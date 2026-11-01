@@ -487,9 +487,20 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 	}
 	queue := a.QueueRepo()
 	store := beadsHome(queue)
+	// protocolAvailable and not exec.LookPath, which searches THIS process's
+	// $PATH — the gated one on any seat that dispatched us (ranger-base-372iq,
+	// found by the census arm in
+	// internal/treepins/protocolchildpath_qa_test.go). The sqlite3 this gate is
+	// about is the one staged thirty lines down through protocolCmd, resolved
+	// outside every gates dir (ADR 0077 D3), and git is run the same way
+	// everywhere in this tree; a PID that denies either has a shim under that
+	// name rendered in the launching persona's gates bin dir, so the old
+	// lookup answered yes on the shim and the stage then died at protocolBin
+	// with a sentence about gates dirs instead of this verb's own
+	// ErrBackupTool exit (ADR 0036 §2).
 	for _, tool := range []string{"git", "sqlite3"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			return res, fmt.Errorf("%w: %s is not on PATH — posse backup needs it to stage the store (ADR 0036 §2)", ErrBackupTool, tool)
+		if !protocolAvailable(tool) {
+			return res, fmt.Errorf("%w: %s is not on PATH outside posse's gates dirs — posse backup needs it to stage the store (ADR 0036 §2)", ErrBackupTool, tool)
 		}
 	}
 

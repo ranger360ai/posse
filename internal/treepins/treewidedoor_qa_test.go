@@ -369,15 +369,24 @@ package treepins
 // through ewdGoFiles, a relative literal, which is the first rule above and
 // not the widened one. (That walk was rooted at cmd/ and internal/ when this
 // paragraph was written; ranger-base-tpy6q rooted it at the repository root,
-// which changes neither the spelling rule nor the door.) The census's own fixture arm is undoored
-// for the reason the rows above give — it drives the rule over planted
-// sources, so nothing derives it:
+// which changes neither the spelling rule nor the door.) The census's own fixture arms are undoored
+// for the reason the rows above give — they drive the rule over planted
+// sources, so nothing derives them. The third row is that census's arm 3: the
+// PROBE for such a binary's name, which has to ask the question the resolution
+// asks or it answers true where protocolBin refuses (ranger-base-372iq, from
+// ranger-base-g1xnt and -d0nyb's five probes). Its own function and its own
+// door, because `-run` selects by test name and an arm hidden inside the
+// function above it would be reachable only by a filter that happened to name
+// that one:
 //
 //	TestQAEveryProtocolChildRunsOutsideTheGates
 //	                                              make corpus-check
 //	TestQATheEnvBinderDerivationFindsThisTreesBinders
 //	                                              make corpus-check
 //	                                              (both ranger-base-bm6j8)
+//	TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable
+//	                                              make corpus-check
+//	                                              (ranger-base-372iq)
 //
 // and THREE more, which are the first members of this class that computed no
 // root AT ALL (ranger-base-nt0pi). Every rule for the internal/posse half
@@ -820,8 +829,31 @@ package treepins
 // one thing seed-check's drift arm is checking when it refuses a green with
 // "no tests to run".
 //
-// and `make tree-check` is all of them — one hundred and nineteen pins and
-// seventeen doors, 90-117s over two warm runs at one hundred and nineteen of
+// and `make tree-check` is all of them — one hundred and twenty pins and
+// seventeen doors, 68-73s over three warm runs at one hundred and twenty of
+// them (MEASURED 2026-11-01, ranger-base-m8kfv: 67.7s, 69.0s then 72.8s, at a
+// one-minute load average of 4.46, 7.08 and 7.90 over a five-minute 4.11, 5.01
+// and 5.84 and a FIFTEEN-minute 8.80, 8.77 and 8.82, with both suite slots
+// free throughout and one warm-up run discarded. This is the merge-back that
+// landed ranger-base-372iq's one pin onto a main that had meanwhile landed
+// ranger-base-00fyg's five, so it is the first reading of the class at one
+// hundred and twenty and the first of EITHER side of that merge — the entry
+// below was taken at one hundred and nineteen and ranger-base-372iq's own at
+// one hundred and fifteen, so neither is a reading of what landed
+// (docs/notes.d/ranger-base-v3tt4.md is the rule and
+// docs/notes.d/ranger-base-xea2y.md the procedure). A 5.0s spread on a quiet
+// box whose load rose gently across the three, which puts it where the chain
+// predicts and makes it the entry that TESTS this paragraph's own advice
+// rather than restating it: "a minute on a quiet box" said ~60s and the quiet
+// box said 68-73s, so the advice is right about the band and about eight
+// seconds light at this size — read the floor as seventy now. An earlier set
+// of four on this same work read 63.9-78.8s, and it is not quoted as the
+// reading because it was taken before ranger-base-w0w7u reached main and so
+// over a tree with one fewer internal/posse test file in pkgcensus-check's
+// corpus; rq986's lesson arrived twice in one bead. The pin this bead added
+// costs nothing measurable: it is one more arm on a file corpus_check already
+// walks),
+// 90-117s over two warm runs at one hundred and nineteen of
 // them (MEASURED 2026-11-01, ranger-base-00fyg: 116.6s then 90.4s, the first
 // at a one-minute load average of 15.57 over a five-minute 16.22 and a
 // FIFTEEN-minute 21.43 with both suite slots held by sibling seats, the second

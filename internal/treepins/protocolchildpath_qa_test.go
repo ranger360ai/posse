@@ -61,11 +61,37 @@ package treepins
 // deadlock arm with ranger-base-c33j6's sentence verbatim; dropping one
 // protocolCmd in the shipped tree reds arm 1 here naming that file and line;
 // dropping one protocolEnv from a `.Env` assignment reds arm 2.
+//
+// ARM 3 IS THE PROBE and it is a separate test function below —
+// TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable
+// (ranger-base-372iq), with its own ruling roster (pcProbeExemptFuncs) and its
+// own planted-shape partner (TestQATheProbeCensusCanStillSayNo). Arms 1 and 2
+// are about the child; this one is about the ANSWER posse gives before it runs
+// one. A probe that asks exec.LookPath reads this process's gated $PATH and so
+// can answer true where protocolBin refuses — a wrong yes, a plan made on it,
+// and the right no arriving later (ranger-base-g1xnt, -d0nyb; five probes did
+// it). Its own door row in the Makefile, because `-run` selects by test name
+// and a third arm hidden inside the function above would be reachable only by
+// a filter that happened to name it.
+//
+// It is a separate FUNCTION and not a third arm in the one above because the
+// two halves it matches are a different pair: arms 1 and 2 read exec sites and
+// `.Env` assignments, this one reads exec sites against PROBES, and the
+// positive witness each needs is a different count. What they share is the
+// file walk and pcFuncAt, which is the exemption rosters' key either way.
+//
+// MEASURED 2026-11-01, arm 3's mutants: Herdr.Available back to
+// `resolveOutside(h.Bin, "") != ""` reds it naming herdr.go and nothing else;
+// backup.go's tool gate back to `exec.LookPath(tool)` reds it naming
+// backup.go, which is the row the literal-range expansion exists for; and the
+// whole of ranger-base-d0nyb's pre-fix tree reds it on exactly its four
+// probes (the paragraph on that function).
 
 import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"sort"
@@ -529,5 +555,485 @@ func TestQATheEnvBinderDerivationFindsThisTreesBinders(t *testing.T) {
 	}
 	if got["protocolCmd"] {
 		t.Error("protocolCmd was derived as an env BINDER. It calls protocolEnv, so the derivation is right by its own rule — but arm 2 then reads `c.Env = protocolCmd(c).Env` as satisfied, which it is not. Narrow the derivation to functions that RETURN an environment.")
+	}
+}
+
+// ─── arm 3: the PROBE for such a child's name ────────────────────────────────
+
+// pcProbeExemptFuncs is arm 3's ruling half: the shipped functions that ask
+// "is there a <name>" about a name one of posse's own children execs, and
+// whose answer is nonetheless NOT about that child. Keyed "<file>:<func>" the
+// way pcExemptFuncs is, and carrying why.
+//
+// A row is one of three claims, and never that the collapse was inconvenient:
+// the two spellings name two different binaries; they name two different
+// PATHs, because the process that reaches the probe is not the process that
+// reaches the exec; or the call is not a probe at all — a resolveOutside whose
+// answer is the real target written into a rendered shim is a resolution, and
+// protocolAvailable would throw away the path it needs.
+var pcProbeExemptFuncs = map[string]string{
+	"internal/posse/cageinner.go:PrepareGatesWrap": "the two `argv[0]`s are " +
+		"two different argvs. PrepareGatesWrap's is what follows `--` INSIDE " +
+		"the container (`posse gates wrap -- …`), resolved on the caller's PATH " +
+		"before the shims go in front of it — which that function's own comment " +
+		"states, and which is the ruling cagelauncher.go's two pcExemptFuncs " +
+		"rows carry: this runs in the seat, not in a launcher. " +
+		"CageInnerGatesReady's argv[0] is the host-side engine step. Same " +
+		"spelling, different variable, different process.",
+	"internal/posse/seatbelt.go:SeatbeltAvailable": "ranger-base-npqem's " +
+		"ruling, written out at that function: SeatbeltAvailable is a HOST " +
+		"question. The `sandbox-exec` it is about is the one startPlanned types " +
+		"into a herdr pane, which runs in herdr's process tree carrying the " +
+		"seat's PATH — so the gated lookup is the one that matches how that " +
+		"binary will be resolved, and a gates-free probe here would answer a " +
+		"question neither AvailableCages[CageSeatbelt] nor the launch gate " +
+		"asked. The sandbox-exec posse execs in THIS process is " +
+		"sandboxApplyProbe's, and since npqem that site resolves its own binary " +
+		"(protocolBin at :166) rather than reading this answer as a licence.",
+}
+
+// pcProbe is one availability probe in the shipped tree: a call whose value is
+// "is there a <name>".
+type pcProbe struct {
+	file     string
+	line     int
+	fn       string
+	spelling string // "exec.LookPath" | "resolveOutside"
+	arg      string // the argument as rendered
+	name     string // the exec'd spelling it collided with; "" when in no class
+}
+
+// pcIsProbe reports whether call asks that question, and over which argument.
+//
+// TWO SPELLINGS, both live in this tree (the counts are on the test function
+// below, MEASURED 2026-11-01):
+//
+//	exec.LookPath(X)    — searches THIS process's $PATH. The defect itself:
+//	                      on a gated seat that PATH leads with the launching
+//	                      persona's gates bin dir, so the probe answers true
+//	                      on a shim the protocol resolution then refuses
+//	                      (ranger-base-c33j6, -g1xnt, -d0nyb).
+//	resolveOutside(X,…) — the RIGHT PATH, the WRONG spelling. Not a defect
+//	                      today; a second copy of protocolAvailable's body,
+//	                      which is what protocolAvailable was written to stop
+//	                      being. ranger-base-d0nyb's four probes landed in
+//	                      this shape — two sites, its three cage probes
+//	                      sharing engineOnPath — in the hour before
+//	                      ranger-base-g1xnt named the function, and a
+//	                      LookPath-only census read them as clean while the
+//	                      tree carried three spellings of one question.
+//	                      ranger-base-372iq collapsed both onto
+//	                      protocolAvailable so this arm is green over one
+//	                      spelling rather than rostered around two.
+//
+// NOT absLookPath, which is the third thing in that neighbourhood and is not
+// in the class: it takes a PATH and never a name, searches nothing, and is
+// resolveOutside's own arm with no other caller in the tree (MEASURED
+// 2026-11-01: two call sites, both inside resolveOutside). A probe cannot be
+// written as absLookPath(X) for a bare name at all.
+//
+// protocolAvailable is of course not a probe to report — it is the answer.
+func pcIsProbe(call *ast.CallExpr) (ast.Expr, string, bool) {
+	if ewdIsSel(call.Fun, "exec", "LookPath") && len(call.Args) == 1 {
+		return call.Args[0], "exec.LookPath", true
+	}
+	if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "resolveOutside" && len(call.Args) == 2 {
+		return call.Args[0], "resolveOutside", true
+	}
+	return nil, "", false
+}
+
+// pcProtocolNames are the expressions this file hands to posse's own
+// resolution: the binary of a protocolCmd-wrapped exec, and every direct
+// protocolBin argument.
+//
+// WRAPPED SITES ONLY, and that is the class and not a shortcut. An exec that
+// does NOT go through protocolCmd is either arm 1's error or a pcExemptFuncs
+// row — a line the SEAT reaches, whose binary is resolved on the seat's own
+// gated PATH on purpose. A probe for such a binary reading that same gated
+// PATH is right, so those sites must not pull their file's probes into the
+// class (cagelauncher.go's two rows are exactly that case, and tree-wide they
+// were two of the derivation's false positives).
+func pcProtocolNames(f *ast.File) []ast.Expr {
+	var out []ast.Expr
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		id, ok := call.Fun.(*ast.Ident)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		switch id.Name {
+		case "protocolBin":
+			out = append(out, call.Args[0])
+		case "protocolCmd":
+			inner, ok := call.Args[0].(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch {
+			case ewdIsSel(inner.Fun, "exec", "Command") && len(inner.Args) > 0:
+				out = append(out, inner.Args[0])
+			case ewdIsSel(inner.Fun, "exec", "CommandContext") && len(inner.Args) > 1:
+				out = append(out, inner.Args[1])
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// pcRangeStrings maps "<func>:<ident>" to the string literals ident takes when
+// it is the value of a `for _, x := range []string{…}`.
+//
+// It is here because the match below is between RENDERED EXPRESSIONS, and one
+// member of this class does not spell its name at the probe:
+// internal/posse/backup.go asks `exec.LookPath(tool)` over
+// `[]string{"git", "sqlite3"}` and execs `"sqlite3"` thirty lines down. An
+// expression match alone reads `tool` against `"sqlite3"` and says clean,
+// which is a pin missing a member it can see — so the match is between SETS of
+// spellings, and a literal range is the one expansion this tree needs
+// (MEASURED 2026-11-01: it adds exactly that one row and no other, on either
+// side).
+func pcRangeStrings(f *ast.File) map[string][]string {
+	out := map[string][]string{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		rs, ok := n.(*ast.RangeStmt)
+		if !ok || rs.Value == nil {
+			return true
+		}
+		id, ok := rs.Value.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		cl, ok := rs.X.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		arr, ok := cl.Type.(*ast.ArrayType)
+		if !ok || arr.Len != nil {
+			return true
+		}
+		if elt, ok := arr.Elt.(*ast.Ident); !ok || elt.Name != "string" {
+			return true
+		}
+		key := pcFuncAt(f, rs.Pos()) + ":" + id.Name
+		for _, el := range cl.Elts {
+			if lit, ok := el.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				out[key] = append(out[key], lit.Value)
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// pcNameSet is every spelling e can be: itself as rendered, plus the literals
+// of a string range it is the value of.
+func pcNameSet(f *ast.File, ranges map[string][]string, e ast.Expr) []string {
+	out := []string{types.ExprString(e)}
+	if id, ok := e.(*ast.Ident); ok {
+		out = append(out, ranges[pcFuncAt(f, e.Pos())+":"+id.Name]...)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// pcProbeScan reads one file for its probes, each marked with the exec'd
+// spelling it collided with. PER FILE, which is the measured rule: a
+// cross-file spelling match says nothing about the binary — `path` and `tool`
+// are generic identifiers, and tree-wide the same derivation returned two rows
+// that were only identifier collisions (cagelauncher.go:210 against
+// runtimeprobe.go:442, gates.go:1159 against skillsdirtrust.go:168).
+func pcProbeScan(fset *token.FileSet, rel string, f *ast.File) (probes []pcProbe, execd []string) {
+	ranges := pcRangeStrings(f)
+	seen := map[string]bool{}
+	for _, e := range pcProtocolNames(f) {
+		for _, s := range pcNameSet(f, ranges, e) {
+			if !seen[s] {
+				seen[s], execd = true, append(execd, s)
+			}
+		}
+	}
+	sort.Strings(execd)
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		arg, spelling, ok := pcIsProbe(call)
+		if !ok {
+			return true
+		}
+		p := pcProbe{
+			file: rel, line: fset.Position(call.Pos()).Line,
+			fn: pcFuncAt(f, call.Pos()), spelling: spelling, arg: types.ExprString(arg),
+		}
+		for _, s := range pcNameSet(f, ranges, arg) {
+			if seen[s] {
+				p.name = s
+				break
+			}
+		}
+		probes = append(probes, p)
+		return true
+	})
+	return probes, execd
+}
+
+// pcProtocolAvailableCalls counts the calls to the sanctioned spelling.
+func pcProtocolAvailableCalls(files map[string]*ast.File) int {
+	n := 0
+	for _, f := range files {
+		ast.Inspect(f, func(x ast.Node) bool {
+			call, ok := x.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "protocolAvailable" {
+				n++
+			}
+			return true
+		})
+	}
+	return n
+}
+
+// TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable is arm 3
+// of ranger-base-bm6j8's census — ranger-base-372iq, asked for by
+// ranger-base-d0nyb rather than fixing three call sites by hand, "since the
+// next one lands the same way".
+//
+// THE RULE. A probe for a name that one of posse's own children execs must ask
+// protocolAvailable, which asks protocolBin's question over ADR 0077 D3's
+// gates-free PATH. A probe that asks exec.LookPath instead reads THIS
+// process's $PATH — on a gated seat, the launching persona's gates bin dir
+// first — so it answers TRUE on a shim that the resolution one function away
+// then refuses: a wrong yes followed by a right no, with the plan already made
+// on the yes. ranger-base-c33j6 measured the gated PATH; ranger-base-g1xnt
+// found the first probe (Bd.Available), ranger-base-d0nyb the next four
+// (Herdr.Available and cage's three engine probes, which WrapInCage had
+// already cleared and then refused).
+//
+// THE DERIVATION, measured rather than listed, and the reason this is an arm
+// and not five fixes:
+//
+//	probe      = exec.LookPath(X) | resolveOutside(X, …)   (pcIsProbe)
+//	exec site  = protocolCmd(exec.Command(Y, …))           (pcProtocolNames)
+//	           | protocolCmd(exec.CommandContext(ctx, Y, …))
+//	           | protocolBin(Y)
+//	in class   = some exec site in the SAME FILE spells Y the way this probe
+//	             spells X (pcNameSet, which is the rendered expression plus the
+//	             literals of a string range it is the value of)
+//
+// MEASURED 2026-11-01 (darwin 25.6.0, a developer seat's ranger-base-372iq worktree,
+// at main 2225b0b0 + this change): 21 probes in the shipped tree — 7
+// exec.LookPath and 14 resolveOutside — against 36 exec'd spellings over 28
+// files, and 2 of the 21 in class, both ruled below. A third was in class when
+// this bead opened and is collapsed by it: internal/posse/backup.go's
+// backup-tool gate, which is the whole reason pcNameSet expands a literal
+// range (it spells `tool` and execs `"sqlite3"`).
+//
+// PER FILE is the rule and it was measured against the alternative: tree-wide,
+// the same derivation adds two rows that are identifier collisions and nothing
+// else (cagelauncher.go:210's `path` against runtimeprobe.go:442's,
+// gates.go:1159's against skillsdirtrust.go:168's).
+//
+// AND IT FINDS THE CLASS IT WAS DERIVED FROM, which is the test of a
+// derivation. MEASURED the same day over the tree at 2225b0b0^ — the four
+// probes ranger-base-d0nyb had not yet fixed, restored into this worktree and
+// read by this very scan: cage.go:266 (ContainerAvailable), :1277
+// (cageNoBinary), :1430 (BuildCageImage) and herdr.go:59 (Herdr.Available),
+// each reported against the protocolBin site in its own file, and nothing
+// else. (ranger-base-g1xnt's internal/posse/beads.go:51 is the fifth and was
+// not re-measured here: that revision of beads.go does not compile against
+// today's internal/posse, so the test binary cannot be built over it. The
+// derivation that found it is on ranger-base-372iq, measured by
+// ranger-base-d0nyb's seat.)
+//
+// WHAT THIS ARM IS NOT. It is syntactic, like arms 1 and 2: a protocolAvailable
+// that stopped reading the gates-free PATH would leave it green.
+// internal/posse/probegatesfreepath_test.go is the behavioural proof, both
+// directions, on a fixture PATH whose only answer for the name is a gates bin
+// dir — with its own positive controls, because "unavailable" is what a probe
+// reading a PATH it can resolve nothing on reports.
+func TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+	rels := ewdGoFiles(t)
+	files := map[string]*ast.File{}
+	for _, rel := range rels {
+		f, err := parser.ParseFile(fset, rel, nil, parser.ParseComments)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", rel, err)
+		}
+		files[rel] = f
+	}
+	if len(files) < 100 {
+		t.Fatalf("the walk read %d non-test .go files under %s — the corpus this pin censuses is not there",
+			len(files), ewdCorpusRoot)
+	}
+
+	var probes []pcProbe
+	execd := 0
+	for _, rel := range rels {
+		p, e := pcProbeScan(fset, rel, files[rel])
+		probes = append(probes, p...)
+		execd += len(e)
+	}
+
+	// The positive witnesses. This arm is an assertion of absence like every
+	// other one here, and a scan that resolves neither side reports exactly
+	// what a clean tree reports. Floors under the live counts (MEASURED
+	// 2026-11-01, at main 2225b0b0 + this change): 21 probes, 36 exec'd
+	// spellings over 28 files, 4 calls to protocolAvailable.
+	if len(probes) < 12 {
+		t.Errorf("the scan found %d probe(s) in the shipped tree and 21 sit there today — 7 exec.LookPath (cageinner.go, cagelauncher.go, gates.go x2, possebinary.go, runtimepreflight.go, seatbelt.go) and 14 resolveOutside. A count this low means pcIsProbe has stopped resolving one of its two spellings, and this arm is then green over whatever the tree does with it.",
+			len(probes))
+	}
+	if execd < 20 {
+		t.Errorf("the scan read %d exec'd spelling(s) out of protocolCmd/protocolBin sites and 36 sit in the tree today, over 28 files — pcProtocolNames has stopped resolving the wrapper, so no probe can collide with anything and this arm is measuring nothing.",
+			execd)
+	}
+	if n := pcProtocolAvailableCalls(files); n < 2 {
+		t.Errorf("the tree holds %d call(s) to protocolAvailable and four sit there today (beads.go Bd.Available, herdr.go Herdr.Available, cage.go engineOnPath, backup.go's backup-tool gate). The sanctioned spelling having emptied out is how this class comes back: a tree with no protocolAvailable in it and no probe in class is also a tree where every probe was rewritten as something this scan cannot see.",
+			n)
+	}
+
+	// THE ARM.
+	seen := map[string]bool{}
+	inClass := 0
+	for _, p := range probes {
+		if p.name == "" {
+			continue
+		}
+		inClass++
+		key := p.file + ":" + p.fn
+		if _, ok := pcProbeExemptFuncs[key]; ok {
+			seen[key] = true
+			continue
+		}
+		t.Errorf("%s:%d (%s) probes %s with %s(%s), and a protocolCmd/protocolBin site in this same file execs %s.\n"+
+			"  A probe for a name posse's own children exec has to ask the question the resolution asks. exec.LookPath searches THIS process's $PATH, which on a gated seat leads with the launching persona's gates bin dir — so it answers true on that persona's shim while protocolBin, one function away, refuses the same name (MEASURED 2026-10-31, ranger-base-c33j6; ranger-base-g1xnt and -d0nyb are the five probes that did it). A bare resolveOutside reads the right PATH and is a second copy of protocolAvailable's body, which is the copy that goes stale.\n"+
+			"  Spell it `protocolAvailable(%s)` (internal/posse/protocolchild.go) — never wider than protocolBin, and narrower only on an explicit path that is not there, which is a probe saying no rather than a gate opening onto a refusal. If the two names are two different binaries, or two different PATHs because the process that reaches this line is not the one that reaches the exec, or this call is a resolution whose ANSWER is the path (a shim's real target) rather than a yes/no, add %q to pcProbeExemptFuncs with that reason — the way cageinner.go's and seatbelt.go's rows are.",
+			p.file, p.line, p.fn, p.name, p.spelling, p.arg, p.name, p.arg, key)
+	}
+	if inClass == 0 {
+		t.Error("not one probe in the tree was read as naming a binary one of posse's own children execs, and two did on 2026-11-01 — cageinner.go:PrepareGatesWrap and seatbelt.go:SeatbeltAvailable, the two rows pcProbeExemptFuncs rules — with a third, backup.go's backup-tool gate, collapsed onto protocolAvailable by ranger-base-372iq.\n" +
+			"  Both halves have to resolve for this arm to mean anything, and a scan that resolves the probes but matches none of them reports exactly what a clean tree reports. Either the match broke or the tree really did lose the class; check pcNameSet against a file you know holds one.")
+	}
+
+	// And the ruling's rows have to be real.
+	var keys []string
+	for k := range pcProbeExemptFuncs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if !seen[k] {
+			t.Errorf("pcProbeExemptFuncs rules %s exempt (%s) and no probe there names a binary one of posse's own children execs any more — drop the row",
+				k, pcProbeExemptFuncs[k])
+		}
+	}
+}
+
+// TestQATheProbeCensusCanStillSayNo is arm 3's two-way half: one planted shape
+// per route a probe can be in class, out of class, or satisfied — run through
+// the same reader, because the arm above is an assertion of absence and an
+// absence is what a reader that resolves nothing reports.
+func TestQATheProbeCensusCanStillSayNo(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		src      string
+		inClass  bool
+		noProbes bool // the shape holds no probe at all, which is its point
+	}{
+		{"LookPath for a name this file's protocolCmd execs", `package x
+import "os/exec"
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func avail() bool { _, err := exec.LookPath("bd"); return err == nil }
+func run() error { return protocolCmd(exec.Command("bd", "ready")).Run() }
+`, true, false},
+		{"the context form's binary is its SECOND argument", `package x
+import ("context"; "os/exec")
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func avail() bool { _, err := exec.LookPath("bd"); return err == nil }
+func run(ctx context.Context) error { return protocolCmd(exec.CommandContext(ctx, "bd", "ready")).Run() }
+`, true, false},
+		{"a direct protocolBin is an exec site too", `package x
+import "os/exec"
+func protocolBin(n string) (string, error) { return n, nil }
+func avail() bool { _, err := exec.LookPath("bd"); return err == nil }
+func run() (string, error) { return protocolBin("bd") }
+`, true, false},
+		{"resolveOutside is the right PATH and still the wrong spelling", `package x
+import "os/exec"
+func resolveOutside(c, b string) string { return c }
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func avail() bool { return resolveOutside("bd", "") != "" }
+func run() error { return protocolCmd(exec.Command("bd", "ready")).Run() }
+`, true, false},
+		{"protocolAvailable is the answer, not a probe", `package x
+import "os/exec"
+func protocolAvailable(n string) bool { return n != "" }
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func avail() bool { return protocolAvailable("bd") }
+func run() error { return protocolCmd(exec.Command("bd", "ready")).Run() }
+`, false, true},
+		{"a literal range reaches the name the probe does not spell", `package x
+import "os/exec"
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func avail() bool {
+	for _, tool := range []string{"git", "sqlite3"} {
+		if _, err := exec.LookPath(tool); err != nil { return false }
+	}
+	return true
+}
+func run() error { return protocolCmd(exec.Command("sqlite3", "x")).Run() }
+`, true, false},
+		{"a different name in the same file is not this file's class", `package x
+import "os/exec"
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func avail() bool { _, err := exec.LookPath("true"); return err == nil }
+func run() error { return protocolCmd(exec.Command("git", "status")).Run() }
+`, false, false},
+		{"an UNWRAPPED exec is the seat's own, and pulls nothing into the class", `package x
+import "os/exec"
+func avail() bool { _, err := exec.LookPath("docker"); return err == nil }
+func run() error { return exec.Command("docker", "ps").Run() }
+`, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, "x.go")
+			if err := os.WriteFile(path, []byte(tc.src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+			if err != nil {
+				t.Fatalf("parsing the fixture: %v", err)
+			}
+			probes, _ := pcProbeScan(fset, "x.go", f)
+			if (len(probes) == 0) != tc.noProbes {
+				t.Fatalf("the scan found %d probe(s) (want none = %v) in:\n%s", len(probes), tc.noProbes, tc.src)
+			}
+			got := false
+			for _, p := range probes {
+				if p.name != "" {
+					got = true
+				}
+			}
+			if got != tc.inClass {
+				t.Errorf("in class = %v (want %v) over %d probe(s); the census reads this shape wrong, so arm 3 is measuring nothing",
+					got, tc.inClass, len(probes))
+			}
+		})
 	}
 }

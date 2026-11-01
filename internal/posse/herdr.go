@@ -84,7 +84,14 @@ func NewHerdr() Herdr {
 // hands such a path straight back unchecked — an explicit binary is an answer,
 // not a search — so the two agree on every bare name and this one is the
 // stricter of the two, never the looser.)
-func (h Herdr) Available() bool { return resolveOutside(h.Bin, "") != "" }
+//
+// SPELLED protocolAvailable, which is that whole paragraph as one call
+// (ranger-base-372iq). This was `resolveOutside(h.Bin, "") != ""` — the same
+// answer, written out, because ranger-base-d0nyb reached it independently in
+// the hour before ranger-base-g1xnt named it. Two spellings of one question is
+// the second copy that goes stale, and the census arm in
+// internal/treepins/protocolchildpath_qa_test.go reads this one.
+func (h Herdr) Available() bool { return protocolAvailable(h.Bin) }
 
 // KnownAgentKinds is the set of agent kinds this herdr recognizes — the
 // `launch` stage's first observable (ADR 0013 §1): a runtime whose argv0

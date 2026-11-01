@@ -264,10 +264,18 @@ func (e *Engine) Binary() string {
 //
 // STILL A FACT ABOUT A FILE and not about whether the engine answers, which
 // is the distinction ranger-base-1mu9r drew and ContainerAvailable's doc
-// keeps: resolveOutside is a PATH search over a narrower PATH, and nothing
+// keeps: protocolAvailable is a PATH search over a narrower PATH, and nothing
 // here runs the engine. CageEngineLive is the other question.
+//
+// SPELLED protocolAvailable, which is the probe beside protocolBin — the
+// resolution WrapInCage asks over this very expression (ranger-base-372iq).
+// This was `resolveOutside(e.Binary(), "") != ""`, the same answer written
+// out: ranger-base-d0nyb arrived here in the hour before ranger-base-g1xnt
+// named the spelling, and two spellings of one question is the second copy
+// that goes stale. The census arm in
+// internal/treepins/protocolchildpath_qa_test.go reads this one.
 func engineOnPath(e *Engine) bool {
-	return e != nil && resolveOutside(e.Binary(), "") != ""
+	return e != nil && protocolAvailable(e.Binary())
 }
 
 // ContainerAvailable reports whether this host can provide `cage:
