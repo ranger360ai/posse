@@ -487,7 +487,9 @@ package treepins
 // spellings above: twdClimbSet reads a climb held in a local, a local const
 // or a package const, and twdClimbHops closes the param-rooted-walker
 // relation over calls so a climb handed any number of hops from the walk is
-// refused. THE FENCE MAY FOLLOW THE CHAIN WHERE THE DERIVATION MAY NOT, and
+// refused. (A third spelling joined the first half later and is the section
+// below: a climb reaching the walker as a RANGE VARIABLE over a list of
+// literals, ranger-base-g31e0.) THE FENCE MAY FOLLOW THE CHAIN WHERE THE DERIVATION MAY NOT, and
 // that asymmetry is the load-bearing decision here: a wrong resolution in the
 // derivation is a door demanded for a fixture walk or a pin quietly leaving
 // the class, while a wrong resolution in a prohibition only tells a seat to
@@ -649,9 +651,77 @@ package treepins
 //     2 through the new floor alone and with the floor's own message. That
 //     is the case the floor exists for and the one no other arm can see.
 //
-// and `make tree-check` is all of them — one hundred and nine pins and
-// seventeen doors, 55-56s over three warm runs at the full one hundred and
-// nine (MEASURED 2026-10-31, ranger-base-h1q5o: 56s, 55s and 55s in that
+// and THREE more, which are the shape the two halves of the derivation miss
+// BECAUSE it is both of them at once (ranger-base-g31e0, from
+// ranger-base-tw3t7's verify of the two beads above). A list of relative
+// literals that mixes the package's OWN directory with a climb OUT of it,
+// ranged over and walked — `for _, d := range []string{".",
+// "../../cmd/posse"}` — was read by NEITHER rule. The FENCE binds at an
+// AssignStmt or a ValueSpec, so a CompositeLit bound the slice and the range
+// VARIABLE was never bound at all, which made 8yv7z's "once the fence reads
+// an identifier it finds six" six of nine. The SEED voided the whole list on
+// one unreadable element — right where it was written, because in
+// internal/treepins a climb LEAVES the tree — and wrong here, where a climb
+// is how a test REACHES it: the unreadable element makes the reading more
+// tree-wide, and refusing the list threw away the readable `"."` that
+// ranger-base-m94g2 had just decided is a member on its own. So the pins
+// were outside the class for doing both, and the ~950s arm run was their
+// only route:
+//
+//	TestQAKeychainStoreIsWiredToTheAbsoluteBinary make pkgcensus-check
+//	                                              (`.` and `../../cmd`,
+//	                                              walked — no file anywhere
+//	                                              execs the bare word a
+//	                                              persona's shim answers to,
+//	                                              ranger-base-ypf5/r64)
+//	TestExactModelHasNoDeclarationSurface         make pkgcensus-check
+//	                                              (`.` and `../../cmd/posse`,
+//	                                              ReadDir'd — ADR 0053 D5's
+//	                                              declaration surface)
+//	TestVisibilityOverrideIsNeverDispatched       make pkgcensus-check
+//	                                              (`..` and `../../cmd`,
+//	                                              walked — guardrail 4's
+//	                                              rule half, the override out
+//	                                              of every dispatched
+//	                                              environment, and the one of
+//	                                              the three whose silent
+//	                                              unreachability mattered
+//	                                              most)
+//	                                              (all three
+//	                                              ranger-base-g31e0)
+//
+// NO NEW DOOR, and the radius is why it needed saying: QA_PKGCENSUS_PINS is
+// named for a class that was one package when na4rm doored it, and these
+// three ask the same never-question one directory further out. The subject
+// is a reading of this repo's own Go sources whose file SET is discovered —
+// a bead that adds a .go file in that radius reds them — which is this
+// door's subject exactly and the same key the fifteen are in on. 0.23s
+// between the three (0.02s, 0.02s and 0.19s, over three warm runs that
+// agreed to the hundredth, at a one-minute load average of 6.00).
+//
+// TWO FIXES, ONE TO EACH HALF, and which half takes a site is decided by
+// MEASUREMENT and not by preference. The fence reads a range over a list now
+// (twdClimbSet.list, climbingList) and the seed skips a CLIMBING element
+// rather than voiding the list (twdRelTreeList) — and with both in, the two
+// mixed lists are DERIVED members through their readable `"."`, while
+// visibility_test.go's `[]string{"..", "../../cmd"}` is not, because every
+// element of it climbs and the seed can read none of them. So that one took
+// the root from qibRepoRoot, the house fix a third time, and the other two
+// are doored where they stand: a census of internal/posse's own sources is a
+// member AS a relative read (ranger-base-m94g2), and demanding a root of the
+// mixed spelling alone would have treated it more harshly than the
+// `"."`-only sibling the house blessed, for the same door.
+//
+// WHICH IS ALSO WHY THE FENCE ARM NOW READS relEnum (see its own comment
+// below). Its sentence is "no rule in this file can see it, the pin gets no
+// door" — true of visibility_test.go, false of the two the seed derives, and
+// a prohibition that prints a false reason is worse than one that stays
+// quiet. `!f.root` was already that condition for the direct rule; this is
+// the same condition for the third seed.
+//
+// and `make tree-check` is all of them — one hundred and twelve pins and
+// seventeen doors, 55-56s over three warm runs at one hundred and nine of
+// them (MEASURED 2026-10-31, ranger-base-h1q5o: 56s, 55s and 55s in that
 // order, at a one-minute load average of 4.56, 3.70 and 3.25 before the
 // three and no suite slot held by anyone; 72s on the run before them, with
 // the two tagged binaries cold. This is the merge-back that landed
@@ -1409,7 +1479,9 @@ func twdClimbRoot(e ast.Expr) bool {
 
 // twdClimbSet is what an identifier naming a climb OUT of the package can be
 // read through: the names, at one package's file scope and in one function
-// body, bound to an expression twdClimbRoot calls a climb.
+// body, bound to an expression twdClimbRoot calls a climb — and, since
+// ranger-base-g31e0, the names bound to a LIST of them, from which a range
+// variable inherits the climb.
 //
 // WHY IT EXISTS (ranger-base-8yv7z). ranger-base-nt0pi fenced the climb
 // spelled AT the walker and said its residual out loud: a climb that arrives
@@ -1428,7 +1500,26 @@ func twdClimbRoot(e ast.Expr) bool {
 // any body this could match — so where the derivation must be exact, the
 // fence may be generous, and that is the whole reason the two are separate
 // maps rather than one.
-type twdClimbSet map[string]bool
+type twdClimbSet struct {
+	// val: a name bound to a climb that NAMES a path below the repo root.
+	val map[string]bool
+	// list: a name bound to a []string holding at least one such climb —
+	// `roots := []string{"..", "../../cmd"}`, which binds the SLICE and not
+	// its elements, so until ranger-base-g31e0 nothing about it entered this
+	// set and `for _, r := range roots { filepath.Walk(r, …) }` was unread.
+	//
+	// SEPARATE FROM val FOR twdRelEnv's REASON, one rule over: ranging a
+	// STRING yields its runes, so a range variable may inherit a climb only
+	// from something this rule knows is a slice of paths. One map would bind
+	// `r` in `dir := "../../etc"; for _, r := range dir`, where r is a rune.
+	list map[string]bool
+}
+
+// twdNewClimbSet is the empty set, by one function so the two maps cannot be
+// half-built anywhere.
+func twdNewClimbSet() twdClimbSet {
+	return twdClimbSet{val: map[string]bool{}, list: map[string]bool{}}
+}
 
 // climbs reports whether an expression spells a climb out of the package,
 // reading identifiers through the set: a literal exactly as twdClimbRoot
@@ -1438,7 +1529,7 @@ type twdClimbSet map[string]bool
 func (c twdClimbSet) climbs(e ast.Expr) bool {
 	switch v := e.(type) {
 	case *ast.Ident:
-		return c[v.Name]
+		return c.val[v.Name]
 	case *ast.CallExpr:
 		sel, ok := v.Fun.(*ast.SelectorExpr)
 		if !ok || len(v.Args) == 0 {
@@ -1456,7 +1547,10 @@ func (c twdClimbSet) climbs(e ast.Expr) bool {
 }
 
 // bind adds name if its right-hand side climbs AND the path it spells names
-// something BELOW the repo root. `_` is never a name.
+// something BELOW the repo root — or if it spells a `[]string` with such an
+// element, in which case the name goes in the LIST half (ranger-base-g31e0),
+// because what a range over it yields is the element and not the slice. `_`
+// is never a name.
 //
 // THE SECOND CONDITION IS THE JURISDICTION LINE, and it is what keeps this
 // arm off nine tests it would be wrong about. A climb made of nothing but
@@ -1485,19 +1579,74 @@ func (c twdClimbSet) climbs(e ast.Expr) bool {
 // bare-root identifier never enters this set and nothing built from it does.
 // That shape is the hidden arm's and is scored by its dataflow.
 func (c twdClimbSet) bind(name string, rhs ast.Expr) {
-	if name == "_" || !c.climbs(rhs) {
+	if name == "_" {
+		return
+	}
+	// A LIST of paths, one of which climbs: the name holds the slice, and a
+	// range over it binds its value variable in extend below.
+	if c.climbingList(rhs) {
+		c.list[name] = true
+	}
+	if !c.climbs(rhs) {
 		return
 	}
 	if twdClimbNamesASubpath(rhs, c) {
-		c[name] = true
+		c.val[name] = true
 	}
+}
+
+// climbingList reports whether an expression spells a `[]string` with at
+// least one element bind would take on its own — a climb that NAMES a path
+// below the root. An inline composite literal is read element by element; an
+// identifier resolves through the list half of the set.
+//
+// WHY THE FENCE READS A LIST (ranger-base-g31e0, ranger-base-tw3t7's FINDING
+// 1). The fence binds at an AssignStmt or a ValueSpec, so a climb that
+// reaches the walker as a RANGE VARIABLE over a list of literals was unread:
+// the right-hand side is a CompositeLit, climbs() answers false for one, and
+// the range value was never bound at all. That spelling was live three times
+// in internal/posse — `roots := []string{"..", "../../cmd"}` walked in
+// visibility_test.go, `[]string{".", "../../cmd"}` in gatedkeychain_test.go,
+// `[]string{".", "../../cmd/posse"}` in exactmodel_qa_test.go — and it is
+// the spelling twdRelEnv has read since ranger-base-g6sb1, one rule over, so
+// the fence was narrower than the derivation it serves on a shape its sibling
+// already resolved.
+//
+// THE JURISDICTION LINE IS THE ELEMENT'S, not the list's: an element is
+// tested by exactly the pair of conditions bind applies to a scalar, so a
+// range over bare roots only — `[]string{"..", "../.."}` — stays
+// twdRootExprs' and the hidden arm's, and widening the fence to lists cannot
+// take detectionRig's nine callers with it (ranger-base-sx2dq). The fixture
+// table below types both sides of that.
+func (c twdClimbSet) climbingList(e ast.Expr) bool {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return c.list[v.Name]
+	case *ast.CompositeLit:
+		at, ok := v.Type.(*ast.ArrayType)
+		if !ok || at.Len != nil {
+			return false
+		}
+		if id, ok := at.Elt.(*ast.Ident); !ok || id.Name != "string" {
+			return false
+		}
+		for _, el := range v.Elts {
+			if c.climbs(el) && twdClimbNamesASubpath(el, c) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // twdClimbNamesASubpath reports whether a climbing expression spells a path
 // with at least one element that is not `..` — `../../etc/claude` does,
 // `../..` and `filepath.Join("..", "..")` do not. Identifiers resolve through
-// the set, which already holds only subpath-naming climbs, so an identifier
-// in it names one by construction.
+// the VAL half of the set, which holds only subpath-naming climbs, so an
+// identifier in it names one by construction. A list element is read
+// directly rather than through either half — climbingList tests it with this
+// function and climbs() both, which is how the jurisdiction line stays per
+// element.
 func twdClimbNamesASubpath(e ast.Expr, c twdClimbSet) bool {
 	named := func(s string) bool {
 		for _, el := range strings.Split(filepath.ToSlash(s), "/") {
@@ -1509,7 +1658,7 @@ func twdClimbNamesASubpath(e ast.Expr, c twdClimbSet) bool {
 	}
 	switch v := e.(type) {
 	case *ast.Ident:
-		return c[v.Name]
+		return c.val[v.Name]
 	case *ast.BasicLit:
 		if v.Kind != token.STRING {
 			return false
@@ -1555,7 +1704,7 @@ func (c twdClimbSet) bindDecls(specs []ast.Spec) {
 // paths, over every file at once because a const declared in one file roots a
 // walk in another — the reason twdPkgRelEnv is built that way too.
 func twdPkgClimbSet(files []*ast.File) twdClimbSet {
-	c := twdClimbSet{}
+	c := twdNewClimbSet()
 	// Two passes, so a declaration that reads one written below it binds.
 	for i := 0; i < 2; i++ {
 		for _, file := range files {
@@ -1576,9 +1725,12 @@ func twdPkgClimbSet(files []*ast.File) twdClimbSet {
 // const, which is the spelling this bead was filed for. Two passes, for the
 // reason twdRootExprs makes two.
 func (c twdClimbSet) extend(body *ast.BlockStmt) twdClimbSet {
-	out := twdClimbSet{}
-	for k := range c {
-		out[k] = true
+	out := twdNewClimbSet()
+	for k := range c.val {
+		out.val[k] = true
+	}
+	for k := range c.list {
+		out.list[k] = true
 	}
 	for i := 0; i < 2; i++ {
 		ast.Inspect(body, func(n ast.Node) bool {
@@ -1606,6 +1758,22 @@ func (c twdClimbSet) extend(body *ast.BlockStmt) twdClimbSet {
 				}
 				for j, name := range st.Names {
 					out.bind(name.Name, st.Values[j])
+				}
+			case *ast.RangeStmt:
+				// The VALUE of a range over a list holding a climb that
+				// names a path (ranger-base-g31e0): the body walks EVERY
+				// element, so the variable can hold that climb and the
+				// reading is the tree. The list may be written at the range
+				// or held in a local or a package var, which is why bind
+				// above keeps the slice's name. The KEY is an index and is
+				// never bound, and the list half is never read from a
+				// string — see twdClimbSet's own head comment.
+				id, ok := st.Value.(*ast.Ident)
+				if !ok || id.Name == "_" {
+					return true
+				}
+				if out.climbingList(st.X) {
+					out.val[id.Name] = true
 				}
 			}
 			return true
@@ -2062,7 +2230,26 @@ func twdRelTreePaths(e ast.Expr, env *twdRelEnv) []string {
 // One unreadable element makes the whole list unknown, rather than the
 // readable ones standing for it — a range over that list walks the element
 // the rule could not read too, so claiming the list would be claiming a root
-// this file does not know.
+// this file does not know. A variable, a scratch directory, an absolute path
+// and a helper's return are all that element.
+//
+// EXCEPT A CLIMB, which is skipped rather than voiding the list
+// (ranger-base-g31e0, ranger-base-tw3t7's FINDING 2). The refusal above is
+// about not CLAIMING a root, and a `../` element is the one unreadable
+// element whose own reading is never narrower than the list's: in
+// internal/posse it is how a test reaches the tree, so it makes the reading
+// MORE tree-wide, and in internal/treepins it leaves the tree and this rule
+// claims nothing of it either way. What voided the list was the reason to be
+// careful, not the climb — and voiding it threw away the readable `"."`
+// beside it, which is the one-package census ranger-base-m94g2 decided is in
+// the class on its own. `for _, d := range []string{".", "../../cmd/posse"}`
+// was derived by NEITHER half of the register until this bead, precisely
+// because it did both: the fence could not see the climb and the seed
+// discarded the `"."`.
+//
+// A list of nothing BUT climbs still returns nothing, so visibility_test.go's
+// `[]string{"..", "../../cmd"}` is the fence's and not this rule's — which is
+// what keeps the two findings two.
 func twdRelTreeList(e ast.Expr, env *twdRelEnv) []string {
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -2079,6 +2266,9 @@ func twdRelTreeList(e ast.Expr, env *twdRelEnv) []string {
 		for _, el := range v.Elts {
 			paths := twdRelTreePaths(el, env)
 			if len(paths) == 0 {
+				if twdClimbRoot(el) {
+					continue
+				}
 				return nil
 			}
 			out = append(out, paths...)
@@ -3495,15 +3685,57 @@ func TestX(t *testing.T) { scan("testdata") }`, false},
 func TestX(t *testing.T) { scan("../../examples", t.TempDir()) }`, false},
 		{"a parameter that roots no walk is not a hop", `func read(p string) { os.ReadFile(p) }
 func TestX(t *testing.T) { read("../../AGENTS.md") }`, false},
+		// THE RANGE VARIABLE (ranger-base-g31e0). These three rows read
+		// false until this bead: the set bound at an AssignStmt or a
+		// ValueSpec, `roots := []string{...}` binds the SLICE, and climbs()
+		// answers false for a CompositeLit — so the range value was never
+		// bound and three live pins read the tree with nothing watching.
+		// The list may be written at the range or held in a name, and
+		// nothing about the hole depended on which.
+		{"a climb reaching the walker as a range variable over an inline list", `func TestX(t *testing.T) { for _, r := range []string{"..", "../../cmd"} { filepath.Walk(r, nil) } }`, true},
+		{"a climb reaching the walker as a range variable over a named list", `func TestX(t *testing.T) { roots := []string{"..", "../../cmd"}
+	for _, r := range roots { filepath.Walk(r, nil) } }`, true},
+		{"a climb beside the package's own directory in ONE list", `func TestX(t *testing.T) { for _, d := range []string{".", "../../cmd/posse"} { os.ReadDir(d) } }`, true},
+		// AND THE JURISDICTION LINE AGAIN, held per ELEMENT: a list of bare
+		// roots is twdRootExprs' and the hidden arm's, so widening to lists
+		// cannot take detectionRig's nine callers with it.
+		{"a range over bare roots only is the hidden arm's shape", `func TestX(t *testing.T) { for _, r := range []string{"..", "../.."} { os.ReadDir(r) } }`, false},
+		{"a range over scratch directories is not a climb", `func TestX(t *testing.T) { for _, r := range []string{t.TempDir()} { os.ReadDir(r) } }`, false},
+		{"a range variable that roots no walker is not a climb", `func TestX(t *testing.T) { for _, p := range []string{"../../AGENTS.md"} { os.ReadFile(p) } }`, false},
 	} {
 		if got := twdFixtureClimbs(t, c.src); got != c.want {
 			t.Errorf("the climbing-enumeration rule says %v for this source, want %v (%s) — the fence below is then measuring something other than what this comment says, and its zero is not evidence:\n%s", got, c.want, c.name, c.src)
 		}
 	}
 
+	// THE ARM FIRES WHERE NOTHING SEES THE READING, which is why it reads
+	// both of the register's own answers before it speaks. `!f.root` has
+	// always been here: a body that takes the root from the one helper is
+	// derived by the direct rule, so its climb is not what makes anything
+	// invisible. `len(f.relEnum) == 0` is the same condition for the seed
+	// (ranger-base-g31e0): since ranger-base-na4rm a body that enumerates a
+	// readable relative path IS a derived member and IS doored, and a
+	// mixed list — `for _, d := range []string{".", "../../cmd/posse"}` —
+	// is exactly that body with a climb beside the `"."`.
+	//
+	// WITHOUT THIS THE ARM'S OWN SENTENCE WOULD BE FALSE for such a body:
+	// it says "no rule in this file can see it, the pin gets no door", and
+	// the seed sees it and the door is in the Makefile. Worse, the
+	// remediation would ask a census of internal/posse's own sources to
+	// take a root, which is the one thing ranger-base-m94g2 decided it need
+	// not do — the fifteen one-package censuses read `.` relatively and are
+	// members BECAUSE of it. Demanding a root of the mixed spelling alone
+	// would treat it more harshly than the `"."`-only sibling the house
+	// blessed, for nothing: the door is the same door.
+	//
+	// What stays fenced is a climb NOTHING resolves. visibility_test.go's
+	// `[]string{"..", "../../cmd"}` is that: every element climbs, so the
+	// seed reads no element and the list is not a reading this file can
+	// name — the fence is its only route, which is what keeps
+	// ranger-base-tw3t7's two findings two.
 	var climbed []string
 	for name, f := range all {
-		if f.climbEnum && !f.root {
+		if f.climbEnum && !f.root && len(f.relEnum) == 0 {
 			climbed = append(climbed, f.where+" "+name)
 		}
 	}

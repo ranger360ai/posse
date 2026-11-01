@@ -28,6 +28,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-kf9ou](ranger-base-kf9ou.md) — bob 2.0.5 → 2.0.9: what a bundle read re-measures for free, and what stays as-of-2.0.5 (ranger-base-kf9ou) — 2026-10-31
 - [ranger-base-h1q5o](ranger-base-h1q5o.md) — ranger-base-h1q5o — a merge-back whose conflict was the same pinned COUNT, twice over — 2026-10-31
 - [ranger-base-gf0ln](ranger-base-gf0ln.md) — 'posse runtime drift' on the clock: the verify-box ROSTER row (ranger-base-gf0ln) — 2026-10-31
+- [ranger-base-g31e0](ranger-base-g31e0.md) — The shape neither half of the derivation reads: a root list that is both (ranger-base-g31e0) — 2026-10-31
 - [ranger-base-f5jbs](ranger-base-f5jbs.md) — `posse runtime drift` — giving skillsVerifiedDrift an exit code — 2026-10-31
 - [ranger-base-et7bs](ranger-base-et7bs.md) — The read verb that did not auto-update, and the one footprint it does leave (ranger-base-et7bs) — 2026-10-31
 - [ranger-base-esz16](ranger-base-esz16.md) — The second footprint, and the one that leaves the box (ranger-base-esz16) — 2026-10-31

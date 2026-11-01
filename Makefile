@@ -598,9 +598,25 @@ QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 # which is the same answer. A seat that ran only arm 1 pays about 26s more on
 # a `make tree-check` because the two tagged binaries are cold; a seat that
 # ran `make test` pays the linking once either way.
-# Type the untagged one when you add or edit a .go file in internal/posse;
-# type the tagged one for the arm your file carries.
-QA_PKGCENSUS_PINS      := TestNoSecondReadOfARuntimeHomeVariable|TestQAEverySandboxProbeFileIsGated|TestQANoEventSubscriptionRemainsInInternalPosse|TestQANoInferredIntentMechanismRemainsInInternalPosse|TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself|TestQANoProductGitDiffReaderIsBare|TestQAOneThrottleOnlyWatchArmsTheRefill|TestQAProcessNoticesResolveThroughTheDeclaredSeams
+# AND THREE WHOSE RADIUS IS WIDER THAN THE NAME (ranger-base-g31e0). The
+# variable is called PKGCENSUS because the class was one package when it was
+# written; the SUBJECT is a never-question asked of this repo's own Go
+# sources, and three pins ask it past internal/posse's own directory — the
+# keychain pin over `.` and cmd/, the exact-model pin over `.` and cmd/posse,
+# the visibility-override pin over internal/ and cmd/ from the root. Each
+# reads a file set it does not spell, so a bead that adds a .go file anywhere
+# in that radius reds it; that is the same key as the fifteen above and the
+# same door is theirs. All three were spelled as a range over a list of
+# relative literals mixing the package directory with a climb out of it, a
+# shape NEITHER half of the derivation could read, so none of them had a door
+# — the fence bound at an assignment and never saw the range variable, and
+# the enumeration seed discarded the readable element because the list also
+# held a climb (ranger-base-tw3t7's two findings; the rules read both now,
+# and the visibility pin takes its root from qibRepoRoot because every
+# element of ITS list climbs).
+# Type the untagged one when you add or edit a .go file in internal/posse or
+# under cmd/; type the tagged one for the arm your file carries.
+QA_PKGCENSUS_PINS      := TestExactModelHasNoDeclarationSurface|TestNoSecondReadOfARuntimeHomeVariable|TestQAEverySandboxProbeFileIsGated|TestQAKeychainStoreIsWiredToTheAbsoluteBinary|TestQANoEventSubscriptionRemainsInInternalPosse|TestQANoInferredIntentMechanismRemainsInInternalPosse|TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself|TestQANoProductGitDiffReaderIsBare|TestQAOneThrottleOnlyWatchArmsTheRefill|TestQAProcessNoticesResolveThroughTheDeclaredSeams|TestVisibilityOverrideIsNeverDispatched
 QA_PKGCENSUS_ARM2_PINS := TestQAEveryCountedSkipReasonHasAReportingSite|TestQAEveryTestBinaryReExecKeepsTheChildATestBinary|TestQAOnlyWorktreeGoWritesAMergeRefusal
 QA_PKGCENSUS_ARM3_PINS := TestBackupHasNoOverride|TestQAOneDoorForTheReportedReadingAndItNamesNoRuntime|TestQAPosseNeverWritesGroksTrustTable|TestQAWatchStreamWritesGoThroughTheDispatcher
 

@@ -158,15 +158,33 @@ func TestBeadsVisibilityFailsClosed(t *testing.T) {
 // persona the way past the wall.
 func TestVisibilityOverrideIsNeverDispatched(t *testing.T) {
 	t.Parallel()
-	roots := []string{"..", "../../cmd"}
-	for _, root := range roots {
-		filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+	// THE ROOT FROM qibRepoRoot, not a climb (ranger-base-g31e0). This walk
+	// was `roots := []string{"..", "../../cmd"}` ranged over, and that
+	// spelling was read by NEITHER half of the tree-wide class derived in
+	// internal/treepins/treewidedoor_qa_test.go: the climb fence bound at an
+	// assignment, so the range VARIABLE was never bound, and the enumeration
+	// seed reads no element of a list in which every element climbs. So this
+	// pin — the rule half of guardrail 4, which holds the visibility
+	// override out of every dispatched environment — had no Makefile door
+	// and the ~950s arm run was its only route. It is in
+	// QA_PKGCENSUS_PINS now, by the direct rule, for the reason
+	// ranger-base-nt0pi's three and ranger-base-xndgk's five are: the class
+	// is bounded by there being ONE root helper.
+	root := qibRepoRoot(t)
+	for _, dir := range []string{filepath.Join(root, "internal"), filepath.Join(root, "cmd")} {
+		filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
 			if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 				return nil
 			}
 			b, rerr := os.ReadFile(p)
 			if rerr != nil {
 				return nil
+			}
+			// Reported relative to the root, which is what the climbing
+			// spelling printed and what a reader can paste.
+			name := p
+			if rel, rerr := filepath.Rel(root, p); rerr == nil {
+				name = rel
 			}
 			for _, form := range []string{
 				`EnvVar{"` + VisibilityOverrideEnv,
@@ -175,7 +193,7 @@ func TestVisibilityOverrideIsNeverDispatched(t *testing.T) {
 				`Setenv("` + VisibilityOverrideEnv,
 			} {
 				if bytes.Contains(b, []byte(form)) {
-					t.Errorf("%s puts %s into an environment (%q) — it is the operator's to type", p, VisibilityOverrideEnv, form)
+					t.Errorf("%s puts %s into an environment (%q) — it is the operator's to type", name, VisibilityOverrideEnv, form)
 				}
 			}
 			return nil

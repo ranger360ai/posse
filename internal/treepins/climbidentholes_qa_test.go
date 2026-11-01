@@ -2,39 +2,55 @@ package treepins
 
 // The witness for the verify of ranger-base-8yv7z and ranger-base-na4rm
 // (ranger-base-tw3t7): a reading that mixes the package's OWN directory with
-// a climb OUT of it, in one list, is seen by neither half of the tree-wide
-// derivation for internal/posse — and it is live three times.
+// a climb OUT of it, in one list, was seen by neither half of the tree-wide
+// derivation for internal/posse — and it was live three times.
 //
-// WHAT EACH HALF READS, and where the two miss each other.
+// CLOSED BY ranger-base-g31e0, one fix to each half, and this file is the
+// regression: the four rows below are the spellings it was filed for and
+// every one of them is now a YES from at least one rule. They were written
+// as `hole` rows asserting the gap, with the instruction to FLIP the want
+// rather than delete the row; that is what happened, and the CONTROL rows
+// are what say the two fixes took nothing with them. Revert either fix and
+// the rows that were holes red with the measurement in their message.
 //
-//   - THE FENCE (twdClimbSet, ranger-base-8yv7z) reads a climb held in a
-//     local, a local const or a package const, and follows it any number of
-//     parameter hops to the walker. It does NOT read a climb that reaches
-//     the walker as a RANGE VARIABLE over a list of literals — the set binds
+// WHAT EACH HALF READS, and where the two missed each other.
+//
+//   - THE FENCE (twdClimbSet, ranger-base-8yv7z) read a climb held in a
+//     local, a local const or a package const, and followed it any number of
+//     parameter hops to the walker. It did NOT read a climb that reaches
+//     the walker as a RANGE VARIABLE over a list of literals — the set bound
 //     at an AssignStmt or a ValueSpec, and `roots := []string{...}` binds the
 //     SLICE, not its elements, so `for _, r := range roots { Walk(r) }` never
-//     enters it. That spelling is the one twdRelEnv has read since
-//     ranger-base-g6sb1, one package over, so the fence is narrower than the
-//     derivation it serves on a shape its sibling already resolves.
+//     entered it. That spelling is the one twdRelEnv has read since
+//     ranger-base-g6sb1, one package over, so the fence was narrower than the
+//     derivation it serves on a shape its sibling already resolved. It reads
+//     a list now, element by element and by exactly the test it gives a
+//     scalar, so the jurisdiction line is unmoved (twdClimbSet.climbingList).
 //
 //   - THE ENUMERATION SEED (twdRelTreeList) does read a range over a list of
-//     literals — but one element it cannot read makes the WHOLE list unknown,
-//     and its head comment gives the reason: "a range over that list walks
-//     the element the rule could not read too, so claiming the list would be
-//     claiming a root this file does not know." That is right in
-//     internal/treepins, where a `../` climb LEAVES the tree. It is wrong for
+//     literals — but one element it could not read made the WHOLE list
+//     unknown, and its head comment gave the reason: "a range over that list
+//     walks the element the rule could not read too, so claiming the list
+//     would be claiming a root this file does not know." That is right in
+//     internal/treepins, where a `../` climb LEAVES the tree. It was wrong for
 //     internal/posse, where a climb is how a test REACHES the tree: the
 //     unreadable element makes the pin more tree-wide, not less, and refusing
-//     the list discards the readable `"."` beside it — the one-package census
-//     ranger-base-m94g2 decided IS in the class.
+//     the list discarded the readable `"."` beside it — the one-package census
+//     ranger-base-m94g2 decided IS in the class. A CLIMBING element is
+//     skipped now and every other kind still voids the list, so the row
+//     below that plants a variable beside a readable path keeps its answer.
 //
-// So a pin that reads its own package directory AND cmd/ in one range is
-// outside the class precisely BECAUSE it does both, and gets no Makefile
+// So a pin that read its own package directory AND cmd/ in one range was
+// outside the class precisely BECAUSE it did both, and got no Makefile
 // door from either bead.
 //
-// THE THREE LIVE SITES, as of 975d0d82 (named here rather than enumerated,
-// so this pin reads no tree and needs no door of its own — the same shape as
-// execwaitdelayholes_qa_test.go):
+// THE THREE SITES THAT WERE LIVE, as of 975d0d82 (named here rather than
+// enumerated, so this pin reads no tree and needs no door of its own — the
+// same shape as execwaitdelayholes_qa_test.go). All three are in
+// $(QA_PKGCENSUS_PINS) now; the first two are DERIVED members through the
+// readable `"."` the seed stopped discarding, and the third took the root
+// from qibRepoRoot because every element of its list climbs and the seed can
+// read none of them — which is what keeps these two findings two:
 //
 //	internal/posse/visibility_test.go:161       TestVisibilityOverrideIsNeverDispatched
 //	  roots := []string{"..", "../../cmd"}; filepath.Walk(root, …)
@@ -45,18 +61,19 @@ package treepins
 //
 // Each walks every non-test .go file under a top-level directory, so a bead
 // that adds one joins its population and can red it, and none of the three
-// is named by any Makefile door variable or dispositioned in
-// treewidedoor_qa_test.go. All three are arm 1 or shared, so a door reaches
-// them with no `-tags`.
+// was named by any Makefile door variable or dispositioned in
+// treewidedoor_qa_test.go. All three are arm 1 or shared, so the untagged
+// door reaches them with no `-tags`.
 //
 // HOW TO READ THE ROWS. Every row goes through the register's own harnesses
 // (twdFixtureClimbs, twdFixtureEnumerates), so a row cannot pass against a
-// second, friendlier copy of either rule. A `hole` row asserts what the
-// rules say TODAY, with the inversion in the failure message — it ships
-// GREEN and is not a waiver: when the gap is closed, flip that row's want
-// rather than deleting it, and the CONTROL rows are what keep the flip
-// honest. The controls fail closed: each is a shape that must keep its
-// current answer whichever way the hole is fixed.
+// second, friendlier copy of either rule. A `filed` row is one of the four
+// spellings this witness was filed for; it asserted the gap while the gap
+// was open and asserts the FIX now, and the floor at the bottom holds every
+// one of them to being a YES from at least one rule — which is the whole of
+// what makes this file a regression rather than a record. The CONTROL rows
+// fail closed: each is a shape that had to keep its answer whichever way the
+// gap was closed, and each still does.
 
 import "testing"
 
@@ -68,44 +85,49 @@ type cihCase struct {
 	src       string
 	wantClimb bool
 	wantEnum  bool
-	hole      bool
-	why       string
+	// filed: one of the four spellings this witness was filed for. It held
+	// the GAP while the gap was open (both rules false) and holds the FIX
+	// now; the floor at the bottom requires four of them and requires each
+	// to be a YES from at least one rule, so neither fix can be reverted
+	// without a row reddening here.
+	filed bool
+	why   string
 }
 
 var cihCases = []cihCase{
-	// ── THE HOLES ────────────────────────────────────────────────────────
+	// ── THE FOUR THIS WITNESS WAS FILED FOR ─────────────────────────────
 	{
-		name: "HOLE a climb reaching the walker as a range variable over a named list",
+		name: "a climb reaching the walker as a range variable over a named list",
 		src: `func TestX(t *testing.T) { roots := []string{"..", "../../cmd"}
 	for _, r := range roots {
 		filepath.Walk(r, nil)
 	} }`,
-		wantClimb: false, wantEnum: false, hole: true,
-		why: "visibility_test.go:161's shape — the fence does not bind a range variable, and every element climbs so the seed reads nothing either",
+		wantClimb: true, wantEnum: false, filed: true,
+		why: "visibility_test.go:161's shape — the fence now binds a range variable, and every element climbs so the seed reads nothing either: the FENCE is this one's only route, which is why that site took the root from qibRepoRoot",
 	},
 	{
-		name: "HOLE a climb reaching the walker as a range variable over an inline list",
+		name: "a climb reaching the walker as a range variable over an inline list",
 		src: `func TestX(t *testing.T) { for _, r := range []string{"..", "../../cmd"} {
 		filepath.Walk(r, nil)
 	} }`,
-		wantClimb: false, wantEnum: false, hole: true,
-		why: "the same shape with the list written at the range — nothing about the hole depends on the list being named",
+		wantClimb: true, wantEnum: false, filed: true,
+		why: "the same shape with the list written at the range — nothing about the hole depended on the list being named, and nothing about the fix does either",
 	},
 	{
-		name: "HOLE the package's own directory and a climb in ONE list, at Walk",
+		name: "the package's own directory and a climb in ONE list, at Walk",
 		src: `func TestX(t *testing.T) { for _, r := range []string{".", "../../cmd"} {
 		filepath.Walk(r, nil)
 	} }`,
-		wantClimb: false, wantEnum: false, hole: true,
-		why: "gatedkeychain_test.go:443's shape — the readable `\".\"` is discarded because the list also holds a climb, and the climb is invisible to the fence",
+		wantClimb: true, wantEnum: true, filed: true,
+		why: "gatedkeychain_test.go:443's shape — BOTH halves read it now: the seed keeps the readable `\".\"` beside the climb, which is what doors that site where it stands, and the fence sees the climb (the ARM stands down on a body the seed derives, which is a separate decision from the rule's answer here)",
 	},
 	{
-		name: "HOLE the package's own directory and a climb in ONE list, at ReadDir",
+		name: "the package's own directory and a climb in ONE list, at ReadDir",
 		src: `func TestX(t *testing.T) { for _, d := range []string{".", "../../cmd/posse"} {
 		os.ReadDir(d)
 	} }`,
-		wantClimb: false, wantEnum: false, hole: true,
-		why: "exactmodel_qa_test.go:539's shape, the same gap at a different walker",
+		wantClimb: true, wantEnum: true, filed: true,
+		why: "exactmodel_qa_test.go:539's shape, the same gap and the same fix at a different walker",
 	},
 
 	// ── CONTROLS: the two halves, each shown able to say YES ─────────────
@@ -163,7 +185,7 @@ var cihCases = []cihCase{
 // register reads today, and the message says what the right answer is.
 func TestQATheClimbFenceAndTheOnePackageSeedBothMissAMixedRootList(t *testing.T) {
 	t.Parallel()
-	holes, positives := 0, 0
+	filed, positives, filedPositives := 0, 0, 0
 	for _, tc := range cihCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -171,31 +193,40 @@ func TestQATheClimbFenceAndTheOnePackageSeedBothMissAMixedRootList(t *testing.T)
 			if got := twdFixtureClimbs(t, tc.src); got != tc.wantClimb {
 				t.Errorf("the CLIMB fence says %v for this source and this row says %v.\n"+
 					"  What the row holds it to: %s.\n"+
-					"  If this row is a HOLE (%v), a fix that closed it has arrived: flip wantClimb here rather than deleting the row, and keep the CONTROL rows — they are what says the fix did not also take a fixture walk or a bare-root climb.\n%s",
-					got, tc.wantClimb, tc.why, tc.hole, tc.src)
+					"  If this is one of the four rows this witness was filed for (%v), ranger-base-g31e0's fence fix has been reverted or narrowed: twdClimbSet binds at an AssignStmt and a ValueSpec, and a climb reaching the walker as a RANGE VARIABLE over a list of literals needs twdClimbSet.climbingList to be read at all. Restore it rather than flipping this row — three live pins were undoored for exactly this.\n%s",
+					got, tc.wantClimb, tc.why, tc.filed, tc.src)
 			}
 			if got := twdFixtureEnumerates(t, tc.src); got != tc.wantEnum {
 				t.Errorf("the ENUMERATION seed says %v for this source and this row says %v.\n"+
 					"  What the row holds it to: %s.\n"+
-					"  If this row is a HOLE (%v), the list rule has stopped discarding a readable element beside an unreadable one: flip wantEnum here rather than deleting the row.\n%s",
-					got, tc.wantEnum, tc.why, tc.hole, tc.src)
+					"  If this is one of the four (%v), twdRelTreeList has gone back to voiding a whole list on one unreadable element: a CLIMBING element is skipped and every other kind still voids it, which is what keeps the readable `\".\"` of a mixed list a derived member (ranger-base-m94g2, ranger-base-g31e0).\n%s",
+					got, tc.wantEnum, tc.why, tc.filed, tc.src)
 			}
 		})
 	}
-	// The floor. Four rows asserting "neither rule sees this" are satisfied
-	// by two rules that see nothing at all, so the table must also hold rows
-	// each rule says YES to — and it must keep holding them if the holes are
-	// flipped.
+	// The floor, and it is the half of this file that survives the fix.
+	// While the gap was open it held the table to four rows asserting "and
+	// neither rule sees this" plus four a rule says YES to, because an
+	// absence asserted with no planted positive measures the harness. Now
+	// that the gap is closed it holds the four to being YES — a reverted fix
+	// cannot pass by flipping a want back, because the floor fails too, with
+	// this message rather than a row's.
 	for _, tc := range cihCases {
-		if tc.hole {
-			holes++
+		if tc.filed {
+			filed++
+			if tc.wantClimb || tc.wantEnum {
+				filedPositives++
+			}
 		}
 		if tc.wantClimb || tc.wantEnum {
 			positives++
 		}
 	}
-	if holes < 4 {
-		t.Errorf("%d HOLE rows, want at least 4 — three live sites and the named/inline pair are what this witness exists to hold", holes)
+	if filed < 4 {
+		t.Errorf("%d rows marked `filed`, want at least 4 — the three live sites and the named/inline pair are what this witness exists to hold, and dropping one is how a closed gap stops being watched", filed)
+	}
+	if filed != filedPositives {
+		t.Errorf("%d of %d `filed` rows are a YES from at least one rule, want all of them — ranger-base-g31e0 closed this gap and these four rows ARE the regression: a row of it reading false again means the fence stopped reading a range over a list, or the seed went back to voiding a mixed list, and the right repair is the rule and not the want", filedPositives, filed)
 	}
 	if positives < 4 {
 		t.Errorf("only %d row(s) in this table are a YES from either rule — an absence asserted with no planted positive measures the harness, not the tree", positives)
