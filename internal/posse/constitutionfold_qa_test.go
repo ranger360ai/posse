@@ -22,6 +22,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -31,7 +32,10 @@ type resolutionRow struct {
 	name   string
 	staged string
 	above  bool
-	stage  func(t *testing.T, repo string, git func(env []string, args ...string) (string, error), env []string)
+	// constitution makes the fixture the constitution repo (the marker
+	// directory present), so the promoted half of the class is live.
+	constitution bool
+	stage        func(t *testing.T, repo string, git func(env []string, args ...string) (string, error), env []string)
 }
 
 func symlinkRow(name, at, target string) resolutionRow {
@@ -68,6 +72,20 @@ var resolutionRows = []resolutionRow{
 	fileRow("upper-case file", ".claude/Settings.json"),
 	fileRow("long s U+017F", ".claude/ſettings.json"),
 	fileRow("KELVIN SIGN U+212A", ".groK/hooks/x"),
+	// ranger-base-l717c's four MEASURED landings: one rune that APFS resolves
+	// to two ASCII letters, through the FULL case fold a rune->byte table
+	// could not say (fixed by ranger-base-uvcj8). Spelled with escapes rather
+	// than literally, unlike the rows above: a ligature or a sharp s beside
+	// the letters it opens is the hardest spelling on this page to read.
+	constitutionRow(fileRow("sharp s U+00DF in posse/config.yaml", "po\u00dfe/config.yaml")),
+	constitutionRow(fileRow("capital sharp s U+1E9E in posse/agents", "po\u1e9ee/agents/developer.md")),
+	fileRow("fi ligature U+FB01 in .codex/config.toml", ".codex/con\ufb01g.toml"),
+	fileRow("long s t ligature U+FB05 in .bob/custom_modes.yaml", ".bob/cu\ufb05om_modes.yaml"),
+}
+
+func constitutionRow(r resolutionRow) resolutionRow {
+	r.constitution = true
+	return r
 }
 
 // TestQAConstitutionWallRefusesResolutionEquivalentNames is the fix measured
@@ -79,7 +97,7 @@ func TestQAConstitutionWallRefusesResolutionEquivalentNames(t *testing.T) {
 	for _, row := range resolutionRows {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
-			repo, git, persona := constitutionWallRepo(t, false)
+			repo, git, persona := constitutionWallRepo(t, row.constitution)
 			row.stage(t, repo, git, persona)
 			staged, err := git(nil, "diff", "--cached", "--name-only", "-z", "HEAD")
 			if err != nil {
@@ -156,36 +174,55 @@ func TestQAConstitutionWallTrackedFoldFailsClosed(t *testing.T) {
 }
 
 // constitutionResolveModel is the rune-level model of a case- AND
-// normalization-insensitive volume: the ASCII byte it resolves r to, if any.
-// Normalization first (APFS compares NFC-normalized names), then case, which
-// is the order that makes U+212A reach "k" by either road.
+// normalization-insensitive volume: the ASCII STRING it resolves r to, if
+// any. NFC, then FULL case fold, then NFC again — the fold can produce a
+// sequence that composes, and the volume compares composed names.
+//
+// FULL fold and not unicode.SimpleFold (ranger-base-l717c): the simple fold
+// maps one rune to one rune, so it can never say that U+00DF opens "ss" or
+// U+FB03 opens "ffi", and the model it replaced was blind to nine runes APFS
+// resolves — the same blindness the table had, so the pin agreed with it.
 //
 // This is the derivation constitutionResolveRunes is the measured answer to,
-// and the two agree on this box: MEASURED 2026-11-01 (ranger-base-qu8wn,
-// Darwin 25.6, case-insensitive APFS) by opening one file per ASCII graphic
-// character under every rune 0x80..0x10FFFF — four hits, the same four this
-// model derives, and U+0130 in neither.
-func constitutionResolveModel(r rune) (byte, bool) {
-	rs := []rune(norm.NFC.String(string(r)))
-	if len(rs) != 1 {
-		return 0, false
+// and the two agree on this box: MEASURED 2026-11-01 (ranger-base-l717c,
+// Darwin 25.6, case-insensitive APFS) by opening one fixture per graphic
+// ASCII character and per a-z string of length 2 and 3 under every rune
+// 0x80..0x10FFFF — 13 hits, the same 13 this model derives, and U+0130 in
+// neither. fold is the caller's, one per goroutine: a cases.Caser is not
+// safe for concurrent use.
+func constitutionResolveModel(fold cases.Caser, r rune) (string, bool) {
+	s := norm.NFC.String(fold.String(norm.NFC.String(string(r))))
+	if s == "" {
+		return "", false
 	}
-	c := rs[0]
-	if c < 0x80 {
-		return byte(unicode.ToLower(c)), true
-	}
-	for f := unicode.SimpleFold(c); f != c; f = unicode.SimpleFold(f) {
-		if f < 0x80 {
-			return byte(unicode.ToLower(f)), true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return "", false
 		}
 	}
-	return 0, false
+	return s, true
+}
+
+// constitutionResolveDerived is constitutionResolveModel over every
+// non-ASCII rune, keyed by rune.
+func constitutionResolveDerived() map[rune]string {
+	fold := cases.Fold()
+	got := map[rune]string{}
+	for r := rune(0x80); r <= unicode.MaxRune; r++ {
+		if !utf8.ValidRune(r) {
+			continue
+		}
+		if a, ok := constitutionResolveModel(fold, r); ok {
+			got[r] = a
+		}
+	}
+	return got
 }
 
 // TestQAConstitutionResolveRunesAreTheClosedSet pins both arms' fold. It
 // re-derives constitutionResolveModel over EVERY rune and asserts the
-// non-ASCII runes that resolve to an ASCII byte are exactly
-// constitutionResolveRunes. When a Go table bump adds one — Unicode's CASE
+// non-ASCII runes that resolve to an ASCII string, and the strings, are
+// exactly constitutionResolveRunes. When a Go table bump adds one — Unicode's CASE
 // fold or its NORMALIZATION tables, and this is what the predecessor pin
 // could not see (ranger-base-qu8wn: it enumerated unicode.SimpleFold alone
 // and so was blind to the two runes that reach ASCII through NFC, which both
@@ -194,34 +231,42 @@ func constitutionResolveModel(r rune) (byte, bool) {
 // (gates.go, posse_cls_fold) and is read by the Go belt's constitutionFold.
 func TestQAConstitutionResolveRunesAreTheClosedSet(t *testing.T) {
 	t.Parallel()
-	got := map[rune]byte{}
-	for r := rune(0x80); r <= unicode.MaxRune; r++ {
-		if !utf8.ValidRune(r) {
-			continue
-		}
-		if a, ok := constitutionResolveModel(r); ok {
-			got[r] = a
-		}
-	}
-	want := map[rune]byte{}
+	got := constitutionResolveDerived()
+	want := map[rune]string{}
 	for _, f := range constitutionResolveRunes {
-		want[f.R] = f.ASCII
-		if f.ASCII >= 0x80 {
-			t.Errorf("U+%04X resolves to a non-ASCII byte %#x — the table's whole point is an ASCII target", f.R, f.ASCII)
+		if _, dup := want[f.R]; dup {
+			t.Errorf("U+%04X is in constitutionResolveRunes twice", f.R)
 		}
-		// "&" is sed's one replacement metacharacter; the hook renders the
-		// replacement through printf octal, so a literal & would be the one
-		// byte that still misbehaved. No row has one today.
-		if f.ASCII == '&' {
-			t.Errorf("U+%04X resolves to %q, which is sed's replacement metacharacter — constitutionFoldSed needs an escape before this row lands", f.R, f.ASCII)
+		want[f.R] = f.ASCII
+		if f.ASCII == "" {
+			t.Errorf("U+%04X resolves to the empty string — a row must name what the volume opens", f.R)
+		}
+		for i := 0; i < len(f.ASCII); i++ {
+			c := f.ASCII[i]
+			if c >= 0x80 {
+				t.Errorf("U+%04X resolves to %q, which is not ASCII — the table's whole point is an ASCII target", f.R, f.ASCII)
+			}
+			// What printf hands sed lands inside the s///, read as a
+			// replacement: "&" is the matched text, a backslash escapes,
+			// "/" is the delimiter and a newline ends the expression. The
+			// WHOLE string is checked, not one byte (ranger-base-uvcj8: a
+			// replacement is several bytes now). No row has one today.
+			if strings.IndexByte("&\\/\n", c) >= 0 {
+				t.Errorf("U+%04X resolves to %q, which carries %q — a sed replacement metacharacter or delimiter; constitutionFoldSed needs an escape before this row lands", f.R, f.ASCII, c)
+			}
 		}
 	}
 	if len(got) != len(want) {
-		t.Errorf("non-ASCII runes resolving to ASCII: got %d %v, constitutionResolveRunes has %d — add the new row so BOTH arms fold it (gates.go posse_cls_fold and promote.go constitutionFold)", len(got), got, len(want))
+		t.Errorf("non-ASCII runes resolving to ASCII: got %d %q, constitutionResolveRunes has %d — add the new row so BOTH arms fold it (gates.go posse_cls_fold and promote.go constitutionFold)", len(got), got, len(want))
 	}
 	for r, a := range got {
-		if want[r] != a {
+		if w, ok := want[r]; !ok || w != a {
 			t.Errorf("U+%04X resolves to %q and is not in constitutionResolveRunes as such — neither the sh sed line nor constitutionFold folds it", r, a)
+		}
+	}
+	for r, w := range want {
+		if _, ok := got[r]; !ok {
+			t.Errorf("constitutionResolveRunes has U+%04X -> %q, which the derivation does not produce", r, w)
 		}
 	}
 	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
@@ -230,19 +275,44 @@ func TestQAConstitutionResolveRunesAreTheClosedSet(t *testing.T) {
 	}
 }
 
-// TestQAConstitutionResolveIsSingleRuneSufficient closes the question the
-// table's SHAPE begs: it maps one rune to one ASCII byte, so a SEQUENCE
-// equivalent to a single ASCII character would be past both arms with no row
-// able to express it. None exists, and the reason is checkable — no ASCII
-// character has a canonical decomposition, so its NFD is itself and nothing
-// longer can be equivalent to it. If a future Unicode gives an ASCII
+// TestQAConstitutionResolveIsSingleRuneSufficient closes the two questions
+// the table's SHAPE begs, one per direction.
+//
+// A SEQUENCE resolving to one ASCII character would be past both arms with no
+// row able to express it. None exists, and the reason is checkable — no
+// ASCII character has a canonical decomposition, so its NFD is itself and
+// nothing longer can be equivalent to it. If a future Unicode gives an ASCII
 // character a decomposition, this reds and the table's shape is wrong.
+//
+// ONE rune resolving to SEVERAL ASCII characters is the other direction, and
+// the one the rune->byte table missed (ranger-base-l717c: U+00DF opens "ss",
+// U+FB01 "fi", U+FB03 "ffi"). The table carries a string now; this half
+// holds that every multi-character resolution the derivation finds is a row
+// with exactly that string, and that there ARE some — a model that could
+// only answer one byte would pass the first check over an empty set.
 func TestQAConstitutionResolveIsSingleRuneSufficient(t *testing.T) {
 	t.Parallel()
 	for c := rune(0); c < 0x80; c++ {
 		if d := norm.NFD.String(string(c)); d != string(c) {
-			t.Errorf("ASCII %q has canonical decomposition %q — a MULTI-rune spelling now resolves to it, which a rune→byte table cannot fold", string(c), d)
+			t.Errorf("ASCII %q has canonical decomposition %q — a MULTI-rune spelling now resolves to it, which a rune-keyed table cannot fold", string(c), d)
 		}
+	}
+	table := map[rune]string{}
+	for _, f := range constitutionResolveRunes {
+		table[f.R] = f.ASCII
+	}
+	multi := 0
+	for r, a := range constitutionResolveDerived() {
+		if len(a) < 2 {
+			continue
+		}
+		multi++
+		if table[r] != a {
+			t.Errorf("U+%04X resolves to the %d-character %q, and constitutionResolveRunes has %q — both arms would compare it against the wrong name", r, len(a), a, table[r])
+		}
+	}
+	if multi == 0 {
+		t.Errorf("the derivation found no rune resolving to a multi-character ASCII string — ranger-base-l717c MEASURED nine; the model has gone blind to the full fold")
 	}
 }
 
@@ -268,7 +338,7 @@ func TestQAConstitutionShFoldResolvesEveryTableRune(t *testing.T) {
 	var probe, want strings.Builder
 	for _, f := range constitutionResolveRunes {
 		probe.WriteString(".claude/" + string(f.R) + "ettings\n")
-		want.WriteString(".claude/" + string(f.ASCII) + "ettings\n")
+		want.WriteString(".claude/" + f.ASCII + "ettings\n")
 	}
 	// Upper case through the same pipe: the sed runs before the tr, so a row
 	// whose ASCII byte is a letter has to survive being lower-cased after.

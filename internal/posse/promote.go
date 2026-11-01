@@ -253,7 +253,7 @@ func InConstitutionClass(class []string, p string) string {
 //     shape and refusing it costs nothing.
 //   - FOLD: names are compared component by component under
 //     constitutionFoldEqual — each non-ASCII rune the volume RESOLVES to an
-//     ASCII byte replaced by that byte (constitutionResolveRunes), then
+//     ASCII string replaced by that string (constitutionResolveRunes), then
 //     strings.EqualFold for ASCII case. `.Claude/settings.json`,
 //     `.claude/ſettings.json` (U+017F) and `.groK/hooks` (U+212A) all open
 //     the canonical file. Never a byte-length prefix (ſ is two bytes, s is
@@ -261,10 +261,10 @@ func InConstitutionClass(class []string, p string) string {
 //
 // Every member is ASCII and its own fold (pinned), so the only non-ASCII
 // spellings that can reach a member are the closed set in
-// constitutionResolveRunes — which is also all the sh arm has to fold. Two of
-// those four resolve to ";" and "`", which no live member's name carries;
-// that is why the gap ranger-base-qu8wn closed was never exploitable, and why
-// sufficiency is now the table's property and not the class's.
+// constitutionResolveRunes — which is also all the sh arm has to fold.
+// Sufficiency is the table's property and not the class's: two rows resolve
+// to ";" and "`", which no live member carries, and nine resolve to two or
+// three letters, which `posse`, `config` and `custom` do (ranger-base-l717c).
 func constitutionClassMatch(class []string, p string) (member string, above bool) {
 	if p == "" {
 		return "", false
@@ -296,11 +296,14 @@ func foldPrefix(a, b []string) bool {
 // constitutionFoldEqual reports whether two path components open the same
 // file on a volume that is case- AND normalization-insensitive. It is the Go
 // spelling of the sh arm's posse_cls_fold (gates.go): resolve the non-ASCII
-// runes this box was measured to resolve, then compare ASCII case.
+// runes this box was measured to resolve, then compare ASCII case. Each
+// component is folded WHOLE before the compare, which is what makes a
+// lengthening fold safe here.
 //
 // strings.EqualFold alone is NOT this (ranger-base-qu8wn, from
-// ranger-base-g55ah): it is Go's simple case fold, and two of the four runes
-// reach ASCII through NORMALIZATION rather than case — EqualFold answers
+// ranger-base-g55ah): it is Go's simple case fold, two of the table's runes
+// reach ASCII through NORMALIZATION rather than case, and nine through a FULL
+// fold that lengthens them (ranger-base-l717c) — EqualFold answers
 // false for U+037E vs ";" and U+1FEF vs "`" (measured), while APFS opens the
 // ASCII file for both.
 func constitutionFoldEqual(a, b string) bool {
@@ -308,8 +311,11 @@ func constitutionFoldEqual(a, b string) bool {
 }
 
 // constitutionFold replaces every constitutionResolveRunes rune with the
-// ASCII byte the volume resolves it to, leaving everything else alone. ASCII
-// case is the caller's (strings.EqualFold, or the sh arm's tr).
+// ASCII string the volume resolves it to, leaving everything else alone.
+// ASCII case is the caller's (strings.EqualFold, or the sh arm's tr). The
+// result can be LONGER than s (U+00DF, two bytes, becomes "ss"; U+FB03, three
+// bytes, becomes "ffi"), so nothing may slice a folded name by an offset read
+// off the unfolded one — every caller compares whole folded components.
 func constitutionFold(s string) string {
 	at := -1
 	for i, r := range s {
@@ -326,7 +332,7 @@ func constitutionFold(s string) string {
 	b.WriteString(s[:at])
 	for _, r := range s[at:] {
 		if a, ok := constitutionResolveASCII(r); ok {
-			b.WriteByte(a)
+			b.WriteString(a)
 			continue
 		}
 		b.WriteRune(r)
@@ -334,45 +340,61 @@ func constitutionFold(s string) string {
 	return b.String()
 }
 
-func constitutionResolveASCII(r rune) (byte, bool) {
+func constitutionResolveASCII(r rune) (string, bool) {
 	if r < 0x80 {
-		return 0, false
+		return "", false
 	}
 	for _, f := range constitutionResolveRunes {
 		if f.R == r {
 			return f.ASCII, true
 		}
 	}
-	return 0, false
+	return "", false
 }
 
 // constitutionResolveRunes is the CLOSED set of non-ASCII runes a
-// case-insensitive APFS volume RESOLVES to a single ASCII byte, with that
-// byte. It is an EQUIVALENCE table for the filesystem, not a census of Go's
-// case fold: APFS is normalization-insensitive as well as case-insensitive,
-// so two of the four reach ASCII through NFC and are invisible to
-// unicode.SimpleFold and strings.EqualFold.
+// case-insensitive APFS volume RESOLVES to an ASCII STRING, with that string.
+// It is an EQUIVALENCE table for the filesystem, not a census of Go's simple
+// case fold: APFS compares names under normalization AND full case folding,
+// so a rune can reach ASCII through NFC (U+037E, U+1FEF), through a simple
+// fold (U+017F, U+212A), or through a FULL fold that lengthens it — U+00DF
+// opens "ss" and U+FB03 opens "ffi". A rune->byte table could not say the
+// third kind, and `poße/config.yaml` landed past both readers of the wall
+// (MEASURED, ranger-base-l717c; this shape is ranger-base-uvcj8's fix).
 //
-// MEASURED 2026-10-31 and re-measured 2026-11-01 (ranger-base-hrx86,
-// ranger-base-qu8wn), Darwin 25.6, case-insensitive APFS: one file written
-// per ASCII graphic character, then every rune 0x80..0x10FFFF opened by
-// name — these four and no others. U+0130 LATIN CAPITAL LETTER I WITH DOT
-// ABOVE is the negative control; it does NOT open "i".
+// DERIVED: for every rune 0x80..0x10FFFF, NFC, then full case fold
+// (cases.Fold), then NFC, keeping every pure-ASCII result — exactly these 13.
+// MEASURED 2026-11-01 (ranger-base-l717c, re-measured by ranger-base-uvcj8's
+// filer), Darwin 25.6, case-insensitive APFS: one fixture file per graphic
+// ASCII character and per a-z string of length 2 and 3, then every rune
+// opened by name — the same 13, none derived-but-not-measured and none
+// measured-but-not-derived. U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE is
+// the negative control; it folds to "i" plus a combining dot and opens
+// nothing.
 //
 // Both readers fold through this table: the Go belt in constitutionFold, the
 // sh arm through the sed line constitutionFoldSed renders from it, and then
 // each applies ASCII case. TestQAConstitutionResolveRunesAreTheClosedSet
-// re-derives the set over every rune from Go's case-fold AND normalization
-// tables and reds when either bump adds one, rather than quietly leaving a
-// spelling that resolves to a class member unfolded by both arms.
+// re-derives the set over every rune and reds when a Unicode table bump adds
+// one, rather than quietly leaving a spelling that resolves to a class member
+// unfolded by both arms.
 var constitutionResolveRunes = []struct {
 	R     rune
-	ASCII byte
+	ASCII string
 }{
-	{0x017F, 's'}, // LATIN SMALL LETTER LONG S, bytes c5 bf — case fold
-	{0x037E, ';'}, // GREEK QUESTION MARK, bytes cd be — NFC singleton
-	{0x1FEF, '`'}, // GREEK VARIA, bytes e1 bf af — NFC singleton
-	{0x212A, 'k'}, // KELVIN SIGN, bytes e2 84 aa — case fold, and NFC to "K"
+	{0x00DF, "ss"},  // LATIN SMALL LETTER SHARP S — full case fold
+	{0x017F, "s"},   // LATIN SMALL LETTER LONG S — case fold
+	{0x037E, ";"},   // GREEK QUESTION MARK — NFC singleton
+	{0x1E9E, "ss"},  // LATIN CAPITAL LETTER SHARP S — full case fold
+	{0x1FEF, "`"},   // GREEK VARIA — NFC singleton
+	{0x212A, "k"},   // KELVIN SIGN — case fold, and NFC to "K"
+	{0xFB00, "ff"},  // LATIN SMALL LIGATURE FF — full case fold
+	{0xFB01, "fi"},  // LATIN SMALL LIGATURE FI — full case fold
+	{0xFB02, "fl"},  // LATIN SMALL LIGATURE FL — full case fold
+	{0xFB03, "ffi"}, // LATIN SMALL LIGATURE FFI — full case fold
+	{0xFB04, "ffl"}, // LATIN SMALL LIGATURE FFL — full case fold
+	{0xFB05, "st"},  // LATIN SMALL LIGATURE LONG S T — full case fold
+	{0xFB06, "st"},  // LATIN SMALL LIGATURE ST — full case fold
 }
 
 // ConstitutionTouched names every (path, class member) pair in paths, in the

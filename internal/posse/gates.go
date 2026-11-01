@@ -5748,9 +5748,11 @@ $posse_bad"
 // octal-escaping every replacement keeps the rule "whatever the table says"
 // rather than one re-reasoned for each new ASCII byte, and
 // TestQAConstitutionShFoldResolvesEveryTableRune runs the line to say it
-// resolves, which parsing cannot. Nothing here is special to sed itself: "&"
-// is a replacement's only metacharacter and no row's byte is one, which
-// TestQAConstitutionResolveRunesAreTheClosedSet pins.
+// resolves, which parsing cannot. A replacement may be several bytes ("ss",
+// "ffi" — ranger-base-l717c); octal renders a string as it stands. What
+// printf hands sed still lands inside the s///, so "&", a backslash, "/" and a
+// newline would misbehave there; no row carries one, which
+// TestQAConstitutionResolveRunesAreTheClosedSet pins over the whole string.
 func constitutionFoldSed() string {
 	octal := func(b *strings.Builder, s string) {
 		for _, c := range []byte(s) {
@@ -5762,7 +5764,7 @@ func constitutionFoldSed() string {
 		b.WriteString(` -e "s/$(printf '`)
 		octal(&b, string(f.R))
 		b.WriteString(`')/$(printf '`)
-		octal(&b, string(f.ASCII))
+		octal(&b, f.ASCII)
 		b.WriteString(`')/g"`)
 	}
 	return b.String()
@@ -5842,10 +5844,11 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
     IFS='
 '
     # RESOLUTION-equivalence (ranger-base-g55ah, widened by
-    # ranger-base-qu8wn): the wall defends what the filesystem resolves, and
-    # APFS folds names by Unicode case AND by normalization. Both sides are
-    # folded the same way before the match — the four non-ASCII runes APFS
-    # was measured to resolve to an ASCII byte (promote.go
+    # ranger-base-qu8wn, ranger-base-uvcj8): the wall defends what the
+    # filesystem resolves, and APFS folds names by Unicode case (full fold,
+    # so one rune can open "ss" or "ffi") AND by normalization. Both sides
+    # are folded the same way, over the WHOLE path, before any match — the
+    # non-ASCII runes APFS was measured to resolve to ASCII (promote.go
     # constitutionResolveRunes, the closed set
     # TestQAConstitutionResolveRunesAreTheClosedSet pins), then ASCII case.
     # Never the staged spelling the refusal prints: that stays as typed.
