@@ -47,10 +47,45 @@ func NewBd() Bd {
 	return Bd{Bin: bin}
 }
 
-func (b Bd) Available() bool {
-	_, err := exec.LookPath(b.Bin)
-	return err == nil
-}
+// Available is whether there is a bd posse can actually RUN — the same
+// judgement bin() makes, over the same PATH, and never a wider one.
+//
+// ranger-base-g1xnt: this was `exec.LookPath(b.Bin)`, which searches THIS
+// process's $PATH. On a gated seat that PATH leads with the launching
+// persona's gates bin dir, and that dir holds a `bd` shim, so the probe said
+// yes on the shim while bin() refused the same name (protocolAvailable,
+// protocolchild.go, carries the mechanism). posse walked past its own
+// availability gate — cmd/posse/cockpit.go, cmd/posse/main.go,
+// internal/posse/govern.go, seven call sites in three files — and then
+// failed at every bd call with "executable file not found outside posse's
+// gates dirs". Nothing silent: a wrong answer followed by a right one. Before ranger-base-cwsi8 the same
+// box deadlocked on ADR 0073's store lock instead, so the honest error is
+// new and the hang is gone.
+//
+// THE DIRECTION, which the bead left to whoever took it: no-bd UP FRONT, not
+// a gate that opens and seven call sites that each discover the refusal per
+// call. A probe exists so a caller can decide before it spends anything, and
+// a shim is not a bd posse can run — every call through it refuses, and
+// refusing is the shim's whole job. All seven already have an honest
+// bd-is-missing path (a `(none)` section the cockpit still stamps, govern's
+// "G2/G3/G9 unknown" row, `needBd`'s die with an install hint), and each of
+// those says more than the resolution error would.
+//
+// What an operator on such a box should read is "not found on PATH outside
+// posse's gates dirs", which is what the four that REFUSE now say (the other
+// three degrade silently and have nowhere to say it): on a
+// shim-only box `bd` IS in PATH, and the old sentence sent the reader
+// looking for the thing they already have.
+func (b Bd) Available() bool { return protocolAvailable(b.Bin) }
+
+// NoBdLine is the one sentence every caller of Available() refuses with, and
+// it names the condition Available() actually tested (ranger-base-g1xnt).
+// "bd not found in PATH" was true of a box with no bd at all and misleading
+// on the box this probe exists for: a gated seat's PATH leads with a gates
+// bin dir whose `bd` shim is very much in PATH, and the thing posse has not
+// got is a bd OUTSIDE those dirs (ADR 0077 D3). A reader sent looking for a
+// bd they already have does not find the install they are missing.
+const NoBdLine = "bd not found on PATH outside posse's gates dirs"
 
 // bdGlobalFlags go in front of every verb Bd.run invokes.
 //

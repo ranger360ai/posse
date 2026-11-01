@@ -486,7 +486,7 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 		// bd is the store of record for three rows. Missing means UNKNOWN,
 		// and reporting unknown as clear is the silence this surface exists
 		// to end.
-		failed = append(failed, Die("bd not found in PATH — G2/G3/G9 unknown"))
+		failed = append(failed, Die(NoBdLine+" — G2/G3/G9 unknown"))
 	}
 
 	// ── G5 · the guard is blind, and past its budget ─────────────────────

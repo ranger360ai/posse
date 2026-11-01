@@ -30,6 +30,10 @@ package posse
 //     refused on posse's own store lock.
 //   - gatesPathSplit judging the spelling only, not the resolution, reds the
 //     third test's three arms and nothing else.
+//   - Available() going back to exec.LookPath over this process's $PATH — the
+//     probe ranger-base-g1xnt replaced — reds TestBdAvailableAgreesWithBin-
+//     OutsideTheGates' first arm alone: true on the launcher's shim, with
+//     bin() refusing the same name beside it.
 //   - moving `bin, err := b.bin()` from above the `if bdVerbWrites(argv)`
 //     block to just before `limit := b.timeout()` — the ordering
 //     ranger-base-cwsi8 claimed in a comment and pinned nowhere — reds
@@ -364,5 +368,97 @@ func TestBdBinUnresolvableRefusesWithoutWaitingOnTheStoreLock(t *testing.T) {
 		t.Errorf("the gates-dir bd ran — posse's own children run outside every gates dir (ADR 0077 D3)")
 	} else if !os.IsNotExist(serr) {
 		t.Fatal(serr)
+	}
+}
+
+// ranger-base-g1xnt — the PROBE agrees with the resolution: Available() is
+// never true where bin() refuses. Four arms, because "the two agree" is a
+// claim about a disagreement that had a direction, and the two halves of the
+// precedence rule are separate claims from either.
+//
+// Red before the fix: Available() was `exec.LookPath(b.Bin)` over THIS
+// process's $PATH — the gated one — so on arm (a)'s fixture it answered true
+// on the launcher's shim while bin(), on the same PATH, errored. posse's six
+// availability callers walked past their own gate and then failed at every bd
+// call with the resolution error.
+//
+// Serial, like the two tests above and for the same reason: it sets PATH.
+//
+// MUTATION-CHECKED: restoring `_, err := exec.LookPath(b.Bin); return err ==
+// nil` reds arm (a) alone — Available() = true on the shim-only PATH, with
+// bin() refusing beside it — and leaves (b), (c) and (d) green, which is the
+// whole point of keeping them: the probe this replaces was right about every
+// case except the one that fires on a gated seat.
+func TestBdAvailableAgreesWithBinOutsideTheGates(t *testing.T) {
+	// (a) THE DEFECT. A gates bin dir on PATH holding a `bd`, and not one
+	// non-gates element that answers — TestBdBinUnresolvableOutsideTheGates-
+	// IsAnError's wall, which is the shim-only box this probe is asked about.
+	gatesBin := filepath.Join(t.TempDir(), "state", "gates", "launcher", "bin")
+	if err := os.MkdirAll(gatesBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(gatesBin, "bd")
+	if err := WriteExecutable(shim, []byte("#!/bin/sh\nexit 3\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(t.TempDir(), "bin") // an ordinary dir, holding no bd
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sep := string(os.PathListSeparator)
+	t.Setenv("PATH", gatesBin+sep+empty)
+
+	// The control: this is the PATH the two surfaces used to disagree on.
+	if _, err := (Bd{Bin: "bd"}).bin(); err == nil {
+		t.Fatalf("bin() resolved on a PATH whose only bd is %s — the fixture is not the shim-only box this arm is about", shim)
+	}
+	if (Bd{Bin: "bd"}).Available() {
+		t.Errorf("Available() = true where bin() refuses: the only bd on PATH is the launcher's shim at %s, and every call through it refuses (ADR 0077 D3, ranger-base-g1xnt)", shim)
+	}
+
+	// (b) And the other direction, so the fix is not "always false": a real
+	// bd on an ordinary element behind the shim is available, and it is that
+	// one the resolution names.
+	realBin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(realBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(realBin, "bd")
+	if err := WriteExecutable(real, []byte("#!/bin/sh\necho '{}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", gatesBin+sep+realBin+sep+empty)
+	if !(Bd{Bin: "bd"}).Available() {
+		t.Errorf("Available() = false with a real bd at %s, outside every gates dir — that is the box this repo runs on", real)
+	}
+	if got, err := (Bd{Bin: "bd"}).bin(); err != nil || got != real {
+		t.Errorf("bin() = %q, %v; want %q — the probe and the resolution must name the same binary", got, err, real)
+	}
+
+	// (c) RHQ_BD_BIN keeps precedence here too: a Bin that NAMES a path is an
+	// answer, not a search, and every fixture on the box points that variable
+	// at a binary inside a temp dir and expects posse to run it. The probe
+	// must not take that away — least of all on a path that spells `gates`.
+	named := filepath.Join(t.TempDir(), "state", "gates", "p", "bin", "bd")
+	if err := os.MkdirAll(filepath.Dir(named), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteExecutable(named, []byte("#!/bin/sh\necho '{}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !(Bd{Bin: named}).Available() {
+		t.Errorf("Available() = false for an explicitly named bd at %s — RHQ_BD_BIN is an answer, not a search (ADR 0077 D3)", named)
+	}
+
+	// (d) The one place the probe is deliberately NARROWER than bin(): a
+	// named path that is not there. bin() hands it back unchecked, because an
+	// explicit RHQ_BD_BIN is the caller's answer and exec reports it missing
+	// better than a pre-flight can — but a probe's whole question is whether
+	// the file is there, and answering no is a caller standing down rather
+	// than a gate opening onto a refusal. Narrower is the safe side; wider is
+	// the defect.
+	missing := filepath.Join(t.TempDir(), "no-such-bd")
+	if (Bd{Bin: missing}).Available() {
+		t.Errorf("Available() = true for %s, which does not exist", missing)
 	}
 }

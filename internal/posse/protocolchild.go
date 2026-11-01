@@ -99,6 +99,35 @@ func protocolBin(name string) (string, error) {
 	return "", Die("%s: executable file not found outside posse's gates dirs — posse's own children are resolved against the gates-free PATH and never handed to exec as a bare name (ADR 0077 D3, ranger-base-cwsi8)", name)
 }
 
+// protocolAvailable is "is there a <name> posse could run as part of its own
+// protocol" — the PROBE beside protocolBin, asking its question over the same
+// gates-free PATH so that an availability gate cannot open onto a binary the
+// resolution is about to refuse.
+//
+// ranger-base-g1xnt is why it exists: Bd.Available was `exec.LookPath(b.Bin)`,
+// which searches THIS process's $PATH. On a gated seat that PATH leads with
+// the launching persona's gates bin dir, that dir holds a `bd` shim, and the
+// probe therefore answered true on the shim while protocolBin — one function
+// away — refused the same name. Every other posse bd surface had stopped
+// reading that PATH; the probe was the one still asking the old question.
+//
+// Same precedence as protocolBin, with one difference, and the difference is
+// the reason this is not `_, err := protocolBin(name); err == nil`: a name
+// that SPELLS a path is an answer rather than a search in both, but
+// protocolBin hands such a name back UNCHECKED — an explicit RHQ_BD_BIN is
+// the caller's answer, and exec reports it missing better than a pre-flight
+// can — while a probe's whole question is whether the file is there and
+// runnable. resolveOutside draws both arms already: absLookPath for a name
+// that spells a path, the gates-free walk for a bare one.
+//
+// So this is never WIDER than protocolBin — everything it calls available,
+// protocolBin resolves — and that is the invariant worth having, since a
+// probe answering true where the resolution refuses is a gate that lies. It
+// is narrower on an explicit path that does not exist, which is a probe
+// saying no and a caller standing down rather than a gate opening onto a
+// refusal.
+func protocolAvailable(name string) bool { return resolveOutside(name, "") != "" }
+
 // protocolEnv is the environment one of posse's own children runs with: the
 // caller's, with ADR 0077 D3's gates-free PATH put over whatever PATH it
 // carried. nil means this process's environment, which is what an unset

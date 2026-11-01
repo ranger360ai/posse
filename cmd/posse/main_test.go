@@ -371,6 +371,11 @@ func TestReadyEmptyQueueStillSaysNoReadyWork(t *testing.T) {
 // pass starts. PATH is emptied so the first thing past the flag loop is
 // "bd not found" — which is also the positive control, since only a count
 // the loop accepted can get that far.
+//
+// The sentence is posse.NoBdLine since ranger-base-g1xnt, which made the
+// probe ask about the gates-free PATH rather than this process's: what the
+// empty PATH below buys is unchanged (nothing answers either way), and the
+// wording now names the condition that was tested.
 func TestDispatchRefusesBadCount(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
@@ -392,8 +397,8 @@ func TestDispatchRefusesBadCount(t *testing.T) {
 		{[]string{"dispatch", "--timeout", "soon"}, "--timeout needs a value in ms"},
 		{[]string{"dispatch", "--timeout"}, "--timeout needs a value in ms"},
 		// Accepted counts reach the next check instead of dying here.
-		{[]string{"dispatch", "-n", "3", "--timeout", "0", "--dry-run"}, "bd not found in PATH"},
-		{[]string{"dispatch", "-n", "0", "--dry-run"}, "bd not found in PATH"},
+		{[]string{"dispatch", "-n", "3", "--timeout", "0", "--dry-run"}, posse.NoBdLine},
+		{[]string{"dispatch", "-n", "0", "--dry-run"}, posse.NoBdLine},
 	} {
 		cmd := exec.Command(bin, c.args...)
 		cmd.Env = env

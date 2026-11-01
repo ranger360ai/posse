@@ -1049,7 +1049,7 @@ func main() {
 			return
 		}
 		if !d.Bd.Available() {
-			die(posse.Die("bd not found in PATH"))
+			die(posse.Die(posse.NoBdLine))
 		}
 		if watch > 0 {
 			// Continuous passes with quiet-pass backoff; SIGINT/SIGTERM end
@@ -1588,7 +1588,7 @@ func main() {
 			persona = args[0]
 		}
 		if !posse.NewBd().Available() {
-			die(posse.Die("bd not found in PATH"))
+			die(posse.Die(posse.NoBdLine))
 		}
 		if err := a.Scorecard(posse.NewBd(), out, persona, time.Now()); err != nil {
 			die(err)
@@ -2399,7 +2399,7 @@ const worktreesUsage = "posse worktrees [--dir <repo>] [--land [--force] | --ret
 func needBd() posse.Bd {
 	bd := posse.NewBd()
 	if !bd.Available() {
-		die(posse.Die("bd not found in PATH (brew install beads or see github.com/steveyegge/beads)"))
+		die(posse.Die(posse.NoBdLine + " (brew install beads or see github.com/steveyegge/beads)"))
 	}
 	return bd
 }
