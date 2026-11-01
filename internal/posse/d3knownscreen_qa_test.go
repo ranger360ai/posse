@@ -187,7 +187,14 @@ func d3ksSameStrings(a, b []string) bool {
 func TestQAKnownScreenReaderNamesEveryFixtureExactly(t *testing.T) {
 	t.Parallel()
 	d := d3ksTables(t)
-	testdata := filepath.Join("..", "..", "etc", "herdr", "agent-detection", "testdata")
+	// The root comes from qibRepoRoot, not from a `../..` climb spelled here
+	// (ranger-base-8yv7z). This directory's whole point is the sentence below
+	// — a detection bead adds to it — so the pin's subject is the tree, and
+	// internal/posse's half of the tree-wide class is derived from that one
+	// helper. Through a climb held in a local the reading was invisible, so
+	// the pin was never asked for a Makefile door ($(QA_SEED_PINS)) and its
+	// only route was the ~950s package run.
+	testdata := filepath.Join(qibRepoRoot(t), "etc", "herdr", "agent-detection", "testdata")
 
 	// ENUMERATED, not listed. The script warns about an unlabelled fixture
 	// on stderr and exits 0, so a sixteenth capture would be measured by

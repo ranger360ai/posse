@@ -418,6 +418,91 @@ package treepins
 // for seven other pins and is ranger-base-m94g2's to answer; nothing here
 // prejudges it, because one test moving files is not a mechanism.
 //
+// and EIGHT more, which are the same defect ONE HOP OUT (ranger-base-8yv7z).
+// nt0pi fixed the climb spelled AT the walker and fenced that spelling, and
+// said its own residual out loud: a climb that reaches the walker through an
+// IDENTIFIER, or through a PARAMETER, is unread. Both were live, and not
+// singly — the fence, once it reads an identifier, finds six pins spelled
+// that way and a seventh population behind a parameter chain:
+//
+//	TestQAThePolicyDropInsDoNotSetTheSameKeyTwice  make seed-check
+//	                                              (`const dir =
+//	                                              "../../etc/claude/managed-settings.d"`
+//	                                              in a local const, ReadDir'd
+//	                                              — the one spelling nt0pi
+//	                                              named)
+//	TestQAKnownScreenReaderNamesEveryFixtureExactly
+//	                                              make seed-check
+//	                                              (every detection fixture
+//	                                              under
+//	                                              etc/herdr/agent-detection/testdata,
+//	                                              through a local)
+//	TestEmbeddedSeedMatchesExamplesDir            make seed-check
+//	                                              (walks EVERY file under
+//	                                              examples/ against the
+//	                                              binary's embed)
+//	TestShippedPIDsDenyPromote                    make seed-check
+//	TestShippedPIDsDenyRefresh                    make seed-check
+//	                                              (both enumerate the shelf
+//	                                              through a local holding
+//	                                              `../../examples/agents`)
+//	TestExampleAgentsArePIDs                      make seed-check
+//	TestExampleAgentsHandoffsAreShapes            make seed-check
+//	TestShelfPIDsGuardFailsRatherThanSkipsWhenShort
+//	                                              make seed-check
+//	                                              (all three read the shelf
+//	                                              through shelfPIDs, which
+//	                                              handed a climbing literal
+//	                                              to a helper that handed its
+//	                                              own parameter to a helper
+//	                                              that globbed at that
+//	                                              parameter — TWO call sites
+//	                                              from the walk)
+//	                                              (all eight
+//	                                              ranger-base-8yv7z)
+//
+// No new door: every one of them reads the surface a publication carries —
+// examples/, and the configuration the shipped tree carries beside it under
+// etc/ — which is what TestSeedSurfaceNameCountIsZero has always walked
+// whole, so seed-check's subject is theirs and the Makefile says so once
+// rather than eight times. Two MOVED ARM to get one, into files of their own
+// (policydropins_qa_test.go from posse_arm3,
+// shippedpidsdenyrefresh_qa_test.go from posse_arm2), for the reason
+// TestShelfPIDsLintCleanAsASet did and with the same disclaimer: a door takes
+// no `-tags`, a filter that matches nothing exits 0, and two tests changing
+// files is not a mechanism. ranger-base-m94g2 still owns the tag question.
+//
+// THE FIXES ARE THE ROOT AGAIN, not a wider derivation. Six take the root
+// from qibRepoRoot where they held a climb; the shelf's helper takes it as a
+// PARAMETER its callers spell `qibRepoRoot(t)`, which is what puts those
+// three tests in the class by the rule half of it is already derived from.
+// Nothing in the derivation widened, and the chain is still not followed
+// there.
+//
+// WHAT WIDENED IS THE FENCE, and the two halves of it are read from the two
+// spellings above: twdClimbSet reads a climb held in a local, a local const
+// or a package const, and twdClimbHops closes the param-rooted-walker
+// relation over calls so a climb handed any number of hops from the walk is
+// refused. THE FENCE MAY FOLLOW THE CHAIN WHERE THE DERIVATION MAY NOT, and
+// that asymmetry is the load-bearing decision here: a wrong resolution in the
+// derivation is a door demanded for a fixture walk or a pin quietly leaving
+// the class, while a wrong resolution in a prohibition only tells a seat to
+// take the root from qibRepoRoot — which is the right instruction for every
+// body it can match. So twdRelEnv's refusal stands untouched and the fence
+// goes as wide as the spellings that actually carried pins.
+//
+// AND IT HAS A JURISDICTION LINE, measured rather than assumed. The first
+// fence that read identifiers also fenced detectionRig
+// (verifydetection_qa_test.go), which holds `filepath.Join("..", "..")` in a
+// local and ReadDirs a subdirectory of it — a shape the posse half scores as
+// NOT tree-wide on purpose (twdRootExprs' head comment), and whose nine
+// callers would have joined the class the moment the fence's own remediation
+// was applied. So an identifier binds here only when the climb it holds NAMES
+// a path below the root: the climb arm owns a climb that names a path, the
+// twin/hidden arms own the climb that names the ROOT, and the two do not
+// overlap. That is the only live answer this bead changed by argument rather
+// than by measurement, and the fixture table below types both sides of it.
+//
 // AND THE SPELLING IS FENCED, not merely fixed: a climbing literal at a
 // WalkDir/Walk/ReadDir/Glob is the fourth arm of
 // TestQAOneRepoRootHelperInTheTestPackage (twdClimbRoot), with its own
@@ -434,16 +519,31 @@ package treepins
 // finds the pairs, identically and on purpose; that one would be the
 // propagation, and nothing in the package is spelled that way. And two
 // fixture roots are correctly unseen. In internal/posse, a climb that
-// arrives at the walker through an IDENTIFIER is unread by the fence —
+// arrives at the walker through an IDENTIFIER was unread by the fence —
 // `const dir = "../../etc/claude/managed-settings.d"; os.ReadDir(dir)`,
-// which policyhooks_qa_test.go spells today — and that one is filed rather
-// than fenced here (ranger-base-nt0pi), because closing it adds a class
-// member and this bead's three were a defect, not a decision.)
+// which policyhooks_qa_test.go spelled on the day nt0pi landed — and that
+// one was filed rather than fenced there, because closing it adds a class
+// member and that bead's three were a defect, not a decision. It is fenced
+// now, with the parameter hop beside it and with eight more members
+// (ranger-base-8yv7z, below); what is still unread in internal/posse is a
+// named path JOINED onto a bare-root identifier, which is the hidden arm's
+// shape and is scored by its dataflow.)
 //
-// and `make tree-check` is all of them — eighty-six pins and fourteen doors,
-// 59s warm at the full eighty-six (MEASURED 2026-10-31, ranger-base-nt0pi:
+// and `make tree-check` is all of them — ninety-four pins and fourteen doors,
+// 68-106s over three warm runs at the full ninety-four (MEASURED 2026-10-31,
+// ranger-base-8yv7z: 81s, 68s and 106s in that order, with a one-minute load
+// average of 11.15, 9.45 and 10.76 before the three and BOTH suite slots held
+// by sibling seats throughout. A 38s spread read at a load that never left
+// 9-11 and barely moved across the three — so this reading says the spread is
+// not the load's LEVEL and not its MOVEMENT either, which is as far as the
+// pair of readings one entry below could take it; what it is remains
+// unmeasured, and the honest advice is still the quiet end of the range plus
+// room for half as much again. The eight pins this bead adds report
+// 0.464-0.514s measured alone, over three runs, so none of a 38s spread is
+// theirs), 59s warm at eighty-six of
+// those pins (MEASURED 2026-10-31, ranger-base-nt0pi:
 // one warm run at a one-minute load average of 5.62, the quietest box this
-// command has been read on, and the first reading taken over the whole
+// command has been read on, and the first reading taken over that whole
 // class), and 81-89s over three warm runs taken at eighty-three of those
 // pins (MEASURED 2026-10-31, ranger-base-3e68k: 87s, 81s and 89s in that
 // order, with a one-minute load average of 25.12, 27.90 and 26.08 before the
@@ -1128,6 +1228,332 @@ func twdClimbRoot(e ast.Expr) bool {
 	return false
 }
 
+// twdClimbSet is what an identifier naming a climb OUT of the package can be
+// read through: the names, at one package's file scope and in one function
+// body, bound to an expression twdClimbRoot calls a climb.
+//
+// WHY IT EXISTS (ranger-base-8yv7z). ranger-base-nt0pi fenced the climb
+// spelled AT the walker and said its residual out loud: a climb that arrives
+// through an IDENTIFIER is unread. It was live in the tree that same day —
+// `const dir = "../../etc/claude/managed-settings.d"; os.ReadDir(dir)` in
+// internal/posse/policyhooks_qa_test.go — carrying a pin whose population is
+// every drop-in in that directory, outside the class and undoored. So the
+// fence reads the identifier now.
+//
+// IT IS NOT twdRelEnv, and the difference is which side of the file it serves.
+// twdRelEnv feeds a DERIVATION: a name it resolves wrongly is a member the
+// register invents or drops, which is a door asked for or not asked for, so it
+// is kept narrow and every refusal in its head comment is load-bearing. This
+// set feeds a PROHIBITION. Its only consequence is a seat being told to take
+// the root from qibRepoRoot and join onto it, which is the right advice for
+// any body this could match — so where the derivation must be exact, the
+// fence may be generous, and that is the whole reason the two are separate
+// maps rather than one.
+type twdClimbSet map[string]bool
+
+// climbs reports whether an expression spells a climb out of the package,
+// reading identifiers through the set: a literal exactly as twdClimbRoot
+// reads one, an identifier the set names, or either of those under
+// filepath.Join (first element only, as twdClimbRoot does) or
+// Clean/ToSlash/FromSlash/Abs.
+func (c twdClimbSet) climbs(e ast.Expr) bool {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return c[v.Name]
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok || len(v.Args) == 0 {
+			break
+		}
+		if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "filepath" {
+			break
+		}
+		switch sel.Sel.Name {
+		case "Join", "Clean", "ToSlash", "FromSlash", "Abs":
+			return c.climbs(v.Args[0])
+		}
+	}
+	return twdClimbRoot(e)
+}
+
+// bind adds name if its right-hand side climbs AND the path it spells names
+// something BELOW the repo root. `_` is never a name.
+//
+// THE SECOND CONDITION IS THE JURISDICTION LINE, and it is what keeps this
+// arm off nine tests it would be wrong about. A climb made of nothing but
+// `..` segments evaluates to the repo root itself, and a hand-rolled climb to
+// the root is already the business of twdRootExprs and the `hidden` arm
+// below — which carries the dataflow precision the posse half needs:
+// detectionRig (verifydetection_qa_test.go) holds `filepath.Join("..", "..")`
+// in a local and then ReadDirs `filepath.Join(repo, "etc", "herdr",
+// "agent-detection")`, and the posse half scores that as a SUBDIRECTORY walk
+// on purpose — it reds when that one directory changes, which that rule says
+// is not this class (twdRootExprs' head comment, ranger-base-sx2dq). Binding
+// the bare root here would have fenced it, and the fence's remediation —
+// take the root from qibRepoRoot — would then have made `root && walk` true
+// in that body and put its nine callers in the class.
+//
+// So: the climb arm owns a climb that NAMES a path, the root arms own the
+// climb that names the ROOT, and the two do not overlap. A literal bare
+// `../..` written AT the walker is the one place both can fire, because
+// twdClimbRoot below reads it directly and ranger-base-nt0pi's fixture says
+// it must; nothing is lost either way, since the `hidden` arm reads that
+// spelling too.
+//
+// RESIDUAL, said out loud: a named path built by JOINING onto a bare-root
+// identifier — `dir := filepath.Join(repo, "etc"); os.ReadDir(dir)` — is
+// unread here for the same reason the inline spelling is, because the
+// bare-root identifier never enters this set and nothing built from it does.
+// That shape is the hidden arm's and is scored by its dataflow.
+func (c twdClimbSet) bind(name string, rhs ast.Expr) {
+	if name == "_" || !c.climbs(rhs) {
+		return
+	}
+	if twdClimbNamesASubpath(rhs, c) {
+		c[name] = true
+	}
+}
+
+// twdClimbNamesASubpath reports whether a climbing expression spells a path
+// with at least one element that is not `..` — `../../etc/claude` does,
+// `../..` and `filepath.Join("..", "..")` do not. Identifiers resolve through
+// the set, which already holds only subpath-naming climbs, so an identifier
+// in it names one by construction.
+func twdClimbNamesASubpath(e ast.Expr, c twdClimbSet) bool {
+	named := func(s string) bool {
+		for _, el := range strings.Split(filepath.ToSlash(s), "/") {
+			if el != ".." && el != "." && el != "" {
+				return true
+			}
+		}
+		return false
+	}
+	switch v := e.(type) {
+	case *ast.Ident:
+		return c[v.Name]
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return false
+		}
+		str, err := strconv.Unquote(v.Value)
+		return err == nil && named(str)
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok || len(v.Args) == 0 {
+			return false
+		}
+		if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "filepath" {
+			return false
+		}
+		switch sel.Sel.Name {
+		case "Clean", "ToSlash", "FromSlash", "Abs":
+			return twdClimbNamesASubpath(v.Args[0], c)
+		case "Join":
+			for _, a := range v.Args {
+				if twdClimbNamesASubpath(a, c) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// bindDecls reads one `const`/`var` spec list for climbing identifiers.
+func (c twdClimbSet) bindDecls(specs []ast.Spec) {
+	for _, spec := range specs {
+		vs, ok := spec.(*ast.ValueSpec)
+		if !ok || len(vs.Names) != len(vs.Values) {
+			continue
+		}
+		for i, name := range vs.Names {
+			c.bind(name.Name, vs.Values[i])
+		}
+	}
+}
+
+// twdPkgClimbSet reads one package's FILE-SCOPE consts and vars for climbing
+// paths, over every file at once because a const declared in one file roots a
+// walk in another — the reason twdPkgRelEnv is built that way too.
+func twdPkgClimbSet(files []*ast.File) twdClimbSet {
+	c := twdClimbSet{}
+	// Two passes, so a declaration that reads one written below it binds.
+	for i := 0; i < 2; i++ {
+		for _, file := range files {
+			for _, decl := range file.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok || (gd.Tok != token.CONST && gd.Tok != token.VAR) {
+					continue
+				}
+				c.bindDecls(gd.Specs)
+			}
+		}
+	}
+	return c
+}
+
+// extend returns the package set plus ONE function body's own locals and
+// consts — `const dir = "../../etc/claude/managed-settings.d"` is a local
+// const, which is the spelling this bead was filed for. Two passes, for the
+// reason twdRootExprs makes two.
+func (c twdClimbSet) extend(body *ast.BlockStmt) twdClimbSet {
+	out := twdClimbSet{}
+	for k := range c {
+		out[k] = true
+	}
+	for i := 0; i < 2; i++ {
+		ast.Inspect(body, func(n ast.Node) bool {
+			switch st := n.(type) {
+			case *ast.AssignStmt:
+				// `x := expr` and `x, err := expr` both bind x, the shape
+				// twdRootExprs and twdBodyRelEnv both read.
+				if len(st.Rhs) == 1 && len(st.Lhs) >= 1 {
+					if id, ok := st.Lhs[0].(*ast.Ident); ok {
+						out.bind(id.Name, st.Rhs[0])
+					}
+					return true
+				}
+				if len(st.Lhs) != len(st.Rhs) {
+					return true
+				}
+				for j, l := range st.Lhs {
+					if id, ok := l.(*ast.Ident); ok {
+						out.bind(id.Name, st.Rhs[j])
+					}
+				}
+			case *ast.ValueSpec:
+				if len(st.Names) != len(st.Values) {
+					return true
+				}
+				for j, name := range st.Names {
+					out.bind(name.Name, st.Values[j])
+				}
+			}
+			return true
+		})
+	}
+	return out
+}
+
+// twdClimbHops is the fence's other half (ranger-base-8yv7z): for each
+// function, the parameter positions at which a path handed in reaches a
+// walker — directly, or through any number of further calls that pass that
+// same parameter on.
+//
+// THE SHAPE IT IS FOR. internal/posse's shelf helper was
+// `shelfPIDs()` -> `shelfPIDsIn(t, filepath.Join("..", "..", "examples", "agents"))`
+// -> `statShelf(dir)` -> `filepath.Glob(filepath.Join(dir, "*.md"))`: the
+// whole shelf read through a climb spelled TWO call sites from the walk.
+// Three tree-wide pins sat behind it and the register saw none of them.
+//
+// AND WHY FOLLOWING THE CHAIN IS ALLOWED HERE AND NOWHERE ELSE. twdRelEnv and
+// twdTestFiles both refuse to follow a value across a function boundary, and
+// twdParamHops resolves exactly ONE argument at ONE call site because a wrong
+// resolution there is a wrong class membership — a door demanded for a
+// fixture walk, or a pin quietly leaving the class. This is a prohibition, so
+// it has no such cost: it decides nothing about membership and its only
+// output is an instruction to take the root from qibRepoRoot, which is the
+// right instruction for every body it can match. So the fence closes the
+// relation over calls and the derivation does not, and neither is a copy of
+// the other.
+//
+// It propagates a PARAMETER POSITION and not a path: the climbing literal is
+// still resolved at exactly one place, the outermost call site, by
+// twdClimbSet above.
+func twdClimbHops(fset *token.FileSet, files map[string]*ast.File) map[string][]int {
+	at := map[string]map[int]bool{}
+	add := func(fn string, idx int) bool {
+		if at[fn] == nil {
+			at[fn] = map[int]bool{}
+		}
+		if at[fn][idx] {
+			return false
+		}
+		at[fn][idx] = true
+		return true
+	}
+	// The base case is the walker table the derivation reads, so the fence
+	// and the hop cannot disagree about what a param-rooted walk is.
+	for fn, ws := range twdParamHops(fset, files) {
+		for _, w := range ws {
+			add(fn, w.idx)
+		}
+	}
+	decls := rpDecls(fset, files)
+	for changed := true; changed; {
+		changed = false
+		for _, d := range decls {
+			params := rpParamIndex(d.fd)
+			if len(params) == 0 {
+				continue
+			}
+			carries := rpCarriers(d.fd.Body, params)
+			ast.Inspect(d.fd.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				id, ok := call.Fun.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				for idx := range at[id.Name] {
+					if len(call.Args) <= idx {
+						continue
+					}
+					param, ok := rpRootParam(call.Args[idx], params, carries)
+					if !ok {
+						continue
+					}
+					if add(d.fd.Name.Name, params[param]) {
+						changed = true
+					}
+				}
+				return true
+			})
+		}
+	}
+	out := map[string][]int{}
+	for fn, idxs := range at {
+		for idx := range idxs {
+			out[fn] = append(out[fn], idx)
+		}
+		sort.Ints(out[fn])
+	}
+	return out
+}
+
+// twdPkgEnv is everything twdAnalyze needs that is a property of the PACKAGE
+// rather than of the one body it reads: the relative-path env, the climbing
+// env, the derivation's one-step walker table and the fence's closed one.
+// Built once per parse, and by one function, so the two fixture drivers below
+// cannot assemble a friendlier version of it than twdParseDir does.
+type twdPkgEnv struct {
+	rel       *twdRelEnv
+	climb     twdClimbSet
+	hops      map[string][]rpRootWalker
+	climbHops map[string][]int
+}
+
+// twdNewPkgEnv builds that env from one package's parsed test files.
+func twdNewPkgEnv(fset *token.FileSet, byPath map[string]*ast.File) *twdPkgEnv {
+	var files []*ast.File
+	paths := make([]string, 0, len(byPath))
+	for path := range byPath {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		files = append(files, byPath[path])
+	}
+	return &twdPkgEnv{
+		rel:       twdPkgRelEnv(files),
+		climb:     twdPkgClimbSet(files),
+		hops:      twdParamHops(fset, byPath),
+		climbHops: twdClimbHops(fset, byPath),
+	}
+}
+
 // twdWalkers are the calls that turn a repo root into a reading of the whole
 // tree. A function that computes the root AND makes one of these is walking
 // from the root, and every file in the tree is then its subject.
@@ -1624,12 +2050,7 @@ func twdBodyRelEnv(body *ast.BlockStmt, pkg *twdRelEnv) *twdRelEnv {
 // — are carried and unused, and the question of whether a census of one
 // package's own sources is in the class stays where ranger-base-0ckgm filed
 // it.
-func twdParamHops(t *testing.T, paths []string, fset *token.FileSet, files []*ast.File) map[string][]rpRootWalker {
-	t.Helper()
-	byPath := map[string]*ast.File{}
-	for i, f := range files {
-		byPath[paths[i]] = f
-	}
+func twdParamHops(fset *token.FileSet, byPath map[string]*ast.File) map[string][]rpRootWalker {
 	_, byName := rpParamRootedWalkers(fset, byPath)
 	return byName
 }
@@ -1703,22 +2124,21 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 	paths := twdTestFiles(t, pkg)
 	fset := token.NewFileSet()
 	files := make([]*ast.File, 0, len(paths))
+	byPath := map[string]*ast.File{}
 	for _, path := range paths {
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", path, err)
 		}
 		files = append(files, file)
+		byPath[path] = file
 	}
-	// The file-scope env over EVERY file before any body is read: a const
-	// declared in one file roots a walk in another (armPkgDir does), so this
-	// cannot be built one file at a time.
-	env := twdPkgRelEnv(files)
-	// And the walker table the parameter hop resolves against, over every
-	// file for the same reason the env is: the helper and its call site are
-	// routinely in different files (cgScan is called from its own, arParse
-	// from four tests in its own).
-	hops := twdParamHops(t, paths, fset, files)
+	// Every env over EVERY file before any body is read: a const declared in
+	// one file roots a walk in another (armPkgDir does), and the param-rooted
+	// helper and its call site are routinely in different files (cgScan is
+	// called from its own, arParse from four tests in its own). So none of
+	// this can be built one file at a time.
+	env := twdNewPkgEnv(fset, byPath)
 	out := map[string]*twdFunc{}
 	tests := 0
 	for i, file := range files {
@@ -1727,7 +2147,7 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 			if !ok || fn.Recv != nil || fn.Body == nil {
 				continue
 			}
-			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", paths[i], fset.Position(fn.Pos()).Line), env, hops)
+			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", paths[i], fset.Position(fn.Pos()).Line), env)
 			if f.test {
 				tests++
 			}
@@ -1742,14 +2162,15 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 // so the fixture-driven mutation check below drives the same code the tree is
 // derived with — a second copy of the rule, written to be easy to test, is a
 // copy that can agree with the fixture and disagree with the tree.
-func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv, hops map[string][]rpRootWalker) *twdFunc {
+func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdPkgEnv) *twdFunc {
 	f := &twdFunc{
 		name:  fn.Name.Name,
 		where: where,
 		test:  strings.HasPrefix(fn.Name.Name, "Test"),
 		calls: map[string]bool{},
 	}
-	env := twdBodyRelEnv(fn.Body, pkg)
+	env := twdBodyRelEnv(fn.Body, pkg.rel)
+	climb := pkg.climb.extend(fn.Body)
 	var getwd, dirCall, goMod bool
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
@@ -1785,12 +2206,22 @@ func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv, hops map[string]
 			// its own parameters a relative tree path, at that parameter's
 			// own position. The reading is the tree, so the enumeration is
 			// this body's (ranger-base-pyl22, twdParamHops).
-			for _, w := range hops[fun.Name] {
+			for _, w := range pkg.hops[fun.Name] {
 				if len(call.Args) <= w.idx {
 					continue
 				}
 				for _, rel := range twdRelTreePaths(call.Args[w.idx], env) {
 					f.relEnum = append(f.relEnum, twdHopEntry(w, rel))
+				}
+			}
+			// And the FENCE's own hop: this call hands a CLIMB out of the
+			// package to a function that reaches a walker at that
+			// parameter, however many calls further on. The reading is the
+			// tree and no root is computed, which is the whole defect
+			// (ranger-base-8yv7z, twdClimbHops).
+			for _, idx := range pkg.climbHops[fun.Name] {
+				if len(call.Args) > idx && climb.climbs(call.Args[idx]) {
+					f.climbEnum = true
 				}
 			}
 		case *ast.SelectorExpr:
@@ -1800,7 +2231,7 @@ func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv, hops map[string]
 					for _, rel := range twdRelTreePaths(call.Args[0], env) {
 						f.relEnum = append(f.relEnum, fun.Sel.Name+"("+rel+")")
 					}
-					if twdClimbRoot(call.Args[0]) {
+					if climb.climbs(call.Args[0]) {
 						f.climbEnum = true
 					}
 				}
@@ -2399,15 +2830,14 @@ func twdFixtureEnumerates(t *testing.T, src string) bool {
 	if err != nil {
 		t.Fatalf("parse fixture: %v\n%s", err, src)
 	}
-	env := twdPkgRelEnv([]*ast.File{file})
-	_, hops := rpParamRootedWalkers(fset, map[string]*ast.File{"fixture_test.go": file})
+	env := twdNewPkgEnv(fset, map[string]*ast.File{"fixture_test.go": file})
 	all := map[string]*twdFunc{}
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil {
 			continue
 		}
-		f := twdAnalyze(fn, "fixture", env, hops)
+		f := twdAnalyze(fn, "fixture", env)
 		all[f.name] = f
 	}
 	return twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })["TestX"]
@@ -2424,14 +2854,13 @@ func twdFixtureClimbs(t *testing.T, src string) bool {
 	if err != nil {
 		t.Fatalf("parse fixture: %v\n%s", err, src)
 	}
-	env := twdPkgRelEnv([]*ast.File{file})
-	_, hops := rpParamRootedWalkers(fset, map[string]*ast.File{"fixture_test.go": file})
+	env := twdNewPkgEnv(fset, map[string]*ast.File{"fixture_test.go": file})
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil || fn.Name.Name != "TestX" {
 			continue
 		}
-		return twdAnalyze(fn, "fixture", env, hops).climbEnum
+		return twdAnalyze(fn, "fixture", env).climbEnum
 	}
 	t.Fatalf("fixture declares no TestX:\n%s", src)
 	return false
@@ -2792,7 +3221,51 @@ func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
 		{"a Clean around the same Join", `func TestX(t *testing.T) { os.ReadDir(filepath.Clean(filepath.Join("..", "..", "examples"))) }`, true},
 		{"reading one named file through a climb is not an enumeration", `func TestX(t *testing.T) { os.ReadFile("../../AGENTS.md") }`, false},
 		{"an enumeration that does not climb is the package's own directory", `func TestX(t *testing.T) { os.ReadDir(".") }`, false},
-		{"a climb that arrives through an identifier is unread", `func TestX(t *testing.T) { dir := "../../etc"; os.ReadDir(dir) }`, false},
+		// THE IDENTIFIER (ranger-base-8yv7z). This row read false until this
+		// bead, and said so out loud as nt0pi's residual: six live pins read
+		// the tree through a climb held in a local or a package const, and
+		// every one of them was outside the class with no door.
+		{"a climb through a local", `func TestX(t *testing.T) { dir := "../../etc"; os.ReadDir(dir) }`, true},
+		{"a climb through a local const", `func TestX(t *testing.T) {
+	const dir = "../../etc/claude/managed-settings.d"
+	os.ReadDir(dir)
+}`, true},
+		{"a climb through a package const", `const dropIns = "../../etc/claude/managed-settings.d"
+func TestX(t *testing.T) { os.ReadDir(dropIns) }`, true},
+		{"a climb through a local assigned a Join", `func TestX(t *testing.T) { dir := filepath.Join("..", "..", "examples"); filepath.WalkDir(dir, nil) }`, true},
+		{"a climb through a local, joined at the walker", `func TestX(t *testing.T) { dir := "../../examples"; os.ReadDir(filepath.Join(dir, "agents")) }`, true},
+		// AND THE JURISDICTION LINE. A climb made only of `..` evaluates to
+		// the repo root, and a hand-rolled climb to the ROOT is the `hidden`
+		// arm's — which scores a walk of a SUBDIRECTORY of it as not
+		// tree-wide. detectionRig is that shape and nine tests reach it, so
+		// binding the bare root here would have fenced it and the fence's own
+		// remediation would then have put all nine in the class.
+		{"a bare-root local joined at the walker is the hidden arm's shape", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); os.ReadDir(filepath.Join(repo, "etc", "herdr")) }`, false},
+		{"a bare-root local walked directly is the hidden arm's too", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); os.ReadDir(repo) }`, false},
+		{"an identifier holding a scratch directory is not a climb", `func TestX(t *testing.T) { dir := t.TempDir(); os.ReadDir(dir) }`, false},
+		{"an identifier holding the package's own directory is not a climb", `func TestX(t *testing.T) { dir := "testdata"; os.ReadDir(dir) }`, false},
+		// THE PARAMETER HOP, and the CHAIN (ranger-base-8yv7z). The shelf was
+		// read through `filepath.Join("..", "..", "examples", "agents")`
+		// handed to a helper that handed its own parameter to a helper that
+		// globbed at that parameter — two call sites from the walk. The fence
+		// closes the relation over calls; the DERIVATION still does not (see
+		// twdClimbHops).
+		{"a climb handed to a helper that walks that parameter", `func scan(dir string) { filepath.Glob(filepath.Join(dir, "*.md")) }
+func TestX(t *testing.T) { scan(filepath.Join("..", "..", "examples", "agents")) }`, true},
+		{"a climb handed two call sites from the walk", `func inner(dir string) { filepath.Glob(filepath.Join(dir, "*.md")) }
+func mid(t *testing.T, dir string) { inner(dir) }
+func TestX(t *testing.T) { mid(t, "../../examples/agents") }`, true},
+		{"a climb through an identifier handed down a chain", `func inner(dir string) { os.ReadDir(dir) }
+func mid(dir string) { inner(dir) }
+func TestX(t *testing.T) { dir := "../../examples"; mid(dir) }`, true},
+		{"a hop handed a scratch directory is not a climb", `func scan(dir string) { filepath.Glob(filepath.Join(dir, "*.md")) }
+func TestX(t *testing.T) { scan(t.TempDir()) }`, false},
+		{"a hop handed the package's own directory is not a climb", `func scan(dir string) { filepath.Glob(filepath.Join(dir, "*.md")) }
+func TestX(t *testing.T) { scan("testdata") }`, false},
+		{"a climb at a position that is not the walked parameter", `func scan(name string, dir string) { os.ReadDir(dir) }
+func TestX(t *testing.T) { scan("../../examples", t.TempDir()) }`, false},
+		{"a parameter that roots no walk is not a hop", `func read(p string) { os.ReadFile(p) }
+func TestX(t *testing.T) { read("../../AGENTS.md") }`, false},
 	} {
 		if got := twdFixtureClimbs(t, c.src); got != c.want {
 			t.Errorf("the climbing-enumeration rule says %v for this source, want %v (%s) — the fence below is then measuring something other than what this comment says, and its zero is not evidence:\n%s", got, c.want, c.name, c.src)

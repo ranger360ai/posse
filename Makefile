@@ -564,7 +564,7 @@ fmt-check:
 # new tree-wide pin fails that check until it is given a door here.
 QA_CREW_PINS      := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
 QA_TOOL_PINS      := TestTreeIsGofmtClean
-QA_SEED_PINS      := TestShelfPIDsLintCleanAsASet|TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale|TestSeedConfigDocumentedNumberDefaultsAreTheConstants|TestSeedConfigDocumentedNumberRegisterIsNotStale
+QA_SEED_PINS      := TestShelfPIDsLintCleanAsASet|TestExampleAgentsArePIDs|TestExampleAgentsHandoffsAreShapes|TestShelfPIDsGuardFailsRatherThanSkipsWhenShort|TestShippedPIDsDenyPromote|TestShippedPIDsDenyRefresh|TestEmbeddedSeedMatchesExamplesDir|TestQAThePolicyDropInsDoNotSetTheSameKeyTwice|TestQAKnownScreenReaderNamesEveryFixtureExactly|TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale|TestSeedConfigDocumentedNumberDefaultsAreTheConstants|TestSeedConfigDocumentedNumberRegisterIsNotStale
 QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
 QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists|TestQAEveryNotesFragmentCitationResolves|TestQAPublicDocBaseIsTheSpellingTheSiteShips|TestQAClaudeAutoModeCarveOutIsADR0070D2Verbatim|TestQAPrescribedGitDiffChecksStateTheirFormat|TestQAPrescribedGitDiffChecksRunUnderADiffDriver
 QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
@@ -629,6 +629,38 @@ crew-check:
 # reading and was behind `//go:build posse_arm2` — where a door, which takes
 # no tags, could not have reached it. Type it when you touch examples/ or
 # anything the published tree ships.
+#
+# And EIGHT more for the same subject (ranger-base-8yv7z), every one of which
+# read the published surface through a climb out of the package that no rule
+# in treewidedoor_qa_test.go could see — ranger-base-nt0pi's defect one hop
+# out, through an identifier or through a parameter.
+#
+# THIS DOOR'S SUBJECT, said once rather than per pin: the surface a
+# publication carries. That is examples/ — the seed — and the configuration
+# the shipped tree carries beside it under etc/, which is the same surface
+# TestSeedSurfaceNameCountIsZero has always walked whole.
+#
+# Five read examples/: the other three readers of the SHELF
+# (examples/agents — every reference PID is a PID, its Handoffs rows are
+# shapes, and the shelf guard fails rather than skips when the shelf is
+# short), which reached it through a `../../examples/agents` literal handed
+# two call sites from the glob; the two shipped-PID deny pins, which held the
+# same climb in a local; and the embed pin, which walks every file under
+# examples/ and compares it byte-for-byte with the binary. Three read etc/:
+# the policy drop-ins setting no key twice, which enumerates
+# `etc/claude/managed-settings.d` — a bead that adds a fourth drop-in joins
+# its population, which is what puts it here rather than with the pins that
+# read one drop-in by NAME — and the known-screen reader, which enumerates
+# every detection fixture under `etc/herdr/agent-detection/testdata`, a
+# directory whose own comment says a detection bead adds to it.
+#
+# Two of them MOVED ARM to get in, into files of their own
+# (policydropins_qa_test.go from posse_arm3, shippedpidsdenyrefresh_qa_test.go
+# from posse_arm2), for the reason TestShelfPIDsLintCleanAsASet did: a door
+# takes no `-tags` and a filter that matches nothing exits 0.
+#
+# Type this door when you add or edit a reference PID, anything else under
+# examples/, a policy drop-in, or a detection fixture.
 seed-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_SEED_PINS))$$'
 

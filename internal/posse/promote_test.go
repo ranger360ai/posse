@@ -754,7 +754,11 @@ func mustManifest(t *testing.T, a *App) *PromoteManifest {
 // refused turn rather than a discovered fact.
 func TestShippedPIDsDenyPromote(t *testing.T) {
 	t.Parallel()
-	dir := filepath.Join("..", "..", "examples", "agents")
+	// qibRepoRoot, not a `../..` climb in a local (ranger-base-8yv7z): this
+	// enumerates the shelf, so retiring or adding a reference PID reds it and
+	// the pin belongs to the tree-wide class, which internal/posse's half is
+	// derived from that one helper. Its door is $(QA_SEED_PINS).
+	dir := filepath.Join(qibRepoRoot(t), "examples", "agents")
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)

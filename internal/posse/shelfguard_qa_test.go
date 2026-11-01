@@ -74,9 +74,24 @@ func shelfPIDsIn(t *testing.T, dir string) []string {
 
 // shelfPIDs is examples/agents itself: the committed reference PIDs (ADR
 // 0001) every shelf-wide PID contract pin reads.
-func shelfPIDs(t *testing.T) []string {
+//
+// THE ROOT ARRIVES AS A PARAMETER, and the caller spells it `qibRepoRoot(t)`
+// (ranger-base-8yv7z). It used to be
+// `shelfPIDsIn(t, filepath.Join("..", "..", "examples", "agents"))` — a climb
+// out of the package, handed to a helper that globs at its own parameter,
+// which globs at ITS parameter in turn. That reads the whole shelf while
+// computing no root, two call sites from the walk, so no rule in
+// internal/treepins/treewidedoor_qa_test.go could see it: the three tests
+// that read the shelf through here were outside the tree-wide class, were
+// never asked for a Makefile door, and were reachable only by the ~950s
+// internal/posse run. The register's own lesson is that the class is not
+// bounded by how a test spells its root but by there being ONE — so the one
+// helper is named in the test body that reads the tree, which puts the test
+// in the class by the rule that half of it is derived from, with no rule
+// widened and no chain followed.
+func shelfPIDs(t *testing.T, root string) []string {
 	t.Helper()
-	return shelfPIDsIn(t, filepath.Join("..", "..", "examples", "agents"))
+	return shelfPIDsIn(t, filepath.Join(root, "examples", "agents"))
 }
 
 // The pin: shrink a COPY of the shelf by one file (never the real shelf —
@@ -85,7 +100,7 @@ func shelfPIDs(t *testing.T) []string {
 // classify as a skip, which is the case the guard exists to keep quiet.
 func TestShelfPIDsGuardFailsRatherThanSkipsWhenShort(t *testing.T) {
 	t.Parallel()
-	shelf := shelfPIDs(t)
+	shelf := shelfPIDs(t, qibRepoRoot(t))
 	tmp := t.TempDir()
 	for _, p := range shelf[1:] {
 		b, err := os.ReadFile(p)

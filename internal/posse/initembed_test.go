@@ -31,7 +31,13 @@ func initTestApp(t *testing.T) *App {
 // Byte-for-byte against the checkout is the cheap total assertion.
 func TestEmbeddedSeedMatchesExamplesDir(t *testing.T) {
 	t.Parallel()
-	root := filepath.Join("..", "..", "examples")
+	// The root comes from qibRepoRoot rather than a `../..` climb held in a
+	// local (ranger-base-8yv7z): this walks EVERY file under examples/, so
+	// any bead that adds one reds it, and the tree-wide class in
+	// internal/treepins/treewidedoor_qa_test.go is derived from that one
+	// helper. Spelled as a climb the reading computed no root, no rule could
+	// see it, and the pin had no door ($(QA_SEED_PINS), `make seed-check`).
+	root := filepath.Join(qibRepoRoot(t), "examples")
 	n := 0
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {

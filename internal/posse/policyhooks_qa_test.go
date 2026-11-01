@@ -130,45 +130,6 @@ func TestQAThePolicyHooksDropInRedeclaresTheCrewsOwnHooks(t *testing.T) {
 	}
 }
 
-// Two policy sources setting one key make the winner an ordering accident —
-// the same argument the inlet pin's drop-in test makes, now that the
-// directory holds three files.
-func TestQAThePolicyDropInsDoNotSetTheSameKeyTwice(t *testing.T) {
-	t.Parallel()
-	const dir = "../../etc/claude/managed-settings.d"
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("the policy drop-in directory is missing: %v", err)
-	}
-	owner := map[string]string{}
-	seen := 0
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			t.Fatalf("%s: %v", e.Name(), err)
-		}
-		var m map[string]json.RawMessage
-		if err := json.Unmarshal(b, &m); err != nil {
-			t.Fatalf("%s is not valid JSON: %v", e.Name(), err)
-		}
-		seen++
-		for k := range m {
-			if prev, dup := owner[k]; dup {
-				t.Errorf("%q is set by both %s and %s — two policy sources for one key make the winner an ordering accident", k, prev, e.Name())
-				continue
-			}
-			owner[k] = e.Name()
-		}
-	}
-	// Without this the loop above passes on an empty directory.
-	if seen < 3 {
-		t.Errorf("read %d drop-ins, want at least 3 (inlet, field, hooks) — a sweep over nothing agrees with everything", seen)
-	}
-}
-
 // The execution half of the PreToolUse string. It is graded DIRECTLY rather
 // than in a session on purpose: this box pins CLAUDE_CONFIG_DIR at the policy
 // tier, so the operator's real user-scope gate loads in every session and

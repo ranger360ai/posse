@@ -297,7 +297,7 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 	// examples/agents/*.md are the reference PIDs (ADR 0001, rangerhq-cd3):
 	// every one carries the full frontmatter, the four hard risk lines
 	// verbatim, the headings in contract order, and a push deny.
-	shelf := shelfPIDs(t)
+	shelf := shelfPIDs(t, qibRepoRoot(t))
 	a := &App{Home: t.TempDir(), AgentsDir: filepath.Dir(shelf[0])}
 	names := a.ListAgents()
 	for _, name := range names {
@@ -703,7 +703,7 @@ func TestTiers(t *testing.T) {
 // label; the rest is prose a reviewer reads.
 func TestExampleAgentsHandoffsAreShapes(t *testing.T) {
 	t.Parallel()
-	shelf := shelfPIDs(t)
+	shelf := shelfPIDs(t, qibRepoRoot(t))
 	a := &App{Home: t.TempDir(), AgentsDir: filepath.Dir(shelf[0])}
 	names := a.ListAgents()
 	for _, name := range names {

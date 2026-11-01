@@ -42,7 +42,7 @@ import (
 // not a heading.
 func TestShelfPIDsLintCleanAsASet(t *testing.T) {
 	t.Parallel()
-	shelf := shelfPIDs(t)
+	shelf := shelfPIDs(t, qibRepoRoot(t))
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {

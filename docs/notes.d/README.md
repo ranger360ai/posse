@@ -33,6 +33,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-bm6j8](ranger-base-bm6j8.md) — Every binary posse execs: protocol or a persona's command (ranger-base-bm6j8) — 2026-10-31
 - [ranger-base-atvd4](ranger-base-atvd4.md) — A launch-time CHECK is install-gated exactly like a wall, and nothing counted that category (ranger-base-atvd4) — 2026-10-31
 - [ranger-base-9f2o6](ranger-base-9f2o6.md) — grok 1.0.52 re-measured: the cwd root is still read, and it has a precondition nobody declared (ranger-base-9f2o6) — 2026-10-31
+- [ranger-base-8yv7z](ranger-base-8yv7z.md) — The fourth spelling, one hop out: an identifier and a parameter (ranger-base-8yv7z) — 2026-10-31
 - [ranger-base-8wxbn](ranger-base-8wxbn.md) — Twelve tree-wide pins behind four spellings of a walk root, and the one spelling still refused (ranger-base-8wxbn) — 2026-10-31
 - [ranger-base-8u8n8](ranger-base-8u8n8.md) — Two pinned spellings of one seam, and the gate between them (ranger-base-8u8n8) — 2026-10-31
 - [ranger-base-80zqb](ranger-base-80zqb.md) — The two brackets were backwards, and the reader was never going to close the class (ranger-base-80zqb) — 2026-10-31
