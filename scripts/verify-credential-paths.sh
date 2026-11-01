@@ -53,6 +53,32 @@ esac
 
 [ -n "${HOME:-}" ] || { echo "verify-credential-paths: HOME is unset — nothing to scan"; exit 2; }
 
+# And a RELATIVE $HOME is refused, not resolved — add_dir's rule one variable
+# over (ranger-base-zm6yw, the verify of ranger-base-l5v9k). The check below
+# used to ask only whether HOME was NON-EMPTY, and ~/.claude is the one
+# directory this sweep always scans and an operator cannot opt out of, so the
+# whole control turned on where it was typed: MEASURED 2026-10-31 (darwin
+# 25.6.0, bash 3.2), HOME=relhome with a credential file planted in
+# A/relhome/.claude and both config-dir variables set-and-EMPTY,
+#
+#   cwd=A -> "FINDING  relhome/.claude/.credentials.json", exit 1
+#   cwd=B -> "clean    relhome/.claude",                   exit 0
+#
+# the same box, the same environment, the same store of record, and a
+# detective control saying clean about a directory it never looked in. Both of
+# ranger-base-57045's readings come with it: the false clean, and a printed
+# FINDING line naming a relative path that means nothing to whoever reads the
+# report. It is NOT resolved against the sweep's own cwd, for l5v9k's reason:
+# the launcher cwd posse resolved against cannot be recovered after the fact,
+# so resolving here would only swap one wrong guess for another.
+case "$HOME" in
+  /*) ;;
+  *)
+    echo "verify-credential-paths: HOME=$HOME is relative; posse resolved it against the launcher cwd, which this sweep cannot know; export an absolute path — nothing measured, not a pass"
+    exit 2
+    ;;
+esac
+
 # The directories claude can write a credential file into. MEASURED off the
 # shipped 2.1.258 bundle and spelled the same way in Go by
 # internal/posse/credential.go credentialDir(), which has the source: the
