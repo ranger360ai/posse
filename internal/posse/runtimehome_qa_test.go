@@ -23,6 +23,7 @@ package posse
 // dialog. These pins cover posse's half of that.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -533,6 +534,106 @@ func TestARelativeRuntimeHomeIsMadeAbsoluteAtTheOneRead(t *testing.T) {
 				t.Errorf("%s with an ABSOLUTE %s=%q: pin = %q, want %q", tc.runtime, tc.v, abs, got, want)
 			}
 		}
+	}
+}
+
+// Arm 4b: the same rule for CLAUDE_SECURESTORAGE_CONFIG_DIR, which is read
+// in credentialDirNamed and NOT through runtimeHomeOverride (its set-and-empty
+// arm shadows CLAUDE_CONFIG_DIR, and runtimeHomeOverride's rule is v != "").
+//
+// Before ranger-base-8sxf5 that read returned the value verbatim, so a
+// relative value was typed onto the seat as-is (credentialDirPin ->
+// credentialDirPinJSON), resolved there against the SESSION dir while posse
+// resolved it against its own cwd, and credentialDenyable dropped it — no
+// seatbelt read-deny over the directory the seat's CLI writes its token into.
+//
+// All four readings are asserted because each is a different consumer of
+// the one read: the resolver, the file posse reads, the wall, and the line.
+func TestARelativeSecureStorageDirIsMadeAbsoluteAtCredentialDirNamed(t *testing.T) {
+	launcherCwd := t.TempDir()
+	t.Chdir(launcherCwd)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(ClaudeConfigDirVar, "")
+
+	pinnedSec := func(t *testing.T) string {
+		t.Helper()
+		var payload struct {
+			Env map[string]string `json:"env"`
+		}
+		raw := credentialDirPinJSON()
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			t.Fatalf("credentialDirPinJSON is not JSON: %v: %s", err, raw)
+		}
+		v, ok := payload.Env["CLAUDE_SECURESTORAGE_CONFIG_DIR"]
+		if !ok {
+			t.Fatalf("credentialDirPinJSON carries no CLAUDE_SECURESTORAGE_CONFIG_DIR: %s", raw)
+		}
+		return v
+	}
+
+	check := func(t *testing.T, value, want string) {
+		t.Helper()
+		t.Setenv("CLAUDE_SECURESTORAGE_CONFIG_DIR", value)
+
+		dir, named, err := credentialDirNamed()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !named {
+			t.Errorf("%q: credentialDirNamed says no variable named the directory", value)
+		}
+		if !filepath.IsAbs(dir) {
+			t.Errorf("%q: credentialDirNamed answered the RELATIVE %q — the seat resolves that against the session dir, posse against its own cwd (ranger-base-8sxf5)", value, dir)
+		}
+		if dir != want {
+			t.Errorf("%q: credentialDirNamed = %q, want %q", value, dir, want)
+		}
+
+		file, err := CredentialsFile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !filepath.IsAbs(file) {
+			t.Errorf("%q: CredentialsFile = %q, not absolute", value, file)
+		}
+		if !credentialDenyable(file) {
+			t.Errorf("%q: credentialDenyable(%q) is false — the seatbelt read-deny names nothing over the directory the seat writes its token into", value, file)
+		}
+
+		if got := pinnedSec(t); got != want {
+			t.Errorf("%q: the settings pin types CLAUDE_SECURESTORAGE_CONFIG_DIR=%q, want %q (the path the wall names)", value, got, want)
+		}
+	}
+
+	for _, rel := range []string{"relsec", "./relsec", "a/b", "relsec/"} {
+		check(t, rel, filepath.Join(wd, rel))
+	}
+
+	// CONTROL: an absolute value reaches all four byte-identical — not
+	// Cleaned, which is why the fix is gated on filepath.IsAbs.
+	for _, abs := range []string{
+		filepath.Join(t.TempDir(), "sec"),
+		filepath.Join(t.TempDir(), "sec") + "/",
+		filepath.Join(t.TempDir(), "sec") + "/./sub",
+	} {
+		check(t, abs, abs)
+	}
+
+	// CONTROL: set-and-EMPTY still shadows CLAUDE_CONFIG_DIR and is not
+	// named — the arm that keeps this read out of runtimeHomeOverride.
+	t.Setenv(ClaudeConfigDirVar, filepath.Join(t.TempDir(), "cfg"))
+	t.Setenv("CLAUDE_SECURESTORAGE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	dir, named, err := credentialDirNamed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if named || dir != filepath.Join(home, ".claude") {
+		t.Errorf("set-and-empty: credentialDirNamed = (%q, %v), want (%q, false)", dir, named, filepath.Join(home, ".claude"))
 	}
 }
 

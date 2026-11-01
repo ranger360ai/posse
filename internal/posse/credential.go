@@ -1128,7 +1128,8 @@ func credentialDir() (string, error) {
 // Named is an ENVIRONMENT property, never a path property:
 //
 //   - CLAUDE_SECURESTORAGE_CONFIG_DIR set and non-empty — named, and the
-//     directory is that value verbatim.
+//     directory is that value: verbatim when absolute, made absolute against
+//     this process's cwd when relative (ranger-base-8sxf5).
 //   - CLAUDE_SECURESTORAGE_CONFIG_DIR set and EMPTY — NOT named. It shadows
 //     CLAUDE_CONFIG_DIR for the name exactly as it does for the file, so an
 //     empty value beside a set config dir is the default item.
@@ -1143,6 +1144,19 @@ func credentialDir() (string, error) {
 func credentialDirNamed() (dir string, named bool, err error) {
 	sec, set := os.LookupEnv("CLAUDE_SECURESTORAGE_CONFIG_DIR")
 	if set && sec != "" {
+		// A relative value is made absolute here, against the launcher's
+		// cwd, for the reason runtimeHomeOverride does it for the other home
+		// variables (ranger-base-sczjy): the pin types this value onto a
+		// seat whose cwd is the session dir, and credentialDenyable drops a
+		// relative path, so verbatim it was two stores and no wall
+		// (ranger-base-8sxf5). Not routed through runtimeHomeOverride: its
+		// rule is v != "", and set-and-empty must still shadow
+		// CLAUDE_CONFIG_DIR below. An absolute value is left byte-identical.
+		if !filepath.IsAbs(sec) {
+			if abs, aerr := filepath.Abs(sec); aerr == nil {
+				sec = abs
+			}
+		}
 		return sec, true, nil
 	}
 	home, herr := os.UserHomeDir()
@@ -1862,7 +1876,10 @@ func jsonKind(b []byte) string {
 // before and after the pin, and CredentialsFile the same path. Written out,
 // the four arms it covers:
 //
-//   - SECURESTORAGE set to a directory: pinned verbatim (named, dir = it).
+//   - SECURESTORAGE set to a directory: pinned as credentialDirNamed answers
+//     it (named, dir = it) — verbatim when absolute, made absolute against
+//     posse's cwd when relative (ranger-base-8sxf5), so the seat, the wall
+//     and keychainItem's hash all read the one absolute path.
 //   - SECURESTORAGE set but EMPTY: pinned empty — presence, not truthiness;
 //     it means $HOME/.claude to the runtime and must not become a path.
 //   - SECURESTORAGE unset with CLAUDE_CONFIG_DIR set: pinned to the config

@@ -1163,6 +1163,11 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 // directory walled and the directory the seat's CLI writes are one
 // directory. What the relative value used to buy was no wall at all over a
 // real credential file, which is the worse half of decision 3's sentence.
+// CLAUDE_SECURESTORAGE_CONFIG_DIR is the fourth such variable and is read
+// in credentialDirNamed (credential.go), not runtimeHomeOverride, because
+// its set-and-empty arm must shadow CLAUDE_CONFIG_DIR; since
+// ranger-base-8sxf5 that read makes a relative value absolute the same way,
+// so the directory walled is the directory credentialDirPin types.
 // The predicate stays for the two shapes no variable can carry.
 //
 // It stays a wall over an ABSOLUTE $CODEX_HOME — that is the arm the control
