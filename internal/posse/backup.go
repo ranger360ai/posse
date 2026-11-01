@@ -639,7 +639,20 @@ func (a *App) stageBackup(out io.Writer, stage, queue, store string, at time.Tim
 	// tokenizer to quote.
 	cmd.Dir = qstage
 	if outp, err := cmd.CombinedOutput(); err != nil {
-		return man, Die("sqlite3 .backup: %s", strings.TrimSpace(string(outp)))
+		// The REASON, and err when the child wrote no output to carry one
+		// (ranger-base-w0w7u, found by ranger-base-va8v5). A child that
+		// never STARTED wrote nothing to either stream: protocolCmd puts a
+		// protocolBin refusal on cmd.Err (ADR 0077 D3) and CombinedOutput
+		// then returns an empty slice beside that error, so discarding err
+		// rendered `sqlite3 .backup: ` — a refusal with no reason at all,
+		// on a half-built archive. Same fallback worktree.go's git() has
+		// carried for every other child of this tree: what the child said
+		// if it said anything, else what the exec itself said.
+		msg := strings.TrimSpace(string(outp))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return man, Die("sqlite3 .backup: %s", msg)
 	}
 
 	// The projections beside it. issues.jsonl is what bd exports and what
