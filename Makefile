@@ -66,6 +66,41 @@ release:
 # writing it. `posse` is the command. Retiring the two inodes that predate this
 # change is the operator's, inside ranger-base-3rv9's window (ranger-base-6y83);
 # nothing here recreates them.
+# THE L3 HOOK WALL GOES STALE HERE, AND THIS TARGET USED TO SAY NOTHING ABOUT
+# IT (ranger-base-rzkcp, from ranger-base-j0imz). The hook bodies are compiled
+# into the binary, so every installed hook on the box is a COPY of an older
+# render; promoting a wall fix is therefore the one moment every hook on the
+# box goes stale at once. Nothing here noticed. The sweep that DETECTS that
+# drift (SweepHookWall, internal/posse/hookfresh.go) fires at `posse promote`
+# and at the `dispatch --watch` preamble, and this target ran only
+# verify-gate-freshness, which measures the operator's bd argv gate copy and
+# asks nothing about the hook wall. MEASURED on j0imz (mtimes, 2026-11-01): the
+# install at 21:22 left four repos running the ranger-base-g55ah-era two-rune
+# fold, the security lane read them stale at 21:30, and a hand-typed
+# install-hooks repaired them at 21:33 — eleven minutes in which the
+# exploitable bypass ranger-base-l717c describes was live in every hooked
+# repo, with the fix sitting in the binary this target had just promoted.
+#
+# It DETECTS and repairs nothing, which is ranger-base-ixv4's stance kept
+# rather than reversed: re-rendering here would rewrite the hooks of checkouts
+# other sessions share, and that is a change someone should type. A finding
+# prints the `posse gates install-hooks <repo>` line per stale repo.
+#
+# POSSE IS BOUND TO THE BINARY THIS TARGET JUST INSTALLED, never left to PATH.
+# The script's reference is a fresh render from $POSSE, so a reference rendered
+# by the OLD binary reads every hook it just staled as FRESH — a green at
+# exactly the moment the check exists to fire. `command -v posse` is not that
+# binary: MEASURED 2026-11-02 on this box, `which -a posse` answers the persona
+# gate shim (~/.config/posse/state/gates/<persona>/bin/posse) first and
+# $(BINDIR)/posse second, and $(BINDIR) is not guaranteed to be on PATH at all
+# — scripts/path-warning.sh one line above exists for that case.
+#
+# `--quiet` so a clean box is one verdict line; every finding names its own
+# repo and is restated with the prescription whatever the flag. `|| true`
+# because a stale hook is not a reason to fail an install that already
+# happened — the binary is in place and the operator needs the line, not an
+# exit code. 12.5s over four hooked repos, MEASURED 2026-11-02, against a
+# `release` build that costs minutes.
 install: release
 	install -d $(BINDIR)
 	install -m 0755 bin/posse-release $(BINDIR)/posse
@@ -74,6 +109,7 @@ install: release
 	@echo "  version : $$($(BINDIR)/posse version)"
 	@scripts/path-warning.sh '$(BINDIR)'
 	@scripts/verify-gate-freshness.sh --warn || true
+	@POSSE='$(BINDIR)/posse' scripts/verify-hook-freshness.sh --quiet || true
 
 deploy: install
 

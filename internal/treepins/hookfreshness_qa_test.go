@@ -222,13 +222,16 @@ func (r *hfRig) escape(t *testing.T, name string) {
 	}
 }
 
-func (r *hfRig) run(t *testing.T) (string, int) {
+// run execs the script. Variadic, so every arm that passes no flag is
+// unchanged — the flags matter to exactly one arm, the one that runs the
+// script with the flags `make install`'s recipe passes it (ranger-base-rzkcp).
+func (r *hfRig) run(t *testing.T, args ...string) (string, int) {
 	t.Helper()
 	abs, err := filepath.Abs(hfScript)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(abs)
+	cmd := exec.Command(abs, args...)
 	path := filepath.Dir(r.git) + ":/usr/bin:/bin"
 	if r.shimDir != "" {
 		path = r.shimDir + ":" + path
@@ -604,6 +607,202 @@ func TestQAHookFreshnessIsReadOnlyAndWired(t *testing.T) {
 	}
 	if !strings.Contains(string(mk), "verify-hook-freshness") {
 		t.Error("no verify-hook-freshness target in the Makefile")
+	}
+}
+
+// ─── the install epilogue (ranger-base-rzkcp, from ranger-base-j0imz) ─────
+//
+// THE DEFECT. `make install` is the moment every L3 hook on the box goes
+// stale. The bodies are compiled into the binary being promoted, so the
+// instant the new binary lands every installed hook is a copy of an older
+// render — and the install target said nothing about it. The sweep that
+// DETECTS that drift (SweepHookWall) fires at `posse promote` and at the
+// `dispatch --watch` preamble; install ran only verify-gate-freshness, which
+// measures the operator's bd argv gate copy and asks nothing about the hook
+// wall. MEASURED on ranger-base-j0imz (mtimes, 2026-11-01): the install at
+// 21:22, the security lane's stale reading at 21:30, a hand-typed
+// install-hooks at 21:33 — eleven minutes in which the l717c bypass was live in
+// all four hooked repos, with the fix sitting in the binary that install had
+// just promoted.
+//
+// It DETECTS and repairs nothing: ranger-base-ixv4's stance kept, not
+// reversed for this one site. Re-rendering here would rewrite hooks in
+// checkouts other sessions share.
+//
+// THREE ARMS, and the two that matter are not readable off the recipe. Arm 1
+// is the wiring. Arms 2 and 3 RUN the script with the flags the recipe
+// passes, because the failure this wiring invites is silent: the script's
+// parser is a strict `case` that answers an unknown flag with a usage line
+// and exit 2, and the recipe's `|| true` swallows exactly that.
+
+// hfInstallRecipe is the `install:` target's recipe, make decorations
+// stripped and comment lines dropped.
+func hfInstallRecipe(t *testing.T) []string {
+	t.Helper()
+	mk, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := makeRecipe(string(mk), "install")
+	if len(raw) == 0 {
+		t.Fatal("no recipe found for `install:` — the pin is reading nothing")
+	}
+	var out []string
+	for _, line := range raw {
+		code := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "@"))
+		if code == "" || strings.HasPrefix(code, "#") {
+			continue
+		}
+		out = append(out, code)
+	}
+	return out
+}
+
+// hfInstallLine is the one `install:` recipe line that runs this script.
+func hfInstallLine(t *testing.T) string {
+	t.Helper()
+	var found []string
+	for _, code := range hfInstallRecipe(t) {
+		if strings.Contains(code, hfScript) {
+			found = append(found, code)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("want exactly one `install:` recipe line running %s, got %d: %q", hfScript, len(found), found)
+	}
+	return found[0]
+}
+
+// hfInstallFlags is what that line passes the script: the words after the
+// script path, stopping at the shell operator that follows them. Read off the
+// recipe rather than spelled here, so arms 2 and 3 measure the invocation the
+// operator actually gets and not a copy of it that can drift.
+func hfInstallFlags(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	seen := false
+	for _, w := range strings.Fields(hfInstallLine(t)) {
+		if !seen {
+			if strings.Contains(w, hfScript) {
+				seen = true
+			}
+			continue
+		}
+		if w == "||" || w == "&&" || w == ";" {
+			break
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// Arm 1: the epilogue names this script, binds POSSE to the binary install
+// just wrote, runs AFTER that write, and cannot fail the target.
+func TestQAHookFreshnessRunsInTheInstallEpilogue(t *testing.T) {
+	recipe := hfInstallRecipe(t)
+	binIdx, scriptIdx := -1, -1
+	for i, code := range recipe {
+		if strings.HasPrefix(code, "install -m") && strings.Contains(code, "$(BINDIR)/posse") {
+			binIdx = i
+		}
+		if strings.Contains(code, hfScript) {
+			scriptIdx = i
+		}
+	}
+	// The positive half. A pin that only asserts an order passes just as well
+	// on a target that stopped installing the binary, which is the one thing
+	// this epilogue is about.
+	if binIdx < 0 {
+		t.Fatalf("`install:` no longer writes $(BINDIR)/posse — nothing here can be about a promoted binary:\n%q", recipe)
+	}
+	if scriptIdx < 0 {
+		t.Fatalf("`install:` does not run %s — the promote that stales every hook on the box says nothing about it (ranger-base-rzkcp):\n%q", hfScript, recipe)
+	}
+	// Order: a check that runs before the write measures the OLD binary
+	// against the old hooks and calls the box fresh.
+	if scriptIdx < binIdx {
+		t.Errorf("%s runs at recipe line %d, before $(BINDIR)/posse is written at line %d — it would measure the binary being replaced", hfScript, scriptIdx, binIdx)
+	}
+	line := recipe[scriptIdx]
+	// POSSE is BOUND, not resolved from PATH. The script's reference is a
+	// fresh render from $POSSE, so a reference taken from the binary this
+	// target just replaced reads every hook it staled as fresh — a green at
+	// exactly the moment the check exists to fire. And `command -v posse` is
+	// not $(BINDIR)/posse here: MEASURED 2026-11-02 on this box, `which -a
+	// posse` answers the persona gate shim first, and $(BINDIR) need not be
+	// on PATH at all (scripts/path-warning.sh exists for that case).
+	pi := strings.Index(line, "POSSE=")
+	if pi < 0 || pi > strings.Index(line, hfScript) {
+		t.Errorf("the epilogue does not bind POSSE= ahead of the script, so its reference render comes from whatever PATH resolves: %q", line)
+	}
+	if !strings.Contains(line, "$(BINDIR)/posse") {
+		t.Errorf("POSSE must name the binary this target just installed, $(BINDIR)/posse: %q", line)
+	}
+	// A stale hook is not a reason to fail an install that already happened:
+	// the binary is in place and the operator needs the line, not an exit
+	// code. The script exits 1 on a finding and 2 on nothing measured, and it
+	// has no flag that suppresses either, so the recipe is the only place
+	// this can be arranged.
+	if !strings.HasSuffix(line, "|| true") {
+		t.Errorf("the epilogue must not fail the install it reports on: %q", line)
+	}
+}
+
+// Arm 2, by execution: the flags that line passes are flags this script
+// ACCEPTS. Its parser answers an unknown flag with a usage line and exit 2 —
+// so a recipe that copied `--warn` off the verify-gate-freshness line beside
+// it would print a usage error, measure nothing, and leave the install green
+// behind `|| true`. No grep over either file can see that; a run can.
+func TestQAHookFreshnessAcceptsTheFlagsTheInstallRecipePasses(t *testing.T) {
+	flags := hfInstallFlags(t)
+	r := hfNewRig(t, map[string]string{"priv": "private", "pub": "public"})
+	out, code := r.run(t, flags...)
+	if strings.Contains(out, "usage:") {
+		t.Fatalf("`make install` passes %q, which this script does not accept:\n%s", flags, out)
+	}
+	if code != 0 {
+		t.Fatalf("a freshly rendered box must pass with the install recipe's flags %q, got exit %d:\n%s", flags, code, out)
+	}
+	if !strings.Contains(out, "verify-hook-freshness: fresh") {
+		t.Errorf("the epilogue prints no verdict with %q — an install that measured nothing looks exactly like one that passed:\n%s", flags, out)
+	}
+	// The control: the same box with no flags at all. A difference in verdict
+	// here means the recipe's flags change what is MEASURED and not just what
+	// is printed.
+	plain, plainCode := r.run(t)
+	if plainCode != code {
+		t.Errorf("flags %q change the verdict: exit %d with them, %d without\n--- with:\n%s\n--- without:\n%s", flags, code, plainCode, out, plain)
+	}
+}
+
+// Arm 3, by execution: and with those flags a stale repo is still a finding
+// that names the repo and prints the install-hooks line. That is this bead's
+// DONE clause, and it is the thing a quieting flag can take away — the one in
+// the recipe drops every per-repo line, so the findings have to stand on
+// their own at the end of the stream.
+func TestQAHookFreshnessFindingsSurviveTheInstallRecipeFlags(t *testing.T) {
+	flags := hfInstallFlags(t)
+	r := hfNewRig(t, map[string]string{"priv": "private"})
+	body := hfRead(t, r.hook("priv"))
+	const erba = "'git diff --no-ext-diff HEAD -- <paths>'"
+	if !strings.Contains(body, erba) {
+		t.Fatalf("rig never built: the current render does not carry %s", erba)
+	}
+	hfWrite(t, r.hook("priv"), strings.Replace(body, erba, "'git diff'", 1))
+	out, code := r.run(t, flags...)
+	if code != 1 {
+		t.Fatalf("a stale body must be a finding (exit 1) with the install recipe's flags %q, got %d:\n%s", flags, code, out)
+	}
+	// The repo, by name, on the finding line itself — a bare "is STALE" with
+	// the per-repo header suppressed would tell the operator nothing about
+	// which checkout to type the command in.
+	for _, want := range []string{
+		"~/priv: prepare-commit-msg is STALE",
+		"posse gates install-hooks <repo>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q with the install recipe's flags %q:\n%s", want, flags, out)
+		}
 	}
 }
 

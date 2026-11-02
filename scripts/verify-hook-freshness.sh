@@ -96,6 +96,17 @@
 #     dir is rendered fresh at every launch — so a box that is entirely managed
 #     is CLEAN, not unmeasured.
 #
+# WHERE IT RUNS (ranger-base-rzkcp). `make verify-hook-freshness` and
+# `make verify-box` when a person types them, and the epilogue of
+# `make install` — which is the moment that STALES every hook on the box,
+# because the bodies are compiled into the binary being promoted and every
+# installed hook is a copy of an older render. That epilogue binds
+# POSSE=$(BINDIR)/posse rather than letting the line above resolve it from
+# PATH: the reference is a render from $POSSE, so a reference taken from the
+# OLD binary calls every hook it just staled fresh. On this box `command -v
+# posse` is not $(BINDIR)/posse — the persona gate shim precedes it (MEASURED
+# 2026-11-02) — and $(BINDIR) need not be on PATH at all.
+#
 # Exit 0 clean · 1 findings · 2 nothing measured.
 set -uo pipefail
 
