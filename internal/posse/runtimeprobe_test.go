@@ -698,41 +698,98 @@ func TestCLIVersionFromIsUnknownPastTheDeadline(t *testing.T) {
 // docs/notes.d/ranger-base-2cttm.md is corrected with it, because the next
 // WaitDelay fixture gets built from those notes.
 //
-// THE LIMIT IS 3s, AND THE WITNESS BELOW IS WHY IT HAS TO BE — which is
-// ranger-base-metqp's correction, from ranger-base-grj2i. This arm ran at a
-// 200ms limit, and on a loaded box the planted sleeper does not reach its
-// FIRST LINE before the context kills it: no echo, no grandchild, nothing on
-// the pipes, and so nothing for cmd.WaitDelay to bound. The arm then passed
-// over a tree with `cmd.WaitDelay = limit` DELETED — green 10 runs of 10 in
+// THE DEADLINE DOES NOT COVER THE SLEEPER'S FIRST EXEC ANY MORE, and that is
+// ranger-base-y9q7l's correction. This arm ran at a 200ms limit and then a 3s
+// one, and on a box where the planted sleeper does not reach its FIRST LINE
+// before the context kills it there is no echo, no grandchild, nothing on the
+// pipes, and so nothing for cmd.WaitDelay to bound. The arm then passed over a
+// tree with `cmd.WaitDelay = limit` DELETED — green 10 runs of 10 in
 // ranger-base-grj2i's hands, in two sessions, at loadavg 13-22 and again at
-// 57-61. The matrix re-taken here agrees, 3 runs per cell, "RAN" = the
-// sleeper's own witness file exists, loadavg 5.9/21.1 (1min/5min):
+// 57-61 — which is why the witness below exists. At 3s the witness fired
+// instead, reddening arm 3 of a full `make test` for a seat whose diff touched
+// no production code (ranger-base-y9q7l).
 //
-//	limit    arm 1 RAN   arm 2 RAN   wall
-//	200ms    0/3         0/3         0.20s — the limit, so nothing leaked
-//	800ms    1/3         2/3         0.80s or 1.60s, split by whether it RAN
-//	1600ms   3/3         3/3         3.20s = limit+WaitDelay
-//	3s       3/3         3/3         6.00s = limit+WaitDelay
+// THE COST IS A FIRST EXEC, NOT THE SCHEDULER, and it is paid OUTSIDE the
+// deadline now. What the fixture plants is a freshly written executable, and
+// darwin charges for the first exec of one — the second exec of the SAME path
+// is two orders of magnitude cheaper. MEASURED 2026-11-02 on this box (darwin
+// 25.6.0, /bin/sh), the sleeper's witness file timed from Start(), five
+// readings, loadavg as the 1-minute average over each:
 //
-// 1600ms started 3/3 here and 1/3 in ranger-base-grj2i's own matrix at
-// loadavg 22, so the limit is the cell with two independent 3/3 readings and
-// not the cheapest one that worked once. THE COST IS 6s of this arm's wall, both bodies in
-// parallel, against 0.4s before — paid because the 0.4s version decided its
-// verdict by whether the scheduler let a /bin/sh start inside 200ms.
+//	reading   loadavg   cold: a new path each time        warm: the same path again
+//	n=40      5.7       mean 714ms   worst 2.17s          —
+//	n=40      6.9       mean 696ms   worst 1.58s          —
+//	n=30      19.6      mean 702ms   worst 1.97s          first 1.34s, then mean 8.8ms worst 13.4ms
+//	n=30      44.4      mean 181ms   worst 471ms          first 145ms, then mean 6.5ms worst 7.8ms
+//	n=100     10.6      mean 164ms   p50 150ms p99 417ms  first 138ms, then mean 6.3ms p99 21ms
 //
-// AND THE WITNESS IS THE PART THAT LASTS. A limit is a number that goes
+// (The first row polled for the witness without sleeping and the rest poll at
+// 1ms. Its mean is 2.5% off the row below it, so the spin is not what any of
+// this measures.)
+//
+// Read it as: the cold exec's mean moves 4.4x between readings (164-714ms)
+// and its worst 5.2x (417ms-2.17s), while a single exec measured 150ms at one
+// reading's p50 and 2.17s at another's tail — 14x apart. NOTHING IN THE LOAD
+// COLUMN PREDICTS WHERE A READING LANDS IN THAT RANGE: the largest worst-case
+// came at loadavg 5.7 and the cheapest reading of all (mean 181ms, worst
+// 471ms) at 44.4, the busiest. So the load column this bead was asked to add
+// would not have warned. The warm re-exec is 6.3-8.8ms mean and 7.8-21ms at
+// the tail in EVERY reading, loadavg 5.7 to 44.4. The bead's red is a cold
+// exec that went past 3s, which no reading here reached and the worst reading
+// here is within 1.4x of.
+//
+// SO THE PRE-FLIGHT IS THE FIX AND THE LIMIT IS THE MARGIN. The sleeper's
+// first invocation exits immediately without running its body, the fixture
+// spends it before the clock starts, and the timed call then re-execs a warm
+// path: ~8ms of startup inside a 4s deadline, against a 14x-variable cost that
+// the old 3s had to cover. The limit is 4s rather than 3s anyway, because 4s
+// is also 1.8x the worst COLD reading above — so if the pre-flight is ever
+// removed or warms nothing, this arm degrades to slightly better than the 3s
+// that reddened, and not to a coin toss. It costs 8s of this arm's wall, both
+// bodies in parallel, against 6s before.
+//
+// WHAT THE OLD MATRIX WAS, AND WHY IT IS NOT RE-TAKEN HERE. The reading it
+// replaces was 3 runs per cell of "did the sleeper RAN at this limit", at
+// loadavg 5.9/21.1: 200ms 0/3, 800ms 1-2/3, 1600ms 3/3, 3s 3/3. RE-TAKEN
+// 2026-11-02 at loadavg 5.3-7.7, 3 runs per cell per arm: 1600ms, 3s, 4s, 6s
+// and 8s all read 3/3 — every cell, both arms, nothing distinguished. Six
+// samples cannot see a tail event, so the matrix is green at every limit it
+// was meant to choose between and would have chosen 1600ms on this box today.
+// The latency distribution above is the instrument; a RAN-ratio at 3 runs a
+// cell is not, and that is the part worth keeping.
+//
+// AND THE WITNESS IS STILL THE PART THAT LASTS. A limit is a number that goes
 // stale when the box or the OS changes; the positive control fails LOUDLY
-// instead of passing, so the next reader is told to raise the limit rather
-// than inheriting a green that measured nothing.
+// instead of passing, so the next reader is told what to raise rather than
+// inheriting a green that measured nothing. The pre-flight is guarded on both
+// sides for the same reason — it RAN (`.warm`), and it did NOT reach the body
+// (`.ran` still absent) — because a pre-flight that silently did either of
+// those wrong hands back exactly the green this bead was filed about: the
+// first would leave the cold exec inside the deadline again, and the second
+// would make `.ran` a witness to the pre-flight rather than to the timed run,
+// which is green whatever the deadline does. MEASURED 2026-11-02, each mutant
+// run against both arms: `cmd.WaitDelay = limit` deleted reds 3 of 3 (the
+// 25s wait, which is what this pin is for), the warm guard deleted reds the
+// `.warm` witness on both arms, and a `.ran` moved ahead of that guard reds
+// the `.ran` one. The empty-read check in front of them has no mutant and is
+// the weak one: no body here prints inside the pre-flight, so it is a guard
+// against the NEXT body, not a tested assertion.
 func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 	t.Parallel()
-	// Above process startup under load — the matrix above is the reason, and
-	// the witness below is what reds if this is ever too low again.
-	const limit = 3 * time.Second
-	// Past limit+WaitDelay (6.0s) with room for a loaded box, and far short
-	// of the 25s sleeps: a leak reads ~25s and a bound reads ~6s, so there
+	// Above a WARM re-exec of the planted sleeper, which is all the
+	// pre-flight below leaves this deadline to cover — 190x the measured
+	// warm tail, and still 1.8x the worst cold reading. The readings are in
+	// the doc above; the witnesses below are what red if this is ever too
+	// low again.
+	const limit = 4 * time.Second
+	// Past limit+WaitDelay (8.0s) with room for a loaded box, and far short
+	// of the 25s sleeps: a leak reads ~25s and a bound reads ~8s, so there
 	// is nothing between them for a loaded box to be mistaken for.
 	const bound = 12 * time.Second
+	// The pre-flight's own deadline, and generous on purpose: paying the
+	// cold first exec is its whole job, so this is the one place that cost
+	// is allowed to be slow. 4.6x the worst cold reading in the doc above.
+	const preflightLimit = 10 * time.Second
 	for _, tc := range []struct{ name, body string }{
 		{"says nothing and never exits", "sleep 25\n"},
 		{"prints a line, then leaves a grandchild on its pipes", "echo 'sleepycli 9.9.9'\nsleep 25 &\nwait\n"},
@@ -740,12 +797,36 @@ func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			sleeper := filepath.Join(t.TempDir(), "sleepycli")
-			// THE POSITIVE CONTROL: the sleeper's first act, before it
-			// forks anything. `$0` and not an interpolated path, so the
-			// fixture carries no quoting of a t.TempDir() name into a shell.
+			// THE POSITIVE CONTROLS: the sleeper's first act on each of its
+			// two invocations, before it forks anything. `$0` and not an
+			// interpolated path, so the fixture carries no quoting of a
+			// t.TempDir() name into a shell.
 			witness := sleeper + ".ran"
-			if err := WriteExecutable(sleeper, []byte("#!/bin/sh\n: > \"$0.ran\"\n"+tc.body), 0o755); err != nil {
+			warmed := sleeper + ".warm"
+			// Invocation 1 marks itself and exits without running the body;
+			// invocation 2 is the real one. The order matters: the body is
+			// unreachable on the pre-flight, so `.ran` can only have been
+			// written by the timed run below.
+			if err := WriteExecutable(sleeper, []byte("#!/bin/sh\n"+
+				"if [ ! -f \"$0.warm\" ]; then : > \"$0.warm\"; exit 0; fi\n"+
+				": > \"$0.ran\"\n"+tc.body), 0o755); err != nil {
 				t.Fatal(err)
+			}
+			// THE PRE-FLIGHT, outside the clock: it pays darwin's charge for
+			// the first exec of a freshly written binary, which is the
+			// 150ms-to-2.17s this arm used to have to fit inside its deadline
+			// (the doc above has the readings). It goes through
+			// readCLIVersionWithin itself rather than exec.Command, so what
+			// it warms is exactly the exec the timed call makes — same
+			// protocolCmd path resolution, same env.
+			if v := readCLIVersionWithin(sleeper, preflightLimit); v != "" {
+				t.Fatalf("the pre-flight invocation must print nothing and exit; it read %q, so the body ran and the witness below would prove nothing", v)
+			}
+			if _, err := os.Stat(warmed); err != nil {
+				t.Fatalf("the sleeper's pre-flight never ran under a %s deadline (%v), so the timed call below would pay the cold first exec this pre-flight exists to spend. Raise preflightLimit", preflightLimit, err)
+			}
+			if _, err := os.Stat(witness); err == nil {
+				t.Fatal("the pre-flight reached the body, so `.ran` no longer witnesses the TIMED run — the arm would be green whatever the deadline did")
 			}
 			started := time.Now()
 			got := readCLIVersionWithin(sleeper, limit)
@@ -753,11 +834,11 @@ func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 
 			// FIRST, because every assertion below it is about what the
 			// sleeper did and means nothing if it never ran. A box that
-			// cannot start a /bin/sh inside the limit makes this arm's
-			// verdict a coin toss, and the answer to that is a bigger limit
-			// — never a green (ranger-base-metqp).
+			// cannot re-exec a warm /bin/sh script inside the limit makes
+			// this arm's verdict a coin toss, and the answer to that is a
+			// bigger limit — never a green (ranger-base-metqp).
 			if _, err := os.Stat(witness); err != nil {
-				t.Fatalf("the planted sleeper never reached its first line under a %s deadline (%v), so nothing forked, nothing held the pipes, and cmd.WaitDelay had nothing to bound — this arm measured the scheduler and not the code. Raise limit (keeping bound under the 25s sleep) and re-take the matrix in this test's doc", limit, err)
+				t.Fatalf("the planted sleeper never reached its first line under a %s deadline (%v), so nothing forked, nothing held the pipes, and cmd.WaitDelay had nothing to bound — this arm measured process startup and not the code. The pre-flight above already spent the cold first exec, so this is a WARM re-exec that took longer than %s: raise limit (keeping limit+WaitDelay under bound, and bound under the 25s sleep) and re-take the latency readings in this test's doc", limit, err, limit)
 			}
 			if waited > bound {
 				t.Fatalf("the read waited %s under a %s deadline — this call has no upper bound on wall time, and its first unattended reader runs under launchd", waited, limit)

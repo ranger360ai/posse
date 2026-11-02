@@ -42,9 +42,25 @@ package treepins
 // box therefore measures NOTHING about WaitDelay — the child dies before it
 // forks, so there is no grandchild to hold the pipes — and it passes either
 // way. internal/posse's own arm ran at 200ms for that reason and was green
-// over a tree with the assignment deleted; it is at 3s now and asserts the
-// witness. Build the next one the same way: a positive control the fixture
-// writes before it forks, and a limit above process startup under load.
+// over a tree with the assignment deleted; it asserts the witness now, at a
+// 4s limit.
+//
+// AND THE LIMIT WAS THE WRONG LEVER (ranger-base-y9q7l). What the fixture
+// cannot fit inside a small deadline is the FIRST exec of the executable it
+// just wrote — darwin's charge on a new binary — and not the scheduler:
+// MEASURED 2026-11-02 on this box, a fresh path each time read mean
+// 164-714ms and worst 2.17s, while a re-exec of the SAME path read mean
+// 6.3-8.8ms and 7.8-21ms at the tail. The largest worst-case came at the
+// QUIETEST loadavg of the five and the cheapest reading of all at the
+// busiest, so the load column nobody had would not have warned either. At 3s
+// the arm's own witness fired on a full `make test` and reddened arm 3 for a
+// seat whose diff touched no production code. So build
+// the next one with THREE parts: the `& wait` body, a positive control the
+// fixture writes before it forks, and a PRE-FLIGHT invocation that pays the
+// first exec outside the deadline — leaving the limit to cover a warm
+// re-exec, which is the only part a number can honestly bound. The limit is
+// still the part that goes stale; the control is what reds instead of passing
+// when it does.
 //
 // WHY A PIN AND NOT PROSE. The rule was written out in three doc comments and
 // honoured at five of fifteen call sites. ranger-base-2cttm censused the tree

@@ -47,12 +47,16 @@ it 6/6. Below that floor the child is killed before it forks, so there is no
 grandchild, nothing holds the pipes, and the fixture returns at the limit
 whether `WaitDelay` is set or not — it measures the scheduler. That is
 exactly how `TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer` came to pass
-10 runs of 10 over a tree with `cmd.WaitDelay = limit` DELETED. It runs at a
-3s limit now and `t.Fatalf`s on the missing witness. So the next fixture
-built from this note wants both: the `& wait` body above, AND a positive
-control the script writes before it forks, under a limit above process
-startup under load. The limit is the part that goes stale; the control is
-what reds instead of passing when it does.
+10 runs of 10 over a tree with `cmd.WaitDelay = limit` DELETED. It
+`t.Fatalf`s on the missing witness now, at a 4s limit. So the next fixture
+built from this note wants three parts: the `& wait` body above, a positive
+control the script writes before it forks, AND a pre-flight invocation that
+pays the first exec outside the deadline — because the cost that does not fit
+inside a small limit is darwin's charge on the FIRST exec of a freshly written
+binary and not the scheduler, it spans 150ms to 2.17s on this box, and loadavg
+does not predict it (ranger-base-y9q7l, which has the readings). The limit is
+the part that goes stale; the control is what reds instead of passing when it
+does.
 
 Not observed in the wild. Nothing here is a filed hang; the whole bead is
 read off the code path, the same way fnn1o was.
@@ -191,6 +195,7 @@ the limit in, as `patchIDsVerbatimWithin` does — would be three new seams for
 a mechanism already pinned twice. The behaviour lives at
 `TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer`
 (internal/posse/runtimeprobe_test.go), which runs the fixture above through a
-real child under a 200ms deadline and fails if the call outlives deadline
-plus grace, and at `watchhang_qa_test.go`'s herdr arm. This bead's pin is the
-census; those two are the proof the census is about something.
+real child under a 4s deadline (200ms when this was written) and fails if the
+call outlives deadline plus grace, and at `watchhang_qa_test.go`'s herdr arm.
+This bead's pin is the census; those two are the proof the census is about
+something.
