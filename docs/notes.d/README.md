@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-y9q7l](ranger-base-y9q7l.md) — The deadline was sized for a cost that belongs outside it (ranger-base-y9q7l) — 2026-11-02
 - [ranger-base-rzkcp](ranger-base-rzkcp.md) — The install that stales every hook on the box said nothing about it (ranger-base-rzkcp) — 2026-11-02
+- [ranger-base-aru4c](ranger-base-aru4c.md) — The cold-first-exec census, and the two sites it found that the grep did not (ranger-base-aru4c) — 2026-11-02
 - [ranger-base-3pm6b](ranger-base-3pm6b.md) — The fold's premise gets executed, not only derived (ranger-base-3pm6b) — 2026-11-02
 - [ranger-base-2g820](ranger-base-2g820.md) — Two rigs that lie about a wall, and the probe that would have caught both (ranger-base-2g820) — 2026-11-02
 - [ranger-base-zm6yw](ranger-base-zm6yw.md) — The climb spelled past a Join's first element, and the HOME nobody can opt out of (ranger-base-zm6yw) — 2026-11-01

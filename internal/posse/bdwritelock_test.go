@@ -13,6 +13,7 @@ package posse
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -373,8 +374,36 @@ func TestRunOnceHoldsWriteLockAcrossChild(t *testing.T) {
 	scratch := t.TempDir()
 	marker := filepath.Join(scratch, "started")
 	bin := filepath.Join(scratch, "bd")
-	body := "#!/bin/sh\ntouch " + marker + "\nsleep 0.4\necho '{}'\n"
+	// `--warm` guards the SLEEP and not the touch, so the pre-flight below
+	// proves the body's first line runs and still returns at once
+	// (hangingBin's shape, watchhang_qa_test.go). runOnce's argv starts with
+	// the verb, so no real call can take this arm.
+	body := "#!/bin/sh\ntouch " + marker + "\n[ \"$1\" = --warm ] && exit 0\nsleep 0.4\necho '{}'\n"
 	if err := WriteExecutable(bin, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// THE PRE-FLIGHT, and it is not tidiness: macOS assesses a freshly
+	// written executable on its FIRST exec, and MEASURED on this box
+	// 2026-11-02 that first exec costs mean 164-714ms and worst 2.17s while
+	// a re-exec of the same path costs 6.3-8.8ms (ranger-base-aru4c,
+	// ranger-base-y9q7l). Unwarmed, the 3s waitForFile below spent most of
+	// its budget on Gatekeeper and reported it as "runOnce never started
+	// the child" — the same shape hangingBin and hangingGit already warm
+	// for. It is paid here, outside every timed window.
+	//
+	// BOTH HALVES ARE ASSERTED, because a pre-flight that silently ran the
+	// body would make the marker a witness to nothing and one that silently
+	// ran NOTHING would leave the deadline over a cold exec.
+	if out, err := exec.Command(bin, "--warm").Output(); err != nil {
+		t.Fatalf("the planted bd cannot be run at all (%v) — this test would measure nothing", err)
+	} else if len(out) > 0 {
+		t.Fatalf("the --warm run fell through its guard and ran the body (%q) — the marker below would then be its witness and not the child's", out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the --warm run never reached the body's first line (%v), so it warmed nothing and the deadline below is back over a cold exec", err)
+	}
+	// Cleared behind it, or waitForFile answers to the pre-flight's own touch.
+	if err := os.Remove(marker); err != nil {
 		t.Fatal(err)
 	}
 	b := Bd{Bin: bin}
@@ -385,6 +414,9 @@ func TestRunOnceHoldsWriteLockAcrossChild(t *testing.T) {
 		done <- err
 	}()
 
+	// Over a WARM exec (the pre-flight above): ~8ms of process start plus
+	// the touch, so 3s is the hang guard it reads as. Unwarmed it was a
+	// 0.83s margin over a 2.17s measured worst case.
 	waitForFile(t, marker, 3*time.Second)
 
 	store := bdWriteStore(storeDir)
@@ -420,6 +452,19 @@ func TestRunOnceDoesNotLockOnARead(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "bd")
 	if err := WriteExecutable(bin, []byte("#!/bin/sh\necho '[]'\n"), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	// The same pre-flight, for the reason spelled out in
+	// TestRunOnceHoldsWriteLockAcrossChild above — and this bound was the
+	// one BELOW the measurement: a 2.17s worst-case first exec blows the 2s
+	// select below, and what it would have printed is "a read verb waited on
+	// a write lock held by somebody else" — the defect under test, reported
+	// over code that is fine. This body has no side effect and holds no
+	// lock, so it needs no `--warm` guard: its own answer is the witness
+	// that the warm run reached it.
+	if out, err := exec.Command(bin, "--warm").Output(); err != nil {
+		t.Fatalf("the planted bd cannot be run at all (%v) — this test would measure nothing", err)
+	} else if strings.TrimSpace(string(out)) != "[]" {
+		t.Fatalf("the --warm run answered %q, not the body's own line, so it warmed nothing and the bound below is back over a cold exec", out)
 	}
 	b := Bd{Bin: bin}
 
