@@ -78,7 +78,14 @@ What it cannot do is tell **"the response is garbage"** from **"this provider
 stopped reporting one of the two windows I ask for."** Both are silence to
 `pct()`, and only one of them should void a reading that is otherwise sound.
 
-### Proposal — the smallest rule (NOT APPLIED; operator decides)
+### Proposal — the smallest rule (RULED AND APPLIED; see below)
+
+**A was ruled and shipped** (operator, 2026-11-01, on `ranger-base-z5snh`;
+`docs/notes.d/ranger-base-z5snh.md` is the decision and the pins). What
+follows is the proposal as this bead wrote it, kept as written: the "NOT
+APPLIED" it carried was true of this bead, which measured and proposed only.
+B was not chosen and is still live.
+
 
 ADR 0010 / ADR 0018 plan_guard semantics are the operator's, so this bead
 measured and proposed only. The decision is filed as `ranger-base-z5snh`

@@ -309,7 +309,47 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// zero value and came back as a SUCCESSFUL reading of 0% utilization.
 	// The guard opened, and plan_guard_blind_max never armed because the
 	// reads kept "succeeding": fail-open in the one direction the interlock
-	// must never fail. Absent is now an error, so the blind clock runs.
+	// must never fail. A body that yields NO window is an error, so the
+	// blind clock runs.
+	//
+	// NO window, and no longer "either window" (ranger-base-z5snh, operator
+	// ruling 2026-11-01). A window the endpoint stops reporting drops out of
+	// the reading; it voids the reading only when it was the last one.
+	// MEASURED 2026-11-01 on this instance: `five_hour` began arriving as
+	// JSON null — the whole object — on a 200 with a live credential, while
+	// `seven_day` kept sending a present, whole-percent utilization that
+	// MOVED across 82 minutes of reads. Returning the first pct error
+	// discarded that good window too, so the guard went blind over a window
+	// it could still read, with a threshold armed against it and no config
+	// able to reach the behaviour (pct ran for both windows whatever
+	// thresholds were set). The windows this provider reports are the
+	// provider's to change; what the harness may never get is a zero where
+	// a reading should be, and dropping a silent window hands it one window
+	// fewer rather than one wrong number.
+	//
+	// The rule, exactly: ABSENCE drops a window, a VALUE never does. A
+	// window that is missing, JSON null, or an object with no utilization is
+	// silence — it is not reported, so it is not a reading of it. A window
+	// that IS reported and implausible is drift and still fails the WHOLE
+	// read (ranger-base-cb0s, ranger-base-959m6, pct below), because an
+	// endpoint sending a number posse cannot believe has said nothing
+	// trustworthy about the windows beside it either. Only silence is
+	// absence.
+	//
+	// So ranger-base-65s's class is untouched and is now the whole of what
+	// holds the blind machine: `{}`, an error envelope, and a renamed
+	// `utilization` all yield zero windows and all still fail. The harness
+	// half needed no change — Dispatcher.unmatchedThresholds already names a
+	// `plan_guard_<window>:` aimed at a window this provider does not
+	// report, once per process.
+	//
+	// THE EXPOSURE THIS BUYS, named because it is real: a provider that
+	// silently stops reporting the TIGHTER window degrades the guard to the
+	// looser one, announced by that one stderr line and nothing else. It is
+	// ADR 0010's "dollars and window percentage are different quantities"
+	// residue one notch over — a brake measuring a different window rather
+	// than a different quantity — and it is the operator's accepted trade,
+	// not this file's to re-decide.
 	//
 	// A key that IS present is not thereby plausible (ranger-base-cb0s): a
 	// utilization outside 0..100 — negative, or over 100 — decodes as a
@@ -341,41 +381,89 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// on an exhausted account, so the guard runs one pass at the exact top
 	// — every value between arrived fractional and was refused first, so
 	// the blind machine was already in force by then.
-	five, err := body.FiveHour.pct(anthropicWindow5h)
+	//
+	// Both windows are read before either is judged, deliberately: a value
+	// error anywhere fails the read whichever window carries it, so there is
+	// no order in which a dropped window can hide one.
+	five, haveFive, err := body.FiveHour.pct(anthropicWindow5h)
 	if err != nil {
 		return nil, err
 	}
-	seven, err := body.SevenDay.pct(anthropicWindow7d)
+	seven, haveSeven, err := body.SevenDay.pct(anthropicWindow7d)
 	if err != nil {
 		return nil, err
 	}
 	// Tightest first: the guard trips on the first window over its
-	// threshold, and the 5h window is the one the operator feels.
-	return PlanUsage{
-		{Name: anthropicWindow5h, Pct: five},
-		{Name: anthropicWindow7d, Pct: seven},
-	}, nil
+	// threshold, and the 5h window is the one the operator feels. A window
+	// the endpoint did not report is not here at all — never here at zero,
+	// which is the value the interlock must never be handed for a window it
+	// has no reading of.
+	u := make(PlanUsage, 0, 2)
+	if haveFive {
+		u = append(u, Window{Name: anthropicWindow5h, Pct: five})
+	}
+	if haveSeven {
+		u = append(u, Window{Name: anthropicWindow7d, Pct: seven})
+	}
+	if len(u) == 0 {
+		// The last window's silence is the whole body's silence, and this is
+		// ranger-base-65s's error unchanged in class and in consequence: nil
+		// windows, "not the expected JSON", the blind clock arms. It names
+		// both windows it asked for, because what the operator needs is the
+		// vocabulary this adapter expects against whatever the endpoint has
+		// started sending instead.
+		return nil, Die("usage response is not the expected JSON: no utilization for any window (%s, %s)",
+			anthropicWindow5h, anthropicWindow7d)
+	}
+	return u, nil
 }
 
 // anthropicWindowBody is one window as the endpoint reports it. Both the
 // window and its utilization are pointers so that MISSING and 0.0 are
 // different values all the way down: a key that is present and zero is a
 // legitimate reading (a fresh window really is 0% used), a key that is not
-// there at all is no reading.
+// there at all is no reading — and since ranger-base-z5snh those two travel
+// all the way out, the second as a window that is not in the returned
+// PlanUsage rather than as a window at 0%.
 type anthropicWindowBody struct {
 	Utilization *float64 `json:"utilization"`
 }
 
-// pct is the window's utilization, or the error naming why it is not one.
-// Nil-receiver safe: the absent window and the present-but-empty one are
-// the same answer. window names which one, for the error.
+// pct is the window's utilization, whether the endpoint reported one at
+// all, and the error naming a value that is not a percent.
+//
+// THREE answers, not two, and the middle one is ranger-base-z5snh's whole
+// change (operator ruling 2026-11-01):
+//
+//	(v, true, nil)    the endpoint reported this window: a reading.
+//	(0, false, nil)   the endpoint reported NOTHING for it: absence. Not an
+//	                  error and not a 0% reading — Read drops the window,
+//	                  and fails only if it was the last one.
+//	(0, false, err)   the endpoint reported a value posse cannot believe:
+//	                  drift. Read returns it and the WHOLE reading is void.
+//
+// Nil-receiver safe, and the three silences are one answer: the window key
+// missing, the window key present as JSON null, and the window object
+// present with no `utilization` are all "this endpoint did not report this
+// window". It cannot be distinguished from the inside and must not be: the
+// provider's ways of saying nothing are its own, and a reading of 0% is the
+// one thing none of them means. window names which window, for the error.
+//
+// Why absence drops the window while a bad VALUE voids the read. Silence is
+// about one window and the endpoint is entitled to it — a plan that no
+// longer has a five-hour window reports no five-hour window, which is a
+// fact and not a fault. An implausible number is about the ENDPOINT: a body
+// sending something posse cannot read as a percent has given no reason to
+// trust the numbers beside it, so it arms the blind clock on the lot. That
+// asymmetry is the rule, stated once: only silence is absence.
 //
 // 0..100 inclusive is the plausible range for a percent: 0 is a fresh
 // window and 100 an exhausted one, both legitimate readings. Outside that
 // window — negative, or over 100 — a value is not a percent at all, and
 // reading a negative one as usage silently defeats every plan_guard
-// threshold, which is worse than the absent-key case this guards
-// alongside: there the shape check at least has a chance to fire.
+// threshold, which is worse than the absent-window case this guards
+// alongside: there the window leaves the reading and a configured
+// threshold for it is named on stderr, rather than passing under one.
 //
 // Inside that range, the second check is the provider's grammar rather
 // than arithmetic: this endpoint reports utilization as a WHOLE percent
@@ -386,16 +474,16 @@ type anthropicWindowBody struct {
 // refused as shape drift, which arms the blind clock, rather than rescaled,
 // which would be a guess. The value is never adjusted, only believed or
 // refused.
-func (w *anthropicWindowBody) pct(window string) (float64, error) {
+func (w *anthropicWindowBody) pct(window string) (float64, bool, error) {
 	if w == nil || w.Utilization == nil {
-		return 0, Die("usage response is not the expected JSON: no %s utilization", window)
+		return 0, false, nil
 	}
 	v := *w.Utilization
 	if v < 0 || v > 100 {
-		return 0, Die("usage response is not the expected JSON: %s utilization %g is not a percent", window, v)
+		return 0, false, Die("usage response is not the expected JSON: %s utilization %g is not a percent", window, v)
 	}
 	if v != math.Trunc(v) {
-		return 0, Die("usage response is not the expected JSON: %s utilization %g is not a whole percent", window, v)
+		return 0, false, Die("usage response is not the expected JSON: %s utilization %g is not a whole percent", window, v)
 	}
-	return v, nil
+	return v, true, nil
 }

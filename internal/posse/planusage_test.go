@@ -458,44 +458,179 @@ func TestPlanReaderRequest(t *testing.T) {
 	}
 }
 
-// A 200 whose body is valid JSON of the WRONG SHAPE is not a reading
+// A 200 whose body yields NO WINDOW AT ALL is not a reading
 // (ranger-base-65s). Decoded into values, `{}` — or an error envelope from
 // a middlebox, or a renamed key after an endpoint change — came back as a
 // successful reading of 0% utilization: the guard opened and
 // plan_guard_blind_max never armed, because the reads kept "succeeding".
-// The last row is the line this must not cross: a window present and 0.0 is
-// a fresh window, and stays a legitimate reading.
+//
+// "No window at all" and no longer "either window" (ranger-base-z5snh,
+// operator ruling 2026-11-01): a window the endpoint stops reporting drops
+// out of the reading, so these rows are now the WHOLE of what holds the ADR
+// 0018 blind machine, and that is why each one is here explicitly rather
+// than riding on the first `pct` error. `{}`, the error envelope and the
+// renamed `utilization` all reach the zero-window refusal by a different
+// route — no keys, no recognised keys, and two recognised window objects
+// that report nothing — and all three must still fail. The rows that MOVED
+// under that ruling are in TestPlanReaderUnreportedWindowDropsOut below;
+// the last subtest here is the line neither test may cross.
 func TestPlanReaderShapeDriftIsNotAReading(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		body string
-		want string // the window named in the error, or "" for a reading
 	}{
-		{"empty object", `{}`, "5h"},
-		{"five_hour missing", `{"seven_day":{"utilization":12}}`, "5h"},
-		{"seven_day missing", `{"five_hour":{"utilization":12}}`, "7d"},
-		{"utilization renamed", `{"five_hour":{"pct":12},"seven_day":{"pct":12}}`, "5h"},
-		{"error envelope", `{"error":{"type":"not_found","message":"no such endpoint"}}`, "5h"},
-		{"window null", `{"five_hour":null,"seven_day":{"utilization":0}}`, "5h"},
-		{"utilization null", `{"five_hour":{"utilization":null},"seven_day":{"utilization":0}}`, "5h"},
-		{"both present at zero", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`, ""},
+		{"empty object", `{}`},
+		{"utilization renamed", `{"five_hour":{"pct":12},"seven_day":{"pct":12}}`},
+		{"error envelope", `{"error":{"type":"not_found","message":"no such endpoint"}}`},
+		{"both windows null", `{"five_hour":null,"seven_day":null}`},
+		{"both windows present, neither reporting", `{"five_hour":{},"seven_day":{}}`},
+		{"both utilizations null", `{"five_hour":{"utilization":null},"seven_day":{"utilization":null}}`},
+		{"one window null, the other renamed", `{"five_hour":null,"seven_day":{"pct":33}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ps := newPlanServer(t, 0, 0)
 			ps.body = tc.body
 			u, err := ps.reader().Read()
-			if tc.want == "" {
-				if err != nil {
-					t.Fatalf("a window present at 0.0 is a reading: %v", err)
-				}
-				if win(u, "5h") != 0 || win(u, "7d") != 0 {
-					t.Errorf("parsed %+v, want both windows at 0", u)
-				}
-				return
-			}
 			if err == nil {
-				t.Fatalf("a 200 of the wrong shape read as %+v — the blind clock never arms", u)
+				t.Fatalf("a 200 yielding no window read as %+v — the blind clock never arms", u)
+			}
+			if u != nil {
+				t.Errorf("a failed read must hand back no windows, got %+v", u)
+			}
+			// The error CLASS is what the blind machine reads, and it is
+			// unchanged by ranger-base-z5snh: same sentence, same nil
+			// windows, same clock.
+			if !strings.Contains(err.Error(), "not the expected JSON") {
+				t.Errorf("error = %q, want the expected-JSON failure the blind machine reads", err)
+			}
+			// And it names the vocabulary this adapter asked for — both
+			// windows, because when none of them arrived the useful fact is
+			// what was expected, not which pointer was checked first.
+			for _, name := range []string{"5h", "7d"} {
+				if !strings.Contains(err.Error(), name) {
+					t.Errorf("error = %q, want it to name the %s window it asked for", err, name)
+				}
+			}
+		})
+	}
+	// The line this must not cross, and the one row that proves a window
+	// present at 0.0 is believed at its face value: a fresh window really is
+	// 0% used, and that is a legitimate reading, not a silence.
+	t.Run("both present at zero is a reading", func(t *testing.T) {
+		ps := newPlanServer(t, 0, 0)
+		ps.body = `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`
+		u, err := ps.reader().Read()
+		if err != nil {
+			t.Fatalf("a window present at 0.0 is a reading: %v", err)
+		}
+		if win(u, "5h") != 0 || win(u, "7d") != 0 {
+			t.Errorf("parsed %+v, want both windows at 0", u)
+		}
+	})
+}
+
+// A window this provider STOPS REPORTING drops out of the reading instead of
+// voiding it (ranger-base-z5snh, operator ruling 2026-11-01, from the
+// measurement on ranger-base-dkda2).
+//
+// MEASURED 2026-11-01 on this instance: `five_hour` began arriving as JSON
+// null — the whole object — on a 200 with a live credential, while
+// `seven_day` kept sending a present, whole-percent utilization that MOVED
+// across 82 minutes of reads at a 2-minute cadence. `Read` returned the
+// first `pct` error, so that good window was discarded with the silent one
+// and the guard went blind over a window it could still read, with a
+// threshold armed against it. No config reached it: `pct` ran for both
+// windows whatever thresholds were set.
+//
+// The rule these rows pin: ABSENCE drops a window. The three spellings of
+// silence are one answer — the key missing, the key present as JSON null,
+// and the window object present with no `utilization` — because the
+// provider's ways of saying nothing are its own, and a reading of 0% is the
+// one thing none of them means. The dropped window must be ABSENT from the
+// result, never present at zero: `win` answers -1 for a window the reading
+// does not carry, and that distinction is the whole point of the change.
+func TestPlanReaderUnreportedWindowDropsOut(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		body string
+		gone string  // the window the endpoint stopped reporting
+		kept string  // the one it still reports
+		pct  float64 // and at what
+	}{
+		// The live shape, as captured. It was a pinned 5h ERROR before this
+		// ruling, and moving it is the bead.
+		{"five_hour null, the measured shape", `{"five_hour":null,"seven_day":{"utilization":33}}`, "5h", "7d", 33},
+		{"five_hour missing", `{"seven_day":{"utilization":12}}`, "5h", "7d", 12},
+		{"five_hour present, utilization null", `{"five_hour":{"utilization":null},"seven_day":{"utilization":0}}`, "5h", "7d", 0},
+		{"five_hour present, no utilization key", `{"five_hour":{"resets_at":"2026-11-05T19:59:59Z"},"seven_day":{"utilization":33}}`, "5h", "7d", 33},
+		// And the same rule the other way round: nothing here privileges the
+		// tighter window, so the looser one going silent leaves a sighted
+		// guard on the tighter one.
+		{"seven_day missing", `{"five_hour":{"utilization":12}}`, "7d", "5h", 12},
+		{"seven_day null", `{"five_hour":{"utilization":12},"seven_day":null}`, "7d", "5h", 12},
+		{"seven_day present, no utilization key", `{"five_hour":{"utilization":12},"seven_day":{"resets_at":"2026-11-05T19:59:59Z"}}`, "7d", "5h", 12},
+		// A surviving window at 0 is still a reading, so a dropped window
+		// beside it must not be mistaken for the same thing.
+		{"five_hour null, seven_day at zero", `{"five_hour":null,"seven_day":{"utilization":0}}`, "5h", "7d", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := newPlanServer(t, 0, 0)
+			ps.body = tc.body
+			u, err := ps.reader().Read()
+			if err != nil {
+				t.Fatalf("one silent window must not void a reading of %s: %v", tc.kept, err)
+			}
+			if len(u) != 1 {
+				t.Fatalf("reading = %+v, want only the %s window", u, tc.kept)
+			}
+			if got := win(u, tc.kept); got != tc.pct {
+				t.Errorf("%s = %v, want %v (reading %+v)", tc.kept, got, tc.pct, u)
+			}
+			// -1 is `win`'s answer for a window the reading does not carry.
+			// A 0 here would be the interlock handed a zero for a window it
+			// has no reading of, which is the failure this whole file exists
+			// to prevent.
+			if got := win(u, tc.gone); got != -1 {
+				t.Errorf("%s is not reported, so it must be absent from the reading, got %v in %+v", tc.gone, got, u)
+			}
+		})
+	}
+}
+
+// A dropped window does not rescue a bad VALUE, and that asymmetry is the
+// rule (ranger-base-z5snh): only silence is absence. A window that IS
+// reported and implausible is drift and still fails the WHOLE read
+// (ranger-base-cb0s, ranger-base-959m6), because an endpoint sending a
+// number posse cannot believe has said nothing trustworthy about the
+// windows beside it either.
+//
+// These rows are the cross-product the ruling's "every value check is
+// unchanged" turns on: the silent window is the one that would have errored
+// FIRST under the old code, so without this test a reading could come back
+// carrying one window and a value nobody checked.
+func TestPlanReaderDroppedWindowDoesNotRescueABadValue(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		body  string
+		want  string // the window the error must name
+		value string // and the offending value, as the error must quote it
+	}{
+		{"five_hour null, seven_day negative", `{"five_hour":null,"seven_day":{"utilization":-1}}`, "7d", "-1"},
+		{"five_hour null, seven_day over 100", `{"five_hour":null,"seven_day":{"utilization":140}}`, "7d", "140"},
+		{"five_hour null, seven_day 0..1-scaled", `{"five_hour":null,"seven_day":{"utilization":0.93}}`, "7d", "0.93"},
+		{"five_hour missing, seven_day fractional", `{"seven_day":{"utilization":0.5}}`, "7d", "0.5"},
+		{"seven_day null, five_hour over 100", `{"five_hour":{"utilization":140},"seven_day":null}`, "5h", "140"},
+		{"seven_day missing, five_hour negative", `{"five_hour":{"utilization":-5}}`, "5h", "-5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := newPlanServer(t, 0, 0)
+			ps.body = tc.body
+			u, err := ps.reader().Read()
+			if err == nil {
+				t.Fatalf("an implausible value is drift however many windows went silent beside it, read as %+v", u)
 			}
 			if u != nil {
 				t.Errorf("a failed read must hand back no windows, got %+v", u)
@@ -503,7 +638,59 @@ func TestPlanReaderShapeDriftIsNotAReading(t *testing.T) {
 			if !strings.Contains(err.Error(), "not the expected JSON") || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error = %q, want it to name %q and the expected-JSON failure", err, tc.want)
 			}
+			if !strings.Contains(err.Error(), tc.value) {
+				t.Errorf("error = %q, want it to quote the offending value %s", err, tc.value)
+			}
 		})
+	}
+}
+
+// The whole point of the ruling, through the dispatcher and the shipped
+// adapter rather than at the seam: with the tighter window silent, the guard
+// is SIGHTED on the one that still reads — it trips on it — and the
+// threshold aimed at the silent window is named once instead of disappearing
+// (ranger-base-z5snh). The harness half needed no change for this;
+// Dispatcher.unmatchedThresholds already existed for exactly a
+// `plan_guard_<window>:` the provider reports no window for.
+func TestPlanGuardSightedOnTheSurvivingWindow(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	ps := newPlanServer(t, 0, 0)
+	// The measured SHAPE, with the surviving window over its threshold. The
+	// numbers are this file's usual fixture pair and not any box's own
+	// guard values (ADR 0024 D2 check 3) — the shape is what was measured,
+	// and the arithmetic of one window against one threshold needs no
+	// particular numbers to be the arithmetic.
+	ps.body = `{"five_hour":null,"seven_day":{"utilization":90}}`
+	d, errb := planDispatcher(t, b, ps)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := planRepo(t, `[{"id":"a-1","title":"t","labels":["go"]}]`,
+		`[{"id":"a-1","title":"t","status":"closed"}]`)
+	planConfig(t, b.App, repo, "plan_guard_5h: 70\nplan_guard_7d: 85")
+	idleClaude(t, fake)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("the surviving window is over its threshold and must gate: %d dispatched\n%s", n, dispatcherOut(d))
+	}
+	if out := dispatcherOut(d); !strings.Contains(out, "plan 7d at 90%") {
+		t.Errorf("the trip must name the window it read:\n%s", out)
+	}
+	// Not blind: the reading arrived, so no clock is running and nothing in
+	// the ADR 0018 machine is involved.
+	if s := errb.String(); strings.Contains(s, "blind") {
+		t.Errorf("a reading arrived — the guard is sighted, not blind: %q", s)
+	}
+	// And the cost of the degraded reading is said out loud, once.
+	want := "plan guard: config plan_guard_5h: this provider reports no window by that name (it reports 7d) — that threshold gates nothing"
+	if !strings.Contains(errb.String(), want) {
+		t.Errorf("want %q on stderr, got %q", want, errb.String())
+	}
+	if strings.Contains(errb.String(), "plan_guard_7d") {
+		t.Errorf("the threshold that DID match must not be complained about: %q", errb.String())
 	}
 }
 
