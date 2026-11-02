@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -491,5 +492,222 @@ func TestQAConstitutionClassMatchFoldsNormalizationRunes(t *testing.T) {
 				t.Errorf("belt rendering %q: above=%v", hit[0], c.above)
 			}
 		})
+	}
+}
+
+// constitutionResolveWiderCandidates is the derivation constitutionResolveRunes
+// is NOT: every non-ASCII rune that reaches an ASCII string through
+// COMPATIBILITY equivalence (NFKC) and the full case fold, minus the rows the
+// table already carries.
+//
+// WHY A SECOND DERIVATION, and why this one. The table's own derivation is
+// APFS's equivalence as measured — canonical normalization plus the full case
+// fold — so a pin built on it can only ever ask whether Go agrees with Go.
+// The question the volume alone can answer is whether its equivalence is
+// WIDER than that, and Unicode's next-wider standard relation is
+// compatibility equivalence. That is where every lookalike spelling of an
+// ASCII name lives: the fullwidth forms (U+FF53 for "s"), the circled and
+// parenthesized letters, the superscripts, the roman numerals, the squared
+// abbreviations whose compatibility form is several ASCII characters. A
+// volume that folded any of them would open a class member under a spelling
+// no row in the table can say, which is the shape of every bead in this
+// chain.
+func constitutionResolveWiderCandidates() map[rune]string {
+	fold := cases.Fold()
+	// The shipped table, never constitutionResolveDerived(): subtracting the
+	// DERIVATION would put every rune the derivation produces outside this
+	// set, so a row deleted from constitutionResolveRunes would leave the
+	// boundary half green over a spelling this volume really does open.
+	// MUTATION-CHECKED both ways (ranger-base-3pm6b): dropping the U+212A row
+	// survives the derivation-keyed version of this line and reds the
+	// table-keyed one, naming the KELVIN SIGN as a live escape.
+	table := map[rune]bool{}
+	for _, f := range constitutionResolveRunes {
+		table[f.R] = true
+	}
+	got := map[rune]string{}
+	for r := rune(0x80); r <= unicode.MaxRune; r++ {
+		if !utf8.ValidRune(r) {
+			continue
+		}
+		if table[r] {
+			continue
+		}
+		s := norm.NFC.String(fold.String(norm.NFKC.String(string(r))))
+		if s == "" {
+			continue
+		}
+		ascii := true
+		for i := 0; i < len(s); i++ {
+			if s[i] >= 0x80 {
+				ascii = false
+				break
+			}
+		}
+		if ascii {
+			got[r] = s
+		}
+	}
+	return got
+}
+
+// constitutionFoldVolume returns a directory to probe, or skips. Two
+// conditions, each naming the volume it did not get rather than passing
+// vacuously (ranger-base-99gww's rule for a pin whose subject is the MOUNT):
+// the premise is APFS's, and on a case-SENSITIVE volume no name resolves to
+// another, so there is nothing there for the fold to be a model of.
+func constitutionFoldVolume(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skipf("the premise under test is APFS's name equivalence and this is %s", runtime.GOOS)
+	}
+	dir := t.TempDir()
+	at := filepath.Join(dir, "constitutionvolumeprobe")
+	if err := os.WriteFile(at, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lower, err := os.Stat(at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upper, err := os.Stat(filepath.Join(dir, "CONSTITUTIONVOLUMEPROBE"))
+	if err != nil || !os.SameFile(lower, upper) {
+		t.Skipf("%s is on a case-SENSITIVE volume: no spelling resolves to another one here, so the fold models nothing measurable", dir)
+	}
+	return dir
+}
+
+// constitutionFoldFixture makes a file this volume holds under the ASCII name
+// ascii, and returns what names it. The name is the MIDDLE of "x<ascii>y":
+// several compatibility targets are not legal names on their own — "." and
+// "/" both occur among them — and a wrapper gives every target one spelling
+// that is.
+func constitutionFoldFixture(dir, ascii string) (os.FileInfo, error) {
+	at := filepath.Join(dir, filepath.FromSlash("x"+ascii+"y"))
+	if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(at, []byte("the fold's subject\n"), 0o644); err != nil {
+		return nil, err
+	}
+	return os.Stat(at)
+}
+
+// TestQAConstitutionResolveTableIsThisVolumesEquivalence EXECUTES the premise
+// every other arm of the fold rests on, against the subject rather than
+// against a model of it.
+//
+// THE GAP (ranger-base-3pm6b, from ranger-base-2g820's verify of
+// ranger-base-l717c). constitutionResolveRunes is DERIVED, and every pin over
+// it re-derives it the same way — NFC, cases.Fold, NFC — so the sh sed
+// render, the Go land belt, the closed-set pin and the sufficiency pin all
+// agree with the table whenever the table agrees with GO, whatever the
+// filesystem does. Three beads in this chain were one defect:
+// ranger-base-y52v6, ranger-base-qu8wn and ranger-base-l717c each found a
+// model of the volume's name equivalence narrower than the equivalence, each
+// fix widened the model, and none of them executed the premise — so each
+// reading found it again. The premise was carried as prose, correct and
+// dated, and prose does not red.
+//
+// BOTH DIRECTIONS, and a failure means opposite things.
+//
+//   - A ROW THAT DOES NOT RESOLVE says the table is wider than this volume.
+//     The wall stays shut — a fold wider than the equivalence refuses
+//     spellings nobody could have used — but the table's claim about the
+//     volume is then false, and the next bead reasoning from it inherits a
+//     wrong measurement.
+//   - A CANDIDATE THAT RESOLVES says the wall is OPEN: a spelling reaches a
+//     class member's name and no row in the table folds it, which is exactly
+//     the landing ranger-base-l717c measured.
+//
+// WHAT THIS DOES NOT COVER. The candidate set is still derived, from a
+// strictly wider model, so this arm reds the day the volume's equivalence
+// widens as far as COMPATIBILITY equivalence and not the day it widens past
+// that. The total reading — every rune 0x80..0x10FFFF against one fixture per
+// graphic ASCII character and per a-z string of length 2 and 3 — is
+// ranger-base-l717c's, dated, and ADR 0015 section 3 carries it as the
+// obligation an OS bump re-pays. What is no longer prose is everything inside
+// compatibility equivalence, which is where a lookalike spelling of a class
+// member would be found.
+//
+// MEASURED 2026-11-02 (ranger-base-3pm6b, Darwin 25.6, case-insensitive APFS,
+// go1.26.10, golang.org/x/text v0.43.0): 1,392 candidates, ZERO of them
+// resolving; all 13 rows resolving; U+0130 opening nothing. 0.41s for the
+// test, both derivations over 1.1M runes included.
+//
+// MUTATION-CHECKED, and docs/notes.d/ranger-base-3pm6b.md has the four
+// mutants. One of them SURVIVED the first draft and is why the candidate set
+// subtracts the shipped table rather than the derivation.
+func TestQAConstitutionResolveTableIsThisVolumesEquivalence(t *testing.T) {
+	t.Parallel()
+	dir := constitutionFoldVolume(t)
+	cands := constitutionResolveWiderCandidates()
+	// Every fixture BEFORE any probe, so each probe is asked against the
+	// whole name set: a candidate resolving to some OTHER row's target is
+	// still a spelling that opens an ASCII name, and must be caught.
+	fixture := map[string]os.FileInfo{}
+	unnameable := map[string]error{}
+	for _, want := range cands {
+		if _, done := fixture[want]; done {
+			continue
+		}
+		fi, err := constitutionFoldFixture(dir, want)
+		if err != nil {
+			// A target this volume cannot hold is a target no class member
+			// can be named through, so it is not a hazard — counted, not
+			// fatal, and the floor below keeps the count honest.
+			unnameable[want] = err
+			continue
+		}
+		fixture[want] = fi
+	}
+	for _, f := range constitutionResolveRunes {
+		if _, done := fixture[f.ASCII]; done {
+			continue
+		}
+		fi, err := constitutionFoldFixture(dir, f.ASCII)
+		if err != nil {
+			t.Fatalf("this volume cannot hold a file named through %q, which constitutionResolveRunes says U+%04X opens: %v", f.ASCII, f.R, err)
+		}
+		fixture[f.ASCII] = fi
+	}
+
+	// FORWARD: the table says the volume resolves these 13. Identity, never
+	// existence — the table names WHICH string, so the question is whether
+	// the two names are one file.
+	for _, f := range constitutionResolveRunes {
+		probe, err := os.Stat(filepath.Join(dir, "x"+string(f.R)+"y"))
+		if err != nil {
+			t.Errorf("constitutionResolveRunes says U+%04X opens %q, and on this volume it opens nothing (%v) — the table is WIDER than this volume's equivalence and its measurement is stale, though the wall stays shut", f.R, f.ASCII, err)
+			continue
+		}
+		if !os.SameFile(fixture[f.ASCII], probe) {
+			t.Errorf("U+%04X opens a file on this volume that is not the one named through %q — the table names the wrong target", f.R, f.ASCII)
+		}
+	}
+
+	// BOUNDARY: nothing outside the table may open an ASCII name.
+	probed := 0
+	for r, want := range cands {
+		if _, ok := fixture[want]; !ok {
+			continue
+		}
+		probed++
+		if _, err := os.Stat(filepath.Join(dir, "x"+string(r)+"y")); err == nil {
+			t.Errorf("U+%04X opens an ASCII-named file on this volume (its compatibility form is %q) and constitutionResolveRunes has no row for it — both arms of the wall leave this spelling unfolded, so it reaches a class member under a name neither reader compares", r, want)
+		}
+	}
+	if probed < 1000 {
+		t.Errorf("only %d of %d compatibility candidates were probed (1,392 probed on 2026-11-02) — the boundary half has gone vacuous; unnameable targets: %v", probed, len(cands), unnameable)
+	}
+
+	// The rig can say NO over a rune that is not a candidate at all: U+0130
+	// folds to "i" plus a combining dot and is the negative control every
+	// measurement in this chain has carried.
+	if _, err := constitutionFoldFixture(dir, "i"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "xİy")); err == nil {
+		t.Errorf("U+0130 opens an ASCII-named file on this volume — the negative control every bead in this chain measured has flipped, and the whole derivation is now a guess")
 	}
 }

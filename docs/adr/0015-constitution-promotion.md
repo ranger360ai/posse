@@ -570,6 +570,42 @@ the same way twice:
   is ASCII and its own fold (pinned), so the folded member the sh arm
   prints is the member's true spelling.
 
+  *Amended 2026-11-02 (ranger-base-3pm6b, from ranger-base-2g820's
+  verify of ranger-base-l717c, measured).* **The premise is executed
+  now, not only derived.** Two corrections, and the decision does not
+  move. First the table: the paragraph above says "the measured four",
+  and since ranger-base-l717c (fixed by ranger-base-uvcj8) it is
+  **thirteen** rows carrying ASCII STRINGS rather than bytes, because
+  APFS's FULL case fold lengthens — U+00DF opens `ss` and U+FB03 opens
+  `ffi`, and `poße/config.yaml` landed past both readers before the
+  table could say so. Second the premise: every arm of the fold — the sh
+  sed render, the Go land belt, the closed-set pin and the sufficiency
+  pin — re-derived the table from Go's own Unicode tables, so the whole
+  defence agreed with the table whenever the table agreed with GO,
+  whatever the volume did. Three beads in this chain were one defect
+  (ranger-base-y52v6, ranger-base-qu8wn, ranger-base-l717c): a model of
+  the volume's name equivalence narrower than the equivalence, widened
+  three times and never executed, so each reading found it again.
+  `TestQAConstitutionResolveTableIsThisVolumesEquivalence` reads the
+  subject: it opens one fixture per table row under the rune's spelling
+  (**MEASURED** 2026-11-02, Darwin 25.6, case-insensitive APFS: all 13
+  resolve, by identity and not existence), and it opens one per rune
+  reaching ASCII through COMPATIBILITY equivalence (NFKC) that the table
+  does NOT carry — **1,392 of them, zero resolving**, which is the one
+  class that could falsify the premise and the one a `cases.Fold`
+  derivation cannot produce. It skips off darwin and on a case-sensitive
+  volume, each with a line naming the volume it did not get
+  (ranger-base-99gww's rule for a pin whose subject is the mount).
+  **The residual obligation, narrowed:** the candidate set is still
+  derived, from a strictly wider model, so the arm reds the day the
+  volume's equivalence widens as far as compatibility equivalence and
+  not the day it widens past that. The TOTAL reading — every rune
+  0x80..0x10FFFF against one fixture per graphic ASCII character and per
+  a-z string of length 2 and 3 — stays ranger-base-l717c's, dated, and
+  an OS bump re-pays it. What is no longer prose is everything inside
+  compatibility equivalence, which is where a lookalike spelling of a
+  class member would be found.
+
   *Fourth — the launcher's land-path belt*
   (`MergeSessionWork`, `internal/posse/worktree.go`). The launcher
   refuses to fast-forward a session branch whose merge-base..HEAD
