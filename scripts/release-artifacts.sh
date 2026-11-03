@@ -62,11 +62,30 @@ if [ -z "$VERSION" ]; then
 		exit 1
 	}
 fi
+# ANCHORED, WHOLE-STRING, and it has to be (ranger-base-ctath). `case $VERSION
+# in v[0-9]*)` on its own is a PREFIX check — the exact shape release.yml's own
+# guard was hardened away from, which passed `v0.3.0$(id)`, `v9;curl evil` and
+# `v1 -X evil=1` — and since ranger-base-ctath this value is interpolated into
+# the `-ldflags` STRING of the build below, where go splits on spaces and a
+# space in the tag would become another linker flag. Same allowlist release.yml
+# applies to the tag it passes here (`^v[0-9]+(\.[0-9]+)*$`, ranger-base-u9at),
+# spelled in POSIX sh because this script's shebang is /bin/sh and `[[ =~ ]]` is
+# bash. Widen it deliberately if a release ever needs a pre-release suffix; never
+# by dropping the second case.
 case $VERSION in
 v[0-9]*) ;;
 *) echo "release-artifacts: --version must look like vX.Y.Z, got: $VERSION" >&2; exit 2 ;;
 esac
 bare=${VERSION#v}
+# `[!0-9.]` refuses every byte that is not a digit or a dot — space, `$`, `;`,
+# a backtick, a newline — and the other two patterns refuse the malformed dot
+# shapes `v1..2` and `v1.` that the first case would accept.
+case $bare in
+*[!0-9.]* | *..* | *.)
+	echo "release-artifacts: --version must look like vX.Y.Z, got: $VERSION" >&2
+	exit 2
+	;;
+esac
 
 # The preflight described in the header. Read from the COMMIT, not the working
 # tree: someone else's uncommitted app.go edit must not decide what ships.
@@ -310,6 +329,25 @@ bottle_from() { # $1=stage dir $2=goos $3=goarch
 # CGO off everywhere. It is what makes one machine able to build all four
 # targets, and it is what makes the linux tarballs work on a musl box as well
 # as a glibc one — verified cross-compiling all four from darwin/arm64.
+#
+# TWO STAMPS, AND THE SECOND ONE IS WHAT MAKES THIS A RELEASE
+# (ranger-base-ctath). `.Build=$sha` alone is byte-identical to what a dev
+# `make build` of the same commit stamps, so a release binary could not tell a
+# reader which of the two it was — and posse's wall-freshness reading is
+# defined against a LOCAL checkout, which a brew install does not have. It
+# therefore said "UNKNOWN whether this binary carries the wall renders that
+# landed" on every release install, permanently. `.ReleaseTag=$VERSION` is the
+# identity it was missing: the walls a release renders are the tag's by
+# construction, and internal/posse/releasestamp.go turns that into a third,
+# non-UNKNOWN state. NOTHING ELSE IN THE TREE SETS IT — not the Makefile, not
+# scripts/clean-build.sh, not a cage build — which is the whole of what keeps a
+# dev build out of that state, so do not add it to another build line.
+#
+# `-X` on a symbol that does not exist is SILENT (exit 0, variable keeps its
+# default), so this spelling is pinned against the Go name it stamps:
+# internal/treepins/releasestamp_qa_test.go compares it to
+# internal/posse.ReleaseTagSymbol, and cmd/posse's arm builds through that
+# constant and reads the state back.
 for platform in $PLATFORMS; do
 	goos=${platform%/*}
 	goarch=${platform#*/}
@@ -317,7 +355,7 @@ for platform in $PLATFORMS; do
 	mkdir -p "$stage"
 	(cd "$src" && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" "${GOBIN:-go}" build \
 		-trimpath \
-		-ldflags "-s -w -X github.com/ranger360ai/posse/internal/posse.Build=$sha" \
+		-ldflags "-s -w -X github.com/ranger360ai/posse/internal/posse.Build=$sha -X github.com/ranger360ai/posse/internal/posse.ReleaseTag=$VERSION" \
 		-o "$stage/posse" ./cmd/posse)
 	for doc in LICENSE README.md INSTALL.md; do
 		[ -f "$src/$doc" ] && cp "$src/$doc" "$stage/" || :

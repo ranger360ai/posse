@@ -38,6 +38,17 @@ package posse
 // anything, and rendering that abstention as silence is how the gap above
 // stayed open through three closes that said "reaches a seat at its next
 // launch".
+//
+// WITH ONE ANSWER THAT IS NEITHER (ranger-base-ctath). A RELEASE install has
+// no checkout to compare against and never will, so the UNKNOWN above was
+// permanent there rather than unreadable: `posse gates | head -1` said it on
+// every release, forever. A release binary carries the tag it was cut from
+// now (releasestamp.go), and the walls it renders are that tag's by
+// construction — a third state, said in its own sentence, which claims
+// nothing about whether a newer release exists because reading that would be
+// a network call on a launch path. Everything else in this file is unchanged:
+// a known lag is still counted, and a dirty or unnamed build still reads
+// UNKNOWN.
 
 import (
 	"fmt"
@@ -147,6 +158,15 @@ type WallRenderer struct {
 	Why          string
 	CheckCommits []string
 	CheckWhy     string
+	// Release is what the binary knows about itself when the lag could not
+	// be read at all: on a release install there is no checkout to compare
+	// against and never will be, and the walls are that tag's
+	// (releasestamp.go, ranger-base-ctath). Read in every case so one
+	// reading carries both answers, and consulted only where the lag
+	// abstains — a release binary on a box that DOES hold its commit is
+	// counted like any other, because the lag is the richer answer and the
+	// release state must never mask one.
+	Release ReleaseIdentity
 }
 
 // ReadWallRenderer narrows a lag reading to the wall-rendering commits in it
@@ -155,7 +175,7 @@ type WallRenderer struct {
 // nothing to list, and asking anyway would put two forks in the watch pass's
 // budget for answers that are always empty.
 func ReadWallRenderer(l LauncherLag) WallRenderer {
-	w := WallRenderer{Lag: l}
+	w := WallRenderer{Lag: l, Release: Release()}
 	if !l.Known() || l.Behind == 0 {
 		return w
 	}
@@ -290,6 +310,19 @@ func (w WallRenderer) Lines(where string) []string {
 	l := w.Lag
 	head := fmt.Sprintf("wall renderer (%s) · %s", where, l.Version)
 	switch {
+	case !l.Known() && w.Release.IsRelease():
+		// THE RELEASE STATE (ranger-base-ctath). A third answer, not a
+		// rebranded OK: it says which release's walls are in force, names
+		// the abstention that is still true underneath it, and does not
+		// claim to be the latest, because that is a question about
+		// github.com and a launch path takes no network call. Reachable
+		// only from the release script's own stamp — see releasestamp.go on
+		// why no dev build can get here, and on the three refusals that
+		// keep a dirty, mis-tagged or commitless build out.
+		return []string{
+			head + " is release " + w.Release.Tag + " — the walls it renders and the launch-time checks it decides are the ones tagged " + w.Release.Tag + ", which is what a release install carries",
+			"  no local comparison was possible — " + l.Why + " — and whether a newer release has been published is not read here: that is a network call, and this line is printed at every launch. So this names which release is in force, never that it is the newest one — `brew upgrade ranger360ai/tap/posse` is what moves this box forward, and `make install` from a checkout is what a fleet box does instead",
+		}
 	case !l.Known():
 		// UNKNOWN and not OK, explicitly. A dev build carries no
 		// vcs.revision (cagestale.go documents the shape: a `go build` from
@@ -297,8 +330,16 @@ func (w WallRenderer) Lines(where string) []string {
 		// there is no commit to compare — and the walls it renders and the
 		// checks it decides are still the ones every seat on this box
 		// launches behind.
-		return []string{head + " · UNKNOWN whether this binary carries the wall renders and the launch-time checks that landed: " + l.Why +
+		out := []string{head + " · UNKNOWN whether this binary carries the wall renders and the launch-time checks that landed: " + l.Why +
 			" — every seatbelt, gate shim, gate shell, cage mount set and hook here is rendered by THIS binary, and every parity verdict a launch reports is decided by it, so read this as UNKNOWN and never as OK"}
+		// A stamp that was there and could not be believed is said out
+		// loud under it. Dropping it would make a mis-stamped or forged
+		// release identity render exactly like the ordinary dev build
+		// above, which is the one thing this reading must not do.
+		if w.Release.Disagreement != "" {
+			out = append(out, "  "+w.Release.Disagreement+" — the reading above stands and `make install` is the remedy either way")
+		}
+		return out
 	case l.Behind == 0:
 		return []string{head + fmt.Sprintf(" is the tip of %s in %s — the walls it renders and the launch-time checks it decides at every launch are current%s",
 			l.Base, AbbrevHome(l.Repo), w.dirtyClause())}
@@ -352,6 +393,26 @@ func (w WallRenderer) dirtyClause() string {
 	return ", and its tree had uncommitted edits, so the wall it renders is in no commit at all and this is a floor"
 }
 
+// Actionable is whether the reading found something for a human: a lag, an
+// answer it could not read, or a release stamp it could not believe.
+//
+// A believed release identity is NOT actionable here, and that is the whole
+// behavioural difference ranger-base-ctath buys. On a release install the
+// walls are the tag's by construction, nothing local can be installed to
+// change that, and `brew upgrade` is a decision about a newer release this
+// binary deliberately does not read — so reporting it as "something to act
+// on" would be the permanent UNKNOWN again, wearing a bool.
+func (w WallRenderer) Actionable() bool {
+	switch {
+	case w.Release.Disagreement != "":
+		return true
+	case !w.Lag.Known():
+		return !w.Release.IsRelease()
+	default:
+		return w.Lag.Behind > 0
+	}
+}
+
 // ReportWallRenderer prints the reading and reports whether it found
 // something to act on — a lag, or an answer it could not read. The bool is
 // for a caller that wants to say more, never a refusal: `posse promote` is
@@ -361,5 +422,5 @@ func (a *App) ReportWallRenderer(out io.Writer, where string, extra ...string) b
 	for _, ln := range w.Lines(where) {
 		fmt.Fprintln(out, ln)
 	}
-	return !w.Lag.Known() || w.Lag.Behind > 0
+	return w.Actionable()
 }
