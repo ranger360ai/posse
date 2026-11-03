@@ -224,3 +224,39 @@ func TestSeatGitPinFollowsTheRuntime(t *testing.T) {
 		t.Errorf("a runtime with no settings pin rendered %+v", pin)
 	}
 }
+
+// At the container tier a launch renders no redirect, so the row must not
+// model one: a managed repo there is judged on the pin alone.
+func TestHookParityDerivesNoRedirectAtTheContainerTier(t *testing.T) {
+	t.Parallel()
+	repo := gitTempDir(t)
+	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	managed := filepath.Join(gitTempDir(t), "managed")
+	if err := os.MkdirAll(managed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", repo, "config", "core.hooksPath", managed).CombinedOutput(); err != nil {
+		t.Fatalf("git config: %v\n%s", err, out)
+	}
+	// Read-only so managedHooksDir classifies it Managed; restored so
+	// TempDir cleanup can remove it.
+	if err := os.Chmod(managed, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(managed, 0o755) })
+	if m, err := managedHooksDir(repo); err != nil || !m.Managed {
+		t.Skipf("fixture not classified managed here (%+v, %v) — running as root?", m, err)
+	}
+	a := &App{StateDir: gitTempDir(t)}
+	rt := &Runtime{Name: "codex"}
+	derived := hookParityText(a.launchGitHookParity(rt, repo, nil, true))
+	if !strings.Contains(derived, "redirect ") {
+		t.Fatalf("the derived redirect arm did not run over a managed repo, so the control is vacuous:\n%s", derived)
+	}
+	caged := hookParityText(a.launchGitHookParity(rt, repo, nil, false))
+	if strings.Contains(caged, "redirect") {
+		t.Errorf("the container tier modelled a redirect a caged launch never renders:\n%s", caged)
+	}
+}

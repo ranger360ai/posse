@@ -319,14 +319,17 @@ func seatGitPin(rt *Runtime) []EnvVar {
 
 // launchGitHookParity is the live row: this box's git, the runtime's pin,
 // and the redirect a launch in dir renders. A launch hands its real redirect
-// in; every other caller passes nil and gets the one a launch WOULD render,
-// with a placeholder session dir (no session exists yet), which is all git
-// needs: it reads the value, it does not open the directory.
-func (a *App) launchGitHookParity(rt *Runtime, dir string, red *l3Redirect) gitHookParityResult {
+// in. With none in hand and derive set, it builds the one a launch WOULD
+// render, with a placeholder session dir (no session exists yet), which is
+// all git needs: it reads the value, it does not open the directory. derive
+// is false at the container tier, where a launch renders no redirect at all
+// (herdrback.go, ADR 0052 D2), so modelling one there would describe a seat
+// that does not exist.
+func (a *App) launchGitHookParity(rt *Runtime, dir string, red *l3Redirect, derive bool) gitHookParityResult {
 	seat := seatGitPin(rt)
 	if red != nil {
 		seat = append(seat, gitConfigHooksPathVars(seat, red.Hooks)...)
-	} else if dir != "" && a.StateDir != "" {
+	} else if derive && dir != "" && a.StateDir != "" {
 		if m, err := managedHooksDir(dir); err == nil && m.Managed {
 			hooks := filepath.Join(a.StateDir, "hooks", "<session>")
 			red = &l3Redirect{Hooks: hooks, Managed: m.Dir}
@@ -342,7 +345,7 @@ func (a *App) applyHookConfigParity(p *Parity, rt *Runtime, dir string, red *l3R
 	if dir == "" || rt == nil {
 		return
 	}
-	res := a.launchGitHookParity(rt, dir, red)
+	res := a.launchGitHookParity(rt, dir, red, p.Cage != CageContainer)
 	p.Realized[HookConfigGate] = RealizedGate{Detail: strings.Join(res.Lines, "; ")}
 }
 
@@ -353,7 +356,7 @@ func (a *App) hookConfigRow(rt *Runtime, dir string) stageRow {
 		by:      "the launch's rendered env: inletPin (claude's settings pin) and the ADR 0052 redirect, compared against this box's git with every GIT_CONFIG* removed",
 		missing: "a managed hook configured in a scope the seat does not read is SKIPPED with no message, and git still exits 0 (ranger-base-t301k)",
 	}
-	res := a.launchGitHookParity(rt, dir, nil)
+	res := a.launchGitHookParity(rt, dir, nil, true)
 	r.value = "clean"
 	if res.Red {
 		r.value = "RED — the seat's git does not see every managed-hook entry the operator's does"
