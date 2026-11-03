@@ -1293,9 +1293,10 @@ func newCloseGateTrees(t *testing.T) closeGateTrees {
 	// gpgsign on the box the suite runs on must not decide whether this
 	// fixture builds (the hooksPath class is why hookfreshness_qa_test.go
 	// reads git's own answer instead of deriving one).
+	gitBin := gitOutsideGates(t)
 	git := func(dir string, args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", append([]string{
+		cmd := exec.Command(gitBin, append([]string{
 			"-c", "user.email=probe@example.invalid", "-c", "user.name=probe",
 			"-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main",
 			"-c", "core.hooksPath=" + filepath.Join(root, "no-hooks"),

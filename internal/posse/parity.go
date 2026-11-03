@@ -427,6 +427,19 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			}
 		}
 	}
+	// The git shim's hook-skip arm (ranger-base-r3pri) is rendered for every
+	// seat and is no PID rule, so it has no deny to hang a row on. It is
+	// claimed exactly where an L1 shim was just claimed for some rule — the
+	// same shim dir, the same PATH, the same gate shell — and nowhere else,
+	// so this reads nothing the loop above did not already decide. Never
+	// Unrealized: the PID did not ask for it, and its absence is not a gate
+	// this launch was asked to hold.
+	for _, g := range p.Realized {
+		if g.Class == Cooperative && strings.HasPrefix(g.Detail, "L1 shim") {
+			p.Realized[HookSkipGate] = RealizedGate{Class: Cooperative, Detail: "L1 git shim on every seat, no PID rule needed; residual by class: /usr/bin/git, env -i, a git alias, HOME/XDG_CONFIG_HOME moved, a hand-edited config file"}
+			break
+		}
+	}
 	if len(ag.Egress) > 0 {
 		gate := "egress: " + strings.Join(ag.Egress, ",")
 		switch {

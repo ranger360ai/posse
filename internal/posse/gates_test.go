@@ -435,7 +435,14 @@ func TestRenderedShimRefusesAndPasses(t *testing.T) {
 	if _, _, _, err := a.RenderGates("security", []string{"Edit"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(shim); err == nil {
+	// The git shim itself stays: every seat gets one for the hook-skip arm
+	// (ranger-base-r3pri). What must be gone is the dropped RULE.
+	if b, err := os.ReadFile(shim); err != nil {
+		t.Errorf("every render carries a git shim now: %v", err)
+	} else if strings.Contains(string(b), "Bash(git push:*)") {
+		t.Error("stale rule survived a re-render")
+	}
+	if _, err := os.Stat(filepath.Join(binDir, "bd")); err == nil {
 		t.Error("stale shim survived a re-render")
 	}
 	if _, err := os.Stat(filepath.Join(gatesDir, "refusals.log")); err != nil {

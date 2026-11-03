@@ -917,9 +917,15 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 		return "", "", "", err
 	}
 	rules := ParseShimRules(deny)
-	cmds := make([]string, 0, len(rules))
+	cmds := make([]string, 0, len(rules)+1)
 	for c := range rules {
 		cmds = append(cmds, c)
+	}
+	// A git shim for EVERY seat, whether or not the PID denies a git verb:
+	// the hook-skip arm is not a PID rule and must not depend on one
+	// (ranger-base-r3pri). The sequencer audit rides along with it.
+	if _, ok := rules["git"]; !ok {
+		cmds = append(cmds, "git")
 	}
 	sort.Strings(cmds)
 	log := filepath.Join(gatesDir, "refusals.log")
@@ -949,9 +955,13 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 	if posseBin != "" && !posseSupportsBdWrite(posseBin) {
 		posseBin = ""
 	}
+	hooksRoot := ""
+	if a.StateDir != "" {
+		hooksRoot = filepath.Join(a.StateDir, "hooks")
+	}
 	for _, c := range cmds {
 		real := resolveOutside(c, binDir)
-		script := renderShim(persona, c, real, log, dateBin, rules[c], ceiling, posseBin)
+		script := renderShim(persona, c, real, log, dateBin, rules[c], ceiling, posseBin, hooksRoot)
 		if err := WriteExecutable(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
 			return "", "", "", err
 		}
@@ -1486,7 +1496,11 @@ func quotedStamp(dateBin string) string {
 // command costs no caller a second read of config. posseBin is the
 // absolute path renderBdWriteTail (ADR 0073 D2) calls back into for the
 // same cmd=="bd" command, resolved once per render rather than per shim.
-func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceiling []OpsPattern, posseBin string) string {
+//
+// hooksRoot is <StateDir>/hooks, the parent of every ADR 0052 D2 redirect
+// dir — the one core.hooksPath the git shim's hook-skip arm lets a
+// GIT_CONFIG_KEY_<n> carry (ranger-base-r3pri). Ignored for any cmd but git.
+func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceiling []OpsPattern, posseBin, hooksRoot string) string {
 	var b strings.Builder
 	// The marker stays on line 2 and stays where gateShimTarget and
 	// scripts/verify-bd-pin.sh read it (`head -2`); the renderer clause is
@@ -1496,6 +1510,14 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 	fmt.Fprintf(&b, "posse_refuse() {\n  echo \"refused by posse gate: %s $* (deny: $RHQ_GATE_RULE)\" >&2\n", cmd)
 	b.WriteString("  [ -n \"$RHQ_GATE_HINT\" ] && echo \"$RHQ_GATE_HINT\" >&2\n")
 	fmt.Fprintf(&b, "  echo \"%s %s $* (deny: $RHQ_GATE_RULE)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n  exit 1\n}\n", refusalTimestamp(dateBin), cmd)
+	// The hook-skip arm stands in front of every deny rule: it is the PID-
+	// independent wall, and its named reason is more specific than a deny's
+	// (`git push --no-verify` is a hook skip before it is a push).
+	// Its env arm is the exception and runs after the deny rules: it execs
+	// git, and a denied command must not (renderHookSkipEnvCall).
+	if cmd == "git" {
+		b.WriteString(renderHookSkipArm(real, dateBin, hooksRoot))
+	}
 	// A negative rule needs one helper: does argv carry the qualifier WITH
 	// an operand? The bare token is not enough — `git commit --` with an
 	// empty pathspec commits the shared index exactly like the bare form
@@ -1563,6 +1585,9 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 		// a function touches only that function's positional params.
 		b.WriteString("posse_verb_match \"$@\"\n")
 		b.WriteString("if [ -n \"$RHQ_GATE_RULE\" ]; then posse_refuse \"$@\"; fi\n")
+	}
+	if cmd == "git" {
+		b.WriteString(renderHookSkipEnvCall())
 	}
 	b.WriteString(renderSequencerAudit(cmd, real, dateBin))
 	b.WriteString(renderDataCeilingArgvGuard(cmd, ceiling, dateBin))

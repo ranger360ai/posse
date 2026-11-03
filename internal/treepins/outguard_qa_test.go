@@ -82,9 +82,10 @@ func outGuardFixture(t *testing.T) (repo, home string) {
 	if err := os.WriteFile(filepath.Join(repo, "internal", "posse", "app.go"), []byte(app), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	gitBin := gitOutsideGates(t)
 	git := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		cmd := exec.Command(gitBin, args...)
 		cmd.Dir = repo
 		cmd.Env = outGuardEnv(home)
 		if out, err := cmd.CombinedOutput(); err != nil {
