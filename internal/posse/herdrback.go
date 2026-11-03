@@ -2864,6 +2864,16 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			}
 			warn("posse: %s\n", PIDChannelDegraded(rt, where))
 		}
+		// The settings pin's GIT_CONFIG_SYSTEM row carries git's own
+		// system-scope path, resolved here in the launcher; when that fails
+		// the row falls back to /dev/null and the seat skips system-scope
+		// hooks. Named, never silent (ranger-base-t301k). Only runtimes that
+		// carry the pin can lose it.
+		if rt.FleetSettings != nil || rt.SettingsPin != nil {
+			if d := GitSystemScopeDegraded(); d != "" {
+				warn("posse: %s\n", d)
+			}
+		}
 		if f := rt.PIDVoided(cmd); f != "" {
 			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+
 				"  drop %s from this PID's command:, or fold the PID into the override text yourself — that replaces the runtime's own system prompt, which is a decision, not a default",

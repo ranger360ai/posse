@@ -33,7 +33,7 @@ import (
 // measured to deny the inlet while leaving this box's behaviour where it
 // already was.
 func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
-	t.Parallel() // reads no environment: the table is a constant
+	t.Parallel() // one row asks git; the rest are constants
 	want := map[string]string{
 		// Exec: a shell, the dynamic linker, node.
 		"BASH_ENV":              "/dev/null",
@@ -45,7 +45,6 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 		// Exec: what git runs.
 		"GIT_SSH_COMMAND":       "ssh",
 		"GIT_PAGER":             "",
-		"GIT_CONFIG_SYSTEM":     "/dev/null",
 		"GIT_CONFIG_PARAMETERS": "",
 
 		// Transport: where the bearer goes and who may terminate its TLS.
@@ -70,7 +69,6 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 		"ENV":                          "same, for sh",
 		"NODE_OPTIONS":                 "a single space: non-empty, and parses to no options",
 		"GIT_SSH_COMMAND":              `git's own default. "" is not "no command", it is the command "" — ` + "`error: cannot run :`" + ` on every ssh remote`,
-		"GIT_CONFIG_SYSTEM":            "a config file with nothing in it. Neutral on Apple git 2.50.1 by a byte-identical `git config --list --show-origin`: its bundled CommandLineTools gitconfig is read by a path this variable does not govern, so osxkeychain survives",
 		"NODE_TLS_REJECT_UNAUTHORIZED": `"1" is verify-on, measured against a self-signed server; "0" is the value that completes an MITM`,
 		"ANTHROPIC_BASE_URL":           "the bundle resolves ANTHROPIC_BASE_URL || CLAUDE_CODE_API_BASE_URL || this. A non-empty value in the FIRST name short-circuits the chain and closes the second one too",
 	}
@@ -94,11 +92,35 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 			t.Errorf("inletPin[%s] = %q, want %q — %s", name, g, val, why[name])
 		}
 	}
+	// The launch-resolved rows are held against what they resolve, never a
+	// literal: a literal is right on one git binary and wrong on the next.
+	for name, resolve := range launchResolvedInletRows {
+		w, ok := resolve(t)
+		if !ok {
+			continue
+		}
+		if g := got[name]; g != w {
+			t.Errorf("inletPin[%s] = %q, want %q — git's own answer with the variable unset (ranger-base-t301k)", name, g, w)
+		}
+	}
 	for _, name := range order {
+		if _, ok := launchResolvedInletRows[name]; ok {
+			continue
+		}
 		if _, ok := want[name]; !ok {
 			t.Errorf("inletPin carries %s, which this table does not account for. A new row needs its own three-arm measurement (unset/attack/pin) before it lands, not just a plausible name", name)
 		}
 	}
+}
+
+// launchResolvedInletRows are the rows whose value inletPin asks for at
+// launch rather than carries as a constant, each with how a test asks the
+// same question independently. GIT_CONFIG_SYSTEM's answer is the git
+// binary's build-time sysconfdir (ranger-base-t301k); the independent route
+// is `git config --system --list --show-origin`, not the `git var` the
+// resolver uses first, so the two can disagree.
+var launchResolvedInletRows = map[string]func(*testing.T) (string, bool){
+	"GIT_CONFIG_SYSTEM": gitSystemScopePath,
 }
 
 // The two halves compose, in an order that does not move. The credential
@@ -243,7 +265,18 @@ func TestQAThePolicyDropInMatchesTheInletPin(t *testing.T) {
 	}
 	want := map[string]string{}
 	for _, v := range inletPin() {
+		if _, ok := launchResolvedInletRows[v.Key]; ok {
+			continue
+		}
 		want[v.Key] = v.Value
+	}
+	// A launch-resolved row is ABSENT from the drop-in, by the same rule
+	// that keeps it out of the literal table: the drop-in is a shipped
+	// constant and the value is per git binary (ranger-base-t301k).
+	for k := range launchResolvedInletRows {
+		if v, ok := got.Env[k]; ok {
+			t.Errorf("%s carries %s=%q. That row's value is resolved per launch against the seat's git; a constant here empties or misnames system scope for the operator's own claude", path, k, v)
+		}
 	}
 	for k, v := range want {
 		g, ok := got.Env[k]

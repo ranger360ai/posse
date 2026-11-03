@@ -10,7 +10,6 @@
     "DYLD_INSERT_LIBRARIES": "",
     "ENV": "/dev/null",
     "GIT_CONFIG_PARAMETERS": "",
-    "GIT_CONFIG_SYSTEM": "/dev/null",
     "GIT_PAGER": "",
     "GIT_SSH_COMMAND": "ssh",
     "HTTPS_PROXY": "",

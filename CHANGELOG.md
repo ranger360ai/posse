@@ -9,6 +9,40 @@ that release's notes on GitHub, above the generated commit list —
 prints exactly what will be prepended. Renaming `## Unreleased` to the version
 being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
+## Unreleased
+
+**A commit scanner configured in system git scope now runs in posse-launched
+claude sessions.**
+
+*Affected: every build since v0.5.0, claude seats only. The policy drop-in
+changes too, and installing it is yours.*
+
+Since v0.5.0 the launch pin set `GIT_CONFIG_SYSTEM=/dev/null` to shut an
+inlet: a lower-scope settings `env` pointing git at an attacker's config
+naming `core.hooksPath`. That value also emptied system scope, so a
+pre-commit hook or scanner configured only there was skipped on every seat
+commit, at exit 0, with nothing said (gh ranger360ai/posse#15). The pin now
+carries the file git itself reads with the variable unset, resolved at launch
+against the git the seat runs. That file is git's build-time sysconfdir:
+`/etc/gitconfig` for `/usr/bin/git` and a distro git, and
+`/opt/homebrew/etc/gitconfig` for a Homebrew git on apple silicon. The inlet
+stays shut, and system scope — its hooks, and any `user.email` in it, which
+the visibility wall reads — reaches the session as it does outside posse. If
+the launcher cannot resolve the path, the row falls back to `/dev/null` and
+the launch prints a `DEGRADED: git system scope is NOT carried` line.
+On this box, which has no `/etc/gitconfig`, nothing visible changes.
+`TestQATheGitConfigSystemPinCarriesASystemScopeManagedHook` runs a
+system-scope pre-commit through the pin, and
+`TestQATheGitConfigSystemPinKeepsASystemScopeIdentityLiteral` holds this
+paragraph.
+
+`etc/claude/managed-settings.d/10-posse-inlet-pin.json` no longer carries the
+row: the drop-in is one file for every git on a box, and no constant is right
+for all of them. So a claude you start yourself is back at git's default for
+this one variable, and keeps that inlet the way it already keeps
+`GIT_CONFIG_GLOBAL`'s. `make verify-policy-pins` reports the installed copy
+STALE until you reinstall it.
+
 ## v0.5.3
 
 *2026-10-22. A security and patch release ten days after v0.5.2, led by the
@@ -948,9 +982,11 @@ was measured on has no `/etc/gitconfig` at all. Any box that does — a Linux
 box, a CI image, a Mac someone put an identity on — is one address short.
 The row stays pinned, because it closes a `core.hooksPath` inlet that fires;
 whether a box in that position wants it at all is an open operator call and
-is not settled here. `TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral`
+is not settled here. `TestQATheGitConfigSystemPinKeepsASystemScopeIdentityLiteral`
 measures both halves — the drop, and this paragraph — so the note cannot go
-stale.
+stale. Superseded by the gh ranger360ai/posse#15 entry above
+(ranger-base-t301k): the row now carries git's own system-scope path instead
+of `/dev/null`, so this cost is gone, and the drop-in no longer carries it.
 
 **A persona session could commit your constitution — the PIDs every future
 session runs under — and nothing refused it.**

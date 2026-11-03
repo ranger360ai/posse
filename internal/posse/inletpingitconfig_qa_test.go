@@ -19,7 +19,10 @@ package posse
 // each was measured rather than assumed, so they are disclosed in the file
 // instead — which is the other half of what this test holds:
 //
-//   - GIT_CONFIG_SYSTEM=/dev/null   pinned. Neutral on Apple git 2.50.1.
+//   - GIT_CONFIG_SYSTEM             pinned, to the path git resolves with
+//                                   the variable unset (ranger-base-t301k;
+//                                   /dev/null before it, which emptied
+//                                   system scope and its managed hooks).
 //   - GIT_CONFIG_PARAMETERS=""      pinned. The family member nobody named.
 //   - GIT_CONFIG_COUNT              NOT pinnable: `0` also switches off
 //                                   posse's own L3 hooks redirect (ADR 0052
@@ -50,8 +53,10 @@ import (
 
 // gitConfigPinned is the half of the family that has a neutral spelling, with
 // the value measured neutral for each (2026-09-05, git 2.50.1 Apple Git-155).
+// GIT_CONFIG_SYSTEM is pinned too, but its value is git's own answer and not
+// a literal, so it is held against git in the test rather than written here
+// (ranger-base-t301k).
 var gitConfigPinned = map[string]string{
-	"GIT_CONFIG_SYSTEM":     os.DevNull,
 	"GIT_CONFIG_PARAMETERS": "",
 }
 
@@ -80,6 +85,11 @@ func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 			t.Errorf("inletPin()[%s] = %q, want %q (the value measured neutral)", k, got, want)
 		}
 	}
+	if got, ok := pinned["GIT_CONFIG_SYSTEM"]; !ok {
+		t.Errorf("inletPin() does not carry GIT_CONFIG_SYSTEM — an attacker's system-scope config naming core.hooksPath runs its hook past every other row")
+	} else if want, ok := gitSystemScopePath(t); ok && got != want {
+		t.Errorf("inletPin()[GIT_CONFIG_SYSTEM] = %q, but git names %q as its system scope with the variable unset. Any other value either empties system scope (and skips the managed hooks there) or points git at a file it would not read (ranger-base-t301k)", got, want)
+	}
 	// The other direction, and it is not symmetry for its own sake: pinning
 	// either of these is a fleet outage, so the pin refusing them is a
 	// property to hold, not an omission to tolerate.
@@ -106,6 +116,9 @@ func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 		if _, ok := dropIn.Env[k]; !ok {
 			t.Errorf("%s does not carry %s either, so the operator's own session is uncovered too", path, k)
 		}
+	}
+	if v, ok := dropIn.Env["GIT_CONFIG_SYSTEM"]; ok {
+		t.Errorf("%s carries GIT_CONFIG_SYSTEM=%q. Its value is per git binary and the drop-in is a constant, so any value there either empties system scope for the operator's own claude or names a file their git does not read (ranger-base-t301k)", path, v)
 	}
 	for k := range gitConfigDisclosed {
 		if _, ok := dropIn.Env[k]; ok {
@@ -294,8 +307,17 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 	return p
 }
 
-// TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral is the cost of
-// the row that IS pinned, for ranger-base-nn161 (found verifying
+// TestQATheGitConfigSystemPinKeepsASystemScopeIdentityLiteral was the cost of
+// the row that IS pinned, and is now the proof the cost is gone.
+//
+// RENAMED on ranger-base-t301k from ...PinDropsASystemScopeIdentityLiteral.
+// The row's value moved from /dev/null to the path git resolves with the
+// variable unset, so a user.email in system scope now STAYS in the wall. The
+// /dev/null arm below is kept as the wrong arm — it still drops the address —
+// and the landed-pin arm runs through a stand-in git whose own default is the
+// fixture, so the pin is resolved, not assumed. The history follows.
+//
+// Originally the cost, for ranger-base-nn161 (found verifying
 // ranger-base-44or9 on ranger-base-53y2k). The close above disclosed that
 // GIT_CONFIG_SYSTEM=/dev/null "WOULD suppress /etc/gitconfig off darwin" and
 // stopped there. (That off-darwin framing was itself wrong, and is corrected
@@ -349,7 +371,7 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 // user.email lives in system scope, and the fleet is not darwin by contract — the
 // LD_PRELOAD row two rows up says so. Whether such a box wants the row at all
 // is the operator's, on ranger-base-zz08i.
-func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
+func TestQATheGitConfigSystemPinKeepsASystemScopeIdentityLiteral(t *testing.T) {
 	// t.Setenv: DeriveIdentityLiterals shells out with this process's own
 	// environment, so the arms move the real thing and cannot be parallel.
 
@@ -424,10 +446,27 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 	if !walled(t, "GIT_CONFIG_SYSTEM at a config with user.email", sys) {
 		t.Fatalf("CONTROL FAILED: a user.email in system scope did not reach DeriveIdentityLiterals at all, so the pinned arm below cannot show it being dropped — `git config --get-all` may have stopped walking every scope, which is a bigger finding than this test")
 	}
-	// The landed pin. Silently: no error, one fewer literal.
-	if walled(t, "GIT_CONFIG_SYSTEM="+os.DevNull+" (the landed pin)", os.DevNull) {
-		t.Errorf("GIT_CONFIG_SYSTEM=%s no longer empties system scope for DeriveIdentityLiterals. Good news, but the GIT_CONFIG_SYSTEM row in inletpin.go now says it does — re-measure and rewrite the clause", os.DevNull)
+	// The value the row carried until ranger-base-t301k. Silently: no
+	// error, one fewer literal — which is why it moved.
+	if walled(t, "GIT_CONFIG_SYSTEM="+os.DevNull+" (the retired pin)", os.DevNull) {
+		t.Errorf("GIT_CONFIG_SYSTEM=%s no longer empties system scope for DeriveIdentityLiterals. The GIT_CONFIG_SYSTEM row in inletpin.go says it did, and that is why the row stopped carrying it — re-measure and rewrite the clause", os.DevNull)
 	}
+	// The landed pin, resolved and not assumed: a stand-in git whose own
+	// default system scope IS the fixture goes first on PATH, the pin is
+	// asked of inletPin() with this process still under the session's own
+	// GIT_CONFIG_* scrubbed, and its value is what the walled arm sets.
+	stand := gitStandInWithSystemScope(t, sys)
+	basePath := os.Getenv("PATH")
+	t.Setenv("PATH", stand+string(os.PathListSeparator)+basePath)
+	landed := inletPinValue(t, "GIT_CONFIG_SYSTEM")
+	if landed != sys {
+		t.Fatalf("inletPin()[GIT_CONFIG_SYSTEM] = %q with a git whose unset default is %q first on PATH — the row is not carrying git's own answer, so the arm below would measure a different file", landed, sys)
+	}
+	if !walled(t, "GIT_CONFIG_SYSTEM="+landed+" (the landed pin)", landed) {
+		t.Errorf("the landed pin (%s, git's own system scope) dropped %s from the wall. That is the /dev/null cost ranger-base-t301k removed, back", landed, addr)
+	}
+	// The stand-in off PATH again: the fourth arm asks THIS box's git.
+	t.Setenv("PATH", basePath)
 
 	// ── the PATH, a fourth arm ───────────────────────────────────────────
 	//
@@ -494,7 +533,7 @@ func gitConfigSystemRowRegion(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("cannot read the table to check its own disclosure: %v", err)
 	}
-	const rowHead, nextRow = "GIT_CONFIG_SYSTEM=" + os.DevNull, `GIT_CONFIG_PARAMETERS=""`
+	const rowHead, nextRow = "GIT_CONFIG_SYSTEM=<git's own>", `GIT_CONFIG_PARAMETERS=""`
 	i := strings.Index(string(src), rowHead)
 	j := strings.Index(string(src), nextRow)
 	if i < 0 || j <= i {
@@ -580,25 +619,6 @@ func gitSystemScopePath(t *testing.T) (string, bool) {
 	return path, true
 }
 
-// parseGitSystemScopePath reads the path out of whichever of the two shapes
-// git produced: a `file:` origin when the file exists and holds something,
-// the fatal when it does not (which is this box). Split out from the command
-// so the third shape — an existing but EMPTY system config, which prints
-// nothing at rc 0 — is reachable in a test instead of being a branch nobody
-// on a darwin box can enter.
-func parseGitSystemScopePath(out string) (string, bool) {
-	if _, rest, ok := strings.Cut(out, "unable to read config file '"); ok {
-		if path, _, ok := strings.Cut(rest, "'"); ok {
-			return path, true
-		}
-	}
-	if _, rest, ok := strings.Cut(out, "file:"); ok {
-		path, _, _ := strings.Cut(rest, "\t")
-		return strings.TrimRight(path, "\r\n"), true
-	}
-	return "", false
-}
-
 // TestQAGitSystemScopePathParsesTheShapesGitActuallyPrints holds the probe's
 // own reader against the three outputs measured 2026-09-06 on git 2.50.1
 // (Apple Git-155). The middle one is what a Linux box or a CI image prints
@@ -658,7 +678,7 @@ const changelogPath = "../../CHANGELOG.md"
 
 // changelogAnchor is the citation that marks a changelog paragraph as an
 // account of what GIT_CONFIG_SYSTEM=/dev/null costs.
-const changelogAnchor = "TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral"
+const changelogAnchor = "TestQATheGitConfigSystemPinKeepsASystemScopeIdentityLiteral"
 
 // gitConfigSystemChangelogParagraphs is EVERY paragraph in the changelog that
 // cites this test, in file order — so a rewrite that drops the citation is
@@ -787,7 +807,7 @@ var costMisScopingRules = []struct {
 	{
 		name: "scopes the suppression away from this platform",
 		find: func(prose string) string { return offPlatformFraming.FindString(prose) },
-		why:  "The pin empties system scope on darwin exactly as it does elsewhere — the fourth arm of TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral runs the command that names the file, /etc/gitconfig for the git this box runs — and what is zero on this box is a missing file (ranger-base-sv8x4)",
+		why:  "The pin empties system scope on darwin exactly as it does elsewhere — the fourth arm of TestQATheGitConfigSystemPinKeepsASystemScopeIdentityLiteral runs the command that names the file, /etc/gitconfig for the git this box runs — and what is zero on this box is a missing file (ranger-base-sv8x4)",
 	},
 	{
 		name: "tells a reader that a PLATFORM is what makes this free",
@@ -1096,5 +1116,172 @@ func TestQAEveryRegionAccountsForEveryMeasuredSystemScopePath(t *testing.T) {
 		for _, miss := range regionsNotAccountingFor(regions, m.path) {
 			t.Errorf("for %s (%s): %s. A reader on that box is sent to a file their git does not read", m.path, m.where, miss)
 		}
+	}
+}
+
+// gitStandInWithSystemScope is a git whose OWN default system scope is sys:
+// a wrapper that sets GIT_CONFIG_SYSTEM only when it is unset, then execs the
+// real git. It stands in for a git built with a sysconfdir holding sys, which
+// no test can make of /usr/bin/git without root. Returns the directory to put
+// first on PATH. The real git is resolved before PATH moves, off the
+// gates-free PATH a seat's shim would exec.
+func gitStandInWithSystemScope(t *testing.T, sys string) string {
+	t.Helper()
+	real := resolveOutside("git", "")
+	if real == "" {
+		t.Skip("no git on the gates-free PATH")
+	}
+	dir := t.TempDir()
+	body := "#!/bin/sh\n: \"${GIT_CONFIG_SYSTEM=" + sys + "}\"\nexport GIT_CONFIG_SYSTEM\nexec " + real + " \"$@\"\n"
+	if err := WriteExecutable(filepath.Join(dir, "git"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// inletPinValue is one row of inletPin(), or a Fatalf when it is missing.
+func inletPinValue(t *testing.T, key string) string {
+	t.Helper()
+	for _, v := range inletPin() {
+		if v.Key == key {
+			return v.Value
+		}
+	}
+	t.Fatalf("inletPin() carries no %s row", key)
+	return ""
+}
+
+// TestQATheGitConfigSystemPinCarriesASystemScopeManagedHook is the execution
+// pin for ranger-base-t301k (gh ranger360ai/posse#15, defect 1): a commit
+// scanner configured ONLY in system scope has to fire on a seat's
+// path-limited commit, with the whole inlet pin applied — and the attacker
+// arm the row exists for has to stay quiet in the same run.
+//
+// The "employer" is a system config naming core.hooksPath with a marker
+// pre-commit. It is made system scope the only way a test can without root:
+// a stand-in git whose own default is that file (gitStandInWithSystemScope),
+// first on PATH. Every arm is asked through inletPin() itself, with this
+// process's GIT_CONFIG_SYSTEM set to /dev/null first — the state of a
+// launcher that already runs under the old pin, which is the trap the
+// resolver scrubs for.
+func TestQATheGitConfigSystemPinCarriesASystemScopeManagedHook(t *testing.T) {
+	// t.Setenv: the pin resolves git off this process's PATH.
+	employer := t.TempDir()
+	marker := filepath.Join(employer, "marker")
+	if err := WriteExecutable(filepath.Join(employer, "pre-commit"),
+		[]byte("#!/bin/sh\necho scanned >> "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sys := filepath.Join(t.TempDir(), "system.gitconfig")
+	if err := os.WriteFile(sys, []byte("[core]\n\thooksPath = "+employer+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := gitConfigProbeRepo(t)
+	attacker := gitConfigProbeHooks(t)
+	if err := WriteExecutable(filepath.Join(attacker, "pre-commit"),
+		[]byte("#!/bin/sh\necho fired >> "+filepath.Join(attacker, "marker")+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	stand := gitStandInWithSystemScope(t, sys)
+	t.Setenv("PATH", stand+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull) // the launcher is under the old pin
+	pin := inletPin()
+	var got string
+	for _, v := range pin {
+		if v.Key == "GIT_CONFIG_SYSTEM" {
+			got = v.Value
+		}
+	}
+	if got != sys {
+		t.Fatalf("inletPin()[GIT_CONFIG_SYSTEM] = %q, want %q — the stand-in git's own system scope. A launcher already carrying GIT_CONFIG_SYSTEM=%s must scrub it before asking, or it pins that value onward", got, sys, os.DevNull)
+	}
+	if d := GitSystemScopeDegraded(); d != "" {
+		t.Errorf("a resolved system scope still printed the degraded line: %s", d)
+	}
+
+	n := 0
+	commit := func(t *testing.T, override string, attack ...string) (employerFired, attackerFired bool) {
+		t.Helper()
+		_ = os.Remove(marker)
+		_ = os.Remove(filepath.Join(attacker, "marker"))
+		n++
+		f := fmt.Sprintf("c%d", n)
+		if err := os.WriteFile(filepath.Join(repo, f), []byte(f+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		env := append(gitConfigScrubbedEnv(), attack...)
+		for _, v := range pin {
+			env = append(env, v.Key+"="+v.Value)
+		}
+		if override != "" {
+			env = append(env, "GIT_CONFIG_SYSTEM="+override)
+		}
+		for _, args := range [][]string{{"add", "--", f}, {"commit", "-q", "-m", f, "--", f}} {
+			c := exec.Command("git", args...)
+			c.Dir, c.Env = repo, env
+			if out, err := c.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+		}
+		_, e1 := os.Stat(marker)
+		_, e2 := os.Stat(filepath.Join(attacker, "marker"))
+		return e1 == nil, e2 == nil
+	}
+
+	// The wrong arm: the value the row carried before this bead. The
+	// employer's scanner is skipped at rc 0, which is the defect.
+	if fired, _ := commit(t, os.DevNull); fired {
+		t.Fatalf("CONTROL FAILED: the system-scope pre-commit fired under GIT_CONFIG_SYSTEM=%s, so the arms below cannot tell the landed pin from the retired one", os.DevNull)
+	}
+	// The landed pin: the managed hook runs.
+	if fired, _ := commit(t, ""); !fired {
+		t.Errorf("a pre-commit configured only in system scope did not run on a path-limited commit with the inlet pin applied — posse is causing the managed hook to be skipped, which ADR 0052 forbids (ranger-base-t301k)")
+	}
+	// The inlet: an attacker's GIT_CONFIG_SYSTEM under the pin. The pin is
+	// assigned over it, so the attacker's hook is quiet and the employer's
+	// still runs.
+	employerFired, attackerFired := commit(t, "", "GIT_CONFIG_SYSTEM="+gitConfigProbeGlobal(t, attacker))
+	if attackerFired {
+		t.Errorf("an attacker's GIT_CONFIG_SYSTEM ran its pre-commit past the pin — the inlet this row exists to shut is open")
+	}
+	if !employerFired {
+		t.Errorf("with an attacker's GIT_CONFIG_SYSTEM laid under the pin, the system-scope managed hook did not run")
+	}
+}
+
+// TestQATheGitConfigSystemPinFailsClosedAndSaysSo holds the fallback: no git
+// to ask means the inlet stays shut (/dev/null) AND the launch says system
+// scope is not carried. A silent /dev/null is the defect this bead removed.
+func TestQATheGitConfigSystemPinFailsClosedAndSaysSo(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if got := inletPinValue(t, "GIT_CONFIG_SYSTEM"); got != os.DevNull {
+		t.Errorf("with no git to ask, inletPin()[GIT_CONFIG_SYSTEM] = %q, want %s — an unresolved row must still shut the inlet", got, os.DevNull)
+	}
+	d := GitSystemScopeDegraded()
+	for _, want := range []string{"DEGRADED", "system scope is NOT carried", "GIT_CONFIG_SYSTEM", os.DevNull} {
+		if !strings.Contains(d, want) {
+			t.Errorf("the degraded launch line does not say %q:\n%q", want, d)
+		}
+	}
+}
+
+// TestQAResolveGitSystemScopeAnswersForAnEmptySystemConfig is the shape the
+// older fallback cannot read: an existing EMPTY system config prints nothing
+// at rc 0 under `git config --system --list --show-origin`. `git var`
+// names it anyway, so the row still carries the path rather than degrading.
+func TestQAResolveGitSystemScopeAnswersForAnEmptySystemConfig(t *testing.T) {
+	sys := filepath.Join(t.TempDir(), "empty.gitconfig")
+	if err := os.WriteFile(sys, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stand := filepath.Join(gitStandInWithSystemScope(t, sys), "git")
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	got, err := resolveGitSystemScope(stand)
+	if err != nil {
+		t.Fatalf("resolveGitSystemScope over an empty system config: %v — on git >= 2.42 `git var GIT_CONFIG_SYSTEM` names it", err)
+	}
+	if got != sys {
+		t.Errorf("resolveGitSystemScope = %q, want %q", got, sys)
 	}
 }

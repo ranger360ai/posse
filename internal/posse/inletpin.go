@@ -280,70 +280,71 @@ import "os"
 //	                                Pinned anyway — "" still printed the log
 //	                                — but as defence in depth for a
 //	                                TTY-wrapped call, not as a measured fix.
-//	GIT_CONFIG_SYSTEM=/dev/null     attack pointed it at a config naming
+//	GIT_CONFIG_SYSTEM=<git's own>   attack pointed it at a config naming
 //	                                core.hooksPath; the attacker's
 //	                                post-checkout FIRED under the three git
-//	                                rows above, /dev/null quiet. Neutral
-//	                                here by a byte-identical `git config
-//	                                --list --show-origin`, because Apple git
-//	                                2.50.1 reads its own bundled
-//	                                /Library/Developer/CommandLineTools/…/
-//	                                gitconfig by a path this variable does
-//	                                not govern — so osxkeychain and
-//	                                init.defaultBranch survive the pin. That
-//	                                bundled file is NOT system scope, though,
-//	                                and the suppression this row performs is
-//	                                not conditional on the platform: the row
-//	                                empties system scope on darwin exactly as
-//	                                it does elsewhere. WHICH FILE that is, is
-//	                                a property of the git BINARY and not of
-//	                                one path. git reads its own build-time
-//	                                sysconfdir, so /usr/bin/git here and a
-//	                                distro git both read /etc/gitconfig,
+//	                                rows above, and is quiet under ANY
+//	                                constant here. The value is the one git
+//	                                resolves with the variable UNSET, asked
+//	                                at launch (gitsystemscope.go), so the
+//	                                row is neutral by construction rather
+//	                                than by measurement on one box.
+//	                                It was /dev/null until ranger-base-t301k,
+//	                                and that EMPTIED system scope: a managed
+//	                                commit scanner configured there was
+//	                                skipped on every seat commit, rc 0, no
+//	                                word said (MEASURED 2026-11-03, git
+//	                                2.50.1, a marker pre-commit under
+//	                                core.hooksPath in a stand-in system
+//	                                config: fired at that file, quiet at
+//	                                /dev/null). ADR 0052 forbids exactly
+//	                                that. WHICH FILE git resolves is a
+//	                                property of the git BINARY and not of
+//	                                one path: its build-time sysconfdir, so
+//	                                /usr/bin/git here and a distro git read
+//	                                /etc/gitconfig
 //	                                while a Homebrew git on apple silicon
 //	                                reads
 //	                                /opt/homebrew/etc/gitconfig
-//	                                — that second one is CI's macos runner,
-//	                                and asserting the first as universal is
-//	                                what redded ci.yml (measured 2026-09-06
-//	                                against the git 2.55.0 bottle,
-//	                                ranger-base-33r36). `git config --system
-//	                                --list --show-origin` names the file YOUR
-//	                                git wanted, and that answer beats this
-//	                                row — but run it with this very variable
-//	                                UNSET, because inside a session carrying
-//	                                the pin it reports on /dev/null and says
-//	                                nothing at all (measured; it is why
-//	                                gitSystemScopePath checks its own env
-//	                                before it asks). What is zero here is a MISSING FILE,
-//	                                a fact about this box rather than about
-//	                                the platform (ranger-base-sv8x4).
-//	                                AND READ THAT SUPPRESSION AGAINST THE
-//	                                GIT_CONFIG_GLOBAL PARAGRAPH ABOVE: it
-//	                                reaches the same guardrail, one scope
-//	                                instead of every scope.
-//	                                DeriveIdentityLiterals (visibility.go)
-//	                                walks `git config --get-all user.email`
-//	                                across all of them to build the wall
-//	                                that keeps this box's addresses out of a
-//	                                public repo, and a scope this row
-//	                                emptied contributes nothing through the
-//	                                renderer's own "nothing to say" branch —
-//	                                no error, one fewer e-mail literal, and
-//	                                that is a WALL rendered short, not a
-//	                                log line. Measured 2026-09-05, scratch
-//	                                repo with global scope closed so only
-//	                                the system arm moves: unset, that
-//	                                address is not in the wall; this
-//	                                variable at a config holding it, it IS;
-//	                                /dev/null, gone again, rc 0. Zero on
-//	                                THIS box — system scope is empty and
-//	                                there is no /etc/gitconfig — so the row
-//	                                stays pinned; on a box whose user.email
-//	                                lives in system scope it is the identity
-//	                                half of the wall, one address short,
-//	                                and that is the operator's call on
-//	                                ranger-base-zz08i (ranger-base-nn161).
+//	                                — CI's macos runner (ranger-base-33r36).
+//	                                So the launcher resolves it against the
+//	                                git a seat runs (resolveOutside over the
+//	                                gates-free PATH), with every GIT_CONFIG*
+//	                                name scrubbed first: a launcher already
+//	                                under the pin would otherwise be told
+//	                                /dev/null and pin that onward.
+//	                                `git var GIT_CONFIG_SYSTEM` is the
+//	                                question; `git config --system --list
+//	                                --show-origin` is the fallback for a git
+//	                                older than 2.42. A failed resolution
+//	                                pins /dev/null — the inlet stays shut —
+//	                                and says so on the launch line
+//	                                (GitSystemScopeDegraded); never quietly.
+//	                                Apple git also reads its own bundled
+//	                                /Library/Developer/CommandLineTools/…/
+//	                                gitconfig by a path this variable does
+//	                                not govern; that file is not system
+//	                                scope and is untouched either way.
+//	                                THE IDENTITY WALL: DeriveIdentityLiterals
+//	                                (visibility.go) walks `git config
+//	                                --get-all user.email` across every
+//	                                scope, and under /dev/null a user.email
+//	                                in system scope left the wall with no
+//	                                error (ranger-base-nn161). Carrying the
+//	                                resolved file keeps that address in the
+//	                                wall, so the cost ranger-base-zz08i was
+//	                                asked to rule on is gone with the
+//	                                /dev/null value.
+//	                                NOT IN THE POLICY DROP-IN. That file is a
+//	                                shipped constant and this value is per
+//	                                git binary, so 10-posse-inlet-pin.json
+//	                                carries no GIT_CONFIG_SYSTEM row: the
+//	                                --settings pin holds it for every seat
+//	                                posse launches, and the operator's own
+//	                                uncaged claude is left at git's default.
+//	                                The accepted residue is that a session
+//	                                posse did not launch keeps this inlet,
+//	                                exactly as it keeps GIT_CONFIG_GLOBAL's.
 //	GIT_CONFIG_PARAMETERS=""        the family member nobody named — not
 //	                                rflee's fix spec, not the verify bead —
 //	                                and it is the same inlet: an attacker's
@@ -404,7 +405,7 @@ func inletPin() []EnvVar {
 		// that keeps each of them out.
 		{Key: "GIT_SSH_COMMAND", Value: "ssh"},
 		{Key: "GIT_PAGER", Value: ""},
-		{Key: "GIT_CONFIG_SYSTEM", Value: os.DevNull},
+		{Key: "GIT_CONFIG_SYSTEM", Value: gitSystemScopePinValue()},
 		{Key: "GIT_CONFIG_PARAMETERS", Value: ""},
 
 		// Transport: where the bearer goes, and who is trusted to
