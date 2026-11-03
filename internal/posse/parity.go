@@ -668,6 +668,10 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// never degrades — see applySuiteQueueReach — so it sits here for the
 	// printing, not for the verdict.
 	a.applySuiteQueueReach(&p, ag, rt, dir)
+	// ranger-base-tpvkc: does the seat's git see every managed-hook config
+	// entry the operator's does? Printed, never degrading — see
+	// githookparity.go's header.
+	a.applyHookConfigParity(&p, rt, dir, red)
 	// ADR 0007 §6f: the cwd skills root's precondition on the session
 	// directory. Directory-aware for ProjectConfigTrust's reason — whether
 	// grok trusts this folder is a fact about a concrete launch dir and not
@@ -1033,6 +1037,8 @@ func gateRank(gate string) int {
 		return 3
 	case gate == SuiteQueueGate:
 		return 4
+	case gate == HookConfigGate:
+		return 5
 	default:
 		return 0
 	}

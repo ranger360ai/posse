@@ -17,6 +17,7 @@ package posse
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -189,12 +190,17 @@ func (a *App) RuntimeCheck(rt *Runtime, h ManifestReader, w io.Writer) bool {
 	// reads as a DECLARED DIFFERENCE, an unmeasured one as UNDECLARED, and
 	// the two are never spelled the same way.
 	fmt.Fprintln(w)
+	// The managed-hook row reads git in the directory the command runs in:
+	// the redirect half is a fact about a repo, and that is the repo an
+	// operator onboarding a runtime is standing in.
+	cwd, _ := os.Getwd()
 	for _, r := range []stageRow{
 		a.skillsRow(rt),
 		egressRow(rt),
 		cageCredRow(rt),
 		projectConfigRow(rt),
 		sandboxRow(rt),
+		a.hookConfigRow(rt, cwd),
 	} {
 		r.write(w)
 	}
