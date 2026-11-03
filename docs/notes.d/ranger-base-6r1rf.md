@@ -62,6 +62,33 @@ oversight — see `docs/notes.d/ranger-base-bs49e.md`, which carries why the
 re-run did not clear the §6c clock, what replaced bob sixty seconds after this
 session exited, and what is left for the next probe to establish.
 
+### Re-run on 2.0.9 — all three arms a third time (ranger-base-0q45n)
+
+That reading shipped in drift too, for the same reason one release later, so
+§6c's remedy was applied a third time. This is the run that landed.
+
+**MEASURED 2026-11-03 10:27Z by the operator (Dave), monica-verified.**
+`bob --version` → `2.0.9` / `commit: 9690f20b0`; session log
+`~/.bob/logs/shell/bob-shell-20261103T052710.log`, cwd the same three-arm
+scratch workspace, **the same fixture still on disk** (`probe-b-symlink` is
+still the absolute symlink out to `outside-target/`, verified by `ls -la`
+after the run), same method — TUI `/skills` listing only, **no chat turn
+sent**.
+
+| arm | fixture | 2.0.5 | 2.0.7 | 2.0.9 |
+|---|---|---|---|---|
+| a. real dir | `<ws>/.bob/plugins/posse/skills/probe-a-realdir/SKILL.md` | **LISTED**, `local` | **LISTED**, `local` | **LISTED**, `local` |
+| b. symlink out | same path, `probe-b-symlink` → a dir OUTSIDE the workspace | **LISTED**, `local` | **LISTED**, `local` | **LISTED**, `local` |
+| c. control | `<ws>/.bob/skills/probe-c-control/SKILL.md` | **LISTED**, `local` | **LISTED**, `local` | **LISTED**, `local` |
+
+So `SkillsVerified` moves **2.0.7 → "2.0.9"**, and this time it is also the
+version installed right now — the first time since §6 shipped that the
+declaration and the box agree. What made that possible was not patience: the
+same session proved `bobShell.autoUpdate: false`, so the box stopped moving
+under the probe. `docs/notes.d/ranger-base-0q45n.md` has that half, the log
+lines it rests on, and two facts the earlier runs' logs could have carried and
+did not.
+
 **Why the operator ran it and not this seat** (ranger-base-lfk7t carries the
 recipe verbatim). A `cage: seatbelt` seat cannot run `bob chat` at all, by
 two different walls:
@@ -152,8 +179,11 @@ exactly the same terms.
 
 ### Filed, not fixed
 
-- **ranger-base-bs49e** (operator, `-l question`) — re-run the three arms on
-  the installed 2.0.7, §6c's remedy for the drift above.
+- ~~**ranger-base-bs49e**~~ **RUN** (operator, `-l question`) — re-run the
+  three arms on the installed 2.0.7, §6c's remedy for the drift above. All
+  three listed; the reading is the second table above. It shipped in drift in
+  turn, which ranger-base-0q45n re-ran on 2.0.9 — the third table — and that
+  one landed.
 - **ranger-base-xzgz3** (`-l code,debt`, P3) — the flip makes bob's binding
   realizable and `qmSurfaces` (arm 3's skills table, one row per runtime
   DECLARATION) still has no bob row. It could not have had one before: every

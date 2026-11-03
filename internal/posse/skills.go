@@ -330,19 +330,30 @@ const AgentsSkillsPath = ".agents/skills"
 // the operator's static read of bob 2.0.5's bundle (ADR 0007 Evidence) found
 // no CLI read of `.agents/skills` at all, so claiming that root for bob was
 // the §6 bug — a declaration nobody had measured, standing in for a runtime
-// whose real surface a different root entirely. MEASURED LIVE 2026-10-31 on
-// bob 2.0.5 (ranger-base-6r1rf) and again on bob 2.0.7 (ranger-base-bs49e):
-// bob's `/skills` listing carries a skill planted here as a real dir AND as a
-// symlink out of the workspace, so the root is verified and runtime.go now
-// declares SkillsVerified for it. Both arms, both versions, against the
-// `.bob/skills` control — docs/notes.d/ranger-base-6r1rf.md has the table.
+// whose real surface a different root entirely. MEASURED LIVE on bob 2.0.5
+// and 2.0.7 (2026-10-31, ranger-base-6r1rf and ranger-base-bs49e) and on bob
+// 2.0.9 (2026-11-03, ranger-base-0q45n): bob's `/skills` listing carries a
+// skill planted here as a real dir AND as a symlink out of the workspace, so
+// the root is verified and runtime.go declares SkillsVerified for it. Both
+// arms, all three versions, against the `.bob/skills` control —
+// docs/notes.d/ranger-base-6r1rf.md has the table.
 //
-// The STATIC half holds on 2.0.9 as well: ranger-base-kf9ou re-read that
-// bundle and this path is still inside bob's own `.bob/plugins/*/skills`
-// workspace root. What is AS-OF the last LIVE probe, and can only be, is
-// the listing and the symlink-follow — a TUI reading — which is why
-// SkillsVerified names a version a probe produced and the drift row against
-// an installed 2.0.9 still fires.
+// The STATIC half holds on 2.0.9 too (ranger-base-kf9ou's independent bundle
+// re-read: this path is still inside bob's own `.bob/plugins/*/skills`
+// workspace root), but it was never the part that needed a probe. What is
+// AS-OF the last LIVE probe, and can only be, is the listing and the
+// symlink-follow — a TUI reading, absent from bob's own logs, which carry the
+// watcher registrations and no listing line at all. That is why this root
+// takes an operator session and not a parse.
+//
+// MEASURED 2026-11-03 (ranger-base-0q45n), and the reason the render needs no
+// manifest: `.bob/plugins/posse/` held NO `plugin.json` in the probe
+// workspace — bob's PluginManager logged `No plugin.json found ... skipping`
+// for it four times on that start — and the skill under it listed anyway. So
+// `.bob/plugins/*/skills` is read as a skill root independently of whether
+// the dir is a loadable bob plugin, which is exactly the shape
+// renderSkillsCwd writes: `<root>/<name>` symlinks and nothing else. The
+// probe fixture IS that shape, not an analogue of it.
 const BobSkillsRoot = ".bob/plugins/posse/skills"
 
 // bobSkillsGlobalRoots is bob's declared Runtime.SkillsGlobalRoots (ADR 0007
@@ -358,7 +369,12 @@ const BobSkillsRoot = ".bob/plugins/posse/skills"
 // is dead. The minified names moved exactly as the ADR's Evidence warns they
 // would — the 2.0.5 recipe's `rXo=` and `nXo=Afr.flatMap` are `xds=` and
 // `Sds=Cmr.flatMap` on 2.0.9, where `NA=".bob"` and `tJ="plugins"` — and the
-// string literals did not. `~/.bob`, `~/.agents` and `~/.claude`, each
+// string literals did not. CONFIRMED LIVE 2026-11-03 (ranger-base-0q45n),
+// which no reading before it was: the 2.0.9 probe's session log registers a
+// `SkillDirectoryWatcher` on each of these six, by absolute path under the
+// operator's $HOME, beside the four workspace roots — so what the running
+// CLI walks is what this bundle read declared, and the list is no longer
+// derived from a parse alone. `~/.bob`, `~/.agents` and `~/.claude`, each
 // with `skills` and `plugins/*/skills` — six entries because the
 // measurement names the glob exactly, not a coarser directory that happens
 // to cover it: refuseSkillsGlobalWrite matches path SEGMENTS, with a `*`

@@ -349,11 +349,16 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		// posse-owned namespace, BobSkillsRoot, and skills_verified names
 		// the bob the operator MEASURED listing a skill there live on
 		// 2026-10-31 — both as a real dir and as a symlink out of the
-		// workspace. The version half moved 2.0.5 → 2.0.7 when the operator
-		// re-ran the three arms on the installed 2.0.7 the same day
-		// (ranger-base-bs49e, §6c's remedy); it holds at what a LIVE probe
-		// produced, so it reads as drift against an installed 2.0.9 on
-		// purpose. Dropping SkillsRoot renders `skills flag — , pointed
+		// workspace. The version half moved twice under §6c's remedy, each
+		// time because the reading before it shipped in drift: 2.0.5 → 2.0.7
+		// when the operator re-ran the three arms on the installed 2.0.7 the
+		// same day (ranger-base-bs49e), then 2.0.7 → 2.0.9 on the installed
+		// 2.0.9 (ranger-base-0q45n, 2026-11-03). It holds at what a LIVE
+		// probe produced and never at what the box carries — the two agree
+		// for the first time since this runtime shipped, which is a
+		// measurement catching up and not a rule change, so this anchor must
+		// not be re-derived from `bob --version` if they part again.
+		// Dropping SkillsRoot renders `skills flag — , pointed
 		// at the tree posse renders per persona` — an empty flag name and a
 		// dangling comma, a malformed row — and posse then points bob at a
 		// tree its CLI never walks. Anchored on the VERSION as well as the
@@ -362,7 +367,7 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		// again, which silently re-degrades every `skills:` PID on bob
 		// (§6b) while the row still names the right path.
 		"cwd-discovery — " + BobSkillsRoot + " under the session dir, symlinked at launch and ADDITIVE",
-		"the LINKS are the binding (verified 2.0.7)",
+		"the LINKS are the binding (verified 2.0.9)",
 		// sandbox: self_sandbox UNSET, so L2 is posse's seatbelt and not
 		// bob's own. Declaring it flips who enforces Edit/Write here on a CLI
 		// nobody has measured wrapping its own children.

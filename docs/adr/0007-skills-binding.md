@@ -14,10 +14,12 @@ version-verified fact per runtime, or that runtime's skills are UNPROVEN;
 bob gets a posse-owned root; the `$HOME` position of ranger-base-q114b is
 reversed — §6) · amended 2026-10-31 (ranger-base-6r1rf: bob's root is
 MEASURED live and no longer UNPROVEN — §6a, Evidence; re-measured on the
-installed 2.0.7 the same day by ranger-base-bs49e, which is what `verified`
-names now) · amended 2026-10-31 (ranger-base-kwbh1: a cwd root may
-also be a fact per DIRECTORY — grok's is gated on folder trust, declared and
-probed rather than seeded — §6f)*
+installed 2.0.7 the same day by ranger-base-bs49e) · amended 2026-10-31
+(ranger-base-kwbh1: a cwd root may also be a fact per DIRECTORY — grok's is
+gated on folder trust, declared and probed rather than seeded — §6f) · amended 2026-11-03 (ranger-base-0q45n: bob
+re-measured live a THIRD time, on the installed 2.0.9 — `verified` names that
+now, and for the first time since §6 shipped the declaration and the box agree
+— §6a, Evidence)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -40,7 +42,7 @@ Facts checked on this machine (2026-08-18):
 | claude | `<name>/SKILL.md` dir | `~/.claude/skills/`, project `.claude/skills/`, plugins' `skills/` | **`--plugin-dir <dir>`** (repeatable, session-only; a dir with `.claude-plugin/plugin.json` + `skills/`). `--add-dir` is *CLAUDE.md dirs* — it does not load skills |
 | codex | `<name>/SKILL.md` dir | `~/.codex/skills/` (10 present) | **`<cwd>/.agents/skills/`, and no flag** — the `-c` candidate is a real config table with no root field, verified 2026-08-18 (§2) |
 | grok | `<name>/SKILL.md` dir | `~/.grok/skills/` (8 present) | **the same `<cwd>/.agents/skills/`, and no flag** — the `--agent` candidate carries no skill-path field, verified 2026-08-18 (§2) |
-| bob | `<name>/SKILL.md` dir | `~/.bob/skills/`, `~/.bob/plugins/*/skills/`, **and `~/.agents/skills/`, `~/.claude/skills/`** | no flag; the workspace's `.bob/skills/`, `.bob/plugins/*/skills/`, `.agents/skills/`, `.claude/skills/` — static read of 2.0.5, re-read unchanged on 2.0.9 (ranger-base-bs49e), and `.bob/plugins/posse/skills/` MEASURED live on 2.0.5 and again on 2.0.7 (§6 Evidence, ranger-base-6r1rf and ranger-base-bs49e) |
+| bob | `<name>/SKILL.md` dir | `~/.bob/skills/`, `~/.bob/plugins/*/skills/`, **and `~/.agents/skills/`, `~/.claude/skills/`** | no flag; the workspace's `.bob/skills/`, `.bob/plugins/*/skills/`, `.agents/skills/`, `.claude/skills/` — static read of 2.0.5, re-read unchanged on 2.0.9 (ranger-base-bs49e) and confirmed live there off the running CLI's own watcher registrations (ranger-base-0q45n), and `.bob/plugins/posse/skills/` MEASURED live on 2.0.5, 2.0.7 and 2.0.9 (§6 Evidence, ranger-base-6r1rf, ranger-base-bs49e and ranger-base-0q45n) |
 
 *(Amended 2026-09-06, ranger-base-mppjc: the two rows above read
 "none verified: candidates …" until this date, and were then followed by a
@@ -83,7 +85,7 @@ to the tool realizer, and a new template placeholder **`{skills}`**:
 | claude | `RHQ_HOME/state/skills/<persona>/claude/` rendered fresh at launch (like gates): `.claude-plugin/plugin.json` `{"name":"posse-<persona>","description":"skills bound by posse"}` and `skills/<name>` — a real directory of files, COPIED from `RHQ_HOME/skills/<name>` (amended 2026-09-05, below) | `--plugin-dir <that dir>` |
 | codex | `<session dir>/.agents/skills/<name>` → symlink to `RHQ_HOME/skills/<name>`, excluded via `.git/info/exclude` (verified, rangerhq-1qd) | nothing — there is no flag |
 | grok | the same `.agents/skills/<name>` symlinks (verified, rangerhq-1qd) | nothing — there is no flag |
-| bob | `<session dir>/.bob/plugins/posse/skills/<name>` → symlink to `RHQ_HOME/skills/<name>`, posse's own namespace (§6d); verified `2.0.7` (§6's live probe, ranger-base-6r1rf, re-run on 2.0.7 by ranger-base-bs49e) | nothing — there is no flag |
+| bob | `<session dir>/.bob/plugins/posse/skills/<name>` → symlink to `RHQ_HOME/skills/<name>`, posse's own namespace (§6d) and needing no `plugin.json` beside it (MEASURED, ranger-base-0q45n); verified `2.0.9` (§6's live probe, ranger-base-6r1rf, re-run on 2.0.7 by ranger-base-bs49e and on 2.0.9 by ranger-base-0q45n) | nothing — there is no flag |
 | `runtimes/*.yaml` | optional `skills_flag:` (`--foo %s` given the rendered dir), or `skills_cwd: <root>` + `skills_verified: <version>` (§6); absent → unrealizable | |
 
 *Amended 2026-09-05 (ranger-base-65rc): the flag tree binds each skill by
@@ -216,10 +218,13 @@ say, per runtime and per version, which root was measured.
   `skills_verified: <the CLI's --version line at the live measurement>`.
   The built-ins carry: codex `.agents/skills` verified `codex-cli 0.147.0`
   (moved to `0.153.4` by ranger-base-bdias); grok `.agents/skills` verified
-  `grok 1.0.5`; bob `.bob/plugins/posse/skills` verified **`2.0.7`**
+  `grok 1.0.5`; bob `.bob/plugins/posse/skills` verified **`2.0.9`**
   (ranger-base-6r1rf, 2026-10-31 — it read **no verified root** until then;
-  moved 2.0.5 → 2.0.7 the same day by ranger-base-bs49e's re-run, 6c's own
-  remedy applied to a reading that shipped in drift).
+  moved 2.0.5 → 2.0.7 the same day by ranger-base-bs49e's re-run and 2.0.7 →
+  2.0.9 on 2026-11-03 by ranger-base-0q45n's, 6c's own remedy applied twice to
+  readings that each shipped in drift inside a day — and the second time it
+  landed, because the off-switch that holds this box still was proven on the
+  same start).
   The value is the CLI's own line, the way that CLI prints it — bob's is the
   bare number, where codex's carries a program name — **minus any trailing
   bracketed field, which is box state and not the release** (ranger-base-3a5z7,
@@ -265,7 +270,7 @@ say, per runtime and per version, which root was measured.
   re-measurement clears either — a permanent false finding standing beside the
   real ones, which is the failure the exit code was built to avoid
   (ranger-base-f5jbs). It is one rule, not a per-runtime parser: codex's
-  `codex-cli 0.153.4` and bob's `2.0.7` have no bracketed field, so their
+  `codex-cli 0.153.4` and bob's `2.0.9` have no bracketed field, so their
   canonical form is the raw line byte for byte, and a release move still reds
   with the field present or absent — the version and the build hash are both
   ahead of the bracket. What stops being drift is a channel change alone,
@@ -427,12 +432,17 @@ say, per runtime and per version, which root was measured.
   tree uses. **RE-RUN 2026-10-31 09:38 on the installed bob 2.0.7
   (`commit: e1a2a9f87`, ranger-base-bs49e), 6c's own remedy for the drift
   the first reading shipped in: the same three arms, the same method, all
-  three LISTED again.** So bob's built-in declares `SkillsVerified: "2.0.7"`
-  (runtime.go) and a `skills:` PID on bob no longer degrades. The work
-  box's bob version is still unmeasured and out of this probe's reach, and
-  the probe's own box is unstated — what the declaration keys on is the
-  VERSION, which is the whole of §6.
-  Method and both arm-by-arm readings: `docs/notes.d/ranger-base-6r1rf.md`.
+  three LISTED again. RE-RUN AGAIN 2026-11-03 10:27Z on the installed bob
+  2.0.9 (`commit: 9690f20b0`, ranger-base-0q45n), the same remedy for the
+  drift THAT reading shipped in: same three arms, same method, same fixture
+  on disk, all three LISTED as location *local*.** So bob's built-in
+  declares `SkillsVerified: "2.0.9"` (runtime.go) and a `skills:` PID on bob
+  no longer degrades. The work box's bob version is still unmeasured and out
+  of this probe's reach, and the probe's own box is unstated — what the
+  declaration keys on is the VERSION, which is the whole of §6.
+  Method and all three arm-by-arm readings:
+  `docs/notes.d/ranger-base-6r1rf.md`; the 2.0.9 run's own log evidence is
+  `docs/notes.d/ranger-base-0q45n.md`.
 - MEASURED 2026-10-31 (ranger-base-6r1rf), this box: installed bob was
   **2.0.7** (`commit: e1a2a9f87`) against a declaration of 2.0.5, so bob's
   own declaration was in drift under 6c the day it shipped — the codex case
@@ -457,6 +467,34 @@ say, per runtime and per version, which root was measured.
   `bobShell.autoUpdate: false` does not gate (set 09:37, before the probe —
   ranger-base-zneyv said so in its own blast radius) and which cannot fire
   twice.
+- MEASURED 2026-11-03 (ranger-base-0q45n), this box: **the third
+  re-measurement is the one that landed, and the reason is the off-switch.**
+  The operator re-ran the three arms on the installed bob **2.0.9**
+  (`commit: 9690f20b0`) at 10:27Z, all three LISTED, and `bob --version` read
+  the same bare `2.0.9` afterwards — so for the first time since §6 shipped,
+  `skills_verified:` and the installed CLI agree and `posse runtime drift`
+  reports no bob row. What held the box still is `bobShell.autoUpdate: false`
+  (ranger-base-zneyv), now **PROVEN**: that session's log carries
+  `bob-shell:update-check  Skipping update check. Disabled by user setting or
+  policy` at 10:27:11.146Z, as does the start one minute before it — two
+  consecutive clean starts — and the bundle's mtime is still the 09:39
+  replacement of three days earlier. The two readings before this could not
+  see the line because the `bobshell` → `@ibm/bob` MIGRATION sat ahead of the
+  check in bob's startup chain and ran instead of it; that migration is spent
+  (no migration line anywhere in this log) and the check is what a start
+  reaches now. Two further facts this run settles, neither of them reachable
+  from a bundle: (1) the ten discovery roots are confirmed LIVE — bob
+  registers a `SkillDirectoryWatcher` on each of §6e's six global roots and
+  each of the four workspace roots, by absolute path, so the running CLI walks
+  what the static read declared; (2) `.bob/plugins/posse/` carried **no
+  `plugin.json`** (bob's own PluginManager logged `No plugin.json found ...
+  skipping` for it) and the skill under it listed anyway, so
+  `.bob/plugins/*/skills` is a skill root whether or not the dir is a loadable
+  plugin — which is exactly what posse's render writes, `<root>/<name>`
+  symlinks and nothing else. What this run does NOT establish is anything
+  about the next release: the field keys on the version, and the off-switch
+  gates updates and not migrations.
+  `docs/notes.d/ranger-base-0q45n.md`.
 - MEASURED 2026-10-31 (ranger-base-kf9ou), this box, independently of the
   bullet above and reaching the same numbers: `bob --version` **2.0.9**
   (`commit: 9690f20b0`), the bundle at

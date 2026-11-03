@@ -23,6 +23,9 @@ on the installed 2.0.7 at 09:38, so `SkillsVerified` is `"2.0.7"` and not
 `"2.0.5"`, and the remaining live arm is filed as **ranger-base-0q45n**. The
 reasoning this bead gives for not advancing the field off a bundle read is the
 reasoning bs49e's 2.0.7 applies; only the number differs.
+`[0q45n]` That arm ran on 2026-11-03 and the field is `"2.0.9"` now. The
+reasoning held all the way through: the number was advanced by a probe each
+time and never by a bundle read.
 
 ## 1. The version is 2.0.9, not 2.0.7, and the pin is not what held it
 
@@ -94,6 +97,10 @@ still `"2.0.7"`. bob writes that key on the first start of a new version
 (`if (last !== current) await config.updateAt("bobShell.lastRunVersion", current)`),
 so **no 2.0.9 session has ever started on this box**. Every live reading of
 2.0.9 is still unmade, and that is the line between the two halves below.
+`[0q45n]` It reads `"2.0.9"` as of 2026-11-03 10:27:10Z, written by the
+operator's probe — so this key is also the record of which session was this
+box's first 2.0.9 start, and it was the one that measured it. bob rewrote that
+file on the same start and left `autoUpdate: false` standing beside it.
 
 ## 2. Re-measured on 2.0.9 (static bundle read, free)
 
@@ -149,7 +156,7 @@ exactly the work it was written for.
 
 | claim | why it stays |
 |---|---|
-| **skills discovery, live** (ADR 0007 §6 Evidence, `SkillsVerified: "2.0.5"`): that bob LISTS a skill at `.bob/plugins/posse/skills/<name>/SKILL.md` in `/skills`, as a real dir AND as a symlink out of the workspace | needs a TUI and a browser sign-in. **ranger-base-bs49e** is already filed with the operator for exactly this; ranger-base-lf6it §2 narrowed it to the symlink arm and the listing itself. `SkillsVerified` is not advanced off a bundle read, so the drift row keeps firing. `[bs49e]` the field reads `"2.0.7"` and the row `drift: skills_verified: "2.0.7" but bob reports "2.0.9"`, because the operator re-ran the probe on the installed 2.0.7 at 09:38 — one hour before this bead read the binary as 2.0.9. The live 2.0.9 arm is **ranger-base-0q45n** |
+| **skills discovery, live** (ADR 0007 §6 Evidence, `SkillsVerified: "2.0.5"`): that bob LISTS a skill at `.bob/plugins/posse/skills/<name>/SKILL.md` in `/skills`, as a real dir AND as a symlink out of the workspace | needs a TUI and a browser sign-in. **ranger-base-bs49e** is already filed with the operator for exactly this; ranger-base-lf6it §2 narrowed it to the symlink arm and the listing itself. `SkillsVerified` is not advanced off a bundle read, so the drift row keeps firing. `[bs49e]` the field reads `"2.0.7"` and the row `drift: skills_verified: "2.0.7" but bob reports "2.0.9"`, because the operator re-ran the probe on the installed 2.0.7 at 09:38 — one hour before this bead read the binary as 2.0.9. The live 2.0.9 arm is **ranger-base-0q45n**. `[0q45n]` RUN 2026-11-03: all three arms LISTED on 2.0.9, the field reads `"2.0.9"`, and the drift row is **clear** for the first time since §6 shipped |
 | **`rules_precedence: pid`** (runtime.go, ranger-base-4mrmc) | a billed model turn — 0.024704 Bobcoins under the operator's authorization on ranger-base-2vr1j. The artifact survives (bob task `77a20a1a8b35b4a1b9b50d95fde15712` in `~/.bob/db/bob.db`) but it is a 2.0.5 reply |
 | **`hidden` hides nothing** (ranger-base-4mrmc F1) | read off that same turn's stored prompt. The schema field is still there on 2.0.9; what it does is a reading of a rendered prompt |
 | **top-level `-p` is swallowed and delivers nothing** (ranger-base-5jjtn) | the measurement was a pane watched at 5/10/20/30/45s. **Corroborated, not re-measured**: `initialPrompt`, `args.prompt` and `args?.prompt` appear **0 times** in the 2.0.9 bundle, and the chat executor hands the whole args object to the TUI without a first-message path. That is a reason not to re-probe, not a substitute for one — and `DO NOT PUT -p BACK` is unaffected either way |
@@ -227,6 +234,11 @@ it — so this correction moves one printed row and no behaviour. The row's pin 
   day, all three arms listed, and `SkillsVerified` moved to `"2.0.7"`. The same
   wall for 2.0.9 is **ranger-base-0q45n**, which §2 narrows to the symlink arm
   and the listing — never the roots.
+  `[0q45n]` CLOSED too, 2026-11-03: all three arms listed on 2.0.9 and
+  `SkillsVerified` is `"2.0.9"`. §1's own "one less thing to check" came out
+  the other way — the `Skipping update check` line WAS the thing that run
+  settled, and it is what makes this number the first one that is not already
+  stale.
 - **ranger-base-f5jbs** (`-l code`) — the exit-code surface for
   `skillsVerifiedDrift`. Unchanged by any of this, and §1 is a second argument
   for it: the version moved twice in one day, both times without anybody typing

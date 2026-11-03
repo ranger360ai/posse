@@ -2259,52 +2259,63 @@ var builtinRuntimes = []Runtime{
 	// is most likely to get wrong, and now the part that is measured.
 	// Skills: bob's root is its OWN posse-owned namespace, BobSkillsRoot
 	// (ADR 0007 §6d) — not AgentsSkillsPath, the shared surface codex and
-	// grok read. SkillsVerified is `2.0.7`, MEASURED LIVE TWICE by the
+	// grok read. SkillsVerified is `2.0.9`, MEASURED LIVE THREE TIMES by the
 	// operator, because this cage cannot run the probe at all — it can
 	// neither write ~/.bob nor complete bob's browser sign-in
-	// (ranger-base-lfk7t): on 2.0.5 at 2026-10-31 00:25 (ranger-base-6r1rf)
-	// and re-run on the installed 2.0.7 at 2026-10-31 09:38
-	// (ranger-base-bs49e, §6c's remedy for the drift the first reading
-	// shipped in). Both runs: `bob chat --workspace
+	// (ranger-base-lfk7t): on 2.0.5 at 2026-10-31 00:25 (ranger-base-6r1rf),
+	// re-run on the installed 2.0.7 at 2026-10-31 09:38 (ranger-base-bs49e)
+	// and re-run again on the installed 2.0.9 at 2026-11-03 10:27
+	// (ranger-base-0q45n) — the last two both §6c's remedy for the drift the
+	// reading before them shipped in. All three runs: `bob chat --workspace
 	// <probe> --trust` in a scratch workspace, read off the TUI's own
-	// `/skills` listing with no turn sent, and both listed a skill planted
-	// at `<ws>/.bob/plugins/posse/skills/<name>/SKILL.md` BOTH as a real dir
-	// and as a symlink whose target is outside the workspace — the two
-	// facts §6's Evidence had ASSUMED, and the pair the binding needs, since
-	// posse renders this root as symlinks into RHQ_HOME/skills. So a
+	// `/skills` listing with no turn sent, and all three listed a skill
+	// planted at `<ws>/.bob/plugins/posse/skills/<name>/SKILL.md` BOTH as a
+	// real dir and as a symlink whose target is outside the workspace — the
+	// two facts §6's Evidence had ASSUMED, and the pair the binding needs,
+	// since posse renders this root as symlinks into RHQ_HOME/skills. So a
 	// `skills:` PID on bob is no longer §6b-UNPROVEN.
 	// The value is BARE on purpose: `skills_verified` is compared verbatim
 	// against ProbeCLIVersion's read (§6c), and `bob --version` prints the
-	// number alone — `2.0.7`, with `commit: <sha>` on a second line the
+	// number alone — `2.0.9`, with `commit: 9690f20b0` on a second line the
 	// reader drops — where codex prints `codex-cli 0.153.4`. Writing
-	// `bob 2.0.7` here would be permanent false drift against every bob.
-	// It is 2.0.7 and NOT the version installed right now, because §6's
-	// subject is the release whose LIVE discovery was measured and not the
-	// one the box happens to carry: bob replaced itself AGAIN at 09:39, one
-	// minute after that probe exited, so this box runs 2.0.9 (`commit:
-	// 9690f20b0`, `@ibm/bob`) and this declaration IS in drift today —
-	// reported in the grid and at launch, never refused (§6c). THREE
-	// releases in one day with nobody typing an upgrade: 2.0.5 at 00:26,
-	// 2.0.7 by 00:27, 2.0.9 by 09:39 (ranger-base-kf9ou, which re-read the
-	// installed binary independently and agrees on the number and the
-	// commit). The remedy is
-	// one more operator probe, ranger-base-0q45n, and it is narrow: a STATIC
-	// read of 2.0.9's bundle finds BobSkillsRoot and every
-	// SkillsGlobalRoots entry below unchanged, so what is unmeasured on
-	// 2.0.9 is the symlink arm and the listing, never the roots. Nor has
-	// anything started a 2.0.9 session to measure: `bobShell.lastRunVersion`
-	// still reads `2.0.7`, and bob writes that on the first start of a new
-	// version (ranger-base-kf9ou). So advancing this field off the bundle
-	// read alone would retire the drift row by asserting the one thing a
-	// bundle cannot show.
-	// The second move was the `bobshell` → `@ibm/bob` package MIGRATION,
-	// which `bobShell.autoUpdate: false` does not gate (in that file since
-	// 09:37, ranger-base-zneyv, whose own blast-radius note said so) — so a
-	// reader here must not take the off-switch as a reason to trust the
-	// number. The route is closed on 2.0.9 either way: the migration worker
-	// is absent from that bundle (ranger-base-kf9ou §1).
-	// docs/notes.d/ranger-base-bs49e.md carries both readings and
-	// docs/notes.d/ranger-base-kf9ou.md the re-read beside them.
+	// `bob 2.0.9` here would be permanent false drift against every bob.
+	// **This is the first time since this runtime shipped that the field and
+	// the installed binary agree**, and that is a measurement and not a
+	// convention: the field holds at the release whose LIVE discovery was
+	// measured, never at what the box happens to carry (§6's whole subject),
+	// and the two agree only because a probe finally caught up. The two
+	// readings before this one each shipped in drift within a day — 2.0.5
+	// declared against an installed 2.0.7, then 2.0.7 against an installed
+	// 2.0.9 sixty seconds after the probe exited. THREE releases crossed this
+	// field in a single day, with nobody typing an upgrade: 2.0.5 at 00:26,
+	// 2.0.7 by 00:27, 2.0.9 by 09:39 (ranger-base-kf9ou, which
+	// re-read the installed binary independently and agrees on the number
+	// and the commit).
+	// WHAT STOPPED IT, and it is the reason a reader may trust this number
+	// for longer than a day: `bobShell.autoUpdate: false` is now PROVEN on
+	// this box (ranger-base-zneyv's key, whose VERIFIED-WILL-MEAN this
+	// closes). The probe's own session log carries
+	// `bob-shell:update-check  Skipping update check. Disabled by user
+	// setting or policy` at 10:27:11Z — and so does the start a minute
+	// before it, so the line is two consecutive clean starts and not one —
+	// and the bundle's mtime has not moved since the 09:39 replacement three
+	// days earlier. The earlier readings could not show this because the
+	// `bobshell` → `@ibm/bob` package MIGRATION, which the key does NOT gate
+	// (ranger-base-bs49e; zneyv's own blast-radius note said so), sat ahead
+	// of the update check in bob's startup chain and ran instead of it. That
+	// migration is spent — the legacy package is gone, its worker is absent
+	// from the 2.0.9 bundle (ranger-base-kf9ou §1), and the probe's log
+	// carries no migration line at all — so the check is what a start
+	// reaches now, and the check is off.
+	// `bobShell.lastRunVersion` reads `2.0.9` as of that start, written at
+	// 10:27:10Z: the probe WAS this box's first 2.0.9 session, which is what
+	// ranger-base-kf9ou predicted while the key read `2.0.7`. bob rewrote
+	// that settings file on the same start and left `autoUpdate: false`
+	// standing, so the off-switch survives bob's own writes to the file that
+	// holds it.
+	// docs/notes.d/ranger-base-0q45n.md carries this reading,
+	// docs/notes.d/ranger-base-bs49e.md the two before it and
+	// docs/notes.d/ranger-base-kf9ou.md the independent re-read beside them.
 	// SkillsGlobalRoots is the same static read's other half (§6e): bob's
 	// OWN BobSkillsRoot (`.bob/plugins/posse/skills`) sits inside its own
 	// `.bob/plugins/*/skills` entry below, so bob's declaration refuses its
@@ -2312,8 +2323,12 @@ var builtinRuntimes = []Runtime{
 	// bundle already settles. Re-read on 2.0.9's bundle (MEASURED
 	// 2026-10-31, ranger-base-bs49e): the six entries are unchanged, and so
 	// are the four workspace roots — see bobSkillsGlobalRoots in skills.go
-	// for the current path and the minified names.
-	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, SkillsVerified: "2.0.7", SkillsGlobalRoots: bobSkillsGlobalRoots, Unattended: "--auto-approve",
+	// for the current path and the minified names. Those ten roots are no
+	// longer a bundle read alone: the 2026-11-03 probe's log registers a
+	// SkillDirectoryWatcher on each of them by absolute path at startup —
+	// four under the workspace, these six under $HOME — so the RUNNING
+	// 2.0.9 walks exactly what this declaration names (ranger-base-0q45n).
+	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, SkillsVerified: "2.0.9", SkillsGlobalRoots: bobSkillsGlobalRoots, Unattended: "--auto-approve",
 		// The PID channel (ADR 0062 D1): bob is the one built-in whose CLI
 		// has no launch-time system FLAG, and the one that declares a
 		// persona-mode channel. {mode} renders off this and the launch

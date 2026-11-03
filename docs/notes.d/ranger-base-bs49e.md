@@ -192,11 +192,17 @@ survive the next one (ranger-base-lf6it §5).
 
 ## Filed, not fixed
 
-- **ranger-base-0q45n** (operator, `-l question`, `-a dave` — the probe needs
-  a browser sign-in and a writable `~/.bob`, which a `cage: seatbelt` seat has
-  neither of) — re-run arm b and the `/skills` listing on 2.0.9, and read the
-  off-switch for free on the same start. §3 above narrows it from three arms
-  to one plus the listing; §2 says what to grep the log for.
+- ~~**ranger-base-0q45n**~~ **RUN 2026-11-03** (operator, `-l question`,
+  `-a dave` — the probe needs a browser sign-in and a writable `~/.bob`, which
+  a `cage: seatbelt` seat has neither of) — re-run arm b and the `/skills`
+  listing on 2.0.9, and read the off-switch for free on the same start. §3
+  above narrows it from three arms to one plus the listing; §2 says what to
+  grep the log for.
+  **Both came back.** All three arms LISTED on the installed 2.0.9 and the
+  grep §2 specified hit: `Skipping update check. Disabled by user setting or
+  policy`. So the clock this fragment's title says was not cleared IS cleared
+  — `SkillsVerified` is `"2.0.9"`, matching the installed CLI, and §2's "the
+  off-switch is therefore still unproven" is superseded. `docs/notes.d/ranger-base-0q45n.md`.
 
 ## Verified
 
