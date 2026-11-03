@@ -11,6 +11,36 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**An attacker's git config can no longer reach a posse-launched claude
+session through `GIT_CONFIG_GLOBAL`, `XDG_CONFIG_HOME` or `HOME`, on a box
+whose git global scope is one file.**
+
+*Affected: every build so far, claude seats only. Nothing to install.*
+
+Three environment names steer which file git reads as global scope, and a
+lower-scope settings `env` block pointing any of them at a config naming
+`core.hooksPath` ran that hook in the session. The launch pin now carries
+`GIT_CONFIG_GLOBAL` set to the file git itself reads with the variable unset,
+resolved at launch: the one global file that exists, or `~/.gitconfig` when
+there is none. An absolute value there replaces git's whole global-file
+lookup, so the one row closes all three names for git. Your identity is
+unchanged: `user.name`, `user.email` and the visibility wall read the same
+file they read before. This supersedes ranger-base-37y0z for a box with zero
+or one global file. That ruling accepted the inlet because every fixed value
+(`/dev/null`, `""`) silently misattributes commits, and a per-launch value
+does not.
+
+If you have **both** `~/.config/git/config` (or `$XDG_CONFIG_HOME/git/config`)
+**and** `~/.gitconfig`, git reads both and no single value is neutral. The pin
+then carries no row, the inlet stays open as it was, and every launch prints
+`DEGRADED: git global scope has two files; GIT_CONFIG_GLOBAL inlet NOT
+pinned`. Merge the two files to close it. posse never falls back to
+`/dev/null` here. That is the opposite of the `GIT_CONFIG_SYSTEM` row's
+fallback, because what `/dev/null` loses in global scope is who you are.
+The policy drop-in does not carry this row, for the same reason it no longer
+carries `GIT_CONFIG_SYSTEM`. So a claude you start yourself keeps these
+inlets, as before.
+
 **A commit scanner configured in system git scope now runs in posse-launched
 claude sessions.**
 

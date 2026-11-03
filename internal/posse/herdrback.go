@@ -2873,6 +2873,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if d := GitSystemScopeDegraded(); d != "" {
 				warn("posse: %s\n", d)
 			}
+			// And its GIT_CONFIG_GLOBAL row, which degrades the other way:
+			// no row rather than /dev/null (ranger-base-obdnk).
+			if d := GitGlobalScopeDegraded(); d != "" {
+				warn("posse: %s\n", d)
+			}
 		}
 		if f := rt.PIDVoided(cmd); f != "" {
 			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+

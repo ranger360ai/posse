@@ -78,17 +78,18 @@ import "os"
 // and is filed separately rather than half-done here.
 //
 // ALSO NOT COVERED, and these three are inlets that FIRE: GIT_CONFIG_COUNT
-// with its GIT_CONFIG_KEY_n/VALUE_n indices, GIT_CONFIG_GLOBAL, and
-// GIT_EXTERNAL_DIFF. The first two were named in ranger-base-rflee's fix
+// with its GIT_CONFIG_KEY_n/VALUE_n indices, GIT_EXTERNAL_DIFF, and — on a
+// box whose git global scope has two files, and only there —
+// GIT_CONFIG_GLOBAL, which carries XDG_CONFIG_HOME and HOME with it. The first two were named in ranger-base-rflee's fix
 // spec as part of "GIT_CONFIG_*" and both were left out of the table
 // silently, which is the defect ranger-base-44or9 is about. The third is
 // here by a different route: it WAS pinned, its cost was measured after the
 // fact, and it came back out by operator ruling (ranger-base-5sph1, applied
 // on ranger-base-888fv). Either way the file's contract is the same — a name
 // that is not here is not covered, and a reader has to be able to SEE that.
-// None of the three is pinned, and each has a measured reason (the
-// GIT_CONFIG pair 2026-09-05, GIT_EXTERNAL_DIFF 2026-09-06; git 2.50.1
-// Apple Git-155):
+// Each has a measured reason (the GIT_CONFIG pair 2026-09-05 and
+// GIT_CONFIG_GLOBAL again 2026-11-03, GIT_EXTERNAL_DIFF 2026-09-06; git
+// 2.50.1 Apple Git-155):
 //
 //   - GIT_CONFIG_COUNT has no pinnable value at all. `0` closes the inlet —
 //     and closes posse's OWN L3 hooks redirect with it, because ADR 0052 D2
@@ -102,7 +103,7 @@ import "os"
 //     Any value ≥ 1 is worse — it names indices the session never received
 //     and git dies `missing config key GIT_CONFIG_KEY_0`, rc 128, on every
 //     command (the ranger-base-buvq4 outage, recorded in hooksredirect.go).
-//   - GIT_CONFIG_GLOBAL has no neutral spelling, empty or not. Both
+//   - GIT_CONFIG_GLOBAL has no neutral CONSTANT, empty or not. Both
 //     /dev/null and "" close the inlet by replacing ~/.gitconfig wholesale,
 //     and this box's ~/.gitconfig is where user.name and user.email live. It
 //     does not fail loudly: git falls back to a gecos-and-hostname ident and
@@ -116,12 +117,28 @@ import "os"
 //     /dev/null global that command exits 1 with no output — the renderer's
 //     own "nothing to say" branch — so the wall would come out with no
 //     e-mail literal in it, silently. Measured both arms in this repo.
-//     ORDERS.md already had the same effect from the other end: a
-//     hook-freshness reference rendered under that variable loses three
-//     `posse_check 'email'` literals and reads every repo as STALE. The
-//     only neutral value is the path git already resolves to, which is
-//     per-box, and the shipped drop-in is a constant this table is held
-//     equal to — so there is nothing to write in it.
+//     The only neutral value is the path git already resolves to, which is
+//     per-box — so since ranger-base-obdnk the launcher RESOLVES it
+//     (gitglobalscope.go) and the table carries a GIT_CONFIG_GLOBAL row,
+//     below, whenever git's global scope is one file or none. That one row
+//     closes three names for git, because an absolute GIT_CONFIG_GLOBAL
+//     replaces git's whole global-file lookup: GIT_CONFIG_GLOBAL itself,
+//     XDG_CONFIG_HOME (git reads $XDG_CONFIG_HOME/git/config) and HOME (git
+//     reads $HOME/.gitconfig). MEASURED 2026-11-03, a marker
+//     core.fsmonitor on `git status`: all three FIRED under the pin without
+//     the row and all three are QUIET with it. What stays OPEN is the box
+//     with two global files: git reads BOTH, XDG first, and no single value
+//     reads both — pinning either loses the other's keys, and a rendered
+//     [include] file breaks `git config --global --get-all user.email`
+//     (rc 1; includes are off for --global) and moves --global writes into
+//     posse's file. So there the row is ABSENT, the launch prints a
+//     DEGRADED line saying GIT_CONFIG_GLOBAL inlet NOT pinned, and all
+//     three names stay open to git exactly as ranger-base-37y0z accepted
+//     them. Never /dev/null, never "": that is the opposite fail direction
+//     to the GIT_CONFIG_SYSTEM row, for the identity reason above. The
+//     policy drop-in still carries no row — it is a shipped constant, the
+//     same reason GIT_CONFIG_SYSTEM left it — so the operator's own uncaged
+//     claude keeps all three, unchanged and accepted.
 //   - GIT_EXTERNAL_DIFF has no neutral spelling either, and unlike the two
 //     above it was pinned `""` for a while before anyone measured what that
 //     cost. Every value in this name is EXECUTED as the diff driver, so `""`
@@ -164,15 +181,19 @@ import "os"
 //
 // So the GIT_CONFIG_* family is NARROWED here, not closed, and the git
 // exec surface is narrowed with it: an attacker who can set a lower-scope
-// `env` block still has GIT_CONFIG_COUNT, GIT_CONFIG_GLOBAL and
-// GIT_EXTERNAL_DIFF. Closing any of them costs something the operator has
+// `env` block still has GIT_CONFIG_COUNT and GIT_EXTERNAL_DIFF everywhere,
+// and GIT_CONFIG_GLOBAL (with XDG_CONFIG_HOME and HOME) on a box with two
+// global files. Closing any of them costs something the operator has
 // to accept, so each was filed for them rather than decided here —
 // ranger-base-37y0z for the GIT_CONFIG pair, ranger-base-5sph1 for
-// GIT_EXTERNAL_DIFF — and all three were accepted.
+// GIT_EXTERNAL_DIFF — and all three were accepted. ranger-base-obdnk
+// supersedes 37y0z for GIT_CONFIG_GLOBAL on a box with zero or one global
+// file, where per-launch resolution makes the closing value free.
 // TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot holds this
 // paragraph against the live behaviour for the pair: it fails if either
-// name stops being disclosed, and it fails if either gap closes and the
-// prose stops being true.
+// name stops being disclosed, if GIT_CONFIG_COUNT's gap closes and the prose
+// stops being true, and if GIT_CONFIG_GLOBAL's arm is open on a launch that
+// carries its row (or closed on one that does not).
 // TestQATheExternalDiffRowIsPinnedWithItsCostOrNotPinnedAtAll holds the
 // third one to the same standard from the other direction: absent from
 // BOTH ends and named here with a reason, or pinned with its cost readable
@@ -361,6 +382,37 @@ import "os"
 //	                                name itself for its own subprograms, over
 //	                                whatever it inherited (measured, alias
 //	                                included).
+//	GIT_CONFIG_GLOBAL=<git's own>   only when git's global scope is one file
+//	                                or none (ranger-base-obdnk): the one
+//	                                that exists, else $HOME/.gitconfig, git's
+//	                                --global write target when unset. Asked
+//	                                at launch with `git var
+//	                                GIT_CONFIG_GLOBAL` (git's documented
+//	                                ${XDG_CONFIG_HOME:-$HOME/.config}/git/config
+//	                                then $HOME/.gitconfig on an older git),
+//	                                every GIT_CONFIG* scrubbed, so it is
+//	                                neutral by construction: on this box
+//	                                `git config --list --show-origin
+//	                                --show-scope` is byte-identical unset vs
+//	                                pinned, and so are `git config --get-all
+//	                                user.email`, `git var GIT_AUTHOR_IDENT`
+//	                                and the --global write target. Closes
+//	                                GIT_CONFIG_GLOBAL, XDG_CONFIG_HOME and HOME
+//	                                for git (all three FIRED without it,
+//	                                MEASURED 2026-11-03). TWO files: no row
+//	                                and a DEGRADED launch line, never
+//	                                /dev/null — see ALSO NOT COVERED for why
+//	                                the fail direction is the opposite of
+//	                                GIT_CONFIG_SYSTEM's. Caveats, stated:
+//	                                resolved from the LAUNCHER's HOME and
+//	                                XDG_CONFIG_HOME (a steered launcher is out
+//	                                of scope, as for every row); a second
+//	                                global file made after launch is not read
+//	                                by that session and the next launch
+//	                                degrades; HOME's reach beyond git is not
+//	                                covered; a container seat is handed a
+//	                                host path it does not mount (gitglobalscope.go).
+//	                                Not in the policy drop-in.
 //	ANTHROPIC_BASE_URL=…anthropic.com   read from the bundle, which resolves
 //	                                the endpoint as `ANTHROPIC_BASE_URL ||
 //	                                CLAUDE_CODE_API_BASE_URL || "https://
@@ -389,7 +441,7 @@ import "os"
 // rendered launch line is stable across launches and a diff of it is
 // readable.
 func inletPin() []EnvVar {
-	return []EnvVar{
+	pin := []EnvVar{
 		// Exec inlets: a shell, the dynamic linker, and node.
 		{Key: "BASH_ENV", Value: os.DevNull},
 		{Key: "ENV", Value: os.DevNull},
@@ -397,15 +449,24 @@ func inletPin() []EnvVar {
 		{Key: "LD_PRELOAD", Value: ""},
 		{Key: "NODE_OPTIONS", Value: " "},
 
-		// Exec inlets git opens whenever a session runs git. Three
-		// more names git reads are inlets and are NOT here — two of
-		// the GIT_CONFIG_* family, and GIT_EXTERNAL_DIFF, which was
-		// pinned until the operator priced it and ruled it out. The
-		// ALSO NOT COVERED paragraph above carries the measurement
-		// that keeps each of them out.
+		// Exec inlets git opens whenever a session runs git. Two
+		// more names git reads are inlets and are NOT here —
+		// GIT_CONFIG_COUNT, and GIT_EXTERNAL_DIFF, which was pinned
+		// until the operator priced it and ruled it out — and a third,
+		// GIT_CONFIG_GLOBAL, is here only on a box whose global scope
+		// is one file. The ALSO NOT COVERED paragraph above carries the
+		// measurement behind each.
 		{Key: "GIT_SSH_COMMAND", Value: "ssh"},
 		{Key: "GIT_PAGER", Value: ""},
 		{Key: "GIT_CONFIG_SYSTEM", Value: gitSystemScopePinValue()},
+	}
+	// GIT_CONFIG_GLOBAL only when git's global scope is ONE file (or none):
+	// with two there is no neutral value, and the fallback is no row — never
+	// /dev/null, which empties the identity (ranger-base-obdnk).
+	if p, err := gitGlobalScope(); err == nil {
+		pin = append(pin, EnvVar{Key: "GIT_CONFIG_GLOBAL", Value: p})
+	}
+	return append(pin, []EnvVar{
 		{Key: "GIT_CONFIG_PARAMETERS", Value: ""},
 
 		// Transport: where the bearer goes, and who is trusted to
@@ -423,7 +484,7 @@ func inletPin() []EnvVar {
 		{Key: "CLAUDE_CODE_CERT_STORE", Value: ""},
 		{Key: "CLAUDE_CODE_CLIENT_CERT", Value: ""},
 		{Key: "CLAUDE_CODE_CLIENT_KEY", Value: ""},
-	}
+	}...)
 }
 
 // anthropicBaseURL is the endpoint the runtime falls back to with neither

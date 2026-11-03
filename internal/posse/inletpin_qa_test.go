@@ -118,9 +118,13 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 // same question independently. GIT_CONFIG_SYSTEM's answer is the git
 // binary's build-time sysconfdir (ranger-base-t301k); the independent route
 // is `git config --system --list --show-origin`, not the `git var` the
-// resolver uses first, so the two can disagree.
+// resolver uses first, so the two can disagree. GIT_CONFIG_GLOBAL's is the
+// global-scope origins of `git config --list --show-scope`
+// (ranger-base-obdnk); its "" answer means the row must be ABSENT, which is
+// what an absent key reads as in the comparison below.
 var launchResolvedInletRows = map[string]func(*testing.T) (string, bool){
 	"GIT_CONFIG_SYSTEM": gitSystemScopePath,
+	"GIT_CONFIG_GLOBAL": gitGlobalScopePath,
 }
 
 // The two halves compose, in an order that does not move. The credential

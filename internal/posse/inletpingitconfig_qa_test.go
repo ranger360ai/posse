@@ -15,9 +15,10 @@ package posse
 // here is not covered, and a reader has to be able to see that".
 //
 // WHAT MEASUREMENT MADE OF THE FOUR-WAY FIX THE BEAD ASKED FOR. Two of the
-// family can be pinned and now are. Two cannot be, and the cost of pinning
-// each was measured rather than assumed, so they are disclosed in the file
-// instead — which is the other half of what this test holds:
+// family could be pinned and were. Two could not be, and the cost of pinning
+// each was measured rather than assumed, so they were disclosed in the file
+// instead — which is the other half of what this test holds. Since
+// ranger-base-obdnk one of those two is pinned on most boxes:
 //
 //   - GIT_CONFIG_SYSTEM             pinned, to the path git resolves with
 //                                   the variable unset (ranger-base-t301k;
@@ -28,10 +29,14 @@ package posse
 //                                   posse's own L3 hooks redirect (ADR 0052
 //                                   D2), which rides this exact mechanism;
 //                                   ≥1 is rc 128 on every git command.
-//   - GIT_CONFIG_GLOBAL             NOT pinnable: every closing spelling
-//                                   drops ~/.gitconfig, and git then commits
-//                                   under a gecos ident at rc 0 — silent
-//                                   misattribution, fleet-wide.
+//   - GIT_CONFIG_GLOBAL             no neutral CONSTANT: every closing
+//                                   constant drops ~/.gitconfig, and git
+//                                   then commits under a gecos ident at
+//                                   rc 0. Pinned since ranger-base-obdnk to
+//                                   the file git resolves when its global
+//                                   scope is one file or none; with two the
+//                                   row is ABSENT and disclosed, never
+//                                   /dev/null.
 //
 // So this file asserts three things and not one: the two rows are pinned at
 // both ends, the two that are not pinned are DISCLOSED, and the live gap is
@@ -64,8 +69,16 @@ var gitConfigPinned = map[string]string{
 // visible in the file's own prose instead. The value is the phrase a reader
 // looking for the reason would search for.
 var gitConfigDisclosed = map[string]string{
-	"GIT_CONFIG_COUNT":  "no pinnable value",
-	"GIT_CONFIG_GLOBAL": "no neutral spelling",
+	"GIT_CONFIG_COUNT": "no pinnable value",
+}
+
+// gitConfigGlobalDisclosed is what the ALSO NOT COVERED paragraph has to say
+// about GIT_CONFIG_GLOBAL now that it is pinned on most boxes and open on
+// one shape of box (ranger-base-obdnk): the two names the row closes with
+// it, the box it does not close them on, and what that launch prints.
+var gitConfigGlobalDisclosed = []string{
+	"GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "HOME", "two global files",
+	"GIT_CONFIG_GLOBAL inlet NOT pinned", "Never /dev/null",
 }
 
 func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
@@ -89,6 +102,15 @@ func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 		t.Errorf("inletPin() does not carry GIT_CONFIG_SYSTEM — an attacker's system-scope config naming core.hooksPath runs its hook past every other row")
 	} else if want, ok := gitSystemScopePath(t); ok && got != want {
 		t.Errorf("inletPin()[GIT_CONFIG_SYSTEM] = %q, but git names %q as its system scope with the variable unset. Any other value either empties system scope (and skips the managed hooks there) or points git at a file it would not read (ranger-base-t301k)", got, want)
+	}
+	// GIT_CONFIG_GLOBAL: git's own answer when there is one, and when there
+	// is not (two global files) no row — never a closing constant, which
+	// misattributes every commit (ranger-base-obdnk).
+	if got, ok := pinned["GIT_CONFIG_GLOBAL"]; ok && (got == os.DevNull || got == "") {
+		t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q. That empties global scope — every seat commit under a gecos ident at rc 0 and no e-mail in the identity wall. The row carries git's own file or is absent", got)
+	}
+	if want, ok := gitGlobalScopePath(t); ok && pinned["GIT_CONFIG_GLOBAL"] != want {
+		t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q, but git's own global scope with the variable unset says %q (\"\" = two files, so no row) (ranger-base-obdnk)", pinned["GIT_CONFIG_GLOBAL"], want)
 	}
 	// The other direction, and it is not symmetry for its own sake: pinning
 	// either of these is a fleet outage, so the pin refusing them is a
@@ -116,6 +138,9 @@ func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 		if _, ok := dropIn.Env[k]; !ok {
 			t.Errorf("%s does not carry %s either, so the operator's own session is uncovered too", path, k)
 		}
+	}
+	if v, ok := dropIn.Env["GIT_CONFIG_GLOBAL"]; ok {
+		t.Errorf("%s carries GIT_CONFIG_GLOBAL=%q. Its value is per box and per launch and the drop-in is a constant: any value there either empties the operator's identity or names a file their git does not read (ranger-base-obdnk)", path, v)
 	}
 	if v, ok := dropIn.Env["GIT_CONFIG_SYSTEM"]; ok {
 		t.Errorf("%s carries GIT_CONFIG_SYSTEM=%q. Its value is per git binary and the drop-in is a constant, so any value there either empties system scope for the operator's own claude or names a file their git does not read (ranger-base-t301k)", path, v)
@@ -145,6 +170,16 @@ func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 		if !strings.Contains(gaps, why) {
 			t.Errorf("inletpin.go's %q paragraph does not say %q for %s — a name listed as uncovered without the measured reason invites the next reader to just pin it", marker, why, k)
 		}
+	}
+	if j := strings.Index(gaps, "func inletPin("); j > 0 {
+		para := flattenProse(gaps[:j])
+		for _, want := range gitConfigGlobalDisclosed {
+			if !strings.Contains(para, want) {
+				t.Errorf("inletpin.go's %q paragraph does not say %q. GIT_CONFIG_GLOBAL — and XDG_CONFIG_HOME and HOME with it — is still an inlet that fires on a box with two global files, and the paragraph is where a reader learns which box that is (ranger-base-obdnk)", marker, want)
+			}
+		}
+	} else {
+		t.Errorf("inletpin.go has no func inletPin( after its %q paragraph — re-anchor this check", marker)
 	}
 
 	// ── the live half ────────────────────────────────────────────────────
@@ -188,8 +223,35 @@ func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 	if !fires(t, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.hooksPath", "GIT_CONFIG_VALUE_0="+hooks) {
 		t.Errorf("core.hooksPath via GIT_CONFIG_COUNT no longer reaches past the pin. Good news, but inletpin.go's %q paragraph says it does — re-measure and rewrite it", marker)
 	}
-	if !fires(t, "GIT_CONFIG_GLOBAL="+gitConfigProbeGlobal(t, hooks)) {
-		t.Errorf("GIT_CONFIG_GLOBAL no longer reaches past the pin. Good news, but inletpin.go's %q paragraph says it does — re-measure and rewrite it", marker)
+
+	// GIT_CONFIG_GLOBAL and the two names that steer git's global lookup
+	// without it. One row closes all three, and on a box with two global
+	// files there is no row and all three are open — both directions are
+	// held, so the paragraph cannot lie either way (ranger-base-obdnk).
+	_, globalPinned := pinned["GIT_CONFIG_GLOBAL"]
+	xdg := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(xdg, "git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(xdg, "git", "config"), []byte("[core]\n\thooksPath = "+hooks+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evilHome := t.TempDir()
+	if err := os.WriteFile(filepath.Join(evilHome, ".gitconfig"), []byte("[core]\n\thooksPath = "+hooks+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, arm := range []struct{ name, attack string }{
+		{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_GLOBAL=" + gitConfigProbeGlobal(t, hooks)},
+		{"XDG_CONFIG_HOME", "XDG_CONFIG_HOME=" + xdg},
+		{"HOME", "HOME=" + evilHome},
+	} {
+		got := fires(t, arm.attack)
+		switch {
+		case globalPinned && got:
+			t.Errorf("%s reached past the pin with a GIT_CONFIG_GLOBAL row in it — the row is meant to replace git's whole global lookup", arm.name)
+		case !globalPinned && !got:
+			t.Errorf("%s did not fire on a launch with NO GIT_CONFIG_GLOBAL row. Good news, but inletpin.go's %q paragraph says the two-file box leaves it open — re-measure and rewrite it", arm.name, marker)
+		}
 	}
 }
 
@@ -617,6 +679,58 @@ func gitSystemScopePath(t *testing.T) (string, bool) {
 	}
 	t.Logf("system scope, named by git: %s", path)
 	return path, true
+}
+
+// gitGlobalScopePath is the GIT_CONFIG_GLOBAL row's expected value, asked a
+// different way from the resolver: the global-scope ORIGINS of the full
+// listing, not `git var`. Two origins answer "" — no row. None answers the
+// file `git config --global --list` names in its fatal, which is the one git
+// writes to. (`git config --global --list` cannot answer the two-file case:
+// MEASURED 2026-11-03, git 2.50.1, it reads only ~/.gitconfig when both
+// exist, while the scope listing names both, XDG first.) An existing EMPTY
+// file has no origin to show, so a box carrying one is skipped rather than
+// graded — the resolver counts it and this route cannot see it.
+func gitGlobalScopePath(t *testing.T) (string, bool) {
+	t.Helper()
+	env := gitConfigScrubbedEnv()
+	run := func(args ...string) string {
+		c := exec.Command("git", args...)
+		c.Env, c.Dir = env, t.TempDir()
+		out, _ := c.CombinedOutput()
+		return string(out)
+	}
+	var origins []string
+	for _, l := range strings.Split(run("config", "--list", "--show-scope", "--show-origin"), "\n") {
+		scope, rest, _ := strings.Cut(l, "\t")
+		if scope != "global" {
+			continue
+		}
+		origin, _, _ := strings.Cut(rest, "\t")
+		if p, ok := strings.CutPrefix(origin, "file:"); ok && !slices.Contains(origins, p) {
+			origins = append(origins, p)
+		}
+	}
+	if cands, err := gitGlobalScopeDocumented(env); err == nil {
+		for _, c := range cands {
+			if fi, err := os.Stat(c); err == nil && fi.Size() == 0 && !slices.Contains(origins, c) {
+				t.Logf("global scope has an empty file (%s) the listing cannot show; not graded", c)
+				return "", false
+			}
+		}
+	}
+	switch len(origins) {
+	case 0:
+		p, ok := parseGitSystemScopePath(run("config", "--global", "--list", "--show-origin"))
+		if ok {
+			t.Logf("global scope, named by git: no file; writes go to %s", p)
+		}
+		return p, ok
+	case 1:
+		t.Logf("global scope, named by git: %s", origins[0])
+		return origins[0], true
+	}
+	t.Logf("global scope, named by git: two files %v, so no row", origins)
+	return "", true
 }
 
 // TestQAGitSystemScopePathParsesTheShapesGitActuallyPrints holds the probe's
