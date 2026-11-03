@@ -205,16 +205,21 @@ func differsFromHEAD(tree, path string) bool {
 // it for the same reason.
 //
 // Path-limited, with the `add` in front of it that a path git has never seen
-// needs (rangerhq-4pbt). `--no-verify` is the bd flush hook and nothing else:
-// bd's pre-commit stages `.beads/issues.jsonl`, a path-limited commit does not
-// take it, and what is left behind is a staged entry over a tree that already
-// matches HEAD — which the very next pass reads as the persona's uncommitted
-// work and files a closed-dirty handoff about (AGENTS.md, rangerhq-be7k).
-// MEASURED 2026-10-03, git 2.50.1: `--no-verify` skips pre-commit and
-// prepare-commit-msg still runs, so posse's own commit wall — the data
-// ceiling, the visibility guard, the constitution paths — is kept and only
-// the flush is skipped. A wall that refuses this commit is reported as a
-// refusal to land, like any other obstacle.
+// needs (rangerhq-4pbt). EVERY HOOK RUNS (ranger-base-7yvo4). This commit
+// used to pass `--no-verify` to dodge bd's flush, and on an ADR 0052 managed
+// box the same flag skips the employer's pre-commit scanner, which posse must
+// never cause; since ranger-base-r3pri a seat's L1 shim refuses the flag
+// outright, so a landing run from a persona pane could not commit at all. Nor
+// is an absolute git path the answer: that is the same skip with the wall
+// removed.
+//
+// So the flush runs, and what it leaves is cleared the documented way
+// (AGENTS.md, rangerhq-be7k). MEASURED 2026-11-03, git 2.50.1: a pre-commit
+// that rewrites and `git add`s an unnamed path during a path-limited commit
+// puts the flushed file IN the commit and leaves the real index holding the
+// version before it — `MM` over a tree that already matches HEAD, which the
+// next pass would read as the persona's uncommitted work.
+// clearHookLeftovers unstages exactly those entries and nothing else.
 //
 // THE BEAD ID IS IN THE SUBJECT either way, which is what AGENTS.md asks of
 // every commit here: the branch name carries it by construction
@@ -234,8 +239,49 @@ func commitGeneratedIndex(t *SessionTree, path string) error {
 	if t.Bead != "" {
 		body += "\nBead: " + t.Bead + "\n"
 	}
-	_, err := git(t.Path, "commit", "--no-verify", "-m", subject, "-m", body, "--", path)
-	return err
+	before := stagedPaths(t.Path)
+	if _, err := git(t.Path, "commit", "-m", subject, "-m", body, "--", path); err != nil {
+		return err
+	}
+	clearHookLeftovers(t.Path, before)
+	return nil
+}
+
+// stagedPaths is every path whose index entry differs from HEAD, in git's -z
+// spelling. nil on any error, which clearHookLeftovers reads as "nothing was
+// staged before" — the guard that keeps it safe is the per-path diff, not
+// this set.
+func stagedPaths(dir string) map[string]bool {
+	out, err := git(dir, "diff", "--cached", "--name-only", "--no-renames", "-z")
+	if err != nil {
+		return nil
+	}
+	set := map[string]bool{}
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" {
+			set[p] = true
+		}
+	}
+	return set
+}
+
+// clearHookLeftovers unstages what a pre-commit hook staged behind a
+// path-limited commit: an entry that was not staged before the commit, is
+// staged after it, and whose working tree matches HEAD (`git diff HEAD` is
+// empty — the check AGENTS.md puts before any unstage, because a non-empty
+// diff is somebody's real work). `restore --staged` and never a reset. Best
+// effort: an entry it cannot clear is left for the next pass to report.
+func clearHookLeftovers(dir string, before map[string]bool) {
+	for p := range stagedPaths(dir) {
+		if before[p] {
+			continue
+		}
+		lit := ":(literal)" + p // a name git printed, never a glob
+		if d, err := git(dir, "diff", "--no-ext-diff", "HEAD", "--name-only", "--", lit); err != nil || d != "" {
+			continue
+		}
+		_, _ = git(dir, "restore", "--staged", "--", lit)
+	}
 }
 
 // restoreGeneratedIndex puts the generated file back the way the last commit

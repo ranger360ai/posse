@@ -76,6 +76,11 @@ the landing commit wants: bd's flush hook (which stages `.beads/issues.jsonl`
 and leaves it staged over a tree that already matches HEAD, AGENTS.md's
 `rangerhq-be7k`) is skipped, and posse's own commit wall is kept.
 
+**Superseded 2026-11-03 (ranger-base-7yvo4):** the landing commit no longer
+passes `--no-verify` — on a managed box it skipped the employer's pre-commit,
+and a seat's shim now refuses it. The hook runs and its leftover is unstaged
+instead; see `ranger-base-7yvo4.md`.
+
 ## The residual, and the measurement that narrowed it
 
 A branch that already carries a merge-back block on record is re-probed only

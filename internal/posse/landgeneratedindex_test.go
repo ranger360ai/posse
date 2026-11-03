@@ -438,15 +438,23 @@ func TestLandingRefusesWhenTheGeneratorFails(t *testing.T) {
 }
 
 // THE HOOK DECISION, pinned because both halves of it are load-bearing and
-// neither is visible in a passing landing (commitGeneratedIndex's header).
-// `--no-verify` is bd's pre-commit flush and nothing else: the flush stages
-// `.beads/issues.jsonl`, a path-limited commit does not take it, and what is
-// left is a staged entry over a tree that already matches HEAD — which the
-// next pass reads as the persona's uncommitted work. posse's own wall lives
-// in prepare-commit-msg precisely so that `--no-verify` cannot dodge it.
-func TestTheLandingCommitSkipsTheFlushHookAndNotTheWall(t *testing.T) {
+// neither is visible in a passing landing (commitGeneratedIndex's header,
+// ranger-base-7yvo4). The landing commit runs EVERY hook: on an ADR 0052
+// managed box pre-commit is the employer's scanner, and a seat's L1 shim
+// refuses `--no-verify` anyway (ranger-base-r3pri). The hook here is both at
+// once — a managed marker, and bd's flush, which rewrites and stages an
+// unnamed `.beads/issues.jsonl` — so the pin also holds the cost the old flag
+// was dodging: no staged entry is left over a tree that matches HEAD
+// (rangerhq-be7k). prepare-commit-msg is posse's own wall and must run too.
+//
+// Observed RED against the `--no-verify` commit: the marker never fired.
+// Observed RED with the flag dropped and clearHookLeftovers not called: the
+// session tree read `MM .beads/issues.jsonl`.
+func TestTheLandingCommitRunsTheManagedHookAndLeavesNoFlushBehind(t *testing.T) {
 	t.Parallel()
 	a, repo := notesRepo(t)
+	flushed := filepath.Join(".beads", "issues.jsonl")
+	commitIn(t, repo, flushed, "{\"id\":\"x-1\"}\n", "main: a beads census")
 	tr := fragmentBranch(t, a, repo, "s-1", "ranger-base-jjjj", "a fragment", false)
 
 	hooks := mustGit(t, repo, "rev-parse", "--git-path", "hooks")
@@ -454,10 +462,14 @@ func TestTheLandingCommitSkipsTheFlushHookAndNotTheWall(t *testing.T) {
 		hooks = filepath.Join(repo, hooks)
 	}
 	marks := t.TempDir()
+	write(t, filepath.Join(hooks, "pre-commit"), "#!/bin/sh\n"+
+		"echo fired > "+shq(filepath.Join(marks, "pre-commit"))+"\n"+
+		"echo '{\"id\":\"x-2\"}' >> "+shq(flushed)+"\n"+
+		"git add -- "+shq(flushed)+"\n")
+	write(t, filepath.Join(hooks, "prepare-commit-msg"), "#!/bin/sh\n"+
+		"echo fired > "+shq(filepath.Join(marks, "prepare-commit-msg"))+"\nexit 0\n")
 	for _, h := range []string{"pre-commit", "prepare-commit-msg"} {
-		p := filepath.Join(hooks, h)
-		write(t, p, "#!/bin/sh\necho fired > "+shq(filepath.Join(marks, h))+"\nexit 0\n")
-		if err := os.Chmod(p, 0o755); err != nil {
+		if err := os.Chmod(filepath.Join(hooks, h), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -469,11 +481,14 @@ func TestTheLandingCommitSkipsTheFlushHookAndNotTheWall(t *testing.T) {
 	if !o.Merged || len(o.Regenerated) == 0 {
 		t.Fatalf("fixture: nothing was committed, so no hook was in the path (%v, %s)", o.Regenerated, o.Reason)
 	}
-	if _, err := os.Stat(filepath.Join(marks, "pre-commit")); err == nil {
-		t.Error("the landing commit ran pre-commit — bd's flush stages the beads db, and a path-limited commit leaves it staged over a clean tree (AGENTS.md, rangerhq-be7k)")
+	if _, err := os.Stat(filepath.Join(marks, "pre-commit")); err != nil {
+		t.Error("the landing commit skipped pre-commit — on a managed box that is the employer's scanner, which posse must never cause to be skipped (ADR 0052, ranger-base-7yvo4)")
 	}
 	if _, err := os.Stat(filepath.Join(marks, "prepare-commit-msg")); err != nil {
-		t.Error("the landing commit did not run prepare-commit-msg — that is where posse's commit wall lives, and `--no-verify` must not have dodged it")
+		t.Error("the landing commit did not run prepare-commit-msg — that is where posse's commit wall lives")
+	}
+	if left := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); left != "" {
+		t.Errorf("the flush hook left the session tree dirty — the next pass reads this as the persona's uncommitted work (rangerhq-be7k):\n%s", left)
 	}
 }
 
