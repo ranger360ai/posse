@@ -220,14 +220,16 @@ func runPosse(t *testing.T, bin string, env []string, args ...string) (stdout, s
 func TestCostPlanPrintsTheReadingAndNothingElse(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
+	at := time.Now()
 	seedPlan(t, home, map[string]any{
-		"at": time.Now().UTC().Format(time.RFC3339Nano),
+		"at": at.UTC().Format(time.RFC3339Nano),
 		// The snapshot is window-shaped since ADR 0012 D4: the names are the
 		// adapter's, and this file only asserts that they come back out.
 		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
 	})
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	skipIfTheBoxSleptMidTest(t, at)
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
@@ -244,7 +246,9 @@ func TestCostPlanFailsLoudWhenTheReadingIsUnavailable(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
 	armGuard(t, home)
-	now := time.Now().UTC()
+	// seeded keeps its monotonic reading; now does not (.UTC() strips it).
+	seeded := time.Now()
+	now := seeded.UTC()
 	seedPlan(t, home, map[string]any{
 		"at":       now.Add(-time.Hour).Format(time.RFC3339Nano),
 		"windows":  []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
@@ -252,6 +256,7 @@ func TestCostPlanFailsLoudWhenTheReadingIsUnavailable(t *testing.T) {
 	})
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	skipIfTheBoxSleptMidTest(t, seeded)
 	if code != 1 {
 		t.Fatalf("an unreadable reading must exit 1, got %d (stdout %q, stderr %q)", code, stdout, stderr)
 	}
@@ -272,6 +277,80 @@ const agedSeed = 3*time.Minute + 30*time.Second
 // is allowed to bolt on.
 const costFooterNote = " (the plan's own rate limits — the real budget; dollars above are API-equivalent)"
 
+// wallSince is time.Since in the clock the BINARY reads.
+//
+// time.Since subtracts monotonic readings, and on darwin Go's monotonic
+// clock is mach_absolute_time, which does not tick while the box is
+// asleep. Every age asserted in this file is rendered in ANOTHER process
+// out of a wall-clock timestamp this one wrote to disk, so the honest
+// bracket is wall against wall: Round(0) drops the monotonic reading,
+// which is the whole of what makes the subtraction wall-clock arithmetic.
+//
+// On a box nothing happens to, the two agree to about 4µs per second
+// (MEASURED 2026-11-04 on this one: 62µs of divergence over 15s, the wall
+// clock slewing ~4ppm ahead of the monotonic one, so ~2.5ms across a
+// 600-second test), and this changes nothing. What it changes is the run
+// that IS interrupted — see skipIfTheBoxSleptMidTest.
+//
+// `at` must come straight from time.Now() and still carry its monotonic
+// reading; .UTC() and .Round(0) strip it, and a stripped reference makes
+// this and wallJump answer about one clock twice.
+func wallSince(at time.Time) time.Duration { return time.Now().Round(0).Sub(at.Round(0)) }
+
+// wallJump is the wall time the box gained BEYOND the monotonic time this
+// test actually spent: a system sleep or a clock step, and microseconds
+// otherwise.
+func wallJump(at time.Time) time.Duration { return wallSince(at) - time.Since(at) }
+
+// skipIfTheBoxSleptMidTest skips when the wall clock moved out from under a
+// fixture seeded at `at`, because then the fixture's premise is what
+// failed and not the code.
+//
+// MEASURED 2026-11-04 (ranger-base-gt0q9): this box slept from 01:50:26 to
+// 04:41:28 — `pmset -g log`, "Entering Sleep state due to 'Low Power
+// Sleep':TCPKeepAlive=inactive Using Batt (Charge:1%)", woken 2h51m02s
+// later by the power button, which no caffeinate assertion can prevent at
+// 1% — in the middle of a `make test` arm-1 run, and the single launch
+// inside TestCostPlanHintSurvivesAnUnreadableGuardReadingWithoutRescuingIt
+// straddled it. BOTH of that test's assertions failed and one clock
+// explains both: the hint seeded agedSeed before the run printed `as of
+// 2h54m ago` (2h51m02s + 3m30s, to the minute) against a monotonic bracket
+// of [3m, 3m], and the 30-minute cooldown seeded with it had expired, so
+// the binary asked the endpoint and said `usage endpoint unreachable`
+// where the test wanted `rate-limited`. The binary was right about the
+// wall clock in both halves; the fixture was 2h51m old by the time it was
+// read.
+//
+// So widening agedAges was never the fix: it would have papered over the
+// half that is an age and left the half that is a deadline red. A
+// wall-clock jump invalidates every premise these fixtures state as a
+// deadline — the live cooldown above, and the 5-minute TTL that makes a
+// snapshot seeded agedSeed old still a cache hit — and no margin is safe,
+// because nothing bounds how long a laptop sleeps and `go test -timeout`
+// is monotonic too, so the run resumes instead of being killed.
+//
+// One minute of tolerance, from both ends: ordinary divergence is
+// microseconds (wallSince), and the tightest premise in this file has 90
+// seconds of margin (PlanUsageTTLDefault 5m less agedSeed 3m30s), so
+// anything in between separates "the box slept" from "nothing happened".
+// Called after the launch and before the first assertion, exit status
+// included, because the jump breaks that as readily as the age.
+func skipIfTheBoxSleptMidTest(t *testing.T, at time.Time) {
+	t.Helper()
+	// A reference with no monotonic reading would make wallJump identically
+	// zero: a guard that looks installed and asserts nothing.
+	if !strings.Contains(at.String(), " m=") {
+		t.Fatalf("skipIfTheBoxSleptMidTest needs a reference straight from time.Now() "+
+			"(.UTC() and .Round(0) strip the monotonic reading this compares against), got %s", at)
+	}
+	if j := wallJump(at); j > time.Minute {
+		t.Skipf("the box's wall clock gained %s between seeding this fixture and reading it — "+
+			"a system sleep or a clock step — so the fixture's own deadlines expired while it "+
+			"waited and nothing here is a statement about the code (ranger-base-gt0q9)",
+			j.Round(time.Second))
+	}
+}
+
 // agedAges is every age BlindFor could honestly have printed for a reading
 // seeded `at`, from the moment it was written (agedSeed old) to the moment
 // the caller checks — one per whole minute the bracket spans, since
@@ -279,9 +358,15 @@ const costFooterNote = " (the plan's own rate limits — the real budget; dollar
 // more than one on a loaded one. Factored out of runAgedPlan so the other
 // single-launch fixtures of the same shape (ranger-base-boafa) can bracket
 // their own reading without a second process to compare against.
+//
+// The span is wall-clock (wallSince) and not time.Since: BlindFor was
+// handed a wall-clock difference, by a process with its own clock, so a
+// bracket that counted monotonic time would be answering about a clock
+// nobody rendered — which is how a jump smaller than
+// skipIfTheBoxSleptMidTest's tolerance would red a reading that is right.
 func agedAges(at time.Time) []string {
 	var ages []string
-	for m := int(agedSeed.Minutes()); m <= int(time.Since(at).Minutes()); m++ {
+	for m := int(agedSeed.Minutes()); m <= int(wallSince(at).Minutes()); m++ {
 		ages = append(ages, posse.BlindFor(time.Duration(m)*time.Minute))
 	}
 	return ages
@@ -318,6 +403,7 @@ func runAgedPlan(t *testing.T, bin, home string, args ...string) (string, []stri
 		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
 	})
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), args...)
+	skipIfTheBoxSleptMidTest(t, at)
 	if code != 0 {
 		t.Fatalf("posse %s: exit %d, stderr %q", strings.Join(args, " "), code, stderr)
 	}
@@ -474,6 +560,7 @@ func TestCostPlanPrintsTheCodexHintWithItsAge(t *testing.T) {
 	seedCodexHint(t, home, at, 62, now.Add(24*time.Hour))
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	skipIfTheBoxSleptMidTest(t, at)
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
@@ -501,6 +588,7 @@ func TestCostPlanShowsAResetCodexWindowAsReset(t *testing.T) {
 	seedCodexHint(t, home, at, 96, now.Add(-time.Minute))
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	skipIfTheBoxSleptMidTest(t, at)
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
@@ -534,6 +622,7 @@ func TestCostPlanHintSurvivesAnUnreadableGuardReadingWithoutRescuingIt(t *testin
 	seedCodexHint(t, home, at, 62, now.Add(24*time.Hour))
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
+	skipIfTheBoxSleptMidTest(t, at)
 	if code != 1 {
 		t.Fatalf("an unreadable guard reading must still exit 1, got %d (stdout %q, stderr %q)", code, stdout, stderr)
 	}
