@@ -210,8 +210,12 @@ func TestDispatchRefusesDegradedUnlessAllowed(t *testing.T) {
 	if n, _ := d2.Run("", "", 0); n != 1 {
 		t.Fatalf("--allow-degraded must launch:\n%s", dispatcherOut(d2))
 	}
-	m, _ := b.readMeta(SessionForBead("security", repo, "s-1"))
-	if m == nil || !strings.Contains(m.Degraded, "Edit") || !strings.Contains(dispatcherOut(d2), "DEGRADED") {
+	one := SessionForBead("security", repo, "s-1")
+	m, ok := b.readMeta(one)
+	if !ok {
+		t.Fatalf("no run record for %s after the pass, so the degraded mark cannot be read at all:\n%s", one, dispatcherOut(d2))
+	}
+	if !strings.Contains(m.Degraded, "Edit") || !strings.Contains(dispatcherOut(d2), "DEGRADED") {
 		t.Errorf("degraded session must be marked and announced: %+v\n%s", m, dispatcherOut(d2))
 	}
 	// codex realizes the security PID's gates: dispatch --runtime codex
@@ -223,8 +227,13 @@ func TestDispatchRefusesDegradedUnlessAllowed(t *testing.T) {
 	if n, _ := d3.Run("", "", 0); n != 1 {
 		t.Errorf("security on codex must launch at shims:\n%s", dispatcherOut(d3))
 	}
-	if m, _ := b.readMeta(SessionForBead("security", repo, "s-2")); m == nil || m.Degraded != "" || m.Cage != "shims" {
-		t.Errorf("codex session must be full parity: %+v", m)
+	two := SessionForBead("security", repo, "s-2")
+	m2, ok := b.readMeta(two)
+	if !ok {
+		t.Fatalf("no run record for %s after the pass, so its parity cannot be read at all:\n%s", two, dispatcherOut(d3))
+	}
+	if m2.Degraded != "" || m2.Cage != "shims" {
+		t.Errorf("codex session must be full parity: %+v", m2)
 	}
 }
 

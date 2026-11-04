@@ -590,7 +590,11 @@ func TestDispatchMarksAProviderRefusalAsTurnFailure(t *testing.T) {
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if m, _ := b.readMeta(session); m.TurnFailure != "" {
+	m, ok = b.readMeta(session)
+	if !ok {
+		t.Fatalf("no run record for %s after the resumed pass, so the marker cannot be read at all:\n%s", session, dispatcherOut(d))
+	}
+	if m.TurnFailure != "" {
 		t.Errorf("healthy resumed turn left a stale failure marker: %+v", m)
 	}
 }
@@ -1512,7 +1516,10 @@ func TestDispatchHeldBeadNotReprompted(t *testing.T) {
 
 	// Agent gone (crashed): the run was interrupted → relaunch + resume.
 	os.Remove(filepath.Join(fake, "agents.json"))
-	m, _ := b.readMeta(session)
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatalf("no run record for %s after the pass, so the launch stamp this arm has to age is not there to age:\n%s", session, out)
+	}
 	m.Launched = time.Now().Add(-time.Hour)
 	b.writeMeta(m)
 	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
@@ -1611,8 +1618,12 @@ func TestDispatchTierReachesSession(t *testing.T) {
 	if !strings.Contains(c, "--env RHQ_TIER=fast") || !strings.Contains(c, "GATES claude --model 'claude-sonnet-5'") {
 		t.Errorf("tier must reach env and model flag:\n%s", c)
 	}
-	m, _ := b.readMeta(SessionForBead("ranger", repo, "a-1"))
-	if m == nil || m.Tier != "fast" {
+	session := SessionForBead("ranger", repo, "a-1")
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatalf("no run record for %s after the pass, so the tier it was launched at cannot be read at all:\n%s", session, out)
+	}
+	if m.Tier != "fast" {
 		t.Errorf("meta tier: %+v", m)
 	}
 	// --tier overrides the label.

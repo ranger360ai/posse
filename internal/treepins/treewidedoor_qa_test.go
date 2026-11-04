@@ -890,8 +890,65 @@ package treepins
 // twdTwinRoutes: a Getwd climb to a marker that is not `go.mod`, which is
 // nowhere in either package (MEASURED 2026-11-01).
 //
-// and `make tree-check` is all of them — one hundred and twenty-two pins and
-// seventeen doors, 63-65s over three warm runs at one hundred and twenty-two
+// and ONE more, which is the first member this register admitted that
+// censuses this package's own TEST files rather than its shipped sources:
+//
+//	TestQANoPassRunningTestDiscardsAReadMetaOk    make pkgcensus-check
+//	                                              (ReadDir's `.` and reads
+//	                                              every *_test.go in
+//	                                              internal/posse as TEXT —
+//	                                              no test that runs a
+//	                                              dispatch pass may discard
+//	                                              readMeta's ok, because the
+//	                                              pass's own epilogue sweep
+//	                                              may have reaped that
+//	                                              session and the nil deref
+//	                                              is a SIGSEGV that takes
+//	                                              the whole arm's binary
+//	                                              down)
+//	                                              (ranger-base-rviq5)
+//
+// NO NEW DOOR, by the same sentence the three g31e0 rows and the two pruuq
+// rows are in on: QA_PKGCENSUS_PINS' subject is a reading of this repo's own
+// Go sources whose file SET is discovered, and a bead that adds a test file
+// to internal/posse reds this one. What is NEW is which sources — every
+// member of that variable until now read non-test .go, and a census over the
+// test files is what lets ONE pin in arm 1 hold all three arms, since it
+// reads the files as text and no build tag can hide one from it. 0.75s
+// measured alone, over 572 files and 5,326 top-level funcs.
+//
+// Its sibling in the same file, TestQATestDispatcherOutlastsItsOwnPass, is
+// NOT in this class and deliberately: it asserts a relation between two
+// durations on a dispatcher it constructs, reads nothing off the filesystem,
+// and so has no discovered file set for any rule here to see. It runs in the
+// ordinary arm-1 suite.
+//
+// and `make tree-check` is all of them — one hundred and twenty-three pins and
+// seventeen doors, 95-122s over three warm runs at one hundred and
+// twenty-three of them (MEASURED 2026-11-04, ranger-base-rviq5: 115.8s,
+// 122.4s then 94.7s in that order, at a one-minute load average of 98.82,
+// 57.77 and 52.45 over a five-minute 114.10, 93.92 and 82.34, with one suite
+// slot held by a sibling seat at the start of the three and both held at the
+// end, and one warm-up run discarded at 153.2s and a one-minute 172.55. The
+// first reading of this class at one hundred and twenty-three, and the second
+// ever taken in this load band: ranger-base-pyl22, further down this chain,
+// read 74.5-172.1s at a one-minute 57-95 — at EIGHTY-ONE pins, forty-two
+// fewer than this. That pairing is the one thing this entry is good for, and
+// it is a warning rather than a price: the smaller class read both faster
+// and slower than the larger one at the same load, so up here the box
+// swamps the class entirely and no reading taken at 50-100 measures what a
+// pin costs. Across the two, "a saturated box" means 75s to 172s — against
+// the 1-5s spreads the quiet entries produce — so a seat who needs to know
+// what tree-check will cost reads the quiet entries, and a seat who has to
+// type it NOW on a box like this should expect two minutes and be unsurprised
+// by three. On the chain's own argument it lands awkwardly a third time: the
+// load FELL by a factor of two across these three while the wall moved 27.7s,
+// and the slowest run was the SECOND, at 41 points less load than the first,
+// so "the spread tracks how much the load MOVES" is once more not what the
+// box did. The pin this bead adds is 0.75s
+// measured alone, one more arm on a corpus pkgcensus-check already walks, so
+// none of this spread is its),
+// 63-65s over three warm runs at one hundred and twenty-two
 // of them (MEASURED 2026-11-01, ranger-base-pruuq: 63s, 65s then 63s in that
 // order, at a one-minute load average of 3.42, 11.52 and 6.90 over a
 // five-minute 3.11, 5.05 and 4.96, with both suite slots free throughout and

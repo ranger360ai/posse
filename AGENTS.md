@@ -387,7 +387,13 @@ bd sync               # Sync with git
   25-28 one is 81-89s, so price the command at a minute on a quiet box and at
   ninety seconds on a busy but steady one, and expect two and a half minutes
   when the load is moving. The work those two beads added cost under a second
-  between them, so neither spread is theirs. Earlier the same day the command read
+  between them, so neither spread is theirs. On 2026-11-04 it read 95-122s at
+  a load of 52-99 (ranger-base-rviq5, after a discarded warm-up of 153.2s at
+  172.55) — the same band as pyl22 below, over a much larger class, and both
+  faster and slower than pyl22 was. Up there the box swamps the class:
+  across the two, a saturated reading is anything from 75s to 172s, so
+  price the command from the quiet entries and read the high end as what it
+  costs beside other people's suites. Earlier the same day the command read
   74.5-172.1s at a load of 57-95 (ranger-base-pyl22) and 57.0-57.7s at a load
   of 10-31 (ranger-base-v3tt4), over classes smaller by what those two beads
   added. The cold reading is

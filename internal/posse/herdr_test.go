@@ -1536,8 +1536,12 @@ func fakeBdSetDescription(id, desc string) {
 // unclaims it, gets it back in the queue.
 //
 // MEASURED (ranger-base-y3x6n): without this, a Run whose own sweep reaps a
-// settled session — any Run slower than PromptGrace, which is every one of
-// them under -race — got the same bead offered back by the next `ready`,
+// settled session — any Run slower than PromptGrace, which at the time was
+// every one of them under -race, since newTestDispatcher left the 30s
+// default alone; it raises the grace past any pass now (ranger-base-rviq5),
+// so reaching this needs the grace collapsed on purpose, which is what
+// TestQARefillSlowEnoughToReapItsOwnSessionStillLaunchesOnePerBead does —
+// got the same bead offered back by the next `ready`,
 // found no live holder for it (its session had just been reaped) and
 // RELAUNCHED it under ADR 0030 §1's recovery arm. A third `workspace create`
 // for two beads, out of a store real bd would never have answered that way.
@@ -3497,6 +3501,43 @@ func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 	d.StartupWait = 2 * time.Second
 	d.StatusGrace = 50 * time.Millisecond
 	d.Poll = 10 * time.Millisecond
+	// NO PASS MAY REAP THE SESSION IT JUST DISPATCHED (ranger-base-rviq5,
+	// the class ranger-base-191em found one test of).
+	//
+	// A fixture that marks its bead CLOSED — which most do, because
+	// `closed by ranger` and the verify-after rungs are what a pass is read
+	// for — gives the pass's own epilogue sweep a legitimate reap candidate
+	// in the session that same pass just launched (autoreap.go, Dial F). The
+	// ONLY thing holding the sweep off it is promptedRecently, and PromptGrace
+	// unset is 30 seconds (ADR 0028 §3) against a pass that budgets itself
+	// DefaultGatherWindow — 3m, with a PromptWaitMS leg of 15m inside it,
+	// neither shortened by the three knobs above. So a box that makes one
+	// pass spend 30 of its own 180 seconds has the sweep print
+	// `reaped <session> (bead a-1 closed)` and REMOVE the record, the tree
+	// and the branch the test is about to read: correct behaviour, and a red
+	// assertion — or, where the read discards readMeta's ok, a SIGSEGV that
+	// takes the whole arm's binary down — in a test measuring something else.
+	//
+	// The grace moves rather than the pass being made to hurry: a shortened
+	// PromptWaitMS or GatherWindow is a new timeout that can expire, the same
+	// flake one knob over. It is the DEFAULT because the exposure needs only
+	// a closed bead and a post-pass read, which is the ordinary shape of a
+	// dispatch test — ranger-base-191em fixed its one test and left 26 files
+	// behind it (docs/notes.d/ranger-base-rviq5.md has the census).
+	//
+	// The two kinds of test that want the sweep to fire are unaffected, and
+	// deliberately so:
+	//
+	//   - one that never prompted its candidate (reapCandidate, reapSession)
+	//     is not guarded by this at any size: promptedRecently reads the
+	//     run record's `prompted:` stamp, and a zero stamp is "not recent"
+	//     however wide the grace (dispatch.go).
+	//   - one that wants a LATER pass to reap a session this pass prompted
+	//     says so with agePrompt(t, b, session, d.PromptGrace+time.Minute),
+	//     which reads the grace off the dispatcher and so moves with it.
+	//
+	// Pinned by TestQATestDispatcherOutlastsItsOwnPass.
+	d.PromptGrace = time.Hour
 	d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) { return TurnOutcome{}, false }
 	return d
 }

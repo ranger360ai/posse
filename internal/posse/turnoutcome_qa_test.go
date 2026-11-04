@@ -433,7 +433,11 @@ func TestQAUnobservedTurnOutcomeSettleLineIsNamed(t *testing.T) {
 	if strings.Contains(out, "refused the first turn") {
 		t.Errorf("observed=false is not a refusal:\n%s", out)
 	}
-	if m, _ := b.readMeta(session); m.TurnFailure != "" {
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatalf("no run record for %s after the pass, so whether the read marked a failure cannot be asked at all:\n%s", session, out)
+	}
+	if m.TurnFailure != "" {
 		t.Errorf("an unobserved read must not mark a turn failure: %+v", m)
 	}
 }
