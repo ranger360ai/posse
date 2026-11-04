@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-11
 
+- [ranger-base-tmb7t](ranger-base-tmb7t.md) — ranger-base-tmb7t · verifying the four hook-skip closes — 2026-11-03
 - [ranger-base-ctath](ranger-base-ctath.md) — The wall reading a release install could never get a sighted answer to (ranger-base-ctath) — 2026-11-03
 - [ranger-base-7yvo4](ranger-base-7yvo4.md) — The landing commit stops skipping pre-commit (ranger-base-7yvo4) — 2026-11-03
 - [ranger-base-191em](ranger-base-191em.md) — The flake's one-minute budget was spent on a three-minute pass (ranger-base-191em) — 2026-11-03
