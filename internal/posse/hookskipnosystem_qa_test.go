@@ -24,6 +24,22 @@ package posse
 // does on a managed box. That makes the hide direction reachable without
 // writing /etc/gitconfig. The scratch dirs are not the tree, so this is not
 // a tree-wide pin and owes the Makefile no door.
+//
+// THE ARM IS EXECUTED, NOT DOT-SOURCED WITH ARGUMENTS (ranger-base-zvg7q).
+// `sh -c '. arm.sh commit -q -m x -- f'` sets the positional parameters on a
+// /bin/sh that is bash (every darwin runner) and SILENTLY IGNORES them on one
+// that is dash (every ubuntu runner): `$#` reads 0, `posse_hs_check` returns
+// at its own `[ $# -gt 0 ] || return 0`, and every leg below reads "not
+// refused" with no output at all. MEASURED 2026-11-04 with /bin/dash on
+// darwin 26.7.1 (Apple dash-16) as `sh` — the four hide legs and the
+// refusals.log read byte for byte what run 41786341017 printed on
+// ubuntu-latest. That is how this pin landed green on darwin and red on
+// linux the hour it shipped. The arm is rendered the way renderShim renders
+// it — `#!/bin/sh` and the arm — and exec'd with the git call as its argv,
+// which is also what a seat's PATH does to it, so no shell builtin stands
+// between the test and the production form. The arm itself was never broken
+// on either shell: under /bin/dash it refuses all four hide spellings by
+// name and allows all three controls.
 
 import (
 	"os"
@@ -51,8 +67,10 @@ exit 0
 
 func TestQAHookSkipRefusesTheSystemScopeHideDirection(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh")
+	// The shebang names /bin/sh, the way the rendered shim does, so that is
+	// what must exist — not whatever `sh` PATH would resolve to.
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no /bin/sh")
 	}
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "git")
@@ -60,8 +78,8 @@ func TestQAHookSkipRefusesTheSystemScopeHideDirection(t *testing.T) {
 		t.Fatal(err)
 	}
 	shim := filepath.Join(dir, "arm.sh")
-	arm := renderHookSkipArm(fake, "", filepath.Join(dir, "hooks")) + renderHookSkipEnvCall()
-	if err := os.WriteFile(shim, []byte(arm), 0o644); err != nil {
+	arm := "#!/bin/sh\n" + renderHookSkipArm(fake, "", filepath.Join(dir, "hooks")) + renderHookSkipEnvCall()
+	if err := WriteExecutable(shim, []byte(arm), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -77,7 +95,7 @@ func TestQAHookSkipRefusesTheSystemScopeHideDirection(t *testing.T) {
 	base = append(base, "RHQ_GATE_LOG="+filepath.Join(dir, "refusals.log"))
 
 	run := func(env string) (string, bool) {
-		cmd := exec.Command("sh", "-c", ". "+shQuote(shim)+" commit -q -m x -- f")
+		cmd := exec.Command(shim, "commit", "-q", "-m", "x", "--", "f")
 		cmd.Env = base
 		if env != "" {
 			cmd.Env = append(append([]string{}, base...), env)

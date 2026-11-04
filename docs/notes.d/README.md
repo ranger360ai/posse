@@ -25,6 +25,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-m8kfv](ranger-base-m8kfv.md) — ranger-base-m8kfv — a merge-back whose whole conflict was one spelled number, replayed three times — 2026-11-01
 - [ranger-base-d0nyb](ranger-base-d0nyb.md) — A probe answers on the PATH the exec it predicts resolves on (ranger-base-d0nyb) — 2026-11-01
 - [ranger-base-00fyg](ranger-base-00fyg.md) — ADR 0078 built: the tree-wide class stops depending on how a test spells its root (ranger-base-00fyg) — 2026-11-01
+- [ranger-base-zvg7q](ranger-base-zvg7q.md) — The pin that only had positional parameters on darwin (ranger-base-zvg7q) — 2026-11
 
 ## 2026-10
 
