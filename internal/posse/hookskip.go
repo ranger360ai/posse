@@ -32,6 +32,26 @@ import (
 //	                         removing one of those keys or their sections, at
 //	                         any scope, legacy or subcommand form; and
 //	                         `git config --edit`/`-e`/`edit` outright.
+//	hookskip:alias           (ranger-base-z8kym) a verb that is not a git
+//	                         builtin is looked up as an alias, under the
+//	                         call's own global options and env, after the
+//	                         deny rules. A `!` (shell) alias is refused
+//	                         outright; any other expansion is spliced into
+//	                         argv in place of the verb and walked by every
+//	                         arm above again, chains included, to depth 10.
+//
+// alias.* IS A HOOK-RELEVANT KEY TOO (ranger-base-z8kym). `-c alias.ci="commit
+// -n"`, the same in GIT_CONFIG_PARAMETERS or GIT_CONFIG_KEY_<n>, and `git
+// config alias.ci "commit -n"` each define a verb that reaches commit -n
+// without spelling it, so every arm that refuses a hooksPath key refuses an
+// alias key under the same rule. Seats have no need to define aliases.
+//
+// WHY EVERY `!` ALIAS AND NOT ONLY AN ABSOLUTE-PATH ONE. The bead expected a
+// `!git commit -n` alias to reach this shim again through PATH. It does not.
+// MEASURED 2026-11-03, git 2.50.1 (Apple Git-155): git puts its exec-path
+// ahead of PATH for a shell alias, that dir holds a `git` binary, and the
+// inner bare `git` runs it and never this shim. A shell alias can run any git
+// with any flag, so the arm refuses it outright.
 //
 // include.* and includeIf.* are not in the bead's list and are here on
 // purpose: `-c include.path=<file>` loads a file that can set core.hooksPath,
@@ -59,9 +79,11 @@ import (
 //
 // RESIDUALS, past L1 by class (ADR 0025 — a cooperative wall: it holds
 // against the ordinary path and says so): an absolute /usr/bin/git, `env -i`
-// or `command -p git`; hand-editing .git/config or ~/.gitconfig; a git ALIAS
-// that expands to a hook verb plus a skip flag (the alias hole this file's
-// preamble already names); and HOME / XDG_CONFIG_HOME pointed elsewhere,
+// or `command -p git`; hand-editing .git/config or ~/.gitconfig; an alias
+// expansion this arm splits differently from git (it splits on IFS and does
+// not unquote, which can only refuse more); the PID's deny rules, which still
+// match an alias token and not its expansion (gates.go's preamble); and
+// HOME / XDG_CONFIG_HOME pointed elsewhere,
 // which moves the global scope without naming any GIT_CONFIG_* variable — the
 // shim has no notion of the "real" home to compare against. An over-refusal
 // one respelling away is the accepted cost in every arm: `-c` values,
@@ -82,6 +104,22 @@ import (
 // the ones a config or scope override is judged on. -c is judged on EVERY
 // verb instead (it costs nothing and closes `git -c core.hooksPath=x <alias>`).
 var hookSkipVerbs = []string{"commit", "merge", "am", "push", "pull", "rebase", "cherry-pick", "revert"}
+
+// hookSkipBuiltins are verbs the alias lookup skips: git runs a builtin
+// before it looks for an alias, so no alias of these names can run. It is a
+// SUBSET of `git --list-cmds=builtins` (git 2.50.1), long-standing ones only,
+// chosen for the hot path. Leaving a builtin out costs one `git config` exec;
+// listing a non-builtin would let its alias through, so a name goes in only
+// when every git a seat could carry has it as a builtin.
+// A word list, not a []string literal: TestQANoProductGitDiffReaderIsBare
+// reads a string slice holding "diff" as a git argv.
+var hookSkipBuiltins = strings.Fields(`
+	add am apply blame branch cat-file checkout cherry-pick clone commit
+	config diff fetch for-each-ref grep help init log ls-files ls-remote
+	ls-tree merge merge-base mv pull push rebase reflog remote reset restore
+	rev-list rev-parse revert rm show show-ref stash status switch
+	symbolic-ref tag var version worktree
+`)
 
 // hookSkipNoVerify is, per verb, the spoiler table for its hook-skipping
 // option. MEASURED 2026-11-03, git 2.50.1, `git <verb> -h`: commit and am
@@ -145,6 +183,7 @@ func hookKeyArms() string {
 		ciGlob("hook.") + "*",
 		ciGlob("include.") + "*",
 		ciGlob("includeif.") + "*",
+		ciGlob("alias.") + "*",
 	}, "|")
 }
 
@@ -152,13 +191,13 @@ func hookKeyArms() string {
 // `--rename-section`/`--remove-section` can take. `core` is in it because
 // removing or renaming the whole section drops core.hooksPath with it.
 func hookSectionArms() string {
-	return hookKeyArms() + "|" + strings.Join([]string{ciGlob("core"), ciGlob("hook"), ciGlob("include")}, "|")
+	return hookKeyArms() + "|" + strings.Join([]string{ciGlob("core"), ciGlob("hook"), ciGlob("include"), ciGlob("alias")}, "|")
 }
 
 // hookSkipRegexp is what the scope comparison asks `git config
 // --get-regexp` for. git lowercases section and variable names in what it
 // matches against, so the lowercase pattern is the whole set.
-const hookSkipRegexp = `^(core\.hookspath|hook\.|include\.|includeif\.)`
+const hookSkipRegexp = `^(core\.hookspath|hook\.|include\.|includeif\.|alias\.)`
 
 // renderHookSkipArm writes the arm. real is the git the shim execs ("" when
 // none resolved at render — the scope comparison then fails CLOSED, since
@@ -168,8 +207,8 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 	var b strings.Builder
 	b.WriteString("# ranger-base-r3pri: hook-skipping forms are refused on every seat, every\n")
 	b.WriteString("# runtime, independent of the PID (ADR 0052). Cooperative (ADR 0025): an\n")
-	b.WriteString("# absolute /usr/bin/git, env -i, an alias, HOME moved, or a hand-edited\n")
-	b.WriteString("# config file are past this wall by class — see hookskip.go.\n")
+	b.WriteString("# absolute /usr/bin/git, env -i, HOME moved, or a hand-edited config file are\n")
+	b.WriteString("# past this wall by class; aliases are resolved (ranger-base-z8kym) — see hookskip.go.\n")
 	b.WriteString("posse_hs_refuse() {\n  posse_hs_rule=$1; posse_hs_why=$2\n")
 	b.WriteString("  echo \"refused by posse gate: git $posse_hs_argv — $posse_hs_why (rule: $posse_hs_rule, ranger-base-r3pri)\" >&2\n")
 	b.WriteString("  echo \"  a hook a scanner may live in (an employer's managed hook above all) must run on every commit and push from a seat: posse never causes it to be skipped (ADR 0052). Retype without the skip; if the hook itself is broken, say so on your bead and stop.\" >&2\n")
@@ -204,8 +243,8 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 
 	// The env arm, for hook-running verbs.
 	b.WriteString("posse_hs_env() {\n")
-	fmt.Fprintf(&b, "  case \"${GIT_CONFIG_PARAMETERS:-}\" in\n    *%s*|*\\'%s*|*\\'%s*|*\\'%s*) posse_hs_refuse hookskip:config-env 'GIT_CONFIG_PARAMETERS names a hook-moving key' ;;\n  esac\n",
-		ciGlob("hookspath"), ciGlob("hook."), ciGlob("include."), ciGlob("includeif."))
+	fmt.Fprintf(&b, "  case \"${GIT_CONFIG_PARAMETERS:-}\" in\n    *%s*|*\\'%s*|*\\'%s*|*\\'%s*|*\\'%s*) posse_hs_refuse hookskip:config-env 'GIT_CONFIG_PARAMETERS names a hook-moving key or an alias' ;;\n  esac\n",
+		ciGlob("hookspath"), ciGlob("hook."), ciGlob("include."), ciGlob("includeif."), ciGlob("alias."))
 	b.WriteString("  posse_hs_n=${GIT_CONFIG_COUNT:-0}\n  case \"$posse_hs_n\" in ''|*[!0-9]*) posse_hs_n=0 ;; esac\n  posse_hs_i=0\n")
 	b.WriteString("  while [ \"$posse_hs_i\" -lt \"$posse_hs_n\" ]; do\n")
 	b.WriteString("    eval \"posse_hs_k=\\${GIT_CONFIG_KEY_$posse_hs_i:-}; posse_hs_v=\\${GIT_CONFIG_VALUE_$posse_hs_i:-}\"\n")
@@ -257,9 +296,12 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 
 	// The walk: global options first (checking -c/--config-env as it goes),
 	// then the verb and its own arguments.
-	b.WriteString("posse_hs_check() {\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
-	b.WriteString("      -c|--config-env)\n        [ $# -ge 2 ] || break\n        posse_hs_key \"$2\" && posse_hs_refuse hookskip:config-override \"$1 $2 moves or adds a hook\"\n        shift 2 ;;\n")
-	b.WriteString("      --config-env=*)\n        posse_hs_key \"${1#--config-env=}\" && posse_hs_refuse hookskip:config-override \"$1 moves or adds a hook\"\n        shift ;;\n")
+	b.WriteString("posse_hs_check() {\n  posse_hs_all=$#; posse_hs_noalias=\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
+	// Options that print and exit before any verb runs: an alias lookup under
+	// them would read their output as an expansion.
+	b.WriteString("      -h|--help|-v|--version|--exec-path|--html-path|--man-path|--info-path|--list-cmds=*) posse_hs_noalias=1; shift ;;\n")
+	b.WriteString("      -c|--config-env)\n        [ $# -ge 2 ] || break\n        posse_hs_key \"$2\" && posse_hs_refuse hookskip:config-override \"$1 $2 moves or adds a hook, or defines an alias\"\n        shift 2 ;;\n")
+	b.WriteString("      --config-env=*)\n        posse_hs_key \"${1#--config-env=}\" && posse_hs_refuse hookskip:config-override \"$1 moves or adds a hook, or defines an alias\"\n        shift ;;\n")
 	if pairs := globalValueOpts["git"]; len(pairs) > 0 {
 		var quoted []string
 		for _, o := range pairs {
@@ -271,13 +313,20 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 		fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || break\n        shift 2 ;;\n", strings.Join(quoted, "|"))
 	}
 	b.WriteString("      -*) shift ;;\n      *) break ;;\n    esac\n  done\n")
-	b.WriteString("  [ $# -gt 0 ] || return 0\n  posse_hs_verb=$1; shift\n")
+	b.WriteString("  [ $# -gt 0 ] || return 0\n  posse_hs_ng=$((posse_hs_all - $#)); posse_hs_verb=$1; shift\n")
+	// Not a builtin: maybe an alias. Recorded, and resolved after the deny
+	// rules (renderHookSkipEnvCall), because resolving it execs git.
+	bi := make([]string, 0, len(hookSkipBuiltins))
+	for _, v := range hookSkipBuiltins {
+		bi = append(bi, shQuote(v))
+	}
+	fmt.Fprintf(&b, "  posse_hs_aliasverb=\n  case \"$posse_hs_verb\" in %s) ;; -*) ;; *) [ -n \"$posse_hs_noalias\" ] || posse_hs_aliasverb=1 ;; esac\n", strings.Join(bi, "|"))
 	b.WriteString("  case \"$posse_hs_verb\" in\n")
 	for _, v := range hookSkipNoVerifyVerbs {
 		fmt.Fprintf(&b, "    %s) %s \"$@\" && posse_hs_refuse hookskip:no-verify '%s skips its hooks' ;;\n",
 			v, shIdent("posse_hs_nv", v), strings.Join(hookSkipNoVerify(v).Opts, "/"))
 	}
-	b.WriteString("    config) posse_hs_config \"$@\" || posse_hs_refuse hookskip:config-write 'git config writes a hook-moving key' ;;\n")
+	b.WriteString("    config) posse_hs_config \"$@\" || posse_hs_refuse hookskip:config-write 'git config writes a hook-moving key or an alias' ;;\n")
 	b.WriteString("  esac\n")
 	verbs := make([]string, 0, len(hookSkipVerbs))
 	for _, v := range hookSkipVerbs {
@@ -287,7 +336,44 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 	// must wait until every deny rule has had its say (renderHookSkipEnvCall).
 	fmt.Fprintf(&b, "  case \"$posse_hs_verb\" in %s) posse_hs_envverb=1 ;; esac\n", strings.Join(verbs, "|"))
 	b.WriteString("  return 0\n}\n")
+	b.WriteString(renderHookSkipAlias(real))
 	b.WriteString("posse_hs_argv=\"$*\"; posse_hs_envverb=\nposse_hs_check \"$@\"\n")
+	return b.String()
+}
+
+// renderHookSkipAlias writes the alias resolver (ranger-base-z8kym).
+// posse_hs_lookup asks the real git for alias.<verb> under the call's own
+// global options (the first posse_hs_ng args, so `-C <repo>` reads that
+// repo's config) and env. posse_hs_unalias splices the expansion in place of
+// the verb and re-walks posse_hs_check until the verb is a builtin, no
+// alias, or one already seen (a loop, which git refuses on its own). A chain
+// of more than 10 distinct aliases is refused rather than judged. With no real git there is nothing to ask and nothing that could run
+// the alias either, so the resolver is a no-op.
+func renderHookSkipAlias(real string) string {
+	if real == "" {
+		return "posse_hs_unalias() { :; }\n"
+	}
+	var b strings.Builder
+	b.WriteString("posse_hs_lookup() {\n  posse_hs_k=0\n  for posse_hs_a in \"$@\"; do\n")
+	b.WriteString("    [ $posse_hs_k -eq 0 ] && set --\n")
+	b.WriteString("    [ $posse_hs_k -lt $posse_hs_ng ] && set -- \"$@\" \"$posse_hs_a\"\n")
+	b.WriteString("    posse_hs_k=$((posse_hs_k+1))\n  done\n")
+	fmt.Fprintf(&b, "  posse_hs_x=$(%s \"$@\" config --get \"alias.$posse_hs_verb\" 2>/dev/null) || posse_hs_x=\n}\n", shQuote(real))
+	b.WriteString("posse_hs_unalias() {\n  posse_hs_d=0; posse_hs_seen=' '\n  while [ -n \"$posse_hs_aliasverb\" ]; do\n")
+	// A verb seen before is a loop, and git refuses a loop itself ("alias
+	// loop detected") without running anything, so it is handed to git.
+	b.WriteString("    case \"$posse_hs_seen\" in *\" $posse_hs_verb \"*) return 0 ;; esac\n    posse_hs_seen=\"$posse_hs_seen$posse_hs_verb \"\n")
+	b.WriteString("    posse_hs_d=$((posse_hs_d+1))\n")
+	b.WriteString("    [ $posse_hs_d -le 10 ] || posse_hs_refuse hookskip:alias 'an alias chain deeper than 10 cannot be judged'\n")
+	b.WriteString("    posse_hs_lookup \"$@\"\n    [ -n \"$posse_hs_x\" ] || return 0\n")
+	b.WriteString("    case \"$posse_hs_x\" in\n      !*) posse_hs_refuse hookskip:alias \"alias $posse_hs_verb is a shell alias, which runs git past this gate (git puts its exec-path ahead of PATH)\" ;;\n    esac\n")
+	// Rebuild argv: the globals, the expansion (split on IFS, unglobbed and
+	// never eval'd), then the rest. The for list is expanded once, before
+	// the first set --.
+	b.WriteString("    posse_hs_k=0\n    for posse_hs_a in \"$@\"; do\n      [ $posse_hs_k -eq 0 ] && set --\n")
+	b.WriteString("      if [ $posse_hs_k -eq $posse_hs_ng ]; then set -f; set -- \"$@\" $posse_hs_x; set +f\n      else set -- \"$@\" \"$posse_hs_a\"; fi\n")
+	b.WriteString("      posse_hs_k=$((posse_hs_k+1))\n    done\n")
+	b.WriteString("    posse_hs_check \"$@\"\n  done\n}\n")
 	return b.String()
 }
 
@@ -298,8 +384,15 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 // sets GIT_CONFIG_SYSTEM — and a command the PID refuses must never reach
 // the real binary for any reason (TestRefusalNamesWhereTheCommandDoesRun
 // caught exactly that: a denied push ran git config through the leak canary).
+//
+// The alias resolver goes here too, for the same reason (it execs git). The
+// env arm runs first on an alias candidate as well, so an alias the env
+// itself defines is refused under hookskip:config-env and not by its
+// expansion. The env arm reads only the env, never the verb, so one pass in
+// front of the resolver covers whatever verb the expansion turns out to be.
 func renderHookSkipEnvCall() string {
-	return "[ -n \"$posse_hs_envverb\" ] && posse_hs_env\n"
+	return "if [ -n \"$posse_hs_envverb\" ] || [ -n \"$posse_hs_aliasverb\" ]; then posse_hs_env; fi\n" +
+		"[ -n \"$posse_hs_aliasverb\" ] && posse_hs_unalias \"$@\"\n"
 }
 
 // HookSkipGate is the parity row the arm is reported under (CheckParity).

@@ -95,6 +95,27 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		{"", "config --edit", "hookskip:config-write"},
 		{"", "config -e", "hookskip:config-write"},
 		{"", "config edit", "hookskip:config-write"},
+		// ranger-base-z8kym: aliases. The bead's legs first — each exited 0
+		// with the hook unrun before this arm resolved aliases.
+		{"", `-c alias.ci="commit -n" ci -q -m a1 -- f`, "hookskip:config-override"},
+		{"", `-c alias.ci="!git commit -n" ci -q -m a2 -- f`, "hookskip:config-override"},
+		{"", "--config-env=alias.ci=HOME ci -q -m a2 -- f", "hookskip:config-override"},
+		{`GIT_CONFIG_PARAMETERS="'alias.ci'='commit -n'" `, "ci -q -m a3 -- f", "hookskip:config-env"},
+		{"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.ci GIT_CONFIG_VALUE_0='commit --no-verify' ", "ci -q -m a4 -- f", "hookskip:config-env"},
+		{"", `config alias.ci "commit -n"`, "hookskip:config-write"},
+		{"", `config set alias.ci "commit -n"`, "hookskip:config-write"},
+		{"", "config --remove-section alias", "hookskip:config-write"},
+		// An alias already in config (planted by hsSetup, past the shim, the
+		// way an operator's own gitconfig would carry one) is resolved and
+		// its expansion judged.
+		{"", "pci -q -m p1 -- f", "hookskip:no-verify"},
+		{"", "PCI -q -m p1 -- f", "hookskip:no-verify"},
+		{"", "-C . pci -q -m p1 -- f", "hookskip:no-verify"},
+		{"", "pchain -q -m p2 -- f", "hookskip:no-verify"},
+		{"", "pnv -q -m p3 -- f", "hookskip:no-verify"},
+		{"", "phooks -q -m p4 -- f", "hookskip:config-override"},
+		{"", "psh", "hookskip:alias"},
+		{"", "pabs", "hookskip:alias"},
 	}
 }
 
@@ -117,6 +138,14 @@ func hsAllowed(fx *hsFixture) []hsLeg {
 		{"", "config --list", ""},
 		{"", "config user.email a@b.c", ""},
 		{"GIT_CONFIG_GLOBAL=/dev/null ", "status", ""},
+		// An alias for a plain commit runs, and runs the hook.
+		{"", "pcm -q -m a -- f", ""},
+		{"", "config --get alias.pci", ""},
+		{"", "config get alias.pci", ""},
+		{"", "--version", ""},
+		// An alias loop is git's to refuse ("alias loop detected"), and it
+		// runs nothing.
+		{"", "ploop", ""},
 	}
 }
 
@@ -168,6 +197,20 @@ func hsSetup(t *testing.T) *hsFixture {
 	hsRealGit(t, fx, "-C", fx.repo, "add", "--", "f")
 	hsRealGit(t, fx, "-C", fx.repo, "commit", "-q", "-m", "seed", "--", "f")
 	hsRealGit(t, fx, "-C", fx.repo, "push", "-q", "origin", "main")
+	// Persistent aliases, planted past the shim (ranger-base-z8kym).
+	for k, v := range map[string]string{
+		"pci":    "commit -n",
+		"pchain": "pci",
+		"pnv":    "commit --no-verify",
+		"phooks": "-c core.hooksPath=/dev/null commit",
+		"psh":    "!git commit -n -q -m x -- f",
+		"pabs":   "!" + realGit + " commit -n -q -m x -- f",
+		"ploop":  "ploop2",
+		"ploop2": "ploop",
+		"pcm":    "commit",
+	} {
+		hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v)
+	}
 	os.Remove(fx.marker)
 	return fx
 }
@@ -287,7 +330,7 @@ func TestQAHookSkipRefusedOnEveryRuntime(t *testing.T) {
 					t.Errorf("%s: refused by the hook-skip arm, want allowed: %q", line, errs)
 					continue
 				}
-				if strings.HasPrefix(leg.args, "commit") || strings.Contains(leg.args, " commit ") {
+				if strings.HasPrefix(leg.args, "commit") || strings.Contains(leg.args, " commit ") || strings.HasPrefix(leg.args, "pcm ") {
 					if code != 0 || hsFired(fx) != before+1 {
 						t.Errorf("%s: code=%d, hook fired %d times, want 0 and once (%s)", line, code, hsFired(fx)-before, errs)
 					}
