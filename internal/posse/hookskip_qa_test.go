@@ -58,13 +58,24 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		{"", "-c core.hooksPath=/dev/null commit -q -m e -- f", "hookskip:config-override"},
 		{"", "-c CORE.HOOKSPATH=/dev/null commit -q -m e -- f", "hookskip:config-override"},
 		{"", "-c core.hooksPath= commit -q -m e -- f", "hookskip:config-override"},
-		{"", "-c core.hooksPath status", "hookskip:config-override"},
+		{"", "-c core.hooksPath commit -q -m e -- f", "hookskip:config-override"},
 		{"", "-c hook.scan.command=true commit -q -m e -- f", "hookskip:config-override"},
 		{"", "-c include.path=/tmp/x commit -q -m e -- f", "hookskip:config-override"},
 		{"", "-c includeIf.gitdir:/.path=/tmp/x commit -q -m e -- f", "hookskip:config-override"},
 		{"", "--config-env=core.hooksPath=HOME commit -q -m e -- f", "hookskip:config-override"},
 		{"", "--config-env core.hooksPath=HOME commit -q -m e -- f", "hookskip:config-override"},
-		{"", "-C . -c user.name=x -c core.hooksPath=/dev/null log -1", "hookskip:config-override"},
+		{"", "-C . -c user.name=x -c core.hooksPath=/dev/null merge HEAD", "hookskip:config-override"},
+		// ranger-base-ap4p6: the override is judged on the VERB. These are
+		// the verbs hookSkipReadVerbs does NOT admit, each for a stated
+		// reason — an unknown verb (which is what an alias looks like here,
+		// and the hole the "any verb" arm was for), the two whose
+		// subcommands split on rule (a), and a ref-moving checkout.
+		{"", "-c core.hooksPath=/dev/null hs-not-a-verb", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote prune origin", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote update", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null worktree add " + shQuote(filepath.Join(fx.home, "wt")) + " -d", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null checkout main", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null reset --hard HEAD", "hookskip:config-override"},
 		// hookskip:config-env
 		{`GIT_CONFIG_PARAMETERS="'core.hookspath'='/dev/null'" `, "commit -q -m f -- f", "hookskip:config-env"},
 		{`GIT_CONFIG_PARAMETERS="'hook.scan.command'='true'" `, "commit -q -m f -- f", "hookskip:config-env"},
@@ -146,6 +157,28 @@ func hsAllowed(fx *hsFixture) []hsLeg {
 		// An alias loop is git's to refuse ("alias loop detected"), and it
 		// runs nothing.
 		{"", "ploop", ""},
+		// ranger-base-ap4p6: the Claude Code harness's own context calls,
+		// verbatim in shape from the refusals.log census in hookskip.go —
+		// a hook-key override on a verb that runs no hook to skip. Refusing
+		// these cost every seat its branch/status snapshot.
+		{"", "-c core.hooksPath=/dev/null status --porcelain --untracked-files=normal", ""},
+		{"", "-c core.hooksPath=/dev/null rev-parse --abbrev-ref HEAD", ""},
+		{"", "-c core.hooksPath=/dev/null remote get-url origin", ""},
+		{"", "-c core.hooksPath=/dev/null remote", ""},
+		{"", "-c core.hooksPath=/dev/null remote -v", ""},
+		{"", "-c core.hooksPath=/dev/null config -z --get-regexp remote", ""},
+		{"", "-c core.hooksPath=/dev/null config --get --path core.excludesFile", ""},
+		{"", "-c core.hooksPath=/dev/null ls-files -z --stage", ""},
+		{"", "-c core.hooksPath=/dev/null ls-files --error-unmatch -- f", ""},
+		{"", "-c core.hooksPath=/dev/null update-index --untracked-cache", ""},
+		{"", "-c core.hooksPath=/dev/null write-tree", ""},
+		{"", "-c core.hooksPath=/dev/null worktree list --porcelain", ""},
+		{"", "-c core.hooksPath=/dev/null --no-optional-locks log --oneline -n 1", ""},
+		{"", "-c hook.pre-commit.enabled=false status --porcelain", ""},
+		{"", "-c include.path=/tmp/x diff --stat", ""},
+		{"", "-C . -c user.name=x -c core.hooksPath=/dev/null log -1", ""},
+		// No verb at all: nothing runs, so nothing is skipped.
+		{"", "-c core.hooksPath=/dev/null --version", ""},
 	}
 }
 
@@ -337,6 +370,58 @@ func TestQAHookSkipRefusedOnEveryRuntime(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A verb cannot be both read and hook-running (ranger-base-ap4p6). This is
+// the cheap pin on an expensive mistake: a hookSkipVerbs entry that also
+// appeared in hookSkipReadVerbs would un-do r3pri in silence — the arm would
+// still render, still define every rule, and wave the override through on the
+// one verb the whole file exists for. Nothing in the execution pins above
+// would say so either, because they assert the refusal and not WHICH list
+// produced it.
+func TestQAHookSkipReadVerbsAreNotHookVerbs(t *testing.T) {
+	t.Parallel()
+	read := map[string]bool{}
+	for v := range hookSkipReadVerbs {
+		read[v] = true
+	}
+	for v, subs := range hookSkipReadSubverbs {
+		if read[v] {
+			t.Errorf("%q is in hookSkipReadVerbs AND hookSkipReadSubverbs — the plain arm matches first and the subcommand split is dead", v)
+		}
+		if len(subs) == 0 {
+			t.Errorf("hookSkipReadSubverbs[%q] is empty, so the verb renders an arm that can never match", v)
+		}
+		read[v] = true
+	}
+	for _, v := range hookSkipVerbs {
+		if read[v] {
+			t.Errorf("%q runs a hook a scanner could live in and must never be read as a read", v)
+		}
+	}
+	for _, v := range hookSkipNoVerifyVerbs {
+		if read[v] {
+			t.Errorf("%q has a --no-verify spoiler, so it runs hooks and must never be read as a read", v)
+		}
+	}
+	// And the rendered sh must actually ask: a refusal that no longer consults
+	// posse_hs_readverb is the same regression from the other side.
+	body := renderHookSkipArm("/usr/bin/git", "/bin/date", "/x/hooks", hookSkipGlobalRef{})
+	if !strings.Contains(body, "posse_hs_readverb() {") ||
+		!strings.Contains(body, "! posse_hs_readverb \"$1\" \"${2:-}\"") {
+		t.Errorf("the -c arm must be judged through posse_hs_readverb, with the verb AND its next word:\n%s", body)
+	}
+	// Both tables are maps, so a render that iterated them directly would
+	// emit a different shim on every run — and a seat's gates dir is
+	// compared against a re-render elsewhere in this package.
+	if second := renderHookSkipArm("/usr/bin/git", "/bin/date", "/x/hooks", hookSkipGlobalRef{}); second != body {
+		t.Error("renderHookSkipArm is not deterministic — a map is being iterated without sorting")
+	}
+	for v := range hookSkipReadVerbs {
+		if !strings.Contains(body, "'"+v+"'") {
+			t.Errorf("hookSkipReadVerbs names %q and the rendered arm does not", v)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package posse
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -18,9 +19,13 @@ import (
 //	                         merge/pull/rebase/push --no-verify and prefixes.
 //	                         NOT push -n (that is --dry-run), NOT merge/
 //	                         rebase/cherry-pick/revert -n (no-stat/no-commit).
-//	hookskip:config-override -c / --config-env (both spellings) on ANY verb
-//	                         whose key is core.hooksPath, hook.*, include.*
-//	                         or includeIf.* — compared case-insensitively.
+//	hookskip:config-override -c / --config-env (both spellings) whose key is
+//	                         core.hooksPath, hook.*, include.* or includeIf.*
+//	                         — compared case-insensitively — on any verb
+//	                         except the reads hookSkipReadVerbs names, which
+//	                         run no hook to skip (ranger-base-ap4p6). An
+//	                         unknown verb is not a read, so an alias is still
+//	                         refused.
 //	hookskip:config-env      on a hook-running verb: GIT_CONFIG_PARAMETERS
 //	                         naming one of those keys; a GIT_CONFIG_KEY_<n>
 //	                         below GIT_CONFIG_COUNT naming one, unless it is
@@ -61,6 +66,17 @@ import (
 // include.* and includeIf.* are not in the bead's list and are here on
 // purpose: `-c include.path=<file>` loads a file that can set core.hooksPath,
 // so leaving them out would leave every other arm one indirection wide.
+//
+// THE -c ARM IS JUDGED ON THE VERB, NOT ON THE FLAG ALONE (ranger-base-ap4p6).
+// `git -c core.hooksPath=/dev/null status` skips nothing: status runs no hook
+// a scanner can veto in. Refusing it is a false positive, and it was not a
+// cheap one — the Claude Code harness types that exact prefix in front of
+// every git call it makes for its own context, so the first arm refused
+// `status`, `rev-parse`, `remote get-url`, `config --get-regexp`, `ls-files`,
+// `update-index` and `write-tree` on every seat, and every seat lost its
+// branch/status snapshot. hookSkipReadVerbs is the allowlist and carries the
+// membership rule; everything not on it, KNOWN VERB OR NOT, is still refused,
+// which is how the `git -c core.hooksPath=x <alias>` hole stays shut.
 //
 // THE SYSTEM SCOPE OVERRIDES ARE JUDGED BY CONTENT, NOT BY VALUE. The bead's
 // fallback was "differs from what the launch set", and the shim cannot know
@@ -121,8 +137,9 @@ import (
 // executes it through each.
 
 // hookSkipVerbs are the git verbs that run a hook a scanner could live in —
-// the ones a config or scope override is judged on. -c is judged on EVERY
-// verb instead (it costs nothing and closes `git -c core.hooksPath=x <alias>`).
+// the ones a config or scope override is judged on. -c is judged on every
+// verb EXCEPT hookSkipReadVerbs (it costs nothing there and closes
+// `git -c core.hooksPath=x <alias>`, whose verb no list can name).
 var hookSkipVerbs = []string{"commit", "merge", "am", "push", "pull", "rebase", "cherry-pick", "revert"}
 
 // hookSkipBuiltins are verbs the alias lookup skips: git runs a builtin
@@ -140,6 +157,111 @@ var hookSkipBuiltins = strings.Fields(`
 	rev-list rev-parse revert rm show show-ref stash status switch
 	symbolic-ref tag var version worktree
 `)
+
+// hookSkipReadVerbs are the verbs a hook-relevant -c / --config-env is NOT
+// refused on (ranger-base-ap4p6, from ranger-base-b1ttk). Refusing a read is
+// a false positive, not a scanner bypass, and the cost was measured: the
+// Claude Code harness types its own git context calls with
+// `-c core.hooksPath=/dev/null -c hook.<every-hook>.enabled=false` in front,
+// so with -c judged on every verb EVERY seat on the new binary lost its
+// branch/status snapshot. MEASURED 2026-11-03/04 over refusals.log for seven
+// personas under <StateDir>/gates: 51 `remote get-url origin`, 51 bare
+// `remote`, 43 `status --porcelain`, 43 `rev-parse --abbrev-ref HEAD`, 43
+// `config -z --get-regexp ^(remote\..+…)$`, 8 `ls-files --error-unmatch`, 7
+// each of `write-tree`, `update-index --untracked-cache`, `ls-files -z
+// --stage` and `config --get --path core.excludesFile`, plus `log`,
+// `worktree list --porcelain -z` and `--version` — 0 writes, 0 commits.
+//
+// MEMBERSHIP RULE, so a verb added later is judged and not guessed: a verb
+// belongs here when it (a) performs no reference update and (b) runs no hook
+// whose nonzero exit vetoes anything. Three hooks do fire on verbs in this
+// list and none is a gate (MEASURED, githooks(5), git 2.50.1):
+// `fsmonitor-watchman` is a query helper git reads an answer from,
+// `post-index-change` runs after do_write_locked_index has already written,
+// and `reference-transaction` — the one that CAN veto, in its "prepared"
+// state — needs a reference update, which (a) excludes. That is why
+// `checkout`, `switch`, `reset`, `fetch`, `tag`, `branch`, `update-ref`,
+// `symbolic-ref`, `reflog`, `stash`, `gc` and `submodule` are absent beside
+// the eight hookSkipVerbs: each updates a ref, runs a vetoing hook, or both.
+// It is also why two members are split by subcommand below.
+//
+// An UNKNOWN verb is not in this table and is therefore still refused, which
+// is what keeps the alias hole shut: `git -c core.hooksPath=x <alias>` cannot
+// be read as a read.
+//
+// NOT githang.go's gitReadOnlyVerbs, which is a different predicate and must
+// stay one. That table proves a signalled child moved no ref, HEAD or working
+// tree, so it excludes `status` on purpose — status rewrites the index when
+// the stat cache is racy. This table proves a verb runs no hook to skip,
+// which `status`, `write-tree` and `update-index` all satisfy while writing
+// the index freely. Folding them would have to drop one claim or the other.
+// A map and not a slice, like both of githang.go's verb tables: a verb table
+// is a SET, duplicate keys are a compile error rather than a pin's job, and
+// extdiff_qa_test.go's census reads a `"diff"` in an argv-shaped slice as a
+// bare `git diff` reader (ranger-base-zfza8 added its map-key exemption for
+// gitReadOnlyVerbs, for this same reason).
+var hookSkipReadVerbs = map[string]bool{
+	"annotate": true, "archive": true, "blame": true, "cat-file": true,
+	"check-attr": true, "check-ignore": true, "check-mailmap": true,
+	"check-ref-format": true, "cherry": true, "config": true,
+	"count-objects": true, "describe": true, "diff": true,
+	"diff-files": true, "diff-index": true, "diff-tree": true,
+	"for-each-ref": true, "grep": true, "help": true,
+	"interpret-trailers": true, "log": true, "ls-files": true,
+	"ls-remote": true, "ls-tree": true, "merge-base": true,
+	"merge-tree": true, "name-rev": true, "patch-id": true,
+	"range-diff": true, "rev-list": true, "rev-parse": true,
+	"shortlog": true, "show": true, "show-ref": true, "status": true,
+	"stripspace": true, "update-index": true, "var": true,
+	"verify-commit": true, "verify-tag": true, "version": true,
+	"whatchanged": true, "write-tree": true,
+}
+
+// hookSkipReadSubverbs are the two verbs whose SUBCOMMANDS split on rule (a):
+// `git remote` reads and writes config, but `remote prune` and `remote
+// update` delete and update refs; `git worktree list` reads, but `worktree
+// add` writes a HEAD and runs post-checkout. So each is allowed only at the
+// subcommands the rule admits — "" is the bare verb.
+//
+// The verb-plus-next-word read this needs is the one githang.go's
+// gitVerbPair already does, and for the same `worktree add` / `worktree
+// list` distinction — there to size a deadline, here to judge an override.
+// The sh walk reaches the pair for free (it has already consumed the global
+// options to find the verb), so this is that precedent and not a second
+// mechanism.
+var hookSkipReadSubverbs = map[string][]string{
+	"remote":   {"", "-v", "--verbose", "get-url", "show"},
+	"worktree": {"list"},
+}
+
+// renderHookSkipReadVerb writes posse_hs_readverb: $1 the verb, $2 its first
+// following word (empty when there is none). Exit 0 means "a read — do not
+// refuse the -c override on it". Both tables render in sorted key order, so
+// the shim a given posse builds is byte-identical run to run.
+func renderHookSkipReadVerb() string {
+	var b strings.Builder
+	b.WriteString("posse_hs_readverb() {\n  case \"$1\" in\n")
+	plain := make([]string, 0, len(hookSkipReadVerbs))
+	for v := range hookSkipReadVerbs {
+		plain = append(plain, shQuote(v))
+	}
+	sort.Strings(plain)
+	fmt.Fprintf(&b, "    %s) return 0 ;;\n", strings.Join(plain, "|"))
+	verbs := make([]string, 0, len(hookSkipReadSubverbs))
+	for v := range hookSkipReadSubverbs {
+		verbs = append(verbs, v)
+	}
+	sort.Strings(verbs)
+	for _, v := range verbs {
+		subs := make([]string, 0, len(hookSkipReadSubverbs[v]))
+		for _, s := range hookSkipReadSubverbs[v] {
+			subs = append(subs, shQuote(s))
+		}
+		fmt.Fprintf(&b, "    %s) case \"${2:-}\" in %s) return 0 ;; esac ;;\n", shQuote(v), strings.Join(subs, "|"))
+	}
+	b.WriteString("  esac\n  return 1\n}\n")
+	return b.String()
+}
 
 // hookSkipNoVerify is, per verb, the spoiler table for its hook-skipping
 // option. MEASURED 2026-11-03, git 2.50.1, `git <verb> -h`: commit and am
@@ -226,7 +348,8 @@ const hookSkipRegexp = `^(core\.hookspath|hook\.|include\.|includeif\.|alias\.)`
 func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) string {
 	var b strings.Builder
 	b.WriteString("# ranger-base-r3pri: hook-skipping forms are refused on every seat, every\n")
-	b.WriteString("# runtime, independent of the PID (ADR 0052). Cooperative (ADR 0025): an\n")
+	b.WriteString("# runtime, independent of the PID (ADR 0052) — on the verbs that run a hook\n")
+	b.WriteString("# to skip, never on a read (ranger-base-ap4p6). Cooperative (ADR 0025): an\n")
 	b.WriteString("# absolute /usr/bin/git, env -i, or a hand-edited config file are\n")
 	b.WriteString("# past this wall by class; aliases are resolved (ranger-base-z8kym), and a moved\n")
 	b.WriteString("# HOME/XDG_CONFIG_HOME/GIT_CONFIG_GLOBAL is judged against the launcher's global\n")
@@ -318,14 +441,20 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	b.WriteString("  [ -z \"$posse_hs_w\" ] && [ -z \"$posse_hs_sub\" ] && [ $posse_hs_np -le 1 ] && return 0\n")
 	b.WriteString("  return 1\n}\n")
 
-	// The walk: global options first (checking -c/--config-env as it goes),
-	// then the verb and its own arguments.
+	// Which verbs an override is a read on (ranger-base-ap4p6).
+	b.WriteString(renderHookSkipReadVerb())
+
+	// The walk: global options first (RECORDING a hook-relevant -c/--config-env
+	// as it goes), then the verb and its own arguments. The override is judged
+	// only once the verb is known, because whether it skips a hook is a fact
+	// about the verb and not about the flag (ranger-base-ap4p6): before that
+	// change the refusal fired inside this loop, where no verb has been read.
 	b.WriteString("posse_hs_check() {\n  posse_hs_all=$#; posse_hs_noalias=\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
 	// Options that print and exit before any verb runs: an alias lookup under
 	// them would read their output as an expansion.
 	b.WriteString("      -h|--help|-v|--version|--exec-path|--html-path|--man-path|--info-path|--list-cmds=*) posse_hs_noalias=1; shift ;;\n")
-	b.WriteString("      -c|--config-env)\n        [ $# -ge 2 ] || break\n        posse_hs_key \"$2\" && posse_hs_refuse hookskip:config-override \"$1 $2 moves or adds a hook, or defines an alias\"\n        shift 2 ;;\n")
-	b.WriteString("      --config-env=*)\n        posse_hs_key \"${1#--config-env=}\" && posse_hs_refuse hookskip:config-override \"$1 moves or adds a hook, or defines an alias\"\n        shift ;;\n")
+	b.WriteString("      -c|--config-env)\n        [ $# -ge 2 ] || break\n        posse_hs_key \"$2\" && { posse_hs_cover=1; posse_hs_coverwhy=\"$1 $2 moves or adds a hook, or defines an alias\"; }\n        shift 2 ;;\n")
+	b.WriteString("      --config-env=*)\n        posse_hs_key \"${1#--config-env=}\" && { posse_hs_cover=1; posse_hs_coverwhy=\"$1 moves or adds a hook, or defines an alias\"; }\n        shift ;;\n")
 	if pairs := globalValueOpts["git"]; len(pairs) > 0 {
 		var quoted []string
 		for _, o := range pairs {
@@ -337,7 +466,10 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 		fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || break\n        shift 2 ;;\n", strings.Join(quoted, "|"))
 	}
 	b.WriteString("      -*) shift ;;\n      *) break ;;\n    esac\n  done\n")
-	b.WriteString("  [ $# -gt 0 ] || return 0\n  posse_hs_ng=$((posse_hs_all - $#)); posse_hs_verb=$1; shift\n")
+	// No verb at all (`git --version`, `git -c core.hooksPath=x`) runs no hook.
+	b.WriteString("  [ $# -gt 0 ] || return 0\n")
+	b.WriteString("  if [ -n \"$posse_hs_cover\" ] && ! posse_hs_readverb \"$1\" \"${2:-}\"; then\n    posse_hs_refuse hookskip:config-override \"$posse_hs_coverwhy\"\n  fi\n")
+	b.WriteString("  posse_hs_ng=$((posse_hs_all - $#)); posse_hs_verb=$1; shift\n")
 	// Not a builtin: maybe an alias. Recorded, and resolved after the deny
 	// rules (renderHookSkipEnvCall), because resolving it execs git.
 	bi := make([]string, 0, len(hookSkipBuiltins))
@@ -361,7 +493,7 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	fmt.Fprintf(&b, "  case \"$posse_hs_verb\" in %s) posse_hs_envverb=1 ;; esac\n", strings.Join(verbs, "|"))
 	b.WriteString("  return 0\n}\n")
 	b.WriteString(renderHookSkipAlias(real))
-	b.WriteString("posse_hs_argv=\"$*\"; posse_hs_envverb=\nposse_hs_check \"$@\"\n")
+	b.WriteString("posse_hs_argv=\"$*\"; posse_hs_envverb=; posse_hs_cover=; posse_hs_coverwhy=\nposse_hs_check \"$@\"\n")
 	return b.String()
 }
 
