@@ -1052,6 +1052,12 @@ exists for the one verb that is a hard risk line; the parity check
   to a real push, which runs the hook), nothing catches it elsewhere, and
   the tier that closes it properly is `seatbelt`/`container`, where the
   gate is not a name lookup.
+  **Closed at L1 since 2026-11-04** (ranger-base-z8kym, ranger-base-d4bk4).
+  The git shim looks up a non-builtin verb with one `git config --get
+  alias.<tok>`, under the call's own global options and env, so a repo's own
+  alias is found too. It refuses a `!` alias outright and re-runs the verb
+  deny rules on every other expansion (`renderAliasDeny`). The cost is that
+  lookup on non-builtin verbs only; a builtin verb forks nothing extra.
 
 **The gate shell (ADR 0009, `renderGateShell`, verified live in
 rangerhq-e43).** A PATH prefix on the typed line survives only while the

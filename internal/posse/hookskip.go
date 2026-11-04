@@ -39,6 +39,8 @@ import (
 //	                         outright; any other expansion is spliced into
 //	                         argv in place of the verb and walked by every
 //	                         arm above again, chains included, to depth 10.
+//	                         Each expansion then meets the PID's verb deny
+//	                         rules too (ranger-base-d4bk4, renderAliasDeny).
 //
 // alias.* IS A HOOK-RELEVANT KEY TOO (ranger-base-z8kym). `-c alias.ci="commit
 // -n"`, the same in GIT_CONFIG_PARAMETERS or GIT_CONFIG_KEY_<n>, and `git
@@ -81,8 +83,8 @@ import (
 // against the ordinary path and says so): an absolute /usr/bin/git, `env -i`
 // or `command -p git`; hand-editing .git/config or ~/.gitconfig; an alias
 // expansion this arm splits differently from git (it splits on IFS and does
-// not unquote, which can only refuse more); the PID's deny rules, which still
-// match an alias token and not its expansion (gates.go's preamble); and
+// not unquote, which can only refuse more), which the PID's verb deny rules
+// now judge as well (renderAliasDeny, ranger-base-d4bk4); and
 // HOME / XDG_CONFIG_HOME pointed elsewhere,
 // which moves the global scope without naming any GIT_CONFIG_* variable — the
 // shim has no notion of the "real" home to compare against. An over-refusal
@@ -373,7 +375,12 @@ func renderHookSkipAlias(real string) string {
 	b.WriteString("    posse_hs_k=0\n    for posse_hs_a in \"$@\"; do\n      [ $posse_hs_k -eq 0 ] && set --\n")
 	b.WriteString("      if [ $posse_hs_k -eq $posse_hs_ng ]; then set -f; set -- \"$@\" $posse_hs_x; set +f\n      else set -- \"$@\" \"$posse_hs_a\"; fi\n")
 	b.WriteString("      posse_hs_k=$((posse_hs_k+1))\n    done\n")
-	b.WriteString("    posse_hs_check \"$@\"\n  done\n}\n")
+	// Each expansion is judged by this arm, then by the PID's deny rules
+	// (posse_hs_pid, rendered by renderShim — ranger-base-d4bk4). This arm
+	// goes first for the same reason it does on the typed argv: its reason
+	// is the more specific one. posse_hs_av keeps the alias name for the
+	// refusal, since posse_hs_check moves posse_hs_verb on.
+	b.WriteString("    posse_hs_av=$posse_hs_verb\n    posse_hs_check \"$@\"\n    posse_hs_pid \"$@\"\n  done\n}\n")
 	return b.String()
 }
 
@@ -390,9 +397,41 @@ func renderHookSkipAlias(real string) string {
 // itself defines is refused under hookskip:config-env and not by its
 // expansion. The env arm reads only the env, never the verb, so one pass in
 // front of the resolver covers whatever verb the expansion turns out to be.
+//
+// THE ONE EXEC A DENIED COMMAND MAKES (ranger-base-d4bk4). The PID's deny
+// rules judge an alias's expansion too (renderAliasDeny), and the expansion
+// is only known once the real git has answered `config --get alias.<verb>`.
+// So a command refused BY ITS EXPANSION has reached git exactly once, for
+// that read-only lookup, and never for its own verb. A deny matched on the
+// typed argv still reaches git zero times, since a builtin verb is never
+// looked up. TestQAPIDDenyAliasLookupIsTheOnlyExec pins both.
 func renderHookSkipEnvCall() string {
 	return "if [ -n \"$posse_hs_envverb\" ] || [ -n \"$posse_hs_aliasverb\" ]; then posse_hs_env; fi\n" +
 		"[ -n \"$posse_hs_aliasverb\" ] && posse_hs_unalias \"$@\"\n"
+}
+
+// renderAliasDeny writes posse_hs_pid, which posse_hs_unalias calls on each
+// expansion it splices (ranger-base-d4bk4). An alias from the operator's own
+// gitconfig (`alias.c = commit`) reaches the shim as the token `c`, and the
+// PID's verb rules matched only that token, so `git c -m x` was a bare commit
+// under `Bash(git commit unless --)`. posse_hs_pid runs the same
+// posse_verb_match on the expansion and refuses under the same rule, naming
+// the alias in the hint. A PID with no verb rules renders no posse_verb_match,
+// and posse_hs_pid is then a no-op.
+//
+// Only VERB rules are re-run. A rule that leads with an option is a literal
+// prefix of the typed argv (renderShim). An expansion replaces the verb and
+// leaves the globals in front of it alone, so that prefix is unchanged.
+func renderAliasDeny(haveVerbRules bool) string {
+	if !haveVerbRules {
+		return "posse_hs_pid() { :; }\n"
+	}
+	var b strings.Builder
+	b.WriteString("posse_hs_pid() {\n  posse_verb_match \"$@\"\n  [ -n \"$RHQ_GATE_RULE\" ] || return 0\n")
+	b.WriteString("  posse_hs_h=\"  git $posse_hs_av is an alias for '$posse_hs_x': the deny rule judged its expansion (ranger-base-d4bk4)\"\n")
+	b.WriteString("  [ -n \"$RHQ_GATE_HINT\" ] && posse_hs_h=\"$posse_hs_h\n$RHQ_GATE_HINT\"\n")
+	b.WriteString("  RHQ_GATE_HINT=$posse_hs_h\n  posse_refuse \"$@\"\n}\n")
+	return b.String()
 }
 
 // HookSkipGate is the parity row the arm is reported under (CheckParity).

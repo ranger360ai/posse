@@ -13,13 +13,15 @@ package posse
 // claude included: --disallowedTools is the polite refusal in front of the
 // shim's hard one (L0Spellings widens the PID's deny list so it fires on
 // the same argv this shim does — rangerhq-3mc). Known holes are why L3
-// (pre-push hook, rangerhq-8s4) exists for git push: /usr/bin/git,
-// command -p, and a *git alias* — `git p` where the operator's gitconfig
-// says alias.p = push reaches the shim as the token `p`, and resolving it
-// would mean running `git config --get alias.<tok>` per invocation, in
-// POSIX sh, against whatever repo the options point at. L3 catches it in
-// hooked repos; elsewhere it is the seatbelt/container tier's, not this
-// matcher's.
+// (pre-push hook, rangerhq-8s4) exists for git push: /usr/bin/git and
+// command -p. L3 catches those in hooked repos; elsewhere they belong to the
+// seatbelt/container tier, not this matcher. A *git alias* used to be on that
+// list: `git p`, where the operator's gitconfig says alias.p = push, reached
+// the shim as the token `p`. The hook-skip arm now resolves a non-builtin verb
+// with `git config --get alias.<tok>` under the call's own options and env
+// (ranger-base-z8kym). The verb deny rules are re-run on each expansion
+// (renderAliasDeny, ranger-base-d4bk4), so `git p` is refused as a push. A
+// `!` shell alias is refused outright.
 //
 // A deny naming a subcommand (Bash(git push:*)) is NOT matched at argv[1]:
 // git and its kind accept global options before the subcommand, so
@@ -1587,6 +1589,7 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 		b.WriteString("if [ -n \"$RHQ_GATE_RULE\" ]; then posse_refuse \"$@\"; fi\n")
 	}
 	if cmd == "git" {
+		b.WriteString(renderAliasDeny(len(verbs) > 0))
 		b.WriteString(renderHookSkipEnvCall())
 	}
 	b.WriteString(renderSequencerAudit(cmd, real, dateBin))

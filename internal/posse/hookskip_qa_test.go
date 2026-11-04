@@ -387,3 +387,148 @@ func TestQAHookSkipScopeFailsClosedWithoutGit(t *testing.T) {
 		t.Errorf("with no real git the scope comparison must return 1 (refuse):\n%s", body)
 	}
 }
+
+// ranger-base-d4bk4: the PID's verb deny rules judge an alias's expansion,
+// not only its token. Before, with real `alias.c = commit` in config, `git c
+// -q -m x` under `Bash(git commit unless --)` exited 0 as a bare commit.
+// Real git, through the seat launch line, claude and codex.
+func TestQAPIDDenyJudgesAliasExpansion(t *testing.T) {
+	t.Parallel()
+	for _, rtName := range []string{"claude", "codex"} {
+		t.Run(rtName, func(t *testing.T) {
+			t.Parallel()
+			fx := hsSetup(t)
+			for k, v := range map[string]string{"c": "commit", "cc": "c", "pp": "push"} {
+				hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v)
+			}
+			home := t.TempDir()
+			a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+			rt, err := a.LoadRuntime(rtName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
+			wrapped, gatesDir, _, err := a.WrapWithGates("ad-"+rtName, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, leg := range []struct{ args, rule, judged string }{
+				{"c -q -m x", "Bash(git commit unless --)", "git commit -q -m x"},
+				{"-C . c -q -m x", "Bash(git commit unless --)", "git -C . commit -q -m x"},
+				{"cc -q -m x", "Bash(git commit unless --)", "git commit -q -m x"},
+				{"c -q -m x --", "Bash(git commit unless --)", "git commit -q -m x --"},
+				{"pp origin main", "Bash(git push:*)", "git push origin main"},
+			} {
+				errs, code := hsRun(t, fx, wrapped, hsLeg{args: leg.args})
+				want := "refused by posse gate: " + leg.judged + " (deny: " + leg.rule + ")"
+				if code != 1 || !strings.Contains(errs, want) {
+					t.Errorf("git %s: code=%d, want 1 and %q:\n%s", leg.args, code, want, errs)
+				}
+				if !strings.Contains(errs, "is an alias for") || !strings.Contains(errs, "ranger-base-d4bk4") {
+					t.Errorf("git %s: the refusal must say an alias was judged by its expansion:\n%s", leg.args, errs)
+				}
+				// The rule's own hint (its safe form) survives under the alias line.
+				if strings.HasPrefix(leg.rule, "Bash(git commit") && !strings.Contains(errs, "safe form: git commit") {
+					t.Errorf("git %s: the safe form must still be named:\n%s", leg.args, errs)
+				}
+			}
+			logb, _ := os.ReadFile(filepath.Join(gatesDir, "refusals.log"))
+			if n := strings.Count(string(logb), "(deny: Bash(git commit unless --))"); n != 4 {
+				t.Errorf("refusals.log: want 4 commit-rule lines, got %d:\n%s", n, logb)
+			}
+			if hsFired(fx) != 0 {
+				t.Errorf("a refused alias reached commit: the hook fired %d times", hsFired(fx))
+			}
+			// The control: the safe form, through the alias, runs and runs the hook.
+			if errs, code := hsRun(t, fx, wrapped, hsLeg{args: "c -q -m ok -- f"}); code != 0 || hsFired(fx) != 1 {
+				t.Errorf("git c -q -m ok -- f: code=%d fired=%d, want 0 and 1 (%s)", code, hsFired(fx), errs)
+			}
+		})
+	}
+}
+
+// A PID with no verb deny rule has no matcher to re-run: the same alias
+// commit runs (the hook-skip arm still resolves it, and it skips nothing).
+func TestQAPIDDenyAliasNoVerbRulesIsANoop(t *testing.T) {
+	t.Parallel()
+	fx := hsSetup(t)
+	hsRealGit(t, fx, "-C", fx.repo, "config", "alias.c", "commit")
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
+	_, binDir, _, err := a.RenderGates("ad-nodeny", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(filepath.Join(binDir, "git"))
+	if !strings.Contains(string(body), "posse_hs_pid() { :; }") {
+		t.Errorf("no verb rules: posse_hs_pid must be the no-op:\n%s", body)
+	}
+	if errs, code := hsRun(t, fx, GatePrefix(binDir, ""), hsLeg{args: "c -q -a -m z"}); code != 0 || hsFired(fx) != 1 {
+		t.Errorf("git c -q -a -m z with no deny: code=%d fired=%d, want 0 and 1 (%s)", code, hsFired(fx), errs)
+	}
+}
+
+// ASSUMED (ranger-base-d4bk4): a command refused by its alias EXPANSION
+// reaches the real git exactly once, for the read-only `config --get
+// alias.<verb>` that produced the expansion, and never for its own verb. A
+// deny on the typed argv still reaches git zero times. A stub git records
+// every exec, the way TestRefusalNamesWhereTheCommandDoesRun's canary does.
+func TestQAPIDDenyAliasLookupIsTheOnlyExec(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	dir := t.TempDir()
+	execs := filepath.Join(dir, "execs")
+	stub := filepath.Join(dir, "git")
+	script := "#!/bin/sh\necho \"$*\" >> " + shQuote(execs) + "\ncase \"$*\" in\n" +
+		"  'config --get alias.c') echo commit ;;\n  'config --get alias.pp') echo push ;;\n  config\\ --get\\ *) exit 1 ;;\nesac\n"
+	if err := WriteExecutable(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rules := ParseShimRules([]string{"Bash(git push:*)", "Bash(git commit unless --)"})["git"]
+	shim := filepath.Join(dir, "shim")
+	body := renderShim("ad-canary", "git", stub, filepath.Join(dir, "refusals.log"), "/bin/date", rules, nil, "", filepath.Join(dir, "hooks"))
+	if err := WriteExecutable(shim, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_CONFIG") && !strings.HasPrefix(kv, "RHQ_GATE_") {
+			env = append(env, kv)
+		}
+	}
+	run := func(args ...string) (int, []string) {
+		os.Remove(execs)
+		cmd := exec.Command(shim, args...)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("%v: %v %s", args, err, out)
+		}
+		b, _ := os.ReadFile(execs)
+		return code, strings.Split(strings.TrimSpace(string(b)), "\n")
+	}
+	for _, c := range []struct {
+		args  []string
+		code  int
+		execs []string
+	}{
+		{[]string{"c", "-m", "x"}, 1, []string{"config --get alias.c"}},
+		{[]string{"pp", "origin"}, 1, []string{"config --get alias.pp"}},
+		{[]string{"commit", "-m", "x"}, 1, []string{""}},
+		{[]string{"push"}, 1, []string{""}},
+		// Allowed: the lookup, then git itself with the argv as typed.
+		{[]string{"c", "-m", "x", "--", "f"}, 0, []string{"config --get alias.c", "c -m x -- f"}},
+		{[]string{"nope"}, 0, []string{"config --get alias.nope", "nope"}},
+	} {
+		code, got := run(c.args...)
+		if code != c.code || strings.Join(got, "|") != strings.Join(c.execs, "|") {
+			t.Errorf("git %v: code=%d execs=%q, want %d and %q", c.args, code, got, c.code, c.execs)
+		}
+	}
+}
