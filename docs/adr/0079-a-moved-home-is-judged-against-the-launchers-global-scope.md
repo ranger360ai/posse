@@ -1,6 +1,6 @@
 # ADR 0079 — the hook-skip arm judges git's global scope against the launcher's resolved global files, for HOME, XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL alike
 
-*Status: accepted 2026-11-04 (ranger-base-7yx3s, from ranger-base-z8kym item 3) · owner: architect · replaces the GIT_CONFIG_GLOBAL half of `posse_hs_scope` (hookskip.go, ranger-base-r3pri); the SYSTEM half stands · builds in the code bead named on ranger-base-7yx3s (dinesh)*
+*Status: accepted 2026-11-04 (ranger-base-7yx3s, from ranger-base-z8kym item 3) · owner: architect · replaces the GIT_CONFIG_GLOBAL half of `posse_hs_scope` (hookskip.go, ranger-base-r3pri); the SYSTEM half stands · builds in the code bead named on ranger-base-7yx3s (dinesh) · amended 2026-11-04 (ranger-base-o6xr6): D2 and D3 now say what ranger-base-32ll0 shipped*
 
 ## Context
 
@@ -57,12 +57,21 @@ GIT_CONFIG_GLOBAL arm on a hook-running verb.
   (`case "$l" in global"<TAB>"*`), not with a second binary.
 - *want* is `git config --includes --file <c> --get-regexp <hookSkipRegexp>`
   for each baked candidate in order, concatenated. A missing file
-  contributes nothing.
-- Equal → allowed; different → `hookskip:config-env`.
+  contributes nothing. **The want reads run under the launcher's baked
+  `HOME` and `XDG_CONFIG_HOME`** (set, or unset, as baked), not the call's.
+  An `include.path = ~/x` in the operator's file expands `~` from `HOME`, so
+  under the call's moved HOME the include would follow the attacker on both
+  sides and compare equal.
+- *have* is also counted with `--show-scope --name-only --get-regexp`. A key
+  can't hold a newline, so the entry count is honest. A listing with more
+  lines than entries is refused. That's because a value with a newline can
+  forge a `global` line in the non `-z` listing: MEASURED 2026-11-04, git
+  2.50.1, a local alias value `a\nglobal\tcore.hookspath /m` prints exactly
+  that line. `-z` is out because sh command substitution drops NULs.
+- Equal → allowed; different, or a miscount → `hookskip:config-env`.
 
 MEASURED equal, in a repo and outside one, over two files plus an
-`[include]` and an `[includeIf "gitdir:…"]`. Use `-z` on both sides if a
-value can carry a newline.
+`[include]` and an `[includeIf "gitdir:…"]`.
 
 **D3 — Gate the compare on a string test, so the ordinary call runs no
 extra git.** The compare runs only when one of these holds:
@@ -71,9 +80,19 @@ extra git.** The compare runs only when one of these holds:
 - `GIT_CONFIG_GLOBAL` is unset and `HOME` or `XDG_CONFIG_HOME` differs from
   the baked value in value or in set/unset.
 
-A pinned `GIT_CONFIG_GLOBAL` with HOME moved skips the compare, because git
-ignores HOME there. Cost when it fires: 1 + (number of candidates) execs,
-~40 ms MEASURED for two files (10 pairs in 0.78 s, this box).
+A pinned `GIT_CONFIG_GLOBAL` with HOME or XDG moved still runs the
+compare. git ignores HOME when it looks up the global file, but not inside
+it: `include.path = ~/x` in the pinned file expands from the call's HOME.
+(The first text of this ADR said such a call skips the compare. That was
+wrong, and ranger-base-32ll0 shipped the safer gate; ranger-base-o6xr6
+amended this text to match.) Only a call that moved HOME or XDG pays for
+this, and the ordinary call never does.
+
+Cost when it fires: 2 + (number of candidates) execs (listing, name count,
+one read per candidate). MEASURED 2026-11-04, git 2.50.1, this box at a
+load of 7-18: 0.81-0.86 s for 10 compares over two candidates, so ~85 ms a
+compare. (The first text's ~40 ms was for the 3-exec shape, at an
+unrecorded load.)
 
 **D4 — Fail direction.** No real git at render fails closed, as today. No
 candidates (a launcher with no HOME) bakes an empty reference: a seat whose
@@ -98,6 +117,11 @@ no global hook either.
 - Two launches of one persona from launchers with different HOMEs would race
   on the shared shim file. This is ASSUMED away by the same ADR 0077 D1
   assumption, and named here so it isn't rediscovered.
+- **Over-refusal: a hook-relevant config value that carries a newline**,
+  in any scope, makes a moved-HOME/XDG/GIT_CONFIG_GLOBAL hook verb
+  unjudgeable, and it is refused (D2's count). It's ASSUMED rare: the
+  regexp covers hook keys and aliases, and nothing in this repo writes a
+  multi-line one. The ordinary call never reaches the compare (D3).
 - Still cooperative (ADR 0025): `/usr/bin/git`, `env -i` and a hand-edited
   reference file are past it by class.
 - **Exit hatch:** the arm is render-time data plus ~15 lines of sh in
@@ -148,3 +172,12 @@ seat skips the managed hook at rc 0.
 7. The plain commit with HOME, XDG and GIT_CONFIG_GLOBAL as rendered execs
    no `git config` (D3), read through the leak canary the env arm's call
    site already uses.
+8. (amendment) The pinned file carries `include.path = ~/x`; `HOME=evil`
+   with `GIT_CONFIG_GLOBAL=<pin>`, where `evil/x` drops the hooksPath →
+   refused. This pins both the D3 gate firing under the pin and the D2 want
+   reads running under the launcher's HOME. Shipped as
+   `TestQAHookSkipMovedHomeFollowsNoTildeInclude`.
+9. (amendment) `GIT_CONFIG_GLOBAL=/dev/null` plus a local value whose
+   newline forges the launcher's `global` hooksPath line → refused. Delete
+   D2's count and that call compares equal and skips the hook at rc 0. Not
+   shipped with 32ll0; owed by the bead cut under ranger-base-o6xr6.
