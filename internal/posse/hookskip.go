@@ -78,6 +78,16 @@ import (
 // membership rule; everything not on it, KNOWN VERB OR NOT, is still refused,
 // which is how the `git -c core.hooksPath=x <alias>` hole stays shut.
 //
+// THE -c REFUSAL FIRES ON THE FIRST WALK, BEFORE ANY ALIAS IS RESOLVED
+// (ranger-base-c1pqo, the choice docs/notes.d/ranger-base-1agm6.md §5 names).
+// An alias name is never a read verb — git runs a builtin before it looks for
+// an alias, and every hookSkipReadVerbs entry is a builtin — so `git -c
+// core.hooksPath=x <alias>` is refused whatever the alias expands to, a read
+// included. That is an over-refusal one respelling away (type the verb), and
+// the other order would make the refusal depend on an expansion this arm
+// splits differently from git. An alias that carries its OWN hook-key -c is
+// judged on the re-walk, against the verb it expands to.
+//
 // THE SYSTEM SCOPE OVERRIDES ARE JUDGED BY CONTENT, NOT BY VALUE. The bead's
 // fallback was "differs from what the launch set", and the shim cannot know
 // that: it is rendered per persona, not per runtime, and the claude inlet pin
@@ -221,23 +231,39 @@ var hookSkipReadVerbs = map[string]bool{
 // `git remote` reads and writes config, but `remote prune` and `remote
 // update` delete and update refs; `git worktree list` reads, but `worktree
 // add` writes a HEAD and runs post-checkout. So each is allowed only at the
-// subcommands the rule admits — "" is the bare verb.
+// subcommands the rule admits — "" is the bare verb. The table holds
+// SUBCOMMANDS only, never an option (ranger-base-c1pqo).
 //
-// The verb-plus-next-word read this needs is the one githang.go's
+// The verb-plus-subcommand read this needs is the one githang.go's
 // gitVerbPair already does, and for the same `worktree add` / `worktree
 // list` distinction — there to size a deadline, here to judge an override.
-// The sh walk reaches the pair for free (it has already consumed the global
-// options to find the verb), so this is that precedent and not a second
-// mechanism.
+//
+// THE SUBCOMMAND IS THE FIRST WORD THAT IS NOT AN OPTION (ranger-base-c1pqo,
+// from ranger-base-jvwcb). git takes an option BEFORE the subcommand, so the
+// next word is not the subcommand: when this table listed -v and --verbose
+// as if they were subverbs, `git -c core.hooksPath=/dev/null remote -v prune
+// origin` was read as a read and deleted refs with hooks off, against rule
+// (a). MEASURED 2026-11-04, git 2.50.1 (Apple Git-155), plain git in a
+// scratch repo: `remote -v prune`, `-v -v prune`, `-vv prune`, `--verb prune`
+// (a unique-prefix abbreviation) and `-v update --prune` each pruned the
+// stale tracking ref; `remote -- prune` is git's own "unknown subcommand";
+// `worktree -v list` is "unknown switch". So posse_hs_readverb skips every
+// leading word that starts with `-` and judges the first one that does not.
+// Skipping cannot swallow a subcommand: remote's only top-level option is
+// -v/--verbose, a flag with no value, and worktree takes none. A lone `--`
+// is not skipped — it is judged, and it is in no table, so it is refused
+// (git refuses it too, so nothing a seat needs is lost).
 var hookSkipReadSubverbs = map[string][]string{
-	"remote":   {"", "-v", "--verbose", "get-url", "show"},
+	"remote":   {"", "get-url", "show"},
 	"worktree": {"list"},
 }
 
-// renderHookSkipReadVerb writes posse_hs_readverb: $1 the verb, $2 its first
-// following word (empty when there is none). Exit 0 means "a read — do not
-// refuse the -c override on it". Both tables render in sorted key order, so
-// the shim a given posse builds is byte-identical run to run.
+// renderHookSkipReadVerb writes posse_hs_readverb: its arguments are the
+// verb and every word after it. Exit 0 means "a read — do not refuse the -c
+// override on it". For a hookSkipReadSubverbs verb the leading options are
+// skipped and the first other word (empty when there is none) is judged.
+// Both tables render in sorted key order, so the shim a given posse builds
+// is byte-identical run to run.
 func renderHookSkipReadVerb() string {
 	var b strings.Builder
 	b.WriteString("posse_hs_readverb() {\n  case \"$1\" in\n")
@@ -257,7 +283,7 @@ func renderHookSkipReadVerb() string {
 		for _, s := range hookSkipReadSubverbs[v] {
 			subs = append(subs, shQuote(s))
 		}
-		fmt.Fprintf(&b, "    %s) case \"${2:-}\" in %s) return 0 ;; esac ;;\n", shQuote(v), strings.Join(subs, "|"))
+		fmt.Fprintf(&b, "    %s)\n      shift\n      while [ $# -gt 0 ]; do case \"$1\" in --) break ;; -*) shift ;; *) break ;; esac; done\n      case \"${1:-}\" in %s) return 0 ;; esac ;;\n", shQuote(v), strings.Join(subs, "|"))
 	}
 	b.WriteString("  esac\n  return 1\n}\n")
 	return b.String()
@@ -468,7 +494,11 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	b.WriteString("      -*) shift ;;\n      *) break ;;\n    esac\n  done\n")
 	// No verb at all (`git --version`, `git -c core.hooksPath=x`) runs no hook.
 	b.WriteString("  [ $# -gt 0 ] || return 0\n")
-	b.WriteString("  if [ -n \"$posse_hs_cover\" ] && ! posse_hs_readverb \"$1\" \"${2:-}\"; then\n    posse_hs_refuse hookskip:config-override \"$posse_hs_coverwhy\"\n  fi\n")
+	// The deferred -c refusal, on the verb and every word after it, so a
+	// subcommand behind an option is still found (ranger-base-c1pqo). It
+	// fires here, on the first walk, before an alias is resolved: an alias
+	// name is never a read verb, so it is refused whatever it expands to.
+	b.WriteString("  if [ -n \"$posse_hs_cover\" ] && ! posse_hs_readverb \"$@\"; then\n    posse_hs_refuse hookskip:config-override \"$posse_hs_coverwhy\"\n  fi\n")
 	b.WriteString("  posse_hs_ng=$((posse_hs_all - $#)); posse_hs_verb=$1; shift\n")
 	// Not a builtin: maybe an alias. Recorded, and resolved after the deny
 	// rules (renderHookSkipEnvCall), because resolving it execs git.

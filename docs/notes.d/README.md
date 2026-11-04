@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-gt0q9](ranger-base-gt0q9.md) — The box slept 2h51m inside one test, and go test could not see it (ranger-base-gt0q9) — 2026-11-04
 - [ranger-base-e09l0](ranger-base-e09l0.md) — The alias splice unquotes the way git does (ranger-base-e09l0) — 2026-11-04
 - [ranger-base-dutum](ranger-base-dutum.md) — Four closes, and the clock arithmetic nobody had a positive control for (ranger-base-dutum) — 2026-11-04
+- [ranger-base-c1pqo](ranger-base-c1pqo.md) — The read arm judged remote on its next word, and git takes an option first (ranger-base-c1pqo) — 2026-11-04
 - [ranger-base-ap4p6](ranger-base-ap4p6.md) — The wall that refused the reads it was never built to stop (ranger-base-ap4p6) — 2026-11-04
 - [ranger-base-6vvgs](ranger-base-6vvgs.md) — A moved HOME moves the module cache, and a package built against an empty one (ranger-base-6vvgs) — 2026-11-04
 - [ranger-base-1agm6](ranger-base-1agm6.md) — ranger-base-1agm6 — verifying four closes against the git hook-skip arm — 2026-11-04

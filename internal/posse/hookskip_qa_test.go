@@ -76,6 +76,27 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		{"", "-c core.hooksPath=/dev/null worktree add " + shQuote(filepath.Join(fx.home, "wt")) + " -d", "hookskip:config-override"},
 		{"", "-c core.hooksPath=/dev/null checkout main", "hookskip:config-override"},
 		{"", "-c core.hooksPath=/dev/null reset --hard HEAD", "hookskip:config-override"},
+		// ranger-base-c1pqo (from ranger-base-jvwcb): git takes an option
+		// BEFORE remote's subcommand, and every one of these pruned or
+		// updated a ref with hooks off when the arm judged only the next
+		// word. MEASURED 2026-11-04, git 2.50.1, plain git in a scratch repo.
+		{"", "-c core.hooksPath=/dev/null remote -v prune origin", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote --verbose prune origin", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote -v -v prune origin", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote -vv prune origin", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote --verb prune origin", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote -v update", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null remote -v -- prune origin", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null worktree -v add " + shQuote(filepath.Join(fx.home, "wt2")) + " -d", "hookskip:config-override"},
+		// The deferred -c refusal against z8kym's alias re-walk
+		// (docs/notes.d/ranger-base-1agm6.md §5). It fires on the FIRST walk:
+		// an alias name is never a read verb, so the override is refused
+		// whatever the alias expands to — a commit, and a read too.
+		{"", "-c core.hooksPath=/dev/null pcm -q -m c1 -- f", "hookskip:config-override"},
+		{"", "-c core.hooksPath=/dev/null pstat", "hookskip:config-override"},
+		// And an alias carrying its own -c is judged on the re-walk, where an
+		// option before remote's subcommand must not hide a prune either.
+		{"", "prm", "hookskip:config-override"},
 		// hookskip:config-env
 		{`GIT_CONFIG_PARAMETERS="'core.hookspath'='/dev/null'" `, "commit -q -m f -- f", "hookskip:config-env"},
 		{`GIT_CONFIG_PARAMETERS="'hook.scan.command'='true'" `, "commit -q -m f -- f", "hookskip:config-env"},
@@ -179,6 +200,14 @@ func hsAllowed(fx *hsFixture) []hsLeg {
 		{"", "-C . -c user.name=x -c core.hooksPath=/dev/null log -1", ""},
 		// No verb at all: nothing runs, so nothing is skipped.
 		{"", "-c core.hooksPath=/dev/null --version", ""},
+		// ranger-base-c1pqo: remote's subcommand is the first word that is not
+		// an option, so these are reads — and so is a bare `remote -v`.
+		{"", "-c core.hooksPath=/dev/null remote --verbose", ""},
+		{"", "-c core.hooksPath=/dev/null remote -v show origin", ""},
+		{"", "-c core.hooksPath=/dev/null remote -vv get-url origin", ""},
+		// An alias that carries its OWN hook-key -c is judged on the re-walk,
+		// against the verb it expands to: here a read.
+		{"", "pst", ""},
 	}
 }
 
@@ -241,6 +270,10 @@ func hsSetup(t *testing.T) *hsFixture {
 		"ploop":  "ploop2",
 		"ploop2": "ploop",
 		"pcm":    "commit",
+		// ranger-base-c1pqo: the -c refusal against the alias re-walk.
+		"pstat": "status",
+		"pst":   "-c core.hooksPath=/dev/null status",
+		"prm":   "-c core.hooksPath=/dev/null remote -v prune origin",
 	} {
 		hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v)
 	}
@@ -407,10 +440,19 @@ func TestQAHookSkipReadVerbsAreNotHookVerbs(t *testing.T) {
 	}
 	// And the rendered sh must actually ask: a refusal that no longer consults
 	// posse_hs_readverb is the same regression from the other side.
+	// The table holds subcommands only (ranger-base-c1pqo): an option in it
+	// is how `remote -v prune` was read as a read.
+	for v, subs := range hookSkipReadSubverbs {
+		for _, s := range subs {
+			if strings.HasPrefix(s, "-") {
+				t.Errorf("hookSkipReadSubverbs[%q] lists the option %q — options are skipped, never matched", v, s)
+			}
+		}
+	}
 	body := renderHookSkipArm("/usr/bin/git", "/bin/date", "/x/hooks", hookSkipGlobalRef{})
 	if !strings.Contains(body, "posse_hs_readverb() {") ||
-		!strings.Contains(body, "! posse_hs_readverb \"$1\" \"${2:-}\"") {
-		t.Errorf("the -c arm must be judged through posse_hs_readverb, with the verb AND its next word:\n%s", body)
+		!strings.Contains(body, "! posse_hs_readverb \"$@\"") {
+		t.Errorf("the -c arm must be judged through posse_hs_readverb, with the verb AND every word after it (ranger-base-c1pqo):\n%s", body)
 	}
 	// Both tables are maps, so a render that iterated them directly would
 	// emit a different shim on every run — and a seat's gates dir is
