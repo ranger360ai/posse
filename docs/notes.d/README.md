@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-ctath](ranger-base-ctath.md) — The wall reading a release install could never get a sighted answer to (ranger-base-ctath) — 2026-11-03
 - [ranger-base-7yvo4](ranger-base-7yvo4.md) — The landing commit stops skipping pre-commit (ranger-base-7yvo4) — 2026-11-03
+- [ranger-base-191em](ranger-base-191em.md) — The flake's one-minute budget was spent on a three-minute pass (ranger-base-191em) — 2026-11-03
 - [ranger-base-0q45n](ranger-base-0q45n.md) — The third re-measurement is the one that landed, because the same session proved the off-switch (ranger-base-0q45n) — 2026-11-03
 - [ranger-base-y9q7l](ranger-base-y9q7l.md) — The deadline was sized for a cost that belongs outside it (ranger-base-y9q7l) — 2026-11-02
 - [ranger-base-rzkcp](ranger-base-rzkcp.md) — The install that stales every hook on the box said nothing about it (ranger-base-rzkcp) — 2026-11-02

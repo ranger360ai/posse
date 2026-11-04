@@ -360,7 +360,28 @@ func TestDispatchRelaunchesDeadAgent(t *testing.T) {
 		`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`)
 	session := deadPersonaSession(t, b, fake, "ranger", repo, "a-1", time.Hour)
 	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
+	// THIS PASS MUST NOT REAP THE SESSION IT RELAUNCHED (ranger-base-191em).
+	// The fixture's bead is closed — that is what "closed by ranger" below
+	// asserts — and the session settles, so the only thing keeping the
+	// epilogue sweep off it is promptedRecently: the pass prompted it, so
+	// within PromptGrace the sweep spares it (autoreap.go, ADR 0028 §3).
+	// Unset that is 30s, and everything between the prompt and the read at
+	// the bottom of this test is budgeted by the pass at DefaultGatherWindow
+	// — three minutes, with a PromptWaitMS leg of fifteen inside it, neither
+	// shortened here. So a box that makes one pass spend 30 of its own 180
+	// seconds has the sweep print `reaped <session> (bead a-1 closed)` and
+	// REMOVE the record this test is about to read. That is correct Dial F
+	// behaviour on a closed bead and it is not what this test measures, so
+	// the grace is put past anything a box can do to one pass rather than
+	// the pass being made to hurry. MEASURED: at a 35s prompt-delay-ms hold
+	// the sweep reaps, and the old `m, _ :=` read below then dereferenced
+	// the nil as SIGSEGV — which takes the whole arm-2 binary down, not just
+	// this test.
+	d.PromptGrace = time.Hour
 
+	// The instant the pass began, which is the clock the launch stamp is
+	// read against at the bottom — see there.
+	before := time.Now()
 	n, err := d.Run("", "", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -383,9 +404,43 @@ func TestDispatchRelaunchesDeadAgent(t *testing.T) {
 	if strings.Count(c, "pane run") != 2 || !strings.Contains(launchLog(t, b.App, fake), "GATES claude") {
 		t.Errorf("want the persona command re-typed into the original pane:\n%s", launchLog(t, b.App, fake))
 	}
-	m, _ := b.readMeta(session)
-	if time.Since(m.Launched) > time.Minute {
-		t.Error("relaunch must record the new launch time")
+	// `ok` is READ and not discarded: a record that is GONE is a different
+	// fact from a record carrying a stale stamp, and the two reached the same
+	// line. See the PromptGrace block above for what removes it and why that
+	// is nobody's bug; this is the guard that says so instead of crashing the
+	// binary if it ever happens again.
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatalf("no launch record for %s after the pass, so the launch stamp cannot be read at all:\n%s", session, out)
+	}
+	// THE CLOCK THIS IS READ AGAINST (ranger-base-191em). The fact asserted
+	// is that the relaunch REPLACED the hour-old fixture stamp with one of
+	// its own — RelaunchAgent writes `m.Launched = time.Now()` on the line
+	// before it types — so "at or after the instant this pass began" is that
+	// fact exactly, and it is the one reading nothing downstream can move.
+	//
+	// It used to ask `time.Since(m.Launched) > time.Minute`, which is not a
+	// question about the stamp: it budgets a minute of WALL CLOCK for
+	// everything after the stamp — the rest of RelaunchAgent, awaitAgent,
+	// the claim, the typed prompt, the gather — out of the three minutes the
+	// pass gives itself for the same stretch. So it was red whenever a loaded
+	// box spent a minute of that, over a stamp that was correct the instant
+	// it was written, and it reported that as the relaunch failing to record
+	// a launch time. MEASURED on a quiet box: 227-427ms over eleven runs,
+	// against a one-minute budget — a 140x margin that says nothing, which is
+	// why the number held for as long as it did. MEASURED red at a 61s
+	// prompt-delay-ms hold ("sleep that long, then settle", the fake's own
+	// words for a loaded box), with the stamp correct in the record.
+	//
+	// Both readings are named, because a failure here is now one of exactly
+	// two things and they do not look alike: a stamp an hour before `before`
+	// is the fixture's, never replaced, and a stamp at the zero time is a
+	// record that carries no `launched:` line (parseLaunched reads an absent
+	// or unparseable one as the zero time — the inversion
+	// TestQADeadPersonaSessionRefusesARecordThatDidNotTakeTheStamp pins).
+	if m.Launched.Before(before) {
+		t.Errorf("relaunch must record the new launch time: the record reads launched %s, before this pass began at %s — the fixture's own stamp was %s",
+			m.Launched.UTC().Format(time.RFC3339Nano), before.UTC().Format(time.RFC3339Nano), before.Add(-time.Hour).UTC().Format(time.RFC3339Nano))
 	}
 }
 
