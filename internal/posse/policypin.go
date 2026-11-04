@@ -31,7 +31,7 @@ import (
 // whichever one wins, because the fix is the same for each.
 
 // PolicyPinGate is the parity row's name in `posse gates`.
-const PolicyPinGate = "git: policy-tier GIT_CONFIG_SYSTEM"
+const PolicyPinGate = "git: policy-tier pin"
 
 // claudePolicyDir is the OS-admin directory claude reads policySettings
 // from. "" on a platform with no known path, which reads as nothing to check.
