@@ -973,8 +973,7 @@ func TestDeriveIdentityLiteralsWallsEveryScopesEmail(t *testing.T) {
 	// (GIT_CONFIG_GLOBAL outranks $HOME/.gitconfig); pin the scratch file
 	// either way, and keep /etc/gitconfig out of the fixture.
 	gcfg := filepath.Join(home, ".gitconfig")
-	t.Setenv("GIT_CONFIG_GLOBAL", gcfg)
-	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	gitScrubGlobalScope(t, gcfg)
 	write(t, gcfg, "[user]\n\temail = "+global+"\n")
 	repo := filepath.Join(home, "repo")
 	os.MkdirAll(repo, 0o755)
@@ -1032,6 +1031,10 @@ func TestDeriveIdentityLiteralsWallsEveryScopesEmail(t *testing.T) {
 // Skipped sources are check 3's normal case, not a failure of it.
 func TestDeriveIdentityLiteralsSkipsAbsentSourcesSilently(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // no ~/.gitconfig: no global email to fall through to
+	// ...and HOME is not enough: this seat carries a GIT_CONFIG_GLOBAL that
+	// replaces that lookup outright, so without this the fixture reads the
+	// operator's real address (ranger-base-loi28).
+	gitScrubGlobalScope(t, "")
 	dir := t.TempDir()
 	lits, err := DeriveIdentityLiterals(dir)
 	if err != nil {

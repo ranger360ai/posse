@@ -92,6 +92,29 @@ type hfRig struct {
 	extraEnv []string
 }
 
+// hfEnv is this process's environment with every GIT_CONFIG_* shed — the
+// same shed internal/posse's hsEnv does, for the same reason. The rig's own
+// run() builds its environment from scratch and so carries NONE of them, but
+// a leg that inherits os.Environ() carries the GIT_CONFIG_GLOBAL and
+// GIT_CONFIG_SYSTEM every posse-launched seat is given (ranger-base-obdnk,
+// ranger-base-t301k). An absolute GIT_CONFIG_GLOBAL REPLACES git's whole
+// global-file lookup, so HOME=r.home does not displace it: the two sides
+// then resolve DIFFERENT global scopes, the install renders the operator's
+// real user.email into the hook as an identity literal and the script's
+// reference render — which never saw it — reads every hook STALE
+// (ranger-base-loi28). Shedding here makes an inherited leg resolve exactly
+// what run() resolves: the scratch HOME, and nothing else.
+func hfEnv(extra ...string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "GIT_CONFIG") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, extra...)
+}
+
 // prep runs against each repo after `git init` and BEFORE its hooks are
 // rendered — the only window in which a fixture can give a repo the property
 // the render reads (a .beads/redirect, a repo-local user.email) and still have
@@ -127,7 +150,7 @@ func hfNewRig(t *testing.T, vis map[string]string, prep ...func(t *testing.T, na
 	}
 	for name, p := range r.repos {
 		cmd := exec.Command(r.bin, "gates", "install-hooks", p)
-		cmd.Env = append(os.Environ(), "HOME="+r.home, "RHQ_HOME="+r.rhqHome)
+		cmd.Env = hfEnv("HOME="+r.home, "RHQ_HOME="+r.rhqHome)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("install-hooks %s: %v %s", name, err, out)
 		}
@@ -190,7 +213,7 @@ func (r *hfRig) manage(t *testing.T) string {
 	// take would leave every repo unmanaged and the managed arms asserting
 	// nothing.
 	cmd := exec.Command(r.git, "-C", r.repos[anyName(r)], "rev-parse", "--git-path", "hooks")
-	cmd.Env = append(os.Environ(), "HOME="+r.home, "GIT_CONFIG_GLOBAL="+r.gitconfig)
+	cmd.Env = hfEnv("HOME="+r.home, "GIT_CONFIG_GLOBAL="+r.gitconfig)
 	out, err := cmd.Output()
 	if err != nil || strings.TrimSpace(string(out)) != managed {
 		t.Fatalf("rig never built: git dispatches from %q, want %s (%v)", strings.TrimSpace(string(out)), managed, err)

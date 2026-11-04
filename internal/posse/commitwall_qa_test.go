@@ -80,6 +80,31 @@ func removeAllTolerant(t *testing.T, dir string) {
 	t.Errorf("cleanup: os.RemoveAll(%s) still failing after retries: %v\nremaining entries:\n%s", dir, err, strings.Join(leftover, "\n"))
 }
 
+// gitScrubGlobalScope makes git's global and system scopes EMPTY for this
+// test — which scrubbing HOME alone no longer does. Since ranger-base-obdnk
+// and ranger-base-t301k every posse-launched seat carries GIT_CONFIG_GLOBAL
+// and GIT_CONFIG_SYSTEM in its environment, and an absolute
+// GIT_CONFIG_GLOBAL REPLACES git's whole global-file lookup rather than
+// adding to it, so a fixture whose premise is "no global config" built out
+// of t.Setenv("HOME", t.TempDir()) reads the operator's real ~/.gitconfig
+// instead (ranger-base-loi28: it derived the operator's user.email inside a
+// fixture asserting there was none). The config-in-env scopes outrank both
+// files, so the two file scopes are not by themselves an empty scope and
+// are shed here too.
+//
+// Pass a path as global to put a SCRATCH global file in that scope instead
+// of emptying it; "" empties it.
+func gitScrubGlobalScope(t *testing.T, global string) {
+	t.Helper()
+	if global == "" {
+		global = os.DevNull
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	t.Setenv("GIT_CONFIG_PARAMETERS", "")
+	t.Setenv("GIT_CONFIG_COUNT", "0")
+}
+
 // commitWallRepo is a scratch repo with the real prepare-commit-msg wall
 // installed, plus a `git` runner in the shape TestSharedIndexCommitHook
 // uses: the operator's env by default, `persona` for a session's.
