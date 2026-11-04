@@ -183,6 +183,13 @@ func TestMain(m *testing.M) {
 		home = resolved
 	}
 	os.Setenv("HOME", home)
+	// GIT_CONFIG_GLOBAL goes with HOME, for the same reason. A claude seat
+	// carries obdnk's pin (the OPERATOR's ~/.gitconfig) in its env, so a suite
+	// run from one read the operator's global git config past the temp HOME,
+	// and the git shim's hook-skip arm (ADR 0079) correctly judged every
+	// shimmed commit as global scope moved off the launcher's (the temp
+	// HOME's). Unset, not emptied: git reads an empty value as a file name.
+	os.Unsetenv("GIT_CONFIG_GLOBAL")
 	os.Setenv("RHQ_FAKE_HERDR", "1")
 	os.Setenv(EnvPersona, "")
 	// The three CLI home overrides, cleared for the same reason HOME is

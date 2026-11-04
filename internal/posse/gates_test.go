@@ -2661,6 +2661,9 @@ func TestShimRefusalNeverLooksUpDateOnThePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The render's own `git var GIT_CONFIG_GLOBAL` (ADR 0079 D1) is the
+	// launcher reading, not a shim exec: the canary counts from here.
+	os.Remove(leaked)
 	decoyDir := t.TempDir()
 	witness := filepath.Join(decoyDir, "witness")
 	if err := WriteExecutable(filepath.Join(decoyDir, "date"),
