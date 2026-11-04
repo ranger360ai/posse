@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-loi28](ranger-base-loi28.md) — A fixture that scrubs HOME no longer has an empty git global scope (ranger-base-loi28) — 2026-11-04
 - [ranger-base-gt0q9](ranger-base-gt0q9.md) — The box slept 2h51m inside one test, and go test could not see it (ranger-base-gt0q9) — 2026-11-04
+- [ranger-base-6vvgs](ranger-base-6vvgs.md) — A moved HOME moves the module cache, and a package built against an empty one (ranger-base-6vvgs) — 2026-11-04
 - [ranger-base-1agm6](ranger-base-1agm6.md) — ranger-base-1agm6 — verifying four closes against the git hook-skip arm — 2026-11-04
 - [ranger-base-tmb7t](ranger-base-tmb7t.md) — ranger-base-tmb7t · verifying the four hook-skip closes — 2026-11-03
 - [ranger-base-rviq5](ranger-base-rviq5.md) — The pass that reaps the session the test is about to read (ranger-base-rviq5) — 2026-11-03

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -134,6 +135,36 @@ func TestMain(m *testing.M) {
 	// The fourth, RHQ_FAKE_DIR, is genuinely per test and is now told to
 	// the child through argv[0] instead — see fakeDir and fakeBinFor.
 	operatorHome = os.Getenv("HOME")
+	// GOMODCACHE and GOCACHE, pinned to what `go` resolves under the REAL
+	// home, read here because the temp HOME below hides it
+	// (ranger-base-6vvgs). Both default under $HOME — GOMODCACHE to
+	// $GOPATH/pkg/mod and so to $HOME/go/pkg/mod, GOCACHE to the user cache
+	// dir — so moving HOME moves them both, and every `go build` this
+	// package shells out to (buildBdWritePosse, cagePosseBuildArgv) then
+	// builds cmd/posse against an EMPTY module cache: it re-downloads
+	// golang.org/x/{sys,term,text} from proxy.golang.org on every run of
+	// this binary, with the runner's own populated cache sitting right
+	// there under its home. That made a transient resolver failure a RED ON
+	// MAIN, which is the one gate a commit here ever passes: run
+	// 41811904569 (macos-latest, arm 1) failed
+	// TestPosseSupportsBdWriteOnARealBinary with `lookup proxy.golang.org:
+	// no such host` on three modules, 49.44s in. MEASURED 2026-11-04 on
+	// darwin/arm64 with GOPROXY=off: `go build ./cmd/posse` under a temp
+	// HOME fails (it cannot even fetch the toolchain go.mod asks for), and
+	// with these two pinned it exits 0 and writes the binary. Set here,
+	// once, rather than on each exec.Command, so the next `go` shellout a
+	// test adds is covered by construction; a `go` that cannot answer
+	// leaves both alone, which is today's behaviour and fails loudly at the
+	// build rather than quietly here.
+	if out, gerr := exec.Command("go", "env", "GOMODCACHE", "GOCACHE").Output(); gerr == nil {
+		if lines := strings.Split(strings.TrimSpace(string(out)), "\n"); len(lines) == 2 {
+			for i, key := range []string{"GOMODCACHE", "GOCACHE"} {
+				if v := strings.TrimSpace(lines[i]); v != "" {
+					os.Setenv(key, v)
+				}
+			}
+		}
+	}
 	home, err := os.MkdirTemp("", "posse-testhome-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "posse test: temp HOME: %v\n", err)
