@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-11
 
+- [ranger-base-zpk8r](ranger-base-zpk8r.md) — ranger-base-zpk8r — the launch DEGRADED call site, and two inverted policy-tier lines — 2026-11-04
 - [ranger-base-loi28](ranger-base-loi28.md) — A fixture that scrubs HOME no longer has an empty git global scope (ranger-base-loi28) — 2026-11-04
 - [ranger-base-gt0q9](ranger-base-gt0q9.md) — The box slept 2h51m inside one test, and go test could not see it (ranger-base-gt0q9) — 2026-11-04
 - [ranger-base-dutum](ranger-base-dutum.md) — Four closes, and the clock arithmetic nobody had a positive control for (ranger-base-dutum) — 2026-11-04

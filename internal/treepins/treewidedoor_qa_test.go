@@ -554,7 +554,7 @@ package treepins
 // joinsOntoBareRoot's own residual and is nowhere in the package
 // (MEASURED 2026-11-01).)
 //
-// and FIFTEEN more, which are the ONE-PACKAGE CENSUSES — and the first
+// and SIXTEEN more, which are the ONE-PACKAGE CENSUSES — and the first
 // members admitted by a DECISION rather than by a defect
 // (ranger-base-m94g2 decided, ranger-base-na4rm doored). A pin in
 // internal/posse that enumerates its OWN package directory —
@@ -582,6 +582,8 @@ package treepins
 //
 //	TestNoSecondReadOfARuntimeHomeVariable        make pkgcensus-check
 //	TestQAEverySandboxProbeFileIsGated            make pkgcensus-check
+//	TestQAEveryZeroArgDegradedLaunchReadingIsPrintedAtItsCallSite
+//	                                              make pkgcensus-check
 //	TestQANoEventSubscriptionRemainsInInternalPosse
 //	                                              make pkgcensus-check
 //	TestQANoInferredIntentMechanismRemainsInInternalPosse
@@ -601,12 +603,15 @@ package treepins
 //	                                              make pkgcensus-arm3-check
 //	TestQAPosseNeverWritesGroksTrustTable         make pkgcensus-arm3-check
 //	TestQAWatchStreamWritesGoThroughTheDispatcher make pkgcensus-arm3-check
-//	                                              (all fifteen
-//	                                              ranger-base-na4rm)
+//	                                              (fifteen of the
+//	                                              sixteen
+//	                                              ranger-base-na4rm; the
+//	                                              last of them
+//	                                              ranger-base-zpk8r)
 //
 // THREE DOORS FOR ONE SUBJECT, split by BUILD TAG and by nothing else — and
 // they are the first doors in this register to carry `-tags`. Seven of the
-// fifteen are compiled out of arm 1, a door's `-run` ran with no tag, and a
+// sixteen are compiled out of arm 1, a door's `-run` ran with no tag, and a
 // `go test -run` over a name that is not in the build exits 0: an untagged
 // door would have stood green in front of seven pins it could not select,
 // which is rot class 4 of armtags_qa_test.go doored INTO existence. That arm
@@ -923,8 +928,28 @@ package treepins
 // and so has no discovered file set for any rule here to see. It runs in the
 // ordinary arm-1 suite.
 //
-// and `make tree-check` is all of them — one hundred and twenty-three pins and
-// seventeen doors, 95-122s over three warm runs at one hundred and
+// and `make tree-check` is all of them — one hundred and twenty-four pins and
+// seventeen doors, 71.7-126.1s over three warm runs at one hundred and
+// twenty-four of them (MEASURED 2026-11-04, ranger-base-zpk8r: 90.7s, 71.7s
+// then 126.1s in that order, at a one-minute load average of 30.01, 21.42 and
+// 12.34 over a five-minute 37.85, 32.99 and 27.77, with one suite slot held
+// by a sibling seat for the first two runs and BOTH held for the third, and
+// one warm-up run discarded at 97.5s. The first reading of this class at one
+// hundred and twenty-four, and what it adds to the chain is a counterexample
+// to the one generalization the chain had left: the one-minute load average
+// is not the variable. It FELL by a factor of two and a half across these
+// three while the wall ROSE 35.4s, and the SLOWEST run is the one at the
+// LOWEST load — 126.1s at a one-minute 12.34, against the 55-62s band EVERY
+// earlier reading under a load of 16 produced, which is 64s outside it. What
+// that run had and the other two did not is BOTH suite slots held by sibling
+// seats; a loadavg is an exponentially weighted average over the preceding
+// minute, so it reports a box that has already emptied while two full suites
+// are in fact spending it. So price this command off slot occupancy — ask
+// `scripts/suite-lock.sh --status`, which is a fact about now — and read a
+// loadavg as the lagging indicator it is. The pin this bead adds is 0.09s
+// measured alone, one more arm on a corpus pkgcensus-check already walks, so
+// none of this spread is its),
+// 95-122s over three warm runs at one hundred and
 // twenty-three of them (MEASURED 2026-11-04, ranger-base-rviq5: 115.8s,
 // 122.4s then 94.7s in that order, at a one-minute load average of 98.82,
 // 57.77 and 52.45 over a five-minute 114.10, 93.92 and 82.34, with one suite

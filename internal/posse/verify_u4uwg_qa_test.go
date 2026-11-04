@@ -36,7 +36,13 @@ package posse
 // are its two neighbours (GitSystemScopeDegraded, GitGlobalScopeDegraded):
 // deleting any of the three warn() calls leaves this package green too.
 // That is a house-wide class rather than this close's slip, and it is filed
-// for the code lane rather than invented here.
+// for the code lane rather than invented here. IT IS HELD NOW, one file over:
+// verify_zpk8r_qa_test.go's
+// TestQAEveryZeroArgDegradedLaunchReadingIsPrintedAtItsCallSite censuses the
+// derived class — an exported, zero-argument, string-returning `*Degraded`
+// function in this package — for a guarded call site that prints it, so all
+// three warn() lines have a witness and a fourth reading added tomorrow is in
+// the class without anyone editing a list (ranger-base-zpk8r finding 1).
 
 import (
 	"runtime"
