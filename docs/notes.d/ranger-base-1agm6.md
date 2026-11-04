@@ -47,11 +47,13 @@ expansion it did not write, so this sits inside z8kym's scope.
 
 Pinned GREEN asserting the hole, with the inversion in its failure message:
 `internal/posse/verify_1agm6_qa_test.go`
-(`TestQAHookSkipAliasSpliceDoesNotUnquote`). Mutation-checked both arms — a
-simulated fix (the resolver also refusing a quoted expansion) reds all five
-legs with the "FIXED — invert this assertion" message; dropping `alias.*` from
-`hookKeyArms` reds all eight boundary legs with "THE HOLE GOT WORSE", each
-then planting at exit 0. `hookskip.go` md5 restored after each.
+(`TestQAHookSkipAliasSpliceDoesNotUnquote`; inverted and renamed
+`TestQAHookSkipAliasSpliceUnquotes` by the fix, ranger-base-e09l0).
+Mutation-checked both arms — a simulated fix (the resolver also refusing a
+quoted expansion) reds all five legs with the "FIXED — invert this
+assertion" message; dropping `alias.*` from `hookKeyArms` reds all eight
+boundary legs with "THE HOLE GOT WORSE", each then planting at exit 0.
+`hookskip.go` md5 restored after each.
 
 Also checked and CLEAN: all 45 names in `hookSkipBuiltins` are real builtins
 in `git --list-cmds=builtins` (git 2.50.1), so no listed name lets its alias

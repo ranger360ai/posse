@@ -98,13 +98,14 @@ import (
 // RESIDUALS, past L1 by class (ADR 0025 — a cooperative wall: it holds
 // against the ordinary path and says so): an absolute /usr/bin/git, `env -i`
 // or `command -p git`; hand-editing .git/config or ~/.gitconfig; an alias
-// expansion this arm splits differently from git (it splits on IFS and does
-// not unquote, which can only refuse more), which the PID's verb deny rules
-// now judge as well (renderAliasDeny, ranger-base-d4bk4); a hand-edited
-// copy of the baked reference in the shim file itself; and a hook-relevant
-// config value carrying a newline, which the global compare cannot judge and
-// so refuses (an over-refusal). A moved HOME / XDG_CONFIG_HOME is no longer a
-// residual (ADR 0079). An over-refusal
+// expansion this arm splits differently from git — it unquotes the way
+// split_cmdline does (posse_hs_split, ranger-base-e09l0; the IFS split it
+// replaced left a quoted '-n' unmatched while git ran -n), which the PID's
+// verb deny rules now judge as well (renderAliasDeny, ranger-base-d4bk4); a
+// hand-edited copy of the baked reference in the shim file itself; and a
+// hook-relevant config value carrying a newline, which the global compare
+// cannot judge and so refuses (an over-refusal). A moved HOME /
+// XDG_CONFIG_HOME is no longer a residual (ADR 0079). An over-refusal
 // one respelling away is the accepted cost in every arm: `-c` values,
 // commit clusters like `-uno` (the `-n` scan cannot tell `-u`'s glued value
 // from a cluster), and any `git config` read whose form the scan cannot prove
@@ -382,6 +383,7 @@ func renderHookSkipAlias(real string) string {
 	b.WriteString("    [ $posse_hs_k -lt $posse_hs_ng ] && set -- \"$@\" \"$posse_hs_a\"\n")
 	b.WriteString("    posse_hs_k=$((posse_hs_k+1))\n  done\n")
 	fmt.Fprintf(&b, "  posse_hs_x=$(%s \"$@\" config --get \"alias.$posse_hs_verb\" 2>/dev/null) || posse_hs_x=\n}\n", shQuote(real))
+	b.WriteString(hookSkipSplit)
 	b.WriteString("posse_hs_unalias() {\n  posse_hs_d=0; posse_hs_seen=' '\n  while [ -n \"$posse_hs_aliasverb\" ]; do\n")
 	// A verb seen before is a loop, and git refuses a loop itself ("alias
 	// loop detected") without running anything, so it is handed to git.
@@ -390,11 +392,12 @@ func renderHookSkipAlias(real string) string {
 	b.WriteString("    [ $posse_hs_d -le 10 ] || posse_hs_refuse hookskip:alias 'an alias chain deeper than 10 cannot be judged'\n")
 	b.WriteString("    posse_hs_lookup \"$@\"\n    [ -n \"$posse_hs_x\" ] || return 0\n")
 	b.WriteString("    case \"$posse_hs_x\" in\n      !*) posse_hs_refuse hookskip:alias \"alias $posse_hs_verb is a shell alias, which runs git past this gate (git puts its exec-path ahead of PATH)\" ;;\n    esac\n")
-	// Rebuild argv: the globals, the expansion (split on IFS, unglobbed and
-	// never eval'd), then the rest. The for list is expanded once, before
-	// the first set --.
+	// Rebuild argv: the globals, the expansion (split and unquoted the way
+	// git's split_cmdline does it, by posse_hs_split), then the rest. The
+	// for list is expanded once, before the first set --.
+	b.WriteString("    posse_hs_split \"$posse_hs_x\" || posse_hs_refuse hookskip:alias \"alias $posse_hs_verb has an unclosed quote or a trailing backslash, which git refuses and this gate cannot judge\"\n")
 	b.WriteString("    posse_hs_k=0\n    for posse_hs_a in \"$@\"; do\n      [ $posse_hs_k -eq 0 ] && set --\n")
-	b.WriteString("      if [ $posse_hs_k -eq $posse_hs_ng ]; then set -f; set -- \"$@\" $posse_hs_x; set +f\n      else set -- \"$@\" \"$posse_hs_a\"; fi\n")
+	b.WriteString("      if [ $posse_hs_k -eq $posse_hs_ng ]; then eval \"set -- \\\"\\$@\\\" $posse_hs_q\"\n      else set -- \"$@\" \"$posse_hs_a\"; fi\n")
 	b.WriteString("      posse_hs_k=$((posse_hs_k+1))\n    done\n")
 	// Each expansion is judged by this arm, then by the PID's deny rules
 	// (posse_hs_pid, rendered by renderShim — ranger-base-d4bk4). This arm
@@ -404,6 +407,46 @@ func renderHookSkipAlias(real string) string {
 	b.WriteString("    posse_hs_av=$posse_hs_verb\n    posse_hs_check \"$@\"\n    posse_hs_pid \"$@\"\n  done\n}\n")
 	return b.String()
 }
+
+// hookSkipSplit is git's split_cmdline (alias.c, git 2.50.1) in POSIX sh:
+// outside quotes a run of space, tab, CR or LF ends a word; ' and " open a
+// quote that the same character closes; a backslash outside single quotes
+// takes the next character literally. An empty quoted word and a trailing
+// separator each still make a word, as they do in git. An unclosed quote
+// or a trailing backslash returns 1 — git refuses those itself.
+//
+// The result is posse_hs_q: every word single-quoted (a quote inside is
+// closed, backslash-escaped and reopened), so `eval "set -- \"\$@\" $posse_hs_q"` appends exactly those
+// words and cannot run, glob or split anything (ranger-base-e09l0: the IFS
+// splice it replaces left `'-n'` as `'-n'` while git ran `-n`).
+const hookSkipSplit = `posse_hs_split() {
+  posse_hs_s=$1; posse_hs_q="'"; posse_hs_qt=
+  posse_hs_ws=$(printf ' \t\r\n.'); posse_hs_ws=${posse_hs_ws%.}
+  while [ -n "$posse_hs_s" ]; do
+    posse_hs_c=${posse_hs_s%"${posse_hs_s#?}"}; posse_hs_s=${posse_hs_s#?}
+    if [ -z "$posse_hs_qt" ]; then
+      case "$posse_hs_c" in
+        [$posse_hs_ws])
+          while :; do case "$posse_hs_s" in [$posse_hs_ws]*) posse_hs_s=${posse_hs_s#?} ;; *) break ;; esac; done
+          posse_hs_q="$posse_hs_q' '"; continue ;;
+        \'|\") posse_hs_qt=$posse_hs_c; continue ;;
+      esac
+    elif [ "$posse_hs_c" = "$posse_hs_qt" ]; then
+      posse_hs_qt=; continue
+    fi
+    if [ "$posse_hs_c" = '\' ] && [ "$posse_hs_qt" != "'" ]; then
+      [ -n "$posse_hs_s" ] || return 1
+      posse_hs_c=${posse_hs_s%"${posse_hs_s#?}"}; posse_hs_s=${posse_hs_s#?}
+    fi
+    case "$posse_hs_c" in
+      \') posse_hs_q="$posse_hs_q'\\''" ;;
+      *) posse_hs_q="$posse_hs_q$posse_hs_c" ;;
+    esac
+  done
+  [ -z "$posse_hs_qt" ] || return 1
+  posse_hs_q="$posse_hs_q'"
+}
+`
 
 // renderHookSkipEnvCall is the env arm's call site, emitted by renderShim
 // AFTER the PID's deny rules. The argv checks above are pure sh and run first;

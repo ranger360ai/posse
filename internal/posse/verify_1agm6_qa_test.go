@@ -43,10 +43,17 @@ package posse
 // an expansion it did not write, so this sits inside z8kym's scope, not past
 // its edge.
 //
-// THIS PIN SHIPS GREEN ASSERTING THE HOLE. When the hole is fixed the five
-// legs below start refusing and this test REDS, naming the inversion — that
-// is the handover, not a regression. The scratch repo is not the tree, so
-// this is not a tree-wide pin and owes the Makefile no door.
+// FIXED under ranger-base-e09l0. The splice now unquotes the way git's
+// split_cmdline does (hookskip.go, posse_hs_split), so the five legs below
+// are REFUSED, each under the rule of the flag it spells, with the hook not
+// fired and nothing landed. The allowed legs hold the other side: a quoted
+// expansion that skips nothing still commits and still runs the hook, so the
+// fix is an unquote and not a blanket refusal of quotes. An unclosed quote,
+// which git refuses itself, is refused under hookskip:alias.
+//
+// The boundary legs stay: they are what keeps a regression here a P2. The
+// scratch repo is not the tree, so this is not a tree-wide pin and owes the
+// Makefile no door.
 
 import (
 	"os/exec"
@@ -55,14 +62,24 @@ import (
 	"testing"
 )
 
-// v1agm6QuotedAliases are expansions git unquotes and the arm's splice does
-// not. The value is what `git config alias.<k>` is given, past the shim.
-var v1agm6QuotedAliases = map[string]string{
-	"q1agmN":     "commit '-n' -q -m q1agmN --",
-	"q1agmNdq":   `commit "-n" -q -m q1agmNdq --`,
-	"q1agmNoVer": "commit '--no-verify' -q -m q1agmNoVer --",
-	"q1agmHooks": "-c 'core.hooksPath=/dev/null' commit -q -m q1agmHooks --",
-	"q1agmAlias": "-c 'alias.q1agmInner=commit -n' q1agmInner -q -m q1agmAlias --",
+// v1agm6QuotedAliases are expansions git unquotes into a hook skip, and the
+// rule the arm must name for each. The value is what `git config
+// alias.<k>` is given, past the shim.
+var v1agm6QuotedAliases = map[string][2]string{
+	"q1agmN":     {"commit '-n' -q -m q1agmN --", "hookskip:no-verify"},
+	"q1agmNdq":   {`commit "-n" -q -m q1agmNdq --`, "hookskip:no-verify"},
+	"q1agmNoVer": {"commit '--no-verify' -q -m q1agmNoVer --", "hookskip:no-verify"},
+	"q1agmHooks": {"-c 'core.hooksPath=/dev/null' commit -q -m q1agmHooks --", "hookskip:config-override"},
+	"q1agmAlias": {"-c 'alias.q1agmInner=commit -n' q1agmInner -q -m q1agmAlias --", "hookskip:config-override"},
+	"q1agmOpen":  {"commit -q -m 'q1agmOpen --", "hookskip:alias"},
+}
+
+// v1agm6QuotedAllowed are quoted expansions that skip nothing: each must
+// commit (HEAD subject = the value after -m) and run the hook once.
+var v1agm6QuotedAllowed = map[string][2]string{
+	"q1agmMsg":  {"commit -q -m 'q1agm two words' --", "q1agm two words"},
+	"q1agmUser": {"-c 'user.name=Q One' commit -q -m q1agmUser --", "q1agmUser"},
+	"q1agmBs":   {`commit -q -m "q1agm\"bs" --`, `q1agm"bs`},
 }
 
 // v1agm6AliasWrites are the spellings that would PLANT one. Every one must
@@ -78,7 +95,7 @@ var v1agm6AliasWrites = []string{
 	`config --file .git/config alias.w8 "commit '-n' -q -m w8 --"`,
 }
 
-func TestQAHookSkipAliasSpliceDoesNotUnquote(t *testing.T) {
+func TestQAHookSkipAliasSpliceUnquotes(t *testing.T) {
 	t.Parallel()
 	fx := hsSetup(t)
 	home := t.TempDir()
@@ -93,7 +110,10 @@ func TestQAHookSkipAliasSpliceDoesNotUnquote(t *testing.T) {
 		t.Fatal(err)
 	}
 	for k, v := range v1agm6QuotedAliases {
-		hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v)
+		hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v[0])
+	}
+	for k, v := range v1agm6QuotedAllowed {
+		hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v[0])
 	}
 
 	// CONTROL 1: the managed hook is reachable at all — without this the
@@ -117,20 +137,35 @@ func TestQAHookSkipAliasSpliceDoesNotUnquote(t *testing.T) {
 		}
 	}
 
-	// THE HOLE, asserted as it stands.
-	for name, expansion := range v1agm6QuotedAliases {
+	// THE HOLE, closed: each quoted skip is refused under its own rule.
+	for name, v := range v1agm6QuotedAliases {
+		before, head := hsFired(fx), v1agm6Head(t, fx)
+		errs, code := hsRun(t, fx, wrapped, hsLeg{args: name + " f"})
+		if code == 0 || !strings.Contains(errs, "(rule: "+v[1]) {
+			t.Errorf("`git %s` (alias %q) must be refused under %s: code=%d (%s)", name, v[0], v[1], code, errs)
+		}
+		if f := hsFired(fx) - before; f != 0 {
+			t.Errorf("`git %s` was refused but the hook ran %d times", name, f)
+		}
+		if got := v1agm6Head(t, fx); got != head {
+			t.Errorf("`git %s` was refused but HEAD moved to %q", name, got)
+		}
+	}
+
+	// THE OTHER SIDE: a quoted expansion that skips nothing still runs.
+	for name, v := range v1agm6QuotedAllowed {
 		before := hsFired(fx)
 		errs, code := hsRun(t, fx, wrapped, hsLeg{args: name + " f"})
-		fired := hsFired(fx) - before
-		landed := v1agm6Head(t, fx)
-		if code == 0 && fired == 0 && landed == name {
-			continue // the hole, as measured
-		}
-		if strings.Contains(errs, "hookskip:") && fired == 0 {
-			t.Errorf("FIXED — invert this assertion: `git %s` (alias %q) is now REFUSED by the hook-skip arm. ranger-base-z8kym's quoted-expansion hole is closed: rewrite this pin to require the refusal and its rule, drop the \"ships green asserting the hole\" framing in the header, and correct hookskip.go's \"can only refuse more\" sentence if it still stands.\n%s", name, expansion, errs)
+		if code != 0 || strings.Contains(errs, "hookskip:") {
+			t.Errorf("`git %s` (alias %q) skips nothing and must run: code=%d (%s)", name, v[0], code, errs)
 			continue
 		}
-		t.Errorf("neither the hole nor the fix: `git %s` (alias %q) code=%d hookfired=%d HEAD=%q errs=%q — read this before trusting either arm", name, expansion, code, fired, landed, errs)
+		if f := hsFired(fx) - before; f != 1 {
+			t.Errorf("`git %s` committed but the hook ran %d times, want 1", name, f)
+		}
+		if got := v1agm6Head(t, fx); got != v[1] {
+			t.Errorf("`git %s`: HEAD subject %q, want %q — the splice and git disagree on the words", name, got, v[1])
+		}
 	}
 }
 
