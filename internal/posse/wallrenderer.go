@@ -133,6 +133,7 @@ var LaunchCheckSources = []string{
 	"internal/posse/agents.go",
 	"internal/posse/githookparity.go",
 	"internal/posse/parity.go",
+	"internal/posse/policypin.go",
 	"internal/posse/reachability.go",
 	"internal/posse/runtime.go",
 	"internal/posse/skillsdirtrust.go",

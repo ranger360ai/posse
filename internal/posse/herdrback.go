@@ -2873,6 +2873,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if d := GitSystemScopeDegraded(); d != "" {
 				warn("posse: %s\n", d)
 			}
+			// A stale policy-tier drop-in outranks that row whatever it
+			// resolved to (ranger-base-s69ep).
+			if d := PolicyPinDegraded(); d != "" {
+				warn("posse: %s\n", d)
+			}
 			// And its GIT_CONFIG_GLOBAL row, which degrades the other way:
 			// no row rather than /dev/null (ranger-base-obdnk).
 			if d := GitGlobalScopeDegraded(); d != "" {

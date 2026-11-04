@@ -685,6 +685,10 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// entry the operator's does? Printed, never degrading — see
 	// githookparity.go's header.
 	a.applyHookConfigParity(&p, rt, dir, red)
+	// ranger-base-s69ep: a stale policy-tier drop-in outranks the launch
+	// pin's GIT_CONFIG_SYSTEM row. Printed, never degrading — see
+	// policypin.go.
+	applyPolicyPin(&p, rt)
 	// ADR 0007 §6f: the cwd skills root's precondition on the session
 	// directory. Directory-aware for ProjectConfigTrust's reason — whether
 	// grok trusts this folder is a fact about a concrete launch dir and not
@@ -1052,6 +1056,8 @@ func gateRank(gate string) int {
 		return 4
 	case gate == HookConfigGate:
 		return 5
+	case gate == PolicyPinGate:
+		return 6
 	default:
 		return 0
 	}
