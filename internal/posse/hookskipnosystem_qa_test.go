@@ -78,7 +78,7 @@ func TestQAHookSkipRefusesTheSystemScopeHideDirection(t *testing.T) {
 		t.Fatal(err)
 	}
 	shim := filepath.Join(dir, "arm.sh")
-	arm := "#!/bin/sh\n" + renderHookSkipArm(fake, "", filepath.Join(dir, "hooks")) + renderHookSkipEnvCall()
+	arm := "#!/bin/sh\n" + renderHookSkipArm(fake, "", filepath.Join(dir, "hooks"), resolveHookSkipGlobalRef(fake, nil)) + renderHookSkipEnvCall()
 	if err := WriteExecutable(shim, []byte(arm), 0o755); err != nil {
 		t.Fatal(err)
 	}

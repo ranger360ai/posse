@@ -274,7 +274,7 @@ func TestQAHookSkipRefusedOnEveryRuntime(t *testing.T) {
 			t.Parallel()
 			fx := hsSetup(t)
 			home := t.TempDir()
-			a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+			a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
 			rt, err := a.LoadRuntime(rtName)
 			if err != nil {
 				t.Fatal(err)
@@ -347,7 +347,7 @@ func TestQAHookSkipNeedsNoPIDRule(t *testing.T) {
 	t.Parallel()
 	fx := hsSetup(t)
 	home := t.TempDir()
-	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
 	fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
 	_, binDir, _, err := a.RenderGates("hs-nodeny", nil)
 	if err != nil {
@@ -379,12 +379,15 @@ func TestQAHookSkipNeedsNoPIDRule(t *testing.T) {
 }
 
 // With no git resolved at render, an override the arm cannot judge is
-// refused, not waved through: the scope comparison fails closed.
+// refused, not waved through: both scope comparisons fail closed.
 func TestQAHookSkipScopeFailsClosedWithoutGit(t *testing.T) {
 	t.Parallel()
-	body := renderHookSkipArm("", "/bin/date", "/x/hooks")
-	if !strings.Contains(body, "posse_hs_scope() {\n  posse_hs_have=$(false config") || !strings.Contains(body, "  return 1\n}\nposse_hs_env()") {
-		t.Errorf("with no real git the scope comparison must return 1 (refuse):\n%s", body)
+	body := renderHookSkipArm("", "/bin/date", "/x/hooks", hookSkipGlobalRef{})
+	if !strings.Contains(body, "posse_hs_scope() {\n  posse_hs_have=$(false config") || !strings.Contains(body, "  return 1\n}\nposse_hs_gscope()") {
+		t.Errorf("with no real git the system scope comparison must return 1 (refuse):\n%s", body)
+	}
+	if !strings.Contains(body, "posse_hs_gscope() {\n  return 1\n}\n") {
+		t.Errorf("with no real git the global scope comparison must return 1 (refuse, ADR 0079 D4):\n%s", body)
 	}
 }
 
@@ -402,7 +405,7 @@ func TestQAPIDDenyJudgesAliasExpansion(t *testing.T) {
 				hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v)
 			}
 			home := t.TempDir()
-			a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+			a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
 			rt, err := a.LoadRuntime(rtName)
 			if err != nil {
 				t.Fatal(err)
@@ -454,7 +457,7 @@ func TestQAPIDDenyAliasNoVerbRulesIsANoop(t *testing.T) {
 	fx := hsSetup(t)
 	hsRealGit(t, fx, "-C", fx.repo, "config", "alias.c", "commit")
 	home := t.TempDir()
-	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
 	fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
 	_, binDir, _, err := a.RenderGates("ad-nodeny", nil)
 	if err != nil {
@@ -489,7 +492,7 @@ func TestQAPIDDenyAliasLookupIsTheOnlyExec(t *testing.T) {
 	}
 	rules := ParseShimRules([]string{"Bash(git push:*)", "Bash(git commit unless --)"})["git"]
 	shim := filepath.Join(dir, "shim")
-	body := renderShim("ad-canary", "git", stub, filepath.Join(dir, "refusals.log"), "/bin/date", rules, nil, "", filepath.Join(dir, "hooks"))
+	body := renderShim("ad-canary", "git", stub, filepath.Join(dir, "refusals.log"), "/bin/date", rules, nil, "", filepath.Join(dir, "hooks"), resolveHookSkipGlobalRef(stub, nil))
 	if err := WriteExecutable(shim, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}

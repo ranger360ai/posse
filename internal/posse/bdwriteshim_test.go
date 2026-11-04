@@ -52,7 +52,7 @@ func bdWriteShimFixture(t *testing.T, posseBin string) (shim, bdRanMarker, bdArg
 	}
 	log = filepath.Join(dir, "refusals.log")
 	rules := ParseShimRules([]string{"Bash(bd daemon:*)"})["bd"]
-	body := renderShim("security", "bd", realBin, log, "/bin/date", rules, nil, posseBin, "")
+	body := renderShim("security", "bd", realBin, log, "/bin/date", rules, nil, posseBin, "", hookSkipGlobalRef{})
 	shim = filepath.Join(dir, "bd")
 	if err := WriteExecutable(shim, []byte(body), 0o755); err != nil {
 		t.Fatal(err)

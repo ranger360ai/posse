@@ -963,7 +963,13 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 	}
 	for _, c := range cmds {
 		real := resolveOutside(c, binDir)
-		script := renderShim(persona, c, real, log, dateBin, rules[c], ceiling, posseBin, hooksRoot)
+		// The launcher's global-scope reference (ADR 0079 D1), resolved once
+		// per render and only for git: it execs git var.
+		var gref hookSkipGlobalRef
+		if c == "git" {
+			gref = a.hookSkipGlobalRef(real)
+		}
+		script := renderShim(persona, c, real, log, dateBin, rules[c], ceiling, posseBin, hooksRoot, gref)
 		if err := WriteExecutable(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
 			return "", "", "", err
 		}
@@ -1501,8 +1507,10 @@ func quotedStamp(dateBin string) string {
 //
 // hooksRoot is <StateDir>/hooks, the parent of every ADR 0052 D2 redirect
 // dir — the one core.hooksPath the git shim's hook-skip arm lets a
-// GIT_CONFIG_KEY_<n> carry (ranger-base-r3pri). Ignored for any cmd but git.
-func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceiling []OpsPattern, posseBin, hooksRoot string) string {
+// GIT_CONFIG_KEY_<n> carry (ranger-base-r3pri). gref is the launcher's
+// global-scope reference the same arm judges a moved HOME, XDG_CONFIG_HOME or
+// GIT_CONFIG_GLOBAL against (ADR 0079). Both are ignored for any cmd but git.
+func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceiling []OpsPattern, posseBin, hooksRoot string, gref hookSkipGlobalRef) string {
 	var b strings.Builder
 	// The marker stays on line 2 and stays where gateShimTarget and
 	// scripts/verify-bd-pin.sh read it (`head -2`); the renderer clause is
@@ -1518,7 +1526,7 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 	// Its env arm is the exception and runs after the deny rules: it execs
 	// git, and a denied command must not (renderHookSkipEnvCall).
 	if cmd == "git" {
-		b.WriteString(renderHookSkipArm(real, dateBin, hooksRoot))
+		b.WriteString(renderHookSkipArm(real, dateBin, hooksRoot, gref))
 	}
 	// A negative rule needs one helper: does argv carry the qualifier WITH
 	// an operand? The bare token is not enough — `git commit --` with an

@@ -82,7 +82,7 @@ func TestQAHookSkipAliasSpliceDoesNotUnquote(t *testing.T) {
 	t.Parallel()
 	fx := hsSetup(t)
 	home := t.TempDir()
-	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
 	rt, err := a.LoadRuntime("claude")
 	if err != nil {
 		t.Fatal(err)

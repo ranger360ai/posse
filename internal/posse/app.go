@@ -84,6 +84,14 @@ type App struct {
 	// ciClear's own tests must never shell out to a real gh, and this is a
 	// second, independent set of gh calls CIRead does not make.
 	CICauses func(dir, slug string, runs []CIRun) []string
+	// GitScopeEnv is the environment the git shim's hook-skip arm resolves
+	// the launcher's global-scope reference from at render (HOME,
+	// XDG_CONFIG_HOME, and the files git reads from them — ADR 0079 D1).
+	// nil = os.Environ(), which is what every real launch uses. It is a
+	// field because QA tests are t.Parallel and cannot t.Setenv: a fixture
+	// whose scratch HOME is not the launcher's would see every commit judged
+	// as a moved HOME.
+	GitScopeEnv []string
 	// TopCPU reads the box's process table for the load guard's culprit
 	// line (loadguard.go). nil = SysTopCPU, one bounded `ps` on the real
 	// box, which is what every real refusal uses. It is a field for the

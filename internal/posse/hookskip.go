@@ -2,6 +2,7 @@ package posse
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -24,10 +25,12 @@ import (
 //	                         naming one of those keys; a GIT_CONFIG_KEY_<n>
 //	                         below GIT_CONFIG_COUNT naming one, unless it is
 //	                         core.hooksPath at posse's own ADR 0052 D2
-//	                         redirect (<StateDir>/hooks/<session>); and a
-//	                         GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM /
-//	                         GIT_CONFIG_NOSYSTEM that changes what hook
-//	                         config git sees (below).
+//	                         redirect (<StateDir>/hooks/<session>); a
+//	                         GIT_CONFIG_SYSTEM / GIT_CONFIG_NOSYSTEM that
+//	                         changes what hook config git sees; and a
+//	                         GIT_CONFIG_GLOBAL, HOME or XDG_CONFIG_HOME whose
+//	                         global scope differs from the launcher's
+//	                         (ADR 0079, below).
 //	hookskip:config-write    `git config` writing, unsetting, renaming or
 //	                         removing one of those keys or their sections, at
 //	                         any scope, legacy or subcommand form; and
@@ -59,7 +62,7 @@ import (
 // purpose: `-c include.path=<file>` loads a file that can set core.hooksPath,
 // so leaving them out would leave every other arm one indirection wide.
 //
-// THE SCOPE OVERRIDES ARE JUDGED BY CONTENT, NOT BY VALUE. The bead's
+// THE SYSTEM SCOPE OVERRIDES ARE JUDGED BY CONTENT, NOT BY VALUE. The bead's
 // fallback was "differs from what the launch set", and the shim cannot know
 // that: it is rendered per persona, not per runtime, and the claude inlet pin
 // sets GIT_CONFIG_SYSTEM while no other runtime does — and ranger-base-t301k
@@ -79,15 +82,29 @@ import (
 //   - It costs two extra `git config` execs on a hook-running verb, and only
 //     when one of those variables is present in the environment.
 //
+// GLOBAL SCOPE IS JUDGED AGAINST THE LAUNCHER'S FILES (ADR 0079,
+// ranger-base-32ll0). It used to be the same unset-baseline compare as system
+// scope, and that baseline was computed under the call's own HOME: MEASURED
+// `HOME=evil GIT_CONFIG_GLOBAL=evil/.gitconfig git commit` was allowed with
+// the managed hook unread, and a moved HOME or XDG_CONFIG_HOME was not judged
+// at all. Now the render bakes in the launcher's global-scope files
+// (gitGlobalScopeCandidates, the function obdnk's GIT_CONFIG_GLOBAL pin uses),
+// its HOME and XDG_CONFIG_HOME, and that pin. A hook verb whose HOME, XDG or
+// GIT_CONFIG_GLOBAL differs from those compares the global-scope hook keys git
+// sees (posse_hs_gscope) against the ones the launcher's files carry, and
+// refuses on a difference. The ordinary call moves none of the three and
+// execs nothing extra. See hookSkipGlobalRef and its renderers below.
+//
 // RESIDUALS, past L1 by class (ADR 0025 — a cooperative wall: it holds
 // against the ordinary path and says so): an absolute /usr/bin/git, `env -i`
 // or `command -p git`; hand-editing .git/config or ~/.gitconfig; an alias
 // expansion this arm splits differently from git (it splits on IFS and does
 // not unquote, which can only refuse more), which the PID's verb deny rules
-// now judge as well (renderAliasDeny, ranger-base-d4bk4); and
-// HOME / XDG_CONFIG_HOME pointed elsewhere,
-// which moves the global scope without naming any GIT_CONFIG_* variable — the
-// shim has no notion of the "real" home to compare against. An over-refusal
+// now judge as well (renderAliasDeny, ranger-base-d4bk4); a hand-edited
+// copy of the baked reference in the shim file itself; and a hook-relevant
+// config value carrying a newline, which the global compare cannot judge and
+// so refuses (an over-refusal). A moved HOME / XDG_CONFIG_HOME is no longer a
+// residual (ADR 0079). An over-refusal
 // one respelling away is the accepted cost in every arm: `-c` values,
 // commit clusters like `-uno` (the `-n` scan cannot tell `-u`'s glued value
 // from a cluster), and any `git config` read whose form the scan cannot prove
@@ -205,12 +222,14 @@ const hookSkipRegexp = `^(core\.hookspath|hook\.|include\.|includeif\.|alias\.)`
 // none resolved at render — the scope comparison then fails CLOSED, since
 // there is no git to ask). hooksRoot is <StateDir>/hooks, the parent of every
 // ADR 0052 D2 redirect dir; "" allows no redirect at all.
-func renderHookSkipArm(real, dateBin, hooksRoot string) string {
+func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) string {
 	var b strings.Builder
 	b.WriteString("# ranger-base-r3pri: hook-skipping forms are refused on every seat, every\n")
 	b.WriteString("# runtime, independent of the PID (ADR 0052). Cooperative (ADR 0025): an\n")
-	b.WriteString("# absolute /usr/bin/git, env -i, HOME moved, or a hand-edited config file are\n")
-	b.WriteString("# past this wall by class; aliases are resolved (ranger-base-z8kym) — see hookskip.go.\n")
+	b.WriteString("# absolute /usr/bin/git, env -i, or a hand-edited config file are\n")
+	b.WriteString("# past this wall by class; aliases are resolved (ranger-base-z8kym), and a moved\n")
+	b.WriteString("# HOME/XDG_CONFIG_HOME/GIT_CONFIG_GLOBAL is judged against the launcher's global\n")
+	b.WriteString("# files (ADR 0079) — see hookskip.go.\n")
 	b.WriteString("posse_hs_refuse() {\n  posse_hs_rule=$1; posse_hs_why=$2\n")
 	b.WriteString("  echo \"refused by posse gate: git $posse_hs_argv — $posse_hs_why (rule: $posse_hs_rule, ranger-base-r3pri)\" >&2\n")
 	b.WriteString("  echo \"  a hook a scanner may live in (an employer's managed hook above all) must run on every commit and push from a seat: posse never causes it to be skipped (ADR 0052). Retype without the skip; if the hook itself is broken, say so on your bead and stop.\" >&2\n")
@@ -226,15 +245,16 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 	// One -c / --config-env value: refuse when its key is hook-relevant.
 	fmt.Fprintf(&b, "posse_hs_key() {\n  case \"${1%%%%=*}\" in\n    %s) return 0 ;;\n  esac\n  return 1\n}\n", hookKeyArms())
 
-	// The scope comparison: the hook-relevant keys git sees with the
-	// override, against the ones it sees with the override unset.
+	// The SYSTEM scope comparison: the hook-relevant keys git sees with the
+	// override, against the ones it sees with the override unset. (The GLOBAL
+	// half moved to posse_hs_gscope, ADR 0079.)
 	q := "false"
 	if real != "" {
 		q = shQuote(real)
 	}
-	fmt.Fprintf(&b, "posse_hs_scope() {\n  posse_hs_have=$(%s config --$1 --get-regexp %s 2>/dev/null)\n", q, shQuote(hookSkipRegexp))
-	b.WriteString("  case \"$1\" in\n    system) case \"${GIT_CONFIG_NOSYSTEM:-}\" in ''|0|[Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|[Oo][Ff][Ff]) ;; *) posse_hs_have= ;; esac ;;\n  esac\n")
-	fmt.Fprintf(&b, "  posse_hs_want=$(unset GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; %s config --$1 --get-regexp %s 2>/dev/null)\n", q, shQuote(hookSkipRegexp))
+	fmt.Fprintf(&b, "posse_hs_scope() {\n  posse_hs_have=$(%s config --system --get-regexp %s 2>/dev/null)\n", q, shQuote(hookSkipRegexp))
+	b.WriteString("  case \"${GIT_CONFIG_NOSYSTEM:-}\" in ''|0|[Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|[Oo][Ff][Ff]) ;; *) posse_hs_have= ;; esac\n")
+	fmt.Fprintf(&b, "  posse_hs_want=$(unset GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; %s config --system --get-regexp %s 2>/dev/null)\n", q, shQuote(hookSkipRegexp))
 	if real == "" {
 		// No git to ask: an override is present and nothing can say what it
 		// hides, so it is treated as hiding something.
@@ -242,6 +262,7 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 	} else {
 		b.WriteString("  [ \"$posse_hs_have\" = \"$posse_hs_want\" ]\n}\n")
 	}
+	b.WriteString(renderHookSkipGlobalScope(real, ref))
 
 	// The env arm, for hook-running verbs.
 	b.WriteString("posse_hs_env() {\n")
@@ -261,8 +282,8 @@ func renderHookSkipArm(real, dateBin, hooksRoot string) string {
 	}
 	fmt.Fprintf(&b, "      %s || posse_hs_refuse hookskip:config-env \"GIT_CONFIG_KEY_$posse_hs_i names $posse_hs_k, and not at posse's own ADR 0052 redirect\"\n", allow)
 	b.WriteString("    fi\n    posse_hs_i=$((posse_hs_i+1))\n  done\n")
-	b.WriteString("  if [ -n \"${GIT_CONFIG_GLOBAL+x}\" ] && ! posse_hs_scope global; then\n    posse_hs_refuse hookskip:config-env 'GIT_CONFIG_GLOBAL changes the hook config git sees in global scope'\n  fi\n")
-	b.WriteString("  if { [ -n \"${GIT_CONFIG_SYSTEM+x}\" ] || [ -n \"${GIT_CONFIG_NOSYSTEM:-}\" ]; } && ! posse_hs_scope system; then\n    posse_hs_refuse hookskip:config-env 'GIT_CONFIG_SYSTEM/GIT_CONFIG_NOSYSTEM changes the hook config git sees in system scope'\n  fi\n")
+	b.WriteString(renderHookSkipGlobalGate(ref))
+	b.WriteString("  if { [ -n \"${GIT_CONFIG_SYSTEM+x}\" ] || [ -n \"${GIT_CONFIG_NOSYSTEM:-}\" ]; } && ! posse_hs_scope; then\n    posse_hs_refuse hookskip:config-env 'GIT_CONFIG_SYSTEM/GIT_CONFIG_NOSYSTEM changes the hook config git sees in system scope'\n  fi\n")
 	b.WriteString("}\n")
 
 	// `git config` writes. Its args come after the verb.
@@ -386,9 +407,11 @@ func renderHookSkipAlias(real string) string {
 
 // renderHookSkipEnvCall is the env arm's call site, emitted by renderShim
 // AFTER the PID's deny rules. The argv checks above are pure sh and run first;
-// this one execs the real git (posse_hs_scope) whenever a GIT_CONFIG_* scope
-// variable is set — on a claude seat that is every call, since the inlet pin
-// sets GIT_CONFIG_SYSTEM — and a command the PID refuses must never reach
+// this one execs the real git (posse_hs_scope) whenever a GIT_CONFIG_SYSTEM
+// scope variable is set — on a claude seat that is every call, since the
+// inlet pin sets GIT_CONFIG_SYSTEM — and (posse_hs_gscope) whenever HOME,
+// XDG_CONFIG_HOME or GIT_CONFIG_GLOBAL differs from the launcher's (ADR
+// 0079), and a command the PID refuses must never reach
 // the real binary for any reason (TestRefusalNamesWhereTheCommandDoesRun
 // caught exactly that: a denied push ran git config through the leak canary).
 //
@@ -437,3 +460,183 @@ func renderAliasDeny(haveVerbRules bool) string {
 // HookSkipGate is the parity row the arm is reported under (CheckParity).
 // It names no PID rule because it answers to none.
 const HookSkipGate = "git hook-skip forms (-n/--no-verify, -c/env/config hooksPath)"
+
+// ─── The global-scope reference (ADR 0079, ranger-base-32ll0) ────────────────
+//
+// hookSkipGlobalRef is what "global scope not moved" means for this shim: the
+// LAUNCHER's global-scope files and the env they were resolved from, baked in
+// at render. It replaces the unset-baseline GIT_CONFIG_GLOBAL arm, whose
+// baseline was computed under the call's own (possibly moved) HOME — MEASURED
+// a bypass at rc 0 (ADR 0079 Context 2).
+type hookSkipGlobalRef struct {
+	// Cands are the files git reads as global scope with GIT_CONFIG_GLOBAL
+	// unset, in git's order (gitGlobalScopeCandidates). Empty when the
+	// launcher has neither HOME nor XDG_CONFIG_HOME (ADR 0079 D4).
+	Cands []string
+	// The launcher's HOME and XDG_CONFIG_HOME. Unset is not empty: git
+	// resolves the two differently.
+	Home, XDG       string
+	HomeSet, XDGSet bool
+	// Pin is obdnk's GIT_CONFIG_GLOBAL row value, "" when the launch pins
+	// none (a two-file box, or no candidates). Derived from Cands by the same
+	// chooseGitGlobalScope, so the claude pin and this reference cannot drift.
+	Pin string
+}
+
+// envLookupLast reads k from an env list the way exec does: last one wins.
+func envLookupLast(env []string, k string) (string, bool) {
+	for i := len(env) - 1; i >= 0; i-- {
+		if v, ok := strings.CutPrefix(env[i], k+"="); ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// resolveHookSkipGlobalRef resolves the reference from env (nil means
+// os.Environ(), which is what every real launch uses; see App.GitScopeEnv).
+// real is the git the shim execs; "" leaves the candidates to git's
+// documented rule, and the arm then fails closed anyway (renderHookSkipGlobalScope).
+func resolveHookSkipGlobalRef(real string, env []string) hookSkipGlobalRef {
+	if env == nil {
+		env = os.Environ()
+	}
+	var r hookSkipGlobalRef
+	r.Home, r.HomeSet = envLookupLast(env, "HOME")
+	r.XDG, r.XDGSet = envLookupLast(env, "XDG_CONFIG_HOME")
+	// Every GIT_CONFIG* shed, as gitGlobalScope does: the question is which
+	// files git reads with the variable UNSET.
+	var scrub []string
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "GIT_CONFIG") {
+			scrub = append(scrub, kv)
+		}
+	}
+	cands, err := gitGlobalScopeCandidates(real, scrub)
+	if err != nil {
+		return r // no candidates: an empty reference (ADR 0079 D4)
+	}
+	r.Cands = cands
+	if p, err := chooseGitGlobalScope(cands, func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	}); err == nil {
+		r.Pin = p
+	}
+	return r
+}
+
+// hookSkipGlobalRef is the reference RenderGates bakes into this App's git
+// shims, resolved from a.GitScopeEnv.
+func (a *App) hookSkipGlobalRef(real string) hookSkipGlobalRef {
+	return resolveHookSkipGlobalRef(real, a.GitScopeEnv)
+}
+
+// shSetState renders the "${V+x}:${V-}" string a variable's set-ness and
+// value compare as, for the baked side of the D3 gate.
+func shSetState(v string, set bool) string {
+	if !set {
+		return shQuote(":")
+	}
+	return shQuote("x:" + v)
+}
+
+// renderHookSkipGlobalScope writes posse_hs_gscope (ADR 0079 D2): 0 when the
+// hook-relevant keys the call's git sees in GLOBAL scope equal the ones the
+// launcher's global files carry, 1 otherwise.
+//
+//   - have: `git config --show-scope --get-regexp`, every scope, keeping the
+//     `global` lines in pure sh. Not `git config --global`: MEASURED, that
+//     reads only ~/.gitconfig when the XDG file exists too (Context 3).
+//   - want: `git config --includes --file <c> --get-regexp` per baked
+//     candidate, concatenated; a missing file contributes nothing.
+//
+// TWO ADDITIONS TO D2, both fail-closed:
+//
+//   - The want reads run under the LAUNCHER's HOME and XDG_CONFIG_HOME, not
+//     the call's. An `include.path = ~/x` in the operator's global file
+//     expands `~` from HOME, so a want read under the moved HOME would follow
+//     the attacker's include on both sides and call them equal.
+//   - A value carrying a newline can forge a `global<TAB>` line in the
+//     non -z listing (MEASURED 2026-11-04, git 2.50.1: a local alias value
+//     "a\nglobal\tcore.hookspath /m" prints exactly that line). -z cannot be
+//     read in sh, since command substitution drops NULs. So the entries are
+//     counted with `--name-only` (a key cannot hold a newline) and a listing
+//     with more lines than entries is refused as unjudgeable. Cost: one exec.
+//
+// Cost when it runs: 2 + len(Cands) execs. It runs only when the D3 gate
+// (renderHookSkipGlobalGate) says something moved.
+func renderHookSkipGlobalScope(real string, ref hookSkipGlobalRef) string {
+	if real == "" {
+		// No git to ask (ADR 0079 D4: fails closed, as before).
+		return "posse_hs_gscope() {\n  return 1\n}\n"
+	}
+	q, re := shQuote(real), shQuote(hookSkipRegexp)
+	var b strings.Builder
+	b.WriteString("posse_hs_gscope() {\n")
+	fmt.Fprintf(&b, "  posse_hs_gall=$(%s config --show-scope --get-regexp %s 2>/dev/null)\n", q, re)
+	fmt.Fprintf(&b, "  posse_hs_gnames=$(%s config --show-scope --name-only --get-regexp %s 2>/dev/null)\n", q, re)
+	// Split on newline in a subshell, so IFS and set -f stay its own, and
+	// with no here-document (sh may need a temp file for one, and a cage
+	// that cannot write one would read nothing: fail-open). The subshell's
+	// status says whether the count held.
+	b.WriteString("  posse_hs_have=$(IFS='\n'; set -f; posse_hs_gn=0; posse_hs_gl=0\n")
+	b.WriteString("    for posse_hs_l in $posse_hs_gnames; do posse_hs_gn=$((posse_hs_gn+1)); done\n")
+	b.WriteString("    for posse_hs_l in $posse_hs_gall; do\n      posse_hs_gl=$((posse_hs_gl+1))\n")
+	// `(pattern)`, not `pattern)`: bash 3.2 (darwin's /bin/sh) misparses an
+	// unbalanced `)` from a case arm inside a command substitution.
+	b.WriteString("      case \"$posse_hs_l\" in (global\"\t\"*) printf '%s\\n' \"${posse_hs_l#global\t}\" ;; esac\n    done\n")
+	b.WriteString("    # More lines than entries: a value carries a newline and could forge a global line.\n")
+	b.WriteString("    [ \"$posse_hs_gl\" -eq \"$posse_hs_gn\" ]) || return 1\n")
+	// want, under the launcher's HOME and XDG_CONFIG_HOME.
+	b.WriteString("  posse_hs_want=$(")
+	for _, kv := range []struct {
+		k, v string
+		set  bool
+	}{{"HOME", ref.Home, ref.HomeSet}, {"XDG_CONFIG_HOME", ref.XDG, ref.XDGSet}} {
+		if kv.set {
+			fmt.Fprintf(&b, "%s=%s; export %s; ", kv.k, shQuote(kv.v), kv.k)
+		} else {
+			fmt.Fprintf(&b, "unset %s; ", kv.k)
+		}
+	}
+	if len(ref.Cands) == 0 {
+		b.WriteString(":")
+	} else {
+		cs := make([]string, 0, len(ref.Cands))
+		for _, c := range ref.Cands {
+			cs = append(cs, shQuote(c))
+		}
+		fmt.Fprintf(&b, "for posse_hs_c in %s; do %s config --includes --file \"$posse_hs_c\" --get-regexp %s 2>/dev/null; done", strings.Join(cs, " "), q, re)
+	}
+	b.WriteString(")\n")
+	b.WriteString("  [ \"$posse_hs_have\" = \"$posse_hs_want\" ]\n}\n")
+	return b.String()
+}
+
+// renderHookSkipGlobalGate writes the env arm's global-scope check (ADR 0079
+// D3): a string test that decides whether posse_hs_gscope runs at all, so the
+// ordinary call — HOME, XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL as rendered —
+// execs no extra git.
+//
+// DIVERGED from D3 in one case, toward running the compare more: D3 skips it
+// when GIT_CONFIG_GLOBAL is the baked pin, whatever HOME says, because git
+// ignores HOME for the file lookup there. git does NOT ignore HOME inside the
+// file: `include.path = ~/x` in the pinned file expands from the call's HOME.
+// So a moved HOME/XDG runs the compare under the pin too. That costs execs
+// only on a call that moved HOME, which the ordinary call never does, and
+// pin 6's "pinned GIT_CONFIG_GLOBAL plus HOME=<empty>" is still allowed,
+// because the contents are equal.
+func renderHookSkipGlobalGate(ref hookSkipGlobalRef) string {
+	var b strings.Builder
+	b.WriteString("  posse_hs_gm=\n")
+	if ref.Pin == "" {
+		b.WriteString("  [ -n \"${GIT_CONFIG_GLOBAL+x}\" ] && posse_hs_gm=1\n")
+	} else {
+		fmt.Fprintf(&b, "  [ -n \"${GIT_CONFIG_GLOBAL+x}\" ] && [ \"$GIT_CONFIG_GLOBAL\" != %s ] && posse_hs_gm=1\n", shQuote(ref.Pin))
+	}
+	fmt.Fprintf(&b, "  [ \"${HOME+x}:${HOME-}\" = %s ] || posse_hs_gm=1\n", shSetState(ref.Home, ref.HomeSet))
+	fmt.Fprintf(&b, "  [ \"${XDG_CONFIG_HOME+x}:${XDG_CONFIG_HOME-}\" = %s ] || posse_hs_gm=1\n", shSetState(ref.XDG, ref.XDGSet))
+	b.WriteString("  if [ -n \"$posse_hs_gm\" ] && ! posse_hs_gscope; then\n    posse_hs_refuse hookskip:config-env 'GIT_CONFIG_GLOBAL, HOME or XDG_CONFIG_HOME changes the hook config git sees in global scope, against the launcher'\"'\"'s global files (ADR 0079)'\n  fi\n")
+	return b.String()
+}

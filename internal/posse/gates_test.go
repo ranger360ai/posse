@@ -309,6 +309,13 @@ func TestRefusalNamesWhereTheCommandDoesRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The RENDER asks git once, `git var GIT_CONFIG_GLOBAL`, for the
+	// launcher's global-scope reference (ADR 0079 D1). That is the launcher
+	// reading, not a shim exec, so the canary starts counting after it.
+	if b, err := os.ReadFile(leaked); err == nil && string(b) != "LEAK git\n" {
+		t.Fatalf("the render may ask git once and nothing else: %q", b)
+	}
+	os.Remove(leaked)
 	run := func(cmd string, args ...string) string {
 		out, err := exec.Command(filepath.Join(binDir, cmd), args...).CombinedOutput()
 		ee, ok := err.(*exec.ExitError)
