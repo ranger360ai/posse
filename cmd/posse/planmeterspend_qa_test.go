@@ -104,13 +104,26 @@ func TestQAStatusSaysTheGuardIsUnarmedOverAnOldReading(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(home, "state"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			seedQuietSnapshot(t, filepath.Join(home, "state"), time.Now().UTC().Add(-3*time.Hour))
+			at := seedAgedQuietSnapshot(t, filepath.Join(home, "state"))
 
 			out, _, _ := runPosse(t, bin, planEnvAt(home, srv.URL+"/usage"), "status")
-			if got := strings.Contains(out, "plan meter BLIND 3h00m"); got != tc.wants {
-				t.Errorf("%s: said = %v, want %v:\n%s", tc.name, got, tc.wants, out)
-			}
-			if tc.wants {
+			skipIfTheBoxSleptMidTest(t, at)
+			if !tc.wants {
+				// The control's claim is that there is no BLIND line at
+				// all, so it is asserted on the prefix rather than on the
+				// bracket: an idle unarmed shop is QUIET and nothing here
+				// is stale, whatever age the snapshot carries. That is
+				// stronger than the "BLIND 3h00m" this replaced, which a
+				// line with any other age walked straight past.
+				if strings.Contains(out, "plan meter BLIND") {
+					t.Errorf("%s: said it, want silence:\n%s", tc.name, out)
+				}
+			} else {
+				var lines []string
+				for _, age := range agedAgesOf(at, quietSeedAge) {
+					lines = append(lines, "plan meter BLIND "+age)
+				}
+				wantOneOf(t, tc.name, planLine(out, "plan meter BLIND"), lines, strings.Contains)
 				for _, want := range []string{
 					"the plan guard is UNARMED (budget_pass:/budget_day: is set)",
 					"5h 46% · 7d 29%",

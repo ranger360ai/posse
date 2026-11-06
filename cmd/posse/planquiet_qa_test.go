@@ -80,6 +80,65 @@ func seedQuietSnapshot(t *testing.T, stateDir string, at time.Time) {
 	}
 }
 
+// quietSeedAge is how old the reading is at the instant the two
+// out-of-process `posse status` pins below write it: three hours, which is
+// past PlanUsageStaleAfterDefault (2h) on the BLIND side and far enough
+// past it that a jump cannot take the premise back under the threshold —
+// an age only ever gets older.
+const quietSeedAge = 3 * time.Hour
+
+// seedAgedQuietSnapshot seeds the snapshot quietSeedAge old and hands back
+// the reference the caller brackets and skips with (ranger-base-dsuk7).
+//
+// Both pins used to assert "3h00m" exactly, off `time.Now().UTC().Add(-3h)`,
+// and that is two statements about a clock the test does not own. The age
+// is rendered in ANOTHER process out of a wall-clock timestamp this one
+// wrote to disk, so it reds on a wall-clock jump — this box slept 2h51m
+// inside one cmd/posse test on 2026-11-04 and a sibling pin printed
+// `2h54m` while its monotonic bracket said `3m` (ranger-base-gt0q9) — and,
+// independently, on any launch slower than a minute, which in a package
+// measured at 590.639s on a loaded box is not far-fetched.
+//
+// The fix is the bracket gt0q9 landed, not a clock the binary is told
+// about: `posse status` reads time.Now() and nothing else, so "stopping
+// the clock" for these two would mean a shipped binary that believes an
+// env var about what time it is, for the sake of two test strings.
+//
+// It does not weaken the assertion. What `3h00m` pinned is that the line
+// carries the age of the reading it is not refreshing — BlindFor handed
+// `now - At` — and agedAgesOf names every age that is, from the write to
+// the moment the test checks. Anything outside it is still red. The one
+// thing the exact string caught and the bracket does not is a binary that
+// rendered one minute too much on a launch that really did take a minute,
+// which is the false positive and not a defect. The skip beside it is what
+// keeps the bracket tight: with a jump of over a minute skipped, the
+// bracket can only ever span the launch's own wall time, so it is two
+// members wide at worst.
+func seedAgedQuietSnapshot(t *testing.T, stateDir string) time.Time {
+	t.Helper()
+	at := time.Now().Add(-quietSeedAge)
+	seedQuietSnapshot(t, stateDir, at.UTC())
+	return at
+}
+
+// planLine is the one line of a `posse status` report that carries
+// `marker`, or the whole report when no line does.
+//
+// It is a diagnostic and nothing else: wantOneOf quotes what it was given
+// with %q, and `posse status` in a fixture home prints forty lines of bd
+// errors and sandbox warnings around the one sentence these pins are
+// about — a bracket miss handed the whole thing is a single escaped
+// monster line nobody reads. The fallback is the whole report on purpose:
+// when the line is missing, missing-from-what is the question.
+func planLine(out, marker string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, marker) {
+			return l
+		}
+	}
+	return out
+}
+
 // The bead, on the surface that broke it: the cockpit's plan tick asks
 // nothing while the meter is quiet, and says which state it is showing.
 func TestQACockpitAsksNothingWhileTheMeterIsQuiet(t *testing.T) {
@@ -240,18 +299,23 @@ func TestQAStatusSaysTheMeterIsQuiet(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(home, "state"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			seedQuietSnapshot(t, filepath.Join(home, "state"), time.Now().UTC().Add(-3*time.Hour))
+			at := seedAgedQuietSnapshot(t, filepath.Join(home, "state"))
 
 			out, _, _ := runPosse(t, bin, planEnvAt(home, srv.URL+"/usage"), "status")
+			skipIfTheBoxSleptMidTest(t, at)
 			if got := strings.Contains(out, "plan meter QUIET (plan_usage_quiet)"); got != tc.wants {
 				t.Errorf("%s: said = %v, want %v:\n%s", tc.name, got, tc.wants, out)
 			}
 			if tc.wants {
-				for _, want := range []string{"5h 46% · 7d 29%", "3h00m ago"} {
-					if !strings.Contains(out, want) {
-						t.Errorf("the line must carry the reading it is not refreshing (%q):\n%s", want, out)
-					}
+				if !strings.Contains(out, "5h 46% · 7d 29%") {
+					t.Errorf("the line must carry the reading it is not refreshing:\n%s", out)
 				}
+				var ages []string
+				for _, age := range agedAgesOf(at, quietSeedAge) {
+					ages = append(ages, age+" ago")
+				}
+				wantOneOf(t, "the line must carry that reading's age",
+					planLine(out, "plan meter QUIET"), ages, strings.Contains)
 				if strings.Contains(out, "plan meter BLIND") {
 					t.Errorf("quiet is not blind — no headroom rule is ruling on anything:\n%s", out)
 				}

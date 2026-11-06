@@ -364,9 +364,18 @@ func skipIfTheBoxSleptMidTest(t *testing.T, at time.Time) {
 // bracket that counted monotonic time would be answering about a clock
 // nobody rendered — which is how a jump smaller than
 // skipIfTheBoxSleptMidTest's tolerance would red a reading that is right.
-func agedAges(at time.Time) []string {
+func agedAges(at time.Time) []string { return agedAgesOf(at, agedSeed) }
+
+// agedAgesOf is agedAges for a fixture seeded `seeded` old rather than
+// agedSeed old — the same bracket, parameterized, because the two pins
+// ranger-base-dsuk7 fixed seed three HOURS and not three and a half
+// minutes (planquiet_qa_test.go, planmeterspend_qa_test.go). `at` is the
+// snapshot's timestamp and `seeded` is how old it was at the instant it
+// was written, so `at` plus `seeded` is the moment of the write and
+// everything agedAges' comment says holds unchanged.
+func agedAgesOf(at time.Time, seeded time.Duration) []string {
 	var ages []string
-	for m := int(agedSeed.Minutes()); m <= int(wallSince(at).Minutes()); m++ {
+	for m := int(seeded.Minutes()); m <= int(wallSince(at).Minutes()); m++ {
 		ages = append(ages, posse.BlindFor(time.Duration(m)*time.Minute))
 	}
 	return ages

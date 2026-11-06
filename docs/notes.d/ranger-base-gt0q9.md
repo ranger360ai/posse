@@ -97,3 +97,7 @@ separately:
 - `cmd/posse/planquiet_qa_test.go`, `TestQAStatusSaysTheMeterIsQuiet`:
   `"3h00m ago"` over a snapshot seeded `-3h`.
 - `cmd/posse/planmeterspend_qa_test.go`: `"plan meter BLIND 3h00m"`, same seed.
+
+Both were bracketed with the same machinery under ranger-base-dsuk7, which
+also rules out the "stop the clock" alternative this bead's description
+offered: docs/notes.d/ranger-base-dsuk7.md.
