@@ -50,46 +50,75 @@ type autostartViaCase struct {
 	// why records what the row is FOR, so a reader meeting a failure knows
 	// which decision it is about.
 	why string
+	// disarmed is what the HOOK must say over this same line on a home with
+	// no `autostart_interval:` at all — the one shape no row above can
+	// reach, because viaHome and every run below are armed by design, which
+	// is how the three readers came to diverge on it unseen
+	// (ranger-base-hmet1, from ranger-base-zml8t).
+	//
+	// EXIT 0 FOR EVERY ROW, including the refusals: a refusal needs an arm
+	// to refuse, and this hook arms nothing on such a home whatever the key
+	// says. The three readers do not converge there and are not meant to —
+	// AutostartVia reads a VALUE and refuses it wherever it appears, G7's
+	// row is gated on the arm switch and says nothing at all, and the hook
+	// is the only one of the three that runs on that home — so this column
+	// is the table recording the split rather than a verdict derived from
+	// `owner`.
+	disarmed string
 }
 
 var autostartViaTable = []autostartViaCase{
 	{"absent", "", AutostartViaHerdr,
-		"the default and the common case: every home on a herdr-only host, unchanged"},
+		"the default and the common case: every home on a herdr-only host, unchanged",
+		"disarmed (no autostart_interval:"},
 	{"herdr, spelled", "autostart_via: herdr\n", AutostartViaHerdr,
-		"the default said out loud"},
+		"the default said out loud",
+		"disarmed (no autostart_interval:"},
 	{"systemd", "autostart_via: systemd\n", AutostartViaSystemd,
-		"the host D5 is about"},
+		"the host D5 is about",
+		"systemd owns"},
 	// The four shapes both readers map to the empty string. This key HAS a
 	// default, so empty is the default and not a broken arm — the
 	// autostart_max_interval precedent and not the autostart_interval one.
 	{"bare", "autostart_via:\n", AutostartViaHerdr,
-		"a bare key is not told, and not told is the default (the key has one, unlike the arm switch)"},
+		"a bare key is not told, and not told is the default (the key has one, unlike the arm switch)",
+		"disarmed (no autostart_interval:"},
 	{"whitespace", "autostart_via:   \n", AutostartViaHerdr,
-		"yamlClean and cfg() both trim, so this is the bare key"},
+		"yamlClean and cfg() both trim, so this is the bare key",
+		"disarmed (no autostart_interval:"},
 	{"null", "autostart_via: null\n", AutostartViaHerdr,
-		"yamlGetLines maps a cleaned null to empty and cfg() does too (ranger-base-fqfw)"},
+		"yamlGetLines maps a cleaned null to empty and cfg() does too (ranger-base-fqfw)",
+		"disarmed (no autostart_interval:"},
 	{"tilde", "autostart_via: ~\n", AutostartViaHerdr,
-		"YAML's other spelling of unset"},
+		"YAML's other spelling of unset",
+		"disarmed (no autostart_interval:"},
 	// The quotes, which are the whole of ranger-base-k3yd: yamlClean drops
 	// a matched pair and cfg() was taught to, so YAML's own way of writing
 	// a string must not read as a value posse cannot parse.
 	{"quoted systemd", "autostart_via: \"systemd\"\n", AutostartViaSystemd,
-		"a matched pair of double quotes goes, in both readers (ranger-base-k3yd)"},
+		"a matched pair of double quotes goes, in both readers (ranger-base-k3yd)",
+		"systemd owns"},
 	{"quoted herdr", "autostart_via: \"herdr\"\n", AutostartViaHerdr,
-		"the same, on the default"},
+		"the same, on the default",
+		"disarmed (no autostart_interval:"},
 	{"trailing comment", "autostart_via: systemd # the linux host\n", AutostartViaSystemd,
-		"findComment's rule: a comment opens at whitespace + '#'"},
+		"findComment's rule: a comment opens at whitespace + '#'",
+		"systemd owns"},
 	// And the refusals. Each is a name posse cannot read, and reading one
 	// as the default is how D9's race gets armed on a host whose operator
 	// meant the unit to own the loop.
 	{"a near miss", "autostart_via: systemdd\n", "",
-		"a typo in an owner must not be read as the default: that arms the hook on a systemd host"},
+		"a typo in an owner must not be read as the default: that arms the hook on a systemd host",
+		"nothing to arm here anyway"},
 	{"wrong case", "autostart_via: Systemd\n", "",
-		"the set is closed and compared exactly, as ValidMultiplexer compares"},
+		"the set is closed and compared exactly, as ValidMultiplexer compares",
+		"nothing to arm here anyway"},
 	{"a third mechanism", "autostart_via: launchd\n", "",
-		"there are two mechanisms; a name for a third is a refusal, never a fallback"},
+		"there are two mechanisms; a name for a third is a refusal, never a fallback",
+		"nothing to arm here anyway"},
 	{"prose", "autostart_via: the systemd one\n", "",
-		"whitespace in the value is not one of the two names"},
+		"whitespace in the value is not one of the two names",
+		"nothing to arm here anyway"},
 }
 
 // viaHome writes an armed config carrying one table row's line and returns
@@ -290,6 +319,116 @@ func TestAutostartViaTableIsReadByTheUnitRender(t *testing.T) {
 			}
 		})
 	}
+}
+
+// THE DISARMED HOME — the shape the table could not reach, because viaHome
+// and every reader arm above are armed by design and `autostartViaTable`'s
+// own comment says so. Four readings of the table's `disarmed` column, and
+// what they measure is the SPLIT: on a home that arms nothing the three
+// readers do different things, and this is where each one's is written down
+// (ranger-base-hmet1, from ranger-base-zml8t).
+//
+// What each does, and why it is not the others:
+//
+//   - AutostartVia reads a VALUE. It refuses a name it cannot read wherever
+//     it appears, armed or not, because nothing about the arm makes `launchd`
+//     a mechanism.
+//   - the HOOK is the only one of the three that runs on such a home, and it
+//     arms nothing there whatever the key says — so a refusal has nothing to
+//     refuse. It names the value and exits 0, the disarm's own exit code.
+//   - the RENDER refuses, for the ARM's reason on a systemd home and the
+//     owner's on every other: a unit over a home with no interval is a unit
+//     that dies in the journal.
+//   - G7 says NOTHING. Its whole row is gated on the arm switch, deliberately
+//     (ranger-base-i6h): the row whose job is to be believed does not fire
+//     over a config nothing will ever arm from.
+//
+// SERIAL, like the armed G7 reading it is the other half of: this reaches
+// govNow through govIn, which `go run ./cmd/testparallel ./internal/posse
+// extra` reports as package-level state (ADR 0047 D3). The fixture is read
+// only and each row's own state is its own t.TempDir, so a parallelOK
+// clearance would be arguable — but the sibling reader took the serial
+// answer, and one table whose two readings disagree about their own safety
+// costs more to read than these seconds cost to run (1.5s, MEASURED).
+func TestAutostartViaTableOnADisarmedHome(t *testing.T) {
+	for _, tc := range autostartViaTable {
+		if tc.disarmed == "" {
+			t.Errorf("%s: the table's disarmed column is empty — every row has a verdict on a home that arms nothing", tc.name)
+			continue
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			// READER 1 — the value reader, which the arm cannot move.
+			got, err := disarmedViaHome(t, tc.line).AutostartVia()
+			if tc.owner == "" {
+				if err == nil {
+					t.Errorf("read %q as %q on a disarmed home — a name posse cannot read is not a name wherever it appears (%s)", tc.line, got, tc.why)
+				}
+			} else if err != nil || got != tc.owner {
+				t.Errorf("read %q as %q/%v on a disarmed home and as %q when armed — this reader reads a value, not an arm", tc.line, got, err, tc.owner)
+			}
+
+			// READER 2 — the hook, the only one that runs here. Exit 0 and
+			// nothing armed, and the value still named.
+			r := runStandDown(t, tc.line)
+			if r.code != 0 {
+				t.Errorf("exit %d on a home that arms nothing — this hook would arm nothing here whatever %s said, so there is no arm to refuse (%s):\n%s", r.code, AutostartViaKey, tc.why, r.out)
+			}
+			if !probedOnly(r.calls) {
+				t.Errorf("the hook asked posse for more than liveness on a disarmed home:\n%s", r.calls)
+			}
+			if !strings.Contains(r.out, tc.disarmed) {
+				t.Errorf("the stand-down does not say %q — the table's disarmed column is what this home's operator reads (%s):\n%s", tc.disarmed, tc.why, r.out)
+			}
+			if tc.owner == "" {
+				// Named, not swallowed: standing down quietly over a value
+				// nobody can read is how the typo survives to the day the
+				// home is armed.
+				value := strings.TrimSuffix(strings.TrimPrefix(tc.line, "autostart_via: "), "\n")
+				if !strings.Contains(r.out, value) || !strings.Contains(r.out, AutostartViaKey) {
+					t.Errorf("the stand-down must still quote the key and the value the deployer typed (%q):\n%s", value, r.out)
+				}
+			}
+
+			// READER 2b — the render, which refuses every row of this table
+			// on such a home, and on a systemd home for the ARM.
+			a := disarmedViaHome(t, tc.line+"autostart_multiplexer_unit: mux-server.service\n")
+			u, err := RenderWatchUnit(a, "/usr/local/bin/posse")
+			if err == nil {
+				t.Fatalf("rendered a unit for a home with no interval — `dispatch --watch` has no default and the unit would die in the journal:\n%s", u.Body)
+			}
+			if tc.owner == AutostartViaSystemd && !strings.Contains(err.Error(), "autostart_interval") {
+				t.Errorf("the refusal on a systemd home does not name the arm switch, which is the key that fixes it: %v", err)
+			}
+
+			// READER 3 — G7, silent.
+			b, _ := newTestBackend(t)
+			appendConfig(t, b.App, tc.line)
+			if g := find(shopSet(t, govIn(t, b)), "G7"); g != nil {
+				t.Errorf("G7 = %+v over a home that arms nothing — the row is gated on the arm switch on purpose (ranger-base-i6h)", *g)
+			}
+		})
+	}
+}
+
+// disarmedViaHome is viaHome with the arm switch left out: the same config,
+// minus the one key whose presence arms the loop. Built by removal rather
+// than written out, so it cannot drift from the armed fixture every reader
+// above is measured on (the configWithout rule, ranger-base-orq4e).
+func disarmedViaHome(t *testing.T, line string) *App {
+	t.Helper()
+	a := viaHome(t, line)
+	body, err := os.ReadFile(a.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cut := configWithout(string(body), "autostart_interval")
+	if err := os.WriteFile(a.ConfigPath, []byte(cut), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if yamlHasKey(a.ConfigPath, "autostart_interval") {
+		t.Fatalf("premise: this home still names the arm switch:\n%s", cut)
+	}
+	return a
 }
 
 // ─── the argv the hook and the render both build ────────────────────────────
@@ -596,6 +735,19 @@ func TestSystemdUnitRefusesWithoutTheMultiplexersUnit(t *testing.T) {
 		"a path":           "autostart_multiplexer_unit: /usr/lib/systemd/user/rex.conf\n",
 		"two words":        "autostart_multiplexer_unit: rex server.service\n",
 		"the suffix alone": "autostart_multiplexer_unit: .service\n",
+		// A `%` IS NOT A UNIT NAME. systemd expands specifiers in
+		// After=/Requires= — its own templates rely on it — and the unit
+		// rendered here is not a template, so `%i` expands to the empty
+		// instance and `%n` to this unit's own name: the loop ends up
+		// ordered behind a unit nobody typed, which is the second of the
+		// two failures AutostartUnitKey's no-default decision is written to
+		// prevent. Refused rather than escaped, because a doubled `%%` is a
+		// unit nobody has either (ranger-base-hmet1, from
+		// ranger-base-zml8t).
+		"an instance specifier": "autostart_multiplexer_unit: rex%i.service\n",
+		"this unit's own name":  "autostart_multiplexer_unit: rex%n.service\n",
+		"a percent in the stem": "autostart_multiplexer_unit: 100%.service\n",
+		"an escaped percent":    "autostart_multiplexer_unit: rex%%i.service\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -664,6 +816,97 @@ func TestSystemdUnitEscapesWhatSystemdWouldReread(t *testing.T) {
 			}
 			if strings.Contains(dir, " ") && !strings.HasPrefix(got, `"`) {
 				t.Errorf("WorkingDirectory=%q — a path with whitespace must be quoted or systemd reads two arguments", got)
+			}
+		})
+	}
+}
+
+// A COMMAND LINE IS THE ONE PLACE `$` IS RE-READ. systemd.service(5) gives
+// ExecStart basic environment-variable substitution and spells a literal
+// dollar `$$`; WorkingDirectory= and Environment= are not command lines and
+// substitute nothing, so a `$$` written into either would reach the process
+// as two characters. Both halves are pinned here, in one test, because the
+// pin is the DIVERGENCE: a renderer that doubled everywhere and one that
+// doubled nowhere each pass half of this (ranger-base-hmet1, from
+// ranger-base-zml8t).
+//
+// What is reachable, stated: of everything in this ExecStart only the
+// binary's own path can carry a `$` at all — every config value in the argv
+// is ParseInterval-validated or digits-only — and the unit SETS
+// Environment=RHQ_HOME=, so a `${RHQ_HOME}` in that path would expand
+// against a variable this very file defines. Whether systemd substitutes
+// inside argv[0] at all is REPORTED from the man page and not MEASURED (no
+// systemd on darwin); doubling is right either way for a literal dollar.
+func TestSystemdUnitDoublesADollarOnTheCommandLineOnly(t *testing.T) {
+	t.Parallel()
+	base := "autostart_via: systemd\nautostart_multiplexer_unit: mux.service\n"
+
+	for name, tc := range map[string]struct{ exe, want string }{
+		"a bare dollar":     {"/opt/po$se/posse", "/opt/po$$se/posse"},
+		"a braced variable": {"/opt/po${RHQ_HOME}sse/posse", "/opt/po$${RHQ_HOME}sse/posse"},
+		// Quoting does not stand the substitution down — it happens after
+		// the line is split — so a path needing both gets both.
+		"a dollar and a space": {"/opt/my crew/po$se/posse", `"/opt/my crew/po$$se/posse"`},
+		// The control: a path needing nothing is rendered as itself, or this
+		// pin would pass over a renderer that mangled every path equally.
+		"plain": {"/opt/posse/posse", "/opt/posse/posse"},
+	} {
+		t.Run("ExecStart/"+name, func(t *testing.T) {
+			t.Parallel()
+			u, err := RenderWatchUnit(viaHome(t, base), tc.exe)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(u.Body, "ExecStart="+tc.want+" dispatch ") {
+				t.Errorf("exe %q rendered no ExecStart=%s — systemd re-reads `$` on a command line and a literal one is written `$$`:\n%s", tc.exe, tc.want, u.Body)
+			}
+		})
+	}
+
+	// THE OTHER HALF. The same dollar in the two directives that are not
+	// command lines, where doubling it would be the bug: a home and a
+	// working directory with a `$` in them come through verbatim.
+	t.Run("the directives that are not command lines", func(t *testing.T) {
+		t.Parallel()
+		const dollarPath = "/srv/po$se"
+		a := viaHome(t, base+"autostart_dir: "+dollarPath+"\n")
+		// Home is the directive's own subject and a scratch home cannot
+		// carry a `$` in its path, so it is set here: RenderWatchUnit reads
+		// the config through ConfigPath and takes Environment=RHQ_HOME= from
+		// Home, which is exactly the seam under test.
+		a.Home = dollarPath
+		u, err := RenderWatchUnit(a, "/opt/posse")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"WorkingDirectory=" + dollarPath, "Environment=RHQ_HOME=" + dollarPath} {
+			if !strings.Contains(u.Body, want+"\n") {
+				t.Errorf("no %q in the unit — these directives substitute nothing, so a doubled dollar would reach the process as two characters:\n%s", want, u.Body)
+			}
+		}
+	})
+
+	// And the two renderers say it directly, which is where the rule lives.
+	for _, tc := range []struct{ in, cmd, arg string }{
+		{"/opt/po$se", "/opt/po$$se", "/opt/po$se"},
+		{"${RHQ_HOME}/posse", "$${RHQ_HOME}/posse", "${RHQ_HOME}/posse"},
+		{"/opt/100%/posse", "/opt/100%%/posse", "/opt/100%%/posse"},
+	} {
+		t.Run("unitCmdArg/"+tc.in, func(t *testing.T) {
+			t.Parallel()
+			got, err := unitCmdArg(tc.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.cmd {
+				t.Errorf("unitCmdArg(%q) = %q, want %q", tc.in, got, tc.cmd)
+			}
+			got, err = unitArg(tc.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.arg {
+				t.Errorf("unitArg(%q) = %q, want %q — `%%` is expanded in every directive and `$` only on a command line", tc.in, got, tc.arg)
 			}
 		})
 	}
@@ -775,6 +1018,45 @@ func TestSystemdUnitStdoutIsTheUnitAndStderrIsTheNotes(t *testing.T) {
 	// And it wrote nothing: a render is a render.
 	if _, err := os.Stat(filepath.Join(WatchUnitDir(), "posse-dispatch.service")); err == nil {
 		t.Error("a render with no --write put a unit on disk")
+	}
+
+	// THE BINARY IS THE RUNNING POSSE'S OWN ABSOLUTE PATH (ADR 0080 D5), and
+	// this is the only pin that can say so: every other one calls
+	// RenderWatchUnit directly with a hardcoded exe — right for what each of
+	// them is about, and it leaves the two lines that COMPUTE the real one
+	// (os.Executable, filepath.Abs) with no witness at all, the
+	// ranger-base-u4uwg shape (ranger-base-hmet1, from ranger-base-zml8t).
+	// The only thing the real caller can be graded against is this test
+	// binary's own path, so that is what it is graded against.
+	own, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err = filepath.Abs(own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := unitCmdArg(own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var execStart string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if rest, ok := strings.CutPrefix(line, "ExecStart="); ok {
+			execStart = rest
+		}
+	}
+	if execStart == "" {
+		t.Fatalf("stdout carries no ExecStart line:\n%s", out.String())
+	}
+	// Absolute, which is the half systemd itself enforces: it refuses a unit
+	// whose ExecStart does not start with `/`, so a bare `posse` here is a
+	// loop that never starts.
+	if !strings.HasPrefix(strings.TrimPrefix(execStart, `"`), "/") {
+		t.Errorf("ExecStart=%s names no absolute binary — systemd refuses such a unit at `enable`, so the argv has to carry the installed path and not a name", execStart)
+	}
+	if !strings.HasPrefix(execStart, want+" dispatch ") {
+		t.Errorf("ExecStart=%s does not run the posse that rendered it (%s) — the argv is supposed to track the binary (ADR 0080 D5)", execStart, want)
 	}
 }
 

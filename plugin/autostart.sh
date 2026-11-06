@@ -28,7 +28,12 @@
 #                            default, unlike the arm switch below); a value
 #                            that is NEITHER NAME is refused by name, because
 #                            reading an owner posse cannot parse as the
-#                            default is exactly how that race gets armed
+#                            default is exactly how that race gets armed —
+#                            except on a home that arms nothing at all (no
+#                            autostart_interval: below), where the value is
+#                            named on stderr and the hook stands down exit 0:
+#                            a refusal needs an arm to refuse, and G7's row
+#                            is gated on the same switch (ranger-base-hmet1)
 #   autostart_multiplexer_unit:
 #                            read by `posse systemd` only, never here: the
 #                            multiplexer server's own user unit, which the
@@ -317,7 +322,9 @@ valid_interval() {
 # about. A value that is neither name is refused rather than defaulted —
 # defaulting it to herdr is how a systemd host's hook takes the lock the unit
 # needs, and standing down on it would be the same mistake in the other
-# direction on a herdr host.
+# direction on a herdr host. On a home with no arm switch the refusal has
+# nothing to refuse and the value is named instead; the arm's own `case`
+# below says why.
 via=$(cfg autostart_via)
 case "$via" in
 '' | herdr) ;;
@@ -327,6 +334,25 @@ systemd)
 	exit 0
 	;;
 *)
+	# A VALUE NEITHER NAME IS A REFUSAL, and a refusal needs an arm to
+	# refuse. On a home with no `autostart_interval:` at all this hook would
+	# arm nothing whatever the owner said, so exiting 1 over the owner is a
+	# [[startup]] hook that fails at every server start about a loop nobody
+	# asked for — and `posse status`'s G7 cannot name why, because its whole
+	# row is gated on the arm switch (ranger-base-hmet1, from
+	# ranger-base-zml8t). So the value is still NAMED, in the same words and
+	# the same place, and the exit code is the one the disarm below uses: the
+	# typo goes loud at the moment it starts mattering, which is the moment
+	# the home is armed.
+	#
+	# The arm SWITCH and not the arm's value: a present-but-broken
+	# `autostart_interval:` is a home that means to arm, so an unreadable
+	# owner there is refused as before — the more total of the two failures
+	# (no mechanism will arm this home) and the one that speaks.
+	if ! haskey autostart_interval; then
+		say "autostart_via: '$via' in $CONFIG is not a mechanism — use herdr or systemd; nothing to arm here anyway (no autostart_interval:)" >&2
+		exit 0
+	fi
 	say "autostart_via: '$via' in $CONFIG is not a mechanism — use herdr or systemd; nothing armed" >&2
 	exit 1
 	;;

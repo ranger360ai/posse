@@ -2693,7 +2693,10 @@ hook stands down by name, the render refuses unless the key says it, and
 `posse status`'s G7 names the unit instead of the hook. Absent, bare, `null`
 and `~` all read as `herdr`; anything else is refused by all three of those
 readers rather than defaulted, because a typo read as the default is exactly
-how that race gets armed.
+how that race gets armed. On a home with no `autostart_interval:` at all the
+hook names the value and stands down exit 0 instead — nothing arms such a
+home whatever the key says, so there is no arm to refuse, and the typo goes
+loud at the moment the home is armed.
 
 `autostart_multiplexer_unit:` has **no default**: ADR 0080 D5 orders the loop
 `After=`/`Requires=` the multiplexer server's own user unit so it still

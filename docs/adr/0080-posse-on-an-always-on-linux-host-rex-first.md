@@ -329,6 +329,19 @@ units apart in the one directory an account has, D12), and the render
 refuses a broken arm — absent, bare or unparseable `autostart_interval:` —
 rather than write a unit that dies in the journal.
 
+*Amended ranger-base-hmet1, 2026-11-06.* "Refused by all three" is a claim
+about a home that ARMS. On one with no `autostart_interval:` at all the
+three readers diverge, and the divergence is the honest one: `AutostartVia`
+reads a value and refuses it wherever it appears; the render refuses too,
+for the arm's reason; the hook — the only one of the three that runs on
+such a home — names the value on stderr and exits 0, because it would arm
+nothing there whatever the key said and a refusal needs an arm to refuse;
+and G7 says nothing at all, its row being gated on the arm switch on
+purpose (ranger-base-i6h). What this cost before the amendment was a herdr
+`[[startup]]` hook that exited 1 at every server start with no governance
+row naming why. The split is recorded per row in `autostartViaTable`'s
+`disarmed` column.
+
 **D10. A Rex seat proven dead is destroyed, not only forgotten.** On a
 non-herdr occupant, `reclaim` calls `Close` (`session.destroy`) on the
 recorded session id under the launcher lock, before it unlinks the meta.

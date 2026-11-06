@@ -985,7 +985,9 @@ default_emoji: ⚙️
 # `posse status`'s G7 names the unit instead of the hook. Absent, bare, null
 # and ~ all read as `herdr` — this key has a default, unlike the arm switch —
 # and any other value is refused by all three of those readers, because a
-# typo read as the default is exactly how that race gets armed.
+# typo read as the default is exactly how that race gets armed. On a home
+# with no autostart_interval: the hook names the value and stands down
+# instead: nothing arms such a home whatever this key says.
 #
 # posse never runs `systemctl enable` itself: the verb prints the line.
 # autostart_via: herdr         # herdr | systemd — which mechanism owns this home's loop

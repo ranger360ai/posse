@@ -429,16 +429,35 @@ WantedBy=default.target
 // name, one word, ending in one of systemd's own unit-type suffixes.
 //
 // It is deliberately NOT systemd's full escaping grammar (templates,
-// instances, escaped paths). What it has to catch is the two shapes that
+// instances, escaped paths). What it has to catch is the three shapes that
 // would end up inside the file and break it or point it somewhere else: a
 // value with whitespace in it, which systemd reads as two directives' worth
-// of tokens, and a value that is not a unit name at all.
+// of tokens; a value carrying a `%`, which systemd expands where this value
+// lands; and a value that is not a unit name at all.
+//
+// THIS VALUE IS INTERPOLATED RAW, which is why the `%` is refused here and
+// not doubled downstream. After=/Requires= take unit names, and a unit name
+// as systemctl prints it carries no `%` at all (systemd.unit(5): the
+// characters a unit name may hold are alphanumerics, `:`, `-`, `_`, `.`,
+// `\` and `@`) — so a `%` is not a name needing an escape, it is not a name.
+// Doubling it would render `rex%%i.service` — which is a unit nobody has
+// either, and the reason this refuses rather than escapes.
 func validUnitName(v string) error {
 	if err := unitPrintable(v); err != nil {
 		return err
 	}
 	if strings.ContainsAny(v, " \t") {
 		return Die("a unit name is one word with no whitespace")
+	}
+	// systemd expands specifiers in After=/Requires= — its own shipped
+	// templates rely on it (`serial-getty@.service` is After=dev-%i.device)
+	// — and the unit this renders is not a template, so `%i` would expand to
+	// the empty instance and `%n` to this unit's own name. That is verbatim
+	// the second failure AutostartUnitKey's no-default decision exists to
+	// prevent: a name another unit wears orders the loop behind the wrong
+	// process (ranger-base-hmet1, from ranger-base-zml8t).
+	if strings.Contains(v, "%") {
+		return Die("a unit name carries no `%%`: systemd reads it as a specifier and expands it in After=/Requires= (`%%i` to the empty instance, `%%n` to this unit's own name), so the loop would be ordered behind a unit nobody named — name the server's unit as systemctl prints it")
 	}
 	for _, suffix := range systemdUnitSuffixes {
 		if strings.HasSuffix(v, suffix) && len(v) > len(suffix) {
@@ -471,11 +490,52 @@ func unitArg(v string) (string, error) {
 	if err := unitPrintable(v); err != nil {
 		return "", err
 	}
-	v = strings.ReplaceAll(v, "%", "%%")
+	return unitQuote(strings.ReplaceAll(v, "%", "%%")), nil
+}
+
+// unitQuote is the whitespace rule, shared by unitArg and unitCmdArg:
+// whitespace (or a quote, or a backslash) means systemd would otherwise read
+// the value as more than one argument, or re-read the escape.
+func unitQuote(v string) string {
 	if strings.ContainsAny(v, " \t\"'\\") {
-		return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(v) + `"`, nil
+		return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(v) + `"`
 	}
-	return v, nil
+	return v
+}
+
+// unitCmdArg is unitArg for one argument of a COMMAND LINE (ExecStart=),
+// which is the one place systemd also re-reads `$`: systemd.service(5)
+// ("Command lines") gives command lines basic environment-variable
+// substitution — `$FOO` and `${FOO}` — and says a literal dollar sign is
+// written `$$`. Quoting does not stand it down: the substitution happens
+// after the line is split, so a `$` inside the quotes the whitespace rule
+// added is still a variable.
+//
+// DOUBLED HERE AND NOT IN unitArg, because the two are not the same
+// directive. WorkingDirectory= and Environment= are not command lines and
+// substitute nothing, so a `$$` written into either would reach the process
+// as two characters — which is why this is a second function and not a line
+// added to the first (ranger-base-hmet1, from ranger-base-zml8t).
+//
+// WHAT IT PROTECTS, stated narrowly: of everything that reaches an ExecStart
+// here only the binary's own path can carry a `$` at all — every config value
+// in the argv is ParseInterval-validated or digits-only — so the reachable
+// case is a posse installed under a path with a dollar in it, and the unit
+// SETS Environment=RHQ_HOME=, so a `${RHQ_HOME}` in that path would expand
+// against a variable this very file defines. REPORTED from systemd.service(5)
+// and not MEASURED: this shop has no systemd (darwin), and the man page's
+// rule for the FIRST token of a command line differs ("the program to
+// execute may not be a variable"), so whether systemd substitutes inside
+// argv[0] rather than refusing the unit is unread. Doubling is the answer
+// that is right either way for a literal dollar, and ranger-base-offid's
+// shakedown is where the other half gets measured.
+func unitCmdArg(v string) (string, error) {
+	if err := unitPrintable(v); err != nil {
+		return "", err
+	}
+	v = strings.ReplaceAll(v, "%", "%%")
+	v = strings.ReplaceAll(v, "$", "$$")
+	return unitQuote(v), nil
 }
 
 // unitLiteral is unitArg for a directive that takes the rest of the line as
@@ -488,14 +548,14 @@ func unitLiteral(v string) (string, error) {
 	return strings.ReplaceAll(v, "%", "%%"), nil
 }
 
-// unitExec renders an ExecStart command line: each argument through unitArg,
-// joined by single spaces. The binary path comes first and is quoted by the
-// same rule as every other argument, so a posse installed under a path with
-// a space in it still launches.
+// unitExec renders an ExecStart command line: each argument through
+// unitCmdArg, joined by single spaces. The binary path comes first and is
+// escaped and quoted by the same rule as every other argument, so a posse
+// installed under a path with a space or a dollar in it still launches.
 func unitExec(argv []string) (string, error) {
 	out := make([]string, 0, len(argv))
 	for _, arg := range argv {
-		q, err := unitArg(arg)
+		q, err := unitCmdArg(arg)
 		if err != nil {
 			return "", Die("argument %q cannot go in a unit file: %v", arg, err)
 		}
