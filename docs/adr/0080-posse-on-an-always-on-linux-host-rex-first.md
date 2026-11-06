@@ -160,11 +160,10 @@ today.
 - Arch's current git reads config-based hooks (`hook.*`), which the
   laptop's git 2.50.1 does not. The ranger-base-zwkgb arms that skip below
   2.54 can run there for the first time. This is a bonus, not a gate.
-- Several crew homes under one account share one multiplexer server. Two
-  things are unread: whether session names collide across homes, and
-  herdr's "only the default herdr server may arm the fleet loop". D5 takes
-  the loop off the hook, which may dissolve the second. The first is a
-  bounded read, spiked before the second crew lands.
+- Several crew homes under one account share one multiplexer server. The
+  amendment below (ranger-base-oz8nc) answers whether session names collide
+  and whether D5 dissolves herdr's "only the default herdr server may arm
+  the fleet loop" (D8-D12).
 
 ## Alternatives rejected
 
@@ -227,3 +226,163 @@ All are `discovered-from` ranger-base-3v8gh.
 | ranger-base-20r29 | architect | spike: Landlock as the Linux cage (D4, D7) |
 | ranger-base-5syu4 | dinesh | `#!/bin/bash` portability (P3) |
 | ranger-base-offid | operator | shakedown; blocked on yyq64, izgm6, 136b5 |
+
+## Amendment: several crew homes on one account and one server (ranger-base-oz8nc, 2026-11-06)
+
+**Context.** D2 puts N `RHQ_HOME`s under one OS account, sharing one Rex
+server and one herdr server. The Consequences above left three questions:
+(a) do session names collide across homes, and what does each occupant's
+`List()` (ADR 0076 §5 correction) show of the other homes' sessions;
+(b) does D5 dissolve "only the default herdr server may arm the fleet loop";
+(c) what else is keyed per user rather than per home.
+
+The host is not up yet (ranger-base-yyq64), so the two-home run was taken
+on the laptop against a **scratch** Rex server (`rex server run --listen
+<private socket> --restore=false --max-sessions 3`), the operator's own
+server untouched. Three scratch homes: `crewa` with `instance: crewa`,
+`crewb` and `crewc` untagged, all `multiplexer: rex`, `rex_bin:` a wrapper
+adding `-S <socket>`, seats running `sleep 600`. No model ran.
+MEASURED 2026-11-06, laptop (darwin/arm64), rex 0.0.1793377904-ge6592f,
+posse built from this tree:
+
+| probe | result |
+|---|---|
+| `rex new 'crewa/smoke'` | label with `/` round-trips through `ls` and `session list --json` |
+| `rex new dup` twice | **both accepted**: Rex allows duplicate labels (herdr refuses the second, rangerhq-ouf9) |
+| a 4th `rex new` at `--max-sessions 3` | refused, `409 conflict` |
+| block's program and shell ended (`windows: 0`) | **the husk still counts toward the cap**; `session_count` includes it |
+| A `posse new smoke`, B `posse new smoke` | labels `crewa/smoke` and `smoke`; both created |
+| A `posse list` | its own `smoke 👤` **and** B's as a second `smoke (rex)` row |
+| B `posse list` | A's row reads `crewa/smoke (rex)` |
+| B `posse kill crewa/smoke` | refused: "NOT killed: … is a foreign workspace" |
+| B `posse new crewa/smoke` | refused: `/` is not a legal session name |
+| C (untagged) `posse new smoke` | refused "already exists": posse's own foreign-label check stands in for the server refusal Rex lacks |
+| runtime exits, shell stays | seat stays listed (block open) — no husk |
+| shell exits too | seat drops out of A's `List()`; after `PruneGrace` A unlinks the meta and **the Rex session stays on the server** (see D10) |
+
+Read from the tree, same day:
+- `RexMux.List()` and `HerdrMux.List()` return every seat on the server,
+  every home's. Ownership is the meta file, never the listing:
+  `listSessions` claims rows by recorded id and lists the rest as
+  `Foreign`. Kill, dispatch, autoreap, govern and permission reads all
+  skip or refuse foreign rows. This is rangerhq-ouf9's design, and it is
+  occupant-agnostic, so it holds on Rex as measured above.
+- `plugin/autostart.sh` resolves ONE home (`RHQ_HOME`, else
+  `~/.config/posse`) per herdr server start. "Only the default herdr
+  server" is a per-USER rule, because herdr's plugin registry is per user.
+- `dispatch --watch` that cannot take `state/dispatch-watch.lock` exits
+  non-zero (watch.go). The lock keeps one loop per home whoever starts it.
+- The plan-usage snapshot that ended the 2026-08-22 429 storm
+  (plancache.go, rangerhq-tdy8) is per HOME (`$StateDir/plan-usage.json`).
+  The meter it shares is per CREDENTIAL, and D6 puts every home on one
+  login.
+- `reclaim` (herdrback.go) unlinks a proven-dead meta and closes nothing.
+
+**Answers.**
+- **(a)** Names collide only when a home is untagged. With `instance:` set
+  on every home, labels are disjoint by construction, and `/` cannot
+  appear in a typed name. Untagged, every verb is still safe (refusals
+  above), but a listing shows two rows with one name. Each occupant's
+  `List()` shows every home's seats. That is what makes the foreign
+  refusals possible, so it stays.
+- **(b)** Yes for the rule; no for the hook. With D5's unit owning the
+  loop, no home needs the hook. But the hook still runs whenever the
+  posse user's herdr server starts with the plugin linked. If it finds an
+  armed home, it starts a herdr-hosted loop first (herdr is up before the
+  unit that is `After=` it), and the unit's own loop then loses the lock
+  and fails. That is one loop, not two, but it lives where D5 said it
+  must not.
+- **(c)** The table in D12.
+
+**D8. Every home on the host sets `instance:`, and no crew home lives at
+`~/.config/posse`.** Config and procedure, not code. The tag removes the
+ambiguous rows. Having no default home means a hand-typed `posse` must
+name its crew with `RHQ_HOME`, and the herdr hook has nothing to arm. A
+command that runs against the wrong home is rangerhq-snd's and
+ranger-base-g7lt's shape, and a default home on a multi-home account
+invites it.
+
+**D9. Loop ownership is a config key: `autostart_via: herdr | systemd`,
+default `herdr`.** The hook stands down by name on `systemd`. The unit
+render (ranger-base-136b5) refuses unless the home says `systemd`.
+`posse status` G7 reads the key the same way. One key with two readers,
+the house pattern for this file (plugin/autostart.sh `cfg()`). D8 makes
+the race unreachable on the host, and D9 makes ownership explicit
+wherever both mechanisms exist.
+
+**D10. A Rex seat proven dead is destroyed, not only forgotten.** On a
+non-herdr occupant, `reclaim` calls `Close` (`session.destroy`) on the
+recorded session id under the launcher lock, before it unlinks the meta.
+If the destroy fails, the meta is kept and the next pass retries. An id
+the server no longer knows counts as already destroyed. This is not the
+reaper ADR 0076's correction rejected. That reaper destroyed sessions
+when their blocks exited, so that `session.list` would mean liveness. This
+destroy runs after liveness has been proven by the occupant's `List()`,
+by the one home whose meta names the id. Without it, every seat that ends
+by its shell exiting leaves a session that no home lists (no terminal
+block) and no meta names (pruned), and that still holds one of the
+server's `--max-sessions` (default 64) slots. Those slots are shared by
+every home on the server. When they run out, every home's `Create` fails
+with 409. herdr needs nothing here: a dead herdr workspace is gone.
+
+**D11. The plan-usage snapshot is keyed by the Claude login, not the home.**
+It moves to `~/.cache/posse/plan-usage/<sha256 of the resolved Claude
+config dir>.json`, with its `.log` beside it. That is the same cache root
+as the suite slots and the bd-write locks. Every home on one login then
+shares one reading, one 429 cooldown and one request log. Without this,
+N homes are N pollers on one rate limit, and a cooldown that home A earned
+is not honoured by home B. That is the rangerhq-tdy8 incident with the
+fix undone. `Shared` still gates the store, so a test home cannot write
+the per-user file. There is no migration: the first read misses, and one
+fetch fills the file.
+
+**D12. What is per user, and stays that way.**
+
+| thing | keyed by | verdict |
+|---|---|---|
+| suite slots, bd-write locks (`~/.cache/posse`) | user (bd lock: store realpath) | correct: the cores and stores are the box's |
+| load guard, `checkorphans` | box | correct: home A's guard ends home B's *undeclared* orphan, same rule as between seats (`POSSE_KEEP=`) |
+| `~/.claude`, `~/.codex`, `~/.grok` | user | D6, by design. Trust seeding locks `<cfg>.posse-lock`, so concurrent homes are safe |
+| worktree root `~/.posse/worktrees/<repo>/<session>` | user | enumerated per repo through git, so there is no cross-home sweep. Collides only on same repo basename and session name; D8's procedure sets `worktrees:` per home anyway |
+| herdr socket and plugin registry; Rex default socket | user | D2 and D9. posse has no Rex server selector, which D2 wants |
+| metas, gates, hooks, launch and watch locks | home (`state/`) | unchanged |
+| plan-usage snapshot | home | **moves to the login (D11)** |
+
+**Alternatives rejected.**
+- **A Rex server per home** (posse grows a server selector; `rexGlobals`
+  already passes `--server`). Each listing would then be private, but
+  that isolation buys nothing: ownership is the meta, not the listing.
+  It also costs N Tailscale listeners and N hosts in the Rex app, which is
+  D2 undone. If the walls stop being enough, the exit is D7's account
+  split.
+- **Filter other homes' rows out of `List()`.** The foreign refusals
+  (kill, create, dispatch) are built on seeing those rows. Hiding them
+  turns "refused, belongs to another instance" into a silent duplicate.
+- **A server-wide husk sweep** (destroy every zero-window session). It
+  would destroy sessions no meta of ours names: other homes', and the
+  operator's own. Ownership is the meta, so only the owner destroys (D10).
+- **`--max-sessions 0` as the husk fix.** That hides the leak instead of
+  closing it. The cap is Rex's memory guard, and it stays.
+- **A config key pointing homes at one shared plan file.** Every home
+  would have to agree by hand. Deriving the key from the login makes
+  sharing automatic and correct when one home uses its own
+  `CLAUDE_CONFIG_DIR`.
+- **The hook detects a rendered systemd unit.** That reads another
+  system's files to guess ownership. The key states it.
+
+**Measured versus assumed.**
+MEASURED (laptop, scratch server, above): Rex label and duplicate
+behaviour, the husk counting toward the cap, foreign rows and refusals on
+Rex, and the husk surviving the prune.
+STATIC (code read): (b)'s hook and lock behaviour, D11's keying, D12's table.
+ASSUMED until the host's two-home run: that Linux Rex behaves like
+darwin Rex on all of the above; whether `--restore` brings husks back
+after a server restart; and the cost of Rex `List()` when it walks every
+home's seats (1 + N + M calls at 50-70 ms each, MEASURED 2026-10-31 for
+one home). Each home pays for the whole server's fleet on every pass.
+That is unpriced until a second crew is running, so it is read then and
+not built now.
+
+**Beads.** ranger-base-136b5 gains D9. The D10 and D11 builds are cut below
+for dinesh. D8 is added to ranger-base-yyq64 and ranger-base-offid as
+procedure.
