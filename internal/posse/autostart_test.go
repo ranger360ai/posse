@@ -1652,7 +1652,7 @@ func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
 		// The control column belongs to one kind. A value parked on any
 		// other row is a value nothing reads, which is how a column stops
 		// being believed.
-		if r := seedShellDefaultRegister[key]; r.control != "" && r.kind != seedShellGatesTheArm {
+		if r := seedShellDefaultRegister[key]; seedShellControlMisplaced(r.kind, r.control) {
 			t.Errorf("seedShellDefaultRegister[%q] carries a control value (%q) and its kind %q does not read one", key, r.control, r.kind)
 		}
 	}
@@ -1739,6 +1739,51 @@ func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
 				}
 			default:
 				t.Errorf("%s carries an unknown register kind %q", key, r.kind)
+			}
+		})
+	}
+}
+
+// seedShellControlMisplaced is the control column's rule: exactly one kind
+// reads a control value, so a value on any other row is one nothing reads.
+//
+// A PREDICATE rather than two lines inside the loop above, for the reason
+// seedShellNoFallbackComplaint is a function (ranger-base-p1hen): no row of
+// the live table misplaces a control today and none should, so the loop's
+// arm cannot be shown able to say no by running it — deleting the check
+// would leave the pin green. The witness below is the showing.
+func seedShellControlMisplaced(kind seedShellKind, control string) bool {
+	return control != "" && kind != seedShellGatesTheArm
+}
+
+// The witness for that rule, over PLANTED rows rather than the tree — so
+// this is not itself a claim about the register, which the loop above
+// already makes.
+func TestSeedShellControlColumnBelongsToOneKind(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		kind      seedShellKind
+		control   string
+		misplaced bool
+		why       string
+	}{
+		"the gate kind with its control": {seedShellGatesTheArm, "systemd", false,
+			"the one kind that reads the column — this is autostart_via's live row"},
+		"the gate kind with none": {seedShellGatesTheArm, "", false,
+			"a missing control is that KIND's arm to fatal on, naming the comparison it cannot make; this rule is only about a value nothing reads"},
+		"a non-default row with a control": {seedShellNotTheFallback, "systemd", true,
+			"the column parked on a kind whose arm never opens it"},
+		"the arm switch with a control": {seedShellNoFallback, "30s", true,
+			"the same, on the kind that defaults nothing"},
+		"no documented value, with a control": {seedShellNoDocumentedValue, "~", true,
+			"the same, on the kind with no seed value at all"},
+		"a non-default row with none": {seedShellNotTheFallback, "", false,
+			"the shape every row but autostart_via's has today"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := seedShellControlMisplaced(tc.kind, tc.control); got != tc.misplaced {
+				t.Errorf("seedShellControlMisplaced(%q, %q) = %v, want %v (%s)", tc.kind, tc.control, got, tc.misplaced, tc.why)
 			}
 		})
 	}
