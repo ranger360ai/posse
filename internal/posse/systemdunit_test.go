@@ -823,8 +823,15 @@ func TestSystemdUnitWriteRefusesWithNoUnitDirectory(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "XDG_CONFIG_HOME") {
 		t.Errorf("the refusal does not name what would fix it: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join("systemd", "user", "posse-dispatch.service")); err == nil {
-		t.Error("--write put a unit under the working directory")
+	// WatchUnitDir() is what the mutant would have written into, and with
+	// no HOME it is `.config/systemd/user` — RELATIVE to this package's own
+	// directory. Asserted at that exact path, and cleaned up, because a
+	// guard whose failure litters the repo is a guard whose red costs a
+	// second red somewhere else.
+	litter := filepath.Join(WatchUnitDir(), "posse-dispatch.service")
+	t.Cleanup(func() { os.RemoveAll(strings.Split(WatchUnitDir(), string(os.PathSeparator))[0]) })
+	if _, err := os.Stat(litter); err == nil {
+		t.Errorf("--write put a unit at %s, relative to wherever this ran", litter)
 	}
 	// The render itself still works: printing a unit needs no unit dir, and
 	// a render on a box that is not the host is a legitimate thing to want.
