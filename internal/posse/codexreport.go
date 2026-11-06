@@ -67,6 +67,25 @@ const HookReportVerb = "hook-report"
 // nobody can check before the launch.
 const HookReportDeclareFlag = "--declare"
 
+// HookReportAskFlag makes the same verb run D7's trust ask and print the ONE
+// `-c` value it builds: `posse hook-report --ask codex [-c <value>]…`
+// (codextrust.go).
+//
+// It is here rather than on a verb of its own for the reason --declare is: a
+// launch renders both halves of codex's hooks line itself, and these two arms
+// are how the halves are made observable BEFORE a launch — the string that
+// would be typed, and the trust codex itself would answer with. The probe
+// reads posse's own renderer through them (docs/adr/0076-trust-ask.probe.sh)
+// rather than carrying a second copy of either in shell, so there is no
+// drift between what the probe measures and what a launch types.
+//
+// The `-c` values after the app name are the OTHER values the seat's line
+// carries, and the ask passes them to codex ahead of the declaration. The
+// hooks declaration itself is not among them and must not be: the ask renders
+// it (CodexHooksAsk.Flags), because trust binds to the hash of the
+// declaration asked about.
+const HookReportAskFlag = "--ask"
+
 // codexHookTimeout is the `timeout` posse declares on every handler, in
 // seconds, and it is the probe's measured value. The reporter opens one file
 // and writes ~40 bytes; the budget is for a box under load, not for the work.
@@ -302,11 +321,13 @@ func IsHookReport(argv []string) bool {
 // error, because the ONLY code it may return on the hook path is 0 and a
 // caller holding an error has to decide that again.
 //
-//	posse hook-report <app>              read the hook JSON on stdin, write one report
-//	posse hook-report --declare <app>    print the declaration that installs the above
+//	posse hook-report <app>                     read the hook JSON on stdin, write one report
+//	posse hook-report --declare <app>           print the declaration that installs the above
+//	posse hook-report --ask <app> [-c <v>]…     ask codex for the trust that declaration needs
 //
-// Only the declaration arm can fail, and it can because nothing it does is
-// inside a turn: it is a thing posse or an operator asks before a launch.
+// Only the declare and ask arms can fail, and they can because nothing they
+// do is inside a turn: they are things posse or an operator asks before a
+// launch.
 func RunHookReport(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return runHookReport(argv, stdin, stdout, stderr, openTTY)
 }
@@ -342,6 +363,9 @@ func runHookReport(argv []string, stdin io.Reader, stdout, stderr io.Writer, tty
 		args = argv[2:]
 	}
 
+	if len(args) >= 2 && args[0] == HookReportAskFlag {
+		return runCodexHooksAsk(args[1:], stdout, stderr)
+	}
 	if len(args) == 2 && args[0] == HookReportDeclareFlag {
 		exe := RunningPosse().Exe
 		decl, err := CodexHooksDeclaration(exe, args[1])
@@ -357,8 +381,8 @@ func runHookReport(argv []string, stdin io.Reader, stdout, stderr io.Writer, tty
 		// renders this command itself, so a wrong argv here is either a hand
 		// run or a declaration that drifted from this binary. Say which, on
 		// stderr, and still get out of codex's way.
-		fmt.Fprintf(stderr, "posse: usage: posse %s <app>  |  posse %s %s <app>  (posse's OSC 7501 hook reporter, rendered onto a runtime's launch line — ADR 0076 D6 — not typed by hand)\n",
-			HookReportVerb, HookReportVerb, HookReportDeclareFlag)
+		fmt.Fprintf(stderr, "posse: usage: posse %s <app>  |  posse %s %s <app>  |  posse %s %s <app> [-c <value>]…  (posse's OSC 7501 hook reporter, rendered onto a runtime's launch line — ADR 0076 D6/D7 — not typed by hand)\n",
+			HookReportVerb, HookReportVerb, HookReportDeclareFlag, HookReportVerb, HookReportAskFlag)
 		return 0
 	}
 	app := args[0]
@@ -393,5 +417,48 @@ func runHookReport(argv []string, stdin io.Reader, stdout, stderr io.Writer, tty
 	}
 	io.WriteString(f, OSC7501(payload))
 	f.Close()
+	return 0
+}
+
+// runCodexHooksAsk is the --ask arm: D7's trust ask, over this process's cwd
+// and this process's CODEX_HOME, for a declaration naming THIS binary.
+//
+// It prints the `hooks.state` value on stdout and the inventory codex
+// reported on stderr, which is the reference client's own split (ADR 0076's
+// ask.py): the one is a thing to put on a line, the other a thing to read.
+//
+// EXIT 1 ON A REFUSAL, unlike every other path in this file. The reporter's
+// arms must never return anything but 0 because codex reads a hook's exit
+// code (see this file's header); this arm is not a hook — nobody's turn is
+// waiting on it — and a refusal that exited 0 would be a launch script's
+// green light over an empty trust line.
+func runCodexHooksAsk(args []string, stdout, stderr io.Writer) int {
+	usage := func() int {
+		fmt.Fprintf(stderr, "posse: usage: posse %s %s <app> [-c <value>]…  (ADR 0076 D7's trust ask: the -c values are the OTHER values the seat's line carries, with $PWD already resolved; the hooks declaration is rendered here and must not be among them)\n",
+			HookReportVerb, HookReportAskFlag)
+		return 1
+	}
+	app, rest := args[0], args[1:]
+	var conf []string
+	for len(rest) > 0 {
+		if rest[0] != "-c" || len(rest) < 2 {
+			return usage()
+		}
+		conf, rest = append(conf, rest[1]), rest[2:]
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "posse: cannot read this process's working directory, which is the seat's cwd the ask is about: %v\n", err)
+		return 1
+	}
+	// Symlinks resolved, because codex keys project trust and project hook
+	// discovery by the RESOLVED path (ADR 0076's probes all take their
+	// scratch dir through `pwd -P` for that reason).
+	flags, err := CodexHooksAsk{Exe: RunningPosse().Exe, App: app, Cwd: resolveLinks(cwd), Conf: conf, Log: stderr}.Flags()
+	if err != nil {
+		fmt.Fprintln(stderr, "posse: "+err.Error())
+		return 1
+	}
+	fmt.Fprintln(stdout, flags.State)
 	return 0
 }

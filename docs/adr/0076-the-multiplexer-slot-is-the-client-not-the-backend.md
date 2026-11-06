@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh`*
 
 ## Context
 
@@ -573,6 +573,51 @@ to the hash. A hook added or edited between the ask and the launch reads
 untrusted or modified. It does not run, the dialog holds the prompt, no
 record arrives, and D2's argv arm HOLDs. The failure is a stall, never
 execution of a hook nobody vetted.
+
+*Realized 2026-11-06 (ranger-base-fwwl8): `CodexHooksAsk.Flags()` in
+`internal/posse/codextrust.go` is the ask, and it hands back the PAIR —
+`CodexHooksFlags{Declaration, State}` — rather than a renderer to call twice,
+because trust binds to the hash of the declaration asked about and two call
+sites rendering the same string is how they come to render different ones.
+`posse hook-report --ask codex [-c <value>]…` runs it by hand, printing the
+trust value on stdout and codex's own inventory on stderr, so both halves of
+the line are observable before a launch. Acceptance:
+`docs/adr/0076-trust-ask.probe.sh`, three arms, no model turn.*
+
+*ONE THING THIS AMENDMENT DID NOT KNOW, and it decides whether any of the
+rest works: **the declaration must be typed BEFORE the trust.** codex applies
+`-c` overrides in order and `hooks={…}` sets the whole `hooks` table,
+`state` subtable and all, so a `hooks.state` that arrives first is wiped by
+the declaration that follows it. MEASURED 2026-11-06 (probe arm `order`, the
+same two values both ways round, one scratch home): declaration first, codex
+read all nine hooks back `trusted` with the foreign one `enabled=false`;
+trust first, all nine `untrusted` and the foreign one `enabled=true` — a line
+carrying every byte of the right answer, a launch that completes, and a seat
+on the review dialog. `ranger-base-8gh58` types the line and this is the
+constraint on it. Also MEASURED: a declaration rendered by a posse at another
+path reads `trustStatus: "modified"`, a third value of that field, so a trust
+line built against one binary is worthless for another (the caged seat's
+`/usr/local/bin/posse`, D6's Realized note).*
+
+*Measured on the slice, beyond what the amendment's table had: the whole
+three-message conversation answers in 0.41 s; `hooks/list` returns
+`result.data[]` per asked cwd with `errors[]` and `warnings[]` beside
+`hooks[]`, which are the only account of a declaration that FAILED to load;
+an id-less `remoteControl/status/changed` notification arrives BETWEEN the two
+answers, so a reader that takes the next line reads it; and `command` comes
+back byte-identical to what posse typed, which is what lets the ask refuse an
+answer about a line other than the one it asked about. Three refusals beyond
+D7's two, each for the same reason — the alternative is a stall nobody can
+read: an answer that does not account for all of posse's own declared hooks,
+a key or hash posse cannot put through both shell quoting and a TOML string,
+and the same key twice (which would make the inline table invalid TOML).
+`docs/notes.d/ranger-base-fwwl8.md` has the tables and the mutants.*
+
+*STILL OPEN here, and it is the admission slice's: whether the ordinary
+launch-failure path releases the worktree and the claim at THIS stage (the
+ASSUMED above). The ask returns an ordinary error, which is what that path
+takes; which path takes it is decided where `Flags()` is called, and that is
+`ranger-base-8gh58`.*
 
 **D8. Rex only. herdr's codex line does not change.** `CodexFleetFlags`
 keeps `--disable hooks` on herdr, which reads codex through its own

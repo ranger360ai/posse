@@ -17,6 +17,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-hogeb](ranger-base-hogeb.md) — The replay landed before the block's seat was dispatched (ranger-base-hogeb) — 2026-11-06
 - [ranger-base-hmet1](ranger-base-hmet1.md) — Four conjuncts of the systemd unit render, and a reader split on a disarmed home (ranger-base-hmet1) — 2026-11-06
 - [ranger-base-h0hjx](ranger-base-h0hjx.md) — ranger-base-h0hjx — verify 3 closes: e09l0, 32ll0, zpk8r — 2026-11-06
+- [ranger-base-fwwl8](ranger-base-fwwl8.md) — D7's trust ask, and the `-c` order that decides whether any of it works (ranger-base-fwwl8) — 2026-11-06
 - [ranger-base-fe4uq](ranger-base-fe4uq.md) — ranger-base-fe4uq — verifying four closes, and a fifth conjunct with no witness — 2026-11-06
 - [ranger-base-dsuk7](ranger-base-dsuk7.md) — The exact age two pins asserted was a statement about a clock they did not own (ranger-base-dsuk7) — 2026-11-06
 - [ranger-base-ava0x](ranger-base-ava0x.md) — A forged `global` line, and the control that made the bypass look like "nothing to commit" (ranger-base-ava0x) — 2026-11-06
