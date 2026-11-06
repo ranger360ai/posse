@@ -12,6 +12,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-hogeb](ranger-base-hogeb.md) — The replay landed before the block's seat was dispatched (ranger-base-hogeb) — 2026-11-06
 - [ranger-base-h0hjx](ranger-base-h0hjx.md) — ranger-base-h0hjx — verify 3 closes: e09l0, 32ll0, zpk8r — 2026-11-06
 - [ranger-base-dsuk7](ranger-base-dsuk7.md) — The exact age two pins asserted was a statement about a clock they did not own (ranger-base-dsuk7) — 2026-11-06
+- [ranger-base-ava0x](ranger-base-ava0x.md) — A forged `global` line, and the control that made the bypass look like "nothing to commit" (ranger-base-ava0x) — 2026-11-06
 - [ranger-base-87zme](ranger-base-87zme.md) — ranger-base-87zme — the ADR 0079 compare resolves `~` per read — 2026-11-06
 - [ranger-base-0ddmu](ranger-base-0ddmu.md) — The other direction of the wall-clock-age class: a premise that is fresh (ranger-base-0ddmu) — 2026-11-06
 - [ranger-base-zpk8r](ranger-base-zpk8r.md) — ranger-base-zpk8r — the launch DEGRADED call site, and two inverted policy-tier lines — 2026-11-04

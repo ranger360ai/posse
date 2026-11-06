@@ -7,12 +7,14 @@ package posse
 // global files, for HOME, XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL alike.
 //
 // Each pin protects the refusal on a hook verb: delete one and a seat skips
-// the managed hook at rc 0. Pins 1-6 run REAL git through the seat launch line
-// (WrapWithGates) on claude AND codex, with the render's env set to the
-// fixture's (App.GitScopeEnv), so the scratch HOME is the launcher's. Pin 7
-// renders the shim over a stub git and counts its execs. The scratch dirs are
-// not the tree, so none of this is a tree-wide pin and it owes the Makefile no
-// door.
+// the managed hook at rc 0. Pins 1-6, 8 and 9 run REAL git through the seat
+// launch line (WrapWithGates) on claude AND codex, with the render's env set
+// to the fixture's (App.GitScopeEnv), so the scratch HOME is the launcher's.
+// Pin 7 renders the shim over a stub git and counts its execs. Pins 8 and 9
+// are the ranger-base-o6xr6 amendment's: the `~` include (shipped with
+// ranger-base-32ll0) and D2's newline count (ranger-base-ava0x). The scratch
+// dirs are not the tree, so none of this is a tree-wide pin and it owes the
+// Makefile no door.
 
 import (
 	"os"
@@ -29,9 +31,11 @@ type hsGlobalLeg struct {
 	refused   bool
 }
 
-// hsWrapped renders the gates for rtName with the fixture's env as the
-// launcher's, and returns the typed launch prefix.
-func hsWrapped(t *testing.T, fx *hsFixture, rtName string) string {
+// hsWrappedDir renders the gates for rtName under persona, with the fixture's
+// env as the launcher's, and returns the typed launch prefix and the bin dir
+// holding the rendered git shim. Pin 9's witness patches that shim; every
+// other pin wants only the prefix (hsWrapped).
+func hsWrappedDir(t *testing.T, fx *hsFixture, rtName, persona string) (string, string) {
 	t.Helper()
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
@@ -40,10 +44,18 @@ func hsWrapped(t *testing.T, fx *hsFixture, rtName string) string {
 		t.Fatal(err)
 	}
 	fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
-	wrapped, _, _, err := a.WrapWithGates("hg-"+rtName, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
+	wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return wrapped, filepath.Join(gatesDir, "bin")
+}
+
+// hsWrapped renders the gates for rtName with the fixture's env as the
+// launcher's, and returns the typed launch prefix.
+func hsWrapped(t *testing.T, fx *hsFixture, rtName string) string {
+	t.Helper()
+	wrapped, _ := hsWrappedDir(t, fx, rtName, "hg-"+rtName)
 	return wrapped
 }
 
@@ -404,6 +416,127 @@ func TestQAHookSkipUnexpandableTildeFailsClosed(t *testing.T) {
 				// both fail: two empties must not compare equal.
 				{"HOME at a byte-identical config, both reads fail", "HOME=" + shQuote(same) + " ", true},
 			})
+		})
+	}
+}
+
+// hsGitOut runs the real git with the fixture's env (the launcher's) and
+// returns its stdout — the want side, read exactly as the shim reads it.
+func hsGitOut(t *testing.T, fx *hsFixture, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(fx.realGit, args...)
+	cmd.Env = hsEnv(fx)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return string(out)
+}
+
+// hsCountTest is D2's count test, as renderHookSkipGlobalScope writes it, and
+// the mutant that drops it while leaving the subshell parseable. Pin 9's
+// witness swaps the first for the second in a rendered shim.
+const (
+	hsCountTest   = "[ \"$posse_hs_gl\" -eq \"$posse_hs_gn\" ])"
+	hsCountMutant = "[ 0 -eq 0 ])"
+)
+
+// Pin 9 (ADR 0079 D2's count, owed by the ranger-base-o6xr6 amendment): a
+// config value carrying a NEWLINE forges a `global<TAB>…` line in the
+// non -z `--show-scope` listing, so a call that HIDES the launcher's global
+// scope can still make the have side read back the want side.
+//
+// The attack, MEASURED 2026-11-06 against git 2.50.1 (Apple Git-155) — a
+// LOCAL alias (matched by hookSkipRegexp) whose value is
+// `a\nglobal<TAB>core.hookspath <the launcher's managed path>`, planted past
+// the shim the way hsSetup plants its own aliases and the way an operator's
+// gitconfig or a cloned repo would carry one, then
+// `GIT_CONFIG_GLOBAL=/dev/null git commit`:
+//
+//	local<TAB>alias.pforge a
+//	global<TAB>core.hookspath <managed>
+//
+// git reads no global file under that variable, so the managed hook is
+// unread — yet the shim's pure-sh filter keeps the second line, which is byte
+// for byte what the want reads return from the launcher's own files. have ==
+// want, the compare calls the call clean, and the commit lands at rc 0 with
+// the hook never run. The same forgery works through a moved HOME, which is
+// the second leg here.
+//
+// D2's `--name-only` count is what refuses both: a KEY cannot hold a newline,
+// so that listing's line count is an honest entry count, and the forged
+// listing carries one line more than there are entries. (-z would also settle
+// it and is out: sh command substitution drops NULs.)
+//
+// THE WITNESS is the same two legs through a shim whose count test is mutated
+// to `[ 0 -eq 0 ]`, which must be ALLOWED at rc 0 with the hook unfired.
+// Without it this pin cannot tell D2's count from the plain
+// `GIT_CONFIG_GLOBAL=/dev/null` refusal that hsRefused already carries, nor
+// from a HOME compare that happens to refuse for the ordinary reason.
+func TestQAHookSkipNewlineForgedGlobalLineIsRefused(t *testing.T) {
+	t.Parallel()
+	for _, rtName := range []string{"claude", "codex"} {
+		t.Run(rtName, func(t *testing.T) {
+			t.Parallel()
+			fx := hsSetup(t)
+			// The want side, read the way the shim reads it, so the forged
+			// line is built from git's own output and not from this test's
+			// idea of the fixture's hooksPath.
+			want := hsGitOut(t, fx, "config", "--includes", "--file", filepath.Join(fx.home, ".gitconfig"), "--get-regexp", hookSkipRegexp)
+			if !strings.HasPrefix(want, "core.hookspath ") {
+				t.Fatalf("the fixture's global file must carry the managed hooksPath; got %q", want)
+			}
+			forged := "a"
+			for _, l := range strings.Split(strings.TrimRight(want, "\n"), "\n") {
+				forged += "\nglobal\t" + l
+			}
+			hsRealGit(t, fx, "-C", fx.repo, "config", "alias.pforge", forged)
+
+			// A HOME carrying the identity but no hooksPath: the second way
+			// to hide the launcher's global scope from the call.
+			bare := filepath.Join(fx.home, "bare-home-9")
+			if err := os.MkdirAll(bare, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			write(t, filepath.Join(bare, ".gitconfig"), "[user]\n\tname = t\n\temail = t@example.com\n")
+
+			legs := []hsGlobalLeg{
+				{"pin 9: GIT_CONFIG_GLOBAL=/dev/null, forged global line", "GIT_CONFIG_GLOBAL=/dev/null ", true},
+				{"pin 9: HOME lacking the hooksPath, forged global line", "HOME=" + shQuote(bare) + " ", true},
+			}
+
+			wrapped, _ := hsWrappedDir(t, fx, rtName, "hg9-"+rtName)
+			// The control leads, in the SAME call as the legs: with nothing
+			// moved the D3 gate does not fire, so the forged value changes
+			// nothing about the ordinary commit and the managed hook runs.
+			// One call because hsGlobalCheck numbers its commit messages from
+			// zero — split across two calls the control and the first leg
+			// write f identically, and the leg then dies at "nothing to
+			// commit" (rc 1, on stdout) instead of landing the bypass, which
+			// is a mutant that reds this pin for the wrong reason.
+			hsGlobalCheck(t, fx, wrapped, append([]hsGlobalLeg{{name: "control: forged value, nothing moved", env: ""}}, legs...))
+
+			// The witness: the same legs, count mutated away.
+			mwrapped, mbin := hsWrappedDir(t, fx, rtName, "hg9mut-"+rtName)
+			shim := filepath.Join(mbin, "git")
+			body, err := os.ReadFile(shim)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(body), hsCountTest) {
+				t.Fatalf("the rendered shim no longer carries D2's count test %q — this witness is stale, not passing", hsCountTest)
+			}
+			mutant := strings.Replace(string(body), hsCountTest, hsCountMutant, 1)
+			if err := WriteExecutable(shim, []byte(mutant), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for i, leg := range legs {
+				before := hsFired(fx)
+				errs, code := hsRun(t, fx, mwrapped, hsLeg{env: leg.env, args: "commit -q -m w" + strconv.Itoa(i) + " -- f"})
+				if code != 0 || hsFired(fx) != before {
+					t.Errorf("WITNESS %s: with D2's count mutated away the forged line must compare EQUAL — the commit lands at rc 0 with the hook unfired; got code=%d fired=%d (%q)", leg.name, code, hsFired(fx)-before, errs)
+				}
+			}
 		})
 	}
 }

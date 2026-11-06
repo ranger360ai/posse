@@ -222,8 +222,15 @@ seat skips the managed hook at rc 0.
    2026-11-06. Pin 15 carries the no-`~` shape that needs the flag.
 9. (amendment) `GIT_CONFIG_GLOBAL=/dev/null` plus a local value whose
    newline forges the launcher's `global` hooksPath line → refused. Delete
-   D2's count and that call compares equal and skips the hook at rc 0. Not
-   shipped with 32ll0; owed by the bead cut under ranger-base-o6xr6.
+   D2's count and that call compares equal and skips the hook at rc 0.
+   Shipped as `TestQAHookSkipNewlineForgedGlobalLineIsRefused`
+   (ranger-base-ava0x), which pins the same forgery through a moved HOME
+   beside the `/dev/null` spelling and carries the mutant as an in-test
+   witness: the same two legs through a shim whose count test is rewritten
+   to `[ 0 -eq 0 ]` must be allowed at rc 0 with the hook unfired. MEASURED
+   2026-11-06, git 2.50.1 (Apple Git-155): with D2's count mutated away in
+   `renderHookSkipGlobalScope` itself, both legs land at rc 0 with the
+   managed hook unread, on claude and on codex.
 10. (amendment, ranger-base-87zme) The launcher's file carries
     `core.hooksPath = ~/managed-hooks`; `HOME=evil` at a byte-identical file
     with its own `managed-hooks/` → refused, neither hook runs. And
