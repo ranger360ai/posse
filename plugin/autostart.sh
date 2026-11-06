@@ -12,6 +12,27 @@
 # DISARMED unless the instance config says otherwise. Keys in
 # $RHQ_HOME/config.yaml (flat-YAML scalars, house subset):
 #
+#   autostart_via:           herdr | systemd — WHICH MECHANISM OWNS THIS
+#                            HOME'S LOOP (ADR 0080 D9). Default herdr, which
+#                            is this hook. On `systemd` this hook stands
+#                            down BY NAME and arms nothing: the loop is a
+#                            systemd user unit rendered by `posse systemd`,
+#                            and both mechanisms arming is not two loops but
+#                            a race the unit loses — a dispatch --watch that
+#                            cannot take state/dispatch-watch.lock exits
+#                            non-zero, and herdr's server is up before the
+#                            unit that is After= it, so a linked hook that
+#                            found an armed home would take the lock and the
+#                            unit would fail on every start. Absent, bare,
+#                            null and ~ all read as herdr (the key has a
+#                            default, unlike the arm switch below); a value
+#                            that is NEITHER NAME is refused by name, because
+#                            reading an owner posse cannot parse as the
+#                            default is exactly how that race gets armed
+#   autostart_multiplexer_unit:
+#                            read by `posse systemd` only, never here: the
+#                            multiplexer server's own user unit, which the
+#                            rendered unit is ordered After=/Requires=
 #   autostart_interval:      base pass interval (30s, 5m, or bare seconds)
 #                            — PRESENCE OF THIS KEY IS THE ARM SWITCH, and a
 #                            value it cannot read is a broken arm, not a
@@ -281,6 +302,35 @@ valid_interval() {
 	[[ $1 =~ ^\+?[0-9]+$ || $1 =~ ^\+?($num$unit)+$ ]] || return 1
 	[[ $1 =~ [1-9] ]]
 }
+
+# WHO OWNS THIS HOME'S LOOP (ADR 0080 D9). Read before anything else about
+# the arm, because it decides whether this hook has any business here at all:
+# a `systemd` home is never armed by this hook whatever the rest of its
+# config says, which is what makes D9's race unreachable rather than merely
+# unlikely.
+#
+# The grammar is cfg()'s and AutostartVia's (internal/posse/systemdunit.go),
+# and the two are pinned on one input table (systemdunit_test.go) exactly as
+# this file's interval check is pinned against ParseInterval. Absent, bare,
+# `null` and `~` all read as herdr: this key HAS a default, unlike the arm
+# switch below, and "" is the one reading cfg() and yamlClean cannot disagree
+# about. A value that is neither name is refused rather than defaulted —
+# defaulting it to herdr is how a systemd host's hook takes the lock the unit
+# needs, and standing down on it would be the same mistake in the other
+# direction on a herdr host.
+via=$(cfg autostart_via)
+case "$via" in
+'' | herdr) ;;
+systemd)
+	say "autostart_via: systemd in $CONFIG — systemd owns this home's loop (ADR 0080 D5), nothing armed here"
+	say "the unit: posse systemd --write, then systemctl --user enable --now <unit>; this hook arms nothing while the key says systemd"
+	exit 0
+	;;
+*)
+	say "autostart_via: '$via' in $CONFIG is not a mechanism — use herdr or systemd; nothing armed" >&2
+	exit 1
+	;;
+esac
 
 interval=$(cfg autostart_interval)
 if [ -z "$interval" ]; then

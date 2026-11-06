@@ -560,7 +560,28 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	if yamlHasKey(in.App.ConfigPath, "autostart_interval") {
 		interval := in.App.CfgGet("autostart_interval", "")
 		_, badInterval := ParseInterval(interval)
+		// WHO OWNS THE LOOP, read before anything about the arm (ADR 0080
+		// D9). The key decides which mechanism arms this home, and both of
+		// the arm-broken sentences below name a mechanism — so on a home
+		// that says `autostart_via: systemd` a row written against the herdr
+		// hook would point the operator at a hook that is standing down by
+		// name and never mention the verb they actually have to run. Read
+		// the same way the hook reads it (plugin/autostart.sh's cfg()) and
+		// AutostartVia reads it, over one input table.
+		//
+		// A MALFORMED OWNER IS ITS OWN SHAPE OF BROKEN ARM, and the most
+		// total one: the hook refuses it and arms nothing, AND the render
+		// refuses it and renders nothing, so no mechanism will ever arm this
+		// home. It is reported through AutostartVia's own error rather than
+		// re-stated here, because a second sentence about one key is how the
+		// hook's wording and this row drift apart. Still G7 and still
+		// arm-broken: the fact is the same one and only the cause differs,
+		// which is what the fingerprint moves on.
+		via, badVia := in.App.AutostartVia()
 		switch {
+		case badVia != nil:
+			add("G7", GovUrgent, "arm-broken",
+				fmt.Sprintf("%v — nothing will arm this home's watch loop until the key names one of them", badVia))
 		case interval == "":
 			// Still G7, and still URGENT: the fact is the same one
 			// (nothing is delivering, and nothing will at the next herdr
@@ -568,8 +589,8 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 			// which is what the fingerprint moves on. A second row name
 			// would say the shop has two problems where it has one.
 			add("G7", GovUrgent, "arm-broken",
-				fmt.Sprintf("autostart_interval: in %s is present but empty — the herdr startup hook refuses it and arms nothing; give it an interval (30s, 5m, or bare seconds), or comment the key out to disarm",
-					AbbrevHome(in.App.ConfigPath)))
+				fmt.Sprintf("autostart_interval: in %s is present but empty — %s; give it an interval (30s, 5m, or bare seconds), or comment the key out to disarm",
+					AbbrevHome(in.App.ConfigPath), AutostartRefuser(via)))
 		case badInterval != nil:
 			// The same broken arm, one input shape over: the hook refuses a
 			// value posse cannot parse and arms nothing (ranger-base-7rt5).
@@ -579,17 +600,27 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 			// reporting "autostart is armed" about a config nothing will
 			// ever arm from.
 			add("G7", GovUrgent, "arm-broken",
-				fmt.Sprintf("autostart_interval: %q in %s is not an interval — the herdr startup hook refuses it and arms nothing; use 30s, 5m, or bare seconds",
-					interval, AbbrevHome(in.App.ConfigPath)))
+				fmt.Sprintf("autostart_interval: %q in %s is not an interval — %s; use 30s, 5m, or bare seconds",
+					interval, AbbrevHome(in.App.ConfigPath), AutostartRefuser(via)))
 		default:
 			running, err := WatchLoopRunning(in.App)
 			switch {
 			case err != nil:
 				failed = append(failed, fmt.Errorf("watch-loop lock: %w — G7 unknown", err))
 			case !running:
-				add("G7", GovUrgent, "loop-dead",
-					fmt.Sprintf("autostart is armed and no watch loop holds %s — nothing is being delivered",
-						AbbrevHome(WatchLockPath(in.App))))
+				// The LEVER differs by owner and the fact does not, so the
+				// sentence gains a clause rather than a second row. On
+				// herdr the loop comes back when the server does and the
+				// operator has nothing to type; under systemd the unit is
+				// where a dead loop's reason is written, and a row that did
+				// not name it would send the operator to a hook that is
+				// standing down on purpose.
+				dead := fmt.Sprintf("autostart is armed and no watch loop holds %s — nothing is being delivered",
+					AbbrevHome(WatchLockPath(in.App)))
+				if via == AutostartViaSystemd {
+					dead += fmt.Sprintf(" (systemd owns this loop: systemctl --user status %s)", WatchUnitName(in.App))
+				}
+				add("G7", GovUrgent, "loop-dead", dead)
 			default:
 				// The loop is alive. Is its RECORD (ranger-base-n00wn)?
 				//

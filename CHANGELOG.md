@@ -11,6 +11,28 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**`posse systemd` renders the dispatch loop as a systemd user unit, for a
+host that runs no herdr.**
+
+*New. Nothing changes on a herdr host.*
+
+The only autostart posse has had is herdr's `[[startup]]` hook, so a home
+whose multiplexer is Rex had none at all. `posse systemd` prints the loop as
+a systemd **user** service — one per `RHQ_HOME`, `ExecStart` carrying this
+binary's absolute path and the argv the home's `autostart_*` keys describe,
+ordered `After=`/`Requires=` the unit named by
+`autostart_multiplexer_unit:`, `Restart=on-failure` — and `--write` puts it
+under `~/.config/systemd/user/`. It never runs `systemctl`: it prints the
+lines.
+
+`autostart_via: herdr | systemd` (default `herdr`) says which mechanism owns
+a home's loop. On `systemd` the startup hook stands down by name, the render
+refuses unless the key says it, and `posse status`'s G7 names the unit
+instead of the hook. Both arming is not two loops but a race the unit loses,
+so a value that is neither name is refused by all three readers rather than
+read as the default. `autostart_multiplexer_unit:` has no default on
+purpose. See ADR 0080 D5/D9 and INSTALL.md step 12.
+
 **An attacker's git config can no longer reach a posse-launched claude
 session through `GIT_CONFIG_GLOBAL`, `XDG_CONFIG_HOME` or `HOME`, on a box
 whose git global scope is one file.**

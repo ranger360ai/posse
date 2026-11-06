@@ -313,6 +313,22 @@ the house pattern for this file (plugin/autostart.sh `cfg()`). D8 makes
 the race unreachable on the host, and D9 makes ownership explicit
 wherever both mechanisms exist.
 
+*As built (ranger-base-136b5, 2026-11-06).* Three readers, not two: the
+hook, the unit render (`posse systemd`) and G7, pinned on one input table
+(`internal/posse/systemdunit_test.go`). Absent, bare, `null` and `~` all
+read as `herdr` — the key has a default, so `""` is the one reading
+`yamlClean` and `cfg()` cannot disagree about — and a value that is
+NEITHER NAME is refused by all three rather than defaulted, because a typo
+read as the default is how this race gets armed. D5's ordering needed a
+second key, and it is `autostart_multiplexer_unit:` with **no default**:
+"name from config, not hardcoded" has no fallback that is honest, since a
+name no unit wears refuses the start and a name another unit wears orders
+the loop behind the wrong process. The unit is
+`posse-dispatch-<instance>.service` (D8's tag is what keeps two homes'
+units apart in the one directory an account has, D12), and the render
+refuses a broken arm — absent, bare or unparseable `autostart_interval:` —
+rather than write a unit that dies in the journal.
+
 **D10. A Rex seat proven dead is destroyed, not only forgotten.** On a
 non-herdr occupant, `reclaim` calls `Close` (`session.destroy`) on the
 recorded session id under the launcher lock, before it unlinks the meta.

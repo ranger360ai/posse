@@ -2660,6 +2660,71 @@ delivered. The threshold is the watchdog's own budget — the longest a healthy
 loop can write nothing — read from `autostart_interval:` and
 `autostart_max_interval:`.
 
+### On a host with no herdr: the loop as a systemd user unit
+
+Everything above arms the loop through herdr's `[[startup]]` hook, which is
+the only autostart posse has had. A home whose multiplexer is Rex may run no
+herdr at all, and then nothing starts the loop — on an always-on Linux host
+that is the difference between a fleet and a box (ADR 0080 D5).
+
+There the loop is a **systemd user service**, one per `RHQ_HOME`, and posse
+renders it:
+
+```
+$ posse systemd                       # the unit, on stdout
+$ posse systemd --write               # ...into ~/.config/systemd/user/
+```
+
+Two keys, in that home's `config.yaml`:
+
+```yaml
+autostart_via: systemd                       # who owns this home's loop
+autostart_multiplexer_unit: <server>.service # the unit it is ordered behind
+autostart_interval: <interval>               # still the arm switch
+```
+
+`autostart_via:` is **ownership stated, not detected**, and it is the one
+thing to get right. Both mechanisms arming is not two loops — it is a race
+the unit loses: a `posse dispatch --watch` that cannot take
+`state/dispatch-watch.lock` exits non-zero, and herdr's server is up before
+the unit that is `After=` it, so a linked hook that found an armed home
+would take the lock and the unit would fail on every start. On `systemd` the
+hook stands down by name, the render refuses unless the key says it, and
+`posse status`'s G7 names the unit instead of the hook. Absent, bare, `null`
+and `~` all read as `herdr`; anything else is refused by all three of those
+readers rather than defaulted, because a typo read as the default is exactly
+how that race gets armed.
+
+`autostart_multiplexer_unit:` has **no default**: ADR 0080 D5 orders the loop
+`After=`/`Requires=` the multiplexer server's own user unit so it still
+cannot start in a world with no socket, and posse has measured neither
+multiplexer's Linux unit name. A guess is wrong in two directions — a name no
+unit wears refuses the start, a name another unit wears orders the loop
+behind the wrong process — so the render refuses and tells you to read the
+real one off the host (`systemctl --user list-units --type=service`).
+
+Three things the render does not do, on purpose:
+
+- **It never enables anything.** It prints the `systemctl --user` lines and
+  they stay yours.
+- **It does not give the service a `PATH`.** A user service gets systemd's
+  minimal one, and posse shells out to `bd` and `git`. Check
+  `systemctl --user show-environment`, and add an `Environment=PATH=…`
+  drop-in if either lives somewhere systemd cannot see.
+- **It does not enable lingering.** `loginctl enable-linger <user>` is what
+  makes user services outlive a logout on a headless host (ADR 0080 D1).
+
+Set `instance:` on every home here (ADR 0080 D8). A user unit directory is
+per account, so the tag is what keeps two crews' units apart — an untagged
+home renders `posse-dispatch.service`, which the second untagged home would
+render too. The render says so; it does not refuse.
+
+Re-run `posse systemd --write` after any `autostart_*` change: the argv is
+rendered from those keys and from this binary's own absolute path, so a
+promotion that moves the binary moves the unit. Writing identical bytes is
+not a replacement; a unit that says something else is refused unless you
+pass `--force`.
+
 ---
 
 ## 13. Two instances on one machine

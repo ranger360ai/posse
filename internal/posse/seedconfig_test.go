@@ -82,6 +82,14 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 		"dispatch_epoch",
 		"autostart_interval", "autostart_max_interval", "autostart_max_beads",
 		"autostart_dry_run", "autostart_resume", "autostart_session", "autostart_dir",
+		// autostart_via: says which mechanism owns this home's watch loop
+		// (ADR 0080 D9). A seed that shipped `systemd` would stand the
+		// herdr startup hook down on every fresh instance and point it at
+		// a unit nobody rendered; shipping `herdr` would be the default
+		// said twice, and the key is read by three surfaces that must agree
+		// about what "not told" means. autostart_multiplexer_unit: names a
+		// unit that exists on exactly one host.
+		"autostart_via", "autostart_multiplexer_unit",
 	} {
 		if v := YamlGet(cfg, key); v != "" {
 			t.Errorf("seed config sets %s: %q — the seed must ship it commented out", key, v)

@@ -1080,6 +1080,40 @@ func main() {
 		}
 		fmt.Fprintf(out, "%d bead(s) %s\n", n, verb)
 
+	case "systemd":
+		// ADR 0080 D5: on a host whose multiplexer is not herdr there is no
+		// [[startup]] hook to arm `dispatch --watch`, so the loop is a
+		// systemd USER unit — one per RHQ_HOME — ordered behind the
+		// multiplexer server's own unit. This renders it; it never enables
+		// it, and never runs systemctl at all. Enabling a unit is a change
+		// to a deployed system and stays the operator's, so the command
+		// prints the lines instead (ADR 0080 D5, and the hard risk line
+		// above it).
+		//
+		// STDOUT IS THE UNIT and stderr is everything about it, so
+		// `posse systemd > name.service` is a file. --write is the same
+		// render put where systemd reads it, refusing to replace a unit
+		// that says something else unless --force says the operator looked.
+		{
+			write, force := false, false
+			for _, f := range args {
+				switch f {
+				case "--write":
+					write = true
+				case "--force":
+					force = true
+				default:
+					die(posse.Die("usage: posse systemd [--write] [--force] (unknown argument: %s)", f))
+				}
+			}
+			if force && !write {
+				die(posse.Die("posse systemd --force only means something with --write: a render to stdout replaces nothing"))
+			}
+			if err := a.CmdSystemdUnit(write, force, out, os.Stderr); err != nil {
+				die(err)
+			}
+		}
+
 	case "status":
 		// The governance surface as a command (ADR 0029 §2, bead
 		// rangerhq-81y0): the same
@@ -3077,6 +3111,42 @@ governance:
                                  heal; only a human pauses. The operator, and
                                  the coordinator; a second pause keeps the first
   posse resume                   lift it. Idempotent
+  posse systemd [--write] [--force]
+                                 render this home's "dispatch --watch" loop as a
+                                 systemd USER unit and print it (ADR 0080 D5). On a
+                                 host whose multiplexer is not herdr nothing autostarts
+                                 the loop — herdr's [[startup]] hook is the only arm
+                                 posse has — so the unit IS the autostart: one per
+                                 RHQ_HOME, ExecStart carrying this binary's absolute
+                                 path and the argv this home's autostart_* keys
+                                 describe, ordered After=/Requires= the unit named by
+                                 autostart_multiplexer_unit: so it cannot start in a
+                                 world with no socket, and Restart=on-failure. The unit
+                                 goes to stdout and everything about it to stderr, so a
+                                 redirect is a file. posse NEVER runs systemctl: it
+                                 prints the enable line, and running it stays yours
+      --write                  put it at ~/.config/systemd/user/<unit>
+                                 (XDG_CONFIG_HOME wins) instead of on stdout. Refuses
+                                 to replace a unit that says something else — several
+                                 homes on one account write into one directory (ADR
+                                 0080 D12)
+      --force                  with --write, replace it anyway
+                               config autostart_via: (herdr) which mechanism owns this
+                                 home's loop — herdr's startup hook, or this unit. The
+                                 hook stands down by name on "systemd" and this verb
+                                 refuses to render anything unless the key says it,
+                                 because both arming is a race the unit loses: a loop
+                                 that cannot take state/dispatch-watch.lock exits
+                                 non-zero, and herdr is up before the unit that is
+                                 After= it (ADR 0080 D9). Absent, bare, null and ~ all
+                                 read as herdr; any other value is refused by all three
+                                 readers
+                               config autostart_multiplexer_unit: (unset) the multiplexer
+                                 server's own user unit, as systemctl prints it, suffix
+                                 included. NO DEFAULT on purpose: a name no unit wears
+                                 refuses the start and a name another unit wears orders
+                                 the loop behind the wrong process, so the render
+                                 refuses rather than guess
 
 cockpit (herdr plugin pane — make link-plugin):
   posse cockpit                  interactive oversight: sessions blocked-first +

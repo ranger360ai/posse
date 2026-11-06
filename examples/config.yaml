@@ -967,6 +967,36 @@ default_emoji: ⚙️
 # Log: $RHQ_HOME/state/dispatch-watch.log, beside dispatch-watch.lock (held
 # by the loop for its whole life; `posse dispatch --watch-status` reads it)
 # and dispatch-watch.pid (which pid, since when, under what argv).
+#
+# WHO OWNS THE LOOP, on a host that is not a laptop (ADR 0080 D5/D9). Off
+# macOS a home may run no herdr at all — its multiplexer can be Rex — and
+# then the [[startup]] hook above is not there to arm anything. There the
+# loop is a systemd USER unit instead, one per home, rendered by
+# `posse systemd` and ordered After=/Requires= the multiplexer server's own
+# unit so it still cannot start in a world with no socket.
+#
+# `autostart_via:` says WHICH of the two owns this home, and it is a stated
+# fact rather than either side detecting the other, because both arming is
+# not two loops — it is a race the unit loses. A `dispatch --watch` that
+# cannot take state/dispatch-watch.lock exits non-zero, and herdr's server is
+# up before the unit that is After= it, so a linked hook that found an armed
+# home would take the lock and the unit would fail on every start. On
+# `systemd` the hook stands down by name, `posse systemd` renders, and
+# `posse status`'s G7 names the unit instead of the hook. Absent, bare, null
+# and ~ all read as `herdr` — this key has a default, unlike the arm switch —
+# and any other value is refused by all three of those readers, because a
+# typo read as the default is exactly how that race gets armed.
+#
+# posse never runs `systemctl enable` itself: the verb prints the line.
+# autostart_via: herdr         # herdr | systemd — which mechanism owns this home's loop
+# autostart_multiplexer_unit: rex-server.service
+#                              # the multiplexer server's own systemd user unit, as
+#                              # systemctl prints it, suffix included. Read only by
+#                              # `posse systemd`, and it has NO DEFAULT: posse has
+#                              # measured neither multiplexer's unit name, and a guess
+#                              # is wrong in two directions — a name no unit wears
+#                              # refuses the start, a name another unit wears orders
+#                              # the loop behind the wrong process
 # autostart_interval: 5m       # base pass interval (30s, 5m, or bare seconds) — THE ARM SWITCH
 # autostart_max_interval: 40m  # backoff cap for quiet passes (default: 8x the interval —
 #                              # which is also what an unreadable value falls back to)
