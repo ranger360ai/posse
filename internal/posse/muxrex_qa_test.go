@@ -26,6 +26,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -781,6 +782,56 @@ func TestQARexBinPrefersTheEnvThenTheConfigKeyThenTheInstallPath(t *testing.T) {
 	t.Setenv(RexBinEnv, "/tmp/fake-rex")
 	if got := a.RexBin(); got != "/tmp/fake-rex" {
 		t.Errorf("RexBin with %s set = %q, want the env override", RexBinEnv, got)
+	}
+}
+
+// BOTH ARMS OF THE PLATFORM DEFAULT, BY PARAMETER (ranger-base-izgm6, ADR
+// 0080 Context, "Rex's binary"). rexDefaultBinAt takes the OS and the home
+// rather than reading runtime.GOOS and $HOME, so there is no build tag here
+// and neither arm is reachable from only one box: this test proves the Linux
+// arm on darwin, and proves darwin's arm under `make test-linux`. Before
+// that split the off-darwin default was the macOS app bundle path under
+// $HOME — a path no Linux box has, on the host ADR 0080 moves posse to.
+func TestQARexDefaultBinIsThePlatformsInstallPath(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+
+	if got, want := rexDefaultBinAt("darwin", home), filepath.Join(home, rexDefaultBinRel); got != want {
+		t.Errorf("darwin default = %q, want the app bundle's CLI under $HOME %q", got, want)
+	}
+	if got := rexDefaultBinAt("darwin", ""); got != "" {
+		t.Errorf("darwin with no $HOME = %q, want \"\" and not a path rooted at the filesystem root", got)
+	}
+
+	for _, goos := range []string{"linux", "freebsd", "openbsd", "windows"} {
+		got := rexDefaultBinAt(goos, home)
+		if got != rexPackageBin {
+			t.Errorf("%s default = %q, want the Linux package's path %q", goos, got, rexPackageBin)
+		}
+		if strings.Contains(got, home) {
+			t.Errorf("%s default joined $HOME: %q", goos, got)
+		}
+	}
+	// Off darwin $HOME cannot matter, because the package path is absolute
+	// and joins nothing: an unset home is not the empty-path refusal darwin
+	// needs, it is simply unread.
+	if got := rexDefaultBinAt("linux", ""); got != rexPackageBin {
+		t.Errorf("linux with no $HOME = %q, want %q", got, rexPackageBin)
+	}
+
+	// A PATH, NOT A NAME TO LOOK UP. `rex` on a Debian-family host is an
+	// unrelated Perl remote-execution tool, so an exec.LookPath fallback
+	// would not fail on a box without Rex — it would hand posse a different
+	// program. The default must be absolute for the stat in Available to be
+	// the whole question.
+	if !filepath.IsAbs(rexPackageBin) {
+		t.Errorf("the off-darwin default is not absolute: %q — a bare name would resolve through PATH", rexPackageBin)
+	}
+
+	// And the exported door is that same function at this box's GOOS and
+	// $HOME, so RexDefaultBin cannot drift from the arms above.
+	if got, want := RexDefaultBin(), rexDefaultBinAt(runtime.GOOS, os.Getenv("HOME")); got != want {
+		t.Errorf("RexDefaultBin() = %q, want this platform's arm %q", got, want)
 	}
 }
 

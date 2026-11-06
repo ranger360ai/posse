@@ -117,9 +117,14 @@ default_emoji: ⚙️
 # Everything else is unchanged: session names, meta files, worktrees, gates,
 # the bd queue, kill-and-land. `posse list` says which one you are on.
 #
-# The rex CLI is not on PATH. posse looks for it where the Rex server keeps
-# it under $HOME; set rex_bin: if yours lives somewhere else (RHQ_REX_BIN
-# overrides both, the way RHQ_HERDR_BIN does for herdr).
+# The rex CLI is not on PATH, and posse will not look for it there: on a
+# Debian-family host `rex` is an unrelated Perl tool, so a PATH lookup would
+# not fail on a box without Rex — it would find a different program. posse
+# uses the platform's install path instead. On macOS that is inside the Rex
+# server's own app bundle under $HOME; off macOS it is /usr/bin/rex, where
+# Rex's Linux package puts the one binary that is both the server and the
+# CLI. Set rex_bin: if yours lives somewhere else (RHQ_REX_BIN overrides
+# both, the way RHQ_HERDR_BIN does for herdr).
 # multiplexer: herdr
 # rex_bin: ~/path/to/rex
 

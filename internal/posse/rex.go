@@ -8,10 +8,13 @@ package posse
 //
 // THREE WAYS IT IS NOT HERDR'S CLIENT, each measured rather than assumed:
 //
-//  1. NOT ON PATH. Rex ships its CLI inside the app bundle, so there is no
-//     `exec.LookPath` to ask. The binary comes from config (`rex_bin:`) or
-//     RHQ_REX_BIN, defaulting to the install path below (ADR 0076
-//     Consequences, "Rex's CLI is not on PATH").
+//  1. NOT ON PATH. Rex ships its CLI inside the app bundle on darwin and as
+//     one server-and-CLI binary from its Linux package, so there is no
+//     `exec.LookPath` to ask — and off darwin there is worse than nothing to
+//     ask, because `rex` on a Debian-family host is an unrelated Perl tool.
+//     The binary comes from config (`rex_bin:`) or RHQ_REX_BIN, defaulting
+//     to the platform's install path below (ADR 0076 Consequences, "Rex's
+//     CLI is not on PATH"; ADR 0080 Context, "Rex's binary").
 //  2. NO JSON ENVELOPE. herdr answers every control call with
 //     {"id":…,"result":…} or {"error":{"code","message"}}, which is why
 //     Herdr.Run decodes one. rex answers with the result object itself and
@@ -39,6 +42,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -53,23 +57,54 @@ const RexBinEnv = "RHQ_REX_BIN"
 // installed Rex somewhere else says so here.
 const RexBinKey = "rex_bin"
 
-// rexDefaultBinRel is where the Rex server keeps its CLI under $HOME, as
-// MEASURED on this box 2026-10-31 (Rex Beta 0.1.0, CLI 0.0.1793377904). It
-// is a RELATIVE path joined to $HOME at call time, never a literal home: a
-// path with a user name baked in is what `make identity-check` exists to
-// refuse, and an instance whose Rex lives elsewhere sets RexBinKey.
+// rexDefaultBinRel is where the Rex server keeps its CLI under $HOME on
+// DARWIN, as MEASURED on this box 2026-10-31 (Rex Beta 0.1.0, CLI
+// 0.0.1793377904). It is a RELATIVE path joined to $HOME at call time, never
+// a literal home: a path with a user name baked in is what
+// `make identity-check` exists to refuse, and an instance whose Rex lives
+// elsewhere sets RexBinKey.
 //
 // `Current` is a symlink Rex maintains across its own upgrades, so this path
 // survives a Rex version bump; the version in the comment is what answered
 // when it was measured, not a pin.
 const rexDefaultBinRel = "Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex"
 
-// RexDefaultBin is rexDefaultBinRel under this process's $HOME, or "" when
-// $HOME is unset — "" and not a path rooted at "/", which is the same
-// refusal ExpandTilde makes for the same reason (ranger-base-a3t1): an empty
-// home used to turn every ~-path into a child of the filesystem root.
+// rexPackageBin is where Rex's Linux package installs it: one binary that is
+// both the server and the CLI (ADR 0080 Context, "Rex's binary"). REPORTED
+// from Rex's own docs 2026-11-06 and not yet MEASURED here — the always-on
+// host is not up (ranger-base-yyq64) and the shakedown (ranger-base-offid)
+// is what reads this path on a real install.
+//
+// IT IS ABSOLUTE, AND THAT IS THE DECISION. There is deliberately no
+// `exec.LookPath("rex")` behind it, which is the obvious fallback and the
+// one thing this must not do: Debian-family hosts package an unrelated Perl
+// remote-execution tool as `rex`, so on a box without Rex a LookPath would
+// not fail — it would answer with a DIFFERENT program, and posse would go
+// on to drive it with rex argv. A wrong absolute path fails as a missing
+// path instead (Available), which is the honest answer, and an instance
+// whose Rex lives elsewhere says so in RexBinKey.
+const rexPackageBin = "/usr/bin/rex"
+
+// RexDefaultBin is this platform's Rex install path: rexDefaultBinRel under
+// this process's $HOME on darwin, else the Linux package's rexPackageBin.
 func RexDefaultBin() string {
-	home := os.Getenv("HOME")
+	return rexDefaultBinAt(runtime.GOOS, os.Getenv("HOME"))
+}
+
+// rexDefaultBinAt is RexDefaultBin with the OS and the home named. They are
+// parameters and not `runtime.GOOS` and `os.Getenv` for the reason
+// meterStore's goos is one (credential.go): no build tags means neither arm
+// is a branch only one box can reach, and a test on either box proves both
+// — which is what `make test-linux` reads here.
+//
+// "" AND NOT A PATH ROOTED AT "/" when darwin's $HOME is unset, the same
+// refusal ExpandTilde makes for the same reason (ranger-base-a3t1): an empty
+// home used to turn every ~-path into a child of the filesystem root. The
+// package path joins no home, so that question does not arise off darwin.
+func rexDefaultBinAt(goos, home string) string {
+	if goos != "darwin" {
+		return rexPackageBin
+	}
 	if home == "" {
 		return ""
 	}
@@ -77,8 +112,9 @@ func RexDefaultBin() string {
 }
 
 // RexBin is this instance's rex CLI: the env override, else `rex_bin:`, else
-// the install path. Read here rather than in NewRexMux so that the one place
-// an operator can move the binary is the one place posse looks for it.
+// the platform's install path. Read here rather than in NewRexMux so that
+// the one place an operator can move the binary is the one place posse looks
+// for it.
 func (a *App) RexBin() string {
 	if bin := os.Getenv(RexBinEnv); bin != "" {
 		return bin
