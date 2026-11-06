@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-11
 
+- [ranger-base-y9i3o](ranger-base-y9i3o.md) — Four conjuncts of the ADR 0079 D2 compare now carry a witness (ranger-base-y9i3o) — 2026-11-06
 - [ranger-base-rrklg](ranger-base-rrklg.md) — ranger-base-rrklg — verifying four closes — 2026-11-06
 - [ranger-base-pr6p8](ranger-base-pr6p8.md) — ranger-base-pr6p8 — verifying four closes, and the conjuncts nothing witnesses — 2026-11-06
 - [ranger-base-hogeb](ranger-base-hogeb.md) — The replay landed before the block's seat was dispatched (ranger-base-hogeb) — 2026-11-06

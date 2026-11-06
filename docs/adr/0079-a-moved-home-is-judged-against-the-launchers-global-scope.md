@@ -214,7 +214,12 @@ seat skips the managed hook at rc 0.
    with `GIT_CONFIG_GLOBAL=<pin>`, where `evil/x` drops the hooksPath →
    refused. This pins both the D3 gate firing under the pin and the D2 want
    reads running under the launcher's HOME. Shipped as
-   `TestQAHookSkipMovedHomeFollowsNoTildeInclude`.
+   `TestQAHookSkipMovedHomeFollowsNoTildeInclude`. **It does not pin the want
+   side following the include at all** (amended, ranger-base-y9i3o, from
+   ranger-base-pr6p8 finding 4): what refuses that fixture is the `~` in its
+   `include.path` expanding differently under the two HOMEs, so dropping
+   `--includes` from the want's candidate read leaves it green — MEASURED
+   2026-11-06. Pin 15 carries the no-`~` shape that needs the flag.
 9. (amendment) `GIT_CONFIG_GLOBAL=/dev/null` plus a local value whose
    newline forges the launcher's `global` hooksPath line → refused. Delete
    D2's count and that call compares equal and skips the hook at rc 0. Not
@@ -232,6 +237,32 @@ seat skips the managed hook at rc 0.
     `TestQAHookSkipSystemTildeHooksPathJudgedAgainstLauncher`.
 12. (amendment, ranger-base-87zme) The launcher's file carries an alias
     value `~nosuchuser-…`; HOME at a config with no hook keys → refused, and
-    HOME at a byte-identical config → refused. Drop the want side's exit
-    check and the first leg compares two empty reads as equal and skips the
-    hook. Shipped as `TestQAHookSkipUnexpandableTildeFailsClosed`.
+    HOME at a byte-identical config → refused. Drop the want CANDIDATE
+    read's exit check and the first leg compares two empty reads as equal and
+    skips the hook. The fixture plants its `~user` in a candidate file, so
+    the want SYSTEM read's check and the have listing's are separate
+    conjuncts this does not reach (pin 13). Shipped as
+    `TestQAHookSkipUnexpandableTildeFailsClosed`.
+13. (amendment, ranger-base-y9i3o, from ranger-base-pr6p8 findings 1 and 2)
+    EVERY read the compare makes has its rc checked: the have listing's, the
+    want SYSTEM read's and each want CANDIDATE read's. One read returns 128
+    and prints nothing while every other read agrees → refused; with every
+    read agreeing the same moved HOME is allowed. Real git cannot be made to
+    fail exactly one of them — the two sides read the same files and differ
+    only by HOME/XDG_CONFIG_HOME, so a value git dies on dies on both sides,
+    and an `include.path` is itself a key the have listing prints — so this
+    renders the shim over a stub git with a chosen rc per read, as pin 7
+    does. Shipped as `TestQAHookSkipGlobalCompareChecksEveryReadRC`.
+14. (amendment, ranger-base-y9i3o, from ranger-base-pr6p8 finding 3) The
+    system file's hooksPath sits behind an `include.path` spelled ABSOLUTE,
+    the global file carries none, and HOME is moved to a byte-identical
+    global file → allowed and fired. Drop `--includes` from the want
+    `--system` read and the want side stops at the `include.path` line, the
+    sides differ, and that call is refused. Shipped as
+    `TestQAHookSkipSystemIncludeIsFollowedOnTheWantSide`.
+15. (amendment, ranger-base-y9i3o, from ranger-base-pr6p8 finding 4) The same
+    in global scope: the launcher's file is an `include.path` spelled
+    ABSOLUTE whose target holds the managed hooksPath, HOME moved to a
+    byte-identical top file → allowed and fired. Drop `--includes` from the
+    want CANDIDATE read and that call is refused. This is the include pin
+    pin 8 was read as being.

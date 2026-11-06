@@ -255,6 +255,15 @@ func TestQAHookSkipGlobalGateExecsNothingAsRendered(t *testing.T) {
 //     equal. The want reads run under the launcher's HOME.
 //   - D3 as written skips the compare when GIT_CONFIG_GLOBAL is the pin,
 //     yet the pinned file's include still expands from the moved HOME.
+//
+// What this pin does NOT witness, named here because its title reads as if it
+// did (ranger-base-y9i3o, from ranger-base-pr6p8 finding 4): the want side
+// following the include at all. What refuses the fixture below is the `~` in
+// its include.path expanding differently under the two HOMEs, so dropping
+// `--includes` from the want's candidate read leaves every leg green —
+// MEASURED 2026-11-06. ADR 0079 pin 15,
+// TestQAHookSkipGlobalIncludeIsFollowedOnTheWantSide, carries the no-`~`
+// shape that needs the flag.
 func TestQAHookSkipMovedHomeFollowsNoTildeInclude(t *testing.T) {
 	t.Parallel()
 	for _, rtName := range []string{"claude", "codex"} {
