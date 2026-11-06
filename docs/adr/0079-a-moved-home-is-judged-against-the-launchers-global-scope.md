@@ -273,3 +273,24 @@ seat skips the managed hook at rc 0.
     byte-identical top file → allowed and fired. Drop `--includes` from the
     want CANDIDATE read and that call is refused. This is the include pin
     pin 8 was read as being.
+16. (amendment, ranger-base-rbxal, from ranger-base-fe4uq finding 1)
+    `--type=path` on the want **SYSTEM** read, which pin 10's `--type` claim
+    does not reach: pin 10's witness is a global-scope value, and the system
+    read is a separate conjunct. The system file carries
+    `core.hooksPath = ~/managed-hooks`, the global file carries none, and
+    `XDG_CONFIG_HOME` is moved with **HOME left alone** → allowed and fired,
+    because both sides then resolve the `~` against the same HOME. Drop the
+    flag and the want side reads the raw value while the have side reads it
+    resolved: the sides differ and that call is refused. Pin 11 plants the
+    same fixture and is not this conjunct's witness — its moved-HOME leg
+    asserts refusal, which the mutant also gives, and its allowed leg spells
+    the system hooksPath ABSOLUTE, where `--type=path` is the identity.
+    MEASURED 2026-11-06 at main 6125eb4e: with the flag deleted the whole
+    shipped `TestQAHookSkip` filter was ok, exit 0. Shipped as
+    `TestQAHookSkipSystemTildeIsTypePathResolvedOnTheWantSide`, which carries
+    the mutant as an in-test witness (as pin 9 does), since an allowed leg is
+    also what a compare that never RAN looks like.
+    GENERAL RULE, worth more than the pin: a conjunct that can only make a
+    wall refuse MORE needs an ALLOWED leg as its witness, so the question to
+    ask of a candidate pin is whether the mutant reaches any of ITS allowed
+    legs.

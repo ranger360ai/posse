@@ -256,3 +256,113 @@ func TestQAHookSkipGlobalIncludeIsFollowedOnTheWantSide(t *testing.T) {
 		})
 	}
 }
+
+// hsSysTypePath is the want SYSTEM read's flag list as renderHookSkipGlobalScope
+// writes it, and hsSysTypePathMutant is that line with `--type=path` dropped —
+// arm 6 of ranger-base-fe4uq, applied to the RENDERED shim rather than to the
+// source. The spelling is unique in the shim: the have listing reads
+// `--show-scope --type=path` with no `--system`, and the candidate read
+// `--includes --file "$posse_hs_c" --type=path`.
+const (
+	hsSysTypePath       = "--system --includes --show-scope --type=path"
+	hsSysTypePathMutant = "--system --includes --show-scope"
+)
+
+// FINDING 1 of ranger-base-fe4uq (ADR 0079 pin 16) — hookskip.go,
+// `--type=path` on the want SYSTEM read. The fifth conjunct of
+// renderHookSkipGlobalScope with no witness: delete it and the whole shipped
+// TestQAHookSkip filter stayed green (MEASURED 2026-11-06 at main 6125eb4e,
+// md5 4b585517b267eb03b9201924c3316376, ok exit 0). It escaped from
+// ranger-base-87zme, which shipped the per-read resolution, and from
+// ranger-base-pr6p8, whose `--type=path` arms were "both sides raw", "the have
+// side raw alone" and "the want side raw alone" — the CANDIDATE read — and
+// never this read alone.
+//
+// Pin 11 (TestQAHookSkipSystemTildeHooksPathJudgedAgainstLauncher) plants the
+// same system `core.hooksPath = ~/managed-hooks` and is NOT this conjunct's
+// witness: its moved-HOME leg asserts REFUSED and the mutant refuses too, and
+// its allowed leg spells the system hooksPath ABSOLUTE, where `--type=path` is
+// the identity. GENERAL RULE (ranger-base-fe4uq §5): a conjunct that can only
+// make a wall refuse MORE needs an ALLOWED leg as its witness, so ask of a
+// candidate pin whether the mutant reaches any of ITS allowed legs.
+//
+// The witness is a move of XDG_CONFIG_HOME with HOME LEFT ALONE: the D3 gate
+// fires (pin 2's "XDG_CONFIG_HOME at its own default" leg is the same move),
+// both sides then resolve the system file's `~` against the same HOME, so they
+// agree and the call is allowed with the managed hook firing. Drop the flag and
+// the want side reads the raw `~/managed-hooks` while the have side reads it
+// resolved: the sides differ and the call is refused.
+//
+// Severity is debt, by measurement and not by reasoning: both sides read the
+// SAME system file, so the value text is identical on both, and `--type=path`
+// can only make them differ where the resolving HOME differs — where it does,
+// the compare refuses either way. Dropping the flag over-refuses and opens
+// nothing. What is lost is a conjunct of a security wall that nothing notices
+// going away.
+//
+// The mutant rides along as an in-test witness, as pin 9 does: without it an
+// allowed leg is also what a compare that never RAN looks like, and this pin
+// would go quiet-green under any later change that stopped the D3 gate firing
+// on an XDG-only move.
+//
+// The system file cannot be planted for real (it is the box's), so the shim is
+// rendered over a git wrapper that points GIT_CONFIG_SYSTEM at a scratch file
+// on every exec, as pins 11 and 14 do.
+func TestQAHookSkipSystemTildeIsTypePathResolvedOnTheWantSide(t *testing.T) {
+	t.Parallel()
+	fx := hsSetup(t)
+	// The hook leaves global scope entirely: it is named by the system file's
+	// `~`, so the compare's system read is the only side that can see it.
+	write(t, filepath.Join(fx.home, ".gitconfig"), "[user]\n\tname = t\n\temail = t@example.com\n")
+	sys := filepath.Join(fx.home, "system-config")
+	write(t, sys, "[core]\n\thooksPath = ~/managed-hooks\n")
+
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "git-wrapper")
+	if err := WriteExecutable(wrapper, []byte("#!/bin/sh\nGIT_CONFIG_SYSTEM="+shQuote(sys)+"; export GIT_CONFIG_SYSTEM\nexec "+shQuote(fx.realGit)+" \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ref := resolveHookSkipGlobalRef(wrapper, hsEnv(fx))
+	body := renderShim("hg-systype", "git", wrapper, filepath.Join(dir, "refusals.log"), "/bin/date", nil, nil, "", filepath.Join(dir, "hooks"), ref)
+	shimAt := func(name, text string) string {
+		bin := filepath.Join(dir, name)
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteExecutable(filepath.Join(bin, "git"), []byte(text), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return "PATH=" + shQuote(bin) + ":\"$PATH\" "
+	}
+	prefix := shimAt("bin", body)
+
+	// XDG_CONFIG_HOME pointed at the dir it resolves to anyway: the gate
+	// fires, the two sides read the same files under the same HOME, equal.
+	xdgLeg := "XDG_CONFIG_HOME=" + shQuote(filepath.Join(fx.home, ".config")) + " "
+	hsGlobalCheck(t, fx, prefix, []hsGlobalLeg{
+		// The control: the managed hook IS reached through the system tilde,
+		// so "fired" below is a statement about something.
+		{"control: nothing moved, the system tilde names the managed hook", "", false},
+		// THE PIN.
+		{"XDG_CONFIG_HOME at its own default, HOME unchanged, system hooksPath = ~/managed-hooks", xdgLeg, false},
+	})
+
+	// THE WITNESS: the same leg, `--type=path` dropped from the want SYSTEM
+	// read alone. The want side reads `~/managed-hooks` raw, the have side
+	// reads it resolved, and the call is refused.
+	// Exactly once, not merely present: a second occurrence would mean the
+	// spelling is no longer unique to this read and the replace below could
+	// land on another one.
+	if n := strings.Count(body, hsSysTypePath); n != 1 {
+		t.Fatalf("the rendered shim carries the want SYSTEM read's %q %d times, want exactly 1. Either the conjunct is GONE from renderHookSkipGlobalScope — which is what the leg above reds for, and this message is the second half of that one failure — or the flag list was respelled and this witness needs the new spelling. It is not passing either way.", hsSysTypePath, n)
+	}
+	mprefix := shimAt("mutbin", strings.Replace(body, hsSysTypePath, hsSysTypePathMutant, 1))
+	before := hsFired(fx)
+	errs, code := hsRun(t, fx, mprefix, hsLeg{env: xdgLeg, args: "commit -q -m w0 -- f"})
+	if code == 0 || !strings.Contains(errs, "rule: hookskip:config-env,") || !strings.Contains(errs, "ADR 0079") {
+		t.Errorf("WITNESS: with --type=path dropped from the want SYSTEM read the sides must differ and this leg must be refused by hookskip:config-env naming ADR 0079; got code=%d (%q)", code, errs)
+	}
+	if n := hsFired(fx) - before; n != 0 {
+		t.Errorf("WITNESS: the hook ran %d times under the mutant's refusal", n)
+	}
+}

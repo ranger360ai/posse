@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-y9i3o](ranger-base-y9i3o.md) — Four conjuncts of the ADR 0079 D2 compare now carry a witness (ranger-base-y9i3o) — 2026-11-06
 - [ranger-base-rrklg](ranger-base-rrklg.md) — ranger-base-rrklg — verifying four closes — 2026-11-06
+- [ranger-base-rbxal](ranger-base-rbxal.md) — The fifth ADR 0079 D2 conjunct now carries a witness (ranger-base-rbxal) — 2026-11-06
 - [ranger-base-pymhr](ranger-base-pymhr.md) — The identity git invents on darwin and not on ubuntu (ranger-base-pymhr) — 2026-11-06
 - [ranger-base-pr6p8](ranger-base-pr6p8.md) — ranger-base-pr6p8 — verifying four closes, and the conjuncts nothing witnesses — 2026-11-06
 - [ranger-base-mfk8v](ranger-base-mfk8v.md) — A merge-back whose conflict markers were not conflicts (ranger-base-mfk8v) — 2026-11-06
