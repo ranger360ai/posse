@@ -251,6 +251,16 @@ func hsSetup(t *testing.T) *hsFixture {
 	for _, c := range [][]string{
 		{"init", "-q", "--bare", remote},
 		{"-C", fx.repo, "init", "-q", "-b", "main"},
+		// LOCAL scope, which no leg here hides, and read by `git commit`
+		// under every one of them: it forbids git to INVENT an identity
+		// from the OS user record when the config scopes a leg leaves
+		// standing carry none. That invention is what made the pin 9
+		// witness darwin-only (see hsEnv), and it is the one difference
+		// between this box and ubuntu-latest that no local run could
+		// otherwise show — with this line a seat that drops hsEnv's
+		// identity reds here and not two pushes later. It matches none of
+		// hookSkipRegexp, so it is in no compare and in no D2 count.
+		{"-C", fx.repo, "config", "user.useConfigOnly", "true"},
 		{"-C", fx.repo, "remote", "add", "origin", remote},
 	} {
 		hsRealGit(t, fx, c...)
@@ -284,15 +294,39 @@ func hsSetup(t *testing.T) *hsFixture {
 // hsEnv is the env every leg starts from: this process's, with every
 // GIT_CONFIG_* the seat running this suite carries shed, and HOME the scratch
 // one — so the default global scope is the managed one above.
+//
+// The committer identity is handed over in the ENV, and any the seat carries
+// is shed with the rest, because every config SCOPE here is some leg's
+// subject: a leg that hides the launcher's global scope hides whatever
+// identity lives in it, and pin 9's witness
+// (TestQAHookSkipNewlineForgedGlobalLineIsRefused) types
+// `GIT_CONFIG_GLOBAL=/dev/null git commit` and must land it at rc 0. The
+// legs that move HOME or XDG_CONFIG_HOME can write a `[user]` block into the
+// file git will still read; that one has no file at all, so the identity
+// cannot be config here and stay the pins' subject.
+//
+// What carried it before was git inventing a name from the OS user record.
+// MEASURED 2026-11-06: `git var GIT_AUTHOR_IDENT` under
+// GIT_CONFIG_GLOBAL=/dev/null with a scratch HOME answers from the account's
+// gecos name on darwin (git 2.50.1, Apple Git-155) and dies `fatal: empty
+// ident name` on ubuntu-latest, whose `runner` account has none — so that
+// witness was green on macos-latest and red on ubuntu-latest for the same
+// commit 47eabc3d, run 42270221451, the platform split ci.yml exists to show
+// (ranger-base-pymhr, over the pin ranger-base-ava0x landed).
 func hsEnv(fx *hsFixture) []string {
 	var env []string
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "GIT_CONFIG") || strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=") {
+		if strings.HasPrefix(kv, "GIT_CONFIG") || strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_CONFIG_HOME=") ||
+			strings.HasPrefix(kv, "GIT_AUTHOR_") || strings.HasPrefix(kv, "GIT_COMMITTER_") || strings.HasPrefix(kv, "EMAIL=") {
 			continue
 		}
 		env = append(env, kv)
 	}
-	return append(env, "HOME="+fx.home)
+	// The same name and address the fixture's global file carries, so nothing
+	// observable about authorship moves with the identity.
+	return append(env, "HOME="+fx.home,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
 }
 
 func hsRealGit(t *testing.T, fx *hsFixture, args ...string) {
