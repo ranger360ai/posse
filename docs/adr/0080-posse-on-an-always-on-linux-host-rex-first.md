@@ -105,6 +105,8 @@ does today on any host without one. That refusal is honest, and the first
 crews here use PIDs that do not need a cage. Landlock (kernel-enforced,
 unprivileged, path-scoped, no daemon) is the candidate enforced tier for
 Linux. It is ASSUMED a fit, and spiked before anything is built on it.
+*(Spiked: Landlock is rejected and a mount namespace is the candidate. See
+the amendment "The Linux cage is a mount namespace, not Landlock".)*
 
 **D5. On this host the watch loop is a systemd user unit, not a
 multiplexer hook.** It runs one `posse dispatch --watch` per crew home,
@@ -135,7 +137,8 @@ status`. The herdr hook stays the autostart on hosts that run herdr only.
 **D7. Exits, named now.** Each of these is a later bead, not this one.
 - **One OS account per crew** via Rex's per-account login server, when one
   crew's walls stop being enough.
-- **Landlock** as the Linux enforced tier (D4).
+- **An enforced Linux tier** (D4): a bubblewrap mount namespace, not
+  Landlock (amendment below, ranger-base-20r29).
 - **A VM per crew** (overalls or similar) once a platform installs on
   owned hardware.
 
@@ -386,3 +389,119 @@ not built now.
 **Beads.** ranger-base-136b5 gains D9. The D10 and D11 builds are cut below
 for dinesh. D8 is added to ranger-base-yyq64 and ranger-base-offid as
 procedure.
+
+## Amendment: the Linux cage is a mount namespace, not Landlock (ranger-base-20r29, 2026-11-06)
+
+**Context.** D4 assumed Landlock is the Linux analogue of the seatbelt
+profile's path-scoped trailing deny. That profile (`SeatbeltProfile`,
+seatbelt.go) has five shapes, and it is the shapes that have to carry over:
+
+1. a write grant on whole subtrees (cwd, state dirs, TMPDIR, gates);
+2. a **trailing deny under a grant**: the gates and hooks dirs inside the
+   granted state dir, `.git/hooks` and the git config chain inside the
+   worktree, and a PID's own `Edit(docs/adr/**)` inside cwd (ADR 0014 §3);
+3. atomic-write **siblings of a granted file**, such as
+   `~/.claude.json.lock` and `~/.claude.json.tmp.<pid>.<hex>`, as regexes;
+4. **create-only** literals: git may make a ref dir, but write nothing in it;
+5. a **read deny** on another runtime's credential file.
+
+The host is not up (ranger-base-yyq64), and this laptop has no Linux kernel,
+so nothing here is MEASURED on Linux. The facts are from primary sources,
+read 2026-11-06: the kernel's Landlock doc (7.4.0-rc1), landlock(7)
+(man-pages 6.19), `security/landlock/syscalls.c` at each tag, Arch's
+`linux` package and config, Claude Code's sandboxing docs and issues, and
+codex's `linux-sandbox` README.
+
+**Findings.**
+- **Landlock is allow-only.** "One policy layer grants access to a file path
+  if at least one of its rules encountered on the path grants the access."
+  Within a layer, rules combine as a union. Across stacked layers, they
+  combine as an intersection, and every layer must allow. No rule can take
+  back a subtree that an enclosing rule grants. So shape 2 has no Landlock
+  spelling, and shape 2 is the whole of what the profile defends.
+- **The directory rights cover the whole subtree.** `MAKE_*`, `REMOVE_*` and
+  `REFER` "only apply to the content of a directory", and to everything
+  beneath it. A file rule carries only EXECUTE, WRITE_FILE, READ_FILE,
+  TRUNCATE and IOCTL_DEV. So shape 3 means granting creation in all of
+  `$HOME`, and shape 4 means granting all of the parent dir. Claude Code's
+  `~/.claude.json` write is a lock, then a temp file, then a rename, all in
+  `$HOME`. It has crashed Claude Code under a Landlock sandbox with EACCES on
+  the first config save (anthropics/claude-code#30372, on ABI 5). A maintainer
+  reproduced the `$HOME`-root temp files again on 2.1.234 (#87677, open).
+- **A Landlock domain forbids mounts.** "Threads sandboxed with filesystem
+  restrictions cannot modify filesystem topology, whether via mount(2) or
+  pivot_root(2)." Claude Code's own sandbox is bubblewrap plus socat on
+  Linux. Codex's is bubblewrap plus seccomp: "Bubblewrap is the default
+  filesystem sandbox". Codex keeps Landlock only as a legacy mode, which it
+  rejects for filesystem-restricted policies because Landlock "cannot
+  isolate app-server Unix sockets". So under a Landlock cage, codex's
+  SelfSandbox (runtime.go) stops working, and so does claude's /sandbox.
+- **The field's standard answer is a mount namespace.** A read-only bind on
+  top of a writable bind is exactly a trailing deny. Binding `/dev/null` over
+  a file is a read deny. Flatpak, Claude Code and codex all build on
+  bubblewrap. It is unprivileged, needs no daemon and no group, and holds no
+  memory, so D4's two objections to containers do not apply to it.
+- **The host can run both.** Arch `linux` 7.2.14 sets
+  `CONFIG_SECURITY_LANDLOCK=y` with
+  `CONFIG_LSM="landlock,lockdown,yama,integrity,bpf"`, and 7.2 is Landlock
+  ABI 10. The Arch wiki says unprivileged user namespaces are "enabled by
+  default in all officially supported kernels except for linux-hardened",
+  which is what bubblewrap needs.
+
+**Decision.**
+- **D13. Landlock is rejected as posse's Linux cage tier.** This holds at
+  every ABI read (1 through 12): none of them adds a deny rule.
+- **D14. The candidate is a bubblewrap mount namespace**, built only after
+  the probe passes on the host. Each shape maps to a mount:
+  - shape 1: `--ro-bind / /`, plus `--bind` on each grant;
+  - shape 2: `--ro-bind` on each denied subtree, layered over the grant.
+    The seal is free: renaming a mountpoint is EBUSY, and renaming an
+    ancestor carries the mount with it (both ASSUMED, probes B3 and B4).
+  - shape 5: `--ro-bind /dev/null <file>`.
+  - Shapes 3 and 4 have no narrow bwrap spelling either. Renaming onto a
+    bind-mounted file is EBUSY (probe B8). The design bead answers them,
+    most likely by giving each seat a `CLAUDE_CONFIG_DIR`, which moves
+    `.claude.json` and its siblings into a dir grant. The docs confirm the
+    move; that the siblings follow it is ASSUMED. The answer has to sit
+    with ADR 0077's typed environment and the credential-dir check in
+    credentialDirVarsIn.
+  - A runtime's own bwrap must still nest inside ours (probe B7). That is
+    the property Landlock fails.
+- **D15. The probe is the gate:** `docs/adr/0080-linux-cage.probe.sh`. It
+  needs Linux, python3 and bwrap, and makes no repo writes. Its L-rows
+  confirm the three Landlock refusals above. Its B-rows check every
+  bwrap expectation, including that a nested user namespace cannot unmount
+  or remount the deny (MNT_LOCKED, ASSUMED). Any B-row that reads
+  differently from its EXPECT column reopens D14 before any design.
+
+**Alternatives rejected.**
+- **Landlock alone**, which D4 wanted. Shape 2 is inexpressible, and it
+  breaks both runtimes' own sandboxes.
+- **Landlock by enumerating leaves**: grant every child of cwd except the
+  denied one. A new top-level file in cwd still needs `MAKE_REG` on cwd,
+  which reaches the denied child. The other choice is to freeze the tree as
+  it was at launch.
+- **bwrap plus a Landlock layer** for the scopes bwrap lacks (ABI 6 signal
+  and abstract-socket scoping). The scoping is attractive, because it would
+  make a cross-seat kill impossible rather than merely denied by the PID.
+  But a filesystem domain blocks the nested bwrap. A scope-only ruleset may
+  not block it, but that is ASSUMED and unread. The PID-level `pkill` deny
+  already covers this. Revisit only if that deny is measured leaking.
+- **landrun or go-landlock as the helper.** Both are maintained (go-landlock
+  v0.11.0, 2026-10-23; landrun v0.1.17, 2026-07-22). Both inherit Landlock's
+  shape problem, and go-landlock's BestEffort "will succeed without error
+  even when Landlock is not available". That is a fail-open, which posse's
+  "refuse at launch" rule (D4) forbids.
+- **Containers.** D4's reasons stand.
+
+**Exit hatch.** bubblewrap is one binary that posse types onto the launch
+line, as it types `sandbox-exec` today. It holds no state. Removing it
+leaves the cooperative tier D4 already runs.
+
+**Measured versus assumed.**
+- MEASURED: nothing on Linux. In this tree, the five shapes are read from
+  seatbelt.go.
+- REPORTED (primary sources, 2026-11-06): every quoted fact above.
+- ASSUMED until the probe runs: B3/B4 (the seal), B6 (MNT_LOCKED), B7
+  (nesting), B8, and that the `.claude.json` siblings follow
+  `CLAUDE_CONFIG_DIR`.
