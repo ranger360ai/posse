@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probe: `docs/adr/0076-flag-trust.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probe: `docs/adr/0076-flag-trust.probe.sh` · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh`*
 
 ## Context
 
@@ -349,7 +349,7 @@ the keyboard, and `State` reads `unknown` until a record arrives.
 Positive evidence is the same in both cases: a record whose owner is the
 runtime and not the shell.
 
-**D3. grok is refused on Rex (MEASURED).** *(Restated, not reversed, by Amendment 2's D10.)* No record in 131 s of a live
+**D3. grok is refused on Rex (MEASURED).** *(Replaced by Amendment 3's D12: the `grokon` arm set the key in a project file grok does not read for `ui.*`, so only `auto` was measured.)* No record in 131 s of a live
 argv turn. The reason is UNPROVEN, and the fix is upstream. Re-admit
 when the probe's `grok` and `grokon` arms show a record within the
 bound on a new version, then set `ReportsOnRex` and re-run the first-turn
@@ -585,7 +585,7 @@ no turn) per deliberate codex bump. The cask is pinned.
    off by key.
 5. `blocked` UNPROVEN live: still unproven, and moot under `-a never`.
 
-**D10. grok stays refused on Rex (D3, MEASURED, not reversed).** The
+**D10. grok stays refused on Rex (D3, MEASURED, not reversed).** *(Replaced by Amendment 3's D12: grok's hooks cannot reach the tty, and grok reports natively under `program_status = "on"`.)* The
 question was whether a posse-side route exists that is still positive
 evidence. The answer has two parts:
 - **It would be evidence.** grok runs hooks before any model turn
@@ -671,3 +671,173 @@ read from, managed hooks, and the review predicate. ASSUMED: codex startup
 with a network inside 45 s, a harmless `initialize` with a live login,
 `/dev/tty` under seatbelt, the launch-failure path releasing the claim at
 this stage, and the Linux behaviour. UNPROVEN: codex `blocked` live.
+
+## Amendment 3: grok reports on Rex natively once its home config says `on`; the hook route is closed (ranger-base-1vgrw, 2026-11-06)
+
+**Context.** D10 left grok on herdr until a spike measured three things: whether
+a grok hook can write a record stamped with grok's own process, whether
+`program_status = "off"` stops grok's `7501;?` query and with it the `n,auth`
+composer leak, and where a hook should live (a per-seat `GROK_HOME` or a file in
+the session worktree). The spike answered all three. It also found that the arm
+D3 rests on never set the key it was testing.
+
+**MEASURED 2026-11-06**, this box (darwin 25.6.0), Rex CLI 0.0.1793377904,
+grok 1.0.52 (0920c8169e27), `docs/adr/0076-grok-hook.probe.sh`. No model turn
+was possible. Every arm ran the ranger-base-1g8gf rig: its own fixture `HOME`, a
+junk API key, every `*_PROXY` at `127.0.0.1:9`, telemetry off. Each turn
+died locally ("Connection failed | Retrying").
+
+Where grok reads `program_status` from, and what follows:
+
+| arm | where `program_status` was set | record | `n,auth` in composer |
+|---|---|---|---|
+| `auto` | nowhere (default `auto`) | none, through a working turn | **yes** |
+| `offenv` | `"off"` in the `GROK_CONFIG` overlay only | none | **yes**: the overlay dropped it |
+| `off` | `"off"` in `$GROK_HOME/config.toml` | none | no |
+| `on` | `"on"` in `$GROK_HOME/config.toml` | **`working`** by t+4 s, `app=grok-build`, `msg="Connection failed \| Retrying (2/15)"`, owner `{pid, "grok-1.0.52-macos-aarch64"}` | no |
+| `onidle` | `on`, launched with no prompt | **`idle`** by t+3 s, the same owner | no |
+| `onlife`, `onend` | `on`, argv prompt | `working` during the turn; one Ctrl-C with nothing queued → **`idle`**; `/quit` → **record cleared**; a dead turn stays `working` through 8 min 20 s of retries (retry 9 of 15) | no |
+
+The hook carriers. Every hook mapped grok's event to a report and wrote it to
+`/dev/tty`. The `UserPromptSubmit` hook also exited 2:
+
+| arm | carrier | grok loaded it | SessionStart fired at launch | `/dev/tty` write |
+|---|---|---|---|---|
+| `hhome` | `$GROK_HOME/hooks/posse.json` | yes (`inspect`: Hooks (7), `user`) | yes | **failed** |
+| `hwt` | the session dir's `.grok/hooks/`, dir trusted | yes (`project`) | yes | **failed** |
+| `hagent` | an agent file outside the tree, `--agent <path>` | yes | yes | **failed** |
+| `hglobal` | `~/.grok/hooks/`, env-gated (herdr's own pattern) | yes | yes | **failed** |
+| `hcfgpath` | `GROK_CONFIG_PATH` overlay file | **no** (`inspect`: Hooks (None)) | — | — |
+| `ctl` | the same hook run from the bare shell | — | — | ok: the record lands, with no owner |
+
+In every arm that ran, grok started the hook as the leader of a session of its
+own (the witness line reads `ppid = sid = pgid`). A process in a new session
+has no controlling terminal, so `/dev/tty` cannot be opened. codex and bob run
+their hooks in the pane's session, and their hooks reach the tty (Spike, above).
+
+**Answers.**
+1. *Does a grok hook's record land, owned by grok?* **No.** No carrier changes
+   this: grok detaches its hooks from the terminal. The hook route for grok is
+   closed by measurement, not by price.
+2. *Does `off` stop the probe and the leak?* **Yes**, when it is set in grok's
+   home config. It does nothing in the `GROK_CONFIG` overlay, whose allowlist
+   is `models`, `features`, `toolset` and `shell_environment_policy`
+   (grok's 05-configuration.md). But `off` also stops every record. The setting
+   that matters is **`on`**. It skips the query, so nothing leaks, and grok
+   reports by itself: `idle` at launch, `working` during a turn, `idle` after a
+   cancel, cleared at `/quit`, all stamped with grok's own pid.
+3. *Which placement costs least?* The question changes, because a hook needs a
+   placement and `on` does not. The key is `[ui.notifications]`, and grok reads
+   it only from `$GROK_HOME/config.toml`, `managed_config.toml` and
+   `requirements.toml`. A project's `.grok/config.toml` contributes four tables
+   only (`mcp_servers`, `plugins`, `permission`, `mcp.max_output_bytes`;
+   26-config-reference.md), and the overlay drops it. Both candidates the bead
+   named lose:
+   - **A file in the session worktree cannot carry it.** Commit risk does not
+     come into it. **This is why D3's `grokon` arm read silent**: it set the
+     key in a project `.grok/config.toml`, which grok does not read for `ui.*`.
+     D3's "forced `on`" was never forced. `ReportsOnRex = false` for grok rests
+     on a measurement of `auto` only.
+   - **A per-seat `GROK_HOME` could carry it, at D4's price.** It moves
+     grok's credential file, which grok rewrites on refresh by atomic rename
+     (its per-pid temp files sit beside it), so a symlink is replaced and the
+     seat's token forks from the operator's. It moves `sessions/`, which
+     `turnfailure_grok.go` and `cost_grok.go` read through posse's own
+     `grokHome()`, not the seat's. It moves `trusted_folders.toml`, which gates
+     the skills root and the project config (`GrokSkillsDirTrust`,
+     ranger-base-1g8gf), so a fresh home degrades every `skills:` launch. And it
+     moves the two interstitial keys `GrokInterstitials` reads. That is five
+     stores to fake for one line.
+
+   The cheapest placement is one line in the operator's own
+   `~/.grok/config.toml`, where the fleet pin's `[cli]` keys already live.
+
+**Decision.**
+
+**D12. grok is admitted on Rex by its own report, behind one operator-owned
+config line.** It replaces D3 and D10. `ReportsOnRex` becomes true for grok, and
+admission (D1, read before the claim) also requires a builtin-only precondition:
+`$GROK_HOME/config.toml` (through `grokHomeIn`, the HOME pin of ADR 0077 D1)
+carries `program_status = "on"` under `[ui.notifications]`.
+- **Absent, `auto` or `off`:** refused before the claim, and the message names
+  the line to add. `auto` leaks `n,auth` and reports nothing on Rex. `off`
+  reports nothing. All three are MEASURED.
+- **Unreadable file:** "unknown", which also refuses. That is the interstitial
+  probes' rule: unknown is never yes.
+- D2's argv arm then confirms with the first record, as for claude and codex.
+  `onidle` shows that grok satisfies even §3's original typed rule.
+
+**D13. posse documents the line and never writes it.** It joins the `[cli]`
+keys in `etc/grok/version-pin.toml` as a key posse requires in the operator's
+config, and `make verify-grok-pin` asserts it. This is `interstitial.go`'s rule.
+`config.toml` belongs to the operator and grok rewrites it, so copying a file
+over it would clobber both, and posse never writes global config (`rex skill
+setup`, above). posse reads the file itself, section-aware. It cannot ask grok:
+`grok inspect --json` reports no value for the key, and its validator calls
+`ui.notifications` an "unrecognized config key" (MEASURED, `configWarnings`),
+even though the TUI obeys the key in every arm above. Since grok will not say,
+the declaration carries the version it was measured on, as D9 does for codex. A
+grok whose version is not `1.0.52 (0920c8169e27)` is refused on Rex, and the
+re-measurement is the probe's `auto on off onidle` arms (about two minutes, no
+turn). The cask is pinned, so that costs one run per deliberate bump.
+
+**Consequences.**
+- ADR 0080 D3's "every runtime" is now short only of bob (D11).
+- **The line is box-wide.** Every grok the operator runs then writes OSC 7501
+  in every terminal, including herdr panes. A terminal that does not know an
+  OSC is meant to consume it unseen (ECMA-48 string controls). That herdr's
+  emulator does so, and that herdr's own grok detection still settles, is
+  ASSUMED. The slice's shakedown measures it on both multiplexers before the
+  line is required.
+- grok's `blocked` is STATIC: the binary carries
+  `7501;state=…:kind=permission:app=grok-build`. A live permission prompt needs
+  a model turn, so it is UNPROVEN. Fleet grok runs `--permission-mode auto`.
+- A turn that cannot reach the network stays `working` while grok retries
+  (15 attempts, with backoff; MEASURED still `working` at retry 9, 8 min 20 s
+  in). How a turn ENDS, `done` or `error`, is in grok's docs ("working, waiting
+  for you, done, or failed") but UNPROVEN live: the rig cannot finish a turn
+  without a model. Admission does not rest on it, because D2's argv arm accepts
+  a first record of any state. Settling does, so the slice's live shakedown
+  (one real turn, operator-run) is where it is measured.
+- A grok killed without `/quit` leaves its last record behind. The Spike's rule
+  covers this: a dead owner pid reads `unknown`.
+- `runtime.go`'s `ReportsOnRex` comment repeats D3's "again forced `on`". The
+  slice corrects it.
+- The probe defaults to the darwin Rex app path (`REX=` overrides it). On the ADR 0080 Linux
+  host the line is ASSUMED to behave the same, since it is grok's config and
+  Rex's protocol, and the shakedown (ranger-base-offid) re-runs `onidle` there.
+
+**Alternatives rejected.**
+- **A grok hook, wherever it lives.** MEASURED dead: grok gives its hooks no
+  terminal. That was the route this spike was filed to price, and the price was
+  never reached.
+- **A hook that reports through Rex's API instead of the tty** (`REX_SESSION`,
+  `REX_BLOCK`). It might land, but the owner would be whoever Rex stamps for an
+  API caller, not grok's own process (unmeasured). A native report needs no
+  hook, so this is not worth measuring.
+- **A per-seat `GROK_HOME`.** Five stores moved or faked for one line (priced
+  above).
+- **`GROK_CONFIG` / `GROK_CONFIG_PATH`.** MEASURED: the overlay drops both
+  `ui.*` and `hooks`. That is by design, since the overlay "cannot spawn
+  commands".
+- **Spoofing `TERM_PROGRAM`, so grok skips its version query and falls back on
+  `REX_SESSION`/`REX_BLOCK` under `auto`.** This was the clever one. It lies to
+  grok about the terminal, which also drives its rendering and keyboard
+  choices, and it rests on an undocumented list of terminals. Not measured.
+- **`managed_config.toml` in `$GROK_HOME`.** grok's console sync owns that file
+  ("console-synced"), so a line there can be overwritten by xAI.
+- **Waiting for upstream to fix `auto`.** The leak and the silence under `auto`
+  are one grok bug: Rex's reply to the query arrives after grok has stopped
+  listening ("dropping stalled terminal reply fragment" is in the binary), so
+  `auto` stays off and the reply's tail reaches the composer. That is worth
+  reporting upstream, but `on` does not need the fix.
+
+**Measured versus assumed.** MEASURED (this box, 2026-11-06): every row of both
+tables, `inspect`'s `configWarnings` reading, and the absence of a value in
+`inspect --json`. STATIC (grok 1.0.52's shipped docs and binary strings): the
+config layers and the overlay allowlist, `blocked`'s report string, the stalled
+reply message, and the absence of any `GROK_*` variable for `program_status`.
+ASSUMED: herdr consuming the OSC unseen, the Linux behaviour, and
+the credential file's rename-on-refresh (inferred from its temp files, not
+traced).
+UNPROVEN: `blocked` live.
