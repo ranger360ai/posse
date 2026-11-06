@@ -747,21 +747,43 @@ func shSetState(v string, set bool) string {
 }
 
 // renderHookSkipGlobalScope writes posse_hs_gscope (ADR 0079 D2): 0 when the
-// hook-relevant keys the call's git sees in GLOBAL scope equal the ones the
-// launcher's global files carry, 1 otherwise.
+// hook-relevant keys the call's git sees in GLOBAL and SYSTEM scope equal the
+// ones the launcher's git would see there, 1 otherwise.
 //
-//   - have: `git config --show-scope --get-regexp`, every scope, keeping the
-//     `global` lines in pure sh. Not `git config --global`: MEASURED, that
-//     reads only ~/.gitconfig when the XDG file exists too (Context 3).
-//   - want: `git config --includes --file <c> --get-regexp` per baked
-//     candidate, concatenated; a missing file contributes nothing.
+//   - have: `git config --show-scope --type=path --get-regexp`, every scope,
+//     keeping the `system` and `global` lines in pure sh. Not `git config
+//     --global`: MEASURED, that reads only ~/.gitconfig when the XDG file
+//     exists too (Context 3).
+//   - want: `git config --system --includes --show-scope --type=path
+//     --get-regexp`, then `git config --includes --file <c> --type=path
+//     --get-regexp` per baked candidate with each line prefixed
+//     `global<TAB>`; a missing file contributes nothing.
 //
-// TWO ADDITIONS TO D2, both fail-closed:
+// ADDITIONS TO D2, all fail-closed:
 //
 //   - The want reads run under the LAUNCHER's HOME and XDG_CONFIG_HOME, not
 //     the call's. An `include.path = ~/x` in the operator's global file
 //     expands `~` from HOME, so a want read under the moved HOME would follow
 //     the attacker's include on both sides and call them equal.
+//   - Every value is read with --type=path, on both sides (ranger-base-87zme).
+//     git expands a `~` in core.hooksPath when it runs the hook, from that
+//     process's HOME, so a raw `core.hooksPath = ~/managed-hooks` reads
+//     byte-identical under a moved HOME while naming the seat's own dir.
+//     --type=path expands it per read, from that read's HOME, so the sides
+//     differ. A value with no `~` (every ordinary alias.*) reads unchanged.
+//   - A read whose git exits past 1 (1 is "no match") refuses: --type=path
+//     dies on a `~` it cannot expand (`~nosuchuser/x`, MEASURED rc 128 with
+//     nothing printed), and two empty reads must not compare equal.
+//   - SYSTEM lines are compared too (ranger-base-87zme). The system arm
+//     (posse_hs_scope) runs only when GIT_CONFIG_SYSTEM or GIT_CONFIG_NOSYSTEM
+//     is set and reads both its sides under the call's HOME, so a `~` in the
+//     system file plus a moved HOME reached no compare at all. The want's
+//     system read keeps the call's GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM,
+//     so the two sides read the same file and differ only by HOME: WHICH
+//     file is the system arm's question, not this one. `--system` ignores
+//     GIT_CONFIG_NOSYSTEM (MEASURED, git 2.50.1), so a truthy one skips it,
+//     as in posse_hs_scope. `--system` reads no includes by default, unlike
+//     the have listing, hence --includes.
 //   - A value carrying a newline can forge a `global<TAB>` line in the
 //     non -z listing (MEASURED 2026-11-04, git 2.50.1: a local alias value
 //     "a\nglobal\tcore.hookspath /m" prints exactly that line). -z cannot be
@@ -769,7 +791,7 @@ func shSetState(v string, set bool) string {
 //     counted with `--name-only` (a key cannot hold a newline) and a listing
 //     with more lines than entries is refused as unjudgeable. Cost: one exec.
 //
-// Cost when it runs: 2 + len(Cands) execs. It runs only when the D3 gate
+// Cost when it runs: 3 + len(Cands) execs. It runs only when the D3 gate
 // (renderHookSkipGlobalGate) says something moved.
 func renderHookSkipGlobalScope(real string, ref hookSkipGlobalRef) string {
 	if real == "" {
@@ -779,7 +801,10 @@ func renderHookSkipGlobalScope(real string, ref hookSkipGlobalRef) string {
 	q, re := shQuote(real), shQuote(hookSkipRegexp)
 	var b strings.Builder
 	b.WriteString("posse_hs_gscope() {\n")
-	fmt.Fprintf(&b, "  posse_hs_gall=$(%s config --show-scope --get-regexp %s 2>/dev/null)\n", q, re)
+	fmt.Fprintf(&b, "  posse_hs_gall=$(%s config --show-scope --type=path --get-regexp %s 2>/dev/null)\n", q, re)
+	// 1 is "no match"; past it git failed (a `~` --type=path cannot expand).
+	b.WriteString("  [ $? -le 1 ] || return 1\n")
+	// Keys only: no value, so no --type and nothing for it to fail on.
 	fmt.Fprintf(&b, "  posse_hs_gnames=$(%s config --show-scope --name-only --get-regexp %s 2>/dev/null)\n", q, re)
 	// Split on newline in a subshell, so IFS and set -f stay its own, and
 	// with no here-document (sh may need a temp file for one, and a cage
@@ -790,7 +815,7 @@ func renderHookSkipGlobalScope(real string, ref hookSkipGlobalRef) string {
 	b.WriteString("    for posse_hs_l in $posse_hs_gall; do\n      posse_hs_gl=$((posse_hs_gl+1))\n")
 	// `(pattern)`, not `pattern)`: bash 3.2 (darwin's /bin/sh) misparses an
 	// unbalanced `)` from a case arm inside a command substitution.
-	b.WriteString("      case \"$posse_hs_l\" in (global\"\t\"*) printf '%s\\n' \"${posse_hs_l#global\t}\" ;; esac\n    done\n")
+	b.WriteString("      case \"$posse_hs_l\" in (system\"\t\"*|global\"\t\"*) printf '%s\\n' \"$posse_hs_l\" ;; esac\n    done\n")
 	b.WriteString("    # More lines than entries: a value carries a newline and could forge a global line.\n")
 	b.WriteString("    [ \"$posse_hs_gl\" -eq \"$posse_hs_gn\" ]) || return 1\n")
 	// want, under the launcher's HOME and XDG_CONFIG_HOME.
@@ -805,16 +830,20 @@ func renderHookSkipGlobalScope(real string, ref hookSkipGlobalRef) string {
 			fmt.Fprintf(&b, "unset %s; ", kv.k)
 		}
 	}
-	if len(ref.Cands) == 0 {
-		b.WriteString(":")
-	} else {
+	b.WriteString("\n    case \"${GIT_CONFIG_NOSYSTEM:-}\" in (''|0|[Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|[Oo][Ff][Ff])\n")
+	fmt.Fprintf(&b, "      %s config --system --includes --show-scope --type=path --get-regexp %s 2>/dev/null\n", q, re)
+	b.WriteString("      [ $? -le 1 ] || exit 1 ;;\n    esac\n")
+	if len(ref.Cands) > 0 {
 		cs := make([]string, 0, len(ref.Cands))
 		for _, c := range ref.Cands {
 			cs = append(cs, shQuote(c))
 		}
-		fmt.Fprintf(&b, "for posse_hs_c in %s; do %s config --includes --file \"$posse_hs_c\" --get-regexp %s 2>/dev/null; done", strings.Join(cs, " "), q, re)
+		fmt.Fprintf(&b, "    for posse_hs_c in %s; do\n", strings.Join(cs, " "))
+		fmt.Fprintf(&b, "      posse_hs_o=$(%s config --includes --file \"$posse_hs_c\" --type=path --get-regexp %s 2>/dev/null)\n", q, re)
+		b.WriteString("      [ $? -le 1 ] || exit 1\n")
+		b.WriteString("      (IFS='\n'; set -f; for posse_hs_l in $posse_hs_o; do printf 'global\\t%s\\n' \"$posse_hs_l\"; done)\n    done\n")
 	}
-	b.WriteString(")\n")
+	b.WriteString("  ) || return 1\n")
 	b.WriteString("  [ \"$posse_hs_have\" = \"$posse_hs_want\" ]\n}\n")
 	return b.String()
 }
@@ -842,6 +871,6 @@ func renderHookSkipGlobalGate(ref hookSkipGlobalRef) string {
 	}
 	fmt.Fprintf(&b, "  [ \"${HOME+x}:${HOME-}\" = %s ] || posse_hs_gm=1\n", shSetState(ref.Home, ref.HomeSet))
 	fmt.Fprintf(&b, "  [ \"${XDG_CONFIG_HOME+x}:${XDG_CONFIG_HOME-}\" = %s ] || posse_hs_gm=1\n", shSetState(ref.XDG, ref.XDGSet))
-	b.WriteString("  if [ -n \"$posse_hs_gm\" ] && ! posse_hs_gscope; then\n    posse_hs_refuse hookskip:config-env 'GIT_CONFIG_GLOBAL, HOME or XDG_CONFIG_HOME changes the hook config git sees in global scope, against the launcher'\"'\"'s global files (ADR 0079)'\n  fi\n")
+	b.WriteString("  if [ -n \"$posse_hs_gm\" ] && ! posse_hs_gscope; then\n    posse_hs_refuse hookskip:config-env 'GIT_CONFIG_GLOBAL, HOME or XDG_CONFIG_HOME changes the hook config git sees in global or system scope, against what the launcher'\"'\"'s HOME reads there (ADR 0079)'\n  fi\n")
 	return b.String()
 }

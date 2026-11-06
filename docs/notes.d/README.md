@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-rrklg](ranger-base-rrklg.md) — ranger-base-rrklg — verifying four closes — 2026-11-06
 - [ranger-base-h0hjx](ranger-base-h0hjx.md) — ranger-base-h0hjx — verify 3 closes: e09l0, 32ll0, zpk8r — 2026-11-06
 - [ranger-base-dsuk7](ranger-base-dsuk7.md) — The exact age two pins asserted was a statement about a clock they did not own (ranger-base-dsuk7) — 2026-11-06
+- [ranger-base-87zme](ranger-base-87zme.md) — ranger-base-87zme — the ADR 0079 compare resolves `~` per read — 2026-11-06
 - [ranger-base-zpk8r](ranger-base-zpk8r.md) — ranger-base-zpk8r — the launch DEGRADED call site, and two inverted policy-tier lines — 2026-11-04
 - [ranger-base-loi28](ranger-base-loi28.md) — A fixture that scrubs HOME no longer has an empty git global scope (ranger-base-loi28) — 2026-11-04
 - [ranger-base-gt0q9](ranger-base-gt0q9.md) — The box slept 2h51m inside one test, and go test could not see it (ranger-base-gt0q9) — 2026-11-04

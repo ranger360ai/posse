@@ -55,23 +55,19 @@ package posse
 // reference is built to judge, not past its edge. `~/.company/hooks` is an
 // ordinary way to write that line.
 //
-// A CANDIDATE ROUTE, MEASURED and NOT a prescription — the lane picks the
-// fix: reading both sides with `--type=path` makes git expand the `~` per
-// read, so the two sides differ and the arm refuses. Trialled 2026-11-06 on
-// top of 1f4da269: both legs below flip to REFUSED with the seat's hook not
-// run, and ADR 0079 pins 1-7, TestQAHookSkipMovedHomeFollowsNoTildeInclude
-// and TestQAHookSkipRefusedOnEveryRuntime all stayed green (the full suite
-// was not run under it). `--type=path` leaves a value with no `~` alone, so
-// the `alias.*` half of hookSkipRegexp reads unchanged — also MEASURED.
+// FIXED under ranger-base-87zme, by the route this pin first named: both
+// sides read every value with `--type=path`, so git expands the `~` per read
+// from that read's HOME, and the two sides differ whenever the directory
+// does. The leg below is now a refusal; it was shipped asserting the hole and
+// inverted when the fix landed. ADR 0079 D2 says the compare resolves
+// HOME-relative values rather than comparing them raw.
 //
-// WHEN THE FIX LANDS this test REDS, naming the assertion to invert. The
-// scratch dirs are not the tree, so this is not a tree-wide pin and owes the
-// Makefile no door.
+// The scratch dirs are not the tree, so this is not a tree-wide pin and owes
+// the Makefile no door.
 
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -148,25 +144,29 @@ func TestQAHookSkipTildeHooksPathIsJudgedByRawText(t *testing.T) {
 				}
 			}
 
-			// THE HOLE. Each leg is ALLOWED today and must not be: the text
-			// compares equal while the directory git resolves does not.
-			for i, leg := range []struct {
-				name, env string
-				seat      int // times the seat's own pre-commit runs
-			}{
-				{"HOME=evil, byte-identical config, the seat's own hooks dir", "HOME=" + shQuote(evil) + " ", 1},
-			} {
-				firedBefore, seatBefore := hsFired(fx), seatRan()
-				errs, code := hsRun(t, fx, wrapped, hsLeg{env: leg.env, args: "commit -q -m h0" + strconv.Itoa(i) + " -- f"})
-				fired, seat := hsFired(fx)-firedBefore, seatRan()-seatBefore
-				if code != 0 || fired != 0 || seat != leg.seat || strings.Contains(errs, "hookskip:") {
-					t.Errorf("INVERT ME — this is the pin to flip when the fix lands.\n"+
-						"%s: code=%d managed_fired=%d seat_hook_ran=%d (%s)\n"+
-						"This leg asserted the MEASURED hole: rc 0, the managed hook fired 0, the seat's own hook ran %d, no refusal. "+
-						"If it is now refused under hookskip:config-env with the seat's hook not run, the fix has landed: rewrite this leg as a refusal (the shape hsGlobalCheck uses in hookskipglobal_qa_test.go), and say in ADR 0079 D2 that the compare resolves HOME-relative values rather than comparing them raw.",
-						leg.name, code, fired, seat, errs, leg.seat)
-				}
+			// THE CLOSED HOLE. The text of the two files is identical and
+			// the directory git would resolve is not, so the arm refuses and
+			// neither hook runs. Before ranger-base-87zme this leg exited 0,
+			// the managed hook fired 0 times and the seat's own ran once.
+			seatBefore := seatRan()
+			hsGlobalCheck(t, fx, wrapped, []hsGlobalLeg{
+				{"HOME=evil, byte-identical tilde config, the seat's own hooks dir", "HOME=" + shQuote(evil) + " ", true},
+			})
+			if n := seatRan() - seatBefore; n != 0 {
+				t.Errorf("the seat's own pre-commit ran %d times under a refused commit", n)
 			}
+
+			// BOTH SIDES READ WITH ONE --type (the bead's item 1). A move
+			// that runs the compare but leaves HOME alone expands the `~`
+			// identically on both sides, so it is allowed and fires. Read
+			// one side raw and the other expanded and this leg is refused.
+			xdg := filepath.Join(fx.home, "other-xdg")
+			if err := os.MkdirAll(xdg, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			hsGlobalCheck(t, fx, wrapped, []hsGlobalLeg{
+				{"g-xdg: XDG_CONFIG_HOME moved, HOME as launched, tilde config", "XDG_CONFIG_HOME=" + shQuote(xdg) + " ", false},
+			})
 		})
 	}
 }

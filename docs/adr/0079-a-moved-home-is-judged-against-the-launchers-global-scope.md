@@ -1,6 +1,6 @@
 # ADR 0079 — the hook-skip arm judges git's global scope against the launcher's resolved global files, for HOME, XDG_CONFIG_HOME and GIT_CONFIG_GLOBAL alike
 
-*Status: accepted 2026-11-04 (ranger-base-7yx3s, from ranger-base-z8kym item 3) · owner: architect · replaces the GIT_CONFIG_GLOBAL half of `posse_hs_scope` (hookskip.go, ranger-base-r3pri); the SYSTEM half stands · builds in the code bead named on ranger-base-7yx3s (dinesh) · amended 2026-11-04 (ranger-base-o6xr6): D2 and D3 now say what ranger-base-32ll0 shipped*
+*Status: accepted 2026-11-04 (ranger-base-7yx3s, from ranger-base-z8kym item 3) · owner: architect · replaces the GIT_CONFIG_GLOBAL half of `posse_hs_scope` (hookskip.go, ranger-base-r3pri); the SYSTEM half stands · builds in the code bead named on ranger-base-7yx3s (dinesh) · amended 2026-11-04 (ranger-base-o6xr6): D2 and D3 now say what ranger-base-32ll0 shipped · amended 2026-11-06 (ranger-base-87zme, from ranger-base-7czd6): D2 resolves HOME-relative values instead of comparing them raw, and it compares system lines too*
 
 ## Context
 
@@ -52,18 +52,44 @@ fixture passes `hsEnv(fx)`, so its scratch HOME is the launcher's.
 
 **D2 — One global compare covers all three names.** It replaces the
 GIT_CONFIG_GLOBAL arm on a hook-running verb.
-- *have* is the call's own `git config --show-scope --get-regexp
-  <hookSkipRegexp>`, keeping only `global` lines. Filter in pure sh
-  (`case "$l" in global"<TAB>"*`), not with a second binary.
-- *want* is `git config --includes --file <c> --get-regexp <hookSkipRegexp>`
-  for each baked candidate in order, concatenated. A missing file
+- *have* is the call's own `git config --show-scope --type=path
+  --get-regexp <hookSkipRegexp>`, keeping the `system` and `global` lines.
+  Filter in pure sh (`case "$l" in system"<TAB>"*|global"<TAB>"*`), not
+  with a second binary.
+- *want* is `git config --system --includes --show-scope --type=path
+  --get-regexp <hookSkipRegexp>`, then `git config --includes --file <c>
+  --type=path --get-regexp <hookSkipRegexp>` for each baked candidate in
+  order, each of those lines prefixed `global<TAB>`. A missing file
   contributes nothing. **The want reads run under the launcher's baked
   `HOME` and `XDG_CONFIG_HOME`** (set, or unset, as baked), not the call's.
   An `include.path = ~/x` in the operator's file expands `~` from `HOME`, so
   under the call's moved HOME the include would follow the attacker on both
   sides and compare equal.
-- *have* is also counted with `--show-scope --name-only --get-regexp`. A key
-  can't hold a newline, so the entry count is honest. A listing with more
+- **The compare resolves HOME-relative values. It does not compare them
+  raw** (amended, ranger-base-87zme). git expands a `~` in `core.hooksPath`
+  when it runs the hook, from that process's HOME. So in a raw compare,
+  `core.hooksPath = ~/managed-hooks` read the same text under a moved HOME
+  while naming the seat's own directory. That allowed the commit, and the
+  seat's hook ran instead of the managed one. MEASURED 2026-11-06 by holden
+  (ranger-base-7czd6). `--type=path` on both sides makes git expand the `~`
+  per read, from that read's HOME, so the sides differ whenever the
+  directory does. A value with no `~` reads unchanged. Both sides must use
+  the same `--type`.
+- **A read that fails refuses.** Exit 1 means "no match". Anything above 1
+  refuses. `--type=path` exits 128 and prints nothing when it cannot expand
+  a `~user` (MEASURED 2026-11-06, git 2.50.1). Two empty reads must not
+  compare equal.
+- **System lines too** (amended, ranger-base-87zme). The system arm runs
+  only when GIT_CONFIG_SYSTEM or GIT_CONFIG_NOSYSTEM is set, and it reads
+  both its sides under the call's HOME. So a `~` in the system file plus a
+  moved HOME reached no compare at all. The want's `--system` read keeps the
+  call's GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM, so both sides read the
+  same file and differ only by HOME. Which file is read stays the system
+  arm's question. `--system` ignores GIT_CONFIG_NOSYSTEM, so a truthy one
+  skips that read. It needs `--includes` because, unlike the all-scope
+  listing, it reads no includes by default.
+- *have* is also counted with `--show-scope --name-only --get-regexp` (no
+  `--type`: it prints keys, not values). A key can't hold a newline, so the entry count is honest. A listing with more
   lines than entries is refused. That's because a value with a newline can
   forge a `global` line in the non `-z` listing: MEASURED 2026-11-04, git
   2.50.1, a local alias value `a\nglobal\tcore.hookspath /m` prints exactly
@@ -88,8 +114,9 @@ wrong, and ranger-base-32ll0 shipped the safer gate; ranger-base-o6xr6
 amended this text to match.) Only a call that moved HOME or XDG pays for
 this, and the ordinary call never does.
 
-Cost when it fires: 2 + (number of candidates) execs (listing, name count,
-one read per candidate). MEASURED 2026-11-04, git 2.50.1, this box at a
+Cost when it fires: 3 + (number of candidates) execs (listing, name count,
+the system read, one read per candidate). It was 2 + candidates before
+ranger-base-87zme added the system read; the ~85 ms below is that shape. MEASURED 2026-11-04, git 2.50.1, this box at a
 load of 7-18: 0.81-0.86 s for 10 compares over two candidates, so ~85 ms a
 compare. (The first text's ~40 ms was for the 3-exec shape, at an
 unrecorded load.)
@@ -104,8 +131,19 @@ no global hook either.
 
 - The z8kym HOME leg, an XDG move, `env -u HOME`, and both measured
   GIT_CONFIG_GLOBAL bypasses are refused. A HOME pointed at an identical
-  config, or at one with no hook keys on a box with none (every hermetic test
-  in this repo), is allowed.
+  config is allowed only when every hook-relevant value in global and system
+  scope resolves the same under both HOMEs. A `~`-spelled hooksPath,
+  include path or hook command does not, so that move is refused (amended,
+  ranger-base-87zme; the first text said "an identical config is allowed",
+  and that was the hole). A HOME at a config with no hook keys, on a box with
+  none (every hermetic test in this repo), is allowed.
+- **Over-refusal: a `~` value under a moved HOME.** A moved-HOME hook verb is
+  refused when a hook-relevant value carries a `~` that expands differently,
+  even when the content it leads to is identical. It is also refused when
+  `--type=path` cannot expand the value at all (a `~user` with no such user,
+  even in an alias the launcher's own git never expands). Only a call that
+  moved HOME, XDG or GIT_CONFIG_GLOBAL pays this, and the ordinary call
+  never reaches the compare (D3).
 - On obdnk's two-file DEGRADED box, a typed or settings-injected HOME or XDG
   move on a hook verb is now caught by the shim. Settings `env` inlets
   outside git are still obdnk's to name.
@@ -181,3 +219,19 @@ seat skips the managed hook at rc 0.
    newline forges the launcher's `global` hooksPath line → refused. Delete
    D2's count and that call compares equal and skips the hook at rc 0. Not
    shipped with 32ll0; owed by the bead cut under ranger-base-o6xr6.
+10. (amendment, ranger-base-87zme) The launcher's file carries
+    `core.hooksPath = ~/managed-hooks`; `HOME=evil` at a byte-identical file
+    with its own `managed-hooks/` → refused, neither hook runs. And
+    `XDG_CONFIG_HOME=<other>` with HOME as launched → allowed and fired,
+    which pins that both sides read with the same `--type`. Shipped as
+    `TestQAHookSkipTildeHooksPathIsJudgedByRawText`, holden's pin, inverted.
+11. (amendment, ranger-base-87zme) The system file carries
+    `core.hooksPath = ~/managed-hooks` with a global file that carries no
+    hooksPath; `HOME=evil` at a byte-identical global file → refused. The
+    same system file spelled absolute → allowed. Shipped as
+    `TestQAHookSkipSystemTildeHooksPathJudgedAgainstLauncher`.
+12. (amendment, ranger-base-87zme) The launcher's file carries an alias
+    value `~nosuchuser-…`; HOME at a config with no hook keys → refused, and
+    HOME at a byte-identical config → refused. Drop the want side's exit
+    check and the first leg compares two empty reads as equal and skips the
+    hook. Shipped as `TestQAHookSkipUnexpandableTildeFailsClosed`.

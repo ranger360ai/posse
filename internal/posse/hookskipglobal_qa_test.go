@@ -238,9 +238,10 @@ func TestQAHookSkipGlobalGateExecsNothingAsRendered(t *testing.T) {
 			n++
 		}
 	}
-	// 2 for the have side, one per candidate (2) for the want side.
-	if n != 2+len(ref.Cands) {
-		t.Errorf("WITNESS: a moved HOME must run the compare (%d git config execs), got %q", 2+len(ref.Cands), got)
+	// 2 for the have side; for the want side 1 system read (ranger-base-87zme)
+	// and one per candidate (2).
+	if n != 3+len(ref.Cands) {
+		t.Errorf("WITNESS: a moved HOME must run the compare (%d git config execs), got %q", 3+len(ref.Cands), got)
 	}
 }
 
@@ -281,6 +282,118 @@ func TestQAHookSkipMovedHomeFollowsNoTildeInclude(t *testing.T) {
 				{"control: the included hook fires", "", false},
 				{"HOME at an identical top file, its own include", "HOME=" + shQuote(evil) + " ", true},
 				{"pinned GIT_CONFIG_GLOBAL, HOME moved under its include", "HOME=" + shQuote(evil) + " GIT_CONFIG_GLOBAL=" + shQuote(dotfile) + " ", true},
+			})
+		})
+	}
+}
+
+// Amendment pin (ranger-base-87zme, the bead's item 4): a HOME-relative
+// hooksPath reached through SYSTEM scope, plus a moved HOME holding a
+// byte-identical global file. The system arm only runs when GIT_CONFIG_SYSTEM
+// or GIT_CONFIG_NOSYSTEM is set, and the global compare used to keep only
+// `global` lines, so this call reached no compare and git ran
+// <moved HOME>/managed-hooks/pre-commit at rc 0.
+//
+// The system file cannot be planted for real (it is the box's), so the shim
+// is rendered over a git wrapper that points GIT_CONFIG_SYSTEM at a scratch
+// file on EVERY exec — the shim's reads and the commit alike — which is what
+// a box whose /etc/gitconfig carries the line looks like. The call itself sets
+// no GIT_CONFIG_SYSTEM, so the system arm stays out of it.
+func TestQAHookSkipSystemTildeHooksPathJudgedAgainstLauncher(t *testing.T) {
+	t.Parallel()
+	fx := hsSetup(t)
+	user := "[user]\n\tname = t\n\temail = t@example.com\n"
+	write(t, filepath.Join(fx.home, ".gitconfig"), user)
+	sys := filepath.Join(fx.home, "system-config")
+	write(t, sys, "[core]\n\thooksPath = ~/managed-hooks\n")
+
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "git-wrapper")
+	if err := WriteExecutable(wrapper, []byte("#!/bin/sh\nGIT_CONFIG_SYSTEM="+shQuote(sys)+"; export GIT_CONFIG_SYSTEM\nexec "+shQuote(fx.realGit)+" \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ref := resolveHookSkipGlobalRef(wrapper, hsEnv(fx))
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := renderShim("hg-sys", "git", wrapper, filepath.Join(dir, "refusals.log"), "/bin/date", nil, nil, "", filepath.Join(dir, "hooks"), ref)
+	if err := WriteExecutable(filepath.Join(bin, "git"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prefix := "PATH=" + shQuote(bin) + ":\"$PATH\" "
+
+	evil := filepath.Join(fx.home, "evil-home")
+	if err := os.MkdirAll(filepath.Join(evil, "managed-hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(evil, ".gitconfig"), user)
+	seatHook := filepath.Join(fx.home, "seat-hook-ran")
+	if err := WriteExecutable(filepath.Join(evil, "managed-hooks", "pre-commit"),
+		[]byte("#!/bin/sh\necho ran >> "+shQuote(seatHook)+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	hsGlobalCheck(t, fx, prefix, []hsGlobalLeg{
+		// The control: the managed hook is reached through the system tilde.
+		{"control: nothing moved, the system tilde names the managed hook", "", false},
+		{"HOME=evil, byte-identical global file, system hooksPath = ~/managed-hooks", "HOME=" + shQuote(evil) + " ", true},
+	})
+	if b, _ := os.ReadFile(seatHook); len(b) != 0 {
+		t.Errorf("the seat's own pre-commit ran under a refused commit: %q", b)
+	}
+
+	// The system compare is not a refusal of every HOME move: the same
+	// system file spelled ABSOLUTE reads the same under both HOMEs.
+	write(t, sys, "[core]\n\thooksPath = "+filepath.Join(fx.home, "managed-hooks")+"\n")
+	// hsGlobalCheck numbers its messages from g0 again, and the g0 commit
+	// above already landed that content: commit something else first, past
+	// the shim and with no hook (the real box's system scope, no hooksPath).
+	write(t, filepath.Join(fx.repo, "f"), "between\n")
+	hsRealGit(t, fx, "-C", fx.repo, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "between", "--", "f")
+	hsGlobalCheck(t, fx, prefix, []hsGlobalLeg{
+		{"HOME=evil, byte-identical global file, system hooksPath absolute", "HOME=" + shQuote(evil) + " ", false},
+	})
+}
+
+// Amendment pin (ranger-base-87zme, the bead's item 2): --type=path makes git
+// exit 128, printing nothing, on a `~user` it cannot expand. The launcher's
+// global file here carries one in an alias value, which the launcher's own
+// git never path-expands and so never trips on. A moved HOME at a config with
+// no hook keys then reads have = "" and, if the failed want read were taken
+// as "no lines", want = "" too: equal, allowed, and the managed hooksPath
+// skipped. A want read that fails must refuse.
+func TestQAHookSkipUnexpandableTildeFailsClosed(t *testing.T) {
+	t.Parallel()
+	for _, rtName := range []string{"claude", "codex"} {
+		t.Run(rtName, func(t *testing.T) {
+			t.Parallel()
+			fx := hsSetup(t)
+			dotfile := filepath.Join(fx.home, ".gitconfig")
+			managed, err := os.ReadFile(dotfile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bad := string(managed) + "[alias]\n\tzz87 = ~nosuchuser-posse-87zme/x\n"
+			write(t, dotfile, bad)
+			wrapped := hsWrapped(t, fx, rtName)
+
+			empty := filepath.Join(fx.home, "empty-home")
+			same := filepath.Join(fx.home, "same-home")
+			for _, d := range []string{empty, same} {
+				if err := os.MkdirAll(d, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(t, filepath.Join(empty, ".gitconfig"), "[user]\n\tname = t\n\temail = t@example.com\n")
+			write(t, filepath.Join(same, ".gitconfig"), bad)
+
+			hsGlobalCheck(t, fx, wrapped, []hsGlobalLeg{
+				{"control: nothing moved runs no compare", "", false},
+				// want fails, have reads nothing.
+				{"HOME at a config with no hook keys, launcher's want read fails", "HOME=" + shQuote(empty) + " ", true},
+				// both fail: two empties must not compare equal.
+				{"HOME at a byte-identical config, both reads fail", "HOME=" + shQuote(same) + " ", true},
 			})
 		})
 	}
