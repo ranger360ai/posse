@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probe: `docs/adr/0076-flag-trust.probe.sh`*
 
 ## Context
 
@@ -349,7 +349,7 @@ the keyboard, and `State` reads `unknown` until a record arrives.
 Positive evidence is the same in both cases: a record whose owner is the
 runtime and not the shell.
 
-**D3. grok is refused on Rex (MEASURED).** No record in 131 s of a live
+**D3. grok is refused on Rex (MEASURED).** *(Restated, not reversed, by Amendment 2's D10.)* No record in 131 s of a live
 argv turn. The reason is UNPROVEN, and the fix is upstream. Re-admit
 when the probe's `grok` and `grokon` arms show a record within the
 bound on a new version, then set `ReportsOnRex` and re-run the first-turn
@@ -357,7 +357,7 @@ leak check. The `n,auth` leak also lands in the composer that a later
 typed prompt (a re-prompt, `--resume`) would use. It has to be gone
 before grok is admitted.
 
-**D4. codex is refused on Rex by price, not by mechanism.** The hook
+**D4. codex is refused on Rex by price, not by mechanism.** *(Reversed by Amendment 2, below: ADR 0080 D3 accepts the price, and D6–D9 pay it without the per-seat home or the hash.)* The hook
 route works: an argv launch with seeded trust reports `working` in 2 s
 under codex's own owner (MEASURED). But admitting codex means posse owns
 these:
@@ -383,7 +383,7 @@ wanted on a Rex instance. The four rows above are then the slices, the
 probe's `codex` arm is the acceptance test, and deriving the hash from
 codex's source comes first.
 
-**D5. bob stays refused.** It is `prompt: typed` with no launch record,
+**D5. bob stays refused.** *(Restated by Amendment 2's D11.)* It is `prompt: typed` with no launch record,
 so D2's typed arm refuses it. It also has no `blocked` (spike, STATIC).
 
 **Consequences.** ranger-base-phq39's refusal of codex and grok is the D1
@@ -461,3 +461,213 @@ covers three cases:
   That is §2's `State` verb, and it answers a different question: is the
   runtime alive inside a seat that exists? Liveness of the SEAT stays a
   matter of listing.
+
+## Amendment 2: codex on Rex through its launch line; grok and bob wait on measurements (ranger-base-dok0a, 2026-11-06)
+
+**Context.** ADR 0080 D3 (operator direction, 2026-11-06) makes herdr and
+Rex interchangeable for every runtime, and accepts the price D4 refused.
+This amendment chooses how to pay it. D4 assumed two of its five items:
+that trust has to live in a file (so either the operator's `~/.codex` or a
+per-seat `CODEX_HOME`), and that posse has to compute codex's trust hash.
+Both turn out to be false for codex 0.153.4.
+
+Read from codex's source at tag `rust-v0.153.4` (STATIC):
+- `config.toml` carries hooks as well as `hooks.json` does
+  (`HookEventsToml`), so a `-c hooks={…}` override declares them. That is
+  codex's session-flags layer. Its hooks are keyed under a synthetic path,
+  `/<session-flags>/config.toml:<event>:<group>:<handler>`, which no
+  directory and no home appears in.
+- `hooks.state` is read from the user layer and the session-flags layer
+  only (`hook_states_from_stack`). A project's files cannot set trust or
+  re-enable a hook.
+- The hash is sha256 over sorted-key compact JSON of the normalized
+  declaration (`hook_hash`, `version_for_toml`), not over the source text.
+- The startup review fires for any hook that is untrusted or modified,
+  enabled or not (`hook_needs_review`). A disabled hook never runs
+  (`hook_enabled`). A managed hook (system, MDM, enterprise) can be neither
+  disabled nor re-trusted.
+- `codex app-server`'s `hooks/list` reports every hook that would load,
+  with its key, source, managed flag and `currentHash`. The app-server is
+  labelled `[experimental]`.
+
+**MEASURED 2026-11-06**, this box, Rex CLI 0.0.1793377904, codex-cli
+0.153.4, `docs/adr/0076-flag-trust.probe.sh`, four runs. No model turn was
+possible. Every codex ran under `sandbox-exec (deny network*)` in a scratch
+`CODEX_HOME` whose only provider is a dead loopback port, and the hook's
+UserPromptSubmit exits 2.
+
+| arm | review dialog | first record | home `config.toml` |
+|---|---|---|---|
+| `seed`: hooks as `-c` flags, no trust | **yes** | none | "Trust all" wrote 8 keys under `/<session-flags>/…` |
+| `flag`: fresh home, the same flags, plus that trust as `-c hooks.state` | no | `working`, owner `{pid,"codex"}`, 3 of 4 runs by t+2–5 s, 1 run by t+42 s (startup, see below) | byte-identical before and after |
+| `userhook`: plus an untrusted user-layer `hooks.json`, `enabled=false` only | **yes**, "1 hook is new or changed" | none | — |
+| `ask`: the whole `hooks.state` built from `hooks/list`, nothing taken from `seed` | no | `working`, owner `{pid,"codex"}`, by t+2 s; the user-layer hook did not run | byte-identical |
+
+Also MEASURED: `hooks/list` answered in 0.1–0.3 s, and its `currentHash`
+equalled the hash the dialog wrote. A Python model of the hash reproduced
+codex's own values 8 of 8. The one slow `flag` run sat on
+"model: loading" for 20–40 s before it submitted the argv prompt. That was
+codex's model-metadata fetch failing under the network deny. A seat with a
+network is ASSUMED faster, and the slice measures it against the 45 s
+`startup_wait` bound.
+
+**Decision.**
+
+**D6. codex's 7501 hooks ride its launch line as session flags.** On a Rex
+instance, codex's line adds `-c hooks={…}`, one group with one handler per
+event. The handler is posse's own binary (a hidden reporter subcommand),
+not a rendered script. It reads `hook_event_name` from stdin and writes one
+OSC 7501 report to `/dev/tty`:
+
+| codex event | report |
+|---|---|
+| SessionStart, Stop, Interrupt | `idle` |
+| UserPromptSubmit, PreToolUse, PostToolUse | `working` |
+| PermissionRequest | `blocked`, `kind=permission` |
+| SessionEnd | `state=clear` |
+
+No `hooks.json` is written anywhere. Fleet codex runs `-a never`, so
+`blocked` should never fire. It is mapped anyway, and it is still UNPROVEN
+live (D4 item 5).
+
+**D7. Trust is asked of codex, then typed.** Before the line is typed,
+posse runs `codex app-server` once, with the seat's `CODEX_HOME` pin
+(ADR 0077 D1), the seat's cwd and the seat's `-c` line. It sends
+`initialize`, `initialized` and `hooks/list`, and types one
+`-c hooks.state={…}` built from the answer:
+- posse's session-flags hooks get `{trusted_hash}`;
+- every other hook, from any source, gets `{enabled=false, trusted_hash}`.
+  Trusting a hook that is disabled only keeps the review dialog from
+  firing. The hook still does not run.
+
+posse never computes a hash. Two cases refuse the launch before the line
+is typed, so no turn is spent:
+- a **managed** hook, because posse can neither switch it off nor vet it;
+- an ask that **fails** (no answer, a malformed answer, or a timeout).
+
+The worktree and the claim are released by the ordinary launch-failure
+path (ASSUMED that it covers this stage; the slice checks).
+
+This is safe against the file changing after the ask, because trust binds
+to the hash. A hook added or edited between the ask and the launch reads
+untrusted or modified. It does not run, the dialog holds the prompt, no
+record arrives, and D2's argv arm HOLDs. The failure is a stall, never
+execution of a hook nobody vetted.
+
+**D8. Rex only. herdr's codex line does not change.** `CodexFleetFlags`
+keeps `--disable hooks` on herdr, which reads codex through its own
+detection (§6: herdr's code paths do not change). On Rex the line drops
+`--disable hooks` and adds D6 and D7. The posture D4 item 4 protected
+holds in both cases: in a fleet seat only posse's hooks run.
+
+**D9. Admission is still a declaration read before the claim (D1).**
+`ReportsOnRex` becomes true for codex. The field's meaning widens to "a
+record whose owner is the runtime, written natively or by posse's route
+on the runtime's own events". Both are positive evidence under ADR 0013
+§1: the report is caused by the runtime's own event and stamped with its
+foreground process. Silence is not evidence.
+
+The route rests on two things codex does not promise: an experimental RPC
+and session-flag hook semantics. So the declaration carries the version it
+was measured on (`codex-cli 0.153.4`). Before the claim, a codex that
+reports another version is refused on Rex, with the probe's `ask` arm
+named as the re-measurement. That costs one probe run (about two minutes,
+no turn) per deliberate codex bump. The cask is pinned.
+
+**How D4's five items are paid:**
+1. Hook script and declaration per launch: no script, and no file. One
+   `-c` on the line, pointing at posse's own binary.
+2. Trust seeding: on the line. No home is written, `~/.codex` is never
+   touched, and there is no per-seat `CODEX_HOME`. So the credential file,
+   the rollouts and the interstitial silences stay where they are.
+3. The undocumented hash: never computed. codex reports it.
+4. Dropping `--disable hooks`: Rex only, with every non-posse hook switched
+   off by key.
+5. `blocked` UNPROVEN live: still unproven, and moot under `-a never`.
+
+**D10. grok stays refused on Rex (D3, MEASURED, not reversed).** The
+question was whether a posse-side route exists that is still positive
+evidence. The answer has two parts:
+- **It would be evidence.** grok runs hooks before any model turn
+  (`.grok/hooks/*.json`, and the hooks in `.claude/settings.json`, which
+  RAN in a trusted directory: MEASURED, ranger-base-1g8gf). A hook record
+  stamped with grok's own process would stand where codex's stands.
+- **It is not routable today.** grok has no flag that carries hooks or
+  settings (`grok --help`, 1.0.52). Its hooks would need a file posse does
+  not own: a per-seat `GROK_HOME` (D4 item 2's price again, which moves the
+  session store the turn-outcome reader uses) or a file in the session
+  worktree. And the `n,auth` leak comes from grok's native `7501;?` probe,
+  which a hook does not stop. Whether `program_status = "off"` stops it is
+  unmeasured.
+
+That makes it a measurement, and it can be taken without a turn (the
+1g8gf rig). It is filed as a spike. grok stays on herdr until the spike
+lands or upstream fixes grok's own report. ADR 0080 D3's "every runtime"
+waits on that spike for grok.
+
+**D11. bob stays refused on Rex (D5).** bob is `prompt: typed` with no
+launch record, so D2's typed arm refuses it: posse cannot see that the
+composer is ready, and §3 forbids screen rules on Rex. `bob chat` (2.0.9)
+has no initial-prompt flag, and nothing on the line that declares,
+disables or trusts a hook. Its hooks come from workspace and global files,
+and the operator's global herdr-bob hooks fire as well. bob cannot be
+fenced off the network (spike, above), so measuring whether the top-level
+`bob -p` opens the interactive client costs a billed turn. That is the
+spike's first question, and it needs operator authorization.
+
+**Consequences.**
+- A codex PID runs on a Rex instance. That is ADR 0080 D3 for codex, and
+  ranger-base-phq39's refusal shrinks to grok and bob.
+- Each codex launch on Rex spawns one `codex app-server` (MEASURED
+  0.1–0.3 s with the network denied). Whether it reaches the network at
+  `initialize` with a live login is ASSUMED harmless and unmeasured. The
+  launch lock is held for that time.
+- confirmReports' argv arm ("unreachable today") becomes reachable. A
+  codex seat with no record within `startup_wait` HOLDs and is not judged.
+- codex's record stays `working` after a prompt a hook blocked (spike,
+  MEASURED). posse's hook never blocks, so a fleet seat does not reach
+  that state.
+- A dead owner pid reads `unknown` (spike). SessionEnd clears the record,
+  which covers a clean `/quit`.
+- The probe is darwin-only (`sandbox-exec`). On the ADR 0080 Linux host
+  the route is ASSUMED to behave the same: it is codex's config machinery
+  and Rex's protocol, with nothing macOS-specific. The shakedown
+  (ranger-base-offid) re-runs it under a Linux network fence.
+- On darwin, the hook runs as codex's child under posse's seatbelt when the
+  PID is caged. That the hook may open `/dev/tty` there is ASSUMED, and
+  the slice tests it.
+
+**Alternatives rejected.**
+- **A per-seat `CODEX_HOME`**, with symlinks back to the credential file
+  and `sessions/`. It is D4's own route. It moves or fakes three stores
+  posse reads, a fresh home draws the update menu and the sign-in check,
+  and a symlinked config would carry the trust write into the operator's
+  file. The line does the same job with no home at all.
+- **Writing trust into the operator's `~/.codex/config.toml`.** posse never
+  writes global config (`rex skill setup`, above).
+- **posse computing the hash.** The model reproduced codex 8 of 8, so it
+  is buildable. That was the clever one. But turning off the operator's,
+  the project's and the plugins' hooks needs every hook's hash, which means
+  re-implementing codex's whole discovery, and every codex bump would need
+  a re-audit. Asking is one RPC, and a failed ask refuses safely. The model
+  stays in the probe, as a check on the reading.
+- **`enabled=false` alone for foreign hooks.** MEASURED: it still draws
+  the review dialog.
+- **`--dangerously-bypass-hook-trust`.** It would run every hook in reach.
+  Rejected in the first amendment, and nothing here changes that.
+- **One codex line for both multiplexers.** That changes a working herdr
+  path for no herdr gain, and nobody has measured what herdr does with
+  OSC 7501. §6 keeps herdr's paths as they are.
+- **A `.codex/hooks.json` written into the session worktree.** It is a
+  file in the repo tree that an agent can commit, and a flag does the same
+  without it.
+
+**Measured versus assumed.** MEASURED (this box, 2026-11-06): the four
+probe arms, `hooks/list` latency and agreement with the dialog's hash, the
+hash model 8 of 8, that `enabled=false` alone draws the dialog, the CLI
+surfaces of `grok --help` (1.0.52) and `bob chat --help` (2.0.9). STATIC
+(source at `rust-v0.153.4`): the key format, the layers `hooks.state` is
+read from, managed hooks, and the review predicate. ASSUMED: codex startup
+with a network inside 45 s, a harmless `initialize` with a live login,
+`/dev/tty` under seatbelt, the launch-failure path releasing the claim at
+this stage, and the Linux behaviour. UNPROVEN: codex `blocked` live.
