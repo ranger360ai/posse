@@ -25,11 +25,13 @@ package treepins
 // names `make install`; the wall count only says how loud to read it.
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -49,17 +51,43 @@ const wrsStampFunc = "RenderedByPosse"
 // wrsStampDefiner is where wrsStampFunc lives, relative to the repo root.
 const wrsStampDefiner = "internal/posse/renderstamp.go"
 
+// wrsRenderPrefix is the naming convention of a func that returns rendered
+// text. It is what the body-renderer half of the class follows.
+const wrsRenderPrefix = "render"
+
+// THE BODY RENDERERS (ranger-base-jk380). A header is written once, by the
+// file that writes the wall, but the wall's BODY can be spliced in from
+// elsewhere: renderShim in gates.go writes the git shim's header and calls
+// renderHookSkipArm and renderHookSkipEnvCall, declared in hookskip.go. That
+// file says `do not edit` nowhere, so the marker alone never derived it, and
+// `posse gates` read "0 of them rendering a wall" over three commits that
+// changed only hookskip.go — one closing a hole live on every installed seat.
+//
+// So the class is closed over calls: start from every func declared in a
+// headered file, follow each call whose callee is named `render*`, and every
+// file declaring such a callee is a body renderer; the walk continues through
+// that callee's own `render*` calls. By NAME, not by type: a method and a
+// func sharing a name both count, which can only over-derive, never miss.
+// The residual is a helper spliced into a wall whose name is not `render*`
+// (a quoting helper, say) — still a floor, and WallRenderSources says so.
+
 // wrsRenderSites parses every non-test Go file in internal/posse and returns,
-// per file, whether its string literals claim "do not edit" and whether its
-// body calls the stamp writer.
-func wrsRenderSites(t *testing.T, root string) (renders, stamps map[string]bool) {
+// per file, whether its string literals claim "do not edit", whether its body
+// calls the stamp writer, and whether it is a body renderer reached from a
+// headered file (see above; never a file already in renders).
+func wrsRenderSites(t *testing.T, root string) (renders, stamps, bodies map[string]bool) {
 	t.Helper()
 	dir := filepath.Join(root, "internal", "posse")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("cannot read %s: %v", dir, err)
 	}
-	renders, stamps = map[string]bool{}, map[string]bool{}
+	renders, stamps, bodies = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	type renderFunc struct {
+		file    string
+		callees []string // the `render*` names its body calls
+	}
+	decls := map[string][]renderFunc{} // func or method name -> declarations
 	fset := token.NewFileSet()
 	seen := 0
 	for _, e := range entries {
@@ -93,6 +121,31 @@ func wrsRenderSites(t *testing.T, root string) (renders, stamps map[string]bool)
 			}
 			return true
 		})
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			rf := renderFunc{file: rel}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				var name string
+				switch fn := call.Fun.(type) {
+				case *ast.Ident:
+					name = fn.Name
+				case *ast.SelectorExpr:
+					name = fn.Sel.Name
+				}
+				if strings.HasPrefix(name, wrsRenderPrefix) {
+					rf.callees = append(rf.callees, name)
+				}
+				return true
+			})
+			decls[fd.Name.Name] = append(decls[fd.Name.Name], rf)
+		}
 	}
 	if seen < 50 {
 		// The package is ~200 files. A handful means the walk found the
@@ -102,25 +155,84 @@ func wrsRenderSites(t *testing.T, root string) (renders, stamps map[string]bool)
 	if len(renders) == 0 {
 		t.Fatalf("no file under %s claims %q in a string literal — the marker this pin derives its class from is gone", dir, wrsRenderMarker)
 	}
-	return renders, stamps
+	var queue []string
+	for _, ds := range decls {
+		for _, d := range ds {
+			if renders[d.file] {
+				queue = append(queue, d.callees...)
+			}
+		}
+	}
+	visited := map[string]bool{}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if visited[name] {
+			continue
+		}
+		visited[name] = true
+		for _, d := range decls[name] {
+			if !renders[d.file] {
+				bodies[d.file] = true
+			}
+			queue = append(queue, d.callees...)
+		}
+	}
+	return renders, stamps, bodies
 }
 
-// ARM 1: every derived render site is in WallRenderSources, so the count
-// `posse promote` prints cannot silently omit a wall.
+// wrsUnlisted returns, sorted, every derived render site (headered or body)
+// that list does not name.
+func wrsUnlisted(renders, bodies map[string]bool, list []string) []string {
+	listed := map[string]bool{}
+	for _, p := range list {
+		listed[p] = true
+	}
+	var missing []string
+	for _, set := range []map[string]bool{renders, bodies} {
+		for rel := range set {
+			if !listed[rel] {
+				missing = append(missing, rel)
+			}
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// ARM 1: every derived render site — headered or body — is in
+// WallRenderSources, so the count `posse promote` prints cannot silently omit
+// a wall.
 func TestWallRenderSourcesNameEveryRenderedDoNotEditSite(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	renders, _ := wrsRenderSites(t, root)
-	listed := map[string]bool{}
-	for _, p := range posse.WallRenderSources {
-		listed[p] = true
-	}
-	for rel := range renders {
-		if !listed[rel] {
-			t.Errorf("%s renders a file whose header says %q, and posse.WallRenderSources does not name it — `posse promote` and `posse gates` would count a lag over this file as touching no wall, which is the silence ranger-base-vso72 closed. Add it to WallRenderSources (wallrenderer.go).", rel, wrsRenderMarker)
+	renders, _, bodies := wrsRenderSites(t, root)
+	for _, rel := range wrsUnlisted(renders, bodies, posse.WallRenderSources) {
+		why := fmt.Sprintf("renders a file whose header says %q", wrsRenderMarker)
+		if bodies[rel] {
+			why = fmt.Sprintf("declares a %s* func a headered render site splices into its wall", wrsRenderPrefix)
 		}
+		t.Errorf("%s %s, and posse.WallRenderSources does not name it — `posse promote` and `posse gates` would count a lag over this file as touching no wall, which is the silence ranger-base-vso72 closed (and ranger-base-jk380 found again for a body renderer). Add it to WallRenderSources (wallrenderer.go).", rel, why)
+	}
+
+	// The derivation's own witness (ranger-base-jk380): hookskip.go carries
+	// no header and renders the git shim's hook-skip arm, so a copy of the
+	// list without it must red. If this fails the body-renderer half has
+	// stopped seeing the file whose omission it exists for.
+	const body = "internal/posse/hookskip.go"
+	var without []string
+	for _, p := range posse.WallRenderSources {
+		if p != body {
+			without = append(without, p)
+		}
+	}
+	if renders[body] {
+		t.Fatalf("%s now says %q itself — this witness needs a body renderer that does not; pick one from the derived bodies %v", body, wrsRenderMarker, bodies)
+	}
+	if got := wrsUnlisted(renders, bodies, without); len(got) != 1 || got[0] != body {
+		t.Errorf("WallRenderSources minus %s should be missing exactly %s, derived as a body renderer; the derivation reports missing %v (bodies derived: %v)", body, body, got, bodies)
 	}
 }
 
@@ -131,7 +243,7 @@ func TestEveryRenderedDoNotEditSiteNamesItsRenderer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renders, stamps := wrsRenderSites(t, root)
+	renders, stamps, _ := wrsRenderSites(t, root)
 	for rel := range renders {
 		if rel == wrsStampDefiner || stamps[rel] {
 			continue

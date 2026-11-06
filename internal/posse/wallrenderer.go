@@ -58,7 +58,8 @@ import (
 )
 
 // WallRenderSources are the tracked paths whose commits can change a wall
-// this binary renders: the seatbelt profile, the gate shims and gate shell,
+// this binary renders: the seatbelt profile, the gate shims and gate shell
+// (with the git shim's hook-skip arm),
 // the L3 hook bodies, the cage's mounts and launcher, the egress allowlist,
 // the pane line, the session skills binding, the persona-mode channel that
 // carries the PID on a CLI with no launch-time system flag, and the renderer
@@ -66,7 +67,10 @@ import (
 //
 // A FLOOR, and read as one. internal/treepins' pin holds the derived half —
 // every internal/posse file that renders a `do not edit` header must be
-// named here — and the rest are named by hand, so a render site that carries
+// named here, and so must every file declaring a `render*` func reached from
+// one through `render*` calls (the BODY renderers: hookskip.go renders the
+// shim's hook-skip arm and gates.go writes its header, ranger-base-jk380) —
+// and the rest are named by hand, so a render site that carries
 // no such header could still be missing. That is why nothing keys OFF this
 // list: the line below always reports the WHOLE lag and always names `make
 // install`, and the wall count only says how loud to read it. An empty wall
@@ -79,6 +83,7 @@ import (
 var WallRenderSources = []string{
 	"internal/posse/seatbelt.go",
 	"internal/posse/gates.go",
+	"internal/posse/hookskip.go",
 	"internal/posse/cage.go",
 	"internal/posse/cagelauncher.go",
 	"internal/posse/cageinner.go",
