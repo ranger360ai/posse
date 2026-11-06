@@ -282,10 +282,22 @@ func main() {
 		}
 		return
 	}
+	// Fourth entry point (ranger-base-z7kle): the OSC 7501 reporter a runtime
+	// runs as a hook, which on Rex is how codex reports at all (ADR 0076
+	// Amendment 2, D6). It is here for the same two reasons as the cage
+	// entry points — it reads no config, and it runs in whatever environment
+	// the runtime hands a hook, which may name no home — plus one of its
+	// own: a hook must never be able to stop a turn, and NewApp's refusal is
+	// an exit 1. It returns a code rather than an error because the only
+	// code it may return on the hook path is 0, and die() would decide that
+	// again.
+	if posse.IsHookReport(os.Args) {
+		os.Exit(posse.RunHookReport(os.Args, os.Stdin, os.Stdout, os.Stderr))
+	}
 	// The home refusal is here and not deeper because it must reach every
-	// subcommand, and because the two entry points that legitimately run in
-	// a scrubbed environment (IsCageLaunch, IsCageReap) have already
-	// returned above — neither reads config (ranger-base-58b5).
+	// subcommand, and because the three entry points that legitimately run
+	// in a scrubbed environment (IsCageLaunch, IsCageReap, IsHookReport)
+	// have already returned above — none reads config (ranger-base-58b5).
 	a, err := posse.NewApp()
 	if err != nil {
 		die(err)

@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probe: `docs/adr/0076-flag-trust.probe.sh` · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh`*
 
 ## Context
 
@@ -529,6 +529,26 @@ OSC 7501 report to `/dev/tty`:
 No `hooks.json` is written anywhere. Fleet codex runs `-a never`, so
 `blocked` should never fire. It is mapped anyway, and it is still UNPROVEN
 live (D4 item 5).
+
+*Realized 2026-11-06 (ranger-base-z7kle): `posse hook-report <app>` is the
+subcommand, `posse hook-report --declare <app>` prints the declaration, and
+both live in `internal/posse/codexreport.go`; the handler is read ahead of
+`NewApp` in `cmd/posse/main.go`, as a fourth entry point, because a hook runs
+in whatever environment the runtime hands it and `NewApp`'s no-home refusal is
+an exit 1. MEASURED on the slice, `docs/adr/0076-reporter.probe.sh` (three
+arms, no model turn), with the table above held byte for byte: codex's own
+`hooks/list` accepts posse's declaration and reports all eight hooks as
+`sessionFlags`, one group and one handler each; the launch draws no review
+dialog and the record reads `working`, `app=codex`,
+`owner={pid,"codex"}` at t+2 s with the home byte-identical. Two findings
+the design did not have — `state=clear` REMOVES the record rather than naming
+a sixth state, and codex splits a hook `command` on whitespace with no shell
+but honours single quotes, so the handler path is quoted — are in
+`docs/notes.d/ranger-base-z7kle.md`. What that run could not reach, and
+`ranger-base-8gh58` must: a record that SETTLES. The turn under the probe's
+no-turn lock failed on a missing credential and the record stayed `working`
+for 60 s with no Stop or Interrupt, so what codex reports after a turn that
+ends is still UNPROVEN.*
 
 **D7. Trust is asked of codex, then typed.** Before the line is typed,
 posse runs `codex app-server` once, with the seat's `CODEX_HOME` pin

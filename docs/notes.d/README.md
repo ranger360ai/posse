@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-11
 
+- [ranger-base-z7kle](ranger-base-z7kle.md) — posse's OSC 7501 reporter for codex, and what the route actually does (ranger-base-z7kle) — 2026-11-06
 - [ranger-base-y9i3o](ranger-base-y9i3o.md) — Four conjuncts of the ADR 0079 D2 compare now carry a witness (ranger-base-y9i3o) — 2026-11-06
 - [ranger-base-rrklg](ranger-base-rrklg.md) — ranger-base-rrklg — verifying four closes — 2026-11-06
 - [ranger-base-rbxal](ranger-base-rbxal.md) — The fifth ADR 0079 D2 conjunct now carries a witness (ranger-base-rbxal) — 2026-11-06
