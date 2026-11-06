@@ -88,6 +88,15 @@ launcher pass drops both once it closes. Nothing here was pushed and
 nothing merged to main by hand.
 
 Related: ranger-base-ap4p6, ranger-base-c1pqo, ranger-base-jvwcb,
-ranger-base-e09l0 (160d6bd9, still merge-blocked, conflicts with
-`hookskip.go` again), docs/notes.d/ranger-base-xea2y.md (the replay
-recipe), docs/notes.d/ranger-base-1agm6.md.
+ranger-base-e09l0, docs/notes.d/ranger-base-xea2y.md (the replay recipe),
+docs/notes.d/ranger-base-1agm6.md.
+
+ranger-base-e09l0 was merge-blocked over the same file when c1pqo closed,
+and is not any more: 160d6bd9 paired onto main as 2f1d59aa (replayKey
+identical), its branch is gone and its pin is under `refs/posse/retired/`.
+So all three hook-skip commits — e09l0, ap4p6, c1pqo — are on main, and
+`hookskip.go` has no merge-blocked work outstanding against it. What that
+leaves is ranger-base-8t93w / ranger-base-onwi1: the posse the seats RUN is
+still 1f4da269, which predates all three, so the landed wall is not live on
+any seat until the operator runs `make install`. Being on main and being
+installed are different facts here.
