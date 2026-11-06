@@ -266,29 +266,86 @@ func TestQABdCeilingKeyAbsentRendersNothing(t *testing.T) {
 	}
 }
 
-// VERIFICATION 7: 20 bd calls through a rendered ceiling arm cost under 1s
-// wall — the prototype's own measured range (0.30-0.48s, ADR 0069 Context)
-// on an otherwise-idle box. This pin's own budget is 5s rather than 1s
-// (credpinwire_qa_test.go's own generous bound, same reason): `make test`
-// runs this alongside two other suite arms competing for the same cores,
-// and a bound tight enough to pin the prototype's number is a bound that
-// flakes under that contention (MEASURED: 1.29s for this same loop during
-// a three-arm `make test` run) without catching anything a 5s bound would
-// miss — the arm being guarded against is an accidental O(n^2) or a lost
-// short-circuit, not a few hundred milliseconds of scheduler noise.
+// VERIFICATION 7: the ceiling arm's per-call cost is a bounded multiple of
+// the SAME shim rendered without the arm — measured in the same process,
+// interleaved call-for-call, with both shims warmed equally. ADR 0069
+// Consequences claims "15-24 ms per bd call, linear in classes and in file
+// size"; what this pin exists to catch is that claim breaking by an order
+// of magnitude — an accidental O(n^2) or a lost short-circuit — never a
+// few hundred milliseconds either way.
+//
+// It used to budget 5s of ABSOLUTE wall over 20 ceiling calls, and that is
+// a budget on the BOX, not on the arm: `make test` runs this beside two
+// other suite arms and several sibling seats' suites, and the absolute
+// number moves with all of them while the arm is unchanged. MEASURED for
+// ranger-base-91rep: the same 20 calls cost 0.30-0.48s on the prototype's
+// idle box (ADR 0069 V7), 2.58-2.97s here at a one-minute load average of
+// 30-60, and 5.490s at load ~85 in a sibling seat's push lane at bdd3954b,
+// which is the flake this replaces — an 11x spread over identical code,
+// against a bound with 10x of headroom at the point it was chosen.
+//
+// The ratio does not move with the box, because a plain call and a ceiling
+// call pay the same scheduler tax in the same window: MEASURED 1.78-2.27
+// over 15 readings at loads 26-60 (six of them 1.81-2.12 with the
+// symmetric warm-up below, at load 26-30), against which ceilingCostFactor
+// keeps ~2.6x of headroom. Interleaving is what buys that: the same box,
+// same minute, measured as two SEQUENTIAL loops instead, read 1.80-3.48 —
+// a 1.7x spread against this 0.5x one, because a loop that runs second
+// sees whatever the load did meanwhile. Alternating which shim leads each
+// pair cancels the first-of-pair cache advantage, which is worth real
+// numbers here: warming the ceiling shim 20 calls more than the plain one
+// pulls the ratio down to 1.04.
+//
+// The slack term is for the case the ratio cannot speak to — a plain
+// baseline so fast that the arm's fixed cost dominates it. It is deliberately
+// larger than the whole measured ceiling leg, so it can only ever forgive,
+// never accuse.
+//
+// Measurements and the uniform-slowdown repro: docs/notes.d/ranger-base-91rep.md
 func TestQABdCeilingTwentyCallsFastEnough(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode")
 	}
-	shim, _, _ := qaBdCeilingShim(t, true)
-	start := time.Now()
+	// The arm may cost this multiple of a call through the same shim
+	// without it, plus the slack, and no more.
+	const ceilingCostFactor = 6
+	const ceilingCostSlack = 300 * time.Millisecond
+
+	plainShim, _, _ := qaBdCeilingShim(t, false)
+	ceilShim, _, _ := qaBdCeilingShim(t, true)
+
+	call := func(what, shim string) time.Duration {
+		start := time.Now()
+		_, errs, code := qaBdCeilingRun(t, shim, "", "list", "--limit", "1")
+		d := time.Since(start)
+		if code != 0 {
+			t.Fatalf("%s shim: `list --limit 1` must pass through clean, got code=%d err=%q", what, code, errs)
+		}
+		return d
+	}
+	// Warm both equally before either is timed — the render is on disk and
+	// the arm's own grep is a separate binary, so an unwarmed first call
+	// measures the page cache rather than the arm.
+	for i := 0; i < 3; i++ {
+		call("plain", plainShim)
+		call("ceiling", ceilShim)
+	}
+
+	var plain, ceiling time.Duration
 	for i := 0; i < 20; i++ {
-		if _, _, code := qaBdCeilingRun(t, shim, "", "list", "--limit", "1"); code != 0 {
-			t.Fatalf("call %d must pass through clean", i)
+		if i%2 == 0 {
+			plain += call("plain", plainShim)
+			ceiling += call("ceiling", ceilShim)
+		} else {
+			ceiling += call("ceiling", ceilShim)
+			plain += call("plain", plainShim)
 		}
 	}
-	if d := time.Since(start); d > 5*time.Second {
-		t.Errorf("20 bd calls through the ceiling arm took %s, want well under 5s", d)
+	t.Logf("20 calls each, interleaved: plain=%s ceiling=%s ratio=%.3f (budget %dx+%s)",
+		plain, ceiling, float64(ceiling)/float64(plain), ceilingCostFactor, ceilingCostSlack)
+	if ceiling > ceilingCostFactor*plain+ceilingCostSlack {
+		t.Errorf("20 bd calls through the ceiling arm took %s against %s for the same shim without it (ratio %.3f) — want at most %dx+%s. The arm's per-call cost is linear in classes and file size (ADR 0069); this says it is not.",
+			ceiling, plain, float64(ceiling)/float64(plain), ceilingCostFactor, ceilingCostSlack)
 	}
 }
 

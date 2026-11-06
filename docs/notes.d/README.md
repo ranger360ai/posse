@@ -17,6 +17,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-dutum](ranger-base-dutum.md) — Four closes, and the clock arithmetic nobody had a positive control for (ranger-base-dutum) — 2026-11-04
 - [ranger-base-c1pqo](ranger-base-c1pqo.md) — The read arm judged remote on its next word, and git takes an option first (ranger-base-c1pqo) — 2026-11-04
 - [ranger-base-ap4p6](ranger-base-ap4p6.md) — The wall that refused the reads it was never built to stop (ranger-base-ap4p6) — 2026-11-04
+- [ranger-base-91rep](ranger-base-91rep.md) — A wall-clock budget on the box, standing in for a budget on the arm (ranger-base-91rep) — 2026-11-04
 - [ranger-base-6vvgs](ranger-base-6vvgs.md) — A moved HOME moves the module cache, and a package built against an empty one (ranger-base-6vvgs) — 2026-11-04
 - [ranger-base-1agm6](ranger-base-1agm6.md) — ranger-base-1agm6 — verifying four closes against the git hook-skip arm — 2026-11-04
 - [ranger-base-tmb7t](ranger-base-tmb7t.md) — ranger-base-tmb7t · verifying the four hook-skip closes — 2026-11-03
