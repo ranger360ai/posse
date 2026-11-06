@@ -111,26 +111,73 @@ func TestQAStatusPrintsTheStaleLine(t *testing.T) {
 	}
 }
 
+// freshSeedAge is how FRESH the live row below seeds its reading at the
+// instant it writes it, and the row's whole premise is that this is under
+// PlanUsageStaleAfterDefault (2h, internal/posse/planstale.go:66).
+//
+// That premise is a wall-clock deadline stated in this process and read in
+// another, which is the class ranger-base-gt0q9 measured: Go's monotonic
+// clock on darwin is mach_absolute_time and does not tick while the box is
+// asleep, and this box slept 2h51m02s inside one cmd/posse test. The
+// exposure is the MIRROR of seedAgedQuietSnapshot's, which is why that
+// bead's bracket does not cover this row — there the reading is seeded
+// past the threshold and an age only ever gets older, so no jump can take
+// the premise back; here it is seeded under the threshold and any jump
+// past two hours takes it over, after which the binary correctly prints
+// the BLIND line and this pin reds accusing the code (MEASURED
+// 2026-11-06, ranger-base-0ddmu: the same row seeded -3h fails with
+// `plan meter BLIND 3h00m`, the binary right and the fixture expired).
+//
+// There is nothing to bracket, because the row asserts silence rather than
+// an age, so skipIfTheBoxSleptMidTest is the whole guard. Its tolerance is
+// a minute against this row's ~2h of margin, so it skips conservatively —
+// a jump in between retires a run that would still have passed. That is
+// the cheap direction: a real staleness regression is not a wall jump, so
+// it still reds rather than skipping: the -3h repro above fails, under
+// this guard, exactly as it did without one.
+const freshSeedAge = time.Minute
+
 // Two controls, because a line printed unconditionally would pass the pin
 // above. Both are states where the sentence would be a lie: an armed guard
 // whose reading is minutes old, and a shop with no meter guard at all —
 // where nothing is ruling on the snapshot a cockpit happened to write.
+//
+// The fixed calendar date needs no guard: no clock can move a date, and
+// with no meter guard configured nothing is ruling on it at any age. The
+// live row is the one stating a deadline, and it carries freshSeedAge's.
 func TestQAStatusQuietWhereTheLineWouldLie(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		guard   string
-		reading time.Time
+		reading time.Time // the zero time: seeded live, freshSeedAge old, in the subtest
 	}{
-		{"fresh reading", "plan_guard_5h: 70\nplan_guard_7d: 85\n", time.Now().UTC().Add(-time.Minute)},
+		{"fresh reading", "plan_guard_5h: 70\nplan_guard_7d: 85\n", time.Time{}},
 		{"no meter guard", "", time.Date(2026, 9, 2, 3, 23, 0, 0, time.UTC)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bin := buildRhq(t)
 			home := t.TempDir()
 			repo := t.TempDir()
+			// ref is read HERE and not in the table literal, which is
+			// evaluated once when the table is built rather than inside the
+			// subtest, and it keeps its monotonic reading: the guard
+			// compares the two clocks and fatals on a reference carrying
+			// only one, which is what .UTC() leaves behind. So .UTC() is
+			// applied to the value written to the store and to nothing else.
+			live := tc.reading.IsZero()
+			reading, ref := tc.reading, time.Now().Add(-freshSeedAge)
+			if live {
+				reading = ref.UTC()
+			}
 			writeStatusConfig(t, home, repo, tc.guard)
-			seedStatusReading(t, home, tc.reading)
-			if out := runStatus(t, bin, home); strings.Contains(out, "plan meter BLIND") {
+			seedStatusReading(t, home, reading)
+			out := runStatus(t, bin, home)
+			if live {
+				// After the launch and before the assertion: the jump
+				// breaks the premise while the binary is reading it.
+				skipIfTheBoxSleptMidTest(t, ref)
+			}
+			if strings.Contains(out, "plan meter BLIND") {
 				t.Fatalf("%s must print nothing about blindness:\n%s", tc.name, out)
 			}
 		})

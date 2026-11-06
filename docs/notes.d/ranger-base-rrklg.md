@@ -165,3 +165,10 @@ and are unread leads, not findings: `runtimeavail_qa_test.go`'s
 `backupsurface_qa_test.go`'s `backupHome`/`plantArchive` (the archive's age
 is its NAME's stamp, read against a retention window). The discriminator is
 ranger-base-w4enh's: whether one clock reads both sides.
+
+FIXED 2026-11-06 under ranger-base-0ddmu
+(docs/notes.d/ranger-base-0ddmu.md): the `fresh reading` row now takes its
+reference inside the subtest, with its monotonic reading intact, and skips
+through `skipIfTheBoxSleptMidTest` after the launch. There is nothing to
+bracket — the row asserts silence, not an age. The two leads above are
+unchanged and remain ranger-base-w4enh's census.

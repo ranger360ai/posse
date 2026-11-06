@@ -101,3 +101,12 @@ separately:
 Both were bracketed with the same machinery under ranger-base-dsuk7, which
 also rules out the "stop the clock" alternative this bead's description
 offered: docs/notes.d/ranger-base-dsuk7.md.
+
+A third row in the same package is in the class in the OTHER direction, found
+by ranger-base-rrklg's verification and guarded under ranger-base-0ddmu
+(docs/notes.d/ranger-base-0ddmu.md): `cmd/posse/planstale_qa_test.go`,
+`TestQAStatusQuietWhereTheLineWouldLie/fresh_reading`, seeds a reading FRESHER
+than the staleness threshold and asserts silence. It states its premise as a
+wall deadline like the rest, but carries no age literal at all — so the thing
+that makes a fixture a member is whether one clock reads both sides of the
+premise, and never whether it spells an age.
