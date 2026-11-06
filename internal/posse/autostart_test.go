@@ -1421,6 +1421,19 @@ const (
 	// The seed line carries no value for exampleConfigDefault to read, so
 	// there is no documented text to compare.
 	seedShellNoDocumentedValue seedShellKind = "the seed line documents no value"
+	// The key is not IN the argv: it decides whether this hook arms an argv
+	// at all. The seed line IS a claim about the script's fallback, and it
+	// is not one two argvs can be compared for — seedShellDefaultCompared's
+	// control is a value that arms a DIFFERENT loop, and a gate's other
+	// value arms NONE, which that table's `other` reads as the key failing
+	// to reach the argv.
+	//
+	// So the claim is checked here, both ways: the documented value arms
+	// exactly what an absent key arms (that IS the fallback), and the
+	// control value arms nothing and says so quietly. Without the second
+	// half the first is satisfied by a hook that stopped reading the key
+	// (ranger-base-136b5).
+	seedShellGatesTheArm seedShellKind = "the key decides whether the hook arms at all"
 )
 
 // seedShellDefaultRegister is the other half of the total table: every key
@@ -1431,27 +1444,36 @@ const (
 var seedShellDefaultRegister = map[string]struct {
 	kind seedShellKind
 	why  string
+	// control is a value of this key that arms NOTHING — required by
+	// seedShellGatesTheArm and empty for every other kind, which the pin
+	// checks both ways so the column cannot become a place to park a value
+	// nothing reads.
+	control string
 }{
-	"autostart_interval": {seedShellNoFallback,
-		"THE ARM SWITCH. Absent is a disarm and a value it cannot read is a " +
-			"broken arm — `posse dispatch --watch` has no default interval to " +
-			"fall back on — so the seed's 5m is a worked example and not a " +
-			"claim about anything the script applies (ranger-base-7rt5)"},
-	"autostart_max_interval": {seedShellNotTheFallback,
-		"the fallback is posse's own 8x the base interval, computed in " +
+	"autostart_interval": {kind: seedShellNoFallback, why: "THE ARM SWITCH. Absent is a disarm and a value it cannot read is a " +
+		"broken arm — `posse dispatch --watch` has no default interval to " +
+		"fall back on — so the seed's 5m is a worked example and not a " +
+		"claim about anything the script applies (ranger-base-7rt5)"},
+	"autostart_max_interval": {kind: seedShellNotTheFallback,
+		why: "the fallback is posse's own 8x the base interval, computed in " +
 			"cmd/posse/main.go when the flag is omitted and never written in " +
 			"shell at all; the seed's 40m is a worked example (ranger-base-x8y8)"},
-	"autostart_dry_run": {seedShellNotTheFallback,
-		"the seed documents the opt-IN (`true`); absent is off, and off is " +
+	"autostart_dry_run": {kind: seedShellNotTheFallback,
+		why: "the seed documents the opt-IN (`true`); absent is off, and off is " +
 			"the absence of a flag rather than a default value"},
-	"autostart_resume": {seedShellNotTheFallback,
-		"the one key here that defaults ON, so the seed documents the " +
+	"autostart_resume": {kind: seedShellNotTheFallback,
+		why: "the one key here that defaults ON, so the seed documents the " +
 			"opt-OUT (`false`) — the line is deliberately the non-default " +
 			"(ranger-base-f0g)"},
-	"autostart_dir": {seedShellNoDocumentedValue,
-		"`autostart_dir: ~` is YAML's unset, shown to document the shape; the " +
+	"autostart_dir": {kind: seedShellNoDocumentedValue,
+		why: "`autostart_dir: ~` is YAML's unset, shown to document the shape; the " +
 			"fallback is $HOME, which is an absolute path no seed line may " +
 			"name (TestSeedConfigNamesNoMachine)"},
+	"autostart_via": {kind: seedShellGatesTheArm, why: "it reaches no argv: it decides whether this hook arms " +
+		"one at all (ADR 0080 D9). The seed's `herdr` IS the fallback the script applies, so the line is a " +
+		"claim about it — just not one two argvs can be compared for, because the other value arms NOTHING " +
+		"and seedShellDefaultCompared's `other` would read that as the key never reaching the argv",
+		control: "systemd"},
 }
 
 // autostartConfigKeys is every config key plugin/autostart.sh reads, taken
@@ -1627,6 +1649,12 @@ func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
 		if !slices.Contains(read, key) {
 			t.Errorf("seedShellDefaultRegister names %s and plugin/autostart.sh no longer reads it", key)
 		}
+		// The control column belongs to one kind. A value parked on any
+		// other row is a value nothing reads, which is how a column stops
+		// being believed.
+		if r := seedShellDefaultRegister[key]; r.control != "" && r.kind != seedShellGatesTheArm {
+			t.Errorf("seedShellDefaultRegister[%q] carries a control value (%q) and its kind %q does not read one", key, r.control, r.kind)
+		}
 	}
 
 	for _, key := range slices.Sorted(maps.Keys(seedShellDefaultRegister)) {
@@ -1668,6 +1696,34 @@ func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
 				// does, so the two are comparable as they stand.
 				if got := runArgv(t, base+key+": "+def+"\n"); got == baseline.calls {
 					t.Errorf("%s is registered as %q (%s), but the seed's %s arms exactly what an absent key arms — the line HAS become a claim about the fallback, so move it to seedShellDefaultCompared:\n%s", key, r.kind, r.why, def, got)
+				}
+			case seedShellGatesTheArm:
+				if !documented {
+					t.Fatalf("%s is registered as %q (%s) and the seed documents no value at all — this kind's whole claim is that the line names the fallback, so the row has gone stale", key, r.kind, r.why)
+				}
+				if r.control == "" {
+					t.Fatalf("%s is registered as %q (%s) with no control value — the comparison below is satisfied by a hook that stopped reading the key, and the control is what rules that out", key, r.kind, r.why)
+				}
+				if r.control == def {
+					t.Fatalf("%s's control value is the documented default (%q), so it controls nothing — pick the other value of the gate", key, r.control)
+				}
+				// This kind's missing control, same as the one above it: a
+				// key whose removal disarms has no fallback for its seed
+				// line to be about.
+				gateBase := runStandDown(t, base)
+				if gateBase.code != 0 || gateBase.calls == "" {
+					t.Fatalf("%s is registered as %q (%s), but the baseline with %s left out armed nothing (exit %d) — there is no fallback for the seed's %s to be a claim about:\n%s", key, r.kind, r.why, key, gateBase.code, def, gateBase.out)
+				}
+				// THE FALLBACK: the documented value arms exactly what an
+				// absent key arms. Compared on argv, so it is the loop and
+				// not the words.
+				if got := runStandDown(t, base+key+": "+def+"\n"); got.code != 0 || got.calls != gateBase.calls {
+					t.Errorf("the seed documents %s: %s as this key's default and the hook armed something else (exit %d)\nwritten: %s\nabsent:  %s\n%s", key, def, got.code, got.calls, gateBase.calls, got.out)
+				}
+				// THE CONTROL: the other value arms nothing, and quietly —
+				// a gate that refused would be a broken arm, not a gate.
+				if other := runStandDown(t, base+key+": "+r.control+"\n"); other.code != 0 || !probedOnly(other.calls) {
+					t.Errorf("%s: %s is this kind's control and the hook neither armed nothing nor stood down quietly (exit %d):\n%s\n%s", key, r.control, other.code, other.out, other.calls)
 				}
 			case seedShellNoFallback:
 				// Nothing is defaulted, so the proof is that leaving THIS

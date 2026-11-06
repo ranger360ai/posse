@@ -241,6 +241,14 @@ func TestAutostartViaTableIsReadByG7(t *testing.T) {
 				if !strings.Contains(g.Detail, AutostartViaKey) {
 					t.Errorf("the row does not name the key that is wrong: %q", g.Detail)
 				}
+				// The path reads the way every other row of this table
+				// reads it — AbbrevHome, not the absolute home. Under a
+				// fixture whose config is not below HOME the two spellings
+				// are the same string, so this is the assertion that holds
+				// on both and the absolute-path half would not be one.
+				if !strings.Contains(g.Detail, AbbrevHome(b.App.ConfigPath)) {
+					t.Errorf("the row does not name the config file the way its siblings do: %q", g.Detail)
+				}
 				if strings.Contains(g.Detail, "is armed") {
 					t.Errorf("a refused owner is not armed: %q", g.Detail)
 				}
@@ -767,5 +775,102 @@ func TestSystemdUnitStdoutIsTheUnitAndStderrIsTheNotes(t *testing.T) {
 	// And it wrote nothing: a render is a render.
 	if _, err := os.Stat(filepath.Join(WatchUnitDir(), "posse-dispatch.service")); err == nil {
 		t.Error("a render with no --write put a unit on disk")
+	}
+}
+
+// WorkingDirectory= takes an absolute path and systemd refuses a unit
+// without one, so a home that names no `autostart_dir:` on a box with no
+// HOME has no working directory to give the loop. Refused at render, naming
+// the key that fixes it, rather than written as a unit that fails at start
+// with a message about a directory.
+//
+// t.Setenv, so no t.Parallel here: the subject IS the environment.
+func TestSystemdUnitRefusesWithoutAnAbsoluteWorkingDirectory(t *testing.T) {
+	base := "autostart_via: systemd\nautostart_multiplexer_unit: mux.service\n"
+	t.Setenv("HOME", "")
+	a := viaHome(t, base)
+	if u, err := RenderWatchUnit(a, "/opt/posse"); err == nil {
+		t.Fatalf("rendered a unit with no working directory:\n%s", u.Body)
+	} else if !strings.Contains(err.Error(), "autostart_dir") {
+		t.Errorf("the refusal does not name the key that fixes it: %v", err)
+	}
+	// A relative autostart_dir: is the same refusal: systemd expands
+	// nothing, so `~` and `crew` are both relative paths to it.
+	for _, dir := range []string{"~", "crew", "./crew"} {
+		if _, err := RenderWatchUnit(viaHome(t, base+"autostart_dir: "+dir+"\n"), "/opt/posse"); err == nil {
+			t.Errorf("autostart_dir: %s rendered a relative WorkingDirectory=", dir)
+		}
+	}
+	// The control: an absolute one renders, so the check above is refusing
+	// a shape and not every value.
+	if _, err := RenderWatchUnit(viaHome(t, base+"autostart_dir: /srv/crew\n"), "/opt/posse"); err != nil {
+		t.Errorf("control: an absolute autostart_dir: must render: %v", err)
+	}
+}
+
+// --write has to be able to say WHERE. WatchUnitDir reads the environment,
+// so with neither XDG_CONFIG_HOME nor HOME set the unit would land at
+// `systemd/user/<unit>` relative to wherever the command ran — a file
+// systemd will never read, reported as a successful install.
+func TestSystemdUnitWriteRefusesWithNoUnitDirectory(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	a := viaHome(t, "autostart_via: systemd\nautostart_multiplexer_unit: mux.service\nautostart_dir: /srv/crew\n")
+
+	var out, errw strings.Builder
+	if err := a.CmdSystemdUnit(true, false, &out, &errw); err == nil {
+		t.Error("--write wrote a unit to a path it could not name")
+	} else if !strings.Contains(err.Error(), "XDG_CONFIG_HOME") {
+		t.Errorf("the refusal does not name what would fix it: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join("systemd", "user", "posse-dispatch.service")); err == nil {
+		t.Error("--write put a unit under the working directory")
+	}
+	// The render itself still works: printing a unit needs no unit dir, and
+	// a render on a box that is not the host is a legitimate thing to want.
+	out.Reset()
+	if err := a.CmdSystemdUnit(false, false, &out, &errw); err != nil {
+		t.Errorf("a render with no --write needs no unit directory: %v", err)
+	}
+	if !strings.Contains(out.String(), "ExecStart=") {
+		t.Errorf("stdout is not a unit:\n%s", out.String())
+	}
+}
+
+// ONE REFUSAL SENTENCE, TWO CALLERS, each naming the config path its own
+// surface names: AutostartVia hands it the absolute path a refusal at the
+// keyboard should quote, and G7 hands it AbbrevHome, which is what every
+// other row of that table prints.
+//
+// The G7 row's own fixture cannot pin the second half — a scratch config
+// that is not below HOME makes AbbrevHome the identity, so the two spellings
+// are one string there — so what is pinned is the seam: the renderer takes
+// the path as an argument, and AutostartVia's error IS that renderer's
+// output. A second sentence for either caller then shows up here.
+func TestAutostartViaRefusalIsOneSentenceWithThePathAsAnArgument(t *testing.T) {
+	t.Parallel()
+	for _, cfg := range []string{"~/.config/posse/config.yaml", "/srv/crewa/config.yaml"} {
+		err := AutostartViaRefusal("banana", cfg)
+		if err == nil {
+			t.Fatal("the refusal renderer returned no error")
+		}
+		if !strings.Contains(err.Error(), cfg) {
+			t.Errorf("the sentence does not name the path it was handed (%q): %v", cfg, err)
+		}
+		for _, want := range []string{AutostartViaKey, "banana", AutostartViaHerdr, AutostartViaSystemd} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the sentence does not name %q: %v", want, err)
+			}
+		}
+	}
+	// AutostartVia's own refusal is this renderer's output over its own
+	// config path — not a second copy of the words.
+	a := viaHome(t, "autostart_via: banana\n")
+	_, err := a.AutostartVia()
+	if err == nil {
+		t.Fatal("AutostartVia accepted a value that names neither mechanism")
+	}
+	if want := AutostartViaRefusal("banana", a.ConfigPath).Error(); err.Error() != want {
+		t.Errorf("AutostartVia says\n  %s\nand the renderer says\n  %s", err, want)
 	}
 }

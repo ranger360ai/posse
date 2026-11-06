@@ -90,26 +90,20 @@ func (a *App) AutostartVia() (string, error) {
 		return AutostartViaHerdr, nil
 	}
 	if !ValidAutostartVia(v) {
-		return "", Die("bad %s '%s' in %s (want %s or %s — ADR 0080 D9) — the key says which mechanism owns this home's `dispatch --watch` loop, and a name that is neither cannot be read as either: the herdr startup hook refuses it and arms nothing, and `posse systemd` refuses to render a unit",
-			AutostartViaKey, v, a.ConfigPath, AutostartViaHerdr, AutostartViaSystemd)
+		return "", AutostartViaRefusal(v, a.ConfigPath)
 	}
 	return v, nil
 }
 
-// AutostartViaName is AutostartVia for the read paths that must keep
-// working over a config they cannot refuse — the same split as
-// MultiplexerName/Multiplexer, and for the same reason: a malformed value
-// reads as the default here and is refused where it costs something.
-//
-// G7 does NOT use this: a row whose whole job is to be believed has to say
-// that the owner is unreadable rather than report on the default's
-// mechanism (govern.go).
-func (a *App) AutostartViaName() string {
-	name, err := a.AutostartVia()
-	if err != nil {
-		return AutostartViaHerdr
-	}
-	return name
+// AutostartViaRefusal is the sentence a value that names neither mechanism
+// gets. One renderer, two callers, because each names the config path its
+// own surface names: AutostartVia hands it the absolute path a refusal at
+// the keyboard should quote, and `posse status`'s G7 hands it AbbrevHome,
+// which is what every other row of that table prints. A second sentence
+// would be the drift this file's header is about.
+func AutostartViaRefusal(value, cfg string) error {
+	return Die("bad %s '%s' in %s (want %s or %s — ADR 0080 D9) — the key says which mechanism owns this home's `dispatch --watch` loop, and a name that is neither cannot be read as either: the herdr startup hook refuses it and arms nothing, and `posse systemd` refuses to render a unit",
+		AutostartViaKey, value, cfg, AutostartViaHerdr, AutostartViaSystemd)
 }
 
 // ─── the loop's argv, which the hook also builds ────────────────────────────
@@ -330,9 +324,24 @@ func RenderWatchUnit(a *App, exe string) (*WatchUnit, error) {
 		notes = append(notes, fmt.Sprintf("%s names no instance: — this unit is called %s, which is not specific to this home. A second home on this account would render the same name (ADR 0080 D8 sets instance: on every home for exactly this reason)", a.ConfigPath, name))
 	}
 
+	// autostart_dir: is EXPANDED HERE and is not by the hook, which is a
+	// divergence and the right one: the hook hands the value to `posse new
+	// --dir`, where ExpandTilde runs, and systemd expands nothing at all —
+	// a literal `~` in WorkingDirectory= is a relative path and the unit
+	// refuses to start. The seed documents `autostart_dir: ~`, so this is
+	// the common value and not a corner.
 	dir := ExpandTilde(a.CfgGet("autostart_dir", ""))
 	if dir == "" {
 		dir = os.Getenv("HOME")
+	}
+	// WorkingDirectory= takes an absolute path and systemd refuses the unit
+	// without one. Nothing above can produce one from an empty HOME, and a
+	// unit written with an empty or relative value fails at start with a
+	// message about the directory rather than about the config — so it is
+	// refused here, where the key that would fix it can be named.
+	if !filepath.IsAbs(dir) {
+		return nil, Die("the loop has no absolute working directory: autostart_dir: in %s is %q and HOME resolves to %q — systemd's WorkingDirectory= takes an absolute path and refuses the unit without one, so name the directory in autostart_dir:",
+			a.ConfigPath, a.CfgGet("autostart_dir", ""), os.Getenv("HOME"))
 	}
 
 	who := tag
@@ -425,7 +434,7 @@ WantedBy=default.target
 // value with whitespace in it, which systemd reads as two directives' worth
 // of tokens, and a value that is not a unit name at all.
 func validUnitName(v string) error {
-	if err := printable(v); err != nil {
+	if err := unitPrintable(v); err != nil {
 		return err
 	}
 	if strings.ContainsAny(v, " \t") {
@@ -439,13 +448,13 @@ func validUnitName(v string) error {
 	return Die("it ends in no systemd unit type (%s) — name the server's unit as systemctl prints it, suffix included", strings.Join(systemdUnitSuffixes, ", "))
 }
 
-// printable refuses a control character — a newline above all. Every value
+// unitPrintable refuses a control character — a newline above all. Every value
 // below is interpolated into a unit file, where a newline is not a value at
 // all: it ends the directive and starts a new one, so a path carrying one
 // would inject directives nobody wrote. Flat-YAML cannot produce one (the
 // reader splits on it), and a path from the environment is not supposed to
 // either — which is why this is a refusal and not an escape.
-func printable(v string) error {
+func unitPrintable(v string) error {
 	for _, r := range v {
 		if r < 0x20 || r == 0x7f {
 			return Die("it carries a control character (%q)", r)
@@ -459,7 +468,7 @@ func printable(v string) error {
 // literal one is doubled; whitespace means the value has to be quoted or
 // systemd reads it as more than one argument.
 func unitArg(v string) (string, error) {
-	if err := printable(v); err != nil {
+	if err := unitPrintable(v); err != nil {
 		return "", err
 	}
 	v = strings.ReplaceAll(v, "%", "%%")
@@ -473,7 +482,7 @@ func unitArg(v string) (string, error) {
 // free text (Description=): the specifier still expands, so `%` is still
 // doubled, but nothing is quoted or split.
 func unitLiteral(v string) (string, error) {
-	if err := printable(v); err != nil {
+	if err := unitPrintable(v); err != nil {
 		return "", err
 	}
 	return strings.ReplaceAll(v, "%", "%%"), nil
@@ -532,6 +541,13 @@ func (a *App) CmdSystemdUnit(write, force bool, out, errw io.Writer) error {
 			fmt.Fprintf(errw, "posse systemd: then: %s\n", line)
 		}
 		return nil
+	}
+	// WatchUnitDir reads the environment, so a session with neither
+	// XDG_CONFIG_HOME nor HOME would otherwise write `systemd/user/<unit>`
+	// relative to the cwd — a file systemd will never read, reported as a
+	// successful install.
+	if !filepath.IsAbs(u.Path) {
+		return Die("cannot say where this account's systemd user units live: neither XDG_CONFIG_HOME nor HOME is set, so the unit would land at %q, relative to wherever this ran. Print it instead (`posse systemd`) and put it where `systemctl --user` reads it", u.Path)
 	}
 	if err := os.MkdirAll(filepath.Dir(u.Path), 0o755); err != nil {
 		return err

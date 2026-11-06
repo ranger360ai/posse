@@ -580,8 +580,12 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 		via, badVia := in.App.AutostartVia()
 		switch {
 		case badVia != nil:
+			// Re-rendered through AutostartViaRefusal rather than printing
+			// badVia, so the path reads the way every other row of this
+			// table reads it. Same sentence, one renderer.
 			add("G7", GovUrgent, "arm-broken",
-				fmt.Sprintf("%v — nothing will arm this home's watch loop until the key names one of them", badVia))
+				fmt.Sprintf("%v — nothing will arm this home's watch loop until the key names one of them",
+					AutostartViaRefusal(strings.TrimSpace(in.App.CfgGet(AutostartViaKey, "")), AbbrevHome(in.App.ConfigPath))))
 		case interval == "":
 			// Still G7, and still URGENT: the fact is the same one
 			// (nothing is delivering, and nothing will at the next herdr
