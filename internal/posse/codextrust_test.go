@@ -658,6 +658,12 @@ func TestCodexHooksAskRefusesBeforeStartingAnythingItCannotAsk(t *testing.T) {
 func TestHookReportAskArmRefusesAnUnpairedConfigValue(t *testing.T) {
 	t.Parallel() // argv in, a sentence out: no env, no cwd, no child
 	for _, argv := range [][]string{
+		// THE ARGV THAT IS ONE WORD SHORT (ranger-base-5x8xi). Until the ask
+		// arm owned its own arity this fell past it into the shared
+		// wrong-argv arm and answered exit 0 with an empty stdout — MEASURED
+		// 2026-11-07 — which is a launch script's green light over an empty
+		// trust line, the one answer this arm's doc says it must never give.
+		{"posse", HookReportVerb, HookReportAskFlag},
 		{"posse", HookReportVerb, HookReportAskFlag, "codex", "-c"},
 		{"posse", HookReportVerb, HookReportAskFlag, "codex", "model=x"},
 		{"posse", HookReportVerb, HookReportAskFlag, "codex", "-c", "a=1", "-x", "b=2"},

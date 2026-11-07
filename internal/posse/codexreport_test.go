@@ -247,6 +247,13 @@ func TestHookReportRefusesAnAppNameThatIsNotOne(t *testing.T) {
 	t.Parallel()
 	for _, app := range []string{
 		"",
+		// A LONE COLON, and it is the row that was missing (ranger-base-5x8xi).
+		// Every other row below carries a `=`, a space, an escape, a newline
+		// or a slash BESIDE its colon, so each is refused for the other byte
+		// and the colon — the first byte this pin's doc names — was never
+		// isolated: MEASURED 2026-11-07, admitting `:` in plainStatusToken
+		// left this test green.
+		"codex:x",
 		"codex:state=idle",
 		"codex=x",
 		"co dex",

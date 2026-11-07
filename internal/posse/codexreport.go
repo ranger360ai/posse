@@ -363,7 +363,16 @@ func runHookReport(argv []string, stdin io.Reader, stdout, stderr io.Writer, tty
 		args = argv[2:]
 	}
 
-	if len(args) >= 2 && args[0] == HookReportAskFlag {
+	// THE ASK ARM OWNS ITS OWN ARITY, at any length (ranger-base-5x8xi, found
+	// verifying ranger-base-fwwl8 under ranger-base-rucsu). It used to be
+	// gated on `len(args) >= 2`, so a bare `--ask` with no app name fell
+	// past it into the wrong-argv arm below, whose `return 0` is the HOOK
+	// path's rule — and exit 0 over an empty stdout is the one answer this
+	// arm must never give, because a launch script reads it as a green light
+	// over an empty trust line (runCodexHooksAsk's own doc). A short argv
+	// reaches that arm's usage instead, which exits 1 like every other
+	// malformed ask.
+	if len(args) >= 1 && args[0] == HookReportAskFlag {
 		return runCodexHooksAsk(args[1:], stdout, stderr)
 	}
 	if len(args) == 2 && args[0] == HookReportDeclareFlag {
@@ -437,6 +446,13 @@ func runCodexHooksAsk(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "posse: usage: posse %s %s <app> [-c <value>]…  (ADR 0076 D7's trust ask: the -c values are the OTHER values the seat's line carries, with $PWD already resolved; the hooks declaration is rendered here and must not be among them)\n",
 			HookReportVerb, HookReportAskFlag)
 		return 1
+	}
+	// The app name, and NOT `args[0]` straight off: this arm is entered on the
+	// flag alone now (ranger-base-5x8xi), and an index into an empty slice
+	// would panic — which RunHookReport's recovery turns into exit 0, the
+	// very answer the arity change exists to stop.
+	if len(args) == 0 {
+		return usage()
 	}
 	app, rest := args[0], args[1:]
 	var conf []string

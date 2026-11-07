@@ -649,6 +649,32 @@ func codexAskOver(ctx context.Context, cwd string, in io.Writer, msgs <-chan cod
 	}
 	var rows []codexHookRow
 	for _, inv := range answer.Data {
+		// THE ANSWER HAS TO BE ABOUT THE DIRECTORY POSSE ASKED ABOUT
+		// (ranger-base-5x8xi, found verifying ranger-base-fwwl8 under
+		// ranger-base-rucsu). `data[]` carries one entry per asked cwd and
+		// posse asks about exactly one, so an entry naming another directory
+		// — or naming none — is an inventory of somebody else's seat. What it
+		// costs is what every refusal in this file exists to prevent: the
+		// hooks the seat's OWN project declares are absent from such an
+		// answer, so they stay untrusted, codex draws the startup review
+		// dialog, and the seat submits nothing and reports nothing. The
+		// duplicate-key refusal below already says the reasoning in words
+		// ("posse asks about ONE cwd") and until this it was the one place
+		// the reasoning was written and the cwd was not read.
+		//
+		// A BYTE COMPARE, and that is MEASURED and not assumed. codex-cli
+		// 0.153.4 on darwin 25.6.0, 2026-11-07: `hooks/list` echoes the asked
+		// path back verbatim with no normalization of any kind — a trailing
+		// slash survives, an uncollapsed `..` survives, a symlinked path is
+		// NOT resolved, and the echo is identical whether the answer carries
+		// no hooks, a discovered hook, or a hooks.json codex could not parse.
+		// So equality cannot refuse a launch that was fine, and anything
+		// weaker would admit a neighbouring path. posse hands over an
+		// absolute, symlink-resolved cwd (runCodexHooksAsk, RexReportLine);
+		// docs/notes.d/ranger-base-5x8xi.md has the six readings.
+		if inv.Cwd != cwd {
+			return nil, Die("codex hooks trust: posse asked hooks/list about %q and codex answered about %q. posse asks about ONE cwd, so an answer about another directory is an inventory of a different seat — the hooks this seat's own project declares are not in it, so they would stay untrusted, codex would draw the startup review dialog, and the seat would submit nothing (ADR 0076 Amendment 2, D7)", cwd, inv.Cwd)
+		}
 		rows = append(rows, inv.Hooks...)
 		codexAskNotes(log, inv.Cwd, "error", inv.Errors)
 		codexAskNotes(log, inv.Cwd, "warning", inv.Warnings)

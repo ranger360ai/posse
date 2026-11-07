@@ -14,6 +14,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-74tkp](ranger-base-74tkp.md) — The wait leg that did not wait, and why the fix is not in the occupant (ranger-base-74tkp) — 2026-11-07
 - [ranger-base-6qede](ranger-base-6qede.md) — Verifying four closes: two claimed diagnostics, neither reachable (ranger-base-6qede) — 2026-11-07
 - [ranger-base-6mpke](ranger-base-6mpke.md) — A retry budget of twenty attempts that was one instant (ranger-base-6mpke) — 2026-11-07
+- [ranger-base-5x8xi](ranger-base-5x8xi.md) — What codex echoes in `hooks/list`'s `cwd`, and two argv the tables had no row for (ranger-base-5x8xi) — 2026-11-07
 - [ranger-base-z7kle](ranger-base-z7kle.md) — posse's OSC 7501 reporter for codex, and what the route actually does (ranger-base-z7kle) — 2026-11-06
 - [ranger-base-y9i3o](ranger-base-y9i3o.md) — Four conjuncts of the ADR 0079 D2 compare now carry a witness (ranger-base-y9i3o) — 2026-11-06
 - [ranger-base-w4enh](ranger-base-w4enh.md) — Seven wall-clock fixture leads, and the three files that crossed clocks (ranger-base-w4enh) — 2026-11-06

@@ -2,48 +2,49 @@
 
 package posse
 
-// A LIVE-DEFECT PIN from verifying ranger-base-fwwl8 (verify bead
-// ranger-base-rucsu, findings bead named on it).
+// THE PIN FOR codexAskOver's cwd COMPARE. It began as a live-defect pin that
+// shipped GREEN asserting a hole (found verifying ranger-base-fwwl8 under
+// verify bead ranger-base-rucsu) and it is now the right way round:
+// ranger-base-5x8xi landed the guard and INVERTED the two hole arms, which is
+// the mechanism the pin was written for. The controls are untouched, and they
+// are the half that says the compare landed in the right place rather than
+// refusing everything.
 //
-// IT SHIPS GREEN AND IT ASSERTS A HOLE. D7's ask sends `hooks/list
-// {cwds:[<the seat's cwd>]}` and reads `result.data[]` back, one entry per
-// asked cwd, each carrying its own `cwd` beside its `hooks[]`. posse decodes
-// that `cwd` field and uses it for one thing — the log sentence
-// codexAskNotes prints — and never compares it with the directory it asked
-// about. So an answer about SOMEBODY ELSE'S directory, or about no directory
-// at all, renders a full trust line that a launch would type.
+// WHAT IT PINS. D7's ask sends `hooks/list {cwds:[<the seat's cwd>]}` and
+// reads `result.data[]` back, one entry per asked cwd, each carrying its own
+// `cwd` beside its `hooks[]`. posse asks about exactly one directory, so an
+// entry naming another — or naming none — is an inventory of somebody else's
+// seat, and before the guard it rendered a full trust line that a launch
+// would have typed.
 //
 // WHY THAT IS THE SHAPE THIS FILE EXISTS FOR. codexHooksState refuses the
 // sibling contradiction in codex's answer — the same hook key twice — and its
 // refusal says why in words that cover this one exactly: "posse asks about
 // ONE cwd, so this is not two rows about two seats". codexAskOver refuses an
 // answer about no directory at all (`data[]` empty). Between those two
-// guards sits an answer about one directory that is not the seat's, and
-// nothing reads it. What it costs is what every refusal in codextrust.go is
+// guards sat an answer about one directory that is not the seat's, and
+// nothing read it. What it cost is what every refusal in codextrust.go is
 // written to prevent: the hooks discovered in the seat's OWN project are
 // absent from the table, so they stay untrusted, codex draws the startup
 // review dialog, and the seat submits nothing and reports nothing.
 //
-// WHEN THE GUARD LANDS THIS PIN REDS. That is deliberate and it is the whole
-// mechanism: invert the two hole arms to assert the refusal, keep the two
-// controls as they are, and name the bead that fixed it. Do not delete the
-// arms — the controls below are the half that says a compare landed in the
-// right place rather than refusing everything.
-//
-// WHAT A FIXER HAS TO MEASURE FIRST, because this pin cannot answer it: what
-// codex actually ECHOES in that field for the path posse hands it. posse
-// passes an absolute, symlink-resolved path; nothing on record says whether
-// codex echoes it byte for byte, so a strict equality compare could refuse a
-// launch that was fine. docs/adr/0076-trust-ask.probe.sh's `state` arm prints
-// the real answer and is where that reading comes from — it is NOT measured
-// here, and this pin's fixtures echo whatever they are handed.
+// WHY A BYTE COMPARE IS SAFE, which is the reading this pin could not take
+// and a fixer had to: MEASURED 2026-11-07, codex-cli 0.153.4 on darwin
+// 25.6.0, `hooks/list` echoes the asked path back VERBATIM — no
+// normalization at all. A trailing slash survives, an uncollapsed `..`
+// survives, a symlinked path is not resolved, and the echo is identical over
+// an answer with no hooks, one with a discovered hook, and one whose
+// hooks.json codex could not parse. So equality cannot refuse a launch that
+// was fine. docs/notes.d/ranger-base-5x8xi.md has the six readings; the
+// fixtures below still echo whatever they are handed, which is why they can
+// render the shapes codex does not.
 
 import (
 	"strings"
 	"testing"
 )
 
-func TestQACodexAskDoesNotVetTheDirectoryItsAnswerIsAbout(t *testing.T) {
+func TestQACodexAskVetsTheDirectoryItsAnswerIsAbout(t *testing.T) {
 	t.Setenv(CodexHomeVar, "")
 
 	// THE CONTROL FIRST, so an arm below that passes cannot be passing
@@ -61,50 +62,70 @@ func TestQACodexAskDoesNotVetTheDirectoryItsAnswerIsAbout(t *testing.T) {
 		}
 	})
 
-	// THE HOLE, arm 1: an answer about another seat's directory.
-	t.Run("HOLE: an answer about another directory is accepted", func(t *testing.T) {
+	// ARM 1: an answer about another seat's directory refuses.
+	t.Run("an answer about another directory refuses", func(t *testing.T) {
 		cwd := ctCwd(t)
 		bin, _ := ctFake(t, ctTalk(ctListReply("/not/the/seats/directory", ctOurs(t)), ""))
-		_, err := ctAsk(bin, cwd).Flags()
-		if err != nil {
-			t.Fatalf("THE GUARD HAS LANDED, and this pin is now the wrong way round: asking about %s and being answered about /not/the/seats/directory is refused with %v. Invert this arm to assert that refusal — the hooks the seat's own project declares are absent from such an answer, so they stay untrusted and codex draws the startup review dialog — keep both controls, and name the bead that closed it (found verifying ranger-base-fwwl8 under ranger-base-rucsu)", cwd, err)
+		flags, err := ctAsk(bin, cwd).Flags()
+		if err == nil {
+			t.Fatalf("asking about %s and being answered about /not/the/seats/directory rendered %q. That is an inventory of a DIFFERENT seat: the hooks this seat's own project declares are not in it, so they would stay untrusted, codex would draw the startup review dialog, and the seat would submit nothing (found verifying ranger-base-fwwl8 under ranger-base-rucsu; guarded by ranger-base-5x8xi)", cwd, flags.State)
+		}
+		if !strings.Contains(err.Error(), "/not/the/seats/directory") {
+			t.Errorf("the refusal is %v, and it has to NAME the directory codex answered about — that sentence is the whole diagnosis for a launch that otherwise looks like nothing at all", err)
 		}
 	})
 
-	// THE HOLE, arm 2: an answer naming no directory. `data[]` is non-empty,
+	// ARM 2: an answer naming no directory refuses. `data[]` is non-empty,
 	// so codexAskOver's "answered about no directory at all" refusal — which
-	// reads the LENGTH of data[] — does not reach this.
-	t.Run("HOLE: an answer naming no directory is accepted", func(t *testing.T) {
+	// reads the LENGTH of data[] — is not what reaches this; the compare is.
+	t.Run("an answer naming no directory refuses", func(t *testing.T) {
 		cwd := ctCwd(t)
 		bin, _ := ctFake(t, ctTalk(ctListReply("", ctOurs(t)), ""))
-		_, err := ctAsk(bin, cwd).Flags()
-		if err != nil {
-			t.Fatalf("THE GUARD HAS LANDED for the empty-cwd shape: %v. Invert this arm as the one above says (ranger-base-rucsu)", err)
+		if flags, err := ctAsk(bin, cwd).Flags(); err == nil {
+			t.Fatalf("an entry naming no directory at all rendered %q (ranger-base-5x8xi)", flags.State)
 		}
 	})
 
-	// THE SECOND CONTROL, and it is what BOUNDS the finding: an answer that
-	// repeats posse's own layer is already refused, so the gap is an answer
-	// about ONE wrong directory and not every multi-directory answer.
+	// THE SECOND CONTROL: the compare did not take over the refusal that was
+	// already covering the neighbouring shape. An answer with TWO entries
+	// both about the seat's own cwd passes the compare on both — so what
+	// refuses it is still the duplicate-key guard, whose own sentence is the
+	// one this guard was written from ("posse asks about ONE cwd").
 	//
 	// MEASURED which guard reaches it, because the first reading of this arm
 	// named the wrong one: the DUPLICATE-KEY refusal fires, not the
 	// session-flags count. The session-flags layer comes back once per asked
 	// cwd with the same synthetic keys each time, so the repeat is seen
-	// inside the loop and the count is never reached. Both refusals carry
-	// the same reasoning ("posse asks about ONE cwd"), which is the sentence
-	// this finding is about — it is written, and it is not read anywhere the
-	// cwd itself is.
-	t.Run("bound: an answer repeating posse's own layer is already refused", func(t *testing.T) {
+	// inside the loop and the count is never reached.
+	t.Run("control: a repeat of the seat's OWN cwd still refuses on the key", func(t *testing.T) {
 		cwd := ctCwd(t)
 		ours := ctOurs(t)
-		two := ctSpliceInventories(ctListReply(cwd, ours), ctListReply("/not/the/seats/directory", ours))
+		two := ctSpliceInventories(ctListReply(cwd, ours), ctListReply(cwd, ours))
 		bin, _ := ctFake(t, ctTalk(two, ""))
 		_, err := ctAsk(bin, cwd).Flags()
 		if err == nil {
-			t.Error("two inventories each carrying posse's eight session-flags hooks were accepted — the duplicate-key refusal is what covers any part of this class, and it is not covering this")
+			t.Error("two inventories each carrying posse's eight session-flags hooks were accepted — the duplicate-key refusal is what covers this shape, and it is not covering it")
 		} else if !strings.Contains(err.Error(), "named the key") {
-			t.Errorf("the refusal is %v, and what reached this shape when it was measured was the DUPLICATE-KEY guard — if another one does now, say which here, because the bound on the finding is whatever that guard happens to cover", err)
+			t.Errorf("the refusal is %v, and this shape's guard is the DUPLICATE-KEY one — both entries name the seat's own cwd, so the cwd compare has nothing to say about it. If the compare is what answers now it has widened past what it was scoped to (ranger-base-5x8xi)", err)
+		}
+	})
+
+	// AND THE MIXED SHAPE, which is what the finding was about: two entries,
+	// one of them the seat's. Before the compare this was refused only
+	// incidentally — by the duplicate key the second entry's session-flags
+	// layer happened to repeat — so an answer whose extra entry carried no
+	// posse hooks at all went through. The compare answers it on the
+	// DIRECTORY now, whatever the extra entry holds.
+	t.Run("two entries, one of them another directory, refuses on the directory", func(t *testing.T) {
+		cwd := ctCwd(t)
+		two := ctSpliceInventories(ctListReply(cwd, ctOurs(t)), ctListReply("/not/the/seats/directory", nil))
+		bin, _ := ctFake(t, ctTalk(two, ""))
+		_, err := ctAsk(bin, cwd).Flags()
+		if err == nil {
+			t.Fatal("an answer carrying an entry about /not/the/seats/directory was accepted (ranger-base-5x8xi)")
+		}
+		if !strings.Contains(err.Error(), "/not/the/seats/directory") {
+			t.Errorf("the refusal is %v, and this shape has to be refused on the DIRECTORY: the extra entry declares no hook, so no duplicate key stands behind it", err)
 		}
 	})
 }

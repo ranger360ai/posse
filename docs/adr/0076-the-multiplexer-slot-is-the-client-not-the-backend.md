@@ -636,12 +636,26 @@ three-message conversation answers in 0.41 s; `hooks/list` returns
 an id-less `remoteControl/status/changed` notification arrives BETWEEN the two
 answers, so a reader that takes the next line reads it; and `command` comes
 back byte-identical to what posse typed, which is what lets the ask refuse an
-answer about a line other than the one it asked about. Three refusals beyond
+answer about a line other than the one it asked about. Four refusals beyond
 D7's two, each for the same reason — the alternative is a stall nobody can
 read: an answer that does not account for all of posse's own declared hooks,
 a key or hash posse cannot put through both shell quoting and a TOML string,
-and the same key twice (which would make the inline table invalid TOML).
+the same key twice (which would make the inline table invalid TOML), and an
+entry about a DIRECTORY other than the one posse asked about.
 `docs/notes.d/ranger-base-fwwl8.md` has the tables and the mutants.*
+
+*The fourth of those was the gap, not a refusal, when this note was written:
+the slice decoded `data[].cwd` and read it only into a log line, so an answer
+about somebody else's seat rendered a full trust line. Found verifying the
+slice (`ranger-base-rucsu`) and closed by `ranger-base-5x8xi`, which compares
+the two paths BYTE FOR BYTE — MEASURED 2026-11-07, codex-cli 0.153.4 on
+darwin 25.6.0: `hooks/list` echoes the asked path verbatim, with a trailing
+slash, an uncollapsed `..` and an unresolved symlink all surviving, so
+equality cannot refuse a launch that was fine and anything weaker admits a
+neighbouring path. `docs/notes.d/ranger-base-5x8xi.md` has the six readings.
+The DESIGN is unchanged: this is the refusal D7 already implies, and the only
+thing that moved is that the directory is now read where the reasoning was
+already written.*
 
 *ANSWERED by the admission slice (ranger-base-8gh58), and the ASSUMED above
 was HALF right. The ask is called from `planLaunch`, so its error is an
