@@ -35,10 +35,13 @@ package posse
 // bead:
 // MEASURED WORKING / MEASURED BROKEN / DECLARED DIFFERENCE /
 // UNKNOWN(failing). The point of the last two is that they are NOT
-// failures of the runtime: codex's `record: untrusted` is a declared
-// difference (ranger-base-0fb measured it 3/3), and an exhausted account
-// is UNKNOWN — a fact about the bill, not about the CLI. Reading one as
-// the other is what cost the shop a morning on 2026-08-26.
+// failures of the runtime: a `record: untrusted` runtime's settle-without-
+// close is a declared difference — codex was the measured instance of it
+// (ranger-base-0fb, 3/3) until its promotion on 2026-11-07
+// (ranger-base-t5ein), and the scoring below asks the DECLARATION rather
+// than the name — and an exhausted account is UNKNOWN, a fact about the
+// bill and not about the CLI. Reading one as the other is what cost the
+// shop a morning on 2026-08-26.
 //
 // Fixture decisions, which were the bead's two open questions:
 //
@@ -280,8 +283,11 @@ func TestLiveRuntimeContractWalk(t *testing.T) {
 	}
 
 	// record. The store of record is the bead, and this is the stage codex
-	// was measured to skip. A miss on a `record: untrusted` runtime is the
-	// DECLARED difference; on a `record: trusted` one it is news.
+	// was measured to skip in 2026-08 and measured to reach in 2026-11
+	// (ranger-base-t5ein). A miss on a `record: untrusted` runtime is the
+	// DECLARED difference; on a `record: trusted` one it is news — and codex
+	// is now in the second population, which is the point of asking
+	// RecordTrust() here instead of the runtime's name.
 	after, showErr := d.Bd.Show(is.Dir, is.ID)
 	paneTail := ""
 	if showErr != nil || after.Status != "closed" {

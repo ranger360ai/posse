@@ -242,10 +242,21 @@ func TestQARefusalAfterWorkDoesNotClaimNoWorkRan(t *testing.T) {
 	}
 }
 
-// codex is both `record: untrusted` and turn-outcome blind, and the two say
-// different things: one is the declared degrade (nothing was lost, --resume
-// retries), the other is a fact posse does not have. The pass carries both
-// and neither swallows the other.
+// A runtime can be both `record: untrusted` and turn-outcome blind, and the
+// two say different things: one is the declared degrade (nothing was lost,
+// --resume retries), the other is a fact posse does not have. The pass
+// carries both and neither swallows the other.
+//
+// THE FIXTURE IS A TEMPLATE RUNTIME, for the reason the trusted-and-blind
+// arm at the bottom of this test already gives in its own words. codex was
+// both facts' built-in instance when this pin was written and is neither
+// half now on the record side: it was promoted to `record: trusted` on
+// 2026-11-07 after two dispatched seats closed their own beads
+// (ranger-base-t5ein). A template-only yaml declaring nothing but
+// `command:` is untrusted AND blind by default (ADR 0013 §4), which is the
+// pair this arm is about — and it is also the only shape that can still
+// print the degrade clause, no built-in being both dispatchable and
+// untrusted today.
 //
 // WHERE each one goes changed with ranger-base-zt45t and the claim did not.
 // The degrade is the settle line's one parenthesis — a line with two trailing
@@ -257,7 +268,14 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	runtimePersona(t, b.App, "ranger", "[go]", "codex")
+	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.App.RuntimesDir(), "unmeasured.yaml"),
+		[]byte("command: unmeasured {file}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runtimePersona(t, b.App, "ranger", "[go]", "unmeasured")
 	qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
@@ -268,16 +286,16 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 	}
 	out := dispatcherOut(d)
 	for _, want := range []string{
-		"codex is record: untrusted",
+		"unmeasured is record: untrusted",
 		"--resume re-prompts it",
-		"posse reads no turn outcome on codex",
+		"posse reads no turn outcome on unmeasured",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the settle line must carry %q:\n%s", want, out)
 		}
 	}
 	// One parenthesis, one clause in it.
-	if strings.Count(out, "(codex is record: untrusted") != 1 || strings.Contains(out, ") (") {
+	if strings.Count(out, "(unmeasured is record: untrusted") != 1 || strings.Contains(out, ") (") {
 		t.Errorf("the degrade must be the settle line's one parenthesis:\n%s", out)
 	}
 	// And the turn-outcome fact beneath it rather than inside it: on the
@@ -294,7 +312,7 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 	if strings.Contains(settle, "turn outcome") {
 		t.Errorf("the turn-outcome fact must not ride in the settle line:\n%s", settle)
 	}
-	if !strings.HasPrefix(rest, "  \u21b3 ") || !strings.Contains(rest, "posse reads no turn outcome on codex") {
+	if !strings.HasPrefix(rest, "  \u21b3 ") || !strings.Contains(rest, "posse reads no turn outcome on unmeasured") {
 		t.Errorf("want the turn-outcome fact on its own continuation line beneath the settle line:\n%s", out)
 	}
 
@@ -308,7 +326,9 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 	// and stopped being one the day it got a reader (ranger-base-fc8go), so
 	// the pin was measuring a coincidence of the built-in table rather than
 	// the independence of two declarations. Written this way it survives
-	// codex getting a reader too.
+	// codex getting a reader too — and the arm above is written the same way
+	// now, for the mirror-image reason: codex stopped being untrusted
+	// (ranger-base-t5ein) before it stopped being blind.
 	b2, fake2 := newTestBackend(t)
 	d2 := newTestDispatcher(t, b2)
 	if err := os.MkdirAll(b2.App.RuntimesDir(), 0o755); err != nil {

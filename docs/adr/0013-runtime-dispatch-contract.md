@@ -573,14 +573,53 @@ hint. That was already true; what was missing is what dispatch does when
 the runtime does not write the store.
 
 - `record: trusted` — a dispatched session of this runtime has been
-  *measured* to close (claude; grok via the qa lane tonight). Built-in
-  default only where measured. Promotion is a yaml/built-in edit after a
-  measured close, not a new store.
+  *measured* to close (claude; grok via the qa lane tonight; **codex
+  since 2026-11-07**, below). Built-in default only where measured.
+  Promotion is a yaml/built-in edit after a measured close, not a new
+  store.
 - `record: untrusted` — default for every other runtime, including
-  today's codex. Dispatch still launches. Gather never prints ✓ on
+  today's codex (**no longer true of codex; see the promotion below**).
+  Dispatch still launches. Gather never prints ✓ on
   settle-without-close. Unattended `--resume` stays on (ranger-base-f0g)
   so a skip is retried, not parked behind a busy key. This is not
   "monica closes the bead."
+
+**codex PROMOTED 2026-11-07 (ranger-base-t5ein, measured under
+ranger-base-8gh58's live acceptance on two turns the operator authorized
+in ranger-base-x7ojx).** Two dispatched codex seats on codex-cli 0.153.4
+each closed their OWN bead, left their own comment naming what changed
+and how it was verified, and landed the commit on `main`:
+ranger-base-7vh7y from a `multiplexer: rex` instance (`b14420ef`) and
+ranger-base-w4enh from a herdr one (`3bc1a6db`). Neither needed a second
+leg. The two are on different multiplexers with byte-identical PIDs
+otherwise, which is what makes it a reading of the RUNTIME rather than of
+one instance's rig; both PIDs carried a `bd close` instruction in the
+body, exactly as claude's and grok's measurements did, so what is
+measured is a runtime that acts on the contract it is handed and not one
+that closes unprompted.
+
+The 2026-08-24 reading it replaces — 3/3 settle-without-close,
+ranger-base-0fb — is not retracted: it was true of codex 0.147.0 under
+the conditions of that day — and one of those conditions was later
+MEASURED as the harness's and not the runtime's. The silence class 0fb
+names includes five consecutive dispatched sessions whose `bd close` was
+DENIED, because a self-sandboxing runtime was never told the store of
+record was writable (the reachability half of this section,
+ranger-base-hxhb). Another condition simply changed: `prompt: argv`
+delivery had not landed in 2026-08, which is a difference and not a
+cause. What the 2026-11-07 measurement has that the old one lacks is a
+seat that could reach the store at all. Two closes on one day is a small *n*, and it is a
+larger one than grok's promotion rests on.
+
+What moves with the promotion: `recordClause` stops printing codex's
+degrade on a settle-without-close, and unattended `--resume` stops
+treating a codex settle as the declared skip. Nothing else keys off the
+value. The live occupant of the untrusted branch is now a DECLARED
+runtime — the default a `runtimes/<name>.yaml` lands on — because bob's
+`record:` is the absence of a measurement and its launch row refuses
+dispatch, so no built-in is both dispatchable and untrusted; the pins for
+that branch are written over a template runtime for exactly that reason
+(`recordskip_qa_test.go`).
 
 **One exception (RULED by the operator 2026-09-05, ranger-base-8fr2j;
 built under ranger-base-4gy4i).** The harness may close a bead **it
@@ -1078,7 +1117,8 @@ rule-to-flag compilers, and an inference client inside dispatch.
   Built-in defaults after the probe (it held, 2026-08-25): claude
   `typed` (works; argv is an allowed later unify), grok/codex `argv`
   with no `startup_wait:`; claude+grok `record: trusted`, codex
-  `untrusted`. Shipped in ranger-base-dg5.
+  `untrusted` (codex promoted 2026-11-07 on a measurement of its own —
+  §4). Shipped in ranger-base-dg5.
 - `dispatch.go`: claim-then-argv path; busy-key split; plan-guard skip
   is per-bead including blind; gather never ✓ on untrusted
   settle-without-close.
@@ -1338,9 +1378,10 @@ rule-to-flag compilers, and an inference client inside dispatch.
   `rules_precedence: pid` on both built-ins, trace in
   `0013-rules-precedence-probe.md`. It stays ASSUMED on **claude**,
   which was not authorized a turn: the PID-wins prompt line remains its
-  only reconciliation. codex stays `record: untrusted` on its own
+  only reconciliation. codex stayed `record: untrusted` on its own
   measurement — 3/3 settle-without-close, ranger-base-0fb — which this
-  result does not touch.)
+  result did not touch; §4 records its promotion on 2026-11-07, on a
+  measurement of its own.)
 - Cost-adapter internals for grok/codex exist behind 0012 D4 and are
   not designed here; `uncounted_cap_` is the brake until they do.
   (Resolved 2026-08-29: both exist — grok's carries provider-reported

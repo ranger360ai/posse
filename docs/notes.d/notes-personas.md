@@ -270,25 +270,42 @@ lands in `awaitDelivered`'s seen=false outcome on argv runtimes, not here.
 An exec-preflight gate was rejected in the same amendment — posse's PATH is
 not the pane's — see the ADR's alternatives.
 
-`record:` is where grok and codex differ, and only for a measured reason:
-the qa lane on grok closed a dispatched bead properly, and 3/3 dispatched
-codex sessions did the work and left the bead `in_progress` with no comment
-(`ranger-base-0fb`). Trust is a built-in/yaml edit after a measurement —
-never a derived store that could disagree with the bead (ADR 0011).
+`record:` is per-runtime and only ever a measured reason. The qa lane on
+grok closed a dispatched bead properly; 3/3 dispatched codex sessions on
+2026-08-24 did the work and left the bead `in_progress` with no comment
+(`ranger-base-0fb`), which is what put codex on the untrusted side and what
+the stage below was built for. **codex is `record: trusted` since
+2026-11-07** (`ranger-base-t5ein`): two dispatched seats on codex-cli
+0.153.4, one per multiplexer, each closed its own bead with its own comment
+and landed its commit on `main`. Trust is a built-in/yaml edit after a
+measurement — never a derived store that could disagree with the bead
+(ADR 0011) — and so is a promotion.
+
+Which leaves **bob** as the only built-in on the untrusted side, for a
+different kind of reason: not a measurement that went the other way but the
+absence of one, since its launch row refuses and no bob session has been
+dispatched at all. The clause below therefore belongs, in practice, to a
+runtime you DECLARE: a `runtimes/<name>.yaml` that declares nothing is
+`record: untrusted`, and that is the shape the pins are written over.
 
 ### What a settle-without-close costs, and what it does not (ADR 0013 §4)
 
 The tick is the **bead's** to give. A pass prints `✓` only when `bd show`
 says `closed`, on every runtime, trusted or not — an agent going idle is a
-hint (ADR 0011), and on codex that hint was wrong three times out of three.
+hint (ADR 0011), and on codex that hint was wrong three times out of three
+on the day the stage was built.
 Everything else settles as `◑ <id> settled "done" but issue is
 "in_progress" — review <session>`, and on a `record: untrusted` runtime the
 line adds whose declared degrade it is:
 
 ```
 ◑ a-1   settled "done" but issue is "in_progress" — review ranger-posse-a-1
-        (codex is record: untrusted — the claim is kept and --resume re-prompts it)
+        (unmeasured is record: untrusted — the claim is kept and --resume re-prompts it)
 ```
+
+(`unmeasured` here is a declared runtime, which is what wears this clause
+now that codex has been promoted — the line names whichever runtime the
+persona is pinned to.)
 
 Three things that clause is telling the operator, and each of them is a
 decision made elsewhere in this file: the bead **keeps its claim** (nothing

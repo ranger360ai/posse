@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-11
 
+- [ranger-base-t5ein](ranger-base-t5ein.md) — Promoting codex's record, and the fixtures that were pinning a table row (ranger-base-t5ein) — 2026-11-07
 - [ranger-base-m928w](ranger-base-m928w.md) — A presence probe that read its own cage as the operator's answer (ranger-base-m928w) — 2026-11-07
 - [ranger-base-8rg06](ranger-base-8rg06.md) — Verifying four closes: the destroy's PLACE was the unpinned half (ranger-base-8rg06) — 2026-11-07
 - [ranger-base-74tkp](ranger-base-74tkp.md) — The wait leg that did not wait, and why the fix is not in the occupant (ranger-base-74tkp) — 2026-11-07

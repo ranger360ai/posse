@@ -142,9 +142,15 @@ func TestDeclaredContractKeys(t *testing.T) {
 }
 
 // The built-ins carry the ADR's own table, and one line of it is load-
-// bearing: grok and codex differ ONLY because a dispatched grok session was
-// measured to close a bead and three dispatched codex sessions were
-// measured not to. If this test ever has to change, a measurement changed.
+// bearing: `record:` is a MEASUREMENT per runtime and never a default this
+// table rounds off. If this test ever has to change, a measurement changed —
+// and on 2026-11-07 one did. grok and codex used to differ on this line
+// alone (one measured close against three measured skips); codex is
+// `record: trusted` now, measured 2026-11-07 on two dispatched seats that
+// closed their own beads, one per multiplexer (ranger-base-t5ein, from
+// ranger-base-8gh58's live acceptance). What still differs is bob, whose
+// cell is the ABSENCE of a measurement — no bob session has been dispatched
+// at all — which is the one value in this column that is not a reading.
 func TestBuiltinContractDeclarations(t *testing.T) {
 	t.Parallel()
 	a := checkApp(t)
@@ -167,7 +173,11 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 		read, priced bool
 	}{
 		{"claude", PromptTyped, RecordTrusted, "", "", true, true},
-		{"codex", PromptArgv, RecordUntrusted, RulesPrecedencePID, "ranger-base-6rcv", true, false},
+		// codex: record: trusted since 2026-11-07 (ranger-base-t5ein) — two
+		// dispatched seats closed their own beads on 2026-11-07, one per
+		// multiplexer. Its RecordWhy is required by the loop below, which is
+		// what keeps the promotion from reading as a default.
+		{"codex", PromptArgv, RecordTrusted, RulesPrecedencePID, "ranger-base-6rcv", true, false},
 		{"grok", PromptArgv, RecordTrusted, RulesPrecedencePID, "ranger-base-6rcv", true, true},
 		// bob is the fourth built-in (ADR 0060, ADR 0062). Its account row
 		// is UNCOUNTED — no cost adapter is registered for it and its unit

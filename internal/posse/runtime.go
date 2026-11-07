@@ -2253,11 +2253,33 @@ var builtinRuntimes = []Runtime{
 		// resolve this CLI's store through, pinned onto the seat's line so
 		// the seat's codex reads the store posse read (ADR 0077 D1).
 		HomeVar: CodexHomeVar,
-		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
-		// sessions did the work and left the bead in_progress with no
-		// comment, one of them on a dirty shared checkout (ranger-base-0fb).
-		// Dispatch still launches; gather never ✓s a settle-without-close.
-		Prompt: PromptArgv, Record: RecordUntrusted,
+		// record: trusted — PROMOTED 2026-11-07 (ranger-base-t5ein), and the
+		// promotion is this edit, which is the whole of the mechanism: the
+		// field's own doc says a derived store could disagree with the bead.
+		//
+		// It replaces the 2026-08-24 reading that put codex here in the first
+		// place — 3/3 dispatched sessions did the work and left the bead
+		// in_progress with no comment, one on a dirty shared checkout
+		// (ranger-base-0fb) — and that reading is not retracted: it was true
+		// of codex 0.147.0 under the conditions of the day. One of those
+		// conditions was later MEASURED as the harness's and not the
+		// runtime's: the silence class 0fb names includes five consecutive
+		// sessions whose `bd close` was DENIED, because a self-sandboxing
+		// runtime was never told the store of record was writable
+		// (launchWritableRoots, ranger-base-hxhb's reachability stage).
+		// Another simply changed — `prompt: argv` delivery had not landed in
+		// 2026-08 — which is a difference and not a cause. What the new
+		// measurement has that the old one lacks is a seat that could reach
+		// the store at all.
+		//
+		// TWO closes on ONE day, which is more than grok's promotion rests on
+		// (one) and more than claude's (the baseline the contract was written
+		// from). The counter-argument — two is a small n — is on the bead;
+		// what settled it is that the two are on DIFFERENT multiplexers with
+		// byte-identical PIDs otherwise, so the measurement is of the runtime
+		// and not of one instance's rig.
+		Prompt: PromptArgv, Record: RecordTrusted,
+		RecordWhy:   "MEASURED 2026-11-07 on codex-cli 0.153.4 (ranger-base-8gh58's live acceptance, two turns authorized on ranger-base-x7ojx): two dispatched codex seats each closed their OWN bead, with their own comment naming what changed and how it was verified, and landed the commit — ranger-base-7vh7y on a `multiplexer: rex` instance (b14420ef) and ranger-base-w4enh on a herdr one (3bc1a6db), neither needing a second prompt. Both PIDs carried a `bd close` instruction in the body, exactly as claude's and grok's measurements did: what is measured is a runtime that acts on the contract it is handed, not one that closes unprompted",
 		NativeRules: codexNativeRules, Interstitials: CodexInterstitials,
 		// rules_precedence: pid — MEASURED behaviourally on 2026-09-01
 		// (ranger-base-6rcv, one billed turn under the operator's

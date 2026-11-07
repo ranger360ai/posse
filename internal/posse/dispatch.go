@@ -4328,8 +4328,8 @@ func runtimeName(runtime string) string {
 // whether that is news.
 //
 // On a `record: untrusted` runtime it is not news — it is the declared
-// degrade, measured (3/3 dispatched codex sessions, ranger-base-0fb) — and
-// what the operator needs to know is that nothing was lost by it: the claim
+// degrade — and what the operator needs to know is that nothing was lost
+// by it: the claim
 // stays on the bead and unattended `--resume` re-prompts the same session
 // next pass. The harness does not close on the agent's behalf; that hides
 // the defect and puts a human back in the loop dispatch exists to replace.
@@ -4338,6 +4338,17 @@ func runtimeName(runtime string) string {
 // a runtime measured to close its beads that stopped closing them is the
 // signal `record-skip-rate` exists to catch, and a reassuring parenthesis
 // beside it would be the harness explaining away its own evidence.
+//
+// WHO WEARS THIS CLAUSE TODAY, since the clause is written from a reading
+// that moved. codex was the measured occupant (3/3 settle-without-close,
+// ranger-base-0fb) and is `record: trusted` since 2026-11-07
+// (ranger-base-t5ein); bob is `record: untrusted` for the absence of a
+// measurement rather than one that went the other way, and its launch row
+// refuses dispatch, so no built-in can print this clause. Its live occupant
+// is a DECLARED runtime — the default for a `runtimes/<name>.yaml` that
+// declares nothing (ADR 0013 §4) — which is why this path's pins are written
+// over a template runtime and not over whichever built-in happened to be
+// untrusted that week (recordskip_qa_test.go).
 //
 // Bare text, no parentheses: settleClause wraps whichever clauses are true
 // into the one parenthesis the line carries.

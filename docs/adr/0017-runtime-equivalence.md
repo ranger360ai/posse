@@ -405,5 +405,7 @@ would ever switch on gets no field: none was added beyond these.
   measured to sidestep). Latent, not urgent.
 - Skills-surface parity rests on one skill, one day, three runtimes
   (rangerhq-74c6); grok `record: trusted` on one observation; codex
-  `record: untrusted` on three. Values, not the mechanism — the
-  measurement lanes own them.
+  `record: untrusted` on three, and `record: trusted` since 2026-11-07
+  on two dispatched closes one per multiplexer (ranger-base-t5ein,
+  ADR 0013 §4). Values, not the mechanism — the measurement lanes own
+  them, and this is what it looks like when one of them moves.

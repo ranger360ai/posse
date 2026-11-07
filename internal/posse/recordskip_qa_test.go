@@ -13,6 +13,12 @@ package posse
 // buys: the pass never ticks work nobody recorded, it says which runtime's
 // declared degrade it is looking at, and the bead is left in a state a later
 // pass RETRIES rather than one a human has to notice.
+//
+// THE FIXTURE IS NO LONGER CODEX, and the reason is the stage's own history:
+// codex was promoted to `record: trusted` on 2026-11-07 after two dispatched
+// seats closed their own beads (ranger-base-t5ein), so a pin that named it
+// was pinning a row of the built-in table rather than the declaration. See
+// untrustedPersona below.
 
 import (
 	"os"
@@ -21,25 +27,53 @@ import (
 	"testing"
 )
 
-// codexPersona is a PID on the runtime that is `record: untrusted` for a
-// measured reason.
-func codexPersona(t *testing.T, a *App, name, labels string) {
+// untrustedPersona is a PID on a DECLARED runtime that is `record:
+// untrusted` — the key's DEFAULT, which a template-only yaml declaring
+// nothing but `command:` lands on (ADR 0013 §4).
+//
+// Not a built-in, and that is the pin's robustness rather than a
+// convenience. codex was this fixture until 2026-11-07: the runtime whose
+// settle-without-close was measured 3/3 (ranger-base-0fb), named by name in
+// the clause these arms assert. Two dispatched codex seats then closed their
+// own beads and the built-in was promoted (ranger-base-t5ein), which is the
+// day the arms would have gone red over a declaration that had not changed.
+// Written this way they survive the next promotion too — and they are
+// written over the only shape that can still print the clause at all: no
+// built-in is both dispatchable and untrusted now, because bob's `record:`
+// is the absence of a measurement and its launch row refuses.
+//
+// One thing moved with the fixture and it is not the subject: a
+// template-only yaml is `prompt: typed`, where codex was `argv`. These arms
+// are about the RECORD stage — the tick, the clause, the kept claim and the
+// retry — and none of the four reads the delivery channel. The argv path's
+// own pins are elsewhere (ADR 0013 §2).
+func untrustedPersona(t *testing.T, a *App, name, labels string) {
 	t.Helper()
-	os.MkdirAll(a.AgentsDir, 0o755)
-	md := "---\nname: " + name + "\ndescription: test\nlabels: " + labels + "\nruntime: codex\n---\nYou are " + name + ".\n"
+	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "command: unmeasured {file}\n"
+	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "unmeasured.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	md := "---\nname: " + name + "\ndescription: test\nlabels: " + labels + "\nruntime: unmeasured\n---\nYou are " + name + ".\n"
 	if err := os.WriteFile(filepath.Join(a.AgentsDir, name+".md"), []byte(md), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
 // The tick belongs to the bead. A settled agent is a hint (ADR 0011), and on
-// an untrusted runtime it is a hint that has been wrong three times out of
-// three.
+// an untrusted runtime it is a hint nobody has measured to be worth
+// anything. That is all the key claims, and codex's 3/3 was once its
+// instance.
 func TestUntrustedSettleWithoutCloseIsReviewedNotDone(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	codexPersona(t, b.App, "ranger", "[go]")
+	untrustedPersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
@@ -57,7 +91,7 @@ func TestUntrustedSettleWithoutCloseIsReviewedNotDone(t *testing.T) {
 	}
 	// And WHOSE degrade it is, so the operator reads it as the declared
 	// contract rather than as a mystery to investigate every pass.
-	for _, want := range []string{"codex is record: untrusted", "--resume re-prompts"} {
+	for _, want := range []string{"unmeasured is record: untrusted", "--resume re-prompts"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the line must name %q:\n%s", want, out)
 		}
@@ -77,7 +111,7 @@ func TestUntrustedSettleWithoutCloseKeepsTheClaim(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	codexPersona(t, b.App, "ranger", "[go]")
+	untrustedPersona(t, b.App, "ranger", "[go]")
 	qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
@@ -99,7 +133,7 @@ func TestResumeRePromptsAnUntrustedSettleWithoutClose(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	codexPersona(t, b.App, "ranger", "[go]")
+	untrustedPersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
