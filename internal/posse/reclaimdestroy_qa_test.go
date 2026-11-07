@@ -37,6 +37,7 @@ package posse
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,17 +64,129 @@ import (
 // prunes it"; in a test it would make every arm here flaky over a fact about
 // the box. So the pass is asked again — and a prune that genuinely refuses
 // still never satisfies cond, which is what keeps the arms falsifiable.
+//
+// WHY THE BUDGET IS WALL CLOCK AND NOT A PASS COUNT (ranger-base-6mpke).
+// This loop was `for i := 0; i < 20; i++` with nothing between the passes,
+// and that bound read like twenty chances at a 5.31% event
+// (forkflockrace_live_test.go's measured rate) when it was in fact ONE. What
+// is being ridden out is a WINDOW in time — fork to execve in a sibling
+// goroutine's child — and twenty back-to-back passes do not sample twenty
+// instants, they sample one.
+//
+// MEASURED 2026-11-07, this box (darwin 25.6.0, go1.26.5), over this very
+// fixture: one listing pass costs 167-196µs, so the whole twenty-pass budget
+// spanned 1.7-3.9ms. Held deliberately from a second open file description,
+// a launcher lock held for 10ms — far shorter than any window worth worrying
+// about — exhausted the entire budget, and so did 50ms and 200ms, every one
+// of them deterministically. TestQAAThePruneRetryBudgetRidesOutAHeldLaunchLock
+// pins a 300ms hold, for the reason it gives there.
+// That is the flake ranger-base-6mpke was filed off: a full `make test` at a
+// one-minute load of 49-75 spent passes 2 through 20 inside one such window,
+// and arm 2 reported "the destroy was attempted once and never again" over a
+// prune that was working — a red arm 1, a ~680s run discarded, and the next
+// reader sent after a merge defect that was not there.
+//
+// So the loop spends TIME, not attempts: pruneUntilBudget of it.
+//
+// AND A SPARED PASS IS NOT A PASS — which is the fix, and the gap below is
+// not. A pass reclaim ended on the launcher lock never reached the branch
+// under test at all, so it does not count against pruneUntilReaches, and the
+// only thing a window of contention can exhaust is the wall clock. The reach
+// count is then what a broken prune cannot outrun: with the lock free every
+// pass counts, and a genuine break fails in milliseconds rather than at the
+// deadline. Both halves are needed and each is pinned on its own
+// (MUTATION-CHECKED 2026-11-07, below).
+//
+// The GAP is not part of that argument and is not asserted as if it were. A
+// budget that spun this loop flat out for the whole of a window would be
+// adding load to the box whose load produced the window — so the passes are
+// spaced, and what the pin holds is that riding out a known hold costs tens
+// of passes and not tens of thousands.
+const (
+	// pruneUntilBudget is the wall clock the loop will spend riding out a
+	// contended launcher lock. It only has to outlast a fork-to-exec window
+	// on a loaded box, and seconds are orders of magnitude more than that.
+	// It is spent in full only on a box where that lock is contended for the
+	// whole of it — which is a broken box, and is reported as one rather
+	// than as a claim about the prune.
+	pruneUntilBudget = 15 * time.Second
+	// pruneUntilGap spaces the passes. Not for the sampling — the reach
+	// accounting already means a contended lock cannot exhaust anything but
+	// the clock — but because the alternative is burning a core flat out
+	// against contention this box is already short of.
+	pruneUntilGap = 5 * time.Millisecond
+	// pruneUntilReaches is how many passes that actually REACHED reclaim's
+	// decision may fail to satisfy cond before this is a break and not a
+	// flake. It is the old bound, applied to the only passes it was ever a
+	// statement about.
+	pruneUntilReaches = 20
+)
+
+// lockSparedSentence is the half of reclaim's lock sparing that pruneUntil
+// keys on to tell "this pass never got there" from "this pass got there and
+// answered no". It is pinned, in the same test as the budget, because a
+// rename on reclaim's side would break no build: it would silently turn every
+// spared pass back into a counted one, and the budget back into the four
+// milliseconds ranger-base-6mpke was filed off.
+const lockSparedSentence = "the launch lock was not taken"
+
 func pruneUntil(t *testing.T, b *HerdrBackend, what string, cond func() bool) {
 	t.Helper()
-	for i := 0; i < 20; i++ {
-		if _, err := b.Sessions(); err != nil {
-			t.Fatal(err)
-		}
-		if cond() {
-			return
-		}
+	gaveUp, _, err := prunePasses(b, warnBuf(t, b), pruneUntilBudget, cond)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Fatalf("after 20 listing passes, %s\n%s", what, warnBuf(t, b).String())
+	if gaveUp != "" {
+		t.Fatalf("%s%s\n%s", gaveUp, what, warnBuf(t, b).String())
+	}
+}
+
+// prunePasses is pruneUntil without a *testing.T, so that the budget's own
+// two guards can be MEASURED rather than asserted about from outside a helper
+// that fatals. It returns "" when cond held, and otherwise the clause naming
+// why it gave up, which the caller's `what` completes.
+//
+// The budget is a parameter for one reason: the deadline guard's own pin
+// would otherwise cost pruneUntilBudget of real suite wall to reach, and a
+// guard too expensive to pin is a guard nobody has seen fire.
+func prunePasses(b *HerdrBackend, warn *syncBuf, budget time.Duration, cond func() bool) (gaveUp string, passes int, err error) {
+	start := time.Now()
+	deadline := start.Add(budget)
+	var reached int
+	for {
+		at := len(warn.String())
+		if _, err := b.Sessions(); err != nil {
+			return "", passes, err
+		}
+		passes++
+		if cond() {
+			return "", passes, nil
+		}
+		// Only a pass that got past the lock is evidence about the prune.
+		if !strings.Contains(warn.String()[at:], lockSparedSentence) {
+			reached++
+		}
+		if reached >= pruneUntilReaches {
+			return fmt.Sprintf("after %d listing passes in %v, %d of which reached reclaim's own decision, ",
+				passes, time.Since(start).Round(time.Millisecond), reached), passes, nil
+		}
+		if time.Now().After(deadline) {
+			// It reports what it counted rather than asserting nobody got
+			// there. A deadline reached with reached > 0 is rare — it needs
+			// fewer than pruneUntilReaches passes to have got past the lock
+			// in pruneUntilBudget — but it is reachable, and a give-up that
+			// said "NOT ONE" over nineteen that did would send its reader
+			// exactly where this bead's own flake sent one.
+			if reached > 0 {
+				return fmt.Sprintf("after %d listing passes over %v, %d of which reached reclaim's own decision before the clock ran out, ",
+					passes, time.Since(start).Round(time.Millisecond), reached), passes, nil
+			}
+			return fmt.Sprintf("after %d listing passes over %v, NOT ONE of which reached reclaim's own decision — "+
+				"every one was spared on the launcher lock, so this is a box on which that lock is never free, and not a claim about the prune (ranger-base-6mpke), ",
+				passes, time.Since(start).Round(time.Millisecond)), passes, nil
+		}
+		time.Sleep(pruneUntilGap)
+	}
 }
 
 // metaGone is "this record is no longer on disk", as a cond for pruneUntil.
@@ -472,21 +585,17 @@ func TestQAATheDestroyIsNotTakenOnEvidenceTheReProofWouldSpare(t *testing.T) {
 			// again is what makes the arm falsifiable rather than flaky, and
 			// a prune that genuinely never spares on its own re-proof still
 			// never produces the witness.
+			//
+			// It is pruneUntil's own budget and not a hand-rolled count, for
+			// pruneUntil's own reason (ranger-base-6mpke): twenty back-to-back
+			// passes here sampled one instant of the same window, so this loop
+			// was flaky in exactly the way the arms it guards were. The
+			// positive witness is seatEvidence's own sentence carried out as
+			// the sparing reason — without it every assertion below is
+			// satisfied by a pass that never reached reclaim.
 			witness := "seat " + husk + " is alive"
-			var saw bool
-			for i := 0; i < 20 && !saw; i++ {
-				if _, err := b.Sessions(); err != nil {
-					t.Fatal(err)
-				}
-				saw = strings.Contains(warnBuf(t, b).String(), witness)
-			}
-			// The positive witness that reclaim RAN and that its re-proof is
-			// what refused: seatEvidence's own sentence, carried out as the
-			// sparing reason. Without it every assertion below is satisfied
-			// by a pass that never reached reclaim.
-			if !saw {
-				t.Fatalf("after 20 passes the prune never spared this record on its own re-proof, so this arm never reached reclaim at all:\n%s", warnBuf(t, b).String())
-			}
+			pruneUntil(t, b, "the prune never spared this record on its own re-proof, so this arm never reached reclaim at all",
+				func() bool { return strings.Contains(warnBuf(t, b).String(), witness) })
 			if n := len(stub.closes); n != 0 {
 				t.Errorf("the prune destroyed the seat %d time(s) although its own re-proof under the launcher lock found it ALIVE — the destroy is being taken on evidence read outside the lock, which is the reading reclaim re-takes precisely because a create can be in flight (rangerhq-3a5t, ADR 0080 D10). A live seat is ended, and prunable's refusal then keeps the record, so posse goes on listing a session it has just killed", n)
 			}
@@ -495,4 +604,207 @@ func TestQAATheDestroyIsNotTakenOnEvidenceTheReProofWouldSpare(t *testing.T) {
 			}
 		})
 	}
+}
+
+// holdLaunchLock takes the launcher lock for a test that means to HOLD it,
+// retrying the probe.
+//
+// Because the probe this test makes is subject to the race this test is
+// pinning (ranger-base-6mpke, and the irony is the point): a sibling
+// goroutine's fork duplicates some other test's launcher-lock fd into its
+// child, and tryLockLaunches here reads EWOULDBLOCK on a lock nobody holds.
+// MEASURED 2026-11-07: one such read in nine runs of this file, as a 0.01s
+// red saying "could not take the launcher lock to hold it" — the arms below
+// ride out that window for the PRUNE's probe and would have flaked on their
+// own. The retry is bounded, so a lock a real launcher holds for the whole
+// budget still fails, and says which it was.
+func holdLaunchLock(t *testing.T, b *HerdrBackend) *LaunchLock {
+	t.Helper()
+	deadline := time.Now().Add(pruneUntilBudget)
+	for {
+		lock, why := tryLockLaunches(b.App)
+		if lock != nil {
+			return lock
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("this test could not take the launcher lock to hold it, over %v of trying: %s", pruneUntilBudget, why)
+		}
+		time.Sleep(pruneUntilGap)
+	}
+}
+
+// ─── the retry budget itself: what it rides out, and what it must not ───────
+//
+// ranger-base-6mpke. pruneUntil's budget IS the mitigation for the accepted
+// fork/flock false-busy (ranger-base-a40d9, operator ruling ACCEPT on
+// ranger-base-5mulm), and for as long as it was a bare count of twenty
+// back-to-back passes it was a mitigation that covered 1.7-3.9ms of wall
+// clock. It read like an arbitrary 20 and was in fact the whole of it.
+//
+// WHAT BEHAVES DIFFERENTLY IF THIS PIN IS DELETED (ADR 0006 §7): nothing in
+// production — the subject here is the suite. What goes is the only statement
+// anywhere that the budget's unit is TIME, and the next edit that spells it as
+// a pass count again, or drops the gap between passes, or starts counting
+// lock-spared passes against the reach guard, lands green and reddens arm 1
+// at a load average instead.
+func TestQAAThePruneRetryBudgetRidesOutAHeldLaunchLock(t *testing.T) {
+	t.Parallel()
+
+	// ── it rides out a window no count of passes could span ──
+	//
+	// MEASURED 2026-11-07: a listing pass over this fixture costs 167-196µs,
+	// so twenty back-to-back passes span 1.7-3.9ms, and a launcher lock held
+	// for as little as 10ms exhausted all twenty — deterministically, at
+	// every hold from 10ms to 200ms. The hold here is taken from a SECOND
+	// open file description in this very process, which is how reclaim's
+	// probe reads EWOULDBLOCK (arm 1 above reads the same fact from the other
+	// side): a deterministic stand-in for the fork/exec window, with no forks
+	// and no load on a box that is not to be load-tested (AGENTS.md).
+	//
+	// THE HOLD IS 300ms AND THAT NUMBER IS LOAD-BEARING. It is longer than
+	// pruneUntilReaches passes can span even WITH the gap (20 × 5ms = 100ms),
+	// so the only thing that can ride it out is the reach accounting: a
+	// spared pass not counting. Shorter, and the arm would pass with that
+	// accounting deleted, which is the one mutant it exists to catch.
+	//
+	// AND THE PASS COUNT IS THE GAP'S OWN PIN. MEASURED 2026-11-07: ~60
+	// passes ride out 300ms at a 5ms gap, and with the sleep removed the same
+	// ride-out spent 1212-1418, flat out on a core. The ceiling is ten times
+	// the spaced figure, so the subject is "it is not spinning" and never a
+	// timing assertion: the spaced run is sleep-dominated and cannot approach
+	// 600 whatever the box is doing, while the unspaced one is pass-cost
+	// dominated and so its own margin narrows as the box gets busier.
+	t.Run("a lock held past any pass count is ridden out", func(t *testing.T) {
+		t.Parallel()
+		b, stub := muxMetaRexBoard(t, "husk", "01a1902c-husk", false)
+		stub.onClose = func(Seat) error { return errors.New("server refused the destroy") }
+		pruneUntil(t, b, "the prune never reached the destroy at all", func() bool { return len(stub.closes) > 0 })
+		lock := holdLaunchLock(t, b)
+		const hold = 300 * time.Millisecond
+		released := make(chan struct{})
+		go func() {
+			time.Sleep(hold)
+			lock.Release()
+			close(released)
+		}()
+		gaveUp, passes, err := prunePasses(b, warnBuf(t, b), pruneUntilBudget,
+			func() bool { return len(stub.closes) > 1 })
+		<-released
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gaveUp != "" {
+			t.Fatalf("the destroy was never retried across a launcher lock held for %v: %s\n"+
+				"The retry budget is spending attempts and not time, so it samples one instant of the window it exists to ride out (ranger-base-6mpke)\n%s",
+				hold, gaveUp, warnBuf(t, b).String())
+		}
+		if max := int(hold/pruneUntilGap) * 10; passes > max {
+			t.Errorf("riding out %v cost %d listing passes (ceiling %d) — the passes are not spaced, so this loop spins a core flat out against contention for as long as the contention lasts, on the box whose load produced it",
+				hold, passes, max)
+		}
+	})
+
+	// ── a broken prune still fails, and fails fast ──
+	//
+	// The falsifiability half. With the lock free every pass reaches
+	// reclaim's own decision, so the reach guard — the old bound, applied to
+	// the only passes it was ever a statement about — is what answers, in
+	// milliseconds and not at the deadline. A budget that rode out a genuine
+	// break for fifteen seconds a call would be ten of these pins' worth of
+	// suite wall on every red run.
+	t.Run("a cond that can never hold gives up on the reach guard", func(t *testing.T) {
+		t.Parallel()
+		b, stub := muxMetaRexBoard(t, "husk", "01a1902c-husk", false)
+		stub.onClose = func(Seat) error { return errors.New("server refused the destroy") }
+		start := time.Now()
+		gaveUp, _, err := prunePasses(b, warnBuf(t, b), pruneUntilBudget, metaGone(b, "husk"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gaveUp == "" {
+			t.Fatal("the record went although every destroy failed — this arm measures nothing")
+		}
+		if !strings.Contains(gaveUp, "reached reclaim's own decision") || strings.Contains(gaveUp, "NOT ONE") {
+			t.Errorf("a break was reported as a contended box: %q", gaveUp)
+		}
+		// The one wall-clock assertion here, and deliberately a 35x margin:
+		// MEASURED 2026-11-07 at 0.13-0.15s against a ceiling of 5s. What it
+		// holds is that the REACH guard answered and not the deadline, which
+		// the message above cannot say on its own now that the deadline
+		// reports its own count. Reaching the ceiling would take a sustained
+		// ~98% false-busy rate for five seconds against the 5.31% measured
+		// (forkflockrace_live_test.go) — a margin, not a bet on the box.
+		if took := time.Since(start); took > pruneUntilBudget/3 {
+			t.Errorf("a prune that reached its decision %d times spent %v giving up, with a budget of %v — the reach guard is not holding, so every red arm here now costs the whole budget",
+				pruneUntilReaches, took, pruneUntilBudget)
+		}
+		// And the other give-up over the same board: a budget too short for
+		// pruneUntilReaches passes to fit in (20 × 5ms = 100ms against 30),
+		// so the DEADLINE is what answers, over passes that DID reach. It
+		// must report them and not claim nobody got there — the whole cost of
+		// this bead's own flake was a message that aimed its reader at the
+		// wrong thing.
+		//
+		// AND IT IS ASKED AGAIN, for this file's own reason. MEASURED
+		// 2026-11-07: written as one probe it reddened a full `make test`,
+		// having spent its whole short budget inside one window — one pass,
+		// spared, so the give-up was the OTHER branch and correctly so. A
+		// short budget is by construction a budget that one window can
+		// swallow, which is the entire finding of ranger-base-6mpke applied
+		// to the pin that pins it. So the probe is repeated until the box
+		// gives it a pass that got through, bounded the way everything else
+		// here is bounded.
+		clockDeadline := time.Now().Add(pruneUntilBudget)
+		for {
+			gaveUp, _, err = prunePasses(b, warnBuf(t, b), 30*time.Millisecond, metaGone(b, "husk"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gaveUp == "" {
+				t.Fatal("the record went although every destroy failed — this arm measures nothing")
+			}
+			if !strings.Contains(gaveUp, "NOT ONE") {
+				break
+			}
+			if time.Now().After(clockDeadline) {
+				t.Fatalf("over %v, not one pass of a short-budget prune ever got past the launcher lock, so this arm never reached the give-up it is about — that is a box on which that lock is never free: %s",
+					pruneUntilBudget, gaveUp)
+			}
+		}
+		if !strings.Contains(gaveUp, "before the clock ran out") {
+			t.Errorf("the deadline answered over passes that reached reclaim's own decision and its give-up does not say it was the clock: %q", gaveUp)
+		}
+	})
+
+	// ── a lock that is never free is reported as a box, not as a prune ──
+	//
+	// And this arm is also the pin on lockSparedSentence, which is the one
+	// coupling here that no build can check: reclaim writes that sentence and
+	// prunePasses reads it, and a rename on reclaim's side would make every
+	// spared pass count against the reach guard instead. That failure is
+	// silent in the only direction that matters — the budget would quietly
+	// go back to being a count — so what is asserted is the DEADLINE message
+	// over the reach message, which can only be reached through the match.
+	t.Run("a lock held throughout is named as the box", func(t *testing.T) {
+		t.Parallel()
+		b, stub := muxMetaRexBoard(t, "husk", "01a1902c-husk", false)
+		stub.onClose = func(Seat) error { return errors.New("server refused the destroy") }
+		defer holdLaunchLock(t, b).Release()
+		// A budget of its own, for prunePasses' own reason: the real one is
+		// fifteen seconds of suite wall to witness one message.
+		gaveUp, _, err := prunePasses(b, warnBuf(t, b), 50*time.Millisecond, func() bool { return len(stub.closes) > 0 })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gaveUp == "" {
+			t.Fatal("the prune destroyed a seat with the launcher lock held by this test — reclaim's whole shape is that the act is taken under ADR 0011 §1's lock")
+		}
+		if !strings.Contains(gaveUp, "NOT ONE") {
+			t.Errorf("every pass was spared on the launcher lock and the give-up blames the prune: %q\n"+
+				"That is lockSparedSentence no longer matching what reclaim writes — which also means every spared pass now counts against the reach guard, and the budget is a count of twenty again (ranger-base-6mpke)", gaveUp)
+		}
+		if warn := warnBuf(t, b).String(); !strings.Contains(warn, lockSparedSentence) {
+			t.Errorf("the sparing does not name the lock at all:\n%s", warn)
+		}
+	})
 }

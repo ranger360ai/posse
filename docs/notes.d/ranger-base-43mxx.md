@@ -181,6 +181,15 @@ fakes constantly. In production that reads as one spared file and the
 documented "the next quiet pass prunes it", which is why it is a note and
 not a bead.
 
+The bound that implements "asked again" was `for i := 0; i < 20; i++` with
+nothing between the passes, and ranger-base-6mpke later MEASURED that the
+twenty of them span 1.7-3.9ms — one instant of the window, not twenty
+chances at it — after a full `make test` at a load average of 49-75 reddened
+the kept-on-failure arm with all nineteen retries spared on the lock. The
+budget is wall clock now, and a pass spared on the lock no longer counts
+against it; docs/notes.d/ranger-base-6mpke.md has the numbers. Nothing about
+the production reading above changed.
+
 ## 9. The mutation table
 
 MUTATION-CHECKED 2026-11-06, each mutant applied to a clean tree and the
