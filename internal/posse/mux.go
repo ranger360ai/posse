@@ -247,3 +247,26 @@ type Mux interface {
 	// on the seat (ADR 0076 §5).
 	Server() MuxServer
 }
+
+// MuxCloseGone is an occupant that can read its own Close refusal: whether
+// the server it spoke to does not hold that seat's session at all.
+//
+// IT IS NOT ONE OF ADR 0076 §2'S VERBS, and it is here for MuxServer's
+// reason — ADR 0080 D10 is not satisfiable without it. D10 makes a
+// proven-dead seat on a non-herdr occupant DESTROYED and not only forgotten:
+// reclaim calls Close on the recorded id before it unlinks the meta, and
+// "an id the server no longer knows counts as already destroyed". Only the
+// occupant can read that, because the answer is its own server's refusal
+// text in its own spelling, and posse has no envelope to branch on (rex
+// reports failure as plain text with a non-zero exit — rex.go, item 2).
+//
+// IT IS REACHED BY A TYPE ASSERTION, like §4's herdr-only verbs, and a
+// failed assertion is "not available" and never "no". On a destroy that
+// direction is the safe one: an occupant that cannot read its own refusal
+// keeps the meta and the next pass retries, where reading the refusal as
+// "gone" would unlink the only record of an id the server may still hold.
+type MuxCloseGone interface {
+	// CloseSaysGone reports whether err — returned by this occupant's
+	// Close — means the server does not know that session id.
+	CloseSaysGone(err error) bool
+}

@@ -438,6 +438,52 @@ func (r Rex) KillSession(sessionID string) error {
 	return r.Run(false, nil, "kill", sessionID)
 }
 
+// rexTargetGone is rex's refusal for a session id its server does not hold,
+// in the two halves of the sentence it prints. It is a pair of substrings
+// and not the whole line because the id is interpolated between them.
+//
+// MEASURED 2026-11-06, rex CLI 0.0.1793377904, darwin/arm64, against a
+// scratch server (`server run --listen <private socket> --restore=false
+// --max-sessions 3`, the operator's own server untouched —
+// docs/notes.d/ranger-base-43mxx.md has the transcript). `rex kill <id>`
+// answered, on stderr with exit 3 and nothing on stdout:
+//
+//	Error: session target "00000000-0000-0000-0000-000000000000" not found
+//
+// for all three shapes an id can be wrong in — an unknown UUID, a word that
+// is no id at all, and a session THIS probe had destroyed a moment earlier.
+// Exit 3 is the same code and the same `<kind> target "…" not found` shape
+// the head comment's item 2 measured for a missing block, which is what
+// makes the two halves worth matching rather than the exit status: the exit
+// code says "the call failed" and the text says what about it.
+const (
+	rexTargetGonePrefix = `session target "`
+	rexTargetGoneSuffix = `" not found`
+)
+
+// rexSessionGone reports whether a failed rex call failed BECAUSE the server
+// does not hold that session — rex's own `not found`, which is positive
+// evidence about the id and not silence about it.
+//
+// A HANG IS NOT GONE. A blown deadline travels unwrapped (callErr), and a
+// timeout read as "already destroyed" would be the destroy skipped on the
+// one answer that means posse never reached the server at all. The guard is
+// BELT and is said to be: a hang's text is its argv and its wait, so the two
+// substrings refuse it without help, and no mutation of this line reds the
+// suite (reclaimdestroy_qa_test.go says so where the arm is). It is worn
+// because every predicate of this shape in this package wears it — callErr
+// itself does — and because the distinction it names is the one a rewrite of
+// this predicate would get wrong. Everything else that is not this sentence — a server that refused, a binary that is not there, a JSON
+// answer that would not parse — is also not this sentence, and the caller's
+// own arm for it is the safe one (destroyRecordedSeat keeps the record).
+func rexSessionGone(err error) bool {
+	if err == nil || IsHerdrHang(err) {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, rexTargetGonePrefix) && strings.Contains(s, rexTargetGoneSuffix)
+}
+
 // Sessions is `rex ls --json` (session.list). `--short=false` because the
 // short ids this prints by default are a display convenience and the ids
 // posse records are the full ones.

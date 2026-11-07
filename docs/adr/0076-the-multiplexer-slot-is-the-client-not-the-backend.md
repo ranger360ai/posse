@@ -441,7 +441,8 @@ covers three cases:
   sessions, so one autostarted read would make every recorded seat
   look absent (ranger-base-qlxb5).
 - The zero-window session id stays addressable, so `Close` still runs
-  `session.destroy` on it.
+  `session.destroy` on it — which is what ADR 0080 D10 then has the prune
+  do, before it unlinks the record (ranger-base-43mxx).
 
 **Alternatives rejected.**
 - **Leave the prose as it was and rely on the code.** The next occupant,
@@ -456,7 +457,10 @@ covers three cases:
   it races `List()` in the window between the exit and the destroy. A
   crash in the reaper brings the immortal seats back. The occupant
   already reads the block, which is the fact itself, so no reaper is
-  needed.
+  needed. ADR 0080 D10's destroy is **not** this reaper: it runs after
+  liveness has been proven by that `List()`, by the one home whose meta
+  names the id, and it is the prune's own line and not a second writer
+  (ranger-base-43mxx).
 - **Judge by the root block's `process` liveness, not by its presence.**
   That is §2's `State` verb, and it answers a different question: is the
   runtime alive inside a seat that exists? Liveness of the SEAT stays a

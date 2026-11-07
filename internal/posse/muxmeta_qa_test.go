@@ -47,6 +47,12 @@ type muxMetaStub struct {
 	addr  string
 	seats []SeatInfo
 	lists int
+	// Close's side, added with ADR 0080 D10 (reclaimdestroy_qa_test.go):
+	// the prune now DESTROYS a proven-dead non-herdr seat before it unlinks
+	// the record, so Close is a verb §5's prune reaches and a nil-interface
+	// panic here would be the pin above failing as a crash.
+	closes  []Seat
+	onClose func(Seat) error
 }
 
 func (s *muxMetaStub) Server() MuxServer { return MuxServer{Name: s.name, Addr: s.addr} }
@@ -54,6 +60,14 @@ func (s *muxMetaStub) Server() MuxServer { return MuxServer{Name: s.name, Addr: 
 func (s *muxMetaStub) List() ([]SeatInfo, error) {
 	s.lists++
 	return s.seats, nil
+}
+
+func (s *muxMetaStub) Close(seat Seat) error {
+	s.closes = append(s.closes, seat)
+	if s.onClose != nil {
+		return s.onClose(seat)
+	}
+	return nil
 }
 
 // ─── claim 1: no key means herdr ─────────────────────────────────────────────

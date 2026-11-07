@@ -146,6 +146,20 @@ func (m RexMux) Start(s Seat, line string) error {
 // Close is `rex kill` (session.destroy).
 func (m RexMux) Close(s Seat) error { return m.R.KillSession(s.Session) }
 
+// CloseSaysGone is Rex's half of MuxCloseGone (ADR 0080 D10): rex's own
+// `session target "<id>" not found`, which is positive evidence about the id
+// and the one refusal that counts as already destroyed.
+//
+// IT DOES NOT MAKE Close ITSELF IDEMPOTENT, which was the other way to
+// spell this and is the wrong one. Close's contract is "ends the seat"
+// (mux.go), and its two other callers reach it holding a seat their own
+// listing just answered for — `posse kill` and a relaunch's closeRecorded.
+// A Close that swallowed `not found` would read a misaimed destroy, against
+// an id this home never held, as a seat successfully ended, and both of
+// those callers unlink the record on that answer. So the reading stays a
+// second question, asked only where the absence has already been proven.
+func (m RexMux) CloseSaysGone(err error) bool { return rexSessionGone(err) }
+
 // Focus is `rex focus` (session.focus_block), which also makes the block's
 // window the active one.
 func (m RexMux) Focus(s Seat) error { return m.R.FocusBlock(s.Session, s.Pane) }
@@ -729,3 +743,9 @@ func rexStateForMessage(read MuxReading) string {
 }
 
 var _ Mux = RexMux{}
+
+// And the optional one, asserted here so a rename of either side is a build
+// failure rather than a type assertion that quietly stops matching — which
+// on a destroy would be the seat kept forever instead of reclaimed
+// (MuxCloseGone, ADR 0080 D10).
+var _ MuxCloseGone = RexMux{}

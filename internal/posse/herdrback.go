@@ -1899,8 +1899,66 @@ func (b *HerdrBackend) reclaim(name string, srv MuxServer) string {
 	if dead, why := b.prunable(m, srv); !dead {
 		return why
 	}
+	// ADR 0080 D10, and it goes HERE and nowhere else in this function: the
+	// record is the only thing that names the seat's id, so a pass that
+	// unlinks first has nothing left to destroy with, and one that destroys
+	// before the re-proof destroys on evidence read outside the lock.
+	if why := b.destroyRecordedSeat(m); why != "" {
+		return why
+	}
 	os.Remove(b.metaPath(name)) // workspace died — stale meta
 	return ""
+}
+
+// destroyRecordedSeat is ADR 0080 D10: on an occupant that is not herdr, a
+// seat this pass has PROVEN dead is destroyed and not only forgotten. It
+// returns "" when the seat is gone — destroyed now, or already unknown to
+// the server — and the reason to keep the record otherwise.
+//
+// WHAT IS LEAKING WITHOUT IT. On Rex a seat ends by its block closing, and
+// the session then stays on the server holding no terminal block
+// (MEASURED 2026-10-31, ADR 0076's §5 correction). The occupant's List()
+// drops it, so §5 reads it as dead and the prune unlinks the record — and
+// the session is still there, still counted toward the server's
+// `--max-sessions` (64 by default), a cap SHARED by every posse home on
+// that server (ADR 0080 D2). MEASURED 2026-11-06 on a scratch server at
+// `--max-sessions 3`: three sessions whose programs had exited, each listing
+// zero blocks, filled the cap, the fourth `rex new` was refused `409
+// conflict`, and one `rex kill` of a husk freed the slot
+// (docs/notes.d/ranger-base-43mxx.md). Every landed seat costs a slot
+// forever, and when they run out every home's Create fails.
+//
+// HERDR NEEDS NOTHING HERE, which is why the first line is the gate and not
+// an optimisation: a dead herdr workspace is gone, so there is no husk to
+// destroy, and `workspace close` on an id herdr has recycled would close a
+// STRANGER's workspace. The meta's own name is read rather than the live
+// occupant's because the record is what aims the call — and by here
+// cannotAnswerFor has already refused every record whose mux or server is
+// not this pass's, so the two agree.
+//
+// A FAILED DESTROY KEEPS THE RECORD. That is the direction D10 names and it
+// is the only recoverable one: the record is the only thing that names this
+// id, so unlinking after a destroy that did not land strands the session
+// with nothing left to address it by — the leak, made permanent. Keeping it
+// costs one file and one warning line, and the next pass proves the same
+// death and retries. The one refusal that is not a failure is the server
+// saying it does not know the id, which is positive evidence that the
+// destroy has already happened (MuxCloseGone) — an occupant that cannot
+// read its own refusal gets the keep, because "not available" is never "no".
+func (b *HerdrBackend) destroyRecordedSeat(m *HerdrMeta) string {
+	if m.MuxName() == MuxHerdr {
+		return ""
+	}
+	mux := b.Mux()
+	err := mux.Close(m.Seat())
+	if err == nil {
+		return ""
+	}
+	if gone, ok := mux.(MuxCloseGone); ok && gone.CloseSaysGone(err) {
+		return ""
+	}
+	return fmt.Sprintf("%s refused to destroy seat %s (%v), and its record is the only thing that names that id — kept, and the next pass retries the destroy (ADR 0080 D10)",
+		m.MuxName(), m.Workspace, err)
 }
 
 // backfillServer records which herdr server — and which generation of it —

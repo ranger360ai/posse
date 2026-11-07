@@ -230,16 +230,35 @@ func fakeRexLs() int {
 	return 0
 }
 
+// fakeRexKill is `rex kill <session>`, and it REFUSES an id the fake does not
+// hold, in the real CLI's own words: `Error: session target "<id>" not found`
+// on stderr, nothing on stdout, exit 3. MEASURED 2026-11-06 on rex
+// 0.0.1793377904 against a scratch server, for an unknown UUID, a word that
+// is no id at all, and a session destroyed a moment earlier
+// (docs/notes.d/ranger-base-43mxx.md).
+//
+// It used to answer 0 for every id, which made that refusal unreachable from
+// the suite — and the refusal is now a BRANCH in production code
+// (rexSessionGone, ADR 0080 D10: an id the server no longer knows counts as
+// already destroyed), so a fake that cannot produce it is a fake that makes
+// the branch untestable and its pin vacuous.
 func fakeRexKill(words []string) int {
 	if len(words) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: kill needs a session")
 		return 2
 	}
 	var kept []fakeRexSession
+	var found bool
 	for _, s := range fakeRexLoadSessions() {
 		if s.SessionID != words[0] && s.Label != words[0] {
 			kept = append(kept, s)
+			continue
 		}
+		found = true
+	}
+	if !found {
+		fmt.Fprintf(os.Stderr, "Error: session target %q not found\n", words[0])
+		return 3
 	}
 	fakeRexSaveSessions(kept)
 	return 0
