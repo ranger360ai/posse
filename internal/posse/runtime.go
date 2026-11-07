@@ -188,9 +188,18 @@ type Interstitial struct {
 // could not read the file" walls a box for something nobody measured, and
 // says so in the refusal's own words (ranger-base-9r33).
 //
-// A probe that cannot distinguish the two never returns Unknown — grok's
-// two keys are written by grok itself, so a config without them is an
-// answered question, not an unreadable one.
+// The two are told apart by the ERRNO and by nothing else, which is the half
+// that was missing: ENOENT and ENOTDIR are the file being ABSENT, and that
+// is a reading — these CLIs write these keys themselves, so a config without
+// one is a box that has not been told. Every other failure, EPERM above all,
+// is posse unable to look, which is no reading at all (probeAbsent,
+// interstitial.go). This file used to say that a probe which cannot
+// distinguish the two never returns Unknown, and grok's two keys were the
+// example; what the code did was answer "not silenced" to both, so a reader
+// that could not open the file at all reported the operator's box as
+// unsilenced. From a caged seat that is every read of another runtime's home
+// — including the one posse's own L2 profile denies — and it refused every
+// codex dispatch on a box with a live login (ranger-base-m928w).
 type Silence struct {
 	Silenced bool   // the key is set: this screen will not draw
 	Unknown  bool   // posse could not read the file — "cannot tell", never "no"

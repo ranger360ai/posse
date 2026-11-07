@@ -472,6 +472,38 @@ this branch as the recipe, so it says so.
    `danger:` — the mechanism would be invented ahead of its first user,
    and the first declarer who hits the wall with a genuinely silenced
    screen is the bead that specifies it.
+
+   **Amended 2026-11-07 (ranger-base-m928w, from the ranger-base-8gh58
+   live acceptance).** Tri-state was right and the probes had no spelling
+   for it: a probe answered the same `false` to "the file is not there"
+   and to "posse could not read the file", so the third state was reached
+   only where a probe happened to test for it. MEASURED 2026-11-07 from a
+   `cage: seatbelt` seat — `posse runtime check codex` reported the
+   sign-in screen NOT SILENCED and said codex *"has nothing to
+   authenticate with"*, while the same probe from a Rex block, spawned
+   outside that cage the same minute, found the live login. The cause is
+   an EPERM stat of codex's credential file — the path `codexSigninProbe`
+   names (interstitial.go) — taken for an absence: the seat's
+   profile does not grant that home, and **posse's own L2 profile denies a
+   caged seat the sibling runtimes' credential stores by design** (ADR
+   0019 D2 store 3) — so posse put up the wall and read it back as a fact
+   about the operator's box. Being a `danger:` entry, that false reading
+   was a dispatch refuse: codex was undispatchable from every caged seat,
+   with a remedy printed that the operator had already carried out, and
+   the acceptance could only run by moving both passes outside the cage.
+   So: **absence is ENOENT or ENOTDIR and nothing else** (`probeAbsent`,
+   interstitial.go — `danglingSkillLink`'s rule, for its reasons); every
+   other errno is UNKNOWN, named with the errno and, when posse can see
+   its own cage on the two facts that diagnose one, with that. The verdict
+   for this unknown is the same as for every other — **no refuse** —
+   chosen rather than inherited, on both grounds above: a refusal there
+   refuses on a fact about the SEAT and not about the box, since the
+   credential it could not stat was sitting right there, and mzmv's
+   backstop holds, since herdr's `signin_menu` / `signin_api_key` rules
+   name that screen `blocked` too. The accepted cost is the mirror of
+   mzmv's: a caged `runtime check` prints "state unknown" with the errno
+   where an uncaged one prints a reading, and the answer is to ask from
+   outside the cage, which the line itself says.
 3. **Declared keystrokes** — last resort, keyed on a herdr *rule id*
    (today: none — grok's splash was the only entry, retired in
    rangerhq-6723 once detection stopped calling it a blocker

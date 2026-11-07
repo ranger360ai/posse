@@ -6,6 +6,8 @@ package posse
 // runs `brew upgrade --cask codex`.
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -516,5 +518,238 @@ interstitial_update:
 	}
 	if log := bdCalls(t, fake); strings.Contains(log, "--claim") {
 		t.Errorf("no bead may be claimed on a benched slot:\n%s\n%s", log, out)
+	}
+}
+
+// ─── the errno (ranger-base-m928w) ───────────────────────────────────────────
+
+// A probe that cannot READ its path says UNKNOWN, and the ERRNO is the only
+// thing that tells that from the path not being there.
+//
+// MEASURED 2026-11-07 from a `cage: seatbelt` seat during
+// ranger-base-8gh58's live acceptance: `posse runtime check codex` reported
+// the sign-in screen NOT SILENCED and said codex had nothing to
+// authenticate with, while the same probe from a Rex block — which the Rex
+// server spawns OUTSIDE the seat's cage, read the same minute — found the
+// live credential. The seat's profile does not grant codex's home, so every
+// read of it answers EPERM, and a bare `err != nil` took that for absence.
+// That entry carries `danger:`, so the false reading was a LAUNCH REFUSE for
+// anything dispatched (ADR 0013 §2): codex was undispatchable from every
+// caged seat, for a reason that was not true of the box, with a remedy the
+// refusal printed that the operator had already carried out.
+//
+// THE FIXTURE IS THE DEFECT. Every file these probes name is PRESENT and
+// says "silenced" — asserted first, so the arms below cannot pass by reading
+// an empty home — and then the directories holding them are made unreadable.
+// A probe that reads the errno says unknown; one that does not says the
+// operator has silenced nothing.
+func TestQAUnreadableHomeReadsUnknownAndNotAbsent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	codexDir := filepath.Join(home, ".codex")
+	grokDir := filepath.Join(home, ".grok")
+	t.Setenv("CODEX_HOME", codexDir)
+	t.Setenv("GROK_HOME", grokDir)
+	// The env-var arm of the sign-in probe is its own reading (unknown), and
+	// an operator's own key in this process's environment would make that
+	// arm the one every assertion below measured.
+	unsetenvForTest(t, "OPENAI_API_KEY")
+	stubCodexInstalled(t, "codex-cli 0.149.1")
+	for _, f := range []struct{ path, body string }{
+		{".codex/auth.json", `{}`},
+		{".codex/config.toml", "check_for_update_on_startup = false\n"},
+		{".codex/version.json", `{"latest_version":"0.149.1","dismissed_version":"0.149.1"}`},
+		{".grok/config.toml", "[cli]\nauto_update = false\n\n[privacy]\nprivacy_banner_acked = \"2026-08-24T21:35:58Z\"\n"},
+	} {
+		p := filepath.Join(home, f.path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(f.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probes := []struct {
+		name  string
+		probe func() Silence
+		// The sentence this probe must stop saying: its own "no" line, which
+		// is a claim about a file it could not open.
+		never string
+	}{
+		{"codexSigninProbe", codexSigninProbe, "nothing to authenticate with"},
+		{"codexUpdateProbe", codexUpdateProbe, "the menu is back"},
+		{"grokPrivacyProbe", grokPrivacyProbe, "re-arms every launch"},
+		{"grokAutoUpdateProbe", grokAutoUpdateProbe, "pin not applied"},
+	}
+	for _, tc := range probes {
+		if sil := tc.probe(); !sil.Silenced {
+			t.Fatalf("fixture: %s reads %+v over a readable home that says silenced — the arms below would measure nothing", tc.name, sil)
+		}
+	}
+
+	for _, d := range []string{codexDir, grokDir} {
+		if err := os.Chmod(d, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(d, 0o755) })
+	}
+	// Staged, not assumed: a user who can read a mode-0000 directory (root
+	// in a container being the case that matters on CI) cannot reach this
+	// arm at all, and a test that silently measured the readable path would
+	// be worse than one that says so.
+	_, serr := os.Stat(filepath.Join(codexDir, "auth.json"))
+	if serr == nil {
+		t.Skip("this user can read a mode-0000 directory, so the refused read cannot be staged here")
+	}
+	if probeAbsent(serr) {
+		t.Fatalf("fixture: stat under a mode-0000 directory answered %v, which probeAbsent reads as absence", serr)
+	}
+	errno := errnoText(serr)
+
+	for _, tc := range probes {
+		sil := tc.probe()
+		if !sil.Unknown || sil.Silenced {
+			t.Errorf("%s over an unreadable home: Unknown=%v Silenced=%v why=%q — want unknown, because the file may be sitting right there",
+				tc.name, sil.Unknown, sil.Silenced, sil.Why)
+		}
+		// Naming the errno is the whole remedy an onboarder gets: "cannot
+		// tell" over a path is a shrug, and "operation not permitted" over
+		// that same path is a thing to go and fix.
+		if !strings.Contains(sil.Why, errno) {
+			t.Errorf("%s must name the errno %q it did not look at before: %q", tc.name, errno, sil.Why)
+		}
+		if strings.Contains(sil.Why, tc.never) {
+			t.Errorf("%s asserts %q about a file it could not read: %q", tc.name, tc.never, sil.Why)
+		}
+	}
+
+	// The launcher's own verdict for that unknown, which is the half that
+	// cost the live acceptance: no refuse. Unknown has always been skipped
+	// here (ranger-base-9r33); what m928w changed is which readings arrive
+	// as unknown, and ADR 0013 §2 says why this one belongs in the skip.
+	rt := &Runtime{Name: "codex", Builtin: true, Interstitials: CodexInterstitials}
+	if lines := DangerUnsilenced(rt); len(lines) != 0 {
+		t.Errorf("an unreadable codex home refused a launch — a fact about this seat, not about the box:\n%s", strings.Join(lines, "\n"))
+	}
+
+	// And the cage sentence, on the two facts it claims and no fewer:
+	// fs.ErrPermission AND an RHQ_CAGE in this process's own environment.
+	t.Setenv("RHQ_CAGE", CageSeatbelt)
+	t.Setenv(EnvPersona, "ranger")
+	// The DIAGNOSIS is the sentence under test, matched on its own words:
+	// this probe's tail also mentions caged seats in general — posse's own
+	// profile denies that file to every other runtime's — and a general
+	// fact is not a claim about the reader.
+	const diagnosis = "This reader is itself a caged seat"
+	sil := codexSigninProbe()
+	for _, want := range []string{diagnosis, "RHQ_CAGE=" + CageSeatbelt, "ranger", "THIS SEAT", "outside the cage"} {
+		if !strings.Contains(sil.Why, want) {
+			t.Errorf("a caged reader's unknown must name %q: %q", want, sil.Why)
+		}
+	}
+	unsetenvForTest(t, "RHQ_CAGE")
+	if sil := codexSigninProbe(); strings.Contains(sil.Why, diagnosis) {
+		t.Errorf("with no RHQ_CAGE in posse's own environment the line must not diagnose a cage: %q", sil.Why)
+	}
+
+	// The CONTROL on all of it: absence is still a reading, and it still
+	// refuses. Restore the mode, take the credential away, and the same
+	// probe over the same home says "not silenced" and the same launcher
+	// refuses — otherwise every arm above would hold equally for a probe
+	// that had simply stopped reading anything.
+	for _, d := range []string{codexDir, grokDir} {
+		if err := os.Chmod(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(filepath.Join(codexDir, "auth.json")); err != nil {
+		t.Fatal(err)
+	}
+	if sil := codexSigninProbe(); sil.Unknown || sil.Silenced || !strings.Contains(sil.Why, "nothing to authenticate with") {
+		t.Errorf("an ABSENT auth.json is a reading, not an unknown: %+v", sil)
+	}
+	if lines := DangerUnsilenced(rt); len(lines) != 1 {
+		t.Errorf("a box with no credential must still refuse a dispatch — got %d line(s): %v", len(lines), lines)
+	}
+}
+
+// A non-permission failure is diagnosed as neither a cage nor an unknown
+// where the errno says the file is gone: ENOTDIR — a home that is an
+// ordinary FILE — cannot resolve now and cannot resolve later, so it is
+// absence, and absence is a reading (probeAbsent, skills.go's rule).
+func TestQAProbeReadsENOTDIRAsAbsenceAndClaimsNoCage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	notADir := filepath.Join(home, ".codex")
+	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", notADir)
+	unsetenvForTest(t, "OPENAI_API_KEY")
+	t.Setenv("RHQ_CAGE", CageSeatbelt)
+
+	_, serr := os.Stat(filepath.Join(notADir, "auth.json"))
+	if errors.Is(serr, fs.ErrPermission) {
+		t.Skip("this platform reports ENOTDIR as a permission error, so the arm cannot be staged")
+	}
+	sil := codexSigninProbe()
+	if sil.Unknown || sil.Silenced {
+		t.Errorf("a home that is a regular file cannot hold a credential now or later, so this is a reading: %+v", sil)
+	}
+	if strings.Contains(sil.Why, "This reader is itself a caged seat") {
+		t.Errorf("a non-permission failure must not be diagnosed as a cage: %q", sil.Why)
+	}
+}
+
+// And the launch surface, which is the only reason any of the above is a
+// defect rather than a wrong line in a grid: a codex home this launcher
+// cannot read dispatches, and claims and creates exactly as it does on an
+// uncaged box. The probe test above is the mechanism; this is the cost
+// ranger-base-8gh58's live acceptance paid, which could only run by moving
+// both dispatch passes into Rex blocks, outside the cage, for this alone.
+//
+// The fixture is codexMenuSilenced's — a credential and a current dismissal,
+// both PRESENT — with the directory then made unreadable, because that is
+// the box the bead was filed from: a live login, read back as absent.
+func TestQAAnUnreadableCodexHomeDispatchesRatherThanRefusing(t *testing.T) {
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	codexMenuSilenced(t)
+	unsetenvForTest(t, "OPENAI_API_KEY")
+	home := os.Getenv("CODEX_HOME")
+	if home == "" {
+		t.Fatal("fixture: codexMenuSilenced left no CODEX_HOME to wall off")
+	}
+	if err := os.Chmod(home, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(home, 0o755) })
+	if _, err := os.Stat(filepath.Join(home, "auth.json")); err == nil {
+		t.Skip("this user can read a mode-0000 directory, so the refused read cannot be staged here")
+	}
+
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\nruntime: codex\n---\nYou are ranger.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+	idleClaude(t, fake)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if n != 1 {
+		t.Errorf("an unreadable codex home refused %d bead(s) — the launcher's own cage is not a reading about the box:\n%s", 1-n, out)
+	}
+	if !strings.Contains(calls(t, fake), "workspace create") {
+		t.Errorf("no session was created:\n%s\n%s", calls(t, fake), out)
+	}
+	if strings.Contains(out, "MUTATES THE MACHINE") {
+		t.Errorf("a read posse could not make must not print as a screen the operator left armed:\n%s", out)
 	}
 }

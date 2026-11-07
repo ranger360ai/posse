@@ -23,16 +23,27 @@ package posse
 //
 // The probes below are READ-ONLY and best-effort: they answer "has the
 // operator already silenced this on this machine", so `posse runtime check`
-// can tell an onboarder what a launch would hit. An unreadable or absent
-// file — or, where a probe asks the CLI itself, a CLI that will not say what
-// it is — is "unknown", never "no".
+// can tell an onboarder what a launch would hit. An unreadable file — or,
+// where a probe asks the CLI itself, a CLI that will not say what it is — is
+// "unknown", never "no".
+//
+// An ABSENT file is the one failure that is a reading rather than an
+// unknown, because these CLIs write these keys themselves: a config without
+// one is a box that has not been told. That makes the difference between the
+// two an ERRNO, and reading it is probeAbsent's job — not a bare `err !=
+// nil`, which is how a caged launcher that could not stat codex's credential
+// came to report the box as unauthenticated and refuse every codex dispatch
+// (ranger-base-m928w).
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // grokHome / codexHome honour the CLIs' own home overrides, because a
@@ -142,16 +153,103 @@ func noHomeSilence(override, tail string) Silence {
 	return Silence{Unknown: true, Why: "$HOME is unset and " + override + " names no home either — nothing to read, so this " + tail}
 }
 
+// probeAbsent reports whether err — from a probe's stat or read — is the
+// thing being ABSENT, as against posse being unable to LOOK at it. It is
+// the distinction Silence's third state is made of, and until
+// ranger-base-m928w these probes had no spelling for it: a bare `err != nil`
+// answers "not silenced" to both, and only one of them is a reading.
+//
+// Two errnos say absent, and they are the only two — danglingSkillLink's
+// rule (skills.go), for danglingSkillLink's reasons:
+//
+//   - ENOENT — a component of the path is not there.
+//   - ENOTDIR — a component of it is an ordinary FILE, so the path cannot
+//     resolve now and cannot resolve later either.
+//
+// Everything else failed for a reason that is about the PATH and not about
+// the target, so the target may be sitting right there. EPERM is that case
+// and it is the one this exists for: MEASURED 2026-11-07 from a
+// `cage: seatbelt` seat, `~/.codex/auth.json` answers "operation not
+// permitted" to a stat while a live login is present — read the same minute
+// from a Rex block, which the Rex server spawns outside the seat's cage. The
+// seat's profile does not grant that home, and posse's OWN L2 profile denies
+// the sibling runtimes' credential stores there by design
+// (credentialReadDenyLiterals, seatbelt.go; ADR 0019 D2 store 3). So the
+// wall posse put up was being read back as a fact about the operator's box.
+func probeAbsent(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+}
+
+// unreadableSilence is the UNKNOWN for a read that failed for any other
+// reason: the path, the errno, and what that leaves unanswered — never a
+// verdict about the box. tail says what this probe can no longer tell, in
+// the probe's own words, because the line prints straight at an onboarder.
+//
+// It prints the ERRNO and not the error. The error is a *fs.PathError
+// carrying the unabbreviated path, and the rule on these paths is that the
+// path printed has to be the path read (grokHomeIn's note) — AbbrevHome
+// spells it once, here.
+func unreadableSilence(path string, err error, tail string) Silence {
+	return Silence{Unknown: true, Why: "cannot read " + AbbrevHome(path) + " (" + errnoText(err) + ") — " + tail + probeCageNote(err)}
+}
+
+// errnoText is the errno out of a path error, or the whole error when it is
+// not one.
+func errnoText(err error) string {
+	if err == nil {
+		return ""
+	}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
+}
+
+// probeCageNote names the launcher's own cage on an unknown it caused, and
+// it is CONDITIONAL ON BOTH FACTS IT CLAIMS — claudeTrustWriteRefusal's rule
+// (trust.go), for that function's reason: a confident wrong diagnosis is
+// worse than the bare errno. It needs a permission error (fs.ErrPermission —
+// EPERM is what seatbelt denies with) and an RHQ_CAGE in this process's own
+// environment, which is the launch env posse writes onto a seat and is
+// therefore present exactly when the reader IS one. A read-only volume or a
+// chmod the operator made gets the path and the errno without being told it
+// is a cage; a cage posse cannot see is not asserted. What it does NOT say is
+// WHY that particular path is walled, because that differs per path and this
+// note is one sentence for all of them — codexSigninProbe's own tail carries
+// the fact that posse's L2 profile denies that file by design.
+//
+// Reading RHQ_CAGE from posse's OWN environment is right here for
+// claudeTrustWriteRefusal's reason too: this decides something about the
+// READER — which process just had a read refused — and not about a seat
+// posse is hiring, which is the mistake ADR 0077 names.
+func probeCageNote(err error) string {
+	if !errors.Is(err, fs.ErrPermission) {
+		return ""
+	}
+	cage := os.Getenv("RHQ_CAGE")
+	if cage == "" {
+		return ""
+	}
+	return ". This reader is itself a caged seat — RHQ_CAGE=" + cage + ", persona " + os.Getenv(EnvPersona) +
+		" — so the refused read is a fact about THIS SEAT and not about the box: the path may hold exactly what the operator put there. Ask again from outside the cage — a Rex block, or the operator's own shell — before believing anything about this key"
+}
+
 // tomlFlag reads a bare `key = value` line from a TOML file. Deliberately
 // line-level and section-blind: these two keys are unique in grok's
 // config.toml, and a real TOML parser for a yes/no probe would be a
 // dependency bought for nothing. A key that ever stops being unique there
 // makes this wrong, which is why the caller prints the file and the key it
 // read rather than a bare verdict.
-func tomlFlag(path, key string) (val string, found bool) {
+//
+// The read error is RETURNED and not swallowed, because "no such file" and
+// "operation not permitted" are a reading and an unknown respectively, and
+// a found=false that covers both hands the caller a verdict it has not
+// earned (ranger-base-m928w). Callers classify it with probeAbsent.
+func tomlFlag(path, key string) (val string, found bool, err error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", false
+		return "", false, err
 	}
 	for _, ln := range strings.Split(string(b), "\n") {
 		t := strings.TrimSpace(ln)
@@ -166,9 +264,9 @@ func tomlFlag(path, key string) (val string, found bool) {
 		if i := strings.Index(v, "#"); i >= 0 {
 			v = strings.TrimSpace(v[:i])
 		}
-		return strings.Trim(v, `"`), true
+		return strings.Trim(v, `"`), true, nil
 	}
-	return "", false
+	return "", false, nil
 }
 
 // grokPrivacyProbe: has the coding-data consent banner been answered?
@@ -185,7 +283,10 @@ func grokPrivacyProbe() Silence {
 		return noHomeSilence("GROK_HOME", "cannot tell whether the banner has been answered")
 	}
 	p := filepath.Join(h, "config.toml")
-	v, ok := tomlFlag(p, "privacy_banner_acked")
+	v, ok, err := tomlFlag(p, "privacy_banner_acked")
+	if err != nil && !probeAbsent(err) {
+		return unreadableSilence(p, err, "so this cannot tell whether the banner has been answered")
+	}
 	if !ok || v == "" || v == "false" {
 		// No config and an unanswered config are the same reading here, and
 		// it is a reading rather than a shrug: grok writes the ack itself,
@@ -206,7 +307,10 @@ func grokAutoUpdateProbe() Silence {
 		return noHomeSilence("GROK_HOME", "cannot tell whether the pin is applied")
 	}
 	p := filepath.Join(h, "config.toml")
-	v, ok := tomlFlag(p, "auto_update")
+	v, ok, err := tomlFlag(p, "auto_update")
+	if err != nil && !probeAbsent(err) {
+		return unreadableSilence(p, err, "so this cannot tell whether the pin is applied")
+	}
 	if !ok {
 		return Silence{Why: "[cli] auto_update not set in " + AbbrevHome(p) + " — pin not applied (make verify-grok-pin)"}
 	}
@@ -269,8 +373,17 @@ func codexUpdateSilence(installed func() string) Silence {
 	// The pin is a value, not a presence: a key that is present and true is
 	// the menu ARMED, so this must never read as "someone mentioned it".
 	cp := filepath.Join(h, "config.toml")
-	if v, ok := tomlFlag(cp, "check_for_update_on_startup"); ok && v == "false" {
+	pin, pinSet, cerr := tomlFlag(cp, "check_for_update_on_startup")
+	if pinSet && pin == "false" {
 		return Silence{Silenced: true, Why: "check_for_update_on_startup = false in " + AbbrevHome(cp) + " — the menu is never drawn (fleet pin, make verify-codex-pin)"}
+	}
+	if cerr != nil && !probeAbsent(cerr) {
+		// Short-circuited rather than carried down, because the DURABLE
+		// silence lives in this file: with it unread, every arm below that
+		// would answer "not silenced" would be answering over a pin that
+		// may be holding. An absent config.toml still falls through — that
+		// is a box without the pin, which is a reading (ranger-base-m928w).
+		return unreadableSilence(cp, cerr, "and the fleet pin there (check_for_update_on_startup = false) is what silences this menu durably, so this cannot tell whether the update menu is silenced")
 	}
 	p := filepath.Join(h, "version.json")
 	b, err := os.ReadFile(p)
@@ -281,8 +394,13 @@ func codexUpdateSilence(installed func() string) Silence {
 		// (DangerUnsilenced). codex writes this file itself when it first
 		// checks for a release, so its absence is a box that has not been
 		// told anything yet, not a box carrying a menu — and posse does not
-		// wall a launch on what it did not read.
-		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether the update menu is silenced"}
+		// wall a launch on what it did not read. Both arms are unknown; they
+		// are two arms because an absence is the box's answer and an EPERM
+		// is this reader's, and an onboarder can only act on the second.
+		if !probeAbsent(err) {
+			return unreadableSilence(p, err, "so this cannot tell whether the update menu is silenced")
+		}
+		return Silence{Unknown: true, Why: "no " + AbbrevHome(p) + " — codex writes it on its first release check, so nothing here has been told about a release yet and this cannot tell whether the update menu is silenced"}
 	}
 	var v struct {
 		Latest    string `json:"latest_version"`
@@ -351,6 +469,14 @@ func codexUpdateSilence(installed func() string) Silence {
 //     a reading, never on ignorance).
 //   - no home at all -> noHomeSilence, the same "nothing to read" the other
 //     two probes answer.
+//   - a stat that FAILED for any reason but absence -> UNKNOWN, naming the
+//     errno. This is the arm ranger-base-m928w was filed for: from a caged
+//     seat the stat answers EPERM, and the only two errnos that mean the
+//     credential is not there are ENOENT and ENOTDIR (probeAbsent). Taking
+//     the refusal for an absence made this entry — a DANGER entry, so a
+//     launch refuse for anything dispatched — say that codex had nothing to
+//     authenticate with about a box holding a live login, with a remedy the
+//     operator had already carried out.
 //   - otherwise -> not silenced, naming the path read.
 func codexSigninProbe() Silence {
 	h := codexHome()
@@ -358,8 +484,15 @@ func codexSigninProbe() Silence {
 		return noHomeSilence("CODEX_HOME", "cannot tell whether the sign-in screen is silenced")
 	}
 	p := filepath.Join(h, "auth.json")
-	if st, err := os.Stat(p); err == nil {
+	st, err := os.Stat(p)
+	if err == nil {
 		return Silence{Silenced: true, Why: AbbrevHome(p) + " is present (mtime " + st.ModTime().Format("2006-01-02") + ") — codex has a credential to start with"}
+	}
+	// Before the environment, because this file is the question: a line
+	// that says "no auth.json" is a claim about a path this stat did not
+	// reach, and the env arm's wording makes exactly that claim.
+	if !probeAbsent(err) {
+		return unreadableSilence(p, err, "so this cannot tell whether codex has a credential — presence is the whole of what this probe may ask (ADR 0019) and this stat never reached an answer. posse's own L2 profile denies THIS file to a caged seat of every runtime but codex (credentialReadDenyLiterals, ADR 0019 D2 store 3), so a refusal here can be posse's own wall")
 	}
 	if os.Getenv("OPENAI_API_KEY") != "" {
 		return Silence{Unknown: true, Why: "no " + AbbrevHome(p) + ", but OPENAI_API_KEY is set in the environment — codex can start from that, and this probe does not run codex to confirm it"}
@@ -658,6 +791,22 @@ var BobInterstitials = []Interstitial{{
 // own rule (etc/herdr/agent-detection/codex.toml, update_menu), so a launch
 // that does meet it fails by name instead of being typed into. So this
 // refuses on a reading, never on ignorance (ranger-base-9r33).
+//
+// SINCE ranger-base-m928w THERE IS A SECOND WAY TO ARRIVE AT UNKNOWN HERE,
+// and the verdict for it is this same line, chosen rather than inherited.
+// The first way is the box having no answer — a version.json codex has never
+// written. The second is THIS READER being unable to look: a caged launcher
+// gets EPERM on every read of another runtime's home, posse's own credential
+// wall among them (ADR 0019 D2 store 3), and before m928w that EPERM came
+// back as "not silenced" and refused the launch. Fixing the errno moves it
+// into this skip, which is the right place for it on both of the grounds
+// above: a refusal there refuses on a fact about the SEAT and not about the
+// box — the credential it could not stat was sitting right there — and the
+// backstop still holds, since herdr's signin_menu / signin_api_key rules
+// name that screen `blocked` too. The accepted cost is the mirror of
+// ranger-base-mzmv's: a caged `runtime check` prints "state unknown" with the
+// errno where an uncaged one prints a reading, and the answer to that is to
+// ask from outside the cage, which the line itself says.
 //
 // Every line carries the operator's action, since a refusal an operator
 // cannot clear from the line is a dead end.
