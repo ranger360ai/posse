@@ -77,21 +77,29 @@ func (a *App) MultiplexerLine() string {
 //
 // IT IS A DECLARATION AND NOT A TRY-AND-SEE, which is the whole of D1. On
 // Rex posse reads the runtime's OWN OSC 7501 record and invents no state, so
-// a runtime that writes none is unreadable from its first keystroke — and one
-// of the two runtimes refused today is `prompt: argv` (grok, until Amendment
-// 3's config line lands), where the work prompt rides the launch line. A
-// launch-then-wait refusal for that one arrives after a claim, a worktree and
-// a live billed turn, which is what ADR 0013 §1 rule 3 ("before anything is
-// spent") forbids. So the fact is read off the runtime table before the
-// claim, and the wait after the launch is only its confirmation (ADR 0076 D2,
-// awaitFirstReport).
+// a runtime that writes none is unreadable from its first keystroke — and two
+// of the three runtimes it admits today are `prompt: argv` (codex, grok),
+// where the work prompt rides the launch line. A launch-then-wait refusal for
+// those arrives after a claim, a worktree and a live billed turn, which is
+// what ADR 0013 §1 rule 3 ("before anything is spent") forbids. So the fact
+// is read off the runtime table before the claim, and the wait after the
+// launch is only its confirmation (ADR 0076 D2, awaitFirstReport).
 //
 // WHAT THE YES MEANS WIDENED WITH D9 and the predicate did not move: a record
-// whose owner is the runtime, written natively (claude) or by posse's route
-// on the runtime's own events (codex, ADR 0076 Amendment 2 D6/D7). The second
-// kind is a line posse has to type and a version it was measured on, which is
-// RexVersionDrift below — the admission's second reading, asked at the same
-// two call sites and before the same claim.
+// whose owner is the runtime, written natively (claude, grok) or by posse's
+// route on the runtime's own events (codex, ADR 0076 Amendment 2 D6/D7). The
+// second kind is a line posse has to type and a version it was measured on,
+// which is RexVersionDrift below — the admission's second reading, asked at
+// the same two call sites and before the same claim.
+//
+// THREE READINGS SINCE AMENDMENT 3, and this predicate is still only the
+// first of them. grok's record IS its own output, so it needs no route — but
+// it exists only while the operator's config carries one line, and that is a
+// fact about the BOX rather than about the binary (D12). RexPrecondition
+// below is the third reading, asked at the same two sites and before the same
+// claim; the order is declaration, version, precondition, and it is that way
+// round because a grok this was not measured on falsifies the measurement the
+// precondition rests on (D13 — grok's own validator disowns the key).
 func RexAdmits(rt *Runtime) bool { return rt != nil && rt.ReportsOnRex }
 
 // RexVersionDrift is ADR 0076 D9's version pin, read as the second half of
@@ -144,23 +152,55 @@ func RexVersionDrift(rt *Runtime) (string, bool) {
 // rexVersionLines are the sentences the version refusal and its interactive
 // warning share, so the dispatched and at-the-keyboard arms cannot drift into
 // describing one gap differently — rexRefusalLines' rule, one reading over.
+//
+// TWO ARMS, KEYED ON THE ROUTE AND NEVER ON A NAME (ADR 0017 §3), because the
+// pin has two reasons to exist and they are not the same gap:
+//
+//   - a ROUTED report (RexRouteCodexHooks) rests on an `[experimental]` RPC
+//     and on session-flag hook semantics nobody promises — D9's reason.
+//   - a NATIVE report with a pin on it (grok) rests on a config key the CLI's
+//     OWN validator calls unrecognised while its TUI obeys it, and which
+//     `grok inspect --json` reports no value for. Since the CLI will not say,
+//     the declaration carries the release the key was MEASURED on — D13's
+//     reason, and the reason the "a native report carries no pin" sentence in
+//     D9's realization note is now narrower than it reads: it holds wherever
+//     the report rests on nothing but the binary's own output, which claude's
+//     does and grok's does not.
+//
+// Both arms end at the same place — a launch that COMPLETES and reports
+// nothing, with `prompt: argv`'s work prompt already delivered and D2's HOLD
+// keeping the claim over a turn nobody can read — which is why the version is
+// read where D1 is read and not after the launch.
 func rexVersionLines(rt *Runtime, got string) (string, string) {
-	cause := rt.Name + " reports " + strconv.Quote(got) + " and this instance's Rex route was measured on " + strconv.Quote(rt.RexVerified)
+	cause := rt.Name + " reports " + strconv.Quote(got) + " and this instance's Rex reading of " + rt.Name + " was measured on " + strconv.Quote(rt.RexVerified)
 	if got == "" {
-		cause = rt.Name + " would not answer `--version`, and this instance's Rex route was measured on " + strconv.Quote(rt.RexVerified)
+		cause = rt.Name + " would not answer `--version`, and this instance's Rex reading of " + rt.Name + " was measured on " + strconv.Quote(rt.RexVerified)
 	}
-	return cause, "ADR 0076 D9: " + rt.Name + "'s record on Rex is not its own output — posse types its reporter onto the launch line as session-flag hooks and trusts them with the hash " +
-		rt.Name + " itself reported, which rests on an `[experimental]` RPC and on session-flag hook semantics nobody promises. A version this route was not measured on most likely fails as a line " +
-		rt.Name + " ACCEPTS: the launch completes, the seat sits on the startup review dialog, no record arrives, and `" + PromptArgv +
-		"` delivery means the work prompt is already with the CLI (ADR 0076 D2's HOLD keeps the claim over a turn nobody can read)"
+	if rt.RexRoute == RexRouteCodexHooks {
+		return cause, "ADR 0076 D9: " + rt.Name + "'s record on Rex is not its own output — posse types its reporter onto the launch line as session-flag hooks and trusts them with the hash " +
+			rt.Name + " itself reported, which rests on an `[experimental]` RPC and on session-flag hook semantics nobody promises. A version this route was not measured on most likely fails as a line " +
+			rt.Name + " ACCEPTS: the launch completes, the seat sits on the startup review dialog, no record arrives, and `" + PromptArgv +
+			"` delivery means the work prompt is already with the CLI (ADR 0076 D2's HOLD keeps the claim over a turn nobody can read)"
+	}
+	return cause, "ADR 0076 D13: " + rt.Name + "'s record on Rex IS its own output, but it exists only while the operator's config carries the line this instance's precondition reads — a key " +
+		rt.Name + " itself will not confirm (its validator calls the table unrecognised and `" + rt.Name +
+		" inspect --json` reports no value for it, both MEASURED, while the TUI obeys it in every arm of the probe). Since the CLI will not say, the pinned claim is \"the key was measured on THIS release\", and a release it was not measured on most likely fails as SILENCE rather than an error: the launch completes, no record arrives, and `" +
+		PromptArgv + "` delivery means the work prompt is already with the CLI (ADR 0076 D2's HOLD keeps the claim over a turn nobody can read)"
 }
 
-// rexVersionDoor is the re-measurement, named in both arms: two probe runs
-// and no model turn, which is what D9 priced the pin at.
+// rexVersionDoor is the re-measurement, named in both arms: a couple of probe
+// runs and no model turn, which is what D9 and D13 each priced their pin at.
+// Keyed on the route for rexVersionLines' reason, and the native arm takes its
+// probe from the precondition's own registry entry so the two cannot name
+// different arms of the same measurement.
 func rexVersionDoor(rt *Runtime) string {
-	return "re-measure the route and move `rex_verified:` on the " + rt.Name +
-		" built-in: docs/adr/0076-trust-ask.probe.sh (arm `ask`, the whole route; arm `state` is the cheap one — codex's own hooks/list, no Rex block and no prompt) and docs/adr/0076-reporter.probe.sh. Both are about two minutes and spend no model turn (ADR 0076 D9). Until then " +
-		rexHerdrDoor(rt)
+	if rt.RexRoute == RexRouteCodexHooks {
+		return "re-measure the route and move `rex_verified:` on the " + rt.Name +
+			" built-in: docs/adr/0076-trust-ask.probe.sh (arm `ask`, the whole route; arm `state` is the cheap one — codex's own hooks/list, no Rex block and no prompt) and docs/adr/0076-reporter.probe.sh. Both are about two minutes and spend no model turn (ADR 0076 D9). Until then " +
+			rexHerdrDoor(rt)
+	}
+	return "re-measure the key and move `rex_verified:` on the " + rt.Name +
+		" built-in: " + rexPreconditionProbe(rt) + " — about two minutes, no model turn (ADR 0076 D13). Until then " + rexHerdrDoor(rt)
 }
 
 // RexVersionRefusal is the dispatched arm of the version pin, and a plain
@@ -187,6 +227,125 @@ func RexVersionDegraded(rt *Runtime, got string) string {
 	return "DEGRADED — " + cause + ", and this instance runs `" + MultiplexerKey + ": " + MuxRex +
 		"`; an interactive launch proceeds because you are at the keyboard and can read the screen posse cannot. " + why +
 		". If it opens on a review dialog, that is this pin firing late. " + rexVersionDoor(rt)
+}
+
+// ─── admission's third reading: the precondition (ADR 0076 D12/D13) ─────────
+//
+// D1 asks whether the BINARY reports and D9 asks which release this is. This
+// asks the one thing neither can: whether the box is in the state the report
+// was measured in. It exists for grok, whose record is its own output and
+// arrives only while the operator's grok config carries
+// `[ui.notifications] program_status = "on"` — `auto` (the shipped default)
+// and `off` are each MEASURED silent on Rex, and `auto` also leaks the
+// `n,auth` tail of Rex's reply into grok's composer.
+//
+// IT IS BUILT-IN ONLY AND DECLARED, never asked by name: `Runtime
+// .RexPrecondition` names a registry key and this file resolves it, which is
+// Runtime.RexRoute's seam one reading over (ADR 0017 §3).
+//
+// AND IT IS READ WHERE D1 IS READ. The reading is one small ReadFile — no
+// launch, no Rex call, no claim — and refusing here rather than after the
+// launch is the whole of D12 on a `prompt: argv` runtime: the evidence a
+// try-and-see would wait for arrives only once the work prompt has ridden the
+// line.
+
+// rexPre is one precondition: the reader, the remedy, and the probe that
+// re-measures what the reader's verdict rests on.
+//
+// read answers WHAT WAS READ and whether the precondition is met, which is
+// RexVersionDrift's shape and for its reason: the caller prints the reading
+// back, because "refused" without "program_status = \"auto\" in ~/.grok/config.toml"
+// is a wall with no door on it.
+type rexPre struct {
+	read  func() (string, bool)
+	door  func() string
+	probe string
+}
+
+// rexPreconditions is the registry, and the registry is the whole of it: a
+// key with no entry here REFUSES rather than admitting, which is the opposite
+// direction from turnOutcomeReaders' nil (turnfailure.go). The asymmetry is
+// deliberate — an unreadable turn outcome is a declared blindness posse
+// prints, and an unresolvable ADMISSION precondition is a launch posse would
+// be making on a reading nobody performed.
+var rexPreconditions = map[string]rexPre{
+	RexPreGrokProgramStatus: {read: grokProgramStatusRead, door: grokProgramStatusDoor, probe: grokProgramStatusProbe},
+}
+
+// RexPreconditionMet is the reading: the string is what was read, in the
+// probe's own words, and ok=false is a refusal. A runtime that declares no
+// precondition is met by construction — there is nothing to read and nothing
+// to say about it (claude, codex).
+//
+// UNREADABLE AND UNKNOWN BOTH REFUSE, which is the interstitial probes' rule
+// (ADR 0013 §1: unknown is never read as yes). The reading says which, so a
+// caged launcher that could not open the file is told it is the cause
+// (probeCageNote) rather than the operator's config being blamed for it.
+func RexPreconditionMet(rt *Runtime) (string, bool) {
+	if rt == nil || rt.RexPrecondition == "" {
+		return "", true
+	}
+	pre, ok := rexPreconditions[rt.RexPrecondition]
+	if !ok {
+		return "no reader is registered for the Rex precondition " + strconv.Quote(rt.RexPrecondition), false
+	}
+	return pre.read()
+}
+
+// rexPreconditionDoor is the remedy, in the precondition's own words, with
+// the herdr door after it: adding the line is the fix, and running the
+// runtime on a herdr instance is the alternative that needs nothing added.
+func rexPreconditionDoor(rt *Runtime) string {
+	if pre, ok := rexPreconditions[rt.RexPrecondition]; ok {
+		return pre.door() + rexHerdrDoor(rt)
+	}
+	return rexHerdrDoor(rt)
+}
+
+// rexPreconditionProbe is the re-measurement the VERSION pin names when the
+// reading it protects is a precondition's (rexVersionDoor's native arm). It
+// lives here so the two readings cannot name different arms of one probe.
+func rexPreconditionProbe(rt *Runtime) string {
+	if pre, ok := rexPreconditions[rt.RexPrecondition]; ok && pre.probe != "" {
+		return pre.probe
+	}
+	return "the probe named in ADR 0076's amendment for " + rt.Name
+}
+
+// rexPreconditionLines are the sentences the precondition's refusal and its
+// interactive warning share — rexRefusalLines' rule, one reading further on.
+func rexPreconditionLines(rt *Runtime, read string) (string, string) {
+	return rt.Name + " reports on Rex only behind a precondition this box does not meet (" + read + ")",
+		"ADR 0076 D12: " + rt.Name + " writes its own OSC 7501 record — natively, with nothing typed for it — but ONLY with that key set to " +
+			strconv.Quote(GrokProgramStatusOn) + ". MEASURED 2026-11-06 over one binary and four fixture homes differing in nothing else: `auto` (the shipped default) wrote no record through a working turn AND leaked the `n,auth` tail of Rex's reply into the composer, `off` wrote no record at all, and `" +
+			GrokProgramStatusOn + "` reported `idle` at launch, `working` during a turn, `idle` after a cancel and cleared at `/quit`, every record stamped with " +
+			rt.Name + "'s own pid. Three of those four are a seat whose prompt, settle and turn outcome would each be a guess (ADR 0013 §1), and an unreadable config is the fourth: unknown is never read as yes"
+}
+
+// RexPreconditionRefusal is the dispatched arm, and a plain error for
+// RexRuntimeRefusal's reason: fireLoop's busy-key split lands it on the
+// persona/runtime arm and benches the slot, because every bead routed to this
+// persona on this runtime meets the same missing line, and claiming them one
+// at a time to refuse them one at a time is the sterilised queue ADR 0013 §2
+// named once.
+func RexPreconditionRefusal(rt *Runtime, read string) error {
+	cause, why := rexPreconditionLines(rt, read)
+	return Die("%s launch refused: %s, and this instance runs `%s: %s`\n"+
+		"  %s\n"+
+		"  ADR 0076 D12: refused HERE — before the claim, before a worktree and before a Rex session exists — because the evidence a try-and-see would wait for arrives only after the prompt has been delivered, and on a `%s` runtime that is a billed turn nobody observes\n"+
+		"  %s\n",
+		rt.Name, cause, MultiplexerKey, MuxRex, why, rt.PromptMode(), rexPreconditionDoor(rt))
+}
+
+// RexPreconditionDegraded is the INTERACTIVE arm, with RexRuntimeDegraded's
+// asymmetry and its reason: the operator is at the keyboard, can read the
+// screen posse cannot, and a launch is also how an operator finds out what
+// their own config does.
+func RexPreconditionDegraded(rt *Runtime, read string) string {
+	cause, why := rexPreconditionLines(rt, read)
+	return "DEGRADED — " + cause + ", and this instance runs `" + MultiplexerKey + ": " + MuxRex +
+		"`; an interactive launch proceeds because you are at the keyboard and can read the screen posse cannot. " + why +
+		". `posse list` and every dispatch reading of this session will say unknown. " + rexPreconditionDoor(rt)
 }
 
 // rexRefusalLines are the two sentences shared by the refusal and the

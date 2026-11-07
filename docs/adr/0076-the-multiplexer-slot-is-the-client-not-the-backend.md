@@ -1009,6 +1009,46 @@ carries `program_status = "on"` under `[ui.notifications]`.
 - D2's argv arm then confirms with the first record, as for claude and codex.
   `onidle` shows that grok satisfies even §3's original typed rule.
 
+*Realized 2026-11-07 (ranger-base-nhxdx). `ReportsOnRex` is true for grok with
+`RexRoute` empty — a NATIVE yes, with nothing typed for it — and the
+precondition is a THIRD built-in-only key, `RexPrecondition`, naming a
+registry reader (`RexPreGrokProgramStatus`, `grokrex.go`). It is read as
+`RexPreconditionMet` at the SAME two sites D1 and D9 are read at —
+`dispatch.go` above the claim and `planLaunch` as the backstop — with D1's
+interactive asymmetry (a dispatched launch refuses, `posse new` warns and
+proceeds). `posse runtime check`'s Rex block grew a fourth line for it, so an
+unmet precondition is shown in a refused column with the line to add, rather
+than under "launches here".*
+
+*Four things the decision did not settle, decided here:*
+
+- ***the order is declaration, version, precondition.** A grok the key was not
+  measured on falsifies the measurement the precondition rests on — the key is
+  one grok's own validator disowns, so there is nothing but the measurement —
+  so the version is read first and the box second.*
+- ***the reader is section-aware and its contract is three spellings**:
+  `[ui.notifications]` + a bare key, `[ui]` + `notifications.program_status`,
+  and the fully dotted key at the root. All three are one document to grok's
+  parser. An inline table, a multi-line value and a quoted bare key carrying a
+  dot each read as ABSENT and therefore refuse, which is the honest direction
+  for an admission gate: the cost is one line re-spelled, and the cost of
+  guessing the other way is a seat whose every state is unknown.
+  `tomlFlag` was not reused and could not be — it is line-level and
+  section-blind on purpose (two unique keys), and `program_status` is not
+  unique to one table, so a blind read would admit a seat on
+  `program_status = "on"` sitting under `[cli]`, which grok does not read as
+  this key at all.*
+- ***it is not memoized**, where the version read beside it is
+  (`ProbeCLIVersion`'s per-process memo). One small `ReadFile` per launch is
+  cheaper than that exec, and the asymmetry is useful: an operator who adds
+  the line is admitted by the next launch of a running
+  `posse dispatch --watch`, where a grok they UPGRADE is not noticed until the
+  next process.*
+- ***a key no reader implements REFUSES**, which is the opposite direction from
+  `turnOutcomeReaders`' nil (`turnfailure.go`). An unreadable turn outcome is a
+  declared blindness posse prints; an unresolvable admission precondition is a
+  launch posse would be making on a reading nobody performed.*
+
 **D13. posse documents the line and never writes it.** It joins the `[cli]`
 keys in `etc/grok/version-pin.toml` as a key posse requires in the operator's
 config, and `make verify-grok-pin` asserts it. This is `interstitial.go`'s rule.
@@ -1045,6 +1085,26 @@ turn). The cask is pinned, so that costs one run per deliberate bump.
   covers this: a dead owner pid reads `unknown`.
 - `runtime.go`'s `ReportsOnRex` comment repeats D3's "again forced `on`". The
   slice corrects it.
+
+*Realized 2026-11-07 (ranger-base-nhxdx). The line joins the `[cli]` keys in
+`etc/grok/version-pin.toml` under its own `[ui.notifications]` table, and
+`scripts/verify-grok-pin.sh` asserts it in both directions: that the pin file
+still declares the one admitting value (`"on"` is written into the row rather
+than taken from the pin, so a pin edited to declare `auto` cannot agree with
+itself), and that the operator's own `config.toml` carries it. That row reads
+the config SECTION-AWARE too, through a shell twin of the Go reader with the
+same three-spelling contract — a section-blind row would report green over a
+launch posse refuses. It is also re-audit item 5 on the lift gate, because the
+measurement behind it was taken on the pinned release only.*
+
+*The `ReportsOnRex` comment is corrected, and the correction is narrower than
+"D3 was wrong": D3's `auto` reading stands, and what it never had was the `on`
+arm — that arm set the key in a project `.grok/config.toml`, a layer grok does
+not read for `ui.*` at all, so "again forced `on`" was never forced. The field
+doc now says so, and `RexVerified`'s doc carries the half of D9's realization
+note this amendment narrows: "a native report carries no pin" holds wherever
+the report rests on nothing but the binary's own output, which claude's does
+and grok's does not.*
 - The probe defaults to the darwin Rex app path (`REX=` overrides it). On the ADR 0080 Linux
   host the line is ASSUMED to behave the same, since it is grok's config and
   Rex's protocol, and the shakedown (ranger-base-offid) re-runs `onidle` there.

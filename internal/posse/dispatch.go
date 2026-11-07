@@ -5043,12 +5043,32 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			// already with the CLI and D2's HOLD keeps the claim over a turn
 			// nobody can read. It costs one memoized `codex --version` per
 			// process (ProbeCLIVersion, through parity.go's seam).
+			//
+			// THREE SINCE AMENDMENT 3 (ranger-base-nhxdx), and the third is
+			// the one neither declaration can make: whether THIS BOX is in
+			// the state the report was measured in. grok's record is its own
+			// output and arrives only while the operator's grok config
+			// carries `[ui.notifications] program_status = "on"`; `auto` —
+			// the shipped default — is MEASURED both silent on Rex and
+			// leaking into grok's composer, and `off` is MEASURED silent. It
+			// costs one small ReadFile per launch, which is why it is not
+			// memoized as the version read beside it is: an operator who
+			// adds the line is admitted by the next launch of a running
+			// `posse dispatch --watch`.
+			//
+			// THE ORDER IS THE DECISION, not an optimisation of it: a grok
+			// the key was not measured on falsifies the measurement the
+			// precondition rests on, so the version is read first (D13 —
+			// grok's own validator disowns the key, so posse cannot ask).
 			if d.App.MultiplexerName() == MuxRex {
 				if !RexAdmits(rt) {
 					return launched{}, RexRuntimeRefusal(rt)
 				}
 				if got, ok := RexVersionDrift(rt); !ok {
 					return launched{}, RexVersionRefusal(rt, got)
+				}
+				if read, ok := RexPreconditionMet(rt); !ok {
+					return launched{}, RexPreconditionRefusal(rt, read)
 				}
 			}
 			// Refuses(), not Undetectable(): ADR 0061 D2 gives this row a

@@ -101,6 +101,66 @@ required_maximum_version = "1.0.52"
 # anti-downgrade floors; a floor is the wrong direction for a pin and would
 # block rolling back to a known-good build.
 
+[ui.notifications]
+# NOT a version ceiling, and the second key posse REQUIRES in the operator's
+# own ~/.grok/config.toml (ADR 0076 Amendment 3, D13, ranger-base-nhxdx). It is
+# in this file for the same reason the two ceilings are: posse reads the
+# operator's config and never writes it, so the declaration plus
+# `make verify-grok-pin` is the whole mechanism.
+#
+# WHAT IT BUYS. On a `multiplexer: rex` instance posse reads the runtime's OWN
+# OSC 7501 program_status record and invents no state — there are no screen
+# rules on Rex and no posse-written hooks (ADR 0076 §3) — so a runtime that
+# writes none cannot be read at all and is refused before the claim. This key
+# is what makes grok write one.
+#
+# MEASURED 2026-11-06 (ranger-base-1vgrw, docs/adr/0076-grok-hook.probe.sh),
+# Rex CLI 0.0.1793377904, one grok 1.0.52 (0920c8169e27) binary over four
+# fixture homes differing in nothing but this key:
+#
+#   auto (the shipped default) → NO record through a working turn, AND the
+#                                `n,auth` leak: grok's `7501;?` query goes out,
+#                                Rex's reply lands after grok has stopped
+#                                listening, and its tail reaches the composer
+#   off                        → no record at all, and no leak
+#   on                         → `working` by t+4 s, `app=grok-build`, owner
+#                                {pid, "grok-1.0.52-macos-aarch64"}; `idle` at
+#                                launch with no prompt, `idle` after one
+#                                Ctrl-C, record cleared at `/quit`
+#
+# So `on` is the only value that both reports and does not leak, and it is the
+# only value posse admits. Absent, `auto`, `off` and an unreadable config each
+# refuse a grok seat on Rex before the claim (ADR 0013 §1: unknown is never
+# read as yes).
+#
+# WHERE GROK READS IT, and it is why this is the operator's file and not a
+# per-seat one: `[ui.notifications]` is read from `$GROK_HOME/config.toml`,
+# `managed_config.toml` and `requirements.toml` only. A project's
+# `.grok/config.toml` contributes four tables and none of them is `ui`, and
+# the `GROK_CONFIG` overlay drops it — both MEASURED, and the first is why ADR
+# 0076 D3's "forced on" arm read silent for two weeks: it set the key in a
+# project file grok does not read for `ui.*`. A per-seat `$GROK_HOME` could
+# carry it, at the price of faking five stores (the credential file grok
+# rewrites by atomic rename, `sessions/`, `trusted_folders.toml` and the two
+# interstitial keys), so one line here is the cheapest placement there is.
+#
+# POSSE CANNOT ASK GROK whether it is set: `grok inspect --json` reports no
+# value for the key and grok's own validator calls `ui.notifications` an
+# "unrecognized config key" (MEASURED) — while the TUI obeys it in every arm
+# above. So posse reads the file itself, section-aware (grokrex.go), and the
+# release that reading was measured on is pinned on the grok built-in
+# (`rex_verified: grok 1.0.52 (0920c8169e27)`). A grok on another release is
+# refused on Rex, and the re-measurement is the probe's `auto on off onidle`
+# arms — about two minutes, no model turn.
+#
+# THE LINE IS BOX-WIDE. Every grok the operator runs then writes OSC 7501 in
+# every terminal, herdr panes included. A terminal that does not know an OSC
+# is meant to consume it unseen (ECMA-48 string controls); that herdr's
+# emulator does so, and that herdr's own grok detection still settles, is
+# ASSUMED and is what ranger-base-yqmkr's shakedown measures on both
+# multiplexers.
+program_status = "on"
+
 [install]
 # The brew half of the pin — the half the [cli] keys above cannot reach, since
 # `brew upgrade` is not grok's updater and obeys none of grok's config.

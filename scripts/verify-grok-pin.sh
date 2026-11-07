@@ -9,7 +9,15 @@
 # now two halves to assert, and neither can stand in for the other:
 #
 #   grok's own config  — ~/.grok/config.toml's two ceilings, which is where grok
-#                        reads its policy from whatever installed the binary.
+#                        reads its policy from whatever installed the binary,
+#                        plus the ONE key that is not a ceiling at all:
+#                        `[ui.notifications] program_status`, which ADR 0076
+#                        D12/D13 requires for a grok seat on a
+#                        `multiplexer: rex` instance. It is here because it is
+#                        the same mechanism — posse declares what it needs in
+#                        the operator's config and never writes that file —
+#                        and because the measurement behind it was taken on
+#                        the pinned release only (re-audit item 5).
 #   brew               — the installed cask version, the cask pin, and the
 #                        Caskroom directory, because `brew upgrade` is not
 #                        grok's updater and obeys none of grok's config.
@@ -121,6 +129,83 @@ val() {
   done <"$2"
 }
 
+# tomlpath <file> <dotted.key.path> — the scalar at that FULL key path, read
+# SECTION-AWARE, for the one key in this file whose name is not unique to one
+# table (ADR 0076 D13, ranger-base-nhxdx). `val` above is deliberately
+# section-blind — it is tomlFlag's rule in shell, and it is right for keys that
+# occur once in grok's config. `program_status` is not one of those: it is a
+# plausible name under more than one table, and the one table that counts is
+# `[ui.notifications]`. A section-blind read would take `program_status = "on"`
+# out of any table and call the precondition met where posse REFUSES it, which
+# is a gate reporting green over a launch posse will not make.
+#
+# It is the shell twin of grokrex.go's tomlPathValue and reads the same three
+# spellings, which is the contract and not a sample:
+#
+#   [ui.notifications]  + program_status = "on"
+#   [ui]                + notifications.program_status = "on"
+#   (root)                ui.notifications.program_status = "on"
+#
+# and nothing else — an inline table, a multi-line value, a quoted bare key
+# carrying a dot all read as absent, which FAILS the row rather than passing
+# it. Same direction as the Go reader, same reason: the cost is one line
+# re-spelled and the cost of guessing the other way is a gate that lies.
+#
+# No forks, per the extractor note at the top of this file: this decides an
+# arm. `[[array.of.tables]]` sets a table nothing can match rather than being
+# skipped, because skipping it would leave the previous header in force and
+# read that array's keys as the enclosing table's.
+tomlpath() {
+  local file=$1 want=$2 line t rest table= key v path
+  [ -r "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    t=${line#"${line%%[![:space:]]*}"}
+    t=${t%"${t##*[![:space:]]}"}
+    case $t in
+      '' | '#'*) continue ;;
+      '[['*)
+        table=$'\n'
+        continue
+        ;;
+      '['*)
+        rest=${t#\[}
+        case $rest in
+          *\]*) table=${rest%%\]*} ;;
+          *) table=$'\n' ;;
+        esac
+        continue
+        ;;
+    esac
+    case $t in *=*) ;; *) continue ;; esac
+    key=${t%%=*}
+    v=${t#*=}
+    # The composed path, with every space and quote removed: a bare TOML key
+    # cannot contain either, and a quoted one that does is a spelling this
+    # refuses by design (above).
+    path=$table.$key
+    [ -z "$table" ] && path=$key
+    path=${path//[\"\' ]/}
+    path=${path//$'\t'/}
+    [ "$path" = "$want" ] || continue
+    v=${v#"${v%%[![:space:]]*}"}
+    case $v in
+      '"'*)
+        v=${v#\"}
+        printf '%s' "${v%%\"*}"
+        return 0
+        ;;
+      "'"*)
+        v=${v#\'}
+        printf '%s' "${v%%\'*}"
+        return 0
+        ;;
+    esac
+    v=${v%%#*}
+    printf '%s' "${v%"${v##*[![:space:]]}"}"
+    return 0
+  done <"$file"
+}
+
 # field2 <text> — the second whitespace-separated field of the FIRST line,
 # replacing `| awk '{print $2}'`. Deliberately stricter than the awk it
 # replaces, which printed field 2 of EVERY line: the version answer is one
@@ -170,6 +255,10 @@ want_req=$(val required_maximum_version "$pin")
 want_cask=$(val formula "$pin")
 want_pin=$(val pin_state "$pin")
 want_room=$(val caskroom_dir "$pin")
+# The third key posse REQUIRES in the operator's config (ADR 0076 D13), and
+# the only one read section-aware — see tomlpath above for why.
+grok_ps_path=ui.notifications.program_status
+want_ps=$(tomlpath "$pin" "$grok_ps_path")
 
 # The REACHED binary, not the one a path says should be there: grok is also
 # installable by its own internal installer into $GROK_HOME/bin (which is what
@@ -179,6 +268,7 @@ live_ver=$(field2 "$(grok --version 2>/dev/null)")
 cfg_auto=$(val auto_update "$cfg")
 cfg_max=$(val maximum_version "$cfg")
 cfg_req=$(val required_maximum_version "$cfg")
+cfg_ps=$(tomlpath "$cfg" "$grok_ps_path")
 
 # What brew RECORDS as installed. This is the row the operator's lift-gate asks
 # for: it reds the moment a `brew upgrade` moves the cask, whether or not the
@@ -283,6 +373,25 @@ chk_row "brew cask pin"             "$want_pin"  "$pinned"
 chk_row "config auto_update"        "false"      "$cfg_auto"
 chk_row "config maximum_version"    "$want_max"  "$cfg_max"
 chk_row "config required_max_ver"   "$want_req"  "$cfg_req"
+# The precondition ADR 0076 D12 puts in front of every grok seat on a
+# `multiplexer: rex` instance, asserted in both directions:
+#
+#   the PIN row says the declaration still names the one admitting value. "on"
+#   is hardcoded here rather than taken from the pin file, because that is the
+#   whole assertion — posse admits `on` and nothing else (MEASURED: `auto`, the
+#   shipped default, is silent on Rex AND leaks the `n,auth` tail of Rex's
+#   reply into grok's composer; `off` is silent), so a pin file edited to
+#   declare `auto` would otherwise agree with itself.
+#   the CONFIG row says the operator's own file carries it. posse READS that
+#   file and never writes it (D13): config.toml holds the operator's
+#   preferences and grok rewrites it itself, so a copy over it would clobber
+#   both. This row is the whole mechanism by which the requirement is kept.
+#
+# An absent key reads empty and FAILs, which is the state this gate exists to
+# make visible: until the line is there, a dispatched grok on Rex is refused
+# before the claim and the refusal names this file.
+chk_row "pin program_status"        "on"         "$want_ps"
+chk_row "config program_status"     "on"         "$cfg_ps"
 case "$live_auto" in
   true | false)
     chk_row "grok update: autoUpdate"  "false"     "$live_auto" ;;
@@ -600,6 +709,18 @@ EOF
      login-shell capture that L1 rides on.
   4. The startup-splash detection override (etc/herdr/agent-detection/grok.toml,
      rangerhq-37c/1xsj) — re-run \`make verify-detection\` against the new splash.
+  5. The Rex program_status precondition (ADR 0076 Amendment 3 D12/D13,
+     ranger-base-1vgrw). \`[ui.notifications] program_status = "on"\` is what
+     makes grok write its own OSC 7501 record on a \`multiplexer: rex\`
+     instance, and grok will not confirm the key: \`grok inspect --json\`
+     reports no value for it and grok's own validator calls the table an
+     "unrecognized config key", while the TUI obeys it. So the measurement is
+     all there is, and it was taken on $want_ver only — which is why the grok
+     built-in carries \`rex_verified: grok $want_ver (<build hash>)\` and
+     refuses a grok on any other release BEFORE the claim. Re-measure
+     $upstream with \`sh docs/adr/0076-grok-hook.probe.sh auto on off onidle\`
+     (about two minutes, no model turn) and move \`rex_verified:\`, or grok
+     stops launching on every Rex instance the moment the pin moves.
 
   Runbook to lift the pin: docs/notes.d/notes-grok.md, "grok substrate".
 EOF

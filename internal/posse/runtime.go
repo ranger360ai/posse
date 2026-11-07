@@ -757,9 +757,24 @@ type Runtime struct {
 	// CLI 0.0.1793377904, this box. claude 2.1.314 is the native yes:
 	// launched in a Rex block with no hooks its record read `idle`,
 	// `app=claude-code`, `owner={pid,"2.1.314"}`, and one prompt turned it
-	// `working` then `done`. grok 1.0.52 wrote NO record at 2 s through
-	// 131 s of a live argv turn, with program_status `auto` and again forced
-	// `on`; codex 0.153.4 and bob carry no `7501;` string at all.
+	// `working` then `done`. codex 0.153.4 and bob carry no `7501;` string at
+	// all.
+	//
+	// grok 1.0.52 read FALSE here until Amendment 3, and the reading behind
+	// that was narrower than D3 said: it wrote no record at 2 s through 131 s
+	// of a live argv turn with `program_status` at its default `auto`, and
+	// D3's "again forced `on`" arm set the key in a project
+	// `.grok/config.toml` — a layer grok does not read for `ui.*` at all
+	// (MEASURED 2026-11-06, ranger-base-1vgrw: a project config contributes
+	// four tables, none of them `ui`, and the `GROK_CONFIG` overlay drops it
+	// too). So `on` was never forced and the false rested on `auto` alone.
+	// Set where grok DOES read it — `$GROK_HOME/config.toml` — the record
+	// arrives: `idle` at launch, `working` during a turn, `idle` after a
+	// cancel, cleared at `/quit`, each stamped `app=grok-build` with grok's
+	// own pid. grok is a NATIVE yes behind that one operator-owned line
+	// (D12), which RexPrecondition below is, and the hook route is closed by
+	// measurement rather than by price: grok starts its hooks as session
+	// leaders, so no carrier's hook can open `/dev/tty` at all.
 	//
 	// codex 0.153.4 is the ROUTED yes, MEASURED 2026-11-06 under Amendment 2
 	// (ranger-base-z7kle's reporter and ranger-base-fwwl8's trust ask, both
@@ -767,8 +782,7 @@ type Runtime struct {
 	// hooks and their trust typed beside it, a codex launch draws no review
 	// dialog and its record reads `working`, `app=codex`,
 	// `owner={pid,"codex"}` at t+2 s. That is the same evidence class claude
-	// provides, one layer out. bob stays false (D11) and grok's own yes is
-	// Amendment 3's, through its config rather than a hook.
+	// provides, one layer out. bob stays false (D11).
 	ReportsOnRex bool
 	// RexRoute is HOW that record gets written, and it exists so no launch
 	// path has to ask a runtime's NAME (ADR 0017 §3: dispatch keys on the
@@ -802,7 +816,47 @@ type Runtime struct {
 	// update-check cache and not release identity) cannot read as drift.
 	// BUILT-IN ONLY: it is the version a measurement was taken on, and a
 	// yaml that could move it could move the admission.
+	//
+	// AMENDMENT 3 GAVE IT A SECOND REASON, and the "a native report carries
+	// no pin" sentence above is narrower than it reads: it holds wherever the
+	// report rests on nothing but the binary's own output, which claude's does
+	// and grok's does not. grok writes its own record, but only while the
+	// operator's config carries the key RexPrecondition below reads — a key
+	// grok's own validator calls unrecognised and `grok inspect --json`
+	// reports no value for, both MEASURED, while the TUI obeys it. Since grok
+	// will not say, the release that reading was measured on is pinned (D13),
+	// and the re-measurement named is the precondition's own probe arms rather
+	// than the route probes (rexVersionDoor keys the two arms on RexRoute).
 	RexVerified string
+	// RexPrecondition is the builtin-only precondition this runtime's Rex
+	// admission rests on BEYOND the two declarations above: the one thing
+	// neither of them can say, which is whether THIS BOX is in the state the
+	// report was measured in (ADR 0076 Amendment 3, D12).
+	//
+	// "" is the honest answer for a runtime whose record needs nothing of the
+	// box — claude and codex, whose admissions are a declaration and (for
+	// codex) a version. The one non-empty value is RexPreGrokProgramStatus
+	// (grokrex.go): `$GROK_HOME/config.toml` carries
+	// `program_status = "on"` under `[ui.notifications]`, read section-aware
+	// through grokHomeIn (the HOME pin of ADR 0077 D1, so the file posse read
+	// is the file the seat's grok opens). Absent, `auto`, `off` and unreadable
+	// all refuse — `auto` is the shipped default and is MEASURED both silent
+	// on Rex and leaking the `n,auth` tail of Rex's reply into grok's
+	// composer, `off` is MEASURED silent, and unknown is never read as yes.
+	//
+	// A REGISTRY KEY AND NOT A PREDICATE, which is TurnOutcomeAdapter's seam
+	// and RexRoute's rule: rexPreconditions (multiplexer.go) resolves it, so
+	// no launch path asks a runtime's NAME for a fact about its mechanism
+	// (ADR 0017 §3), and a key no reader implements REFUSES rather than
+	// admitting.
+	//
+	// BUILT-IN ONLY, for ReportsOnRex's reason and one of its own: a yaml that
+	// could name the precondition could also clear it, and clearing it is
+	// exactly the admission D12 was written to withhold. posse READS the
+	// operator's file and never writes it (D13, interstitial.go's rule) — the
+	// line is declared in etc/grok/version-pin.toml beside the `[cli]` keys
+	// and asserted by `make verify-grok-pin`.
+	RexPrecondition string
 }
 
 // PromptMode is how dispatch delivers the work prompt here. The zero value
@@ -2406,7 +2460,39 @@ var builtinRuntimes = []Runtime{
 		// clean launch can only have been grok's own default answering.
 		UnknownModel:    UnknownModelSwap,
 		UnknownModelWhy: "measured 2026-09-09 (ranger-base-jzm04) on grok 1.0.5 (5115b46bc909): -m grok-4.7, an id 'grok models' does not list and the operator confirms does not exist, launched with no refusal anywhere and the composer border read 'Grok 4.6 (high)' — the CLI ran its own default for the unknown id and said nothing",
-		Command:         `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
+		// reports_on_rex: a NATIVE yes behind one operator-owned config line
+		// (ADR 0076 Amendment 3, D12 — it replaces D3 and D10). grok writes
+		// its own OSC 7501 record, so rex_route is "" and posse types nothing
+		// for it; what it needs is `program_status = "on"` under
+		// `[ui.notifications]` in the operator's own grok config, which is
+		// rex_precondition below and the one thing about this admission that
+		// is a fact about the BOX.
+		//
+		// MEASURED 2026-11-06 (ranger-base-1vgrw,
+		// docs/adr/0076-grok-hook.probe.sh), Rex CLI 0.0.1793377904, one grok
+		// 1.0.52 binary over four fixture homes differing in nothing but this
+		// key: `auto` (the shipped default) and `off` each wrote NO record,
+		// and `auto` additionally leaked the `n,auth` tail of Rex's reply into
+		// grok's composer; `on` reported `working` by t+4 s with
+		// `app=grok-build` and owner `{pid, "grok-1.0.52-macos-aarch64"}`,
+		// `idle` at launch with no prompt, `idle` after one Ctrl-C, and
+		// cleared at `/quit`. The hook route Amendment 3 was filed to price
+		// is closed by measurement, not by cost: grok starts every hook as the
+		// leader of a new session, so `/dev/tty` cannot be opened from one —
+		// five carriers, five failures.
+		//
+		// rex_verified is D13's pin, and it is on a NATIVE report because the
+		// precondition is a key grok itself will not confirm: `grok inspect
+		// --json` reports no value for it and grok's validator calls
+		// `ui.notifications` an "unrecognized config key" (MEASURED) while
+		// the TUI obeys it in every arm above. So the release the key was
+		// measured on is declared, and a grok reporting another one is
+		// refused on Rex BEFORE the claim — the re-measurement is the probe's
+		// `auto on off onidle` arms, about two minutes and no model turn. The
+		// value is the `grok --version` line MINUS its trailing ` [stable]`,
+		// for skills_verified's reason one field over (skillsVersionRelease).
+		ReportsOnRex: true, RexVerified: "grok 1.0.52 (0920c8169e27)", RexPrecondition: RexPreGrokProgramStatus,
+		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 	// bob — the fourth built-in, declared from ADR 0060 D1's table and
 	// measured on bobshell 2.0.5. The LAUNCH row is the one that is unmet
 	// (herdr 0.8.2 has no `bob` kind), and nothing here hides it: the

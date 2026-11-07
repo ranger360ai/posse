@@ -1874,27 +1874,36 @@ func main() {
 		// (ADR 0076 §3/D1). A herdr instance reads the one line and moves on.
 		fmt.Fprintf(out, "%s\n", a.MultiplexerLine())
 		if a.MultiplexerName() == posse.MuxRex {
-			// BOTH READINGS, because this surface is read as the answer to
-			// "will this persona launch here" and a row in the wrong column
-			// is a lever that reads as connected and is not (ADR 0017 §1).
-			// The second reading is ADR 0076 D9's version pin: a runtime
-			// whose Rex record is posse's own route carries the release it
-			// was measured on, and one reporting another release is refused
-			// before the claim exactly as an unadmitted runtime is — so it
-			// belongs in a refused column here and not in `launches here`.
-			// Its own line, because the remedy is different: a
-			// re-measurement, not a herdr instance (RexVersionDrift).
-			var admits, refuses, drifted []string
+			// ALL THREE READINGS, because this surface is read as the answer
+			// to "will this persona launch here" and a row in the wrong
+			// column is a lever that reads as connected and is not (ADR 0017
+			// §1). The second reading is ADR 0076 D9's version pin: a runtime
+			// whose Rex record is posse's own route — or whose own record
+			// rests on a key the CLI will not confirm (D13) — carries the
+			// release it was measured on, and one reporting another release
+			// is refused before the claim exactly as an unadmitted runtime
+			// is. The third is Amendment 3's precondition: grok's record is
+			// its own output and arrives only while the operator's grok
+			// config carries `[ui.notifications] program_status = "on"`.
+			//
+			// THREE LINES AND NOT ONE, because the remedy differs: a herdr
+			// instance, a re-measurement, and a line to add. A reader who is
+			// told only "refused" has a wall with no door on it.
+			var admits, refuses, drifted, unmet []string
 			for _, rn := range a.ListRuntimes() {
 				rt, err := a.LoadRuntime(rn)
 				if err != nil {
 					continue
 				}
-				switch got, ok := posse.RexVersionDrift(rt); {
+				got, versionOK := posse.RexVersionDrift(rt)
+				read, preOK := posse.RexPreconditionMet(rt)
+				switch {
 				case !posse.RexAdmits(rt):
 					refuses = append(refuses, rn)
-				case !ok:
+				case !versionOK:
 					drifted = append(drifted, rn+" (reports "+reportedVersion(got)+", measured on "+rt.RexVerified+")")
+				case !preOK:
+					unmet = append(unmet, rn+" ("+read+")")
 				default:
 					admits = append(admits, rn)
 				}
@@ -1902,7 +1911,11 @@ func main() {
 			fmt.Fprintf(out, "  launches here: %s\n", runtimeSet(admits))
 			fmt.Fprintf(out, "  REFUSED here, before the claim — run them on a herdr instance: %s\n", runtimeSet(refuses))
 			if len(drifted) > 0 {
-				fmt.Fprintf(out, "  REFUSED here by the version pin (ADR 0076 D9) — posse's own reporting route was measured on another release; re-measure with docs/adr/0076-trust-ask.probe.sh (no model turn) and move `rex_verified:`: %s\n", strings.Join(drifted, ", "))
+				fmt.Fprintf(out, "  REFUSED here by the version pin (ADR 0076 D9/D13) — the reading behind the admission was measured on another release; re-measure with the probe the refusal names (no model turn) and move `rex_verified:`: %s\n", strings.Join(drifted, ", "))
+			}
+			if len(unmet) > 0 {
+				fmt.Fprintf(out, "  REFUSED here by the program_status precondition (ADR 0076 D12) — the runtime reports natively, but only with `%s` in the operator's own grok config, which posse reads and never writes (D13; declared in etc/grok/version-pin.toml, asserted by `make verify-grok-pin`): %s\n",
+					strings.ReplaceAll(posse.GrokProgramStatusLine, "\n", " / "), strings.Join(unmet, ", "))
 			}
 		}
 		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in this shell's cwd %s:\n", tier, posse.AbbrevHome(cwd))

@@ -2611,6 +2611,18 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// on the startup review dialog — so it is read here, off a
 		// declaration, before the claim, rather than found out after the
 		// prompt has ridden the line (RexVersionDrift).
+		//
+		// THREE SINCE AMENDMENT 3 (ranger-base-nhxdx), and the third is a
+		// reading of the BOX rather than of a declaration: grok's record is
+		// its own output and arrives only while the operator's grok config
+		// carries `[ui.notifications] program_status = "on"` — `auto`, the
+		// shipped default, is MEASURED silent on Rex and leaking, and `off`
+		// is MEASURED silent (RexPreconditionMet). Same two arms as the
+		// readings above it: a bead-carrying or recreate launch refuses, and
+		// the operator at the keyboard is told what their config says and
+		// proceeds. The ORDER is version then precondition, because a grok
+		// the key was not measured on falsifies the measurement the
+		// precondition rests on.
 		if a.MultiplexerName() == MuxRex {
 			if !RexAdmits(rt) {
 				if o.Bead != "" || o.Recreate {
@@ -2622,6 +2634,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 					return nil, RexVersionRefusal(rt, got)
 				}
 				warn("posse: %s\n", RexVersionDegraded(rt, got))
+			} else if read, ok := RexPreconditionMet(rt); !ok {
+				if o.Bead != "" || o.Recreate {
+					return nil, RexPreconditionRefusal(rt, read)
+				}
+				warn("posse: %s\n", RexPreconditionDegraded(rt, read))
 			}
 		}
 		// ADR 0013 §1's launch row, on the same rung and with the same

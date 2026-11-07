@@ -14,8 +14,10 @@ package posse
 //     .ReportsOnRex, unreachable from any yaml, and the refusal names herdr
 //     as the way to run the runtime. Since Amendment 2's D9 it is TWO
 //     declarations — the bool, and the release a ROUTED report was measured
-//     on (RexVerified, codex) — both read at the same two sites and before
-//     the same claim.
+//     on (RexVerified, codex) — and since Amendment 3's D12 a third reading
+//     beside them, of the BOX rather than of a declaration (grok's config
+//     precondition, pinned in grokrex_qa_test.go). All of them are read at
+//     the same two sites and before the same claim.
 //  3. CONFIRMATION is the first-report wait after the launch (D2), and what a
 //     miss COSTS is keyed on `prompt:` — a refusal with nothing typed for a
 //     typed runtime, a HOLD for an argv one, and never a refusal when rex
@@ -23,8 +25,9 @@ package posse
 //
 // The arm that is easiest to lose is 2: a try-and-see refusal would look
 // identical on claude and would spend a claim, a worktree and a billed turn
-// on grok before it said no. So the pins below assert the ORDER — that the
-// refusal is reachable with no Mux call at all — and not only the message.
+// on an argv runtime before it said no. So the pins below assert the ORDER —
+// that the refusal is reachable with no Mux call at all — and not only the
+// message.
 
 import (
 	"os"
@@ -111,9 +114,12 @@ func TestQARexAdmitsOnlyTheRuntimeMeasuredToReportThere(t *testing.T) {
 	t.Parallel()
 	// codex flipped under ranger-base-8gh58 (ADR 0076 Amendment 2, D9): its
 	// record is posse's own reporter on codex's events, which is the same
-	// evidence class claude's native one is (ADR 0013 §1). grok's own flip is
-	// Amendment 3's and bob stays refused (D11).
-	want := map[string]bool{"claude": true, "codex": true, "grok": false, "bob": false}
+	// evidence class claude's native one is (ADR 0013 §1). grok flipped under
+	// ranger-base-nhxdx (Amendment 3, D12): its record is its OWN output,
+	// behind one operator-owned config line — so this predicate, which reads
+	// the declaration alone, says yes for it, and the line is the separate
+	// third reading pinned in grokrex_qa_test.go. bob stays refused (D11).
+	want := map[string]bool{"claude": true, "codex": true, "grok": true, "bob": false}
 	seen := map[string]bool{}
 	for i := range builtinRuntimes {
 		// A COPY, never &builtinRuntimes[i]. Taking the table's address in a
@@ -138,6 +144,20 @@ func TestQARexAdmitsOnlyTheRuntimeMeasuredToReportThere(t *testing.T) {
 	if RexAdmits(nil) {
 		t.Error("a nil runtime was admitted on Rex")
 	}
+	// And the declaration is not the whole admission on grok: D12's
+	// precondition is a THIRD reading, and a grok built-in that stopped
+	// declaring one would be admitted on a box whose config says `auto` —
+	// MEASURED silent on Rex and leaking `n,auth` into the composer.
+	gk := builtinRuntime(t, "grok")
+	if gk.RexPrecondition != RexPreGrokProgramStatus {
+		t.Errorf("the grok built-in declares rex_precondition %q, want %q — without it RexAdmits is the whole gate and the shipped default `auto` launches (ADR 0076 D12)", gk.RexPrecondition, RexPreGrokProgramStatus)
+	}
+	if gk.RexVerified == "" {
+		t.Error("the grok built-in carries no rex_verified — the precondition is a key grok's own validator disowns (D13), so the release it was measured on is the only thing standing between a bumped grok and an admission nobody re-measured")
+	}
+	if gk.RexRoute != "" {
+		t.Errorf("the grok built-in declares rex_route %q — its record is NATIVE (D12), and a route would have posse typing a reporter at a CLI that already writes one", gk.RexRoute)
+	}
 }
 
 func TestQANoRuntimeYamlCanClaimItReportsOnRex(t *testing.T) {
@@ -150,7 +170,7 @@ func TestQANoRuntimeYamlCanClaimItReportsOnRex(t *testing.T) {
 	// removes.
 	rt := writeRuntime(t, a, "mycli", "command: mycli {file}\n"+
 		"reports_on_rex: true\nreports_on_rex_why: measured by me\nrex: true\nmultiplexer: rex\n"+
-		"rex_route: "+RexRouteCodexHooks+"\nrex_verified: mycli 1.0\n")
+		"rex_route: "+RexRouteCodexHooks+"\nrex_verified: mycli 1.0\nrex_precondition: \"\"\n")
 	if rt.ReportsOnRex || RexAdmits(rt) {
 		t.Fatal("a runtimes/*.yaml set ReportsOnRex — it is built-in only (ADR 0076 D1), because a declaration without the measurement is the try-and-see refusal in another costume")
 	}
@@ -160,6 +180,13 @@ func TestQANoRuntimeYamlCanClaimItReportsOnRex(t *testing.T) {
 	// profile could move is the admission a profile could move (D9).
 	if rt.RexRoute != "" || rt.RexVerified != "" {
 		t.Fatalf("a runtimes/*.yaml set the Rex route/version: route=%q verified=%q — both are built-in only (ADR 0076 Amendment 2, D6/D9)", rt.RexRoute, rt.RexVerified)
+	}
+	// And the third one, which is the key a yaml would most want: CLEARING a
+	// precondition is the admission D12 was written to withhold, so the key
+	// does not exist and an empty value in a yaml cannot reach the field
+	// either (`rex_precondition: ""` above).
+	if rt.RexPrecondition != "" {
+		t.Fatalf("a runtimes/*.yaml set the Rex precondition %q — it is built-in only (ADR 0076 D12), because a profile that could name one could also clear one", rt.RexPrecondition)
 	}
 	// An OVERLAY onto a built-in keeps the built-in's measured answer: it is
 	// still that binary.
@@ -175,18 +202,36 @@ func TestQANoRuntimeYamlCanClaimItReportsOnRex(t *testing.T) {
 	if cx.RexRoute != RexRouteCodexHooks || cx.RexVerified == "" {
 		t.Errorf("an overlay onto the codex built-in lost its Rex route/version: route=%q verified=%q", cx.RexRoute, cx.RexVerified)
 	}
+	// Same for grok's pair (D12/D13): an overlay that dropped the
+	// precondition would admit a grok whose config reports nothing, and one
+	// that dropped the version pin would admit every future grok on a key
+	// measured once.
+	gk := writeRuntime(t, a, "grok", "startup_wait: 30s\n")
+	if gk.RexPrecondition != RexPreGrokProgramStatus || gk.RexVerified == "" {
+		t.Errorf("an overlay onto the grok built-in lost its Rex precondition/version: precondition=%q verified=%q", gk.RexPrecondition, gk.RexVerified)
+	}
 }
 
+// The subject is BOB, and since ranger-base-nhxdx it has to be: this is the
+// message for a runtime that writes no record at all, and grok — which wore
+// it until Amendment 3 — writes its own (D12). Asserting it on grok would pin
+// a sentence no launch can now produce about that runtime, which is a green
+// over a message nobody reads. bob is the one built-in D1 still refuses
+// outright (D11: `chat` takes no argv prompt, so no record exists before a
+// typed one).
 func TestQARexRuntimeRefusalNamesTheCauseAndHerdrAsTheDoor(t *testing.T) {
 	t.Parallel()
-	rt := builtinRuntime(t, "grok")
+	rt := builtinRuntime(t, "bob")
+	if RexAdmits(rt) {
+		t.Fatal("bob is admitted on Rex, so this pin is asserting the no-record refusal on a runtime that reports — re-aim it at whichever built-in D1 still refuses")
+	}
 	err := RexRuntimeRefusal(rt)
 	if err == nil {
 		t.Fatal("RexRuntimeRefusal returned nil")
 	}
 	// ADR 0076 §3 in its own words: "a message that names herdr as the way
 	// to run that runtime".
-	for _, want := range []string{"grok", "herdr", MultiplexerKey + ": " + MuxRex, "ADR 0076", "before the claim"} {
+	for _, want := range []string{"bob", "herdr", MultiplexerKey + ": " + MuxRex, "ADR 0076", "before the claim"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the Rex launch refusal does not name %q:\n%v", want, err)
 		}
@@ -196,7 +241,7 @@ func TestQARexRuntimeRefusalNamesTheCauseAndHerdrAsTheDoor(t *testing.T) {
 	if strings.Contains(err.Error(), "posse peek") {
 		t.Errorf("the pre-claim refusal points at a session, and the whole point of its placement is that there is none:\n%v", err)
 	}
-	if warn := RexRuntimeDegraded(rt); !strings.Contains(warn, "grok") || !strings.Contains(warn, "herdr") {
+	if warn := RexRuntimeDegraded(rt); !strings.Contains(warn, "bob") || !strings.Contains(warn, "herdr") {
 		t.Errorf("the interactive warning does not carry the same two facts:\n%s", warn)
 	}
 }
@@ -535,9 +580,15 @@ func TestQAListHeaderNamesTheOccupantAndHerdrsIsUnchanged(t *testing.T) {
 // Rex session created, and no worktree cut — because the refusal is read off
 // the runtime table before any of them is spent (ADR 0013 §1 rule 3).
 //
-// grok is the subject deliberately: it is `prompt: argv`, so a try-and-see
-// here would mean a real billed turn that nobody ever observes (ADR 0076 D3,
-// MEASURED — no record in 131 s of a live argv turn).
+// THE SUBJECT IS A DECLARED `prompt: argv` RUNTIME, and it is argv for the
+// reason the placement exists: a try-and-see refusal there means a real
+// billed turn that nobody ever observes. It was grok until
+// ranger-base-nhxdx, and grok cannot hold it any more — Amendment 3 admits
+// grok at D1 and refuses it one reading later (D12's config precondition), so
+// a grok subject would pin this placement through whichever of the three
+// readings happened to fire on the box running the suite. A yaml runtime
+// cannot set `reports_on_rex` at all (pinned next door), so it is refused by
+// D1 itself, hermetically, with no CLI on PATH and no operator config in it.
 func TestQADispatchRefusesANonReportingRuntimeOnRexBeforeTheClaim(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -547,15 +598,19 @@ func TestQADispatchRefusesANonReportingRuntimeOnRexBeforeTheClaim(t *testing.T) 
 	b.Slot, _ = newTestRexMux(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
+	writeRuntimeFile(t, b.App, "argvcli", "command: argvcli {file}\nprompt: argv\n")
+	if rt, err := b.App.LoadRuntime("argvcli"); err != nil || rt.PromptMode() != PromptArgv || RexAdmits(rt) {
+		t.Fatalf("the subject must be an argv runtime D1 refuses: %+v %v", rt, err)
+	}
 
 	repo := t.TempDir()
 	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t", Labels: []string{"go"}}, Dir: repo}
 	prompt := func() string { return "work prompt" }
-	_, err := d.launchSession(is, "ranger", "ranger-x-a-1", "grok", "fast", prompt, nil, false)
+	_, err := d.launchSession(is, "ranger", "ranger-x-a-1", "argvcli", "fast", prompt, nil, false)
 	if err == nil {
-		t.Fatal("a grok launch on a Rex instance was allowed — grok writes no program_status record there (ADR 0076 D3, MEASURED), so its every state would be unknown")
+		t.Fatal("an unadmitted launch on a Rex instance was allowed — a runtime that writes no program_status record there (ADR 0076 D1) has every state unknown")
 	}
-	for _, want := range []string{"grok", "herdr"} {
+	for _, want := range []string{"argvcli", "herdr"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not name %q:\n%v", want, err)
 		}
@@ -602,8 +657,12 @@ func TestQADispatchRefusesANonReportingRuntimeOnRexBeforeTheClaim(t *testing.T) 
 // covers the malformed KEY, not the admission, which is why the gap read as
 // covered.
 //
-// grok is the subject for the dispatch pin's reason: `prompt: argv`, so a
-// refusal that arrived any later would be a billed turn nobody observes.
+// The subject is a declared `prompt: argv` runtime, for the dispatch pin's
+// two reasons: argv is why a later refusal would be a billed turn nobody
+// observes, and a yaml runtime is refused by D1 itself rather than by
+// whichever of Amendment 3's three readings fires on the box running the
+// suite (grok wore this until ranger-base-nhxdx; grokrex_qa_test.go holds the
+// precondition's own backstop).
 //
 // FOUR ARMS, because the condition has two halves and each can fail open.
 // Dispatched and recreate refuse; interactive warns and proceeds (ADR 0013 §1
@@ -617,9 +676,9 @@ func TestQAPlanLaunchIsTheRexAdmissionBackstopForEveryBeadCarryingPath(t *testin
 		o       NewSessionOpts
 		refused bool
 	}{
-		{"a recipe or cockpit launch carrying a bead", NewSessionOpts{Runtime: "grok", Bead: "ranger-base-x"}, true},
-		{"a recreate, which plans before it kills", NewSessionOpts{Runtime: "grok", Recreate: true}, true},
-		{"the operator's own, at the keyboard", NewSessionOpts{Runtime: "grok"}, false},
+		{"a recipe or cockpit launch carrying a bead", NewSessionOpts{Runtime: "argvcli", Bead: "ranger-base-x"}, true},
+		{"a recreate, which plans before it kills", NewSessionOpts{Runtime: "argvcli", Recreate: true}, true},
+		{"the operator's own, at the keyboard", NewSessionOpts{Runtime: "argvcli"}, false},
 		{"the runtime Rex admits", NewSessionOpts{Runtime: "claude", Bead: "ranger-base-x"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -635,6 +694,7 @@ func TestQAPlanLaunchIsTheRexAdmissionBackstopForEveryBeadCarryingPath(t *testin
 			// it — which is the property being asserted.
 			b.Slot, _ = newTestRexMux(t)
 			writePersona(t, b.App, "ranger", "[go]")
+			writeRuntimeFile(t, b.App, "argvcli", "command: argvcli {file}\nprompt: argv\n")
 			o := tc.o
 			o.Name, o.Dir, o.Agent = "s1", t.TempDir(), "ranger"
 			_, err := b.planLaunch(o)
@@ -652,19 +712,19 @@ func TestQAPlanLaunchIsTheRexAdmissionBackstopForEveryBeadCarryingPath(t *testin
 				if err != nil {
 					t.Fatalf("planLaunch refused this launch: %v", err)
 				}
-				// The interactive grok arm still has to SAY it, or the
-				// escape hatch is a silent one.
-				if tc.o.Runtime == "grok" && (!strings.Contains(warn, "DEGRADED") || !strings.Contains(warn, "grok")) {
+				// The interactive arm on the refused runtime still has to
+				// SAY it, or the escape hatch is a silent one.
+				if tc.o.Runtime == "argvcli" && (!strings.Contains(warn, "DEGRADED") || !strings.Contains(warn, "argvcli")) {
 					t.Errorf("an interactive launch on a runtime Rex cannot read proceeded without saying so:\n%s", warn)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatal("planLaunch planned a grok launch on a `multiplexer: rex` instance — this is D1's backstop for every bead-carrying path that is not the dispatch loop, and without it a cockpit `d`, a recipe or a recreate opens a seat whose every state is unknown (ADR 0076 D1)")
+				t.Fatal("planLaunch planned an unadmitted launch on a `multiplexer: rex` instance — this is D1's backstop for every bead-carrying path that is not the dispatch loop, and without it a cockpit `d`, a recipe or a recreate opens a seat whose every state is unknown (ADR 0076 D1)")
 			}
 			// It is THIS refusal and not another of planLaunch's: the same
 			// four facts the pre-claim refusal next door is pinned on.
-			for _, want := range []string{"grok", "herdr", MultiplexerKey + ": " + MuxRex, "ADR 0076"} {
+			for _, want := range []string{"argvcli", "herdr", MultiplexerKey + ": " + MuxRex, "ADR 0076"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("the refusal does not name %q, so it may be some other planLaunch gate standing in for the admission:\n%v", want, err)
 				}
