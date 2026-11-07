@@ -758,7 +758,8 @@ type Runtime struct {
 	// launched in a Rex block with no hooks its record read `idle`,
 	// `app=claude-code`, `owner={pid,"2.1.314"}`, and one prompt turned it
 	// `working` then `done`. codex 0.153.4 and bob carry no `7501;` string at
-	// all.
+	// all, so neither is a native yes — and for bob that reading is not the
+	// reason either, as its own paragraph below says.
 	//
 	// grok 1.0.52 read FALSE here until Amendment 3, and the reading behind
 	// that was narrower than D3 said: it wrote no record at 2 s through 131 s
@@ -782,7 +783,36 @@ type Runtime struct {
 	// hooks and their trust typed beside it, a codex launch draws no review
 	// dialog and its record reads `working`, `app=codex`,
 	// `owner={pid,"codex"}` at t+2 s. That is the same evidence class claude
-	// provides, one layer out. bob stays false (D11).
+	// provides, one layer out.
+	//
+	// bob stays FALSE, and AMENDMENT 4's D14 (ranger-base-778y0, replacing D5
+	// and D11) is why: not an absent report, but an absent FIRST TURN to
+	// report on. bob's hook report works — MEASURED 2026-11-06 on bob 2.0.9,
+	// this box, `docs/adr/0076-bob-argv.probe.sh`: a workspace hook's record
+	// read `working`, `owner={pid,"node"}`, bob's own process, and `/quit`
+	// cleared it. What bob has no route to is a prompt posse does not have to
+	// type. `bob chat` takes no argv prompt: top-level `-p` picks headless
+	// `run`, and `bob -p <text> chat` opens the client and DISCARDS the
+	// prompt — `chat`'s zod schema has no `prompt` field and zod drops keys it
+	// does not know (STATIC, 2.0.9 `dist/bob.js`; MEASURED first on 2.0.5,
+	// ranger-base-5jjtn 2026-10-01, and again on 2.0.9, whose `live` arm sat
+	// at an EMPTY composer at t+20 s). So the record a hook would write can
+	// only arrive after posse has typed into a composer it could not see was
+	// ready, and ADR 0013 §1 wants positive evidence BEFORE posse types —
+	// which is the first amendment's rejected first-prompt handshake. bob is
+	// therefore herdr-only on Rex, and D1's refusal before the claim is the
+	// whole behaviour (RexRuntimeDegraded names herdr).
+	//
+	// The hook layer's own costs are on top of that, not the reason, and
+	// would be priced if the argv answer changed: a workspace
+	// `disableGlobalHooks` does not switch the operator's global herdr-bob
+	// hooks off (MEASURED: `/hooks` read 12/12 active, the five global
+	// herdr-bob ones among them), the remaining route is a per-seat
+	// `HOME` that moves bob's login, task database, `trustedFolders.json` and
+	// skills roots with it, and bob still has no permission event, so a seat
+	// waiting on an approval would report `working` — a wrong state rather
+	// than an unknown one, which `--auto-approve` makes rare and does not
+	// detect.
 	ReportsOnRex bool
 	// RexRoute is HOW that record gets written, and it exists so no launch
 	// path has to ask a runtime's NAME (ADR 0017 §3: dispatch keys on the
