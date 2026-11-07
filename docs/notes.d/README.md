@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-t5ein](ranger-base-t5ein.md) — Promoting codex's record, and the fixtures that were pinning a table row (ranger-base-t5ein) — 2026-11-07
+- [ranger-base-r7fyk](ranger-base-r7fyk.md) — Verifying 4 closes: 5x8xi, obaim, c2k6z, jep08 (ranger-base-r7fyk) — 2026-11-07
 - [ranger-base-obaim](ranger-base-obaim.md) — Three stated decisions that no pin held (ranger-base-obaim) — 2026-11-07
 - [ranger-base-m928w](ranger-base-m928w.md) — A presence probe that read its own cage as the operator's answer (ranger-base-m928w) — 2026-11-07
 - [ranger-base-jep08](ranger-base-jep08.md) — The hook-skip and git-scope pins read against git 2.56 (ranger-base-jep08) — 2026-11-07
