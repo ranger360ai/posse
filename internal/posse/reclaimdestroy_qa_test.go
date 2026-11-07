@@ -35,12 +35,54 @@ package posse
 //     would close a stranger's workspace.
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// pruneUntil runs listing passes until cond() holds, and fails naming the
+// warning stream when it never does.
+//
+// WHY A LOOP AND NOT ONE PASS. reclaim's answer to a contended launcher lock
+// is to spare the file and let the next quiet pass prune (ADR 0011 §1), and
+// this suite's own concurrency produces that contention: a lock, release and
+// re-lock cycle on a file no other test can even name reads EWOULDBLOCK
+// intermittently while the package's other tests are forking their fakes,
+// because flock is per open file description and a child between fork and
+// exec still holds a reference to the one the parent just closed.
+//
+// MEASURED 2026-11-06, and it is NOT this bead's code: a throwaway test that
+// did nothing but tryLockLaunches / Release five times over its own
+// newTestBackend home failed the same way under `-count=5` beside four other
+// tests (the close comment on ranger-base-43mxx has the run). In production
+// that reads as one spared file and the documented "the next quiet pass
+// prunes it"; in a test it would make every arm here flaky over a fact about
+// the box. So the pass is asked again — and a prune that genuinely refuses
+// still never satisfies cond, which is what keeps the arms falsifiable.
+func pruneUntil(t *testing.T, b *HerdrBackend, what string, cond func() bool) {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		if _, err := b.Sessions(); err != nil {
+			t.Fatal(err)
+		}
+		if cond() {
+			return
+		}
+	}
+	t.Fatalf("after 20 listing passes, %s\n%s", what, warnBuf(t, b).String())
+}
+
+// metaGone is "this record is no longer on disk", as a cond for pruneUntil.
+func metaGone(b *HerdrBackend, name string) func() bool {
+	return func() bool {
+		_, ok := b.readMeta(name)
+		return !ok
+	}
+}
 
 // ─── arm 1: destroy, then unlink, under the lock ─────────────────────────────
 
@@ -66,11 +108,10 @@ func TestQAAProvenDeadNonHerdrSeatIsDestroyedBeforeItsRecordIsUnlinked(t *testin
 		}
 		return nil
 	}
-	if _, err := b.Sessions(); err != nil {
-		t.Fatal(err)
-	}
+	pruneUntil(t, b, "the prune destroyed no seat at all — a proven-dead seat on a non-herdr occupant was forgotten and not destroyed, which leaves a session holding one of the server's --max-sessions slots for every home on it (ADR 0080 D10)",
+		func() bool { return len(stub.closes) > 0 })
 	if len(stub.closes) != 1 {
-		t.Fatalf("the prune destroyed %d seat(s), want 1 — a proven-dead seat on a non-herdr occupant was forgotten and not destroyed, which leaves a session holding one of the server's --max-sessions slots for every home on it (ADR 0080 D10)", len(stub.closes))
+		t.Fatalf("the prune destroyed %d seat(s), want 1", len(stub.closes))
 	}
 	// The seat the RECORD names, both ids, and not a session id lifted out
 	// of it: the record is what aims the destroy (HerdrMeta.Seat).
@@ -94,9 +135,7 @@ func TestQAAFailedDestroyKeepsTheRecordAndRetries(t *testing.T) {
 	t.Parallel()
 	b, stub := muxMetaRexBoard(t, "husk", "01a1902c-husk", false)
 	stub.onClose = func(Seat) error { return errors.New("server refused the destroy") }
-	if _, err := b.Sessions(); err != nil {
-		t.Fatal(err)
-	}
+	pruneUntil(t, b, "the prune never reached the destroy at all", func() bool { return len(stub.closes) > 0 })
 	if _, ok := b.readMeta("husk"); !ok {
 		t.Fatal("a destroy that FAILED still unlinked the record — the record is the only thing that names that session id, so the seat is now leaked with nothing left to address it by, and no later pass can retry (ADR 0080 D10)")
 	}
@@ -110,80 +149,131 @@ func TestQAAFailedDestroyKeepsTheRecordAndRetries(t *testing.T) {
 		}
 	}
 	// And the retry is real, not a promise: the same board, asked again.
-	if _, err := b.Sessions(); err != nil {
-		t.Fatal(err)
-	}
-	if len(stub.closes) != 2 {
-		t.Errorf("two passes over the same dead seat took %d destroy attempt(s), want 2 — a kept record whose destroy is never retried is the leak with one extra file", len(stub.closes))
+	pruneUntil(t, b, "the destroy was attempted once and never again — a kept record whose destroy is never retried is the leak with one extra file",
+		func() bool { return len(stub.closes) > 1 })
+	if _, ok := b.readMeta("husk"); !ok {
+		t.Fatal("the record went on a pass whose destroy also failed")
 	}
 	// The failing arm's own control: once the destroy lands, the record goes.
 	// Without it every assertion above is satisfied by a prune that stopped
 	// pruning at all.
 	stub.onClose = nil
-	if _, err := b.Sessions(); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := b.readMeta("husk"); ok {
-		t.Error("the record survived a destroy that succeeded on the third pass — the keep is unconditional, so nothing is ever reclaimed")
-	}
+	pruneUntil(t, b, "the record survived every pass once the destroy succeeded — the keep is unconditional, so nothing is ever reclaimed", metaGone(b, "husk"))
 }
 
 // ─── arm 3: rex's own `not found` is the destroy already having happened ─────
 
 // The end-to-end half, over the real occupant and the real sentence. The stub
-// above cannot reach it: reading a refusal is the occupant's own (MuxCloseGone),
-// and the fake rex answers in the CLI's measured words.
-func TestQAARexRefusalThatTheServerDoesNotKnowTheIdCountsAsDestroyed(t *testing.T) {
+// above cannot reach it: reading a refusal is the occupant's own
+// (MuxCloseGone), and the fake rex answers in the CLI's measured words.
+//
+// The middle row is the one the whole bead is about — a husk the server DOES
+// hold, destroyed — and it is the row that reads the server's own state
+// afterwards rather than posse's.
+func TestQAARexHuskIsDestroyedAndOnlyNotFoundCountsAsAlreadyDestroyed(t *testing.T) {
 	t.Parallel()
+	const husk = "01a1902c-husk"
 	for _, c := range []struct {
-		name   string
+		name string
+		// seat is the husk session as the server holds it: a real husk has
+		// NO terminal block, which is what makes List() drop it and §5 read
+		// it as dead.
+		seat   bool
 		fail   string
 		pruned bool
+		// left is whether the server still holds the husk session when the
+		// pass is over.
+		left bool
 	}{
-		// The fake holds no session under this id at all, so its `kill`
-		// answers exactly what the real CLI answered for an unknown id,
-		// a non-id and a session destroyed a moment earlier (MEASURED
-		// 2026-11-06, fakeRexKill carries the transcript).
-		{name: "server does not know the id", pruned: true},
+		// The husk itself: present on the server, holding no terminal block,
+		// and the destroy lands. Without D10 this row ends with the record
+		// gone and the session still there, which is the leak.
+		{name: "a husk the server holds is destroyed", seat: true, pruned: true, left: false},
+		// An id the server does not hold at all. No lever is set, so the
+		// refusal is the FAKE's own — the measured sentence, exit 3 — which
+		// is also what makes this row a pin on the fake's fidelity.
+		{name: "an id the server does not hold", pruned: true},
 		// Any OTHER refusal is a destroy that did not land. Same exit code,
 		// same stream, same `Error:` shape — only the sentence differs, which
-		// is the whole of what rexSessionGone may read.
-		{name: "server refused the destroy", fail: "kill\tthe daemon is shutting down", pruned: false},
+		// is the whole of what rexSessionGone may read. The session is still
+		// there, and so is the record that names it.
+		{name: "another refusal, same shape", seat: true, fail: "kill\tthe daemon is shutting down", pruned: false, left: true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			b, _ := newTestBackend(t)
 			mux, dir := newTestRexMux(t)
 			b.Slot = mux
-			// One session of somebody else's, with a terminal block, so the
+			// One session of somebody else's, WITH a terminal block, so the
 			// occupant's listing is not empty — the prune's own belt would
-			// otherwise answer every arm here (emptyBoard).
-			rexSeedSessions(t, fakeRexSession{SessionID: "01a1902c-other", Label: "somebody-else",
-				Blocks: []fakeRexBlock{{BlockID: "block:other", Flavor: RexTerminalFlavor}}})
+			// otherwise answer every row here (emptyBoard).
+			sessions := []fakeRexSession{{SessionID: "01a1902c-other", Label: "somebody-else",
+				Blocks: []fakeRexBlock{{BlockID: "block:other", Flavor: RexTerminalFlavor}}}}
+			if c.seat {
+				sessions = append(sessions, fakeRexSession{SessionID: husk, Label: "husk"})
+			}
+			rexSeedSessions(t, sessions...)
 			if c.fail != "" {
-				if err := os.WriteFile(dir+"/rex-fail", []byte(c.fail), 0o644); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, "rex-fail"), []byte(c.fail), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if err := b.writeMeta(&HerdrMeta{
-				Name: "husk", Workspace: "01a1902c-husk", Pane: "block:husk", Emoji: "🤠", Agent: "scout",
+				Name: "husk", Workspace: husk, Pane: "block:husk", Emoji: "🤠", Agent: "scout",
 				Mux: MuxRex, Socket: mux.Server().Addr,
 				Launched: time.Now().Add(-2 * PruneGrace),
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := b.Sessions(); err != nil {
+			// Until the pass has actually asked for the destroy: a listing
+			// that spared the record on the launcher lock has not reached
+			// the branch under test (pruneUntil's doc).
+			asked := func() bool {
+				for _, c := range rexCalls(t) {
+					if strings.Contains(c, "kill") && strings.Contains(c, husk) {
+						return true
+					}
+				}
+				return false
+			}
+			pruneUntil(t, b, "the prune never asked rex to destroy the seat", asked)
+			if c.pruned {
+				// The unlink is in the same pass as the destroy, so one more
+				// pass is only the lock-sparing retry above.
+				pruneUntil(t, b, "the record was kept after a destroy that counts as done", metaGone(b, "husk"))
+			}
+			if _, kept := b.readMeta("husk"); kept == c.pruned {
+				if c.pruned {
+					t.Errorf("the record was kept: rex said it does not hold that session, which is positive evidence the destroy has already happened — keeping the record on it makes the meta immortal, since every later pass proves the same death, asks for the same destroy and is refused the same way\n%s", warnBuf(t, b).String())
+				} else {
+					t.Error(`a destroy rex REFUSED unlinked the record anyway — only session target "<id>" not found says the seat is gone, and every other refusal is a seat still there with nothing left to name it (rexSessionGone)`)
+				}
+			}
+			if !c.seat {
+				return
+			}
+			// The server's own state, which is the half posse's listing can
+			// never show: did the session actually go?
+			var left []fakeRexSession
+			raw, err := os.ReadFile(filepath.Join(dir, "rex-sessions.json"))
+			if err != nil {
 				t.Fatal(err)
 			}
-			if killed := rexCallWith(t, "kill", "01a1902c-husk"); killed == "" {
-				t.Fatal("the prune never asked rex to destroy the seat")
+			if err := json.Unmarshal(raw, &left); err != nil {
+				t.Fatal(err)
 			}
-			_, kept := b.readMeta("husk")
-			switch {
-			case c.pruned && kept:
-				t.Errorf("rex said it does not hold that session and the record was kept anyway — that refusal is positive evidence the destroy has already happened, and keeping the record on it makes the meta immortal: every pass proves the same death, asks for the same destroy and is refused the same way forever")
-			case !c.pruned && !kept:
-				t.Errorf("a destroy rex REFUSED unlinked the record anyway — only `session target \"<id>\" not found` says the seat is gone, and every other refusal is a seat still there with nothing left to name it (rexSessionGone)")
+			var holds bool
+			for _, s := range left {
+				if s.SessionID == husk {
+					holds = true
+				}
+			}
+			if holds != c.left {
+				if c.left {
+					t.Errorf("the server no longer holds %s after a destroy it REFUSED — the fake is not answering the lever, so this row measures nothing", husk)
+				} else {
+					t.Errorf("the server still holds %s after the prune — the record is gone and the session is not, which is the whole leak: it goes on counting toward --max-sessions for every home on that server (ADR 0080 D10)", husk)
+				}
 			}
 		})
 	}
@@ -252,15 +342,10 @@ func TestQAAThePruneNeverDestroysAHerdrWorkspace(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Sessions(); err != nil {
-		t.Fatal(err)
-	}
 	// The control first: this record really was pruned, so the claim below
 	// is about a prune that ran and not about one that refused for some
 	// other reason.
-	if _, ok := b.readMeta("dead"); ok {
-		t.Fatalf("the herdr record was not pruned at all, so this arm measures nothing: it is the wrong board, not herdr being spared:\n%s", warnBuf(t, b).String())
-	}
+	pruneUntil(t, b, "the herdr record was not pruned at all, so this arm measures nothing: it is the wrong board, not herdr being spared", metaGone(b, "dead"))
 	if log := calls(t, fake); strings.Contains(log, "workspace close") {
 		t.Errorf("the prune closed a workspace on a HERDR record — a dead herdr workspace is already gone, and herdr re-issues workspace ids across a restart or handoff (rangerhq-6bg7), so the id in a proven-dead record is exactly the one a stranger's workspace may be holding now (ADR 0080 D10: \"herdr needs nothing here\"):\n%s", log)
 	}
