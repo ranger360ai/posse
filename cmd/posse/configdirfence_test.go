@@ -61,8 +61,28 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("CLAUDE_CONFIG_DIR", dir); err != nil {
 		panic("config-dir fence: " + err.Error())
 	}
+	// The cache fence, for the same reason and in the same one place. Since
+	// ADR 0080 D11 the plan-usage snapshot and its read log live under
+	// `~/.cache/posse/plan-usage` keyed by the config dir above, NOT under
+	// $RHQ_HOME/state — so a child that inherits the operator's HOME
+	// (main_test.go's readyEnv does, deliberately) appends its read log to
+	// a file in the operator's own cache directory. The key is the fence
+	// dir's, so it could never be the operator's LIVE snapshot; what it
+	// would be is litter in a directory this suite has no business writing
+	// to, and the suite slots and bd-write locks are that directory's other
+	// tenants. XDG_CACHE_HOME is the resolution's own first branch
+	// (planUsageCacheDirIn, bdWriteLockDir, SuiteLockDir), so one row moves
+	// all three for every child and for this process alike.
+	cache, err := os.MkdirTemp("", "posse-cache-fence-")
+	if err != nil {
+		panic("cache fence: " + err.Error())
+	}
+	if err := os.Setenv("XDG_CACHE_HOME", cache); err != nil {
+		panic("cache fence: " + err.Error())
+	}
 	code := m.Run()
 	os.RemoveAll(dir)
+	os.RemoveAll(cache)
 	os.Exit(code)
 }
 

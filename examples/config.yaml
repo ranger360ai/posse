@@ -470,13 +470,25 @@ default_emoji: ⚙️
 # dispatch pass, plus one per `posse cost`, is how it came back 429 for
 # three hours straight — with the guard blind and the unattended loop
 # failing closed for all of it (rangerhq-tdy8). So all three read one
-# snapshot in $RHQ_HOME/state/plan-usage.json and only refresh it past this
-# age, which caps the whole instance at ~12 requests/hour. The guard never
-# decides on a reading older than half `plan_guard_blind_max:`, whatever
-# this says. Default 5m; **0 = no sharing**, every caller asks for itself.
-# Retry-After is honoured across processes either way, and every request
-# that actually goes out is logged to $RHQ_HOME/state/plan-usage.log — that
-# file is the evidence for whether a 429 storm is your own polling.
+# snapshot and only refresh it past this age, which caps the whole box at
+# ~12 requests/hour. The guard never decides on a reading older than half
+# `plan_guard_blind_max:`, whatever this says. Default 5m; **0 = no
+# sharing**, every caller asks for itself. Retry-After is honoured across
+# processes either way, and every request that actually goes out is logged
+# to a read log beside the snapshot — that file is the evidence for whether
+# a 429 storm is your own polling.
+#
+# Where those two files are is not a setting, and is keyed by the LOGIN
+# rather than by this home: `~/.cache/posse/plan-usage/<sha256 of the
+# resolved $CLAUDE_CONFIG_DIR, else ~/.claude>.json`, with its `.log`
+# beside it ($XDG_CACHE_HOME honoured; the same cache root the suite slots
+# and the bd-write locks use). The rate limit is per credential, so several
+# posse homes under one OS account on one Claude login are several pollers
+# on one limit unless they share one snapshot and one cooldown — and a home
+# that genuinely points `CLAUDE_CONFIG_DIR` somewhere else gets its own
+# store with nothing to configure. There is no migration: the first read
+# misses and one fetch fills the file, and an old
+# `$RHQ_HOME/state/plan-usage.json` is ignored where it is.
 # plan_usage_ttl: 5m         # 30s, 5m, bare seconds, or 0 to disable
 #
 # The quiet gap: nothing on this box asks that endpoint at all. `true` is an

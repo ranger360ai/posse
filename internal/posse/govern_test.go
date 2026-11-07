@@ -135,14 +135,15 @@ func sessionAgent(t *testing.T, fake, session, status string) {
 // the reason a process that is not the watch loop can answer that row.
 func seedPlanSnapshot(t *testing.T, a *App, at time.Time) {
 	t.Helper()
-	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
+	snapshot, _ := a.PlanUsagePaths()
+	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(map[string]any{"at": at, "windows": fakeWindows(10, 10)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(a.StateDir, "plan-usage.json"), body, 0o644); err != nil {
+	if err := os.WriteFile(snapshot, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

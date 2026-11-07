@@ -215,7 +215,7 @@ type GovInputs struct {
 	Lag func() LauncherLag
 
 	// Caller is the name a plan-endpoint request lands under in
-	// $StateDir/plan-usage.log ("status", "pulse", "cockpit"); "" reads as
+	// the login's plan-usage read log ("status", "pulse", "cockpit"); "" reads as
 	// "govern". The log is only evidence if it says who asked — that is
 	// what settled whether the 2026-08-22 429 storm was ours.
 	Caller string

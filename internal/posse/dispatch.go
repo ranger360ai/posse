@@ -775,7 +775,7 @@ func (d *Dispatcher) planGuard() {
 		d.blindSince = now
 	}
 	// One reading for the whole instance (rangerhq-tdy8): the cockpit, this
-	// pass and `posse cost` share `$StateDir/plan-usage.json` rather than
+	// pass and `posse cost` share the login's plan-usage snapshot rather than
 	// each polling a metering endpoint on its own cadence. The guard states
 	// how stale a reading it will decide on — never more than half its own
 	// blind budget, so a cache hit can never be what fails a pass closed.
@@ -868,8 +868,8 @@ func (d *Dispatcher) planGuard() {
 // request per TTL — the request whose absence is the bead.
 //
 // The result is dropped on purpose. Failures are already recorded where a
-// reader can find them (plan-usage.log's cadence, and the age in
-// plan-usage.json that planstale.go reads back out loud on this same
+// reader can find them (the read log's cadence, and the age in the
+// snapshot that planstale.go reads back out loud on this same
 // pass's preamble); a second sentence here would be a per-pass line about
 // a guard that is off, which is the furniture ranger-base-4rfw1 spent its
 // close refusing to add.

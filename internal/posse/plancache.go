@@ -12,12 +12,23 @@ package posse
 // `plan_guard_blind_max:` — so a 429 storm stops the fleet.
 //
 // The fix is one derived copy with an age on it. The endpoint is the store
-// of record for the reading; `$StateDir/plan-usage.json` is a snapshot of
+// of record for the reading; the file this package writes is a snapshot of
 // it, and every caller states how stale a snapshot it can act on (Read's
 // maxAge). Past that age one caller fetches and replaces the file, and
-// every other caller's read costs nothing — so the whole instance makes at
-// most one request per TTL no matter how many cockpits, passes and cost
-// runs are asking.
+// every other caller's read costs nothing — so the whole box makes at most
+// one request per TTL no matter how many cockpits, passes and cost runs are
+// asking.
+//
+// WHERE that file lives is the other half of the same sentence, and it is
+// keyed by the LOGIN rather than the home (ADR 0080 D11):
+// `~/.cache/posse/plan-usage/<sha256 of the resolved Claude config dir>`,
+// `.json` and `.log`, beside the suite slots and the bd-write locks under
+// the one posse cache root (planUsageKeyIn, below). The rate limit is per
+// credential and D6 puts every crew home on one login, so a snapshot under
+// `$StateDir` makes N homes N pollers on one limit and leaves a cooldown
+// home A earned unknown to home B — the incident above with its fix undone.
+// There is no migration: the first read misses, and one fetch fills the
+// file.
 //
 // Two rules the incident bought:
 //
@@ -28,8 +39,8 @@ package posse
 //     exactly and re-asking at the boundary is how one gets EXTENDED
 //     INDEFINITELY, which is why the wait doubles per consecutive 429 and
 //     resets on the first success (planCooldown, ranger-base-rwwp6).
-//   - Every request that actually leaves the machine is logged to
-//     `$StateDir/plan-usage.log` with who asked and what came back. The
+//   - Every request that actually leaves the machine is logged to the
+//     `.log` beside the snapshot, with who asked and what came back. The
 //     cadence is the evidence: next time the endpoint 429s for hours, that
 //     file settles whether it was us.
 //
@@ -39,12 +50,14 @@ package posse
 // exactly what a success means. Taking a flock (ADR 0011 §1) across a
 // ten-second HTTP call would trade a rate problem for a liveness one.
 //
-// Fail-quiet, like the rest of the plan guard: an unwritable state dir
-// costs the sharing, never the reading — and never a line on a stderr the
-// cockpit does not own.
+// Fail-quiet, like the rest of the plan guard: an unwritable cache dir —
+// or no HOME to resolve one under — costs the sharing, never the reading,
+// and never a line on a stderr the cockpit does not own.
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -156,6 +169,125 @@ type PlanCache struct {
 	Spender string
 }
 
+// planUsageDirName is the snapshot store, by path, under the box's one
+// posse cache root. A directory and not two files beside the suite slots:
+// the file name is a hash, and a hash loose in a shared directory is
+// unreadable to the operator who has to look at it.
+const planUsageDirName = "plan-usage"
+
+// PlanUsageCacheDirIn is `<cache>/posse/plan-usage` for a process whose
+// $HOME is home and whose $XDG_CACHE_HOME is cacheHome ("" = unset) — the
+// same cache root the suite slots and the bd-write locks resolve
+// (SuiteLockDir, bdWriteLockDir), with XDG_CACHE_HOME winning over the home
+// exactly as it does for both siblings.
+//
+// Both inputs are NAMED rather than read, which is ClaudeConfigDirIn's rule
+// and here it is load-bearing: the callers that cannot read the environment
+// they are asking about are the tests that seed the file a CHILD posse will
+// read, where the child's HOME and cache root are fixtures and this
+// process's are not (cmd/posse's planEnvAt, statusEnv). A resolver that
+// reads them itself cannot answer that question at all.
+//
+// "" when neither names a place, which is ExpandTilde's and bdWriteLockDir's
+// rule (ranger-base-a3t1): an invented home makes the snapshot a child of a
+// directory nobody named, and here filepath.Join would drop the empty
+// element and leave a RELATIVE `.cache/posse/plan-usage` under whatever cwd
+// the process happens to have. A cache that cannot be placed costs the
+// sharing and nothing else — the whole file is fail-quiet, and Path "" is
+// already "no sharing, every read is a request".
+func PlanUsageCacheDirIn(home, cacheHome string) string {
+	if cacheHome != "" {
+		return filepath.Join(cacheHome, "posse", planUsageDirName)
+	}
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".cache", "posse", planUsageDirName)
+}
+
+// planUsageKeyFor is the LOGIN the snapshot belongs to: sha256 of the
+// resolved Claude config dir, 16 hex digits (ADR 0080 D11).
+//
+// The home is not the key, and that is the whole of D11. The usage
+// endpoint's rate limit is per CREDENTIAL, and ADR 0080 D6 puts every crew
+// home on one Claude login — so N homes keyed by home are N pollers on one
+// limit, and a 429 cooldown home A earned is not honoured by home B. That
+// is rangerhq-tdy8 (2026-08-22, this file's header) with the fix undone.
+// Keyed by the config dir instead, every home on one login shares one
+// reading, one cooldown and one request log, and a home that genuinely has
+// its own `CLAUDE_CONFIG_DIR` gets its own store without anyone configuring
+// anything.
+//
+// The config dir is ClaudeConfigDirIn's answer — `CLAUDE_CONFIG_DIR` else
+// `<home>/.claude`, the ONE spelling of that rule (trust.go) — and then
+// REALPATHED, so a symlinked spelling of one config dir is one key rather
+// than two: bdWriteLockPath's reason for realpathing its store, which is
+// ADR 0072 D2's. Truncated to 16 hex digits, the same width as that lock's
+// key and the launch lock's sibling caches, for the same reason: a
+// collision space a handful of config dirs on one box will never fill, and
+// a file name an operator can still read back.
+//
+// "" is "nowhere to key it" and means no sharing, the same answer the cache
+// dir gives — planUsageConfigDir is where that case is decided.
+func planUsageKeyFor(configDir string) string {
+	if configDir == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(resolveLinks(configDir)))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// planUsageConfigDir is the config dir to key by for a process whose $HOME
+// is home: ClaudeConfigDirIn's answer, or "" when there is nothing to
+// resolve one from.
+//
+// With no HOME and no CLAUDE_CONFIG_DIR, ClaudeConfigDirIn would join onto
+// an empty home and hand back a RELATIVE `.claude` — a config dir nobody
+// named, and a key derived from whatever cwd the process happens to have.
+// The guard is runtimeHomeOverride's bit, which is trust.go's and
+// sentline.go's own spelling of this same test: the variable IN FORCE
+// outranks a missing home, and only a missing home with no variable has
+// nothing to resolve.
+func planUsageConfigDir(home string) string {
+	_, named := runtimeHomeOverride(ClaudeConfigDirVar)
+	if home == "" && !named {
+		return ""
+	}
+	return ClaudeConfigDirIn(home)
+}
+
+// PlanUsageStoreIn is the pair of files for one config dir in one plan-usage
+// directory: the snapshot and the read log beside it, which is where the two
+// have always sat relative to each other. Either input empty gives "", ""
+// — no store, and the two paths are never allowed to disagree about that.
+//
+// Exported alongside PlanUsageCacheDirIn and for the same callers; together
+// the two are the whole of App.PlanUsagePaths with nothing read from the
+// environment.
+func PlanUsageStoreIn(dir, configDir string) (string, string) {
+	key := planUsageKeyFor(configDir)
+	if dir == "" || key == "" {
+		return "", ""
+	}
+	return filepath.Join(dir, key+".json"), filepath.Join(dir, key+".log")
+}
+
+// PlanUsagePaths is where this App's shared snapshot and read log live.
+// Both "" means there is nowhere to key the store, which PlanCache reads as
+// "no sharing" (Path's own doc).
+//
+// It is a method rather than a bare function only because of PlanUsageDir
+// (app.go): the resolution is per BOX, and the field is the seam that keeps
+// a test's writes out of the box's one file.
+func (a *App) PlanUsagePaths() (string, string) {
+	home := os.Getenv("HOME")
+	dir := a.PlanUsageDir
+	if dir == "" {
+		dir = PlanUsageCacheDirIn(home, os.Getenv("XDG_CACHE_HOME"))
+	}
+	return PlanUsageStoreIn(dir, planUsageConfigDir(home))
+}
+
 // PlanCache builds the instance's cache for one caller. Every posse process
 // that reads the usage endpoint goes through this.
 func (a *App) PlanCache(caller string) *PlanCache {
@@ -165,9 +297,10 @@ func (a *App) PlanCache(caller string) *PlanCache {
 	// owns the whole terminal and cannot write to one at all. The safe
 	// reading of a typo is "not quiet" either way (planquiet.go).
 	q, s := a.planMeterState(io.Discard)
+	snapshot, readLog := a.PlanUsagePaths()
 	return &PlanCache{
-		Path:      filepath.Join(a.StateDir, "plan-usage.json"),
-		Log:       filepath.Join(a.StateDir, "plan-usage.log"),
+		Path:      snapshot,
+		Log:       readLog,
 		Caller:    caller,
 		Reader:    r,
 		NoAdapter: err,

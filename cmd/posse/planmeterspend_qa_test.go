@@ -104,7 +104,8 @@ func TestQAStatusSaysTheGuardIsUnarmedOverAnOldReading(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(home, "state"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			at := seedAgedQuietSnapshot(t, filepath.Join(home, "state"))
+			snapshot, _ := planStore(t, home)
+			at := seedAgedQuietSnapshot(t, snapshot)
 
 			out, _, _ := runPosse(t, bin, planEnvAt(home, srv.URL+"/usage"), "status")
 			skipIfTheBoxSleptMidTest(t, at)

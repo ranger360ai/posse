@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // lpouiLine is the measured line, as the internal renderer produces it.
@@ -192,10 +194,30 @@ func writeStatusConfig(t *testing.T, home, repo, guard string) {
 	}
 }
 
+// statusPlanStore is the snapshot and read log the `posse status` child
+// below reads, keyed by the login rather than by the home since ADR 0080
+// D11 (internal/posse/plancache.go).
+//
+// `<home>/cache` is the child's XDG_CACHE_HOME, and runStatus types the
+// same row — per TEST and not the package-wide fence TestMain sets, because
+// the store is now shared by every process on one login and these tests
+// share a login: the fence keeps the suite out of the operator's cache, and
+// this keeps each test out of its siblings'. The config dir is that fence,
+// unchanged, since the child inherits it.
+func statusPlanStore(t *testing.T, home string) (string, string) {
+	t.Helper()
+	dir := posse.PlanUsageCacheDirIn("", filepath.Join(home, "cache"))
+	snapshot, readLog := posse.PlanUsageStoreIn(dir, os.Getenv("CLAUDE_CONFIG_DIR"))
+	if snapshot == "" || readLog == "" {
+		t.Fatal("no plan-usage store resolves — TestMain's CLAUDE_CONFIG_DIR fence is gone")
+	}
+	return snapshot, readLog
+}
+
 func seedStatusReading(t *testing.T, home string, at time.Time) {
 	t.Helper()
-	state := filepath.Join(home, "state")
-	if err := os.MkdirAll(state, 0o755); err != nil {
+	snapshot, _ := statusPlanStore(t, home)
+	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(map[string]any{"at": at, "windows": []map[string]any{
@@ -204,7 +226,7 @@ func seedStatusReading(t *testing.T, home string, at time.Time) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(state, "plan-usage.json"), body, 0o644); err != nil {
+	if err := os.WriteFile(snapshot, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -216,7 +238,11 @@ func seedStatusLog(t *testing.T, home string, at time.Time, n int) {
 	for i := 1; i <= n; i++ {
 		b.WriteString(at.Add(time.Duration(i)*time.Hour).UTC().Format(time.RFC3339) + " dispatch 429 cooldown=5m\n")
 	}
-	if err := os.WriteFile(filepath.Join(home, "state", "plan-usage.log"), []byte(b.String()), 0o644); err != nil {
+	_, readLog := statusPlanStore(t, home)
+	if err := os.MkdirAll(filepath.Dir(readLog), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(readLog, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -231,7 +257,8 @@ func runStatus(t *testing.T, bin, home string) string {
 	// A loopback usage URL: the adapter serves it without reading any
 	// credential store, and port 1 refuses, so the read fails the way a
 	// blind box's does.
-	cmd.Env = statusEnv(t, home, "RHQ_PLAN_USAGE_URL=http://127.0.0.1:1")
+	cmd.Env = statusEnv(t, home, "RHQ_PLAN_USAGE_URL=http://127.0.0.1:1",
+		"XDG_CACHE_HOME="+filepath.Join(home, "cache"))
 	out, _ := cmd.CombinedOutput()
 	return string(out)
 }

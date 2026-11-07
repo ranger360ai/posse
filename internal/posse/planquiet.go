@@ -10,7 +10,7 @@ package posse
 // Its plan tick asked the endpoint itself at 20:13:57Z, a second instance
 // asked again at 21:15:39Z, both drew `429 Retry-After: 3600`, and the gap
 // was over twice without anybody deciding it should be
-// ($StateDir/plan-usage.log, caller `cockpit`).
+// (the login's plan-usage read log, caller `cockpit`).
 //
 // The bug is not in the cockpit. Three surfaces read this meter — the
 // cockpit header, `posse cost`, the dispatch guard — and the ones that

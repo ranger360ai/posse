@@ -54,10 +54,11 @@ func TestQAPlanStaleStreakStopsAtATornLine(t *testing.T) {
 		at.Add(time.Hour).UTC().Format(time.RFC3339) + " dispatch 429 cooldown=5m\n" +
 		at.Add(2*time.Hour).UTC().Format(time.RFC3339) + " dispatch 429 cooldown=5m\n" +
 		at.Add(3 * time.Hour).UTC().Format(time.RFC3339)[:13] + "\n"
-	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
+	_, readLog := a.PlanUsagePaths()
+	if err := os.MkdirAll(filepath.Dir(readLog), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(a.StateDir, "plan-usage.log"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(readLog, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -62,12 +62,22 @@ func quietCockpit(t *testing.T, cfg string, snapshotAge time.Duration) (*cockpit
 	}
 	now := time.Date(2026, 9, 2, 20, 13, 57, 0, time.UTC)
 	if snapshotAge > 0 {
-		seedQuietSnapshot(t, a.StateDir, now.Add(-snapshotAge))
+		snapshot, _ := a.PlanUsagePaths()
+		if snapshot == "" {
+			t.Fatal("no plan-usage store to seed — App.PlanUsagePaths answered nothing")
+		}
+		seedQuietSnapshot(t, snapshot, now.Add(-snapshotAge))
 	}
 	return &cockpit{app: a, now: func() time.Time { return now }, plans: make(chan planRead, 1)}, hits
 }
 
-func seedQuietSnapshot(t *testing.T, stateDir string, at time.Time) {
+// seedQuietSnapshot writes the reading into `snapshot`, which the caller
+// resolves: `a.PlanUsagePaths()` for a cockpit in THIS process, and
+// `planStore(t, home)` for a child the test is about to launch. Since ADR
+// 0080 D11 those two are different files — the store is keyed by the login
+// and the child's HOME is a fixture — so the path is the caller's to name
+// and never derived from a home here.
+func seedQuietSnapshot(t *testing.T, snapshot string, at time.Time) {
 	t.Helper()
 	b, err := json.Marshal(map[string]any{"at": at, "windows": []map[string]any{
 		{"name": "5h", "pct": 46}, {"name": "7d", "pct": 29},
@@ -75,7 +85,10 @@ func seedQuietSnapshot(t *testing.T, stateDir string, at time.Time) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stateDir, "plan-usage.json"), b, 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(snapshot, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -114,10 +127,10 @@ const quietSeedAge = 3 * time.Hour
 // keeps the bracket tight: with a jump of over a minute skipped, the
 // bracket can only ever span the launch's own wall time, so it is two
 // members wide at worst.
-func seedAgedQuietSnapshot(t *testing.T, stateDir string) time.Time {
+func seedAgedQuietSnapshot(t *testing.T, snapshot string) time.Time {
 	t.Helper()
 	at := time.Now().Add(-quietSeedAge)
-	seedQuietSnapshot(t, stateDir, at.UTC())
+	seedQuietSnapshot(t, snapshot, at.UTC())
 	return at
 }
 
@@ -256,7 +269,8 @@ func TestQACostPlanServesTheSnapshotWhileQuiet(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Now().Add(-agedSeed)
-	seedQuietSnapshot(t, filepath.Join(home, "state"), at)
+	snapshot, _ := planStore(t, home)
+	seedQuietSnapshot(t, snapshot, at)
 
 	stdout, stderr, code := runPosse(t, bin, planEnvAt(home, srv.URL+"/usage"), "cost", "--plan")
 	if code != 0 {
@@ -299,7 +313,8 @@ func TestQAStatusSaysTheMeterIsQuiet(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(home, "state"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			at := seedAgedQuietSnapshot(t, filepath.Join(home, "state"))
+			snapshot, _ := planStore(t, home)
+			at := seedAgedQuietSnapshot(t, snapshot)
 
 			out, _, _ := runPosse(t, bin, planEnvAt(home, srv.URL+"/usage"), "status")
 			skipIfTheBoxSleptMidTest(t, at)

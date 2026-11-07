@@ -49,24 +49,32 @@ func staleApp(t *testing.T, cfg string) *App {
 // clock counts from.
 func seedReading(t *testing.T, a *App, at time.Time, u PlanUsage) {
 	t.Helper()
-	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
+	snapshot, _ := a.PlanUsagePaths()
+	if snapshot == "" {
+		t.Fatal("no plan-usage store to seed — App.PlanUsagePaths answered nothing")
+	}
+	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	body, err := json.Marshal(planEntry{At: at, Windows: u})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(a.StateDir, "plan-usage.json"), body, 0o644); err != nil {
+	if err := os.WriteFile(snapshot, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// seedReadLog writes $StateDir/plan-usage.log with the outcomes given,
-// oldest first — the same three-field shape logRead writes, because the
-// streak reader's whole contract is with that shape.
+// seedReadLog writes the shared read log with the outcomes given, oldest
+// first — the same three-field shape logRead writes, because the streak
+// reader's whole contract is with that shape.
 func seedReadLog(t *testing.T, a *App, outcomes ...string) {
 	t.Helper()
-	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
+	_, readLog := a.PlanUsagePaths()
+	if readLog == "" {
+		t.Fatal("no plan-usage store to seed — App.PlanUsagePaths answered nothing")
+	}
+	if err := os.MkdirAll(filepath.Dir(readLog), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var b strings.Builder
@@ -76,7 +84,7 @@ func seedReadLog(t *testing.T, a *App, outcomes ...string) {
 		b.WriteString(o)
 		b.WriteString("\n")
 	}
-	if err := os.WriteFile(filepath.Join(a.StateDir, "plan-usage.log"), []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(readLog, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -63,7 +63,7 @@ func (r *stormRig) tick(t *testing.T, d time.Duration) {
 // which is what the loud line has to render.
 func seedCooldown(t *testing.T, a *App, until time.Time, streak int) {
 	t.Helper()
-	path := filepath.Join(a.StateDir, "plan-usage.json")
+	path, _ := a.PlanUsagePaths()
 	var e planEntry
 	b, err := os.ReadFile(path)
 	if err != nil {

@@ -117,6 +117,20 @@ type App struct {
 	// ~/.posse/worktrees, which two concurrent tests cutting a session tree
 	// land in together (ADR 0047 D2). Nothing product-facing reads it.
 	WorktreeRootDefault string
+	// PlanUsageDir is where the shared plan-usage snapshot and its read log
+	// live (plancache.go, ADR 0080 D11). Empty = planUsageCacheDirIn's
+	// answer, `~/.cache/posse/plan-usage`, which is what every real App has
+	// and every real process on the box shares — the point of D11 being
+	// that they do.
+	//
+	// It is a field for the reason WorktreeRootDefault is one, and more
+	// sharply: the default now names ONE directory per box rather than one
+	// per posse home, so without this seam every test in a binary that
+	// shares a $HOME (internal/posse's TestMain) would read and write one
+	// another's snapshot — a snapshot that is deliberately cross-process
+	// shared state. hermetic() sets it per test. Nothing product-facing
+	// reads it, and no config key names it.
+	PlanUsageDir string
 }
 
 var legacyHomeNotices sync.Map

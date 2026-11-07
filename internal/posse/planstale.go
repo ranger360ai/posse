@@ -29,10 +29,11 @@ package posse
 //
 // Two stores, each answering the half it owns:
 //
-//   - `$StateDir/plan-usage.json` — the reading and when it was taken
-//     (plancache.go LastReading). Never aged forward, never extrapolated;
-//     it is quoted as the past fact it is.
-//   - `$StateDir/plan-usage.log` — how many requests have actually left the
+//   - the login's snapshot — the reading and when it was taken
+//     (plancache.go LastReading; `~/.cache/posse/plan-usage/<login>.json`
+//     since ADR 0080 D11). Never aged forward, never extrapolated; it is
+//     quoted as the past fact it is.
+//   - the read log beside it — how many requests have actually left the
 //     machine since the last one that worked, and what the newest of them
 //     was. The cadence file was written to be exactly this evidence ("next
 //     time the endpoint 429s for hours, that file settles whether it was
@@ -224,7 +225,7 @@ func (a *App) PlanStaleness(caller string, now time.Time, errw io.Writer) PlanSt
 	return PlanStale{Stale: true, At: at, Age: age, After: after, Windows: last, Fails: fails, Class: class, NextAsk: next, Spender: c.Spender}
 }
 
-// planFailStreak walks $StateDir/plan-usage.log backwards: how many
+// planFailStreak walks the login's read log backwards: how many
 // requests in a row failed, and the class of the newest of them. A line
 // whose outcome is `ok` ends the streak, which is the whole contract this
 // has with logRead — every other outcome that file carries is a failure.

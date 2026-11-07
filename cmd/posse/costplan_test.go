@@ -51,21 +51,38 @@ func TestParseCostFlags(t *testing.T) {
 	}
 }
 
+// planStore is the two files the CHILD this package launches will read: the
+// snapshot and its read log, keyed by the login rather than by the home
+// since ADR 0080 D11 (internal/posse/plancache.go). Resolved off the env
+// planEnvAt builds and not off this process's, because the child's HOME,
+// cache root and CLAUDE_CONFIG_DIR are all fixtures and this process's are
+// not — which is exactly why the resolution takes them as arguments.
+func planStore(t *testing.T, home string) (string, string) {
+	t.Helper()
+	childHome := filepath.Join(home, "h")
+	dir := posse.PlanUsageCacheDirIn(childHome, os.Getenv("XDG_CACHE_HOME"))
+	snapshot, readLog := posse.PlanUsageStoreIn(dir, filepath.Join(childHome, ".claude"))
+	if snapshot == "" || readLog == "" {
+		t.Fatalf("no plan-usage store resolves for a child homed at %s", childHome)
+	}
+	return snapshot, readLog
+}
+
 // seedPlan writes the shared snapshot every posse process reads
-// (internal/posse/plancache.go). Written straight to the state dir rather
-// than through the library, so the test is exercising the file format the
-// binary actually reads.
+// (internal/posse/plancache.go). Written straight to the file rather than
+// through the library, so the test is exercising the file format the binary
+// actually reads.
 func seedPlan(t *testing.T, home string, e map[string]any) {
 	t.Helper()
-	dir := filepath.Join(home, "state")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	snapshot, _ := planStore(t, home)
+	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	b, err := json.Marshal(e)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "plan-usage.json"), b, 0o644); err != nil {
+	if err := os.WriteFile(snapshot, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -482,8 +499,8 @@ func TestCostPlanAndTheCostFooterAreOneRendering(t *testing.T) {
 // that answers, and the read log naming who asked. The other tests here
 // point at a dead port and so can only prove that nothing left the
 // machine — this one proves the leaving works, and that `--plan` is
-// "cost" in $StateDir/plan-usage.log, which is the file that settles who
-// was hammering the endpoint the next time it 429s.
+// "cost" in the login's read log, which is the file that settles who was
+// hammering the endpoint the next time it 429s.
 //
 // The log line is also the positive witness for the absence asserted at the
 // end: a reading fetched under an RHQ_PLAN_USAGE_URL override may not
@@ -513,7 +530,8 @@ func TestCostPlanFetchesThroughTheSeamAndNamesItselfInTheReadLog(t *testing.T) {
 		t.Errorf("one command, one request: got %d", hits)
 	}
 
-	b, err := os.ReadFile(filepath.Join(home, "state", "plan-usage.log"))
+	snapshot, readLog := planStore(t, home)
+	b, err := os.ReadFile(readLog)
 	if err != nil {
 		t.Fatalf("every request that leaves the machine is logged: %v", err)
 	}
@@ -521,7 +539,7 @@ func TestCostPlanFetchesThroughTheSeamAndNamesItselfInTheReadLog(t *testing.T) {
 	if !strings.HasSuffix(line, " cost ok") {
 		t.Errorf("the read log must name the caller: got %q, want it to end with %q", line, " cost ok")
 	}
-	if _, err := os.Stat(filepath.Join(home, "state", "plan-usage.json")); err == nil {
+	if _, err := os.Stat(snapshot); err == nil {
 		t.Error("a reading fetched under an endpoint override is nobody's shared fact (credpin.go rule 5), but a snapshot was written")
 	}
 }

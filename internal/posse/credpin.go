@@ -31,7 +31,7 @@ package posse
 //     Authorization across a redirect to another domain; this stops the
 //     other half, which is that the override was a cache-poisoning
 //     primitive as well — a 200 from somewhere else must never become the
-//     fact in state/model-catalog.json or state/plan-usage.json.
+//     fact in state/model-catalog.json or the login's plan-usage snapshot.
 //
 // The override this file does not mention is RHQ_MODEL_LIST_URL: it is
 // gone. Nothing read it but the vulnerability — the tests inject
@@ -54,9 +54,11 @@ package posse
 //     byte for byte — credentialedURL below, never a host test. A loopback
 //     override is asked WITHOUT an Authorization header, and the keychain
 //     is not read for it at all: the seam keeps working, uncredentialed.
-//  5. An override's answer is not the fleet's fact. `$StateDir/
-//     plan-usage.json` is read by every posse process on the instance for
-//     the TTL (rangerhq-tdy8), so one `posse cost --plan` under an override
+//  5. An override's answer is not the fleet's fact. The plan-usage
+//     snapshot is read by every posse process on the BOX for the TTL
+//     (rangerhq-tdy8, and ADR 0080 D11 for why it is every process on one
+//     Claude login rather than one home's), so one `posse cost --plan`
+//     under an override
 //     would otherwise PUBLISH a caller's numbers to the whole shop — 0%
 //     disarms the plan guard, 99% parks the fleet, and neither needs a
 //     credential. Enforced at the store, in plancache.go, off
@@ -81,7 +83,7 @@ package posse
 // upstream itself (a trusted CA, DNS + TLS interception, a compromised
 // api.anthropic.com, a proxy the operator configured — NOT an env var and a
 // socket, which dr6u closed) could therefore hand the whole instance its
-// model-catalog.json or plan-usage.json. The model sink is the weaker of
+// model-catalog.json or plan-usage snapshot. The model sink is the weaker of
 // the two: ModelCache.store has no MayShare gate at all, so belt 3 is the
 // only thing standing in front of it.
 //

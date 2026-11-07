@@ -99,7 +99,7 @@ type PlanReader interface {
 	// answer by asking again (plancache.go).
 	Read() (PlanUsage, error)
 	// MayShare reports whether a reading this reader produces may become
-	// the instance's shared fact — `$StateDir/plan-usage.json`, which every
+	// the box's shared fact — the login's plan-usage snapshot, which every
 	// posse process on the machine reads for the TTL (rangerhq-tdy8).
 	// credpin.go rule 5: only the compiled-in endpoint's answers may.
 	//

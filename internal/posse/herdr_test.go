@@ -2958,6 +2958,16 @@ func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 //     whatever the suite's own machine is running. An empty table renders
 //     nothing, so a refusal in a test says only what the test set up; the
 //     tests that want culprits named supply rows.
+//   - PlanUsageDir: empty is ~/.cache/posse/plan-usage, ONE directory per
+//     BOX by design (ADR 0080 D11) — every posse process on one Claude
+//     login shares that snapshot, which is the whole point of it. In this
+//     binary $HOME is one temp home and CLAUDE_CONFIG_DIR is cleared, so
+//     the shipped resolution gives all ~2000 tests one key and one file:
+//     a 429 cooldown one test's fake endpoint writes would be honoured by
+//     the next test's read, and a test asserting the snapshot is ABSENT
+//     would be red or green depending on who ran before it. Per test it is
+//     per path. Tests that want to WATCH the sharing point two Apps at the
+//     same dir on purpose (planlogin_qa_test.go).
 //   - WorktreeRootDefault: nil is ~/.posse/worktrees, ONE directory for the
 //     whole binary now that $HOME is per binary (TestMain). SessionTreePath
 //     is <root>/<repo basename>/<session>, every test repo is a t.TempDir
@@ -2976,6 +2986,7 @@ func hermetic(t *testing.T, a *App) *App {
 	a.ModelLister = &ModelLister{}
 	a.Load1 = func() (float64, error) { return 0, nil }
 	a.TopCPU = func() ([]Proc, error) { return nil, nil }
+	a.PlanUsageDir = filepath.Join(t.TempDir(), "plan-usage")
 	// Under whatever $HOME is current: the binary's temp home for almost
 	// every test, and a test that set its own (wtqaHome, wtApp) gets one
 	// under that instead — either way the under-$HOME rule holds by

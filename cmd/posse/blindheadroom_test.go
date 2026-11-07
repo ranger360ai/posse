@@ -36,7 +36,14 @@ func seedSnapshot(t *testing.T, a *posse.App, at time.Time, name string, pct flo
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(a.StateDir, "plan-usage.json"), b, 0o644); err != nil {
+	snapshot, _ := a.PlanUsagePaths()
+	if snapshot == "" {
+		t.Fatal("no plan-usage store to seed — App.PlanUsagePaths answered nothing")
+	}
+	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(snapshot, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	u, got, ok := a.PlanCache("test").LastReading()

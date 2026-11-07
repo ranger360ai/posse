@@ -112,8 +112,9 @@ type AnthropicPlanReader struct {
 	// time.Now). Only the HTTP-date form of that header needs it.
 	Now func() time.Time
 	// Shared reports whether a reading this reader produces may become the
-	// instance's shared fact — `$StateDir/plan-usage.json`, which every
-	// posse process on the machine reads for the TTL (rangerhq-tdy8).
+	// box's shared fact — the login's plan-usage snapshot, which every
+	// posse process on the machine reads for the TTL (rangerhq-tdy8, and
+	// ADR 0080 D11 for why the file is keyed by the login).
 	// credpin.go rule 5: only the compiled-in endpoint's answers may. One
 	// `posse cost --plan` under a loopback override would otherwise publish
 	// a caller's numbers to the whole shop, and that needs no credential at
@@ -365,7 +366,7 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// one direction the interlock exists to hold. So this adapter knows one
 	// more fact of its provider's grammar, in the same class as the shape
 	// check above: THIS ENDPOINT REPORTS UTILIZATION AS A WHOLE PERCENT
-	// (evidence, 2026-09-01: this box's own state/plan-usage.json at 15/3,
+	// (evidence, 2026-09-01: this box's own plan-usage snapshot at 15/3,
 	// and every published capture of the endpoint — 35.0/14.0/39.0,
 	// 33.0/13.0/1.0 alongside the sentence "utilization = percentage used
 	// (0-100)", raw `"utilization": 2` — whole in every one). A fractional
