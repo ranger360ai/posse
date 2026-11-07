@@ -221,6 +221,10 @@ func TestQAPlanSnapshotKeyFollowsASymlinkedConfigDir(t *testing.T) {
 // request" (PlanCache.Path), which is the honest answer and the one the
 // whole file is built to degrade to.
 func TestQAPlanSnapshotHasNowhereToGoWithoutAHome(t *testing.T) {
+	// Parallel, unlike the four above: this one reads no environment and
+	// touches no file — it is the resolution as arithmetic, both inputs
+	// named.
+	t.Parallel()
 	for _, tc := range []struct {
 		name          string
 		home, cache   string
