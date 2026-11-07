@@ -571,7 +571,14 @@ but honours single quotes, so the handler path is quoted — are in
 `ranger-base-8gh58` must: a record that SETTLES. The turn under the probe's
 no-turn lock failed on a missing credential and the record stayed `working`
 for 60 s with no Stop or Interrupt, so what codex reports after a turn that
-ends is still UNPROVEN.*
+ends was UNPROVEN until the live acceptance.*
+
+*MEASURED 2026-11-07 (ranger-base-8gh58's live acceptance, two codex turns the
+operator authorized on ranger-base-x7ojx): **codex SETTLES.** One root record,
+updated in place, owner `{pid 40297, "codex"}` throughout — `working` at
++80.4 s and `idle` at +285.1 s after Rex created the session. The seat closed
+its own bead and its commit landed on `main`. No `state=clear` came and no
+sixth state appeared. `docs/notes.d/ranger-base-8gh58.md` §7.*
 
 **D7. Trust is asked of codex, then typed.** Before the line is typed,
 posse runs `codex app-server` once, with the seat's `CODEX_HOME` pin
@@ -889,10 +896,23 @@ Consequences' own notes: the launch-failure path releases the CLAIM and leaves
 the WORKTREE for `posse worktrees --land` to sweep, and `/dev/tty` under
 seatbelt is moot for codex (posse renders no profile for a `SelfSandbox`
 runtime) while being permitted under the profile posse would render. What
-remains ASSUMED is unchanged: codex startup inside 45 s with a network, a
-harmless `initialize` with a live login, and the Linux behaviour — the first
-of those is what the live acceptance measures, against the 45 s
-`startup_wait`.*
+remains ASSUMED after that slice was: codex startup inside 45 s with a
+network, a harmless `initialize` with a live login, and the Linux behaviour.*
+
+*Two of those three fell to the live acceptance on 2026-11-07 (the same two
+authorized turns). **codex startup inside 45 s with a network:** MEASURED by
+the gate's own verdict — `confirmReports` took its silent success path on the
+`multiplexer: rex` launch, and codex declares no `startup_wait:`, so a record
+was there inside `DefaultStartupWait` = 45 s. The exact arrival time is NOT
+recovered, because the root record is updated in place and its stamp is the
+latest write rather than the arrival; `docs/notes.d/ranger-base-8gh58.md` §7
+says what to do differently. **A harmless `initialize` with a live login:**
+MEASURED — the D7 ask ran against a real login on both launches, drew no
+dialog, and left the runtime's own home untouched: every file in it that the
+ask could have written was unchanged afterwards, content hash included, so the
+ask neither refreshed nor rotated anything. (Which files, and their readings,
+are instance-ops and stay in the instance tree — ADR 0024 D3.) What remains
+ASSUMED is the Linux behaviour.*
 
 ## Amendment 3: grok reports on Rex natively once its home config says `on`; the hook route is closed (ranger-base-1vgrw, 2026-11-06)
 

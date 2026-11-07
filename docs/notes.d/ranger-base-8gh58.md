@@ -8,12 +8,12 @@ measured on is pinned in the built-in table, and the two readings are taken at
 the same two sites D1 is taken at (`dispatch.go` above the claim,
 `planLaunch` as every other path's backstop).
 
-Everything below was measured on this box on 2026-11-06 from a dispatched
+Sections 1-6 were measured on this box on 2026-11-06 from a dispatched
 `cage: seatbelt` seat: **Rex CLI 0.0.1793377904-ge6592f**, **codex-cli
-0.153.4**, posse `0.5.3+dev`, darwin 25.6.0. **No model turn was spent.** The
-live acceptance the bead's done-when names — a codex bead dispatched on a
-herdr instance and one on a `multiplexer: rex` instance — spends billed codex
-turns and is the operator's to authorize, so it is NOT in here.
+0.153.4**, posse `0.5.3+dev`, darwin 25.6.0, and **no model turn was spent**
+on any of them. Section 7 is the live acceptance the bead's done-when names —
+two billed codex turns, which the operator authorized on ranger-base-x7ojx
+and which ran on 2026-11-07 against the same box and the same versions.
 
 ## 1. `--disable hooks` has to come off WHOLE-WORD, or the guard goes blind
 
@@ -176,3 +176,139 @@ ranger-base-metqp's finding about D2's own wait, one reading over.
   Deliberate: the probe's job is to measure a runtime, not to report as one,
   and it types no work prompt. Worth knowing if a future probe arm ever wants
   to read a record.
+
+## 7. The live acceptance: two turns, two multiplexers, both settled
+
+Authorized on **ranger-base-x7ojx** (operator, 2026-11-06: two billed codex
+turns, one per multiplexer, "routed as two small REAL beads per the suggested
+shape"). Run 2026-11-07, two dispatch passes minutes apart against the same
+repo and the same runtime, differing only in the instance's `multiplexer:`
+key — which is the comparison D8 and ADR 0080 D3 are about, and the only one
+that can tell a Rex finding from a codex one.
+
+**The rig.** Two scratch homes, each holding exactly ONE codex PID whose
+`labels:` match no bead in this queue, so the only thing that can route work
+to either seat is an explicit assignee (`laneFor`: an assignee that
+canon-resolves is a lane of one and never falls through). `instance: 8gh58h`
+with no `multiplexer:` key, `instance: 8gh58r` with it; byte-identical
+otherwise but for the two comments naming which is which. Both beads read
+`unroutable (no assignee/label match and no default_persona)` on the LIVE
+instance before and after — no live persona carries `debt`, and the live
+`--watch` loop had been printing that line for both of them for days — so
+nothing raced the operator's loop for either one. Passes ran `-n 2 --no-reap
+--allow-degraded`.
+
+**Both passes had to run from a Rex BLOCK and not from this seat**, for the
+reason now filed as **ranger-base-m928w**: this seat is `cage: seatbelt`, its
+profile does not grant the codex runtime's own home, and posse's
+credential-presence probe (ADR 0019 — presence, mtime, path) reads the
+resulting EPERM as ABSENT. So from inside the cage every dispatched codex
+launch refuses on the signin interstitial, which is a LAUNCH REFUSE for
+anything dispatched (ADR 0013 §2), saying codex has nothing to authenticate
+with — while a live login is in fact present, MEASURED from a Rex block the
+same minute. The caged read fails `Operation not permitted` and not `No such
+file`, and that is the whole of the bug: the probe takes the failure for an
+answer without looking at the errno, which is the one thing ADR 0013 §1's
+"unknown is never read as no" forbids. A Rex block is spawned by the Rex
+server, outside this seat's cage, which is where the reading is true; it is
+the same door the `tty` arm of the probe needed, for the same reason. The
+paths and their readings are instance-ops and stay in the instance tree
+(ADR 0024 D3).
+
+|  | control | acceptance |
+|---|---|---|
+| instance | `8gh58h`, no key | `8gh58r`, `multiplexer: rex` |
+| bead | ranger-base-w4enh (P3 census) | ranger-base-7vh7y (P2, three comment words) |
+| seat | `codexherdr-posse-ranger-base-w4enh` | `codexrex-posse-ranger-base-7vh7y` |
+| line | `CodexFleetFlags` byte-identical, 1952 B | the three D8 edits, 4858 B |
+| settle | herdr detection: `idle` | `program_status`: `idle`, `owner {pid 40297, codex}` |
+| closed by | the seat | the seat |
+| landed on `main` | `3bc1a6db`, REBASED | `b14420ef`, fast-forward |
+| turn | 1 of 2 | 2 of 2 |
+
+**D8's byte-identical promise, measured and not only pinned.** The control's
+rendered line carries `-a never --disable hooks -c allow_login_shell=false -c
+"projects={\"$PWD\"={trust_level=\"trusted\"}}"` and holds no `hooks=` and
+no `hooks.state` anywhere in its 1952 bytes. The Rex line, at 4858 bytes, has
+`--disable hooks` gone, `-c 'hooks={...}'` typed BEFORE `-c
+'hooks.state={...}'`, and both values shell-quoted with the `'\''` spelling
+section 2 measured through `/bin/sh`. Four times `PaneLineMax` (1023), so it
+rode `state/launch/<session>.sh` exactly as section 2 said it would, and the
+pane sourced it.
+
+posse said so on the way past, which is the warn `RexReportLine` prints:
+
+    posse: codexrex-posse-ranger-base-7vh7y — codex reports on Rex through
+    posse's own hooks: the declaration and the trust codex itself reported are
+    on the launch line and `--disable hooks` is off it (ADR 0076 D6/D7)
+
+**The first-report gate passed, and I do not have the number.** Both logs hold
+ZERO HOLD lines, zero `could not be confirmed` lines and zero refusals, so
+`confirmReports` took its success path — which returns nil SILENTLY. codex
+declares no `startup_wait:`, so `rt.Wait()` is `DefaultStartupWait` = 45s, and
+the line was written at +0.067s after Rex created the session (uuidv7, which
+carries its own millisecond stamp). A record therefore existed before ~+45s or
+the argv HOLD would have printed. What I can state exactly is the record's
+later life, read off Rex: `working` at **+80.4s** and `idle` at **+285.1s**
+after session creation, the same root record updated in place, owner
+`{pid 40297, name codex}` throughout — which is D9's `ReportsOnRex` in its
+widened sense, a record whose owner is the RUNTIME, written by posse's route
+on the runtime's own events.
+
+The exact arrival time is NOT recovered, and the reason is a rig error of
+mine, not a posse one: the root record is updated IN PLACE, so `updated_at`
+holds the latest write and the arrival stamp is gone, and my external
+stopwatch missed the seat because **posse labels a Rex session
+`<instance>/<session>`** — `8gh58r/codexrex-posse-ranger-base-7vh7y` — while
+the watcher matched the bare session name. Anyone re-measuring this should
+match on the suffix, and should poll `block call ... program_status` from
+before the seat exists; one more turn would buy the number, and this bead did
+not spend one on it after the gate had already answered the question the
+done-when was asking.
+
+**What the two turns bought besides evidence.** Both seats did the work and
+closed their own beads. The census seat read all SEVEN files its bead's own
+scope correction names (not the five in the description), classified four as
+immune, found and guarded three real cross-clock fixtures in
+`internal/posse/verifybox_qa_test.go`, `cmd/posse/runtimeavail_qa_test.go` and
+`cmd/posse/backupsurface_qa_test.go`, wrote its own notes fragment and
+regenerated the index (ranger-base-w4enh — named as a bead and not as a path,
+because that fragment landed on `main` and this branch does not carry it);
+`make tree-check` green. The comment seat corrected
+four stale tokens — the bead said three — and ran `make tree-check` green.
+Neither needed a second prompt.
+
+### Three things this pass found that are not about codex
+
+- **`--no-reap` does not cover the land sweep** (observation, not filed). The
+  rex pass printed `⌫ ranger-base-onwi1 ... retired` for ANOTHER persona's
+  tree while `--no-reap` was on the command line. The flag names the end-of-
+  pass reaper; the worktree landing sweep is a different thing and ran anyway.
+  Nothing was lost — the predicate is bead-closed plus nothing-unlanded plus
+  session-gone plus untouched-for-1h, and the live loop's own next pass would
+  have taken the same tree — but a second instance pointed at the same repo
+  does the first one's housekeeping, and the flag's name does not say so.
+- **The Rex wait leg does not wait**, filed as **ranger-base-74tkp** (P2):
+  295 `still working after Ns — waiting again` lines in ~3m30s over 210
+  distinct one-second values, about 1.4 legs per second, against ZERO such
+  lines from the herdr pass over a longer wait on the same bead class. On
+  herdr a leg blocks inside herdr's own wait verb; on Rex there is no blocking
+  wait verb to call, so the leg returns at once and the loop busy-waits — and
+  polls `program_status` once per iteration — for the whole length of every
+  dispatched turn.
+- **`idle-to-next` has nothing to say on a first launch**, both halves:
+  `first launch into this seat on record — no settle to measure from`. The
+  same gap ranger-base-c33j6 recorded, and for the same reason: the interval
+  needs a second dispatch into a seat the reaper retires with its bead.
+
+### Where the trees went
+
+Both seats were killed from this seat and both worktrees were KEPT, because
+`git worktree remove` under `~/.posse/worktrees/<other session>` is
+`Operation not permitted` from inside this cage — the same wall as the
+credential probe, one directory over. Both hold nothing unlanded (their
+commits are on `main`, verified by `git log --grep`), so the live landing
+sweep takes them after `retire_tree_after:` (1h), which is precisely what it
+did to gilfoyle's tree during my own pass. `rex ls` is back to the one
+pre-existing foreign session; `go run ./cmd/checkorphans` is clean and both
+suite slots are free.
