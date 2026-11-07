@@ -174,7 +174,28 @@
 # included, every time (D4).
 set -uo pipefail
 
-cd "$(git rev-parse --show-toplevel)" || exit 2
+# ASK GIT'S EXIT STATUS, NEVER `cd ""` (ranger-base-azd7l). This was
+# `cd "$(git rev-parse --show-toplevel)" || exit 2`, which reads git's OUTPUT
+# and not its STATUS: outside a checkout the substitution is empty, and `cd ""`
+# was a silent no-op in every bash through 5.2 — so the `|| exit 2` beside it
+# could not fire, and the run simply continued in the caller's cwd. bash 5.3
+# makes `cd ""` an error ("cd: null directory"), so the hour `ubuntu-latest`
+# moved from 24.04 (bash 5.2.21) to 26.04 (bash 5.3.9) that dead guard woke up
+# and took with it the half of this script that needs no checkout at all:
+# --self-test plants its own throwaway repos, and the 12 mutant arms in
+# internal/posse/silentrevert_qa_test.go run a mutated copy of this file from a
+# plain t.TempDir(). All 12 red on the ubuntu arm, every darwin arm green, and
+# nothing in the tree had changed — three commits on main wore the red before
+# the image line in the log was read.
+#
+# So the toplevel is resolved by status here, and REQUIRED at the bottom by the
+# half that actually reads a checkout. Every other script here that wants the
+# toplevel already asks this way (clean-build.sh, release-artifacts.sh,
+# release-notes.sh); this was the one site that did not.
+TOPLEVEL=
+if TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null); then
+  cd "$TOPLEVEL" || exit 2
+fi
 ALLOW=scripts/silent-reverts.allow
 
 # --- self-test fixtures -----------------------------------------------------
@@ -1033,6 +1054,17 @@ QUIET=0
 
 # --quiet: one summary line when clean, full detail when something is untriaged.
 [ "${1:-}" = "--quiet" ] && { QUIET=1; shift; }
+
+# The audit half reads THIS checkout — git log over its commits, and $ALLOW as
+# a path relative to its toplevel — so here a checkout is required. Saying it
+# in this script's own words is also what its pin can hook: without this line
+# the run limps on and the only thing printed is two of git's own
+# `fatal: not a git repository` lines, exit 2 either way (MEASURED 2026-11-06,
+# darwin, bash 3.2.57).
+[ -n "$TOPLEVEL" ] || {
+  echo "audit-silent-reverts: not a git repository — run this from a checkout" >&2
+  exit 2
+}
 
 audit "${1:-HEAD}"
 exit $?

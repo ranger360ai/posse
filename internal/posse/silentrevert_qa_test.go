@@ -826,3 +826,101 @@ func TestAuditPatchIdArmCostsNothingOnACleanRun(t *testing.T) {
 			"not:\n%s\ngit calls:\n%s", out, calls)
 	}
 }
+
+// --- ranger-base-azd7l: the toplevel is resolved by git's STATUS -------------
+//
+// The script opened with `cd "$(git rev-parse --show-toplevel)" || exit 2`,
+// which reads git's OUTPUT and not its STATUS. Outside a checkout the
+// substitution is empty, and `cd ""` was a silent no-op in every bash through
+// 5.2 — so that `|| exit 2` could not fire and the run continued in the
+// caller's cwd. bash 5.3 makes `cd ""` an error, so when `ubuntu-latest` moved
+// from 24.04 (bash 5.2.21) to 26.04 (bash 5.3.9) the dead guard woke up and
+// exited 2 before --self-test could plant anything: the twelve srMutateScript
+// arms above run their mutant from a plain t.TempDir(), all twelve red on the
+// ubuntu arm, every darwin arm green, and main's only gate wore it for three
+// commits (MEASURED: runs 42307299630, 42310301976, 42315652161; the last
+// green, 42298066234, is the same code on 24.04).
+//
+// The three pins below are one per half of the change plus one for the shape,
+// because they fail in different places. Two are BEHAVIOUR and one is SOURCE,
+// and the source one is the only one of the three that can fail on a darwin
+// seat: on bash 3.2 and 5.2 the old spelling passes both behaviour pins, which
+// is exactly how this shipped. Reproducing the behaviour half here needs a
+// bash whose `cd ""` fails; it was done with an exported `cd` function in the
+// mutant's environment (`BASH_FUNC_cd%%`), which reds all twelve arms above on
+// bash 3.2.57 and greens them again under the fix — see
+// docs/notes.d/ranger-base-azd7l.md.
+
+// srNonCheckout is a cwd that is not inside any git checkout — the position
+// the mutant arms run from, and the position the gate died in.
+func srNonCheckout(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Run(); err == nil {
+		t.Skipf("%s is inside a git checkout, so this pin cannot measure what it exists for", dir)
+	}
+	return dir
+}
+
+// TestAuditSelfTestNeedsNoCheckout is the half the gate lost. --self-test
+// plants its own throwaway repos and reads nothing from the checkout it was
+// invoked in, so it must run from anywhere — which is what the twelve mutant
+// arms above assume, none of them stating it.
+func TestAuditSelfTestNeedsNoCheckout(t *testing.T) {
+	t.Parallel()
+	script := srScript(t)
+	out, code := srAudit(t, script, srNonCheckout(t), "--self-test")
+	if code != 0 {
+		t.Fatalf("--self-test exited %d from a cwd outside any checkout:\n%s", code, out)
+	}
+	if !strings.Contains(out, "self-test PASS: detector flags the rangerhq-8rtf mechanism") {
+		t.Fatalf("--self-test outside a checkout did not reach its summary line:\n%s", out)
+	}
+}
+
+// TestAuditOutsideACheckoutSaysSo is the other half: the AUDIT reads the
+// checkout (git log over its commits, $ALLOW relative to its toplevel), so
+// outside one it must refuse in its own words. The exit status alone proves
+// nothing — the old spelling also exited 2 from there, by limping on until
+// git's own `fatal: not a git repository` stopped it twice (MEASURED
+// 2026-11-06, darwin, bash 3.2.57) — so this asserts the script's own line.
+func TestAuditOutsideACheckoutSaysSo(t *testing.T) {
+	t.Parallel()
+	script := srScript(t)
+	out, code := srAudit(t, script, srNonCheckout(t))
+	if code != 2 {
+		t.Fatalf("the audit exited %d outside a checkout, want 2:\n%s", code, out)
+	}
+	if !strings.Contains(out, "audit-silent-reverts: not a git repository") {
+		t.Fatalf("the audit did not name the gap in its own words outside a checkout:\n%s", out)
+	}
+}
+
+// TestAuditResolvesTheToplevelByStatus is the shape, and the arm that reds on
+// any bash. Reading a `cd` straight off a command substitution is a guard that
+// only looks like one: whether it fires is a property of the shell, not of
+// this script, and a darwin seat cannot tell the difference.
+func TestAuditResolvesTheToplevelByStatus(t *testing.T) {
+	t.Parallel()
+	script := srScript(t)
+	src, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatalf("read %s: %v", script, err)
+	}
+	// CODE lines only: the script's own comment quotes the defective spelling,
+	// which is this shop's style and not a regression.
+	for i, line := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if strings.Contains(line, `cd "$(git rev-parse`) {
+			t.Fatalf("%s:%d cds straight off a command substitution: outside a checkout that "+
+				"is `cd \"\"`, a no-op on bash <= 5.2 and an error on 5.3 — ask git's exit "+
+				"status instead (ranger-base-azd7l):\n%s", script, i+1, line)
+		}
+	}
+	if !strings.Contains(string(src), "if TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null); then") {
+		t.Fatalf("%s no longer resolves its toplevel by git's exit status; this pin no longer "+
+			"applies", script)
+	}
+}
