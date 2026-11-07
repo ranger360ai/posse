@@ -152,7 +152,12 @@ green run:
    exit code and the same shape (record kept).
    `TestQAARexSessionGoneReadsOnlyRexsOwnNotFound` pins the sentence itself,
    including the neighbouring `block target "…" not found`, which says
-   nothing about a session.
+   nothing about a session. None of those rows pins the FAKE's own answer
+   for an unknown id, and the mutation run is what said so — each row ends
+   with the record unlinked whether the kill was refused or succeeded. That
+   is `TestQAATheFakeRexRefusesAKillOfAnIdItDoesNotHold`, which also walks
+   the refusal through `MuxCloseGone` as the interface rather than as the
+   method, since the prune's assertion is on the interface.
 4. `TestQAAThePruneNeverDestroysAHerdrWorkspace` — over the real herdr
    occupant, reading its calls log, with a control that the record really
    was pruned. A stub occupant cannot reach this arm at all: herdr's half of
@@ -161,5 +166,42 @@ green run:
    nothing. That is the first shape this test was written in, and it was red
    for exactly that reason.
 
-MUTATION-CHECKED, 2026-11-06 — see the close comment on the bead for the
-table of which pin each mutant reddened.
+## 8. Every pass is asked again, over a lock flake that is not this bead
+
+Each arm drives listing passes through `pruneUntil` rather than one
+`b.Sessions()`, because reclaim's answer to a contended launcher lock is to
+spare the file and let the next quiet pass prune (ADR 0011 §1) — and this
+package's own concurrency produces that contention. MEASURED 2026-11-06: a
+throwaway test doing nothing but `tryLockLaunches` / `Release` five times
+over its own `newTestBackend` home, with nothing of this bead in it, failed
+with `a launcher is running` under `-count=5` beside four other tests. flock
+is per open file description and a child between fork and exec still holds a
+reference to the one the parent just closed, and this package forks its
+fakes constantly. In production that reads as one spared file and the
+documented "the next quiet pass prunes it", which is why it is a note and
+not a bead.
+
+## 9. The mutation table
+
+MUTATION-CHECKED 2026-11-06, each mutant applied to a clean tree and the
+tree asserted clean again after. Pin names abbreviated.
+
+| mutant | reds |
+|---|---|
+| the destroy moved AFTER the `os.Remove` | ordering, kept-on-failure, the rex rows |
+| the destroy removed entirely | ordering, kept-on-failure, the rex rows |
+| a failed destroy returns "" (proceeds to the unlink) | kept-on-failure, the rex rows |
+| the `MuxName() == MuxHerdr` gate removed | herdr-untouched |
+| `rexSessionGone` matches any error | the sentence table, the rex rows |
+| `rexSessionGone` matches nothing | the sentence table, the rex rows |
+| the destroy aimed at `Seat{Session:}` without the pane | ordering |
+| the `MuxCloseGone` reading ignored | the rex rows |
+| `fakeRexKill` back to exit 0 for every id | the fake's own refusal |
+| the `IsHerdrHang` guard dropped from `rexSessionGone` | **nothing — declared** |
+
+The last one is a belt and is said to be one in both the predicate and the
+test arm: a hang's text is its argv and its wait, so the two substrings
+refuse it with no help from the guard. It is worn because every predicate of
+this shape in the package wears it, and because the distinction it names is
+the one a rewrite of this predicate — keying on the exit code, say, where a
+killed child and a refusal are the same nonzero — would get wrong.
