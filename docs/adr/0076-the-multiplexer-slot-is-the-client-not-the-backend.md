@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh`*
 
 ## Context
 
@@ -383,7 +383,7 @@ wanted on a Rex instance. The four rows above are then the slices, the
 probe's `codex` arm is the acceptance test, and deriving the hash from
 codex's source comes first.
 
-**D5. bob stays refused.** *(Restated by Amendment 2's D11.)* It is `prompt: typed` with no launch record,
+**D5. bob stays refused.** *(Restated by Amendment 2's D11; settled by Amendment 4's D14: herdr-only.)* It is `prompt: typed` with no launch record,
 so D2's typed arm refuses it. It also has no `blocked` (spike, STATIC).
 
 **Consequences.** ranger-base-phq39's refusal of codex and grok is the D1
@@ -670,7 +670,7 @@ That makes it a measurement, and it can be taken without a turn (the
 lands or upstream fixes grok's own report. ADR 0080 D3's "every runtime"
 waits on that spike for grok.
 
-**D11. bob stays refused on Rex (D5).** bob is `prompt: typed` with no
+**D11. bob stays refused on Rex (D5).** *(Replaced by Amendment 4's D14: no argv route, MEASURED with no turn spent, and bob is herdr-only on Rex.)* bob is `prompt: typed` with no
 launch record, so D2's typed arm refuses it: posse cannot see that the
 composer is ready, and §3 forbids screen rules on Rex. `bob chat` (2.0.9)
 has no initial-prompt flag, and nothing on the line that declares,
@@ -906,3 +906,150 @@ ASSUMED: herdr consuming the OSC unseen, the Linux behaviour, and
 the credential file's rename-on-refresh (inferred from its temp files, not
 traced).
 UNPROVEN: `blocked` live.
+
+## Amendment 4: bob is herdr-only on Rex; it has no argv prompt and no record before one (ranger-base-778y0, 2026-11-06)
+
+**Context.** D11 kept bob refused and left four questions: (1) does the
+top-level `bob -p <prompt>` open the interactive client with that prompt
+submitted, so bob could be `prompt: argv`; (2) if so, does a workspace hook's
+OSC 7501 report land on that first turn, owned by bob's node process; (3) can
+the operator's global herdr-bob hooks be kept from firing in a fleet seat
+without writing global config; (4) bob has no `blocked` and no clear-on-exit
+event, so is the dead-owner-pid rule enough? D11 said measuring (1) costs a
+billed turn. It does not. The operator authorized up to three
+(ranger-base-57oel). **None was spent.**
+
+D11 also missed that (1) had been answered already, on bob 2.0.5:
+`runtime.go`'s note above `BobCommand` records `-p … chat` delivering
+nothing and top-level `-p` going headless (ranger-base-5jjtn, MEASURED
+2026-10-01). This amendment re-measures it on 2.0.9 and reads the reason out
+of the bundle.
+
+**STATIC, bob 2.0.9 (commit 9690f20b0), `dist/bob.js`:**
+- The top-level action picks `run` (headless) when a prompt is given or stdin
+  is not a tty, and `chat` otherwise (`dFl`: `!process.stdin.isTTY || !!prompt`).
+- `chat` parses its options through a zod schema with no `prompt` field
+  (`GBl = MQ.extend({format})`), and zod drops keys it does not know. A global
+  `-p` reaches `chat` through `optsWithGlobals()` and is discarded there. Only
+  `run`'s schema carries `prompt` (`QBl`). No `BOB_*` variable carries one.
+- The hook events are `SessionStart, UserPromptSubmit, PreCompact,
+  PostCompact, PreToolUse, PostToolUse, Stop`. 2.0.7's list plus the two
+  compaction events. There is still no permission, interrupt or session-end
+  event, and `SessionStart` still fires inside the first turn's input path,
+  not at launch.
+- Hooks run through `child_process.exec`, in bob's own process group.
+- `disableGlobalHooks` is read from the user config only. A workspace
+  `.bob/settings.json` contributes `hooks` and `disableWorkspaceHooks`, and
+  nothing else the hook manager reads.
+- bob's whole home is `os.homedir()/.bob`, so `$HOME` moves all of it: the
+  global hooks, the login, the task database and the folder-trust list live
+  under that one directory.
+
+**MEASURED 2026-11-06**, this box (darwin 25.6.0), Rex CLI 0.0.1793377904,
+bob 2.0.9, node v26.12.1, `docs/adr/0076-bob-argv.probe.sh`. Arms `chat`,
+`p` and `pchat` cannot make a turn: each has its own scratch `HOME` (no
+login), bob's key variables unset, and every proxy at `127.0.0.1:9`. Arm `live`
+runs under the real login, and its workspace `UserPromptSubmit` hook exits 2,
+so bob blocks every prompt before a request is built.
+
+| arm | line | screen | hooks ran | record |
+|---|---|---|---|---|
+| `chat` | `bob chat --accept-license -w .` | the TUI (folder-trust menu) | — | none |
+| `p` | `bob --accept-license -p <text>` | **headless**: an error asking for an API key, back at the shell | — | none |
+| `pchat` | `bob -p <text> chat --accept-license -w .` | the TUI, the same as `chat` | — | none |
+| `live`, untyped | `bob -p <text> chat --accept-license --trust -w .`, real login | splash, "Logged in", **an empty composer** at t+20 s | **none** | none |
+| `live`, `/hooks` | workspace file also sets `"disableGlobalHooks": true` | "(12/12) active": all **5 Global** herdr-bob hooks `● active` beside the 7 Workspace ones | — | — |
+| `live`, one typed prompt | posse's typed route | prompt blocked by the hook | SessionStart → idle, UserPromptSubmit → working, `tty-write=ok`, hook `pgid` = bob's node pid | **`working`**, `owner={pid,"node"}` |
+| `live`, `/quit` | — | back at the shell | — | **none** (`working` dropped at exit) |
+
+**Answers.**
+1. **No.** Top-level `-p` is headless `run`, which has no interactive client.
+   `-p … chat` opens the client and discards the prompt. bob has no argv route,
+   so it stays `prompt: typed`.
+2. **Moot for argv.** There is no argv first turn for a hook to report. On the
+   typed route the hook works as it did on 2.0.7: the report lands, stamped
+   with bob's node process. But it lands only *after* posse has typed into a
+   composer it could not see was ready. That is the order D2's typed arm and
+   the first amendment's rejected handshake both refuse.
+3. **No.** A workspace file cannot switch the global hooks off (MEASURED). The
+   remaining routes are writing `disableGlobalHooks` into the operator's
+   `~/.bob/settings/settings.json`, which posse never does, or a per-seat
+   `HOME`. A per-seat `HOME` moves the login (its refresh then forks
+   from the operator's), the task database, `trustedFolders.json` and the
+   skills roots. That is D4's and D13's price again, and it still buys no argv
+   prompt.
+4. **Enough for death, not for a live seat.** A dead owner reads `unknown`,
+   and `/quit` cleared a `working` record (MEASURED). A stale `idle` with a
+   dead pid is the case the Spike's rule already catches. A *live* bob is a
+   different problem: it has no permission event, so a seat waiting on an
+   approval reports `working`, which is a wrong state and not an unknown one.
+   Fleet bob runs `--auto-approve`, which makes that rare for a dispatched seat
+   ("when safety rules allow"). It is still a gap posse could not detect.
+
+**Decision.**
+
+**D14. bob is herdr-only on Rex.** It replaces D5 and D11. `ReportsOnRex`
+stays false for bob, and D1's refusal before the claim, which names herdr, is
+the whole behaviour. No code changes. The reason is answer 1. Nothing writes a
+record before a prompt, and bob takes no prompt except one that posse types.
+ADR 0013 §1 needs positive evidence before posse types, and §3 forbids the
+screen rules that herdr-bob uses to supply it. Answers 3 and 4 are separate
+costs on top of that. Either would be priced if answer 1 changed. Neither can
+rescue the refusal on its own.
+
+ADR 0080 D3's "interchangeable for every runtime" therefore excludes bob. A
+bob crew on the ADR 0080 host runs on herdr beside Rex. 20 of 20 PIDs on this
+instance run claude (D4's count), so nothing that runs today is affected.
+
+**Reopen when** a bob release carries all three:
+- an initial prompt that `chat` submits (an option on `chat`, or `-p` honoured
+  there);
+- a session-scoped switch for global hooks, such as a flag or an env var. The
+  alternative is the operator accepting that herdr-bob's hooks fire in fleet
+  seats;
+- for `blocked`, a permission event. Without one, `--auto-approve` remains the
+  only answer.
+
+The re-measurement is this probe's `pchat` and `live` arms on the new version.
+Neither spends a turn. If both turn positive, the slice follows codex's shape
+(D6, D9): posse's reporter as the workspace hook's handler, a version guard,
+and D2's argv arm as the confirmation.
+
+**Alternatives rejected.**
+- **Type the first prompt blind and admit on the hook record that follows.**
+  It works mechanically (the `live` arm's typed row). It is the first-prompt
+  handshake the first amendment rejected: posse types into a composer it
+  cannot see is ready, and a refusal could come only after a claim, a
+  worktree and a typed turn.
+- **A composer-ready screen rule on Rex, only for bob.** It is small and would
+  admit bob. It is also a second detection engine for one runtime, which §3
+  and the first Alternatives refuse. herdr already runs that engine, and it
+  runs bob.
+- **Headless `bob run` as the Rex seat.** It is `argv` in the literal sense.
+  But it runs one task and exits: no composer for a re-prompt or `--resume`,
+  no terminal state to report, and no seat in the sense the ten verbs mean.
+  Under a scratch home it demanded an API key (MEASURED). Whether it takes
+  the operator's login instead is unmeasured, because measuring it would spend
+  a turn for a seat model nobody has asked for.
+- **`bob acp`, the Agent Client Protocol server.** This was the clever one:
+  structured sessions, prompts and state updates, with no screen and no OSC.
+  It is not Rex admission. It is a new kind of occupant with no terminal,
+  which is a runtime-driver design and not a multiplexer slot. Nothing is
+  filed for it, because no PID wants bob off herdr (ranger-base-57oel's
+  recommendation, and the 20 of 20 count).
+- **A per-seat `HOME`.** It moves the login and three other stores (answer 3),
+  and it still buys no argv prompt.
+- **`disableGlobalHooks` in the workspace file.** MEASURED: ignored.
+
+**Measured versus assumed.** MEASURED (this box, 2026-11-06): every row of
+the table, the empty composer at t+20 s, the five global hooks active under a
+workspace `disableGlobalHooks`, the hook's process group, the record's owner,
+and its removal at `/quit`. STATIC (bob 2.0.9 bundle): the top-level
+dispatch, `chat`'s schema dropping `prompt`, the event list, `exec`, the
+layer `disableGlobalHooks` is read from, and that the login lives under the same home. ASSUMED:
+nothing the decision rests on. UNPROVEN: `bob run` under the real login, and
+how bob's Stop record behaves after a turn that completes (it needs a billed
+turn and changes nothing above). Billed turns spent: 0 of the 3 authorized.
+One write outside the scratch dir: `--trust` added the `live` arm's scratch
+workspace to `~/.bob/trustedFolders.json`, the same kind of entry ch2rb's bob
+arm left.

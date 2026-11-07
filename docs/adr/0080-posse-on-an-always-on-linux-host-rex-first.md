@@ -91,6 +91,7 @@ cost is now accepted. The mechanism is designed in its own bead (cut below)
 as an amendment to ADR 0076. Until it lands, the D2 host runs herdr beside
 Rex, and a crew whose runtime Rex refuses (codex, grok, bob) uses herdr.
 `posse list` already says which multiplexer a session is on.
+*bob is the exception (ADR 0076 Amendment 4, D14, ranger-base-778y0): `bob chat` takes no argv prompt and writes no record before a typed one, so bob is herdr-only on Rex, and a bob crew on the D2 host uses herdr beside it.*
 ADR 0076 D3 (grok: no record in 131 s, MEASURED, cause upstream) is not
 reversed by direction. A mechanism can route around a runtime that never
 reports, but it cannot turn that runtime's silence into evidence.
