@@ -30,6 +30,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-87zme](ranger-base-87zme.md) — ranger-base-87zme — the ADR 0079 compare resolves `~` per read — 2026-11-06
 - [ranger-base-43mxx](ranger-base-43mxx.md) — A proven-dead Rex seat is destroyed, not only forgotten (ranger-base-43mxx) — 2026-11-06
 - [ranger-base-136b5](ranger-base-136b5.md) — The watch loop as a systemd user unit, and ownership as a key (ranger-base-136b5) — 2026-11-06
+- [ranger-base-0g6zm](ranger-base-0g6zm.md) — ranger-base-0g6zm — replaying a TWO-commit merge-back: never squash it — 2026-11-06
 - [ranger-base-0ddmu](ranger-base-0ddmu.md) — The other direction of the wall-clock-age class: a premise that is fresh (ranger-base-0ddmu) — 2026-11-06
 - [ranger-base-zpk8r](ranger-base-zpk8r.md) — ranger-base-zpk8r — the launch DEGRADED call site, and two inverted policy-tier lines — 2026-11-04
 - [ranger-base-loi28](ranger-base-loi28.md) — A fixture that scrubs HOME no longer has an empty git global scope (ranger-base-loi28) — 2026-11-04
