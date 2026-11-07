@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh`*
 
 ## Context
 
@@ -636,17 +636,72 @@ a key or hash posse cannot put through both shell quoting and a TOML string,
 and the same key twice (which would make the inline table invalid TOML).
 `docs/notes.d/ranger-base-fwwl8.md` has the tables and the mutants.*
 
-*STILL OPEN here, and it is the admission slice's: whether the ordinary
-launch-failure path releases the worktree and the claim at THIS stage (the
-ASSUMED above). The ask returns an ordinary error, which is what that path
-takes; which path takes it is decided where `Flags()` is called, and that is
-`ranger-base-8gh58`.*
+*ANSWERED by the admission slice (ranger-base-8gh58), and the ASSUMED above
+was HALF right. The ask is called from `planLaunch`, so its error is an
+ordinary launch failure, and:*
+
+- *the CLAIM is handed back. `createSession` returns the error,
+  `launchWithPrompt` wraps it in `unclaimAfterLaunchFailure`, the bead goes
+  back to open, and the refusal — a plain error — benches the persona/runtime
+  slot for the pass rather than being paid once per bead (ADR 0013 §2
+  property 4).*
+- *the WORKTREE IS NOT REMOVED. `EnsureSessionTree` cuts it near the top of
+  `planLaunch`, above every refusal in that function, and nothing unwinds it —
+  which is equally true of the danger, detection, parity, PID-channel and
+  version refusals. For THIS refusal it cannot be otherwise: the ask is ABOUT
+  the tree (codex discovers hooks from the cwd and keys project trust by the
+  resolved path), so it cannot be asked before there is one.*
+
+*The tree has no commits, so `posse worktrees --land` removes it ("had no
+commits — worktree and the branch removed"). So the cost of a refused ask is
+one launch and a tree that waits for a sweep, and never a turn. Both halves
+are pinned, including the surviving tree, in
+`TestQACodexRexAskRefusalUnclaimsTheBeadAndLeavesTheTreeForTheSweep`.*
 
 **D8. Rex only. herdr's codex line does not change.** `CodexFleetFlags`
 keeps `--disable hooks` on herdr, which reads codex through its own
 detection (§6: herdr's code paths do not change). On Rex the line drops
 `--disable hooks` and adds D6 and D7. The posture D4 item 4 protected
 holds in both cases: in a fleet seat only posse's hooks run.
+
+*Realized 2026-11-06 (ranger-base-8gh58): `RexReportLine`
+(`internal/posse/codexrex.go`) is the whole of it, and it makes three edits to
+a line that is already rendered — `--disable hooks` off, the declaration on,
+the trust on after it — rather than growing a second codex template. It is a
+no-op on herdr and on any runtime whose record is its own, keyed on
+`Runtime.RexRoute` (built-in only) so that no launch path asks a runtime's
+NAME for a fact about its mechanism (ADR 0017 §3). `CodexFleetFlags` is
+unchanged and pinned byte for byte, and `CodexDisableHooks` is split out of it
+only so the removal and the refusal name one string.*
+
+*Two things the design did not say, both found by building it:*
+
+- ***the removal has to be WHOLE-WORD.** A plain substring removal takes the
+  same bytes out of `--disable hooks,mcp` and leaves `,mcp` behind — codex's
+  hook layer still off, through a flag the guard can no longer SEE, because
+  the string it looks for is the string that was just removed. So anything
+  posse's own spelling does not match is LEFT in place, where a refusal finds
+  it. A PID's `command:` is the one template posse did not write, and this is
+  the shape that would have turned it into a silent seat.*
+- ***both values are shell-quoted, and the declaration's own single quotes are
+  why.** The line is TYPED — into a pane, or into the launch script a line
+  over `PaneLineMax` spills to — and the declaration carries `'…'` around the
+  handler path by construction (codex splits a `command` on whitespace with no
+  shell and honours single quotes, MEASURED under ranger-base-z7kle). The
+  `'\''` idiom carries it, and a real `/bin/sh` is what the pin asks (it
+  splits the typed line into the exact argv codex must receive).*
+
+*The pair adds roughly 1.6 KB to codex's line, which spends headroom that was
+already spent: every persona line has spilled to `state/launch/<session>.sh`
+since 2026-09-01 (1867-2058 bytes against the 1023 limit), so the spill is
+where this lands and no behaviour changes.*
+
+*Also typed on the RELAUNCH path (`RelaunchAgent`), through the same function,
+and the ask runs AGAIN there rather than its answer being remembered: trust
+binds to the hash of the declaration asked about, and a re-render can name a
+posse upgraded since the launch. A revived codex carrying the launch's old
+trust is a seat on the review dialog; one carrying no declaration is a seat
+posse cannot read.*
 
 **D9. Admission is still a declaration read before the claim (D1).**
 `ReportsOnRex` becomes true for codex. The field's meaning widens to "a
@@ -661,6 +716,47 @@ was measured on (`codex-cli 0.153.4`). Before the claim, a codex that
 reports another version is refused on Rex, with the probe's `ask` arm
 named as the re-measurement. That costs one probe run (about two minutes,
 no turn) per deliberate codex bump. The cask is pinned.
+
+*Realized 2026-11-06 (ranger-base-8gh58). `ReportsOnRex` is true for codex,
+and the field's doc carries D9's widened meaning. The version is a second
+built-in-only key, `RexVerified` (`codex-cli 0.153.4`), read as
+`RexVersionDrift` at the SAME two sites D1 is read at — `dispatch.go` above
+the claim and `planLaunch` as the backstop — with D1's interactive asymmetry
+(a dispatched launch refuses, `posse new` warns and proceeds, because
+launching is how the next measurement gets taken). `posse gates`' Rex listing
+reads both, so a drifted codex is shown in a refused column instead of under
+"launches here".*
+
+*Three things the decision did not settle, decided here:*
+
+- ***an unreadable version is refused too.** D9's sentence is "a codex that
+  reports another version"; a codex that will not answer `--version` reports
+  none. The pinned claim is "this route was measured on THIS version", and a
+  binary that cannot be identified leaves it unsupported — ADR 0013 §1's
+  "unknown is never read as no". The cost of refusing is one launch that would
+  have opened on a codex posse cannot name; the cost of admitting is the stall
+  below. A codex that cannot answer `--version` was not going to hand the seat
+  a record inside its 45 s `startup_wait` either.*
+- ***a NATIVE report carries no pin, and that is not an omission.** claude's
+  record is claude's own output: a regression there shows up as D2's
+  first-report wait missing, with nothing typed and nothing spent. codex's
+  exists because posse typed two `-c` values derived from an experimental RPC,
+  and the likely failure of a moved codex is not an error but a line codex
+  ACCEPTS — a launch that completes, a seat on the startup review dialog, and
+  `prompt: argv`'s HOLD keeping the claim over a turn nobody can read. The pin
+  is for that asymmetry and `RexVerified` is empty wherever it does not hold.*
+- ***the reader is parity.go's own `--version` seam** (`skillsDriftVersion` →
+  `ProbeCLIVersion`), compared through `skillsVersionRelease` (ADR 0007 §6c).
+  One reader, one per-process memo — so the dispatch loop pays one exec per
+  process, and a codex upgraded under a running `posse dispatch --watch` is
+  not noticed until the next process, which is the property `posse runtime
+  drift` exists for.*
+
+*MEASURED by mutation (ranger-base-8gh58): with `dispatch.go`'s version arm
+deleted, every pin that called `RexVersionDrift` directly stayed green. The
+pin that reds it drives a whole pass and asserts that bd is never asked to
+CLAIM — which is D9's placement, not its message
+(`TestQACodexRexVersionRefusalLandsAboveTheClaim`).*
 
 **How D4's five items are paid:**
 1. Hook script and declaration per launch: no script, and no file. One
@@ -712,6 +808,12 @@ spike's first question, and it needs operator authorization.
   launch lock is held for that time.
 - confirmReports' argv arm ("unreachable today") becomes reachable. A
   codex seat with no record within `startup_wait` HOLDs and is not judged.
+  *(Realized 2026-11-06, ranger-base-8gh58: the comments in `multiplexer.go`
+  and `herdrback.go` say so now. What reaches that arm is a reporter codex did
+  not run or a record that did not arrive in time — the version pin, the
+  declaration render and the trust ask all refuse on the far side of the
+  launch, before a turn — so the HOLD is the LAST thing between posse and a
+  turn it cannot see rather than the first.)*
 - codex's record stays `working` after a prompt a hook blocked (spike,
   MEASURED). posse's hook never blocks, so a fleet seat does not reach
   that state.
@@ -723,7 +825,28 @@ spike's first question, and it needs operator authorization.
   (ranger-base-offid) re-runs it under a Linux network fence.
 - On darwin, the hook runs as codex's child under posse's seatbelt when the
   PID is caged. That the hook may open `/dev/tty` there is ASSUMED, and
-  the slice tests it.
+  the slice tests it. *(MEASURED 2026-11-06, ranger-base-8gh58, and the
+  PREMISE was wrong: posse renders **no** seatbelt for codex at all. codex
+  declares `SelfSandbox`, macOS refuses to nest `sandbox-exec`, and
+  `seatbeltWallRendered` is false for such a runtime whatever tier the PID
+  asked for — posse says so as a DeclaredDifference instead (ADR 0017 §2). So
+  at `cage: seatbelt` there is no posse profile in front of a codex seat and
+  this bullet is moot at that tier; codex is refused at `cage: container`
+  today for want of a `CageCred`. The counterfactual was measured anyway,
+  because posse's profile is the one wall shape that COULD have refused the
+  open: with a profile `RenderSeatbelt` really rendered,
+  `sandbox-exec -f <prof> /bin/sh -c 'exec 3>/dev/tty'` SUCCEEDS and posse's
+  reporter runs under it. The grant is that profile's own
+  `(allow file-write* (regex #"^/dev/"))`, which outvotes its
+  `(deny file-write*)` for `/dev/tty`. The OPEN and not a write, so no OSC
+  bytes reach anyone's terminal. Pinned as
+  `TestQATheHookTTYUnderACagedCodexPID`, whose live arms SKIP where there is
+  no controlling terminal — which is every `go test` in a dispatched seat, and
+  the reason `docs/adr/0076-reporter.probe.sh` grew a `tty` arm that compiles
+  the pin out here and runs it inside a Rex block, where there is a tty and
+  where Rex spawns outside this seat's cage. Triangulated by the two earlier
+  slices, whose codex ran under `sandbox-exec (deny network*)` AND codex's own
+  `-s workspace-write` with the hook writing records throughout.)*
 
 **Alternatives rejected.**
 - **A per-seat `CODEX_HOME`**, with symlinks back to the credential file
@@ -759,6 +882,17 @@ read from, managed hooks, and the review predicate. ASSUMED: codex startup
 with a network inside 45 s, a harmless `initialize` with a live login,
 `/dev/tty` under seatbelt, the launch-failure path releasing the claim at
 this stage, and the Linux behaviour. UNPROVEN: codex `blocked` live.
+
+*Two of those ASSUMED were MEASURED by the admission slice
+(ranger-base-8gh58), and both came back half-true — see D7's and the
+Consequences' own notes: the launch-failure path releases the CLAIM and leaves
+the WORKTREE for `posse worktrees --land` to sweep, and `/dev/tty` under
+seatbelt is moot for codex (posse renders no profile for a `SelfSandbox`
+runtime) while being permitted under the profile posse would render. What
+remains ASSUMED is unchanged: codex startup inside 45 s with a network, a
+harmless `initialize` with a live login, and the Linux behaviour — the first
+of those is what the live acceptance measures, against the 45 s
+`startup_wait`.*
 
 ## Amendment 3: grok reports on Rex natively once its home config says `on`; the hook route is closed (ranger-base-1vgrw, 2026-11-06)
 

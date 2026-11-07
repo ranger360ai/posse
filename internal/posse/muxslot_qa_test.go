@@ -11,8 +11,11 @@ package posse
 //     neither occupant refuses the LAUNCH while the read paths keep working.
 //     (App.Multiplexer / App.MultiplexerName, NewHerdrBackend.)
 //  2. ADMISSION is a declaration read before the claim (D1): Runtime
-//     .ReportsOnRex, true on claude alone, unreachable from any yaml, and the
-//     refusal names herdr as the way to run the runtime.
+//     .ReportsOnRex, unreachable from any yaml, and the refusal names herdr
+//     as the way to run the runtime. Since Amendment 2's D9 it is TWO
+//     declarations — the bool, and the release a ROUTED report was measured
+//     on (RexVerified, codex) — both read at the same two sites and before
+//     the same claim.
 //  3. CONFIRMATION is the first-report wait after the launch (D2), and what a
 //     miss COSTS is keyed on `prompt:` — a refusal with nothing typed for a
 //     typed runtime, a HOLD for an argv one, and never a refusal when rex
@@ -106,7 +109,11 @@ func TestQABackendTakesItsOccupantFromTheKeyAndLeavesHerdrUntouched(t *testing.T
 
 func TestQARexAdmitsOnlyTheRuntimeMeasuredToReportThere(t *testing.T) {
 	t.Parallel()
-	want := map[string]bool{"claude": true, "codex": false, "grok": false, "bob": false}
+	// codex flipped under ranger-base-8gh58 (ADR 0076 Amendment 2, D9): its
+	// record is posse's own reporter on codex's events, which is the same
+	// evidence class claude's native one is (ADR 0013 §1). grok's own flip is
+	// Amendment 3's and bob stays refused (D11).
+	want := map[string]bool{"claude": true, "codex": true, "grok": false, "bob": false}
 	seen := map[string]bool{}
 	for i := range builtinRuntimes {
 		// A COPY, never &builtinRuntimes[i]. Taking the table's address in a
@@ -142,15 +149,31 @@ func TestQANoRuntimeYamlCanClaimItReportsOnRex(t *testing.T) {
 	// claim it without that measurement would buy back the exact cost D1
 	// removes.
 	rt := writeRuntime(t, a, "mycli", "command: mycli {file}\n"+
-		"reports_on_rex: true\nreports_on_rex_why: measured by me\nrex: true\nmultiplexer: rex\n")
+		"reports_on_rex: true\nreports_on_rex_why: measured by me\nrex: true\nmultiplexer: rex\n"+
+		"rex_route: "+RexRouteCodexHooks+"\nrex_verified: mycli 1.0\n")
 	if rt.ReportsOnRex || RexAdmits(rt) {
 		t.Fatal("a runtimes/*.yaml set ReportsOnRex — it is built-in only (ADR 0076 D1), because a declaration without the measurement is the try-and-see refusal in another costume")
+	}
+	// The two keys Amendment 2 added are built-in only for the same reason
+	// and for one more each: a route would have posse typing hook
+	// declarations at a CLI nobody asked `hooks/list`, and a version pin a
+	// profile could move is the admission a profile could move (D9).
+	if rt.RexRoute != "" || rt.RexVerified != "" {
+		t.Fatalf("a runtimes/*.yaml set the Rex route/version: route=%q verified=%q — both are built-in only (ADR 0076 Amendment 2, D6/D9)", rt.RexRoute, rt.RexVerified)
 	}
 	// An OVERLAY onto a built-in keeps the built-in's measured answer: it is
 	// still that binary.
 	over := writeRuntime(t, a, "claude", "startup_wait: 30s\n")
 	if !RexAdmits(over) {
 		t.Error("an overlay onto the claude built-in lost ReportsOnRex — an overlay declares INSTANCE facts and the binary is the same one that was measured")
+	}
+	// And the same for the pair, on the one built-in that carries them: an
+	// overlay that dropped the route would type no reporter onto a codex
+	// line and leave the seat unreadable; one that dropped the version pin
+	// would admit every future codex without a re-measurement.
+	cx := writeRuntime(t, a, "codex", "startup_wait: 30s\n")
+	if cx.RexRoute != RexRouteCodexHooks || cx.RexVerified == "" {
+		t.Errorf("an overlay onto the codex built-in lost its Rex route/version: route=%q verified=%q", cx.RexRoute, cx.RexVerified)
 	}
 }
 

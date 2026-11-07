@@ -1874,20 +1874,36 @@ func main() {
 		// (ADR 0076 §3/D1). A herdr instance reads the one line and moves on.
 		fmt.Fprintf(out, "%s\n", a.MultiplexerLine())
 		if a.MultiplexerName() == posse.MuxRex {
-			var admits, refuses []string
+			// BOTH READINGS, because this surface is read as the answer to
+			// "will this persona launch here" and a row in the wrong column
+			// is a lever that reads as connected and is not (ADR 0017 §1).
+			// The second reading is ADR 0076 D9's version pin: a runtime
+			// whose Rex record is posse's own route carries the release it
+			// was measured on, and one reporting another release is refused
+			// before the claim exactly as an unadmitted runtime is — so it
+			// belongs in a refused column here and not in `launches here`.
+			// Its own line, because the remedy is different: a
+			// re-measurement, not a herdr instance (RexVersionDrift).
+			var admits, refuses, drifted []string
 			for _, rn := range a.ListRuntimes() {
 				rt, err := a.LoadRuntime(rn)
 				if err != nil {
 					continue
 				}
-				if posse.RexAdmits(rt) {
-					admits = append(admits, rn)
-				} else {
+				switch got, ok := posse.RexVersionDrift(rt); {
+				case !posse.RexAdmits(rt):
 					refuses = append(refuses, rn)
+				case !ok:
+					drifted = append(drifted, rn+" (reports "+reportedVersion(got)+", measured on "+rt.RexVerified+")")
+				default:
+					admits = append(admits, rn)
 				}
 			}
 			fmt.Fprintf(out, "  launches here: %s\n", runtimeSet(admits))
 			fmt.Fprintf(out, "  REFUSED here, before the claim — run them on a herdr instance: %s\n", runtimeSet(refuses))
+			if len(drifted) > 0 {
+				fmt.Fprintf(out, "  REFUSED here by the version pin (ADR 0076 D9) — posse's own reporting route was measured on another release; re-measure with docs/adr/0076-trust-ask.probe.sh (no model turn) and move `rex_verified:`: %s\n", strings.Join(drifted, ", "))
+			}
 		}
 		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in this shell's cwd %s:\n", tier, posse.AbbrevHome(cwd))
 		// The persona's OWN runtime, before the table. The loop below walks
@@ -3248,6 +3264,16 @@ func backupHelp() string {
 // "(none)" rather than a blank, because an empty list is an answer — on a
 // Rex instance with no admitted runtime, every launch is refused, and a
 // trailing colon with nothing after it reads as a bug in the report.
+// reportedVersion renders what a CLI answered to `--version` for the line
+// above: the line itself, or the fact that there was no answer. An empty
+// string printed bare would read as a release called nothing.
+func reportedVersion(got string) string {
+	if got == "" {
+		return "no --version answer"
+	}
+	return got
+}
+
 func runtimeSet(names []string) string {
 	if len(names) == 0 {
 		return "(none)"

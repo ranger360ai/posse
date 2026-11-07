@@ -206,7 +206,12 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	// gated — the runners call the gate themselves — so the widening moved
 	// no test from red to green; what it moved is what this assertion is
 	// able to notice.
-	if len(scanned) != 11 {
-		t.Errorf("expected the eleven sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	//
+	// Twelve since ranger-base-8gh58: codexrex_test.go asks the kernel
+	// whether the codex hook's /dev/tty open survives a profile posse
+	// rendered (ADR 0076 Amendment 2's darwin ASSUMED), so it is a
+	// sandbox-exec like any other here and goes behind the same gate.
+	if len(scanned) != 12 {
+		t.Errorf("expected the twelve sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }

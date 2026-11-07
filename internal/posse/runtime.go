@@ -736,17 +736,64 @@ type Runtime struct {
 	// and a billed turn spent on a seat whose every state is unknown.
 	// DetectionFiling is builtin-only for the same shape of reason.
 	//
+	// WIDENED BY AMENDMENT 2's D9 (ranger-base-dok0a): the fact is "a record
+	// whose owner is the RUNTIME, written natively or by posse's route on the
+	// runtime's own events". Both are positive evidence under ADR 0013 §1 —
+	// the report is caused by the runtime's own event and stamped with its
+	// foreground process — and silence is still not evidence. RexRoute below
+	// says WHICH of the two this runtime's yes rests on, because the routed
+	// one is a line posse has to type (D6, D7) and the native one is not.
+	//
 	// MEASURED 2026-10-31 (ADR 0076, its "Spike" and its "Amendment"), Rex
-	// CLI 0.0.1793377904, this box. claude 2.1.314 is the only yes: launched
-	// in a Rex block with no hooks its record read `idle`,
+	// CLI 0.0.1793377904, this box. claude 2.1.314 is the native yes:
+	// launched in a Rex block with no hooks its record read `idle`,
 	// `app=claude-code`, `owner={pid,"2.1.314"}`, and one prompt turned it
 	// `working` then `done`. grok 1.0.52 wrote NO record at 2 s through
 	// 131 s of a live argv turn, with program_status `auto` and again forced
-	// `on`; codex 0.153.4 and bob carry no `7501;` string at all and report
-	// only through a hook layer ADR 0076 D4 priced and deferred. So the
-	// false here is three measurements and not three omissions, and D3/D4/D5
-	// name what each would take to flip.
+	// `on`; codex 0.153.4 and bob carry no `7501;` string at all.
+	//
+	// codex 0.153.4 is the ROUTED yes, MEASURED 2026-11-06 under Amendment 2
+	// (ranger-base-z7kle's reporter and ranger-base-fwwl8's trust ask, both
+	// with their own probes): with posse's reporter declared as session-flag
+	// hooks and their trust typed beside it, a codex launch draws no review
+	// dialog and its record reads `working`, `app=codex`,
+	// `owner={pid,"codex"}` at t+2 s. That is the same evidence class claude
+	// provides, one layer out. bob stays false (D11) and grok's own yes is
+	// Amendment 3's, through its config rather than a hook.
 	ReportsOnRex bool
+	// RexRoute is HOW that record gets written, and it exists so no launch
+	// path has to ask a runtime's NAME (ADR 0017 §3: dispatch keys on the
+	// declaration). "" is the native route — the runtime writes its own
+	// record and posse types nothing for it (claude). RexRouteCodexHooks is
+	// ADR 0076 D6/D7's: posse's reporter rides the launch line as session-flag
+	// hooks, with the trust codex itself reported typed beside it, and
+	// RexReportLine (codexrex.go) is the one place that assembles it.
+	//
+	// BUILT-IN ONLY, for ReportsOnRex's reason and one of its own: the route
+	// is not a preference but the shape of a measurement, and a profile that
+	// could name one would be asking posse to type hook declarations at a CLI
+	// nobody has asked `hooks/list`.
+	RexRoute string
+	// RexVerified is the CLI `--version` line the Rex route above was
+	// measured on, when the route rests on something its vendor does not
+	// promise. "" means no version pin, which is the honest answer for a
+	// native report: it is the CLI's own output, and ADR 0076 D1's
+	// measurement does not rest on an experimental surface.
+	//
+	// Non-empty is ADR 0076 D9's pin. codex's route rests on an
+	// `[experimental]` RPC (`codex app-server hooks/list`) and on
+	// session-flag hook semantics, so BEFORE THE CLAIM a codex reporting
+	// another version is refused on Rex and the probe's `ask` arm is named as
+	// the re-measurement (RexVersionDrift, RexVersionRefusal). That costs one
+	// probe run — about two minutes, no model turn — per deliberate bump, and
+	// the cask is pinned.
+	//
+	// Compared through skillsVersionRelease, the ADR 0007 §6c rule, so a
+	// trailing bracketed field (grok's `[stable]`, which is this box's
+	// update-check cache and not release identity) cannot read as drift.
+	// BUILT-IN ONLY: it is the version a measurement was taken on, and a
+	// yaml that could move it could move the admission.
+	RexVerified string
 }
 
 // PromptMode is how dispatch delivers the work prompt here. The zero value
@@ -1513,7 +1560,61 @@ const ClaudeFleetFlags = `--permission-mode auto`
 //     etc/herdr/agent-detection/codex.toml fixes the detection for panes the
 //     fleet did not launch (rangerhq-7ia). The flag stays either way: it is a
 //     posture, not a workaround for the detection gap.
-const CodexFleetFlags = `--disable hooks -c allow_login_shell=false -c "projects={\"$PWD\"={trust_level=\"trusted\"}}"`
+const CodexFleetFlags = CodexDisableHooks + ` -c ` + codexConfLoginShell + ` -c "projects={\"$PWD\"={trust_level=\"trusted\"}}"`
+
+// RexRouteCodexHooks is Runtime.RexRoute's one non-native value: posse's own
+// reporter, declared on codex's launch line as session-flag hooks and trusted
+// by the hash codex itself reported (ADR 0076 Amendment 2, D6 and D7). The
+// name says codex because the mechanism is codex's — `-c hooks={…}`,
+// `-c hooks.state={…}` and `codex app-server hooks/list` — and a second CLI
+// that grew the same three would be measured before it shared the value.
+const RexRouteCodexHooks = "codex-hooks"
+
+// CodexDisableHooks is the flag that switches codex's whole hook layer off,
+// split out of CodexFleetFlags because ADR 0076 D8 takes it back OFF the line
+// on a `multiplexer: rex` instance — there the hooks ARE posse's reporter
+// (D6), and a line carrying both would declare a reporter and then disable
+// it. RexReportLine (codexrex.go) is what removes it, and it refuses a line
+// that still names this flag after the removal rather than typing a
+// declaration nothing will run.
+//
+// On herdr the line is unchanged, which is D8's own sentence, and it is
+// pinned byte for byte (TestQACodexHerdrLineKeepsDisableHooksAndRexDropsIt).
+const CodexDisableHooks = `--disable hooks`
+
+// codexConfLoginShell and codexConfProjects are CodexFleetFlags' two `-c`
+// values as a CHILD receives them — no shell quoting around them and `$PWD`
+// already resolved — because ADR 0076 D7's trust ask has to run `codex
+// app-server` with the SAME `-c` line the seat will get, and that child has
+// no shell to expand anything (CodexHooksAsk.Conf, codextrust.go).
+//
+// TWO SPELLINGS OF ONE GRANT, and a pin is what keeps them one: the typed
+// line needs `$PWD` and the escaping that survives being typed into a pane,
+// and the ask needs the value itself. CodexFleetFlags is built from the same
+// pieces CodexSeatConf renders, and
+// TestQACodexSeatConfIsCodexFleetFlagsOwnValues compares the pair against
+// the const — including the COUNT, so a third `-c` added to the line without
+// being added to the ask reds rather than silently asking codex about a line
+// the seat does not get.
+const codexConfLoginShell = `allow_login_shell=false`
+
+func codexConfProjects(cwd string) string {
+	return `projects={"` + cwd + `"={trust_level="trusted"}}`
+}
+
+// CodexSeatConf is the `-c` VALUES CodexFleetFlags types, in its order, for a
+// seat whose cwd is cwd. It is the ask's `Conf` and nothing else reads it.
+//
+// WHAT IT LEAVES OUT, deliberately: `-c model=…` and
+// `-c developer_instructions="$(cat …)"`. Neither reaches codex's hook
+// discovery — which reads the home, the cwd's project files and the
+// session-flags layer — and the second cannot be rendered at all without a
+// shell to expand `$(cat)`. So the ask asks about the part of the line that
+// decides the answer, and codexHooksState's drift guard confirms that what
+// came back is about posse's own declaration (ADR 0076 D7).
+func CodexSeatConf(cwd string) []string {
+	return []string{codexConfLoginShell, codexConfProjects(cwd)}
+}
 
 // CodexProjectConfig is the file a trusted session dir hands codex —
 // codex's own doc string for it is "Project `.codex/config.toml`: settings
@@ -2115,12 +2216,14 @@ var builtinRuntimes = []Runtime{
 		// message, so a pass can tell an exhausted account from a settle.
 		// The only runtime with a reader today (ranger-base-02zr).
 		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
-		// reports_on_rex: the only built-in that does, MEASURED 2026-10-31
-		// in a Rex block with no hooks (ADR 0076 §3) — idle at launch,
-		// working then done across one prompt, owner={pid,"2.1.314"}. It is
-		// what lets a `multiplexer: rex` instance launch claude at all
-		// (RexAdmits); every other runtime is refused there and keeps
-		// running on herdr.
+		// reports_on_rex: the NATIVE one, MEASURED 2026-10-31 in a Rex block
+		// with no hooks (ADR 0076 §3) — idle at launch, working then done
+		// across one prompt, owner={pid,"2.1.314"}. It is what lets a
+		// `multiplexer: rex` instance launch claude at all (RexAdmits).
+		// rex_route is "" and rex_verified with it: claude writes the record
+		// itself, so posse types nothing for it and there is no experimental
+		// surface for a version bump to move under the admission (D9's pin is
+		// for a ROUTED yes, and codex's is the one).
 		ReportsOnRex: true,
 		Command:      `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
 	// SkillsVerified: re-measured 2026-10-12 (ranger-base-bdias) against the
@@ -2160,7 +2263,30 @@ var builtinRuntimes = []Runtime{
 		// grok's answer legible rather than a lone oddity.
 		UnknownModel:    UnknownModelCarry,
 		UnknownModelWhy: "measured 2026-09-09 (ranger-base-jzm04) on codex-cli 0.150.1: a canary launched with -c model=gpt-6-astra came up with 'model: gpt-6-astra high' in its own banner — the typed id, not this box's default, so the id reaches the provider and its answer is the canary's",
-		Command:         `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
+		// reports_on_rex: a ROUTED yes (ADR 0076 Amendment 2, D9, which
+		// widened the field to admit one). codex carries no `7501;` string of
+		// its own — D4 read that off the binary and refused it on price — and
+		// what Amendment 2 bought instead is two `-c` values on the Rex line:
+		// posse's reporter as session-flag hooks (D6) and the trust codex's
+		// own `hooks/list` reported for them (D7). The record that arrives is
+		// written by posse's binary on codex's event and stamped with codex's
+		// foreground pid, which is the same evidence class claude's native one
+		// is (ADR 0013 §1).
+		//
+		// MEASURED 2026-11-06, both slices, each with its own probe and no
+		// model turn: no startup review dialog, `working`, `app=codex`,
+		// `owner={pid,"codex"}` at t+2 s, the operator's `~/.codex` untouched
+		// byte for byte (docs/adr/0076-reporter.probe.sh,
+		// docs/adr/0076-trust-ask.probe.sh).
+		//
+		// rex_verified is D9's pin and the reason it is not just `true`: the
+		// route rests on an `[experimental]` app-server RPC and on
+		// session-flag hook semantics, neither promised, so a codex that
+		// reports another version is refused on Rex BEFORE the claim rather
+		// than launched to find out. The herdr line is untouched by all of
+		// this (D8).
+		ReportsOnRex: true, RexRoute: RexRouteCodexHooks, RexVerified: "codex-cli 0.153.4",
+		Command: `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	// SkillsVerified: re-measured 2026-10-31 (ranger-base-9f2o6) against the
 	// installed 1.0.52, after `posse runtime drift`'s first run found the
 	// declaration one minor version behind — still reads

@@ -213,6 +213,16 @@ This does not change the fleet's posture. `posse`'s codex template still passes
 the runtime's plugins'. The override is what protects **operator-started** codex
 panes, which get no such flag.
 
+One exception since 2026-11-06, and it is not on herdr: on a `multiplexer: rex`
+instance the flag comes OFF codex's line, because there the hooks ARE posse's
+own OSC 7501 reporter and every foreign hook is switched off by key instead
+(ADR 0076 Amendment 2, D6-D8; `internal/posse/codexrex.go`). The posture D4
+item 4 protected holds either way — in a fleet seat only posse's hooks run —
+and **nothing in this directory changes**: herdr's codex line, and so every
+rule below, is byte-identical to what it was (pinned,
+`TestQACodexFleetFlagsIsByteIdenticalOnHerdr`). A Rex instance has no herdr
+detection at all.
+
 ### Re-audited against codex 0.153.4 (ranger-base-femsg, 2026-09-06)
 
 `make verify-detection` replays *recorded* fixtures: it proves the rules still

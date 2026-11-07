@@ -5001,12 +5001,13 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			// posse-written hooks (ADR 0076 §3) — so the prompt, the settle
 			// and the turn's own outcome would each be a guess.
 			//
-			// THIS PLACEMENT IS THE DECISION, not an optimisation of it. The
-			// two runtimes refused today are both `prompt: argv`: their work
-			// prompt rides the launch line, so the evidence a try-and-see
-			// would wait for arrives only after the prompt has been
-			// delivered, and the refusal would land on the far side of a
-			// claim, a worktree, a Rex session and a billed turn nobody
+			// THIS PLACEMENT IS THE DECISION, not an optimisation of it.
+			// The admitted runtimes now include a `prompt: argv` one (codex,
+			// ADR 0076 D9) and one of the refused two still is: a work
+			// prompt that rides the launch line means the evidence a
+			// try-and-see would wait for arrives only after the prompt has
+			// been delivered, and the refusal would land on the far side of
+			// a claim, a worktree, a Rex session and a billed turn nobody
 			// observes (ADR 0013 §1 rule 3, "before anything is spent"; ADR
 			// 0076's "Alternatives rejected", try-and-see). So the fact is
 			// read off the runtime table — a measurement, not a yaml
@@ -5021,8 +5022,23 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			// backstop for every launch path that is not this one — the same
 			// shape as the readings around it, and a read of one bool off a
 			// table already in memory, so the second ask costs nothing.
-			if d.App.MultiplexerName() == MuxRex && !RexAdmits(rt) {
-				return launched{}, RexRuntimeRefusal(rt)
+			//
+			// TWO READINGS SINCE D9, and the second is the version the route
+			// was measured on (ranger-base-8gh58). It is here rather than at
+			// the launch because what it protects against is not an error:
+			// a codex whose hook semantics or app-server have moved most
+			// likely ACCEPTS posse's line, completes its launch, and sits on
+			// the startup review dialog — at which point the prompt is
+			// already with the CLI and D2's HOLD keeps the claim over a turn
+			// nobody can read. It costs one memoized `codex --version` per
+			// process (ProbeCLIVersion, through parity.go's seam).
+			if d.App.MultiplexerName() == MuxRex {
+				if !RexAdmits(rt) {
+					return launched{}, RexRuntimeRefusal(rt)
+				}
+				if got, ok := RexVersionDrift(rt); !ok {
+					return launched{}, RexVersionRefusal(rt, got)
+				}
 			}
 			// Refuses(), not Undetectable(): ADR 0061 D2 gives this row a
 			// SECOND refusing state — a runtime declaring `detection:

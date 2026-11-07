@@ -26,6 +26,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-fe4uq](ranger-base-fe4uq.md) — ranger-base-fe4uq — verifying four closes, and a fifth conjunct with no witness — 2026-11-06
 - [ranger-base-dsuk7](ranger-base-dsuk7.md) — The exact age two pins asserted was a statement about a clock they did not own (ranger-base-dsuk7) — 2026-11-06
 - [ranger-base-ava0x](ranger-base-ava0x.md) — A forged `global` line, and the control that made the bypass look like "nothing to commit" (ranger-base-ava0x) — 2026-11-06
+- [ranger-base-8gh58](ranger-base-8gh58.md) — Admitting codex on Rex: the line, the version pin, and two ASSUMEDs that came back half-true (ranger-base-8gh58) — 2026-11-06
 - [ranger-base-87zme](ranger-base-87zme.md) — ranger-base-87zme — the ADR 0079 compare resolves `~` per read — 2026-11-06
 - [ranger-base-43mxx](ranger-base-43mxx.md) — A proven-dead Rex seat is destroyed, not only forgotten (ranger-base-43mxx) — 2026-11-06
 - [ranger-base-136b5](ranger-base-136b5.md) — The watch loop as a systemd user unit, and ownership as a key (ranger-base-136b5) — 2026-11-06

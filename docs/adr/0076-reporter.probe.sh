@@ -3,7 +3,7 @@
 # reporter and POSSE'S OWN declaration do what D6 says: one OSC 7501 report
 # per codex hook event, landing as a record Rex keeps, owned by codex?
 #
-# Usage: sh docs/adr/0076-reporter.probe.sh [bytes] [codex] [space]   (repo root; no args = all, in order)
+# Usage: sh docs/adr/0076-reporter.probe.sh [bytes] [codex] [space] [tty]   (repo root; no args = all, in order)
 #        REX=<path to rex> to override the CLI.
 #
 # This is the acceptance arm the slice's done-when names. It is deliberately
@@ -31,6 +31,16 @@
 #           path holding a space. Does codex's split read it, read a
 #           single-quoted one, or neither? The refusal in codexHookCommand
 #           cites this arm as its re-measurement.
+#   tty     can the hook OPEN /dev/tty under a seatbelt profile posse itself
+#           rendered (ADR 0076 Amendment 2's Consequences, the darwin ASSUMED;
+#           added by ranger-base-8gh58)? It runs the package pin
+#           TestQATheHookTTYUnderACagedCodexPID, which skips itself where
+#           there is no controlling terminal — which is every `go test` in a
+#           dispatched seat, and the whole reason this arm exists: a Rex block
+#           HAS a tty, and Rex spawns it outside this seat's cage, where
+#           sandbox-exec is not refused. The test binary is compiled out here
+#           and only RUN in there, because compiling needs no tty and the
+#           block is the scarce thing.
 #
 # NO MODEL TURN IS POSSIBLE, and the lock is three things: every codex that
 # could make one runs inside `sandbox-exec (deny network*)`, in a scratch
@@ -67,7 +77,7 @@ echo "== rex $("$REX" version | head -1)"
 echo "== posse $("$POSSE" version 2>/dev/null | head -1)"
 echo "== scratch $W"
 
-ARMS=${*:-bytes codex space}
+ARMS=${*:-bytes codex space tty}
 want() { case " $ARMS " in *" $1 "*) return 0;; esac; return 1; }
 pause() { python3 -I -c "import time; time.sleep($1)"; }
 arm() { # arm <name> <cwd> <command>
@@ -228,4 +238,30 @@ for spelling in unquoted single-quoted; do
   screen 4; done_arm
 done
 fi
+# ─── tty: the hook's /dev/tty open under posse's OWN seatbelt profile ────────
+# WHY A PROBE AND NOT JUST A PIN. The pin is the measurement; what it needs is
+# a place to run. `openTTY` opens the CONTROLLING TERMINAL, and a dispatched
+# seat's `go test` has none ("device not configured"), so the pin skips its
+# live arms there and would be green forever without ever having asked the
+# kernel anything. A Rex block has a tty, and — measured by this file's own
+# header — Rex spawns it outside this seat's cage, where `sandbox_apply` is
+# not refused. So: compile here, run in there, read the verdict back.
+#
+# The pin's first arm needs no tty at all and runs anywhere: posse renders NO
+# seatbelt for codex (SelfSandbox, and macOS refuses to nest), so the
+# amendment's "the hook runs under posse's seatbelt when the PID is caged" is
+# moot at that tier. What this arm measures is the counterfactual the
+# amendment was worried about — the profile posse WOULD render — because that
+# profile is `(deny file-write*)` with an allow list and is the one shape that
+# could have refused the open.
+if want tty; then
+echo "== tty: can the hook open /dev/tty under a posse-rendered seatbelt profile"
+go test -c -o "$W/posse.test" ./internal/posse || exit 2
+arm tty "$PWD/internal/posse" "$W/posse.test -test.run TestQATheHookTTYUnderACagedCodexPID -test.v"
+pause 12
+"$REX" capture -s "$S" -b "$B" --trim | grep -E 'PASS|FAIL|SKIP|REFUSES|could not' | sed 's/^/  /'
+echo "  (SKIP here means the block had no tty or no sandbox-exec — not an answer)"
+screen 6; done_arm
+fi
+
 echo "== scratch left at $W"

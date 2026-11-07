@@ -2582,8 +2582,8 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// not write its own OSC 7501 record cannot be read there at all, so
 		// a seat of it is refused before one is opened.
 		//
-		// IT IS READ OFF THE RUNTIME TABLE AND NEVER OFF A LAUNCH. The two
-		// runtimes refused today are both `prompt: argv`, where the work
+		// IT IS READ OFF THE RUNTIME TABLE AND NEVER OFF A LAUNCH. One of
+		// the two runtimes refused today is `prompt: argv`, where the work
 		// prompt rides the launch line — so a try-and-see refusal would
 		// arrive after a claim, a worktree and a live billed turn, which is
 		// what ADR 0013 §1 rule 3 forbids. confirmReports' wait after the
@@ -2600,11 +2600,29 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// last line): the operator is at the keyboard, State reads unknown
 		// until a record arrives, and looking at the screen is how a runtime
 		// nobody has measured on Rex gets measured.
-		if a.MultiplexerName() == MuxRex && !RexAdmits(rt) {
-			if o.Bead != "" || o.Recreate {
-				return nil, RexRuntimeRefusal(rt)
+		//
+		// TWO READINGS SINCE ADR 0076 D9 ADMITTED A ROUTED REPORT
+		// (ranger-base-8gh58). The first is the declaration above. The
+		// second is the version it was measured on, and it exists because
+		// codex's record is not codex's own output: posse types its reporter
+		// onto the line and trusts it with a hash an `[experimental]` RPC
+		// reported. A version that route was not measured on most likely
+		// fails as a line codex ACCEPTS — a launch that completes and a seat
+		// on the startup review dialog — so it is read here, off a
+		// declaration, before the claim, rather than found out after the
+		// prompt has ridden the line (RexVersionDrift).
+		if a.MultiplexerName() == MuxRex {
+			if !RexAdmits(rt) {
+				if o.Bead != "" || o.Recreate {
+					return nil, RexRuntimeRefusal(rt)
+				}
+				warn("posse: %s\n", RexRuntimeDegraded(rt))
+			} else if got, ok := RexVersionDrift(rt); !ok {
+				if o.Bead != "" || o.Recreate {
+					return nil, RexVersionRefusal(rt, got)
+				}
+				warn("posse: %s\n", RexVersionDegraded(rt, got))
 			}
-			warn("posse: %s\n", RexRuntimeDegraded(rt))
 		}
 		// ADR 0013 §1's launch row, on the same rung and with the same
 		// asymmetry (ranger-base-d8riq, from ranger-base-i3q6g). herdr has no
@@ -2946,6 +2964,35 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+
 				"  drop %s from this PID's command:, or fold the PID into the override text yourself — that replaces the runtime's own system prompt, which is a decision, not a default",
 				o.Agent, rt.Name, f, rt.Name, f)
+		}
+		// ADR 0076 D6/D7/D8's line, and this placement is the decision
+		// (ranger-base-8gh58): LAST of the things that go on the runtime's
+		// own line, so that every cheap refusal above it — the model id, the
+		// writable roots, the PID channel, the voiding flag, and the version
+		// pin two hundred lines up — fires BEFORE posse starts a `codex
+		// app-server` child to ask what hooks this seat would load. And
+		// above the prompt, the seatbelt prefix and the gates wrap, for the
+		// same reason the prompt is here: these are arguments to the
+		// RUNTIME, not to sandbox-exec and not to `docker run`.
+		//
+		// Nothing at all on herdr and nothing on a runtime that writes its
+		// own record — RexReportLine is the whole of that decision, and it is
+		// asked through the same function on the relaunch path, so one seat
+		// cannot be typed two ways (codexrex.go).
+		//
+		// A FAILURE REFUSES, AND WHAT THAT COSTS IS MEASURED, not assumed
+		// (ADR 0076 D7 left it ASSUMED): the CLAIM is handed back by the
+		// ordinary launch-failure path — createSession returns this error,
+		// launchWithPrompt wraps it in unclaimAfterLaunchFailure
+		// (dispatch.go) — and the WORKTREE is NOT removed, because
+		// EnsureSessionTree cut it two hundred lines above and nothing here
+		// unwinds it. That is true of every refusal in this function, and it
+		// cannot be otherwise for this one: the ask is ABOUT the tree, so it
+		// cannot be asked before there is one. An empty tree is what `posse
+		// worktrees --land` removes ("had no commits"), so the cost is a tree
+		// that waits for a sweep and never a turn.
+		if cmd, err = a.RexReportLine(rt, o.Name, dir, cmd, warnw); err != nil {
+			return nil, err
 		}
 		// ADR 0013 §2, and the reason it is HERE and not further down: the
 		// prompt is an argument to the RUNTIME, so it goes on the runtime's
@@ -3393,8 +3440,15 @@ func (b *HerdrBackend) confirmReports(o NewSessionOpts, p *launchPlan, seat Seat
 	}
 	// The argv arm first, because it refuses nothing: the prompt rode the
 	// launch line, so this pass knows less than it did and judges no less
-	// carefully (ADR 0076 D2, ADR 0066 D1). Unreachable today — D1 admits no
-	// argv runtime on Rex — and it is the arm a future admission lands on.
+	// carefully (ADR 0076 D2, ADR 0066 D1).
+	//
+	// REACHABLE SINCE ranger-base-8gh58: codex is `prompt: argv` and D9
+	// admitted it, so this is the arm a codex seat with no record lands on.
+	// What reaches it is a reporter codex did not run or a record that did
+	// not arrive inside rt.Wait() — the declaration, the trust and the
+	// version pin are all refused on the far side of the launch, before a
+	// turn (D6, D7, D9) — and the HOLD is correct for it: the work prompt was
+	// on the line codex already read.
 	if rt.PromptMode() == PromptArgv {
 		fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s\n", RexNoReportHold(rt, o.Name, rt.Wait(), read))
 		return nil
@@ -3648,6 +3702,25 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 		if want := rt.ExactModelText(m.Model); want == "" || !strings.Contains(inner, want) {
 			return false, Die("%s: the rendered %s line does not carry --model %s — refusing to retype the canary session %s on its tier's own model (ADR 0053 D1)", m.Agent, rt.Name, m.Model, m.Name)
 		}
+	}
+	// ADR 0076 D6/D7/D8 on the one other path that renders a persona line
+	// (ranger-base-8gh58), through the same function planLaunch asks. It is
+	// reachable for the reason every refusal above it is — the PID, the
+	// runtime file and the box are all re-read here — and it has one of its
+	// own: the ask is asked AGAIN rather than its answer remembered, because
+	// trust binds to the hash of the declaration asked about, and this
+	// re-render can name a different posse binary (an upgrade since the
+	// launch) or meet a hook somebody added to the session dir while the
+	// session ran. A revived codex carrying the launch's old trust would be
+	// a seat on the review dialog; one carrying no declaration at all would
+	// be a seat posse cannot read.
+	//
+	// The refusal is unconditional here, as the detection and PID-channel
+	// re-type refusals are and for their reason: this path has one caller
+	// and it is the unattended one, so there is no interactive arm to hold
+	// ADR 0015 §3's asymmetry open.
+	if inner, err = b.App.RexReportLine(rt, name, m.Dir, inner, b.warnWriter()); err != nil {
+		return false, err
 	}
 	// The same question planLaunch asks, through the same function
 	// (ranger-base-179hy). Spelled inline here until it was found drifted
