@@ -252,6 +252,37 @@ func TestQAPlanSnapshotHasNowhereToGoWithoutAHome(t *testing.T) {
 	}
 }
 
+// The same question one layer up, where the environment is read: with no
+// $HOME and no `$CLAUDE_CONFIG_DIR` there is no config dir to key by, and
+// the answer is "" and never the relative `.claude` ClaudeConfigDirIn would
+// hand back off an empty home.
+//
+// This arm exists because the table above does NOT reach it — it calls
+// PlanUsageStoreIn with a config dir the test computed, so deleting the
+// guard in planUsageConfigDir left every row of it green (MEASURED, as a
+// surviving mutant, 2026-11-07). The three rows are the whole of that
+// function: the variable IN FORCE outranks a missing home, a home with no
+// variable resolves under the home, and neither resolves to nothing.
+func TestQAPlanSnapshotKeysNothingOffARelativeConfigDir(t *testing.T) {
+	login := filepath.Join(t.TempDir(), "login")
+	for _, tc := range []struct {
+		name, variable, home, want string
+	}{
+		{name: "neither: nothing to resolve, and never a relative `.claude`"},
+		{name: "the variable in force outranks a missing home", variable: login, want: login},
+		{name: "a home with no variable", home: "/tmp/home", want: "/tmp/home/.claude"},
+		{name: "the variable wins over the home", variable: login, home: "/tmp/home", want: login},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(ClaudeConfigDirVar, tc.variable)
+			if got := planUsageConfigDir(tc.home); got != tc.want {
+				t.Errorf("planUsageConfigDir(%q) with %s=%q = %q, want %q",
+					tc.home, ClaudeConfigDirVar, tc.variable, got, tc.want)
+			}
+		})
+	}
+}
+
 // Rule 5 still gates the store, and it has to be re-pinned HERE because the
 // file moved out from under it: credpin.go's own pins are written against a
 // hand-built Path in a tempdir, and what this bead changed is that the real

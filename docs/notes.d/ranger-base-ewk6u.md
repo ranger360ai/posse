@@ -71,11 +71,43 @@ per-test dir keeps each test out of its siblings'.
   for itself and holds none of the first's cooldown;
 - one config dir spelled through a symlink → one store (the realpath claim);
 - no home / no cache root → `""`, at both halves, as a table;
+- the same question one layer up, in `planUsageConfigDir`, where the
+  environment is read;
 - an `RHQ_PLAN_USAGE_URL` override writes no login store on a success OR on
   a 429, with the read log as the positive witness that the request happened
   (credpin.go rule 5 re-pinned here, because what changed is that the file
   it gates is now the box's rather than one test home's).
 
-MEASURED 2026-11-07, darwin/arm64: the five pass in 0.95s; with
-`App.PlanCache` restored to `filepath.Join(a.StateDir, "plan-usage.json")`
-the first two fail and the override arm goes vacuous.
+## The mutants
+
+MEASURED 2026-11-07, darwin/arm64, `internal/posse -run
+'TestQAPlanSnapshot|TestQAAnOverriddenEndpoint'`, baseline green in 0.95s.
+
+| mutant | reds |
+|---|---|
+| `PlanCache` back to `filepath.Join(a.StateDir, "plan-usage.json")` | the sharing pin, and both override arms |
+| the key is a constant (`sha256("one-key-for-every-login")`) | the two-logins pin |
+| the key is not realpathed | the symlink pin |
+| `planUsageConfigDir`'s no-home guard deleted | the relative-`.claude` pin |
+| `PlanUsageCacheDirIn` ignores `XDG_CACHE_HOME` | the "cache root but no login" row |
+
+The per-home mutant leaves the two-logins pin GREEN, and that is the point
+of writing both directions: two homes are two files under the old path too,
+so the second arm is the only thing that says the key is a KEY.
+
+**One mutant survived first.** Deleting `planUsageConfigDir`'s guard left
+every row of the `HasNowhereToGo` table green, because that table calls
+`PlanUsageStoreIn` with a config dir the TEST computed and so never enters
+the function that reads the environment — the "mutated a copy the pin never
+reads" shape. `TestQAPlanSnapshotKeysNothingOffARelativeConfigDir` is the
+arm that was missing, and it reds on that mutant now.
+
+## Follow-ups taken in the same bead
+
+The first full `go test ./cmd/posse` after the move failed
+`TestQACockpitAsksNothingWhileTheMeterIsQuiet/"quiet flag, no snapshot"`:
+the arm that seeds nothing saw a three-minute-old reading a sibling subtest
+had written, because that binary pins both halves of the key process-wide
+and every in-process App therefore resolved one file. `planFenced`
+(configdirfence_test.go) sets `App.PlanUsageDir` per test at the five
+in-process sites. `go test ./cmd/posse -count=1`: ok 421.075s.
