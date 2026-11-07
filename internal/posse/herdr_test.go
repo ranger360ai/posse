@@ -3576,6 +3576,20 @@ func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 	//
 	// Pinned by TestQATestDispatcherOutlastsItsOwnPass.
 	d.PromptGrace = time.Hour
+	// THE WAIT-LEG PACING IS OFF HERE, and off rather than shortened
+	// (ranger-base-74tkp). Both knobs bound a RATE in production — 15s
+	// between two legs on one bead, one progress line a minute — and every
+	// dispatch fixture in this package drives legs that come back in
+	// milliseconds, so the production floor would put a 15-second sleep
+	// between the legs of 26 files' worth of tests and the production
+	// progress interval would hide every line after the first. Zero on both
+	// is byte-identical to what this helper handed back before the knobs
+	// existed, so no fixture here changes behaviour; the pacing has its own
+	// pins, which set both values themselves and assert a ceiling on a rate
+	// (waitlegpace_qa_test.go), and the production defaults are held at the
+	// constructor by TestQAProductionDispatchCarriesBothPacingNumbers.
+	d.LegFloor = 0
+	d.ProgressEvery = 0
 	d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) { return TurnOutcome{}, false }
 	return d
 }

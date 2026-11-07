@@ -165,6 +165,25 @@ reason to diverge from that.
 - `Wait` polls. The rates are ASSUMED low enough (one seat at a time,
   deadlines in seconds) that an event subscriber would cost more than it
   saves.
+
+  *MEASURED 2026-11-07 (ranger-base-74tkp), and the ASSUMED held while its
+  premise did not: a dispatch wait leg's deadline is `PromptWaitMS` —
+  fifteen minutes — and not seconds, and what polls it is not this verb.
+  `Wait` kept its own one-second interval throughout; the rate that ran
+  away was the LEG rate above it. dispatch's gather re-waited on whatever
+  the last leg returned without asking how long that leg took, so on this
+  occupant — where a leg ends when its own deadline does, rather than
+  blocking inside a server's wait verb — one agent turn became 295 progress
+  lines in ~3m30s, ~1.4 legs a second, each one re-reading
+  `program_status`. Nothing was misjudged: the claim was kept and the
+  settle was read when it came. The fix is a floor under the interval
+  between two legs and a separate interval for the progress line
+  (`Dispatcher.LegFloor`, `Dispatcher.ProgressEvery`), and it is in the leg
+  loop rather than in this occupant, because the same runaway was then
+  reproduced on HERDR at 24 legs a second by answering every leg with the
+  `timeout` code a real server answers a blown deadline with. The event
+  subscriber this bullet declines is still declined: at four readings a
+  minute per waiting seat there is nothing for it to save.*
 - ADR 0075's cost line held: the seam widened from 13 to 21 files while
   it waited, and the extraction is still one bead.
 

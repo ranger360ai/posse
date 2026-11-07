@@ -147,6 +147,44 @@ type Dispatcher struct {
 	RelaunchGrace time.Duration
 	StatusGrace   time.Duration // after a --wait leg times out: how long an unreadable agent status is re-asked before the pass stops waiting on that bead
 	Poll          time.Duration // detection poll interval
+	// LegFloor is the minimum wall between the STARTS of two wait legs on
+	// one bead — the interval at which a waiting pass asks the box what
+	// its agent is doing, when the leg itself does not spend that wall.
+	//
+	// IT IS A FLOOR AND NEVER A CEILING, which is why the herdr path is
+	// byte-identical with it in place: a herdr leg blocks for PromptWaitMS
+	// inside `agent wait` — fifteen minutes in production, three orders of
+	// magnitude over this — so the remainder is always negative and nothing
+	// sleeps. It binds the case where a leg ENDS EARLY, which ranger-base-74tkp
+	// measured on a `multiplexer: rex` instance: there is no blocking wait
+	// verb for that occupant to delegate to, so the leg came back at once,
+	// judgeStall/rewait sent it round again at once, and one dispatched turn
+	// became a busy-wait — MEASURED 295 progress lines in ~3m30s, ~1.4
+	// legs/second, for the whole length of the turn, against ZERO from the
+	// herdr pass over a longer wait.
+	//
+	// The cause is not the occupant's and neither is the fix: the loop
+	// re-waited on whatever the last leg returned without ever asking how
+	// long that leg took. Reproduced on HERDR at 24 legs/second by arming
+	// the fake server to answer every leg with its own `timeout` code —
+	// which is what a server replaced under an in-flight prompt already
+	// does (TestDispatchRewaitServerGoneHandsTheBeadBack's measurement
+	// against real herdr 0.8.0). So it is a property of the leg loop and
+	// both halves of the pacing are pinned on both occupants, in one test
+	// each: TestQAWaitLegPollsOnAnIntervalOnEveryMultiplexer and
+	// TestQAWaitLegProgressLineHasItsOwnIntervalOnEveryMultiplexer.
+	LegFloor time.Duration
+	// ProgressEvery is how often the "still working" line is printed while
+	// one bead waits. The line is per wait LEG and nothing else bounded it,
+	// so the rate at which the operator's record is written tracked the rate
+	// at which the box was polled: at 1.4 legs/second a 40-minute bead is
+	// about 3,400 lines and the 4h WaitCeiling about 20,000 — written into
+	// state/dispatch-watch.log, which rotates at 5 MiB, so one seat drowns
+	// the fleet's retrospective record.
+	//
+	// A ceiling on the rate, so herdr is again unchanged: its legs are
+	// fifteen minutes apart and every one of them still prints.
+	ProgressEvery time.Duration
 	PromptGrace   time.Duration // LaunchBead: refuse a session prompted this recently that herdr still calls idle
 
 	// Unattended says this pass has no human witness — Watch sets it, and
@@ -369,6 +407,33 @@ const DefaultRelaunchGrace = 45 * time.Second
 // one would be a threshold about a loop nobody is running.
 const DefaultPromptWaitMS = 15 * 60 * 1000
 
+// DefaultLegFloor is Dispatcher.LegFloor when nothing said otherwise, and it
+// is the interval SOMEBODY CHOSE that ranger-base-74tkp's done-when asks for.
+//
+// Sized against the two costs it trades, and against what it cannot make
+// worse. The cost of a poll is one Mux reading: on Rex that is two rex calls,
+// MEASURED 2026-10-31 at 50-70 ms wall and ~20 ms of CPU each, so fifteen
+// seconds spends under 1% of the wall and well under 1% of one core per
+// WAITING seat — four readings a minute against the eighty-four the busy-wait
+// was taking. What it buys back is legibility and the only measurement it
+// touches: ADR 0028 §5 observable 1 reads a seat's idle window off the
+// discovery of a settle, which is late by up to one poll, and fifteen seconds
+// is a bound that bias never had — the leg it replaces is PromptWaitMS, so on
+// herdr that bias is up to fifteen MINUTES today and this can only shorten
+// it. Nothing dispatch does with a settled seat happens on a shorter clock
+// than this: Poll is 2s and only detection reads it, StatusGrace is 10s, and
+// the refill that re-fires a freed seat is driven by the gather it already
+// waited out.
+const DefaultLegFloor = 15 * time.Second
+
+// DefaultProgressEvery is Dispatcher.ProgressEvery when nothing said
+// otherwise: one "still working" line a minute per waiting bead, which is the
+// human-scale heartbeat the line exists to be. A 40-minute bead gets about
+// forty lines instead of 3,400 and a bead held to the 4h WaitCeiling about
+// 240 instead of 20,000, while a herdr pass — one leg every fifteen minutes —
+// prints exactly what it printed before.
+const DefaultProgressEvery = time.Minute
+
 func NewDispatcher(a *App, hb *HerdrBackend, out io.Writer) *Dispatcher {
 	return &Dispatcher{
 		App: a, HB: hb, Bd: NewBd(), Out: out,
@@ -378,6 +443,8 @@ func NewDispatcher(a *App, hb *HerdrBackend, out io.Writer) *Dispatcher {
 		RelaunchGrace: DefaultRelaunchGrace,
 		StatusGrace:   10 * time.Second,
 		Poll:          2 * time.Second,
+		LegFloor:      DefaultLegFloor,
+		ProgressEvery: DefaultProgressEvery,
 		PromptGrace:   30 * time.Second,
 		lastPrompt:    map[string]time.Time{},
 	}
@@ -3570,6 +3637,22 @@ type pendingBead struct {
 	unseen   bool
 	result   chan promptResult
 	prompted time.Time
+	// legAt is when this bead's CURRENT wait leg starts watching — the
+	// instant LegFloor is measured from, so the floor paces the starts of
+	// consecutive legs and not the gaps between them (a leg that spends
+	// wall of its own has already spent the floor).
+	//
+	// Written and read on the gather goroutine only (fire and rewait are
+	// both called from it); the leg's own goroutine never touches it. On a
+	// rewait that sleeps, it is stamped FORWARD to the instant the sleep
+	// ends, which is when the next reading is actually taken.
+	legAt time.Time
+	// saidWorking is when the "still working" line was last printed for
+	// this bead, or the zero time when it has not been: the first leg to
+	// come back says so at once and ProgressEvery paces the rest. Suppressing
+	// a line changes nothing about the wait — the claim, the ceiling and the
+	// settle are all read exactly as they were.
+	saidWorking time.Time
 	// launched is when fire() started this bead's launch — BEFORE
 	// launchSession, where the prompt of an argv runtime is delivered at
 	// exec. It is the floor a turn_outcome: reader is given, and prompted
@@ -3682,9 +3765,10 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		how = "prompt on the launch line"
 	}
 	d.printf("· %-14s → %s  (%s, %s via %s)\n", is.ID, session, how, tier, tierWhy)
+	now := time.Now()
 	p := &pendingBead{is: is, persona: persona, session: session, target: l.target, runtime: runtime,
 		resumed: l.resumed, delivered: l.delivered, unseen: l.unseen,
-		result: make(chan promptResult, 1), prompted: time.Now(), launched: launched}
+		result: make(chan promptResult, 1), prompted: now, legAt: now, launched: launched}
 	switch {
 	case l.unseen:
 		// Nothing to wait on: a settle-wait started over herdr's idle guess
@@ -3904,7 +3988,9 @@ wait:
 			// Settle-based wait: the timeout is a check-in, not a deadline.
 			// Beads run 15–40 min and longer; cutting the agent loose at a
 			// fixed 15 was what unclaimed live work.
-			d.printf("◷ %-14s still working after %s — waiting again\n", p.is.ID, waited)
+			if d.sayWorking(p) {
+				d.printf("◷ %-14s still working after %s — waiting again\n", p.is.ID, waited)
+			}
 			d.rewait(p)
 			continue
 		case "blocked":
@@ -4264,11 +4350,47 @@ func (d *Dispatcher) recordClause(runtime string) string {
 }
 
 // rewait watches the same agent for another leg after a --wait timeout.
+//
+// THE FLOOR IS HERE AND NOT IN THE LOOP, so that it paces the box without
+// pacing the pass: the gather goroutine goes straight back to its select,
+// where a stop is still honoured within the stage (ranger-base-e9d9's drain),
+// while the leg this starts waits out whatever is left of LegFloor before it
+// asks anything. A leg abandoned by a drain mid-sleep is the same shape as
+// one abandoned mid-wait, and strictly cheaper: it has not yet forked a
+// child, and the buffered channel it eventually writes into is one nobody
+// reads again.
+//
+// Nothing sleeps on the herdr path. LegFloor is a floor under the INTERVAL
+// and herdr's own leg is PromptWaitMS of it, so the remainder is negative
+// every time — see the field's own doc for the occupant this does bind.
 func (d *Dispatcher) rewait(p *pendingBead) {
+	floor := d.LegFloor - time.Since(p.legAt)
+	if floor < 0 {
+		floor = 0
+	}
+	p.legAt = time.Now().Add(floor)
 	go func() {
+		if floor > 0 {
+			time.Sleep(floor)
+		}
 		res, err := d.HB.Mux().Wait(paneSeat(p.target), []string{"idle", "done", "blocked"}, d.PromptWaitMS)
 		p.result <- promptResult{res: res, err: err, at: time.Now()}
 	}()
+}
+
+// sayWorking is whether this bead's "still working" line is printed on this
+// leg: the first one always is, and ProgressEvery paces the rest.
+//
+// It is read only where the line is printed, so a suppressed line is the only
+// thing a suppression costs. ProgressEvery unset (a Dispatcher built by hand
+// rather than by NewDispatcher) is every leg, which is what this printed
+// before the knob existed.
+func (d *Dispatcher) sayWorking(p *pendingBead) bool {
+	if !p.saidWorking.IsZero() && time.Since(p.saidWorking) < d.ProgressEvery {
+		return false
+	}
+	p.saidWorking = time.Now()
+	return true
 }
 
 // statusAfterTimeout is herdr's view of the session's agent after a --wait
