@@ -473,9 +473,10 @@ const (
 // suite (reclaimdestroy_qa_test.go says so where the arm is). It is worn
 // because every predicate of this shape in this package wears it — callErr
 // itself does — and because the distinction it names is the one a rewrite of
-// this predicate would get wrong. Everything else that is not this sentence — a server that refused, a binary that is not there, a JSON
-// answer that would not parse — is also not this sentence, and the caller's
-// own arm for it is the safe one (destroyRecordedSeat keeps the record).
+// this predicate would get wrong. Everything else that is not this
+// sentence — a server that refused, a binary that is not there, an answer
+// that would not parse — is also not this sentence, and the caller's own arm
+// for it is the safe one (destroyRecordedSeat keeps the record).
 func rexSessionGone(err error) bool {
 	if err == nil || IsHerdrHang(err) {
 		return false
