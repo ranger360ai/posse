@@ -1085,6 +1085,30 @@ turn). The cask is pinned, so that costs one run per deliberate bump.
   emulator does so, and that herdr's own grok detection still settles, is
   ASSUMED. The slice's shakedown measures it on both multiplexers before the
   line is required.
+
+  *MEASURED 2026-11-07 (ranger-base-yqmkr), and both halves hold on herdr:
+  `docs/adr/0076-grok-shakedown.probe.sh`, arms `osc detect`, herdr 0.9.1 with
+  grok detection manifest 2026.10.05.1. With the key `on`, grok wrote 28
+  OSC 7501 strings into a herdr pane — `state=idle` at launch, then
+  `state=working` per retry, each `app=grok-build` and ST-terminated, taken
+  from a `script(1)` copy of the bytes so the reading has a positive half —
+  and the RENDERED screen held zero matches of `7501`, `n,auth` or
+  `grok-build` and zero stray control bytes. Against the shipped `auto`
+  default in an otherwise identical fixture the two screens are IDENTICAL once
+  grok's own spinner frame and stopwatch are normalized (byte-identical,
+  1141 bytes each, on a longer run of the same pair). herdr's detection does
+  not move either: `working` then `idle` from a matched rule on both arms,
+  same rule ids, same manifest, and the `osc_progress` region holds `4;1;-1`
+  → `4;0;0` — OSC 9;4, which herdr always read. The 7501 OSC enters neither
+  detection region. A second reading fell out of the control: under `auto`, in
+  a herdr pane, grok writes NO `7501` bytes at all, not even the `7501;?`
+  query whose stalled reply is the `n,auth` leak — so that leak is
+  Rex-specific, and on herdr this line buys nothing and costs nothing.
+  What the shakedown did NOT reach is the turn-end state and a dispatched
+  settle on either multiplexer: both need a real billed grok turn, which is
+  the operator's to authorize (the codex precedent is ranger-base-x7ojx), so
+  the UNPROVEN three bullets down stands and ranger-base-yqmkr is blocked on
+  the ask rather than guessing.*
 - grok's `blocked` is STATIC: the binary carries
   `7501;state=…:kind=permission:app=grok-build`. A live permission prompt needs
   a model turn, so it is UNPROVEN. Fleet grok runs `--permission-mode auto`.
