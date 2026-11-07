@@ -2,16 +2,23 @@
 
 package posse
 
-// TWO LIVE-DEFECT PINS from verifying ranger-base-5x8xi (verify bead
-// ranger-base-r7fyk, findings bead named on it).
+// THE TWO LIVE-DEFECT PINS from verifying ranger-base-5x8xi (verify bead
+// ranger-base-r7fyk), INVERTED: both holes are closed by ranger-base-pjui5
+// and these arms now assert the refusals.
 //
-// THEY SHIP GREEN AND THEY ASSERT HOLES. ranger-base-5x8xi's finding 2 fixed
-// the `--ask` arm of `posse hook-report`: a bare `--ask` fell past the arm's
-// own `len(args) >= 2` into the shared wrong-argv arm, whose `return 0` is
-// the HOOK path's rule, and answered exit 0 over an empty stdout — "a launch
-// script's green light over an empty trust line", which runCodexHooksAsk's
-// own doc calls the one answer that arm must never give. The arm owns its
-// arity now. The `--declare` arm beside it does not, and nothing moved there.
+// THEY SHIPPED GREEN ASSERTING THE HOLES, which is the mechanism working as
+// written — each arm's failure message named its own inversion, and
+// MEASURED 2026-11-07 against the fix all six HOLE arms reddened with
+// exactly those messages while every control stayed green. What they held
+// was ranger-base-5x8xi's finding 2 one arm over: that fix gave the `--ask`
+// arm of `posse hook-report` its own arity, because a bare `--ask` fell past
+// `len(args) >= 2` into the shared wrong-argv arm, whose `return 0` is the
+// HOOK path's rule, and answered exit 0 over an empty stdout — "a launch
+// script's green light over an empty trust line", the one answer
+// runCodexHooksAsk's doc says that arm must never give. The `--declare` arm
+// beside it was routed on `len(args) == 2` and did the same; and a leading
+// dash was a legal app name on the declaration side while the reporter side
+// refused it.
 //
 // WHAT PROCESS BEHAVES DIFFERENTLY IF THESE PINS ARE DELETED (ADR 0006 §7).
 // Not a comment: `docs/adr/0076-trust-ask.probe.sh` reads the declaration at
@@ -19,29 +26,25 @@ package posse
 //
 //	DECL=$("$POSSE" hook-report --declare codex) || exit 1
 //
-// which is exactly the shape finding 2 was about — an exit 0 over an empty
-// stdout leaves DECL empty and the `|| exit 1` unfired, and the script
-// carries on and installs nothing. That is a shipped script in this repo,
-// and it is the only reader of this arm that is not a hand run.
+// which is the shape finding 1 was about — an exit 0 over an empty stdout
+// leaves DECL empty and the `|| exit 1` unfired, and the script carries on
+// and installs nothing. That is a shipped script in this repo and the only
+// reader of this arm that is not a hand run. For finding 2 it is a seat: a
+// runtime whose name starts with a dash launched with codex trusting a
+// reporter that reported nothing, so Rex read no record for it, the settle
+// was never seen and dispatch judged the bead on a status probe alone.
 //
-// EXIT 1 IS WHAT THE ARM ALREADY DOES WHEN IT IS ENTERED: the declare arm
-// returns 1 when CodexHooksDeclaration refuses the app name (codexreport.go).
-// So the arm is not undecided about refusals — it is inconsistent about the
-// one argv that does not reach it.
+// WHY THERE ARE TWO COPIES OF FINDING 1's TABLE, on purpose and not by
+// drift: TestHookReportDeclareArmOwnsItsArity (codexreport_test.go) is the
+// REGRESSION pin, beside the code it holds and reachable by the `-run` filter
+// anyone editing that code would type. This file is the PROVENANCE pin, which
+// is where a reader following ranger-base-r7fyk lands. Neither is stale; if
+// they ever disagree, the one beside the code is the one to believe.
 //
-// WHAT A FIXER OF FINDING 1 HITS FIRST, measured by planting the fix:
-// TestHookReportNeverExitsNonZeroOnTheHookPath (codexreport_test.go:204)
-// ASSERTS this hole. Its table carries `{"posse", HookReportVerb,
-// HookReportDeclareFlag}` and requires exit 0, under the message "a malformed
-// handler line must not be able to block a prompt" — and that justification
-// is stricter than the rule it names: the rule in this file's own header is
-// that codex reads exit **2** as a block, so an exit 1 on a non-hook argv
-// blocks nothing. Re-pointing that row is part of finding 1's fix, not a
-// separate decision, and the second pin below is coupled to it the same way:
-// its `--declare` arm asserts exit 0 for the command a `--declare`
-// declaration installs, which the same fix turns into exit 1.
-//
-// MEASURED 2026-11-07, darwin 25.6.0, go1.26.10, at main e6a8b198.
+// MEASURED 2026-11-07, darwin 25.6.0, go1.26.10, over the fix on main
+// e6a8b198. Fixed under ranger-base-pjui5; found under ranger-base-r7fyk;
+// the hole was built by ranger-base-z7kle and its twin fixed by
+// ranger-base-5x8xi.
 
 import (
 	"bytes"
@@ -49,20 +52,22 @@ import (
 	"testing"
 )
 
-// TestQAHookReportDeclareArmDoesNotOwnItsArity is finding 1.
+// TestQAHookReportDeclareArmOwnsItsArity is finding 1, closed.
 //
-// `--declare` is routed on `len(args) == 2`, so an argv one word short and an
-// argv one word long both fall into the shared wrong-argv arm and answer
-// exit 0 with an empty stdout. The ask arm's twin of this is now exit 1
-// (ranger-base-5x8xi); this one is not.
+// `--declare` is routed on `len(args) >= 1` now and refuses any arity but 2
+// from the arm itself, so neither an argv one word short nor one word long
+// can reach the shared wrong-argv arm and borrow the hook path's `return 0`.
 //
-// WHEN THE FIX LANDS THIS PIN REDS. That is deliberate and it is the whole
-// mechanism: invert the two HOLE arms to assert exit 1 from the declare
-// arm's own refusal, keep the control as it is, and name the bead that fixed
-// it. Do not delete the arms — the control below is the half that says an
-// arity fix landed in the right place rather than refusing the argv a launch
-// line actually types.
-func TestQAHookReportDeclareArmDoesNotOwnItsArity(t *testing.T) {
+// EXIT 1 IS WHAT THE ARM ALREADY DID WHEN IT WAS ENTERED — it returns 1 when
+// CodexHooksDeclaration refuses the app name — which is what said the finding
+// was the ARITY and not the validation, and it is why the bound below is
+// still here. And exit 1 holds no prompt: codex reads **2** from a hook as
+// "block this", so an exit 1 on an argv no declaration installs blocks
+// nothing. Re-pointing TestHookReportNeverExitsNonZeroOnTheHookPath's
+// `{"posse", HookReportVerb, HookReportDeclareFlag}` row, which asserted this
+// hole under a justification stricter than the rule it named, was part of
+// this fix rather than a separate decision.
+func TestQAHookReportDeclareArmOwnsItsArity(t *testing.T) {
 	t.Parallel() // argv in, a sentence out: no env, no cwd, no child
 
 	run := func(t *testing.T, argv ...string) (int, string, string) {
@@ -84,78 +89,80 @@ func TestQAHookReportDeclareArmDoesNotOwnItsArity(t *testing.T) {
 		}
 	})
 
+	usage := "usage: posse " + HookReportVerb + " " + HookReportDeclareFlag + " <app>"
 	for _, tc := range []struct {
 		name, why string
 		argv      []string
 	}{
 		{
-			name: "HOLE: one word short answers exit 0 over an empty stdout",
+			name: "one word short is refused by the arm itself",
 			why:  "an argv one word short",
 			argv: []string{HookReportDeclareFlag},
 		},
 		{
-			name: "HOLE: one word long answers exit 0 over an empty stdout",
+			name: "one word long is refused by the arm itself",
 			why:  "an argv one word long",
 			argv: []string{HookReportDeclareFlag, "codex", "extra"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			code, out, errs := run(t, tc.argv...)
-			if code != 0 || out != "" {
-				t.Fatalf("THE FIX HAS LANDED, and this pin is now the wrong way round: %s (%v) answered exit %d and stdout %q. Invert this arm to assert the declare arm's own refusal — exit 1, as its sibling returns when CodexHooksDeclaration refuses an app name, and as `%s %s` has returned since ranger-base-5x8xi — keep the control, and name the bead that closed it (found verifying ranger-base-5x8xi under ranger-base-r7fyk)",
-					tc.why, tc.argv, code, out, HookReportVerb, HookReportAskFlag)
+			if code != 1 || out != "" {
+				t.Fatalf("THE HOLE IS BACK: %s (%v) answered exit %d and stdout %q, want exit 1 and nothing. Exit 0 over an empty stdout is what docs/adr/0076-trust-ask.probe.sh reads as a rendered declaration — `DECL=$(… --declare codex) || exit 1` leaves DECL empty with the `|| exit 1` unfired (ranger-base-pjui5, found verifying ranger-base-5x8xi under ranger-base-r7fyk)",
+					tc.why, tc.argv, code, out)
 			}
-			// And it is the SHARED arm it fell into, not the declare arm
-			// saying something of its own: that is what makes the exit 0 the
-			// hook path's rule applied to a non-hook argv.
-			if !strings.Contains(errs, HookReportDeclareFlag+" <app>  |") {
-				t.Errorf("%s reached %q, and the shape of this finding is that it falls into the SHARED wrong-argv arm — if a declare-only usage answers now, say which here, because the bound on the finding is whatever that arm happens to cover", tc.why, errs)
+			// And it is the DECLARE ARM's own usage, not the shared
+			// wrong-argv arm's: falling into that arm is the whole shape of
+			// the finding, so a refusal that borrowed its sentence would be
+			// the same bug with a better exit code.
+			if !strings.Contains(errs, usage) {
+				t.Errorf("%s was refused without naming its own arm: %q, want a usage carrying %q. The finding was this argv falling into the SHARED wrong-argv arm, so the arm that answers is half of what is pinned here", tc.why, errs, usage)
 			}
 		})
 	}
 
-	// THE BOUND, and it is what says the finding is the ARITY and not the
-	// validation: an app name the token rule refuses DOES reach the declare
-	// arm and DOES exit 1. So the arm is not indifferent to bad input — it is
-	// unreachable for the two argv above.
-	t.Run("bound: an app name the token rule refuses already exits 1", func(t *testing.T) {
+	// THE BOUND, and it is what said the finding was the ARITY and not the
+	// validation: an app name the token rule refuses always DID reach the
+	// declare arm and exit 1. The arm was never indifferent to bad input — it
+	// was unreachable for the two argv above.
+	t.Run("bound: an app name the token rule refuses exits 1", func(t *testing.T) {
 		code, out, _ := run(t, HookReportDeclareFlag, "codex:evil")
 		if code != 1 || out != "" {
-			t.Errorf("`%s %s codex:evil` exited %d and printed %q, want exit 1 and nothing — the declare arm's refusal is the answer the two HOLE arms above cannot reach", HookReportVerb, HookReportDeclareFlag, code, out)
+			t.Errorf("`%s %s codex:evil` exited %d and printed %q, want exit 1 and nothing — the declare arm's refusal, which the two arms above could not reach before ranger-base-pjui5", HookReportVerb, HookReportDeclareFlag, code, out)
 		}
 	})
 }
 
-// TestQAHookReportRendersADeclarationItsOwnReporterRefuses is finding 2.
+// TestQAHookReportCannotRenderADeclarationItsOwnReporterRefuses is finding 2,
+// closed.
 //
-// A leading dash is a legal plainStatusToken (`-` is in its character set,
-// codexreport.go), so `-c`, `-`, `--declare` and `--ask` are app names both
-// the declare arm and D7's ask arm accept — and CodexHooksDeclaration renders
-// `posse hook-report <app>` as the hook command for all eight events. But
-// runHookReport's shared wrong-argv arm is `len(args) != 1 || HasPrefix(args[0], "-")`,
-// so when codex then RUNS that command the reporter never reaches its own
-// report path: it opens no tty and writes nothing, at exit 0, on every event,
-// forever. The declaration and the reporter disagree about which app names
-// are usable, and the token rule is checked on only one side of that.
+// A leading dash used to be a legal plainStatusToken (`-` is in its character
+// set), so `-c`, `-`, `--declare` and `--ask` were app names BOTH the declare
+// arm and D7's ask arm accepted — and CodexHooksDeclaration rendered `posse
+// hook-report <app>` as the hook command for all eight events. But
+// runHookReport's shared wrong-argv arm is
+// `len(args) != 1 || HasPrefix(args[0], "-")`, so when codex then RAN that
+// command the reporter never reached its own report path: it opened no tty
+// and wrote nothing, at exit 0, on every event, forever. MEASURED 2026-11-07
+// before the fix: the declaration rendered for all four and the command each
+// installed wrote 0 bytes, against 29 bytes for the `codex` control.
 //
-// `--ask` is the sharper half and it is NEW: before ranger-base-5x8xi the ask
-// arm was routed on `len(args) >= 2`, so a hook running `posse hook-report
-// --ask` landed in the shared arm at exit 0 like the others. The arm owns its
-// arity now, so that argv reaches runCodexHooksAsk's usage and exits 1 — and
-// this file's own rule, pinned by TestHookReportNeverExitsNonZeroOnTheHookPath,
-// is that no arm on the hook path returns anything but 0.
+// plainStatusToken REFUSES A LEADING DASH NOW, which is the cheapest spelling
+// of "the two sides read one rule" — the dash is otherwise legal here
+// (`grok-build`), and what makes a leading one different is that the app name
+// is also the last word of an argv codex splits and runs. runHookReport's own
+// dash guard stays where it is: it is reached before any name rule, and its
+// subject is the exit code codex sees rather than what a name may be.
 //
-// WHAT PROCESS BEHAVES DIFFERENTLY IF THIS PIN IS DELETED (ADR 0006 §7): a
-// seat whose runtime is named with a leading dash launches with codex trusting
-// a reporter that reports nothing, so Rex reads no record for that seat, the
-// settle is never seen and dispatch judges the bead on a status probe alone.
-// Reachable today by a hand run, a hand-written launch script, or a
-// `runtimes/<name>.yaml` whose name starts with a dash — which is the cost
-// class ranger-base-5x8xi accepted for its own finding 2.
-//
-// WHEN THE FIX LANDS THIS PIN REDS, as the one above: invert each HOLE arm to
-// assert the refusal, keep the control.
-func TestQAHookReportRendersADeclarationItsOwnReporterRefuses(t *testing.T) {
+// THE `--ask` ROW is the half ranger-base-5x8xi created: before its arity
+// change that argv landed in the shared arm at exit 0 like the others, and
+// after it reaches runCodexHooksAsk's usage and exits 1 — against this file's
+// rule, pinned by TestHookReportNeverExitsNonZeroOnTheHookPath, that no arm
+// on the hook path returns anything but 0. It stays exit 1 and that is now
+// sound rather than tolerated, for the reason the arity pin above gives: 1 is
+// not codex's block, and since the name rule refuses the name, no declaration
+// can install that argv for codex to run. The arm below asserts both halves.
+func TestQAHookReportCannotRenderADeclarationItsOwnReporterRefuses(t *testing.T) {
 	t.Parallel()
 
 	// The CONTROL: a real app name renders, and the rendered command reports.
@@ -177,38 +184,47 @@ func TestQAHookReportRendersADeclarationItsOwnReporterRefuses(t *testing.T) {
 		}
 	})
 
+	// A DASH IS STILL A NAME BYTE anywhere but the front, which is what keeps
+	// the arms below about the position rather than the character.
+	t.Run("bound: a dash inside a name is still a name", func(t *testing.T) {
+		if !plainStatusToken("grok-build") {
+			t.Fatal("plainStatusToken refuses \"grok-build\" — ranger-base-pjui5 refused a LEADING dash, and a rule that took the byte everywhere would refuse a runtime name posse really reports")
+		}
+		if _, err := CodexHooksDeclaration("/bin/posse", "grok-build"); err != nil {
+			t.Errorf("the declaration refuses \"grok-build\": %v", err)
+		}
+	})
+
 	for _, app := range []string{"-c", "-", HookReportDeclareFlag, HookReportAskFlag} {
-		t.Run("HOLE: a declaration for "+app+" installs a reporter that never reports", func(t *testing.T) {
-			if !plainStatusToken(app) {
-				t.Fatalf("THE FIX MAY HAVE LANDED IN plainStatusToken: it now refuses %q. If a leading dash is no longer a legal app name, invert this arm to assert THAT refusal and say so (ranger-base-r7fyk)", app)
+		t.Run("a declaration for "+app+" is refused before a seat is launched", func(t *testing.T) {
+			if plainStatusToken(app) {
+				t.Fatalf("THE HOLE IS BACK in plainStatusToken: %q is a legal app name again. A name that looks like a flag is the last word of the argv codex runs, and runHookReport reads a leading dash there as `not a hook argv` before it has any opinion about names (ranger-base-pjui5)", app)
 			}
-			decl, derr := CodexHooksDeclaration("/bin/posse", app)
-			if derr != nil {
-				t.Fatalf("THE FIX HAS LANDED in the declaration: CodexHooksDeclaration refuses %q with %v. Invert this arm to assert that refusal, keep the control, and name the bead (found verifying ranger-base-5x8xi under ranger-base-r7fyk)", app, derr)
-			}
-			if !strings.Contains(decl, HookReportVerb+" "+app) {
-				t.Fatalf("the declaration for %q does not name it as the reporter's argument, so this arm is aimed at the wrong thing: %.120q", app, decl)
+			if decl, err := CodexHooksDeclaration("/bin/posse", app); err == nil {
+				t.Fatalf("THE HOLE IS BACK in the declaration: %q rendered %.120q. The command that installs is one this binary's own reporter refuses to run, so the seat gets a reporter silent on every event forever while codex trusts it (ranger-base-pjui5)", app, decl)
 			}
 
-			// Now run the command that declaration installs, as codex would.
+			// AND THE REPORTER SIDE IS UNCHANGED, which is what says the fix
+			// closed the disagreement rather than moved it: this argv still
+			// writes no record. It is the EXIT that differs between a plain
+			// dash name and this verb's own flag spellings, and neither is
+			// codex's block.
 			var out, errs bytes.Buffer
 			q := &qaTTY{}
 			code := runHookReport([]string{"posse", HookReportVerb, app},
 				strings.NewReader(`{"hook_event_name":"SessionStart"}`), &out, &errs, q.open)
 			if q.opens != 0 || q.buf.Len() != 0 {
-				t.Fatalf("THE FIX HAS LANDED in the reporter: the command declared for %q opened the tty %d time(s) and wrote %q. Invert this arm — a declaration and the reporter it installs now agree about this app name (ranger-base-r7fyk)",
-					app, q.opens, q.buf.String())
+				t.Errorf("the reporter wrote a record for %q (%d opens, %q) — a name the declaration refuses is not a name the reporter should report under", app, q.opens, q.buf.String())
 			}
-			if app == HookReportAskFlag {
-				// The half ranger-base-5x8xi's arity change created. Exit 1
-				// from a hook argv is against this file's own rule.
-				if code != 1 {
-					t.Fatalf("THE FIX HAS LANDED: the command declared for %q exits %d, not 1. This arm exists because ranger-base-5x8xi's arity change routed this argv to runCodexHooksAsk's usage, and TestHookReportNeverExitsNonZeroOnTheHookPath's rule is that no arm here returns anything but 0 — invert it to assert exit 0 and name the bead (ranger-base-r7fyk)", app, code)
-				}
-				return
+			want := 0
+			if app == HookReportDeclareFlag || app == HookReportAskFlag {
+				want = 1
 			}
-			if code != 0 {
-				t.Fatalf("THE FIX HAS LANDED: the command declared for %q exits %d rather than reporting at exit 0. Invert this arm and name the bead (ranger-base-r7fyk)", app, code)
+			if code != want {
+				t.Errorf("`%s %s` exited %d, want %d", HookReportVerb, app, code, want)
+			}
+			if code == 2 {
+				t.Errorf("`%s %s` exited 2, which is the one status codex reads from a hook as `block this prompt`", HookReportVerb, app)
 			}
 		})
 	}

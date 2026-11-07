@@ -191,11 +191,19 @@ func TestHookReportNeverExitsNonZeroOnTheHookPath(t *testing.T) {
 	// drifted from this binary: it says so on stderr and still gets out of
 	// the way. Checked through runHookReport directly, because the stderr
 	// qaHookRun forbids is the point of this one.
+	//
+	// `--declare` WITH NO APP NAME IS NOT ON THIS TABLE ANY MORE
+	// (ranger-base-pjui5). It was, under the message "a malformed handler
+	// line must not be able to block a prompt" — and that justification was
+	// stricter than the rule it names: codex reads exit **2** as a block, so
+	// an exit 1 on an argv no declaration installs holds no prompt. What it
+	// did buy was the one thing the declare arm must never answer, an exit 0
+	// over an empty stdout that a launch script reads as a green light. That
+	// argv is the arity arm below.
 	for _, args := range [][]string{
 		{"posse", HookReportVerb},
 		{"posse", HookReportVerb, "codex", "extra"},
 		{"posse", HookReportVerb, "--nope"},
-		{"posse", HookReportVerb, HookReportDeclareFlag},
 	} {
 		q := &qaTTY{}
 		var out, errs bytes.Buffer
@@ -209,6 +217,74 @@ func TestHookReportNeverExitsNonZeroOnTheHookPath(t *testing.T) {
 		if q.opens != 0 || q.buf.Len() != 0 {
 			t.Errorf("argv %v still reported something: %d opens, %q", args[1:], q.opens, q.buf.String())
 		}
+	}
+}
+
+// TestHookReportDeclareArmOwnsItsArity (ranger-base-pjui5, found verifying
+// ranger-base-5x8xi under ranger-base-r7fyk).
+//
+// The declare arm was routed on `len(args) == 2`, so an argv one word short
+// or one word long fell past it into the shared wrong-argv arm and answered
+// exit 0 with an empty stdout — which is exactly what ranger-base-5x8xi
+// fixed in the `--ask` twin, and what runCodexHooksAsk's doc calls the one
+// answer these arms must never give. The reader is shipped:
+// docs/adr/0076-trust-ask.probe.sh lines 122 and 171 are
+// `DECL=$("$POSSE" hook-report --declare codex) || exit 1`, and an exit 0
+// over an empty stdout leaves DECL empty, the `|| exit 1` unfired, and the
+// script installing nothing.
+//
+// THE CONTROL AND THE BOUND are both here on purpose. The control is the
+// argv a launch line actually types, so an arity refusal cannot pass by
+// having stopped rendering altogether; the bound is an app name the token
+// rule refuses, which already reached the arm and already exited 1, and is
+// what says this was the ARITY and not the validation.
+func TestHookReportDeclareArmOwnsItsArity(t *testing.T) {
+	t.Parallel() // argv in, a sentence out: no env, no cwd, no child
+
+	run := func(argv ...string) (int, string, string) {
+		var out, errs bytes.Buffer
+		q := &qaTTY{}
+		code := runHookReport(append([]string{"posse", HookReportVerb}, argv...),
+			strings.NewReader(`{"hook_event_name":"SessionStart"}`), &out, &errs, q.open)
+		if q.opens != 0 || q.buf.Len() != 0 {
+			t.Errorf("argv %v reported to the terminal (%d opens, %q) — no arm of --declare writes a record", argv, q.opens, q.buf.String())
+		}
+		return code, out.String(), errs.String()
+	}
+
+	// The control.
+	if code, out, _ := run(HookReportDeclareFlag, "codex"); code != 0 || !strings.Contains(out, "hooks={") {
+		t.Fatalf("`%s %s codex` exited %d and printed %q — the arms below measure nothing if this is not a rendered declaration",
+			HookReportVerb, HookReportDeclareFlag, code, out)
+	}
+
+	usage := "usage: posse " + HookReportVerb + " " + HookReportDeclareFlag + " <app>"
+	for _, tc := range []struct {
+		why  string
+		argv []string
+	}{
+		{"one word short", []string{HookReportDeclareFlag}},
+		{"one word long", []string{HookReportDeclareFlag, "codex", "extra"}},
+		{"three words long", []string{HookReportDeclareFlag, "codex", "extra", "more"}},
+	} {
+		code, out, errs := run(tc.argv...)
+		if code != 1 {
+			t.Errorf("an argv %s (%v) exited %d, want 1 — exit 0 over an empty stdout is a launch script's green light over nothing, and exit 1 holds no prompt because codex's block is 2",
+				tc.why, tc.argv, code)
+		}
+		if out != "" {
+			t.Errorf("an argv %s (%v) printed %q on stdout — a refusal must print nothing a launch script could type", tc.why, tc.argv, out)
+		}
+		if !strings.Contains(errs, usage) {
+			t.Errorf("an argv %s (%v) said %q, want a usage naming the arm (%q) rather than the shared wrong-argv arm's, which is the arm this finding was about falling into",
+				tc.why, tc.argv, errs, usage)
+		}
+	}
+
+	// The bound.
+	if code, out, _ := run(HookReportDeclareFlag, "codex:evil"); code != 1 || out != "" {
+		t.Errorf("`%s %s codex:evil` exited %d and printed %q, want exit 1 and nothing — the declare arm's own refusal, which the two argv above could not reach",
+			HookReportVerb, HookReportDeclareFlag, code, out)
 	}
 }
 
@@ -260,15 +336,44 @@ func TestHookReportRefusesAnAppNameThatIsNotOne(t *testing.T) {
 		"codex\x1b\\",
 		"codex\n",
 		"codex/1",
+		// A LEADING DASH, which is a name that is not one for a different
+		// reason than every row above (ranger-base-pjui5). `-` is a legal
+		// byte here — `grok-build` is in the control below — but the app name
+		// is also the last word of the command CodexHooksDeclaration renders,
+		// and runHookReport reads a leading dash in that position as "not a
+		// hook argv" before it has any opinion about names. So these four
+		// used to render a declaration whose handler this binary then
+		// refused: a reporter silent on every event forever, with codex
+		// trusting it. MEASURED 2026-11-07: all four rendered, and the
+		// command each installed wrote 0 bytes.
+		"-c",
+		"-",
+		HookReportDeclareFlag,
+		HookReportAskFlag,
 	} {
 		q := &qaTTY{}
 		var out, errs bytes.Buffer
 		code := runHookReport([]string{"posse", HookReportVerb, app}, strings.NewReader(`{"hook_event_name":"SessionStart"}`), &out, &errs, q.open)
-		if code != 0 {
-			t.Errorf("app %q exited %d", app, code)
+		// EXIT 0 FOR EVERY ROW BUT THE TWO FLAG SPELLINGS. Those two are
+		// this verb's own arms, so `posse hook-report --declare` and `posse
+		// hook-report --ask` are each a malformed arm invocation and exit 1
+		// — which blocks nothing (codex's block is 2) and which no
+		// declaration can install, because the name rule above refuses them.
+		// Every other row is the hook path and must get out of codex's way.
+		want := 0
+		if app == HookReportDeclareFlag || app == HookReportAskFlag {
+			want = 1
+		}
+		if code != want {
+			t.Errorf("app %q exited %d, want %d", app, code, want)
 		}
 		if q.opens != 0 || q.buf.Len() != 0 {
 			t.Errorf("app %q reached the terminal as %q — an app name is a name, never a pair", app, q.buf.String())
+		}
+		// And the declaration side refuses the same name, which is the half
+		// that was missing: one rule, read by both sides.
+		if _, err := CodexHooksDeclaration("/Users/nobody/.local/bin/posse", app); err == nil {
+			t.Errorf("app %q is refused by the reporter and accepted by the declaration — that disagreement IS the defect (ranger-base-pjui5)", app)
 		}
 	}
 	// The control: the names posse actually uses are names.
@@ -464,7 +569,11 @@ func TestCodexHooksDeclarationQuotesTheHandlerPathAndRefusesWhatItCannotQuote(t 
 			t.Errorf("%s: %q was accepted and rendered %q", tc.name, tc.exe, got)
 		}
 	}
-	for _, app := range []string{"", "codex:state=idle", "co dex", "codex/1"} {
+	for _, app := range []string{"", "codex:state=idle", "co dex", "codex/1",
+		// A leading dash (ranger-base-pjui5): rendered until the name rule
+		// refused it, and the handler it rendered was one this binary's own
+		// reporter would not run.
+		"-c", "-", HookReportDeclareFlag, HookReportAskFlag} {
 		if got, err := CodexHooksDeclaration("/Users/nobody/.local/bin/posse", app); err == nil {
 			t.Errorf("app %q was accepted and rendered %q — the app name is also the `app=` in every report", app, got)
 		}

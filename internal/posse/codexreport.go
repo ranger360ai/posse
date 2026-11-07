@@ -182,8 +182,31 @@ func OSC7501(payload string) string { return "\x1b]7501;" + payload + "\x1b\\" }
 // a byte outside this set is either one of those or something Rex's own
 // payload validator may drop the whole report over ("payload is not escape
 // code safe UTF-8", its words).
+//
+// A LEADING DASH IS REFUSED, and that is an argv rule rather than a payload
+// one (ranger-base-pjui5, found verifying ranger-base-5x8xi under
+// ranger-base-r7fyk). `-` is otherwise a legal byte here — `grok-build` is a
+// runtime name — but the app name is not only the `app=` a report carries: it
+// is also the last word of the command CodexHooksDeclaration renders, which
+// codex splits into an argv and runs. runHookReport reads a leading dash in
+// that position as "this is not a hook argv" and gets out of codex's way at
+// exit 0, before it knows anything about app names at all — so an app called
+// `-c`, `-`, `--declare` or `--ask` USED TO render a declaration whose
+// handler this very file then refused: a reporter that opens no tty and
+// writes nothing, on every event, forever, while codex trusts it and Rex
+// reads no record for the seat. MEASURED 2026-11-07: the declaration rendered
+// and the command it installed wrote 0 bytes for all four.
+//
+// REFUSED HERE AND NOT IN THE DECLARATION because this is the one rule both
+// sides already read, and a second copy beside the first is two rules to keep
+// in step by hand. runHookReport's own dash guard stays where it is: it is
+// reached before any name rule and its job is the exit code codex sees, not
+// what a name may be.
 func plainStatusToken(s string) bool {
 	if s == "" {
+		return false
+	}
+	if s[0] == '-' {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
@@ -284,7 +307,7 @@ func CodexHooksDeclaration(exe, app string) (string, error) {
 //     error reporting before it reached anything else.
 func codexHookCommand(exe, app string) (string, error) {
 	if !plainStatusToken(app) {
-		return "", Die("codex hooks declaration: %q is not a runtime name posse can put in an OSC 7501 report (letters, digits, '-', '_', '.')", app)
+		return "", Die("codex hooks declaration: %q is not a runtime name posse can put in an OSC 7501 report, nor one it can pass as the handler's own argument (letters, digits, '-', '_', '.', and never a leading '-' — a name that looks like a flag installs a reporter this binary refuses to run)", app)
 	}
 	if exe == "" {
 		return "", Die("codex hooks declaration: posse cannot name its own binary, so there is no handler to declare (os.Executable failed — see RunningPosse)")
@@ -375,7 +398,33 @@ func runHookReport(argv []string, stdin io.Reader, stdout, stderr io.Writer, tty
 	if len(args) >= 1 && args[0] == HookReportAskFlag {
 		return runCodexHooksAsk(args[1:], stdout, stderr)
 	}
-	if len(args) == 2 && args[0] == HookReportDeclareFlag {
+	// AND SO DOES THE DECLARE ARM, at any length (ranger-base-pjui5, found
+	// verifying ranger-base-5x8xi under ranger-base-r7fyk). It was routed on
+	// `len(args) == 2`, so an argv one word short (`--declare` alone) and one
+	// word long (`--declare codex extra`) both fell past it into the shared
+	// wrong-argv arm below and were answered with that arm's `return 0` — the
+	// HOOK path's rule, over an empty stdout, which is the same wrong answer
+	// the ask arm above stopped giving and for the same reason. The reader is
+	// shipped and is not a hand run: docs/adr/0076-trust-ask.probe.sh reads
+	// this arm at lines 122 and 171 as
+	//
+	//	DECL=$("$POSSE" hook-report --declare codex) || exit 1
+	//
+	// so an exit 0 leaves DECL empty, the `|| exit 1` unfired, and the script
+	// carries on and installs nothing.
+	//
+	// EXIT 1 AND NOT 0 is what this arm already answers when
+	// CodexHooksDeclaration refuses the app name, which is also what says the
+	// finding was the arity and not the validation — an app name the token
+	// rule refuses DOES reach here and DOES exit 1. And it blocks nothing: the
+	// status codex reads from a hook as "block this prompt" is 2, never 1
+	// (this file's header), and a declaration never installs this argv anyway.
+	if len(args) >= 1 && args[0] == HookReportDeclareFlag {
+		if len(args) != 2 {
+			fmt.Fprintf(stderr, "posse: usage: posse %s %s <app>  — one runtime name and nothing else (posse renders this line itself; a launch script reads the declaration off stdout, so an empty stdout at exit 0 would be a green light over nothing)\n",
+				HookReportVerb, HookReportDeclareFlag)
+			return 1
+		}
 		exe := RunningPosse().Exe
 		decl, err := CodexHooksDeclaration(exe, args[1])
 		if err != nil {
