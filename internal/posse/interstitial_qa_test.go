@@ -832,3 +832,140 @@ func TestQAAnUnreadableCodexHomeDispatchesRatherThanRefusing(t *testing.T) {
 		t.Errorf("a read posse could not make must not print as a screen the operator left armed:\n%s", out)
 	}
 }
+
+// claude's two interstitial probes, pinned in BOTH directions
+// (ranger-base-c2k6z, which is ranger-base-m928w's defect inverted).
+//
+// Pre-fix both answered Silence{Unknown: true, Why: "unreadable <p> — ..."}
+// on every os.ReadFile error, absence included. So on a box where claude has
+// never run — no config file at all, which is precisely an ONBOARDER's box,
+// and `posse runtime check claude` is precisely what an onboarder types —
+// the grid printed "state unknown: unreadable ~/.claude.json" about a file
+// that is perfectly readable and simply not there, and sent them looking for
+// a permission problem they do not have. The truth there is a reading:
+// nothing is trusted, the notice has not been answered, and the launch seeds
+// both.
+//
+// Three arms, because either one alone is satisfiable by a probe that has
+// stopped distinguishing anything: absence is a READING, a readable config
+// still reads (the control), and a genuinely unreadable one is UNKNOWN with
+// the errno the old line hid.
+//
+// Neither row walls a launch — both are Seeded and DangerUnsilenced skips
+// those outright — so unlike m928w this is a wrong line in one command and
+// not a refused dispatch. That is why it was P3 and not that bead's priority.
+func TestQAAbsentClaudeConfigIsAReadingAndUnreadableIsUnknown(t *testing.T) {
+	probes := []struct {
+		name  string
+		probe func() Silence
+		// The reading this probe owes an onboarder: the sentence a config
+		// that EXISTS without the key already got, which absence has the
+		// same right to. It doubles as the sentence the unreadable arm must
+		// NOT say, since there it would be a claim about a file posse could
+		// not open.
+		reading string
+	}{
+		{"claudeTrustProbe", claudeTrustProbe, "is not trusted"},
+		{"claudeOutsideReadProbe", claudeOutsideReadProbe, ClaudeOutsideReadSeenKey + " is not set"},
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", home)
+	unsetenvForTest(t, "RHQ_CAGE")
+	cfg := ClaudeConfigFile()
+	if want := filepath.Join(home, ".claude.json"); cfg != want {
+		t.Fatalf("fixture: ClaudeConfigFile() = %q, want the tempdir's %q — every arm below reads that file", cfg, want)
+	}
+
+	// ARM 1 — the bead: no config at all.
+	for _, tc := range probes {
+		sil := tc.probe()
+		if sil.Unknown || sil.Silenced {
+			t.Errorf("%s over a box with no config: Unknown=%v Silenced=%v why=%q — absence is a READING here (nothing is trusted, no notice has been answered), not an unknown",
+				tc.name, sil.Unknown, sil.Silenced, sil.Why)
+		}
+		if !strings.Contains(sil.Why, tc.reading) {
+			t.Errorf("%s over an absent config must still deliver %q: %q", tc.name, tc.reading, sil.Why)
+		}
+		// The word that sent the onboarder after a permission problem.
+		if strings.Contains(sil.Why, "unreadable") || strings.Contains(sil.Why, "cannot read") {
+			t.Errorf("%s calls a file that is simply not there unreadable: %q", tc.name, sil.Why)
+		}
+		if !strings.Contains(sil.Why, "does not exist") {
+			t.Errorf("%s must say the config is not there, and that the launch makes it: %q", tc.name, sil.Why)
+		}
+	}
+	// Still read-only, which is the rule every probe here is held to.
+	if _, err := os.Stat(cfg); err == nil {
+		t.Error("a probe created the operator's config")
+	}
+
+	// ARM 2 — the control, written by the thing the arm above says writes
+	// it: the launch's own seed. Both probes must now read silenced, or the
+	// readings above and the unknown below are a probe that answers the
+	// same thing to everything.
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SeedClaudeTrust(cfg, &Runtime{Name: "claude", Builtin: true}, cwd); err != nil {
+		t.Fatalf("fixture: the seed the probe lines promise failed: %v", err)
+	}
+	for _, tc := range probes {
+		if sil := tc.probe(); !sil.Silenced || sil.Unknown {
+			t.Fatalf("fixture: %s reads %+v over the config the launch just seeded — the arms either side would measure nothing", tc.name, sil)
+		}
+	}
+
+	// ARM 3 — a config that is really unreadable: unknown, WITH the errno.
+	if err := os.Chmod(cfg, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(cfg, 0o600) })
+	// Staged, not assumed: a user who can read a mode-0000 file (root in a
+	// container, which is the case that matters on CI) cannot reach this arm,
+	// and a test that silently measured the readable path would be worse
+	// than one that says so.
+	_, rerr := os.ReadFile(cfg)
+	if rerr == nil {
+		t.Skip("this user can read a mode-0000 file, so the refused read cannot be staged here")
+	}
+	if probeAbsent(rerr) {
+		t.Fatalf("fixture: reading a mode-0000 file answered %v, which probeAbsent reads as absence", rerr)
+	}
+	errno := errnoText(rerr)
+	for _, tc := range probes {
+		sil := tc.probe()
+		if !sil.Unknown || sil.Silenced {
+			t.Errorf("%s over an unreadable config: Unknown=%v Silenced=%v why=%q — want unknown, because the key may be sitting right there",
+				tc.name, sil.Unknown, sil.Silenced, sil.Why)
+		}
+		// The half of this bead that is not the absent arm: these two were
+		// the only probes whose unknown carried no errno, and "cannot tell"
+		// over a path is a shrug where "permission denied" over that same
+		// path is a thing to go and fix.
+		if !strings.Contains(sil.Why, errno) {
+			t.Errorf("%s must name the errno %q its old line hid: %q", tc.name, errno, sil.Why)
+		}
+		if strings.Contains(sil.Why, tc.reading) {
+			t.Errorf("%s asserts %q about a config it could not open: %q", tc.name, tc.reading, sil.Why)
+		}
+	}
+	// And the cage diagnosis, which is what makes such an unknown
+	// actionable — on both the facts it claims and no fewer (probeCageNote).
+	const diagnosis = "This reader is itself a caged seat"
+	t.Setenv("RHQ_CAGE", CageSeatbelt)
+	t.Setenv(EnvPersona, "ranger")
+	for _, tc := range probes {
+		if sil := tc.probe(); !strings.Contains(sil.Why, diagnosis) || !strings.Contains(sil.Why, "RHQ_CAGE="+CageSeatbelt) {
+			t.Errorf("%s: a caged reader's unknown must name the cage: %q", tc.name, sil.Why)
+		}
+	}
+	unsetenvForTest(t, "RHQ_CAGE")
+	for _, tc := range probes {
+		if sil := tc.probe(); strings.Contains(sil.Why, diagnosis) {
+			t.Errorf("%s: with no RHQ_CAGE in posse's own environment the line must not diagnose a cage: %q", tc.name, sil.Why)
+		}
+	}
+}

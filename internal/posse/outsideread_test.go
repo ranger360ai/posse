@@ -247,8 +247,16 @@ func TestOutsideReadProbeReadsAndDoesNotWrite(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", home)
 
-	if s := claudeOutsideReadProbe(); !s.Unknown {
-		t.Errorf("no config at all must read as unknown, not as answered/unanswered: %+v", s)
+	// No config at ALL is a reading and not an unknown (ranger-base-c2k6z):
+	// the key is one claude writes when the operator answers the notice, so
+	// a box without the file is a box that has not answered it, and the
+	// launch seeds it exactly as it does for a config that lacks the key.
+	// Both directions are pinned in
+	// TestQAAbsentClaudeConfigIsAReadingAndUnreadableIsUnknown
+	// (interstitial_qa_test.go); what this file still owns is the no-write
+	// rule below.
+	if s := claudeOutsideReadProbe(); s.Unknown || s.Silenced {
+		t.Errorf("no config at all must read as not silenced — the notice cannot have been answered on a box with no config: %+v", s)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".claude.json")); err == nil {
 		t.Error("the probe created the operator's config")

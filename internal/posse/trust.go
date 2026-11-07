@@ -795,12 +795,15 @@ func claudeTrustProbe() Silence {
 		return noHomeSilence("CLAUDE_CONFIG_DIR", "cannot tell whether this directory is trusted")
 	}
 	b, err := os.ReadFile(p)
-	if err != nil {
-		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"}
+	if err != nil && !probeAbsent(err) {
+		return unreadableSilence(p, err, "so this cannot tell whether this directory is trusted")
 	}
+	absent := err != nil
 	state := map[string]any{}
-	if err := json.Unmarshal(b, &state); err != nil {
-		return Silence{Unknown: true, Why: "unparseable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"}
+	if !absent {
+		if err := json.Unmarshal(b, &state); err != nil {
+			return Silence{Unknown: true, Why: "unparseable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"}
+		}
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -813,6 +816,19 @@ func claudeTrustProbe() Silence {
 	subject := ClaudeTrustKey(cwd)
 	if real, err := filepath.EvalSymlinks(cwd); err != nil || filepath.Clean(real) != subject {
 		subject += " (the repo this directory belongs to)"
+	}
+	// An ABSENT config is a READING and not an unknown (ranger-base-c2k6z,
+	// which is m928w's defect in the other direction): a config that does
+	// not exist holds no trusted directory, so this one is not trusted —
+	// the same answer the not-silenced line below gives for a config that
+	// exists without the key, reached by a shorter route. That state is a
+	// box claude has never been run on, which is precisely an ONBOARDER's
+	// box, and an onboarder is who types `posse runtime check claude`. The
+	// seed creates the file (SeedClaudeTrust reads os.IsNotExist as empty,
+	// and lockClaudeConfig/writeJSONInPlace MkdirAll the directory), so
+	// "the launch seeds it" is true of absence too.
+	if absent {
+		return Silence{Why: subject + " is not trusted — " + AbbrevHome(p) + " does not exist, so no directory is trusted on this box; the launch creates it and seeds this one (a repo the operator has never run claude in draws the modal)"}
 	}
 	if ClaudeTrusted(state, cwd) {
 		return Silence{Silenced: true, Why: subject + " is already trusted in " + AbbrevHome(p) + " — this launch writes nothing"}
@@ -894,8 +910,15 @@ func claudeOutsideReadProbe() Silence {
 		return noHomeSilence("CLAUDE_CONFIG_DIR", "cannot tell whether the outside-read notice has been seen")
 	}
 	b, err := os.ReadFile(p)
+	if err != nil && !probeAbsent(err) {
+		return unreadableSilence(p, err, "so this cannot tell whether the outside-read notice has been seen")
+	}
+	// Absence is a reading here for claudeTrustProbe's reason
+	// (ranger-base-c2k6z): the key is one claude writes when the operator
+	// answers the notice, so a config that is not there is a notice that
+	// has not been answered — and the launch seeds the key either way.
 	if err != nil {
-		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether the outside-read notice has been seen"}
+		return Silence{Why: ClaudeOutsideReadSeenKey + " is not set — " + AbbrevHome(p) + " does not exist, so the notice has not been answered on this box; the launch creates it and seeds the key (an auto-mode session reading outside its worktree would otherwise stop on the notice)"}
 	}
 	state := map[string]any{}
 	if err := json.Unmarshal(b, &state); err != nil {
