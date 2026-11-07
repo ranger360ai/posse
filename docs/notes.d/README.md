@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-z7kle](ranger-base-z7kle.md) — posse's OSC 7501 reporter for codex, and what the route actually does (ranger-base-z7kle) — 2026-11-06
 - [ranger-base-y9i3o](ranger-base-y9i3o.md) — Four conjuncts of the ADR 0079 D2 compare now carry a witness (ranger-base-y9i3o) — 2026-11-06
+- [ranger-base-w4enh](ranger-base-w4enh.md) — Seven wall-clock fixture leads, and the three files that crossed clocks (ranger-base-w4enh) — 2026-11-06
 - [ranger-base-rrklg](ranger-base-rrklg.md) — ranger-base-rrklg — verifying four closes — 2026-11-06
 - [ranger-base-rbxal](ranger-base-rbxal.md) — The fifth ADR 0079 D2 conjunct now carries a witness (ranger-base-rbxal) — 2026-11-06
 - [ranger-base-pymhr](ranger-base-pymhr.md) — The identity git invents on darwin and not on ubuntu (ranger-base-pymhr) — 2026-11-06

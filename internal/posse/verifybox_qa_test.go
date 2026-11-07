@@ -51,6 +51,23 @@ import (
 // clock differs from the one under test is a fixture measuring the gap.
 func vbNow() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
 
+// skipIfVerifyBoxClockJumped keeps the one out-of-process fixture in this
+// file from judging a wall timestamp written by the child against elapsed
+// monotonic time in the parent. The rest of the file injects vbNow on both
+// sides and cannot straddle two clocks.
+func skipIfVerifyBoxClockJumped(t *testing.T, at time.Time) {
+	t.Helper()
+	if !strings.Contains(at.String(), " m=") {
+		t.Fatalf("skipIfVerifyBoxClockJumped needs a reference straight from time.Now(), got %s", at)
+	}
+	wall := time.Now().Round(0).Sub(at.Round(0))
+	if jump := wall - time.Since(at); jump > time.Minute {
+		t.Skipf("the box's wall clock gained %s while the verify-box producer fixture ran; "+
+			"its freshness premise expired outside the code under test (ranger-base-w4enh)",
+			jump.Round(time.Second))
+	}
+}
+
 // vbRig is an instance whose verify-box state file says what the caller
 // wants. It writes the FILE and not a run: the state file is the whole
 // store, the reader under test opens nothing else, and a rig that shelled
@@ -728,6 +745,7 @@ func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 		"onpath\tvbonpath",
 	}, "\n") + "\n"
 
+	clockRef := time.Now()
 	cmd := exec.Command(copied, "--self-test-run")
 	// RHQ_PERSONA IS SHED, and it has to be named here rather than inherited
 	// (ranger-base-4dhcw). Since that bead the script records a verdict only
@@ -747,6 +765,7 @@ func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 	if runErr != nil && cmd.ProcessState.ExitCode() != 1 {
 		t.Fatalf("the script exited %d: %v\n%s", cmd.ProcessState.ExitCode(), runErr, out)
 	}
+	skipIfVerifyBoxClockJumped(t, clockRef)
 
 	a := NewAppAt(home)
 	r := a.VerifyBoxFreshness(time.Now(), os.Stderr)

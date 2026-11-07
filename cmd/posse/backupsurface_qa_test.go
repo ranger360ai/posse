@@ -30,8 +30,9 @@ import (
 // store (an archive is published only after it verifies), and the age is
 // the name's stamp, so a file of one byte is a backup of the right age for
 // every reader this test drives.
-func backupHome(t *testing.T, cfg string, ago ...time.Duration) string {
+func backupHomeAt(t *testing.T, cfg string, ago ...time.Duration) (string, time.Time) {
 	t.Helper()
+	at := time.Now()
 	home := t.TempDir()
 	dir := filepath.Join(home, "state", "backup")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -41,11 +42,17 @@ func backupHome(t *testing.T, cfg string, ago ...time.Duration) string {
 		t.Fatal(err)
 	}
 	for _, d := range ago {
-		name := "posse-backup-" + time.Now().UTC().Add(-d).Format("20060102T150405Z") + ".tar.gz"
+		name := "posse-backup-" + at.UTC().Add(-d).Format("20060102T150405Z") + ".tar.gz"
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	return home, at
+}
+
+func backupHome(t *testing.T, cfg string, ago ...time.Duration) string {
+	t.Helper()
+	home, _ := backupHomeAt(t, cfg, ago...)
 	return home
 }
 
@@ -85,7 +92,11 @@ func TestBackupStatusExitsForOnBoxStalenessOnly(t *testing.T) {
 		{"past 2x the interval is stale", "runtime: claude\nbackup_interval: 1h\n", []time.Duration{5 * time.Hour}, 1, "STALE, older than 2h00m"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			code, out := runBackupPosse(t, bin, backupHome(t, c.cfg, c.ago...), "backup", "status")
+			home, at := backupHomeAt(t, c.cfg, c.ago...)
+			code, out := runBackupPosse(t, bin, home, "backup", "status")
+			if len(c.ago) != 0 {
+				skipIfTheBoxSleptMidTest(t, at)
+			}
 			if code != c.code || !strings.Contains(out, c.want) {
 				t.Errorf("exit %d, output %q; want exit %d containing %q", code, out, c.code, c.want)
 			}
@@ -299,13 +310,14 @@ func TestCutDestinationKeysChangeNothing(t *testing.T) {
 // by. A negative ago is a stamp in the future, which is the state this pin
 // exists for; the byte of content is deliberate — `backup verify` opening
 // the file and refusing it as gzip is the proof that it CHOSE this one.
-func plantArchive(t *testing.T, home string, ago time.Duration) string {
+func plantArchive(t *testing.T, home string, ago time.Duration) (string, time.Time) {
 	t.Helper()
-	name := "posse-backup-" + time.Now().UTC().Add(-ago).Format("20060102T150405Z") + ".tar.gz"
+	at := time.Now()
+	name := "posse-backup-" + at.UTC().Add(-ago).Format("20060102T150405Z") + ".tar.gz"
 	if err := os.WriteFile(filepath.Join(home, "state", "backup", name), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return name
+	return name, at
 }
 
 // `posse backup verify` with no --archive, filling the gap ranger-base-wxvd5
@@ -338,8 +350,9 @@ func TestBackupVerifyNamesWhyItCannotPickAnArchive(t *testing.T) {
 
 	t.Run("a directory of future stamps has files but no reading", func(t *testing.T) {
 		home := backupHome(t, armed)
-		future := plantArchive(t, home, -72*time.Hour)
+		future, at := plantArchive(t, home, -72*time.Hour)
 		code, out := runBackupPosse(t, bin, home, "backup", "verify")
+		skipIfTheBoxSleptMidTest(t, at)
 		for _, want := range []string{"no datable archive to verify", future, "AHEAD of this box's clock", "name one with --archive"} {
 			if !strings.Contains(out, want) {
 				t.Errorf("output %q; want it to contain %q", out, want)
@@ -358,9 +371,10 @@ func TestBackupVerifyNamesWhyItCannotPickAnArchive(t *testing.T) {
 
 	t.Run("control: it follows through to the newest archive it CAN date", func(t *testing.T) {
 		home := backupHome(t, armed)
-		future := plantArchive(t, home, -72*time.Hour)
-		datable := plantArchive(t, home, 3*time.Hour)
+		future, at := plantArchive(t, home, -72*time.Hour)
+		datable, _ := plantArchive(t, home, 3*time.Hour)
 		_, out := runBackupPosse(t, bin, home, "backup", "verify")
+		skipIfTheBoxSleptMidTest(t, at)
 		if !strings.Contains(out, datable) {
 			t.Errorf("output %q; want it to open %s, the newest archive it can date", out, datable)
 		}

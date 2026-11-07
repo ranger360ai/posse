@@ -23,12 +23,17 @@ import (
 )
 
 // seedRuntimeCatalog writes the shared snapshot into a home, `age` old,
-// with an optional cooldown running until `retry`.
-func seedRuntimeCatalog(t *testing.T, home string, age time.Duration, retry time.Time, ids ...string) {
+// with an optional cooldown lasting `retryFor`, and returns the snapshot's
+// timestamp with its monotonic reading intact. The launched binary reads the
+// wall timestamp; callers keep the other clock so a system sleep cannot turn
+// the fixture's freshness or cooldown premise into a claim about the code.
+func seedRuntimeCatalog(t *testing.T, home string, age, retryFor time.Duration, ids ...string) time.Time {
 	t.Helper()
-	e := map[string]any{"at": time.Now().Add(-age).Format(time.RFC3339Nano), "models": ids}
-	if !retry.IsZero() {
-		e["retry_at"] = retry.Format(time.RFC3339Nano)
+	ref := time.Now()
+	at := ref.Add(-age)
+	e := map[string]any{"at": at.Format(time.RFC3339Nano), "models": ids}
+	if retryFor != 0 {
+		e["retry_at"] = ref.Add(retryFor).Format(time.RFC3339Nano)
 	}
 	b, err := json.Marshal(e)
 	if err != nil {
@@ -40,6 +45,7 @@ func seedRuntimeCatalog(t *testing.T, home string, age time.Duration, retry time
 	if err := os.WriteFile(filepath.Join(home, "state", "model-catalog.json"), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return at
 }
 
 func runtimesOut(t *testing.T, bin, home string, args ...string) string {
@@ -68,9 +74,10 @@ func TestRuntimesCarriesTheAvailabilityVerdictPerMappedTier(t *testing.T) {
 	}
 	// A reading a minute old: inside the default lease, so no age clause,
 	// and holding neither the strong id nor othercli's.
-	seedRuntimeCatalog(t, home, time.Minute, time.Time{}, "claude-opus-5", "claude-sonnet-5")
+	at := seedRuntimeCatalog(t, home, time.Minute, 0, "claude-opus-5", "claude-sonnet-5")
 
 	got := runtimesOut(t, bin, home)
+	skipIfTheBoxSleptMidTest(t, at)
 	for _, want := range []string{
 		// persona "" — the catalog is the ACCOUNT's, not a PID's.
 		"session: tier strong wants claude-fable-5-1 — unavailable on this account; launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it",
@@ -110,16 +117,20 @@ func TestRuntimesCarriesTheAvailabilityVerdictPerMappedTier(t *testing.T) {
 func TestRuntimesProbeHonoursALiveCooldownAndDatesTheReading(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
-	seedRuntimeCatalog(t, home, 48*time.Hour, time.Now().Add(10*time.Minute), "claude-opus-5", "claude-sonnet-5")
+	const staleAge = 48 * time.Hour
+	at := seedRuntimeCatalog(t, home, staleAge, 10*time.Minute, "claude-opus-5", "claude-sonnet-5")
 
 	got := runtimesOut(t, bin, home, "--probe")
+	skipIfTheBoxSleptMidTest(t, at)
 	for _, want := range []string{
 		"session: tier strong wants claude-fable-5-1 — not in the catalog read 48h00m ago; availability UNKNOWN, launching as asked",
 		"claude: tier standard → claude-opus-5 (availability UNKNOWN — the catalog read 48h00m ago is past model_probe_ttl; the launch takes the tier as asked)",
 	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("--probe over a stale reading missing %q in:\n%s", want, got)
+		var bracket []string
+		for _, age := range agedAgesOf(at, staleAge) {
+			bracket = append(bracket, strings.Replace(want, "48h00m", age, 1))
 		}
+		wantOneOf(t, "--probe over a stale reading", got, bracket, strings.Contains)
 	}
 	// Nothing was ASKED, so nothing may be reported as a failing probe —
 	// and nothing was logged, because the cooldown ran first.
@@ -139,9 +150,11 @@ func TestRuntimesProbeHonoursALiveCooldownAndDatesTheReading(t *testing.T) {
 	// which of the two sentences is printed, and no longer decides which
 	// model runs.
 	fresh := t.TempDir()
-	seedRuntimeCatalog(t, fresh, 30*time.Minute, time.Now().Add(10*time.Minute), "claude-opus-5", "claude-sonnet-5")
-	if got := runtimesOut(t, bin, fresh, "--probe"); !strings.Contains(got, "session: tier strong wants claude-fable-5-1 — unavailable on this account; launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it") {
-		t.Errorf("a cooled-down reading inside its lease must still rule:\n%s", got)
+	freshAt := seedRuntimeCatalog(t, fresh, 30*time.Minute, 10*time.Minute, "claude-opus-5", "claude-sonnet-5")
+	freshOut := runtimesOut(t, bin, fresh, "--probe")
+	skipIfTheBoxSleptMidTest(t, freshAt)
+	if !strings.Contains(freshOut, "session: tier strong wants claude-fable-5-1 — unavailable on this account; launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it") {
+		t.Errorf("a cooled-down reading inside its lease must still rule:\n%s", freshOut)
 	}
 }
 
@@ -150,7 +163,7 @@ func TestRuntimesProbeHonoursALiveCooldownAndDatesTheReading(t *testing.T) {
 func TestRuntimesRefusesAnUnknownFlag(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
-	seedRuntimeCatalog(t, home, time.Minute, time.Time{}, "claude-fable-5-1")
+	seedRuntimeCatalog(t, home, time.Minute, 0, "claude-fable-5-1")
 	cmd := exec.Command(bin, "runtimes", "--porbe")
 	cmd.Env = []string{"HOME=" + t.TempDir(), "RHQ_HOME=" + home, "PATH=" + os.Getenv("PATH")}
 	out, err := cmd.CombinedOutput()
@@ -174,9 +187,11 @@ func TestRuntimesProbeForcesExactlyOneRead(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
 	log := filepath.Join(home, "state", "model-catalog.log")
-	seedRuntimeCatalog(t, home, time.Minute, time.Time{}, "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5")
+	at := seedRuntimeCatalog(t, home, time.Minute, 0, "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5")
 
-	if got := runtimesOut(t, bin, home); !strings.Contains(got, "claude: tier strong → claude-fable-5-1 (available)") {
+	got := runtimesOut(t, bin, home)
+	skipIfTheBoxSleptMidTest(t, at)
+	if !strings.Contains(got, "claude: tier strong → claude-fable-5-1 (available)") {
 		t.Fatalf("the fixture must rule off the snapshot:\n%s", got)
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {
