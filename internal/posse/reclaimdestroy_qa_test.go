@@ -383,3 +383,116 @@ func TestQAAThePruneNeverDestroysAHerdrWorkspace(t *testing.T) {
 		t.Errorf("the prune closed a workspace on a HERDR record — a dead herdr workspace is already gone, and herdr re-issues workspace ids across a restart or handoff (rangerhq-6bg7), so the id in a proven-dead record is exactly the one a stranger's workspace may be holding now (ADR 0080 D10: \"herdr needs nothing here\"):\n%s", log)
 	}
 }
+
+// ─── the destroy's PLACE: the half the four arms above do not reach ──────────
+//
+// ranger-base-8rg06, verifying ranger-base-43mxx. destroyRecordedSeat
+// carries the ordering claim in its own words — "it goes HERE and nowhere else
+// in this function: ... one that destroys before the re-proof destroys on
+// evidence read outside the lock" — and the four arms above pin only one end of
+// it. MEASURED 2026-11-07 on this tree: moving the call from BELOW the
+// `prunable` re-proof to ABOVE it, and again above `cannotAnswerFor` and the
+// recipe check, left the whole arm-1 internal/posse package green. Arm 1 above
+// witnesses that the record still exists and the lock is held when the destroy
+// runs; neither says the re-proof had already answered.
+//
+// WHAT BEHAVES DIFFERENTLY IF THIS PIN IS DELETED (ADR 0006 §7): the prune
+// destroys a LIVE Rex seat. reclaim is reached on evidence read outside the
+// launcher lock (rangerhq-3a5t, and reclaim's own doc), so between that
+// reading and the unlink a create can have put the seat back — and a destroy
+// taken before the re-proof ends the session the re-proof was about to spare,
+// while prunable's refusal then KEEPS the record, so posse goes on listing a
+// seat it has just killed.
+
+// reclaimRaceMux is an occupant whose listing re-grows the seat exactly while
+// the launcher lock is HELD: that is the listing reclaim takes INSIDE the lock
+// and none of the listings the pass takes outside it. flock is per open file
+// description, so a second open+LOCK_NB from this very process conflicts with
+// the one reclaim is holding — arm 1 above reads the same fact from the other
+// side.
+//
+// It is NOT a List() call count, deliberately. A fixture that re-grew the seat
+// on the Nth listing would stop aiming at reclaim the moment a listing was
+// added or removed anywhere in the pass, and the arm would then pass by never
+// reaching the branch under test at all.
+type reclaimRaceMux struct {
+	*muxMetaStub
+	app  *App
+	seat Seat
+	// race is false in the control row, which is the same rig with the lever
+	// off: the seat is absent from every listing and the destroy must happen.
+	race bool
+}
+
+func (m *reclaimRaceMux) List() ([]SeatInfo, error) {
+	seats, err := m.muxMetaStub.List()
+	if err != nil || !m.race {
+		return seats, err
+	}
+	if lock, _ := tryLockLaunches(m.app); lock != nil {
+		lock.Release()
+		return seats, nil // free: a listing taken outside reclaim
+	}
+	return append(append([]SeatInfo{}, seats...), SeatInfo{Seat: m.seat, Label: "husk"}), nil
+}
+
+func TestQAATheDestroyIsNotTakenOnEvidenceTheReProofWouldSpare(t *testing.T) {
+	t.Parallel()
+	const husk = "01a1902c-husk"
+	for _, c := range []struct {
+		name string
+		race bool
+	}{
+		{name: "the re-proof under the lock finds the seat back", race: true},
+		{name: "control: absent outside the lock and inside it", race: false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			b, stub := muxMetaRexBoard(t, "husk", husk, false)
+			b.Slot = &reclaimRaceMux{muxMetaStub: stub, app: b.App,
+				seat: Seat{Session: husk, Pane: "block-1"}, race: c.race}
+			if !c.race {
+				// The control first, because it is what makes the row below
+				// an absence of something this rig can produce: with the
+				// lever off, the same board destroys the seat and unlinks
+				// the record.
+				pruneUntil(t, b, "the control row destroyed nothing, so the rig cannot produce a destroy at all and the raced row measures nothing",
+					func() bool { return len(stub.closes) > 0 })
+				pruneUntil(t, b, "the control row kept the record after a destroy that succeeded", metaGone(b, "husk"))
+				return
+			}
+			// The pass is asked again until the WITNESS appears, for
+			// pruneUntil's reason pointed at this rig's own lever: the lock
+			// flake its doc measures makes tryLockLaunches answer "held"
+			// when nobody holds it, and read by List() above that re-grows
+			// the seat for a listing taken OUTSIDE reclaim — so the outer
+			// pass spares the record itself and never reaches the branch
+			// under test. That costs the witness and never the assertion: a
+			// pass that did not reach reclaim also took no destroy. Asking
+			// again is what makes the arm falsifiable rather than flaky, and
+			// a prune that genuinely never spares on its own re-proof still
+			// never produces the witness.
+			witness := "seat " + husk + " is alive"
+			var saw bool
+			for i := 0; i < 20 && !saw; i++ {
+				if _, err := b.Sessions(); err != nil {
+					t.Fatal(err)
+				}
+				saw = strings.Contains(warnBuf(t, b).String(), witness)
+			}
+			// The positive witness that reclaim RAN and that its re-proof is
+			// what refused: seatEvidence's own sentence, carried out as the
+			// sparing reason. Without it every assertion below is satisfied
+			// by a pass that never reached reclaim.
+			if !saw {
+				t.Fatalf("after 20 passes the prune never spared this record on its own re-proof, so this arm never reached reclaim at all:\n%s", warnBuf(t, b).String())
+			}
+			if n := len(stub.closes); n != 0 {
+				t.Errorf("the prune destroyed the seat %d time(s) although its own re-proof under the launcher lock found it ALIVE — the destroy is being taken on evidence read outside the lock, which is the reading reclaim re-takes precisely because a create can be in flight (rangerhq-3a5t, ADR 0080 D10). A live seat is ended, and prunable's refusal then keeps the record, so posse goes on listing a session it has just killed", n)
+			}
+			if _, ok := b.readMeta("husk"); !ok {
+				t.Error("the record was unlinked although the re-proof spared it")
+			}
+		})
+	}
+}
