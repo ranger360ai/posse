@@ -283,7 +283,7 @@ func TestQAMessageArmReadsTwoWaysKeyedOnTheCleanupMode(t *testing.T) {
 		Extra:   []OpsPattern{{Class: qaInstanceClass, ERE: qaInstanceERE}},
 		Ceiling: []OpsPattern{{Class: qaCeilingClass, ERE: qaCeilingERE}},
 	}
-	hook := CommitGuardHook(VisibilityPublic, set, IdentityLiteral{Class: "username", Value: "qa-fixture-operator"})
+	hook := qaNoHome.CommitGuardHook(VisibilityPublic, set, IdentityLiteral{Class: "username", Value: "qa-fixture-operator"})
 	for _, want := range []struct {
 		frag string
 		n    int

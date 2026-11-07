@@ -701,7 +701,12 @@ func TestL3ProbeSeesTheWallFromInsideAWorktree(t *testing.T) {
 	}
 	a := wtApp(t)
 	repo := wtRepo(t)
-	if _, err := installCommitGuard(repo); err != nil {
+	// Installed from `a` and not from installCommitGuard's homeless App: the
+	// probe below decides "ours" by rendering the body again, and since
+	// ADR 0081 D2 the body names the home that rendered it. A fixture that
+	// installs from one home and probes from another is measuring the stamp,
+	// which is this file's subject on no line of it.
+	if _, _, _, err := a.InstallCommitGuardHook(repo); err != nil {
 		t.Fatal(err)
 	}
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)

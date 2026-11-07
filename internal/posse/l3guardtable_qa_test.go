@@ -143,8 +143,8 @@ func TestQAEveryCommitGuardBannerInTheRenderHasATableRow(t *testing.T) {
 		render string
 		floor  int
 	}{
-		{"with a data ceiling configured", CommitGuardHook(VisibilityPublic, set), len(l3CommitGuards) + len(qaCommitGuardArms)},
-		{"with no data ceiling", CommitGuardHook(VisibilityPublic, (&App{ConfigPath: filepath.Join(home, "absent.yaml")}).OpsPatternSet()), len(l3CommitGuards) - 1},
+		{"with a data ceiling configured", a.CommitGuardHook(VisibilityPublic, set), len(l3CommitGuards) + len(qaCommitGuardArms)},
+		{"with no data ceiling", a.CommitGuardHook(VisibilityPublic, (&App{ConfigPath: filepath.Join(home, "absent.yaml")}).OpsPatternSet()), len(l3CommitGuards) - 1},
 	}
 	armUsed := map[string]bool{}
 	for _, r := range renders {

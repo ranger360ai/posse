@@ -452,7 +452,7 @@ func TestQADataCeilingIsSeenIdenticallyByTheL3Probe(t *testing.T) {
 	}
 	// And the file IS the render, not merely accepted by it.
 	vis, _ := a.BeadsVisibility(w.priv)
-	if want := CommitGuardHook(vis, a.OpsPatternSet(), testIdentity(t, w.priv)...); qaHookFile(t, w.priv) != want {
+	if want := a.CommitGuardHook(vis, a.OpsPatternSet(), testIdentity(t, w.priv)...); qaHookFile(t, w.priv) != want {
 		t.Error("the private repo's stamped hook is not byte-identical to CommitGuardHook over the same set")
 	}
 }
@@ -469,7 +469,7 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 	t.Parallel() // renders and reads strings; no repo, no env
 	set := OpsPatternSet{Ceiling: []OpsPattern{{Class: qaCeilingClass, ERE: qaCeilingERE}}}
 	for _, vis := range []string{VisibilityPublic, VisibilityPrivate} {
-		hook := CommitGuardHook(vis, set)
+		hook := qaNoHome.CommitGuardHook(vis, set)
 		gate := strings.Index(hook, `if [ "$posse_beads_visibility" = `+shQuote(VisibilityPublic)+` ]; then`)
 		ceiling := strings.Index(hook, "posse_check '"+qaCeilingClass+"'")
 		helper := strings.Index(hook, "posse_check() {")
@@ -534,7 +534,7 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 			t.Errorf("%s: the block's banner and the head comment's count must name the ceiling", vis)
 		}
 	}
-	if hook := CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); strings.Contains(hook, dataCeilingScanLabel) ||
+	if hook := qaNoHome.CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); strings.Contains(hook, dataCeilingScanLabel) ||
 		strings.Contains(hook, "─── the data ceiling") || strings.Contains(hook, "third arm: the commit MESSAGE") ||
 		strings.Contains(hook, "REPORTING reader: .beads/*.jsonl") ||
 		strings.Contains(hook, `posse_msg=$(cat "$1"`) {
@@ -1063,7 +1063,7 @@ func TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine(t *testing.T) {
 	bare := set
 	bare.CeilingSelfMatch = nil
 	for _, stamp := range []string{VisibilityPublic, VisibilityPrivate} {
-		if got, want := CommitGuardHook(stamp, set), CommitGuardHook(stamp, bare); got != want {
+		if got, want := qaNoHome.CommitGuardHook(stamp, set), qaNoHome.CommitGuardHook(stamp, bare); got != want {
 			t.Errorf("the %s hook render changed with CeilingSelfMatch — every launch into every hooked repo would read it as stale", stamp)
 		}
 	}

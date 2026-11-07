@@ -209,7 +209,7 @@ func TestQAMarkdownScanOwnsEveryMarkdownSpelling(t *testing.T) {
 // it: one place the way OpsPatterns is (ranger-base-4b1z4's own ask).
 func TestQAMarkdownPathspecsAreRenderedFromTheGoList(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	for _, p := range MarkdownPathspecs {
 		if !strings.Contains(render, "'"+p+"'") {
 			t.Errorf("the rendered hook must carry the pathspec %q from MarkdownPathspecs", p)
@@ -675,7 +675,7 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 // readers reds this pin naming that line.
 func TestQAHookReadersAllDisableMoveDetection(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{},
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{},
 		IdentityLiteral{Class: "username", Value: "someone"})
 	var names, content, reference int
 	for _, line := range strings.Split(render, "\n") {

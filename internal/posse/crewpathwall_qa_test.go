@@ -333,14 +333,14 @@ func TestQAEveryCommitGuardRendererDerivesTheCrewNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	installed := qaHookFile(t, w.pub)
-	if want := CommitGuardHook(VisibilityPublic, a.OpsPatternSet(), lits...); installed != want {
+	if want := a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet(), lits...); installed != want {
 		t.Errorf("the installed hook must be what commitGuardLiterals renders — a second derivation reads as stale on every launch")
 	}
 	identity, err := DeriveIdentityLiterals(hookRepo(w.pub))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if idOnly := CommitGuardHook(VisibilityPublic, a.OpsPatternSet(), identity...); installed == idOnly {
+	if idOnly := a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet(), identity...); installed == idOnly {
 		t.Error("the wrong arm: a render from the identity literals ALONE must differ from the installed hook, or this pin measured nothing")
 	}
 }

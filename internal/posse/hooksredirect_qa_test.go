@@ -391,7 +391,7 @@ func TestQARedirectMembersAreTheInstallRenders(t *testing.T) {
 		t.Fatal(err)
 	}
 	for slot, want := range map[string]string{
-		"prepare-commit-msg": CommitGuardHook(visibility, f.a.OpsPatternSet(), identity...),
+		"prepare-commit-msg": f.a.CommitGuardHook(visibility, f.a.OpsPatternSet(), identity...),
 		"pre-push":           PrePushHook,
 	} {
 		p := filepath.Join(r.Dir, "posse-"+slot)

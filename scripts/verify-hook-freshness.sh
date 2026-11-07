@@ -46,6 +46,18 @@
 #             stamp, which comes from config) normalized on BOTH sides. A
 #             future body change that is NOT that line grows the diff and
 #             fails here rather than being waved through.
+#             A FAILED identity has two readings since ADR 0081 D2, and the
+#             hook says which: the body carries `# posse-home: <abs home>`,
+#             the home that rendered it. When that names a home other than
+#             the one this run renders the reference from, the hook is not
+#             this binary's render gone stale — it is ANOTHER home's current
+#             render of the same wall, and `install-hooks` from here would
+#             only re-stamp a file that home's next launch stamps back. Still
+#             a finding (two homes writing one wall is misconfiguration, made
+#             visible — D6), with a different sentence and a different fix.
+#             The stamp line is NOT normalized away: normalizing it would
+#             make a body from another home with no other difference compare
+#             EQUAL, which is a wall this run would then call fresh.
 #   stamp     that line's value equals what config beads_visibility: says for
 #             the repo. Identity alone cannot see a private repo carrying a
 #             public stamp: it is the half that would leak.
@@ -274,6 +286,42 @@ stamp_of() {
   done <"$1"
 }
 
+# home_of <file> — the value after `# posse-home: ` on the FIRST line that
+# carries it, or nothing (ADR 0081 D2). Same shape as stamp_of above and read
+# the same way, with `${...}` and no fork: a dead sed or cut here would make
+# every hook on the box look unstamped, and an unstamped body is D3's
+# migration case — the one state a launch rewrites without asking.
+home_of() {
+  local line
+  [ -r "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+    '# posse-home: '*)
+      printf '%s' "${line#\# posse-home: }"
+      return 0
+      ;;
+    esac
+  done <"$1"
+}
+
+# same_dir <a> <b> — "do these name ONE directory", which is the question
+# samePath answers on the Go side (internal/posse/visibility.go) and which a
+# string compare does not. Two processes can spell one home differently —
+# /tmp against /private/tmp on this box, a symlinked ~/.config — and a run
+# that read one home as two would report a wall as another home's over a
+# spelling, in a repo whose wall is correct. Resolved with `cd -P && pwd -P`,
+# the same idiom the behavior arm below uses on the git dirs; equal strings
+# are the same directory without a stat, and when either side cannot be
+# entered the strings are the only answer there is, which is where samePath
+# lands too.
+same_dir() {
+  local ra rb
+  [ "$1" = "$2" ] && return 0
+  ra=$(cd -P "$1" 2>/dev/null && pwd -P) || return 1
+  rb=$(cd -P "$2" 2>/dev/null && pwd -P) || return 1
+  [ -n "$ra" ] && [ "$ra" = "$rb" ]
+}
+
 # refhooks is set per repo by need_ref, one fresh empty directory each: a
 # render that writes nothing then leaves nothing to compare against, instead of
 # the previous repo's reference sitting there reading as this one's.
@@ -307,6 +355,13 @@ ref_env() {
 refn=0
 ref_commit_sha=""
 ref_prepush_sha=""
+# THIS run's home, taken out of the reference render and never spelled here
+# (ADR 0081 D2). The reference is written by $POSSE from whatever home it
+# resolved, so its own stamp is exactly the value a hook of ours must carry —
+# the same argument that makes the reference a render and not a string. A
+# home path recomputed in shell would differ by a symlink or a trailing
+# element and report every repo on the box as another home's.
+ref_commit_home=""
 need_ref() { # <repo> <short>
   local repo=$1 short=$2
   refn=$((refn + 1))
@@ -349,6 +404,11 @@ need_ref() { # <repo> <short>
     { echo "verify-hook-freshness: reference render for $short carries no visibility stamp — it is not a posse render, nothing measured"; exit 2; }
   ref_commit_sha=$(norm "$ref_commit")
   ref_prepush_sha=$(plain "$ref_prepush")
+  # Empty under a $POSSE predating ADR 0081 D2, which renders no stamp at
+  # all. Then every hook reads unstamped, no hook is classified by home, and
+  # this control says exactly what it said before the ADR — rather than
+  # calling the whole box another home's.
+  ref_commit_home=$(home_of "$ref_commit")
 }
 
 # The posse-owned member of a slot: the slot itself when it carries our marker,
@@ -439,8 +499,21 @@ for e in "${entries[@]}"; do
     if [ "$(norm "$m")" = "$ref_commit_sha" ]; then
       say "    fresh    prepare-commit-msg  ${m##*/}"
     else
-      finding "$short: prepare-commit-msg is STALE — it does not match this binary's render"
-      say "             $m"
+      got_home=$(home_of "$m")
+      # An UNSTAMPED hook is stale and nothing else: every body written
+      # before ADR 0081 D2 carries no stamp, so reading absence as "somebody
+      # else's" would re-word every finding on the box on the day this
+      # lands. And the two homes are compared as DIRECTORIES (same_dir), not
+      # as strings: the stamp was written by whatever process installed the
+      # hook, which need not have spelled the home the way this run does.
+      if [ -n "$ref_commit_home" ] && [ -n "$got_home" ] && ! same_dir "$got_home" "$ref_commit_home"; then
+        finding "$short: prepare-commit-msg was rendered by home $got_home, not by this one — a repo's shared commit wall has one owning home (ADR 0081 D2), so this is not a stale copy: re-rendering it from here only re-stamps a file that home's next launch stamps back"
+        say "             $m"
+        say "             this home renders from $ref_commit_home — decide which home owns this repo's wall, and install from that one"
+      else
+        finding "$short: prepare-commit-msg is STALE — it does not match this binary's render"
+        say "             $m"
+      fi
     fi
     got=$(stamp_of "$m")
     if [ "$got" = "$want" ]; then
@@ -560,7 +633,11 @@ Each stale or missing slot is fixed by re-rendering it from this binary:
 That is a hook rewrite in someone else's checkout, so type it rather than
 scripting it, and re-run this to confirm. A FOREIGN slot is not fixed by that
 command — it refuses rather than overwrite, and prints the chain to paste
-(INSTALL.md §9).
+(INSTALL.md §9). Neither is a slot rendered by ANOTHER HOME: that command
+would write it, and that home's next session launch would write it back. Two
+homes marking one repo in `beads_visibility:` is the misconfiguration (ADR
+0081 D1/D6) — drop the claim from whichever home should not own the wall,
+then re-render from the one that should.
 EOF
   exit 1
 fi

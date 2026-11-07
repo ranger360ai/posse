@@ -275,7 +275,7 @@ func TestQAInstancePatternRendersWithoutAnyIdentity(t *testing.T) {
 	// And it reaches the real render through the real caller, which is what
 	// InstallCommitGuardHook stamps — the unit above would be green over a
 	// block nothing calls.
-	hook := CommitGuardHook(VisibilityPublic, OpsPatternSet{Extra: extra})
+	hook := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{Extra: extra})
 	if !strings.Contains(hook, "posse_check '"+qaInstanceClass+"'") ||
 		!strings.Contains(hook, "an instance-defined visibility class in a staged PATH") {
 		t.Error("CommitGuardHook must carry check 3's block with no identity literals at all")

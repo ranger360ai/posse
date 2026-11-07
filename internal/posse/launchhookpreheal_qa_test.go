@@ -40,7 +40,7 @@ func TestQALaunchReportsPreHealHookDriftBeforeSilentlyRepairingIt(t *testing.T) 
 	// exactly the one line that decides the exemption, same fixture shape
 	// TestHookWallSweepCatchesAStampThatDisagreesWithConfig uses.
 	hook := hwsHook(t, repo, "prepare-commit-msg")
-	if err := WriteExecutable(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte(a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := a.BeadsVisibility(repo); v != VisibilityPrivate {
@@ -118,7 +118,7 @@ func TestQALaunchReportsPreHealHookDriftOnAFirstWorktreeLaunch(t *testing.T) {
 	a := b.App
 
 	hook := hwsHook(t, repo, "prepare-commit-msg")
-	if err := WriteExecutable(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte(a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -199,7 +199,7 @@ func TestQALaunchReportsPreHealDriftBehindTheChainDispatcher(t *testing.T) {
 	if err := WriteExecutable(slot, []byte(chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteExecutable(member, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(member, []byte(a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

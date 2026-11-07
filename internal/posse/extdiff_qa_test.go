@@ -683,7 +683,7 @@ func extDiffSurfaces(t *testing.T) []extDiffSurface {
 	// them. The glob below is why one more file in notes.d is enough.
 	root := qibRepoRoot(t)
 	out := []extDiffSurface{
-		{name: "the prepare-commit-msg hook render", text: CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
+		{name: "the prepare-commit-msg hook render", text: qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
 		{name: "the pre-push hook render", text: PrePushHook},
 		{name: "AGENTS.md", text: extDiffReadDoc(t, filepath.Join(root, "AGENTS.md")), markdown: true},
 		{name: "NOTES.md", text: extDiffReadDoc(t, filepath.Join(root, "NOTES.md")), markdown: true},

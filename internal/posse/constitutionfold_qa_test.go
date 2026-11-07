@@ -270,7 +270,7 @@ func TestQAConstitutionResolveRunesAreTheClosedSet(t *testing.T) {
 			t.Errorf("constitutionResolveRunes has U+%04X -> %q, which the derivation does not produce", r, w)
 		}
 	}
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	if !strings.Contains(render, "LC_ALL=C sed"+constitutionFoldSed()+" | LC_ALL=C tr 'A-Z' 'a-z'") {
 		t.Errorf("the rendered hook does not carry the fold sed line built from constitutionResolveRunes")
 	}
@@ -333,7 +333,7 @@ func TestQAConstitutionResolveIsSingleRuneSufficient(t *testing.T) {
 func TestQAConstitutionShFoldResolvesEveryTableRune(t *testing.T) {
 	t.Parallel()
 	line := "LC_ALL=C sed" + constitutionFoldSed() + " | LC_ALL=C tr 'A-Z' 'a-z'"
-	if !strings.Contains(CommitGuardHook(VisibilityPublic, OpsPatternSet{}), line) {
+	if !strings.Contains(qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{}), line) {
 		t.Fatalf("the rendered hook does not carry this fold line; the run below would not be measuring the shipped arm:\n%s", line)
 	}
 	var probe, want strings.Builder

@@ -248,7 +248,7 @@ func TestQAConstitutionWallNamesTheRuntimesOverlay(t *testing.T) {
 	if got := InConstitutionClass(ConstitutionClassIn(constitutionRepoTop(t)), want+"/claude.yaml"); got != want {
 		t.Errorf("a persona commit of %s/claude.yaml falls under class member %q, want %q", want, got, want)
 	}
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	if !strings.Contains(render, "\n"+want+"\n") {
 		t.Errorf("the rendered commit wall does not name %s as a class member", want)
 	}

@@ -60,7 +60,7 @@ func TestL3ProbeRendersAreNotLooseInTheSharedTempDir(t *testing.T) {
 	t.Setenv("TMPDIR", tmp)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	commitRender := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	commitRender := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	push, commit := execOwnRenders(repo, true, commitRender)
 	if !push || !commit {
 		t.Fatalf("the shim exits 0; both slots must read OK (push=%v commit=%v) — the exec did not happen as expected", push, commit)
@@ -141,7 +141,7 @@ func TestL3ProbeLeavesNothingInTheTempDir(t *testing.T) {
 	}
 	t.Setenv("TMPDIR", tmp)
 
-	execOwnRenders(repo, true, CommitGuardHook(VisibilityPublic, OpsPatternSet{}))
+	execOwnRenders(repo, true, qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{}))
 
 	left, err := os.ReadDir(tmp)
 	if err != nil {

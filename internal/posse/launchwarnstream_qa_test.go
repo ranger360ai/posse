@@ -51,7 +51,7 @@ func lwsStaleWall(t *testing.T, b *HerdrBackend, ready, show string) (repo, hook
 	write(t, filepath.Join(repo, "fake-show.json"), show)
 	write(t, a.ConfigPath, "beads:\n  - "+repo+"\nbeads_visibility:\n  "+repo+": "+VisibilityPrivate+"\n")
 	hook = hwsHook(t, repo, "prepare-commit-msg")
-	if err := WriteExecutable(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte(a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := a.BeadsVisibility(repo); v != VisibilityPrivate {
@@ -134,7 +134,7 @@ func TestQALaunchWarningsFollowTheWriterTheLauncherHandsDown(t *testing.T) {
 	b, repo := lhpWorktreeFixture(t, VisibilityPrivate)
 	a := b.App
 	hook := hwsHook(t, repo, "prepare-commit-msg")
-	if err := WriteExecutable(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte(a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	backend := warnBuf(t, b)
@@ -152,7 +152,7 @@ func TestQALaunchWarningsFollowTheWriterTheLauncherHandsDown(t *testing.T) {
 
 	// The control, and the launch `posse new` makes: no writer named, so the
 	// backend's answers — os.Stderr in production, the operator's terminal.
-	if err := WriteExecutable(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte(a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.planLaunch(NewSessionOpts{Name: "s2", Dir: repo, Agent: "ranger", Worktree: true}); err != nil {

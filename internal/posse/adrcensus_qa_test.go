@@ -296,7 +296,7 @@ func TestQAAdrCensusIsTheOnlyRendererOfThePredicate(t *testing.T) {
 	if !strings.Contains(AdrCensusScript(), pred) {
 		t.Errorf("posse gates adr-census must render adrShaPredicate verbatim")
 	}
-	if strings.Contains(CommitGuardHook(VisibilityPublic, OpsPatternSet{}), pred) {
+	if strings.Contains(qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{}), pred) {
 		t.Errorf("the prepare-commit-msg hook renders the ADR predicate again — ADR 0051's check is on demand, not at the wall (ranger-base-bp0yj)")
 	}
 	// The census reads every line of the file as both sources.

@@ -490,7 +490,7 @@ func TestDocsGenreAndProseGuardHook(t *testing.T) {
 // see which way it was stamped.
 func TestCommitGuardHookCarriesBothWalls(t *testing.T) {
 	for _, vis := range []string{VisibilityPublic, VisibilityPrivate} {
-		h := CommitGuardHook(vis, OpsPatternSet{})
+		h := qaNoHome.CommitGuardHook(vis, OpsPatternSet{})
 		if !strings.Contains(h, "posse_beads_visibility='"+vis+"'") {
 			t.Errorf("%s: the hook must record the stamp it was written with", vis)
 		}
@@ -1001,7 +1001,7 @@ func TestDeriveIdentityLiteralsWallsEveryScopesEmail(t *testing.T) {
 		}
 		// Render too: two literals are two check lines in the hook, and the
 		// hook is what refuses, not the slice.
-		hook := CommitGuardHook(VisibilityPublic, OpsPatternSet{}, lits...)
+		hook := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{}, lits...)
 		for _, e := range out {
 			if !strings.Contains(hook, identityLiteralERE(e)) {
 				t.Errorf("derived %q but the rendered hook does not carry it", e)

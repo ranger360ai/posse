@@ -227,7 +227,7 @@ func TestQAHookWallSweepStampDriftBothDirectionsOverTheInstallersOwnRender(t *te
 	}
 	plant := func(vis string) {
 		t.Helper()
-		if err := WriteExecutable(slot, []byte(CommitGuardHook(vis, a.OpsPatternSet(), id...)), 0o755); err != nil {
+		if err := WriteExecutable(slot, []byte(a.CommitGuardHook(vis, a.OpsPatternSet(), id...)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

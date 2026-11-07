@@ -344,7 +344,7 @@ func TestQACheckThreeMessageArmRenders(t *testing.T) {
 	extra := []OpsPattern{{Class: qaInstanceClass, ERE: qaInstanceERE}}
 	lit := IdentityLiteral{Class: "username", Value: "qa-fixture-operator"}
 	set := OpsPatternSet{Extra: extra, Ceiling: []OpsPattern{{Class: qaCeilingClass, ERE: qaCeilingERE}}}
-	hook := CommitGuardHook(VisibilityPublic, set, lit)
+	hook := qaNoHome.CommitGuardHook(VisibilityPublic, set, lit)
 
 	gate := strings.Index(hook, `if [ "$posse_beads_visibility" = `+shQuote(VisibilityPublic)+` ]; then`)
 	// The banner names check 3's sources and gained a third when the crew
@@ -398,7 +398,7 @@ func TestQACheckThreeMessageArmRenders(t *testing.T) {
 
 	// Nothing derived and nothing configured is still nothing — the message
 	// arm included: a box with neither pays for no read of the message file.
-	bare := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	bare := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	if strings.Contains(bare, "check 3, third arm") || strings.Contains(bare, `posse_msg=$(cat "$1"`) {
 		t.Error("an empty check 3 and an empty ceiling must render no message arm at all")
 	}
@@ -421,7 +421,7 @@ func TestQACheckThreeMessageArmIsSeenIdenticallyByTheL3Probe(t *testing.T) {
 		t.Error("the stamped hook does not carry check 3's commit-message arm")
 	}
 	vis, _ := a.BeadsVisibility(w.pub)
-	if want := CommitGuardHook(vis, a.OpsPatternSet(), testIdentity(t, w.pub)...); qaHookFile(t, w.pub) != want {
+	if want := a.CommitGuardHook(vis, a.OpsPatternSet(), testIdentity(t, w.pub)...); qaHookFile(t, w.pub) != want {
 		t.Error("the public repo's stamped hook is not byte-identical to CommitGuardHook over the same set")
 	}
 }

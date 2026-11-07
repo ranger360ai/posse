@@ -253,7 +253,7 @@ func TestQADiffReadersCarryTextAndBinarySafeGreps(t *testing.T) {
 	if !strings.Contains(diffReaderShape, "--text") {
 		t.Errorf("diffReaderShape must carry --text: %q", diffReaderShape)
 	}
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{
 		Ceiling: []OpsPattern{{Class: "c", ERE: "zzz"}},
 	})
 	for _, line := range strings.Split(render, "\n") {
@@ -304,7 +304,7 @@ func TestQARenderedHookMakesNoTextFileScopeClaim(t *testing.T) {
 	// Every prose source at once: the head comment, check 2, check 3 with
 	// both its sources, and the ceiling with all three arms. A claim in a
 	// block this render omits is a claim this pin cannot see.
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{
 		Extra:   []OpsPattern{{Class: "e", ERE: "zzz"}},
 		Ceiling: []OpsPattern{{Class: "c", ERE: "yyy"}},
 	}, IdentityLiteral{Class: "username", Value: "qa-fixture-operator"})

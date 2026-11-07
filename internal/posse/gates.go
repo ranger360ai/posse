@@ -6049,6 +6049,67 @@ fi
 // this box; the pins are in binaryreader_qa_test.go.
 const diffReaderShape = "--no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/ --text"
 
+// commitGuardHomeStampPrefix is the whole of the stamp's syntax (ADR 0081
+// D2): a comment line whose rest-of-line is the absolute home that rendered
+// the body. The prefix is the sentinel and MAY NOT MOVE — the same rule
+// sharedIndexMarker carries, for the same reason. Ownership here is a
+// question about a file some OTHER binary, from some other home, wrote; a
+// renamed prefix would read every already-stamped body as unstamped, which
+// is ADR 0081 D3's migration case, which is the one state a launch rewrites
+// without asking.
+const commitGuardHomeStampPrefix = "# posse-home: "
+
+// commitGuardHomeStamp renders the stamp line for one home, or nothing at
+// all when that home cannot be named in a comment.
+//
+// Nothing, and not an empty value: the bytes and their meaning have to
+// agree. commitGuardHomeOf answers "" for `# posse-home: ` exactly as it
+// answers "" for a body with no such line, and ADR 0081 D3 case 4 reads an
+// unstamped body as a body written before this ADR — the one-shot migration
+// a launch silently re-stamps. A line that parses back as absent would put
+// a body in that class while LOOKING stamped to a human reading the file.
+//
+// A home with a newline in its path is unnameable for a second reason, and
+// it is the one that matters: the stamp is a COMMENT, and a newline in the
+// value ends the comment and hands the rest of the path to /bin/sh as a
+// command, in a file git execs on every commit. That home stamps nothing
+// and therefore owns nothing (D1 is a config question and answers it
+// separately) — fail closed, with no shell injected. The same class
+// DeriveGuardValueLiterals refuses a single quote for, answered without an
+// error return because this renderer has none and every caller's alternative
+// to a stamp is the migration case, not a broken hook.
+//
+// Absolute, as D2 says, by filepath.Abs and Clean and NOT by resolving
+// symlinks: the reader compares with samePath, which resolves both sides at
+// compare time, and the operator acts on the spelling they configured.
+func commitGuardHomeStamp(home string) string {
+	if strings.TrimSpace(home) == "" || strings.ContainsAny(home, "\n\r") {
+		return ""
+	}
+	abs, err := filepath.Abs(home)
+	if err != nil {
+		abs = home
+	}
+	return commitGuardHomeStampPrefix + filepath.Clean(abs) + "\n"
+}
+
+// commitGuardHomeOf is the stamp's reader: the absolute home named by an
+// installed commit-guard body, or "" when the body carries no stamp.
+//
+// The FIRST such line wins, the way stamp_of in
+// scripts/verify-hook-freshness.sh takes the first visibility stamp: a body
+// with two is not one this renderer wrote, and answering from the top is the
+// only answer that cannot be moved by appending to the file. The value is
+// trimmed, so a body whose line was written with CRLF still names its home.
+func commitGuardHomeOf(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		if rest, ok := strings.CutPrefix(line, commitGuardHomeStampPrefix); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
 // CommitGuardHook is the whole prepare-commit-msg hook for a repo whose
 // beads db carries the given visibility. Three arms, in this order and for
 // this reason:
@@ -6087,8 +6148,19 @@ const diffReaderShape = "--no-color --no-ext-diff --no-textconv --src-prefix=a/ 
 // can only be one — and because the literal itself says which arms it
 // belongs in (IdentityLiteral.PathsOnly, .Keyed), so nothing is lost by
 // shipping them in one slice.
-func CommitGuardHook(visibility string, set OpsPatternSet, identity ...IdentityLiteral) string {
-	return commitGuardHead + hookStampFunc + visibilityGuardBody(visibility, set, identity) +
+//
+// A METHOD, and the home is the receiver's rather than a fourth parameter,
+// since ADR 0081 D2. The stamp's whole job is to say which home rendered
+// these bytes, to a reader that cannot read that home's config and has only
+// the file. A parameter would let a caller render a body stamped with a home
+// that did not render it — precisely the claim every reader of the stamp
+// then believes. On the receiver it cannot be spelled wrong: the home that
+// renders is the home that is named. An App with no Home renders no stamp
+// (commitGuardHomeStamp), which is D3 case 4's migration body and is what
+// every byte-exact fixture in the tests is.
+func (a *App) CommitGuardHook(visibility string, set OpsPatternSet, identity ...IdentityLiteral) string {
+	return commitGuardHead + commitGuardHomeStamp(a.Home) + hookStampFunc +
+		visibilityGuardBody(visibility, set, identity) +
 		constitutionGuardBody() + sharedIndexBody
 }
 
@@ -6172,7 +6244,7 @@ func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source strin
 	if err != nil {
 		return "", "", "", err
 	}
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), false)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, a.CommitGuardHook(visibility, a.OpsPatternSet(), identity...), false)
 	return path, visibility, source, err
 }
 
@@ -6184,7 +6256,7 @@ func (a *App) InstallCommitGuardHookChained(dir string) (path, visibility, sourc
 	if err != nil {
 		return "", "", "", err
 	}
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), true)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, a.CommitGuardHook(visibility, a.OpsPatternSet(), identity...), true)
 	return path, visibility, source, err
 }
 
@@ -6297,9 +6369,20 @@ const (
 	// one-command remedy, so it is said as one rather than as "foreign hook"
 	// over a wall that was installed, correct, and taken off the commit path
 	// by a tool the operator ran for an unrelated reason (ranger-base-2msgj).
-	// Last in this block on purpose: these are compared, never persisted, and
-	// appending leaves every existing constant's value alone.
+	// Appended rather than inserted: these are compared, never persisted,
+	// so adding one at the END leaves every existing constant's value alone.
 	l3Displaced
+	// l3OtherHome: ours by marker AND by stamp, but the stamp names a
+	// DIFFERENT home than the one reading it (ADR 0081 D2). Bytes differ, so
+	// identity fails exactly as l3Stale does — what differs is why, and
+	// therefore the fix. A stale body is this home's own render gone old and
+	// a launch refreshes it; this one is another home's current render of the
+	// same wall, and re-rendering it from here only moves the contention,
+	// because that home's next launch stamps it back. It can only ever be the
+	// prepare-commit-msg slot: pre-push carries no stamp (D5 — its body takes
+	// no home input, so a cross-home write produces identical bytes), and the
+	// per-session redirect dir has no stale verdict to refine at all.
+	l3OtherHome
 )
 
 // reStamped reports whether install rewrites, in place and without asking,
@@ -6307,7 +6390,16 @@ const (
 // pre-heal state a launch silently repairs: l3Foreign is refused, l3Held is
 // rewritten with the bytes it already had, and l3Uninstalled had nothing
 // there to repair.
-func (v l3Verdict) reStamped() bool { return v == l3Stale || v == l3MemberGone }
+//
+// l3OtherHome is in the list because it is TRUE of the launch as it stands:
+// that body carries our marker, so installHook rewrites it in place like any
+// other, and the whole value of this predicate is that the warning it drives
+// says the launch did. ADR 0081 D3 is what stops the write, and D3 is its own
+// bead (ranger-base-lh9nj) — when it lands, this predicate narrows with it
+// rather than before it, or the launch rewrites a wall and says nothing.
+func (v l3Verdict) reStamped() bool {
+	return v == l3Stale || v == l3MemberGone || v == l3OtherHome
+}
 
 // l3Identity reports whether the file at hooks/slot is byte-for-byte render
 // (+x) — our current render, dispatched — or the prescribed chain dispatcher
@@ -6655,8 +6747,26 @@ func writeTempRender(dir, slot, body string) (string, error) {
 // consequence is the CALLER's, and for prepare-commit-msg it is no longer a
 // literal: commitGuardConsequence derives it from the installed body for the
 // verdicts where posse is holding one (ranger-base-e78c4).
-func l3DegradeLine(slot, path, consequence string, v l3Verdict) string {
+//
+// home is the installed body's own stamp (ADR 0081 D2), read by the caller
+// that already had to read that body to classify it; "" for every slot and
+// every verdict that carries no stamp, which is all of them but one. It is a
+// parameter rather than a read of its own so the switch below stays TOTAL:
+// l3RedirectMismatch is worded away from here by l3DegradeLineIn because
+// redirect mode re-words every identity failure, but a lone verdict composed
+// somewhere else would leave the default arm quietly calling it a renderer
+// regression.
+func l3DegradeLine(slot, path, consequence, home string, v l3Verdict) string {
 	switch v {
+	case l3OtherHome:
+		// NOT "ours but stale", and the clause that says so is the point:
+		// the body is a current posse render of this same wall, written by
+		// the home named here, and this home's render is not the one on the
+		// commit path. The remedy is ownership, not freshness — a repo's
+		// shared wall has one owning home — so the line names the home and
+		// the ADR instead of prescribing an install-hooks that the other
+		// home's next launch would stamp straight back.
+		return fmt.Sprintf("L3 %s hook — %s — rendered by home %s, not by this one: a repo's shared commit wall has one owning home (ADR 0081 D2), so this is not ours gone stale — re-render it from whichever home should own it; %s", slot, AbbrevHome(path), AbbrevHome(home), consequence)
 	case l3Stale:
 		return fmt.Sprintf("L3 %s hook — %s — ours but stale — run `posse gates install-hooks`; %s", slot, AbbrevHome(path), consequence)
 	case l3Uninstalled:
@@ -6725,16 +6835,24 @@ var l3CommitGuards = []l3CommitGuard{
 }
 
 // commitGuardConsequence is the consequence clause l3DegradeLine prints for
-// the prepare-commit-msg slot. For the two verdicts where the installed
-// body is posse's own it is DERIVED from both bodies; everywhere else it is
-// commitGuardWorstCase, unchanged.
+// the prepare-commit-msg slot. For the verdicts where the installed body is
+// posse's own and ON the commit path it is DERIVED from both bodies;
+// everywhere else it is commitGuardWorstCase, unchanged.
 //
 // render is this launch's render — the probe already has it, because
 // identity was decided by comparing against it one line earlier.
 func commitGuardConsequence(path, render string, v l3Verdict) string {
 	var installed string
 	switch v {
-	case l3Stale:
+	case l3Stale, l3OtherHome:
+		// l3OtherHome joins l3Stale rather than falling to the worst case
+		// (ADR 0081 D2) because the question the clause answers is the same
+		// one and the answer is sharper here, not weaker: that body is a
+		// posse render, it is dispatched, and every guard in it is realized
+		// — by another home's render of them. What a reader needs is which
+		// of THIS home's guards are not in it, which is exactly the gap.
+		// The reverse case, a guard that home renders and this one does not,
+		// is not a loss and is named on neither side (l3GuardGap).
 		// Re-read rather than thread the body out of l3Identity: this is
 		// the degraded path, reached once per launch per failing slot, and
 		// the alternative is a body parameter across every caller for a
@@ -6819,6 +6937,49 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	return a.probeL3HooksIn(dir, wantPrePush, nil)
 }
 
+// commitGuardHomeVerdict refines l3Stale with the one fact the bytes cannot
+// carry: WHOSE render is installed (ADR 0081 D2). It answers l3OtherHome,
+// and the home named, when the installed commit guard's stamp names a home
+// that is not this one; otherwise it hands back the verdict it was given and
+// no home at all.
+//
+// Only l3Stale is refined. l3Held is this home's own render by definition;
+// l3Foreign and l3Displaced are bodies posse will not vouch for, and a stamp
+// read out of one would be a claim made on behalf of a file posse did not
+// write; l3Uninstalled and l3MemberGone have no body to read.
+//
+// A re-read of the file, on the same path and for the same reason
+// commitGuardConsequence re-reads it: this runs once per launch per failing
+// slot, and the alternative is threading a body through every caller of
+// l3Identity for a string two clauses read. A body that has gone since the
+// identity read is no stamp to trust, so it stays l3Stale — the verdict that
+// prescribes a repair, which is the safe way to be wrong here.
+//
+// An UNSTAMPED body stays l3Stale, and that is ADR 0081 D3 case 4 rather
+// than a default: every body installed before this ADR has no stamp, so the
+// first launch per repo re-stamps it and says so once. Reading it as another
+// home's would leave every repo on the box reporting a home nobody can name.
+//
+// samePath, not string equality: this home's spelling of itself and the
+// spelling the stamping process used can differ by a symlink (/tmp against
+// /private/tmp is the one that bites tests first) or by a trailing element,
+// and a wall read as foreign because of that would be a finding about path
+// spelling printed as a finding about ownership.
+func (a *App) commitGuardHomeVerdict(v l3Verdict, path string) (l3Verdict, string) {
+	if v != l3Stale {
+		return v, ""
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return v, ""
+	}
+	stamp := commitGuardHomeOf(string(b))
+	if stamp == "" || samePath(stamp, a.Home) {
+		return v, ""
+	}
+	return l3OtherHome, stamp
+}
+
 // l3Ask is how much of ADR 0023's question one probe asks.
 type l3Ask int
 
@@ -6887,7 +7048,7 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 	// install that hit it already failed loudly — so it degrades to no
 	// literals rather than propagating.
 	identity, _ := a.commitGuardLiterals(dir)
-	commitRender := CommitGuardHook(visibility, a.OpsPatternSet(), identity...)
+	commitRender := a.CommitGuardHook(visibility, a.OpsPatternSet(), identity...)
 
 	var prePushPath string
 	if wantPrePush {
@@ -6895,6 +7056,12 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 	}
 	var commitPath string
 	r.CommitGuardVerdict, commitPath = l3IdentityIn(red, hooks, "prepare-commit-msg", commitRender, sharedIndexMarker)
+	// ADR 0081 D2: the bytes already said this body is not ours; the stamp
+	// says whose it is. Asked only of the commit guard, because it is the
+	// only body that carries a stamp — pre-push takes no home input (D5) and
+	// the redirect dir has no stale verdict to refine.
+	var commitHome string
+	r.CommitGuardVerdict, commitHome = a.commitGuardHomeVerdict(r.CommitGuardVerdict, commitPath)
 
 	// An ask that skips the behavior half reads as "not asked" and never as
 	// "it failed": the verdict below is then identity's alone, and the
@@ -6909,11 +7076,11 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 	r.CommitGuard = r.CommitGuardVerdict == l3Held && commitBehavior
 
 	if wantPrePush && !r.PrePush {
-		r.PrePushDegraded = l3DegradeLineIn(red, "pre-push", prePushPath, "this layer is not realized", r.PrePushVerdict)
+		r.PrePushDegraded = l3DegradeLineIn(red, "pre-push", prePushPath, "this layer is not realized", "", r.PrePushVerdict)
 	}
 	if !r.CommitGuard {
 		r.CommitGuardDegraded = l3DegradeLineIn(red, "prepare-commit-msg", commitPath,
-			commitGuardConsequence(commitPath, commitRender, r.CommitGuardVerdict), r.CommitGuardVerdict)
+			commitGuardConsequence(commitPath, commitRender, r.CommitGuardVerdict), commitHome, r.CommitGuardVerdict)
 	}
 	// The forward-completeness arm, and the reason it is separate from the
 	// two slots above: what a missing dispatcher costs is not a posse gate

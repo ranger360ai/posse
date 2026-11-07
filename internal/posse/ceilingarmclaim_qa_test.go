@@ -41,7 +41,7 @@ import (
 // over an empty render.
 func TestQACeilingBannerDoesNotDenyCheckThreesMessageArm(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{
 		Extra:   []OpsPattern{{Class: "e", ERE: "zzz"}},
 		Ceiling: []OpsPattern{{Class: "c", ERE: "yyy"}},
 	}, IdentityLiteral{Class: "username", Value: "qa-fixture-operator"})

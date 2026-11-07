@@ -40,7 +40,7 @@ func TestL3CommitGuardBannersAreInTheRender(t *testing.T) {
 	if len(set.Ceiling) == 0 {
 		t.Fatalf("fixture premise: the ceiling patterns must be accepted, got %+v/%v", set.Ceiling, set.CeilingRejected)
 	}
-	render := CommitGuardHook(VisibilityPublic, set)
+	render := a.CommitGuardHook(VisibilityPublic, set)
 	for _, g := range l3CommitGuards {
 		if n := strings.Count(render, g.banner); n != 1 {
 			t.Errorf("the %s guard's banner %q appears %d time(s) in the render, want 1 — l3GuardGap would misreport it", g.name, g.banner, n)
@@ -51,7 +51,7 @@ func TestL3CommitGuardBannersAreInTheRender(t *testing.T) {
 	// instance that configured no patterns (dataCeilingCheck's empty-list
 	// return), which is why l3GuardGap names a guard on neither side when
 	// this render does not carry it. Every other banner is unconditional.
-	bare := CommitGuardHook(VisibilityPublic, (&App{ConfigPath: filepath.Join(home, "absent.yaml")}).OpsPatternSet())
+	bare := a.CommitGuardHook(VisibilityPublic, (&App{ConfigPath: filepath.Join(home, "absent.yaml")}).OpsPatternSet())
 	for _, g := range l3CommitGuards {
 		got, want := strings.Contains(bare, g.banner), g.name != "data ceiling"
 		if got != want {
@@ -122,7 +122,7 @@ func TestStaleL3LineNamesOnlyTheGuardTheBodyLacks(t *testing.T) {
 // identity is not about the body at all.
 func TestL3ConsequenceKeepsTheWorstCaseWhereItCannotTell(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	for _, v := range []l3Verdict{l3Held, l3Uninstalled, l3Foreign, l3RedirectMismatch} {
 		if got := commitGuardConsequence(filepath.Join(t.TempDir(), "absent"), render, v); got != commitGuardWorstCase {
 			t.Errorf("verdict %d must keep the static worst case, got %q", v, got)
@@ -151,7 +151,7 @@ func TestL3ConsequenceKeepsTheWorstCaseWhereItCannotTell(t *testing.T) {
 // guard that is there may be an older render of itself.
 func TestL3GuardGapSaysWhenNoNamedGuardIsMissing(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	got := l3GuardGap(render+"\n# one line of drift\n", render)
 	for _, want := range []string{"no named guard is missing", "this render's or an older one", "the drift is elsewhere"} {
 		if !strings.Contains(got, want) {

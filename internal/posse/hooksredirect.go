@@ -91,7 +91,7 @@ func (a *App) RenderSessionHooks(session, dir string, m managedHooks, wantPrePus
 	if err != nil {
 		return nil, err
 	}
-	members := map[string]string{"prepare-commit-msg": CommitGuardHook(visibility, a.OpsPatternSet(), identity...)}
+	members := map[string]string{"prepare-commit-msg": a.CommitGuardHook(visibility, a.OpsPatternSet(), identity...)}
 	if wantPrePush {
 		members["pre-push"] = PrePushHook
 	}
@@ -333,9 +333,16 @@ func l3RedirectIdentity(hooks, managed, slot, render string) (identity bool, pat
 // per-session dir it does not write, and "foreign" describes nothing there.
 // A behavior failure (identity held, our own render did not refuse) is the
 // same renderer regression it always was, in the same words.
-func l3DegradeLineIn(red *l3Redirect, slot, path, consequence string, v l3Verdict) string {
+//
+// home passes straight through (ADR 0081 D2) and is always "" on this side:
+// redirect mode's identity has no stale verdict for the stamp to refine, and
+// this dir is posse's own, rebuilt from nothing at every launch by the home
+// that is reading it. It is in the signature because l3DegradeLine's is the
+// line, and a wrapper that dropped an argument would word one verdict
+// differently depending on which of the two it went through.
+func l3DegradeLineIn(red *l3Redirect, slot, path, consequence, home string, v l3Verdict) string {
 	if red == nil || v == l3Held {
-		return l3DegradeLine(slot, path, consequence, v)
+		return l3DegradeLine(slot, path, consequence, home, v)
 	}
 	return fmt.Sprintf("L3 %s hook — %s — the session hooks dir does not carry this launch's render — re-launch to re-render under an installed posse that carries it; %s", slot, AbbrevHome(path), consequence)
 }

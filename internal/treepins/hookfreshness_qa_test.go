@@ -357,6 +357,123 @@ func TestQAHookFreshnessCatchesAStampThatDisagreesWithConfig(t *testing.T) {
 	}
 }
 
+// hfHomeOf is the `# posse-home: <abs home>` value in a rendered body, or ""
+// (ADR 0081 D2). Taken out of the RENDER and never spelled in these arms, for
+// the same reason the script takes it out of its reference: a home path
+// recomputed here would differ by a symlink or a trailing element and the arm
+// would be measuring that instead.
+func hfHomeOf(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		if rest, ok := strings.CutPrefix(line, "# posse-home: "); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// ADR 0081 D2, the fourth arm. A failed identity has two readings and the
+// body says which: ANOTHER home's current render of the same wall is not
+// this binary's render gone stale, and the fix is not the reinstall — that
+// home's next session launch would stamp the file straight back
+// (ranger-base-q0np6 measured the loop). Both homes are told apart by one
+// comment line, which is the only thing a non-owning home can read about a
+// home whose config it cannot see.
+func TestQAHookFreshnessNamesAForeignStampedWallInsteadOfStale(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private"})
+	body := hfRead(t, r.hook("priv"))
+	mine := hfHomeOf(body)
+	if mine == "" {
+		t.Fatalf("rig never built: the current render carries no `# posse-home:` line, so this arm would be measuring its own absence")
+	}
+	other := filepath.Join(r.home, "some-other-home")
+
+	// ONE LINE changed, the way the stamp arm above changes one line: the
+	// body stays a current, marker-bearing, refusing posse render and the
+	// visibility stamp still agrees with config, so the only thing identity
+	// can be failing over is the home.
+	hfWrite(t, r.hook("priv"), strings.Replace(body,
+		"# posse-home: "+mine, "# posse-home: "+other, 1))
+	out, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("a wall another home rendered must be a finding (exit 1), got %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "was rendered by home "+other) {
+		t.Errorf("the finding must name the stamping home — it is the one fact a reader cannot get anywhere else:\n%s", out)
+	}
+	if strings.Contains(out, "is STALE") {
+		t.Errorf("another home's current render is not this binary's render gone stale, and the STALE line prescribes the reinstall that keeps two homes re-stamping one file:\n%s", out)
+	}
+	if strings.Contains(out, "visibility stamp is") {
+		t.Errorf("the arm changed a line it was not supposed to: the visibility stamp must still agree with config:\n%s", out)
+	}
+	// The remedy, which is the half that makes this a different finding
+	// rather than a different sentence: the reader is told to decide which
+	// home owns the wall, with this home named so they can tell the two apart.
+	if !strings.Contains(out, "decide which home owns this repo's wall") || !strings.Contains(out, r.rhqHome) {
+		t.Errorf("the finding must name THIS home too, and the choice it is asking for:\n%s", out)
+	}
+}
+
+// The other half of D2's reading, and the one that is true of every hook on
+// every box the day this lands: no stamp is NOT another home. ADR 0081 D3
+// case 4 calls an unstamped body the one-shot migration, which a launch
+// re-stamps without asking — so this control must keep saying STALE over it,
+// or it re-words every finding on the box and prescribes a decision nobody
+// has to make. MEASURED 2026-11-07 over this instance's four declared repos:
+// 4 findings, all `is STALE`, none classified by home.
+func TestQAHookFreshnessStillCallsAnUnstampedBodyStale(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private"})
+	body := hfRead(t, r.hook("priv"))
+	mine := hfHomeOf(body)
+	if mine == "" {
+		t.Fatalf("rig never built: the current render carries no `# posse-home:` line to drop")
+	}
+	hfWrite(t, r.hook("priv"), strings.Replace(body, "# posse-home: "+mine+"\n", "", 1))
+	out, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("an unstamped body is still a difference from this binary's render (exit 1), got %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "prepare-commit-msg is STALE") {
+		t.Errorf("a body nobody stamped is this home's to re-stamp, so it keeps the line that prescribes the re-render:\n%s", out)
+	}
+	if strings.Contains(out, "rendered by home") {
+		t.Errorf("absence of a stamp must not read as somebody else's stamp:\n%s", out)
+	}
+}
+
+// And the cry-wolf half, which is where this classification could do real
+// damage: ONE home spelled two ways. The stamp is written by whatever process
+// installed the hook, and that process need not spell the home the way this
+// run does — /tmp against /private/tmp on this box, a symlinked ~/.config —
+// so the two are compared as DIRECTORIES (same_dir) and not as strings. The
+// body's bytes still differ, so this is a finding; what it must not be is a
+// finding about ownership, which asks the operator to decide something in a
+// repo whose wall belongs to exactly one home already.
+func TestQAHookFreshnessDoesNotCryWolfOverASymlinkedHomeSpelling(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private"})
+	body := hfRead(t, r.hook("priv"))
+	mine := hfHomeOf(body)
+	if mine == "" {
+		t.Fatalf("rig never built: the current render carries no `# posse-home:` line")
+	}
+	link := filepath.Join(r.home, "home-by-another-name")
+	if err := os.Symlink(mine, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	hfWrite(t, r.hook("priv"), strings.Replace(body,
+		"# posse-home: "+mine, "# posse-home: "+link, 1))
+	out, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("the bytes differ, so this is still a finding (exit 1), got %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "rendered by home") {
+		t.Errorf("one home spelled two ways is one home — a finding about ownership here sends the operator to decide a question that is already settled:\n%s", out)
+	}
+	if !strings.Contains(out, "prepare-commit-msg is STALE") {
+		t.Errorf("a body this binary's render does not match is stale:\n%s", out)
+	}
+}
+
 // ADR 0023: a slot counts only when identity AND behavior hold. A file wearing
 // our marker that refuses nothing is the planted-hook case.
 func TestQAHookFreshnessCatchesAMarkedHookThatRefusesNothing(t *testing.T) {

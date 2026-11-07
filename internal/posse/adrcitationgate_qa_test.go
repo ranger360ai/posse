@@ -221,7 +221,7 @@ func TestQAAdrCitationOfTheWritersOwnShaCommits(t *testing.T) {
 // green against a hook that renders nothing at all.
 func TestQAAdrCitationMachineryIsNotInTheRenderedHook(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 
 	for _, gone := range append([]string{
 		"posse_adr_judge",
@@ -284,7 +284,7 @@ func TestQAAdrCitationMachineryIsNotInTheRenderedHook(t *testing.T) {
 // one to be added under it (ranger-base-dclwi).
 func TestQAAdrCitationCostIsNotOnTheCommitPathUnderAnyName(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 
 	for _, verb := range []string{"merge-base", "patch-id"} {
 		if strings.Contains(render, verb) {

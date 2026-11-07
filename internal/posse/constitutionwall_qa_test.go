@@ -250,7 +250,7 @@ func TestQAConstitutionWallRefusesADeletion(t *testing.T) {
 // render without removing it from the promoted set is caught here.
 func TestQAConstitutionWallRenderNamesEveryPromotedPath(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	for _, p := range PromotedPaths {
 		want := ConstitutionSourceDir + "/" + p
 		if !strings.Contains(render, "\n"+want+"\n") {
@@ -290,7 +290,7 @@ func TestQAConstitutionWallRenderNamesEveryPromotedPath(t *testing.T) {
 // launch check.
 func TestQAConstitutionWallRenderNamesEveryBuiltinProjectConfig(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	class := ConstitutionClassIn(constitutionRepoTop(t))
 	plain := ConstitutionClassIn(t.TempDir())
 	for i := range builtinRuntimes {
@@ -364,7 +364,7 @@ func TestQAConstitutionWallRefusesAnotherRuntimesProjectConfig(t *testing.T) {
 // exactly the case ranger-base-7pq0 measured.
 func TestQAConstitutionWallSitsAboveTheSharedIndexArm(t *testing.T) {
 	t.Parallel()
-	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	con := strings.Index(render, "the constitution-path guard")
 	shared := strings.Index(render, "the shared-index guard")
 	if con < 0 || shared < 0 {

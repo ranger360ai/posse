@@ -2076,7 +2076,7 @@ func TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges(t *testing.T) 
 	} {
 		before, _ := os.ReadFile(ours)
 		write(t, a.ConfigPath, "beads_visibility:\n  "+repo+": "+c.mark+"\n")
-		if string(before) == CommitGuardHook(c.want, a.OpsPatternSet()) {
+		if string(before) == a.CommitGuardHook(c.want, a.OpsPatternSet()) {
 			t.Fatalf("%s: fixture carries the wanted stamp already — nothing to restamp", c.mark)
 		}
 		path, vis, src, err := a.InstallCommitGuardHook(repo)
@@ -2087,7 +2087,7 @@ func TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges(t *testing.T) 
 			t.Errorf("%s: install reported (%q, %q, %q), want the chained member stamped %q from config",
 				c.mark, path, vis, src, c.want)
 		}
-		if body, _ := os.ReadFile(ours); string(body) != CommitGuardHook(c.want, a.OpsPatternSet(), testIdentity(t, repo)...) {
+		if body, _ := os.ReadFile(ours); string(body) != a.CommitGuardHook(c.want, a.OpsPatternSet(), testIdentity(t, repo)...) {
 			t.Errorf("%s: the chained hook does not carry the mark config now says:\n%s",
 				c.mark, firstStampLine(string(body)))
 		}
@@ -2157,7 +2157,7 @@ func TestCommitGuardStampsTheREPOSMarkFromALinkedWorktree(t *testing.T) {
 				if c.want == VisibilityPublic {
 					other = VisibilityPrivate
 				}
-				write(t, shared, CommitGuardHook(other, a.OpsPatternSet()))
+				write(t, shared, a.CommitGuardHook(other, a.OpsPatternSet()))
 				if err := os.Chmod(shared, 0o755); err != nil {
 					t.Fatal(err)
 				}
@@ -2179,7 +2179,7 @@ func TestCommitGuardStampsTheREPOSMarkFromALinkedWorktree(t *testing.T) {
 				if src != wantSrc {
 					t.Errorf("reported source = %q, want %q", src, wantSrc)
 				}
-				if body, _ := os.ReadFile(shared); string(body) != CommitGuardHook(c.want, a.OpsPatternSet(), testIdentity(t, wt)...) {
+				if body, _ := os.ReadFile(shared); string(body) != a.CommitGuardHook(c.want, a.OpsPatternSet(), testIdentity(t, wt)...) {
 					t.Errorf("the shared repo's hook does not carry the mark config gives %s:\n  %s",
 						AbbrevHome(repo), firstStampLine(string(body)))
 				}
@@ -2589,7 +2589,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	write("posse-pre-push", PrePushHook)
 	write("prepare-commit-msg", chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg"))
 	write("theirs-prepare-commit-msg", "#!/bin/sh\nexit 1\n")
-	write("posse-prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}, identity...))
+	write("posse-prepare-commit-msg", a.CommitGuardHook(VisibilityPublic, OpsPatternSet{}, identity...))
 	if got := a.probeL3Hooks(repo, true); !got.Repo || !got.PrePush || !got.CommitGuard {
 		t.Errorf("byte-exact chain must count by identity: %+v", got)
 	}
@@ -2619,7 +2619,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	// wantPrePush=false is vacuous for the push arm regardless of what sits
 	// there; the commit-guard arm still requires identity.
 	os.Remove(filepath.Join(hooks, "pre-push"))
-	write("prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{}, identity...))
+	write("prepare-commit-msg", a.CommitGuardHook(VisibilityPublic, OpsPatternSet{}, identity...))
 	if got := a.probeL3Hooks(repo, false); !got.PrePush || !got.CommitGuard {
 		t.Errorf("commit-only probe: %+v", got)
 	}
@@ -2978,7 +2978,7 @@ func TestL3HooksStampWithoutABareDate(t *testing.T) {
 		// renders whatever the set holds, and a test that reads config
 		// off the box measures the box (the neighbouring L3 tests
 		// spell it the same way).
-		{"prepare-commit-msg", CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
+		{"prepare-commit-msg", qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
 	} {
 		if strings.Contains(tc.body, "$(date ") {
 			t.Errorf("%s: a refusal line spells `date` bare — inside a session that name is the persona's own gate (ranger-base-l97n):\n%s", tc.name, tc.body)

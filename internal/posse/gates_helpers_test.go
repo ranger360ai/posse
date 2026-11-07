@@ -185,10 +185,30 @@ func renderGateShellFor(t *testing.T, base, body string) (wrapper, gatesDir, bin
 // behind it, which is the fail-closed default: unmarked repo = public beads
 // db = the visibility half armed. Every test below commits files outside
 // `.beads/`, so what they exercise is the shared-index half.
+//
+// FOR BEHAVIOR, never for identity. The App is homeless and configless, so
+// the body it writes carries no `# posse-home:` stamp (ADR 0081 D2), no
+// guard-value literals and no crew literals — the repo-derived identity
+// literals it does carry are the only half that does not depend on a home. A
+// test that goes on to PROBE that repo, or to compare the slot against a
+// render, must install from the App it reads with, or the two disagree over
+// lines neither test is about.
 func installCommitGuard(dir string) (string, error) {
 	p, _, _, err := (&App{}).InstallCommitGuardHook(dir)
 	return p, err
 }
+
+// qaNoHome is the App a byte-exact FIXTURE renders the commit guard from.
+// It has no Home, so commitGuardHomeStamp renders no `# posse-home:` line
+// (ADR 0081 D2) and the body is the one every pin here was written against —
+// which is also, exactly, the unstamped body D3 case 4 calls the migration
+// case.
+//
+// A fixture that must match what an INSTALLER wrote cannot use it: that body
+// carries the installing home's stamp the same way it carries that home's
+// identity literals and ops patterns (CommitGuardHook's own doc comment), so
+// those sites render from the App under test and nothing else.
+var qaNoHome = &App{}
 
 // testIdentity is the ADR 0024 D2 check 3 literal set InstallCommitGuardHook
 // / probeL3Hooks would derive for dir on THIS box, right now — for a test
