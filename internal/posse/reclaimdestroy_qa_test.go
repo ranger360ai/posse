@@ -154,6 +154,18 @@ func prunePasses(b *HerdrBackend, warn *syncBuf, budget time.Duration, cond func
 	deadline := start.Add(budget)
 	var reached int
 	for {
+		// THE WINDOW IS PER PASS, and that is load-bearing rather than tidy
+		// (ranger-base-obaim). `at` is where THIS pass's warnings start, so
+		// the sparing test below asks whether THIS pass was spared; widened
+		// to the whole buffer it would ask whether ANY pass ever was, and
+		// after the first spared pass the answer is yes forever. `reached`
+		// would then never increment again, the reach guard would be dead,
+		// and every give-up on a box that saw one transient false-busy would
+		// be the deadline's "NOT ONE" — a genuinely broken prune reported as
+		// a box whose lock is never free, which is ranger-base-6mpke's own
+		// disease. MEASURED 2026-11-07: 20 passes/122ms as written against
+		// 2,197 passes/15.01s widened, same board. Pinned by the fourth arm
+		// of TestQAAThePruneRetryBudgetRidesOutAHeldLaunchLock.
 		at := len(warn.String())
 		if _, err := b.Sessions(); err != nil {
 			return "", passes, err
@@ -805,6 +817,78 @@ func TestQAAThePruneRetryBudgetRidesOutAHeldLaunchLock(t *testing.T) {
 		}
 		if warn := warnBuf(t, b).String(); !strings.Contains(warn, lockSparedSentence) {
 			t.Errorf("the sparing does not name the lock at all:\n%s", warn)
+		}
+	})
+
+	// ── ONE spared pass does not blind the reach guard ──
+	//
+	// ranger-base-obaim. The three arms above hold the budget's unit and its
+	// two give-ups, and every one of them is green on the mutant that widens
+	// prunePasses' sparing window from THIS pass to the whole buffer: "held
+	// throughout" wants NOT ONE and still gets it, "held past any pass count"
+	// ends on cond, and the deadline arm holds no lock so its buffer never
+	// carries the sentence at all. So the `[at:]` slice — the whole of "a
+	// spared pass is not a pass" — was unpinned.
+	//
+	// THE SHAPE IS THE ONE THIS BEAD IS ABOUT: a transient false-busy, not a
+	// sustained one. The lock is taken, a pass or two runs under it and is
+	// spared, and then it is FREE for the rest of the call — which is what a
+	// sibling's fork-to-exec window looks like (ranger-base-a40d9), and the
+	// window the budget exists to ride out. Against it the two readings
+	// disagree about which fact the operator is told, MEASURED 2026-11-07:
+	//
+	//	as landed  20 passes, 122ms   "20 of which reached reclaim's own
+	//	                              decision"            -> blames the PRUNE
+	//	widened    2,197 passes, 15s  "NOT ONE of which reached ... so this is
+	//	                              a box on which that lock is never free"
+	//	                                                   -> blames the BOX
+	//
+	// The hold is 50ms against a 5ms gap, so ~10 passes are spared and the
+	// first one certainly is — the lock is held before prunePasses is called.
+	// It does NOT need to outlast pruneUntilReaches passes the way the
+	// ride-out arm's 300ms does: this arm's subject is the FIRST spared pass
+	// poisoning the test for every pass after it, which one spared pass is
+	// enough to show.
+	t.Run("one spared pass does not blind the reach guard", func(t *testing.T) {
+		t.Parallel()
+		b, stub := muxMetaRexBoard(t, "husk", "01a1902c-husk", false)
+		stub.onClose = func(Seat) error { return errors.New("server refused the destroy") }
+		lock := holdLaunchLock(t, b)
+		const hold = 50 * time.Millisecond
+		released := make(chan struct{})
+		go func() {
+			time.Sleep(hold)
+			lock.Release()
+			close(released)
+		}()
+		start := time.Now()
+		gaveUp, _, err := prunePasses(b, warnBuf(t, b), pruneUntilBudget, metaGone(b, "husk"))
+		took := time.Since(start)
+		<-released
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gaveUp == "" {
+			t.Fatal("the record went although every destroy failed — this arm measures nothing")
+		}
+		// The fixture's own control: a run in which nothing was ever spared
+		// would be the third arm's board and would pin nothing here.
+		if warn := warnBuf(t, b).String(); !strings.Contains(warn, lockSparedSentence) {
+			t.Fatalf("no pass was spared on the launcher lock over a %v hold, so this arm never reached the window it is about:\n%s", hold, warn)
+		}
+		if strings.Contains(gaveUp, "NOT ONE") {
+			t.Errorf("after ONE spared pass a broken prune is reported as a box whose launcher lock is never free: %q\n"+
+				"prunePasses is asking whether ANY pass was ever spared instead of whether THIS one was (the `[at:]` slice), so `reached` can never increment again after the first transient false-busy — the reach guard is dead and ranger-base-6mpke's disease is back, at %v against the 122ms this costs as written", gaveUp, took)
+		}
+		if !strings.Contains(gaveUp, "reached reclaim's own decision") {
+			t.Errorf("a broken prune after a spared pass gave up without naming what reached its decision: %q", gaveUp)
+		}
+		// The reach guard answered and not the deadline — the same 35x margin
+		// the second arm's assertion carries, and here it is the half the
+		// message cannot say on its own: the widened read ends at the
+		// deadline, 123x the wall.
+		if took > pruneUntilBudget/3 {
+			t.Errorf("a broken prune after a %v hold spent %v giving up against a budget of %v — the reach guard is not counting the passes that got through", hold, took, pruneUntilBudget)
 		}
 	})
 }

@@ -43,6 +43,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,10 @@ import (
 // gather's WaitCeiling arm, so no pin here depends on a settle, a bd read or
 // a judged bead.
 const legPaceCeiling = 2 * time.Second
+
+// legPaceSession is the one seat every fixture in this file hires. Named so
+// that an assertion about what the pass SAID about it does not re-spell it.
+const legPaceSession = "ranger-qa-a-1"
 
 // waitLegGather runs one bounded gather per occupant over a seat that reads
 // WORKING throughout and a wait leg that ends at once, and hands back each
@@ -81,7 +86,7 @@ func waitLegGather(t *testing.T, tune func(*Dispatcher)) map[string]string {
 	for _, mux := range []string{MuxHerdr, MuxRex} {
 		t.Run(mux, func(t *testing.T) {
 			b, fake := newTestBackend(t)
-			const session = "ranger-qa-a-1"
+			const session = legPaceSession
 			var target string
 			if mux == MuxRex {
 				m, _ := newTestRexMux(t)
@@ -333,6 +338,184 @@ func TestQAWaitLegErrorDoesNotSuppressTheProgressLine(t *testing.T) {
 			// is not paced at all. Either way the two clocks are not the two
 			// this pin is about.
 			t.Errorf("%s: %d leg-error lines inside one ProgressEvery, want 1:\n%s", mux, n, out)
+		}
+	}
+}
+
+// ─── and WHERE the sink is: before the probe, not inside an arm of it ────────
+//
+// ranger-base-obaim. The three pins above are all driven by waitLegGather,
+// whose seat reads WORKING throughout — it hard-requires that ("this gather
+// never reached the re-wait arm"), because the busy-wait regime it was written
+// for IS the `working` arm. So all three are satisfied by a sink that only
+// fires inside `case "working":`, and the PLACEMENT the close states as the
+// decision — "printed BEFORE the probe, not inside an arm of it, because the
+// leg error is a fact about the leg and not about what the status probe then
+// says" — was unpinned.
+//
+// MEASURED 2026-11-07 with the sink moved into `case "working":`: `blocked`,
+// the WaitCeiling arm and the `default` arm each print no leg error, and the
+// reach pin stays green because earlier `working` legs printed one. Three of
+// the four arms the close enumerates, silently back to what ranger-base-aj79z
+// was filed off — a leg that ran out, a leg the occupant refused and a leg
+// whose read failed all reaching the probe indistinguishable from each other.
+//
+// WHY A SECOND FIXTURE AND NOT A TUNE KNOB. These arms end the pass on the
+// FIRST leg — `blocked` and `default` both `return true, nil` — so there is no
+// re-wait to pace and nothing here is about a rate. waitLegGather's own
+// control would fail first.
+
+// waitLegGatherEndingOn runs one bounded gather per occupant over a seat the
+// status probe reads as `st`, with the wait leg failing, and hands back each
+// occupant's output. `st` is a state gather does NOT loop on, so the pass ends
+// on its first leg.
+//
+// THE LEG FAILS ON EACH OCCUPANT THE WAY waitLegGather's DOES, and the
+// difference between the two fixtures is the same honest one:
+//
+//   - On HERDR the fake's `wait-error` lever answers `agent wait` with the
+//     `timeout` code, independent of what the seat reads — so the seat reads
+//     `st` from the start.
+//   - On REX nothing is injected: the status QUEUE steps. Its head is
+//     `working`, which is not in rewait's until set, so RexMux's poller is
+//     already past its own 1ms deadline when that first sample returns and it
+//     answers with its own `timeout` (the file head's note). The next element
+//     is `st` and the fake leaves the last one in place forever
+//     (fakeRexProgramStatus), so every later read — the probe's, and
+//     statusAfterTimeout's re-reads on the `default` arm — is `st`.
+//
+// That is also the production sequence rather than a contrivance: the leg ran
+// out while the agent was working, and by the time the probe asked, the seat
+// had moved.
+func waitLegGatherEndingOn(t *testing.T, st string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, mux := range []string{MuxHerdr, MuxRex} {
+		t.Run(mux, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			const session = legPaceSession
+			var target string
+			if mux == MuxRex {
+				m, _ := newTestRexMux(t)
+				b.Slot = m
+				rexSeedSessions(t, fakeRexSession{SessionID: rexTestSession, Label: b.App.WorkspaceLabel(session),
+					Blocks: []fakeRexBlock{{BlockID: rexTestBlock, Label: "shell", Flavor: RexTerminalFlavor}}})
+				rexSeedProcess(t, rexTestBlock, rexRuntimeProc())
+				rexSeedStatus(t, rexTestBlock,
+					[]RexStatusRecord{rexRuntimeRec(MuxWorking)}, []RexStatusRecord{rexRuntimeRec(st)})
+				target = rexTestBlock
+				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: rexTestSession, Pane: rexTestBlock,
+					Agent: "ranger", Mux: MuxRex, Socket: m.Server().Addr, Launched: time.Now()}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: b.App.WorkspaceLabel(session), AgentStatus: st}})
+				if err := os.WriteFile(filepath.Join(fake, "agents.json"),
+					[]byte(`[{"agent":"claude","agent_status":"`+st+`","pane_id":"w1:p1","workspace_id":"w1"}]`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(fake, "wait-error"),
+					[]byte("timeout|timed out waiting for agent status"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				target = "w1:p1"
+				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: "w1", Pane: target,
+					Agent: "ranger", Socket: SocketID(), Gen: ServerGen(), Launched: time.Now()}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			d := newTestDispatcher(t, b)
+			d.PromptWaitMS = 1
+			d.WaitCeiling = legPaceCeiling
+			d.LegFloor = 0
+			d.ProgressEvery = 0
+			now := time.Now()
+			p := &pendingBead{is: RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: t.TempDir()},
+				persona: "ranger", session: session, target: target, runtime: "claude", delivered: true,
+				result: make(chan promptResult, 1), prompted: now, legAt: now, launched: now}
+			d.rewait(p)
+			inFlight, err := d.gather(p)
+			got := dispatcherOut(d)
+			if err != nil {
+				t.Fatalf("%s: gather over a %s seat failed: %v\n%s", mux, st, err, got)
+			}
+			// Both arms under test KEEP the claim, and a pass that judged the
+			// bead reached neither of them — on rex that is the leg having
+			// succeeded (its poller got a second sample inside 1ms and read
+			// `st` off the queue), which would make everything below vacuous.
+			if !inFlight {
+				t.Fatalf("%s: gather judged a %s seat, so the pass never reached the arm this pin is about:\n%s", mux, st, got)
+			}
+			out[mux] = got
+		})
+	}
+	return out
+}
+
+// legErrorBefore is the placement itself: the leg error is in the output AND
+// it is above `arm`, which is the one thing a sink moved inside an arm of the
+// probe cannot do.
+func legErrorBefore(t *testing.T, mux, out, arm string) {
+	t.Helper()
+	i, j := strings.Index(out, "wait leg ended:"), strings.Index(out, arm)
+	if j < 0 {
+		t.Fatalf("%s: this gather never printed %q, so it did not end on the arm this pin is about:\n%s", mux, arm, out)
+	}
+	if i < 0 {
+		t.Errorf("%s: a failed wait leg reached %q and never said it failed — the leg error is printed inside an arm of the status probe and not before it, so a leg that ran out, one the occupant refused and one whose read failed are indistinguishable here (ranger-base-aj79z):\n%s",
+			mux, arm, out)
+		return
+	}
+	if i > j {
+		t.Errorf("%s: the leg error is printed AFTER %q — it is a fact about the leg and not about what the probe then says:\n%s", mux, arm, out)
+	}
+}
+
+// THE `blocked` ARM. The occupant says the agent is waiting on a human, and
+// the leg that just failed is the other half of that sentence: an operator
+// told to attach needs to know the harness also could not read the seat.
+func TestQAWaitLegErrorIsSaidOnTheBlockedArmOnEveryMultiplexer(t *testing.T) {
+	t.Parallel()
+	for mux, out := range waitLegGatherEndingOn(t, MuxBlocked) {
+		legErrorBefore(t, mux, out, "blocked in ")
+		// And the occupant's OWN text, which is the discriminator these pins
+		// exist for — not just that something was said.
+		want := "timed out waiting for agent status"
+		if mux == MuxRex {
+			want = "no " + strings.Join([]string{MuxIdle, MuxDone, MuxBlocked}, "|") + " state in " + rexTestBlock
+		}
+		for _, probe := range []string{want, "(timeout)"} {
+			if !strings.Contains(out, probe) {
+				t.Errorf("%s: the leg error on the blocked arm does not carry %q:\n%s", mux, probe, out)
+			}
+		}
+	}
+}
+
+// THE `default` ARM — a state nobody names, which is the arm whose own line
+// says the LEAST about the leg: statusPhrase names the PROBE's error and never
+// this one, so without the sink the only thing printed about a leg that failed
+// is a sentence about what the occupant could not say.
+func TestQAWaitLegErrorIsSaidOnTheUnnamedStateArmOnEveryMultiplexer(t *testing.T) {
+	t.Parallel()
+	// Not one of the four gather branches on, and not "" either: an empty
+	// reading is statusPhrase's "detects no agent" arm, which is a different
+	// sentence. This is a state the occupant does name and posse does not know.
+	const unnamed = "pondering"
+	for mux, out := range waitLegGatherEndingOn(t, unnamed) {
+		legErrorBefore(t, mux, out, "wait timed out after")
+		// What the arm prints back is the OCCUPANT's reading, and the two
+		// occupants honestly differ: herdr reports the agent_status string it
+		// was given, while RexMux maps any record state it does not know to
+		// MuxUnknown before posse ever sees it (muxrex.go, ADR 0076 §3 —
+		// never to MuxIdle). Either way it is statusPhrase's `default` arm,
+		// which is what this pin needs to have reached.
+		state := unnamed
+		if mux == MuxRex {
+			state = MuxUnknown
+		}
+		if !strings.Contains(out, "herdr reports "+legPaceSession+" "+strconv.Quote(state)) {
+			t.Errorf("%s: the default arm did not print the state it could not read (%q), so this may be some other arm:\n%s", mux, state, out)
 		}
 	}
 }

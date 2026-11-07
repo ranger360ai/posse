@@ -470,3 +470,140 @@ func TestQAGrokPreconditionIsVisibleToTheOperatorBeforeALaunch(t *testing.T) {
 		t.Error("the refusal does not quote the one shared spelling of the line")
 	}
 }
+
+// ─── the ORDER of the three readings, which is also a decision ──────────────
+//
+// ranger-base-obaim. Both call sites carry it in a comment calling it "THE
+// ORDER IS THE DECISION, not an optimisation of it: a grok the key was not
+// measured on falsifies the measurement the precondition rests on", and no
+// pin held it. Every precondition arm above fixes the version AT
+// `rex_verified` (grokRexBackend, and the two t.Fatal guards inside the
+// dispatch arm say so in as many words), and every version arm seeds a config
+// that carries the line — so the one box state where the order is observable,
+// BOTH readings refusing at once, was never driven.
+//
+// WHAT THE INVERSION COSTS, MEASURED 2026-11-07 with the two blocks swapped at
+// dispatch.go's call site, over a grok reporting a release the key was never
+// measured on whose config also lacks the line:
+//
+//	as landed  RexVersionRefusal     — names the release read, the release it
+//	                                   was measured on, and `re-measure the
+//	                                   key and move rex_verified:`
+//	inverted   RexPreconditionRefusal — "ADD THE LINE ... program_status =
+//	                                   \"on\"", and it NEVER NAMES THE
+//	                                   VERSION AT ALL
+//
+// So inverted, the operator is told to edit their config on a release nobody
+// measured that key on — which is the admission D13's order exists to refuse
+// — and is told nothing about the version. The refusals do not compose: each
+// returns, so exactly one is ever seen.
+//
+// grokDriftedRelease is a release this instance's reading was never taken on.
+// It is the same spelling the version pin above uses, so the two arms cannot
+// disagree about what drift looks like.
+const grokDriftedRelease = "grok 1.0.70 (deadbeefcafe)"
+
+// grokRexBothRefusing is grokRexBackend's board with BOTH readings failing:
+// a config with the table present and `program_status` absent — not an empty
+// home, so the arm cannot be satisfied by the absent-FILE reading — and the
+// version seam re-pinned at a drifted release. grokPinVersion is called a
+// second time on purpose: its cleanup restores whatever the previous call set,
+// so the two nest.
+func grokRexBothRefusing(t *testing.T) (*HerdrBackend, *Runtime) {
+	t.Helper()
+	b := grokRexBackend(t, "[cli]\nmodel = \"grok-4\"\n\n[ui.notifications]\nsound = false\n")
+	rt := builtinRuntime(t, "grok")
+	grokPinVersion(t, rt, grokDriftedRelease)
+	// The board's own control: BOTH readings have to be refusing, or this is
+	// one of the single-reading arms above wearing another name.
+	if got, ok := RexVersionDrift(rt); ok {
+		t.Fatalf("the version seam reads %q and admits it, so the order is not observable on this board", got)
+	}
+	if read, ok := RexPreconditionMet(rt); ok {
+		t.Fatalf("the fixture config was admitted by the precondition (%q), so the order is not observable on this board", read)
+	}
+	return b, rt
+}
+
+// wantGrokVersionRefusalAndNotThePrecondition is the assertion both call sites
+// share: the message is the VERSION one. The positive half is the release —
+// the precondition's refusal never names a version at all, so naming it is
+// decisive on its own — and the negative half is the remedy, because that is
+// what the operator would act on.
+func wantGrokVersionRefusalAndNotThePrecondition(t *testing.T, where, msg string, rt *Runtime) {
+	t.Helper()
+	for _, want := range []string{grokDriftedRelease, rt.RexVerified, "re-measure the key", grokProgramStatusProbe} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("%s: with both readings refusing, the message does not name %q — the precondition was read before the version, so the operator is told nothing about the release their grok actually is (ADR 0076 D13):\n%s",
+				where, want, msg)
+		}
+	}
+	// The remedy that must NOT be reached: adding the line is the fix for a
+	// box whose RELEASE is the one the key was measured on, and on any other
+	// release it is advice to act on a measurement nobody retook.
+	for _, never := range []string{"ADD THE LINE", GrokProgramStatusLine} {
+		if strings.Contains(msg, never) {
+			t.Errorf("%s: with both readings refusing, the operator is sent to %q on a release the key was never measured on — the two blocks are in the wrong order (ADR 0076 D13: a grok the key was not measured on falsifies the measurement the precondition rests on):\n%s",
+				where, never, msg)
+		}
+	}
+}
+
+// CALL SITE 1: the dispatch loop (dispatch.go, above the argv ladder).
+func TestQAGrokVersionIsReadBeforeThePreconditionInTheDispatchLoop(t *testing.T) {
+	b, rt := grokRexBothRefusing(t)
+	d := newTestDispatcher(t, b)
+	_, fake := b, fakeDirOf(t)
+	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t", Labels: []string{"go"}}, Dir: t.TempDir()}
+	_, err := d.launchSession(is, "ranger", "ranger-x-a-1", "grok", "fast", func() string { return "work prompt" }, nil, false)
+	if err == nil {
+		t.Fatal("a grok launch was allowed over a board on which BOTH the version pin and the precondition refuse")
+	}
+	wantGrokVersionRefusalAndNotThePrecondition(t, "dispatch", err.Error(), rt)
+	// Unchanged either way, and asserted so that a reordering cannot be
+	// excused as harmless: nothing is claimed, created or typed on either
+	// order, because both readings are a declaration and one ReadFile.
+	if log := bdCalls(t, fake); strings.Contains(log, "--claim") {
+		t.Errorf("the bead was claimed before the readings:\n%s", log)
+	}
+	// The same verb list the precondition's own dispatch arm uses, and for
+	// its reason: launchSession reads the board (`ls`, `whoami`) before any
+	// gate, so what must not happen is a seat being created or typed into.
+	for _, c := range rexCalls(t) {
+		for _, verb := range []string{" new ", " send ", " send-key ", " kill "} {
+			if strings.Contains(" "+c+" ", verb) {
+				t.Errorf("a refused launch ran rex%s— nothing may be created or typed before the readings: %s", verb, c)
+			}
+		}
+	}
+}
+
+// CALL SITE 2: planLaunch (herdrback.go), with BOTH arms of the asymmetry —
+// the refusal and the interactive DEGRADED warning carry the same order, and
+// the warning is the arm an operator at the keyboard actually reads.
+func TestQAGrokVersionIsReadBeforeThePreconditionInPlanLaunch(t *testing.T) {
+	t.Run("a bead-carrying launch refuses on the version", func(t *testing.T) {
+		b, rt := grokRexBothRefusing(t)
+		_, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "ranger",
+			Runtime: "grok", Bead: "ranger-base-x"})
+		if err == nil {
+			t.Fatal("planLaunch planned a grok launch over a board on which BOTH readings refuse")
+		}
+		wantGrokVersionRefusalAndNotThePrecondition(t, "planLaunch", err.Error(), rt)
+		if warn := warnBuf(t, b).String(); warn != "" {
+			t.Errorf("a refused launch also warned — the asymmetry is refuse OR warn, never both:\n%s", warn)
+		}
+	})
+	t.Run("the operator at the keyboard is warned about the version", func(t *testing.T) {
+		b, rt := grokRexBothRefusing(t)
+		if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "ranger",
+			Runtime: "grok"}); err != nil {
+			t.Fatalf("an interactive launch was refused rather than warned: %v", err)
+		}
+		warn := warnBuf(t, b).String()
+		if !strings.Contains(warn, "DEGRADED") {
+			t.Fatalf("an interactive grok launch on an unmeasured release proceeded without saying so:\n%s", warn)
+		}
+		wantGrokVersionRefusalAndNotThePrecondition(t, "planLaunch interactive", warn, rt)
+	})
+}

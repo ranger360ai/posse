@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-t5ein](ranger-base-t5ein.md) — Promoting codex's record, and the fixtures that were pinning a table row (ranger-base-t5ein) — 2026-11-07
+- [ranger-base-obaim](ranger-base-obaim.md) — Three stated decisions that no pin held (ranger-base-obaim) — 2026-11-07
 - [ranger-base-m928w](ranger-base-m928w.md) — A presence probe that read its own cage as the operator's answer (ranger-base-m928w) — 2026-11-07
 - [ranger-base-ewk6u](ranger-base-ewk6u.md) — The plan-usage snapshot is keyed by the login, not the home (ranger-base-ewk6u) — 2026-11-07
 - [ranger-base-aj79z](ranger-base-aj79z.md) — The wait-leg error with no sink, and the discriminator that did not exist (ranger-base-aj79z) — 2026-11-07
