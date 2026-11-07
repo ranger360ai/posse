@@ -677,6 +677,13 @@ func TestQAUnreadableHomeReadsUnknownAndNotAbsent(t *testing.T) {
 // where the errno says the file is gone: ENOTDIR — a home that is an
 // ordinary FILE — cannot resolve now and cannot resolve later, so it is
 // absence, and absence is a reading (probeAbsent, skills.go's rule).
+//
+// ONLY THE FIRST HALF OF THAT IS PINNED HERE, and the name oversells the
+// second (ranger-base-6qede). An ENOTDIR fixture takes probeAbsent's TRUE
+// arm, so this probe never calls probeCageNote and the "no cage" guard
+// below cannot fire whatever probeCageNote does.
+// TestQANonPermissionErrnoIsUnknownAndClaimsNoCage is the arm that reaches
+// it, and it is where the mutation evidence lives.
 func TestQAProbeReadsENOTDIRAsAbsenceAndClaimsNoCage(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -698,6 +705,78 @@ func TestQAProbeReadsENOTDIRAsAbsenceAndClaimsNoCage(t *testing.T) {
 	}
 	if strings.Contains(sil.Why, "This reader is itself a caged seat") {
 		t.Errorf("a non-permission failure must not be diagnosed as a cage: %q", sil.Why)
+	}
+}
+
+// probeCageNote's OTHER conjunct, which the pin above cannot reach
+// (ranger-base-6qede, verifying ranger-base-m928w's close).
+//
+// The function stands on two facts and asserts a cage only on both:
+// fs.ErrPermission AND an RHQ_CAGE in posse's own environment. The pin above
+// is named for the first of them and says "a non-permission failure must not
+// be diagnosed as a cage" — but its guard cannot fire, whatever
+// probeCageNote does. Its fixture stages ENOTDIR, probeAbsent answers TRUE,
+// and codexSigninProbe takes the absence arm and never calls
+// unreadableSilence or probeCageNote at all. Every non-permission errno that
+// fixture can reach is one already classified as absence, so the half of its
+// name that says "no cage" was unreachable: MEASURED 2026-11-07, dropping the
+// fs.ErrPermission conjunct from probeCageNote left all three
+// ranger-base-m928w pins GREEN.
+//
+// ELOOP is the shape that reaches it: a self-referential symlink as the home,
+// so the stat answers "too many levels of symbolic links" — neither absence
+// (probeAbsent is false) nor permission (errors.Is(err, fs.ErrPermission) is
+// false), which is the only combination that gets past probeAbsent and into
+// probeCageNote on a non-permission errno. Under that mutant this arm reds
+// and the ENOTDIR pin above stays green, which is the whole reason it is a
+// separate test and not another line in it.
+//
+// Why it matters beyond the pin: this is the errno where the diagnosis would
+// be CONFIDENTLY WRONG. probeCageNote's own doc gives the rule it borrows
+// from claudeTrustWriteRefusal — "a confident wrong diagnosis is worse than
+// the bare errno" — and a caged seat reading an EIO or an ELOOP would be told
+// "the refused read is a fact about THIS SEAT and not about the box: the path
+// may hold exactly what the operator put there", about a path that is broken
+// for everybody.
+func TestQANonPermissionErrnoIsUnknownAndClaimsNoCage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	loop := filepath.Join(home, "codexloop")
+	if err := os.Symlink(loop, loop); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", loop)
+	unsetenvForTest(t, "OPENAI_API_KEY")
+	// The cage IS set, so the arm below is about the errno and nothing else:
+	// with RHQ_CAGE unset, probeCageNote's second conjunct would carry the
+	// assertion and the first would stay unmeasured all over again.
+	t.Setenv("RHQ_CAGE", CageSeatbelt)
+
+	// The fixture's own control. If a platform ever answers this with ENOENT
+	// or EPERM, this test is not staging what it says and must say so rather
+	// than pass: an unreachable arm passing is the defect it was written for.
+	_, serr := os.Stat(filepath.Join(loop, "auth.json"))
+	if serr == nil || probeAbsent(serr) || errors.Is(serr, fs.ErrPermission) {
+		t.Skipf("this platform does not answer a symlink loop with a non-absence non-permission errno (%v), so the arm cannot be staged", serr)
+	}
+
+	sil := codexSigninProbe()
+	// First: it is an UNKNOWN. A stat that never resolved is not a reading,
+	// which is ranger-base-m928w's rule applied to an errno nobody staged.
+	if !sil.Unknown || sil.Silenced {
+		t.Errorf("a stat that could not resolve is UNKNOWN and not a reading: %+v", sil)
+	}
+	if !strings.Contains(sil.Why, "too many levels of symbolic links") {
+		t.Errorf("the unknown must name the errno the kernel gave: %q", sil.Why)
+	}
+	// And the subject: no cage is asserted on an errno a cage did not cause.
+	if strings.Contains(sil.Why, "This reader is itself a caged seat") {
+		t.Errorf("probeCageNote asserted a cage on a non-permission errno — the diagnosis is wrong and confident: %q", sil.Why)
+	}
+	// It must still not refuse: an unknown is an unknown however it arose.
+	rt := &Runtime{Name: "codex", Builtin: true, Interstitials: CodexInterstitials}
+	if lines := DangerUnsilenced(rt); len(lines) != 0 {
+		t.Errorf("an unreadable credential path must not refuse a dispatch — got %v", lines)
 	}
 }
 

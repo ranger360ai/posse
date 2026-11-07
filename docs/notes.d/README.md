@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-ewk6u](ranger-base-ewk6u.md) — The plan-usage snapshot is keyed by the login, not the home (ranger-base-ewk6u) — 2026-11-07
 - [ranger-base-8rg06](ranger-base-8rg06.md) — Verifying four closes: the destroy's PLACE was the unpinned half (ranger-base-8rg06) — 2026-11-07
 - [ranger-base-74tkp](ranger-base-74tkp.md) — The wait leg that did not wait, and why the fix is not in the occupant (ranger-base-74tkp) — 2026-11-07
+- [ranger-base-6qede](ranger-base-6qede.md) — Verifying four closes: two claimed diagnostics, neither reachable (ranger-base-6qede) — 2026-11-07
 - [ranger-base-z7kle](ranger-base-z7kle.md) — posse's OSC 7501 reporter for codex, and what the route actually does (ranger-base-z7kle) — 2026-11-06
 - [ranger-base-y9i3o](ranger-base-y9i3o.md) — Four conjuncts of the ADR 0079 D2 compare now carry a witness (ranger-base-y9i3o) — 2026-11-06
 - [ranger-base-w4enh](ranger-base-w4enh.md) — Seven wall-clock fixture leads, and the three files that crossed clocks (ranger-base-w4enh) — 2026-11-06
