@@ -195,7 +195,7 @@ type MuxReading struct {
 //     Create would make a failed meta write leave a runtime running that
 //     posse has no record of, which is the orphan rangerhq-v52t and
 //     mustNotOrphan exist to prevent.
-//   - RestartAgent types a line into a pane whose shell has been settled for
+//   - RelaunchAgent types a line into a pane whose shell has been settled for
 //     hours. There is no create there to fold into.
 //
 // An occupant that cannot open a seat without its command — Rex, whose

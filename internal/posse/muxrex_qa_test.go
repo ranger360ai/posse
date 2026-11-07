@@ -115,7 +115,7 @@ func TestQARexCreateOpensAShellBlockWithTheEnvInItsArgv(t *testing.T) {
 		t.Errorf("the cwd did not reach `rex new`: %s", call)
 	}
 	// ADR 0076 §2: blocks take no env, so it rides the argv as `env K=V …`
-	// — and it rides the SHELL's argv, so a later Start or RestartAgent
+	// — and it rides the SHELL's argv, so a later Start or RelaunchAgent
 	// inherits it the way a herdr pane does (RexMux.Create's doc).
 	cmd := rexNewCommand(t)
 	want := []string{"/usr/bin/env", "A=1", "B=two", rexShell(), "-i"}

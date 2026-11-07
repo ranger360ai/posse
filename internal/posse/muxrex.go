@@ -89,7 +89,7 @@ const rexPollInterval = time.Second
 // and Start were one verb. They are not: posse types the runtime's line only
 // after the meta that records the session is on disk, because a failed meta
 // write must not leave a runtime running that posse has no record of
-// (mustNotOrphan, rangerhq-v52t) — and RestartAgent types a line into a
+// (mustNotOrphan, rangerhq-v52t) — and RelaunchAgent types a line into a
 // shell that settled hours ago, where there is no create to fold into. Rex's
 // `command` is optional, so the seat opens as a shell exactly the way herdr's
 // pane does and BOTH call sites keep working unchanged. That closes the
@@ -101,7 +101,7 @@ const rexPollInterval = time.Second
 // MEASURED), so §2 says to put it in the argv as `env K=V …`. It goes in the
 // SHELL's argv and not the runtime line's, and that is the difference that
 // matters: on herdr the env is set on the workspace, so every line typed into
-// that pane inherits it — including RestartAgent's, which re-reads the env
+// that pane inherits it — including RelaunchAgent's, which re-reads the env
 // sets but types only the line. Env prefixed per typed line would give a
 // relaunched seat no credentials at all. The exposure is the argv, which is
 // what Create's own doc already concedes ("the same known exposure `tmux -e`
