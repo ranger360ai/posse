@@ -190,8 +190,11 @@ func TestQAARexHuskIsDestroyedAndOnlyNotFoundCountsAsAlreadyDestroyed(t *testing
 		// gone and the session still there, which is the leak.
 		{name: "a husk the server holds is destroyed", seat: true, pruned: true, left: false},
 		// An id the server does not hold at all. No lever is set, so the
-		// refusal is the FAKE's own — the measured sentence, exit 3 — which
-		// is also what makes this row a pin on the fake's fidelity.
+		// refusal is the FAKE's own — the measured sentence, exit 3. This
+		// row does NOT pin that: a fake that answered 0 for an unknown id
+		// (which is what it did before this bead) ends this row the same
+		// way, through the destroy-succeeded path instead. The fake's own
+		// answer is pinned below, where it can be seen.
 		{name: "an id the server does not hold", pruned: true},
 		// Any OTHER refusal is a destroy that did not land. Same exit code,
 		// same stream, same `Error:` shape — only the sentence differs, which
@@ -276,6 +279,36 @@ func TestQAARexHuskIsDestroyedAndOnlyNotFoundCountsAsAlreadyDestroyed(t *testing
 				}
 			}
 		})
+	}
+}
+
+// The fake's own answer for an id the server does not hold, which is the one
+// thing the rows above cannot witness: each of them ends with the record gone
+// whether the kill was refused or succeeded. MEASURED 2026-11-06 on rex
+// 0.0.1793377904 — `session target "<id>" not found` on stderr, exit 3 — and
+// the fake answered exit 0 for every id until this bead, which left the
+// production branch that reads that refusal unreachable from the suite.
+func TestQAATheFakeRexRefusesAKillOfAnIdItDoesNotHold(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestRexMux(t)
+	rexSeedSessions(t, fakeRexSession{SessionID: "01a1902c-other", Label: "somebody-else",
+		Blocks: []fakeRexBlock{{BlockID: "block:other", Flavor: RexTerminalFlavor}}})
+	err := m.Close(Seat{Session: "01a1902c-husk", Pane: "block:husk"})
+	if err == nil {
+		t.Fatal("the fake destroyed an id it does not hold and called it success — the real CLI refuses with exit 3, so the branch that reads that refusal (rexSessionGone, ADR 0080 D10) cannot be reached from this suite at all and every pin on it passes through the success path instead")
+	}
+	if !strings.Contains(err.Error(), `session target "01a1902c-husk" not found`) {
+		t.Errorf("the fake's refusal is %q, not the sentence the real CLI prints", err)
+	}
+	// And the occupant reads its own refusal, which is the wiring: the
+	// interface is optional and reached by a type assertion, so a rename on
+	// either side would simply stop matching.
+	if !m.CloseSaysGone(err) {
+		t.Error("the occupant does not read its own `not found` as gone")
+	}
+	var gone MuxCloseGone = m
+	if !gone.CloseSaysGone(err) {
+		t.Error("RexMux does not satisfy MuxCloseGone through the interface the prune asserts on")
 	}
 }
 
