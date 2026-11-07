@@ -207,6 +207,26 @@ operator's own commits do.
 
 ## Measured versus assumed
 
+*(Amended 2026-11-07, ranger-base-jep08: the rule above is measured against
+**config-based hooks** too. git >= 2.54 lets a hook live in config —
+`hook.<name>.command` with `hook.<name>.event` — and not only in a
+`core.hooksPath` directory; every reading of this ADR before now was taken on
+git 2.50.1, where those keys are inert. MEASURED 2026-11-07 on the ADR 0080
+D1 host, Linux x86_64, git 2.56.0: with an employer's scanner carried only as
+`hook.scan.*` in system scope, the GIT_CONFIG_SYSTEM row carries it, the
+retired `/dev/null` value skips it at rc 0 with nothing said, and **D2's
+command-scope `core.hooksPath` does not reach it** — the redirect replaces
+the hooks DIRECTORY and leaves a config hook running, so D2 cannot cause a
+config-based managed hook to be skipped. Pinned by
+`TestQATheGitConfigSystemPinCarriesAConfigBasedManagedHook`
+(internal/posse/inletpingitconfig_qa_test.go), which skips below 2.54;
+re-read with `docs/adr/0052-config-based-hooks.probe.sh`. Also MEASURED
+there: `hook.<name>.enabled=false` and `hook.<event>.enabled=false`, typed in
+command or repo-local scope, skip a configured hook at rc 0 — a direction
+that does nothing on 2.50.1. The hook-skip arm refuses all of them by the
+`hook\.` key prefix (internal/posse/hookskip.go), and
+docs/notes.d/ranger-base-jep08.md holds the rows.)*
+
 MEASURED (this host, 2026-09-02): M1–M4 above; the failing call is the
 create in `installHook`, by reading. ASSUMED: local-over-global precedence
 (rejected alternative, from docs); `GIT_CONFIG_COUNT` appending when the

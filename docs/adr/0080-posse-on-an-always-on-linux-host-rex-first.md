@@ -164,6 +164,19 @@ today.
 - Arch's current git reads config-based hooks (`hook.*`), which the
   laptop's git 2.50.1 does not. The ranger-base-zwkgb arms that skip below
   2.54 can run there for the first time. This is a bonus, not a gate.
+  **Read, 2026-11-07** (ranger-base-jep08, docs/notes.d/ranger-base-jep08.md):
+  the host arrived at git 2.56.0, and D1's hold-back clause was exercised
+  before any crew ran there. All 51 hook-skip, parity and git-scope arms pass
+  on it — two for the first time anywhere — so nothing is held back and no
+  pin was patched. The arms were cross-compiled (`GOOS=linux go test -c`) and
+  run from a copy of the tree, which needs no toolchain on the host and is
+  not a substitute for step 6 of the bring-up. What 2.56 does add is a hide
+  direction that is inert below 2.54: `hook.<name>.enabled` and
+  `hook.<event>.enabled` skip a managed scanner at rc 0. The hook-skip arm
+  refuses all three spellings already, by key prefix; the gap was that
+  nothing had measured ADR 0052's rule against the `hook.*` shape at all.
+  `docs/adr/0052-config-based-hooks.probe.sh` is the instrument, and the
+  reading to re-take when this host's git moves again.
 - Several crew homes under one account share one multiplexer server. The
   amendment below (ranger-base-oz8nc) answers whether session names collide
   and whether D5 dissolves herdr's "only the default herdr server may arm

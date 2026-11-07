@@ -52,6 +52,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -1361,6 +1362,112 @@ func TestQATheGitConfigSystemPinCarriesASystemScopeManagedHook(t *testing.T) {
 	}
 	if !employerFired {
 		t.Errorf("with an attacker's GIT_CONFIG_SYSTEM laid under the pin, the system-scope managed hook did not run")
+	}
+}
+
+// gitReadsConfigBasedHooks skips the caller unless this box's git reads
+// config-based hooks (hook.<friendly-name>.*, git >= 2.54). Below that the
+// keys are inert, so an arm whose subject IS such a key has nothing to
+// measure and must not read green over a git that cannot fail it.
+func gitReadsConfigBasedHooks(t *testing.T) {
+	t.Helper()
+	out, err := exec.Command("git", "version").Output()
+	if err != nil {
+		t.Skip("git version:", err)
+	}
+	m := regexp.MustCompile(`(\d+)\.(\d+)`).FindStringSubmatch(string(out))
+	if m == nil {
+		t.Skipf("cannot read %q", out)
+	}
+	maj, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	if maj < 2 || (maj == 2 && minor < 54) {
+		t.Skipf("%s has no config-based hooks (needs 2.54)", strings.TrimSpace(string(out)))
+	}
+}
+
+// TestQATheGitConfigSystemPinCarriesAConfigBasedManagedHook is the pin above
+// for the shape an employer can use from git 2.54: a managed scanner carried
+// as hook.<name>.* in SYSTEM scope, with no hooks directory anywhere. ADR
+// 0052's rule does not distinguish the two shapes, and until this arm neither
+// did any measurement — every reading of the rule was taken against
+// core.hooksPath on a git where hook.* was inert.
+//
+// MEASURED 2026-11-07 on the ADR 0080 D1 host (Linux x86_64, git 2.56.0,
+// docs/notes.d/ranger-base-jep08.md rows P1-P3): carried, the scanner fires;
+// emptied to /dev/null it is skipped at rc 0 with nothing on either stream;
+// and a command-scope core.hooksPath does NOT suppress it.
+//
+// The third leg is the one with no other guard. The ADR 0052 D2 redirect IS
+// a command-scope core.hooksPath, and it does replace the hooks DIRECTORY
+// (that is what the parity row's redirect arm exists for). If a later git let
+// it suppress config-based hooks too, every seat on a managed box would skip
+// the employer's scanner at rc 0, which is exactly what ADR 0052 forbids, and
+// nothing else here would notice.
+func TestQATheGitConfigSystemPinCarriesAConfigBasedManagedHook(t *testing.T) {
+	gitReadsConfigBasedHooks(t)
+	employer := t.TempDir()
+	marker := filepath.Join(employer, "marker")
+	scan := filepath.Join(employer, "scan")
+	if err := WriteExecutable(scan, []byte("#!/bin/sh\necho scanned >> "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sys := filepath.Join(t.TempDir(), "system.gitconfig")
+	if err := os.WriteFile(sys, []byte("[hook \"scan\"]\n\tcommand = "+scan+"\n\tevent = pre-commit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := gitConfigProbeRepo(t)
+	alt := t.TempDir() // an empty hooks dir, as the redirect's target is
+
+	// t.Setenv: the pin resolves git off this process's PATH.
+	stand := gitStandInWithSystemScope(t, sys)
+	t.Setenv("PATH", stand+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull) // the launcher is under the old pin
+	pin := inletPin()
+	if got := inletPinValue(t, "GIT_CONFIG_SYSTEM"); got != sys {
+		t.Fatalf("inletPin()[GIT_CONFIG_SYSTEM] = %q, want %q — the stand-in git's own system scope", got, sys)
+	}
+
+	n := 0
+	commit := func(t *testing.T, override string, extra ...string) bool {
+		t.Helper()
+		_ = os.Remove(marker)
+		n++
+		f := fmt.Sprintf("h%d", n)
+		if err := os.WriteFile(filepath.Join(repo, f), []byte(f+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		env := append(gitConfigScrubbedEnv(), extra...)
+		for _, v := range pin {
+			env = append(env, v.Key+"="+v.Value)
+		}
+		if override != "" {
+			env = append(env, "GIT_CONFIG_SYSTEM="+override)
+		}
+		for _, args := range [][]string{{"add", "--", f}, {"commit", "-q", "-m", f, "--", f}} {
+			c := exec.Command("git", args...)
+			c.Dir, c.Env = repo, env
+			if out, err := c.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+		}
+		_, err := os.Stat(marker)
+		return err == nil
+	}
+
+	// The retired pin's value. The scanner is skipped at rc 0: the control
+	// that tells the landed pin from the old one.
+	if commit(t, os.DevNull) {
+		t.Fatalf("CONTROL FAILED: a hook.scan.command in system scope fired under GIT_CONFIG_SYSTEM=%s, so the arms below prove nothing", os.DevNull)
+	}
+	// The landed pin.
+	if !commit(t, "") {
+		t.Errorf("a pre-commit configured only as hook.scan.* in system scope did not run under the inlet pin — posse is causing the managed hook to be skipped, which ADR 0052 forbids")
+	}
+	// The ADR 0052 D2 redirect's mechanism: a command-scope core.hooksPath.
+	// It replaces the hooks directory; it must not reach a config-based hook.
+	if !commit(t, "", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.hooksPath", "GIT_CONFIG_VALUE_0="+alt) {
+		t.Errorf("a command-scope core.hooksPath=%s suppressed a system-scope hook.scan.command — this git lets the ADR 0052 D2 redirect skip a config-based managed hook at rc 0 (ranger-base-jep08)", alt)
 	}
 }
 

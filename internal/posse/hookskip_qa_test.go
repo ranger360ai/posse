@@ -119,6 +119,18 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		{"", "config --unse core.hooksPath", "hookskip:config-write"},
 		{"", "config --unset-all core.hooksPath", "hookskip:config-write"},
 		{"", "config --add hook.scan.command true", "hookskip:config-write"},
+		// ranger-base-jep08: the .enabled keys. Inert on this box's git 2.50.1 and
+		// live from 2.54 — MEASURED 2026-11-07 on the ADR 0080 D1 host, Linux
+		// x86_64, git 2.56.0: with a managed scanner carried as hook.scan.* in
+		// SYSTEM scope, each of these three left it unrun at rc 0, with nothing
+		// on either stream (docs/notes.d/ranger-base-jep08.md, P5/P7/P8). They
+		// are refused by the same key prefix as hook.scan.command, so no arm
+		// moved to admit them; the legs are here because the direction they
+		// name did not exist when the prefix was written.
+		{"", "-c hook.pre-commit.enabled=false commit -q -m h1 -- f", "hookskip:config-override"},
+		{"", "-c hook.scan.enabled=false commit -q -m h2 -- f", "hookskip:config-override"},
+		{"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=hook.pre-commit.enabled GIT_CONFIG_VALUE_0=false ", "commit -q -m h3 -- f", "hookskip:config-env"},
+		{"", "config --local hook.pre-commit.enabled false", "hookskip:config-write"},
 		{"", "config --replace-all core.hooksPath /dev/null", "hookskip:config-write"},
 		{"", "config --remove-section core", "hookskip:config-write"},
 		{"", "config remove-section hook.scan", "hookskip:config-write"},
