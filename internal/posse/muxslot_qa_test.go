@@ -118,7 +118,8 @@ func TestQARexAdmitsOnlyTheRuntimeMeasuredToReportThere(t *testing.T) {
 	// ranger-base-nhxdx (Amendment 3, D12): its record is its OWN output,
 	// behind one operator-owned config line — so this predicate, which reads
 	// the declaration alone, says yes for it, and the line is the separate
-	// third reading pinned in grokrex_qa_test.go. bob stays refused (D11).
+	// third reading pinned in grokrex_qa_test.go. bob stays refused, and is
+	// herdr-only on Rex (Amendment 4, D14, which replaced D5 and D11).
 	want := map[string]bool{"claude": true, "codex": true, "grok": true, "bob": false}
 	seen := map[string]bool{}
 	for i := range builtinRuntimes {
@@ -217,8 +218,8 @@ func TestQANoRuntimeYamlCanClaimItReportsOnRex(t *testing.T) {
 // it until Amendment 3 — writes its own (D12). Asserting it on grok would pin
 // a sentence no launch can now produce about that runtime, which is a green
 // over a message nobody reads. bob is the one built-in D1 still refuses
-// outright (D11: `chat` takes no argv prompt, so no record exists before a
-// typed one).
+// outright (Amendment 4's D14, which replaced D5 and D11: `chat` takes no
+// argv prompt, so no record exists before a typed one).
 func TestQARexRuntimeRefusalNamesTheCauseAndHerdrAsTheDoor(t *testing.T) {
 	t.Parallel()
 	rt := builtinRuntime(t, "bob")
