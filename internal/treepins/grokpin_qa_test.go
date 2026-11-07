@@ -47,11 +47,25 @@ import (
 
 const gpCompactOK = `{"currentVersion":"1.0.52","latestVersion":"1.0.52","updateAvailable":false,"autoUpdate":false,"error":null}`
 
+// The healthy fixture config, and since ranger-base-nhxdx it carries THREE
+// required keys rather than two ceilings: ADR 0076 Amendment 3 (D12/D13) makes
+// `[ui.notifications] program_status = "on"` a key posse requires in the
+// operator's own config, because it is what makes grok write its own OSC 7501
+// record on a `multiplexer: rex` instance. It is in the same file and asserted
+// by the same script for the same reason the ceilings are — posse declares what
+// it needs in that config and never writes it.
+//
+// Its own TABLE, and the row that reads it is section-aware (the script's
+// `tomlpath`), so this fixture is also the shape that proves the two halves do
+// not read each other's keys.
 const gpGoodCfg = `[cli]
 installer = "internal"
 auto_update = false
 maximum_version = "1.0.52"
 required_maximum_version = "1.0.52"
+
+[ui.notifications]
+program_status = "on"
 `
 
 func gpRoot(t *testing.T) string {
@@ -449,6 +463,15 @@ func TestQAGrokPinDeclarationAndMakefile(t *testing.T) {
 		// x.ai still serves the superseded releases by templated URL.
 		"\nurl = \"https://x.ai/cli/grok-1.0.52-macos-aarch64\"",
 		"\nsha256 = \"",
+		// ADR 0076 Amendment 3 (D12/D13, ranger-base-nhxdx): the one required
+		// key that is not a version ceiling. Both halves are asserted — the
+		// TABLE, because the script reads this key section-aware and a
+		// `program_status` that lost its table would be read by neither the
+		// script nor grok, and the VALUE, because `on` is the only value posse
+		// admits (`auto`, the shipped default, is MEASURED both silent on Rex
+		// and leaking the `n,auth` tail of Rex's reply into grok's composer).
+		"\n[ui.notifications]",
+		"\nprogram_status = \"on\"",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("etc/grok/version-pin.toml missing %q", want)
@@ -1166,6 +1189,112 @@ func TestQAGrokPinReadsTheTwoCeilingsIndependently(t *testing.T) {
 				t.Errorf("%q must still read ok — the rows are not independent:\n%s", tc.wantOK, out)
 			}
 		})
+	}
+}
+
+// --- the Rex precondition row (ADR 0076 D12/D13, ranger-base-nhxdx) --------
+//
+// The third key posse requires in the operator's config, and the only one read
+// SECTION-AWARE. `program_status` is a plausible name under more than one
+// table, and the one table that counts is `[ui.notifications]` — the layer grok
+// actually reads `ui.*` from. A section-blind row (the `val` extractor the two
+// ceilings use, which is right for keys unique to one table) would take the key
+// out of ANY table and report green over a launch posse refuses, which is the
+// gate lying in the direction that costs a claim, a worktree and a billed turn
+// on a `prompt: argv` seat.
+//
+// Each arm below writes a config grok reports NOTHING on and requires the row
+// to fail. The last two are the section-blindness arms: the right value in the
+// wrong table, and the right value one table short.
+func TestQAGrokPinReadsTheProgramStatusKeySectionAware(t *testing.T) {
+	const ceilings = "[cli]\nauto_update = false\nmaximum_version = \"1.0.52\"\nrequired_maximum_version = \"1.0.52\"\n"
+	// pre goes BEFORE the [cli] table and tail after it, which matters for
+	// exactly one arm: a dotted key is "at the root" only while no table
+	// header has been seen yet. Written after the ceilings it would be
+	// `cli.ui.notifications.program_status` — a different key, correctly
+	// refused — and an arm that got that wrong would read as the reader
+	// rejecting a spelling it in fact accepts.
+	for _, tc := range []struct {
+		name, pre, tail string
+		fails           bool
+	}{
+		{"the key absent entirely", "", "", true},
+		{"auto, the shipped default", "", "\n[ui.notifications]\nprogram_status = \"auto\"\n", true},
+		{"off, which also reports nothing", "", "\n[ui.notifications]\nprogram_status = \"off\"\n", true},
+		{"the right value under the wrong table", "", "\n[marketplace]\nprogram_status = \"on\"\n", true},
+		{"the right value one table short", "", "\n[ui]\nprogram_status = \"on\"\n", true},
+		{"the right value under [cli], where the ceilings live", "", "program_status = \"on\"\n", true},
+		{"a dotted key that lands under [cli]", "", "ui.notifications.program_status = \"on\"\n", true},
+		{"the table spelling grok reads", "", "\n[ui.notifications]\nprogram_status = \"on\"\n", false},
+		// The two spellings that are the same document to grok's parser, so
+		// the row must read them the same way the Go side does.
+		{"a dotted key under [ui]", "", "\n[ui]\nnotifications.program_status = \"on\"\n", false},
+		{"a fully dotted key at the root", "ui.notifications.program_status = \"on\"\n", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, "1.0.52", gpCompactOK)
+			cfg := tc.pre + ceilings + tc.tail
+			out, code := gpRun(t, root, gpCfg(t, cfg), bin)
+			if gpRowFailed(out, "config program_status") != tc.fails {
+				t.Fatalf("the config program_status row failed=%v, want %v, over:\n%s\n---\n%s", !tc.fails, tc.fails, cfg, out)
+			}
+			// The two ceilings are untouched in every arm, so a row that
+			// started answering for another key reds here rather than
+			// passing: the halves must not read each other's keys.
+			for _, other := range []string{"config maximum_version", "config required_max_ver", "config auto_update"} {
+				if gpRowFailed(out, other) {
+					t.Errorf("%q failed over a config whose [cli] table is healthy — the section-aware row is reading past its own table:\n%s", other, out)
+				}
+			}
+			if tc.fails {
+				if code != 1 {
+					t.Fatalf("exit %d, want 1\n%s", code, out)
+				}
+				if strings.Contains(out, "pin intact") {
+					t.Errorf("a config that makes grok silent on Rex is not an intact pin:\n%s", out)
+				}
+				return
+			}
+			if code != 0 {
+				t.Fatalf("exit %d, want 0\n%s", code, out)
+			}
+		})
+	}
+}
+
+// And the PIN side of the same row: "on" is written into the assertion rather
+// than taken from the pin file, because that IS the assertion — posse admits
+// exactly `on` (D12), so a pin file edited to declare `auto` would otherwise
+// agree with itself and the gate would pass a box that reports nothing.
+func TestQAGrokPinRefusesAPinThatDeclaresAValuePosseWouldNotAdmit(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
+	pin := filepath.Join(root, "etc", "grok", "version-pin.toml")
+	b, err := os.ReadFile(pin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := strings.Replace(string(b), "program_status = \"on\"", "program_status = \"auto\"", 1)
+	if moved == string(b) {
+		t.Fatal("the fixture pin does not declare program_status = \"on\" — this pin has nothing to move")
+	}
+	if err := os.WriteFile(pin, []byte(moved), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "pin program_status") {
+		t.Errorf("a pin declaring `auto` must FAIL its own row — posse admits only `on`:\n%s", out)
+	}
+	// And the CONFIG row still reads ok, because the operator's own file is
+	// healthy: the two rows answer about two different files.
+	if gpRowFailed(out, "config program_status") {
+		t.Errorf("the config row failed over a healthy config — the two rows are not independent:\n%s", out)
 	}
 }
 

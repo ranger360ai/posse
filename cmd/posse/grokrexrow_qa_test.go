@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // grokRowHome is a `multiplexer: rex` instance with one grok persona.
@@ -52,8 +54,10 @@ func grokRowFakeCLI(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	sh := "#!/bin/sh\nprintf 'grok 1.0.52 (0920c8169e27)\\n'\n"
-	p := filepath.Join(dir, "grok")
-	if err := os.WriteFile(p, []byte(sh), 0o755); err != nil {
+	// WriteExecutable, not os.WriteFile: the tree routes every executable
+	// write through the fork lock (ETXTBSY window, golang/go#22315), and
+	// execwrite-check is the door that says so.
+	if err := posse.WriteExecutable(filepath.Join(dir, "grok"), []byte(sh), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return dir
