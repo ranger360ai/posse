@@ -86,6 +86,31 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// planFenced gives an App its own plan-usage store, and it is the price of
+// the cache fence above rather than a second fence.
+//
+// Since ADR 0080 D11 the store is keyed by the LOGIN: `<cache>/posse/
+// plan-usage/<sha256 of the resolved config dir>.{json,log}`, and this
+// binary pins both halves process-wide — one cache root and one config dir
+// for every test in it. So every in-process App resolves ONE file, and a
+// snapshot one test writes is read by the next: the arm that found this was
+// `quiet flag, no snapshot`, which saw a 3-minute-old reading a sibling
+// subtest had just seeded.
+//
+// It is not solved by moving the fences. They are what keeps a child built
+// from os.Environ() out of the operator's own `~/.claude` and `~/.cache`,
+// and `XDG_CACHE_HOME` has to win over `$HOME` here because it wins over it
+// in the shipped resolver (planUsageCacheDirIn, bdWriteLockDir,
+// SuiteLockDir). The seam the move built for exactly this is the field:
+// empty is the shipped resolution, which is what every real process gets
+// and what the out-of-process pins here still measure through their
+// children.
+func planFenced(t *testing.T, a *posse.App) *posse.App {
+	t.Helper()
+	a.PlanUsageDir = filepath.Join(t.TempDir(), "plan-usage")
+	return a
+}
+
 // The pin, two arms one variable apart, on the one verb in this package's
 // reach that READS the config dir rather than only resolving it.
 //

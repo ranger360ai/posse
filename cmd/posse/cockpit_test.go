@@ -1559,7 +1559,7 @@ func TestCockpitCredSegmentRendersInTheHeader(t *testing.T) {
 func TestCockpitCredSegmentComesFromTheEnvSetsOnDisk(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	a := posse.NewAppAt(filepath.Join(home, "config"))
+	a := planFenced(t, posse.NewAppAt(filepath.Join(home, "config")))
 	if err := os.MkdirAll(a.EnvsDir, 0o700); err != nil {
 		t.Fatal(err)
 	}

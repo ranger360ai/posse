@@ -174,6 +174,7 @@ func TestCockpitGovCheckScansThroughItsOwnMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	planFenced(t, a)
 	c := newCockpit(a, nil, io.Discard)
 	if c.costScan == nil || c.govScan == nil {
 		t.Fatal("a cockpit must be built with both scanners")

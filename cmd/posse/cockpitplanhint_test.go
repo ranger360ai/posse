@@ -112,7 +112,7 @@ func TestCockpitCodexHintComesFromTheRolloutsOnDisk(t *testing.T) {
 	seedCodexRollout(t, home, at.Add(-42*time.Minute), oneWindow(62, at.Add(24*time.Hour)))
 
 	c := fixture()
-	c.app, c.now = posse.NewAppAt(filepath.Join(home, "config")), func() time.Time { return at }
+	c.app, c.now = planFenced(t, posse.NewAppAt(filepath.Join(home, "config"))), func() time.Time { return at }
 	c.planLine = ""
 	c.plans = make(chan planRead, 1)
 	c.scanPlan()
