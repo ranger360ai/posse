@@ -223,3 +223,116 @@ func TestQAProductionDispatchCarriesBothPacingNumbers(t *testing.T) {
 		t.Errorf("DefaultProgressEvery (%s) is shorter than DefaultLegFloor (%s), so the line rate is the poll rate wearing another name", DefaultProgressEvery, DefaultLegFloor)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ranger-base-aj79z — and what the leg that did not wait came back WITH.
+//
+// The pins above hold the rate. These hold the one thing the rate traded
+// away: with ProgressEvery at a minute the per-leg progress line is 84x
+// quieter, and the per-leg line was the only signal that ever exposed this
+// class — 295 lines in ~3m30s is what got ranger-base-74tkp filed at all.
+//
+// WHAT HAD NO SINK. Everything past gather's `r.err == nil` arm runs with a
+// non-nil leg error, and on the `delivered` path neither guard that consumes
+// one can fire: both are `&& !p.delivered`, because on `prompt: argv` the
+// prompt landed at exec and a wait failure is never a delivery failure
+// (ADR 0013 §2). So nothing printed, logged or recorded it — a seat whose
+// every leg failed for a whole turn printed exactly what a healthy one
+// printed. MEASURED FALSE 2026-11-07 over this file's own fixture:
+// ranger-base-74tkp's close said the discriminator was already in the pass
+// output ("a leg that ran out names its own deadline, and a leg that could
+// not read names the rex call"), and neither half could print — the loop only
+// goes round again when the status probe answers `working`, and the only arm
+// that named a rex call was the `default` one, which returns after one leg.
+//
+// These pins run on both occupants for the reason every pin in this file
+// does, and here the two occupants ARE the two halves of that discriminator:
+// rex's own blown deadline, and the code herdr's server returns.
+
+// legErrs is how many times one bead's loop named its leg error. One line per
+// failing leg while ProgressEvery is 0, same as legs().
+func legErrs(out string) int { return strings.Count(out, "wait leg ended:") }
+
+// THE ERROR ITSELF REACHES THE OUTPUT, on both occupants, in the regime that
+// produces the busy-wait: a leg that comes back failing while the agent reads
+// WORKING throughout, which is every leg this fixture runs.
+//
+// Each occupant is pinned on its own text, because that is the discriminator:
+// on rex the leg names the deadline it blew and the pane it blew it in, and
+// on herdr it names what the server said. Both carry the code, which is what
+// HerdrAPIError.Error() renders and what RexMux.Wait builds by hand for its
+// own deadline.
+func TestQAWaitLegErrorReachesThePassOutputOnEveryMultiplexer(t *testing.T) {
+	t.Parallel()
+	want := map[string][]string{
+		// The lever this file arms the fake with, rendered through
+		// HerdrAPIError.Error().
+		MuxHerdr: {"wait leg ended:", "timed out waiting for agent status", "(timeout)"},
+		// RexMux.Wait's own deadline refusal: the `until` set it was given,
+		// the pane, and the code it chose over a stall (muxrex.go).
+		MuxRex: {"wait leg ended:", "no " + strings.Join([]string{MuxIdle, MuxDone, MuxBlocked}, "|") + " state in " + rexTestBlock, "(timeout)"},
+	}
+	for mux, out := range waitLegGather(t, func(d *Dispatcher) {
+		d.LegFloor = 400 * time.Millisecond
+		d.ProgressEvery = 0
+	}) {
+		for _, probe := range want[mux] {
+			if !strings.Contains(out, probe) {
+				t.Errorf("%s: a pass whose every wait leg failed never printed %q, so the leg error has no sink on the delivered path:\n%s",
+					mux, probe, out)
+			}
+		}
+	}
+}
+
+// AND IT IS PACED, on its own interval and not per leg — the half of the
+// done-when that keeps this from undoing ranger-base-74tkp. The floor is OFF
+// so legs come back as fast as the occupant answers and ProgressEvery is the
+// only thing holding the line down, exactly as the progress-line pin does it.
+func TestQAWaitLegErrorLineHasItsOwnIntervalOnEveryMultiplexer(t *testing.T) {
+	t.Parallel()
+	const every = 400 * time.Millisecond
+	// +2: the first failing leg always says so, and the window the ceiling
+	// closes in.
+	most := int(legPaceCeiling/every) + 2
+	for mux, out := range waitLegGather(t, func(d *Dispatcher) {
+		d.LegFloor = 0
+		d.ProgressEvery = every
+	}) {
+		if n := legErrs(out); n > most {
+			t.Errorf("%s: %d leg-error lines in %s at a %s interval, want at most %d — the leg error is named at the rate the box is polled:\n%s",
+				mux, n, legPaceCeiling, every, most, out)
+		}
+		if n := legErrs(out); n == 0 {
+			t.Errorf("%s: no leg-error line at all in %s, so the pacing suppressed the first one too:\n%s", mux, legPaceCeiling, out)
+		}
+	}
+}
+
+// THE TWO CLOCKS ARE SEPARATE, which is the whole of why sayLegError does not
+// read saidWorking. Both lines are printed in the same iteration, so one
+// shared timestamp means whichever printed first suppresses the other for a
+// whole ProgressEvery — and the leg error is printed FIRST, so the sharing
+// mutant costs the progress line, in the regime where the agent IS working.
+//
+// ProgressEvery is ten minutes against a 2s ceiling, so each line can only be
+// the first one: exactly one of each, on a box of any speed. With a shared
+// clock the progress line never prints and waitLegGather's own guard fails
+// first, which is the mutant reddening rather than this assertion.
+func TestQAWaitLegErrorDoesNotSuppressTheProgressLine(t *testing.T) {
+	t.Parallel()
+	for mux, out := range waitLegGather(t, func(d *Dispatcher) {
+		d.LegFloor = 0
+		d.ProgressEvery = 10 * time.Minute
+	}) {
+		if n := legs(out); n != 1 {
+			t.Errorf("%s: %d progress lines inside one ProgressEvery, want 1:\n%s", mux, n, out)
+		}
+		if n := legErrs(out); n != 1 {
+			// 0 = the progress line's clock suppressed it; more than 1 = it
+			// is not paced at all. Either way the two clocks are not the two
+			// this pin is about.
+			t.Errorf("%s: %d leg-error lines inside one ProgressEvery, want 1:\n%s", mux, n, out)
+		}
+	}
+}

@@ -113,6 +113,45 @@ and did not need to be: `RexMux.Wait` returns early on exactly two things, its
 own blown deadline and an error from `State`, and the floor paces the loop
 over either. Reproducing the live reading would cost a billed codex turn on a
 scratch Rex instance (ranger-base-x7ojx's authorization was for two turns,
-both spent). If it is ever worth knowing, the discriminator is in the pass
-output: a leg that ran out names its own deadline (`no idle|done|blocked state
-in <block> within <d>`), and a leg that could not read names the rex call.
+both spent).
+
+### The discriminator this section promised, corrected (ranger-base-aj79z)
+
+What stood here said the discriminator was ALREADY in the pass output — "a
+leg that ran out names its own deadline (`no idle|done|blocked state in
+<block> within <d>`), and a leg that could not read names the rex call".
+
+**MEASURED FALSE 2026-11-07**, darwin 25.6.0, over this bead's own fixture
+(`waitLegGather`): neither half could print. On the `delivered` path a non-nil
+leg error had no sink at all — both guards in `gather` that consume one carry
+`&& !p.delivered`, and codex is `prompt: argv`, so every leg error was dropped
+between `if r.err == nil` and the status switch. The loop only goes round
+again when the status probe answers `working`, so the deadline half never
+reached the output; the "names the rex call" half reached it only through the
+switch's `default` arm, which fires when the probe ALSO fails and returns
+after one leg. A pass that printed a rex call had run one leg, not 295.
+
+Fixed under ranger-base-aj79z: `gather` names the leg's own error once per
+`ProgressEvery`, on its own clock, before the status probe. What the pass
+output NOW carries, MEASURED 2026-11-07 over the same fixture, one line per
+failing leg with `ProgressEvery` 0:
+
+```
+◷ a-1   wait leg ended: herdr: timed out waiting for agent status (timeout)
+◷ a-1   still working after 0s — waiting again
+```
+
+on herdr, and on rex:
+
+```
+◷ a-1   wait leg ended: herdr: no idle|done|blocked state in block:fake-0001 within 1ms (last reading: working) (timeout)
+◷ a-1   still working after 0s — waiting again
+```
+
+So the discriminator is real now and reads as this section meant it to: the
+deadline half names the `until` set, the pane and the deadline, and a leg that
+could not read is a raw error naming the rex call instead. The `herdr:` prefix
+on the rex line is `HerdrAPIError.Error()`, which `RexMux.Wait` reuses on
+purpose (muxrex.go: it carries that route's codes verbatim rather than coining
+its own) — it names the ENVELOPE and not the occupant, and the pane in the
+message is what says which occupant spoke.

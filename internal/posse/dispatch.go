@@ -3653,6 +3653,14 @@ type pendingBead struct {
 	// a line changes nothing about the wait — the claim, the ceiling and the
 	// settle are all read exactly as they were.
 	saidWorking time.Time
+	// saidLegErr is when the wait leg's own error was last named for this
+	// bead, paced exactly like saidWorking and on its own clock so that
+	// neither line can suppress the other (ranger-base-aj79z). Until that
+	// bead a non-nil leg error had no sink at all on the `delivered` path:
+	// both guards that consume it are `&& !p.delivered`, so on a
+	// `prompt: argv` runtime every leg error was dropped and a pass whose
+	// every leg failed printed what a healthy one printed.
+	saidLegErr time.Time
 	// launched is when fire() started this bead's launch — BEFORE
 	// launchSession, where the prompt of an argv runtime is delivered at
 	// exec. It is the floor a turn_outcome: reader is given, and prompted
@@ -3976,6 +3984,31 @@ wait:
 			// rewait below would leave an orphan `herdr agent wait` running
 			// PromptWaitMS past the process that started it.
 			return d.stopClaim(p)
+		}
+		// THE LEG'S OWN ERROR, which is the only place it is ever said
+		// (ranger-base-aj79z). Everything below this point in the loop has a
+		// non-nil r.err — the `r.err == nil` arm above broke out of it — and
+		// on the `delivered` path neither guard between the two can fire,
+		// because both carry `&& !p.delivered` and ADR 0013 §2 is why: the
+		// prompt rode the launch line, so a wait failure is never a delivery
+		// failure and the claim is never handed back on one. So a leg that
+		// ran out, a leg the occupant refused and a leg whose read failed
+		// all reached the status probe indistinguishable from each other,
+		// and the pass said nothing about any of them.
+		//
+		// It is printed BEFORE the probe, not inside an arm of it, because
+		// the leg error is a fact about the leg and not about what the
+		// status probe then says: the busy-wait regime is the `working` arm,
+		// but `blocked`, the ceiling and the `default` arm each dropped it
+		// too (statusPhrase names the PROBE's error, never this one).
+		//
+		// %v and not a code: HerdrAPIError.Error() is "herdr: <message>
+		// (<code>)" and both occupants return it — RexMux.Wait builds one
+		// for its own blown deadline — while a rex call that failed is a raw
+		// error naming the call. Those two are the discriminator
+		// ranger-base-74tkp's close promised and did not have.
+		if d.sayLegError(p) {
+			d.printf("◷ %-14s wait leg ended: %v\n", p.is.ID, r.err)
 		}
 		waited := time.Since(p.prompted).Round(time.Second)
 		st, sterr := d.statusAfterTimeout(p.session)
@@ -4401,6 +4434,24 @@ func (d *Dispatcher) sayWorking(p *pendingBead) bool {
 		return false
 	}
 	p.saidWorking = time.Now()
+	return true
+}
+
+// sayLegError is the same question for the wait leg's own error: the first
+// failing leg names it and ProgressEvery paces the rest, so a pass whose legs
+// are all failing says so once a minute per bead rather than once per leg
+// (ranger-base-aj79z).
+//
+// It keeps its own timestamp rather than sharing saidWorking's, because the
+// two lines are printed at different points in the same iteration and a
+// shared clock would make whichever printed first suppress the other — the
+// leg error would then be legible only on the legs where the agent was NOT
+// working, which is the regime it is least needed in.
+func (d *Dispatcher) sayLegError(p *pendingBead) bool {
+	if !p.saidLegErr.IsZero() && time.Since(p.saidLegErr) < d.ProgressEvery {
+		return false
+	}
+	p.saidLegErr = time.Now()
 	return true
 }
 
