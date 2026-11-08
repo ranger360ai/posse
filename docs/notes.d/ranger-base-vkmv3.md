@@ -118,15 +118,27 @@ still reach THROUGH, which is:
 
 ## Mutation record
 
-MUTATION-CHECKED 2026-11-08, each mutant run over the two new names alone,
-baseline clean before and after each (`git status --porcelain`).
+MUTATION-CHECKED 2026-11-08, four mutants, each run over the two new names
+alone, baseline asserted clean (`git status --porcelain`) before and after
+each and HEAD asserted unmoved at the end. Every one red; the two that matter
+are red in ONE arm each, which is the discrimination the pair was written for.
 
 | mutant | what reds |
 |---|---|
-| `return ""` for both halves (D5's answer, printed) | both arms, on the `= ""` assertion each |
-| one-line degrade: `AbbrevHome(p)` whenever either half refused | the HOME arm only, on `want canonicalPath's own …` — the first arm is green, which is why the second exists |
-| drop the path half's degrade, keep the home half's | the path arm only |
-| `kernelPath` returning an error on darwin (D1's platform half undone) | both arms at their PREMISE — with no kernel reading there is no refusal to degrade, and the arms say so rather than reporting a degrade as wrong |
+| **M1** both halves `return ""` — D5's own answer, printed | **both arms.** Arm 1 on the `= ""` assertion and on `want AbbrevHome's …`; arm 2 on `= ""` and on `want canonicalPath's own …` |
+| **M2** one-line degrade: `AbbrevHome(p)` whenever EITHER half refused | **the home arm only.** It answers `~/Repo` — a `~` form taken against a home this process may not name — and reds on both `want canonicalPath's own …` and the explicit "the kernel reading was taken and then thrown away". Arm 1 is GREEN, which is the whole reason arm 2 exists |
+| **M3** drop the path half's degrade, keep the home half's | **the path arm only.** Arm 2 passes untouched, so neither arm is carrying the other |
+| **M4** `kernelPath` always errors on darwin — D1's platform half gone | **both arms, at a PREMISE rather than at the decision**, which is right: with no kernel reading there is no refusal for D7 to degrade. Arm 1 reds at its with-reach premise (the two spellings render two strings, so there is no single answer a degrade could be compared against); arm 2 reds at the `kernelPath … is gone` door |
+
+**M4 is why that door was added.** Before it, `qcwNoReach` and the home arm's
+`canonicalAbbrevHome` premise both answered a broken platform half with a
+SKIP — which is this file passing vacuously over the one mutant that removes
+the thing it pins. One `kernelPath` call of a readable directory the test
+created tells a box that will not deny the open (nothing to measure) from a
+`kernelPath` that has stopped answering (D1's darwin reading gone). Arm 1
+turned out to red one premise earlier than that door, at the with-reach
+reference; the door is what catches arm 2, and it catches arm 1 in the
+configuration where reach cannot be withdrawn.
 
 ## What this does not touch
 
