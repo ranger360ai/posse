@@ -13,6 +13,18 @@
 #     measured, that screen is decoration over a live composer that takes a
 #     prompt (rangerhq-1xsj). It reported `blocked` between 37c and 1xsj.
 #
+# A THIRD CLASS SINCE ranger-base-72oz4: testdata/<agent>/ for an agent this
+# repo ships no override for AT ALL, declared by a NO-OVERRIDE file in that
+# directory. claude is the first — its first-run notice screens are captured
+# here because internal/posse/knownscreen.go's markers must each be read off a
+# shipped fixture (ADR 0066 D3), and posse forks no claude manifest. For those
+# agents the fixtures are still replayed and their STATE is still checked, so
+# they are a tripwire on herdr's own bundled manifest; what is dropped is the
+# one demand that cannot be met — that the answer came out of a manifest in
+# this checkout, because there is none to come out of. The declaration is what
+# separates this from the class above it, and it is checked both ways: a
+# declaration beside an override that exists is a FAIL, not a skip.
+#
 # codex's was the dangerous hole: no rule matched, and detection fell through
 # to default_known_agent_idle_fallback, which for a KNOWN agent resolves to
 # `idle` — a prompt typed into a modal. grok's rule ends up at the same state
@@ -48,6 +60,9 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 root=etc/herdr/agent-detection
+# The per-directory declaration that an agent has no override in this checkout
+# ON PURPOSE (ranger-base-72oz4). Not a .txt, so the fixture globs cannot see it.
+NO_OVERRIDE=NO-OVERRIDE
 fail=0 n=0 install_fail=0 check_install=0
 for arg in "$@"; do
   case "$arg" in
@@ -76,6 +91,11 @@ done
 # being looked at: the agents built above come only from the tree's *.toml
 # files, and testdata for an agent missing from that list was invisible to
 # every loop that follows (ranger-base-j66o).
+#
+# A NO-OVERRIDE file in that directory says the absence is deliberate rather
+# than a retirement in progress, and the fixture loop below treats the two
+# differently (ranger-base-72oz4). Nothing is folded in differently here: an
+# agent is named either way, which is the whole of what j66o asked for.
 for d in "$root"/testdata/*/; do
   [ -d "$d" ] || continue
   agent=$(basename "$d")
@@ -166,14 +186,30 @@ toml_comment_val() {
 
 printf '%-8s %-38s %-8s %-8s %s\n' AGENT FIXTURE EXPECT ACTUAL RULE
 for agent in "${agents[@]}"; do
+  # Declared-no-override (ranger-base-72oz4), and the inversion that keeps the
+  # declaration from becoming a permanent excuse: once the override exists, the
+  # file is a claim about the tree that is no longer true.
+  declared=0
+  [ -e "$root/testdata/$agent/$NO_OVERRIDE" ] && declared=1
+  if [ -e "$root/$agent.toml" ] && [ "$declared" -eq 1 ]; then
+    printf '%-8s %-38s %-8s %-8s %s   <-- FAIL (%s)\n' \
+      "$agent" "$NO_OVERRIDE" "—" "—" "—" \
+      "$root/testdata/$agent/$NO_OVERRIDE says this agent has no override and $root/$agent.toml exists — delete the declaration"
+    # fail but NOT n: the denominator is what the tree SHIPS as fixtures, and
+    # TestQAVerifyDetectionReplaysEveryFixtureItShips compares it against a
+    # count of the .txt files taken independently. A non-fixture row in it
+    # would red that pin for a reason it is not about.
+    fail=$((fail + 1))
+  fi
   for f in "$root/testdata/$agent"/*.txt; do
     [ -e "$f" ] || continue
     base=$(basename "$f" .txt)
     want=${base%%-*}
     n=$((n + 1))
-    if [ ! -e "$root/$agent.toml" ]; then
+    if [ ! -e "$root/$agent.toml" ] && [ "$declared" -eq 0 ]; then
       printf '%-8s %-38s %-8s %-8s %s   <-- FAIL (%s)\n' \
-        "$agent" "$base" "$want" "?" "—" "no manifest — $root/$agent.toml is missing"
+        "$agent" "$base" "$want" "?" "—" \
+        "no manifest — $root/$agent.toml is missing and testdata/$agent/$NO_OVERRIDE does not say that is deliberate"
       fail=$((fail + 1))
       continue
     fi
@@ -189,8 +225,23 @@ for agent in "${agents[@]}"; do
     # Which file answered. Staging can only prove the tree if the tree is what
     # herdr read: a bundled or cached manifest winning on version would put us
     # straight back in the illusion this script was fixed to end.
-    if [ "$src" != "$staged/$agent.toml" ]; then
-      why="${why:+$why,}manifest=${src:-none}"
+    #
+    # A DECLARED-no-override agent is the one case where that demand is not a
+    # demand (ranger-base-72oz4): nothing of this repo's was staged for it, so
+    # the answer can only have come from herdr's own manifest and requiring
+    # otherwise would fail every such fixture forever — which is the shape
+    # upstream/ exists to keep out of this script. The source is REPORTED in
+    # the row instead, so the day herdr stops answering for the agent at all
+    # (manifest=none) is still a failure, and the day it answers from a
+    # different version is still visible.
+    if [ "$declared" -eq 0 ]; then
+      if [ "$src" != "$staged/$agent.toml" ]; then
+        why="${why:+$why,}manifest=${src:-none}"
+      fi
+    elif [ -z "$src" ]; then
+      why="${why:+$why,}manifest=none"
+    else
+      rule="${rule:-—} [$(colon_field "$out" "manifest")]"
     fi
     # Splash fixtures are idle on purpose (rangerhq-1xsj). Without a named-rule
     # check, deleting startup_splash still goes green: herdr falls through to
@@ -224,7 +275,21 @@ done
 herdr_now=$(last_field "$(herdr --version 2>/dev/null)")
 for agent in "${agents[@]}"; do
   toml="$root/$agent.toml"
-  [ -e "$toml" ] || continue  # testdata-only agent (ranger-base-j66o) — already failed above, nothing to install-check
+  if [ ! -e "$toml" ]; then
+    # testdata-only agent. Declared (ranger-base-72oz4): say what the tree says
+    # and why, because the rows above read as ordinary passes and a reader owes
+    # nothing to a manifest nobody here wrote. Undeclared (ranger-base-j66o):
+    # already failed above, and there is nothing to install-check either way.
+    if [ -e "$root/testdata/$agent/$NO_OVERRIDE" ]; then
+      printf '\n%s install: no override in this checkout, by declaration — %s/testdata/%s/%s\n' \
+        "$agent" "$root" "$agent" "$NO_OVERRIDE"
+      while IFS= read -r line || [ -n "$line" ]; do
+        case $line in '#'*|'') continue ;; esac
+        printf '  %s\n' "$line"
+      done <"$root/testdata/$agent/$NO_OVERRIDE"
+    fi
+    continue
+  fi
   fork=$(toml_comment_val "$toml" '# posse_forked_from = ')
   bundled_from=$(toml_comment_val "$toml" '# posse_bundled_from_herdr = ')
   installed=${XDG_CONFIG_HOME:-$HOME/.config}/herdr/agent-detection/$agent.toml

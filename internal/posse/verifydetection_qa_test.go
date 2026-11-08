@@ -83,7 +83,7 @@ func detectionRig(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixtures := 0
+	fixtures, declared := 0, 0
 	for _, a := range agents {
 		if !a.IsDir() {
 			continue
@@ -93,6 +93,18 @@ func detectionRig(t *testing.T) string {
 			t.Fatal(err)
 		}
 		for _, f := range fs {
+			// NO-OVERRIDE comes with the fixtures (ranger-base-72oz4). It is
+			// not a .txt, so the glob above skipped it, and a rig that left
+			// it behind made every claude fixture read as the ORPHAN class
+			// — "no manifest" — which failed this file's own control arm
+			// over a checkout that passes. The script is what the rig
+			// measures, so the rig has to carry everything the script reads.
+			if f.Name() == detectionNoOverride {
+				declared++
+				cp(filepath.Join(src, "testdata", a.Name(), f.Name()),
+					filepath.Join(dst, "testdata", a.Name(), f.Name()), 0o644)
+				continue
+			}
 			if !strings.HasSuffix(f.Name(), ".txt") {
 				continue
 			}
@@ -104,9 +116,14 @@ func detectionRig(t *testing.T) string {
 	if fixtures == 0 {
 		t.Fatal("no fixtures copied — an empty rig passes every arm")
 	}
-	t.Logf("rig: %d manifests, %d fixtures", tomls, fixtures)
+	t.Logf("rig: %d manifests, %d fixtures, %d declaration(s)", tomls, fixtures, declared)
 	return root
 }
+
+// detectionNoOverride is the per-directory declaration that an agent has no
+// manifest in this checkout ON PURPOSE — the name verify-detection.sh holds in
+// $NO_OVERRIDE and scripts/d3-reader-eval.py reads in declared_no_override.
+const detectionNoOverride = "NO-OVERRIDE"
 
 // runDetection runs the rig's script with install dir `installed` presented as
 // the operator's XDG_CONFIG_HOME.
@@ -192,6 +209,174 @@ func TestQAVerifyDetectionFailsACommittedRuleDeletion(t *testing.T) {
 	}
 	if !strings.Contains(out, "differs from the checkout") {
 		t.Errorf("a stale install was not reported\n%s", out)
+	}
+}
+
+// ranger-base-72oz4: a testdata/<agent>/ for an agent this repo ships no
+// manifest for AT ALL, declared by a NO-OVERRIDE file in that directory.
+// claude is the first — its first-run notice screens are captured because
+// every marker in internal/posse/knownscreen.go has to be read off a shipped
+// fixture (ADR 0066 D3), and posse forks no claude manifest because herdr's
+// bundled one already names both screens.
+//
+// THE RISK THIS ARM EXISTS FOR is that the clause reads as a SKIP. Before it,
+// the script failed such a fixture outright ("no manifest"), which is
+// ranger-base-j66o's answer for an override being retired and is the right
+// answer there. The cheap way to make claude pass would have been to stop
+// looking at it, and a fixture nobody replays is the vacuous shape
+// rangerhq-uglc named — green forever, measuring nothing. So the arms below
+// are, in order: the fixtures are REALLY replayed (break a state, it fails),
+// the declaration is REQUIRED (remove it, the orphan failure comes back), and
+// the declaration EXPIRES (write the manifest, the stale claim fails).
+func TestQAVerifyDetectionReplaysADeclaredNoOverrideAgent(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("herdr"); err != nil {
+		t.Skip("herdr not on PATH")
+	}
+	root := detectionRig(t)
+	det := filepath.Join(root, "etc", "herdr", "agent-detection")
+	installed := filepath.Join(root, "installed")
+
+	// The rig has to actually carry a declared agent, or every arm here is
+	// vacuous. Found rather than named: the class is "a testdata dir with a
+	// declaration", and a second one must not need this file edited.
+	agents, err := os.ReadDir(filepath.Join(det, "testdata"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agent string
+	for _, a := range agents {
+		if !a.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(det, "testdata", a.Name(), detectionNoOverride)); err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(det, a.Name()+".toml")); err == nil {
+			t.Fatalf("%s carries both %s and a manifest in the checkout — the declaration is stale and the script fails on it; delete one",
+				a.Name(), detectionNoOverride)
+		}
+		agent = a.Name()
+		break
+	}
+	if agent == "" {
+		t.Skip("no testdata directory declares " + detectionNoOverride + " — nothing for this arm to measure")
+	}
+	decl := filepath.Join(det, "testdata", agent, detectionNoOverride)
+	t.Logf("declared-no-override agent: %s", agent)
+
+	// Control: the whole tree passes, and the declared agent's fixtures are
+	// COUNTED. "17/17 OK" over a run that skipped two of them would be the
+	// defect this test is for, so the fixture names are asserted present.
+	fixtures, err := os.ReadDir(filepath.Join(det, "testdata", agent))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bases []string
+	for _, f := range fixtures {
+		if strings.HasSuffix(f.Name(), ".txt") {
+			bases = append(bases, strings.TrimSuffix(f.Name(), ".txt"))
+		}
+	}
+	if len(bases) == 0 {
+		t.Fatalf("%s/testdata/%s ships a declaration and no fixtures", det, agent)
+	}
+	out, code := runDetection(t, root, installed)
+	if code != 0 || !strings.Contains(out, "fixtures OK") {
+		t.Fatalf("intact tree with a declared-no-override agent: exit %d, want 0 with all fixtures OK\n%s", code, out)
+	}
+	for _, base := range bases {
+		if !strings.Contains(out, base) {
+			t.Errorf("%s was not in the run at all — a declared agent is REPLAYED, not skipped\n%s", base, out)
+		}
+	}
+	if !strings.Contains(out, "no override in this checkout, by declaration") {
+		t.Errorf("the run did not say the agent has no override here; the rows above it read as ordinary passes against a manifest this repo wrote\n%s", out)
+	}
+
+	// Arm 1: the fixtures are really replayed. Rename one so its filename
+	// claims the opposite state — the one mutation that cannot be satisfied
+	// by any manifest and so can only be caught by a run that explains it.
+	var flipped, from, to string
+	for _, base := range bases {
+		want := base
+		if i := strings.Index(base, "-"); i > 0 {
+			want = base[:i]
+		}
+		switch want {
+		case "blocked":
+			flipped = "idle" + strings.TrimPrefix(base, "blocked")
+		case "idle":
+			flipped = "blocked" + strings.TrimPrefix(base, "idle")
+		default:
+			continue
+		}
+		from = filepath.Join(det, "testdata", agent, base+".txt")
+		to = filepath.Join(det, "testdata", agent, flipped+".txt")
+		break
+	}
+	if from == "" {
+		t.Fatalf("no %s fixture encodes a state in its filename, so nothing here can mutate one", agent)
+	}
+	if err := os.Rename(from, to); err != nil {
+		t.Fatal(err)
+	}
+	out, code = runDetection(t, root, installed)
+	if code == 0 {
+		t.Errorf("a %s fixture renamed to claim the opposite state still passed (exit 0) — the declaration turned the replay into a skip, which is the vacuous fixture rangerhq-uglc named\n%s", agent, out)
+	}
+	if !strings.Contains(out, flipped) {
+		t.Errorf("the mutated fixture %s was not named in the output\n%s", flipped, out)
+	}
+	if err := os.Rename(to, from); err != nil {
+		t.Fatal(err)
+	}
+
+	// Arm 2: the declaration is required. Without it the agent is
+	// ranger-base-j66o's orphan — an override retired or moved aside — and
+	// that is still a failure, by the manifest it cannot name.
+	body, err := os.ReadFile(decl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(decl); err != nil {
+		t.Fatal(err)
+	}
+	out, code = runDetection(t, root, installed)
+	if code == 0 {
+		t.Errorf("%s/testdata/%s with no %s and no manifest passed — an override retired out from under its fixtures is ranger-base-j66o and must still fail\n%s",
+			det, agent, detectionNoOverride, out)
+	}
+	if !strings.Contains(out, "no manifest") {
+		t.Errorf("the undeclared orphan did not fail by its missing manifest\n%s", out)
+	}
+	if err := os.WriteFile(decl, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Arm 3: the declaration expires. Once the manifest exists the file is a
+	// claim about the tree that is no longer true, and a declaration nobody
+	// retires is how this clause would become a permanent excuse. The
+	// manifest's CONTENT does not matter to the claim, so the cheapest real
+	// file is another agent's.
+	other, err := os.ReadFile(filepath.Join(det, "codex.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	planted := filepath.Join(det, agent+".toml")
+	if err := os.WriteFile(planted, other, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code = runDetection(t, root, installed)
+	if code == 0 {
+		t.Errorf("%s.toml exists and %s still declares the agent has no override, and the run passed — the declaration would outlive the thing it describes\n%s",
+			agent, detectionNoOverride, out)
+	}
+	if !strings.Contains(out, detectionNoOverride) {
+		t.Errorf("the stale declaration was not named in the failure\n%s", out)
+	}
+	if err := os.Remove(planted); err != nil {
+		t.Fatal(err)
 	}
 }
 

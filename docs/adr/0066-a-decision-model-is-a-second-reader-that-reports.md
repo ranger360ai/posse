@@ -329,7 +329,9 @@ once a client exists); a pulse pre-filter; anything numeric.
   its denominator on the `caret`, `footer` and `depth` rows and `0` under
   `kw prev FP` (MEASURED 2026-10-04: 2/2, 2/2, 7/7, 0).
 - the shipped reader and that script are one table, and the shipped reader is
-  exact on all fifteen fixtures: `go test -run
+  exact on every fixture the tree ships — fifteen when this was written,
+  seventeen since ranger-base-72oz4 added claude's two, and the arm
+  ENUMERATES the directory rather than reading a list: `go test -run
   'KnownScreen|LooksLike|UnknownScreenFailureLine' ./internal/posse`
   (`internal/posse/d3knownscreen_qa_test.go`, five arms, each mutation-checked
   in `docs/notes.d/ranger-base-6uokf.md`).

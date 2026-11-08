@@ -1,0 +1,14 @@
+# This directory holds fixtures for an agent with no <agent>.toml beside the
+# others, and says so here so scripts/verify-detection.sh can tell it from a
+# retirement in progress (ranger-base-72oz4, from ranger-base-yk5qb). The long
+# form is in ../../README.md, "claude — captures with no override".
+#
+# Every line starting with # is a comment; the rest is printed by
+# verify-detection on every run, so keep it to the part a reader of that run
+# needs. Delete this file the day claude.toml is written — verify-detection
+# fails while both exist.
+posse forks no claude detection manifest and does not want one: herdr's own
+bundled manifest already names both of these screens, so there is no
+fallthrough here to close. The captures are here because every marker in
+internal/posse/knownscreen.go must be read off a fixture in this directory
+(ADR 0066 D3). Their state is still checked, against that bundled manifest.

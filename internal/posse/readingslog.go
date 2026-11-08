@@ -235,7 +235,7 @@ type Reading struct {
 	// reproduce it.
 	//
 	// EMPTY ON EVERY DECISION BUT D3, and empty on most D3 records too: an
-	// unrecognized screen is usually not one of the eight posse owns a
+	// unrecognized screen is usually not one posse owns a
 	// capture of. `omitempty`, so a record with nothing to report carries
 	// no field rather than an empty list.
 	LooksLike []string `json:"looks_like,omitempty"`
@@ -961,7 +961,7 @@ func (b *HerdrBackend) withPaneCaptureNamed(target, region string, ev ReadingEvi
 // appends no line, but the failure line is still printed and the previews
 // are still a reading. So the caller gets the best reading the evidence it
 // has supports — the preview-only one in those cases — rather than a blank
-// row that would read as "not one of the eight".
+// row that would read as "not one of the known screens".
 func (b *HerdrBackend) logUnrecognized(session, target string, d AgentDetection, verdict string) []string {
 	ev := b.withPaneCapture(target, ReadingEvidenceOf(d))
 	looksLike := ev.LooksLike()

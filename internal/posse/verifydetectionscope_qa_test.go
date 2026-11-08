@@ -103,7 +103,8 @@ func TestQAVerifyDetectionReplaysEveryFixtureItShips(t *testing.T) {
 		}
 		shipped += n
 		manifest := filepath.Join(root, "etc", "herdr", "agent-detection", a.Name()+".toml")
-		if _, err := os.Stat(manifest); err != nil && n > 0 {
+		_, declared := os.Stat(filepath.Join(testdata, a.Name(), detectionNoOverride))
+		if _, err := os.Stat(manifest); err != nil && n > 0 && declared != nil {
 			orphans = append(orphans, a.Name())
 		}
 	}
@@ -111,11 +112,24 @@ func TestQAVerifyDetectionReplaysEveryFixtureItShips(t *testing.T) {
 		t.Fatal("no fixtures shipped — this pin would pass over an empty tree")
 	}
 
-	// An agent with fixtures and no manifest is invisible to the run: the
-	// agent list is built from the manifests, so its fixtures are skipped
-	// silently and the total drops with them.
+	// An agent with fixtures and no manifest WAS invisible to the run: the
+	// agent list is built from the manifests, so its fixtures were skipped
+	// silently and the total dropped with them. ranger-base-j66o folds such
+	// an agent back in and fails it by name, so this is now the tree's half
+	// of that — a checkout should not ship the shape at all.
+	//
+	// EXCEPT WHERE THE DIRECTORY DECLARES IT (ranger-base-72oz4): claude's
+	// captures are here for internal/posse/knownscreen.go's markers, posse
+	// forks no claude manifest, and the script replays them against herdr's
+	// bundled one — so they are not the skipped shape this arm is about, and
+	// requiring a manifest for them would require forking one to hold a
+	// marker. The REPLAY is what matters and it is not taken on trust: the
+	// count below compares what the tree ships against what the run reports,
+	// over every agent, declared or not, and TestQAVerifyDetectionReplaysA
+	// DeclaredNoOverrideAgent breaks a declared fixture's state to prove the
+	// run is explaining it rather than counting it.
 	if len(orphans) != 0 {
-		t.Errorf("testdata for %v has no manifest in the checkout — those fixtures are never replayed", orphans)
+		t.Errorf("testdata for %v has no manifest in the checkout and no %s declaring that deliberate — those fixtures fail every run (ranger-base-j66o)", orphans, detectionNoOverride)
 	}
 
 	out, code := runDetection(t, root, installComplete(t, root))

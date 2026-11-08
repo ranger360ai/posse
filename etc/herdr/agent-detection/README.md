@@ -339,6 +339,81 @@ requests a real device code from OpenAI, and no reading is worth a network
 round trip nobody asked for. It is the one screen of this flow with no rule
 and no fixture.
 
+## claude — captures with no override (ranger-base-72oz4)
+
+`testdata/claude/` holds two captures and **no `claude.toml`**, and
+`testdata/claude/NO-OVERRIDE` is what says that is deliberate rather than a
+retirement in progress. `verify-detection` reads that file, replays the
+fixtures anyway, and still fails them on the state in their filenames; what it
+drops for a declared agent is the one demand that cannot be met — that the
+answer came out of a manifest in *this checkout*, because there is none to come
+out of. The source is printed in the row instead (`[bundled 2026.09.11.1]`), so
+`manifest=none` is still a failure and a version move is still visible.
+
+**There is nothing here to override.** MEASURED 2026-11-08, herdr 0.9.1 against
+the shipped captures:
+
+| fixture | state | rule |
+|---|---|---|
+| `blocked-fullscreen-upsell.txt` | `blocked` | `live_blocked_form` (region `after_last_horizontal_rule`, priority 980) |
+| `idle-composer.txt` | `idle` | `live_prompt_box` (region `prompt_box_body`, priority 950) |
+
+Both out of herdr's **bundled** claude manifest `2026.09.11.1`. There is no
+fallthrough to `default_known_agent_idle_fallback` here — which is the hole
+`codex.toml` and `grok.toml` were written for — so an override would shadow
+upstream permanently (the hazard "Retiring this override" is about) for nothing.
+
+**Why the captures are here at all.** `internal/posse/knownscreen.go` names the
+screen on an unrecognized pane from the screen's own heading, and every marker
+in that table must be read off a fixture under `testdata/` — a marker nobody
+can point at a capture for is a guess about a screen (ADR 0066 D3). The tree
+shipped no claude capture, so `claude.fullscreen_upsell` could not be written
+until these existed; `ranger-base-yk5qb` filed that rather than guessing.
+`scripts/d3-reader-eval.py`'s `EXPECTED` labels both, and
+`internal/posse/d3knownscreen_qa_test.go` enumerates the directory, so a third
+claude capture nobody labels reds.
+
+**What the row does NOT do, and this is the finding.** Because herdr names this
+screen, the pane is a *recognized* blocker and neither consumer of that reader
+is reached on it: `awaitDelivered`'s D3 block fires only when `det.Seen()` is
+false, and `awaitSettled` returns at `case det.State == "blocked"` above its
+own. The bare line the ADR 0080 bring-up actually got — `never settled idle
+(status "blocked")`, `awaitAgent`'s `Die` — holds that detection and prints the
+status alone. Naming it there is `ranger-base-x2grk`, not this directory's job.
+
+**How these were captured** (the recipe, for the next one). A scratch
+`CLAUDE_CONFIG_DIR` seeded `hasCompletedOnboarding` plus the session dir's
+`projects[<dir>].hasTrustDialogAccepted` (what `SeedClaudeTrust` writes), a
+120x40 `tmux new-session -d` running `claude` under `env -i`, three identical
+`tmux capture-pane -p` reads a second apart, then trailing blank lines and
+trailing spaces stripped and the rig's path elided — the same shape as
+`testdata/codex/blocked-trust-directory.txt`. The upsell is drawn on an account
+that has already answered it by `CLAUDE_CODE_FORCE_FULLSCREEN_UPSELL=1`, which
+its gate reads *before* the `fullscreenUpsellSeenCount >= 3` clause; three
+earlier bails in the same function still apply, so it is a lever and not a
+guarantee. Nothing was ever typed at either pane.
+
+**The sibling screen has no capture and therefore no row.** "Teach auto mode
+about your environment?" over "Auto mode works better when it knows your
+environment. Takes about a minute." is the same `Yes / Not now / Don't show
+again` shape and posse runs claude seats in auto mode, so it is in the path —
+the whole **local** half of its gate was satisfied in a scratch config dir and
+the screen still did not draw. What is left is one clause,
+`Xu()?.envOnboarding === true`, and no `CLAUDE_CODE_*` variable in the
+bundle's own environment-variable list reaches it — unlike the upsell's
+`CLAUDE_CODE_FORCE_FULLSCREEN_UPSELL`. That the flag is account-side is
+ASSUMED rather than measured; what is measured is that nothing local turns it
+on. `docs/notes.d/ranger-base-72oz4.md` has the gate chain for whoever's
+account draws it; until then its heading is known from the bundle and from no
+capture, which is not a marker.
+
+**Delete `NO-OVERRIDE` the day `claude.toml` is written** — `verify-detection`
+fails while both exist, which is what keeps the declaration from outliving the
+thing it describes. `internal/posse/verifydetection_qa_test.go`'s
+`TestQAVerifyDetectionReplaysADeclaredNoOverrideAgent` pins all three
+directions: the fixtures are really replayed, the declaration is required, and
+the declaration expires.
+
 ## upstream/ — filing packages, not overrides (ranger-base-q0e1y)
 
 `upstream/<agent>/` holds the material for an agent herdr has **no kind for**:

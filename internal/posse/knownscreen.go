@@ -33,15 +33,22 @@ package posse
 //     holds by grep.
 //   - the registry's subject is narrower than "known screen". Every row
 //     carries `Where`, `Key`, `Silence` and a `Probe` — an
-//     operator-silenceable first-run screen — and three of the eight screens
-//     posse owns a capture of (codex's hooks review, trust directory and
-//     model picker) have no silence key, nothing for an operator to have
-//     done first, and nothing for a probe to read. Three such rows would
-//     also grow three permanently-unknown rows in `posse runtime check`'s
-//     grid, which is the sentence bobSignInSilence exists to avoid writing.
+//     operator-silenceable first-run screen — and four of the screens posse
+//     owns a capture of (codex's hooks review, trust directory and model
+//     picker, and claude's fullscreen upsell) have no silence key, nothing
+//     for an operator to have done first, and nothing for a probe to read.
+//     Four such rows would also grow four permanently-unknown rows in
+//     `posse runtime check`'s grid, which is the sentence bobSignInSilence
+//     exists to avoid writing. claude's is the one ranger-base-yk5qb ruled
+//     on directly: that class is per ACCOUNT rather than per repo, its key
+//     is written by the CLI when the screen is answered, and a release adds
+//     notices under keys nobody has seen.
 //   - the two sets disagree in both directions and on their keys. The
-//     registry carries claude's two screens and bob's three, which posse
-//     owns no capture of and can write no marker for; it is per RUNTIME and
+//     registry carries claude's TRUST modal and outside-read notice and
+//     bob's three, which posse owns no capture of and can write no marker
+//     for, while this table carries a claude screen the registry has no row
+//     for (ranger-base-72oz4) — so the disagreement runs both ways inside
+//     one runtime now, not only between runtimes. It is per RUNTIME and
 //     keyed by a prose `Screen` sentence. This table is keyed by the herdr
 //     rule ids that name the screen today — the axis
 //     `scripts/d3-reader-eval.py`'s OPTIONS already uses, the axis a census
@@ -63,7 +70,7 @@ package posse
 // class it cannot survive is a reworded HEADING, which has zero incidents
 // in the record and is where a model's claimed value would have to live.
 //
-// SET-VALUED ON PURPOSE. Three of the fifteen fixtures show two true screens
+// SET-VALUED ON PURPOSE. Three of the shipped fixtures show two true screens
 // at once — grok's startup splash with the consent banner drawn over it —
 // and a `choice` returns one. A reader that had to pick would be wrong on a
 // fifth of the corpus by construction, and the failure line would name the
@@ -109,6 +116,34 @@ type KnownScreen struct {
 // etc/herdr/agent-detection/testdata/ and nothing else. A marker nobody can
 // point at a capture for is a guess about a screen, and this reader's whole
 // claim is that it reads what is there.
+//
+// THAT BAR IS WHY claude HAS ONE ROW AND NOT TWO (ranger-base-72oz4). The
+// fullscreen upsell's sibling — "Teach auto mode about your environment?"
+// over "Auto mode works better when it knows your environment. Takes about a
+// minute.", the same Yes / Not now / Don't show again shape, and posse runs
+// claude seats in auto mode — could not be drawn on this box. MEASURED
+// 2026-11-08: the whole LOCAL half of its gate was satisfied in a scratch
+// config dir (auto mode on, `numStartups` 40 against a floor of 5,
+// `autoModeEnvSetup.denials` 40 against a floor of 5, not dismissed, no
+// `dismissedAt`) and the screen did not draw. Read off claude 2.1.319's own
+// bundle, what is left is one clause — `Xu()?.envOnboarding === true` inside
+// `Zge()`, beside the skill-availability test `mZe()`. The bundle's own
+// enumeration of its environment variables carries nothing that reaches it:
+// the only `CLAUDE_CODE_*ONBOARD*` name in the binary is
+// `CLAUDE_CODE_POWERUP_ONBOARDING`, which is a different screen. (The other
+// gate, `hHe`'s `lC().envOnboardingEligible`, is not a second condition — it
+// is a startup LATCH of this same function: `if($Mr()===void
+// 0)uUt(…mode==="auto"&&dO())`.) ASSUMED and not measured: that
+// `envOnboarding` is an account-side flag. `Xu` is a name the bundle reuses
+// across chunks for three unrelated functions and the one in that chunk's
+// scope was not resolved — what is measured is that no local lever reaches
+// it, which is the part this decision rests on. Unlike the upsell, whose
+// CLAUDE_CODE_FORCE_FULLSCREEN_UPSELL is read before its own counter clause.
+//
+// So the sibling's heading is known from the bundle and from no capture, and
+// a row read off a bundle is exactly the guess the paragraph above refuses.
+// docs/notes.d/ranger-base-72oz4.md has the gate chain for whoever's account
+// draws it.
 var KnownScreens = []KnownScreen{{
 	Name:    "codex.update_menu",
 	Rules:   []string{"update_menu", "startup_update"},
@@ -150,6 +185,37 @@ var KnownScreens = []KnownScreen{{
 	// told about (ranger-base-3j8's first diagnosis).
 	Rules:   nil,
 	Markers: [][]string{{"help improve grok"}},
+}, {
+	// claude, and the one row in this table whose Rules field is the reason
+	// NOT to expect anything of it (ranger-base-72oz4, from
+	// ranger-base-yk5qb). MEASURED 2026-11-08 — herdr 0.9.1, claude 2.1.319
+	// darwin-arm64, the shipped capture replayed through `herdr agent
+	// explain --file --agent claude`: state `blocked`, rule
+	// `live_blocked_form`, region `after_last_horizontal_rule`, priority
+	// 980, out of herdr's own BUNDLED claude manifest 2026.09.11.1. So this
+	// screen is a RECOGNIZED blocker, its residue is empty by construction,
+	// and neither consumer of this reader is reached on it: awaitDelivered's
+	// D3 block fires only when `det.Seen()` is false, and awaitSettled
+	// returns at `case det.State == "blocked"` above its own. The bare line
+	// an operator actually got — `never settled idle (status "blocked")`,
+	// awaitAgent's Die — holds that detection and prints the status alone;
+	// naming it there is ranger-base-x2grk and not this table's job.
+	//
+	// The row is here because the screen is real and the marker is read off
+	// a capture this tree now ships, which is the only bar this file sets.
+	// A claude release that reshapes the dialog past
+	// `after_last_horizontal_rule` is what would make it speak, and until
+	// then an honest empty residue is a better record than no row at all —
+	// the alternative was a fixture labelled "no known screen here" over a
+	// pane that plainly has one.
+	//
+	// ONE PHRASE, no conjunction, and the `?` dropped: the same shape as
+	// codex.trust_directory, whose heading also ends in one. "try the new
+	// fullscreen renderer" appears in no text that is not this screen except
+	// prose about it, which is the standing caveat on every row here.
+	Name:    "claude.fullscreen_upsell",
+	Rules:   []string{"live_blocked_form"},
+	Markers: [][]string{{"try the new fullscreen renderer"}},
 }}
 
 // KnownScreensIn is the reader: the SET of known screens whose heading is in
@@ -232,7 +298,7 @@ func normKnownScreen(s string) string {
 // comma-separated where the set has more than one, and "" for an empty set.
 //
 // "" AND NOT "looks like: nothing". An empty set is the ordinary answer on
-// every screen that is not one of the eight — which is most screens — and a
+// every screen that is not in the table — which is most screens — and a
 // row saying so on every refusal would be a diagnostic that trained its
 // reader to skip the block (the reason WhatHerdrSaw groups by region and not
 // by rule).

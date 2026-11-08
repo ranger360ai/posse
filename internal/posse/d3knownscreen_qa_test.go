@@ -277,6 +277,11 @@ func TestQAKnownScreenReaderNamesEveryFixtureExactly(t *testing.T) {
 	for key, want := range map[string][]string{
 		"codex/idle-composer":                    nil,
 		"grok/idle-composer-with-consent-banner": {"grok.consent_banner"},
+		// claude's, added with its blocked screen (ranger-base-72oz4): a
+		// runtime whose only capture is a blocker gives this bar nothing to
+		// measure, because the row that matters is "the reader does not fire
+		// on an ORDINARY pane of that runtime".
+		"claude/idle-composer": nil,
 	} {
 		if !d3ksSameStrings(d.Expected[key], want) {
 			t.Errorf("%s is labelled %v in scripts/%s and this arm was written against %v — the idle screens are ADR 0066 D5's own bar and the two labellings have diverged",
@@ -284,7 +289,7 @@ func TestQAKnownScreenReaderNamesEveryFixtureExactly(t *testing.T) {
 		}
 	}
 
-	// And the two-screen case, by name: three of the fifteen fixtures show a
+	// And the two-screen case, by name: three of the shipped fixtures show a
 	// splash with the consent banner drawn over it, which is the whole
 	// reason this reader returns a set and a `choice` was not enough.
 	two := 0
@@ -336,6 +341,23 @@ func TestKnownScreensInIsSetValuedAndCanSayNothing(t *testing.T) {
 		name:  "one alternative is enough",
 		texts: []string{"2. Sign in with Device Code"},
 		want:  []string{"codex.signin_menu"},
+	}, {
+		// claude's upsell as the pane draws it: the heading under a
+		// horizontal rule, with the bullet rows and the numbered options
+		// below. The `?` is not in the marker, so the heading's own
+		// punctuation is not load-bearing (ranger-base-72oz4).
+		name: "claude's fullscreen upsell as drawn",
+		texts: []string{"────────────\n  Try the new fullscreen renderer?\n\n" +
+			"  · Flicker-free output\n  ❯ 1. Yes, try it\n    2. Not now\n"},
+		want: []string{"claude.fullscreen_upsell"},
+	}, {
+		// And not on prose ABOUT it. The marker is the heading, so a pane
+		// quoting the heading verbatim names the screen — that is the
+		// standing caveat on every row — but a pane merely discussing the
+		// renderer does not.
+		name:  "a pane talking about the fullscreen renderer is not the screen",
+		texts: []string{"/tui fullscreen switches renderers; the upsell is gated on a counter."},
+		want:  nil,
 	}, {
 		// Regions are joined, and a marker must land inside ONE of them or
 		// across the join — never by the join inventing a phrase. These two
@@ -405,7 +427,7 @@ func TestQAUnknownScreenFailureLineCarriesTheLooksLikeRow(t *testing.T) {
 		t.Fatalf("herdr's working is not in the block at all, so this arm cannot tell whether the row displaced it:\n%s", bare)
 	}
 	if strings.Contains(bare, "looks like") {
-		t.Errorf("an empty D3 report printed a row — an unrecognized screen that is not one of the eight is the ordinary case, and a row on every refusal is how a diagnostic gets skimmed past:\n%s", bare)
+		t.Errorf("an empty D3 report printed a row — an unrecognized screen that is not one of the known screens is the ordinary case, and a row on every refusal is how a diagnostic gets skimmed past:\n%s", bare)
 	}
 
 	with := det.WhatHerdrSaw("", []string{"grok.consent_banner", "grok.startup_splash"})

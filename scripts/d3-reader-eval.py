@@ -91,9 +91,9 @@ FIXTURES = REPO / "etc" / "herdr" / "agent-detection"
 # its evidence. A shipped reader had to live on one of the two tables, and
 # ranger-base-6uokf put it on neither: the interstitial registry is read by a
 # launch guard (DangerUnsilenced), its subject is an operator-silenceable
-# screen, and three of the eight rows here have no silence key at all — so
+# screen, and four of the rows here have no silence key at all — so
 # the markers live in `internal/posse/knownscreen.go`, keyed by rule id, and
-# the registry is untouched. The three `registered: False` rows are what that
+# the registry is untouched. The four `registered: False` rows are what that
 # argument rests on; `KnownScreens` carries no such field, which is why the
 # pin compares names, rules and markers and not this one.
 OPTIONS = {
@@ -116,6 +116,28 @@ OPTIONS = {
                             "markers": [("new worktree", "resume session")], "registered": True},
     "grok.consent_banner": {"rules": [],
                             "markers": ["help improve grok"], "registered": True},
+    # claude, appended rather than sorted in: this table is the order the
+    # corpus GREW in, which is the order the fixtures were taken, and
+    # internal/posse/KnownScreens is held to it row for row.
+    #
+    # `rules` is live here and that is the finding, not a formality
+    # (ranger-base-72oz4). herdr's own BUNDLED claude manifest already names
+    # this screen -- MEASURED 2026-11-08, herdr 0.9.1, manifest 2026.09.11.1:
+    # state blocked, rule live_blocked_form, region after_last_horizontal_rule,
+    # priority 980 -- so the residue this reader is scored on is EMPTY for
+    # claude and the row has nothing to say on the dispatch path today. It is
+    # here because the marker is read off a shipped capture and the screen is
+    # real, not because it saves a diagnosis yet; the diagnosis the incident
+    # wanted is ranger-base-x2grk.
+    #
+    # `registered: False`: ClaudeInterstitials carries the trust modal and the
+    # outside-read notice, and ranger-base-yk5qb ruled this class gets no row
+    # there -- per ACCOUNT rather than per repo, one marker key per notice,
+    # written by the CLI when the screen is answered, and nothing honest for
+    # Silence or Probe to hold.
+    "claude.fullscreen_upsell": {"rules": ["live_blocked_form"],
+                                 "markers": ["try the new fullscreen renderer"],
+                                 "registered": False},
 }
 
 # What each fixture shows, as the SET of known screens on it. The filename
@@ -138,6 +160,10 @@ EXPECTED = {
     "grok/idle-startup-splash-plain-footer": {"grok.startup_splash", "grok.consent_banner"},
     "grok/idle-startup-splash-wide-boxed": {"grok.startup_splash"},
     "grok/idle-composer-with-consent-banner": {"grok.consent_banner"},
+    "claude/blocked-fullscreen-upsell": {"claude.fullscreen_upsell"},
+    # claude's idle control, the third of the set ADR 0066 D5's bar is read
+    # over: an ordinary claude composer must read as no blocked screen at all.
+    "claude/idle-composer": set(),
 }
 
 HEADING_REWORDS = [
@@ -152,6 +178,7 @@ HEADING_REWORDS = [
     ("New worktree", "Create worktree"),
     ("Resume session", "Continue session"),
     ("Help improve Grok", "Help make Grok better"),
+    ("Try the new fullscreen renderer?", "Switch to the fullscreen renderer?"),
 ]
 
 FOOTER_REWORDS = [
@@ -235,9 +262,22 @@ class Herdr:
             return {"error": (p.stderr or p.stdout).strip()}
         d = json.loads(p.stdout)
         src = str(d.get("manifest_source") or "")
-        if str(self.staged) not in src:
+        if str(self.staged) not in src and not self.declared_no_override(agent):
             d["warning_source"] = f"manifest answered from {src or 'none'}, not the checkout"
         return d
+
+    @staticmethod
+    def declared_no_override(agent: str) -> bool:
+        """Is this an agent the tree ships no manifest for ON PURPOSE?
+
+        The same declaration scripts/verify-detection.sh reads, and for the
+        same reason (ranger-base-72oz4): for claude nothing of this repo's was
+        staged, so "the answer did not come from the checkout" is not a warning
+        about anything -- it is the only answer possible -- and a warning that
+        fires on every run over a corpus it cannot apply to is how the ones
+        that matter get skimmed past.
+        """
+        return (FIXTURES / "testdata" / agent / "NO-OVERRIDE").exists()
 
 
 def rule_id(d: dict) -> str:
@@ -439,7 +479,7 @@ def question() -> dict:
         "state": "<the region previews of one D3 record, joined by newlines — never the whole pane>",
         "question": "Which known first-run screen is this terminal showing?",
         "options": opts,
-        "note": "a `choice` returns ONE option; three of the fifteen fixtures show two true screens",
+        "note": "a `choice` returns ONE option; three of the shipped fixtures show two true screens",
     }
 
 

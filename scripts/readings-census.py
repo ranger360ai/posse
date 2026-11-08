@@ -145,7 +145,7 @@ def is_false_idle_candidate(rec: dict) -> bool:
 #
 # BOTH FIGURES, like the false-IDLE line above: the named count AND the D3
 # total. A record with an empty set is an unknown screen that is genuinely
-# not one of the eight posse owns a capture of, which is the ordinary case
+# not one posse owns a capture of, which is the ordinary case
 # and not a miss — and a rate printed without its denominator would read as
 # one.
 #
@@ -283,7 +283,7 @@ def group_key(rec: dict, by: str) -> str:
         return str(rec.get("posse", "?"))
     if by == "screen":
         # The SET as one key, joined, because two screens on one pane is one
-        # reading and not two (three of the fifteen labelled fixtures are
+        # reading and not two (three of the labelled fixtures are
         # that shape: a splash with the consent banner over it). A row per
         # member would double-count those records against the totals every
         # other table prints.
@@ -460,7 +460,7 @@ def print_named(c: dict) -> None:
     OF that row — the same records, counted by whether the heading reader
     named a screen on them. Both figures are given, so the residual is
     visible rather than folded in: a D3 record with an empty set is an
-    unknown screen that really is not one of the eight posse owns a capture
+    unknown screen that really is not one posse owns a capture
     of, which is the ordinary case.
 
     Silent where there are no D3 records at all. A zero over zero is not a

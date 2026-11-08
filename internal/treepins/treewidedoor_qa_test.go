@@ -941,8 +941,45 @@ package treepins
 // were all in this package's fixtures rather than in posse's renders, which
 // were `#!/bin/sh` the whole time.
 //
-// and `make tree-check` is all of them — one hundred and twenty-five pins and
-// seventeen doors, 123-185s over three warm runs at one hundred and
+// and ONE more, folded into seed-check's door beside the five
+// ranger-base-00fyg rows above, because it reaches the same detectionRig and
+// so has the same subject — what a detection bead writes under
+// etc/herdr/agent-detection:
+//
+//	TestQAVerifyDetectionReplaysADeclaredNoOverrideAgent
+//	                                              make seed-check
+//	                                              (ranger-base-72oz4)
+//
+// NO NEW DOOR, for the sentence the 00fyg block gives: seed-check's own
+// comment says to type it when you add a detection fixture, and this bead
+// added two. What it adds to that block is a THIRD thing the rig carries —
+// `testdata/<agent>/NO-OVERRIDE`, the per-directory declaration that an agent
+// has no manifest in this checkout on purpose — so the ReadDirs whose
+// population is a detection bead's are now reading one more kind of file. The
+// rig was copying only `*.txt` and left the declaration behind, which made
+// claude's two captures read as the ORPHAN class and failed this file's
+// neighbour's control arm over a checkout that passes.
+//
+// and `make tree-check` is all of them — one hundred and twenty-six pins and
+// seventeen doors, 71.3-77.7s over three warm runs at one hundred and
+// twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
+// then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
+// 8.42 over a five-minute 11.15, 10.04 and 9.71, with NO suite slot held for
+// the first run and ONE held by a sibling seat for the second and third, and
+// one warm-up run discarded — the register-check that failed on this bead's
+// own pin, which relinked internal/treepins' binary. The first reading of
+// this class at one hundred and twenty-six, taken the same day as the
+// 5syu4 reading below and 110s faster at the top end, and it is the third
+// reading in a row to say the same thing about which variable tracks: the
+// slots, not the average. One slot or none, a load in the single digits, and
+// the band collapses to 6.4s — the tightest this command has produced since
+// ranger-base-h1q5o's 1s spread on an idle box, and nowhere near 5syu4's 62s
+// at a HIGHER load with both slots held. The pin this bead added reports
+// 0.30s inside seed-check, which is below that 6.4s spread by an order of
+// magnitude, so none of this band is its cost either.
+//
+// The reading before it, taken the same day at one pin fewer: 123-185s over
+// three warm runs at one hundred and
 // twenty-five of them (MEASURED 2026-11-08, ranger-base-5syu4: 123s, 129s
 // then 185s in that order, at a one-minute load average of 30.68, 26.98 and
 // 12.02 over a five-minute 33.75, 31.91 and 24.83, with one suite slot held
@@ -956,9 +993,9 @@ package treepins
 // bead added reports 0.30s, which is below the 62s spread by two orders of
 // magnitude, so none of that band is its cost. The seconds here moved
 // because the box did; read the chain's quiet entries, not this one, to
-// price the command.
+// price the command),
 //
-// The reading this replaces, kept because it is the one that named the
+// the reading before THAT, kept because it is the one that named the
 // counterexample: 71.7-126.1s over three warm runs at one hundred and
 // twenty-four of them (MEASURED 2026-11-04, ranger-base-zpk8r: 90.7s, 71.7s
 // then 126.1s in that order, at a one-minute load average of 30.01, 21.42 and
