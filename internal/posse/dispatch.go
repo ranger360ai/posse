@@ -5727,7 +5727,8 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 			// that fails is not evidence either way, and here there is even
 			// less at stake — nothing is about to be typed into the pane.
 			// Take herdr at its word that an agent is there and gather.
-			d.printf("· %-14s herdr cannot explain %s (%v) — the work prompt is on its launch line; gathering anyway\n", id, session, derr)
+			d.printf("· %-14s %s\n", id,
+				explainDegrade(session, derr, "the work prompt is on its launch line; gathering anyway"))
 			return target, true, nil
 		case det.Seen():
 			return target, true, nil
@@ -5912,7 +5913,11 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 	if poll <= 0 {
 		poll = 250 * time.Millisecond
 	}
-	var lastWhy, lastErr string
+	var lastWhy string
+	// lastErr is the ERROR and not its text, so the deadline arm below can
+	// ask it which of §4's two causes it is (explainDegrade,
+	// ranger-base-l32dl).
+	var lastErr error
 	// The detection behind lastWhy, kept only while it is a GUESS: the
 	// failure line owes the next person herdr's working, and a read that
 	// DID see a rule has nothing to explain (ranger-base-3j8).
@@ -5951,7 +5956,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			// this same window already got (rangerhq-lhy2). Only when no
 			// poll has ever produced one does lastWhy stay "" down to the
 			// deadline check below.
-			lastErr = err.Error()
+			lastErr = err
 		case det.State == "blocked":
 			// Never a guess — the fallback only ever says idle — and it
 			// carries the rule that produced it, for the failure line.
@@ -5967,15 +5972,15 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			// and whether that label is still somebody's — which is the whole
 			// of the evidence here, where a matched rule has nothing to
 			// explain (ADR 0061 D3.3).
-			lastErr, lastGuess = "", det
+			lastErr, lastGuess = nil, det
 			lastWhy = fmt.Sprintf("the authority that labels this pane %q last reported %q, which is not a settle", det.Reported, orUnknown(det.State))
 		case det.Seen():
 			// Settled a moment ago, something else on screen now. Not an
 			// answer either way: wait for one.
-			lastErr, lastWhy = "", fmt.Sprintf("herdr last read %q from rule %q", det.State, det.Rule.ID)
+			lastErr, lastWhy = nil, fmt.Sprintf("herdr last read %q from rule %q", det.State, det.Rule.ID)
 			lastGuess = AgentDetection{}
 		default:
-			lastErr = ""
+			lastErr = nil
 			lastGuess = det
 			// The reported arm (ADR 0061 D3.3). "herdr never saw a screen it
 			// recognizes" is true of every reported pane forever, so it is
@@ -5998,8 +6003,9 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			// answer stands even if the LAST call happened to error —
 			// twenty-two guesses are twenty-two real answers, and one late
 			// diagnostic failure does not outrank them (rangerhq-lhy2).
-			if lastErr != "" && lastWhy == "" {
-				d.printf("· %-14s herdr cannot explain %s (%s) — prompting on its %q anyway\n", id, session, lastErr, status)
+			if lastErr != nil && lastWhy == "" {
+				d.printf("· %-14s %s\n", id,
+					explainDegrade(session, lastErr, fmt.Sprintf("prompting on its %q anyway", status)))
 				return status, AgentDetection{State: status}, nil
 			}
 			// WhatHerdrSaw("") and not a declaration: this ladder takes a

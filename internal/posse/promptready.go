@@ -126,13 +126,16 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	answered := false
 	attempts := 0
 	var lastGuess AgentDetection
-	var lastErr string
+	// The ERROR and not its text: the concession below asks it which of ADR
+	// 0076 §4's two causes it is — a verb that failed, or a multiplexer that
+	// has no such verb (explainDegrade, ranger-base-l32dl).
+	var lastErr error
 	for {
 		attempts++
 		det, err := b.explain(paneSeat(target))
 		switch {
 		case err != nil:
-			lastErr = err.Error()
+			lastErr = err
 		case det.Seen():
 			// News is a second `agent explain`, not a slow first one: a box
 			// under load can make one subprocess call take longer than a
@@ -144,7 +147,7 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 			}
 			return det, "", nil
 		default:
-			lastErr, answered, lastGuess = "", true, det
+			lastErr, answered, lastGuess = nil, true, det
 		}
 		if !answered && time.Since(start) >= promptExplainGrace {
 			break
@@ -155,7 +158,7 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 		time.Sleep(promptReadyPoll)
 	}
 	if !answered {
-		return AgentDetection{}, fmt.Sprintf("herdr cannot explain %s (%s) — prompting without the readiness gate", session, lastErr), nil
+		return AgentDetection{}, explainDegrade(session, lastErr, "prompting without the readiness gate"), nil
 	}
 	// The REPORTED wording (ADR 0061 D3.3). Same refusal, same remedies, and
 	// a different sentence about the cause, because on this route there is no

@@ -18,7 +18,11 @@ package posse
 // second reading starts, and nothing mechanical can tell a one-line
 // forwarder from one. The name gives way; the pin does not.
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+)
 
 // NewHerdrMux is the production occupant: the ambient herdr binary, or
 // RHQ_HERDR_BIN.
@@ -317,8 +321,65 @@ type ManifestReader interface {
 // muxNotHerdr is the sentence a §4 verb answers with when the slot holds
 // something else. "not available" and never "no" (ADR 0076 §4): a reading
 // nobody could take says nothing about the pane.
-func muxNotHerdr(verb string) error {
-	return Die("%s is herdr's own verb and this instance's multiplexer is not herdr — the reading is not available (ADR 0076 §4)", verb)
+//
+// IT CARRIES THE VERB AS A VALUE and not only inside its sentence, because a
+// caller that PRINTS this has a second sentence to write and the verb is the
+// subject of it (muxVerbUnavailable, explainDegrade, ranger-base-l32dl).
+func muxNotHerdr(verb string) error { return muxVerbUnavailable{Verb: verb} }
+
+// muxVerbUnavailable is that answer as a TYPE, so a §4 call site can tell
+// "the verb failed" from "this multiplexer has no such verb" — which is the
+// one distinction none of the three printing sites had, and the whole of
+// ranger-base-l32dl. Its Error text is unchanged, word for word: it is the
+// inner sentence every one of those lines already quotes, and it was never
+// the wrong one.
+type muxVerbUnavailable struct{ Verb string }
+
+func (e muxVerbUnavailable) Error() string {
+	return fmt.Sprintf("%s is herdr's own verb and this instance's multiplexer is not herdr — the reading is not available (ADR 0076 §4)", e.Verb)
+}
+
+// muxVerbMissing names the §4 verb this instance's multiplexer does not have,
+// or ("", false) for every other error — a verb that was asked and failed, and
+// anything wrapping one. errors.As and not a type switch so that a caller
+// which wrapped the answer on its way up still reads as what it is.
+func muxVerbMissing(err error) (string, bool) {
+	var u muxVerbUnavailable
+	if errors.As(err, &u) {
+		return u.Verb, true
+	}
+	return "", false
+}
+
+// explainDegrade is the sentence a §4 caller prints when it concedes and goes
+// on. There are two, because there are two causes with nothing in common but
+// the error value (ranger-base-l32dl):
+//
+//   - THE VERB FAILED. herdr is in the slot, it was asked, and it answered
+//     with an error or not at all. "herdr cannot explain <seat> (<why>)" is
+//     true, it names the party that failed, and it is NEWS: it happened on
+//     this pass and may not happen on the next.
+//   - THE SLOT HAS NO SUCH VERB (ADR 0076 §4). On a `multiplexer: rex`
+//     instance nothing was asked, because there is nothing to ask. The
+//     failure wording is then wrong twice over: it names herdr as the party
+//     that failed on a box where herdr is not the multiplexer, and it is
+//     shaped like news for a reading that is unavailable on every launch by
+//     design — so it printed once per seat, on every pass, forever.
+//
+// THE DEGRADE DOES NOT BRANCH, deliberately. ADR 0076 §4 says such a reading
+// is "not available" and never a "no", so every caller concedes and goes on
+// exactly as it did before this split existed; the consequence is the
+// caller's own words and is passed in. Only the cause sentence branches.
+//
+// It names the ADR section rather than the occupant: the occupant's name is
+// one config read or one Server() call away from here, on a line that prints
+// per seat per pass, and the section is what a reader needs to find out that
+// this is the design and not an outage.
+func explainDegrade(session string, err error, consequence string) string {
+	if verb, ok := muxVerbMissing(err); ok {
+		return fmt.Sprintf("this instance's multiplexer has no %s (ADR 0076 §4) — %s", verb, consequence)
+	}
+	return fmt.Sprintf("herdr cannot explain %s (%v) — %s", session, err, consequence)
 }
 
 var _ Mux = HerdrMux{}
