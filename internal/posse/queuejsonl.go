@@ -68,9 +68,24 @@ var queueJSONLPaths = []string{beadsJSONL, beadsDeleted}
 // render.
 //
 // filepath.Abs Cleans, so the Clean is its; it is kept spelled only where Abs
-// cannot answer. What Abs does NOT do is resolve symlinks, so two absolute
-// spellings of one repo are still two repos here — measured and handed to
-// architecture as ranger-base-5wq6g, and the same open end k9x8n left.
+// cannot answer.
+//
+// AND NOT canonicalPath, which landed for the identity wall the same day
+// (ADR 0082 D1, ranger-base-yx73g) and resolves symlinks, on-disk case and
+// firmlinks on top of Abs. Two reasons, both deliberate. The ADR scopes
+// canonicalPath to the RENDER of a wall literal and leaves hookRepo, its three
+// callers and commitGuardLiterals on the value as given; `QueueRepo()` feeds
+// four consumers at once, and `underDir` compares it against a store dir that
+// is NOT canonicalised, so canonicalising only this side is a change to a
+// comparison nobody asked for. And it is not needed for the remedy to work:
+// the key D7 prescribes is matched by samePath, which resolves BOTH sides and
+// then falls back to os.SameFile, so a key in the operator's own case and
+// through their own symlinks still matches — the case axis is
+// ranger-base-99gww's, and samePath is what answers it. What a relative
+// spelling broke is not prettiness, it is that a relative key names a
+// different directory to every reader. Whether this call site should
+// canonicalise TOO is ADR 0082's question and not this bead's: handed to
+// architecture as ranger-base-wvoqe.
 func (a *App) QueueRepo() string {
 	v := a.CfgGet("queue_repo", "")
 	if v == "" {

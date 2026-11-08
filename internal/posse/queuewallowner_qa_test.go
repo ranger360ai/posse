@@ -56,6 +56,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -315,6 +316,17 @@ func TestQAAQueueCommitFromANonOwningHomeStillWritesAnUnclaimedSlot(t *testing.T
 // actionable, and a non-owning home's closes stop reaching git until it is
 // taken.
 //
+// IT ASSERTS THE PROPERTY AND NOT A STRING, which is load-bearing rather than
+// taste. ADR 0082 D1 landed canonicalPath the same day (ranger-base-yx73g),
+// and whether THIS call site should canonicalise on top of absolutising is an
+// open architecture question (ranger-base-wvoqe). canonicalPath resolves
+// symlinks, so a pin that demanded one exact spelling would red the day that
+// question is answered yes — a pin fencing out the better fix. So the premise
+// asks only that the value be ABSOLUTE and name this repo, and the refusal
+// assertions read the prescribed key back out of the message and ask the same
+// two things of it. Every spelling a resolver could legitimately produce
+// passes; the relative one cannot.
+//
 // WHAT THIS PIN DOES NOT COVER, measured and recorded so nobody re-measures
 // it: the WRITE path. The wall `InstallCommitGuardHook` renders through a
 // relative `queue_repo:` is BYTE-IDENTICAL to the absolute one (MEASURED
@@ -359,7 +371,6 @@ func TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantRepo := filepath.Join(cwd, base)
 	// Rewritten rather than parameterised into qwoApp: the non-owning
 	// listing has to stay exactly what qwoApp wrote, or this arm would be
 	// measuring ownership instead.
@@ -381,8 +392,12 @@ func TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath(t *testing.T) {
 	// not Fatalf, for the reason the arm above gives: a mutant that takes the
 	// Abs out must be measured at the refusal too, and a Fatalf here would
 	// stop at the premise and leave the two halves of the finding unread.
-	if got := a.QueueRepo(); got != wantRepo {
-		t.Errorf("QueueRepo() = %q from `queue_repo: %s` in %s, want the absolute %q — underDir, OwnsCommitWall, InstallCommitGuardHook and D7's refusal all read this one value", got, base, cwd, wantRepo)
+	resolved := a.QueueRepo()
+	if !filepath.IsAbs(resolved) {
+		t.Errorf("QueueRepo() = %q from `queue_repo: %s` in %s, want an absolute path — underDir, OwnsCommitWall, InstallCommitGuardHook and D7's refusal all read this one value, and a relative one names a different directory to every reader", resolved, base, cwd)
+	}
+	if !samePath(resolved, repo) {
+		t.Errorf("QueueRepo() = %q, which does not name the repo %q the config spelled as %q", resolved, repo, base)
 	}
 
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
@@ -399,27 +414,29 @@ func TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath(t *testing.T) {
 		t.Errorf("the refusal no longer names the stamping home %s: %v", AbbrevHome(x.Home), cerr)
 	}
 
-	// THE FINDING. Both places: the repo it names, and the key it
-	// prescribes.
-	if !strings.Contains(cerr.Error(), AbbrevHome(wantRepo)) {
-		t.Errorf("the refusal does not name the repo %s whose wall it is — a relative `queue_repo:` must still be reported, and prescribed, as the repo:\n%v", AbbrevHome(wantRepo), cerr)
+	// THE FINDING. Both places: the repo the refusal names, and the key it
+	// prescribes. Read the key back out of the message rather than composing
+	// the one spelling this bead's fix happens to produce — see the
+	// property-not-a-string paragraph in this arm's header.
+	text := cerr.Error()
+	if !strings.Contains(text, AbbrevHome(resolved)) {
+		t.Errorf("the refusal does not name the repo %s whose wall it is — a relative `queue_repo:` must still be reported, and prescribed, as the repo:\n%s", AbbrevHome(resolved), text)
 	}
-	// Composed through the renderer the refusal now uses and not AbbrevHome:
-	// ADR 0082 D4 (ranger-base-w79sc, ranger-base-qm7eg) landed
-	// CanonicalAbbrevPath on both of D7's path renders while this bead was
-	// open, so the key it prescribes carries the kernel's spelling of the
-	// repo. qaCanonicalPath is the fixture form of that, as qaStampedBy is
-	// for the home stamp — on darwin a t.TempDir() is reached through
-	// /var -> /private/var, so the raw fixture path is the one spelling the
-	// refusal is guaranteed NOT to print. The unanchored Contains assertions
-	// above cannot see this: `/private/var/...` contains `/var/...`, so only
-	// a key read with its backticks is a reading of the spelling at all.
-	wantKey := "`" + AbbrevHome(qaCanonicalPath(t, wantRepo)) + ": <private|public>`"
-	if !strings.Contains(cerr.Error(), wantKey) {
-		t.Errorf("the prescribed remedy is not %s — a `beads_visibility:` key is resolved against the READING process's cwd, so any other spelling is a remedy that is inert where it was printed:\n%v", wantKey, cerr)
+	key := qwoPrescribedKey.FindStringSubmatch(text)
+	if key == nil {
+		t.Fatalf("D7's remedy no longer prescribes a `<repo>: <private|public>` key, which is the whole of what makes this refusal actionable:\n%s", text)
 	}
-	badKey := "`" + base + ": <private|public>`"
-	if strings.Contains(cerr.Error(), badKey) {
-		t.Errorf("the refusal prescribes %s, a cwd-dependent wildcard over the visibility verdict this wall enforces:\n%v", badKey, cerr)
+	// ExpandTilde, because the message abbreviates $HOME and the operator
+	// pastes the abbreviated form into a config that expands it again.
+	if got := ExpandTilde(key[1]); !filepath.IsAbs(got) {
+		t.Errorf("the remedy prescribes the relative key %q — a `beads_visibility:` key is read by samePath -> resolvedPath -> filepath.Abs, i.e. against the READING process's cwd, so a relative one is inert where it was printed and a cwd-dependent wildcard over the visibility verdict this wall enforces:\n%s", key[1], text)
+	} else if !samePath(got, repo) {
+		t.Errorf("the remedy prescribes %q, which does not name the repo %q it is the remedy for:\n%s", key[1], repo, text)
 	}
 }
+
+// qwoPrescribedKey captures the `beads_visibility:` key D7 tells the reader to
+// add. The assertion is about that key specifically and not about the message
+// containing some absolute path somewhere: the refusal already names two
+// absolute homes, so a substring test would pass on a relative key.
+var qwoPrescribedKey = regexp.MustCompile("remedy: add `([^`]+): <private\\|public>`")

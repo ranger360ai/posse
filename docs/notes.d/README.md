@@ -19,7 +19,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-ib61s](ranger-base-ib61s.md) — The rendered unit carries a PATH, and it is the render's own (ranger-base-ib61s) — 2026-11-08
 - [ranger-base-i0yuw](ranger-base-i0yuw.md) — The fence has one file in it, and the transport is already equal (ranger-base-i0yuw) — 2026-11-08
 - [ranger-base-g6bs7](ranger-base-g6bs7.md) — canonicalPath answers by reach, not only by path (ranger-base-g6bs7) — 2026-11-08
-- [ranger-base-8kwa5](ranger-base-8kwa5.md) — A relative `queue_repo:` is resolved before anything reads it, and the one-list pin asks the question its name makes (ranger-base-8kwa5) — 2026-11-08
+- [ranger-base-8kwa5](ranger-base-8kwa5.md) — A relative `queue_repo:` is resolved before anything reads it (ranger-base-8kwa5) — 2026-11-08
 - [ranger-base-8j070](ranger-base-8j070.md) — A directory this process may not name has no canonical spelling (ranger-base-8j070) — 2026-11-08
 - [ranger-base-8gwu1](ranger-base-8gwu1.md) — The home stamp takes the kernel's spelling too (ranger-base-8gwu1) — 2026-11-08
 - [ranger-base-72oz4](ranger-base-72oz4.md) — claude's first-run notices: one row, and why it is read by nothing yet (ranger-base-72oz4) — 2026-11-08
