@@ -590,3 +590,191 @@ This block is the current one (updated 2026-11-08, ranger-base-vdmm9).
     only that bwrap nests in bwrap;
   - that a scope-only Landlock ruleset leaves nested bwrap alone
     (Alternatives rejected). No row tests it.
+
+## Amendment: the bwrap tier, as built (ranger-base-rwcqg, 2026-11-08)
+
+**Context.** D14 named bubblewrap and the host probe passed (ranger-base-hft2q).
+This section is the buildable design: what the tier is called, how each of
+the five shapes renders, what shapes 3 and 4 become, how codex nests, and the
+launch line. Every renderer input already exists. `SeatbeltWritable`,
+`SeatbeltCarveOut`, `credentialReadDenyLiterals` and `sessionRefDirs` produce
+the same lists for both mechanisms. Only the last step, list to wall, differs.
+
+**D16. The tier keeps its name, `seatbelt`; the mechanism is a host fact.**
+`cage: seatbelt` means "the L2 path-scoped write wall" (ADR 0002 §3). It is
+realized by `sandbox-exec` on darwin and by `bwrap` on Linux, the way `cage:
+container` is realized by whichever engine the home names. `WallMechanism()`
+returns `sandbox-exec`, `bwrap` or `""`. On Linux, `AvailableCages[CageSeatbelt]`
+is true when `bwrap` resolves and an apply probe passes:
+`bwrap --ro-bind / / /bin/true` through `protocolCmd`, the twin of
+`sandboxApplyProbe`. The probe catches a kernel or LSM that refuses
+unprivileged user namespaces (linux-hardened, Ubuntu's AppArmor sysctl).
+Parity's cage row and `posse gates` print `seatbelt (bwrap)` or
+`seatbelt (sandbox-exec)`. A PID never names the mechanism.
+
+**D17. The render.** `BwrapArgs` is a pure function from those lists to an
+argv. The order is fixed, and a later mount covers an earlier one:
+1. base: `--die-with-parent --ro-bind / / --dev-bind /dev /dev --chdir <cwd>`.
+   No `--unshare-pid`, `--unshare-net`, `--proc`, `--tmpfs /tmp` or
+   `--new-session` (see Alternatives).
+2. shape 1: `--bind p p` for each writable DIRECTORY, shallowest first. A
+   writable path that does not exist yet is `mkdir -p`'d by the launcher
+   first. The launcher is outside the wall, and seatbelt granted such paths
+   before they existed (`resolveExisting`).
+3. shape 2: `--ro-bind d d` for each `Deny`. If `d` is missing and its nearest
+   existing ancestor is inside a write grant, the launcher makes it as an
+   empty directory first. Otherwise nothing can create it and no mount is
+   rendered. `Seal` renders nothing: renaming a mountpoint, or carrying it
+   away by renaming an ancestor, is refused (B3, B4).
+4. `Keep`: the launcher creates each file, then `--bind f f`. That is an
+   in-place append on a bound file, which B8 does not touch (B8 is a rename).
+5. shape 5: `--ro-bind /dev/null f` for each `DenyRead` that exists at launch.
+   A missing one renders nothing, and parity prints the residual (Consequences).
+A writable entry that is a regular FILE has no bwrap spelling (B8). The
+render refuses with the file named, except for the git entries D20
+replaces and claude's `~/.claude.json`, which D19 removes.
+
+**D18. The launch line, identical on herdr and Rex panes.** `RenderBwrap`
+writes the argv NUL-separated to `state/gates/<persona>/bwrap.args`, beside
+`seatbelt.sb`, and writes a readable copy to `bwrap.txt` headed by the
+`RenderedByPosse()` stamp. The prefix goes in `SeatbeltPrefix`'s slot,
+between the PATH assignment and the runtime command:
+
+    3<'<state>/gates/<p>/bwrap.args' '<abs bwrap>' --args 3 -- <runtime cmd>
+
+A redirection before the command name is POSIX. The line already assumes a
+POSIX pane shell (`PATH=…` prefix, `"$(cat …)"`), and Rex's `rexShell` is
+`realShell`. `bwrap` is typed as the absolute path resolved at render, not
+bare, so a mise shim or a gates-dir shim cannot stand in for it. Both call
+sites that prefix today (herdrback.go, the create and relaunch paths) change
+together, through one `WallPrefix(rt)` function.
+
+**D19. Shape 3: claude's config lives in a dir grant because the seat's
+`CLAUDE_CONFIG_DIR` points at one. There is no per-seat dir.**
+MEASURED today (below): claude writes `.claude.json`'s lock and temp siblings
+inside `$CLAUDE_CONFIG_DIR`. Every claude seat on this box already runs with
+it set to `~/.claude`, which ADR 0077 D1 types onto the line and which is a
+whole-dir grant. So on the bwrap mechanism:
+- the launcher's resolved `CLAUDE_CONFIG_DIR` must be set and absolute. The
+  value typed on the line (ADR 0077 D1) is the value the grant uses, so the
+  wall and the runtime cannot disagree about it;
+- claude's state grant is that directory. The `~/.claude.json` file entry and
+  its `SeatbeltSiblings` drop out;
+- unset, the bwrap render refuses: `claude on cage seatbelt (bwrap) needs
+  CLAUDE_CONFIG_DIR set in the launcher; set it in the home's unit
+  Environment=`. That is host procedure for ranger-base-yyq64/offid, one line;
+- `credentialDirVarsIn`'s env-set refusal is unchanged and now covers bwrap
+  too, because `seatbeltWallRendered` becomes the mechanism-neutral
+  `wallRendered`. An env set that moves the config dir would move the
+  runtime's write out of its grant (and, for non-claude seats, past the read
+  mask) on either mechanism.
+- On Linux, claude's credential is a file inside the config dir (the path
+  `credentialFileCandidates` already resolves). It is inside a claude seat's
+  own grant, so it is not masked there. For every OTHER runtime's seat it
+  joins `credentialReadDenyLiterals` as a sibling, the way codex's
+  credential file does for claude. That function currently adds claude's
+  file on darwin only.
+
+**D20. Shape 4: git's ref writes need a dir grant, and the dir is
+`refs/heads/<branch parent>`.** Git writes a ref as `<ref>.lock` and then a
+rename onto `<ref>`. Both need write on the ref's directory, so the leaf and
+`.lock` pair in `sessionGitGrants` has no bwrap spelling. The wall instead
+binds the ref's parent directory, `<common>/refs/heads/posse` for the fleet's
+`posse/<session>` branches. The launcher creates it, and puts an empty
+`.posse-keep` in it, before the wall goes up. The keep file matters: an
+outside `git pack-refs --all --prune` (any gc) otherwise empties and removes
+the bound directory under a live seat, and its next commit fails. Git skips
+dot-named entries in a loose ref directory (ASSUMED, probe T4c/T4d). A
+slashless branch in a linked worktree would bind `refs/heads` itself, which
+exposes `main`. So it gets no ref grant: the commit fails loudly, and parity
+says why. `<common>/packed-refs.lock` is dropped. Granting it means a
+writable `<common>`, which can create a missing `packed-refs` or rewrite
+`HEAD`. The cost is ADR 0059's residual, the one the container tier already
+has: a sequencer that deletes a pseudo-ref exits 0 and leaves it, and
+AGENTS.md's git shim refuses that run (probe T5).
+
+**D21. codex is walled on Linux.** On darwin, `seatbeltWallRendered` skips
+SelfSandbox runtimes because nested `sandbox_apply` is refused. On Linux, B7
+measured bwrap nesting inside bwrap. So `wallRendered` drops `!rt.SelfSandbox`
+when the mechanism is `bwrap`, and parity's "cannot wrap codex" declared
+difference becomes darwin-only. codex's own sandbox then runs inside ours,
+and a write needs both walls to allow it. That is stronger than darwin, where
+codex's own sandbox is the only file wall. Gated on probe T6 (`codex sandbox`,
+no turn). Until T6 reads as expected, the flip stays off and Linux codex
+keeps darwin's posture.
+
+**D22. The probe for this design is `docs/adr/0080-bwrap-tier.probe.sh`.**
+T1 is the D19 save under the shipped wall, T2-T5 are D20's git grants against
+an outside pack, T6 is D21's nesting, and T7 is D18's `--args` fd. It writes
+only under one mktemp dir and calls no model. D19 and D20 can be built and
+pinned on darwin, because the renderer is pure. D18's live arm and D21 wait
+for the run.
+
+**Alternatives rejected.**
+- **A per-seat `CLAUDE_CONFIG_DIR`**, the bead's likely answer and the one I
+  wanted, because it isolates seats from each other's config. On Linux the
+  credential lives in that directory. N seats would then mean N credential
+  copies, and if the refresh token rotates (ASSUMED) one seat's refresh logs
+  the others out. It also splits D11's plan-usage key into N pollers on one
+  rate limit, and it hides the shared transcripts, settings, plugins and
+  skills. It buys nothing over what was measured: the shared dir already
+  holds the siblings.
+- **A new tier name** (`bwrap`, `namespace`). PIDs are shared across darwin
+  and Linux homes. A rung that exists on only one OS would degrade every PID
+  that moves, and the PID would carry a host fact.
+- **Bind `~/.claude.json` as a file.** B8 refuses the atomic replace.
+- **`$HOME` writable, read-only binds over its children.** This is
+  enumerating leaves. A dotfile that does not exist yet (`~/.gitconfig`,
+  `~/.bashrc`) is creatable, and it is the git config chain the deny exists
+  for. It fails open.
+- **An overlay or tmpfs on `$HOME`.** Config writes would vanish at exit,
+  and a seat's trust and MCP state would silently diverge from the file
+  posse seeds.
+- **Granting `<common>` for `packed-refs.lock`.** It fails open, as above.
+- **A narrower ref grant by renaming the fleet's branches** to
+  `posse/<session>/head`, so that each session owns a directory. It is
+  narrower, but every reader of `posse/<session>` changes. If D20's
+  widening is ever measured being used, this is the exit.
+- **`--unshare-pid`.** A seat must `kill` its own pids and `checkorphans`
+  must read the box's `/proc`. **`--unshare-net`**: egress belongs to the
+  container tier. **`--tmpfs /tmp`**: a seat's posse needs the multiplexer
+  socket and the shared TMPDIR paths (`posse-test-signal.log`).
+  **`--new-session`**: setsid detaches the TUI from its controlling terminal
+  (ASSUMED to break ^C and job control). TIOCSTI injection, which it guards
+  against, is off by default since kernel 6.2 (`dev.tty.legacy_tiocsti`,
+  ASSUMED, not read on the host).
+- **The argv inline on the line** instead of `--args`. It runs to hundreds
+  of characters per seat, and the relaunch path would re-quote them.
+
+**Consequences.**
+- **A widening against seatbelt:** a bwrap seat can move a PEER session's
+  `posse/*` ref (probe T3d). It still cannot move `main` or any top-level
+  branch, or touch the shared hooks or config. That is narrower than codex
+  and grok on darwin, which get `refs/heads` whole through `--add-dir`.
+- **A credential mask is a snapshot at launch.** Another runtime's
+  credential file created after the seat started is readable by it. Parity
+  names each missing file. The seat still cannot WRITE there.
+- The packed-refs residual of the container tier now applies to bwrap seats.
+- Claude seats on the host need `CLAUDE_CONFIG_DIR` in the unit
+  environment, which D6's one login already implies.
+- Exit hatch unchanged: `bwrap` is one binary on the line, the args file is
+  re-rendered each launch, and no state is held.
+
+**Measured versus assumed.**
+- MEASURED 2026-11-08, this laptop (darwin 25.6.0, claude 2.1.319, the host's
+  version): `CLAUDE_CONFIG_DIR=<scratch> claude mcp add -s user …` under a
+  `sandbox-exec` profile that allowed writes ONLY to the scratch dir and
+  `/dev/` saved twice, exit 0, the entry in `<scratch>/.claude.json`, and the
+  real `~/.claude.json` inode and mtime unchanged. The same with a trailing
+  `deny file-write*` on `^<scratch>/\.claude\.json\..+` failed: exit 1, `MCP
+  server "p2" was not saved`. So the siblings are named `.claude.json.<x>`
+  inside the config dir and nowhere else. The CLI also READ the real
+  `~/.claude/backups/` to print a restore hint for the fresh dir. That was a
+  read, and nothing failed.
+- ASSUMED, read by the probe: that the same build places siblings the same
+  way on Linux (T1); D20's keep file, git ignoring it, and the post-pack
+  commit (T4-T4e); the packed-refs residual (T5); codex nesting (T6); bwrap
+  closing the `--args` fd, though a leaked fd would be read-only and hold
+  nothing secret (T7c); claude's own `/sandbox` nesting in a real session,
+  which no row tests without a turn.
+- STATIC, this tree: the render inputs and call sites named above.
