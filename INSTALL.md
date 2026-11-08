@@ -41,6 +41,15 @@ Install these first. Versions matter; two of them are pinned on purpose.
 | **git** | any current | bd stores the queue in a git repo | — |
 | an **agent CLI** | at least one | the labor. `claude`, `codex`, `grok`, or `bob` — bob launches by hand today and dispatches only once step 8's detection authority is installed. | vendor |
 
+Sign in to each agent CLI **as the account the fleet will run as** — on an
+always-on host that is the service user, not your laptop login — and then run
+it once interactively, in a scratch directory, and clear every first-run
+screen it draws before you `/exit`. That is a step and not a courtesy: a
+dispatched seat cannot answer a dialog, and on a fresh account the first one
+goes straight to `blocked` and the pass drops it. Section 10's *instance
+interstitials* says which screens there are, which ones posse answers for
+you, and which ones are only yours.
+
 If you install `grok`, pin it: the fleet runs **1.0.52** and grok
 self-updates by default (`etc/grok/version-pin.toml`, `make
 verify-grok-pin`). An upgrade is a security re-audit, not a version bump.
@@ -2421,8 +2430,10 @@ exception below — and that is deliberate in both directions:
 
 So nothing in posse blind-sends Enter at a fresh pane, and a dialog whose
 default action mutates the machine is a **launch refuse** until your own
-config silences it. `posse runtime check <name>` prints each one with its
-key, its file, and whether it is already silenced on this box.
+config silences it. `posse runtime check <name>` prints each screen posse can
+name a key for, with its file and whether it is already silenced on this box
+— the last row of the table below is the class it cannot, and the paragraph
+after the table says why.
 
 **What that refusal does to you, in practice.** Anything **dispatched** —
 a pass, `--watch`, the cockpit's `d`, a recipe — refuses *before it claims
@@ -2442,6 +2453,7 @@ and a session that does meet it fails by name.
 | grok | New worktree / Resume session / Quit startup menu | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | already handled by the fleet pin, declared in `etc/grok/version-pin.toml`. `make verify-grok-pin` asserts it; NOTES.md *"grok substrate"* is the runbook for lifting it. |
 | codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin there are two silences and both expire: picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release, and simply being at the latest release already, which lasts until the next one ships. |
 | claude | `Accessing workspace: <cwd>` over `Quick safety check: Is this a project you created or one you trust?` | `projects["<the enclosing repo's canonical root>"].hasTrustDialogAccepted` in `~/.claude.json` | **nothing — the launch seeds it**, per repo, because this one fires in every repo claude has not run in and has no flag to answer it with. See below. |
+| claude | a one-time notice or upsell drawn over the composer, e.g. `Try the new fullscreen renderer?` footed `Yes, try it / Not now / Don't show again` | one marker key per notice, at the TOP LEVEL of `~/.claude.json` — `fullscreenUpsellSeenCount`, `hasSeenTasksHint`, `transcriptShareDismissed`, … | **run `claude` once interactively as the service user and clear what it draws.** posse seeds two of these keys and names no more: the set is one key per notice and it grows with every release. See below. |
 
 **The codex dismissal has a shelf life; the fleet pin does not.**
 `dismissed_version` silences one release — the menu returns as soon as
@@ -2493,6 +2505,41 @@ the shipped bundle.
 `posse runtime check claude` prints this row too, and its probe tells you
 whether the workspace you are standing in is already trusted — naming the
 repo it turns on when that is not the directory itself.
+
+**The ones nobody can answer for you: claude's per-ACCOUNT notices.** The
+fourth row of that table is not one screen but a FAMILY of one-time notices —
+a renderer upsell, a feature hint, a nudge — each with its own marker key at
+the top level of `~/.claude.json`, so each is answered once per *config dir*
+and never per repo. posse seeds exactly two of these keys (directory trust
+above, and `hasSeenAutoModeOutsideReadPrompt`, both measured and neither
+answerable from a launch line) and names no more, which is also why
+`posse runtime check` prints no row for them: the registry it prints is one
+row per key posse can name and read, and a new notice ships with a release
+under a key nobody has seen yet. There is nothing to put in a config by hand
+either — the CLI writes each key when you answer its screen.
+
+So the bring-up step is an interactive run, and it is the whole remedy: as
+the account the fleet runs as, `cd` to a scratch dir, run `claude`, answer
+every notice it draws, `/exit`. **Prefer the answer that retires the
+notice** — `Don't show again`, or accepting it — over `Not now`: MEASURED
+2026-11-08 off the shipped bundle (`~/.local/share/claude/versions/2.1.319`),
+the fullscreen upsell's gate is a COUNTER and not a flag, the clause that
+stops it drawing being `(fullscreenUpsellSeenCount ?? 0) >= 3`, and each
+impression increments that count and persists it — so a `Not now` leaves the
+screen armed for two more launches, and on a dispatched seat each of those is
+another blocked session. Re-run the interactive `claude` after a claude
+update for the same reason: the release that adds a notice arms it on an
+account that has answered every earlier one.
+
+MEASURED 2026-11-08, a fresh account's first dispatched claude seat on a new
+host (ADR 0080 bring-up, `ranger-base-yk5qb`): the pane held
+`Try the new fullscreen renderer? 1. Yes / 2. Not now` for a service user who
+had run `claude` only to sign in. herdr read the pane `blocked`, dispatch
+logged `never settled idle (status "blocked")` and `did not take the launch`,
+and the seat never saw its prompt. The operator answered that one screen by
+hand and the next launch prompted and worked.
+`docs/notes.d/ranger-base-yk5qb.md` has the bundle reading and the key
+census.
 
 ---
 

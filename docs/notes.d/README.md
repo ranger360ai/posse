@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-yx73g](ranger-base-yx73g.md) — One repo, one identity wall, however its path is spelled (ranger-base-yx73g) — 2026-11-08
+- [ranger-base-yk5qb](ranger-base-yk5qb.md) — A fresh account's first claude seat meets a notice nobody seeded (ranger-base-yk5qb) — 2026-11-08
 - [ranger-base-wbs6z](ranger-base-wbs6z.md) — A landing asked by SHA is a landing you cannot see (ranger-base-wbs6z) — 2026-11-08
 - [ranger-base-w79sc](ranger-base-w79sc.md) — One refusal, one spelling: the path a remedy tells you to paste (ranger-base-w79sc) — 2026-11-08
 - [ranger-base-vkmv3](ranger-base-vkmv3.md) — ranger-base-vkmv3 — what a refusal prints for a directory nobody can name — 2026-11-08
