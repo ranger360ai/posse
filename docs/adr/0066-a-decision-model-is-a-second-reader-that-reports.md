@@ -1,6 +1,6 @@
 # ADR 0066 — A typed-decision model, if posse ever carries one, is a second reader that reports and never acts; the readings log comes first
 
-*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked), ruled 2026-10-05 (ranger-base-gy3io: option B, the deterministic reader) and BUILT 2026-10-05 (ranger-base-6uokf) · D1 amended 2026-10-04 (ranger-base-o1aoi: the false-IDLE gap is closed by a capture at the act written on the stall, not by sampling; code bead filed) · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked), ruled 2026-10-05 (ranger-base-gy3io: option B, the deterministic reader) and BUILT 2026-10-05 (ranger-base-6uokf) · D1 amended 2026-10-04 (ranger-base-o1aoi: the false-IDLE gap is closed by a capture at the act written on the stall, not by sampling; code bead filed) · D2 amended 2026-11-08 (ranger-base-jnmx6: the blocked settle refusal is the D3 report’s third named consumer, with a capture; code bead filed) · owner: architect · source
 bead ranger-base-our1e (spike, recommendation only) · sits under ADR 0057
 (no guard branches on a display reading), ADR 0060 D2 (detection is herdr's
 to ship), ADR 0061 D3 (a label is identity, not liveness) and ADR 0063 D1
@@ -94,6 +94,78 @@ No guard, launch eligibility, hand-back, kill, hire or keystroke reads it.
 This restates ADR 0057, 0060 D2, 0061 D3 and 0063 D1 for a new reader and
 adds nothing to them; a later record that wants a model reading to act must
 reopen one of those four.
+
+*Amended 2026-11-08 (ranger-base-jnmx6): a third consumer, the blocked
+settle refusal, and it takes a capture.* D3's ruling names where the
+known-screen report rides "and no others": the unrecognized-screen failure
+line and the D3 record. **A third is named here**: awaitAgent's
+`never settled idle` refusal (`internal/posse/dispatch.go`, built under
+ranger-base-x2grk) and the D2 refusal record it writes. D2's substance is
+untouched. The report still decides nothing, the consumer list is still a
+closed list that grep can check, and the refusal was already taken on
+`agent wait`'s state before the reader runs.
+
+*Why a reader beside a rule that matched.* The heading reader was written to
+speak only where herdr's rules said nothing. Here a rule did speak, but two
+of herdr's blocked rules name a SHAPE and not a screen: `live_blocked_form`
+(claude; it matches every form claude draws, the trust dialog included,
+rangerhq-4mzt) and `live_strong_blocker` (codex). MEASURED 2026-11-08,
+herdr 0.9.1 against the checkout's staged overrides, over every shipped
+fixture that reads `blocked` (ten, claude's upsell taken from
+ranger-base-72oz4's tree): eight match a screen-specific rule
+(`signin_menu` ×3, `signin_api_key` ×2, `hooks_review`, `trust_directory`,
+`update_menu`), whose id already names the screen; two match a generic rule,
+and those two are where the row helps.
+
+*Why it takes a capture.* Over herdr's 243-character previews alone, the
+reader names **1 of those 2**. It names the upsell, whose heading is the
+first line of `after_last_horizontal_rule`. It misses codex's model picker,
+because `after_last_prompt_marker` opens at the picker's own `›` caret, two
+rows below `Select Model and Effort`. With the whole pane it names 2 of 2.
+That is the qk9tr finding again (5 of 11 vs 11 of 11) on a new path, and
+`ReadingEvidence.LooksLike` already rejects the preview-only reader in
+writing. The capture also does a second job: a blocked refusal on a screen
+the table does not know leaves a fixture-shaped capture in the log. The next
+`KnownScreens` row is then copied from the fleet rather than drawn on a rig,
+which is the step ranger-base-72oz4 had to do by hand and could not do at all
+for claude's auto-mode sibling.
+
+*What the capture costs.* One `herdr pane read`, through `d3Evidence`
+(dry-run guarded) on the TERMINAL arm, so once per refused launch and never
+in a poll loop. That is the bargain `blockerEvidence`'s explain already
+strikes. Its bytes go through `withPaneCaptureNamed`'s existing ceiling,
+into a log that already carries captures on D3 and D5 records. No new
+mechanism, no new region name (`pane_capture`), no config key.
+
+*The rules of the third consumer:*
+
+1. **Only beside an agreeing explain.** When `blockerEvidence` falls back to
+   the bare detection, because explain disagreed or failed, there is no
+   capture and no `looks_like`. A later instant's screen attached to `agent
+   wait`'s state is the wrong screen named with confidence, which
+   ranger-base-x2grk already refuses for the rule.
+2. **D2 records only** (`status "blocked"`). The D1 branch (any other
+   non-idle status) is unchanged. The reported route gets neither, because
+   `withPaneCaptureNamed` refuses it.
+3. **The line appends, never replaces.** `; looks like: <set>` follows
+   `WhyBlocked()` inside the status parentheses. `LooksLikeLine`'s empty
+   string means no row. The rule and region stay first, because they are
+   the diagnostic that can be traced to a codepoint.
+4. **The census keeps the classes apart.** `readings-census.py`'s "unknown
+   screens NAMED" line stays D3-only: a non-empty set on a D3 record still
+   means, by construction, a screen herdr did not name. A separate row
+   counts `blocked refusals named by the heading reader: M of N`.
+
+Rejected: **no third consumer**. The rule and region are on the line already
+and `posse peek` is one command. But for a generic rule that line says "a
+form, at the bottom", and the operator still has to peek; the incident that
+filed this cost a hand-launch. **Preview-only, no capture.** It was the clever
+one: no pane read, no new bytes, and it names the incident's own screen. It
+misses half the generic-rule fixtures, and it leaves nothing behind for the
+next row. **Run the reader only for generic rules.** That needs a second
+table listing which rules are generic, kept in sync by hand. Where the rule
+is screen-specific the reader either agrees or says nothing, so running it
+everywhere costs nothing to read.
 
 **D3 — First seams: the unknown-screen diagnosis, then the composer hold.**
 The unknown-screen line is already "diagnosis only" (ranger-base-3j8) and
