@@ -544,7 +544,8 @@ codex's `linux-sandbox` README.
   operator's verdict stands — the arm holds and the tier is buildable —
   but the 20 characters the old cell kept did not include the errno text,
   so which error it was is unread. The next host run's detail line answers
-  it.
+  it. The amendment's "Measured versus assumed" block below is the current
+  reading of every row, B5 included (ranger-base-vdmm9).
 
 **Alternatives rejected.**
 - **Landlock alone**, which D4 wanted. Shape 2 is inexpressible, and it

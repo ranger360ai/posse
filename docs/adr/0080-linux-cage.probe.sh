@@ -12,7 +12,9 @@
 # GOT == EXPECT; the one finding was B5's cell, which this file's B5 comment
 # now explains. So the expectations below are no longer all unread — what each
 # row is worth after that run is ADR 0080's "Measured versus assumed" block,
-# which still reads as it did before the run (ranger-base-vdmm9).
+# which reads that run row by row and is the current record; the "ASSUMED"
+# notes inside D14 and D15 are the pre-run state it supersedes
+# (ranger-base-vdmm9).
 #
 #   sh docs/adr/0080-linux-cage.probe.sh
 #
