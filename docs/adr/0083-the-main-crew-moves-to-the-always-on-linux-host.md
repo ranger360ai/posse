@@ -196,6 +196,47 @@ constitution was missing.
   map cannot waive a rule.
 - `container` cannot be mapped from or to. Its engine is per home already.
 
+*As built (ranger-base-1155n, 2026-11-08).* **The key is a family, one
+top-level key per OS**, because posse's YAML is a deliberate flat subset —
+top-level keys plus ONE nesting level, "no anchors/multiline/deeper nesting"
+(`internal/posse/yamlflat.go`, docs/notes.d/notes-yaml.md) — and the block
+above is two. That subset is what every config, recipe, session record and PID
+frontmatter in this tree is written in, with an awk twin and a shell reader
+behind some keys, so a second nesting level for one key with one reader would
+be a new primitive in the format. The same wall has been answered the same way
+twice before, by a key family whose members the harness does not know in
+advance: `plan_guard_<window>:` and `interstitial_<name>:`. So the spelling is
+
+    cage_realize_linux:
+      seatbelt: shims
+
+What a family costs is that a mistyped member reads as ABSENT rather than as
+an error, which is exactly ADR 0080 D9's typo arming the wrong thing. So
+validation is TOTAL rather than per-lookup, and the bare `cage_realize:` key
+this section writes is **refused by name**, with the family spelling in the
+refusal — otherwise an operator who typed the record's own example would get a
+key that parses to nothing, arms nothing and says nothing. Every
+`cage_realize_*` member is checked whether or not it is this GOOS's; an
+unknown OS, a scalar where the block belongs, a tier that is not a tier,
+`container` on either side and one demand mapped twice are each refused at the
+launch, at dispatch's per-bead door and in `posse status`.
+
+Three further things the build had to settle, none of them changing a decision
+above. **Ratified degradation needed a list of its own** — `Parity.Ratified`
+beside `Degraded`, because `Degraded` is the list a launch REFUSES on and
+`DeclaredDifference` never marks a session: the refusal reads `Degraded`, the
+session record reads both, and the rendered block gained a fourth verdict.
+**The waiver is not the operator's consent**, so the relaunch's `AllowDegraded`
+and the `posse status` per-session row (G15) both stop reading a
+`cage_realize:` reason as one — left alone, a host whose map lowers every code
+persona would have armed `--allow-degraded` for every seat and then waived
+each seat's next, real degradation silently at every refresh. The standing row
+is **G17**, read from the config and so true with no session on the box.
+**And the session record names the tier the session GOT**, so a relaunch comes
+back asking for `shims` with only the PID still remembering `seatbelt`; parity
+therefore asks the map about `ag.Cage` as well as about what the launch
+requested, or the waiver would expire at the first refresh.
+
 **D8. Rollback: the laptop home stays intact until the operator retires it.**
 Nothing on the laptop is deleted or re-promoted by the cutover. Rollback is
 the window run backwards:
@@ -222,10 +263,16 @@ unchanged.
 - Under D6 A or C, the host crew is weaker than the laptop crew on file
   writes and the Claude login until the bwrap tier lands, and the security
   reviewer's lane is empty. `posse status` says so on every read.
-- The constitution gains one key with one reader (parity). The broader
-  host-fact keys are not overlaid per host (rejected below): the
-  constitution describes the one host that runs it, and the laptop's
-  promoted copy is frozen as the rollback image.
+- The constitution gains one key family. *As built (ranger-base-1155n): FOUR
+  readers, not one, and the count is the price of refusing rather than
+  defaulting — parity resolves the tier, the launch and dispatch's per-bead
+  door each refuse a map they cannot read before anything is created, and
+  `posse status` stands G17 while it lowers anything. All four go through one
+  function over one config, so they cannot disagree about what the map says;
+  what differs is the shape each one says it in.* The broader host-fact keys
+  are not overlaid per host (rejected below): the constitution describes the
+  one host that runs it, and the laptop's promoted copy is frozen as the
+  rollback image.
 - Each cutover step is a bead in the operator's hands, so the window's
   progress is in the graph, not in a transcript.
 
