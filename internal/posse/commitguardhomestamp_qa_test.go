@@ -236,3 +236,84 @@ func TestQAHookWallSweepNamesAForeignStampedWall(t *testing.T) {
 		t.Errorf("the sweep called another home's current render stale:\n%s", out)
 	}
 }
+
+// ─── one home spelled two ways is one home (the Go reader's cry-wolf arm) ────
+
+// ADR 0081 D2 says the stamp is compared by PATH and not by string, and
+// commitGuardHomeVerdict does it with samePath. The shell reader has an arm
+// for that (TestQAHookFreshnessDoesNotCryWolfOverASymlinkedHomeSpelling,
+// internal/treepins) and until ranger-base-hgq2k the GO reader did not:
+// MEASURED 2026-11-07 on fcb61cb6, `samePath(stamp, a.Home)` replaced by
+// `stamp == a.Home` left all 28 L3 arms of this package and all 10 of
+// cmd/posse's install-hooks arms GREEN.
+//
+// The Go side is the side where it costs more than a sentence. ADR 0081 D3's
+// write rule is asked of this verdict (sharedCommitWallWrite), so a wall read
+// as another home's over a SPELLING would stop this home refreshing its OWN
+// wall, take the per-session redirect instead, and send the operator to settle
+// an ownership question that is already settled — a finding about path
+// spelling, printed as a finding about ownership. Both halves are asserted
+// here: the verdict, and the write it decides.
+func TestQAOneHomeSpelledTwoWaysIsOneHomeToTheCommitWallReader(t *testing.T) {
+	t.Parallel()
+	repo, _ := qaHookRepo(t)
+	home := t.TempDir()
+	link := filepath.Join(t.TempDir(), "home-by-another-name")
+	if err := os.Symlink(home, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	// The premise this arm lives or dies on: two spellings that are not the
+	// same STRING and are the same DIRECTORY. Without the first it measures
+	// nothing; without the second it is asking the wrong question.
+	if link == home {
+		t.Fatalf("fixture premise: the two spellings are one string (%s)", link)
+	}
+	if !samePath(link, home) {
+		t.Fatalf("fixture premise: %s and %s are not one directory, so this arm would be measuring a real foreign home", link, home)
+	}
+
+	// Installed through the LINKED spelling, which is what the stamp then
+	// carries: D2 stamps Abs+Clean and deliberately does NOT resolve
+	// symlinks, because the operator acts on the spelling they configured.
+	slot, _, _, err := NewAppAt(link).InstallCommitGuardHook(repo)
+	if err != nil {
+		t.Fatalf("install from the linked spelling: %v", err)
+	}
+	body, err := os.ReadFile(slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := commitGuardHomeOf(string(body)); got != link {
+		t.Fatalf("fixture premise: the slot is stamped %q, want the linked spelling %q — a stamp that already resolved would make every assertion below vacuous", got, link)
+	}
+
+	// Read back through the OTHER spelling of that same home. The bytes
+	// differ — this render stamps `home`, the file says `link` — so identity
+	// fails, and the whole question is which failure it is.
+	a := NewAppAt(home)
+	p := a.probeL3Hooks(repo, false)
+	if p.CommitGuardVerdict == l3Held {
+		t.Fatalf("CONTROL: the two renders are byte-equal, so nothing below is about the stamp at all")
+	}
+	if p.CommitGuardVerdict != l3Stale {
+		t.Errorf("one home spelled two ways read verdict=%d, want l3Stale (%d): this is this home's own render gone stale and `posse gates install-hooks` is the remedy — line: %q",
+			p.CommitGuardVerdict, l3Stale, p.CommitGuardDegraded)
+	}
+	if p.CommitGuardHome != "" {
+		t.Errorf("CommitGuardHome = %q, want nothing: the probe names a home only when the stamp is ANOTHER home's", p.CommitGuardHome)
+	}
+	if strings.Contains(p.CommitGuardDegraded, "rendered by home") {
+		t.Errorf("a finding about ownership over a path spelling sends the operator to decide a question that is already settled:\n  %s", p.CommitGuardDegraded)
+	}
+	if !strings.Contains(p.CommitGuardDegraded, "ours but stale") {
+		t.Errorf("this home's own wall must keep the line that prescribes the re-render:\n  %s", p.CommitGuardDegraded)
+	}
+
+	// And the consequence, which is why this arm is worth more than wording:
+	// D3's write rule must still let this home write the wall it already owns
+	// the bytes of. A string compare here answers write=false and names the
+	// home as foreign.
+	if write, stamp := a.sharedCommitWallWrite(repo, p); !write || stamp != "" {
+		t.Errorf("ADR 0081 D3 refused this home its OWN wall over a spelling: write=%v stamp=%q", write, stamp)
+	}
+}
