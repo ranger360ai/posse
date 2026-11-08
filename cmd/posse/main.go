@@ -2048,9 +2048,21 @@ func main() {
 			if line := a.PreflightReportOn(cat, ag.Name, rn, tier); line != "" {
 				fmt.Fprintf(out, "  %s\n", line)
 			}
-			fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.DefaultCage, tier, cwd).String())
+			base := a.CheckParityIn(ag, rt, posse.DefaultCage, tier, cwd)
+			fmt.Fprint(out, "  "+base.String())
+			// The seatbelt block, where this build provides the tier. Not
+			// where `cage_realize_<goos>:` realizes seatbelt as the tier the
+			// block above already reported (ADR 0083 D7): two identical
+			// blocks on the one surface an operator reads the wall off is a
+			// worse answer than one block and a line saying why. Said out
+			// loud rather than swallowed, for the reason the block below is.
 			if posse.AvailableCages[posse.CageSeatbelt] {
-				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.CageSeatbelt, tier, cwd).String())
+				if sb := a.CheckParityIn(ag, rt, posse.CageSeatbelt, tier, cwd); sb.Cage != base.Cage {
+					fmt.Fprint(out, "  "+sb.String())
+				} else {
+					fmt.Fprintf(out, "  no separate %s block: this host realizes %s as %s (cage_realize:, ADR 0083 D7), so the block above already IS this PID at its demanded tier\n",
+						posse.CageSeatbelt, posse.CageSeatbelt, sb.Cage)
+				}
 			}
 		}
 		// The one thing above this line that is NOT a property of the PID:
