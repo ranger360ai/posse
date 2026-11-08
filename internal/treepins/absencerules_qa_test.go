@@ -622,6 +622,10 @@ var arShadowAllowed = []arShadowAllow{
 		why: "§3's own example: writing ~/.claude.json is inherently claude's own state, and there is no dimension behind it to declare.",
 	},
 	{
+		file: "posse/bwrap.go", fn: "BwrapStateDirs", shape: "branch",
+		why: "the same state as the SeedCageHome row above, one mechanism over (ADR 0080 D19): claude's `state_dir:` declaration names a FILE, `~/.claude.json`, and the bwrap mechanism has no spelling for a writable file — a bind of one refuses the atomic replace its writer makes (probe B8). What replaces it is the directory claude's OWN resolver answers, `CLAUDE_CONFIG_DIR` else `~/.claude` (ClaudeConfigDirIn, trust.go), which is the third site of the one claude-config-dir rule §3 already accepts twice. There is no dimension behind it: no other built-in declares a file, and nothing is declarable here — the replacement is not the directory holding this CLI's state but the directory its own config resolver is pointed AT, which only that CLI can answer. The day a second runtime declares a file entry AND has its own config-dir variable, this stops being a branch and becomes a Runtime field beside StateDirs; one more runtime with a home variable alone does not, because the body here is about the declaration's shape and not about the variable.",
+	},
+	{
 		file: "posse/trust.go", fn: "SeedClaudeTrust", shape: "branch",
 		why: "§3's other example: seeding claude's own trust dialog. Accepted in the register update by name.",
 	},

@@ -23,8 +23,8 @@ package posse
 // the render is pure, goos is a parameter of the credential selection, and no
 // arm here puts a wall up.
 //
-// No t.Parallel in this file: every arm sets HOME and CLAUDE_CONFIG_DIR,
-// which are process-wide.
+// No t.Parallel in this file except the one arm driven at the pure function:
+// every other one sets HOME and CLAUDE_CONFIG_DIR, which are process-wide.
 
 import (
 	"os"
@@ -181,6 +181,7 @@ func TestBwrapStateDirsRefusesAnEmptyConfigDir(t *testing.T) {
 // walled and the directory written would be two directories. Unreachable is
 // not the same as unnecessary, and a pin is how it stays spelled.
 func TestBwrapStateDirsRefusesARelativeConfigDir(t *testing.T) {
+	t.Parallel()
 	declared := []string{"~/.claude", "~/" + claudeConfigFileName}
 	got, err := bwrapClaudeStateDirs(declared, "relcfg", true, "/Users/probe")
 	if err == nil {

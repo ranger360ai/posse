@@ -765,6 +765,46 @@ whole-dir grant. So on the bwrap mechanism:
   credential file does for claude. That function currently adds claude's
   file on darwin only.
 
+*As built (ranger-base-tc41o, 2026-11-08).* `BwrapStateDirs` in
+`internal/posse/bwrap.go` — `rt.StateDirs` as this mechanism can grant them
+— plus one branch in `credentialReadDenyLiterals` (`internal/posse/seatbelt.go`).
+Pinned by `internal/posse/bwrapstatedirs_qa_test.go` on darwin, for the
+reason D17's pins run there. Nothing calls it yet; the wiring is D18's.
+Full reasoning in `docs/notes.d/ranger-base-tc41o.md`.
+
+- **Three refusing arms, not one.** Unset, set-and-EMPTY (posse's rule is
+  that empty is out of force, and the runtime resolves its config DIRECTORY
+  with `??` and its config FILE with `||`, so an empty value is a
+  cwd-relative directory to one and the home to the other), and in-force but
+  not absolute — which `runtimeHomeOverride` makes unreachable on any box
+  with a working cwd, and which stays spelled because the demand above is
+  "set AND absolute". The pure half, `bwrapClaudeStateDirs`, takes the
+  resolved directory and the in-force bit as arguments so that last arm has a
+  pin.
+- **`~/.claude` STAYS; only the file entry drops.** The letter says so, and
+  there is a second reason outside this item: `credentialReadDenyLiterals`'
+  `own()` is keyed to the DECLARED `state_dir` literal, so a list that had
+  lost the tree would read there as "not a claude seat" and mask a Linux
+  claude seat off the credential this item's own last bullet spares it. The
+  coupling is pinned from one function's real output into the other.
+- **The last bullet's `sibling()` arm went in as `own()` and not as a GOOS
+  branch.** "On Linux that file is the store of record" is a reason to spare
+  the seat that owns it and was read for two beads as a reason to open it to
+  every seat, so before this a Linux codex, grok or bob seat could read
+  claude's credential. The arm is now
+  `goos == "darwin" || !own("~/.claude")`, through `credentialFileCandidates`
+  on both halves so the Linux wall follows the variables the way the darwin
+  one has since ranger-base-x5f6p. Two assertions of ABSENCE reversed, each
+  given its counterpart row in the same table rather than an edited
+  expectation.
+- **The darwin render is untouched and pinned so.** The cheap version of this
+  item would have dropped `~/.claude.json` from the declaration, which would
+  take the `(subpath …)` grant and its sibling regex out of the darwin
+  profile too and put ranger-base-cypy1's lost config write back on every
+  seatbelt seat on this box. So: the declaration still carries the file,
+  `SeatbeltSiblings` still grants its scratch namespace, and
+  `BwrapStateDirs` is the only thing that knows otherwise.
+
 **D20. Shape 4: git's ref writes need a dir grant, and the dir is
 `refs/heads/<branch parent>`.** Git writes a ref as `<ref>.lock` and then a
 rename onto `<ref>`. Both need write on the ref's directory, so the leaf and
