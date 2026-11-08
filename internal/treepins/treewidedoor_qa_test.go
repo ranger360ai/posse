@@ -554,7 +554,7 @@ package treepins
 // joinsOntoBareRoot's own residual and is nowhere in the package
 // (MEASURED 2026-11-01).)
 //
-// and SIXTEEN more, which are the ONE-PACKAGE CENSUSES — and the first
+// and SEVENTEEN more, which are the ONE-PACKAGE CENSUSES — and the first
 // members admitted by a DECISION rather than by a defect
 // (ranger-base-m94g2 decided, ranger-base-na4rm doored). A pin in
 // internal/posse that enumerates its OWN package directory —
@@ -594,6 +594,7 @@ package treepins
 //	TestQAOneThrottleOnlyWatchArmsTheRefill       make pkgcensus-check
 //	TestQAProcessNoticesResolveThroughTheDeclaredSeams
 //	                                              make pkgcensus-check
+//	TestQATheExplainDegradeSentenceHasOneHome     make pkgcensus-check
 //	TestQAEveryCountedSkipReasonHasAReportingSite make pkgcensus-arm2-check
 //	TestQAEveryTestBinaryReExecKeepsTheChildATestBinary
 //	                                              make pkgcensus-arm2-check
@@ -603,11 +604,13 @@ package treepins
 //	                                              make pkgcensus-arm3-check
 //	TestQAPosseNeverWritesGroksTrustTable         make pkgcensus-arm3-check
 //	TestQAWatchStreamWritesGoThroughTheDispatcher make pkgcensus-arm3-check
-//	                                              (fifteen of the
+//	                                              (fifteen of the first
 //	                                              sixteen
 //	                                              ranger-base-na4rm; the
-//	                                              last of them
-//	                                              ranger-base-zpk8r)
+//	                                              sixteenth
+//	                                              ranger-base-zpk8r, the
+//	                                              seventeenth
+//	                                              ranger-base-l32dl)
 //
 // THREE DOORS FOR ONE SUBJECT, split by BUILD TAG and by nothing else — and
 // they are the first doors in this register to carry `-tags`. Seven of the
@@ -960,7 +963,7 @@ package treepins
 // claude's two captures read as the ORPHAN class and failed this file's
 // neighbour's control arm over a checkout that passes.
 //
-// and `make tree-check` is all of them — one hundred and twenty-six pins and
+// and `make tree-check` is all of them — one hundred and twenty-seven pins and
 // seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
