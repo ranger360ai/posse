@@ -203,8 +203,8 @@ answered by canonicalising one side to hide the mismatch.
 **Alternatives rejected.**
 - **Absolute is enough; leave it alone.** It is functionally true, because
   the key matches. But it leaves one line showing two spellings, and a remedy
-  whose text depends on how the reader got there. This is the reason we
-  are priced at P3 and not P2: the cost of the fix is two format arguments.
+  whose text depends on how the reader got there. That is why the bead
+  was P3 and not P2. The fix costs two format arguments.
 - **Canonicalise inside `QueueRepo()`** (the bead's question as worded). This
   changes the comparison that three consumers make, and only on one side. It
   would fix the measured case mismatch for a store spelled the way it is on
