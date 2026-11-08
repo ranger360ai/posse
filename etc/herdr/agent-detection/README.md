@@ -293,7 +293,11 @@ server:
   intervene (posse attach <session>)`, claim kept, nothing pressed.
 - **typed.** `awaitSettled` asks for `idle|done|blocked` and hands a blocker
   straight back for the caller to refuse by name, which is `awaitAgent` dying
-  `never settled idle (status "blocked")` instead of typing into the menu.
+  `never settled idle (status "blocked", rule "…" region=… priority=…)`
+  instead of typing into the menu. The rule clause is this manifest's own
+  vocabulary and is there because `agent wait` answers with a state alone:
+  since ranger-base-x2grk that arm pays one `agent explain` so the refusal
+  names the screen rather than the status (`internal/posse/blockedsettle.go`).
 
 The working/blocked session guard also stops reading the pane as a free one.
 The pre-launch refuse is also declared now (`CodexInterstitials`,

@@ -2664,6 +2664,15 @@ func fakeExplainAgentArg(args []string) string {
 // Levers:
 //
 //	explain-rule      the rule id that produced the state (default fake_<state>)
+//	explain-region    the screen region that rule read (default fake_region)
+//	explain-priority  the priority it won at (default 1000)
+//	                  Both ride on `matched_rule` beside the id, because a
+//	                  real herdr emits all three and has since at least
+//	                  0.8.0 — MEASURED on 0.9.1 in AgentDetection.Rule's own
+//	                  comment — and the settle refusal names them
+//	                  (blockedsettle.go). They are levers rather than
+//	                  constants so a pin can arm the real values a measured
+//	                  screen produced.
 //	explain-state     the state `explain` reports, when it must differ from
 //	                  the one `agent wait` settled on — the two are one
 //	                  reading in herdr, but sampled at different instants
@@ -2706,10 +2715,18 @@ func fakeExplain() string {
 	if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-rule")); err == nil {
 		rule = strings.TrimSpace(string(b))
 	}
-	return fmt.Sprintf(`{"state":%q,"matched_rule":{"id":%q,"state":%q},`+
+	region := "fake_region"
+	if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-region")); err == nil {
+		region = strings.TrimSpace(string(b))
+	}
+	priority := "1000"
+	if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-priority")); err == nil {
+		priority = strings.TrimSpace(string(b))
+	}
+	return fmt.Sprintf(`{"state":%q,"matched_rule":{"id":%q,"region":%q,"priority":%s,"state":%q},`+
 		`"visible_idle":%t,"visible_blocker":%t,"visible_working":%t,`+
 		`"fallback_reason":null%s}`,
-		state, rule, state, state == "idle", state == "blocked", state == "working", fakeExplainRules())
+		state, rule, region, priority, state, state == "idle", state == "blocked", state == "working", fakeExplainRules())
 }
 
 // fakeExplainRules splices the explain-rules lever in, as the `,"..."` tail

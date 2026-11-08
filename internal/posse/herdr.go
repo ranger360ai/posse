@@ -833,8 +833,31 @@ func (h Herdr) AgentSendKeys(target string, keys ...string) error {
 // how a guess reads here.
 type AgentDetection struct {
 	State string `json:"state"`
-	Rule  struct {
-		ID string `json:"id"`
+	// Rule is herdr's matched rule, and three of its fields are read: the
+	// id, the screen REGION that rule read, and the PRIORITY it won at.
+	// herdr emits all three on `matched_rule` and has since at least 0.8.0
+	// (the captured pair in bootrace_test.go carries them); MEASURED again
+	// on herdr 0.9.1, darwin-arm64, 2026-11-08, replaying
+	// etc/herdr/agent-detection/testdata/codex/blocked-trust-directory.txt
+	// through `agent explain --file --agent codex --json` against this
+	// checkout's manifests —
+	// `{"id":"trust_directory","priority":950,"region":"top_non_empty_lines(20)","state":"blocked"}`.
+	//
+	// THE REGION AND PRIORITY ARE THE SETTLE REFUSAL'S, and nothing
+	// branches on either (blockedsettle.go, ranger-base-x2grk). A launch
+	// refused because herdr read a blocker prints them in herdr's own
+	// spelling, so the operator takes that line to `herdr agent explain`
+	// and to the manifest instead of hand-launching the seat to find out
+	// which screen it was. They are manifest IDENTIFIERS and never the
+	// screen's bytes, so the failure line raises no data-ceiling question
+	// (ADR 0050) that the status string did not already raise.
+	//
+	// An older herdr that emits neither leaves them zero, and WhyBlocked
+	// then says only what it has.
+	Rule struct {
+		ID       string `json:"id"`
+		Region   string `json:"region"`
+		Priority int    `json:"priority"`
 	} `json:"matched_rule"`
 	VisibleIdle bool `json:"visible_idle"`
 	// FallbackReason is herdr's own word for why it guessed —

@@ -608,6 +608,14 @@ const (
 	RuleTurnOutcome   = "turnfailure.go:TurnOutcomeReader"
 	RulePromptReady   = "promptready.go:promptReady"
 	RuleSettleOpen    = "settleopen.go:noteSettleOpen"
+	// RuleSettleGate is the one of these that names a D1/D2 record, and
+	// only as the FALLBACK: a settle refusal normally carries herdr's own
+	// matched rule, and this is what it says when the second read could not
+	// name one (blockedsettle.go, ranger-base-x2grk). A census row under
+	// this name is therefore "posse refused a launch on a state herdr
+	// answered and no rule was in hand", which is a different finding from
+	// the rows beside it rather than a missing value.
+	RuleSettleGate = "dispatch.go:awaitSettled"
 )
 
 // ─── the log's own lifecycle ────────────────────────────────────────────────

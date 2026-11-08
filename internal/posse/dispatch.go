@@ -5825,7 +5825,15 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 		return "", AgentDetection{}, err
 	}
 	if status != "idle" && status != "done" {
-		return "", AgentDetection{}, Die("agent in %s never settled idle (status %q) — check the session (posse peek %s)", session, status, session)
+		// The screen is NAMED here, and the record written, because this is
+		// the line ranger-base-yk5qb's operator read and could do nothing
+		// with: `status "blocked"` whole, over a pane herdr had already
+		// matched to a rule. blockedsettle.go carries why that rule was not
+		// in hand on the arm the incident went through, and why a refusal
+		// on a screen herdr DID recognize is still one of ADR 0066 D1's
+		// five consequences.
+		d.logBlockedRefusal(id, session, runtime, status, gate)
+		return "", AgentDetection{}, Die("agent in %s never settled idle (status %q, %s) — check the session (posse peek %s)", session, status, gate.WhyBlocked(), session)
 	}
 	// ADR 0062 D2, and the LAST thing between a launch and a keystroke. On
 	// a runtime whose PID arrives as a custom mode the launch wrote, an
@@ -5921,8 +5929,13 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		status := res.State
 		if status != "idle" && status != "done" {
 			// A blocker is never a guess, so it is reported as herdr gave
-			// it, for the caller to refuse by name.
-			return status, AgentDetection{State: status}, nil
+			// it, for the caller to refuse by name — and "by name" used to
+			// be the state string alone, because `agent wait` answers with
+			// a state and nothing else. ONE explain names the rule and the
+			// region it read, for the failure line and the record the
+			// caller writes; it re-takes no decision, and blockedsettle.go
+			// has both arguments (ranger-base-x2grk).
+			return status, d.blockerEvidence(target, status), nil
 		}
 		// `agent wait` and `agent explain` read the same detection at two
 		// different instants, and the second one wins: it is the fresher

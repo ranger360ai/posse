@@ -2541,6 +2541,13 @@ hand and the next launch prompted and worked.
 `docs/notes.d/ranger-base-yk5qb.md` has the bundle reading and the key
 census.
 
+That refusal line names the screen now (`ranger-base-x2grk`): the same pane
+today prints `never settled idle (status "blocked", rule "live_blocked_form"
+region=after_last_horizontal_rule priority=980)`, which is herdr's own
+spelling and takes you to `etc/herdr/agent-detection/` rather than to a
+hand-launch. It still does not answer the screen, and never will
+(`rangerhq-4mzt`) — running `claude` once interactively, above, is the fix.
+
 ---
 
 ## 11. First dispatch — the bead that proves the install
