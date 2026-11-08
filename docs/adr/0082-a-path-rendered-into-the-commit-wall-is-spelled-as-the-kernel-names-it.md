@@ -233,6 +233,23 @@ answered by canonicalising one side to hide the mismatch.
   wording). The two sentences above stand as written and are left as written:
   what is corrected is the count, here, where a reader of the Radius claim
   reaches it.
+  **Taken 2026-11-08 (ranger-base-qm7eg):** both of that row's arguments go
+  through `CanonicalAbbrevPath`, so the three sites D4 governs are one
+  helper's callers and the Radius above reads as three. The different
+  audience turned out not to be a different rule — `posse status` and the
+  cockpit print the Detail verbatim, so the paste happens from there, and the
+  D7 refusal cites this row by name for the same cutover step, which is two
+  reachable lines for one remedy. The SIBLING `queue-not-a-repo` row keeps
+  `AbbrevHome` and that is now a decision rather than an omission: it
+  prescribes nothing and quotes the `queue_repo:` line the operator must go
+  and edit, so the canonical spelling would quote their file back to them in
+  words it does not contain. Pinned in both directions by
+  internal/posse/queuegovspelling_qa_test.go (a case-changed and a symlinked
+  `queue_repo:` for the row that prescribes, the config's own spelling for
+  the row that quotes), each arm also asserting `QueueReady().Repo` is still
+  the config's spelling. The "no census pin" sentence above still holds and
+  is still the reason this escaped: what now constrains the radius is three
+  named pins at three sites, not a grep anybody has to remember to re-run.
 
 **Alternatives rejected.**
 - **Absolute is enough; leave it alone.** It is functionally true, because

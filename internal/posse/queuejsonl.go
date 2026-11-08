@@ -415,15 +415,47 @@ func (r QueueReadiness) GovRows() []GovCondition {
 	// NotARepo short-circuits: "is it marked" is unanswerable about a path
 	// that is not a checkout, and a second row there would be a second
 	// remedy for one broken config line.
+	//
+	// AND IT KEEPS AbbrevHome WHILE THE ROW BELOW DOES NOT (ADR 0082 D4,
+	// ranger-base-qm7eg). D4's subject is "a path that a refusal or remedy
+	// prints for the operator to PASTE INTO CONFIG". This row prescribes
+	// nothing: it QUOTES the config line that is already there — `config
+	// queue_repo: names %s` — and its remedy is to edit that line. The
+	// canonical spelling is by construction not the one the operator's
+	// config carries, so rendering it here would quote their file back to
+	// them in words their file does not contain, in the one row whose whole
+	// job is to send them to that line. There is also often nothing to
+	// canonicalise: a `queue_repo:` that is not a checkout is frequently a
+	// path that does not exist, where canonicalPath is resolvedPath's string
+	// answer anyway (ADR 0082 D1's first bullet, as amended by D5).
 	if r.NotARepo {
 		return []GovCondition{row("queue-not-a-repo", fmt.Sprintf(
 			"config queue_repo: names %s, which is not a git checkout — the launcher's commit of the store of record's projection is refused at every close, so no closed bead reaches the queue repo's history and the bead-loss census goes blind (ADR 0015 §4)",
 			AbbrevHome(r.Repo)))}
 	}
+	// CanonicalAbbrevPath, BOTH ARGUMENTS (ADR 0082 D4, ranger-base-qm7eg,
+	// the third site of the three its Radius names). The second one is
+	// prescribed as a `beads_visibility:` key for the operator to paste —
+	// the class D4 rules on — and the first names the same repo one clause
+	// earlier, so rendering only the key would leave one row showing two
+	// spellings of one directory, which is the defect the amendment is
+	// about rather than a smaller version of it.
+	//
+	// Being a GOVERNANCE row and not a refusal changes who reads it, not
+	// what it prescribes: `posse status` and the cockpit print this Detail
+	// verbatim, and the key in it is pasted from there. It is also the row
+	// ADR 0081 D7's refusal CITES by name for this same remedy
+	// (CommitQueueJSONL above), so the two lines an operator can reach this
+	// one cutover step through now agree letter for letter.
+	//
+	// The VALUE is untouched, as at every other D4 site: `r.Repo` is
+	// QueueReady()'s reading of `QueueRepo()`, and the same reading feeds
+	// hooksDir and BeadsVisibility(hookRepo(q)) one function up — a render
+	// never feeds a comparison.
 	if r.Unmarked {
 		return []GovCondition{row("queue-unmarked", fmt.Sprintf(
 			"config beads_visibility: names no entry for the queue repo %s, and unmarked is PUBLIC (fail closed) — the commit guard's beads-jsonl scan runs in public repos only, so the launcher's own commit of the store of record is scanned as a publication and refused at every close; mark it (ADR 0015 §4 cutover step 5: `%s: private`)",
-			AbbrevHome(r.Repo), AbbrevHome(r.Repo)))}
+			CanonicalAbbrevPath(r.Repo), CanonicalAbbrevPath(r.Repo)))}
 	}
 	return nil
 }
