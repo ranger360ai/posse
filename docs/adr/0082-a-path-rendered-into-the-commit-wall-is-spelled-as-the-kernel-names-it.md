@@ -532,8 +532,14 @@ is `chmod 0` that is exotic, not the class.
   D5 refuses at the wall is on the record as accepted here, in a string that
   is printed and dropped.
 - ranger-base-qm7eg's G13 `queue-unmarked` row inherits this answer, which is
-  what it was blocked on. Its Detail has a different audience (`posse status`,
-  the cockpit) and the same helper; nothing there needs a second decision.
+  what it said it was blocked on, and it LANDED on the same day through the
+  same helper (f04ecbcf, the Radius note above): its Detail has a different
+  audience — `posse status`, the cockpit — and that turned out not to be a
+  different rule, so nothing there needed a second decision. Three sites are
+  now one helper's callers, which is also what makes this decision's radius
+  three rather than two. That is why D7 keeps the single return value rather
+  than giving the helper an error: a signature change here would have been a
+  third site to teach, landing after the first two.
 - The two pins are in arm 1, beside `canonicalwall_qa_test.go`, because they
   share `qcwNoReach` and because the sibling they complete
   (`TestQACanonicalPathRefusesADirectoryItMayNotName`) is there. No census pin
