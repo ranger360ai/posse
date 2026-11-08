@@ -95,7 +95,10 @@ container tier the redirect means there is nothing to refuse.
 ## What is NOT in this bead
 
 - **D4, `install-hooks`' refusal for an explicit target** — ranger-base-hnujh,
-  which `OwnsCommitWall` is exported for.
+  which `OwnsCommitWall` is exported for. LANDED 2026-11-07: the verb asks
+  `sharedCommitWallWrite` through `ForeignCommitWallOwner`, so the rule has
+  one implementation and the verb is no longer the remedy that undoes the
+  wall. See docs/notes.d/ranger-base-hnujh.md.
 - **D5, pre-push** — unchanged and still installed into the shared dir, from
   either arm. `PrePushHook` is a constant with no home input, so a cross-home
   write produces identical bytes; there is nothing for two writers to contend

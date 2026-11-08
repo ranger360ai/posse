@@ -1769,6 +1769,28 @@ func main() {
 				fmt.Fprintf(out, "  pre-push and prepare-commit-msg: nothing written there — the session hooks dir is rendered at launch (ADR 0052 D2)\n")
 				return
 			}
+			// ADR 0081 D4: the shared commit-guard slot has ONE owning
+			// home — the one whose `beads_visibility:` marks this repo
+			// (D1) — and this command is the second of the three writers
+			// that used to rewrite any repo's wall from any home on the
+			// box. Asked here, BEFORE either install, so the verdict is a
+			// reading of the slot as it stands rather than of a write this
+			// command just made (the launch asks it in the same order, and
+			// of the same predicate).
+			//
+			// A repo on this home's own list is owned, so the operator's
+			// ordinary sweep over the listed repos is unaffected, and so is
+			// every repo nobody has stamped — an unstamped body is D3 case
+			// 4's one-shot migration and an empty slot is case 1. What is
+			// refused is the narrow case the hazard is actually made of:
+			// another home's current render, in a repo this home never
+			// claimed.
+			//
+			// The target's spelling does not enter it. D4 says "an explicit
+			// target" to say that the sweep is unaffected, not to make `.`
+			// a second rule — and a hole a `cd` walks through is not a rule
+			// (q0np6's two launches were in the repo, not pointed at it).
+			foreignWallHome, wallRepo := a.ForeignCommitWallOwner(dir)
 			// Both slots are attempted and reported independently — a
 			// foreign hook taking one must not cost the other
 			// (rangerhq-mgdk; the comment used to claim this and only
@@ -1787,6 +1809,22 @@ func main() {
 				failed = true
 			} else {
 				fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", posse.AbbrevHome(p))
+			}
+			// The refusal, and the whole of it: the slot is not read
+			// again, not rendered, and not opened — bytes and mtime where
+			// they were. There is no `--force`, deliberately (ADR 0081 D4):
+			// the remedy is a config line, and a flag would put the second
+			// writer back the moment the first operator reached for it.
+			if foreignWallHome != "" {
+				fmt.Fprintf(out, "not installed: prepare-commit-msg — %s's commit wall was rendered by home %s, and this home does not own it (ADR 0081 D1/D4)\n",
+					posse.AbbrevHome(wallRepo), posse.AbbrevHome(foreignWallHome))
+				fmt.Fprintf(out, "  remedy: add `%s: <private|public>` under this home's beads_visibility:, which is the list that confers ownership — or install from home %s, which rendered what is there\n",
+					posse.AbbrevHome(wallRepo), posse.AbbrevHome(foreignWallHome))
+				fmt.Fprintf(out, "  no --force: two homes writing one wall is the contention D1 removes, and the last writer would keep winning\n")
+				// Exit 1 whatever the pre-push arm said: it has already
+				// printed its own verdict above, and a refusal to write
+				// another home's wall is a nonzero outcome on its own.
+				os.Exit(1)
 			}
 			var c, vis, src string
 			var cerr error

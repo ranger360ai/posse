@@ -7058,6 +7058,34 @@ func (a *App) sharedCommitWallWrite(dir string, pre l3HookProbe) (write bool, st
 	return false, pre.CommitGuardHome
 }
 
+// ForeignCommitWallOwner asks ADR 0081 D3's write rule — the SAME predicate
+// the launch asks, not a second copy of it — on behalf of a caller that holds
+// no probe of its own. D4's `posse gates install-hooks` is the first such
+// caller: it has one directory and one write to make, and no session to
+// render a redirect for, so the only two answers it needs are "write" and
+// "whose wall this is".
+//
+// It answers stamp == "" when this home may write the repo at dir's shared
+// commit-guard slot, and otherwise the absolute home the installed body is
+// stamped by (D2), together with the repo whose wall that is. The repo is
+// returned rather than left to the caller because it is hookRepo's answer —
+// the main checkout, since the file lands in the COMMON hooks dir — and a
+// refusal that named the session worktree it was typed in would name a
+// directory whose `beads_visibility:` line nobody can write (ranger-base-up22).
+//
+// The probe is identity-only (l3AskIdentity). Ownership and the stamp are
+// per-repo identity facts; the behavior half execs this binary's own render
+// over the repo's index, which asks whether THIS BINARY's renderer still
+// refuses — a question about the binary, identical in every repo, and not one
+// a write rule has any use for.
+func (a *App) ForeignCommitWallOwner(dir string) (stamp, repo string) {
+	write, stamp := a.sharedCommitWallWrite(dir, a.probeL3HooksAsk(dir, false, nil, l3AskIdentity))
+	if write {
+		stamp = ""
+	}
+	return stamp, hookRepo(dir)
+}
+
 // l3Ask is how much of ADR 0023's question one probe asks.
 type l3Ask int
 

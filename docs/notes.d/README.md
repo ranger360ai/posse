@@ -12,6 +12,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-m928w](ranger-base-m928w.md) — A presence probe that read its own cage as the operator's answer (ranger-base-m928w) — 2026-11-07
 - [ranger-base-lh9nj](ranger-base-lh9nj.md) — A launch out of a non-owning home leaves the wall and takes the redirect (ranger-base-lh9nj) — 2026-11-07
 - [ranger-base-jep08](ranger-base-jep08.md) — The hook-skip and git-scope pins read against git 2.56 (ranger-base-jep08) — 2026-11-07
+- [ranger-base-hnujh](ranger-base-hnujh.md) — install-hooks refuses another home's wall (ranger-base-hnujh) — 2026-11-07
 - [ranger-base-ewk6u](ranger-base-ewk6u.md) — The plan-usage snapshot is keyed by the login, not the home (ranger-base-ewk6u) — 2026-11-07
 - [ranger-base-b87ej](ranger-base-b87ej.md) — The commit wall says which home rendered it (ranger-base-b87ej) — 2026-11-07
 - [ranger-base-aj79z](ranger-base-aj79z.md) — The wait-leg error with no sink, and the discriminator that did not exist (ranger-base-aj79z) — 2026-11-07

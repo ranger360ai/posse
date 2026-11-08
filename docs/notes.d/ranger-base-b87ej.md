@@ -94,5 +94,9 @@ LANDED 2026-11-07, D1 and D3 (ranger-base-lh9nj): the launch no longer rewrites
 a foreign-stamped wall it does not own, and takes ADR 0052 D2's per-session dir
 instead. `l3Verdict.reStamped()` is unchanged — it is a fact about the body, and
 an OWNING home still re-stamps (D6) — so the narrowing is at the call site,
-which asks `sharedCommitWallWrite`. D4 (`install-hooks`) is still open:
-ranger-base-hnujh. See docs/notes.d/ranger-base-lh9nj.md.
+which asks `sharedCommitWallWrite`. D4 (`install-hooks`) landed the same day
+(ranger-base-hnujh): the verb refuses a target — argument or cwd — whose wall
+another home stamped and this home does not own, which is what stops the
+remedy every reader above prescribes from being the thing that writes the wall
+back. See docs/notes.d/ranger-base-lh9nj.md and
+docs/notes.d/ranger-base-hnujh.md.
