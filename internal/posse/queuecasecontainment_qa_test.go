@@ -33,12 +33,19 @@ package posse
 // The fourth is the sibling-namespace shape identity must not reach
 // (ranger-base-cypy1).
 //
-// MUTATION-CHECKED 2026-11-08: reverting queuejsonl.go's call to underDir
-// reds TestQueueCommitLandsThroughACaseChangedQueueRepo alone;
-// making underSameDir return underDir's answer reds that one and
-// TestUnderSameDirAnswersContainmentByIdentity; making it return true
-// reds TestQueueCommitStillRefusesACaseChangedStranger and the
-// sibling-namespace arm.
+// MUTATION-CHECKED 2026-11-08, each mutant run over these five names alone:
+//
+//   - reverting queuejsonl.go's call to underDir reds
+//     TestQueueCommitLandsThroughACaseChangedQueueRepo ALONE — so the
+//     end-to-end pin is measuring the call site and not the predicate.
+//   - making the climb never match (`if false && samePath(cur, d)`) reds
+//     that one and TestUnderSameDirAnswersContainmentByIdentity.
+//   - making underSameDir return true unconditionally reds the other
+//     three: the stranger pin, the identity pin's own stranger arm, and
+//     the sibling-namespace arm. Both directions, which is the point.
+//   - giving underDir the case fold this file refuses
+//     (`insideDir(strings.ToLower(...), strings.ToLower(...))`) reds
+//     TestUnderDirStaysTheSandboxStringComparison alone.
 //
 // THE SKIP. Every case arm needs a case-INsensitive volume, and whether a
 // mount is one is a per-mount question neither statfs nor a filesystem name
