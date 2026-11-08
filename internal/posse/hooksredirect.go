@@ -27,6 +27,36 @@ import (
 // first and its exit is final, so the managed hook can only refuse more, and
 // the forward hands it git's own argv and stdin.
 
+// l3RedirectReason is WHY a launch dispatches its hooks from the per-session
+// dir instead of from git's own path. There are two reasons now and they are
+// different facts about the repo, so they are different words — and this is
+// the word the session record carries as `hooks_mode`, so the vocabulary is
+// spelled once and the launch and the record cannot disagree about it.
+type l3RedirectReason string
+
+const (
+	// redirectManaged: ADR 0052 D1 — the dispatch path is an employer's
+	// directory posse may not write at all. The forward target is that
+	// directory, and the operator's own effective core.hooksPath names it.
+	redirectManaged l3RedirectReason = "redirect"
+	// redirectForeignOwner: ADR 0081 D3 — posse MAY write the slot and this
+	// home SHOULD NOT, because the body installed there is another home's
+	// current render and this home does not own the repo (D1). The forward
+	// target is the repo's OWN hooks dir, which no core.hooksPath names and
+	// which posse itself wrote the far side of.
+	redirectForeignOwner l3RedirectReason = "foreign-owner"
+)
+
+// l3Forward is where one render's dispatchers forward to, and why posse
+// rendered them rather than writing the slot. A pair rather than a
+// managedHooks, because only one of the two reasons is about a managed
+// directory: passing the other through a value whose own name asserts an
+// employer owns the far side is the kind of lie a later reader believes.
+type l3Forward struct {
+	Dir    string
+	Reason l3RedirectReason
+}
+
 // SessionHooksDir is where one session's redirect hooks live. "" for a name
 // this may not build a path from — the render and the removal both key on
 // that, so a bad name renders nothing rather than reaching os.RemoveAll with
@@ -48,6 +78,10 @@ type hooksRedirect struct {
 	Managed string
 	Slots   []string
 	Skipped []string
+	// Reason is the l3Forward's, carried through so the probe, the parity
+	// row and the session record all say the same thing about this render
+	// (ADR 0081 D3).
+	Reason l3RedirectReason
 }
 
 // posseHookSlots is the set posse renders a MEMBER for, in the order the
@@ -63,10 +97,20 @@ func posseHookSlots(wantPrePush bool) []string {
 	return slots
 }
 
-// RenderSessionHooks renders the session's hooks dir for a repo whose
-// dispatch path is managed, and returns what it built. The directory is
-// rebuilt from nothing on every call: hook freshness (ADR 0023) then holds
-// by construction, and the sweep has nothing to measure for a managed repo.
+// RenderSessionHooks renders the session's hooks dir for a repo whose slot
+// this launch is not going to write, and returns what it built. The
+// directory is rebuilt from nothing on every call: hook freshness (ADR 0023)
+// then holds by construction, and the sweep has nothing to measure for such
+// a repo.
+//
+// TWO CALLERS, ONE RENDER (fwd.Reason): a managed dispatch path posse may not
+// write (ADR 0052 D1), and a shared slot stamped by a home that owns the repo
+// while this one does not (ADR 0081 D3). The render is identical because the
+// arrangement is: this home's wall runs first in its own process with its
+// exit final, then the slot at the forward target is exec'd with git's argv —
+// so the session is held by BOTH walls and never by fewer than the far side
+// alone. What differs is only what the far side IS, which is the reason's
+// whole job to say.
 //
 // The members are the SAME bytes install-hooks would have written into
 // `.git/hooks` — same call, same visibility mark, same ADR 0024 D2 identity
@@ -75,16 +119,17 @@ func posseHookSlots(wantPrePush bool) []string {
 // A literal that cannot be rendered refuses the whole render, as it refuses
 // the whole install: better a launch that says why the wall is not there
 // than one carrying a hook rendered wrong.
-func (a *App) RenderSessionHooks(session, dir string, m managedHooks, wantPrePush bool) (*hooksRedirect, error) {
+func (a *App) RenderSessionHooks(session, dir string, fwd l3Forward, wantPrePush bool) (*hooksRedirect, error) {
 	hooks := a.SessionHooksDir(session)
 	if hooks == "" {
 		return nil, Die("cannot render a session hooks dir for %q", session)
 	}
-	if !filepath.IsAbs(m.Dir) {
-		// managedHooksDir only ever answers Managed for an absolute path;
-		// this is the render refusing to bake a relative neighbour into a
+	if !filepath.IsAbs(fwd.Dir) {
+		// managedHooksDir only ever answers Managed for an absolute path,
+		// and hooksDir joins every relative answer git gives it; this is
+		// the render refusing to bake a relative neighbour into a
 		// dispatcher that git runs from a directory of its own choosing.
-		return nil, Die("managed hooks path %s is not absolute — not rendering a redirect around it", m.Dir)
+		return nil, Die("hooks forward target %s is not absolute — not rendering a redirect around it", fwd.Dir)
 	}
 	visibility, _ := a.BeadsVisibility(hookRepo(dir))
 	identity, err := a.commitGuardLiterals(dir)
@@ -96,11 +141,11 @@ func (a *App) RenderSessionHooks(session, dir string, m managedHooks, wantPrePus
 		members["pre-push"] = PrePushHook
 	}
 
-	forwarded, skipped, err := forwardableSlots(m.Dir)
+	forwarded, skipped, err := forwardableSlots(fwd.Dir)
 	if err != nil {
 		return nil, err
 	}
-	r := &hooksRedirect{Dir: hooks, Managed: m.Dir, Skipped: skipped}
+	r := &hooksRedirect{Dir: hooks, Managed: fwd.Dir, Skipped: skipped, Reason: fwd.Reason}
 
 	// The union, and the reason it is one: M4. A managed slot with no
 	// dispatcher in the redirect dir is not "unchanged", it is SKIPPED —
@@ -140,7 +185,7 @@ func (a *App) RenderSessionHooks(session, dir string, m managedHooks, wantPrePus
 		}
 	}
 	for _, slot := range r.Slots {
-		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(redirectDispatcher(slot, m.Dir, members[slot] != "")), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(redirectDispatcher(slot, fwd.Dir, members[slot] != "")), 0o755); err != nil {
 			return nil, err
 		}
 	}
@@ -195,8 +240,23 @@ func forwardableSlots(managed string) (slots, skipped []string, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	samples := 0
 	for _, e := range ents {
 		name := e.Name()
+		// A `.sample` is not a slot git dispatches under any name: git's
+		// hook lookup is find_hook(<the exact slot name>), and `git init`
+		// writes these from its templates precisely as inert examples. They
+		// are counted out BEFORE the stat arms below, in one line rather
+		// than one line each, because ADR 0081 D3 made a repo's own
+		// `.git/hooks` a forward target (ranger-base-lh9nj) — where a
+		// template dir's dozen-odd samples are the normal case, and a
+		// dispatcher and a skip line per sample would be the launch's whole
+		// report. Counted and said, never silently dropped: what this file
+		// may not do is step over something git WOULD run without saying so.
+		if strings.HasSuffix(name, ".sample") {
+			samples++
+			continue
+		}
 		st, err := os.Stat(filepath.Join(managed, name))
 		switch {
 		case err != nil:
@@ -213,6 +273,9 @@ func forwardableSlots(managed string) (slots, skipped []string, err error) {
 	}
 	sort.Strings(slots)
 	sort.Strings(skipped)
+	if samples > 0 {
+		skipped = append(skipped, fmt.Sprintf("%d .sample file(s) (git dispatches no slot whose name ends in .sample)", samples))
+	}
 	return slots, skipped, nil
 }
 
@@ -273,6 +336,9 @@ func gitConfigHooksPathVars(vars []EnvVar, hooks string) []EnvVar {
 type l3Redirect struct {
 	Hooks   string
 	Managed string
+	// Reason is the render's (ADR 0081 D3): the parity line that says whose
+	// hooks run after ours cannot word that from the two paths alone.
+	Reason l3RedirectReason
 }
 
 // probe is the render's own answer to "what should the probe read" — the
@@ -282,7 +348,7 @@ func (r *hooksRedirect) probe() *l3Redirect {
 	if r == nil {
 		return nil
 	}
-	return &l3Redirect{Hooks: r.Dir, Managed: r.Managed}
+	return &l3Redirect{Hooks: r.Dir, Managed: r.Managed, Reason: r.Reason}
 }
 
 // l3IdentityIn is l3Identity, or its redirect-mode twin. Same shape so

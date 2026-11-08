@@ -87,8 +87,16 @@ type gitHookParityInput struct {
 	// (system and global scopes only).
 	Dir string
 	// Redirect is the session hooks dir the seat's core.hooksPath names and
-	// the managed dir it forwards into; nil when the launch renders none.
+	// the dir it forwards into; nil when the launch renders none.
 	Redirect *l3Redirect
+	// DefaultHooks is where the OPERATOR's git dispatches Dir's hooks from
+	// when no core.hooksPath is set in any scope — `git rev-parse
+	// --git-path hooks`. The redirect arm needs it because ADR 0081 D3's
+	// redirect forwards into exactly that directory, over a repo where no
+	// core.hooksPath exists to be read: without it, "the operator's
+	// effective core.hooksPath is (unset)" reads as a finding against the
+	// one arrangement that loses the operator nothing at all.
+	DefaultHooks string
 }
 
 // gitHookParityResult is the comparison's verdict. Lines are printable
@@ -214,12 +222,12 @@ func gitHookParity(in gitHookParityInput) gitHookParityResult {
 		opEnv = envPut(append([]string(nil), base...), "GIT_CONFIG_SYSTEM", in.OperatorSystem)
 	}
 	seatEnv := envWith(append([]string(nil), base...), in.Seat)
-	return compareGitHookViews(readGitHookView(opEnv, in.Dir), readGitHookView(seatEnv, in.Dir), in.Redirect)
+	return compareGitHookViews(readGitHookView(opEnv, in.Dir), readGitHookView(seatEnv, in.Dir), in.Redirect, in.DefaultHooks)
 }
 
 // compareGitHookViews is the verdict, separated from the git calls so the
 // wording can be read without running git.
-func compareGitHookViews(op, seat gitHookView, red *l3Redirect) gitHookParityResult {
+func compareGitHookViews(op, seat gitHookView, red *l3Redirect, dfltHooks string) gitHookParityResult {
 	var r gitHookParityResult
 	if op.Err != "" || seat.Err != "" {
 		r.Red = true
@@ -268,16 +276,25 @@ func compareGitHookViews(op, seat gitHookView, red *l3Redirect) gitHookParityRes
 			if e.Scope != "command" || e.Key != "core.hookspath" || filepath.Clean(e.Value) != filepath.Clean(red.Hooks) {
 				continue
 			}
-			want := op.effectiveHooksPath()
+			// What the operator's git dispatches from: the last
+			// core.hooksPath listed, or — when nobody set one — git's own
+			// path for this repo, which is what ADR 0081 D3's redirect
+			// forwards into. Said as two different clean lines, because
+			// "the operator's effective core.hooksPath" is not a true
+			// description of a value no scope carries.
+			want, whose := op.effectiveHooksPath(), "the operator's effective core.hooksPath"
+			if want == "" {
+				want, whose = dfltHooks, "where the operator's git dispatches this repo's hooks from (no core.hooksPath is set)"
+			}
 			if want == "" || !sameHooksPath(want, red.Managed) {
 				r.Red = true
 				if want == "" {
-					want = "(unset)"
+					want = "(unset, and this reading could not name git's own path either)"
 				}
-				r.Lines = append(r.Lines, fmt.Sprintf("RED — the session redirect %s forwards into %s, but the operator's effective core.hooksPath is %s",
-					AbbrevHome(red.Hooks), AbbrevHome(red.Managed), want))
+				r.Lines = append(r.Lines, fmt.Sprintf("RED — the session redirect %s forwards into %s, but %s is %s",
+					AbbrevHome(red.Hooks), AbbrevHome(red.Managed), whose, want))
 			} else {
-				r.Lines = append(r.Lines, "redirect "+AbbrevHome(red.Hooks)+" forwards into "+AbbrevHome(red.Managed)+", the operator's effective core.hooksPath")
+				r.Lines = append(r.Lines, "redirect "+AbbrevHome(red.Hooks)+" forwards into "+AbbrevHome(red.Managed)+", "+whose)
 			}
 			break
 		}
@@ -332,11 +349,18 @@ func (a *App) launchGitHookParity(rt *Runtime, dir string, red *l3Redirect, deri
 	} else if derive && dir != "" && a.StateDir != "" {
 		if m, err := managedHooksDir(dir); err == nil && m.Managed {
 			hooks := filepath.Join(a.StateDir, "hooks", "<session>")
-			red = &l3Redirect{Hooks: hooks, Managed: m.Dir}
+			red = &l3Redirect{Hooks: hooks, Managed: m.Dir, Reason: redirectManaged}
 			seat = append(seat, gitConfigHooksPathVars(seat, hooks)...)
 		}
 	}
-	return gitHookParity(gitHookParityInput{Base: os.Environ(), Seat: seat, Dir: dir, Redirect: red})
+	// Only derived when there IS a redirect to judge, and read from git
+	// rather than joined: a repo whose hooks dir is somewhere else entirely
+	// is the whole reason this comparison exists.
+	dflt := ""
+	if red != nil && dir != "" {
+		dflt, _ = hooksDir(dir)
+	}
+	return gitHookParity(gitHookParityInput{Base: os.Environ(), Seat: seat, Dir: dir, Redirect: red, DefaultHooks: dflt})
 }
 
 // applyHookConfigParity adds the row to a directory-aware parity matrix.

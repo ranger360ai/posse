@@ -6314,6 +6314,17 @@ type l3HookProbe struct {
 	PrePushVerdict     l3Verdict
 	CommitGuardVerdict l3Verdict
 
+	// CommitGuardHome is the home named by the stamp in the installed
+	// commit-guard body (ADR 0081 D2), and is non-empty exactly when
+	// CommitGuardVerdict is l3OtherHome — commitGuardHomeVerdict decides
+	// the two in one statement, so a caller may read either as the other's
+	// condition. It is in the struct, and not left as the local the
+	// degraded line was worded from, because D3's write rule is a question
+	// about WHOSE wall this is and the launch asks it of this same probe
+	// (ranger-base-lh9nj): a second read of the file at decision time could
+	// answer differently from the line the launch prints about it.
+	CommitGuardHome string
+
 	// Forward carries redirect mode's own arm (ADR 0052 D3): one
 	// ready-to-display line per managed hook this session's git would
 	// SKIP, because the dir it dispatches from does not carry that slot's
@@ -6391,12 +6402,16 @@ const (
 // rewritten with the bytes it already had, and l3Uninstalled had nothing
 // there to repair.
 //
-// l3OtherHome is in the list because it is TRUE of the launch as it stands:
-// that body carries our marker, so installHook rewrites it in place like any
-// other, and the whole value of this predicate is that the warning it drives
-// says the launch did. ADR 0081 D3 is what stops the write, and D3 is its own
-// bead (ranger-base-lh9nj) — when it lands, this predicate narrows with it
-// rather than before it, or the launch rewrites a wall and says nothing.
+// l3OtherHome is in the list, and ADR 0081 D3 (ranger-base-lh9nj) did not
+// take it out, because what it states is still true of the write when the
+// write happens: that body carries our marker, so installHook rewrites it in
+// place like any other. What D3 changed is WHETHER the launch writes, and
+// that is not a property of the body — an owning home still re-stamps a
+// foreign-stamped wall (D6), and a non-owner does not. So the narrowing is at
+// the call site, which asks sharedCommitWallWrite and reports the re-stamp
+// only when it actually did one. A predicate narrowed here instead would
+// silence the owner's own re-stamp, which is the one case the warning was
+// written for.
 func (v l3Verdict) reStamped() bool {
 	return v == l3Stale || v == l3MemberGone || v == l3OtherHome
 }
@@ -6980,6 +6995,69 @@ func (a *App) commitGuardHomeVerdict(v l3Verdict, path string) (l3Verdict, strin
 	return l3OtherHome, stamp
 }
 
+// OwnsCommitWall answers ADR 0081 D1: this home owns the repo at dir's
+// SHARED commit wall iff its own `beads_visibility:` marks that repo. No new
+// key and no new state — `beads_visibility:` is the list the config itself
+// calls the hook wall's repo list, and BeadsVisibility already reports a repo
+// nobody listed as VisibilityUnmarkedSource.
+//
+// hookRepo, for the reason every other caller here uses it: the file lands in
+// the COMMON hooks dir, so the repo whose wall this is, is the main checkout
+// and never the session worktree launched into it. A `beads_visibility:` key
+// names a repo the operator declared, so a worktree path could only ever fall
+// through to unmarked — which would read every worktree launch into a listed
+// repo as a launch this home does not own (ranger-base-up22, one question
+// over).
+//
+// It says nothing about whether the wall is INSTALLED or whose render is in
+// it. Ownership is a fact about config; what is on disk is the stamp's
+// question (D2), and D3 is where the two meet.
+func (a *App) OwnsCommitWall(dir string) bool {
+	_, source := a.BeadsVisibility(hookRepo(dir))
+	return source != VisibilityUnmarkedSource
+}
+
+// sharedCommitWallWrite is ADR 0081 D3's write rule: may this launch write
+// the repo at dir's shared commit-guard slot, and if not, which home does
+// that wall belong to.
+//
+// Asked of the PRE-HEAL probe rather than of the filesystem, so the decision
+// and the line the launch prints about it are the same reading (herdrback
+// probes before it installs, ranger-base-2mogn). The four conditions D3
+// lists are four states of that one verdict, which is why this is one
+// question asked of it and not four reads of the file:
+//
+//	l3Uninstalled, l3Foreign, l3Displaced,     no posse commit guard there
+//	l3MemberGone                               (D3 case 1 — and a foreign
+//	                                           hook is refused by installHook
+//	                                           anyway, ADR 0002 §3)
+//	l3Held                                     our own current render, stamp
+//	                                           and all (case 3)
+//	l3Stale                                    ours by marker: the stamp is
+//	                                           this home's, or there is none
+//	                                           at all (cases 3 and 4 — case 4
+//	                                           is the one-shot migration of
+//	                                           every body written before this
+//	                                           ADR)
+//	l3OtherHome                                another home's current render:
+//	                                           written only if this home owns
+//	                                           the repo (case 2)
+//
+// So the whole rule is "every verdict but l3OtherHome, plus l3OtherHome when
+// D1 says this home owns it". Two owners is D6's misconfiguration, made
+// visible rather than refused: the owner writes, the last writer wins, and
+// the stamp now makes every reader name the other home.
+//
+// A dir that is not a repository answers "write": there is no wall there to
+// belong to anyone, and the install's own error is a better report of that
+// than a predicate's silence.
+func (a *App) sharedCommitWallWrite(dir string, pre l3HookProbe) (write bool, stamp string) {
+	if !pre.Repo || pre.CommitGuardVerdict != l3OtherHome || a.OwnsCommitWall(dir) {
+		return true, ""
+	}
+	return false, pre.CommitGuardHome
+}
+
 // l3Ask is how much of ADR 0023's question one probe asks.
 type l3Ask int
 
@@ -7060,8 +7138,7 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 	// says whose it is. Asked only of the commit guard, because it is the
 	// only body that carries a stamp — pre-push takes no home input (D5) and
 	// the redirect dir has no stale verdict to refine.
-	var commitHome string
-	r.CommitGuardVerdict, commitHome = a.commitGuardHomeVerdict(r.CommitGuardVerdict, commitPath)
+	r.CommitGuardVerdict, r.CommitGuardHome = a.commitGuardHomeVerdict(r.CommitGuardVerdict, commitPath)
 
 	// An ask that skips the behavior half reads as "not asked" and never as
 	// "it failed": the verdict below is then identity's alone, and the
@@ -7080,7 +7157,7 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 	}
 	if !r.CommitGuard {
 		r.CommitGuardDegraded = l3DegradeLineIn(red, "prepare-commit-msg", commitPath,
-			commitGuardConsequence(commitPath, commitRender, r.CommitGuardVerdict), commitHome, r.CommitGuardVerdict)
+			commitGuardConsequence(commitPath, commitRender, r.CommitGuardVerdict), r.CommitGuardHome, r.CommitGuardVerdict)
 	}
 	// The forward-completeness arm, and the reason it is separate from the
 	// two slots above: what a missing dispatcher costs is not a posse gate

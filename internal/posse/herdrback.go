@@ -2758,6 +2758,12 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// parity check below reports it on the post-heal state it is still
 		// in, which is the honest place for it.
 		preHeal := a.probeL3Hooks(dir, deniesGitPush(ag.Deny))
+		// Did this launch write the repo's SHARED commit-guard slot (ADR
+		// 0081 D3)? The pre-heal alarm below is a sentence about that write,
+		// so it is asked of the write and not of the body's verdict: the
+		// managed arm writes nothing, and the unmanaged arm now writes only
+		// when this home may (ranger-base-lh9nj).
+		wroteCommitWall := false
 		// ADR 0052 D1: on a MANAGED hooks path the install step writes
 		// nothing at all — not the two renders, not a chain — and says so
 		// on the launch. The pre-heal comparison is skipped with it: the
@@ -2809,7 +2815,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if caged {
 				warn("posse: %s — the session redirect is not applied at the container tier: %s is not inside the cage, and a core.hooksPath naming a path the cage does not have skips every hook there, the managed ones too (ADR 0052 D2)\n", o.Name, AbbrevHome(a.SessionHooksDir(o.Name)))
 			} else {
-				red, err := a.RenderSessionHooks(o.Name, dir, mh, deniesGitPush(ag.Deny))
+				red, err := a.RenderSessionHooks(o.Name, dir, l3Forward{Dir: mh.Dir, Reason: redirectManaged}, deniesGitPush(ag.Deny))
 				if err != nil {
 					return nil, err
 				}
@@ -2820,13 +2826,72 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 				}
 			}
 		} else {
+			// pre-push first, and unconditionally: ADR 0081 D5 leaves it
+			// alone. PrePushHook is a constant with no home input, so a
+			// cross-home write produces identical bytes and there is nothing
+			// for two writers to contend over.
 			if deniesGitPush(ag.Deny) {
 				InstallPrePushHook(dir)
 			}
-			a.InstallCommitGuardHook(dir)
+			// ADR 0081 D1/D3. `dir`'s hooks dir is the repo's COMMON one by
+			// design (gates.go hooksDir), so this write is a write to a file
+			// every session in every worktree of that repo dispatches, and
+			// the body is a function of THIS home's config. Before D3 any
+			// home on the box rewrote any repo's wall as a matter of course:
+			// MEASURED 2026-11-06 (ranger-base-q0np6), two scratch-home
+			// launches took ~/src/posse's wall from 1897 lines to 1137,
+			// after which every reader from the owning home said "ours but
+			// stale" and every install from either home put it back.
+			//
+			// So the slot is written only when this home may write it, and
+			// otherwise the wall this home WOULD have installed is rendered
+			// per-session instead (ADR 0052 D2's dir, with the shared hooks
+			// dir as the forward target): the session's git runs this home's
+			// wall first and then execs the owner's, so it is held by both
+			// and never by fewer than the owner's alone.
+			write, stamp := a.sharedCommitWallWrite(dir, preHeal)
+			switch {
+			case write:
+				wroteCommitWall = true
+				a.InstallCommitGuardHook(dir)
+			case caged:
+				// No redirect at the container tier — D2's own exclusion,
+				// for the reason the managed arm gives above: the env
+				// crosses the boundary and the dir it names is not on the
+				// mount list, so a core.hooksPath pointing at it would skip
+				// every hook in the repo, the owner's included. The session
+				// runs under the owner's wall alone, which is strictly more
+				// than it would have had before this ADR and strictly less
+				// than this home's own gates — the parity check below reads
+				// that wall as another home's and reports it, which is the
+				// honest verdict and the one that names the remedy.
+				warn("posse: %s — %s's commit wall belongs to home %s; not rewritten; the session runs under it, and the container tier applies no redirect (ADR 0081 D3, ADR 0052 D2)\n",
+					o.Name, AbbrevHome(hookRepo(dir)), AbbrevHome(stamp))
+			default:
+				shared, err := hooksDir(dir)
+				if err != nil {
+					return nil, err
+				}
+				red, err := a.RenderSessionHooks(o.Name, dir, l3Forward{Dir: shared, Reason: redirectForeignOwner}, deniesGitPush(ag.Deny))
+				if err != nil {
+					return nil, err
+				}
+				hooksRedirectDir, hooksProbe = red.Dir, red.probe()
+				// managedHooksPath stays empty: there is no employer's
+				// directory here, and `managed_hooks` is the record's word
+				// for one. What the record says instead is the REASON
+				// (hooks_mode: foreign-owner), which is what keeps the
+				// cleanup and probe readers from treating the repo's own
+				// hooks dir as an employer's (ADR 0081, Consequences).
+				warn("posse: %s — %s's commit wall belongs to home %s; not rewritten, L3 rendered at %s — %s dispatched into %s, this home's wall first and then the owner's (ADR 0081 D3)\n",
+					o.Name, AbbrevHome(hookRepo(dir)), AbbrevHome(stamp), AbbrevHome(red.Dir), strings.Join(red.Slots, ", "), AbbrevHome(red.Managed))
+				for _, skip := range red.Skipped {
+					warn("posse: %s — not forwarded from %s: %s\n", o.Name, AbbrevHome(red.Managed), skip)
+				}
+			}
 		}
 		parity := a.checkParityIn(ag, rt, cage, tier, dir, hooksProbe)
-		if !mh.Managed && preHeal.Repo && preHeal.CommitGuardVerdict.reStamped() {
+		if wroteCommitWall && preHeal.Repo && preHeal.CommitGuardVerdict.reStamped() {
 			warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
 		}
 		if len(parity.Degraded) > 0 {
@@ -3310,13 +3375,21 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	if ag != nil && caged {
 		sockets = CageSocketTag(ag)
 	}
-	// ADR 0052 D3: how L3 was realized here, on the record. "redirect" is
-	// the only value that is ever written — its absence is the ordinary
-	// `.git/hooks` install — so a reader can tell the two apart without
-	// re-classifying a dispatch path that may have changed since.
+	// ADR 0052 D3: how L3 was realized here, on the record. Its absence is
+	// the ordinary `.git/hooks` install, so a reader can tell that apart
+	// from a redirect without re-classifying a dispatch path that may have
+	// changed since — and, since ADR 0081 D3, can tell the two REASONS for
+	// a redirect apart as well.
 	hooksMode := ""
 	if hooksRedirectDir != "" {
-		hooksMode = "redirect"
+		// The render's own word for why it was taken, never a literal here:
+		// "redirect" for a managed dispatch path (ADR 0052 D1) and
+		// "foreign-owner" for a shared slot this home may not write (ADR
+		// 0081 D3). Two reasons, two words, one vocabulary
+		// (l3RedirectReason) — a reader that found `redirect` over a repo
+		// with no managed path behind it would go looking for an employer
+		// who does not exist.
+		hooksMode = string(hooksProbe.Reason)
 	}
 	return &launchPlan{
 		Dir: dir, Repo: repo, Branch: branch, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,

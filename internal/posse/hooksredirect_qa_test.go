@@ -163,7 +163,7 @@ func (f *hrFix) render(wantPrePush bool) (*hooksRedirect, []string) {
 	if !m.Managed {
 		f.t.Fatalf("fixture is not a managed hooks path: %+v", m)
 	}
-	r, err := f.a.RenderSessionHooks("s1", f.repo, m, wantPrePush)
+	r, err := f.a.RenderSessionHooks("s1", f.repo, l3Forward{Dir: m.Dir, Reason: redirectManaged}, wantPrePush)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -521,7 +521,7 @@ func TestQARenderIsFreshAndTouchesNothingManaged(t *testing.T) {
 	if err := WriteExecutable(stale, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.a.RenderSessionHooks("s1", f.repo, mustManaged(t, f.repo), false); err != nil {
+	if _, err := f.a.RenderSessionHooks("s1", f.repo, l3Forward{Dir: mustManaged(t, f.repo).Dir, Reason: redirectManaged}, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(stale); err == nil {

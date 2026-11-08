@@ -786,7 +786,18 @@ func (a *App) applyL3Probe(p *Parity, ag *AgentFile, rt *Runtime, dir string, re
 	// wrote is owed both facts.
 	verified := "render probed, dispatch verified"
 	if probe.Managed != "" {
-		verified += fmt.Sprintf(" — session hooks dir, redirected by env; managed hooks %s run after ours", AbbrevHome(probe.Managed))
+		// Whose hooks run after ours, in the words of the reason the
+		// redirect was taken for (ADR 0081 D3): an employer's directory
+		// posse may not write, or the repo's own shared slot, held by the
+		// home that owns it and which this launch deliberately left alone.
+		// The two paths cannot be told apart by their spelling, and an
+		// operator reading `managed hooks` over a plain `.git/hooks` would
+		// go looking for a core.hooksPath nobody set.
+		whose := "managed hooks %s run after ours"
+		if red != nil && red.Reason == redirectForeignOwner {
+			whose = "the owning home's wall %s runs after ours"
+		}
+		verified += " — session hooks dir, redirected by env; " + fmt.Sprintf(whose, AbbrevHome(probe.Managed))
 	}
 	for _, rule := range ag.Deny {
 		switch {

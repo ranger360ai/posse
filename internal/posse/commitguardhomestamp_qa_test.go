@@ -151,11 +151,15 @@ func TestQAAWallRenderedByAnotherHomeIsNotReportedAsStale(t *testing.T) {
 		t.Errorf("the line must cite the decision it is a verdict of:\n  %s", p.CommitGuardDegraded)
 	}
 
-	// And the launch still SAYS it re-stamped, because it still does
-	// (ADR 0081 D3 is ranger-base-lh9nj). A predicate that narrowed ahead
-	// of the write would make the launch rewrite a wall in silence.
+	// The verdict still reports as re-stamped, and D3 (ranger-base-lh9nj)
+	// did not change that: what it states is true of the write WHEN the
+	// write happens, and an owning home still re-stamps a foreign-stamped
+	// wall (D6). The narrowing is at the call site, which asks
+	// sharedCommitWallWrite — see commitwallowner_qa_test.go. A predicate
+	// narrowed HERE instead would silence the owner's own re-stamp, which
+	// is the one case herdrback's warning was written for.
 	if !p.CommitGuardVerdict.reStamped() {
-		t.Errorf("until D3 stops the write, l3OtherHome must report as re-stamped — herdrback's warning is the only thing that says the launch took the wall")
+		t.Errorf("l3OtherHome must report as re-stamped: it is what installHook does to a body carrying our marker, and the owner's launch is where that still happens")
 	}
 
 	// The parser's own answer about the file on disk, so an arm above

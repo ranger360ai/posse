@@ -45,7 +45,7 @@ func TestQASiblingsWriteExecutablesUnderTheForkLock(t *testing.T) {
 		{"cage.go", `WriteExecutable(filepath.Join(bin, "bd"), b, 0o755)`},
 		{"cageinner.go", `WriteExecutable(path, []byte(script), 0o755)`},
 		{"hooksredirect.go", `WriteExecutable(filepath.Join(hooks, name), []byte(members[slot]), 0o755)`},
-		{"hooksredirect.go", `WriteExecutable(filepath.Join(hooks, slot), []byte(redirectDispatcher(slot, m.Dir, members[slot] != "")), 0o755)`},
+		{"hooksredirect.go", `WriteExecutable(filepath.Join(hooks, slot), []byte(redirectDispatcher(slot, fwd.Dir, members[slot] != "")), 0o755)`},
 		{"runtimeprobe.go", `WriteExecutable(script, []byte("#!/bin/sh\n# posse runtime probe`},
 	}
 

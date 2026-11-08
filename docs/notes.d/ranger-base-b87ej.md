@@ -89,3 +89,10 @@ foreign-stamped wall, so `l3Verdict.reStamped()` reports `l3OtherHome` as
 re-stamped and herdrback's "found the wall WRONG before this launch just
 silently re-stamped it" warning carries the new line. Narrowing the predicate
 ahead of the write would make the launch take the wall in silence.
+
+LANDED 2026-11-07, D1 and D3 (ranger-base-lh9nj): the launch no longer rewrites
+a foreign-stamped wall it does not own, and takes ADR 0052 D2's per-session dir
+instead. `l3Verdict.reStamped()` is unchanged — it is a fact about the body, and
+an OWNING home still re-stamps (D6) — so the narrowing is at the call site,
+which asks `sharedCommitWallWrite`. D4 (`install-hooks`) is still open:
+ranger-base-hnujh. See docs/notes.d/ranger-base-lh9nj.md.
