@@ -1355,14 +1355,49 @@ Work lives in beads, in a git repo. Create the repo first, then the queue.
 ```sh
 $ mkdir -p ~/src/<your-work-repo> && cd ~/src/<your-work-repo>
 $ git init
-$ bd init
+$ bd init --backend sqlite --prefix <your-prefix>
+```
+**Verify:** `.beads/beads.db` is there, and `bd info` names it on its
+`Database:` line. If it is not, stop here rather than wiring git around it:
+every step below is about a store that holds the queue, and this one does
+not.
+
+**`--backend sqlite` is not a preference, and leaving it off builds the
+wrong store without failing.** MEASURED 2026-11-07, bd 0.50.3
+(`bd25acbc`), on linux and darwin, with the pinned release tarball and a
+local build that are both `CGO_ENABLED=0`: bd 0.50.3 defaults to the Dolt
+backend, Dolt requires CGO, and a CGO-free bd says so on stdout and carries
+on —
+
+```
+Note: dolt backend requires CGO (not available in this build).
+Falling back to JSONL-only mode.
 ```
 
-`bd init` creates `.beads/` (a SQLite database plus `issues.jsonl`, its
-git-tracked projection) and derives the issue prefix from the directory
-name unless `.beads/config.yaml` sets `issue-prefix:`. Rename the directory
-*before* `bd init` if you care what your bead ids look like — renaming the
-prefix afterwards is a maintenance verb.
+— writing a store with no `beads.db` at all, and exiting 0. What it leaves
+is JSONL-only, which on this binary means `no-db: true` in the store's
+`config.yaml` (INFERRED from bd's own config template; a hand-written store
+with neither a database nor that line refuses every read with `no beads
+database found`, exit 1 — MEASURED 2026-11-07, darwin). That is the mode
+ADR 0073 measured losing **34-36 of 48** concurrent creates, each one
+printing `Created issue: <id>` and exiting 0, and answering a `close` with
+`in_progress` afterwards in 1 of 3 trials under a comment storm. A crew cannot share it. `bd init --backend sqlite`
+builds the classic `beads.db` store the rest of this recipe assumes, on the
+same CGO-free binary, and a create and its read-back land there (same
+measurement). The repo's own live fixtures ask for the class by name for
+this reason (`liveBeadsRepoOfClass`, internal/posse). **Nothing downstream
+will tell you**: posse reads no store class (ADR 0055 D3), the mode is a
+line in bd's own config rather than an error, and the cost arrives later as
+beads that were created, printed and lost.
+
+`bd init` derives the issue prefix from the directory name when `--prefix`
+is absent and `.beads/config.yaml` carries no `issue-prefix:`. Name it on
+the line above, or rename the directory *before* `bd init` if you care what
+your bead ids look like — renaming the prefix afterwards is a maintenance
+verb. Either way the store gets one: a store whose rows carry more than one
+prefix with `issue-prefix:` unset makes every no-db `bd` in a session
+refuse to start, which includes the container tier's (ADR 0055,
+Consequences).
 
 Then wire the three git-side pieces, and verify each rather than assuming
 `bd init` did it:
