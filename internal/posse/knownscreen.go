@@ -16,10 +16,15 @@ package posse
 //
 // IT IS A REPORT AND NOTHING READS IT (ADR 0066 D2, verbatim: "no guard,
 // launch eligibility, hand-back, kill, hire or keystroke reads it"). The
-// only two consumers are the failure line's last row and the `looks_like`
-// field on the D3 record, which `scripts/readings-census.py` counts. A
-// reading that said "this is the update menu" and then pressed something
-// would be the whole of what ADR 0057, 0060 D2, 0061 D3 and 0063 D1 refuse.
+// only three consumers are the unrecognized-screen failure line's last row,
+// the `looks_like` field on the D3 record, and — since ADR 0066 D2's
+// amendment of 2026-11-08 (ranger-base-jnmx6) — the BLOCKED SETTLE REFUSAL:
+// awaitAgent's `never settled idle` line and the D2 record it writes
+// (blockedsettle.go). `scripts/readings-census.py` counts the second and the
+// third apart, under two rows, because they are two different findings. The
+// list is still a closed list a grep can check, and a reading that said
+// "this is the update menu" and then pressed something would still be the
+// whole of what ADR 0057, 0060 D2, 0061 D3 and 0063 D1 refuse.
 //
 // WHY A SEPARATE TABLE AND NOT THE INTERSTITIAL REGISTRY (the one design
 // choice ranger-base-6uokf flagged, decided here and recorded on the bead):
@@ -60,10 +65,27 @@ package posse
 //
 // WHY HEADINGS AND NOT RULES. A rule is herdr's and replayable at the
 // codepoint; that is the reader that keeps the decision, and this one does
-// not compete with it — it only ever speaks where that one said nothing. A
-// heading is the one part of these screens that is addressed to a human, so
-// it is the part a layout change, a caret codepoint, an extra logo row or a
-// reworded footer leaves alone: MEASURED 2026-10-04 (ranger-base-qk9tr,
+// not compete with it — where herdr's rule names the SCREEN, this reader is
+// silent or agrees, and the rule leads the line either way.
+//
+// IT ONLY EVER SPEAKS WHERE THAT ONE SAID NOTHING ABOUT THE SCREEN, and
+// that sentence had to grow a clause on 2026-11-08 (ranger-base-jnmx6,
+// ranger-base-w0vz2). It used to read "where that one said nothing", full
+// stop, which was true while the only consumers were the unrecognized-screen
+// line and the D3 record — both of which fire when no rule matched at all.
+// The third consumer is a refusal where a rule DID match, and matched is not
+// the same as named: two of herdr's blocked rules are about a SHAPE —
+// `live_blocked_form` (claude: every form it draws, the trust dialog
+// included, rangerhq-4mzt) and `live_strong_blocker` (codex) — so the id
+// says "a form, at the bottom" and the screen is still unnamed. MEASURED
+// 2026-11-08 over every shipped fixture that reads `blocked` (ten): eight
+// match a screen-specific rule, whose id already names the screen, and two
+// match a generic one. The silence this reader respects is a silence about
+// the SCREEN, and a generic rule is one.
+//
+// A HEADING is the one part of these screens that is addressed to a human,
+// so it is the part a layout change, a caret codepoint, an extra logo row or
+// a reworded footer leaves alone: MEASURED 2026-10-04 (ranger-base-qk9tr,
 // docs/notes.d/ranger-base-qk9tr.md) over the fifteen labelled fixtures and
 // three perturbation classes taken from the incident record, 11 of 11
 // residue cases named with 0 false positives on the idle screens. The one
@@ -193,21 +215,29 @@ var KnownScreens = []KnownScreen{{
 	// explain --file --agent claude`: state `blocked`, rule
 	// `live_blocked_form`, region `after_last_horizontal_rule`, priority
 	// 980, out of herdr's own BUNDLED claude manifest 2026.09.11.1. So this
-	// screen is a RECOGNIZED blocker, its residue is empty by construction,
-	// and neither consumer of this reader is reached on it: awaitDelivered's
-	// D3 block fires only when `det.Seen()` is false, and awaitSettled
-	// returns at `case det.State == "blocked"` above its own. The bare line
-	// an operator actually got — `never settled idle (status "blocked")`,
-	// awaitAgent's Die — holds that detection and prints the status alone;
-	// naming it there is ranger-base-x2grk and not this table's job.
+	// screen is a RECOGNIZED blocker and its D3 residue is empty by
+	// construction: the two D3 consumers are not reached on it —
+	// awaitDelivered's D3 block fires only when `det.Seen()` is false, and
+	// awaitSettled returns at `case det.State == "blocked"` above its own.
 	//
-	// The row is here because the screen is real and the marker is read off
-	// a capture this tree now ships, which is the only bar this file sets.
-	// A claude release that reshapes the dialog past
-	// `after_last_horizontal_rule` is what would make it speak, and until
-	// then an honest empty residue is a better record than no row at all —
-	// the alternative was a fixture labelled "no known screen here" over a
-	// pane that plainly has one.
+	// AND IT IS THE ROW THAT MADE THE READER GROW A THIRD CONSUMER. When
+	// ranger-base-72oz4 wrote this row, the two paragraphs above were the
+	// whole story and the row spoke nowhere; what an operator got was
+	// `never settled idle (status "blocked")`, whole (ranger-base-yk5qb),
+	// then its rule and region alone (ranger-base-x2grk). The rule is
+	// `live_blocked_form`, which is every form claude draws, so the line
+	// named a shape and the peek was still owed — and ADR 0066 D2's
+	// amendment of 2026-11-08 (ranger-base-jnmx6, built in
+	// ranger-base-w0vz2) names that refusal's line and record this reader's
+	// third consumer for exactly this screen. The `Rules` field below is
+	// still the reason to expect nothing of it on the D3 path and is now
+	// also the reason it speaks on the D2 one: a rule that matched without
+	// naming.
+	//
+	// The row was here before any of that, because the screen is real and
+	// the marker is read off a capture this tree ships, which is the only
+	// bar this file sets. The alternative was a fixture labelled "no known
+	// screen here" over a pane that plainly has one.
 	//
 	// ONE PHRASE, no conjunction, and the `?` dropped: the same shape as
 	// codex.trust_directory, whose heading also ends in one. "try the new

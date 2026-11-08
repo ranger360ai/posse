@@ -17,13 +17,29 @@ package posse
 // `after_last_horizontal_rule`, priority 980, off the bundled claude
 // manifest 2026.09.11.1. herdr had the answer and posse printed the state.
 //
-// SO THIS IS NOT THE D3 READER AND MUST NOT BE CONFUSED WITH IT. `WhatHerdrSaw`
-// and the known-screen heading reader (unrecognized.go, knownscreen.go) speak
-// only where herdr's rules said NOTHING — "it only ever speaks where that one
-// said nothing" is knownscreen.go's own line. A blocked settle is the other
-// case: herdr working, named by a rule, replayable at the codepoint, which is
-// the diagnostic ADR 0066 D2 prefers to every report. What was missing was
-// that posse never printed it.
+// SO THIS IS NOT THE D3 READER — AND SINCE ranger-base-jnmx6 IT CARRIES THE
+// D3 REPORT ANYWAY. The two halves of that reader have to be kept apart here.
+// `WhatHerdrSaw` — herdr's whole working, every rule it tried and a preview
+// of each region — is D3's and is NOT printed on this line: a blocked settle
+// has a rule, so there is no working to explain, which is what "it only ever
+// speaks where that one said nothing" (knownscreen.go's own line about the
+// heading reader) was written against. What rides here is that reader's one
+// ROW, `LooksLikeLine`, and ADR 0066 D2 as amended 2026-11-08 names this
+// refusal its THIRD consumer for a measured reason: two of herdr's blocked
+// rules name a SHAPE and not a screen — `live_blocked_form` (claude, every
+// form it draws, the trust dialog included) and `live_strong_blocker`
+// (codex) — so on those two the rule says "a form, at the bottom" and the
+// operator still has to peek. MEASURED 2026-11-08 over every shipped fixture
+// that reads `blocked` (ten): eight match a screen-specific rule whose id
+// already names the screen, two match a generic one, and those two are where
+// the row is the difference between this line and ranger-base-yk5qb's
+// hand-launch.
+//
+// THE RULE AND THE REGION STAY FIRST AND THE ROW ONLY APPENDS (ADR 0066 D2
+// rule 3). herdr's rule is replayable at the codepoint and this reader's
+// answer is not, so the diagnostic that can be chased leads and the report
+// follows it — the same order, and the same reason, as the D3 block next
+// door.
 //
 // WHY ONE MORE `agent explain` (blockerEvidence). `agent wait` answers with a
 // STATE and nothing else — `{"agent":{"agent_status":"blocked"}}`, no rule, no
@@ -36,11 +52,13 @@ package posse
 // happens once per refused launch and never in a poll loop, and a refused
 // launch already costs a session nobody can use.
 //
-// It is NOT guarded by the dry-run rule the way d3Evidence's pane read is.
-// That guard exists because a `pane read` is a cost no dry pass should fork;
-// an `agent explain` is already made unguarded on every poll of the ladder
-// directly above this, so one more on its exit adds no class of call a dry
-// pass was not already making. The RECORD is guarded, by logReading itself.
+// The EXPLAIN is NOT guarded by the dry-run rule the way d3Evidence's pane
+// read is. That guard exists because a `pane read` is a cost no dry pass
+// should fork; an `agent explain` is already made unguarded on every poll of
+// the ladder directly above this, so one more on its exit adds no class of
+// call a dry pass was not already making. The RECORD is guarded, by
+// logReading itself — and the CAPTURE this file now takes beside the record
+// is guarded too, by going through d3Evidence and nothing else.
 //
 // NOTHING IS PRESSED AT THE SCREEN, here or anywhere below it (rangerhq-4mzt,
 // ADR 0013 §2, and startupscreen_test.go pins it as behaviour): a blocked pane
@@ -72,6 +90,11 @@ import (
 // A REGION OR PRIORITY OF ZERO IS LEFT OUT rather than printed as empty or
 // `priority=0`. An older herdr emits neither field (AgentDetection.Rule), and
 // the honest line there names the rule alone.
+//
+// THE HEADING READER'S ROW FOLLOWS THIS CLAUSE and never replaces it
+// (awaitAgent, ADR 0066 D2 rule 3): `; looks like: <set>`, inside the same
+// status parentheses, for the two blocked rules that name a shape rather than
+// a screen. This function neither knows nor asks about it.
 func (d AgentDetection) WhyBlocked() string {
 	if d.Rule.ID == "" {
 		switch saw := herdrEvidence(d); {
@@ -147,20 +170,72 @@ func (d *Dispatcher) blockerEvidence(target, status string) AgentDetection {
 // claimed, which is ConsequenceRefusal's own definition and what the D3
 // record on the same ladder already uses.
 //
-// NO PANE CAPTURE, deliberately, and it is the line that keeps this inside
-// ADR 0066 D2. A capture is what the known-screen heading reader needs
-// (PaneCaptureRegion: over herdr's previews alone it names 5 of 11 residue
-// cases instead of 11), and a `looks_like` on a blocked hand-back would be a
-// THIRD consumer of the D3 report where D2 names exactly two. That is the
-// architect's call, not this file's — filed, not assumed. A D1/D2 record
-// carries herdr's own regions and nothing else, which is also what
-// logPromptHandBack writes.
-func (d *Dispatcher) logBlockedRefusal(id, session, runtime, status string, det AgentDetection) {
+// A PANE CAPTURE AND THE D3 REPORT, ON THE D2 BRANCH ONLY — which is the
+// 2026-11-08 amendment and was a refusal in this file until it (ADR 0066 D2,
+// ranger-base-jnmx6, from ranger-base-w0vz2). The capture is what the
+// known-screen heading reader needs: over herdr's 243-character previews
+// alone it names 1 of the 2 generic-rule blocked fixtures, over the whole
+// pane 2 of 2 — the same input bottleneck ranger-base-qk9tr measured at 5 of
+// 11 against 11 of 11 on the D3 path. It does a second job the report does
+// not: a blocked refusal on a screen `KnownScreens` has no row for leaves a
+// fixture-shaped capture in the log, so the next row is copied from the fleet
+// rather than drawn on a rig (the step ranger-base-72oz4 had to do by hand).
+//
+// THE FOUR GATES, in the order the code applies them — which is not the
+// amendment's numbering, so each one cites the rule it is (rule 3, the line's
+// order, is awaitAgent's and is argued at the head of this file):
+//
+//  1. `status "blocked"` only — the D2 branch (rule 2). The D1 branch (any
+//     other non-idle status) is not a screen reading at all: it is `agent
+//     wait`'s state and nothing else, so there is no screen for a reader to
+//     name, and a capture there would be posse reading a pane its own
+//     decision never looked at.
+//  2. An AGREEING explain only (rule 1), and `det.Seen()` is the test. The
+//     bare detection blockerEvidence synthesizes when explain disagreed or
+//     failed carries no rule, no label and no visible-idle, so it fails
+//     Seen() by construction — and a later instant's screen attached to
+//     `agent wait`'s state would be the wrong screen named with confidence,
+//     which is what ranger-base-x2grk already refuses one field to the left,
+//     for the rule. Seen() and not a flag threaded out of the ladder because
+//     it is the reader this package already has for "herdr's own read said
+//     something positive about this pane", and because it makes the two
+//     D3-report consumers in dispatch.go the two sides of one question:
+//     awaitDelivered speaks where `det.Seen()` is false and herdr recognized
+//     nothing, this speaks where it is true and the rule it recognized names
+//     a shape.
+//     NARROWER THAN THE RULE'S LETTER IN ONE SHAPE, said out loud: an
+//     explain that agreed on `blocked` while naming no rule at all fails
+//     Seen() and gets no capture. herdr does not produce that shape — its
+//     fallback state is `idle` — and where it ever does, withholding is the
+//     safe direction and the one this whole ADR takes.
+//  3. The reported route gets neither (rule 2's second half), and no gate
+//     here says so: withPaneCaptureNamed refuses a pane herdr does not
+//     address, so the evidence comes back with no capture and the reader
+//     reads no regions (ADR 0061 D3.3).
+//  4. The dry-run rule, carried by d3Evidence and not restated — a dry pass
+//     forks no `pane read`, exactly as on the D3 path. Not one of the
+//     numbered rules: it is the amendment's "through `d3Evidence` (dry-run
+//     guarded)" and it is a gate because that is the function the capture
+//     goes through.
+//
+// IT RETURNS THE SET, for logUnrecognized's reason: the line and the record
+// have to carry the SAME reading, the evidence is built here and the capture
+// is taken here, and a caller recomputing it off the detection would get the
+// preview-only reader this amendment measured and rejected. On a dry pass no
+// record is written and no capture is taken, and the set returned is then the
+// preview-only one — the best reading the evidence in hand supports, which is
+// the answer logUnrecognized gives in the same case and for the same reason.
+func (d *Dispatcher) logBlockedRefusal(id, session, runtime, target, status string, det AgentDetection) []string {
 	decision := DecisionPaneState
+	ev := ReadingEvidenceOf(det)
+	var looksLike []string
 	if status == "blocked" {
 		decision = DecisionDialog
+		if det.Seen() {
+			ev = d.d3Evidence(target, det)
+			looksLike = ev.LooksLike()
+		}
 	}
-	ev := ReadingEvidenceOf(det)
 	d.logReading(session, Reading{
 		Decision:    decision,
 		Verdict:     fmt.Sprintf("never settled idle: status %q", status),
@@ -169,7 +244,9 @@ func (d *Dispatcher) logBlockedRefusal(id, session, runtime, status string, det 
 		Bead:        id,
 		Runtime:     runtime,
 		Herdr:       ev,
+		LooksLike:   looksLike,
 	})
+	return looksLike
 }
 
 // blockedRefusalRule is herdrRefusalRule's question with the other answer

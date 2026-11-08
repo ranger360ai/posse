@@ -216,6 +216,16 @@ type Reading struct {
 	// capture included (knownscreen.go, ADR 0066 D3 as amended
 	// ranger-base-qk9tr and ruled ranger-base-gy3io).
 	//
+	// ON D3 RECORDS AND ON ONE CLASS OF D2 (ADR 0066 D2 as amended
+	// 2026-11-08, ranger-base-jnmx6): the blocked settle refusal, which is
+	// that report's third named consumer (blockedsettle.go). The two are
+	// different findings and the census keeps them apart under two rows —
+	// a non-empty set on a D3 record is, by construction, a screen herdr's
+	// rules did not name at all, while on a D2 refusal it is a screen a
+	// GENERIC blocked rule matched without naming (`live_blocked_form`,
+	// `live_strong_blocker`). A census that folded them would price the two
+	// classes as one.
+	//
 	// IT IS A SECOND READER'S OUTPUT AND NOTHING ACTS ON IT (ADR 0066 D2).
 	// It is on the record for one reason: so the saving can be counted.
 	// Every D3 record carrying a non-empty set is one unknown-screen
@@ -234,10 +244,12 @@ type Reading struct {
 	// `redacted` record then says plainly that its own bytes cannot
 	// reproduce it.
 	//
-	// EMPTY ON EVERY DECISION BUT D3, and empty on most D3 records too: an
-	// unrecognized screen is usually not one posse owns a
-	// capture of. `omitempty`, so a record with nothing to report carries
-	// no field rather than an empty list.
+	// EMPTY ON EVERY DECISION BUT D3 AND THE D2 BLOCKED REFUSAL, and empty
+	// on most of those too: an unrecognized screen is usually not one posse
+	// owns a capture of, and a blocked refusal whose explain disagreed or
+	// failed carries no capture to read (blockedsettle.go's four gates).
+	// `omitempty`, so a record with nothing to report carries no field
+	// rather than an empty list.
 	LooksLike []string `json:"looks_like,omitempty"`
 	// Redacted names the data-ceiling classes taken out of the regions
 	// before this line was written (ADR 0050 D2, class only). Non-empty
@@ -676,6 +688,14 @@ func (d *Dispatcher) logReading(session string, r Reading) {
 
 // d3Evidence is a dispatch D3 record's herdr half: what herdr saw, plus the
 // pane capture where there is one to take (withPaneCapture).
+//
+// ONE CALLER MORE SINCE 2026-11-08, and it is not a D3 record: the blocked
+// settle refusal's D2 record takes its capture through here too (ADR 0066 D2
+// as amended, ranger-base-jnmx6; blockedsettle.go gates it). The name stays
+// because what this function IS is the dry-run-guarded wrapper around
+// `PaneCaptureRegion` — the region D3 defined and the one that record carries
+// — and a second copy of that guard for a second caller is the mistake its
+// own comment below argues against.
 //
 // IT CARRIES logReading's --dry-run RULE ONE STEP EARLIER, and that is the
 // whole reason it exists rather than two inline calls. The capture is a

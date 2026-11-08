@@ -5833,8 +5833,24 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 		// in hand on the arm the incident went through, and why a refusal
 		// on a screen herdr DID recognize is still one of ADR 0066 D1's
 		// five consequences.
-		d.logBlockedRefusal(id, session, runtime, status, gate)
-		return "", AgentDetection{}, Die("agent in %s never settled idle (status %q, %s) — check the session (posse peek %s)", session, status, gate.WhyBlocked(), session)
+		//
+		// TWO READERS ON ONE LINE, IN THIS ORDER (ADR 0066 D2 as amended
+		// 2026-11-08, ranger-base-jnmx6 — this refusal is the D3 report's
+		// third named consumer). `WhyBlocked` is herdr's own: the rule, the
+		// region and the priority, replayable at the codepoint, and it
+		// leads. The heading reader's row appends to it inside the same
+		// parentheses and only where there is a set — `LooksLikeLine`'s
+		// empty string IS "no row", so most refusals print exactly the line
+		// they printed before. The record and the line carry the same
+		// reading because logBlockedRefusal built it and hands it back; a
+		// re-read here would be the preview-only reader the amendment
+		// measured and rejected.
+		looksLike := d.logBlockedRefusal(id, session, runtime, target, status, gate)
+		why := gate.WhyBlocked()
+		if row := LooksLikeLine(looksLike); row != "" {
+			why += "; " + row
+		}
+		return "", AgentDetection{}, Die("agent in %s never settled idle (status %q, %s) — check the session (posse peek %s)", session, status, why, session)
 	}
 	// ADR 0062 D2, and the LAST thing between a launch and a keystroke. On
 	// a runtime whose PID arrives as a custom mode the launch wrote, an

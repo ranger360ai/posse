@@ -143,6 +143,26 @@ def is_false_idle_candidate(rec: dict) -> bool:
 # fleet this line reads "N unknown-screen incidents named without a human
 # peek", which is a number and not an argument.
 #
+# AND SINCE 2026-11-08 THERE IS A SECOND CLASS, COUNTED APART (ADR 0066 D2 as
+# amended, ranger-base-jnmx6; the writer is internal/posse/blockedsettle.go).
+# The heading reader's third consumer is the blocked settle refusal — a D2
+# record whose consequence is a refusal — and the set means something
+# DIFFERENT there. On a D3 record a non-empty set is a screen herdr's rules
+# did not name at all, which is what makes the D3 line above true by
+# construction. On a D2 refusal a rule DID match: two of herdr's blocked
+# rules name a SHAPE and not a screen (`live_blocked_form`,
+# `live_strong_blocker`), so the set names a screen the matched rule left
+# unnamed, and the eight fixtures whose rule is screen-specific are not in
+# that territory at all.
+#
+# So the two rows are printed separately and neither total folds into the
+# other (ADR 0066 D2 rule 4, verbatim: the "unknown screens NAMED" line
+# "stays D3-only"). A single "screens named" rate over both would price a
+# reader that spoke where nothing was known against one that spoke where a
+# generic rule had, and those are two findings with two different fixes —
+# a new `KnownScreens` row for the first, a narrower herdr rule for the
+# second.
+#
 # BOTH FIGURES, like the false-IDLE line above: the named count AND the D3
 # total. A record with an empty set is an unknown screen that is genuinely
 # not one posse owns a capture of, which is the ordinary case
@@ -171,6 +191,20 @@ def looks_like_of(rec: dict) -> list[str]:
     if not isinstance(v, list):
         return []
     return sorted(str(x) for x in v if isinstance(x, str) and x)
+
+
+def is_blocked_refusal(rec: dict) -> bool:
+    """A D2 record whose consequence is a refusal: the settle gate refusing a
+    launch on a blocker herdr read (internal/posse/blockedsettle.go).
+
+    BOTH FIELDS, because D2 is the DECISION and not the site. The other D2
+    writer is logPromptHandBack — herdr refusing a submission it had already
+    read a dialog on — and its consequence is a hand-back, so the pair picks
+    out the settle refusal without naming a verdict string a future writer
+    could reword.
+    """
+    return (str(rec.get("decision", "")) == "D2"
+            and str(rec.get("consequence", "")) == "refusal")
 
 
 def git_dir_of(tree: Path) -> Path | None:
@@ -288,10 +322,17 @@ def group_key(rec: dict, by: str) -> str:
         # member would double-count those records against the totals every
         # other table prints.
         #
-        # `-` for the empty set rather than the key being dropped: a D3
-        # record the reader named nothing on is the ordinary case, and the
-        # row that says how many there were is the denominator of the line
-        # print_named prints.
+        # `-` for the empty set rather than the key being dropped: a record
+        # the reader named nothing on is the ordinary case, and the row that
+        # says how many there were is the denominator of the lines
+        # print_named and print_blocked_named print.
+        #
+        # OVER EVERY RECORD, which is why this table is not either of those
+        # two lines: it answers "which screens keep arriving", and since
+        # ADR 0066 D2's amendment of 2026-11-08 two decisions carry a set
+        # (D3's unknown screens and D2's blocked refusals). A reader who
+        # needs them apart reads the two rates below the per-decision table,
+        # which is exactly what they are there for.
         return ",".join(looks_like_of(rec)) or "-"
     return str(rec.get("decision", "?"))
 
@@ -310,6 +351,9 @@ def census(records: list[dict], by: str) -> dict:
     d3 = 0
     named = 0
     screens: Counter = Counter()
+    blocked = 0
+    blocked_named = 0
+    blocked_screens: Counter = Counter()
     for rec in records:
         day = day_of(rec)
         cons = str(rec.get("consequence", "?"))
@@ -337,6 +381,16 @@ def census(records: list[dict], by: str) -> dict:
                 gated += 1
             if is_false_idle_candidate(rec):
                 candidates += 1
+        if is_blocked_refusal(rec):
+            blocked += 1
+            # The SAME field, counted under its own name — see the second
+            # class in the comment above. A record is in at most one of
+            # these two branches: D3 and D2 are different decisions.
+            blocked_seen = looks_like_of(rec)
+            if blocked_seen:
+                blocked_named += 1
+                for screen in blocked_seen:
+                    blocked_screens[screen] += 1
         if str(rec.get("decision", "")) == "D3":
             d3 += 1
             seen_screens = looks_like_of(rec)
@@ -387,6 +441,8 @@ def census(records: list[dict], by: str) -> dict:
         "replayable": replayable,
         "false_idle": {"d5": d5, "with_gate": gated, "candidates": candidates},
         "named_screens": {"d3": d3, "named": named, "screens": dict(screens.most_common())},
+        "blocked_screens": {"refusals": blocked, "named": blocked_named,
+                            "screens": dict(blocked_screens.most_common())},
     }
 
 
@@ -424,6 +480,7 @@ def print_table(c: dict, by: str, logs: list[Path], torn: int) -> None:
     print_rows(head, rows)
     print_false_idle(c)
     print_named(c)
+    print_blocked_named(c)
 
     print("\nregions read")
     for name, n in c["regions"].items():
@@ -472,6 +529,31 @@ def print_named(c: dict) -> None:
     print(f"\n  unknown screens NAMED by the heading reader: {n.get('named', 0)} of {n.get('d3', 0)} D3 record(s)")
     print("    each one is an unknown-screen refusal diagnosed without the hand-launch and `posse peek`")
     print("    it used to cost (ADR 0066 D3, ranger-base-3j8) — a report only: no guard read it")
+    for screen, k in (n.get("screens") or {}).items():
+        print(f"      {k:6d}  {screen}")
+
+
+def print_blocked_named(c: dict) -> None:
+    """The same count over the heading reader's THIRD consumer (ADR 0066 D2 as
+    amended 2026-11-08, ranger-base-jnmx6).
+
+    A row of its own and never folded into print_named's, because the two
+    sets mean different things: there herdr's rules named no screen, here a
+    rule matched and named a SHAPE. Printed after it, so a reader meets the
+    D3 line this reader was built for first.
+
+    Silent where there are no blocked settle refusals at all, for
+    print_named's reason — and that is the ordinary state of a log on a box
+    whose seats all launch clean.
+    """
+    n = c.get("blocked_screens") or {}
+    if not n.get("refusals"):
+        return
+    print(f"\n  blocked refusals named by the heading reader: {n.get('named', 0)} of {n.get('refusals', 0)} D2 refusal(s)")
+    print("    each one is a launch refused on a blocker whose screen the reader named off the capture")
+    print("    the refusal took — the saving is on the two rules that name a SHAPE and not a screen")
+    print("    (`live_blocked_form`, `live_strong_blocker`), where the rule id alone still cost a")
+    print("    `posse peek` (ADR 0066 D2, ranger-base-yk5qb) — a report only: no guard read it")
     for screen, k in (n.get("screens") or {}).items():
         print(f"      {k:6d}  {screen}")
 

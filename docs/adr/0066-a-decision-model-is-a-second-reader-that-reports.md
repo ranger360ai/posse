@@ -1,6 +1,6 @@
 # ADR 0066 — A typed-decision model, if posse ever carries one, is a second reader that reports and never acts; the readings log comes first
 
-*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked), ruled 2026-10-05 (ranger-base-gy3io: option B, the deterministic reader) and BUILT 2026-10-05 (ranger-base-6uokf) · D1 amended 2026-10-04 (ranger-base-o1aoi: the false-IDLE gap is closed by a capture at the act written on the stall, not by sampling; code bead filed) · D2 amended 2026-11-08 (ranger-base-jnmx6: the blocked settle refusal is the D3 report’s third named consumer, with a capture; code bead filed) · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked), ruled 2026-10-05 (ranger-base-gy3io: option B, the deterministic reader) and BUILT 2026-10-05 (ranger-base-6uokf) · D1 amended 2026-10-04 (ranger-base-o1aoi: the false-IDLE gap is closed by a capture at the act written on the stall, not by sampling; code bead filed) · D2 amended 2026-11-08 (ranger-base-jnmx6: the blocked settle refusal is the D3 report’s third named consumer, with a capture; code bead filed, BUILT 2026-11-08 ranger-base-w0vz2) · owner: architect · source
 bead ranger-base-our1e (spike, recommendation only) · sits under ADR 0057
 (no guard branches on a display reading), ADR 0060 D2 (detection is herdr's
 to ship), ADR 0061 D3 (a label is identity, not liveness) and ADR 0063 D1
@@ -155,6 +155,28 @@ mechanism, no new region name (`pane_capture`), no config key.
    screens NAMED" line stays D3-only: a non-empty set on a D3 record still
    means, by construction, a screen herdr did not name. A separate row
    counts `blocked refusals named by the heading reader: M of N`.
+
+*Built 2026-11-08 (ranger-base-w0vz2, code).* `logBlockedRefusal` takes the
+pane and returns the set (`internal/posse/blockedsettle.go`); awaitAgent
+appends `LooksLikeLine`'s row to `WhyBlocked()` inside the status parentheses
+(`internal/posse/dispatch.go`); `scripts/readings-census.py` grew a
+`blocked_screens` row beside the D3 one, counted over D2 records whose
+consequence is a refusal, and the "unknown screens NAMED" line is unchanged
+and now pinned D3-only. Rule 1's "agreeing explain" is realized as
+`det.Seen()`, which is the reader this package already has for *herdr's own
+read said something positive about this pane* — the bare detection
+`blockerEvidence` synthesizes fails it by construction, and the choice makes
+the two D3-report consumers in dispatch.go the two sides of one question
+(awaitDelivered speaks where `Seen()` is false, this where it is true). Said
+out loud because it is narrower than the rule's letter in one shape: an
+explain that agreed on `blocked` while naming no rule at all gets no capture.
+herdr does not produce that shape — its fallback state is `idle` — and
+withholding is this record's own direction. Rules 2-4 needed no new guard: the
+reported route is refused by `withPaneCaptureNamed` and the dry pass by
+`d3Evidence`, both already. Four arms in
+`internal/posse/blockedsettle_qa_test.go` (arm 3): the row's position on the
+line, the capture and set on the record, neither on a disagreeing *or* failing
+explain, neither on a dry pass, and the census counting the two classes apart.
 
 Rejected: **no third consumer**. The rule and region are on the line already
 and `posse peek` is one command. But for a generic rule that line says "a
