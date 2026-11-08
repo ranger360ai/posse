@@ -277,6 +277,67 @@ answered by canonicalising one side to hide the mismatch.
   the config's spelling. The "no census pin" sentence above still holds and
   is still the reason this escaped: what now constrains the radius is three
   named pins at three sites, not a grep anybody has to remember to re-run.
+- **The third `underSameDir` caller is `posse promote`'s same-tree refusal,
+  and it FAILED OPEN too** (internal/posse/promote.go, ranger-base-v603x,
+  escaped from ranger-base-oczuq and found verifying it under
+  ranger-base-j9pj2). That refusal keeps promote from copying the
+  constitution onto itself — the pre-cutover shape where `~/.config/rhq` is
+  the instance repo — and its own comment states the cost of being wrong:
+  "promoting there would copy a tree onto itself and then 'remove what the
+  source no longer has' from the source". It asked
+  `underDir(a.Home, src) || underDir(src, a.Home)`, whose two sides are
+  independent: `src` is `resolvePromoteSource`'s answer (the `--source` flag
+  or the previous manifest's recorded source), `a.Home` is `RHQ_HOME` carried
+  verbatim through `newApp`/`NewAppAt`. Neither is canonicalised, so on a
+  case-insensitive volume one directory arrives under two spellings and the
+  string answer declines. MEASURED 2026-11-08 (darwin 25.6.0, go1.26.10
+  darwin/arm64, APFS case-insensitive, `…/constitution/posse` against
+  `…/constitution/POSSE`): `samePath` = true, `underDir` = false in BOTH
+  directions, `underSameDir` = true, and `CmdPromote` returned **nil** — the
+  guard did not fire, the promote ran, and `promoted.json` was written into
+  the constitution source tree, where `git status` reports it untracked.
+  This is the same question D4's closing paragraph assigns to identity: it is
+  only ever about the directory, never about a spelling another program will
+  match. **The prune half of that comment is NOT reachable today and is not
+  claimed to be**: `promoteRemovals` is bounded to `PromotedPaths` and
+  `promoteCleanGate` refuses on any dirty or ignored path inside exactly
+  those pathspecs (`--ignored=matching`), so a file the recorded commit lacks
+  cannot sit inside a promoted path and still pass the gate — MEASURED with
+  an uncommitted `agents/wip.md`, refused before the copy. What the refusal
+  prevents today is the self-copy and the manifest landing in the repo
+  instead of the home, with the prune as defence in depth behind it. Pinned
+  by internal/posse/promotecasecontainment_qa_test.go: four refusal arms
+  (the source recased, a home nested inside it, a recased ancestor, and the
+  source inside a recased home) plus a stranger-home arm, each asserting the
+  refusal's own "the same tree" text so no arm can pass because another gate
+  refused first. The last two refusal arms each constrain one half of the
+  `||` and nothing else does — measured, and the reason the file has four
+  arms rather than the three it was first written with, which left the first
+  half of the `||` unconstrained.
+- **AND THE CENSUS IS FINISHED, which is what this escape actually was.**
+  ranger-base-oczuq's close moved one call site and said of the rest that
+  they "decide a sandbox grant, a cage mount, a PID `writable:` reach or a
+  store's placement" — true of most, and it stopped there, which is how two
+  more directory questions stayed on strings for a day each. Every non-test
+  `underDir` caller in internal/posse, classified 2026-11-08: THREE asked
+  only about the directory and all three have now moved — `CommitQueueJSONL`
+  (ranger-base-oczuq), `initFrom`'s ADR 0031 §2 operator fence
+  (ranger-base-2emry) and `CmdPromote`'s same-tree refusal (this bullet). Of
+  the rest, `storeContained` (envs.go) fails CLOSED, since a false IS its
+  refusal — a second spelling makes it stricter and never looser;
+  `managedHooksDir` (gates.go) takes both sides from `git rev-parse` over one
+  directory, so they cannot disagree in case; `launchWritableRoots`
+  (worktree.go) reads a false as "append another writable root" and
+  suitelock.go's `~/.cache` leg as "print a different Detail", neither of
+  them a grant decision. The remainder — seatbelt.go's six, cage.go's three,
+  `anyUnderDir`'s reachability and suite-queue verdicts, and
+  personamode.go's deliberately split `insideDir` (ranger-base-ie68e) — are
+  exactly the callers `underDir`'s own doc comment keeps on strings, because
+  the spelling some other program will match IS their subject. So what
+  bounds this radius is a classification of every caller, recorded here, and
+  not a grep somebody has to remember to re-run. A new caller whose question
+  is only ever about the directory takes `underSameDir`; one whose question
+  is what another program matches stays on `underDir`.
 
 **Alternatives rejected.**
 - **Absolute is enough; leave it alone.** It is functionally true, because

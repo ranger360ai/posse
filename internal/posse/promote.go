@@ -945,7 +945,21 @@ func (a *App) CmdPromote(w io.Writer, o PromoteOpts) error {
 	if st, err := os.Lstat(a.Home); err == nil && st.Mode()&os.ModeSymlink != 0 {
 		return Die("%s is a symlink; the promoted home must be a real directory (ADR 0015 §2) — remove the link first", AbbrevHome(a.Home))
 	}
-	if underDir(a.Home, src) || underDir(src, a.Home) {
+	// underSameDir and not underDir: this question is only ever about the
+	// DIRECTORY — "is the home I am about to write the constitution I am
+	// promoting from?" — never about a spelling some other program will
+	// match, which is the case ADR 0082 D4's closing paragraph assigns to
+	// identity. The two sides are independent: `src` comes from
+	// `resolvePromoteSource` (the flag, or the manifest's recorded source),
+	// `a.Home` is `RHQ_HOME` carried verbatim through `newApp`/`NewAppAt`,
+	// and nothing canonicalises either. On a case-insensitive volume one
+	// directory therefore has two spellings here, and the string answer
+	// FAILS OPEN on a false — "not inside" means this guard declines and
+	// the promote proceeds (ranger-base-v603x, escaped from
+	// ranger-base-oczuq; the same shape as init.go's operator fence,
+	// ranger-base-2emry). Both directions, because either nesting is the
+	// hazard.
+	if underSameDir(a.Home, src) || underSameDir(src, a.Home) {
 		return Die("%s and the home %s are the same tree — nothing to promote", AbbrevHome(src), AbbrevHome(a.Home))
 	}
 
