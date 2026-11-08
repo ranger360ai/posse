@@ -197,12 +197,37 @@ answered by canonicalising one side to hide the mismatch.
 - The separate fix this section hands off — containment by identity — landed
   as `underSameDir` (internal/posse/visibility.go, ranger-base-oczuq). It
   runs `underDir`'s string answer first and unchanged, then climbs the
-  store's ancestors asking `samePath`. `CommitQueueJSONL` is its one caller;
-  `underDir` itself stays a string comparison and now says in its own doc
+  store's ancestors asking `samePath`. `CommitQueueJSONL` was its one
+  caller, and `initFrom`'s operator fence is the second (see the bullet
+  below); `underDir` itself stays a string comparison and now says in its own doc
   comment why, so no sandbox grant, cage mount or `writable:` reach decided
   through it is moved by this fix. The prediction above held: no site
   needed `QueueRepo()` to canonicalise, because `absResolve` inside the
   predicate already absolutises whatever spelling the config carries.
+- **The second caller is ADR 0031 §2's operator fence, and it FAILED OPEN**
+  (internal/posse/init.go, ranger-base-2emry). That fence is the refusal
+  keeping a persona session's `posse init` from writing the home it was
+  launched from, and it asked `underDir(origin, a.Home)`. Its two sides are
+  independent raw env values — `origin` is `os.Getenv(EnvLaunchHome)`
+  verbatim, `a.Home` is `os.Getenv("RHQ_HOME")` carried unchanged through
+  `newApp` and `NewAppAt` — so they are as independent as `queue_repo:` and
+  the store were in the measurement above. A false from the predicate reads
+  "not inside", so the guard declined and init SEEDED the launch home: the
+  ranger-base-x26u leak, reached through the case axis instead of through an
+  equal string. MEASURED 2026-11-08 (darwin 25.6.0, go1.26.10 darwin/arm64,
+  APFS case-insensitive): with the target spelled in another case of the
+  origin, `samePath` = true and `underDir` = false, `initFrom` returned nil
+  and wrote `config.yaml` into the launch home; the same held with the
+  recased component an ANCESTOR rather than the home's own name — this
+  ADR's own `~/src` against `~/SRC` pair — so the firing configuration is
+  any `RHQ_HOME` override differing from `RHQ_LAUNCH_HOME` in the case of
+  ANY component, which the documented `RHQ_HOME=<scratch> posse init`
+  workflow typed against a recased parent reaches. Fixed by `underSameDir`,
+  pinned as arms 7 and 8 of internal/posse/initoperatorfence_qa_test.go.
+  This is the call site D4's closing paragraph above describes: its question
+  is only ever about the directory, never about a spelling another program
+  will match, which is why ranger-base-oczuq's close excluded the rest of
+  the package and not this.
 - Radius: these two are the only sites that MEASURED as prescribing a path to
   paste (a grep of non-test `.go` for `beads_visibility:` inside format
   strings, 2026-11-08). The next site to prescribe a path uses the same

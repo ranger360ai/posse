@@ -6,7 +6,7 @@ package posse
 // home rather than blanket-refused under RHQ_PERSONA (the promote/refresh
 // shape) — the harm is a property of WHICH home is written, and a persona's
 // `RHQ_HOME=<scratch> posse init` is how QA seeds fixtures and how the leak
-// this ADR fixes (ranger-base-x26u) was itself measured. Six arms, each
+// this ADR fixes (ranger-base-x26u) was itself measured. Eight arms, each
 // standing for one branch of the fence in initFrom (init.go):
 //
 //  1. persona + origin=live + target=live            → refused, nothing written
@@ -15,6 +15,15 @@ package posse
 //  4. no persona                                       → seeds (operator unchanged)
 //  5. persona + target a symlink resolving into origin → refused
 //  6. persona + target a not-yet-existing dir under origin → refused
+//  7. persona + target a case-changed spelling of origin → refused
+//  8. persona + target recased in an ANCESTOR of origin  → refused
+//
+// Arms 7 and 8 are the case axis (ranger-base-2emry). Arms 1-6 are all
+// reachable by comparing the two resolved SPELLINGS, which is why the
+// defect they were written against escaped: one directory has more than one
+// spelling on a case-insensitive volume, and this fence fails OPEN on a
+// false. They skip on a case-sensitive volume rather than asserting the
+// other answer — the axis does not exist there.
 //
 // All hermetic: t.Setenv for HOME/RHQ_HOME/RHQ_PERSONA/RHQ_LAUNCH_HOME, temp
 // dirs only — no arm here may touch the operator's real $HOME.
@@ -152,5 +161,45 @@ func TestQAInitFenceRefusesNotYetExistingTargetUnderOrigin(t *testing.T) {
 		t.Fatalf("fixture bug: %s already exists", target)
 	}
 	a := fenceFixture(t, target, "developer", live)
+	assertRefused(t, a, "")
+}
+
+// Arm 7: the target is a case-changed spelling of the origin — one
+// directory under two spellings on a case-insensitive volume, the axis
+// EvalSymlinks cannot close (ADR 0082 D4, ranger-base-oczuq). It fails OPEN
+// on strings: a false from the containment test reads "not inside", so the
+// fence declines and init seeds the home it was launched from
+// (ranger-base-2emry, MEASURED).
+func TestQAInitFenceRefusesCaseChangedTargetOfOrigin(t *testing.T) {
+	root := t.TempDir()
+	live := filepath.Join(root, "live-home")
+	if err := os.MkdirAll(live, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cased := filepath.Join(root, "LIVE-HOME")
+	if !samePath(live, cased) {
+		t.Skipf("case-sensitive volume: %s is not %s", cased, live)
+	}
+	a := fenceFixture(t, cased, "developer", live)
+	assertRefused(t, a, "")
+}
+
+// Arm 8: the recased component is an ANCESTOR rather than the home's own
+// name — ADR 0082's own named pair, `~/src` against `~/SRC`. This is the
+// configuration that makes the defect ordinary rather than a typo: the
+// documented `RHQ_HOME=<scratch> posse init` workflow typed against a
+// recased parent reaches it, and a fix that only compared the leaf would
+// leave it open (ranger-base-2emry, MEASURED).
+func TestQAInitFenceRefusesCaseChangedAncestorOfOrigin(t *testing.T) {
+	root := t.TempDir()
+	live := filepath.Join(root, "src", "live-home")
+	if err := os.MkdirAll(live, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cased := filepath.Join(root, "SRC", "live-home")
+	if !samePath(live, cased) {
+		t.Skipf("case-sensitive volume: %s is not %s", cased, live)
+	}
+	a := fenceFixture(t, cased, "developer", live)
 	assertRefused(t, a, "")
 }

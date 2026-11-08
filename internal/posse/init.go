@@ -118,12 +118,30 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 			return Die("posse init refuses to run (ADR 0031 §2): %s is set but %s is not, so this session cannot prove it wasn't launched from the home it's about to write — relaunch the session (a post-0031 launcher stamps %s), or ask the operator to run init themselves\n  to seed a scratch home from here instead: RHQ_HOME=<scratch> posse init",
 				EnvPersona, EnvLaunchHome, EnvLaunchHome)
 		}
-		// underDir resolves the longest existing prefix of each side through
-		// symlinks (a throwaway target usually does not exist yet; the
-		// pre-cutover home is a symlink onto the instance repo, ADR 0015
-		// §2) before comparing cleaned paths, so this catches both the
-		// exact-match case and a target nested inside the origin.
-		if underDir(origin, a.Home) {
+		// underSameDir and NOT underDir (ADR 0082 D4's closing paragraph,
+		// ranger-base-2emry). Both resolve the longest existing prefix of
+		// each side through symlinks — a throwaway target usually does not
+		// exist yet, and the pre-cutover home is a symlink onto the
+		// instance repo (ADR 0015 §2) — so either catches the exact-match
+		// case and a target nested inside the origin. The difference is the
+		// axis EvalSymlinks cannot close: underDir then compares the two
+		// resolved SPELLINGS, and one directory has more than one spelling
+		// on a case-insensitive volume. This fence FAILS OPEN on a false —
+		// "not inside" means the guard declines and init proceeds to seed —
+		// so a `RHQ_HOME` that differs from `RHQ_LAUNCH_HOME` in the case of
+		// ANY component wrote the home the session was launched from.
+		// MEASURED 2026-11-08 (darwin 25.6.0, APFS case-insensitive), with
+		// the recased component the home's own name AND with it an
+		// ancestor — ADR 0082's own `~/src` against `~/SRC` pair: arms 7 and
+		// 8 of initoperatorfence_qa_test.go.
+		//
+		// This call site is the one ranger-base-oczuq's close excluded the
+		// rest of the package from: its question is only ever about the
+		// directory — "is the home I am about to write the home I was
+		// launched from?" — and never about a spelling some other program
+		// will match, so identity is the right answer and the string
+		// comparison was an accident of it.
+		if underSameDir(origin, a.Home) {
 			return Die("posse init refuses to write the home it was launched from (ADR 0031 §2): %s resolves inside %s\n  to seed a scratch home instead: RHQ_HOME=<scratch> posse init",
 				a.Home, origin)
 		}
