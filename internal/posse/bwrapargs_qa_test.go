@@ -46,21 +46,28 @@ import (
 func bwTree(t *testing.T, dirs []string, files []string) (string, func(...string) string) {
 	t.Helper()
 	root := absResolve(t.TempDir())
-	at := func(parts ...string) string { return filepath.Join(append([]string{root}, parts...)...) }
+	// bwAt and not `at`: cmd/testparallel resolves a called NAME against every
+	// `at := func(...)` in the package, and one of those reaches the plan-clock
+	// package var blindT — so every t.Parallel test here is reported as
+	// reaching that var and goes UNCLEARED, which is exactly what
+	// qcwDiffLines' own comment (canonicalwall_qa_test.go) records. A unique
+	// name is the honest fix; a parallelOK line naming blindT would clear a
+	// reason these tests do not have.
+	bwAt := func(parts ...string) string { return filepath.Join(append([]string{root}, parts...)...) }
 	for _, d := range dirs {
-		if err := os.MkdirAll(at(d), 0o755); err != nil {
+		if err := os.MkdirAll(bwAt(d), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, f := range files {
-		if err := os.MkdirAll(filepath.Dir(at(f)), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(bwAt(f)), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(at(f), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(bwAt(f), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return root, at
+	return root, bwAt
 }
 
 // bwJoin renders an argv as one line, for an assertion that is about the
@@ -85,9 +92,9 @@ func bwPrep(prep []PrepStep) []string {
 // like it (bwrap.go).
 func TestBwrapArgsRendersD17Base(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj"}, nil)
+	_, bwAt := bwTree(t, []string{"proj"}, nil)
 
-	argv, prep, err := BwrapArgs(at("proj"), nil, SeatbeltCarveOut{})
+	argv, prep, err := BwrapArgs(bwAt("proj"), nil, SeatbeltCarveOut{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +102,7 @@ func TestBwrapArgsRendersD17Base(t *testing.T) {
 		"--die-with-parent",
 		"--ro-bind", "/", "/",
 		"--dev-bind", "/dev", "/dev",
-		"--chdir", at("proj"),
+		"--chdir", bwAt("proj"),
 	}
 	if bwJoin(argv) != bwJoin(want) {
 		t.Fatalf("base argv =\n  %v\nwant\n  %v", argv, want)
@@ -114,11 +121,11 @@ func TestBwrapArgsRendersD17Base(t *testing.T) {
 // something else.
 func TestBwrapArgsNeverUnsharesWhatTheSeatNeeds(t *testing.T) {
 	t.Parallel()
-	root, at := bwTree(t, []string{"proj", "state"}, []string{"cred"})
+	root, bwAt := bwTree(t, []string{"proj", "state"}, []string{"cred"})
 
-	argv, _, err := BwrapArgs(at("proj"),
-		[]string{at("proj"), at("state")},
-		SeatbeltCarveOut{Deny: []string{at("state", "gates")}, DenyRead: []string{at("cred")}})
+	argv, _, err := BwrapArgs(bwAt("proj"),
+		[]string{bwAt("proj"), bwAt("state")},
+		SeatbeltCarveOut{Deny: []string{bwAt("state", "gates")}, DenyRead: []string{bwAt("cred")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,17 +168,17 @@ func TestBwrapArgsWithNoCwdOmitsChdir(t *testing.T) {
 // grant that sorts between them, so the arm measures an ORDER and not a pair.
 func TestBwrapArgsBindsWriteGrantsShallowestFirst(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj/.beads", "proj/.git", "state"}, nil)
+	_, bwAt := bwTree(t, []string{"proj/.beads", "proj/.git", "state"}, nil)
 
 	// Handed deepest-first, so a renderer that preserved input order fails.
-	argv, prep, err := BwrapArgs(at("proj"),
-		[]string{at("state"), at("proj", ".git"), at("proj", ".beads"), at("proj")},
+	argv, prep, err := BwrapArgs(bwAt("proj"),
+		[]string{bwAt("state"), bwAt("proj", ".git"), bwAt("proj", ".beads"), bwAt("proj")},
 		SeatbeltCarveOut{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	line := bwJoin(argv)
-	for _, p := range []string{at("proj"), at("proj", ".beads"), at("proj", ".git"), at("state")} {
+	for _, p := range []string{bwAt("proj"), bwAt("proj", ".beads"), bwAt("proj", ".git"), bwAt("state")} {
 		if !strings.Contains(line, "--bind "+p+" "+p) {
 			t.Fatalf("no rw bind of %s:\n%s", p, line)
 		}
@@ -179,8 +186,8 @@ func TestBwrapArgsBindsWriteGrantsShallowestFirst(t *testing.T) {
 	// The containment pairs, each asserted as a position: this is the claim,
 	// and "they are all present" is not.
 	for _, pair := range [][2]string{
-		{at("proj"), at("proj", ".beads")},
-		{at("proj"), at("proj", ".git")},
+		{bwAt("proj"), bwAt("proj", ".beads")},
+		{bwAt("proj"), bwAt("proj", ".git")},
 	} {
 		if strings.Index(line, "--bind "+pair[0]+" ") > strings.Index(line, "--bind "+pair[1]+" ") {
 			t.Fatalf("%s is mounted after %s, which buries it:\n%s", pair[0], pair[1], line)
@@ -197,10 +204,10 @@ func TestBwrapArgsBindsWriteGrantsShallowestFirst(t *testing.T) {
 // grant is real the moment the prep runs.
 func TestBwrapArgsPrepsAMissingWriteGrant(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj"}, nil)
-	missing := at("proj", ".beads")
+	_, bwAt := bwTree(t, []string{"proj"}, nil)
+	missing := bwAt("proj", ".beads")
 
-	argv, prep, err := BwrapArgs(at("proj"), []string{at("proj"), missing}, SeatbeltCarveOut{})
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), missing}, SeatbeltCarveOut{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,10 +232,10 @@ func TestBwrapArgsPrepsAMissingWriteGrant(t *testing.T) {
 // error is a thing a caller can use by accident.
 func TestBwrapArgsRefusesAWritableRegularFile(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj"}, []string{"claude.json"})
-	file := at("claude.json")
+	_, bwAt := bwTree(t, []string{"proj"}, []string{"claude.json"})
+	file := bwAt("claude.json")
 
-	argv, prep, err := BwrapArgs(at("proj"), []string{at("proj"), file}, SeatbeltCarveOut{})
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), file}, SeatbeltCarveOut{})
 	if err == nil {
 		t.Fatalf("a writable regular file rendered a wall: %v", argv)
 	}
@@ -255,24 +262,24 @@ func TestBwrapArgsRefusesAWritableRegularFile(t *testing.T) {
 // for the same reason as the nesting arm above.
 func TestBwrapArgsRoBindsEachDenyOverItsGrant(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj/agents", "state/gates"}, nil)
+	_, bwAt := bwTree(t, []string{"proj/agents", "state/gates"}, nil)
 
-	argv, prep, err := BwrapArgs(at("proj"),
-		[]string{at("proj"), at("state")},
-		SeatbeltCarveOut{Deny: []string{at("state", "gates"), at("proj", "agents")}})
+	argv, prep, err := BwrapArgs(bwAt("proj"),
+		[]string{bwAt("proj"), bwAt("state")},
+		SeatbeltCarveOut{Deny: []string{bwAt("state", "gates"), bwAt("proj", "agents")}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	line := bwJoin(argv)
-	for _, d := range []string{at("proj", "agents"), at("state", "gates")} {
+	for _, d := range []string{bwAt("proj", "agents"), bwAt("state", "gates")} {
 		if !strings.Contains(line, "--ro-bind "+d+" "+d) {
 			t.Fatalf("no read-only bind of %s:\n%s", d, line)
 		}
 	}
 	// Every write grant is mounted before every deny: the deny is the later
 	// statement at this mechanism exactly as it is at the other.
-	lastBind := strings.LastIndex(line, "--bind "+at("state")+" ")
-	if firstDeny := strings.Index(line, "--ro-bind "+at("proj", "agents")+" "); firstDeny < lastBind {
+	lastBind := strings.LastIndex(line, "--bind "+bwAt("state")+" ")
+	if firstDeny := strings.Index(line, "--ro-bind "+bwAt("proj", "agents")+" "); firstDeny < lastBind {
 		t.Fatalf("a deny is mounted before a write grant, so the grant buries it:\n%s", line)
 	}
 	if len(prep) != 0 {
@@ -286,10 +293,10 @@ func TestBwrapArgsRoBindsEachDenyOverItsGrant(t *testing.T) {
 // that.
 func TestBwrapArgsPrepsAMissingDenyInsideAGrant(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj", "state"}, nil)
-	deny := at("state", "gates")
+	_, bwAt := bwTree(t, []string{"proj", "state"}, nil)
+	deny := bwAt("state", "gates")
 
-	argv, prep, err := BwrapArgs(at("proj"), []string{at("proj"), at("state")},
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), bwAt("state")},
 		SeatbeltCarveOut{Deny: []string{deny}})
 	if err != nil {
 		t.Fatal(err)
@@ -310,10 +317,10 @@ func TestBwrapArgsPrepsAMissingDenyInsideAGrant(t *testing.T) {
 // reason is a directory posse leaves behind for nothing.
 func TestBwrapArgsRendersNothingForAMissingDenyOutsideEveryGrant(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj"}, nil)
-	deny := at("elsewhere", "promoted")
+	_, bwAt := bwTree(t, []string{"proj"}, nil)
+	deny := bwAt("elsewhere", "promoted")
 
-	argv, prep, err := BwrapArgs(at("proj"), []string{at("proj")},
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj")},
 		SeatbeltCarveOut{Deny: []string{deny}})
 	if err != nil {
 		t.Fatal(err)
@@ -344,10 +351,10 @@ func TestBwrapArgsRendersNothingForAMissingDenyOutsideEveryGrant(t *testing.T) {
 // this arm alone and leaves every other arm in this file green.
 func TestBwrapArgsPrepsAMissingDenyInsideAMissingGrant(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj"}, nil)
-	grant, deny := at("state"), at("state", "gates")
+	_, bwAt := bwTree(t, []string{"proj"}, nil)
+	grant, deny := bwAt("state"), bwAt("state", "gates")
 
-	argv, prep, err := BwrapArgs(at("proj"), []string{at("proj"), grant},
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), grant},
 		SeatbeltCarveOut{Deny: []string{deny}})
 	if err != nil {
 		t.Fatal(err)
@@ -378,17 +385,17 @@ func TestBwrapArgsPrepsAMissingDenyInsideAMissingGrant(t *testing.T) {
 // also grants, so their names are in the argv either way.
 func TestBwrapArgsRendersNothingForSeal(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj/agents", "state/gates"}, nil)
-	writable := []string{at("proj"), at("state")}
-	carve := SeatbeltCarveOut{Deny: []string{at("proj", "agents"), at("state", "gates")}}
+	_, bwAt := bwTree(t, []string{"proj/agents", "state/gates"}, nil)
+	writable := []string{bwAt("proj"), bwAt("state")}
+	carve := SeatbeltCarveOut{Deny: []string{bwAt("proj", "agents"), bwAt("state", "gates")}}
 
-	bare, barePrep, err := BwrapArgs(at("proj"), writable, carve)
+	bare, barePrep, err := BwrapArgs(bwAt("proj"), writable, carve)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sealed := carve
-	sealed.Seal = []string{at("proj"), at("state"), at("elsewhere")}
-	withSeal, sealPrep, err := BwrapArgs(at("proj"), writable, sealed)
+	sealed.Seal = []string{bwAt("proj"), bwAt("state"), bwAt("elsewhere")}
+	withSeal, sealPrep, err := BwrapArgs(bwAt("proj"), writable, sealed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,12 +416,12 @@ func TestBwrapArgsRendersNothingForSeal(t *testing.T) {
 // bind has no such move, so the launcher makes them.
 func TestBwrapArgsBindsKeepFilesBackOverTheDeny(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj", "state/gates/dev"}, []string{"state/gates/dev/refusals.log"})
-	gates := at("state", "gates")
-	have, missing := at("state", "gates", "dev", "refusals.log"), at("state", "gates", "dev", "shell.log")
+	_, bwAt := bwTree(t, []string{"proj", "state/gates/dev"}, []string{"state/gates/dev/refusals.log"})
+	gates := bwAt("state", "gates")
+	have, missing := bwAt("state", "gates", "dev", "refusals.log"), bwAt("state", "gates", "dev", "shell.log")
 
-	argv, prep, err := BwrapArgs(at("proj"),
-		[]string{at("proj"), at("state"), at("state", "gates", "dev")},
+	argv, prep, err := BwrapArgs(bwAt("proj"),
+		[]string{bwAt("proj"), bwAt("state"), bwAt("state", "gates", "dev")},
 		SeatbeltCarveOut{Deny: []string{gates}, Keep: []string{have, missing}})
 	if err != nil {
 		t.Fatal(err)
@@ -451,11 +458,11 @@ func TestBwrapArgsBindsKeepFilesBackOverTheDeny(t *testing.T) {
 // own direction.
 func TestBwrapArgsRefusesADirectoryAtAKeepPath(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj", "state/gates/refusals.log"}, nil)
-	keep := at("state", "gates", "refusals.log")
+	_, bwAt := bwTree(t, []string{"proj", "state/gates/refusals.log"}, nil)
+	keep := bwAt("state", "gates", "refusals.log")
 
-	argv, prep, err := BwrapArgs(at("proj"), []string{at("proj"), at("state")},
-		SeatbeltCarveOut{Deny: []string{at("state", "gates")}, Keep: []string{keep}})
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), bwAt("state")},
+		SeatbeltCarveOut{Deny: []string{bwAt("state", "gates")}, Keep: []string{keep}})
 	if err == nil {
 		t.Fatalf("a directory at a Keep path rendered a wall: %v", argv)
 	}
@@ -476,10 +483,10 @@ func TestBwrapArgsRefusesADirectoryAtAKeepPath(t *testing.T) {
 // mask is a snapshot at launch, and parity names each missing file).
 func TestBwrapArgsMasksEachExistingDenyReadAndSkipsTheRest(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj"}, []string{"codex/auth.json"})
-	have, missing := at("codex", "auth.json"), at("grok", "auth.json")
+	_, bwAt := bwTree(t, []string{"proj"}, []string{"codex/auth.json"})
+	have, missing := bwAt("codex", "auth.json"), bwAt("grok", "auth.json")
 
-	argv, prep, err := BwrapArgs(at("proj"), []string{at("proj")},
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj")},
 		SeatbeltCarveOut{DenyRead: []string{have, missing}})
 	if err != nil {
 		t.Fatal(err)
@@ -513,17 +520,17 @@ func TestBwrapArgsMasksEachExistingDenyReadAndSkipsTheRest(t *testing.T) {
 // shapes.
 func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 	t.Parallel()
-	root, at := bwTree(t,
+	root, bwAt := bwTree(t,
 		[]string{"proj/.beads", "proj/agents", "state"},
 		[]string{"codex/auth.json"})
-	cwd := at("proj")
+	cwd := bwAt("proj")
 
-	writable := []string{at("proj"), at("proj", ".beads"), at("state"), at("fresh")}
+	writable := []string{bwAt("proj"), bwAt("proj", ".beads"), bwAt("state"), bwAt("fresh")}
 	carve := SeatbeltCarveOut{
-		Deny:     []string{at("proj", "agents"), at("state", "gates"), at("elsewhere", "promoted")},
-		Seal:     []string{at("proj")},
-		Keep:     []string{at("state", "gates", "refusals.log")},
-		DenyRead: []string{at("codex", "auth.json"), at("grok", "auth.json")},
+		Deny:     []string{bwAt("proj", "agents"), bwAt("state", "gates"), bwAt("elsewhere", "promoted")},
+		Seal:     []string{bwAt("proj")},
+		Keep:     []string{bwAt("state", "gates", "refusals.log")},
+		DenyRead: []string{bwAt("codex", "auth.json"), bwAt("grok", "auth.json")},
 	}
 
 	argv, prep, err := BwrapArgs(cwd, writable, carve)
@@ -536,25 +543,25 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 		"--dev-bind", "/dev", "/dev",
 		"--chdir", cwd,
 		// shape 1, shallowest first
-		"--bind", at("fresh"), at("fresh"),
-		"--bind", at("proj"), at("proj"),
-		"--bind", at("proj", ".beads"), at("proj", ".beads"),
-		"--bind", at("state"), at("state"),
+		"--bind", bwAt("fresh"), bwAt("fresh"),
+		"--bind", bwAt("proj"), bwAt("proj"),
+		"--bind", bwAt("proj", ".beads"), bwAt("proj", ".beads"),
+		"--bind", bwAt("state"), bwAt("state"),
 		// shape 2 — elsewhere/promoted is in no grant, so no mount
-		"--ro-bind", at("proj", "agents"), at("proj", "agents"),
-		"--ro-bind", at("state", "gates"), at("state", "gates"),
+		"--ro-bind", bwAt("proj", "agents"), bwAt("proj", "agents"),
+		"--ro-bind", bwAt("state", "gates"), bwAt("state", "gates"),
 		// Keep, back over the deny above it
-		"--bind", at("state", "gates", "refusals.log"), at("state", "gates", "refusals.log"),
+		"--bind", bwAt("state", "gates", "refusals.log"), bwAt("state", "gates", "refusals.log"),
 		// shape 5 — grok's credential is not on this box, so no mask
-		"--ro-bind", "/dev/null", at("codex", "auth.json"),
+		"--ro-bind", "/dev/null", bwAt("codex", "auth.json"),
 	}
 	if bwJoin(argv) != bwJoin(want) {
 		t.Fatalf("argv =\n  %s\nwant\n  %s", strings.ReplaceAll(bwJoin(argv), root, "R"), strings.ReplaceAll(bwJoin(want), root, "R"))
 	}
 	wantPrep := []string{
-		"mkdir -p " + at("fresh"),
-		"mkdir -p " + at("state", "gates"),
-		"touch " + at("state", "gates", "refusals.log"),
+		"mkdir -p " + bwAt("fresh"),
+		"mkdir -p " + bwAt("state", "gates"),
+		"touch " + bwAt("state", "gates", "refusals.log"),
 	}
 	if got := bwPrep(prep); strings.Join(got, "\n") != strings.Join(wantPrep, "\n") {
 		t.Fatalf("prep =\n  %v\nwant\n  %v", got, wantPrep)
@@ -562,7 +569,7 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 	// Nothing was written: the prep list is a REQUEST to the launcher, and a
 	// renderer that acted on it could not be called twice or printed by
 	// `posse gates` without changing the box.
-	for _, p := range []string{at("fresh"), at("state", "gates"), at("elsewhere")} {
+	for _, p := range []string{bwAt("fresh"), bwAt("state", "gates"), bwAt("elsewhere")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("the render created %s (%v)", p, err)
 		}
@@ -576,24 +583,24 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 // twice, and an operator reading two identical lines reads two.
 func TestBwrapArgsIsDeterministicAndDedupes(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj/.beads", "state/gates"}, nil)
-	carve := SeatbeltCarveOut{Deny: []string{at("state", "gates"), at("state", "gates")}}
+	_, bwAt := bwTree(t, []string{"proj/.beads", "state/gates"}, nil)
+	carve := SeatbeltCarveOut{Deny: []string{bwAt("state", "gates"), bwAt("state", "gates")}}
 
-	forward, _, err := BwrapArgs(at("proj"), []string{at("proj"), at("proj", ".beads"), at("state"), at("proj"), ""}, carve)
+	forward, _, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), bwAt("proj", ".beads"), bwAt("state"), bwAt("proj"), ""}, carve)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reversed, _, err := BwrapArgs(at("proj"), []string{"", at("state"), at("proj"), at("proj", ".beads")}, carve)
+	reversed, _, err := BwrapArgs(bwAt("proj"), []string{"", bwAt("state"), bwAt("proj"), bwAt("proj", ".beads")}, carve)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bwJoin(forward) != bwJoin(reversed) {
 		t.Fatalf("input order changed the wall:\n  %v\n  %v", forward, reversed)
 	}
-	if n := strings.Count(bwJoin(forward), "--bind "+at("proj")+" "+at("proj")); n != 1 {
+	if n := strings.Count(bwJoin(forward), "--bind "+bwAt("proj")+" "+bwAt("proj")); n != 1 {
 		t.Fatalf("the duplicated grant rendered %d mounts: %v", n, forward)
 	}
-	if n := strings.Count(bwJoin(forward), "--ro-bind "+at("state", "gates")); n != 1 {
+	if n := strings.Count(bwJoin(forward), "--ro-bind "+bwAt("state", "gates")); n != 1 {
 		t.Fatalf("the duplicated deny rendered %d mounts: %v", n, forward)
 	}
 	for _, a := range forward {
@@ -619,8 +626,8 @@ func TestBwrapArgsRefusesAPathItCannotStat(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no mode bits to take away")
 	}
-	_, at := bwTree(t, []string{"proj", "closed/inner"}, nil)
-	closed, inner := at("closed"), at("closed", "inner")
+	_, bwAt := bwTree(t, []string{"proj", "closed/inner"}, nil)
+	closed, inner := bwAt("closed"), bwAt("closed", "inner")
 	if err := os.Chmod(closed, 0o000); err != nil {
 		t.Fatal(err)
 	}
@@ -634,12 +641,12 @@ func TestBwrapArgsRefusesAPathItCannotStat(t *testing.T) {
 		carve SeatbeltCarveOut
 		w     []string
 	}{
-		{"write grant", SeatbeltCarveOut{}, []string{at("proj"), inner}},
-		{"deny", SeatbeltCarveOut{Deny: []string{inner}}, []string{at("proj")}},
-		{"keep", SeatbeltCarveOut{Keep: []string{inner}}, []string{at("proj")}},
-		{"read deny", SeatbeltCarveOut{DenyRead: []string{inner}}, []string{at("proj")}},
+		{"write grant", SeatbeltCarveOut{}, []string{bwAt("proj"), inner}},
+		{"deny", SeatbeltCarveOut{Deny: []string{inner}}, []string{bwAt("proj")}},
+		{"keep", SeatbeltCarveOut{Keep: []string{inner}}, []string{bwAt("proj")}},
+		{"read deny", SeatbeltCarveOut{DenyRead: []string{inner}}, []string{bwAt("proj")}},
 	} {
-		argv, prep, err := BwrapArgs(at("proj"), tc.w, tc.carve)
+		argv, prep, err := BwrapArgs(bwAt("proj"), tc.w, tc.carve)
 		if err == nil {
 			t.Fatalf("%s: an unreadable path rendered a wall: %v", tc.shape, argv)
 		}
@@ -665,14 +672,14 @@ func TestBwrapArgsRefusesAPathItCannotStat(t *testing.T) {
 // about this box's home, and a pin on its contents belongs with the producer.
 func TestBwrapArgsRendersTheTiersOwnLists(t *testing.T) {
 	t.Parallel()
-	_, at := bwTree(t, []string{"proj", "home/state"}, nil)
-	a := &App{Home: at("home"), StateDir: at("home", "state")}
-	ag := &AgentFile{Name: "developer", MemoryDir: at("home", "personas", "developer")}
+	_, bwAt := bwTree(t, []string{"proj", "home/state"}, nil)
+	a := &App{Home: bwAt("home"), StateDir: bwAt("home", "state")}
+	ag := &AgentFile{Name: "developer", MemoryDir: bwAt("home", "personas", "developer")}
 	gatesDir := filepath.Join(a.StateDir, "gates", ag.Name)
 
-	writable := a.SeatbeltWritable(ag, at("proj"), gatesDir)
-	carve := a.SeatbeltCarveOut(ag, at("proj"), gatesDir, writable)
-	argv, prep, err := BwrapArgs(at("proj"), writable, carve)
+	writable := a.SeatbeltWritable(ag, bwAt("proj"), gatesDir)
+	carve := a.SeatbeltCarveOut(ag, bwAt("proj"), gatesDir, writable)
+	argv, prep, err := BwrapArgs(bwAt("proj"), writable, carve)
 	if err != nil {
 		t.Fatalf("the tier's own lists do not render: %v", err)
 	}
