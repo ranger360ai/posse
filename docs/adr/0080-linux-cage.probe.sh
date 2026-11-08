@@ -6,6 +6,14 @@
 # first run on the D1 host is the measurement; paste its output on the bead
 # that runs it.
 #
+# FIRST RUN 2026-11-08, on the D1 host as the service account
+# (ranger-base-hft2q): Linux 7.2, bubblewrap 0.13.1, Landlock ABI 10, LSMs
+# lockdown,capability,landlock,yama,bpf,ima,evm. Every L- and B-row read
+# GOT == EXPECT; the one finding was B5's cell, which this file's B5 comment
+# now explains. So the expectations below are no longer all unread — what each
+# row is worth after that run is ADR 0080's "Measured versus assumed" block,
+# which still reads as it did before the run (ranger-base-vdmm9).
+#
 #   sh docs/adr/0080-linux-cage.probe.sh
 #
 # Needs: Linux, python3 (Landlock via ctypes, no compiler), bwrap, unshare.
@@ -113,7 +121,22 @@ BW4="bwrap --die-with-parent --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp
   --bind $W/tree $W/tree --ro-bind $W/tree/a/deep $W/tree/a/deep"
 row "B4 rename ancestor, then write moved deny" refused \
   "$(try $BW4 sh -c "mv $W/tree/a $W/tree/b && echo x > $W/tree/b/deep/x")"
-row "B5 read the masked credential" empty "$($BW cat "$W/home/cred" 2>&1 | head -c 20 || true)$( [ -z "$($BW cat "$W/home/cred" 2>/dev/null)" ] && echo empty)"
+# B5: shape 5, the mask. The GOT cell is the BYTES the read returned, and
+# nothing else: "empty" when it returned none, the first 20 of the secret if
+# the mask leaked. cat's own stderr used to be concatenated in FRONT of that
+# word, so a read that failed printed "cat: <path>: ...empty" and the row read
+# as a mismatch when nothing had leaked (ranger-base-yca4g). It is not thrown
+# away either. No bytes is no leak whatever stopped them, so the cell matching
+# is right — but shape 5 is a claim about WHY they were absent, and its
+# documented reading is EOF at exit 0, not an error. So the reason prints UNDER
+# the row as prose, and D15 says what it is worth: not a D14 reopen, and not a
+# pass of shape 5 either.
+b5=$($BW cat "$W/home/cred" 2>"$W/b5.err"); b5rc=$?
+row "B5 read the masked credential" empty \
+  "$(if [ -n "$b5" ]; then printf '%s' "$b5" | head -c 20; else echo empty; fi)"
+if [ "$b5rc" -ne 0 ] || [ -s "$W/b5.err" ]; then
+  echo "   B5 detail (not a row): exit=$b5rc stderr=$(head -c 200 "$W/b5.err" | tr '\n' ' ')"
+fi
 # B6: can the seat undo its own wall? A new userns gets caps, but mounts it
 # inherits are MNT_LOCKED: no umount, no clearing the read-only flag.
 row "B6 umount the deny from a nested userns" refused \

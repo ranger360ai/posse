@@ -526,6 +526,25 @@ codex's `linux-sandbox` README.
   bwrap expectation, including that a nested user namespace cannot unmount
   or remount the deny (MNT_LOCKED, ASSUMED). Any B-row that reads
   differently from its EXPECT column reopens D14 before any design.
+  **B5 is the one row whose cell cannot say that on its own**
+  (ranger-base-yca4g). Its cell is the BYTES the read returned, so a read
+  that FAILED returns none and reads `empty` — a match, and rightly: no
+  bytes is no leak, whatever stopped them. What it does not show is WHY,
+  and shape 5 is a claim about why — `--ro-bind /dev/null`, whose
+  documented reading is EOF at exit 0, not an error. So a B5 that errored
+  leaves shape 5 ASSUMED rather than measured, and the row prints a
+  `B5 detail (not a row)` line under itself carrying the exit status and
+  cat's stderr for the bead. **A detail line under a matching B5 is not a
+  D14 reopen and not a pass of shape 5**: it is the one row to re-read
+  before shape 5 is written into a cage, because whatever errored there
+  may not be present when the cage is real.
+  MEASURED 2026-11-08 on the host (ranger-base-hft2q): B5 read
+  `cat: <tmpdir>...empty`, cat's error concatenated in front of the word
+  by the pre-fix cell, over a credential that was not readable. The
+  operator's verdict stands — the arm holds and the tier is buildable —
+  but the 20 characters the old cell kept did not include the errno text,
+  so which error it was is unread. The next host run's detail line answers
+  it.
 
 **Alternatives rejected.**
 - **Landlock alone**, which D4 wanted. Shape 2 is inexpressible, and it
