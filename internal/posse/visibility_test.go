@@ -899,10 +899,18 @@ func TestDeriveIdentityLiterals(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	// HOME has to be a real ancestor of the redirect target, or AbbrevHome
-	// has nothing to abbreviate and instance-path/instance-path-abs
-	// coincide — which is a real, DEDUPED case (seen in TestDeriveIdentity
+	// HOME has to be a real ancestor of the redirect target, or there is
+	// nothing to abbreviate and instance-path/instance-path-abs coincide —
+	// which is a real, DEDUPED case (seen in TestDeriveIdentity
 	// LiteralsSkipsAbsentSourcesSilently's kin below), not this test's.
+	//
+	// AND IT IS LEFT UNRESOLVED ON PURPOSE (ADR 0082 D2). t.TempDir() hands
+	// back a path through darwin's /var -> /private/var symlink, while the
+	// instance path below renders CANONICAL. AbbrevHome against the raw
+	// $HOME therefore fails the prefix test and the tilde form disappears;
+	// canonicalAbbrevHome, which spells the home canonically too, keeps it.
+	// So this fixture is what holds D2's home half — do not "fix" the home
+	// by resolving it here, or the half goes unmeasured.
 	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	repo := filepath.Join(home, "repo")
@@ -934,7 +942,14 @@ func TestDeriveIdentityLiterals(t *testing.T) {
 	// doc comment; the same arithmetic beadsHome and seedBeadsRedirect use).
 	os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
 	write(t, filepath.Join(repo, ".beads", "redirect"), "../instance/.beads\n")
+	// CREATED, because the literal is now the KERNEL's name for this
+	// directory (canonicalPath, ADR 0082 D1) and a directory that cannot be
+	// opened falls back to resolvedPath's string instead.
 	instance := filepath.Clean(filepath.Join(repo, "..", "instance"))
+	if err := os.MkdirAll(filepath.Join(instance, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	instance = canonicalPath(instance)
 
 	lits, err = DeriveIdentityLiterals(repo)
 	if err != nil {
@@ -947,7 +962,13 @@ func TestDeriveIdentityLiterals(t *testing.T) {
 	if classes["instance-path-abs"] != instance {
 		t.Errorf("instance-path-abs = %q, want %q", classes["instance-path-abs"], instance)
 	}
-	if want := AbbrevHome(instance); classes["instance-path"] != want || want == instance {
+	// SPELLED OUT, not AbbrevHome(instance): the home in this fixture is the
+	// unresolved t.TempDir() spelling (see its comment), so AbbrevHome would
+	// answer the absolute path here and the assertion would be satisfied by
+	// the very collapse it exists to refuse. `~/instance` is what D2 owes
+	// the wall, and the second clause keeps the fixture honest about the two
+	// forms differing.
+	if want := "~/instance"; classes["instance-path"] != want || want == instance {
 		t.Errorf("instance-path = %q, want the ~-abbreviated %q (and the fixture must make them differ)", classes["instance-path"], want)
 	}
 }
@@ -1324,7 +1345,8 @@ func TestIdentityLiteralGuardHook(t *testing.T) {
 	}
 	home := gitTempDir(t)
 	// Install runs IN this Go process, not through the git subprocess
-	// helper below — DeriveIdentityLiterals reads $HOME directly (AbbrevHome),
+	// helper below — DeriveIdentityLiterals reads $HOME directly
+	// (canonicalAbbrevHome, ADR 0082 D2),
 	// so it has to be THIS home too, or instance and instance-abs never
 	// differ and dedupe drops one of them.
 	t.Setenv("HOME", home)
@@ -1344,7 +1366,15 @@ func TestIdentityLiteralGuardHook(t *testing.T) {
 	}
 	persona := []string{"RHQ_PERSONA=tester", "RHQ_GATES_DIR=" + gates}
 
+	// Created, not merely named: canonicalPath renders the kernel's name for
+	// a directory it can open and falls back to the unresolved string for
+	// one it cannot (ADR 0082 D1), and an instance path that fell back while
+	// $HOME did not would dedupe the tilde literal away — the premise below
+	// asserts both forms derive.
 	instance := filepath.Join(home, "instance")
+	if err := os.MkdirAll(filepath.Join(instance, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, repo := range []string{pub, priv} {
 		os.MkdirAll(filepath.Join(repo, ".beads"), 0o755)
 		write(t, filepath.Join(repo, ".beads", "redirect"), filepath.Join(instance, ".beads")+"\n")

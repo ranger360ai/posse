@@ -277,7 +277,18 @@ func ExpandTilde(p string) string {
 }
 
 func AbbrevHome(p string) string {
-	home := os.Getenv("HOME")
+	return abbrevHomeAgainst(os.Getenv("HOME"), p)
+}
+
+// abbrevHomeAgainst is AbbrevHome's arithmetic with the home spelled by the
+// caller. ONE implementation, because ADR 0082 D2 needs exactly this against
+// the home's CANONICAL spelling (canonicalAbbrevHome, visibility.go) and a
+// second copy would be a second `~` form to keep in step — in the one place
+// where the two are compared byte for byte. Empty home still means "unknown
+// home" and still returns p untouched (ranger-base-a3t1): every caller is
+// reading the environment, and a caller with nothing to read must not get a
+// home invented for it here either.
+func abbrevHomeAgainst(home, p string) string {
 	if home == "" {
 		return p
 	}

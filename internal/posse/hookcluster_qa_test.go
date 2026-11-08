@@ -348,7 +348,7 @@ func TestQAIdentityPathArmIsAddedEntriesOnly(t *testing.T) {
 // for paths too, not only for content.
 //
 // MUTATION-CHECKED: with DeriveIdentityLiterals no longer adding the
-// AbbrevHome form — so only the absolute instance path is rendered — this
+// ~-abbreviated form (canonicalAbbrevHome since ADR 0082 D2) — so only the absolute instance path is rendered — this
 // pin goes red, together with the non-ASCII pin below, which reads the same
 // literal.
 func TestQAIdentityPathArmSeesTheTildeForm(t *testing.T) {

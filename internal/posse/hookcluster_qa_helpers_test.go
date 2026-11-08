@@ -15,9 +15,10 @@ import (
 // visWall is a public- and a private-stamped scratch repo with the REAL
 // rendered hook installed in each, in the shape TestIdentityLiteralGuardHook
 // uses. $HOME is this process's for the duration because
-// DeriveIdentityLiterals reads it directly (AbbrevHome): without that the
-// abbrev and absolute instance paths are the same string, dedupe drops one,
-// and the tilde-form pin below has nothing to measure.
+// DeriveIdentityLiterals reads it directly (canonicalAbbrevHome, ADR 0082
+// D2): without that the abbrev and absolute instance paths are the same
+// string, dedupe drops one, and the tilde-form pin below has nothing to
+// measure.
 type visWall struct {
 	pub, priv, gates, home string
 	instance               string
@@ -79,6 +80,16 @@ func newVisWallCfg(t *testing.T, instanceDir, extraConfig string) *visWall {
 		return string(out), err
 	}
 	w.persona = []string{"RHQ_PERSONA=tester", "RHQ_GATES_DIR=" + w.gates}
+	// The instance store EXISTS on disk, which ADR 0082 D1 made load-bearing
+	// for a fixture: canonicalPath renders the kernel's name for a directory
+	// it can OPEN, and falls back to resolvedPath's string for one it cannot
+	// — so an instance directory that was never created renders the
+	// unresolved t.TempDir() spelling while $HOME renders the resolved one,
+	// the prefix test fails, and the tilde literal dedupes away. Three pins
+	// in this cluster read that literal by name.
+	if err := os.MkdirAll(filepath.Join(w.instance, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, repo := range []string{w.pub, w.priv} {
 		write(t, filepath.Join(repo, ".beads", "redirect"), filepath.Join(w.instance, ".beads")+"\n")
 		if out, err := w.git(repo, nil, "init", "-q", "-b", "main"); err != nil {

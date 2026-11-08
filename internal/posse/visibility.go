@@ -358,6 +358,61 @@ func resolvedPath(p string) string {
 	return p
 }
 
+// canonicalPath is the spelling a path gets when it is RENDERED into the
+// commit wall (ADR 0082 D1) — the way the kernel names the directory, with
+// the platform half in canonicalpath_darwin.go / canonicalpath_other.go.
+//
+// IT IS NOT samePath AND MUST NOT MERGE WITH IT. samePath is the
+// COMPARISON — "do these two spellings name one directory?", answered by
+// identity because no string normalizing can. canonicalPath is the RENDER —
+// "which one string do we write?". Different questions: the first answers
+// yes for two strings at once, the second has to pick one of them.
+//
+// WHY A RENDER NEEDS ITS OWN ANSWER AT ALL. Three renderers write the wall
+// (install-hooks, RenderSessionHooks, the L3 probe) and the probe decides
+// "ours" by rendering again and comparing BYTE FOR BYTE (ADR 0023). They
+// already share one derivation, commitGuardLiterals — but its output still
+// depended on how the caller spelled dir, so two absolute spellings of one
+// repo rendered two walls that behave identically and differ in three
+// lines, and the second read as "ours but stale" on every launch
+// (ranger-base-k9x8n's measurement; ranger-base-up22's class reached
+// through the path spelling instead of the visibility mark).
+//
+// The fallback is resolvedPath's string answer, for a path that cannot be
+// opened or resolved — it does not exist, or the cage refuses it. That
+// answer is deterministic for a given input, which is all the byte compare
+// needs, and a missing instance directory is already a broken redirect.
+func canonicalPath(p string) string {
+	r := resolvedPath(p)
+	// IsAbs, because a wall line is only worth rendering if it names a
+	// place: a kernel answer that is not absolute is not one, and the
+	// deterministic fallback is better than half a path.
+	if k, err := kernelPath(r); err == nil && filepath.IsAbs(k) {
+		return filepath.Clean(k)
+	}
+	return r
+}
+
+// canonicalAbbrevHome is AbbrevHome against the HOME's canonical spelling
+// (ADR 0082 D2). It exists because the two halves of one rendered literal
+// have to be spelled the same way or the `~` form silently stops existing:
+// canonicalPath resolves the repo, and a HOME the operator typed through a
+// symlink then fails the prefix test, so the abbreviated literal collapses
+// onto the absolute one and dedupes away. One `~` form for every spelling of
+// HOME, rather than none when HOME was spelled differently from the repo.
+//
+// The empty-HOME check is BEFORE canonicalPath and not inside it:
+// canonicalPath("") is Abs(Clean("")), which is the process's cwd, so an
+// unset HOME would abbreviate against a directory nobody named — the
+// ranger-base-a3t1 class AbbrevHome refuses by hand.
+func canonicalAbbrevHome(p string) string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		return p
+	}
+	return abbrevHomeAgainst(canonicalPath(home), p)
+}
+
 // WarnOpsContent is the cheap in-session half of the guard: the harness
 // says so BEFORE it files a bead of its own into a public repo's db. It
 // warns and returns — the refusal lives in the commit hook, which catches
@@ -1080,9 +1135,14 @@ const identityLiteralMaxLen = 4096
 //   - the instance repo path, when dir's .beads/redirect names one: the
 //     dirname of the redirect's target (the same resolution beadsHome and
 //     seedBeadsRedirect use — relative resolves against the repo root, not
-//     against .beads/ itself), rendered BOTH ~-relative (AbbrevHome) and
-//     absolute. Skipped whole when there is no .beads, or no redirect in
-//     it.
+//     against .beads/ itself), in its CANONICAL spelling (canonicalPath,
+//     ADR 0082 D1+D2: the way the kernel names that directory, so the three
+//     renderers of this wall agree byte for byte however the caller spelled
+//     dir), rendered BOTH ~-relative — against the home's canonical
+//     spelling too, canonicalAbbrevHome — and absolute. The two coincide
+//     and dedupe to one literal whenever the repo is not under HOME, as
+//     they always have. Skipped whole when there is no .beads, or no
+//     redirect in it.
 //
 // Every literal is checked for a single quote before it is returned — it is
 // rendered into a single-quoted sh word, and a literal that broke that
@@ -1090,7 +1150,7 @@ const identityLiteralMaxLen = 4096
 // than rendered wrong.
 func DeriveIdentityLiterals(dir string) ([]IdentityLiteral, error) {
 	var out []IdentityLiteral
-	seen := map[string]bool{} // AbbrevHome(p) == p whenever p is not under $HOME (or HOME is unset): one literal, not two.
+	seen := map[string]bool{} // canonicalAbbrevHome(p) == p whenever p is not under $HOME (or HOME is unset): one literal, not two.
 	add := func(class, value string) error {
 		if value == "" || len(value) > identityLiteralMaxLen || seen[value] {
 			return nil
@@ -1122,9 +1182,15 @@ func DeriveIdentityLiterals(dir string) ([]IdentityLiteral, error) {
 		}
 	}
 
+	// canonicalPath HERE, at the value that is rendered, and not at
+	// commitGuardLiterals' entry (ADR 0082 D2). Canonicalising `dir` would
+	// fix a RELATIVE redirect and leave an absolute one that was written
+	// through a symlink, and it would move the `dir` hookRepo,
+	// BeadsVisibility and installHook see — a wider blast radius for less
+	// closure.
 	if target := identityRedirectTarget(dir); target != "" {
-		repo := filepath.Dir(target)
-		if err := add("instance-path", AbbrevHome(repo)); err != nil {
+		repo := canonicalPath(filepath.Dir(target))
+		if err := add("instance-path", canonicalAbbrevHome(repo)); err != nil {
 			return nil, err
 		}
 		if err := add("instance-path-abs", repo); err != nil {

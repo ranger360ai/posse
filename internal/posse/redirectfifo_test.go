@@ -51,12 +51,22 @@ func TestAFifoAtTheBeadsRedirectMustNotWedgeTheLaunch(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(reg, beadsDirName, beadsRedirect), []byte("../instance/.beads\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The store is created BEFORE the derivation and the expectation goes
+	// through canonicalPath (ADR 0082 D1+D2): the literal is the kernel's
+	// name for that directory, which on darwin means the /private prefix
+	// t.TempDir() hides. Before this the two strings agreed only because
+	// the directory did not exist yet and the rendering fell back to the
+	// unresolved spelling — a control that passed for a reason it was not
+	// claiming.
+	// TWO SPELLINGS OF ONE DIRECTORY, deliberately: `store` is the redirect
+	// target joined as beadsHome joins it (the arm further down asserts
+	// that string), `want` is what the identity wall RENDERS for the same
+	// directory. The two differ on darwin, which is the whole of ADR 0082,
+	// and collapsing them back into one variable reds one arm or the other.
+	store := filepath.Join(filepath.Dir(reg), "instance")
+	want := canonicalPathForTest(t, store)
 	if !returnsWithin(t, 10*time.Second, func() { lits, _ = DeriveIdentityLiterals(reg) }) {
 		t.Fatalf("CONTROL: DeriveIdentityLiterals blocked on a regular redirect — the rig, not the code")
-	}
-	want := filepath.Join(filepath.Dir(reg), "instance")
-	if err := os.MkdirAll(filepath.Join(want, beadsDirName), 0o755); err != nil {
-		t.Fatal(err)
 	}
 	if got := instancePathLiterals(lits); !containsString(got, want) {
 		t.Errorf("CONTROL: a regular redirect derived %v, want one of them %s", got, want)
@@ -87,7 +97,7 @@ func TestAFifoAtTheBeadsRedirectMustNotWedgeTheLaunch(t *testing.T) {
 	if !returnsWithin(t, 10*time.Second, func() { home = beadsHome(reg) }) {
 		t.Fatalf("CONTROL: beadsHome blocked on a regular redirect — the rig, not the code")
 	}
-	if got, wantHome := home, filepath.Join(want, beadsDirName); got != wantHome {
+	if got, wantHome := home, filepath.Join(store, beadsDirName); got != wantHome {
 		t.Errorf("CONTROL: beadsHome over a regular redirect = %s, want the redirect target %s", got, wantHome)
 	}
 	if !returnsWithin(t, 10*time.Second, func() { home = beadsHome(fifo) }) {
@@ -135,6 +145,18 @@ func plantRedirectFifo(t *testing.T, dir string) {
 	if err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
 		t.Fatalf("fixture at %s is not a FIFO: mode %v (%v)", p, fi.Mode(), err)
 	}
+}
+
+// canonicalPathForTest creates dir with its .beads and returns the spelling
+// the wall will render for it — the kernel's (ADR 0082 D1). A fixture that
+// names a directory it never created gets canonicalPath's FALLBACK instead,
+// which is a different string on darwin and a control that measures nothing.
+func canonicalPathForTest(t *testing.T, dir string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return canonicalPath(dir)
 }
 
 func instancePathLiterals(lits []IdentityLiteral) []string {
