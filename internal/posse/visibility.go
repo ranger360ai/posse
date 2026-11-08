@@ -347,13 +347,15 @@ func anySamePath(seen []string, p string) bool {
 // "are these one directory?" (ADR 0082 D4's closing paragraph).
 //
 // WHY A SECOND PREDICATE AND NOT A FIX TO underDir. underDir compares the
-// two resolved SPELLINGS with filepath.Rel, and every one of its ~25 callers
-// but one is asking about a sandbox grant or a seatbelt literal — a
-// containment rule about a path some other program will match, where the
-// spelling IS the subject (seatbelt.go's note on underDir, and insideDir
-// beside it, which ranger-base-ie68e split out for exactly that reason).
-// Those stay on strings. This one is for a caller whose question is only
-// ever about the directory itself.
+// two resolved SPELLINGS with filepath.Rel, and it decides sandbox grants,
+// cage mounts, PID `writable:` reach and store placement at every other
+// call site in this package. Widening containment under all of them is not
+// one bead's to do, and for most of them the spelling is the SUBJECT rather
+// than an accident: a containment rule about a path some other program will
+// match has to compare what that program matches (seatbelt.go's note on
+// underDir, and insideDir beside it, which ranger-base-ie68e split out for
+// exactly that reason). Those stay on strings. This one is for a caller
+// whose question is only ever about the directory itself.
 //
 // WHAT THE STRING ANSWER GETS WRONG. MEASURED 2026-11-08 (ranger-base-oczuq,
 // go1.26.5 darwin/arm64, APFS case-insensitive, scratch `real/Repo/.beads`):

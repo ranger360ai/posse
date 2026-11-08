@@ -194,6 +194,15 @@ answered by canonicalising one side to hide the mismatch.
   suggestion that is guaranteed to match, not the only key that will.
 - The pin 8kwa5 added (TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath)
   asserts a property and not a string, so it stays green.
+- The separate fix this section hands off — containment by identity — landed
+  as `underSameDir` (internal/posse/visibility.go, ranger-base-oczuq). It
+  runs `underDir`'s string answer first and unchanged, then climbs the
+  store's ancestors asking `samePath`. `CommitQueueJSONL` is its one caller;
+  `underDir` itself stays a string comparison and now says in its own doc
+  comment why, so no sandbox grant, cage mount or `writable:` reach decided
+  through it is moved by this fix. The prediction above held: no site
+  needed `QueueRepo()` to canonicalise, because `absResolve` inside the
+  predicate already absolutises whatever spelling the config carries.
 - Radius: these two are the only sites that MEASURED as prescribing a path to
   paste (a grep of non-test `.go` for `beads_visibility:` inside format
   strings, 2026-11-08). The next site to prescribe a path uses the same

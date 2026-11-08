@@ -166,6 +166,7 @@ func TestQueueCommitStillRefusesACaseChangedStranger(t *testing.T) {
 // underSameDir's own arms, including the two it must answer the same way
 // underDir does.
 func TestUnderSameDirAnswersContainmentByIdentity(t *testing.T) {
+	t.Parallel()
 	base := gitTempDir(t)
 	repo := filepath.Join(base, "Repo")
 	store := filepath.Join(repo, ".beads")
@@ -203,6 +204,7 @@ func TestUnderSameDirAnswersContainmentByIdentity(t *testing.T) {
 // it has no ancestor that is `<base>`, so the identity answer is the string
 // answer here. A prefix-matching "fix" to containment would reverse this.
 func TestUnderSameDirLeavesTheSiblingNamespaceOutside(t *testing.T) {
+	t.Parallel()
 	base := gitTempDir(t)
 	dir := filepath.Join(base, "config")
 	sibling := filepath.Join(base, "config.yaml")
@@ -219,14 +221,15 @@ func TestUnderSameDirLeavesTheSiblingNamespaceOutside(t *testing.T) {
 	}
 }
 
-// underDir itself stays a STRING comparison. ~25 callers ask it about a
-// sandbox grant, a seatbelt literal or a PID's `writable:`, where the
-// spelling some other program will match IS the subject (seatbelt.go's note,
-// and insideDir beside it). ADR 0082 D4 rejects canonicalising its sides
-// explicitly. So this pin asserts the disagreement underSameDir exists to
+// underDir itself stays a STRING comparison. Every other call site in the
+// package decides a sandbox grant, a cage mount, a PID's `writable:` reach
+// or a store's placement, and for most of them the spelling some other
+// program will match IS the subject (seatbelt.go's note, and insideDir
+// beside it). ADR 0082 D4 rejects canonicalising its sides explicitly. So this pin asserts the disagreement underSameDir exists to
 // close, which is the only thing that keeps a later pass from closing it in
 // the wrong place and widening every grant on the box.
 func TestUnderDirStaysTheSandboxStringComparison(t *testing.T) {
+	t.Parallel()
 	base := gitTempDir(t)
 	repo := filepath.Join(base, "Repo")
 	store := filepath.Join(repo, ".beads")
