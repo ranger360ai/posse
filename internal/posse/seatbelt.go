@@ -1072,11 +1072,18 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // at the accepted cost that a seatbelt-caged claude session cannot
 // authenticate through it until the operator unlocks or re-grants the
 // keychain. That is backwards on any other platform: D2 names the same
-// path the store of record there, so denying it would strand a future
-// linux session's own credential behind a wall posse itself put up — goos
-// is a parameter, not `runtime.GOOS` read here directly, so the branch a
-// linux box would take is provable from a darwin one too (credential.go's
+// path the store of record there, so denying it to a CLAUDE seat would
+// strand that session's own credential behind a wall posse itself put up —
+// goos is a parameter, not `runtime.GOOS` read here directly, so the branch
+// a linux box would take is provable from a darwin one too (credential.go's
 // meterStore made the same call, for the same reason).
+//
+// SINCE ADR 0080 D19 the non-darwin arm is "not THIS seat's runtime" and
+// no longer "nobody". Being the store of record is a reason to spare the
+// seat that owns it and is not a reason to open it to the three that do
+// not, which is the rule the siblings below have always followed; before
+// D19 a Linux codex, grok or bob seat could read claude's credential. The
+// own() test is the same one, keyed to the same declared state_dir literal.
 //
 // WHICH file that is, this function does not spell: it asks
 // credentialFileCandidates. The deny was a home-shaped literal for as long
@@ -1179,7 +1186,35 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 		}
 		out = append(out, p)
 	}
-	if goos == "darwin" {
+	// claude's own credential store. WHO it is denied to is two questions,
+	// and only the first of them is GOOS's.
+	//
+	// On darwin the file is the runtime's keychain-FALLBACK store and the
+	// keychain is the store of record (ADR 0019 D2 store 1), so it is denied
+	// to every seat INCLUDING claude's own — the paragraph above has that
+	// reasoning and its accepted cost in full.
+	//
+	// Everywhere else the file IS the store of record, so it follows the
+	// rule every sibling runtime's credential already follows below: denied
+	// to every seat but the one whose runtime owns it. That is own()'s
+	// question and not GOOS's, and until ADR 0080 D19 this branch asked only
+	// the GOOS one — so on Linux a codex, grok or bob seat could read
+	// claude's credential, which is the ranger-base-9fl posture with the
+	// runtimes swapped. On Linux the file sits inside the config directory
+	// D19 grants a claude seat whole, so it is not masked there and the own()
+	// arm is not a courtesy: a runtime denied its own credential cannot
+	// authenticate itself.
+	//
+	// credentialFileCandidates either way — the resolver and not a literal
+	// — so the Linux arm follows CLAUDE_SECURESTORAGE_CONFIG_DIR and
+	// CLAUDE_CONFIG_DIR to wherever the runtime writes next, for the reason
+	// ranger-base-x5f6p paid for on the darwin arm.
+	//
+	// own() keys on the declared state_dir literal, which is why
+	// BwrapStateDirs keeps `~/.claude` in claude's list while dropping the
+	// config FILE beside it (bwrap.go): a list that had lost the tree would
+	// read here as "not a claude seat".
+	if goos == "darwin" || !own("~/.claude") {
 		for _, p := range credentialFileCandidates() {
 			add(p)
 		}

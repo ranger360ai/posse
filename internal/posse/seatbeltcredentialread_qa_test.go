@@ -84,10 +84,24 @@ func TestCredentialReadDenyLiteralsIsRuntimeAwareAndGOOSShaped(t *testing.T) {
 		// token store could not authenticate itself, hw18's rule.
 		{"darwin, bob launching: bob's own store spared, same reason", "darwin",
 			[]string{"~/.bob"}, crdWant(claudeFile, codexFile, grokFile)},
-		{"linux, no runtime declared: claude's file IS the store of record there (ADR 0019 D2) — must stay readable", "linux", nil,
-			crdWant(codexFile, grokFile, bobFile)},
-		{"linux, grok launching: grok's own file spared, claude's stays open for the same GOOS reason", "linux",
-			[]string{"~/.grok"}, crdWant(codexFile, bobFile)},
+		// ADR 0080 D19 moved these three. On linux claude's file is the
+		// store of record (ADR 0019 D2), which is a reason to spare the seat
+		// that OWNS it and was read for two beads as a reason to open it to
+		// every seat: before D19 a linux codex, grok or bob session could
+		// read claude's credential. The rule there is now the siblings' own
+		// — denied to every seat but its runtime's — so the GOOS answer is
+		// which seats, not whether.
+		{"linux, no runtime declared: claude's file is denied like every other unowned store (ADR 0080 D19)", "linux", nil,
+			crdWant(claudeFile, codexFile, grokFile, bobFile)},
+		{"linux, grok launching: grok's own file spared, claude's denied — it is not this session's business either", "linux",
+			[]string{"~/.grok"}, crdWant(claudeFile, codexFile, bobFile)},
+		// The arm that keeps the one above honest, and the half that must
+		// NEVER widen: on linux the file claude authenticates with is
+		// claude's own, it sits inside the config directory D19 grants that
+		// seat whole, and a runtime denied its own credential cannot log in.
+		// Spared by own(), keyed to the declared state_dir literal.
+		{"linux, claude launching: claude's own store spared — it is the store of record there and this seat owns it", "linux",
+			[]string{"~/.claude", "~/.claude.json"}, crdWant(codexFile, grokFile, bobFile)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := credentialReadDenyLiterals(tc.goos, tc.stateDirs)

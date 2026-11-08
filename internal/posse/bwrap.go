@@ -22,6 +22,7 @@ package posse
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -434,4 +435,130 @@ func shallowestFirst(in []string) []string {
 	out := dedupeStrings(in)
 	sort.Strings(out)
 	return out
+}
+
+// ─── D19: CLAUDE'S STATE GRANT IS ITS CONFIG DIRECTORY ──────────────────────
+
+// BwrapStateDirs is `rt.StateDirs` as THIS mechanism can grant them, and it
+// is the whole of ADR 0080 D19. Every other runtime's list passes through
+// untouched; claude's is the one that cannot, and it is not a preference.
+//
+// WHY CLAUDE IS DIFFERENT. Its declaration is two entries (runtime.go), and
+// one of them is a FILE: `~/.claude` is the CLI's own tree and
+// `~/.claude.json` is where it keeps `projects`, the MCP list and the
+// onboarding state. At L2 a file entry works — `(subpath …)` grants it, and
+// SeatbeltSiblings grants the `.lock` and `.tmp.<pid>` names the CLI
+// actually writes beside it (ranger-base-cypy1). At this mechanism neither
+// move exists: a bind of a FILE refuses the atomic replace its writer makes
+// (B8, MEASURED), and a mount cannot name a sibling NAMESPACE at all. So
+// BwrapArgs refuses a writable file outright, and this function is what
+// keeps that refusal from being every claude launch.
+//
+// WHAT REPLACES IT. MEASURED (D19): claude writes `.claude.json`'s lock and
+// temp siblings inside `$CLAUDE_CONFIG_DIR`, and with that variable in force
+// the config FILE is in there too (ClaudeConfigFile's own rule, trust.go).
+// A whole-DIRECTORY grant therefore covers the file, the lock, the temp and
+// every scratch name the CLI ever invents — which is the one thing the
+// sibling regex was for. So the config directory joins the list, and the
+// declared entry naming `$HOME/.claude.json` drops out.
+//
+// IT IS THE LAUNCHER'S RESOLVED VALUE AND NOT A SECOND SPELLING. The
+// directory is ClaudeConfigDirIn's answer, which is the value ADR 0077 D1
+// types onto the seat's own line (RuntimeHomePin) and the value credential.go
+// walls — so the wall, the seed and the runtime cannot disagree about which
+// directory is in play. That is surface 1's whole lesson
+// (ranger-base-c33j6): posse seeded one file, the seat read another, and
+// every signal said the launch was healthy.
+//
+// `~/.claude` STAYS. D19 drops the file entry and not the tree, and keeping
+// it matters for a reason outside this function: credentialReadDenyLiterals'
+// own() is keyed to the DECLARED state_dir literal, so a list that had lost
+// `~/.claude` would read as "not a claude seat" and deny a claude seat its
+// own credential on Linux — the one thing a runtime must never be denied
+// (ADR 0019). Pinned, because nothing about this function's own output says
+// it.
+//
+// UNSET REFUSES, rather than falling back to `<home>/.claude`. With the
+// variable out of force the runtime resolves its config file to
+// `$HOME/.claude.json` — outside any directory grant, and a file this
+// mechanism cannot bind — so the fallback would be a wall that goes up,
+// reports success, and silently loses every config write the seat makes.
+// That is ranger-base-cypy1's failure with the grant in place, which is
+// worse than no grant. The remedy is one line of host procedure
+// (ranger-base-yyq64/offid) and the refusal names it.
+func BwrapStateDirs(rt *Runtime) ([]string, error) {
+	if rt == nil {
+		return nil, nil
+	}
+	if rt.Name != "claude" {
+		return rt.StateDirs, nil
+	}
+	// $HOME and not os.UserHomeDir(), because this home's only job is to
+	// resolve the entry being dropped against the SAME home ExpandTilde
+	// expands the surviving entries against one call later
+	// (SeatbeltWritable). On unix the two are one value (ClaudeConfigFile's
+	// own note, measured); where they could differ, agreeing with the
+	// consumer is the property that matters.
+	home := os.Getenv("HOME")
+	_, inForce := runtimeHomeOverride(ClaudeConfigDirVar)
+	return bwrapClaudeStateDirs(rt.StateDirs, ClaudeConfigDirIn(home), inForce, home)
+}
+
+// bwrapClaudeStateDirs is that answer with the environment already read, so
+// that a pin can drive the one arm the environment cannot produce: a value
+// in force that is still RELATIVE.
+//
+// runtimeHomeOverride makes a relative value absolute at the single read of
+// these variables (ranger-base-sczjy), so on any box with a working cwd the
+// `in force and relative` arm is unreachable — it survives only where
+// os.Getwd itself failed, which is posse's own directory removed under it.
+// The check stays because D19's demand is "set AND absolute" and the reason
+// is the whole of ADR 0077 D1: the launcher resolves a relative value
+// against ITS cwd and the seat resolves the same string against the session
+// dir, so the directory walled and the directory written would be two
+// directories. A render that cannot name one directory renders nothing.
+//
+// The declared list is otherwise copied verbatim, order intact. An operator
+// who overlaid `state_dir:` for this box keeps it (ADR 0021 D1), and an
+// overlaid entry that is a file this mechanism cannot bind still reaches
+// BwrapArgs' own refusal with the path named — narrowing it quietly here
+// would be a widening nobody could read off the argv.
+func bwrapClaudeStateDirs(declared []string, dir string, inForce bool, home string) ([]string, error) {
+	if !inForce || !filepath.IsAbs(dir) {
+		return nil, bwrapClaudeConfigDirRefusal(dir, inForce)
+	}
+	// The config directory FIRST: it is claude's state grant at this
+	// mechanism, and shallowest-first ordering is BwrapArgs' to impose
+	// anyway (shallowestFirst), so this order is for the operator reading
+	// `posse gates` rather than for the kernel.
+	out := []string{dir}
+	drop := ""
+	if home != "" {
+		drop = absResolve(filepath.Join(home, claudeConfigFileName))
+	}
+	for _, d := range declared {
+		if drop != "" && absResolve(ExpandTilde(d)) == drop {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// bwrapClaudeConfigDirRefusal is D19's refusal, in its two arms. It names
+// the variable, what it costs to leave it unset, and the one line of host
+// procedure that fixes it for every seat on the box at once — because the
+// bare failure this prevents has no error in it at all.
+//
+// The cage is spelled `seatbelt (bwrap)` from the constants and not through
+// CageLabel, which reads the LIVE host: this render is Linux's, and a
+// refusal rendered on darwin must still say which mechanism refused.
+func bwrapClaudeConfigDirRefusal(dir string, inForce bool) error {
+	why := "it is not set there, so the runtime resolves its config file to $HOME/" + claudeConfigFileName +
+		" — a FILE, outside every directory grant, and binding one refuses the atomic replace its writer makes (probe B8): the wall would go up, report success, and lose every config write the seat makes"
+	if inForce {
+		why = "it is set to " + dir + ", which is not absolute — the launcher resolves that against its own directory and the seat against the session's, so the directory walled and the directory written would be two directories (ADR 0077 D1)"
+	}
+	return Die("claude on cage %s (%s) needs %s set in the launcher: %s. Set it in the home's unit Environment= — one line, and every claude seat on this host then resolves the very directory this wall grants (ADR 0080 D19)",
+		CageSeatbelt, WallBwrap, ClaudeConfigDirVar, why)
 }

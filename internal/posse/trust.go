@@ -85,6 +85,14 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// claudeConfigFileName is the basename of that file, spelled once because
+// three callers join it onto a base they resolved for themselves:
+// ClaudeConfigFile below (the home, or the config dir when the variable is
+// in force), SeedCageHome (the container's own HOME, cage.go), and
+// BwrapStateDirs, which drops the declared entry naming it because at that
+// mechanism a FILE is not a grant (ADR 0080 D19, bwrap.go).
+const claudeConfigFileName = ".claude.json"
+
 // ClaudeConfigFile is the file claude keeps its `projects` map in,
 // resolved the way claude 2.1.241 resolves it: <config dir>/.config.json
 // when that file exists, else <CLAUDE_CONFIG_DIR or $HOME>/.claude.json,
@@ -131,7 +139,7 @@ func ClaudeConfigFile() string {
 	if cfgDir == ClaudeConfigDirIn("") {
 		base = cfgDir
 	}
-	return filepath.Join(base, ".claude.json")
+	return filepath.Join(base, claudeConfigFileName)
 }
 
 // ClaudeConfigDirIn is claude's CONFIGURATION directory, the one rule read

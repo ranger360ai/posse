@@ -95,11 +95,13 @@ func TestQACredentialReadDenyFollowsTheConfigDirVariables(t *testing.T) {
 	claudeState := []string{"~/.claude", "~/.claude.json"}
 
 	for _, tc := range []struct {
-		name     string
-		goos     string
-		sec, cfg string
-		want     []string // the claude half; codex, grok and bob are appended below
-		absent   string   // a path this arm must NOT deny, "" for none
+		name      string
+		goos      string
+		sec, cfg  string
+		stateDirs []string // the LAUNCHING runtime's declaration; claude's when nil
+		want      []string // the claude half; codex, grok and bob are appended below
+		spare     string   // the sibling file this seat OWNS, so it is not in the tail
+		absent    string   // a path this arm must NOT deny, "" for none
 	}{
 		{
 			name: "neither variable set: the home, as it always was",
@@ -157,15 +159,51 @@ func TestQACredentialReadDenyFollowsTheConfigDirVariables(t *testing.T) {
 			// strands the session exactly the way denying the home one
 			// would. Moving where a file is does not move which platform
 			// owns it.
-			name: "linux with the variable set: still no claude deny at all",
+			//
+			// stateDirs is claude's own throughout this table, so since ADR
+			// 0080 D19 this row is spared by own() rather than by GOOS, and
+			// the row below is what says so: the same environment on the
+			// same GOOS, one seat over, DENIES both spellings. Without it
+			// this expectation of absence would read as "linux never denies
+			// claude's file", which stopped being true at D19.
+			name: "linux, claude's own seat: no claude deny at all — the store of record, and this seat owns it",
 			goos: "linux", sec: sec, cfg: cfg,
 			want: nil, absent: cdmCreds(sec),
+		},
+		{
+			// The non-claude seat on the same box, which is the half D19
+			// added: being the store of record spares the runtime that owns
+			// it, not the three that do not. The deny MOVES with the
+			// variables here exactly as it does on darwin, which is the
+			// property this whole table is about — a Linux codex seat with
+			// CLAUDE_SECURESTORAGE_CONFIG_DIR set must carry the relocated
+			// file and not the home spelling alone.
+			name: "linux, a codex seat with the variable set: claude's relocated file is denied and follows the variable",
+			goos: "linux", sec: sec, cfg: cfg, stateDirs: []string{"~/.codex"},
+			want: []string{homeCreds, cdmCreds(sec)}, spare: codexFile,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cdmEnv(t, home, tc.sec, tc.cfg)
-			want := append(append([]string(nil), tc.want...), codexFile, grokFile, bobFile)
-			got := credentialReadDenyLiterals(tc.goos, claudeState)
+			// claude's own declaration unless a row names another runtime's:
+			// every row before ADR 0080 D19 measured the darwin exception
+			// (claude's file denied to its own seat), and D19 added arms
+			// where the seat is somebody else's.
+			state := claudeState
+			if tc.stateDirs != nil {
+				state = tc.stateDirs
+			}
+			var tail []string
+			for _, p := range []string{codexFile, grokFile, bobFile} {
+				if p != tc.spare {
+					tail = append(tail, p)
+				}
+			}
+			if tc.spare != "" && len(tail) != 2 {
+				t.Fatalf("spare %s is not one of the three sibling files — this row cannot measure what it claims", tc.spare)
+			}
+			want := append(append([]string(nil), tc.want...), tail...)
+			got := credentialReadDenyLiterals(tc.goos, state)
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("goos=%s sec=%q cfg=%q:\n got  %v\n want %v", tc.goos, tc.sec, tc.cfg, got, want)
 			}

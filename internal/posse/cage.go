@@ -1052,7 +1052,7 @@ func (a *App) SeedCageHome(ag *AgentFile, rt *Runtime, dir string) (string, erro
 	if rt.Name != "claude" {
 		return home, nil
 	}
-	p := filepath.Join(home, ".claude.json")
+	p := filepath.Join(home, claudeConfigFileName)
 	// Same read-amend-write race trust.go locks against (ranger-base-5qnt):
 	// two launches of this same caged persona under this same RHQ_HOME can
 	// interleave the read and the write. Held across read, amend and write.
