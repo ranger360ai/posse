@@ -95,6 +95,39 @@ this one variable, and keeps that inlet the way it already keeps
 `GIT_CONFIG_GLOBAL`'s. `make verify-policy-pins` reports the installed copy
 STALE until you reinstall it.
 
+**The wall-renderer and launcher-lag readings now find the checkout the binary
+was installed from, so they are no longer permanently UNKNOWN on a box whose
+queue is not posse.**
+
+*Fixes a reading that could never resolve. No configuration needed.*
+
+`posse gates <persona>` and `posse status` read the running binary's freshness
+by finding a posse checkout that holds the commit its build stamp names. They
+looked in `beads:` and the directory the command was typed in — and on an
+instance whose crew works on something other than posse, neither of those ever
+names a posse checkout. So the line read `UNKNOWN whether this binary carries
+the wall renders and the launch-time checks that landed` on every pass,
+forever, with the checkout `make install` was run from sitting on the same
+disk; `G11` went dark with it, because an unreadable lag raises no condition.
+
+`make build` and `make install` now stamp the directory they built in, and the
+reading consults it LAST — after `beads:` and the cwd, so it can only turn an
+UNKNOWN into an answer and never move a reading another candidate settled. A
+stamped path is still tested like any other candidate (a git checkout,
+declaring the module, holding the commit), so a checkout that has moved or
+been replaced degrades to the same abstention rather than to a wrong number.
+Nothing that leaves this box carries the stamp: a release binary's answer is
+its tag, as before.
+
+`posse_repo:` is the manual override for an install the stamp cannot name — a
+binary copied in from another machine, or a box with two clones where the
+reading must prefer one. It is read ahead of `beads:`. Unset, nothing changes.
+
+An abstention also names every candidate it rejected and why — `(not a git
+checkout)`, `(not a posse checkout)`, `(posse, but it does not hold that
+commit)` — so a mistyped `posse_repo:` or a moved checkout is visible instead
+of silently inert.
+
 ## v0.5.3
 
 *2026-10-22. A security and patch release ten days after v0.5.2, led by the

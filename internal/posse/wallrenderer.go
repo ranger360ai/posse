@@ -53,7 +53,6 @@ package posse
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -213,13 +212,14 @@ func narrowLag(l LauncherLag, sources []string, noun string) (commits []string, 
 // promote` passes the constitution source, so a box whose constitution is
 // itself a posse checkout is counted against the very tree it is promoting
 // from rather than against whichever repo `beads:` happens to name first.
+//
+// Through launcherCandidates, which is the ONE list (ranger-base-eiwhk): this
+// function used to compose its own copy of it, and `posse gates` — the
+// surface that bead's symptom was read off — is this one, not the status
+// line's. A candidate source added to one copy and not the other is a fix
+// that looks landed and is not.
 func (a *App) WallRenderer(extra ...string) WallRenderer {
-	c := append([]string{}, extra...)
-	c = append(c, a.BeadsDirs()...)
-	if cwd, err := os.Getwd(); err == nil {
-		c = append(c, cwd)
-	}
-	return ReadWallRenderer(FindLauncher(VersionString(), c))
+	return ReadWallRenderer(FindLauncher(VersionString(), a.launcherCandidates(true, extra...)))
 }
 
 // lagCategory is one narrowing of a lag rendered for a human. The two

@@ -874,6 +874,22 @@ default_emoji: ⚙️
 # row gates nothing — it says a human is needed. `0` means any lag at all is
 # one, which is what an instance that installs from the tip every time wants.
 # launcher_behind_max: 16   # commits behind before the lag is a condition
+#
+# WHICH CHECKOUT that reading — and the `posse gates` wall-renderer line above
+# it — counts against. The binary's own build stamp picks the repo, so this key
+# only says where to LOOK, and a path that is not a posse checkout holding this
+# binary's commit is skipped and named in the abstention rather than believed.
+#
+# Three sources are consulted and none of them has to be this key: `beads:`,
+# the directory the command was typed in, and — since ranger-base-eiwhk — the
+# checkout `make install` was run from, which the binary carries as a stamp.
+# That stamp is why most instances need nothing here. Set this where the
+# install came from somewhere the stamp cannot name (a binary copied in from
+# another box, a release tarball beside a checkout you do want counted) or
+# where the box holds two clones of posse and the reading must prefer one: it
+# is read AHEAD of `beads:`, because it is the candidate that was typed on
+# purpose. Unset, as it ships, nothing changes.
+# posse_repo: ~/src/posse
 
 # ─── backups of the store of record (ADR 0036) ───────────────────────────────
 # `posse backup` writes ONE on-box archive: the queue repo's git history as a

@@ -83,6 +83,30 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 git -C "$repo" worktree add --detach --quiet "$src" HEAD
-(cd "$src" && "${GOBIN:-go}" build -ldflags "-X github.com/ranger360ai/posse/internal/posse.Build=$sha" -o "$out" ./cmd/posse)
+
+# Stamp WHERE this was built, and $repo rather than $src: the temp worktree
+# above is removed on the way out, while $repo is the checkout an operator
+# still has after `make install` (ranger-base-eiwhk). Without it the installed
+# binary's freshness reading looks only in `beads:` and the cwd, and on an
+# instance whose crew works on something other than posse neither ever names a
+# posse checkout — so `posse gates` reads UNKNOWN forever with the source
+# right there. internal/posse/buildsource.go has why a stamped path is a
+# candidate and never a fact.
+#
+# Whitespace is REFUSED rather than quoted: go splits the -ldflags value on
+# spaces, so a path with one would become a second linker flag. Not stamping
+# leaves the reading exactly as it is today, which is the safe direction.
+ldflags="-X github.com/ranger360ai/posse/internal/posse.Build=$sha"
+case $repo in
+*[[:space:]]*)
+	echo "clean-build: $repo contains whitespace — not stamping the build source" >&2
+	echo "  the freshness reading will look only in beads: and the cwd (ranger-base-eiwhk)" >&2
+	;;
+*)
+	ldflags="$ldflags -X github.com/ranger360ai/posse/internal/posse.BuildSource=$repo"
+	;;
+esac
+
+(cd "$src" && "${GOBIN:-go}" build -ldflags "$ldflags" -o "$out" ./cmd/posse)
 
 echo "clean-build: built $out from $sha"

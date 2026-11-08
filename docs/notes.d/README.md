@@ -16,6 +16,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-hnujh](ranger-base-hnujh.md) — install-hooks refuses another home's wall (ranger-base-hnujh) — 2026-11-07
 - [ranger-base-hgq2k](ranger-base-hgq2k.md) — Verifying ADR 0081 D2/D1/D3/D4 and INSTALL's store step (ranger-base-hgq2k) — 2026-11-07
 - [ranger-base-ewk6u](ranger-base-ewk6u.md) — The plan-usage snapshot is keyed by the login, not the home (ranger-base-ewk6u) — 2026-11-07
+- [ranger-base-eiwhk](ranger-base-eiwhk.md) — The provenance row that could never be green off the laptop (ranger-base-eiwhk) — 2026-11-07
 - [ranger-base-b87ej](ranger-base-b87ej.md) — The commit wall says which home rendered it (ranger-base-b87ej) — 2026-11-07
 - [ranger-base-aj79z](ranger-base-aj79z.md) — The wait-leg error with no sink, and the discriminator that did not exist (ranger-base-aj79z) — 2026-11-07
 - [ranger-base-8rg06](ranger-base-8rg06.md) — Verifying four closes: the destroy's PLACE was the unpinned half (ranger-base-8rg06) — 2026-11-07

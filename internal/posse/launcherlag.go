@@ -150,13 +150,32 @@ func FindLauncher(version string, candidates []string) LauncherLag {
 		if c == "" {
 			continue
 		}
-		dir, isRepo := MainCheckout(ExpandTilde(c))
-		if !isRepo || seen[dir] {
+		// EVERY non-empty candidate is NAMED, with what was wrong with it,
+		// and that is ranger-base-eiwhk's second half. A candidate that is
+		// silently dropped is a dial whose failure to take effect is
+		// invisible: an operator who sets `posse_repo:` to a path that is not
+		// a checkout — or whose build directory has since moved, so the
+		// stamp names a dir that is gone — would read "looked in <the other
+		// repos>" and conclude the setting was ignored. With five sources
+		// feeding this list (promote's source, `posse_repo:`, `beads:`, the
+		// cwd, the build stamp) an undifferentiated list of paths is no
+		// longer a reading anyone can act on.
+		exp := ExpandTilde(c)
+		dir, isRepo := MainCheckout(exp)
+		key := dir
+		if !isRepo {
+			key = "\x00" + exp
+		}
+		if seen[key] {
 			continue
 		}
-		seen[dir] = true
-		looked = append(looked, AbbrevHome(dir))
+		seen[key] = true
+		if !isRepo {
+			looked = append(looked, AbbrevHome(exp)+" (not a git checkout)")
+			continue
+		}
 		if !isPosseCheckout(dir) {
+			looked = append(looked, AbbrevHome(dir)+" (not a posse checkout)")
 			continue
 		}
 		// The stamp has to be IN it. A posse checkout that has never
@@ -168,10 +187,13 @@ func FindLauncher(version string, candidates []string) LauncherLag {
 		// real CLONES of posse both hold the stamp, and the first candidate
 		// wins even if its `main` is the staler of the two. The stamp
 		// separates unrelated histories, not two copies of one — for that
-		// the order is the operator's, and it is the order of `beads:`.
+		// the order is the operator's: `posse_repo:` if they named one
+		// (buildsource.go), else the order of `beads:`.
 		if _, err := git(dir, "cat-file", "-e", rev+"^{commit}"); err != nil {
+			looked = append(looked, AbbrevHome(dir)+" (posse, but it does not hold that commit)")
 			continue
 		}
+		looked = append(looked, AbbrevHome(dir))
 		l.Repo = dir
 		break
 	}
@@ -283,28 +305,40 @@ func (l LauncherLag) behindSentence() string {
 		l.Version, l.Behind, l.Base, AbbrevHome(l.Repo), dirty, AbbrevHome(l.Repo), l.Rev, l.Base)
 }
 
-// Launcher is the instance's own reading: the running binary, counted
-// against every repo this instance is configured for, plus the process's
-// working directory — the second so `posse status` typed inside a posse
-// checkout answers even on a box whose `beads:` never names one.
+// Launcher is the instance's own reading: the running binary, counted against
+// every repo this instance is configured for, plus the process's working
+// directory — the second so `posse status` typed inside a posse checkout
+// answers even on a box whose `beads:` never names one — and, since
+// ranger-base-eiwhk, plus `posse_repo:` and the checkout the binary was BUILT
+// in, which is what answers on a box where none of the first three is a posse
+// checkout at all. launcherCandidates holds the order and why it is that one.
 func (a *App) Launcher() LauncherLag {
 	return FindLauncher(VersionString(), a.launcherCandidates(true))
 }
 
-// LauncherOverFleet is the same reading taken over the instance's CONFIGURED
-// checkouts alone, and it is what G11 is computed from (govern.go lag()).
+// LauncherOverFleet is the same reading taken WITHOUT the cwd candidate, and
+// it is what G11 is computed from (govern.go lag()).
 //
-// The difference from Launcher is one candidate and it is the difference
+// The difference from Launcher is that one candidate and it is the difference
 // between a line and a condition. A line is owed to whoever typed the
 // command, so it answers about the checkout they are standing in; a condition
-// is owed to the fleet, and the fleet is `beads:`. The second half of the
-// reason is in govern.go's lag(), where the row is raised.
+// is owed to the fleet, and the fleet is not whichever directory a command
+// was typed in. The second half of the reason is in govern.go's lag(), where
+// the row is raised.
+//
+// `posse_repo:` and the build stamp ARE in this reading, and the distinction
+// is the same one (ranger-base-eiwhk): one is configuration, the other is a
+// property of the binary the fleet runs — neither is an accident of where
+// somebody was standing. Without them G11 was permanently dark on every
+// instance whose queues are not posse, because an unreadable lag raises
+// nothing (GovRows), which is the ranger-base-y13h7 silence by another route.
 func (a *App) LauncherOverFleet() LauncherLag {
 	return FindLauncher(VersionString(), a.launcherCandidates(false))
 }
 
 // launcherCandidates is the list a reading is taken over, with withCwd the
-// only difference between the two readings above.
+// only difference between the two readings above and extra the directories a
+// caller knows about that no config does.
 //
 // Its own function because that difference is the whole of what distinguishes
 // them and is otherwise unpinnable: both readings go through VersionString(),
@@ -312,13 +346,53 @@ func (a *App) LauncherOverFleet() LauncherLag {
 // end-to-end reading in this package abstains before the candidate scan is
 // even reached — which is why dispatch.Lag and GovInputs.Lag are seams. The
 // candidate list is the part a pin can hold.
-func (a *App) launcherCandidates(withCwd bool) []string {
-	c := a.BeadsDirs()
-	if !withCwd {
-		return c
+//
+// ONE LIST, for both readings and for the wall renderer (ranger-base-eiwhk).
+// `(*App).WallRenderer` composed a second copy of it, which is how
+// ranger-base-eiwhk would have been fixed in one place and left open in the
+// other — the bead's own symptom was read off `posse gates`, which is the
+// copy, not the original.
+func (a *App) launcherCandidates(withCwd bool, extra ...string) []string {
+	cwd := ""
+	if withCwd {
+		if d, err := os.Getwd(); err == nil {
+			cwd = d
+		}
 	}
-	if cwd, err := os.Getwd(); err == nil {
+	return launcherCandidateList(extra, a.PosseRepo(), a.BeadsDirs(), cwd, BuildSource)
+}
+
+// launcherCandidateList is the ORDER, as a pure function of the five sources,
+// because the order is the whole claim and the sources are otherwise only
+// reachable through a config file and a linker flag.
+//
+// First what a CALLER named (promote passes the constitution source it is
+// promoting from — the most specific thing in hand at that moment), then what
+// the OPERATOR named (`posse_repo:`, see PosseRepo on why it outranks
+// `beads:`), then the fleet's queues, then the cwd for the two surfaces an
+// operator typed, and LAST the build stamp.
+//
+// Last is load-bearing. A candidate appended at the end can only change the
+// outcome when every earlier one failed, so the build stamp turns an UNKNOWN
+// into an answer and can never move a reading that `beads:` or the cwd
+// already settled — which is what makes stamping a path into a binary safe
+// to do at all (buildsource.go's header).
+//
+// An empty source contributes nothing rather than an empty candidate, with
+// one exception kept deliberately: BeadsDirs' own cwd fallback yields a
+// single "" entry when the key is absent, and FindLauncher skips it. Passing
+// it through is what it did before this function existed.
+func launcherCandidateList(extra []string, posseRepo string, beads []string, cwd, buildSource string) []string {
+	c := append([]string{}, extra...)
+	if posseRepo != "" {
+		c = append(c, posseRepo)
+	}
+	c = append(c, beads...)
+	if cwd != "" {
 		c = append(c, cwd)
+	}
+	if buildSource != "" {
+		c = append(c, buildSource)
 	}
 	return c
 }

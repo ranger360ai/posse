@@ -28,7 +28,7 @@ the vocabulary is closed at nine or that every process has identical inputs.
 | G10 / `verify-box-unmeasured` | A fresh verdict in which every check answered "nothing measured" | LANE |
 | G10 / `verify-box:<checks>` | Checks the fresh verdict reports as finding or error; the key names them, and `verify_box_accepted` adds the tracking bead id to the detail without removing the check | LANE |
 | G10 / `verify-box-accept-stale:<check>` | A `verify_box_accepted` entry whose check is not red in the fresh verdict | LANE |
-| G11 / `launcher-behind:<depth>` | The running launcher's own build stamp counted against the branch of the configured checkout that holds it, past `launcher_behind_max` (default 16); the key carries the doubling step, so a deepening lag re-prompts at 16, 32, 64 and nowhere between. An unreadable stamp raises nothing and is not a partial view | LANE |
+| G11 / `launcher-behind:<depth>` | The running launcher's own build stamp counted against the branch of the first checkout that holds it — `posse_repo:`, then `beads:`, then the checkout the binary was BUILT in (ranger-base-eiwhk) — past `launcher_behind_max` (default 16); the key carries the doubling step, so a deepening lag re-prompts at 16, 32, 64 and nowhere between. An unreadable stamp raises nothing and is not a partial view | LANE |
 | G12 / `hook-wall:<slot>:<repo>` | One row per degraded L3 slot in the repos `beads_visibility:` declares, from `SweepHookWallIdentity` — the sweep with ADR 0023's behavior half unasked; a skipped repo (absent, not git, managed hooks path per ADR 0052 D1) is never a finding. The detail is the sweep's own line, and the queue repo's carries one clause more | LANE |
 | G13 / `queue-not-a-repo` · `queue-unmarked` | Two config facts that make the launcher's commit of the store of record's projection fail at every close: `queue_repo:` is not a checkout; or it is unmarked in `beads_visibility:`, which is public, which is the one state where the commit guard's beads-jsonl scan runs over it. Not the projection's dirtiness, and not a `beads:` store that legitimately lives outside the queue repo — both are ordinary states | LANE |
 | G14 / `memory-unlanded:<persona>` | A persona memory dir holding lines no commit holds, with no live session for that persona — the landing runs at a kill (`memoryland.go`), so this is a landing that already ran and left them, or was refused. Owner: the personas checkout, read in one `git status` for the whole dir | LANE |
@@ -59,10 +59,11 @@ same ruling.
 G11 is the second row added under that bar (bead ranger-base-y13h7, from
 ranger-base-6pnab). Its predicate is `LauncherLag.Behind >= launcher_behind_max`
 with the reading known; its owner is the running binary's build stamp, counted
-in whichever configured checkout holds that commit (`launcherlag.go`); its
-scope is the instance's `beads:` checkouts and deliberately not the process's
-working directory, because the condition is about the fleet this instance
-dispatches rather than the directory a command was typed in; its class is LANE,
+in whichever checkout holds that commit (`launcherlag.go`); its scope is
+`posse_repo:`, the instance's `beads:` checkouts and the checkout the binary
+was built in, and deliberately not the process's working directory, because the
+condition is about the fleet this instance dispatches rather than the directory
+a command was typed in; its class is LANE,
 on the backup-stale rule — a stale launcher stops nothing, it keeps running
 with the defects its own repo fixed. The reading itself is older (ADR 0029 is
 not its design; `launcherlag.go` and bead ranger-base-z3hx6 are) and it was

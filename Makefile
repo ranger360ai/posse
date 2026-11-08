@@ -42,6 +42,28 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
+# WHERE this build is happening, stamped beside the sha (ranger-base-eiwhk).
+# The freshness reading looks for the binary's own checkout in `beads:` and
+# the cwd, and on an instance whose crew works on something other than posse
+# neither of those ever names a posse checkout — so `posse gates` and `posse
+# status` read "UNKNOWN whether this binary carries the wall renders … that
+# landed" permanently, with the checkout the install came from sitting right
+# there. The build knows that directory; now the binary does too. It is read
+# as the LAST candidate and still has to pass every test FindLauncher applies
+# to any other, so a stale stamp degrades to the abstention it replaced
+# (internal/posse/buildsource.go).
+#
+# `words` is the whitespace guard, and it is why this is two lines rather than
+# an interpolation. go splits the -ldflags VALUE on spaces, so a checkout path
+# containing one would become a second linker flag; a path make sees as more
+# than one word is not stamped at all, and the reading abstains exactly as it
+# does today. 0 words is "not a git checkout", which stamps nothing for the
+# same reason BUILD_STAMP does.
+BUILD_SOURCE := $(shell git rev-parse --show-toplevel 2>/dev/null)
+ifeq ($(words $(BUILD_SOURCE)),1)
+LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
+endif
+
 .PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
