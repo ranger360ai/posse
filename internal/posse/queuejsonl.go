@@ -102,7 +102,15 @@ func (a *App) CommitQueueJSONL(bd Bd, dir, msg string) (QueueCommit, error) {
 		return QueueCommit{Skipped: "config queue_repo: is unset — the store has not moved yet (ADR 0015 §4)"}, nil
 	}
 	store := beadsHome(dir)
-	if !underDir(q, store) {
+	// underSameDir and not underDir: `q` is `queue_repo:` as the operator
+	// typed it and `store` is whatever the session's redirect names, so the
+	// two spellings are independent and the question is only ever about the
+	// directory (ADR 0082 D4 — the comparison answers containment by
+	// identity, and canonicalPath never feeds a comparison). On the string
+	// answer a case-changed `queue_repo:` over a store spelled as on disk
+	// skipped every close, and a skip here costs the bead-loss census this
+	// close's line (ranger-base-oczuq).
+	if !underSameDir(q, store) {
 		return QueueCommit{Repo: q, Store: store, Skipped: AbbrevHome(store) + " is not inside " + AbbrevHome(q)}, nil
 	}
 	c := QueueCommit{Repo: q, Store: store}

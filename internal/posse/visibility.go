@@ -342,6 +342,57 @@ func anySamePath(seen []string, p string) bool {
 	return false
 }
 
+// underSameDir is underDir's question — "is p dir, or inside it?" — answered
+// by IDENTITY rather than by string containment, the way samePath answers
+// "are these one directory?" (ADR 0082 D4's closing paragraph).
+//
+// WHY A SECOND PREDICATE AND NOT A FIX TO underDir. underDir compares the
+// two resolved SPELLINGS with filepath.Rel, and every one of its ~25 callers
+// but one is asking about a sandbox grant or a seatbelt literal — a
+// containment rule about a path some other program will match, where the
+// spelling IS the subject (seatbelt.go's note on underDir, and insideDir
+// beside it, which ranger-base-ie68e split out for exactly that reason).
+// Those stay on strings. This one is for a caller whose question is only
+// ever about the directory itself.
+//
+// WHAT THE STRING ANSWER GETS WRONG. MEASURED 2026-11-08 (ranger-base-oczuq,
+// go1.26.5 darwin/arm64, APFS case-insensitive, scratch `real/Repo/.beads`):
+// with dir spelled `real/REPO` and p spelled `real/Repo/.beads`, both sides
+// absResolve to those same two strings — EvalSymlinks keeps the caller's
+// case — so filepath.Rel gives `../Repo/.beads` and underDir says "not
+// inside", although os.SameFile says `real/REPO` and `real/Repo` are one
+// directory. That is samePath's own case axis (ranger-base-99gww) reached
+// through containment instead of equality, and the cost at the one caller
+// was every close's record missing the store's git history.
+//
+// THE WALK. The string answer runs FIRST and unchanged, so the ordinary
+// call pays nothing and no behaviour that underDir already called contained
+// changes. Only on a false does this climb p's ancestors and ask samePath,
+// which stats. A sibling namespace is not reached by the climb — `<base>.x`
+// has no ancestor that is `<base>` — so the ranger-base-cypy1 shape
+// (`<base>.<suffix>` is NOT under `<base>`) answers the same way it does on
+// strings, and a dir that does not exist stats nowhere and stays false,
+// which is the direction underDir already failed in.
+func underSameDir(dir, p string) bool {
+	if underDir(dir, p) {
+		return true
+	}
+	d := absResolve(dir)
+	for cur := absResolve(p); ; {
+		if samePath(cur, d) {
+			return true
+		}
+		parent := filepath.Dir(cur)
+		// filepath.Dir of a root is that root, which is the climb's only
+		// stopping condition — a relative path Abs'd in absResolve above
+		// reaches "/" and a Windows volume root reaches `C:\`.
+		if parent == cur {
+			return false
+		}
+		cur = parent
+	}
+}
+
 // resolvedPath is one spelling normalized as far as a string can be:
 // expanded, cleaned, and with symlinks resolved when they resolve
 // (/tmp → /private/tmp on macOS is the case that bites, and it bites tests

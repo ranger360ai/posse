@@ -1562,6 +1562,18 @@ func absResolve(p string) string {
 
 // underDir reports whether p is dir or inside it, compared as the sandbox
 // sees them — /tmp and its /private/tmp real path are the same directory.
+//
+// A STRING comparison, deliberately, and it stays one. Nearly every caller
+// is asking about a sandbox grant, a seatbelt literal or a PID's
+// `writable:` — a containment rule about a path some other program will
+// match, where the spelling is the subject, which is also why insideDir
+// below is split out (ranger-base-ie68e). The cost is that two spellings of
+// one directory can disagree: on a case-insensitive volume `real/REPO` and
+// `real/Repo` are one directory and EvalSymlinks keeps the caller's case,
+// so Rel reports `..`. A caller whose question is only ever about the
+// DIRECTORY wants underSameDir (visibility.go), which answers by identity;
+// widening this one would move grant decisions, which is nobody's accident
+// to have (ADR 0082 D4, ranger-base-oczuq).
 func underDir(dir, p string) bool {
 	return insideDir(absResolve(dir), absResolve(p))
 }
