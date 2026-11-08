@@ -657,6 +657,30 @@ refusal: a missing `/bin/true`, a `bwrap` too old for these flags, a seccomp
 refusal and the resolver's own `could not ask` all leave the tier
 unavailable. "Could not ask" is not "the wall is up".
 
+*A THIRD question, and the window between D16 and D18 (ranger-base-pl3ck,
+2026-11-08).* D16 as built answers "which mechanism" and "can this host", and
+nothing between the availability table and the launch line asked **can posse
+type it**. `wallRendered` reads the table, and both of its call sites then
+type `SeatbeltPrefix` — `sandbox-exec -f <prof>` — unconditionally. So with
+D16 landed and D18 not, a `cage: seatbelt` launch on the Linux host would have
+reported its L2 rules REALIZED (parity's `seatbelt :=` reads only
+`cageAvailable`) and typed a binary that host does not have, where before D16
+the same launch was REFUSED with "cage seatbelt is not available on this
+host/build". Not hypothetical: the host probe measured bwrap 0.13.1 present
+with B0 allowed (ranger-base-hft2q), so both of D16's questions answer yes
+there. The table fill therefore reads all three —
+`seatbeltTierProvidedOn` = `wallMechanismRendered(WallMechanism())` **and**
+the measured availability — and `wallMechanismRendered` admits
+`sandbox-exec` alone. The question is about TYPING the wall: D17's `BwrapArgs`
+is a pure argv render with no call site on a launch line, so it does not lift
+this. **D18 lifts it in one line**, in the commit that replaces both
+`SeatbeltPrefix` call sites, and the pin beside it
+(`TestQAWallTableClaimsNoTierThisBuildCannotType`) reds if either lands
+without the other. The third question is kept apart from the other two for
+the same reason they are kept apart from each other: folded into
+availability it would make the apply probe answer for a render, and folded
+into the NAME it would print bare `seatbelt` on that Linux host again.
+
 The rename landed: `seatbeltWallRendered` is `wallRendered`, in
 `internal/posse/seatbelt.go`, and D21's text below should be read against
 that name. It still carries `!rt.SelfSandbox` unconditionally — D21's flip

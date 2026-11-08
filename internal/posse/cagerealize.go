@@ -171,7 +171,10 @@ func CageRealizeEntries(cfg, goos string) ([]CageRealizeEntry, error) {
 // cageRealizeRows validates one member's pairs.
 func cageRealizeRows(cfg, key string) ([]CageRealizeEntry, error) {
 	var rows []CageRealizeEntry
-	seen := map[string]bool{}
+	// The demanded tier → its answer. One map and not a `seen` set beside it:
+	// a key is present here exactly when it has been answered, and the
+	// idempotence loop below needs the answer and not just the fact.
+	target := map[string]string{}
 	for _, kv := range YamlMapPairs(cfg, key) {
 		e := CageRealizeEntry{From: kv[0], To: kv[1]}
 		bad := func(why string) error {
@@ -189,11 +192,42 @@ func cageRealizeRows(cfg, key string) ([]CageRealizeEntry, error) {
 			// (`default_engine:`, a.cageAvailable's engine probe), so it is
 			// not a class a host-wide GOOS map can hand off or stand in for.
 			return nil, bad("cage " + CageContainer + " may appear on neither side of this map: its engine is chosen per home, not per OS")
-		case seen[e.From]:
+		// A non-empty answer is already recorded for this demand. Reached
+		// only after the `e.To == ""` arm above, so a present key always
+		// carries a real tier.
+		case target[e.From] != "":
 			return nil, bad("the demanded tier " + e.From + " is mapped twice; one answer per demand")
 		}
-		seen[e.From] = true
+		target[e.From] = e.To
 		rows = append(rows, e)
+	}
+	// IDEMPOTENT, OR REFUSED (ranger-base-pl3ck). A launch applies this map
+	// TWICE: planLaunch resolves the demand and hands the REALIZED tier to
+	// checkParityIn, which resolves again (herdrback.go, parity.go — and that
+	// second reading is load-bearing, it is why parity can ask the map about
+	// ag.Cage too). So correctness rests on the map answering the same thing
+	// the second time, which nothing above checks.
+	//
+	// MEASURED before the refusal existed: a member carrying both
+	// `shims: seatbelt` and `seatbelt: shims` was accepted as two rows, and
+	// then one application of it realized `shims` as `seatbelt` while a
+	// second realized it as `shims` — so the launch rendered the seatbelt
+	// wall at the tier planLaunch resolved while parity, the printed block
+	// and the session record all said shims, and carried a spurious
+	// `cage_realize: <goos> seatbelt→shims` ratified waiver for a launch that
+	// asked for shims.
+	//
+	// The test is "a realized target that is itself a demanded key, answered
+	// with something other than itself". Identity (`seatbelt: seatbelt`)
+	// passes: it is a key whose answer IS itself, so a second application
+	// changes nothing — and it is the one row D7 accepts as "not degradation
+	// at all". Refused here with the other "nothing defaults" refusals, in
+	// file order, so an operator reads one sentence about the pair.
+	for _, e := range rows {
+		if to, ok := target[e.To]; ok && to != e.To {
+			return nil, Die("%s: %s: %s: %s — the realized tier %s is itself a demanded tier in this map, answered with %s. A launch applies this map twice (the demand at plan, the realized tier again at parity), so this one would resolve to %s once and %s the second time: the wall rendered at one tier and the parity block, the printed report and the session record all saying the other (ADR 0083 D7, ranger-base-pl3ck)",
+				AbbrevHome(cfg), key, e.From, e.To, e.To, to, e.To, to)
+		}
 	}
 	return rows, nil
 }
@@ -238,8 +272,20 @@ func RealizeCageIn(cfg, goos, ratifier, demanded string) (CageRealizeResolution,
 // cageRealizeReason is the one sentence this map writes into Parity.Ratified
 // and the session meta. ADR 0083 D7's own shape: who, from where to where,
 // and what ratified it.
+//
+// It carries NO "; " (ranger-base-pl3ck). The field it lands in is a
+// "; "-joined list — CreateSession joins Parity's lists that way — and
+// DegradedBeyondRatified splits on that separator and asks each part for this
+// prefix. The goos and the entry are validated tiers, but the ratifier is
+// free text: one of cageRealizeRatifier's four states quotes an os error
+// (`<manifest> is unreadable: ` + err.Error()), and an error text carrying
+// "; " would split this one reason into a second part with no prefix — read
+// as REAL degradation, so RecreateOpts arms AllowDegraded, the exact
+// direction that predicate exists to prevent. Stripped where the reason is
+// built rather than guarded at the reader: the reader's contract is the
+// separator, and this is the one writer that can break it.
 func cageRealizeReason(goos string, e CageRealizeEntry, ratifier string) string {
-	return fmt.Sprintf("%s%s %s (%s)", CageRealizeReasonPrefix, goos, e, ratifier)
+	return fmt.Sprintf("%s%s %s (%s)", CageRealizeReasonPrefix, goos, e, strings.ReplaceAll(ratifier, "; ", ", "))
 }
 
 // RealizeCage is RealizeCageIn for this App on this OS.
@@ -348,7 +394,10 @@ func (a *App) CageRealizeStanding() (CageRealizeStanding, error) {
 //
 // The field is a "; "-joined list (CreateSession joins Parity's lists that
 // way, and yamlflat.go's reader gives it back as one line), and the reason
-// this map writes carries no "; " of its own.
+// this map writes carries no "; " of its own — not because its own text has
+// none, but because cageRealizeReason strips it from the one part that is
+// free text, the ratifier (ranger-base-pl3ck). Read that comment before
+// trusting this sentence.
 func DegradedBeyondRatified(degraded string) bool {
 	for _, part := range strings.Split(degraded, "; ") {
 		if strings.TrimSpace(part) == "" {

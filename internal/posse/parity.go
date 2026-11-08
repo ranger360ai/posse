@@ -209,11 +209,6 @@ type Parity struct {
 	// rather than in it: the refusal reads Degraded, the session meta and
 	// the printers read both.
 	Ratified []string
-	// CageDemanded is the tier the launch ASKED for, before
-	// `cage_realize_<goos>:`. Cage is what it got. They differ only where
-	// the map says so, and the pair is what makes a mapped launch legible in
-	// a printer that has one line to say it in.
-	CageDemanded string
 }
 
 // AnyDegradation reports whether this launch is degraded in any way a session
@@ -257,8 +252,16 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	// launch and dispatch doors refuse on the error itself before reaching
 	// here (CreateSession, CheckTier), which is where a config refusal
 	// belongs; this line is the one that cannot return an error.
+	//
+	// The DEMAND is not a field of Parity (ranger-base-pl3ck). It was one for
+	// a day, on the ground that "the pair is what makes a mapped launch
+	// legible in a printer that has one line to say it in" — and no printer
+	// read it: the ⚖ ratified row already carries `<demanded>→<realized>`,
+	// which is the pair, said where it is load-bearing. Where the map does
+	// NOT lower a tier there is no waiver to be legible about, and the demand
+	// survives in ag.Cage, which is where the relaunch reading below reads it
+	// back from.
 	demanded := cage
-	p.CageDemanded = demanded
 	res, cageMapErr := a.RealizeCage(demanded)
 	if cageMapErr != nil {
 		p.Degraded = append(p.Degraded, cageMapErr.Error())

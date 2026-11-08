@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -2060,8 +2061,14 @@ func main() {
 				if sb := a.CheckParityIn(ag, rt, posse.CageSeatbelt, tier, cwd); sb.Cage != base.Cage {
 					fmt.Fprint(out, "  "+sb.String())
 				} else {
-					fmt.Fprintf(out, "  no separate %s block: this host realizes %s as %s (cage_realize:, ADR 0083 D7), so the block above already IS this PID at its demanded tier\n",
-						posse.CageSeatbelt, posse.CageSeatbelt, sb.Cage)
+					// The key is named as an operator can ACT on it:
+					// `cage_realize_<goos>:` is the spelling this reader
+					// accepts, and the bare `cage_realize:` is refused BY
+					// NAME two files over (cagerealize.go) — so printing
+					// that one here would send the reader to edit a line
+					// posse would then refuse (ranger-base-pl3ck).
+					fmt.Fprintf(out, "  no separate %s block: this host realizes %s as %s (%s, ADR 0083 D7), so the block above already IS this PID at its demanded tier\n",
+						posse.CageSeatbelt, posse.CageSeatbelt, sb.Cage, posse.CageRealizeKey(runtime.GOOS)+":")
 				}
 			}
 		}

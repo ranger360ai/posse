@@ -14,6 +14,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-vkmv3](ranger-base-vkmv3.md) — ranger-base-vkmv3 — what a refusal prints for a directory nobody can name — 2026-11-08
 - [ranger-base-tc41o](ranger-base-tc41o.md) — claude on the bwrap wall: a directory grant, and a refusal with no error behind it (ranger-base-tc41o) — 2026-11-08
 - [ranger-base-qoamy](ranger-base-qoamy.md) — The bwrap render, as built: three things D17 did not settle (ranger-base-qoamy) — 2026-11-08
+- [ranger-base-pl3ck](ranger-base-pl3ck.md) — Six findings against two sound closes (ranger-base-pl3ck) — 2026-11-08
 - [ranger-base-k9x8n](ranger-base-k9x8n.md) — install-hooks resolves its target before anything reads it (ranger-base-k9x8n) — 2026-11-08
 - [ranger-base-ib61s](ranger-base-ib61s.md) — The rendered unit carries a PATH, and it is the render's own (ranger-base-ib61s) — 2026-11-08
 - [ranger-base-i0yuw](ranger-base-i0yuw.md) — The fence has one file in it, and the transport is already equal (ranger-base-i0yuw) — 2026-11-08

@@ -99,7 +99,9 @@ refuses as before.
 - `internal/posse/cagerealize.go` — the family, its total validation, the
   resolution, the provenance token, the standing reading, the predicate.
 - `internal/posse/parity.go` — `Parity.Ratified`/`CageDemanded`, the map
-  applied before every rule check, the fourth verdict.
+  applied before every rule check, the fourth verdict. (`CageDemanded` was
+  removed a day later: no printer ever read it, and the ⚖ ratified row
+  already carries the pair — ranger-base-pl3ck item 5.)
 - `internal/posse/herdrback.go` — the launch refuses a map it cannot read; the
   refusal reads `Degraded`, the record reads both.
 - `internal/posse/relaunch.go`, `internal/posse/govern.go` — the two readers

@@ -152,6 +152,32 @@ func TestCageRealizeMapTable(t *testing.T) {
 			cfg:  "cage_realize_linux:\n  seatbelt: shims\n  seatbelt: seatbelt\n",
 			goos: "linux", demanded: CageSeatbelt, realized: CageSeatbelt,
 			refuse: "mapped twice"},
+		// IDEMPOTENCE (ranger-base-pl3ck). A launch applies this map twice,
+		// so a realized tier that is itself a demanded key answered with
+		// something else resolves to two different tiers on the two
+		// readings. Accepted before the refusal landed, and MEASURED: the
+		// wall went up at one tier while the parity block, the report and
+		// the session record said the other, with a waiver for a demand
+		// nobody made.
+		{name: "a swap answers differently on the second application",
+			cfg:  "cage_realize_linux:\n  shims: seatbelt\n  seatbelt: shims\n",
+			goos: "linux", demanded: CageShims, realized: CageShims,
+			refuse: "is itself a demanded tier in this map"},
+		{name: "the swap is refused whichever way round it is written",
+			cfg:  "cage_realize_linux:\n  seatbelt: shims\n  shims: seatbelt\n",
+			goos: "linux", demanded: CageSeatbelt, realized: CageSeatbelt,
+			refuse: "is itself a demanded tier in this map"},
+		{name: "another OS's swap refuses this OS's read, like every other member",
+			cfg:  crLinuxMap + "cage_realize_darwin:\n  shims: seatbelt\n  seatbelt: shims\n",
+			goos: "linux", demanded: CageSeatbelt, realized: CageSeatbelt,
+			refuse: "is itself a demanded tier in this map"},
+		// And the two shapes it must NOT catch, which is the whole of why
+		// the test is "answered with something OTHER than itself": identity
+		// is a key whose answer is itself, so a second application changes
+		// nothing, and a lone raise names no key on its realized side.
+		{name: "identity beside a raise is idempotent and stays accepted",
+			cfg: "cage_realize_linux:\n  shims: seatbelt\n  seatbelt: seatbelt\n", goos: "linux",
+			demanded: CageShims, realized: CageSeatbelt},
 		// The validation is TOTAL, not per-lookup: the member being edited
 		// is rarely the member being read, and a map whose other half nobody
 		// checked is a map nobody checked.
@@ -188,6 +214,48 @@ func TestCageRealizeMapTable(t *testing.T) {
 				want := "cage_realize: " + tc.goos + " " + tc.demanded + "→" + tc.realized + " (" + crNeverPromoted + ")"
 				if res.Ratified != want {
 					t.Errorf("reason = %q, want %q", res.Ratified, want)
+				}
+			}
+		})
+	}
+}
+
+// THE INVARIANT THE REFUSAL ABOVE BUYS (ranger-base-pl3ck): a map this reader
+// accepts answers the same thing on its second application.
+//
+// It is not a style rule. A launch resolves the map TWICE — planLaunch
+// resolves the demand and hands the REALIZED tier to checkParityIn, which
+// resolves again, and that second reading is load-bearing (it is how parity
+// reports the waiver for a relaunch that comes back carrying the realized
+// tier). So every accepted map is applied to its own answer here, which is
+// exactly what the second reading does.
+func TestCageRealizeAcceptedMapsAreIdempotent(t *testing.T) {
+	t.Parallel()
+	for _, cfgBody := range []string{
+		"",
+		crLinuxMap,
+		"cage_realize_linux:\n  seatbelt: seatbelt\n",
+		"cage_realize_linux:\n  shims: seatbelt\n",
+		"cage_realize_linux:\n  shims: seatbelt\n  seatbelt: seatbelt\n",
+	} {
+		t.Run(strings.ReplaceAll(cfgBody, "\n", "·"), func(t *testing.T) {
+			t.Parallel()
+			cfg := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(cfg, []byte(cfgBody), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, demanded := range []string{CageShims, CageSeatbelt} {
+				first, err := RealizeCageIn(cfg, "linux", crNeverPromoted, demanded)
+				if err != nil {
+					t.Fatalf("accepted config refused: %v", err)
+				}
+				again, err := RealizeCageIn(cfg, "linux", crNeverPromoted, first.Realized)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if again.Realized != first.Realized {
+					t.Errorf("%q: %s realizes as %s, but applying the map to %s again gives %s — the launch applies it twice, so the wall would go up at one tier and every report name the other",
+						cfgBody, demanded, first.Realized, first.Realized, again.Realized)
 				}
 			}
 		})
@@ -256,6 +324,44 @@ func TestCageRealizeRatifierNamesWhatRatifiedIt(t *testing.T) {
 	}
 }
 
+// The reason carries no "; " of its own, and that is now a property of the
+// WRITER and not of its inputs (ranger-base-pl3ck). `degraded:` is a
+// "; "-joined list and DegradedBeyondRatified splits on that separator, so a
+// ratifier containing it would split this one reason into a second part with
+// no `cage_realize: ` prefix — read as REAL degradation, which arms
+// AllowDegraded on the relaunch: the exact direction that predicate exists to
+// prevent. The ratifier is the only free-text part, and one of its four
+// states quotes an os error.
+func TestCageRealizeReasonCarriesNoListSeparator(t *testing.T) {
+	t.Parallel()
+	e := CageRealizeEntry{From: CageSeatbelt, To: CageShims}
+	// The shape that produced it: an unreadable manifest quoting an os error
+	// whose own text carries the separator.
+	ratifier := cageRealizeRatifier(nil, Die("open /x; y: permission denied"))
+	if !strings.Contains(ratifier, "; ") {
+		t.Fatalf("NOTHING MEASURED: this fixture is meant to put %q in the ratifier, got %q", "; ", ratifier)
+	}
+	reason := cageRealizeReason("linux", e, ratifier)
+	if strings.Contains(reason, "; ") {
+		t.Errorf("the reason must carry no %q: %q splits into parts that are not all ratified, and RecreateOpts then arms AllowDegraded", "; ", reason)
+	}
+	if DegradedBeyondRatified(reason) {
+		t.Errorf("a ratified-only degraded field must read as ratified only: %q", reason)
+	}
+	// Still legible, and still the provenance: the strip replaces the
+	// separator, it does not drop the sentence.
+	for _, want := range []string{CageRealizeReasonPrefix, "seatbelt→shims", "permission denied", PromoteManifestFile} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason %q lost %q", reason, want)
+		}
+	}
+	// And the four states that carry no separator are untouched, byte for
+	// byte, so nothing else in this file's expectations moves.
+	if got, want := cageRealizeReason("linux", e, crNeverPromoted), CageRealizeReasonPrefix+"linux seatbelt→shims ("+crNeverPromoted+")"; got != want {
+		t.Errorf("reason = %q, want %q", got, want)
+	}
+}
+
 // ─── 3 · parity at the realized tier ────────────────────────────────────────
 
 // THE CLAIM D7 RESTS ON: the map waives the cage line and never a rule.
@@ -295,8 +401,14 @@ func TestCageRealizeParityIsComputedAtTheRealizedTier(t *testing.T) {
 
 	// A rule the realized tier cannot hold still refuses.
 	pw := a.CheckParity(wall, claude, ResolveCage("", wall), TierStrong)
-	if pw.Cage != CageShims || pw.CageDemanded != CageSeatbelt {
-		t.Fatalf("the map must realize seatbelt as shims and remember the demand: %+v", pw)
+	if pw.Cage != CageShims {
+		t.Fatalf("the map must realize seatbelt as shims: %+v", pw)
+	}
+	// And the DEMAND is remembered on the ⚖ row and not in a field of its
+	// own (ranger-base-pl3ck): `<demanded>→<realized>` is where the pair is
+	// load-bearing, and it is asserted in full two lines down.
+	if !strings.Contains(strings.Join(pw.Ratified, " "), CageSeatbelt+"→"+CageShims) {
+		t.Errorf("the waiver must name the demand it lowered: %v", pw.Ratified)
 	}
 	if len(pw.Ratified) != 1 || pw.Ratified[0] != reason {
 		t.Errorf("ratified row = %v, want [%q]", pw.Ratified, reason)
@@ -458,6 +570,45 @@ func TestGovG17NoMapIsNotACondition(t *testing.T) {
 	govRepo(t, b)
 	if g := find(shopSet(t, govIn(t, b)), "G17"); g != nil {
 		t.Errorf("a home with no cage map must raise nothing: %+v", *g)
+	}
+}
+
+// A MAP THIS READER CANNOT PARSE IS NOT AN ALL-CLEAR (ranger-base-pl3ck).
+// The invariant is stated in capitals over govern.go's G17 arm and had no
+// pin: the unreadable map goes to `failed`, so the set is PARTIAL and no
+// surface renders "no condition" over a reading that did not happen.
+// MEASURED before this arm existed: replacing that append with a discard left
+// every test green, TestGovG17CageMapLoweringATier and
+// TestGovG17NoMapIsNotACondition included — the two arms that look like they
+// cover it.
+//
+// Not shopSet, which fatals on a partial set: that is the thing being
+// asserted here, so this arm reads ShopCheck's two returns itself.
+func TestGovG17AnUnparseableMapIsNotAnAllClear(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	// A mistyped MEMBER of the family, which is the failure the key family
+	// was ruled to have: it reads as absent to a per-lookup reader, and
+	// total validation is what turns it into this error.
+	crCfgPrepend(t, b.App, "cage_realize_linus:\n  seatbelt: shims\n")
+
+	set, failed := ShopCheck(govIn(t, b))
+	if g := find(set, "G17"); g != nil {
+		t.Errorf("an unreadable map raises no G17 row — whether anything is lowered is exactly what could not be read: %+v", *g)
+	}
+	var found string
+	for _, err := range failed {
+		if strings.Contains(err.Error(), "G17 unknown") {
+			found = err.Error()
+		}
+	}
+	if found == "" {
+		t.Fatalf("the set must be PARTIAL, naming G17 as the reading that failed; got %d failure(s): %v", len(failed), failed)
+	}
+	// The failure carries the config's own sentence, so the operator reads
+	// the line to fix and not just which check gave up.
+	if !strings.Contains(found, "names no OS this posse runs on") {
+		t.Errorf("the partial-set entry must carry the map's own refusal: %q", found)
 	}
 }
 

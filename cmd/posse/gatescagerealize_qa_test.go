@@ -102,12 +102,49 @@ func TestQAGatesPrintsOneBlockWhereTheCageMapCollapsesTwo(t *testing.T) {
 	}
 	// Said out loud, not swallowed: the absent block has a reason and the
 	// reason names the key.
-	if !strings.Contains(mapped, collapsed) || !strings.Contains(mapped, "cage_realize:") {
-		t.Errorf("the collapsed block must say why, naming the key:\n%s", mapped)
+	//
+	// THE LINE, CUT OUT FIRST, and that is the whole of this arm's
+	// correctness (ranger-base-pl3ck). Asserted over the whole output it
+	// read `cage_realize:` off the ⚖ ratified row printed a few lines above
+	// — satisfied twice over and proving nothing about the collapse line.
+	// MEASURED: dropping the key from the Fprintf left this arm green.
+	// And the key it must name is the one an operator can ACT on,
+	// `cage_realize_<goos>:`: the bare `cage_realize:` is the spelling
+	// cagerealize.go refuses BY NAME.
+	//
+	// EVERY one of them: this surface prints the line per RUNTIME and not
+	// per persona, and a reader who lands on the third block reads the
+	// third line.
+	for _, line := range gcrLinesWith(t, mapped, collapsed) {
+		if !strings.Contains(line, posse.CageRealizeKey(runtime.GOOS)+":") {
+			t.Errorf("the collapsed block's own line must name the key family an operator can edit (%s:), not the nested spelling this reader refuses:\n%s", posse.CageRealizeKey(runtime.GOOS), line)
+		}
+		if !strings.Contains(line, posse.CageShims) {
+			t.Errorf("the line must say what this host realizes the tier AS, or the operator reads an absence with no answer in it:\n%s", line)
+		}
 	}
 	// And the waiver itself is still on the surface — collapsing the second
 	// block must not take the row that says the cage was lowered.
 	if !strings.Contains(mapped, "⚖ cage_realize: "+runtime.GOOS+" seatbelt→shims") {
 		t.Errorf("the ratified row must still print:\n%s", mapped)
 	}
+}
+
+// gcrLinesWith is the output lines containing want, and a fatal if there are
+// none. Cutting the lines out is what makes an assertion about them an
+// assertion about them: this surface prints the same key on the ⚖ ratified
+// row, so `strings.Contains` over the whole output answers yes for a collapse
+// line that says nothing at all (ranger-base-pl3ck).
+func gcrLinesWith(t *testing.T, out, want string) []string {
+	t.Helper()
+	var hits []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, want) {
+			hits = append(hits, l)
+		}
+	}
+	if len(hits) == 0 {
+		t.Fatalf("no line contains %q:\n%s", want, out)
+	}
+	return hits
 }
