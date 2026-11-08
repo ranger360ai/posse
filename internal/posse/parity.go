@@ -780,6 +780,11 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// pin's GIT_CONFIG_SYSTEM row. Printed, never degrading — see
 	// policypin.go.
 	applyPolicyPin(&p, rt)
+	// ADR 0080 D20: what the bwrap mechanism's git ref grant is for THIS
+	// launch dir — a directory bind and its widening, or no ref grant at all
+	// for a top-level branch in a linked worktree. Declared difference,
+	// never degrading — see bwrap.go. Silent at every other mechanism.
+	a.applyBwrapRefGrant(&p, dir)
 	// ADR 0007 §6f: the cwd skills root's precondition on the session
 	// directory. Directory-aware for ProjectConfigTrust's reason — whether
 	// grok trusts this folder is a fact about a concrete launch dir and not
