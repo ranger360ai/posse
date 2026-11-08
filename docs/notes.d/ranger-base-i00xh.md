@@ -11,7 +11,7 @@ first code bead to measure the multiple. This is that measurement.
 MEASURED 2026-10-09, `bd version 0.50.3 (bd25acbc)`, darwin 25.4.0, from a
 `cage: seatbelt` crew seat, on this box with the live instance's own
 configuration (two beads repos: the queue repo of record, reached through a
-`.beads/redirect`, and `~/src/hcn`).
+`.beads/redirect`, and `~/src/proj`).
 
 `posse dispatch --dry-run`, built from this worktree with the check in it,
 with `RHQ_BD_BIN` pointed at a pass-through shim that appends one line per
@@ -35,7 +35,7 @@ Both passes: **14 bd calls**, byte-identical in shape.
 | 2 | `list --status in_progress --json --limit 0` | `InProgress`, once per repo |
 
 **Empty list reads: 0. `info` calls fired: 0. Added tax: 0s.** The three
-calls whose stdout was empty were `~/src/hcn`'s, all exit 1 (`sqlite3:
+calls whose stdout was empty were `~/src/proj`'s, all exit 1 (`sqlite3:
 unable to open database file` — that store is not openable from this seat's
 cage). A failing read returns on `run`'s error path and never reaches the
 check, which is the point: an error was already loud.

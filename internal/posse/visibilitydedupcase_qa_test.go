@@ -5,8 +5,8 @@ package posse
 // ranger-base-y5vud — the gap in ranger-base-99gww's close.
 //
 // That bead replaced a string compare with samePath (identity: same device,
-// same inode) so a `beads_visibility:` key the operator spelled `~/src/hcn`
-// meets the directory git spells `~/src/HCN`. It carried the SAME comparison
+// same inode) so a `beads_visibility:` key the operator spelled `~/src/proj`
+// meets the directory git spells `~/src/PROJ`. It carried the SAME comparison
 // to two dedup sites through anySamePath — SweepHookWall and
 // SweepSecondStores, where two spellings of one checkout must be one row —
 // and visibilitypathcase_qa_test.go pins only the lookup and the stamp.
@@ -47,7 +47,7 @@ import (
 func TestQAHookWallSweepCountsTwoCaseSpellingsOfOneRepoOnce(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	onDisk, lower := otherCaseDir(t, home, "HCN")
+	onDisk, lower := otherCaseDir(t, home, "PROJ")
 
 	a := hermetic(t, NewAppAt(t.TempDir()))
 	if err := os.WriteFile(a.ConfigPath,
@@ -80,7 +80,7 @@ func TestQAHookWallSweepCountsTwoCaseSpellingsOfOneRepoOnce(t *testing.T) {
 func TestQASecondStoreDeduplicatesTwoCaseSpellingsOfOneCheckout(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	onDisk, lower := otherCaseDir(t, home, "HCN")
+	onDisk, lower := otherCaseDir(t, home, "PROJ")
 	instance := t.TempDir()
 
 	a := hermetic(t, NewAppAt(t.TempDir()))

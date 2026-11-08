@@ -121,7 +121,7 @@ func (a *App) sweepHookWall(ask l3Ask) HookWallSweep {
 		// the counts: a duplicate key that inflated Declared would make
 		// "0 of N present" name a repo that was never a separate repo.
 		// Compared by identity, not by string — on a case-insensitive
-		// volume `~/src/hcn` and `~/src/HCN` are one checkout and would
+		// volume `~/src/proj` and `~/src/PROJ` are one checkout and would
 		// otherwise be two rows probing one wall (ranger-base-99gww).
 		dir := absResolve(ExpandTilde(key))
 		if anySamePath(seen, dir) {

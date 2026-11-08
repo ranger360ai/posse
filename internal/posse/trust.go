@@ -306,8 +306,8 @@ func ClaudeTrustKey(dir string) string {
 // the on-disk spelling (MEASURED there too: a `git worktree add` under
 // `caserepo` wrote `gitdir: .../CASEREPO/.git/worktrees/...`) and posse
 // creates its own session dirs — and "correcting" it would break what the
-// pointer-spelling pin holds: `bd` lists ~/src/hcn where the filesystem
-// spells HCN, and claude's lookup is an exact string match against git's
+// pointer-spelling pin holds: `bd` lists ~/src/proj where the filesystem
+// spells PROJ, and claude's lookup is an exact string match against git's
 // spelling.
 func claudeProjectKey(dir string) string {
 	key := dir

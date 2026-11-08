@@ -9,8 +9,8 @@ package posse
 //
 //	symlinks   resolved, as EvalSymlinks also does.
 //	CASE       the on-disk spelling. EvalSymlinks keeps the CALLER's case, so
-//	           on a case-INsensitive volume (the APFS default) `~/src/hcn`
-//	           and `~/src/HCN` resolved to two strings for one directory and
+//	           on a case-INsensitive volume (the APFS default) `~/src/proj`
+//	           and `~/src/PROJ` resolved to two strings for one directory and
 //	           rendered two identity walls — ranger-base-99gww's axis, the
 //	           one samePath exists to answer for the COMPARISON.
 //	firmlinks  folded. `/System/Volumes/Data/Users/<u>/src/<repo>` is the

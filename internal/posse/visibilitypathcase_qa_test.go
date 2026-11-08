@@ -4,11 +4,11 @@ package posse
 // the key was matched by STRING. resolvedPath normalized a spelling (Clean,
 // Abs, EvalSymlinks) but EvalSymlinks does not fold case, so on a
 // case-INsensitive volume — the APFS default, this whole box — a config key
-// the operator typed as `~/src/hcn` never met the directory git spells
-// `~/src/HCN`, and the repo fell through to "unmarked is public (fail
+// the operator typed as `~/src/proj` never met the directory git spells
+// `~/src/PROJ`, and the repo fell through to "unmarked is public (fail
 // closed)".
 //
-// What that cost: `posse gates install-hooks ~/src/hcn` stamped the shared
+// What that cost: `posse gates install-hooks ~/src/proj` stamped the shared
 // prepare-commit-msg hook private (it was handed the config spelling), and
 // the next dispatched launch — which derives the repo path from git, so
 // upper case — re-stamped the SAME file public and said it had healed a
@@ -20,7 +20,7 @@ package posse
 // THE FIX: samePath — the question was never "what is the canonical string"
 // but "are these two spellings the same directory", so it is answered by
 // identity (os.SameFile) and not by spelling. That is right on a
-// case-sensitive volume too, where `hcn` and `HCN` are two directories with
+// case-sensitive volume too, where `proj` and `PROJ` are two directories with
 // two inodes and must NOT merge; a case fold would have merged them.
 //
 // MUTATION-CHECKED (2026-10-03, this box, APFS case-insensitive): samePath
@@ -79,7 +79,7 @@ func otherCaseDir(t *testing.T, parent, name string) (onDisk, otherCase string) 
 func TestBeadsVisibilityReadsAConfigKeySpelledInAnotherCase(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	onDisk, lower := otherCaseDir(t, home, "HCN")
+	onDisk, lower := otherCaseDir(t, home, "PROJ")
 	cfg := filepath.Join(home, "config.yaml")
 	// The operator's spelling is the lower-case one; git's is on disk.
 	if err := os.WriteFile(cfg, []byte("beads_visibility:\n  "+lower+": private\n"), 0o644); err != nil {
@@ -102,7 +102,7 @@ func TestBeadsVisibilityReadsAConfigKeySpelledInAnotherCase(t *testing.T) {
 func TestBeadsVisibilityReadsALowerCaseLookupOfAnUpperCaseKey(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	onDisk, lower := otherCaseDir(t, home, "HCN")
+	onDisk, lower := otherCaseDir(t, home, "PROJ")
 	cfg := filepath.Join(home, "config.yaml")
 	if err := os.WriteFile(cfg, []byte("beads_visibility:\n  "+onDisk+": private\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -118,8 +118,8 @@ func TestBeadsVisibilityReadsALowerCaseLookupOfAnUpperCaseKey(t *testing.T) {
 func TestBeadsVisibilityStillFailsClosedAcrossCase(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	_, lower := otherCaseDir(t, home, "HCN")
-	other := filepath.Join(home, "hcn-instance")
+	_, lower := otherCaseDir(t, home, "PROJ")
+	other := filepath.Join(home, "proj-instance")
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestCommitGuardStampIsTheSameUnderEitherSpellingOfTheRepo(t *testing.T) {
 		t.Skip("no git")
 	}
 	home := gitTempDir(t)
-	onDisk, lower := otherCaseDir(t, home, "HCN")
+	onDisk, lower := otherCaseDir(t, home, "PROJ")
 	qaGit(t, onDisk, "init", "-q")
 	cfg := filepath.Join(home, "config.yaml")
 	if err := os.WriteFile(cfg, []byte("beads_visibility:\n  "+lower+": private\n"), 0o644); err != nil {
@@ -203,7 +203,7 @@ func twoCaseDistinctDirs(t *testing.T, parent, name string) (upper, lower string
 }
 
 // The other volume, and the reason this is identity and not a case fold: on
-// a case-sensitive filesystem `hcn` and `HCN` are two repos with two inodes,
+// a case-sensitive filesystem `proj` and `PROJ` are two repos with two inodes,
 // and a private mark on one must not mark the other. A fold would pass every
 // arm above and silently hand a public repo the private exemption here.
 //
@@ -215,7 +215,7 @@ func twoCaseDistinctDirs(t *testing.T, parent, name string) (upper, lower string
 func TestBeadsVisibilityKeepsTwoCaseDistinctReposApart(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	upper, lower := twoCaseDistinctDirs(t, home, "HCN")
+	upper, lower := twoCaseDistinctDirs(t, home, "PROJ")
 	cfg := filepath.Join(home, "config.yaml")
 	if err := os.WriteFile(cfg, []byte("beads_visibility:\n  "+lower+": private\n"), 0o644); err != nil {
 		t.Fatal(err)

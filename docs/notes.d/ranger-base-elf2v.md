@@ -1,6 +1,6 @@
 ## Which `projects[]` key does claude read? (ranger-base-elf2v)
 
-Three dispatched seats in a NEW repo (`~/src/HCN`, no prior claude session
+Three dispatched seats in a NEW repo (`~/src/PROJ`, no prior claude session
 there) opened on the folder-trust modal with posse's grant sitting in
 `~/.claude.json`, true and timestamped at launch. posse wrote
 `projects["<the session worktree>"]`; claude 2.1.288 looks a linked worktree's
@@ -100,7 +100,7 @@ function tn(e,n){ try{
 `Nn` is `t.normalize("NFC")` and `ye` strips trailing slashes. **Nothing in
 that chain realpaths anything** — the answer is git's own spelling, out of the
 pointer files. That is why the fix must not "correct" it: the bead's case note
-is that `bd` lists `~/src/hcn` while the filesystem spells `HCN`, APFS is
+is that `bd` lists `~/src/proj` while the filesystem spells `PROJ`, APFS is
 case-insensitive, and claude's exact-string lookup only matches git's
 spelling. `internal/posse/trust.go`'s `claudeMainRepoOf` mirrors `tn` bail for
 bail, and `TestTrustKeyFollowsTheSamePointerChainClaudeDoes` pins the three

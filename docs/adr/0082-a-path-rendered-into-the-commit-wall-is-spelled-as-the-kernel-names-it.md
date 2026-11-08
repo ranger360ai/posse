@@ -115,8 +115,8 @@ D3 case 3 asks.
 ## Alternatives rejected
 
 - **(a) EvalSymlinks at every render and probe site.** MEASURED above: it
-  keeps the caller's case and does not fold firmlinks, so `~/src/hcn` vs
-  `~/src/HCN` still renders two walls. "Every site" also means three places
+  keeps the caller's case and does not fold firmlinks, so `~/src/proj` vs
+  `~/src/PROJ` still renders two walls. "Every site" also means three places
   to keep in step, which is the drift `commitGuardLiterals` exists to
   prevent.
 - **(b) Make the probe compare check 3's lines semantically.** This breaks
@@ -209,7 +209,7 @@ answered by canonicalising one side to hide the mismatch.
   changes the comparison that three consumers make, and only on one side. It
   would fix the measured case mismatch for a store spelled the way it is on
   disk. It would also create a new mismatch for a config and store that were
-  both spelled `HCN` while the disk says `hcn`, and that config works today.
+  both spelled `PROJ` while the disk says `proj`, and that config works today.
   Merging the render into the value turns a wording change into a
   behaviour change.
 - **Canonicalise both sides of `underDir` (the clever one).** This closes

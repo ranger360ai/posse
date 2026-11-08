@@ -11,7 +11,7 @@ ASSUMED*
 `beads_visibility:` is keyed by filesystem path, and the key was matched by
 STRING. `resolvedPath` normalized a spelling — `ExpandTilde`, `Clean`, `Abs`,
 `EvalSymlinks` — and none of those folds case. So on this box a key the
-operator typed as `~/src/hcn` never met the directory git spells `~/src/HCN`,
+operator typed as `~/src/proj` never met the directory git spells `~/src/PROJ`,
 and the repo fell through `BeadsVisibility`'s last line: *unmarked is public
 (fail closed)*.
 
@@ -21,8 +21,8 @@ write the same file:
 
 | who | the path it derives | what it stamped |
 |---|---|---|
-| `posse gates install-hooks ~/src/hcn` | the operator's config spelling | `private` |
-| a dispatched launch / `posse relaunch` (L3 pre-heal) | git's, so `~/src/HCN` | `public`, reporting it had healed a WRONG wall |
+| `posse gates install-hooks ~/src/proj` | the operator's config spelling | `private` |
+| a dispatched launch / `posse relaunch` (L3 pre-heal) | git's, so `~/src/PROJ` | `public`, reporting it had healed a WRONG wall |
 
 Three flips in one morning on the operator's box (08:40 private, 09:06 public
 after relaunches, 09:1x private). `scripts/verify-hook-freshness.sh` could
@@ -40,15 +40,15 @@ before a third was chosen.
 
 MEASURED, by probe, on this box:
 
-The directory is spelled `HCN` on disk; `$HOME` is written as `~` below and
+The directory is spelled `PROJ` on disk; `$HOME` is written as `~` below and
 the home's own components are the real spelling in both columns.
 
 | path handed in | `filepath.EvalSymlinks` | `fcntl(F_GETPATH)` |
 |---|---|---|
-| `~/src/hcn` | `~/src/hcn` — the spelling it was given | `~/src/HCN` |
-| `~/src/HCN` | `~/src/HCN` | `~/src/HCN` |
-| `~/SRC/hCn` | `~/SRC/hCn` — every component wrong | `~/src/HCN` |
-| `~` with the username in caps, `/src/HCN/.git` | unchanged, caps and all | the home's real spelling, `/src/HCN/.git` |
+| `~/src/proj` | `~/src/proj` — the spelling it was given | `~/src/PROJ` |
+| `~/src/PROJ` | `~/src/PROJ` | `~/src/PROJ` |
+| `~/SRC/pRoJ` | `~/SRC/pRoJ` — every component wrong | `~/src/PROJ` |
+| `~` with the username in caps, `/src/PROJ/.git` | unchanged, caps and all | the home's real spelling, `/src/PROJ/.git` |
 | `/tmp`, `/var`, `/etc/hosts`, a symlinked dir | `/private/…`, target | agrees, every case |
 | a dangling symlink | error | error |
 
@@ -68,7 +68,7 @@ than about the syscall:
    is strictly stronger.
 
 `EqualFold` was rejected outright: it is wrong on a case-SENSITIVE volume,
-where `hcn` and `HCN` are two directories, and "is this mount
+where `proj` and `PROJ` are two directories, and "is this mount
 case-sensitive?" is a per-mount question that neither `statfs`'s
 `f_fstypename` (MEASURED: `apfs` for both kinds) nor a filesystem name
 answers.
@@ -132,11 +132,11 @@ failure.
 The pin is a unit of the package; this is the operator's own command. A
 throwaway posse home in the session scratchpad (`RHQ_HOME` points at it), a
 config carrying one key — the repo spelled in LOWER case — and a git repo
-whose directory is spelled `HCN`, which is the real instance's shape. Then
+whose directory is spelled `PROJ`, which is the real instance's shape. Then
 `posse gates install-hooks` under each spelling, against a binary built from
 this change and one built from `HEAD`. MEASURED 2026-10-03:
 
-| binary | `install-hooks <…>/hcn` (the operator's) | `install-hooks <…>/HCN` (git's, so the launch's) |
+| binary | `install-hooks <…>/proj` (the operator's) | `install-hooks <…>/PROJ` (git's, so the launch's) |
 |---|---|---|
 | `HEAD` | `private — config beads_visibility:` | **`public — unmarked in config beads_visibility:`** |
 | this change | `private — config beads_visibility:` | `private — config beads_visibility:` |

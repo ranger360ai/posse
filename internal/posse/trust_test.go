@@ -288,7 +288,7 @@ func TestTrustIsPerRepoAndNotPerAncestor(t *testing.T) {
 
 // ranger-base-elf2v, the bead's own pin: a worktree of an UNTRUSTED main
 // repo seeds the main repo's key, and a worktree of a trusted one writes
-// nothing. The first half is the dead seat — three HCN seats opened on the
+// nothing. The first half is the dead seat — three PROJ seats opened on the
 // modal with projects[<worktree>] sitting in the config, true and
 // timestamped, because claude looks the worktree up under its main repo.
 func TestSeedTrustSeedsTheWorktreesMainRepo(t *testing.T) {
@@ -370,8 +370,8 @@ func TestTrustKeyFollowsTheSamePointerChainClaudeDoes(t *testing.T) {
 	})
 	t.Run("the key is the pointer's spelling, not a resolved one", func(t *testing.T) {
 		t.Parallel()
-		// The bead's case note: `bd` lists ~/src/hcn, the filesystem spells
-		// HCN, and claude's exact-string lookup only matches git's spelling.
+		// The bead's case note: `bd` lists ~/src/proj, the filesystem spells
+		// PROJ, and claude's exact-string lookup only matches git's spelling.
 		// Claude derives the main repo from the pointer files and never
 		// realpaths the answer, so posse must not either — a key posse
 		// "corrected" is a key claude never looks up.
@@ -586,7 +586,7 @@ func TestTrustKeyIsNFCWhereClaudesIs(t *testing.T) {
 		// reaches it — git writes the worktree pointer in the on-disk
 		// spelling and posse creates its own session dirs — and correcting
 		// it would break the case note the pointer-spelling arm above holds
-		// (~/src/hcn over an on-disk HCN).
+		// (~/src/proj over an on-disk PROJ).
 		root := qaEvalPath(t, t.TempDir())
 		mkdirs(t, filepath.Join(root, "CASEREPO", ".git"))
 		asked := filepath.Join(root, "caserepo")
@@ -594,7 +594,7 @@ func TestTrustKeyIsNFCWhereClaudesIs(t *testing.T) {
 			t.Skipf("case-sensitive filesystem: %v", err)
 		}
 		check(t, asked, asked,
-			"the key is the spelling posse was handed; a case-corrected key is the HCN note's dead seat")
+			"the key is the spelling posse was handed; a case-corrected key is the PROJ note's dead seat")
 	})
 }
 

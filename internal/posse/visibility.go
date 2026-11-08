@@ -301,7 +301,7 @@ const VisibilityUnmarkedSource = "unmarked in config beads_visibility: — unmar
 // amount of string normalizing can answer it:
 //
 //   - CASE. EvalSymlinks does not fold case, and on a case-INsensitive
-//     volume — the APFS default — `~/src/hcn` and `~/src/HCN` are one
+//     volume — the APFS default — `~/src/proj` and `~/src/PROJ` are one
 //     directory under two spellings. A `beads_visibility:` key the operator
 //     typed in one case never met the path git derived in the other, the
 //     repo fell through to "unmarked is public", and the shared

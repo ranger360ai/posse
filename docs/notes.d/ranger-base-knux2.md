@@ -18,7 +18,7 @@ did not capture it. Everything below is MEASURED 2026-10-03 on this box, with
       ~/src/posse          (same slot, same verdict, at posse-prepare-commit-msg behind the chain)
 
 The count in the bead was right; its DATE was off by one — the generation is
-2026-10-03 00:15:59, not 2026-10-02. The fourth repo is `~/src/hcn`. The bead's
+2026-10-03 00:15:59, not 2026-10-02. The fourth repo is `~/src/proj`. The bead's
 caveat asked `managed-hooks` about a fourth repo of its own, one this instance's
 private beads tree lives in; that repo is not in `beads_visibility:` at all, so
 the wall has never had an opinion about it.
@@ -44,15 +44,15 @@ because the operator's backup at `state/backup/posse-backup-20261003T031102Z.tar
 holds `home/config.yaml` with mtime 2026-10-02 23:11:02 — taken at the same
 moment as the clean wall in row 1. The edit added three things:
 
-- `~/src/hcn` to `beads:`,
-- `~/src/hcn: private` to `beads_visibility:` (which is why row 2 measures four
+- `~/src/proj` to `beads:`,
+- `~/src/proj: private` to `beads_visibility:` (which is why row 2 measures four
   repos where row 1 measured three),
 - and the part that stales every hook on the box at once: this instance's
   FIRST `data_ceiling_patterns:` block (ADR 0050), one class, `ssn`.
 
 `data_ceiling_patterns:` is instance-wide, so it is in every repo's
 `prepare-commit-msg` render. Three repos installed before 23:39:07 went stale
-in one step. `~/src/hcn`, whose hooks were first rendered AFTER it, is the
+in one step. `~/src/proj`, whose hooks were first rendered AFTER it, is the
 control arm: it is the one of the four that row 2 found fresh.
 
 ## Which rules the stale render was grading by
@@ -110,7 +110,7 @@ $CONSTITUTION  23:39:07 → 09:43:41   10 commits   0 hits
 the queue repo     23:39:07 → 09:43:41    3 commits   0 hits
 ```
 
-And the repo the ceiling was written FOR was never unguarded. `~/src/hcn`'s
+And the repo the ceiling was written FOR was never unguarded. `~/src/proj`'s
 hooks postdate the edit; its two commits in the window (23:52:29 and 08:30:40)
 were graded by the full render. The exposure window covered three repos the
 ceiling was not written for and missed the one it was.
