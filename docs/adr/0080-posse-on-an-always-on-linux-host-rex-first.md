@@ -686,6 +686,44 @@ A writable entry that is a regular FILE has no bwrap spelling (B8). The
 render refuses with the file named, except for the git entries D20
 replaces and claude's `~/.claude.json`, which D19 removes.
 
+*As built (ranger-base-qoamy, 2026-11-08).* `BwrapArgs` in
+`internal/posse/bwrap.go`, beside the availability half, pinned by
+`internal/posse/bwrapargs_qa_test.go` over fixture trees on darwin. No launch
+wiring; nothing calls it. Five shapes as listed, with three things the text
+did not settle and one residual for D18. Full reasoning in
+`docs/notes.d/ranger-base-qoamy.md`.
+
+- **The order is SBPL's last-match-wins, and the gates dir is the proof.**
+  The persona's own gates dir is in three lists at once — a write grant,
+  inside the `state/gates` deny, holding two Keep literals — so rendering
+  grant, then deny, then Keep reproduces exactly what SBPL resolves by taking
+  the last match: no writing its own shims, and both audit logs appendable.
+  That is the arm driven from `SeatbeltWritable`/`SeatbeltCarveOut` rather
+  than from a fixture list.
+- **DIVERGED on shape 2's missing-deny test, to this item's own stated
+  reason.** The letter asks whether the deny's nearest EXISTING ancestor is
+  inside a write grant; the reason given is "otherwise nothing can create it".
+  They disagree when the GRANT does not exist yet, which is a fresh home:
+  `a.StateDir` is a grant, `a.StateDir/gates` is a deny, the deny's nearest
+  existing ancestor is the home, and the letter renders no mount over a grant
+  that is about to be created and bound rw. The build asks whether the deny is
+  inside a write grant, which answers the reason, is never narrower, and
+  covers the prep-created grants.
+- **Two refusals this item does not name.** A stat that fails for any reason
+  other than "not there" refuses the render naming the path and the list, so
+  that an unreadable path cannot become a missing one (for a deny, missing is
+  no mount at all). And a DIRECTORY at a Keep path refuses, because binding it
+  would hand back the tree the deny just closed.
+- **Residual for D18: a missing grant is not free here.** `SeatbeltWritable`
+  carries four darwin-only literals unconditionally — `/private/tmp` and three
+  under the home. At L2 a grant for an absent path costs nothing. Here the
+  launcher must create it, outside the namespace, as the seat's user — so on
+  Linux every seat's prep would ask for a `mkdir -p` at the filesystem root
+  that an unprivileged launcher cannot make, plus three junk directories in
+  the home. Narrowing those four to darwin in `SeatbeltWritable` is the
+  smaller fix and serves both mechanisms; a launcher that merely refuses the
+  step leaves the wall announcing grants it does not have.
+
 **D18. The launch line, identical on herdr and Rex panes.** `RenderBwrap`
 writes the argv NUL-separated to `state/gates/<persona>/bwrap.args`, beside
 `seatbelt.sb`, and writes a readable copy to `bwrap.txt` headed by the
