@@ -10,7 +10,10 @@ necessarily its ROWS; ranger-base-a5st4, github issue #5) · amended 2026-10-09 
 detector and nothing else: the check of an empty `--json` answer against
 bd's own `info` count and the census is ADR 0071; ranger-base-3xmt6) · amended
 2026-10-12 (D3 admits one store fact at one site, the container parity row:
-does the store hold a SQLite database file; ADR 0074, ranger-base-4jlcn)*
+does the store hold a SQLite database file; ADR 0074, ranger-base-4jlcn) ·
+re-ruled 2026-11-07 (D3 also refuses a JSONL-only store-of-record finding:
+ADR 0073's lock fixes the loss in either mode, and ADR 0074 makes the class
+a supported one; ranger-base-p1l2h)*
 
 ## Context
 
@@ -107,6 +110,45 @@ environment, the no-db create from the worktree lands in the MAIN store and
    `isNoDbModeConfigured`, covering one door of four, that goes stale on
    its own schedule.
 
+   **Re-ruled 2026-11-07 (ranger-base-p1l2h): the refusal stands for the
+   store of record's class too, for a different reason.** The question was
+   new. bd 0.50.3's `bd init` on a CGO-free binary builds a JSONL-only store
+   by default (ranger-base-3opof), and ADR 0073 measured that class losing
+   concurrent writes. A launch env does not fix that. The proposal was a
+   governance row (G17, `store-jsonl-only:<home>`, LANE). It would first stat
+   `sqliteStoreFile`, then ask `bd info --json` whether `database_path` names
+   a file. That meets the objection above: it asks bd instead of copying
+   bd's reader, and a live pin keeps it from going stale. It is refused
+   anyway, for two reasons that do not depend on how the class is read:
+   - **The loss already has a fix that works in either mode, and it is
+     built.** ADR 0073 D1/D2 runs every bd write posse makes, and every
+     write a seat types through the shim, under one flock per store.
+     MEASURED by ranger-base-x0xct (probe `0073-bd-write-readback.probe.sh`,
+     B2 arm): 3 runs, **0/48 lost** each through the lock, against 36/48 in
+     the same run's unlocked no-db arm. So "the fix is mode-independent"
+     covers the write loss the way it covers the fork. What is left are the
+     writers the lock cannot reach: the operator's own `bd` typed outside a
+     shim, and a second box writing through git. On a SQLite store bd
+     serializes the first of those itself; on a JSONL-only store it does
+     not. That leftover is accepted. ADR 0073 D3/D4's read-back detects it,
+     and INSTALL §9's Verify prevents it at the one moment the class is
+     chosen.
+   - **JSONL-only is a class posse supports, so a row about it could not be
+     cleared.** ADR 0074 makes the container tier unrealizable over a SQLite
+     store. Its own degraded line tells the operator to move the store to
+     no-db. A row that fires on every instance that took that advice could
+     never be healed by its remedy. A row nobody can clear spends the
+     all-clear, and the all-clear is what governance is for (ADR 0029,
+     G12-G15).
+
+   **Reopen this when** the container tier is withdrawn or stops needing
+   no-db (then JSONL-only has no supported use, and the second reason
+   goes); when a loss is measured on a JSONL-only store of record from a
+   writer outside the lock; or when the pinned bd changes what `bd init`
+   builds by default. Until then the proposed shape (stat first, then
+   `bd info`'s `database_path`, a live pin on both rigs) is on
+   ranger-base-p1l2h, ready to build.
+
 4. **The record says which bd it holds for.** `worktree.go`'s "WHAT WAS
    MEASURED" block gains the no-db bullet above, dated bd 0.50.3, and its
    sentence "bd 0.49.1 does not read the redirect" is qualified to database
@@ -198,6 +240,12 @@ environment, the no-db create from the worktree lands in the MAIN store and
   posse opens — and copies bd's reader into posse; the 2026-09-04 lesson
   (ranger-base-9307c) is that a property of the reader written into a rule
   names a hole. There is also no `posse doctor` verb to put it in.
+- **A governance row for a JSONL-only store of record, scoped away from
+  container-tier instances** (ranger-base-p1l2h, the clever extension of
+  G17). It would join each store to the `cage:` of every PID that reaches
+  it, so posse would judge which store class each persona's tier should
+  have. That is a policy judge built to protect against writers the lock
+  already serializes (D3, re-ruled).
 - **Drop `--no-db` from the cage wrapper.** Measured 2026-08-22 as the only
   pair that works through the mount; SQLite does not cross the boundary.
 - **Delete, back-date or symlink the worktree's `.beads`.** Rejected in

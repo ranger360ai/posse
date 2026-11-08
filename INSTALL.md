@@ -1386,9 +1386,13 @@ builds the classic `beads.db` store the rest of this recipe assumes, on the
 same CGO-free binary, and a create and its read-back land there (same
 measurement). The repo's own live fixtures ask for the class by name for
 this reason (`liveBeadsRepoOfClass`, internal/posse). **Nothing downstream
-will tell you**: posse reads no store class (ADR 0055 D3), the mode is a
-line in bd's own config rather than an error, and the cost arrives later as
-beads that were created, printed and lost.
+will tell you**: posse reads no store class (ADR 0055 D3, re-ruled
+2026-11-07), and the mode is a line in bd's own config rather than an error.
+posse's write lock does serialize every bd write posse and its seats make,
+on either class (ADR 0073). What it cannot reach is the `bd` you type
+yourself and a second box writing through git, and on a JSONL-only store
+those can still lose a bead that was created and printed. This Verify is
+the check.
 
 `bd init` derives the issue prefix from the directory name when `--prefix`
 is absent and `.beads/config.yaml` carries no `issue-prefix:`. Name it on
