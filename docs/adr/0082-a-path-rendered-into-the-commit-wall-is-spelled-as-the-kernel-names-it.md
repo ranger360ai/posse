@@ -137,3 +137,83 @@ D3 case 3 asks.
   union of spellings that any caller has used. That makes the set a function
   of history: the bytes would depend on which renderer ran first, which is
   the defect again, now remembered. It was also unbounded.
+
+## Amendment: a path a refusal tells the operator to paste is a render too (ranger-base-wvoqe, 2026-11-08)
+
+**Context.** D1 scoped `canonicalPath` to what is rendered INTO the wall.
+Two refusals also print a path and then tell the operator to paste it as a
+`beads_visibility:` key: ADR 0081 D7's queue-commit refusal
+(internal/posse/queuejsonl.go, fed by `QueueRepo()`) and D4's install-hooks
+refusal (cmd/posse/main.go, `not installed: prepare-commit-msg`). Both print
+the repo as `AbbrevHome(hookRepo(dir))`, which is the caller's spelling. Both
+print the owning home from the wall's `# posse-home:` stamp, and D3 made that
+canonical. So one refusal line shows two paths in two spellings.
+ranger-base-8kwa5 made `QueueRepo()` absolute (`filepath.Abs`). This bead asks
+whether it should canonicalise as well.
+
+Matching is not the issue. The prescribed key is read by `samePath`, which
+compares by identity, so any absolute spelling of the repo matches.
+Absolute was the property the remedy needed in order to work, and 8kwa5
+supplied it.
+
+MEASURED 2026-11-08 (go1.26.5 darwin/arm64, APFS case-insensitive, scratch
+`real/Repo/.beads`): `underDir`'s two sides, after `absResolve`, are
+`…/real/REPO` and `…/real/Repo/.beads`. `filepath.Rel` gives
+`../Repo/.beads`, so the answer is "not inside", although `os.SameFile`
+says the two are the same directory. `underDir` compares strings, and
+`EvalSymlinks` keeps the caller's case.
+
+**D4 — Render at the render point, never at the value.** A path that a
+refusal or remedy prints for the operator to paste into config is a render.
+It is spelled `canonicalPath`, with its `~` form taken through
+`canonicalAbbrevHome`. That applies to both of the paths such a line prints,
+and to both refusals above. It is done in ONE exported helper, so that
+cmd/posse and internal/posse cannot drift apart, and it is called where the
+line is formatted.
+
+`QueueRepo()` stays `filepath.Abs` and does not canonicalise. It is a VALUE
+that feeds `underDir`, `OwnsCommitWall` and `InstallCommitGuardHook`, and
+those are comparisons. The rule this ADR states twice applies here: the
+comparison and the render must not merge.
+
+So the bead's last question, "which spelling does `underDir` compare
+against?", is answered: the one it compares against today. `canonicalPath`
+never feeds a comparison. The case defect measured above belongs to the
+comparison, and its fix is the comparison's own. Containment should be
+answered by identity: walk up from the store and check `os.SameFile`
+against the queue repo, the way `samePath` falls back. It should not be
+answered by canonicalising one side to hide the mismatch.
+
+**Consequences.**
+- Every spelling of `queue_repo:`, of the cwd, and of the `install-hooks`
+  argument prints the same refusal, byte for byte. That refusal's key is the
+  string the identity wall already prints for that repo, so an operator who
+  greps for it finds one spelling.
+- Matching does not change: a key the operator already wrote in their own
+  spelling still matches through `samePath`. The prescribed key is a
+  suggestion that is guaranteed to match, not the only key that will.
+- The pin 8kwa5 added (TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath)
+  asserts a property and not a string, so it stays green.
+- Radius: these two are the only sites that MEASURED as prescribing a path to
+  paste (a grep of non-test `.go` for `beads_visibility:` inside format
+  strings, 2026-11-08). The next site to prescribe a path uses the same
+  helper. No census pin is added, because none would name the process it
+  protects (ADR 0006 §7).
+
+**Alternatives rejected.**
+- **Absolute is enough; leave it alone.** It is functionally true, because
+  the key matches. But it leaves one line showing two spellings, and a remedy
+  whose text depends on how the reader got there. This is the reason we
+  are priced at P3 and not P2: the cost of the fix is two format arguments.
+- **Canonicalise inside `QueueRepo()`** (the bead's question as worded). This
+  changes the comparison that three consumers make, and only on one side. It
+  would fix the measured case mismatch for a store spelled the way it is on
+  disk. It would also create a new mismatch for a config and store that were
+  both spelled `HCN` while the disk says `hcn`, and that config works today.
+  Merging the render into the value turns a wording change into a
+  behaviour change.
+- **Canonicalise both sides of `underDir` (the clever one).** This closes
+  the case axis by string, which is what `samePath`'s note says cannot be
+  done in general. It also puts F_GETPATH's open and fcntl into a predicate
+  that the seatbelt code reuses. Identity is the honest answer, and it is a
+  separate fix.
