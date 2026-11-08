@@ -219,6 +219,43 @@ default_emoji: ⚙️
 # (persona memory, ADR 0015 §5).
 # constitution: ~/src/<your instance repo>/posse
 
+# ─── the cage, per OS (ADR 0083 D7) ──────────────────────────────────────────
+# A PID's `cage:` line says what its RULES need. This says what THIS host
+# realizes that demand with — one key per OS, so one shared constitution runs
+# on a mac and on a Linux box and each reads its own answer, with no host name
+# in the file.
+#
+# `seatbelt` is darwin-only (sandbox-exec). On Linux nothing realizes it until
+# the bubblewrap tier lands, so a PID demanding it would refuse there; this is
+# how that PID runs on a weaker host without its `cage:` line being rewritten
+# to a lie that then travels back to the mac.
+#
+# cage_realize_linux:
+#   seatbelt: shims
+#
+# Keyed by demanded tier, valued by realized tier (shims | seatbelt). Absent
+# and bare both mean no mapping, which is what every host does today: a tier
+# realizes itself where this build provides it, and a demand this host cannot
+# provide and does not map still refuses.
+#
+# IT WAIVES THE CAGE LINE, NEVER A RULE. Enforcement parity is recomputed at
+# the REALIZED tier, so a rule that tier cannot hold still refuses the launch
+# — a PID denying `Edit`/`Write` outright needs a file wall, and mapping
+# seatbelt to shims does not give it one. Check with `posse gates <persona>`.
+#
+# MAPPING DOWN IS RATIFIED DEGRADATION. It launches, dispatch included,
+# because the waiver is in the promoted set — hashed by `promoted.json`, shown
+# in `posse promote`'s diff — and not invented by the launcher. Every such
+# session is marked degraded with `cage_realize: <goos> <from>→<to>`, and
+# `posse status` carries one standing row (G17) for as long as the map lowers
+# anything. Mapping to an equal or stronger tier is not degradation.
+#
+# Nothing defaults here. An OS this posse does not run on, a scalar where the
+# block belongs, a tier that is not a tier, `container` on either side (its
+# engine is chosen per home, not per OS) and a tier mapped twice are each
+# refused at the launch, by dispatch and by `posse status` — a typo read as
+# "no mapping" is how the wrong thing gets armed quietly (ADR 0080 D9).
+
 # ─── the queue ───────────────────────────────────────────────────────────────
 # Beads repos — `posse ready`, `posse dispatch` and the cockpit aggregate
 # unblocked work from each listed repo's bd database. A path that is missing

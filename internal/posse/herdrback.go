@@ -2727,6 +2727,24 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			return nil, Die("%s: tier_floor: %q is not strong | standard | fast", o.Agent, ag.TierFloor)
 		}
 		cage = ResolveCage(o.Cage, ag)
+		// `cage_realize_<goos>:` (ADR 0083 D7): the tier this host REALIZES
+		// the demand with. From here down `cage` is that tier and nothing
+		// else reads the demand — the seatbelt wrap, RHQ_CAGE, the container
+		// decision below and the session record all describe what the
+		// session GOT. The demand survives in the PID, which is where
+		// CheckParity reads it back from to report the waiver.
+		//
+		// REFUSED, NEVER DEFAULTED, and refused HERE: before a workspace, a
+		// render or a record exists. A map posse cannot read is not a map
+		// that maps nothing — that reading is how ADR 0080 D9's typo arms
+		// the wrong thing — so an unknown OS key, a scalar where a block
+		// belongs, an unknown tier or `container` on either side stops the
+		// launch with the sentence that names the line.
+		cageRealized, err := a.RealizeCage(cage)
+		if err != nil {
+			return nil, err
+		}
+		cage = cageRealized.Realized
 		// A container tier this host cannot provide is a degradation like
 		// any other: refused, or launched on the host and marked. What it
 		// never is, is a launch that pretends to be caged.
@@ -2894,13 +2912,22 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if wroteCommitWall && preHeal.Repo && preHeal.CommitGuardVerdict.reStamped() {
 			warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
 		}
+		// THE REFUSAL READS Degraded; THE RECORD READS BOTH (ADR 0083 D7).
+		// A ratified waiver — the cage map lowering a tier the promoted
+		// constitution says this host realizes differently — is real
+		// degradation and marks the session, but it is not a wall the
+		// operator is asked to waive: the waiver is already in the promoted
+		// set, hashed by the manifest, and dispatch may launch it. So it
+		// never reaches the refusal and it always reaches the meta.
 		if len(parity.Degraded) > 0 {
 			// ADR 0003 §3: at fast the operator's consent is not on offer —
 			// the wall is the only thing left holding the PID's gates.
 			if !o.AllowDegraded || parity.NoDegrade {
 				return nil, degradedError{parity}
 			}
-			degraded = strings.Join(parity.Degraded, "; ")
+		}
+		if parity.AnyDegradation() {
+			degraded = parity.DegradedReason()
 			warn("posse: %s launches DEGRADED on %s @ %s — %s\n", o.Name, rt.Name, cage, degraded)
 		}
 		// Skills (ADR 0007 §2): rendered fresh here, like the gates — the

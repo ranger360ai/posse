@@ -19,6 +19,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-8gwu1](ranger-base-8gwu1.md) — The home stamp takes the kernel's spelling too (ranger-base-8gwu1) — 2026-11-08
 - [ranger-base-72oz4](ranger-base-72oz4.md) — claude's first-run notices: one row, and why it is read by nothing yet (ranger-base-72oz4) — 2026-11-08
 - [ranger-base-5syu4](ranger-base-5syu4.md) — The 38 `#!/bin/bash` literals were never in a render (ranger-base-5syu4) — 2026-11-08
+- [ranger-base-1155n](ranger-base-1155n.md) — A PID's cage is the class it needs; the host names the tier that realizes it (ranger-base-1155n) — 2026-11-08
 - [ranger-base-t5ein](ranger-base-t5ein.md) — Promoting codex's record, and the fixtures that were pinning a table row (ranger-base-t5ein) — 2026-11-07
 - [ranger-base-r7fyk](ranger-base-r7fyk.md) — Verifying 4 closes: 5x8xi, obaim, c2k6z, jep08 (ranger-base-r7fyk) — 2026-11-07
 - [ranger-base-obaim](ranger-base-obaim.md) — Three stated decisions that no pin held (ranger-base-obaim) — 2026-11-07

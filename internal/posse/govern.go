@@ -436,6 +436,7 @@ func ReadPause(path string) Pause {
 //	G14 a persona's memory is not landed          the personas dir   LANE
 //	G15 a live session is running degraded        the session meta   LANE
 //	G16 a census line is near/over bd's 64 KB limit  the census         LANE/URGENT
+//	G17 this OS's cage map lowers a tier          config + promoted  LANE
 //
 // plus the two conditions the pulse's own first cut shipped and this
 // widening deliberately does not drop — unpushed commits on a beads repo,
@@ -838,8 +839,17 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// one SESSION's waiver, cleared by ending or relaunching that session
 	// once the wall holds. Two keys, so one healing does not silence the
 	// other.
+	//
+	// AND IT IS NOT THE ROW FOR A RATIFIED WAIVER (ADR 0083 D7). A session
+	// whose only degradation is `cage_realize_<goos>:` lowering its cage
+	// fails every clause of the sentence below: nothing was waived with
+	// --allow-degraded, no relaunch re-arms it from the meta (parity
+	// re-derives it from the promoted config), and the remedy is not this
+	// session's. D7 asks for ONE standing row while the map lowers anything
+	// — G17 — rather than one per mapped seat, which on a host where every
+	// code persona is mapped is the whole crew saying the same thing.
 	for _, s := range sessions {
-		if s.Foreign || s.Degraded == "" {
+		if s.Foreign || !DegradedBeyondRatified(s.Degraded) {
 			continue
 		}
 		add("G15", GovLane, "session-degraded:"+s.Name, fmt.Sprintf(
@@ -891,6 +901,34 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 				"%s is %d B of %d — move bulk out before the next comment",
 				l.ID, l.Bytes, BdLineLimit))
 		}
+	}
+
+	// ── G17 · this OS's cage map lowers a tier (ADR 0083 D7) ─────────────
+	//
+	// ONE STANDING ROW, not one per session. `cage_realize_<goos>:` is a
+	// promoted key: while it lowers a tier, every PID demanding that tier
+	// launches weaker than its own rules ask for, and goes on doing so until
+	// the operator raises the map. That is a fact about the HOME and the
+	// host, true with no session on the box, so it is read from the config
+	// and not from the sessions — and G15 stands down for the sessions it
+	// marks (see there).
+	//
+	// LANE, not URGENT: 0029 keeps URGENT for "the shop is stopped", and
+	// this shop is running — deliberately, at a posture a human ratified at
+	// promote. What earns a row anyway is the same thing that earns G15 one:
+	// the consent does not stay where it was given. It is one line of YAML
+	// that no launch ever asks about again, and the window it opens is meant
+	// to close (D6 option C: the map flips to the bubblewrap tier, one
+	// promoted line).
+	//
+	// A MAP THIS READER CANNOT PARSE IS NOT AN ALL-CLEAR. It goes to
+	// `failed` — the set is then PARTIAL — because whether anything is
+	// lowered is exactly what could not be read. It is not silent anywhere
+	// else either: the launch and dispatch doors refuse on the same error.
+	if st, err := in.App.CageRealizeStanding(); err != nil {
+		failed = append(failed, fmt.Errorf("%w — G17 unknown", err))
+	} else if st.Any() {
+		add("G17", GovLane, "cage-realize:"+st.GOOS, st.GovDetail())
 	}
 
 	// ── carry-over · unpushed commits on a beads repo ────────────────────

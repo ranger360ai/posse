@@ -317,7 +317,14 @@ func RecreateOpts(m *HerdrMeta) NewSessionOpts {
 		Model: m.Model,
 		// The operator consented to this session's degradation when it was
 		// created; relaunching the same session is not a new decision.
-		AllowDegraded: m.Degraded != "",
+		//
+		// RATIFIED degradation is not that consent (ADR 0083 D7): nobody
+		// typed --allow-degraded for a `cage_realize_<goos>:` waiver, it is
+		// in the promoted config and parity re-derives it on every launch.
+		// Reading it as the operator's would arm the flag for every seat on
+		// a host whose map lowers a tier, and then waive each seat's NEXT,
+		// real degradation silently, at every relaunch.
+		AllowDegraded: DegradedBeyondRatified(m.Degraded),
 		// Nor is it a change of hands: a session the operator was talking
 		// to is still theirs on the other side of the refresh (ADR 0008).
 		Crew: m.Crew,

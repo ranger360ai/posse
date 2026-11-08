@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -194,6 +195,36 @@ type Parity struct {
 	// difference must never gate a launch or force --allow-degraded, or it
 	// renders exactly like the missing wall it is not (ranger-base-d17a).
 	DeclaredDifference []string
+	// Ratified (ADR 0083 D7): degradation the promoted constitution already
+	// waived — today only `cage_realize_<goos>:` mapping a demanded cage
+	// tier down to one this host realizes. It is REAL degradation, unlike a
+	// DeclaredDifference: the session is marked degraded with it and every
+	// surface prints it. What it is not is an --allow-degraded wall, because
+	// the waiver was ratified at promote and not invented by dispatch (ADR
+	// 0002 §4's rule is about who invents it). So it sits beside Degraded
+	// rather than in it: the refusal reads Degraded, the session meta and
+	// the printers read both.
+	Ratified []string
+	// CageDemanded is the tier the launch ASKED for, before
+	// `cage_realize_<goos>:`. Cage is what it got. They differ only where
+	// the map says so, and the pair is what makes a mapped launch legible in
+	// a printer that has one line to say it in.
+	CageDemanded string
+}
+
+// AnyDegradation reports whether this launch is degraded in any way a session
+// record should carry — the refusable half and the ratified half together.
+// The REFUSAL is len(Degraded) > 0 and stays that way; this is the question a
+// meta writer and a renderer ask.
+func (p Parity) AnyDegradation() bool { return len(p.Degraded)+len(p.Ratified) > 0 }
+
+// DegradedReason is the one line a session's `degraded:` meta field carries:
+// the gates the wall does not realize, then the ratified waivers. Ratified
+// entries come LAST so the reason a reader has to act on leads
+// (DegradedBeyondRatified's two readers subtract on the prefix, not on the
+// order, so nothing rests on it beyond legibility).
+func (p Parity) DegradedReason() string {
+	return strings.Join(append(append([]string{}, p.Degraded...), p.Ratified...), "; ")
 }
 
 // CheckParity computes the directory-independent matrix for a PID on a
@@ -209,6 +240,50 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	if tier == "" {
 		tier = DefaultTier
 		p.Tier = tier
+	}
+	// `cage_realize_<goos>:` (ADR 0083 D7) — FIRST, because everything below
+	// is computed at the tier this host REALIZES and not at the one that was
+	// asked for. That is the whole of the key's semantics: the map changes
+	// the cage and nothing else, so a rule the realized tier cannot hold
+	// still goes unrealized here and still refuses the launch.
+	//
+	// A map this reader cannot parse waives NOTHING — the resolution falls
+	// back to the demanded tier — and the error is reported as degradation
+	// so no printing surface renders a broken map as an all-clear. The
+	// launch and dispatch doors refuse on the error itself before reaching
+	// here (CreateSession, CheckTier), which is where a config refusal
+	// belongs; this line is the one that cannot return an error.
+	demanded := cage
+	p.CageDemanded = demanded
+	res, cageMapErr := a.RealizeCage(demanded)
+	if cageMapErr != nil {
+		p.Degraded = append(p.Degraded, cageMapErr.Error())
+	}
+	cage = res.Realized
+	p.Cage = cage
+	// The ratified waiver, if there is one. TWO SOURCES, one row, because
+	// there are two demands a map can lower and the matrix is the only place
+	// that sees both:
+	//
+	//   - what THIS LAUNCH asked for — res above — which is a `--cage` the
+	//     operator typed as readily as the PID's own line, and which must
+	//     not be lowered silently either;
+	//   - what the PID NEEDS, where that is higher than what the launch
+	//     asked for. CreateSession records the REALIZED tier in the session
+	//     meta (it is the tier the session got), so a relaunch comes back
+	//     through here already carrying `shims`, and only ag.Cage still
+	//     remembers that seatbelt was the demand. Without this half the
+	//     relaunch of a mapped session would read as a bare cage shortfall
+	//     and refuse — a waiver that expires at the first refresh is not a
+	//     waiver.
+	ratified := res.Ratified
+	if ag.Cage != "" && cageRank(ag.Cage) > cageRank(demanded) {
+		if byPID, err := a.RealizeCage(ag.Cage); err == nil && byPID.Ratified != "" && byPID.Realized == cage {
+			ratified = byPID.Ratified
+		}
+	}
+	if ratified != "" {
+		p.Ratified = append(p.Ratified, ratified)
 	}
 	// What the runtime enforces at OS level (codex read-only). Computed
 	// before the cage-rank check below, which needs it to tell a real cage
@@ -228,9 +303,18 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	// to launch at its own correct cage (ranger-base-d17a).
 	if ag.Cage != "" && cageRank(ag.Cage) > cageRank(cage) {
 		msg := fmt.Sprintf("cage: PID demands %s, launching at %s", ag.Cage, cage)
-		if ag.Cage == CageSeatbelt && rt.SelfSandbox && enforced["Edit"] && enforced["Write"] {
+		switch {
+		// The shortfall IS the ratified map's, already recorded above as
+		// Parity.Ratified — ADR 0083 D7's "the launch proceeds". Saying it
+		// twice would also say it in the one list that REFUSES, which is the
+		// opposite of ratifying it. The condition is the map's own answer for
+		// this PID's demand (`byPID.Realized == cage` above), so a shortfall
+		// the map does not explain — a `--cage shims` on a host with no map,
+		// or one whose map lands somewhere else — still takes the hard entry.
+		case ratified != "":
+		case ag.Cage == CageSeatbelt && rt.SelfSandbox && enforced["Edit"] && enforced["Write"]:
 			p.DeclaredDifference = append(p.DeclaredDifference, msg+" — "+rt.Name+"'s own sandbox already realizes the write wall (OS-enforced Edit/Write) here, an equivalent posture to seatbelt")
-		} else {
+		default:
 			p.Degraded = append(p.Degraded, msg)
 		}
 	}
@@ -912,6 +996,15 @@ func (a *App) CheckTier(ag *AgentFile, rt *Runtime, cage, tier string, allowDegr
 	if ag == nil || rt == nil {
 		return nil
 	}
+	// ADR 0083 D7: `cage_realize_<goos>:` is refused, never defaulted. This
+	// is dispatch's door — it calls CheckTier per bead — and a map posse
+	// cannot read must stop a bead here rather than be read as "no mapping"
+	// and launch a persona at a tier nobody ratified. The error is returned
+	// plainly: it is a config refusal, not a parity verdict, and nothing
+	// about it is waivable with --allow-degraded.
+	if _, err := CageRealizeEntries(a.ConfigPath, runtime.GOOS); err != nil {
+		return err
+	}
 	p := a.CheckParity(ag, rt, cage, tier)
 	if p.NoDegrade || (BelowFloor(ag, tier) && !allowDegraded) {
 		return degradedError{p}
@@ -998,19 +1091,24 @@ func (e degradedError) Error() string {
 		e.p.Runtime, e.p.Cage, e.p.Tier, strings.Join(e.p.Degraded, "\n  "), tail)
 }
 
-// String renders the matrix for posse gates. Three verdicts, never spelled
+// String renders the matrix for posse gates. Four verdicts, never spelled
 // the same way (ADR 0017 §2's presentation rule): ✓ realized, ⊘ declared
 // difference (safe by design — codex's SelfSandbox is the canonical
-// example), ✗ degraded (a gate the wall does not hold). A declared
-// difference alone never earns the header's DEGRADED — that word is
-// reserved for a launch --allow-degraded actually has to waive
-// (ranger-base-d17a).
+// example), ⚖ ratified degradation (real, and already waived by the promoted
+// constitution — ADR 0083 D7's cage map), ✗ degraded (a gate the wall does
+// not hold). A declared difference alone never earns the header's DEGRADED —
+// that word is reserved for a launch --allow-degraded actually has to waive
+// (ranger-base-d17a) — and neither does a ratified one, which no operator is
+// asked to waive at all: it says RATIFIED DEGRADATION, because calling it
+// either "degraded" or "all gates realized" would be a different launch.
 func (p Parity) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s @ %s/%s:", p.Runtime, p.Cage, p.Tier)
 	switch {
 	case len(p.Degraded) > 0:
 		b.WriteString(" DEGRADED\n")
+	case len(p.Ratified) > 0:
+		b.WriteString(" RATIFIED DEGRADATION\n")
 	case len(p.DeclaredDifference) > 0:
 		b.WriteString(" DECLARED DIFFERENCE\n")
 	default:
@@ -1021,6 +1119,9 @@ func (p Parity) String() string {
 	}
 	for _, d := range p.DeclaredDifference {
 		fmt.Fprintf(&b, "    ⊘ %s\n", d)
+	}
+	for _, r := range p.Ratified {
+		fmt.Fprintf(&b, "    ⚖ %s\n", r)
 	}
 	for _, u := range p.Degraded {
 		fmt.Fprintf(&b, "    ✗ %s\n", u)
