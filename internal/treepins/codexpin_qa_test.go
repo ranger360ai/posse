@@ -107,7 +107,7 @@ func (b *cpBox) installCodex(t *testing.T, ver string, linked bool) {
 	if err := os.MkdirAll(room, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "#!/bin/bash\nif [ \"$1\" = \"--version\" ]; then echo \"codex-cli " + ver + "\"; exit 0; fi\nexit 99\n"
+	body := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"codex-cli " + ver + "\"; exit 0; fi\nexit 99\n"
 	real := filepath.Join(room, "codex")
 	if err := WriteExecutable(real, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
@@ -172,7 +172,7 @@ func (b *cpBox) brewRaw(t *testing.T, pinState, header string, infoRC int) {
 	if header != "" {
 		info = "echo '" + header + "'; echo 'https://github.com/openai/codex'; " + info
 	}
-	body := "#!/bin/bash\n" +
+	body := "#!/bin/sh\n" +
 		"case \"$1\" in\n" +
 		"  --prefix) echo '" + b.prefix + "'; exit 0 ;;\n" +
 		"  list) echo '" + pinned + "'; exit 0 ;;\n" +

@@ -107,7 +107,7 @@ func bpHome(t *testing.T, version string, mtime time.Time) string {
 
 func bpStubBD(t *testing.T, path, version string) {
 	t.Helper()
-	body := "#!/bin/bash\n" +
+	body := "#!/bin/sh\n" +
 		"[ \"$1\" = \"--no-daemon\" ] && shift\n" +
 		"if [ \"$1\" = \"version\" ]; then echo \"bd version " + version + " (deadbeef: HEAD@deadbeef)\"; exit 0; fi\n" +
 		"echo \"stub bd: $*\" >&2; exit 99\n"
@@ -131,7 +131,7 @@ func bpStubBrew(t *testing.T, dir, state string) {
 	default:
 		json = `{"formulae":[{"name":"beads","installed":[{"version":"1.2.2"}],"pinned":false,"linked_keg":null}]}`
 	}
-	body := "#!/bin/bash\ncat <<'JSON'\n" + json + "\nJSON\n"
+	body := "#!/bin/sh\ncat <<'JSON'\n" + json + "\nJSON\n"
 	if err := WriteExecutable(filepath.Join(dir, "brew"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,12 @@ func bpStubPS(t *testing.T, dir string, procs []bpProc) {
 	if err := os.WriteFile(fixture, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	body := `#!/bin/bash
+	// The one fixture here that is NOT `#!/bin/sh`: `${@: -1}` below is
+	// bash's offset expansion and has no POSIX spelling (ranger-base-5syu4,
+	// ADR 0080). `env bash` rather than `/bin/bash` so a host that has bash
+	// somewhere other than /bin can still run it; the lookup is PATH's, which
+	// is the right trust level for a test fixture and not for a gate shim.
+	body := `#!/usr/bin/env bash
 F="$PS_FIXTURE"
 case "$*" in
 *-A*) awk -F'\t' '{ printf "  %s %s\n", $1, $4 }' "$F"; exit 0;;
@@ -192,7 +197,7 @@ exit 0
 	// `lsof -p <pid> -a -d cwd -Fn`: one `n<path>` line, and nothing at all
 	// for a pid the fixture does not know — which is the honest "could not
 	// read it" case rather than a wrong answer.
-	lsof := `#!/bin/bash
+	lsof := `#!/bin/sh
 F="$PS_FIXTURE"
 pid=""
 while [ $# -gt 0 ]; do
@@ -284,7 +289,7 @@ func bpStubStat(t *testing.T, dir, flavor, target string, mtime time.Time) {
 	var body string
 	switch flavor {
 	case "gnu":
-		body = `#!/bin/bash
+		body = `#!/bin/sh
 if [ "$1" = -c ]; then
   [ "$2" = %Y ] || { echo "stat: invalid directive" >&2; exit 1; }
   shift 2
@@ -305,7 +310,7 @@ fi
 echo "stat: unsupported: $*" >&2; exit 1
 `
 	case "bsd":
-		body = `#!/bin/bash
+		body = `#!/bin/sh
 if [ "$1" = -f ]; then
   [ "$2" = %m ] || { echo "stat: bad format" >&2; exit 1; }
   shift 2
@@ -315,13 +320,13 @@ fi
 echo "stat: illegal option -- ${1#-}" >&2; exit 1
 `
 	case "broken":
-		body = `#!/bin/bash
+		body = `#!/bin/sh
 echo "mtime: whenever"; exit 0
 `
 	default:
 		t.Fatalf("bpStubStat: unknown flavor %q", flavor)
 	}
-	body = "#!/bin/bash\nEPOCH=" + epoch + "\nTARGET=" + target + "\n" + strings.TrimPrefix(body, "#!/bin/bash\n")
+	body = "#!/bin/sh\nEPOCH=" + epoch + "\nTARGET=" + target + "\n" + strings.TrimPrefix(body, "#!/bin/sh\n")
 	if err := WriteExecutable(filepath.Join(dir, "stat"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}

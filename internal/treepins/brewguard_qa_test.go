@@ -349,29 +349,29 @@ func TestQATheBrewGuardReaderCanStillSayNo(t *testing.T) {
 		wantShadow  map[string]int // the guards the reader SAW and refused
 		wantFirst   int            // 0 == no brew mention at all
 	}{
-		{"both guarded above the call", "#!/bin/bash\n" + guard + "\nv=$(brew info --cask codex)\n",
+		{"both guarded above the call", "#!/usr/bin/env bash\n" + guard + "\nv=$(brew info --cask codex)\n",
 			map[string]int{analytics: 2, autoUpd: 2}, nil, 3},
-		{"no export at all", "#!/bin/bash\nv=$(brew info --cask codex)\n",
+		{"no export at all", "#!/usr/bin/env bash\nv=$(brew info --cask codex)\n",
 			map[string]int{}, nil, 2},
 		// Spelled without a command substitution on purpose: a `$( )` above
 		// the export would stop the reader placing it at all (ranger-base-80zqb),
 		// and this row's subject is the ORDERING check below a call it CAN place.
-		{"both exported below the call", "#!/bin/bash\nbrew info --cask codex >/dev/null\n" + guard + "\n",
+		{"both exported below the call", "#!/usr/bin/env bash\nbrew info --cask codex >/dev/null\n" + guard + "\n",
 			map[string]int{analytics: 3, autoUpd: 3}, nil, 2},
-		{"auto-update only — the pre-esz16 tree", "#!/bin/bash\n" + autoOnly + "\nv=$(brew list --pinned)\n",
+		{"auto-update only — the pre-esz16 tree", "#!/usr/bin/env bash\n" + autoOnly + "\nv=$(brew list --pinned)\n",
 			map[string]int{autoUpd: 2}, nil, 3},
-		{"analytics only", "#!/bin/bash\nexport " + analytics + "\nv=$(brew list --pinned)\n",
+		{"analytics only", "#!/usr/bin/env bash\nexport " + analytics + "\nv=$(brew list --pinned)\n",
 			map[string]int{analytics: 2}, nil, 3},
 		{"the two on separate lines, one of them below the call",
-			"#!/bin/bash\nexport " + analytics + "\nbrew --prefix >/dev/null\nexport " + autoUpd + "\n",
+			"#!/usr/bin/env bash\nexport " + analytics + "\nbrew --prefix >/dev/null\nexport " + autoUpd + "\n",
 			map[string]int{analytics: 2, autoUpd: 4}, nil, 3},
-		{"a commented export is not a setting", "#!/bin/bash\n# " + guard + "\nv=$(brew list --pinned)\n",
+		{"a commented export is not a setting", "#!/usr/bin/env bash\n# " + guard + "\nv=$(brew list --pinned)\n",
 			map[string]int{}, nil, 3},
-		{"a bare assignment is not an export", "#!/bin/bash\n" + analytics + " " + autoUpd + "\nv=$(brew --prefix)\n",
+		{"a bare assignment is not an export", "#!/usr/bin/env bash\n" + analytics + " " + autoUpd + "\nv=$(brew --prefix)\n",
 			map[string]int{}, nil, 3},
-		{"prose about brew is not a call", "#!/bin/bash\n# brew info is auto-update-able, it says here\n" + guard + "\n",
+		{"prose about brew is not a call", "#!/usr/bin/env bash\n# brew info is auto-update-able, it says here\n" + guard + "\n",
 			map[string]int{analytics: 3, autoUpd: 3}, nil, 0},
-		{"the export line is not itself a brew call", "#!/bin/bash\n" + guard + "\n",
+		{"the export line is not itself a brew call", "#!/usr/bin/env bash\n" + guard + "\n",
 			map[string]int{analytics: 2, autoUpd: 2}, nil, 0},
 
 		// ranger-base-mk6gw: the reachability arms. Every one of these three
@@ -381,26 +381,26 @@ func TestQATheBrewGuardReaderCanStillSayNo(t *testing.T) {
 		// carries the line in each, which is what makes these rows a reading
 		// rather than a reader that merely stopped finding things.
 		{"an export inside a function nothing calls is not a setting",
-			"#!/bin/bash\nnever_called() {\n\t" + guard + "\n}\nv=$(brew info --cask codex)\n",
+			"#!/usr/bin/env bash\nnever_called() {\n\t" + guard + "\n}\nv=$(brew info --cask codex)\n",
 			map[string]int{}, map[string]int{analytics: 3, autoUpd: 3}, 5},
 		{"an export inside an `if false` branch is not a setting",
-			"#!/bin/bash\nif false; then\n\t" + guard + "\nfi\nv=$(brew list --pinned)\n",
+			"#!/usr/bin/env bash\nif false; then\n\t" + guard + "\nfi\nv=$(brew list --pinned)\n",
 			map[string]int{}, map[string]int{analytics: 3, autoUpd: 3}, 5},
 		{"an export inside a heredoc is not a setting",
-			"#!/bin/bash\ncat <<'EOF' >/dev/null\n" + guard + "\nEOF\nv=$(brew --prefix)\n",
+			"#!/usr/bin/env bash\ncat <<'EOF' >/dev/null\n" + guard + "\nEOF\nv=$(brew --prefix)\n",
 			map[string]int{}, map[string]int{}, 5},
 		// Column 0 is demanded on top of the depth count, because the depth
 		// count is a count: a function body written without indentation is
 		// caught by the braces, and one whose braces the count has lost is
 		// caught by the margin.
 		{"an unindented export inside a function is still not a setting",
-			"#!/bin/bash\nnever_called() {\n" + guard + "\n}\nv=$(brew --prefix)\n",
+			"#!/usr/bin/env bash\nnever_called() {\n" + guard + "\n}\nv=$(brew --prefix)\n",
 			map[string]int{}, map[string]int{analytics: 3, autoUpd: 3}, 5},
 		{"an indented top-level export is refused — the reader errs strict",
-			"#!/bin/bash\n\t" + guard + "\nv=$(brew --prefix)\n",
+			"#!/usr/bin/env bash\n\t" + guard + "\nv=$(brew --prefix)\n",
 			map[string]int{}, map[string]int{analytics: 2, autoUpd: 2}, 3},
 		{"an export below a block that CLOSED is top level again",
-			"#!/bin/bash\nif false; then\n\t: nothing\nfi\n" + guard + "\nv=$(brew --prefix)\n",
+			"#!/usr/bin/env bash\nif false; then\n\t: nothing\nfi\n" + guard + "\nv=$(brew --prefix)\n",
 			map[string]int{analytics: 5, autoUpd: 5}, map[string]int{}, 6},
 
 		// ranger-base-80zqb: the same two shapes spelled with PARENTHESES,
@@ -411,10 +411,10 @@ func TestQATheBrewGuardReaderCanStillSayNo(t *testing.T) {
 		// are no longer the whole of it. Mutation-check this reader with these
 		// spellings, not the brace one.
 		{"an export inside a top-level subshell is not a setting",
-			"#!/bin/bash\n(\n" + guard + "\n)\nv=$(brew info --cask codex)\n",
+			"#!/usr/bin/env bash\n(\n" + guard + "\n)\nv=$(brew info --cask codex)\n",
 			map[string]int{}, map[string]int{analytics: 3, autoUpd: 3}, 5},
 		{"an export inside a function whose body is a subshell is not a setting",
-			"#!/bin/bash\nnever_called() (\n" + guard + "\n)\nv=$(brew --prefix)\n",
+			"#!/usr/bin/env bash\nnever_called() (\n" + guard + "\n)\nv=$(brew --prefix)\n",
 			map[string]int{}, map[string]int{analytics: 3, autoUpd: 3}, 5},
 
 		// And what the rule COSTS, written down rather than discovered: this
@@ -425,7 +425,7 @@ func TestQATheBrewGuardReaderCanStillSayNo(t *testing.T) {
 		// move the export above that line; a guard this reader imagined would
 		// be the pin lying.
 		{"an export whose own line carries a command substitution is refused — strict, and the line is named",
-			"#!/bin/bash\n" + guard + " NOW=$(date)\nv=$(brew --prefix)\n",
+			"#!/usr/bin/env bash\n" + guard + " NOW=$(date)\nv=$(brew --prefix)\n",
 			map[string]int{}, map[string]int{analytics: 2, autoUpd: 2}, 3},
 	}
 	for _, c := range cases {
@@ -501,7 +501,7 @@ func TestQABrewGuardListIsTheTwoMeasuredSettings(t *testing.T) {
 // fixture is the cheapest real shape — a brace in a string, with no opener.
 func TestQATheBrewGuardReaderRefusesAStructureItCannotPlace(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "fixture.sh")
-	body := "#!/bin/bash\necho \"}\"\n" +
+	body := "#!/usr/bin/env bash\necho \"}\"\n" +
 		"export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1\nv=$(brew --prefix)\n"
 	if err := os.WriteFile(f, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -758,7 +758,7 @@ func TestQABrewGuardsReachTheBrewChild(t *testing.T) {
 			}
 			// The subject binary. Without it every one of these gates exits 2
 			// with "<subject> not on PATH" before it reads brew.
-			subj := "#!/bin/bash\necho '" + d.subject + " 0.0.0'\nexit 0\n"
+			subj := "#!/bin/sh\necho '" + d.subject + " 0.0.0'\nexit 0\n"
 			if err := WriteExecutable(filepath.Join(bin, d.subject), []byte(subj), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -767,7 +767,7 @@ func TestQABrewGuardsReachTheBrewChild(t *testing.T) {
 			// the argv it was given and then every bgGuards setting as THIS
 			// CHILD has it. The names are derived from bgGuards, so a row added
 			// there is demanded here too and cannot be half-applied.
-			body := "#!/bin/bash\n{\n\tprintf 'call %s\\n' \"$*\"\n"
+			body := "#!/bin/sh\n{\n\tprintf 'call %s\\n' \"$*\"\n"
 			for _, g := range bgGuards {
 				name, _, _ := strings.Cut(g.assign, "=")
 				body += fmt.Sprintf("\tprintf '%s=%%s\\n' \"${%s-%s}\"\n", name, name, bgUnset)

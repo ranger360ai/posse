@@ -101,12 +101,12 @@ func gpStubGrok(t *testing.T, binDir, version, checkJSON string) {
 	}
 	var body string
 	if checkJSON == "" {
-		body = "#!/bin/bash\n" +
+		body = "#!/bin/sh\n" +
 			"if [ \"$1\" = \"--version\" ]; then echo \"grok " + version + " (deadbeef) [stable]\"; exit 0; fi\n" +
 			"if [ \"$1\" = \"update\" ]; then exit 0; fi\n" +
 			"echo \"stub grok: $*\" >&2; exit 99\n"
 	} else {
-		body = "#!/bin/bash\n" +
+		body = "#!/bin/sh\n" +
 			"if [ \"$1\" = \"--version\" ]; then echo \"grok " + version + " (deadbeef) [stable]\"; exit 0; fi\n" +
 			"if [ \"$1\" = \"update\" ]; then\n" +
 			"cat <<'JSON'\n" + checkJSON + "\nJSON\n" +
@@ -224,7 +224,7 @@ func gpStubBrew(t *testing.T, binDir string, b gpBrew) {
 		info = "exit " + itoa(b.infoExit)
 	}
 
-	body := "#!/bin/bash\n" +
+	body := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"--prefix\" ]; then echo \"" + prefix + "\"; exit 0; fi\n" +
 		"if [ \"$1\" = \"list\" ] && [ \"$2\" = \"--pinned\" ]; then printf '%s\\n' \"" + pinned + "\"; exit 0; fi\n" +
 		"if [ \"$1\" = \"list\" ] && [ \"$2\" = \"--cask\" ]; then " + versions + "; fi\n" +
@@ -620,7 +620,7 @@ func gpStubGrokNoVersion(t *testing.T, binDir, checkJSON string) {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "#!/bin/bash\n" +
+	body := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"--version\" ]; then exit 1; fi\n" +
 		"if [ \"$1\" = \"update\" ]; then\ncat <<'JSON'\n" + checkJSON + "\nJSON\nexit 0\nfi\n" +
 		"echo \"stub grok: $*\" >&2; exit 99\n"

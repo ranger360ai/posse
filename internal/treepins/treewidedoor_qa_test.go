@@ -928,8 +928,38 @@ package treepins
 // and so has no discovered file set for any rule here to see. It runs in the
 // ordinary arm-1 suite.
 //
-// and `make tree-check` is all of them — one hundred and twenty-four pins and
-// seventeen doors, 71.7-126.1s over three warm runs at one hundred and
+// and one more, folded into corpus-check's door rather than given a new one
+// — its subject is a reading of this repo's own Go sources, which is that
+// door's subject already:
+//
+//	TestQANoGoSourceWritesABinBashShebang         make corpus-check
+//	                                              (ranger-base-5syu4)
+//
+// It is the one pin in this register whose SUBJECT is portability rather
+// than policy: ADR 0080's always-on Linux host made a `#!/bin/bash` literal
+// a thing a host can refuse to run, and the thirty-eight the ADR counted
+// were all in this package's fixtures rather than in posse's renders, which
+// were `#!/bin/sh` the whole time.
+//
+// and `make tree-check` is all of them — one hundred and twenty-five pins and
+// seventeen doors, 123-185s over three warm runs at one hundred and
+// twenty-five of them (MEASURED 2026-11-08, ranger-base-5syu4: 123s, 129s
+// then 185s in that order, at a one-minute load average of 30.68, 26.98 and
+// 12.02 over a five-minute 33.75, 31.91 and 24.83, with one suite slot held
+// by a sibling seat for the first run and BOTH held for the second and third,
+// and one warm-up run discarded at 213s with internal/treepins' test binary
+// to relink. The slowest band this command has produced, and it says the
+// zpk8r paragraph below twice over rather than adding anything: the slowest
+// warm run is again the one at the LOWEST load — 185s at a one-minute 12.02,
+// against 123s at 30.68 — and again it is the run with BOTH slots held, so
+// the variable that tracks is the slots and not the average. The pin this
+// bead added reports 0.30s, which is below the 62s spread by two orders of
+// magnitude, so none of that band is its cost. The seconds here moved
+// because the box did; read the chain's quiet entries, not this one, to
+// price the command.
+//
+// The reading this replaces, kept because it is the one that named the
+// counterexample: 71.7-126.1s over three warm runs at one hundred and
 // twenty-four of them (MEASURED 2026-11-04, ranger-base-zpk8r: 90.7s, 71.7s
 // then 126.1s in that order, at a one-minute load average of 30.01, 21.42 and
 // 12.34 over a five-minute 37.85, 32.99 and 27.77, with one suite slot held

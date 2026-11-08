@@ -158,6 +158,16 @@ today.
 - `/bin/bash` exists on this host, so the 38 `#!/bin/bash` literals in
   posse's Go renders (a grep, not an audit) are a portability debt, not a
   blocker. Filed P3.
+  **Read, 2026-11-08** (ranger-base-5syu4, docs/notes.d/ranger-base-5syu4.md):
+  the grep had the count right and the place wrong. Not one of the 38 was a
+  render — posse's renders were `#!/bin/sh` already, every one of them — and
+  all 38 were test-fixture shims and fixture text under internal/treepins.
+  So the debt was never in the renders; it was in the SUITE, which eighteen
+  of them made unrunnable on a host without `/bin/bash`. They are
+  `#!/bin/sh` now bar one bashism that takes `#!/usr/bin/env bash`, and
+  `TestQANoGoSourceWritesABinBashShebang` (`make corpus-check`) keeps the
+  literal out. Nothing here needed the host to have `/bin/bash` after all,
+  and nothing was held back.
 - Two never-measured Linux paths get measured by the shakedown, with no
   code first: the meter's credentials-file store (ADR 0019 V1) and
   `checkorphans` over `ps`.
