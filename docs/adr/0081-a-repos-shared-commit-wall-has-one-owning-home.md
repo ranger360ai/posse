@@ -1,6 +1,6 @@
 # ADR 0081 — a repo's shared commit wall has one owning home; a launch from any other home takes its own wall instead of rewriting the shared one
 
-*Status: accepted 2026-11-06 (ranger-base-n6dsk, from ranger-base-q0np6) · owner: architect · amends ADR 0023 (one writer per slot is now a rule with an owner, not an assumption) and extends ADR 0052 D2 (the per-session redirect is also taken when posse MAY write the slot but this home SHOULD NOT) · builds in the code beads named on ranger-base-n6dsk (dinesh)*
+*Status: accepted 2026-11-06 (ranger-base-n6dsk, from ranger-base-q0np6); D7 added 2026-11-07 (ranger-base-knb1v, from ranger-base-lh9nj) · owner: architect · amends ADR 0023 (one writer per slot is now a rule with an owner, not an assumption) and extends ADR 0052 D2 (the per-session redirect is also taken when posse MAY write the slot but this home SHOULD NOT) · builds in the code beads named on ranger-base-n6dsk (dinesh)*
 
 ## Context
 
@@ -81,6 +81,30 @@ input, so a cross-home write produces identical bytes. It is left as is.
 homes both mark R, both write and the last one wins. That is today's behaviour,
 except that D2's stamp now makes every reader name the other home.
 
+**D7 — The queue repo's guard write follows D3. When D3 says no, the
+projection commit is refused.** `CommitQueueJSONL`
+(internal/posse/queuejsonl.go) is a third writer of a shared wall. Before
+every jsonl commit it calls `a.InstallCommitGuardHook(q)` with
+`q = a.QueueRepo()`, from whichever home ran the close. Ownership is still D1
+alone. `queue_repo:` does not confer it, because it is one line any home can
+copy. The call site does what the launch does: probe first, ask D3's rule
+(the same predicate the launch asks, not a second copy of it), and install
+only if the rule allows. When it does not, there is no session to redirect.
+The probe that already rules this commit then reads the other home's render,
+and the commit is refused. The error names the stamping home and both
+remedies: mark `q` in this home's `beads_visibility:` (G13's remedy and
+ADR 0015 §4 cutover step 5), or close from the home that stamped it.
+
+This costs no line the census does not already lose. A home that does not
+mark `q` renders it public. In a public repo check 0 scans the projection's
+added lines against the effective ops patterns, and G13 already reports that
+commit as refused at every close (QueueReady's `Unmarked`). Under rule (a)
+below, a non-owner would rewrite the owner's wall with its public body, and
+in that common case its own commit would still be refused. D7 refuses the
+same commit and leaves the owner's wall intact. The projection is a full
+export, so the next close from the owning home commits what this one did not.
+That is the "recoverable by the next close" the call site already relies on.
+
 ## Consequences
 
 - Every body installed before this ADR has no stamp. Each reader's fresh
@@ -131,3 +155,21 @@ except that D2's stamp now makes every reader name the other home.
 - **Stamp a hash of the config instead of the home.** That says the bodies
   differ, which the bytes already say. It cannot say whose config it is or
   what the remedy is.
+- **(D7a) `queue_repo:` implies ownership of the queue repo's wall.** D1
+  would gain a second source, and the second one is a key that copies
+  between homes with the rest of a config. That is how a scratch home comes
+  to name the real repo in the first place. The write it permits is the
+  public body over the owner's private one, and check 0 then refuses the
+  commit anyway, so it does damage and saves nothing.
+- **(D7b) Run the queue commit under both walls, the way D3 holds a
+  session.** That means a per-commit `core.hooksPath` redirect to a fresh
+  render of this home's wall, which forwards to the shared slot. This home's
+  wall is the public body, so wherever check 0 fires it refuses exactly as
+  D7 does. It differs only when no added line matches a pattern, and there it
+  lets a non-owning home write history into another home's queue repo. That
+  costs a render and a temp dir per close to rescue a commit the owner's next
+  close makes anyway. ASSUMED rare; not MEASURED.
+- **(D7c) Accept the owner's render as armed (commit under the owner's wall
+  alone).** The launcher would be acting on this home's config, which calls
+  `q` public, while skipping the scan that config demands. By this home's own
+  reading that is a disclosure.
