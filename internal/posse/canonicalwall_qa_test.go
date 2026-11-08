@@ -287,7 +287,16 @@ func qcwDiffLines(got, want string) string {
 	if len(w) > n {
 		n = len(w)
 	}
-	at := func(lines []string, i int) string {
+	// lineAt, not `at`: cmd/testparallel resolves a called NAME against
+	// every `at := func(...)` in the package, and one of those reaches the
+	// plan-clock package var `blindT`. So a t.Parallel test that wants
+	// nothing from this helper but a readable diff is reported as reaching
+	// that var and goes UNCLEARED — which is what
+	// TestQAOneHomeSpelledTwoWaysRendersOneCommitWall did, and why
+	// TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared reds over a
+	// local variable's name. A unique name is the honest fix; a parallelOK
+	// line naming blindT would be clearing a reason this test does not have.
+	lineAt := func(lines []string, i int) string {
 		if i < len(lines) {
 			return lines[i]
 		}
@@ -296,8 +305,8 @@ func qcwDiffLines(got, want string) string {
 	var b strings.Builder
 	shown := 0
 	for i := 0; i < n && shown < 6; i++ {
-		if at(g, i) != at(w, i) {
-			fmt.Fprintf(&b, "  line %d\n    got:  %s\n    want: %s\n", i+1, at(g, i), at(w, i))
+		if lineAt(g, i) != lineAt(w, i) {
+			fmt.Fprintf(&b, "  line %d\n    got:  %s\n    want: %s\n", i+1, lineAt(g, i), lineAt(w, i))
 			shown++
 		}
 	}

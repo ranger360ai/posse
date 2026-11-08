@@ -97,9 +97,9 @@ func qwoForeignWall(t *testing.T, repo string, launcher *App) (*App, string) {
 	}
 	// Measured, not assumed: the committing home reads this body as another
 	// home's render, by its stamp and not by its length.
-	if p := launcher.probeL3Hooks(repo, false); p.CommitGuardVerdict != l3OtherHome || p.CommitGuardHome != x.Home {
+	if p := launcher.probeL3Hooks(repo, false); p.CommitGuardVerdict != l3OtherHome || p.CommitGuardHome != qaStampedHome(x.Home) {
 		t.Fatalf("fixture premise: verdict=%d home=%q, want l3OtherHome (%d) stamped %q — line: %q",
-			p.CommitGuardVerdict, p.CommitGuardHome, l3OtherHome, x.Home, p.CommitGuardDegraded)
+			p.CommitGuardVerdict, p.CommitGuardHome, l3OtherHome, qaStampedHome(x.Home), p.CommitGuardDegraded)
 	}
 	return x, slot
 }
@@ -169,7 +169,7 @@ func TestQAAQueueCommitFromANonOwningHomeLeavesTheWallAndRefuses(t *testing.T) {
 		return // already reported; there is no refusal to read
 	}
 	for _, want := range []string{
-		AbbrevHome(x.Home),
+		qaStampedBy(x.Home),
 		AbbrevHome(repo),
 		"beads_visibility:",
 		"ADR 0081",

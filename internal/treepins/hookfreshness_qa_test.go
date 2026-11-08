@@ -409,8 +409,19 @@ func TestQAHookFreshnessNamesAForeignStampedWallInsteadOfStale(t *testing.T) {
 	// The remedy, which is the half that makes this a different finding
 	// rather than a different sentence: the reader is told to decide which
 	// home owns the wall, with this home named so they can tell the two apart.
-	if !strings.Contains(out, "decide which home owns this repo's wall") || !strings.Contains(out, r.rhqHome) {
-		t.Errorf("the finding must name THIS home too, and the choice it is asking for:\n%s", out)
+	// RESOLVED, since ADR 0082 D3: the script prints `$ref_commit_home`,
+	// which it reads out of the REFERENCE render, and the render spells its
+	// home the way the kernel names the directory. The rig's home is a
+	// `t.TempDir()`, reached through darwin's /var -> /private/var symlink,
+	// so the raw field is the one spelling that line cannot carry.
+	// EvalSymlinks is enough for this rig: every path under its root is
+	// created in the case it is named in.
+	mineAsRendered := r.rhqHome
+	if resolved, err := filepath.EvalSymlinks(r.rhqHome); err == nil {
+		mineAsRendered = resolved
+	}
+	if !strings.Contains(out, "decide which home owns this repo's wall") || !strings.Contains(out, mineAsRendered) {
+		t.Errorf("the finding must name THIS home too (%s), and the choice it is asking for:\n%s", mineAsRendered, out)
 	}
 }
 

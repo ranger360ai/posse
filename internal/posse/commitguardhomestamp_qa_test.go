@@ -7,6 +7,19 @@ package posse
 // which are not its own render asks WHOSE they are before it calls them
 // stale.
 //
+// SINCE ADR 0082 D3 (ranger-base-8gwu1) that path is spelled
+// `canonicalPath(a.Home)` — the way the kernel names the directory, the same
+// spelling check 3's instance-path literals take one line further down the
+// same body. D2's "absolute" survives; the sentence that said absolute and
+// NOT resolved, "because the operator acts on the spelling they configured",
+// is withdrawn. So every expected stamp in this file is built with
+// qaStampedHome / qaStampedBy (gates_helpers_test.go) and never from an
+// App's `Home` field, which on darwin is the one spelling the stamp is
+// guaranteed not to carry. The READERS are unchanged, and the two arms at
+// the foot of the file are the split that keeps them apart: one home spelled
+// two ways is now one wall at the RENDER, and samePath is what still makes a
+// body an earlier binary stamped non-canonically this home's to re-render.
+//
 // WHY THE DISTINCTION IS WORTH A VERDICT. Identity is byte-for-byte
 // (ADR 0023), and the commit guard's bytes are a function of the rendering
 // HOME: its ops patterns, its guard-value literals, its crew names, its
@@ -38,6 +51,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -60,9 +74,23 @@ func qaStampHomes(t *testing.T) (x, y *App) {
 func TestQACommitGuardBodyNamesTheHomeThatRenderedIt(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
+	// canonicalPath, since ADR 0082 D3: the stamp is spelled the way the
+	// kernel names the directory, and a temp root on darwin is reached
+	// through /var -> /private/var, so the raw t.TempDir() string is the
+	// one spelling the body is guaranteed NOT to carry. ADR 0082's
+	// Consequences says this in as many words — a fixture that builds an
+	// expected literal from a temp dir passes it through canonicalPath.
+	want := canonicalPath(home)
 	body := NewAppAt(home).CommitGuardHook(VisibilityPublic, OpsPatternSet{})
-	if got := commitGuardHomeOf(body); got != home {
-		t.Errorf("commitGuardHomeOf = %q, want the rendering home %q", got, home)
+	if got := commitGuardHomeOf(body); got != want {
+		t.Errorf("commitGuardHomeOf = %q, want the rendering home's canonical spelling %q", got, want)
+	}
+	// And it still names the same DIRECTORY the App was built on, which is
+	// the claim every reader of the stamp makes. Asserted beside the string
+	// so a canonicalPath that answered some other real path could not pass
+	// the line above by agreeing with itself.
+	if got := commitGuardHomeOf(body); !samePath(got, home) {
+		t.Errorf("commitGuardHomeOf = %q, which is not the directory %q the App renders from", got, home)
 	}
 	if n := strings.Count(body, commitGuardHomeStampPrefix); n != 1 {
 		t.Errorf("the body carries %d stamp line(s), want exactly 1 — the parser takes the first and a second is a line no reader would ever see", n)
@@ -70,9 +98,11 @@ func TestQACommitGuardBodyNamesTheHomeThatRenderedIt(t *testing.T) {
 
 	// The stamp is a COMMENT, which is what makes it safe to carry a path
 	// the renderer does not control. A body whose stamp line were not one
-	// would hand its home to /bin/sh on every commit in the repo.
+	// would hand its home to /bin/sh on every commit in the repo. Both
+	// spellings are swept: the one the stamp carries, and the one the
+	// caller handed in, which a future renderer could start emitting.
 	for _, line := range strings.Split(body, "\n") {
-		if strings.Contains(line, home) && !strings.HasPrefix(line, "#") {
+		if (strings.Contains(line, want) || strings.Contains(line, home)) && !strings.HasPrefix(line, "#") {
 			t.Errorf("the home reached a line /bin/sh reads as a command:\n  %s", line)
 		}
 	}
@@ -88,6 +118,20 @@ func TestQACommitGuardBodyNamesTheHomeThatRenderedIt(t *testing.T) {
 }
 
 // The stamp is ABSOLUTE (D2's own word), and unnameable homes stamp nothing.
+//
+// Every home in the TABLE is a path that does NOT exist, so each row
+// measures canonicalPath's deterministic fallback (ADR 0082 D1's third
+// bullet) and the syntax rules around it. The canonical FOLD — a home that
+// exists and is reachable by more than one spelling — is the subject of
+// TestQAOneHomeSpelledTwoWaysRendersOneCommitWall, because it needs a real
+// directory and a real symlink to have one.
+//
+// The arm after the table is the newline guard over the RENDERED answer,
+// which ADR 0082 D3 made necessary and no row can reach.
+// MUTATION-CHECKED 2026-11-08: with that second guard removed the arm reds,
+// and the line it prints is the defect in full —
+// `# posse-home: <tmp>/home\nrm -rf ` written into a file git execs on
+// every commit in the repo.
 func TestQACommitGuardHomeStampIsAbsoluteOrAbsent(t *testing.T) {
 	t.Parallel()
 	abs, err := filepath.Abs("rel/home")
@@ -95,7 +139,7 @@ func TestQACommitGuardHomeStampIsAbsoluteOrAbsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ what, home, want string }{
-		{"an absolute home is stamped as it is spelled", "/opt/posse-home", commitGuardHomeStampPrefix + "/opt/posse-home\n"},
+		{"an absolute home with nothing to fold is stamped as it is spelled", "/opt/posse-home", commitGuardHomeStampPrefix + "/opt/posse-home\n"},
 		{"an uncleaned home is cleaned", "/opt/posse-home/../posse-home/./x", commitGuardHomeStampPrefix + "/opt/posse-home/x\n"},
 		{"a relative home is made absolute", "rel/home", commitGuardHomeStampPrefix + abs + "\n"},
 		{"no home, no stamp", "", ""},
@@ -110,6 +154,31 @@ func TestQACommitGuardHomeStampIsAbsoluteOrAbsent(t *testing.T) {
 		if got := commitGuardHomeStamp(c.home); got != c.want {
 			t.Errorf("%s: commitGuardHomeStamp(%q) = %q, want %q", c.what, c.home, got, c.want)
 		}
+	}
+
+	// And the guard over the RENDERED answer, which is the one the table
+	// above cannot reach: since ADR 0082 D3 the value written is a string
+	// the KERNEL chose, so a home whose own path is comment-safe can
+	// resolve onto one that is not. The home here carries no newline and
+	// the directory it names does, which is a file git execs on every
+	// commit handing the tail of a path to /bin/sh.
+	root := t.TempDir()
+	unsafe := filepath.Join(root, "home\nrm -rf /")
+	if err := os.MkdirAll(unsafe, 0o755); err != nil {
+		t.Skipf("no newline in a filename here: %v", err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(unsafe, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if strings.ContainsAny(link, "\n\r") {
+		t.Fatalf("fixture premise: the home handed in already carries a newline (%q), so the argument guard answers and the rendered one is not measured", link)
+	}
+	if !strings.ContainsAny(canonicalPath(link), "\n\r") {
+		t.Skipf("canonicalPath(%q) = %q carries no newline on this box, so there is nothing for the second guard to catch", link, canonicalPath(link))
+	}
+	if got := commitGuardHomeStamp(link); got != "" {
+		t.Errorf("a home that RESOLVES onto a newline stamped %q, want nothing — that home is unnameable in a comment and therefore owns nothing (D3 case 4), which is the fail-closed answer with no shell injected", got)
 	}
 }
 
@@ -141,8 +210,8 @@ func TestQAAWallRenderedByAnotherHomeIsNotReportedAsStale(t *testing.T) {
 	if p.CommitGuard {
 		t.Errorf("another home's render must not COUNT as this home's wall: the guards in it are that home's, and the layer this launch claims is not realized")
 	}
-	if !strings.Contains(p.CommitGuardDegraded, AbbrevHome(x.Home)) {
-		t.Errorf("the line must name the stamping home by path (%s), which is the one fact a reader cannot get anywhere else:\n  %s", AbbrevHome(x.Home), p.CommitGuardDegraded)
+	if !strings.Contains(p.CommitGuardDegraded, qaStampedBy(x.Home)) {
+		t.Errorf("the line must name the stamping home by path (%s), which is the one fact a reader cannot get anywhere else:\n  %s", qaStampedBy(x.Home), p.CommitGuardDegraded)
 	}
 	if strings.Contains(p.CommitGuardDegraded, "ours but stale") {
 		t.Errorf("a foreign home's current render is not ours gone stale — that line prescribes the reinstall that keeps two homes re-stamping one file:\n  %s", p.CommitGuardDegraded)
@@ -168,8 +237,8 @@ func TestQAAWallRenderedByAnotherHomeIsNotReportedAsStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := commitGuardHomeOf(string(body)); got != x.Home {
-		t.Errorf("the installed slot is stamped %q, want home X %q", got, x.Home)
+	if got, want := commitGuardHomeOf(string(body)), canonicalPath(x.Home); got != want {
+		t.Errorf("the installed slot is stamped %q, want home X's canonical spelling %q (ADR 0082 D3)", got, want)
 	}
 }
 
@@ -229,71 +298,206 @@ func TestQAHookWallSweepNamesAForeignStampedWall(t *testing.T) {
 	if !found {
 		t.Fatalf("a wall another home rewrote passed the sweep:\n%s", out)
 	}
-	if !strings.Contains(out, "rendered by home") || !strings.Contains(out, AbbrevHome(x.Home)) {
-		t.Errorf("the sweep must name the stamping home %s rather than report freshness:\n%s", AbbrevHome(x.Home), out)
+	if !strings.Contains(out, "rendered by home") || !strings.Contains(out, qaStampedBy(x.Home)) {
+		t.Errorf("the sweep must name the stamping home %s rather than report freshness:\n%s", qaStampedBy(x.Home), out)
 	}
 	if strings.Contains(out, "ours but stale") {
 		t.Errorf("the sweep called another home's current render stale:\n%s", out)
 	}
 }
 
-// ─── one home spelled two ways is one home (the Go reader's cry-wolf arm) ────
+// ─── one home spelled two ways is one home: at the RENDER, then at the reader ─
 
-// ADR 0081 D2 says the stamp is compared by PATH and not by string, and
-// commitGuardHomeVerdict does it with samePath. The shell reader has an arm
-// for that (TestQAHookFreshnessDoesNotCryWolfOverASymlinkedHomeSpelling,
-// internal/treepins) and until ranger-base-hgq2k the GO reader did not:
-// MEASURED 2026-11-07 on fcb61cb6, `samePath(stamp, a.Home)` replaced by
-// `stamp == a.Home` left all 28 L3 arms of this package and all 10 of
-// cmd/posse's install-hooks arms GREEN.
+// qaStampHomeSpellings is one directory and the spellings that reach it: the
+// on-disk path, a path through a symlink to its parent, and — darwin on a
+// case-folding volume — the same name in another case. Every spelling is
+// asserted to be a different STRING for the same DIRECTORY, because without
+// the first the pin measures nothing and without the second it is measuring
+// a real foreign home.
 //
-// The Go side is the side where it costs more than a sentence. ADR 0081 D3's
-// write rule is asked of this verdict (sharedCommitWallWrite), so a wall read
-// as another home's over a SPELLING would stop this home refreshing its OWN
-// wall, take the per-session redirect instead, and send the operator to settle
-// an ownership question that is already settled — a finding about path
-// spelling, printed as a finding about ownership. Both halves are asserted
-// here: the verdict, and the write it decides.
-func TestQAOneHomeSpelledTwoWaysIsOneHomeToTheCommitWallReader(t *testing.T) {
-	t.Parallel()
-	repo, _ := qaHookRepo(t)
-	home := t.TempDir()
-	link := filepath.Join(t.TempDir(), "home-by-another-name")
-	if err := os.Symlink(home, link); err != nil {
-		t.Skipf("no symlinks here: %v", err)
-	}
-	// The premise this arm lives or dies on: two spellings that are not the
-	// same STRING and are the same DIRECTORY. Without the first it measures
-	// nothing; without the second it is asking the wrong question.
-	if link == home {
-		t.Fatalf("fixture premise: the two spellings are one string (%s)", link)
-	}
-	if !samePath(link, home) {
-		t.Fatalf("fixture premise: %s and %s are not one directory, so this arm would be measuring a real foreign home", link, home)
-	}
-
-	// Installed through the LINKED spelling, which is what the stamp then
-	// carries: D2 stamps Abs+Clean and deliberately does NOT resolve
-	// symlinks, because the operator acts on the spelling they configured.
-	slot, _, _, err := NewAppAt(link).InstallCommitGuardHook(repo)
-	if err != nil {
-		t.Fatalf("install from the linked spelling: %v", err)
-	}
-	body, err := os.ReadFile(slot)
-	if err != nil {
+// The home is a NAMED subdirectory and not the temp root itself: the case
+// axis needs letters to change the case of, and a t.TempDir() basename is
+// digits.
+func qaStampHomeSpellings(t *testing.T) (home string, others []string) {
+	t.Helper()
+	root := t.TempDir()
+	home = filepath.Join(root, "Home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := commitGuardHomeOf(string(body)); got != link {
-		t.Fatalf("fixture premise: the slot is stamped %q, want the linked spelling %q — a stamp that already resolved would make every assertion below vacuous", got, link)
+	if err := os.Symlink(root, filepath.Join(root, "link")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	cand := []string{filepath.Join(root, "link", "Home")}
+	// darwin only, and only where the volume folds case: this is the axis
+	// EvalSymlinks cannot close and F_GETPATH can (ADR 0082 D1). On a
+	// case-SENSITIVE volume `<root>/HOME` is a directory that does not
+	// exist, and keeping it apart is correct rather than a miss.
+	if cased := filepath.Join(root, "HOME"); runtime.GOOS == "darwin" && samePath(home, cased) {
+		cand = append(cand, cased)
+	} else {
+		t.Logf("case spelling skipped on this box: %s", cased)
+	}
+	for _, o := range cand {
+		if o == home {
+			t.Fatalf("fixture premise: %q and the on-disk home are one string", o)
+		}
+		if !samePath(o, home) {
+			t.Fatalf("fixture premise: %q and %q are not one directory, so a difference below would be a real foreign home", o, home)
+		}
+		others = append(others, o)
+	}
+	return home, others
+}
+
+// THE PIN ADR 0082 D3 IS FOR. Two Apps whose Home is one directory under two
+// spellings render byte-identical commit-guard bodies, so the L3 probe's
+// byte compare (ADR 0023) reads one home's wall as HELD however that home
+// was spelled when it was written.
+//
+// Before D3 the stamp was `filepath.Abs` + `Clean` of the home as
+// configured, so an RHQ_HOME typed through a symlink — or a `/tmp` spelling
+// of a `/private/tmp` home, which is what every test rig on this box has —
+// rendered a body differing in that one line from the body the next launch
+// renders. Identity then failed, the verdict said "ours but stale", and
+// `posse gates install-hooks` re-rendered a file that was already correct,
+// on every launch into that repo, forever. That is the same loop
+// ranger-base-q0np6 measured between two REAL homes, reached through a path
+// spelling instead: ADR 0082's class, over the home rather than the repo.
+//
+// Byte equality of the whole body is the assertion, not a grep for the
+// stamp line, for the reason canonicalwall_qa_test.go gives about the repo
+// half: one equality holds the claim for every line the render grows later.
+//
+// MUTATION-CHECKED 2026-11-08 (darwin 25.6.0, APFS case-insensitive), the
+// same two mutants the repo half is checked with, and they red DIFFERENT
+// spellings — which is what says this pin measures D3 and D1's platform
+// half separately rather than one equality twice:
+//
+//   - commitGuardHomeStamp reverted to filepath.Abs + Clean (D3 undone, the
+//     pre-0082 stamp) reds BOTH spellings here and reds
+//     TestQAAWallInstalledUnderAnotherSpellingOfThisHomeReadsAsHeld at the
+//     installed slot's stamp. The READER arm below stays GREEN under it,
+//     which is what says that one is pinning samePath and not the render.
+//   - kernelPath returning an error on darwin (D1's platform half undone, so
+//     canonicalPath degrades to resolvedPath — exactly ADR 0082's rejected
+//     option (a)) leaves the SYMLINK spelling green and reds the CASE
+//     spelling, here and in TestQACanonicalPathIsTheKernelsSpelling. That is
+//     the ADR's reason for rejecting (a), measured rather than asserted.
+func TestQAOneHomeSpelledTwoWaysRendersOneCommitWall(t *testing.T) {
+	t.Parallel()
+	home, others := qaStampHomeSpellings(t)
+	want := canonicalPath(home)
+
+	ref := NewAppAt(home).CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	// The premise, or every equality below is two unstamped bodies agreeing
+	// about nothing: the reference really does carry a stamp, and it carries
+	// the CANONICAL spelling rather than the one handed in.
+	if got := commitGuardHomeOf(ref); got == "" {
+		t.Fatalf("fixture premise: the reference body carries no %q line", commitGuardHomeStampPrefix)
+	} else if got != want {
+		t.Fatalf("fixture premise: the reference is stamped %q, want canonicalPath's %q", got, want)
 	}
 
-	// Read back through the OTHER spelling of that same home. The bytes
-	// differ — this render stamps `home`, the file says `link` — so identity
-	// fails, and the whole question is which failure it is.
+	for _, o := range others {
+		body := NewAppAt(o).CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+		if got := commitGuardHomeOf(body); got != want {
+			t.Errorf("a home spelled %q stamps %q, want the kernel's spelling %q (ADR 0082 D3)", o, got, want)
+		}
+		if body != ref {
+			t.Errorf("a home spelled %q rendered a different wall than %q:\n%s", o, home, qcwDiffLines(body, ref))
+		}
+		// And the renderer on its own, so a failure names the stamp rather
+		// than "two bodies of N lines are unequal".
+		if got, ref := commitGuardHomeStamp(o), commitGuardHomeStamp(home); got != ref {
+			t.Errorf("commitGuardHomeStamp(%q) = %q, want %q", o, got, ref)
+		}
+	}
+}
+
+// And the end of the loop, through the probe that pays for it: a wall
+// INSTALLED under one spelling of this home reads as HELD from another. This
+// is the arm that would have caught ranger-base-k9x8n's defect on the home
+// half, and the one the ADR's Consequences is written in terms of.
+func TestQAAWallInstalledUnderAnotherSpellingOfThisHomeReadsAsHeld(t *testing.T) {
+	t.Parallel()
+	repo, _ := qaHookRepo(t)
+	home, others := qaStampHomeSpellings(t)
+
+	slot, _, _, err := NewAppAt(others[0]).InstallCommitGuardHook(repo)
+	if err != nil {
+		t.Fatalf("install from the %s spelling: %v", others[0], err)
+	}
+	if got, want := commitGuardHomeOf(qaReadFile(t, slot)), canonicalPath(home); got != want {
+		t.Fatalf("the installed slot is stamped %q, want the canonical %q", got, want)
+	}
+
 	a := NewAppAt(home)
 	p := a.probeL3Hooks(repo, false)
+	if p.CommitGuardVerdict != l3Held || !p.CommitGuard {
+		t.Errorf("one home spelled two ways read verdict=%d commitGuard=%v, want l3Held (%d) and true — the bytes are this home's own render and a reinstall would change nothing: %q",
+			p.CommitGuardVerdict, p.CommitGuard, l3Held, p.CommitGuardDegraded)
+	}
+	// The write rule, which is the half that costs something: a wall held is
+	// a wall this home may refresh.
+	if write, stamp := a.sharedCommitWallWrite(repo, p); !write || stamp != "" {
+		t.Errorf("ADR 0081 D3 refused this home its OWN wall over a spelling: write=%v stamp=%q", write, stamp)
+	}
+}
+
+// THE READER'S samePath, which ADR 0082 D3 keeps and which now has exactly
+// one source of a non-canonical stamp: a body an EARLIER BINARY wrote. D3
+// says such a body is still ours — it re-renders once through the
+// stale->reinstall path that already exists, and no migration case is added
+// for it — so the arm plants the pre-0082 spelling the way the shell
+// reader's sibling does (TestQAHookFreshnessDoesNotCryWolfOverASymlinked
+// HomeSpelling, internal/treepins): one line of the CURRENT render changed,
+// so the only thing identity can be failing over is the home.
+//
+// Until ranger-base-hgq2k the Go reader had no arm for this at all: MEASURED
+// 2026-11-07 on fcb61cb6, `samePath(stamp, a.Home)` replaced by
+// `stamp == a.Home` left all 28 L3 arms of this package and all 10 of
+// cmd/posse's install-hooks arms GREEN. The Go side is where it costs more
+// than a sentence, because ADR 0081 D3's write rule is asked of this verdict
+// (sharedCommitWallWrite): a wall read as another home's over a spelling
+// would stop this home refreshing its OWN wall, take the per-session
+// redirect instead, and send the operator to settle an ownership question
+// that is already settled — a finding about path spelling, printed as a
+// finding about ownership. Both halves are asserted here: the verdict, and
+// the write it decides.
+func TestQAOneHomeSpelledTwoWaysIsOneHomeToTheCommitWallReader(t *testing.T) {
+	t.Parallel()
+	repo, hooks := qaHookRepo(t)
+	home, others := qaStampHomeSpellings(t)
+	old := others[0]
+
+	a := NewAppAt(home)
+	cur := a.CommitGuardHook(VisibilityPublic, a.OpsPatternSet(), testIdentity(t, repo)...)
+	// Taken OUT OF the render and never recomputed here, for the reason the
+	// shell sibling's hfHomeOf gives: this arm is about the READER, so what
+	// the renderer currently spells its own home as is none of its business
+	// — and a value computed here would make the arm red on a renderer
+	// change it is not pinning.
+	mine := commitGuardHomeOf(cur)
+	if mine == "" {
+		t.Fatalf("fixture premise: this home's render carries no %q line to rewrite", commitGuardHomeStampPrefix)
+	}
+	if mine == old {
+		t.Fatalf("fixture premise: this home already renders the %q spelling, so the planted body would be its own render", old)
+	}
+	// The body an earlier binary left: current in every other line, stamped
+	// with the spelling that binary was configured with.
+	pre := strings.Replace(cur, commitGuardHomeStampPrefix+mine, commitGuardHomeStampPrefix+old, 1)
+	if got := commitGuardHomeOf(pre); got != old {
+		t.Fatalf("fixture premise: the planted body is stamped %q, want the pre-0082 spelling %q", got, old)
+	}
+	if err := WriteExecutable(filepath.Join(hooks, "prepare-commit-msg"), []byte(pre), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	p := a.probeL3Hooks(repo, false)
 	if p.CommitGuardVerdict == l3Held {
-		t.Fatalf("CONTROL: the two renders are byte-equal, so nothing below is about the stamp at all")
+		t.Fatalf("CONTROL: the planted body is byte-equal to this home's render, so nothing below is about the stamp at all")
 	}
 	if p.CommitGuardVerdict != l3Stale {
 		t.Errorf("one home spelled two ways read verdict=%d, want l3Stale (%d): this is this home's own render gone stale and `posse gates install-hooks` is the remedy — line: %q",
@@ -311,8 +515,8 @@ func TestQAOneHomeSpelledTwoWaysIsOneHomeToTheCommitWallReader(t *testing.T) {
 
 	// And the consequence, which is why this arm is worth more than wording:
 	// D3's write rule must still let this home write the wall it already owns
-	// the bytes of. A string compare here answers write=false and names the
-	// home as foreign.
+	// the bytes of, so the one re-render ADR 0082 D3 promises can happen. A
+	// string compare here answers write=false and names the home as foreign.
 	if write, stamp := a.sharedCommitWallWrite(repo, p); !write || stamp != "" {
 		t.Errorf("ADR 0081 D3 refused this home its OWN wall over a spelling: write=%v stamp=%q", write, stamp)
 	}

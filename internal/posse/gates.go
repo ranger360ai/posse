@@ -6079,18 +6079,41 @@ const commitGuardHomeStampPrefix = "# posse-home: "
 // error return because this renderer has none and every caller's alternative
 // to a stamp is the migration case, not a broken hook.
 //
-// Absolute, as D2 says, by filepath.Abs and Clean and NOT by resolving
-// symlinks: the reader compares with samePath, which resolves both sides at
-// compare time, and the operator acts on the spelling they configured.
+// Absolute and CANONICAL — canonicalPath (ADR 0082 D3), the spelling the
+// kernel gives the directory, which is the spelling D2's instance-path
+// literals are rendered in one line further down the same body.
+//
+// THE SENTENCE THAT USED TO STAND HERE IS WITHDRAWN: "absolute by
+// filepath.Abs and Clean and NOT by resolving symlinks, because the
+// operator acts on the spelling they configured". The stamp is a line in a
+// wall whose identity is byte-for-byte (ADR 0023), so one home reached
+// through two spellings — an RHQ_HOME typed through a symlink, /tmp against
+// /private/tmp — rendered two bodies that behave identically and differed
+// in this line alone, and the second read as "ours but stale" on every
+// launch. That is ADR 0082's own class, reached through the home instead of
+// the repo. The operator half of the old sentence survives the change: a
+// refusal that names the kernel's spelling names the same directory.
+//
+// THE READERS DO NOT CHANGE. commitGuardHomeVerdict compares with samePath
+// and the shell reader with same_dir, so a body an earlier binary stamped
+// in a non-canonical spelling is still THIS home's wall. It is re-rendered
+// once, through the stale->reinstall path that already exists, and no
+// migration case is added for it (D3 case 4 stays about an UNSTAMPED body).
+//
+// The newline guard is asked twice, of the argument and of the rendered
+// answer. canonicalPath hands back a string the KERNEL chose, so a home
+// whose own path carries no newline can resolve onto one that does, and the
+// bytes this must fail closed over are the bytes written into a file git
+// execs on every commit.
 func commitGuardHomeStamp(home string) string {
 	if strings.TrimSpace(home) == "" || strings.ContainsAny(home, "\n\r") {
 		return ""
 	}
-	abs, err := filepath.Abs(home)
-	if err != nil {
-		abs = home
+	abs := canonicalPath(home)
+	if strings.TrimSpace(abs) == "" || strings.ContainsAny(abs, "\n\r") {
+		return ""
 	}
-	return commitGuardHomeStampPrefix + filepath.Clean(abs) + "\n"
+	return commitGuardHomeStampPrefix + abs + "\n"
 }
 
 // commitGuardHomeOf is the stamp's reader: the absolute home named by an

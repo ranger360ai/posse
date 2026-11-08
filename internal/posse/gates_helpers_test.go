@@ -210,6 +210,24 @@ func installCommitGuard(dir string) (string, error) {
 // those sites render from the App under test and nothing else.
 var qaNoHome = &App{}
 
+// qaStampedHome is the value ONE HOME's commit-guard stamp carries: that
+// home's canonical spelling, since ADR 0082 D3 (`canonicalPath(a.Home)`).
+// qaStampedBy is how every reader of that stamp PRINTS it — the probe's
+// degraded line, the hook-wall sweep, the launch warning, the queue
+// refusal — which is AbbrevHome over the same value.
+//
+// Spelled once, here, because a test that recomputed either from the App's
+// `Home` field alone would be asserting the pre-0082 spelling: a scratch
+// home is a `t.TempDir()`, and on darwin a temp root is reached through
+// /var -> /private/var, so the raw field is the one spelling a stamp
+// rendered from it is guaranteed NOT to carry. ADR 0082's Consequences says
+// this in as many words — a fixture that builds an expected literal from a
+// temp dir passes it through canonicalPath, and that is the build's work
+// rather than a divergence.
+func qaStampedHome(home string) string { return canonicalPath(home) }
+
+func qaStampedBy(home string) string { return AbbrevHome(qaStampedHome(home)) }
+
 // testIdentity is the ADR 0024 D2 check 3 literal set InstallCommitGuardHook
 // / probeL3Hooks would derive for dir on THIS box, right now — for a test
 // that constructs a byte-exact CommitGuardHook fixture instead of installing

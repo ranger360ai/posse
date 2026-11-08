@@ -56,7 +56,20 @@ func cwoFixture(t *testing.T) (bin, owner, other, repo string) {
 		t.Skip("no git")
 	}
 	bin = buildRhq(t)
+	// RESOLVED, since ADR 0082 D3: the subprocess stamps the wall with
+	// `canonicalPath(a.Home)`, and `t.TempDir()` hands back a path through
+	// darwin's /var -> /private/var symlink — so an unresolved root would
+	// make every `cwoStampOf` assertion below compare the stamp against the
+	// one spelling it is guaranteed not to carry. The sibling at
+	// installhooksrelativetarget_qa_test.go resolves its root for the
+	// mirror-image reason. EvalSymlinks and not the kernel reading is enough
+	// HERE because the only axis this fixture crosses is that symlink: every
+	// path under the root is created in the case it is named in, and a temp
+	// root is not reached through a firmlink.
 	root := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	owner = filepath.Join(root, "owning-home")
 	other = filepath.Join(root, "scratch-home")
 	repo = filepath.Join(root, "checkout")

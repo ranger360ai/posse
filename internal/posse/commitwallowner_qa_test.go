@@ -126,9 +126,9 @@ func cwoForeignWall(t *testing.T, repo string, launcher *App) (*App, string) {
 	}
 	// The premise the whole file rests on, measured rather than assumed: the
 	// launching home reads this body as another home's render, by its stamp.
-	if p := launcher.probeL3Hooks(repo, false); p.CommitGuardVerdict != l3OtherHome || p.CommitGuardHome != x.Home {
+	if p := launcher.probeL3Hooks(repo, false); p.CommitGuardVerdict != l3OtherHome || p.CommitGuardHome != qaStampedHome(x.Home) {
 		t.Fatalf("fixture premise: verdict=%d home=%q, want l3OtherHome (%d) stamped %q — line: %q",
-			p.CommitGuardVerdict, p.CommitGuardHome, l3OtherHome, x.Home, p.CommitGuardDegraded)
+			p.CommitGuardVerdict, p.CommitGuardHome, l3OtherHome, qaStampedHome(x.Home), p.CommitGuardDegraded)
 	}
 	return x, slot
 }
@@ -224,7 +224,7 @@ func TestQAALaunchFromANonOwningHomeLeavesTheWallsBytesAndMtimeAlone(t *testing.
 	// D3's one line, and the two facts only it carries: whose wall it is,
 	// and that this launch did not take it.
 	got := warn.String()
-	for _, want := range []string{AbbrevHome(x.Home), "not rewritten", "ADR 0081 D3", AbbrevHome(hooks)} {
+	for _, want := range []string{qaStampedBy(x.Home), "not rewritten", "ADR 0081 D3", AbbrevHome(hooks)} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the launch did not say %q:\n%s", want, got)
 		}
@@ -287,7 +287,7 @@ func TestQAAWorktreeLaunchFromANonOwningHomeLeavesTheSharedWallAlone(t *testing.
 		redirectDispatcher("prepare-commit-msg", shared, true)) {
 		t.Errorf("the dispatcher does not forward into the shared hooks dir %s", shared)
 	}
-	if got := warn.String(); !strings.Contains(got, AbbrevHome(x.Home)) || !strings.Contains(got, "not rewritten") {
+	if got := warn.String(); !strings.Contains(got, qaStampedBy(x.Home)) || !strings.Contains(got, "not rewritten") {
 		t.Errorf("the worktree launch did not name whose wall it left alone:\n%s", got)
 	}
 }
@@ -321,7 +321,7 @@ func TestQAAnOwningHomeStillReStampsAWallAnotherHomeStamped(t *testing.T) {
 	if !strings.Contains(got, "WRONG before this launch") {
 		t.Errorf("the owning home re-stamped another home's wall in silence:\n%s", got)
 	}
-	if !strings.Contains(got, AbbrevHome(x.Home)) {
+	if !strings.Contains(got, qaStampedBy(x.Home)) {
 		t.Errorf("the warning does not name the home whose render it replaced:\n%s", got)
 	}
 }
@@ -630,11 +630,11 @@ func TestQAAtTheContainerTierTheWallIsNeitherRewrittenNorRedirected(t *testing.T
 	if err == nil {
 		t.Fatal("a caged launch under another home's wall was not reported as degraded — the session's gates are that home's, not this one's")
 	}
-	if !strings.Contains(err.Error(), "rendered by home") || !strings.Contains(err.Error(), AbbrevHome(x.Home)) {
+	if !strings.Contains(err.Error(), "rendered by home") || !strings.Contains(err.Error(), qaStampedBy(x.Home)) {
 		t.Errorf("the refusal does not name whose wall is in the slot:\n%v", err)
 	}
 	got := warn.String()
-	for _, want := range []string{AbbrevHome(x.Home), "not rewritten", "the session runs under it", "ADR 0081 D3"} {
+	for _, want := range []string{qaStampedBy(x.Home), "not rewritten", "the session runs under it", "ADR 0081 D3"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the launch did not say %q:\n%s", want, got)
 		}
