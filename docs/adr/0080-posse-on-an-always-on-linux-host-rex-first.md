@@ -551,10 +551,42 @@ codex's `linux-sandbox` README.
 line, as it types `sandbox-exec` today. It holds no state. Removing it
 leaves the cooperative tier D4 already runs.
 
-**Measured versus assumed.**
-- MEASURED: nothing on Linux. In this tree, the five shapes are read from
-  seatbelt.go.
+**Measured versus assumed.** The amendment above was written before the
+probe ran, so the "ASSUMED" notes inside D14 and D15 are that first state.
+This block is the current one (updated 2026-11-08, ranger-base-vdmm9).
+- MEASURED 2026-11-08 on the D1 host (ranger-base-hft2q, run as the
+  service account, checkout 7d3446ef; Linux 7.2, bubblewrap 0.13.1,
+  Landlock ABI 10, `kernel.unprivileged_userns_clone=1`):
+  - Landlock, D13: L0 ABI 10; L1 allowed (the trailing deny cannot be
+    spelled); L2 refused and L2b allowed (a file rule allows an in-place
+    write, not the atomic replace); L3 and L3b refused (a Landlock domain cannot start
+    bwrap). Every row read as its EXPECT.
+  - bubblewrap, D14: B0 and B1 allowed; B2 refused (shape 2); B3 and B4
+    refused (the seal, both halves); B6 and B6b refused (a nested user
+    namespace cannot unmount the deny or remount it rw: MNT_LOCKED holds);
+    B7 allowed (a runtime's own bwrap nests inside ours); B8 refused (an
+    atomic replace of a bound file is refused, so shapes 3 and 4 need a dir
+    grant); B9 claude, codex and grok `--version` start under the wall.
+    Every row read as its EXPECT. These retire the B3/B4, B6, B7 and B8
+    assumptions above.
+  - B5, shape 5, measured only in part. No byte of the credential reached
+    the seat, so the read deny holds. But the read FAILED: the cell printed
+    cat's error where `/dev/null`'s silent EOF was expected. So shape 5 was
+    shown by an error, not by its stated mechanism, and which error is
+    unread. The old cell kept 20 characters, and the tmpdir path used them
+    up. ranger-base-yca4g makes the next run print the exit status and the
+    errno text.
+- MEASURED, this tree: the five shapes are read from seatbelt.go.
 - REPORTED (primary sources, 2026-11-06): every quoted fact above.
-- ASSUMED until the probe runs: B3/B4 (the seal), B6 (MNT_LOCKED), B7
-  (nesting), B8, and that the `.claude.json` siblings follow
-  `CLAUDE_CONFIG_DIR`.
+- ASSUMED, still:
+  - that `--ro-bind /dev/null <file>` masks a file through a clean EOF (B5,
+    above). The design bead may only rely on "the read gets no bytes";
+  - that the `.claude.json` siblings (`.lock`, `.tmp.<pid>.<hex>`) follow
+    `CLAUDE_CONFIG_DIR`. No probe row tests this: B9 runs `--version` only,
+    which writes no config. ranger-base-rwcqg must measure it before its
+    shape 3/4 answer is buildable;
+  - that the runtimes work under the wall past `--version`: a turn, a
+    config save, codex's SelfSandbox nested in a real session. B7 shows
+    only that bwrap nests in bwrap;
+  - that a scope-only Landlock ruleset leaves nested bwrap alone
+    (Alternatives rejected). No row tests it.
