@@ -216,17 +216,70 @@ func TestQAPosseRepoIsReadForTheReadingAndAheadOfTheQueues(t *testing.T) {
 // ONE LIST, which is the half that would otherwise have been fixed twice and
 // half-landed. `(*App).WallRenderer` composed its own copy of the candidates,
 // and `posse gates` — the surface the bead was filed from — is that copy.
-// Here: the caller's `extra` still leads, and the list it gets is the same
-// function the status line reads.
+//
+// ASSERTED THROUGH WallRenderer ITSELF, which is the whole of what this arm
+// is for: a version of it that only compared `launcherCandidates` against
+// itself was GREEN with WallRenderer's own copy restored (MEASURED
+// 2026-11-08, verifying ranger-base-eiwhk under ranger-base-l7sb2 — the
+// duplication this pin is named for, and the pin did not see it; only
+// cmd/posse/gatesbuildsource_qa_test.go reded). A pin that cannot fail for
+// the reason it was written is a door held open.
+//
+// HOW IT REACHES THE READING, since this file's header says an in-package
+// reading abstains before the candidate scan: it does, because a test binary
+// carries no vcs stamp — so this arm sets `Build`, the same linker-stamped
+// var version_test.go sets, and VersionString() then names the rig's commit
+// and FindLauncher scans for real. The cwd candidate is the live posse
+// checkout the suite runs in; it is a posse checkout and does NOT hold the
+// rig's sha, so it is rejected and settles nothing — which is what leaves
+// the stamp as the only candidate that can answer.
 func TestQATheWallRendererReadsTheSameCandidateList(t *testing.T) {
-	t.Parallel()
+	// Not parallel: Build and BuildSource are linker-stamped package vars
+	// and this arm sets both, as the two arms above set one.
+	defer func(b, s string) { Build, BuildSource = b, s }(Build, BuildSource)
+
 	b, _ := newTestBackend(t)
 	project, _ := posseRig(t, "github.com/example/a-project-this-crew-works-on")
 	writeBeadsDirs(b.App, []string{project})
+	repo, stamp := posseRig(t, posseModule)
+	landCommits(t, repo, 4)
+	Build = stamp
 
+	// THE CONTROL, unstamped: `beads:` names a project repo and the cwd is a
+	// posse checkout without this commit, so the wall-renderer reading is the
+	// bead's own UNKNOWN. Without it this arm would pass on a reading that was
+	// never in doubt.
+	BuildSource = ""
+	if w := b.App.WallRenderer(); w.Lag.Known() {
+		t.Fatalf("the unstamped wall-renderer reading counted %d in %q — this fixture cannot show the bead", w.Lag.Behind, w.Lag.Repo)
+	}
+
+	// And stamped. This is the assertion the duplication breaks: WallRenderer's
+	// own copy of the list held `beads:` and the cwd only, so the stamp — and
+	// `posse_repo:` with it — never reached the surface the bead was filed from.
+	BuildSource = repo
+	w := b.App.WallRenderer()
+	if !w.Lag.Known() {
+		t.Fatalf("the wall-renderer reading does not see the build stamp, so `posse gates` is reading a candidate list of its own: %s", w.Lag.Why)
+	}
+	if w.Lag.Repo != repo {
+		t.Fatalf("the wall-renderer reading counted in %q, want the checkout the binary was built in (%q)", w.Lag.Repo, repo)
+	}
+	if w.Lag.Behind != 4 {
+		t.Fatalf("behind = %d, want 4 (%s)", w.Lag.Behind, w.Lag.Line())
+	}
+	// Same reading, same list: a divergence between the two surfaces is the
+	// defect, so they are compared rather than each asserted alone.
+	if l := b.App.Launcher(); l.Repo != w.Lag.Repo || l.Behind != w.Lag.Behind {
+		t.Errorf("the status line and the wall renderer disagree: %q behind %d vs %q behind %d", l.Repo, l.Behind, w.Lag.Repo, w.Lag.Behind)
+	}
+
+	// And the caller's `extra` still leads, which is `posse promote` counting
+	// against the tree it is promoting FROM rather than against whichever repo
+	// `beads:` names first.
 	withExtra := b.App.launcherCandidates(true, "/promote/source")
 	if len(withExtra) < 2 || withExtra[0] != "/promote/source" {
-		t.Fatalf("candidates = %q, want the caller's directory first: `posse promote` counts against the tree it is promoting FROM", withExtra)
+		t.Fatalf("candidates = %q, want the caller's directory first", withExtra)
 	}
 	plain := b.App.launcherCandidates(true)
 	if len(withExtra) != len(plain)+1 {
