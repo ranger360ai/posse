@@ -43,13 +43,15 @@ package posse
 // MUTATION-CHECKED 2026-11-07, two mutants:
 //
 //	the rule removed (back to the unconditional install)
-//	  → the non-owner arm reds at the BYTES and at HEAD; nothing else moves,
-//	    which is what says the other two arms are about the states this call
-//	    still writes rather than about the rule
-//	ownership dropped (the refusal taken on every l3OtherHome)
-//	  → the owning-home arm reds on the commit; D6's case over the queue
-//	    repo would go silent, and every close from the owning home would
-//	    refuse the moment any other home had stamped the wall once
+//	  → the non-owner arm reds five times over: the commit succeeds, the
+//	    wall's BYTES change, its MTIME changes, and HEAD moves. Nothing else
+//	    moves, which is what says the other two arms are about the states
+//	    this call still writes rather than about the rule
+//	ownership dropped (`|| a.OwnsCommitWall(dir)` out of sharedCommitWallWrite)
+//	  → the owning-home arm reds on the commit, carrying the refusal it
+//	    should never have been handed. D6's case over the queue repo would
+//	    go silent, and every close from the owning home would refuse the
+//	    moment any other home had stamped that wall once
 
 import (
 	"os"
@@ -134,8 +136,12 @@ func TestQAAQueueCommitFromANonOwningHomeLeavesTheWallAndRefuses(t *testing.T) {
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
 
 	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
+	// Errorf and not Fatalf, all the way down: a mutant that takes the rule
+	// out makes this call SUCCEED, and the three facts below are what the
+	// arm is actually about. Fatalf here would stop at "it committed" and
+	// leave the wall and HEAD unmeasured in the one run that needed them.
 	if err == nil {
-		t.Fatalf("the projection committed through another home's wall: %+v", c)
+		t.Errorf("the projection committed through another home's wall: %+v", c)
 	}
 	if c.SHA != "" {
 		t.Errorf("a refusal reported a commit: %+v", c)
@@ -159,6 +165,9 @@ func TestQAAQueueCommitFromANonOwningHomeLeavesTheWallAndRefuses(t *testing.T) {
 	// G13's queue-unmarked row), or close from the home that rendered what
 	// is there. The stamping home is in both the finding and the second
 	// remedy, so it is asserted by name.
+	if err == nil {
+		return // already reported; there is no refusal to read
+	}
 	for _, want := range []string{
 		AbbrevHome(x.Home),
 		AbbrevHome(repo),
