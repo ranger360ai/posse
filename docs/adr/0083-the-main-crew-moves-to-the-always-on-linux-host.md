@@ -155,7 +155,10 @@ priced:
 **Recommendation: C, gated on the probe.** Move only after
 ranger-base-hft2q's output is in and every B-row reads as expected. The
 probe costs minutes, and it turns A's open-ended weakness into a window with
-a known end. If a B-row fails, the recommendation becomes B. Two
+a known end. If a B-row fails, the recommendation becomes B. *The gate is
+met:* ranger-base-hft2q closed 2026-11-08 with the probe passing on the
+host, only a cosmetic B5 print issue (READ from the coordinator's comment on
+ranger-base-9nxdt, not re-read here), so C stands as recommended. Two
 mitigations ride with C, and the operator can take either: the deploy keys
 carry a passphrase and are unlocked only for a push in the operator's own
 shell (no agent socket a seat could find); and the security reviewer's
