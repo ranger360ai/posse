@@ -42,12 +42,45 @@ var queueJSONLPaths = []string{beadsJSONL, beadsDeleted}
 // shipped default: this whole path is inert until the operator writes the
 // key, so installing a posse that knows how to commit the jsonl does not
 // start committing in the constitution repo the day before the cutover.
+//
+// ABSOLUTIZED here, before anything reads it — the same act install-hooks'
+// target takes one call site over (ranger-base-k9x8n), for the same reason
+// and one rung further on (ranger-base-8kwa5). This is the ONE place that
+// reaches `underDir`, `OwnsCommitWall`, `InstallCommitGuardHook` and D7's
+// refusal together, and a relative `queue_repo:` resolved none of them: the
+// value stayed relative all the way to the refusal, which then named a
+// relative target as the repo AND prescribed that spelling as a
+// `beads_visibility:` key. Such a key is resolved against the READING
+// process's cwd (samePath -> resolvedPath -> filepath.Abs), so the remedy was
+// inert wherever it is read from another cwd and a cwd-dependent wildcard
+// over the visibility verdict that same wall enforces. MEASURED 2026-11-08,
+// darwin 25.6.0, cwd at the repo's parent and `queue_repo: 001`: the refusal
+// read "001's commit wall was rendered by home <abs home> ... remedy: add
+// `001: <private|public>`" — the relative spelling in both places.
+//
+// NOT the WRITE path, and that is recorded so nobody re-measures it: the wall
+// InstallCommitGuardHook renders through a relative `queue_repo:` was
+// BYTE-IDENTICAL to the absolute one (MEASURED the same day, 64437 bytes).
+// k9x8n's identity-derivation consequence does not reach this call site —
+// because the queue repo HOLDS the store, so it carries no `.beads/redirect`
+// and identityRedirectTarget answers "". Not because the dir cannot be
+// relative. So this fix is the refusal and the four predicates, not the
+// render.
+//
+// filepath.Abs Cleans, so the Clean is its; it is kept spelled only where Abs
+// cannot answer. What Abs does NOT do is resolve symlinks, so two absolute
+// spellings of one repo are still two repos here — measured and handed to
+// architecture as ranger-base-5wq6g, and the same open end k9x8n left.
 func (a *App) QueueRepo() string {
 	v := a.CfgGet("queue_repo", "")
 	if v == "" {
 		return ""
 	}
-	return filepath.Clean(ExpandTilde(v))
+	p := ExpandTilde(v)
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return filepath.Clean(p)
 }
 
 // QueueCommit is one attempt's outcome. Skipped carries why nothing was

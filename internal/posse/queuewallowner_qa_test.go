@@ -296,3 +296,130 @@ func TestQAAQueueCommitFromANonOwningHomeStillWritesAnUnclaimedSlot(t *testing.T
 		})
 	}
 }
+
+// ─── D7's refusal names the repo, not the spelling (ranger-base-8kwa5) ───────
+
+// The escape ranger-base-ynzig named as a line and ranger-base-k9x8n fixed one
+// call site over: `QueueRepo()` was `filepath.Clean(ExpandTilde(v))`, which
+// resolves no cwd, so a RELATIVE `queue_repo:` stayed relative all the way to
+// the refusal above — which named that spelling as the repo and then
+// prescribed it as a `beads_visibility:` key.
+//
+// WHY THAT IS A DEFECT AND NOT A WORDING QUIBBLE, which is the whole of why
+// this pin exists beside the one above rather than inside it: a
+// `beads_visibility:` key is read by samePath -> resolvedPath ->
+// filepath.Abs, i.e. against the READING process's cwd. So the remedy D7
+// prints is inert wherever it is read from another cwd, and where it is not
+// inert it is a cwd-dependent wildcard over the visibility verdict that same
+// wall enforces. The remedy is the only thing that makes the refusal
+// actionable, and a non-owning home's closes stop reaching git until it is
+// taken.
+//
+// WHAT THIS PIN DOES NOT COVER, measured and recorded so nobody re-measures
+// it: the WRITE path. The wall `InstallCommitGuardHook` renders through a
+// relative `queue_repo:` is BYTE-IDENTICAL to the absolute one (MEASURED
+// 2026-11-08, owning home, same repo, same config with only the spelling
+// changed: 64437 bytes both ways). k9x8n's identity-derivation consequence
+// does not reach this call site, because the queue repo HOLDS the store and so
+// carries no `.beads/redirect` — identityRedirectTarget answers "". Not
+// because the dir cannot be relative, which is why the fix is still the one
+// `filepath.Abs` in QueueRepo and not a printf.
+//
+// MUTATION-CHECKED 2026-11-08, darwin 25.6.0: with QueueRepo back to
+// `filepath.Clean(ExpandTilde(v))` this arm reds four times over — the
+// premise (`QueueRepo() = "001"`), the repo the refusal names, the key it
+// should have prescribed, and the relative key it did. The refusal it printed
+// is the one the bead MEASURED: "001's commit wall was rendered by home
+// <abs home> ... remedy: add `001: <private|public>`".
+func TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	// Ownership and the foreign stamp are set up through the ABSOLUTE
+	// spelling, so the only variable this arm changes is how the config
+	// spells the repo. qwoApp checks the non-owning premise for us.
+	a := qwoApp(t, repo, false)
+	x, slot := qwoForeignWall(t, repo, a)
+	beforeBody, beforeMtime := qwoSlot(t, slot)
+
+	// The operator's cwd is the repo's parent and the key is the bare
+	// directory name — the spelling MEASURED on 2026-11-08 (`queue_repo:
+	// 001`, the name t.TempDir() gives a repo).
+	parent, base := filepath.Dir(repo), filepath.Base(repo)
+	t.Chdir(parent)
+	// From os.Getwd() and not from `parent`, because filepath.Abs resolves
+	// against os.Getwd() and the two therefore cannot disagree. Which
+	// spelling that IS depends on how the cwd was reached — os.Getwd prefers
+	// $PWD when it names the same directory, and testing.T.Chdir sets it, so
+	// here it is t.TempDir()'s `/var/...` and not darwin's physical
+	// `/private/var/...` (MEASURED 2026-11-08). Taking it from the same
+	// source the code under test does keeps this pin measuring
+	// relative-vs-absolute and not the second divergence k9x8n left open —
+	// two absolute spellings of one repo, ranger-base-5wq6g.
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRepo := filepath.Join(cwd, base)
+	// Rewritten rather than parameterised into qwoApp: the non-owning
+	// listing has to stay exactly what qwoApp wrote, or this arm would be
+	// measuring ownership instead.
+	cfg, rerr := os.ReadFile(a.ConfigPath)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	rel := strings.Replace(string(cfg), "queue_repo: "+repo+"\n", "queue_repo: "+base+"\n", 1)
+	// A Replace that matched nothing would leave the ABSOLUTE spelling in
+	// place and make every assertion below pass vacuously — which is the
+	// class of defect this bead's second finding is.
+	if rel == string(cfg) {
+		t.Fatalf("fixture premise: no `queue_repo: %s` line to rewrite, so this arm would measure the absolute spelling:\n%s", repo, cfg)
+	}
+	write(t, a.ConfigPath, rel)
+
+	// The premise, and the first thing the mutant reds: the configured value
+	// is resolved before any of the four predicates that read it. Errorf and
+	// not Fatalf, for the reason the arm above gives: a mutant that takes the
+	// Abs out must be measured at the refusal too, and a Fatalf here would
+	// stop at the premise and leave the two halves of the finding unread.
+	if got := a.QueueRepo(); got != wantRepo {
+		t.Errorf("QueueRepo() = %q from `queue_repo: %s` in %s, want the absolute %q — underDir, OwnsCommitWall, InstallCommitGuardHook and D7's refusal all read this one value", got, base, cwd, wantRepo)
+	}
+
+	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
+	c, cerr := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
+	if cerr == nil {
+		t.Fatalf("a relative `queue_repo:` committed through another home's wall: %+v", c)
+	}
+	// The refusal still does everything the arm above asserts — a resolved
+	// value must not have turned D7 into a different answer.
+	if afterBody, afterMtime := qwoSlot(t, slot); afterBody != beforeBody || !afterMtime.Equal(beforeMtime) {
+		t.Errorf("the refused commit wrote another home's wall: bytes equal=%v, mtime %s -> %s", afterBody == beforeBody, beforeMtime, afterMtime)
+	}
+	if !strings.Contains(cerr.Error(), AbbrevHome(x.Home)) {
+		t.Errorf("the refusal no longer names the stamping home %s: %v", AbbrevHome(x.Home), cerr)
+	}
+
+	// THE FINDING. Both places: the repo it names, and the key it
+	// prescribes.
+	if !strings.Contains(cerr.Error(), AbbrevHome(wantRepo)) {
+		t.Errorf("the refusal does not name the repo %s whose wall it is — a relative `queue_repo:` must still be reported, and prescribed, as the repo:\n%v", AbbrevHome(wantRepo), cerr)
+	}
+	// Composed through the renderer the refusal now uses and not AbbrevHome:
+	// ADR 0082 D4 (ranger-base-w79sc, ranger-base-qm7eg) landed
+	// CanonicalAbbrevPath on both of D7's path renders while this bead was
+	// open, so the key it prescribes carries the kernel's spelling of the
+	// repo. qaCanonicalPath is the fixture form of that, as qaStampedBy is
+	// for the home stamp — on darwin a t.TempDir() is reached through
+	// /var -> /private/var, so the raw fixture path is the one spelling the
+	// refusal is guaranteed NOT to print. The unanchored Contains assertions
+	// above cannot see this: `/private/var/...` contains `/var/...`, so only
+	// a key read with its backticks is a reading of the spelling at all.
+	wantKey := "`" + AbbrevHome(qaCanonicalPath(t, wantRepo)) + ": <private|public>`"
+	if !strings.Contains(cerr.Error(), wantKey) {
+		t.Errorf("the prescribed remedy is not %s — a `beads_visibility:` key is resolved against the READING process's cwd, so any other spelling is a remedy that is inert where it was printed:\n%v", wantKey, cerr)
+	}
+	badKey := "`" + base + ": <private|public>`"
+	if strings.Contains(cerr.Error(), badKey) {
+		t.Errorf("the refusal prescribes %s, a cwd-dependent wildcard over the visibility verdict this wall enforces:\n%v", badKey, cerr)
+	}
+}
