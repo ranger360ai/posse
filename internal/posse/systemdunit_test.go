@@ -30,6 +30,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -605,7 +606,12 @@ func TestSystemdUnitRenderIsPinned(t *testing.T) {
 	}
 	a := &App{Home: home, ConfigPath: filepath.Join(home, "config.yaml"), StateDir: filepath.Join(home, "state")}
 
-	u, err := RenderWatchUnit(a, "/usr/local/bin/posse")
+	// renderWatchUnitOn and not RenderWatchUnit: since ranger-base-ib61s the
+	// unit carries a PATH, and the exported render reads this process's.
+	// Naming it is what keeps the pin a pin — and `t.Setenv` is not the
+	// alternative, because it panics in a parallel test and the whole file
+	// is parallel.
+	u, err := renderWatchUnitOn(a, "/usr/local/bin/posse", "/opt/crew/bin:/usr/bin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,6 +624,10 @@ func TestSystemdUnitRenderIsPinned(t *testing.T) {
 		"Type=simple",
 		"WorkingDirectory=/srv/crewa",
 		"Environment=RHQ_HOME=" + home,
+		// The named PATH first, in its own order, then systemd's own
+		// default for the dirs it did not already name — /usr/bin is in
+		// both and appears once, where the deployer's PATH put it.
+		"Environment=PATH=/opt/crew/bin:/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin",
 		"ExecStart=/usr/local/bin/posse dispatch --watch 5m --max-interval 40m -n 3 --resume",
 		"Restart=on-failure",
 		"RestartSec=5s",
@@ -628,10 +638,12 @@ func TestSystemdUnitRenderIsPinned(t *testing.T) {
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("rendered directives:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	// Deterministic: the same home renders the same bytes, so a unit written
-	// twice is not a unit that changed and `systemctl --user daemon-reload`
-	// is only ever needed when something really moved.
-	again, err := RenderWatchUnit(a, "/usr/local/bin/posse")
+	// Deterministic: the same home and the same PATH render the same bytes,
+	// so a unit written twice is not a unit that changed and `systemctl
+	// --user daemon-reload` is only ever needed when something really moved.
+	// (A PATH that MOVED does move the unit, which is why --write refuses to
+	// replace a unit that says something else without --force.)
+	again, err := renderWatchUnitOn(a, "/usr/local/bin/posse", "/opt/crew/bin:/usr/bin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -640,6 +652,176 @@ func TestSystemdUnitRenderIsPinned(t *testing.T) {
 	}
 	if again.Name != u.Name || again.Path != u.Path {
 		t.Errorf("the unit's own name moved between renders: %q/%q then %q/%q", u.Name, u.Path, again.Name, again.Path)
+	}
+}
+
+// ─── the unit's PATH (ranger-base-ib61s) ────────────────────────────────────
+
+// unitPathDirs pulls the Environment=PATH= value back out of a rendered unit
+// and splits it the way systemd would — on `:`, which is the TARGET's
+// separator and not this process's.
+func unitPathDirs(t *testing.T, body string) []string {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		if rest, ok := strings.CutPrefix(line, "Environment=PATH="); ok {
+			return strings.Split(strings.Trim(rest, `"`), ":")
+		}
+	}
+	t.Fatalf("the unit carries no Environment=PATH= at all — a user manager reads no profile, so without one the loop cannot find a bd in ~/.local/bin (ranger-base-ib61s):\n%s", body)
+	return nil
+}
+
+// THE BEAD'S OWN DONE CONDITION: a rendered unit's PATH finds bd.
+//
+// MEASURED 2026-11-08 on the ADR 0080 host (offid leg 3), which is what this
+// pin is for: the unit carried Environment=RHQ_HOME and an absolute
+// ExecStart and no PATH, a systemd user manager's PATH does not include
+// ~/.local/bin (it reads no shell profile), INSTALL's bd step installs bd
+// exactly there — so `posse dispatch --watch` exited 1 at once with
+// NoBdLine and Restart=on-failure looped it every RestartSec.
+//
+// The fixture is that host: a bd and a git in a dir no default PATH names,
+// first on the PATH the deployer rendered from. The assertion is not "the
+// string is in the file" but "resolving `bd` against what systemd will read
+// finds the bd this render saw" — the same question pathDirsLookup answers
+// for the note, asked here through the FILE.
+func TestSystemdUnitPathFindsBd(t *testing.T) {
+	t.Parallel()
+	localBin := t.TempDir() // stands for ~/.local/bin
+	for _, name := range []string{"bd", "git"} {
+		if err := WriteExecutable(filepath.Join(localBin, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := "autostart_via: systemd\nautostart_multiplexer_unit: mux.service\n"
+	u, err := renderWatchUnitOn(viaHome(t, base), "/opt/posse", localBin+":/usr/bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := unitPathDirs(t, u.Body)
+	if got := pathDirsLookup(dirs, "bd"); got != filepath.Join(localBin, "bd") {
+		t.Errorf("`bd` resolves to %q on the unit's PATH, want the one this render found at %q — a unit whose PATH cannot answer `bd` exits %q on its first pass and systemd restarts it every RestartSec:\nPATH=%s", got, filepath.Join(localBin, "bd"), NoBdLine, strings.Join(dirs, ":"))
+	}
+	if got := pathDirsLookup(dirs, "git"); got != filepath.Join(localBin, "git") {
+		t.Errorf("`git` resolves to %q on the unit's PATH, want %q", got, filepath.Join(localBin, "git"))
+	}
+	// And the render says nothing about a missing child, because nothing is
+	// missing: the note and the file must not disagree.
+	for _, n := range u.Notes {
+		if strings.Contains(n, "answers to no") {
+			t.Errorf("the render warned about a child its own PATH resolves: %q", n)
+		}
+	}
+
+	// SETTING PATH SUBTRACTS systemd's default, so the render adds it back:
+	// a unit naming only the render host's dirs would lose every binary in
+	// /usr/bin to fix one in ~/.local/bin.
+	for _, d := range systemdFallbackPath {
+		if !slices.Contains(dirs, d) {
+			t.Errorf("the unit's PATH drops %s, which a unit with NO Environment=PATH= would have had — Environment=PATH= replaces the manager's default rather than adding to it:\n%s", d, strings.Join(dirs, ":"))
+		}
+	}
+}
+
+// THE OTHER HALF, over the pre-flight directly rather than the file: the
+// notes are the only place a deployer learns at render what the journal
+// would have told them at 5s intervals.
+//
+// unitSearchPathMisses and not a render, because a render always appends
+// systemdFallbackPath — so a box with a real /usr/bin/bd would make the
+// negative arm pass for the wrong reason, and a box without one would make
+// it pass for the right reason today and silently stop testing anything the
+// day bd is packaged. A named dir list has the same answer everywhere.
+func TestSystemdUnitPathNamesTheChildrenItCannotResolve(t *testing.T) {
+	t.Parallel()
+	empty := t.TempDir()
+	miss := unitSearchPathMisses([]string{empty})
+	if len(miss) != len(unitSearchPathChildren) {
+		t.Fatalf("a PATH of one empty dir resolves %d of %d children: %q", len(unitSearchPathChildren)-len(miss), len(unitSearchPathChildren), miss)
+	}
+	joined := strings.Join(miss, "\n")
+	for _, c := range unitSearchPathChildren {
+		if !strings.Contains(joined, "`"+c.name+"`") {
+			t.Errorf("the render drops a child without naming it (want %q):\n%s", c.name, joined)
+		}
+	}
+	// The bd sentence quotes the line the loop would actually print, so the
+	// render's warning and the journal's error are searchable as one string.
+	if !strings.Contains(joined, NoBdLine) {
+		t.Errorf("the bd miss does not quote %q — that is the sentence the deployer will read in the journal:\n%s", NoBdLine, joined)
+	}
+
+	full := t.TempDir()
+	for _, c := range unitSearchPathChildren {
+		if err := WriteExecutable(filepath.Join(full, c.name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := unitSearchPathMisses([]string{full}); got != nil {
+		t.Errorf("a PATH that answers every child still warned: %q", got)
+	}
+}
+
+// A unit is NOBODY'S SEAT (ADR 0077 D3), and the render owns that rule
+// rather than trusting the caller to have applied it: a gates bin dir on the
+// loop's PATH puts a persona's shims in front of posse's own bd, which is
+// ranger-base-c33j6's deadlock in a process no persona typed in. A relative
+// element is the hazard this render would INTRODUCE — WorkingDirectory= is a
+// crew's own repo — so it goes the same way. Both are named, never swallowed.
+func TestSystemdUnitPathDropsWhatAUnitMustNotCarry(t *testing.T) {
+	t.Parallel()
+	const gates = "/home/u/.posse/personas/a-persona/gates/bin"
+	base := "autostart_via: systemd\nautostart_multiplexer_unit: mux.service\n"
+	u, err := renderWatchUnitOn(viaHome(t, base), "/opt/posse", gates+":bin:.:/opt/crew/bin::/usr/bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := unitPathDirs(t, u.Body)
+	notes := strings.Join(u.Notes, "\n")
+	for _, bad := range []string{gates, "bin", "."} {
+		if slices.Contains(dirs, bad) {
+			t.Errorf("the unit's PATH carries %q:\n%s", bad, strings.Join(dirs, ":"))
+		}
+		if !strings.Contains(notes, bad) {
+			t.Errorf("the render dropped %q without naming it:\n%s", bad, notes)
+		}
+	}
+	if !slices.Contains(dirs, "/opt/crew/bin") {
+		t.Errorf("the unit's PATH lost a perfectly good dir while dropping the bad ones:\n%s", strings.Join(dirs, ":"))
+	}
+	// The empty element is systemd's own "the current directory" too, and it
+	// is dropped by the same split the gates rule reads — silently, because
+	// an empty element is a trailing colon and not something anybody typed.
+	if slices.Contains(dirs, "") {
+		t.Errorf("the unit's PATH carries an empty element, which systemd reads as the working directory:\n%q", strings.Join(dirs, ":"))
+	}
+}
+
+// Environment= is NOT a command line: `%` is still a specifier there and `$`
+// is not re-read, which is unitArg's split and is pinned for the other two
+// directives in TestSystemdUnitDoublesADollarOnTheCommandLineOnly. The PATH
+// is the third value to go through it, and the first that is a LIST — so the
+// pin is that the whole value is escaped and quoted once, not per element.
+func TestSystemdUnitPathIsEscapedLikeADirective(t *testing.T) {
+	t.Parallel()
+	base := "autostart_via: systemd\nautostart_multiplexer_unit: mux.service\n"
+	u, err := renderWatchUnitOn(viaHome(t, base), "/opt/posse", "/opt/100%/bin:/opt/my crew/bin:/opt/po$se/bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	for _, line := range strings.Split(u.Body, "\n") {
+		if rest, ok := strings.CutPrefix(line, "Environment=PATH="); ok {
+			got = rest
+		}
+	}
+	for _, want := range []string{"/opt/100%%/bin", "/opt/po$se/bin"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Environment=PATH=%s carries no %q — `%%` is a specifier in every directive and `$` is re-read only on a command line", got, want)
+		}
+	}
+	if !strings.HasPrefix(got, `"`) || !strings.HasSuffix(got, `"`) {
+		t.Errorf("Environment=PATH=%s — a value with whitespace in it is quoted once, around the whole list", got)
 	}
 }
 

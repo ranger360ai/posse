@@ -2745,14 +2745,23 @@ unit wears refuses the start, a name another unit wears orders the loop
 behind the wrong process — so the render refuses and tells you to read the
 real one off the host (`systemctl --user list-units --type=service`).
 
-Three things the render does not do, on purpose:
+**The unit carries a `PATH`, and it is the one you rendered it from.** A
+systemd user manager reads no shell profile, so its own `PATH` does not
+include `~/.local/bin` — which is where step 1's `bd` install puts `bd`. A
+unit with no `Environment=PATH=` therefore exited at once with `bd not found
+on PATH outside posse's gates dirs`, and `Restart=on-failure` looped it every
+five seconds (measured on a Linux host, 2026-11-08). So the render writes the
+`PATH` *this render ran with* — posse's own gates bin dirs dropped, since a
+unit is nobody's seat, relative elements dropped, and systemd's own default
+appended, because `Environment=PATH=` replaces the manager's default rather
+than adding to it. Render it from a shell where `bd`, `git`, `posse` and the
+runtime CLI all work, and it warns on stderr if the `PATH` it just wrote
+cannot find `bd` or `git`.
+
+Two things the render does not do, on purpose:
 
 - **It never enables anything.** It prints the `systemctl --user` lines and
   they stay yours.
-- **It does not give the service a `PATH`.** A user service gets systemd's
-  minimal one, and posse shells out to `bd` and `git`. Check
-  `systemctl --user show-environment`, and add an `Environment=PATH=…`
-  drop-in if either lives somewhere systemd cannot see.
 - **It does not enable lingering.** `loginctl enable-linger <user>` is what
   makes user services outlive a logout on a headless host (ADR 0080 D1).
 
@@ -2763,9 +2772,10 @@ render too. The render says so; it does not refuse.
 
 Re-run `posse systemd --write` after any `autostart_*` change: the argv is
 rendered from those keys and from this binary's own absolute path, so a
-promotion that moves the binary moves the unit. Writing identical bytes is
-not a replacement; a unit that says something else is refused unless you
-pass `--force`.
+promotion that moves the binary moves the unit. The `PATH` is read at render
+the same way, so re-run it after `bd`, `git` or a runtime CLI moves too.
+Writing identical bytes is not a replacement; a unit that says something else
+is refused unless you pass `--force`.
 
 ---
 

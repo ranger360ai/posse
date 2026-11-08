@@ -100,3 +100,8 @@ Two render decisions the shakedown should read, both ASSUMED 2026-11-06:
   the file would go stale silently, so the unit carries a comment and
   INSTALL.md says to check `systemctl --user show-environment` and add a
   drop-in. Whether that is enough is a shakedown reading.
+  **SUPERSEDED 2026-11-08 (ranger-base-ib61s).** It was not enough: the
+  shakedown read a 5s crash-loop on `bd not found on PATH outside posse's
+  gates dirs`, because `~/.local/bin` is where INSTALL installs `bd` and a
+  user manager reads no profile. The render writes the `PATH` it ran with
+  now — see `docs/notes.d/ranger-base-ib61s.md`.

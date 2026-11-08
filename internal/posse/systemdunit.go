@@ -206,6 +206,125 @@ func autostartIsCount(s string) bool {
 	return true
 }
 
+// ─── the unit's PATH (ranger-base-ib61s) ────────────────────────────────────
+
+// systemdFallbackPath is the PATH a user unit would have had if this render
+// set none: systemd's own compile-time default. REPORTED from
+// systemd.exec(5) and NOT MEASURED — this shop has no systemd (darwin) and
+// the value is a build option every distribution may set differently — so
+// what is written here is the common spelling and never an authority.
+//
+// IT IS APPENDED, AND IS NEVER THE WHOLE ANSWER. `Environment=PATH=`
+// REPLACES the manager's default rather than adding to it, so a unit naming
+// only the render host's dirs would take away the one PATH the crash-looping
+// unit in ranger-base-ib61s did have — every binary in /usr/bin, to fix a
+// bd in ~/.local/bin. It goes last, so the render host's own precedence
+// leads: where the deployer's shell found bd, git, posse and the runtime CLI
+// is where the loop should find them too.
+var systemdFallbackPath = []string{
+	"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin",
+}
+
+// unitSearchPathChildren are the BARE NAMES the loop's own posse resolves on
+// this PATH, with why each one matters — the pre-flight behind the render's
+// PATH note. Two, and not the dozen the protocol-child census holds: these
+// are the ones a dispatch pass execs unconditionally, so a PATH that cannot
+// answer them is a unit that fails rather than a unit that degrades.
+//
+// Not rex, which is an absolute path by construction (rex.go: "the CLI is
+// not on PATH"); not herdr, whose own unit is what this one is `Requires=`
+// — a host where herdr is unresolvable has no multiplexer unit to be
+// ordered behind. Not the runtime CLIs either: their dirs ARE carried, since
+// the whole render-host PATH is, but a home that hires no claude seat is not
+// broken by a claude this render cannot see, and naming every runtime here
+// would be the enumeration this file's header refuses.
+var unitSearchPathChildren = []struct{ name, why string }{
+	{"bd", "every dispatch pass reads the queue through it, so a loop that cannot resolve it exits non-zero at once (\"" + NoBdLine + "\") and Restart=on-failure brings it straight back — which is ranger-base-ib61s verbatim: a 5s crash-loop, on the host, in the journal"},
+	{"git", "the pass's worktree, parity and commit-wall work all shell out to it"},
+}
+
+// unitSearchPath is the `Environment=PATH=` value: the dirs of a PATH that
+// is NAMED rather than read from the environment, in order, deduplicated,
+// with everything a unit must not carry dropped and named.
+//
+// WHY THE RENDER HOST'S WHOLE PATH and not the two dirs the names above
+// resolve into. The loop execs more than bd and git — sqlite3, python3, gh,
+// ps, sh, go, the multiplexer, a runtime CLI — and it also TYPES a PATH onto
+// every seat it hires (SeatBasePath), so the unit's PATH is the floor under
+// everything the loop does and not just under its own two calls. A list of
+// binaries is the enumeration that goes stale one landing later; "the PATH
+// posse itself was working on when the deployer rendered this" does not.
+//
+// THE GATES RULE IS APPLIED HERE and not trusted to the caller, so the
+// invariant holds whatever PATH is handed in: a unit is nobody's seat (ADR
+// 0077 D3), and a persona's shims in front of the loop's own bd is
+// ranger-base-c33j6's deadlock in a process no persona typed in.
+func unitSearchPath(searchPath string) (dirs, notes []string) {
+	outside, foreign := gatesSplitPath(searchPath, "")
+	if len(foreign) > 0 {
+		notes = append(notes, fmt.Sprintf("dropped %d PATH element(s) reaching a posse gates bin dir: %s — a unit is nobody's seat (ADR 0077 D3), and a persona's shims in front of the loop's own bd is ranger-base-c33j6's deadlock", len(foreign), strings.Join(foreign, ", ")))
+	}
+	var relative []string
+	seen := map[string]bool{}
+	add := func(d string) {
+		if !filepath.IsAbs(d) {
+			relative = append(relative, d)
+			return
+		}
+		if seen[d] {
+			return
+		}
+		seen[d] = true
+		dirs = append(dirs, d)
+	}
+	for _, d := range outside {
+		add(d)
+	}
+	for _, d := range systemdFallbackPath {
+		add(d)
+	}
+	if len(relative) > 0 {
+		// A relative element is a hazard this render introduces and the
+		// absent PATH did not: WorkingDirectory= is a crew's own repo, so
+		// `.` or `bin` on the loop's PATH lets whatever that tree holds
+		// answer to `git` for a process with the crew's whole home.
+		notes = append(notes, fmt.Sprintf("dropped %d relative PATH element(s): %s — the loop's working directory is a crew repo, and a relative element would let whatever that tree holds answer to `git`", len(relative), strings.Join(relative, ", ")))
+	}
+	return dirs, notes
+}
+
+// unitSearchPathMisses names the children of unitSearchPathChildren this
+// PATH cannot answer, as one sentence each.
+//
+// It is a RENDER-TIME filesystem read, and the honest one: the unit runs on
+// the host it is rendered on, so "is there a bd in one of these dirs" has
+// the same answer now as it will at start. Nothing here stats the posse in
+// ExecStart= — that path is right whether or not the binary is promoted yet
+// (RenderWatchUnit's block) — but a PATH is not a path: it is only correct
+// about a binary that is already somewhere on it.
+func unitSearchPathMisses(dirs []string) []string {
+	var out []string
+	for _, c := range unitSearchPathChildren {
+		if pathDirsLookup(dirs, c.name) != "" {
+			continue
+		}
+		out = append(out, fmt.Sprintf("the unit's PATH answers to no `%s`: %s. Install it where this PATH reaches, or re-render from a shell whose PATH finds it", c.name, c.why))
+	}
+	return out
+}
+
+// pathDirsLookup is exec.LookPath over a list of directories rather than
+// over $PATH — the same question resolveOutside asks, over a PATH this
+// process is not running with. "" when nothing answers.
+func pathDirsLookup(dirs []string, name string) string {
+	for _, d := range dirs {
+		if abs := absLookPath(filepath.Join(d, name)); abs != "" {
+			return abs
+		}
+	}
+	return ""
+}
+
 // ─── the unit ───────────────────────────────────────────────────────────────
 
 // systemdUnitSuffixes is systemd's own closed set of unit types
@@ -287,7 +406,25 @@ func AutostartRefuser(via string) string {
 // condition. Reading them in order: the owner (D9), then the ordering D5
 // makes load-bearing, then the arm grammar, then the values that would end
 // up inside the file.
+//
+// THE PATH IS THIS PROCESS'S, gates dirs dropped (ranger-base-ib61s). A user
+// manager reads no shell profile, so its PATH does not include ~/.local/bin
+// — which is where INSTALL's own bd step installs bd — and the unit's first
+// bd call therefore died with NoBdLine on the ADR 0080 host, every
+// RestartSec, forever. renderWatchUnitOn is the same render over a PATH that
+// is named instead of read.
 func RenderWatchUnit(a *App, exe string) (*WatchUnit, error) {
+	return renderWatchUnitOn(a, exe, PathOutsideGates(""))
+}
+
+// renderWatchUnitOn is RenderWatchUnit over a search path the CALLER names —
+// the one render, available to a caller that has a PATH in hand instead of
+// $PATH. Parameterized rather than copied, and never by swapping $PATH
+// around the call: the process environment is one variable shared by every
+// goroutine, so that swap is a window in which any concurrent caller
+// resolves against a PATH it never asked for (gatesSplitPath's own rule,
+// ranger-base-i7fa).
+func renderWatchUnitOn(a *App, exe, searchPath string) (*WatchUnit, error) {
 	via, err := a.AutostartVia()
 	if err != nil {
 		return nil, err
@@ -349,9 +486,22 @@ func RenderWatchUnit(a *App, exe string) (*WatchUnit, error) {
 		who = AbbrevHome(a.Home)
 	}
 
+	searchDirs, pathNotes := unitSearchPath(searchPath)
+	notes = append(notes, pathNotes...)
+	notes = append(notes, unitSearchPathMisses(searchDirs)...)
+
 	execStart, err := unitExec(append([]string{exe}, args...))
 	if err != nil {
 		return nil, err
+	}
+	// `:` and not os.PathListSeparator: this value is read by systemd, which
+	// is Linux, and the render may be running anywhere. (They agree today —
+	// darwin's separator is `:` too — which is exactly why the literal is
+	// the honest one: the unit's separator is the TARGET's, and nothing
+	// about this process should decide it.)
+	unitPath, err := unitArg(strings.Join(searchDirs, ":"))
+	if err != nil {
+		return nil, Die("the loop's PATH cannot go in a unit file: %v", err)
 	}
 	home, err := unitArg(a.Home)
 	if err != nil {
@@ -384,10 +534,15 @@ func RenderWatchUnit(a *App, exe string) (*WatchUnit, error) {
 # rotates it (ranger-base-n00wn), so nothing here tees into it; journalctl's
 # copy is a duplicate, not the record.
 #
-# A USER SERVICE DOES NOT INHERIT YOUR SHELL'S PATH — systemd gives it a
-# minimal one — and posse shells out to bd and git. Check
-# `+"`systemctl --user show-environment`"+` and add an Environment=PATH= drop-in if
-# either lives somewhere systemd cannot see.
+# A USER SERVICE DOES NOT INHERIT YOUR SHELL'S PATH — a user manager reads
+# no profile, and its minimal PATH does not include ~/.local/bin, which is
+# where INSTALL puts bd. So Environment=PATH= below is the PATH THIS RENDER
+# RAN WITH, posse's own gates dirs dropped and systemd's default appended
+# (ranger-base-ib61s: without it the loop exited 'bd not found on PATH' and
+# systemd restarted it every 5s). It is read at render, like the binary's
+# path above it — so re-render after bd, git, posse or a runtime CLI moves,
+# and compare it against `+"`systemctl --user show-environment`"+` if a call still
+# cannot find something.
 [Unit]
 Description=posse dispatch --watch (%s)
 After=%s
@@ -397,6 +552,7 @@ Requires=%s
 Type=simple
 WorkingDirectory=%s
 Environment=RHQ_HOME=%s
+Environment=PATH=%s
 ExecStart=%s
 # on-failure, per ADR 0080 D5. A loop that loses the lock exits non-zero, so
 # if something else is already arming this home the unit hits systemd's start
@@ -410,7 +566,7 @@ WantedBy=default.target
 `,
 		AbbrevHome(a.Home),
 		AutostartViaKey, AutostartViaSystemd,
-		desc, mux, mux, workdir, home, execStart)
+		desc, mux, mux, workdir, home, unitPath, execStart)
 
 	return &WatchUnit{
 		Name: name,

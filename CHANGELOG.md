@@ -25,6 +25,15 @@ ordered `After=`/`Requires=` the unit named by
 under `~/.config/systemd/user/`. It never runs `systemctl`: it prints the
 lines.
 
+The unit also carries `Environment=PATH=`, and it is the `PATH` the render
+ran with — posse's own gates bin dirs dropped, relative elements dropped,
+systemd's default appended. A user manager reads no shell profile, so its
+minimal `PATH` does not include `~/.local/bin`, which is where INSTALL's `bd`
+step puts `bd`: without this the loop exited `bd not found on PATH outside
+posse's gates dirs` on its first pass and restarted every five seconds.
+Render it from a shell where `bd`, `git` and the runtime CLI work; it says so
+on stderr if the `PATH` it just wrote cannot find `bd` or `git`.
+
 `autostart_via: herdr | systemd` (default `herdr`) says which mechanism owns
 a home's loop. On `systemd` the startup hook stands down by name, the render
 refuses unless the key says it, and `posse status`'s G7 names the unit
