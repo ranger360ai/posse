@@ -83,13 +83,21 @@ both, never neither-then-both. The cutover is:
     pause → drain → push → stop + FENCE → transport → verify → host writes
 
 - **The fence is the store file's write bit.** After the last laptop write,
-  the laptop's db files and their `.beads` dir lose write permission. A
+  the laptop's db file loses write permission. A
   paused loop is not enough: pause stops spend, not oversight, and the
   epilogue still files verify beads (`posse pause` help). The fence also
   catches the operator's own hand-typed `bd` on the laptop. It is reversible
-  with one `chmod`, which is what rollback needs. That bd 0.50.3 fails LOUD
-  against a read-only db is ASSUMED, and it is measured on a copy before the
-  window (bead below).
+  with one `chmod`, which is what rollback needs. *As measured
+  (ranger-base-i0yuw): bd 0.50.3 does fail loud — every write verb exits 1
+  and names the db path and `permission denied`, a raw `sqlite3` insert is
+  refused too, and nothing is written. But the fence is `chmod a-w` on
+  `beads.db` ALONE, not on "the db files and their `.beads` dir" as this
+  line first read: a bd store is a WAL database, so a read-only `beads.db-wal`
+  or a read-only `.beads` dir stops `bd list` as well, and the fence that
+  blocks every write while reads stay green covers the one file and leaves
+  the sidecars and the dir alone. `bd export` opens the store read-write, so
+  it is refused under any fence — the laptop's export for the verify step
+  below is captured BEFORE the fence, not after.*
 - **Transport is the archive posse already verifies.** `posse backup`
   stages the queue db through sqlite's online backup API, bundles the queue
   repo's git history and the jsonl, and reads the archive back before
@@ -318,8 +326,16 @@ seatbelt.go's credential deny and absence of an `~/.ssh` deny.
 READ from the shakedown (operator's comments on ranger-base-offid): legs 0-4,
 including the hand-edited `cage: shims` and the unit's missing PATH.
 
-ASSUMED, each measured by a bead below before the window: bd fails loud on
-a read-only db; a restored archive's export equals the source's; Rex's saved
+MEASURED, 2026-11-08, on copies (ranger-base-i0yuw, bd 0.50.3): bd fails
+loud on a read-only db, and the fence is one file rather than the file set
+D3 first named; a restored archive's export equals the source's, on both the
+`posse backup` route and the `sqlite3 ".backup"` one, whether the archive was
+taken before or after the fence; and a restored db needs nothing hand-placed
+but one `bd sync --import-only`, because tar and `cp` both leave the jsonl
+newer than the db's `last_import_time`. Detail in
+docs/notes.d/ranger-base-i0yuw.md.
+
+ASSUMED, each measured by a bead below before the window: Rex's saved
 state holds scrollback; seat capacity (phase 0 leg 8); the bwrap B-rows
 (ranger-base-hft2q).
 

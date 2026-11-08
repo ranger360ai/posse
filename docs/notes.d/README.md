@@ -14,6 +14,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-vkmv3](ranger-base-vkmv3.md) — ranger-base-vkmv3 — what a refusal prints for a directory nobody can name — 2026-11-08
 - [ranger-base-k9x8n](ranger-base-k9x8n.md) — install-hooks resolves its target before anything reads it (ranger-base-k9x8n) — 2026-11-08
 - [ranger-base-ib61s](ranger-base-ib61s.md) — The rendered unit carries a PATH, and it is the render's own (ranger-base-ib61s) — 2026-11-08
+- [ranger-base-i0yuw](ranger-base-i0yuw.md) — The fence has one file in it, and the transport is already equal (ranger-base-i0yuw) — 2026-11-08
 - [ranger-base-g6bs7](ranger-base-g6bs7.md) — canonicalPath answers by reach, not only by path (ranger-base-g6bs7) — 2026-11-08
 - [ranger-base-8j070](ranger-base-8j070.md) — A directory this process may not name has no canonical spelling (ranger-base-8j070) — 2026-11-08
 - [ranger-base-8gwu1](ranger-base-8gwu1.md) — The home stamp takes the kernel's spelling too (ranger-base-8gwu1) — 2026-11-08
