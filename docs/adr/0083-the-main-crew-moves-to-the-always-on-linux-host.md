@@ -19,8 +19,8 @@ dispatches two bead stores:
   `.beads/redirect` files. MEASURED 2026-11-08: both redirects are
   untracked and hold an ABSOLUTE laptop path, and the queue repo has **no
   git remote at all** — its only off-box copy today is nothing;
-- **the agency repo's own store** (`beads:` lists it beside the posse repo),
-  under ADR 0050's data ceiling: no client PHI, pane history off.
+- **the private project repo's own store** (`beads:` lists it beside the posse repo),
+  under its existing rules (ADR 0050), pane history off.
 
 Three facts read from the tree decide most of the shape:
 
@@ -55,13 +55,13 @@ a class, the node's config names the handler that realizes it).
 - **GitHub: one deploy key per project**, generated on the host as the
   service account. Write access only on the repos the crew lands into and
   the operator pushes from: the posse repo, the constitution repo, the queue
-  repo, and the agency repo. No account-wide token. GitHub refuses one key on
+  repo, and the private project repo. No account-wide token. GitHub refuses one key on
   two repos, so each clone's remote uses a per-repo SSH host alias.
   The queue repo gains a **private** remote for its key. That is its first
   off-box copy, and its audience is unchanged (the operator alone).
 - **The coordinator runs ON the host as a crew seat.** The operator reaches
   it through the Rex macOS app first, `herdr --remote` second.
-- **The agency repo and its store move too**, under their existing rules.
+- **The private project repo and its store move too**, under their existing rules.
 - **claude is the only runtime on the host for now** (ADR 0080 D6).
 
 **D2. Phase 0 is the shakedown's legs 5-8, read on the host before any
@@ -94,7 +94,7 @@ both, never neither-then-both. The cutover is:
   stages the queue db through sqlite's online backup API, bundles the queue
   repo's git history and the jsonl, and reads the archive back before
   naming it. The operator copies it to the host and runs `posse backup
-  verify --archive` there. The agency store is not in that archive; it moves
+  verify --archive` there. The private project's store is not in that archive; it moves
   as `sqlite3 <db> ".backup <out>"`, the same API. Never `cp` of a live db.
 - **Verify is equality, not a smoke test.** The host's `bd export` of each
   store equals the laptop's last export, byte for byte after sorting, before
@@ -125,13 +125,13 @@ reads.**
   shakedown home must not mark them. `posse gates install-hooks` from the
   main home stamps all four. The laptop's clones keep the laptop home's
   stamp and take no crew commits after the fence.
-- **Pane history off for the agency repo.** One Rex server serves every
+- **Pane history off for the private project repo.** One Rex server serves every
   home (ADR 0080 D2), and Rex's history switch is server-wide: `--restore=false`
   "starts without them and saves nothing" (MEASURED, `rex server run --help`,
   laptop build). The host's Rex runs with it. Whether Rex's saved state holds
   scrollback is ASSUMED; the prep bead reads the state dir after one session.
   Claude's own transcripts under `~/.claude/projects` follow whatever the
-  laptop does for the agency repo today; the same bead reads that and repeats
+  laptop does for the private project repo today; the same bead reads that and repeats
   it, it does not invent a new rule.
 
 **D5. The coordinator moves last, with its memory, through git.** Persona
@@ -253,7 +253,7 @@ unchanged.
 - **Transport by `bd import` from the jsonl.** `bd import` is a fenced verb,
   the jsonl is a projection of the db rather than the db, and the archive
   is already verified end to end.
-- **A second Rex server for the agency home**, to keep history on for the
+- **A second Rex server for the private project's home**, to keep history on for the
   rest. ADR 0080 D12 rejected per-home servers; the cost of losing session
   restore on a host whose seats posse relaunches anyway is small.
 - **Cut over one store at a time.** One home dispatches both stores in one
@@ -291,7 +291,7 @@ Phase 0 is ranger-base-offid (operator, legs 5-8). The rest are
 | ranger-base-zrja9 | operator | deploy keys; the queue repo's private remote (D1) | offid |
 | ranger-base-cywju | operator | clones at `~`-relative paths; redirects (D3, D4) | offid, zrja9 |
 | ranger-base-4s8a0 | operator | the host home, born paused; seat ceiling; promote dry run (D2, D4) | offid |
-| ranger-base-jpgxo | operator | agency pane history off, measured (D4) | offid |
+| ranger-base-jpgxo | operator | private project pane history off, measured (D4) | offid |
 | ranger-base-19bt7 | operator | hook ownership on the host clones (D4) | cywju, 4s8a0 |
 | ranger-base-j3r7t | operator | window 1: pause and drain the laptop | all of the above |
 | ranger-base-68i8n | operator | window 2: push the four repos | j3r7t |
