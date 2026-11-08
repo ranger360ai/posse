@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-yx73g](ranger-base-yx73g.md) — One repo, one identity wall, however its path is spelled (ranger-base-yx73g) — 2026-11-08
+- [ranger-base-w79sc](ranger-base-w79sc.md) — One refusal, one spelling: the path a remedy tells you to paste (ranger-base-w79sc) — 2026-11-08
 - [ranger-base-k9x8n](ranger-base-k9x8n.md) — install-hooks resolves its target before anything reads it (ranger-base-k9x8n) — 2026-11-08
 - [ranger-base-ib61s](ranger-base-ib61s.md) — The rendered unit carries a PATH, and it is the render's own (ranger-base-ib61s) — 2026-11-08
 - [ranger-base-g6bs7](ranger-base-g6bs7.md) — canonicalPath answers by reach, not only by path (ranger-base-g6bs7) — 2026-11-08

@@ -1854,10 +1854,19 @@ func main() {
 			// the remedy is a config line, and a flag would put the second
 			// writer back the moment the first operator reached for it.
 			if foreignWallHome != "" {
+				// CanonicalAbbrevPath and not AbbrevHome, for both paths and
+				// in both lines (ADR 0082 D4): the remedy prescribes this
+				// repo as a `beads_visibility:` key to paste, and the home
+				// beside it comes from the wall's `# posse-home:` stamp,
+				// which D3 already spells canonically. The TARGET's own
+				// spelling still does not enter the rule — this is the
+				// render of the refusal, and `dir` reaches
+				// ForeignCommitWallOwner and InstallCommitGuardHook as the
+				// operator typed it.
 				fmt.Fprintf(out, "not installed: prepare-commit-msg — %s's commit wall was rendered by home %s, and this home does not own it (ADR 0081 D1/D4)\n",
-					posse.AbbrevHome(wallRepo), posse.AbbrevHome(foreignWallHome))
+					posse.CanonicalAbbrevPath(wallRepo), posse.CanonicalAbbrevPath(foreignWallHome))
 				fmt.Fprintf(out, "  remedy: add `%s: <private|public>` under this home's beads_visibility:, which is the list that confers ownership — or install from home %s, which rendered what is there\n",
-					posse.AbbrevHome(wallRepo), posse.AbbrevHome(foreignWallHome))
+					posse.CanonicalAbbrevPath(wallRepo), posse.CanonicalAbbrevPath(foreignWallHome))
 				fmt.Fprintf(out, "  no --force: two homes writing one wall is the contention D1 removes, and the last writer would keep winning\n")
 				// Exit 1 whatever the pre-push arm said: it has already
 				// printed its own verdict above, and a refusal to write

@@ -208,6 +208,31 @@ answered by canonicalising one side to hide the mismatch.
   strings, 2026-11-08). The next site to prescribe a path uses the same
   helper. No census pin is added, because none would name the process it
   protects (ADR 0006 §7).
+- **The helper landed as `CanonicalAbbrevPath`** (internal/posse/visibility.go,
+  ranger-base-w79sc) — `canonicalAbbrevHome(canonicalPath(p))`, which is the
+  composition D2 already renders the identity wall's own instance path with.
+  Exported, because the two sites this section names live one in cmd/posse and
+  one in internal/posse and the whole point is that they cannot drift. Both
+  paths in both lines of both refusals go through it; `QueueRepo()`, `hookRepo`
+  and `install-hooks`' target are untouched, as D4 requires. Pinned by
+  internal/posse/queuerefusalspelling_qa_test.go (a case-changed and a
+  symlinked `queue_repo:`) and cmd/posse/installhooksrefusalspelling_qa_test.go
+  (a symlinked target, and the byte equality of the two spellings' refusals),
+  each of which also asserts that the VALUE is still the config's own spelling
+  — so the rejected alternative reds a premise rather than passing quietly.
+- **This section's Radius is one site short, re-measured by the same grep
+  while landing it** (2026-11-08, ranger-base-w79sc). `QueueReadiness.GovRows`
+  (internal/posse/queuejsonl.go) prints the queue repo twice in G13's
+  `queue-unmarked` row and prescribes the second as `` `%s: private` `` — a
+  remedy prescribing a key to paste, in the caller's spelling, in non-test
+  `.go`, inside a format string carrying `beads_visibility:`. It was not taken
+  in w79sc, whose DO and DONE WHEN enumerate the two sites above, and because
+  a governance row's Detail has a different audience (`posse status`, the
+  cockpit) than a refusal; filed as ranger-base-qm7eg with the cost measured
+  (no pin asserts that Detail, so nothing in the suite constrains its
+  wording). The two sentences above stand as written and are left as written:
+  what is corrected is the count, here, where a reader of the Radius claim
+  reaches it.
 
 **Alternatives rejected.**
 - **Absolute is enough; leave it alone.** It is functionally true, because

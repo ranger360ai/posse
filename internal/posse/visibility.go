@@ -541,6 +541,41 @@ func canonicalAbbrevHome(p string) (string, error) {
 	return abbrevHomeAgainst(h, p), nil
 }
 
+// CanonicalAbbrevPath is the spelling a path gets when a refusal or a remedy
+// PRINTS it for the operator — canonicalPath for the path itself, then
+// canonicalAbbrevHome for its `~` form, which is exactly how ADR 0082 D2
+// renders the identity wall's own instance path. It is EXPORTED, and that is
+// the point of it: ADR 0082 D4 says the render happens in ONE helper so that
+// cmd/posse and internal/posse cannot drift apart, and the two call sites it
+// names live one in each.
+//
+// WHICH PATHS. The ones a line tells the operator to PASTE INTO CONFIG, and
+// the ones printed beside them in the same line — ADR 0081 D7's queue-commit
+// refusal (queuejsonl.go) and D4's `not installed: prepare-commit-msg`
+// refusal with its remedy (cmd/posse/main.go). Both print the repo whose
+// wall it is, and prescribe that same string as a `beads_visibility:` key,
+// and both print the owning home taken from the wall's `# posse-home:`
+// stamp. That stamp has been canonical since D3, so before this helper one
+// refusal line showed two paths in two spellings — the home as the kernel
+// names it, the repo as the caller happened to spell it.
+//
+// IT IS A RENDER AND MUST NEVER FEED A COMPARISON, the rule ADR 0082 states
+// twice and D4 states again. `QueueRepo()` keeps the spelling the config
+// carries — D4 reads "stays filepath.Abs", which is ranger-base-8kwa5's
+// one-line change to it and is still waiting on the ranger-base-83nrw
+// merge-back; either way it is the VALUE and this helper is not applied to
+// it — and `hookRepo`, `underDir` and `OwnsCommitWall` keep it as given:
+// canonicalising one side of a string comparison moves what three consumers
+// consider contained (ADR 0082 D4's rejected alternatives, and underSameDir
+// above for the one comparison that needed widening — by identity, not by
+// spelling). Matching does not need this: the prescribed key is read by
+// samePath, so EVERY absolute spelling of the repo already matched, and the
+// prescribed one is the spelling that is guaranteed to match rather than the
+// only one that will.
+func CanonicalAbbrevPath(p string) string {
+	return canonicalAbbrevHome(canonicalPath(p))
+}
+
 // WarnOpsContent is the cheap in-session half of the guard: the harness
 // says so BEFORE it files a bead of its own into a public repo's db. It
 // warns and returns — the refusal lives in the commit hook, which catches

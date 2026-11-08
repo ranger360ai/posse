@@ -172,9 +172,19 @@ func (a *App) CommitQueueJSONL(bd Bd, dir, msg string) (QueueCommit, error) {
 	// refusal actionable, so the line is written where the rule is asked.
 	// ForeignCommitWallOwner is the identity-only ask, so a close pays no
 	// second behavior exec to reach it.
+	//
+	// Both paths are rendered through CanonicalAbbrevPath (ADR 0082 D4), not
+	// AbbrevHome: this line prescribes the repo as a `beads_visibility:` key
+	// for the operator to paste, and it prints the owning home beside it
+	// from the wall's `# posse-home:` stamp — which D3 made canonical. So on
+	// AbbrevHome alone one line showed two spellings of two paths, and the
+	// key it prescribed depended on how this home's config happened to spell
+	// `queue_repo:`. The value is untouched: `q` is QueueRepo()'s, which
+	// feeds underSameDir, OwnsCommitWall and InstallCommitGuardHook above,
+	// and a render never feeds a comparison.
 	if foreignWallHome, wallRepo := a.ForeignCommitWallOwner(q); foreignWallHome != "" {
 		return c, fmt.Errorf("%s's commit wall was rendered by home %s and this home does not own it, so it was left alone (ADR 0081 D1/D7) — and an unguarded jsonl commit of the store of record is the disclosure that wall exists to refuse; remedy: add `%s: <private|public>` under this home's beads_visibility:, which is both what confers ownership (D1) and ADR 0015 §4 cutover step 5 (G13's queue-unmarked row) — or close from home %s, which rendered what is there",
-			AbbrevHome(wallRepo), AbbrevHome(foreignWallHome), AbbrevHome(wallRepo), AbbrevHome(foreignWallHome))
+			CanonicalAbbrevPath(wallRepo), CanonicalAbbrevPath(foreignWallHome), CanonicalAbbrevPath(wallRepo), CanonicalAbbrevPath(foreignWallHome))
 	}
 	a.InstallCommitGuardHook(q) //nolint:errcheck // best effort, as at launch; the probe below is the verdict
 	if probe := a.probeL3Hooks(q, false); !probe.CommitGuard {
