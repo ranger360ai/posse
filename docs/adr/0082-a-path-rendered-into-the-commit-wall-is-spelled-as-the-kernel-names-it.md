@@ -209,8 +209,10 @@ answered by canonicalising one side to hide the mismatch.
   helper. No census pin is added, because none would name the process it
   protects (ADR 0006 §7).
 - **The helper landed as `CanonicalAbbrevPath`** (internal/posse/visibility.go,
-  ranger-base-w79sc) — `canonicalAbbrevHome(canonicalPath(p))`, which is the
-  composition D2 already renders the identity wall's own instance path with.
+  ranger-base-w79sc) — the composition D2 already renders the identity wall's
+  own instance path with. It landed as the bare
+  `canonicalAbbrevHome(canonicalPath(p))`, which was that composition when
+  both callees answered one value; what it does with D5's refusal is D7 below.
   Exported, because the two sites this section names live one in cmd/posse and
   one in internal/posse and the whole point is that they cannot drift. Both
   paths in both lines of both refusals go through it; `QueueRepo()`, `hookRepo`
@@ -441,3 +443,118 @@ MEASURED as two mutation arms, which is why D6 is here and not just D5
 - **Classify by errno list rather than `fs.ErrPermission`.** Same answer,
   a `syscall` import in `visibility.go`, and a list to keep in step with a
   platform nobody here runs.
+
+## Amendment: the refusal a human reads degrades where the wall refuses (ranger-base-vkmv3, 2026-11-08)
+
+**Context.** D4's one helper, `CanonicalAbbrevPath`, and D5's refusal were
+decided and landed in parallel, off one base, by two beads that did not
+conflict textually: D5/D6 gave `canonicalPath` and `canonicalAbbrevHome` an
+error return (ranger-base-8j070), and the helper that composes them was
+written against the one-value signatures (ranger-base-w79sc). The merge
+succeeded quietly and `go build ./internal/posse` was what broke — MEASURED
+2026-11-08 on main at 9ac5f656, go1.26.10 darwin/arm64:
+`visibility.go:576:9: too many return values`, plus a second break in
+`internal/posse/queuerefusalspelling_qa_test.go` (three one-value
+`canonicalPath` calls in a fixture premise) that only the test build reaches.
+
+The signature is not the decision. Both of the helper's call sites are
+REFUSAL lines — ADR 0081 D7's queue-commit refusal (internal/posse/queuejsonl.go)
+and D4's `not installed: prepare-commit-msg` with its remedy
+(cmd/posse/main.go) — and a refusal has to print something. So what is being
+decided is what such a line prescribes as a `beads_visibility:` key for a repo
+whose directory this process may not name, and whatever this one helper does,
+every later prescribing site inherits — including ranger-base-qm7eg's G13
+`queue-unmarked` row.
+
+**D7 — A path a refusal PRINTS degrades; a path the wall WRITES refuses.**
+`CanonicalAbbrevPath` keeps its single return value and absorbs both refusals,
+per half:
+
+| the half that refused | the answer |
+|---|---|
+| the path itself | `AbbrevHome(p)` — the caller's spelling, which is then the only spelling of that directory in existence |
+| `$HOME` | the canonical absolute path, unabbreviated — the `~` form is given up, the kernel reading of the path is not |
+
+The reason is the CONSUMER, and it is the one thing that differs from the
+wall. D5 refuses because ADR 0023's ours-vs-stale verdict compares a wall
+rendered by one process against a wall rendered by ANOTHER, byte for byte; a
+second spelling there is a flip-flop nothing reports. This helper's answer is
+printed once into a line an operator reads, and is never stored, re-derived or
+compared — there is no second render to disagree with, so the defect D5 closes
+has no analogue at this site. And "" is here the one answer that cannot be
+given: a remedy reading `add : <private|public>` prescribes nothing, and both
+call sites are the last thing that happens on their path (one returns the
+error, one `os.Exit(1)`).
+
+The degraded spelling is still ACTIONABLE, which is the property that matters.
+The prescribed key is read by `samePath`, which answers by identity, so the
+caller's own spelling matches exactly as well as the kernel's — D4's own
+consequence, that the canonical one is the spelling guaranteed to match rather
+than the only one that will. Canonicalising buys agreement with the identity
+wall's spelling of that repo and nothing else, and in exactly the case the
+degrade is reached there is no such spelling to agree with: D6 refuses the
+whole derivation over an instance path it cannot name, so that repo's wall
+has no instance-path literal. **The reason to canonicalise is void in the one
+case the degrade is taken.**
+
+MEASURED 2026-11-08, darwin 25.6.0, go1.26.10 darwin/arm64, APFS
+case-insensitive (internal/posse/canonicalabbrevdegrade_qa_test.go, two arms,
+both reached and neither skipped on this box):
+
+| fixture | reading |
+|---|---|
+| repo readable | `CanonicalAbbrevPath` -> the kernel's spelling, through both the on-disk and the case-changed spelling |
+| repo `chmod 0` | `canonicalPath` -> `errPathUnnameable`; the degrade is `AbbrevHome`'s of the caller's spelling, and through the case-changed spelling that is a DIFFERENT string from the one reach rendered |
+| `$HOME` at mode **0111**, repo under it at 0755 | `canonicalAbbrevHome` -> `errPathUnnameable` while `canonicalPath(repo)` still answers; the degrade is the canonical absolute path and the `~` form is lost |
+
+**Mode 0111 is why the second arm can be written at all, and it is also the
+firing configuration this amendment makes real.** F_GETPATH's reading is an
+`open(dir, O_RDONLY)`, which needs READ on the directory; reaching a path
+BELOW it needs only SEARCH. So a directory at 0111 is one this process may not
+name and may still reach through — which is both the only state where the home
+half refuses while the path half answers, and an ordinary permission setting a
+box can be in. D5's "latent rather than live" stands for the three cages; it
+is `chmod 0` that is exotic, not the class.
+
+**Consequences.**
+- The build is whole again on all three arms, and `go vet` is clean under
+  each (`""`, `posse_arm2`, `posse_arm3`).
+- A degraded answer may be non-canonical, so it may never be stored, compared
+  or rendered into the wall — on top of D4's own rule that a render never
+  feeds a comparison. The wall's own path keeps going through `canonicalPath`
+  directly and propagating (`commitGuardLiterals`, `DeriveIdentityLiterals`),
+  so D6 is untouched: nothing this amendment does can put a second spelling
+  into a wall.
+- On every box today nothing changes, for D5's own reason: no renderer here
+  lacks the reach, so neither degrade is reached outside its pin.
+- The first arm MEASURES the cost rather than asserting it — with reach
+  withdrawn the case-changed spelling renders a second string — so the thing
+  D5 refuses at the wall is on the record as accepted here, in a string that
+  is printed and dropped.
+- ranger-base-qm7eg's G13 `queue-unmarked` row inherits this answer, which is
+  what it was blocked on. Its Detail has a different audience (`posse status`,
+  the cockpit) and the same helper; nothing there needs a second decision.
+- The two pins are in arm 1, beside `canonicalwall_qa_test.go`, because they
+  share `qcwNoReach` and because the sibling they complete
+  (`TestQACanonicalPathRefusesADirectoryItMayNotName`) is there. No census pin
+  is added, for D4's reason (ADR 0006 §7).
+
+**Alternatives rejected.**
+- **Give `CanonicalAbbrevPath` an error return and let each call site decide.**
+  Two sites each inventing an answer is precisely the drift D4's ONE helper
+  exists to prevent, and neither site has anywhere to put the error: one is
+  already returning a refusal about something else, the other exits 1.
+- **Return `("", err)` and print the empty string.** D5's loud answer, and the
+  right one for a literal that must not be written. Printed, it is a remedy
+  with no path in it.
+- **Degrade in one line — `if either half refused, return AbbrevHome(p)`.**
+  It passes the first arm and reds the second, which is why the second arm
+  exists: it throws away a kernel reading that was successfully taken, and
+  abbreviates against a home this process cannot name — the second spelling
+  one rung in, which is `canonicalAbbrevHome`'s own stated reason for
+  propagating rather than degrading.
+- **Say in the line that the spelling is degraded.** The most honest option
+  and it is not available at this helper: the wording would have to thread
+  through both call sites, which is the drift again, and a key with a
+  parenthetical in it cannot be pasted. The honest thing a one-string helper
+  can do is print a spelling that names the directory.

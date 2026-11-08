@@ -110,12 +110,18 @@ func qrsRefusal(t *testing.T, repo, spelling string) string {
 	if got := a.QueueRepo(); got != spelling {
 		t.Errorf("QueueRepo() = %q, want the config's own spelling %q — ADR 0082 D4 keeps this a VALUE that feeds underSameDir, OwnsCommitWall and InstallCommitGuardHook, and canonicalising it moves three comparisons", got, spelling)
 	}
-	if canonicalPath(spelling) == spelling {
+	// qaCanonicalPath and not canonicalPath (ADR 0082 D5, ranger-base-8j070):
+	// both of these are fixture directories this process created, so the
+	// refusal arm is a Fatal naming the path rather than an ignored error —
+	// which would leave the premise below comparing "" against a spelling and
+	// passing for the wrong reason.
+	canonSpelling, canonRepo := qaCanonicalPath(t, spelling), qaCanonicalPath(t, repo)
+	if canonSpelling == spelling {
 		t.Fatalf("fixture premise: %q is already its own canonical spelling, so this arm cannot tell a rendered path from an unrendered one", spelling)
 	}
-	if canonicalPath(spelling) != canonicalPath(repo) {
+	if canonSpelling != canonRepo {
 		t.Fatalf("fixture premise: %q and %q canonicalise to %q and %q — two directories, so the refusal is right either way",
-			spelling, repo, canonicalPath(spelling), canonicalPath(repo))
+			spelling, repo, canonSpelling, canonRepo)
 	}
 
 	closeBead(t, store, `{"id":"q-1","title":"closed"}`)

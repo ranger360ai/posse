@@ -572,8 +572,61 @@ func canonicalAbbrevHome(p string) (string, error) {
 // samePath, so EVERY absolute spelling of the repo already matched, and the
 // prescribed one is the spelling that is guaranteed to match rather than the
 // only one that will.
+//
+// IT HAS NO ERROR RETURN, AND THAT IS ADR 0082 D7 (ranger-base-vkmv3). Both
+// callees can refuse — a directory that is there and this process may not
+// name it has no canonical spelling (D5) — and both refusals are DEGRADED
+// here rather than propagated. The reason is the consumer, and it is the one
+// thing that differs from the wall:
+//
+//   - D5 refuses because ADR 0023's ours-vs-stale verdict compares a wall
+//     rendered by one process against a wall rendered by ANOTHER, byte for
+//     byte. A second spelling there is a flip-flop nothing reports. This
+//     helper's answer is never stored, never re-derived and never compared:
+//     it is printed once, into a line an operator reads. There is no second
+//     render to disagree with, so the defect D5 closes has no analogue at
+//     this site.
+//   - A refusal has to print SOMETHING. Both call sites are the last thing
+//     that happens on their path (one returns the error, one os.Exit(1)),
+//     and the path they print is the key the line tells the operator to
+//     paste. A remedy that reads "add : <private|public> under this home's
+//     beads_visibility:" prescribes nothing, so "" — D5's loud answer, and
+//     the right one for a literal that must not be written — is here the one
+//     answer that cannot be given.
+//   - The degraded spelling is still ACTIONABLE, which is the property that
+//     matters. The prescribed key is read by samePath, which answers by
+//     identity, so the caller's own spelling matches exactly as well as the
+//     kernel's (D4's consequence: the canonical one is the spelling
+//     guaranteed to match, not the only one that will). Canonicalising buys
+//     agreement with the identity wall's spelling of that repo, nothing
+//     more — and in exactly this case there is no such spelling to agree
+//     with, because DeriveIdentityLiterals refuses the whole derivation over
+//     an instance path it cannot name (D6). The reason to canonicalise is
+//     void in the one case the degrade is reached.
+//
+// So the degrade is per HALF, each losing only what refused:
+//
+//	p unnameable        AbbrevHome(p) — the caller's spelling, which is then
+//	                    the only spelling of that directory in existence
+//	HOME unnameable     the canonical absolute p, unabbreviated, rather than
+//	                    a `~` form taken against a home nobody can name
+//
+// WHAT THIS DOES NOT LICENSE. The answer below may be non-canonical, so it
+// may never be stored, compared, or rendered into the wall — on top of D4's
+// own rule that a render never feeds a comparison. The wall's own path goes
+// through canonicalPath directly and propagates (commitGuardLiterals,
+// DeriveIdentityLiterals); this helper is for a line being PRINTED and
+// nothing else, and the two call sites D4 names are both such a line.
 func CanonicalAbbrevPath(p string) string {
-	return canonicalAbbrevHome(canonicalPath(p))
+	c, err := canonicalPath(p)
+	if err != nil {
+		return AbbrevHome(p)
+	}
+	a, err := canonicalAbbrevHome(c)
+	if err != nil {
+		return c
+	}
+	return a
 }
 
 // WarnOpsContent is the cheap in-session half of the guard: the harness

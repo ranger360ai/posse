@@ -38,7 +38,15 @@ func CanonicalAbbrevPath(p string) string {
 ```
 
 That is the composition D2 already renders the wall's own instance path
-with. It is exported for one reason: the two sites are one in `cmd/posse`
+with. **That body is this bead's and no longer the one in the tree**, and it
+is left here as written: ranger-base-8j070 landed off the same base and gave
+both callees an error return (ADR 0082 D5/D6), so the merge-back compiled to
+`too many return values` and the body carries a per-half degrade now — ADR
+0082 D7, docs/notes.d/ranger-base-vkmv3.md. What this bead decided is
+unchanged by that; what it could not know is what the refusal prints for a
+directory nobody can name.
+
+It is exported for one reason: the two sites are one in `cmd/posse`
 and one in `internal/posse`, and D4's requirement is that they cannot
 drift. Both paths, in both lines, of both refusals now go through it.
 
