@@ -224,7 +224,31 @@ var qaNoHome = &App{}
 // this in as many words — a fixture that builds an expected literal from a
 // temp dir passes it through canonicalPath, and that is the build's work
 // rather than a divergence.
-func qaStampedHome(home string) string { return canonicalPath(home) }
+func qaStampedHome(home string) string {
+	// The error arm is canonicalPath's own (errPathUnnameable, ADR 0082 D1
+	// as amended by ranger-base-8j070) and a scratch home this process just
+	// created cannot reach it. Dropped rather than Fatal'd because this
+	// helper is called from expression position in tests that hold no `t`,
+	// and the dropped answer is "" — which reds every caller through the
+	// equality it already asserts. qaCanonicalPath below is the form for a
+	// caller that does hold a `t`.
+	c, _ := canonicalPath(home)
+	return c
+}
+
+// qaCanonicalPath is canonicalPath over a FIXTURE path — one this process
+// created and can open — so its refusal arm is a Fatal here rather than an
+// ignored error. That arm has a pin of its own next door
+// (TestQACanonicalPathRefusesADirectoryItMayNotName, canonicalwall_qa_test.go);
+// what every other fixture wants from this function is the spelling.
+func qaCanonicalPath(t *testing.T, p string) string {
+	t.Helper()
+	c, err := canonicalPath(p)
+	if err != nil {
+		t.Fatalf("canonicalPath(%q): %v", p, err)
+	}
+	return c
+}
 
 func qaStampedBy(home string) string { return AbbrevHome(qaStampedHome(home)) }
 

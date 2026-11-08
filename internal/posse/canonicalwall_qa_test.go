@@ -59,7 +59,9 @@ package posse
 // premise in visibility_test.go.
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,7 +101,7 @@ func newQCWRig(t *testing.T) *qcwRig {
 	// words — a fixture that builds an expected literal from a temp dir
 	// passes it through canonicalPath, and that is expected, not a
 	// divergence.
-	root := canonicalPath(gitTempDir(t))
+	root := qaCanonicalPath(t, gitTempDir(t))
 	r := &qcwRig{
 		home: filepath.Join(root, "home"),
 	}
@@ -220,12 +222,237 @@ func TestQAOneRepoRendersOneWallHoweverItsPathIsSpelled(t *testing.T) {
 	}
 }
 
+// qcwNoReach makes dir unopenable by this process for the rest of the test
+// and reports whether it managed to. chmod 0 is the cheap local stand-in for
+// a cage, and both land on the same branch of canonicalPath — an open() that
+// returns an error (ADR 0082 D1 as amended, ranger-base-8j070, which has the
+// census of which cage actually loses this open(): none of the three).
+//
+// The restore is registered IMMEDIATELY and not deferred by the caller,
+// because the rig's root is a t.TempDir/gitTempDir: that cleanup was
+// registered first and therefore runs last, so a mode-0 directory left
+// behind is a cleanup failure rather than a test failure, reported against
+// a test that passed.
+func qcwNoReach(t *testing.T, dir string) bool {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Log("reach cannot be withdrawn from root — mode bits do not bind uid 0")
+		return false
+	}
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Logf("cannot chmod %s: %v", dir, err)
+		return false
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if _, err := kernelPath(dir); !errors.Is(err, fs.ErrPermission) {
+		t.Logf("chmod 0 did not deny the open of %s (kernelPath err %v) — nothing to measure here", dir, err)
+		_ = os.Chmod(dir, 0o755)
+		return false
+	}
+	return true
+}
+
+// TestQACanonicalPathRefusesADirectoryItMayNotName is the amendment to ADR
+// 0082 D1's third bullet, on its own: a directory that is THERE and that
+// this process may not open has no canonical spelling to render, and
+// canonicalPath says so rather than handing back resolvedPath's answer.
+//
+// WHY THE REFUSAL AND NOT THE FALLBACK. D1 first said the fallback answer
+// "is deterministic for a given input, which is all the byte compare needs".
+// canonicalPath's input is not the path string alone — the reading is an
+// open(), so it is the string PLUS the rendering process's reach. The
+// control arm below measures the consequence rather than asserting it:
+// with reach withdrawn, resolvedPath still ANSWERS, and for the
+// case-changed spelling of the same directory it answers a DIFFERENT
+// string. Two renderers with different reach would therefore write two
+// walls for one repo and the probe would read the second as "ours but
+// stale" on every launch — ranger-base-k9x8n's defect reached through
+// privilege instead of through the caller's spelling (ranger-base-g6bs7's
+// finding).
+//
+// DARWIN ONLY, and that is the platform half rather than a thin pin:
+// kernelPath off darwin answers errNoKernelPath for EVERY path, so
+// canonicalPath never reaches the permission branch there and no reach axis
+// exists to lose. D1's non-darwin half IS the fallback.
+func TestQACanonicalPathRefusesADirectoryItMayNotName(t *testing.T) {
+	// Parallel-safe, unlike its sibling below: this one reads no
+	// environment and newQCWRig's t.Setenv("HOME") is the whole reason that
+	// one cannot take it.
+	t.Parallel()
+	if runtime.GOOS != "darwin" {
+		t.Skipf("%s has no kernel reading (ADR 0082 D1's non-darwin half IS the fallback), so no reach axis exists to lose", runtime.GOOS)
+	}
+	root := qaCanonicalPath(t, t.TempDir())
+	dir := filepath.Join(root, "instance")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The reference, with reach: the kernel's spelling, and the same answer
+	// through a case-changed spelling of the same directory. If this second
+	// equality does not hold the volume is case-sensitive and the control
+	// arm below has no divergence to find.
+	cased := filepath.Join(root, "INSTANCE")
+	caseFolds := samePath(dir, cased)
+	if got := qaCanonicalPath(t, dir); got != dir {
+		t.Fatalf("premise: canonicalPath(%q) = %q with reach", dir, got)
+	}
+	if caseFolds {
+		if got := qaCanonicalPath(t, cased); got != dir {
+			t.Fatalf("premise: canonicalPath(%q) = %q with reach, want the on-disk %q", cased, got, dir)
+		}
+	} else {
+		t.Logf("case row skipped: %s is on a case-SENSITIVE volume", root)
+	}
+
+	if !qcwNoReach(t, dir) {
+		t.Skip("reach could not be withdrawn on this box")
+	}
+
+	// THE DECISION: no answer, and the sentinel its readers ask for by
+	// errors.Is — the L3 probe has to tell this class from the other
+	// derivation error (a literal carrying a single quote), which is a
+	// property of the value and identical in every process.
+	got, err := canonicalPath(dir)
+	if !errors.Is(err, errPathUnnameable) {
+		t.Errorf("canonicalPath(%q) with no reach = (%q, %v), want errPathUnnameable", dir, got, err)
+	}
+	if got != "" {
+		t.Errorf("the refusal answered %q as well — a caller that drops the error must get a loudly empty string, not a plausible second spelling", got)
+	}
+	// And the refusal is reached from UNDER the directory too (an
+	// unreadable component above the one being named): the open() is of the
+	// path, so every component is in it.
+	if _, err := canonicalPath(filepath.Join(dir, "store")); !errors.Is(err, errPathUnnameable) {
+		t.Errorf("a path below an unreadable component: err = %v, want errPathUnnameable", err)
+	}
+
+	// THE CONTROL, measured and not asserted: this is what D1's original
+	// fallback would have rendered, and why it was silent.
+	if r := resolvedPath(dir); r == "" {
+		t.Errorf("premise: resolvedPath stopped answering with no reach, so the fallback was never the silent second spelling this pin is about")
+	}
+	if caseFolds {
+		if r := resolvedPath(cased); r == dir {
+			t.Errorf("premise: resolvedPath(%q) folded the case with no reach, so the two reaches would not have diverged", cased)
+		} else {
+			t.Logf("the fallback's second spelling, measured: resolvedPath(%q) = %q against the kernel's %q", cased, r, dir)
+		}
+	}
+
+	// A MISSING path is still the fallback, and keeps being it with the
+	// parent unreadable — "nothing is there" and "there and not mine" are
+	// the two halves the amendment separates, and only one refuses.
+	missing := filepath.Join(root, "no-such-dir")
+	if g, err := canonicalPath(missing); err != nil || g != resolvedPath(missing) {
+		t.Errorf("a missing path: canonicalPath = (%q, %v), want resolvedPath's %q and no error", g, err, resolvedPath(missing))
+	}
+}
+
+// TestQAAWallWhoseInstancePathCannotBeNamedIsRefusedNotRespelled is the same
+// amendment at the wall, which is the only place it matters — the pin
+// ranger-base-g6bs7 asked for, beside the one above it: render the same repo
+// over an instance directory that is readable and then is not.
+//
+// THE THREE ARMS ARE THREE DIFFERENT CLAIMS, and the third is the one the
+// finding was about:
+//
+//  1. The DERIVATION refuses, with canonicalPath's own sentinel, so the two
+//     installers and RenderSessionHooks refuse — which they already did for
+//     a literal they could not render, and this joins that class.
+//  2. The INSTALL refuses, through the real entry point, rather than
+//     writing a wall spelled by whichever process happened to render it.
+//  3. The L3 PROBE abstains. This is the live half: the probe deliberately
+//     drops a derivation error ("an install that hit it already failed
+//     loudly"), which is right for the single-quote class and wrong for
+//     this one — the install may have HAD the reach the probe lacks. A
+//     probe that degraded to no literals would compare a correct installed
+//     wall against a render short two lines and call it l3Stale on every
+//     launch, which is the whole defect with the silence moved. So the arm
+//     asserts l3Unnameable AND, separately, that it is not l3Stale.
+//
+// ARM 3 IS ASKED THROUGH BOTH SPELLINGS, and the case one is not a bonus
+// row — it is the only one that can catch the defect, MEASURED as a
+// mutation arm (ranger-base-8j070): with canonicalPath reverted to the
+// fallback, a probe asked through the ON-DISK spelling reads l3Held,
+// because the fallback's answer for that spelling IS the canonical one and
+// nothing moved. That is ranger-base-g6bs7's "latent on this box" in one
+// line: reach cannot move a literal the caller already spelled canonically.
+// Asked
+// through the case-changed spelling of the same directory the same mutant
+// reads l3Stale, which is ranger-base-k9x8n's verdict on a wall that is
+// perfectly good.
+func TestQAAWallWhoseInstancePathCannotBeNamedIsRefusedNotRespelled(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skipf("%s has no kernel reading (ADR 0082 D1's non-darwin half IS the fallback), so no reach axis exists to lose", runtime.GOOS)
+	}
+	r := newQCWRig(t)
+
+	// WITH REACH: the wall renders, carries both instance-path literals,
+	// and installs. That installed file is arm 3's subject — a wall that is
+	// genuinely this home's current render, written by a process that could
+	// name the instance directory.
+	want := r.render(t, r.repo)
+	slot, _, _, err := r.a.InstallCommitGuardHook(r.repo)
+	if err != nil {
+		t.Fatalf("install with reach: %v", err)
+	}
+	if got := qaReadFile(t, slot); got != want {
+		t.Fatalf("premise: the installed slot is not the reference render:\n%s", qcwDiffLines(got, want))
+	}
+	if p := r.a.probeL3Hooks(r.repo, false); p.CommitGuardVerdict != l3Held {
+		t.Fatalf("premise: with reach the probe must hold the slot it just installed, got verdict %v (%s)", p.CommitGuardVerdict, p.CommitGuardDegraded)
+	}
+
+	if !qcwNoReach(t, r.wantStore) {
+		t.Skip("reach could not be withdrawn on this box")
+	}
+
+	// ARM 1 — the derivation.
+	if lits, err := r.a.commitGuardLiterals(r.repo); !errors.Is(err, errPathUnnameable) {
+		t.Errorf("commitGuardLiterals with no reach to %s = (%d literals, %v), want errPathUnnameable", r.wantStore, len(lits), err)
+	}
+	// ARM 2 — the install, through the entry point an operator types.
+	if _, _, _, err := r.a.InstallCommitGuardHook(r.repo); !errors.Is(err, errPathUnnameable) {
+		t.Errorf("InstallCommitGuardHook with no reach = %v, want errPathUnnameable — a refusal, not a wall spelled by this process's privileges", err)
+	}
+	if got := qaReadFile(t, slot); got != want {
+		t.Errorf("the refused install moved the installed wall:\n%s", qcwDiffLines(got, want))
+	}
+	// ARM 3 — the probe, through both spellings. See the header on why the
+	// second row is the one that can catch anything.
+	for _, c := range []struct {
+		name, dir string
+		run       bool
+	}{
+		{"the on-disk spelling", r.repo, true},
+		{"a case-changed spelling of the same directory", r.viaCase, samePath(r.repo, r.viaCase)},
+	} {
+		if !c.run {
+			t.Logf("skipped on this box: %s (%s) — case-SENSITIVE volume", c.name, c.dir)
+			continue
+		}
+		p := r.a.probeL3Hooks(c.dir, false)
+		switch {
+		case p.CommitGuardVerdict == l3Stale:
+			t.Errorf("%s: the probe called a correct installed wall STALE because it could not name the instance directory — ranger-base-k9x8n's \"ours but stale on every launch\", reached through privilege (degraded: %s)", c.name, p.CommitGuardDegraded)
+		case p.CommitGuardVerdict != l3Unnameable:
+			t.Errorf("%s: probe verdict = %v, want l3Unnameable (degraded: %s)", c.name, p.CommitGuardVerdict, p.CommitGuardDegraded)
+		}
+		if p.CommitGuard {
+			t.Errorf("%s: the probe vouched for a wall it could not render to compare — a privacy wall is not held by a comparison nobody made", c.name)
+		}
+		if !strings.Contains(p.CommitGuardDegraded, "NOT MEASURED") {
+			t.Errorf("%s: the degraded line must say it did not look, got %q", c.name, p.CommitGuardDegraded)
+		}
+	}
+}
+
 // TestQACanonicalPathIsTheKernelsSpelling is D1 on its own, under the wall
 // it exists for — so a platform half that stops folding an axis is named
 // here rather than discovered as "two bodies of N lines are unequal".
 func TestQACanonicalPathIsTheKernelsSpelling(t *testing.T) {
 	t.Parallel()
-	root := canonicalPath(t.TempDir())
+	root := qaCanonicalPath(t, t.TempDir())
 	real := filepath.Join(root, "real")
 	repo := filepath.Join(real, "Repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -237,13 +464,13 @@ func TestQACanonicalPathIsTheKernelsSpelling(t *testing.T) {
 
 	// The reference: canonicalPath of a path with nothing to fold is that
 	// path. If this is not so, every row below is unreadable.
-	if got := canonicalPath(repo); got != repo {
+	if got := qaCanonicalPath(t, repo); got != repo {
 		t.Fatalf("canonicalPath is not idempotent over its own answer: %q -> %q", repo, got)
 	}
 
 	// SYMLINK, on every platform — EvalSymlinks closes this axis too, so
 	// this row holds for the non-darwin half as well.
-	if got := canonicalPath(filepath.Join(root, "link", "Repo")); got != repo {
+	if got := qaCanonicalPath(t, filepath.Join(root, "link", "Repo")); got != repo {
 		t.Errorf("a path through a symlink: canonicalPath = %q, want %q", got, repo)
 	}
 
@@ -257,7 +484,7 @@ func TestQACanonicalPathIsTheKernelsSpelling(t *testing.T) {
 	case !samePath(repo, cased):
 		t.Logf("case row skipped: %s is on a case-SENSITIVE volume, where %q is a different directory and keeping it apart is correct", root, cased)
 	default:
-		if got := canonicalPath(cased); got != repo {
+		if got := qaCanonicalPath(t, cased); got != repo {
 			t.Errorf("a case-changed spelling: canonicalPath = %q, want the on-disk %q", got, repo)
 		}
 		// And the control for that row: EvalSymlinks really does NOT
@@ -271,10 +498,10 @@ func TestQACanonicalPathIsTheKernelsSpelling(t *testing.T) {
 	// A MISSING PATH falls back to resolvedPath's string answer, which is
 	// deterministic — that determinism is all the byte compare needs.
 	missing := filepath.Join(repo, "no", "such", "dir")
-	if got, want := canonicalPath(missing), resolvedPath(missing); got != want {
+	if got, want := qaCanonicalPath(t, missing), resolvedPath(missing); got != want {
 		t.Errorf("a missing path: canonicalPath = %q, want resolvedPath's %q", got, want)
 	}
-	if a, b := canonicalPath(missing), canonicalPath(missing); a != b {
+	if a, b := qaCanonicalPath(t, missing), qaCanonicalPath(t, missing); a != b {
 		t.Errorf("a missing path must answer the same twice: %q then %q", a, b)
 	}
 }

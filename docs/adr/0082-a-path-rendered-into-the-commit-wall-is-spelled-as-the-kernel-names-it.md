@@ -226,3 +226,176 @@ answered by canonicalising one side to hide the mismatch.
   done in general. It also puts F_GETPATH's open and fcntl into a predicate
   that the seatbelt code reuses. Identity is the honest answer, and it is a
   separate fix.
+
+## Amendment: a directory this process may not name has no canonical spelling (ranger-base-8j070, 2026-11-08)
+
+**Context.** D1's third bullet said that whenever the path cannot be opened
+or resolved — "it does not exist, or the cage refuses it" — `canonicalPath`
+takes `resolvedPath`'s string answer, and that "that answer is deterministic
+for a given input". True, and not what the byte compare needs.
+ranger-base-g6bs7's finding, off verifying ranger-base-yx73g (which
+implemented the clause exactly as written): the reading is an `open()`, so
+this function's input is not the path string alone — it is the path string
+PLUS the rendering process's filesystem reach. ADR 0023's ours-vs-stale
+verdict compares a wall rendered by ONE process against a wall rendered by
+ANOTHER. A renderer that can open the instance directory gets the kernel's
+spelling; a renderer that cannot gets a different string for the same
+directory; and the fallback is not an error, so nothing says so. That is
+ranger-base-k9x8n's "ours but stale on every launch" reached through the
+renderer's privileges instead of through the caller's spelling.
+
+MEASURED 2026-11-08 (darwin 25.6.0, go1.26.10 darwin/arm64, APFS
+case-insensitive), one directory on disk as `<root>/instance`:
+
+| state | `kernelPath` | `resolvedPath`, asked as `<root>/INSTANCE` |
+|---|---|---|
+| readable | `<root>/instance` (both spellings) | `<root>/INSTANCE` |
+| the directory `chmod 0` | EACCES (13) | `<root>/INSTANCE` — it still ANSWERS |
+| a PARENT component `chmod 0` | EACCES (13) | keeps `/tmp`, unresolved |
+| missing | ENOENT (2) | `<root>/INSTANCE` |
+
+The parent row is the sharper one and is new here: with a component above it
+unreadable, `EvalSymlinks` fails too, so the fallback loses the symlink
+resolution as well and differs from the canonical spelling even for a path
+with no case and no firmlink axis in it at all.
+
+**WHICH CAGE LOSES THIS `open()`: none of the three.** The finding named this
+the first thing to measure and said it might make the fix cheaper than it
+looks. It does. L1 shims put up no filesystem boundary. The L2 seatbelt
+profile posse emits is `(allow default)` + `(deny file-write*)` + write
+grants + exactly ONE `(deny file-read* (literal …))` block whose members are
+credential-store FILES (`credentialReadDenyLiterals`; `SeatbeltProfile` is
+the only `deny file-read` emission in the tree), so a directory opened for
+read matches `(allow default)` and nothing else. An L4 container runs linux,
+where `kernelPath` has no reading at all and the fallback IS D1's non-darwin
+half. So the firing configuration is ordinary filesystem permissions — a
+directory whose mode, ACL or owner denies the renderer, or an unreadable
+component above it — which is why the finding is latent on this box rather
+than live. The seatbelt half is read off the emitted profile and NOT
+measured: a nested `sandbox_apply` is refused from inside a caged seat
+(`sandboxApplyRefusal`), which is every seat that could have asked. That is
+a reading, labelled as one.
+
+**D5 — The two failures are told apart by what they say about the
+directory.** D1's third bullet is replaced by:
+
+- **Nothing is there** (ENOENT, ENOTDIR, or a kernel answer that is not
+  absolute), or **this platform has no kernel reading** (`errNoKernelPath`,
+  which IS D1's non-darwin half): `resolvedPath`'s string answer, as D1
+  always said. Every process that can see the parent derives the same string
+  from the same input, and a missing instance directory is already a broken
+  redirect.
+- **The directory is there and this process may not name it**
+  (`fs.ErrPermission` — EACCES or EPERM): **no answer.** `canonicalPath`
+  returns `("", errPathUnnameable)`. A caller that drops the error gets a
+  loudly empty string and never a plausible second spelling.
+
+The classifier is `errors.Is(err, fs.ErrPermission)` and not an errno list,
+because that is exactly EACCES-or-EPERM on every platform Go builds here and
+it needs no `syscall` import in `visibility.go`. The default is the
+FALLBACK, deliberately: ENOENT is the common real case and must keep
+working, so an errno nobody classified falls back rather than refusing a
+launch. The residual is an unclassified error that is nonetheless
+process-dependent; the rule to apply to the next one is the bullet above —
+does this error say something about the PATH, or about THIS PROCESS?
+
+**D6 — A render that cannot be spelled is refused, and the probe abstains.**
+Refusing in `canonicalPath` is half of it. `DeriveIdentityLiterals`
+propagates, which is the answer it already gives a literal it cannot render
+(one carrying a single quote), and the three renderers already refuse on
+that error: both installers and `RenderSessionHooks`. The L3 probe did NOT
+— it dropped the derivation error on purpose, because "an install that hit
+it already failed loudly". That reasoning is sound for the single-quote
+class, which is a property of the VALUE and identical in every process, and
+unsound for this one: the install that wrote the wall may have had the reach
+the probe lacks. So the probe tells the two apart by `errors.Is` and, for
+this class, abstains — a new verdict `l3Unnameable`, which is neither
+`l3Held` (a privacy wall is not vouched for by a comparison nobody made) nor
+`l3Stale` (nothing says the body is old; the remedy is reach, not an
+install). Its degraded line says NOT MEASURED and names the directory, its
+consequence clause is `commitGuardUnmeasured` rather than the worst case
+(which would be a claim about a body this probe did not read), and
+`l3DegradeLineIn` passes it through unworded in redirect mode, because
+"re-launch to re-render" would prescribe a re-launch from the same seat.
+
+MEASURED as two mutation arms, which is why D6 is here and not just D5
+(ranger-base-8j070,
+`TestQAAWallWhoseInstancePathCannotBeNamedIsRefusedNotRespelled`):
+
+- With `canonicalPath` reverted to the fallback — D1's third bullet as
+  originally written — the probe asked through the ON-DISK spelling reads
+  `l3Held`: reach cannot move a literal the caller already spelled
+  canonically, which is the whole of "latent on this box". Asked through the
+  case-changed spelling of the same directory it reads `l3Stale`, with the
+  degraded line `ours but stale — run posse gates install-hooks; no named
+  guard is missing from the installed body … so the drift is elsewhere`,
+  over a wall that is perfectly good. So the pin asks both spellings and
+  only the second can catch anything.
+- With `canonicalPath` refusing but the probe still degrading to no literals
+  — the finding's fix shape (a) as it was literally worded, "abstain there
+  (skip both instance-path literals)" — the same `l3Stale` line appears on
+  BOTH spellings. Abstaining at the literals alone does not make two
+  renderers with different reach disagree loudly; it writes a wall short two
+  lines, which the other renderer reads as stale and re-renders, which this
+  one reads as stale and re-renders. The silence moves, it does not close.
+
+**Consequences.**
+- On a box where every renderer can read the instance directory — every box
+  today — nothing changes: no new refusal is reachable and the walls are the
+  bytes they already were.
+- Where it is NOT readable, an `install-hooks` refuses with the reason
+  instead of writing a second spelling, and the launch reports L3
+  prepare-commit-msg as not measured, which fails parity and so refuses the
+  launch unless the operator passes `--allow-degraded`. That is the intended
+  trade: a session that cannot verify its privacy wall should say so.
+- `canonicalPath` now returns `(string, error)`. Fixtures that build an
+  expected literal from a temp dir go through `qaCanonicalPath(t, …)`, which
+  Fatals on the refusal arm — that arm has its own pin
+  (`TestQACanonicalPathRefusesADirectoryItMayNotName`).
+- **The `# posse-home:` stamp keeps its existing answer and that is a
+  residual, stated rather than hidden.** `commitGuardHomeStamp` has no error
+  return, so an unnameable home gets the answer an unnameable home already
+  got — no stamp, D3 case 4's migration body — and a renderer without reach
+  would differ from one with it in that line. It is unreachable on the
+  install path twice over: `DeriveIdentityLiterals` asks
+  `canonicalAbbrevHome` of that same HOME and refuses the whole derivation
+  first whenever the repo has a redirect at all, and a process that read its
+  config out of that home can open that home. What is left is a repo with no
+  redirect whose renderer cannot open its own `RHQ_HOME`, and nothing on this
+  box is that.
+- **Off darwin there is no reach axis to lose**, because nothing opens
+  anything: `kernelPath` answers `errNoKernelPath` for every path and the
+  fallback is D1's non-darwin half. Both new pins skip there and say so.
+  A darwin HOST renderer and a linux CONTAINER renderer of one repo
+  therefore still disagree wherever the two spellings differ — that is D1's
+  pre-existing non-darwin residual, named here because this amendment walked
+  past it, and not closed by it.
+- **The hook-wall sweep's SUMMARY line does not learn this verdict, and the
+  per-repo line does.** `hookWallLine` passes `l3Unnameable` straight
+  through, so the repo's own line reads NOT MEASURED, which is right. The
+  header above it counts that repo in `Findings` and says "do NOT carry this
+  binary's render", and the prescription under it says to re-render — both of
+  which are claims the probe did not make. Separating an unmeasured repo from
+  a failing one costs a second counter in `hookWallSummary`, its header
+  wording and its pins, which is a deliverable and not a line; it is left
+  undone deliberately rather than half-done, and it is reachable only in the
+  configuration above, which no cage on this box produces. The honest line is
+  the one the reader sees next to the repo.
+
+**Alternatives rejected.**
+- **Keep the fallback; it is deterministic for a given input.** D1's own
+  sentence, and it is withdrawn: the input is not the string alone. MEASURED
+  above as a mutation arm, not argued.
+- **Abstain at the literals only (the finding's (a), as worded).** MEASURED
+  above: the flip-flop survives on both spellings. It is the right
+  instinct — do not render a second spelling — stopped one rung short of
+  the verdict that reads it.
+- **Take the reading once where the wall is INSTALLED and have the probe
+  compare against the stored spelling (the finding's (b)).** This makes the
+  rendered bytes a function of history, which is this ADR's own rejected
+  "render every spelling seen", and it has the probe trust the wall's
+  content instead of re-deriving it, which is the byte-for-byte identity
+  ADR 0023 exists for. Two decided properties for one latent defect.
+- **Classify by errno list rather than `fs.ErrPermission`.** Same answer,
+  a `syscall` import in `visibility.go`, and a list to keep in step with a
+  platform nobody here runs.

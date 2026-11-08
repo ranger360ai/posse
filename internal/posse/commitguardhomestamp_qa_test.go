@@ -80,7 +80,7 @@ func TestQACommitGuardBodyNamesTheHomeThatRenderedIt(t *testing.T) {
 	// one spelling the body is guaranteed NOT to carry. ADR 0082's
 	// Consequences says this in as many words — a fixture that builds an
 	// expected literal from a temp dir passes it through canonicalPath.
-	want := canonicalPath(home)
+	want := qaCanonicalPath(t, home)
 	body := NewAppAt(home).CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	if got := commitGuardHomeOf(body); got != want {
 		t.Errorf("commitGuardHomeOf = %q, want the rendering home's canonical spelling %q", got, want)
@@ -174,8 +174,8 @@ func TestQACommitGuardHomeStampIsAbsoluteOrAbsent(t *testing.T) {
 	if strings.ContainsAny(link, "\n\r") {
 		t.Fatalf("fixture premise: the home handed in already carries a newline (%q), so the argument guard answers and the rendered one is not measured", link)
 	}
-	if !strings.ContainsAny(canonicalPath(link), "\n\r") {
-		t.Skipf("canonicalPath(%q) = %q carries no newline on this box, so there is nothing for the second guard to catch", link, canonicalPath(link))
+	if !strings.ContainsAny(qaCanonicalPath(t, link), "\n\r") {
+		t.Skipf("canonicalPath(%q) = %q carries no newline on this box, so there is nothing for the second guard to catch", link, qaCanonicalPath(t, link))
 	}
 	if got := commitGuardHomeStamp(link); got != "" {
 		t.Errorf("a home that RESOLVES onto a newline stamped %q, want nothing — that home is unnameable in a comment and therefore owns nothing (D3 case 4), which is the fail-closed answer with no shell injected", got)
@@ -237,7 +237,7 @@ func TestQAAWallRenderedByAnotherHomeIsNotReportedAsStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := commitGuardHomeOf(string(body)), canonicalPath(x.Home); got != want {
+	if got, want := commitGuardHomeOf(string(body)), qaCanonicalPath(t, x.Home); got != want {
 		t.Errorf("the installed slot is stamped %q, want home X's canonical spelling %q (ADR 0082 D3)", got, want)
 	}
 }
@@ -387,7 +387,7 @@ func qaStampHomeSpellings(t *testing.T) (home string, others []string) {
 func TestQAOneHomeSpelledTwoWaysRendersOneCommitWall(t *testing.T) {
 	t.Parallel()
 	home, others := qaStampHomeSpellings(t)
-	want := canonicalPath(home)
+	want := qaCanonicalPath(t, home)
 
 	ref := NewAppAt(home).CommitGuardHook(VisibilityPublic, OpsPatternSet{})
 	// The premise, or every equality below is two unstamped bodies agreeing
@@ -428,7 +428,7 @@ func TestQAAWallInstalledUnderAnotherSpellingOfThisHomeReadsAsHeld(t *testing.T)
 	if err != nil {
 		t.Fatalf("install from the %s spelling: %v", others[0], err)
 	}
-	if got, want := commitGuardHomeOf(qaReadFile(t, slot)), canonicalPath(home); got != want {
+	if got, want := commitGuardHomeOf(qaReadFile(t, slot)), qaCanonicalPath(t, home); got != want {
 		t.Fatalf("the installed slot is stamped %q, want the canonical %q", got, want)
 	}
 

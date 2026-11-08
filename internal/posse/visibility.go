@@ -431,20 +431,87 @@ func resolvedPath(p string) string {
 // (ranger-base-k9x8n's measurement; ranger-base-up22's class reached
 // through the path spelling instead of the visibility mark).
 //
-// The fallback is resolvedPath's string answer, for a path that cannot be
-// opened or resolved — it does not exist, or the cage refuses it. That
-// answer is deterministic for a given input, which is all the byte compare
-// needs, and a missing instance directory is already a broken redirect.
-func canonicalPath(p string) string {
+// IT CAN REFUSE, AND THE REASON IS THE WHOLE OF THE AMENDMENT (ADR 0082 D1
+// third bullet, as amended by ranger-base-8j070 off ranger-base-g6bs7's
+// finding). D1 first said that whenever the path cannot be opened or
+// resolved — "it does not exist, or the cage refuses it" — the answer is
+// resolvedPath's string, because "that answer is deterministic for a given
+// input". True, and not what the byte compare needs. This function's input
+// is not the path string alone: it is the path string PLUS the rendering
+// process's reach, because the reading is an open(). So the two failures
+// have to be told apart by what they say about the DIRECTORY:
+//
+//   - NOTHING IS THERE (ENOENT, ENOTDIR, a path with no absolute kernel
+//     answer), or THIS PLATFORM HAS NO KERNEL READING (errNoKernelPath,
+//     which IS D1's non-darwin half): resolvedPath's string answer, as D1
+//     always said. Every process that can see the parent derives the same
+//     string from the same input, and a missing instance directory is
+//     already a broken redirect.
+//   - THE DIRECTORY IS THERE AND THIS PROCESS MAY NOT NAME IT
+//     (fs.ErrPermission — EACCES or EPERM, MEASURED below): no answer.
+//     resolvedPath would still ANSWER here, and what it answers is the
+//     CALLER's spelling, not the directory's — so a renderer with reach
+//     writes the kernel's spelling and one without writes a second
+//     spelling of the same directory, and the probe reads "ours but stale"
+//     on every launch. That is ranger-base-k9x8n's defect reached through
+//     the renderer's privileges instead of through the caller's spelling,
+//     and the fallback is not an error, so nothing says so.
+//
+// MEASURED 2026-11-08 (ranger-base-8j070, darwin 25.6.0, go1.26.10
+// darwin/arm64, APFS case-insensitive), one directory on disk as
+// `<root>/instance` asked through the case-changed `<root>/INSTANCE`:
+//
+//	with reach  canonicalPath -> <root>/instance   both spellings, the kernel's
+//	mode 0 dir  kernelPath    -> EACCES (13); resolvedPath ANSWERS, case kept
+//	mode 0 parent  kernelPath -> EACCES (13); resolvedPath answers AND loses
+//	               the symlink resolution too (/tmp stays /tmp), so the
+//	               degraded spelling differs from the canonical one even on a
+//	               path with no case and no firmlink axis in it at all
+//	missing     kernelPath    -> ENOENT (2)
+//
+// chmod 0 is the cheap local stand-in for a cage, and both land on the same
+// branch — an open() that returns an error. WHICH CAGE LOSES THIS open() IS
+// NONE OF THE THREE ON THIS BOX: L1 shims put up no filesystem boundary at
+// all; the L2 seatbelt profile posse emits is `(allow default)` plus write
+// denies plus ONE `(deny file-read* (literal …))` block whose members are
+// credential-store FILES (credentialReadDenyLiterals), so a directory
+// opened for read matches `(allow default)` and nothing else; and an L4
+// container runs linux, where kernelPath has no reading and the fallback is
+// D1's own non-darwin half. So the firing configuration is ordinary
+// filesystem permissions — a directory whose mode, ACL or owner denies the
+// renderer, or an unreadable path component above it — which is why
+// ranger-base-g6bs7 found this latent rather than live. The seatbelt half of
+// that is read off the emitted profile and NOT measured: a nested
+// sandbox_apply is refused from inside a caged seat (seatbelt.go's
+// sandboxApplyRefusal), which is every seat that could have asked.
+//
+// A caller that ignores the error gets "" and not a plausible second
+// spelling, deliberately: the three renderers already refuse an install
+// over an unrenderable literal, and "" is loud wherever that refusal was
+// missed.
+func canonicalPath(p string) (string, error) {
 	r := resolvedPath(p)
+	k, err := kernelPath(r)
+	switch {
 	// IsAbs, because a wall line is only worth rendering if it names a
 	// place: a kernel answer that is not absolute is not one, and the
 	// deterministic fallback is better than half a path.
-	if k, err := kernelPath(r); err == nil && filepath.IsAbs(k) {
-		return filepath.Clean(k)
+	case err == nil && filepath.IsAbs(k):
+		return filepath.Clean(k), nil
+	case errors.Is(err, fs.ErrPermission):
+		return "", fmt.Errorf("%w: %s: %w", errPathUnnameable, p, err)
 	}
-	return r
+	return r, nil
 }
+
+// errPathUnnameable is canonicalPath's one refusal: the directory IS there
+// and this process may not open it, so there is no spelling to render that
+// another process rendering the same wall would also render. Its readers
+// ask with errors.Is and not by string — the L3 probe has to tell this
+// class from the OTHER derivation error (a literal carrying a single
+// quote), which is a property of the value and the same in every process
+// (probeL3HooksAsk).
+var errPathUnnameable = errors.New("the directory is there and this process may not name it")
 
 // canonicalAbbrevHome is AbbrevHome against the HOME's canonical spelling
 // (ADR 0082 D2). It exists because the two halves of one rendered literal
@@ -458,12 +525,20 @@ func canonicalPath(p string) string {
 // canonicalPath("") is Abs(Clean("")), which is the process's cwd, so an
 // unset HOME would abbreviate against a directory nobody named — the
 // ranger-base-a3t1 class AbbrevHome refuses by hand.
-func canonicalAbbrevHome(p string) string {
+func canonicalAbbrevHome(p string) (string, error) {
 	home := os.Getenv("HOME")
 	if home == "" {
-		return p
+		return p, nil
 	}
-	return abbrevHomeAgainst(canonicalPath(home), p)
+	// The error is canonicalPath's own class (errPathUnnameable) and is
+	// propagated rather than degraded to AbbrevHome: a `~` form taken
+	// against a home this process cannot name is the same second spelling
+	// one rung in, and this literal is rendered into the same wall.
+	h, err := canonicalPath(home)
+	if err != nil {
+		return "", err
+	}
+	return abbrevHomeAgainst(h, p), nil
 }
 
 // WarnOpsContent is the cheap in-session half of the guard: the harness
@@ -1242,8 +1317,24 @@ func DeriveIdentityLiterals(dir string) ([]IdentityLiteral, error) {
 	// BeadsVisibility and installHook see — a wider blast radius for less
 	// closure.
 	if target := identityRedirectTarget(dir); target != "" {
-		repo := canonicalPath(filepath.Dir(target))
-		if err := add("instance-path", canonicalAbbrevHome(repo)); err != nil {
+		// Both errors below are errPathUnnameable and both REFUSE the
+		// whole derivation, which is the same answer this function already
+		// gives a literal it cannot render (the single-quote class two
+		// blocks up): better a render that says why it did not happen than
+		// a wall spelled by whichever process happened to render it. The
+		// two installers propagate it (InstallCommitGuardHook,
+		// InstallCommitGuardHookChained), RenderSessionHooks propagates it,
+		// and the L3 probe abstains on it rather than comparing against a
+		// wall it knows is short two lines.
+		repo, err := canonicalPath(filepath.Dir(target))
+		if err != nil {
+			return nil, err
+		}
+		rel, err := canonicalAbbrevHome(repo)
+		if err != nil {
+			return nil, err
+		}
+		if err := add("instance-path", rel); err != nil {
 			return nil, err
 		}
 		if err := add("instance-path-abs", repo); err != nil {

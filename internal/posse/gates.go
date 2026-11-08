@@ -6105,11 +6105,33 @@ const commitGuardHomeStampPrefix = "# posse-home: "
 // whose own path carries no newline can resolve onto one that does, and the
 // bytes this must fail closed over are the bytes written into a file git
 // execs on every commit.
+//
+// AND canonicalPath CAN REFUSE (ADR 0082 D1's third bullet, as amended by
+// ranger-base-8j070): a home that is THERE and that this process may not
+// open has no spelling to render that another renderer would also render.
+// The answer here is the one an unnameable home already got — no stamp,
+// which is ADR 0081 D3 case 4's migration body — and it is explicit rather
+// than left to the `abs == ""` guard below, so a reader can see that this
+// renderer, which has no error return, is choosing it.
+//
+// THAT BRANCH IS A RESIDUAL AND NOT A HOLE, and the amendment's Consequences
+// says so in the same words: a stamp is absent where the install's two
+// instance-path literals would be present, so a renderer without reach and
+// one with it would write bodies that differ in this line. It is unreachable
+// on the install path, twice over — DeriveIdentityLiterals asks
+// canonicalAbbrevHome of this same HOME and refuses the whole derivation
+// first whenever the repo has a redirect at all, and a process that read its
+// config out of this home can open this home. What is left is a repo with
+// NO redirect whose renderer cannot open its own RHQ_HOME, and nothing on
+// this box is that.
 func commitGuardHomeStamp(home string) string {
 	if strings.TrimSpace(home) == "" || strings.ContainsAny(home, "\n\r") {
 		return ""
 	}
-	abs := canonicalPath(home)
+	abs, err := canonicalPath(home)
+	if err != nil {
+		return ""
+	}
 	if strings.TrimSpace(abs) == "" || strings.ContainsAny(abs, "\n\r") {
 		return ""
 	}
@@ -6417,6 +6439,23 @@ const (
 	// no home input, so a cross-home write produces identical bytes), and the
 	// per-session redirect dir has no stale verdict to refine at all.
 	l3OtherHome
+	// l3Unnameable: NOT a reading of the slot at all — this process could
+	// not RENDER the wall to compare, because a path the wall must name is
+	// there and this process may not open it (errPathUnnameable, ADR 0082
+	// D1 as amended by ranger-base-8j070). The file at the dispatch path is
+	// not classified and no claim is made about it: it may be this home's
+	// current render, written by an install that had the reach this probe
+	// lacks. It is NOT l3Held, because a privacy wall is not vouched for by
+	// a comparison nobody made, and not l3Stale, because nothing says the
+	// body is old — the remedy is reach, not an install. It is also not a
+	// reading l3Identity can reach: probeL3HooksAsk sets it instead of the
+	// verdict that function returned.
+	//
+	// APPENDED, for the reason l3Displaced states two constants up: these
+	// are compared and never persisted, so adding one at the END leaves
+	// every existing constant's value alone, and inserting one above
+	// l3OtherHome would have moved it for nothing.
+	l3Unnameable
 )
 
 // reStamped reports whether install rewrites, in place and without asking,
@@ -6805,6 +6844,12 @@ func l3DegradeLine(slot, path, consequence, home string, v l3Verdict) string {
 		// the ADR instead of prescribing an install-hooks that the other
 		// home's next launch would stamp straight back.
 		return fmt.Sprintf("L3 %s hook — %s — rendered by home %s, not by this one: a repo's shared commit wall has one owning home (ADR 0081 D2), so this is not ours gone stale — re-render it from whichever home should own it; %s", slot, AbbrevHome(path), AbbrevHome(home), consequence)
+	case l3Unnameable:
+		// NOT "ours but stale" and NOT "foreign": this line is the probe
+		// saying it did not look. The remedy it prescribes is reach,
+		// because an `install-hooks` typed from this same seat would
+		// refuse for the identical reason (ADR 0082 D1 as amended).
+		return fmt.Sprintf("L3 %s hook — %s — NOT MEASURED here: this process cannot read the instance directory the wall must name (ADR 0082 D1), so it cannot render the wall to compare — the installed wall may be intact and nothing here says otherwise; re-ask from a seat that can read that directory, or fix its mode; %s", slot, AbbrevHome(path), consequence)
 	case l3Stale:
 		return fmt.Sprintf("L3 %s hook — %s — ours but stale — run `posse gates install-hooks`; %s", slot, AbbrevHome(path), consequence)
 	case l3Uninstalled:
@@ -6849,6 +6894,15 @@ func l3DegradeLine(slot, path, consequence, home string, v l3Verdict) string {
 // 0 removed / 324 added). One name of four was true and the operator paid
 // a bead to find out which.
 const commitGuardWorstCase = "the data ceiling, beads visibility, constitution-path and shared-index guards are not realized"
+
+// commitGuardUnmeasured is commitGuardConsequence's clause for
+// l3Unnameable, and it is neither the derived gap nor the worst case. The
+// derived gap needs both bodies and there is no render to be one half of
+// it; the worst case would say four guards are not realized, which is a
+// claim about the installed body that this probe explicitly did not read.
+// "Not measured" is the only honest clause, and it is the reason
+// l3Unnameable gets one at all rather than falling to the default arm.
+const commitGuardUnmeasured = "which of this wall's guards are in force is NOT MEASURED — the comparison was not made, so nothing here says any of them is missing"
 
 // l3CommitGuard pairs one of the prepare-commit-msg slot's guards with the
 // banner line its arm renders. The banner is the sentinel because it is the
@@ -6901,6 +6955,10 @@ func commitGuardConsequence(path, render string, v l3Verdict) string {
 			return commitGuardWorstCase
 		}
 		installed = string(b)
+	case l3Unnameable:
+		// ADR 0082 D1 as amended: no render, so no diff, and the worst
+		// case would be a claim about a body this probe did not classify.
+		return commitGuardUnmeasured
 	case l3MemberGone:
 		// Nothing at path, by construction: l3Identity reached this verdict
 		// by asking hookSlotVerdict about the member and being told
@@ -7176,11 +7234,28 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 	// The SAME set, and the SAME derived literals — identity AND crew — the
 	// install stamps with, or an instance that adds a pattern, or that
 	// staffs a new lane, reads as "ours but stale" on every launch (the identity
-	// half of ADR 0023 is byte-for-byte). A derivation error here (a
-	// literal with a single quote) is not this probe's to report — an
-	// install that hit it already failed loudly — so it degrades to no
-	// literals rather than propagating.
-	identity, _ := a.commitGuardLiterals(dir)
+	// half of ADR 0023 is byte-for-byte).
+	//
+	// A DERIVATION ERROR IS NOT ONE CLASS, and telling the two apart is
+	// ADR 0082 D1's amendment (ranger-base-8j070, off ranger-base-g6bs7):
+	//
+	//   A literal that cannot be RENDERED (one carrying a single quote) is
+	//   a property of the VALUE — every process derives the same bad value
+	//   — so an install that hit it already failed loudly, and this probe
+	//   degrades to no literals rather than reporting it, as it always has.
+	//
+	//   A path this process cannot NAME (errPathUnnameable: the instance
+	//   directory is there and open() answers EACCES) is a property of
+	//   THIS PROCESS. The install that wrote the wall may have had the
+	//   reach this probe lacks, so degrading to no literals would compare
+	//   the installed wall against a render short two of its lines and
+	//   call it "ours but stale" on every launch — ranger-base-k9x8n's
+	//   defect reached through privilege instead of through the caller's
+	//   spelling, which is what degrading SILENTLY buys. There is nothing
+	//   to compare, so the probe does not pretend to: l3Unnameable below,
+	//   which is neither held nor stale.
+	identity, derr := a.commitGuardLiterals(dir)
+	unnameable := errors.Is(derr, errPathUnnameable)
 	commitRender := a.CommitGuardHook(visibility, a.OpsPatternSet(), identity...)
 
 	var prePushPath string
@@ -7194,6 +7269,18 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 	// only body that carries a stamp — pre-push takes no home input (D5) and
 	// the redirect dir has no stale verdict to refine.
 	r.CommitGuardVerdict, r.CommitGuardHome = a.commitGuardHomeVerdict(r.CommitGuardVerdict, commitPath)
+	if unnameable {
+		// The identity CLAIM is withdrawn and nothing else is. The two
+		// reads above still happened and are still what names commitPath
+		// for the degraded line; their verdict is discarded because it was
+		// reached against a render this process knows is incomplete, and
+		// the stamp refinement is dropped with it (it only ever sharpens
+		// l3Stale). The behavior half below is unaffected: it execs THIS
+		// binary's own render out of a temp file and asks whether it
+		// refuses, which is a property of the binary and not of the
+		// instance path.
+		r.CommitGuardVerdict, r.CommitGuardHome = l3Unnameable, ""
+	}
 
 	// An ask that skips the behavior half reads as "not asked" and never as
 	// "it failed": the verdict below is then identity's alone, and the

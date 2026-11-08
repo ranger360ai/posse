@@ -156,7 +156,7 @@ func canonicalPathForTest(t *testing.T, dir string) string {
 	if err := os.MkdirAll(filepath.Join(dir, beadsDirName), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return canonicalPath(dir)
+	return qaCanonicalPath(t, dir)
 }
 
 func instancePathLiterals(lits []IdentityLiteral) []string {

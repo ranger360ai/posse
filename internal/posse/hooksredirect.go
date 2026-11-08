@@ -407,7 +407,14 @@ func l3RedirectIdentity(hooks, managed, slot, render string) (identity bool, pat
 // line, and a wrapper that dropped an argument would word one verdict
 // differently depending on which of the two it went through.
 func l3DegradeLineIn(red *l3Redirect, slot, path, consequence, home string, v l3Verdict) string {
-	if red == nil || v == l3Held {
+	// l3Unnameable passes through for the same reason l3Held does: it is
+	// not an identity failure that redirect mode has its own remedy for.
+	// It is the probe saying it could not render the wall to compare at all
+	// (ADR 0082 D1 as amended, ranger-base-8j070), and re-wording it as
+	// "the session hooks dir does not carry this launch's render — re-launch"
+	// would prescribe a re-launch from the same seat, which cannot read that
+	// directory either, over a dir that is not what went wrong.
+	if red == nil || v == l3Held || v == l3Unnameable {
 		return l3DegradeLine(slot, path, consequence, home, v)
 	}
 	return fmt.Sprintf("L3 %s hook — %s — the session hooks dir does not carry this launch's render — re-launch to re-render under an installed posse that carries it; %s", slot, AbbrevHome(path), consequence)

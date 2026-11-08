@@ -949,7 +949,7 @@ func TestDeriveIdentityLiterals(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(instance, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	instance = canonicalPath(instance)
+	instance = qaCanonicalPath(t, instance)
 
 	lits, err = DeriveIdentityLiterals(repo)
 	if err != nil {
