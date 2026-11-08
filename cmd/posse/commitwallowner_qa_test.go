@@ -226,6 +226,22 @@ func TestQAInstallHooksRefusesAForeignWallInTheCurrentDirectoryToo(t *testing.T)
 	if !strings.Contains(out, owner) {
 		t.Errorf("the refusal does not name the stamping home %s:\n%s", owner, out)
 	}
+	// And the REPO, named as a repo rather than as the cwd — the assertion
+	// the explicit-argument sibling above makes and this arm did not, which
+	// is the whole of ranger-base-k9x8n. Not a wording quibble: the remedy
+	// line prescribes this same string as a `beads_visibility:` key, and
+	// such a key is resolved against the READING process's cwd, so a `.`
+	// here is a remedy that is inert where it was printed and a wildcard
+	// over every other repo it is read from. The resolved spelling is what
+	// the binary prints, because it absolutizes against its own cwd and
+	// `t.TempDir()` hands back a path through a symlink on darwin.
+	wantRepo := repo
+	if resolved, rerr := filepath.EvalSymlinks(repo); rerr == nil {
+		wantRepo = resolved
+	}
+	if !strings.Contains(out, wantRepo) {
+		t.Errorf("the refusal does not name the repo %s whose wall it is — a relative target must still be reported, and prescribed, as the repo:\n%s", wantRepo, out)
+	}
 	if _, after, afterTime := cwoSlot(t, repo); after != before || afterTime != beforeTime {
 		t.Errorf("%s moved: bytes equal=%v, mtime %d → %d", path, after == before, beforeTime, afterTime)
 	}

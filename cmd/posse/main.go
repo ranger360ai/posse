@@ -1757,6 +1757,44 @@ func main() {
 				}
 				dir = posse.ExpandTilde(a2)
 			}
+			// Absolutized here, before anything reads it — the same act the
+			// managed-hooks arm above does, and for a reason one step
+			// stronger than a report's wording (ranger-base-k9x8n).
+			// hookRepo hands a MAIN checkout's dir straight back
+			// (LinkedGitDirs == nil, gates.go), so with the `.` default —
+			// the form every degraded line, verify-hook-freshness.sh and
+			// most of INSTALL.md prescribes — ADR 0081 D4's refusal named
+			// the repo as `.` and then prescribed that `.` as a
+			// `beads_visibility:` key. Such a key is resolved against the
+			// READING process's cwd (samePath → resolvedPath →
+			// filepath.Abs), so the remedy was inert where it was printed
+			// and a cwd-dependent wildcard over the visibility verdict
+			// everywhere else: MEASURED 2026-11-07, adding `.: private`
+			// left the refusal standing and made an unrelated repo, named
+			// nowhere in that config, read as guarded.
+			//
+			// The INSTALL arms needed it just as much, which is why this is
+			// the target and not the printf. `dir` reaches BeadsVisibility
+			// and DeriveIdentityLiterals through hookRepo, and
+			// identityRedirectTarget joins a relative `.beads/redirect`
+			// target onto it — so ADR 0024 D2 check 3's instance-path
+			// literal was derived from the cwd-relative spelling. MEASURED
+			// 2026-11-08, darwin 25.6.0, scratch home and repo with
+			// `.beads/redirect` = `../store/.beads`: the no-argument
+			// install stamped `posse_check 'instance-path' '\.\./store'`
+			// in all three places the absolute install stamps the real
+			// path — an identity check that matches the two-character
+			// string `../store` and not the instance it exists to catch —
+			// and that wall differed by those three lines from the one the
+			// launch renders, i.e. "ours but stale" on a wall nobody moved
+			// (ranger-base-up22's class). With the absolutize, the
+			// no-argument render is byte-identical to the absolute one.
+			// This arm was the only entry point where a relative dir could
+			// reach that derivation: the probe and RenderSessionHooks take
+			// the session dir and queuejsonl the configured queue repo.
+			if abs, aerr := filepath.Abs(dir); aerr == nil {
+				dir = abs
+			}
 			// ADR 0052 D1: a MANAGED hooks path is asked about before
 			// either slot is attempted, because both attempts are writes
 			// into somebody else's directory. Neither slot is installed,
