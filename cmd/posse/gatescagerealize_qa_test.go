@@ -78,6 +78,10 @@ func TestQAGatesPrintsOneBlockWhereTheCageMapCollapsesTwo(t *testing.T) {
 	}
 	bin := buildRhq(t)
 	const collapsed = "no separate seatbelt block"
+	// The row names the tier AND the mechanism realizing it here (ADR 0080
+	// D16), so the expected header is composed and not spelled: spelled, this
+	// pin would read `seatbelt/` on darwin and nowhere else.
+	seatbeltAt := "claude @ " + posse.CageLabel(posse.CageSeatbelt) + "/"
 
 	// The control first, so the arm below is a CHANGE and not a shape this
 	// surface always had: with no map, the two blocks are two tiers.
@@ -85,7 +89,7 @@ func TestQAGatesPrintsOneBlockWhereTheCageMapCollapsesTwo(t *testing.T) {
 	if n := strings.Count(plain, "claude @ "); n != 2 {
 		t.Fatalf("with no map this surface prints the default tier and the seatbelt tier: %d claude block(s)\n%s", n, plain)
 	}
-	if !strings.Contains(plain, "claude @ seatbelt/") || strings.Contains(plain, collapsed) {
+	if !strings.Contains(plain, seatbeltAt) || strings.Contains(plain, collapsed) {
 		t.Errorf("with no map the seatbelt block must be printed, at the seatbelt tier:\n%s", plain)
 	}
 
@@ -93,7 +97,7 @@ func TestQAGatesPrintsOneBlockWhereTheCageMapCollapsesTwo(t *testing.T) {
 	if n := strings.Count(mapped, "claude @ "); n != 1 {
 		t.Errorf("the map realizes seatbelt as shims, so the two blocks are one: %d claude block(s)\n%s", n, mapped)
 	}
-	if strings.Contains(mapped, "claude @ seatbelt/") {
+	if strings.Contains(mapped, seatbeltAt) {
 		t.Errorf("no block may claim the seatbelt tier on a host that realizes it as shims:\n%s", mapped)
 	}
 	// Said out loud, not swallowed: the absent block has a reason and the

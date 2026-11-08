@@ -1303,7 +1303,7 @@ func credentialDirVarsIn(vars []EnvVar) []string {
 // can see it, the variable moves the deny and the pin together, and the pin
 // is what moves the write.
 //
-// Only where the wall exists (seatbeltWallRendered). A shims-tier session
+// Only where the wall exists (wallRendered). A shims-tier session
 // has no file-read deny for a variable to walk past, and a caged one renders
 // its own profile inside, so refusing either would be a wall over nothing.
 //
@@ -1324,7 +1324,7 @@ func credentialDirVarsIn(vars []EnvVar) []string {
 // TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet says
 // which.
 func credentialDirEnvSetRefusal(cage string, rt *Runtime, vars []EnvVar) error {
-	if !seatbeltWallRendered(cage, rt) {
+	if !wallRendered(cage, rt) {
 		return nil
 	}
 	names := credentialDirVarsIn(vars)

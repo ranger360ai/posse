@@ -468,7 +468,7 @@ func TestQACodexRexAskRefusalUnclaimsTheBeadAndLeavesTheTreeForTheSweep(t *testi
 //
 // WHAT THE SLICE FOUND, and it is the premise rather than the conclusion:
 // posse renders NO seatbelt for codex AT ALL. codex declares SelfSandbox, and
-// seatbeltWallRendered is false for a SelfSandbox runtime whatever the tier
+// wallRendered is false for a SelfSandbox runtime whatever the tier
 // asked for — macOS refuses to nest sandbox-exec, so posse wraps nothing and
 // says so as a DeclaredDifference instead (ADR 0017 §2). So at `cage:
 // seatbelt` there is no posse profile in front of a codex seat for the hook
@@ -500,7 +500,7 @@ func TestQATheHookTTYUnderACagedCodexPID(t *testing.T) {
 	if !cx.SelfSandbox {
 		t.Error("the codex built-in stopped declaring SelfSandbox — if posse now wraps codex in its own seatbelt, the hook's /dev/tty open runs under the profile arm 2 measures, and ADR 0076 Amendment 2's Consequences bullet is live again rather than moot")
 	}
-	if seatbeltWallRendered(CageSeatbelt, cx) {
+	if wallRendered(CageSeatbelt, cx) {
 		t.Error("posse rendered a seatbelt profile for a SelfSandbox runtime — macOS refuses to nest sandbox-exec, so this is a wall that cannot apply (parity.go's DeclaredDifference)")
 	}
 

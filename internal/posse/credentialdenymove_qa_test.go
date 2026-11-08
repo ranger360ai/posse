@@ -425,8 +425,8 @@ func TestQASeatbeltWallRenderedIsTheTierAndNotTheName(t *testing.T) {
 		{"no cage resolved", "", plain, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := seatbeltWallRendered(tc.cage, tc.rt); got != tc.want {
-				t.Errorf("seatbeltWallRendered(%q, %v) = %v, want %v", tc.cage, tc.rt, got, tc.want)
+			if got := wallRendered(tc.cage, tc.rt); got != tc.want {
+				t.Errorf("wallRendered(%q, %v) = %v, want %v", tc.cage, tc.rt, got, tc.want)
 			}
 		})
 	}
@@ -472,7 +472,7 @@ func TestQASeatbeltWallRenderedIsTheTierAndNotTheName(t *testing.T) {
 // drop the refusal (the ranger-base-179hy defect itself) and the sets are
 // resolved and never scanned; spell the wall predicate inline at the render
 // and it can drift from the one the refusal asks — which is the drift
-// e241b14 extracted seatbeltWallRendered to end, and which
+// e241b14 extracted wallRendered to end, and which
 // TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself finishes.
 func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *testing.T) {
 	t.Parallel()
@@ -523,12 +523,12 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 			envs, _ := callAt("EnvSetVars")
 
 			if !inPkg {
-				t.Errorf("%s.%s renders a seatbelt profile at line %d and resolves this session's env sets at line %d — a launch path OUTSIDE internal/posse, where neither half of the wall can be asked: seatbeltWallRendered and credentialDirEnvSetRefusal are both unexported, so this path cannot ask whether it rendered a wall and cannot refuse an env set that moves the credential write past one. The launch belongs in the package that owns the wall (ranger-base-179hy, ranger-base-o05yg)", src.rel, who, render, envs)
+				t.Errorf("%s.%s renders a seatbelt profile at line %d and resolves this session's env sets at line %d — a launch path OUTSIDE internal/posse, where neither half of the wall can be asked: wallRendered and credentialDirEnvSetRefusal are both unexported, so this path cannot ask whether it rendered a wall and cannot refuse an env set that moves the credential write past one. The launch belongs in the package that owns the wall (ranger-base-179hy, ranger-base-o05yg)", src.rel, who, render, envs)
 				continue
 			}
-			guard, ok := callAt("seatbeltWallRendered")
+			guard, ok := callAt("wallRendered")
 			if !ok || guard > render {
-				t.Errorf("%s.%s renders a seatbelt profile at line %d without asking seatbeltWallRendered first (asked at %v) — the render is one of that predicate's two call sites, and a site that spells the question itself is free to drift from the one the refusal below asks", src.rel, who, render, lines["seatbeltWallRendered"])
+				t.Errorf("%s.%s renders a seatbelt profile at line %d without asking wallRendered first (asked at %v) — the render is one of that predicate's two call sites, and a site that spells the question itself is free to drift from the one the refusal below asks", src.rel, who, render, lines["wallRendered"])
 				continue
 			}
 			if envs <= render {
@@ -556,7 +556,7 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 //
 // The package IS the honest boundary for that sweep, unlike the launch-path
 // one above, which is why the two no longer share a scope
-// (ranger-base-o05yg): the predicate it protects, seatbeltWallRendered, is
+// (ranger-base-o05yg): the predicate it protects, wallRendered, is
 // unexported, and so is the table read it is spelled from where another
 // package would have to reach it through `posse.AvailableCages`. That
 // spelling exists on main today at cmd/posse's parity report, where it is
@@ -720,7 +720,7 @@ func cdmSeatbeltKey(e ast.Expr) bool {
 }
 
 // The other half, and the one that keeps the pin above honest: the wall
-// predicate is spelled ONCE. e241b14 extracted seatbeltWallRendered so the
+// predicate is spelled ONCE. e241b14 extracted wallRendered so the
 // render site and the question about the render could not drift apart, and
 // RelaunchAgent kept its inline copy for two months — a copy that had lost
 // the `rt != nil` arm and was tied to no refusal at all (ranger-base-179hy).
@@ -729,13 +729,13 @@ func cdmSeatbeltKey(e ast.Expr) bool {
 // sit in (ranger-base-qg6q5, which is what the filename exemption this
 // replaces let through: a second spelling appended to seatbelt.go itself was
 // not swept, measured 2026-09-05). One fills the table — an assignment is
-// not a question. One is the body of seatbeltWallRendered, which is the
+// not a question. One is the body of wallRendered, which is the
 // place the question is answered. Anywhere else, including the rest of the
 // file that owns the predicate, the lookup is a second spelling by
 // definition.
 func TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself(t *testing.T) {
 	t.Parallel()
-	const owner = "seatbeltWallRendered"
+	const owner = "wallRendered"
 	fset := token.NewFileSet()
 	sawAnswer, sawFill := "", ""
 	for _, src := range cdmPackageSources(t) {
@@ -768,7 +768,7 @@ func TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself(t *testing.T) {
 				case answers:
 					sawAnswer = at
 				default:
-					t.Errorf("%s spells the seatbelt-wall lookup itself, inside %s — that is the wall question, and seatbeltWallRendered is the one place it is answered (ranger-base-179hy, e241b14). A copy is free to drift from the spelling the credential refusal asks, and both directions are silent: a refusal for a session with no wall, or no refusal for one that has it", at, cdmDeclName(d))
+					t.Errorf("%s spells the seatbelt-wall lookup itself, inside %s — that is the wall question, and wallRendered is the one place it is answered (ranger-base-179hy, e241b14). A copy is free to drift from the spelling the credential refusal asks, and both directions are silent: a refusal for a session with no wall, or no refusal for one that has it", at, cdmDeclName(d))
 				}
 				return true
 			})

@@ -3116,7 +3116,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		}
 		// L2 seatbelt: the runtime runs under sandbox-exec with a profile
 		// rendered from the PID; the outer shell expands $(cat {file}) first.
-		if seatbeltWallRendered(cage, rt) {
+		if wallRendered(cage, rt) {
 			// state_dir: (ADR 0012 D4) — the runtime's own state tree joins
 			// the writable set. Without it a third-party CLI runs under a
 			// sandbox that makes its config read-only, which it reports as a
@@ -3844,7 +3844,7 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// from the predicate e241b14 extracted for exactly these two sites: the
 	// copy had no `rt != nil` arm, and — worse — nothing tied it to the
 	// refusal the answer is FOR, twenty lines below.
-	if seatbeltWallRendered(m.Cage, rt) {
+	if wallRendered(m.Cage, rt) {
 		prof, err := b.App.RenderSeatbelt(ag, m.Dir, rt.StateDirs...)
 		if err != nil {
 			return false, err

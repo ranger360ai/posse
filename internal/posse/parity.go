@@ -36,8 +36,12 @@ const (
 var Cages = []string{CageShims, CageSeatbelt, CageContainer}
 
 // AvailableCages is what this build can actually provide *host-wide*:
-// shims always, seatbelt when sandbox-exec exists (seatbelt.go's init).
-// container is deliberately absent — its engine is configurable per
+// shims always, seatbelt where this host's mechanism for it is there and was
+// measured to work — sandbox-exec on darwin, bwrap plus an apply probe on
+// Linux (wall.go's init, ADR 0080 D16). WHETHER the tier is available and
+// WHICH mechanism realizes it are two questions: this table is the first,
+// WallMechanism is the second, and wall.go's header says why they are kept
+// apart. container is deliberately absent — its engine is configurable per
 // RHQ_HOME, so availability is a question for an App, not for the package:
 // ask a.cageAvailable / a.ContainerAvailable (cage.go).
 var AvailableCages = map[string]bool{CageShims: true}
@@ -1103,7 +1107,13 @@ func (e degradedError) Error() string {
 // either "degraded" or "all gates realized" would be a different launch.
 func (p Parity) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s @ %s/%s:", p.Runtime, p.Cage, p.Tier)
+	// CageLabel and not p.Cage: at the seatbelt tier the row names the
+	// mechanism realizing the wall on this host — `seatbelt (sandbox-exec)`,
+	// `seatbelt (bwrap)` — because the tier's name says what the wall DOES
+	// and an operator reading a row needs to know what to go and look at
+	// (ADR 0080 D16). The field itself stays the bare tier; this is the
+	// label, not the value.
+	fmt.Fprintf(&b, "%s @ %s/%s:", p.Runtime, CageLabel(p.Cage), p.Tier)
 	switch {
 	case len(p.Degraded) > 0:
 		b.WriteString(" DEGRADED\n")

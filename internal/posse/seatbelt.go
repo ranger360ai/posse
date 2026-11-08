@@ -62,11 +62,10 @@ func SeatbeltAvailable() bool {
 	return err == nil
 }
 
-func init() {
-	if SeatbeltAvailable() {
-		AvailableCages[CageSeatbelt] = true
-	}
-}
+// The table fill this used to do is wall.go's init now, which asks the same
+// question for both mechanisms (ADR 0080 D16). This answer is still one of
+// its two inputs, and still exported, because the launch gate and the
+// reachability probe ask it directly.
 
 // sandboxApplyProbeProfile is what the probe below applies: everything
 // allowed and one deny on a path that is not there, so the child it wraps
@@ -379,11 +378,19 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 	return b.String()
 }
 
-// seatbeltWallRendered reports whether this launch's L2 wall is a seatbelt
-// profile posse renders itself: the tier asked for it, the box has
-// sandbox-exec, and the runtime does not sandbox itself (in which case
-// posse renders nothing and wrapping it would be a second wall over a
-// first).
+// wallRendered reports whether this launch's L2 wall is one posse renders
+// itself: the tier asked for it, the box can provide it, and the runtime
+// does not sandbox itself (in which case posse renders nothing and wrapping
+// it would be a second wall over a first).
+//
+// MECHANISM-NEUTRAL, and named that way since ADR 0080 D16: the question is
+// "did this launch get an L2 wall", and the answer is the same shape whether
+// the wall is a sandbox-exec profile or a bwrap mount namespace
+// (WallMechanism, wall.go). Every caller asks it about the wall and not
+// about the binary, which is why the rename cost its callers nothing.
+// `!rt.SelfSandbox` is still unconditional here — D21 drops it on the bwrap
+// mechanism, where nesting was MEASURED to work (probe B7), and that flip
+// waits for its own run.
 //
 // One predicate, two call sites, and that is the whole reason it is a
 // function. The launcher renders the profile at one point in the launch and
@@ -393,7 +400,7 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 // spelling is a copy that can drift into asking about a wall this launch
 // never put up, and the failure is silent both ways: a refusal for a
 // session with no wall, or no refusal for one that has it.
-func seatbeltWallRendered(cage string, rt *Runtime) bool {
+func wallRendered(cage string, rt *Runtime) bool {
 	return cage == CageSeatbelt && AvailableCages[CageSeatbelt] && rt != nil && !rt.SelfSandbox
 }
 

@@ -229,7 +229,7 @@ func TestOnboardingFooterNamesEveryDeclarableKey(t *testing.T) {
 // refuses to nest seatbelts and the launch dies with `sandbox_apply:
 // Operation not permitted`.
 //
-// The wrap is seatbeltWallRendered (seatbelt.go) — `cage == CageSeatbelt &&
+// The wrap is wallRendered (seatbelt.go) — `cage == CageSeatbelt &&
 // AvailableCages[CageSeatbelt] && rt != nil && !rt.SelfSandbox` — asked by
 // both rendering paths in herdrback.go and by nothing else, which is why
 // the audit row above names seatbelt.go and not the launcher

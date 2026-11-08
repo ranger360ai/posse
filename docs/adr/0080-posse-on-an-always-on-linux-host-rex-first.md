@@ -632,6 +632,38 @@ unprivileged user namespaces (linux-hardened, Ubuntu's AppArmor sysctl).
 Parity's cage row and `posse gates` print `seatbelt (bwrap)` or
 `seatbelt (sandbox-exec)`. A PID never names the mechanism.
 
+*As built (ranger-base-eoxo1, 2026-11-08).* The decision is unchanged. What
+the build had to settle is that **`WallMechanism()` answers a NAMING question
+and not an availability one**, and the two are now kept apart on purpose.
+It reads nothing but `GOOS`: `sandbox-exec`, `bwrap`, and `""` only on a GOOS
+with neither. `AvailableCages[CageSeatbelt]` stays the measured half — on
+Linux, `bwrap` resolving plus the apply probe passing, filled by one
+`init` in `internal/posse/wall.go` that asks the question for both
+mechanisms rather than one init per mechanism. Folded together, a Linux host
+whose kernel refuses unprivileged user namespaces would print bare
+`seatbelt`, which reads as a tier with no mechanism; apart, it prints
+`seatbelt (bwrap)` over the block of ✗ rows that say the wall did not go up,
+which is the honest reading and the one with a remedy in it. The label is
+`CageLabel(cage)`, a label and never a value: `Parity.Cage` stays the bare
+tier, because it is compared against the constant and written into session
+records.
+
+The probe is the twin D16 names with **one deliberate difference, which is
+the direction it fails in**. `sandboxApplyProbe` drops a failure that is not
+an apply refusal, because its `""` is read as "this process may apply a
+profile" — a permission — and a host problem belongs to whatever check meets
+it. Here `""` is read as "this host provides the tier", so every failure is a
+refusal: a missing `/bin/true`, a `bwrap` too old for these flags, a seccomp
+refusal and the resolver's own `could not ask` all leave the tier
+unavailable. "Could not ask" is not "the wall is up".
+
+The rename landed: `seatbeltWallRendered` is `wallRendered`, in
+`internal/posse/seatbelt.go`, and D21's text below should be read against
+that name. It still carries `!rt.SelfSandbox` unconditionally — D21's flip
+waits for probe T6 — and `credentialDirEnvSetRefusal` (credential.go) follows
+the rename unchanged, because it always asked about the wall and never about
+the binary.
+
 **D17. The render.** `BwrapArgs` is a pure function from those lists to an
 argv. The order is fixed, and a later mount covers an earlier one:
 1. base: `--die-with-parent --ro-bind / / --dev-bind /dev /dev --chdir <cwd>`.
