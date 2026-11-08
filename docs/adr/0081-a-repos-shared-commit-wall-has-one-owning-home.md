@@ -1,6 +1,6 @@
 # ADR 0081 — a repo's shared commit wall has one owning home; a launch from any other home takes its own wall instead of rewriting the shared one
 
-*Status: accepted 2026-11-06 (ranger-base-n6dsk, from ranger-base-q0np6); D7 added 2026-11-07 (ranger-base-knb1v, from ranger-base-lh9nj) · owner: architect · amends ADR 0023 (one writer per slot is now a rule with an owner, not an assumption) and extends ADR 0052 D2 (the per-session redirect is also taken when posse MAY write the slot but this home SHOULD NOT) · builds in the code beads named on ranger-base-n6dsk (dinesh)*
+*Status: accepted 2026-11-06 (ranger-base-n6dsk, from ranger-base-q0np6); D7 added 2026-11-07 (ranger-base-knb1v, from ranger-base-lh9nj); D2's stamp spelling amended 2026-11-08 by ADR 0082 D3 (ranger-base-5wq6g) · owner: architect · amends ADR 0023 (one writer per slot is now a rule with an owner, not an assumption) and extends ADR 0052 D2 (the per-session redirect is also taken when posse MAY write the slot but this home SHOULD NOT) · builds in the code beads named on ranger-base-n6dsk (dinesh)*
 
 ## Context
 
@@ -39,7 +39,8 @@ source other than `VisibilityUnmarkedSource`. No new key and no new state.
 
 **D2 — Stamp.** The commit-guard body (the `posse-prepare-commit-msg` member,
 or the slot itself when it is unchained) carries one comment line,
-`# posse-home: <absolute a.Home>`. This is how a home that does NOT own R can
+`# posse-home: <absolute a.Home>` — spelled `canonicalPath(a.Home)` since
+ADR 0082 D3. This is how a home that does NOT own R can
 tell that another home wrote the wall. It cannot read the other home's config,
 but it can read the file. Readers keep comparing bytes. When the bytes differ
 and the stamp names a different home, the verdict says

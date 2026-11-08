@@ -23,7 +23,10 @@ examples/config.yaml's documented default or is a bare 0/true/false
 sentinel; `budget_pass`/`budget_day` stay out, MEASURED
 (ranger-base-ei046) 3-13 residual lines on this repo's own *_qa_test.go
 fixtures reusing common round dollar figures, a collision no digit-count
-floor closes — ranger-base-qdwet, from ranger-base-ei046)*
+floor closes — ranger-base-qdwet, from ranger-base-ei046) · amended
+2026-11-08 (D2 check 3: the instance repo path is rendered in its canonical
+spelling, the kernel's name for the directory, so every renderer writes the
+same bytes — ADR 0082, ranger-base-5wq6g)*
 
 ## Context
 
@@ -142,7 +145,8 @@ install and at every persona launch).
    from the box itself, the literals that have no legitimate public use
    anywhere — code included: `whoami`, `git config user.email`, and the
    instance repo path (dirname of the `.beads/redirect` target, rendered
-   in both `~`-relative and absolute forms; the redirect is verified
+   in both `~`-relative and absolute forms, each in the canonical spelling
+   of ADR 0082 D1; the redirect is verified
    present and absolute in this tree). These are grepped over the ADDED
    lines of **all** staged files — whatever their bytes: the reader
    carries `--text`, so a NUL neither exempts a markdown file nor a real
