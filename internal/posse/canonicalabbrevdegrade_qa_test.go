@@ -99,6 +99,16 @@ func TestQAARefusalSpellingDegradesForAPathItCannotName(t *testing.T) {
 	}
 
 	if !qcwNoReach(t, dir) {
+		// A BOX LIMITATION AND A BROKEN PLATFORM HALF LOOK THE SAME HERE and
+		// are not: qcwNoReach says no both when the open could not be denied
+		// (nothing to measure, skip) and when kernelPath stopped answering at
+		// all (D1's darwin reading gone, so there is no refusal left for D7 to
+		// degrade and every arm in this file would pass BY SKIPPING). It has
+		// restored the mode by now, so a readable directory this process
+		// created must answer on darwin, and the distinction is one call.
+		if _, err := kernelPath(dir); err != nil {
+			t.Fatalf("kernelPath(%q) on a readable directory this test created = %v — ADR 0082 D1's darwin reading is gone, so canonicalPath has no refusal and D7 has nothing to degrade. This file would otherwise report that as a skip", dir, err)
+		}
 		t.Skip("reach could not be withdrawn on this box")
 	}
 
@@ -179,6 +189,14 @@ func TestQAARefusalSpellingKeepsTheCanonicalPathWhenOnlyHomeCannotBeNamed(t *tes
 
 	// Both premises, because the arm is exactly the gap between them.
 	if _, err := canonicalAbbrevHome(repo); !errors.Is(err, errPathUnnameable) {
+		// The same distinction the arm above makes, for the same reason: a
+		// 0111 directory this box will still let us NAME is nothing to
+		// measure, and a kernelPath that has stopped answering is D1's darwin
+		// half gone. `repo` is reachable through a 0111 home (search is
+		// granted, read is not) so on darwin it must answer.
+		if _, kerr := kernelPath(repo); kerr != nil {
+			t.Fatalf("kernelPath(%q) = %v through a 0111 home — ADR 0082 D1's darwin reading is gone, so there is no refusal for D7 to degrade and this arm would report it as a skip", repo, kerr)
+		}
 		t.Skipf("HOME at 0111 is still nameable here (canonicalAbbrevHome err %v) — nothing to measure", err)
 	}
 	canon, err := canonicalPath(repo)
