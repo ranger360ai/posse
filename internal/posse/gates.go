@@ -7060,10 +7060,14 @@ func (a *App) sharedCommitWallWrite(dir string, pre l3HookProbe) (write bool, st
 
 // ForeignCommitWallOwner asks ADR 0081 D3's write rule — the SAME predicate
 // the launch asks, not a second copy of it — on behalf of a caller that holds
-// no probe of its own. D4's `posse gates install-hooks` is the first such
-// caller: it has one directory and one write to make, and no session to
-// render a redirect for, so the only two answers it needs are "write" and
-// "whose wall this is".
+// no probe of its own. Both callers are the same shape: one directory, one
+// write to make, and no session to render a redirect for, so the only two
+// answers either needs are "write" and "whose wall this is".
+//
+//	D4  `posse gates install-hooks` with an explicit target (cmd/posse)
+//	D7  CommitQueueJSONL, before it reconciles the queue repo's slot
+//	    (queuejsonl.go) — the third writer of a shared wall, and the one
+//	    where a non-write refuses the commit rather than redirecting it
 //
 // It answers stamp == "" when this home may write the repo at dir's shared
 // commit-guard slot, and otherwise the absolute home the installed body is

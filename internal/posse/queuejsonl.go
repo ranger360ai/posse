@@ -130,6 +130,44 @@ func (a *App) CommitQueueJSONL(bd Bd, dir, msg string) (QueueCommit, error) {
 	// census this close's line (beadloss.go) and says so on the pass, which
 	// is the cheaper of the two failures: an uncommitted projection is
 	// recoverable by the next close, an unguarded one is disclosed.
+	//
+	// ADR 0081 D7 narrows the reconcile without changing that shape. This
+	// call is the THIRD writer of a repo's SHARED commit wall — the launch
+	// is herdrback's, `posse gates install-hooks` is D4's — and the one with
+	// no session behind it. `q` is `queue_repo:`, read from whichever home
+	// ran the close, and the body this would write is a function of THAT
+	// home's config: MEASURED 2026-11-06 (ranger-base-q0np6), same binary
+	// and same repo with only RHQ_HOME changed renders 1897 lines against
+	// 1137. Ownership stays D1 alone — `queue_repo:` does not confer it,
+	// because it is one line any home can copy with the rest of a config,
+	// which is exactly how a scratch home comes to name the real queue repo
+	// (D7a, rejected). So the install is asked D3's rule first, of the same
+	// predicate the launch and install-hooks ask and not a second copy of
+	// it.
+	//
+	// A non-write leaves the owner's render where it is and refuses this
+	// commit. That is the same cost as every other refusal here and no more:
+	// the projection is a full export, so the next close from the owning
+	// home commits what this one did not. It is also, in the common case,
+	// the same commit a write would have lost anyway — a home that does not
+	// mark `q` renders it PUBLIC, and the guard's check 0 scans a public
+	// repo's jsonl as a publication and refuses (G13's queue-unmarked row).
+	// D7 refuses it without taking the owner's wall down to do it.
+	//
+	// The refusal is worded HERE, and the probe below is SKIPPED on a
+	// non-write. Both for the same reason: the rule answers no only over
+	// l3OtherHome, which is not l3Held, so `probe.CommitGuard` is already
+	// false whatever the behavior half would find — and that half execs a
+	// render over the repo's own index for a verdict this close already
+	// holds (MEASURED ~0.9s a repo, l3AskIdentity's note). What it cannot
+	// supply is D7's two remedies, which is the whole of what makes this
+	// refusal actionable, so the line is written where the rule is asked.
+	// ForeignCommitWallOwner is the identity-only ask, so a close pays no
+	// second behavior exec to reach it.
+	if foreignWallHome, wallRepo := a.ForeignCommitWallOwner(q); foreignWallHome != "" {
+		return c, fmt.Errorf("%s's commit wall was rendered by home %s and this home does not own it, so it was left alone (ADR 0081 D1/D7) — and an unguarded jsonl commit of the store of record is the disclosure that wall exists to refuse; remedy: add `%s: <private|public>` under this home's beads_visibility:, which is both what confers ownership (D1) and ADR 0015 §4 cutover step 5 (G13's queue-unmarked row) — or close from home %s, which rendered what is there",
+			AbbrevHome(wallRepo), AbbrevHome(foreignWallHome), AbbrevHome(wallRepo), AbbrevHome(foreignWallHome))
+	}
 	a.InstallCommitGuardHook(q) //nolint:errcheck // best effort, as at launch; the probe below is the verdict
 	if probe := a.probeL3Hooks(q, false); !probe.CommitGuard {
 		why := probe.CommitGuardDegraded
