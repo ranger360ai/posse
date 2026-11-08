@@ -1,6 +1,6 @@
 # ADR 0029 — Shared governance observations and explicit pause intent
 
-*Status: accepted; simplified 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · descriptive consolidation, no required runtime removal · amended 2026-10-09 for G12-G15 (bead ranger-base-wmaf9, from github.com/ranger360ai/posse/issues/3).*
+*Status: accepted; simplified 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · descriptive consolidation, no required runtime removal · amended 2026-10-09 for G12-G15 (bead ranger-base-wmaf9, from github.com/ranger360ai/posse/issues/3) · G16 row recorded 2026-11-08 (ranger-base-71goc; the row is ADR 0072 D5's, built 2026-10-12).*
 
 ## Decision
 
@@ -33,6 +33,7 @@ the vocabulary is closed at nine or that every process has identical inputs.
 | G13 / `queue-not-a-repo` · `queue-unmarked` | Two config facts that make the launcher's commit of the store of record's projection fail at every close: `queue_repo:` is not a checkout; or it is unmarked in `beads_visibility:`, which is public, which is the one state where the commit guard's beads-jsonl scan runs over it. Not the projection's dirtiness, and not a `beads:` store that legitimately lives outside the queue repo — both are ordinary states | LANE |
 | G14 / `memory-unlanded:<persona>` | A persona memory dir holding lines no commit holds, with no live session for that persona — the landing runs at a kill (`memoryland.go`), so this is a landing that already ran and left them, or was refused. Owner: the personas checkout, read in one `git status` for the whole dir | LANE |
 | G15 / `session-degraded:<name>` | A live, non-foreign session whose meta carries `degraded:` — the gates its wall does not realize, which `posse ls` has marked ⚠️degraded since the parity check shipped. Reported, never alarmed: consent was given once with `--allow-degraded` and is re-armed by every relaunch from the meta | LANE |
+| G16 / `bd-line-cliff:<id>` · `bd-line-warn:<id>` | One row per issue line in the census (`issues.jsonl`) of each distinct `beadsHome` over `BeadsDirs()` whose length reaches `BdLineWarn` (49152 B): past `BdLineLimit` (65536, bd's scanner limit) it is `bd-line-cliff`, below it `bd-line-warn`. An absent census is not a finding; an unreadable one is a partial view. Predicate, owner and the reason it is the only signal for SQLite mode are ADR 0072 D5's | URGENT for `bd-line-cliff`; LANE for `bd-line-warn` |
 | `unpushed:<repo>:<n>` | Local git upstream comparison for configured bead repositories; no upstream yields no finding | Existing carry-over, no G id |
 | `no-live:<persona>` | Missing delivery target, only when pulse is armed and a target exists | Existing carry-over, no G id |
 | `backup-stale` | Armed backup policy and archive observation under ADR 0036; no archive is stale | LANE, no G id |
@@ -152,6 +153,17 @@ whole of what the bead asked for.
   or relaunching that session once the wall holds. Two keys, so one healing
   does not silence the other.
 
+G16's design lives in another ADR, as G9's does in ADR 0033: [ADR 0072](0072-bd-line-cliff-is-judged-in-go-at-the-write-and-reported-at-the-read.md)
+D5 owns its predicate, owner, scope and class, and this table carries its
+line so that "is this condition described" has one place to ask. It is the
+first row added under the bar that can be URGENT, and it passes the test the
+G12-G15 paragraph states — URGENT means the shop is stopped: a line past the
+limit fails every no-db and cage read of the whole store, so the queue is
+unknown, not empty. Below the limit nothing has failed yet, so the warning is
+LANE.
+A later row designed elsewhere owes this table the same one line and a
+lineage entry; the owning ADR keeps the argument.
+
 G4's streak is process-local and resets on restart. A fresh status process
 cannot infer two hours of skips from one reading and reports no G4. G7 is
 several observations of delivery health, not a pidfile assertion: test the
@@ -224,5 +236,6 @@ observation scopes prevents a fresh shell from inventing missing history.
 | Operator ruling 2026-09-05 | Existing conditions retained without closed-nine fiction |
 | Operator ruling 2026-09-06 (ranger-base-0x1wc) | G10 live-box verdict with a mandatory freshness rule and a named-bead suppression |
 | Issue #3 / ranger-base-wmaf9 (2026-10-08) | G12-G15: a degraded wall, a queue that cannot take the projection, unlanded persona memory and a degraded session are conditions, not readings somebody else prints |
+| ADR 0072 D5 / ranger-base-zufew (2026-10-12); row recorded here by ranger-base-71goc (2026-11-08) | G16: a census line near or past bd's 64 KB scanner limit, warned at 48 KB and urgent past the cliff |
 
 Prior tables and evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0029-governance-surface.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
