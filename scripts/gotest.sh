@@ -132,6 +132,48 @@ KEEP=${POSSE_TESTBIN_KEEP:-3}
 
 die() { printf 'gotest.sh: %s\n' "$*" >&2; exit 2; }
 
+# `shasum` IS NOT ON EVERY BOX'S PATH, and the cache key is a sha, so this
+# wrapper ran a STALE BINARY and reported its result on a box where it is not
+# (ranger-base-sydnc). Arch — what the always-on Linux host runs — ships it
+# with perl at /usr/bin/core_perl/shasum, off the default PATH, and carries
+# coreutils' `sha256sum` instead; ubuntu and macOS carry both, which is why CI
+# and the laptop were green. MEASURED 2026-11-09 on the host, and reproduced
+# here with shasum hidden from PATH: every build hashed to the EMPTY STRING,
+# so every build named the same cache file (`<slug>-.test`), and the reuse
+# branch below handed back the FIRST binary ever cached for that package
+# forever after. `--self-test` reds exactly three arms, the same three on both
+# boxes — `control: a changed test file rebuilds: cache did not grow`,
+# `control: the new test actually ran: TestBeta not in output`, and
+# `exit status: a red test reds the wrapper: wrapper exited 0`. The last one is
+# the hole: a changed package's new tests never run, and a red test greens the
+# wrapper. (The poisoned entry is unprunable too — `<slug>-.test` does not
+# match the `-[0-9a-f]\{16\}.test` --prune groups by.)
+#
+# `set -euo pipefail` does not catch it: a command substitution whose command
+# is not found yields the empty string and the status of the assignment it
+# feeds is discarded (MEASURED 2026-11-09, bash 3.2.57 on darwin; the host's
+# own run shows the same, since it got past this line too). So the spelling is
+# picked ONCE by probe — like `stat` below, and for the same kind of reason —
+# it is PROVEN against a known digest before anything is cached, and a digest
+# that is not 64 hex characters is an error and never a key.
+if command -v sha256sum >/dev/null 2>&1; then
+	sha256_file() { sha256sum "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+	sha256_file() { shasum -a 256 "$1"; }
+else
+	die "neither sha256sum nor shasum is on PATH — the cache key is a sha256 and there is nothing to compute it with (ranger-base-sydnc)"
+fi
+hash_selfcheck() {
+	local probe want='9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08' got
+	probe=$(mktemp) || return 1
+	printf '%s' 'test' >"$probe" || { rm -f "$probe"; return 1; }
+	got=$(sha256_file "$probe") || { rm -f "$probe"; return 1; }
+	rm -f "$probe"
+	got=${got%% *}
+	[ "$got" = "$want" ]
+}
+hash_selfcheck || die "the sha256 on this box does not answer a known digest — refusing to key the binary cache on it (ranger-base-sydnc)"
+
 # `stat` is not one program, and the difference is invisible from either box.
 # BSD stat (macOS) spells the format `-f` and prints mtime as %m and the
 # name as %N; GNU stat (Linux, which is what ubuntu-latest runs) spells it
@@ -170,7 +212,15 @@ slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9' '-' | sed 's/^-*//; s/-*$//'; }
 # trick; everything above is why it is the right one.
 reuse() {
 	local tmp=$1 sl=$2 sha target
-	sha=$(shasum -a 256 "$tmp" | cut -c1-16)
+	# An unusable digest is a hard stop, never a key: a cache keyed on a
+	# hash that did not happen hands back whatever is already there
+	# (ranger-base-sydnc). `die` here only ends the command substitution
+	# this runs in, so the CALLER checks what came back as well.
+	sha=$(sha256_file "$tmp") || sha=""
+	sha=${sha%% *}
+	case $sha in *[!0-9a-f]*) sha="" ;; esac
+	[ ${#sha} -eq 64 ] || die "no sha256 for the test binary just built for $sl — refusing to cache it under a key that is not a hash (ranger-base-sydnc)"
+	sha=${sha:0:16}
 	target="$CACHE/$sl-$sha.test"
 	if [ -f "$target" ]; then
 		rm -f "$tmp"
@@ -271,6 +321,12 @@ run() {
 		fi
 		chmod +x "$tmp"
 		bin=$(reuse "$tmp" "$sl")
+		# reuse()'s own `die` cannot end this script from inside a
+		# command substitution, so its answer is checked here too: an
+		# empty or unexecutable path means the binary was never cached
+		# and there is nothing honest to run (ranger-base-sydnc).
+		[ -n "$bin" ] && [ -x "$bin" ] ||
+			die "the test binary for $ip was not cached — refusing to report a result for a binary this wrapper cannot name"
 		# cwd is the package directory or testdata does not resolve — a
 		# hand-run test binary resolves testdata from YOUR shell, not
 		# from the package.

@@ -7,6 +7,19 @@
 #
 #   sh docs/adr/0083-commit-wall-host-premises.probe.sh
 #
+# THAT QUESTION IS ANSWERED and this script did not answer it. It is kept
+# because the premises in section C are worth re-asking of any host the walls
+# are about to run on, not because anything here is still open. The reds the
+# bead was filed for had two causes and neither is a premise below: the
+# message/identity arms were the host's OS account name reaching check 3's
+# identity literals (ranger-base-87jw1, fixed by ranger-base-c7i8t), and the
+# nine freshness arms plus the test wrapper's self-test were `shasum` not being
+# on that host's PATH, which left every hash empty and every compare equal
+# (fixed in scripts/verify-hook-freshness.sh and scripts/gotest.sh, pinned by
+# internal/treepins/hashportability_qa_test.go). Section A is where that would
+# have shown, and it does not ask which hasher is on PATH: if you extend this
+# script, that is the row to add.
+#
 # Needs: sh, git, python3 is NOT needed and no Go toolchain is needed — this
 # runs on a host that has neither. Run it as the account the crew will run as,
 # from inside a checkout of this repo (section B reads two tracked files).

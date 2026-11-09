@@ -221,7 +221,73 @@ trap 'rm -rf "$tmp"; [ -n "$stray_idx" ] && rm -f "$stray_idx"' EXIT
 # `sed | shasum | cut` (ranger-base-s8b4g): a sed or cut that never ran would
 # make every hash differ from every other and report every hook in the fleet
 # STALE — a finding about the matcher, printed as a finding about the box.
-# `shasum` stays: hashing IS the measurement.
+# Hashing itself stays: hashing IS the measurement. WHICH HASHER is a probe,
+# for the reason below.
+#
+# `shasum` IS NOT ON EVERY BOX'S PATH, and this file read `fresh` over a stale
+# wall for as long as it has existed on a box where it is not
+# (ranger-base-sydnc). Arch — what the always-on Linux host runs — ships it
+# with perl at /usr/bin/core_perl/shasum, which is off the default PATH, and
+# carries coreutils' `sha256sum` instead; ubuntu and macOS carry both, which
+# is why CI and the laptop were green. MEASURED 2026-11-09 on the host, and
+# reproduced here with shasum hidden from PATH: `shasum: command not found`
+# left BOTH hashes EMPTY, the empty strings compared EQUAL, and this script
+# printed `fresh` and exited 0 over a planted stale hook — nine of
+# hookfreshness_qa_test.go's arms red there with "a stale body must be a
+# finding (exit 1), got 0". That is not test noise. It is the detective
+# control passing every stale and every foreign hook on that box, silently,
+# which is the one outcome this file exists to prevent.
+#
+# `set -uo pipefail` does not catch it and neither does `set -e`: a command
+# substitution whose command is not found yields the empty string, and the
+# status of the assignment it feeds is discarded (MEASURED 2026-11-09,
+# bash 3.2.57 on darwin; the host's own run shows the same, since it got past
+# this line too).
+#
+# So the spelling is picked ONCE by probe, it is PROVEN against a known digest
+# before anything is measured, and a digest that is not 64 hex characters is an
+# ERROR and never a value — an empty hash must not compare equal to anything,
+# least of all to another empty hash.
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256_stdin() { sha256sum; }
+  sha256_file() { sha256sum "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+  sha256_stdin() { shasum -a 256; }
+  sha256_file() { shasum -a 256 "$1"; }
+else
+  echo "verify-hook-freshness: neither sha256sum nor shasum is on PATH — nothing measured (ranger-base-sydnc)"
+  exit 2
+fi
+
+# hex64 <hasher-output> <subject> — the 64-hex field, or NOTHING and a loud
+# line. Both readers below go through it, so there is one place where "the
+# hasher did not answer" is decided, and it decides it the same way for both.
+hex64() {
+  local h=${1%% *}
+  [ ${#h} -eq 64 ] || h=""
+  case $h in *[!0-9a-f]*) h="" ;; esac
+  if [ -z "$h" ]; then
+    echo "verify-hook-freshness: no sha256 for $2 — that is an error, not a value, and not a match (ranger-base-sydnc)" >&2
+    return 1
+  fi
+  printf '%s' "$h"
+}
+
+# The probe answers a KNOWN digest, in both the stdin and the file shape,
+# before a single hook is read. A hasher that is present but shadowed,
+# renamed, or not the program its name says is a loud exit here rather than an
+# equality thirty lines down.
+hash_selfcheck() {
+  local want='9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08' got
+  printf '%s' 'test' >"$tmp/hashprobe" || return 1
+  got=$(printf '%s' 'test' | sha256_stdin) || return 1
+  [ "$(hex64 "$got" 'the stdin hash self-check')" = "$want" ] || return 1
+  got=$(sha256_file "$tmp/hashprobe") || return 1
+  [ "$(hex64 "$got" 'the file hash self-check')" = "$want" ] || return 1
+}
+hash_selfcheck ||
+  { echo "verify-hook-freshness: the sha256 on this box does not answer a known digest — nothing measured (ranger-base-sydnc)"; exit 2; }
+
 norm() {
   local line body= h
   while IFS= read -r line || [ -n "$line" ]; do
@@ -230,13 +296,13 @@ norm() {
     esac
     body=$body$line$'\n'
   done <"$1"
-  h=$(printf '%s' "$body" | shasum -a 256)
-  printf '%s' "${h%% *}"
+  h=$(printf '%s' "$body" | sha256_stdin) || h=""
+  hex64 "$h" "$1"
 }
 plain() {
   local h
-  h=$(shasum -a 256 "$1")
-  printf '%s' "${h%% *}"
+  h=$(sha256_file "$1") || h=""
+  hex64 "$h" "$1"
 }
 
 # file_has <file> <literal> — `grep -qF`, and line_starts <file> <prefix> —
@@ -404,6 +470,14 @@ need_ref() { # <repo> <short>
     { echo "verify-hook-freshness: reference render for $short carries no visibility stamp — it is not a posse render, nothing measured"; exit 2; }
   ref_commit_sha=$(norm "$ref_commit")
   ref_prepush_sha=$(plain "$ref_prepush")
+  # The REFERENCE side, asserted here rather than left to the compares. A
+  # candidate this box cannot hash reads empty against a 64-hex reference and
+  # so is reported STALE — loud, and in the conservative direction. A
+  # REFERENCE this box cannot hash would make every compare empty-against-
+  # empty, which is the ranger-base-sydnc failure exactly: nothing is measured,
+  # and nothing measured is never a pass.
+  [ -n "$ref_commit_sha" ] && [ -n "$ref_prepush_sha" ] ||
+    { echo "verify-hook-freshness: the reference render for $short could not be hashed — nothing measured (ranger-base-sydnc)"; exit 2; }
   # Empty under a $POSSE predating ADR 0081 D2, which renders no stamp at
   # all. Then every hook reads unstamped, no hook is classified by home, and
   # this control says exactly what it said before the ADR — rather than

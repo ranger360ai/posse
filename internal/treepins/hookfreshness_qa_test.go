@@ -90,6 +90,17 @@ type hfRig struct {
 	// stands where `git` is looked up. extraEnv is appended last.
 	shimDir  string
 	extraEnv []string
+	// pathDirs are appended to the script's PATH, for a command that is
+	// genuinely elsewhere on this box than on the one being imitated
+	// (darwin keeps sha256sum in /sbin, the host in /usr/bin).
+	pathDirs []string
+	// hideFromPath names commands the script must NOT find on PATH. Taking
+	// one away means rebuilding the PATH out of symlinks, because the
+	// command to hide shares its directory with ones the script needs:
+	// hfPathWithout in hashportability_qa_test.go does that, and
+	// ranger-base-sydnc is why anything needs it — the host has no `shasum`
+	// on PATH and this script read `fresh` over a stale wall there.
+	hideFromPath []string
 }
 
 // hfEnv is this process's environment with every GIT_CONFIG_* shed — the
@@ -256,6 +267,12 @@ func (r *hfRig) run(t *testing.T, args ...string) (string, int) {
 	}
 	cmd := exec.Command(abs, args...)
 	path := filepath.Dir(r.git) + ":/usr/bin:/bin"
+	for _, d := range r.pathDirs {
+		path += ":" + d
+	}
+	if len(r.hideFromPath) > 0 {
+		path = hfPathWithout(t, path, r.hideFromPath...)
+	}
 	if r.shimDir != "" {
 		path = r.shimDir + ":" + path
 	}
