@@ -51,6 +51,15 @@ func TestQARelaunchRefusesAnEnvSetThatMovesTheCredentialDirAfterTheLaunch(t *tes
 			delete(AvailableCages, CageSeatbelt)
 		}
 	})
+	// The premise of the WITNESS steps on a host whose wall is a mount: a
+	// claude seat at this cage is refused outright with CLAUDE_CONFIG_DIR
+	// unset (ADR 0080 D19), which TestMain leaves it, so on ci.yml's ubuntu
+	// arms the first launch below failed and the refusal this file is about
+	// was never reached (ranger-base-temhf). Setting it does not weaken that
+	// refusal: credentialDirEnvSetRefusal reads the env set's NAMES and never
+	// a value, launcher's own included, so an env set exporting the variable
+	// is refused whatever the launcher resolved (credential.go).
+	claudeConfigDirForTest(t)
 
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)

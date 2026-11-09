@@ -240,7 +240,11 @@ func TestDispatchRefusesDegradedUnlessAllowed(t *testing.T) {
 // L2 seatbelt (rangerhq-5vt): the profile denies file-write* except the
 // session's legitimate targets; with Edit/Write denied the repo itself is
 // read-only but .beads/ and .git/ stay writable; the typed command wraps
-// the runtime in sandbox-exec; codex cannot be wrapped (nested seatbelt).
+// the runtime in this host's wall; codex cannot be wrapped (nested seatbelt).
+//
+// The SBPL assertions at the top are sandbox-exec's own grammar and are
+// driven at SeatbeltProfile directly, which renders on either host; what
+// moved for the second mechanism is the LAUNCH half below (ranger-base-temhf).
 func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	b, fake := newTestBackend(t)
 	os.MkdirAll(b.App.AgentsDir, 0o755)
@@ -300,15 +304,23 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	if len(p.Degraded) != 0 || len(p.DeclaredDifference) != 1 || !strings.Contains(p.DeclaredDifference[0], "does not nest") || p.Realized["Edit"].Detail != "codex sandbox (OS-enforced)" {
 		t.Errorf("security@codex seatbelt must be a declared difference, Edit still enforced by codex: %+v", p)
 	}
-	// Launch: the typed command is PATH=… sandbox-exec -f <profile> grok …
+	// Launch: the typed command is PATH=… <this host's wall> grok …
+	//
+	// THE WALL AND NOT `sandbox-exec -f` (ranger-base-temhf). The tier has two
+	// mechanisms since ADR 0080 D18 and the artifact is one of two files, so
+	// the darwin spelling read as "seatbelt wrap missing" on every ubuntu arm
+	// of ci.yml over a line that carried the Linux wall verbatim. The expected
+	// wrap comes from the same two functions the launcher types
+	// (wallWrapForTest), so this still pins the LINE against the prefix and
+	// not against a second copy of it.
 	mustCreate(t, b, NewSessionOpts{Name: "hg", Agent: "security", Runtime: "grok", Dir: repo})
 	log := calls(t, fake)
-	profPath := filepath.Join(gates, "seatbelt.sb")
-	if !strings.Contains(log, `GATES sandbox-exec -f '`+profPath+`' grok`) || !strings.Contains(log, "--env RHQ_CAGE=seatbelt") {
-		t.Errorf("seatbelt wrap missing:\n%s", log)
+	wrap, wallPath := wallWrapForTest(t, gates)
+	if !strings.Contains(log, "GATES "+wrap+"grok") || !strings.Contains(log, "--env RHQ_CAGE=seatbelt") {
+		t.Errorf("%s wrap missing:\n%s", WallMechanism(), log)
 	}
-	if _, err := os.Stat(profPath); err != nil {
-		t.Error("profile not rendered")
+	if _, err := os.Stat(wallPath); err != nil {
+		t.Errorf("%s wall not rendered at %s: %v", WallMechanism(), wallPath, err)
 	}
 	m, _ := b.readMeta("hg")
 	if m.Cage != CageSeatbelt || m.Degraded != "" || m.Dir != repo {
@@ -335,7 +347,20 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 		!strings.Contains(got, "⊘ cage: PID demands seatbelt, launching at shims") || strings.Contains(got, "✗ cage: PID demands seatbelt") {
 		t.Errorf("rendered block must mark the cage shortfall ⊘, not ✗, and never say DEGRADED for it alone:\n%s", got)
 	}
-	if err := b.CreateSession(NewSessionOpts{Name: "hc", Agent: "security", Runtime: "codex", Cage: CageShims, Dir: repo}); err != nil {
+	// A DIR OF ITS OWN, and not `repo` (ranger-base-temhf). `repo` had no
+	// store of record when this arm was written, so ADR 0013 §4's
+	// reachability row abstained — "nothing to reach" — and a codex line that
+	// renders `-s read-only` (this PID denies bare Edit and Write) had no
+	// target to be unreachable for. The grok launch above now CREATES one on a
+	// host whose wall is a mount: bwrap binds only a source that exists, so
+	// RenderBwrap `mkdir -p`s every write grant first, `<repo>/.beads` among
+	// them (bwrap.go, prep shape 1). The row then judged a real store behind
+	// `-s read-only`, found it unreachable, and refused this launch — on
+	// ci.yml's ubuntu arms only, three lines of this test at once. The arm's
+	// subject is the cage shortfall being a declared difference rather than a
+	// degradation, so it wants a tree the earlier launches cannot have
+	// touched; the record-reach row over a real store is its own pin.
+	if err := b.CreateSession(NewSessionOpts{Name: "hc", Agent: "security", Runtime: "codex", Cage: CageShims, Dir: t.TempDir()}); err != nil {
 		t.Errorf("codex at shims must launch without --allow-degraded: %v", err)
 	}
 	if m, _ := b.readMeta("hc"); m == nil || m.Degraded != "" || m.Cage != CageShims {
@@ -348,8 +373,8 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	if ok, err := b.RelaunchAgent("hg", time.Second); err != nil || !ok {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
-	if got := calls(t, fake); strings.Count(got, "sandbox-exec -f '"+profPath+"' grok") != 2 {
-		t.Errorf("relaunch must keep the seatbelt:\n%s", got)
+	if got := calls(t, fake); strings.Count(got, wrap+"grok") != 2 {
+		t.Errorf("relaunch must keep the %s wall:\n%s", WallMechanism(), got)
 	}
 }
 

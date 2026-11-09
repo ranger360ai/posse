@@ -283,11 +283,20 @@ func TestSelfSandboxSkipsTheSeatbeltWrapAtLaunch(t *testing.T) {
 
 	// The CONTROL first: without the key the same yaml IS wrapped. If this
 	// arm ever goes quiet the assertion below measures nothing.
-	if cmd := plan("plainbox"); !strings.Contains(cmd, "sandbox-exec") {
-		t.Fatalf("control: a runtime without self_sandbox: must be seatbelt-wrapped, or this test proves nothing about the key: %q", cmd)
+	//
+	// THE MECHANISM AND NOT `sandbox-exec` (ranger-base-temhf). The tier's
+	// binary is a host fact (WallMechanism, wall.go), and both arms' prefixes
+	// name their own — `sandbox-exec -f <prof>`, `3<args <bwrap> --args 3 --`
+	// — so the mechanism's name is what "is this line wrapped" asks on either
+	// host. Spelled `sandbox-exec`, the control was a darwin assertion that
+	// failed on every ubuntu arm of ci.yml the day D18 typed the Linux wall,
+	// over a line that WAS wrapped.
+	wall := WallMechanism()
+	if cmd := plan("plainbox"); !strings.Contains(cmd, wall) {
+		t.Fatalf("control: a runtime without self_sandbox: must be wrapped by this host's wall (%s), or this test proves nothing about the key: %q", wall, cmd)
 	}
 	// And the key itself.
-	if cmd := plan("selfbox"); strings.Contains(cmd, "sandbox-exec") {
-		t.Errorf("self_sandbox: true must NOT be seatbelt-wrapped — macOS refuses to nest and the launch dies with sandbox_apply: Operation not permitted: %q", cmd)
+	if cmd := plan("selfbox"); strings.Contains(cmd, wall) {
+		t.Errorf("self_sandbox: true must NOT be wall-wrapped — macOS refuses to nest sandbox-exec and the launch dies with sandbox_apply: Operation not permitted: %q", cmd)
 	}
 }

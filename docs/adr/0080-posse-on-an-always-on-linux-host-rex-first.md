@@ -893,6 +893,26 @@ D16's note above demands. Pinned by
   third question stays a separate predicate after D18 because `RenderWall`
   refuses the mechanism it has no arm for, and the predicate is what keeps
   that refusal from being where a host first hears about it.
+- **`wallMechanismHost` is the fourth such variable, and it is the one the
+  other three needed** (ranger-base-temhf, 2026-11-09). Those three make the
+  bwrap RENDER reachable from darwin and `renderWallOn`'s mechanism parameter
+  makes the switch reachable — but a LAUNCH asks `WallMechanism()`, so
+  nothing could put `planLaunch` or `CreateSession` behind the other
+  mechanism, and the launch paths are exactly where the two mechanisms differ
+  in what they REFUSE: D19 below is a refusal on one host and silence on the
+  other. D18 landed `make test` green on darwin and red on all six ubuntu
+  jobs of ci.yml — seven tests over all three arms, none of them about the
+  wall, on main's only gate. `TestQALaunchAtTheOtherHostsWallMechanism` and
+  `TestQAClaudeAtTheBwrapMechanismIsRefusedAtTheLaunchAndNotOnDarwin`
+  (`internal/posse/walllaunchmechanism_qa_test.go`, arm 1) drive a real launch
+  at both mechanisms from either host now. **Whoever builds D21 wants this
+  door**: the `!rt.SelfSandbox` flip is a launch-path difference between the
+  two mechanisms, which is this class exactly. Full reasoning in
+  `docs/notes.d/ranger-base-temhf.md`, including the two side effects the red
+  surfaced — an absolute `writable:` in a PID is a directory posse CREATES on
+  the host at this mechanism, and a bwrap launch materializes `<cwd>/.beads`,
+  which moves ADR 0013 §4's record-reach row for a LATER launch in the same
+  tree.
 
 **D19. Shape 3: claude's config lives in a dir grant because the seat's
 `CLAUDE_CONFIG_DIR` points at one. There is no per-seat dir.**

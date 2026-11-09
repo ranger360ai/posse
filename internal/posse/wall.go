@@ -58,7 +58,25 @@ const (
 // WallMechanism names what realizes the seatbelt tier on this host:
 // `sandbox-exec`, `bwrap`, or "" on a GOOS with neither. See the file
 // comment for why this is a naming question and not an availability one.
-func WallMechanism() string { return wallMechanismOn(runtime.GOOS) }
+func WallMechanism() string { return wallMechanismOn(wallMechanismHost) }
+
+// wallMechanismHost is the GOOS WallMechanism answers for. `runtime.GOOS`,
+// and a var for the reason bwrapResolves, bwrapApplyRefusal and bwrapBin are
+// vars (bwrap.go): the arm it selects is unreachable on the box that builds
+// it, so a pin answers it to drive the other host's render from here.
+//
+// IT IS THE FOURTH SUCH VAR AND THE ONE THE OTHER THREE NEEDED. Those three
+// make the bwrap RENDER drivable from darwin, and `renderWallOn`'s mechanism
+// parameter makes the switch drivable — but a LAUNCH asks WallMechanism(),
+// so no pin could put a launch behind the other mechanism, and the launch
+// paths are where the two mechanisms differ in what they REFUSE: ADR 0080
+// D19 refuses a claude seat here that darwin walls without comment. That gap
+// is how ranger-base-djl3c landed `make test` green on darwin and red on
+// every ubuntu arm of ci.yml — seven tests, three arms, main's only gate
+// (ranger-base-temhf). TestQALaunchAtTheOtherHostsWallMechanism is what the
+// var is for; production never writes it, and a write in production would be
+// a seat walled by one mechanism and reported under another.
+var wallMechanismHost = runtime.GOOS
 
 // wallMechanismOn is that answer for an arbitrary GOOS, so a pin can read
 // the Linux branch from darwin. Nothing but the OS decides it.

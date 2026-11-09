@@ -122,6 +122,15 @@ func TestQANoRuntimeInHandGrantsNoRuntimeStateDir(t *testing.T) {
 // A claude persona is the whole crew today, so this is the arm that says
 // what actually changed on this box.
 func TestQARenderedProfileForAClaudeLaunchCarriesNoOtherRuntimesStateDir(t *testing.T) {
+	// The assertions below are SBPL — `(subpath "…")` lines, from this
+	// mechanism's own grammar — so this is darwin's reading of the claim and
+	// says nothing on a host whose wall is a mount (ranger-base-temhf). The
+	// bwrap reading of the same narrowing is TestBwrapStateDirs* — claude's
+	// grant is the directory CLAUDE_CONFIG_DIR names, every other runtime
+	// passes through, and the credential wall still reads a claude seat as one
+	// (bwrapstatedirs_qa_test.go) — and every arm of that file runs here too,
+	// so what this skip gives up is a duplicate and not the claim.
+	sandboxExecWallOnly(t)
 	seatbeltForTest(t)
 	b, _ := newTestBackend(t)
 	a := b.App

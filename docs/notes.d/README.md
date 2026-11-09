@@ -108,6 +108,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-d0nyb](ranger-base-d0nyb.md) — A probe answers on the PATH the exec it predicts resolves on (ranger-base-d0nyb) — 2026-11-01
 - [ranger-base-00fyg](ranger-base-00fyg.md) — ADR 0078 built: the tree-wide class stops depending on how a test spells its root (ranger-base-00fyg) — 2026-11-01
 - [ranger-base-zvg7q](ranger-base-zvg7q.md) — The pin that only had positional parameters on darwin (ranger-base-zvg7q) — 2026-11
+- [ranger-base-temhf](ranger-base-temhf.md) — Seven tests that asserted a host, and the seam that made them unfixable (ranger-base-temhf) — 2026-11
 - [ranger-base-azd7l](ranger-base-azd7l.md) — `cd ""` was a silent no-op until bash 5.3, and a dead guard woke up (ranger-base-azd7l) — 2026-11
 
 ## 2026-10

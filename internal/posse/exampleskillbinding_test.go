@@ -102,6 +102,13 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 	// still reds this test. The skill claim is asserted on all three either
 	// way, which is what this file is about.
 	seatbeltForTest(t)
+	// And the host procedure ADR 0080 D19 asks of a box whose wall is a mount:
+	// a claude seat at this cage is REFUSED there with CLAUDE_CONFIG_DIR
+	// unset, which TestMain leaves it (ranger-base-temhf). Nothing in this
+	// file is about that variable — the launch below just has to happen for
+	// the skill surface to be readable — so it is set the one way D19 says
+	// and the subject is unchanged.
+	claudeConfigDirForTest(t)
 	// codex denies bare Edit/Write here too, so its own sandbox already
 	// realizes the wall the seatbelt nesting refusal cannot give it — a
 	// DECLARED DIFFERENCE (ADR 0017 §2), not a degradation
