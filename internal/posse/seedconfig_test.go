@@ -2018,6 +2018,7 @@ var seedNumberBodyReaders = map[string]func(*App, io.Writer) float64{
 	"LauncherBehindMax": func(a *App, w io.Writer) float64 { return float64(a.LauncherBehindMax(w)) },
 	"LoadGuard":         func(a *App, w io.Writer) float64 { return a.LoadGuard(w) },
 	"verifyBatch":       func(a *App, w io.Writer) float64 { return float64(a.verifyBatch(w)) },
+	"verifyChainMax":    func(a *App, w io.Writer) float64 { return float64(a.verifyChainMax(w)) },
 }
 
 // seedNumberDefaults is the Default-shaped constant NAME -> its value, the
@@ -2030,6 +2031,7 @@ var seedNumberDefaults = map[string]float64{
 	"DefaultBackupMinFreeMB":   DefaultBackupMinFreeMB,
 	"DefaultLauncherBehindMax": DefaultLauncherBehindMax,
 	"DefaultVerifyBatch":       DefaultVerifyBatch,
+	"DefaultVerifyChainMax":    DefaultVerifyChainMax,
 	"LoadGuardDefault":         LoadGuardDefault,
 }
 
@@ -2309,17 +2311,19 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 	// longer resolves and this says how much of the census went with it. A
 	// Fatalf, because every comparison below a census this thin is vacuous.
 	//
-	// Five is the measured population (MEASURED 2026-10-09, four until
+	// Six is the measured population (MEASURED 2026-11-09, five until
+	// ranger-base-ewnas added the verify-chain bound; four until
 	// ranger-base-c768n gave the scaled rule its member): backup_keep
 	// through BackupKeep, backup_min_free_mb through BackupMinFree,
 	// launcher_behind_max through LauncherBehindMax, load_guard through
-	// LoadGuard, verify_batch through verifyBatch. It is deliberately not
-	// thirteen — the count of documented lines — because the house
-	// vocabulary for a number key is "unset means off" and most of this
-	// file's numbers have no constant at all; the section header has the
-	// reason and the third register has the rows.
-	if len(keys) < 5 {
-		t.Fatalf("derived %d number key/constant pairings from %d files, want at least 5 — the two reader rules in seedReaderDecl have stopped matching the tree's number readers, so this pin holds almost nothing", len(keys), scanned)
+	// LoadGuard, verify_batch through verifyBatch, verify_chain_max through
+	// verifyChainMax. It is deliberately not fourteen — the count of
+	// documented lines — because the house vocabulary for a number key is
+	// "unset means off" and most of this file's numbers have no constant at
+	// all; the section header has the reason and the third register has the
+	// rows.
+	if len(keys) < 6 {
+		t.Fatalf("derived %d number key/constant pairings from %d files, want at least 6 — the two reader rules in seedReaderDecl have stopped matching the tree's number readers, so this pin holds almost nothing", len(keys), scanned)
 	}
 
 	// One key, one default.

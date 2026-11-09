@@ -548,6 +548,25 @@ func fakeBd(args []string) int {
 				file = "fake-dependents.json"
 			}
 		}
+		// PER ISSUE, where a fixture asked for it (ranger-base-ewnas). The
+		// two files above are per REPO — enough for a caller asking about
+		// the one bead it just filed against, and wrong for a caller that
+		// walks a CHAIN: verifyChainRounds asks `dep list` once per hop,
+		// and one answer for every id makes hop 2 a repeat of hop 1 rather
+		// than the parent's own parents. `fake-deps.<id>.json` is that id's
+		// own answer and nothing else's; absent, the per-repo file stands,
+		// so every fixture written before this reads exactly as it did.
+		//
+		// Written by hand only. `dep add` still writes the per-repo file
+		// (fakeBdAddDep), so a test that seeds a per-issue answer for a
+		// bead and then adds an edge to that same bead would not see it —
+		// no caller does both, and the add's own pin reads the per-repo
+		// file it writes.
+		if id := bdFakeDepSubject(args); id != "" {
+			if per := strings.TrimSuffix(file, ".json") + "." + id + ".json"; fileExists(per) {
+				file = per
+			}
+		}
 		if b, err := os.ReadFile(file); err == nil {
 			fmt.Print(string(b))
 		} else {
@@ -1104,6 +1123,24 @@ func fakeBdFilterStatus(body, status string) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+// bdFakeDepSubject is the id a `dep list` asks about: the first argument
+// after the verb that is not a flag. "" when the call names none, which is
+// not a shape bd accepts and so not one this fake answers specially.
+func bdFakeDepSubject(args []string) string {
+	for i, a := range args {
+		if a != "list" {
+			continue
+		}
+		for _, v := range args[i+1:] {
+			if !strings.HasPrefix(v, "-") {
+				return v
+			}
+		}
+		return ""
+	}
+	return ""
 }
 
 // fakeBdAddDep records `dep add <id> <blocker>` where `dep list <id>` will

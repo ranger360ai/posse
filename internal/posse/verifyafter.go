@@ -40,6 +40,17 @@ package posse
 // instead of once per close, and that is what took the queue's branching
 // factor above 1.0 (ranger-base-1t7r, and DefaultVerifyBatch below).
 //
+// Config `verify_chain_max: N` bounds the DEPTH of that rule. Verify files
+// a bead, the verifier files findings from it, the fix closes, and verify
+// files a bead about THAT close — a cycle whose every round is locally
+// reasonable and which nothing in this file used to stop. One project crew
+// on another instance ran ~20 rounds on a single config-test pin before a
+// human paused it (ranger-base-ewnas). Above N rounds on one lineage the
+// next close files ONE `-l question` bead for the operator instead of
+// another verify bead, which ends the cycle where the harness owns it: no
+// verify bead, no verifier session, no findings bundle, nothing to fix.
+// `verify_chain_max: 0` turns the bound off. See verifyChainRounds.
+//
 // It is one query per repo per pass and one rule. It is not a workflow
 // engine: the verify bead never holds the close, and nothing here reopens
 // anything.
@@ -88,6 +99,32 @@ const DefaultVerifyBatch = 1
 // reaches this age, then filed as it stands. Neither named failure survives.
 const DefaultVerifyBatchAge = 24 * time.Hour
 
+// DefaultVerifyChainMax is config `verify_chain_max:` when unset: how many
+// verify rounds ONE LINEAGE earns before the next close in it goes to the
+// operator instead of to a verifier. 0 turns the bound off.
+//
+// ADR 0006 §6 already bounds the FAN-OUT of one verify close — a finding
+// whose fix runs nothing is a comment and files no bead — and the 2026-09-02
+// rule before it bounded beads per verify close. Neither bounds DEPTH: a
+// chain of live findings, each one genuinely live, each filed as one bundle,
+// walks as far as the two seats will carry it.
+//
+// MEASURED 2026-11-09 by scripts/chain-depth-census.py over one shop's whole
+// bead store (3,353 beads, 2026-08-12 .. 2026-11-09, 2,634 of them not
+// verify beads), counting for each close the rounds already spent on its
+// lineage by exactly the walk verifyChainRounds makes:
+//
+//	0 rounds 2055 (78.0%) · 1 round 527 (20.0%) · 2 rounds 41 (1.6%)
+//	3 rounds 8 (0.3%) · 4 rounds 3 (0.1%) · deepest observed 4
+//
+// So 98.0% of closes are inside one round and that shop's own deepest chain
+// is four. Three is therefore a bound no converging piece of work on that
+// queue has ever needed, and it would have escalated 11 closes in 89 days —
+// about one a week for the operator, against ~20 sessions spent on one
+// artifact in the incident that filed this. The per-artifact key the bead
+// proposed was measured and rejected: see verifyChainRounds.
+const DefaultVerifyChainMax = 3
+
 const (
 	// DefaultVerifyAssignee is config `verify_assignee:` when unset: nobody.
 	// The harness ships no crew, so it cannot know which persona verifies —
@@ -104,6 +141,12 @@ const (
 
 	verifyCommitLimit = 10
 	verifyTitleMax    = 200
+	// verifyChainMaxBound caps `verify_chain_max:` — a configured bound is
+	// also how many `bd dep list` calls one candidate's walk can make, so
+	// an operator typo of 10000 is a pass that spends the launcher lock on
+	// a graph walk. Well above the deepest chain this queue has produced
+	// (DefaultVerifyChainMax's census: four).
+	verifyChainMaxBound = 50
 	// verifyBranchLimit caps how many session branches one close's landing
 	// block names, for the reason verifyCommitLimit exists: this is a
 	// description bd has to store. A bead is normally cut for one session,
@@ -139,6 +182,28 @@ const (
 	// the same query, and 0.51+ is the Dolt migration. The marker stays.
 	verifyMarkerPrefix = "Verify the close of "
 	verifyMarkerAfter  = " ("
+
+	// verifyChainStuckPrefix opens a chain-stop escalation's title and is
+	// its dedupe of record, for the reason the marker above is the verify
+	// bead's: it is written by bd in the same breath as the issue, so an
+	// orphaned create — the muoo class, one paragraph up — still dedupes.
+	// The stopped close's id follows it immediately, so a title scan needs
+	// no parser.
+	//
+	// Unlike settleopen.go's escalation this one dedupes against CLOSED
+	// question beads too, and the difference is not an oversight: a settle
+	// that recurs after a human looked at it is news again, because the
+	// bead is still in the queue. Here the subject is a close that has
+	// already happened, the watermark walks past it, and nothing will ever
+	// re-examine it — so an answered escalation must not re-arm into a
+	// second one if a later pass ever sees that close again.
+	verifyChainStuckPrefix = "verify chain stopped: "
+
+	// discoveredFromDepType is bd's own name for the handoff edge (ADR 0006
+	// §1), as `bd dep list --json` spells it in `dependency_type`. The walk
+	// counts THIS edge and no other: a `blocks` or `relates-to` parent is
+	// not a bead somebody filed from this one.
+	discoveredFromDepType = "discovered-from"
 )
 
 // verifiedSources is the set of closes this repo already has a verify bead
@@ -239,14 +304,36 @@ func (a *App) verifyBatchAge(errw io.Writer) time.Duration {
 	return d
 }
 
+// verifyChainMax is config `verify_chain_max:` as a round count. Same rule
+// as verifyBatch: an unreadable value is named on errw and the default
+// stands, because a typo must be visible rather than silently change a gate.
+//
+// 0 IS A VALUE here and not an error — it turns the bound off, the
+// `verify_labels:`-empty convention — so the refusal is of a negative or
+// non-numeric one, and of a bound past verifyChainMaxBound.
+func (a *App) verifyChainMax(errw io.Writer) int {
+	raw := strings.TrimSpace(YamlGet(a.ConfigPath, "verify_chain_max"))
+	if raw == "" {
+		return DefaultVerifyChainMax
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 || n > verifyChainMaxBound {
+		fmt.Fprintf(errw, "verify-after: config verify_chain_max: %q is not a round count in 0..%d — the bound stands at %d\n",
+			raw, verifyChainMaxBound, DefaultVerifyChainMax)
+		return DefaultVerifyChainMax
+	}
+	return n
+}
+
 // verifyPolicy is the config one sweep runs under, read once at the head of
 // the pass: every repo in it is answered by the same rule, and a config typo
 // is named once rather than once per repo.
 type verifyPolicy struct {
-	Labels []string
-	Batch  int
-	MaxAge time.Duration
-	Now    time.Time
+	Labels   []string
+	Batch    int
+	MaxAge   time.Duration
+	ChainMax int
+	Now      time.Time
 }
 
 // verifyWatermarkPath is RHQ_HOME/state/verify-after.<repo> — per repo,
@@ -302,13 +389,20 @@ func writeVerifyWatermark(p string, t time.Time) error {
 // The lock is taken and dropped inside this call, so callers must not already
 // hold it: `Run` calls this before fireLoop takes its own, and `posse ready` —
 // which files by the same rule (ADR 0006 §3) — holds nothing. Hold time is a
-// `bd list --all` per repo plus a create per new close, not the fire loop's.
+// `bd list --all` per repo, a create per new close, and — since the depth
+// bound — up to `verify_chain_max` dependency reads per new close, not the
+// fire loop's. In practice that is ONE such read per close: the walk's first
+// call is also its last for any close that was not filed from a verify bead,
+// which is 78% of them (DefaultVerifyChainMax's census), and it makes none
+// at all when the bound is off or when the close already has its verify
+// bead.
 func (a *App) VerifyAfter(bd Bd, dirs []string, out, errw io.Writer) int {
 	pol := verifyPolicy{Labels: a.verifyLabels()}
 	if len(pol.Labels) == 0 {
 		return 0 // config says off
 	}
 	pol.Batch, pol.MaxAge, pol.Now = a.verifyBatch(errw), a.verifyBatchAge(errw), time.Now()
+	pol.ChainMax = a.verifyChainMax(errw)
 	lock, err := lockLaunches(a, out)
 	if err != nil {
 		// One line, like every other failure here. Not acting is the safe
@@ -455,18 +549,37 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 	// filing a second one — and adopting it is a handled candidate, so the
 	// watermark that the timeout froze thaws on its own.
 	already := verifiedSources(issues)
+	// And every close a chain-stop escalation already answers: the harness
+	// files one INSTEAD of a verify bead, so without this the next pass
+	// sees a close with no verify bead and no qa dependent and files the
+	// escalation again (verifyChainStopped).
+	for id := range verifyChainStopped(issues) {
+		already[id] = true
+	}
+	// The listing by id, for the chain walk: every bead above a close but
+	// the close's own parent edge is in here already, so the walk pays bd
+	// for the edges and nothing else.
+	byID := make(map[string]BdIssue, len(issues))
+	for _, is := range issues {
+		byID[is.ID] = is
+	}
 
 	// Classify every candidate BEFORE grouping. A close that already has its
 	// verify bead must not consume a slot in a batch, and a close bd could
 	// not answer for must not silently join one — so both are decided per
 	// candidate first, and only what is genuinely pending is batched.
 	const (
-		vaHandled = iota // answered already, or answered by this pass
-		vaPending        // needs a verify bead
-		vaFailed         // bd could not say, or the bead is unusable
+		vaHandled   = iota // answered already, or answered by this pass
+		vaPending          // needs a verify bead
+		vaChainStop        // its lineage has spent its rounds: the operator's
+		vaFailed           // bd could not say, or the bead is unusable
 	)
 	state := make([]int, len(cands))
-	var pending []int
+	var pending, stops []int
+	// The rounds already spent above each pending close, by close id: read
+	// once here, then read twice — by the escalation that stops a chain and
+	// by the head line that tells a verifier which round it is on.
+	chain := map[string][]verifyChainHop{}
 	for i, is := range cands {
 		if !beadIDRe.MatchString(is.ID) {
 			// Never retried: it cannot succeed, and the id is going into
@@ -483,9 +596,42 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 		case done:
 			state[i] = vaHandled
 		default:
+			// How deep is this close's lineage? The bound is on the count,
+			// and a walk bd could not finish gives a FLOOR — named, and
+			// never read as a reason to escalate (verifyChainRounds).
+			hops, whole := verifyChainRounds(bd, dir, is.ID, byID, pol.ChainMax)
+			chain[is.ID] = hops
+			if !whole {
+				fmt.Fprintf(errw, "verify-after: %s: bd could not finish the verify-chain walk — %d round(s) counted, which is a floor, so the verify bead is filed\n",
+					is.ID, len(hops))
+			}
+			if pol.ChainMax > 0 && len(hops) >= pol.ChainMax {
+				state[i] = vaChainStop
+				stops = append(stops, i)
+				continue
+			}
 			state[i] = vaPending
 			pending = append(pending, i)
 		}
+	}
+
+	// The bound, before the batching: a close whose lineage has spent its
+	// rounds must not consume a slot in a batch either, so it is decided
+	// here and never reaches the loop below. The escalation IS the handling
+	// — the watermark walks past this close and nothing re-examines it —
+	// so a create that fails leaves it vaFailed and the watermark holds.
+	for _, i := range stops {
+		is := cands[i]
+		qid, err := a.fileVerifyChainStop(bd, dir, is, chain[is.ID], byID, pol, errw)
+		if err != nil {
+			fmt.Fprintf(errw, "verify-after: %s: %v\n", is.ID, err)
+			state[i] = vaFailed
+			continue
+		}
+		already[is.ID] = true
+		state[i] = vaHandled
+		fmt.Fprintf(out, "+ %-14s no verify bead: %d verify round(s) on one lineage is the bound — escalated to %s, the operator decides the next one\n",
+			is.ID, len(chain[is.ID]), qid)
 	}
 
 	// One verify bead per pol.Batch closes, in close order. The trailing
@@ -510,7 +656,7 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 		for _, i := range pending[off:end] {
 			group = append(group, cands[i])
 		}
-		qid, err := a.fileVerifyBead(bd, dir, group, already, errw)
+		qid, err := a.fileVerifyBead(bd, dir, group, verifyChainHead(group, chain, pol.ChainMax), already, errw)
 		if err != nil {
 			fmt.Fprintf(errw, "verify-after: %s: %v\n", verifyIDList(group), err)
 			for _, i := range pending[off:end] {
@@ -579,13 +725,314 @@ func (a *App) verifyAlreadyFiled(bd Bd, dir string, is BdIssue, already map[stri
 	return false, nil
 }
 
+// ─── the depth bound (ranger-base-ewnas) ─────────────────────────────────────
+
+// verifyChainHop is one verify round already spent above a close: the verify
+// bead, and the close it answered when it answered exactly one.
+type verifyChainHop struct {
+	Verify string // the verify bead this close was filed from
+	Source string // the close that verify answered, "" when it answered N
+}
+
+// verifyChainRounds walks the lineage above one close and returns the verify
+// rounds already spent on it, newest first, plus whether the walk reached
+// its own end rather than a bd that would not answer.
+//
+// One hop is: this close was filed `--deps discovered-from:<Q>` where Q is a
+// verify bead (ADR 0006 §6's findings bundle, which is the only thing that
+// edge means here), and Q answered close S. Repeat from S. The walk stops at
+// a close with no such parent, at a parent the listing does not hold or does
+// not call a verify bead, at a repeat, or at `limit` hops — so it
+// costs at most `limit` `bd dep list` calls and makes none at all when the
+// bound is off.
+//
+// THE FLOOR CANNOT REACH THE BOUND, which is why the caller needs no second
+// condition: the loop appends one hop per successful `bd dep list` and only
+// ever runs while `len(hops) < limit`, so a walk that ends in a bd failure
+// has counted strictly FEWER than `limit` rounds. `len(hops) >= limit`
+// therefore means every edge the count rests on was really read, and a
+// walk that returned false is a count that is too SMALL — one more round,
+// never an escalation nobody earned.
+//
+// THE KEY IS THE LINEAGE, NOT THE PATH, and that is a measured choice rather
+// than the obvious one. ranger-base-ewnas proposed keying the chain on the
+// ARTIFACT — "a verify of a bead that was itself a verify finding on the
+// same path" — so a chain that moved to a different file would start a fresh
+// count. MEASURED 2026-11-09 by scripts/chain-depth-census.py, which measures
+// both keys over the same store and prints the deepest chains of each to be
+// read by eye (3,353 beads; the artifact read as the path set of every
+// commit naming the bead, two rounds on one artifact when those sets
+// intersect, and a batched hop disambiguated BY THE PATH, which is that
+// key's whole appeal): the path key reads 137 closes at 3 rounds or more, 10
+// of them at 8 or more and the deepest at 13 — and those are visibly NOT one
+// artifact. One 11-deep chain runs a cost-provider bead into a silent-revert
+// bead into three `posse worktrees` beads into four common-dir-pin beads
+// into a seatbelt bead, chained because every one of them touches
+// internal/posse/dispatch.go and NOTES.md. A hot file is not an artifact,
+// and in this tree most files are hot.
+//
+// The lineage key reads the same store at a deepest 4 (see
+// DefaultVerifyChainMax), and every chain it reads at 3 or more is one
+// subject by eye: the GIT_CONFIG inlet pin four rounds running, the
+// common-dir pin three.
+//
+// Subject continuity comes for free from the one-source rule instead. At
+// `verify_batch: 1` — the default, and the incident's shape — a verify bead
+// answers exactly one close, so "filed from the verify of that close" IS
+// "about that close's work". A BATCHED verify bead answers N unrelated
+// closes and the findings bundle names which in prose, which the harness
+// cannot read; the hop counts (a verify round did happen) and the walk then
+// STOPS rather than guess which of the N to continue through. That
+// undercounts, which is the direction every count in this file errs in: an
+// undercount costs one more round, an overcount files an escalation the
+// shop did not earn.
+func verifyChainRounds(bd Bd, dir, id string, byID map[string]BdIssue, limit int) ([]verifyChainHop, bool) {
+	if limit <= 0 {
+		return nil, true // the bound is off: no walk, no bd calls
+	}
+	var hops []verifyChainHop
+	seen := map[string]bool{id: true}
+	cur := id
+	for len(hops) < limit {
+		deps, err := bd.DepList(dir, cur)
+		if err != nil {
+			// Not knowing how deep the chain is is not evidence that it is
+			// deep. The caller names the floor and files the verify bead.
+			return hops, false
+		}
+		// The first `discovered-from` parent that IS a verify bead, rather
+		// than the first one full stop. The two answer the same for all but
+		// one bead in the census store — MEASURED 2026-11-09: of its 2,634
+		// non-verify beads, 2,005 carry exactly one `discovered-from`
+		// parent, 628 carry none, and ONE carries two — but "the first"
+		// makes the count depend on the order bd happens to list edges in,
+		// and in that one measured case the verify bead is the SECOND.
+		// (Four parents is the ordinary shape of a `verify_batch: 4` verify
+		// bead, 342 of them there; a verify bead is never a bead this walk
+		// starts from or continues through.)
+		var q BdIssue
+		parent := ""
+		for _, d := range deps {
+			if d.DependencyType != discoveredFromDepType || !beadIDRe.MatchString(d.ID) || seen[d.ID] {
+				continue
+			}
+			if is, known := byID[d.ID]; known && hasLabel(is.Labels, VerifyLabel) {
+				parent, q = d.ID, is
+				break
+			}
+		}
+		if parent == "" {
+			return hops, true
+		}
+		seen[parent] = true
+		hop := verifyChainHop{Verify: parent}
+		if srcs := verifySourceIDs(q.Description); len(srcs) == 1 {
+			hop.Source = srcs[0]
+		}
+		hops = append(hops, hop)
+		if hop.Source == "" || seen[hop.Source] {
+			return hops, true // a batch, or a graph that loops: stop short
+		}
+		seen[hop.Source] = true
+		cur = hop.Source
+	}
+	return hops, true
+}
+
+// verifyChainStopped is every close this repo already has a chain-stop
+// escalation for, read out of the listing the pass already made — the
+// escalation's half of `already`, and the reason it is a TITLE scan rather
+// than an edge read is verifyChainStuckPrefix's.
+//
+// Closed escalations count. See that constant for why this differs from
+// settleopen.go, which deliberately re-arms.
+func verifyChainStopped(issues []BdIssue) map[string]bool {
+	out := map[string]bool{}
+	for _, is := range issues {
+		if id := verifyChainStuckSource(is.Title); id != "" {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// verifyChainStuckTitle is the escalation's title — the dedupe key, so the
+// stopped close's id sits at a fixed offset and nothing else may precede it.
+func verifyChainStuckTitle(id string, rounds int) string {
+	return verifyTruncate(fmt.Sprintf("%s%s — %d verify rounds on one lineage, the operator decides the next one",
+		verifyChainStuckPrefix, verifyOneLine(id), rounds))
+}
+
+// verifyChainStuckSource recovers the stopped close's id from an escalation
+// title, or "" when the text is not one the harness wrote.
+func verifyChainStuckSource(title string) string {
+	if !strings.HasPrefix(title, verifyChainStuckPrefix) {
+		return ""
+	}
+	rest := title[len(verifyChainStuckPrefix):]
+	if i := strings.IndexByte(rest, ' '); i > 0 {
+		rest = rest[:i]
+	}
+	if beadIDRe.MatchString(rest) {
+		return rest
+	}
+	return ""
+}
+
+// verifyChainStopComment is the breadcrumb left on the stopped close naming
+// the escalation filed instead of its verify bead. It is the pointer the
+// `discovered-from` edge may not carry (verifyMarkerPrefix's muoo note), and
+// it must never read as `verify filed:` — a reader who finds that line on a
+// close believes a verifier is coming.
+func verifyChainStopComment(qid string, rounds, max int) string {
+	return fmt.Sprintf("verify chain stopped: %s — this close's lineage has already spent %d verify round(s) and "+
+		"`verify_chain_max:` is %d, so NO verify bead was filed for it and the operator decides whether there is "+
+		"another round (ranger-base-ewnas). Nothing is blocked and nothing reopens; %s says what to decide.",
+		qid, rounds, max, qid)
+}
+
+// verifyChainStopBody is what the operator reads. It is built from the same
+// facts a verify bead's section carries — closer, close reason, commits —
+// and deliberately NOT from verifySection, which opens with the dedupe
+// marker: this bead is not a verify bead, and a marker saying it verifies
+// this close would be both a lie to the reader and a dedupe waiting to
+// happen if verifiedSources ever stops checking the label.
+func (a *App) verifyChainStopBody(dir string, is BdIssue, hops []verifyChainHop, byID map[string]BdIssue, max int) string {
+	id := verifyOneLine(is.ID)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s closed, and its lineage has already spent %d verify round(s): every close below was filed\n"+
+		"from the verify of the close before it. `verify_chain_max:` is %d, so no verify bead was filed for this\n"+
+		"close — the next round is the operator's call and not another seat's (ADR 0006 §3, ranger-base-ewnas).\n\n"+
+		"A verify/fix pair can iterate on one artifact without bound: every round is locally reasonable, each finding\n"+
+		"is real, and nothing in the queue says the loop is running. One project crew on another instance ran ~20\n"+
+		"rounds on a single config-test pin that way before a human paused it.\n\n", id, len(hops), max)
+	fmt.Fprintf(&b, "close:    %s (title, quoted as data: %q)\n", id, is.Title)
+	if c := verifyOneLine(verifyCloser(is)); c != "" {
+		fmt.Fprintf(&b, "closer:   %s\n", c)
+	}
+	if r := verifyOneLine(is.CloseReason); r != "" {
+		fmt.Fprintf(&b, "reason:   %s\n", r)
+	}
+	fmt.Fprintf(&b, "repo:     %s\n%s%s\n\n", AbbrevHome(dir), discoveredFromMarkerPrefix, id)
+	b.WriteString("the chain, newest first:\n")
+	for i, h := range hops {
+		src := "a BATCH of closes — the walk stopped here rather than guess which one this round answered"
+		if h.Source != "" {
+			src = "close " + h.Source
+			if s, ok := byID[h.Source]; ok {
+				src += fmt.Sprintf(" (title, quoted as data: %q)", s.Title)
+			}
+		}
+		fmt.Fprintf(&b, "  round %d  verify %s of %s\n", len(hops)-i, h.Verify, src)
+	}
+	if lines, _ := gitCommitsFor(dir, is.ID); len(lines) > 0 {
+		fmt.Fprintf(&b, "\ncommits naming %s (git log --grep; a commit may merely CITE the bead):\n", id)
+		for _, l := range lines {
+			fmt.Fprintf(&b, "    %s\n", l)
+		}
+	}
+	fmt.Fprintf(&b, "\nWhat to decide: is the artifact converging? If it is, one more round is cheap and this bead is how you\n"+
+		"buy it — `bd create \"verify: <title>\" -l %s --deps discovered-from:%s` files it by hand, and then close this\n"+
+		"bead. If it is not, another round is not the answer: rewrite the thing, hand the design to architecture, or\n"+
+		"accept it as it stands and say so on %s. Closing THIS bead files nothing and blocks nothing — the close it\n"+
+		"names is already closed, and verify-after will not see it again.\n", VerifyLabel, id, id)
+	return b.String()
+}
+
+// fileVerifyChainStop files ONE question bead for a close whose lineage has
+// spent its rounds, and comments it back on the close. It is the whole stop:
+// with no verify bead there is no verifier session, no findings bundle and
+// no next close, so the cycle ends at the one hop the harness owns.
+//
+// Nothing is blocked and nothing is reopened — there is nothing in the queue
+// to block, because the subject is a close. That is the difference from
+// settleopen.go's escalation, whose stuck bead is live and leaves `bd ready`
+// on an edge.
+func (a *App) fileVerifyChainStop(bd Bd, dir string, is BdIssue, hops []verifyChainHop, byID map[string]BdIssue, pol verifyPolicy, errw io.Writer) (string, error) {
+	title := verifyChainStuckTitle(is.ID, len(hops))
+	desc := a.verifyChainStopBody(dir, is, hops, byID, pol.ChainMax)
+	// The same cheap half of the visibility guard fileVerifyBead takes, for
+	// the same reason: this bead is built out of other beads' titles.
+	a.WarnOpsContent(errw, dir, "the verify-chain escalation for "+is.ID, title+"\n"+desc)
+	qid, err := bd.Create(dir, BdNew{
+		Title:       title,
+		Description: desc,
+		Labels:      []string{SettleQuestionLabel},
+		Assignee:    a.CfgGet("operator", ""),
+		// As urgent as the close it stands in for, which is how
+		// fileVerifyBead prices a verify bead: the escalation replaces that
+		// bead, so it inherits that bead's claim on attention rather than
+		// inventing one.
+		Priority: strconv.Itoa(is.Priority),
+		// The handoff edge, which settleopen.go's escalation cannot carry
+		// and this one can: there is no `blocks` edge here for it to close a
+		// cycle with (ranger-base-23oo is about that PAIR), so the ordinary
+		// provenance is available. It is still the write bd can lose while
+		// committing the issue, so the title above is the dedupe of record
+		// and the body carries discoveredFromMarkerPrefix as well.
+		Deps:  []string{"discovered-from:" + is.ID},
+		Actor: VerifyActor,
+	})
+	if err != nil {
+		// As fileVerifyBead: bd may have committed the issue and failed on
+		// the edge. Say so, retry next pass, and let the title scan
+		// (verifyChainStopped) adopt the orphan rather than file a second.
+		return "", err
+	}
+	if err := bd.Comment(dir, is.ID, verifyChainStopComment(qid, len(hops), pol.ChainMax), VerifyActor); err != nil {
+		fmt.Fprintf(errw, "verify-after: %s: comment: %v\n", is.ID, err)
+	}
+	return qid, nil
+}
+
+// verifyChainHead is the line the VERIFIER reads first when the filing is
+// not the first round on its close's lineage: which round this is, of how
+// many, and what the last one means. It is the bound's other half and the
+// cheaper one — the harness can only stop the round after next, and a
+// verifier who knows it is on round 3 of 3 can stop this one.
+//
+// "" when no close in the group has spent a round, which is almost all of
+// them (78.0%, DefaultVerifyChainMax's census) — so a first-round filing's
+// description stays byte for byte what this rule has always written, and no
+// fixture of one moves.
+func verifyChainHead(group []BdIssue, chain map[string][]verifyChainHop, max int) string {
+	var b strings.Builder
+	for _, is := range group {
+		hops := chain[is.ID]
+		if len(hops) == 0 {
+			continue
+		}
+		round := len(hops) + 1
+		fmt.Fprintf(&b, "VERIFY ROUND %d of %d on %s's lineage (config `verify_chain_max:`): each close below it was filed from the verify of the one before. ",
+			round, max, verifyOneLine(is.ID))
+		var rounds []string
+		for i, h := range hops {
+			if h.Source == "" {
+				rounds = append(rounds, fmt.Sprintf("round %d: verify %s (a batch)", len(hops)-i, h.Verify))
+				continue
+			}
+			rounds = append(rounds, fmt.Sprintf("round %d: verify %s of %s", len(hops)-i, h.Verify, h.Source))
+		}
+		fmt.Fprintf(&b, "Newest first — %s.", strings.Join(rounds, "; "))
+		if round >= max {
+			b.WriteString(" THIS IS THE LAST ROUND this lineage gets: a close filed from this bead files a question for the operator instead of another verify bead. " +
+				"So if the artifact is not converging, say THAT on this bead's close — the finding a fourth round would make is worth less than the sentence that says the loop is not ending.")
+		}
+		b.WriteString("\n\n")
+	}
+	return b.String()
+}
+
 // fileVerifyBead files ONE verify bead for a group of closes — one close at
 // `verify_batch: 1`, N at N — and comments its id back on every close it
-// covers. The comment is the provenance that survives: the `discovered-from`
+// covers. `head` is verifyChainHead's depth line, prepended rather than
+// threaded into the sections: it is "" for a first-round filing, so a
+// description this rule has always written is unchanged byte for byte, and
+// the marker the dedupe reads is still found BY LINE below it. The comment is the provenance that survives: the `discovered-from`
 // edges are the write that may not land at all (verifyMarkerPrefix), and
 // with N of them the walk that fails to terminate has N chances to start.
-func (a *App) fileVerifyBead(bd Bd, dir string, group []BdIssue, already map[string]bool, errw io.Writer) (string, error) {
-	title, desc := verifyGroupTitle(group), a.verifyGroupDescription(dir, group)
+func (a *App) fileVerifyBead(bd Bd, dir string, group []BdIssue, head string, already map[string]bool, errw io.Writer) (string, error) {
+	title, desc := verifyGroupTitle(group), head+a.verifyGroupDescription(dir, group)
 	// The cheap half of the visibility guard (rangerhq-hrz): this bead is
 	// built out of OTHER beads' titles and descriptions, so it inherits
 	// whatever those carried. Warn, do not refuse — the refusal is the

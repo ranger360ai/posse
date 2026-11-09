@@ -11,6 +11,53 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**`verify_chain_max: 3` — verify-after stops handing one lineage round after
+round and asks the operator instead.**
+
+*New, ON by default, and it changes nothing for a close that is not already
+the product of three verify rounds.*
+
+verify-after files a verify bead for a close; the verifier files one findings
+bundle from it; the fix closes; verify-after files a bead about THAT close.
+Nothing counted the rounds. One project crew ran about twenty rounds on a
+single config-test pin that way — bash quoting, then rsync pattern grammar,
+then ANSI-C escapes — before a human noticed and paused the home. Every round
+was locally reasonable: real findings, real fixes, the rule working as
+written. `verify_batch:` does not help, because it divides how many closes
+one verify bead answers and not how many times a lineage comes back.
+
+The new key counts the rounds already spent on a close's **lineage** — this
+close was filed `discovered-from` a verify bead, that bead answered the close
+before it, and so on up — and at the bound it files one `-l question` bead
+for your `operator:` instead of another verify bead. That is the whole stop:
+no verify bead, no verifier session, no findings bundle, no next close. The
+question bead carries the chain, the close's own evidence and the three
+decisions available (buy one more round by hand, change the design, or accept
+the thing as it stands). Nothing is blocked and nothing is reopened — the
+subject is a close, so there is nothing in the queue to hold.
+
+Below the bound the filing is what it always was, plus one line at the head
+saying which round it is; the last round says it is the last, so a verifier
+can stop before the harness has to. A first-round verify bead — 78% of them —
+is byte for byte unchanged.
+
+**Why 3.** MEASURED over one shop's whole bead store, 3,353 beads across 89
+days, by `scripts/chain-depth-census.py`: 78.0% of closes have spent no
+verify round at all, 20.0% one, 1.6% two, and the deepest chain the shop has
+ever produced is four. At 3 the bound would have asked the operator about 11
+closes in those 89 days, about one a week. Set `verify_chain_max: 0` to turn
+it off, and then not one dependency edge is read for it.
+
+The count errs SHORT on purpose, three ways: a batched verify bead ends the
+walk rather than guess which of its closes a bundle answered, a
+`discovered-from` edge bd lost is a round the walk cannot see, and a
+dependency read that fails yields a floor that is named on stderr and never
+escalated on. An undercount costs one more round; an overcount costs a
+question nobody earned. Keying the chain on the touched FILE instead was
+measured and rejected — in a tree where most closes touch one or two large
+files it chains unrelated subjects together and reports depths nobody has
+worked at (`docs/notes.d/ranger-base-ewnas.md` has both halves).
+
 **`session_transcripts: <repo>: off` — a claude seat in that repo writes no
 session transcript to disk.**
 

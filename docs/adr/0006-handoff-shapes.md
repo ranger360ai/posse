@@ -1,6 +1,6 @@
 # ADR 0006 — Handoffs carry explicit acceptance; verification stays batched
 
-*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal landed 2026-09-06 (ranger-base-0ezn7) · escape doctrine amended 2026-09-06 by operator ruling (§1, §6; ranger-base-0f2zy) · pin write-freeze added 2026-09-10 by operator ruling (§7; ranger-base-7dh59) · owner: architect.*
+*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal landed 2026-09-06 (ranger-base-0ezn7) · escape doctrine amended 2026-09-06 by operator ruling (§1, §6; ranger-base-0f2zy) · pin write-freeze added 2026-09-10 by operator ruling (§7; ranger-base-7dh59) · verify-chain depth bound added 2026-11-09 (§3; ranger-base-ewnas) · owner: architect.*
 
 ## Context
 
@@ -46,6 +46,24 @@ on each close. Respect `verify_assignee` only as an operator pin. Exempt a
 whole-word rejected close (`invalid`, `duplicate`/`dup`, `wontfix`/`won't
 fix`, `not a bug`, including the existing plural forms) only when a
 successful git query finds no commit naming it; a failed query cannot exempt.
+
+**`verify_chain_max` (default 3) bounds the rule's DEPTH** (added 2026-11-09,
+ranger-base-ewnas). Count the verify rounds already spent on a close's
+LINEAGE: this close filed `discovered-from` a verify bead, that verify bead
+answering exactly one close, repeated from that close. At or above the bound,
+file no verify bead for that close — file one `-l question` bead for
+`operator:` instead, priority the close's own, carrying the chain, the
+close's evidence and what there is to decide; comment it back on the close,
+distinguishably from `verify filed:`; dedupe it on its own title across OPEN
+AND CLOSED question beads, because the subject is a close the watermark
+walks past once. Block nothing and reopen nothing: there is nothing in the
+queue to block. `0` disables the bound and then no edge is read for it. A
+batched verify bead ends the walk rather than guessing which of its closes a
+bundle answered, and a dependency read that fails yields a FLOOR that is
+named and never escalated on — so the count errs short by construction.
+Below the bound the filing is unchanged but for one head line naming the
+round, which the last round says is the last. Not the artifact: keying the
+chain on the touched path was measured and rejected (Consequences).
 
 **4. Acceptance is explicit.** `closerDoneWhen` label/type-to-intent
 selection is REPLACED (landed 2026-09-06, ranger-base-0ezn7), and not by an
@@ -160,8 +178,49 @@ is of the recorded class with reason `doctrine 2026-09-06, recorded on
 so the record moves rather than vanishes; keep every bead whose fix would
 change what a process does or a pin proves.
 
+MEASURED 2026-11-09 (ranger-base-ewnas, scripts/chain-depth-census.py over
+one shop's whole bead store: 3,353 beads, 2026-08-12 .. 2026-11-09, 2,634 of
+them not verify beads), the depth §3's bound is denominated in — rounds
+already spent on a close's lineage, by the shipped walk:
+
+- 0 rounds 2055 (78.0%) · 1 round 527 (20.0%) · 2 rounds 41 (1.6%) · 3
+  rounds 8 (0.3%) · 4 rounds 3 (0.1%). Deepest observed: 4. So 98.0% of
+  closes sit inside one round, and a bound of 3 would have escalated 11
+  closes in 89 days — about one a week — against the ~20 sessions one
+  artifact took in the incident that filed this (another instance's project
+  crew, two seats, ~20 verify→fix rounds on a test of two config files; a
+  coordinator note on one bead did not stop it because each follow-up was a
+  new id, and the home was paused by hand).
+- THE ARTIFACT KEY, measured and rejected. The same census keyed on the
+  touched path instead — two rounds are one chain when the closes' commit
+  path sets intersect, with a batched hop disambiguated by that path, which
+  is the key's whole appeal — reads 137 closes at 3 rounds or more, 10 at 8
+  or more, deepest 13. Those are not one artifact: one 11-deep chain runs a
+  cost-provider bead into a silent-revert bead into three `posse worktrees`
+  beads into four common-dir-pin beads into a seatbelt bead, chained because
+  every one touches `internal/posse/dispatch.go` and `NOTES.md`. A hot file
+  is not an artifact and in this tree most files are hot, so the path key
+  both over-counts and cannot be read. The lineage key needs no path at all:
+  at `verify_batch: 1` — the default, and the incident's shape — a verify
+  bead answers one close, so "filed from the verify of that close" already
+  means "about that close's work".
+
+ASSUMED, to be measured after a month: that the escalation rate stays near
+one close a week on a queue of this size, and that an operator answer is
+cheaper than the round it replaces. Read it as the count of `verify chain
+stopped:` question beads and how many were answered by filing one more
+verify bead by hand — if most were, the bound is one too low.
+
 Rejected: doing nothing (guessed policy); removing batching (known queue
-failure); a label-to-intent map or graph inference (another vocabulary);
+failure); bounding the depth in the VERIFIER's PID instead — a
+diminishing-returns instruction is advice at the one hop the harness does
+not own, and §6's own history says the channel has to change, not the
+count; keying the chain on the artifact (measured above); blocking or
+reopening the looping close (§6: verification never holds a build close
+hostage, and the close is already closed); a `chain-depth` field or label on
+the bead (another vocabulary for what the graph already says); a counter in
+$RHQ_HOME/state (0011: a fifth store, and the first one that decides
+something — the count is a fact about the beads); a label-to-intent map or graph inference (another vocabulary);
 one bug per finding (amplification); branch-record absence as proof of
 landing; verify as a close gate; filing recorded-class findings as debt at
 a lower priority (same inflow, same loop, one more triage field); a

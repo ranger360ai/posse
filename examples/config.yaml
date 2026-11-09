@@ -419,6 +419,28 @@ default_emoji: ⚙️
 # quiet mid-batch still gets its last closes verified.
 # verify_batch: 4
 # verify_batch_age: 24h
+#
+# `verify_chain_max: N` bounds the DEPTH of the same rule. Verify files a
+# bead, the verifier files findings from it, the fix closes, and verify files
+# a bead about THAT close: a cycle whose every round is locally reasonable.
+# One project crew ran about twenty rounds on a single config-test pin that
+# way before a human stopped it. `verify_batch:` does not help — it divides
+# the fan-out of one round, not the number of rounds.
+#
+# Above N rounds on ONE LINEAGE — each close filed from the verify of the
+# close before it — the next close files one `-l question` bead for
+# `operator:` instead of another verify bead, and that is the stop: no
+# verify bead, no verifier session, no findings bundle, nothing to fix. The
+# bead says what to decide and how to buy one more round by hand. Rounds
+# below the bound are unchanged except for one line at the head of the
+# verify bead naming which round it is, so the verifier can stop before the
+# harness has to.
+#
+# Measured on one shop's queue of 3,353 beads: 97.9% of closes sit inside
+# ONE round and the deepest chain was four, so 3 escalates about one close a
+# week there. 0 turns the bound off, and then not one `bd dep list` is made
+# for it.
+# verify_chain_max: 3
 
 # ─── ci-watch ────────────────────────────────────────────────────────────────
 # A dispatch pass reads your repo's CI gate on the branch it merges into and

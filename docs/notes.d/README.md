@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-ybz6u](ranger-base-ybz6u.md) — `seatbelt (bwrap)` is a label and not a mapping, and the rest of this bead landed twice (ranger-base-ybz6u) — 2026-11-09
 - [ranger-base-sg7a7](ranger-base-sg7a7.md) — The launcher makes the session's furniture, not the host's (ranger-base-sg7a7) — 2026-11-09
+- [ranger-base-ewnas](ranger-base-ewnas.md) — A verify/fix pair has no bound on depth (ranger-base-ewnas) — 2026-11-09
 - [ranger-base-c7i8t](ranger-base-c7i8t.md) — The identity wall cannot wall the product's own name (ranger-base-c7i8t) — 2026-11-09
 - [ranger-base-yx73g](ranger-base-yx73g.md) — One repo, one identity wall, however its path is spelled (ranger-base-yx73g) — 2026-11-08
 - [ranger-base-yk5qb](ranger-base-yk5qb.md) — A fresh account's first claude seat meets a notice nobody seeded (ranger-base-yk5qb) — 2026-11-08
