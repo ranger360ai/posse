@@ -3988,9 +3988,36 @@ wait:
 		// the branch below that is about herdr's own five-second window
 		// rather than about delivery — the text was typed — so it gets a
 		// second reading first, and only the arm that finds no turn and no
-		// commit falls through to the unclaim. promptstall.go carries the
-		// incident and herdr's own wording for the difference.
-		if IsHerdrCode(r.err, "agent_prompt_stalled") && !p.delivered {
+		// work in this session's branch or tree falls through to the
+		// unclaim. promptstall.go carries the incident and herdr's own
+		// wording for the difference.
+		//
+		// AND A PROMPT CALL THAT SAYS NOTHING ABOUT DELIVERY SAYS LESS THAN
+		// A STALL, so it takes the same route (ADR 0084 D1, D2). Three
+		// outcomes, named below in the order the ADR names them:
+		//
+		//	delivered       the leg is not evidence about delivery at all —
+		//	                `delivered` (the launch line, ADR 0013 §2) or
+		//	                `rewaited` (an `agent wait` submits nothing, and
+		//	                it only started after a leg said the prompt
+		//	                landed — ranger-base-2mqp3).
+		//	not delivered   isNotDelivered: herdr's own words that nothing
+		//	                was sent. The ONLY route to the unclaim.
+		//	indeterminate   everything else — an untyped error, a hang, a
+		//	                signalled child, server_not_running, any other
+		//	                code, and the stall itself. Read, never spent.
+		//
+		// A `timeout` is apart from all three and keeps going to the status
+		// probe: herdr took the text and stopped watching, so the agent's
+		// own state is the question (rangerhq-1z0), and the probe's
+		// idle/done arm reads "the prompt plainly landed" — a sentence that
+		// is true after a timeout and FALSE for an indeterminate call, which
+		// is why that call does not go there (ADR 0084's rejected
+		// alternative 2: it would judge a seat that never got the text as
+		// settled-without-close and keep it claimed with nobody working it).
+		firstLeg := !p.delivered && !p.rewaited
+		handBack := firstLeg && isNotDelivered(r.err)
+		if firstLeg && !handBack && !IsHerdrCode(r.err, "timeout") {
 			if d.stopping() {
 				// The drain (ranger-base-e9d9), before the grace is spent:
 				// that reading costs up to a startup_wait of wall and the
@@ -3998,13 +4025,26 @@ wait:
 				// stopping loop reaches anyway.
 				return d.stopClaim(p)
 			}
-			switch d.judgeStall(p) {
+			tr := triggerIndeterminate(p, r.err)
+			if IsHerdrCode(r.err, "agent_prompt_stalled") {
+				tr = triggerStalled(p)
+			}
+			switch d.judgeStall(p, tr) {
 			case stallRewait:
 				d.rewait(p)
 				continue
 			case stallKeep:
 				return true, nil
 			}
+			// stallHandBack: both readings answered and neither found
+			// anything — no turn in the grace, and no work in this
+			// session's branch or tree. That is rangerhq-81d's own case, a
+			// live idle seat that never got the text, and it falls through
+			// to the hand-back BELOW the drain check rather than unclaiming
+			// here: judgeStall just spent up to a startup_wait of wall, and
+			// a stop that landed inside it is a stop (ranger-base-2mqp3's
+			// ordering, which this must not walk around).
+			handBack = true
 		}
 		if d.stopping() {
 			// THE DRAIN, AND IT IS ABOVE THE HAND-BACK ON PURPOSE
@@ -4028,20 +4068,20 @@ wait:
 			// running PromptWaitMS past the process that started it.
 			return d.stopClaim(p)
 		}
-		// THE HAND-BACK, and the two things it is NOT (ranger-base-2mqp3).
-		// unclaimAfterPromptFailure's contract is "the claim was made but
-		// the prompt never reached the agent", and this guard is the only
-		// reading of that contract: a wait error that gets past it is spent
-		// as a prompt failure, on a bead whose seat may be mid-turn.
+		// THE HAND-BACK, which is now reached only two ways, both decided
+		// above: isNotDelivered — herdr's own words that nothing was sent —
+		// and judgeStall answering stallHandBack after taking both its
+		// readings. unclaimAfterPromptFailure's contract is "the claim was
+		// made but the prompt never reached the agent", and nothing else may
+		// spend it: a leg error that gets here unjudged is a claim taken off
+		// a bead whose seat may be mid-turn (ranger-base-2mqp3's two seats,
+		// two branches and one bead).
 		//
-		//   - NOT a `timeout`: herdr took the text and stopped watching
-		//     (rangerhq-1z0). Only the agent's own state says whether work
-		//     is happening.
-		//   - NOT a leg on a bead whose delivery is already settled —
-		//     `delivered`, the launch line (ADR 0013 §2), or `rewaited`,
-		//     the typed path's own half of it, whose doc carries the
-		//     duplicate-dispatch this cost.
-		if !IsHerdrCode(r.err, "timeout") && !p.delivered && !p.rewaited {
+		// It used to be written as "not a `timeout`" — a deny-list of one
+		// reading an allow-list contract — and isNotDelivered's doc carries
+		// what that cost on each leg. The guard is the allow-list now, and
+		// the `!p.delivered && !p.rewaited` half of it rides in `firstLeg`.
+		if handBack {
 			d.logPromptHandBack(p.session, p.is.ID, p.runtime, p.target, r.err)
 			return false, d.unclaimAfterPromptFailure(p.is, p.persona, p.session, p.resumed, r.err)
 		}
@@ -4049,8 +4089,9 @@ wait:
 		// (ranger-base-aj79z). Everything below this point in the loop has a
 		// non-nil r.err — the `r.err == nil` arm above broke out of it — and
 		// on the `delivered` path neither VERDICT guard between the two can
-		// fire, because both carry `&& !p.delivered` and ADR 0013 §2 is why:
-		// the prompt rode the launch line, so a wait failure is never a
+		// fire, because both are behind `firstLeg` — which is `!p.delivered
+		// && !p.rewaited` — and ADR 0013 §2 is why for the first half: the
+		// prompt rode the launch line, so a wait failure is never a
 		// delivery failure and the claim is never handed back on one. (The
 		// drain between them is not one of those two: it fires on every
 		// path, and takes the whole pass out rather than judging this bead.)
@@ -5687,6 +5728,28 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	}
 	if !l.delivered {
 		if _, err := d.HB.Mux().Prompt(paneSeat(l.target), prompt(), false, 0); err != nil {
+			// D1's allow-list holds here too, and the cockpit's answer to
+			// the indeterminate case is not the pass's (ADR 0084 D5). This
+			// prompt carries no `--wait` and there is no gather loop behind
+			// it, so there is nothing to re-read with and no later pass to
+			// judge it — the only two verdicts available are hand back now
+			// or keep the claim. isNotDelivered is herdr's own words that
+			// nothing was sent, and it hands back exactly as it did. Every
+			// other error KEEPS THE CLAIM: the operator pressed the key and
+			// is watching, so the cheap recovery is the line below, where a
+			// hand-back on a seat that did get the text is a second
+			// dispatch they did not ask for.
+			//
+			// notePrompted first, and that is the same reading: the text
+			// may have gone in, so the session is remembered as prompted
+			// and a second `d` inside PromptGrace is refused rather than
+			// typing a second instruction into a seat that is mid-turn
+			// (ADR 0084's rejected alternative "retry the prompt" — the
+			// prompt is not idempotent and has no key).
+			if !isNotDelivered(err) {
+				d.notePrompted(session)
+				return "", Die("%s: the prompt call to %s ended without saying whether the text went in (%v) — claim kept; read the seat (posse peek %s)", is.ID, session, err, session)
+			}
 			d.logPromptHandBack(session, is.ID, launchRuntime, l.target, err)
 			return "", d.unclaimAfterPromptFailure(is, persona, session, l.resumed, err)
 		}

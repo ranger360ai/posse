@@ -2012,6 +2012,17 @@ func TestDispatchRewaitServerGoneKeepsTheClaim(t *testing.T) {
 // meets the replaced server. Claim-then-prompt means the claim is already
 // made (launchSession claims after awaitAgent), so this unclaims too — the
 // rangerhq-81d contract, reached by a code nothing pinned before.
+//
+// SINCE ADR 0084 THE VERDICT IS THE SAME AND THE ROUTE IS NOT, which is
+// what the added assertion below holds. `server_not_running` is not on
+// isNotDelivered's allow-list — herdr never said it sent nothing, and a
+// server replaced under an in-flight prompt answers this for calls whose
+// text DID land — so it is indeterminate and is READ before it is spent: no
+// turn in the grace and no work in this session's branch or tree, and only
+// then the hand-back. This fixture's seat is idle and shares the checkout,
+// so both readings answer "nothing" and the bead goes back exactly as it
+// did. TestAHerdrCodeOffTheAllowListIsReadNotSpent is the same code over a
+// seat that cannot be read, where the verdict moves.
 func TestDispatchPromptServerGoneUnclaims(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -2032,6 +2043,12 @@ func TestDispatchPromptServerGoneUnclaims(t *testing.T) {
 	out := dispatcherOut(d)
 	if n != 0 || !strings.Contains(out, "unclaimed") {
 		t.Errorf("server_not_running is not a timeout — it unclaims, got n=%d:\n%s", n, out)
+	}
+	// ADR 0084 D1/D2: the hand-back is EARNED by readings, not taken on the
+	// code. Without this the pin is green over the old build, which spent
+	// the claim on any code that was not `timeout`.
+	if log := calls(t, fake); !strings.Contains(log, "--until working --until blocked") {
+		t.Errorf("a code off the allow-list is indeterminate and gets the readings first:\n%s", log)
 	}
 	if !strings.Contains(out, "server_not_running") {
 		t.Errorf("the ✗ line must name the code the post-flight greps for:\n%s", out)

@@ -2273,6 +2273,24 @@ func fakeHerdr(args []string) int {
 		if b, err := os.ReadFile(filepath.Join(fakeDir(), "wait-error-on-prompt")); err == nil {
 			os.WriteFile(filepath.Join(fakeDir(), "wait-error"), b, 0o644)
 		}
+		// prompt-crash (file) is the FIRST leg dying with NO ENVELOPE AT
+		// ALL: nonzero exit, nothing on stdout, nothing on stderr. It is
+		// wait-crash's half for `agent prompt --wait`, and it is the shape
+		// ADR 0084 is about — a client child that is signalled, hangs past
+		// its deadline or loses its server can die before, during or after
+		// the submission herdr makes server-side, and the error carries no
+		// envelope, so posse cannot tell which. HerdrCodeOf of it is "",
+		// which is why a guard written as "not a timeout" read it as a
+		// prompt that never landed. prompt-error cannot make this shape: it
+		// always writes an envelope. The file's contents are the exit code,
+		// or 3.
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "prompt-crash")); err == nil {
+			code := 3
+			if n, cerr := strconv.Atoi(strings.TrimSpace(string(b))); cerr == nil && n > 0 {
+				code = n
+			}
+			return code
+		}
 		// prompt-error (file) makes the prompt fail like a herdr --wait
 		// timeout / agent_not_ready — the QA suite's error-path lever.
 		// "code|message" spells the error herdr actually returned; a bare

@@ -83,6 +83,81 @@ import (
 	"time"
 )
 
+// isNotDelivered is the hand-back's ALLOW-LIST, and the whole of it
+// (ADR 0084 D1). A prompt call is delivered, NOT DELIVERED, or
+// indeterminate, and only the middle one is evidence posse may spend a
+// claim on. herdr names exactly two codes that mean nothing was sent:
+//
+//	agent_not_ready  herdr will not address the pane at all.
+//	agent_blocked    the submission is "rejected ... BEFORE ANY INPUT IS
+//	                 SENT" (`herdr agent prompt --help`, 0.9.1).
+//
+// Everything else is INDETERMINATE and reaches no unclaim directly: an
+// untyped error, a HerdrHangError, a signalled child, `server_not_running`,
+// and any herdr code not named above. `agent_prompt_stalled` is
+// deliberately absent — herdr documents it as an ACCEPTED submission (this
+// file's header), so it is a statement about herdr's five-second window and
+// never about delivery.
+//
+// IT IS AN ALLOW-LIST AND MUST NEVER BE WRITTEN AS "NOT TIMEOUT" AGAIN.
+// That spelling is a deny-list of one reading a contract that is an
+// allow-list — unclaimAfterPromptFailure is "the claim was made but the
+// prompt never reached the agent" — so every error with no herdr envelope
+// behind it fell through it and was spent as a failed prompt. It cost the
+// re-wait leg's duplicate dispatch (ranger-base-2mqp3: two seats, two
+// branches, byte-identical work for one bead) and, on the first leg, the
+// same reading of ignorance as evidence (ranger-base-20cef). Adding a code
+// here needs herdr's own words that nothing was sent.
+func isNotDelivered(err error) bool {
+	return IsHerdrCode(err, "agent_not_ready") || IsHerdrCode(err, "agent_blocked")
+}
+
+// stallTrigger is why judgeStall is taking its readings, and it is an
+// argument because two different events arrive at one decision (ADR 0084
+// D4). A stall is herdr saying "accepted, unobserved". An indeterminate
+// prompt call says LESS than that — nobody knows whether the text went in —
+// so it gets at least the readings a stall gets, and it gets them for the
+// same reason: an unobserved delivery can only be resolved by reading the
+// receiver.
+//
+// What it carries is the PRINT and the record's TAG, and nothing else. The
+// readings, the verdicts, the decision id and the rule are all unchanged
+// (ADR 0066 D1 as amended), because this is the same decision.
+type stallTrigger struct {
+	// tag prefixes the record's Verdict — "stalled" or "indeterminate" — so
+	// a census can split the two without a new field.
+	tag string
+	// why is the sentence the pass prints before it spends the grace: what
+	// was reported, in the words of whoever reported it.
+	why string
+	// ref is where the reader is sent for the incident behind this trigger.
+	ref string
+}
+
+// triggerStalled is herdr's own stall: it ACCEPTED the submission and did
+// not see the turn start inside its own five seconds. The sentence is the
+// one this file has printed since ranger-base-uauvn, unchanged.
+func triggerStalled(p *pendingBead) stallTrigger {
+	return stallTrigger{
+		tag: "stalled",
+		why: fmt.Sprintf("herdr typed the prompt into %s and saw no turn start inside its own 5s window", p.session),
+		ref: "ranger-base-uauvn",
+	}
+}
+
+// triggerIndeterminate is a first-leg error that is neither a timeout nor
+// isNotDelivered: the call ended without saying whether the text went in.
+// The error is named in the sentence because it is the only thing anybody
+// knows about the call, and the reader needs it to tell a signalled child
+// from a replaced server from a hang.
+func triggerIndeterminate(p *pendingBead, err error) stallTrigger {
+	return stallTrigger{
+		tag: "indeterminate",
+		why: fmt.Sprintf("the prompt call to %s ended without saying whether the text went in (%v)", p.session, err),
+		ref: "ADR 0084",
+	}
+}
+
 // stallVerdict is what the second reading decided about a stalled prompt.
 // Three outcomes and only one of them hands the bead back, which is the
 // whole point: the two that do not are what the incident needed.
@@ -101,10 +176,18 @@ const (
 	stallHandBack
 )
 
-// judgeStall is the second reading a stalled prompt gets before anything is
-// judged, and it is the only caller of the two readings below. It prints the
-// line that explains the verdict, because the operator reading the pass is
-// the person who had to re-claim the bead by hand last time.
+// judgeStall is the second reading an UNOBSERVED DELIVERY gets before
+// anything is judged, and it is the only caller of the two readings below.
+// It prints the line that explains the verdict, because the operator reading
+// the pass is the person who had to re-claim the bead by hand last time.
+//
+// TWO TRIGGERS, ONE DECISION (ADR 0084 D2, D4). herdr's stall is one of
+// them; the other is a first-leg prompt call that ended without saying
+// whether the text went in — an untyped error, a hang, a signalled child, a
+// code that is not isNotDelivered. The second says LESS about delivery than
+// the first, so it gets at least the readings the first gets. The trigger
+// argument is the print and the record's tag; it changes no reading and no
+// verdict.
 //
 // TWO READINGS, BOTH POSITIVE-EVIDENCE, AND IN THIS ORDER:
 //
@@ -130,10 +213,10 @@ const (
 // recovery from a kept claim is `--resume` and a line in the cockpit, while
 // recovery from a wrong hand-back is a second seat on a bead that is already
 // finished.
-func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
+func (d *Dispatcher) judgeStall(p *pendingBead, tr stallTrigger) stallVerdict {
 	grace := d.stallGrace(p.runtime)
-	d.printf("◷ %-14s herdr typed the prompt into %s and saw no turn start inside its own 5s window — re-reading for up to %s before anything is judged (ranger-base-uauvn)\n",
-		p.is.ID, p.session, grace)
+	d.printf("◷ %-14s %s — re-reading for up to %s before anything is judged (%s)\n",
+		p.is.ID, tr.why, grace, tr.ref)
 	st, why := d.afterStall(p, grace)
 	// ADR 0066 D1: the D5 record is written on the verdict, below, and the
 	// evidence is what this reading actually read — herdr's answer to the
@@ -149,11 +232,11 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 			p.is.ID, p.session)
 		return stallRewait
 	case "blocked":
-		d.logStall(p, stallKeep, "blocked — an operator's to clear", read)
+		d.logStall(p, tr, stallKeep, "blocked — an operator's to clear", read)
 		d.printf("⛔ %-14s blocked in %s — intervene (posse attach %s); claim kept\n", p.is.ID, p.session, p.session)
 		return stallKeep
 	case stallUnreadable:
-		d.logStall(p, stallKeep, why, read)
+		d.logStall(p, tr, stallKeep, why, read)
 		d.printf("◷ %-14s %s — claim kept, not judged this pass (posse peek %s)\n", p.is.ID, why, p.session)
 		return stallKeep
 	}
@@ -163,7 +246,7 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 	w, answered := d.sessionWork(p)
 	switch {
 	case !answered:
-		d.logStall(p, stallKeep, fmt.Sprintf("%s, and whether any work was done could not be read (%s)", why, w.Unread), read)
+		d.logStall(p, tr, stallKeep, fmt.Sprintf("%s, and whether any work was done could not be read (%s)", why, w.Unread), read)
 		d.printf("◷ %-14s %s, and whether %s has done any work cannot be read (%s) — claim kept, not judged this pass (posse peek %s)\n",
 			p.is.ID, why, p.session, w.Unread, p.session)
 		return stallKeep
@@ -174,12 +257,12 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 		// in flight that nothing but the seat itself will commit (ADR 0084
 		// D3 — the ranger-base-2mqp3 tree was the second shape exactly, six
 		// modified files and one untracked with nothing committed).
-		d.logStall(p, stallKeep, fmt.Sprintf("%s, but %s", why, w), read)
+		d.logStall(p, tr, stallKeep, fmt.Sprintf("%s, but %s", why, w), read)
 		d.printf("◷ %-14s %s, but %s has %s — the prompt landed; claim kept, not judged this pass (posse peek %s)\n",
 			p.is.ID, why, p.session, w, p.session)
 		return stallKeep
 	}
-	d.logStall(p, stallHandBack, fmt.Sprintf("%s, and %s", why, w), read)
+	d.logStall(p, tr, stallHandBack, fmt.Sprintf("%s, and %s", why, w), read)
 	return stallHandBack
 }
 
@@ -199,12 +282,17 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 // gate's, with a capture from each side of the keystrokes. A false IDLE is
 // a reading of the first kind diagnosed from the second, and a record that
 // merged them would be a D5 verdict wearing somebody else's screen.
-func (d *Dispatcher) logStall(p *pendingBead, v stallVerdict, why string, read ReadingEvidence) {
+func (d *Dispatcher) logStall(p *pendingBead, tr stallTrigger, v stallVerdict, why string, read ReadingEvidence) {
 	cons := ConsequenceHold
 	verdict := "keep: " + why
 	if v == stallHandBack {
 		cons, verdict = ConsequenceHandBack, "hand back: "+why
 	}
+	// ADR 0084 D4: the trigger is the one thing the record says about which
+	// of the two events this was. Decision and Rule stay put — it is the
+	// same decision read the same way — so a census splits the two on this
+	// prefix and groups them on the fields it always grouped them on.
+	verdict = tr.tag + ": " + verdict
 	d.logReading(p.session, Reading{
 		Decision:    DecisionStallVerdict,
 		Verdict:     verdict,

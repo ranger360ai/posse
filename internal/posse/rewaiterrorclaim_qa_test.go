@@ -47,6 +47,22 @@ package posse
 // in_progress with nobody working it. The discriminator is WHICH LEG failed,
 // not which error it was, so the same error is fed to both arms.
 //
+// AND THE SECOND PIN WAS REPLACED, NOT DELETED (ADR 0084, ranger-base-ng8wz).
+// It was `TestQAFirstLegErrorWithNoCodeStillUnclaims`, and it pinned the
+// first leg handing the bead back on that error IMMEDIATELY. ADR 0084
+// refines the sentence above rather than overturning it: the discriminator
+// is still which leg failed — a re-wait leg's error is not evidence about
+// delivery at all, and this file's first arm is unchanged — but a FIRST
+// leg's untyped error is not evidence either. It is INDETERMINATE: herdr
+// submits the text server-side and the caller's child can die before,
+// during or after that submission with no envelope to say which. So the
+// first leg is now READ before it is spent — judgeStall's two readings,
+// exactly as a stall — and only "no turn AND no work" reaches the unclaim.
+// rangerhq-81d is kept by that arm, not by this one, and the replacement
+// here (`…IsJudgedNotSpent`) pins what this fixture can see: the readings
+// are taken, and an unreadable herdr keeps the claim. The full set of D2's
+// arms is indeterminateprompt_qa_test.go.
+//
 // THE FIXTURE drives gather() directly, for waitlegpace_qa_test.go's reason:
 // the subject is the leg loop, and a launch would put its own occupant-shaped
 // settle gate in front of every assertion. HERDR only — `wait-crash` is a
@@ -155,35 +171,68 @@ func TestQARewaitLegErrorWithNoCodeKeepsTheClaim(t *testing.T) {
 	if calls := bdCalls(t, fake); strings.Contains(calls, "--status open") {
 		t.Errorf("nothing may send the bead back to open while its seat is working (rangerhq-khc):\n%s", calls)
 	}
+	// THE DISCRIMINATOR'S OTHER HALF (ADR 0084). A re-wait leg's error is
+	// not evidence about delivery, so there is nothing to investigate: no
+	// reading is taken at all. The first-leg arm below asserts the same
+	// call is made there, and the pair is what "which LEG failed" means now
+	// that both verdicts are "claim kept".
+	if log := calls(t, fake); strings.Contains(log, "--until working --until blocked") {
+		t.Errorf("a re-wait leg's error says nothing about delivery — nothing is re-read on it:\n%s", log)
+	}
 }
 
 // THE COUNTERFACTUAL, and the reason the fix is a discriminator rather than a
-// retreat. The SAME untyped error on the FIRST leg — nothing yet says the
-// prompt landed — still hands the bead back, which is rangerhq-81d's
-// contract: a prompt that never reached the agent must not strand the bead as
-// in_progress with nobody working it.
+// retreat. The SAME untyped error on the FIRST leg — where nothing yet says
+// the prompt landed — is not waved through: it is READ, with the two
+// readings judgeStall takes for a stall (ADR 0084 D2), and it can still
+// reach the unclaim when both of them answer that nothing happened.
 //
-// Fed by hand, because the fixture's own first leg is a `agent prompt --wait`
-// and arming THAT to crash would be a pin about a different call. What is
-// under test is gather's verdict on a given leg result, and the only
-// difference between this arm and the one above is which leg produced it.
-func TestQAFirstLegErrorWithNoCodeStillUnclaims(t *testing.T) {
+// THIS FIXTURE'S OWN ANSWER IS THE UNREADABLE ONE, and it is one of D2's
+// arms: `wait-crash` is armed, so the re-read dies exactly as the leg did,
+// and a herdr that cannot be asked is IGNORANCE rather than evidence —
+// claim kept, bead not judged this pass (rangerhq-khc). The arms where the
+// readings succeed are in indeterminateprompt_qa_test.go, which has a
+// prepared session tree to read: idle and clean hands the bead back (81d),
+// a turn under way rewaits.
+//
+// WHAT SEPARATES THIS ARM FROM THE ONE ABOVE is therefore no longer the
+// verdict — both keep the claim — but the READING. A first leg's error is
+// about delivery and is investigated; a re-wait leg's error cannot be, and
+// nothing is asked. The two arms assert each other's absence.
+//
+// Fed by hand, because the fixture's own first leg is an `agent prompt
+// --wait` and arming THAT to crash is a different fixture (it is
+// `prompt-crash`, and it is what the file above drives). What is under test
+// is gather's route for a given leg result, and the only difference between
+// this arm and the one above is which leg produced it.
+func TestQAFirstLegErrorWithNoCodeIsJudgedNotSpent(t *testing.T) {
 	t.Parallel()
 	d, fake, p := crashedWaitSeat(t)
 	p.result <- promptResult{err: crashErr(), at: time.Now()}
 	inFlight, err := d.gather(p)
 	out := dispatcherOut(d)
-	if err == nil {
-		t.Fatalf("81d: a first leg that failed with nothing saying the prompt landed must hand the bead back:\n%s", out)
+	if err != nil {
+		t.Fatalf("an unreadable re-read is ignorance, not a verdict — gather must not fail the bead: %v\n%s", err, out)
 	}
-	if inFlight {
-		t.Errorf("a handed-back bead is not in flight:\n%s", out)
+	if !inFlight {
+		t.Fatalf("the claim is kept and the bead is not judged this pass, so it is in flight:\n%s", out)
 	}
-	if !strings.Contains(err.Error(), "unclaimed") {
-		t.Errorf("the error must say the bead was unclaimed, got %v:\n%s", err, out)
+	// THE ROUTE, which is the whole of the change: the error was READ.
+	if log := calls(t, fake); !strings.Contains(log, "--until working --until blocked") {
+		t.Errorf("ADR 0084 D2: a first leg's error is indeterminate and gets the readings a stall gets:\n%s", log)
 	}
-	if calls := bdCalls(t, fake); !strings.Contains(calls, "--status open") {
-		t.Errorf("81d: the bead must go back to open — nobody is working it:\n%s", calls)
+	if !strings.Contains(out, "ended without saying whether the text went in") {
+		t.Errorf("D4: the pass must say the call said nothing about delivery:\n%s", out)
+	}
+	// And the verdict on THIS fixture's reading.
+	if strings.Contains(out, "unclaimed") {
+		t.Errorf("nothing may be spent on a reading that could not be taken (rangerhq-khc):\n%s", out)
+	}
+	if !strings.Contains(out, "claim kept, not judged this pass") {
+		t.Errorf("the pass must say the claim was kept, so the next reader knows the bead is still somebody's:\n%s", out)
+	}
+	if calls := bdCalls(t, fake); strings.Contains(calls, "--status open") {
+		t.Errorf("a bead whose seat cannot be read is not a bead nobody is working:\n%s", calls)
 	}
 }
 

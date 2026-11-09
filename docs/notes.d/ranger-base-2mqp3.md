@@ -86,6 +86,26 @@ untyped error on the FIRST leg still hands the bead back, because nothing yet
 says the prompt landed. The discriminator is WHICH LEG failed, never which
 error it was.
 
+> **REFINED by [ADR 0084](../adr/0084-a-prompt-call-with-no-answer-about-delivery-is-indeterminate-and-is-read-not-spent.md)**
+> (ranger-base-20cef, built as ranger-base-ng8wz), which answers the
+> question this bead left open and narrows the sentence above rather than
+> overturning it. The discriminator is still which leg failed — a re-wait
+> leg's error is not evidence about delivery at all, and that half is
+> unchanged — but a FIRST leg's untyped error is not evidence *either*: herdr
+> submits the text server-side and the client child can die before, during
+> or after that submission with no envelope to say which, so the call is
+> INDETERMINATE. "Still hands the bead back" is therefore now "is READ before
+> it can be spent": judgeStall's two readings, exactly as a stall, and only
+> "no turn in the grace AND no work in this session's branch or tree"
+> reaches the unclaim. 81d's own case — a live, idle seat with a clean tree —
+> still goes back after one `startup_wait`, which is the arm that keeps it.
+> The hand-back is an allow-list now (`isNotDelivered`: `agent_not_ready`
+> and `agent_blocked`, herdr's own words that nothing was sent) and must
+> never be written as "not a timeout" again.
+> `TestQAFirstLegErrorWithNoCodeStillUnclaims` was replaced in place by
+> `TestQAFirstLegErrorWithNoCodeIsJudgedNotSpent`; D2's full set of arms is
+> `internal/posse/indeterminateprompt_qa_test.go`.
+
 ## What this supersedes
 
 `TestDispatchRewaitServerGoneHandsTheBeadBack` (now
@@ -111,7 +131,7 @@ reaches the same arm") was the defect stated as a fact.
 | pin | leg | verdict |
 |---|---|---|
 | `TestQARewaitLegErrorWithNoCodeKeepsTheClaim` | re-wait, through a real leg | claim kept |
-| `TestQAFirstLegErrorWithNoCodeStillUnclaims` | first | handed back (81d) |
+| `TestQAFirstLegErrorWithNoCodeStillUnclaims` | first | handed back (81d) — replaced by `…IsJudgedNotSpent`, read then judged (ADR 0084) |
 | `TestQADrainDoesNotUnclaimOnAKilledWaitChild` | first, loop stopping | claim kept |
 
 The first is driven through a real leg rather than a hand-fed result so that

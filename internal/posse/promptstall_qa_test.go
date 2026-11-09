@@ -322,10 +322,15 @@ func TestStalledPromptOverACleanSessionTreeStillHandsBack(t *testing.T) {
 	}
 	// And the record says which readings got it there, in the words the
 	// keep arms use for the same two halves.
+	// And it names its TRIGGER, which is the half of ADR 0084 D4 this arm
+	// holds: the same decision, read the same way, reached by herdr's own
+	// stall rather than by a call that said nothing at all. The census
+	// splits the two on this prefix, so a build that tagged every verdict
+	// `indeterminate:` would read as having no stalls.
 	if rec, ok := lastStallReading(t, b.App, tr.Path); !ok ||
-		!strings.Contains(rec.Verdict, "hand back: ") ||
+		!strings.HasPrefix(rec.Verdict, "stalled: hand back: ") ||
 		!strings.Contains(rec.Verdict, "no commit on its branch and nothing uncommitted in its tree") {
-		t.Errorf("the D5 record must name both halves of the reading it handed back on: %+v", rec)
+		t.Errorf("the D5 record must name its trigger and both halves of the reading it handed back on: %+v", rec)
 	}
 }
 
