@@ -111,16 +111,56 @@ row "T5 cherry-pick exits, CHERRY_PICK_HEAD state" leaks \
   "$( [ -f "$C/worktrees/wt/CHERRY_PICK_HEAD" ] && echo leaks || echo clean)"
 
 echo "== T6 codex's own sandbox nested in ours (D21) =="
+# AMENDED after the first host run (ranger-base-bjk4k). That run read T6
+# refused against an expected allowed, and the three rows as they stood could
+# not say WHY: `try` reports `refused` for any non-zero exit, so a nested
+# sandbox denying the write and a codex that never built one print the same
+# cell — and T6b/T6c, which expect refused, are satisfied by either. Three
+# things changed, none of them the hypothesis:
+#
+#  - `tryv` carries codex's own last stderr line into the GOT cell, the way
+#    T1 already does for claude. A usage error is then legible as one.
+#  - CODEX_HOME is bound writable, because the wall under test must be the
+#    wall posse RENDERS: codex declares StateDirs ["~/.codex"] and
+#    SeatbeltWritable grants TMPDIR, and codex writes helper binaries plus a
+#    .lock under $CODEX_HOME/tmp/arg0 at startup (MEASURED darwin, codex-cli
+#    0.153.4). Under `--ro-bind / /` and no such grant, T6 was measuring a
+#    seat posse does not launch.
+#  - T6z, THE UNWRAPPED CONTROL, and it is the row that decides how to read
+#    the other three: the same codex argv with no bwrap at all. Refused there
+#    means the argv or the environment never reached a sandbox, and T6/T6b/T6c
+#    then say nothing whatever about nesting. An expected-pass row that is the
+#    only one carrying information has to fail loudly, and on the first run it
+#    failed silently.
+#
+# The argv is NOT guessed into a shape 0.167.0 might prefer — `codex sandbox`
+# wanted a required --permission-profile at 0.153.4, the only version
+# measurable here, and inventing flags for a version nobody can run would
+# trade a known-ambiguous row for an unknown one. The probe reports what
+# codex says; the operator pastes it.
+# The FIRST error line and not the last: codex's argument parser prints the
+# complaint first and "For more information, try '--help'." last, so a
+# `tail -1` like T1's — right for claude, which prints one line — carries the
+# one line that says nothing (MEASURED darwin, codex-cli 0.153.4, running the
+# T6z row of this script).
+tryv() { if "$@" >/dev/null 2>"$W/t6.err"; then echo allowed; else
+  echo "refused: $( (grep -i -m1 'error\|denied\|permitted' "$W/t6.err" 2>/dev/null \
+    || sed -n '/./{p;q;}' "$W/t6.err" 2>/dev/null) | cut -c1-70)"; fi; }
 if command -v codex >/dev/null; then
-  mkdir -p "$W/out"
-  CX="$BASE --bind $WT $WT --bind $W/out $W/out"
+  mkdir -p "$W/out" "$W/ch"
+  CXENV="CODEX_HOME=$W/ch"
+  CXARGS="codex sandbox -c sandbox_mode=workspace-write -C $WT --"
+  CX="$BASE --bind $WT $WT --bind $W/out $W/out --bind $W/ch $W/ch"
+  row "T6z control: the same codex argv, NO bwrap at all" allowed \
+    "$(tryv env $CXENV $CXARGS sh -c "echo x > $WT/t6z")"
   row "T6 codex sandbox: write in its workspace" allowed \
-    "$(try $CX codex sandbox -c sandbox_mode=workspace-write -C "$WT" -- sh -c "echo x > $WT/t6")"
+    "$(tryv env $CXENV $CX $CXARGS sh -c "echo x > $WT/t6")"
   row "T6b codex sandbox: write our wall grants, codex does not" refused \
-    "$(try $CX codex sandbox -c sandbox_mode=workspace-write -C "$WT" -- sh -c "echo x > $W/out/t6")"
+    "$(tryv env $CXENV $CX $CXARGS sh -c "echo x > $W/out/t6")"
   row "T6c codex sandbox: write neither grants" refused \
-    "$(try $CX codex sandbox -c sandbox_mode=workspace-write -C "$WT" -- sh -c "echo x > $W/t6")"
+    "$(tryv env $CXENV $CX $CXARGS sh -c "echo x > $W/t6")"
 else
+  row "T6z control: the same codex argv, NO bwrap at all" allowed absent
   row "T6 codex sandbox: write in its workspace" allowed absent
 fi
 
