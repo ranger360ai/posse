@@ -2,14 +2,35 @@
 
 MEASURED 2026-11-09, this tree at main 196ecca9, darwin 25.6.0 arm64.
 
-AMENDED 2026-11-09 (ranger-base-0z9ta): the two pending rows are GONE.
-ranger-base-sydnc's fix (e2499fcc) landed on main before uxadf's own commit
-(972338dc) was pushed, so this page shipped describing a state that was
-already over: the pending arm reddened over both rows — on every box — and
-0z9ta deleted them. `hshPending` is empty. The sections below are kept as the
-record of why the map exists and what it measured; where one says a fix "has
-not landed", read it as of 196ecca9, and see "The pending rows" for what
-actually happened.
+AMENDED 2026-11-09 (ranger-base-0z9ta, with ranger-base-h2uhe): the two
+pending rows are GONE. ranger-base-sydnc's fix (e2499fcc) landed on main two
+commits after 196ecca9 — during this session — and uxadf's own commit
+(972338dc) is four commits after that, still unpushed on the laptop, so this
+page shipped describing a state that was already over: the pending arm
+reddened over both rows, on every box, and the rows were deleted.
+`hshPending` is empty. The sections below are kept as the record of why the
+map exists and what it measured; where one says a fix "has not landed", read
+it as of 196ecca9, and see "The pending rows" for what actually happened.
+
+**The blast radius is why that red was a P1** (ranger-base-h2uhe):
+`corpus-check` is a `tree-check` door and `tree-check` is a prerequisite of
+`make test` and `make test-arm1` both, so NO arm of the suite ran at all for
+anybody — `make test` exited 2 in about a minute having compiled nothing.
+Every seat that rebased onto 972338dc and typed the house command got a red
+that was not its own: the ranger-base-4v4r6 class AGENTS.md already names.
+
+**And the lesson, which is the mechanism's one sharp edge:** a `hshPending`
+row's precondition is a reading of MAIN, not of your tree, and the reading
+has a shelf life of one landing. The check is one command and it belongs at
+commit time, not at measurement time:
+
+    git merge-base --is-ancestor <the commit the row cites> main && echo STALE
+
+The same shape binds every declaration whose reason is "in flight" — a
+pending row, a skip naming a bead, an exemption that says "until X lands". If
+a row's reason contains a commit SHA, that SHA is a claim about main that you
+re-check before you commit, and the arm that reds over it is doing its job on
+the day it reds.
 
 ranger-base-sydnc was `shasum` not being on the cutover host's PATH. Arch —
 what ADR 0080's always-on Linux host runs — ships it with perl at

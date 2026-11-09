@@ -22,9 +22,12 @@ package treepins
 // on a PATH with no `shasum`. This file shipped with them in hshPending
 // because e2499fcc had not landed when it was written and uxadf's own commit
 // (972338dc) was still unpushed; sydnc landed first, the pending arm reddened
-// over both rows exactly as it is built to, and ranger-base-0z9ta deleted
-// them. hshPending is empty and stays here for the next finding whose fix is
-// in flight.
+// over both rows exactly as it is built to, and the rows were deleted
+// (ranger-base-0z9ta, ranger-base-h2uhe). That red was a P1 because
+// corpus-check is a tree-check door and tree-check is a prerequisite of every
+// suite arm, so `make test` compiled nothing and exited 2 for every seat on
+// the box. hshPending is empty and stays here for the next finding whose fix
+// is in flight.
 //
 // This file is the cheap second door either way: behaviour pins hold the
 // scripts they name, and the next script to hash is not one of them.
@@ -274,8 +277,14 @@ var hshExempt = map[string]string{
 // It is EMPTY today, and that is the mechanism having worked rather than
 // never having been used: the two rows it shipped with — scripts/gotest.sh
 // and scripts/verify-hook-freshness.sh, the ranger-base-sydnc finding — were
-// deleted under ranger-base-0z9ta when e2499fcc landed and this arm reddened
-// over them.
+// deleted under ranger-base-0z9ta and ranger-base-h2uhe when e2499fcc landed
+// and this arm reddened over them.
+//
+// A row added here is a promise to come back and delete it, dated by the bead
+// it names. Add one only when the fix is genuinely in flight, and check at
+// COMMIT time that the commit it cites is not already an ancestor of main —
+// `git merge-base --is-ancestor <that commit> main` — because the row's
+// precondition is a reading of main and it goes stale while you work.
 var hshPending = map[string]string{}
 
 // hshFile is the path this file's findings point the reader at.
