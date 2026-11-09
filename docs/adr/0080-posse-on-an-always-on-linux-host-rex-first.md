@@ -688,7 +688,9 @@ into the NAME it would print bare `seatbelt` on that Linux host again.
 The rename landed: `seatbeltWallRendered` is `wallRendered`, in
 `internal/posse/seatbelt.go`, and D21's text below should be read against
 that name. It still carries `!rt.SelfSandbox` unconditionally — D21's flip
-waits for probe T6 — and `credentialDirEnvSetRefusal` (credential.go) follows
+was GATED on probe T6 and that gate answered refused (ranger-base-bjk4k;
+see D21's as-measured note), so the unconditional reading is now the settled
+one and not a hold — and `credentialDirEnvSetRefusal` (credential.go) follows
 the rename unchanged, because it always asked about the wall and never about
 the binary.
 
@@ -1060,6 +1062,68 @@ codex's own sandbox is the only file wall. Gated on probe T6 (`codex sandbox`,
 no turn). Until T6 reads as expected, the flip stays off and Linux codex
 keeps darwin's posture.
 
+*THE GATE ANSWERED, AND IT ANSWERED REFUSED — SO THE FLIP STAYS OFF
+(ranger-base-bjk4k, 2026-11-08).* The host run of T6 is in: MEASURED on the
+D1 host, Linux 7.2, bubblewrap 0.13.1, codex 0.167.0, **T6 EXPECT allowed GOT
+refused**, with T6b and T6c refused as expected (ranger-base-r5m98's comment
+carries the whole table). So the condition this item was gated on is not met
+and `wallRendered` keeps `!rt.SelfSandbox` unconditionally: Linux codex keeps
+darwin's posture, parity's "cannot wrap codex" stays mechanism-neutral, and
+nothing in D21 is built.
+
+**What the reading does NOT establish, and this is the part worth keeping.**
+A refused T6 is consistent with D21's premise being wrong, and it is equally
+consistent with two defects in the probe — and the probe cannot tell them
+apart, because `try()` reports `refused` for any non-zero exit and discards
+the stream that would say which:
+
+1. *The argv may never have entered a sandbox.* `codex sandbox` takes a
+   `--permission-profile <NAME>` that T6 does not pass. On the one codex
+   available to measure — **MEASURED 2026-11-08, darwin 25.6.0, codex-cli
+   0.153.4** — T6's exact argv shape is a usage error, `exit 2`, "the
+   following required arguments were not provided: --permission-profile
+   <NAME>", before any sandbox is applied; supplying the flag then wants a
+   `[permissions]` table in the config. That version is not the host's
+   0.167.0 and this is therefore not a measurement OF the finding — but a
+   usage error produces exactly the row pattern the host returned, all three
+   refused, which is why the reading cannot be read as nesting.
+2. *T6's wall is not the wall posse renders.* The prefix is
+   `$BASE --bind $WT $WT --bind $W/out $W/out`, so under `--ro-bind / /` the
+   seat gets no writable `~/.codex` and no writable `/tmp`. The shipped wall
+   grants both — codex declares `StateDirs: ["~/.codex"]` and
+   `SeatbeltWritable` adds TMPDIR — and codex writes there at startup before
+   it does anything else: it materializes `apply_patch`, `applypatch` and
+   `codex-execve-wrapper` plus a `.lock` under `$CODEX_HOME/tmp/arg0/`
+   (MEASURED, same box and version; on darwin an unwritable `CODEX_HOME`
+   only warns, "could not create PATH aliases: Operation not permitted").
+
+**Why T6b and T6c do not rescue it.** Both expect `refused` and both got it —
+but a codex that refuses every write, or never started, satisfies them too.
+Once T6 is refused those two rows distinguish nothing, so the composition
+claim ("a write needs both walls to allow it") has no positive evidence in
+this run at all. A probe whose expected-pass row is the only one carrying
+information needs that row to fail LOUDLY, which is what the amendment below
+is for.
+
+**The probe is amended, not re-read** (`docs/adr/0080-bwrap-tier.probe.sh`,
+ranger-base-bjk4k): T6 carries codex's own stderr into the GOT cell instead of
+a bare `refused`, binds a writable `CODEX_HOME` so the wall under test is the
+one posse renders, and gains **T6z, an unwrapped control** — the same codex
+argv with no bwrap at all, expecting `allowed`. T6z is the row that decides
+how to read the other three: refused there and T6/T6b/T6c say nothing about
+nesting, because the argv or the environment never reached the sandbox. The
+amended argv is deliberately NOT guessed into shape for 0.167.0 — nobody here
+can run that version — so the probe reports what codex says rather than
+asserting what it ought to accept.
+
+Whether D21 is worth another host run at all was not this bead's call. It
+was filed to the architecture lane with the reading (ranger-base-unsqg,
+discovered-from ranger-base-bjk4k) and the note below is that lane's answer:
+PARKED. One correction to this bead's own filing travels with it — the
+"claude-only by operator ruling" in the run's comment is in no record, so
+it was never a reason to retire anything, and this bead should not have
+offered it as one.
+
 *D21 is parked, not pending and not retired (ranger-base-unsqg,
 2026-11-09).* The first host run read T6 refused (ranger-base-r5m98,
 MEASURED: Linux 7.2, bubblewrap 0.13.1, codex 0.167.0), and that reading
@@ -1095,7 +1159,10 @@ pinned on darwin, because the renderer is pure. D18 is built and its SHELL
 half — the redirection, the quoting of both paths, the `--` separator — is
 measured on darwin against a stand-in binary that copies fd 3
 (`bwraplaunchline_qa_test.go`); what T7 adds is the real binary's own
-acceptance of the argv. D21 waits for the run.
+acceptance of the argv. D21's run is IN and T6 read refused against an
+expected allowed (ranger-base-bjk4k): the reading, what it does not
+establish, and the T6/T6z amendment this bead made to the probe are in D21's
+as-measured note above.
 
 **Alternatives rejected.**
 - **A per-seat `CLAUDE_CONFIG_DIR`**, the bead's likely answer and the one I

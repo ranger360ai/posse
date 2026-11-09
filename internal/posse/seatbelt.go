@@ -434,9 +434,24 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 // the wall is a sandbox-exec profile or a bwrap mount namespace
 // (WallMechanism, wall.go). Every caller asks it about the wall and not
 // about the binary, which is why the rename cost its callers nothing.
-// `!rt.SelfSandbox` is still unconditional here — D21 drops it on the bwrap
-// mechanism, where nesting was MEASURED to work (probe B7), and that flip
-// waits for its own run.
+// `!rt.SelfSandbox` IS UNCONDITIONAL HERE, ON BOTH MECHANISMS, and that is
+// now a settled reading rather than a hold. ADR 0080 D21 would have dropped
+// it on bwrap, where bwrap-in-bwrap nesting was MEASURED to work (probe B7),
+// and it was gated on probe T6 — codex's OWN sandbox nested in ours. T6 ran
+// on the D1 host and read refused against an expected allowed
+// (ranger-base-r5m98, ranger-base-bjk4k), so the flip is not built and Linux
+// codex keeps darwin's posture: posse renders it no wall and parity says so
+// as a DeclaredDifference. The reading does not prove D21 wrong either — the
+// probe could not say whether codex's nested sandbox denied the write or
+// never started — which is why this stays a measured decision with a named
+// gap and not a conclusion. D21's as-measured note carries both halves.
+//
+// A FLIP HERE IS MECHANISM-BLIND TO THIS SUITE, which is why there is a
+// tripwire on the SOURCE of this function and not only on its answer:
+// `wallRendered(CageSeatbelt, codex)` is false on darwin whether or not a
+// `WallMechanism() == WallBwrap` disjunct has been added beside the
+// SelfSandbox term, so the behavioral pins would stay green over a landed
+// D21 (TestQANoPosseWallForASelfSandboxRuntimeOnEitherMechanism).
 //
 // One predicate, two call sites, and that is the whole reason it is a
 // function. The launcher renders the profile at one point in the launch and

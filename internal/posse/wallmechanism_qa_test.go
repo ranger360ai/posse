@@ -23,6 +23,9 @@ package posse
 // resolver's.
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"runtime"
 	"strings"
 	"testing"
@@ -321,4 +324,97 @@ func TestQAWallTableClaimsNoTierThisBuildCannotType(t *testing.T) {
 	if AvailableCages[CageSeatbelt] && !wallMechanismRendered(WallMechanism()) {
 		t.Errorf("AvailableCages claims the %s tier on %s, whose mechanism is %q and which this build cannot render — posse would print a wall it never put up", CageSeatbelt, runtime.GOOS, WallMechanism())
 	}
+}
+
+// ─── D21's gate answered refused, so the flip is a tripwire (bjk4k) ─────────
+
+// ADR 0080 D21 would have had `wallRendered` drop `!rt.SelfSandbox` when the
+// mechanism is bwrap, so codex's own sandbox ran inside ours. It was GATED on
+// probe T6, and T6 ran on the D1 host and read **refused against an expected
+// allowed** (ranger-base-r5m98's comment carries the table; ranger-base-bjk4k
+// read it). So the flip is not built, Linux codex keeps darwin's posture, and
+// this pin is how that answer stays an answer.
+//
+// WHY A SOURCE READ AND NOT ONLY A BEHAVIORAL ARM, which is the whole reason
+// this pin exists beside the ones that were already here. `wallRendered`
+// takes no mechanism: it reads `WallMechanism()` nowhere, so the behavioral
+// pins on its answer (codexrex_test.go's arm 1,
+// credentialdenymove_qa_test.go's table) are read on THIS box, where the
+// mechanism is `sandbox-exec`. A D21 flip is spelled as a bwrap disjunct —
+// `!rt.SelfSandbox || WallMechanism() == WallBwrap` — and on darwin that
+// disjunct is false, so every one of those pins stays GREEN over a landed
+// flip and the darwin suite would never see it. That is the exact shape this
+// ADR keeps parameterizing its host decisions to avoid (`wallMechanismOn`,
+// `renderWallOn`, `seatbeltTierAvailableOn`, "so a pin can read the Linux
+// branch from darwin"), and the one predicate at the centre of D21 is the one
+// that cannot be read that way. So arm 2 reads the function's BODY.
+//
+// A TRIPWIRE WITH INSTRUCTIONS, not a veto. The day D21 lands on a reading
+// that supports it, this arm is meant to be deleted — by whoever also moves
+// D21's as-measured note, parity's declared difference and the pins named
+// above, which is the list the failure message carries. What it refuses is
+// that flip landing with none of them touched.
+func TestQANoPosseWallForASelfSandboxRuntimeOnEitherMechanism(t *testing.T) {
+	// No t.Parallel: reads the package var AvailableCages, which other tests
+	// write (cmd/testparallel's rule).
+	cx := builtinRuntime(t, "codex")
+	if !cx.SelfSandbox {
+		t.Fatal("the codex built-in stopped declaring SelfSandbox — this pin's subject is the `!rt.SelfSandbox` term in wallRendered, and with the declaration gone it has no subject and would pass for the wrong reason (ADR 0080 D21)")
+	}
+
+	// ARM 1: THE ANSWER, on this box. False, and false because of the
+	// SelfSandbox term rather than because the tier is unavailable — the
+	// control below is the arm that fails if the predicate has stopped
+	// saying yes to anything at all, which is the way an assertion of
+	// absence goes vacuous.
+	if wallRendered(CageSeatbelt, cx) {
+		t.Errorf("posse rendered an L2 wall for %s, a SelfSandbox runtime — on darwin nested sandbox-exec is refused, and on Linux the gate that would have permitted this (ADR 0080 D21, probe T6) read refused (ranger-base-bjk4k). parity.go says this as a DeclaredDifference instead; a wall here is one that cannot apply", cx.Name)
+	}
+	if !AvailableCages[CageSeatbelt] {
+		t.Skip("no seatbelt tier on this box — arm 1's control cannot distinguish the SelfSandbox term from the availability term, and arm 2 is the half that matters")
+	}
+	cl := builtinRuntime(t, "claude")
+	if cl.SelfSandbox {
+		t.Fatal("the claude built-in started declaring SelfSandbox — arm 1's control needs a runtime posse DOES wall, or the arm above is an absence measured over a predicate that says no to everything")
+	}
+	if !wallRendered(CageSeatbelt, cl) {
+		t.Fatalf("wallRendered says no to %s at %s on a box where the tier IS available — the predicate has stopped saying yes to anything, so arm 1's false is not evidence about SelfSandbox", cl.Name, CageSeatbelt)
+	}
+
+	// ARM 2: THE SOURCE. wallRendered names no mechanism, which is what
+	// makes arm 1 mechanism-independent — and what makes a mechanism term
+	// appearing here a D21 flip that arm 1 cannot see from darwin.
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "seatbelt.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse seatbelt.go: %v", err)
+	}
+	const owner = "wallRendered"
+	var body *ast.FuncDecl
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Name.Name == owner && fd.Body != nil {
+			body = fd
+		}
+	}
+	if body == nil {
+		t.Fatalf("no func %s in seatbelt.go — the predicate this pin is about has moved or been renamed, and a pin that cannot find its subject must say so rather than pass (the last rename was seatbeltWallRendered → %s, ADR 0080 D16)", owner, owner)
+	}
+	// The mechanism vocabulary, every spelling a flip could reach for. Not a
+	// census over the whole package: the claim is about ONE function body.
+	mechNames := map[string]bool{
+		"WallMechanism":         true,
+		"wallMechanismOn":       true,
+		"WallBwrap":             true,
+		"WallSandboxExec":       true,
+		"wallMechanismRendered": true,
+	}
+	ast.Inspect(body.Body, func(n ast.Node) bool {
+		id, ok := n.(*ast.Ident)
+		if !ok || !mechNames[id.Name] {
+			return true
+		}
+		t.Errorf("%s names the mechanism %q at %s — that is ADR 0080 D21's flip, and it is INVISIBLE to this suite's behavioral pins: on darwin a `WallMechanism() == WallBwrap` disjunct is false, so codexrex_test.go's arm 1, credentialdenymove_qa_test.go's wallRendered table and arm 1 above all stay green while Linux codex gets a wall posse never measured. D21 was gated on probe T6 and T6 read REFUSED against an expected allowed (ranger-base-r5m98, ranger-base-bjk4k). If the gate has since been answered properly, land it WITH its reading: D21's as-measured note, parity.go's `seatbeltIncompatible` declared difference, reachability.go's SelfSandbox arm, and this pin, which is meant to be deleted by that commit and not by this one",
+			owner, id.Name, fset.Position(id.Pos()))
+		return true
+	})
 }
