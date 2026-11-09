@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -199,7 +199,9 @@ repo) — is the tiebreak for every reading of this paragraph: where a release
 rule and that observable disagree, the seat stays held. Other observations
 (busy elsewhere, prompt grace, a benched CLI) expire with the fire pass and
 are read fresh on the next offer. Claims are never released because a wait
-timed out.
+timed out, nor because a prompt call ended without saying whether it
+delivered: that outcome is indeterminate, and it is resolved by reading the
+seat, never by expiry (ADR 0084, ranger-base-20cef).
 
 `dispatch_epoch:` (default 1h) denominates `budget_pass:` and
 `-n`/`autostart_max_beads`. The epoch is wall-clock aligned, so a restart
