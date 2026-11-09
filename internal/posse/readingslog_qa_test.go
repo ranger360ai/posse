@@ -387,7 +387,7 @@ func TestQAReadingsLogReplaysThisWeekendsIncidents(t *testing.T) {
 		// 3 — ranger-base-uauvn
 		{
 			Decision: DecisionStallVerdict, Consequence: ConsequenceHandBack,
-			Verdict: "hand back: no turn started in 45s either, and no commit on the branch",
+			Verdict: "hand back: no turn started in 45s either, and no commit on its branch and nothing uncommitted in its tree",
 			Rule:    RuleStallVerdict,
 			Herdr:   ReadingEvidence{State: stallNoTurn, Seen: true},
 		},

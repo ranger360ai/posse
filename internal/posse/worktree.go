@@ -3201,7 +3201,25 @@ func notOnBase(t *SessionTree) string {
 // dirtyPaths lists what the worktree holds that no commit does. It is
 // reported rather than acted on: uncommitted work is the persona's, and the
 // only thing the harness owes it is to never destroy it silently.
+//
+// A git that would not answer reads as "nothing", and for every caller here
+// that is the safe direction: each of them REPORTS this list, and a reader
+// told "nothing uncommitted" by a failed read is told the same thing a
+// reader of a clean tree is. The one caller that decides on the absence —
+// sessionWork (promptstall.go), where "nothing" can reach an unclaim — takes
+// dirtyPathsRead instead and keeps the claim on a read that failed.
 func dirtyPaths(path string) []string {
+	paths, _ := dirtyPathsRead(path)
+	return paths
+}
+
+// dirtyPathsRead is dirtyPaths with the two answers git can give kept apart:
+// (nil, true) is "read, and the tree is clean" and (nil, false) is "git would
+// not say". ADR 0084 D3 is why the distinction exists — a work reading that
+// can hand a bead back must never read ignorance as absence — and it lives
+// here rather than beside that caller so the `--no-optional-locks` lesson
+// below has one implementation and not two.
+func dirtyPathsRead(path string) ([]string, bool) {
 	// gitRaw, not git: the status column's LEADING SPACE is data here. git()
 	// trims the whole blob, which takes that space off the first line only —
 	// and the ln[3:] below then cuts one real character off the first path
@@ -3238,7 +3256,7 @@ func dirtyPaths(path string) []string {
 	// answer and pays a re-hash instead of a write.
 	out, err := gitRaw(path, "--no-optional-locks", "status", "--porcelain")
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	var paths []string
 	for _, ln := range strings.Split(string(out), "\n") {
@@ -3250,7 +3268,7 @@ func dirtyPaths(path string) []string {
 		}
 		paths = append(paths, strings.TrimSpace(ln[3:]))
 	}
-	return paths
+	return paths, true
 }
 
 // RemoveSessionTree retires a session's worktree and its branch. It refuses

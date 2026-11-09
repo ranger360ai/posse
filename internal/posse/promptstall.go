@@ -79,6 +79,7 @@ package posse
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -113,12 +114,13 @@ const (
 //     than polls — a poll started after the keystroke reads the state that
 //     was already there, which is the very mistake the 5s window exists to
 //     refuse.
-//  2. Ask git whether this session has COMMITTED anything. It covers the
-//     case the first reading cannot: a turn that started and finished
-//     inside the grace, so there was no transition left to observe by the
-//     time anyone looked. A session's branch is cut per bead
-//     (SessionForBead), so a commit ahead of its base is this bead's work
-//     and nobody else's.
+//  2. Ask git whether this session DID ANY WORK — commits ahead of the
+//     branch it was cut from, or anything uncommitted in its own tree
+//     (sessionWork, ADR 0084 D3). It covers the case the first reading
+//     cannot: a turn that started and finished inside the grace, so there
+//     was no transition left to observe by the time anyone looked. A
+//     session's branch and tree are cut per bead (SessionForBead), so
+//     either kind of evidence there is this bead's work and nobody else's.
 //
 // Ignorance is never a hand-back. A herdr that will not answer and a git
 // that will not answer both keep the claim, on the rule gather's own
@@ -135,7 +137,8 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 	st, why := d.afterStall(p, grace)
 	// ADR 0066 D1: the D5 record is written on the verdict, below, and the
 	// evidence is what this reading actually read — herdr's answer to the
-	// re-asked wait and, on the arm that gets that far, git's commit count.
+	// re-asked wait and, on the arm that gets that far, git's reading of
+	// this session's work.
 	// NO REGIONS, and that is not an omission: this decision reads no
 	// screen at all (the spike's §3 D5 row), so a record here carrying a
 	// footer would be carrying a reading somebody else took.
@@ -157,19 +160,26 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 	// st is stallNoTurn: herdr watched the grace out and no turn started in
 	// it. The second reading decides, and only a git that ANSWERED
 	// "nothing" reaches the hand-back.
-	switch n, answered := d.committedWork(p); {
+	w, answered := d.sessionWork(p)
+	switch {
 	case !answered:
-		d.logStall(p, stallKeep, why+", and the commit count could not be read", read)
-		d.printf("◷ %-14s %s, and whether %s has committed anything cannot be read — claim kept, not judged this pass (posse peek %s)\n",
-			p.is.ID, why, p.session, p.session)
+		d.logStall(p, stallKeep, fmt.Sprintf("%s, and whether any work was done could not be read (%s)", why, w.Unread), read)
+		d.printf("◷ %-14s %s, and whether %s has done any work cannot be read (%s) — claim kept, not judged this pass (posse peek %s)\n",
+			p.is.ID, why, p.session, w.Unread, p.session)
 		return stallKeep
-	case n > 0:
-		d.logStall(p, stallKeep, fmt.Sprintf("%s, but %d commit(s) on the branch", why, n), read)
-		d.printf("◷ %-14s %s, but %s has %d commit(s) on its own branch — the prompt landed; claim kept, not judged this pass (posse peek %s)\n",
-			p.is.ID, why, p.session, n, p.session)
+	case w.found():
+		// The evidence is NAMED, in the print and in the record, because
+		// the two kinds are diagnosed differently: a commit is work that
+		// landed and `posse worktrees` can take, where a dirty tree is work
+		// in flight that nothing but the seat itself will commit (ADR 0084
+		// D3 — the ranger-base-2mqp3 tree was the second shape exactly, six
+		// modified files and one untracked with nothing committed).
+		d.logStall(p, stallKeep, fmt.Sprintf("%s, but %s", why, w), read)
+		d.printf("◷ %-14s %s, but %s has %s — the prompt landed; claim kept, not judged this pass (posse peek %s)\n",
+			p.is.ID, why, p.session, w, p.session)
 		return stallKeep
 	}
-	d.logStall(p, stallHandBack, why+", and no commit on the branch", read)
+	d.logStall(p, stallHandBack, fmt.Sprintf("%s, and %s", why, w), read)
 	return stallHandBack
 }
 
@@ -306,30 +316,116 @@ func (d *Dispatcher) afterStall(p *pendingBead, grace time.Duration) (state, why
 	}
 }
 
-// committedWork is how many commits this session is ahead of the branch it
-// was cut from, and whether that could be read at all.
+// workEvidence is what git found that says this session did work: commits
+// ahead of the branch it was cut from, and uncommitted changes in its own
+// tree. Unread names what could not be read, and is only meaningful beside
+// a `false` from sessionWork.
 //
-// (0, false) is the ignorance arm and keeps the claim; (0, true) is the only
-// answer in this file that can reach an unclaim. A session that shares the
-// checkout answers (0, true) honestly — it has no branch of its own, so
-// there is no such evidence to be had, which is the shape every session had
-// before per-session worktrees landed.
+// Two counts and not a bool, because the verdict's print and record NAME the
+// evidence (ADR 0084 D3) and the two kinds send the reader somewhere
+// different: a commit is landed work `posse worktrees` can take, where a
+// dirty tree is work only the seat itself can commit.
+type workEvidence struct {
+	Commits int
+	Dirty   int
+	Unread  string
+}
+
+// found is "work happened" — EITHER kind, which is the whole of D3's
+// widening.
+func (w workEvidence) found() bool { return w.Commits > 0 || w.Dirty > 0 }
+
+// String is the one spelling of this reading, used by the keep arm's print,
+// the keep arm's record, and the hand-back record — so a reader comparing
+// the pass's output with the readings log is comparing one sentence with
+// itself. The zero value is the hand-back's own sentence and says both
+// halves were read and both were empty.
+func (w workEvidence) String() string {
+	switch {
+	case w.Commits > 0 && w.Dirty > 0:
+		return fmt.Sprintf("%d commit(s) on its own branch and %d uncommitted change(s) in its tree", w.Commits, w.Dirty)
+	case w.Commits > 0:
+		return fmt.Sprintf("%d commit(s) on its own branch", w.Commits)
+	case w.Dirty > 0:
+		return fmt.Sprintf("%d uncommitted change(s) in its tree", w.Dirty)
+	}
+	return "no commit on its branch and nothing uncommitted in its tree"
+}
+
+// sessionWork is whether this session DID ANY WORK, and whether that could
+// be read at all.
 //
-// Asked through workHead, so the count is of the work and not of the ref: a
-// container-tier session commits on a DETACHED HEAD by design and leaves its
-// branch where it was cut (PrepareSessionHead), and counting the branch
-// there would read a seat's real commits as nothing — the false-negative
-// MergeSessionWork's splice exists for, and here it would hand back a bead
-// whose work is sitting in a tree.
-func (d *Dispatcher) committedWork(p *pendingBead) (int, bool) {
+// (nothing, false) is the ignorance arm and keeps the claim; (nothing, true)
+// is the only answer in this file that can reach an unclaim. A session that
+// shares the checkout answers (nothing, true) honestly — it has no tree or
+// branch of its own, so there is no such evidence to be had, which is the
+// shape every session had before per-session worktrees landed. Reading the
+// SHARED checkout's status there would be reading every other persona's
+// dirt as this bead's work.
+//
+// TWO HALVES, AND THE TREE'S IS WHY THIS IS NOT `committedWork` ANY MORE
+// (ADR 0084 D3). The branch count alone was enough while the only caller was
+// a stall: herdr watched 5s from submission and saw nothing, so a whole turn
+// fitting inside that window is not plausible. It is not enough for an
+// INDETERMINATE prompt call, whose error can arrive up to a full `--wait`
+// leg (15 min) after submission — so a turn may have run, edited, and
+// settled without ever committing. ranger-base-2mqp3's own tree was that
+// shape: six modified files, one untracked, nothing committed, and a branch
+// count would have handed that bead to a second seat.
+//
+// Both halves are read even when the first already found work, so the
+// verdict can name both. A half that will not answer is only ignorance when
+// the other half found NOTHING — evidence beats a failed read, and a reading
+// that found a commit does not need the tree's status to know a turn ran.
+//
+// THE COMMIT HALF IS ASKED THROUGH workHead, so the count is of the work and
+// not of the ref: a container-tier session commits on a DETACHED HEAD by
+// design and leaves its branch where it was cut (PrepareSessionHead), and
+// counting the branch there would read a seat's real commits as nothing —
+// the false-negative MergeSessionWork's splice exists for, and here it would
+// hand back a bead whose work is sitting in a tree.
+//
+// AND THE TREE HALF RESTS ON A PREPARED TREE BEING CLEAN, which is measured
+// and not assumed: seedScaffoldExcludes hides the launcher's own scaffolding
+// from git precisely so that every reader of this status sees the seat's work
+// and nothing else (ranger-base-e01op), and
+// TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath reads zero lines
+// over both prepare paths — the per-session worktree and the container
+// tier's detached HEAD. Were that to stop holding, this reading would find
+// posse's own files and keep every claim forever, which is rangerhq-81d
+// lost. The pin is the guard; this is the dependency that makes it one.
+func (d *Dispatcher) sessionWork(p *pendingBead) (workEvidence, bool) {
 	m, ok := d.HB.readMeta(p.session)
 	if !ok {
-		return 0, false
+		return workEvidence{Unread: "it has no run record"}, false
 	}
 	t := SessionTreeOf(m)
 	if t == nil {
-		return 0, true // shares the checkout: no branch of its own to read
+		return workEvidence{}, true // shares the checkout: no tree or branch of its own to read
 	}
+	var w workEvidence
+	var unread []string
+	if n, ok := commitsAhead(t); ok {
+		w.Commits = n
+	} else {
+		unread = append(unread, "its commits could not be counted")
+	}
+	if paths, ok := dirtyPathsRead(t.Path); ok {
+		w.Dirty = len(paths)
+	} else {
+		unread = append(unread, "its tree's status could not be read")
+	}
+	if w.found() {
+		return w, true
+	}
+	w.Unread = strings.Join(unread, " and ")
+	return w, len(unread) == 0
+}
+
+// commitsAhead is how many commits this session's work is ahead of the
+// branch it was cut from, and whether that could be read at all. See
+// sessionWork for why it is asked through workHead.
+func commitsAhead(t *SessionTree) (int, bool) {
 	if t.Base == "" {
 		return 0, false // a repo on a detached HEAD: nothing to count against
 	}

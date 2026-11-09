@@ -483,6 +483,120 @@ func TestFreshSessionTreeIsPorcelainCleanBeforeTheSeatTypes(t *testing.T) {
 	}
 }
 
+// EVERY prepare path, not just the one above — because ADR 0084 D3 now
+// DECIDES on this status instead of merely reporting it.
+//
+// sessionWork (promptstall.go) reads `git status --porcelain` in a session's
+// tree and keeps the bead's claim when it is non-empty. So a prepare path
+// that leaves one file of posse's own behind does not file a spurious P1 any
+// more — it keeps every claim it is ever asked about, forever, which is
+// rangerhq-81d lost with nothing printed. The reading is only as good as
+// this measurement, so the measurement is a pin and not a paragraph.
+//
+// TWO PATHS, because the launcher prepares a tree twice over and the second
+// one writes files: EnsureSessionTree cuts and seeds it (the test above),
+// and PrepareSessionHead then puts HEAD where the tier needs it —
+// `--detach` for the container tier, plus `<common>/logs` and
+// `<gitdir>/config.worktree`. Both of those are INSIDE the git dir and
+// cannot reach a working-tree status, which is the reason to expect zero
+// here; it is also exactly the kind of reasoning that is wrong the day
+// somebody adds a third create. MEASURED instead.
+//
+// Read with --untracked-files=all, which is stricter than the porcelain
+// sessionWork itself takes: `normal` collapses an untracked directory to one
+// line, so a tree this arm calls clean is clean for either spelling.
+//
+// MUTATIONS RUN (each reds this test): have PrepareSessionHead write its
+// `config.worktree` into the worktree root instead of the git dir; drop the
+// seedScaffoldExcludes call (the detached arm reds too, since it prepares
+// the same seeded tree).
+func TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	// The seeded scaffolding is the thing most likely to be left behind, so
+	// the fixture carries it rather than measuring a bare checkout: a
+	// `.beads` posse writes the redirect into, and a declared link the main
+	// checkout ignores.
+	write(t, filepath.Join(repo, ".beads", "issues.jsonl"), "")
+	write(t, filepath.Join(repo, ".bob", "config.yaml"), "bob: yes\n")
+	commitIn(t, repo, ".gitignore", ".beads/\n.bob/\n", "ignore the queue and the config dir")
+	write(t, a.ConfigPath, "worktree_link:\n  - .bob\n")
+
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CONTROL: the scaffolding is really there. A clean status over a tree
+	// that was never seeded passes for the wrong reason.
+	readRedirect(t, tr.Path)
+	if fi, err := os.Lstat(filepath.Join(tr.Path, ".bob")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("CONTROL: .bob must be a symlink in the session tree, or this fixture carries no scaffolding: %v", err)
+	}
+
+	// PATH 1 — the per-session worktree, which is every seat on this box
+	// outside the container tier. PrepareSessionHead is still called, since
+	// that is what a launch does, and the uncaged arm is a no-op over a tree
+	// that was never detached.
+	if err := PrepareSessionHead(tr, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); strings.TrimSpace(out) != "" {
+		t.Errorf("MEASURE (ADR 0084 D3): the per-session worktree path must leave zero porcelain lines — sessionWork would read these as the seat's work and keep the claim forever:\n%s", out)
+	}
+	if b, err := git(tr.Path, "symbolic-ref", "--short", "HEAD"); err != nil || b != tr.Branch {
+		t.Fatalf("CONTROL: path 1 is the on-branch shape, got %q (%v)", b, err)
+	}
+
+	// PATH 2 — the container tier's detached HEAD, where the launcher makes
+	// `<common>/logs` and `<gitdir>/config.worktree` and moves HEAD off the
+	// branch (PrepareSessionHead, ranger-base-t4f1).
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := treeDetachedHead(tr.Path); !ok {
+		t.Fatalf("CONTROL: path 2 is the detached shape, and HEAD is still on a branch")
+	}
+	// CONTROL: the two files the caged prepare writes really were written,
+	// or the assertion below is over a prepare that did nothing.
+	own := LinkedGitDirs(tr.Path)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	for _, p := range []string{filepath.Join(own[1], "logs"), filepath.Join(own[0], "config.worktree")} {
+		if _, err := os.Lstat(p); err != nil {
+			t.Fatalf("CONTROL: the caged prepare must have written %s, or this arm measures nothing: %v", p, err)
+		}
+	}
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); strings.TrimSpace(out) != "" {
+		t.Errorf("MEASURE (ADR 0084 D3): the container tier's prepare must leave zero porcelain lines too:\n%s", out)
+	}
+
+	// And a RELAUNCH into either shape, since both prepare steps re-run on
+	// every launch into the tree and both re-do their work. The tier
+	// alternates, so this walks the re-attach direction (PrepareSessionHead's
+	// uncaged arm over a tree posse detached) as well as a second detach.
+	//
+	// EnsureSessionTree is re-run only on the ON-BRANCH shape: over a
+	// DETACHED tree it refuses outright, because existingTree asks
+	// `symbolic-ref --short HEAD` and compares it to the branch. That is a
+	// defect in the relaunch path and not this measurement's subject — filed
+	// separately, with this fixture as its repro.
+	for _, caged := range []bool{false, true, true, false} {
+		if _, detached := treeDetachedHead(tr.Path); !detached {
+			if _, err := a.EnsureSessionTree(repo, "s-1", nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := PrepareSessionHead(tr, caged, io.Discard); err != nil {
+			t.Fatalf("relaunch (caged=%v): %v", caged, err)
+		}
+		if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); strings.TrimSpace(out) != "" {
+			t.Errorf("MEASURE: a relaunch (caged=%v) must leave the tree clean as well:\n%s", caged, out)
+		}
+	}
+}
+
 // A declared `worktree_link:` path the MAIN CHECKOUT holds untracked and
 // UN-ignored gets no pattern either (ranger-base-7ebv6, from
 // ranger-base-751ha's verification of ranger-base-e01op).
