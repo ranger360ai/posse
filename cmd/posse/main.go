@@ -2095,15 +2095,24 @@ func main() {
 			// operator reads ADR 0015 §2's wall off the output, and a
 			// report that silently prints nothing is the failure it exists
 			// to prevent.
-			// The persona's own runtime declares where its CLI keeps state
-			// (state_dir:, ADR 0012 D4) — a report that left it out would
-			// print a writable set the launch does not use.
-			var stateDirs []string
-			if rt, err := a.LoadRuntime(a.ResolveRuntime("", ag)); err == nil {
-				stateDirs = rt.StateDirs
+			// The persona's own runtime, because the report's lists are
+			// shaped by it: `state_dir:` (ADR 0012 D4) says where this
+			// CLI keeps state and a report that left it out would print a
+			// writable set the launch does not use — and at the bwrap
+			// mechanism the declaration itself is substituted by the
+			// runtime's resolved config directory (BwrapStateDirs, ADR
+			// 0080 D19), which is keyed on the runtime's NAME.
+			//
+			// WallReport and not SeatbeltReport, so this block prints the
+			// wall THIS host puts up: the same markers over the same
+			// lists, rendered by whichever mechanism realizes the tier
+			// here (ADR 0080 D18). On darwin it is SeatbeltReport.
+			var rt *posse.Runtime
+			if r, err := a.LoadRuntime(a.ResolveRuntime("", ag)); err == nil {
+				rt = r
 			}
-			if err := a.SeatbeltReport(ag, cwd, out, stateDirs...); err != nil {
-				fmt.Fprintf(out, "  seatbelt profile not rendered: %v\n", err)
+			if err := a.WallReport(ag, rt, cwd, out); err != nil {
+				fmt.Fprintf(out, "  %s wall not rendered: %v\n", posse.WallMechanism(), err)
 			}
 		}
 		rules := posse.ParseShimRules(ag.Deny)

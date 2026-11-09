@@ -673,10 +673,14 @@ there. The table fill therefore reads all three —
 the measured availability — and `wallMechanismRendered` admits
 `sandbox-exec` alone. The question is about TYPING the wall: D17's `BwrapArgs`
 is a pure argv render with no call site on a launch line, so it does not lift
-this. **D18 lifts it in one line**, in the commit that replaces both
-`SeatbeltPrefix` call sites, and the pin beside it
+this. **D18 lifted it in one line** (ranger-base-djl3c), in the commit that
+replaced both `SeatbeltPrefix` call sites, and the pin beside it
 (`TestQAWallTableClaimsNoTierThisBuildCannotType`) reds if either lands
-without the other. The third question is kept apart from the other two for
+without the other — it now holds the BICONDITIONAL instead of the hold:
+every mechanism `wallMechanismOn` can name is one `RenderWall` has an arm
+for, so the hazard it watches has moved from "bwrap is available and
+untyped" to "the next mechanism is named and untyped". The third question is
+kept apart from the other two for
 the same reason they are kept apart from each other: folded into
 availability it would make the apply probe answer for a render, and folded
 into the NAME it would print bare `seatbelt` on that Linux host again.
@@ -714,10 +718,11 @@ replaces and claude's `~/.claude.json`, which D19 removes.
 
 *As built (ranger-base-qoamy, 2026-11-08).* `BwrapArgs` in
 `internal/posse/bwrap.go`, beside the availability half, pinned by
-`internal/posse/bwrapargs_qa_test.go` over fixture trees on darwin. No launch
-wiring; nothing calls it. Five shapes as listed, with three things the text
-did not settle and one residual for D18. Full reasoning in
-`docs/notes.d/ranger-base-qoamy.md`.
+`internal/posse/bwrapargs_qa_test.go` over fixture trees on darwin. Five
+shapes as listed, with three things the text did not settle and one residual
+for D18. Full reasoning in `docs/notes.d/ranger-base-qoamy.md`. The launch
+wiring it was written without is D18's and has landed (ranger-base-djl3c):
+`RenderBwrap` calls this, runs its prep and writes its argv.
 
 - **The order is SBPL's last-match-wins, and the gates dir is the proof.**
   The persona's own gates dir is in three lists at once — a write grant,
@@ -836,6 +841,57 @@ bare, so a mise shim or a gates-dir shim cannot stand in for it. Both call
 sites that prefix today (herdrback.go, the create and relaunch paths) change
 together, through one `WallPrefix(rt)` function.
 
+*As built (ranger-base-djl3c, 2026-11-08).* The line is D18's letter
+unchanged. `RenderBwrap` in `internal/posse/bwrap.go` (the D18 section),
+`BwrapPrefix` beside it, and **one mechanism switch for the whole tier** in
+`internal/posse/wall.go`: `RenderWall` returns a `WallRender`
+(mechanism · artifact · prefix) and `WallPrefix` is what the two launch call
+sites type. `wallMechanismRendered` admits `WallBwrap` in the same commit, as
+D16's note above demands. Pinned by
+`internal/posse/bwraplaunchline_qa_test.go` on darwin. Full reasoning in
+`docs/notes.d/ranger-base-djl3c.md`.
+
+- **The three things the prefix is typed in front of, and the three that
+  moved with it.** The letter named two call sites; the build found four
+  surfaces that decide a wall and had to answer for all of them.
+  `herdrback.go`'s create and relaunch paths are the two. The third is
+  `reachability.go`, whose seatbelt arm would have returned early on Linux
+  (`!SeatbeltAvailable()`) and left ADR 0013 §4's record-reach row ABSENT for
+  every bwrap seat — a check that measured nothing printing the same as no
+  check at all, which is the one shape that file exists to refuse. It gets a
+  bwrap arm that judges by TYPING the prefix under `/bin/sh`, so the
+  redirection and the quoting are measured at a launch and not only by probe
+  T7. The fourth is `posse gates`, now `WallReport`.
+- **`WallRender` is one struct because the three cannot be allowed to
+  disagree.** The prefix NAMES the artifact — `-f <prof>` on one mechanism,
+  `3<<args>` on the other — so a caller that rendered one and reported the
+  other would print a wall nobody is behind. Parity's reach row is exactly
+  such a caller, and its pin is that the prefix contains the artifact.
+- **D17's residual is closed the way qoamy §4 recommended**, in
+  `SeatbeltWritable`: `homeCacheGrants(goos)` and a darwin guard on
+  `/private/tmp`. Unnarrowed, every Linux seat's prep list carried a
+  `mkdir -p /private/tmp` at the filesystem root (a refused launch) plus
+  three junk directories in the home. The darwin render is byte-identical —
+  `add` absResolves and `/tmp` IS `/private/tmp` there, so the fourth literal
+  was already redundant — and the Linux list gains the Go toolchain's
+  telemetry counters at their `os.UserConfigDir()` spelling, `local` and never
+  its parent, because `telemetry/mode` beside it is what decides whether the
+  box UPLOADS them.
+- **A prep `touch` never truncates, and that is a pin rather than a note.**
+  The launcher creates the session's two audit logs so the Keep binds can go
+  back over the deny. `os.Create` would empty a live seat's `refusals.log` at
+  every relaunch, and the only reader who would notice is whoever goes
+  looking for a refusal that was recorded and is gone.
+- **`bwrapBin` is a package variable**, the third host measurement to become
+  one (beside `bwrapResolves` and `bwrapApplyRefusal`) and for their reason:
+  without it the bwrap arm of `RenderWall` is unreachable on the box that
+  builds it, and an untested arm that puts up an L2 write wall is the one
+  nobody may be handed on a guess.
+- **What is still untyped is the mechanism that does not exist yet.** The
+  third question stays a separate predicate after D18 because `RenderWall`
+  refuses the mechanism it has no arm for, and the predicate is what keeps
+  that refusal from being where a host first hears about it.
+
 **D19. Shape 3: claude's config lives in a dir grant because the seat's
 `CLAUDE_CONFIG_DIR` points at one. There is no per-seat dir.**
 MEASURED today (below): claude writes `.claude.json`'s lock and temp siblings
@@ -866,8 +922,10 @@ whole-dir grant. So on the bwrap mechanism:
 `internal/posse/bwrap.go` — `rt.StateDirs` as this mechanism can grant them
 — plus one branch in `credentialReadDenyLiterals` (`internal/posse/seatbelt.go`).
 Pinned by `internal/posse/bwrapstatedirs_qa_test.go` on darwin, for the
-reason D17's pins run there. Nothing calls it yet; the wiring is D18's.
-Full reasoning in `docs/notes.d/ranger-base-tc41o.md`.
+reason D17's pins run there. Full reasoning in
+`docs/notes.d/ranger-base-tc41o.md`. D18 wired it (ranger-base-djl3c):
+`RenderBwrap` takes its state dirs from here, so the unset refusal is now a
+refused LAUNCH and is pinned as one.
 
 - **Three refusing arms, not one.** Unset, set-and-EMPTY (posse's rule is
   that empty is out of force, and the runtime resolves its config DIRECTORY
@@ -954,8 +1012,10 @@ parity row and one line in `checkParityIn`. Pinned by
 `internal/posse/bwrapgitrefs_qa_test.go` over real linked worktrees on
 darwin, and by `internal/posse/bwrapgitrefslive_test.go`, which skips off
 Linux or without `bwrap` and mirrors probe T2-T4e against the RENDERED argv
-rather than a hand-typed one. Nothing calls it yet; the wiring is D18's.
-Full reasoning in `docs/notes.d/ranger-base-gi1gi.md`.
+rather than a hand-typed one. Full reasoning in
+`docs/notes.d/ranger-base-gi1gi.md`. D18 wired it (ranger-base-djl3c):
+`RenderBwrap` renders from `BwrapWritable`'s set and the launcher touches the
+keep file, so `applyBwrapRefGrant`'s parity row now prints on a bwrap host.
 
 - **The swap is a filter over the writable SET, not a change to
   `sessionGitGrants`.** Same rule D19 kept for `~/.claude.json` and for the
@@ -1004,8 +1064,11 @@ keeps darwin's posture.
 T1 is the D19 save under the shipped wall, T2-T5 are D20's git grants against
 an outside pack, T6 is D21's nesting, and T7 is D18's `--args` fd. It writes
 only under one mktemp dir and calls no model. D19 and D20 can be built and
-pinned on darwin, because the renderer is pure. D18's live arm and D21 wait
-for the run.
+pinned on darwin, because the renderer is pure. D18 is built and its SHELL
+half — the redirection, the quoting of both paths, the `--` separator — is
+measured on darwin against a stand-in binary that copies fd 3
+(`bwraplaunchline_qa_test.go`); what T7 adds is the real binary's own
+acceptance of the argv. D21 waits for the run.
 
 **Alternatives rejected.**
 - **A per-seat `CLAUDE_CONFIG_DIR`**, the bead's likely answer and the one I

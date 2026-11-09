@@ -57,7 +57,8 @@ import (
 )
 
 // WallRenderSources are the tracked paths whose commits can change a wall
-// this binary renders: the seatbelt profile, the gate shims and gate shell
+// this binary renders: the seatbelt profile and, on Linux, the same tier's
+// bwrap args file (ADR 0080 D18), the gate shims and gate shell
 // (with the git shim's hook-skip arm),
 // the L3 hook bodies, the cage's mounts and launcher, the egress allowlist,
 // the pane line, the session skills binding, the persona-mode channel that
@@ -81,6 +82,8 @@ import (
 // inflate the one number whose value is that it is specific.
 var WallRenderSources = []string{
 	"internal/posse/seatbelt.go",
+	"internal/posse/bwrap.go",
+	"internal/posse/wall.go",
 	"internal/posse/gates.go",
 	"internal/posse/hookskip.go",
 	"internal/posse/cage.go",

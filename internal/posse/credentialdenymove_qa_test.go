@@ -494,9 +494,9 @@ func TestQASeatbeltWallRenderedIsTheTierAndNotTheName(t *testing.T) {
 // and a path outside this package fails on the one thing it cannot do:
 // ask a wall predicate and a refusal that are both unexported.
 //
-// A launch path here is a function that does BOTH — renders a profile and
+// A launch path here is a function that does BOTH — renders the L2 wall and
 // resolves this session's env sets — which is a property and not a list of
-// names: SeatbeltReport and the reachability probe render profiles too, and
+// names: SeatbeltReport and the reachability probe render walls too, and
 // they are out of scope because they resolve no env sets, not because they
 // are spelled somewhere as exceptions — and that is what lets the scope be
 // the whole module without a per-package exemption list. The cost of keying on both is that a
@@ -545,7 +545,7 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 				}
 				return true
 			})
-			if len(lines["RenderSeatbelt"]) == 0 || len(lines["EnvSetVars"]) == 0 {
+			if cdmWallRenderLine(lines) == 0 || len(lines["EnvSetVars"]) == 0 {
 				continue
 			}
 			paths++
@@ -557,24 +557,24 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 				return lines[name][0], true
 			}
 			last := func(name string) int { return lines[name][len(lines[name])-1] }
-			render, _ := callAt("RenderSeatbelt")
+			render := cdmWallRenderLine(lines)
 			envs, _ := callAt("EnvSetVars")
 
 			if !inPkg {
-				t.Errorf("%s.%s renders a seatbelt profile at line %d and resolves this session's env sets at line %d — a launch path OUTSIDE internal/posse, where neither half of the wall can be asked: wallRendered and credentialDirEnvSetRefusal are both unexported, so this path cannot ask whether it rendered a wall and cannot refuse an env set that moves the credential write past one. The launch belongs in the package that owns the wall (ranger-base-179hy, ranger-base-o05yg)", src.rel, who, render, envs)
+				t.Errorf("%s.%s renders the L2 wall at line %d and resolves this session's env sets at line %d — a launch path OUTSIDE internal/posse, where neither half of the wall can be asked: wallRendered and credentialDirEnvSetRefusal are both unexported, so this path cannot ask whether it rendered a wall and cannot refuse an env set that moves the credential write past one. The launch belongs in the package that owns the wall (ranger-base-179hy, ranger-base-o05yg)", src.rel, who, render, envs)
 				continue
 			}
 			guard, ok := callAt("wallRendered")
 			if !ok || guard > render {
-				t.Errorf("%s.%s renders a seatbelt profile at line %d without asking wallRendered first (asked at %v) — the render is one of that predicate's two call sites, and a site that spells the question itself is free to drift from the one the refusal below asks", src.rel, who, render, lines["wallRendered"])
+				t.Errorf("%s.%s renders the L2 wall at line %d without asking wallRendered first (asked at %v) — the render is one of that predicate's two call sites, and a site that spells the question itself is free to drift from the one the refusal below asks", src.rel, who, render, lines["wallRendered"])
 				continue
 			}
 			if envs <= render {
-				t.Errorf("%s.%s resolves env sets at line %d, at or before the seatbelt render at line %d — the credential read-deny CAN see the session's env sets now, so the launch should add their directory to the deny rather than refusing (ranger-base-x5f6p)", src.rel, who, envs, render)
+				t.Errorf("%s.%s resolves env sets at line %d, at or before the wall render at line %d — the credential read-deny CAN see the session's env sets now, so the launch should add their directory to the deny rather than refusing (ranger-base-x5f6p)", src.rel, who, envs, render)
 			}
 			scan, ok := callAt("credentialDirEnvSetRefusal")
 			if !ok {
-				t.Errorf("%s.%s renders a seatbelt profile (line %d) and resolves env sets (line %d) but never calls credentialDirEnvSetRefusal — an env set exporting CLAUDE_CONFIG_DIR or CLAUDE_SECURESTORAGE_CONFIG_DIR moves this session's credential write past a wall already rendered, and nothing here says so (ranger-base-179hy)", src.rel, who, render, envs)
+				t.Errorf("%s.%s renders the L2 wall (line %d) and resolves env sets (line %d) but never calls credentialDirEnvSetRefusal — an env set exporting CLAUDE_CONFIG_DIR or CLAUDE_SECURESTORAGE_CONFIG_DIR moves this session's credential write past a wall already rendered, and nothing here says so (ranger-base-179hy)", src.rel, who, render, envs)
 				continue
 			}
 			if scan <= last("EnvSetVars") {
@@ -583,8 +583,43 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 		}
 	}
 	if paths < 2 {
-		t.Fatalf("%d function(s) in this MODULE both render a seatbelt profile and resolve the session's env sets; there are two — planLaunch and RelaunchAgent — and a pin that finds fewer than two is watching a path that has left, or one that no longer resolves its env sets by name and so is checked by nothing above (ranger-base-179hy, ranger-base-qg6q5). The floor is still only the wall against a path LEAVING; a path ADDED is caught by the sweep now that the sweep is the module and not this package (ranger-base-o05yg)", paths)
+		t.Fatalf("%d function(s) in this MODULE both render the L2 wall (any of %v) and resolve the session's env sets; there are two — planLaunch and RelaunchAgent — and a pin that finds fewer than two is watching a path that has left, or one that no longer resolves its env sets by name and so is checked by nothing above (ranger-base-179hy, ranger-base-qg6q5). The floor is still only the wall against a path LEAVING; a path ADDED is caught by the sweep now that the sweep is the module and not this package (ranger-base-o05yg)", paths, cdmWallRenders)
 	}
+}
+
+// cdmWallRenders are the names a function renders the L2 wall by, and the
+// line this sweep reads as "the wall is up from here". FOUR AND NOT ONE
+// SINCE ADR 0080 D18 (ranger-base-djl3c): the tier has two mechanisms now
+// (WallMechanism), so a launch path asks `WallPrefix`, which renders through
+// `RenderWall`, which renders a sandbox-exec profile with `RenderSeatbelt`
+// or a bwrap args file with `RenderBwrap`. Keying on `RenderSeatbelt` alone
+// read ZERO launch paths the moment the two call sites moved to WallPrefix,
+// and the census floor at the bottom of the sweep is what said so — which is
+// the one thing that floor is there for.
+//
+// EVERY ENTRY POINT AND NOT THE TOP ONE. A path that reaches for the
+// mechanism's own renderer directly — which is what every launch did before
+// D18 — must still be swept, because the refusal it owes is the same: an env
+// set that moves CLAUDE_CONFIG_DIR moves the credential write past whatever
+// wall was rendered, by either mechanism, however the render was spelled.
+// Naming only `WallPrefix` would make the sweep a check on today's call
+// graph rather than on the property.
+var cdmWallRenders = []string{"WallPrefix", "RenderWall", "RenderSeatbelt", "RenderBwrap"}
+
+// cdmWallRenderLine is the EARLIEST line in a function at which the wall is
+// rendered, or 0 for a function that renders none. Earliest, because the
+// ordering arms below ask whether the env sets could have been seen by the
+// deny, and the first render is the one that settles that.
+func cdmWallRenderLine(lines map[string][]int) int {
+	first := 0
+	for _, name := range cdmWallRenders {
+		for _, l := range lines[name] {
+			if first == 0 || l < first {
+				first = l
+			}
+		}
+	}
+	return first
 }
 
 // cdmPackageSources is the scope the WALL-SPELLING sweep takes: every

@@ -1,8 +1,10 @@
 package posse
 
-// Gates L2 on Linux — the seatbelt tier's bwrap mechanism (ADR 0080 D16).
-// This file holds the availability half: whether this host can put the wall
-// up at all. The render is D17/D18's and is not here yet.
+// Gates L2 on Linux — the seatbelt tier's bwrap mechanism (ADR 0080 D16-D20).
+// Three halves, in order: whether this host can put the wall up at all (D16),
+// the pure render from the L2 lists to a bwrap argv (D17, with D19's and
+// D20's two substitutions), and the launch (D18) — the prep, the two files
+// and the prefix.
 //
 // bubblewrap is the Linux answer to the same question sandbox-exec answers
 // on darwin, and D14 picked it off a measured host probe (ranger-base-hft2q):
@@ -12,15 +14,18 @@ package posse
 // SeatbeltCarveOut, credentialReadDenyLiterals, sessionRefDirs are the same
 // for both mechanisms. Only the last step, list to wall, differs.
 //
-// TWO HALVES, and the second one starts at BwrapArgs below. The availability
-// half asks whether this host can put the wall up at all; the render half
-// (D17, ranger-base-qoamy) is the pure function from those lists to the argv
-// that puts it up. Writing that argv to a file and typing it onto a pane is
-// D18's and is not here yet: nothing in this file writes anything, which is
-// what lets every shape be pinned by a table on darwin.
+// WHERE THE WRITES ARE, and why that is worth saying up front. Everything
+// from BwrapArgs down to D20's parity row is pure in SeatbeltProfile's sense
+// — it stats the tree and appends strings, writes nothing and forks nothing —
+// which is what lets every shape be pinned by a table on darwin. The D18
+// section at the bottom is the exception and the only one: `RenderBwrap`
+// makes the host-side prep the namespace cannot and writes the argv where a
+// launch line can read it. A reader asking "what does a launch do here"
+// starts there; a reader asking "what is the wall" starts at BwrapArgs.
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -851,8 +856,9 @@ func (a *App) applyBwrapRefGrant(p *Parity, dir string) {
 
 // bwrapRefGrantDifference is that row with the host facts in hand, so a
 // darwin pin can read the Linux mechanism's answer — which is the only way
-// to pin it at all until D18 (ranger-base-djl3c) types the wall and this box
-// is a Linux host.
+// to pin it at all on this box, D18 (ranger-base-djl3c) notwithstanding: what
+// that bead typed is the wall, and the row's two facts are still a Linux
+// host's.
 //
 // IT READS THE RENDER'S OWN ANSWER rather than re-deciding what the grant
 // is: `keep` is empty exactly when bwrapGitSwap granted no ref directory, so
@@ -865,9 +871,10 @@ func (a *App) applyBwrapRefGrant(p *Parity, dir string) {
 // here grants nothing, and a declared difference about its shape would be a
 // claim about a wall nobody has — parity already says `cage seatbelt is not
 // available on this host/build` in that case, which is the sentence to act
-// on. So on today's Linux host, where D18 has not landed and
-// wallMechanismRendered admits sandbox-exec alone, this prints nothing and
-// the launch is refused; the day D18 lands it prints.
+// on. Before D18 (ranger-base-djl3c) that covered every Linux host, because
+// wallMechanismRendered admitted sandbox-exec alone and the tier was
+// therefore never in the table there; since D18 a Linux host with bwrap and
+// a passing probe prints this row.
 func bwrapRefGrantDifference(mech, cage string, available bool, dir string) string {
 	if mech != WallBwrap || cage != CageSeatbelt || !available || dir == "" {
 		return ""
@@ -890,4 +897,335 @@ func bwrapRefGrantDifference(mech, cage string, available bool, dir string) stri
 	}
 	return fmt.Sprintf("cage %s (%s): the ref grant for %s is the directory %s, because a ref update is a lock-then-rename and a mount cannot grant the leaf — so this session can also move a PEER session's ref in that directory, which the darwin mechanism's leaf grant does not allow. It still cannot move %s or any top-level branch, or write the shared hooks or config (ADR 0080 D20)",
 		CageSeatbelt, WallBwrap, branch, AbbrevHome(filepath.Dir(keep[0])), filepath.Join("refs", "heads", "main"))
+}
+
+// ─── D18: THE LAUNCH LINE ───────────────────────────────────────────────────
+
+// The two files RenderBwrap writes into the persona's gates dir, beside
+// `seatbelt.sb`. One is read by bwrap and one is read by people, and the
+// split is deliberate: the argv is NUL-separated because a mount source may
+// hold any byte a path may hold, and a file an operator can read has to
+// break lines somewhere.
+const (
+	// bwrapArgsName holds the argv, each element followed by a NUL. This is
+	// the ARTIFACT — what `--args 3` reads and what the wall is.
+	bwrapArgsName = "bwrap.args"
+	// bwrapTextName is the readable twin. Nothing reads it back, which is
+	// why it may carry a header and a prep list the argv has no room for.
+	bwrapTextName = "bwrap.txt"
+)
+
+// RenderBwrap is ADR 0080 D18's half of the launch: it renders this seat's
+// wall from the L2 lists, makes on the host what the namespace cannot, writes
+// the argv where the launch line will read it, and returns that file's path.
+// `RenderSeatbelt`'s twin, called from the same place in a launch through
+// RenderWall (wall.go).
+//
+// THE PREP IS NOT HOUSEKEEPING AND IT IS WHY THIS FUNCTION EXISTS. D17's
+// render is pure, and three of its five shapes cannot be realized without a
+// write OUTSIDE the namespace first: bwrap binds only a source that exists,
+// where sandbox-exec granted paths that did not (resolveExisting). So a
+// missing write grant is a `mkdir -p`, a missing deny inside a grant is an
+// empty directory the mount goes over, a missing audit log is a `touch`, and
+// the ref keep file is a `touch` that renders no mount at all (D20). Every
+// one of them is a write posse makes as the seat's user before the wall goes
+// up, in the order BwrapArgs emitted them — which is a promise, not a set:
+// a grant's mkdir precedes the touch of a file inside it.
+//
+// THE TWO SUBSTITUTIONS ARE APPLIED HERE AND NOWHERE ELSE, which is what
+// keeps the darwin profile untouched (D19 and D20 both say so in their own
+// words). `BwrapStateDirs` is the runtime's state as this mechanism can
+// grant it — claude's config DIRECTORY instead of its config file — and
+// `BwrapWritable` swaps git's ref leaf and `.lock` for the ref's parent
+// directory plus a keep file. Narrowing `SeatbeltWritable` or
+// `sessionGitGrants` instead would take those entries out of the sandbox-exec
+// profile too and reinstate ranger-base-cypy1's lost config write and
+// ranger-base-uuze's lost commit on every seatbelt seat on this box.
+//
+// THE CARVE-OUT IS COMPUTED FROM THE DECLARED SET AND NOT FROM THE SWAPPED
+// ONE. `SeatbeltCarveOut` reads the writable set for exactly one thing — the
+// rename seal — and `Seal` renders no mount at this mechanism (BwrapArgs step
+// 3's note: a mount is a statement about a mount POINT, so there is nothing
+// for a rename to walk around). Feeding it the declared set is therefore
+// identical in output and true to D16's claim that both mechanisms render
+// from the same lists: `SeatbeltWritable`, `SeatbeltCarveOut`,
+// `credentialReadDenyLiterals` and `sessionRefDirs` answer once, and only the
+// last step differs.
+func (a *App) RenderBwrap(ag *AgentFile, rt *Runtime, cwd string) (string, error) {
+	args, _, err := a.renderBwrapWall(ag, rt, cwd)
+	return args, err
+}
+
+// renderBwrapWall is RenderBwrap with the render itself handed back, so that
+// the report can print the wall it just WROTE rather than a second one it
+// composed. SeatbeltReport renders its profile for the same reason — `posse
+// gates` is where an operator reads the wall off the output, and a report
+// whose head line names a file that is not there is worse than no report.
+func (a *App) renderBwrapWall(ag *AgentFile, rt *Runtime, cwd string) (string, bwrapRendered, error) {
+	gatesDir := a.GatesDir(ag.Name)
+	if err := os.MkdirAll(gatesDir, 0o755); err != nil {
+		return "", bwrapRendered{}, err
+	}
+	r, err := a.bwrapRender(ag, rt, cwd, gatesDir)
+	if err != nil {
+		return "", bwrapRendered{}, err
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		return "", bwrapRendered{}, err
+	}
+	args := filepath.Join(gatesDir, bwrapArgsName)
+	if err := os.WriteFile(args, bwrapArgsBytes(r.Argv), 0o644); err != nil {
+		return "", bwrapRendered{}, err
+	}
+	if err := os.WriteFile(filepath.Join(gatesDir, bwrapTextName), []byte(bwrapReadable(ag.Name, args, r.Argv, r.Prep)), 0o644); err != nil {
+		return "", bwrapRendered{}, err
+	}
+	return args, r, nil
+}
+
+// bwrapRendered is one render of this mechanism's wall: the lists as this
+// mechanism grants them and what D17 made of them. It exists so the report
+// and the launch are ONE render — a report composed from the inputs would
+// agree with the design while disagreeing with the wall, which is the class
+// reachability.go's file comment refuses in the same words.
+type bwrapRendered struct {
+	// Set is the writable set after D19's and D20's substitutions: what the
+	// argv actually binds read-write.
+	Set []string
+	// Keep is D20's ref keep file — the one render input that binds nothing.
+	Keep []string
+	// Carve is the carve-out, computed from the DECLARED writable set (see
+	// RenderBwrap's own note on why that is identical here).
+	Carve SeatbeltCarveOut
+	// Argv and Prep are D17's two outputs.
+	Argv []string
+	Prep []PrepStep
+}
+
+// bwrapRender is the list-to-argv half with no write in it: the two
+// substitutions, the carve-out, and D17's render. Split out so that
+// RenderBwrap and BwrapReport cannot render two different walls.
+func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwrapRendered, error) {
+	stateDirs, err := BwrapStateDirs(rt)
+	if err != nil {
+		return bwrapRendered{}, err
+	}
+	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
+	r := bwrapRendered{Carve: a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)}
+	r.Set, r.Keep = BwrapWritable(writable, cwd)
+	if r.Argv, r.Prep, err = BwrapArgs(cwd, r.Set, r.Carve, r.Keep...); err != nil {
+		return bwrapRendered{}, err
+	}
+	return r, nil
+}
+
+// bwrapArgsBytes is the args file's format: every element followed by a NUL,
+// the last one included. That is what `bwrap --args FD` reads, and the probe's
+// T7 row writes the same bytes with `printf '%s\0'`.
+//
+// NO SEPARATOR THAT A PATH MAY CONTAIN. A newline-separated file would be
+// readable and would be wrong the first time a mount source held a newline —
+// which is a legal byte in a path on both hosts, and which posse does not
+// choose: a `writable:` extra and a `state_dir:` come from the PID and from
+// the box. The readable copy is a second FILE for that reason rather than a
+// second format for this one.
+func bwrapArgsBytes(argv []string) []byte {
+	var b strings.Builder
+	for _, a := range argv {
+		b.WriteString(a)
+		b.WriteByte(0)
+	}
+	return []byte(b.String())
+}
+
+// runBwrapPrep makes on the host what the namespace cannot, in the order
+// BwrapArgs emitted the steps. The launcher is outside the wall, so every
+// one of these is a write in the seat's name — which is why each step
+// carries its reason and why the readable copy prints them.
+//
+// IN ORDER AND NOT CONCURRENTLY (PrepStep's own rule): a Keep file's
+// directory is a grant one loop up, so its mkdir has just been emitted and
+// the touch that follows cannot run first.
+//
+// A TOUCH NEVER TRUNCATES. The files this creates are the session's own audit
+// logs and the ref keep file; BwrapArgs only emits a step for a path that is
+// not there, and the open below carries no O_TRUNC, so a re-render against a
+// live seat's gates dir cannot empty `refusals.log`.
+//
+// AN UNKNOWN KIND REFUSES rather than being skipped. A step posse does not
+// know how to make is a grant the argv names and the host does not have, and
+// bwrap's own failure for that is `Can't find source path` with no reason in
+// it — so the refusal is here, where the reason is.
+func runBwrapPrep(prep []PrepStep) error {
+	for _, s := range prep {
+		switch s.Kind {
+		case PrepMkdirAll:
+			if err := os.MkdirAll(s.Path, 0o755); err != nil {
+				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
+					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
+			}
+		case PrepTouch:
+			f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_WRONLY, 0o644)
+			if err != nil {
+				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
+					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
+			}
+			if err := f.Close(); err != nil {
+				return err
+			}
+		default:
+			return Die("cage %s (%s): the render asked the launcher for %q on %s, which posse has no step for — refusing rather than binding a source nothing created (ADR 0080 D18)",
+				CageSeatbelt, WallBwrap, string(s.Kind), s.Path)
+		}
+	}
+	return nil
+}
+
+// BwrapPrefix is the prefix typed between the PATH assignment and the runtime
+// command, SeatbeltPrefix's twin at this mechanism (ADR 0080 D18):
+//
+//	3<'<gates>/bwrap.args' '/usr/bin/bwrap' --args 3 -- <runtime cmd>
+//
+// WHY A FILE ON AN FD AND NOT THE ARGV. The argv is long — every grant, every
+// deny and every mask of a crew seat's wall — and the line posse types has a
+// hard limit it is already over (PaneLine spills every persona's line today).
+// `--args` moves the whole wall off the line for the price of one redirection,
+// and leaves the typed line the same length whatever the PID grants.
+//
+// A REDIRECTION BEFORE THE COMMAND NAME IS POSIX, and the line already
+// assumes a POSIX pane shell: `PATH=…:"$PATH"` is a prefix assignment and the
+// gates wrap types `"$(cat …)"`. Rex's seat shell is `realShell`'s answer,
+// which is a bash or a zsh or nothing (rexShell, ADR 0077 D2 surface 4), so
+// both multiplexers' panes parse it. fd 3 and not 0: stdin is the seat's tty.
+//
+// THE BINARY IS THE ABSOLUTE PATH RESOLVED AT RENDER, never the bare name.
+// The line runs in the multiplexer's process tree carrying the seat's own
+// PATH — which LEADS with the persona's gates dir (ADR 0009) and, on a box
+// with mise or a user bin dir, holds whatever else that operator installed.
+// A bare `bwrap` there is a name a shim can answer, and the shim would stand
+// between the seat and its own wall. Resolved here, against the gates-free
+// PATH, the wall is the file posse measured.
+func BwrapPrefix(bin, args string) string {
+	return "3<" + shellQuote(args) + " " + shellQuote(bin) + " --args 3 -- "
+}
+
+// bwrapBin resolves the binary BwrapPrefix types. A variable for the reason
+// bwrapResolves and bwrapApplyRefusal above are variables: this is the third
+// host measurement the mechanism depends on, and the arm it feeds is
+// unreachable on the box that builds it, so a pin drives the Linux render
+// from darwin by answering it.
+var bwrapBin = liveBwrapBin
+
+// liveBwrapBin is what production resolves with. protocolBin and not
+// exec.LookPath, for ADR 0077 D3's reason and for BwrapPrefix's own: the
+// gates-free PATH is the only lookup that cannot answer with a gate shim,
+// and it is the same resolution `bwrapApplyProbe` measured the host with —
+// so the binary the availability answer is about is the binary the launch
+// line names.
+func liveBwrapBin() (string, error) { return protocolBin("bwrap") }
+
+// bwrapReadable is the `bwrap.txt` twin: the same argv, one element per line,
+// under a header naming the renderer and the prep the launcher ran. do not
+// edit — nothing reads this file back, and a hand-edit would describe a wall
+// that is not up.
+//
+// THE HEADER IS THE POINT OF THE FILE. `RenderedByPosse()` is how a seat
+// reading a wall tells "relaunch pending" from "install pending"
+// (ranger-base-mmhhc: twelve caged launches read a superseded wall that named
+// nobody), and the prep list is the only place an operator can see the writes
+// posse made on the host in the seat's name.
+//
+// ONE ELEMENT PER LINE, UNQUOTED, and the header says so: that is exactly
+// `tr '\0' '\n' < bwrap.args`, so a reader comparing the two files is
+// comparing the same thing rather than this file's idea of it. A mount source
+// holding a newline would break this copy and not the wall, which is the
+// right way round — the args file is the artifact.
+func bwrapReadable(persona, args string, argv []string, prep []PrepStep) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# posse bwrap wall for %s — %s from the PID at launch; do not edit (ADR 0080 D18)\n", persona, RenderedByPosse())
+	fmt.Fprintf(&b, "# The wall that RUNS is %s, NUL-separated. The launch line reads it on fd 3:\n", filepath.Base(args))
+	fmt.Fprintf(&b, "#   %s<runtime command>\n", BwrapPrefix("<bwrap>", args))
+	fmt.Fprintf(&b, "# Below is that argv one element per line, unquoted — `tr '\\0' '\\n' < %s`.\n", filepath.Base(args))
+	fmt.Fprintf(&b, "# Nothing reads THIS file; it is here so the wall can be read.\n")
+	if len(prep) > 0 {
+		fmt.Fprintf(&b, "#\n# prep the launcher ran on the host, in this order, before the wall went up —\n")
+		fmt.Fprintf(&b, "# bwrap binds only a source that exists, and the launcher is outside the namespace:\n")
+		for _, s := range prep {
+			fmt.Fprintf(&b, "#   %s   (%s)\n", s, s.Why)
+		}
+	}
+	for _, a := range argv {
+		b.WriteString(a)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// BwrapReport prints this mechanism's wall for `posse gates <persona>`,
+// through SeatbeltReport's own markers over the same lists (ADR 0080 D18).
+// WallReport (wall.go) is what chooses between the two.
+//
+// THE MARKERS ARE THE OTHER REPORT'S so an operator reads one wall and not
+// two vocabularies: `w` a write grant, `x` a path the deny takes back, `r` a
+// file-read mask, and `w (re-allowed)` for the audit logs bound back over the
+// deny. Two of seatbelt's markers are absent because the mechanism has no
+// such statement to make — `~` (the sibling namespace beside a granted FILE)
+// and `+` as "create only" — and `+` is reused for the one thing this
+// mechanism has and seatbelt does not: the keep file, which the launcher
+// creates and no mount names.
+//
+// IT READS THE RENDERED ARGV AND THE PREP, not the lists, which is the
+// difference that matters for a report whose whole job is to be checkable.
+// `posse gates` is where ADR 0015 §2's claim is read off the output, and a
+// report composed from the inputs would agree with the design while
+// disagreeing with the wall. So the order below is the argv's order, which is
+// the wall's semantics: later covers earlier.
+func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer) error {
+	args, r, err := a.renderBwrapWall(ag, rt, cwd)
+	if err != nil {
+		return err
+	}
+	set, keep, carve, prep := r.Set, r.Keep, r.Carve, r.Prep
+	fmt.Fprintf(out, "  %s rendered for cwd %s (cage %s (%s); the mount set below, later covers earlier):\n",
+		AbbrevHome(args), AbbrevHome(cwd), CageSeatbelt, WallBwrap)
+	for _, w := range shallowestFirst(set) {
+		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
+	}
+	// The one render input that binds nothing, so it gets its own marker
+	// rather than a "w" line an operator would read as a grant (D20).
+	for _, f := range shallowestFirst(keep) {
+		fmt.Fprintf(out, "    + %s (the launcher's keep file — an empty dot-file that stops an outside `git pack-refs --prune` from removing the bound directory above it; bound by nothing)\n", AbbrevHome(f))
+	}
+	byRule := map[string][]string{}
+	for _, d := range pidDeniedSubtrees(ag, cwd) {
+		byRule[d.Path] = append(byRule[d.Path], d.Rule)
+	}
+	for _, p := range shallowestFirst(carve.Deny) {
+		if r := byRule[p]; len(r) > 0 {
+			fmt.Fprintf(out, "    x %s (read-only bind over the grant above — the PID's %s; ADR 0014 §3)\n", AbbrevHome(p), strings.Join(r, ", "))
+			continue
+		}
+		fmt.Fprintf(out, "    x %s (read-only bind over the grant above; MNT_LOCKED, so a nested namespace can neither unmount it nor remount it rw — probe B6/B6b)\n", AbbrevHome(p))
+	}
+	// Seal is the one list of the four that renders nothing here, and it is
+	// said out loud for the reason BwrapArgs says it: a renderer that
+	// ignores an input looks exactly like a renderer that forgot it.
+	for _, p := range carve.Seal {
+		fmt.Fprintf(out, "    · %s (rename seal — NO mount: a mount is a statement about a mount POINT, so renaming it or an ancestor is refused by the kernel; probe B3/B4)\n", AbbrevHome(p))
+	}
+	for _, p := range shallowestFirst(carve.Keep) {
+		fmt.Fprintf(out, "    w %s (re-allowed after the deny: the session's own audit trail, bound back as a FILE — an append to a bound file is in place)\n", AbbrevHome(p))
+	}
+	for _, p := range shallowestFirst(carve.DenyRead) {
+		fmt.Fprintf(out, "    r %s (/dev/null bound over it — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
+	}
+	// The prep, which an operator can read nowhere else: these are writes
+	// posse makes on the HOST, outside the namespace, in the seat's name.
+	for _, s := range prep {
+		fmt.Fprintf(out, "    ! %s (prep, run by the launcher before the wall: %s)\n", s, s.Why)
+	}
+	// No siblings: a mount cannot name the scratch namespace beside a file,
+	// and D19 makes it moot by granting claude's config DIRECTORY.
+	a.reportConstitutionGrants(ag, out, set, nil, carve.Deny)
+	return nil
 }

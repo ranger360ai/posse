@@ -575,7 +575,19 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	// counter files a build without it does. The only lever that stops
 	// the writes is the mode file, which is account-global and hand-
 	// applied; this is the versioned one.
-	for _, d := range []string{"Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share", "Library/Application Support/go/telemetry/local"} {
+	//
+	// PER GOOS SINCE ADR 0080 D17's RESIDUAL (ranger-base-qoamy §4, built
+	// under D18). Three of these were darwin paths spelled unconditionally,
+	// which at L2 costs nothing — a `(subpath …)` for a path that is not
+	// there grants nothing, and nothing writes it. At the bwrap mechanism a
+	// missing grant is NOT free: bwrap cannot bind a source that does not
+	// exist, so the launcher `mkdir -p`s it first, OUTSIDE the namespace and
+	// as the seat's user (BwrapArgs shape 1). Unnarrowed, every Linux seat's
+	// prep list would therefore carry three junk directories in the home —
+	// `Library/Caches` among them, on a box that has no Library — created by
+	// posse and used by nothing. The list is the generic caches every CLI on
+	// the box writes through, so the honest spelling is this box's layout.
+	for _, d := range homeCacheGrants(runtime.GOOS) {
 		if home != "" {
 			add(filepath.Join(home, d))
 		}
@@ -620,10 +632,56 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	if t := os.Getenv("TMPDIR"); t != "" {
 		add(t)
 	}
-	add("/private/tmp")
+	// The fourth of D17's residual literals, and the one whose cost is a
+	// REFUSED launch rather than a junk directory: on Linux there is no
+	// `/private`, so the prep this grant renders is a `mkdir -p` at the
+	// filesystem root that an unprivileged launcher cannot make. On darwin
+	// the line is redundant anyway — `add` absResolves, `/tmp` IS
+	// `/private/tmp` there, and dedupeStrings below folds the two — so
+	// guarding it changes that profile not at all, which is what
+	// TestQASeatbeltWritableTmpGrantIsOneDirectoryOnDarwin holds.
+	if runtime.GOOS == "darwin" {
+		add("/private/tmp")
+	}
 	add("/tmp")
 	out = append(out, pidWritableExtras(ag, cwd)...)
 	return dedupeStrings(out)
+}
+
+// homeCacheGrants names the generic cache directories under the home that
+// every CLI on the box writes through, for a GOOS. NOT runtime state and
+// never derived from a runtime declaration: these belong to npm, to the
+// operating system and to the XDG layout, which is why they are a literal
+// list and why the list is per OS.
+//
+// PARAMETERIZED SO A DARWIN PIN CAN READ THE LINUX ANSWER, the rule this
+// file's other host-shaped decisions already follow (seatbeltTierAvailableOn,
+// credentialReadDenyLiterals). The Linux arm is unreachable on the box that
+// builds it, and an unreachable arm that decides a WRITE GRANT is the one
+// nobody may hand over on a guess.
+//
+// The shared three are the XDG layout and are real on both. What differs:
+//
+//   - `Library/Caches` and `Library/Logs` are darwin's own and have no
+//     Linux equivalent to name — `.cache` already is it.
+//   - the Go toolchain's telemetry counters live under `os.UserConfigDir()`,
+//     which is `Library/Application Support` on darwin and `.config` on
+//     Linux. Same directory, two spellings, and the REASON travels with it:
+//     `local` and never its parent, because `telemetry/mode` sits beside it
+//     and is the only thing that decides whether the toolchain UPLOADS
+//     those counters. Granting the parent would let a session flip the
+//     operator's box from "local" to "on" — an egress the operator never
+//     chose (crew guardrail 4).
+//
+// The darwin list's ORDER is the one it had before it was a function, and it
+// is kept: a grant set is rendered in list order into the profile's allow
+// block, and reordering it would rewrite every seat's `seatbelt.sb` on a
+// change that means nothing.
+func homeCacheGrants(goos string) []string {
+	if goos == "darwin" {
+		return []string{"Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share", "Library/Application Support/go/telemetry/local"}
+	}
+	return []string{".cache", ".npm", ".local/share", ".config/go/telemetry/local"}
 }
 
 // SeatbeltSiblings names the grants whose atomic-write SIBLINGS a caged
@@ -1902,10 +1960,31 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	// deny: the carve-out is a wall, not a licence to grant it. What the
 	// deny changes is the verdict — a grant it covers is refused at the
 	// kernel, so it is a PID to fix rather than a hole to close tonight.
+	a.reportConstitutionGrants(ag, out, writable, siblings, carve.Deny)
+	return nil
+}
+
+// reportConstitutionGrants is the last block of a wall report: ADR 0015 §2's
+// structural claim CHECKED against the grants above it rather than restated.
+//
+// SHARED BY BOTH MECHANISMS (ADR 0080 D18), and it is the one part of the
+// report that had to be. The rest of a report is the mechanism's own
+// spelling — a subpath grant and a sibling regex on one, a bind mount and a
+// prep step on the other — but this block is a property of the GRANT SET,
+// and the set is the same list on both (SeatbeltWritable). Spelled twice it
+// would be two deny-lists to keep complete, which is the exact failure the
+// block exists to replace: a carve-out nobody can tell by looking is still
+// whole.
+//
+// deny is the carve-out's trailing-deny list, which decides the VERDICT and
+// not the finding: a grant the deny covers is refused at the wall, so it is
+// a PID to fix rather than a hole to close tonight. siblings is empty at any
+// mechanism that cannot name a namespace beside a file.
+func (a *App) reportConstitutionGrants(ag *AgentFile, out io.Writer, writable, siblings, deny []string) {
 	if bad := a.ConstitutionGrants(writable, siblings...); len(bad) > 0 {
 		open := false
 		for _, p := range bad {
-			if writeGranted(carve.Deny, p) {
+			if writeGranted(deny, p) {
 				fmt.Fprintf(out, "    ✗ GRANT REACHES THE CONSTITUTION: %s — refused by the trailing deny below it (ADR 0015 §2, ranger-base-h15); fix the PID\n", AbbrevHome(p))
 				continue
 			}
@@ -1917,7 +1996,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 		if !open {
 			fmt.Fprintf(out, "    every grant above that reaches the constitution is taken back by the deny; nothing at %s is writable — ADR 0015 §2/§7\n", AbbrevHome(a.Home))
 		}
-		return nil
+		return
 	}
 	// Same list as the bad-grant branch above reports members of, and read
 	// from the same place: the all-clear an operator sees on a clean home
@@ -1926,7 +2005,6 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	fmt.Fprintf(out, "    constitution at %s (%s, %s/, %s): in no grant above — ADR 0015 §2/§7\n",
 		AbbrevHome(a.Home), PromotedProse(""), ConstitutionEnvsDir, PromoteManifestFile)
 	fmt.Fprintf(out, "    memory %s is granted and no other persona's is — ADR 0015 §5\n", AbbrevHome(ag.MemoryDir))
-	return nil
 }
 
 // SeatbeltPrefix is typed between the PATH assignment and the runtime

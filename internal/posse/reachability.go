@@ -61,10 +61,16 @@ const reachProbeFile = ".posse-reach-probe"
 //
 //   - shims: there is no file wall at this tier, so every path the session
 //     can write, it can write. Trivially reachable, no probe.
-//   - seatbelt: judged BEHAVIORALLY against the profile the launch will
-//     render — a create+remove of a probe file inside each target under
-//     `sandbox-exec -f <the rendered .sb>`. The artifact that runs is the
-//     artifact judged.
+//   - seatbelt: judged BEHAVIORALLY against the wall the launch will
+//     render — a create+remove of a probe file inside each target under it.
+//     The artifact that runs is the artifact judged. TWO MECHANISMS realize
+//     this tier (WallMechanism, ADR 0080 D16), so there are two arms: on
+//     darwin `sandbox-exec -f <the rendered .sb>`, and on Linux the
+//     rendered `bwrap.args` typed exactly as the launch line types it
+//     (ADR 0080 D18). Two arms and not one because the two mechanisms fail
+//     differently and the ROW has to say which — a profile's trailing deny
+//     against a mount the kernel locked are different things to go and fix
+//     — but they judge the same way, by running the wall over the target.
 //   - a self-sandboxing runtime (codex): membership of the writable roots
 //     its RENDERED launch line names — the workspace plus every --add-dir
 //     realizeCodex emitted. List semantics, no ordering trap, no probe.
@@ -107,6 +113,31 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 			return
 		}
 		p.Realized[RecordReachGate] = RealizedGate{Class: Enforced, Detail: fmt.Sprintf("%s's own sandbox names %s (rendered launch line, %d targets)", rt.Name, AbbrevHome(home), len(targets))}
+	case p.Cage == CageSeatbelt && a.cageAvailable(p.Cage) && WallMechanism() == WallBwrap:
+		// ADR 0080 D18's arm. Shaped like the one below, measurement for
+		// measurement, and separate from it because every one of those
+		// measurements has a different name at this mechanism.
+		//
+		// Asked before the wall is rendered, for the reason the arm below
+		// gives and one of its own: rendering here WRITES — the args file,
+		// and the host-side prep bwrap needs because it binds only a source
+		// that exists (RenderBwrap) — so a process that cannot put the
+		// namespace up should not be making those writes to find out.
+		if why := bwrapApplyRefusal(); why != "" {
+			// Class "": unmeasured, not enforcement — see recordReachUnmeasured.
+			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasuredOn(WallBwrap, why)}
+			return
+		}
+		w, err := a.RenderWall(ag, rt, dir)
+		if err != nil {
+			p.unrealized(RecordReachGate, "the "+WallBwrap+" wall this launch would run under cannot be rendered, so the store of record cannot be judged reachable: "+err.Error())
+			return
+		}
+		if why := wallReachRow(w, targets); why != "" {
+			p.unrealized(RecordReachGate, why)
+			return
+		}
+		p.Realized[RecordReachGate] = RealizedGate{Class: Enforced, Detail: fmt.Sprintf("L2 %s probed at launch: %d targets created and removed under %s", AbbrevHome(w.Artifact), len(targets), w.Mechanism)}
 	case p.Cage == CageSeatbelt && a.cageAvailable(p.Cage):
 		if !SeatbeltAvailable() {
 			// The tier was pinned available on a host that cannot run the
@@ -158,6 +189,23 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 // may-not. `why` carries the kernel's own words when they exist, so the
 // stronger fact is still in the row where it is true.
 func recordReachUnmeasured(why string) string {
+	return recordReachUnmeasuredOn(WallSandboxExec, why)
+}
+
+// recordReachUnmeasuredOn is that row for a named mechanism (ADR 0080 D18).
+// Two whole sentences rather than one with the binary's name substituted
+// into it: what the abstention IS differs — applying a profile on one host,
+// unsharing a mount namespace on the other — and so does the reason the
+// LAUNCH is unaffected, which is the clause an operator acts on. A template
+// with a hole in it would have said "outside this process's sandbox" on a
+// host where the thing outside is a namespace.
+func recordReachUnmeasuredOn(mech, why string) string {
+	if mech == WallBwrap {
+		return "NOT MEASURED — this posse process is not known to be able to put up a bwrap mount namespace (" + why +
+			") and the probe that judges the store of record IS one, so the store is neither reachable nor unreachable here. " +
+			"The launch this row judges is unaffected: its bwrap is typed into a pane, outside this process's own namespace. " +
+			"Re-run `posse gates` outside the cage for a verdict (ADR 0013 §4, ranger-base-heur; ADR 0080 D18)"
+	}
 	return "NOT MEASURED — this posse process is not known to be able to apply a seatbelt profile (" + why +
 		") and the probe that judges the store of record IS one, so the store is neither reachable nor unreachable here. " +
 		"The launch this row judges is unaffected: its sandbox-exec is typed into a herdr pane, outside this process's sandbox. " +
@@ -232,6 +280,51 @@ func seatbeltReachProbe(profile, target string) (string, error) {
 	f := shellQuote(filepath.Join(target, fmt.Sprintf("%s.%d", reachProbeFile, os.Getpid())))
 	out, err := protocolCmd(exec.Command("sandbox-exec", "-f", profile, "/bin/sh", "-c",
 		": > "+f+" && rm -f "+f)).CombinedOutput()
+	return string(out), err
+}
+
+// wallReachRow is seatbeltReachRow's twin for the bwrap mechanism, and it
+// judges the wall BY TYPING IT (ADR 0080 D18): the prefix RenderWall
+// returned, in front of the same create-and-remove the other arm runs, under
+// one `/bin/sh -c`.
+//
+// THE PREFIX AND NOT A HAND-BUILT ARGV, which is the whole difference from
+// the probe script's own T7 row. What this mechanism's wall is spelled as on
+// a launch line is a redirection before the command name —
+// `3<args bwrap --args 3 --` — and a probe that exec'd bwrap directly with
+// the args file on an fd would measure the MOUNTS and say nothing about the
+// line posse types. So the shell is the point: if the redirection, the
+// quoting of the args path or the resolved binary is wrong, this row is
+// where it shows, at a launch rather than on a seat that opened with no wall
+// and no complaint.
+//
+// There is no apply-refusal arm inside this function, unlike its twin. The
+// caller (applyRecordReach) asks bwrapApplyRefusal before it renders, because
+// rendering this wall WRITES; seatbeltReachRow re-asks because its caller's
+// ask is memoized and free. So a per-probe failure here can only be the
+// target's own write refused — which is also why the reason is read off the
+// output exactly as the other arm reads it.
+func wallReachRow(w WallRender, targets []string) string {
+	for _, t := range targets {
+		out, err := wallReachProbe(w, t)
+		if err == nil {
+			continue
+		}
+		return fmt.Sprintf("%s is not writable under the %s wall this launch runs (%s): %s — a caged session cannot `bd sync`, `bd export` or commit the JSONL there, so it claims, comments and closes nothing however good the runtime's record: grade is (ADR 0013 §4 reachability, ranger-base-hxhb). At this mechanism the narrow statement is the LATER mount: a read-only bind rendered over this target beats the write grant below it, and MNT_LOCKED means the session cannot take it off (ADR 0080 D17, probe B6/B6b)",
+			AbbrevHome(t), w.Mechanism, AbbrevHome(w.Artifact), reachProbeReason(out, err))
+	}
+	return ""
+}
+
+// wallReachProbe runs one target's create-and-remove behind the typed
+// prefix. The inner command is quoted as one argument so that the wall's own
+// shell — the `sh` bwrap execs inside the namespace — receives exactly the
+// bytes the launch's runtime command would be, and the outer `/bin/sh` is
+// only there to perform the redirection.
+func wallReachProbe(w WallRender, target string) (string, error) {
+	f := shellQuote(filepath.Join(target, fmt.Sprintf("%s.%d", reachProbeFile, os.Getpid())))
+	line := w.Prefix + "/bin/sh -c " + shellQuote(": > "+f+" && rm -f "+f)
+	out, err := protocolCmd(exec.Command("/bin/sh", "-c", line)).CombinedOutput()
 	return string(out), err
 }
 

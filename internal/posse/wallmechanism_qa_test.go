@@ -213,23 +213,28 @@ func TestQAParityCageRowNamesTheMechanismThatRealizesTheTier(t *testing.T) {
 	}
 }
 
-// ─── the third question: can posse TYPE it (ranger-base-pl3ck) ───────────────
+// ─── the third question: can posse TYPE it (ranger-base-pl3ck, D18) ─────────
 
-// The window this pin closes. ranger-base-eoxo1 made the seatbelt tier
-// AVAILABLE on a Linux host with bwrap and a passing probe, and nothing
-// between that table and the launch line asks which mechanism realizes the
-// tier: `wallRendered` reads the table, and both of its call sites then type
-// `SeatbeltPrefix` — `sandbox-exec -f <prof>` — unconditionally. So on that
-// host the launch would have reported its L2 rules REALIZED (parity's
-// `seatbelt :=` reads only cageAvailable) and typed a binary the host does
-// not have, where before eoxo1 the same launch was REFUSED at "cage seatbelt
-// is not available on this host/build". D16's own pin above says the thing to
-// avoid is posse printing a wall it never put up; this is that, from the
-// other side.
+// The window this pin was opened for, and the one it holds now. ranger-base-
+// eoxo1 made the seatbelt tier AVAILABLE on a Linux host with bwrap and a
+// passing probe, and nothing between that table and the launch line asked
+// which mechanism realizes the tier: `wallRendered` read the table, and both
+// of its call sites then typed `SeatbeltPrefix` — `sandbox-exec -f <prof>` —
+// unconditionally. So on that host the launch would have reported its L2
+// rules REALIZED (parity's `seatbelt :=` reads only cageAvailable) and typed
+// a binary the host does not have, where before eoxo1 the same launch was
+// REFUSED at "cage seatbelt is not available on this host/build". D16's own
+// pin above says the thing to avoid is posse printing a wall it never put
+// up; this is that, from the other side.
 //
-// ADR 0080 D18 (ranger-base-djl3c) writes bwrap's render and its prefix. Until
-// it lands the table holds the Linux arm, and this pin reds if the hold is
-// lifted without the render.
+// ADR 0080 D18 (ranger-base-djl3c) CLOSED IT BY BUILDING THE RENDER, not by
+// lifting the hold: `RenderWall` is the one switch between the two
+// mechanisms, `WallPrefix` is what both call sites type, and
+// wallMechanismRendered admits bwrap in the same commit. What this pin holds
+// from here on is the BICONDITIONAL, in the only direction that can still
+// break: every mechanism `wallMechanismOn` can name is one this build can
+// type, and every name it admits is tied to the text posse actually types
+// for it. A third mechanism added as a name alone reds here.
 func TestQAWallTableClaimsNoTierThisBuildCannotType(t *testing.T) {
 	// No t.Parallel: wmStub writes package-level func vars, and the last arm
 	// reads AvailableCages.
@@ -238,38 +243,67 @@ func TestQAWallTableClaimsNoTierThisBuildCannotType(t *testing.T) {
 	// the two things that must change together are this predicate and the
 	// prefix typed at wallRendered's call sites, and the second is a string
 	// in a function body that no census can tie to a mechanism name. So the
-	// list is spelled, and the arm below ties the one TRUE member to the
-	// text actually typed.
+	// list is spelled, and the arms below tie each TRUE member to the text
+	// actually typed.
 	for _, tc := range []struct {
 		m    string
 		want bool
 	}{
 		{WallSandboxExec, true},
-		{WallBwrap, false},
+		{WallBwrap, true},
 		{"", false},
 	} {
 		if got := wallMechanismRendered(tc.m); got != tc.want {
-			t.Errorf("wallMechanismRendered(%q) = %v, want %v — if ADR 0080 D18's bwrap render has landed, flip %q here AND check the prefix typed at wallRendered's two call sites names it (herdrback.go, create and relaunch); if it has not, this build cannot type that wall and the tier must not be claimed",
-				tc.m, got, tc.want, tc.m)
+			t.Errorf("wallMechanismRendered(%q) = %v, want %v — this predicate's membership IS RenderWall's switch (wall.go). A name admitted with no arm there is a tier posse announces and cannot put up; an arm with the name withheld is a wall posse renders and then refuses to launch behind.",
+				tc.m, got, tc.want)
 		}
 	}
-	// The one member that is true is tied to the text posse types, so the
-	// predicate cannot drift into a claim about a prefix that says something
-	// else.
+	// NO MECHANISM IS NAMED THAT THIS BUILD CANNOT TYPE. The derived half of
+	// the set: whatever GOOS wallMechanismOn answers for, the answer is a
+	// mechanism with a render. This is the arm a third mechanism added as a
+	// name alone reds, which is the whole residual after D18 — the hazard
+	// has moved from "bwrap is available and untyped" to "the next one is
+	// named and untyped", and it is the same hazard.
+	for _, goos := range []string{"darwin", "linux", "windows", "freebsd", "plan9"} {
+		m := wallMechanismOn(goos)
+		if m != "" && !wallMechanismRendered(m) {
+			t.Errorf("wallMechanismOn(%q) names %q and wallMechanismRendered refuses it — a GOOS whose mechanism has a NAME but no render in RenderWall must not be named at all until it has one, or AvailableCages claims a tier over a wall nothing puts up (ranger-base-pl3ck)", goos, m)
+		}
+	}
+	// Each true member tied to the text posse types for it, so the predicate
+	// cannot drift into a claim about a prefix that says something else.
 	if pre := SeatbeltPrefix("/x/seatbelt.sb"); !strings.HasPrefix(pre, WallSandboxExec+" ") {
 		t.Errorf("wallMechanismRendered admits %q, but the prefix typed onto the launch line is %q — the predicate and the render must name the same binary", WallSandboxExec, pre)
 	}
+	// bwrap's prefix names the binary as the ABSOLUTE path it was resolved
+	// to, not as the bare name, so a gates-dir or mise shim cannot stand in
+	// for the seat's own wall (ADR 0080 D18).
+	if pre := BwrapPrefix("/usr/bin/"+WallBwrap, "/x/bwrap.args"); !strings.Contains(pre, "'/usr/bin/"+WallBwrap+"' --args 3 -- ") {
+		t.Errorf("wallMechanismRendered admits %q, but the prefix typed onto the launch line is %q — the predicate and the render must name the same binary", WallBwrap, pre)
+	}
+	if strings.Contains(BwrapPrefix(WallBwrap, "/x/bwrap.args"), " "+WallBwrap+" ") {
+		t.Error("BwrapPrefix quotes the binary it is handed; a bare name on the line is one a gates-dir shim answers")
+	}
 
 	// THE COMPOSITION. Both host measurements green on Linux: available, and
-	// still not provided, because nothing renders it. The two answers differ
-	// HERE and this is the only place they do.
+	// now PROVIDED, because D18 renders it. The two answers used to differ
+	// here and this was the only place they did; what the arm holds now is
+	// that they agree on every host, mechanism for mechanism.
 	wmStub(t, true, "")
 	if !seatbeltTierAvailableOn("linux") {
-		t.Fatal("the availability half must still answer yes with both measurements green — this pin is about the render, and a stub that broke the measurement would pass for the wrong reason")
+		t.Fatal("the availability half must answer yes with both measurements green — this pin is about the render, and a stub that broke the measurement would pass for the wrong reason")
 	}
+	if !seatbeltTierProvidedOn("linux") {
+		t.Error("a Linux host with bwrap and a passing probe is AVAILABLE and, since ADR 0080 D18 wrote the bwrap render, PROVIDED: withholding the tier here refuses every caged launch on the host ADR 0083 moves the crew to, over a wall posse can put up (ranger-base-djl3c)")
+	}
+	// And the render conjunct still CONJOINS: a host whose kernel refuses
+	// the namespace is not provided, so the day this reads true the render
+	// has started answering for the measurement.
+	wmStub(t, true, "bwrap: No permissions to creating new namespace")
 	if seatbeltTierProvidedOn("linux") {
-		t.Error("a Linux host with bwrap and a passing probe is AVAILABLE and not PROVIDED until ADR 0080 D18 writes the bwrap render: claiming the tier here reports L2 rules realized and types sandbox-exec onto a host that has no sandbox-exec (ranger-base-pl3ck)")
+		t.Error("a Linux host whose kernel refuses the namespace provides no tier, however good the render is — availability is the other half and must not be swallowed by it")
 	}
+	wmStub(t, true, "")
 	// Darwin is untouched by the conjunct: its mechanism is the one that
 	// renders, so the provided answer IS the available one, measurement for
 	// measurement.

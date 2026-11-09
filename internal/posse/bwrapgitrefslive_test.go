@@ -27,11 +27,11 @@ package posse
 // here and nowhere else.
 //
 // THE WRITABLE SET IS THE GIT HALF ALONE, deliberately. SeatbeltWritable also
-// carries the generic CLI caches under the home and `/private/tmp`, which on
-// Linux are four paths an unprivileged launcher cannot or should not make
-// (ADR 0080 D17's residual, D18's to narrow). Varying only what this bead is
-// about is also what makes a refusal below attributable: the one thing that
-// differs between the arms is a git grant.
+// carries the generic CLI caches under the home — and carried `/private/tmp`
+// and three darwin paths unconditionally until D18 narrowed them per GOOS
+// (ADR 0080 D17's residual, closed in `homeCacheGrants`). Varying only what
+// this bead is about is what makes a refusal below attributable: the one
+// thing that differs between the arms is a git grant.
 
 import (
 	"os"

@@ -3114,18 +3114,26 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			}
 			cmd += ArgvPromptSuffix(o.PromptFile)
 		}
-		// L2 seatbelt: the runtime runs under sandbox-exec with a profile
-		// rendered from the PID; the outer shell expands $(cat {file}) first.
+		// L2 seatbelt: the runtime runs behind the wall this host's
+		// mechanism puts up — `sandbox-exec -f <profile>` on darwin,
+		// `bwrap --args 3` on Linux (WallMechanism, ADR 0080 D16/D18). One
+		// function renders it and returns what to type, so the two call
+		// sites that prefix cannot type a binary for a wall they did not
+		// render; the outer shell expands $(cat {file}) first either way.
+		//
+		// The RUNTIME and not its state dirs, because the mechanism decides
+		// what `state_dir:` (ADR 0012 D4) becomes: on darwin the declared
+		// tree joins the writable set — without it a third-party CLI runs
+		// under a sandbox that makes its config read-only, which it reports
+		// as a first-run flow that never sticks rather than as a denial —
+		// and on bwrap claude's entry becomes the config DIRECTORY its
+		// CLAUDE_CONFIG_DIR names (BwrapStateDirs, D19).
 		if wallRendered(cage, rt) {
-			// state_dir: (ADR 0012 D4) — the runtime's own state tree joins
-			// the writable set. Without it a third-party CLI runs under a
-			// sandbox that makes its config read-only, which it reports as a
-			// first-run flow that never sticks rather than as a denial.
-			prof, err := a.RenderSeatbelt(ag, dir, rt.StateDirs...)
+			pre, err := a.WallPrefix(ag, rt, dir)
 			if err != nil {
 				return nil, err
 			}
-			cmd = SeatbeltPrefix(prof) + cmd
+			cmd = pre + cmd
 		}
 		// L1 gates (ADR 0002 §3, ADR 0009): shims rendered fresh from deny:,
 		// PATH prefixed on the typed line and SHELL/GROK_SHELL pointed at the
@@ -3845,11 +3853,11 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// copy had no `rt != nil` arm, and — worse — nothing tied it to the
 	// refusal the answer is FOR, twenty lines below.
 	if wallRendered(m.Cage, rt) {
-		prof, err := b.App.RenderSeatbelt(ag, m.Dir, rt.StateDirs...)
+		pre, err := b.App.WallPrefix(ag, rt, m.Dir)
 		if err != nil {
 			return false, err
 		}
-		inner = SeatbeltPrefix(prof) + inner
+		inner = pre + inner
 	}
 	// Same shape as CreateSession, and for the same reason: at the container
 	// tier the wall is rendered inside the cage, so the host's gate prefix
