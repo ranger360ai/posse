@@ -399,21 +399,45 @@ func TestQANoPosseWallForASelfSandboxRuntimeOnEitherMechanism(t *testing.T) {
 	if body == nil {
 		t.Fatalf("no func %s in seatbelt.go — the predicate this pin is about has moved or been renamed, and a pin that cannot find its subject must say so rather than pass (the last rename was seatbeltWallRendered → %s, ADR 0080 D16)", owner, owner)
 	}
-	// The mechanism vocabulary, every spelling a flip could reach for. Not a
-	// census over the whole package: the claim is about ONE function body.
-	mechNames := map[string]bool{
-		"WallMechanism":         true,
-		"wallMechanismOn":       true,
-		"WallBwrap":             true,
-		"WallSandboxExec":       true,
-		"wallMechanismRendered": true,
+	// AN ALLOW-LIST AND NOT A DENY-LIST, because a deny-list pins spellings
+	// and the claim is about terms. This arm first held the five mechanism
+	// names a flip was expected to reach for (WallMechanism, wallMechanismOn,
+	// WallBwrap, WallSandboxExec, wallMechanismRendered) under a comment
+	// calling that "every spelling a flip could reach for" — and it was not:
+	// ADR 0080's own house style parameterizes a host decision on the GOOS
+	// rather than on the mechanism name (wallMechanismOn(goos),
+	// seatbeltTierAvailableOn(goos), homeCacheGrants(goos)), each so a pin can
+	// read the Linux branch from darwin. A flip in that style names no
+	// mechanism at all:
+	//
+	//	cage == CageSeatbelt && AvailableCages[CageSeatbelt] && rt != nil &&
+	//		(!rt.SelfSandbox || runtime.GOOS == "linux")
+	//
+	// left the deny-list GREEN, and so were the five behavioral pins this
+	// file's close had already identified as blind to a flip — the exact
+	// outcome this arm exists to make impossible (MEASURED 2026-11-09 on
+	// darwin 25.6.0, ranger-base-ojmh6/ranger-base-e7ink).
+	//
+	// So the assertion is the other way round: the identifiers in this body
+	// are a SUBSET of the five the predicate is allowed to read, plus `nil`.
+	// That is immune to spelling — it reds on any new term whatever it is
+	// called — and it is the right shape for the subject, because the claim
+	// is that this predicate reads the tier and the runtime's declaration and
+	// NOTHING ELSE. Not a census over the whole package: ONE function body.
+	okNames := map[string]bool{
+		"cage":           true,
+		"CageSeatbelt":   true,
+		"AvailableCages": true,
+		"rt":             true,
+		"SelfSandbox":    true,
+		"nil":            true,
 	}
 	ast.Inspect(body.Body, func(n ast.Node) bool {
 		id, ok := n.(*ast.Ident)
-		if !ok || !mechNames[id.Name] {
+		if !ok || okNames[id.Name] {
 			return true
 		}
-		t.Errorf("%s names the mechanism %q at %s — that is ADR 0080 D21's flip, and it is INVISIBLE to this suite's behavioral pins: on darwin a `WallMechanism() == WallBwrap` disjunct is false, so codexrex_test.go's arm 1, credentialdenymove_qa_test.go's wallRendered table and arm 1 above all stay green while Linux codex gets a wall posse never measured. D21 was gated on probe T6 and T6 read REFUSED against an expected allowed (ranger-base-r5m98, ranger-base-bjk4k). If the gate has since been answered properly, land it WITH its reading: D21's as-measured note, parity.go's `seatbeltIncompatible` declared difference, reachability.go's SelfSandbox arm, and this pin, which is meant to be deleted by that commit and not by this one",
+		t.Errorf("%s reads %q at %s — this predicate is allowed the tier (cage, CageSeatbelt, AvailableCages) and the runtime's own declaration (rt, SelfSandbox) and nothing else, so a new term here is a host decision moving into it. If it names the mechanism, directly or through the GOOS — that is ADR 0080 D21's flip, and it is INVISIBLE to this suite's behavioral pins: on darwin a `WallMechanism() == WallBwrap` disjunct is false, so codexrex_test.go's arm 1, credentialdenymove_qa_test.go's wallRendered table and arm 1 above all stay green while Linux codex gets a wall posse never measured. D21 was gated on probe T6 and T6 read REFUSED against an expected allowed (ranger-base-r5m98, ranger-base-bjk4k). If the gate has since been answered properly, land it WITH its reading: D21's as-measured note, parity.go's `seatbeltIncompatible` declared difference, reachability.go's SelfSandbox arm, and this pin, which is meant to be deleted by that commit and not by this one",
 			owner, id.Name, fset.Position(id.Pos()))
 		return true
 	})

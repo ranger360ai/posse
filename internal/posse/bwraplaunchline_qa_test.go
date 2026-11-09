@@ -280,6 +280,14 @@ func TestQARenderBwrapWritesTheArgsFileAndItsReadableTwin(t *testing.T) {
 // bwrap binds only a source that exists. Two halves, and the second is the
 // one with a victim — an audit log the launcher truncates is a refusal nobody
 // can read afterwards.
+//
+// WHICH OF THE TWO DEFENCES THIS ONE HOLDS: the first. The refusals.log
+// assertion below is end-to-end over the RENDER, and BwrapArgs emits a touch
+// step only for a path that is NOT there — so the file this plants never
+// reaches the open at all, and the assertion is true however that open is
+// spelled. The FLAGS are pinned by
+// TestQABwrapPrepTouchDoesNotTruncateAnExistingFile below, which hands
+// runBwrapPrep the step directly (ranger-base-e7ink).
 func TestQARenderBwrapPrepMakesTheMissingPathsAndNeverTruncates(t *testing.T) {
 	// No t.Parallel: bwlStubBin writes a package-level var.
 	f := bwlFixture(t)
@@ -346,6 +354,38 @@ func TestQARenderBwrapPrepMakesTheMissingPathsAndNeverTruncates(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(logPath); string(got) != refusal {
 		t.Errorf("refusals.log reads %q after a SECOND render — prep is not idempotent", got)
+	}
+}
+
+// The SECOND of the two defences the comment over runBwrapPrep names, and the
+// one the pin above cannot reach. That pin plants refusals.log with a refusal
+// in it and reads it back unchanged after two renders, which holds the FIRST
+// defence: BwrapArgs emits a touch step only for a path that is NOT there, so
+// the file it plants never reaches the open at all. Its assertion is
+// therefore true however that open is spelled — `|os.O_TRUNC` added to
+// bwrap.go's PrepTouch leaves it, and all 45 wall and bwrap pins, GREEN
+// (MEASURED 2026-11-09 on darwin 25.6.0, ranger-base-ojmh6/ranger-base-e7ink).
+//
+// So this hands runBwrapPrep the step directly, which is the only way to put
+// the flags under a pin. The victim is an audit log and the prep runs on the
+// HOST, outside the namespace, as the seat's user: the day anything emits a
+// touch for a path that is already there — a fix to BwrapArgs, a second
+// caller, a re-render against a live seat — a relaunch empties the one file
+// a refusal is recorded in. Not a comment going stale, an audit log going
+// empty.
+func TestQABwrapPrepTouchDoesNotTruncateAnExistingFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "refusals.log")
+	const refusal = "denied: git push\n"
+	if err := os.WriteFile(p, []byte(refusal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep([]PrepStep{{Kind: PrepTouch, Path: p, Why: "an audit log that is already there"}}); err != nil {
+		t.Fatalf("runBwrapPrep refused a touch of a path that already exists: %v — a relaunch renders the prep again over a live seat's gates dir, so an existing file is the ordinary case and not an error", err)
+	}
+	if got, _ := os.ReadFile(p); string(got) != refusal {
+		t.Errorf("runBwrapPrep's touch EMPTIED %s: it reads %q, want %q — the open must stay os.O_CREATE|os.O_WRONLY with no O_TRUNC (ADR 0080 D18, and runBwrapPrep's own \"A TOUCH NEVER TRUNCATES\")", p, got, refusal)
 	}
 }
 
