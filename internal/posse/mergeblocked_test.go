@@ -1258,6 +1258,30 @@ func TestMergeBlockedReplayNamesTheCountAndThePerCommitLoop(t *testing.T) {
 		"--merge-base=$C^ HEAD $C",
 		"git diff --name-only $C^ $C",
 		"format=%aI $C",
+		// ranger-base-48ouv: the last three operands of the recipe, added
+		// because a mutation of each SURVIVED every pin in this file and in
+		// mergebackreplay_test.go (MEASURED 2026-11-08, darwin, by reverting
+		// each one in internal/posse/dispatch.go and running this file's arms
+		// plus TestMergeBackPairsEveryCommit...).
+		//
+		// The deletion guard is asserted WITH ITS OPERANDS and not as the
+		// bare `--diff-filter=D` the body pin below checks. Reversed to
+		// `$TREE HEAD` it reports the paths the merge ADDED and MISSES a real
+		// deletion — and a dropped deletion still pairs, because replayKey is
+		// an identity and never a measurement of content, so the branch reads
+		// as landed over a hunk that never arrived. That is the one thing a
+		// write-and-add loop cannot carry and the guard is the only thing
+		// that says so.
+		"--diff-filter=D --name-only HEAD $TREE",
+		// And the whole-SET read-back, which could be DELETED OUTRIGHT with
+		// every pin green: it is the step that tells a seat it stranded a
+		// commit, which is the failure this entire bead exists for. Both
+		// operands, because `base..HEAD` is the half that reads the replay —
+		// and the AUTHOR date field, since `%cI` here compares committer
+		// dates that a replay always rewrites, so the read-back would scream
+		// on every correct replay and mean nothing.
+		"<(git log --format='%ae%x1f%aI%x1f%s' main.." + sha + " | sort)",
+		"<(git log --format='%ae%x1f%aI%x1f%s' main..HEAD | sort)",
 	}
 	for _, c := range []struct {
 		commits int
