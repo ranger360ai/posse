@@ -506,10 +506,10 @@ func TestFreshSessionTreeIsPorcelainCleanBeforeTheSeatTypes(t *testing.T) {
 // sessionWork itself takes: `normal` collapses an untracked directory to one
 // line, so a tree this arm calls clean is clean for either spelling.
 //
-// MUTATIONS RUN (each reds this test): have PrepareSessionHead write its
-// `config.worktree` into the worktree root instead of the git dir; drop the
-// seedScaffoldExcludes call (the detached arm reds too, since it prepares
-// the same seeded tree).
+// MUTATIONS RUN 2026-11-09 (each reds this test): have PrepareSessionHead
+// write its `config.worktree` into the worktree root instead of the git dir;
+// drop the seedScaffoldExcludes call (which reds the test above as well,
+// since this fixture carries the same seeded scaffolding).
 func TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
@@ -580,8 +580,10 @@ func TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath(t *testing.T) {
 	// EnsureSessionTree is re-run only on the ON-BRANCH shape: over a
 	// DETACHED tree it refuses outright, because existingTree asks
 	// `symbolic-ref --short HEAD` and compares it to the branch. That is a
-	// defect in the relaunch path and not this measurement's subject — filed
-	// separately, with this fixture as its repro.
+	// defect in the relaunch path and not this measurement's subject —
+	// ranger-base-p60mv, filed from this fixture, which is its repro: take
+	// the `detached` guard off this loop and it dies with `is on "", not
+	// "posse/s-1"`.
 	for _, caged := range []bool{false, true, true, false} {
 		if _, detached := treeDetachedHead(tr.Path); !detached {
 			if _, err := a.EnsureSessionTree(repo, "s-1", nil); err != nil {

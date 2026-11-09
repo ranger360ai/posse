@@ -70,7 +70,8 @@ back after one `startup_wait`, not stranded. Under a drain, `stopClaim` still
 goes first, as 2mqp3 ordered it.
 
 **D3 — "Did this session work?" reads the tree as well as the branch.**
-`committedWork` becomes a work reading. It is *commits ahead of base, OR a
+`committedWork` becomes a work reading (built as `sessionWork`,
+ranger-base-x475y). It is *commits ahead of base, OR a
 non-empty `git status --porcelain` in the session tree*. Either one means
 work happened. The branch count alone was enough for a stall: herdr watched
 5s from submission and saw nothing, so a whole turn fitting inside that
@@ -104,7 +105,9 @@ resolved by reading the seat (ADR 0084), never by expiry.*
 ## Consequences
 
 - One `if` changes shape in gather, `judgeStall` gains a trigger argument,
-  `committedWork` gains a porcelain read, and `LaunchBead`'s guard changes.
+  `committedWork` gains a porcelain read (landed as `sessionWork`, with
+  `dirtyPaths` split so that "git would not answer" stays apart from "the
+  tree is clean" — ranger-base-x475y), and `LaunchBead`'s guard changes.
   There is no new state, config key or herdr call. The porcelain read runs
   only on the D2 path, once per judged bead.
 - `TestQAFirstLegErrorWithNoCodeStillUnclaims` is replaced by pins on D2's
@@ -117,12 +120,24 @@ resolved by reading the seat (ADR 0084), never by expiry.*
   cheaper than an invisible second seat. MEASURED in 2mqp3, the second seat
   cost a full duplicate of one bead and wrong provenance on one of two
   branches.
-- ASSUMED, not measured: that a posse-prepared session tree is clean at
-  prompt time. One reading holds it (this session's own tree, claude,
-  2026-11-09: zero porcelain lines after bd calls). A resumed session's
-  tree may be dirty from an earlier turn. That reads as work and keeps the
-  claim, which is the safe direction. The build bead re-measures a fresh
-  tree on each prepare path before relying on it.
+- **MEASURED 2026-11-09 (ranger-base-x475y), replacing this bullet's
+  ASSUMED:** a posse-prepared session tree is clean at prompt time, on BOTH
+  prepare paths — the per-session worktree and the container tier's detached
+  HEAD (`PrepareSessionHead`). Zero porcelain lines
+  (`--untracked-files=all`, stricter than the reading itself takes) over a
+  tree carrying the seeded scaffolding a fresh one gets, and over four
+  relaunches alternating the tier. Nothing had to be excluded:
+  `seedScaffoldExcludes` (ranger-base-e01op) already hides the launcher's own
+  files from git, and the two files the caged prepare writes — `<common>/logs`
+  and `<gitdir>/config.worktree` — are inside the git dir where no
+  working-tree status can reach them. Pinned, not left as prose, in
+  `TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath`: were a third
+  prepare-time create to leave a file in the tree, this reading would find
+  posse's own file and keep every claim forever, which is rangerhq-81d lost
+  with nothing printed. A live reading agrees (a dispatched claude seat's own
+  tree, uncaged, after a session's bd calls: zero lines). A RESUMED session's
+  tree may still be dirty from an earlier turn; that reads as work and keeps
+  the claim, which is the safe direction.
 
 ## Alternatives rejected
 

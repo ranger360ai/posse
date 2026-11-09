@@ -213,6 +213,16 @@ func TestStalledPromptWhoseBranchHoldsACommitKeepsItsClaim(t *testing.T) {
 // plausible); it is not enough for an indeterminate prompt call, whose error
 // can arrive a full `--wait` leg after submission. Either kind of evidence
 // means a turn ran, and only "both halves read, both empty" hands back.
+//
+// MUTATIONS RUN 2026-11-09, over this arm, 4, 4c and
+// TestSessionWorkIsATriState (which of them each one reds is named):
+//
+//	sessionWork ignores the tree half (D3 reverted)      → this arm
+//	dirtyPathsRead reads a failed status as a clean tree → tri-state
+//	the `if w.found()` short-circuit removed             → tri-state
+//	found() needs BOTH kinds of evidence                 → this arm, 4, tri-state
+//	the tree half always reports one change (over-keep)  → 4c, this arm, 4, tri-state
+//	String() names the commit as dirt and the dirt as a commit → this arm, 4
 func TestStalledPromptWhoseTreeHoldsUncommittedWorkKeepsItsClaim(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
