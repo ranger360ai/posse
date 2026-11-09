@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-rffxq](ranger-base-rffxq.md) — The verify-chain bound at any batch size (ranger-base-rffxq) — 2026-11-09
 - [ranger-base-ewnas](ranger-base-ewnas.md) — A verify/fix pair has no bound on depth (ranger-base-ewnas) — 2026-11-09
 - [ranger-base-c7i8t](ranger-base-c7i8t.md) — The identity wall cannot wall the product's own name (ranger-base-c7i8t) — 2026-11-09
+- [ranger-base-bu8rz](ranger-base-bu8rz.md) — The bound that could not be reached at this shop's batch size (ranger-base-bu8rz) — 2026-11-09
 - [ranger-base-yx73g](ranger-base-yx73g.md) — One repo, one identity wall, however its path is spelled (ranger-base-yx73g) — 2026-11-08
 - [ranger-base-yk5qb](ranger-base-yk5qb.md) — A fresh account's first claude seat meets a notice nobody seeded (ranger-base-yk5qb) — 2026-11-08
 - [ranger-base-x2grk](ranger-base-x2grk.md) — The settle refusal had the rule and did not have it (ranger-base-x2grk) — 2026-11-08

@@ -427,6 +427,14 @@ default_emoji: ⚙️
 # way before a human stopped it. `verify_batch:` does not help — it divides
 # the fan-out of one round, not the number of rounds.
 #
+# READ THIS BEFORE YOU SET BOTH. A `verify_batch:` above 1 turns this bound
+# OFF, and a pass says so on stderr every time it runs. The count walks ONE
+# LINEAGE and stops at a batched verify bead rather than guess which of its N
+# closes a findings bundle answered, so above a batch of 1 every walk counts
+# a single round and no lineage ever reaches the bound. Reporting that as a
+# bound would be the real cost, so it reads 0 instead. Today the two keys are
+# an either/or: batch the filing, or bound the depth.
+#
 # Above N rounds on ONE LINEAGE — each close filed from the verify of the
 # close before it — the next close files one `-l question` bead for
 # `operator:` instead of another verify bead, and that is the stop: no
@@ -438,8 +446,8 @@ default_emoji: ⚙️
 #
 # Measured on one shop's queue of 3,353 beads: 97.9% of closes sit inside
 # ONE round and the deepest chain was four, so 3 escalates about one close a
-# week there. 0 turns the bound off, and then not one `bd dep list` is made
-# for it.
+# week there. 0 turns the bound off — as does any `verify_batch:` above 1,
+# per the paragraph above — and then not one `bd dep list` is made for it.
 # verify_chain_max: 3
 
 # ─── ci-watch ────────────────────────────────────────────────────────────────

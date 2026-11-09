@@ -49,7 +49,11 @@ package posse
 // next close files ONE `-l question` bead for the operator instead of
 // another verify bead, which ends the cycle where the harness owns it: no
 // verify bead, no verifier session, no findings bundle, nothing to fix.
-// `verify_chain_max: 0` turns the bound off. See verifyChainRounds.
+// `verify_chain_max: 0` turns the bound off, and so does a `verify_batch:`
+// greater than 1: the walk stops at a batched verify bead, so above a batch
+// of 1 no lineage can reach the bound and OFF is the only honest reading of
+// it — named on stderr once per pass rather than left looking like a bound
+// (verifyChainBound, ranger-base-bu8rz). See verifyChainRounds.
 //
 // It is one query per repo per pass and one rule. It is not a workflow
 // engine: the verify bead never holds the close, and nothing here reopens
@@ -123,6 +127,15 @@ const DefaultVerifyBatchAge = 24 * time.Hour
 // about one a week for the operator, against ~20 sessions spent on one
 // artifact in the incident that filed this. The per-artifact key the bead
 // proposed was measured and rejected: see verifyChainRounds.
+//
+// Those 11 are also every close on that queue the bound could EVER have
+// escalated, and all of them are old: MEASURED 2026-11-09 by the same
+// script, each closed between 2026-08-22 and 2026-09-06, before that shop
+// finished moving to `verify_batch: 4`. Reaching this bound takes two
+// consecutive SINGLE-CLOSE verify beads above a close, and a shop batching
+// its verify beads files almost none — so the default is a bound on the
+// default batch, and `verifyChainBound` is where the other batch sizes are
+// answered.
 const DefaultVerifyChainMax = 3
 
 const (
@@ -325,6 +338,57 @@ func (a *App) verifyChainMax(errw io.Writer) int {
 	return n
 }
 
+// verifyChainBound is the depth bound a pass will actually ENFORCE: config
+// `verify_chain_max:` as read above, except that a `verify_batch:` greater
+// than 1 turns it off and says so on errw.
+//
+// THIS NAMES A DEFECT RATHER THAN ADDING A FEATURE (ranger-base-bu8rz, from
+// the verify of ranger-base-ewnas). The bound counts a LINEAGE — this close
+// filed `discovered-from` a verify bead, that verify bead answering exactly
+// ONE close, repeated from that close — and stops at a batched verify bead
+// rather than guess which of its N closes a findings bundle answered
+// (verifyChainRounds, ADR 0006 §3). At `verify_batch: 1` that stop costs one
+// round. Above 1 every verify bead the rule files is batched, so every walk
+// counts exactly one hop and `len(hops) >= ChainMax` is never true: the bound
+// does not bind, the escalation never fires, and verifyChainHead's head line
+// sticks at "VERIFY ROUND 2 of 3" on a lineage twelve rounds deep while the
+// sentence that says THIS IS THE LAST ROUND is never printed.
+//
+// MEASURED 2026-11-09 by scripts/chain-depth-census.py over the same bead
+// store DefaultVerifyChainMax's census reads (3,353 beads, 2,639 of them not
+// verify beads): of 671 verify beads carrying a marker, 345 answer four
+// closes; single-close against batched by month, 2026-08 191/85, 2026-09
+// 125/176, 2026-10 4/56, 2026-11 0/34. Nothing on that queue has been
+// reachable by this bound since 2026-09-06.
+//
+// So 0 — the value that already means off — is the honest bound here: no
+// walk, no `bd dep list` per close, no round line, and one stderr line an
+// operator can act on. It does not restore the bound; it stops the record
+// claiming one.
+//
+// WHY NOT WALK THE BATCH. Taking the deepest chain through all N sources of
+// a batched verify bead is the obvious repair and it is worse than the hole,
+// MEASURED 2026-11-09 over that same store: it reads a deepest of 17 rounds
+// where the lineage reads 1, over a chain whose hops are visibly more than a
+// dozen different subjects — a backup-lock CI-red close, a seatbelt
+// credential close, a FIFO-at-redirect close, a build-cache close, a herdr
+// readiness-gate close — chained only because batching put each consecutive
+// pair in one verify bead; and at `verify_chain_max: 3` it escalates 202 of 2,639
+// closes (7.65%) against the lineage key's 11 (0.42%). That is the failure
+// the PATH key was rejected for one paragraph up in verifyChainRounds: a
+// batch is no more an artifact than a hot file is. A bound that works at any
+// batch size needs (verify bead, close) to be recoverable for a bundle filed
+// from a batched verify bead, which is provenance the harness does not write
+// today — a decision for ADR 0006 §3, not a liberty taken here.
+func verifyChainBound(chainMax, batch int, errw io.Writer) int {
+	if chainMax <= 0 || batch <= 1 {
+		return chainMax
+	}
+	fmt.Fprintf(errw, "verify-after: config verify_chain_max: %d does not bind at verify_batch: %d — the depth walk stops at a batched verify bead (ADR 0006 §3) and above a batch of 1 every verify bead is batched, so no lineage reaches the bound; it is OFF this pass rather than reported as a bound that cannot fire (ranger-base-bu8rz)\n",
+		chainMax, batch)
+	return 0
+}
+
 // verifyPolicy is the config one sweep runs under, read once at the head of
 // the pass: every repo in it is answered by the same rule, and a config typo
 // is named once rather than once per repo.
@@ -394,15 +458,15 @@ func writeVerifyWatermark(p string, t time.Time) error {
 // fire loop's. In practice that is ONE such read per close: the walk's first
 // call is also its last for any close that was not filed from a verify bead,
 // which is 78% of them (DefaultVerifyChainMax's census), and it makes none
-// at all when the bound is off or when the close already has its verify
-// bead.
+// at all when the bound is off — which includes every `verify_batch:` above
+// 1 (verifyChainBound) — or when the close already has its verify bead.
 func (a *App) VerifyAfter(bd Bd, dirs []string, out, errw io.Writer) int {
 	pol := verifyPolicy{Labels: a.verifyLabels()}
 	if len(pol.Labels) == 0 {
 		return 0 // config says off
 	}
 	pol.Batch, pol.MaxAge, pol.Now = a.verifyBatch(errw), a.verifyBatchAge(errw), time.Now()
-	pol.ChainMax = a.verifyChainMax(errw)
+	pol.ChainMax = verifyChainBound(a.verifyChainMax(errw), pol.Batch, errw)
 	lock, err := lockLaunches(a, out)
 	if err != nil {
 		// One line, like every other failure here. Not acting is the safe
@@ -786,6 +850,17 @@ type verifyChainHop struct {
 // undercounts, which is the direction every count in this file errs in: an
 // undercount costs one more round, an overcount files an escalation the
 // shop did not earn.
+//
+// AT A BATCH ABOVE 1 THAT PRICE IS WRONG, and it is why this walk no longer
+// runs there (ranger-base-bu8rz, from the verify of ranger-base-ewnas).
+// Every verify bead the rule files at `verify_batch: N > 1` is batched, so
+// every walk stops after exactly ONE hop however deep the lineage runs: the
+// undercount does not cost one more round, it costs every round after the
+// first, and the escalation — which needs len(hops) >= ChainMax — cannot
+// fire at all. The STOP is still right, and walking all N sources instead
+// was measured worse than the hole (verifyChainBound). What changed is that
+// the caller now refuses the combination rather than enforce a bound no
+// lineage can reach.
 func verifyChainRounds(bd Bd, dir, id string, byID map[string]BdIssue, limit int) ([]verifyChainHop, bool) {
 	if limit <= 0 {
 		return nil, true // the bound is off: no walk, no bd calls

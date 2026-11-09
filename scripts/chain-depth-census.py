@@ -37,6 +37,21 @@ reports depths nothing on the queue has ever worked at. Run both halves and
 compare the deepest lineages by eye: that is the comparison the rejection
 rests on, and it is re-runnable rather than asserted.
 
+  FAN-OUT (the batch repair, measured and rejected under ranger-base-bu8rz):
+  continue through ALL N closes of a batched verify bead and take the
+  deepest chain, with no artifact test to say which of the N this round
+  answered. It is the obvious way to make the bound reachable at a
+  `verify_batch:` above 1 — see verifyChainBound, which instead turns the
+  bound off there — and it fails for the PATH key's reason one layer up: a
+  batch is no more an artifact than a hot file is. This half needs no repo
+  and always runs, so the comparison that rejected it is re-runnable too.
+  Read its deepest chains by eye; they are not one subject.
+
+The REACHABILITY line each report prints is the question the shipped walk's
+own census does not answer: how many closes a given `verify_chain_max:`
+would escalate under that key. The lineage key answers 0 above a batch of 1,
+which is the defect ranger-base-bu8rz was filed for.
+
 Usage:
     scripts/chain-depth-census.py [issues.jsonl] [repo-with-the-commits]
 """
@@ -139,14 +154,16 @@ def commit_paths(repo, known):
     return out
 
 
-def depth(beads, par, paths, leaf, same_artifact, seen=None):
+def depth(beads, par, paths, leaf, key, seen=None):
     """Verify rounds already spent on leaf's lineage, newest first.
 
     The LINEAGE key walks one forced hop at a time and stops at a batched
-    verify bead, which is the harness's own walk. The PATH key branches: a
-    batch's N closes are candidates and the artifact decides which of them
-    this round answered, so the deepest chain through any of them is the
-    answer. That branching is the proposal, not a liberty taken with it.
+    verify bead, which is the harness's own walk. The PATH and FAN-OUT keys
+    branch: a batch's N closes are all candidates and the deepest chain
+    through any of them is the answer. PATH then requires a shared commit
+    path, which is what it claims disambiguates the batch; FAN-OUT requires
+    nothing, which is why it fuses unrelated subjects. That branching is each
+    proposal as proposed, not a liberty taken with it.
     """
     if seen is None:
         seen = {leaf}
@@ -155,40 +172,46 @@ def depth(beads, par, paths, leaf, same_artifact, seen=None):
         return []
     seen = seen | {q}
     srcs = verify_sources(beads, q)
-    if not same_artifact:
+    if key == "lineage":
         if len(srcs) != 1:
             return [(q, None)]          # a batch: count the round, stop the walk
         src = srcs[0]
         if src in seen:
             return [(q, src)]
-        return [(q, src)] + depth(beads, par, paths, src, same_artifact, seen | {src})
+        return [(q, src)] + depth(beads, par, paths, src, key, seen | {src})
     best = [(q, None)]
     for src in srcs:
         if src in seen:
             continue
-        if paths.get(leaf) and paths.get(src) and not (paths[leaf] & paths[src]):
+        if key == "path" and paths.get(leaf) and paths.get(src) and not (paths[leaf] & paths[src]):
             continue                     # a different artifact: not this chain
-        cand = [(q, src)] + depth(beads, par, paths, src, same_artifact, seen | {src})
+        cand = [(q, src)] + depth(beads, par, paths, src, key, seen | {src})
         if len(cand) > len(best):
             best = cand
     return best
 
 
-def report(label, beads, par, paths, same_artifact):
+def report(label, beads, par, paths, key):
     rows = []
     for i in beads:
         if is_verify(beads, i):
             continue
-        rows.append((len(depth(beads, par, paths, i, same_artifact)), i))
+        rows.append((len(depth(beads, par, paths, i, key)), i))
     hist = collections.Counter(d for d, _ in rows)
     print(f"\n=== {label}: rounds already spent, over {len(rows)} non-verify beads")
     for k in sorted(hist):
         print(f"   {k} round(s): {hist[k]:5d}  ({100.0 * hist[k] / len(rows):.1f}%)")
+    # REACHABILITY: what a configured bound would actually escalate under this
+    # key. 0 at the shipped default is not a quiet queue, it is a bound that
+    # cannot fire (ranger-base-bu8rz).
+    for bound in (3, 5, 8):
+        n = sum(1 for d, _ in rows if d >= bound)
+        print(f"   at verify_chain_max: {bound} this key escalates {n} close(s) ({100.0 * n / len(rows):.2f}%)")
     rows.sort(reverse=True)
     print(f"--- deepest {min(5, len(rows))}, by eye: is each one SUBJECT?")
     for d, i in rows[:5]:
         print(f"  depth={d} {i} — {(beads[i].get('title') or '')[:78]}")
-        for q, src in depth(beads, par, paths, i, same_artifact):
+        for q, src in depth(beads, par, paths, i, key):
             t = (beads.get(src, {}).get("title") or "") if src else "(a batch of closes)"
             print(f"        verify {q} of {src or '-'}: {t[:66]}")
     return hist
@@ -200,11 +223,12 @@ def main():
     beads = load(path)
     par = parents(beads)
     print(f"store: {path}\nbeads: {len(beads)}, {len(par)} of them with a discovered-from parent")
-    report("LINEAGE key (what the harness counts)", beads, par, {}, False)
+    report("LINEAGE key (what the harness counts)", beads, par, {}, "lineage")
+    report("FAN-OUT key (the batch repair, measured and rejected)", beads, par, {}, "fanout")
     if repo:
         paths = commit_paths(repo, set(beads))
         print(f"\ncommit trails: {len(paths)} beads are named by at least one commit in {repo}")
-        report("PATH key (measured and rejected)", beads, par, paths, True)
+        report("PATH key (measured and rejected)", beads, par, paths, "path")
     else:
         print("\n(no repo given, so the PATH key half was not measured — pass it as argument 2)")
 

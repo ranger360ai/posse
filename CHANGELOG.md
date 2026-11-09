@@ -14,8 +14,10 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 **`verify_chain_max: 3` — verify-after stops handing one lineage round after
 round and asks the operator instead.**
 
-*New, ON by default, and it changes nothing for a close that is not already
-the product of three verify rounds.*
+*New, ON by default at `verify_batch: 1`, and it changes nothing for a close
+that is not already the product of three verify rounds. If you set
+`verify_batch:` above 1 this bound does not bind — read "Batching turns it
+off" below before you rely on it.*
 
 verify-after files a verify bead for a close; the verifier files one findings
 bundle from it; the fix closes; verify-after files a bead about THAT close.
@@ -52,11 +54,31 @@ The count errs SHORT on purpose, three ways: a batched verify bead ends the
 walk rather than guess which of its closes a bundle answered, a
 `discovered-from` edge bd lost is a round the walk cannot see, and a
 dependency read that fails yields a floor that is named on stderr and never
-escalated on. An undercount costs one more round; an overcount costs a
-question nobody earned. Keying the chain on the touched FILE instead was
+escalated on. At `verify_batch: 1` an undercount costs one more round; an
+overcount costs a question nobody earned. Keying the chain on the touched
+FILE instead was
 measured and rejected — in a tree where most closes touch one or two large
 files it chains unrelated subjects together and reports depths nobody has
 worked at (`docs/notes.d/ranger-base-ewnas.md` has both halves).
+
+**Batching turns it off, and a pass says so.** The walk stops at a batched
+verify bead, so above `verify_batch: 1` EVERY walk counts one round and no
+lineage ever reaches the bound. Rather than report a bound that cannot fire,
+`verify_chain_max:` reads 0 there and each pass prints one line naming the
+combination. Nothing else changes: the verify bead is still filed, no
+dependency edge is read, and no round line is rendered. Today the two keys
+are an either/or — batch the filing, or bound the depth — and the depth bound
+is the one that gives way, because a shop that set `verify_batch:` set it for
+a measured reason.
+
+Walking all N closes of a batched verify bead and taking the deepest chain
+would be the obvious repair, and it is worse than the gap: MEASURED on the
+same store, it reads 17 rounds where the lineage reads 1 and would escalate
+7.65% of closes against the real 0.42%, over chains that are visibly a dozen
+unrelated subjects fused by batching. A batch is no more an artifact than a
+hot file is. Making the bound work at any batch size needs provenance the
+harness does not write yet; `docs/notes.d/ranger-base-bu8rz.md` has that
+measurement and what it would take.
 
 **`session_transcripts: <repo>: off` — a claude seat in that repo writes no
 session transcript to disk.**

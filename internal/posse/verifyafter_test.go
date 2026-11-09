@@ -2379,6 +2379,118 @@ func TestVerifyChainMaxZeroTurnsTheBoundOffAndWalksNothing(t *testing.T) {
 	}
 }
 
+// THE BOUND'S REACHABILITY, which is not the same question as the stop
+// (ranger-base-bu8rz, from the verify of ranger-base-ewnas). The pin above
+// says a batched hop ends the walk and is right about it. Nothing asked
+// whether the bound could still FIRE at the batch size an instance is
+// configured for, and the answer is no: every verify bead the rule files at
+// `verify_batch: N > 1` is batched, so every walk counts one hop and
+// `len(hops) >= ChainMax` is never true, however deep the lineage runs.
+//
+// So above a batch of 1 the bound reads OFF and says so, and these two
+// subtests differ in ONE config line. The control is the point: the same
+// lineage escalates at `verify_batch: 1`, so what the first subtest observes
+// is the batch size and not a fixture that never reached the bound.
+//
+// AND THE LINEAGE IS SINGLE-CLOSE ON PURPOSE (vaChain's verify beads answer
+// one close each), because that is the one shape which could still reach the
+// bound at `verify_batch: 4` — a partial batch flushed at `verify_batch_age:`
+// files a one-close verify bead, 4 of 60 on the measured queue in 2026-10 and
+// 0 of 34 in 2026-11. What is pinned is the refusal of the COMBINATION: above
+// a batch of 1 the bound is off even on the lineage that would have reached
+// it, so an operator is never told a bound holds when the next close's
+// lineage — batched, like every other one — cannot reach it. A fixture of
+// batched hops would pass this test with the fix reverted.
+func TestVerifyChainBoundDoesNotBindAboveABatchOfOne(t *testing.T) {
+	t.Parallel()
+	// `verify_batch_age: 1m` flushes the partial batch, so the batched run
+	// files its verify bead within the pass instead of holding it — the
+	// subject here is the BOUND, not the hold.
+	for _, tc := range []struct {
+		name  string
+		batch string
+		filed int
+	}{
+		{"batch 4, the bound cannot fire", "verify_batch: 4", 1},
+		{"CONTROL: batch 1, the bound fires", "verify_batch: 1", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, fake := newTestBackend(t)
+			a := b.App
+			_, leaf, _ := vaChainRepo(t, a, 3, "verify_chain_max: 3", tc.batch,
+				"verify_batch_age: 1m", "operator: boss")
+
+			n, _, errs := vaRun(t, a, testBd(t))
+			calls := bdCalls(t, fake)
+			escalated := strings.Contains(calls, "create "+verifyChainStuckPrefix)
+			said := strings.Contains(errs, "config verify_chain_max: 3 does not bind at verify_batch: 4")
+
+			if n != tc.filed {
+				t.Errorf("filed %d verify beads, want %d (stderr: %s)\n%s", n, tc.filed, errs, calls)
+			}
+			if tc.filed == 0 {
+				// The control. If this ever fails, the first subtest proves
+				// nothing: read it before touching the bound.
+				if !escalated {
+					t.Fatalf("the control did not escalate a three-round lineage at verify_batch: 1, so this test pins nothing:\n%s", calls)
+				}
+				if said {
+					t.Errorf("the batch refusal was printed at verify_batch: 1:\n%s", errs)
+				}
+				return
+			}
+			if escalated {
+				t.Errorf("the bound fired at verify_batch: 4 — if the walk can now continue through a batch, this pin and verifyChainBound are both stale:\n%s", calls)
+			}
+			if !said {
+				t.Errorf(`the bound did not bind and the pass did not say so.
+An operator reading this stderr believes in a bound that cannot fire: the
+walk stops at a batched verify bead (ADR 0006 §3) and at verify_batch: 4
+every verify bead is batched, so %s's lineage counts one round forever.
+stderr was: %s`, leaf, errs)
+			}
+			// Off means off: no walk, no round line, and the close still
+			// gets its verify bead — the bound going quiet must not cost
+			// coverage.
+			if strings.Contains(calls, "dep list "+leaf+" --json\n") {
+				t.Errorf("the bound is off and the chain walk ran anyway:\n%s", calls)
+			}
+			if strings.Contains(calls, "VERIFY ROUND") {
+				t.Errorf(`a round line was rendered under a bound that cannot be reached — "VERIFY ROUND 2 of 3" on a lineage of any depth:\n%s`, calls)
+			}
+			if !strings.Contains(calls, "create verify: gate shell "+leaf) {
+				t.Errorf("no verify bead for %s: turning the bound off dropped the coverage it was never buying:\n%s", leaf, calls)
+			}
+		})
+	}
+}
+
+// verifyChainBound itself, over the combinations the pass cannot all reach:
+// the refusal is of a LIVE bound at a batch above 1, and of nothing else.
+func TestVerifyChainBoundRefusesOnlyALiveBoundAboveABatchOfOne(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		chainMax, batch, want int
+		said                  bool
+	}{
+		{3, 1, 3, false}, // the default shape: untouched
+		{3, 4, 0, true},  // the defect, named
+		{50, 2, 0, true}, // a batch of 2 is already enough
+		{0, 4, 0, false}, // already off: nothing to report
+		{3, 0, 3, false}, // an unreadable verify_batch: already defaulted to 1
+	} {
+		var errb strings.Builder
+		got := verifyChainBound(tc.chainMax, tc.batch, &errb)
+		if got != tc.want {
+			t.Errorf("verifyChainBound(%d, %d) = %d, want %d", tc.chainMax, tc.batch, got, tc.want)
+		}
+		if said := strings.Contains(errb.String(), "does not bind at verify_batch:"); said != tc.said {
+			t.Errorf("verifyChainBound(%d, %d) said=%v, want %v: %q", tc.chainMax, tc.batch, said, tc.said, errb.String())
+		}
+	}
+}
+
 // A `verify_chain_max:` nobody can read is named on stderr and the default
 // stands — a typo must be visible, not a silently changed gate. 0 is a
 // VALUE here and not a typo, which is the one difference from verifyBatch.
