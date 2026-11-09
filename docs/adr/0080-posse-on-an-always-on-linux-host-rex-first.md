@@ -5,7 +5,9 @@ architecture session the same day) · owner: architect · scope: the
 operator's PERSONAL instances only; the work instance is out of scope and
 unchanged · applies ADR 0075 §2 (the multiplexer slot) and ADR 0076 (Rex
 as its second occupant) to a host that is not macOS · reverses ADR 0076 D4's
-price judgement on operator direction (see D3)*
+price judgement on operator direction (see D3) · D3 amended for the D1 host
+and D21 retired, 2026-11-09 (ranger-base-r2fz9, operator ruling
+ranger-base-0ka8a (a)): see the last amendment*
 
 ## Context
 
@@ -96,6 +98,10 @@ as an amendment to ADR 0076. Until it lands, the D2 host runs herdr beside
 Rex, and a crew whose runtime Rex refuses (codex, grok, bob) uses herdr.
 `posse list` already says which multiplexer a session is on.
 *bob is the exception (ADR 0076 Amendment 4, D14, ranger-base-778y0): `bob chat` takes no argv prompt and writes no record before a typed one, so bob is herdr-only on Rex, and a bob crew on the D2 host uses herdr beside it.*
+*On the D1 host, claude only (operator ruling, ranger-base-0ka8a (a),
+2026-11-09).* D3 stays posse's design: the codex line on Rex (ranger-base-8gh58)
+is built and stays built. What the host RUNS is narrower, for D6's reason:
+codex, grok and bob crews stay on the laptop. See the last amendment.
 ADR 0076 D3 (grok: no record in 131 s, MEASURED, cause upstream) is not
 reversed by direction. A mechanism can route around a runtime that never
 reports, but it cannot turn that runtime's silence into evidence.
@@ -137,7 +143,8 @@ status`. The herdr hook stays the autostart on hosts that run herdr only.
 - Whether one login may be used on more than one of the operator's own
   machines is not addressed in the terms. ASSUMED permitted.
 - OpenAI's and xAI's terms for a plan login on a server are unread. The
-  operator reads them before a codex or grok crew runs unattended.
+  operator reads them before a codex or grok crew runs unattended. Until
+  then the D1 host is claude-only (last amendment).
 
 **D7. Exits, named now.** Each of these is a later bead, not this one.
 - **One OS account per crew** via Rex's per-account login server, when one
@@ -910,7 +917,7 @@ D16's note above demands. Pinned by
   `TestQAClaudeAtTheBwrapMechanismIsRefusedAtTheLaunchAndNotOnDarwin`
   (`internal/posse/walllaunchmechanism_qa_test.go`, arm 1) drive a real launch
   at both mechanisms from either host now. **Whoever builds D21 wants this
-  door**: the `!rt.SelfSandbox` flip is a launch-path difference between the
+  door** (D21 is retired; the door stays for the next launch-path difference): the `!rt.SelfSandbox` flip is a launch-path difference between the
   two mechanisms, which is this class exactly. Full reasoning in
   `docs/notes.d/ranger-base-temhf.md`, including the two side effects the red
   surfaced — an absolute `writable:` in a PID is a directory posse CREATES on
@@ -1099,7 +1106,10 @@ keep file, so `applyBwrapRefGrant`'s parity row now prints on a bwrap host.
   move, which is a ref write into an unlinked directory with nothing red.
   The first run on the D1 host logs which answer it got.
 
-**D21. codex is walled on Linux.** On darwin, `seatbeltWallRendered` skips
+**D21. codex is walled on Linux.** *RETIRED 2026-11-09 (ranger-base-r2fz9):
+the D1 host is claude-only, so there is no codex seat to wall. The text and
+both notes below are kept as the record; the last amendment says what
+replaces them.* On darwin, `seatbeltWallRendered` skips
 SelfSandbox runtimes because nested `sandbox_apply` is refused. On Linux, B7
 measured bwrap nesting inside bwrap. So `wallRendered` drops `!rt.SelfSandbox`
 when the mechanism is `bwrap`, and parity's "cannot wrap codex" declared
@@ -1200,7 +1210,8 @@ read the other three.
 
 **D22. The probe for this design is `docs/adr/0080-bwrap-tier.probe.sh`.**
 T1 is the D19 save under the shipped wall, T2-T5 are D20's git grants against
-an outside pack, T6 is D21's nesting, and T7 is D18's `--args` fd. It writes
+an outside pack, T6 is D21's nesting (retired with D21; its rows print
+`absent` on a host without codex), and T7 is D18's `--args` fd. It writes
 only under one mktemp dir and calls no model. D19 and D20 can be built and
 pinned on darwin, because the renderer is pure. D18 is built and its SHELL
 half — the redirection, the quoting of both paths, the `--` separator — is
@@ -1418,3 +1429,75 @@ refusal. ASSUMED, unchanged by this bead: that a Linux render is this render,
 which it is not — `SeatbeltWritable` still reads `runtime.GOOS` for the
 home-cache grants, so which PATHS the wall covers is `homeCacheGrants`' own
 pin and what the launcher MAKES is this one.
+
+## Amendment: the D1 host is claude-only; D21 is retired (ranger-base-r2fz9, 2026-11-09)
+
+*Operator ruling, ranger-base-0ka8a option (a), 2026-11-09. First said
+2026-11-08 in answer to ADR 0083's prep questions ("claude for now",
+ranger-base-9nxdt) and restated when the operator declined ranger-base-uzb3s.*
+
+**Context.** D21's parked note left one question open: is the D1 host
+claude-only? The probe-run comment said so, and no record did. The operator
+has now answered on the record, so the conflict with D3 is settled.
+
+**D24. The D1 host runs claude crews only.** The reason is D6: the operator has
+not read OpenAI's and xAI's terms for a plan login on a server. codex, grok and
+bob crews stay on the laptop. Two things are unchanged:
+- D3 as a property of posse: herdr and Rex are interchangeable, and the codex
+  line on Rex (ranger-base-8gh58) stays built and tested. Only what the D1
+  host RUNS is narrowed.
+- How to reopen: ask the operator. Do not infer it from a new runtime version
+  or a probe result. The ruling says "for now", and its condition is the D6
+  terms read, not a measurement.
+
+**D25. D21 is retired, and so is the parity change it would have made.** With
+no codex seat on the host, walling codex under bwrap protects nothing.
+- `wallRendered` keeps `!rt.SelfSandbox` on both mechanisms. That is the code
+  as it stands, so nothing is reverted.
+- parity's "cannot wrap codex" declared difference (`seatbeltIncompatible`,
+  parity.go) stays mechanism-neutral. The darwin-only version D21 described
+  is never built.
+- reachability.go's SelfSandbox arm stays where it is.
+- The T6 rows in `0080-bwrap-tier.probe.sh` stay. They print `absent` on a host
+  without codex. If codex is ever admitted, the amended T6/T6z run is the first
+  step, and ranger-base-1jhgv already describes it.
+
+**D26. The bjk4k pin stays, without its instructions.**
+`TestQANoPosseWallForASelfSandboxRuntimeOnEitherMechanism` was written as a
+tripwire "meant to be deleted by the commit that lands D21". That commit will
+not happen now, so the deletion instructions are wrong and are removed. The
+pin itself keeps its job.
+
+What the pin protects: a commit that adds a host term (the mechanism, or the
+GOOS) to `wallRendered`. On darwin that commit passes every behavioral pin, and
+it gives codex on any Linux host an L2 wall that posse never measured. posse is
+shipped software, so "any Linux host" is not only the D1 host. If the pin is
+deleted, that commit lands green.
+
+The pin's message now says three things: D21 is retired by operator ruling;
+reopening it is the operator's call; and a reopen starts with the T6/T6z run.
+It also drops the "land it WITH its reading … this pin is meant to be deleted"
+list. Both arms and the allow-list are unchanged. The code lane makes the
+change (cut below), together with the matching comment in seatbelt.go
+(`wallRendered`'s head: "D21's as-measured note carries both halves").
+
+**Alternatives rejected.**
+- **Delete the pin with its instructions.** The bead's wording allows this
+  reading. It is rejected because the hole the pin closes (a flip that darwin
+  cannot see) does not depend on D21 being pending. It depends on the
+  predicate reading no host term, and that is still the design.
+- **Keep D21 parked.** That was option (b), and the operator chose (a). Parked
+  would also keep a pending-looking item in an ADR whose host will never run
+  it.
+- **Remove the T6 rows from the probe.** They cost nothing on a claude-only
+  host and they are the reopen run. Removing them would turn a reopen into a
+  rewrite.
+
+**Measured versus assumed.** Nothing here is newly MEASURED; this is a ruling
+applied to text. The T6 reading (refused, uninterpretable) stands as D21's
+notes record it. ASSUMED: that no codex binary is installed on the D1 host, so
+T6 prints `absent`. If one is installed, the rows run and their result is
+ignored, because no decision reads them.
+
+**Beads.** ranger-base-r2fz9 (this). The code slice is the one cut from this
+bead for dinesh: the pin message and the seatbelt.go comment.
