@@ -55,10 +55,10 @@ delivery earns that reading is a decision, not a patch).
 **`verify_chain_max: 3` — verify-after stops handing one lineage round after
 round and asks the operator instead.**
 
-*New, ON by default at `verify_batch: 1`, and it changes nothing for a close
-that is not already the product of three verify rounds. If you set
-`verify_batch:` above 1 this bound does not bind — read "Batching turns it
-off" below before you rely on it.*
+*New, ON by default, and it changes nothing for a close that is not already
+the product of three verify rounds. It binds at every `verify_batch:`; if you
+batch, "It binds at any batch size" below says what that does to your
+filing.*
 
 verify-after files a verify bead for a close; the verifier files one findings
 bundle from it; the fix closes; verify-after files a bead about THAT close.
@@ -91,35 +91,41 @@ ever produced is four. At 3 the bound would have asked the operator about 11
 closes in those 89 days, about one a week. Set `verify_chain_max: 0` to turn
 it off, and then not one dependency edge is read for it.
 
-The count errs SHORT on purpose, three ways: a batched verify bead ends the
-walk rather than guess which of its closes a bundle answered, a
-`discovered-from` edge bd lost is a round the walk cannot see, and a
-dependency read that fails yields a floor that is named on stderr and never
-escalated on. At `verify_batch: 1` an undercount costs one more round; an
-overcount costs a question nobody earned. Keying the chain on the touched
-FILE instead was
+The count errs SHORT on purpose, three ways: a verify bead that answers
+several closes is counted through the SHALLOWEST of them, because which one a
+findings bundle answered is written nowhere; a `discovered-from` edge bd lost
+is a round the walk cannot see; and a dependency read that fails yields a
+floor that is named on stderr and never escalated on. An undercount costs one
+more round; an overcount costs a question nobody earned. Keying the chain on
+the touched FILE instead was
 measured and rejected — in a tree where most closes touch one or two large
 files it chains unrelated subjects together and reports depths nobody has
 worked at (`docs/notes.d/ranger-base-ewnas.md` has both halves).
 
-**Batching turns it off, and a pass says so.** The walk stops at a batched
-verify bead, so above `verify_batch: 1` EVERY walk counts one round and no
-lineage ever reaches the bound. Rather than report a bound that cannot fire,
-`verify_chain_max:` reads 0 there and each pass prints one line naming the
-combination. Nothing else changes: the verify bead is still filed, no
-dependency edge is read, and no round line is rendered. Today the two keys
-are an either/or — batch the filing, or bound the depth — and the depth bound
-is the one that gives way, because a shop that set `verify_batch:` set it for
-a measured reason.
+**It binds at any batch size, and that takes two halves.** A verify bead that
+answers N closes does not say which of the N a findings bundle was about, so
+the count continues through the shallowest of them — never deeper than the
+truth — and a batch is filed LIKE WITH LIKE, its closes grouped by the rounds
+they have already spent, so every close in one has the same count and the
+shallowest is the answer rather than merely a safe guess. Neither half works
+alone: without the grouping a batch mixes depths, the count reads its
+shallowest member's for all of them, and a deep lineage keeps its rounds
+hidden. What the grouping costs, MEASURED by replaying the same store's
+closes at `verify_batch: 4`: 3.5% more verify beads, and a p90 wait of 3.9h
+against 1.5h, because a lone close several rounds deep now waits for another
+like it rather than for the next close of any depth. At `verify_batch: 1`
+there is nothing to group and nothing changes.
 
 Walking all N closes of a batched verify bead and taking the deepest chain
 would be the obvious repair, and it is worse than the gap: MEASURED on the
 same store, it reads 17 rounds where the lineage reads 1 and would escalate
 7.65% of closes against the real 0.42%, over chains that are visibly a dozen
 unrelated subjects fused by batching. A batch is no more an artifact than a
-hot file is. Making the bound work at any batch size needs provenance the
-harness does not write yet; `docs/notes.d/ranger-base-bu8rz.md` has that
-measurement and what it would take.
+hot file is. The shallowest is 18x cheaper and errs the other way: 11 closes
+against 202. `docs/notes.d/ranger-base-bu8rz.md` has the measurement that
+rejected the deepest, `ranger-base-rffxq.md` the one that chose the
+shallowest and the grouping, and `ranger-base-fswbr.md` what the build
+measured.
 
 **`session_transcripts: <repo>: off` — a claude seat in that repo writes no
 session transcript to disk.**

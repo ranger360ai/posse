@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-sg7a7](ranger-base-sg7a7.md) — The launcher makes the session's furniture, not the host's (ranger-base-sg7a7) — 2026-11-09
 - [ranger-base-rffxq](ranger-base-rffxq.md) — The verify-chain bound at any batch size (ranger-base-rffxq) — 2026-11-09
 - [ranger-base-hoh3q](ranger-base-hoh3q.md) — D23's perimeter was a spelling, and the crew pins were built from half the set (ranger-base-hoh3q) — 2026-11-09
+- [ranger-base-fswbr](ranger-base-fswbr.md) — The verify-chain bound, built to bind at any batch size (ranger-base-fswbr) — 2026-11-09
 - [ranger-base-ewnas](ranger-base-ewnas.md) — A verify/fix pair has no bound on depth (ranger-base-ewnas) — 2026-11-09
 - [ranger-base-c7i8t](ranger-base-c7i8t.md) — The identity wall cannot wall the product's own name (ranger-base-c7i8t) — 2026-11-09
 - [ranger-base-bu8rz](ranger-base-bu8rz.md) — The bound that could not be reached at this shop's batch size (ranger-base-bu8rz) — 2026-11-09
