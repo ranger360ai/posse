@@ -33,6 +33,22 @@ package posse
 // one thing the two mechanisms do not share, D19's refusal of a claude seat
 // with no config dir named, reaches the LAUNCH and not only the render.
 //
+// AND THE DESIGN CLAIM THE SAME LAUNCH SETTLES, which is the question
+// ranger-base-ybz6u was filed on and the one the host cutover rests on:
+// `seatbelt (bwrap)` is `CageLabel`'s LABEL for one tier realized by this
+// host's mechanism (D16) and NOT a `cage_realize_<goos>:` mapping (ADR 0083
+// D7). The label makes the two easy to confuse and the difference is total.
+// A MAPPING is an explicit promoted line that maps one TIER to another,
+// fails closed when absent, and marks every session it lowers with a
+// ratified waiver. A MECHANISM maps nothing. So with no `cage_realize_*` key
+// in this home at all, the demanded tier IS the realized tier — D7's own
+// second bullet, "a tier maps to itself where `AvailableCages` has it", and
+// D6 option C's "the D7 map flips from `shims` to the bwrap tier, one
+// promoted line", which is why the host's `cage_realize_linux:` carries no
+// `seatbelt` entry once this tier is available. The last block of
+// TestQALaunchAtTheOtherHostsWallMechanism says it out loud over the launch
+// it has already made.
+//
 // WHAT IT IS NOT. Driving the Linux mechanism from darwin is not a Linux
 // render: `SeatbeltWritable` reads `runtime.GOOS` for the home-cache grants
 // and for `/private/tmp` (seatbelt.go), so the SET being bound here is still
@@ -126,6 +142,35 @@ func TestQALaunchAtTheOtherHostsWallMechanism(t *testing.T) {
 			}
 			if !bytes.Contains(got, []byte(ExpandTilde("~/.mycli-wlm"))) {
 				t.Errorf("the launching runtime declared state_dir: ~/.mycli-wlm and the %s wall the launch rendered does not grant it:\n%s", tc.mech, got)
+			}
+
+			// AND THE DESIGN HALF (ranger-base-ybz6u): the launch above
+			// came up at the tier the PID DEMANDED, with no mapping
+			// anywhere in it. `seatbelt (bwrap)` is a label, never a value
+			// — see the file comment for why the distinction is the whole
+			// of what the host cutover rests on. This home declares no
+			// `cage_realize_*` key, so the claim is that the demanded tier
+			// is the realized tier: the bare constant, an empty `Ratified`
+			// and an empty `Degraded`.
+			//
+			// It holds at either mechanism and does not depend on which one
+			// this subtest pinned: `RealizeCageIn` keys on `runtime.GOOS`
+			// and not on `wallMechanismHost` (cagerealize.go), so what is
+			// measured here is the ABSENCE of a mapping, which is the fact
+			// D7 and D6 option C are about. Reading it inside both subtests
+			// is deliberate all the same — a mechanism that ever did reach
+			// this answer would red here and nowhere else.
+			ag, lerr := a.LoadAgent("ranger")
+			if lerr != nil {
+				t.Fatal(lerr)
+			}
+			rt, lerr := a.LoadRuntime("mycli")
+			if lerr != nil {
+				t.Fatal(lerr)
+			}
+			if par := a.CheckParity(ag, rt, CageSeatbelt, TierStrong); par.Cage != CageSeatbelt || len(par.Ratified) != 0 || len(par.Degraded) != 0 {
+				t.Errorf("an unmapped `cage: seatbelt` launch at the %s mechanism must be the DEMANDED tier with no ratified waiver and no degradation (ADR 0083 D7's own \"a tier maps to itself where AvailableCages has it\"; %q is CageLabel's label and never a value): cage=%q ratified=%v degraded=%v",
+					tc.mech, CageLabel(CageSeatbelt), par.Cage, par.Ratified, par.Degraded)
 			}
 		})
 	}

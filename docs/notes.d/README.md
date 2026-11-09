@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-11
 
+- [ranger-base-ybz6u](ranger-base-ybz6u.md) — `seatbelt (bwrap)` is a label and not a mapping, and the rest of this bead landed twice (ranger-base-ybz6u) — 2026-11-09
 - [ranger-base-yx73g](ranger-base-yx73g.md) — One repo, one identity wall, however its path is spelled (ranger-base-yx73g) — 2026-11-08
 - [ranger-base-yk5qb](ranger-base-yk5qb.md) — A fresh account's first claude seat meets a notice nobody seeded (ranger-base-yk5qb) — 2026-11-08
 - [ranger-base-x2grk](ranger-base-x2grk.md) — The settle refusal had the rule and did not have it (ranger-base-x2grk) — 2026-11-08

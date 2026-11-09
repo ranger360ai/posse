@@ -917,6 +917,29 @@ D16's note above demands. Pinned by
   the host at this mechanism, and a bwrap launch materializes `<cwd>/.beads`,
   which moves ADR 0013 §4's record-reach row for a LATER launch in the same
   tree.
+- **`seatbelt (bwrap)` is this label and NOT a `cage_realize_<goos>:` entry,
+  so the host's cutover map carries no `seatbelt` line at all**
+  (ranger-base-ybz6u, 2026-11-09 — asked because the label alone cannot tell
+  the two apart, and the host cutover rests on the answer). D16 above already
+  rules it: the tier keeps its name and the mechanism is a host fact, the way
+  `cage: container` is realized by whichever engine the home names, and a PID
+  never names the mechanism. `seatbelt (bwrap)` is `CageLabel`'s output — a
+  label and never a value, and `Parity.Cage` stays the bare tier. ADR 0083 D7
+  is a different thing in every respect that matters: it maps one TIER to
+  another, it is an explicit promoted line that fails closed when absent, and
+  it marks every session it lowers with a ratified waiver. A mechanism maps
+  nothing and waives nothing. D7's own second bullet is "a tier maps to itself
+  where `AvailableCages` has it", and D6 option C names this tier as what ENDS
+  the `seatbelt → shims` entry — "the D7 map flips from `shims` to the bwrap
+  tier, one promoted line" — so once the Linux host realizes `seatbelt`, the
+  correct `cage_realize_linux:` has NO `seatbelt` key in it. Nothing to
+  change here; pinned rather than reasoned, in the last block of
+  `TestQALaunchAtTheOtherHostsWallMechanism`
+  (`internal/posse/walllaunchmechanism_qa_test.go`, arm 1): over a launch at
+  either mechanism in a home that declares no `cage_realize_*` key, the
+  demanded tier is the realized tier — the bare constant, an empty `Ratified`
+  and an empty `Degraded`. MEASURED: the three red together under a mapping
+  that IS present.
 
 **D19. Shape 3: claude's config lives in a dir grant because the seat's
 `CLAUDE_CONFIG_DIR` points at one. There is no per-seat dir.**
