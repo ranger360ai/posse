@@ -6384,7 +6384,7 @@ func mergeBlockedBody(persona, id, base string, t *SessionTree, o MergeOutcome, 
 		persona, id, o.Commits, t.Branch, base, o.Reason,
 		discoveredFromMarkerPrefix, id,
 		t.Path, t.Repo, mergeBlockedWhere(sha, pin), base, base,
-		mergeBlockedReplay(base, sha),
+		mergeBlockedReplay(base, sha, o.Commits),
 		mergeBlockedShelfLife(t, base, sha, pin))
 }
 
@@ -6415,39 +6415,100 @@ func mergeBlockedBody(persona, id, base string, t *SessionTree, o MergeOutcome, 
 // reads as unlanded on every later pass, which re-files this same block
 // forever.
 //
+// AND IT IS A LOOP, NOT A COMMAND (ranger-base-4r8fw). Every entry of this
+// class until ranger-base-83nrw replayed a branch with ONE commit
+// (ranger-base-xea2y, -3e68k, -h1q5o, -v3tt4, -yrag8), and this copy was
+// written for that: one merged tree computed for the whole branch, one
+// `cat-file` loop over its paths, and "that commit's author identity" in the
+// singular. A seat that follows it literally on a three-commit branch
+// produces ONE commit, which carries ONE original's replayKey — so
+// equivalentOnBase pairs that original, returns nil on the next, and the
+// block re-files on every later pass forever with the work fully on the base.
+// That is exactly what the paragraph above warns about, reached by obeying
+// the text. So the copy names the count, gives the per-commit loop, and says
+// that the merge base WALKS THE ORIGINALS — `$C^`, because "ours" is the
+// replay so far and not this branch's base. MEASURED under ranger-base-83nrw
+// over the three commits ranger-base-8kwa5's branch carried (all three
+// replayKeys reproduced byte-for-byte) and again here over a two-commit
+// fixture, TestMergeBackPairsEveryCommitOfATwoCommitBranchReplayedOneByOne —
+// which is the claim a prose-only fix could not make.
+//
 // NO SHA, NO OPERANDS. The commands need the pinned commit, and a filing that
 // could not read a head has none — mergeBlockedShelfLife's third arm is what
 // tells that seat so. The warning stands in both arms: it is about a tool,
 // not about this commit.
-func mergeBlockedReplay(base, sha string) string {
+func mergeBlockedReplay(base, sha string, commits int) string {
 	const warn = "RESOLVING A REAL CONFLICT: REPLAY, DO NOT REBASE. A rebase or cherry-pick in\n" +
 		"a session worktree needs the SHARED repo's packed-refs.lock to END; when that\n" +
 		"lock is unavailable git exits 0 with the sequencer marker still set, and your\n" +
 		"next path-limited commit dies at `fatal: cannot do a partial commit during a\n" +
 		"cherry-pick` — in a later call, looking like a PID refusal (AGENTS.md,\n" +
 		"\"Landing the plane\").\n"
+	// ONE REPLAY COMMIT PER ORIGINAL is said in both arms, for the warning's
+	// reason: it is a fact about equivalentOnBase and not about this filing's
+	// operands, and a seat that has to find its own head still has to produce
+	// one commit per commit it finds.
+	const perOriginal = "ONE REPLAY COMMIT PER ORIGINAL"
+	const runbooks = "docs/notes.d/ranger-base-xea2y.md is the worked example and\n" +
+		"docs/notes.d/ranger-base-4r8fw.md the per-commit loop, both MEASURED."
 	if sha == "" {
 		return warn + "Nothing here needs one: `git merge-tree --write-tree " + base + " <the\n" +
 			"work>` merges in the object store and `git cat-file blob` takes the merged\n" +
 			"blobs back out — no sequencer state, nothing to leak. This filing has no sha\n" +
-			"to put in that command, so the reason above is what there is.\n" +
-			"docs/notes.d/ranger-base-xea2y.md is the worked example, MEASURED."
+			"to put in that command, so the reason above is what there is. " + perOriginal + "\n" +
+			"once you have one, however many there turn out to be: a squash pairs with one\n" +
+			"of them and strands the rest, and this block re-files forever.\n" + runbooks
+	}
+	// The count the body's own first sentence prints, said again where the
+	// loop is: one number in this text, so the recipe cannot disagree with
+	// the sentence above it. Nothing readable is "every commit" rather than
+	// a 0 — an outcome blocked over no commits at all is a different bug,
+	// and "0 commit(s) in, 0 out" would read as nothing to do.
+	count := "every commit"
+	switch {
+	case commits == 1:
+		count = "1 commit"
+	case commits > 1:
+		count = fmt.Sprintf("%d commits", commits)
 	}
 	return warn + "Nothing here needs one: the merge this pass already made is in the\n" +
-		"object store, and every worktree of this repo shares it. In YOUR tree, on " + base + ":\n" +
+		"object store, and every worktree of this repo shares it.\n" +
+		"\n" +
+		perOriginal + " — " + count + " in, " + count + " out, NEVER a squash.\n" +
+		"equivalentOnBase is what tells a later pass this work reached " + base + ", and it\n" +
+		"walks the originals ONE AT A TIME, giving up on the first it cannot account\n" +
+		"for. Your replay writes no `-x` trailer and its resolution changes the patch,\n" +
+		"so `git cherry` says `+` and (author email, AUTHOR date, subject) is the only\n" +
+		"thing left that can pair a commit of yours with an original. Squash, and\n" +
+		"exactly one original is paired while the rest are stranded — the block then\n" +
+		"re-files on every later pass forever, with the work sitting on " + base + ".\n" +
+		"\n" +
+		"In YOUR tree, on " + base + ":\n" +
+		"  # the originals, OLDEST FIRST — replay them in this order, one commit each:\n" +
+		"  git rev-list --reverse " + base + ".." + sha + "\n" +
+		"For each original C in that order. The merge base is C's OWN PARENT, which\n" +
+		"WALKS THE ORIGINALS and is NOT this branch's base, because \"ours\" is the replay\n" +
+		"so far:\n" +
 		"  # the merged tree, conflict markers and all:\n" +
-		"  TREE=$(git merge-tree --write-tree " + base + " " + sha + " | head -1)\n" +
+		"  TREE=$(git merge-tree --write-tree --merge-base=$C^ HEAD $C | head -1)\n" +
 		"  # nothing deleted — the loop below only writes and adds:\n" +
-		"  git diff --diff-filter=D --name-only " + base + " $TREE\n" +
+		"  git diff --diff-filter=D --name-only HEAD $TREE\n" +
 		"  # the paths to replay, then one cat-file per path:\n" +
-		"  git diff --name-only " + base + "..." + sha + "\n" +
+		"  git diff --name-only $C^ $C\n" +
 		"  git cat-file blob \"$TREE:<p>\" > <p>\n" +
-		"Resolve whatever came out carrying conflict markers — a GENERATED file is\n" +
-		"regenerated, never hand-merged — then `git add -- <new paths>` and commit\n" +
-		"path-limited. Keep that commit's author identity, AUTHOR date (`git commit\n" +
-		"--date=...`; `--amend` ignores GIT_AUTHOR_DATE) and subject, or nothing pairs\n" +
-		"your commit with it and every later pass re-files this block.\n" +
-		"docs/notes.d/ranger-base-xea2y.md is the worked example, MEASURED."
+		"  # resolve the markers, then ONE commit carrying C's own identity:\n" +
+		"  GIT_AUTHOR_NAME=$(git log -1 --format=%an $C) \\\n" +
+		"  GIT_AUTHOR_EMAIL=$(git log -1 --format=%ae $C) \\\n" +
+		"    git commit --date=\"$(git log -1 --format=%aI $C)\" \\\n" +
+		"      -m \"$(git log -1 --format=%s $C)\" -- <your paths>\n" +
+		"A GENERATED file is regenerated, never hand-merged, and a path git has not seen\n" +
+		"needs `git add -- <it>` first. The AUTHOR date goes on the commit that creates\n" +
+		"it — `--amend` ignores GIT_AUTHOR_DATE — and so does the subject.\n" +
+		"Read the whole SET back before you stop; one missing key is one stranded\n" +
+		"commit, and the block that re-files does not say which:\n" +
+		"  diff <(git log --format='%ae%x1f%aI%x1f%s' " + base + ".." + sha + " | sort) \\\n" +
+		"       <(git log --format='%ae%x1f%aI%x1f%s' " + base + "..HEAD | sort)\n" +
+		runbooks
 }
 
 // blockedOnDirt is the one question anything asks of a merge-back reason

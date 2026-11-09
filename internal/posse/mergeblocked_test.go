@@ -1220,9 +1220,78 @@ func TestRebaseRecommendationScannerDiscriminates(t *testing.T) {
 		t.Errorf("the scanner reads git's report of the launcher's own rebase as a prescription: %q", got)
 	}
 	for _, sha := range []string{"", "a1e32986d8e56fa33aa18b1c7748b01b97591124"} {
-		if got := rebaseRecommendations(mergeBlockedReplay("main", sha)); len(got) > 0 {
-			t.Errorf("sha %q: the replacement copy still prescribes a rebase: %q", sha, got)
+		for _, n := range []int{0, 1, 3} {
+			if got := rebaseRecommendations(mergeBlockedReplay("main", sha, n)); len(got) > 0 {
+				t.Errorf("sha %q, %d commit(s): the replacement copy still prescribes a rebase: %q", sha, n, got)
+			}
 		}
+	}
+}
+
+// ranger-base-4r8fw: the copy is a LOOP, and it has to say how many times.
+//
+// Every entry of this class until ranger-base-83nrw replayed a ONE-commit
+// branch, and this text was written for that — one merged tree for the whole
+// branch, "that commit's author identity" in the singular. Followed literally
+// on a three-commit branch it produces one commit carrying one original's
+// replayKey, so equivalentOnBase pairs that one, returns nil on the next, and
+// the block re-files forever over work that is entirely on the base. The
+// honest half of this is
+// TestMergeBackPairsEveryCommitOfATwoCommitBranchReplayedOneByOne, which
+// replays a two-commit branch by this recipe and measures the pairing; this
+// is the cheap half, and it is here because a seat reads the TEXT.
+//
+// The count is o.Commits — the number the body's own first sentence already
+// prints — so there is one number in this text and the recipe cannot disagree
+// with the sentence above it.
+func TestMergeBlockedReplayNamesTheCountAndThePerCommitLoop(t *testing.T) {
+	t.Parallel()
+	const sha = "a1e32986d8e56fa33aa18b1c7748b01b97591124"
+
+	// The per-commit step, in every arm that has operands at all: the loop's
+	// own walk, the merge base that WALKS THE ORIGINALS ($C^ and not the
+	// branch's base, which is the non-obvious half), and the read-back over
+	// the whole SET of keys.
+	perCommit := []string{
+		"ONE REPLAY COMMIT PER ORIGINAL",
+		"git rev-list --reverse main.." + sha,
+		"--merge-base=$C^ HEAD $C",
+		"git diff --name-only $C^ $C",
+		"format=%aI $C",
+	}
+	for _, c := range []struct {
+		commits int
+		want    []string
+	}{
+		// A one-commit branch is the case the old copy was correct for, and
+		// it still has to read as a loop that runs once — a seat told "1
+		// commit in, 1 commit out" has been told the rule.
+		{1, append([]string{"1 commit in, 1 commit out"}, perCommit...)},
+		{3, append([]string{"3 commits in, 3 commits out"}, perCommit...)},
+		{17, append([]string{"17 commits in, 17 commits out"}, perCommit...)},
+		// Nothing readable says "every commit" and not "0": a block over no
+		// commits at all is a different bug, and "0 in, 0 out" reads as
+		// nothing to do.
+		{0, append([]string{"every commit in, every commit out"}, perCommit...)},
+	} {
+		got := mergeBlockedReplay("main", sha, c.commits)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%d commit(s): the recipe does not say %q:\n%s", c.commits, w, got)
+			}
+		}
+	}
+	// The whole clause and not the digit: "10 commits in" contains "0
+	// commits in", so a bare substring check here would be red on every
+	// two-digit branch.
+	if got := mergeBlockedReplay("main", sha, 0); strings.Contains(got, "0 commits in, 0 commits out") ||
+		strings.Contains(got, "0 commit in, 0 commit out") {
+		t.Errorf("a count the filing could not read is rendered as a zero:\n%s", got)
+	}
+	// And the arm with no operands keeps the rule even though it can give no
+	// loop: the rule is about equivalentOnBase, not about this filing's sha.
+	if got := mergeBlockedReplay("main", "", 2); !strings.Contains(got, "ONE REPLAY COMMIT PER ORIGINAL") {
+		t.Errorf("a filing with no head drops the one-commit-per-original rule:\n%s", got)
 	}
 }
 
@@ -1246,17 +1315,22 @@ func TestMergeBlockedBodyTellsTheSeatToReplayAndNotToRebase(t *testing.T) {
 	}{
 		{"pinned", sha, blockedPinRef(tr.Branch), []string{
 			"REPLAY, DO NOT REBASE",
-			"merge-tree --write-tree main " + sha, // the launcher's own operand, with the handle
-			"--diff-filter=D",                     // the one thing a write-and-add loop misses
+			"git rev-list --reverse main.." + sha,   // the pinned head, as the loop's own operand
+			"merge-tree --write-tree --merge-base=", // the launcher's own tool, per original
+			"--diff-filter=D",                       // the one thing a write-and-add loop misses
 			"git cat-file blob",
-			"AUTHOR date", // or equivalentOnBase's replay arm cannot pair the commit
+			"AUTHOR date",                    // or equivalentOnBase's replay arm cannot pair the commit
+			"ONE REPLAY COMMIT PER ORIGINAL", // ranger-base-4r8fw: one key per original, or n-1 strand
 			"docs/notes.d/ranger-base-xea2y.md",
+			"docs/notes.d/ranger-base-4r8fw.md",
 		}},
 		{"no head at all", "", "", []string{
 			"REPLAY, DO NOT REBASE",
 			"merge-tree --write-tree main",
 			"no sha",
+			"ONE REPLAY COMMIT PER ORIGINAL",
 			"docs/notes.d/ranger-base-xea2y.md",
+			"docs/notes.d/ranger-base-4r8fw.md",
 		}},
 	} {
 		got := mergeBlockedBody("p", "a-1", "main", tr, o, c.sha, c.pin)

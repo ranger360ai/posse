@@ -4,6 +4,7 @@ package posse
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -254,6 +255,172 @@ func TestReplayPairingNeverLicensesADelete(t *testing.T) {
 	}
 	if !branchExists(repo, tr.Branch) {
 		t.Error("the refused branch was deleted anyway")
+	}
+}
+
+// ranger-base-4r8fw: the POSITIVE half of the pin above, and the claim a
+// prose fix to the runbook cannot make on its own.
+//
+// TestMergeBackPairsNothingWhenOnlySomeOfABranchLanded measures the squash:
+// two commits landing as one pairs one key and strands the other, and the
+// honest answer is nil. That is also exactly what mergeBlockedReplay's text
+// used to PRESCRIBE — it computed one merged tree for the whole branch and
+// spoke of "that commit's" identity in the singular, which every entry of
+// this class until ranger-base-83nrw could get away with because every one of
+// them was a one-commit branch (-xea2y, -3e68k, -h1q5o, -v3tt4, -yrag8). A
+// seat following it on a multi-commit branch produced the squash above and
+// the block re-filed forever over work that was entirely on main.
+//
+// So this runs the corrected recipe as rendered — `rev-list --reverse`, then
+// per original C a `merge-tree --write-tree --merge-base=$C^ HEAD $C`, the
+// `cat-file blob` loop, a resolution, and ONE commit carrying C's own author
+// date and subject — and asserts equivalentOnBase accounts for BOTH. The
+// merge base walking the originals is the non-obvious half: "ours" is the
+// replay so far, so for commit 2 the base is commit 1 and not main's own
+// merge base with the branch.
+//
+// Both replays are checked to be `+` under `git cherry` and trailer-free
+// first, for the same reason the pins above are: with either cheap arm
+// available this fixture would measure nothing about replayKey, which is the
+// only arm a hand-resolved replay leaves.
+func TestMergeBackPairsEveryCommitOfATwoCommitBranchReplayedOneByOne(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "shared.mk", "PHONY := build test\n", "seed the makefile")
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const subjA, dateA = "the first half (ranger-base-4r8fw)", "2026-10-03T22:41:58-04:00"
+	const subjB, dateB = "the second half (ranger-base-4r8fw)", "2026-10-04T16:37:43-04:00"
+	commitAtIn(t, tr.Path, "shared.mk", "PHONY := build test a\n", subjA, dateA)
+	commitAtIn(t, tr.Path, "shared.mk", "PHONY := build test a b\n", subjB, dateB)
+
+	// main moves on in the same line both of them touched, which is what
+	// blocks the merge and what makes every per-commit replay below conflict
+	// for real.
+	commitIn(t, repo, "shared.mk", "PHONY := build test verify-x\n", "a sibling bead")
+	if o, err := MergeSessionWork(a, tr); err != nil {
+		t.Fatal(err)
+	} else if !o.Blocked() {
+		t.Fatalf("fixture: the branch has to be blocked or there is nothing for the recipe to replay: %+v", o)
+	}
+
+	// The resolution, keyed on each original's subject: keep both sides,
+	// which is what a seat decides and what makes the bytes neither side's.
+	resolved := map[string]string{
+		subjA: "PHONY := build test verify-x a\n",
+		subjB: "PHONY := build test verify-x a b\n",
+	}
+	originals := strings.Fields(mustGit(t, repo, "rev-list", "--reverse", "main.."+tr.Branch))
+	if len(originals) != 2 {
+		t.Fatalf("fixture: %d original(s) to replay, want 2 — one is the case the old copy was already correct for", len(originals))
+	}
+	for i, c := range originals {
+		// merge-tree exits NONZERO on a conflict and writes the tree anyway,
+		// which is the whole case this recipe is for — so the error is read
+		// off the output and not off the exit code.
+		out, _ := git(repo, "merge-tree", "--write-tree", "--merge-base="+c+"^", "HEAD", c)
+		fields := strings.Fields(out)
+		if len(fields) == 0 {
+			t.Fatalf("original %d: merge-tree wrote no tree:\n%s", i+1, out)
+		}
+		tree := fields[0]
+		if del := mustGit(t, repo, "diff", "--diff-filter=D", "--name-only", "HEAD", tree); del != "" {
+			t.Fatalf("original %d: the merged tree deletes %q, which a write-and-add loop cannot carry", i+1, del)
+		}
+		for _, p := range strings.Fields(mustGit(t, repo, "diff", "--name-only", c+"^", c)) {
+			b, err := gitRaw(repo, "cat-file", "blob", tree+":"+p)
+			if err != nil {
+				t.Fatalf("original %d: %s out of the merged tree: %v", i+1, p, err)
+			}
+			write(t, filepath.Join(repo, p), string(b))
+			// TWO THINGS AT ONCE, and the second is why the merge base is
+			// written as $C^.
+			//
+			// The fixture only measures a RESOLVED replay while the merge
+			// needs resolving: a textually clean one is a patch-id twin and
+			// `git cherry` would answer it without replayKey.
+			//
+			// And it is where a merge base of main's own — the branch's base,
+			// which is what the one-commit copy computed — shows up. MEASURED
+			// 2026-11-08 by planting `--merge-base=main` here: original 1's
+			// shared.mk comes out CLEAN as `PHONY := build test a`, because
+			// against that base only theirs changed the line, so the merge
+			// takes theirs whole and main's own `verify-x` is silently gone.
+			// A clean-looking tree that ate the base's work is the shape
+			// ranger-base-83nrw's replay met and called "the one that nearly
+			// ate main's work" (docs/notes.d/ranger-base-4r8fw.md quotes it),
+			// and this is the assertion that sees it.
+			if !strings.Contains(string(b), "<<<<<<<") {
+				t.Fatalf("original %d: %s came out of the merge clean — either the fixture measures the patch-id arm, or the merge base is not $C^ and this tree has taken theirs over the base's own work:\n%s", i+1, p, b)
+			}
+		}
+		subject := mustGit(t, repo, "log", "-1", "--format=%s", c)
+		body, ok := resolved[subject]
+		if !ok {
+			t.Fatalf("original %d: no resolution for %q", i+1, subject)
+		}
+		// ONE commit per original, carrying its AUTHOR date and subject —
+		// the three fields replayKey reads, and the whole of what pairs it.
+		commitAtIn(t, repo, "shared.mk", body, subject, mustGit(t, repo, "log", "-1", "--format=%aI", c))
+	}
+
+	// The replay ADDS the branch's work and takes none of the base's away —
+	// the cheap half of ranger-base-83nrw's deletion-count reading, asked
+	// here because a pairing is about identity and would be satisfied by a
+	// replay that dropped every hunk main had.
+	if final := mustGit(t, repo, "show", "main:shared.mk"); final != "PHONY := build test verify-x a b" {
+		t.Errorf("the replay did not keep main's own work beside the branch's: %q", final)
+	}
+
+	// Neither cheap arm may answer this, or the pairing below is not the one
+	// a hand-resolved replay has to rely on.
+	for _, ln := range strings.Split(mustGit(t, repo, "cherry", "main", tr.Branch), "\n") {
+		if !strings.HasPrefix(ln, "+ ") {
+			t.Fatalf("git cherry calls a replay a patch-id twin (%q); the fixture measures nothing new", ln)
+		}
+	}
+	if body := mustGit(t, repo, "log", "--format=%B", "main", "--not", tr.Branch); strings.Contains(body, "cherry picked from commit") {
+		t.Fatalf("a replay wrote an -x trailer; the fixture is the trailer arm again:\n%s", body)
+	}
+
+	// THE CLAIM. Two originals, two replays, and every one of them accounted
+	// for — not one pairing and a nil.
+	eq := equivalentOnBase(repo, "main", tr.Branch)
+	if len(eq) != 2 {
+		t.Fatalf("a two-commit branch replayed one commit per original is accounted for %d time(s), want 2: %+v\n"+
+			"This is the bug mergeBlockedReplay's text produced when it was written for one commit (ranger-base-4r8fw).", len(eq), eq)
+	}
+	for i, e := range eq {
+		if !e.replayed || e.byPatch {
+			t.Errorf("pairing %d must be marked a replay and never a measurement of content: %+v", i+1, e)
+		}
+	}
+	// Each original paired with a DIFFERENT commit on main: one replay
+	// claimed twice would be len 2 and still a squash.
+	seen := map[string]bool{}
+	for _, e := range eq {
+		if seen[e.note] {
+			t.Errorf("two originals paired with the same commit on main: %+v", eq)
+		}
+		seen[e.note] = true
+	}
+
+	// And the outcome a later pass reports: no strand, no re-filed block.
+	o, err := MergeSessionWork(a, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Blocked() {
+		t.Errorf("a branch replayed in full was still reported blocked, so the block re-files: %q", o.Reason)
+	}
+	if !o.Merged || len(o.Equivalent) != 2 {
+		t.Errorf("the outcome must account for both commits: %+v", o)
+	}
+	if !branchExists(repo, tr.Branch) {
+		t.Error("the branch was moved or deleted by a read-only equivalence check")
 	}
 }
 

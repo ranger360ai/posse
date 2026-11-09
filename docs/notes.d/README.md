@@ -25,6 +25,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-83nrw](ranger-base-83nrw.md) — ranger-base-83nrw — the first multi-commit merge-back replay, and a pin whose mutant got quieter under the merge — 2026-11-08
 - [ranger-base-72oz4](ranger-base-72oz4.md) — claude's first-run notices: one row, and why it is read by nothing yet (ranger-base-72oz4) — 2026-11-08
 - [ranger-base-5syu4](ranger-base-5syu4.md) — The 38 `#!/bin/bash` literals were never in a render (ranger-base-5syu4) — 2026-11-08
+- [ranger-base-4r8fw](ranger-base-4r8fw.md) — ranger-base-4r8fw — the merge-blocked replay is a LOOP, one commit per original — 2026-11-08
 - [ranger-base-1155n](ranger-base-1155n.md) — A PID's cage is the class it needs; the host names the tier that realizes it (ranger-base-1155n) — 2026-11-08
 - [ranger-base-t5ein](ranger-base-t5ein.md) — Promoting codex's record, and the fixtures that were pinning a table row (ranger-base-t5ein) — 2026-11-07
 - [ranger-base-r7fyk](ranger-base-r7fyk.md) — Verifying 4 closes: 5x8xi, obaim, c2k6z, jep08 (ranger-base-r7fyk) — 2026-11-07
