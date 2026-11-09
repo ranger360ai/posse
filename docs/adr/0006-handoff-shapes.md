@@ -1,6 +1,6 @@
 # ADR 0006 — Handoffs carry explicit acceptance; verification stays batched
 
-*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal landed 2026-09-06 (ranger-base-0ezn7) · escape doctrine amended 2026-09-06 by operator ruling (§1, §6; ranger-base-0f2zy) · pin write-freeze added 2026-09-10 by operator ruling (§7; ranger-base-7dh59) · verify-chain depth bound added 2026-11-09 (§3; ranger-base-ewnas) · owner: architect.*
+*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal landed 2026-09-06 (ranger-base-0ezn7) · escape doctrine amended 2026-09-06 by operator ruling (§1, §6; ranger-base-0f2zy) · pin write-freeze added 2026-09-10 by operator ruling (§7; ranger-base-7dh59) · verify-chain depth bound added 2026-11-09 (§3; ranger-base-ewnas) · the bound made reachable at any batch size 2026-11-09 (§3; ranger-base-rffxq) · owner: architect.*
 
 ## Context
 
@@ -57,13 +57,34 @@ close's evidence and what there is to decide; comment it back on the close,
 distinguishably from `verify filed:`; dedupe it on its own title across OPEN
 AND CLOSED question beads, because the subject is a close the watermark
 walks past once. Block nothing and reopen nothing: there is nothing in the
-queue to block. `0` disables the bound and then no edge is read for it. A
-batched verify bead ends the walk rather than guessing which of its closes a
-bundle answered, and a dependency read that fails yields a FLOOR that is
-named and never escalated on — so the count errs short by construction.
-Below the bound the filing is unchanged but for one head line naming the
-round, which the last round says is the last. Not the artifact: keying the
-chain on the touched path was measured and rejected (Consequences).
+queue to block. `0` disables the bound and then no edge is read for it, and
+batching is then exactly as above. A dependency read that fails yields a
+FLOOR that is named and never escalated on — so the count errs short by
+construction. Below the bound the filing is unchanged but for one head line
+naming the round, which the last round says is the last. Not the artifact:
+keying the chain on the touched path was measured and rejected
+(Consequences).
+
+**The bound binds at every `verify_batch`, and neither key gives way**
+(amended 2026-11-09, ranger-base-rffxq). Which of a batch's N closes a
+findings bundle answered is not written anywhere the harness can read, so
+the batch is made not to need the answer, from two halves that only work
+together. (a) **A batch is filed like with like:** the pending closes are
+grouped by the rounds already counted on their lineages (0 up to
+`verify_chain_max` − 1; a close at the bound has already left as an
+escalation), and `verify_batch` and `verify_batch_age` apply within each
+group exactly as above. (b) **A batched hop continues through its SHALLOWEST
+source:** a close filed from a verify bead that answers N closes has spent
+one round plus the fewest any of those N had spent. Every source is a close
+the bundle could have answered, so the minimum is a floor on the true count,
+which is the direction this rule always errs. Over a batch filed under (a)
+every source has the same count, so the floor is exact. A batch filed before
+this amendment still reads as a floor, never below the old stop. The walk
+reads each bead's edges at most once a pass and gives up after a fixed number
+of reads; giving up makes the count a floor, named on stderr, and a floor
+never escalates. No new write, field, edge or prose contract is added; the
+count is still read from the graph. If the bound is ever withdrawn, deleting
+the grouping undoes this.
 
 **4. Acceptance is explicit.** `closerDoneWhen` label/type-to-intent
 selection is REPLACED (landed 2026-09-06, ranger-base-0ezn7), and not by an
@@ -205,6 +226,43 @@ already spent on a close's lineage, by the shipped walk:
   bead answers one close, so "filed from the verify of that close" already
   means "about that close's work".
 
+MEASURED 2026-11-09 (ranger-base-rffxq, the same store, read straight from
+its `issues.jsonl`; the method and both scripts are in
+docs/notes.d/ranger-base-rffxq.md). This is the price of making the bound
+bind above `verify_batch: 1`, which the shipped walk could not do: it stopped
+at every batched verify bead, and since 2026-11-01 every verify bead has been
+batched (34 of 34, ranger-base-bu8rz).
+
+- THE STORE IS MOSTLY MIXED BATCHES. Of 351 verify beads answering two
+  closes or more, 263 mix lineage depths and 88 do not. So (b) alone is
+  barely better than the old stop: over the 540 closes since 2026-09-15 the
+  shallowest-source floor reads 448/89/3 at 0/1/2 rounds against the old
+  stop's 448/90/2, deepest 2. A floor that a depth-0 neighbour always pulls
+  down never reaches 3. (a) is the half that makes the floor exact.
+- (b) OVER THE WHOLE STORE moves 8 of 2,639 non-verify closes from 1 round to
+  2 and none the other way. Closes at 3 rounds or more stay at 11, and the
+  deepest stays at 4 on the same three beads. It does not fuse subjects the
+  way taking the DEEPEST source does. That key read 17 and escalated 202
+  closes (7.65%) under ranger-base-bu8rz, and it was rejected there.
+- (a)'S PRICE was measured by replaying every close a verify bead answered,
+  in close order, at `verify_batch: 4` and `verify_batch_age: 24h`. Over all
+  1,669 closes: 423 verify beads filed as one group against 438 grouped by
+  depth (+3.5%). The median wait goes from 0.3h to 0.5h and the p90 from 1.5h
+  to 3.9h. Over the 388 closes since 2026-09-15: 102 against 109 (+6.9%); the
+  median wait goes from 0.6h to 1.0h and the p90 from 4.3h to 14.0h. The p90
+  grows because a deep group is thin and waits for its age, which the
+  operator's own `verify_batch_age` already allows. The other way to make
+  every hop single-source, filing each close that has a verify parent on its
+  own, costs 815 against 423 (+93%) and 167 against 102 (+64%). That gives up
+  most of what batching bought (ranger-base-1t7r).
+- ASSUMED: the replay groups by today's graph, where the floor is pulled down
+  by mixed batches. Under (a) the depth mix should return to the
+  `verify_batch: 1` era's (78/20/1.6/0.3%), with more closes in the deep
+  groups than the replay saw. The +3.5% from the whole-history replay, whose
+  mix is close to that era's, is the better estimate. Measure it a month
+  after landing as verify beads filed per close. If the result is above +10%,
+  revisit (a) before the batch size.
+
 ASSUMED, to be measured after a month: that the escalation rate stays near
 one close a week on a queue of this size, and that an operator answer is
 cheaper than the round it replaces. Read it as the count of `verify chain
@@ -227,7 +285,27 @@ a lower priority (same inflow, same loop, one more triage field); a
 `recorded` label or a third close reason (a vocabulary for a comment line);
 mass-closing the open debt pile unread (the live-class ones are work);
 changing the verify seats or the batch size (the seats were not the
-amplifier, the finding class was). bd remains the only work store and its
+amplifier, the finding class was). Rejected for the batched hop
+(ranger-base-rffxq):
+- Continuing through the DEEPEST source. It is a ceiling, and it was measured
+  fusing more than a dozen subjects (ranger-base-bu8rz).
+- A `discovered-from` edge from the bundle to the close it answered. A
+  persona has to write it, and it is the write bd loses (muoo). A lost edge
+  makes the count silently short, which is where this started.
+- A machine-read origin line in the bundle. It is atomic with the create,
+  but it is a contract with a persona's prose that the harness cannot make a
+  verifier keep. §6's bundle also answers a SET of closes, which brings the
+  same min-or-max choice back.
+- Reading the round back from the verify bead's head line. It is a depth
+  field by another name, already rejected above, and a mixed batch has no
+  single round to write.
+- Filing each close that has a verify parent on its own (+93%, measured
+  above).
+- Refusing the combination, which is ranger-base-bu8rz's stopgap. It is
+  honest, but it is not a bound.
+- Two groups, round 0 against round 1 or more. That is 9 fewer verify beads
+  over the whole store, but the floor is then inexact between rounds 1 and
+  2, and the bound of 3 sits right there. bd remains the only work store and its
 existing export is the exit hatch. The 2026-09-05 decision needed no runtime
 edit; the 2026-09-06 amendment changes the rendered verify trailer's
 wording and the shipped QA example, and nothing else in the runtime.
