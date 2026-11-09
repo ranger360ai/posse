@@ -20,6 +20,7 @@ package posse
 // what lets every shape be pinned by a table on darwin.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -183,7 +184,19 @@ func (s PrepStep) String() string { return string(s.Kind) + " " + s.Path }
 //     CLI ever invents.
 //   - createOnly (sessionRefDirs). A mount cannot say "making this path is
 //     allowed, writing inside it is not". D20 replaces that grant with a
-//     bind of the ref's PARENT directory plus a keep file.
+//     bind of the ref's PARENT directory plus a keep file — BwrapWritable
+//     below makes that substitution, and refKeep here is the keep file it
+//     names.
+//
+// refKeep IS THE ONE THING THAT RENDERS NO MOUNT (D20, ranger-base-gi1gi).
+// Every other argument of this function turns into a `--bind` or a
+// `--ro-bind`; a keep file turns into a PrepStep and nothing else. It is a
+// file the launcher must leave inside a write grant so that an outside `git
+// pack-refs --all --prune` cannot empty and remove the bound directory under
+// a live seat — the mount survives the prune, and the seat's next commit then
+// writes into a directory that is no longer the one its branch lives in. Not
+// carve.Keep, which is the other list of files the launcher creates: a Keep
+// entry is a literal re-allow and IS bound, back over the deny above it.
 //
 // THE ORDER IS THE SEMANTICS. bwrap applies mounts in argv order and a later
 // mount covers an earlier one, so this is not a rendering preference the way
@@ -214,7 +227,7 @@ func (s PrepStep) String() string { return string(s.Kind) + " " + s.Path }
 // built out of. Same safe failure direction as bwrapApplyProbe above, and
 // for the same reason — the value of this answer is that a seat runs behind
 // it.
-func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut) ([]string, []PrepStep, error) {
+func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ...string) ([]string, []PrepStep, error) {
 	// 1. The base. --die-with-parent so a seat's wall dies with the pane
 	// that holds it; --ro-bind / / because the default is to deny writes
 	// everywhere, which at this mechanism is spelled as a read-only mount of
@@ -299,6 +312,38 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut) ([]string,
 			prep = append(prep, PrepStep{PrepMkdirAll, p, "a write grant that is not there yet; bwrap cannot bind a source that does not exist"})
 		}
 		argv = append(argv, "--bind", p, p)
+	}
+
+	// 2b. The keep files, inside the grants above and bound by nothing (D20,
+	// ranger-base-gi1gi). Emitted HERE and not with carve.Keep below, because
+	// the order of this list is a promise to the launcher (PrepStep): a keep
+	// file's directory is one of the grants one loop up, so its mkdir has
+	// just been emitted and the touch that follows it cannot run first.
+	//
+	// OUTSIDE A GRANT IT IS A LIE, so it refuses rather than renders. The
+	// file's whole job is to keep a BOUND directory from being pruned; a
+	// keep file under no grant names a directory this render never binds, so
+	// the prune it is there to survive would take the directory and the seat
+	// would be none the wiser — the same shape of silence as a deny that
+	// renders no mount.
+	for _, f := range shallowestFirst(refKeep) {
+		exists, dir, err := bwrapStat(f)
+		if err != nil {
+			return nil, nil, bwrapStatRefusal("ref keep", f, err)
+		}
+		if !writeGranted(grants, f) {
+			return nil, nil, Die("bwrap cannot keep %s: it is inside no write grant, so this render binds no directory for it to hold open (ADR 0080 D20)", f)
+		}
+		if exists && dir {
+			// A directory at that name is not a keep file: `pack-refs
+			// --prune` removes an EMPTY directory, so a directory here is
+			// either pruned with its parent or holds something that is not
+			// ours — and either way the launcher's touch would fail.
+			return nil, nil, Die("bwrap cannot keep %s: it is a directory, and the keep file is an empty FILE whose only job is to make its parent non-empty (ADR 0080 D20)", f)
+		}
+		if !exists {
+			prep = append(prep, PrepStep{PrepTouch, f, "the keep file that stops an outside `git pack-refs --prune` from removing the bound ref directory under a live seat"})
+		}
 	}
 
 	// 3. Shape 2: the carve-out's denies, read-only over the grants above
@@ -636,4 +681,212 @@ func bwrapClaudeConfigDirRefusal(dir string, inForce bool) error {
 	}
 	return Die("claude on cage %s (%s) needs %s set in the launcher: %s. Set it in the home's unit Environment= — one line, and every claude seat on this host then resolves the very directory this wall grants (ADR 0080 D19)",
 		CageSeatbelt, WallBwrap, ClaudeConfigDirVar, why)
+}
+
+// ─── D20: GIT'S REF WRITES NEED A DIR GRANT ─────────────────────────────────
+
+// bwrapRefKeepName is the file the launcher leaves in the bound ref
+// directory. Dot-named on purpose: git skips dot-named entries when it reads
+// a loose ref directory (ASSUMED, probe T4c/T4d), so the file that keeps the
+// directory alive is not also a ref called `.posse-keep`.
+//
+// EMPTY, and it has to be: git's loose-ref reader is what decides whether a
+// stray file in `refs/heads/<x>/` is a broken ref, and the name is the whole
+// of what posse controls there. Nothing reads its contents — not posse, not
+// git — so a byte in it would be a claim about a reader that does not exist.
+const bwrapRefKeepName = ".posse-keep"
+
+// BwrapWritable is SeatbeltWritable's set as THIS mechanism can grant it,
+// and it is the whole of ADR 0080 D20. Every entry passes through untouched
+// except the git ones a linked-worktree session gets, which cannot: three of
+// them name FILES in the shared common dir, and BwrapArgs refuses a writable
+// file outright (B8 — binding one refuses the atomic replace its writer
+// makes). This function is what keeps that refusal from being every
+// worktree launch, the way BwrapStateDirs keeps it from being every claude
+// launch.
+//
+// WHAT GIT ACTUALLY NEEDS, and why the L2 spelling has no translation. A ref
+// update is `<ref>.lock` created, written, and then renamed onto `<ref>`.
+// Both of those are writes on the ref's DIRECTORY, not on the ref: at L2
+// that is sayable as two subpath grants over the leaf and its `.lock`
+// sibling, because SBPL grants a path and the rename is a write to a granted
+// name. A mount has no such move — the lock does not exist at launch so
+// there is nothing to bind, a pre-created `.lock` fails every commit ("File
+// exists"), and a bind mountpoint cannot be replaced by the rename(2) that
+// commits the update. So the grant moves up one level, to the directory both
+// writes land in: `<common>/refs/heads/posse` for the fleet's
+// `posse/<session>` branches.
+//
+// THE KEEP FILE IS LOAD-BEARING AND IT IS NOT HOUSEKEEPING. `git pack-refs
+// --all --prune` — which `git gc` runs on its own at gc.auto, from OUTSIDE
+// the wall, in the operator's checkout — writes every loose ref into
+// `packed-refs`, deletes the loose files, and then removes the directories
+// that just emptied. The bound directory going away under a live seat is
+// worse than it going away between launches (which the mkdir prep below
+// would simply remake): the mount survives the prune and the seat keeps
+// writing into an unlinked inode nothing reads. An empty dot-named file in
+// the directory means it is never empty, so the prune leaves it. That is
+// ranger-base-uuze's measurement at the other mechanism, where the same gc
+// left every live session unable to commit; here it is answered by a file
+// instead of by a create-only grant, because create-only is the thing a
+// mount cannot say.
+//
+// A SLASHLESS BRANCH IN A LINKED WORKTREE GETS NO REF GRANT. Its ref sits
+// directly in `refs/heads`, so the parent to bind would be `refs/heads`
+// itself — `refs/heads/main` with it, and moving main from a dispatched
+// session is the capability ranger-base-m2wf was opened to close. The commit
+// fails loudly at `cannot lock ref`, and parity says why before the launch
+// (bwrapRefGrantDifference below). The fleet's own branches all carry a
+// slash, so this costs a hand-made worktree and nothing posse dispatches.
+//
+// `<common>/packed-refs.lock` IS DROPPED, and the cost is stated rather than
+// closed. ADR 0059 D1 grants it at L2 so that git can finish its own cleanup
+// after a sequencer verb; granting it here means a writable `<common>`,
+// which is a writable `packed-refs`, `HEAD` and `config` — the fail-open
+// direction, and `--ro-bind` over the children would be enumerating leaves.
+// So bwrap seats carry the container tier's residual (ADR 0059 D4): a
+// `cherry-pick`/`revert`/`rebase` that ends by deleting a pseudo-ref exits 0
+// and leaves it, and AGENTS.md's git shim is the floor that refuses the next
+// partial commit. Dropping it is also the only safe answer at a mount: an
+// absent bind source is not refused, it is CREATED — a `packed-refs.lock`
+// DIRECTORY in the operator's git dir would kill their every `gc` and
+// `pack-refs` permanently.
+//
+// objects, logs and the worktree's OWN git dir are directories already and
+// pass through as dir binds, which is what they are at both mechanisms.
+//
+// SEATBELT'S RENDER IS UNTOUCHED. sessionGitGrants and sessionRefDirs still
+// say exactly what they said, and this is the only thing that knows
+// otherwise — the same rule D19 kept for `~/.claude.json`, and for the same
+// reason: narrowing the shared producer would take the leaf pair out of the
+// darwin profile too and put ranger-base-uuze's lost commit back on every
+// seatbelt seat on this box.
+func BwrapWritable(writable []string, cwd string) (set []string, keep []string) {
+	dirs := LinkedGitDirs(cwd)
+	if len(dirs) != 2 {
+		// A main checkout: sessionGitGrants named only `.git`, a directory,
+		// and there is no common dir of anyone else's to narrow against.
+		return writable, nil
+	}
+	return bwrapGitSwap(writable, dirs[1], repoBranch(cwd))
+}
+
+// bwrapGitSwap is that substitution with git already asked, so that a pin
+// can drive every branch shape from one fixture: the two questions this
+// function needs — which directory is the shared common dir, and what branch
+// is checked out — cost a `git rev-parse` each, and a table that had to
+// build a worktree per row would measure git's behaviour and not this one's.
+//
+// It compares RESOLVED paths and returns the caller's own spellings, because
+// the set it filters is SeatbeltWritable's, whose every element is already
+// absResolve'd, and the entries it drops are rebuilt here from the same two
+// inputs sessionGitGrants built them from. A resolution mismatch would be
+// silent in the safe-looking direction: the leaf would stay in the set and
+// BwrapArgs would refuse the launch, naming the file. The DANGEROUS
+// direction is closed by BwrapArgs rather than here — a `.lock` left in the
+// set is a path that does not exist, which shape 1 prep would `mkdir -p`
+// into a directory that fails every commit, and that is why the leaf pair's
+// refusal is spelled there and not as a note.
+//
+// The order of what survives is the caller's, intact: BwrapArgs imposes
+// shallowest-first on the whole set anyway (shallowestFirst), so this order
+// is for the operator reading `posse gates` rather than for the kernel. The
+// ref directory is appended LAST for the same reason — it is the entry this
+// mechanism added, and a reader comparing the two walls should find it where
+// it was added.
+func bwrapGitSwap(writable []string, common, branch string) (set []string, keep []string) {
+	drop := map[string]bool{absResolve(filepath.Join(common, "packed-refs.lock")): true}
+	parent := ""
+	if branch != "" {
+		ref := filepath.Join(common, "refs", "heads", branch)
+		drop[absResolve(ref)] = true
+		drop[absResolve(ref+".lock")] = true
+		// The DEEPEST parent only, and one bind covers the whole chain: for
+		// `a/b/c` the launcher's `mkdir -p` makes `refs/heads/a` and
+		// `refs/heads/a/b`, the bind lands on `a/b` where both of git's
+		// writes go, and the prune cannot reach `a` while `a/b` is in it.
+		//
+		// The climb-out check is sessionRefDirs', for its reason: a parent
+		// that is `refs/heads` itself is the slashless case above, and one
+		// that is not under `refs/heads` at all is not a ref this grants.
+		base := absResolve(filepath.Join(common, "refs", "heads"))
+		if d := absResolve(filepath.Dir(ref)); d != base && underDir(base, d) {
+			parent = d
+		}
+	}
+	for _, w := range writable {
+		if drop[absResolve(w)] {
+			continue
+		}
+		set = append(set, w)
+	}
+	if parent != "" {
+		set = append(set, parent)
+		keep = append(keep, filepath.Join(parent, bwrapRefKeepName))
+	}
+	return set, keep
+}
+
+// applyBwrapRefGrant is D20's parity row, and both of its arms are
+// statements about this mechanism's ref grant that an operator cannot read
+// off anything else: the session that gets NO ref grant and will fail its
+// first commit, and the widening the grant carries where it is made.
+//
+// A DECLARED DIFFERENCE AND NOT DEGRADATION (ADR 0017 §2), in both arms,
+// because nothing here is a wall posse asked for and did not get. The
+// slashless arm is a wall NARROWER than the one `cage: seatbelt` means on
+// darwin — the mechanism differs, and what it costs is a function the seat
+// loses loudly rather than a gate that goes unrealized. Degrading it would
+// put a safe-by-design refusal behind --allow-degraded and would refuse
+// dispatch for it, which is the reading ranger-base-d17a closed.
+//
+// Directory-aware, so it is CheckParityIn's and never CheckParity's: both
+// facts come from `git rev-parse` in the launch dir.
+func (a *App) applyBwrapRefGrant(p *Parity, dir string) {
+	if d := bwrapRefGrantDifference(WallMechanism(), p.Cage, a.cageAvailable(p.Cage), dir); d != "" {
+		p.DeclaredDifference = append(p.DeclaredDifference, d)
+	}
+}
+
+// bwrapRefGrantDifference is that row with the host facts in hand, so a
+// darwin pin can read the Linux mechanism's answer — which is the only way
+// to pin it at all until D18 (ranger-base-djl3c) types the wall and this box
+// is a Linux host.
+//
+// IT READS THE RENDER'S OWN ANSWER rather than re-deciding what the grant
+// is: `keep` is empty exactly when bwrapGitSwap granted no ref directory, so
+// a note and a wall that disagree is not a state these two can reach. That
+// is the one property worth having here — a parity line claiming a grant the
+// argv does not make is worse than no line, because it is what an operator
+// checks the design against.
+//
+// AVAILABILITY IS ONE OF THE FACTS. A mechanism that cannot put the wall up
+// here grants nothing, and a declared difference about its shape would be a
+// claim about a wall nobody has — parity already says `cage seatbelt is not
+// available on this host/build` in that case, which is the sentence to act
+// on. So on today's Linux host, where D18 has not landed and
+// wallMechanismRendered admits sandbox-exec alone, this prints nothing and
+// the launch is refused; the day D18 lands it prints.
+func bwrapRefGrantDifference(mech, cage string, available bool, dir string) string {
+	if mech != WallBwrap || cage != CageSeatbelt || !available || dir == "" {
+		return ""
+	}
+	dirs := LinkedGitDirs(dir)
+	if len(dirs) != 2 {
+		return "" // a main checkout: cwd's own grant covers .git whole
+	}
+	// A detached HEAD is not a difference: seatbelt grants no ref there
+	// either (sessionGitGrants), and a caged worktree session is detached by
+	// the launcher on purpose (PrepareSessionHead). Nothing to say.
+	branch := repoBranch(dir)
+	if branch == "" {
+		return ""
+	}
+	_, keep := bwrapGitSwap(nil, dirs[1], branch)
+	if len(keep) == 0 {
+		return fmt.Sprintf("cage %s (%s): branch %s is a top-level ref, so this session gets NO write grant for it — the directory to bind would be %s, and %s is in it. A commit on this branch fails at `cannot lock ref`; the fleet's own branches are posse/<session>, whose parent directory is this session's alone to write (ADR 0080 D20)",
+			CageSeatbelt, WallBwrap, branch, AbbrevHome(filepath.Join(dirs[1], "refs", "heads")), filepath.Join("refs", "heads", "main"))
+	}
+	return fmt.Sprintf("cage %s (%s): the ref grant for %s is the directory %s, because a ref update is a lock-then-rename and a mount cannot grant the leaf — so this session can also move a PEER session's ref in that directory, which the darwin mechanism's leaf grant does not allow. It still cannot move %s or any top-level branch, or write the shared hooks or config (ADR 0080 D20)",
+		CageSeatbelt, WallBwrap, branch, AbbrevHome(filepath.Dir(keep[0])), filepath.Join("refs", "heads", "main"))
 }

@@ -942,6 +942,48 @@ writable `<common>`, which can create a missing `packed-refs` or rewrite
 has: a sequencer that deletes a pseudo-ref exits 0 and leaves it, and
 AGENTS.md's git shim refuses that run (probe T5).
 
+*As built (ranger-base-gi1gi, 2026-11-08).* `BwrapWritable` in
+`internal/posse/bwrap.go`, beside D19's half, plus `applyBwrapRefGrant`'s
+parity row and one line in `checkParityIn`. Pinned by
+`internal/posse/bwrapgitrefs_qa_test.go` over real linked worktrees on
+darwin, and by `internal/posse/bwrapgitrefslive_test.go`, which skips off
+Linux or without `bwrap` and mirrors probe T2-T4e against the RENDERED argv
+rather than a hand-typed one. Nothing calls it yet; the wiring is D18's.
+Full reasoning in `docs/notes.d/ranger-base-gi1gi.md`.
+
+- **The swap is a filter over the writable SET, not a change to
+  `sessionGitGrants`.** Same rule D19 kept for `~/.claude.json` and for the
+  same reason: narrowing the shared producer would take the leaf pair out of
+  the darwin profile too, and put ranger-base-uuze's lost commit back on
+  every seatbelt seat on this box.
+- **The keep file is the one render input that renders NO mount** — a
+  `PrepStep` and nothing else, which is why it is `BwrapArgs`' own trailing
+  argument and not a sixth list. It is emitted with the write grants and not
+  with `Keep`, because the prep list's order is a promise to the launcher and
+  the keep file's directory is a grant one loop up.
+- **T4b-T4d are MEASURED now, on darwin, and T4d's expectation was wrong.**
+  Three of that row's claims are git's behaviour rather than the kernel's, so
+  they did not need the host: with the keep file `pack-refs --all --prune`
+  leaves the directory and the next commit lands; dot-named,
+  `for-each-ref`, `show-ref`, `branch`, `log --all` and `gc` are all clean at
+  exit 0; **`fsck` is not** — exit 8, `badRefName: invalid refname format`
+  and `badRefContent`. The probe's T4d row read `clean` and now reads
+  `flagged`. What the DOT buys is larger than "git skips it": named without
+  it, the same empty file makes `git gc` and `git log --all` exit 128 in the
+  OPERATOR's checkout (`fatal: bad object`, `failed to run repack`) — a
+  worse failure than the prune, and one that lands on the operator. All of
+  it MEASURED 2026-11-08, darwin 25.6.0, git 2.50.1 (Apple Git-155).
+- **What is left for the host is one question, and it is narrower than T4e.**
+  Whether the prune can remove a directory that is a MOUNTPOINT in a live
+  seat's namespace at all: `vfs_rmdir` answers EBUSY for a dentry anything is
+  mounted on, and bwrap's bind target is the same dentry, so the prune may
+  simply fail and the keep file be belt-and-braces. The design holds either
+  way — the file costs an empty inode — so the live pin asserts the
+  COHERENCE instead of the outcome: what must never happen is the seat's
+  commit exiting 0 while the operator's checkout does not see the branch
+  move, which is a ref write into an unlinked directory with nothing red.
+  The first run on the D1 host logs which answer it got.
+
 **D21. codex is walled on Linux.** On darwin, `seatbeltWallRendered` skips
 SelfSandbox runtimes because nested `sandbox_apply` is refused. On Linux, B7
 measured bwrap nesting inside bwrap. So `wallRendered` drops `!rt.SelfSandbox`
@@ -1004,6 +1046,14 @@ for the run.
   credential file created after the seat started is readable by it. Parity
   names each missing file. The seat still cannot WRITE there.
 - The packed-refs residual of the container tier now applies to bwrap seats.
+- **`git fsck` is no longer clean in a repo that has hosted a bwrap seat**
+  (MEASURED, ranger-base-gi1gi): the keep file is an invalid refname holding
+  no sha, so fsck exits 8 and names it twice. Every other git verb is clean,
+  `gc` included, and nothing removes the file — it is one empty inode per ref
+  directory, permanently. The exit, if the noise is ever measured costing
+  anything, is a `.posse-keep` DIRECTORY rather than a file: a directory
+  keeps the parent non-empty, is no ref-shaped entry at all, and the render
+  refuses one today precisely because the letter asks for a file.
 - Claude seats on the host need `CLAUDE_CONFIG_DIR` in the unit
   environment, which D6's one login already implies.
 - Exit hatch unchanged: `bwrap` is one binary on the line, the args file is
@@ -1021,8 +1071,10 @@ for the run.
   `~/.claude/backups/` to print a restore hint for the fresh dir. That was a
   read, and nothing failed.
 - ASSUMED, read by the probe: that the same build places siblings the same
-  way on Linux (T1); D20's keep file, git ignoring it, and the post-pack
-  commit (T4-T4e); the packed-refs residual (T5); codex nesting (T6); bwrap
+  way on Linux (T1); whether a prune can remove a ref directory that is a
+  live seat's MOUNTPOINT, which is what is left of D20's T4e once T4b-T4d
+  were measured on darwin (above); the packed-refs residual (T5); codex
+  nesting (T6); bwrap
   closing the `--args` fd, though a leaked fd would be read-only and hold
   nothing secret (T7c); claude's own `/sandbox` nesting in a real session,
   which no row tests without a turn.

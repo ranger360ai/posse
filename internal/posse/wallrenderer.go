@@ -135,6 +135,7 @@ var WallRenderSources = []string{
 // headline is the whole lag either way.
 var LaunchCheckSources = []string{
 	"internal/posse/agents.go",
+	"internal/posse/bwrap.go",
 	"internal/posse/githookparity.go",
 	"internal/posse/parity.go",
 	"internal/posse/policypin.go",

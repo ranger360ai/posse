@@ -80,8 +80,16 @@ row "T4 commit after an outside pack-refs --all" allowed "$T4"
 row "T4b the keep file kept the dir" present "$( [ -d "$C/refs/heads/posse" ] && echo present || echo pruned)"
 row "T4c git ignores the keep file (for-each-ref)" clean \
   "$(git -C "$R" for-each-ref 2>&1 | grep -q posse-keep && echo listed || echo clean)"
-row "T4d git fsck says nothing of it" clean \
+# T4d EXPECTS flagged, corrected from `clean` by measurement rather than by a
+# rerun (ranger-base-gi1gi, darwin 25.6.0, git 2.50.1): the keep file is an
+# invalid refname holding no sha, so fsck exits 8 and names it twice. It is
+# the only verb that says anything — `for-each-ref`, `show-ref`, `branch`,
+# `log --all` and `gc` are all clean at exit 0 — and the residual is stated
+# in the ADR's Consequences. A `clean` here means this git stopped saying it.
+row "T4d git fsck flags it, and nothing else does" flagged \
   "$(git -C "$R" fsck 2>&1 | grep -q posse-keep && echo flagged || echo clean)"
+row "T4d2 gc is clean over it (the verb that prunes)" clean \
+  "$(git -C "$R" gc --quiet 2>&1 | grep -q posse-keep && echo flagged || echo clean)"
 # T4e is the control: same pack, no keep file, so the empty dir is pruned
 # under a live mount. EXPECT refused is what makes the keep file load-bearing.
 rm -f "$C/refs/heads/posse/.posse-keep" "$W/go"
