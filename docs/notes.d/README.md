@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-ybz6u](ranger-base-ybz6u.md) — `seatbelt (bwrap)` is a label and not a mapping, and the rest of this bead landed twice (ranger-base-ybz6u) — 2026-11-09
+- [ranger-base-sydnc](ranger-base-sydnc.md) — git 2.56 is not what redded the commit-wall pins on the cutover host (ranger-base-sydnc) — 2026-11-09
 - [ranger-base-sg7a7](ranger-base-sg7a7.md) — The launcher makes the session's furniture, not the host's (ranger-base-sg7a7) — 2026-11-09
 - [ranger-base-rffxq](ranger-base-rffxq.md) — The verify-chain bound at any batch size (ranger-base-rffxq) — 2026-11-09
 - [ranger-base-hoh3q](ranger-base-hoh3q.md) — D23's perimeter was a spelling, and the crew pins were built from half the set (ranger-base-hoh3q) — 2026-11-09
