@@ -43,7 +43,7 @@ does, and `judgeStall`/`rewait` sent it round again at once.
 suite: a bounded pass with the fake server's `wait-error` lever answering
 every `agent wait` with the `timeout` code a real one answers a blown deadline
 with printed 68 progress lines in 2.809s. Which is not a contrived shape —
-`TestDispatchRewaitServerGoneHandsTheBeadBack` measures a real herdr answering
+`TestDispatchRewaitServerGoneKeepsTheClaim` measures a real herdr answering
 exactly that way, three fresh processes against a socket whose server was
 replaced under an in-flight prompt. So the defect is a property of the leg
 loop, on either occupant, and the fix belongs there.
@@ -52,6 +52,16 @@ The reason the loop TOLERATED a leg that failed, rather than handing the bead
 back, is `pendingBead.delivered`: codex is `prompt: argv`, the prompt rode the
 launch line, and on that path no wait failure is a prompt failure at all (ADR
 0013 §2). On the typed path only the `timeout` code reaches the same arm.
+
+> **Superseded 2026-11-09 (ranger-base-2mqp3), for the typed path only.** The
+> last sentence above was the defect that bead was filed for: a re-wait leg's
+> error — a signalled child, a replaced server, anything that is not herdr's
+> `timeout` envelope — was spent as a failed prompt and unclaimed a bead whose
+> seat was mid-turn. `pendingBead.rewaited` now says for the typed path what
+> `delivered` says for the launch line, so EVERY leg error past the first
+> reaches the status probe on either path. Nothing above it changes: the
+> pacing this note is about is what makes the kept claim affordable, since a
+> loop that tolerates a failing leg is a loop that goes round.
 
 ## The fix
 

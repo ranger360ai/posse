@@ -27,7 +27,7 @@ package posse
 // box. MEASURED here on HERDR at 24 legs/second before the fix, with the fake
 // server armed to answer every leg with the `timeout` code a real one answers
 // a blown deadline with — which is also what a server replaced under an
-// in-flight prompt does (TestDispatchRewaitServerGoneHandsTheBeadBack).
+// in-flight prompt does (TestDispatchRewaitServerGoneKeepsTheClaim).
 //
 // SO EVERY PIN HERE RUNS ON BOTH OCCUPANTS and asserts the same ceiling,
 // which is the bead's own ask: compare the two multiplexers in one test

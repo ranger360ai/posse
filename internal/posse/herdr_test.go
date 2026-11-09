@@ -2343,6 +2343,23 @@ func fakeHerdr(args []string) int {
 				return fakeOK(fmt.Sprintf(`{"type":"agent_wait","agent":{"agent_status":%q}}`, st))
 			}
 		}
+		// wait-crash (file) is the wait leg dying with NO ENVELOPE AT ALL:
+		// nonzero exit, nothing on stdout, nothing on stderr. That is the
+		// one shape wait-error cannot make, and it is the shape of the
+		// measured incident (ranger-base-2mqp3): the child was signalled,
+		// so `herdr agent wait … --timeout 900000: signal: interrupt` came
+		// back through Herdr.Run's last arm as an untyped Die naming the
+		// call. HerdrCodeOf of it is "", so every guard that branches on a
+		// code reads it as "not that code" — which is why dispatch's
+		// hand-back, written as "not a timeout", used to spend it as a
+		// failed prompt. The file's contents are the exit code, or 3.
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "wait-crash")); err == nil {
+			code := 3
+			if n, cerr := strconv.Atoi(strings.TrimSpace(string(b))); cerr == nil && n > 0 {
+				code = n
+			}
+			return code
+		}
 		// wait-error (file) fails the wait leg itself — what a server that
 		// went away under an in-flight prompt returns. "code|message" like
 		// prompt-error.

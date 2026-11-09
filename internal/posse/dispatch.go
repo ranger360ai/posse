@@ -168,7 +168,7 @@ type Dispatcher struct {
 	// long that leg took. Reproduced on HERDR at 24 legs/second by arming
 	// the fake server to answer every leg with its own `timeout` code —
 	// which is what a server replaced under an in-flight prompt already
-	// does (TestDispatchRewaitServerGoneHandsTheBeadBack's measurement
+	// does (TestDispatchRewaitServerGoneKeepsTheClaim's measurement
 	// against real herdr 0.8.0). So it is a property of the leg loop and
 	// both halves of the pacing are pinned on both occupants, in one test
 	// each: TestQAWaitLegPollsOnAnIntervalOnEveryMultiplexer and
@@ -3634,7 +3634,41 @@ type pendingBead struct {
 	// unseen: delivered, and herdr never recognized a screen in the session
 	// before the startup wait ran out. Nothing is in flight for this one;
 	// gather says so and keeps the claim.
-	unseen   bool
+	unseen bool
+	// rewaited: this bead has had at least one leg come back and be
+	// re-waited, so delivery is SETTLED and no later leg's error can be
+	// evidence about it (ranger-base-2mqp3). Two independent reasons, and
+	// either one alone is enough:
+	//
+	//   - A rewait leg is an `agent wait`, a verb that SUBMITS NOTHING.
+	//     Whatever it returns is a fact about the wait, never about
+	//     whether the work prompt reached the agent.
+	//   - A rewait only starts after a leg already came back saying the
+	//     prompt landed — a `timeout` over a `working` agent (the status
+	//     probe's arm), or judgeStall's stallRewait, which is herdr
+	//     answering that a turn is under way.
+	//
+	// It is the typed path's half of what `delivered` already states for
+	// the launch line (ADR 0013 §2), and the two are kept apart because
+	// they are different facts: `delivered` is about how the prompt was
+	// handed over, this is about how much posse has since learned.
+	//
+	// THE INCIDENT, 2026-11-09 (the bead, from ranger-base-bu8rz's record).
+	// A claude seat was prompted, worked, and had its first leg time out
+	// over a `working` agent; the rewait's child was signalled and came
+	// back `herdr agent wait w36W:p1 --until idle --until done --until
+	// blocked --timeout 900000: signal: interrupt`. That is not a herdr
+	// envelope, so it is not the `timeout` code the guard below excused —
+	// and `delivered` is false on claude — so a wait error fifteen minutes
+	// PAST a prompt the pass had already watched land was spent as "the
+	// prompt to <session> failed", the bead went open and unassigned, and
+	// a second seat was dispatched onto a bead the first was still
+	// working. Two branches ended up carrying byte-identical work
+	// (e7bcf63e, c2ed8024) for one bead. A bd claim is a lease WITHOUT
+	// expiry by ADR 0011's own decision, precisely because expiry without
+	// a fencing token is double-dispatch; unclaiming on a wait error is
+	// that expiry, reintroduced through an exec failure.
+	rewaited bool
 	result   chan promptResult
 	prompted time.Time
 	// legAt is when this bead's CURRENT wait leg starts watching — the
@@ -3972,29 +4006,57 @@ wait:
 				return true, nil
 			}
 		}
-		if !IsHerdrCode(r.err, "timeout") && !p.delivered {
+		if d.stopping() {
+			// THE DRAIN, AND IT IS ABOVE THE HAND-BACK ON PURPOSE
+			// (ranger-base-e9d9's verdict, ranger-base-2mqp3's ordering).
+			// A SIGINT reaches the whole process group, so the signal that
+			// stops this loop also kills the `herdr agent wait` child it is
+			// holding — and that child's death arrives here as an untyped
+			// error naming the call, which is exactly what the guard below
+			// used to spend as a failed prompt. stopClaim's own doc already
+			// states the rule this ordering realizes: "a drain is not
+			// evidence about the agent, and the agent is still working."
+			// Nothing is handed back on the way out, whatever the leg said.
+			//
+			// It was BELOW, where its comment called it "defensive rather
+			// than load-bearing" — true of the timed-out leg it was written
+			// for, since the select above guarantees the exit, and false of
+			// every other error, which reached the unclaim one line sooner.
+			// A leg that came back timed out into a stopping loop is still
+			// not worth a status probe (StatusGrace) or a fresh leg — and
+			// the rewait below would leave an orphan `herdr agent wait`
+			// running PromptWaitMS past the process that started it.
+			return d.stopClaim(p)
+		}
+		// THE HAND-BACK, and the two things it is NOT (ranger-base-2mqp3).
+		// unclaimAfterPromptFailure's contract is "the claim was made but
+		// the prompt never reached the agent", and this guard is the only
+		// reading of that contract: a wait error that gets past it is spent
+		// as a prompt failure, on a bead whose seat may be mid-turn.
+		//
+		//   - NOT a `timeout`: herdr took the text and stopped watching
+		//     (rangerhq-1z0). Only the agent's own state says whether work
+		//     is happening.
+		//   - NOT a leg on a bead whose delivery is already settled —
+		//     `delivered`, the launch line (ADR 0013 §2), or `rewaited`,
+		//     the typed path's own half of it, whose doc carries the
+		//     duplicate-dispatch this cost.
+		if !IsHerdrCode(r.err, "timeout") && !p.delivered && !p.rewaited {
 			d.logPromptHandBack(p.session, p.is.ID, p.runtime, p.target, r.err)
 			return false, d.unclaimAfterPromptFailure(p.is, p.persona, p.session, p.resumed, r.err)
-		}
-		if d.stopping() {
-			// The same verdict one rung earlier, and defensive rather than
-			// load-bearing: the select above is what GUARANTEES the exit.
-			// A leg that came back timed out into a stopping loop is not
-			// worth a status probe (StatusGrace) or a fresh leg — and the
-			// rewait below would leave an orphan `herdr agent wait` running
-			// PromptWaitMS past the process that started it.
-			return d.stopClaim(p)
 		}
 		// THE LEG'S OWN ERROR, which is the only place it is ever said
 		// (ranger-base-aj79z). Everything below this point in the loop has a
 		// non-nil r.err — the `r.err == nil` arm above broke out of it — and
-		// on the `delivered` path neither guard between the two can fire,
-		// because both carry `&& !p.delivered` and ADR 0013 §2 is why: the
-		// prompt rode the launch line, so a wait failure is never a delivery
-		// failure and the claim is never handed back on one. So a leg that
-		// ran out, a leg the occupant refused and a leg whose read failed
-		// all reached the status probe indistinguishable from each other,
-		// and the pass said nothing about any of them.
+		// on the `delivered` path neither VERDICT guard between the two can
+		// fire, because both carry `&& !p.delivered` and ADR 0013 §2 is why:
+		// the prompt rode the launch line, so a wait failure is never a
+		// delivery failure and the claim is never handed back on one. (The
+		// drain between them is not one of those two: it fires on every
+		// path, and takes the whole pass out rather than judging this bead.)
+		// So a leg that ran out, a leg the occupant refused and a leg whose
+		// read failed all reached the status probe indistinguishable from
+		// each other, and the pass said nothing about any of them.
 		//
 		// It is printed BEFORE the probe, not inside an arm of it, because
 		// the leg error is a fact about the leg and not about what the
@@ -4408,6 +4470,11 @@ func (d *Dispatcher) recordClause(runtime string) string {
 // and herdr's own leg is PromptWaitMS of it, so the remainder is negative
 // every time — see the field's own doc for the occupant this does bind.
 func (d *Dispatcher) rewait(p *pendingBead) {
+	// Delivery is settled from here on — see pendingBead.rewaited for both
+	// reasons and for what the one hand-back that read it otherwise cost.
+	// Stamped on the gather goroutine before the leg is started, like
+	// legAt, so the guard that reads it cannot race the leg that fails.
+	p.rewaited = true
 	floor := d.LegFloor - time.Since(p.legAt)
 	if floor < 0 {
 		floor = 0

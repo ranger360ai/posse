@@ -1928,20 +1928,46 @@ func TestDispatchQuestionBeadCostsNoAttempt(t *testing.T) {
 // time — the "already reported" suppression is per-process, and each leg is
 // its own exec.
 //
-// gather() branches on one code only, so server_not_running takes
-// unclaimAfterPromptFailure: the bead is handed back to open/unassigned
-// while its agent keeps running in a pane the handoff preserved (same pid).
-// That is the rangerhq-khc failure mode arriving through the one door the
-// khc fix does not cover, and it is why the upgrade runbook's gate is "wait
-// for the in-flight prompts to drain", not "park the loop".
-func TestDispatchRewaitServerGoneHandsTheBeadBack(t *testing.T) {
+// SINCE ranger-base-2mqp3 THE CLAIM IS KEPT, and this pin's own previous
+// wording is why. It used to assert the hand-back and to describe it, in
+// this comment, as "the rangerhq-khc failure mode arriving through the one
+// door the khc fix does not cover" — a bead handed to open/unassigned while
+// its agent keeps running in a pane the handoff preserved (same pid), with
+// the mitigation pushed out to the upgrade runbook's "wait for the in-flight
+// prompts to drain". It was a characterization of a defect, not a decision,
+// and it said so.
+//
+// What closed the door: gather's hand-back was written as "not a `timeout`",
+// a deny-list of one, against a contract that is an allow-list — "the claim
+// was made but the prompt never reached the agent"
+// (unclaimAfterPromptFailure). Every OTHER error on a re-wait leg fell
+// through it, and a re-wait leg cannot carry delivery evidence at all: it is
+// an `agent wait`, a verb that submits nothing, and it only starts after an
+// earlier leg already said the prompt landed. pendingBead.rewaited states
+// that and carries the second, measured incident of the same class — a
+// signalled wait child, a bead unclaimed under a live seat, and two branches
+// holding byte-identical work for one bead.
+//
+// So server_not_running on a re-wait is now ignorance and keeps the claim,
+// and the pass ends on the ceiling arm with the bead still assigned. The
+// operator's recovery is `posse worktrees` and a later pass, not a re-claim
+// by hand.
+func TestDispatchRewaitServerGoneKeepsTheClaim(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
+	// The loop is now correct and therefore ENDLESS in this fixture: every
+	// leg fails instantly and the seat reads working forever, so the pass
+	// ends where a working seat always ends — the ceiling. LegFloor paces
+	// the legs so the 2s is spent in a handful of them rather than in the
+	// hundreds ranger-base-74tkp measured; both knobs are the production
+	// ones, only smaller.
+	d.WaitCeiling = 2 * time.Second
+	d.LegFloor = 200 * time.Millisecond
 	writePersona(t, b.App, "ranger", "[go]")
 	// No fake-show.json — see TestDispatchStderrAgentNotReadyStillUnclaims'
-	// comment (ranger-base-vj105): this test unclaims, so a declared `show`
-	// answer would be read as a lost write, not this test's intent.
+	// comment (ranger-base-vj105): a declared `show` answer over a bead this
+	// pass never closes would be read as a lost write, not this test's intent.
 	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, ``)
 	workingClaude(t, fake)
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)
@@ -1961,18 +1987,24 @@ func TestDispatchRewaitServerGoneHandsTheBeadBack(t *testing.T) {
 	if !strings.Contains(out, "still working after") {
 		t.Fatalf("want the first leg re-waited, so the failure lands on the re-wait:\n%s", out)
 	}
-	if n != 0 || !strings.Contains(out, "unclaimed") {
-		t.Errorf("a re-wait against a replaced server unclaims the bead, got n=%d:\n%s", n, out)
+	// n is beads DISPATCHED (Run's own doc), and the count moved with the
+	// verdict: the hand-back this used to assert made the bead
+	// undispatched, and a kept claim leaves it dispatched and in flight.
+	if n != 1 || strings.Contains(out, "unclaimed") {
+		t.Errorf("a re-wait against a replaced server must NOT hand the bead back — its agent is still working in the pane the handoff preserved, got n=%d:\n%s", n, out)
 	}
-	// The runbook's post-flight is `grep server_not_running` over
-	// state/dispatch-watch.log — each hit a bead to re-claim by hand. That
-	// only works while the code survives into the pass's own ✗ line.
+	if !strings.Contains(out, "claim kept") {
+		t.Errorf("the pass must say the claim was kept, so the next reader knows the bead is still somebody's:\n%s", out)
+	}
+	// The post-flight is still `grep server_not_running` over
+	// state/dispatch-watch.log — it now names beads to WATCH rather than
+	// beads to re-claim, and that only works while the code survives into
+	// the pass's own output (sayLegError's line).
 	if !strings.Contains(out, "server_not_running") {
-		t.Errorf("the ✗ line must name the code the post-flight greps for:\n%s", out)
+		t.Errorf("the leg-error line must name the code the post-flight greps for:\n%s", out)
 	}
-	calls := bdCalls(t, fake)
-	if !strings.Contains(calls, "--status open") {
-		t.Errorf("the bead must go back to open — its agent is still running:\n%s", calls)
+	if calls := bdCalls(t, fake); strings.Contains(calls, "--status open") {
+		t.Errorf("nothing may send the bead back to open while its agent is running (rangerhq-khc):\n%s", calls)
 	}
 }
 

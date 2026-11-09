@@ -11,6 +11,47 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**A dispatch pass no longer hands a bead back when the WAIT on it fails — the
+claim is kept and the seat is left working.**
+
+*Bug fix, no new key, nothing to configure. If you have ever re-claimed a bead
+by hand after a `herdr update --handoff`, or found two seats working one bead,
+this is that.*
+
+A watch pass prompts a seat and then waits on it in legs. Once the first leg
+has come back — timed out over a working agent, or with herdr reporting a turn
+under way — every leg after it is an `agent wait`, a call that submits nothing
+and therefore cannot say anything about whether the prompt landed. The pass
+read it as if it could: the guard was "not herdr's `timeout` code", so a leg
+that died any OTHER way — a killed child, a replaced server, a blown deadline
+— was spent as *"the prompt to <session> failed"*, and the bead went open and
+unassigned while its seat kept working. Both ends of that are now fixed: a
+re-wait leg's error keeps the claim and goes to the one question that was ever
+relevant (what is the agent doing?), and the drain check moved above the
+hand-back, so a Ctrl-C — which kills the `herdr agent wait` child along with
+the loop, since a SIGINT reaches the whole process group — unclaims nothing on
+the way out.
+
+**What it cost when it fired.** One bead was handed to a second persona 23
+minutes before the first seat committed its finished implementation; the
+second seat found that worktree holding uncommitted work with no commit on its
+branch, read it as an interrupted session about to be retired, and adopted it.
+Two branches ended up holding byte-identical single commits for one bead, of
+which only one can land. A claim here is a lease *without* expiry on purpose —
+expiry without a fencing token the resource checks is double-dispatch — and
+unclaiming on a wait error was that expiry arriving through an exec failure.
+
+**What has NOT changed**, because it is the other half of the same contract: a
+prompt that genuinely never reached the agent still hands the bead back, so a
+failed prompt does not strand a bead as in-progress with nobody working it.
+The discriminator is which leg failed, never which error it was. **Still live:
+the FIRST leg failing unreadably** — a killed or hung `agent prompt` call —
+where posse cannot tell a submitted prompt from an unsubmitted one and still
+hands the bead back on that ignorance. It is filed for architecture with the
+mechanism attached (`judgeStall` already re-probes the agent and reads the
+branch for commits before handing anything back; whether an unreadable
+delivery earns that reading is a decision, not a patch).
+
 **`verify_chain_max: 3` — verify-after stops handing one lineage round after
 round and asks the operator instead.**
 
