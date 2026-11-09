@@ -1655,7 +1655,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv>")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir...] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv>")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1750,13 +1750,45 @@ func main() {
 		}
 		if args[0] == "install-hooks" {
 			chain := false
-			dir := "."
+			var dirs []string
 			for _, a2 := range args[1:] {
 				if a2 == "--chain" {
 					chain = true
 					continue
 				}
-				dir = posse.ExpandTilde(a2)
+				// EVERY positional is a target (ranger-base-jamt2). This
+				// loop used to assign `dir`, so N repos installed into the
+				// LAST one and said nothing about the rest: MEASURED
+				// 2026-11-08 on this box, a brace expansion over FOUR of
+				// this instance's repos — the form the coordinator had been
+				// handing the operator for weeks, and which the shell
+				// expands to four arguments — printed the LAST repo's two
+				// install lines and exited 0 with the other three repos'
+				// walls untouched (mtimes unchanged, and one of their ADR
+				// 0029 G12 stale rows still standing). A silent
+				// partial install of the commit wall is the worst shape this
+				// command has: the operator reads exit 0 and two installed
+				// lines and stops looking.
+				//
+				// A flag that is not --chain is a usage error rather than
+				// a repo, which is what the old assignment made of it: a
+				// mistyped `--chian` became `dir`, so
+				// `install-hooks <repo> --chian` absolutized it to
+				// `$PWD/--chian` and reported THAT as the repo it could not
+				// install into, while the repo the operator named went
+				// untouched. Now that every positional is installed into, a
+				// swallowed flag is also a repo nobody asked for.
+				if strings.HasPrefix(a2, "-") && a2 != "-" {
+					die(posse.Die("unknown flag %s\nusage: posse gates install-hooks [dir...] [--chain]", a2))
+				}
+				dirs = append(dirs, posse.ExpandTilde(a2))
+			}
+			// The `.` default, kept: it is the form every degraded line,
+			// scripts/verify-hook-freshness.sh and most of INSTALL.md
+			// prescribes, and the absolutize below is what makes it the same
+			// install as an absolute argument (ranger-base-k9x8n).
+			if len(dirs) == 0 {
+				dirs = []string{"."}
 			}
 			// Absolutized here, before anything reads it — the same act the
 			// managed-hooks arm above does, and for a reason one step
@@ -1793,115 +1825,32 @@ func main() {
 			// This arm was the only entry point where a relative dir could
 			// reach that derivation: the probe and RenderSessionHooks take
 			// the session dir and queuejsonl the configured queue repo.
-			if abs, aerr := filepath.Abs(dir); aerr == nil {
-				dir = abs
-			}
-			// ADR 0052 D1: a MANAGED hooks path is asked about before
-			// either slot is attempted, because both attempts are writes
-			// into somebody else's directory. Neither slot is installed,
-			// nothing is chained there, and the operator gets the
-			// classification instead of `open <dir>/pre-push: permission
-			// denied` — which is what this command said on the managed box
-			// it was run on (ranger-base-yt6m0). Exit 0: nothing failed.
-			if line, managed := posse.ManagedHooksPath(dir); managed {
-				fmt.Fprintln(out, line)
-				fmt.Fprintf(out, "  pre-push and prepare-commit-msg: nothing written there — the session hooks dir is rendered at launch (ADR 0052 D2)\n")
-				return
-			}
-			// ADR 0081 D4: the shared commit-guard slot has ONE owning
-			// home — the one whose `beads_visibility:` marks this repo
-			// (D1) — and this command is the second of the three writers
-			// that used to rewrite any repo's wall from any home on the
-			// box. Asked here, BEFORE either install, so the verdict is a
-			// reading of the slot as it stands rather than of a write this
-			// command just made (the launch asks it in the same order, and
-			// of the same predicate).
-			//
-			// A repo on this home's own list is owned, so the operator's
-			// ordinary sweep over the listed repos is unaffected, and so is
-			// every repo nobody has stamped — an unstamped body is D3 case
-			// 4's one-shot migration and an empty slot is case 1. What is
-			// refused is the narrow case the hazard is actually made of:
-			// another home's current render, in a repo this home never
-			// claimed.
-			//
-			// The target's spelling does not enter it. D4 says "an explicit
-			// target" to say that the sweep is unaffected, not to make `.`
-			// a second rule — and a hole a `cd` walks through is not a rule
-			// (q0np6's two launches were in the repo, not pointed at it).
-			foreignWallHome, wallRepo := a.ForeignCommitWallOwner(dir)
-			// Both slots are attempted and reported independently — a
-			// foreign hook taking one must not cost the other
-			// (rangerhq-mgdk; the comment used to claim this and only
-			// InstallCommitGuardHook below actually did it, because the
-			// pre-push failure died before it was ever reached).
-			failed := false
-			var p string
-			var err error
-			if chain {
-				p, err = posse.InstallPrePushHookChained(dir)
-			} else {
-				p, err = posse.InstallPrePushHook(dir)
-			}
-			if err != nil {
-				fmt.Fprintf(out, "not installed: pre-push — %v\n", err)
-				failed = true
-			} else {
-				fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", posse.AbbrevHome(p))
-			}
-			// The refusal, and the whole of it: the slot is not read
-			// again, not rendered, and not opened — bytes and mtime where
-			// they were. There is no `--force`, deliberately (ADR 0081 D4):
-			// the remedy is a config line, and a flag would put the second
-			// writer back the moment the first operator reached for it.
-			if foreignWallHome != "" {
-				// CanonicalAbbrevPath and not AbbrevHome, for both paths and
-				// in both lines (ADR 0082 D4): the remedy prescribes this
-				// repo as a `beads_visibility:` key to paste, and the home
-				// beside it comes from the wall's `# posse-home:` stamp,
-				// which D3 already spells canonically. The TARGET's own
-				// spelling still does not enter the rule — this is the
-				// render of the refusal, and `dir` reaches
-				// ForeignCommitWallOwner and InstallCommitGuardHook as the
-				// operator typed it.
-				fmt.Fprintf(out, "not installed: prepare-commit-msg — %s's commit wall was rendered by home %s, and this home does not own it (ADR 0081 D1/D4)\n",
-					posse.CanonicalAbbrevPath(wallRepo), posse.CanonicalAbbrevPath(foreignWallHome))
-				fmt.Fprintf(out, "  remedy: add `%s: <private|public>` under this home's beads_visibility:, which is the list that confers ownership — or install from home %s, which rendered what is there\n",
-					posse.CanonicalAbbrevPath(wallRepo), posse.CanonicalAbbrevPath(foreignWallHome))
-				fmt.Fprintf(out, "  no --force: two homes writing one wall is the contention D1 removes, and the last writer would keep winning\n")
-				// Exit 1 whatever the pre-push arm said: it has already
-				// printed its own verdict above, and a refusal to write
-				// another home's wall is a nonzero outcome on its own.
-				os.Exit(1)
-			}
-			var c, vis, src string
-			var cerr error
-			if chain {
-				c, vis, src, cerr = a.InstallCommitGuardHookChained(dir)
-			} else {
-				c, vis, src, cerr = a.InstallCommitGuardHook(dir)
-			}
-			if cerr != nil {
-				fmt.Fprintf(out, "not installed: prepare-commit-msg — %v\n", cerr)
-				failed = true
-			} else {
-				fmt.Fprintf(out, "installed %s (refuses an unqualified git commit from any shell in this checkout — the index is shared; rangerhq-lmq9, rangerhq-lt2w)\n", posse.AbbrevHome(c))
-				// The same slot carries the beads visibility guard, and its
-				// verdict is stamped into the file — so say which one was
-				// stamped and where it came from, or an operator has to read a
-				// hook to find out whether their db is guarded (rangerhq-hrz).
-				fmt.Fprintf(out, "  beads visibility guard: %s — %s\n", vis, src)
-				if vis == posse.VisibilityPublic {
-					fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", posse.AbbrevHome(dir))
+			for i := range dirs {
+				if abs, aerr := filepath.Abs(dirs[i]); aerr == nil {
+					dirs[i] = abs
 				}
-				// What THIS instance added to each pattern list, and what it
-				// asked for and did not get — the visibility patterns and,
-				// under every stamp, the data ceiling (ADR 0050 D3). The
-				// words are OpsPatternSet.WriteStampReport's, so the pin on
-				// them is a unit test and not a build of this binary.
-				a.OpsPatternSet().WriteStampReport(out)
 			}
-			if failed {
+			// One target reports exactly what it always reported — the
+			// existing pins read these lines, and so does every operator who
+			// has typed this command. More than one gets a header per repo
+			// and a count at the end, because the failure this fixes was
+			// output that could not be told apart from a complete run: four
+			// unheaded blocks are the same page as one.
+			bad := 0
+			for _, dir := range dirs {
+				if len(dirs) > 1 {
+					fmt.Fprintf(out, "%s:\n", posse.AbbrevHome(dir))
+				}
+				if !installHooksInto(a, dir, chain, out) {
+					bad++
+				}
+			}
+			if len(dirs) > 1 {
+				// "ok" and not "installed": a managed hooks path writes
+				// nothing and is still a clean outcome (ADR 0052 D1).
+				fmt.Fprintf(out, "install-hooks: %d repo(s), %d ok, %d refused or failed\n", len(dirs), len(dirs)-bad, bad)
+			}
+			if bad > 0 {
 				os.Exit(1)
 			}
 			return
@@ -2724,6 +2673,130 @@ func parseNewFlags(args []string) posse.NewSessionOpts {
 // Exit status is the probe's verdict, because the whole point is that this is
 // usable as an onboarding gate: a probe that failed and exited 0 is the
 // green-while-broken shape `runtime check` was filed to end.
+// installHooksInto is `posse gates install-hooks` for ONE already-absolutized
+// repo, reporting to out and answering whether that repo came out clean. It is
+// a function and not the arm's own body because the arm takes N repos
+// (ranger-base-jamt2) and every exit in here used to be an os.Exit — a
+// refusal in the first repo ended the command, which is the same silence the
+// bead is about seen from the other side.
+//
+// false means refused or failed, which the caller turns into exit 1 once, at
+// the end, after every target has been attempted.
+func installHooksInto(a *posse.App, dir string, chain bool, out io.Writer) bool {
+	// ADR 0052 D1: a MANAGED hooks path is asked about before
+	// either slot is attempted, because both attempts are writes
+	// into somebody else's directory. Neither slot is installed,
+	// nothing is chained there, and the operator gets the
+	// classification instead of `open <dir>/pre-push: permission
+	// denied` — which is what this command said on the managed box
+	// it was run on (ranger-base-yt6m0). Exit 0: nothing failed.
+	if line, managed := posse.ManagedHooksPath(dir); managed {
+		fmt.Fprintln(out, line)
+		fmt.Fprintf(out, "  pre-push and prepare-commit-msg: nothing written there — the session hooks dir is rendered at launch (ADR 0052 D2)\n")
+		// Clean: nothing failed, and nothing was meant to be written.
+		return true
+	}
+	// ADR 0081 D4: the shared commit-guard slot has ONE owning
+	// home — the one whose `beads_visibility:` marks this repo
+	// (D1) — and this command is the second of the three writers
+	// that used to rewrite any repo's wall from any home on the
+	// box. Asked here, BEFORE either install, so the verdict is a
+	// reading of the slot as it stands rather than of a write this
+	// command just made (the launch asks it in the same order, and
+	// of the same predicate).
+	//
+	// A repo on this home's own list is owned, so the operator's
+	// ordinary sweep over the listed repos is unaffected, and so is
+	// every repo nobody has stamped — an unstamped body is D3 case
+	// 4's one-shot migration and an empty slot is case 1. What is
+	// refused is the narrow case the hazard is actually made of:
+	// another home's current render, in a repo this home never
+	// claimed.
+	//
+	// The target's spelling does not enter it. D4 says "an explicit
+	// target" to say that the sweep is unaffected, not to make `.`
+	// a second rule — and a hole a `cd` walks through is not a rule
+	// (q0np6's two launches were in the repo, not pointed at it).
+	foreignWallHome, wallRepo := a.ForeignCommitWallOwner(dir)
+	// Both slots are attempted and reported independently — a
+	// foreign hook taking one must not cost the other
+	// (rangerhq-mgdk; the comment used to claim this and only
+	// InstallCommitGuardHook below actually did it, because the
+	// pre-push failure died before it was ever reached).
+	failed := false
+	var p string
+	var err error
+	if chain {
+		p, err = posse.InstallPrePushHookChained(dir)
+	} else {
+		p, err = posse.InstallPrePushHook(dir)
+	}
+	if err != nil {
+		fmt.Fprintf(out, "not installed: pre-push — %v\n", err)
+		failed = true
+	} else {
+		fmt.Fprintf(out, "installed %s (refuses git push when RHQ_TOOLS_DENY matches; foreign hooks are never overwritten)\n", posse.AbbrevHome(p))
+	}
+	// The refusal, and the whole of it: the slot is not read
+	// again, not rendered, and not opened — bytes and mtime where
+	// they were. There is no `--force`, deliberately (ADR 0081 D4):
+	// the remedy is a config line, and a flag would put the second
+	// writer back the moment the first operator reached for it.
+	if foreignWallHome != "" {
+		// CanonicalAbbrevPath and not AbbrevHome, for both paths and
+		// in both lines (ADR 0082 D4): the remedy prescribes this
+		// repo as a `beads_visibility:` key to paste, and the home
+		// beside it comes from the wall's `# posse-home:` stamp,
+		// which D3 already spells canonically. The TARGET's own
+		// spelling still does not enter the rule — this is the
+		// render of the refusal, and `dir` reaches
+		// ForeignCommitWallOwner and InstallCommitGuardHook as the
+		// operator typed it.
+		fmt.Fprintf(out, "not installed: prepare-commit-msg — %s's commit wall was rendered by home %s, and this home does not own it (ADR 0081 D1/D4)\n",
+			posse.CanonicalAbbrevPath(wallRepo), posse.CanonicalAbbrevPath(foreignWallHome))
+		fmt.Fprintf(out, "  remedy: add `%s: <private|public>` under this home's beads_visibility:, which is the list that confers ownership — or install from home %s, which rendered what is there\n",
+			posse.CanonicalAbbrevPath(wallRepo), posse.CanonicalAbbrevPath(foreignWallHome))
+		fmt.Fprintf(out, "  no --force: two homes writing one wall is the contention D1 removes, and the last writer would keep winning\n")
+		// Nonzero whatever the pre-push arm said: it has already
+		// printed its own verdict above, and a refusal to write
+		// another home's wall is a nonzero outcome on its own. A
+		// return and not an os.Exit, so the repos after this one in
+		// the same command line are still attempted.
+		return false
+	}
+	var c, vis, src string
+	var cerr error
+	if chain {
+		c, vis, src, cerr = a.InstallCommitGuardHookChained(dir)
+	} else {
+		c, vis, src, cerr = a.InstallCommitGuardHook(dir)
+	}
+	if cerr != nil {
+		fmt.Fprintf(out, "not installed: prepare-commit-msg — %v\n", cerr)
+		failed = true
+	} else {
+		fmt.Fprintf(out, "installed %s (refuses an unqualified git commit from any shell in this checkout — the index is shared; rangerhq-lmq9, rangerhq-lt2w)\n", posse.AbbrevHome(c))
+		// The same slot carries the beads visibility guard, and its
+		// verdict is stamped into the file — so say which one was
+		// stamped and where it came from, or an operator has to read a
+		// hook to find out whether their db is guarded (rangerhq-hrz).
+		fmt.Fprintf(out, "  beads visibility guard: %s — %s\n", vis, src)
+		if vis == posse.VisibilityPublic {
+			fmt.Fprintf(out, "  refuses ops-class content added to %s/.beads/*.jsonl (NOTES.md, Privacy model)\n", posse.AbbrevHome(dir))
+		}
+		// What THIS instance added to each pattern list, and what it
+		// asked for and did not get — the visibility patterns and,
+		// under every stamp, the data ceiling (ADR 0050 D3). The
+		// words are OpsPatternSet.WriteStampReport's, so the pin on
+		// them is a unit test and not a build of this binary.
+		a.OpsPatternSet().WriteStampReport(out)
+	}
+	if failed {
+		return false
+	}
+	return true
+}
+
 func runtimeProbe(a *posse.App, rt *posse.Runtime, args []string, out io.Writer) {
 	o := posse.ProbeOpts{Out: out}
 	for len(args) > 0 {
@@ -3086,7 +3159,7 @@ catalog:
                                  over it, and refusals.log. Re-renders the shims; from
                                  a caged seat, where that dir is read-only, it reports
                                  what is on disk and says so instead of dying
-  posse gates install-hooks [dir] [--chain]
+  posse gates install-hooks [dir...] [--chain]
                                  L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
                                  and prepare-commit-msg refusing an unqualified commit from any shell
                                  plus ops-class content added to .beads/*.jsonl in a repo that
@@ -3096,6 +3169,11 @@ catalog:
                                  bd's shim moves to bd-<slot>, ours goes to posse-<slot>, and the
                                  real slot gets the process-and-status dispatcher (INSTALL.md §9).
                                  A hook that is neither ours nor bd's is still refused.
+                                 SEVERAL repos install one each, reported under a header naming
+                                 the repo and counted at the end; exit 1 if any one of them
+                                 refused or failed, and every other one is still attempted. No
+                                 argument = the cwd's repo. A positional that looks like a flag
+                                 is a usage error, never a repo path (ranger-base-jamt2).
   posse gates managed-hooks [dir]
                                  ADR 0052 D1's classification, read-only: is this repo's hook
                                  dispatch path one posse must not write in (absolute, outside the

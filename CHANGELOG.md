@@ -137,6 +137,34 @@ checkout)`, `(not a posse checkout)`, `(posse, but it does not hold that
 commit)` — so a mistyped `posse_repo:` or a moved checkout is visible instead
 of silently inert.
 
+**`posse gates install-hooks` with several repos now installs into every one of
+them. It used to install into the LAST one and exit 0.**
+
+*Affected: every build with this verb. If you have a multi-repo install line in
+your notes or your tooling, it refreshed one repo — re-run it once on this
+build.*
+
+The argument loop assigned a single target, so each positional overwrote the
+one before it. MEASURED 2026-11-08 on 0.5.3+8433641d: one `posse gates
+install-hooks` over a brace expansion naming four repos, which the shell
+expands to four arguments, printed the LAST repo's two `installed` lines and
+exited 0, with the other three repos' hooks not rewritten and one of their
+stale-wall rows still standing. Nothing in the output distinguished that from a
+run that installed all four.
+
+This is the verb every degraded hook line, every G12 row and `make
+verify-hook-freshness` prescribes, and nothing else re-renders a repo that
+holds no session — so the repos a sweep silently skipped were the ones that
+stay skipped.
+
+Every positional is a target now. One target prints exactly what it always
+printed. Several print a header naming each repo and a count at the end
+(`install-hooks: 3 repo(s), 2 ok, 1 refused or failed`), and **every target is
+attempted even when an earlier one refuses** — the ADR 0081 D4 refusal used to
+end the whole command where it stood — with the exit code decided once, at the
+end. A positional that looks like a flag is now a usage error naming it,
+instead of being taken for a repo path.
+
 ## v0.5.3
 
 *2026-10-22. A security and patch release ten days after v0.5.2, led by the

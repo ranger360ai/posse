@@ -2080,7 +2080,13 @@ So `posse promote` and the `posse dispatch --watch` preamble each sweep every
 repo `beads_visibility:` names (the key is documented in `examples/config.yaml`) and print the ones whose hooks are not
 that binary's render, naming the repo and the command that fixes it. They
 report only — re-render each one yourself with `posse gates install-hooks
-<repo>`. `make verify-hook-freshness` in a posse checkout asks the same
+<repo>`. **One command takes several repos** and installs into each, under a
+header naming the repo and with a count at the end; it attempts every one of
+them even if an earlier one refuses, and exits nonzero if any did. Before
+ranger-base-jamt2 it kept only the LAST argument and said nothing about the
+rest, so a brace-expanded sweep over four repos refreshed one of them and
+exited 0 — if you have such a line in your own notes, it did less than it
+printed. `make verify-hook-freshness` in a posse checkout asks the same
 question on demand, and adds the two behavioural arms (an unqualified commit
 must exit 1 *and* the path-limited form must exit 0) against the file actually
 installed.
