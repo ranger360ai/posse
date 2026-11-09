@@ -2745,3 +2745,172 @@ func TestVerifyChainMaxRefusesAValueOutsideItsRange(t *testing.T) {
 		})
 	}
 }
+
+// ─── ranger-base-2t90k: two claims the shallowest-source walk makes that
+// nothing asserted ───────────────────────────────────────────────────────
+//
+// Both arms below were written because a mutant survived the whole of this
+// file. Each names the mutant it kills, so the next reader can re-take the
+// reading rather than trust this comment.
+
+// A TIE AT THE MINIMUM IS WHOLE WHENEVER EITHER BRANCH IS, and until this
+// arm nothing said so: deleting the tie case from verifyChainRounds' switch
+// (`case len(sub) == best && whole && !bestWhole:` -> `case false && …`) left
+// every other arm of this file GREEN (MEASURED 2026-11-09, ranger-base-2t90k,
+// `go test -overlay` over -tags posse_arm3 -run '^Test(QA)?Verify').
+//
+// The rule it insures is verifyChainRounds' own: "the minimum is whole when
+// some branch that ATTAINS it is whole". The walk reads a batched verify
+// bead's closes in the order its description lists them, so which branch is
+// seen first is a fixture choice and not a property of the lineage — and with
+// the REFUSED source listed first, the floored branch arrives first and sets
+// the minimum. Dropping the tie arm costs two readings, both of them about a
+// count that was in fact read in full: the pass cries floor over it, and the
+// round line names the source the walk could not vouch for.
+//
+// It cannot change whether the bound FIRES — a floored path gave up with
+// depth still to spend, so it is strictly shorter than the limit, and that
+// is why this arm asserts the stderr line and the rendered source rather
+// than the escalation.
+func TestQAVerifyChainTieAtTheMinimumIsWholeWhenEitherBranchIs(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-3 * time.Hour)
+	repo := vaRepo(t, a, "[]", "verify_chain_max: 2", "operator: boss")
+	// One batched round above c-1, and its verify bead answers two closes:
+	//
+	//	x-0 ← v-1{x-0, a-0} ← c-1    x-0 FIRST, and its edges are refused:
+	//	a-0 ← v-1{x-0, a-0}          that branch gives up at depth 0.
+	//	                             a-0's answer, at the same depth, is the
+	//	                             tie this arm is about.
+	list := []string{
+		vaClosed("x-0", t0.Add(-2*time.Hour), 1),
+		vaClosed("a-0", t0.Add(-2*time.Hour), 1),
+		vaQaBead("v-1", "x-0", "a-0"),
+		vaClosed("c-1", t0, 2),
+	}
+	vaChainEdge(t, repo, "c-1", "v-1", "discovered-from")
+	// x-0's DOWN read answers unparseable JSON, so its branch is a FLOOR of
+	// 0 — the same instrument TestVerifyChainWalkFailureFilesTheBeadAndNames
+	// TheFloor uses, pointed at a sibling branch instead of the leaf.
+	if err := os.WriteFile(filepath.Join(repo, "fake-deps.x-0.json"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// a-0's answers, with no verify bead above it: read, whole, 0 rounds.
+	if err := os.WriteFile(filepath.Join(repo, "fake-deps.a-0.json"), []byte("[]"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(vaList(list...)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Minute))
+
+	n, _, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d verify beads for a close one round deep under a bound of 2, want 1 (stderr: %s)", n, errs)
+	}
+	// CONTROL: the refused branch really was refused, or the tie this arm is
+	// about never happened and a clean stderr means nothing.
+	calls := bdCalls(t, fake)
+	if !strings.Contains(calls, "dep list x-0") {
+		t.Fatalf("CONTROL: the walk never read x-0's edges, so no branch gave up here:\n%s", calls)
+	}
+	if strings.Contains(errs, "which is a floor") {
+		t.Errorf("a count whose minimum was ATTAINED by a branch that answered in full was "+
+			"called a floor, because the branch listed FIRST was the refused one — a tie that "+
+			"any branch attains whole is whole (verifyChainRounds):\n%s", errs)
+	}
+	if !strings.Contains(calls, "round 1: verify v-1 of a-0 (one of 2)") {
+		t.Errorf("the round line must name the source the walk can vouch for (a-0), not the one "+
+			"whose edges it could not read (x-0):\n%s", calls)
+	}
+}
+
+// THE READ BUDGET IS PER CANDIDATE, AND `w.spent = 0` IN verifyChainRounds IS
+// THE WHOLE OF WHAT MAKES IT ONE. Removing that reset (`w.spent = w.spent`)
+// left every other arm of this file GREEN (MEASURED 2026-11-09,
+// ranger-base-2t90k, `go test -overlay` over -tags posse_arm3 -run
+// '^Test(QA)?Verify') — and what it does is ranger-base-bu8rz's defect again
+// by another route: once a pass has spent verifyChainReadMax reads in TOTAL,
+// every later candidate's walk gives up at its first read, counts 0 rounds as
+// a floor, and a floor never escalates. The bound stops binding for every
+// close after the twenty-fifth, with nothing printed but a floor line each.
+//
+// The existing repro asserts the reads of ONE candidate (nine beads, well
+// inside the cap), so no arm of this file could tell a per-candidate budget
+// from a per-pass one. This one runs 30 candidates whose lineages share
+// NOTHING, so every read is a distinct bd call and the control below can see
+// the budget being passed: 60 reads against a cap of 50. Sharing the deep hop
+// would have made the fixture smaller and the control a lie — cache hits
+// count toward the budget (verifyChainReadMax) but not toward the bd calls
+// vaWalkReads can see, and the first draft of this arm read 31 and said so.
+func TestQAVerifyChainReadBudgetIsPerCandidateNotPerPass(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-3 * time.Hour)
+	repo := vaRepo(t, a, "[]", "verify_chain_max: 2", "operator: boss")
+	// Two rounds above every candidate, and no bead shared between them:
+	//
+	//	s-i ← v-i{s-i} ← m-i ← u-i{m-i} ← c-i      for i in 0..n-1
+	//
+	// Each c-i counts 2 rounds and is AT the bound, and each walk reads
+	// exactly two dependency lists of its own: c-i's and m-i's (s-i's is
+	// never reached, the depth cap ending the level below it).
+	const n = 30
+	var list []string
+	for i := 0; i < n; i++ {
+		s := fmt.Sprintf("s-%d", i)
+		m := fmt.Sprintf("m-%d", i)
+		c := fmt.Sprintf("c-%d", i)
+		list = append(list,
+			vaClosed(s, t0.Add(-3*time.Hour), 1),
+			vaQaBead(fmt.Sprintf("v-%d", i), s),
+			vaClosed(m, t0.Add(-2*time.Hour), 1),
+			vaQaBead(fmt.Sprintf("u-%d", i), m),
+			vaClosed(c, t0, 2),
+		)
+		vaChainEdge(t, repo, m, fmt.Sprintf("v-%d", i), "discovered-from")
+		vaChainEdge(t, repo, c, fmt.Sprintf("u-%d", i), "discovered-from")
+	}
+	if err := os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(vaList(list...)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Minute))
+
+	// CONTROL, and it is arithmetic on the FIXTURE rather than a reading of
+	// the run: two reads per candidate must come to more than one
+	// candidate's whole budget, or a per-pass budget would never be reached
+	// and every assertion below would pass over a fixture that cannot fail.
+	// Taking it off the run instead is what the first draft did, and the
+	// mutant then satisfied it — a walk that stops reading at the cap makes
+	// FEWER calls, so the control fired first and reported the apparatus
+	// where the finding was.
+	if 2*n <= verifyChainReadMax {
+		t.Fatalf("CONTROL: %d candidates at two reads each is %d, inside the %d cap — this "+
+			"fixture cannot tell a per-candidate budget from a per-pass one", n, 2*n, verifyChainReadMax)
+	}
+
+	filed, out, errs := vaRun(t, a, testBd(t))
+	if filed != 0 {
+		t.Errorf("filed %d verify beads for %d closes that have each spent 2 rounds under "+
+			"verify_chain_max: 2 — the later candidates' walks gave up on a budget the earlier "+
+			"ones had already spent, so the bound stopped binding (ranger-base-bu8rz's defect "+
+			"by another route)\nstderr: %s", filed, n, errs)
+	}
+	if strings.Contains(errs, "which is a floor") {
+		t.Errorf("a candidate read a floor in a pass where its OWN budget was untouched — "+
+			"verifyChainRounds resets the read budget per candidate:\n%s", errs)
+	}
+	if got := strings.Count(out, "no verify bead:"); got != n {
+		t.Errorf("escalated %d of %d closes at the bound, want all of them:\n%s", got, n, out)
+	}
+	// The reading that says WHY, once the arms above have said what: with the
+	// budget reset per candidate every walk makes its own two reads, and the
+	// pass makes 2n. A per-pass budget stops at the cap instead.
+	if got := len(vaWalkReads(bdCalls(t, fake))); got != 2*n {
+		t.Errorf("the pass made %d dependency reads over %d candidates, want %d (two each) — "+
+			"a count at the %d cap is the budget being shared", got, n, 2*n, verifyChainReadMax)
+	}
+}
