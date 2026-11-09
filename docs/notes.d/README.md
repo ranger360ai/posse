@@ -23,6 +23,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-gi1gi](ranger-base-gi1gi.md) — git's refs on the bwrap wall: a dir grant, a dot, and one question left for the host (ranger-base-gi1gi) — 2026-11-08
 - [ranger-base-g6bs7](ranger-base-g6bs7.md) — canonicalPath answers by reach, not only by path (ranger-base-g6bs7) — 2026-11-08
 - [ranger-base-djl3c](ranger-base-djl3c.md) — The bwrap launch line, as built: four surfaces, not two (ranger-base-djl3c) — 2026-11-08
+- [ranger-base-bjk4k](ranger-base-bjk4k.md) — D21's gate answered refused, and the flip it refused is invisible to this suite (ranger-base-bjk4k) — 2026-11-08
 - [ranger-base-8kwa5](ranger-base-8kwa5.md) — A relative `queue_repo:` is resolved before anything reads it (ranger-base-8kwa5) — 2026-11-08
 - [ranger-base-8j070](ranger-base-8j070.md) — A directory this process may not name has no canonical spelling (ranger-base-8j070) — 2026-11-08
 - [ranger-base-8gwu1](ranger-base-8gwu1.md) — The home stamp takes the kernel's spelling too (ranger-base-8gwu1) — 2026-11-08
