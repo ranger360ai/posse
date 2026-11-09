@@ -785,6 +785,13 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// for a top-level branch in a linked worktree. Declared difference,
 	// never degrading — see bwrap.go. Silent at every other mechanism.
 	a.applyBwrapRefGrant(&p, dir)
+	// ADR 0080 D23: a `writable:` extra this PID named absolutely that the
+	// launch host does not have. The launcher creates the session's own
+	// furniture and not a path it did not derive, so the grant renders no
+	// mount — a declared difference, never degrading, see bwrap.go. Silent
+	// at every other mechanism, and silent for a relative extra, which is
+	// created with the session tree.
+	a.applyBwrapHostGrants(&p, ag)
 	// ADR 0007 §6f: the cwd skills root's precondition on the session
 	// directory. Directory-aware for ProjectConfigTrust's reason — whether
 	// grok trusts this folder is a fact about a concrete launch dir and not

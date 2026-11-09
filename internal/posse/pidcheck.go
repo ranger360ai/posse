@@ -274,6 +274,24 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 		}
 	}
 
+	// `writable:` extras that name a HOST path (ADR 0080 D23). A relative
+	// extra resolves inside the session tree, which posse makes and retires;
+	// an absolute one — `~` included — names a directory on whatever box the
+	// seat lands on, and nothing in the session can bring it into being
+	// either. At the bwrap mechanism the launcher will not make it, so the
+	// grant is realized only where the host already has the directory.
+	//
+	// A WARNING AND BOX-INDEPENDENT, both on purpose. The PID is coherent and
+	// may well be launched on a host that has the path, so this is not an
+	// exit-1 finding; and it stats nothing, so `posse agent check` gives one
+	// answer wherever it runs — the LAUNCH is where the box is known, and
+	// bwrapAbsoluteWritableDifference is the row standing there.
+	for _, w := range ag.Writable {
+		if pidWritableIsHostPath(w) {
+			warn("writable: %s is an absolute host path — no session creates it and neither does the launcher, so at cage %s on a %s host the grant renders no mount unless this box already has that directory (ADR 0080 D23). A path relative to the session dir is created with the session tree.",
+				w, CageSeatbelt, WallBwrap)
+		}
+	}
 	// route_order: a spelling that is not an integer takes the default and
 	// the PID still loads (a lane must not go silent over an ordering
 	// hint) — so the mistake has to surface here, or `route_order: high`

@@ -97,7 +97,19 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		// the same line (ranger-base-fm4p).
 		// Class "": nothing is there to reach, so no wall is being claimed
 		// either way — this row is a "nothing to check" pass, not a gate.
-		p.Realized[RecordReachGate] = RealizedGate{Detail: "no store of record at " + AbbrevHome(home) + " — nothing to reach (bd creates it on first write)"}
+		//
+		// AND WHO WOULD CREATE ONE, at the mechanism where that is not the
+		// same answer (ADR 0080 D23). "bd creates it on first write" is this
+		// row's own sentence and the launcher used to falsify it: bwrap binds
+		// only a source that exists, so prep made `<cwd>/.beads` at every
+		// launch, and a store that exists is a store this row probes — a
+		// LATER launch in the same tree then read a real store behind a
+		// read-only sandbox and was refused for it (ranger-base-sg7a7,
+		// MEASURED). Prep no longer makes it, so the sentence is true again
+		// on both hosts; what the clause adds is that posse will not make one
+		// for a seat that cannot, which is a fact about this host an operator
+		// reading the row has no other way to learn.
+		p.Realized[RecordReachGate] = RealizedGate{Detail: "no store of record at " + AbbrevHome(home) + " — nothing to reach (bd creates it on first write)" + recordReachNoStoreClause(WallMechanism(), p.Cage, a.cageAvailable(p.Cage))}
 		return
 	}
 	switch {
@@ -210,6 +222,17 @@ func recordReachUnmeasuredOn(mech, why string) string {
 		") and the probe that judges the store of record IS one, so the store is neither reachable nor unreachable here. " +
 		"The launch this row judges is unaffected: its sandbox-exec is typed into a herdr pane, outside this process's sandbox. " +
 		"Re-run `posse gates` outside the cage for a verdict (ADR 0013 §4, ranger-base-heur)"
+}
+
+// recordReachNoStoreClause is the mechanism's half of the row above, "" at
+// every mechanism where the launcher's behaviour and bd's are the same
+// thing. Mechanism-parameterized for the reason every host-shaped answer in
+// bwrap.go is: the Linux arm is unreachable on the box that builds it.
+func recordReachNoStoreClause(mech, cage string, available bool) string {
+	if mech != WallBwrap || cage != CageSeatbelt || !available {
+		return ""
+	}
+	return ". At this mechanism the launcher does not create one either: bwrap binds only a source that exists and the store of record is not a path posse derives, so bd's first write lands only where the session tree itself is granted (ADR 0080 D23)"
 }
 
 // recordTargets is what the record stage writes: the .beads bd actually

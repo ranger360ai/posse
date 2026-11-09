@@ -899,6 +899,226 @@ func bwrapRefGrantDifference(mech, cage string, available bool, dir string) stri
 		CageSeatbelt, WallBwrap, branch, AbbrevHome(filepath.Dir(keep[0])), filepath.Join("refs", "heads", "main"))
 }
 
+// ─── D23: PREP CREATES THE SESSION'S OWN FURNITURE, NOTHING ELSE ─────────────
+
+// pidAbsoluteWritable is the first of D23's two members on its own: the
+// `writable:` extras this PID named with an absolute path, resolved the way
+// pidWritableExtras resolves them so that the entry kept out of the set and
+// the entry put into it are one spelling.
+//
+// A FUNCTION OF ITS OWN because two readers need exactly this half and
+// neither wants the other: the render asks for both members at once, and the
+// parity row below is about the PID and must not go asking the filesystem
+// about a store of record (ADR 0013 §4's row owns that question). Asking
+// bwrapNoCreate with an empty cwd would answer the same thing today by a
+// coincidence of its branches, which is not a thing to build a row on.
+func pidAbsoluteWritable(ag *AgentFile) []string {
+	if ag == nil {
+		return nil
+	}
+	var out []string
+	for _, w := range ag.Writable {
+		if pidWritableIsHostPath(w) {
+			out = append(out, absResolve(ExpandTilde(w)))
+		}
+	}
+	return dedupeStrings(out)
+}
+
+// pidWritableIsHostPath is that test on one declared entry, and it is the
+// one spelling of D23's line between the two classes. `posse agent check`
+// asks it too, over `ag.Writable` rather than over the resolved list, so the
+// lint can name the string the operator typed while the render names the
+// path it binds — one rule, two vocabularies, no second predicate.
+func pidWritableIsHostPath(w string) bool { return filepath.IsAbs(ExpandTilde(w)) }
+
+// bwrapNoCreate names the write grants the LAUNCHER MAY NOT CREATE, and it
+// is the whole of ADR 0080 D23. BwrapWritable's twin one question over: that
+// one says which paths this mechanism can GRANT, this one says which of them
+// posse may bring into being on the host.
+//
+// WHY PREP NEEDS A PERIMETER AT ALL. Shape 1's prep exists because bwrap
+// binds only a source that exists where sandbox-exec granted paths that did
+// not, so a missing grant becomes a `mkdir -p` outside the namespace, in the
+// seat's name (BwrapArgs, D17/D18). That is right for the session's own
+// furniture and it is not a general licence: posse creating a path turns a
+// grant into a host WRITE, and it makes the one PID line mean three
+// different things on three hosts. MEASURED (ranger-base-sg7a7, from
+// ranger-base-temhf's reproduction): a fixture PID declaring
+// `writable: [scratch, /opt/shared]` is a free grant on darwin — SBPL grants
+// a path whether or not it is there and nothing writes it — a REFUSED launch
+// on this box (`mkdir /opt/shared: permission denied`) and a new directory on
+// ci.yml's ubuntu runner, created silently on every red run.
+//
+// THE TWO MEMBERS, each because the creation is visible to a decision posse
+// does not own:
+//
+//   - AN ABSOLUTE `writable:` EXTRA. It is a HOST path the operator
+//     declared, not one posse derived, and nothing in the session can bring
+//     it into being either (pidWritableExtras). A RELATIVE extra keeps its
+//     prep: it resolves inside the session tree, which posse made and
+//     retires with the session, and for a persona that denies file writes
+//     cwd itself is not granted, so without the mkdir the grant would be
+//     dead. `~` counts as absolute, for homeCacheGrants' reason one list
+//     over — junk directories in the operator's home, created by posse and
+//     used by nothing.
+//   - THE STORE OF RECORD. Its EXISTENCE is itself read as a fact: ADR 0013
+//     §4's reachability row says "nothing to reach (bd creates it on first
+//     write)" in its own words, and recordTargets probes only what is there.
+//     MEASURED in the same reproduction: a seatbelt launch materialized
+//     `<repo>/.beads`, and a launch three arms later in the SAME tree — a
+//     codex seat rendering `-s read-only` — then had a real store behind a
+//     read-only sandbox where it had none before, so the row went from
+//     "nothing to reach" to unrealized and REFUSED that launch. Same tree,
+//     same PIDs, a different answer depending on which seat launched first.
+//     An empty `.beads` is not inert either: in no-db mode bd resolves
+//     $BEADS_DIR else `$cwd/.beads` and reads no redirect at all (ADR 0055),
+//     so a directory posse makes there is a second store of record that can
+//     take writes nothing reads back. `bd init` is denied to every persona
+//     because creating a store is a decision; it is not the launcher's
+//     either.
+//
+// ONE SPELLING OF THE STORE, and it is `<cwd>/.beads`, which is the only one
+// that can be ABSENT. SeatbeltWritable grants the store under two names —
+// that one for a persona that denies file writes, and beadsHome's resolved
+// target where a redirect moves it out of the tree (ADR 0012 D3-C) — but a
+// redirect bd FOLLOWS is one whose target beadsRedirectHop has already
+// stat'd as a directory, so the resolved target is there by construction and
+// an entry for it would be a control with no failing arm. Said here because
+// the two-entry version is the obvious reading of the key, and it costs a
+// reader nothing to know which half the stat already answered
+// (TestQABwrapTheStoreHasOneSpellingThatCanBeAbsent).
+//
+// A MEMBER THAT IS THERE IS GRANTED EXACTLY AS BEFORE. This list changes
+// nothing about the wall over a host that has the directory; what it changes
+// is whether posse makes one that nobody asked it to make.
+//
+// STATED RESIDUAL, not closed: where a redirect names a store in a directory
+// that is not a git repository, SeatbeltWritable grants `<root>/.git` and
+// prep still makes it. That path is not in this list because in the common
+// case `<root>` IS the session tree, where `.git` is the session's own and
+// prep creating it is the furniture this decision keeps. The cost is a `.git`
+// directory in a non-repo, which the next `git` run there reports; the fix
+// for it is a producer that knows which of the two it is naming, the way D20
+// answered the ref pair one step earlier.
+//
+// SEATBELT'S RENDER IS UNTOUCHED, the rule D19 and D20 both keep: narrowing
+// SeatbeltWritable instead would take these entries out of the darwin
+// profile, where a grant for an absent path costs nothing and the session
+// can still create it.
+func bwrapNoCreate(ag *AgentFile, cwd string) []string {
+	out := pidAbsoluteWritable(ag)
+	if cwd != "" {
+		out = append(out, absResolve(filepath.Join(cwd, beadsDirName)))
+	}
+	return dedupeStrings(out)
+}
+
+// bwrapBindExisting applies that list to a writable set: a no-create grant
+// that is THERE stays and is bound as any other grant, one that is not is
+// taken out of the set and returned, so this render binds nothing for it and
+// asks the launcher for nothing.
+//
+// OUT OF THE SET AND NOT A FLAG ON IT, which is D20's own move
+// (bwrapGitSwap) and keeps BwrapArgs' five shapes exactly as they are: the
+// renderer never learns that this question exists, there is no sixth arm in
+// it to get wrong, and its signature does not grow a parameter at thirty
+// call sites.
+//
+// A FILE AT THE PATH STAYS IN THE SET, deliberately. B8's refusal is
+// BwrapArgs' and names the path and the remedy; answering it here would be a
+// second refusal for one fact, and a quieter one.
+//
+// THE RE-STAT IS BENIGN. BwrapArgs stats the survivors again and would prep
+// one that vanished between the two statements of a single render — a path
+// that was on the host when the render began, which is not a path posse
+// invented. The alternative is passing this answer down, and the shape of
+// what is being kept out is "a directory posse never had a reason to make",
+// not "a byte-exact inventory of the filesystem at one instant".
+func bwrapBindExisting(set, noCreate []string) (kept, absent []string, err error) {
+	if len(noCreate) == 0 {
+		return set, nil, nil
+	}
+	no := map[string]bool{}
+	for _, p := range noCreate {
+		no[p] = true
+	}
+	for _, w := range set {
+		if w == "" || !no[absResolve(w)] {
+			kept = append(kept, w)
+			continue
+		}
+		exists, _, serr := bwrapStat(w)
+		if serr != nil {
+			return nil, nil, bwrapStatRefusal("write grant posse may not create", w, serr)
+		}
+		if exists {
+			kept = append(kept, w)
+			continue
+		}
+		absent = append(absent, w)
+	}
+	return kept, absent, nil
+}
+
+// bwrapAbsentGrantLine is how an absent no-create grant reads wherever it is
+// printed — the readable copy, `posse gates`, and the parity row. One
+// sentence and one spelling, because an operator comparing the three is
+// comparing the same fact.
+func bwrapAbsentGrantLine(p string) string {
+	return AbbrevHome(p) + " (declared, NOT granted: it is not on this host, and the launcher does not create a path it did not derive — bwrap binds only a source that exists, so this render makes no mount for it; create the directory outside posse, or declare it relative to the session dir, ADR 0080 D23)"
+}
+
+// bwrapAbsoluteWritableDifference is D23's parity row: the `writable:`
+// extras this PID named absolutely that the launch host does not have, said
+// before the launch rather than discovered by a failed write inside the
+// seat.
+//
+// A DECLARED DIFFERENCE AND NOT DEGRADATION (ADR 0017 §2), for
+// applyBwrapRefGrant's reason in its own words: nothing here is a wall posse
+// asked for and did not get. It is a GRANT the mechanism renders narrower
+// than darwin's, what it costs is a function the seat loses loudly — a write
+// into that path is refused by the base `--ro-bind / /` — and degrading it
+// would put a safe-by-design narrowing behind --allow-degraded and refuse
+// dispatch for a path that is nobody's gate, which is the reading
+// ranger-base-d17a closed.
+//
+// IT NEEDS NO WRITABLE SET AND NO RUNTIME, which is why this row is cheap
+// enough to sit on the launch path: every absolute extra is in the set
+// unconditionally (pidWritableExtras), so the PID plus a stat is the whole
+// of the question. The store of record's half of D23 is NOT here — ADR 0013
+// §4's reachability row is already the reader for "there is no store at this
+// launch dir", and it says so in one place (applyRecordReach).
+//
+// Mechanism-parameterized so a darwin pin can read the Linux answer, the
+// rule every host-shaped decision in this file follows.
+func bwrapAbsoluteWritableDifference(mech, cage string, available bool, ag *AgentFile) string {
+	if mech != WallBwrap || cage != CageSeatbelt || !available || ag == nil {
+		return ""
+	}
+	var absent []string
+	for _, p := range pidAbsoluteWritable(ag) {
+		if exists, _, err := bwrapStat(p); err == nil && !exists {
+			absent = append(absent, AbbrevHome(p))
+		}
+	}
+	if len(absent) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("cage %s (%s): this PID's `writable:` names %s absolutely and this host does not have %s, so the launch binds nothing there and a write into it is refused by the base read-only bind. The launcher does not create a path it did not derive, where SBPL grants an absent path and lets the session make it. Create the directory outside posse, or declare it relative to the session dir (ADR 0080 D23)",
+		CageSeatbelt, WallBwrap, strings.Join(absent, ", "), plural(len(absent), "that path", "those paths"))
+}
+
+// applyBwrapHostGrants puts that row on a parity matrix. Directory-
+// independent — an absolute path is absolute — but it sits in CheckParityIn
+// beside applyBwrapRefGrant because it STATS, which is the line parity.go's
+// header draws (CheckParity stats nothing and tests rely on that).
+func (a *App) applyBwrapHostGrants(p *Parity, ag *AgentFile) {
+	if d := bwrapAbsoluteWritableDifference(WallMechanism(), p.Cage, a.cageAvailable(p.Cage), ag); d != "" {
+		p.DeclaredDifference = append(p.DeclaredDifference, d)
+	}
+}
+
 // ─── D18: THE LAUNCH LINE ───────────────────────────────────────────────────
 
 // The two files RenderBwrap writes into the persona's gates dir, beside
@@ -977,7 +1197,7 @@ func (a *App) renderBwrapWall(ag *AgentFile, rt *Runtime, cwd string) (string, b
 	if err := os.WriteFile(args, bwrapArgsBytes(r.Argv), 0o644); err != nil {
 		return "", bwrapRendered{}, err
 	}
-	if err := os.WriteFile(filepath.Join(gatesDir, bwrapTextName), []byte(bwrapReadable(ag.Name, args, r.Argv, r.Prep)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(gatesDir, bwrapTextName), []byte(bwrapReadable(ag.Name, args, r.Argv, r.Prep, r.Absent)), 0o644); err != nil {
 		return "", bwrapRendered{}, err
 	}
 	return args, r, nil
@@ -997,6 +1217,12 @@ type bwrapRendered struct {
 	// Carve is the carve-out, computed from the DECLARED writable set (see
 	// RenderBwrap's own note on why that is identical here).
 	Carve SeatbeltCarveOut
+	// Absent is D23's answer: the write grants posse may not create that
+	// this host does not have, so Argv binds nothing for them and Prep asks
+	// for nothing. Kept on the render rather than recomputed, for the reason
+	// this struct exists — a report that composed it again would agree with
+	// the design while disagreeing with the wall.
+	Absent []string
 	// Argv and Prep are D17's two outputs.
 	Argv []string
 	Prep []PrepStep
@@ -1013,6 +1239,13 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	r := bwrapRendered{Carve: a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)}
 	r.Set, r.Keep = BwrapWritable(writable, cwd)
+	// D23, after D20's substitution and before the render: what is left of
+	// the set is what posse will bind, and a no-create grant that is not
+	// there has been taken out of it, so BwrapArgs can ask the launcher for
+	// every missing grant it still sees.
+	if r.Set, r.Absent, err = bwrapBindExisting(r.Set, bwrapNoCreate(ag, cwd)); err != nil {
+		return bwrapRendered{}, err
+	}
 	if r.Argv, r.Prep, err = BwrapArgs(cwd, r.Set, r.Carve, r.Keep...); err != nil {
 		return bwrapRendered{}, err
 	}
@@ -1140,7 +1373,7 @@ func liveBwrapBin() (string, error) { return protocolBin("bwrap") }
 // comparing the same thing rather than this file's idea of it. A mount source
 // holding a newline would break this copy and not the wall, which is the
 // right way round — the args file is the artifact.
-func bwrapReadable(persona, args string, argv []string, prep []PrepStep) string {
+func bwrapReadable(persona, args string, argv []string, prep []PrepStep, absent []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# posse bwrap wall for %s — %s from the PID at launch; do not edit (ADR 0080 D18)\n", persona, RenderedByPosse())
 	fmt.Fprintf(&b, "# The wall that RUNS is %s, NUL-separated. The launch line reads it on fd 3:\n", filepath.Base(args))
@@ -1152,6 +1385,17 @@ func bwrapReadable(persona, args string, argv []string, prep []PrepStep) string 
 		fmt.Fprintf(&b, "# bwrap binds only a source that exists, and the launcher is outside the namespace:\n")
 		for _, s := range prep {
 			fmt.Fprintf(&b, "#   %s   (%s)\n", s, s.Why)
+		}
+	}
+	// The other half of the same sentence, and the only place it can be read
+	// off the wall: a grant that was declared, is not on this host, and that
+	// the launcher did NOT make (D23). Below the prep list, because the two
+	// together are the whole of what the launcher did and did not do.
+	if len(absent) > 0 {
+		fmt.Fprintf(&b, "#\n# declared and NOT granted — no mount below names these, and the launcher\n")
+		fmt.Fprintf(&b, "# did not create them (ADR 0080 D23):\n")
+		for _, p := range shallowestFirst(absent) {
+			fmt.Fprintf(&b, "#   %s\n", bwrapAbsentGrantLine(p))
 		}
 	}
 	for _, a := range argv {
@@ -1195,6 +1439,12 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 	// rather than a "w" line an operator would read as a grant (D20).
 	for _, f := range shallowestFirst(keep) {
 		fmt.Fprintf(out, "    + %s (the launcher's keep file — an empty dot-file that stops an outside `git pack-refs --prune` from removing the bound directory above it; bound by nothing)\n", AbbrevHome(f))
+	}
+	// D23: declared, not granted, and not created. Printed with Seal's
+	// marker — the one that already means "this entry is in a list and
+	// renders no mount" — because that is exactly what it is.
+	for _, p := range shallowestFirst(r.Absent) {
+		fmt.Fprintf(out, "    · %s\n", bwrapAbsentGrantLine(p))
 	}
 	byRule := map[string][]string{}
 	for _, d := range pidDeniedSubtrees(ag, cwd) {
