@@ -189,8 +189,36 @@ discover it with a `git show` that resolves only in the shared repo. MEASURED:
 
 ## Verified
 
-`make fmt-check`, `make tree-check`, `scripts/notes-index.py --check`,
-`scripts/audit-silent-reverts.sh`, `go vet` untagged and `-tags posse_arm3`,
-`go run ./cmd/checkorphans`, and `make test` whole. The three replay commits
-were each checked at their own tip with `go vet -tags posse_arm3` and the two
-queue-wall arms before the next was written.
+`make fmt-check`, `make crew-check`, `make notes-check`, `make tree-check`
+(green, 82.6s at a one-minute load average of ~4), `scripts/notes-index.py
+--check`, `go vet` untagged and `-tags posse_arm3`, and **`make test` whole**.
+The three replay commits were each checked at their own tip with `go vet -tags
+posse_arm3` and the two queue-wall arms before the next was written.
+
+`make test` is proven whole by its LAST recipe line rather than by an exit
+code, which is worth saying because the exit code was not available: the run
+was piped to `tail`, so the status the harness reported was `tail`'s. make
+aborts a recipe on its first non-zero exit and
+`@scripts/audit-silent-reverts.sh --quiet` is the final line of the `test`
+target, so `silent-revert audit: 2381 commits, 0 untriaged` in the output is
+the proof that `tree-check`, the arm-tags type-check door, `./...`,
+`-tags posse_arm2` and `-tags posse_arm3` all passed before it. Zero `FAIL`
+lines; `internal/posse` ok three times at 414.794s, 434.818s and 688.412s.
+
+**And a first attempt at that run was killed, which is the harness lesson.**
+`nohup make test &` inside a Bash call that was ITSELF backgrounded reports the
+wrapper's exit — "completed (exit code 0)" after ~3 minutes, over a log whose
+last line is a `go test` invocation with no result under it — while the real
+`make` dies with the wrapper's process group. Pass `make test` to the tool with
+`run_in_background` and no inner `&`. That first green was not a green.
+
+`go run ./cmd/checkorphans` exits **1**, over one leaked gate-shell child that
+is **not this session's**: pid 2444, ppid 1, its argv sourcing
+`snapshot-zsh-1794165372051-yn6vpv.sh`, whose embedded timestamp is 14:16:12
+against this session's scratchpad created 18:42:38 — 4h26m earlier, and
+`pgrep -fl <this worktree path>` is empty. It is named rather than passed over:
+an undeclared orphan on this box is the load guard's kill arm's business and
+some other seat's to own. `ps` is refused from inside the cage
+(`operation not permitted`), which is the documented reason checkorphans reads
+`sysctl kern.proc.all`; the dating above is the fallback path AGENTS.md
+prescribes when the tool's own verdict has to be split from someone else's.
