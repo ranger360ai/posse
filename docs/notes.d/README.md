@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-ybz6u](ranger-base-ybz6u.md) — `seatbelt (bwrap)` is a label and not a mapping, and the rest of this bead landed twice (ranger-base-ybz6u) — 2026-11-09
+- [ranger-base-uxadf](ranger-base-uxadf.md) — The hash spelling, as a census rather than a word ban (ranger-base-uxadf) — 2026-11-09
 - [ranger-base-sydnc](ranger-base-sydnc.md) — `shasum` was not on the cutover host's PATH, and two guards read clean because of it (ranger-base-sydnc) — 2026-11-09
 - [ranger-base-sg7a7](ranger-base-sg7a7.md) — The launcher makes the session's furniture, not the host's (ranger-base-sg7a7) — 2026-11-09
 - [ranger-base-rffxq](ranger-base-rffxq.md) — The verify-chain bound at any batch size (ranger-base-rffxq) — 2026-11-09

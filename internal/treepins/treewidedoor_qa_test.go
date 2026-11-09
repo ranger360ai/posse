@@ -944,6 +944,22 @@ package treepins
 // were all in this package's fixtures rather than in posse's renders, which
 // were `#!/bin/sh` the whole time.
 //
+// and one more into corpus-check, now TWO pins whose subject is portability
+// — the second of them over the shipped runnables rather than the Go
+// sources:
+//
+//	TestQAEveryShippedScriptThatHashesPicksItsHasherByProbe
+//	                                              make corpus-check
+//	                                              (ranger-base-uxadf)
+//
+// NO NEW DOOR, for the sentence the credential-scan row above gives: its
+// walk is the same four shipped directories through the same cgScannedDirs,
+// and this door's subject is already this repo's own sources. What it adds is
+// the hash spelling — `shasum` is not on every box's PATH, and a
+// command substitution whose command is not found yields the EMPTY STRING
+// with the status of its assignment discarded, so a bare call does not fail,
+// it compares two empty strings EQUAL (ranger-base-sydnc).
+//
 // and ONE more, folded into seed-check's door beside the five
 // ranger-base-00fyg rows above, because it reaches the same detectionRig and
 // so has the same subject — what a detection bead writes under
@@ -963,7 +979,7 @@ package treepins
 // claude's two captures read as the ORPHAN class and failed this file's
 // neighbour's control arm over a checkout that passes.
 //
-// and `make tree-check` is all of them — one hundred and twenty-seven pins and
+// and `make tree-check` is all of them — one hundred and twenty-eight pins and
 // seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
