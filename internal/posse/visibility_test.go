@@ -899,6 +899,11 @@ func TestDeriveIdentityLiterals(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
+	// The username is PINNED (ranger-base-c7i8t): "username must always be
+	// derived" below is true of every account except one of posse's own
+	// shipped names, and on ADR 0080 D2's `posse` host — read off the box —
+	// this pin would have asserted the exclusion was a bug.
+	qaPinUsername(t, qaFixtureUsername)
 	// HOME has to be a real ancestor of the redirect target, or there is
 	// nothing to abbreviate and instance-path/instance-path-abs coincide —
 	// which is a real, DEDUPED case (seen in TestDeriveIdentity
@@ -1077,6 +1082,108 @@ func TestDeriveIdentityLiteralsSkipsAbsentSourcesSilently(t *testing.T) {
 			t.Error("an empty redirect must derive nothing, not a path built from garbage")
 		}
 	}
+}
+
+// ranger-base-c7i8t, from ranger-base-87jw1 and ranger-base-sydnc: the
+// username is not derived at all when the box's account name IS one of
+// posse's own shipped names — the last element of the module path, or any
+// role the seed staffs an example PID under (shippedPosseNames). Four names
+// here, each covering a different half of that set and a different way of
+// spelling it: `posse` is the module's base (the product, its Go package and
+// its command), `POSSE` is the same name case-folded (ADR 0024 D2 as amended
+// 2026-11-09 says "equals, case-folded", and an OS account may be spelled
+// either way), `qa` is a role in the EMBED, and `ranger` is a role only the
+// digest table still knows — rangerhq-o7y4 renamed agents/ranger.md to
+// agents/ops.md, so a set walking the embed alone would miss it and a home
+// seeded by any earlier release still holds that name.
+//
+// THE PROCESS THIS PIN NAMES (ADR 0006 §7) is the prepare-commit-msg render
+// for an account named for the product: ADR 0080 D2 puts the always-on
+// host's crews under a dedicated `posse` user, and the username literal
+// renders with no word boundary (identityLiteralERE), so every `+package
+// posse` line and every `internal/posse/...` path matched it. MEASURED at
+// 7a14a4f3 by ranger-base-sydnc's overlay: 29 of the 142 commit-wall pins
+// red under that username, 0 under the operator's. Delete the exclusion and
+// every commit into posse on that host is refused, with no remedy a writer
+// can take — nobody can generalize a package clause.
+//
+// The last case is the control, and it is the half that keeps the skip from
+// swallowing every account: a name that is not in the shipped set still
+// derives, with its own value.
+//
+// MUTATION-CHECKED (go test -overlay, tree untouched, 2026-11-09):
+//   - the exclusion dropped (derive always): the four shipped-name subtests
+//     go red, the control passes.
+//   - the skip made unconditional: only the control goes red.
+//   - the skip rewritten to "whatever the tracked tree carries" (a git grep
+//     over the real tree): this pin and
+//     TestQAAnUnshippedUsernameDerivesEvenWhenTheTreeIsFullOfIt both go red
+//     — that is the rewrite ranger-base-87jw1 said the fix must not be, and
+//     it is the one a reader is most likely to think is equivalent.
+func TestDeriveIdentityLiteralsSkipsAShippedUsername(t *testing.T) {
+	// FIXTURE PREMISE, asserted rather than assumed: the set must actually
+	// carry both halves, or every skip below is green over an empty list.
+	shipped := shippedPosseNames()
+	for _, want := range []string{"posse", "qa", "ranger"} {
+		if !isShippedPosseName(want) {
+			t.Fatalf("fixture premise: %q must be one of posse's shipped names, got %v", want, shipped)
+		}
+	}
+	if isShippedPosseName(qaFixtureUsername) {
+		t.Fatalf("fixture premise: the control name %q must NOT be shipped, got %v", qaFixtureUsername, shipped)
+	}
+
+	// No global git e-mail and no .beads anywhere, so the username is the
+	// only source with anything to say and an absent class is unambiguous.
+	// Both lines are needed: this seat carries a GIT_CONFIG_GLOBAL that
+	// replaces the $HOME lookup outright (ranger-base-loi28).
+	t.Setenv("HOME", t.TempDir())
+	gitScrubGlobalScope(t, "")
+	dir := t.TempDir()
+
+	usernames := func(t *testing.T) []string {
+		t.Helper()
+		lits, err := DeriveIdentityLiterals(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, l := range lits {
+			if l.Class == "username" {
+				out = append(out, l.Value)
+			}
+		}
+		// The RENDER too, since the hook is what refuses and not the slice:
+		// a skipped literal must leave no check line behind it, and a
+		// derived one must have one. The spelling is opsCheckCall's —
+		// `posse_check 'username' '<ere>'` — because that call IS the arm.
+		const call = "posse_check 'username' '"
+		hook := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{}, lits...)
+		if got := strings.Contains(hook, call); got != (len(out) > 0) {
+			t.Errorf("derived %d username literals but the rendered hook carries a username check line = %v", len(out), got)
+		}
+		return out
+	}
+
+	for _, name := range []string{"posse", "POSSE", "qa", "ranger"} {
+		t.Run(name, func(t *testing.T) {
+			qaPinUsername(t, name)
+			if got := usernames(t); len(got) != 0 {
+				t.Errorf(`derived username %q under the account %q: a name posse SHIPS has a legitimate public
+use by construction — it is the product, its package and its command, or a role the
+seed staffs — and the literal renders with no word boundary, so deriving it refuses
+every commit into posse itself (ADR 0024 D2 check 3, amended 2026-11-09)`, got, name)
+			}
+		})
+	}
+
+	t.Run("a name that is not shipped still derives", func(t *testing.T) {
+		qaPinUsername(t, qaFixtureUsername)
+		got := usernames(t)
+		if len(got) != 1 || got[0] != qaFixtureUsername {
+			t.Errorf("username literals = %q, want exactly %q — the skip is by SHIPPED NAME, not by account", got, qaFixtureUsername)
+		}
+	})
 }
 
 // ranger-base-qdwet, from ranger-base-ei046's re-measurement: a value equal
@@ -1343,6 +1450,10 @@ func TestIdentityLiteralGuardHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
+	// Pinned for the fixture premise below (ranger-base-c7i8t): this pin
+	// stages the derived username, so on a host whose account IS a shipped
+	// posse name there would be nothing to stage.
+	qaPinUsername(t, qaFixtureUsername)
 	home := gitTempDir(t)
 	// Install runs IN this Go process, not through the git subprocess
 	// helper below — DeriveIdentityLiterals reads $HOME directly

@@ -31,11 +31,43 @@ type visWall struct {
 	identity []IdentityLiteral
 }
 
+// qaFixtureUsername is the account name every visWall pin derives under.
+// It is PINNED rather than read off the box, and the reason is measured
+// (ranger-base-c7i8t, from ranger-base-sydnc): the username was the one
+// check-3 source whose value belonged to the host, so a whole cluster of
+// pins staged a literal no fixture controlled. Under an account named for
+// the product — ADR 0080 D2's dedicated `posse` host — 29 of the 142
+// commit-wall pins reddened because the literal matched `package posse` and
+// `internal/posse/...` everywhere. The shipped-name exclusion reds the same
+// cluster the OTHER way, on `w.literal(t, "username")` finding no username
+// class at all to stage: MEASURED 2026-11-09, 16 of them, with this pin
+// removed and the exclusion in place (docs/notes.d/ranger-base-c7i8t.md has
+// the five configurations). Pinned, neither happens and the pins say the
+// same thing on every box.
+//
+// It is not one of posse's shipped names and must never become one: those
+// are exactly what DeriveIdentityLiterals skips (isShippedPosseName), so a
+// fixture named from that set would derive nothing. It is the same spelling
+// the hand-built username literals in this suite already use.
+const qaFixtureUsername = "qa-fixture-operator"
+
+// qaPinUsername points the username seam (currentUsername) at name for the
+// duration of t. Never from a parallel test: the seam is a package
+// variable, which is the same constraint t.Setenv already puts on every
+// visWall caller.
+func qaPinUsername(t *testing.T, name string) {
+	t.Helper()
+	old := currentUsername
+	currentUsername = func() (string, error) { return name, nil }
+	t.Cleanup(func() { currentUsername = old })
+}
+
 func newVisWall(t *testing.T) *visWall { return newVisWallNamed(t, "instance") }
 
 // newVisWallNamed is newVisWall with the instance directory's NAME under the
-// caller's control, which is the only handle a test has on what the derived
-// literals actually contain — the username and the git email are the box's.
+// caller's control. It and the pinned username (qaFixtureUsername) are the
+// handles a test has on what the derived literals actually contain; the git
+// e-mail is still the box's.
 func newVisWallNamed(t *testing.T, instanceDir string) *visWall {
 	return newVisWallCfg(t, instanceDir, "")
 }
@@ -47,9 +79,20 @@ func newVisWallNamed(t *testing.T, instanceDir string) *visWall {
 // line-oriented and the caller writes whole top-level keys.
 func newVisWallCfg(t *testing.T, instanceDir, extraConfig string) *visWall {
 	t.Helper()
+	return newVisWallAs(t, qaFixtureUsername, instanceDir, extraConfig)
+}
+
+// newVisWallAs is newVisWallCfg deriving under a CHOSEN account name — the
+// handle the shipped-name exclusion needs (ranger-base-c7i8t): the hook is
+// rendered during the install below, so the username has to be pinned
+// before it and not after. Every other constructor in this file reaches it
+// with qaFixtureUsername.
+func newVisWallAs(t *testing.T, username, instanceDir, extraConfig string) *visWall {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
+	qaPinUsername(t, username)
 	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	w := &visWall{

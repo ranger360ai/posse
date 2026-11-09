@@ -28,6 +28,7 @@ import (
 	"io/fs"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
 	"regexp"
 	"regexp/syntax"
@@ -1330,6 +1331,62 @@ same residual a refused staged file leaves.`
 // install.
 const identityLiteralMaxLen = 4096
 
+// shippedPosseNames is the ONE closed set of names posse ships as its own:
+// the last element of its module path — the product, its Go package and its
+// command, all spelled the same — plus every persona name posse has ever
+// shipped an example PID under (retirableExampleNames over the EMBED).
+//
+// SHIPPED AND CLOSED (ADR 0024 D2 check 3 as amended 2026-11-09): a
+// constant and the embed, and nothing else. It never reads the tracked
+// tree, `git ls-files`, examples/ on disk or config — a name excluded
+// because the tree already carries it would let any leak that landed
+// license every later one, which is the one thing ranger-base-87jw1 said
+// the fix must not do.
+//
+// ONE FUNCTION, TWO ARMS, which is why it is here rather than inline in
+// either: DeriveIdentityLiterals skips a USERNAME in this set and
+// DeriveCrewLiterals skips a staffed PID in it. The two arms break the same
+// way under the same name — `posse` as the box account refuses every
+// `internal/posse/...` path through check 3's path arm, and `posse` as a
+// lane name refuses the identical paths through the crew arm — so a set
+// spelled twice is two sets that drift. The crew arm's half of it predates
+// the amendment and its reason is stated there in as many words: a wall
+// that refused the seed's own role names would refuse its own remedy.
+func shippedPosseNames() []string {
+	return append([]string{path.Base(posseModule)}, retirableExampleNames(posse.Seed)...)
+}
+
+// isShippedPosseName reports whether name is one of them, compared
+// case-folded exactly as the amendment says ("equals, case-folded"): a
+// shipped name has a legitimate public use whatever case an OS account or a
+// directory entry happens to spell it in. EqualFold and not ToLower, because
+// the subject on the username side is a name the box chose and not one posse
+// shipped.
+func isShippedPosseName(name string) bool {
+	for _, n := range shippedPosseNames() {
+		if strings.EqualFold(name, n) {
+			return true
+		}
+	}
+	return false
+}
+
+// currentUsername is the box's own account name, and a variable for exactly
+// one reason: a test has to be able to derive under a CHOSEN name. The
+// username is the one check-3 source whose value a test cannot plant — the
+// e-mails are git config and the instance path is a directory the fixture
+// makes, but this comes off the running process's passwd entry — so the
+// exclusion above, whose entire subject is what the name IS, is untestable
+// without a seam. It is a seam and not configuration: $USER stays unread,
+// because a caller can set it to anything.
+var currentUsername = func() (string, error) {
+	u, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	return u.Username, nil
+}
+
 // DeriveIdentityLiterals derives ADR 0024 D2 check 3's identity literals
 // from the box, for the repo at dir (hookRepo's answer — the shared repo a
 // worktree's hook actually belongs to). Each source is independent and
@@ -1338,7 +1395,19 @@ const identityLiteralMaxLen = 4096
 // renderer says so only for what it DID derive:
 //
 //   - username: os/user's Current().Username — not $USER, which a caller
-//     can set to anything.
+//     can set to anything — UNLESS the name IS one of posse's own shipped
+//     names (isShippedPosseName; ADR 0024 D2 check 3 as amended 2026-11-09,
+//     ranger-base-87jw1 from ranger-base-sydnc). The class is defined as
+//     values with no legitimate public use anywhere, and a name posse ships
+//     has one by construction: it is the product, its package and its
+//     command, or a role the seed staffs. ADR 0080 D2 puts the always-on
+//     host's crews under a dedicated `posse` account, and the literal
+//     renders with no word boundary, so under that account the wall refused
+//     nearly every commit into posse itself — every `+package posse` line
+//     and every `internal/posse/...` path — with no remedy a writer could
+//     take, because nobody can generalize a package clause. What is given
+//     up is stated in the ADR: under such an account this source derives
+//     nothing at all.
 //   - email: `git config --get-all user.email` — EVERY scope's value
 //     (system, global, repo-local, worktree, command), one literal each,
 //     deduplicated. Not the bare read: that answers with git's own
@@ -1379,8 +1448,12 @@ func DeriveIdentityLiterals(dir string) ([]IdentityLiteral, error) {
 		return nil
 	}
 
-	if u, err := user.Current(); err == nil {
-		if err := add("username", u.Username); err != nil {
+	// Nothing at all when the account is named for the product or for one of
+	// the seed's roles (isShippedPosseName): skipped, not refused and not
+	// warned about, because the skipped value has a public use and no reader
+	// of the rendered hook is misled by its absence.
+	if name, err := currentUsername(); err == nil && !isShippedPosseName(name) {
+		if err := add("username", name); err != nil {
 			return nil, err
 		}
 	}
@@ -1552,10 +1625,16 @@ this arm.`
 // over this repo's 830 tracked paths at the fix: the 11 PID names this
 // instance staffs hit 1 path; the 9 names the seed ships hit 285, `qa`
 // alone 273 — every *_qa_test.go in the tree. So the set is ListAgents
-// minus every name posse has ever shipped an example under
-// (retirableExampleNames over the EMBED, not a seed directory on disk: the
-// exclusion is the wall's, and examples/ beside a dev binary is the
-// operator's to edit).
+// minus every name posse ships as its own (isShippedPosseName over the
+// EMBED and a constant, not a seed directory on disk: the exclusion is the
+// wall's, and examples/ beside a dev binary is the operator's to edit).
+//
+// ONE SET WITH THE USERNAME ARM since ranger-base-c7i8t, which widened this
+// exclusion by the one name it did not already hold: the last element of
+// posse's module path. A lane named `posse` broke this arm exactly as a box
+// account named `posse` broke the username arm — the same boundary-free
+// match over the same 864 of 1,621 tracked paths — so both read
+// shippedPosseNames and neither can drift from the other.
 //
 // THAT ONE HIT WAS NOT A HIT, and cdxpf's close called it "the real hit"
 // (ranger-base-p7e0z corrects it here and in ADR 0024): the path is
@@ -1581,10 +1660,6 @@ this arm.`
 // metacharacter into the hook (the panic class DeriveIdentityLiterals refuses
 // an install over cannot arise).
 func (a *App) DeriveCrewLiterals() []IdentityLiteral {
-	shipped := map[string]bool{}
-	for _, n := range retirableExampleNames(posse.Seed) {
-		shipped[strings.ToLower(n)] = true
-	}
 	var out []IdentityLiteral
 	seen := map[string]bool{}
 	add := func(v string) {
@@ -1596,7 +1671,7 @@ func (a *App) DeriveCrewLiterals() []IdentityLiteral {
 		out = append(out, IdentityLiteral{Class: CrewLiteralClass, Value: v, PathsOnly: true})
 	}
 	for _, name := range a.ListAgents() {
-		if !ValidName(name) || shipped[strings.ToLower(name)] {
+		if !ValidName(name) || isShippedPosseName(name) {
 			continue
 		}
 		add(name)

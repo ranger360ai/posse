@@ -42,6 +42,7 @@ package posse
 // assertConstitutionRefusal.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -434,6 +435,90 @@ func TestQAIdentityPathArmMatchesANonASCIILiteralRaw(t *testing.T) {
 	}
 	if !strings.Contains(out, "an operator identity literal in a staged PATH") {
 		t.Errorf("the refusal must come from the path arm:\n%s", out)
+	}
+}
+
+// ranger-base-c7i8t, the other half of the shipped-name exclusion and the
+// one that keeps it from becoming the leak it was written beside: the skip
+// is by SHIPPED NAME, never by what the tree happens to carry. A username
+// that saturates the tracked tree is still derived and still refuses, as
+// long as posse does not ship that name.
+//
+// WHY THIS PIN EXISTS AT ALL (ranger-base-87jw1's "one thing the fix must
+// not do"): the cheap rewrite of this exclusion is "skip whatever already
+// occurs in the tree" — one `git grep` and a threshold — and it would pass
+// TestDeriveIdentityLiteralsSkipsAShippedUsername, every other pin in this
+// cluster, and both identity-check censuses, because `posse` saturates the
+// tree and the shipped names are exactly the names that do. It would also
+// mean a leak that landed licensed every later one: the first commit
+// carrying an operator's name would teach the wall to stop looking for it.
+// ADR 0024 D2 as amended 2026-11-09 says the set is shipped and closed — a
+// constant and the embed — and this is the pin that says so by execution.
+//
+// THE PROCESS IT NAMES is the same prepare-commit-msg render: the account
+// here is a tree-saturating name that is NOT shipped, which the amendment's
+// stated residual calls out by example (`dev`, `go`). It must refuse, and
+// loudly, at the first commit.
+//
+// It saturates the FIXTURE's tracked tree and does not read this
+// repository's — the two censuses over the real tree are
+// TestQAIdentityLiteralsNeverAppearInATrackedPath and
+// TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned, which is
+// a different question (has this box leaked) asked of a different subject.
+// Reading the real tree here would put this pin in the tree-wide class for
+// no gain: the property is about the DERIVATION, and a fixture tree pins it
+// with the occurrence count under the test's own control.
+//
+// MUTATION-CHECKED (go test -overlay, tree untouched, 2026-11-09): with
+// isShippedPosseName rewritten to answer "does the tracked tree carry this
+// name" this pin goes red, and with the username skipped unconditionally it
+// goes red too. Dropping the exclusion outright leaves it green, which is
+// the point — it is the half that says the skip must not reach further than
+// the shipped set.
+func TestQAAnUnshippedUsernameDerivesEvenWhenTheTreeIsFullOfIt(t *testing.T) {
+	const name = "dev" // the amendment's own example of the residual
+	if isShippedPosseName(name) {
+		t.Fatalf("fixture premise: %q must NOT be one of posse's shipped names, got %v", name, shippedPosseNames())
+	}
+	w := newVisWallAs(t, name, "instance", "")
+
+	// The fixture tree, saturated: twenty tracked files carrying the name in
+	// the PATH and in the CONTENT, committed with the hook bypassed because
+	// by construction they could not be staged through the wall under test.
+	for i := 0; i < 20; i++ {
+		w.plant(t, w.pub, fmt.Sprintf("internal/%s/file%d.go", name, i), "package "+name+"\n// "+name+" wrote this\n")
+	}
+	tracked, err := w.git(w.pub, nil, "ls-files")
+	if err != nil {
+		t.Fatalf("git ls-files: %v %s", err, tracked)
+	}
+	if n := strings.Count(tracked, "/"+name+"/"); n < 20 {
+		t.Fatalf("fixture premise: the tracked tree must be full of %q, got %d paths carrying it:\n%s", name, n, tracked)
+	}
+
+	// DERIVED ANYWAY — the whole point. w.literal fatals if the class is
+	// absent, so the assertion is that it is present AND is this name.
+	if got := w.literal(t, "username"); got != name {
+		t.Fatalf("username literal = %q, want %q: the exclusion is a shipped set, not a census of the tree", got, name)
+	}
+
+	// AND IT REFUSES. The staged line is the arm a tree-occurrence rewrite
+	// would have opened: content, in a code file, in a repo whose own
+	// history is full of the same string.
+	const rel = "cmd/example.go"
+	w.stage(t, w.pub, rel, "// owned by "+name+"\npackage main\n")
+	out, err := w.git(w.pub, w.persona, "commit", "-m", "x", "--", rel)
+	if err == nil {
+		t.Fatalf("a username that is not a shipped posse name must still be refused, however much of the tree carries it:\n%s", out)
+	}
+	for _, want := range []string{
+		"refused by posse gate: an operator identity literal in a staged file",
+		"username:",
+		"ADR 0024 D2 check 3",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the refusal must carry %q:\n%s", want, out)
+		}
 	}
 }
 
