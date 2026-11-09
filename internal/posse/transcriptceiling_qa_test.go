@@ -390,6 +390,11 @@ func TestQANoLaunchPayloadNamesCleanupPeriodDays(t *testing.T) {
 // before (ranger-base-az23f, verifyesa0j): it renders its own line and
 // trusts nothing in the meta.
 func TestQATranscriptCeilingIsOnTheLineTheLaunchTyped(t *testing.T) {
+	// Parallel-safe and the gate says so: this arm sets no environment
+	// variable (the config it needs is a FILE in its own fixture home,
+	// which is what the launch reads) and every path it touches is under
+	// that home or the fake multiplexer's call log.
+	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	repo := t.TempDir()
