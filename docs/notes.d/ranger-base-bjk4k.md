@@ -127,11 +127,25 @@ between each:
 | `return false && …` (the predicate stops saying yes) | arm 1's claude control |
 | `!rt.SelfSandbox` → `(rt.SelfSandbox \|\| !rt.SelfSandbox)` | arm 1's codex assertion |
 
-## 4. What is not decided here, and by whom
+## 4. What this bead did not decide, and the correction it came back with
 
-Whether D21 is worth another host run at all. The operator's own note on the
-reading is that the D1 host is claude-only by ruling, which would make the
-item moot rather than pending — and that is the architect's call, not this
-bead's. Filed to the architecture lane with the reading. This bead changed no
-behavior on either host, which was the gate's instruction and is also its
-done-when: darwin output unchanged.
+Whether D21 is worth another host run was the architecture lane's call, filed
+as **ranger-base-unsqg** with the reading. That lane answered the same day:
+**D21 is PARKED** — not pending, because nothing shipped waits on it (with
+the flip off, Linux codex is walled exactly as darwin codex is, by its own
+sandbox alone, and that posture is already accepted), and not retired. ADR
+0080 D21 now carries both notes: this reading, then the parked decision.
+
+**The correction, and it is mine.** This bead offered "the D1 host is
+claude-only by operator ruling" — the operator's phrasing in the probe
+comment — as grounds on which D21 might be moot. ranger-base-unsqg searched
+the record: that ruling appears in no ADR, bead or ORDERS file, and D3 of
+this same ADR, which *is* operator direction, says the opposite (Rex and
+herdr serve every runtime; codex was admitted on Rex, ranger-base-8gh58). A
+sentence in a probe-run comment is a reading of the operator's intent, not a
+record of it, and this bead passed it along as if it were one. The lesson is
+narrow and worth keeping: when a handoff offers a ruling as a reason, cite
+where the ruling is written or say that it is unwritten.
+
+This bead changed no behavior on either host, which was the gate's
+instruction and is also its done-when: darwin output unchanged.
