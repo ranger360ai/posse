@@ -9,8 +9,12 @@ ASSUMED and one UNPROVEN, and this bead was cut to measure all three.
 
 **Two of the three are measured here, with no model turn.** The third needs a
 real billed grok turn on the operator's own account, which is spend and is
-never a persona's call; it is filed as an authorization ask and this bead is
-blocked on it. Nothing below cost a turn: every arm ran under its own fixture
+never a persona's call; it was filed as an authorization ask
+(ranger-base-uzb3s) and **DECLINED by the operator on 2026-11-08** — claude is
+the only runtime on the host for now (ADR 0083 D1, ADR 0080 D6), so turns
+bought here would buy evidence for a runtime the host will not field. Section
+4 is therefore what this slice leaves UNPROVEN by decision, not a measurement
+anyone is waiting on. Nothing below cost a turn: every arm ran under its own fixture
 grok home with a junk API key and every `*_PROXY` at `127.0.0.1:9`, so each
 turn died locally before it was a request (the ranger-base-1g8gf rig, as
 Amendment 3's own probe uses it).
@@ -139,11 +143,23 @@ That is still true, and it is the whole of what this bead did not deliver:
 
 Each needs a real billed grok turn on the operator's own account. Filed as an
 authorization ask on the codex precedent (ranger-base-x7ojx, where the
-operator authorized two codex turns by name and by count), and this bead is
-blocked on it rather than guessing. A refusal is also an answer: the two
-ASSUMEDs above are measured either way, and what stays open is the turn-end
-state, which Amendment 3 already records as UNPROVEN and which admission does
-not rest on — D2's argv arm accepts a first record of any state.
+operator authorized two codex turns by name and by count), rather than
+guessing.
+
+**The answer was DECLINE, operator direction 2026-11-08 (ranger-base-uzb3s):
+no billed grok turns, because claude is the only runtime on the host for now
+(ADR 0083 D1's last bullet, on ADR 0080 D6), and ranger-base-yqmkr closes on
+what is built and probed with the live grok settle recorded as unproven.**
+That was named in the ask as the cheap answer and it is: the two ASSUMEDs
+above are measured either way, and what stays open is the turn-end state,
+which Amendment 3 already records as UNPROVEN and which admission does not
+rest on — D2's argv arm accepts a first record of any state. What it costs is
+real and bounded: a posse settle on Rex would be reading a grok turn-end state
+no one has seen, so the first seat to try it is the one that finds out. The
+decline is "for now" and names its own revisit — if grok is admitted on the
+host, the three bullets above are the shopping list, and the probe
+(`docs/adr/0076-grok-shakedown.probe.sh`) is the rig that gets everything else
+back for free.
 
 ## 5. Two rig findings, both of which faked a result first
 
@@ -183,5 +199,6 @@ file path in argv.
 MEASURED (this box, 2026-11-07, versions above): every row of sections 1, 2
 and 3, and both rig findings in section 5. ASSUMED: nothing new — the two
 ASSUMEDs this bead was cut to measure are measured. UNPROVEN: the turn-end
-state and a dispatched settle, section 4, pending authorization; grok's
-`blocked` live, unchanged from Amendment 3.
+state and a dispatched settle, section 4 — not pending, but DECLINED
+2026-11-08 and left unproven by that decision; grok's `blocked` live,
+unchanged from Amendment 3.

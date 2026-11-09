@@ -151,7 +151,7 @@ func grokProgramStatusDoor() string {
 		strings.ReplaceAll(GrokProgramStatusLine, "\n", "` / `") + "` in " + p +
 		" — posse reads that file, section-aware, and never writes it, because it carries the operator's own preferences AND grok rewrites it (" +
 		"a copy over it would clobber both). It is declared in etc/grok/version-pin.toml beside the [cli] keys and asserted by `make verify-grok-pin`. " +
-		"THE LINE IS BOX-WIDE: every grok the operator runs then writes OSC 7501 in every terminal, herdr panes included (a terminal that does not know an OSC consumes it unseen — ECMA-48 string controls — which is ASSUMED for herdr's emulator and is what ranger-base-yqmkr's shakedown measures). " +
+		"THE LINE IS BOX-WIDE: every grok the operator runs then writes OSC 7501 in every terminal, herdr panes included — and that costs you nothing, MEASURED 2026-11-07 (ranger-base-yqmkr) on grok 1.0.52 / herdr 0.9.1: a terminal that does not know an OSC consumes it unseen (ECMA-48 string controls), and herdr's emulator does, so 28 OSC strings into a pane left the rendered screen identical to the `auto` arm's and herdr's own grok detection reading the same states off the same rules. " +
 		"Until it is there, "
 }
 

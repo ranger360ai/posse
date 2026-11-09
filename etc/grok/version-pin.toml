@@ -157,8 +157,15 @@ required_maximum_version = "1.0.52"
 # every terminal, herdr panes included. A terminal that does not know an OSC
 # is meant to consume it unseen (ECMA-48 string controls); that herdr's
 # emulator does so, and that herdr's own grok detection still settles, is
-# ASSUMED and is what ranger-base-yqmkr's shakedown measures on both
-# multiplexers.
+# MEASURED 2026-11-07 (ranger-base-yqmkr), grok 1.0.52 / herdr 0.9.1 with
+# detection manifest 2026.10.05.1: 28 OSC 7501 strings into a herdr pane left
+# the rendered screen identical to the `auto` arm's, and detection read
+# working then idle off matched rules on both arms. So on herdr this line
+# costs nothing — and buys nothing either: under `auto`, in a herdr pane,
+# grok writes no 7501 bytes at all, so the `n,auth` leak it fixes is
+# Rex-specific. What is still UNPROVEN is how a grok turn ENDS on Rex, which
+# needs a billed turn: asked for and DECLINED 2026-11-08 (ranger-base-uzb3s),
+# claude being the only runtime on the host for now (ADR 0083 D1).
 program_status = "on"
 
 [install]

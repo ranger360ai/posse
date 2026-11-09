@@ -1107,8 +1107,12 @@ turn). The cask is pinned, so that costs one run per deliberate bump.
   What the shakedown did NOT reach is the turn-end state and a dispatched
   settle on either multiplexer: both need a real billed grok turn, which is
   the operator's to authorize (the codex precedent is ranger-base-x7ojx), so
-  the UNPROVEN three bullets down stands and ranger-base-yqmkr is blocked on
-  the ask rather than guessing.*
+  ranger-base-yqmkr filed the ask (ranger-base-uzb3s) rather than guessing.
+  **The ask was DECLINED, operator direction 2026-11-08: no billed grok
+  turns, because claude is the only runtime on the host for now (ADR 0083 D1,
+  ADR 0080 D6).** So the UNPROVEN three bullets down is this slice's settled
+  state and not a pending measurement — revisit it if grok is admitted on the
+  host.*
 - grok's `blocked` is STATIC: the binary carries
   `7501;state=…:kind=permission:app=grok-build`. A live permission prompt needs
   a model turn, so it is UNPROVEN. Fleet grok runs `--permission-mode auto`.
@@ -1117,8 +1121,10 @@ turn). The cask is pinned, so that costs one run per deliberate bump.
   in). How a turn ENDS, `done` or `error`, is in grok's docs ("working, waiting
   for you, done, or failed") but UNPROVEN live: the rig cannot finish a turn
   without a model. Admission does not rest on it, because D2's argv arm accepts
-  a first record of any state. Settling does, so the slice's live shakedown
-  (one real turn, operator-run) is where it is measured.
+  a first record of any state. Settling does, and the slice's live shakedown
+  (one real turn, operator-run) was where it would have been measured — that
+  turn was asked for and DECLINED (ranger-base-uzb3s, 2026-11-08), so this
+  stays UNPROVEN until grok is admitted on the host.
 - A grok killed without `/quit` leaves its last record behind. The Spike's rule
   covers this: a dead owner pid reads `unknown`.
 - `runtime.go`'s `ReportsOnRex` comment repeats D3's "again forced `on`". The
