@@ -38,6 +38,7 @@ package posse
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -477,41 +478,68 @@ func TestQABwrapRefGrantIsADeclaredDifferenceNotDegradation(t *testing.T) {
 
 // ─── the keep file against a real `git pack-refs --all --prune` ──────────────
 
-// What the keep file buys, MEASURED rather than assumed, and measurable here
-// because this half of it is git's behaviour and not the kernel's: a loose
-// ref directory holding a dot-named file survives the prune that empties it,
-// and git reads nothing in it as a ref.
+// bgGit runs one git verb and answers its exit status with BOTH streams. The
+// arms below are about what git SAYS over a keep file, and git says it on
+// stderr at exit 0 — the package's own git() helper returns stdout and
+// folds stderr into an error it does not make, so an assertion written
+// through it reads clean over a `warning: ignoring broken ref` on every
+// invocation in the repo. Measured: this test passed over a NON-dot-named
+// keep file until it was written this way.
+func bgGit(t *testing.T, repo string, arg ...string) (bool, string) {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", repo}, arg...)...).CombinedOutput()
+	return err == nil, strings.TrimSpace(string(out))
+}
+
+// What the keep file buys and what the DOT in its name buys, MEASURED rather
+// than assumed — and measurable here, because this half of D20 is git's
+// behaviour and not the kernel's. ADR 0080 D20 lists it as ASSUMED, read by
+// probe T4b-T4d on the Linux host; what is left for the host after this file
+// is narrower than that row suggests, and it is the only part a darwin box
+// cannot settle: whether the prune can take a directory that is a MOUNTPOINT
+// in a live seat's namespace at all (bwrapgitrefslive_test.go's control).
 //
-// ADR 0080 D20 lists this as ASSUMED, read by probe T4b-T4d on the Linux
-// host. T4's remaining Linux-only question is narrower than the probe's row
-// suggests, and it is the only part a darwin box cannot settle: whether the
-// prune can take a directory that is a MOUNTPOINT in a live seat's namespace
-// at all (bwrapgitrefslive_test.go's control carries that one).
+// MEASURED 2026-11-08, darwin 25.6.0, git 2.50.1 (Apple Git-155):
 //
-// MEASURED 2026-11-08, darwin 25.6.0, the box's git: with the keep file the
-// directory is there after the pack and the next commit lands; with it
-// removed and a loose ref back in the directory, the same pack removes it.
+//   - with the keep file, `pack-refs --all --prune` leaves the directory and
+//     the next commit lands; with it removed and a loose ref back in the
+//     directory, the same pack removes it;
+//   - dot-named, `for-each-ref`, `show-ref`, `branch`, `log --all` and `gc`
+//     are all clean at exit 0;
+//   - `fsck` is NOT: exit 8, `badRefName: invalid refname format` and
+//     `badRefContent`. D20's T4d expects `clean` and that expectation is
+//     wrong — the residual is stated in the ADR and pinned below, so a git
+//     that stops saying it reds this and the consequence gets removed rather
+//     than outliving the thing it described.
 func TestQABwrapRefKeepFileSurvivesAnOutsidePackRefs(t *testing.T) {
 	f := wgNewFixture(t)
 	_, keep := bgSwap(t, f, f.tree)
 	dir := filepath.Dir(absResolve(keep[0]))
-	fh, err := os.OpenFile(absResolve(keep[0]), os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fh.Close()
+	bgTouch(t, absResolve(keep[0]))
 
 	mustGit(t, f.repo, "pack-refs", "--all", "--prune")
 	if !wgExists(t, dir) {
 		t.Fatalf("the prune removed %s with the keep file in it — the file does not do what D20 asks of it", dir)
 	}
-	// T4c and T4d: the file is in a loose ref directory, so the question is
-	// whether git reads it as a ref or as damage. Neither, by the dot.
-	if out := mustGit(t, f.repo, "for-each-ref"); strings.Contains(out, bwrapRefKeepName) {
-		t.Errorf("git lists the keep file as a ref:\n%s", out)
+	// T4c: every git verb that READS refs is clean over it, at exit 0 and
+	// with nothing on stderr. `gc` is in the list because it is the verb
+	// this whole item exists for: an operator's `gc` is what prunes the
+	// directory, and a keep file that broke it would be a cure worse than
+	// the disease.
+	for _, verb := range [][]string{{"for-each-ref"}, {"show-ref"}, {"branch"}, {"log", "--all", "--oneline"}, {"gc", "--quiet"}} {
+		ok, out := bgGit(t, f.repo, verb...)
+		if !ok || strings.Contains(out, bwrapRefKeepName) {
+			t.Errorf("git %s is not clean over the keep file (ok=%v):\n%s", strings.Join(verb, " "), ok, out)
+		}
 	}
-	if out, _ := git(f.repo, "fsck"); strings.Contains(out, bwrapRefKeepName) {
-		t.Errorf("git fsck flags the keep file:\n%s", out)
+	if !wgExists(t, dir) {
+		t.Fatalf("`git gc` removed %s with the keep file in it", dir)
+	}
+	// T4d, and it is the one row of D20's probe this measurement CONTRADICTS:
+	// fsck reads a loose ref directory entry by entry and a dot-named empty
+	// file is a ref name it rejects. Pinned as the residual it is.
+	if ok, out := bgGit(t, f.repo, "fsck"); ok || !strings.Contains(out, bwrapRefKeepName) {
+		t.Errorf("`git fsck` no longer flags the keep file (ok=%v) — ADR 0080 D20's stated residual is gone and the ADR should lose it:\n%s", ok, out)
 	}
 	// And the commit after the pack lands, which is T4's git half: the loose
 	// ref is gone, the directory is not, so the lock-then-rename has
@@ -533,4 +561,54 @@ func TestQABwrapRefKeepFileSurvivesAnOutsidePackRefs(t *testing.T) {
 	if wgExists(t, dir) {
 		t.Fatalf("the prune left %s with no keep file in it — the keep file is not what keeps it, and D20's reason for creating it needs revisiting instead of this test", dir)
 	}
+}
+
+// The DOT, by execution, and it is the arm that says why the name is spelled
+// the way it is. A keep file git reads as a ref name is a BROKEN ref: with
+// the dot removed the same file makes `git gc` and `git log --all` exit 128
+// in the operator's checkout — `fatal: bad object`, `failed to run repack` —
+// which is a worse failure than the prune this file exists to survive, and
+// it lands on the operator rather than on the seat.
+//
+// MEASURED 2026-11-08, darwin 25.6.0, git 2.50.1: dot-named, all five verbs
+// above are clean; named `posse-keep`, `for-each-ref` and `branch` warn at
+// exit 0, and `show-ref`, `log --all` and `gc` exit 128.
+func TestQABwrapRefKeepFileWithoutItsDotBreaksTheOperatorsGit(t *testing.T) {
+	f := wgNewFixture(t)
+	_, keep := bgSwap(t, f, f.tree)
+	plain := filepath.Join(filepath.Dir(absResolve(keep[0])), strings.TrimPrefix(bwrapRefKeepName, "."))
+	if plain == absResolve(keep[0]) {
+		t.Fatalf("%s is not dot-named, so this control varies nothing", bwrapRefKeepName)
+	}
+	bgTouch(t, plain)
+
+	for _, verb := range [][]string{{"show-ref"}, {"log", "--all", "--oneline"}, {"gc", "--quiet"}} {
+		if ok, out := bgGit(t, f.repo, verb...); ok {
+			t.Errorf("git %s survived a keep file that is NOT dot-named, so the dot in %s buys nothing on this git and D20's reason for it needs revisiting:\n%s",
+				strings.Join(verb, " "), bwrapRefKeepName, out)
+		}
+	}
+	// The positive half, over the same fixture: the shipped name is clean
+	// where that one is not. Without it this test is satisfied by a git that
+	// refuses every keep file.
+	if err := os.Remove(plain); err != nil {
+		t.Fatal(err)
+	}
+	bgTouch(t, absResolve(keep[0]))
+	for _, verb := range [][]string{{"show-ref"}, {"log", "--all", "--oneline"}, {"gc", "--quiet"}} {
+		if ok, out := bgGit(t, f.repo, verb...); !ok {
+			t.Errorf("git %s refuses the SHIPPED keep file %s too:\n%s", strings.Join(verb, " "), bwrapRefKeepName, out)
+		}
+	}
+}
+
+// bgTouch is the launcher's PrepTouch, which is the only write this bead asks
+// anyone to make inside the operator's git dir.
+func bgTouch(t *testing.T, p string) {
+	t.Helper()
+	fh, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fh.Close()
 }
