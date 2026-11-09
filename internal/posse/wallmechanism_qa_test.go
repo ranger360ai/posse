@@ -349,11 +349,16 @@ func TestQAWallTableClaimsNoTierThisBuildCannotType(t *testing.T) {
 // branch from darwin"), and the one predicate at the centre of D21 is the one
 // that cannot be read that way. So arm 2 reads the function's BODY.
 //
-// A TRIPWIRE WITH INSTRUCTIONS, not a veto. The day D21 lands on a reading
-// that supports it, this arm is meant to be deleted — by whoever also moves
-// D21's as-measured note, parity's declared difference and the pins named
-// above, which is the list the failure message carries. What it refuses is
-// that flip landing with none of them touched.
+// AND D21 IS RETIRED, so this arm waits for nothing. The operator ruled the
+// D1 host claude-only (ranger-base-0ka8a (a), ADR 0080 D24), so walling
+// codex under bwrap protects nothing and the flip is never built (D25).
+// THIS PIN IS NOT RETIRED WITH IT, and the two are independent on purpose
+// (D26): what it refuses is a host term entering `wallRendered` at all, and
+// that hazard is the predicate's shape rather than D21's status — posse is
+// shipped software, so "codex on a Linux host" is not only the D1 host.
+// Reopening D21 is the operator's call, not an inference from a new runtime
+// version or a probe reading, and a reopen starts with the amended T6/T6z
+// run (the STEPS on ranger-base-1jhgv, closed moot by the same ruling).
 func TestQANoPosseWallForASelfSandboxRuntimeOnEitherMechanism(t *testing.T) {
 	// No t.Parallel: reads the package var AvailableCages, which other tests
 	// write (cmd/testparallel's rule).
@@ -368,7 +373,7 @@ func TestQANoPosseWallForASelfSandboxRuntimeOnEitherMechanism(t *testing.T) {
 	// saying yes to anything at all, which is the way an assertion of
 	// absence goes vacuous.
 	if wallRendered(CageSeatbelt, cx) {
-		t.Errorf("posse rendered an L2 wall for %s, a SelfSandbox runtime — on darwin nested sandbox-exec is refused, and on Linux the gate that would have permitted this (ADR 0080 D21, probe T6) read refused (ranger-base-bjk4k). parity.go says this as a DeclaredDifference instead; a wall here is one that cannot apply", cx.Name)
+		t.Errorf("posse rendered an L2 wall for %s, a SelfSandbox runtime — on darwin nested sandbox-exec is refused, and on Linux the gate that would have permitted this (ADR 0080 D21, probe T6) read refused (ranger-base-bjk4k) and D21 is now RETIRED by operator ruling, the D1 host being claude-only (ranger-base-0ka8a (a), ADR 0080 D24-D25). parity.go says this as a DeclaredDifference instead; a wall here is one that cannot apply", cx.Name)
 	}
 	if !AvailableCages[CageSeatbelt] {
 		t.Skip("no seatbelt tier on this box — arm 1's control cannot distinguish the SelfSandbox term from the availability term, and arm 2 is the half that matters")
@@ -437,7 +442,7 @@ func TestQANoPosseWallForASelfSandboxRuntimeOnEitherMechanism(t *testing.T) {
 		if !ok || okNames[id.Name] {
 			return true
 		}
-		t.Errorf("%s reads %q at %s — this predicate is allowed the tier (cage, CageSeatbelt, AvailableCages) and the runtime's own declaration (rt, SelfSandbox) and nothing else, so a new term here is a host decision moving into it. If it names the mechanism, directly or through the GOOS — that is ADR 0080 D21's flip, and it is INVISIBLE to this suite's behavioral pins: on darwin a `WallMechanism() == WallBwrap` disjunct is false, so codexrex_test.go's arm 1, credentialdenymove_qa_test.go's wallRendered table and arm 1 above all stay green while Linux codex gets a wall posse never measured. D21 was gated on probe T6 and T6 read REFUSED against an expected allowed (ranger-base-r5m98, ranger-base-bjk4k). If the gate has since been answered properly, land it WITH its reading: D21's as-measured note, parity.go's `seatbeltIncompatible` declared difference, reachability.go's SelfSandbox arm, and this pin, which is meant to be deleted by that commit and not by this one",
+		t.Errorf("%s reads %q at %s — this predicate is allowed the tier (cage, CageSeatbelt, AvailableCages) and the runtime's own declaration (rt, SelfSandbox) and nothing else, so a new term here is a host decision moving into it. If it names the mechanism, directly or through the GOOS — that is ADR 0080 D21's flip, and it is INVISIBLE to this suite's behavioral pins: on darwin a `WallMechanism() == WallBwrap` disjunct is false, so codexrex_test.go's arm 1, credentialdenymove_qa_test.go's wallRendered table and arm 1 above all stay green while Linux codex gets a wall posse never measured. D21 was gated on probe T6, T6 read REFUSED against an expected allowed (ranger-base-r5m98, ranger-base-bjk4k), and D21 is now RETIRED: the operator ruled the D1 host claude-only (ranger-base-0ka8a (a), ADR 0080 D24-D26), so no codex seat is there for the flip to protect and it is never built. This pin is not waiting to be deleted by it. Reopening D21 is the OPERATOR's call — not an inference from a new runtime version or a probe reading — and a reopen starts with the amended T6/T6z run (ranger-base-1jhgv), never with this term",
 			owner, id.Name, fset.Position(id.Pos()))
 		return true
 	})
