@@ -69,7 +69,11 @@ those pins, hold git back with the package manager's ignore list; never
 patch the pins to suit.
 
 **D2. One OS account, one Rex server, one posse home per crew.**
-- The account is a dedicated `posse` user.
+- The account is a dedicated `posse` user. That name passes the commit
+  wall only through ADR 0024 D2 check 3's 2026-11-09 amendment
+  (ranger-base-87jw1): a username equal to a shipped name is not derived
+  as an identity literal. Until that lands, an account with this name
+  cannot commit into posse.
 - That user runs one Rex server in personal mode, plus herdr's server
   beside it (D3).
 - Each crew is its own `RHQ_HOME` under that account, with its own

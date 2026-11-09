@@ -26,7 +26,11 @@ fixtures reusing common round dollar figures, a collision no digit-count
 floor closes — ranger-base-qdwet, from ranger-base-ei046) · amended
 2026-11-08 (D2 check 3: the instance repo path is rendered in its canonical
 spelling, the kernel's name for the directory, so every renderer writes the
-same bytes — ADR 0082, ranger-base-5wq6g)*
+same bytes — ADR 0082, ranger-base-5wq6g) · amended 2026-11-09 (D2 check
+3: a username equal to one of posse's own shipped names — the module's
+last element or any example role it has shipped — is not derived, from a
+shipped closed set and never from the tree; ranger-base-87jw1, from
+ranger-base-sydnc)*
 
 ## Context
 
@@ -257,6 +261,41 @@ install and at every persona launch).
    lane is renamed. It cannot be silent — the refusal names the path and
    the persona, and the override is one env var.
 
+   *Amended 2026-11-09 (ranger-base-87jw1, from ranger-base-sydnc): the
+   username is not derived when it IS one of posse's own shipped names.*
+   This class is defined as values with "no legitimate public use
+   anywhere". A name posse ships has one by construction: it is the
+   product, its package and its command, or a role the seed staffs. ADR
+   0080 D2 puts the always-on host's crews under a dedicated `posse`
+   account. The username renders with no boundary, so under that account
+   the wall refuses nearly every commit into posse itself. MEASURED
+   2026-11-09 at 3135c8ac: `posse` is in 864 of 1,621 tracked paths and in
+   the content of 1,525 tracked files. By execution (ranger-base-sydnc's
+   overlay at 7a14a4f3), 29 of the 142 commit-wall pins red under that
+   username and none under the operator's. A seeded role does the same:
+   `qa` is in 532 paths and 812 files, `ops` in 728 files. D3's remedy
+   cannot be taken, because nobody can generalize a `package posse`
+   clause. So `DeriveIdentityLiterals` skips the username when it equals,
+   case-folded, a member of ONE shipped set: the last element of posse's
+   module path (`posseModule`), plus `retirableExampleNames(posse.Seed)`.
+   That second list is the one the crew arm already excludes, for the
+   reason stated there: a wall that refused those would refuse its own
+   remedy. Every renderer and both `make identity-check` pins read that
+   one function, so they agree byte for byte.
+
+   **The set is shipped and closed.** It reads a constant and the embed,
+   never the tree. A name excluded because the tracked tree already
+   carries it would let any leak that landed license every later one. The
+   e-mail and instance-path classes are untouched, since neither is ever a
+   bare word. What is given up: under such an account nothing is derived
+   from the username. A box path built from it (`/home/posse/...`) is
+   caught only where it is the instance path, and it names the product,
+   not the operator. The residual stays the crew arm's. A username that is
+   a common word but not a shipped name (`dev`, `go`) is still a
+   boundary-free match. It refuses honest commits until it is renamed or
+   overridden, and it does so loudly, at the first commit, naming the
+   class and the value.
+
    The literals live only in the
    rendered hook under the repo's hooks dir — never in a commit, never
    in the shipped list. The renderer refuses a literal containing a
@@ -448,3 +487,17 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
 - **Per-file visibility front-matter:** a tag the author writes is the
   judgment the wall exists to replace, and untagged files need a
   default — the default *is* the rule, so the tag adds nothing.
+- **Rename the host account instead (ADR 0080 D2) and leave check 3
+  alone** (ranger-base-87jw1): this fixes one box. Every deployer who
+  follows ADR 0080, or names a service account for the tool or a role,
+  meets the same wall at their first commit. The rule would also stay
+  wrong about its own class, because a shipped name has a public use.
+  Nothing here stops the operator from naming the account something else.
+- **Exclude whatever already occurs in the tracked tree:** the leak that
+  landed licenses every later one.
+- **A word boundary on the username:** `package posse` and
+  `internal/posse/` both match `\bposse\b`, so it moves none of the
+  numbers. It also opens the underscore gap measured in ranger-base-o3g6a.
+- **Warn or refuse at render when the username hits N tracked paths:**
+  this reads the tree on the launch path, behind a threshold nobody has
+  measured. The first commit's refusal already names the value.
