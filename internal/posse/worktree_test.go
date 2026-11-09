@@ -2861,6 +2861,58 @@ func TestEnsureSessionTreeAcceptsTheDetachPosseItselfRecorded(t *testing.T) {
 	}
 }
 
+// The OTHER conjunct of that predicate, which is the half neither pin above
+// separates: `launchedDetached` says posse detached this tree once, and
+// `treeDetachedHead` says it is detached NOW. A tree whose record says
+// detached while its HEAD sits on some THIRD branch is neither case — the
+// record is stale, the tree's own session branch is not what git would write
+// to, and accepting it hands the launch a tree whose commits land on the
+// wrong ref. That is the ranger-base-dybv failure this guard exists for, and
+// the function's own header promises the refusal ("a tree sitting on some
+// third branch").
+//
+// Nothing held it. MEASURED 2026-11-09 (ranger-base-oou58, verifying
+// ranger-base-p60mv's close): drop `treeDetachedHead` from existingTree and
+// keep `launchedDetached`, and the whole of arm 2 stays GREEN — both of
+// p60mv's own arms pair the record with a real detached HEAD, and no test in
+// the repo ever checks a session tree out onto another branch. So the
+// simplification `if launchedDetached(...) { return true, nil }` passed every
+// pin in the suite. This arm is what reds it.
+func TestEnsureSessionTreeRefusesAStaleRecordOverATreeOnAnotherBranch(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil || tr == nil {
+		t.Fatalf("EnsureSessionTree = (%v, %v)", tr, err)
+	}
+	// The record posse writes for its own detach...
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !launchedDetached(tr.Repo, tr.Branch) {
+		t.Fatal("CONTROL: the caged prepare must leave the record set, or this arm measures the unrecorded case")
+	}
+	// ...and then a HEAD that is neither the session branch nor detached: an
+	// operator's own checkout inside the tree, or a record left behind on a
+	// reused branch. Both are outside what posse's paths can produce, which
+	// is exactly what the guard is for.
+	mustGit(t, tr.Path, "checkout", "-q", "-b", "operators-own-branch")
+	if _, detached := treeDetachedHead(tr.Path); detached {
+		t.Fatal("CONTROL: the tree must be ON a branch here, or this arm is the recorded-detach case over again")
+	}
+	if !launchedDetached(tr.Repo, tr.Branch) {
+		t.Fatal("CONTROL: the record must still be set, or this arm is the no-record case")
+	}
+
+	got, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err == nil {
+		t.Errorf("a stale detach record let a tree on another branch through: %+v", got)
+	} else if !strings.Contains(err.Error(), "is on") {
+		t.Errorf("the refusal must stay in the guard's own words: %v", err)
+	}
+}
+
 // `branch -f` is a ref write with no ancestry check, so a branch tip the
 // tree's HEAD does not reach is work this would DELETE. Nothing in posse's
 // own paths can produce that pair — the branch of a detached tree moves only

@@ -12,6 +12,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-sydnc](ranger-base-sydnc.md) — `shasum` was not on the cutover host's PATH, and two guards read clean because of it (ranger-base-sydnc) — 2026-11-09
 - [ranger-base-sg7a7](ranger-base-sg7a7.md) — The launcher makes the session's furniture, not the host's (ranger-base-sg7a7) — 2026-11-09
 - [ranger-base-rffxq](ranger-base-rffxq.md) — The verify-chain bound at any batch size (ranger-base-rffxq) — 2026-11-09
+- [ranger-base-oou58](ranger-base-oou58.md) — A two-part guard with one part pinned (ranger-base-oou58) — 2026-11-09
 - [ranger-base-hoh3q](ranger-base-hoh3q.md) — D23's perimeter was a spelling, and the crew pins were built from half the set (ranger-base-hoh3q) — 2026-11-09
 - [ranger-base-h2uhe](ranger-base-h2uhe.md) — A pending row's "unlanded" is a reading of main, and it goes stale while you work (ranger-base-h2uhe) — 2026-11-09
 - [ranger-base-fswbr](ranger-base-fswbr.md) — The verify-chain bound, built to bind at any batch size (ranger-base-fswbr) — 2026-11-09
