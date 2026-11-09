@@ -103,8 +103,9 @@ refuses, so each absence surfaces where it is read before the launch:
   `SeatbeltWritable` grants it under two names, but a redirect bd FOLLOWS is
   one whose target `beadsRedirectHop` already stat'd as a directory — so the
   resolved target is there by construction and an entry for it would be a
-  control with no failing arm. `TestQABwrapTheStoreHasOneSpellingThatCanBe
-  Absent` is that measurement rather than a sentence asserting it.
+  control with no failing arm.
+  `TestQABwrapTheStoreHasOneSpellingThatCanBeAbsent` is that measurement
+  rather than a sentence asserting it.
 - **A FILE at a no-create grant stays in the set**, so B8's refusal is still
   `BwrapArgs`' and still names the path and the remedy. Answering it in the
   drop would be a second refusal for one fact, and a quieter one.

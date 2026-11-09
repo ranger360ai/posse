@@ -1090,6 +1090,14 @@ func bwrapAbsentGrantLine(p string) string {
 // §4's reachability row is already the reader for "there is no store at this
 // launch dir", and it says so in one place (applyRecordReach).
 //
+// A STAT THAT FAILS FOR ANY OTHER REASON IS SILENT HERE, which is not the
+// render's answer to the same question and is deliberate. The render refuses
+// the launch naming the path and the list (bwrapStatRefusal), because a path
+// posse could not ask about must not become a path posse decided about. A
+// row that said "not on this host" over `permission denied` would be stating
+// the one thing that was not measured — and the refusal it would be
+// competing with is the louder signal and arrives first.
+//
 // Mechanism-parameterized so a darwin pin can read the Linux answer, the
 // rule every host-shaped decision in this file follows.
 func bwrapAbsoluteWritableDifference(mech, cage string, available bool, ag *AgentFile) string {
@@ -1417,6 +1425,13 @@ func bwrapReadable(persona, args string, argv []string, prep []PrepStep, absent 
 // and `+` as "create only" — and `+` is reused for the one thing this
 // mechanism has and seatbelt does not: the keep file, which the launcher
 // creates and no mount names.
+//
+// `·` CARRIES TWO STATEMENTS, and both of them are "this entry is in a list
+// and renders no mount": the rename seal, which needs none (a mount is a
+// statement about a mount POINT), and D23's declared-but-not-granted, which
+// has no source to bind. One marker, because an operator scanning the block
+// for what IS mounted wants one thing to skip and the parenthetical says
+// which of the two it is.
 //
 // IT READS THE RENDERED ARGV AND THE PREP, not the lists, which is the
 // difference that matters for a report whose whole job is to be checkable.
