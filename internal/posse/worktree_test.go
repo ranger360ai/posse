@@ -577,18 +577,28 @@ func TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath(t *testing.T) {
 	// alternates, so this walks the re-attach direction (PrepareSessionHead's
 	// uncaged arm over a tree posse detached) as well as a second detach.
 	//
-	// EnsureSessionTree is re-run only on the ON-BRANCH shape: over a
-	// DETACHED tree it refuses outright, because existingTree asks
-	// `symbolic-ref --short HEAD` and compares it to the branch. That is a
-	// defect in the relaunch path and not this measurement's subject —
-	// ranger-base-p60mv, filed from this fixture, which is its repro: take
-	// the `detached` guard off this loop and it dies with `is on "", not
-	// "posse/s-1"`.
+	// Both prepares run on EVERY pass, in the launcher's own order —
+	// EnsureSessionTree first, before anything else reads `dir`, and
+	// PrepareSessionHead once the tier is resolved (herdrback.go) — which is
+	// the sequence this loop exists to measure. It did not always. Until
+	// ranger-base-p60mv, EnsureSessionTree refused a tree posse itself
+	// detached: existingTree asked `symbolic-ref --short HEAD`, compared it
+	// to the branch, and the "" fell through to the Die written for a path
+	// belonging to another repo. So this loop had to skip it on the detached
+	// passes, and the first step of a container-tier relaunch — the one that
+	// died — went unmeasured here.
+	//
+	// existingTree accepts the detach posse RECORDED for the branch now, and
+	// an accidental detach is still refused, so the guard is off
+	// (ranger-base-36yvn). Every pass re-seeds over whichever HEAD the last
+	// one left, which is what a relaunch actually hands it, and seedTree's
+	// idempotent re-run is inside the measurement on a detached tree as well
+	// as an attached one. The FIRST pass is already that shape: PATH 2 left
+	// the tree detached and the control above fatals if it did not, so this
+	// loop enters over a detached HEAD whatever the tier slice holds.
 	for _, caged := range []bool{false, true, true, false} {
-		if _, detached := treeDetachedHead(tr.Path); !detached {
-			if _, err := a.EnsureSessionTree(repo, "s-1", nil); err != nil {
-				t.Fatal(err)
-			}
+		if _, err := a.EnsureSessionTree(repo, "s-1", nil); err != nil {
+			t.Fatal(err)
 		}
 		if err := PrepareSessionHead(tr, caged, io.Discard); err != nil {
 			t.Fatalf("relaunch (caged=%v): %v", caged, err)
