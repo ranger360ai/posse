@@ -31,7 +31,21 @@ it ... remedy: add `001: <private|public>` under this home's
 beads_visibility: ...
 ```
 
-The relative spelling in BOTH places. That is the same class
+The relative spelling in BOTH places.
+
+**That reading is pre-D4 and cannot be retaken** (ranger-base-83nrw, the
+merge-back). ADR 0082 D4 landed ~3h after this bead's commits were authored
+and put both of D7's path renders through `CanonicalAbbrevPath`
+(ranger-base-w79sc), and `canonicalPath` goes through `resolvedPath`, which
+`Abs`'s against the RENDERING process's cwd. So on today's main the refusal
+prescribes an absolute key whether or not `QueueRepo()` resolves one, and the
+block above is the record of the defect rather than a reproducible reading.
+What still needs the `Abs` is the VALUE: the four predicates read it, and a
+relative value names a different directory to every process that reads it from
+a different cwd — which a render cannot fix, because a render is not what they
+read.
+
+That is the same class
 ranger-base-k9x8n fixed one call site over, and it is more than wording for
 the same reason: a `beads_visibility:` key is read by `samePath` →
 `resolvedPath` → `filepath.Abs`, i.e. against the READING process's cwd. So
@@ -82,9 +96,11 @@ Load-bearing rather than taste, and the thing this fragment most exists to
 record. ADR 0082 D1 landed `canonicalPath` the same day
 (ranger-base-yx73g) — the kernel's spelling of a directory, resolving
 symlinks, on-disk case and firmlinks on top of `Abs` — and whether THIS call
-site should canonicalise on top of absolutising is an open question
-(ranger-base-wvoqe). A pin demanding one exact spelling would red the day that
-question is answered yes: a pin fencing out the better fix.
+site should canonicalise on top of absolutising was an open question
+(ranger-base-wvoqe) when this was written. A pin demanding one exact spelling
+would red the day that question is answered yes: a pin fencing out the better
+fix. It was answered hours later; the two paragraphs under the table below are
+what that cost and did not cost.
 
 So the premise asks only that the value be absolute and `samePath` the repo,
 and the refusal assertions parse the prescribed key back out of the message
@@ -99,6 +115,26 @@ MUTATION-CHECKED both ways:
 |---|---|
 | `QueueRepo` back to `filepath.Clean(ExpandTilde(v))` | reds twice — the premise (`QueueRepo() = "001"`) and the prescribed key, printing the refusal quoted above |
 | `QueueRepo` as `resolvedPath(v)` — `Abs` + `EvalSymlinks`, i.e. `canonicalPath` minus its kernel half | **green**, which is the half that says the pin does not fence out ranger-base-wvoqe's answer |
+
+**Re-measured on main, where the first row's figure is one and not two**
+(ranger-base-83nrw). D4's render `Abs`'s the path it prints, so the refusal
+prescribes an absolute key even over a relative value and every assertion
+below the premise passes under that mutant. The premise is this pin's subject
+and the premise is what reds, so nothing is uncovered — the refusal's spelling
+is pinned where D4 decided it, in
+`internal/posse/queuerefusalspelling_qa_test.go`, and reverting D4's render
+reds those two arms while leaving this one green. Each fix is red in one file
+only, in both directions, which is ranger-base-w79sc's own "both pins hold;
+neither subsumes the other" measured on the tree where the two first met.
+
+The second row is now a statement about a settled question rather than an open
+one: **ranger-base-wvoqe was answered yes for the RENDER and no for the
+VALUE** (closed 2026-11-08). `QueueRepo()` stays on `filepath.Abs`, because it
+feeds three comparisons on one side only and because a config and a store each
+spelled differently from the disk is a setup that works today. The pin's
+property form was written to avoid fencing out that answer and it did exactly
+that — the spelling form this bead's first commit wrote reds against D4's
+renderer, which is the hazard the paragraph above it named, happening.
 
 The first draft of this pin compared `QueueRepo()` against
 `filepath.Join(os.Getwd(), base)` exactly. It passed, it reddened correctly on
@@ -161,3 +197,22 @@ left alone here on three grounds:
 
 Filed as ranger-base-wvoqe (`-l architecture`, P3), which the production
 comment in `queuejsonl.go` names.
+
+**Answered the same day, and this bead's three grounds are two of the
+decision's three** (ranger-base-wvoqe closed by richard 2026-11-08; recorded
+here by ranger-base-83nrw, the merge-back that landed this fragment). The
+answer is **yes for the RENDER and no for the VALUE**: a path a refusal prints
+for the operator to paste as config is spelled `canonicalPath` /
+`canonicalAbbrevHome` at the FORMAT site, through one exported helper, which
+ADR 0082 D4 then applied to both prescribing lines — `queuejsonl.go`'s D7
+refusal and `cmd/posse/main.go`'s install-hooks D4 (ranger-base-w79sc, and
+`GovRows`' queue-unmarked row under ranger-base-qm7eg). `QueueRepo()` stays on
+`filepath.Abs`. The alternatives were priced and the two rejected ones are the
+first ground above: canonicalising in `QueueRepo()` changes three comparisons
+on one side only and would break a config and a store each spelled differently
+from the disk, a setup that works today; canonicalising both sides of
+`underDir` is the string folding `samePath` says cannot be done, and would put
+an `fcntl` inside a seatbelt predicate. The decision also turned up a live
+comparison defect next door — `underDir` is case-blind-wrong, `os.SameFile`
+true where `filepath.Rel` says no — which is ranger-base-oczuq's
+`underSameDir`, on main and in the same function as this bead's fix.

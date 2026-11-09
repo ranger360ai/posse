@@ -318,14 +318,24 @@ func TestQAAQueueCommitFromANonOwningHomeStillWritesAnUnclaimedSlot(t *testing.T
 //
 // IT ASSERTS THE PROPERTY AND NOT A STRING, which is load-bearing rather than
 // taste. ADR 0082 D1 landed canonicalPath the same day (ranger-base-yx73g),
-// and whether THIS call site should canonicalise on top of absolutising is an
-// open architecture question (ranger-base-wvoqe). canonicalPath resolves
+// and whether THIS call site should canonicalise on top of absolutising was
+// an open architecture question (ranger-base-wvoqe). canonicalPath resolves
 // symlinks, so a pin that demanded one exact spelling would red the day that
 // question is answered yes — a pin fencing out the better fix. So the premise
 // asks only that the value be ABSOLUTE and name this repo, and the refusal
 // assertions read the prescribed key back out of the message and ask the same
 // two things of it. Every spelling a resolver could legitimately produce
 // passes; the relative one cannot.
+//
+// IT WAS ANSWERED HOURS LATER, AND THE FENCE IS WHY THIS ARM SURVIVED IT
+// (ranger-base-wvoqe, closed 2026-11-08; the merge-back is ranger-base-83nrw).
+// The answer is yes for the RENDER and no for the VALUE, and ADR 0082 D4 then
+// put both of D7's path renders through CanonicalAbbrevPath
+// (ranger-base-w79sc). This arm's property form passes that renderer
+// unchanged. The spelling form it replaced does not: the commit that first
+// wrote this pin asserted the key as AbbrevHome of the fixture's own path and
+// MEASURED red against D4's `/private/var/...` on the merged tree — the exact
+// fencing-out the paragraph above was written against, happening.
 //
 // WHAT THIS PIN DOES NOT COVER, measured and recorded so nobody re-measures
 // it: the WRITE path. The wall `InstallCommitGuardHook` renders through a
@@ -337,12 +347,30 @@ func TestQAAQueueCommitFromANonOwningHomeStillWritesAnUnclaimedSlot(t *testing.T
 // because the dir cannot be relative, which is why the fix is still the one
 // `filepath.Abs` in QueueRepo and not a printf.
 //
-// MUTATION-CHECKED 2026-11-08, darwin 25.6.0: with QueueRepo back to
-// `filepath.Clean(ExpandTilde(v))` this arm reds four times over — the
-// premise (`QueueRepo() = "001"`), the repo the refusal names, the key it
-// should have prescribed, and the relative key it did. The refusal it printed
-// is the one the bead MEASURED: "001's commit wall was rendered by home
-// <abs home> ... remedy: add `001: <private|public>`".
+// MUTATION-CHECKED 2026-11-08, darwin 25.6.0, and RE-MEASURED on the merged
+// tree, where the figure changed (ranger-base-83nrw). Against the base this
+// arm was written on, `QueueRepo` back to `filepath.Clean(ExpandTilde(v))`
+// reddened it in several places at once — the premise, the repo the refusal
+// named, and the key it prescribed — printing the bead's own refusal verbatim
+// ("001's commit wall was rendered by home <abs home> ... remedy: add
+// `001: <private|public>`").
+//
+// ON MAIN THAT SAME MUTANT REDS EXACTLY ONCE, at the premise, and that is
+// worth knowing before reading a green run as cover. ADR 0082 D4's render
+// (CanonicalAbbrevPath, ranger-base-w79sc) Abs's the path it prints, through
+// canonicalPath -> resolvedPath, so the refusal prescribes an absolute key
+// even over a relative value: every assertion below the premise passes under
+// the mutant. The three unanchored `strings.Contains` of a `/var/...` fixture
+// path pass for a second reason worth not rediscovering — `/private/var/...`
+// CONTAINS `/var/...` — so they could not have measured a spelling either way.
+//
+// NOTHING IS UNCOVERED BY THAT, and it is a duplicate reading rather than a
+// hole. The premise IS this pin's subject: the value must be absolute before
+// the four predicates read it, and it is the premise that reds. The refusal's
+// spelling is pinned where it is now decided, in
+// queuerefusalspelling_qa_test.go, and reverting D4's render reds those two
+// arms and leaves this one green (MEASURED 2026-11-08 on the merged tree).
+// Each fix is red in one file only, in both directions.
 func TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath(t *testing.T) {
 	repo := qRepo(t)
 	store := filepath.Join(repo, ".beads")

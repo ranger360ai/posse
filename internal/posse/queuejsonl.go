@@ -58,6 +58,24 @@ var queueJSONLPaths = []string{beadsJSONL, beadsDeleted}
 // read "001's commit wall was rendered by home <abs home> ... remedy: add
 // `001: <private|public>`" — the relative spelling in both places.
 //
+// THAT READING IS PRE-D4 AND CANNOT BE RETAKEN HERE (ranger-base-83nrw, the
+// merge-back). ADR 0082 D4 landed ~3h later and put the refusal's own two
+// path renders through CanonicalAbbrevPath (ranger-base-w79sc), and
+// canonicalPath resolves through resolvedPath, which Abs's against the
+// RENDERING process's cwd. So on today's main a relative `queue_repo:` prints
+// an absolute key whether or not this function resolves one, and the quote
+// above is the record of the defect rather than a reproducible reading.
+// WHAT STILL NEEDS THIS Abs is therefore the VALUE and not the printed line:
+// the four predicates read it, and a relative value is a different directory
+// to every process that reads it from a different cwd — a render cannot fix
+// that, because a render is not what they read. MEASURED 2026-11-08 on the
+// merged tree, both directions, each red in ONE file: with this Abs removed
+// only TestQAARelativeQueueRepoIsRefusedByItsAbsolutePath's premise reds (its
+// refusal-text half now measures D4's render and passes), and with D4's
+// render reverted to AbbrevHome only queuerefusalspelling_qa_test.go's two
+// arms red. That is ranger-base-w79sc's "both pins hold; neither subsumes the
+// other" checked on the tree where the two first met.
+//
 // NOT the WRITE path, and that is recorded so nobody re-measures it: the wall
 // InstallCommitGuardHook renders through a relative `queue_repo:` was
 // BYTE-IDENTICAL to the absolute one (MEASURED the same day, 64437 bytes).
@@ -83,9 +101,20 @@ var queueJSONLPaths = []string{beadsJSONL, beadsDeleted}
 // through their own symlinks still matches — the case axis is
 // ranger-base-99gww's, and samePath is what answers it. What a relative
 // spelling broke is not prettiness, it is that a relative key names a
-// different directory to every reader. Whether this call site should
-// canonicalise TOO is ADR 0082's question and not this bead's: handed to
-// architecture as ranger-base-wvoqe.
+// different directory to every reader.
+//
+// AND THAT WAS ASKED AND ANSWERED, so this paragraph is the decision and no
+// longer a deferral (ranger-base-wvoqe, closed 2026-11-08 in the architecture
+// lane; the
+// scoping sentence above describes ADR 0082 D1 as it stood when this comment
+// was written, which D4 has since widened for renders only). The answer is
+// YES FOR THE RENDER AND NO FOR THE VALUE: a path a refusal prints for the
+// operator to paste is spelled canonicalPath at the FORMAT site, which is
+// what D4 did to both of this file's prescribing lines, and `QueueRepo()`
+// stays on filepath.Abs — because it feeds three comparisons on one side
+// only, and because a config and a store each spelled differently from the
+// disk is a setup that works today and would break. underDir keeps the
+// comparison it makes; canonicalPath never feeds one.
 func (a *App) QueueRepo() string {
 	v := a.CfgGet("queue_repo", "")
 	if v == "" {
