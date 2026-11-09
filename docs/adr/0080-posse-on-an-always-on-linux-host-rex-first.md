@@ -1060,6 +1060,33 @@ codex's own sandbox is the only file wall. Gated on probe T6 (`codex sandbox`,
 no turn). Until T6 reads as expected, the flip stays off and Linux codex
 keeps darwin's posture.
 
+*D21 is parked, not pending and not retired (ranger-base-unsqg,
+2026-11-09).* The first host run read T6 refused (ranger-base-r5m98,
+MEASURED: Linux 7.2, bubblewrap 0.13.1, codex 0.167.0), and that reading
+says nothing about nesting. The probe counted every non-zero exit as
+`refused`, it bound no writable `CODEX_HOME`, and its argv omits the
+`--permission-profile` that `codex sandbox` requires on 0.153.4. That version
+answers a usage error with exactly the three refused rows the host returned
+(darwin, demonstrative only: not the host's version). ranger-base-bjk4k
+amended the probe and added T6z, an unwrapped control that decides how to
+read the other three.
+- **Why parked.** D21 improves on darwin's posture; it is not a
+  precondition for codex on Linux. With the flip off, Linux codex is walled
+  exactly as darwin codex is, by its own sandbox alone, and that posture is
+  already accepted. Nothing shipped waits on D21. The tripwire pin from
+  ranger-base-bjk4k keeps the flip from landing by accident.
+- **Why not retired.** The run's comment calls the host "claude-only by
+  operator ruling". No ADR, bead or ORDERS file records that ruling
+  (searched 2026-11-09), and D3 above, which is operator direction, says the
+  opposite: Rex and herdr serve every runtime, and codex was admitted on Rex
+  (ranger-base-8gh58). A design is not retired on a ruling the record does
+  not contain. That conflict is the operator's to settle, and it is filed as
+  one question.
+- **What wakes it.** If codex is wanted on the D1 host, the amended T6/T6z
+  run comes before the first codex crew there. It costs no turn. If the
+  host is claude-only, D21 is retired, and so are D3's "every runtime" for
+  that host and the bjk4k tripwire's instructions.
+
 **D22. The probe for this design is `docs/adr/0080-bwrap-tier.probe.sh`.**
 T1 is the D19 save under the shipped wall, T2-T5 are D20's git grants against
 an outside pack, T6 is D21's nesting, and T7 is D18's `--args` fd. It writes
