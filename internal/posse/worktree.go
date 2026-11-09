@@ -918,6 +918,22 @@ func (a *App) EnsureSessionTree(dir, session string, warn io.Writer) (*SessionTr
 // path that exists but is something else is an error, never a thing to
 // overwrite: it is either another repo's worktree or a directory somebody
 // meant to keep.
+//
+// The one off-branch HEAD it accepts is the detach POSSE RECORDED for this
+// branch (ranger-base-p60mv). The launcher runs the two prepares in a fixed
+// order: EnsureSessionTree first, before anything else reads `dir`, and
+// PrepareSessionHead later, once the tier is resolved (herdrback.go). So a
+// first container-tier launch leaves the tree detached, and every SECOND
+// launch into that session — a relaunch, a resume, a `--cage container`
+// re-entry — hands this function a tree posse itself detached, whatever tier
+// that launch goes on to resolve. Refusing it killed the launch before
+// PrepareSessionHead could splice or re-attach anything, in the words written
+// for a path belonging to another repo.
+//
+// An ACCIDENTAL detach keeps that refusal: no record, so no splice will move
+// its work and no land can take it, which is the dybv failure this guard
+// exists for. The record is what tells the two apart, and it is the same pair
+// PrepareSessionHead and spliceDetachedWork read.
 func existingTree(t *SessionTree) (bool, error) {
 	if _, err := os.Stat(t.Path); err != nil {
 		return false, nil
@@ -931,6 +947,11 @@ func existingTree(t *SessionTree) (bool, error) {
 	}
 	head, err := git(t.Path, "symbolic-ref", "--short", "HEAD")
 	if err != nil || head != t.Branch {
+		if launchedDetached(t.Repo, t.Branch) {
+			if _, detached := treeDetachedHead(t.Path); detached {
+				return true, nil
+			}
+		}
 		return false, Die("session worktree: %s is on %q, not %q", t.Path, head, t.Branch)
 	}
 	return true, nil

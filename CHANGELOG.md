@@ -11,6 +11,26 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**A relaunch into a container-tier session worktree no longer dies before it
+starts.**
+
+*Bug fix, no new key, nothing to configure. It reaches only a session that has
+both a per-session worktree and `cage: container`, and there it reached the
+SECOND launch into that session, every time.*
+
+A caged worktree session commits on a detached HEAD — that is what lets the
+container tier's git grant name no ref at all. The launcher makes the tree
+first, before anything else reads the directory, and decides which HEAD it
+works on later, once the tier is resolved. So a second launch into such a
+session — a relaunch, a resume, a `--cage container` re-entry — met its own
+tree on the detached HEAD the last launch left there, and the check that
+recognizes a session's tree read that off-branch HEAD as a directory belonging
+to some other repository: `is on "", not "posse/<session>"`, and no launch at
+all. The one off-branch HEAD posse itself records is accepted now, and the
+commits on it are spliced back onto the session branch as they always were.
+An off-branch HEAD posse did NOT record is still refused: that is a tree whose
+commits no ref reaches, and saying so is the whole point of the check.
+
 **A dispatch pass no longer hands a bead back when the WAIT on it fails — the
 claim is kept and the seat is left working.**
 

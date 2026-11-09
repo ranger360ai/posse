@@ -2758,6 +2758,99 @@ func TestARelaunchIntoADetachedTreeSplicesBeforeItRuns(t *testing.T) {
 	}
 }
 
+// The FIRST step of that same relaunch, which used to die before the launch
+// ever reached the splice above (ranger-base-p60mv, from ranger-base-x475y's
+// fixture). The launcher runs the two prepares in a fixed order on every
+// launch: EnsureSessionTree first, before anything reads `dir`, and
+// PrepareSessionHead later, once the tier is resolved (herdrback.go). So a
+// first caged launch leaves the tree detached and a SECOND launch into the
+// same session — a relaunch, a resume, a `--cage container` re-entry — hands
+// EnsureSessionTree a tree posse itself detached. existingTree asks
+// `symbolic-ref --short HEAD` and compares it to the branch; on a detached
+// HEAD that read fails, and the "" fell through to the Die written for a path
+// belonging to another repo: `is on "", not "posse/s-1"`.
+//
+// The guard is not deleted, which is the whole of this fix: an ACCIDENTAL
+// detach is still a tree to refuse, and the record posse writes for its own
+// detach tells the two apart — the same pair PrepareSessionHead and
+// spliceDetachedWork read (launchedDetached + treeDetachedHead).
+func TestEnsureSessionTreeAcceptsTheDetachPosseItselfRecorded(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil || tr == nil {
+		t.Fatalf("EnsureSessionTree = (%v, %v)", tr, err)
+	}
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+
+	again, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatalf("a relaunch into a container-tier session died at its first step: %v", err)
+	}
+	if again == nil {
+		t.Fatal("a detached session tree was demoted to the shared checkout")
+	}
+	if *again != *tr {
+		t.Errorf("the tree changed under a detached HEAD: %+v, want %+v", again, tr)
+	}
+	// It neither re-attached nor moved anything: the tier is
+	// PrepareSessionHead's to decide, and this step runs before the tier is
+	// even known.
+	if b, err := git(tr.Path, "symbolic-ref", "--quiet", "HEAD"); err == nil && b != "" {
+		t.Errorf("EnsureSessionTree re-attached a caged session's tree to %s", b)
+	}
+	if now := mustGit(t, tr.Path, "rev-parse", "HEAD"); now != head {
+		t.Errorf("EnsureSessionTree moved the tree's HEAD: %s vs %s", now[:12], head[:12])
+	}
+	// And the launch this is the first step of completes: the second prepare
+	// splices the first session's commit onto the branch, as the test above
+	// pins it doing.
+	if err := PrepareSessionHead(again, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != head {
+		t.Errorf("the relaunch left the first session's commit on no branch: %s vs %s", now[:12], head[:12])
+	}
+
+	// And a relaunch that DROPS the tier, which is the whole launcher order
+	// over the other prepare arm: Ensure over the still-detached tree, then
+	// the re-attach. Nothing but this pair walks that sequence — the
+	// re-attach's own pin calls PrepareSessionHead directly.
+	third, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatalf("an uncaged relaunch died at its first step: %v", err)
+	}
+	if err := PrepareSessionHead(third, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := git(tr.Path, "symbolic-ref", "--short", "--quiet", "HEAD"); b != tr.Branch {
+		t.Errorf("an uncaged relaunch must put the tree back on %s, HEAD is on %q", tr.Branch, b)
+	}
+
+	// The other direction, and the reason this is a predicate and not a
+	// deleted comparison: a detach posse did NOT record is an operator's or an
+	// accident's, its work is reachable from no ref the splice will move, and
+	// a launch into it is still refused in the words that guard already has.
+	two, err := a.EnsureSessionTree(repo, "s-2", nil)
+	if err != nil || two == nil {
+		t.Fatalf("EnsureSessionTree = (%v, %v)", two, err)
+	}
+	mustGit(t, two.Path, "checkout", "-q", "--detach")
+	if launchedDetached(two.Repo, two.Branch) {
+		t.Fatal("CONTROL: a hand detach must leave no record, or this arm measures the recorded path twice")
+	}
+	if got, err := a.EnsureSessionTree(repo, "s-2", nil); err == nil {
+		t.Errorf("an accidental detach was accepted: %+v", got)
+	} else if !strings.Contains(err.Error(), "is on") {
+		t.Errorf("the accidental case must still be refused in the guard's own words: %v", err)
+	}
+}
+
 // `branch -f` is a ref write with no ancestry check, so a branch tip the
 // tree's HEAD does not reach is work this would DELETE. Nothing in posse's
 // own paths can produce that pair — the branch of a detached tree moves only
