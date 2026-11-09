@@ -772,8 +772,9 @@ did not settle and one residual for D18. Full reasoning in
   files`; at `config.worktree.lock` it refuses `git config --worktree`. Shape
   1's absent-GRANT arm has the same hole — a directory at `<ref>.lock` is
   `fatal: cannot lock ref 'HEAD'`, at `packed-refs.lock` it is a thing
-  AGENTS.md makes the operator's to remove and no persona's — and its two
-  live members are D19's and D20's to remove.
+  AGENTS.md makes the operator's to remove and no persona's — and D20 has
+  since removed all three from the set before the render sees it, leaving
+  claude's `~/.claude.json` as D19's.
 
 - **DIVERGED again on shape 2's missing-deny arm, and this one needs a
   channel** (ranger-base-ppnds). `SeatbeltCarveOut` gains `DenyFile`: the
@@ -797,8 +798,10 @@ did not settle and one residual for D18. Full reasoning in
   **Shape 1 still guesses**, and that is a difference in what producers can
   say: a file-shaped GRANT arrives from a `state_dir:` declaration, and ADR
   0012 D4's key says "directories (and single files)" without saying which.
-  The live members are D19's and D20's; the next file-shaped grant after
-  those reopens it, and what closes it is that grant's producer saying so.
+  D20 answered the same question one step earlier for git's three, by taking
+  them out of the set in `BwrapWritable`; `~/.claude.json` is D19's, and the
+  next file-shaped grant after that reopens this, with its own producer the
+  thing that closes it.
 
 - **The producer-driven arm's cwd was not a git repo** (ranger-base-ppnds,
   finding 3 — and it is why the above escaped).
@@ -811,9 +814,12 @@ did not settle and one residual for D18. Full reasoning in
   which stayed green over all five directories. It is a `git init` plus a `git
   worktree add` now, with the kind of every step asserted against the
   carve-out and a positive witness that a file-shaped deny under the session's
-  git dirs really is absent and inside a grant. It also pins what the real
-  lists do TODAY: they refuse, naming the branch ref leaf, which is what makes
-  D20 a prerequisite of a launch rather than an improvement to one.
+  git dirs really is absent and inside a grant. It drives `wgNewFixture` and
+  D20's own `bgSwap`, so it hand-assembles nothing and is the call D18 will
+  make — `SeatbeltWritable`, `BwrapWritable`, then `BwrapArgs` with the
+  carve-out and the keep file. D20's arms drive the same fixture with an
+  EMPTY carve-out; what is only here is a real one and the KIND of every prep
+  step it produces.
 
 **D18. The launch line, identical on herdr and Rex panes.** `RenderBwrap`
 writes the argv NUL-separated to `state/gates/<persona>/bwrap.args`, beside

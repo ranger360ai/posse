@@ -301,14 +301,15 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			// (SeatbeltCarveOut.DenyFile). A file-shaped GRANT arrives from a
 			// `state_dir:` declaration, and ADR 0012 D4's key says
 			// "directories (and single files)" without saying which: nothing
-			// but a stat can tell, and the path is not there. The live
-			// members are the two beads' — claude's `~/.claude.json` (D19)
-			// and git's ref leaf, its `.lock` and `packed-refs.lock` (D20) —
-			// and until they land this is the measured residual, with the
-			// exists-as-a-file arm above refusing the same paths loudly on
-			// any box that HAS run the CLI. The next file-shaped grant after
-			// those reopens it; what closes it is the producer of that grant
-			// saying so, the way the deny half now does.
+			// but a stat can tell, and the path is not there. Git's three —
+			// the ref leaf, its `.lock` and `packed-refs.lock` — are gone:
+			// D20's BwrapWritable takes them out of the set before this loop
+			// sees it, which is a producer answering the same question one
+			// step earlier. What is left is claude's `~/.claude.json`, D19's
+			// to remove, and the exists-as-a-file arm above refuses it loudly
+			// on any box that HAS run the CLI. The next file-shaped grant
+			// after that reopens this; what closes it is the producer of that
+			// grant saying so, either way the deny half and D20 now do.
 			prep = append(prep, PrepStep{PrepMkdirAll, p, "a write grant that is not there yet; bwrap cannot bind a source that does not exist"})
 		}
 		argv = append(argv, "--bind", p, p)

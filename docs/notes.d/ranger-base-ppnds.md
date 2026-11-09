@@ -83,12 +83,20 @@ makes unconditionally at every launch.
 
 A file-shaped GRANT comes from a `state_dir:` declaration, and ADR 0012 D4's
 key says "directories (and single files)" without saying which: nothing but a
-stat can tell, and the path is not there. The live members are the two beads'
-— claude's `~/.claude.json` (D19) and git's ref leaf, its `.lock` and
-`packed-refs.lock` (D20) — and the exists-as-a-file arm already refuses them
-loudly on any box that HAS run the CLI. The next file-shaped grant after those
-reopens it; what closes it is that grant's producer saying so, the way the
-deny half now does.
+stat can tell, and the path is not there.
+
+Git's three — the ref leaf, its `.lock` and `packed-refs.lock` — were the live
+members when this bead was filed and are gone now: **D20 (ranger-base-gi1gi)
+landed on main while this bead was open**, and its `BwrapWritable` takes all
+three out of the set before `BwrapArgs` sees it. That is the same answer from
+the other end — a producer saying what it means one step earlier, rather than
+the render being told — and it is why finding 1's deny-side channel and D20's
+set-side substitution are not two spellings of one fix: a deny list has no
+producer that could drop an entry, because the deny is the point.
+
+What is left is claude's `~/.claude.json`, D19's to remove, with the
+exists-as-a-file arm refusing it loudly on any box that HAS run the CLI. The
+next file-shaped grant after that reopens this.
 
 ## 2. A Linux claude seat's own credential, behind a spelling
 
@@ -153,7 +161,8 @@ claude seat" when the config dir is declared.
 `TestBwrapArgsRendersTheTiersOwnLists` is the one arm in
 `bwrapargs_qa_test.go` driven from `SeatbeltWritable`/`SeatbeltCarveOut`
 rather than a hand-built list, and its cwd was
-`bwTree(t, []string{"proj", …})` — a fixture DIRECTORY. So `gitPath` failed, `LinkedGitDirs` returned nothing,
+`bwTree(t, []string{"proj", …})` — a fixture DIRECTORY. So `gitPath` failed,
+`LinkedGitDirs` returned nothing,
 and `sessionGitConfigFiles`, `sessionWorktreeIdentityFiles` and
 `sessionGitGrants` all returned nil: **not one file-shaped deny and not one
 git grant reached the render in any of the file's 18 arms.** That is why
@@ -162,9 +171,16 @@ finding 1 escaped. The arm's prep assertion was
 and never whether a `mkdir -p` belongs at that path, so it stayed green over
 all five of the directories above.
 
-It is a `git init` plus a `git worktree add` now — the shape every dispatched
-session has, slash in the branch name and all — with three assertions the old
-arm could not make:
+It drives `wgNewFixture` (seatbeltworktreegit_qa_test.go) and D20's own
+`bgSwap` (bwrapgitrefs_qa_test.go) now, so it hand-assembles nothing: it is
+the call D18 will make, `SeatbeltWritable` → `BwrapWritable` → `BwrapArgs`
+with the carve-out and the keep file. D20's own arms drive that same fixture
+with an EMPTY carve-out, so what is only here is a REAL one. The fixture also
+puts the home OUTSIDE TMPDIR, which is what the verify's REPRO (a) asked for:
+under the blanket temp grant the constitution denies sweep in too and the
+reading says more than it measured.
+
+Three assertions the old arm could not make:
 
 - the kind of every prep step against what its producer means the path to be
   (no `mkdir -p` at a `FileShaped` path; no `touch` at a path nothing
@@ -173,16 +189,13 @@ arm could not make:
   is both absent and inside a grant, so the assertions above are not satisfied
   by a render that was handed no file-shaped deny at all — which is the state
   the arm was in for two beads. It is scoped to the git dirs on purpose: the
-  fixture home sits under TMPDIR, which the writable set grants, so
-  `config.yaml` and the promote manifest are witnesses too and would go on
+  constitution's two files are file-shaped denies too, and they would go on
   satisfying a bare count the day the git half stopped arriving;
-- what the real lists do TODAY. They REFUSE, naming the branch ref leaf, which
-  is shape 1's B8 refusal and is what makes D20 a prerequisite of a launch
-  rather than an improvement to one. The deny half is then read with D20's
-  narrowing applied as a transform of the real list (drop the leaf, its
-  `.lock` and `<common>/packed-refs.lock`; bind the ref's parent directory) —
-  holden's REPRO (b) as a pin. The day D20 lands, the first half goes red and
-  the transform becomes a no-op.
+- that the two producers of a TOUCH are NAMED and not counted — the
+  carve-out's Keep literals and D20's ref keep file — so a touch at a third
+  path nobody declared is a red. That one is a direct consequence of the
+  merge below: D20 added a second touch producer, so a kind assertion written
+  as "the Keep files are the only touch" was already wrong when it was typed.
 
 Plus two focused arms with no git in them:
 `TestBwrapArgsRendersNothingForAMissingFileShapedDeny` (both kinds at one
