@@ -154,6 +154,129 @@ func TestQABwrapPrepDoesNotCreateAnAbsoluteWritableExtra(t *testing.T) {
 	}
 }
 
+// THE SAME MEMBER, REACHED BY THE ONE SPELLING THE PREDICATE DID NOT READ
+// (ranger-base-hoh3q, from the verify ranger-base-41g0y). D23's line is
+// LOCATION — "Prep's authority is posse's own perimeter: the session tree,
+// ..." — and `pidWritableIsHostPath` used to ask whether the declared STRING
+// was absolute. `pidWritableExtras` resolves a relative entry with
+// `filepath.Join(cwd, w)`, which CLEANS `..`, so `writable: ["../../x"]` was
+// a path outside the session tree that D23 classes as relative and prep
+// therefore created. All four of D23's surfaces were silent on it at once:
+// prep made it, the render bound it, the parity row filed nothing and
+// `posse agent check` warned about nothing.
+//
+// MEASURED at this door before the fix, one PID declaring
+// `writable: ["../../d23-escape"]`:
+//
+//	PREP: kind=mkdir -p path=<root>/d23-escape
+//	bwrapNoCreate = [<root>/001/proj/.beads]   <- the escape is not on it
+//	r.Absent      = []                         <- nothing reported
+//	os.Stat(<root>/d23-escape) after runBwrapPrep: EXISTS
+//
+// AT THE REAL SPELLING cwd is `~/.posse/worktrees/posse/<session>`, so
+// `../shared` is a directory in the operator's worktrees dir that no session
+// retires — which is bwrapNoCreate's own stated reason for counting `~` as
+// outside — and enough `..` reaches `/opt/shared` itself, the path D23 was
+// written about.
+//
+// THE SECOND ARM IS THE CONTROL THAT KEEPS THE FIX HONEST: a `..` that
+// resolves back INSIDE the tree is session furniture and keeps its prep, so
+// the fix cannot be "drop every relative grant" — and
+// TestQABwrapPrepDoesNotCreateAnAbsoluteWritableExtra's `scratch` arm is the
+// other half of that control.
+//
+// THE THIRD ARM IS WHY THE PREDICATE ASKS A PATH AND NOT A STRING. Both
+// shapes close the `..` spelling; only one asks the question D23 decided. An
+// entry UNDER A SYMLINK that leaves the session tree resolves — through the
+// same `absResolve` pidWritableExtras grants through — to a host path, with
+// no `..` anywhere in the entry for a string test to read, and prep creates
+// the part of it that is not there. It needs no `..` and no absolute path in
+// the PID: a tracked `tools/cache -> /opt/shared` in the repo the session
+// was dispatched into, plus `writable: [tools/cache/seat]`, and the launcher
+// makes /opt/shared/seat on whatever box the seat lands on.
+//
+// WHAT THAT ARM DOES NOT CLAIM, because resolveExisting draws the line and
+// not this pin: a symlink whose target does not exist resolves to NOTHING —
+// EvalSymlinks fails, resolveExisting climbs to the parent and rejoins the
+// tail, so the grant is the link path inside the tree. So the escape needs
+// the symlink's target to be there and the TAIL under it to be missing,
+// which is exactly the shape above.
+func TestQABwrapPrepDoesNotCreateAPathOutsideTheSessionTree(t *testing.T) {
+	t.Parallel()
+	s := bwlFixture(t)
+	escape := absResolve(filepath.Join(s.dir, "..", "..", "d23-escape"))
+	inside := absResolve(filepath.Join(s.dir, "scratch"))
+	s.ag.Writable = []string{"../../d23-escape", "scratch/../scratch"}
+
+	r, err := bpaRender(t, s)
+	if err != nil {
+		t.Fatalf("a PID naming a `writable:` outside the session tree must still render a wall and launch — the grant is narrower, not a refusal: %v", err)
+	}
+
+	// The whole of the finding: the host did not gain a directory.
+	if _, serr := os.Stat(escape); serr == nil {
+		t.Errorf("the launcher CREATED %s — prep's authority is the session tree, and a relative `writable:` that CLIMBS OUT of it is as much a host path the operator declared as an absolute one (ADR 0080 D23)", escape)
+	}
+	if bpaPreps(r.Prep, escape) {
+		t.Errorf("the render asked the launcher to make %s:\n%v", escape, bwPrep(r.Prep))
+	}
+	if bpaBinds(r.Argv, escape) {
+		t.Errorf("the render binds %s, which is not there — bwrap would refuse the launch at `Can't find source path`:\n%s", escape, bwJoin(r.Argv))
+	}
+	if !containsString(r.Absent, escape) {
+		t.Errorf("an absent grant outside the session tree must be REPORTED, not silently prepped — a grant that disappears without a word is the wall-with-a-note shape this tier refuses: Absent = %v", r.Absent)
+	}
+	if !containsString(bwrapNoCreate(s.ag, s.dir), escape) {
+		t.Errorf("the no-create list does not name %s, so no surface downstream of it can:\n%v", escape, bwrapNoCreate(s.ag, s.dir))
+	}
+
+	// THE CONTROL: `..` that resolves back inside the tree is still the
+	// session's own furniture, so it is prepped, bound, and on no list.
+	if !bpaPreps(r.Prep, inside) {
+		t.Errorf("a `writable:` whose `..` resolves back INSIDE the session tree must keep its prep — the question D23 decided is where the path LANDS, not whether the string holds a `..`:\n%v", bwPrep(r.Prep))
+	}
+	if _, serr := os.Stat(inside); serr != nil {
+		t.Errorf("the launcher did not make %s: %v", inside, serr)
+	}
+	if !bpaBinds(r.Argv, inside) {
+		t.Errorf("the render does not bind %s:\n%s", inside, bwJoin(r.Argv))
+	}
+	if containsString(r.Absent, inside) || containsString(bwrapNoCreate(s.ag, s.dir), inside) {
+		t.Errorf("%s is inside the session tree and belongs on neither list: Absent = %v, noCreate = %v", inside, r.Absent, bwrapNoCreate(s.ag, s.dir))
+	}
+}
+
+// The third arm, in a render of its own because it needs a symlink planted
+// in the session tree before the render runs.
+func TestQABwrapPrepReadsTheRESOLVEDPathAndNotTheSpelling(t *testing.T) {
+	t.Parallel()
+	s := bwlFixture(t)
+	outside := absResolve(t.TempDir())
+	if err := os.Symlink(outside, filepath.Join(s.dir, "cache")); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(outside, "seat")
+	s.ag.Writable = []string{"cache/seat"}
+
+	r, err := bpaRender(t, s)
+	if err != nil {
+		t.Fatalf("a `writable:` through a symlink out of the tree must still render a wall and launch: %v", err)
+	}
+	if _, serr := os.Stat(target); serr == nil {
+		t.Errorf(`the launcher CREATED %s. The entry is `+"`cache/seat`"+` — relative, no `+"`..`"+` in it — and it
+resolves outside the session tree, which is the question ADR 0080 D23 decided.
+A predicate that reads the declared STRING cannot see this at all, and
+pidWritableExtras grants the resolved path either way, so the grant and the
+perimeter have to be decided on the same path (ranger-base-hoh3q)`, target)
+	}
+	if !containsString(r.Absent, target) {
+		t.Errorf("an absent grant outside the session tree must be reported: Absent = %v", r.Absent)
+	}
+	if bpaPreps(r.Prep, target) {
+		t.Errorf("the render asked the launcher to make %s:\n%v", target, bwPrep(r.Prep))
+	}
+}
+
 // A FILE at an absolute `writable:` is still B8's refusal, named and loud.
 // This is the arm that keeps D23 from quietly swallowing the one failure
 // shape this mechanism must never render: a bound file loses every atomic
@@ -296,21 +419,31 @@ func TestQABwrapNoCreateIsTheTwoMembersD23Names(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := filepath.Join(root, "host")
-	ag := &AgentFile{Name: "developer", Writable: []string{host, "scratch", "~/declared-home"}}
+	ag := &AgentFile{Name: "developer", Writable: []string{host, "scratch", "~/declared-home", "../climbs-out", "scratch/../scratch"}}
 
 	got := bwrapNoCreate(ag, cwd)
 	for _, want := range []string{
-		host, // an absolute extra
-		absResolve(ExpandTilde("~/declared-home")), // `~` is absolute too (homeCacheGrants' reason)
+		host, // an extra the PID named absolutely
+		absResolve(ExpandTilde("~/declared-home")), // `~` is outside too (homeCacheGrants' reason)
 		filepath.Join(cwd, beadsDirName),           // the store, as cwd spells it
+		// A RELATIVE extra that climbs out of the session tree
+		// (ranger-base-hoh3q). It is in the list for the same reason the
+		// absolute one is — it is a host path the operator declared, and at
+		// the real cwd it is a junk directory in the operator's worktrees
+		// dir — and it was absent from this list until the predicate stopped
+		// reading the spelling and started reading the location.
+		absResolve(filepath.Join(root, "climbs-out")),
 	} {
 		if !containsString(got, want) {
 			t.Errorf("bwrapNoCreate does not name %s:\n%v", want, got)
 		}
 	}
-	// The relative extra is NOT in it: it is inside the session tree.
-	if rel := filepath.Join(cwd, "scratch"); containsString(got, rel) {
-		t.Errorf("a relative `writable:` extra must keep its prep — %s is in the no-create list:\n%v", rel, got)
+	// An extra that resolves INSIDE the session tree is NOT in it, whether
+	// or not its spelling holds a `..` — the question is where it lands.
+	for _, rel := range []string{filepath.Join(cwd, "scratch")} {
+		if containsString(got, rel) {
+			t.Errorf("a `writable:` extra inside the session tree must keep its prep — %s is in the no-create list:\n%v", rel, got)
+		}
 	}
 	// And the gates dir, the state dir and the memory dir are the furniture
 	// this decision exists to keep creating. Asked of the producer rather
@@ -387,9 +520,13 @@ func TestQAAnAbsoluteWritableThisHostLacksIsADeclaredDifference(t *testing.T) {
 	if err := os.MkdirAll(present, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	cwd := filepath.Join(root, "proj")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	ag := &AgentFile{Name: "developer", Writable: []string{absent, present, "scratch"}}
 
-	d := bwrapAbsoluteWritableDifference(WallBwrap, CageSeatbelt, true, ag)
+	d := bwrapHostWritableDifference(WallBwrap, CageSeatbelt, true, ag, cwd)
 	if d == "" {
 		t.Fatal("an absolute `writable:` this host does not have must be said before the launch — the alternative is a failed write inside the seat, which reads as a wall nobody can explain")
 	}
@@ -409,12 +546,34 @@ func TestQAAnAbsoluteWritableThisHostLacksIsADeclaredDifference(t *testing.T) {
 		{WallBwrap, CageShims},
 		{WallBwrap, CageContainer},
 	} {
-		if got := bwrapAbsoluteWritableDifference(tc.mech, tc.cage, true, ag); got != "" {
-			t.Errorf("bwrapAbsoluteWritableDifference(%s, %s) must be silent: %s", tc.mech, tc.cage, got)
+		if got := bwrapHostWritableDifference(tc.mech, tc.cage, true, ag, cwd); got != "" {
+			t.Errorf("bwrapHostWritableDifference(%s, %s) must be silent: %s", tc.mech, tc.cage, got)
 		}
 	}
-	if got := bwrapAbsoluteWritableDifference(WallBwrap, CageSeatbelt, false, ag); got != "" {
+	if got := bwrapHostWritableDifference(WallBwrap, CageSeatbelt, false, ag, cwd); got != "" {
 		t.Errorf("a tier this host cannot realize gets no row about the shape of its grants: %s", got)
+	}
+	// And the row is one of D23's four surfaces for a RELATIVE extra that
+	// climbs out of the session tree (ranger-base-hoh3q), which is why it
+	// takes the launch dir at all. Said here rather than in a pin of its own
+	// because it is the same row with the same reason: the path is not on
+	// this host, and posse does not make it.
+	escape := absResolve(filepath.Join(cwd, "..", "..", "row-escape"))
+	out := bwrapHostWritableDifference(WallBwrap, CageSeatbelt, true,
+		&AgentFile{Name: "developer", Writable: []string{"../../row-escape", "scratch"}}, cwd)
+	if !strings.Contains(out, AbbrevHome(escape)) {
+		t.Errorf(`a relative `+"`writable:`"+` that resolves OUTSIDE the session tree is a host path the
+operator declared, and this row is where an operator reads that it will not be
+granted — %s is missing from it: %q`, AbbrevHome(escape), out)
+	}
+	if strings.Contains(out, "scratch") {
+		t.Errorf("an extra that resolves inside the session tree is created with it and gets no row: %q", out)
+	}
+	// With NO launch dir there is nothing to resolve it against, and the row
+	// must not guess — that is `posse agent check`'s surface, over the string.
+	if got := bwrapHostWritableDifference(WallBwrap, CageSeatbelt, true,
+		&AgentFile{Name: "developer", Writable: []string{"../../row-escape"}}, ""); got != "" {
+		t.Errorf("with no launch dir a relative entry has no resolved path, so this row has nothing to state: %q", got)
 	}
 }
 
@@ -510,7 +669,7 @@ func TestQATheReadableWallNamesTheGrantsItDidNotCreate(t *testing.T) {
 // the path.
 func TestQAAgentCheckWarnsOnAnAbsoluteWritable(t *testing.T) {
 	t.Parallel()
-	a, _ := bpaCheckApp(t, "writable: [/opt/shared, docs/adr]\n")
+	a, _ := bpaCheckApp(t, "writable: [/opt/shared, docs/adr, ../../climbs-out, scratch/../scratch]\n")
 	findings, warnings, err := a.CheckAgent("ranger")
 	if err != nil {
 		t.Fatal(err)
@@ -525,9 +684,30 @@ func TestQAAgentCheckWarnsOnAnAbsoluteWritable(t *testing.T) {
 		t.Errorf("`posse agent check` says nothing about an absolute `writable:` — which is where an operator writing that PID would hear it:\n%v", warnings)
 	}
 	for _, w := range warnings {
-		if strings.Contains(w, "docs/adr") && strings.Contains(w, "ADR 0080 D23") {
-			t.Errorf("a RELATIVE extra resolves inside the session tree and must not warn: %s", w)
+		for _, quiet := range []string{"docs/adr", "scratch/../scratch"} {
+			if strings.Contains(w, quiet) && strings.Contains(w, "ADR 0080 D23") {
+				t.Errorf("a relative extra that resolves INSIDE the session tree is created with it and must not warn (%s): %s", quiet, w)
+			}
 		}
+	}
+	// AND THE SPELLING THIS LINT WAS SILENT ON (ranger-base-hoh3q): a
+	// relative extra that climbs out of the session dir. This surface has no
+	// session dir and stats nothing — box-independently so — which is why it
+	// reads the STRING, and `..` is the half of the question a string can
+	// answer on every host. It is also the operator-facing sentence that
+	// used to say the opposite in as many words ("A path relative to the
+	// session dir is created with the session tree"), so the warning has to
+	// be here or fixing the predicate leaves the lint teaching the defect.
+	var climb bool
+	for _, w := range warnings {
+		if strings.Contains(w, "../../climbs-out") && strings.Contains(w, "ADR 0080 D23") {
+			climb = true
+		}
+	}
+	if !climb {
+		t.Errorf(`a relative `+"`writable:`"+` that CLIMBS OUT of the session dir is a host path, and this is
+where the operator writing that PID is standing — nothing warned:
+%v`, warnings)
 	}
 	for _, f := range findings {
 		if strings.Contains(f, "ADR 0080 D23") {

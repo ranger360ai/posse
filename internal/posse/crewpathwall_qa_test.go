@@ -19,8 +19,10 @@ package posse
 //
 //  1. WHICH NAMES — derived from the box, never a shipped list, because a
 //     hardcoded crew list in this tree would BE what ADR 0012 App.A 5
-//     forbids. ListAgents, less every name posse has ever shipped an example
-//     PID under. PIN (a) and PIN (d).
+//     forbids. ListAgents, less every name posse ships as its own —
+//     shippedPosseNames: every name it has shipped an example PID under,
+//     plus `posse` itself since ranger-base-c7i8t. PIN (a) and PIN (d),
+//     both over that whole set (shippedPosseNamesForTest).
 //  2. PATH OR CONTENT — path only. A crew name in a staged LINE is legitimate
 //     where ADR 0012 D2 leaves it (docs/, the root narrative, a
 //     D6-grandfathered id) and a commit message names the persona who wrote
@@ -64,12 +66,11 @@ package posse
 // defect it exists to prevent.
 
 import (
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
-
-	"github.com/ranger360ai/posse"
 )
 
 // The fixture PIDs. Not a crew, not a role: two names nothing in any tree
@@ -118,10 +119,14 @@ func crewApp(t *testing.T, w *visWall, names ...string) *App {
 // spelling with it, and nothing else — every literal flagged PathsOnly, which
 // is what keeps it out of the content and message arms two pins down.
 //
-// The seed's own roles are the CONTROL and they are staffed here on purpose:
-// a home that carries both must derive the operator's names and none of
-// posse's. The fixture premise is asserted rather than assumed — a seed that
-// shipped no example PIDs would make this pin green over nothing.
+// POSSE'S OWN NAMES ARE THE CONTROL and they are staffed here on purpose: a
+// home that carries both must derive the operator's names and none of
+// posse's. Staffed from shippedPosseNames and not from the seed's roles
+// alone, which is ranger-base-hoh3q's half — a lane literally named `posse`
+// is a member of that set, and the fixture that staffed only the roles could
+// not see it go. The fixture premise is asserted rather than assumed — a
+// seed that shipped no example PIDs, or a set that stopped carrying `posse`,
+// would make this pin green over nothing.
 //
 // MUTATION-CHECKED (go test -overlay, tree untouched, runs on
 // ranger-base-cdxpf):
@@ -129,9 +134,16 @@ func crewApp(t *testing.T, w *visWall, names ...string) *App {
 //     and PIN (d) go red, nothing else moves.
 //   - the joined spelling dropped: this pin and PIN (b)'s joined-spelling
 //     case go red, and only those two.
+//
+// AND ON ranger-base-hoh3q, the mutant this fixture was blind to:
+// DeriveCrewLiterals' `isShippedPosseName` replaced by a predicate over
+// `retirableExampleNames(posse.Seed)` alone — c7i8t's widening undone — now
+// derives 4 literals where the set is 3 and reds here and at PIN (d). Before
+// the fixture change it was GREEN in arm 1 whole (499.9s), arm 2 whole
+// (325.2s), arm 3 whole (348.9s) and cmd/posse (194.0s).
 func TestQACrewLiteralsAreTheStaffedPIDsLessTheShippedRoles(t *testing.T) {
 	w := newVisWall(t)
-	roles := shippedRoleNamesForTest(t)
+	roles := shippedPosseNamesForTest(t)
 	a := crewApp(t, w, append([]string{qaCrewName, qaCrewHyphen}, roles...)...)
 
 	got := map[string]bool{}
@@ -285,11 +297,18 @@ func TestQACrewNameIsRefusedInAPathOnly(t *testing.T) {
 // 285 of this repo's 830 tracked paths, one of them 273 on its own), and it
 // is the half that decides whether the wall is usable on a seeded home.
 //
+// `posse` IS ONE OF THOSE NAMES (shippedPosseNamesForTest), so this home
+// staffs a lane called `posse` too — which is the other half of the same
+// census and a larger one: boundary-free, that name hits 864 of this repo's
+// 1,621 tracked paths, every `internal/posse/...` among them, so a wall
+// built from it would refuse the file this pin commits.
+//
 // MUTATION-CHECKED: the shipped-role exclusion dropped from
 // DeriveCrewLiterals — this pin and PIN (a) go red together, and nothing
-// else in the file moves.
+// else in the file moves. Same for c7i8t's widening undone
+// (ranger-base-hoh3q), which is the arm the `posse` lane adds.
 func TestQAShippedRoleNamesDoNotArmTheCrewArm(t *testing.T) {
-	w, a := crewWall(t, shippedRoleNamesForTest(t)...)
+	w, a := crewWall(t, shippedPosseNamesForTest(t)...)
 
 	if lits := a.DeriveCrewLiterals(); len(lits) != 0 {
 		t.Fatalf("a home staffed with posse's own example roles must derive no crew literals, got %+v", lits)
@@ -432,14 +451,34 @@ syntax" — so the crew arm must let it stand: %v
 	}
 }
 
-// shippedRoleNamesForTest is every name posse has ever shipped an example PID
-// under, asserted non-empty: the exclusion in DeriveCrewLiterals is only
-// meaningful if the seed actually ships roles.
-func shippedRoleNamesForTest(t *testing.T) []string {
+// shippedPosseNamesForTest is the set DeriveCrewLiterals actually excludes —
+// shippedPosseNames, the SOURCE's own closed set — and not a second spelling
+// of part of it.
+//
+// IT USED TO BE `retirableExampleNames(posse.Seed)`, which was the whole
+// exclusion until ranger-base-c7i8t moved DeriveCrewLiterals onto
+// isShippedPosseName and widened it by `path.Base(posseModule)`
+// (visibility.go's "ONE SET WITH THE USERNAME ARM"). The fixture stayed on
+// the old half, so both pins that read it staffed the ten roles and never a
+// lane named `posse` — and MEASURED on ranger-base-hoh3q (from
+// ranger-base-41g0y), c7i8t's widening undone in the source was GREEN in arm
+// 1 whole, arm 2 whole, arm 3 whole and cmd/posse. A pin built from half of
+// the set it is pinning cannot see the other half go.
+//
+// THE PREMISE IS ASSERTED AND NOT ASSUMED, and `posse` is named in it
+// explicitly: it is the one member whose loss this fixture exists to catch,
+// and a set that quietly stopped carrying it would make both pins green over
+// nothing again — the same way a seed that shipped no example PIDs would.
+func shippedPosseNamesForTest(t *testing.T) []string {
 	t.Helper()
-	names := retirableExampleNames(posse.Seed)
+	names := shippedPosseNames()
 	if len(names) < 5 {
 		t.Fatalf("fixture premise: posse ships example role PIDs, got %v", names)
+	}
+	if !containsString(names, path.Base(posseModule)) {
+		t.Fatalf(`fixture premise: the excluded set must carry %q — it is the name ranger-base-c7i8t
+widened this exclusion by, and the member these pins are here to hold. Got %v`,
+			path.Base(posseModule), names)
 	}
 	return names
 }

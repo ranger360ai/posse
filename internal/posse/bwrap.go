@@ -901,25 +901,33 @@ func bwrapRefGrantDifference(mech, cage string, available bool, dir string) stri
 
 // ─── D23: PREP CREATES THE SESSION'S OWN FURNITURE, NOTHING ELSE ─────────────
 
-// pidAbsoluteWritable is the first of D23's two members on its own: the
-// `writable:` extras this PID named with an absolute path, resolved the way
-// pidWritableExtras resolves them so that the entry kept out of the set and
-// the entry put into it are one spelling.
+// pidHostWritable is the first of D23's two members on its own: the
+// `writable:` extras that name a path OUTSIDE the session tree, resolved
+// through pidWritableResolve so that the entry kept out of the set and the
+// entry put into it are one spelling by construction and not by inspection.
+//
+// NAMED FOR THE QUESTION AND NOT FOR A SPELLING, since ranger-base-hoh3q.
+// It was `pidAbsoluteWritable` through ranger-base-sg7a7 — docs/notes.d/
+// ranger-base-sg7a7.md still names it that, and the parity row below was
+// `bwrapAbsoluteWritableDifference` — and the old names were the defect
+// said out loud: D23's two classes are decided by LOCATION, and a `..` in a
+// relative entry is a host path that no spelling test calls one.
 //
 // A FUNCTION OF ITS OWN because two readers need exactly this half and
 // neither wants the other: the render asks for both members at once, and the
 // parity row below is about the PID and must not go asking the filesystem
-// about a store of record (ADR 0013 §4's row owns that question). Asking
-// bwrapNoCreate with an empty cwd would answer the same thing today by a
-// coincidence of its branches, which is not a thing to build a row on.
-func pidAbsoluteWritable(ag *AgentFile) []string {
+// about a store of record (ADR 0013 §4's row owns that question).
+func pidHostWritable(ag *AgentFile, cwd string) []string {
 	if ag == nil {
 		return nil
 	}
 	var out []string
 	for _, w := range ag.Writable {
-		if pidWritableIsHostPath(w) {
-			out = append(out, absResolve(ExpandTilde(w)))
+		if !pidWritableIsHostPath(w, cwd) {
+			continue
+		}
+		if p, ok := pidWritableResolve(w, cwd); ok {
+			out = append(out, p)
 		}
 	}
 	return dedupeStrings(out)
@@ -930,7 +938,53 @@ func pidAbsoluteWritable(ag *AgentFile) []string {
 // asks it too, over `ag.Writable` rather than over the resolved list, so the
 // lint can name the string the operator typed while the render names the
 // path it binds — one rule, two vocabularies, no second predicate.
-func pidWritableIsHostPath(w string) bool { return filepath.IsAbs(ExpandTilde(w)) }
+//
+// THE QUESTION IS LOCATION, which is ranger-base-hoh3q's whole finding. It
+// used to be `filepath.IsAbs(ExpandTilde(w))`, and that asks whether the
+// DECLARED STRING is absolute, where D23 decided something else: "Prep's
+// authority is posse's own perimeter: the session tree, ..." So
+// `writable: ["../../shared"]` was CLASSED RELATIVE and therefore prepped,
+// while pidWritableExtras resolves it with `filepath.Join(cwd, w)` — which
+// cleans `..` — into a directory outside the session tree that posse then
+// created on the host. MEASURED at this bead's own door
+// (TestQABwrapPrepDoesNotCreateAPathOutsideTheSessionTree): all four of
+// D23's surfaces were silent on it at once, and at the real spelling cwd is
+// `~/.posse/worktrees/posse/<session>`, so `../shared` is a junk directory
+// in the operator's worktrees dir that no session retires — bwrapNoCreate's
+// own stated reason for counting `~` as absolute — and enough `..` reaches
+// `/opt/shared`, the path D23 was written about.
+//
+// A `..` THAT RESOLVES BACK INSIDE THE TREE IS STILL RELATIVE, which is why
+// this asks underDir rather than re-reading the string for a leading `..`:
+// `scratch/../scratch` is session furniture and keeps its prep. underDir
+// resolves BOTH sides, which it has to — on darwin a fixture cwd under
+// `/var/folders/...` and its `/private/var/...` real path are one directory,
+// and comparing one resolved side against one unresolved one would class
+// every relative extra as a host path and kill the control arm.
+//
+// TWO ARMS, ONE RULE, and the second is where `posse agent check` stands: it
+// has no session dir, box-independently so — the lint stats nothing and
+// gives one answer wherever it runs. With no cwd the STRING is the whole of
+// what is known, and `filepath.IsLocal` is that half exactly: a cleaned
+// relative path that opens with `..` climbs out of whatever tree it is
+// joined to, on every host. It is strictly WEAKER than the resolved arm —
+// a symlink inside the tree pointing out of it is caught at the launch and
+// not by the lint — and that is the direction to err in, because the lint's
+// job is to name what the operator typed and the launch's job is to decide
+// what posse writes.
+func pidWritableIsHostPath(w, cwd string) bool {
+	w = ExpandTilde(w)
+	if w == "" {
+		return false // names nothing, so it names nobody's host path
+	}
+	if filepath.IsAbs(w) {
+		return true
+	}
+	if cwd == "" {
+		return !filepath.IsLocal(w)
+	}
+	return !underDir(cwd, filepath.Join(cwd, w))
+}
 
 // bwrapNoCreate names the write grants the LAUNCHER MAY NOT CREATE, and it
 // is the whole of ADR 0080 D23. BwrapWritable's twin one question over: that
@@ -953,15 +1007,17 @@ func pidWritableIsHostPath(w string) bool { return filepath.IsAbs(ExpandTilde(w)
 // THE TWO MEMBERS, each because the creation is visible to a decision posse
 // does not own:
 //
-//   - AN ABSOLUTE `writable:` EXTRA. It is a HOST path the operator
-//     declared, not one posse derived, and nothing in the session can bring
-//     it into being either (pidWritableExtras). A RELATIVE extra keeps its
-//     prep: it resolves inside the session tree, which posse made and
-//     retires with the session, and for a persona that denies file writes
-//     cwd itself is not granted, so without the mkdir the grant would be
-//     dead. `~` counts as absolute, for homeCacheGrants' reason one list
-//     over — junk directories in the operator's home, created by posse and
-//     used by nothing.
+//   - A `writable:` EXTRA THAT RESOLVES OUTSIDE THE SESSION TREE. It is a
+//     HOST path the operator declared, not one posse derived, and nothing
+//     in the session can bring it into being either (pidWritableExtras). An
+//     extra that resolves INSIDE the tree keeps its prep: posse made that
+//     tree and retires it with the session, and for a persona that denies
+//     file writes cwd itself is not granted, so without the mkdir the grant
+//     would be dead. `~` counts as outside, for homeCacheGrants' reason one
+//     list over — junk directories in the operator's home, created by posse
+//     and used by nothing — and so does a RELATIVE entry that climbs out
+//     with `..`, which is the same junk directory one `cd` away and was
+//     prepped until ranger-base-hoh3q (pidWritableIsHostPath).
 //   - THE STORE OF RECORD. Its EXISTENCE is itself read as a fact: ADR 0013
 //     §4's reachability row says "nothing to reach (bd creates it on first
 //     write)" in its own words, and recordTargets probes only what is there.
@@ -1007,7 +1063,7 @@ func pidWritableIsHostPath(w string) bool { return filepath.IsAbs(ExpandTilde(w)
 // profile, where a grant for an absent path costs nothing and the session
 // can still create it.
 func bwrapNoCreate(ag *AgentFile, cwd string) []string {
-	out := pidAbsoluteWritable(ag)
+	out := pidHostWritable(ag, cwd)
 	if cwd != "" {
 		out = append(out, absResolve(filepath.Join(cwd, beadsDirName)))
 	}
@@ -1066,13 +1122,16 @@ func bwrapBindExisting(set, noCreate []string) (kept, absent []string, err error
 // sentence and one spelling, because an operator comparing the three is
 // comparing the same fact.
 func bwrapAbsentGrantLine(p string) string {
-	return AbbrevHome(p) + " (declared, NOT granted: it is not on this host, and the launcher does not create a path it did not derive — bwrap binds only a source that exists, so this render makes no mount for it; create the directory outside posse, or declare it relative to the session dir, ADR 0080 D23)"
+	return AbbrevHome(p) + " (declared, NOT granted: it is not on this host, and the launcher does not create a path it did not derive — bwrap binds only a source that exists, so this render makes no mount for it; create the directory outside posse, or declare it relative to the session dir and INSIDE it, ADR 0080 D23)"
 }
 
-// bwrapAbsoluteWritableDifference is D23's parity row: the `writable:`
-// extras this PID named absolutely that the launch host does not have, said
-// before the launch rather than discovered by a failed write inside the
-// seat.
+// bwrapHostWritableDifference is D23's parity row: the `writable:` extras
+// this PID named outside the session tree that the launch host does not
+// have, said before the launch rather than discovered by a failed write
+// inside the seat. (`bwrapAbsoluteWritableDifference` through
+// ranger-base-sg7a7, which is the name docs/notes.d/ranger-base-sg7a7.md
+// still uses — renamed with the predicate on ranger-base-hoh3q, where the
+// class stopped being a spelling.)
 //
 // A DECLARED DIFFERENCE AND NOT DEGRADATION (ADR 0017 §2), for
 // applyBwrapRefGrant's reason in its own words: nothing here is a wall posse
@@ -1084,11 +1143,20 @@ func bwrapAbsentGrantLine(p string) string {
 // ranger-base-d17a closed.
 //
 // IT NEEDS NO WRITABLE SET AND NO RUNTIME, which is why this row is cheap
-// enough to sit on the launch path: every absolute extra is in the set
+// enough to sit on the launch path: every extra is in the set
 // unconditionally (pidWritableExtras), so the PID plus a stat is the whole
 // of the question. The store of record's half of D23 is NOT here — ADR 0013
 // §4's reachability row is already the reader for "there is no store at this
 // launch dir", and it says so in one place (applyRecordReach).
+//
+// IT TAKES THE LAUNCH DIR, since ranger-base-hoh3q, and that is the one
+// thing that stopped being free here. An absolute path is absolute wherever
+// you ask, but a RELATIVE extra that climbs out of the session tree is a
+// host path whose identity is a function of the dir — so the row that used
+// to be directory-independent now reads the same `dir` the rest of
+// checkParityIn reads, and says nothing about a relative entry where there
+// is no dir to resolve it against (`posse agent check`'s arm, which is the
+// lint's surface and not this one).
 //
 // A STAT THAT FAILS FOR ANY OTHER REASON IS SILENT HERE, which is not the
 // render's answer to the same question and is deliberate. The render refuses
@@ -1100,12 +1168,12 @@ func bwrapAbsentGrantLine(p string) string {
 //
 // Mechanism-parameterized so a darwin pin can read the Linux answer, the
 // rule every host-shaped decision in this file follows.
-func bwrapAbsoluteWritableDifference(mech, cage string, available bool, ag *AgentFile) string {
+func bwrapHostWritableDifference(mech, cage string, available bool, ag *AgentFile, cwd string) string {
 	if mech != WallBwrap || cage != CageSeatbelt || !available || ag == nil {
 		return ""
 	}
 	var absent []string
-	for _, p := range pidAbsoluteWritable(ag) {
+	for _, p := range pidHostWritable(ag, cwd) {
 		if exists, _, err := bwrapStat(p); err == nil && !exists {
 			absent = append(absent, AbbrevHome(p))
 		}
@@ -1113,16 +1181,19 @@ func bwrapAbsoluteWritableDifference(mech, cage string, available bool, ag *Agen
 	if len(absent) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("cage %s (%s): this PID's `writable:` names %s absolutely and this host does not have %s, so the launch binds nothing there and a write into it is refused by the base read-only bind. The launcher does not create a path it did not derive, where SBPL grants an absent path and lets the session make it. Create the directory outside posse, or declare it relative to the session dir (ADR 0080 D23)",
+	return fmt.Sprintf("cage %s (%s): this PID's `writable:` names %s outside the session tree and this host does not have %s, so the launch binds nothing there and a write into it is refused by the base read-only bind. The launcher does not create a path it did not derive, where SBPL grants an absent path and lets the session make it. Create the directory outside posse, or declare it relative to the session dir and INSIDE it (ADR 0080 D23)",
 		CageSeatbelt, WallBwrap, strings.Join(absent, ", "), plural(len(absent), "that path", "those paths"))
 }
 
-// applyBwrapHostGrants puts that row on a parity matrix. Directory-
-// independent — an absolute path is absolute — but it sits in CheckParityIn
-// beside applyBwrapRefGrant because it STATS, which is the line parity.go's
-// header draws (CheckParity stats nothing and tests rely on that).
-func (a *App) applyBwrapHostGrants(p *Parity, ag *AgentFile) {
-	if d := bwrapAbsoluteWritableDifference(WallMechanism(), p.Cage, a.cageAvailable(p.Cage), ag); d != "" {
+// applyBwrapHostGrants puts that row on a parity matrix. It sits in
+// CheckParityIn beside applyBwrapRefGrant because it STATS, which is the
+// line parity.go's header draws (CheckParity stats nothing and tests rely
+// on that) — and since ranger-base-hoh3q it is directory-AWARE for
+// applyBwrapRefGrant's reason too: which paths this PID's `writable:` puts
+// outside the session tree is a fact about a concrete launch dir as soon as
+// one of them is spelled relatively.
+func (a *App) applyBwrapHostGrants(p *Parity, ag *AgentFile, dir string) {
+	if d := bwrapHostWritableDifference(WallMechanism(), p.Cage, a.cageAvailable(p.Cage), ag, dir); d != "" {
 		p.DeclaredDifference = append(p.DeclaredDifference, d)
 	}
 }

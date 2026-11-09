@@ -274,23 +274,39 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 		}
 	}
 
-	// `writable:` extras that name a HOST path (ADR 0080 D23). A relative
-	// extra resolves inside the session tree, which posse makes and retires;
-	// an absolute one — `~` included — names a directory on whatever box the
-	// seat lands on, and nothing in the session can bring it into being
-	// either. At the bwrap mechanism the launcher will not make it, so the
-	// grant is realized only where the host already has the directory.
+	// `writable:` extras that name a HOST path (ADR 0080 D23). An extra that
+	// resolves inside the session tree is created with it, since posse makes
+	// that tree and retires it; one outside — an absolute path, `~`
+	// included, or a relative one that climbs out with `..` — names a
+	// directory on whatever box the seat lands on, and nothing in the
+	// session can bring it into being either. At the bwrap mechanism the
+	// launcher will not make it, so the grant is realized only where the
+	// host already has the directory.
 	//
 	// A WARNING AND BOX-INDEPENDENT, both on purpose. The PID is coherent and
 	// may well be launched on a host that has the path, so this is not an
 	// exit-1 finding; and it stats nothing, so `posse agent check` gives one
 	// answer wherever it runs — the LAUNCH is where the box is known, and
-	// bwrapAbsoluteWritableDifference is the row standing there.
+	// bwrapHostWritableDifference is the row standing there.
+	//
+	// THE EMPTY cwd IS THE LINT'S WHOLE POSITION and it is passed
+	// explicitly: with no session dir there is nothing to resolve a relative
+	// entry against, so pidWritableIsHostPath answers from the string, which
+	// is also the only thing this surface can name back to the operator
+	// (its header says why that arm is the weaker one). Two sentences and
+	// not one, because the remedy differs: an absolute path gets created
+	// outside posse, and a `..` gets re-spelled.
 	for _, w := range ag.Writable {
-		if pidWritableIsHostPath(w) {
-			warn("writable: %s is an absolute host path — no session creates it and neither does the launcher, so at cage %s on a %s host the grant renders no mount unless this box already has that directory (ADR 0080 D23). A path relative to the session dir is created with the session tree.",
-				w, CageSeatbelt, WallBwrap)
+		if !pidWritableIsHostPath(w, "") {
+			continue
 		}
+		if filepath.IsAbs(ExpandTilde(w)) {
+			warn("writable: %s is an absolute host path — no session creates it and neither does the launcher, so at cage %s on a %s host the grant renders no mount unless this box already has that directory (ADR 0080 D23). A path relative to the session dir, and inside it, is created with the session tree.",
+				w, CageSeatbelt, WallBwrap)
+			continue
+		}
+		warn("writable: %s is relative but CLIMBS OUT of the session dir, so it names a host path beside whatever tree the seat lands in — at cwd ~/.posse/worktrees/posse/<session> that is a junk directory in the operator's worktrees dir, which no session retires. Prep's authority is the session tree and nothing else, so at cage %s on a %s host the launcher does not create it and the grant renders no mount unless this box already has that directory (ADR 0080 D23). Re-spell it without `..`, or name the host path absolutely so the PID says what it means.",
+			w, CageSeatbelt, WallBwrap)
 	}
 	// route_order: a spelling that is not an integer takes the default and
 	// the PID still loads (a lane must not go silent over an ordering

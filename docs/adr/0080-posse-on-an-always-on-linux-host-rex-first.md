@@ -920,8 +920,9 @@ D16's note above demands. Pinned by
   door** (D21 is retired; the door stays for the next launch-path difference): the `!rt.SelfSandbox` flip is a launch-path difference between the
   two mechanisms, which is this class exactly. Full reasoning in
   `docs/notes.d/ranger-base-temhf.md`, including the two side effects the red
-  surfaced — an absolute `writable:` in a PID is a directory posse CREATES on
-  the host at this mechanism, and a bwrap launch materializes `<cwd>/.beads`,
+  surfaced — a `writable:` in a PID naming a path outside the session tree is
+  a directory posse CREATES on the host at this mechanism, and a bwrap launch
+  materializes `<cwd>/.beads`,
   which moves ADR 0013 §4's record-reach row for a LATER launch in the same
   tree.
 - **`seatbelt (bwrap)` is this label and NOT a `cage_realize_<goos>:` entry,
@@ -1334,13 +1335,35 @@ state dirs, the generic caches, `TMPDIR`. Two classes of write grant are
 outside it and are **bound where the host has them, render no mount where it
 does not, and are never created**:
 
-- **a `writable:` extra the PID named ABSOLUTELY** (`~` counts as absolute,
-  for `homeCacheGrants`' reason one list over). It is a host path the operator
-  declared, not one posse derived, and nothing inside the session can bring it
-  into being either. A RELATIVE extra keeps its prep: it resolves inside the
-  session tree, which posse made and retires with the session, and for a
+- **a `writable:` extra that RESOLVES OUTSIDE THE SESSION TREE** (`~` counts
+  as outside, for `homeCacheGrants`' reason one list over). It is a host path
+  the operator declared, not one posse derived, and nothing inside the session
+  can bring it into being either. An extra that resolves INSIDE the tree keeps
+  its prep: posse made that tree and retires it with the session, and for a
   persona that denies file writes cwd itself is not granted, so without the
   mkdir the grant would be dead.
+
+  **The question is LOCATION, and until ranger-base-hoh3q the code asked a
+  SPELLING** (`pidWritableIsHostPath` was `filepath.IsAbs(ExpandTilde(w))`,
+  found by the verify ranger-base-41g0y). `pidWritableExtras` resolves a
+  relative entry with `filepath.Join(cwd, w)`, which CLEANS `..`, so
+  `writable: ["../../shared"]` was a path outside the session tree that this
+  decision classed as relative — and prep therefore created it, the render
+  bound it, the parity row filed nothing and `posse agent check` warned about
+  nothing, all four at once (MEASURED 2026-11-09 at
+  `TestQABwrapPrepDoesNotCreateAPathOutsideTheSessionTree`). At the real
+  spelling cwd is `~/.posse/worktrees/posse/<session>`, so `../shared` is a
+  junk directory in the operator's worktrees dir that no session retires —
+  `bwrapNoCreate`'s own stated reason for counting `~` as outside — and enough
+  `..` reaches `/opt/shared` itself, the path this decision was written about.
+  It asks `underDir(cwd, filepath.Join(cwd, w))` now, so a `..` that resolves
+  back inside the tree (`scratch/../scratch`) stays session furniture and an
+  entry under a symlink that leaves the tree does not — the latter is the half
+  a string test cannot reach at all, and it needs no `..` and no absolute path
+  in the PID. Where there is no session dir to resolve against — `posse agent
+  check`, which stats nothing and answers the same on every box — the string
+  is the whole of what is known and `filepath.IsLocal` is that half: one rule,
+  two vocabularies, the cwd-less arm strictly the weaker one.
 - **the store of record.** Its EXISTENCE is itself read as a fact — ADR 0013
   §4's row says "bd creates it on first write" in its own words, and prep made
   that sentence false. An empty `.beads` is not inert either: in no-db mode bd
@@ -1364,11 +1387,15 @@ refuses:
   loudly — a write into that path is refused by the base `--ro-bind / /` — and
   degrading it would put a safe-by-design narrowing behind `--allow-degraded`
   and refuse dispatch for a path that is nobody's gate (ranger-base-d17a).
-- `posse agent check` warns on an absolute `writable:`, which is where the
-  operator writing that PID is standing. A warning and box-INDEPENDENT: the
-  PID is coherent and may well launch on a host that has the path, and a lint
-  that stats would answer differently per box where the launch row already
-  answers for the box it is on.
+- `posse agent check` warns on a `writable:` outside the session tree, which
+  is where the operator writing that PID is standing. A warning and
+  box-INDEPENDENT: the PID is coherent and may well launch on a host that has
+  the path, and a lint that stats would answer differently per box where the
+  launch row already answers for the box it is on. Two sentences since
+  ranger-base-hoh3q, because the remedy differs — an absolute path gets
+  created outside posse, a `..` gets re-spelled — and because the one sentence
+  it used to print ended "A path relative to the session dir is created with
+  the session tree", which was the defect stated to the operator as a rule.
 - the store half gets no second row: ADR 0013 §4's no-store row is already the
   reader for "there is no store at this launch dir", and it gains one clause
   naming the launcher at this mechanism only.
@@ -1406,8 +1433,12 @@ move (`bwrapGitSwap`), and the producer-says rule D19, D20 and
 
 **Pins** (`internal/posse/bwrapprepauthority_qa_test.go`, arm 1, every arm on
 darwin): the launcher creates neither member and binds both where the host has
-them; a relative extra is still created, which is the control that keeps the
-fix from being "drop every absolute grant"; a launch in a tree with no store
+them; an extra that resolves inside the tree is still created, which is the
+control that keeps the fix from being "drop every relative grant"; a relative
+extra that CLIMBS OUT is created by nobody and reported at all four surfaces,
+and an entry under a symlink that leaves the tree is the arm that holds the
+predicate to a path rather than a spelling (ranger-base-hoh3q); a launch in a
+tree with no store
 leaves ADR 0013 §4's row byte-identical for the next launch in the same tree,
 measured before and after rather than asserted; the declared difference
 reaches a real matrix and degrades nothing; `bwrap.txt` names what was not

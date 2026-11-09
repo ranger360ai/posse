@@ -804,16 +804,37 @@ func pidWritableExtras(ag *AgentFile, cwd string) []string {
 	}
 	var out []string
 	for _, w := range ag.Writable {
-		w = ExpandTilde(w)
-		if !filepath.IsAbs(w) {
-			if cwd == "" {
-				continue
-			}
-			w = filepath.Join(cwd, w)
+		if p, ok := pidWritableResolve(w, cwd); ok {
+			out = append(out, p)
 		}
-		out = append(out, absResolve(w))
 	}
 	return dedupeStrings(out)
+}
+
+// pidWritableResolve is that resolution on ONE declared entry, and it is a
+// function because two readers need the identical answer and used to each
+// carry their own copy of it: this one, which puts the path INTO the
+// writable set, and pidHostWritable (bwrap.go), which decides whether the
+// launcher may create it (ADR 0080 D23). The entry kept out of the set and
+// the entry put into it have to be one spelling, or the no-create list
+// names a path the set does not hold and the member silently stops
+// applying. pidHostWritable's own comment asserted that sameness; this
+// makes it structural.
+//
+// ok is false for an entry there is no resolution for: a relative one with
+// no session dir to join against, or an empty entry, which names nothing.
+func pidWritableResolve(w, cwd string) (string, bool) {
+	w = ExpandTilde(w)
+	if w == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(w) {
+		if cwd == "" {
+			return "", false
+		}
+		w = filepath.Join(cwd, w)
+	}
+	return absResolve(w), true
 }
 
 // sessionGitGrants is LinkedGitDirs narrowed to what a worktree session
