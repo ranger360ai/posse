@@ -2,6 +2,15 @@
 
 MEASURED 2026-11-09, this tree at main 196ecca9, darwin 25.6.0 arm64.
 
+AMENDED 2026-11-09 (ranger-base-0z9ta): the two pending rows are GONE.
+ranger-base-sydnc's fix (e2499fcc) landed on main before uxadf's own commit
+(972338dc) was pushed, so this page shipped describing a state that was
+already over: the pending arm reddened over both rows — on every box — and
+0z9ta deleted them. `hshPending` is empty. The sections below are kept as the
+record of why the map exists and what it measured; where one says a fix "has
+not landed", read it as of 196ecca9, and see "The pending rows" for what
+actually happened.
+
 ranger-base-sydnc was `shasum` not being on the cutover host's PATH. Arch —
 what ADR 0080's always-on Linux host runs — ships it with perl at
 `/usr/bin/core_perl/shasum`, off the default PATH, and carries coreutils'
@@ -13,11 +22,12 @@ binary's result. Neither `set -e` nor `set -o pipefail` sees it — a command
 substitution whose command is not found yields the empty string and the status
 of the assignment it feeds is discarded.
 
-Those two have a fix written and committed under ranger-base-sydnc, with
+Those two had a fix written and committed under ranger-base-sydnc, with
 behaviour pins (`hashportability_qa_test.go`) that run them on a PATH with no
-`shasum` — and that commit has not landed on main, which is what the pending
-rows below are about. This bead is the second door either way: a census, so
-the NEXT script that hashes cannot reintroduce the spelling.
+`shasum`. At 196ecca9 that commit had not landed on main, which is what the
+pending rows below were about; it has since (see the amendment above). This
+bead is the second door either way: a census, so the NEXT script that hashes
+cannot reintroduce the spelling.
 
 ## Why the census could not simply forbid the word
 
@@ -27,8 +37,8 @@ reader the pin ships:
 | path | call | class |
 |---|---|---|
 | `scripts/release-artifacts.sh:375` | `sum() { if command -v sha256sum …; else shasum -a 256 …; fi; }` | probes |
-| `scripts/gotest.sh:173` | bare `shasum -a 256` | the finding, fix unlanded |
-| `scripts/verify-hook-freshness.sh:233,238` | bare `shasum -a 256` | the finding, fix unlanded |
+| `scripts/gotest.sh:173` | bare `shasum -a 256` | the finding, fix unlanded at 196ecca9; landed since |
+| `scripts/verify-hook-freshness.sh:233,238` | bare `shasum -a 256` | the finding, fix unlanded at 196ecca9; landed since |
 | `scripts/macos-install-probe.sh:465,486` | bare `shasum -a 256` | darwin-only, declared |
 | `docs/adr/0059-packed-refs-lock.probe.sh` ×4 | bare `shasum` | hand-run instrument, declared |
 | `docs/adr/0076-flag-trust.probe.sh` ×4 | bare `shasum -a 256` | hand-run instrument, declared |
@@ -79,20 +89,33 @@ extension, no shebang — so they are outside the walk rather than exempted by
 it. `docs/runbooks/release.md` names both spellings and says which box each
 belongs to; it is prose.
 
-## The pending rows, and why they are not exemptions
+## The pending rows, and why they were not exemptions
 
-`scripts/gotest.sh` and `scripts/verify-hook-freshness.sh` are findings on
-main today: ranger-base-sydnc's fix is written and committed on that bead's
-own branch (e2499fcc) and has not landed. A census that exempted them would be
-green over the exact bug it exists to prevent; a census that redded over them
-would red `make tree-check`, and so `make test`, for every seat on the box
-until that bead closes. So they sit in `hshPending`, each row naming the bead
-that holds the fix, and the arm over that map fails when a pending path is no
-longer a finding — landing sydnc reds this file and the remedy is to delete
-the row. MEASURED by checking those two scripts out of that branch into a
-scratch copy of this tree: the census reports
+At 196ecca9 `scripts/gotest.sh` and `scripts/verify-hook-freshness.sh` were
+findings on main: ranger-base-sydnc's fix was written and committed on that
+bead's own branch (e2499fcc) and had not landed. A census that exempted them
+would be green over the exact bug it exists to prevent; a census that redded
+over them would red `make tree-check`, and so `make test`, for every seat on
+the box until that bead closed. So they sat in `hshPending`, each row naming
+the bead that held the fix, and the arm over that map fails when a pending
+path is no longer a finding — landing sydnc reds this file and the remedy is
+to delete the row. MEASURED, before landing, by checking those two scripts out
+of that branch into a scratch copy of this tree: the census reports
 `hshPending names scripts/gotest.sh and every hasher mention in it now sits
 inside a probe — THE FIX LANDED. Delete the row` for both, and nothing else.
+
+**And that is how it went, from the wrong side.** The two commits landed in
+the opposite order to the one this page assumed: e2499fcc reached main while
+972338dc was still unpushed on the laptop, so uxadf landed stale and the
+pending arm was red on every box the moment it did — the same two lines,
+verbatim, that the scratch-copy measurement had predicted. ranger-base-0z9ta
+deleted both rows on top of 972338dc, which is the remedy this section names
+and the only one: nothing about the map, the arm or the scripts changed. The
+lesson is not about the mechanism, which worked; it is that a pending row's
+reason names a commit whose landing order nobody controls, so the row is
+only ever as fresh as the last reader of `git log`. MEASURED 2026-11-09
+(ranger-base-0z9ta), this tree at f9009a83: the census is red over both rows
+before the delete and green after, with no other arm moving.
 
 ## The walk, and the floor under it
 
@@ -105,6 +128,11 @@ it, and floors the hashing files at 3 so a matcher that has gone to sleep
 cannot read as a clean tree.
 
 ## Verified by breaking it, four ways
+
+At 196ecca9, where the two scripts still had their bare calls. Arms 1 and 2
+cannot be re-run on today's tree and are kept as the record of what the map
+measured: with e2499fcc landed, deleting a pending row is the FIX, not a
+break, and arm 2's planted state is the tree.
 
 1. `hshPending`'s `scripts/gotest.sh` row deleted → `scripts/gotest.sh calls a
    hasher by name on 1 runnable line(s) outside any command -v probe:

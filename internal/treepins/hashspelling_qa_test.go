@@ -17,12 +17,14 @@ package treepins
 // found yields the empty string and the status of the assignment it feeds is
 // discarded.
 //
-// Those two have a fix WRITTEN AND UNLANDED — committed under
-// ranger-base-sydnc, with behaviour pins (hashportability_qa_test.go) that
-// run them on a PATH with no `shasum` — so on main they are still findings,
-// and hshPending below is where they sit until that bead closes. Do not read
-// a reference to that file here as a file in this tree; check it is there
-// before relying on it.
+// Both are FIXED AND LANDED — ranger-base-sydnc, commit e2499fcc, with
+// behaviour pins (internal/treepins/hashportability_qa_test.go) that run them
+// on a PATH with no `shasum`. This file shipped with them in hshPending
+// because e2499fcc had not landed when it was written and uxadf's own commit
+// (972338dc) was still unpushed; sydnc landed first, the pending arm reddened
+// over both rows exactly as it is built to, and ranger-base-0z9ta deleted
+// them. hshPending is empty and stays here for the next finding whose fix is
+// in flight.
 //
 // This file is the cheap second door either way: behaviour pins hold the
 // scripts they name, and the next script to hash is not one of them.
@@ -39,7 +41,7 @@ package treepins
 // WHAT THIS DOOR CANNOT SEE, so that nobody reads it as more than it is: the
 // probe's third arm. `shasum` absent AND `sha256sum` absent must be a loud
 // stop and never a value, because an empty hash must not compare equal to
-// another empty hash — and that is behaviour, not text. The fix written under
+// another empty hash — and that is behaviour, not text. The fix landed under
 // sydnc has that arm in both scripts, and its pins run them on a box with
 // neither. scripts/release-artifacts.sh is a two-way probe with no such arm,
 // and that is NOT the sydnc class: that script runs under `set -eu`, so the
@@ -268,10 +270,13 @@ var hshExempt = map[string]string{
 // answer to "where does this run"; a pending path has a bug, measured, with a
 // fix in flight. A row here that outlives its bead is this door being held
 // open, and the arm that deletes it is the one that says so.
-var hshPending = map[string]string{
-	"scripts/gotest.sh":                "the ranger-base-sydnc finding itself: the cache key is a sha, so on a box with no `shasum` every build hashed to the empty string, every build named `<slug>-.test`, and the reuse branch handed back the first binary ever cached for that package — a changed package's new tests never ran and a red test greened the wrapper. FIXED under ranger-base-sydnc (commit e2499fcc, on that bead's own branch), which probes for sha256sum then shasum, proves the choice against a known digest, and refuses a key that is not 64 hex characters. That commit has not landed on main. DELETE THIS ROW when it does.",
-	"scripts/verify-hook-freshness.sh": "the other half of the same finding: `shasum: command not found` left BOTH sides of every compare empty, the empty strings compared EQUAL, and this detective control printed `fresh` and exited 0 over a planted stale hook — on that box it passed every stale and every foreign hook, silently. FIXED under ranger-base-sydnc (commit e2499fcc, on that bead's own branch), which probes, self-checks against a known digest, and treats a digest that is not 64 hex characters as an error and never as a value. That commit has not landed on main. DELETE THIS ROW when it does.",
-}
+//
+// It is EMPTY today, and that is the mechanism having worked rather than
+// never having been used: the two rows it shipped with — scripts/gotest.sh
+// and scripts/verify-hook-freshness.sh, the ranger-base-sydnc finding — were
+// deleted under ranger-base-0z9ta when e2499fcc landed and this arm reddened
+// over them.
+var hshPending = map[string]string{}
 
 // hshFile is the path this file's findings point the reader at.
 const hshFile = "internal/treepins/hashspelling_qa_test.go"
