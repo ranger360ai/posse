@@ -72,7 +72,10 @@ type bgLive struct {
 
 func bgLiveFixture(t *testing.T) bgLive {
 	t.Helper()
-	root := t.TempDir()
+	// gitTempDir and not t.TempDir(): a `git init` under a bare root leaves
+	// TempDir's own RemoveAll racing a concurrent write in the repo it made
+	// (gittempdirroot_qa_test.go pins every init in this package to this).
+	root := gitTempDir(t)
 	repo := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -166,6 +169,7 @@ func (f bgLive) branchSha(t *testing.T, name string) string {
 // second half is the one the probe's T2 cannot see: the whole shape of D20's
 // risk is a write that goes through the mount and nowhere else.
 func TestLiveBwrapGitRefsCommitsOnTheSessionBranch(t *testing.T) {
+	t.Parallel()
 	bgLiveSkip(t)
 	f := bgLiveFixture(t)
 	before := f.branchSha(t, "posse/s1")
@@ -184,6 +188,7 @@ func TestLiveBwrapGitRefsCommitsOnTheSessionBranch(t *testing.T) {
 // opened to close and none of them reachable through L1 or L3: a ref move is
 // not a push, so the push shim never sees it and pre-push never fires.
 func TestLiveBwrapGitRefsRefusesTheSharedGitState(t *testing.T) {
+	t.Parallel()
 	bgLiveSkip(t)
 	f := bgLiveFixture(t)
 	mainBefore := f.branchSha(t, "main")
@@ -212,6 +217,7 @@ func TestLiveBwrapGitRefsRefusesTheSharedGitState(t *testing.T) {
 // parity prints this as a declared difference, and a line claiming a
 // widening the wall does not have is worse than no line.
 func TestLiveBwrapGitRefsCanMoveAPeerSessionsRef(t *testing.T) {
+	t.Parallel()
 	bgLiveSkip(t)
 	f := bgLiveFixture(t)
 
@@ -233,6 +239,7 @@ func TestLiveBwrapGitRefsCanMoveAPeerSessionsRef(t *testing.T) {
 // anything: between launches the prep's `mkdir -p` would simply remake the
 // directory (bwrapgitrefs_qa_test.go pins that it asks for it).
 func TestLiveBwrapGitRefsCommitsAfterAnOutsidePackRefs(t *testing.T) {
+	t.Parallel()
 	bgLiveSkip(t)
 	f := bgLiveFixture(t)
 	before := f.branchSha(t, "posse/s1")
@@ -271,6 +278,7 @@ func TestLiveBwrapGitRefsCommitsAfterAnOutsidePackRefs(t *testing.T) {
 // way the host answers the other question, and logs which answer it gave so
 // the first run on the D1 host is the measurement ADR 0080 D22 asks for.
 func TestLiveBwrapGitRefsWithoutTheKeepFileNeverCommitsIntoAPrunedDir(t *testing.T) {
+	t.Parallel()
 	bgLiveSkip(t)
 	f := bgLiveFixture(t)
 	before := f.branchSha(t, "posse/s1")
