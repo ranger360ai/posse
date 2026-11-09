@@ -67,7 +67,14 @@ import (
 //
 // It is a var and not a const list so a test can prove the exclusions below
 // are not in it; nothing mutates it at runtime.
-var PromotedPaths = []string{"agents", "config.yaml", "recipes", "runtimes", "skills"}
+var PromotedPaths = []string{"agents", PromotedConfigFile, "recipes", "runtimes", "skills"}
+
+// PromotedConfigFile is the one FILE in that list, spelled once because two
+// readers need the basename rather than the list: App.ConfigPath joins it onto
+// the home, and HomeConstitutionFiles (seatbelt.go) answers which of the
+// constitution paths are files for a mechanism that has to know a path's kind
+// before it can make one (ranger-base-ppnds).
+const PromotedConfigFile = "config.yaml"
 
 // PromotedProse renders PromotedPaths for a sentence an operator READS —
 // each tree with a trailing slash, `config.yaml` as itself — with `last` as

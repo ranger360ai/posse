@@ -279,6 +279,23 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut) ([]string,
 			// INTO. A grant that is going to be a file is D19's to remove,
 			// and until it is, a box that has never run the CLI gets a
 			// directory where its config was going to go.
+			//
+			// THE DENY ARM BELOW NO LONGER GUESSES and this one still does,
+			// which is a difference in what the producers can say and not a
+			// difference of opinion (ranger-base-ppnds). A file-shaped deny
+			// is named by code that knows — `<gitdir>/config.lock` is a
+			// lockfile by construction — so the carve-out carries the kind
+			// (SeatbeltCarveOut.DenyFile). A file-shaped GRANT arrives from a
+			// `state_dir:` declaration, and ADR 0012 D4's key says
+			// "directories (and single files)" without saying which: nothing
+			// but a stat can tell, and the path is not there. The live
+			// members are the two beads' — claude's `~/.claude.json` (D19)
+			// and git's ref leaf, its `.lock` and `packed-refs.lock` (D20) —
+			// and until they land this is the measured residual, with the
+			// exists-as-a-file arm above refusing the same paths loudly on
+			// any box that HAS run the CLI. The next file-shaped grant after
+			// those reopens it; what closes it is the producer of that grant
+			// saying so, the way the deny half now does.
 			prep = append(prep, PrepStep{PrepMkdirAll, p, "a write grant that is not there yet; bwrap cannot bind a source that does not exist"})
 		}
 		argv = append(argv, "--bind", p, p)
@@ -319,6 +336,64 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut) ([]string,
 			// grants as well.
 			if !writeGranted(grants, d) {
 				continue // nothing inside the wall can bring this path into being
+			}
+			// A FILE-SHAPED DENY GETS NEITHER, and this is the one place in
+			// the render where the carve-out is asked what a path IS rather
+			// than the filesystem (ranger-base-ppnds, finding 1 of the verify
+			// at ranger-base-vnp01).
+			//
+			// `mkdir -p` is what this arm did for every absent deny, and
+			// several Deny entries are file paths that are absent on every
+			// healthy repo: `<gitdir>/config.lock`, `config.worktree`,
+			// `config.worktree.lock` (sessionGitConfigFiles,
+			// sessionWorktreeIdentityFiles, and the beads store's own git dir
+			// through beadsGitDirs). The step runs OUTSIDE the namespace, in
+			// the SHARED repo, in the seat's name, and nothing cleans it up —
+			// so what the wrong kind costs, MEASURED by hand against a real
+			// repo at git 2.50.1 with a green control first (the verify's
+			// REPRO (c), ranger-base-ppnds):
+			//
+			//   config.lock as a DIR          `git config` dies with
+			//                                 `error: could not lock config
+			//                                 file .git/config: File exists`.
+			//                                 commit and status unaffected, so
+			//                                 it is found late and far away.
+			//   config.worktree as a DIR      inert while
+			//                                 extensions.worktreeConfig is
+			//                                 unset; with it set — git sets it
+			//                                 itself for sparse-checkout —
+			//                                 status, config --list and commit
+			//                                 all exit 128 at `fatal: unknown
+			//                                 error occurred while reading the
+			//                                 configuration files`.
+			//   config.worktree.lock as a DIR `git config --worktree` refused.
+			//
+			// A session cannot repair any of it from inside: the path is
+			// behind the wall it is denied. And TOUCH is not the other half of
+			// the fix — an empty FILE at `config.lock` is the same "File
+			// exists" refusal the directory buys.
+			//
+			// So nothing is rendered and the residual is stated here rather
+			// than closed, because closing it needs a mechanism this one does
+			// not have (a mount cannot say "this name may not come into
+			// being"): the session CAN create these files inside the grant
+			// that contains them, and no wall is over them when it does. What
+			// it still cannot do is make one take effect. The file each lock
+			// would be renamed over — `config`, `config.worktree` when it
+			// exists — is itself bound read-only, and B8 measured that a
+			// rename cannot cross a mount point, so the refusal lands one step
+			// later than at the SBPL mechanism (`could not write config file`
+			// where seatbelt says `could not lock`, both arms measured in
+			// seatbeltgitidentity_qa_test.go) and the attacker-chosen config
+			// reaches the lock and never the config. The costs that remain are
+			// a stray lockfile in the shared repo, which an operator's next
+			// `git config` trips over, and an inert `config.worktree` that
+			// becomes live only if something first writes the extension into a
+			// config this wall denies. Both are smaller than a directory the
+			// launcher makes unconditionally at every launch, which is what
+			// the mkdir did.
+			if carve.FileShaped(d) {
+				continue
 			}
 			prep = append(prep, PrepStep{PrepMkdirAll, d, "a deny that is not there yet and sits inside a write grant, so the session could create it"})
 		}

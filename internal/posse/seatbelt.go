@@ -284,11 +284,57 @@ func sbSiblingRegex(p string) string {
 // SBPL cannot tell an append from a truncation, so the session a log
 // records can still forge it. The deny takes the log out of reach of every
 // OTHER persona's session, which is what item 2 of the bead asked for.
+//
+// DenyFile is the one field that is not a list of its own: it says which
+// Deny entries their PRODUCER means as a FILE, and it exists because the
+// other mechanism of this tier has to know (ranger-base-ppnds, finding 1 of
+// the verify at ranger-base-vnp01).
+//
+// SBPL never needed it. `(deny file-write* (subpath "<path>"))` is the same
+// statement whether the path is a file, a directory or absent, and the
+// profile says nothing about paths that are not there. A MOUNT has to be
+// made of something: bwrap can only bind a source that exists, so BwrapArgs
+// creates an absent deny on the host before it mounts it, and a path's KIND
+// is then a thing the launcher writes into the shared repo in the seat's
+// name. It cannot work the kind out — an absent path's shape is exactly what
+// cannot be stat'd — and it must not guess, because at these paths a guess
+// is `mkdir -p <gitdir>/config.lock` and `git config` then dies at
+// `error: could not lock config file` for every reader of that repo, not
+// only for the seat (the five costs are measured in BwrapArgs' own comment).
+//
+// So the producers say. They are the only ones who know: sessionGitConfigFiles
+// names a config file and its lockfile, sessionWorktreeIdentityFiles names
+// five pointer files, HomeConstitutionFiles names config.yaml and the promote
+// manifest — all of them FILES by construction, several of them absent on
+// every healthy repo. Everything else in Deny is a directory a session writes
+// INTO, which is what the unmarked case means.
+//
+// It is a SUBSET of Deny and never a list beside it: an entry here that is
+// not in Deny denies nothing, and the mount order is Deny's. Marking a
+// directory file-shaped costs a deny its mount when the path is absent, so
+// the rule for a new producer is the producer's own question — "is this a
+// path a session writes into, or a path a session writes" — and not a guess
+// at this call site.
 type SeatbeltCarveOut struct {
 	Deny     []string // subpaths no grant above may reach
 	Seal     []string // directories whose rename would carry a Deny path away
 	Keep     []string // literals re-allowed after the deny
 	DenyRead []string // literal files no session may file-read*, whatever grants it
+	DenyFile []string // the Deny entries their producer means as FILES (see above)
+}
+
+// FileShaped reports whether a Deny entry's producer means it as a file. The
+// predicate and not the field, because the question is asked per path by a
+// renderer that has no business knowing how the answer is stored — and
+// because "not marked" has to mean "a directory", which is a default a
+// caller reading the slice could forget to apply.
+func (c SeatbeltCarveOut) FileShaped(p string) bool {
+	for _, f := range c.DenyFile {
+		if f == p {
+			return true
+		}
+	}
+	return false
 }
 
 // Empty reports whether the block renders nothing.
@@ -1007,6 +1053,15 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 		for _, p := range a.HomeConstitutionPaths() {
 			add(&c.Deny, p)
 		}
+		// Two of those are files (HomeConstitutionFiles), for the reason the
+		// git chain below records the same thing. ADR 0015 §2 keeps the whole
+		// area out of every grant and ConstitutionGrants is how that is
+		// checked, so the bwrap render should never reach the missing-deny arm
+		// over one of these — recorded anyway, because "unreachable" is a
+		// property of another function and this is a property of the path.
+		for _, p := range a.HomeConstitutionFiles() {
+			add(&c.DenyFile, p)
+		}
 	}
 	if a.StateDir != "" {
 		add(&c.Deny, filepath.Join(a.StateDir, "gates"))
@@ -1024,16 +1079,25 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	}
 	// ADR 0038: the file that can move that hooks dir, and the chain that
 	// selects which config file a later git reads at all.
+	//
+	// Every path either producer names is a FILE, and that is recorded rather
+	// than left for a consumer to infer: at the bwrap mechanism an absent deny
+	// is created on the host before it is mounted, and three of these are
+	// absent on every healthy repo (`config.lock`, `config.worktree`,
+	// `config.worktree.lock`). DenyFile is where the producer says so.
 	for _, p := range sessionGitConfigFiles(cwd) {
 		add(&c.Deny, p)
+		add(&c.DenyFile, p)
 	}
 	for _, p := range sessionWorktreeIdentityFiles(cwd) {
 		add(&c.Deny, p)
+		add(&c.DenyFile, p)
 	}
 	for _, d := range pidDeniedSubtrees(ag, cwd) {
 		add(&c.Deny, d.Path)
 	}
 	c.Deny = dedupeStrings(c.Deny)
+	c.DenyFile = dedupeStrings(c.DenyFile)
 	// The session's own audit trail, by literal so no new file joins it.
 	// Both are already inside a grant (the gates dir), so this re-allows
 	// rather than widens.
@@ -1083,7 +1147,10 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // seat that owns it and is not a reason to open it to the three that do
 // not, which is the rule the siblings below have always followed; before
 // D19 a Linux codex, grok or bob seat could read claude's credential. The
-// own() test is the same one, keyed to the same declared state_dir literal.
+// own() test is the same one the siblings take, and since ranger-base-ppnds
+// it is a CONTAINMENT test over the declared state dirs rather than a string
+// match on their spelling — see own() itself for what the match cost on this
+// arm, which is the one arm where it stranded a seat.
 //
 // WHICH file that is, this function does not spell: it asks
 // credentialFileCandidates. The deny was a home-shaped literal for as long
@@ -1132,9 +1199,11 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // unconditionally: whatever the CLI wrote before the variable moved it is
 // still sitting in the home (ADR 0019 D2 store 3's keychain-fallback file), and
 // a deny over an absent path costs nothing — the read is ENOENT either way.
-// own() is keyed to the declared state_dir literal, as it always was, and
-// spares BOTH spellings for the owning runtime: a runtime denied its own
-// credential cannot authenticate itself wherever that credential now lives.
+// own() spares BOTH spellings for the owning runtime, as it always has: a
+// runtime denied its own credential cannot authenticate itself wherever that
+// credential now lives. What changed in ranger-base-ppnds is how it decides
+// the store is this seat's — containment of the store's files in a declared
+// state dir, not equality of two spellings of a directory name.
 //
 // The dedupe is INSIDE this function and not left to the caller's. With no
 // variable set the two spellings per sibling are the same path, and while
@@ -1163,13 +1232,69 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // runtime in the operator's environment, so a persona env set cannot move
 // where the operator's codex or grok already wrote. The one arm where it
 // could — a codex- or grok-launched session under the seatbelt on a box
-// exporting its own home variable — is the arm own() spares anyway
-// (ranger-base-b52r3's residual, stated there in full).
+// exporting its own home variable — is the arm own() spares anyway, by
+// owning the DECLARED spelling and sparing the pair
+// (ranger-base-b52r3's residual, stated there in full; ranger-base-ppnds
+// kept that arm where it was on purpose).
 func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
-	own := func(dir string) bool {
+	// own reports whether THIS seat's runtime owns a credential store, and it
+	// asks the question the wall is about: does any file of that store lie
+	// under a directory this launch DECLARED.
+	//
+	// It was a string equality against the declared state_dir literal until
+	// ranger-base-ppnds, which is a different question wearing the same name
+	// (finding 2 of the verify at ranger-base-vnp01). `state_dir:` REPLACES the
+	// built-in list rather than merging (runtime.go, ADR 0021 D1), so the
+	// literal that arrives here is whatever this box's operator typed — and
+	// MEASURED on the linux arm, where ADR 0080 D19 newly subjects claude to
+	// this test: `[<home>/.claude]` (the same directory, spelled absolutely)
+	// and `["~/.claude/"]` (one trailing slash) both read as "not a claude
+	// seat" and masked the seat off the credential it authenticates with,
+	// which on linux is the store of record and not a keychain fallback
+	// (ADR 0019 D2) — the one thing this function's own comment says a
+	// runtime must never be denied.
+	//
+	// underDir is the containment rule every other such question in this file
+	// uses, and it resolves both sides, so a spelling cannot dodge the test in
+	// either direction. ExpandTilde first, because the declared value is a
+	// `~/…` literal in every built-in: absResolve alone would hang it off the
+	// session's cwd. A declared entry that is still not absolute after that
+	// (no HOME to expand against) names no directory and is skipped rather
+	// than resolved against cwd — credentialDenyable's own reasoning, one
+	// caller over.
+	//
+	// WHOLE-STORE and not per-file, the same way the siblings have always
+	// been: ownership is a fact about the RUNTIME, so a seat that owns the
+	// store is spared every spelling of it, including the home copy whatever
+	// the CLI wrote before a variable moved the write (ADR 0019 D2 store 3).
+	// That is also what keeps the CODEX_HOME / GROK_HOME arm where
+	// ranger-base-b52r3's residual left it: a codex seat declaring `~/.codex`
+	// on a box exporting a moved CODEX_HOME is spared BOTH spellings, as it
+	// was before this change, because the declared one is owned.
+	//
+	// A declared state dir wide enough to contain ANOTHER runtime's store
+	// spares that store too — `state_dir: ["~"]` is the shape. That is not a
+	// hole this wall can close: SeatbeltWritable grants every declared state
+	// dir WRITE (its stateDirs loop), so a read deny inside one is theatre
+	// anyway, and the breach is the grant. `posse runtime check` is where an
+	// overlay that wide gets caught.
+	own := func(paths ...string) bool {
 		for _, d := range stateDirs {
-			if d == dir {
-				return true
+			dir := ExpandTilde(d)
+			if !filepath.IsAbs(dir) {
+				continue
+			}
+			for _, p := range paths {
+				// credentialDenyable on the candidate for the same reason
+				// filepath.IsAbs guards the declared dir: a relative
+				// candidate resolves against the session's cwd, and this
+				// test is all-or-nothing per store, so one of those reading
+				// as owned would spare the ABSOLUTE spelling beside it. add
+				// refuses the relative one anyway; this keeps it from
+				// deciding for its sibling.
+				if credentialDenyable(p) && underDir(dir, p) {
+					return true
+				}
 			}
 		}
 		return false
@@ -1210,26 +1335,36 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 	// CLAUDE_CONFIG_DIR to wherever the runtime writes next, for the reason
 	// ranger-base-x5f6p paid for on the darwin arm.
 	//
-	// own() keys on the declared state_dir literal, which is why
-	// BwrapStateDirs keeps `~/.claude` in claude's list while dropping the
-	// config FILE beside it (bwrap.go): a list that had lost the tree would
-	// read here as "not a claude seat".
-	if goos == "darwin" || !own("~/.claude") {
-		for _, p := range credentialFileCandidates() {
+	// own() asks whether a candidate lies under a declared state dir, so
+	// this arm follows the config dir BwrapStateDirs puts first (bwrap.go)
+	// as readily as it follows the `~/.claude` tree beside it. D19 keeps
+	// both and should go on keeping both — whatever the CLI wrote in the
+	// home before CLAUDE_CONFIG_DIR moved the write is still sitting there
+	// — but a list that had lost the tree no longer reads here as "not a
+	// claude seat", which is the coupling ranger-base-tc41o pinned and
+	// ranger-base-ppnds took the sharp edge off.
+	claude := credentialFileCandidates()
+	if goos == "darwin" || !own(claude...) {
+		for _, p := range claude {
 			add(p)
 		}
 	}
 	home, _ := os.UserHomeDir()
 	sibling := func(stateDir, file string, homeIn func(string) string) {
-		if own(stateDir) {
+		// Both spellings, then one ownership question over the pair: the
+		// declared spelling and the one the CLI's own home variable moves
+		// the write to. No second guard on homeIn's answer: Join("", file)
+		// is the relative `auth.json` and Join("mycodex", file) is
+		// "mycodex/auth.json", and add refuses both for the one reason it
+		// refuses either — neither is absolute (ranger-base-o05yg). own()
+		// skips a non-absolute candidate for the same reason.
+		files := []string{ExpandTilde(stateDir + "/" + file), filepath.Join(homeIn(home), file)}
+		if own(files...) {
 			return
 		}
-		add(ExpandTilde(stateDir + "/" + file))
-		// No second guard on homeIn's answer: Join("", file) is the
-		// relative `auth.json` and Join("mycodex", file) is
-		// "mycodex/auth.json", and add refuses both for the one reason it
-		// refuses either — neither is absolute (ranger-base-o05yg).
-		add(filepath.Join(homeIn(home), file))
+		for _, p := range files {
+			add(p)
+		}
 	}
 	sibling("~/.codex", "auth.json", codexHomeIn)
 	sibling("~/.grok", "auth.json", grokHomeIn)
@@ -1549,6 +1684,21 @@ func (a *App) HomeConstitutionPaths() []string {
 		out = append(out, filepath.Join(a.Home, p))
 	}
 	return append(out, a.EnvsDir, a.SecretsDir, a.PromoteManifestPath())
+}
+
+// HomeConstitutionFiles is the FILE-shaped subset of that list: the promoted
+// `config.yaml` and the promote manifest. Everything else it names is a
+// directory.
+//
+// Joined onto a.Home the way HomeConstitutionPaths joins, and off the same
+// PromotedConfigFile constant that list is built from, so the two cannot come
+// to disagree about either half of the path — not about the home (an App
+// built by hand with no ConfigPath set is the shape that would have), and not
+// about the basename the day the seed renames it. Its one caller is
+// SeatbeltCarveOut's DenyFile, whose own comment says what a consumer does
+// with the answer.
+func (a *App) HomeConstitutionFiles() []string {
+	return []string{filepath.Join(a.Home, PromotedConfigFile), a.PromoteManifestPath()}
 }
 
 // ConstitutionGrants reports which of those a writable set reaches. Empty

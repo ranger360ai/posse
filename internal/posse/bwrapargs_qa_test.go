@@ -11,7 +11,7 @@ package posse
 // is Linux's and no arm here puts a wall up — that is D18's live arm and the
 // probe's (docs/adr/0080-bwrap-tier.probe.sh).
 //
-// WHAT MAKES THESE WORTH PINNING RATHER THAN READING. Three of the four
+// WHAT MAKES THESE WORTH PINNING RATHER THAN READING. Four of the five
 // failure modes in this file are SILENT at the mechanism:
 //
 //  1. mount ORDER. bwrap applies mounts in argv order and a later mount
@@ -21,17 +21,27 @@ package posse
 //  2. a mount NOT RENDERED for a path that is not there yet. A deny whose
 //     path the session can still create is a hole that opens the first time
 //     it does, and every signal at launch says the wall went up.
-//  3. a writable FILE. B8 measured that an atomic replace of a bound file is
+//  3. a prep step of the wrong KIND. The prep list is the one part of the
+//     wall that happens outside it: the launcher makes these paths on the
+//     host, in the SHARED repo, in the seat's name. A `mkdir -p` at a path
+//     its producer means as a FILE is silent at launch and loud later in
+//     somebody else's git — `could not lock config file` for every reader of
+//     that repo, with commit and status still working (ranger-base-ppnds).
+//     The carve-out is the only thing that can tell the kinds apart, because
+//     an absent path's shape cannot be stat'd.
+//  4. a writable FILE. B8 measured that an atomic replace of a bound file is
 //     refused, which is ranger-base-cypy1's lost-write failure WITH the
 //     grant in place — exit 0, the CLI printing that it saved, the file
 //     unchanged. The render refuses so that it cannot be reached.
-//  4. and the one that is loud: a path posse could not stat. Pinned anyway,
+//  5. and the one that is loud: a path posse could not stat. Pinned anyway,
 //     because the tempting spelling (os.IsNotExist alone) turns it into
 //     case 2.
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -371,6 +381,112 @@ func TestBwrapArgsPrepsAMissingDenyInsideAMissingGrant(t *testing.T) {
 	}
 }
 
+// A deny that is not there, is inside a grant, and whose PRODUCER means it as
+// a FILE: neither created nor mounted, where every other missing-deny-inside-a-
+// grant above is `mkdir -p`'d and mounted.
+//
+// This is ranger-base-ppnds' half of that verify's finding 1, and the arm the
+// mkdir escaped through: `mkdir -p` was this loop's answer for every absent
+// deny, and several Deny entries are file paths that are absent on every
+// healthy repo — `<gitdir>/config.lock`, `config.worktree`,
+// `config.worktree.lock`. The step runs on the host, outside the namespace,
+// in the SHARED repo, and a directory at `config.lock` makes `git config`
+// die with `could not lock config file` for every reader of that repo while
+// commit and status go on working, so it is found late and nowhere near
+// here. A session cannot clear it either: the path is behind the wall it is
+// denied.
+//
+// Both halves in one table, because each alone is satisfied by a renderer
+// that is wrong in the other direction: a renderer that mkdirs everything
+// passes the directory row, and one that renders nothing for any missing deny
+// passes the file row (and would quietly undo
+// TestBwrapArgsPrepsAMissingDenyInsideAGrant's whole subject).
+func TestBwrapArgsRendersNothingForAMissingFileShapedDeny(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		fileKind  bool
+		wantPrep  []string
+		wantMount bool
+	}{
+		// The control, and it is the same path in the same grant: what
+		// decides is the producer's statement about the KIND and nothing
+		// else about the render.
+		{"a directory-shaped deny is made and mounted", false, []string{"mkdir -p %s"}, true},
+		{"a file-shaped deny is neither", true, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, bwAt := bwTree(t, []string{"proj", "gitdir"}, nil)
+			deny := bwAt("gitdir", "config.lock")
+			carve := SeatbeltCarveOut{Deny: []string{deny}}
+			if tc.fileKind {
+				carve.DenyFile = []string{deny}
+			}
+
+			argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), bwAt("gitdir")}, carve)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []string
+			for _, w := range tc.wantPrep {
+				want = append(want, strings.ReplaceAll(w, "%s", deny))
+			}
+			if got := bwPrep(prep); !reflect.DeepEqual(got, want) {
+				t.Fatalf("prep = %v, want %v", got, want)
+			}
+			if mounted := strings.Contains(bwJoin(argv), deny); mounted != tc.wantMount {
+				t.Fatalf("mounted = %v, want %v:\n%s", mounted, tc.wantMount, bwJoin(argv))
+			}
+			// The render touches nothing either way — the prep list is a
+			// REQUEST to the launcher — so this is what says the file row
+			// leaves no empty file behind for `git config` to trip over, and
+			// that the directory row's mkdir is still the launcher's to make.
+			if _, err := os.Stat(deny); !os.IsNotExist(err) {
+				t.Fatalf("the render itself created %s (%v)", deny, err)
+			}
+		})
+	}
+}
+
+// FileShaped is a statement about a path in Deny and about no other list: an
+// entry that is not in Deny denies nothing, and marking one changes nothing
+// about the grants, the Keep files or the read masks. Asserted because the
+// field is a second list beside the one that carries the mount order, which
+// is exactly the shape a later reader could start treating as a list of its
+// own.
+func TestBwrapArgsFileShapedOnlySpeaksForTheDenyList(t *testing.T) {
+	t.Parallel()
+	_, bwAt := bwTree(t, []string{"proj"}, nil)
+	grant, keep, mask := bwAt("proj", "state"), bwAt("proj", "shell.log"), bwAt("proj", "cred.json")
+	if err := os.WriteFile(mask, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	carve := SeatbeltCarveOut{Keep: []string{keep}, DenyRead: []string{mask}}
+	marked := carve
+	marked.DenyFile = []string{grant, keep, mask}
+
+	argv, prep, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), grant}, carve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mArgv, mPrep, mErr := BwrapArgs(bwAt("proj"), []string{bwAt("proj"), grant}, marked)
+	if mErr != nil {
+		t.Fatal(mErr)
+	}
+	if bwJoin(argv) != bwJoin(mArgv) || !reflect.DeepEqual(bwPrep(prep), bwPrep(mPrep)) {
+		t.Fatalf("marking a grant, a Keep file and a read mask file-shaped moved the render:\n argv  %s\n       %s\n prep  %v\n       %v",
+			bwJoin(argv), bwJoin(mArgv), bwPrep(prep), bwPrep(mPrep))
+	}
+	// And the grant's own missing-path arm is untouched: shape 1 still mkdirs
+	// what it cannot stat, which is the residual bwrap.go names (D19 and D20
+	// remove its live file-shaped members, and a `state_dir:` declaration
+	// cannot say the kind the way a Deny producer can).
+	if got, want := bwPrep(prep), []string{"mkdir -p " + grant, "touch " + keep}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("prep = %v, want %v", got, want)
+	}
+}
+
 // Seal renders NOTHING, and this is the arm that says so rather than a
 // comment: the renderer ignoring one of its four inputs is otherwise
 // indistinguishable from a renderer that forgot it.
@@ -670,18 +786,60 @@ func TestBwrapArgsRefusesAPathItCannotStat(t *testing.T) {
 //
 // It asserts the SHAPE and not the membership: the writable set is a fact
 // about this box's home, and a pin on its contents belongs with the producer.
+//
+// THE CWD IS A REAL LINKED WORKTREE, and for two beads it was a fixture
+// DIRECTORY that was not a git repo at all (ranger-base-ppnds, finding 3 of
+// the verify at ranger-base-vnp01 — and it is why finding 1 escaped). With a
+// non-repo cwd `gitPath` fails, `LinkedGitDirs` answers nothing, and
+// sessionGitConfigFiles, sessionWorktreeIdentityFiles and sessionGitGrants
+// all return nil: not one file-shaped deny and not one git grant reached the
+// render in ANY arm of this file, which is most of what the one
+// producer-driven arm exists to carry. `git init` plus `git worktree add` is
+// the shape every dispatched session has, slash in the branch name and all.
 func TestBwrapArgsRendersTheTiersOwnLists(t *testing.T) {
 	t.Parallel()
-	_, bwAt := bwTree(t, []string{"proj", "home/state"}, nil)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	_, bwAt := bwTree(t, []string{"home/state"}, nil)
+	repo, tree := bwAt("repo"), bwAt("trees", "developer")
+	bwGitWorktree(t, repo, tree, "posse/developer-probe")
+	if dirs := LinkedGitDirs(tree); len(dirs) != 2 {
+		t.Fatalf("LinkedGitDirs(%s) = %v — the fixture is not a linked worktree, so the git lists reach the render empty and this arm measures nothing", tree, dirs)
+	}
 	a := &App{Home: bwAt("home"), StateDir: bwAt("home", "state")}
 	ag := &AgentFile{Name: "developer", MemoryDir: bwAt("home", "personas", "developer")}
 	gatesDir := filepath.Join(a.StateDir, "gates", ag.Name)
 
-	writable := a.SeatbeltWritable(ag, bwAt("proj"), gatesDir)
-	carve := a.SeatbeltCarveOut(ag, bwAt("proj"), gatesDir, writable)
-	argv, prep, err := BwrapArgs(bwAt("proj"), writable, carve)
+	writable := a.SeatbeltWritable(ag, tree, gatesDir)
+	carve := a.SeatbeltCarveOut(ag, tree, gatesDir, writable)
+
+	// AND AS THE LISTS STAND THEY DO NOT RENDER AT ALL, which is a pin and
+	// not an obstacle: `sessionGitGrants` names the branch ref LEAF, a
+	// regular file, and shape 1 refuses a file grant because B8 measured that
+	// an atomic replace of a bound file is refused — ranger-base-cypy1's
+	// lost-write failure WITH the grant in place. That refusal is what makes
+	// ADR 0080 D20 a prerequisite of a launch rather than an improvement to
+	// one, and this is the arm that says so from the real producers, so that
+	// the day D20 lands the first half of this test goes red and gets
+	// deleted rather than quietly staying true about nothing.
+	ref := absResolve(filepath.Join(bwqaGitCommonDir(t, tree), "refs", "heads", "posse", "developer-probe"))
+	if _, _, err := BwrapArgs(tree, writable, carve); err == nil {
+		t.Fatalf("a real dispatched session's grants rendered with the ref leaf %s still in them — shape 1 must refuse a file grant (probe B8), and ADR 0080 D20 is what removes this one", ref)
+	} else if !strings.Contains(err.Error(), ref) {
+		t.Fatalf("the refusal does not name the ref leaf %s: %v", ref, err)
+	}
+
+	// D20's replacement, applied here and nowhere else: drop the leaf, its
+	// `.lock` and `<common>/packed-refs.lock`, bind the ref's PARENT
+	// directory instead. This is that verify's REPRO (b) as a pin — the only
+	// arrangement under which the deny half below can be read today, and it
+	// is what `SeatbeltWritable` itself will answer once D20 lands, at which
+	// point this block becomes a no-op and goes.
+	writable = bwqaApplyD20(writable, ref, filepath.Dir(ref))
+	argv, prep, err := BwrapArgs(tree, writable, carve)
 	if err != nil {
-		t.Fatalf("the tier's own lists do not render: %v", err)
+		t.Fatalf("the tier's own lists do not render with D20 applied: %v", err)
 	}
 	if len(argv) < len(writable) {
 		t.Fatalf("%d argv entries for %d grants: %v", len(argv), len(writable), argv)
@@ -708,9 +866,128 @@ func TestBwrapArgsRendersTheTiersOwnLists(t *testing.T) {
 	// Every prep step names a path inside a grant: the launcher writes these
 	// on the host in the seat's name, so a step outside the wall's own
 	// footprint is a write posse has no business making.
+	//
+	// AND THE KIND OF EACH STEP FITS WHAT ITS PRODUCER MEANS THE PATH TO BE,
+	// which is the half that was missing: `writeGranted` asks whether a step
+	// is inside a grant and never whether a `mkdir -p` belongs at that path,
+	// so it stayed green over every one of finding 1's five directories. The
+	// carve-out is the only thing that can answer — an absent path's shape
+	// cannot be stat'd — and a step whose kind contradicts it is the defect.
 	for _, s := range prep {
 		if !writeGranted(writable, s.Path) {
 			t.Fatalf("prep step %q is outside every write grant", s)
+		}
+		if carve.FileShaped(s.Path) && s.Kind == PrepMkdirAll {
+			t.Fatalf("prep asks the launcher for %q at a path its producer means as a FILE — in the SHARED repo, outside the namespace, in the seat's name, and a session cannot clear it from behind the wall that denies it (ranger-base-ppnds finding 1; a directory at <gitdir>/config.lock kills `git config` for every reader of that repo)", s)
+		}
+		if s.Kind == PrepTouch && !carve.FileShaped(s.Path) && !bwqaIn(carve.Keep, s.Path) {
+			t.Fatalf("prep asks the launcher for %q at a path nothing declared file-shaped — the Keep files are the only touch this render has a producer for", s)
+		}
+	}
+	// THE POSITIVE WITNESS, without which both assertions above are satisfied
+	// by a render that was handed no file-shaped deny at all — which is
+	// exactly the state this arm was in for two beads. A dispatched session's
+	// per-worktree git dir is granted WHOLE (sessionGitGrants), and
+	// `config.worktree`/`config.worktree.lock` inside it are file-shaped
+	// denies that are absent on every healthy repo (measured absent through a
+	// whole session's life, seatbeltgitidentity_qa_test.go), so the arm under
+	// test — a missing deny, inside a grant, file-shaped — really runs here.
+	var witness []string
+	for _, d := range carve.DenyFile {
+		if !writeGranted(writable, d) {
+			continue
+		}
+		if _, err := os.Stat(d); !os.IsNotExist(err) {
+			continue
+		}
+		if strings.Contains(line, " "+d+" ") {
+			t.Fatalf("a file-shaped deny that is not there was mounted — bwrap cannot bind a source that does not exist, so this argv is refused at the host: %s", d)
+		}
+		// A GIT one, specifically. The fixture's home is under TMPDIR, which
+		// the writable set grants, so `config.yaml` and the promote manifest
+		// are witnesses too — and they would go on satisfying a count the day
+		// the git half stopped reaching the render at all, which is the exact
+		// failure finding 3 is about.
+		for _, g := range LinkedGitDirs(tree) {
+			if underDir(g, d) {
+				witness = append(witness, d)
+			}
+		}
+	}
+	if len(witness) == 0 {
+		t.Fatalf("no file-shaped deny under this session's git dirs is both absent and inside a grant, so the arm this test exists for did not run — the state a non-repo cwd leaves it in.\n DenyFile %v\n writable %v", carve.DenyFile, writable)
+	}
+}
+
+// bwqaGitCommonDir is the repo's shared git dir as git reports it, which is
+// where a linked worktree's refs live.
+func bwqaGitCommonDir(t *testing.T, tree string) string {
+	t.Helper()
+	dirs := LinkedGitDirs(tree)
+	if len(dirs) != 2 {
+		t.Fatalf("LinkedGitDirs(%s) = %v", tree, dirs)
+	}
+	return dirs[1]
+}
+
+// bwqaApplyD20 is ADR 0080 D20's narrowing applied to a writable set: the ref
+// leaf, its `.lock` and `<common>/packed-refs.lock` out, the ref's parent
+// directory in. Spelled as a transform of the REAL list rather than as a
+// hand-built one, so a producer that stops emitting any of the three makes
+// this a no-op instead of making it a lie.
+func bwqaApplyD20(writable []string, ref, parent string) []string {
+	common := filepath.Dir(filepath.Dir(filepath.Dir(parent))) // <common>/refs/heads/<p> → <common>
+	drop := map[string]bool{ref: true, ref + ".lock": true,
+		absResolve(filepath.Join(common, "packed-refs.lock")): true}
+	out := []string{absResolve(parent)}
+	for _, p := range writable {
+		if !drop[p] {
+			out = append(out, p)
+		}
+	}
+	return dedupeStrings(out)
+}
+
+// bwqaIn is membership, for the one assertion that has to tell a Keep file's
+// touch from a prep step nothing declared.
+func bwqaIn(list []string, p string) bool {
+	for _, q := range list {
+		if q == p {
+			return true
+		}
+	}
+	return false
+}
+
+// bwGitWorktree makes the fixture the arm above needs: a real repo with one
+// commit, and a linked worktree of it on a branch spelled the way the
+// launcher spells one (`posse/<session>`, so the ref is a file two
+// directories deep and the per-worktree git dir is a real one).
+//
+// `pack-refs --all` because a real checkout has a packed-refs, which is what
+// makes `<common>/packed-refs.lock` a path the git grants name.
+func bwGitWorktree(t *testing.T, repo, tree, branch string) {
+	t.Helper()
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "main", "."},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "t"},
+		{"commit", "-q", "--allow-empty", "-m", "seed"},
+		{"pack-refs", "--all"},
+		{"worktree", "add", "-q", "-b", branch, tree},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		// A fixture repo that reads the operator's own git config is a
+		// fixture whose shape depends on the box: `core.hooksPath` or an
+		// `extensions.*` there would move what sessionHooksDirs and the
+		// identity chain answer.
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s in %s: %v\n%s", strings.Join(args, " "), repo, err, out)
 		}
 	}
 }

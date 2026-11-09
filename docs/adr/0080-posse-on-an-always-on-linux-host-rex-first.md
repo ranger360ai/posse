@@ -699,7 +699,9 @@ argv. The order is fixed, and a later mount covers an earlier one:
    before they existed (`resolveExisting`).
 3. shape 2: `--ro-bind d d` for each `Deny`. If `d` is missing and its nearest
    existing ancestor is inside a write grant, the launcher makes it as an
-   empty directory first. Otherwise nothing can create it and no mount is
+   empty directory first — unless the carve-out says the producer means that
+   path as a FILE, in which case nothing is rendered and nothing is created
+   (ranger-base-ppnds, below). Otherwise nothing can create it and no mount is
    rendered. `Seal` renders nothing: renaming a mountpoint, or carrying it
    away by renaming an ancestor, is refused (B3, B4).
 4. `Keep`: the launcher creates each file, then `--bind f f`. That is an
@@ -747,6 +749,71 @@ did not settle and one residual for D18. Full reasoning in
   the home. Narrowing those four to darwin in `SeatbeltWritable` is the
   smaller fix and serves both mechanisms; a launcher that merely refuses the
   step leaves the wall announcing grants it does not have.
+
+  *That residual took on the right class and then enumerated the wrong
+  members* (ranger-base-ppnds, holden's finding 1 off ranger-base-vnp01). It
+  named four darwin-only literals under `/private/tmp` and the home, and
+  missed every GIT LOCK PATH — none of which is darwin-only, and two of which
+  damage the SHARED repo rather than the session. The class is not "a path
+  that cannot be made" but "a path made as the WRONG KIND", and item 3's
+  letter is faithful about it: it says `mkdir -p` with no kind distinction,
+  because SBPL never needed one. Several `Deny` entries are files that are
+  absent on every healthy repo — `<gitdir>/config.lock`,
+  `<gitdir>/config.worktree`, `config.worktree.lock`, from
+  `sessionGitConfigFiles` and `sessionWorktreeIdentityFiles`, and the beads
+  store's own through `beadsGitDirs` — and all of them sit inside a write
+  grant, so the missing-deny arm fired on each. MEASURED by hand against a
+  real repo at git 2.50.1, each with a green control first: a directory at
+  `config.lock` makes `git config` die at `could not lock config file` while
+  commit and status go on working; at `config.worktree` it is inert until
+  `extensions.worktreeConfig` is set (git sets it itself for
+  `sparse-checkout`) and then `status`, `config --list` and `commit` all exit
+  128 at `fatal: unknown error occurred while reading the configuration
+  files`; at `config.worktree.lock` it refuses `git config --worktree`. Shape
+  1's absent-GRANT arm has the same hole — a directory at `<ref>.lock` is
+  `fatal: cannot lock ref 'HEAD'`, at `packed-refs.lock` it is a thing
+  AGENTS.md makes the operator's to remove and no persona's — and its two
+  live members are D19's and D20's to remove.
+
+- **DIVERGED again on shape 2's missing-deny arm, and this one needs a
+  channel** (ranger-base-ppnds). `SeatbeltCarveOut` gains `DenyFile`: the
+  subset of `Deny` its PRODUCER means as a file, with a `FileShaped(p)`
+  predicate for the render and "not marked" meaning a directory. The render
+  cannot work the kind out — an absent path's shape is exactly what cannot be
+  stat'd — and must not guess, so the producers say: both git producers above
+  (files by construction), plus `HomeConstitutionFiles` (`config.yaml` and the
+  promote manifest). An absent file-shaped deny then renders **no mount and no
+  prep**, and `touch` is not the other half of the fix: an empty file at
+  `config.lock` is the same `File exists` refusal the directory buys. Stated
+  residual, because a mount cannot say "this name may not come into being":
+  the session can create those files inside the grant that contains them, and
+  nothing is over them when it does. It still cannot make one take effect —
+  the file each lock renames onto is itself bound read-only and B8 measured
+  that a rename cannot cross a mount point — so the refusal lands one step
+  later than under SBPL (`could not write config file` where seatbelt says
+  `could not lock`, both arms measured in `seatbeltgitidentity_qa_test.go`),
+  and what remains is a stray lockfile and an inert `config.worktree`. Both
+  are smaller than a directory the launcher makes at every launch.
+  **Shape 1 still guesses**, and that is a difference in what producers can
+  say: a file-shaped GRANT arrives from a `state_dir:` declaration, and ADR
+  0012 D4's key says "directories (and single files)" without saying which.
+  The live members are D19's and D20's; the next file-shaped grant after
+  those reopens it, and what closes it is that grant's producer saying so.
+
+- **The producer-driven arm's cwd was not a git repo** (ranger-base-ppnds,
+  finding 3 — and it is why the above escaped).
+  `TestBwrapArgsRendersTheTiersOwnLists`
+  is the one arm driven from `SeatbeltWritable`/`SeatbeltCarveOut` rather than
+  a hand-built list, and its cwd was a fixture DIRECTORY, so `gitPath` failed,
+  `LinkedGitDirs` answered nothing, and not one file-shaped deny or git grant
+  reached the render in ANY of the file's arms. Its prep assertion was
+  `writeGranted(writable, s.Path)` — inside a grant, never the right KIND —
+  which stayed green over all five directories. It is a `git init` plus a `git
+  worktree add` now, with the kind of every step asserted against the
+  carve-out and a positive witness that a file-shaped deny under the session's
+  git dirs really is absent and inside a grant. It also pins what the real
+  lists do TODAY: they refuse, naming the branch ref leaf, which is what makes
+  D20 a prerequisite of a launch rather than an improvement to one.
 
 **D18. The launch line, identical on herdr and Rex panes.** `RenderBwrap`
 writes the argv NUL-separated to `state/gates/<persona>/bwrap.args`, beside
@@ -811,12 +878,40 @@ Full reasoning in `docs/notes.d/ranger-base-tc41o.md`.
   lost the tree would read there as "not a claude seat" and mask a Linux
   claude seat off the credential this item's own last bullet spares it. The
   coupling is pinned from one function's real output into the other.
+
+  *The second reason is no longer load-bearing, and the declaration still
+  stays* (ranger-base-ppnds, holden's finding 2 off ranger-base-vnp01).
+  `own()` asked string equality against the declared literal, which is a
+  different question wearing the same name: `state_dir:` REPLACES the built-in
+  list (ADR 0021 D1), so what arrives is whatever this box's operator typed,
+  and the arm below newly subjects claude to that test off darwin — where the
+  file is the store of record and not a keychain fallback. MEASURED on the
+  linux arm, `credentialReadDenyLiterals("linux", <state_dir>)`:
+  `["~/.claude" "~/.claude.json"]` spared, `BwrapStateDirs`' own output
+  spared, and then `[<home>/.claude]` DENIED (the same directory, spelled
+  absolutely), `["~/.claude/"]` DENIED (one trailing slash),
+  `[/srv/claude-state]` DENIED (an overlay). A seat denied its own credential
+  cannot authenticate at all. `own()` asks containment now — does any file of
+  this store lie under a directory the launch declared, through `underDir`,
+  which is what every other containment question in that file uses — so the
+  three sibling runtimes' inherited half of the same coupling closes with it,
+  whole-store as it has always been (a codex seat declaring `~/.codex` on a
+  box exporting a moved `CODEX_HOME` is still spared both spellings, which is
+  ranger-base-b52r3's residual kept where it was). The overlay row stays
+  denied and that is the answer rather than a residual: `SeatbeltWritable`
+  grants the declared state dirs and nothing else, so on that declaration
+  nothing grants `~/.claude` either, and the wall and the grant agree about
+  which directory is this seat's state. The `~/.claude` entry stays for the
+  letter's own reason and for ADR 0019 D2 store 3's — whatever the CLI wrote
+  in the home before the variable moved the write is still sitting there.
 - **The last bullet's `sibling()` arm went in as `own()` and not as a GOOS
   branch.** "On Linux that file is the store of record" is a reason to spare
   the seat that owns it and was read for two beads as a reason to open it to
   every seat, so before this a Linux codex, grok or bob seat could read
-  claude's credential. The arm is now
-  `goos == "darwin" || !own("~/.claude")`, through `credentialFileCandidates`
+  claude's credential. The arm went in as
+  `goos == "darwin" || !own("~/.claude")` and is
+  `goos == "darwin" || !own(credentialFileCandidates()...)` since
+  ranger-base-ppnds (the bullet above), through `credentialFileCandidates`
   on both halves so the Linux wall follows the variables the way the darwin
   one has since ranger-base-x5f6p. Two assertions of ABSENCE reversed, each
   given its counterpart row in the same table rather than an edited

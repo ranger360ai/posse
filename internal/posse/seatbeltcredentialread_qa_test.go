@@ -288,3 +288,105 @@ func TestQAClaudeCagedCredentialIsEnvNotFileRead(t *testing.T) {
 		t.Fatalf("CageCredential(claude) = %q, want CLAUDE_CODE_OAUTH_TOKEN — ranger-base-hw18's darwin exception for ~/.claude/.credentials.json assumes a caged claude session authenticates by this env var, not by reading the file", got)
 	}
 }
+
+// ─── ownership is CONTAINMENT, not the spelling of a declaration ─────────────
+
+// ranger-base-ppnds, finding 2 of the verify at ranger-base-vnp01.
+//
+// own() decided whether a credential store belongs to THIS seat's runtime by
+// string equality against the declared `state_dir:` literal. `state_dir:`
+// REPLACES the built-in list rather than merging (runtime.go, ADR 0021 D1),
+// so what arrives is whatever this box's operator typed — and ADR 0080 D19
+// newly subjects claude to that test off darwin, where the file is the store
+// of record and not a keychain fallback (ADR 0019 D2). MEASURED on the linux
+// arm before the fix: `[<home>/.claude]` (the same directory, spelled
+// absolutely) and `["~/.claude/"]` (one trailing slash) both read as "not a
+// claude seat" and masked the seat off the credential it authenticates with
+// — the one thing credentialReadDenyLiterals' own comment says a runtime must
+// never be denied.
+//
+// The question the wall is about is containment: does any file of this store
+// lie under a directory the launch declared. underDir answers it, resolves
+// both sides, and is what every other containment question in that file
+// already uses.
+//
+// The DARWIN column is deliberately absent from these rows: there claude's
+// own file is denied to its own seat whatever is declared (the keychain is
+// the store of record), so darwin can say nothing about ownership. The rows
+// that pin the darwin posture are the table above and
+// credentialpanesplit_qa_test.go's.
+func TestQACredentialReadDenyOwnershipIsContainmentNotSpelling(t *testing.T) {
+	home := t.TempDir()
+	cfg := t.TempDir()
+	homeCreds := cdmCreds(filepath.Join(home, ".claude"))
+	cfgCreds := cdmCreds(cfg)
+	codexFile := filepath.Join(home, ".codex", "auth.json")
+
+	for _, tc := range []struct {
+		name      string
+		stateDirs []string
+		cfgVar    string   // CLAUDE_CONFIG_DIR, or cdmUnset
+		spared    []string // must NOT be in the deny list
+		denied    []string // must be
+	}{
+		// The control, and the shape every box here actually runs: the
+		// built-in declaration, spared before this change and after it.
+		{"the built-in declaration", []string{"~/.claude", "~/.claude.json"}, cdmUnset,
+			[]string{homeCreds}, []string{codexFile}},
+		// The two spellings that stranded the seat. Same directory, same
+		// credential, same runtime.
+		{"the same directory, spelled absolutely", []string{filepath.Join(home, ".claude")}, cdmUnset,
+			[]string{homeCreds}, []string{codexFile}},
+		{"the same directory, one trailing slash", []string{"~/.claude/"}, cdmUnset,
+			[]string{homeCreds}, []string{codexFile}},
+		// ADR 0080 D19's own shape, and what takes the sharp edge off the
+		// coupling ranger-base-tc41o pinned: with the config dir declared and
+		// the `~/.claude` tree NOT, the seat is still read as claude's — and
+		// is spared BOTH spellings, because ownership is a fact about the
+		// runtime and the home copy is whatever that runtime wrote before the
+		// variable moved the write (ADR 0019 D2 store 3).
+		{"the config directory alone, with the tree dropped", []string{cfg}, cfg,
+			[]string{cfgCreds, homeCreds}, []string{codexFile}},
+		// The sibling half, which inherited the same literal coupling and is
+		// closed by the same line: a codex seat declaring its own store
+		// absolutely is spared it.
+		{"a codex seat, declared absolutely", []string{filepath.Join(home, ".codex")}, cdmUnset,
+			[]string{codexFile}, []string{homeCreds}},
+		// An ADR 0021 D1 overlay that moves the declared state somewhere the
+		// credential is NOT. Still denied, and that is the answer rather than
+		// a residual: SeatbeltWritable grants the declared state dirs and
+		// nothing else, so on this declaration nothing grants `~/.claude`
+		// either — the wall and the grant agree about which directory is this
+		// seat's state. An operator who moves claude's state moves
+		// CLAUDE_CONFIG_DIR with it, which is the row above.
+		{"an overlay that does not contain the credential", []string{"/srv/claude-state"}, cdmUnset,
+			nil, []string{homeCreds, codexFile}},
+		// And the fail-closed control: a caller with no runtime in hand owns
+		// nothing, which is SeatbeltWritable's answer to the same question.
+		{"no runtime declared", nil, cdmUnset, nil, []string{homeCreds, codexFile}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cdmEnv(t, home, cdmUnset, tc.cfgVar)
+			got := credentialReadDenyLiterals("linux", tc.stateDirs)
+			for _, p := range tc.spared {
+				if crdHas(got, p) {
+					t.Errorf("stateDirs=%v denies %s — that store is this seat's own, and a runtime denied its own credential cannot authenticate itself (on linux it is the store of record, ADR 0019 D2). deny = %v", tc.stateDirs, p, got)
+				}
+			}
+			for _, p := range tc.denied {
+				if !crdHas(got, p) {
+					t.Errorf("stateDirs=%v does not deny %s — without this the row above is satisfied by a function that denies nothing at all. deny = %v", tc.stateDirs, p, got)
+				}
+			}
+		})
+	}
+}
+
+func crdHas(list []string, p string) bool {
+	for _, q := range list {
+		if q == p {
+			return true
+		}
+	}
+	return false
+}
