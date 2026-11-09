@@ -15,13 +15,25 @@ argument, else $BEADS_DIR/issues.jsonl, else ./.beads/issues.jsonl. It never
 calls bd, so it cannot hand bd a store-selecting flag (AGENTS.md's rule
 about reading another repo's queue), and it never writes.
 
-THE TWO KEYS, and why the shipped one is the lineage.
+THE KEYS, and why the shipped one is the MIN.
 
-  LINEAGE (what verifyChainRounds counts): a close was filed
-  `discovered-from` a verify bead, and that verify bead answered the close
-  before it. A verify bead answering N closes — `verify_batch: N` — carries
-  N markers and the walk cannot know which of the N the findings bundle was
-  about, so this census stops there exactly as the harness does.
+  MIN (what verifyChainRounds counts since 2026-11-09, ranger-base-rffxq): a
+  close was filed `discovered-from` a verify bead; that bead answered one
+  close or N; and the count is one round plus the FEWEST any of those closes
+  has spent. Every one of the N is a close the findings bundle could have
+  been about, so the smallest is a lower bound on the true count, and short
+  is the direction the harness errs in. Over a batch filed like with like —
+  verify-after groups its pending closes by the rounds they have spent — all
+  N have the same count and the minimum is exact.
+
+  LINEAGE (what it counted before that): the same walk, except that it
+  STOPPED at a verify bead answering more than one close rather than guess
+  which of the N to continue through. At `verify_batch: 1` that cost one
+  round. Above it every verify bead is batched, so every walk counted exactly
+  one round however deep the lineage ran and no `verify_chain_max:` could
+  fire at all — the defect ranger-base-bu8rz was filed for. It is still
+  measured here because the amendment rests on the two keys agreeing about
+  the closes that reach the bound.
 
   PATH (the artifact key ranger-base-ewnas proposed, measured and rejected):
   a round continues only when the two closes' commits touch a path in common
@@ -38,22 +50,31 @@ compare the deepest lineages by eye: that is the comparison the rejection
 rests on, and it is re-runnable rather than asserted.
 
   FAN-OUT (the batch repair, measured and rejected under ranger-base-bu8rz):
-  continue through ALL N closes of a batched verify bead and take the
-  deepest chain, with no artifact test to say which of the N this round
+  continue through all N closes of a batched verify bead and take the
+  DEEPEST chain, with no artifact test to say which of the N this round
   answered. It is the obvious way to make the bound reachable at a
-  `verify_batch:` above 1 — see verifyChainBound, which instead turns the
-  bound off there — and it fails for the PATH key's reason one layer up: a
-  batch is no more an artifact than a hot file is. This half needs no repo
-  and always runs, so the comparison that rejected it is re-runnable too.
-  Read its deepest chains by eye; they are not one subject.
+  `verify_batch:` above 1 — the MIN key above is the shipped one, and the
+  two differ in that one word — and it fails for the PATH key's reason one
+  layer up: a batch is no more an artifact than a hot file is. This half
+  needs no repo and always runs, so the comparison that rejected it is
+  re-runnable too. Read its deepest chains by eye; they are not one subject.
 
 The REACHABILITY line each report prints is the question the shipped walk's
 own census does not answer: how many closes a given `verify_chain_max:`
-would escalate under that key. The lineage key answers 0 above a batch of 1,
-which is the defect ranger-base-bu8rz was filed for.
+would escalate under that key. The lineage key answered 0 above a batch of 1,
+which is the defect ranger-base-bu8rz was filed for; the MIN key is what
+answers it now.
+
+`--replay` prints the other half of the amendment's cost: what the GROUPING
+does to the filing. It replays every close a verify bead answers, in close
+order, at `verify_batch:` 1 and 4 with a 24h age, under four ways of grouping
+the pending closes — one group, grouped by rounds spent (what ships), round 0
+against round 1-or-more, and each deep close on its own — and prints the
+verify beads each files and how long its closes waited.
 
 Usage:
     scripts/chain-depth-census.py [issues.jsonl] [repo-with-the-commits]
+    scripts/chain-depth-census.py [issues.jsonl] --replay [--since=YYYY-MM-DD]
 """
 
 import collections
@@ -62,6 +83,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime, timedelta
 
 MARKER = "Verify the close of "
 MARKER_AFTER = " ("
@@ -157,13 +179,15 @@ def commit_paths(repo, known):
 def depth(beads, par, paths, leaf, key, seen=None):
     """Verify rounds already spent on leaf's lineage, newest first.
 
-    The LINEAGE key walks one forced hop at a time and stops at a batched
-    verify bead, which is the harness's own walk. The PATH and FAN-OUT keys
-    branch: a batch's N closes are all candidates and the deepest chain
-    through any of them is the answer. PATH then requires a shared commit
-    path, which is what it claims disambiguates the batch; FAN-OUT requires
-    nothing, which is why it fuses unrelated subjects. That branching is each
-    proposal as proposed, not a liberty taken with it.
+    The MIN key is the harness's own walk: at a batched verify bead it
+    continues through the SHALLOWEST of the closes that bead answers, so the
+    count is one round plus the smallest. The LINEAGE key is what it did
+    before — one forced hop at a time, stopping at a batched verify bead. The
+    PATH and FAN-OUT keys branch the other way and take the DEEPEST chain:
+    PATH requires a shared commit path, which is what it claims disambiguates
+    the batch; FAN-OUT requires nothing, which is why it fuses unrelated
+    subjects. Each key is that proposal as proposed, not a liberty taken
+    with it.
     """
     if seen is None:
         seen = {leaf}
@@ -179,6 +203,19 @@ def depth(beads, par, paths, leaf, key, seen=None):
         if src in seen:
             return [(q, src)]
         return [(q, src)] + depth(beads, par, paths, src, key, seen | {src})
+    if key == "min":
+        best = None
+        for src in srcs:
+            if src in seen:
+                continue
+            cand = [(q, src)] + depth(beads, par, paths, src, key, seen | {src})
+            if best is None or len(cand) < len(best):
+                best = cand
+            if len(best) == 1:
+                break                    # a source with no round above it
+        # No source this walk can continue through: the round counts and the
+        # lineage ends at it, exactly as the harness reads it.
+        return best if best is not None else [(q, None)]
     best = [(q, None)]
     for src in srcs:
         if src in seen:
@@ -212,18 +249,135 @@ def report(label, beads, par, paths, key):
     for d, i in rows[:5]:
         print(f"  depth={d} {i} — {(beads[i].get('title') or '')[:78]}")
         for q, src in depth(beads, par, paths, i, key):
-            t = (beads.get(src, {}).get("title") or "") if src else "(a batch of closes)"
+            t = (beads.get(src, {}).get("title") or "") if src else "(no close of its own to continue through)"
             print(f"        verify {q} of {src or '-'}: {t[:66]}")
     return hist
 
 
+def close_times(beads, cands):
+    """(closed_at, id) for every candidate the store dates, in close order."""
+    out = []
+    for i in cands:
+        b = beads.get(i) or {}
+        if b.get("closed_at"):
+            out.append((parse_time(b["closed_at"]), i))
+    out.sort()
+    return out
+
+
+def parse_time(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00")[:19])
+
+
+def replay(cl, n, age, key, n_for=None):
+    """One filing schedule: verify beads filed, and the hours closes waited.
+
+    Event-driven, as a dispatch pass is: a group that reaches its batch size
+    files at once, and a partial group is held until its OLDEST close reaches
+    `age` and then files as it stands (DefaultVerifyBatchAge). `key` is what
+    verify-after groups by; `n_for` gives a group its own batch size, which
+    is what "deep unbatched" needs — a strategy that files each deep close on
+    its own must file it on ARRIVAL, not wait 24h for a fifth close that the
+    key cannot produce. (That flaw is in the sim.py this is ported from,
+    docs/notes.d/ranger-base-rffxq.md: its deep-unbatched waits are wrong and
+    its counts are right.)
+    """
+    pend = collections.defaultdict(list)
+    filed, waits = 0, []
+    size = n_for or (lambda k: n)
+    for t, i in cl + [(cl[-1][0] + timedelta(days=30), None)]:
+        for k in list(pend):
+            while pend[k] and t - pend[k][0][0] >= age:
+                flush = pend[k][0][0] + age
+                g, pend[k] = pend[k][:size(k)], pend[k][size(k):]
+                filed += 1
+                waits += [(flush - x[0]).total_seconds() / 3600 for x in g]
+        if i is None:
+            break
+        k = key(i)
+        pend[k].append((t, i))
+        if len(pend[k]) >= size(k):
+            g, pend[k] = pend[k][:size(k)], pend[k][size(k):]
+            filed += 1
+            waits += [(t - x[0]).total_seconds() / 3600 for x in g]
+    waits.sort()
+    return filed, waits[len(waits) // 2], waits[int(len(waits) * 0.9)]
+
+
+def replay_report(beads, par, since):
+    """What the GROUPING costs: the filing, under four ways to group.
+
+    The grouping is the other half of the bound (ADR 0006 §3, amended
+    ranger-base-rffxq): without it a batch mixes lineage depths, the
+    shallowest-source walk reads the shallowest member's count for all of
+    them, and no bound fires. What it costs is verify beads and wait, and
+    this is where that is read.
+    """
+    mixed = homog = 0
+    byround = collections.Counter()
+    for q in beads:
+        if not is_verify(beads, q):
+            continue
+        srcs = [s for s in verify_sources(beads, q) if s in beads]
+        if len(srcs) < 2:
+            continue
+        ds = {len(depth(beads, par, {}, s, "min")) for s in srcs}
+        if len(ds) > 1:
+            mixed += 1
+        else:
+            homog += 1
+            byround[next(iter(ds))] += 1
+    print(f"\n=== batched verify beads: homogeneous {homog} {dict(byround)}, mixed {mixed}")
+    print("   (a mixed batch is one whose closes have spent DIFFERENT rounds: the")
+    print("    shape the grouping exists to stop, and the shape that made the")
+    print("    shallowest-source walk read shallow before it)")
+
+    cands = set()
+    for q in beads:
+        if is_verify(beads, q):
+            cands.update(verify_sources(beads, q))
+    cl = [x for x in close_times(beads, cands) if x[0].isoformat() >= since]
+    if not cl:
+        print(f"   no closes a verify bead answers, closed at or after {since}")
+        return
+    d = {i: len(depth(beads, par, {}, i, "min")) for _, i in cl}
+    print(f"\n=== replay: {len(cl)} closes a verify bead answers, since {since}")
+    print(f"   rounds already spent (MIN key): {dict(sorted(collections.Counter(d.values()).items()))}")
+    age = timedelta(hours=24)
+    strategies = (
+        ("one group", lambda i: 0, None),
+        ("by rounds (SHIPPED)", lambda i: d[i], None),
+        ("round 0 vs >=1", lambda i: min(d[i], 1), None),
+        ("deep unbatched", lambda i: 0 if d[i] == 0 else ("solo", i),
+         lambda k: None if k == 0 else 1),
+    )
+    for n in (1, 4):
+        for name, key, solo in strategies:
+            n_for = (lambda k: n if solo(k) is None else solo(k)) if solo else None
+            filed, med, p90 = replay(cl, n, age, key, n_for)
+            print(f"   verify_batch: {n}  {name:20s} verify beads {filed:5d}  wait h median {med:5.1f} p90 {p90:5.1f}")
+        print()
+
+
 def main():
-    path = store_path(sys.argv)
-    repo = sys.argv[2] if len(sys.argv) > 2 else ""
+    argv = [a for a in sys.argv if not a.startswith("--")]
+    flags = [a for a in sys.argv if a.startswith("--")]
+    since = "2000"
+    for f in flags:
+        if f.startswith("--since="):
+            since = f.split("=", 1)[1]
+        elif f != "--replay":
+            sys.exit(f"unknown flag {f}; see the head of this file")
+    path = store_path(argv)
+    repo = argv[2] if len(argv) > 2 else ""
     beads = load(path)
     par = parents(beads)
     print(f"store: {path}\nbeads: {len(beads)}, {len(par)} of them with a discovered-from parent")
-    report("LINEAGE key (what the harness counts)", beads, par, {}, "lineage")
+    if "--replay" in flags:
+        replay_report(beads, par, since)
+        return
+    report("MIN key (what the harness counts)", beads, par, {}, "min")
+    report("LINEAGE key (the single-close walk MIN replaced)", beads, par, {}, "lineage")
     report("FAN-OUT key (the batch repair, measured and rejected)", beads, par, {}, "fanout")
     if repo:
         paths = commit_paths(repo, set(beads))

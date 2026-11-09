@@ -49,11 +49,17 @@ package posse
 // next close files ONE `-l question` bead for the operator instead of
 // another verify bead, which ends the cycle where the harness owns it: no
 // verify bead, no verifier session, no findings bundle, nothing to fix.
-// `verify_chain_max: 0` turns the bound off, and so does a `verify_batch:`
-// greater than 1: the walk stops at a batched verify bead, so above a batch
-// of 1 no lineage can reach the bound and OFF is the only honest reading of
-// it — named on stderr once per pass rather than left looking like a bound
-// (verifyChainBound, ranger-base-bu8rz). See verifyChainRounds.
+// `verify_chain_max: 0` turns the bound off, and nothing else does: it binds
+// at every `verify_batch:`, out of two halves that only work together (ADR
+// 0006 §3, amended 2026-11-09 by ranger-base-rffxq, from the verify of
+// ranger-base-ewnas via ranger-base-bu8rz). A batch is filed LIKE WITH LIKE
+// — the pending closes are grouped by the rounds their lineages have already
+// spent, and `verify_batch:` applies within each group (verifyRoundGroups) —
+// and a batched hop CONTINUES through the shallowest of the verify bead's
+// closes rather than stopping there (verifyChainRounds). The minimum is a
+// floor on the true count, which is the direction every count here errs, and
+// over a batch filed by that grouping every source has the same count, so
+// the floor is exact.
 //
 // It is one query per repo per pass and one rule. It is not a workflow
 // engine: the verify bead never holds the close, and nothing here reopens
@@ -128,14 +134,23 @@ const DefaultVerifyBatchAge = 24 * time.Hour
 // artifact in the incident that filed this. The per-artifact key the bead
 // proposed was measured and rejected: see verifyChainRounds.
 //
-// Those 11 are also every close on that queue the bound could EVER have
-// escalated, and all of them are old: MEASURED 2026-11-09 by the same
-// script, each closed between 2026-08-22 and 2026-09-06, before that shop
-// finished moving to `verify_batch: 4`. Reaching this bound takes two
-// consecutive SINGLE-CLOSE verify beads above a close, and a shop batching
-// its verify beads files almost none — so the default is a bound on the
-// default batch, and `verifyChainBound` is where the other batch sizes are
-// answered.
+// That census is the walk as it was: it stopped at a batched verify bead, so
+// it priced the bound at the default batch and at no other (ranger-base-bu8rz
+// measured what that cost — nothing on that queue had been reachable since
+// 2026-09-06, every one of the 11 having closed between 2026-08-22 and
+// 2026-09-06, while the shop still filed single-close verify beads).
+//
+// THE WALK THAT SHIPS NOW CONTINUES THROUGH THE SHALLOWEST SOURCE and this
+// default does not move, because over the same store the two keys agree on
+// exactly the closes that matter. MEASURED 2026-11-09 by minkey.py
+// (docs/notes.d/ranger-base-rffxq.md; folded into the census as its MIN key),
+// over the same 2,639 non-verify beads:
+//
+//	0 rounds 2058 · 1 round 521 · 2 rounds 49 · 3 rounds 8 · 4 rounds 3
+//
+// Eleven at or above 3 — the same eleven, and the same deepest of 4. The new
+// walk reads DEEPER than the old one for 8 closes and shallower for none,
+// which is the only direction continuing through a batch can move a count.
 const DefaultVerifyChainMax = 3
 
 const (
@@ -154,12 +169,31 @@ const (
 
 	verifyCommitLimit = 10
 	verifyTitleMax    = 200
-	// verifyChainMaxBound caps `verify_chain_max:` — a configured bound is
-	// also how many `bd dep list` calls one candidate's walk can make, so
-	// an operator typo of 10000 is a pass that spends the launcher lock on
-	// a graph walk. Well above the deepest chain this queue has produced
+	// verifyChainMaxBound caps `verify_chain_max:`, so that an operator typo
+	// of 10000 is not a pass that spends the launcher lock on a graph walk.
+	// Well above the deepest chain this queue has produced
 	// (DefaultVerifyChainMax's census: four).
 	verifyChainMaxBound = 50
+	// verifyChainReadMax caps the work ONE candidate's walk may do: how many
+	// dependency lists it reads, cache hits counted. Past it the count is a
+	// FLOOR (verifyChainRounds), and a floor never escalates.
+	//
+	// The bound itself was that cap until the walk began to branch
+	// (ranger-base-rffxq): a batched hop continues through the SHALLOWEST of
+	// its verify bead's closes, so it reads all of them, and the worst case
+	// is a tree rather than a line — 1 + 4 + 16 = 21 at the shipped shape
+	// (bound 3, `verify_batch: 4`), the depth cap ending the level below.
+	// 50 leaves that shape half its budget again, and is what the old
+	// one-read-per-round walk could already spend (verifyChainMaxBound).
+	// The ordinary case is far under: a source with no round above it ends
+	// the minimum early, and 78% of closes are such a source
+	// (DefaultVerifyChainMax's census).
+	//
+	// Cache hits count because this bounds the WORK and not the bd bill —
+	// verifyChainWalk's cache already makes that bill one read per bead per
+	// pass, and re-walking cached edges without bound would spend the
+	// launcher lock just as surely as reading them would.
+	verifyChainReadMax = 50
 	// verifyBranchLimit caps how many session branches one close's landing
 	// block names, for the reason verifyCommitLimit exists: this is a
 	// description bd has to store. A bead is normally cut for one session,
@@ -338,57 +372,6 @@ func (a *App) verifyChainMax(errw io.Writer) int {
 	return n
 }
 
-// verifyChainBound is the depth bound a pass will actually ENFORCE: config
-// `verify_chain_max:` as read above, except that a `verify_batch:` greater
-// than 1 turns it off and says so on errw.
-//
-// THIS NAMES A DEFECT RATHER THAN ADDING A FEATURE (ranger-base-bu8rz, from
-// the verify of ranger-base-ewnas). The bound counts a LINEAGE — this close
-// filed `discovered-from` a verify bead, that verify bead answering exactly
-// ONE close, repeated from that close — and stops at a batched verify bead
-// rather than guess which of its N closes a findings bundle answered
-// (verifyChainRounds, ADR 0006 §3). At `verify_batch: 1` that stop costs one
-// round. Above 1 every verify bead the rule files is batched, so every walk
-// counts exactly one hop and `len(hops) >= ChainMax` is never true: the bound
-// does not bind, the escalation never fires, and verifyChainHead's head line
-// sticks at "VERIFY ROUND 2 of 3" on a lineage twelve rounds deep while the
-// sentence that says THIS IS THE LAST ROUND is never printed.
-//
-// MEASURED 2026-11-09 by scripts/chain-depth-census.py over the same bead
-// store DefaultVerifyChainMax's census reads (3,353 beads, 2,639 of them not
-// verify beads): of 671 verify beads carrying a marker, 345 answer four
-// closes; single-close against batched by month, 2026-08 191/85, 2026-09
-// 125/176, 2026-10 4/56, 2026-11 0/34. Nothing on that queue has been
-// reachable by this bound since 2026-09-06.
-//
-// So 0 — the value that already means off — is the honest bound here: no
-// walk, no `bd dep list` per close, no round line, and one stderr line an
-// operator can act on. It does not restore the bound; it stops the record
-// claiming one.
-//
-// WHY NOT WALK THE BATCH. Taking the deepest chain through all N sources of
-// a batched verify bead is the obvious repair and it is worse than the hole,
-// MEASURED 2026-11-09 over that same store: it reads a deepest of 17 rounds
-// where the lineage reads 1, over a chain whose hops are visibly more than a
-// dozen different subjects — a backup-lock CI-red close, a seatbelt
-// credential close, a FIFO-at-redirect close, a build-cache close, a herdr
-// readiness-gate close — chained only because batching put each consecutive
-// pair in one verify bead; and at `verify_chain_max: 3` it escalates 202 of 2,639
-// closes (7.65%) against the lineage key's 11 (0.42%). That is the failure
-// the PATH key was rejected for one paragraph up in verifyChainRounds: a
-// batch is no more an artifact than a hot file is. A bound that works at any
-// batch size needs (verify bead, close) to be recoverable for a bundle filed
-// from a batched verify bead, which is provenance the harness does not write
-// today — a decision for ADR 0006 §3, not a liberty taken here.
-func verifyChainBound(chainMax, batch int, errw io.Writer) int {
-	if chainMax <= 0 || batch <= 1 {
-		return chainMax
-	}
-	fmt.Fprintf(errw, "verify-after: config verify_chain_max: %d does not bind at verify_batch: %d — the depth walk stops at a batched verify bead (ADR 0006 §3) and above a batch of 1 every verify bead is batched, so no lineage reaches the bound; it is OFF this pass rather than reported as a bound that cannot fire (ranger-base-bu8rz)\n",
-		chainMax, batch)
-	return 0
-}
-
 // verifyPolicy is the config one sweep runs under, read once at the head of
 // the pass: every repo in it is answered by the same rule, and a config typo
 // is named once rather than once per repo.
@@ -454,19 +437,20 @@ func writeVerifyWatermark(p string, t time.Time) error {
 // hold it: `Run` calls this before fireLoop takes its own, and `posse ready` —
 // which files by the same rule (ADR 0006 §3) — holds nothing. Hold time is a
 // `bd list --all` per repo, a create per new close, and — since the depth
-// bound — up to `verify_chain_max` dependency reads per new close, not the
+// bound — up to verifyChainReadMax dependency reads per new close, not the
 // fire loop's. In practice that is ONE such read per close: the walk's first
 // call is also its last for any close that was not filed from a verify bead,
 // which is 78% of them (DefaultVerifyChainMax's census), and it makes none
-// at all when the bound is off — which includes every `verify_batch:` above
-// 1 (verifyChainBound) — or when the close already has its verify bead.
+// at all when the bound is off or when the close already has its verify
+// bead. Per REPO the bill is smaller again: one pass reads any one bead's
+// edges once however many candidates' walks reach it (verifyChainWalk).
 func (a *App) VerifyAfter(bd Bd, dirs []string, out, errw io.Writer) int {
 	pol := verifyPolicy{Labels: a.verifyLabels()}
 	if len(pol.Labels) == 0 {
 		return 0 // config says off
 	}
 	pol.Batch, pol.MaxAge, pol.Now = a.verifyBatch(errw), a.verifyBatchAge(errw), time.Now()
-	pol.ChainMax = verifyChainBound(a.verifyChainMax(errw), pol.Batch, errw)
+	pol.ChainMax = a.verifyChainMax(errw)
 	lock, err := lockLaunches(a, out)
 	if err != nil {
 		// One line, like every other failure here. Not acting is the safe
@@ -641,9 +625,13 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 	state := make([]int, len(cands))
 	var pending, stops []int
 	// The rounds already spent above each pending close, by close id: read
-	// once here, then read twice — by the escalation that stops a chain and
-	// by the head line that tells a verifier which round it is on.
+	// once here, then read three times — by the escalation that stops a
+	// chain, by the grouping that files like with like, and by the head line
+	// that tells a verifier which round it is on.
 	chain := map[string][]verifyChainHop{}
+	// One walk per repo pass, so no bead's edges are read twice however many
+	// candidates' lineages run through it.
+	walk := newVerifyChainWalk(bd, dir, byID, pol.ChainMax)
 	for i, is := range cands {
 		if !beadIDRe.MatchString(is.ID) {
 			// Never retried: it cannot succeed, and the id is going into
@@ -663,13 +651,20 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 			// How deep is this close's lineage? The bound is on the count,
 			// and a walk bd could not finish gives a FLOOR — named, and
 			// never read as a reason to escalate (verifyChainRounds).
-			hops, whole := verifyChainRounds(bd, dir, is.ID, byID, pol.ChainMax)
+			hops, whole := verifyChainRounds(walk, is.ID)
 			chain[is.ID] = hops
 			if !whole {
 				fmt.Fprintf(errw, "verify-after: %s: bd could not finish the verify-chain walk — %d round(s) counted, which is a floor, so the verify bead is filed\n",
 					is.ID, len(hops))
 			}
-			if pol.ChainMax > 0 && len(hops) >= pol.ChainMax {
+			// A FLOOR NEVER ESCALATES (ADR 0006 §3), said here rather than
+			// left to the walk's shape. It is belt and braces today: a
+			// floored path gave up with depth still to spend, so it is
+			// strictly shorter than the bound (verifyChainRounds' proof),
+			// and no fixture can red this `whole` on its own. It is the
+			// ADR's sentence, and the next change to the walk is what it
+			// is for.
+			if pol.ChainMax > 0 && whole && len(hops) >= pol.ChainMax {
 				state[i] = vaChainStop
 				stops = append(stops, i)
 				continue
@@ -698,40 +693,48 @@ func (a *App) verifyAfterRepo(bd Bd, dir string, pol verifyPolicy, out, errw io.
 			is.ID, len(chain[is.ID]), qid)
 	}
 
-	// One verify bead per pol.Batch closes, in close order. The trailing
-	// partial batch is HELD rather than filed short — filing it would make N
-	// a ceiling and reproduce the 1:1 gate under a config key — until its
-	// oldest close reaches pol.MaxAge, which is what keeps a shop that goes
-	// quiet mid-batch from leaving its last closes unverified forever
-	// (DefaultVerifyBatchAge).
+	// One verify bead per pol.Batch closes, in close order, LIKE WITH LIKE:
+	// the pending closes are grouped by the rounds their lineages have
+	// already spent and the batch loop runs inside each group (ADR 0006 §3,
+	// amended ranger-base-rffxq; verifyRoundGroups says why the groups are
+	// the other half of the bound). The trailing partial batch of EACH group
+	// is HELD rather than filed short — filing it would make N a ceiling and
+	// reproduce the 1:1 gate under a config key — until its oldest close
+	// reaches pol.MaxAge, which is what keeps a shop that goes quiet
+	// mid-batch from leaving its last closes unverified forever
+	// (DefaultVerifyBatchAge). With the bound off every close has counted
+	// zero rounds, so there is exactly one group and every byte of this is
+	// what it was before the grouping existed.
 	filed := 0
-	for off := 0; off < len(pending); off += pol.Batch {
-		end := off + pol.Batch
-		if end > len(pending) {
-			end = len(pending)
-			age := pol.Now.Sub(*cands[pending[off]].ClosedAt)
-			if age < pol.MaxAge {
-				fmt.Fprintf(out, "~ %-14s %d close(s) held for a verify batch of %d (oldest %s)\n",
-					AbbrevHome(dir), end-off, pol.Batch, age.Round(time.Minute))
-				break
+	for _, g := range verifyRoundGroups(cands, pending, chain) {
+		for off := 0; off < len(g.Pending); off += pol.Batch {
+			end := off + pol.Batch
+			if end > len(g.Pending) {
+				end = len(g.Pending)
+				age := pol.Now.Sub(*cands[g.Pending[off]].ClosedAt)
+				if age < pol.MaxAge {
+					fmt.Fprintf(out, "~ %-14s %d close(s) held for a verify batch of %d (oldest %s)%s\n",
+						AbbrevHome(dir), end-off, pol.Batch, age.Round(time.Minute), verifyRoundNote(g.Round))
+					break
+				}
 			}
-		}
-		group := make([]BdIssue, 0, end-off)
-		for _, i := range pending[off:end] {
-			group = append(group, cands[i])
-		}
-		qid, err := a.fileVerifyBead(bd, dir, group, verifyChainHead(group, chain, pol.ChainMax), already, errw)
-		if err != nil {
-			fmt.Fprintf(errw, "verify-after: %s: %v\n", verifyIDList(group), err)
-			for _, i := range pending[off:end] {
-				state[i] = vaFailed
+			group := make([]BdIssue, 0, end-off)
+			for _, i := range g.Pending[off:end] {
+				group = append(group, cands[i])
 			}
-			continue
-		}
-		filed++
-		for _, i := range pending[off:end] {
-			state[i] = vaHandled
-			fmt.Fprintf(out, "+ %-14s verify filed: %s\n", cands[i].ID, qid)
+			qid, err := a.fileVerifyBead(bd, dir, group, verifyChainHead(group, chain, pol.ChainMax), already, errw)
+			if err != nil {
+				fmt.Fprintf(errw, "verify-after: %s: %v\n", verifyIDList(group), err)
+				for _, i := range g.Pending[off:end] {
+					state[i] = vaFailed
+				}
+				continue
+			}
+			filed++
+			for _, i := range g.Pending[off:end] {
+				state[i] = vaHandled
+				fmt.Fprintf(out, "+ %-14s verify filed: %s\n", cands[i].ID, qid)
+			}
 		}
 	}
 
@@ -789,41 +792,191 @@ func (a *App) verifyAlreadyFiled(bd Bd, dir string, is BdIssue, already map[stri
 	return false, nil
 }
 
-// ─── the depth bound (ranger-base-ewnas) ─────────────────────────────────────
+// ─── the depth bound (ranger-base-ewnas), at any batch size
+//     (ranger-base-rffxq) ───────────────────────────────────────────────────
+
+// verifyRoundGroup is one round's worth of pending closes: the indices into
+// `cands` of the closes whose lineages have spent the same number of verify
+// rounds, still in close order.
+type verifyRoundGroup struct {
+	Round   int
+	Pending []int
+}
+
+// verifyRoundGroups splits the pending closes by the rounds already counted
+// on their lineages — 0 up to ChainMax-1, since a close AT the bound left as
+// an escalation before this — in ascending round order.
+//
+// THIS IS HALF OF THE BOUND AND NOT A TIDINESS (ADR 0006 §3, amended
+// 2026-11-09 by ranger-base-rffxq). The other half is verifyChainRounds
+// continuing through a batched verify bead's SHALLOWEST close, which is a
+// floor on the true count because every one of those closes is one the
+// findings bundle could have been about. A floor is safe but it is not a
+// bound: over a batch that MIXES depths it reads the shallowest member's
+// count for all of them, and the deep lineage keeps its rounds hidden
+// forever. Grouping is what closes that: over a batch filed like with like
+// every source has spent the same rounds, so the minimum is not a floor but
+// the answer, and the next close's count is exact.
+//
+// MEASURED 2026-11-09 (docs/notes.d/ranger-base-rffxq.md) over one shop's
+// 3,353-bead store: 263 of its 351 batched verify beads mix depths, so
+// without the grouping the shallowest-source walk stays shallow — it reads a
+// deepest of 2 on the closes since that shop moved to `verify_batch: 4`, and
+// a bound of 3 still never fires. With it, the same replay files 3.5% more
+// verify beads over the whole history and 6.9% more since 2026-09-15: that
+// is the price of the bound, and it is the cheapest shape measured (filing
+// each deep close on its own costs 93% and 64%).
+//
+// Each group's tail is held on its own (DefaultVerifyBatchAge), which is the
+// one cost a reader feels: a lone round-1 close waits for another round-1
+// close, not for the next close of any depth. The replay's p90 wait goes
+// from 1.5h to 3.9h over the whole history at `verify_batch: 4`.
+//
+// When the bound is off nothing has counted a round, so there is one group
+// and the filing is byte for byte what it was before this existed.
+func verifyRoundGroups(cands []BdIssue, pending []int, chain map[string][]verifyChainHop) []verifyRoundGroup {
+	byRound := map[int][]int{}
+	for _, i := range pending {
+		r := len(chain[cands[i].ID])
+		byRound[r] = append(byRound[r], i)
+	}
+	rounds := make([]int, 0, len(byRound))
+	for r := range byRound {
+		rounds = append(rounds, r)
+	}
+	sort.Ints(rounds)
+	out := make([]verifyRoundGroup, 0, len(rounds))
+	for _, r := range rounds {
+		out = append(out, verifyRoundGroup{Round: r, Pending: byRound[r]})
+	}
+	return out
+}
+
+// verifyRoundNote says which group a held batch is, and is "" for the first
+// round — which is almost every batch, so the ordinary hold line is the one
+// this rule has always printed.
+func verifyRoundNote(round int) string {
+	if round <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(", each %d verify round(s) deep", round)
+}
 
 // verifyChainHop is one verify round already spent above a close: the verify
-// bead, and the close it answered when it answered exactly one.
+// bead, the close the walk continued through, and how many closes that
+// verify bead answers — 1 at `verify_batch: 1`, N for a batched one, which
+// is what the round line renders as "(one of N)".
 type verifyChainHop struct {
-	Verify string // the verify bead this close was filed from
-	Source string // the close that verify answered, "" when it answered N
+	Verify  string // the verify bead this close was filed from
+	Source  string // the close the walk continued through, "" when there was none
+	Sources int    // how many closes that verify bead answers
+}
+
+// verifyChainWalk is one repo pass's chain walk: the bd seam, the listing,
+// the bound, and the cache that makes the bill one `bd dep list` per BEAD
+// per pass however many candidates' lineages run through it.
+//
+// The cache is the walk's state and the read budget is the candidate's, so
+// the two live here together: verifyChainRounds resets `spent` per candidate
+// and nothing resets `edges`.
+type verifyChainWalk struct {
+	bd    Bd
+	dir   string
+	byID  map[string]BdIssue
+	limit int
+	edges map[string][]BdDep // id -> its dependencies, read at most once
+	spent int                // dependency lists this candidate has read
+}
+
+func newVerifyChainWalk(bd Bd, dir string, byID map[string]BdIssue, limit int) *verifyChainWalk {
+	return &verifyChainWalk{bd: bd, dir: dir, byID: byID, limit: limit, edges: map[string][]BdDep{}}
+}
+
+// deps is one bead's dependency list, from the cache or from bd, and false
+// when it cannot be had — a bd that would not answer, or this candidate's
+// read budget spent (verifyChainReadMax). Both make the count a FLOOR, and
+// they are one return because a floor is a floor whichever produced it.
+//
+// A failed read is not cached: it is a fact about this moment, not about the
+// bead, and the budget already bounds what re-asking can cost.
+func (w *verifyChainWalk) deps(id string) ([]BdDep, bool) {
+	if w.spent >= verifyChainReadMax {
+		return nil, false
+	}
+	w.spent++
+	if d, ok := w.edges[id]; ok {
+		return d, true
+	}
+	d, err := w.bd.DepList(w.dir, id)
+	if err != nil {
+		return nil, false
+	}
+	w.edges[id] = d
+	return d, true
 }
 
 // verifyChainRounds walks the lineage above one close and returns the verify
-// rounds already spent on it, newest first, plus whether the walk reached
-// its own end rather than a bd that would not answer.
+// rounds already spent on it, newest first, plus whether the count is whole
+// rather than a floor.
 //
 // One hop is: this close was filed `--deps discovered-from:<Q>` where Q is a
 // verify bead (ADR 0006 §6's findings bundle, which is the only thing that
-// edge means here), and Q answered close S. Repeat from S. The walk stops at
-// a close with no such parent, at a parent the listing does not hold or does
-// not call a verify bead, at a repeat, or at `limit` hops — so it
-// costs at most `limit` `bd dep list` calls and makes none at all when the
-// bound is off.
+// edge means here), and Q answered the closes S1..SN. Continue from the
+// SHALLOWEST of them: the count is 1 + the smallest count any Si carries.
+// The walk ends at a close with no such parent, at a parent the listing does
+// not hold or does not call a verify bead, at a verify bead whose closes are
+// all already on this path, or at `limit` hops.
 //
-// THE FLOOR CANNOT REACH THE BOUND, which is why the caller needs no second
-// condition: the loop appends one hop per successful `bd dep list` and only
-// ever runs while `len(hops) < limit`, so a walk that ends in a bd failure
-// has counted strictly FEWER than `limit` rounds. `len(hops) >= limit`
-// therefore means every edge the count rests on was really read, and a
-// walk that returned false is a count that is too SMALL — one more round,
-// never an escalation nobody earned.
+// WHY THE MINIMUM. Which of Q's N closes a findings bundle answered is
+// written nowhere the harness can read (ranger-base-bu8rz measured what that
+// cost: the walk used to STOP there, and above `verify_batch: 1` every
+// verify bead is batched, so every walk counted exactly one round however
+// deep the lineage ran and the bound could not fire at all). Every one of
+// the N is a close the bundle could have been about, so the smallest of
+// their counts is a LOWER BOUND on the true one — and short is the direction
+// every count in this file errs in, because an undercount costs one more
+// round while an overcount files an escalation the shop did not earn. Over a
+// batch filed like with like (verifyRoundGroups) all N have spent the same
+// rounds, so the minimum is not merely safe, it is exact.
+//
+// NOT THE DEEPEST, which is the obvious repair and was measured worse than
+// the hole it fills (ranger-base-bu8rz): taking the deepest chain through
+// all N reads 17 rounds where the lineage reads 1, over hops that are
+// visibly more than a dozen unrelated subjects — a backup-lock CI-red close,
+// a seatbelt credential close, a FIFO-at-redirect close — chained only
+// because batching put each consecutive pair in one verify bead; at
+// `verify_chain_max: 3` it escalates 202 of 2,639 closes (7.65%) against the
+// minimum's 11 (0.42%). A batch is no more an artifact than a hot file is.
+//
+// A FLOOR CANNOT ESCALATE, and what used to make that obvious no longer
+// does. While the walk was a line, a bd failure left strictly fewer than
+// `limit` hops because the loop ran only while `len(hops) < limit`, so
+// `len(hops) >= limit` was itself proof that every edge had been read. With
+// branches that reading is gone, so the second return says it in terms and
+// the caller escalates only on a whole count (it names a floor on stderr and
+// files the verify bead instead).
+//
+// The rule for whole is one line: the minimum is whole when some branch that
+// ATTAINS it is whole, because then that branch's true count IS the minimum
+// — every other branch's true count is at least what it reported, which is
+// at least the minimum. A tie between a whole branch and a floored one is
+// therefore whole, and only a minimum every one of whose branches gave up is
+// a floor.
+//
+// It still holds structurally, by a longer route, and that is worth writing
+// down because it is what the caller's `whole` check is insuring: a path is
+// floored only where it GAVE UP — a read that failed or the budget spent —
+// and both can only happen with depth still to spend, so a floored path is
+// strictly shorter than `limit`. A floor therefore cannot reach the bound by
+// construction either, and no fixture can make it; the explicit check is for
+// the change that breaks that argument without noticing.
 //
 // THE KEY IS THE LINEAGE, NOT THE PATH, and that is a measured choice rather
 // than the obvious one. ranger-base-ewnas proposed keying the chain on the
 // ARTIFACT — "a verify of a bead that was itself a verify finding on the
 // same path" — so a chain that moved to a different file would start a fresh
 // count. MEASURED 2026-11-09 by scripts/chain-depth-census.py, which measures
-// both keys over the same store and prints the deepest chains of each to be
+// every key over the same store and prints the deepest chains of each to be
 // read by eye (3,353 beads; the artifact read as the path set of every
 // commit naming the bead, two rounds on one artifact when those sets
 // intersect, and a batched hop disambiguated BY THE PATH, which is that
@@ -839,79 +992,99 @@ type verifyChainHop struct {
 // DefaultVerifyChainMax), and every chain it reads at 3 or more is one
 // subject by eye: the GIT_CONFIG inlet pin four rounds running, the
 // common-dir pin three.
-//
-// Subject continuity comes for free from the one-source rule instead. At
-// `verify_batch: 1` — the default, and the incident's shape — a verify bead
-// answers exactly one close, so "filed from the verify of that close" IS
-// "about that close's work". A BATCHED verify bead answers N unrelated
-// closes and the findings bundle names which in prose, which the harness
-// cannot read; the hop counts (a verify round did happen) and the walk then
-// STOPS rather than guess which of the N to continue through. That
-// undercounts, which is the direction every count in this file errs in: an
-// undercount costs one more round, an overcount files an escalation the
-// shop did not earn.
-//
-// AT A BATCH ABOVE 1 THAT PRICE IS WRONG, and it is why this walk no longer
-// runs there (ranger-base-bu8rz, from the verify of ranger-base-ewnas).
-// Every verify bead the rule files at `verify_batch: N > 1` is batched, so
-// every walk stops after exactly ONE hop however deep the lineage runs: the
-// undercount does not cost one more round, it costs every round after the
-// first, and the escalation — which needs len(hops) >= ChainMax — cannot
-// fire at all. The STOP is still right, and walking all N sources instead
-// was measured worse than the hole (verifyChainBound). What changed is that
-// the caller now refuses the combination rather than enforce a bound no
-// lineage can reach.
-func verifyChainRounds(bd Bd, dir, id string, byID map[string]BdIssue, limit int) ([]verifyChainHop, bool) {
-	if limit <= 0 {
+func verifyChainRounds(w *verifyChainWalk, id string) ([]verifyChainHop, bool) {
+	if w.limit <= 0 {
 		return nil, true // the bound is off: no walk, no bd calls
 	}
-	var hops []verifyChainHop
-	seen := map[string]bool{id: true}
-	cur := id
-	for len(hops) < limit {
-		deps, err := bd.DepList(dir, cur)
-		if err != nil {
-			// Not knowing how deep the chain is is not evidence that it is
-			// deep. The caller names the floor and files the verify bead.
-			return hops, false
-		}
-		// The first `discovered-from` parent that IS a verify bead, rather
-		// than the first one full stop. The two answer the same for all but
-		// one bead in the census store — MEASURED 2026-11-09: of its 2,634
-		// non-verify beads, 2,005 carry exactly one `discovered-from`
-		// parent, 628 carry none, and ONE carries two — but "the first"
-		// makes the count depend on the order bd happens to list edges in,
-		// and in that one measured case the verify bead is the SECOND.
-		// (Four parents is the ordinary shape of a `verify_batch: 4` verify
-		// bead, 342 of them there; a verify bead is never a bead this walk
-		// starts from or continues through.)
-		var q BdIssue
-		parent := ""
-		for _, d := range deps {
-			if d.DependencyType != discoveredFromDepType || !beadIDRe.MatchString(d.ID) || seen[d.ID] {
-				continue
-			}
-			if is, known := byID[d.ID]; known && hasLabel(is.Labels, VerifyLabel) {
-				parent, q = d.ID, is
-				break
-			}
-		}
-		if parent == "" {
-			return hops, true
-		}
-		seen[parent] = true
-		hop := verifyChainHop{Verify: parent}
-		if srcs := verifySourceIDs(q.Description); len(srcs) == 1 {
-			hop.Source = srcs[0]
-		}
-		hops = append(hops, hop)
-		if hop.Source == "" || seen[hop.Source] {
-			return hops, true // a batch, or a graph that loops: stop short
-		}
-		seen[hop.Source] = true
-		cur = hop.Source
+	w.spent = 0
+	return w.rounds(id, w.limit, map[string]bool{id: true})
+}
+
+// rounds is verifyChainRounds' recursion: the rounds above `id`, with
+// `depth` hops left to spend and `seen` the ids already on this path.
+//
+// `seen` is per PATH, so a count is not memoized across candidates — only
+// the READS are (verifyChainWalk.deps), which is where the cost is. A
+// path-blind memo would have to drop the repeat check, and then a lineage
+// that loops back on itself would count to the bound and escalate: an
+// overcount, in the one direction this file refuses.
+func (w *verifyChainWalk) rounds(id string, depth int, seen map[string]bool) ([]verifyChainHop, bool) {
+	if depth <= 0 {
+		// The depth cap, not a floor: the caller already holds `limit` hops
+		// and every one of them was read. Nothing above can change what it
+		// does with them.
+		return nil, true
 	}
-	return hops, true
+	deps, read := w.deps(id)
+	if !read {
+		// Not knowing how deep the chain is is not evidence that it is deep.
+		return nil, false
+	}
+	// The first `discovered-from` parent that IS a verify bead, rather than
+	// the first one full stop. The two answer the same for all but one bead
+	// in the census store — MEASURED 2026-11-09: of its 2,634 non-verify
+	// beads, 2,005 carry exactly one `discovered-from` parent, 628 carry
+	// none, and ONE carries two — but "the first" makes the count depend on
+	// the order bd happens to list edges in, and in that one measured case
+	// the verify bead is the SECOND. (Four parents is the ordinary shape of
+	// a `verify_batch: 4` verify bead, 342 of them there; a verify bead is
+	// never a bead this walk starts from or continues through.)
+	var q BdIssue
+	parent := ""
+	for _, d := range deps {
+		if d.DependencyType != discoveredFromDepType || !beadIDRe.MatchString(d.ID) || seen[d.ID] {
+			continue
+		}
+		if is, known := w.byID[d.ID]; known && hasLabel(is.Labels, VerifyLabel) {
+			parent, q = d.ID, is
+			break
+		}
+	}
+	if parent == "" {
+		return nil, true
+	}
+	srcs := verifySourceIDs(q.Description)
+	hop := verifyChainHop{Verify: parent, Sources: len(srcs)}
+	best, bestWhole, bestHops, bestSrc := -1, false, []verifyChainHop(nil), ""
+	for _, s := range srcs {
+		if s == parent || seen[s] {
+			continue
+		}
+		sub, whole := w.rounds(s, depth-1, verifyChainSeen(seen, parent, s))
+		switch {
+		case best < 0 || len(sub) < best:
+			best, bestWhole, bestHops, bestSrc = len(sub), whole, sub, s
+		case len(sub) == best && whole && !bestWhole:
+			// A branch that TIES the minimum and is whole makes the minimum
+			// whole, and the path shown is then one we can vouch for.
+			bestWhole, bestHops, bestSrc = true, sub, s
+		}
+		if best == 0 && bestWhole {
+			break // a source with no round above it: nothing can go lower
+		}
+	}
+	if best < 0 {
+		// A verify bead with no close this walk can continue through: one
+		// filed by hand with no marker, or every source already on this
+		// path. The round counts and the walk ends here.
+		return []verifyChainHop{hop}, true
+	}
+	hop.Source = bestSrc
+	return append([]verifyChainHop{hop}, bestHops...), bestWhole
+}
+
+// verifyChainSeen is `seen` plus `add`, copied: a branch must not mark a
+// sibling branch's beads as visited, or the order bd lists a batch's closes
+// in would decide which of them the walk may continue through.
+func verifyChainSeen(seen map[string]bool, add ...string) map[string]bool {
+	out := make(map[string]bool, len(seen)+len(add))
+	for k := range seen {
+		out[k] = true
+	}
+	for _, a := range add {
+		out[a] = true
+	}
+	return out
 }
 
 // verifyChainStopped is every close this repo already has a chain-stop
@@ -991,11 +1164,14 @@ func (a *App) verifyChainStopBody(dir string, is BdIssue, hops []verifyChainHop,
 	fmt.Fprintf(&b, "repo:     %s\n%s%s\n\n", AbbrevHome(dir), discoveredFromMarkerPrefix, id)
 	b.WriteString("the chain, newest first:\n")
 	for i, h := range hops {
-		src := "a BATCH of closes — the walk stopped here rather than guess which one this round answered"
+		src := "no close it answers that this walk could continue through — the lineage ends here"
 		if h.Source != "" {
 			src = "close " + h.Source
 			if s, ok := byID[h.Source]; ok {
 				src += fmt.Sprintf(" (title, quoted as data: %q)", s.Title)
+			}
+			if h.Sources > 1 {
+				src += fmt.Sprintf(" — one of the %d closes that verify bead answers, and the SHALLOWEST of them, so this round's count is a floor on the true one (ADR 0006 §3)", h.Sources)
 			}
 		}
 		fmt.Fprintf(&b, "  round %d  verify %s of %s\n", len(hops)-i, h.Verify, src)
@@ -1082,11 +1258,17 @@ func verifyChainHead(group []BdIssue, chain map[string][]verifyChainHop, max int
 			round, max, verifyOneLine(is.ID))
 		var rounds []string
 		for i, h := range hops {
-			if h.Source == "" {
-				rounds = append(rounds, fmt.Sprintf("round %d: verify %s (a batch)", len(hops)-i, h.Verify))
-				continue
+			switch {
+			case h.Source == "":
+				rounds = append(rounds, fmt.Sprintf("round %d: verify %s (no close of its own to continue through)", len(hops)-i, h.Verify))
+			case h.Sources > 1:
+				// A batched round: which of its closes the bundle answered
+				// is not written anywhere, so the walk took the shallowest
+				// and the count below is a floor (verifyChainRounds).
+				rounds = append(rounds, fmt.Sprintf("round %d: verify %s of %s (one of %d)", len(hops)-i, h.Verify, h.Source, h.Sources))
+			default:
+				rounds = append(rounds, fmt.Sprintf("round %d: verify %s of %s", len(hops)-i, h.Verify, h.Source))
 			}
-			rounds = append(rounds, fmt.Sprintf("round %d: verify %s of %s", len(hops)-i, h.Verify, h.Source))
 		}
 		fmt.Fprintf(&b, "Newest first — %s.", strings.Join(rounds, "; "))
 		if round >= max {

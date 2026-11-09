@@ -417,6 +417,13 @@ default_emoji: ⚙️
 # quantum and does not become a ceiling — bounded by `verify_batch_age:`
 # (default 24h), after which it is filed as it stands, so a shop that goes
 # quiet mid-batch still gets its last closes verified.
+#
+# With `verify_chain_max:` on, a batch is filed LIKE WITH LIKE: the closes
+# are grouped by the verify rounds their lineages have already spent, and
+# each group batches and holds on its own. That is one of the two halves
+# that make the depth bound below work at any batch size, and what it costs
+# is a few percent more verify beads and a longer hold for a lone close that
+# is several rounds deep.
 # verify_batch: 4
 # verify_batch_age: 24h
 #
@@ -427,13 +434,14 @@ default_emoji: ⚙️
 # way before a human stopped it. `verify_batch:` does not help — it divides
 # the fan-out of one round, not the number of rounds.
 #
-# READ THIS BEFORE YOU SET BOTH. A `verify_batch:` above 1 turns this bound
-# OFF, and a pass says so on stderr every time it runs. The count walks ONE
-# LINEAGE and stops at a batched verify bead rather than guess which of its N
-# closes a findings bundle answered, so above a batch of 1 every walk counts
-# a single round and no lineage ever reaches the bound. Reporting that as a
-# bound would be the real cost, so it reads 0 instead. Today the two keys are
-# an either/or: batch the filing, or bound the depth.
+# IT BINDS AT EVERY `verify_batch:`, out of two halves that only work
+# together. Which of a batch's N closes a findings bundle answered is written
+# nowhere the harness can read, so the count continues through the SHALLOWEST
+# of them — a lower bound on the true depth, never above it — and the
+# grouping above files each batch like with like, so every close in one has
+# spent the same rounds and that lower bound is the answer. There is no key
+# for either half alone: turn the grouping off and the bound stops being
+# reachable.
 #
 # Above N rounds on ONE LINEAGE — each close filed from the verify of the
 # close before it — the next close files one `-l question` bead for
@@ -446,8 +454,9 @@ default_emoji: ⚙️
 #
 # Measured on one shop's queue of 3,353 beads: 97.9% of closes sit inside
 # ONE round and the deepest chain was four, so 3 escalates about one close a
-# week there. 0 turns the bound off — as does any `verify_batch:` above 1,
-# per the paragraph above — and then not one `bd dep list` is made for it.
+# week there — the same eleven closes under the shallowest-source walk as
+# under the single-close one it replaces. 0 turns the bound off, and then not
+# one `bd dep list` is made for it.
 # verify_chain_max: 3
 
 # ─── ci-watch ────────────────────────────────────────────────────────────────

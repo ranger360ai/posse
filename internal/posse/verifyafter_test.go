@@ -2222,42 +2222,74 @@ func TestVerifyChainBelowTheBoundFilesTheBeadAndNamesTheRound(t *testing.T) {
 }
 
 // A BATCHED verify bead answers N closes and the findings bundle names which
-// in prose. The walk cannot read prose, so it counts the round and STOPS
-// rather than guess which of the N to continue through — an undercount,
-// which costs one more round, where an overcount would cost an escalation
-// nobody earned.
-func TestVerifyChainStopsCountingAtABatchedVerifyBead(t *testing.T) {
+// in prose. The walk cannot read prose — so it counts the round and
+// CONTINUES through the shallowest of the N (amended 2026-11-09,
+// ranger-base-rffxq; it used to stop here, which is the whole of why the
+// bound could not fire above `verify_batch: 1` — ranger-base-bu8rz). Every
+// one of the N is a close the bundle could have answered, so the smallest of
+// their counts is a lower bound on the true one, and short is the direction
+// this file errs in.
+//
+// The lineage here is two rounds of which NEITHER hop is single-close, and
+// the bound is 2: the old walk counted one round and filed a verify bead,
+// this one counts two and escalates. That is the pin — the fixture fails on
+// the previous code rather than merely reading differently.
+func TestVerifyChainContinuesThroughABatchedVerifyBeadsShallowestSource(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	a := b.App
 	t0 := time.Now().Add(-3 * time.Hour)
-	repo := vaRepo(t, a, "[]", "verify_chain_max: 2")
-	// a-0 ← v-1(a-0) ← a-1 ← v-2(a-1, a-9) ← a-2: three rounds by the edges,
-	// two of them reachable, because v-2 covers two closes.
-	list, _ := vaChain(t, repo, 1, t0)
-	list = append(list,
-		vaClosed("a-1", t0.Add(-30*time.Minute), 1),
-		vaQaBead("v-2", "a-1", "a-9"),
-		vaClosed("a-2", t0, 1),
-	)
+	repo := vaRepo(t, a, "[]", "verify_chain_max: 2", "operator: boss")
+	// Two batched rounds above a-2, each verify bead answering two closes:
+	//
+	//	a-0 ← v-1{a-0, b-0} ← a-1 ┐
+	//	b-0 ← v-1{a-0, b-0} ← b-1 ┴ v-2{a-1, b-1} ← a-2
+	//
+	// a-1 and b-1 have each spent one round, so a-2 has spent two.
+	list := []string{
+		vaClosed("a-0", t0.Add(-2*time.Hour), 1),
+		vaClosed("b-0", t0.Add(-2*time.Hour), 1),
+		vaQaBead("v-1", "a-0", "b-0"),
+		vaClosed("a-1", t0.Add(-time.Hour), 1),
+		vaClosed("b-1", t0.Add(-time.Hour), 1),
+		vaQaBead("v-2", "a-1", "b-1"),
+		vaClosed("a-2", t0, 2),
+	}
+	vaChainEdge(t, repo, "a-1", "v-1", "discovered-from")
+	vaChainEdge(t, repo, "b-1", "v-1", "discovered-from")
 	vaChainEdge(t, repo, "a-2", "v-2", "discovered-from")
 	os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(vaList(list...)), 0o644)
 	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Minute))
 
-	n, _, errs := vaRun(t, a, testBd(t))
-	if n != 1 {
-		t.Fatalf("filed %d verify beads, want 1 — the walk counted past a batched hop (stderr: %s)", n, errs)
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 0 {
+		t.Fatalf("filed %d verify beads for a close two BATCHED rounds deep under a bound of 2, want 0 — the walk stopped at the batch (stderr: %s)", n, errs)
 	}
 	calls := bdCalls(t, fake)
-	for _, want := range []string{"VERIFY ROUND 2 of 2", "round 1: verify v-2 (a batch)"} {
+	for _, want := range []string{
+		"create " + verifyChainStuckPrefix + "a-2 — 2 verify rounds on one lineage",
+		"-l question",
+		// both hops, newest first, each naming the batch it continued
+		// through and that the count below it is a floor
+		"round 2  verify v-2 of close a-1",
+		"one of the 2 closes that verify bead answers",
+		"round 1  verify v-1 of close a-0",
+	} {
 		if !strings.Contains(calls, want) {
-			t.Errorf("verify bead missing %q:\n%s", want, calls)
+			t.Errorf("the escalation is missing %q:\n%s", want, calls)
 		}
 	}
-	// And it really did stop: a-1's own round is not counted, or this close
-	// would be at the bound and have been escalated instead.
-	if strings.Contains(calls, "create "+verifyChainStuckPrefix) {
-		t.Errorf("a batched hop was walked through:\n%s", calls)
+	if strings.Contains(calls, "create verify: gate shell a-2") {
+		t.Errorf("a verify bead was filed for a close at the bound:\n%s", calls)
+	}
+	if !strings.Contains(out, "no verify bead: 2 verify round(s) on one lineage is the bound") {
+		t.Errorf("the pass did not say what it did:\n%s", out)
+	}
+	// No bead's edges are read twice in a pass, which is what keeps the
+	// branching walk's bd bill a function of the graph and not of how many
+	// candidates run through it.
+	if got := strings.Count(calls, "dep list a-1 --json\n"); got != 1 {
+		t.Errorf("read a-1's edges %d times, want 1:\n%s", got, calls)
 	}
 }
 
@@ -2379,115 +2411,316 @@ func TestVerifyChainMaxZeroTurnsTheBoundOffAndWalksNothing(t *testing.T) {
 	}
 }
 
-// THE BOUND'S REACHABILITY, which is not the same question as the stop
-// (ranger-base-bu8rz, from the verify of ranger-base-ewnas). The pin above
-// says a batched hop ends the walk and is right about it. Nothing asked
-// whether the bound could still FIRE at the batch size an instance is
-// configured for, and the answer is no: every verify bead the rule files at
-// `verify_batch: N > 1` is batched, so every walk counts one hop and
-// `len(hops) >= ChainMax` is never true, however deep the lineage runs.
+// vaBatchedChain builds a lineage `rounds` deep whose EVERY hop is batched
+// `width` ways — the shape a queue running `verify_batch: 4` actually files,
+// and the shape no walk of this graph could count past one round until
+// ranger-base-rffxq. Level i holds `width` closes, one verify bead answers
+// all of them, and every close of level i+1 was filed from that bead; the
+// leaf on top is the one fresh close, so the sweep has exactly one candidate.
 //
-// So above a batch of 1 the bound reads OFF and says so, and these two
-// subtests differ in ONE config line. The control is the point: the same
-// lineage escalates at `verify_batch: 1`, so what the first subtest observes
-// is the batch size and not a fixture that never reached the bound.
-//
-// AND THE LINEAGE IS SINGLE-CLOSE ON PURPOSE (vaChain's verify beads answer
-// one close each), because that is the one shape which could still reach the
-// bound at `verify_batch: 4` — a partial batch flushed at `verify_batch_age:`
-// files a one-close verify bead, 4 of 60 on the measured queue in 2026-10 and
-// 0 of 34 in 2026-11. What is pinned is the refusal of the COMBINATION: above
-// a batch of 1 the bound is off even on the lineage that would have reached
-// it, so an operator is never told a bound holds when the next close's
-// lineage — batched, like every other one — cannot reach it. A fixture of
-// batched hops would pass this test with the fix reverted.
-func TestVerifyChainBoundDoesNotBindAboveABatchOfOne(t *testing.T) {
-	t.Parallel()
-	// `verify_batch_age: 1m` flushes the partial batch, so the batched run
-	// files its verify bead within the pass instead of holding it — the
-	// subject here is the BOUND, not the hold.
-	for _, tc := range []struct {
-		name  string
-		batch string
-		filed int
-	}{
-		{"batch 4, the bound cannot fire", "verify_batch: 4", 1},
-		{"CONTROL: batch 1, the bound fires", "verify_batch: 1", 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			b, fake := newTestBackend(t)
-			a := b.App
-			_, leaf, _ := vaChainRepo(t, a, 3, "verify_chain_max: 3", tc.batch,
-				"verify_batch_age: 1m", "operator: boss")
-
-			n, _, errs := vaRun(t, a, testBd(t))
-			calls := bdCalls(t, fake)
-			escalated := strings.Contains(calls, "create "+verifyChainStuckPrefix)
-			said := strings.Contains(errs, "config verify_chain_max: 3 does not bind at verify_batch: 4")
-
-			if n != tc.filed {
-				t.Errorf("filed %d verify beads, want %d (stderr: %s)\n%s", n, tc.filed, errs, calls)
-			}
-			if tc.filed == 0 {
-				// The control. If this ever fails, the first subtest proves
-				// nothing: read it before touching the bound.
-				if !escalated {
-					t.Fatalf("the control did not escalate a three-round lineage at verify_batch: 1, so this test pins nothing:\n%s", calls)
-				}
-				if said {
-					t.Errorf("the batch refusal was printed at verify_batch: 1:\n%s", errs)
-				}
-				return
-			}
-			if escalated {
-				t.Errorf("the bound fired at verify_batch: 4 — if the walk can now continue through a batch, this pin and verifyChainBound are both stale:\n%s", calls)
-			}
-			if !said {
-				t.Errorf(`the bound did not bind and the pass did not say so.
-An operator reading this stderr believes in a bound that cannot fire: the
-walk stops at a batched verify bead (ADR 0006 §3) and at verify_batch: 4
-every verify bead is batched, so %s's lineage counts one round forever.
-stderr was: %s`, leaf, errs)
-			}
-			// Off means off: no walk, no round line, and the close still
-			// gets its verify bead — the bound going quiet must not cost
-			// coverage.
-			if strings.Contains(calls, "dep list "+leaf+" --json\n") {
-				t.Errorf("the bound is off and the chain walk ran anyway:\n%s", calls)
-			}
-			if strings.Contains(calls, "VERIFY ROUND") {
-				t.Errorf(`a round line was rendered under a bound that cannot be reached — "VERIFY ROUND 2 of 3" on a lineage of any depth:\n%s`, calls)
-			}
-			if !strings.Contains(calls, "create verify: gate shell "+leaf) {
-				t.Errorf("no verify bead for %s: turning the bound off dropped the coverage it was never buying:\n%s", leaf, calls)
-			}
-		})
+// Every close of level i has spent i rounds, so the leaf has spent `rounds`
+// and the minimum over any batch is exact rather than merely a floor.
+func vaBatchedChain(t *testing.T, repo string, rounds, width int, t0 time.Time) ([]string, string) {
+	t.Helper()
+	level := func(i int) []string {
+		out := make([]string, 0, width)
+		for w := 0; w < width; w++ {
+			out = append(out, fmt.Sprintf("a%d-%d", i, w))
+		}
+		return out
 	}
+	var list []string
+	for i := 0; i < rounds; i++ {
+		for _, id := range level(i) {
+			// All of them before the watermark the caller sets, so none is
+			// a candidate and the assertions name one bead.
+			list = append(list, vaClosed(id, t0.Add(-time.Duration(rounds-i+1)*time.Hour), 1))
+			if i > 0 {
+				vaChainEdge(t, repo, id, fmt.Sprintf("v-%d", i), "discovered-from")
+			}
+		}
+		list = append(list, vaQaBead(fmt.Sprintf("v-%d", i+1), level(i)...))
+	}
+	leaf := "leaf"
+	list = append(list, vaClosed(leaf, t0, 2))
+	vaChainEdge(t, repo, leaf, fmt.Sprintf("v-%d", rounds), "discovered-from")
+	return list, leaf
 }
 
-// verifyChainBound itself, over the combinations the pass cannot all reach:
-// the refusal is of a LIVE bound at a batch above 1, and of nothing else.
-func TestVerifyChainBoundRefusesOnlyALiveBoundAboveABatchOfOne(t *testing.T) {
+// vaWalkReads is every bead the chain walk asked bd about in a pass, in
+// order: a `dep list <id> --json` that is not the dedupe's `--direction=up`
+// read.
+func vaWalkReads(calls string) []string {
+	var out []string
+	for _, l := range strings.Split(calls, "\n") {
+		if strings.Contains(l, "--direction=up") {
+			continue
+		}
+		// The line is the whole argv, so the verb is not at a fixed index
+		// (bdGlobalFlags go in front of it).
+		f := strings.Fields(l)
+		for i := 0; i+2 < len(f); i++ {
+			if f[i] == "dep" && f[i+1] == "list" {
+				out = append(out, f[i+2])
+				break
+			}
+		}
+	}
+	return out
+}
+
+// THE BOUND BINDS AT THE CONFIGURED BATCH SIZE (ranger-base-fswbr, building
+// ADR 0006 §3's 2026-11-09 amendment; this is ranger-base-bu8rz's own repro,
+// which that bead left for architecture rather than inventing the mechanism).
+//
+// What the first subtest pins BY EXECUTION is the defect bu8rz measured: a
+// lineage six rounds deep, every hop of it batched four ways, under
+// `verify_chain_max: 3`. The escalation fires. Under the walk before this
+// every one of those hops ended the count at one round, so the bound could
+// not fire at any depth and `VERIFY ROUND 2 of 3` was the head line on a
+// lineage twelve rounds deep. It is the shape this instance's queue files —
+// 345 of 671 verify beads on the measured store answer four closes.
+//
+// Both controls carry their own weight. The first says the bound going
+// reachable did not cost coverage: a one-round lineage at the same batch
+// size still earns its verify bead and no escalation. The second is the
+// MINIMUM, and it is the only subtest that tells the shipped rule from the
+// repair bu8rz measured and rejected — a batch that MIXES depths (one source
+// no rounds deep, one two rounds deep, which is what every batch filed
+// before the grouping looks like) counts 1 + the shallowest, so it reads 1
+// and files a verify bead. Taking the deepest instead would read 3 and
+// escalate it, and taking the first marker would depend on the order bd
+// happens to list a description's lines in.
+func TestQAVerifyChainBoundBindsAtTheConfiguredBatchSize(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		chainMax, batch, want int
-		said                  bool
-	}{
-		{3, 1, 3, false}, // the default shape: untouched
-		{3, 4, 0, true},  // the defect, named
-		{50, 2, 0, true}, // a batch of 2 is already enough
-		{0, 4, 0, false}, // already off: nothing to report
-		{3, 0, 3, false}, // an unreadable verify_batch: already defaulted to 1
-	} {
-		var errb strings.Builder
-		got := verifyChainBound(tc.chainMax, tc.batch, &errb)
-		if got != tc.want {
-			t.Errorf("verifyChainBound(%d, %d) = %d, want %d", tc.chainMax, tc.batch, got, tc.want)
+
+	t.Run("six batched rounds reach a bound of three", func(t *testing.T) {
+		t.Parallel()
+		b, fake := newTestBackend(t)
+		a := b.App
+		t0 := time.Now().Add(-3 * time.Hour)
+		// `verify_batch_age: 1m` only matters to the controls — an
+		// escalation is decided before the batching — but the three
+		// subtests then differ in their FIXTURE and in nothing else.
+		repo := vaRepo(t, a, "[]", "verify_chain_max: 3", "verify_batch: 4",
+			"verify_batch_age: 1m", "operator: boss")
+		list, leaf := vaBatchedChain(t, repo, 6, 4, t0)
+		os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(vaList(list...)), 0o644)
+		writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Minute))
+
+		n, out, errs := vaRun(t, a, testBd(t))
+		if n != 0 {
+			t.Fatalf(`filed %d verify beads for a close six BATCHED rounds deep under verify_chain_max: 3, want 0.
+This is ranger-base-bu8rz: the walk counts one round at a batched hop and
+stops, so the bound cannot fire at the batch size this queue runs.
+stderr: %s`, n, errs)
 		}
-		if said := strings.Contains(errb.String(), "does not bind at verify_batch:"); said != tc.said {
-			t.Errorf("verifyChainBound(%d, %d) said=%v, want %v: %q", tc.chainMax, tc.batch, said, tc.said, errb.String())
+		calls := bdCalls(t, fake)
+		for _, want := range []string{
+			"create " + verifyChainStuckPrefix + leaf + " — 3 verify rounds on one lineage",
+			"-l question",
+			"-a boss",
+			"--deps discovered-from:" + leaf,
+			"comments add " + leaf + " verify chain stopped: q-1",
+			// the chain, newest first, each hop naming the batch it
+			// continued through so the operator can read the loop
+			"round 3  verify v-6 of close a5-0",
+			"one of the 4 closes that verify bead answers",
+			"round 1  verify v-4 of close a3-0",
+		} {
+			if !strings.Contains(calls, want) {
+				t.Errorf("the escalation is missing %q:\n%s", want, calls)
+			}
 		}
+		if strings.Contains(calls, "create verify: gate shell "+leaf) {
+			t.Errorf("a verify bead was filed for a close at the bound:\n%s", calls)
+		}
+		if !strings.Contains(out, "no verify bead: 3 verify round(s) on one lineage is the bound") {
+			t.Errorf("the pass did not say what it did:\n%s", out)
+		}
+		// THE COST, which is the other half of making a branching walk
+		// safe to run under the launcher lock: at this shape ADR 0006 §3
+		// prices the worst case at 1 + 4 + 16 = 21 dependency reads, and
+		// the pass's own cache turns that into one read per BEAD — the
+		// leaf, four closes at level 5, four at level 4.
+		reads := vaWalkReads(calls)
+		if len(reads) > verifyChainReadMax {
+			t.Errorf("the chain walk made %d dependency reads, over the %d cap:\n%v", len(reads), verifyChainReadMax, reads)
+		}
+		seen := map[string]bool{}
+		for _, id := range reads {
+			if seen[id] {
+				t.Errorf("read %s's edges twice in one pass — the walk's cache is not holding:\n%v", id, reads)
+			}
+			seen[id] = true
+		}
+		if len(reads) != 9 {
+			t.Errorf("the walk read %d beads, want 9 (the leaf, level 5's four, level 4's four): %v", len(reads), reads)
+		}
+	})
+
+	t.Run("CONTROL: one round still earns its verify bead at verify_batch: 4", func(t *testing.T) {
+		t.Parallel()
+		b, fake := newTestBackend(t)
+		a := b.App
+		_, leaf, _ := vaChainRepo(t, a, 1, "verify_chain_max: 3", "verify_batch: 4",
+			"verify_batch_age: 1m", "operator: boss")
+
+		n, _, errs := vaRun(t, a, testBd(t))
+		if n != 1 {
+			t.Fatalf("filed %d verify beads for a one-round lineage at verify_batch: 4, want 1 — the reachable bound cost the coverage it was meant to leave alone (stderr: %s)", n, errs)
+		}
+		calls := bdCalls(t, fake)
+		if !strings.Contains(calls, "create verify: gate shell "+leaf) {
+			t.Fatalf("no verify bead for %s:\n%s", leaf, calls)
+		}
+		if !strings.Contains(calls, "VERIFY ROUND 2 of 3") {
+			t.Errorf("the verify bead does not say which round it is:\n%s", calls)
+		}
+		if strings.Contains(calls, "create "+verifyChainStuckPrefix) {
+			t.Errorf("a one-round lineage escalated:\n%s", calls)
+		}
+	})
+
+	t.Run("CONTROL: a mixed legacy batch counts its shallowest source", func(t *testing.T) {
+		t.Parallel()
+		b, fake := newTestBackend(t)
+		a := b.App
+		t0 := time.Now().Add(-3 * time.Hour)
+		repo := vaRepo(t, a, "[]", "verify_chain_max: 3", "verify_batch: 4",
+			"verify_batch_age: 1m", "operator: boss")
+		// v-mix answers two closes of DIFFERENT depth, which is what 263 of
+		// the measured store's 351 batched verify beads look like:
+		//
+		//	y-0 ← v-y1{y-0} ← y-1 ← v-y2{y-1} ← y-2 ┐
+		//	x-0 (no rounds at all)                  ┴ v-mix{y-2, x-0} ← c-1
+		//
+		// The deep source is named FIRST on purpose: a walk that took the
+		// first marker, or the deepest, would read 3 here and escalate.
+		list := []string{
+			vaClosed("x-0", t0.Add(-3*time.Hour), 1),
+			vaClosed("y-0", t0.Add(-3*time.Hour), 1),
+			vaQaBead("v-y1", "y-0"),
+			vaClosed("y-1", t0.Add(-2*time.Hour), 1),
+			vaQaBead("v-y2", "y-1"),
+			vaClosed("y-2", t0.Add(-time.Hour), 1),
+			vaQaBead("v-mix", "y-2", "x-0"),
+			vaClosed("c-1", t0, 1),
+		}
+		vaChainEdge(t, repo, "y-1", "v-y1", "discovered-from")
+		vaChainEdge(t, repo, "y-2", "v-y2", "discovered-from")
+		vaChainEdge(t, repo, "c-1", "v-mix", "discovered-from")
+		os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(vaList(list...)), 0o644)
+		writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-time.Minute))
+
+		n, _, errs := vaRun(t, a, testBd(t))
+		if n != 1 {
+			t.Fatalf("filed %d verify beads for a close whose batch's shallowest source has spent no rounds, want 1 — a mixed batch read deeper than its minimum (stderr: %s)", n, errs)
+		}
+		calls := bdCalls(t, fake)
+		for _, want := range []string{
+			"create verify: gate shell c-1",
+			"VERIFY ROUND 2 of 3",
+			"round 1: verify v-mix of x-0 (one of 2)",
+		} {
+			if !strings.Contains(calls, want) {
+				t.Errorf("the verify bead is missing %q:\n%s", want, calls)
+			}
+		}
+		if strings.Contains(calls, "create "+verifyChainStuckPrefix) {
+			t.Errorf("a floor of one round escalated under a bound of 3:\n%s", calls)
+		}
+		// The control's own control: the deep branch really was walked, so
+		// the minimum is a comparison and not a first-marker pick.
+		read := strings.Join(vaWalkReads(calls), " ")
+		for _, want := range []string{"y-2", "x-0"} {
+			if !strings.Contains(read, want) {
+				t.Errorf("the walk never read %s's edges, so nothing here compared two depths: %s", want, read)
+			}
+		}
+	})
+}
+
+// THE GROUPING, which is the bound's other half and useless without it (ADR
+// 0006 §3, amended 2026-11-09 by ranger-base-rffxq; verifyRoundGroups has the
+// measurement). A batch is filed LIKE WITH LIKE: the pending closes are
+// grouped by the rounds their lineages have already spent, and `verify_batch:`
+// applies inside each group.
+//
+// Without it the shallowest-source walk is safe and still useless, because a
+// batch that mixes depths reads the shallowest member's count for every close
+// filed from it — 263 of the measured store's 351 batched verify beads mix,
+// so a bound of 3 still never fires. With it every source in a batch has
+// spent the same rounds, so the minimum is exact and the count climbs.
+//
+// The round-1 close sits in the MIDDLE of the close order on purpose. Put it
+// last and close order alone would batch the four round-0 closes and hold it,
+// so the fixture would pass with the grouping deleted.
+func TestQAVerifyBatchesAreFiledLikeWithLikeByRoundsAlreadySpent(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	a := b.App
+	t0 := time.Now().Add(-3 * time.Hour)
+	cfg := func(age string) {
+		os.WriteFile(a.ConfigPath, []byte("beads:\n  - "+a.BeadsDirs()[0]+
+			"\nverify_chain_max: 3\nverify_batch: 4\nverify_batch_age: "+age+"\n"), 0o644)
+	}
+	repo := vaRepo(t, a, "[]", "verify_chain_max: 3", "verify_batch: 4", "verify_batch_age: 24h")
+	// s-0 ← v-1{s-0} ← d-1: one round spent, and d-1 closed between p-2 and
+	// p-3 so that close order and round order disagree.
+	list := []string{
+		vaClosed("s-0", t0.Add(-5*time.Hour), 1),
+		vaQaBead("v-1", "s-0"),
+		vaClosed("p-1", t0.Add(-4*time.Hour), 1),
+		vaClosed("p-2", t0.Add(-3*time.Hour), 1),
+		vaClosed("d-1", t0.Add(-2*time.Hour), 1),
+		vaClosed("p-3", t0.Add(-time.Hour), 1),
+		vaClosed("p-4", t0, 1),
+	}
+	vaChainEdge(t, repo, "d-1", "v-1", "discovered-from")
+	os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(vaList(list...)), 0o644)
+	writeVerifyWatermark(a.verifyWatermarkPath(repo), t0.Add(-5*time.Hour-time.Minute))
+
+	n, out, errs := vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d verify beads, want 1 — four round-0 closes are one batch and the round-1 close is not in it (stderr: %s)", n, errs)
+	}
+	calls := bdCalls(t, fake)
+	if !strings.Contains(calls, "create verify 4 closes: p-1, p-2, p-3, p-4") {
+		t.Errorf(`the batch is not the four closes of one round.
+A batch grouped by close order alone reads "p-1, p-2, d-1, p-3" and holds
+p-4, which is the filing this amendment replaces (ADR 0006 §3):
+%s`, calls)
+	}
+	if strings.Contains(calls, verifyMarkerPrefix+"d-1"+verifyMarkerAfter) {
+		t.Errorf("the round-1 close joined a round-0 batch:\n%s", calls)
+	}
+	if strings.Contains(calls, "VERIFY ROUND") {
+		t.Errorf("a batch of first-round closes carries a round line:\n%s", calls)
+	}
+	if !strings.Contains(out, "1 close(s) held for a verify batch of 4") ||
+		!strings.Contains(out, "each 1 verify round(s) deep") {
+		t.Errorf("the pass did not say it was holding the round-1 close on its own:\n%s", out)
+	}
+
+	// The next pass, with the hold expired. The bead the first pass filed is
+	// in the listing now, as it would be — the watermark stalled at d-1, so
+	// p-3 and p-4 are candidates again and their markers are what dedupes
+	// them.
+	list = append(list, vaQaBead("q-1", "p-1", "p-2", "p-3", "p-4"))
+	os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(vaList(list...)), 0o644)
+	cfg("1m")
+
+	n, _, errs = vaRun(t, a, testBd(t))
+	if n != 1 {
+		t.Fatalf("filed %d verify beads once the hold expired, want 1 — the held round-1 close files alone (stderr: %s)", n, errs)
+	}
+	calls = bdCalls(t, fake)
+	if !strings.Contains(calls, "create verify: gate shell d-1") {
+		t.Errorf("the held close did not file alone:\n%s", calls)
+	}
+	if !strings.Contains(calls, "VERIFY ROUND 2 of 3") {
+		t.Errorf("the round-1 filing does not name its round:\n%s", calls)
 	}
 }
 
