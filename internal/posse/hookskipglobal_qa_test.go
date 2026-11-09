@@ -44,7 +44,7 @@ func hsWrappedDir(t *testing.T, fx *hsFixture, rtName, persona string) (string, 
 		t.Fatal(err)
 	}
 	fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
-	wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
+	wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

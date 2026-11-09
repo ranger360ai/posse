@@ -3065,34 +3065,56 @@ func warnBuf(t *testing.T, b *HerdrBackend) *syncBuf {
 // gatePrefixRe is the WHOLE prefix posse types in front of a persona
 // command: ADR 0002 §3's PATH=<gates bin>, ADR 0009 §2's SHELL/GROK_SHELL
 // pointing at the gate shell (absent only for a Runtime.NoGateShell
-// runtime), and ADR 0077 D1's runtime-home pin (absent only for a runtime
-// with no HomeVar — bob).
+// runtime), ADR 0077 D1's runtime-home pin (absent only for a runtime with
+// no HomeVar — bob) and the transcript ceiling's pin (transcript.go, absent
+// only for a runtime with no TranscriptOffVar — everything but claude).
 //
-// The home pin is folded in here rather than spelled at each assertion for
-// the reason the `GATES ` marker exists at all. WHICH ARM it renders is a
-// fact about the LAUNCHER's environment — set gives `K='<value>' `, unset
-// gives `/usr/bin/env -u K ` — so an assertion naming the persona command
-// after it would otherwise depend on a variable this box happens to export
-// (it exports CLAUDE_CONFIG_DIR; TestMain clears all three, which is a
-// fixture decision and not a property of the shape being asserted). The
-// pin's own two arms are pinned against measured inputs in
-// runtimehome_qa_test.go, which reads the RAW line through rawCalls/spilled
-// and is not collapsed by this.
+// Both PINS are folded in here rather than spelled at each assertion for the
+// reason the `GATES ` marker exists at all: each renders one of TWO arms, the
+// choice is a fact about something other than the shape being asserted, and
+// an assertion naming the persona command after it would otherwise depend on
+// that fact. For the home pin the fact is the LAUNCHER's environment — set
+// gives `K='<value>' `, unset gives `/usr/bin/env -u K ` — and this box
+// exports CLAUDE_CONFIG_DIR while TestMain clears all three, which is a
+// fixture decision. For the transcript pin the fact is whether the fixture's
+// config marks this session's repo `session_transcripts: off`; no fixture
+// here does, so every line below carries the UNSET arm, and an assertion
+// spelling `GATES claude` would be asserting the absence of a ceiling nobody
+// asked these fixtures about.
+//
+// Each pin's own two arms are pinned against their real inputs elsewhere —
+// runtimehome_qa_test.go and transcriptceiling_qa_test.go — both of which
+// read the RAW line (rawCalls/spilled, or WrapWithGates directly) and are not
+// collapsed by this.
 //
 // The variable names come from the built-ins' own declarations, so a fourth
-// runtime-home pin cannot leave this expression behind.
+// runtime-home pin, or a second runtime that learns a transcript surface,
+// cannot leave this expression behind.
 var gatePrefixRe = regexp.MustCompile(
 	`PATH='[^']*':"\$PATH" (SHELL='[^']*' GROK_SHELL='[^']*' )?` +
-		`((` + declaredHomeVars() + `)='[^']*' |/usr/bin/env -u (` + declaredHomeVars() + `) )?`)
+		`((` + declaredHomeVars() + `)='[^']*' |/usr/bin/env -u (` + declaredHomeVars() + `) )?` +
+		`((` + declaredTranscriptVars() + `)='[^']*' |/usr/bin/env -u (` + declaredTranscriptVars() + `) )?`)
 
 // declaredHomeVars is the alternation of every built-in's HomeVar, sorted so
 // the expression is stable. Read off the declarations and not listed here,
 // for gatePrefixRe's last paragraph.
 func declaredHomeVars() string {
+	return declaredRuntimeVars(func(rt Runtime) string { return rt.HomeVar })
+}
+
+// declaredTranscriptVars is the same alternation over TranscriptOffVar.
+func declaredTranscriptVars() string {
+	return declaredRuntimeVars(func(rt Runtime) string { return rt.TranscriptOffVar })
+}
+
+// declaredRuntimeVars is the one derivation both of the above take, so a
+// built-in's declaration is read exactly once per pin and the two cannot
+// drift into different ideas of "declared".
+func declaredRuntimeVars(pick func(Runtime) string) string {
 	var names []string
 	for _, rt := range builtinRuntimes {
-		if rt.HomeVar != "" {
-			names = append(names, regexp.QuoteMeta(rt.HomeVar))
+		if v := pick(rt); v != "" {
+			names = append(names, regexp.QuoteMeta(v))
 		}
 	}
 	sort.Strings(names)

@@ -2302,7 +2302,27 @@ func GatePrefix(binDir, shell string) string {
 // same prefix. The container tier reaches none of them — it takes WrapInCage
 // and its own cage HOME (SeedCageHome), which ADR 0077 D1 leaves out of
 // scope.
-func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, cmd string) (wrapped, gatesDir, shell string, err error) {
+//
+// AND IT IS WHERE THE TRANSCRIPT CEILING GOES, for the identical reason and
+// at the identical altitude: TranscriptPin (transcript.go) types this
+// runtime's transcript-suppression variable in the arm `session_transcripts:`
+// puts the repo at DIR in — set for an `off` repo, unset for every other
+// claude launch.
+//
+// `dir` is this parameter's whole purpose, and it is resolved through
+// hookRepo BECAUSE a dispatched seat's dir is its own linked worktree under
+// ~/.posse/worktrees and not the repo the operator marked. SessionTranscripts
+// compares by path IDENTITY (samePath), so a worktree path matches no config
+// key at all: without the resolution the ceiling would read `on` for every
+// dispatched seat in the marked repo and fire only for a crew session in the
+// shared checkout — closed where nobody needed it and open where the ruling
+// was. hookRepo is the same `--git-common-dir` answer the commit-wall
+// installers already take for the same question (ADR 0081's owning home), so
+// the two walls cannot disagree about which repo a session is in.
+//
+// The container tier is out of scope here the same way D1 is, and
+// transcript.go's TranscriptOffVar doc says what that costs.
+func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, dir, cmd string) (wrapped, gatesDir, shell string, err error) {
 	gatesDir, binDir, shell, err := a.RenderGates(persona, deny)
 	if err != nil {
 		return "", "", "", err
@@ -2311,7 +2331,8 @@ func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, cmd stri
 	if rt != nil && rt.NoGateShell {
 		typed = ""
 	}
-	return GatePrefix(binDir, typed) + RuntimeHomePin(rt) + cmd, gatesDir, shell, nil
+	mode, _ := a.SessionTranscripts(hookRepo(dir))
+	return GatePrefix(binDir, typed) + RuntimeHomePin(rt) + TranscriptPin(rt, mode) + cmd, gatesDir, shell, nil
 }
 
 // ─── L3: git pre-push hook ───────────────────────────────────────────────────

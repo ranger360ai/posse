@@ -464,6 +464,19 @@ type Runtime struct {
 	// (ADR 0070 D2, ClaudeAutoModeCarveOut). Every other PID renders what
 	// it rendered before the parameter existed.
 	FleetSettings func(allow []string) string
+	// TranscriptOffVar is the env var that makes this CLI write NO session
+	// transcript — the surface the per-repo transcript ceiling needs
+	// (TranscriptPin, transcript.go; ADR 0050's third channel, operator
+	// ruling 2026-11-08). Built-in only and set for claude alone: it is the
+	// only CLI whose suppression surface anybody has measured, and a
+	// declarable key here would let an onboarder name a variable nothing
+	// consumes — a lever that reads as connected and is not (ADR 0017 §1's
+	// p84 shape), on the one switch whose whole job is to close a channel.
+	// Empty = this runtime has no such variable, or nobody has measured one;
+	// TranscriptPin then renders nothing in EITHER arm, so a repo marked
+	// `off` that is dispatched on such a runtime gets no ceiling and no
+	// pretence of one.
+	TranscriptOffVar string
 	// SettingsPin is the SMALLER payload — the environment pin alone, with
 	// none of the fleet policy around it — that
 	// EnsureSettingsPin appends to a rendered line carrying no
@@ -2285,6 +2298,14 @@ var builtinRuntimes = []Runtime{
 		// the seat's line (ADR 0077 D1). Both candidate files are live on
 		// this box; which one a seat reads is this variable's answer.
 		HomeVar: ClaudeConfigDirVar,
+		// transcript_off_var: the measured suppression surface for ADR 0050's
+		// third channel (transcript.go names the three levers that lost and
+		// why). Typed onto the seat's line in both arms by TranscriptPin —
+		// set for a repo `session_transcripts:` marks `off`, UNSET for every
+		// other claude launch, because a value leaked into the multiplexer
+		// server's frozen environment would silence every seat's transcript
+		// on the box and the loss arrives as no error at all.
+		TranscriptOffVar: ClaudeTranscriptOffVar,
 		// record: trusted — dispatched claude sessions close their beads;
 		// that is the shape every other runtime is measured against.
 		// account: nothing to declare — the adapter registry is the whole

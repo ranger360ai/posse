@@ -352,6 +352,43 @@ default_emoji: ⚙️
 # `posse gates install-hooks` names the class when a line still would
 # (ADR 0050 D6).
 
+# The ceiling's THIRD channel, and the only one that is not a lint. ADR 0050's
+# rule names three places restricted content may not enter — the bead db,
+# TRANSCRIPTS and memory. The two keys above wall the first; auto-memory is
+# off fleet-wide. This key closes the third, per repo: a claude seat launched
+# into a repo marked `off` writes no session transcript to disk at all. It is
+# not a scan and it reads nothing — the case a pattern list cannot see is
+# exactly the paste nobody thought to write a pattern for.
+#
+# UNMARKED KEEPS THE TRANSCRIPT, which is the opposite direction from the two
+# keys above, and deliberate: posse reads two facts off a seat's transcript
+# and loses both when it is off. TURN OUTCOME — the transcript IS the reader
+# that tells an exhausted account from an agent that settled without closing
+# its bead, so dispatch says so on the settle line for a marked repo. And
+# COST — `posse cost` and the cockpit footer price what they can read under
+# the transcript root, so a marked seat's spend is not counted (a floor, not a
+# total). `claude --resume` goes with it, which costs a dispatched seat
+# nothing. Only an explicit `off` buys the suppression; a typo'd path, an
+# unreadable config and a value that is neither word all come back `on`. A
+# marked launch says one line on the warn stream, because a channel closed in
+# silence is indistinguishable from a channel nobody closed.
+#
+# The repo is the one you MARK, not the directory a seat runs in: a dispatched
+# session works in its own linked worktree and the key is resolved through
+# that worktree's git common dir, so one line covers every seat in the repo.
+# CLAUDE ONLY today — the suppression surface is measured for claude and for
+# no other CLI, and a runtime with none renders no ceiling rather than a
+# pretence of one. The container tier is out of scope (it takes its own cage
+# HOME). See docs/notes.d/ranger-base-ac22n.md for the measurement, including
+# the three levers that lost: `cleanupPeriodDays: 0` (rejected by the
+# runtime's own validator, and a rejected row discards the whole settings
+# payload in silence), `--no-session-persistence` (refused outside `--print`,
+# so unusable for an interactive seat) and a per-launch `CLAUDE_CONFIG_DIR`
+# (loses to a managed-settings `env` at policy scope — it moves the config
+# file and leaves the transcript exactly where it was).
+# session_transcripts:
+#   ~/code/projB: off
+
 # ─── verify-after (ADR 0006 §3) ──────────────────────────────────────────────
 # The one handoff the harness files itself: a closed bead with one of these
 # labels and no `qa` dependent earns `verify: <title>` -l qa, assigned below,

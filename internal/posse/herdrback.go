@@ -3143,7 +3143,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// dead wall on the line. The cage renders its own inside instead —
 		// `posse gates wrap` on the engine's inner line (cageinner.go).
 		if !caged {
-			cmd, gatesDir, _, err = a.WrapWithGates(o.Agent, rt, ag.Deny, cmd)
+			cmd, gatesDir, _, err = a.WrapWithGates(o.Agent, rt, ag.Deny, dir, cmd)
 			if err != nil {
 				return nil, err
 			}
@@ -3165,6 +3165,19 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// find them at. That path is the image's, not the host's; the one
 			// file behind it that is the host's is mounted there (CageMounts).
 			gatesDir = CageGatesDir(o.Agent)
+		}
+		// ADR 0050's third channel, said out loud (transcript.go). The pin
+		// itself rode in on WrapWithGates above; this is the sentence, and
+		// it is here rather than inside that function because that function
+		// returns strings and writes nothing — the relaunch path and the
+		// probe share it and neither has a reader. BELOW the branch and
+		// keyed on `caged`, because the container tier renders no pin at
+		// all: for a marked repo that is a silently open channel, which is
+		// the one state worth a line of its own. Empty for every repo but a
+		// marked one, so the stream stays worth reading.
+		tmode, tsource := a.SessionTranscripts(hookRepo(dir))
+		if line := TranscriptCeilingLine(rt, tmode, tsource, caged); line != "" {
+			warn("%s", line)
 		}
 		if emoji == "" || emoji == a.EmojiFor(o.Name) {
 			if e := a.EmojiExact(runtime); e != "" {
@@ -3906,7 +3919,7 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 		}
 	} else {
 		var gatesDir string
-		if cmd, gatesDir, _, err = b.App.WrapWithGates(m.Agent, rt, ag.Deny, inner); err != nil {
+		if cmd, gatesDir, _, err = b.App.WrapWithGates(m.Agent, rt, ag.Deny, m.Dir, inner); err != nil {
 			return false, err
 		}
 		// Same precondition as planLaunch's, on the one other path that

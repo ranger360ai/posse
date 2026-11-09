@@ -105,7 +105,7 @@ func TestQAHookSkipAliasSpliceUnquotes(t *testing.T) {
 		t.Fatal(err)
 	}
 	fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
-	wrapped, _, _, err := a.WrapWithGates("hs-1agm6", rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
+	wrapped, _, _, err := a.WrapWithGates("hs-1agm6", rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

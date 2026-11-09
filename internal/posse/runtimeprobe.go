@@ -817,7 +817,7 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 	if launchExe == "" {
 		return nil, Die("the rendered %s line is empty — there is no binary to measure; fix `command:` in the runtime profile", rt.Name)
 	}
-	cmd, gatesDir, _, err := a.WrapWithGates(persona, rt, ag.Deny, inner)
+	cmd, gatesDir, _, err := a.WrapWithGates(persona, rt, ag.Deny, dir, inner)
 	if err != nil {
 		return nil, err
 	}

@@ -1934,6 +1934,36 @@ Consequences).
 `install-hooks` prints what it stamped in and, by class, what it refused —
 the ceiling line for private-stamped repos too.
 
+The ceiling's rule names three places that content may not enter — the bead
+db, **transcripts** and memory — and the two keys above are both lints over
+the first. Auto-memory is off for every fleet session already. The third is
+config `session_transcripts:`, a one-level map of repo → `on|off` and the one
+entry in this family that is not a scan and reads nothing: a claude seat
+launched into a repo marked `off` writes **no session transcript to disk at
+all**, because the case a pattern list cannot see is exactly the paste nobody
+thought to write a pattern for. Mark the REPO, not a session directory — a
+dispatched seat works in its own linked worktree and the key is resolved
+through that worktree's git common dir, so one line covers every seat in the
+repo. **Unmarked keeps the transcript**, which is the opposite default from
+the two lints and deliberate: posse reads two facts off a seat's transcript
+and loses both when it is off — turn outcome (the transcript *is* the reader
+that tells an exhausted account from an agent that settled without closing its
+bead) and cost (`posse cost` and the cockpit footer price what they can read
+under the transcript root, so a marked seat's spend is a floor, not a total).
+`claude --resume` goes with it, which costs a dispatched seat nothing. Only an
+explicit `off` buys it; a typo'd path, an unreadable config and a value that
+is neither word all come back `on`, and a marked launch says one line on the
+warn stream, because a channel closed in silence is indistinguishable from a
+channel nobody closed. Two limits, both stated rather than discovered: it is
+**claude only** — the suppression surface is measured there and nowhere else,
+and a runtime with none renders no ceiling rather than a pretence of one — and
+the **container tier** carries no pin, so a marked repo dispatched on a
+`cage: container` persona is told on that launch that the ceiling is not in
+force. Three levers that look closer and are not — a retention period of `0`,
+`--no-session-persistence`, and a per-launch config-directory redirect — are
+each measured and ruled out in `docs/notes.d/ranger-base-ac22n.md`; read it
+before reaching for one of them.
+
 Both gates want a slot `bd hooks install` has already taken. Run:
 
 ```sh

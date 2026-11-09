@@ -463,7 +463,7 @@ func TestRenderedShimRefusesAndPasses(t *testing.T) {
 	if p := GatePrefix(binDir, "/g/zsh"); p != "PATH='"+binDir+"':\"$PATH\" SHELL='/g/zsh' GROK_SHELL='/g/zsh' " {
 		t.Errorf("prefix with gate shell: %q", p)
 	}
-	wrapped, gd, sh, err := a.WrapWithGates("security", &Runtime{Name: "grok"}, []string{"Bash(git push:*)"}, "claude --x")
+	wrapped, gd, sh, err := a.WrapWithGates("security", &Runtime{Name: "grok"}, []string{"Bash(git push:*)"}, t.TempDir(), "claude --x")
 	base := filepath.Base(sh)
 	if err != nil || gd != gatesDir || filepath.Dir(sh) != filepath.Join(gatesDir, "shell") ||
 		(base != "zsh" && base != "bash") ||
@@ -471,7 +471,7 @@ func TestRenderedShimRefusesAndPasses(t *testing.T) {
 		t.Errorf("wrap: %q %q %q %v", wrapped, gd, sh, err)
 	}
 	// The exit hatch drops the two vars but still renders the wrapper.
-	wrapped, _, sh2, err := a.WrapWithGates("security", &Runtime{Name: "odd", NoGateShell: true}, []string{"Bash(git push:*)"}, "claude --x")
+	wrapped, _, sh2, err := a.WrapWithGates("security", &Runtime{Name: "odd", NoGateShell: true}, []string{"Bash(git push:*)"}, t.TempDir(), "claude --x")
 	if err != nil || sh2 != sh || wrapped != "PATH='"+binDir+"':\"$PATH\" claude --x" {
 		t.Errorf("NoGateShell wrap: %q %q %v", wrapped, sh2, err)
 	}

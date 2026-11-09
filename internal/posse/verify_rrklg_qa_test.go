@@ -82,7 +82,7 @@ func TestQAHookSkipOptionSkipHoldsPastItsPinnedSpellings(t *testing.T) {
 			}
 			fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
 			wrapped, _, _, err := a.WrapWithGates("hs-ext-"+rtName, rt,
-				[]string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
+				[]string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
 			if err != nil {
 				t.Fatal(err)
 			}

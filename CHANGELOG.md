@@ -11,6 +11,52 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**`session_transcripts: <repo>: off` — a claude seat in that repo writes no
+session transcript to disk.**
+
+*New, and off unless you mark a repo. Nothing changes for an existing home.*
+
+The data ceiling's rule names three places restricted content may not enter —
+the bead db, **transcripts** and memory. Two had a mechanism
+(`data_ceiling_patterns:` over the first, auto-memory off fleet-wide); the
+third did not, so a seat dispatched into a repo whose content may not exist in
+a local file wrote the whole conversation — every file it read, every tool
+result — under the transcript root, where it sat until the 30-day cleanup.
+
+The new key is a one-level map of repo → `on|off` and it is not a scan: it
+reads nothing and closes the channel outright, because the case a pattern list
+cannot see is exactly the paste nobody thought to write a pattern for. Mark
+the REPO, not a session directory — a dispatched seat works in its own linked
+worktree and the key is resolved through that worktree's git common dir, so
+one line covers every seat in the repo.
+
+**Unmarked keeps the transcript**, which is the opposite default from the two
+lints beside it. posse reads two facts off a seat's transcript and loses both
+when it is off: turn outcome (the transcript *is* the reader that tells an
+exhausted account from an agent that settled without closing its bead) and
+cost (`posse cost` and the cockpit footer price what they can read under the
+transcript root, so a marked seat's spend becomes a floor rather than a
+total). `claude --resume` goes with it. Only an explicit `off` buys the
+suppression, and a marked launch says one line on the warn stream naming what
+was given up — a channel closed in silence is indistinguishable from a channel
+nobody closed.
+
+Two limits, stated rather than left to be discovered. It is **claude only**: a
+suppression surface has been measured for claude and for no other CLI, and a
+runtime without one renders no ceiling rather than a pretence of one. And the
+**container tier** carries no pin — that tier renders its own wall inside the
+cage — so a marked repo dispatched on a `cage: container` persona is told, on
+that launch, that the ceiling is not in force.
+
+Three levers that look closer and are not, each measured and ruled out in
+`docs/notes.d/ranger-base-ac22n.md`: a retention period of `0` (rejected by
+the runtime's own settings validator — and a rejected row makes it discard the
+whole `--settings` payload in silence, credential-dir pin and all),
+`--no-session-persistence` (refused outside `--print`, so unusable for an
+interactive seat) and a per-launch config-directory redirect (loses to a
+managed-settings `env` at policy scope: it moves the config file and leaves
+the transcript exactly where it was).
+
 **`posse systemd` renders the dispatch loop as a systemd user unit, for a
 host that runs no herdr.**
 

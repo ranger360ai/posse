@@ -394,7 +394,7 @@ func TestQAHookSkipRefusedOnEveryRuntime(t *testing.T) {
 			fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
 			persona := "hs-" + rtName
 			// The deny list every crew PID carries.
-			wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
+			wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -584,7 +584,7 @@ func TestQAPIDDenyJudgesAliasExpansion(t *testing.T) {
 				t.Fatal(err)
 			}
 			fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
-			wrapped, gatesDir, _, err := a.WrapWithGates("ad-"+rtName, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, "")
+			wrapped, gatesDir, _, err := a.WrapWithGates("ad-"+rtName, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
 			if err != nil {
 				t.Fatal(err)
 			}
