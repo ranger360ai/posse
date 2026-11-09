@@ -1289,3 +1289,132 @@ as-measured note above.
   nothing secret (T7c); claude's own `/sandbox` nesting in a real session,
   which no row tests without a turn.
 - STATIC, this tree: the render inputs and call sites named above.
+
+## Amendment: prep creates the session's own furniture, nothing else (ranger-base-sg7a7, 2026-11-09)
+
+**Context.** D17/D18's prep shape 1 exists for a real reason — bwrap binds
+only a source that exists, where sandbox-exec granted paths that did not — so
+a write grant that is not there becomes a `mkdir -p` outside the namespace, in
+the seat's user. It landed with no perimeter, and two things that cost nothing
+at the other mechanism became host writes. Both were found by driving a launch
+at this mechanism from darwin (ranger-base-temhf's `wallMechanismHost`), and
+neither was reported by anything:
+
+1. **An absolute `writable:` in a PID was a directory posse created.** One
+   line — `writable: [scratch, /opt/shared]` in `parity_test`'s fixture — was
+   a clean launch on darwin (SBPL grants a path whether or not it is there and
+   nothing writes it), a REFUSED launch on this laptop
+   (`mkdir /opt/shared: permission denied`, MEASURED with the mechanism
+   pinned) and a new host directory on ci.yml's ubuntu runner, created
+   silently on every red run.
+2. **A launch materialized `<cwd>/.beads`, which moved a LATER launch's parity
+   row.** The store of record is in the writable set, so prep made it; ADR
+   0013 §4's reachability row probes only a store that EXISTS. In
+   `TestSeatbeltProfileAndLaunch` a grok seatbelt launch therefore handed a
+   codex seat three arms later — same tree, `-s read-only` — a real store
+   behind a read-only sandbox where it had none before, so the row went from
+   "nothing to reach" to unrealized and REFUSED that launch. Same tree, same
+   PIDs, a different answer depending on which seat launched there first.
+
+**D23. The launcher creates the session's own furniture and nothing else.**
+Prep's authority is posse's own perimeter: the session tree, the gates dir,
+posse's state, the persona's memory dir, the launching runtime's declared
+state dirs, the generic caches, `TMPDIR`. Two classes of write grant are
+outside it and are **bound where the host has them, render no mount where it
+does not, and are never created**:
+
+- **a `writable:` extra the PID named ABSOLUTELY** (`~` counts as absolute,
+  for `homeCacheGrants`' reason one list over). It is a host path the operator
+  declared, not one posse derived, and nothing inside the session can bring it
+  into being either. A RELATIVE extra keeps its prep: it resolves inside the
+  session tree, which posse made and retires with the session, and for a
+  persona that denies file writes cwd itself is not granted, so without the
+  mkdir the grant would be dead.
+- **the store of record.** Its EXISTENCE is itself read as a fact — ADR 0013
+  §4's row says "bd creates it on first write" in its own words, and prep made
+  that sentence false. An empty `.beads` is not inert either: in no-db mode bd
+  resolves `$BEADS_DIR` else `$cwd/.beads` and reads no redirect at all (ADR
+  0055), so a directory posse makes there is a second store of record that can
+  take writes nothing reads back. `bd init` is denied to every persona because
+  creating a store is a decision; it is not the launcher's either.
+
+Each absence is said out loud at a surface read BEFORE the launch, because a
+grant that silently disappears is the wall-with-a-note shape this tier
+refuses:
+
+- `posse gates` and the readable `bwrap.txt` print it with `Seal`'s marker —
+  the one that already means "this entry is in a list and renders no mount" —
+  below the prep list, so the two together are the whole of what the launcher
+  did and did not do on the host.
+- parity carries the PID half as a **DeclaredDifference, never degradation**
+  (ADR 0017 §2), for `applyBwrapRefGrant`'s reason in its own words: nothing
+  here is a wall posse asked for and did not get. It is a grant this mechanism
+  renders narrower than darwin's, what it costs is a function the seat loses
+  loudly — a write into that path is refused by the base `--ro-bind / /` — and
+  degrading it would put a safe-by-design narrowing behind `--allow-degraded`
+  and refuse dispatch for a path that is nobody's gate (ranger-base-d17a).
+- `posse agent check` warns on an absolute `writable:`, which is where the
+  operator writing that PID is standing. A warning and box-INDEPENDENT: the
+  PID is coherent and may well launch on a host that has the path, and a lint
+  that stats would answer differently per box where the launch row already
+  answers for the box it is on.
+- the store half gets no second row: ADR 0013 §4's no-store row is already the
+  reader for "there is no store at this launch dir", and it gains one clause
+  naming the launcher at this mechanism only.
+
+*As built (ranger-base-sg7a7, 2026-11-09).* `bwrapNoCreate` and
+`bwrapBindExisting` in `internal/posse/bwrap.go`, applied in `bwrapRender`
+after D20's substitution and before `BwrapArgs` — so the renderer never learns
+this question exists, there is no sixth arm in it to get wrong, and its
+signature does not grow a parameter at thirty call sites. That is D20's own
+move (`bwrapGitSwap`), and the producer-says rule D19, D20 and
+`SeatbeltCarveOut.DenyFile` all follow. Four things the text did not settle:
+
+- **The store has ONE spelling that can be absent**, and it is `<cwd>/.beads`.
+  `SeatbeltWritable` grants the store under two names — that one, and
+  `beadsHome`'s resolved target where a redirect moves it out of the tree (ADR
+  0012 D3-C) — but a redirect bd FOLLOWS is one whose target
+  `beadsRedirectHop` has already stat'd as a directory. The resolved target is
+  therefore there by construction, and an entry for it would be a control with
+  no failing arm.
+- **A FILE at a no-create grant stays in the set**, so B8's refusal is still
+  `BwrapArgs`' and still names the path and the remedy. Answering it in the
+  drop would be a second refusal for one fact, and a quieter one.
+- **`SeatbeltWritable` is untouched**, the rule D19 and D20 both keep:
+  narrowing the shared producer would take these entries out of the darwin
+  profile, where a grant for an absent path costs nothing and the session can
+  still create it.
+- **Stated residual, not closed.** Where a redirect names a store in a
+  directory that is not a git repository, `SeatbeltWritable` grants
+  `<root>/.git` and prep still makes it. That path is not in the list because
+  in the common case `<root>` IS the session tree, where `.git` is the
+  session's own and prep creating it is exactly the furniture this decision
+  keeps. The cost is a `.git` directory in a non-repo, which the next `git` run
+  there reports; closing it needs a producer that knows which of the two it is
+  naming, the way D20 answered the ref pair one step earlier.
+
+**Pins** (`internal/posse/bwrapprepauthority_qa_test.go`, arm 1, every arm on
+darwin): the launcher creates neither member and binds both where the host has
+them; a relative extra is still created, which is the control that keeps the
+fix from being "drop every absolute grant"; a launch in a tree with no store
+leaves ADR 0013 §4's row byte-identical for the next launch in the same tree,
+measured before and after rather than asserted; the declared difference
+reaches a real matrix and degrades nothing; `bwrap.txt` names what was not
+created and `bwrap.args` does not name it at all; `agent check` warns and does
+not fail. `TestSeatbeltProfileAndLaunch` keeps `/opt/shared` in its fixture on
+purpose — ci.yml's ubuntu arms are the only reader on the planet that runs
+that test at this mechanism, so the declaration is now the live witness on the
+exact line that was creating the directory.
+
+*Measured versus assumed.* MEASURED 2026-11-09, darwin/arm64, with
+`wallMechanismHost` pinned to `linux` and `bwrapBin` stubbed: before the fix
+the launch creates both members and the reachability row moves; after it,
+neither. Five mutations, each red in the pin whose name is the behaviour: the
+render ignoring the producer (3 red), the store dropped from the list (3), the
+host-path predicate answering false (6), the no-store clause silenced (2), and
+the drop stopping asking whether the path is there (3) — that last one is the
+other direction the fix can be wrong, and it reds the two controls and B8's
+refusal. ASSUMED, unchanged by this bead: that a Linux render is this render,
+which it is not — `SeatbeltWritable` still reads `runtime.GOOS` for the
+home-cache grants, so which PATHS the wall covers is `homeCacheGrants`' own
+pin and what the launcher MAKES is this one.

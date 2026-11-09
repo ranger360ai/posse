@@ -263,6 +263,7 @@ func TestQABwrapLaunchDoesNotMaterializeTheStoreOfRecord(t *testing.T) {
 // session can make the store itself and "bd creates it on first write" needs
 // nothing added to it.
 func TestQATheNoStoreRowNamesTheLauncherOnlyAtTheMountMechanism(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		mech  string
 		cage  string
@@ -508,6 +509,7 @@ func TestQATheReadableWallNamesTheGrantsItDidNotCreate(t *testing.T) {
 // finding: the PID is coherent and may well be launched on a host that has
 // the path.
 func TestQAAgentCheckWarnsOnAnAbsoluteWritable(t *testing.T) {
+	t.Parallel()
 	a, _ := bpaCheckApp(t, "writable: [/opt/shared, docs/adr]\n")
 	findings, warnings, err := a.CheckAgent("ranger")
 	if err != nil {

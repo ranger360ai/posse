@@ -313,7 +313,33 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	// wrap comes from the same two functions the launcher types
 	// (wallWrapForTest), so this still pins the LINE against the prefix and
 	// not against a second copy of it.
+	//
+	// `/opt/shared` STAYS IN THIS FIXTURE and it is now a witness rather
+	// than a hazard (ranger-base-sg7a7). ranger-base-temhf's close said this
+	// fixture had been re-pointed under its own tempdir; that edit never
+	// landed, and the reason it no longer needs to is ADR 0080 D23: the
+	// launcher does not create a path a PID named absolutely, so the launch
+	// below makes no host directory on either mechanism. Keeping the
+	// declaration means ci.yml's ubuntu arms — the only reader on the planet
+	// that runs this test at the mount mechanism — are the live witness for
+	// that, on the exact line that was creating `/opt/shared` on the runner
+	// every red run. Measured BEFORE, because a runner that happens to have
+	// the directory must not red this.
+	hadOptShared := isDirPath("/opt/shared")
 	mustCreate(t, b, NewSessionOpts{Name: "hg", Agent: "security", Runtime: "grok", Dir: repo})
+	if !hadOptShared && isDirPath("/opt/shared") {
+		t.Errorf("this launch CREATED /opt/shared on the host. An absolute `writable:` is a path the operator declared, not one posse derived: the launcher binds it where the host has it and makes no mount where it does not (ADR 0080 D23, ranger-base-sg7a7)")
+	}
+	// And the same launch leaves the tree's store of record alone, which is
+	// the other half of D23: a store posse creates is a store ADR 0013 §4's
+	// row then probes, and that is what refused the codex arm further down on
+	// every ubuntu run. That arm keeps the tree of its own temhf gave it —
+	// its subject is the cage shortfall and it is better off not reading a
+	// tree three other launches have been in — so this line is the pin for
+	// the cause rather than for the symptom.
+	if _, serr := os.Stat(filepath.Join(real, beadsDirName)); serr == nil {
+		t.Errorf("this launch materialized %s — bd creates the store of record on first write, at every mechanism (ADR 0080 D23)", filepath.Join(real, beadsDirName))
+	}
 	log := calls(t, fake)
 	wrap, wallPath := wallWrapForTest(t, gates)
 	if !strings.Contains(log, "GATES "+wrap+"grok") || !strings.Contains(log, "--env RHQ_CAGE=seatbelt") {
