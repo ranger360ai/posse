@@ -681,23 +681,49 @@ func (b *HerdrBackend) ConfirmSubmitted(target Seat) string {
 // away. So: take the reading, print nothing extra, and report exactly what
 // the herdr arm reports.
 //
-// WHAT IT IS WORTH, which is the question the bead asked first. Whether Rex's
-// own Prompt verb can leave text in the box the way `herdr agent prompt` was
-// MEASURED to (three times, 2026-09-02, the last sitting four hours) is NOT
-// measured on this occupant. What is written down is the mechanism, on this
-// exact delivery shape: ADR 0060 D5 measured a `send-text` + Enter route
-// whose Enter the CLI's command picker ate, leaving the text in the composer
-// "through Esc and C-u" while the call reported success — and RexMux.Prompt
-// IS that shape (`rex send`, then `send-key enter`), which is why its own
-// note ends "Rex has even less to catch it with than herdr — no envelope,
-// and no detection to read the box back with". That sentence names this
-// absence. Prompt refuses a leading `/` outright, so the one measured CAUSE
-// cannot arrive through `posse prompt`; the generic type-then-Enter race the
-// 2026-09-02 measurement caught had no `/` in it, and on this occupant its
-// window is WIDER, because the gate that guards it is itself §4 and concedes
-// here. The reading is report-only either way: if the failure mode turns out
-// not to exist on Rex it costs one capture and never prints a word, and if it
-// does, the alternative is a prompt sitting for hours with nothing saying so.
+// WHAT IT IS WORTH, which is the question the bead asked first — and it is
+// MEASURED now (ranger-base-8eeoy, 2026-11-10; the venue, the table and the
+// versions are in docs/notes.d/ranger-base-8eeoy.md). **20 prompts typed
+// through `posse prompt` into a live claude seat on this occupant, across
+// five states, left text in the box ZERO times**: 14 on a settled seat, 1
+// mid-turn, 1 with the command picker open, 1 with the box already dirty, 3
+// with a modal up — and this warning fired on none of the 20. Two further
+// attempts never got as far as typing: the §3 detection gate refuses a seat
+// with no `program_status` record, and `--now` does not bypass that one. rex
+// 0.0.1794069975-g6c6689, claude 2.1.322. So `herdr agent prompt`'s
+// 2026-09-02 failure (three times, the last sitting four hours) does not
+// reproduce through this route: `rex send` and `send-key enter` land on one
+// pty in order, and the CLI consumes them in order. Two of the 20 showed the
+// typed text in a single 0.38s sample before it cleared, which bounds the
+// transit under ~0.8s.
+//
+// THE READING STAYS ANYWAY, and the reason is no longer symmetry of risk: it
+// costs one ~20ms capture on a cleared box, prints nothing, and is the only
+// thing that would say so if a state nobody has named does hold a prompt.
+// What it must NOT be read as is coverage of this route's real failures,
+// because the two this occupant does have are both invisible to it:
+//
+//   - A MODAL EATS THE PROMPT AND THE ENTER OPERATES THE DIALOG. Three for
+//     three: the call reported success, the text appeared nowhere in the
+//     whole scrollback, and the Enter actuated the highlighted row — `/model`
+//     saved a default model, and a pending Bash permission dialog was
+//     APPROVED, twice, the command running. This function cannot see it: a
+//     modal is drawn where the box was, so there is no composer region at
+//     all, `captureComposer` answers "" and this answers "the box cleared".
+//     Filed as ranger-base-hlnyx; the tell is in the same capture
+//     PaneHolding already takes one call earlier — while a modal is up there
+//     is no composer region to find.
+//   - THE PICKER SUBMITS RATHER THAN HOLDING. ADR 0060 D5 measured the Enter
+//     being EATEN, the text left "through Esc and C-u"; on claude 2.1.322 a
+//     leftover `/` plus this route's text was submitted as
+//     `Unknown command: …` and the box cleared. D5's composer claim is
+//     CLI-version-bound; its refusal of a leading `/` in Prompt is not, and
+//     stands. Either way the prompt is LOST, not held.
+//
+// And the half of ranger-base-um1bi that fires BEFORE the keystrokes earned
+// its keep in the same session: the pre-type warning named the dirty box on
+// both attempts that had one ("/" and "LEFTOVERE1") and stayed silent on all
+// 14 idle ones, several of which held claude's dim suggestion as it read.
 //
 // WHAT IT COSTS. An empty or cleared box is one ~20ms capture per poll —
 // ~160ms of rex calls spread across the two-second window. A box with text in

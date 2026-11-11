@@ -522,6 +522,20 @@ func (m RexMux) Wait(s Seat, until []string, timeoutMS int) (MuxReading, error) 
 // picker, the picker eats the Enter, and the text sits in the composer while
 // this call reports success. Rex has even less to catch it with than herdr —
 // no envelope, and no detection to read the box back with.
+//
+// THE REFUSAL STANDS AND ITS STATED REASON IS CLI-VERSION-BOUND
+// (ranger-base-8eeoy, MEASURED 2026-11-10 on claude 2.1.322 through this
+// exact route). With a leftover '/' already in the box, this route's text was
+// joined to it and SUBMITTED — `Unknown command: /PROBED1` — and the box
+// cleared, where D5 measured the Enter being eaten and the text left
+// "through Esc and C-u". Both outcomes are a prompt that never runs, so what
+// the refusal above prevents is unchanged; what has moved is which way it
+// fails, and no read-back after the fact can recover either. The same
+// session measured what this route DOES do on a seat holding a modal, which
+// is worse and is not the picker: the prompt is discarded and the Enter
+// actuates the dialog's highlighted row (a pending permission dialog was
+// approved, twice). docs/notes.d/ranger-base-8eeoy.md has the table; the
+// read-back's own note is confirmSubmittedCaptured (panework.go).
 func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReading, error) {
 	if strings.HasPrefix(strings.TrimLeft(text, " \t\r\n"), "/") {
 		return MuxReading{}, Die("nothing was sent: on Rex posse types the prompt in (rex send + Enter), and a prompt " +
