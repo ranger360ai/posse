@@ -1,9 +1,10 @@
 # ADR 0085 — The cold-first-exec class is decided by injecting the cost, not by reading the deadline
 
 *Status: accepted 2026-11-10 (ranger-base-gdzu5, from ranger-base-aru4c) ·
-owner: architect · builds on ADR 0006 §7 (a pin names the process it
-protects) and on the execwrite pins (every executable write goes through
-`WriteExecutable`)*
+amended 2026-11-10 (ranger-base-dacil: D2, D3, D5 and D6 move the cost
+from the file's bytes to its `execve`; the first full run under the
+content rewrite, ranger-base-kiwvn, is the evidence) · owner: architect ·
+builds on ADR 0006 §7 (a pin names the process it protects)*
 
 ## Context
 
@@ -42,104 +43,171 @@ a `Herdr`-driven fixture pays the injected cost inside `mux.Start`, outside
 its deadline, so it stays green. `sh <path>` never execs the path, so it is
 never delayed.
 
-**D2. The cost is injected at `WriteExecutable`, the one door.** The
-execwrite pins already force every executable write in the tree through
-`WriteExecutable`. So the set of plants is closed by an existing gate and
-the injector needs no census of its own. When a test-only hook is set,
-`WriteExecutable` rewrites a script whose first line is `#!<interp>` to:
+**D2. The cost is injected at the `execve`, not in the file** (amended,
+ranger-base-dacil). A supervisor, `cmd/coldexec` (Linux only), wraps the
+door's `go test` command line. Its child sets `no_new_privs`, installs a
+seccomp filter that returns `SECCOMP_RET_USER_NOTIF` for `execve` and
+`execveat` (and `ALLOW` for every other call), hands the listener fd to
+the parent over a socketpair (`SCM_RIGHTS`), and execs the command. Every
+process under it, at any depth, inherits the filter: the test binary, the
+`sh` it starts, the `git` that runs a hook.
 
-```
-#!<shim>
-# posse-coldexec <nonce> <original interpreter line>
-<original body>
-```
+For each notification the parent reads the path argument from
+`/proc/<pid>/mem`, resolves a relative path against `/proc/<pid>/cwd`
+(`execveat`: against `/proc/<pid>/fd/<dirfd>`, or the fd itself under
+`AT_EMPTY_PATH`), and `stat`s it. **A plant is an inode whose ctime is
+after the door started.** The first time the parent sees a given
+`(dev, ino, ctime)`, it sleeps D. Then it checks
+`SECCOMP_IOCTL_NOTIF_ID_VALID` and answers `SECCOMP_USER_NOTIF_FLAG_CONTINUE`,
+so the kernel runs the original `execve`. A file rewritten in place gets a
+new ctime and is cold again, which is what the old nonce did. Each
+notification is handled on its own goroutine, so one cold exec does not
+hold up the others.
 
-The kernel then execs `<shim> <path> <args>`. The shim atomically creates
-`<markerdir>/<nonce>` (O_EXCL). If it created it, this is the first exec,
-and it sleeps D. Then it `syscall.Exec`s the original interpreter line with
-`<path> <args>`, keeping its pid, so pid files and kills still name the
-right process. A fresh nonce per write makes a rewritten file cold again.
-The marker lives outside the script's directory so tests that list a dir
-see no extra file.
+The file's bytes are never touched. `$0`, line numbers, the shebang, a
+hook's identity, a shim's header and a copied binary all reach the disk and
+the reader exactly as the test wrote them. The pid is the forked child's
+own, as on darwin, where the assessment also happens inside `execve`.
+`sh <path>` execs `/bin/sh`, an old inode, so it is never delayed (D1
+holds).
 
-**D3. The hook is test-only by construction.** A package variable in
-`execwrite.go`, nil by default and assigned only in `herdr_test.go`'s
-`TestMain` when `POSSE_COLD_EXEC_DELAY` is set. It applies only when the
-immediate caller of `WriteExecutable` is a `_test.go` file
-(`runtime.Caller`). Shims that production code writes keep their exact
-bytes, so content read-back pins do not red for the wrong reason. A shipped
-binary never assigns the hook. The shim is the test binary itself,
-detected in `TestMain` by argv[1] naming a file whose line 2 is the
-`posse-coldexec` marker. This is the same pattern as `IsCageLaunch`, and it
-needs no build step.
+MEASURED 2026-11-10 (Linux 7.2.15 x86_64, tree 6365a923, loadavg 10-33, a
+scratch probe of this mechanism, D = 2.5s; the numbers are on the bead):
+
+- first exec of a new `#!` script, a copied `/bin/true`, a hook that `git
+  hook run` execs, a relative `./x`, and a script rewritten in place: each
+  +D once, then 1-11ms. `sh <path>`: 2ms. An old `/bin/true`: 5ms.
+- the 26 tests (28 rows across the three arms) that redded under the
+  content rewrite: 28 of 28 green, with 92 planted files still delayed
+  2.5s on their first exec.
+- `TestRunOnceDoesNotLockOnARead` with its `--warm` pre-flight removed:
+  red with its own fatal ("a read verb waited on a write lock held by
+  somebody else"). With the pre-flight it is green. This is the acceptance
+  this ADR set.
+- `bwrapgitrefslive_test.go` and `wallmechanism_qa_test.go` under the
+  filter: 19 pass, 1 skip, and the same skip appears without the door.
+  bwrap is not setuid on this host, so `no_new_privs` does not change it.
+
+**D3. Nothing inside the tested code changes** (amended). The door is a
+process around `go test`. No package variable, no `TestMain` arm and no
+shipped binary knows about it. The content-rewrite hook in `execwrite.go`,
+the shim arm in `herdr_test.go`'s `TestMain`, and
+`coldExecProtocolReason` are deleted once the supervisor is green. The
+old rule that the hook "applies only when the caller is a `_test.go`
+file" is dropped too. A shim that production code renders and a test then
+execs under a deadline is just as cold on darwin, so the door now reaches
+it. Reds that this produces are in the class.
 
 **D4. D = 2.5s.** That is above the measured darwin worst case (2.17s). A
 deadline that survives 2.5s of cold exec survives darwin. ASSUMED: the
 2.17s tail is the true worst. If darwin ever measures worse, raise D. It is
 one constant.
 
-**D5. Non-script plants are passed through and counted.** Content without
-`#!` (a copied binary) cannot be rewritten. The injector counts these and
-the run prints the count, so the gap is a number and not a silence.
-ASSUMED small: 124 of the 322 test call sites have `#!` in their literal
-text within three lines, and most of the rest pass a variable built from a
-script string. Slice 2 measures the real count.
+**D5. Coverage is defined on execs, not on writes** (amended). The
+original D5 passed plants without `#!` through and assumed there were few
+of them. MEASURED by ranger-base-kiwvn (2026-11-10, Linux, tree 10d046f9,
+D = 2.5s): 840 of 1711 plant events had no `#!`, which is 49%. Per arm
+that was 325/205/310 passed through against 346/108/417 rewritten. The
+interim fix for the 26 byte-subject reds then passed through another 199
+hook and shim plants in arms 1 and 2. Of the plants that were rewritten,
+212 of 262 in those two arms were ever exec'd. Nobody measured what the
+840 are. Under the amended D2 that question no longer matters: a copied
+binary that is exec'd is delayed, and one that is never exec'd costs
+nothing either way.
 
-**D6. The door is `make coldexec-check`**, with `RUN=<regex>`.
-Unfiltered, it runs internal/posse's three arms under injection and takes
-suite slots like `make test`. With `RUN=`, a bead that adds a planted
-fixture checks only its own tests, which takes seconds. It is not part of
-`tree-check` or `make test`. D adds up to 2.5s once per planted file, and
-the full run is priced in slice 2 before anyone proposes running it more
-often. Whether CI should run it is the operator's call, because it costs
-runner time.
+The door covers **every first `execve`, by any process under it, of an
+inode created after it started**. These are the edges it does not cover,
+each stated rather than left silent:
+
+- **Files older than the door**: the checkout and the toolchain. On CI's
+  macOS leg a fresh checkout's `scripts/` are new as well. That exposure
+  is not in this class, and the content rewrite did not cover it either.
+- **A process that installs its own seccomp listener under the door.**
+  MEASURED: `EBUSY`, because the kernel allows only one listener in a
+  filter chain. That process fails loudly, never silently. internal/posse
+  installs no listener, and the bwrap tests above pass.
+- **A kernel without user notification**, or an architecture the filter
+  does not name: the supervisor refuses to start. It never runs a suite
+  uncovered. Requires Linux 5.5 or later (`FLAG_CONTINUE`). The host runs
+  7.2.
+
+At its end the run prints the number of notifications and the number of
+cold execs it delayed. Zero delayed is a failed door, not a clean suite.
+
+**D6. The door is `make coldexec-check`**, with `RUN=<regex>`, as before.
+What changes is that each arm's command line runs inside the supervisor.
+`POSSE_COLD_EXEC_DELAY` now sets the supervisor's D. Suite slots, the
+`RUN=` filter and staying out of `tree-check` and `make test` are all
+unchanged. The supervisor wraps any `go test`, so cmd/posse and
+internal/treepins (ranger-base-in8dr) each become one Makefile line, with
+no injector of their own. Price: MEASURED for the content rewrite, +571.1s
+over the three arms (280.3s uninjected, 851.4s injected, 3.04x, loadavg
+4-11, ranger-base-kiwvn). ASSUMED to be at least that for the amended
+door, because it delays everything the rewrite did plus hooks, shims,
+production renders and binaries. The price is measured again when the
+door is rebuilt, before anyone proposes running it more often. Whether CI
+pays for it is still the operator's call.
 
 ## Consequences
 
 - The class stops depending on someone remembering it. Running the door
   turns the darwin tail into a deterministic red on Linux, with the fatal
   the test already prints.
-- Acceptance is measured against aru4c's census, which is the ground truth
-  this ADR has to reproduce without the two readings. Under injection,
-  `TestRunOnceDoesNotLockOnARead` with its pre-flight reverted must red,
-  and green with it. `TestProbeSessionExeRefusesWhatItCannotName` (300ms,
-  Herdr), the `ProbeOpts{Timeout: 2s}` sites, `watchpid_test.go`
+- Acceptance is still aru4c's census, and the amended door has reproduced
+  its two key rows (D2's MEASURED list). `TestProbeSessionExeRefusesWhatItCannotName`
+  (300ms, Herdr), the `ProbeOpts{Timeout: 2s}` sites, `watchpid_test.go`
   `liveProcess` (`sh script`) and every warmed helper (hangingBin,
-  hangingGit) must stay green.
-- The first full run will red some tests. Each red is either in the class
-  (fix it with a `--warm` pre-flight) or an injector artifact (fix the
-  injector). Both get recorded. A test that changes `$0`, or reads its own
-  line numbers, sees one extra line. That is an artifact, and the injector
-  is the place to fix it.
-- Exit hatch: the hook is one nil variable and the shim is one argv arm.
-  Delete both and nothing else changes. They hold no state outside a
-  temporary marker dir.
+  hangingGit) must stay green under it.
+- **The artifact class was a family, not a tail.** This ADR first said a
+  test that changes `$0` or reads its own line numbers "sees one extra
+  line". MEASURED by ranger-base-kiwvn: 28 red rows over 26 tests, and none
+  of them was in the class. All 26 had a planted file's own bytes as their
+  subject. 23 planted a git hook that posse certifies against its own
+  render, 2 planted a gate shim identified by a marker on line 2, and 1
+  compared a copy against the literal it planted. Any injector that
+  rewrites content is visible to every such test, so the amendment moves
+  the cost to where those tests cannot see it.
+- The first full run under the amended door will red some tests that the
+  content rewrite never reached: hooks, shims, production renders and
+  copied binaries exec'd under a deadline. Those reds are in the class. Fix
+  each with a `--warm` pre-flight, with both halves asserted.
+- Exit hatch: delete `cmd/coldexec` and the wrapper in the Makefile line.
+  It holds no state beyond an in-memory set of seen inodes. Nothing in
+  internal/posse refers to it.
 
 ## Alternatives rejected
 
+- **Keep the content rewrite and admit a second pass-through class**
+  (kiwvn's interim `coldExecProtocolReason`: pass a plant through when its
+  basename is a hook slot, its parent or grandparent dir is `hooks`, or a
+  shim marker is in its first two lines). It turns the run green by
+  removing every hook and shim fixture from the door. Those are exactly the
+  files git and posse exec on a commit. The rule is also a list of
+  protocol names that grows each time posse adds a protocol. With D5's 49%
+  on top, the door would have covered about half of what it claims. It
+  stays as the interim until the supervisor replaces it.
 - **A static matcher over duration literals near `WriteExecutable`.**
   aru4c's census is the measurement against it: 10 of 14 rows were
   undecidable. It either reds the runtimeprobe/watchpid family or misses
   the two sites that were actually wrong.
 - **A pin over the fixture helpers** (every plant goes through a
-  registered warming helper, or carries an exemption comment). This was
-  the bead's most promising static shape. Across 322 call sites, most of
-  them never timed, it becomes an exemption list whose entries are
-  comments. ADR 0006 §7 asks what process changes if such a pin is
-  deleted, and the answer is none: the comment would be the subject.
+  registered warming helper, or carries an exemption comment). Across 322
+  call sites, most of them never timed, it becomes an exemption list whose
+  entries are comments. ADR 0006 §7 asks what process changes if such a
+  pin is deleted, and the answer is none: the comment would be the subject.
 - **Prose only** (hangingBin's header plus the notes fragment). That is
   what held the class until now. It was rediscovered three times, and on
   Linux the darwin cost is now invisible to the people writing tests.
-- **The clever one: emulate Gatekeeper in the kernel.** Use fanotify
-  `FAN_OPEN_EXEC_PERM` to hold the first exec of each new file, or a
-  bubblewrap namespace with `/bin/sh` bound to a shim that reads
-  `AT_EXECFN` to tell a shebang exec from `sh <path>`. Both leave file
-  bytes untouched and catch compiled binaries. But fanotify permission
-  events need CAP_SYS_ADMIN in the initial namespace. The namespace shim is
-  Linux-only and replaces the shell every test uses, so it would be wrong
-  in more places than the problem it solves. Rewriting the shebang at the
-  one door costs a line of `$0` drift and the non-script gap (D5). Both
-  are counted.
+- **Hold the exec in the kernel by other means.** fanotify
+  `FAN_OPEN_EXEC_PERM` needs CAP_SYS_ADMIN in the initial namespace. A
+  bubblewrap namespace with `/bin/sh` bound to a shim replaces the shell
+  every test uses. ptrace stops on every syscall and conflicts with
+  anything else that traces. An `LD_PRELOAD` `execve` wrapper misses Go,
+  whose `os/exec` makes raw syscalls. The first version of this ADR
+  rejected "the kernel route" on the first two and never priced seccomp
+  user notification. That route needs only `no_new_privs`, leaves the bytes
+  alone and catches binaries, which are the three things that paragraph
+  wanted. It is now D2.
 - **Make `WriteExecutable` warm every plant by exec'ing it once.** Running
   arbitrary test fixtures for their side effects is not safe: half of them
   write marks, pid files or exit codes that the test then reads.
