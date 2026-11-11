@@ -130,23 +130,62 @@ each stated rather than left silent:
   does not name: the supervisor refuses to start. It never runs a suite
   uncovered. Requires Linux 5.5 or later (`FLAG_CONTINUE`). The host runs
   7.2.
-- **An ORPHANED descendant**, added here because it is now measured rather
-  than reasoned about (ranger-base-in8dr, 2026-11-11). Reading the path
+- **An ORPHANED descendant's execs — measured under ranger-base-in8dr,
+  CLOSED under ranger-base-orgvt, and at a stated price.** Reading the path
   argument needs `PTRACE_MODE_ATTACH` on the caller, which the supervisor
   has by being its ancestor; on a host with `yama/ptrace_scope=1`, which
-  this one is, an ancestor is the only thing that is allowed. A descendant
-  whose parent EXITED is reparented to init and leaves that reach, so its
-  execs read `unreadable` and a plant it execs is never delayed. MEASURED:
-  145 of the internal/treepins arm's 29744 notifications (134 unreadable,
-  11 gone), 0.49%, against 0 of cmd/posse's 8427 — the treepins holes
-  cluster in the suite-lock self-tests, which orphan holder processes on
-  purpose. Reproduced in isolation at D = 500ms with two identical fresh
-  plants: the child still in the tree is delayed, the orphan's is
-  unreadable. It is counted and named, never silently called old, which is
-  what D5's taxonomy is for. ranger-base-orgvt holds the candidate fix
-  (`PR_SET_CHILD_SUBREAPER` on the supervisor, so an orphan reparents to it
-  rather than to init) and will either land it with a pin or record the
-  refusal here.
+  this one is, an ancestor is the only thing allowed. A descendant whose
+  own parent EXITED was reparented past the supervisor and left that
+  reach, so its execs read `unreadable` and a plant it exec'd was never
+  delayed — the test that planted it was not covered at all, silently as
+  far as that test could tell. MEASURED 2026-11-11, Linux 7.2.15, over the
+  two arms in8dr added: 145 of the internal/treepins arm's 29744
+  notifications un-adjudicated (134 unreadable, 11 then called `gone`),
+  0.49%, against 0 of cmd/posse's 8427, whose tests do not orphan. In
+  treepins they cluster in the suite-lock self-tests, which orphan holder
+  processes on purpose. Of that 145, it is the **134 unreadable** that are
+  this edge: ranger-base-j0riv has since retired the `gone` verdict
+  altogether, so the other 11 were never this and are no longer counted as
+  holes by anything.
+
+  Not "reparented to init", which is what the open bullet said: MEASURED
+  here as `systemd --user`, pid 1140, because a systemd user session makes
+  itself a subreaper. Immaterial to the mechanism — either target is
+  outside the reach — but it is why the fix is the flag and not a check
+  against pid 1.
+
+  **The fix** is `prctl(PR_SET_CHILD_SUBREAPER, 1)` on the supervisor
+  before it forks: an orphan lands on the supervisor instead of past it,
+  so it stays a descendant and its execs are adjudicated like any other's.
+  MEASURED on the repro: the orphan's plant goes from 2-3ms and
+  `unreadable` to 504ms and `delayed`, with no holes left in the run.
+  `PR_SET_PTRACER` in the child was measured and REJECTED — the prctl
+  succeeds and changes nothing, because yama's exception is per-task and
+  does not reach the declaring process's descendants, so the orphan's own
+  child is refused exactly as before.
+
+  **Two prices, and neither was in the ASSUMED "one prctl" estimate.** The
+  flag makes the supervisor the parent of every orphan, so it is the only
+  process that can wait on one: without a reaper an orphan that exits
+  stays a zombie and answers `kill -0`, which is this tree's own liveness
+  predicate (`codextrust_test.go` reads ESRCH as "ended and reaped",
+  anything else as a leaked zombie). MEASURED with the prctl and no
+  reaper: 20 orphans leave 20 `Z (defunct)` children, and on the pin's
+  script the orphan's pid still answered `kill -0` ten seconds after it
+  exited. `reapOrphans` closes that, so liveness is unchanged.
+
+  What is NOT recoverable is parentage: **under the door an orphaned
+  descendant's ppid is the supervisor's and not 1**, so a test that plants
+  a real orphan and reads `Orphaned()` (`PPID == 1`) sees the door and not
+  itself. Nothing in the arms does that today — `orphancontrol_test.go` is
+  the one place that asserts ppid 1 on a planted orphan, and it runs only
+  inside `scripts/verify-orphan-report.sh`'s throwaway container, skipped
+  here — and `cmd/checkorphans` runs after the door has exited, so its
+  ppid-1 reading is untouched. So this bullet does not leave the edge
+  list, it changes halves: it stops being an exec the door fails to cover
+  and becomes the one thing the door CHANGES about the suite under it,
+  traded knowingly for 134 silent un-adjudicated execs. Pinned both halves
+  by `TestAnOrphanedDescendantsPlantPaysDAndLeavesNoZombie`.
 
 At its end the run prints the number of notifications and the number of
 cold execs it delayed. Zero delayed is a failed door, not a clean suite.

@@ -93,6 +93,10 @@ type doorRun struct {
 var (
 	reDelayed = regexp.MustCompile(`(\d+) cold first execs delayed`)
 	reElapsed = regexp.MustCompile(`ELAPSED (\S+) (\d+)ms`)
+	// ARM 14's two: the supervisor's own pid, as the supervised shell's
+	// ppid, and the ppid an orphaned descendant lands on.
+	reSupervisor = regexp.MustCompile(`SUPERVISOR (\d+)`)
+	reOrphanPPID = regexp.MustCompile(`ORPHAN PPID (\d+)`)
 )
 
 // runDoor runs the supervisor over `/bin/sh -c <script>` in a fresh
@@ -652,5 +656,116 @@ echo "CALLER EXIT $?"
 	if !strings.Contains(r.out, "CALLER EXIT 0") {
 		t.Errorf("the caller did not exit 0 — the signal ended it instead of restarting its "+
 			"execve, which is a different ending of the mechanism:\n%s", r.out)
+	}
+}
+
+// ARM 15: an ORPHANED descendant's plant pays D too, and the supervisor
+// still leaves no zombie behind. Both halves, because the fix has two
+// moving parts and each one on its own is a regression.
+//
+// THE HOLE. The door's ptrace reach is ancestry and nothing else: readPath
+// opens /proc/<pid>/mem, which needs PTRACE_MODE_ATTACH, which on a box
+// with yama/ptrace_scope=1 (this one) is granted to an ancestor and to
+// nobody else. A descendant whose own parent exited is reparented past the
+// supervisor — to pid 1, or on a systemd user session to `systemd --user`,
+// MEASURED here as ppid 1140 — and falls out of that reach. Its execs then
+// read `unreadable`, so a plant it execs is NEVER DELAYED and the test that
+// planted it is not covered at all, silently as far as that test can tell.
+// MEASURED 2026-11-11 (ranger-base-orgvt, Linux 7.2.15): 134 `permission
+// denied` in the internal/treepins arm's 29744 notifications, clustered in
+// the suite-lock self-tests, which orphan holder processes on purpose —
+// against none at all in cmd/posse's 8427, whose tests do not orphan. (The
+// bead reads 145 un-adjudicated; the other 11 were `gone`, retired as a
+// verdict by ARM 14's bead and not this edge.) On the repro below the
+// pre-fix door delays the kept child's plant and passes the orphan's
+// through at 2-3ms, with no line anywhere saying a plant went by.
+//
+// THE KEPT HALF IS NOT DECORATION. It is what tells this pin's red apart
+// from a door that has stopped delaying anything at all: a run where
+// neither child pays D is ARM 1's failure, and a run where only the orphan
+// does not is this one.
+//
+// THE ZOMBIE HALF. PR_SET_CHILD_SUBREAPER is what closes the hole, and on
+// its own it opens a visible one: being the subreaper makes the supervisor
+// the parent of every orphan, so an orphan that exits unwaited-on stays a
+// zombie — it answers `kill -0`, where under init it would have been reaped
+// and gone. That is not cosmetic here. `kill -0` is this tree's own
+// liveness predicate: codextrust_test.go reads ESRCH as "ended and reaped"
+// and anything else as a leaked zombie. MEASURED 2026-11-11 with the prctl
+// and no reaper, on this script: the orphan's plant is delayed 604ms AND
+// its pid still answers `kill -0` ten seconds after it exited. So
+// reapOrphans is pinned here beside the delay it pays for, and dropping
+// either one reds this and nothing else.
+//
+// THE HANDSHAKE, because the orphan cannot time this for itself. It has no
+// way to tell an initial ppid read taken BEFORE its parent exited from one
+// taken after — reparenting is fast and usually wins — so a loop waiting
+// for that ppid to change either breaks at once or never breaks, and the
+// first draft of this pin spent 10s of every run in the second case. The
+// main shell is the process that knows: the kernel reparents in
+// `exit_notify`, before the exiting parent can be reaped, so by the time
+// `wait` has returned the orphan is already somebody else's child. The
+// `reparented` file is that `wait` returning, and the orphan reads its
+// ppid once, after it.
+//
+// What the pin does NOT assert is the orphan's ppid being 1, because under
+// the door it is the supervisor's — the mechanism, and doc.go's one new
+// stated edge. It asserts the opposite, as the witness that the arm is set
+// up: an orphan whose ppid is the supervisor really was reparented away
+// from the shell that forked it and really did land inside the reach.
+func TestAnOrphanedDescendantsPlantPaysDAndLeavesNoZombie(t *testing.T) {
+	t.Parallel()
+	r := runDoor(t, `read _p _c _s SUP _rest < /proc/$$/stat
+echo "SUPERVISOR $SUP"
+printf '#!/bin/sh\necho kept ran\n' > kept.sh; chmod +x kept.sh
+printf '#!/bin/sh\necho orphan ran\n' > orph.sh; chmod +x orph.sh
+tm kept ./kept.sh
+( /bin/sh -c 'echo $$ > orphan.pid
+i=0; while [ ! -f reparented ] && [ $i -lt 400 ]; do sleep 0.05; i=$((i+1)); done
+read _p _c _s pp _r < /proc/$$/stat
+echo "ORPHAN PPID $pp"
+s=$(date +%s%N); ./orph.sh; e=$(date +%s%N); echo "ELAPSED orphan $(( (e-s)/1000000 ))ms"
+: > orphan.done' & ) &
+wait
+: > reparented
+i=0; while [ ! -f orphan.done ] && [ $i -lt 300 ]; do sleep 0.1; i=$((i+1)); done
+p=$(cat orphan.pid)
+i=0; while kill -0 "$p" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+kill -0 "$p" 2>/dev/null && echo "ORPHAN $p STILL ANSWERS kill -0" || echo "ORPHAN $p IS GONE"
+`)
+	r.wantCode(t, 0)
+
+	// The arm is set up: the orphan outlived the shell that forked it and
+	// was reparented onto the supervisor, which is the whole mechanism. A
+	// run where this does not hold measures nothing below it.
+	sup := reSupervisor.FindStringSubmatch(r.out)
+	opp := reOrphanPPID.FindStringSubmatch(r.out)
+	if sup == nil || opp == nil {
+		t.Fatalf("the run did not print both the supervisor's pid and the orphan's ppid, so the arm is not set up:\n%s", r.out)
+	}
+	if sup[1] != opp[1] {
+		t.Fatalf("the orphan's ppid is %s and the supervisor is %s — it was reparented somewhere else "+
+			"(pid 1, or `systemd --user`), so PR_SET_CHILD_SUBREAPER is not in effect and the arm "+
+			"measures the pre-fix door:\n%s", opp[1], sup[1], r.out)
+	}
+
+	// Both plants pay D, and the orphan's is the one this pin exists for.
+	r.wantDelayed(t, 2)
+	r.cold(t, "kept")
+	r.cold(t, "orphan")
+	r.wantNoHoles(t)
+	if !strings.Contains(r.out, "kept ran") || !strings.Contains(r.out, "orphan ran") {
+		t.Errorf("one of the two plants did not run, so one of the delays above was somebody else's:\n%s", r.out)
+	}
+
+	// And the supervisor waited on the orphan it adopted.
+	if !strings.Contains(r.out, "IS GONE") {
+		t.Errorf("the orphan's pid still answered `kill -0` after it exited — the supervisor adopted it "+
+			"and never reaped it, so every orphan under the door is a zombie and `kill -0` stops "+
+			"meaning what this tree reads it to mean:\n%s", r.out)
+	}
+	if !regexp.MustCompile(`\d+ orphaned descendants were reparented onto this process and reaped`).MatchString(r.out) {
+		t.Errorf("the report does not account for the orphan it reaped, so a real arm has no witness that "+
+			"the subreaper arm fired at all:\n%s", r.out)
 	}
 }

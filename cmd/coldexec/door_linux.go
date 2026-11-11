@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -68,6 +69,12 @@ type door struct {
 	seen map[inode]bool
 
 	notifs atomic.Int64
+	// reaped counts the orphaned descendants the supervisor waited on. It
+	// is the subreaper arm's only witness in a real run: before
+	// ranger-base-orgvt those processes were reparented away and their
+	// execs read `unreadable`, so a non-zero count here is the hole that
+	// is no longer there.
+	reaped atomic.Int64
 	// Every notification lands on exactly one verdict, and the ones that
 	// mean "this exec was not covered" are printed at the end rather than
 	// left silent: a door that has stopped being able to read its targets
@@ -208,6 +215,40 @@ func supervise(d time.Duration, verbose bool, argv []string) int {
 	// environment for a child whose Env is nil.
 	consumeDelayEnv()
 
+	// THE DOOR'S REACH IS ANCESTRY (readPath). On a box with
+	// yama/ptrace_scope=1 the supervisor may read a descendant's memory
+	// because it is its ancestor and for no other reason, so a descendant
+	// REPARENTED away — its own parent exited — falls out of reach, and
+	// its execs are un-adjudicated. MEASURED 2026-11-11 (ranger-base-orgvt,
+	// Linux 7.2.15, ptrace_scope=1): 134 `/proc/<pid>/mem: permission
+	// denied` in the internal/treepins arm's 29744 notifications,
+	// clustered in the suite-lock self-tests, which orphan holder
+	// processes on purpose — against none at all in cmd/posse's 8427,
+	// whose tests do not orphan. A plant such a process execs is never
+	// delayed and the test that planted it is not covered at all. (The
+	// bead reads 145; the other 11 were `gone`, which ranger-base-j0riv
+	// has since retired as a verdict and as a hole.)
+	//
+	// PR_SET_CHILD_SUBREAPER closes it: an orphaned descendant is
+	// reparented to THIS process rather than past it, so it stays inside
+	// the ptrace reach and its execs are adjudicated like any other's.
+	// MEASURED the same day on the repro the bead carries: the orphan's
+	// plant goes from 3ms and `unreadable` to 504ms and `delayed`, with no
+	// holes left in the run.
+	//
+	// It is per-process (signal_struct), so no locked thread, and it is
+	// NOT inherited as `is_child_subreaper` by the children — only the
+	// hint that one exists above them — so every orphan below lands here
+	// and not on an intermediate shell.
+	//
+	// REFUSED and not warned about: the flag is the difference between a
+	// covered run and a run with silent holes in it, and ADR 0085 D5 is
+	// that the door never runs a suite uncovered.
+	if err := unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0); err != nil {
+		refuse("PR_SET_CHILD_SUBREAPER: %v — without it an orphaned descendant is reparented "+
+			"out of this process's ptrace reach and its execs go un-adjudicated (ADR 0085 D5)", err)
+	}
+
 	dr := &door{delay: d, verbose: verbose, seen: map[inode]bool{}}
 	// THE EPOCH, and it is here: after this line every file the run creates
 	// is a plant, and every file it does not is the checkout, the toolchain
@@ -217,6 +258,9 @@ func supervise(d time.Duration, verbose bool, argv []string) int {
 		refuse("starting the supervised child: %v", err)
 	}
 	kid.Close()
+	// The other half of the prctl, and it starts before the first
+	// notification is read: see reapOrphans.
+	go dr.reapOrphans(cmd.Process.Pid)
 
 	lis, err := recvListener(sp[0])
 	unix.Close(sp[0])
@@ -278,6 +322,10 @@ func (d *door) report(delay time.Duration) {
 	if total > 0 {
 		fmt.Fprintf(os.Stderr, "coldexec: %d execs went un-adjudicated (%s) — those were NOT covered; "+
 			"-verbose names each one\n", total, strings.Join(parts, ", "))
+	}
+	if n := d.reaped.Load(); n > 0 {
+		fmt.Fprintf(os.Stderr, "coldexec: %d orphaned descendants were reparented onto this process and reaped "+
+			"— their execs were adjudicated, which before ranger-base-orgvt they were not\n", n)
 	}
 }
 
@@ -550,9 +598,23 @@ func (d *door) answer(n *seccompNotif, pending verdict, pendingTarget string) {
 // It needs PTRACE_MODE_ATTACH on the target, which this process has because
 // it is its ancestor — and that is the one thing it is: on a box with
 // yama/ptrace_scope=1 (this one) an ancestor is allowed and an unrelated
-// process is not, so a descendant that was REPARENTED away (its parent
-// died) can fall out of reach. Those are counted as unread, named in the
-// report, and never silently treated as old.
+// process is not. A descendant REPARENTED away when its own parent died
+// used to fall out of that reach, which is the hole ranger-base-orgvt
+// closed with PR_SET_CHILD_SUBREAPER in supervise: the orphan lands on the
+// supervisor instead of past it, so it stays a descendant and its execs
+// are adjudicated like any other's. MEASURED 2026-11-11, Linux 7.2.15:
+// before the flag, 134 of the internal/treepins arm's 29744 notifications
+// were `permission denied` and nothing in cmd/posse's 8427 was; on the
+// repro the orphan's plant went from 2-3ms and `unreadable` to 504ms and
+// `delayed`.
+//
+// PR_SET_PTRACER in the child is NOT the fix, and was MEASURED not to be
+// (same day, same box): the prctl succeeds, and yama's exception is still
+// per-task — it does not extend to the declaring process's descendants, so
+// an orphan's own child is refused exactly as before, 5 unreadable of 5.
+//
+// Whatever is still unread is counted, named in the report, and never
+// silently treated as old.
 func readPath(pid int, addr uint64) (string, error) {
 	f, err := os.Open(fmt.Sprintf("/proc/%d/mem", pid))
 	if err != nil {
@@ -587,6 +649,110 @@ func ioctlPtr(fd int, req uint, arg unsafe.Pointer) error {
 		return errno
 	}
 	return nil
+}
+
+// reapTick is how often the supervisor looks for orphans to wait on.
+//
+// A POLL AND NOT A SIGCHLD HANDLER, and the reason is the skip rather than
+// the signal: the supervised child's status belongs to os/exec, and the
+// only way to leave it there is to name the pids to wait on one at a time,
+// which a scan can do and `wait4(-1)` cannot. SIGCHLD would tell us WHEN
+// without telling us WHO.
+//
+// How much that skip is worth was MEASURED and it is less than it looks:
+// removing it — reaping the supervised child too — left ARM 9 (the
+// command's own exit code reaching `make`) and ARM 15 green. os/exec is
+// already blocked in its own wait when the child exits, so the window in
+// which a tick could take that status first is microseconds wide and did
+// not open in any run here. It is kept anyway, and it is a guard and not a
+// pinned behaviour: the door's exit code should not rest on os/exec
+// winning a race nothing told it about.
+//
+// 200ms against a D of 2.5s: the window in which a finished orphan is
+// visible as a zombie is a fraction of what the door already adds, and the
+// scan below is a handful of reads of /proc/self.
+const reapTick = 200 * time.Millisecond
+
+// reapOrphans is the other half of PR_SET_CHILD_SUBREAPER, and it is not
+// housekeeping: without it the flag would trade a silent coverage hole for
+// a VISIBLE change in what the suite under the door can observe about
+// itself.
+//
+// Being the subreaper makes this process the parent of every orphaned
+// descendant, which makes it the only process that can wait on one. An
+// orphan that exits unwaited-on is a zombie — it answers `kill -0`, it
+// holds a pid, and it shows in `ps` — where under init it would have been
+// reaped and gone. That matters here because `kill -0` is this tree's own
+// liveness predicate: internal/posse/codextrust_test.go reads ESRCH as
+// "ended and reaped" and anything else as a leaked zombie, and
+// queuecutover's guard is the same call. A door that turned those reads
+// around would red tests whose code is fine, which is the failure ADR 0085
+// D1 is written against.
+//
+// It skips the supervised child, whose status belongs to os/exec — a
+// guard, and reapTick says how narrow the race behind it measured.
+//
+// WHAT IT CANNOT RESTORE is the orphan's ppid, and that is a stated edge
+// rather than a bug — see doc.go's "WHAT IT DOES NOT COVER".
+func (d *door) reapOrphans(childPid int) {
+	t := time.NewTicker(reapTick)
+	defer t.Stop()
+	for range t.C {
+		for _, pid := range ourChildren() {
+			if pid == childPid {
+				continue
+			}
+			var ws unix.WaitStatus
+			for {
+				got, err := unix.Wait4(pid, &ws, unix.WNOHANG, nil)
+				if err == unix.EINTR {
+					continue
+				}
+				// got == 0 is "still running", which is every tick until
+				// it is not. An error is a pid that is not ours any more.
+				if err == nil && got == pid {
+					d.reaped.Add(1)
+				}
+				break
+			}
+		}
+	}
+}
+
+// ourChildren lists this process's children, and `children` is a per-TASK
+// file, so it reads every thread of it rather than one.
+//
+// Not because the orphans were measured landing on more than one: the
+// kernel reparents onto whichever alive thread of the subreaper
+// find_new_reaper() picks, which it finds by walking the thread group from
+// its leader, and the leader of a Go process is the main thread and does
+// not exit while the process lives. MEASURED 2026-11-11 (ranger-base-orgvt,
+// six orphans in one run): 6 of 6 landed on the group leader. The all-task
+// glob is here because it is the read that does not DEPEND on that, at the
+// cost of a handful of extra reads of /proc/self — and nothing pins the
+// difference, so it is a belt and not a claim.
+//
+// Reading /proc rather than keeping a set of our own, because the whole
+// point is the children this process never started.
+func ourChildren() []int {
+	tasks, err := filepath.Glob("/proc/self/task/*/children")
+	if err != nil {
+		return nil
+	}
+	var out []int
+	for _, t := range tasks {
+		// A thread that exits between the glob and the read is ordinary.
+		b, err := os.ReadFile(t)
+		if err != nil {
+			continue
+		}
+		for _, f := range strings.Fields(string(b)) {
+			if pid, err := strconv.Atoi(f); err == nil {
+				out = append(out, pid)
+			}
+		}
+	}
+	return out
 }
 
 // wait reaps the supervised command and answers the exit code to forward:

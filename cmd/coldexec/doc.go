@@ -40,9 +40,14 @@
 //
 // THE MECHANISM, end to end:
 //
-//   - the parent socketpairs, then re-execs itself as `coldexec -child --
-//     <argv…>` with that socket on fd 3. The door starts at that moment:
-//     "a plant" means an inode whose ctime is later than this.
+//   - the parent makes itself a child subreaper, socketpairs, then re-execs
+//     itself as `coldexec -child -- <argv…>` with that socket on fd 3. The
+//     door starts at that moment: "a plant" means an inode whose ctime is
+//     later than this. The subreaper flag is what keeps a descendant whose
+//     own parent exited inside the supervisor's ptrace reach instead of
+//     reparented past it — see door_linux.go's readPath — and it makes the
+//     supervisor the process that has to wait on those orphans, which
+//     reapOrphans does.
 //   - the child locks its OS thread, sets PR_SET_NO_NEW_PRIVS, and installs
 //     a seccomp filter with SECCOMP_FILTER_FLAG_NEW_LISTENER that answers
 //     SECCOMP_RET_USER_NOTIF for execve and execveat and ALLOW for
@@ -75,6 +80,21 @@
 // 64-bit kernel, whose arch the filter does not name and whose execs are
 // ALLOWed untouched; and a kernel or an architecture it does not know, where
 // it refuses to start rather than run a suite uncovered.
+//
+// And one thing it CHANGES rather than fails to cover, which is the price
+// of covering orphaned descendants at all: under the door an orphaned
+// descendant's ppid is the supervisor's and not 1. A test that plants a
+// real orphan and reads its parentage back — `Orphaned()` in internal/posse
+// is `PPID == 1` — would see the door and not itself. Nothing in the arms
+// does that today: orphancontrol_test.go is the one place that asserts
+// ppid 1 on a planted orphan, and it runs only inside
+// scripts/verify-orphan-report.sh's throwaway container, skipped here; and
+// `go run ./cmd/checkorphans` runs after the door has exited, so its
+// ppid-1 reading is untouched. The alternative was leaving those execs
+// un-adjudicated and silent, which is what ADR 0085 D1 is written against.
+// What the door does NOT change is liveness: reapOrphans waits on every
+// orphan it adopts, so `kill -0` answers ESRCH once it is gone, exactly as
+// it would have under init.
 //
 // At the end it prints the notifications it took and the cold execs it
 // delayed. ZERO DELAYED IS A FAILED DOOR, not a clean suite, and it exits 3.
