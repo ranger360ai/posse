@@ -141,6 +141,21 @@ stall that day, and every one of them a typing habit.
   is never that — personas write a `docs/notes.d/<bead-id>.md` fragment
   instead, or edit NOTES.md from a worktree (see NOTES.md, "The shared
   working tree").
+- **A public commit message or notes fragment may describe the hole its fix
+  CLOSES; a hole still OPEN is named by bead id and nothing else** (operator
+  ruling 2026-11-11). This repo is public and the bead graph is not. What a
+  fix shuts is shut, and saying so is how a reader knows why the code
+  changed — but a residual still open under a `vuln-private` bead gets its
+  id alone: no description, no path, no mechanism, no reproduction, until
+  that residual's own fix lands. Keep the "Not closed here" section; write
+  it as a bare `- ranger-base-xxxxx` and leave the detail on the bead, where
+  the audience is already the right one. WHY: on 2026-11-11 three sandbox
+  fixes landed with that section describing the next hole, so each was held
+  back from publication and the hold never converged — a tree that publishes
+  its open holes cannot be published until every one of them is closed, and
+  the next fix's section names the one after it. This is ADR 0024 D1's
+  "when in doubt, instance" at the one place its genre arm already reads
+  public: the fix is public work, the unfixed hole is not.
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.

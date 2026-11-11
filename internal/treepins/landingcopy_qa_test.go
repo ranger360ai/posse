@@ -297,6 +297,10 @@ var landingDropRegister = []landingDrop{
 		why:   "the docs/notes.d convention and this repo's own commit census — neither exists in a fresh work repo",
 	},
 	{
+		match: "a hole still OPEN is named by bead id",
+		why:   "the rule exists because THIS repo is public while the bead graph it is worked from is a private store — a fresh work repo has neither that split, nor a `vuln-private` label to key it on, nor any claim that its own tree is published at all (operator ruling 2026-11-11, ranger-base-lcuec)",
+	},
+	{
 		match: "background process actually died",
 		why:   "ends in `go run ./cmd/checkorphans`, a command that lives only in this repo",
 	},
