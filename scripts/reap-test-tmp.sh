@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # reap-test-tmp.sh — collect the scratch dirs a killed run left behind in a
 # shared /tmp (ranger-base-32bdv; widened to every leak class by
-# ranger-base-y9t65).
+# ranger-base-y9t65, which refused one — the harness's per-session
+# scratchpads — and ranger-base-4arlo, which measured a gate that reaches
+# them and took it).
 #
 # WHY THIS EXISTS. On this box /tmp is a 14G tmpfs mounted usrquota with
 # nr_inodes=1048576, and every seat is uid posse — one box-wide budget for
@@ -24,6 +26,12 @@
 #       scripts/reap-test-tmp.sh --bead-repo DIR        where to file it
 #       scripts/reap-test-tmp.sh --no-bead       never file one
 #       scripts/reap-test-tmp.sh --quiet         totals only, no per-dir list
+#       scripts/reap-test-tmp.sh --claude-sessions DIR  the harness's live
+#                                                session registry (default
+#                                                ~/.claude/sessions)
+#       scripts/reap-test-tmp.sh --claude-projects DIR  the harness's session
+#                                                transcripts (default
+#                                                ~/.claude/projects)
 #
 # ─── WHAT IT TAKES, AND WHY EACH CLASS HAS ITS OWN GRACE ────────────────────
 #
@@ -73,6 +81,13 @@
 #                                                for the compile-only case.
 #   go-testtmp      Test*[0-9]           120m    t.TempDir() with TMPDIR=/tmp.
 #                                                Bounded by the same -timeout.
+#   claude-scratch  claude-<uid>/        1440m    the harness's PER-SESSION
+#                     <slug>/<uuid>               scratchpad, two levels down
+#                                                 from a root we do not own, and
+#                                                 the only class gated on
+#                                                 something other than /proc and
+#                                                 mtime. The next section is the
+#                                                 whole of it.
 #   mktemp          tmp.??????????      1440m    mktemp(1)'s DEFAULT template,
 #                                                and therefore a namespace we
 #                                                do NOT own: an operator's
@@ -83,22 +98,84 @@
 #                                                arm drops.
 #
 # WHAT IT WILL NOT TAKE, AND WHY (ranger-base-y9t65):
-#   - /tmp/claude-1001/..., the harness's per-session scratchpad root, which
-#     was MEASURED 2026-11-11 at 44826 inodes — 43% of everything /tmp was
-#     holding, the single biggest item on the filesystem. Neither gate can
-#     reach it. A Claude Code SESSION is not a process: it sits idle between
-#     turns with nothing on this box referencing its dir, and its mtime does
-#     not move while it waits, so a dormant live session and a dead one read
-#     identically. It is also the harness's directory and not posse's —
-#     nothing here knows which session ids are live. Reclaiming it needs a
-#     liveness signal from the harness side (the session's own transcript
-#     under ~/.claude/projects is one candidate), which is ranger-base-4arlo.
 #   - /tmp/node-compile-cache, which is a CACHE with a stable name, not a
 #     leak. It regenerates, it does not accumulate, and taking it buys an
 #     inode table nothing and costs a recompile.
 #   - anything not owned by this uid. `find -uid` is on every candidate
 #     walk, which is what keeps the generic `tmp.*` namespace from reaching
 #     root's or another user's dirs.
+#
+# ─── THE HARNESS SCRATCHPADS, AND THE GATE THEY NEEDED (ranger-base-4arlo) ──
+#
+# ranger-base-y9t65 refused this class and handed it on, because NEITHER of
+# the two gates above can reach it and both fail in the UNSAFE direction.
+# MEASURED 2026-11-11, both halves:
+#
+#   - A Claude Code SESSION is not a process in the sense the holder scan
+#     means. A live session mid-turn names its own scratchpad in no environ,
+#     no argv, no cwd and no fd of ANY process on this box — the path is the
+#     harness's, not the shell's. Sweeping every /proc entry for one session's
+#     own scratchpad path, from inside that session mid-turn, returned exactly
+#     one hit: the sweeping grep's own argv.
+#   - And the dir's mtime is set when the session starts and never moves
+#     again. The operator's own seat (session 7a2a9b8e) read 15h stale while
+#     its transcript had been written to inside the hour. That is a dir BOTH
+#     gates call collectable while a person is typing into it.
+#
+# WHAT DOES WORK IS THE HARNESS'S OWN REGISTRY. ~/.claude/sessions/<pid>.json
+# holds {"pid", "sessionId", "procStart", "status", ...}, one file per LIVE
+# session, and the scratchpad path carries that same sessionId as its last
+# component. MEASURED on this box: 11 registry files, 11 live `claude`
+# processes, the SAME 11 pids — no stale entry and no live session missing, so
+# the harness removes the file at exit. `procStart` is /proc/<pid>/stat's
+# field 22 (starttime), verified on 2 of 2, which is what makes pid reuse
+# harmless rather than a hazard. 138 scratchpad dirs existed for those 11 live
+# sessions; the other 127 were dead sessions' leavings.
+#
+# So a dir in this class is held by THREE things, any one of which keeps it:
+#   - the /proc scan, as every class is — here it catches a NESTED session
+#     whose cwd is inside another session's scratchpad, which this box makes
+#     (the `-tmp-claude-1001-...` slugs are exactly that);
+#   - the live registry: its uuid is the sessionId of a
+#     ~/.claude/sessions/<pid>.json whose /proc/<pid> is alive AND whose
+#     starttime still matches;
+#   - its own transcript, ~/.claude/projects/<slug>/<uuid>.jsonl, whose mtime
+#     moves on EVERY turn. The dir and the transcript must BOTH be older than
+#     the grace.
+# A MISSING transcript is not a death certificate and never collects the dir.
+# MEASURED: all 11 live sessions had one, so "no transcript" never means
+# "live" — but it does not mean dead either, and the 11 dirs here that had
+# none were 2-3 inodes each, which is not worth a rule that guesses.
+#
+# IT HAS ITS OWN BLINDNESS CONTROL, for the reason the /proc scan has one: a
+# registry the sweep cannot read reads as "nothing is live", which is the
+# unsafe answer. If live `claude` processes exist and the registry names none
+# of them, THIS CLASS refuses by name and the rest of the sweep goes on.
+#
+# THE GRACE IS 24h for the same reason mktemp's is — it is not our namespace.
+# A posse-dispatched session never returns once its process is gone: a resume
+# types into the LIVE composer and a dead pane is relaunched as a new session
+# with a new uuid, so for the dispatched majority the registry alone would do.
+# What 24h buys is the operator's hand-typed `claude --resume`, which DOES
+# reuse the uuid and therefore the scratchpad path: MEASURED over 130
+# transcripts, not one held a second sessionId, and the longest gap between
+# consecutive entries inside one was 1.5h. The pressure arm drops this to 60m
+# with every other class, which is the right shape — under pressure the
+# registry is doing the work and the grace is only insurance.
+#
+# WHAT IT STILL WILL NOT TAKE, and this one is a hole with a name: a dir whose
+# transcript the harness has aged out (its own retention, 30 days by default)
+# has no signal left and becomes permanently uncollectable. /tmp is a tmpfs
+# here, so a reboot is the collector of last resort for those.
+#
+# WHAT IT RECLAIMS. MEASURED 2026-11-11 against the live /tmp, 138 session
+# dirs, 125308 inodes on the filesystem:
+#
+#   grace   dirs   inodes   % of the inode table
+#     4h      98    48983   39.1
+#     8h      79    17011   13.6
+#    12h      53    13717   10.9
+#    24h      39    11506    9.2
 #
 # ─── THE BLINDNESS CONTROL ──────────────────────────────────────────────────
 #
@@ -136,6 +213,8 @@ set -euo pipefail
 
 self=$(basename "$0")
 apply=0 min_age="" roots=() want_classes=() quiet=0
+claude_sessions="${HOME:-/nonexistent}/.claude/sessions"
+claude_projects="${HOME:-/nonexistent}/.claude/projects"
 pressure_at=70 pressure_min_age=60 bead_at=85 bead_repo="" no_bead=0 bead_cooldown=24
 
 die2() { echo "$self: $*" >&2; exit 2; }
@@ -153,6 +232,8 @@ while [ $# -gt 0 ]; do
     --bead-repo)        bead_repo="${2:?--bead-repo needs a directory}"; shift 2 ;;
     --bead-cooldown)    bead_cooldown="${2:?--bead-cooldown needs hours}"; shift 2 ;;
     --no-bead)          no_bead=1; shift ;;
+    --claude-sessions)  claude_sessions="${2:?--claude-sessions needs a directory}"; shift 2 ;;
+    --claude-projects)  claude_projects="${2:?--claude-projects needs a directory}"; shift 2 ;;
     -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
     *) die2 "unknown argument: $1" ;;
   esac
@@ -176,14 +257,41 @@ done
 [ -d /proc/self ] || die2 "no /proc — this reads process state and will not guess without it"
 
 # ─── the class table ────────────────────────────────────────────────────────
-# name|glob|grace in minutes. Order matters only for reporting: a dir that
-# two classes both match (posse-testhome-* is also posse-*) is reported under
-# the first that accepts it, and the union is what gets removed.
-class_table='posse-testhome|posse-testhome-*|60
-posse-scratch|posse-*|120
-go-build|go-build[0-9]*|120
-go-testtmp|Test*[0-9]|120
-mktemp|tmp.??????????|1440'
+# name|glob|grace in minutes|depth. Order matters only for reporting: a dir
+# that two classes both match (posse-testhome-* is also posse-*) is reported
+# under the first that accepts it, and the union is what gets removed.
+#
+# DEPTH is how far below a root the candidate sits, and every class but one is
+# 1. claude-scratch is 3 because the thing a session owns is
+# <root>/claude-<uid>/<slug>/<session-uuid> and the two dirs above it are
+# shared — taking claude-<uid> itself would take every live session on the box.
+# At depth 1 the glob is matched against the NAME; deeper it is matched against
+# the path below the root, so a `*` there spans one component only because
+# -mindepth/-maxdepth pin it.
+class_table='posse-testhome|posse-testhome-*|60|1
+posse-scratch|posse-*|120|1
+go-build|go-build[0-9]*|120|1
+go-testtmp|Test*[0-9]|120|1
+mktemp|tmp.??????????|1440|1
+claude-scratch|claude-[0-9]*/*/*|1440|3'
+
+# EVERY CLASS BUT ONE HAS THE IDENTITY FILTER. claude-scratch's extra gate is
+# the session's own transcript, ~/.claude/projects/<slug>/<uuid>.jsonl, whose
+# mtime moves on every turn while the dir's does not: the dir AND the
+# transcript must both be past the grace. A transcript that is missing is no
+# signal at all and therefore keeps the dir — never collects it.
+class_filter() {
+  local cname="$1" grace="$2" d slug uuid tx
+  if [ "$cname" != claude-scratch ]; then cat; return 0; fi
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    uuid=$(basename "$d"); slug=$(basename "$(dirname "$d")")
+    tx="$claude_projects/$slug/$uuid.jsonl"
+    [ -f "$tx" ] || continue
+    [ -n "$(find "$tx" -maxdepth 0 -mmin "+$grace" -print 2>/dev/null)" ] || continue
+    printf '%s\n' "$d"
+  done
+}
 
 if [ ${#want_classes[@]} -gt 0 ]; then
   for c in "${want_classes[@]}"; do
@@ -247,24 +355,41 @@ rawrefs=$(
   done 2>/dev/null | grep -oE '/[^[:space:]:,="'"'"']+' | sort -u
 ) || true
 
-held=$(mktemp); stale=$(mktemp); rootlist=$(mktemp)
-trap 'rm -f "$held" "$stale" "$rootlist"' EXIT
+held=$(mktemp); held3=$(mktemp); stale=$(mktemp); rootlist=$(mktemp)
+livedirs=$(mktemp)
+trap 'rm -f "$held" "$held3" "$stale" "$rootlist" "$livedirs"' EXIT
 
 printf '%s\n' "${roots[@]}" > "$rootlist"
-printf '%s\n' "$rawrefs" | awk -v rootfile="$rootlist" '
-  BEGIN { n = 0; while ((getline line < rootfile) > 0) if (line != "") R[++n] = line }
-  {
-    for (i = 1; i <= n; i++) {
-      r = R[i]
-      if (index($0, r "/") == 1) {
-        rest = substr($0, length(r) + 2)
-        s = index(rest, "/")
-        if (s > 0) rest = substr(rest, 1, s - 1)
-        if (rest != "") print r "/" rest
-        break
+
+# Folded once per DEPTH the class table uses. A ref deeper than the depth
+# folds up to it; a ref SHALLOWER than it holds nothing at that depth, which
+# is the whole reason claude-scratch needed its own fold: every seat that is
+# working puts /tmp/claude-<uid> in the depth-1 held set, and at depth 1 that
+# one entry would protect every session on the box, live and dead alike. It is
+# why y9t65's run reported the root as HELD and reclaimed none of it.
+fold_refs() {  # $1 = depth, $2 = outfile
+  printf '%s\n' "$rawrefs" | awk -v rootfile="$rootlist" -v d="$1" '
+    BEGIN { n = 0; while ((getline line < rootfile) > 0) if (line != "") R[++n] = line }
+    {
+      for (i = 1; i <= n; i++) {
+        r = R[i]
+        if (index($0, r "/") == 1) {
+          rest = substr($0, length(r) + 2)
+          m = split(rest, part, "/")
+          if (m < d) break
+          p = r
+          for (j = 1; j <= d; j++) {
+            if (part[j] == "") { p = ""; break }
+            p = p "/" part[j]
+          }
+          if (p != "") print p
+          break
+        }
       }
-    }
-  }' | sort -u > "$held"
+    }' | sort -u > "$2"
+}
+fold_refs 1 "$held"
+fold_refs 3 "$held3"
 
 # ─── the blindness control ──────────────────────────────────────────────────
 me=$(id -u) others=0 readable=0
@@ -282,28 +407,90 @@ if [ "$readable" -eq 0 ] && [ "$others" -gt 0 ]; then
   exit 3
 fi
 
+# ─── the harness's live-session registry, and its own blindness control ─────
+# Only class claude-scratch reads this. One file per LIVE session, removed at
+# exit; `procStart` is /proc/<pid>/stat's starttime, so a recycled pid cannot
+# impersonate a session that is gone. A live session's dir is added to the
+# depth-3 held set beside the /proc refs.
+#
+# THE PROCESS COUNT IS READ FIRST ON PURPOSE. A session that exits between the
+# two reads is counted as a process and not as a live session, which can only
+# ever push this toward REFUSING; a session that starts between them has a
+# registry file and no count, which cannot make the class take anything it
+# otherwise would not. The other direction would hand the sweep a window where
+# the registry reads empty and the class believes it.
+claude_blind=0 claude_live=0 claude_procs=0
+for pid in /proc/[0-9]*; do
+  case "$(readlink "$pid/exe" 2>/dev/null)" in */claude) claude_procs=$((claude_procs + 1)) ;; esac
+done
+: > "$livedirs"
+if [ -d "$claude_sessions" ]; then
+  for f in "$claude_sessions"/*.json; do
+    [ -f "$f" ] || continue
+    rpid=$(sed -nE 's/.*"pid"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$f" | head -1)
+    rsid=$(sed -nE 's/.*"sessionId"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$f" | head -1)
+    rstart=$(sed -nE 's/.*"procStart"[[:space:]]*:[[:space:]]*"?([0-9]+)"?.*/\1/p' "$f" | head -1)
+    [ -n "$rpid" ] && [ -n "$rsid" ] || continue
+    [ -d "/proc/$rpid" ] || continue
+    if [ -n "$rstart" ]; then
+      nowstart=$(sed -E 's/.*\) //' "/proc/$rpid/stat" 2>/dev/null | awk '{print $20}')
+      [ "$nowstart" = "$rstart" ] || continue
+    fi
+    claude_live=$((claude_live + 1))
+    for root in "${roots[@]}"; do
+      for sd in "$root"/claude-[0-9]*/*/"$rsid"; do
+        [ -d "$sd" ] && printf '%s\n' "$sd" >> "$livedirs"
+      done
+    done
+  done
+fi
+if [ "$claude_procs" -gt 0 ] && [ "$claude_live" -eq 0 ]; then claude_blind=1; fi
+echo "harness registry: $claude_live live sessions in $claude_sessions   live claude processes: $claude_procs"
+sort -u "$livedirs" "$held3" -o "$held3"
+
 # ─── the candidate walk, class by class ─────────────────────────────────────
 # ADR 0089 D2's `flock -n "$d" true` test goes HERE, ahead of the held-set
 # filter, once ranger-base-z056i lands: a busy lock is proof the creator is
 # alive, and it makes posse-testhome-*'s grace stop carrying the whole
 # weight.
 : > "$stale"
-while IFS='|' read -r cname cglob cgrace; do
+while IFS='|' read -r cname cglob cgrace cdepth; do
   [ -n "$cname" ] || continue
+  if [ "$cname" = claude-scratch ] && [ "$claude_blind" -eq 1 ]; then
+    echo "class claude-scratch: REFUSED — $claude_procs live claude processes and the registry at $claude_sessions names none of them, so 'nothing is live' is not something this run knows"
+    continue
+  fi
   if [ ${#want_classes[@]} -gt 0 ]; then
     printf '%s\n' "${want_classes[@]}" | grep -qxF "$cname" || continue
   fi
   grace=$cgrace
   [ -n "$min_age" ] && grace=$min_age
   [ "$pressure" -eq 1 ] && grace=$pressure_min_age
+  heldfile=$held
+  [ "$cdepth" = 1 ] || heldfile=$held3
   found=$(
     for root in "${roots[@]}"; do
       [ -d "$root" ] || continue
-      find "$root" -maxdepth 1 -mindepth 1 -type d -uid "$me" -name "$cglob" -mmin "+$grace" -print 2>/dev/null
-    done | sort -u | { grep -vxF -f "$held" || true; } | { grep -vxF -f "$stale" || true; }
+      if [ "$cdepth" = 1 ]; then
+        find "$root" -maxdepth 1 -mindepth 1 -type d -uid "$me" -name "$cglob" -mmin "+$grace" -print 2>/dev/null || true
+      else
+        # ROOTED AT THE MATCHING TOP-LEVEL DIR, not at the root with a -path
+        # filter. A deep walk from /tmp itself descends into every other uid's
+        # dirs to reach the depth, and find then exits 1 on the first
+        # `Permission denied` — which, under `set -o pipefail`, took the whole
+        # sweep down with it before this was scoped (MEASURED: exit 1 with the
+        # four depth-1 classes already reported and nothing collected). The
+        # trailing `|| true` is the second half of that lesson: a walk that
+        # cannot read something must collect less, never abort.
+        for top in "$root"/${cglob%%/*}; do
+          [ -d "$top" ] || continue
+          find "$top" -maxdepth "$((cdepth - 1))" -mindepth "$((cdepth - 1))" -type d -uid "$me" -path "$top/${cglob#*/}" -mmin "+$grace" -print 2>/dev/null || true
+        done
+      fi
+    done | sort -u | { grep -vxF -f "$heldfile" || true; } | { grep -vxF -f "$stale" || true; } | class_filter "$cname" "$grace"
   )
   cn=$(printf '%s\n' "$found" | grep -c . || true)
-  echo "class $cname ($cglob, grace ${grace}m): $cn collectable"
+  echo "class $cname ($cglob, grace ${grace}m, depth $cdepth): $cn collectable"
   [ "$cn" -gt 0 ] && printf '%s\n' "$found" | grep . >> "$stale"
 done <<< "$class_table"
 
@@ -327,6 +514,17 @@ fi
 if [ "$n" -gt 0 ]; then
   xargs -a "$stale" -r -d '\n' rm -rf --
   echo "collected $n dirs"
+fi
+
+# The <slug> dir between the harness root and a session dir is the harness's
+# and is left behind empty once its last session goes. rmdir, which can only
+# ever take an empty one, so a slug that still holds a live session is safe by
+# construction — 2 inodes each, 127 of them at the time of writing.
+if [ ${#want_classes[@]} -eq 0 ] || printf '%s\n' "${want_classes[@]}" | grep -qxF claude-scratch; then
+  for root in "${roots[@]}"; do
+    [ -d "$root" ] || continue
+    find "$root" -mindepth 2 -maxdepth 2 -type d -uid "$me" -path "$root/claude-[0-9]*/*" -empty -exec rmdir -- {} + 2>/dev/null || true
+  done
 fi
 
 # ─── bytes and inodes, after ────────────────────────────────────────────────
