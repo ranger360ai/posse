@@ -336,6 +336,18 @@ type SeatbeltCarveOut struct {
 	// ranger-base-7wdb7). bwrap-only like Hide, filled by bwrapRender; ""
 	// leaves /tmp as the write set says. The darwin side is its own bead.
 	Tmp string
+	// Private is the members of a SHARED write grant that a seat gets a copy
+	// of its own: bwrap binds each Src (a per-seat host dir) over its Dst, so
+	// the seat writes there and never sees what other seats wrote at Dst
+	// (claudePrivateSessionState, ranger-base-5632o). bwrap-only like Tmp,
+	// filled by bwrapRender.
+	Private []PrivateBind
+}
+
+// PrivateBind is one entry of SeatbeltCarveOut.Private: Src is the host dir
+// the seat sees at Dst.
+type PrivateBind struct {
+	Src, Dst string
 }
 
 // Seeded reports whether a file-shaped Deny entry is one the launcher may
@@ -1470,12 +1482,7 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// (ranger-base-6akzw; claudeExecConfig says why and what was measured).
 	// The files are seeded empty when absent, because a mount cannot cover a
 	// name that is not there and the session could otherwise create it.
-	var rtGrants []string
-	for _, d := range stateDirs {
-		if e := ExpandTilde(d); filepath.IsAbs(e) {
-			rtGrants = append(rtGrants, absResolve(e))
-		}
-	}
+	rtGrants := runtimeStateGrants(stateDirs)
 	cdirs, cfiles := claudeExecConfig(wallHome(), rtGrants)
 	for _, d := range cdirs {
 		add(&c.Deny, d)

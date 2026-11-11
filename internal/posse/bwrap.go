@@ -446,6 +446,52 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 		}
 	}
 
+	// 2c. The seat's private copies of shared members (ranger-base-5632o;
+	// claudePrivateSessionState says which and why). Each one is a bind of a
+	// per-seat host dir OVER a directory inside a write grant. It comes after
+	// the grants, so it lands on top of the grant that holds it, and before
+	// the denies, which name other members and never these.
+	//
+	// THE DESTINATION IS LSTAT'D, NOT STAT'D. It sits in a dir every seat can
+	// write, so a symlink there could have been planted by another seat, and
+	// bwrap would mount on wherever it points. A destination that is not a
+	// real directory refuses the render. That lets a hostile seat stop the
+	// next launch, which is loud. Following the link would hand it a mount
+	// point of its choosing, which is silent.
+	//
+	// OUTSIDE A GRANT IT RENDERS NOTHING. The read-only base already refuses
+	// every write there, and a grant can drop out of the set before this
+	// point (D23: a no-create grant this host does not have). That check
+	// comes AFTER the lstat, because writeGranted resolves its argument, and
+	// a link there would resolve outside the grant and be skipped, not
+	// refused.
+	for _, pb := range carve.Private {
+		fi, err := os.Lstat(pb.Dst)
+		switch {
+		case err == nil && !fi.IsDir():
+			return nil, nil, Die("bwrap cannot bind a private dir over %s: it is not a directory (a link or a file is there, and every seat can write its parent) — remove it and relaunch (ranger-base-5632o)", pb.Dst)
+		case err != nil && !os.IsNotExist(err):
+			return nil, nil, bwrapStatRefusal("private member", pb.Dst, err)
+		}
+		if !writeGranted(grants, pb.Dst) {
+			continue
+		}
+		if err != nil {
+			prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "the shared member a private copy is mounted over; a mount needs a directory to cover"})
+		}
+		exists, dir, err := bwrapStat(pb.Src)
+		if err != nil {
+			return nil, nil, bwrapStatRefusal("private source", pb.Src, err)
+		}
+		switch {
+		case exists && !dir:
+			return nil, nil, Die("bwrap cannot bind %s over %s: it is not a directory (ranger-base-5632o)", pb.Src, pb.Dst)
+		case !exists:
+			prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
+		}
+		argv = append(argv, "--bind", pb.Src, pb.Dst)
+	}
+
 	// 3. Shape 2: the carve-out's denies, read-only over the grants above
 	// them. This is last-match-wins at the other mechanism: SBPL puts the
 	// deny block after the allow block, bwrap puts the ro-bind after the
@@ -1548,6 +1594,10 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	if r.Carve.Tmp = bwrapSeatTmp(home, cwd); r.Carve.Tmp != "" {
 		r.Set = bwrapDropTmpGrants(r.Set, os.Getenv("TMPDIR"))
 	}
+	// claude's shell snapshots and session-env, one private copy per seat
+	// (ranger-base-5632o). Here and not in SeatbeltCarveOut for the reason
+	// Tmp is: a seatbelt profile cannot bind.
+	r.Carve.Private = claudePrivateSessionState(home, cwd, runtimeStateGrants(stateDirs))
 	// D23, after D20's substitution and before the render: what is left of
 	// the set is what posse will bind, and a no-create grant that is not
 	// there has been taken out of it, so BwrapArgs can ask the launcher for
