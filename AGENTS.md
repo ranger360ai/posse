@@ -12,6 +12,49 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Shapes that stall the seat
+
+A dispatched seat runs behind a permission coordinator that reads the
+command it is about to approve, and it will not approve one it cannot read
+whole. A command it cannot read does not fail — the seat **hangs** on a
+dialog nobody is there to answer, for about two minutes until that dialog
+auto-denies, and the work is then redone. A wait loop that matches itself
+does not fail either: dispatch reads it, correctly, as "waiting on own
+background work" and never re-prompts, so the seat sits dead and holds its
+lane. MEASURED 2026-11-11 (ranger-base-r5w0p): six approval stalls and two
+spinning waits across six seats in one day — the crew's biggest avoidable
+stall that day, and every one of them a typing habit.
+
+- **Edit a tracked file with the Edit tool, never a heredoc'd
+  interpreter.** `python3 - <<'EOF' … EOF` hands the coordinator an argv of
+  `python3 -` and a body it has no way to read, so it raises `this shell -c
+  script … could not be checked` — twice on 2026-11-11, both editing the
+  Makefile (ranger-base-in8dr, ranger-base-w5z7u). Edit and Write take a
+  path and the change, and are read whole.
+- **A loop that deletes, or a battery that mutates, goes in a script file
+  under your scratchpad and is run by path.** An inline `for … do rm -rf
+  …; done` raises `dangerous rm operation not ruled out`
+  (ranger-base-j0riv), and a compound command of `sed -i` plants plus
+  restores raises the unreadable-script dialog (ranger-base-2smyx). Write
+  the script with the Write tool, then `bash <path>`: one argv, one
+  readable file, one approval.
+- **Prefer a fresh `mktemp -d` per iteration over rm-and-recreate.** A
+  directory that is new each time round needs no `rm -rf` at all, so the
+  shape that prompts never appears in the loop.
+- **`rm` on a variable path prompts even when the variable is set on the
+  same line** (ranger-base-zmk4q) — the checker cannot prove the expansion
+  is non-empty. Guard it: `rm -rf -- "${d:?}"`. The `:?` is what says the
+  path cannot be empty, and it is also what makes the command safe to run.
+- **Never wait on `until ! pgrep -f <string>` when your own loop's command
+  line carries `<string>`.** `pgrep -f` matches argv, your loop's argv
+  included, so the loop sees itself and spins forever: ranger-base-vw1cp
+  spun 2h30m after its `make test` had finished at 06:48, and
+  ranger-base-w5z7u about 50 min after its suite finished at 09:37, both on
+  2026-11-11. Wait on the pid instead — `$!`, `wait`, or `kill -0 <pid>` —
+  and when the question is whether a background process really died, the
+  answer is `go run ./cmd/checkorphans` (see "Checking that a background
+  process actually died" below), never a `pgrep` of a tool name.
+
 ## Landing the plane
 
 - **Know which tree you are in.** A dispatched session works in its OWN git
