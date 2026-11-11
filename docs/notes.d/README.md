@@ -54,6 +54,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-4kars](ranger-base-4kars.md) — A withdrawn notification truncates the injection (ranger-base-4kars) — 2026-11-11
 - [ranger-base-4arlo](ranger-base-4arlo.md) — ranger-base-4arlo — the harness scratchpads, and the gate that reaches them — 2026-11-11
 - [ranger-base-3fm26](ranger-base-3fm26.md) — Four closes, and the three guards their own mutants could not reach (ranger-base-3fm26) — 2026-11-11
+- [ranger-base-3clx6](ranger-base-3clx6.md) — A pinned producer and a pinned render, and nothing on the line between them (ranger-base-3clx6) — 2026-11-11
 - [ranger-base-32bdv](ranger-base-32bdv.md) — The temp HOME that followed every process, and the 5.25G mise put in it (ranger-base-32bdv) — 2026-11-11
 - [ranger-base-2smyx](ranger-base-2smyx.md) — ranger-base-2smyx — four closes verified, and the three pins that pass for the wrong reason — 2026-11-11
 - [ranger-base-xa2e3](ranger-base-xa2e3.md) — The gate that guards the tree made the suite that guards the gate unrunnable (ranger-base-xa2e3) — 2026-11-10

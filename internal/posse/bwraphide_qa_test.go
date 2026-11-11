@@ -163,6 +163,60 @@ func TestBwrapRuntimeDirsResolvesAndRefusesWhatWouldBlindTheSeat(t *testing.T) {
 	}
 }
 
+// ─── the wiring ──────────────────────────────────────────────────────────────
+
+// THE ONE LINE THE ARMS ABOVE DO NOT REACH (ranger-base-3clx6, verifying
+// ranger-base-ludpp). Every arm above either hands `BwrapArgs` a `Hide` list
+// of its own or calls `bwrapRuntimeDirs` straight. Between the producer and
+// the render sits a single assignment in `bwrapRender`, and nothing read it:
+// MEASURED 2026-11-11, with that assignment changed to discard its value,
+// ALL THREE ARMS of internal/posse passed — arm 1, arm 2 and arm 3 — while
+// every bwrap seat on the box got the host's runtime dir back. A wall whose
+// producer is green and whose render is empty is the whole of ranger-base-ludpp
+// undone with no test to say so.
+//
+// So this arm renders posse's OWN wall and asks the argv, which is the only
+// question a seat's kernel ever asks.
+func TestBwrapRenderWiresTheRuntimeDirsIntoTheWall(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	f := wrcFixtureIn(t, wallUngrantedDir(t))
+	want, err := liveBwrapRuntimeDirs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) == 0 {
+		// Not a silent pass: a host with no user runtime dir has nothing to
+		// hide, and this arm measured nothing there.
+		t.Skip("NOTHING MEASURED: this host has no user runtime dir for the render to hide")
+	}
+	r, err := f.a.bwrapRender(f.ag, wrcRuntime("codex"), f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(r.Carve.Hide, " "); got != strings.Join(want, " ") {
+		t.Errorf("bwrapRender filled Hide with %q, want %q — the producer is not wired to the render (ranger-base-ludpp)", got, strings.Join(want, " "))
+	}
+	line := bwJoin(r.Argv)
+	for _, d := range want {
+		if bwIndex(r.Argv, "--tmpfs", d) < 0 {
+			t.Errorf("the wall posse renders carries no `--tmpfs %s`, so a seat behind it connects to every control endpoint under it (ranger-base-ludpp):\n  %s", d, line)
+		}
+	}
+	// The unsets ride the same render, and a seat that kept the bus address
+	// could reach an endpoint outside the hidden dir.
+	//
+	// THE NAMES ARE SPELLED HERE, not read off bwrapUnsetEnv: a loop over the
+	// list under test has nothing to say when the list is emptied, and it
+	// scored a kill it had not earned when this arm was first written
+	// (MEASURED, ranger-base-3clx6: `bwrapUnsetEnv = []string{}` left it
+	// green). The literals make emptying the list a red here too.
+	for _, k := range []string{"DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "GPG_AGENT_INFO"} {
+		if bwIndex(r.Argv, "--unsetenv", k) < 0 {
+			t.Errorf("the wall posse renders does not unset %s:\n  %s", k, line)
+		}
+	}
+}
+
 // ─── live ────────────────────────────────────────────────────────────────────
 
 // bhLive is a runtime dir shaped like the one ranger-base-x9f3s measured:
