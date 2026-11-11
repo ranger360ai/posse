@@ -71,7 +71,9 @@ type door struct {
 	// Every notification lands on exactly one verdict, and the ones that
 	// mean "this exec was not covered" are printed at the end rather than
 	// left silent: a door that has stopped being able to read its targets
-	// must not read as a suite with no members of the class.
+	// must not read as a suite with no members of the class. One verdict
+	// per NOTIFICATION, note, not per execve: a restarted execve raises a
+	// fresh notification and spends two (see the note above holes).
 	verdicts [numVerdicts]atomic.Int64
 
 	// verbose prints one line per notification. It is for triage — which
@@ -96,28 +98,68 @@ const (
 	// directory it misses, which is why they are counted apart from the
 	// holes below rather than lumped in with them.
 	vAbsent
+	// Also not a hole, and for a stronger reason than vAbsent's: an execve
+	// the KERNEL did not run. See the note above holes.
+	vWithdrawn
 	// The holes. Each one is an execve the door let through without
 	// knowing what it was.
 	vUnreadable // the path argument could not be read out of the caller
 	vUnstattable
-	vGone // the caller died before the door could answer
 	vForeign
 	numVerdicts int = iota
 )
+
+// vNone is not a verdict and is never recorded. adjudicate answers it to
+// say "I have recorded this notification's verdict myself"; anything else
+// is a verdict only answer() is in a position to decide.
+const vNone verdict = -1
 
 var verdictNames = [numVerdicts]string{
 	vDelayed:     "delayed",
 	vWarm:        "warm",
 	vOld:         "old",
 	vAbsent:      "absent",
+	vWithdrawn:   "withdrawn",
 	vUnreadable:  "unreadable",
 	vUnstattable: "unstattable",
-	vGone:        "gone",
 	vForeign:     "foreign-syscall",
 }
 
-// holes are the verdicts that mean an exec went through un-adjudicated.
-var holes = []verdict{vUnreadable, vUnstattable, vGone, vForeign}
+// A WITHDRAWN NOTIFICATION IS NOT A HOLE, and this is the note for why,
+// because that classification has been wrong once (ranger-base-j0riv:
+// `gone`, as it was called, was in holes, so a door redded its own ARM 3
+// pin intermittently under `go test ./...` and more often the busier the
+// box).
+//
+// The kernel's seccomp wait is interruptible. When the stopped caller takes
+// a deliverable signal the kernel REMOVES the notification and sets the
+// syscall's return to ERESTARTSYS, and what the caller does next is decided
+// by the handler it had installed. All three endings were MEASURED here on
+// 2026-11-11 (this box, linux 7.2.15 x86_64, go1.27.3), each one run under
+// this door:
+//
+//	a handler WITH SA_RESTART — which is what the Go runtime installs, its
+//	  own preemption SIGURG included: the execve is RESTARTED and raises a
+//	  FRESH notification, and that one is adjudicated. One plant read
+//	  `delayed` then `warm`, ran, and its caller exited 0.
+//	a handler WITHOUT SA_RESTART (python3 installs these): the execve
+//	  returns EINTR to the caller and never happens — Python raised
+//	  InterruptedError, exit 1.
+//	no handler and a default-fatal signal: the caller dies stopped and the
+//	  execve never happens — exit 138 for a default SIGUSR1.
+//
+// The kernel never completes an execve whose notification it has taken
+// back, so NOTHING escapes the door at full speed this way. What a
+// withdrawal really costs is arithmetic: in the restart case one execve
+// spends two notifications, and the door used to report the first of them
+// as an exec it had failed to cover.
+//
+// This is why the supervisor's OWN Go child is the process that produces
+// them — it is the one process under the door with an SA_RESTART handler on
+// a signal the runtime sends itself — and why the rate tracks the box's run
+// queue: the wider the queue, the more preemption signals that child takes
+// while stopped in its execve of the command.
+var holes = []verdict{vUnreadable, vUnstattable, vForeign}
 
 func (d *door) record(v verdict, pid int, target string) {
 	d.verdicts[v].Add(1)
@@ -219,6 +261,12 @@ func (d *door) report(delay time.Duration) {
 	fmt.Fprintf(os.Stderr, "coldexec: %d execve notifications, %d cold first execs delayed %s each (%d warm, %d older than the door, %d absent)\n",
 		d.notifs.Load(), d.verdicts[vDelayed].Load(), delay,
 		d.verdicts[vWarm].Load(), d.verdicts[vOld].Load(), d.verdicts[vAbsent].Load())
+	if n := d.verdicts[vWithdrawn].Load(); n > 0 {
+		fmt.Fprintf(os.Stderr, "coldexec: %d notifications were withdrawn before the door could answer — "+
+			"the kernel does not run an execve whose notification it took back, so none of those escaped "+
+			"the door; a caller whose handler carries SA_RESTART restarts the execve and raises a fresh "+
+			"notification, which is the one this run adjudicated (ranger-base-j0riv)\n", n)
+	}
 	var total int64
 	var parts []string
 	for _, v := range holes {
@@ -321,13 +369,23 @@ func (d *door) drain(served <-chan error) {
 // that goes unanswered is an execve blocked in the kernel forever, so every
 // failure path here falls through to the answer.
 func (d *door) handle(n *seccompNotif) {
-	d.adjudicate(n)
-	d.answer(n)
+	pending, pendingTarget := d.adjudicate(n)
+	d.answer(n, pending, pendingTarget)
 }
 
 // adjudicate works out what this execve is about and sleeps D if it is the
 // first exec of a file the run created.
-func (d *door) adjudicate(n *seccompNotif) {
+//
+// It records the COVERED verdicts itself and answers vNone for those. A
+// HOLE it never records: a hole is an execve the door let through without
+// knowing what it was, and whether this one was let through at all is
+// decided at the answer and nowhere else — so the verdict rides down to
+// answer(), which records it only if the kernel says the notification was
+// still live. Every hole here is otherwise load-sensitive in the same way
+// and for the same reason: the caller can be unreadable, or its pid gone,
+// precisely BECAUSE the kernel withdrew the notification under us
+// (ranger-base-j0riv).
+func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget string) {
 	pid := int(n.Pid)
 	var addr uint64
 	var flags uint64
@@ -344,14 +402,12 @@ func (d *door) adjudicate(n *seccompNotif) {
 		// The filter names no other syscall. If one ever arrives, let it
 		// through rather than guess which argument is a path — and say so,
 		// because it means the filter and this switch have drifted apart.
-		d.record(vForeign, pid, fmt.Sprintf("syscall %d", n.Data.Nr))
-		return
+		return vForeign, fmt.Sprintf("syscall %d", n.Data.Nr)
 	}
 
 	p, err := readPath(pid, addr)
 	if err != nil {
-		d.record(vUnreadable, pid, err.Error())
-		return
+		return vUnreadable, err.Error()
 	}
 
 	// Resolved the way the kernel will resolve it, and through the
@@ -364,7 +420,7 @@ func (d *door) adjudicate(n *seccompNotif) {
 		target = fmt.Sprintf("/proc/%d/fd/%d", pid, dirfd)
 	case p == "":
 		d.record(vAbsent, pid, "(empty path)")
-		return
+		return vNone, ""
 	case filepath.IsAbs(p):
 		target = p
 	case dirfd == int(unix.AT_FDCWD):
@@ -375,14 +431,18 @@ func (d *door) adjudicate(n *seccompNotif) {
 
 	var st unix.Stat_t
 	if err := unix.Stat(target, &st); err != nil {
-		d.record(d.statVerdict(pid, err), pid, target)
-		return
+		v, hole := d.statVerdict(pid, err)
+		if hole {
+			return v, target
+		}
+		d.record(v, pid, target)
+		return vNone, ""
 	}
 	// The ctime, not the mtime: a copied binary keeps its source's mtime
 	// and a `chmod +x` moves only the ctime, and both of those are plants.
 	if !time.Unix(st.Ctim.Sec, st.Ctim.Nsec).After(d.started) {
 		d.record(vOld, pid, target)
-		return
+		return vNone, ""
 	}
 	// The ctime again, and for a SECOND decision rather than the same one
 	// twice: this key tells a first exec of this inode-at-this-version from
@@ -399,10 +459,14 @@ func (d *door) adjudicate(n *seccompNotif) {
 	d.mu.Unlock()
 	if !first {
 		d.record(vWarm, pid, target)
-		return
+		return vNone, ""
 	}
+	// Recorded BEFORE the sleep, and so before the answer: this charge is
+	// against the inode and it stands even if the notification is withdrawn
+	// under us, because the restart that follows reads the inode as warm.
 	d.record(vDelayed, pid, target)
 	time.Sleep(d.delay)
+	return vNone, ""
 }
 
 // statVerdict tells a path that is not there from a path the door cannot
@@ -413,16 +477,25 @@ func (d *door) adjudicate(n *seccompNotif) {
 // it is an execve that was going to fail anyway, there is nothing to delay,
 // and counting it as a coverage hole would put tens of thousands of
 // non-events in the report and bury the real ones. ENOENT on a
-// /proc/<pid>/… path, though, can ALSO mean the caller died while we were
-// resolving, so the pid is checked before the verdict is handed out.
-func (d *door) statVerdict(pid int, err error) verdict {
-	if !errors.Is(err, unix.ENOENT) && !errors.Is(err, unix.ENOTDIR) {
-		return vUnstattable
+// /proc/<pid>/… path, though, can ALSO mean the caller is no longer there
+// to resolve it against, so the pid is checked before the verdict is handed
+// out.
+//
+// A pid that is not there is NOT a verdict of its own, which is why there
+// is no `gone` here any more: a pid is reusable, and a caller that exec'd
+// and exited while we resolved reads exactly like one that died stopped.
+// The kernel's answer about THIS notification is ID_VALID and nothing else.
+// So an absent pid is an unstattable like any other and goes to answer() as
+// a hole — which answer() will record only if the notification was still
+// live, i.e. only if the door really did let a live execve through without
+// knowing what it was.
+func (d *door) statVerdict(pid int, err error) (v verdict, hole bool) {
+	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) {
+		if unix.Access(fmt.Sprintf("/proc/%d", pid), unix.F_OK) == nil {
+			return vAbsent, false
+		}
 	}
-	if unix.Access(fmt.Sprintf("/proc/%d", pid), unix.F_OK) != nil {
-		return vGone
-	}
-	return vAbsent
+	return vUnstattable, true
 }
 
 // answer lets the stopped execve run. CONTINUE and not a return value: the
@@ -430,19 +503,28 @@ func (d *door) statVerdict(pid int, err error) verdict {
 // its argv are what they would have been with no door in the way.
 //
 // ID_VALID first, which is the kernel's own advice: a notification whose
-// caller died while we slept must not be answered, and the id could by then
-// belong to a different exec.
-func (d *door) answer(n *seccompNotif) {
+// caller is gone must not be answered, and the id could by then belong to a
+// different exec. It is also the ONLY authority on whether this
+// notification still exists, which is why adjudicate's holes are referred
+// here rather than recorded up there: a hole is recorded only once the
+// kernel has said the notification was live AND the answer has landed,
+// because only then has the door really let a live execve through without
+// knowing what it was. A notification the kernel took back covered nothing
+// and had nothing left to cover (see the note above holes).
+func (d *door) answer(n *seccompNotif, pending verdict, pendingTarget string) {
+	withdrawn := func() {
+		d.record(vWithdrawn, int(n.Pid), "(the kernel took the notification back before the answer)")
+	}
 	id := n.ID
 	if err := ioctlPtr(d.listener, unix.SECCOMP_IOCTL_NOTIF_ID_VALID, unsafe.Pointer(&id)); err != nil {
-		d.record(vGone, int(n.Pid), "(the exec was gone before the answer)")
+		withdrawn()
 		return
 	}
 	resp := seccompNotifResp{ID: n.ID, Flags: userNotifFlagContinue}
 	if err := ioctlPtr(d.listener, unix.SECCOMP_IOCTL_NOTIF_SEND, unsafe.Pointer(&resp)); err != nil {
 		if errors.Is(err, unix.ENOENT) {
 			// The caller is gone. Nothing to let through.
-			d.record(vGone, int(n.Pid), "(the exec was gone before the answer)")
+			withdrawn()
 			return
 		}
 		// The door cannot answer, so every exec from here on would hang in
@@ -452,6 +534,9 @@ func (d *door) answer(n *seccompNotif) {
 		fmt.Fprintf(os.Stderr, "coldexec: NOTIF_SEND: %v — the door cannot answer the kernel, so it is going down "+
 			"rather than hanging every exec under it\n", err)
 		os.Exit(exitRefused)
+	}
+	if pending != vNone {
+		d.record(pending, int(n.Pid), pendingTarget)
 	}
 }
 

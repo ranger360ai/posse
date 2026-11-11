@@ -527,3 +527,130 @@ tm chmodded ./p
 		t.Errorf("the plant did not run twice, so the second delay was not its re-exec:\n%s", r.out)
 	}
 }
+
+// ARM 14: a notification the KERNEL takes back is not a coverage hole, and
+// the door must not report it as one.
+//
+// This is ranger-base-j0riv. The verdict was called `gone` and it was in
+// `holes`, so `wantNoHoles` in ARM 3 above redded intermittently — only
+// inside `go test ./...`, where cmd/coldexec shares the box with its
+// sibling packages, and more often the busier the box (MEASURED on the
+// bead: FAIL at a one-minute loadavg of 12.95, ok three times at 7.32 and
+// below). arm 1 is `make test`'s first test line and nobody's optional
+// door, so the cost of that misclassification was a red package and a
+// non-zero exit for a door whose injection was never in question.
+//
+// The mechanism is in the note above `holes` in door_linux.go. What this
+// pin needs from it is one line: seccomp's wait is interruptible, so a
+// deliverable signal makes the kernel REMOVE the notification and return
+// ERESTARTSYS — and a caller whose handler carries SA_RESTART then RESTARTS
+// the execve, which raises a fresh notification that the door adjudicates
+// normally. The kernel never completes an execve whose notification it took
+// back, so nothing escapes the door; one execve just spends two
+// notifications.
+//
+// THE FIXTURE, and every part of it is load-bearing:
+//
+//   - python3 is the caller because `signal.siginterrupt(sig, False)` is
+//     the shortest way to install an SA_RESTART handler, which is what the
+//     Go runtime installs for its own preemption SIGURG — and the
+//     supervisor's own Go child is the process that produces these in the
+//     wild. A `sh` caller cannot stand in: it resets handled dispositions
+//     before `exec`, so the signal is fatal instead (MEASURED: exit 138),
+//     which is a different ending of the same mechanism.
+//   - the nudging is a FORKED child of the caller rather than a sleep in
+//     the script, and it is guarded by the caller's own
+//     /proc/<pid>/exe. The window to hit is the door's D, and this box
+//     reaches a loadavg of 50-100 (NOTES.md), so a timed sleep would be
+//     the flake this file's header warns about: the loop keeps nudging
+//     until the exec lands, which is deterministic in both directions —
+//     a signal that arrives too early is simply handled and retried, and
+//     the instant /proc/<pid>/exe changes the plant is running under that
+//     pid and must not be signalled. 40/40 identical on a quiet box,
+//     MEASURED 2026-11-11.
+//   - the plant traps USR1 to nothing, which covers the microseconds
+//     between the exec landing and the nudger's next readlink.
+//
+// WHAT IT DOES NOT ASSERT, on purpose: the wall time of the delayed exec.
+// The withdrawal releases the caller at the nudge rather than at D, so this
+// run's injection is TRUNCATED — the plant's exec goes through in
+// milliseconds although the door charged it D and its handler sleeps the
+// full D. That is a second defect and it is filed, not fixed here
+// (ranger-base-4kars); pinning either wall time would make this pin red
+// when that one lands. What is asserted is the
+// classification and the coverage: no holes, the withdrawal named in the
+// report, and the withdrawn execve adjudicated a second time and run.
+func TestAWithdrawnNotificationIsNotAHole(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skipf("no python3, so the pin cannot install an SA_RESTART handler in a caller: %v", err)
+	}
+	r := runDoor(t, `cat > caller.py <<'PY'
+import os, signal, sys, time
+
+# A handler WITH SA_RESTART, which is the Go runtime's own shape. Installed
+# before the fork, so the nudger below can never catch this process with
+# SIGUSR1 still fatal.
+signal.signal(signal.SIGUSR1, lambda *a: None)
+signal.siginterrupt(signal.SIGUSR1, False)
+
+me = os.getpid()
+mine = os.readlink("/proc/%d/exe" % me)
+if os.fork() == 0:
+    # Nudge the parent until its execve has landed. The guard is the
+    # parent's OWN exe link: while it still reads as this python the execve
+    # has not completed, so a signal can only land on the stopped syscall.
+    for _ in range(500):
+        try:
+            if os.readlink("/proc/%d/exe" % me) != mine:
+                break
+            os.kill(me, signal.SIGUSR1)
+        except OSError:
+            break
+        time.sleep(0.01)
+    os._exit(0)
+
+os.execv(sys.argv[1], [sys.argv[1]])
+PY
+printf '#!/bin/sh\ntrap "" USR1\necho the plant ran\n' > plant; chmod +x plant
+python3 -I caller.py ./plant
+echo "CALLER EXIT $?"
+`)
+	// Something was delayed, so the door does not exit 3 over this run.
+	r.wantCode(t, 0)
+
+	// THE ASSERTION THIS PIN EXISTS FOR.
+	r.wantNoHoles(t)
+
+	// And the withdrawal is not silent either: a seat whose run spent two
+	// notifications on one execve has a line that says so.
+	if !strings.Contains(r.out, "withdrawn   pid") {
+		t.Fatalf("the nudging produced no withdrawn notification, so this run did not reach the "+
+			"mechanism and its wantNoHoles above proved nothing:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "notifications were withdrawn before the door could answer") {
+		t.Errorf("the report did not account for the withdrawal, so a seat reading it has nothing "+
+			"to read:\n%s", r.out)
+	}
+
+	// Coverage: the withdrawn execve was adjudicated a SECOND time — the
+	// restart's own notification — rather than let through blind. Either
+	// verdict counts: it is `warm` today and would be `delayed` if the
+	// truncation above is ever fixed.
+	adjudications := regexp.MustCompile(`(?m)^coldexec: (delayed|warm) +pid \d+ .*plant$`).FindAllString(r.out, -1)
+	if len(adjudications) < 2 {
+		t.Errorf("the plant's exec was adjudicated %d times, want at least 2 — the withdrawn "+
+			"notification's restart went through without one:\n%s", len(adjudications), r.out)
+	}
+
+	// And it ran, under that pid, so the second adjudication was a real
+	// exec and not a notification for something that never happened.
+	if !strings.Contains(r.out, "the plant ran") {
+		t.Errorf("the plant never ran, so the execve the door withdrew a notification for did not "+
+			"complete:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "CALLER EXIT 0") {
+		t.Errorf("the caller did not exit 0 — the signal ended it instead of restarting its "+
+			"execve, which is a different ending of the mechanism:\n%s", r.out)
+	}
+}
