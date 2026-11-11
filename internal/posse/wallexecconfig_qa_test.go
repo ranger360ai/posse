@@ -92,7 +92,23 @@ func TestQAWallExecConfigWriteSetReachesNoStateDirAndNoDataHome(t *testing.T) {
 		filepath.Join(f.state, "backup"),
 		filepath.Join(f.state, "skills"),
 		filepath.Join(f.state, "dispatch-watch.pid"),
+		filepath.Join(f.state, "dispatch-launch.lock"),
 		filepath.Join(f.home, ".local", "share", "mise", "command-wrappers", "bin", "claude"),
+		// The REST of the census under XDG_DATA_HOME (ranger-base-y438o's own
+		// comment, 14:12: "more executes-later dirs under .local/share"),
+		// which the fix covered by dropping the whole grant and no pin named.
+		// Until ranger-base-1zs49 only the mise row above held that line, and a
+		// re-grant NARROWER than `.local/share` put any of these back with every
+		// arm green: MEASURED 2026-11-11, with `.local/share/nvim` and
+		// `.local/share/systemd` appended to homeCacheGrants, this test read ok
+		// with the mise row alone and reds naming both rows with these. Each one
+		// runs later and outside the wall — a systemd user unit, an editor's
+		// plugin code, a desktop entry's Exec= line, a keyring.
+		filepath.Join(f.home, ".local", "share", "mise", "installs", "claude"),
+		filepath.Join(f.home, ".local", "share", "systemd", "user"),
+		filepath.Join(f.home, ".local", "share", "nvim"),
+		filepath.Join(f.home, ".local", "share", "applications"),
+		filepath.Join(f.home, ".local", "share", "keyrings"),
 	} {
 		if writeGranted(w, absResolve(p)) {
 			t.Errorf("the writable set reaches %s — code or config that runs outside the wall later (ranger-base-y438o)\n set: %v", p, w)
