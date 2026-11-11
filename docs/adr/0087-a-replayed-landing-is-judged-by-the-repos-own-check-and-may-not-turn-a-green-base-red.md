@@ -128,7 +128,10 @@ being affordable is in Alternatives.
   bead covers it. (3) A toolchain upgrade does not change the tree key, so the
   cached verdict can outlive it by one landing. (4) The check sees only what
   it compiles: a semantic conflict that type-checks still lands. Tests are not
-  in the lock (D6).
+  in the lock (D6). **What covers (1) and (4) is ADR 0088** (ranger-base-oe9ja):
+  after every landing, a caged check outside the lock reads main's new tree
+  and files one bead when that tree turns red. It does not block. Blocking is
+  this ADR's exit hatch below, deferred with a stated trigger.
 - posse stays repo-agnostic. The only new contract is one script path.
 - **This repo's own check shipped under ranger-base-pn621, and the price was
   re-measured on it.** `scripts/posse-land-check` is D6's body, with two things
