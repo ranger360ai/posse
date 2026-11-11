@@ -75,12 +75,29 @@ type door struct {
 	// execs read `unreadable`, so a non-zero count here is the hole that
 	// is no longer there.
 	reaped atomic.Int64
-	// Every notification lands on exactly one verdict, and the ones that
-	// mean "this exec was not covered" are printed at the end rather than
-	// left silent: a door that has stopped being able to read its targets
-	// must not read as a suite with no members of the class. One verdict
-	// per NOTIFICATION, note, not per execve: a restarted execve raises a
-	// fresh notification and spends two (see the note above holes).
+	// Almost every notification lands on exactly one verdict, and the ones
+	// that mean "this exec was not covered" are printed at the end rather
+	// than left silent: a door that has stopped being able to read its
+	// targets must not read as a suite with no members of the class. One
+	// verdict per NOTIFICATION, note, not per execve: a restarted execve
+	// raises a fresh notification and spends two (see the note above holes).
+	//
+	// ALMOST, and here is the exception, because the honest version of this
+	// comment is the one that names it. A notification the kernel takes
+	// back after adjudicate has already recorded `old`, `warm` or `absent`
+	// records vWithdrawn too, so it spends TWO verdicts and the report's
+	// verdicts sum to more than its notification count. Holes and delays no
+	// longer do this — both ride down to answer() and are recorded there
+	// once (ranger-base-j0riv, ranger-base-4kars) — and a verdict adjudicate
+	// settles itself is not FALSIFIED by the withdrawal the way a delay is:
+	// the file really was old.
+	//
+	// MEASURED 2026-11-11, D = 2.5s, the five coldexec arms: four of the
+	// five summed EXACTLY to their notification count, and arm 1 overshot by
+	// exactly its 4 withdrawn — 129555 notifications against 129559 verdicts
+	// (docs/notes.d/ranger-base-4kars.md). ranger-base-9uvsx holds the
+	// decision about closing it, and the pin it would need is
+	// notifs == sum(verdicts).
 	verdicts [numVerdicts]atomic.Int64
 
 	// verbose prints one line per notification. It is for triage — which
@@ -108,6 +125,12 @@ const (
 	// Also not a hole, and for a stronger reason than vAbsent's: an execve
 	// the KERNEL did not run. See the note above holes.
 	vWithdrawn
+	// A delay that was HELD when the kernel took the notification back,
+	// which is the one verdict that is neither the door working nor a hole:
+	// the door knew exactly what this exec was and charged it D, and the
+	// execve went through at full speed anyway. See the note above
+	// recordWithdrawal.
+	vTruncated
 	// The holes. Each one is an execve the door let through without
 	// knowing what it was.
 	vUnreadable // the path argument could not be read out of the caller
@@ -127,6 +150,7 @@ var verdictNames = [numVerdicts]string{
 	vOld:         "old",
 	vAbsent:      "absent",
 	vWithdrawn:   "withdrawn",
+	vTruncated:   "truncated",
 	vUnreadable:  "unreadable",
 	vUnstattable: "unstattable",
 	vForeign:     "foreign-syscall",
@@ -288,11 +312,19 @@ func supervise(d time.Duration, verbose bool, argv []string) int {
 	if code != 0 {
 		return code
 	}
+	// The PAID count, which is what vDelayed is since ranger-base-4kars: a
+	// run whose every injection was truncated injected nothing, and ADR
+	// 0085 D5 does not care why.
 	if dr.verdicts[vDelayed].Load() == 0 {
 		fmt.Fprintln(os.Stderr,
 			"coldexec: the command passed and the door delayed NOTHING — a run that injected "+
 				"nothing says nothing about the class, so this is a failed door and not a clean "+
 				"suite (ADR 0085 D5)")
+		if n := dr.verdicts[vTruncated].Load(); n > 0 {
+			fmt.Fprintf(os.Stderr,
+				"coldexec: and it is the truncation above that took them: %d charges were cut "+
+					"short by a withdrawal, so this run held none of them to the end\n", n)
+		}
 		return exitNoneDelayed
 	}
 	return 0
@@ -310,6 +342,13 @@ func (d *door) report(delay time.Duration) {
 			"the kernel does not run an execve whose notification it took back, so none of those escaped "+
 			"the door; a caller whose handler carries SA_RESTART restarts the execve and raises a fresh "+
 			"notification, which is the one this run adjudicated (ranger-base-j0riv)\n", n)
+	}
+	if n := d.verdicts[vTruncated].Load(); n > 0 {
+		fmt.Fprintf(os.Stderr, "coldexec: %d injections were TRUNCATED — the kernel withdrew the "+
+			"notification while the door was holding it, so the caller was released at that signal and "+
+			"not at %s, and the restart read the inode as warm. Those first execs went through at full "+
+			"speed and are NOT in the delayed count above; -verbose names each one "+
+			"(ranger-base-4kars)\n", n, delay)
 	}
 	var total int64
 	var parts []string
@@ -424,15 +463,19 @@ func (d *door) handle(n *seccompNotif) {
 // adjudicate works out what this execve is about and sleeps D if it is the
 // first exec of a file the run created.
 //
-// It records the COVERED verdicts itself and answers vNone for those. A
-// HOLE it never records: a hole is an execve the door let through without
-// knowing what it was, and whether this one was let through at all is
-// decided at the answer and nowhere else — so the verdict rides down to
-// answer(), which records it only if the kernel says the notification was
-// still live. Every hole here is otherwise load-sensitive in the same way
-// and for the same reason: the caller can be unreadable, or its pid gone,
-// precisely BECAUSE the kernel withdrew the notification under us
-// (ranger-base-j0riv).
+// It records the verdicts it can settle on its own — old, warm, absent —
+// and answers vNone for those. Two kinds it never records, and both for the
+// same reason: whether this execve was let through at all, and at what
+// speed, is decided at the answer and nowhere else, so the verdict rides
+// down to answer() which records it once the kernel has spoken.
+//
+//	a HOLE is an execve the door let through without knowing what it was,
+//	  and every hole here is load-sensitive in the same way: the caller can
+//	  be unreadable, or its pid gone, precisely BECAUSE the kernel withdrew
+//	  the notification under us (ranger-base-j0riv).
+//	a DELAY is a charge the door claims to have paid, and a notification
+//	  withdrawn mid-sleep released its caller at the signal instead
+//	  (ranger-base-4kars; see the note above recordWithdrawal).
 func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget string) {
 	pid := int(n.Pid)
 	var addr uint64
@@ -509,12 +552,15 @@ func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget strin
 		d.record(vWarm, pid, target)
 		return vNone, ""
 	}
-	// Recorded BEFORE the sleep, and so before the answer: this charge is
-	// against the inode and it stands even if the notification is withdrawn
-	// under us, because the restart that follows reads the inode as warm.
-	d.record(vDelayed, pid, target)
+	// NOT recorded before the sleep (ranger-base-4kars). The delay rides
+	// down to answer() like a hole does, and for the same reason: whether
+	// this exec was really held is decided at the answer and nowhere else.
+	// A notification the kernel takes back mid-sleep released its caller at
+	// the signal rather than at D, so recording the charge here would be
+	// the door reporting a delay it did not pay. See the note above
+	// recordWithdrawal.
 	time.Sleep(d.delay)
-	return vNone, ""
+	return vDelayed, target
 }
 
 // statVerdict tells a path that is not there from a path the door cannot
@@ -546,6 +592,56 @@ func (d *door) statVerdict(pid int, err error) (v verdict, hole bool) {
 	return vUnstattable, true
 }
 
+// A WITHDRAWAL DURING THE DELAY TRUNCATES THE INJECTION, and this is the
+// note for the one verdict that is neither coverage nor a hole
+// (ranger-base-4kars).
+//
+// Read the note above `holes` first: a withdrawal is the kernel taking a
+// notification back from a caller that is usually alive, and a caller whose
+// handler carries SA_RESTART then RESTARTS the execve and raises a FRESH
+// notification. Now put that on a cold plant. adjudicate marks
+// `d.seen[key] = true` BEFORE it sleeps, so the restart's notification
+// reads the inode as WARM and is answered at once: the plant's exec
+// completes in milliseconds while the first handler goes on sleeping out
+// the full D against a notification nobody is waiting for.
+//
+// MEASURED 2026-11-11 (this box, linux 7.2.15 x86_64, go1.27.3), D = 600ms,
+// by TestAWithdrawnNotificationTruncatesTheInjection's fixture with a nudge
+// every 10ms: the plant's exec goes through at roughly the first nudge,
+// ~10-20ms, against the 600ms the door charged it. 40/40 runs identical.
+// Without the nudger the same fixture pays the full 600ms.
+//
+// So the delay is charged at the ANSWER and nowhere else, which is the rule
+// j0riv wrote for the holes applied to the one verdict that was still
+// recorded on the way in. `delayed` now counts delays that were HELD and
+// let through, and a delay the kernel cut short is `truncated` — one
+// verdict per notification, and a count that means what the report says it
+// means. The exit-3 rule (ADR 0085 D5: zero delayed is a failed door) reads
+// the paid count, so a run whose every injection was truncated is a failed
+// door and not a clean suite.
+//
+// WHAT THIS DOES NOT DO is make the restart pay. The inode is still marked
+// before the sleep, so a truncated plant's first exec really did go through
+// at full speed and the report says so rather than claiming otherwise.
+// Moving the mark to the answer would make the restart read cold and pay D
+// again — but the mark is ALSO what stops two concurrent first execs of one
+// inode from both paying D, so that is a semantics change and not a fix,
+// and it is worth its cost only if this ever happens to a plant that
+// matters. MEASURED over all five arms: 12 of 2179 charges, 0.55%, every
+// one of them a planted `bd` exec'd by internal/posse/bdwriteshim.go's
+// syscall.Exec — the one live Go runtime in this tree that execve's a
+// plant directly, which is why that family and no other can be withdrawn
+// (docs/notes.d/ranger-base-4kars.md). Not zero, so ranger-base-91fu2
+// holds the fix and the mechanism sketch; this door's job is to stop
+// claiming those 12 were held.
+func (d *door) recordWithdrawal(n *seccompNotif, pending verdict, pendingTarget string) {
+	if pending == vDelayed {
+		d.record(vTruncated, int(n.Pid), pendingTarget)
+		return
+	}
+	d.record(vWithdrawn, int(n.Pid), "(the kernel took the notification back before the answer)")
+}
+
 // answer lets the stopped execve run. CONTINUE and not a return value: the
 // kernel performs the original syscall, so the exec'd program, its pid and
 // its argv are what they would have been with no door in the way.
@@ -553,16 +649,17 @@ func (d *door) statVerdict(pid int, err error) (v verdict, hole bool) {
 // ID_VALID first, which is the kernel's own advice: a notification whose
 // caller is gone must not be answered, and the id could by then belong to a
 // different exec. It is also the ONLY authority on whether this
-// notification still exists, which is why adjudicate's holes are referred
-// here rather than recorded up there: a hole is recorded only once the
-// kernel has said the notification was live AND the answer has landed,
-// because only then has the door really let a live execve through without
-// knowing what it was. A notification the kernel took back covered nothing
-// and had nothing left to cover (see the note above holes).
+// notification still exists, which is why adjudicate's holes and its delays
+// are referred here rather than recorded up there: a hole is recorded only
+// once the kernel has said the notification was live AND the answer has
+// landed, because only then has the door really let a live execve through
+// without knowing what it was. A notification the kernel took back covered
+// nothing and had nothing left to cover (see the note above holes).
+//
+// And a withdrawal discovered here is TWO different facts depending on what
+// this handler was holding — recordWithdrawal above has them.
 func (d *door) answer(n *seccompNotif, pending verdict, pendingTarget string) {
-	withdrawn := func() {
-		d.record(vWithdrawn, int(n.Pid), "(the kernel took the notification back before the answer)")
-	}
+	withdrawn := func() { d.recordWithdrawal(n, pending, pendingTarget) }
 	id := n.ID
 	if err := ioctlPtr(d.listener, unix.SECCOMP_IOCTL_NOTIF_ID_VALID, unsafe.Pointer(&id)); err != nil {
 		withdrawn()

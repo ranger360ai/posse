@@ -19,6 +19,21 @@ package main
 // every time (the second-exec half of the first pin), and a door that
 // delays nothing at all still exits 0 (the two pins that assert exit 3).
 //
+// A PLANT'S OUTPUT MARKER IS SHOUTED, and that is not decoration
+// (ranger-base-4kars). These pins read the plant's own stdout out of the
+// SAME buffer that carries the door's -verbose lines, and those lines name
+// the plant's absolute path. So a marker that can occur inside a path is an
+// assertion that reads the path as output: `strings.Count(r.out, "ran")`
+// counted 4 instead of 2 the first time these ran under
+// TMPDIR=/var/tmp/posse-tmp-ranger-base-4kars, because "ranger" contains
+// "ran" — and EVERY bead id on this box begins "ranger-", so any temp path
+// named after the session trips it. ARM 12 had it the other way and was
+// worse: its `Contains(r.out, "ran")` would have passed on the path alone,
+// with the plant never running. Hence THE PLANT RAN, VERSION ONE and
+// VERSION TWO: upper case with spaces, which no path here spells. The
+// fixture-shaped reason this matters now is ranger-base-w5z7u, whose fix is
+// to give the arms a TMPDIR of their own.
+//
 // The timing is a floor and a ceiling on either side of one partition, not
 // a measurement: D is 600ms and the partition is at 400ms, so a cold exec
 // has to come in over 400ms and a warm one under it. Both bounds are far
@@ -206,7 +221,7 @@ func (r doorRun) wantNoHoles(t *testing.T) {
 func TestFirstExecOfAPlantedScriptPaysDAndTheSecondDoesNot(t *testing.T) {
 	t.Parallel()
 	r := runDoor(t, `p=$PWD/plant.sh
-printf '#!/bin/sh\necho ran\n' > "$p"; chmod +x "$p"
+printf '#!/bin/sh\necho THE PLANT RAN\n' > "$p"; chmod +x "$p"
 tm first "$p"
 tm second "$p"
 `)
@@ -215,7 +230,7 @@ tm second "$p"
 	r.cold(t, "first")
 	r.warm(t, "second")
 	r.wantNoHoles(t)
-	if n := strings.Count(r.out, "ran"); n != 2 {
+	if n := strings.Count(r.out, "THE PLANT RAN"); n != 2 {
 		t.Errorf("the plant ran %d times, want 2 — the door is meant to delay an exec, not replace it:\n%s", n, r.out)
 	}
 }
@@ -318,9 +333,9 @@ tm relative ./x
 // would pass this run's second exec through warm, silently.
 func TestAPlantRewrittenInPlaceIsColdAgain(t *testing.T) {
 	t.Parallel()
-	r := runDoor(t, `printf '#!/bin/sh\necho one\n' > p; chmod +x p
+	r := runDoor(t, `printf '#!/bin/sh\necho VERSION ONE\n' > p; chmod +x p
 tm first ./p
-printf '#!/bin/sh\necho two\n' > p
+printf '#!/bin/sh\necho VERSION TWO\n' > p
 tm rewritten ./p
 `)
 	r.wantCode(t, 0)
@@ -328,7 +343,7 @@ tm rewritten ./p
 	r.cold(t, "first")
 	r.cold(t, "rewritten")
 	r.wantNoHoles(t)
-	if !strings.Contains(r.out, "one") || !strings.Contains(r.out, "two") {
+	if !strings.Contains(r.out, "VERSION ONE") || !strings.Contains(r.out, "VERSION TWO") {
 		t.Errorf("the two versions of the plant did not both run, so the second delay was not the rewrite's:\n%s", r.out)
 	}
 }
@@ -471,7 +486,7 @@ func TestAPlantWhoseMtimePredatesTheRunStillPaysD(t *testing.T) {
 	t.Parallel()
 	r := runDoor(t, `cp -p /bin/true preserved
 tm preserved ./preserved
-printf '#!/bin/sh\necho ran\n' > gained
+printf '#!/bin/sh\necho THE PLANT RAN\n' > gained
 touch -t 202001010000 gained
 chmod +x gained
 tm gained ./gained
@@ -483,7 +498,7 @@ tm gained ./gained
 	// `touch -t` puts the mtime in 2020 and the chmod moves the ctime alone.
 	r.cold(t, "gained")
 	r.wantNoHoles(t)
-	if !strings.Contains(r.out, "ran") {
+	if !strings.Contains(r.out, "THE PLANT RAN") {
 		t.Errorf("the backdated plant did not run, so the second delay was not its exec:\n%s", r.out)
 	}
 }
@@ -515,7 +530,7 @@ tm gained ./gained
 // execs each plant once.
 func TestAReExecAfterAMetadataOnlyChangeIsColdAgain(t *testing.T) {
 	t.Parallel()
-	r := runDoor(t, `printf '#!/bin/sh\necho ran\n' > p; chmod +x p
+	r := runDoor(t, `printf '#!/bin/sh\necho THE PLANT RAN\n' > p; chmod +x p
 tm first ./p
 chmod 0750 p
 tm chmodded ./p
@@ -527,33 +542,20 @@ tm chmodded ./p
 	// it, so a key built from the mtime calls this exec warm.
 	r.cold(t, "chmodded")
 	r.wantNoHoles(t)
-	if strings.Count(r.out, "ran") != 2 {
+	if strings.Count(r.out, "THE PLANT RAN") != 2 {
 		t.Errorf("the plant did not run twice, so the second delay was not its re-exec:\n%s", r.out)
 	}
 }
 
-// ARM 14: a notification the KERNEL takes back is not a coverage hole, and
-// the door must not report it as one.
+// withdrawalFixture is the ONE live run the two pins below read, each for
+// its own claim: ARM 14 the classification and the coverage
+// (ranger-base-j0riv), ARM 16 the accounting (ranger-base-4kars). It is a
+// helper rather than two copies because the fixture is the expensive part
+// and the two claims are read off the same output; it is two pins rather
+// than one because they red for different reasons and a seat that breaks
+// one should not be told about the other.
 //
-// This is ranger-base-j0riv. The verdict was called `gone` and it was in
-// `holes`, so `wantNoHoles` in ARM 3 above redded intermittently — only
-// inside `go test ./...`, where cmd/coldexec shares the box with its
-// sibling packages, and more often the busier the box (MEASURED on the
-// bead: FAIL at a one-minute loadavg of 12.95, ok three times at 7.32 and
-// below). arm 1 is `make test`'s first test line and nobody's optional
-// door, so the cost of that misclassification was a red package and a
-// non-zero exit for a door whose injection was never in question.
-//
-// The mechanism is in the note above `holes` in door_linux.go. What this
-// pin needs from it is one line: seccomp's wait is interruptible, so a
-// deliverable signal makes the kernel REMOVE the notification and return
-// ERESTARTSYS — and a caller whose handler carries SA_RESTART then RESTARTS
-// the execve, which raises a fresh notification that the door adjudicates
-// normally. The kernel never completes an execve whose notification it took
-// back, so nothing escapes the door; one execve just spends two
-// notifications.
-//
-// THE FIXTURE, and every part of it is load-bearing:
+// EVERY PART OF IT IS LOAD-BEARING:
 //
 //   - python3 is the caller because `signal.siginterrupt(sig, False)` is
 //     the shortest way to install an SA_RESTART handler, which is what the
@@ -574,22 +576,19 @@ tm chmodded ./p
 //     MEASURED 2026-11-11.
 //   - the plant traps USR1 to nothing, which covers the microseconds
 //     between the exec landing and the nudger's next readlink.
-//
-// WHAT IT DOES NOT ASSERT, on purpose: the wall time of the delayed exec.
-// The withdrawal releases the caller at the nudge rather than at D, so this
-// run's injection is TRUNCATED — the plant's exec goes through in
-// milliseconds although the door charged it D and its handler sleeps the
-// full D. That is a second defect and it is filed, not fixed here
-// (ranger-base-4kars); pinning either wall time would make this pin red
-// when that one lands. What is asserted is the
-// classification and the coverage: no holes, the withdrawal named in the
-// report, and the withdrawn execve adjudicated a second time and run.
-func TestAWithdrawnNotificationIsNotAHole(t *testing.T) {
-	t.Parallel()
+//   - `held` is a SECOND plant, exec'd before the caller and never
+//     signalled, and it is what makes `wantCode(t, 0)` an assertion rather
+//     than a coincidence. Since ranger-base-4kars a truncated charge is not
+//     in the delayed count, so a run whose only plant is the nudged one
+//     delays NOTHING and exits 3 — correctly, and it would make both pins
+//     below read an exit code that says nothing about their own subjects.
+//     Its own delay is the paid one, and ARM 16 reads the count off it.
+func withdrawalFixture(t *testing.T) doorRun {
+	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skipf("no python3, so the pin cannot install an SA_RESTART handler in a caller: %v", err)
 	}
-	r := runDoor(t, `cat > caller.py <<'PY'
+	return runDoor(t, `cat > caller.py <<'PY'
 import os, signal, sys, time
 
 # A handler WITH SA_RESTART, which is the Go runtime's own shape. Installed
@@ -617,31 +616,70 @@ if os.fork() == 0:
 os.execv(sys.argv[1], [sys.argv[1]])
 PY
 printf '#!/bin/sh\ntrap "" USR1\necho the plant ran\n' > plant; chmod +x plant
+printf '#!/bin/sh\necho the held plant ran\n' > held; chmod +x held
+tm held ./held
 python3 -I caller.py ./plant
 echo "CALLER EXIT $?"
 `)
-	// Something was delayed, so the door does not exit 3 over this run.
+}
+
+// ARM 14: a notification the KERNEL takes back is not a coverage hole, and
+// the door must not report it as one.
+//
+// This is ranger-base-j0riv. The verdict was called `gone` and it was in
+// `holes`, so `wantNoHoles` in ARM 3 above redded intermittently — only
+// inside `go test ./...`, where cmd/coldexec shares the box with its
+// sibling packages, and more often the busier the box (MEASURED on the
+// bead: FAIL at a one-minute loadavg of 12.95, ok three times at 7.32 and
+// below). arm 1 is `make test`'s first test line and nobody's optional
+// door, so the cost of that misclassification was a red package and a
+// non-zero exit for a door whose injection was never in question.
+//
+// The mechanism is in the note above `holes` in door_linux.go. What this
+// pin needs from it is one line: seccomp's wait is interruptible, so a
+// deliverable signal makes the kernel REMOVE the notification and return
+// ERESTARTSYS — and a caller whose handler carries SA_RESTART then RESTARTS
+// the execve, which raises a fresh notification that the door adjudicates
+// normally. The kernel never completes an execve whose notification it took
+// back, so nothing escapes the door; one execve just spends two
+// notifications.
+//
+// WHAT IT DOES NOT ASSERT, on purpose: anything about the delay. The
+// withdrawal releases the caller at the nudge rather than at D, so this
+// run's injection is TRUNCATED — and that is ARM 16's subject and not this
+// one's. This pin is about the classification and the coverage: no holes,
+// the withdrawal named in the report, and the withdrawn execve adjudicated
+// a second time and run.
+func TestAWithdrawnNotificationIsNotAHole(t *testing.T) {
+	t.Parallel()
+	r := withdrawalFixture(t)
+
+	// Something was delayed — `held`, which nothing signals — so the door
+	// does not exit 3 over this run.
 	r.wantCode(t, 0)
 
 	// THE ASSERTION THIS PIN EXISTS FOR.
 	r.wantNoHoles(t)
 
 	// And the withdrawal is not silent either: a seat whose run spent two
-	// notifications on one execve has a line that says so.
-	if !strings.Contains(r.out, "withdrawn   pid") {
+	// notifications on one execve has a line that says so. Either verbose
+	// spelling counts — a withdrawal that cut a delay short reads
+	// `truncated` and one that cost nothing but a notification reads
+	// `withdrawn` — because which one this run produces is the mechanism's
+	// business and ARM 16's subject, not this pin's.
+	if !regexp.MustCompile(`(?m)^coldexec: (withdrawn|truncated) +pid `).MatchString(r.out) {
 		t.Fatalf("the nudging produced no withdrawn notification, so this run did not reach the "+
 			"mechanism and its wantNoHoles above proved nothing:\n%s", r.out)
 	}
-	if !strings.Contains(r.out, "notifications were withdrawn before the door could answer") {
+	if !regexp.MustCompile(`notifications were withdrawn before the door could answer|injections were TRUNCATED`).MatchString(r.out) {
 		t.Errorf("the report did not account for the withdrawal, so a seat reading it has nothing "+
 			"to read:\n%s", r.out)
 	}
 
 	// Coverage: the withdrawn execve was adjudicated a SECOND time — the
-	// restart's own notification — rather than let through blind. Either
-	// verdict counts: it is `warm` today and would be `delayed` if the
-	// truncation above is ever fixed.
-	adjudications := regexp.MustCompile(`(?m)^coldexec: (delayed|warm) +pid \d+ .*plant$`).FindAllString(r.out, -1)
+	// restart's own notification — rather than let through blind. Any
+	// verdict counts; what this reads is that there were two of them.
+	adjudications := regexp.MustCompile(`(?m)^coldexec: (delayed|warm|truncated) +pid \d+ .*plant$`).FindAllString(r.out, -1)
 	if len(adjudications) < 2 {
 		t.Errorf("the plant's exec was adjudicated %d times, want at least 2 — the withdrawn "+
 			"notification's restart went through without one:\n%s", len(adjudications), r.out)
@@ -767,5 +805,83 @@ kill -0 "$p" 2>/dev/null && echo "ORPHAN $p STILL ANSWERS kill -0" || echo "ORPH
 	if !regexp.MustCompile(`\d+ orphaned descendants were reparented onto this process and reaped`).MatchString(r.out) {
 		t.Errorf("the report does not account for the orphan it reaped, so a real arm has no witness that "+
 			"the subreaper arm fired at all:\n%s", r.out)
+	}
+}
+
+// ARM 16: a withdrawal during the delay TRUNCATES the injection, and the
+// door's count says so instead of claiming a delay it did not pay.
+//
+// This is ranger-base-4kars, and it is a different claim from ARM 14's: not
+// whether the execve was covered — it was, the restart is adjudicated — but
+// whether the D the report charges was ever spent. `adjudicate` marks
+// `d.seen[key] = true` before it sleeps, so the restart reads the inode as
+// WARM and is answered at once: the plant's exec completes in milliseconds
+// while the first handler sleeps out the full D against a notification
+// nobody is waiting for. MEASURED 2026-11-11, D = 600ms: ~10-20ms against
+// the 600ms the door charged, 40/40 (docs/notes.d/ranger-base-4kars.md).
+//
+// Until that bead the door recorded `delayed` on the way INTO the sleep, so
+// this run reported one cold exec held for D, printed `delayed` in
+// -verbose, and a report whose numbers were the only evidence anyone has
+// said the injection happened. That is the silent failure ADR 0085 D5
+// exists to prevent, one level up: not a test flaking on darwin because the
+// door missed it, but a door reporting coverage it did not deliver.
+//
+// WHAT IT READS, and why none of it is a wall time. The accounting IS the
+// statement: a charge that was held to the end is in the delayed count and
+// one that was cut short is not, so `delayed == 1` over a run with two cold
+// plants — one nudged, one not — says the nudged plant's exec was not held,
+// exactly. This file's header argues the rest: a pin that read the ratio of
+// two wall times would be a flake on a box that reaches a loadavg of
+// 50-100, and the report's arithmetic has no load sensitivity at all.
+//
+// THE MUTANT it reds on is the one line this bead moved: recording
+// `vDelayed` in `adjudicate` before the sleep instead of handing it to
+// `answer`. Under that door this run reports 2 delayed and 0 truncated,
+// prints no truncation line, and the 600ms it says it charged the plant was
+// never paid.
+//
+// IF THE TRUNCATION IS EVER FIXED — so that the restart reads cold, or
+// carries the remainder of the original charge, and the plant is held to
+// the end — this pin is ranger-base-91fu2's to INVERT: same fixture, with
+// the nudged plant reading `delayed` and the run reporting no truncation,
+// which is a stronger assertion than this one. It is not a tidy-up, which
+// is why it is a separate bead: the `seen` mark is also what stops two
+// concurrent first execs of one inode from both paying D. The note above
+// recordWithdrawal in door_linux.go has the trade, the measured rate and
+// the one call site it all comes from.
+func TestAWithdrawnNotificationTruncatesTheInjection(t *testing.T) {
+	t.Parallel()
+	r := withdrawalFixture(t)
+	r.wantCode(t, 0)
+	r.wantNoHoles(t)
+
+	// The mechanism was reached: a delay was being held when the kernel
+	// took the notification back. Without this the two assertions below are
+	// satisfied by a run that never truncated anything.
+	if !regexp.MustCompile(`(?m)^coldexec: truncated +pid \d+ .*plant$`).MatchString(r.out) {
+		t.Fatalf("no truncated verdict names the plant, so this run did not cut an injection short "+
+			"and the count below proves nothing:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "injections were TRUNCATED") {
+		t.Errorf("the report did not name the truncation, so a seat whose door charged a delay it "+
+			"did not pay has nothing to read:\n%s", r.out)
+	}
+
+	// THE ASSERTION THIS PIN EXISTS FOR. Two cold plants in this run and
+	// exactly one of them was held to the end: `held`, which nothing
+	// signals. The nudged plant was charged and cut short, and it is not in
+	// this count.
+	r.wantDelayed(t, 1)
+	r.cold(t, "held")
+
+	// And the truncated plant ran anyway, which is what makes the count a
+	// correction rather than a refusal: the door let that exec through at
+	// full speed and now says so.
+	if !strings.Contains(r.out, "the plant ran") {
+		t.Errorf("the plant never ran, so the truncated charge was not an exec let through:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "the held plant ran") {
+		t.Errorf("the held plant never ran, so the one delay this run paid was somebody else's:\n%s", r.out)
 	}
 }

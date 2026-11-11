@@ -65,6 +65,16 @@
 //     SECCOMP_USER_NOTIF_FLAG_CONTINUE, so the kernel runs the original
 //     execve. A file rewritten in place gets a new ctime and is cold again,
 //     which is what the old shim's per-write nonce did.
+//   - the delay is COUNTED at the answer and not at the sleep. seccomp's
+//     wait is interruptible: a deliverable signal makes the kernel take the
+//     notification back, which releases the caller at that signal instead
+//     of at D, and a caller whose handler carries SA_RESTART then restarts
+//     the execve — whose fresh notification reads the inode as warm and is
+//     answered at once. So a charge the kernel cut short is reported as
+//     `truncated` and is not in the delayed count (ranger-base-4kars), and
+//     a notification taken back that was holding nothing is `withdrawn`
+//     (ranger-base-j0riv). Neither is a coverage hole: the kernel never
+//     completes an execve whose notification it took back.
 //
 // `sh <path>` execs /bin/sh, an old inode, so it is never delayed — the
 // adjudication ADR 0085 D1 wanted out of execution rather than out of
@@ -79,7 +89,13 @@
 // therefore fails loudly and never silently; a 32-bit process under a
 // 64-bit kernel, whose arch the filter does not name and whose execs are
 // ALLOWed untouched; and a kernel or an architecture it does not know, where
-// it refuses to start rather than run a suite uncovered.
+// it refuses to start rather than run a suite uncovered. And one edge that
+// is about the delay rather than the exec: a charge the kernel cut short by
+// withdrawing the notification mid-sleep, whose plant really did exec at
+// full speed. That one is counted and named rather than paid, because
+// making the restart pay it means moving the mark that stops two concurrent
+// first execs of one inode from both paying D — see the note above
+// recordWithdrawal in door_linux.go, and ADR 0085 D5.
 //
 // And one thing it CHANGES rather than fails to cover, which is the price
 // of covering orphaned descendants at all: under the door an orphaned
@@ -97,7 +113,9 @@
 // it would have under init.
 //
 // At the end it prints the notifications it took and the cold execs it
-// delayed. ZERO DELAYED IS A FAILED DOOR, not a clean suite, and it exits 3.
+// delayed — held to the end and let through, which is what that count means
+// and not what it was charged. ZERO DELAYED IS A FAILED DOOR, not a clean
+// suite, and it exits 3.
 // Otherwise the exit code is the command's own, and a refusal to start is 2.
 //
 // THE EXIT HATCH is this directory and the wrapper in the Makefile line.

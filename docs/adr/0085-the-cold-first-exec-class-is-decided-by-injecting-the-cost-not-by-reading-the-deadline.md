@@ -187,8 +187,32 @@ each stated rather than left silent:
   traded knowingly for 134 silent un-adjudicated execs. Pinned both halves
   by `TestAnOrphanedDescendantsPlantPaysDAndLeavesNoZombie`.
 
+- **A CHARGE THE KERNEL CUT SHORT**, added here for the same reason as the
+  row above — it is measured rather than reasoned about (ranger-base-4kars,
+  2026-11-11). seccomp's wait for the supervisor's answer is interruptible.
+  When the stopped caller takes a deliverable signal the kernel REMOVES the
+  notification, and a caller whose handler carries `SA_RESTART` restarts the
+  `execve` — whose fresh notification reads the inode as warm, because the
+  charge is marked before the sleep. So that plant's first exec completes in
+  milliseconds against the D the door was holding it for. Nothing escapes
+  the door unadjudicated (ranger-base-j0riv): the restart IS adjudicated,
+  and this is a gap in the DELAY and not in the coverage. MEASURED over all
+  five arms, 364,642 notifications: 12 of 2,453 charges, 0.49%. Every one of
+  them is a planted `bd` exec'd by `internal/posse/bdwriteshim.go`'s
+  `syscall.Exec` — a live Go runtime performing a direct `execve`, which is
+  the one caller shape in this tree that can be withdrawn at all, since a
+  plant exec'd through `os/exec` blocks every signal across fork+exec. The
+  eleven in the internal/treepins arm reproduced identically across two
+  runs, so for that family it is not a rare race. It is counted and named
+  as `truncated`, never folded into the delayed count, which is what D5's
+  taxonomy is for. ranger-base-91fu2 holds the candidate fix — making the
+  restart carry the remainder of the original charge — and will either land
+  it with a pin or record the refusal here.
+
 At its end the run prints the number of notifications and the number of
-cold execs it delayed. Zero delayed is a failed door, not a clean suite.
+cold execs it delayed — held to the end and let through, which is what that
+count means and not merely what was charged (ranger-base-4kars). Zero
+delayed is a failed door, not a clean suite.
 
 **D6. The door is `make coldexec-check`**, with `RUN=<regex>`, as before.
 What changes is that each arm's command line runs inside the supervisor.
