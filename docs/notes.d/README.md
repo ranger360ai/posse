@@ -13,6 +13,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-pn621](ranger-base-pn621.md) — This repo's own land check: what it costs, and the three things D6 left to the build (ranger-base-pn621) — 2026-11-11
 - [ranger-base-o8us6](ranger-base-o8us6.md) — ADR 0086 D3's sixth door: the exception that did not test its own reason (ranger-base-o8us6) — 2026-11-11
 - [ranger-base-o57rc](ranger-base-o57rc.md) — Two pins that claimed more than they measured (ranger-base-o57rc) — 2026-11-11
+- [ranger-base-n2yaw](ranger-base-n2yaw.md) — Two gates that judged what nobody had measured (ranger-base-n2yaw) — 2026-11-11
 - [ranger-base-md7ag](ranger-base-md7ag.md) — Verifying four closes: what the mutants said, and the sixth door (ranger-base-md7ag) — 2026-11-11
 - [ranger-base-j687x](ranger-base-j687x.md) — ranger-base-j687x — the typed route had no liveness guard, and the trace is why that is a change — 2026-11-11
 - [ranger-base-ej47m](ranger-base-ej47m.md) — The land check at the replay site: four judgment calls ADR 0087 left open (ranger-base-ej47m) — 2026-11-11

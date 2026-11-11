@@ -50,6 +50,11 @@
 # declares it, with nobody remembering this file, and a fourth arm declared in
 # some OTHER package is vetted in that package rather than missed.
 #
+# The scan reads BOTH build-constraint spellings, `//go:build` and the legacy
+# `// +build`, for the reason arm_declarations' own header gives: the
+# toolchain honours both, so a derivation that read one of them left an arm
+# declared the old way unvetted at the one gate that judges a replayed tip.
+#
 # The scan reads what is ON DISK and not what git tracks, because what is on
 # disk is what the toolchain compiles; and it reads only the lines ABOVE each
 # file's `package` clause, so a build line quoted at column 0 inside a string
@@ -77,6 +82,18 @@
 # STATED RESIDUAL: the `!darwin && !linux` files (backupvolume_other.go,
 # loadavg_other.go, procstart_other.go, …) compile under neither GOOS, here or
 # in ci.yml. Covering them means a third GOOS and a price nobody has measured.
+#
+# WHAT RUNS THIS, which until ranger-base-n2yaw was nothing at all: `make
+# test` never invoked the script, `scripts/shell-syntax.sh` only parsed it,
+# and `make scripts-check`'s censuses read scripts/ as text — so the
+# derivation above, the one part of this file designed to outlive its author,
+# was witnessed only by four by-hand `--plan` readings on ranger-base-pn621's
+# close. internal/posse/landcheckplan_qa_test.go is eight arms over the
+# `--plan` output now (suite arm 2, 0.14s for all eight, no toolchain step
+# run), over a PLANTED module rather than this tree: the subject is the
+# derivation, and a pin that read this repo's own arms would assert a package
+# list every unrelated landing can move. One of those eight red when it was
+# written, which is the legacy spelling above.
 #
 # WHAT IT COSTS, paid inside the fleet lock on the replay arm only: about
 # 7-9s warm and 30s cold, against ADR 0087's budget of ~6s warm and ~16s cold,
@@ -138,13 +155,31 @@ step() {
   env "$@"
 }
 
-# A tag is DECLARED by a `//go:build` line above a file's package clause. The
-# pairs are `<tag><TAB><dir>`; the dir is the package pattern to vet it in.
+# A tag is DECLARED by a build-constraint line above a file's package clause,
+# in EITHER of the two spellings the toolchain honours: `//go:build` and the
+# legacy `// +build`. The pairs are `<tag><TAB><dir>`; the dir is the package
+# pattern to vet it in.
+#
+# BOTH SPELLINGS, because the toolchain reads both and this gate judges what
+# the toolchain compiles (ranger-base-n2yaw, finding 2 of the
+# ranger-base-3fm26 verify). MEASURED 2026-11-11, go1.27.3 linux/amd64: a
+# file carrying `// +build posse_arm5` and no `//go:build` line is named in 0
+# files of the default build and 1 file under `-tags posse_arm5` — honoured —
+# while a derivation reading `//go:build` alone reported `arms declared here:
+# posse_arm2 posse_arm3` and vetted nothing under the fifth. `gofmt -l` flags
+# such a file, so `make fmt-check` reds it; fmt-check is not a prerequisite of
+# THIS gate, and this gate is the only thing that judges the tip a replay
+# creates, so the completeness claimed above cannot rest on it.
+#
+# The legacy pattern is the toolchain's own: `//`, optional space, `+build`,
+# then whitespace before the tags. A `+build` naming no tag constrains
+# nothing, so it is not matched — and a line below the package clause is not
+# matched either, in both spellings, which is the `pre` guard.
 arm_declarations() {
   find . -name .git -prune -o -name '*.go' -type f -exec awk '
     FNR == 1 { pre = 1 }
     /^package[ \t]/ { pre = 0 }
-    pre && /^\/\/go:build/ {
+    pre && (/^\/\/go:build/ || /^\/\/[ \t]*\+build[ \t]/) {
       dir = FILENAME
       sub(/\/[^\/]*$/, "", dir)
       if (dir == FILENAME) dir = "."

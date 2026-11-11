@@ -133,7 +133,9 @@ being affordable is in Alternatives.
 - **This repo's own check shipped under ranger-base-pn621, and the price was
   re-measured on it.** `scripts/posse-land-check` is D6's body, with two things
   D6 left to the build: the arm tags AND the packages to vet them in are
-  derived from the tree's own `//go:build` lines rather than listed, so a
+  derived from the tree's own build-constraint lines rather than listed — BOTH
+  spellings the toolchain honours, `//go:build` and the legacy `// +build`,
+  which the derivation read as one until ranger-base-n2yaw — so a
   fourth arm is covered by the commit that declares it and a fourth arm in
   another package is not vetted into a hole; and the cross-GOOS step reads
   "whichever of darwin/linux is not native", which on the D1 host is

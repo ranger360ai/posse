@@ -201,3 +201,68 @@ func TestQARecordTargetsAgreeWithTheWallForEveryPidAndCheckoutShape(t *testing.T
 		}
 	}
 }
+
+// 5. EVERY TARGET IS A DIRECTORY, which is the other half of "the gate asks
+// for exactly what the wall grants" and the half nothing pinned
+// (ranger-base-n2yaw, finding 1 of the ranger-base-3fm26 verify).
+//
+// `recordTargets` filters its git half through `isDirPath`, and that filter
+// BECAME LOAD-BEARING with ranger-base-6hjm5. Before it, the git half was
+// always `beadsGitDirs`, which names directories only, so the filter had
+// nothing to do — it has been there since 9c00e192 for a `.git` that does
+// not exist. The new arm asks `sessionGitGrants`, and three of that
+// function's six entries are FILE paths: `<common>/packed-refs.lock`,
+// `<common>/refs/heads/<branch>` and that path plus `.lock` (seatbelt.go,
+// ADR 0059 D1). The ref file is real and present in a dispatched session,
+// not hypothetical.
+//
+// WHAT IT COSTS IF THE FILTER GOES: `seatbeltReachProbe` runs
+// `: > <target>/posse-reach-probe.<pid>`, which on a regular file is ENOTDIR
+// — MEASURED, `/bin/sh` answers `Not a directory` — so the row reads
+// unrealized and the launch refuses, for exactly the open-PID /
+// linked-worktree / store-inside-its-own-repo shape ranger-base-6hjm5 exists
+// to fix. The four arms above cannot see it by construction: they assert the
+// targets are a SUBSET of the grants, and the three lock paths ARE granted.
+//
+// So this arm reads the KIND and not the containment, the way
+// seatbeltdenygitgrant's arms do and for the same reason — "inside a git dir"
+// and "is it a file" are different questions, and only the second decides
+// whether the probe can answer at all.
+func TestQARecordTargetsAreAllDirectoriesTheProbeCanWriteIn(t *testing.T) {
+	f := wgDenyFixture(t)
+	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
+	home := beadsHome(f.tree)
+	if home != absResolve(filepath.Join(f.tree, beadsDirName)) {
+		t.Fatalf("the local store does not resolve, so this arm measures nothing: beadsHome = %s", home)
+	}
+
+	// Non-vacuity FIRST, because this arm's live answer is "every target is a
+	// directory" either way once the filter is there, and a filter nobody
+	// feeds a file cannot be told from a filter that is gone: the producer
+	// underneath it has to be handing this shape a path the probe could not
+	// write in. The day it stops, this arm is no longer over the defect and
+	// says so here rather than passing quietly.
+	raw := recordGitTargets(f.ag, f.tree, home)
+	var unprobeable []string
+	for _, p := range raw {
+		if !isDirPath(p) {
+			unprobeable = append(unprobeable, p)
+		}
+	}
+	if len(unprobeable) == 0 {
+		t.Fatalf("recordGitTargets hands this shape nothing but directories, so the isDirPath filter in recordTargets has nothing to do and this arm is not over ranger-base-n2yaw's finding — sessionGitGrants' lock and ref entries are what made that filter load-bearing:\n  %s",
+			strings.Join(wgKinds(raw), "\n  "))
+	}
+
+	got := recordTargets(f.ag, f.tree, home)
+	var bad []string
+	for _, p := range got {
+		if !isDirPath(p) {
+			bad = append(bad, p)
+		}
+	}
+	if len(bad) != 0 {
+		t.Errorf("the record-reach gate would probe %s, and no probe can answer there: seatbeltReachProbe writes `<target>/posse-reach-probe.<pid>` and the kernel says ENOTDIR on a regular file and ENOENT on an absent one, so the row reads unrealized and the launch refuses for a write nothing could have satisfied. recordGitTargets hands this shape %d such path(s) and recordTargets must keep filtering them out:\n  %s",
+			strings.Join(abbrevAll(bad), " "), len(unprobeable), strings.Join(wgKinds(got), "\n  "))
+	}
+}
