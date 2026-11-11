@@ -7,7 +7,8 @@ package posse
 // writes, and the thing being claimed is that CLAUDE puts a sentence on a
 // screen that REX will hand back.
 //
-//	RHQ_LIVE_REX=1 go test ./internal/posse/ -run TestLiveCapturedHoldReadsThisSeatsOwnFooter -v
+//	RHQ_LIVE_REX=1 RHQ_LIVE_CLAUDE_DIR=$HOME/.claude \
+//	  go test ./internal/posse/ -run TestLiveCapturedHoldReadsThisSeatsOwnFooter -v
 //
 // It reads the seat it is RUNNING IN: `REX_SESSION` and `REX_BLOCK` are in
 // every Rex seat's environment (MEASURED 2026-11-10 in this one), so the pin
@@ -30,8 +31,21 @@ package posse
 // RHQ_LIVE_REX_WORK=1 when something IS running in the seat — a background
 // shell, a monitor — and the pin then also requires the hold to see it,
 // which is the arm that would have caught this bead.
+//
+// IT GREW A FOURTH CLAIM WITH ranger-base-qzujz, and it is the one most
+// exposed to somebody else's release: that claude writes a session row for
+// the process rex names as this block's owner, that the row's procStart
+// still matches what the kernel says about that pid, and that the id in it is
+// the one claude's own submit log is keyed on (ADR 0076, Amendment 6). That
+// chain is what tells a held prompt from an echoed one, so when it goes quiet
+// every composer on this instance reads as a hold. It needs the operator's
+// real claude dir NAMED — RHQ_LIVE_CLAUDE_DIR — because the suite's own
+// TestMain points HOME at a temp dir before anything reads it, and
+// liveCapturedComposerChain's own note says why that is right rather than
+// inconvenient.
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,9 +103,15 @@ func TestLiveCapturedHoldReadsThisSeatsOwnFooter(t *testing.T) {
 	if (hold.Work != "") != (backgroundWorkIn(footer) != "") {
 		t.Errorf("PaneHolding().Work = %q but the footer's own vocabulary reading is %q — the hold is no longer the footer's", hold.Work, backgroundWorkIn(footer))
 	}
-	if hold.Typed != "" || hold.Sent != "" || hold.Ghost != "" {
-		t.Errorf("the capture route claimed a composer reading (Typed=%q Sent=%q Ghost=%q); it has no store to tell a held prompt from an echoed one (ranger-base-qzujz)", hold.Typed, hold.Sent, hold.Ghost)
+	// ranger-base-qzujz: the composer half reads here too now, and the three
+	// things it rests on are all outside this repo — claude still drawing its
+	// box between two rules, claude still writing `sessions/<pid>.json` with
+	// a procStart the kernel agrees with, and rex still handing the owner pid
+	// back. The hermetic arms cannot check any of them.
+	if got := captureComposer(screen); got != hold.Typed && got != hold.Sent && got != hold.Ghost {
+		t.Errorf("captureComposer read %q off this screen and the hold carries Typed=%q Sent=%q Ghost=%q — the box is no longer between the last two rules, or the reading stopped being the one the hold spends", got, hold.Typed, hold.Sent, hold.Ghost)
 	}
+	liveCapturedComposerChain(t, b, seat)
 
 	if os.Getenv("RHQ_LIVE_REX_WORK") == "" {
 		t.Logf("RHQ_LIVE_REX_WORK unset: not requiring live work. Work = %q", hold.Work)
@@ -111,4 +131,59 @@ func TestLiveCapturedHoldReadsThisSeatsOwnFooter(t *testing.T) {
 		t.Errorf("Why() = %q, want it to say what is still running", hold.Why())
 	}
 	t.Logf("live hold: Work = %q, Why = %q", hold.Work, hold.Why())
+}
+
+// liveCapturedComposerChain is ranger-base-qzujz's live arm: the join that
+// makes a composer reading honest on this occupant, against the real stores.
+//
+// IT READS THE OPERATOR'S OWN CLAUDE CONFIG DIR, which no hermetic arm may
+// do and which is the whole point of a pin behind RHQ_LIVE_REX: the claim is
+// that CLAUDE writes a session row for the process REX names as the owner of
+// this block, and that the row's procStart still matches what the kernel says
+// about that pid. Both are somebody else's to change — a claude release, a
+// platform — and when either moves, the echo reading goes quiet and every
+// composer on this instance reads as a hold again.
+//
+// Read-only: one `program_status`, one `process`, two file reads.
+func liveCapturedComposerChain(t *testing.T, b *HerdrBackend, seat Seat) {
+	t.Helper()
+
+	// The live store, named here and nowhere else in this file: every other
+	// reading in it is rex's. It cannot be RESOLVED here, which is the one
+	// thing about this arm that is not obvious: the suite's TestMain points
+	// HOME and the three CLI home overrides at a temp dir before anything
+	// reads them, so `claudeHistoryPath()` inside a test answers
+	// /tmp/posse-testhome-…/.claude whatever the operator's real dir is. That
+	// is the discipline keeping every hermetic arm off the operator's own
+	// prompt history (herdrback.go, and HerdrBackend.ClaudeHistory being
+	// empty in every test backend) — so the one pin that is ABOUT that store
+	// has the operator NAME it, and skips otherwise.
+	dir := os.Getenv("RHQ_LIVE_CLAUDE_DIR")
+	if dir == "" {
+		t.Skip("RHQ_LIVE_CLAUDE_DIR unset: this arm reads the operator's own claude store, and the suite's temp HOME means it has to be named to be reached (RHQ_LIVE_CLAUDE_DIR=$HOME/.claude)")
+	}
+	history := filepath.Join(dir, claudeHistoryFile)
+	b.ClaudeHistory = history
+
+	sess, err := b.paneAgentSession(seat)
+	if err != nil {
+		t.Fatalf("no runtime session id for this seat's own block: %v\n"+
+			"  That is ADR 0076 Amendment 6's claim failing on the live stores. Without it the echo check cannot run, "+
+			"every box showing the line this pane last submitted reads as a prompt sitting UNSENT, and the --resume skip "+
+			"and the pulse's G2 -unsent row both act on an invented hold.", err)
+	}
+	if len(sess) < 32 || !strings.Contains(sess, "-") {
+		t.Errorf("runtime session id = %q, which is not the uuid shape claude's submit log is keyed on", sess)
+	}
+	t.Logf("live join: block %s -> claude session %s", seat.Pane, sess)
+
+	// The last link: that id is the one the submit log is keyed on. This
+	// seat has submitted at least the prompt that started the turn running
+	// the test, so a store that answers and holds no row for this session is
+	// the join landing on the wrong conversation.
+	sent, ok := lastSubmitted(history, sess)
+	if !ok {
+		t.Fatalf("claude's submit log (%s) holds no row for session %s, though this seat has submitted at least one prompt — the pid→session join is naming another conversation", history, sess)
+	}
+	t.Logf("live chain complete: last submit in this session was %q", ellipsis(sent, 60))
 }

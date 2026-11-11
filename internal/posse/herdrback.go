@@ -153,12 +153,23 @@ func (b *HerdrBackend) explain(s Seat) (AgentDetection, error) {
 // (ranger-base-2hvtv). Its caller asks the store first and treats every
 // failure here as "not an echo", so a slot that cannot answer costs the
 // reading and nothing else.
+//
+// IT IS THE ONE §4 DOOR WITH A SECOND ROUTE BEHIND IT (ADR 0076, Amendment
+// 6, ranger-base-qzujz), and the door is where that belongs rather than at
+// the call site. The FACT — which conversation is in this seat — is not
+// herdr's; only the verb that reads it is. On Rex the same fact is in
+// claude's own per-session store, joined on the pid that holds the block
+// (runtimesession.go), so the reading this feeds stops being herdr-only
+// without its caller learning which multiplexer answered. An occupant with
+// neither route still answers §4's "not available", unchanged.
 func (b *HerdrBackend) paneAgentSession(target Seat) (string, error) {
-	hm, ok := b.herdrMux()
-	if !ok {
-		return "", muxNotHerdr("pane get agent_session")
+	if hm, ok := b.herdrMux(); ok {
+		return hm.PaneAgentSession(target)
 	}
-	return hm.PaneAgentSession(target)
+	if rm, ok := b.rexMux(); ok {
+		return b.rexAgentSession(rm, target)
+	}
+	return "", muxNotHerdr("pane get agent_session")
 }
 
 // paneReadDetection is §4's CAPTURE: the screen in the shape a detection

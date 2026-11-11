@@ -322,8 +322,27 @@ func fakeRexCapture(flags map[string]string) int {
 	}
 	var text map[string]string
 	fakeRexLoadMap("rex-capture.json", &text)
+	// A FORMAT-keyed screen wins over the block's own, because the real CLI
+	// answers `--format text` and `--format vt` with two different renderings
+	// of one screen and a reading can turn on the difference (the dim run
+	// ghostbox.go decides on is in the second and not the first). A test that
+	// seeds one screen for the block still gets it for both formats, which is
+	// what every arm written before this wanted.
+	if s, ok := text[fakeRexCaptureKey(flags["-b"], flags["--format"])]; ok {
+		fmt.Println(s)
+		return 0
+	}
 	fmt.Println(text[flags["-b"]])
 	return 0
+}
+
+// fakeRexCaptureKey is how a format-specific screen is stored: the block and
+// the format, in a spelling no block id can collide with.
+func fakeRexCaptureKey(block, format string) string {
+	if format == "" {
+		format = "text"
+	}
+	return block + "\t--format " + format
 }
 
 func fakeRexWhoami() int {
@@ -488,12 +507,23 @@ func rexSeedProcess(t *testing.T, block string, proc RexProcess) {
 
 func rexSeedCapture(t *testing.T, block, text string) {
 	t.Helper()
+	rexSeedCaptureAs(t, block, "", text)
+}
+
+// rexSeedCaptureAs seeds the screen one `--format` answers with. An empty
+// format is the block's default, which every format falls back to.
+func rexSeedCaptureAs(t *testing.T, block, format, text string) {
+	t.Helper()
+	key := block
+	if format != "" {
+		key = fakeRexCaptureKey(block, format)
+	}
 	m := map[string]string{}
 	p := filepath.Join(fakeDirOf(t), "rex-capture.json")
 	if b, err := os.ReadFile(p); err == nil {
 		json.Unmarshal(b, &m)
 	}
-	m[block] = text
+	m[key] = text
 	b, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)

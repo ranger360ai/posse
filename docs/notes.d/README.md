@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-uwxs4](ranger-base-uwxs4.md) — The step-7 canary, and the genre wall that moved it (ranger-base-uwxs4) — 2026-11-10
 - [ranger-base-um1bi](ranger-base-um1bi.md) — The two report-only composer readings, on an occupant with no `agent explain` (ranger-base-um1bi) — 2026-11-10
 - [ranger-base-r5131](ranger-base-r5131.md) — A guard that was off, not missing: htafy's hold on a rex instance (ranger-base-r5131) — 2026-11-10
+- [ranger-base-qzujz](ranger-base-qzujz.md) — The store that was not Rex's: the unsent-prompt half of the settled-pane hold (ranger-base-qzujz) — 2026-11-10
 - [ranger-base-pbo1q](ranger-base-pbo1q.md) — The cold-first-exec injector, as built, and what it measured on the way (ranger-base-pbo1q) — 2026-11-10
 - [ranger-base-nfc2b](ranger-base-nfc2b.md) — A rex block has no global name, so `posse peek` could read one seat on the box (ranger-base-nfc2b) — 2026-11-10
 - [ranger-base-k0hd6](ranger-base-k0hd6.md) — The dispatch path holds a Seat now, not a pane (ranger-base-k0hd6) — 2026-11-10

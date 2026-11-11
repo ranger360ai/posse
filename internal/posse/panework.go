@@ -93,9 +93,11 @@ package posse
 // `multiplexer: rex` instance, silently, from the day the slot changed: not
 // "claude is not in the pane" but "the question was never asked". The WORK
 // half is realized a second way for that occupant (capturedHold below,
-// ranger-base-r5131), off §2's `Read`, which every occupant has. The
-// composer half is still §4's and is still herdr-only; ranger-base-qzujz
-// carries it.
+// ranger-base-r5131), off §2's `Read`, which every occupant has. So is the
+// COMPOSER half (capturedcomposer.go, ranger-base-qzujz) — it waited on a
+// second store, because a Typed reading with no echo check behind it invents
+// holds, and the id that check needs was §4's until ADR 0076's Amendment 6
+// found it in claude's own per-session file.
 
 import (
 	"fmt"
@@ -137,6 +139,14 @@ const (
 	// different ways, and a readings census that could not tell them apart
 	// could not say which route a withheld settle was withheld on.
 	captureFooterRegion = "capture_after_last_horizontal_rule"
+
+	// captureComposerRegion is composerRegion read off a CAPTURE, located
+	// between the screen's last two rules rather than named by a manifest
+	// (capturedcomposer.go, ranger-base-qzujz). Spelled apart from
+	// composerRegion for captureFooterRegion's reason: the two are the same
+	// box located two different ways, and a readings census that could not
+	// tell them apart could not say which route withheld a settle.
+	captureComposerRegion = "capture_prompt_box_body"
 )
 
 // captureFooterLines is how much of a captured screen's tail capturedHold
@@ -471,14 +481,18 @@ func (b *HerdrBackend) PaneHolding(target Seat) PaneHold {
 // the note at the top of this file already licenses — say "this settle is
 // not one". See ADR 0076, "Amendment 5".
 //
-// THE WORK HALF ONLY, and the gap is named rather than hidden. The composer
-// half needs `prompt_box_body` and then the two stores that tell a held
-// prompt from an echoed or a drawn one, and the first of those
-// (`paneAgentSession`) is itself §4 — so a Typed reading taken here could
-// not run the echo check and would INVENT holds, which is the one direction
-// this file refuses. Typed, Sent and Ghost therefore stay "" on this route
-// and the unsent-prompt half of htafy stays herdr-only; that is
-// ranger-base-qzujz.
+// BOTH HALVES NOW, and the second one arrived on its own bead because it
+// needed a store this one did not. The composer is on the same captured
+// screen, but a Typed reading is only honest beside the echo check that
+// tells a held prompt from the box showing the line this pane last
+// submitted — and that check needs the runtime's own conversation id, which
+// was §4's and herdr-only when this function was written. So Typed, Sent and
+// Ghost stayed "" here, said out loud rather than guessed, and
+// ranger-base-qzujz went and found Rex's store of record for it: claude's own
+// `sessions/<pid>.json`, joined on the pid that holds the block
+// (runtimesession.go, ADR 0076 Amendment 6). capturedcomposer.go is the
+// reading; the one thing to know here is that it is taken off THIS capture,
+// so the work and the composer are one instant and one snapshot.
 func (b *HerdrBackend) capturedHold(target Seat) PaneHold {
 	screen, err := b.Mux().Read(target, captureFooterLines, false)
 	if err != nil {
@@ -487,18 +501,32 @@ func (b *HerdrBackend) capturedHold(target Seat) PaneHold {
 		return PaneHold{}
 	}
 	footer := captureFooter(screen)
-	work := backgroundWorkIn(footer)
-	if work == "" {
+	hold := PaneHold{Work: backgroundWorkIn(footer)}
+	if hold.Work != "" {
+		// The region is recorded whether or not herdr ever saw one, because
+		// the consequence sites log `hold.Read` and a record that named no
+		// region could not say what this withheld on (ADR 0066 D1). `Seen`
+		// stays false: it means "herdr recognized a screen", and on this
+		// route herdr was never asked.
+		hold.Read.Regions = append(hold.Read.Regions, ReadingRegion{
+			Name: captureFooterRegion, Bytes: len(footer), Text: footer,
+		})
+	}
+	// ranger-base-qzujz: the composer half, off the SAME capture, with the
+	// echo and ghost readings that keep it honest (capturedcomposer.go). It
+	// is asked whatever the footer said, because the two halves are
+	// independent facts about one screen — a seat with nothing running can
+	// still be holding an unsent prompt, which is the whole of the pulse's
+	// G2 `-unsent` row.
+	hold = b.capturedComposerHold(target, screen, hold)
+	if !hold.Waiting() && hold.Sent == "" && hold.Ghost == "" {
+		// Nothing was read off this screen that any caller can spend, and
+		// `PaneHold{}` is what every other failure arm in this file answers
+		// with — so a screen that said nothing reads as a screen that said
+		// nothing, regions and all.
 		return PaneHold{}
 	}
-	// The region is recorded whether or not herdr ever saw one, because the
-	// consequence sites log `hold.Read` and a record that named no region
-	// could not say what this withheld on (ADR 0066 D1). `Seen` stays
-	// false: it means "herdr recognized a screen", and on this route herdr
-	// was never asked.
-	return PaneHold{Work: work, Read: ReadingEvidence{
-		Regions: []ReadingRegion{{Name: captureFooterRegion, Bytes: len(footer), Text: footer}},
-	}}
+	return hold
 }
 
 // captureFooter is the lines after the screen's LAST horizontal rule: the
@@ -673,10 +701,13 @@ func (b *HerdrBackend) ConfirmSubmitted(target Seat) string {
 //
 // WHAT IT COSTS. An empty or cleared box is one ~20ms capture per poll —
 // ~160ms of rex calls spread across the two-second window. A box with text in
-// it also pays the echo join and the dim read (capturedComposerHold's own
-// measurement: ~330ms per sample on this box), so a genuinely held prompt
-// costs four or five of those inside the window and a retired one costs
-// exactly one, because the retirement answers "" on the first poll.
+// it also pays the echo join and the dim read: three more occupant calls,
+// which is capturedComposerHold's own price now that ranger-base-k0hd6 hands
+// this path a Seat carrying both halves and RexMux.hold's resolution returns
+// immediately. (That note's ~330ms per sample was measured when each of the
+// three paid a pane-only seat's listing.) A genuinely held prompt costs four
+// or five of those inside the window and a retired one costs exactly one,
+// because the retirement answers "" on the first poll.
 //
 // NO SEPARATE GHOST ARM AT THE DEADLINE, unlike the herdr loop above. There
 // the dim read is one extra `agent read` and is deferred to the one poll that
@@ -688,12 +719,12 @@ func (b *HerdrBackend) ConfirmSubmitted(target Seat) string {
 // says was submitted last IS the successful submit, and the herdr arm reaches
 // that only by waiting out the window and asking the dim question.
 //
-// IT ANSWERS "" UNTIL ranger-base-qzujz LANDS, said out loud rather than left
-// for a reader to discover: capturedHold fills Work and leaves Typed, Sent
-// and Ghost empty on this route until that bead's composer reading is in the
-// tree (5fa6bafc, committed on its branch and not yet on main). So this is
-// the route, wired and pinned as a route; the report begins the day the
-// reading behind it does, and nothing further is owed here.
+// IT REPORTS NOW: ranger-base-qzujz LANDED, which this note used to say it
+// was waiting for. capturedHold filled Work and left Typed, Sent and Ghost
+// empty on this route until that bead's composer reading reached the tree;
+// the reading is here (capturedcomposer.go, replayed onto this route's own
+// Seat signature under ranger-base-b34wr), so the route this function wired
+// and pinned as a route is a route that answers.
 func (b *HerdrBackend) confirmSubmittedCaptured(target Seat, deadline time.Time) string {
 	for {
 		typed := b.capturedHold(target).Typed

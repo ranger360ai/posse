@@ -636,6 +636,54 @@ func (m RexMux) AwaitFirstReport(s Seat, within time.Duration) (MuxReading, bool
 	}
 }
 
+// RuntimeOwner is the PROCESS holding this seat's keyboard: the root
+// program_status record's owner, once §3's three guards have passed on it.
+//
+// IT IS NOT ONE OF ADR 0076 §2'S VERBS, and it is here for MuxServer's and
+// MuxCloseGone's reason — ADR 0076's Amendment 6 is not satisfiable without
+// it. Amendment 6 realizes §4's runtime-session read on Rex by joining
+// claude's own per-session store on the pid that holds the block
+// (runtimesession.go), and the pid is in the record this occupant already
+// reads. Reached by a type assertion (HerdrBackend.rexMux), like the one
+// other verb only Rex has.
+//
+// AN ERROR IS THE ONLY OTHER ANSWER, never a zero owner. A pid is a join key:
+// the caller is about to read a file NAMED by it, so "posse could not say who
+// holds this block" and "pid 0 holds it" must not wear one shape. The three
+// causes are §3's own and are spelled here as rexReading spells them,
+// through the same two predicates, so the two cannot drift: a record with no
+// owner, an owner that IS the block's shell, and an owner that is no longer
+// live in the block. That agreement is pinned rather than asserted —
+// RuntimeOwner answers iff State's reading has Seen (runtimesession_qa_test.go).
+func (m RexMux) RuntimeOwner(s Seat) (RexOwner, error) {
+	s, err := m.hold(s)
+	if err != nil {
+		return RexOwner{}, err
+	}
+	recs, err := m.R.ProgramStatus(s.Session, s.Pane)
+	if err != nil {
+		return RexOwner{}, err
+	}
+	rec := rexRootRecord(recs)
+	if rec == nil {
+		return RexOwner{}, Die("rex block %s holds no program_status record, so nothing says which process has its keyboard", s.Pane)
+	}
+	if rec.Owner == nil {
+		return RexOwner{}, Die("rex block %s: its program_status record names no owner, so nothing says a runtime wrote it", s.Pane)
+	}
+	proc, err := m.R.Process(s.Session, s.Pane)
+	if err != nil {
+		return RexOwner{}, err
+	}
+	if rexOwnerIsShell(*rec.Owner, proc) {
+		return RexOwner{}, Die("rex block %s: its program_status record was written by the block's own shell (ADR 0076 §3)", s.Pane)
+	}
+	if !rexOwnerLive(*rec.Owner, proc) {
+		return RexOwner{}, Die("rex block %s: %s is not a live process in it — the record outlived its writer", s.Pane, rexOwnerString(*rec.Owner))
+	}
+	return *rec.Owner, nil
+}
+
 // ─── who is answering (ADR 0076 §5) ──────────────────────────────────────────
 
 // Server is Rex's answer to the provenance triple every session record

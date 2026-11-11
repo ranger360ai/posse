@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below*
 
 ## Context
 
@@ -1566,3 +1566,131 @@ first job is to find Rex's store of record for "was this submitted".
 - A runtime that is not claude previews no such footer and answers the
   empty hold, exactly as it did on herdr. That remains a gap and not a
   bug: the reading is only ever allowed to say "this settle is not one".
+
+## Amendment 6: the runtime's own conversation id is readable on Rex, through the runtime's own store (ranger-base-qzujz, 2026-11-10)
+
+§4 keeps `PaneAgentSession` herdr's, and Amendment 5 left the composer
+half of ranger-base-htafy's hold unrealized on Rex because of it: a
+`Typed` reading with no echo check behind it reads every box showing the
+line its pane last submitted as a prompt sitting unsent, and that
+invents holds. This amendment settles the half Amendment 5 deferred.
+
+### What §4 actually owns
+
+§4's list is a list of **verbs**, and the entry that blocked this is the
+only one on it that names a FACT posse needs rather than a diagnostic
+herdr happens to have. `agent explain`'s evaluated rules, the detection
+preflight and the report-agent route are herdr's working — there is
+nothing else to ask, because herdr's detection engine is the thing
+being read. "Which conversation is the runtime in this seat having" is
+not like that. It is the runtime's own fact; herdr's `pane get
+agent_session` is one route to it, and on a Rex instance the runtime
+publishes it itself.
+
+So §4 stands as written and gains one sentence: **a §4 verb that names a
+fact the RUNTIME owns may be answered on another occupant by asking the
+runtime, through the door that already spells the verb.** The door is
+`HerdrBackend.paneAgentSession`, unchanged for its caller — the reading
+it feeds stops being herdr-only without panework.go learning which
+multiplexer answered. An occupant with neither route still answers §4's
+typed "not available" (`muxVerbMissing`), never a "no".
+
+### Where Rex's answer is, and where it is not
+
+MEASURED 2026-11-10 on this host (linux, rex CLI 0.0.1794069975, claude
+2.1.322), over the five live seats on the box plus one scratch Rex
+session created and killed for the arm:
+
+- **`program_status` does not carry it.** The root record is `state`,
+  `app`, `effective_app`, `title`, `msg`, `updated_at` and an `owner` —
+  a pid and a process name. No session id, no transcript path.
+- **Rex has no send history to ask.** `rex capture` answers a screen;
+  `rex send` answers nothing. A block holds no record of what was typed
+  into it.
+- **claude carries it, in a file per LIVE session:**
+  `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`, holding `pid`, `sessionId`,
+  `cwd`, `startedAt`, `procStart`, `version`, `status` and the rest. The
+  join is the OWNER's pid, which `program_status` does carry and which
+  §3 already checks against the block's process table before posse
+  believes a record at all.
+
+The chain end to end on a live posse seat: block
+`block:01a1c83d-…-492d43a87c2e` → owner `{pid:2069699,name:"claude"}` →
+`sessions/2069699.json` → `sessionId
+0226278e-a243-4f86-9200-5cd648eac89f` → a `history.jsonl` row carrying
+that sessionId with `project` = that seat's worktree.
+
+### Decision
+
+**D1. The pid comes from the occupant, not from the process table.** A
+new Rex-only verb, `RexMux.RuntimeOwner`, answers the root record's
+owner once §3's three guards have passed on it — no owner, an owner that
+is the block's own shell, an owner no longer live in the block — and
+returns an error otherwise, never a zero owner. A pid is a join key for a
+file named by it, so "posse could not say who holds this block" and "pid
+0 holds it" must not wear one shape. `RuntimeOwner` answers exactly when
+`State`'s reading has `Seen`, and that agreement is pinned.
+
+**D2. The row is fenced against pid reuse.** Rex says to compare its
+owner "as well as pid, because the system reuses process IDs"; a file
+NAMED by a pid is one layer further out. claude writes `procStart` into
+the row and it is the kernel's own start time for that process — field
+22 of `/proc/<pid>/stat`, byte for byte (MEASURED over six live claude
+processes: an exact string match in every one). The row is accepted only
+when the kernel still agrees. A platform with no such reading answers
+"not available", the echo reading stays off, and a composer is judged
+exactly as it was before this bead.
+
+**D3. The session store is off exactly when the history store is.** Both
+files are claude's config dir, and `HerdrBackend.ClaudeHistory` is empty
+in every test backend so that no test reads the operator's own prompt
+history. The row path is derived from that one field rather than
+resolved a second time through the config dir, which would have read
+the operator's real `sessions/` out of a backend that reads no history
+at all.
+
+**D4. Only claude's shape is answered,** as `Herdr.PaneAgentSession`
+already answers only claude's: the store this id is for is claude's own
+submit log. A block held by another runtime is refused rather than
+joined.
+
+### Consequences
+
+- `PaneHolding`'s composer half now answers on both occupants, so
+  htafy's last two consequences are live on a Rex instance: the
+  `--resume` skip for an unsubmitted prompt and the pulse's G2
+  `-unsent` row, with its echo and ghost clauses.
+- The composer is located between the screen's **last two horizontal
+  rules**, positionally, never searched for — captureFooter's rule, one
+  rule up (`capturedcomposer.go`). The readings log records it as
+  `capture_prompt_box_body`, never herdr's `prompt_box_body`, so a
+  census can still say which route withheld a settle (ADR 0066 D1).
+- **The echo comparison is whitespace-insensitive on this route and
+  nowhere else.** herdr's preview may be TRUNCATED and is never wrapped;
+  a capture is whole and wrapped at the terminal's width, so one
+  submitted prompt is three screen lines (MEASURED). The reading rejoins
+  them and the comparison collapses whitespace runs on both sides.
+  What that cannot see is a line claude broke MID-WORD — an unbroken
+  token wider than the terminal — which then keeps the text as a hold:
+  a withheld settle, not an invented one. Un-wrapping properly would
+  need the terminal's width, and the width is not in the capture.
+- **ghostbox.go's missing half is half-measured now.** Its corpus has a
+  dim suggestion 60 times and a TYPED unsent line zero times, because
+  typing into a live pane is typing into somebody's seat. In a scratch
+  Rex session a typed line was MEASURED NOT DIM (2026-11-10, claude
+  2.1.322): `❯<U+00A0>this prompt is sitting unsent in the box` with no
+  SGR anywhere on the line, against
+  `❯<U+00A0>\e[0m\e[2mTry "create a util logging.py that..."\e[0m` for
+  the suggestion in the same session. One observation on one runtime, so
+  the reading still only RETIRES a claim and still licenses no
+  keystroke; `scripts/verify-ghost-composer.sh` is still what closes it
+  on herdr.
+- `rex capture --format vt` spells a redrawn line's gaps as cursor moves
+  (`\e[1C`) where herdr's `agent read --format ansi` carries literal
+  spaces (MEASURED). `scanSGRDim` drops escapes it is not reading, so
+  the capture route expands `CSI n C` to n spaces before handing the
+  screen to that rule. The normalization is this route's; the dim rule
+  is a measured corpus and is not widened.
+- A runtime that is not claude reaches none of this and answers the
+  empty composer, exactly as it did on herdr. That remains a gap and
+  not a bug.

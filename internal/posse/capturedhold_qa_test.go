@@ -100,11 +100,15 @@ func TestQAACaptureCarriesTheHoldWhereTheSlotHasNoAgentExplain(t *testing.T) {
 	if hold.Read.Seen {
 		t.Error("Read.Seen = true on the capture route — Seen means herdr recognized a screen, and herdr was never asked")
 	}
-	// The composer half is still §4's and must not be guessed here: without
-	// `paneAgentSession` the echo check cannot run, so a Typed reading taken
-	// on this route would invent holds (ranger-base-qzujz).
+	// This fixture's box is EMPTY, and that is now the only reason the three
+	// composer fields are: ranger-base-qzujz found the runtime-session store
+	// on this occupant (ADR 0076 Amendment 6) and the composer half reads
+	// here too, off this same capture. An empty box is still an empty hold,
+	// so the arm stands — what moved is the sentence that used to say the
+	// reading could not be taken at all. The composer arms are in
+	// capturedcomposer_qa_test.go.
 	if hold.Typed != "" || hold.Sent != "" || hold.Ghost != "" {
-		t.Errorf("the capture route claimed a composer reading (Typed=%q Sent=%q Ghost=%q) — it has no store to tell a held prompt from an echoed one", hold.Typed, hold.Sent, hold.Ghost)
+		t.Errorf("the capture route read a composer out of an EMPTY box (Typed=%q Sent=%q Ghost=%q) — `❯` and its U+00A0 are the box, not text in it", hold.Typed, hold.Sent, hold.Ghost)
 	}
 }
 
