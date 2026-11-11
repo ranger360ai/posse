@@ -135,65 +135,127 @@ func wgUnder(set []string, dir string) []string {
 
 // A linked worktree: the session's own tree, its per-worktree git dir inside
 // the operator's `.git`, and the shared common dir. The PID's repo
-// contributes `<cwd>/.beads` and nothing else.
+// contributes the bead store and nothing else.
+//
+// TWICE OVER, in the two shapes the STORE OF RECORD can have inside this
+// repo, because D3's one exception is the store and its SIXTH DOOR was in
+// how that exception was spelled (ranger-base-o8us6, from the QA lane's
+// verify of ranger-base-8t6j1): with no redirect, and with a
+// `.beads/redirect` naming `<cwd>/inner/.beads` — ranger-base-f5dg's REPRO
+// 2, a store INSIDE this very repository, where `beadsGitDirs` resolves the
+// store with `git -C` and so answers with the SESSION's own git dirs. That
+// shape handed this PID `<repo>/.git/worktrees/<session>` and `<repo>/.git`
+// WHOLE (the common dir unnarrowed — `objects` and `refs/heads` both) until
+// the grant started asking whether the store is another repo at all. The
+// store's own DIRECTORY is granted in both halves, or bd cannot claim,
+// comment or close; the ARMS below are the same claim either way, which is
+// the point — the exception is about another repo, not about a path.
 func TestQAWholeTreeDenyGetsNoGitGrantInALinkedWorktree(t *testing.T) {
 	f := wgDenyFixture(t)
-	deny := wgGrants(t, f, wgDeny(f), f.tree)
-	open := wgGrants(t, f, f.ag, f.tree)
 
-	// The control first: the open PID really does get the git grants, so a
-	// producer that answered nothing for everybody cannot pass this file.
-	for _, want := range []string{f.own, filepath.Join(f.common, "objects"), filepath.Join(f.common, "logs"), f.ref(f.branch)} {
-		if !writeGranted(open, want) {
-			t.Fatalf("the control PID is granted no write on %s, so this fixture cannot measure D3 taking it away:\n  %s",
-				want, strings.Join(wgKinds(open), "\n  "))
+	// The control: the open PID really does get the git grants in this
+	// shape, so a producer that answered nothing for everybody cannot pass
+	// this file.
+	control := func(where string) {
+		t.Helper()
+		open := wgGrants(t, f, f.ag, f.tree)
+		for _, want := range []string{f.own, filepath.Join(f.common, "objects"), filepath.Join(f.common, "logs"), f.ref(f.branch)} {
+			if !writeGranted(open, want) {
+				t.Fatalf("%s: the control PID is granted no write on %s, so this fixture cannot measure D3 taking it away:\n  %s",
+					where, want, strings.Join(wgKinds(open), "\n  "))
+			}
 		}
 	}
 
-	// ADR 0086 D3: nothing in either git dir, and `<cwd>/.git` named by
-	// nothing — in a worktree that is the FILE whose grant refused the whole
-	// bwrap render (R0).
-	for _, gone := range []string{
-		filepath.Join(f.tree, ".git"),
-		f.own,
-		filepath.Join(f.common, "objects"),
-		filepath.Join(f.common, "logs"),
-		f.lock(),
-		f.ref(f.branch),
-		f.ref(f.branch) + ".lock",
-		filepath.Join(f.common, "refs", "heads", "main"),
-		f.other,
-	} {
-		if writeGranted(deny, gone) {
-			t.Errorf("a PID that denies the whole tree is granted a write that reaches %s (ADR 0086 D3):\n  %s",
-				gone, strings.Join(wgKinds(deny), "\n  "))
+	// The claim, over whatever the bead stores are in this half.
+	noGitGrant := func(where string, stores ...string) {
+		t.Helper()
+		deny := wgGrants(t, f, wgDeny(f), f.tree)
+
+		// ADR 0086 D3: nothing in either git dir, and `<cwd>/.git` named by
+		// nothing — in a worktree that is the FILE whose grant refused the
+		// whole bwrap render (R0).
+		for _, gone := range []string{
+			filepath.Join(f.tree, ".git"),
+			f.own,
+			f.common,
+			filepath.Join(f.common, "objects"),
+			filepath.Join(f.common, "logs"),
+			f.lock(),
+			f.ref(f.branch),
+			f.ref(f.branch) + ".lock",
+			filepath.Join(f.common, "refs", "heads", "main"),
+			f.other,
+		} {
+			if writeGranted(deny, gone) {
+				t.Errorf("%s: a PID that denies the whole tree is granted a write that reaches %s (ADR 0086 D3):\n  %s",
+					where, gone, strings.Join(wgKinds(deny), "\n  "))
+			}
+		}
+
+		// What it keeps, and the whole of it: the bead store, so claim,
+		// comment and close still work (SeatbeltWritable's own first arm,
+		// and its store-of-record grant for the redirected half).
+		for _, store := range stores {
+			if !writeGranted(deny, store) {
+				t.Errorf("%s: the bead store %s is not granted, so the seat cannot claim or close its own bead:\n  %s",
+					where, store, strings.Join(wgKinds(deny), "\n  "))
+			}
+		}
+		for _, p := range wgUnder(deny, f.tree) {
+			inStore := false
+			for _, store := range stores {
+				if underDir(store, p) {
+					inStore = true
+				}
+			}
+			if !inStore {
+				t.Errorf("%s: the session's tree contributes %s beside %v — D3 leaves the repo the bead store and nothing else:\n  %s",
+					where, p, stores, strings.Join(wgKinds(deny), "\n  "))
+			}
+		}
+
+		// The KIND of every grant, which is R0 generalized: in a linked
+		// worktree the path that refused the bwrap render was a FILE in the
+		// set, and no path in this PID's set is one. (The open PID's set
+		// still holds three, which is what BwrapWritable swaps away at the
+		// other mechanism — so this assertion belongs to this arm alone and
+		// is not a property of the producer.)
+		for _, k := range wgKinds(deny) {
+			if strings.HasPrefix(k, "f ") {
+				t.Errorf("%s: the set names a FILE, which bwrap refuses to bind (BwrapArgs shape 1, probe B8) and which is how R0 refused a whole-tree-deny PID's every worktree launch: %s", where, k)
+			}
+		}
+
+		// BOTH MECHANISMS, which is the half the live-defect pin measured
+		// before this door closed: BwrapWritable returns early for this PID
+		// class ("no git grant to swap, and no ref directory to add"), so
+		// the set it hands BwrapArgs is this one — a git dir the producer
+		// kept would be BOUND READ-WRITE here, with the two walls agreeing
+		// on the grant instead of on the rule.
+		bset, keep := BwrapWritable(wgDeny(f), deny, f.tree)
+		if len(keep) != 0 {
+			t.Errorf("%s: the render asked for a ref keep file for a PID granted no ref directory: %v", where, keep)
+		}
+		for _, p := range bset {
+			if underDir(f.common, p) || underDir(f.own, p) || p == absResolve(filepath.Join(f.tree, ".git")) {
+				t.Errorf("%s: the bwrap set binds %s read-write:\n  %s", where, p, strings.Join(wgKinds(bset), "\n  "))
+			}
 		}
 	}
 
-	// What it keeps, and the whole of it: the bead store, so claim, comment
-	// and close still work (SeatbeltWritable's own first arm).
-	beads := filepath.Join(f.tree, ".beads")
-	if !writeGranted(deny, beads) {
-		t.Errorf("the bead store is not granted, so the seat cannot claim or close its own bead:\n  %s", strings.Join(wgKinds(deny), "\n  "))
-	}
-	for _, p := range wgUnder(deny, f.tree) {
-		if !underDir(beads, p) {
-			t.Errorf("the session's tree contributes %s beside %s — D3 leaves the repo exactly one grant:\n  %s",
-				p, beads, strings.Join(wgKinds(deny), "\n  "))
-		}
-	}
+	control("with no redirect")
+	noGitGrant("with no redirect", filepath.Join(f.tree, beadsDirName))
 
-	// The KIND of every grant, which is R0 generalized: in a linked worktree
-	// the path that refused the bwrap render was a FILE in the set, and no
-	// path in this PID's set is one. (The open PID's set still holds three,
-	// which is what BwrapWritable swaps away at the other mechanism — so
-	// this assertion belongs to this arm alone and is not a property of the
-	// producer.)
-	for _, k := range wgKinds(deny) {
-		if strings.HasPrefix(k, "f ") {
-			t.Errorf("the set names a FILE, which bwrap refuses to bind (BwrapArgs shape 1, probe B8) and which is how R0 refused a whole-tree-deny PID's every worktree launch: %s", k)
-		}
+	// The store of record, moved INSIDE this session's own repository.
+	inner := sbMkdir(t, filepath.Join(f.tree, "inner", beadsDirName))
+	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
+	sbWrite(t, filepath.Join(f.tree, beadsDirName, beadsRedirect), inner+"\n")
+	if got := beadsHome(f.tree); got != absResolve(inner) {
+		t.Fatalf("the redirect was not followed, so the half below is not about it: beadsHome = %s, want %s", got, inner)
 	}
+	control("with a redirect to <cwd>/inner/.beads")
+	noGitGrant("with a redirect to <cwd>/inner/.beads", filepath.Join(f.tree, beadsDirName), inner)
 }
 
 // The operator's own checkout, where `.git` is a DIRECTORY inside cwd. The
@@ -343,8 +405,29 @@ func TestQAWholeTreeDenyRecordTargetsSkipOnlyItsOwnGitDir(t *testing.T) {
 		t.Fatalf("the control PID is not asked for its git dir either, so the arm above measures nothing:\n  %s", strings.Join(wgKinds(ctrl), "\n  "))
 	}
 
-	// A REDIRECT: the store of record is another repo, D3 keeps its git
-	// dirs, and they stay targets for both PIDs.
+	// A REDIRECT THAT STAYS IN THIS REPO (`<cwd>/inner/.beads`,
+	// ranger-base-f5dg's REPRO 2): the store is not under `<cwd>/.beads`,
+	// but the git dirs `beadsGitDirs` names for it are the SESSION's own —
+	// so this PID is granted none of them (ADR 0086 D3's sixth door,
+	// ranger-base-o8us6) and probing them would refuse the launch for a
+	// write its own rule forbids. The store alone, and the control is the
+	// open PID in the same shape, which is still asked for both.
+	inner := sbMkdir(t, filepath.Join(f.tree, "inner", beadsDirName))
+	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
+	sbWrite(t, filepath.Join(f.tree, beadsDirName, beadsRedirect), inner+"\n")
+	if got := beadsHome(f.tree); got != absResolve(inner) {
+		t.Fatalf("the redirect does not resolve, so this half measures nothing: beadsHome = %s", got)
+	}
+	if got := wgKinds(recordTargets(deny, f.tree, beadsHome(f.tree))); strings.Join(got, "\n") != "d "+absResolve(inner) {
+		t.Errorf("a whole-tree-deny PID whose store is inside its own repo is still asked to write that repo's git dirs — the gate must ask for exactly what SeatbeltWritable grants:\n  %s",
+			strings.Join(got, "\n  "))
+	}
+	if n := len(recordTargets(open, f.tree, beadsHome(f.tree))); n < 2 {
+		t.Fatalf("the control PID is not asked for the git dirs in this shape either, so the arm above measures nothing: %d target(s)", n)
+	}
+
+	// A REDIRECT INTO ANOTHER REPO: D3 keeps its git dirs — bd commits
+	// there — and they stay targets for both PIDs.
 	store := sbMkdir(t, filepath.Join(filepath.Dir(f.repo), "store"))
 	sbGitInit(t, store)
 	sbMkdir(t, filepath.Join(store, beadsDirName))

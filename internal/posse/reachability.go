@@ -264,17 +264,26 @@ func recordReachNoStoreClause(mech, cage string, available bool) string {
 // and for the same reason — a `bd` that cannot commit does not take
 // index.lock. What is NOT narrowed is the store of record in ANOTHER repo:
 // D3 keeps those git dirs granted because bd commits there, so they stay
-// targets and a wall that lost them is still a finding. The test is
-// SeatbeltWritable's own base for this PID class (`<dir>/.beads`), so the
-// one shape where a redirect stays inside cwd but outside `.beads` —
-// `<cwd>/inner/.beads`, ranger-base-f5dg's REPRO 2 — is granted and probed
-// rather than silently dropped.
+// targets and a wall that lost them is still a finding.
+//
+// THE TEST IS "IS THE STORE IN THIS SESSION'S OWN TREE", AND IT USED TO BE
+// "IS IT UNDER `<dir>/.beads`" (ranger-base-o8us6, ADR 0086 D3's sixth
+// door). The narrower spelling was written to keep ranger-base-f5dg's REPRO
+// 2 shape — a redirect to `<cwd>/inner/.beads` — "granted and probed", and
+// it was granted: `beadsGitDirs` answered for a store inside this very
+// repository and handed a whole-tree-deny PID the session's own git dirs,
+// which is the defect that door was. Now that SeatbeltWritable skips that
+// grant, a probe of those dirs would refuse every such launch for a write
+// the PID's own rule forbids — the same gate-nothing-can-satisfy this
+// narrowing exists to remove, one shape over. The two conditions are
+// deliberately the same sentence in both files: the gate asks for exactly
+// what the wall grants, or one of them is wrong.
 func recordTargets(ag *AgentFile, dir, home string) []string {
 	if home == "" || !isDirPath(home) {
 		return nil
 	}
 	out := []string{home}
-	if ag != nil && deniesFileWrite(ag.Deny) && underDir(filepath.Join(dir, beadsDirName), home) {
+	if ag != nil && deniesFileWrite(ag.Deny) && underDir(dir, home) {
 		return out
 	}
 	for _, g := range beadsGitDirs(home) {

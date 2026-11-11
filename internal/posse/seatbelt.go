@@ -516,7 +516,11 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 			// both away from this arm; sessionGitGrantsFor is where the
 			// whole reason is written. The store of record's own grants
 			// (beadsHome and beadsGitDirs, below) are NOT in that: bd
-			// commits there, and it is another repo.
+			// commits there, and it is another repo — and since
+			// ranger-base-o8us6 the git half of that grant TESTS for
+			// another repo instead of assuming one, because a redirect
+			// inside this repo made `beadsGitDirs` answer with these very
+			// git dirs (D3's sixth door).
 			add(filepath.Join(cwd, ".beads"))
 		} else {
 			add(cwd) // the tree whole, `.git` in a main checkout with it
@@ -548,21 +552,64 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 		// L2, same resolver, same one-hop bound (ranger-base-7kw).
 		//
 		// "Already covered" is NOT "under cwd": for a deniesFiles persona
-		// cwd itself is never granted (only cwd/.beads and cwd/.git,
-		// above), so a redirect that stays under cwd but outside .beads —
+		// cwd itself is never granted (only cwd/.beads, above), so a
+		// redirect that stays under cwd but outside .beads —
 		// cwd/inner/.beads, say — read as covered under that test when
 		// nothing above actually grants it, and bd's own database came
 		// back "operation not permitted" (ranger-base-f5dg, REPRO 2). The
 		// boundary already granted for this persona is cwd/.beads in that
 		// branch and cwd whole in the other; test against that, not cwd.
+		//
+		// THE GIT DIRS ASK A SECOND QUESTION, AND IT IS "IS IT ANOTHER
+		// REPO" (ADR 0086 D3's SIXTH DOOR, ranger-base-o8us6, found by the
+		// QA lane's verify of ranger-base-8t6j1). The directory grant above
+		// and the git-dir grant below were one condition, and they are not
+		// one question: the store is granted when nothing already grants
+		// it, and its git dirs are granted because BD COMMITS THERE AND IT
+		// IS ANOTHER REPO. For the cwd/inner/.beads shape those two part
+		// company — the store needs the grant above, and `beadsGitDirs`
+		// then answers with the SESSION's own git dirs, because
+		// `git -C cwd/inner rev-parse` is this very worktree. MEASURED
+		// 2026-11-11 on the D1 host through this producer, whole-tree-deny
+		// PID, real linked worktree: the set carried
+		// <repo>/.git/worktrees/<session> and <repo>/.git WHOLE — the
+		// common dir unnarrowed, so `objects` and `refs/heads` both, which
+		// is W14/W15 by plumbing (`hash-object -w`, `commit-tree`, a ref
+		// move the launcher fast-forwards onto main) and reaches
+		// refs/heads/main in a main checkout. D3's headline is that such a
+		// PID gets NO write grant into any git dir of its session, and this
+		// door handed back the two widest.
+		//
+		// So ask the question the reason states, in the spelling the rest
+		// of the tree already uses for it (launchWritableRoots,
+		// sessionHooksDirs, sessionGitConfigFiles, CageMounts): is the
+		// store OUTSIDE the session's own tree. Inside it, the git dirs it
+		// names are the session's own and the arm above has already said
+		// what this PID gets of them — nothing. The store DIRECTORY stays
+		// granted on the line above, so bd still claims, comments and
+		// closes; what it loses is the JSONL commit, which is the write
+		// this PID's own rule forbids anywhere in its repo, and the
+		// record-reach gate stops demanding it on the same condition
+		// (recordTargets, reachability.go).
+		//
+		// Broad in one shape and deliberately: a store inside cwd that is
+		// its own NESTED repository is another repo by git and not by path,
+		// and this test denies its git dirs too. That is launchWritableRoots'
+		// answer at the self-sandboxing tier already (`!underDir(dir, home)`,
+		// one hop up this file's own reasoning), so the two mechanisms agree
+		// rather than disagree; no store on this box or in ADR 0012 D3-C's
+		// layout has that shape, and a bd that cannot commit in it is a
+		// bead write that still lands.
 		grantedBeadsBase := cwd
 		if deniesFiles {
 			grantedBeadsBase = filepath.Join(cwd, ".beads")
 		}
 		if home := beadsHome(cwd); !underDir(grantedBeadsBase, home) {
 			add(home)
-			for _, g := range beadsGitDirs(home) {
-				add(g)
+			if !deniesFiles || !underDir(cwd, home) {
+				for _, g := range beadsGitDirs(home) {
+					add(g)
+				}
 			}
 		}
 	}
@@ -927,7 +974,12 @@ func sessionGitGrants(cwd string) []string {
 // grants it, so darwin's profile narrows by the same line that fixes the
 // Linux render. The store of record is NOT in this — `beadsHome` and
 // `beadsGitDirs` are a different repo's, bd commits there, and
-// SeatbeltWritable keeps them for every PID.
+// SeatbeltWritable keeps them for every PID. A DIFFERENT REPO is the whole
+// of that exception, and SeatbeltWritable's own door now tests it rather
+// than inheriting it: a `.beads/redirect` that stays inside the session's
+// repo makes `beadsGitDirs` name the git dirs THIS function refuses, so for
+// a whole-tree-deny PID that grant is skipped and D3 holds in that shape too
+// (ranger-base-o8us6, ADR 0086 D3's sixth door).
 //
 // Two things it fixes, both MEASURED 2026-11-11 on the D1 host (ADR 0086's
 // table):

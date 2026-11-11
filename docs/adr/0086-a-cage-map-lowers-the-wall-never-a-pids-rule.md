@@ -4,7 +4,9 @@
 on ranger-base-3xh2l, option B) · owner: architect · amends ADR 0083 D7 ·
 builds on ADR 0080 D16–D23 (the bwrap mechanism of `seatbelt`) ·
 amended 2026-11-11 (ranger-base-56w67): D8 carries D3 to the container
-tier, and amends ADR 0014 §4's `.git` carve-out*
+tier, and amends ADR 0014 §4's `.git` carve-out ·
+amended 2026-11-11 (ranger-base-o8us6): D3 has a SIXTH door, the
+store-of-record grant, and one of its five cannot fire*
 
 ## Context
 
@@ -156,7 +158,55 @@ granted, because bd commits there. This holds on both mechanisms.
   this decision removes, wherever the store of record is the session's own
   tree, which no re-grant-free launch could ever satisfy. All five read one
   predicate, `deniesFileWrite`. R0 was reproduced and cleared against the
-  live home, and the live wall arm ran on the D1 host.
+  live home, and the live wall arm ran on the D1 host. **A SIXTH door read no
+  PID at all — see the bullet below.**
+- **As built, the sixth door (ranger-base-o8us6, found by the QA lane's
+  verify in `docs/notes.d/ranger-base-md7ag.md`, closed in
+  `docs/notes.d/ranger-base-o8us6.md`).** The exception this decision states
+  is "the store of record's own git dirs stay granted, because bd commits
+  there", and the reason is that the store is ANOTHER REPO. The code tested
+  something else: whether the store was already covered by what this PID was
+  granted (`!underDir(grantedBeadsBase, home)`, where that base is
+  `<cwd>/.beads` for this PID class). So a `.beads/redirect` that stays
+  inside the session's own repository but outside `<cwd>/.beads` —
+  `<cwd>/inner/.beads`, ranger-base-f5dg's REPRO 2 — made `beadsGitDirs`
+  resolve the store with `git -C` and answer with the SESSION's own git dirs,
+  and they were granted WRITE.
+  - MEASURED 2026-11-11, D1 host, through the shipped producer in a real
+    linked worktree: such a PID was handed
+    `<repo>/.git/worktrees/<session>` and `<repo>/.git` WHOLE. That is
+    WIDER than the grant this decision removed — the common dir is
+    unnarrowed, where `sessionGitGrants` had been narrowed below it
+    (ranger-base-m2wf) — so `objects` and `refs/heads` are both writable:
+    W14/W15 by plumbing, and `refs/heads/main` in a main checkout.
+  - The other two doors AGREED with it rather than catching it.
+    `BwrapWritable` returns early for this PID class ("no git grant to
+    swap"), so the set it hands `BwrapArgs` is the producer's, unnarrowed,
+    and the two mechanisms agreed on the grant instead of on the rule; and
+    `recordTargets` kept those dirs as targets, so the record-reach gate
+    PASSED over the grant instead of refusing the launch.
+  - The fix is to ask the question the reason states — is the store OUTSIDE
+    the session's own tree (`!underDir(cwd, home)`, the spelling
+    `launchWritableRoots`, `sessionHooksDirs`, `sessionGitConfigFiles` and
+    `CageMounts` already use for it) — and `recordTargets`'s narrowing moves
+    to that same sentence, because the gate must ask for exactly what the
+    wall grants or one of them is wrong. Broad in one shape deliberately: a
+    store inside `cwd` that is its own NESTED repository is another repo by
+    git and not by path, and gets no git grant either, which is
+    `launchWritableRoots`' answer at the self-sandboxing tier already.
+  - Nothing was exposed on this instance: all three stores here are reached
+    through a redirect into another repository, so every dispatched launch
+    takes the branch where the exception is what this decision says it is.
+    The grant predates ranger-base-8t6j1; what that bead did was state the
+    invariant and enumerate the doors.
+- **One of those five cannot fire** (MEASURED on ranger-base-md7ag by a
+  planted panic and by a surviving mutant). `sessionGitGrantsFor`'s own
+  `deniesFileWrite` guard is unreachable: `SeatbeltWritable` calls it only in
+  the `else` arm of `if deniesFiles`, and that is its only caller in the
+  tree, so the arm's rule is enforced by that branch and the guard is
+  defence in depth for a second caller that does not exist. It is kept, and
+  it is not a door. A reader of the count above was counting one door that is
+  inert and none that was missing.
 
 **D4. What "read-only" means for a verifier that runs suites.** It means
 the mechanism-neutral `SeatbeltWritable` set, after D3. That set is TMPDIR
