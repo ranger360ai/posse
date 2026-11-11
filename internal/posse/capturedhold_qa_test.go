@@ -61,7 +61,7 @@ func TestQAACaptureCarriesTheHoldWhereTheSlotHasNoAgentExplain(t *testing.T) {
 		"  I'll hold here until the arms report.",
 		"  ⏵⏵ auto mode on · 1 shell · esc to interrupt · ← for agents"))
 
-	hold := b.PaneHolding(rexTestBlock)
+	hold := b.PaneHolding(rexTestSeat())
 	if hold.Work != "1 shell" {
 		t.Fatalf("PaneHolding().Work = %q, want \"1 shell\" — on an occupant with no `agent explain` the footer is the ONLY store that carries it (program_status holds one root record saying `done`, and the process table is the block-shell→claude chain only; both MEASURED 2026-11-10)", hold.Work)
 	}
@@ -108,7 +108,7 @@ func TestQAANoFooterWorkOnTheCaptureRouteIsTheEmptyHold(t *testing.T) {
 		"  Done; the bead is closed.",
 		"  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents"))
 
-	if hold := b.PaneHolding(rexTestBlock); hold.Waiting() {
+	if hold := b.PaneHolding(rexTestSeat()); hold.Waiting() {
 		t.Fatalf("a settled seat with an idle footer read as waiting (%q) — a hold invented here keeps a genuinely stuck bead claimed forever", hold.Why())
 	}
 }
@@ -129,7 +129,7 @@ func TestQAATheTaskVocabularyOnlyEverSeesTheFooter(t *testing.T) {
 			"  the fact exists · 2 monitors · on Rex too",
 		"  ⏵⏵ auto mode on (shift+tab to cycle)"))
 
-	if hold := b.PaneHolding(rexTestBlock); hold.Waiting() {
+	if hold := b.PaneHolding(rexTestSeat()); hold.Waiting() {
 		t.Fatalf("transcript prose quoting the task vocabulary was read as live work (%q) — the reading must be positional, anchored on the last horizontal rule, and never a search of the screen", hold.Why())
 	}
 }
@@ -166,7 +166,7 @@ func TestQAAHerdrThatFailedDoesNotFallBackToTheCapture(t *testing.T) {
 	b, _ := newTestBackend(t)
 	rexSeedCapture(t, rexTestBlock, claudeScreen("x", "  ⏵⏵ auto mode on · 1 shell"))
 
-	hold := b.PaneHolding("no-such-pane:0")
+	hold := b.PaneHolding(Seat{Pane: "no-such-pane:0"})
 	if hold.Waiting() || len(hold.Read.Regions) != 0 {
 		t.Fatalf("a herdr explain that failed produced a reading (%+v) — only a slot with NO such verb (ADR 0076 §4) reaches the capture, because that silence is permanent and this one is news", hold)
 	}

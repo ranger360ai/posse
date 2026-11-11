@@ -479,8 +479,8 @@ func (b *HerdrBackend) PaneHolding(target Seat) PaneHold {
 // this file refuses. Typed, Sent and Ghost therefore stay "" on this route
 // and the unsent-prompt half of htafy stays herdr-only; that is
 // ranger-base-qzujz.
-func (b *HerdrBackend) capturedHold(target string) PaneHold {
-	screen, err := b.Mux().Read(paneSeat(target), captureFooterLines, false)
+func (b *HerdrBackend) capturedHold(target Seat) PaneHold {
+	screen, err := b.Mux().Read(target, captureFooterLines, false)
 	if err != nil {
 		// The same direction as every other failure here: a screen posse
 		// could not read is not evidence that an agent has stopped.

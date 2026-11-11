@@ -48,6 +48,15 @@ func TestLiveCapturedHoldReadsThisSeatsOwnFooter(t *testing.T) {
 	if block == "" {
 		t.Skip("REX_BLOCK unset: not running inside a Rex seat, so there is no live footer to read")
 	}
+	// BOTH HALVES of the seat, which is what the verbs under test are
+	// addressed with since ranger-base-k0hd6 — a Rex block lives under
+	// `session.*`, so an occupant handed a pane-only Seat resolves the
+	// session half out of the server's own listing first (RexMux.hold,
+	// ranger-base-nfc2b). The environment carries both, so this pin pays
+	// neither that listing nor the chance of resolving to the wrong seat.
+	// REX_SESSION empty is not a skip: the occupant still answers for half
+	// a Seat it is handed, and that licence is not withdrawn.
+	seat := Seat{Session: os.Getenv("REX_SESSION"), Pane: block}
 	if bin == "" {
 		bin = RexDefaultBin()
 	}
@@ -56,7 +65,7 @@ func TestLiveCapturedHoldReadsThisSeatsOwnFooter(t *testing.T) {
 
 	// The §4 door must still refuse, or the fallback under test is not the
 	// code path this seat takes.
-	if _, err := b.explain(paneSeat(block)); err == nil {
+	if _, err := b.explain(seat); err == nil {
 		t.Fatal("`agent explain` answered on a Rex slot — this pin is about the route taken when it cannot")
 	} else if verb, missing := muxVerbMissing(err); !missing {
 		t.Fatalf("explain failed with something other than §4's refusal (%v) — the capture route is not reached and PaneHolding answers the empty hold", err)
@@ -64,7 +73,7 @@ func TestLiveCapturedHoldReadsThisSeatsOwnFooter(t *testing.T) {
 		t.Fatalf("§4 refusal named %q, want \"agent explain\"", verb)
 	}
 
-	screen, err := b.Mux().Read(paneSeat(block), captureFooterLines, false)
+	screen, err := b.Mux().Read(seat, captureFooterLines, false)
 	if err != nil {
 		t.Fatalf("rex could not capture this seat's own block %s: %v", block, err)
 	}
@@ -74,7 +83,7 @@ func TestLiveCapturedHoldReadsThisSeatsOwnFooter(t *testing.T) {
 		t.Fatalf("no footer after the last horizontal rule in a live claude screen — either claude stopped drawing the rules or rex stopped returning them, and either way the WORK half of htafy's hold is off on this instance again. Screen tail:\n%s", screen)
 	}
 
-	hold := b.PaneHolding(block)
+	hold := b.PaneHolding(seat)
 	// Whatever the footer says, these two must agree: the hold is read off
 	// the footer and nothing else on this route.
 	if (hold.Work != "") != (backgroundWorkIn(footer) != "") {
