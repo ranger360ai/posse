@@ -238,9 +238,12 @@ func TestDraftPidDenyPromoteIsIdempotent(t *testing.T) {
 // Pinned behaviourally, in a real repo: after the run the change is in the
 // working tree only, the index is clean and HEAD has not moved.
 func TestDraftPidDenyPromoteStagesNothing(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not on PATH")
-	}
+	// gitOutsideGates, never exec.LookPath + a bare name: the hermetic
+	// GIT_CONFIG_GLOBAL below is what the seat's own L1 shim refuses
+	// (hookskip:config-env, ADR 0079), and exec.Command resolves a bare
+	// "git" against THIS process's PATH — gates first — whatever cmd.Env
+	// says (ranger-base-xa2e3). It skips when there is no git outside.
+	gitBin := gitOutsideGates(t)
 	root := t.TempDir()
 	dir := filepath.Join(root, "agents")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -251,7 +254,7 @@ func TestDraftPidDenyPromoteStagesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	git := func(args ...string) string {
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd := exec.Command(gitBin, append([]string{"-C", root}, args...)...)
 		cmd.Env = append(pfEnv(),
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid",
 			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid",

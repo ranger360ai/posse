@@ -17,15 +17,18 @@ import (
 )
 
 func TestGatesAdrCensusDispatches(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("no git")
-	}
+	// gitOutsideGates, never exec.LookPath + a bare name: HOME below is the
+	// fixture's own, which is what the seat's L1 shim refuses on a commit
+	// (hookskip:config-env, ADR 0079), and exec.Command resolves a bare
+	// "git" against THIS process's PATH — gates first — whatever cmd.Env
+	// says (ranger-base-xa2e3). It skips when there is no git outside.
+	gitBin := gitOutsideGates(t)
 	bin := buildRhq(t)
 	repo := t.TempDir()
 	env := []string{"PATH=" + posse.PathOutsideGates(""), "HOME=" + repo, "RHQ_HOME=" + filepath.Join(repo, "rhq")}
 	git := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd := exec.Command(gitBin, append([]string{"-C", repo}, args...)...)
 		cmd.Env = append(env, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
@@ -69,7 +72,7 @@ func TestGatesAdrCensusDispatches(t *testing.T) {
 	}
 	git("add", "--", "side.txt")
 	git("commit", "-qm", "side", "--", "side.txt")
-	rev := exec.Command("git", "-C", repo, "rev-parse", "--short", "HEAD")
+	rev := exec.Command(gitBin, "-C", repo, "rev-parse", "--short", "HEAD")
 	rev.Env = env
 	stale, err := rev.Output()
 	if err != nil {

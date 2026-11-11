@@ -92,6 +92,12 @@ func ppRepo(t *testing.T, files map[string]string) string {
 	if err := os.WriteFile(filepath.Join(repo, "README"), []byte("qa\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// gitOutsideGates, never the bare name: the hermetic GIT_CONFIG_GLOBAL
+	// below is what the seat's own L1 shim refuses (hookskip:config-env,
+	// ADR 0079), and exec.Command resolves a bare "git" against THIS
+	// process's PATH — gates first — whatever cmd.Env says
+	// (ranger-base-xa2e3).
+	gitBin := gitOutsideGates(t)
 	env := append(os.Environ(),
 		"GIT_AUTHOR_NAME=qa", "GIT_AUTHOR_EMAIL=qa@example.invalid",
 		"GIT_COMMITTER_NAME=qa", "GIT_COMMITTER_EMAIL=qa@example.invalid",
@@ -105,7 +111,7 @@ func ppRepo(t *testing.T, files map[string]string) string {
 		// refuses in a scratch fixture repo too (AGENTS.md, rangerhq-4pbt).
 		{"commit", "-qm", "qa fixture", "--", "."},
 	} {
-		cmd := exec.Command("git", append([]string{"-C", repo}, argv...)...)
+		cmd := exec.Command(gitBin, append([]string{"-C", repo}, argv...)...)
 		cmd.Env = env
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", argv, err, out)

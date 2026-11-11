@@ -979,7 +979,26 @@ package treepins
 // claude's two captures read as the ORPHAN class and failed this file's
 // neighbour's control arm over a checkout that passes.
 //
-// and `make tree-check` is all of them — one hundred and twenty-eight pins and
+// and ONE more, folded into corpus-check's door beside the rows above,
+// because its subject is the same one: a census over this repo's own test
+// sources, read as source rather than built, so one run covers all three
+// suite arms.
+//
+//	TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates
+//	                                              make corpus-check
+//	                                              (ranger-base-xa2e3)
+//
+// NO NEW DOOR, for the sentence every other corpus row gives: corpus-check's
+// subject is already a reading of this repo's own .go, test and script
+// sources. What this one adds is a reading of the TEST corpus whose verdict
+// turns on a line in ANOTHER file — a package's TestMain stepping out from
+// behind the gates — so a fixture that unpins git's config scope and resolves
+// `git` by the bare name is a violation in one package and excused in the
+// next. It reports 0.17s of the door's 4.9s (MEASURED 2026-11-10), and its
+// control arm (TestQAFixtureGitCensusCanStillSayNo) enumerates no directory
+// and so is not in this class.
+//
+// and `make tree-check` is all of them — one hundred and twenty-nine pins and
 // seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
@@ -996,6 +1015,15 @@ package treepins
 // at a HIGHER load with both slots held. The pin this bead added reports
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
+//
+// One warm reading at one hundred and twenty-nine, the class as this bead
+// leaves it: 41.9s (MEASURED 2026-11-10, ranger-base-xa2e3, at a one-minute
+// load average of 2.44 over a five-minute 3.61, with no suite slot held by
+// anyone — the quietest box any reading of this command has been taken on,
+// and 13s under ranger-base-h1q5o's 55-56s floor at a load of 3-5. One run,
+// so it is a point and not a band; it says only that the floor moves down
+// with the load the way every reading above says it does, and the pin this
+// bead added is 0.17s of it.)
 //
 // The reading before it, taken the same day at one pin fewer: 123-185s over
 // three warm runs at one hundred and
