@@ -108,3 +108,71 @@ A second, cheaper lesson landed in the same diff: the helper reported
 stderr and nothing on stdout. The helper now carries `(*exec.ExitError).Stderr`
 into the `t.Fatalf`, so the next refusal names its own rule and wall in the
 test output.
+
+## What the suite says after the fix, which is not "green"
+
+MEASURED 2026-11-11 at HEAD 99a5ffde (this worktree, linux 7.2.15,
+go1.27.3, loadavg 1-11, suite slots taken normally):
+
+    make test       cmd/posse  ok  146.486s      <- the bead's red, gone
+                    internal/posse  FAIL 129.206s
+                    internal/treepins ok 163.905s
+                    cmd/coldexec ok 1.697s · cmd/testparallel ok 0.356s
+                    make: *** [Makefile:332: test] Error 1
+    make test-arm2  FAIL internal/posse 57.263s   exit 2
+    make test-arm3  FAIL internal/posse 93.648s   exit 2
+
+The version fixture is fixed and the two tests this bead was filed for
+pass. Arm 1 still reds, on something else, and so do arms 2 and 3 — which
+had never run for a crew seat until this fix let the recipe reach them.
+
+`TestOneEnvelopeReadsIdenticallyThroughBothStores` (credseam_test.go:823,
+:834) fails in all three arms; the file is untagged, so it builds into each
+one. `TestTheReportRendersStructuralAbsenceAsSomethingToDo`
+(refresh_test.go:513) fails in arm 2 as well.
+
+ONE ROOT CAUSE, and it is a gap in a fence. internal/posse's TestMain
+(herdr_test.go:318-332) replaces HOME with a tempdir and clears the CLI
+home overrides so that — in its own words — no locator "reads the
+OPERATOR's live store when the variable survives into the test binary". It
+clears three: CLAUDE_CONFIG_DIR, CODEX_HOME, GROK_HOME.
+CLAUDE_SECURESTORAGE_CONFIG_DIR is a fourth of that class, and
+`credentialDirNamed` (credential.go:1144-1161) reads it FIRST — ahead of
+CLAUDE_CONFIG_DIR and ahead of the temp HOME. A deployer whose launcher
+exports it therefore runs the package's tests against whatever credential
+directory it names.
+
+Isolated by moving one variable at a time, with the directory pointed at a
+scratch path to confirm the derivation: unsetting
+CLAUDE_SECURESTORAGE_CONFIG_DIR turns both failures green, unsetting
+CLAUDE_CONFIG_DIR changes nothing, and pointing it at a scratch directory
+keeps them red with the keychain item's suffix changing to that
+directory's own hash — which is `keychainItem()`'s sha256 of the resolved
+dir (credential.go:702-709). So the variable is the whole discriminator
+and the suffix is derived from it, not from anything else in the
+environment.
+
+The arm-2 failure is the sharp end, and it is why there is a security-lane
+bead: that test asserts the box has no login, and what it read instead was
+the real credential store in the directory the variable names, whose own
+expiry field is what the failure printed. Per ADR 0024 D1/D3 this page
+carries the mechanism and not the reading — the instance-side specifics are
+deliberately written nowhere public, and ranger-base-btroh states the
+exposure for the lane that owns it.
+
+Filed, not fixed here — different root cause, different subsystem, and the
+obvious one-liner is wrong: TestMain sets its other three to `""` on the
+stated grounds that "all three resolvers treat empty as unset", and this
+resolver does not (credential.go:1166 — present-but-empty is a third state
+that shadows CLAUDE_CONFIG_DIR). ranger-base-u3kft has the fix and the
+candidates; ranger-base-btroh is the security lane's half.
+
+It is the same CLASS as this bead and that is the part worth keeping: a
+test that reads the seat's ambient environment, red for the fleet and
+invisible to ungated CI. Both reds were found by one seat typing the house
+command, and both were reported green by another seat typing the same
+command an hour earlier — ranger-base-7xvk5's verify measured
+`ok internal/posse 102.566s` at 911dd195, and nothing in
+911dd195..99a5ffde touches credential.go, credseam_test.go or
+runtimehome.go. Between two readings of the same command over the same
+tree, what differed was the seat.
