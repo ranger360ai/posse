@@ -83,7 +83,14 @@ package treepins
 //     reached one hop through an identifier assigned in the same function
 //     (`gitBin := "git"`), because the shape this pin MANDATES is itself
 //     indirect and an indirected bare name is the same defect
-//     (ranger-base-l0bep);
+//     (ranger-base-l0bep). `exec.LookPath("git")` is read as that same bare
+//     name, because it IS the bare-name resolution: os/exec runs it for you
+//     when you pass a name with no separator, against the same live $PATH.
+//     MEASURED 2026-11-10 from this gated seat (linux 7.2.15, go1.27.3),
+//     `exec.LookPath("git")` and `exec.Command("git").Path` both
+//     /home/.../state/gates/<persona>/bin/git, byte-identical — an absolute
+//     path, which is why it reads as compliant, and the gate, which is the
+//     whole subject (ranger-base-ffojl);
 //  2. its `.Env` is assigned, in the function that exec'd it, by an identifier
 //     match (protocolchildpath_qa_test.go's rule — two functions in one file
 //     routinely both call their child `cmd`), to a value that either names
@@ -116,6 +123,20 @@ package treepins
 // other packages' helpers, and nothing in the tree needs it. What the one hop
 // buys is symmetry, so neither half of the subject can be restored by moving
 // a token out of the call (ranger-base-l0bep).
+//
+// NOR that `exec.LookPath` is read anywhere but in that one hop, on a literal
+// "git", bound to a local identifier the call then execs. Three shapes in this
+// tree are deliberately outside it. `_, err := exec.LookPath("git")` is the
+// availability probe and names no binary — 105 of this corpus's 114 LookPath
+// calls are that, so a census that does not bind the BINARY's own slot reports
+// 114 for a population of 9 (MEASURED 2026-11-10). `exec.LookPath(someVar)`
+// resolves a name this pin cannot read, and is left to whoever bound the
+// variable. And a LookPath value carried into a STRUCT FIELD and exec'd as
+// `f.gitBin` — hooksredirect_qa_test.go's hrFix, whose own field comment
+// reads "git by ABSOLUTE path", which is what makes this class worth a rule —
+// is two hops and a selector, past the depth both halves stop at. All three
+// are in internal/posse, immune for the same reason its other 39 sites are
+// (ranger-base-ffojl).
 
 import (
 	"fmt"
@@ -143,12 +164,15 @@ import (
 var fgpUnpinVars = []string{"GIT_CONFIG_GLOBAL=", "GIT_CONFIG_SYSTEM=", "GIT_CONFIG_NOSYSTEM="}
 
 // fgpKid is one bare-name git child of a function, as the first pass over
-// that function's body found it: the line of its exec call, and the
-// identifier the bare name was reached through ("" when the call spells the
-// literal itself).
+// that function's body found it: the line of its exec call, the identifier
+// the bare name was reached through ("" when the call spells the literal
+// itself), and whether that identifier was bound by exec.LookPath rather than
+// by the literal — which changes nothing about the verdict and everything
+// about what the fix has to say (ranger-base-ffojl).
 type fgpKid struct {
-	line int
-	via  string
+	line     int
+	via      string
+	lookPath bool
 }
 
 // fgpSite is one bare-name git child, with the verdict on its environment.
@@ -157,12 +181,16 @@ type fgpSite struct {
 	line     int
 	why      string // "" when the child still carries the launcher's pin
 	via      string // the identifier the bare name was reached through, "" when inline
+	lookPath bool   // that identifier was bound by exec.LookPath("git")
 	immune   bool   // its package steps out from behind the gates in TestMain
 	local    bool   // its own function strips the gates from $PATH
 }
 
 func (s fgpSite) String() string {
-	if s.via != "" {
+	switch {
+	case s.lookPath:
+		return fmt.Sprintf("%s:%d (%s): its binary is %s, bound by exec.LookPath(\"git\") — an absolute path, and the gate's — and %s", s.file, s.line, s.fn, s.via, s.why)
+	case s.via != "":
 		return fmt.Sprintf("%s:%d (%s): its binary is the bare name \"git\" bound to %s, and %s", s.file, s.line, s.fn, s.via, s.why)
 	}
 	return fmt.Sprintf("%s:%d (%s): %s", s.file, s.line, s.fn, s.why)
@@ -230,9 +258,53 @@ func fgpStringLit(e ast.Expr, want string) bool {
 	return err == nil && v == want
 }
 
-// fgpBareGit reports whether e names the bare binary "git", and the
-// identifier it was reached through ("" when the literal is in the call
-// itself).
+// fgpLookPathGit reports whether e is `exec.LookPath("git")` — the one call in
+// this tree that resolves a bare name against the LIVE $PATH and hands back
+// what it found there.
+//
+// It is read as the bare name itself, and that is not a widening of this
+// pin's subject but the recognition of it. os/exec resolves a name with no
+// path separator by calling LookPath on it, so `exec.Command("git", …)` and
+// `gitBin, _ := exec.LookPath("git"); exec.Command(gitBin, …)` are the SAME
+// operation against the SAME $PATH, differing only in whether the answer is
+// stored first. MEASURED 2026-11-10 from a gated seat on this box (linux
+// 7.2.15, go1.27.3): `exec.LookPath("git")` and `exec.Command("git").Path`
+// both returned the same <home>/state/gates/<persona>/bin/git under this
+// box's own gates root, byte-identical — the seat's own L1 shim.
+//
+// What makes it worth its own accept test rather than a note is that the
+// result LOOKS like compliance from every angle the reader has: it is an
+// absolute path, it was computed rather than typed, and one site in this tree
+// documents the shape as the house form for exactly that ("gitBin string //
+// git by ABSOLUTE path — ADR 0052 M2's own form",
+// internal/posse/hooksredirect_qa_test.go). `gitOutsideGates(t)` exists
+// because LookPath is not safe here: it walks posse.PathOutsideGates("") by
+// hand and takes the first git that is in no gates dir
+// (internal/treepins/gitoutsidegates_test.go, cmd/posse/gateschain_qa_test.go).
+//
+// It is NOT the broader reading — "a call is a bare name unless it is
+// gitOutsideGates" — which inverts the rule's default and would read every
+// unresolvable binary as a violation. This matches one call, on the literal
+// "git", and nothing else (ranger-base-ffojl).
+func fgpLookPathGit(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "LookPath" {
+		return false
+	}
+	if id, ok := sel.X.(*ast.Ident); !ok || id.Name != "exec" {
+		return false
+	}
+	return fgpStringLit(call.Args[0], "git")
+}
+
+// fgpBareGit reports whether e names the bare binary "git", the identifier it
+// was reached through ("" when the literal is in the call itself), and
+// whether that identifier was bound by exec.LookPath rather than by the
+// literal.
 //
 // ONE HOP, by the same rule and to the same depth as the `.Env` half below:
 // an *ast.Ident first argument is resolved through the assignments to that
@@ -253,20 +325,33 @@ func fgpStringLit(e ast.Expr, want string) bool {
 // while the tests it protects failed with ranger-base-xa2e3's original
 // refusal. The same mutation reds it now, naming the binding
 // (ranger-base-l0bep; docs/notes.d/ranger-base-l0bep.md has both arms).
-func fgpBareGit(e ast.Expr, local map[string][]ast.Expr) (bool, string) {
+//
+// Two accept tests are applied to each assignment, not one: fgpStringLit, for
+// the literal the inline spelling gets, and fgpLookPathGit, for the one call
+// that is that literal's own resolution. Any OTHER call — gitOutsideGates(t)
+// foremost — is not a bare name and never becomes one here
+// (ranger-base-ffojl).
+func fgpBareGit(e ast.Expr, local map[string][]ast.Expr) (bare bool, via string, lookPath bool) {
 	if fgpStringLit(e, "git") {
-		return true, ""
+		return true, "", false
 	}
 	id, ok := e.(*ast.Ident)
 	if !ok {
-		return false, ""
+		return false, "", false
 	}
+	// The literal first, so a name bound to it on one path and to LookPath on
+	// another is reported as the plainer of the two.
 	for _, rhs := range local[id.Name] {
 		if fgpStringLit(rhs, "git") {
-			return true, id.Name
+			return true, id.Name, false
 		}
 	}
-	return false, ""
+	for _, rhs := range local[id.Name] {
+		if fgpLookPathGit(rhs) {
+			return true, id.Name, true
+		}
+	}
+	return false, "", false
 }
 
 // fgpNamesUnpin reports whether any string literal under n starts with one of
@@ -405,15 +490,33 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 			// own assignment has been seen, and Go does not require that
 			// assignment to come first in source order (a closure defined
 			// above the binding, for one).
+			//
+			// TWO assignment shapes, because the only spelling of this
+			// class's third form is the second of them: `gitBin, err :=
+			// exec.LookPath("git")` is n-from-1, and a map built under
+			// len(Lhs) == len(Rhs) alone never holds that binding at all, so
+			// the identifier would resolve to nothing however the accept test
+			// read it (ranger-base-ffojl). For n-from-1 only Lhs[0] is
+			// recorded: it is the slot the VALUE lands in for every `v, err
+			// := f()` in this corpus, and mapping `err` to f() would be a
+			// false statement about what that name holds.
 			local := map[string][]ast.Expr{}
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				as, ok := n.(*ast.AssignStmt)
-				if !ok || len(as.Lhs) != len(as.Rhs) {
+				if !ok || len(as.Rhs) == 0 {
 					return true
 				}
-				for i, l := range as.Lhs {
-					if id, ok := l.(*ast.Ident); ok {
-						local[id.Name] = append(local[id.Name], as.Rhs[i])
+				if len(as.Lhs) == len(as.Rhs) {
+					for i, l := range as.Lhs {
+						if id, ok := l.(*ast.Ident); ok {
+							local[id.Name] = append(local[id.Name], as.Rhs[i])
+						}
+					}
+					return true
+				}
+				if len(as.Rhs) == 1 {
+					if id, ok := as.Lhs[0].(*ast.Ident); ok {
+						local[id.Name] = append(local[id.Name], as.Rhs[0])
 					}
 				}
 				return true
@@ -435,12 +538,14 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 					if !ok {
 						continue
 					}
-					bare, via := fgpBareGit(bin, local)
+					bare, via, lookPath := fgpBareGit(bin, local)
 					if !bare {
 						continue
 					}
 					if id, ok := as.Lhs[i].(*ast.Ident); ok && id.Name != "_" {
-						kids[id.Name] = fgpKid{line: fset.Position(call.Pos()).Line, via: via}
+						kids[id.Name] = fgpKid{
+							line: fset.Position(call.Pos()).Line, via: via, lookPath: lookPath,
+						}
 					}
 				}
 				return true
@@ -517,7 +622,8 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 					}
 					byKey[key] = fgpSite{
 						file: rel, line: kid.line, fn: fd.Name.Name, why: why,
-						via: kid.via, immune: immune[dir], local: stripsHere,
+						via: kid.via, lookPath: kid.lookPath,
+						immune: immune[dir], local: stripsHere,
 					}
 					order = append(order, key)
 				}
@@ -554,6 +660,33 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 	// reading above. The indirected spelling exists nowhere in the tree today,
 	// so the hop is a guard closing before the class reaches it and not a
 	// finding — which is also why these floors did not need raising.
+	//
+	// ranger-base-ffojl's LookPath arm DID move them, and that is the one
+	// reading on this page a future bead is likely to mis-predict, so it is
+	// spelled out. The same corpus reads 66 / 39 / 39 without the arm and
+	// 68 / 41 / 41 with it (MEASURED 2026-11-10, this box, 775 test files,
+	// the two readings taken from the same tree a minute apart and the site
+	// lists diffed): exactly +2, and the two are
+	// internal/posse/commitwallowner_qa_test.go:448 and
+	// internal/posse/hooksredirect_qa_test.go:654, both excused by their
+	// package's TestMain like the other 39. No PRE-EXISTING site's verdict
+	// changed — the diff of the two site lists is those two lines and nothing
+	// else, which is what rules out the n-from-1 assignment form having
+	// widened the ENV half it also feeds.
+	//
+	// The bead predicted the totals would NOT move, reasoning that the two
+	// were already counted through their `.Env`. They were not, and the
+	// ordering is why: the binary half gates the env half. A child whose
+	// binary is not read as a bare name never enters `kids`, so its `.Env` is
+	// never looked at and it is not a site at all. Anything that widens the
+	// binary half therefore moves these counts, and anything that widens only
+	// the env half cannot.
+	//
+	// The floors still did not need raising. They sit under the counts on
+	// purpose, at roughly half: they are there to catch a walk that has
+	// stopped reading the tree, not to pin an exact census, and a floor moved
+	// up to the live number would red on every unrelated bead that converts a
+	// fixture.
 	if len(files) < 400 {
 		root, _ := repoRoot()
 		t.Fatalf("the walk read %d _test.go files from %q — the corpus this pin censuses is not there", len(files), root)
@@ -590,7 +723,16 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 			continue
 		}
 		fix := "  Resolve the binary past the gates — `gitBin := gitOutsideGates(t)`, then exec that — which both cmd/posse and internal/treepins already carry for this reason (ranger-base-ebhdx). Keep the hermetic env exactly as it is: it is not the part that was wrong."
-		if s.via != "" {
+		switch {
+		case s.lookPath:
+			// This one needs its own sentence. The site already holds an
+			// absolute path, computed rather than typed, so every
+			// prescription above reads as already done — the thing that is
+			// wrong is WHICH absolute path, and nothing at the site says
+			// (ranger-base-ffojl).
+			fix = fmt.Sprintf("  exec.LookPath is the bare-name resolution, not an escape from it: os/exec calls it for you for any name with no path separator, so `%s` holds whatever leads this process's $PATH — the seat's own gates dir, hence the shim's absolute path. The value being absolute is why this reads as compliant and is not what makes it safe.\n"+
+				"  The line to change is the BINDING: `%s := gitOutsideGates(t)`, which walks posse.PathOutsideGates(\"\") and takes the first git in no gates dir, and which both cmd/posse and internal/treepins already carry for this reason (ranger-base-ebhdx). Keep the hermetic env exactly as it is: it is not the part that was wrong.", s.via, s.via)
+		case s.via != "":
 			// The call already execs a variable, so the line to change is
 			// the binding and not the call: say so, or the prescription
 			// above reads as already done (ranger-base-l0bep).
@@ -609,11 +751,18 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 // an env expression one hop away, a BINARY expression one hop away, and a line
 // in another file.
 //
-// The last three cases are the binary hop's, and the first of them is the
-// shape this pin was green over until ranger-base-l0bep: the bare name moved
-// out of the call and into a local binding, which is one token from the
-// prescribed fix and was MEASURED reproducing ranger-base-xa2e3's refusal
-// while the census read ok.
+// The last nine cases are the binary hop's. The first of them is the shape
+// this pin was green over until ranger-base-l0bep: the bare name moved out of
+// the call and into a local binding, which is one token from the prescribed
+// fix and was MEASURED reproducing ranger-base-xa2e3's refusal while the
+// census read ok. The last six are ranger-base-ffojl's — the third spelling
+// (`gitBin, err := exec.LookPath("git")`) and, deliberately outnumbering it,
+// the five boundaries it must NOT cross. Reading a CALL as a bare name is the
+// one change here that could invert this rule's default, so the cases that
+// say where it stops are the load-bearing half: the availability probe that
+// binds no binary, another binary's LookPath, a LookPath of a variable, an
+// n-from-1 binding to an arbitrary call, and the struct-field carry that is
+// two hops out.
 func TestQAFixtureGitCensusCanStillSayNo(t *testing.T) {
 	t.Parallel()
 
@@ -765,6 +914,112 @@ func TestQAFixtureGitCensusCanStillSayNo(t *testing.T) {
 		func g(t *testing.T) {
 			gitBin := "git"
 			_ = gitBin
+		}`,
+		want: false,
+	}, {
+		// ranger-base-ffojl's shape. Two misses had to be fixed for this to
+		// read: the n-from-1 AssignStmt had to enter the local map at all,
+		// and the accept test had to read a CALL. Either miss alone keeps it
+		// green, so a regression in either is caught here.
+		name: "the third spelling: the binary bound by exec.LookPath(\"git\")",
+		src: `func f(t *testing.T) {
+			gitBin, err := exec.LookPath("git")
+			if err != nil {
+				t.Skip("no git")
+			}
+			cmd := exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		// The availability probe, which is 105 of this corpus's 114
+		// LookPath("git") calls (MEASURED 2026-11-10). It binds the error and
+		// discards the path, so it names no binary and must not drag a
+		// compliant site in beside it — the whole reason the rule binds the
+		// BINARY's own slot and not merely "an identifier in the LHS".
+		name: "the availability probe binds no binary",
+		src: `func f(t *testing.T) {
+			if _, err := exec.LookPath("git"); err != nil {
+				t.Skip("no git")
+			}
+			gitBin := gitOutsideGates(t)
+			cmd := exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		// The accept test is keyed on the literal "git" and on nothing else:
+		// another binary's LookPath is another binary's problem, and this pin
+		// claims one subject.
+		name: "LookPath of another binary is not this class",
+		src: `func f(t *testing.T) {
+			bin, err := exec.LookPath("bd")
+			if err != nil {
+				t.Skip("no bd")
+			}
+			cmd := exec.Command(bin, "list")
+			cmd.Env = []string{"PATH=" + outside}
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		// A LookPath whose argument this pin cannot read is left to whoever
+		// bound the argument. Reading it as a violation would be the inverted
+		// default the bead declined (ranger-base-ffojl).
+		name: "LookPath of a variable is not read as the bare name",
+		src: `func f(t *testing.T) {
+			gitBin, err := exec.LookPath(name)
+			if err != nil {
+				t.Skip("no " + name)
+			}
+			cmd := exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		// The n-from-1 binding had to enter the local map for the case above
+		// to read, and this is the half of that change that must NOT follow:
+		// an n-from-1 binding to an arbitrary call is no more a bare name
+		// than a 1-from-1 one is. The prescribed fix itself takes this shape
+		// wherever the helper returns an error.
+		name: "an n-from-1 binding to an arbitrary call is not a bare name",
+		src: `func f(t *testing.T) {
+			gitBin, err := gitOutsideGatesOrErr(t)
+			if err != nil {
+				t.Skip("no git outside the gates")
+			}
+			cmd := exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		// The depth limit, stated as a test rather than only in NOT CLAIMED:
+		// a LookPath value carried into a struct field and exec'd as
+		// `f.gitBin` is two hops and a selector out. This is a real shape in
+		// this tree (internal/posse/hooksredirect_qa_test.go's hrFix, whose
+		// field comment reads "git by ABSOLUTE path"), immune there for the
+		// same reason that package's other sites are. If the depth is ever
+		// raised, this case is the one that must flip, deliberately.
+		name: "a LookPath value carried through a struct field is past the depth",
+		src: `type fix struct{ gitBin, repo string }
+
+		func newFix(t *testing.T) *fix {
+			gitBin, err := exec.LookPath("git")
+			if err != nil {
+				t.Skip("no git")
+			}
+			return &fix{gitBin: gitBin, repo: t.TempDir()}
+		}
+
+		func f(t *testing.T) {
+			fx := newFix(t)
+			cmd := exec.Command(fx.gitBin, "-C", fx.repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
 		}`,
 		want: false,
 	}}
