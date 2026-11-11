@@ -153,9 +153,22 @@ on an exec that DID take D and `delayed` reads 1. The run that caught it read
 accounting assertion broke. Its second mechanism — 2 of the 10 — is the nudger
 killing the plant in the microseconds after its execve lands and before /bin/sh
 reaches its `trap`: `CALLER EXIT 138`, which is SIGUSR1 at its default
-disposition, so the signal reached the NEW program. Both are recorded on
-ranger-base-k9xsd with the verbatim runs. Neither is this bead's and neither
-assertion was touched here.
+disposition, so the signal reached the NEW program.
+
+That second mechanism is **ranger-base-ghhgb**, filed from here, because it is
+not ARM 16's: it reds ARM 14 too, and it took ARM 14 in this bead's own first
+`make test` — a full arm 1, at 0f3100a4, with 2 cold execs delayed and the
+plant delayed 614ms, so the door did everything that pin asserts and what died
+was the plant. The retry shape ARM 20 uses does not reach it: the trial there
+really ran, and what the signal broke is the pin's subject rather than its
+positive control. The deadline-edge half stays on ranger-base-k9xsd with its
+root cause. Neither is this bead's and no assertion of either pin was touched
+here.
+
+**The suite**: `make test` red once on ranger-base-ghhgb (ARM 14), then ran
+GREEN whole on the re-run at 0f3100a4 — all three arms, `silent-revert audit:
+2531 commits, 0 untriaged`, exit 0. `make tree-check` green, 64.3s. `go run
+./cmd/checkorphans` clean.
 
 **ARM 20 inherits ranger-base-9n4y9 and nothing else**: identical rate and
 identical message to ARM 17, which is that bead's own subject — the nudge
