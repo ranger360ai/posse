@@ -15,11 +15,23 @@ package posse
 //     promoted.json can be in.
 //  3. PARITY AT THE REALIZED TIER. The map waives the cage line and never a
 //     rule: a PID denying `Edit`/`Write` bare, mapped seatbelt→shims, still
-//     refuses. With a control at the same tier and no map, so the suppressed
-//     cage row is the map's doing and not a hole.
+//     refuses — ON A HOST THAT DOES NOT PROVIDE THE TIER IT DEMANDED, which
+//     since ADR 0086 D2 is the only shape that still reaches that refusal.
+//     With a control at the same tier and no map, so the suppressed cage row
+//     is the map's doing and not a hole.
+//
+//     3b. THE MAPPING THIS HOST DECLINES (ADR 0086 D2, ranger-base-dfgte).
+//     Where the demanded tier IS provided here, a mapping that would leave a
+//     rule of this PID unrealized is declined and the PID launches at its
+//     demand — no waiver, nothing degraded, one declared-difference line. The
+//     table is the three questions D2 asks and the shapes that answer each
+//     "no", and the launch arm of claim 4 reads the session RECORD back,
+//     because a resolver every door agrees on is still wrong if the record
+//     names another tier.
 //  4. THE SURFACES. The session record is marked degraded; dispatch and a
-//     relaunch still launch; `posse status` carries one standing row; G15
-//     stands down for a session whose only degradation is this one.
+//     relaunch still launch; `posse status` carries one standing row, which
+//     names the PIDs the map is declined for; G15 stands down for a session
+//     whose only degradation is this one.
 
 import (
 	"os"
@@ -192,7 +204,7 @@ func TestCageRealizeMapTable(t *testing.T) {
 			if err := os.WriteFile(cfg, []byte(tc.cfg), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			res, err := RealizeCageIn(cfg, tc.goos, crNeverPromoted, tc.demanded)
+			res, err := realizeCageIn(cfg, tc.goos, crNeverPromoted, tc.demanded)
 			switch {
 			case tc.refuse == "" && err != nil:
 				t.Fatalf("accepted config refused: %v", err)
@@ -245,11 +257,11 @@ func TestCageRealizeAcceptedMapsAreIdempotent(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, demanded := range []string{CageShims, CageSeatbelt} {
-				first, err := RealizeCageIn(cfg, "linux", crNeverPromoted, demanded)
+				first, err := realizeCageIn(cfg, "linux", crNeverPromoted, demanded)
 				if err != nil {
 					t.Fatalf("accepted config refused: %v", err)
 				}
-				again, err := RealizeCageIn(cfg, "linux", crNeverPromoted, first.Realized)
+				again, err := realizeCageIn(cfg, "linux", crNeverPromoted, first.Realized)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -375,10 +387,19 @@ func TestCageRealizeReasonCarriesNoListSeparator(t *testing.T) {
 //   - a PID whose rules are all L1-realizable loses nothing by running at
 //     shims, so it launches — marked, with the waiver as its reason.
 //
-// Seatbelt is forced AVAILABLE for the duration, which makes this the
-// stronger reading of the key: the demanded tier genuinely exists here, so
-// the lowering is the map's doing and cannot be the old "cage seatbelt is not
-// available on this host/build" row wearing a new name.
+// AMENDED BY ADR 0086 D2 (ranger-base-dfgte), and the amendment is the FIRST
+// arm's precondition, not its verdict. D7's sentence stands — the map waives
+// the cage line, never a rule — but the consequence it drew from it, refusing
+// such a PID, is now reached only where this host CANNOT provide the tier the
+// PID demanded. Where it can, the mapping is DECLINED and the PID launches at
+// its demand (TestCageRealizeDeclinesAMappingThatWouldCostAPIDARule). So the
+// first arm below runs twice, once on each side of AvailableCages, which is
+// the only thing that separates the two answers.
+//
+// Seatbelt is forced AVAILABLE for the rest of the body, which makes those
+// arms the stronger reading of the key: the demanded tier genuinely exists
+// here, so the lowering is the map's doing and cannot be the old "cage
+// seatbelt is not available on this host/build" row wearing a new name.
 func TestCageRealizeParityIsComputedAtTheRealizedTier(t *testing.T) {
 	// No t.Parallel(): this mutates AvailableCages, a package-level map
 	// other tests read.
@@ -399,10 +420,20 @@ func TestCageRealizeParityIsComputedAtTheRealizedTier(t *testing.T) {
 	light := cageAgent(t, a, "cage: seatbelt\ndeny: [Bash(git push:*)]\n")
 	reason := "cage_realize: " + runtime.GOOS + " seatbelt→shims (" + crNeverPromoted + ")"
 
-	// A rule the realized tier cannot hold still refuses.
+	// A rule the realized tier cannot hold still refuses — WHERE DECLINING
+	// would buy the PID nothing, which since ADR 0086 D2 is the whole of
+	// what this arm measures. The tier the PID demanded is not available
+	// here, so handing it back would hand it a tier that realizes nothing;
+	// the map applies and the rule goes unrealized at the mapped tier,
+	// exactly as it did on a host with no seatbelt at all.
+	delete(AvailableCages, CageSeatbelt)
 	pw := a.CheckParity(wall, claude, ResolveCage("", wall), TierStrong)
+	AvailableCages[CageSeatbelt] = true
 	if pw.Cage != CageShims {
-		t.Fatalf("the map must realize seatbelt as shims: %+v", pw)
+		t.Fatalf("the map must realize seatbelt as shims where seatbelt is not available: %+v", pw)
+	}
+	if len(pw.DeclaredDifference) != 0 {
+		t.Errorf("a tier this host cannot provide must not be declined back to: %v", pw.DeclaredDifference)
 	}
 	// And the DEMAND is remembered on the ⚖ row and not in a field of its
 	// own (ranger-base-pl3ck): `<demanded>→<realized>` is where the pair is
@@ -417,14 +448,25 @@ func TestCageRealizeParityIsComputedAtTheRealizedTier(t *testing.T) {
 	if !strings.Contains(joined, "Edit — needs cage: seatbelt") || !strings.Contains(joined, "Write — needs cage: seatbelt") {
 		t.Errorf("a bare Edit/Write deny mapped to shims must go UNREALIZED: %q", joined)
 	}
-	if err := a.CheckTier(wall, claude, ResolveCage("", wall), TierStrong, false); err != nil {
-		t.Errorf("CheckTier judges the tier, not the gates; the launch is what refuses: %v", err)
-	}
 	// And the cage line itself is NOT in the refusing list — it is the one
 	// thing the map waived.
 	if strings.Contains(joined, "cage: PID demands seatbelt") {
 		t.Errorf("the ratified cage shortfall must not also be in the list that refuses: %q", joined)
 	}
+	// CheckTier judges the TIER and not the gates — the launch is what
+	// refuses — and it reads the map through the one resolver, so it is
+	// asked on both sides of availability. Neither answer is an error here.
+	for _, avail := range []bool{false, true} {
+		if avail {
+			AvailableCages[CageSeatbelt] = true
+		} else {
+			delete(AvailableCages, CageSeatbelt)
+		}
+		if err := a.CheckTier(wall, claude, ResolveCage("", wall), TierStrong, false); err != nil {
+			t.Errorf("CheckTier judges the tier, not the gates (seatbelt available=%v): %v", avail, err)
+		}
+	}
+	AvailableCages[CageSeatbelt] = true
 
 	// A PID whose rules hold at shims launches, marked.
 	pl := a.CheckParity(light, claude, ResolveCage("", light), TierStrong)
@@ -470,6 +512,231 @@ func TestCageRealizeParityIsComputedAtTheRealizedTier(t *testing.T) {
 		!strings.Contains(err.Error(), `"bwrap" is not a cage tier`) {
 		t.Errorf("dispatch's door must refuse a map it cannot read, --allow-degraded or not: %v", err)
 	}
+}
+
+// ─── 3b · ADR 0086 D2 · the mapping this host declines ──────────────────────
+
+// D2's rule, over the three questions it asks and the shapes that answer each
+// of them "no". One table, because a decline and a mapping differ in NOTHING
+// an operator can see except the tier the session gets: a row that declined
+// when it should have mapped is a wall nobody ratified, and a row that mapped
+// when it should have declined is ADR 0083 D7's unlaunchable PID.
+//
+// AVAILABILITY IS A COLUMN, not a fixture property, because it is question 2
+// — and it is the only thing separating the two answers for the same PID and
+// the same map. The map is forced and the table is serial for that reason.
+func TestCageRealizeDeclinesAMappingThatWouldCostAPIDARule(t *testing.T) {
+	// No t.Parallel(): every row writes AvailableCages, which CheckParity
+	// and every launch path read.
+	had := AvailableCages[CageSeatbelt]
+	t.Cleanup(func() {
+		if had {
+			AvailableCages[CageSeatbelt] = true
+		} else {
+			delete(AvailableCages, CageSeatbelt)
+		}
+	})
+	for _, tc := range []struct {
+		name     string
+		cfg      string
+		front    string // the PID's frontmatter
+		avail    bool   // does this host provide cage seatbelt
+		demanded string
+		realized string
+		ratified bool
+		declined []string // the rules the decline line must name; nil = no decline
+	}{
+		// Question 3 says yes and question 2 says yes: declined.
+		{name: "a whole-tree write deny: shims holds neither rule, so the map is declined",
+			cfg: crLinuxMap, front: "cage: seatbelt\ndeny: [Edit, Write]\n", avail: true,
+			demanded: CageSeatbelt, realized: CageSeatbelt, declined: []string{"Edit", "Write"}},
+		// The same PID, the same map, question 2 answering no.
+		{name: "the same PID where this host cannot provide the demanded tier: mapped, and the rule refuses",
+			cfg: crLinuxMap, front: "cage: seatbelt\ndeny: [Edit, Write]\n", avail: false,
+			demanded: CageSeatbelt, realized: CageShims, ratified: true},
+		// Question 3 answering no: the PID loses nothing at shims.
+		{name: "a PID whose rules all hold at L1: mapped exactly as today",
+			cfg: crLinuxMap, front: "cage: seatbelt\ndeny: [Bash(git push:*)]\n", avail: true,
+			demanded: CageSeatbelt, realized: CageShims, ratified: true},
+		// The rule is read from PARITY and not from a list of tool names:
+		// a path-scoped subtree deny is realized at seatbelt by the trailing
+		// deny and by nothing at shims (ADR 0014 §1), and D2 sees it for
+		// exactly the same reason it sees a bare Edit.
+		{name: "a path-scoped subtree write deny is a rule shims does not hold either",
+			cfg: crLinuxMap, front: "cage: seatbelt\ndeny: [Edit(docs/adr/**)]\n", avail: true,
+			demanded: CageSeatbelt, realized: CageSeatbelt, declined: []string{"Edit(docs/adr/**)"}},
+		// Question 1: nothing to decline. Each of these is a map that
+		// changed no tier, and the decline test must not run at all.
+		{name: "no map at all",
+			cfg: "", front: "cage: seatbelt\ndeny: [Edit, Write]\n", avail: true,
+			demanded: CageSeatbelt, realized: CageSeatbelt},
+		{name: "an identity row is the one row D7 calls not degradation",
+			cfg: "cage_realize_linux:\n  seatbelt: seatbelt\n", front: "cage: seatbelt\ndeny: [Edit, Write]\n", avail: true,
+			demanded: CageSeatbelt, realized: CageSeatbelt},
+		{name: "a demand the map does not name",
+			cfg: crLinuxMap, front: "cage: shims\ndeny: [Bash(git push:*)]\n", avail: true,
+			demanded: CageShims, realized: CageShims},
+		// A DECLINE ONLY EVER DECLINES TO LOWER. Here the map RAISES, which
+		// D7 allows and D2 has nothing to say about: the tier the launch
+		// gets is the map's, and no rule of the PID is unrealized there that
+		// shims realized.
+		{name: "a map that raises a tier is not declined",
+			cfg: "cage_realize_linux:\n  shims: seatbelt\n", front: "cage: shims\ndeny: [Edit, Write]\n", avail: true,
+			demanded: CageShims, realized: CageSeatbelt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.avail {
+				AvailableCages[CageSeatbelt] = true
+			} else {
+				delete(AvailableCages, CageSeatbelt)
+			}
+			a := crApp(t, crMapFor2(t, tc.cfg))
+			claude, err := a.LoadRuntime("claude")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ag := cageAgent(t, a, tc.front)
+			res, err := a.RealizeCageFor(ag, claude, tc.demanded)
+			if err != nil {
+				t.Fatalf("accepted config refused: %v", err)
+			}
+			if res.Realized != tc.realized {
+				t.Errorf("realized = %q, want %q (declined = %q)", res.Realized, tc.realized, res.Declined)
+			}
+			if (res.Ratified != "") != tc.ratified {
+				t.Errorf("ratified = %q, want set=%v", res.Ratified, tc.ratified)
+			}
+			if (res.Declined != "") != (tc.declined != nil) {
+				t.Fatalf("declined = %q, want set=%v", res.Declined, tc.declined != nil)
+			}
+			if tc.declined == nil {
+				return
+			}
+			// A DECLINE IS NOT A WAIVER: the two fields are never both set,
+			// because a decline gives nothing up.
+			if res.Ratified != "" {
+				t.Errorf("a declined mapping must write no ratified waiver: %q", res.Ratified)
+			}
+			// The line's own shape, from D2 verbatim: the pair it declined,
+			// which tier leaves which rules unrealized, and the tier the
+			// launch got WITH ITS MECHANISM, because that is the thing an
+			// operator goes and looks at (CageLabel, ADR 0080 D16).
+			for _, want := range []string{
+				CageRealizeReasonPrefix + runtime.GOOS + " " + CageSeatbelt + "→" + CageShims,
+				"declined for this PID",
+				CageShims + " leaves " + strings.Join(tc.declined, ", ") + " unrealized",
+				"launched at " + CageLabel(CageSeatbelt),
+			} {
+				if !strings.Contains(res.Declined, want) {
+					t.Errorf("the decline line %q does not say %q", res.Declined, want)
+				}
+			}
+			// AND THE MATRIX. The line is a DECLARED DIFFERENCE (ADR 0017
+			// §2) and never degradation: the rows it was declined for are
+			// realized at the tier the PID asked for, the session is marked
+			// nothing, and --allow-degraded has nothing to waive.
+			p := a.CheckParity(ag, claude, tc.demanded, TierStrong)
+			if p.Cage != tc.realized {
+				t.Errorf("parity must read the same tier the resolver did: %q", p.Cage)
+			}
+			if len(p.Degraded) != 0 || len(p.Ratified) != 0 || p.AnyDegradation() {
+				t.Errorf("a decline marks nothing degraded: %+v", p)
+			}
+			if len(p.DeclaredDifference) != 1 || p.DeclaredDifference[0] != res.Declined {
+				t.Errorf("the decline must print as the one declared difference: %v", p.DeclaredDifference)
+			}
+			for _, rule := range tc.declined {
+				if _, ok := p.Realized[rule]; !ok {
+					t.Errorf("%s must be realized at the tier the decline handed back: %+v", rule, p)
+				}
+			}
+			// TIER-INDEPENDENT, which is what lets the resolver read parity
+			// at DefaultTier and lets its signature take no tier at all. The
+			// model tier reaches Degraded (BelowFloor) and NoDegrade and no
+			// row of Realized.
+			for _, tier := range Tiers {
+				again, err := a.RealizeCageFor(ag, claude, tc.demanded)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if again.Declined != res.Declined || again.Realized != res.Realized {
+					t.Errorf("the resolver answered differently on a second reading: %+v vs %+v", again, res)
+				}
+				if q := a.CheckParity(ag, claude, tc.demanded, tier); q.Cage != p.Cage || len(q.DeclaredDifference) != 1 {
+					t.Errorf("tier %s changed the decline: %+v", tier, q)
+				}
+			}
+		})
+	}
+}
+
+// THE SUBSUMPTION THE TABLE ABOVE CANNOT SEE (ranger-base-dfgte).
+//
+// D2's test has two conditions and declineCageMapping spells both, but only
+// one of them decides: question 3 ("the mapped tier leaves a rule unrealized
+// that the DEMANDED tier realizes") is already false whenever the demanded
+// tier is unavailable, because every row seatbelt realizes that shims does
+// not sits behind parity's own `a.cageAvailable(cage)`. MEASURED 2026-11-11:
+// deleting the `AvailableCages` clause leaves every row of that table green.
+//
+// So the clause is an early exit, and the property that makes it safe to read
+// as one is pinned HERE rather than left implicit in a guard no mutation can
+// reach: at a demanded tier this host does not provide, there is nothing for
+// question 3 to find. If this reds, that clause has stopped being redundant
+// and is the only thing keeping a decline off a tier that holds no rule.
+//
+// The PID is the strongest shape there is for it — a whole-tree write deny,
+// which is the one rule the two tiers genuinely differ on (ADR 0086's census:
+// exactly one of eleven host PIDs has it, the security role's).
+func TestCageRealizeAnUnavailableDemandRealizesNothingToDeclineFor(t *testing.T) {
+	// No t.Parallel(): writes AvailableCages.
+	had := AvailableCages[CageSeatbelt]
+	delete(AvailableCages, CageSeatbelt)
+	t.Cleanup(func() {
+		if had {
+			AvailableCages[CageSeatbelt] = true
+		}
+	})
+	a := crApp(t, "")
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag := cageAgent(t, a, "cage: seatbelt\ndeny: [Edit, Write, Edit(docs/**)]\n")
+	// Both readings the resolver would take, at the one tier pair a map may
+	// name, with the demanded tier unavailable.
+	if lost := a.cageRulesLostByMapping(ag, claude, CageShims, CageSeatbelt); len(lost) != 0 {
+		t.Errorf("an unavailable %s realizes nothing %s does not, so there is no rule to decline for: %v", CageSeatbelt, CageShims, lost)
+	}
+	// The control, and the reason the line above is not an assertion about
+	// an empty fixture: the SAME PID, the same two tiers, with the tier
+	// available. Every rule is then lost by the mapping.
+	AvailableCages[CageSeatbelt] = true
+	lost := a.cageRulesLostByMapping(ag, claude, CageShims, CageSeatbelt)
+	if len(lost) != 3 {
+		t.Fatalf("with %s available this PID loses all three rules to the mapping, got %v", CageSeatbelt, lost)
+	}
+	// And in the PID's own order, which is what the decline line reads as.
+	if got, want := strings.Join(lost, ","), "Edit,Write,Edit(docs/**)"; got != want {
+		t.Errorf("lost rules = %q, want %q (the PID's own order, which is the order the decline line names them in)", got, want)
+	}
+}
+
+// crMapFor2 rewrites a linux-spelled fixture map for whichever OS the suite
+// runs on, so every row of the table above exercises the live `runtime.GOOS`
+// branch rather than half of them reading an absent key. Fatals on a body it
+// cannot rewrite, because a row silently turned into "no map" would pass for
+// a reason that is not the property.
+func crMapFor2(t *testing.T, body string) string {
+	t.Helper()
+	if body == "" || runtime.GOOS == "linux" {
+		return body
+	}
+	const key = "cage_realize_linux:"
+	if !strings.Contains(body, key) {
+		t.Fatalf("fixture map %q names no %s, so rewriting it for %s would make it an absent key", body, key, runtime.GOOS)
+	}
+	return strings.ReplaceAll(body, key, CageRealizeKey(runtime.GOOS)+":")
 }
 
 // ─── 4 · the surfaces ────────────────────────────────────────────────────────
@@ -539,11 +806,55 @@ func TestCageRealizeLaunchMarksTheSessionWithoutAWaiver(t *testing.T) {
 		t.Error("a ratified waiver must not arm AllowDegraded on the relaunch")
 	}
 
-	// The same map, a PID whose rule the realized tier cannot hold: refused.
+	// The same map, a PID whose rule the realized tier cannot hold, on a host
+	// that does NOT provide the tier it demanded: refused. That is ADR 0083
+	// D7's own consequence, and after ADR 0086 D2 this is the shape that
+	// still reaches it — declining would hand the launch a tier that
+	// realizes nothing.
+	delete(AvailableCages, CageSeatbelt)
 	err := b.CreateSession(NewSessionOpts{Name: "wall-x", Agent: "wall", Dir: repo})
+	AvailableCages[CageSeatbelt] = true
 	if err == nil || !strings.Contains(err.Error(), "Edit — needs cage: seatbelt") {
 		t.Errorf("the map waives the cage line, never a rule: %v", err)
 	}
+
+	// THE DECLINE, AT THE LAUNCH (ADR 0086 D2, ranger-base-dfgte). The same
+	// map, the same PID, on a host that DOES provide seatbelt: the mapping is
+	// declined, the session is created at the tier the PID demanded, and the
+	// record carries no waiver because nothing was waived.
+	//
+	// This is the arm that pins the LAUNCH's own door against parity's. The
+	// resolver is one function (RealizeCageFor) and a QA pin holds that every
+	// door reaches it — but a pin over call sites cannot see a launch that
+	// resolves correctly and then records something else, which is exactly
+	// the failure D2 names: "the session has a wall its record does not
+	// name". So the verdict here is the session RECORD, read back off disk.
+	t.Run("the declined mapping at the launch", func(t *testing.T) {
+		if !had {
+			t.Skip("NOTHING MEASURED: this host does not provide cage seatbelt, so a decline back to it is the one thing D2 does not do (the arm above is this host's reading)")
+		}
+		// The two preconditions of a real launch behind this host's wall,
+		// both of them ADR 0086's own findings and neither about D2:
+		// wallUngrantedDir, because every blanket temp grant makes the D5
+		// witness's create land (and correctly refuse the launch); and
+		// CLAUDE_CONFIG_DIR, because unset, a claude seat at this tier is
+		// refused by ADR 0080 D19 before any of this is reached.
+		claudeConfigDirForTest(t)
+		dir := wallUngrantedDir(t)
+		if err := b.CreateSession(NewSessionOpts{Name: "wall-d", Agent: "wall", Dir: dir}); err != nil {
+			t.Fatalf("a declined mapping launches at the demanded tier, which this host provides: %v", err)
+		}
+		m, ok := b.readMeta("wall-d")
+		if !ok {
+			t.Fatal("no session record")
+		}
+		if m.Cage != CageSeatbelt {
+			t.Errorf("the record must name the tier the session GOT, and a declined mapping gets the demand: %q", m.Cage)
+		}
+		if m.Degraded != "" {
+			t.Errorf("a decline is not a waiver: nothing is ratified and nothing is degraded, got %q", m.Degraded)
+		}
+	})
 }
 
 // ─── `posse status`: one standing row, and G15 standing down ────────────────
@@ -562,6 +873,78 @@ func TestGovG17CageMapLoweringATier(t *testing.T) {
 	}
 	if !strings.Contains(g.Detail, "seatbelt→shims") {
 		t.Errorf("the row must name the entry: %q", g.Detail)
+	}
+}
+
+// ADR 0086 D2's half of the standing row: the PIDs this home's map is
+// DECLINED for.
+//
+// WHY THE ROW NEEDS IT. G17's sentence is "every PID demanding a mapped tier
+// launches at the realized one and its session is marked degraded", and for a
+// declined PID every clause of that is false — it launches at its demand, it
+// is not marked, and it carries no waiver. An operator reading the row beside
+// a `posse gates <that persona>` block that says `seatbelt (bwrap)` over a map that
+// lowers seatbelt has two surfaces disagreeing, and the one that is wrong is
+// the standing row.
+//
+// NAMED AND NOT JUST COUNTED, because the next question after "declined for
+// 1" is "which one".
+func TestGovG17NamesThePIDsTheMapIsDeclinedFor(t *testing.T) {
+	// No t.Parallel(): writes AvailableCages.
+	had := AvailableCages[CageSeatbelt]
+	AvailableCages[CageSeatbelt] = true
+	t.Cleanup(func() {
+		if !had {
+			delete(AvailableCages, CageSeatbelt)
+		}
+	})
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	crCfgPrepend(t, b.App, crMapFor(runtime.GOOS))
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Two PIDs under one map: one whose rules all hold at the mapped tier,
+	// and one the mapping would cost a rule. Only the second is declined,
+	// which is what makes the row's list a reading and not a persona census.
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "walled.md"),
+		[]byte("---\nname: walled\ncage: seatbelt\ndeny: [Edit, Write]\n---\nYou are walled.\n"), 0o644)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "lowered.md"),
+		[]byte("---\nname: lowered\ncage: seatbelt\ndeny: [Bash(git push:*)]\n---\nYou are lowered.\n"), 0o644)
+
+	st, err := b.App.CageRealizeStanding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Declined) != 1 || st.Declined[0] != "walled" {
+		t.Fatalf("the standing reading must name exactly the declined PID: %v", st.Declined)
+	}
+	g := find(shopSet(t, govIn(t, b)), "G17")
+	if g == nil {
+		t.Fatalf("no G17 while the map lowers a tier: %v", shopSet(t, govIn(t, b)).Keys())
+	}
+	for _, want := range []string{"declined for 1 PID(s)", "walled", "ADR 0086 D2"} {
+		if !strings.Contains(g.Detail, want) {
+			t.Errorf("the row does not say %q: %q", want, g.Detail)
+		}
+	}
+	// And the row still says what it always said about the PIDs the map DOES
+	// lower — the decline is an addition, not a replacement.
+	if !strings.Contains(g.Detail, "seatbelt→shims") || !strings.Contains(g.Detail, "waives the cage line only") {
+		t.Errorf("the declined half must not displace the row's own sentence: %q", g.Detail)
+	}
+	// THE CONTROL: with the declined PID gone the clause is absent entirely,
+	// so "declined for 0 PID(s)" is never printed over a map that declines
+	// for nobody.
+	if err := os.Remove(filepath.Join(b.App.AgentsDir, "walled.md")); err != nil {
+		t.Fatal(err)
+	}
+	st2, err := b.App.CageRealizeStanding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st2.Declined) != 0 || strings.Contains(st2.GovDetail(), "declined for") {
+		t.Errorf("a map that declines for nobody says nothing about declining: %v / %q", st2.Declined, st2.GovDetail())
 	}
 }
 

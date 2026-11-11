@@ -88,6 +88,38 @@ D7 then refused such a PID. D2 gives it the tier it asked for.
   not name. It only declines to lower.
 - On the host today, D2 moves exactly one seat (hoover) and changes no
   constitution line.
+- **As built (ranger-base-dfgte, `docs/notes.d/ranger-base-dfgte.md`).**
+  `RealizeCageFor(ag, rt, demand)` is the resolver and `realizeCageIn` — the
+  map and nothing else — is UNEXPORTED, which is what turns "one resolver"
+  from advice into a property the language holds: no package outside
+  internal/posse can reach the map's raw reading at all, and inside it four QA
+  pins hold that the only caller is the resolver, that `CageRealizeEntries`'
+  rows are bound nowhere but the file that owns the key, that the map-free
+  parity variant is the decline test's alone, and that the four doors are
+  still there. CheckParity's body was split so the map is resolved at the
+  entry point and the body (`checkParityResolved`) takes the pair already
+  resolved; the decline's two parity readings go through
+  `checkParityAtRealizedTier`, the variant that reads no `cage_realize_*`
+  key — and a `readMap` flag stops the relaunch's by-PID half re-entering the
+  map from inside it, which was a real infinite recursion and not a
+  hypothetical one, because the PID this fires for is exactly the PID whose
+  `ag.Cage` outranks the mapped tier.
+  What the build adds to the decision is that **question 2 is subsumed by
+  question 3**. MEASURED 2026-11-11: deleting the `AvailableCages` clause
+  leaves every row of the decline table green, the "cannot provide the
+  demanded tier" row included — because the only tiers a map may name are
+  `shims` and `seatbelt`, every row seatbelt realizes that shims does not sits
+  behind parity's own `a.cageAvailable(cage)`, and an unavailable tier
+  therefore realizes nothing extra for question 3 to find. The clause stays:
+  it is this decision's own wording and it is the cheap question, answered
+  without two parity readings. What is PINNED is the subsumption
+  (`TestCageRealizeAnUnavailableDemandRealizesNothingToDeclineFor`), because
+  pinning a guard no mutation can reach would be a test of nothing.
+  One thing the decision did not say and the build had to settle: the rules
+  the line names come from PARITY's rows and not from a list of tool names, so
+  a path-scoped subtree write deny (`Edit(docs/adr/**)`, ADR 0014 §1) is
+  declined for exactly as a bare `Edit` is, and it reds the table if it is
+  not.
 
 **D3. A PID that denies the whole tree gets no write grant into any git
 dir of its session.** `SeatbeltWritable`'s `deniesFiles` arm drops

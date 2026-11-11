@@ -240,17 +240,34 @@ type CageRealizeResolution struct {
 	Demanded string
 	Realized string
 	Ratified string // "" unless the map hands the launch a weaker tier
+	// Declined (ADR 0086 D2) is the one DeclaredDifference line a DECLINED
+	// mapping prints, and "" for every mapping that applied. A decline is
+	// the opposite of Ratified and the two are never both set: Realized is
+	// the DEMAND, there is no waiver to ratify, nothing is marked degraded,
+	// and the line only says out loud that the map was read and not taken.
+	Declined string
 }
 
-// RealizeCageIn maps demanded through cfg's map for goos. ratifier is what
-// ratified the map, rendered by cageRealizeRatifier — passed in rather than
-// read here so the whole resolution is a pure function of (config, OS,
-// provenance, demand) and the table that pins it needs no home on disk.
+// realizeCageIn maps demanded through cfg's map for goos, and it is the MAP
+// AND NOTHING ELSE — ADR 0083 D7's resolution, before ADR 0086 D2's decline
+// is asked about. ratifier is what ratified the map, rendered by
+// cageRealizeRatifier — passed in rather than read here so this half is a
+// pure function of (config, OS, provenance, demand) and the table that pins
+// it needs no home on disk.
 //
 // On an error the resolution still answers the DEMANDED tier: a map posse
 // cannot read waives nothing, which is the safe direction. The error is what
 // the callers refuse on.
-func RealizeCageIn(cfg, goos, ratifier, demanded string) (CageRealizeResolution, error) {
+//
+// UNEXPORTED SINCE ADR 0086 D2 (ranger-base-dfgte), and that is the whole of
+// what makes "one resolver" checkable rather than advisory. D2's decline
+// needs the PID and the runtime, which this function does not take, so a
+// caller that resolved the map here would get a tier with the decline left
+// out — the launch at one tier and parity at another, which is the defect D2
+// names as the thing to design out. Unexported, no package outside this one
+// can reach it at all, and inside it the only caller is RealizeCageFor
+// (TestQAOneCageRealizeResolverAndEveryDoorReachesIt).
+func realizeCageIn(cfg, goos, ratifier, demanded string) (CageRealizeResolution, error) {
 	r := CageRealizeResolution{GOOS: goos, Demanded: demanded, Realized: demanded}
 	rows, err := CageRealizeEntries(cfg, goos)
 	if err != nil {
@@ -288,9 +305,136 @@ func cageRealizeReason(goos string, e CageRealizeEntry, ratifier string) string 
 	return fmt.Sprintf("%s%s %s (%s)", CageRealizeReasonPrefix, goos, e, strings.ReplaceAll(ratifier, "; ", ", "))
 }
 
-// RealizeCage is RealizeCageIn for this App on this OS.
-func (a *App) RealizeCage(demanded string) (CageRealizeResolution, error) {
-	return RealizeCageIn(a.ConfigPath, runtime.GOOS, a.cageRealizeRatifier(), demanded)
+// ─── ADR 0086 D2 · one resolver, and the mapping it declines ────────────────
+
+// RealizeCageFor is THE ONE RESOLVER: the map for this App on this OS, asked
+// for a concrete PID on a concrete runtime, with D2's decline applied.
+//
+// EVERY DOOR THAT READS THE MAP CALLS THIS. There are four — CreateSession's
+// launch path (herdrback.go), both halves of CheckParity (the demand and the
+// relaunch's by-PID reading, parity.go) and dispatch's CheckTier, which
+// reaches it through CheckParity — and the reason they must agree is not
+// tidiness: if the launch resolves one tier and parity another, the session
+// runs behind a wall its own record does not name. That is the defect ADR
+// 0086 D2 asks the build to design out, so `realizeCageIn` is unexported and
+// this is the only thing that calls it
+// (TestQAOneCageRealizeResolverAndEveryDoorReachesIt).
+//
+// ag and rt are what D2's test needs and `realizeCageIn` cannot have: the
+// decline is per PID and per runtime, because which rules a tier realizes is
+// a fact about the PID's deny list read through the runtime.
+func (a *App) RealizeCageFor(ag *AgentFile, rt *Runtime, demanded string) (CageRealizeResolution, error) {
+	res, err := realizeCageIn(a.ConfigPath, runtime.GOOS, a.cageRealizeRatifier(), demanded)
+	if err != nil {
+		return res, err
+	}
+	return a.declineCageMapping(ag, rt, res), nil
+}
+
+// declineCageMapping is ADR 0086 D2, the rule itself: a mapping is DECLINED
+// for a PID it would leave with a rule unrealized, when this host provides
+// the tier that PID demanded. The PID then launches at its demand.
+//
+// THIS AMENDS ADR 0083 D7 AND LEAVES ITS WORDS STANDING. A map changes the
+// cage and nothing else, and it cannot waive a rule — D7 then REFUSED such a
+// PID, because parity was recomputed at the mapped tier and the rule went
+// unrealized there. D2 gives it the tier it asked for instead. Both halves of
+// D7's sentence survive: the map still waives no rule, and now it does not
+// cost one either.
+//
+// THE TEST IS THREE QUESTIONS, and the order is the cheap ones first:
+//
+//  1. did the map change anything at all. An absent family, a demand with no
+//     row, and an identity row (`seatbelt: seatbelt`, the one row D7 calls
+//     "not degradation at all") all answer no, and nothing below runs.
+//
+//  2. is the DEMANDED tier in AvailableCages. If this host cannot provide it,
+//     declining would hand the launch a tier that realizes nothing — so the
+//     map applies and the rule refuses, exactly as today (`cage %s is not
+//     available on this host/build`, parity.go).
+//
+//     AN EARLY EXIT AND NOT THE DECIDER, and this is said here because the
+//     code reads like the opposite. Question 3 already subsumes it: the only
+//     tiers a map may name are shims and seatbelt (`container` is refused on
+//     both sides), every row seatbelt realizes that shims does not is behind
+//     parity's own `seatbelt := a.cageAvailable(cage) && …`, and a tier this
+//     host does not provide therefore realizes nothing extra for question 3
+//     to find. MEASURED 2026-11-11: deleting this clause leaves every row of
+//     TestCageRealizeDeclinesAMappingThatWouldCostAPIDARule green, the
+//     "cannot provide the demanded tier" row included. It stays because it
+//     is D2's own wording and because it is the cheap question — an
+//     unavailable tier answers here instead of through two parity readings —
+//     and the SUBSUMPTION is what is pinned, by
+//     TestCageRealizeAnUnavailableDemandRealizesNothingToDeclineFor. If that
+//     pin ever reds, this clause is the only thing standing between a
+//     decline and a tier that holds nothing.
+//
+//  3. does the mapped tier leave a rule unrealized that the demanded tier
+//     realizes. If not, the PID loses nothing by being lowered and the map
+//     applies exactly as today, ratified waiver and all.
+//
+// A DECLINE IS NOT A WAIVER AND NOT A RAISE. It writes no Ratified row and
+// marks nothing degraded, because nothing was given up; and it can only ever
+// answer the DEMAND, so it never raises a PID above what the PID named and
+// never picks a tier nobody asked for. The one thing it leaves behind is the
+// Declined line, which parity prints as a DeclaredDifference — safe by
+// design, never counted toward Degraded (ADR 0017 §2).
+func (a *App) declineCageMapping(ag *AgentFile, rt *Runtime, res CageRealizeResolution) CageRealizeResolution {
+	mapped := res.Realized
+	if ag == nil || rt == nil || mapped == res.Demanded || !a.cageAvailable(res.Demanded) {
+		return res
+	}
+	lost := a.cageRulesLostByMapping(ag, rt, mapped, res.Demanded)
+	if len(lost) == 0 {
+		return res
+	}
+	res.Realized = res.Demanded
+	res.Ratified = ""
+	res.Declined = fmt.Sprintf("%s%s %s→%s declined for this PID: %s leaves %s unrealized; launched at %s (ADR 0086 D2)",
+		CageRealizeReasonPrefix, res.GOOS, res.Demanded, mapped, mapped,
+		strings.Join(lost, ", "), CageLabel(res.Demanded))
+	return res
+}
+
+// cageRulesLostByMapping is question 3: the PID's own rules that go
+// unrealized at mapped and are realized at demanded, in the order the PID
+// wrote them.
+//
+// IT MUST NOT RE-ENTER THE MAP, or it loops: the map's answer is what is
+// being decided. So both readings go through checkParityAtRealizedTier
+// (parity.go), the variant that takes a tier ALREADY realized and reads no
+// `cage_realize_*` key at all.
+//
+// THE RULES AND NOT THE Unrealized LIST. Parity's unrealized entries are
+// `<gate> — <why>` sentences built for a reader, so recovering the rule from
+// one would be a parse of prose; and the rows are keyed by the rule exactly
+// as the PID wrote it (wholeTreeWriteWall's `gate` parameter), so membership
+// in Realized answers this directly. Every deny rule lands in one of the two
+// — Realized or Unrealized — so "not realized here" is "unrealized here".
+//
+// TIER-INDEPENDENT, which is why DefaultTier is passed and no caller has to
+// have a model tier in hand. The model tier reaches Degraded (BelowFloor) and
+// NoDegrade and touches no row of Realized; the decline arm of
+// cagerealize_test.go asserts that over every tier.
+func (a *App) cageRulesLostByMapping(ag *AgentFile, rt *Runtime, mapped, demanded string) []string {
+	low := a.checkParityAtRealizedTier(ag, rt, mapped, DefaultTier)
+	high := a.checkParityAtRealizedTier(ag, rt, demanded, DefaultTier)
+	var out []string
+	said := map[string]bool{}
+	for _, rule := range ag.Deny {
+		if said[rule] {
+			continue
+		}
+		if _, ok := low.Realized[rule]; ok {
+			continue
+		}
+		if _, ok := high.Realized[rule]; !ok {
+			continue
+		}
+		said[rule] = true
+		out = append(out, rule)
+	}
+	return out
 }
 
 // cageRealizeRatifier names what ratified the map, for the reason string.
@@ -333,6 +477,16 @@ type CageRealizeStanding struct {
 	GOOS     string
 	Lowered  []CageRealizeEntry
 	Ratifier string
+	// Declined (ADR 0086 D2) names the PIDs of this home whose mapping is
+	// declined right now — the seats the standing row is NOT about, said in
+	// the row because the row's sentence ("every PID demanding a mapped tier
+	// launches at the realized one") is false for them.
+	//
+	// Filled only by the App reading below, and never by
+	// CageRealizeStandingFor: it is a fact about this home's PIDs and their
+	// runtimes, not about the config text that function is handed, and the
+	// table that pins the text wants no agents dir on disk.
+	Declined []string
 }
 
 // Any reports whether this OS's map lowers anything at all.
@@ -347,8 +501,20 @@ func (s CageRealizeStanding) GovDetail() string {
 	for _, e := range s.Lowered {
 		parts = append(parts, e.String())
 	}
-	return fmt.Sprintf("%s: %s (%s) — every PID demanding a mapped tier launches at the realized one and its session is marked degraded. The map waives the cage line only: a rule the realized tier cannot hold still refuses the launch. Ratified at promote, so dispatch launches it; raise the map when this host can realize the demanded tier (ADR 0083 D7)",
-		CageRealizeKey(s.GOOS), strings.Join(parts, ", "), s.Ratifier)
+	// ADR 0086 D2's half of the row. "EVERY PID demanding a mapped tier" is
+	// what the sentence above says, and for a declined PID it is not true —
+	// so the count is said here rather than left for a reader to reconcile
+	// against a `posse gates` block that names seatbelt over a map that
+	// lowers it. The PIDs are NAMED and not just counted, because the
+	// operator's next question after "declined for 1" is "which one", and
+	// the answer is one short list on a host with eleven seats.
+	declined := ""
+	if len(s.Declined) > 0 {
+		declined = fmt.Sprintf(" — declined for %d PID(s): %s, which launch at their demanded tier because the mapped one leaves a rule of theirs unrealized (ADR 0086 D2); those sessions are not degraded and carry no waiver",
+			len(s.Declined), strings.Join(s.Declined, ", "))
+	}
+	return fmt.Sprintf("%s: %s (%s) — every PID demanding a mapped tier launches at the realized one and its session is marked degraded. The map waives the cage line only: a rule the realized tier cannot hold still refuses the launch. Ratified at promote, so dispatch launches it; raise the map when this host can realize the demanded tier (ADR 0083 D7)%s",
+		CageRealizeKey(s.GOOS), strings.Join(parts, ", "), s.Ratifier, declined)
 }
 
 // CageRealizeStandingFor reads cfg's map for goos and keeps the rows that
@@ -367,9 +533,51 @@ func CageRealizeStandingFor(cfg, goos, ratifier string) (CageRealizeStanding, er
 	return s, nil
 }
 
-// CageRealizeStanding is CageRealizeStandingFor for this App on this OS.
+// CageRealizeStanding is CageRealizeStandingFor for this App on this OS,
+// plus the PIDs this home's map is declined for (ADR 0086 D2).
+//
+// The PID walk is skipped where the map lowers nothing, because there is then
+// no row to print and nothing to decline — which keeps `posse status` on a
+// home with no map exactly as cheap as it was.
 func (a *App) CageRealizeStanding() (CageRealizeStanding, error) {
-	return CageRealizeStandingFor(a.ConfigPath, runtime.GOOS, a.cageRealizeRatifier())
+	s, err := CageRealizeStandingFor(a.ConfigPath, runtime.GOOS, a.cageRealizeRatifier())
+	if err != nil || !s.Any() {
+		return s, err
+	}
+	s.Declined = a.cageRealizeDeclinedPIDs()
+	return s, nil
+}
+
+// cageRealizeDeclinedPIDs asks the one resolver about every PID of this home,
+// at the cage that PID itself demands, and names the ones whose mapping is
+// declined.
+//
+// A PID THAT CANNOT BE READ IS NOT COUNTED, in either direction: a persona
+// file that fails to load or a runtime that fails to resolve cannot launch at
+// all (`posse agent check` and the launch both refuse it), so it is neither a
+// declined seat nor a mapped one, and naming it here would put a broken PID's
+// name in a row about the cage map. Those refusals have their own surfaces —
+// G17 is not one of them.
+//
+// ListAgents is sorted, so the row's list is stable between two readings of
+// the same home (rangerhq-epes' rule: a report two runs cannot diff is a
+// report nobody reads twice).
+func (a *App) cageRealizeDeclinedPIDs() []string {
+	var out []string
+	for _, name := range a.ListAgents() {
+		ag, err := a.LoadAgent(name)
+		if err != nil || ag == nil {
+			continue
+		}
+		rt, err := a.LoadRuntime(a.ResolveRuntime("", ag))
+		if err != nil || rt == nil {
+			continue
+		}
+		if res, err := a.RealizeCageFor(ag, rt, ResolveCage("", ag)); err == nil && res.Declined != "" {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // ─── reading a session's degraded field back ─────────────────────────────────

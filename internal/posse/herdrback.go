@@ -2749,7 +2749,14 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// the wrong thing — so an unknown OS key, a scalar where a block
 		// belongs, an unknown tier or `container` on either side stops the
 		// launch with the sentence that names the line.
-		cageRealized, err := a.RealizeCage(cage)
+		//
+		// THE ONE RESOLVER (ADR 0086 D2). RealizeCageFor and not a reading
+		// of the map here, because this is the LAUNCH's door and parity has
+		// two of its own: a second spelling would be a session walled at one
+		// tier and recorded at another, which is the defect D2 asks the
+		// build to design out. It takes the PID and the runtime because the
+		// decline is per PID and per runtime.
+		cageRealized, err := a.RealizeCageFor(ag, rt, cage)
 		if err != nil {
 			return nil, err
 		}

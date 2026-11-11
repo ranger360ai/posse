@@ -231,27 +231,69 @@ func (p Parity) DegradedReason() string {
 // ownership and behavior are facts about a concrete repo, added only by
 // CheckParityIn after executing the slots.
 func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity {
-	p := Parity{Runtime: rt.Name, Cage: cage, Tier: tier, Realized: map[string]RealizedGate{}}
 	if cage == "" {
 		cage = DefaultCage
-		p.Cage = cage
 	}
 	if tier == "" {
 		tier = DefaultTier
-		p.Tier = tier
 	}
-	// `cage_realize_<goos>:` (ADR 0083 D7) — FIRST, because everything below
+	// `cage_realize_<goos>:` — resolved HERE and nowhere below, through the
+	// one resolver (ADR 0086 D2's RealizeCageFor), because everything the
+	// body computes is computed at the tier this host REALIZES and not at the
+	// one that was asked for.
+	res, cageMapErr := a.RealizeCageFor(ag, rt, cage)
+	return a.checkParityResolved(ag, rt, res, tier, cageMapErr, true)
+}
+
+// checkParityAtRealizedTier is the matrix at a tier that is ALREADY the one
+// this host realizes: the `cage_realize_<goos>:` family is not read at all,
+// and neither half of the map's reading below runs.
+//
+// IT EXISTS BECAUSE ADR 0086 D2's DECLINE WOULD OTHERWISE LOOP. The decline
+// test is "does the mapped tier leave a rule unrealized that the demanded
+// tier realizes", which is two parity readings — and a parity reading that
+// resolved the map would be asking the map the question the map is waiting
+// for an answer to. So the resolver calls this (cageRulesLostByMapping), and
+// nothing else should: a caller that wanted parity for a DEMAND and reached
+// here instead would get the matrix for a tier this host may never run it at,
+// which is the whole class of defect D2 names.
+func (a *App) checkParityAtRealizedTier(ag *AgentFile, rt *Runtime, cage, tier string) Parity {
+	if cage == "" {
+		cage = DefaultCage
+	}
+	if tier == "" {
+		tier = DefaultTier
+	}
+	return a.checkParityResolved(ag, rt,
+		CageRealizeResolution{GOOS: runtime.GOOS, Demanded: cage, Realized: cage}, tier, nil, false)
+}
+
+// checkParityResolved is CheckParity's body with the cage map already
+// resolved. res carries the pair (what was demanded, what this host realizes
+// it with) and whatever the resolver had to say about it; cageMapErr is the
+// config refusal, which is reported as degradation here and refused outright
+// at the launch and dispatch doors. readMap says whether the BY-PID half
+// below may ask the map a second question — false for
+// checkParityAtRealizedTier, which is the arm that must not re-enter it.
+func (a *App) checkParityResolved(ag *AgentFile, rt *Runtime, res CageRealizeResolution, tier string, cageMapErr error, readMap bool) Parity {
+	demanded, cage := res.Demanded, res.Realized
+	p := Parity{Runtime: rt.Name, Cage: cage, Tier: tier, Realized: map[string]RealizedGate{}}
+	// everything below
 	// is computed at the tier this host REALIZES and not at the one that was
 	// asked for. That is the whole of the key's semantics: the map changes
 	// the cage and nothing else, so a rule the realized tier cannot hold
-	// still goes unrealized here and still refuses the launch.
+	// still goes unrealized here and still refuses the launch — and ADR 0086
+	// D2 is why that is no longer the end of the story: a mapping that would
+	// cost this PID a rule is DECLINED upstream of here, so the tier res
+	// carries is already the demand again and the rows below are computed
+	// there. Nothing in this body knows the difference, which is the point.
 	//
 	// A map this reader cannot parse waives NOTHING — the resolution falls
 	// back to the demanded tier — and the error is reported as degradation
 	// so no printing surface renders a broken map as an all-clear. The
 	// launch and dispatch doors refuse on the error itself before reaching
 	// here (CreateSession, CheckTier), which is where a config refusal
-	// belongs; this line is the one that cannot return an error.
+	// belongs; this is the reading that cannot return an error.
 	//
 	// The DEMAND is not a field of Parity (ranger-base-pl3ck). It was one for
 	// a day, on the ground that "the pair is what makes a mapped launch
@@ -261,13 +303,17 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	// NOT lower a tier there is no waiver to be legible about, and the demand
 	// survives in ag.Cage, which is where the relaunch reading below reads it
 	// back from.
-	demanded := cage
-	res, cageMapErr := a.RealizeCage(demanded)
 	if cageMapErr != nil {
 		p.Degraded = append(p.Degraded, cageMapErr.Error())
 	}
-	cage = res.Realized
-	p.Cage = cage
+	// ADR 0086 D2: the map was read and NOT taken. A declared difference and
+	// never degradation (ADR 0017 §2) — nothing was given up, so there is no
+	// waiver to ratify and nothing for --allow-degraded to waive; the line
+	// exists because a reader looking at a `seatbelt` block on a host whose
+	// map lowers seatbelt is owed the sentence that explains it.
+	if res.Declined != "" {
+		p.DeclaredDifference = append(p.DeclaredDifference, res.Declined)
+	}
 	// The ratified waiver, if there is one. TWO SOURCES, one row, because
 	// there are two demands a map can lower and the matrix is the only place
 	// that sees both:
@@ -284,8 +330,8 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	//     and refuse — a waiver that expires at the first refresh is not a
 	//     waiver.
 	ratified := res.Ratified
-	if ag.Cage != "" && cageRank(ag.Cage) > cageRank(demanded) {
-		if byPID, err := a.RealizeCage(ag.Cage); err == nil && byPID.Ratified != "" && byPID.Realized == cage {
+	if readMap && ag.Cage != "" && cageRank(ag.Cage) > cageRank(demanded) {
+		if byPID, err := a.RealizeCageFor(ag, rt, ag.Cage); err == nil && byPID.Ratified != "" && byPID.Realized == cage {
 			ratified = byPID.Ratified
 		}
 	}

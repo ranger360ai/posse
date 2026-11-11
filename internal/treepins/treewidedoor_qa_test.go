@@ -998,8 +998,36 @@ package treepins
 // control arm (TestQAFixtureGitCensusCanStillSayNo) enumerates no directory
 // and so is not in this class.
 //
-// and `make tree-check` is all of them — one hundred and twenty-nine pins and
-// seventeen doors, 71.3-77.7s over three warm runs at one hundred and
+// and FOUR more, folded into pkgcensus-check's door beside the fifteen above,
+// because their subject is that door's own: a census over internal/posse's
+// own sources, read as source, with a file set the sweep discovers rather
+// than spells (a DERIVED member through its readable `"."`, the
+// ranger-base-m94g2 rule):
+//
+//	TestQAOneCageRealizeResolverAndEveryDoorReachesIt
+//	                                              make pkgcensus-check
+//	TestQACageRealizeEntryRowsAreReadOnlyWhereTheKeyLives
+//	                                              make pkgcensus-check
+//	TestQATheMapFreeParityVariantIsTheDeclineTestsAlone
+//	                                              make pkgcensus-check
+//	TestQAEveryCageMapDoorReachesTheOneResolver
+//	                                              make pkgcensus-check
+//	                                              (all four
+//	                                              ranger-base-dfgte)
+//
+// NO NEW DOOR, for the sentence every other pkgcensus row gives. What they
+// add is ADR 0086 D2's "one resolver": the cage map has four doors — the
+// launch, both halves of CheckParity, and dispatch's CheckTier — and a second
+// reader of it would compile, pass every table that drives the resolver
+// directly, and leave a session walled at the tier one door resolved while
+// its record names the tier another did. Three of the four sweep for that
+// second reader; the fourth is the floor under them, because a door that
+// stopped reading the map at all is the same defect from the other side and
+// just as silent. 0.33s between the four (MEASURED 2026-11-11, 0.08s, 0.09s,
+// 0.09s and 0.07s on one warm run of the door).
+//
+// and `make tree-check` is all of them — one hundred and thirty-three pins
+// and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
 // 8.42 over a five-minute 11.15, 10.04 and 9.71, with NO suite slot held for
@@ -1015,6 +1043,20 @@ package treepins
 // at a HIGHER load with both slots held. The pin this bead added reports
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
+//
+// THREE WARM READINGS AT ONE HUNDRED AND THIRTY-THREE, the class as this
+// bead leaves it: 44s, 43s then 40s in that order (MEASURED 2026-11-11,
+// ranger-base-dfgte, at a one-minute load average of 18.00, 13.43 and 12.63,
+// with BOTH suite slots held by a sibling seat for all three runs — which
+// this command never queues behind, every door being a `-run` filter). A 4s
+// spread, and it says the same thing the xa2e3/r5131 entries below say and
+// one step louder: the 40s band is the price of this class, it is
+// reproducible across beads and days, and it holds at a load in the teens
+// with the box's suite capacity fully spoken for. The four pins this bead
+// added report 0.33s between them, two orders of magnitude under the spread,
+// so none of this band is theirs — and the band is the same one the class
+// read at one hundred and twenty-nine, so the four cost nothing a reader can
+// see.
 //
 // Two warm readings at one hundred and twenty-nine, the class as this bead
 // leaves it: 41.9s then 39.4s (MEASURED 2026-11-10, ranger-base-xa2e3, at a

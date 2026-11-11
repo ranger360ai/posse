@@ -154,7 +154,7 @@ func TestQALaunchAtTheOtherHostsWallMechanism(t *testing.T) {
 			// and an empty `Degraded`.
 			//
 			// It holds at either mechanism and does not depend on which one
-			// this subtest pinned: `RealizeCageIn` keys on `runtime.GOOS`
+			// this subtest pinned: `realizeCageIn` keys on `runtime.GOOS`
 			// and not on `wallMechanismHost` (cagerealize.go), so what is
 			// measured here is the ABSENCE of a mapping, which is the fact
 			// D7 and D6 option C are about. Reading it inside both subtests
