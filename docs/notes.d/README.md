@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-y9t65](ranger-base-y9t65.md) — The reaper on a timer, and the four classes it had never heard of (ranger-base-y9t65) — 2026-11-11
 - [ranger-base-xpxo6](ranger-base-xpxo6.md) — The first full run under the execve supervisor: the price, and the red that belonged to no family (ranger-base-xpxo6) — 2026-11-11
 - [ranger-base-xdaw9](ranger-base-xdaw9.md) — herdr's typed route loses a prompt into a modal too, and the tell is the screen (ranger-base-xdaw9) — 2026-11-11
+- [ranger-base-vw1cp](ranger-base-vw1cp.md) — What fills a tmpfs is inodes, and nothing was reading that column (ranger-base-vw1cp) — 2026-11-11
 - [ranger-base-v0nhh](ranger-base-v0nhh.md) — Four closes verified, and the leak the triage blamed the wrong dirs for (ranger-base-v0nhh) — 2026-11-11
 - [ranger-base-tow7x](ranger-base-tow7x.md) — The coldexec register was already clear; what reds `tree-check` now is the box (ranger-base-tow7x) — 2026-11-11
 - [ranger-base-sk13s](ranger-base-sk13s.md) — The L4 git carve-out, withdrawn: three pins the bead did not list, and what the degeneracy looks like (ranger-base-sk13s) — 2026-11-11

@@ -356,10 +356,12 @@ func TestMain(m *testing.M) {
 	if ownHome {
 		if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "posse test: codex home: %v\n", err)
+			removeTestHome(home)
 			os.Exit(1)
 		}
 		if err := os.WriteFile(filepath.Join(home, ".codex", "auth.json"), []byte("{}"), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "posse test: codex auth fixture: %v\n", err)
+			removeTestHome(home)
 			os.Exit(1)
 		}
 	}
@@ -393,9 +395,40 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	coldExec.report()
 	if ownHome {
-		os.RemoveAll(home)
+		removeTestHome(home)
 	}
 	os.Exit(code)
+}
+
+// removeTestHome takes the temp HOME down and SAYS SO when it cannot
+// (ranger-base-vw1cp). It replaces a bare `os.RemoveAll(home)` whose error was
+// discarded, on the one path that reached it: the two setup failures above had
+// already made the directory and then exited without it, and a RemoveAll that
+// fails for any reason — a read-only dir inside, a path the sandbox will not
+// unlink — left a tree behind that no later run and no reader could attribute
+// to anything.
+//
+// ALL THREE CALL SITES SIT UNDER ownHome, because removal is the CREATOR's
+// (ranger-base-32bdv, met in the merge-back): an adopting child shares the
+// parent's home and must not take it down while the parent is still running
+// tests in it. The two setup failures above are inside the same guard for the
+// same reason — the directory they are cleaning up is one this process made a
+// few lines earlier.
+//
+// WHAT THIS DOES NOT FIX, measured, so nobody reads it as the whole answer
+// (ranger-base-glogz). 427 abandoned /tmp/posse-testhome-* trees were counted
+// on this box on 2026-11-11 — 5.2G of them two hours earlier, when
+// ranger-base-vw1cp counted 425 — and they are not RemoveAll failures:
+// MEASURED, a GREEN `go test -tags posse_arm2 ./internal/posse` leaves TWO
+// behind, each holding this fixture and nothing else, because this package
+// re-execs its own test binary and the holder children exist to be
+// `child.Process.Kill()`ed — SIGKILL, which no handler here can see. The
+// stderr line below is for the failures this process survives; the rest is a
+// design question and has its own bead.
+func removeTestHome(home string) {
+	if err := os.RemoveAll(home); err != nil {
+		fmt.Fprintf(os.Stderr, "posse test: temp HOME %s NOT removed: %v\n", home, err)
+	}
 }
 
 // ─── the fake bd ─────────────────────────────────────────────────────────────
