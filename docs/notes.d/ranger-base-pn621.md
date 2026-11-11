@@ -42,7 +42,18 @@ check needs no git in the tree it judges.
 | warm, HEAD~8, 33 go files differ | 13.5 | 7.4s |
 | warm, HEAD~20, 60 go files differ | 13.8 | 8.7s |
 | warm, this worktree, twice, nothing to recompile | 3.4 | 1-2s |
+| warm, **this branch rebased onto a main that had moved** | 7.2 | 9.0s |
 | cold, `GOCACHE` emptied | 7.4 → 15.8 | 30.1s |
+
+The rebase row is the only reading taken over a tree that an actual replay
+produced rather than one `git archive` reconstructed: `main` moved by
+ranger-base-dfgte while this bead was in the suite (11 files, 1,239 insertions,
+most of them in `internal/posse`), and the check was run on the rebased tip —
+`go build ./...` and four vets over a package that had just changed under it.
+9.0s at a loadavg of 7.2, and it is the slowest warm reading here. This file is
+the one place these numbers are said; the script's own header carries the
+summary and points here, because a table in two places is a table that goes
+stale in one of them.
 
 Cold per step, on a second empty cache at loadavg 16.8 → 19.5: `go build
 ./...` 7.9s, `go vet ./...` 2.6s, arm2 2.9s, arm3 2.1s, `GOOS=darwin` 8.5s.

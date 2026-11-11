@@ -78,32 +78,23 @@
 # loadavg_other.go, procstart_other.go, …) compile under neither GOOS, here or
 # in ci.yml. Covering them means a third GOOS and a price nobody has measured.
 #
-# WHAT IT COSTS, paid inside the fleet lock on the replay arm only.
-# MEASURED 2026-11-11 on the D1 host (Linux 7.2.15, 16 cores, go
-# 1.27.3-X:nodwarf5 linux/amd64, GOTOOLCHAIN=local), this script run against a
-# tree exported to a plain directory, the shared GOCACHE warm from the fleet's
-# own builds — which is the state a replay actually finds:
+# WHAT IT COSTS, paid inside the fleet lock on the replay arm only: about
+# 7-9s warm and 30s cold, against ADR 0087's budget of ~6s warm and ~16s cold,
+# so warm holds and the ~30s WARM ceiling at which ranger-base-pn621 said to
+# hand the lock-time price back to architecture is not approached.
 #
-#   warm, 10d046f9, 20 commits back, loadavg 3.4                    7.1s
-#   warm, HEAD~3,   9 go files from HEAD, loadavg 13.8              7.4s
-#   warm, HEAD~8,  33 go files from HEAD, loadavg 13.5              7.4s
-#   warm, HEAD~20, 60 go files from HEAD, loadavg 13.8              8.7s
-#   warm, this worktree twice over, nothing recompiled              1-2s
-#   cold, GOCACHE emptied, loadavg 7.4 → 15.8                      30.1s
+# It is 7s rather than 6s because the ADR timed its four steps one after
+# another over a cache that was warm for all of them, and a replay's tree has
+# files in it that nothing has compiled. The cold figure is the ADR's four
+# steps plus the darwin vet it measured separately (17.7s first-ever there,
+# 8.5s here), and a cold cache is the first replay after a toolchain change or
+# a cache prune rather than a per-landing price.
 #
-# and cold per step on a second empty cache, loadavg 16.8 → 19.5: build 7.9s,
-# vet 2.6s, arm2 2.9s, arm3 2.1s, GOOS=darwin 8.5s.
-#
-# So: about 7s warm and 30s cold, against ADR 0087's budget of ~6s warm and
-# ~16s cold. Warm holds — it is 7s and not 6s because the ADR timed its four
-# steps one after another over a cache that was warm for all of them, and a
-# replay's tree has files in it nothing has compiled. The cold figure is the
-# ADR's four steps plus the darwin vet the ADR measured separately (17.7s
-# first-ever there, 8.5s here), and a cold cache is the first replay after a
-# toolchain change or a cache prune rather than a per-landing price. The ~30s
-# WARM ceiling at which the bead said to hand the lock-time price back to
-# architecture is not approached: nothing warm measured above 8.7s, and that
-# at a loadavg of 13.8 on a 16-core box.
+# EVERY READING, with its tree and its load average, is in
+# docs/notes.d/ranger-base-pn621.md, and that is the ONE place they are said:
+# this file quoting the table as well would be two places to keep in step by
+# hand, which is how the figure in the second one goes stale while both look
+# authoritative (AGENTS.md's own rule about the tree-check reading).
 set -euo pipefail
 
 plan_only=0

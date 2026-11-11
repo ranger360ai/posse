@@ -140,7 +140,7 @@ being affordable is in Alternatives.
   `GOOS=darwin go vet ./...` verbatim and on a darwin launcher is the mirror
   image rather than a redundant native vet beside an unvetted linux arm.
   MEASURED 2026-11-11 on the D1 host, the script run against trees exported
-  with `git archive` against the fleet-warm build cache: **7.1-8.7s warm** at
+  with `git archive` against the fleet-warm build cache: **7.1-9.0s warm** at
   loadavgs of 3.4 to 13.8, and **30.1s cold**. Warm holds against the 5.9s in
   the table above — it is 7s rather than 6s because that table timed its steps
   over a cache warm for all of them, and a replay's tree has files in it
