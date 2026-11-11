@@ -77,6 +77,52 @@ MEASURED 2026-11-11, same worktree, `TMPDIR` on /home (930G ext4, no quota):
 and every `t.TempDir` together, while setting `GOTMPDIR` greens a full-disk
 repro.
 
+### The workaround costs more than those two pins (MEASURED after the fix)
+
+`make test` run in full on 2026-11-11 with `TMPDIR` under `$HOME`, to get a
+suite reading for this bead's own change, red **8 tests in 4 packages**, none of
+them related to anything in the diff:
+
+    cmd/coldexec     TestFirstExecOfAPlantedScriptPaysDAndTheSecondDoesNot
+    cmd/posse        TestCutDestinationKeysChangeNothing
+    cmd/posse        TestClaudeConfigDirIsFenced
+    cmd/posse        TestQAStatusPrintsTheSecondStoreLine
+    internal/posse   TestQARecordReachAbstainsBeforeItRendersTheProfile
+    internal/posse   TestQARecordReachAbstainsWhenThisProcessMayNotApplyAProfile
+    internal/posse   TestQATheRenderedProfileNamesTheMovedFileForEitherVariable
+    internal/treepins TestClaudeConfigDirIsFenced
+
+**6 of the 8 pass on the house default root** (`go test -run <those> ./cmd/posse
+./internal/posse ./internal/treepins`: `internal/posse` ok 0.009s,
+`internal/treepins` ok 0.705s; `cmd/coldexec` ok 0.776s;
+`TestCutDestinationKeysChangeNothing` ok in the same run), so they are the
+workaround's artifacts and not the diff's. Two classes:
+
+- the fixture is outside every granted root, which is the arm-3 pair's
+  mechanism below (a bare `/tmp` is in every rendered seatbelt);
+- the surface abbreviates `$HOME` to `~` and the assertion wants the absolute
+  path — `TestQAStatusPrintsTheSecondStoreLine` prints `second store:
+  ~/.cache/posse-tmp-.../003/.beads` and then reports that same line "missing"
+  the `/home/posse/...` spelling.
+
+**The other 2 cannot be read on this box in EITHER root** while the quota is
+spent, and they are the bead one level up: `cmd/posse`'s
+`TestClaudeConfigDirIsFenced` and `TestQAStatusPrintsTheSecondStoreLine` shell
+out to `go build`, so on `/tmp` they die inside their own build (`compile:
+writing output: write $WORK/b178/_pkg_.a: disk quota exceeded`,
+`cgo-dwarf-inference: fatal error: error writing to /tmp/ccVpgcjZ.s: Disk quota
+exceeded`) and under `$HOME` their premise is gone. GOTMPDIR is no way to split
+the two roots: MEASURED, with `TMPDIR=/tmp` and `GOTMPDIR` under `$HOME` — and
+with the test binary compiled by hand and run directly — the fixtures still
+landed under `$HOME`.
+
+So the honest statement of the workaround is "it buys arm 2 and costs a class",
+not "it costs two pins". The first version of this fragment and of the
+explainer said the latter, from the arm-2/arm-3 reading alone; the full-suite
+reading corrected it.
+
+### The arm-3 pair, in detail
+
 Why those two pins, and it is NOT a product bug: the writable-set builder
 honours the variable (`internal/posse/seatbelt.go:709` reads
 `os.Getenv("TMPDIR")` and adds it when non-empty, with an unconditional add of
@@ -98,8 +144,9 @@ cannot be read at all on a box whose `/tmp` is too full to run them.
 - The advice is now per-errno, because it differs. ENOSPC sends the reader to
   `df` and `du` on GOCACHE; EDQUOT sends them to `du` on the sibling
   `posse-testhome-*` trees, says the budget is shared so the writes may not be
-  theirs, says `df` will look fine, and prints the `TMPDIR` workaround with the
-  two-pin cost above. A quota red sent to `df` is worse than silence: `df`
+  theirs, says `df` will look fine, and prints the `TMPDIR` workaround with its
+  measured cost — arm 2 green, 8 arm-1 reds of which 6 pass on the default root
+  and 2 cannot be read in either. A quota red sent to `df` is worse than silence: `df`
   answers that the box has room, and what the reader learns is that the
   explainer is wrong about its own box. So the two arms that carry this bead
   are the DISCRIMINATIONS in both directions — an EDQUOT log must not print the

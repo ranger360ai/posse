@@ -73,9 +73,14 @@ fired — ENOSPC sends the reader to `df`, where EDQUOT looks fine — and the D
 line now says its number is the device, naming the mount's quota option where
 `/proc/mounts` has one. It still probes no quota: there is no `quota` binary
 here. The workaround the block prints is `TMPDIR` on a filesystem without one
-(`TMPDIR` and never `GOTMPDIR` — krra's trap), and it costs exactly two arm-3
-pins, which build their grant set from `TMPDIR` and then look for a fixture
-outside it; re-run those two alone on the house default. Numbers:
+(`TMPDIR` and never `GOTMPDIR` — krra's trap), and it costs a CLASS and not two
+pins: MEASURED, arm 2 goes green where the quota had red it four times, and arm
+1 reds 8 unrelated tests in 4 packages — pins whose premise is that their
+fixture lies inside a granted root (a bare `/tmp` is in every rendered
+seatbelt), and surfaces that abbreviate `$HOME` to `~` and then want the
+absolute path. 6 of the 8 pass on the house default; the other 2 shell out to
+`go build` and cannot be read on this box in EITHER root while the quota is
+spent, which is this bead one level up. Numbers and names:
 `docs/notes.d/ranger-base-akk9f.md`.
 
 `go test ./...` (also `make test`) is hermetic: the test binary re-execs as
