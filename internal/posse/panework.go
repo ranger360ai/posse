@@ -710,9 +710,13 @@ func (b *HerdrBackend) ConfirmSubmitted(target Seat) string {
 //     APPROVED, twice, the command running. This function cannot see it: a
 //     modal is drawn where the box was, so there is no composer region at
 //     all, `captureComposer` answers "" and this answers "the box cleared".
-//     Filed as ranger-base-hlnyx; the tell is in the same capture
-//     PaneHolding already takes one call earlier — while a modal is up there
-//     is no composer region to find.
+//     **Closed at the other end** (ranger-base-hlnyx, ADR 0076 Amendment 7):
+//     `RexMux.Prompt` now REFUSES a prompt into a claude block whose screen
+//     has no box on it, off the same capture this reading takes, so the state
+//     this could not report is one posse no longer types into. This function
+//     is unchanged and stays blind on purpose — a dialog the TURN raised after
+//     a prompt that really was submitted IS a cleared box, and that is what it
+//     should say.
 //   - THE PICKER SUBMITS RATHER THAN HOLDING. ADR 0060 D5 measured the Enter
 //     being EATEN, the text left "through Esc and C-u"; on claude 2.1.322 a
 //     leftover `/` plus this route's text was submitted as

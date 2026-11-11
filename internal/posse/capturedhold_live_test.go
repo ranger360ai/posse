@@ -187,3 +187,53 @@ func liveCapturedComposerChain(t *testing.T, b *HerdrBackend, seat Seat) {
 	}
 	t.Logf("live chain complete: last submit in this session was %q", ellipsis(sent, 60))
 }
+
+// TestLiveRexPromptSeesThisSeatsOwnComposer is ranger-base-hlnyx's live pin,
+// and it guards the hazard ADR 0076 Amendment 7 names out loud: the composer
+// gate refuses a prompt into a claude block whose screen has no box on it, so
+// if a later claude stops drawing the two rules around its box, every prompt
+// on the instance is refused. The hermetic arms cannot see that — their
+// screens are quoted bytes from 2026-11-10 — and this one can, because the
+// seat running the suite is a live claude block with its composer drawn.
+//
+// READ-ONLY, and nothing is typed: this is `captureComposerSight` over one
+// capture of this seat's own screen, not a `Prompt`. A pin that actually
+// prompted would be typing into the seat running it.
+func TestLiveRexPromptSeesThisSeatsOwnComposer(t *testing.T) {
+	t.Parallel()
+
+	if os.Getenv("RHQ_LIVE_REX") == "" {
+		t.Skip("RHQ_LIVE_REX unset: this pin shells out to the operator's rex and reads the seat it runs in")
+	}
+	block, bin := os.Getenv("REX_BLOCK"), os.Getenv(RexBinEnv)
+	if block == "" {
+		t.Skip("REX_BLOCK unset: not running inside a Rex seat, so there is no live screen to read")
+	}
+	if bin == "" {
+		bin = RexDefaultBin()
+	}
+	seat := Seat{Session: os.Getenv("REX_SESSION"), Pane: block}
+	m := RexMux{R: Rex{Bin: bin}}
+
+	screen, err := m.Read(seat, captureFooterLines, false)
+	if err != nil {
+		t.Fatalf("rex could not capture this seat's own block %s: %v", block, err)
+	}
+	sight := captureComposerSight(screen)
+	t.Logf("live sight = %d (open=%d), last line = %q", sight, composerOpen, captureLastLine(screen))
+	if sight != composerOpen {
+		t.Fatalf("this seat's own live screen does not read as a composer posse may type into (sight %d).\n"+
+			"  That is ADR 0076 Amendment 7's named hazard arriving: refuseWithoutComposer now refuses EVERY prompt "+
+			"on this instance — dispatch, the pulse, relaunch, the probe and `posse prompt` alike. Either claude "+
+			"stopped drawing its box between two U+2500 rules or rex stopped returning them. Screen tail:\n%s", sight, screen)
+	}
+	// The other half of the same guard: this seat IS claude, so the owner
+	// scope (D4) must not be conceding the whole reading on a live seat.
+	owner, err := m.RuntimeOwner(seat)
+	if err != nil {
+		t.Fatalf("no runtime owner for this seat's own block: %v — the gate concedes on this, so it is off on every seat", err)
+	}
+	if owner.Name != claudeRuntimeProcName {
+		t.Errorf("this seat's block is owned by %q and not %q, so the composer gate concedes here", owner.Name, claudeRuntimeProcName)
+	}
+}

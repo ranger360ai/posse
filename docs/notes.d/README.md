@@ -15,6 +15,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-nfc2b](ranger-base-nfc2b.md) — A rex block has no global name, so `posse peek` could read one seat on the box (ranger-base-nfc2b) — 2026-11-10
 - [ranger-base-l0bep](ranger-base-l0bep.md) — ranger-base-l0bep — the fixture-git census reads the BINARY one hop too — 2026-11-10
 - [ranger-base-k0hd6](ranger-base-k0hd6.md) — The dispatch path holds a Seat now, not a pane (ranger-base-k0hd6) — 2026-11-10
+- [ranger-base-hlnyx](ranger-base-hlnyx.md) — A prompt into a seat holding a MODAL is refused before the keystrokes (ranger-base-hlnyx) — 2026-11-10
 - [ranger-base-ffojl](ranger-base-ffojl.md) — ranger-base-ffojl — `exec.LookPath("git")` is the bare name, not an escape from it — 2026-11-10
 - [ranger-base-crlty](ranger-base-crlty.md) — Three hook-skip routes the git shim did not judge (ranger-base-crlty) — 2026-11-10
 - [ranger-base-97w45](ranger-base-97w45.md) — The execve supervisor, as built, and the eight things ADR 0085 left to the build (ranger-base-97w45) — 2026-11-10

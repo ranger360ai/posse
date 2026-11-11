@@ -616,9 +616,16 @@ func TestQARexWaitEndsOnARexThatCannotBeAsked(t *testing.T) {
 func TestQARexPromptTypesThenWaitsForTheSettle(t *testing.T) {
 	t.Parallel()
 	m := rexSeatWithRuntime(t,
+		// ranger-base-hlnyx: the composer gate reads the record once before
+		// anything is typed, to learn which runtime holds the block (the
+		// reading is claude's chrome and may only decide about claude). The
+		// real server answers the current record every time; this queue is
+		// per CALL, so the gate's read needs its own entry.
+		[]RexStatusRecord{rexRuntimeRec("idle")},    // the gate: who holds the block
 		[]RexStatusRecord{rexRuntimeRec("working")}, // the stall window's sample
 		[]RexStatusRecord{rexRuntimeRec("idle")},    // the settle
 	)
+	rexSeedCaptureQueue(t, rexTestBlock, rexIdleScreen)
 	read, err := m.Prompt(rexTestSeat(), "do the thing", true, 10_000)
 	if err != nil {
 		t.Fatal(err)

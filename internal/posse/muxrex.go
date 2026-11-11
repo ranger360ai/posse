@@ -536,17 +536,34 @@ func (m RexMux) Wait(s Seat, until []string, timeoutMS int) (MuxReading, error) 
 // actuates the dialog's highlighted row (a pending permission dialog was
 // approved, twice). docs/notes.d/ranger-base-8eeoy.md has the table; the
 // read-back's own note is confirmSubmittedCaptured (panework.go).
+//
+// AND THAT ONE IS REFUSED BEFORE THE KEYSTROKES, not reported after them
+// (ranger-base-hlnyx, ADR 0076 Amendment 7). The two refusals are the same
+// shape — "these keys are not going where this call says they are, and no
+// read-back afterwards can recover either half" — and they differ in what
+// they read: the '/' above is a property of the ARGUMENT and costs nothing,
+// this one is a property of the SCREEN and costs one capture. It is here
+// rather than in the readiness gate because every caller goes through this
+// (dispatch's two, the pulse, relaunch, the probe, the cockpit, `posse
+// prompt`) and because `--now` must not reach it: --now is the operator
+// saying they mean this pane as it is, which is a statement about posse's
+// DETECTION of the pane and never a licence to press whatever Enter a dialog
+// has highlighted. refuseWithoutComposer is the reading.
 func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReading, error) {
 	if strings.HasPrefix(strings.TrimLeft(text, " \t\r\n"), "/") {
 		return MuxReading{}, Die("nothing was sent: on Rex posse types the prompt in (rex send + Enter), and a prompt " +
-			"starting with '/' opens the CLI's command picker, which eats the Enter and leaves the text sitting in the " +
-			"composer while this call reports success (ADR 0060 D5). Reword it without the leading '/', or drive the " +
-			"picker by hand (posse peek)")
+			"starting with '/' opens the CLI's command picker, which takes the Enter for itself — the prompt is then " +
+			"lost, either submitted as `Unknown command: ...` (MEASURED on claude 2.1.322, ranger-base-8eeoy) or left " +
+			"sitting in the composer while this call reports success (ADR 0060 D5, measured on an older CLI). Reword " +
+			"it without the leading '/', or drive the picker by hand (posse peek)")
 	}
 	// After the text check, which is about the argument and not the seat:
 	// the refusal above costs nothing and this costs rex calls (hold).
 	s, err := m.hold(s)
 	if err != nil {
+		return MuxReading{}, err
+	}
+	if err := m.refuseWithoutComposer(s); err != nil {
 		return MuxReading{}, err
 	}
 	if err := m.R.Send(s.Session, s.Pane, text); err != nil {
@@ -591,6 +608,121 @@ func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReadin
 		return read, nil
 	}
 	return m.Wait(s, []string{MuxIdle, MuxDone, MuxBlocked}, left())
+}
+
+// promptComposerRecheck is how long refuseWithoutComposer waits before it
+// believes a screen with no box on it.
+//
+// ASSUMED, with the reason rather than a measurement: nobody has measured how
+// long a claude screen can be caught without its composer drawn, and the one
+// instrument that has sampled this occupant's screens could not have seen it
+// — ranger-base-8eeoy's series sampled every 0.38s on a loaded box, so a gap
+// shorter than that is below its resolution. What is known is the asymmetry.
+// A redraw is a repaint between two captures that each take 21 ms (MEASURED,
+// ADR 0076 Amendment 5), so a quarter second is many of them; a dialog is up
+// until a human acts on it, so it is in every sample. So the second reading
+// costs a quarter second on the path that is about to refuse and nothing
+// anywhere else, and it buys the one false refusal this reading could
+// otherwise produce on its own.
+const promptComposerRecheck = 250 * time.Millisecond
+
+// refuseWithoutComposer refuses a prompt into a claude block whose screen has
+// no prompt box on it — ranger-base-hlnyx, from ranger-base-8eeoy's
+// measurement, and ADR 0076 Amendment 7 is the decision.
+//
+// WHAT IT IS FOR. MEASURED 2026-11-10 on this host (rex
+// 0.0.1794069975-g6c6689, claude 2.1.322), three attempts and three
+// identical outcomes: `posse prompt` into a seat holding a modal exited 0 and
+// printed `rex send + enter into block:...`, the prompt text appeared NOWHERE
+// in the whole scrollback (`rex capture | grep -c` = 0, three times), and the
+// Enter ACTUATED the dialog's highlighted row — `/model` wrote a default
+// model into the operator's own settings, and a pending Bash permission
+// dialog was approved TWICE, the command running both times. Nothing
+// downstream can catch it: `ConfirmSubmitted` reads the composer back, a
+// modal is drawn where the composer was, so it finds no box, answers "the box
+// cleared", and prints nothing (confirmSubmittedCaptured, panework.go). A
+// prompt sitting in a box is visible to the next person who looks and
+// recoverable with a fresh `posse prompt`; this one is gone, and the keystroke
+// that ate it approved a tool call nobody reviewed.
+//
+// SO IT IS A REFUSAL AND NOT A WARNING. The recovery is a human look
+// (`posse peek`) — the same answer the leading-'/' refusal above gives, for
+// the same reason: posse cannot drive a dialog on anybody's behalf, and the
+// prompt is still the caller's to re-send once the screen is a screen again.
+//
+// THE CODE IS `agent_not_ready`, borrowed from herdr's taxonomy by hand the
+// way this route already borrows `agent_prompt_stalled`, because that is
+// literally what happened: posse will not address the pane at all and nothing
+// was sent. It matters to exactly one reader — dispatch's hand-back allow-list
+// (isNotDelivered, promptstall.go, ADR 0084 D1) — and it is the honest side of
+// it. A claim kept over a prompt that was never typed is a bead claimed by a
+// seat that was never asked anything, and the bead then waits for a grace to
+// expire; handing it back lets the next pass take it, which on a seat that is
+// not holding a dialog is a bead that simply runs. ADR 0084 D1 says adding to
+// that list needs "herdr's own words that nothing was sent" — this is posse's
+// own words, about a keystroke posse itself declined to send, which is the
+// one kind of evidence stronger than herdr's.
+//
+// THE OWNER IS ASKED FIRST, AND THAT IS THE SCOPE. The composer this reading
+// locates is claude's idiom — the mark, the two horizontal rules, the five
+// menu phrases — so on a block held by any other runtime it would find no box
+// on every screen and refuse every prompt forever. ADR 0076 Amendment 5's
+// limit, read the other way: a reading written off one runtime's chrome may
+// only decide about that runtime. So RuntimeOwner gates it, through §3's own
+// three guards (no owner, the block's own shell, a record that outlived its
+// writer), and an owner posse cannot name is an owner this concedes to —
+// unknown is not no.
+//
+// WHAT IT COSTS, per prompt and not per pass: RuntimeOwner's two calls
+// (`program_status`, `process`) plus one `capture` — ~21 ms for the capture
+// (MEASURED, Amendment 5) and the two record reads the readiness gate already
+// makes on the path that has one. A refusal costs one more capture and
+// promptComposerRecheck on top, and only a refusal does.
+//
+// THE HAZARD THIS ADDS, said out loud because it is the price of an absence
+// rule: if a later claude stops drawing the two rules around its box, this
+// reads composerCovered on every settled seat and refuses every prompt on the
+// instance. That is an outage, and it is a LOUD one — the first prompt says
+// so and quotes the screen's last line — where the failure it replaces was
+// silent. It is also pinned against the live binary rather than only against
+// fixtures: TestLiveRexPromptSeesThisSeatsOwnComposer reads the seat the
+// suite is running in.
+func (m RexMux) refuseWithoutComposer(s Seat) error {
+	owner, err := m.RuntimeOwner(s)
+	if err != nil || owner.Name != claudeRuntimeProcName {
+		return nil
+	}
+	screen, sight := m.readComposerSight(s)
+	if sight != composerCovered {
+		return nil
+	}
+	// A screen caught mid-redraw must not read as a dialog
+	// (promptComposerRecheck's note). Only this path waits.
+	time.Sleep(promptComposerRecheck)
+	if screen, sight = m.readComposerSight(s); sight != composerCovered {
+		return nil
+	}
+	return HerdrAPIError{Code: "agent_not_ready", Message: "nothing was sent: on Rex posse types the prompt in " +
+		"(rex send + Enter) and there is no prompt box on " + s.Pane + "'s screen — something else is drawn where " +
+		"it goes, and the last line of it reads " + strconv.Quote(ellipsis(captureLastLine(screen), 120)) + ". " +
+		"MEASURED 2026-11-10 (ranger-base-hlnyx): a prompt typed into a seat holding a dialog is DISCARDED and the " +
+		"Enter actuates the dialog's highlighted row — a pending permission dialog was approved twice and its " +
+		"command ran. Look at it and clear it by hand (posse peek), then send this again"}
+}
+
+// readComposerSight takes one capture and judges it, with the screen it
+// judged handed back so a refusal can quote it. Spelled apart from the TYPE
+// it returns because a method and a type may share a name in Go and a reader
+// should not have to know that. A capture rex would not answer is
+// composerUnreadable: a screen posse could not read is not evidence that
+// something else holds the keyboard, which is the direction every reading in
+// this family takes.
+func (m RexMux) readComposerSight(s Seat) (string, composerSight) {
+	screen, err := m.Read(s, captureFooterLines, false)
+	if err != nil {
+		return "", composerUnreadable
+	}
+	return screen, captureComposerSight(screen)
 }
 
 // ─── the launch-stage first-report check (ADR 0076 §3, D2) ───────────────────

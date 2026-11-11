@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below*
 
 ## Context
 
@@ -1694,3 +1694,193 @@ joined.
 - A runtime that is not claude reaches none of this and answers the
   empty composer, exactly as it did on herdr. That remains a gap and
   not a bug.
+
+## Amendment 7: a screen reading may REFUSE a keystroke on Rex; it still may not license one (ranger-base-hlnyx, 2026-11-10)
+
+Amendment 5 licensed a withholding reading off the screen and drew its
+line in one sentence: "It is not a state, it does not enter
+`MuxReading`, it never admits a runtime and it never licenses a
+keystroke. Its one permitted output is 'this settle is not one'." Every
+clause of that still holds. What this amendment adds is the output
+Amendment 5 had no occasion to name, because the bead that wrote it was
+about settles: **"do not send this keystroke."** A reading that can only
+refuse one is on the same side of that line as a reading that can only
+withhold a settle, and for the same reason — nothing it says can make
+posse act, only decline to.
+
+### What broke
+
+MEASURED 2026-11-10 on this host (rex `0.0.1794069975-g6c6689`, claude
+2.1.322), driving a live `posse new` seat through `posse prompt` — which
+is §2's `Prompt` row, `rex send` then `rex send-key enter`. Three
+attempts with a modal dialog up, three identical outcomes
+(docs/notes.d/ranger-base-8eeoy.md has the venue and the full table of
+22 attempts across five states):
+
+- `posse prompt` exited 0 and printed `rex send + enter into block:…`.
+- The prompt text appeared **nowhere** — not in the box, not in the
+  transcript, not anywhere in the whole scrollback
+  (`rex capture | grep -c <token>` = 0, three times). The dialog
+  consumed it.
+- The Enter **actuated the dialog's highlighted row.** With `/model`
+  open that row was `Haiku ✔` under `Enter to set as default`, and
+  claude wrote `"model": "haiku"` into the operator's own
+  `~/.claude/settings.json` — a key that did not exist before and that
+  the measuring seat's own gate then refused to revert
+  (ranger-base-rpte4). With a Bash permission dialog open it was
+  `1. Yes`, and the pending shell command **ran** — twice, both files
+  written at the second the prompt was typed.
+- `ConfirmSubmitted` printed nothing and could not: a modal is drawn
+  where the composer was, so `captureComposer` finds no region, the
+  reading is `""`, and the read-back answers "the box cleared". That is
+  ranger-base-um1bi's own sentence — "the question was never asked
+  reported as the box cleared" — through a door um1bi did not close.
+
+A prompt sitting in a box is visible to the next person who looks and
+recoverable with a fresh `posse prompt`. A prompt eaten by a modal is
+gone, and the keystroke that ate it approved a tool call nobody
+reviewed. Dispatch's prompts take the same route, and so does the
+pulse's, relaunch's, the runtime probe's and the cockpit's.
+
+### What the screen carries, and what Rex's record does not
+
+All MEASURED in the same session; the bytes are quoted in
+`internal/posse/promptnocomposer_qa_test.go`, which is why its fixtures
+are quoted screens and not invented ones.
+
+- **A settled seat's tail is `rule / ❯<U+00A0> / rule / blank /
+  footer`** — two U+2500 rules with the box between them, which is the
+  region Amendment 6's composer reading is already located in.
+- **The Bash permission dialog has ONE U+2500 rule**, above its title.
+  Its own separators are U+254C (`╌`), which `isFooterRule` is not
+  written for and must not be. Its selection cursor is drawn with the
+  composer's own mark — `❯ 1. Yes` — and its last line is
+  `Esc to cancel · Tab to amend`.
+- **The `/model` picker draws NO U+2500 rule at all.** Its highlighted
+  row is `❯ 5. Haiku ✔` and its last line is `Enter to set as default ·
+  s to use this session only · Esc to cancel`.
+- **The folder-trust prompt is the same shape** (MEASURED 2026-11-10,
+  `capturedcomposer.go`): no rule, `❯ No, exit` highlighted,
+  `Enter to confirm · Esc to cancel`. That is the one a seat can be
+  holding at LAUNCH, so posse's first prompt into a fresh seat is the
+  Enter that quits it.
+- **`program_status` cannot carry it.** The root record is `state`,
+  `app`, `effective_app`, `title`, `msg`, `updated_at` and an `owner`
+  (Amendment 6's own field list, MEASURED) — there is no field in it
+  about what the runtime has DRAWN. Whatever `state` a given dialog
+  happens to produce is a claim about the TURN, and the three dialogs
+  above are not one turn-state between them: `/model` and the trust
+  prompt can be up with nothing running at all. Not read, and
+  deliberately not guessed at here: the reading is the screen's, and the
+  record's answer would have to be measured per dialog to be worth
+  anything.
+
+So the tell is the ABSENCE of the box, and the mark is emphatically not
+the tell: all three dialogs draw their highlighted row with it.
+
+### Decision
+
+**D1. A screen reading may refuse a keystroke.** Amendment 5's permitted
+outputs become two — "this settle is not one" and "do not send this
+keystroke" — and nothing else moves. It still may not produce a state,
+enter `MuxReading`, admit a runtime, or LICENSE a keystroke: a screen
+posse cannot read sends nothing it would not have sent and stops
+nothing it would have. The risk profile is Amendment 5's: the worst a
+wrong one can do is cost a refused call the operator can read.
+
+**D2. The rule is the ABSENCE of the box, not the presence of the
+dialog's marks.** Both measured modals carry one of
+`composerChromePhrases` in their last line, so a presence rule would
+have caught both — and it would be exactly as good as that list, which
+is five strings measured off three of claude's dialogs in 2026. A
+dialog spelling its hint a sixth way would read as a box, and that is
+the failure this exists to stop. Absence fails the other way, on a
+screen that really is idle, and that costs a refusal somebody can read.
+The marks are kept for two jobs they are honest at: making a screen
+READABLE (D3), and telling the operator WHICH dialog is up — the
+refusal quotes the screen's last line.
+
+**D3. A screen with none of claude's chrome on it is ignorance, not a
+refusal.** The reading is three-valued (`composerSight`,
+internal/posse/capturedcomposer.go): a box posse can type into, claude's
+chrome with no box in it, or nothing of claude's at all — no U+2500 rule
+and none of the five phrases. The third is a block mid-boot, a capture
+rex answered with nothing, a screen this vocabulary was never written
+for; ADR 0013 §1's unknown-is-not-no governs it and it refuses nothing.
+This is also what makes the `/model` picker judgeable: it draws no rule,
+so without the phrase arm it would be conceded rather than refused.
+
+**D4. The reading is scoped by the block's OWNER.** The composer it
+locates is claude's idiom — the mark, the two rules, the five phrases —
+so on a block held by anything else it would find no box on every screen
+and refuse every prompt forever. `RuntimeOwner` (Amendment 6's D1) is
+the scope, with §3's three guards already applied to it, and an owner
+posse cannot name is conceded. Amendment 5's limit read the other way:
+a reading written off one runtime's chrome may only decide about that
+runtime.
+
+**D5. A no-box screen is read twice before it is believed.** ASSUMED
+rather than measured, with the reason said instead: nobody has measured
+how long a claude screen can be caught without its composer drawn, and
+ranger-base-8eeoy's series sampled at 0.38s, below which it was blind. A
+redraw is a repaint between captures that take 21 ms each (Amendment 5);
+a dialog is up until a human acts, so it is in every sample. The second
+reading costs `promptComposerRecheck` (250 ms) on the path that is about
+to refuse and nothing anywhere else.
+
+**D6. The refusal is `agent_not_ready`, so a dispatch claim is handed
+back.** This route already borrows `agent_prompt_stalled` by hand rather
+than coining a code three call sites have no arm for (§2's `Prompt`
+row); this is the same borrowing, and the code says what happened —
+posse will not address the pane at all and nothing was sent. ADR 0084
+D1's allow-list says adding to it needs "herdr's own words that nothing
+was sent". This is posse's own words about a keystroke posse itself
+declined to send, which is the one kind of evidence stronger than
+herdr's. The alternative is a claim kept over a seat that was never
+asked anything, waiting out a grace.
+
+**D7. It lives in `Prompt` and `--now` does not reach it.** Every caller
+goes through `Prompt` — dispatch's two, the pulse, relaunch, the runtime
+probe, the cockpit, `posse prompt` — where the readiness gate is on the
+hand path only. And `--now` is the operator saying they mean this pane
+as it is, which is a statement about posse's DETECTION of the pane and
+never a licence to press whatever Enter a dialog has highlighted. An
+operator who does mean to drive a dialog has `posse peek`, and §2's
+`SendText`/`SendKeys` are ungated and unchanged.
+
+### Consequences
+
+- `RexMux.Prompt` costs three rex calls before it types: `program_status`
+  and `process` for the owner, and one `capture` (~21 ms, Amendment 5).
+  Per prompt, not per pass. A refusal costs one more capture and D5's
+  quarter second, and only a refusal does.
+- **The hazard this adds, said out loud.** If a later claude stops
+  drawing the two rules around its box, this reads "covered" on every
+  settled seat and refuses every prompt on the instance. That is an
+  outage. It is a LOUD one — the first prompt says so and quotes the
+  screen's last line — where the failure it replaces was silent, and it
+  is the price of D2's absence rule. It is pinned against the live
+  binary and not only against fixtures:
+  `RHQ_LIVE_REX=1 go test ./internal/posse/ -run
+  TestLiveRexPromptSeesThisSeatsOwnComposer` reads the seat the suite is
+  running in.
+- The three-valued reading is a split of the ONE composer reading, not a
+  second copy of it: `captureComposerBox` is `captureComposer` with the
+  box/no-box answer kept, and `captureComposer` is that function with it
+  thrown away. Amendment 5's "one parser" limit holds — there is still
+  one place that knows where claude's box is.
+- ADR 0060 D5's refusal of a leading `/` in `Prompt` is untouched and
+  still right; its stated REASON is CLI-version-bound. On claude 2.1.322
+  the Rex route MEASURED the picker's line being SUBMITTED (`Unknown
+  command: /PROBED1`) and the box clearing, where D5 measured the Enter
+  eaten and the text left "through Esc and C-u". Both are a prompt that
+  never runs. This route's message now names both outcomes; the herdr
+  route's copy of it is left alone, with its own behaviour unmeasured,
+  as **ranger-base-xdaw9**.
+- **Whether the herdr `pane send-text` + Enter route has this hole is
+  not decided here** and nothing above was measured on herdr. It is the
+  same CLI and the same delivery shape, so it probably does — but the
+  tell there is different, because herdr's manifest NAMES the region and
+  it was measured carrying the box line and a selection menu at once
+  (`composerChromePhrases`, ranger-base-i6t90). ranger-base-xdaw9 carries
+  the measurement and the fix.

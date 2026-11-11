@@ -17,6 +17,7 @@ package posse
 //	rex-status.json    blockID -> a QUEUE of record sets, one taken per call
 //	rex-process.json   blockID -> the block's process table
 //	rex-capture.json   blockID -> the block's terminal text
+//	rex-capture-q.json blockID -> a QUEUE of screens, one taken per call
 //	rex-endpoint       the server address `whoami --json` answers
 //	rex-fail           "<substring of the argv>\t<message>": that call exits 3
 //	rex-calls.log      every invocation, one argv per line
@@ -320,6 +321,23 @@ func fakeRexCapture(flags map[string]string) int {
 	if !fakeRexScoped(flags["-s"], flags["-b"]) {
 		return 3
 	}
+	// A QUEUED screen wins over both of the keys below, for the reason the
+	// status queue exists: a reading that takes a SECOND look at the same
+	// block (RexMux.refuseWithoutComposer) cannot be driven from outside it
+	// by a constant. One screen is taken per call and the last one repeats,
+	// so a short queue is still a constant answer afterwards.
+	var queue map[string][]string
+	fakeRexLoadMap("rex-capture-q.json", &queue)
+	if q := queue[flags["-b"]]; len(q) > 0 {
+		fmt.Println(q[0])
+		if len(q) > 1 {
+			queue[flags["-b"]] = q[1:]
+			if b, err := json.Marshal(queue); err == nil {
+				os.WriteFile(fakeRexPath("rex-capture-q.json"), b, 0o644)
+			}
+		}
+		return 0
+	}
 	var text map[string]string
 	fakeRexLoadMap("rex-capture.json", &text)
 	// A FORMAT-keyed screen wins over the block's own, because the real CLI
@@ -525,6 +543,25 @@ func rexSeedCaptureAs(t *testing.T, block, format, text string) {
 	}
 	m[key] = text
 	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// rexSeedCaptureQueue seeds the screens successive captures of one block
+// answer with, one per call, the last repeating.
+func rexSeedCaptureQueue(t *testing.T, block string, screens ...string) {
+	t.Helper()
+	q := map[string][]string{}
+	p := filepath.Join(fakeDirOf(t), "rex-capture-q.json")
+	if b, err := os.ReadFile(p); err == nil {
+		json.Unmarshal(b, &q)
+	}
+	q[block] = append(q[block], screens...)
+	b, err := json.Marshal(q)
 	if err != nil {
 		t.Fatal(err)
 	}

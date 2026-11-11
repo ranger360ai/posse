@@ -57,13 +57,31 @@ package posse
 // EVERY FAILURE ANSWERS THE EMPTY COMPOSER: fewer than two rules on the
 // screen, nothing between them, a body that does not open with the mark, a
 // menu drawn over the box. All of them read as "posse saw no composer",
-// which is judged exactly as it was before this bead.
+// which is judged exactly as it was before this bead — by the hold's
+// callers. ranger-base-hlnyx is the one caller that needed them told
+// apart, and it asks a different question of the same reading rather than
+// changing this one: see captureComposerBox, and composerSight at the foot
+// of this file.
 
 import "strings"
 
 // captureComposer returns the text sitting in the prompt box of a captured
 // screen, or "" when the box is empty, no box is on screen, or what is
 // between the rules is a menu drawn over the box rather than the box itself.
+// It is captureComposerBox with the one question that reading cannot answer
+// thrown away — see composerSight for the caller that needs it.
+func captureComposer(screen string) string {
+	body, _ := captureComposerBox(screen)
+	return body
+}
+
+// captureComposerBox is captureComposer plus WHETHER THERE IS A BOX, which
+// is the distinction every arm of this file used to flatten and
+// ranger-base-hlnyx needed back: `("", false)` is "posse found no box on this
+// screen" and `("", true)` is "the box is there and it is empty". The second
+// is a seat waiting for a prompt; the first is a seat where the keyboard
+// belongs to something else, and typing into it loses the prompt and
+// actuates whatever that something has highlighted.
 //
 // THE CHROME CHECK READS THE WHOLE TAIL and not only the box body, which is
 // the one place this is stricter than AgentDetection.Composer. herdr hands
@@ -80,7 +98,7 @@ import "strings"
 // second-to-last rule to the end of the screen costs nothing (no footer
 // panework.go measured carries any of the five phrases; claude's is `esc to
 // interrupt`) and cannot be fooled by which side of a rule the hint lands on.
-func captureComposer(screen string) string {
+func captureComposerBox(screen string) (string, bool) {
 	lines := strings.Split(screen, "\n")
 	topRule, botRule := -1, -1
 	for i, l := range lines {
@@ -89,18 +107,18 @@ func captureComposer(screen string) string {
 		}
 	}
 	if topRule < 0 || botRule <= topRule+1 {
-		return ""
+		return "", false
 	}
 	lower := strings.ToLower(strings.Join(lines[topRule:], "\n"))
 	for _, phrase := range composerChromePhrases {
 		if strings.Contains(lower, phrase) {
-			return ""
+			return "", false
 		}
 	}
 	body := lines[topRule+1 : botRule]
 	first := strings.TrimLeft(body[0], " \t")
 	if !strings.HasPrefix(first, composerMark) {
-		return ""
+		return "", false
 	}
 	// Each screen line is trimmed and they are rejoined with one space: the
 	// left edge is the box's padding and the line ends are the renderer's
@@ -112,7 +130,7 @@ func captureComposer(screen string) string {
 	for _, l := range body[1:] {
 		parts = append(parts, strings.TrimSpace(l))
 	}
-	return strings.TrimSpace(strings.Join(parts, " "))
+	return strings.TrimSpace(strings.Join(parts, " ")), true
 }
 
 // capturedEcho is submittedEcho over a reading whose line breaks are the
@@ -276,4 +294,103 @@ func (b *HerdrBackend) capturedComposerHold(target Seat, screen string, hold Pan
 		}
 	}
 	return hold
+}
+
+// ─── is there a box to type into at all (ranger-base-hlnyx) ──────────────────
+
+// composerSight is what posse can see of claude's prompt box on one captured
+// screen. It is the reading RexMux.Prompt refuses on, and it is three-valued
+// rather than two for the reason every reading in this family is: "posse
+// cannot read this screen" and "posse read it and the box is not there" are
+// different facts, and only the second is evidence.
+type composerSight int
+
+const (
+	// composerUnreadable: nothing of claude's chrome is on the screen posse
+	// was handed — no horizontal rule, none of the five menu phrases. A
+	// block mid-boot, a screen rex answered with nothing, a runtime whose
+	// screen this vocabulary was never written for. Ignorance, and ADR 0013
+	// §1's unknown-is-not-no applies: it licenses nothing and refuses
+	// nothing.
+	composerUnreadable composerSight = iota
+	// composerCovered: claude's chrome IS on the screen and the box is not
+	// — something else is drawn where it goes. This is the modal.
+	composerCovered
+	// composerOpen: a box posse can type into, empty or holding text.
+	composerOpen
+)
+
+// captureComposerSight judges one captured screen.
+//
+// WHY THE MIDDLE VALUE IS DECIDED BY ABSENCE AND NOT BY THE DIALOG'S OWN
+// MARKS, which is the question ranger-base-hlnyx was filed with open. Both
+// modal screens measured on this occupant DO carry one of
+// composerChromePhrases in their last line — `Esc to cancel · Tab to amend`
+// on the Bash permission dialog, `Enter to set as default · s to use this
+// session only · Esc to cancel` on `/model` (MEASURED 2026-11-10, the bytes
+// are in docs/notes.d/ranger-base-hlnyx.md) — so a presence rule would have
+// caught both. It is still the wrong rule: it is exactly as good as the
+// phrase list, and the phrase list is five strings measured off three of
+// claude's dialogs in 2026. A dialog whose hint is spelled some sixth way
+// would read as a box, and that failure is the one this reading exists to
+// stop — the prompt is discarded and the Enter actuates the highlighted row.
+// Absence has the other failure, a box posse cannot see on a screen that
+// really is idle, and that one costs a refusal the operator can read.
+//
+// THE MARKS EARN THEIR KEEP ANYWAY, twice. They are half of what makes a
+// screen READABLE below, which is how a `/model` picker that draws no
+// horizontal rule at all is still judged rather than conceded; and the
+// refusal quotes the screen's last line, so an operator is told which dialog
+// is up rather than that something is.
+func captureComposerSight(screen string) composerSight {
+	if _, ok := captureComposerBox(screen); ok {
+		return composerOpen
+	}
+	if captureShowsClaudeChrome(screen) {
+		return composerCovered
+	}
+	return composerUnreadable
+}
+
+// captureShowsClaudeChrome is whether this screen carries anything posse
+// recognizes as claude drawing its own frame: one of its horizontal rules,
+// or one of the five menu phrases.
+//
+// NOT POSITIONAL, AND THAT IS SOUND HERE where it would not be anywhere else
+// in this file. Every other reading over these phrases is anchored on a rule
+// because a hold invented out of TRANSCRIPT PROSE can never go false
+// (captureFooter's note). This one cannot invent anything: the only screen
+// whose answer it decides is a screen captureComposerBox already found no box
+// on, and on such a screen the two answers are "refuse" and "concede". A
+// transcript quoting `Esc to cancel` moves the verdict from concede to
+// refuse, which is the direction that costs a readable refusal and never a
+// lost prompt. The rule arm is what does the work in practice — a claude
+// screen with its composer drawn has two — and the phrase arm is for the
+// dialog that replaces the frame entirely.
+func captureShowsClaudeChrome(screen string) bool {
+	lower := strings.ToLower(screen)
+	for _, phrase := range composerChromePhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	for _, l := range strings.Split(screen, "\n") {
+		if isFooterRule(l) {
+			return true
+		}
+	}
+	return false
+}
+
+// captureLastLine is the last line of a screen with anything on it, trimmed.
+// On claude's dialogs that line is the dialog's own hint — the one line that
+// says which dialog it is — which is what the refusal quotes.
+func captureLastLine(screen string) string {
+	lines := strings.Split(screen, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if s := strings.TrimSpace(lines[i]); s != "" {
+			return s
+		}
+	}
+	return ""
 }
