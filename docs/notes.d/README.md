@@ -41,6 +41,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-o57rc](ranger-base-o57rc.md) — Two pins that claimed more than they measured (ranger-base-o57rc) — 2026-11-11
 - [ranger-base-ntnst](ranger-base-ntnst.md) — The home config file leaves the seatbelt write set when the line names the config dir (ranger-base-ntnst) — 2026-11-11
 - [ranger-base-n2yaw](ranger-base-n2yaw.md) — Two gates that judged what nobody had measured (ranger-base-n2yaw) — 2026-11-11
+- [ranger-base-mm15y](ranger-base-mm15y.md) — ranger-base-mm15y — scrubbing a beads store of record, and the export history it has already been committed into — 2026-11-11
 - [ranger-base-md7ag](ranger-base-md7ag.md) — Verifying four closes: what the mutants said, and the sixth door (ranger-base-md7ag) — 2026-11-11
 - [ranger-base-m0bfv](ranger-base-m0bfv.md) — Every claude line ignores the MCP servers a seat can write (ranger-base-m0bfv) — 2026-11-11
 - [ranger-base-ludpp](ranger-base-ludpp.md) — The bwrap wall's hole was connect(2), not a write (ranger-base-ludpp) — 2026-11-11
