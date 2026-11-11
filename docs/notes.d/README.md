@@ -50,6 +50,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-4arlo](ranger-base-4arlo.md) — ranger-base-4arlo — the harness scratchpads, and the gate that reaches them — 2026-11-11
 - [ranger-base-3fm26](ranger-base-3fm26.md) — Four closes, and the three guards their own mutants could not reach (ranger-base-3fm26) — 2026-11-11
 - [ranger-base-32bdv](ranger-base-32bdv.md) — The temp HOME that followed every process, and the 5.25G mise put in it (ranger-base-32bdv) — 2026-11-11
+- [ranger-base-2smyx](ranger-base-2smyx.md) — ranger-base-2smyx — four closes verified, and the three pins that pass for the wrong reason — 2026-11-11
 - [ranger-base-xa2e3](ranger-base-xa2e3.md) — The gate that guards the tree made the suite that guards the gate unrunnable (ranger-base-xa2e3) — 2026-11-10
 - [ranger-base-uwxs4](ranger-base-uwxs4.md) — The step-7 canary, and the genre wall that moved it (ranger-base-uwxs4) — 2026-11-10
 - [ranger-base-um1bi](ranger-base-um1bi.md) — The two report-only composer readings, on an occupant with no `agent explain` (ranger-base-um1bi) — 2026-11-10
