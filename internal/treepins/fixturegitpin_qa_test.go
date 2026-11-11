@@ -123,17 +123,19 @@ package treepins
 // other packages' helpers, and nothing in the tree needs it. What the one hop
 // buys is symmetry, so neither half of the subject can be restored by moving
 // a token out of the call (ranger-base-l0bep). An in-function `var` or
-// `const` binding IS read, and was not until ranger-base-o57rc: it is an
-// *ast.DeclStmt rather than an assignment, so `var gitBin = "git"` resolved
-// to nothing where `gitBin := "git"` reds, and this paragraph read as a
-// complete enumeration while it was not (ranger-base-tfqlr finding 2; the
-// walk that reads it has both arms).
-//
-// NOR that a git CHILD bound by an in-function `var` is seen: the walk that
-// collects the children this function exec'd reads *ast.AssignStmt alone, so
-// `var cmd = exec.Command(gitBin, …)` is invisible and the function is
-// skipped whole — MEASURED 2026-11-11 at policypins_qa_test.go's ppRepo with
-// a caught `var gitBin = "git"` beside it, reading ok (ranger-base-6rr2e).
+// `const` binding IS read, at BOTH nodes of that one hop, and neither was
+// until two beads closed in sequence: a declaration is an *ast.DeclStmt and
+// not an assignment, so `var gitBin = "git"` resolved to nothing where
+// `gitBin := "git"` reds (ranger-base-o57rc), and `var cmd =
+// exec.Command(gitBin, …)` recorded no CHILD at all — which skipped the
+// function WHOLE, so the binary half of the verdict never ran however well it
+// had just been taught to resolve (ranger-base-6rr2e; MEASURED 2026-11-11 at
+// policypins_qa_test.go's ppRepo, reading ok with a caught `var gitBin =
+// "git"` beside it as the positive control). This paragraph read as a
+// complete enumeration while neither was true (ranger-base-tfqlr finding 2).
+// Both walks that read a BINDING have both arms now; the `.Env` walk needs
+// only the one, because `var cmd.Env = …` is not Go and a write to a field
+// is always an assignment.
 //
 // NOR that `exec.LookPath` is read anywhere but in that one hop, on a literal
 // "git", bound to a local identifier the call then execs. Three shapes in this
@@ -585,14 +587,47 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 			})
 			// The bound bare-name git children of this function, inline or
 			// one hop away.
+			//
+			// TWO BINDING SHAPES, the same two the local map above reads and
+			// for the same reason: a child spelled `var cmd =
+			// exec.Command(gitBin, …)` is an *ast.DeclStmt and not an
+			// assignment, so until ranger-base-6rr2e it entered no `kids`
+			// entry at all. That is worse here than at the binary node,
+			// because `len(kids) == 0` below skips the function WHOLE: the
+			// env half is never looked at, and the binary half never runs
+			// however well ranger-base-o57rc had just taught it to resolve
+			// the name. MEASURED 2026-11-11 at policypins_qa_test.go's
+			// ppRepo: `var cmd = exec.Command(gitBin, …)` read ok with a
+			// caught `var gitBin = "git"` beside it as the positive control,
+			// so the miss was this walk and nothing else (ranger-base-tfqlr
+			// finding 2, filed as this bead). The accept tests are untouched:
+			// a ValueSpec's value meets the same fgpExecBin and fgpBareGit
+			// the assignment's Rhs meets. MEASURED the same day over the
+			// whole corpus, 779 test files: 362 exec children bound by an
+			// assignment and 0 by a declaration, so this closes before the
+			// class reaches it rather than naming a live site, exactly as
+			// ranger-base-l0bep's hop did.
+			//
+			// A `const` spec is deliberately NOT read here, where the local
+			// map reads one: a constant expression cannot hold an *exec.Cmd,
+			// so `const cmd = exec.Command(…)` does not compile and the arm
+			// would be dead code wearing the look of symmetry. At the binary
+			// node `const gitBin = "git"` compiles and is the defect, which
+			// is why that map has it.
+			//
+			// PAIRWISE ONLY, in both shapes, which is where this walk differs
+			// from the local map: n-from-1 is read there because the third
+			// spelling of a BINARY is `gitBin, err := exec.LookPath("git")`,
+			// and no exec.Command call binds a child and an error. Taking
+			// Lhs[0] of an arbitrary n-from-1 call here would record a child
+			// this function never exec'd.
 			kids := map[string]fgpKid{}
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok || len(as.Lhs) != len(as.Rhs) {
-					return true
+			recordKids := func(names, values []ast.Expr) {
+				if len(names) != len(values) {
+					return
 				}
-				for i, rhs := range as.Rhs {
-					call, ok := rhs.(*ast.CallExpr)
+				for i, v := range values {
+					call, ok := v.(*ast.CallExpr)
 					if !ok {
 						continue
 					}
@@ -604,10 +639,32 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 					if !bare {
 						continue
 					}
-					if id, ok := as.Lhs[i].(*ast.Ident); ok && id.Name != "_" {
+					if id, ok := names[i].(*ast.Ident); ok && id.Name != "_" {
 						kids[id.Name] = fgpKid{
 							line: fset.Position(call.Pos()).Line, via: via, lookPath: lookPath,
 						}
+					}
+				}
+			}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				switch s := n.(type) {
+				case *ast.AssignStmt:
+					recordKids(s.Lhs, s.Rhs)
+				case *ast.DeclStmt:
+					gd, ok := s.Decl.(*ast.GenDecl)
+					if !ok || gd.Tok != token.VAR {
+						return true
+					}
+					for _, sp := range gd.Specs {
+						vs, ok := sp.(*ast.ValueSpec)
+						if !ok {
+							continue
+						}
+						names := make([]ast.Expr, len(vs.Names))
+						for i, id := range vs.Names {
+							names[i] = id
+						}
+						recordKids(names, vs.Values)
 					}
 				}
 				return true
@@ -813,11 +870,12 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 // an env expression one hop away, a BINARY expression one hop away, and a line
 // in another file.
 //
-// The last nine cases are the binary hop's. The first of them is the shape
-// this pin was green over until ranger-base-l0bep: the bare name moved out of
-// the call and into a local binding, which is one token from the prescribed
-// fix and was MEASURED reproducing ranger-base-xa2e3's refusal while the
-// census read ok. The last six are ranger-base-ffojl's — the third spelling
+// Nine of the last twelve cases are the binary hop's. The first of those is
+// the shape this pin was green over until ranger-base-l0bep: the bare name
+// moved out of the call and into a local binding, which is one token from the
+// prescribed fix and was MEASURED reproducing ranger-base-xa2e3's refusal
+// while the census read ok. The last six of the nine are
+// ranger-base-ffojl's — the third spelling
 // (`gitBin, err := exec.LookPath("git")`) and, deliberately outnumbering it,
 // the five boundaries it must NOT cross. Reading a CALL as a bare name is the
 // one change here that could invert this rule's default, so the cases that
@@ -825,6 +883,13 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 // binds no binary, another binary's LookPath, a LookPath of a variable, an
 // n-from-1 binding to an arbitrary call, and the struct-field carry that is
 // two hops out.
+//
+// The final three are the DECLARATION spelling of a binding — an
+// *ast.DeclStmt, not an assignment — at the child node
+// (ranger-base-6rr2e), at both nodes at once (which is also the only accept
+// test over ranger-base-o57rc's arm, measured at a live site and not here),
+// and in the PRESCRIBED form, so neither widening can be read as having
+// inverted the default for the sites that already comply.
 func TestQAFixtureGitCensusCanStillSayNo(t *testing.T) {
 	t.Parallel()
 
@@ -1080,6 +1145,46 @@ func TestQAFixtureGitCensusCanStillSayNo(t *testing.T) {
 		func f(t *testing.T) {
 			fx := newFix(t)
 			cmd := exec.Command(fx.gitBin, "-C", fx.repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		// ranger-base-6rr2e: the same class at the CHILD node. A child bound
+		// by a declaration entered no `kids` entry, so `len(kids) == 0`
+		// skipped the function whole and its env was never read. The binary
+		// here is the inline literal, so this case is the child walk and
+		// nothing else — the same isolation the live-site measurement used.
+		name: "a git child bound by an in-function `var` declaration",
+		src: `func f(t *testing.T) {
+			var cmd = exec.Command("git", "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		// Both halves spelled as declarations: the shape MEASURED at
+		// policypins_qa_test.go's ppRepo, and the only accept test over the
+		// local map's declaration arm (ranger-base-o57rc measured that one at
+		// a live site and left no case here). Either walk regressing to
+		// *ast.AssignStmt alone reads this green.
+		name: "both the binary and the child bound by `var` declarations",
+		src: `func f(t *testing.T) {
+			var gitBin = "git"
+			var cmd = exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		// The boundary. Now that a declared child is visible, the PRESCRIBED
+		// fix spelled the same way must still read as compliant: a widening
+		// that cannot say no here would report every converted site the day
+		// one of them is written with a `var`.
+		name: "the fix spelled as declarations is still compliant",
+		src: `func f(t *testing.T) {
+			var gitBin = gitOutsideGates(t)
+			var cmd = exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
 			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
 			cmd.CombinedOutput()
 		}`,
