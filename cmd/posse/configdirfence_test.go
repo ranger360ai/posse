@@ -61,6 +61,17 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("CLAUDE_CONFIG_DIR", dir); err != nil {
 		panic("config-dir fence: " + err.Error())
 	}
+	// The credential locator reads CLAUDE_SECURESTORAGE_CONFIG_DIR FIRST,
+	// ahead of the row above (credentialDirNamed, credential.go), so a seat
+	// whose launcher exports it walks every child straight past the fence to
+	// the operator's real credential store (ranger-base-6sddu). Unset, not
+	// "": a present-but-empty value is a third state that shadows
+	// CLAUDE_CONFIG_DIR and resolves to $HOME/.claude, which in this package
+	// is the operator's. credentialfence_test.go holds this function against
+	// credential.go's own list of the variables, so a third name reds here.
+	if err := os.Unsetenv("CLAUDE_SECURESTORAGE_CONFIG_DIR"); err != nil {
+		panic("config-dir fence: " + err.Error())
+	}
 	// The cache fence, for the same reason and in the same one place. Since
 	// ADR 0080 D11 the plan-usage snapshot and its read log live under
 	// `~/.cache/posse/plan-usage` keyed by the config dir above, NOT under
