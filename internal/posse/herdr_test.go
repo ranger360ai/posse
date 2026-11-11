@@ -27,6 +27,19 @@ import (
 // the home the check is about, and after D1 nothing else can name it.
 var operatorHome string
 
+// The two variables that make this package's temp HOME one per test TREE
+// rather than one per PROCESS, and keep operatorHome honest across a re-exec
+// (ranger-base-32bdv). Set by whichever process creates the home, read by
+// every re-exec child of it — which inherits them, because a site that
+// re-execs this binary builds the child's environment by taking named
+// variables OUT of its own (RHQ_FAKE_HERDR always, which
+// reexecenv_qa_test.go is the census for, and RHQ_HOME where the state tree
+// is handed over explicitly) rather than by listing what goes in.
+const (
+	envTestHome         = "RHQ_TEST_HOME"
+	envTestOperatorHome = "RHQ_TEST_OPERATOR_HOME"
+)
+
 func TestMain(m *testing.M) {
 	// THE COLD-EXEC SHIM ARM, AND IT IS FIRST (ADR 0085 D2/D3, see
 	// coldexec_test.go). When the injector is on, a planted script's shebang
@@ -148,40 +161,133 @@ func TestMain(m *testing.M) {
 	// The fourth, RHQ_FAKE_DIR, is genuinely per test and is now told to
 	// the child through argv[0] instead — see fakeDir and fakeBinFor.
 	operatorHome = os.Getenv("HOME")
-	// GOMODCACHE and GOCACHE, pinned to what `go` resolves under the REAL
-	// home, read here because the temp HOME below hides it
-	// (ranger-base-6vvgs). Both default under $HOME — GOMODCACHE to
-	// $GOPATH/pkg/mod and so to $HOME/go/pkg/mod, GOCACHE to the user cache
-	// dir — so moving HOME moves them both, and every `go build` this
-	// package shells out to (buildBdWritePosse, cagePosseBuildArgv) then
-	// builds cmd/posse against an EMPTY module cache: it re-downloads
-	// golang.org/x/{sys,term,text} from proxy.golang.org on every run of
-	// this binary, with the runner's own populated cache sitting right
-	// there under its home. That made a transient resolver failure a RED ON
-	// MAIN, which is the one gate a commit here ever passes: run
-	// 41811904569 (macos-latest, arm 1) failed
-	// TestPosseSupportsBdWriteOnARealBinary with `lookup proxy.golang.org:
-	// no such host` on three modules, 49.44s in. MEASURED 2026-11-04 on
-	// darwin/arm64 with GOPROXY=off: `go build ./cmd/posse` under a temp
-	// HOME fails (it cannot even fetch the toolchain go.mod asks for), and
-	// with these two pinned it exits 0 and writes the binary. Set here,
-	// once, rather than on each exec.Command, so the next `go` shellout a
-	// test adds is covered by construction; a `go` that cannot answer
-	// leaves both alone, which is today's behaviour and fails loudly at the
-	// build rather than quietly here.
-	if out, gerr := exec.Command("go", "env", "GOMODCACHE", "GOCACHE").Output(); gerr == nil {
-		if lines := strings.Split(strings.TrimSpace(string(out)), "\n"); len(lines) == 2 {
-			for i, key := range []string{"GOMODCACHE", "GOCACHE"} {
-				if v := strings.TrimSpace(lines[i]); v != "" {
-					os.Setenv(key, v)
+	// …unless this process is a re-exec child, whose inherited HOME is the
+	// PARENT's temp home and not the operator's. Every reader of
+	// operatorHome runs in the parent today (ciwatch_live_test.go,
+	// credentialaccount_live_test.go, worktree_test.go), two of them
+	// asserting operatorHome != $HOME, so without this a child-run test
+	// that ever reads it measures a tempdir and the guard proves nothing.
+	if v := os.Getenv(envTestOperatorHome); v != "" {
+		operatorHome = v
+	}
+	// ONE TEMP HOME PER TEST TREE, NOT PER PROCESS (ranger-base-32bdv).
+	// The removal at the foot of this function is reached only when m.Run
+	// RETURNS, and a re-exec child of this binary is routinely not allowed
+	// to get there: the fifteen sites that start one kill it when the test
+	// that needed it is done, and a child handed argv the testing flag
+	// parser rejects exits from inside m.Run. Each such child used to make
+	// its own temp HOME first and leave it behind — MEASURED 2026-11-11:
+	// 427 dirs on this box's /tmp, 417 of them the 4.0K .codex-only shape a
+	// child leaves, and a GREEN three-test arm-1 run
+	// (TestLaunchLockHoldsAcrossProcesses and two others) leaked exactly
+	// one. /tmp here is a 14G tmpfs mounted usrquota and every seat shares
+	// uid posse, so it is one box-wide budget: at 11G used, main's
+	// corpus-check failed with EDQUOT.
+	//
+	// A child never needed one. What it must share with its parent is
+	// handed over explicitly — RHQ_HOME for the state tree,
+	// RHQ_QA_HOLD_HOME for the lock under test — and nothing it reads wants
+	// a FRESH home; the parent's is already private to this binary. So it
+	// adopts, and only the process that created the dir removes it. The
+	// exits that still leak one are the parent's own abnormal ones (a
+	// -timeout panic exits from a watchdog goroutine, a signal does not
+	// unwind at all), which are one dir per run and loud; scripts/reap-test-tmp.sh
+	// is what collects those.
+	home, ownHome := os.Getenv(envTestHome), false
+	if home == "" {
+		dir, herr := os.MkdirTemp("", "posse-testhome-")
+		if herr != nil {
+			fmt.Fprintf(os.Stderr, "posse test: temp HOME: %v\n", herr)
+			os.Exit(1)
+		}
+		home, ownHome = dir, true
+	}
+	// …and the two pins below are the CREATOR's work alone. An adopting
+	// child inherits GOMODCACHE, GOCACHE and the three MISE_*_DIR from the
+	// process that set them, so re-deriving them would buy nothing — and
+	// `go env` is not free of consequence here: run with HOME already
+	// pointing at the adopted temp home, every `go` child writes
+	// $HOME/.config/go/telemetry, and GOTELEMETRYDIR is reported by `go
+	// env` but is NOT an input that can move it (MEASURED 2026-11-11 on
+	// go1.27.3: 8 dirs appear under a temp HOME with the variable set and 8
+	// without). That write outlives the parent's RemoveAll and re-creates
+	// the dir it just removed — a 4.0K leak per re-exec, which is this
+	// bead's own defect in miniature and was MEASURED as one leftover per
+	// run until the call moved in here.
+	if ownHome {
+		// GOMODCACHE and GOCACHE, pinned to what `go` resolves under the REAL
+		// home, read here because the temp HOME below hides it
+		// (ranger-base-6vvgs). Both default under $HOME — GOMODCACHE to
+		// $GOPATH/pkg/mod and so to $HOME/go/pkg/mod, GOCACHE to the user cache
+		// dir — so moving HOME moves them both, and every `go build` this
+		// package shells out to (buildBdWritePosse, cagePosseBuildArgv) then
+		// builds cmd/posse against an EMPTY module cache: it re-downloads
+		// golang.org/x/{sys,term,text} from proxy.golang.org on every run of
+		// this binary, with the runner's own populated cache sitting right
+		// there under its home. That made a transient resolver failure a RED ON
+		// MAIN, which is the one gate a commit here ever passes: run
+		// 41811904569 (macos-latest, arm 1) failed
+		// TestPosseSupportsBdWriteOnARealBinary with `lookup proxy.golang.org:
+		// no such host` on three modules, 49.44s in. MEASURED 2026-11-04 on
+		// darwin/arm64 with GOPROXY=off: `go build ./cmd/posse` under a temp
+		// HOME fails (it cannot even fetch the toolchain go.mod asks for), and
+		// with these two pinned it exits 0 and writes the binary. Set here,
+		// once, rather than on each exec.Command, so the next `go` shellout a
+		// test adds is covered by construction; a `go` that cannot answer
+		// leaves both alone, which is today's behaviour and fails loudly at the
+		// build rather than quietly here.
+		if out, gerr := exec.Command("go", "env", "GOMODCACHE", "GOCACHE").Output(); gerr == nil {
+			if lines := strings.Split(strings.TrimSpace(string(out)), "\n"); len(lines) == 2 {
+				for i, key := range []string{"GOMODCACHE", "GOCACHE"} {
+					if v := strings.TrimSpace(lines[i]); v != "" {
+						os.Setenv(key, v)
+					}
 				}
 			}
 		}
-	}
-	home, err := os.MkdirTemp("", "posse-testhome-")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "posse test: temp HOME: %v\n", err)
-		os.Exit(1)
+		// AND MISE'S THREE DIRS, for the same reason one layer out
+		// (ranger-base-32bdv). On this box `claude`, `codex`, `grok`, `gh` and
+		// `node` are not binaries but mise command-wrappers on PATH, and mise
+		// resolves its data, cache and state dirs under $HOME — so moving HOME
+		// moves all three, every test that execs one of those by bare name
+		// (skills_e2e_test.go, skillsrules_parity_qa_test.go, and the claude
+		// live tests, each gated on a LookPath that the wrapper SATISFIES)
+		// finds nothing installed, and mise re-installs the whole toolchain
+		// into the temp HOME before answering. MEASURED 2026-11-11 on
+		// linux/amd64: four leaked temp homes on this box held 5.25G between
+		// them, 2.3G in the largest, every byte under .cache/mise and
+		// .local/share/mise/installs/{claude,codex,grok} — against 4.0K for a
+		// run that reached no wrapper. `mise ls --installed` under a temp HOME
+		// prints nothing and creates .cache/mise immediately; with these three
+		// set it prints the box's real installs and creates NOTHING under the
+		// temp home. It is also the more honest fixture: unpinned, those tests
+		// exercise a copy mise downloaded seconds earlier rather than the
+		// version /etc/mise/conf.d pins the operator to.
+		//
+		// Env wins over every other mise source, so setting them is the whole
+		// of it. DATA, CACHE and STATE only — never MISE_CONFIG_DIR, which is
+		// configuration and so an INPUT to this binary, exactly what the four
+		// scrubs below exist to keep out; left under the temp HOME, mise finds
+		// no user config there and installs nothing on its own account. A
+		// variable the operator already set points outside the temp home
+		// already and is left alone.
+		for _, d := range []struct{ env, xdg, rel string }{
+			{"MISE_DATA_DIR", "XDG_DATA_HOME", ".local/share"},
+			{"MISE_CACHE_DIR", "XDG_CACHE_HOME", ".cache"},
+			{"MISE_STATE_DIR", "XDG_STATE_HOME", ".local/state"},
+		} {
+			if os.Getenv(d.env) != "" {
+				continue
+			}
+			base := os.Getenv(d.xdg)
+			if base == "" {
+				if operatorHome == "" {
+					continue
+				}
+				base = filepath.Join(operatorHome, d.rel)
+			}
+			os.Setenv(d.env, filepath.Join(base, "mise"))
+		}
 	}
 	// Resolved, because AbbrevHome is a string prefix test and macOS hands
 	// out a temp dir behind a symlink: MkdirTemp returns /var/folders/…,
@@ -196,6 +302,10 @@ func TestMain(m *testing.M) {
 		home = resolved
 	}
 	os.Setenv("HOME", home)
+	// Exported, so a re-exec child adopts this home rather than cutting a
+	// second one, and still knows whose home the operator's is.
+	os.Setenv(envTestHome, home)
+	os.Setenv(envTestOperatorHome, operatorHome)
 	// GIT_CONFIG_GLOBAL goes with HOME, for the same reason. A claude seat
 	// carries obdnk's pin (the OPERATOR's ~/.gitconfig) in its env, so a suite
 	// run from one read the operator's global git config past the temp HOME,
@@ -234,13 +344,24 @@ func TestMain(m *testing.M) {
 	// (runtimecheck_test.go, TestCodexSigninProbeReadsCredentialPresence;
 	// interstitial_qa_test.go isolates the same way for the update-menu
 	// entry).
-	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "posse test: codex home: %v\n", err)
-		os.Exit(1)
-	}
-	if err := os.WriteFile(filepath.Join(home, ".codex", "auth.json"), []byte("{}"), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "posse test: codex auth fixture: %v\n", err)
-		os.Exit(1)
+	//
+	// "ONCE" IS THE CREATOR'S, and that is load-bearing now that the home is
+	// shared (ranger-base-32bdv). os.WriteFile truncates before it writes, so
+	// two adopting children starting together would leave a third reader —
+	// codexSigninProbe is one — seeing a 0-byte file where it expects `{}`,
+	// and the probe would read "cannot authenticate" for reasons no test
+	// names. Per-process temp homes hid that by construction; this guard is
+	// what replaces them. The creator plants it before it starts any test, so
+	// a child cannot arrive before the fixture does.
+	if ownHome {
+		if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "posse test: codex home: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(filepath.Join(home, ".codex", "auth.json"), []byte("{}"), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "posse test: codex auth fixture: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	// GIT_EXTERNAL_DIFF, UNSET and not emptied — emptying it is the defect.
 	// posse's own inlet pin used to export this variable as the EMPTY STRING
@@ -271,7 +392,9 @@ func TestMain(m *testing.M) {
 	coldExec := coldExecInstall()
 	code := m.Run()
 	coldExec.report()
-	os.RemoveAll(home)
+	if ownHome {
+		os.RemoveAll(home)
+	}
 	os.Exit(code)
 }
 
