@@ -10,6 +10,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 - [ranger-base-zvgql](ranger-base-zvgql.md) — codex's and grok's other executable home members, read-only in a caged seat (ranger-base-zvgql) — 2026-11-11
 - [ranger-base-zmk4q](ranger-base-zmk4q.md) — codex's and grok's config.toml, read-only in a caged seat (ranger-base-zmk4q) — 2026-11-11
+- [ranger-base-zibko](ranger-base-zibko.md) — The red that was a commit old, and the test that seeds the shared home (ranger-base-zibko) — 2026-11-11
 - [ranger-base-z9aff](ranger-base-z9aff.md) — The door's second ctime decision, and the triage line that is not mine (ranger-base-z9aff) — 2026-11-11
 - [ranger-base-y9t65](ranger-base-y9t65.md) — The reaper on a timer, and the four classes it had never heard of (ranger-base-y9t65) — 2026-11-11
 - [ranger-base-xpxo6](ranger-base-xpxo6.md) — The first full run under the execve supervisor: the price, and the red that belonged to no family (ranger-base-xpxo6) — 2026-11-11
