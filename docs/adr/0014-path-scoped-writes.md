@@ -3,7 +3,9 @@
 *Status: accepted 2026-08-25 · owner: architect · amends 0002 §3 L2/L4,
 §4 matrix, §5 `writable:` · amended 2026-09-06 (ranger-base-mqoid):
 §4's `.git/hooks` deferral named two beads that have since closed and
-not the record that decided it — it points at ADR 0038*
+not the record that decided it — it points at ADR 0038 · amended
+2026-11-11 (ranger-base-56w67): §4's `.git` carve-out no longer exists
+for a whole-tree write deny — ADR 0086 D3 removed it at L2 and D8 at L4*
 
 > The write cage was binary. An external reader of the public surface
 > asked whether a persona can be allowed some paths and refused others.
@@ -138,7 +140,12 @@ read-only mount, and `.beads/bd.sock` is not a route (VirtioFS
 `ENOTSUP`, measured rangerhq-6so). That was left as a design question
 in NOTES. **Answered here:** L4's `:ro` repo always carries L2's
 carve-outs as read-write overlays — `.beads/` and `.git/` — so a
-read-only-repo persona can still claim, comment and close. The
+read-only-repo persona can still claim, comment and close.
+*Amended by [ADR 0086](0086-a-cage-map-lowers-the-wall-never-a-pids-rule.md)
+D8 (2026-11-11):* the `.git/` half is gone. The repo is `:ro` here exactly
+when the PID denies the whole tree, and that is the PID D3 took `.git` from
+at L2. Through the launcher's splice, the carve-out let such a seat land a
+commit in both tree shapes. "Match L2" now means `.beads/` alone. The
 redirect-target extra (store of record outside the session dir) is
 ranger-base-rhw at L2; the L4 bead applies the same path as a read-write
 submount when it is outside the repo. `.git/hooks` as a further `:ro`

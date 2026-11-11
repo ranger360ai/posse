@@ -2,7 +2,9 @@
 
 *Status: accepted 2026-11-11 (ranger-base-6zqdq, from the operator's ruling
 on ranger-base-3xh2l, option B) · owner: architect · amends ADR 0083 D7 ·
-builds on ADR 0080 D16–D23 (the bwrap mechanism of `seatbelt`)*
+builds on ADR 0080 D16–D23 (the bwrap mechanism of `seatbelt`) ·
+amended 2026-11-11 (ranger-base-56w67): D8 carries D3 to the container
+tier, and amends ADR 0014 §4's `.git` carve-out*
 
 ## Context
 
@@ -175,6 +177,59 @@ wall finding. Those sessions are the first live evidence at this
 mechanism: no seat on this box has run a session at bwrap (MEASURED: the
 weller home's two PIDs are `cage: shims`).
 
+**D8. D3 holds at the container tier (L4) too.** For a PID that denies
+the whole tree (`deniesFileWrite`, the predicate D3's five doors read),
+`CageMounts` mounts no git dir of the session read-write:
+- **main checkout:** the `<dir>/.git` read-write carve-out over the `:ro`
+  repo is not mounted. `.git` stays under the `:ro` repo mount.
+- **linked worktree:** the common dir stays `:ro`, with **none** of the
+  `sessionCommonDirWrites` overlays (`worktrees/<own>`, `objects`, `logs`).
+- **kept:** the `<dir>/.beads` carve-out, and the store of record's overlay
+  when a redirect puts it in another repo. At L4 that overlay was already
+  `.beads` only, with no `.git`, because the inner `bd` is no-db and never
+  commits. So this tier keeps less than L2 does, and needs no more.
+- **unchanged:** every other PID's mounts; the `:ro` binds of
+  `cageGitIdentityBinds`, which land on a `:ro` mount and so add nothing
+  here; and `PrepareSessionHead`, which still detaches a caged session's
+  HEAD. Detaching is harmless here and keeps one launch path per tier.
+  The splice at close then finds nothing to move.
+
+The bead behind this asked which half to keep. Its own estimate was that
+the linked-worktree exposure was small ("objects + logs + the per-worktree
+dir"). **It is not small.** Those three regions are exactly what a
+detached commit writes. They are why the narrowing in ranger-base-t4f1
+could grant them and still let a seat commit. A seat that cannot edit a
+file can still write a blob, stage it with `update-index --cacheinfo`, and
+commit on its detached HEAD. At close, `MergeSessionWork` runs
+`spliceDetachedWork` *before every guard*. That fast-forwards
+`posse/<session>` onto the injected commit, and the landing carries it to
+`main`. That is W14/W15, reached through the launcher's own splice
+instead of a ref grant. In a main checkout the carve-out is `.git` whole,
+and `update-ref refs/heads/main` moves main directly.
+
+MEASURED 2026-11-11, D1 host (Linux 7.2.15, bubblewrap 0.13.1, git
+2.56.0, load 0.9), `docs/adr/0086-l4-git-carve-out.probe.sh`. The probe
+uses CageMounts' mount list mirrored under bwrap, because this seat cannot
+reach the docker socket:
+
+| shape | L4 today | after D8 |
+|---|---|---|
+| linked worktree, detached | cwd create refused; `hash-object -w` ok; **commit ok**, and `posse/s1` is an ancestor of it (the splice fast-forwards) | `hash-object -w` and commit refused; HEAD unchanged |
+| main checkout | cwd create refused; `hash-object -w` ok; **`update-ref refs/heads/main` ok, main moved** | both refused; main unchanged |
+| either shape | `git status`, `git log` ok | `git status`, `git log` ok |
+
+The `:ro` repo does not make the carve-out safe. The repo mount realizes
+"cannot edit a file", and the carve-out reopened "can land a commit"
+underneath it. That is the same gap D3 closed one tier down. A tier stricter
+than L2 that is weaker than L2 on the one capability the deny exists to
+remove is not stricter.
+
+ADR 0014 §4's sentence "L4's `:ro` repo always carries L2's carve-outs …
+`.beads/` and `.git/`" reasoned "match L2". It still does: L2 no longer
+grants `.git` to this PID, so matching L2 means `.beads/` alone. The
+amendment is in ADR 0014's text, and cage.go's comment stops citing the
+L2 grant (the build bead).
+
 ## Alternatives rejected
 
 - **Delete the map line now.** This is the boring answer, and the one ADR
@@ -199,6 +254,23 @@ weller home's two PIDs are `cage: shims`).
   diff. It leaves W15: the Edit/Write rows would read "realized" over a
   seat that can land a commit.
 - **Landlock.** ADR 0080 D13. Nothing here reopens it.
+- **(D8) Keep the L4 carve-out because the repo mount is already `:ro`.**
+  This was the bead's other option. The probe refutes it: the `:ro` repo
+  does not stop a commit, and the carve-out is the route to one.
+- **(D8) Keep the linked-worktree overlays and drop only the main
+  checkout's `.git`.** This was the half the bead thought was small, and it
+  was the clever one. Detaching HEAD did remove the ref grant. But the
+  launcher's own splice puts back the ref write the detach took away, so
+  the worktree shape lands the commit too, just one step later.
+- **(D8) Keep the overlays and refuse the splice for a whole-tree-deny
+  PID.** That would be a gate at close that reads the PID, protecting a
+  grant the PID never needed. It would also leave injected objects in the
+  operator's store. Not granting the write is one branch; guarding its
+  result would be a second door that has to agree with the first.
+- **(D8) A witness at L4 like D5's.** The L4 wall is the mount list, and
+  `CageMounts` is pure. A pin over its output, in both shapes, asserts what
+  a witness would. The engine-side arm stays the off-box one
+  (ranger-base-017dx).
 
 ## Consequences
 
@@ -214,6 +286,12 @@ weller home's two PIDs are `cage: shims`).
 - Exit hatch: D2 is one decline rule inside one resolver, and removing it
   returns ADR 0083 D7's refusal. D3 is one branch in `SeatbeltWritable`.
   D5 is one row. Nothing holds state.
+- D8: a whole-tree-deny seat at L4 can no longer save `git status`'s
+  index refresh, `git fetch` or write any shared-ref reflog. That is G1–G4's
+  cost one tier up. No PID on this box asks for `cage: container` with a
+  whole-tree deny today, so nothing moves on the host. D8 is one branch
+  on `deniesFileWrite` in `CageMounts`, and removing it restores the
+  carve-out.
 
 ## Measured versus assumed
 
@@ -224,6 +302,19 @@ weller home's two PIDs are `cage: shims`).
   Its "move main" row measured nothing, because the scratch repo sat under
   `/tmp`, which the wall binds read-write. Probe T3 (ranger-base-r5m98) is
   the host's reading of that row.
+- MEASURED 2026-11-11, D1 host, `docs/adr/0086-l4-git-carve-out.probe.sh`
+  (D8's table). The mount list was mirrored under bwrap, not run under
+  docker: the probe measures which git writes need which overlay. The
+  depth-ordered bind semantics it relies on are ADR 0014's docker
+  measurement (7/7).
+- STATIC (code read), D8: `MergeSessionWork` splices a detached session's
+  work before any guard (worktree.go), so the probe's ancestry check
+  stands for the fast-forward. The container reach gate
+  (`containerReachRow`) probes only the store, so D8 has no fifth-door
+  deadlock at L4. `cageGitIdentityBinds` adds nothing over a `:ro` mount.
+- ASSUMED, D8: that `git status` under docker's `:ro` bind behaves as it
+  does under bwrap's (EROFS on the opportunistic index write, and the
+  write is skipped). It is the same errno from the same syscall.
 - STATIC (code read): the main checkout's `cwd/.git` grant reaches
   `refs/heads/main` for a whole-tree-deny PID; the launch, parity and
   dispatch doors reading the map through one function today
