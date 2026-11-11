@@ -386,19 +386,42 @@ func (a *App) CageHome(persona string) string {
 // "container tier over a store holding a SQLite database" as a gate
 // CheckParity cannot realize.
 //
-// **`.git` is the second carve-out** (ADR 0014 §4), and it is the same
-// sentence as the first: L2 grants a write-denying PID `cwd/.git` beside
-// `cwd/.beads` — index refresh, git's own locks, never a push, which L3
-// holds — and a tier that took it away would be enforcing more than the
-// gate. In an ordinary repo that is a directory inside the repo mount and
-// an overlay says it. In a worktree `.git` is a FILE and everything behind
-// it lives in the common dir, which is a mount of its own; it goes
-// read-write for the same reason, and what that exposes beyond L2's
-// narrowed grant (`refs/heads` whole, so a caged persona can move a ref)
-// is stated in NOTES rather than hidden. `.git/hooks` back to `:ro` over
-// it — ranger-base-3c3 / h15, deferred here by ADR 0014 §4 — is
-// cageGitIdentityBinds below, with the `config` half without which
-// freezing the slot is not a wall.
+// **`.git` is NOT the second carve-out, and that is ADR 0086 D8** amending
+// ADR 0014 §4. It was one, by the same sentence as the first: L2 granted a
+// write-denying PID `cwd/.git` beside `cwd/.beads` — index refresh, git's
+// own locks, never a push, which L3 holds — and a tier that took it away
+// would have been enforcing more than the gate. ADR 0086 D3 took that grant
+// away at L2, because a seat that may not edit a file can still write a
+// blob, stage it with `update-index --cacheinfo` and commit; so "match L2"
+// now means `.beads` alone, and this tier keeps LESS than L2 and needs no
+// more.
+//
+// The `:ro` repo mount did not already answer it, and the route is the
+// launcher's own. A caged session is launched on a DETACHED HEAD
+// (PrepareSessionHead), and `MergeSessionWork` runs `spliceDetachedWork`
+// BEFORE every guard: that fast-forwards `posse/<session>` onto whatever
+// HEAD names, and the landing carries it to `main`. So the three regions a
+// detached commit writes were the whole of W14/W15 at this tier, reached one
+// step later than a ref grant rather than not at all. MEASURED 2026-11-11
+// (`docs/adr/0086-l4-git-carve-out.probe.sh`): with the overlays in place
+// the plumbing commit landed in a linked worktree and `posse/s1`
+// fast-forwarded onto it, and in a main checkout — where the carve-out was
+// `.git` WHOLE — `update-ref refs/heads/main` moved main directly. Without
+// them both are refused, and `git status` and `git log` still work.
+//
+// So for a whole-tree-deny PID — `deniesFileWrite`, the one predicate D3's
+// doors read — no mount of this session's git dir is read-write: no
+// `<dir>/.git` overlay in a main checkout, where `.git` stays under the
+// `:ro` repo, and none of sessionCommonDirWrites' three overlays in a
+// linked worktree, where the common dir stays `:ro` and whole. Every other
+// PID's mounts are unchanged. What this PID loses is G1-G4's cost one tier
+// up: `git status` works but no longer saves its index refresh, a `git
+// fetch` is refused, and a shared-ref reflog cannot be written. `.git/hooks`
+// back to `:ro` over a read-write `.git` — ranger-base-3c3 / h15, deferred
+// here by ADR 0014 §4 — is cageGitIdentityBinds below, with the `config`
+// half without which freezing the slot is not a wall; for the PID class
+// above there is no read-write mount left for it to land on, and INVISIBLE
+// to write is the stronger of the two walls.
 //
 // **The path-scoped overlays** (ADR 0014 §4) are the last pass, in
 // cagePathScopedOverlays: a `deny: [Edit(docs/adr/**)]` becomes a `:ro`
@@ -418,16 +441,19 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 		{Src: ag.MemoryDir, Dst: ag.MemoryDir, Why: "persona memory ({memory}, ORDERS.md)"},
 		{Src: ag.Path, Dst: ag.Path, RO: true, Why: "the PID the runtime reads as its prompt ({file})"},
 	}
-	// The two carve-outs, AFTER the repo so the later mount wins. Only when
+	// The ONE carve-out, AFTER the repo so the later mount wins. Only when
 	// the repo is `:ro` (on a read-write repo there is nothing to carve out
-	// of) and only where the directory is already there — a worktree's
-	// `.git` is a file and is skipped here, because the thing it points at
-	// is the common-dir mount below.
+	// of) and only where the directory is already there.
+	//
+	// `.git` stood beside it until ADR 0086 D8, and the `ro` that puts the
+	// carve-out here is the same `deniesFileWrite` that removes the git one:
+	// the PID this branch exists for is exactly the PID D3 took `<cwd>/.git`
+	// from at L2. See the paragraph above — through the launcher's splice
+	// that carve-out let such a seat land a commit, in a main checkout by
+	// moving `refs/heads/main` outright.
 	if ro {
 		ms = cageOverlay(ms, filepath.Join(dir, ".beads"), false,
 			"the bead store, READ-WRITE over the :ro repo — the carve-out that keeps claim/comment/close at this tier (ADR 0002 amendment, rangerhq-3nxk)")
-		ms = cageOverlay(ms, filepath.Join(dir, ".git"), false,
-			"the repo's git dir, READ-WRITE over the :ro repo — L2's other carve-out (index refresh and git's own locks; the push is L3's, not the mount's) (ADR 0014 §4)")
 	}
 	// The store of record when a `.beads/redirect` puts it in ANOTHER repo
 	// (ADR 0012 D3-C): `<dir>/.beads` then holds a path and nothing else, so
@@ -488,11 +514,33 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 	// until a ref names it, and naming goes through the splice and the
 	// launcher's ff), `logs` (the reflog), and the session's own worktree
 	// dir. Same class L2 accepts.
+	//
+	// **ADR 0086 D8 reads that residual back for ONE PID class.** "Inert
+	// until a ref names it, and naming goes through the splice" is the
+	// sentence: `spliceDetachedWork` names it, before every guard, and a
+	// seat whose Edit/Write deny exists to make its output FINDINGS is a
+	// seat that must not land a commit by any route. So for
+	// `deniesFileWrite` none of the three is overlaid and the common dir is
+	// `:ro` whole — not because the narrowing was wrong for everyone, but
+	// because for this PID the narrowed set IS the whole of what a commit
+	// needs. The same is true one tier down, where D3 removed
+	// sessionGitGrants from exactly this PID.
 	if common := gitCommonDirOutside(dir); common != "" {
-		ms = append(ms, CageMount{Src: common, Dst: common, RO: true, Why: "the worktree's git common dir, READ-ONLY — L3's hooks and the repo's refs and config live there, and only the three regions a detached-HEAD commit writes are overlaid back (ranger-base-t4f1, ADR 0014 §4)"})
-		for _, p := range sessionCommonDirWrites(dir, common) {
-			ms = cageOverlay(ms, p, false,
-				"read-write over the :ro common dir — one of the three regions a DETACHED-HEAD commit in this worktree writes (sessionGitGrants at L2, ranger-base-m2wf; ranger-base-t4f1 at L4)")
+		cwhy := "the worktree's git common dir, READ-ONLY — L3's hooks and the repo's refs and config live there, and only the three regions a detached-HEAD commit writes are overlaid back (ranger-base-t4f1, ADR 0014 §4)"
+		if ro {
+			cwhy = "the worktree's git common dir, READ-ONLY and WHOLE — a PID that denies the whole tree gets no git-dir write at this tier either, because the three regions a detached commit writes are what the launcher's own splice then lands on the branch (ADR 0086 D8)"
+		}
+		ms = append(ms, CageMount{Src: common, Dst: common, RO: true, Why: cwhy})
+		// None of the three for a whole-tree-deny PID (ADR 0086 D8): they
+		// are exactly what a detached-HEAD commit writes, and
+		// `spliceDetachedWork` runs before every guard at close. The
+		// narrowing that makes them safe for every OTHER PID is what made
+		// them the route to a commit for this one.
+		if !ro {
+			for _, p := range sessionCommonDirWrites(dir, common) {
+				ms = cageOverlay(ms, p, false,
+					"read-write over the :ro common dir — one of the three regions a DETACHED-HEAD commit in this worktree writes (sessionGitGrants at L2, ranger-base-m2wf; ranger-base-t4f1 at L4)")
+			}
 		}
 	}
 	if len(ag.Skills) > 0 {
@@ -552,12 +600,21 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 //   - read-write repo (a main checkout): `<dir>/.git/config` gets a `:ro`
 //     FILE bind and `<dir>/.git/hooks` a `:ro` directory overlay, both
 //     appended over the repo mount and deeper than it.
-//   - `:ro` repo: the same two, over the read-write `.git` carve-out
-//     (ADR 0014 §4) that would otherwise leave them writable.
+//   - `:ro` repo: NOTHING, since ADR 0086 D8 removed the read-write `.git`
+//     carve-out that used to leave them writable. Both files resolve inside
+//     the `:ro` repo mount, where the same-mode rule appends nothing —
+//     which is the third shape's answer arriving in the second shape, by
+//     the same rule and still with no conditional. A pass that insisted on
+//     a bind here would be binding `:ro` over `:ro`.
 //   - a linked worktree (post ranger-base-t4f1): both resolve into the
 //     `:ro` common dir, cageOverlay's same-mode rule appends NOTHING, and
 //     t4f1's "no mount on `<common>/config` or `<common>/hooks`" holds
 //     unchanged. Shape-agnostic by construction, not by a conditional.
+//     Since D8 a whole-tree-deny PID has no read-write overlay under that
+//     dir at all, so the identity chain of decision 4b degenerates the same
+//     way for it: `gitdir`, `commondir` and `config.worktree` are inside
+//     the `:ro` common mount rather than over a read-write
+//     `worktrees/<own>`, and nothing is appended for them either.
 //   - the store of record behind a `.beads/redirect`: at L4 only its
 //     `.beads` is mounted, so nothing covers its `.git` and the deny
 //     direction mounts nothing where nothing covers the path. INVISIBLE is
@@ -582,7 +639,10 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 // t4f1's narrowing leaves read-write: the pointer sits on the repo mount
 // (so on a `:ro` repo the same-mode rule mounts nothing — it is already
 // inside the boundary), and the other three sit under the read-write
-// `worktrees/<own>` overlay. Nothing else in `worktrees/<own>` is taken:
+// `worktrees/<own>` overlay — for every PID but the one ADR 0086 D8 takes
+// that overlay from, where they are inside the `:ro` common mount and the
+// same rule mounts nothing for them either. Nothing else in
+// `worktrees/<own>` is taken:
 // after a whole session's life it holds `COMMIT_EDITMSG`, `commondir`,
 // `gitdir`, `HEAD`, `index`, `logs`, `ORIG_HEAD` and `refs` (MEASURED), and
 // the rest of that set is what a detached-HEAD commit writes.
@@ -680,6 +740,14 @@ func cageIdentityFileBinds(ms []CageMount, paths []string, why string) []CageMou
 // linked worktree) grants nothing extra rather than falling back to the
 // whole dir: a mount list that cannot name the narrow set must not quietly
 // widen to the one this bead removed.
+//
+// **None of the three is rendered for a whole-tree-deny PID** (ADR 0086
+// D8). This function still answers the same set — it is "what a detached
+// commit writes", and that is a fact about the tree and not about a PID —
+// and `CageMounts` does not call it for `deniesFileWrite`, because what a
+// detached commit writes is precisely what `spliceDetachedWork` then lands
+// on the branch at close. The condition lives at the one call site rather
+// than here so this stays a reader of git and not a reader of the PID.
 //
 // `logs` is in the set because L2's is — a wall that reads the same fact
 // differently from the wall next to it is the classification error ADR 0014
