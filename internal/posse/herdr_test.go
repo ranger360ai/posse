@@ -28,6 +28,19 @@ import (
 var operatorHome string
 
 func TestMain(m *testing.M) {
+	// THE COLD-EXEC SHIM ARM, AND IT IS FIRST (ADR 0085 D2/D3, see
+	// coldexec_test.go). When the injector is on, a planted script's shebang
+	// points at this binary, so the kernel execs us as `<binary> <plant>
+	// <args…>`. Every arm below is keyed on an environment variable, and a
+	// shim child inherits all of them — RHQ_FAKE_HERDR most of all, which is
+	// process-wide here — so a shim arm placed after any of them would be
+	// answered by a fake substrate instead, and the plant would never run.
+	// Keyed on a file this process was handed rather than on the
+	// environment: argv[1] naming a file whose line 2 carries the
+	// posse-coldexec marker. It never returns.
+	if script, nonce, interp, ok := coldExecShimArgs(os.Args); ok {
+		coldExecRunShim(script, nonce, interp, os.Args[2:])
+	}
 	// It also doubles as the two binaries the container tier execs
 	// (rangerhq-1k1): posse itself, which a caged pane's launcher symlink
 	// points at — the same entry point cmd/posse/main.go has — and, in argv
@@ -250,7 +263,14 @@ func TestMain(m *testing.M) {
 	// which is git's other spelling of the same setting and is not env at
 	// all (extdiff_qa_test.go, ARMs 1-3).
 	os.Unsetenv("GIT_EXTERNAL_DIFF")
+	// The cold-first-exec injector, installed only under
+	// POSSE_COLD_EXEC_DELAY — which is to say only under `make
+	// coldexec-check` (ADR 0085 D3/D6). This is the one assignment of
+	// coldExecRewrite in the tree; a shipped binary never reaches it.
+	// coldexec_test.go carries the mechanism and the argument.
+	coldExec := coldExecInstall()
 	code := m.Run()
+	coldExec.report()
 	os.RemoveAll(home)
 	os.Exit(code)
 }

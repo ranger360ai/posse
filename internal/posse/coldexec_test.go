@@ -1,0 +1,327 @@
+package posse
+
+// The cold-first-exec injector (ADR 0085). Shared, untagged, helper-only:
+// the shim arm it installs is read by TestMain, which every suite arm
+// compiles, and a file that carried tests of its own would run them three
+// times.
+//
+// WHAT THE CLASS IS. A test plants a brand-new executable and execs it under
+// a deadline of a few hundred ms. macOS assesses a freshly written
+// executable on its FIRST exec and charges two orders of magnitude more for
+// it than for the exec that follows — MEASURED on darwin 25.6.0 at a mean of
+// 156-714ms and a worst of 2.17s against 6.3-10.9ms warm
+// (docs/notes.d/ranger-base-aru4c.md). So a small deadline over a cold exec
+// gives its verdict about process startup rather than about the code. The
+// class has been found three times by hand.
+//
+// WHY A GATE AND NOT A MATCHER. ranger-base-aru4c censused the tree for it
+// and 10 of its 14 candidate rows turned on a judgement no matcher made:
+// does this duration bound an `execve` of the planted file at all? ADR 0085
+// D1 makes the verdict the subject instead — "a test whose verdict changes
+// when the first exec of a planted file is slow" — which is decidable by
+// running the test with the first exec made slow. Both of aru4c's
+// adjudications then fall out of execution rather than out of reading: a
+// fixture driven through Herdr pays the injected cost inside a synchronous
+// mux.Start, outside every deadline its caller sets, and `sh <path>` execs
+// /bin/sh and never the plant at all.
+//
+// AND WHY IT IS WANTED NOW. Linux has no cold-exec cost — MEASURED
+// 2026-11-10 on this host (7.2.15, x86_64, loadavg 7.56, n=40 fresh
+// `#!/bin/sh` scripts): first exec mean 1.07ms, worst 1.29ms, re-exec mean
+// 0.96ms. The crew writes tests here (ADR 0083) and darwin still runs the
+// suite (ci.yml's macos-latest leg, and the laptop kept as the rollback
+// home), so a new unwarmed fixture now passes where it is written and flakes
+// only where nobody is watching.
+//
+// THE MECHANISM, end to end:
+//
+//   - `make coldexec-check` sets POSSE_COLD_EXEC_DELAY. TestMain reads it and
+//     assigns coldExecRewrite (execwrite.go), the one seam, which is nil in
+//     every shipped binary and applies only to a plant whose immediate
+//     caller is a _test.go file.
+//   - the rewrite turns `#!<interp>` into `#!<shim>` plus a second line,
+//     `# posse-coldexec <nonce> <interp>`, and leaves the body alone. The
+//     shim is this test binary.
+//   - the kernel then execs `<shim> <path> <args…>`. The shim creates
+//     `<nonce>` with O_EXCL. If it created it, this is the file's first exec
+//     and it sleeps D; then it syscall.Execs <interp> <path> <args…>,
+//     keeping its pid, so a pid file, a kill or a `$$` still names the
+//     process it would have named without the injector.
+//   - a fresh nonce per write makes a rewritten file cold again. The nonce
+//     lives outside the script's directory, so a test that lists that
+//     directory sees no extra file.
+//
+// THE EXIT HATCH is one nil variable and one argv arm. Delete both and
+// nothing else changes; they hold no state outside a temporary marker dir.
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync/atomic"
+	"syscall"
+	"time"
+)
+
+// coldExecDelayEnv is both the switch and the amount (ADR 0085 D3): set, the
+// hook is installed; its value is how long the shim sleeps on a first exec.
+// One name rather than two, so there is no state in which injection is on
+// and the delay is unknown.
+const coldExecDelayEnv = "POSSE_COLD_EXEC_DELAY"
+
+// coldExecDefaultDelay is ADR 0085 D4's D, and it is above the measured
+// darwin worst case of 2.17s: a deadline that survives 2.5s of cold exec
+// survives darwin. ASSUMED that 2.17s tail is the true worst; if darwin ever
+// measures worse, raise this. It is one constant.
+//
+// It is also the fallback the shim uses when the variable did not reach it —
+// a test that scrubs its child's environment. That is correct by
+// construction rather than a guess: a rewritten file exists only because
+// injection was on, so the question is never whether to sleep but how long,
+// and D is the answer the run was started with.
+const coldExecDefaultDelay = 2500 * time.Millisecond
+
+// coldExecMarkerPrefix opens the injected second line. It is what the shim
+// arm keys on — argv[1] naming a file whose line 2 starts with this — which
+// is IsCageLaunch's pattern (cagelauncher.go) applied to a file instead of a
+// flag, and needs no build step because the shim is this binary.
+const coldExecMarkerPrefix = "# posse-coldexec "
+
+// coldExecInjector holds what one run's rewrites need: the shim to point at,
+// the directory the nonces live in, and the two counters. One per process,
+// built by coldExecInstall; the pins build their own with their own marker
+// dir, so they drive the mechanism without touching the package variable a
+// parallel suite is reading.
+type coldExecInjector struct {
+	shim      string // this test binary, from os.Executable
+	markerDir string // outside every script dir, by construction
+	seq       atomic.Uint64
+	// passedThrough counts the plants that could not be rewritten because
+	// they carry no `#!` — a copied binary (ADR 0085 D5). The gap is a
+	// number the run prints rather than a silence.
+	passedThrough atomic.Int64
+	// rewritten counts the plants that were, so a run that injected nothing
+	// at all cannot read as a run that found nothing.
+	rewritten atomic.Int64
+}
+
+// rewrite is the hook's body. It builds bytes and nothing else: no open, no
+// stat, no fork, because WriteExecutable calls it outside underForkLock and
+// the span in which no fork in this process may start is not the place for
+// filesystem work (execwrite.go's doc comment).
+//
+// It is IDEMPOTENT, and that is load-bearing in two places. A pin plants
+// bytes it rewrote itself and still writes them through WriteExecutable —
+// the one door every exec-bit write in this tree goes through — so under
+// `make coldexec-check` those bytes arrive here a second time; and a
+// production copier handed an already-rewritten file would otherwise bury
+// one shim inside another. Re-planting a file's ORIGINAL content is not this
+// case and gets a fresh nonce, which is what makes a rewritten file cold
+// again (ADR 0085 D2).
+func (c *coldExecInjector) rewrite(path string, content []byte) []byte {
+	if coldExecAlreadyRewritten(content) {
+		return content
+	}
+	interp, body, ok := coldExecShebang(content)
+	if !ok {
+		c.passedThrough.Add(1)
+		return content
+	}
+	c.rewritten.Add(1)
+	// pid as well as a sequence number: the nonce is read back by a CHILD,
+	// and a test that re-execs this binary gives two processes one marker
+	// dir and two counters that both start at zero.
+	nonce := filepath.Join(c.markerDir, fmt.Sprintf("%d-%d", os.Getpid(), c.seq.Add(1)))
+	return []byte("#!" + c.shim + "\n" + coldExecMarkerPrefix + nonce + " " + interp + "\n" + body)
+}
+
+// coldExecAlreadyRewritten reports whether these bytes carry the injected
+// second line already.
+func coldExecAlreadyRewritten(content []byte) bool {
+	lines := strings.SplitN(string(content), "\n", 3)
+	return len(lines) >= 2 && strings.HasPrefix(lines[1], coldExecMarkerPrefix)
+}
+
+// coldExecShebang splits a plant into its interpreter line and the rest.
+// interp is what followed `#!`, with trailing whitespace trimmed as the
+// kernel trims it; body is every line after the first, newline included, so
+// that interp + body is the original content minus its shebang.
+//
+// ok is false for content that cannot be rewritten: no `#!` at all (a copied
+// binary — ADR 0085 D5's counted gap) or a `#!` with nothing after it, which
+// no kernel would exec either.
+func coldExecShebang(content []byte) (interp, body string, ok bool) {
+	rest, found := strings.CutPrefix(string(content), "#!")
+	if !found {
+		return "", "", false
+	}
+	// strings.Cut drops the newline it split on, which is what the rewrite
+	// wants: it supplies its own. A plant with no newline at all has no
+	// body, and Cut answers that with "" rather than needing a branch.
+	line, body, _ := strings.Cut(rest, "\n")
+	interp = strings.TrimRight(line, " \t\r")
+	if interp == "" {
+		return "", "", false
+	}
+	return interp, body, true
+}
+
+// coldExecInterpArgv turns a stored interpreter line back into the argv the
+// kernel would have built from it, which is NOT the same on the two
+// platforms this suite runs on: Linux hands the interpreter at most one
+// argument — everything after the first word arrives as a single argv entry
+// — and darwin splits the line into words. Reproducing each platform's own
+// rule is what keeps `#!/usr/bin/env python3 -u` arriving at the
+// interpreter the way it would have without the injector.
+func coldExecInterpArgv(interp string) []string {
+	s := strings.TrimLeft(interp, " \t")
+	fields := strings.Fields(s)
+	if len(fields) <= 1 || runtime.GOOS != "linux" {
+		return fields
+	}
+	return []string{fields[0], strings.TrimSpace(strings.TrimPrefix(s, fields[0]))}
+}
+
+// coldExecShimArgs reads the argv the kernel hands a shebang shim and
+// reports whether this process is one. argv[1] is the script the kernel was
+// asked to run, and its line 2 is the marker: that is the detection, and it
+// is a FILE read rather than a flag because the kernel chooses the argv, not
+// us.
+//
+// It is cheap on the path that matters. Under `go test` argv[1] is a
+// `-test.*` flag, under the fake substrates it is a verb, and os.Open fails
+// on both.
+func coldExecShimArgs(argv []string) (script, nonce, interp string, ok bool) {
+	if len(argv) < 2 {
+		return "", "", "", false
+	}
+	f, err := os.Open(argv[1])
+	if err != nil {
+		return "", "", "", false
+	}
+	defer f.Close()
+	// A bounded head, not the file: only the first two lines can carry the
+	// marker and a plant may be any size.
+	buf := make([]byte, 4096)
+	n, _ := f.Read(buf)
+	lines := strings.SplitN(string(buf[:n]), "\n", 3)
+	if len(lines) < 2 {
+		return "", "", "", false
+	}
+	rest, found := strings.CutPrefix(lines[1], coldExecMarkerPrefix)
+	if !found {
+		return "", "", "", false
+	}
+	nonce, interp, found = strings.Cut(rest, " ")
+	if !found || nonce == "" || strings.TrimSpace(interp) == "" {
+		return "", "", "", false
+	}
+	return argv[1], nonce, interp, true
+}
+
+// coldExecRunShim is the shim. It never returns: either syscall.Exec
+// replaces this process with the real interpreter, or it exits.
+//
+// syscall.Exec and not exec.Command, so the interpreter KEEPS THIS PID
+// (ADR 0085 D2). A test that writes a pid file, kills the child or echoes
+// `$$` names the process it would have named with no injector in the way;
+// an extra process between the two would have made the injector visible to
+// every such test at once.
+func coldExecRunShim(script, nonce, interp string, rest []string) {
+	switch f, err := os.OpenFile(nonce, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644); {
+	case err == nil:
+		f.Close()
+		time.Sleep(coldExecDelay())
+	case errors.Is(err, fs.ErrExist):
+		// A warm re-exec of the same bytes. The cost is paid; charge nothing.
+	default:
+		// LOUD, never silent. A marker this process cannot create is an
+		// injector that has stopped injecting, and a run in that state must
+		// not read as a suite that measured the class and found it clean.
+		fmt.Fprintf(os.Stderr, "posse coldexec shim: %s: %v — THIS EXEC WAS NOT DELAYED\n", nonce, err)
+	}
+	argv := append(coldExecInterpArgv(interp), script)
+	argv = append(argv, rest...)
+	bin, err := exec.LookPath(argv[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "posse coldexec shim: %s: %v\n", argv[0], err)
+		os.Exit(127)
+	}
+	err = syscall.Exec(bin, argv, os.Environ())
+	fmt.Fprintf(os.Stderr, "posse coldexec shim: exec %s: %v\n", bin, err)
+	os.Exit(126)
+}
+
+// coldExecDelay is D, read from the environment with
+// coldExecDefaultDelay's fallback. A value that is not a duration is said
+// out loud and then ignored, for the reason _suite_lock_slots gives about
+// POSSE_SUITE_SLOTS: refusing would make a typo in a diagnostic variable
+// into a suite that cannot run.
+func coldExecDelay() time.Duration {
+	v := os.Getenv(coldExecDelayEnv)
+	if v == "" {
+		return coldExecDefaultDelay
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		fmt.Fprintf(os.Stderr, "posse coldexec: %s=%q is not a duration — using %s\n", coldExecDelayEnv, v, coldExecDefaultDelay)
+		return coldExecDefaultDelay
+	}
+	return d
+}
+
+// coldExecInstall assigns the hook when POSSE_COLD_EXEC_DELAY is set, and
+// returns the injector it installed or nil. TestMain calls it once, before
+// m.Run, and nothing else in the tree assigns coldExecRewrite.
+//
+// Every failure here is fatal rather than a warning: the caller asked for an
+// injected run, and a run that silently did not inject is a green suite that
+// measured nothing — the one outcome this gate exists to prevent.
+func coldExecInstall() *coldExecInjector {
+	if os.Getenv(coldExecDelayEnv) == "" {
+		return nil
+	}
+	shim, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "posse coldexec: os.Executable: %v\n", err)
+		os.Exit(1)
+	}
+	dir, err := os.MkdirTemp("", "posse-coldexec-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "posse coldexec: marker dir: %v\n", err)
+		os.Exit(1)
+	}
+	// The nonce is the first of two space-separated fields on the injected
+	// line, so a marker dir with a space in it would be read back short.
+	// Refused here, where the message can name it, rather than at the
+	// first exec of a plant.
+	if strings.ContainsAny(dir, " \t") {
+		fmt.Fprintf(os.Stderr, "posse coldexec: marker dir %q contains whitespace — set TMPDIR to a path without any\n", dir)
+		os.Exit(1)
+	}
+	inj := &coldExecInjector{shim: shim, markerDir: dir}
+	coldExecRewrite = inj.rewrite
+	fmt.Fprintf(os.Stderr, "posse coldexec: injecting %s at the first exec of every plant written from a _test.go file (ADR 0085)\n", coldExecDelay())
+	return inj
+}
+
+// report prints what the run did and takes the marker dir away. Nil-safe:
+// an ordinary suite installs no injector and this is a no-op.
+//
+// The pass-through count is ADR 0085 D5. Content with no `#!` cannot be
+// rewritten, so those plants keep their cold first exec and the gate says
+// nothing about them — and the number is printed so that the gap is a
+// number somebody can act on rather than a silence.
+func (c *coldExecInjector) report() {
+	if c == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "posse coldexec: %d plants rewritten, %d executable plants had no #! and were passed through unchanged (ADR 0085 D5)\n",
+		c.rewritten.Load(), c.passedThrough.Load())
+	os.RemoveAll(c.markerDir)
+}

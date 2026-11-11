@@ -501,6 +501,14 @@ func main() {
 		"TestQASandboxApplyProbeGrid":                       "calls sandboxApplyRefusal",
 		"TestQASandboxExecStaysOnPathInsideTheCage":         "calls sandboxApplyRefusal",
 		"TestQASelfCheckAnswersInsideASeatbelt":             "calls sandboxApplyRefusal",
+		// coldExecRewrite (1): the cold-first-exec injector's one seam into
+		// internal/posse/execwrite.go (ADR 0085 D2/D3). It is assigned in
+		// TestMain, before m.Run, and by nothing else in the tree — so once
+		// any test can run it is a constant, and reading it races nothing.
+		// This test reads it to assert TestMain installed it at all; the
+		// rest of its state is a t.TempDir and a child process it alone
+		// starts.
+		"TestColdExecHookWiringChild": "reads coldExecRewrite",
 	}
 	// ── filter 2: written package-level vars named anywhere reachable ────
 	varTainted := propagateIn(funcs, func(g *fn) bool {

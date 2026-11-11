@@ -3,6 +3,8 @@ package posse
 import (
 	"io/fs"
 	"os"
+	"runtime"
+	"strings"
 	"syscall"
 )
 
@@ -75,5 +77,50 @@ func underForkLock(write func() error) error {
 // it on a pipe for as long as they like — deliberately, both in open(2) and
 // inside write(2). Do not point it at a path that can block.
 func WriteExecutable(path string, content []byte, perm fs.FileMode) error {
+	if coldExecRewrite != nil && callerIsTestFile(2) {
+		content = coldExecRewrite(path, content)
+	}
 	return underForkLock(func() error { return os.WriteFile(path, content, perm) })
+}
+
+// coldExecRewrite is the cold-first-exec injector's one seam into this file
+// (ADR 0085 D2), and it is nil in every shipped binary. Nothing in cmd/ or
+// internal/ assigns it; the only assignment in the tree is in
+// herdr_test.go's TestMain, under POSSE_COLD_EXEC_DELAY, and `make
+// coldexec-check` is the one command that sets that variable.
+//
+// WHY THE INJECTION IS HERE AND NOT IN A CENSUS. The execwrite pins
+// (execwritegates_qa_test.go, execwritesiblings_qa_test.go) already force
+// every executable write in the tree through this function, so the set of
+// files a test can plant and then exec is closed by a gate that already
+// exists. A hook here reaches all of them and needs no census of its own —
+// which is the whole of ADR 0085's argument against a static matcher, whose
+// census left 10 of 14 rows undecidable (docs/notes.d/ranger-base-aru4c.md).
+//
+// The rewrite runs OUTSIDE underForkLock, and must: it only builds bytes —
+// no open, no stat, no fork — so it adds nothing to the span in which no
+// fork in this process may start (the paragraph above). The marker file the
+// injected shim keys on is created by the SHIM, in the child, at exec time.
+var coldExecRewrite func(path string, content []byte) []byte
+
+// callerIsTestFile reports whether the frame `skip` levels above this
+// function was compiled from a _test.go file. It is the whole of ADR 0085
+// D3's "test-only by construction" on the write side: a shim that PRODUCTION
+// code writes keeps its exact bytes even with the hook installed, so the
+// content read-back pins over rendered gates, hooks and probes cannot red
+// for the injector's reason rather than their own.
+//
+// skip is counted from this function, so WriteExecutable passes 2: 0 is
+// here, 1 is WriteExecutable, 2 is whoever called it. runtime.Caller
+// expands inlined frames, so it answers about the source line and not about
+// what the compiler did with it.
+//
+// It is the IMMEDIATE caller and deliberately not a walk of the stack. A
+// test that plants through a production helper is writing production bytes
+// at a production call site, and the file that site writes is the file the
+// product writes — if its first exec needs warming, that is the product's
+// deadline to fix and not a fixture's.
+func callerIsTestFile(skip int) bool {
+	_, file, _, ok := runtime.Caller(skip)
+	return ok && strings.HasSuffix(file, "_test.go")
 }

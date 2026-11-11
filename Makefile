@@ -64,7 +64,7 @@ ifeq ($(words $(BUILD_SOURCE)),1)
 LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
 endif
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -1042,6 +1042,58 @@ tree-check: fmt-check crew-check seed-check history-check doc-check identity-che
 # waiting for its answer (test-race's reasoning).
 treepins:
 	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 25m -count=1
+
+# THE COLD-FIRST-EXEC DOOR (ADR 0085 D6, ranger-base-pbo1q). It runs
+# internal/posse's three arms with the first exec of every planted executable
+# made slow, which is the whole of ADR 0085's move: the class is "a test whose
+# verdict changes when the first exec of a planted file is slow", and that is
+# decidable by RUNNING the test with the first exec made slow. No reading of
+# the source is needed, and reading was the part that did not work —
+# ranger-base-aru4c censused the tree for this class and 10 of its 14
+# candidate rows turned on a judgement no matcher made.
+#
+# THE CLASS. A test plants a brand-new executable and execs it under a
+# deadline of a few hundred ms. macOS assesses a freshly written executable on
+# its FIRST exec: MEASURED on darwin 25.6.0 at a mean of 156-714ms and a worst
+# of 2.17s, against 6.3-10.9ms for a re-exec of the same path. Linux charges
+# nothing — MEASURED 2026-11-10 on this host, n=40, first exec mean 1.07ms and
+# worst 1.29ms — so an unwarmed fixture written here passes where it is written
+# and flakes on ci.yml's macos-latest leg and on the laptop, where nobody is
+# watching. The injector (internal/posse/coldexec_test.go) puts the darwin cost
+# back on this box, deterministically, with the fatal the test already prints.
+#
+# D, the injected delay, is above darwin's measured worst case: a deadline that
+# survives 2.5s of cold exec survives darwin. COLDEXEC_DELAY changes it, and it
+# is one constant in one place.
+#
+# RUN=<regex> is the form a bead types. A bead that adds a planted fixture
+# checks only its own tests, which takes seconds instead of three arms; `-v`
+# comes with it, because `go test -run` over a name that is not in the build
+# exits 0 and prints `ok` — so a filter naming an arm 2 test prints `ok` over
+# arms 1 and 3 having selected nothing, and the `=== RUN` lines are how a seat
+# tells its test ran from its test passing.
+#
+# AND IT QUEUES WHEN UNFILTERED, like `make test`: three arms, three suite
+# slots (scripts/suite-lock.sh). Arm 1 is spelled `./internal/posse/...` and
+# not `./internal/posse` for that reason alone — the package has no
+# subpackages, so the two select the same one arm, and a package-tree pattern
+# is what suite_lock_wanted queues. The named-package form is deliberately
+# unqueued there, for the arm 1 run a person does while thinking, and
+# reversing that is the architect's call and not a line added here. A `RUN=`
+# filter returns from that rule before it is reached and takes no slot, which
+# is what makes the filtered form seconds rather than a wait.
+#
+# NOT a prerequisite of `tree-check` or `make test`, and not in CI: D adds up
+# to 2.5s once per planted file, the full run is priced under
+# ranger-base-kiwvn, and whether CI should buy it is the operator's call
+# because it costs runner time.
+COLDEXEC_DELAY ?= 2.5s
+COLDEXEC_RUN   := $(if $(RUN),-run '$(RUN)' -v,)
+
+coldexec-check:
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 25m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink

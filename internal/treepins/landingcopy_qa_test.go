@@ -308,6 +308,10 @@ var landingDropRegister = []landingDrop{
 		match: "cannot reach a tree-wide pin",
 		why:   "`make fmt-check` is a target in this repo's Makefile and the five pins the bullet censuses are tests in this repo's internal/posse — a fresh work repo has no Makefile to hang the door off and none of the tests to name (ranger-base-rulbl)",
 	},
+	{
+		match: "make coldexec-check RUN=",
+		why:   "`make coldexec-check` is a target in this repo's Makefile and the cost it injects comes from a seam in this repo's own internal/posse test binary — a fresh work repo has neither, and the class the door decides is a property of THIS repo's test fixtures rather than of anyone's landing discipline (ADR 0085, ranger-base-pbo1q)",
+	},
 }
 
 // landingParityFaults reports, for one pair of sections, the AGENTS.md bullets

@@ -435,3 +435,16 @@ bd sync               # Sync with git
   enumeration is a line of Python inside `scripts/notes-index.py` — and
   `treewidedoor_qa_test.go` reds until every member of either half is named
   by a Makefile door variable.
+- **A test that plants an executable and then execs it under a deadline:
+  `make coldexec-check RUN=<your tests>`** (ADR 0085, ranger-base-pbo1q).
+  macOS assesses a freshly written executable on its FIRST exec and charges
+  156-714ms for it, worst 2.17s, against 6.3-10.9ms warm; this box charges
+  1.07ms, so an unwarmed fixture written here passes where it is written and
+  flakes on ci.yml's macos-latest leg and on the laptop. The door reruns your
+  tests with that cost injected at `WriteExecutable`, the one door every
+  exec-bit write in this tree goes through, and the fix when it reds is a
+  `--warm` pre-flight that pays the first exec OUTSIDE the deadline, with
+  both halves asserted. Filtered it takes seconds and no suite slot;
+  unfiltered it is three arms, three slots and is nobody's prerequisite —
+  `tree-check` and `make test` do not run it, and the class had been
+  rediscovered by hand three times before it existed.
