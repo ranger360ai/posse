@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# posse-landed-check — this repo's answer to ADR 0088's one contract: is the
+# tree at $PWD, which has just LANDED on main, green?
+#
+#   scripts/posse-landed-check          judge $PWD; exit 0 green, nonzero red
+#   scripts/posse-landed-check --plan   print the commands it would run, run none
+#
+# WHY THIS EXISTS. ranger-base-s64a5 shipped a stale-register pin and
+# ranger-base-in8dr added the arms that make it fire. Each seat ran the doors
+# on its own base, which held only its own half, and both runs were green. The
+# replay type-checks, so ADR 0087's land check passed it, and `make test` then
+# exited 2 in 31.9s for every seat on the box — found about five hours later by
+# the verify lane, because nothing reads main's exit code (ci.yml fires on the
+# operator's push, hours after that). This is the third case of "a gate that
+# cannot reach the pin that reds" (ranger-base-rulbl gofmt;
+# ranger-base-quzcd/n8wek the silent-revert audit). The first two were answered
+# with prose. This one is answered with a reader.
+#
+# THE CONTRACT (ADR 0088 D1, which is ADR 0087 D1's verbatim), and every line
+# of it is load-bearing here:
+#
+#   * No arguments, and **cwd is the tree to judge**. The copy that RUNS comes
+#     from the last tree recorded green, not from the tree being judged — a
+#     landing that weakens this script does not change what judges it. So
+#     nothing here may resolve a path out of $BASH_SOURCE or $0: that names a
+#     DIFFERENT tree, and a check that judged its own directory would pass
+#     every landing by judging the recorded-green tree twice while looking
+#     exactly like a check. Relative paths and $PWD only — which is also why
+#     the derivation below reads `Makefile` and not an absolute path to one.
+#   * Exit 0 is green, any other exit is red, errors on stderr.
+#   * The LAST lines of combined output are the cause — the runner keeps the
+#     last few non-empty ones and flattens them into a bead somebody reads
+#     later. So this fails FAST and prints NOTHING after the failing tool:
+#     make's own `*** [Makefile:NNN: corpus-check] Error 1` is the tail, and it
+#     names the door, which is the whole of what the bead needs to say.
+#
+# WHAT IT MAY RUN, and this is where it differs from the land check. The land
+# check runs operator-side, uncaged, as the launcher, inside the fleet lock, so
+# it executes nothing the branch wrote (0087 D6). This one runs CAGED, in a
+# detached checkout of the landed commit, outside the lock, and never blocks
+# (0088 D2/D3). The actor is the box's own cage tier, not the launcher, so
+# running the tree's own `make` is in bounds — and it has to be, because the
+# thing that went red here is a door and a door is `go test`.
+#
+# THE PREREQUISITES OF `make test`, DERIVED AND NOT LISTED (D6). What reds
+# every seat before an arm runs is the prerequisite list of the Makefile's
+# `test:` line — `tree-check`, `verify-silent-reverts` and the other doors on
+# it. That list is asked of MAKE rather than pattern-matched out of the
+# Makefile's text, for the reason the land check derives its arms rather than
+# naming `posse_arm2 posse_arm3`: a door added tomorrow is covered by the
+# commit that adds it, with nobody remembering this file. Asking make also
+# reads what a seat's `make test` reads and not what a regex thinks it reads —
+# prerequisites named through a variable are expanded, and a second
+# `test: <door>` line elsewhere in the file is unioned in, both of which a scan
+# of the first `^test:` line would miss.
+#
+# The probe is `-p` (print the data base) with `-n` (run nothing) over the
+# tree's Makefile PLUS a second makefile holding one no-op target, which is
+# then the only goal. A bogus goal would do as well on this Makefile and exit
+# 2, which is a status this script could not then tell from a Makefile that
+# does not parse; and on a Makefile carrying a match-anything rule it would be
+# a recipe this script asked for by accident. The no-op goal exits 0 and is
+# nobody's rule.
+#
+# That second makefile arrives on STDIN (`-f -`) rather than through a process
+# substitution, and that is a cage decision rather than a style one: `<(...)`
+# needs /dev/fd and a temp file needs somewhere writable, and under D3 the
+# landed tree and the build cache are the only writable things there. A pipe
+# needs neither.
+#
+# THE SUITE ARMS ARE NOT RUN. The `test:` RECIPE is about 15 minutes and three
+# suite slots, per landing, competing with the seats this exists to protect
+# (0088, Alternatives). Only the prerequisites run. A semantic conflict that
+# only an arm reaches is residual (1) of that ADR, stated and accepted.
+#
+# FINDING NO PREREQUISITES AT ALL IS A RED, not a quiet skip. A derivation that
+# silently returns nothing restores the exact hole this file exists to close —
+# the doors vanish and the run still prints green. This repo's `test:` line has
+# nine prerequisites, so a zero here is this script broken, or a Makefile that
+# did not parse. The day they are genuinely retired, this reds once with that
+# sentence and the fix is to delete this guard in the same commit; a check that
+# could not say that is worth less than the noise.
+#
+# WHAT RUNS THIS: internal/posse/landedcheckplan_qa_test.go, suite arm 2, over
+# a PLANTED Makefile and never over this tree. The subject is the derivation,
+# and a pin that read this repo's own `test:` line would assert a door list
+# every unrelated landing can move (the land check's pin says the same of its
+# arms, for the same reason).
+#
+# WHAT IT COSTS, paid outside the lock and holding nothing: see
+# docs/notes.d/ranger-base-r3pqf.md, which is the ONE place the readings are
+# said. This file quoting them as well would be two places to keep in step by
+# hand, which is how the figure in the second one goes stale while both look
+# authoritative (AGENTS.md's own rule about the tree-check reading). D6's
+# ceiling is a 120s warm run, at which the price goes back to architecture.
+set -euo pipefail
+
+plan_only=0
+case "${1:-}" in
+  '') ;;
+  --plan) plan_only=1; shift ;;
+  -h | --help)
+    printf '%s\n' \
+      'usage: posse-landed-check            judge $PWD; exit 0 green, nonzero red' \
+      '       posse-landed-check --plan     print the commands it would run, run none' \
+      '' \
+      "ADR 0088 D1/D6. cwd is the tree to judge; it runs make test's prerequisites there."
+    exit 0
+    ;;
+  *)
+    printf 'posse-landed-check: unknown argument %s — the contract takes no arguments and judges $PWD (ADR 0088 D1)\n' "$1" >&2
+    exit 2
+    ;;
+esac
+if [ "$#" -gt 0 ]; then
+  printf 'posse-landed-check: unexpected extra arguments: %s\n' "$*" >&2
+  exit 2
+fi
+
+# THE CALLER'S ENVIRONMENT MAY NOT CHANGE WHAT THIS CHECK RUNS. make takes
+# options out of `MAKEFLAGS` and `GNUMAKEFLAGS` and extra makefiles out of
+# `MAKEFILES`, so an inherited `-n` would make every door print and run
+# nothing while this exits 0 — a green over an empty room, from a variable
+# nobody here typed — and an inherited `-k` would carry on past the first red,
+# which puts a GREEN door's output in the tail that D1 says is the cause.
+# `MAKELEVEL` is the same hazard one step quieter: set, it makes the child
+# announce `Entering directory` and, worse, `Leaving directory` LAST, so the
+# bead gets a path where the door's name belongs. MEASURED 2026-11-11: this
+# script's own pin red exactly that way when the suite ran it under
+# `make test-arm2`. They are scrubbed rather than overridden, so the run is the
+# same from a launcher, a seat's shell and a Makefile recipe.
+unset MAKEFLAGS GNUMAKEFLAGS MAKELEVEL MAKEFILES MFLAGS
+
+say() { printf 'posse-landed-check: %s\n' "$*" >&2; }
+die() {
+  say "$*"
+  exit 1
+}
+
+# One choke point for every child, so the plan and the run cannot disagree
+# about what this check is. The step line goes out BEFORE the child, so on a
+# red it is the line above the tool's complaint.
+steps=0
+step() {
+  steps=$((steps + 1))
+  say "step $steps: $*"
+  if [ "$plan_only" = 1 ]; then return 0; fi
+  "$@"
+}
+
+# The goal is named in one place, because the probe makefile and the command
+# line have to agree or make builds the Makefile's default goal instead.
+probe_goal=__posse_landed_check_probe__
+
+# test_prerequisites prints the prerequisites of `test:`, one per line, in the
+# order the Makefile declares them — so the cheapest door (`fmt-check`, ~1.5s)
+# is the first thing that can red, as it is for a seat.
+#
+# The data base's `# Files` section prints one `<target>: <prerequisites>`
+# header per target with every variable expanded. The scan is fenced to that
+# section because the `# Variables` section above it prints assignments, and a
+# recipe line inside the section is TAB-indented, so neither can be read as a
+# rule header. An order-only `|` separator is dropped: those are prerequisites
+# too, and make takes them as goals exactly like the rest.
+#
+# The second colon is matched because make prints a double-colon rule as
+# `test:: <prerequisites>`, and a scan that stripped one colon would hand the
+# run a goal spelled `:`. That is a LOUD failure rather than a silent one —
+# make refuses the goal and the landing reads red — which is precisely why it
+# is worth three characters: a check that reds every landing over a Makefile
+# spelling is no better than one that passes every landing.
+test_prerequisites() {
+  printf '%s:\n\t@:\n' "$probe_goal" |
+    make -p -n -f Makefile -f - "$probe_goal" |
+    awk '
+      /^# Files$/ { files = 1; next }
+      /^# files hash-table stats/ { files = 0 }
+      /^# Finished Make data base/ { files = 0 }
+      files && /^test::?([ \t]|$)/ {
+        sub(/^test::?[ \t]*/, "")
+        n = split($0, f, /[ \t]+/)
+        for (i = 1; i <= n; i++) if (f[i] != "" && f[i] != "|") print f[i]
+      }
+    '
+}
+
+say "judging $PWD"
+[ -f Makefile ] || die "no Makefile here — cwd must be the root of the tree to judge (ADR 0088 D1)"
+
+prerequisites=$(test_prerequisites)
+[ -n "$prerequisites" ] || die "no prerequisites of \`make test\` found in this tree's Makefile — this repo's test: line has nine, so this is the derivation broken or a Makefile that did not parse, not a tree without doors; see this script's header"
+goals=$(printf '%s' "$prerequisites" | tr '\n' ' ')
+say "make test's prerequisites here: $goals"
+
+# Unquoted on purpose: one make goal per word. They run in one invocation so
+# that make dedupes the doors they share (fmt-check is a prerequisite of
+# tree-check as well), and serially with no -k, so the first red is the tail.
+# `--no-print-directory` keeps that tail the door's own complaint even where
+# something put make into directory-announcing mode past the scrub above.
+step make --no-print-directory $goals
+
+if [ "$plan_only" = 1 ]; then
+  say "plan only: $steps step, nothing run"
+  exit 0
+fi
+say "green in ${SECONDS}s: $(printf '%s\n' "$prerequisites" | wc -l | tr -d ' ') prerequisites of \`make test\` over $PWD"
