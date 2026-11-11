@@ -145,7 +145,14 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 	// plugin tree on its line, codex and grok get the session-dir symlink.
 	tree := filepath.Join(a.StateDir, "skills", "architect", "claude")
 	for _, name := range []string{"claude", "codex", "grok"} {
-		dir := gitTempDir(t)
+		// wallUngrantedDir and not gitTempDir: the shelf architect denies
+		// bare Edit/Write, so since ADR 0086 D5 (ranger-base-ctxeq) the
+		// launch WITNESSES that wall by typing it over a create in its own
+		// cwd — and `/tmp`, where gitTempDir puts one, is in every writable
+		// set this package builds. A launch there is refused, correctly: the
+		// create really lands. This dir is one no grant reaches, so the
+		// launch below is clean for the reason it always claimed to be.
+		dir := wallUngrantedDir(t)
 		if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}

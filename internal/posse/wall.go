@@ -45,6 +45,7 @@ package posse
 import (
 	"io"
 	"runtime"
+	"strconv"
 )
 
 // The mechanism names. Each is the BINARY that puts the wall up, which is
@@ -308,4 +309,33 @@ func (a *App) WallReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer) 
 		stateDirs = rt.StateDirs
 	}
 	return a.SeatbeltReport(ag, cwd, out, stateDirs...)
+}
+
+// wallApplyRefusal is "can THIS PROCESS put up the wall it is about to type",
+// for whichever mechanism realizes the tier here: "" when it was measured
+// able to, else the kernel's own words. The third of D16's three questions
+// asked about the PROCESS rather than about the host — a posse running inside
+// a caged session can type the prefix and cannot apply it, and a probe that
+// judges a wall by running it has to know which of those it just measured
+// (ADR 0013 §4, ranger-base-heur).
+//
+// Mechanism-keyed through renderWallOn's own parameter shape rather than
+// through GOOS, so the arm this host does not have is drivable from the other
+// one (wallMechanismOn, seatbeltTierAvailableOn, credentialReadDenyLiterals).
+// Both halves are memoized for the process's lifetime by their owners
+// (sandboxApplyRefusal in seatbelt.go, bwrapApplyRefusal in bwrap.go), so
+// asking is free after the first time.
+func wallApplyRefusal() string { return wallApplyRefusalOn(WallMechanism()) }
+
+func wallApplyRefusalOn(mech string) string {
+	switch mech {
+	case WallSandboxExec:
+		return sandboxApplyRefusal()
+	case WallBwrap:
+		return bwrapApplyRefusal()
+	}
+	// The same refusal RenderWall gives, as a sentence a row can print: a
+	// mechanism with no arm is a wall nothing puts up, so nothing can be
+	// measured about it either.
+	return "this build renders no wall for mechanism " + strconv.Quote(mech) + " (" + runtime.GOOS + "), so there is nothing to apply (ADR 0080 D16/D18)"
 }

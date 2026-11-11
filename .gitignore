@@ -22,3 +22,12 @@ __pycache__/
 # refused — correctly, because it must never be committed. Ignored here so
 # nobody stages it by accident and meets that refusal instead.
 /.bob/plugins/posse/
+
+# ADR 0086 D5's witness (ranger-base-ctxeq). The launch proves a whole-tree
+# write deny by trying `: > <cwd>/.posse-wall-witness.<nonce>` behind the
+# rendered wall; it removes the file if it lands, and a create the wall
+# refused never existed. A posse killed between the two leaves one in the
+# session tree — where it would show up as untracked work in the seat's own
+# `git status` and in the close gate's clean-tree check, which is a probe
+# artifact reading as a persona's output. Ignored so it cannot.
+.posse-wall-witness.*

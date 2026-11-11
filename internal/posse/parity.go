@@ -762,6 +762,13 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// concrete launch dir, not about a persona — and the dir is already in
 	// hand here (reachability.go, ranger-base-hxhb).
 	a.applyRecordReach(&p, ag, rt, dir)
+	// ADR 0086 D5: the Edit/Write rows proved by a WITNESS — the rendered
+	// wall typed over a create in this launch dir and in its git objects dir
+	// — rather than by the tier being available on this host. Directory-aware
+	// for applyRecordReach's reason, and after it deliberately: both render
+	// the same wall, and the one that can abstain BEFORE rendering goes first
+	// (wallwitness.go).
+	a.applyWallWitness(&p, ag, rt, dir)
 	// ADR 0074 D1: a container launch over a store holding a SQLite
 	// database is a gate this cage cannot realize, whatever record:
 	// reachability says about the mount — reachability judges whether the
@@ -1039,12 +1046,19 @@ func (a *App) CheckTier(ag *AgentFile, rt *Runtime, cage, tier string, allowDegr
 // (so the matrix prints back what the operator typed) and tool is the
 // Edit/Write/NotebookEdit it denies — the two differ only for ADR 0014 §1's
 // long spelling, `Edit(**)`, which is this same row and not a scoped one.
+//
+// THE SEATBELT ARM IS A CLAIM ABOUT THE HOST, and `wholeTreeSeatbeltClaim` is
+// where that is written down: the tier is available here and this runtime
+// does not cage itself, which is not the same fact as "this launch's wall
+// holds". ADR 0086 D5 proves the row by typing the wall at the launch
+// instead, and it finds this one by its Detail — so the string is a const
+// those two share (wallwitness.go) rather than a literal in each.
 func (a *App) wholeTreeWriteWall(p *Parity, gate, tool string, rt *Runtime, inner, seatbelt, container bool, enforced map[string]bool) {
 	switch {
 	case inner:
 		p.Realized[gate] = RealizedGate{Class: Enforced, Detail: "L4 mount boundary (repo mounted :ro)"}
 	case seatbelt:
-		p.Realized[gate] = RealizedGate{Class: Enforced, Detail: "L2 seatbelt"}
+		p.Realized[gate] = RealizedGate{Class: Enforced, Detail: wholeTreeSeatbeltClaim}
 	case enforced[tool]:
 		p.Realized[gate] = RealizedGate{Class: Enforced, Detail: rt.Name + " sandbox (OS-enforced)"}
 	case container:

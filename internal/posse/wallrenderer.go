@@ -146,6 +146,7 @@ var LaunchCheckSources = []string{
 	"internal/posse/runtime.go",
 	"internal/posse/skillsdirtrust.go",
 	"internal/posse/suitelock.go",
+	"internal/posse/wallwitness.go",
 }
 
 // wallCommitsShown is how many of a category's lagging commits the line

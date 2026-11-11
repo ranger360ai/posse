@@ -389,12 +389,23 @@ func wallReachProbe(w WallRender, target string) (string, error) {
 // while the last is always the diagnostic this row exists to report
 // (ranger-base-mtnzv) — the same lines-from-the-end reader errEnvelope
 // (herdr.go) already uses against a comparable ordering.
+//
+// A NIL ERROR IS A CASE, since ADR 0086 D5's witness (wallwitness.go). The
+// two rows above call this only after a probe FAILED, so the fallback could
+// dereference `err` safely; the witness is a probe that must fail, so it also
+// reads the reason off a run that exited 0 and said nothing — which is a
+// prefix that swallowed its command, the shape a stub binary in a fixture
+// has. That used to be a nil dereference on the launch path, so the fallback
+// says it instead of crashing a parity read over a successful exec.
 func reachProbeReason(out string, err error) string {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		if s := strings.TrimSpace(lines[i]); s != "" {
 			return s
 		}
+	}
+	if err == nil {
+		return "it printed nothing and exited 0"
 	}
 	return err.Error()
 }

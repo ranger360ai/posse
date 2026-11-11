@@ -151,6 +151,31 @@ same under the session's git objects dir (D3). Both must fail.
   not measured. A create is what the deny forbids, on both mechanisms.
 - What a witness cannot see: a write the wall allows somewhere it does not
   probe. D3's list is the complete statement of where it allows writes.
+- **As built (ranger-base-ctxeq, `docs/notes.d/ranger-base-ctxeq.md`).** One
+  door, `applyWallWitness` (`internal/posse/wallwitness.go`), called from
+  `checkParityIn` beside `applyRecordReach`; it finds its rows by the Detail
+  `wholeTreeWriteWall` writes, a const the two share, rather than re-reading
+  the deny list. What the build added to the decision is that **this is the
+  first probe in the package that passes when a command FAILS**, so one
+  create is not a measurement: anything that stops the create from being
+  attempted — a stub binary that swallows its argv, a namespace the kernel
+  refused, a target that is not there — reads as the wall holding. Three
+  readings make it one: a BASELINE create by posse outside the wall (a path
+  this process cannot write says nothing about a wall), a MARKER echoed
+  inside it (a run that printed none never reached the shell behind the
+  prefix), and the FILE rather than the exit code as the verdict. Each of
+  those is NOT WITNESSED and never a pass, which is `recordReachUnmeasured`'s
+  rule one file over. The cost is MEASURED below. One defect was found on the
+  way: `reachProbeReason` dereferenced a nil error for a probe that exited 0
+  and printed nothing, which its two existing callers could not reach and
+  this one reaches by construction.
+  And the first thing the witness did was audit the suite: THREE existing
+  pins, one per arm, launched a whole-tree-deny PID at this tier in
+  a `/tmp` fixture — where `SeatbeltWritable` grants the tree read-write to
+  everybody — and all three were refused, correctly. Their launch dirs moved
+  outside every blanket temp grant. That is this record's own caveat about
+  its "move main" row, found three more times by a probe rather than by a
+  reader.
 
 **D6. The fixture-git lesson (ranger-base-xa2e3, and ppnds finding 3).**
 R0 escaped because no pin ever drove a whole-tree-deny PID in a linked
@@ -281,8 +306,11 @@ L2 grant (the build bead).
 - On darwin, D3 also narrows hoover's seatbelt profile: no commit objects,
   no ref writes. If a whole-tree-deny PID ever needs to commit, it does not
   have a whole-tree deny. Its deny list is the place to say so.
-- D5 adds one exec under the wall to each such launch. Its cost is ASSUMED
-  to be milliseconds. The build reads it.
+- D5 adds TWO execs under the wall to each such launch — cwd and the git
+  objects dir — plus a second render of the same wall and one `git
+  rev-parse`. MEASURED at ~22ms per launch (the table below); the "one exec,
+  ASSUMED to be milliseconds" this line used to carry was both counts short
+  and the right order of magnitude.
 - Exit hatch: D2 is one decline rule inside one resolver, and removing it
   returns ADR 0083 D7's refusal. D3 is one branch in `SeatbeltWritable`.
   D5 is one row. Nothing holds state.
@@ -319,11 +347,20 @@ L2 grant (the build bead).
   `refs/heads/main` for a whole-tree-deny PID; the launch, parity and
   dispatch doors reading the map through one function today
   (`RealizeCage`).
+- MEASURED 2026-11-11, D1 host, load 5.44 (ranger-base-ctxeq): D5's cost,
+  25 iterations each over the real `bwrap`, a real linked worktree outside
+  every blanket temp grant, through the production render —
+  `applyWallWitness` end to end 20.047/21.934/26.356ms (min/median/max), of
+  which `RenderWall` is 10.579ms, the two witness execs 9.546ms together,
+  and `wallWitnessTargets`' `rev-parse` 1.264ms. The same wall is rendered
+  by `applyRecordReach` and by the launch line, so a launch for such a PID
+  renders it up to three times; the render is idempotent and threading one
+  `WallRender` through `checkParityIn` is the ~10ms that is left on the
+  table. The darwin reading is unmeasured.
 - ASSUMED:
   - a full `make test` under hoover's wall. Only `tree-check` and focused
     runs were measured. Three suite slots on a box at load 40 were not
     worth spending on a seat whose intents are audits;
-  - D5's cost;
   - that `access(2)` is not a reliable witness under seatbelt, which is
     why D5 uses a create;
   - a real claude turn under the wall. ADR 0080's probe T1 measured the

@@ -131,3 +131,47 @@ func wallMechanismForTest(t *testing.T, goos string) {
 	wallMechanismHost = goos
 	t.Cleanup(func() { wallMechanismHost = had })
 }
+
+// wallUngrantedDir is a directory NO L2 wall grants — the precondition of
+// every test whose subject is a wall REFUSING a write, and the one thing a
+// fixture under `t.TempDir()` cannot be.
+//
+// `SeatbeltWritable` adds TMPDIR and `/tmp` unconditionally, and
+// `/private/tmp` on darwin (seatbelt.go), so a fixture inside any of them is
+// writable under the wall for a reason that has nothing to do with the PID's
+// rule. ADR 0086's own measurement is the cautionary tale: a code seat
+// rendered its wall over a scratch repo under `/tmp` and its "move main" row
+// measured nothing.
+//
+// `/var/tmp` AND NOT sbRoot, which says the same thing for the sandbox pins
+// and SKIPS wherever TMPDIR resolves under `/tmp` — every Linux box,
+// including the only host ADR 0086's defect was reachable on. `/var/tmp` is
+// granted by nothing on either host: `/tmp` and `/private/tmp` are different
+// directories. The grant list is checked against the answer rather than
+// assumed, because a box that symlinked `/var/tmp` into `/tmp` would hand
+// every caller a granted root and every refusal would be measuring the other
+// fixture.
+//
+// os.MkdirTemp with a tolerant removal and not t.TempDir(): callers `git
+// init` in here, and the cleanup of such a root has to tolerate a concurrent
+// writer (commitwall_qa_test.go, held by
+// TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot).
+func wallUngrantedDir(t *testing.T) string {
+	t.Helper()
+	const base = "/var/tmp"
+	if st, err := os.Stat(base); err != nil || !st.IsDir() {
+		t.Skip("NOTHING MEASURED: no " + base + " on this host, so there is no fixture root outside every blanket temp grant")
+	}
+	d, err := os.MkdirTemp(base, "posse-ungranted-")
+	if err != nil {
+		t.Skip("NOTHING MEASURED: cannot make a fixture root under " + base + ": " + err.Error())
+	}
+	t.Cleanup(func() { removeAllTolerant(t, d) })
+	d = absResolve(d)
+	for _, g := range []string{"/tmp", "/private/tmp", os.Getenv("TMPDIR")} {
+		if g != "" && underDir(g, d) {
+			t.Skip("NOTHING MEASURED: the fixture root " + d + " lies under " + g + ", which the writable set grants unconditionally")
+		}
+	}
+	return d
+}

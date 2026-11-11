@@ -309,6 +309,15 @@ func TestQABwrapAnAbsoluteWritableFileIsStillB8sRefusal(t *testing.T) {
 // incident was is a LAUNCH leaving a store behind for the next reader of the
 // same tree — and the second half of the assertion is exactly that reader:
 // ADR 0013 §4's row, asked after the launch, in the same directory.
+//
+// THE LAUNCH DIR SITS OUTSIDE THE BLANKET TEMP GRANT since ADR 0086 D5
+// (ranger-base-ctxeq). This PID denies Edit and Write, and the launch now
+// witnesses that wall by typing it over a create in its own cwd — so a cwd
+// under `/tmp`, which `SeatbeltWritable` grants read-write to everybody, is a
+// tree this launch is REFUSED in, and refused correctly: the bwrap here is
+// the real binary (bwlStubBin only pins its path), so the create really
+// lands. wallUngrantedDir is a cwd no grant reaches, which is what this
+// fixture meant by "a tree with no store of record" all along.
 func TestQABwrapLaunchDoesNotMaterializeTheStoreOfRecord(t *testing.T) {
 	wallMechanismForTest(t, "linux")
 	bwlStubBin(t, "/usr/bin/bwrap")
@@ -342,7 +351,7 @@ func TestQABwrapLaunchDoesNotMaterializeTheStoreOfRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repo := t.TempDir()
+	repo := wallUngrantedDir(t)
 	store := filepath.Join(absResolve(repo), beadsDirName)
 	ag, err := a.LoadAgent("ranger")
 	if err != nil {

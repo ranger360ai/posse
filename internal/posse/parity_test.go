@@ -257,7 +257,15 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 		[]byte("---\nname: security\ncage: seatbelt\ndeny: [Edit, Write, Bash(git push:*)]\nwritable: [scratch, /opt/shared]\n---\nYou are security.\n"), 0o644)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\ncage: seatbelt\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
-	repo := t.TempDir()
+	// wallUngrantedDir and not t.TempDir(): this fixture LAUNCHES the
+	// security PID at cage seatbelt further down, and since ADR 0086 D5
+	// (ranger-base-ctxeq) that launch witnesses its own wall by typing it
+	// over a create in this very directory. `/tmp` is in every writable set
+	// this package builds, on both mechanisms, so a launch there is refused
+	// — correctly, because the create really lands. A dir no grant reaches
+	// is what "the repo itself is read-only" meant all along, and it is the
+	// same dir the SBPL assertions above read.
+	repo := wallUngrantedDir(t)
 	security, _ := b.App.LoadAgent("security")
 	dev, _ := b.App.LoadAgent("dev")
 	gates := b.App.GatesDir("security")
