@@ -924,3 +924,81 @@ func TestAuditResolvesTheToplevelByStatus(t *testing.T) {
 			"applies", script)
 	}
 }
+
+// --- ranger-base-b27pn: --self-test gives its scratch dirs back -------------
+//
+// Every fixture here is a throwaway git repo, and the script made each one
+// with a bare `mktemp -d` and removed none of them: no trap, no rm. One run
+// left 17 top-level dirs and 697 inodes behind (MEASURED 2026-11-11, linux).
+//
+// That is this file's bill, not the script's. `go test` does NOT redirect a
+// test binary's TMPDIR, so the script's children land in the OUTER one — the
+// real /tmp — and the pins above run --self-test 19 times per arm-2 run: 313
+// top-level entries and 12205 inodes left behind per `go test -count=1 -tags
+// posse_arm2 ./internal/posse`, 310 of the entries this script's. A census of
+// /tmp on this box (ranger-base-vw1cp, which went looking for a different
+// leak) found 974889 inodes in 24679 such dirs — 94% of a tmpfs mounted
+// nr_inodes=1048576, in exactly the three shapes this script plants, and a
+// full inode table stops every seat's suite with writes that simply fail.
+//
+// Two arms, because "the dir is empty afterwards" over fixtures that were
+// never planted there is the absence-without-a-witness class this file already
+// carries two pins for (ranger-base-z4vx). The wrong arm removes the trap and
+// requires the leak back: that is what says the fixtures really do land in the
+// TMPDIR this pin reads, and that the clean reading above is the trap's doing.
+
+// srAuditInTmpdir runs the audit with cwd=dir and TMPDIR=tmp, and returns its
+// output, its exit code and the number of top-level entries left in tmp.
+func srAuditInTmpdir(t *testing.T, script, dir, tmp string, args ...string) (string, int, int) {
+	t.Helper()
+	cmd := exec.Command(script, args...)
+	cmd.Dir = dir
+	// TMPDIR last: srEnv carries the caller's, and the last assignment wins.
+	cmd.Env = append(srEnv(), "TMPDIR="+tmp)
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("run %s: %v\n%s", script, err, out)
+	}
+	left, rerr := os.ReadDir(tmp)
+	if rerr != nil {
+		t.Fatalf("read %s: %v", tmp, rerr)
+	}
+	return string(out), code, len(left)
+}
+
+func TestAuditSelfTestLeavesNoTempDirs(t *testing.T) {
+	t.Parallel()
+	script := srScript(t)
+
+	// The wrong arm first. Without the EXIT trap the same run must leave the
+	// dirs behind — so a clean reading below is cleanup and not a fixture that
+	// went somewhere this pin cannot see.
+	mutant, dir := srMutateScript(t,
+		`  trap 'rm -rf "${SR_TMPROOT:?}"' EXIT`,
+		`  : # ranger-base-b27pn: the trap this pin exists for, removed`)
+	tmp := t.TempDir()
+	out, code, left := srAuditInTmpdir(t, mutant, dir, tmp, "--self-test")
+	if code != 0 {
+		t.Fatalf("the untrapped mutant did not even pass its own arms: exit %d\n%s", code, out)
+	}
+	if left == 0 {
+		t.Fatalf("--self-test with its cleanup trap REMOVED left nothing in TMPDIR, so this "+
+			"pin cannot see where the fixtures go and the arm below measures nothing:\n%s", out)
+	}
+
+	// The arm itself.
+	tmp = t.TempDir()
+	out, code, left = srAuditInTmpdir(t, script, dir, tmp, "--self-test")
+	if code != 0 {
+		t.Fatalf("--self-test exited %d:\n%s", code, out)
+	}
+	if left != 0 {
+		t.Fatalf("--self-test left %d entr(ies) in TMPDIR; every fixture dir belongs to one "+
+			"scratch root an EXIT trap removes (ranger-base-b27pn), and a bare `mktemp -d` "+
+			"anywhere in this script leaks into the real /tmp on every one of the 19 runs "+
+			"this file makes per arm-2 run:\n%s", left, out)
+	}
+}

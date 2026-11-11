@@ -235,8 +235,23 @@ ALLOW=scripts/silent-reverts.allow
 # is the one the unqualified spelling would have made, and the fixture says so
 # rather than asking to be believed.
 
+# sr_tmpdir — one throwaway dir UNDER the self-test's single scratch root, so
+# the EXIT trap self_test() installs gives all of them back. Every fixture dir
+# below goes through this and none calls `mktemp -d` on its own: a bare one
+# lands in the caller's TMPDIR and stays there, and `go test` does not redirect
+# a test binary's TMPDIR, so the arm-2 pins that run this file's --self-test 19
+# times were leaking 310 dirs and 12205 inodes of the REAL /tmp per arm-2 run —
+# 94% of every inode that run spends, never given back, and 94% of a tmpfs
+# inode table by the time somebody counted (ranger-base-b27pn; the census that
+# found it is ranger-base-vw1cp's).
+sr_tmpdir() {
+  [ -n "${SR_TMPROOT:-}" ] || {
+    echo "sr_tmpdir: no scratch root — self_test() did not run first" >&2; return 2; }
+  mktemp -d "$SR_TMPROOT/XXXXXX"
+}
+
 plant_repo() {
-  local r; r=$(mktemp -d)/r; mkdir -p "$r"; cd "$r" || return 2
+  local r; r=$(sr_tmpdir)/r || return 2; mkdir -p "$r"; cd "$r" || return 2
   git init -q .; git config user.email t@t; git config user.name t
   printf 'v1\n' > fix.go; printf 'o\n' > other.txt
   env -u RHQ_PERSONA git add -- fix.go other.txt
@@ -248,7 +263,7 @@ plant_modify() {
   local stale
   plant_repo || return 2
   printf 'v2-THE-FIX\n' > fix.go
-  ( export GIT_INDEX_FILE="$(mktemp -d)/index"
+  ( export GIT_INDEX_FILE="$(sr_tmpdir)/index"
     env -u RHQ_PERSONA git read-tree HEAD
     env -u RHQ_PERSONA git add -- fix.go
     env -u RHQ_PERSONA git commit -qm "the fix" -- fix.go )
@@ -273,7 +288,7 @@ plant_addonly() {
   local stale
   plant_repo || return 2
   printf 'package x // the regression pin\n' > newpin_test.go
-  ( export GIT_INDEX_FILE="$(mktemp -d)/index"
+  ( export GIT_INDEX_FILE="$(sr_tmpdir)/index"
     env -u RHQ_PERSONA git read-tree HEAD
     env -u RHQ_PERSONA git add -- newpin_test.go
     env -u RHQ_PERSONA git commit -qm "the fix: add newpin_test.go" -- newpin_test.go )
@@ -387,7 +402,7 @@ plant_reland() {
 # 6 and 12 characters is still scientific notation with an exponent that
 # overflows a double. At 40 hex they are plainly unequal; at 7 they are not.
 plant_numeric() {
-  local r; r=$(mktemp -d)/r; mkdir -p "$r"; cd "$r" || return 2
+  local r; r=$(sr_tmpdir)/r || return 2; mkdir -p "$r"; cd "$r" || return 2
   git init -q .; git config user.email t@t; git config user.name t
   printf 'numeric-shaped blob 1059\n' > n.txt; printf 'o\n' > other.txt
   env -u RHQ_PERSONA git add -- n.txt other.txt
@@ -582,7 +597,16 @@ self_test() {
   # ABSENCE, and an absence is exactly what a fixture that was never built
   # hands it. A control that only counts absences needs a positive witness
   # that it looked at something; scan()'s own SCANNED line is that witness.
-  local rc=0 prc n out scanned shape d fdir nonhex an want arc; d=$(mktemp -d)
+  local rc=0 prc n out scanned shape d fdir nonhex an want arc
+  # SR_TMPROOT is deliberately NOT local: the EXIT trap that removes it runs in
+  # global scope, where a function-local name is unset and `set -u` aborts.
+  # It is created HERE, before anything plants, and every fixture dir is a
+  # child of it (sr_tmpdir) — one trap gives back all 17 dirs and 697 inodes a
+  # run used to leave behind. The arms print their diagnostics inline, so
+  # nothing reads these trees after the fact; a failing arm keeps nothing.
+  SR_TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/posse-audit-silent-reverts.XXXXXX") || return 2
+  trap 'rm -rf "${SR_TMPROOT:?}"' EXIT
+  d=$(sr_tmpdir) || return 2
   for shape in modify addonly move numeric renameedit delplusadd reland; do
     ( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" )
     prc=$?

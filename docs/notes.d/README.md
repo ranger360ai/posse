@@ -27,6 +27,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-ej47m](ranger-base-ej47m.md) — The land check at the replay site: four judgment calls ADR 0087 left open (ranger-base-ej47m) — 2026-11-11
 - [ranger-base-dfgte](ranger-base-dfgte.md) — ranger-base-dfgte — one resolver for the cage map, and the mapping it declines — 2026-11-11
 - [ranger-base-ctxeq](ranger-base-ctxeq.md) — ranger-base-ctxeq — witnessing the Edit/Write wall at the launch, and what a negative probe costs to believe — 2026-11-11
+- [ranger-base-b27pn](ranger-base-b27pn.md) — The self-test that filled the inode table, and the trap that was one line (ranger-base-b27pn) — 2026-11-11
 - [ranger-base-akk9f](ranger-base-akk9f.md) — The disk explainer knew one errno, and this box writes the other (ranger-base-akk9f) — 2026-11-11
 - [ranger-base-aifu2](ranger-base-aifu2.md) — Four closes verified, and the half of a rule its own close argued for (ranger-base-aifu2) — 2026-11-11
 - [ranger-base-6rr2e](ranger-base-6rr2e.md) — The same class one node over: a git CHILD bound by a declaration (ranger-base-6rr2e) — 2026-11-11
