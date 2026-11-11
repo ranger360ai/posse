@@ -115,6 +115,20 @@ var pcExemptFuncs = map[string]string{
 		"forked by RunCageLaunch above and re-exec'ing THIS binary by the path " +
 		"os.Executable named — an absolute path, so there is no name for a shim " +
 		"to answer to. Same process and same reason as the row above.",
+	"cmd/coldexec/door_linux.go:supervise": "the cold-first-exec door's " +
+		"supervisor (ADR 0085 D2/D6, ranger-base-97w45), which is a SEAT's " +
+		"command: `make coldexec-check`, typed by a person or by a bead that " +
+		"added a planted fixture. No launcher and no dispatch reaches it, and " +
+		"nothing in internal/posse refers to it. Its child is os.Executable's " +
+		"absolute path — this binary re-exec'd as its own supervised child — so " +
+		"there is no name for a shim to answer to, the same reason as the row " +
+		"above. And the PATH it hands on is the SUBJECT rather than an " +
+		"accident: the door's one job is to run the command line it was given " +
+		"in the environment it was given, minus the one variable it consumes, " +
+		"and internal/posse's suite runs with a gates dir leading PATH on " +
+		"purpose — the gated-bd arms assert what posse does there. A door that " +
+		"resolved its child outside the gates would be injecting its cost into " +
+		"a different suite than the one a seat runs.",
 }
 
 // pcEnvBinders are the functions that put ADR 0077 D3's PATH onto a child's

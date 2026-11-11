@@ -16,6 +16,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-l0bep](ranger-base-l0bep.md) — ranger-base-l0bep — the fixture-git census reads the BINARY one hop too — 2026-11-10
 - [ranger-base-k0hd6](ranger-base-k0hd6.md) — The dispatch path holds a Seat now, not a pane (ranger-base-k0hd6) — 2026-11-10
 - [ranger-base-ffojl](ranger-base-ffojl.md) — ranger-base-ffojl — `exec.LookPath("git")` is the bare name, not an escape from it — 2026-11-10
+- [ranger-base-97w45](ranger-base-97w45.md) — The execve supervisor, as built, and the eight things ADR 0085 left to the build (ranger-base-97w45) — 2026-11-10
 - [ranger-base-ybz6u](ranger-base-ybz6u.md) — `seatbelt (bwrap)` is a label and not a mapping, and the rest of this bead landed twice (ranger-base-ybz6u) — 2026-11-09
 - [ranger-base-x475y](ranger-base-x475y.md) — The stall verdict's work reading reads the tree too (ranger-base-x475y) — 2026-11-09
 - [ranger-base-uxadf](ranger-base-uxadf.md) — The hash spelling, as a census rather than a word ban (ranger-base-uxadf) — 2026-11-09

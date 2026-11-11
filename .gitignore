@@ -3,6 +3,10 @@
 .claude/settings.local.json
 .beads/interactions.jsonl
 /bin/posse-release
+# The cold-first-exec door's supervisor, built by `make coldexec-check`
+# (ADR 0085 D6). Built rather than `go run` because go run reports every
+# nonzero exit as 1, and this door's exit codes are its vocabulary.
+/bin/coldexec
 /dist/
 .beads/
 

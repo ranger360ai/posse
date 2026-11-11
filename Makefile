@@ -1059,12 +1059,37 @@ treepins:
 # nothing — MEASURED 2026-11-10 on this host, n=40, first exec mean 1.07ms and
 # worst 1.29ms — so an unwarmed fixture written here passes where it is written
 # and flakes on ci.yml's macos-latest leg and on the laptop, where nobody is
-# watching. The injector (internal/posse/coldexec_test.go) puts the darwin cost
-# back on this box, deterministically, with the fatal the test already prints.
+# watching. The supervisor (cmd/coldexec) puts the darwin cost back on this
+# box, deterministically, with the fatal the test already prints.
+#
+# HOW, and it is a PROCESS and not a seam in the tree (ADR 0085 D2/D3, amended
+# under ranger-base-dacil). Each arm's command line below runs inside
+# cmd/coldexec, which installs a seccomp filter answering USER_NOTIF for
+# execve and execveat, hands the listener up to itself, and holds the FIRST
+# execve of every inode whose ctime is later than its own start — for every
+# process underneath it, at any depth: the test binary, the `sh` it starts,
+# the `git` that runs a hook. The file's bytes are never touched, so `$$0`,
+# line numbers, the shebang, a hook's identity, a shim's header and a copied
+# binary all reach the reader exactly as the test wrote them. The door this
+# replaced rewrote the `#!` line instead, which 26 tests could see — 23 of
+# them certifying a git hook against posse's own render — and which could not
+# reach a plant with no `#!` at all, 49% of them (ranger-base-kiwvn). The
+# content rewrite still exists in internal/posse and is no longer reached from
+# here; ranger-base-7zkxw retires it. POSSE_COLD_EXEC_DELAY reaches the
+# supervisor ALONE, which is what keeps the two doors from both running.
 #
 # D, the injected delay, is above darwin's measured worst case: a deadline that
 # survives 2.5s of cold exec survives darwin. COLDEXEC_DELAY changes it, and it
 # is one constant in one place.
+#
+# IT REFUSES rather than running a suite uncovered: an architecture its filter
+# does not name, a kernel with no user notification, a struct the kernel lays
+# out differently, or a seccomp listener already installed above it (EBUSY —
+# the kernel allows one per filter chain, so a coldexec inside a coldexec
+# fails here and does not run the command). Exit 2 is that refusal and exit 3
+# is a run that delayed NOTHING, which is a failed door and not a clean suite;
+# anything else is the suite's own code. That is why the supervisor is BUILT
+# here rather than `go run`: `go run` reports every nonzero exit as 1.
 #
 # RUN=<regex> is the form a bead types. A bead that adds a planted fixture
 # checks only its own tests, which takes seconds instead of three arms; `-v`
@@ -1090,10 +1115,15 @@ treepins:
 COLDEXEC_DELAY ?= 2.5s
 COLDEXEC_RUN   := $(if $(RUN),-run '$(RUN)' -v,)
 
-coldexec-check:
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 25m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
+COLDEXEC_BIN   := bin/coldexec
+
+$(COLDEXEC_BIN): $(wildcard cmd/coldexec/*.go)
+	$(GOBIN) build -o $@ ./cmd/coldexec
+
+coldexec-check: $(COLDEXEC_BIN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 25m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink
