@@ -322,6 +322,15 @@ type SeatbeltCarveOut struct {
 	DenyRead []string // literal files no session may file-read*, whatever grants it
 	DenyFile []string // the Deny entries their producer means as FILES (see above)
 	Seed     []string // the DenyFile entries the launcher creates when absent (see Seeded)
+	// Hide is the directories a seat sees EMPTY, whatever is in them on the
+	// host: the user runtime dir and nothing else today (bwrapRuntimeDirs,
+	// ranger-base-ludpp). Like Seed, the bwrap mechanism needs it and
+	// seatbelt has no spelling for it — a mount namespace can put an empty
+	// tmpfs over a directory, an SBPL path rule cannot stop a connect(2) on
+	// a socket the profile can read. Filled by bwrapRender only, so the
+	// seatbelt profile never sees it; the darwin side of the same question
+	// is its own bead.
+	Hide []string
 }
 
 // Seeded reports whether a file-shaped Deny entry is one the launcher may

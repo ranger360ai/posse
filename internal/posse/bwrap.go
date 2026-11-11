@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -263,9 +264,52 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 	}
 	var prep []PrepStep
 
+	// 1b. The host's control endpoints (ranger-base-ludpp). `--ro-bind / /`
+	// stops writes and NOT connect(2) on a socket or a write-open of a FIFO:
+	// the kernel's read-only check covers neither. The user runtime dir is
+	// where a desktop session keeps exactly those, and several of them act
+	// OUTSIDE the cage on a connection's say-so — the session bus and the
+	// user service manager, the multiplexer's server, the gpg and ssh
+	// agents, the secret store, other seats' sockets.
+	//
+	// AN ALLOWLIST, NOT A DENYLIST: an empty tmpfs over the whole directory,
+	// so an endpoint a host grows next month is hidden without anyone
+	// naming it. What a seat needs back is re-bound by a write grant below,
+	// which mounts later and so lands on top — and today that is nothing
+	// (MEASURED, ranger-base-ludpp: the rex reporter writes to /dev/tty, and
+	// claude's own messaging socket could never be created under the
+	// read-only base anyway; on the tmpfs it can, privately).
+	//
+	// The three variables go with it, because an address can name an
+	// endpoint OUTSIDE the hidden dir (an abstract socket, an agent socket
+	// under /tmp), and a seat has no use for any of them.
+	for _, k := range bwrapUnsetEnv {
+		argv = append(argv, "--unsetenv", k)
+	}
+	hidden := shallowestFirst(carve.Hide)
+	for _, h := range hidden {
+		exists, dir, err := bwrapStat(h)
+		if err != nil {
+			return nil, nil, bwrapStatRefusal("hide", h, err)
+		}
+		switch {
+		case !exists:
+			continue // nothing there to reach
+		case !dir:
+			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-ludpp)", h)
+		}
+		argv = append(argv, "--tmpfs", h)
+	}
+
 	// 2. Shape 1: the write grants, shallowest first so a nested grant's
 	// mount lands on top of the one that contains it.
 	grants := shallowestFirst(writable)
+	// reopens answers whether a later mount of p would bind a HOST path back
+	// into a hidden directory that no write grant re-opened. A deny or a mask
+	// is a `--ro-bind` from the host, and a read-only bind of a socket is
+	// still a socket a seat can connect to — so inside a hidden directory
+	// the tmpfs is already the stronger statement and the mount is skipped.
+	reopens := func(p string) bool { return writeGranted(hidden, p) && !writeGranted(grants, p) }
 	for _, p := range grants {
 		exists, dir, err := bwrapStat(p)
 		if err != nil {
@@ -365,6 +409,9 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 	// B6b MEASURED that a nested user namespace can neither unmount the
 	// read-only bind nor remount it rw.
 	for _, d := range shallowestFirst(carve.Deny) {
+		if reopens(d) {
+			continue // hidden already, and the tmpfs is the stronger statement
+		}
 		exists, _, err := bwrapStat(d)
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("deny", d, err)
@@ -484,6 +531,9 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 	// append to a bound file is an in-place write, which is the one thing
 	// B8 does not touch (B8 is a rename).
 	for _, f := range shallowestFirst(carve.Keep) {
+		if reopens(f) {
+			continue // its deny was skipped above, and a re-allow would bind the host file back in
+		}
 		exists, dir, err := bwrapStat(f)
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("keep", f, err)
@@ -548,6 +598,71 @@ func bwrapStat(p string) (exists, dir bool, err error) {
 		return false, false, nil
 	}
 	return false, false, err
+}
+
+// bwrapUnsetEnv is what the render takes out of a seat's environment
+// (ranger-base-ludpp): the session bus address and the two agent addresses.
+// Each names an endpoint that acts outside the cage, and an address can sit
+// outside the runtime dir the render hides — so hiding the directory is not
+// enough by itself. Unsetting a variable that is not set is a no-op in bwrap,
+// so the list is rendered unconditionally and the argv does not depend on
+// the launcher's own environment.
+var bwrapUnsetEnv = []string{"DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "GPG_AGENT_INFO"}
+
+// bwrapRuntimeDirs is the carve-out's Hide list: the user runtime dir, found
+// the two ways a host names it, resolved, and only where it is a directory
+// that is there (ranger-base-ludpp).
+//
+// BOTH SPELLINGS, not one. $XDG_RUNTIME_DIR is the one the desktop session
+// exports and the one a seat's programs read, so it is the one that matters
+// when it is set. The launcher is not always started from that session — a
+// dispatch loop or a cron line may carry no XDG variable at all — and the
+// endpoints are in /run/user/<uid> regardless, so that path is hidden too.
+// On a normal host the two resolve to one directory and render one mount.
+//
+// REFUSED, NOT SKIPPED, when the answer would hide something a seat cannot
+// run without: a relative value (the spec calls it invalid, and a renderer
+// that guessed what it meant would be guessing where the wall goes), `/` or
+// a top-level directory, or any directory holding the home. An empty tmpfs
+// over those is not a narrower wall, it is a seat with no tree — and a
+// launch that fails naming the variable beats one that comes up blind.
+func bwrapRuntimeDirs(xdg string, uid int, home string) ([]string, error) {
+	cands := []string{filepath.Join("/run/user", strconv.Itoa(uid))}
+	if xdg != "" {
+		if !filepath.IsAbs(xdg) {
+			return nil, Die("bwrap cannot hide XDG_RUNTIME_DIR=%q: it is not an absolute path (the XDG spec calls such a value invalid), and the wall will not guess which directory it meant (ranger-base-ludpp)", xdg)
+		}
+		cands = append([]string{xdg}, cands...)
+	}
+	var out []string
+	for _, c := range cands {
+		r := absResolve(c)
+		exists, dir, err := bwrapStat(r)
+		if err != nil {
+			return nil, bwrapStatRefusal("runtime dir", r, err)
+		}
+		if !exists {
+			continue
+		}
+		if !dir {
+			return nil, Die("bwrap cannot hide the runtime dir %s: it is not a directory (ranger-base-ludpp)", r)
+		}
+		if strings.Count(filepath.Clean(r), string(filepath.Separator)) < 2 {
+			return nil, Die("bwrap will not hide the runtime dir %s: an empty tmpfs over / or a top-level directory leaves a seat with no tree. Point XDG_RUNTIME_DIR at a directory of its own (ranger-base-ludpp)", r)
+		}
+		if home != "" && underDir(r, absResolve(home)) {
+			return nil, Die("bwrap will not hide the runtime dir %s: it holds the home %s, and an empty tmpfs over it leaves a seat with no home. Point XDG_RUNTIME_DIR at a directory of its own (ranger-base-ludpp)", r, home)
+		}
+		out = append(out, r)
+	}
+	return dedupeStrings(out), nil
+}
+
+// liveBwrapRuntimeDirs is bwrapRuntimeDirs with this process's answers — the
+// launcher's, which is the seat's: one OS account (ADR 0080 D1).
+func liveBwrapRuntimeDirs() ([]string, error) {
+	home, _ := os.UserHomeDir()
+	return bwrapRuntimeDirs(os.Getenv("XDG_RUNTIME_DIR"), os.Getuid(), home)
 }
 
 // bwrapStatRefusal is that refusal, naming the shape as well as the path: a
@@ -1357,6 +1472,11 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	}
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	r := bwrapRendered{Carve: a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)}
+	// The runtime dir's control endpoints (ranger-base-ludpp). Here and not
+	// in SeatbeltCarveOut, because seatbelt has no spelling for it.
+	if r.Carve.Hide, err = liveBwrapRuntimeDirs(); err != nil {
+		return bwrapRendered{}, err
+	}
 	r.Set, r.Keep = BwrapWritable(ag, writable, cwd)
 	// D23, after D20's substitution and before the render: what is left of
 	// the set is what posse will bind, and a no-create grant that is not

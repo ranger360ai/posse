@@ -1532,3 +1532,70 @@ ignored, because no decision reads them.
 
 **Beads.** ranger-base-r2fz9 (this). The code slice is the one cut from this
 bead for dinesh: the pin message and the seatbelt.go comment.
+
+## Amendment: the bwrap wall hides the user runtime dir (ranger-base-ludpp, 2026-11-11)
+
+**Context.** D17's base is `--ro-bind / /` with no network namespace. A
+read-only mount stops writes. It does not stop connect(2) on a unix socket,
+and it does not stop a write-open of a FIFO: the kernel's read-only check
+covers neither. The user runtime dir (`$XDG_RUNTIME_DIR`, normally
+`/run/user/<uid>`) is where a desktop session keeps exactly those endpoints.
+Several of them act outside the cage when a client connects: the session
+bus and the user service manager, the multiplexer's server, the gpg and ssh
+agents, the secret store, and other seats' sockets. ranger-base-x9f3s
+measured all of them reachable from a live seat. That bead holds the census.
+
+**Decision.**
+1. **An empty tmpfs over the runtime dir**, rendered right after the base
+   and before every write grant. It is an allowlist, not a denylist: an
+   endpoint the host adds later is hidden without anyone naming it. A seat
+   gets something back only through a write grant, which mounts later and
+   so lands on top of the tmpfs. Today nothing is granted back. MEASURED for
+   this bead: the Rex reporter writes its OSC 7501 records to `/dev/tty` and
+   opens no socket. Claude's own messaging socket under `cc-socks/` could
+   never be created under the read-only base. On the tmpfs it can be, and it
+   stays private to the seat.
+2. **Both spellings are hidden.** `$XDG_RUNTIME_DIR` is the one the seat's
+   programs read. `/run/user/<uid>` is hidden as well, because a launcher
+   started outside the desktop session may carry no XDG variable at all.
+   Both are resolved, and on a normal host they render as one mount. The
+   producer is `bwrapRuntimeDirs`. It fills `SeatbeltCarveOut.Hide`, a field
+   only `bwrapRender` sets, the same way `Seed` is bwrap-only. It refuses a
+   relative value, `/`, a top-level directory, or a directory that holds the
+   home. An empty tmpfs over any of those leaves a seat with no tree.
+3. **A deny or Keep inside a hidden dir that no grant re-opened renders no
+   mount.** Both are binds from the host, and a read-only bind of a socket is
+   still a socket a seat can connect to.
+4. **`--unsetenv DBUS_SESSION_BUS_ADDRESS SSH_AUTH_SOCK GPG_AGENT_INFO`**,
+   unconditionally. An address can name an endpoint outside the hidden dir,
+   such as an abstract socket or an agent socket under `/tmp`.
+
+D17 item 1 now reads: base, then the unsets, then `--tmpfs` for each hidden
+dir, then the grants.
+
+**Residuals, stated rather than closed.**
+- **Abstract unix sockets** are not files, so a tmpfs cannot hide them. Only
+  `--unshare-net` closes them, and D17 rejected that flag because egress
+  belongs to the container tier. ranger-base-x9f3s found no listening
+  abstract socket reachable on the D1 host. That is a census of one host on
+  one date, not a guarantee.
+- **System-scope sockets** (`/run/systemd/*`, `/run/<daemon>`) give a seat
+  the rights the user already has outside the cage. They are out of scope
+  here.
+- **The multiplexer socket under `/tmp`** stays reachable, as D17's
+  Alternatives require.
+- **Darwin.** The seatbelt profile is `(allow default)` with only file writes
+  denied, so unix-socket connects and launchd lookups are not walled. Closing
+  that needs the darwin box. It is its own bead.
+
+**Measured.** 2026-11-11, D1 host, bubblewrap 0.13.1, Linux 7.2.15.
+Connect-only probes, nothing sent. Under the old base, `bus`,
+`systemd/private`, `rex/server.sock`, `gnupg/S.gpg-agent.ssh` and
+`keyring/control` all connected, the uwsm FIFO was present, and
+`DBUS_SESSION_BUS_ADDRESS` reached the seat. Under the new base the runtime
+dir is empty and the variable is unset. The pins are in
+`internal/posse/bwraphide_qa_test.go`. The live pin builds its own runtime
+dir with listening sockets and a FIFO, and it carries a control arm that
+reaches them without `Hide`.
+
+**Beads.** ranger-base-ludpp (this), from ranger-base-x9f3s (the finding).

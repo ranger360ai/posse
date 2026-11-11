@@ -26,6 +26,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-o57rc](ranger-base-o57rc.md) — Two pins that claimed more than they measured (ranger-base-o57rc) — 2026-11-11
 - [ranger-base-n2yaw](ranger-base-n2yaw.md) — Two gates that judged what nobody had measured (ranger-base-n2yaw) — 2026-11-11
 - [ranger-base-md7ag](ranger-base-md7ag.md) — Verifying four closes: what the mutants said, and the sixth door (ranger-base-md7ag) — 2026-11-11
+- [ranger-base-ludpp](ranger-base-ludpp.md) — The bwrap wall's hole was connect(2), not a write (ranger-base-ludpp) — 2026-11-11
 - [ranger-base-j687x](ranger-base-j687x.md) — ranger-base-j687x — the typed route had no liveness guard, and the trace is why that is a change — 2026-11-11
 - [ranger-base-j0riv](ranger-base-j0riv.md) — A withdrawn notification is not a coverage hole (ranger-base-j0riv) — 2026-11-11
 - [ranger-base-in8dr](ranger-base-in8dr.md) — Two more arms for the cold-first-exec door, and the three things they found (ranger-base-in8dr) — 2026-11-11

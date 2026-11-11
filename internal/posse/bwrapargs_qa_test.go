@@ -112,6 +112,10 @@ func TestBwrapArgsRendersD17Base(t *testing.T) {
 		"--ro-bind", "/", "/",
 		"--dev-bind", "/dev", "/dev",
 		"--chdir", bwAt("proj"),
+		// ranger-base-ludpp: the agent and bus addresses, always
+		"--unsetenv", "DBUS_SESSION_BUS_ADDRESS",
+		"--unsetenv", "SSH_AUTH_SOCK",
+		"--unsetenv", "GPG_AGENT_INFO",
 	}
 	if bwJoin(argv) != bwJoin(want) {
 		t.Fatalf("base argv =\n  %v\nwant\n  %v", argv, want)
@@ -657,6 +661,10 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 		"--ro-bind", "/", "/",
 		"--dev-bind", "/dev", "/dev",
 		"--chdir", cwd,
+		// ranger-base-ludpp: the agent and bus addresses, always
+		"--unsetenv", "DBUS_SESSION_BUS_ADDRESS",
+		"--unsetenv", "SSH_AUTH_SOCK",
+		"--unsetenv", "GPG_AGENT_INFO",
 		// shape 1, shallowest first
 		"--bind", bwAt("fresh"), bwAt("fresh"),
 		"--bind", bwAt("proj"), bwAt("proj"),
