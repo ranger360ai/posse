@@ -125,6 +125,10 @@ SLOW=${SLOW_PACKAGE_SECONDS:-300}
 # see the block above `disk_preflight`.
 DISK_FLOOR_MB=${DISK_FLOOR_MB:-5120}
 
+# The floor below which the free-INODE line becomes a warning. MEASURED, not
+# picked: see the block above `free_inodes`.
+DISK_FLOOR_INODES=${DISK_FLOOR_INODES:-65536}
+
 warn() { printf 'test-times: %s\n' "$*" >&2; }
 
 # to_seconds <go duration> — "25m" -> 1500. Only the forms a -timeout carries.
@@ -204,6 +208,101 @@ disk_line() {
   [ "$mb" -ge "$DISK_FLOOR_MB" ]
 }
 
+# ----------------------------------------------------------------- the inodes
+#
+# THE OTHER THING A FILESYSTEM RUNS OUT OF, and on this box it is the one that
+# runs out first (ranger-base-vw1cp). /tmp here is a tmpfs mounted
+# `nr_inodes=1048576`: a fixed table of one million inodes over 14 GB, which is
+# one inode per 14 KB, and a suite's fixtures are nothing like that big.
+# MEASURED 2026-11-11, at the moment four arm-2 tests red on writes: `df -i`
+# said 1041640 of 1048576 inodes used — 100%, 6936 free — while `df -h` said
+# 80% with 2.8G available. The byte reading is not WRONG, it is blind: this
+# preflight printed it, above its floor, and the arm walked into a wall it had
+# no column for. A second number is the whole of the fix, and it needs nothing
+# new on the box: `df -iP` is already here, which is why it is a floor and not
+# the quota probe ranger-base-akk9f left undone for want of a `quota` binary.
+#
+# THE FLOOR IS MEASURED, like the byte floor above, and what it measures is
+# what one run NEEDS rather than what it leaves. MEASURED 2026-11-11 (linux
+# 7.2.15, go1.27.3, loadavg 2-5, each arm run with TMPDIR pointed at a fresh
+# empty dir so the count is of that run alone):
+#
+#     go test ./...                  (arm 1)   8567 peak,    20 left
+#     go test -tags posse_arm2 ./internal/posse  12484 peak, 12205 left,  91.3s
+#     go test -tags posse_arm3 ./internal/posse   2955 peak,     7 left, 109.0s
+#
+# — and the arms running one after another does not make a `make test` the
+# largest of those. Nearly all of arm 2's reading is STILL THERE when it exits
+# (310 `mktemp -d` directories the silent-revert pins leave behind at 697
+# inodes a run, ranger-base-b27pn), so arm 3 starts on top of it: the high
+# water mark of one full run is ~15200 inodes, not 12484, and ~12200 of them
+# are still there when `make test` returns.
+#
+# 65536 is that times four, which is 2^16 and the same multiplier the byte
+# floor argues for: two or three sessions' suites on this filesystem at once —
+# and under the shared budget ranger-base-akk9f measured, their inodes come out
+# of one table — plus the build cache's own regrowth where GOCACHE shares the
+# filesystem, which here it does not and elsewhere it will. Below 65536 one
+# `make test` probably still fits and the ones around it may not, which is the
+# byte floor's sentence because it is the same claim about the same box.
+#
+# It is a WARNING and never a failure, for the byte floor's reason and not a
+# weaker one: a floor is a claim about a box, and a red belonging to the box is
+# the bug this script exists to prevent rather than to introduce. The bead
+# asked for a failed preflight; this is what the script's charter allows, and
+# the warning is the loud part.
+
+# free_inodes <path> — free inodes on the filesystem holding <path>, or empty
+# when there is no such reading to take.
+#
+# BY HEADER NAME, because the column order is not portable and the wrong column
+# is a plausible wrong number. On linux the `-i` table is
+# Inodes/IUsed/IFree/IUse%/mount and IFree is field 4; on darwin `-i` APPENDS
+# iused/ifree to the BYTE table, so field 4 there is Available kilobytes and
+# ifree is field 7. Reading field 4 on both would print 2.8 million "free
+# inodes" on a mac that are really 2.8 GB — and a number that is wrong reads
+# exactly like a number that is right, which is worse than no line at all.
+# `LC_ALL=C` so the header is in the language this function matches on: df
+# translates it, and a translated header would silently take the no-reading
+# path below on a box where the number is there.
+#
+# Empty, too, when the filesystem accounts no inodes at all. That is not a
+# corner: MEASURED on this box, `df -iP /home` (where GOCACHE lives) prints
+# `0 0 0 -`, because a btrfs/zfs/apfs-style filesystem allocates inodes as it
+# goes and has no table to be at the end of. A floor over a 0 would warn on
+# every run about a table that does not exist, so ifree and iused both zero is
+# read as "no reading" and the DISK line says so in words.
+free_inodes() {
+  LC_ALL=C df -iP "$1" 2>/dev/null | awk '
+    NR == 1 {
+      for (i = 1; i <= NF; i++) {
+        if (tolower($i) == "ifree") f = i
+        if (tolower($i) == "iused") u = i
+      }
+      next
+    }
+    NR == 2 {
+      if (!f || $f !~ /^[0-9]+$/) exit
+      if (u && $u ~ /^[0-9]+$/ && $f + 0 == 0 && $u + 0 == 0) exit
+      print $f
+    }'
+}
+
+# inode_line <path> <what lives there> — one DISK line for the other column.
+# Returns 1 under the inode floor, so the caller can warn once however many
+# filesystems there were, exactly as disk_line does for the bytes.
+inode_line() {
+  local path=$1 label=$2 free mnt
+  free=$(free_inodes "$path")
+  mnt=$(mount_of "$path")
+  if [ -z "$free" ]; then
+    printf 'test-times: DISK: no inode reading for %s (%s) — this filesystem accounts no inodes\n' "$path" "$label"
+    return 0
+  fi
+  printf 'test-times: DISK: %s free inodes on %s — %s\n' "$free" "${mnt:-?}" "$label"
+  [ "$free" -ge "$DISK_FLOOR_INODES" ]
+}
+
 # disk_preflight <go-binary> — said BEFORE the packages run, because the
 # cheapest moment to learn the box is full is not ten minutes into the suite.
 #
@@ -215,7 +314,7 @@ disk_line() {
 # and is skipped unless the answer names a directory that exists, which is also
 # what makes this safe to run under a stub in --self-test.
 disk_preflight() {
-  local gobin=$1 tmp cache tmnt cmnt low=0 qopt=""
+  local gobin=$1 tmp cache tmnt cmnt low=0 ilow=0 qopt=""
 
   tmp=${TMPDIR:-/tmp}
   cache=$("$gobin" env GOCACHE 2>/dev/null)
@@ -231,6 +330,19 @@ disk_preflight() {
     disk_line "$tmp" 't.TempDir' || low=1
     if [ -n "$cache" ]; then
       disk_line "$cache" 'the go build cache' || low=1
+    fi
+  fi
+
+  # ...and the same filesystems again for the OTHER column (ranger-base-vw1cp).
+  # AFTER the byte lines and never before them: a tmpfs runs out of inodes
+  # first, but the megabytes are what a reader has been reading here since
+  # ranger-base-krra and the self-test's arms read the FIRST DISK line.
+  if [ -n "$cache" ] && [ "$cmnt" = "$tmnt" ]; then
+    inode_line "$tmp" 't.TempDir and the go build cache' || ilow=1
+  else
+    inode_line "$tmp" 't.TempDir' || ilow=1
+    if [ -n "$cache" ]; then
+      inode_line "$cache" 'the go build cache' || ilow=1
     fi
   fi
 
@@ -261,6 +373,20 @@ disk_preflight() {
   else
     printf 'test-times: DISK: that is the DEVICE. A per-user quota binds sooner and df cannot\n'
     printf 'test-times: DISK:   see it, so a red can still be EDQUOT (ranger-base-akk9f).\n'
+  fi
+
+  if [ "$ilow" = 1 ]; then
+    warn "FREE INODES BELOW THE ${DISK_FLOOR_INODES} FLOOR — a red from this run may belong to"
+    warn "  the box rather than to the diff, and this is the reading that runs out FIRST on a"
+    warn "  tmpfs mounted nr_inodes=… (ranger-base-vw1cp). A full inode table is not a full"
+    warn "  disk: the megabytes above can read 80% free while every create fails, so \`df -h\`"
+    warn "  will agree with the diff and against the run. What holds a table, measured:"
+    warn "    ls -d \"\${TMPDIR:-/tmp}\"/tmp.?????????? | wc -l   # 24679 of these held 94% of it"
+    warn "    du --inodes -s \"\${TMPDIR:-/tmp}\"/* | sort -rn | head        # GNU du"
+    warn "    for d in \"\${TMPDIR:-/tmp}\"/*; do printf '%s\\t%s\\n' \"\$(find \"\$d\" | wc -l)\" \"\$d\"; done | sort -rn | head"
+    warn "  Running anyway. Clearing is the operator's call and not this script's, for the"
+    warn "  reason it never is: one of those trees belongs to a live sibling suite, and"
+    warn "  nothing inside any of them says which."
   fi
 
   [ "$low" = 0 ] && return 0
@@ -431,8 +557,17 @@ explain_disk() {
       echo '  Where it goes, measured on this box (ranger-base-krra):'
       echo
       echo '      df -h "${TMPDIR:-/tmp}"'
+      echo '      df -i "${TMPDIR:-/tmp}"             # and the OTHER column'
       echo '      du -sh "$(go env GOCACHE)"          # reached 41G unattended'
       echo '      ls -d "${TMPDIR:-/tmp}"/Test* | wc -l   # 670 leaked TempDirs'
+      echo
+      echo '  BOTH df lines, because a tmpfs runs out of inodes before it'
+      echo '  runs out of bytes and the kernel reports both as ENOSPC'
+      echo '  (ranger-base-vw1cp). MEASURED 2026-11-11 on this box: `df -i`'
+      echo '  said 100%, 6936 of 1048576 free, while `df -h` said 80% with'
+      echo '  2.8G available — so `df -h` alone answers that the box has'
+      echo '  room, which is the reading that sends a reader back to their'
+      echo '  own diff. The preflight above prints both for the same reason.'
       echo
       echo '  Clearing either is the operator call this script will not make'
       echo '  for them: `go clean -cache` slows every concurrent session, and'
@@ -1036,6 +1171,98 @@ STUB
     *) bad 'disk: the preflight prints free space with no word that a quota binds sooner'; dump_out ;;
   esac
 
+  # I3: and the OTHER column (ranger-base-vw1cp). A tmpfs mounted with
+  # `nr_inodes=` runs out of inodes before it runs out of bytes — MEASURED
+  # 2026-11-11, 6936 of 1048576 free while the byte line read 80% — so the
+  # preflight takes both readings and this arm requires the second one.
+  #
+  # The INDEPENDENT reading is taken here the way arm I2 takes the mount
+  # point: df is run, because asking the box is the measurement, and the
+  # verdict is bash's own — no fork between the bytes and the answer. It
+  # cross-checks the BRANCH and not the number: /tmp churns under sibling
+  # seats between df and the script's own df, and a tolerance on a moving
+  # number would be exactly the box-mood red this file exists to avoid.
+  #
+  # Two branches, and both are live on this box: /tmp is a tmpfs with a
+  # table, and /home — where GOCACHE sits — is a filesystem that allocates
+  # inodes as it goes and prints `0 0 0 -`.
+  local idf= ihdr= irow= ifree_col= want_ifree= iused_col= i=
+  local -a ihf=() irf=()
+  idf=$(LC_ALL=C df -iP "${TMPDIR:-/tmp}" 2>/dev/null)
+  irow=${idf#*$'\n'}
+  if [ "$irow" != "$idf" ]; then
+    ihdr=${idf%%$'\n'*}
+    irow=${irow%%$'\n'*}
+    read -ra ihf <<<"$ihdr"
+    read -ra irf <<<"$irow"
+    i=0
+    while [ "$i" -lt "${#ihf[@]}" ]; do
+      case ${ihf[$i]} in
+        IFree|ifree) ifree_col=$i ;;
+        IUsed|iused) iused_col=$i ;;
+      esac
+      i=$((i + 1))
+    done
+    if [ -n "$ifree_col" ]; then
+      want_ifree=${irf[$ifree_col]-}
+      case $want_ifree in ''|*[!0-9]*) want_ifree= ;; esac
+      # the dynamic-inode spelling: a table of zero is no table at all
+      if [ -n "$want_ifree" ] && [ -n "$iused_col" ] && [ "$want_ifree" = 0 ] &&
+         [ "${irf[$iused_col]-}" = 0 ]; then
+        want_ifree=
+      fi
+    fi
+  fi
+
+  run_arm clean.log 0 -timeout 25m
+  local inode_line_ok=0
+  if [ -n "$want_ifree" ]; then
+    case $out in
+      *'test-times: DISK: '[0-9]*' free inodes on '*' — t.TempDir'*) inode_line_ok=1 ;;
+    esac
+    if [ "$inode_line_ok" = 1 ]; then
+      ok 'inodes: the preflight takes the inode reading this filesystem can give'
+    else
+      bad "inodes: df -iP says \$TMPDIR has $want_ifree free inodes and no DISK line names a count"
+      dump_out
+    fi
+  else
+    case $out in
+      *'test-times: DISK: no inode reading for '*'this filesystem accounts no inodes'*)
+        ok 'inodes: the preflight takes the inode reading this filesystem can give (none here, and it says so)' ;;
+      *)
+        bad 'inodes: this filesystem accounts no inodes and the preflight neither said so nor printed a count'
+        dump_out ;;
+    esac
+  fi
+
+  # …and the floor, both ways, for arm J's reason: "no warning" is also what a
+  # floor nobody consults looks like. Where there is no reading there is
+  # nothing to be below, and silence IS the property — so that branch asserts
+  # silence under a floor no filesystem could clear.
+  DISK_FLOOR_INODES=1 run_arm clean.log 0 -timeout 25m
+  case $out in
+    *'FREE INODES BELOW THE'*) bad 'inodes floor: warned with the floor at 1 inode' ;;
+    *) ok 'inodes floor: silent above the floor' ;;
+  esac
+  DISK_FLOOR_INODES=999999999 run_arm clean.log 0 -timeout 25m
+  if [ -n "$want_ifree" ]; then
+    case $out in
+      *'FREE INODES BELOW THE 999999999 FLOOR'*) ok 'inodes floor: warns below the floor, and quotes the floor it used' ;;
+      *) bad 'inodes floor: no warning with the floor above any real table — the floor is not consulted'; dump_out ;;
+    esac
+    case $out in
+      *'Running anyway'*) ok 'inodes floor: says it is running anyway' ;;
+      *) bad 'inodes floor: does not say the run continues' ;;
+    esac
+  else
+    case $out in
+      *'FREE INODES BELOW THE'*) bad 'inodes floor: warned about a table this filesystem does not have' ;;
+      *) ok 'inodes floor: warns below the floor, and quotes the floor it used (no table here: asserts silence instead)' ;;
+    esac
+    ok 'inodes floor: says it is running anyway (no table here: nothing to say it about)'
+  fi
+
   # J: the floor. BOTH arms, because "no warning" is also what a floor that is
   # never consulted looks like: the same fixture, the same box, the same free
   # space, and only the floor moved.
@@ -1068,6 +1295,15 @@ STUB
   case $out in
     *"operator call this script will not make"*) ok 'enospc: names the cleanup as the operator call, not the script'"'"'s' ;;
     *) bad 'enospc: does not say who clears the disk' ;;
+  esac
+  # ...and the inode column beside the byte one (ranger-base-vw1cp). A full
+  # inode table is reported ENOSPC too, and this block's own advice — `df -h`,
+  # `du` on GOCACHE — answers that the box has room, which is the shape
+  # ranger-base-akk9f named one errno over: an explainer that is wrong about
+  # its own box teaches the reader to stop reading it.
+  case $out in
+    *'df -i "${TMPDIR:-/tmp}"'*) ok 'enospc: sends the reader to the inode column too' ;;
+    *) bad 'enospc: advice reads only bytes, where `df -h` answers that the box has room'; dump_out ;;
   esac
   [ "$rc" = 1 ] && ok 'enospc: exit status 1 preserved' || bad "enospc: exit $rc, wanted 1"
 

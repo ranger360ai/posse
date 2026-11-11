@@ -34,6 +34,19 @@ package treepins
 // `df`, where EDQUOT looks fine — so the block names which one fired, and the
 // arms below require that separation in both directions.
 //
+// AND THE SAME RED FROM THE OTHER COLUMN (ranger-base-vw1cp). MEASURED
+// 2026-11-11, at the moment four tests in a doored arm-3 run red on writes
+// and `go test -c ./internal/posse` could not link: `df -i` said
+// 1041640 of 1048576 inodes used — 100%, 6936 free — while `df -h` said 80%
+// with 2.8G available. /tmp here is a tmpfs mounted `nr_inodes=1048576`, one
+// inode per 14 KB of space, so it runs out of inodes long before it runs out
+// of bytes; the preflight printed its megabytes, cleared its floor, and the
+// arm walked into a wall it had no column for. The guard reads `df -iP`
+// beside `df -kP` now, with its own measured floor, and the ENOSPC advice
+// names both — a full table is reported ENOSPC, and advice that sends that
+// reader to `df -h` answers that the box has room, which is akk9f's failure
+// one errno over.
+//
 // The guard lives in scripts/test-times.sh, which is the same place and the
 // same shape as the clock's: a DISK line before the packages run, and a block
 // after a run whose log carries ENOSPC or EDQUOT. Neither deletes anything and neither
@@ -140,6 +153,18 @@ func TestQATheWrapperStillExplainsAFullDiskAndABrokenStdBuild(t *testing.T) {
 		"edquot: exit status 1 preserved",
 		"enospc: not reported as a quota",
 		"clean log: no quota block",
+		// ranger-base-vw1cp. The inode column, which is what a tmpfs
+		// mounted `nr_inodes=` runs out of FIRST: the byte line read 80%
+		// free while `df -i` read 100%, so the preflight that printed a
+		// number and cleared its floor was reading the wrong number. The
+		// floor arms are here for arm J's reason — "no warning" is also
+		// what a floor nobody consults looks like — and the enospc arm is
+		// here because a full table is reported ENOSPC too, where this
+		// block's own `df -h` advice answers that the box has room.
+		"inodes: the preflight takes the inode reading this filesystem can give",
+		"inodes floor: silent above the floor",
+		"inodes floor: warns below the floor",
+		"enospc: sends the reader to the inode column too",
 	} {
 		if !strings.Contains(got, "ok    "+want) {
 			t.Errorf("%s --self-test no longer proves %q — the arm is gone, failing, or renamed\n%s", suiteWrapper, want, got)
