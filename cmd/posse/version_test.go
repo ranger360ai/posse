@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -109,10 +110,35 @@ func posseVersion(t *testing.T, bin string) string {
 }
 
 // tempRepoOfWorkingTree copies the module into a fresh repo and commits it,
-// returning the directory and the commit. The commit is written with
-// plumbing because `git commit` is denied to fleet personas
-// (.claude/settings.json), and a fixture no persona can build is a test the
-// fleet never runs.
+// returning the directory and the commit.
+//
+// The commit is PATH-QUALIFIED (`git commit … -- .`), and not the
+// `write-tree`/`commit-tree`/`update-ref` plumbing it used to be
+// (ranger-base-ltk6x). The reason the plumbing was here still holds — a
+// fixture no persona can build is a test the fleet never runs — but the
+// spelling was one wall out of date in both directions:
+//
+//   - the PID rule is `Bash(git commit unless --)`, which denies the
+//     UNQUALIFIED form only, so a path-qualified commit was never denied;
+//   - and since ranger-base-crlty the L1 git shim REFUSES `commit-tree`
+//     outright (hookskip:plumbing-commit, ADR 0052), because a commit
+//     object written by plumbing is one no pre-commit or commit-msg hook
+//     ever saw. So the plumbing was the spelling no persona could build:
+//     both tests in this file were red at arm 1 of `make test` for every
+//     gated seat, which also kept arms 2 and 3 (separate recipe lines) from
+//     running at all.
+//
+// Why internal/posse's identical commit-tree fixtures are green and this
+// one was not: posse's own `git` helper resolves git OUTSIDE the gates dirs
+// (ADR 0077 D3, protocolCmd) and never meets the shim. This helper is a
+// bare exec.Command, so it resolves git from the test process's PATH, which
+// on a gated seat leads with the seat's shim. It is a FLEET-only red —
+// ci.yml is ungated and cannot see it.
+//
+// A real commit dispatches hooks, which is the point of the shim's rule;
+// here there are none to dispatch. The repo is `git init`-fresh, with no
+// core.hooksPath and no init.templateDir in any scope, so nothing runs that
+// either test's subject — a version string and a build stamp — could see.
 func tempRepoOfWorkingTree(t *testing.T) (dir, sha string, git func(...string) string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -129,14 +155,25 @@ func tempRepoOfWorkingTree(t *testing.T) (dir, sha string, git func(...string) s
 			"GIT_COMMITTER_NAME=posse", "GIT_COMMITTER_EMAIL=posse@invalid")
 		out, err := cmd.Output()
 		if err != nil {
+			// Carry stderr: a gate refusal says why on stderr and
+			// nothing on stdout, so without this the failure reads
+			// "exit status 1" and names neither the rule nor the
+			// wall (ranger-base-ltk6x — that is how this fixture
+			// stayed unreadable for a day).
+			var ee *exec.ExitError
+			if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+				t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, ee.Stderr)
+			}
 			t.Fatalf("git %s: %v", strings.Join(args, " "), err)
 		}
 		return strings.TrimSpace(string(out))
 	}
 	git("init", "-q", ".")
+	// `git add -A` first: a pathspec matches only what git already has an
+	// index entry for, and every file here is new to this repo.
 	git("add", "-A")
-	sha = git("commit-tree", git("write-tree"), "-m", "fixture")
-	git("update-ref", "HEAD", sha)
+	git("commit", "-q", "-m", "fixture", "--", ".")
+	sha = git("rev-parse", "HEAD")
 	return dir, sha, git
 }
 

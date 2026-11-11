@@ -50,6 +50,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-qzujz](ranger-base-qzujz.md) — The store that was not Rex's: the unsent-prompt half of the settled-pane hold (ranger-base-qzujz) — 2026-11-10
 - [ranger-base-pbo1q](ranger-base-pbo1q.md) — The cold-first-exec injector, as built, and what it measured on the way (ranger-base-pbo1q) — 2026-11-10
 - [ranger-base-nfc2b](ranger-base-nfc2b.md) — A rex block has no global name, so `posse peek` could read one seat on the box (ranger-base-nfc2b) — 2026-11-10
+- [ranger-base-ltk6x](ranger-base-ltk6x.md) — The fixture that built its commit with the one verb the shim refuses (ranger-base-ltk6x) — 2026-11-10
 - [ranger-base-l0bep](ranger-base-l0bep.md) — ranger-base-l0bep — the fixture-git census reads the BINARY one hop too — 2026-11-10
 - [ranger-base-kiwvn](ranger-base-kiwvn.md) — The first full run under injection: the price, and the one class every red belonged to (ranger-base-kiwvn) — 2026-11-10
 - [ranger-base-k0hd6](ranger-base-k0hd6.md) — The dispatch path holds a Seat now, not a pane (ranger-base-k0hd6) — 2026-11-10
