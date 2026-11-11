@@ -1016,14 +1016,21 @@ package treepins
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
 //
-// One warm reading at one hundred and twenty-nine, the class as this bead
-// leaves it: 41.9s (MEASURED 2026-11-10, ranger-base-xa2e3, at a one-minute
-// load average of 2.44 over a five-minute 3.61, with no suite slot held by
-// anyone — the quietest box any reading of this command has been taken on,
-// and 13s under ranger-base-h1q5o's 55-56s floor at a load of 3-5. One run,
-// so it is a point and not a band; it says only that the floor moves down
-// with the load the way every reading above says it does, and the pin this
-// bead added is 0.17s of it.)
+// Two warm readings at one hundred and twenty-nine, the class as this bead
+// leaves it: 41.9s then 39.4s (MEASURED 2026-11-10, ranger-base-xa2e3, at a
+// one-minute load average of 2.44 and 12.79 respectively — the first with no
+// suite slot held by anyone, the second with one held by a sibling seat, the
+// two sides of this bead's merge-back onto a main that had meanwhile landed
+// ranger-base-gdzu5. Both are well under ranger-base-h1q5o's 55-56s floor at
+// a load of 3-5, on the same command over a LARGER class, so something other
+// than this pin set got cheaper between those days and the floor above is
+// stale as a price.
+//
+// What these two do NOT support is the reading-to-reading story every entry
+// above tells: the HIGHER load produced the FASTER run, by 2.5s. At this end
+// of the load range the spread is smaller than whatever else moves between
+// two runs, so a seat should price the command from the band and not from the
+// load average. The pin this bead added is 0.17s of either reading.)
 //
 // The reading before it, taken the same day at one pin fewer: 123-185s over
 // three warm runs at one hundred and
