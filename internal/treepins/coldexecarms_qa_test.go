@@ -46,13 +46,13 @@ package treepins
 // nothing. Both directions, because an arm over a package with no plants
 // injects nothing and is a recipe line a reader will trust.
 //
-// The register (cxaUncoveredPlanters) is the live gap, and it is live because
-// of WHEN this bead landed: coldexec-check had three arms, all
-// internal/posse, and extending it to cmd/posse and internal/treepins is
+// The register (cxaUncoveredPlanters) was the live gap, and it was live
+// because of WHEN this bead landed: coldexec-check had three arms, all
+// internal/posse, and extending it to cmd/posse and internal/treepins was
 // ranger-base-in8dr's own deliverable — after ADR 0085 D6's amendment
 // (ranger-base-dacil) one Makefile line per package, inside the supervisor.
-// So this pin cannot demand those two arms today without reddening the suite
-// over work another bead holds, and it must not go quiet about them either.
+// So this pin could not demand those two arms without reddening the suite
+// over work another bead held, and it must not go quiet about them either.
 // A row per package, naming the bead that will cover it, is the honest third
 // answer: the derivation reds for a FOURTH package immediately, and
 // TestQAColdexecArmRegisterIsNotStale reds the moment a registered row stops
@@ -63,9 +63,16 @@ package treepins
 // route into arm 1 that does not go through the census, which is exactly the
 // parking spot treewidedoor_qa_test.go's twdDoorHolders keeps warning about.
 // So a registered package that has stopped planting, or that HAS an arm now,
-// is a red with a one-line fix: delete the row. ranger-base-in8dr's seat will
-// see that red when it lands its two arms, and the instruction is in the
-// register and in the message.
+// is a red with a one-line fix: delete the row.
+//
+// ranger-base-in8dr's seat did NOT see that red, which is the one thing this
+// coupling could not arrange: that bead's worktree was based before this file
+// existed, so the arms and the rows they clear were never in one tree any seat
+// ran. The red landed on main instead — corpus-check, so tree-check, so
+// `make test` exited 2 for every seat on the box until ranger-base-r5tnw
+// deleted the rows. The coupling fired and named its own fix; what nothing
+// reads between two concurrent closes is the MERGED tree, filed to the
+// architecture lane as ranger-base-oe9ja.
 //
 // THE CONTROL is TestQAColdexecArmCensusCanStillSayNo. The two pins above
 // both rest on two readers — a matcher over Go source and a reader over a
@@ -132,13 +139,17 @@ const (
 // arm; TestQAColdexecArmRegisterIsNotStale reds the moment a row stops being
 // true, so a row cannot outlive its cause.
 //
-// TO CLEAR A ROW: add the package's arm to coldexec-check's recipe and delete
-// the row. Both rows are ranger-base-in8dr's, and the register's partner is
-// what will tell its seat so.
-var cxaUncoveredPlanters = map[string]string{
-	"cmd/posse":         "ranger-base-in8dr — extend coldexec-check to cmd/posse's 17 plant sites (ADR 0085 D6, one recipe line inside the supervisor)",
-	"internal/treepins": "ranger-base-in8dr — extend coldexec-check to internal/treepins' 53 plant sites, which plant through this package's own WriteExecutable copy (execwrite_test.go)",
-}
+// EMPTY since ranger-base-r5tnw, and that is the register working rather than
+// the register being unused: ranger-base-in8dr landed the arms its two rows
+// named, the stale-register pin red naming both, and the rows went. Every
+// planting package has an arm now, so the derivation exempts nothing and
+// holds all three of them on its own.
+//
+// TO ADD A ROW: only for a package that plants and whose arm belongs to
+// another bead — key the package directory, and let the value name that bead.
+// TO CLEAR A ROW: add the arm to coldexec-check's recipe and delete the row;
+// the stale-register pin reds, names the row and says so.
+var cxaUncoveredPlanters = map[string]string{}
 
 // cxaPlantSites returns the number of plant call sites per package directory,
 // slash-separated and relative to the repository root. TestMain chdirs this

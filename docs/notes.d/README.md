@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-xdaw9](ranger-base-xdaw9.md) — herdr's typed route loses a prompt into a modal too, and the tell is the screen (ranger-base-xdaw9) — 2026-11-11
 - [ranger-base-sjjf4](ranger-base-sjjf4.md) — ranger-base-sjjf4 — one control strengthened, six decisions pinned — 2026-11-11
 - [ranger-base-s64a5](ranger-base-s64a5.md) — The coldexec door's arm list, derived (ranger-base-s64a5) — 2026-11-11
+- [ranger-base-r5tnw](ranger-base-r5tnw.md) — The waiver that outlived its cause, on a tree no seat ran (ranger-base-r5tnw) — 2026-11-11
 - [ranger-base-qregu](ranger-base-qregu.md) — Four closes verified, and the coupling neither seat could see (ranger-base-qregu) — 2026-11-11
 - [ranger-base-pn621](ranger-base-pn621.md) — This repo's own land check: what it costs, and the three things D6 left to the build (ranger-base-pn621) — 2026-11-11
 - [ranger-base-orgvt](ranger-base-orgvt.md) — ranger-base-orgvt — an orphaned descendant's execs, and what closing them cost — 2026-11-11
