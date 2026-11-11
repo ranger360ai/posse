@@ -43,9 +43,39 @@ import (
 // user-scope MCP servers — and it cannot be read-only, because it is the file
 // the CLI rewrites every turn. Closing that needs a per-seat config directory,
 // which is a design and not a carve: ranger-base-nv3el.
+//
+// The second half of the list is ranger-base-d0rnr's, and its census is
+// claude's OWN: the 2.1.322 binary's sandbox write-deny names these members
+// of the config dir beside the ones above, and its file tools refuse them.
+// MEASURED 2026-11-11 on the D1 host, claude 2.1.322 under bwrap, a scratch
+// CLAUDE_CONFIG_DIR, one unbilled `-p` turn against a local fake endpoint
+// that logged every request body:
+//
+//   - workflows/: a script planted there is IN THE REQUEST, listed as an
+//     invocable skill beside a planted command — a saved Workflow, a JS
+//     script that spawns agents when it is named.
+//   - routines/: claude lists it with commands/, skills/ and workflows/
+//     among the config dirs its own permission rules guard. A planted .md
+//     did not reach a `-p` request; its reader is UNMEASURED.
+//   - daemon.json, daemon/: read from the binary's text, not exercised —
+//     "the service that runs background sessions starts the workers listed
+//     there without asking anyone", and "a file there can start a
+//     background session without asking anyone". daemon.json also holds the
+//     daemon's cron tasks (prompts and permission modes).
+//   - scheduled_tasks.json, launch.json: claude reads both at
+//     `<project>/.claude/`, so in the default config dir they are the HOME
+//     project's: durable cron prompts a later session in `~` fires, and the
+//     Preview launch config's commands. `{}` loads as no tasks (no `tasks`
+//     array).
+//   - With all six bound read-only (the dirs empty, the files `{}`), the
+//     turn exits 0, its Bash call runs, the debug log names no refused
+//     write, and the files are byte-identical afterwards. No member exists
+//     in this box's live config dir, so no seat on it has written one.
+//
+// Residual: ranger-base-h5vij.
 var (
-	claudeExecConfigDirNames  = []string{"agents", "commands", "hooks", "output-styles", "plugins", "rules", "skills"}
-	claudeExecConfigFileNames = []string{"CLAUDE.md", "settings.json", "settings.local.json"}
+	claudeExecConfigDirNames  = []string{"agents", "commands", "daemon", "hooks", "output-styles", "plugins", "routines", "rules", "skills", "workflows"}
+	claudeExecConfigFileNames = []string{"CLAUDE.md", "daemon.json", "launch.json", "scheduled_tasks.json", "settings.json", "settings.local.json"}
 )
 
 // claudeExecConfig names those members for the config directory a seat on

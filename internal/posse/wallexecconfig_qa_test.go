@@ -159,6 +159,27 @@ func TestQAWallExecConfigCarvesClaudesExecutableConfig(t *testing.T) {
 	}
 }
 
+// ranger-base-d0rnr: the members claude itself guards as executable, beyond
+// the ones 6akzw measured, are on the carve's lists. The render pin above
+// walks the lists, so it cannot notice a name dropped from them; this does.
+// claudeExecConfig's comment has what each one does and what was measured.
+func TestQAWallExecConfigCarvesClaudesOwnProtectedMembers(t *testing.T) {
+	t.Parallel()
+	for _, n := range []string{"workflows", "routines", "daemon"} {
+		if !containsString(claudeExecConfigDirNames, n) {
+			t.Errorf("%s/ is not carved — claude starts or obeys what is planted there (ranger-base-d0rnr)", n)
+		}
+	}
+	for _, n := range []string{"daemon.json", "launch.json", "scheduled_tasks.json"} {
+		if !containsString(claudeExecConfigFileNames, n) {
+			t.Errorf("%s is not carved — claude starts or obeys what is planted there (ranger-base-d0rnr)", n)
+		}
+		if seedBody(n) != "{}\n" {
+			t.Errorf("%s would be seeded %q, not the empty JSON object a reader takes as nothing configured", n, seedBody(n))
+		}
+	}
+}
+
 // A seed never rewrites what is there, and writes the empty value of its
 // format when nothing is.
 func TestQAWallExecConfigSeedCreatesEmptyAndNeverOverwrites(t *testing.T) {
@@ -247,13 +268,26 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		"agents plant":               ": > " + q(filepath.Join(cfg, "agents", "x")),
 		"commands plant":             ": > " + q(filepath.Join(cfg, "commands", "x")),
 		"hooks plant":                ": > " + q(filepath.Join(cfg, "hooks", "x")),
-		"launch line append":         "echo x >> " + q(filepath.Join(st, "launch", "peer.sh")),
-		"launch line plant":          ": > " + q(filepath.Join(st, "launch", "other.sh")),
-		"herdr record plant":         ": > " + q(filepath.Join(st, "herdr", "x")),
-		"backup plant":               ": > " + q(filepath.Join(st, "backup", "x")),
-		"skills tree plant":          ": > " + q(filepath.Join(st, "skills", "x")),
-		"dispatch pid append":        "echo x >> " + q(filepath.Join(st, "dispatch-watch.pid")),
-		"state dir new file":         ": > " + q(filepath.Join(st, "new")),
+		// ranger-base-d0rnr: claude's own protected members. The dirs and
+		// files are absent in the fixture, so these rows also hold the prep
+		// that creates them before the mount. A dir row makes its dir first,
+		// as a seat would: without the `mkdir -p` it is refused by ENOENT
+		// whether or not the carve is there (MEASURED, the mutation that
+		// dropped the names read these three green).
+		"workflows plant":              "mkdir -p " + q(filepath.Join(cfg, "workflows")) + " && : > " + q(filepath.Join(cfg, "workflows", "x.js")),
+		"routines plant":               "mkdir -p " + q(filepath.Join(cfg, "routines")) + " && : > " + q(filepath.Join(cfg, "routines", "x.md")),
+		"daemon plant":                 "mkdir -p " + q(filepath.Join(cfg, "daemon")) + " && : > " + q(filepath.Join(cfg, "daemon", "x")),
+		"daemon.json append":           "echo x >> " + q(filepath.Join(cfg, "daemon.json")),
+		"launch.json append":           "echo x >> " + q(filepath.Join(cfg, "launch.json")),
+		"scheduled_tasks.json append":  "echo x >> " + q(filepath.Join(cfg, "scheduled_tasks.json")),
+		"scheduled_tasks.json replace": "echo '{}' > " + q(filepath.Join(cfg, "t.tmp")) + " && mv " + q(filepath.Join(cfg, "t.tmp")) + " " + q(filepath.Join(cfg, "scheduled_tasks.json")),
+		"launch line append":           "echo x >> " + q(filepath.Join(st, "launch", "peer.sh")),
+		"launch line plant":            ": > " + q(filepath.Join(st, "launch", "other.sh")),
+		"herdr record plant":           ": > " + q(filepath.Join(st, "herdr", "x")),
+		"backup plant":                 ": > " + q(filepath.Join(st, "backup", "x")),
+		"skills tree plant":            ": > " + q(filepath.Join(st, "skills", "x")),
+		"dispatch pid append":          "echo x >> " + q(filepath.Join(st, "dispatch-watch.pid")),
+		"state dir new file":           ": > " + q(filepath.Join(st, "new")),
 	}
 	for name, script := range refused {
 		if ok, out := try(script); ok {
