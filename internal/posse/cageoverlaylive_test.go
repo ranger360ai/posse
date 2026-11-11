@@ -152,28 +152,44 @@ touch "$0/.probe" 2>/dev/null && echo "root=writable" || echo "root=refused"`
 	})
 
 	// Bullet 2, and verification 3's "`writable:` extra writable on a `:ro`
-	// repo" and "touch at repo root fails" — plus the two carve-outs a `:ro`
-	// repo always carries, which is what keeps claim/comment/close at this
+	// repo" and "touch at repo root fails" — plus the ONE carve-out a `:ro`
+	// repo still carries, which is what keeps claim/comment/close at this
 	// tier (the bd half of that is TestLiveInnerGatesHoldInsideTheCage,
 	// which runs the real inner wrapper against a real store).
+	//
+	// `git=refused` is ADR 0086 D8 (ranger-base-sk13s), and it is the one
+	// row here that reads the opposite way from the day this test was
+	// written. The `.git` carve-out used to answer `writable` beside
+	// `.beads`; D3 took that grant from this PID class at L2 and D8
+	// followed here, because through `spliceDetachedWork` it let a seat
+	// that may not edit a file land a commit. This fixture's `.git` is a
+	// plain directory inside the repo, so with no carve-out it is simply
+	// under the `:ro` repo mount — which is what the engine must now
+	// confirm. UNRUN since the flip: this arm needs the docker socket, and
+	// the seat that made the change could not reach it (the mount-list half
+	// is TestNoGitDirIsWritableForAWholeTreeDenyPID, and the git behaviour
+	// under this layering is MEASURED under bwrap in
+	// docs/adr/0086-l4-git-carve-out.probe.sh).
 	t.Run("allow-list", func(t *testing.T) {
 		got := run(t, "cage: container\ndeny: [Edit, Write]\nwritable: [docs/adr]\n")
 		want(t, got, "subtree", "writable")
 		want(t, got, "rest", "refused")
 		want(t, got, "root", "refused")
 		want(t, got, "beads", "writable")
-		want(t, got, "git", "writable")
+		want(t, got, "git", "refused")
 	})
 
 	// Verification 5: a PID with only the bare rule is unchanged — same
-	// `:ro` repo, plus the carve-outs, and no hole opened for it.
+	// `:ro` repo, plus the store carve-out, and no hole opened for it. The
+	// bare rule IS the whole-tree deny, so `git=refused` here is D8's row
+	// and not a second question; see the arm above.
 	t.Run("bare-edit-write-still-gets-a-ro-repo", func(t *testing.T) {
 		got := run(t, "cage: container\ndeny: [Edit, Write]\n")
 		want(t, got, "subtree", "refused")
 		want(t, got, "rest", "refused")
 		want(t, got, "root", "refused")
 		want(t, got, "beads", "writable")
-		want(t, got, "git", "writable")
+		want(t, got, "git", "refused")
 	})
 
 	// deny-wins (ADR 0001) through the engine, which is where it could

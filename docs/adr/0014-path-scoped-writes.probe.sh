@@ -96,7 +96,12 @@ T=$(tree c4); probe "expect subtree=writable rest=refused root=refused" \
 echo
 echo "== 5. the :ro carve-outs: .beads and .git read-write over a :ro repo =="
 echo "   (ADR 0014 §4 — the tier whose point is the personas who may not edit"
-echo "    the work is not the tier where they cannot report what they found)"
+echo "    the work is not the tier where they cannot report what they found."
+echo "    This arm hands the engine both binds ITSELF: what it measures is"
+echo "    that a read-write bind holds over a :ro parent, which is unchanged."
+echo "    posse no longer RENDERS the .git one — ADR 0086 D8 withdrew it for"
+echo "    the PID that gets the :ro repo at all; CageMounts' own answer is"
+echo "    pinned in TestNoGitDirIsWritableForAWholeTreeDenyPID)"
 T=$(tree c5); probe "expect beads=writable git=writable root=refused" \
   -v "${T}:${T}:ro" -v "${T}/.beads:${T}/.beads" -v "${T}/.git:${T}/.git" "$IMG" sh -c '
 cd "$0"

@@ -55,15 +55,45 @@ subtree is writable at the only path the persona can reach it by. So
 `cageCovering` finds the deepest mount containing the resolved path and
 re-spells the overlay in *that mount's* words, source and destination both.
 
-### The carve-outs on a `:ro` repo
+### The carve-out on a `:ro` repo, and the one that was withdrawn
 
-`.beads` was already there (rangerhq-3nxk). `.git` is now beside it, which
-is ADR 0014 §4 answering the same question the `.beads` clause answered: L2
-grants a write-denying PID `cwd/.git` for index refresh and git's own locks,
-and a tier that took it away would be enforcing more than the gate. In an
-ordinary repo that is a directory inside the repo mount and an overlay says
-it. In a **worktree** `.git` is a FILE and the index, HEAD and objects all
-live in the common dir, which is a mount of its own.
+`.beads` was already there (rangerhq-3nxk), and it is the only one left.
+`.git` stood beside it from ADR 0014 §4, answering the same question the
+`.beads` clause answered: L2 granted a write-denying PID `cwd/.git` for
+index refresh and git's own locks, and a tier that took it away would have
+been enforcing more than the gate. In an ordinary repo that was a directory
+inside the repo mount and an overlay said it; in a **worktree** `.git` is a
+FILE and the index, HEAD and objects all live in the common dir, which is a
+mount of its own.
+
+**ADR 0086 D8 withdrew it** (ranger-base-sk13s, from the design on
+ranger-base-56w67). The premise stopped holding one tier down: D3 took
+`cwd/.git` and the narrowed `sessionGitGrants` away from exactly this PID at
+L2, because a seat that may not edit a file can still write a blob, stage it
+with `update-index --cacheinfo` and commit — so "match L2" now means
+`.beads` alone, and this tier keeps LESS than L2 rather than more. At L4 the
+route to the commit is the launcher's own: a caged session is launched on a
+DETACHED HEAD and `MergeSessionWork` runs `spliceDetachedWork` before every
+guard, fast-forwarding `posse/<session>` onto whatever HEAD names, and the
+landing carries it to `main`. So for `deniesFileWrite` there is now no
+read-write mount anywhere under either git dir: no `<dir>/.git` overlay in a
+main checkout, and none of the three overlays below in a worktree, where the
+common dir stays `:ro` and WHOLE. MEASURED twice on the D1 host
+(`docs/adr/0086-l4-git-carve-out.probe.sh`, 2026-11-11, bwrap 0.13.1 /
+git 2.56.0): with the overlays the plumbing commit landed and `posse/s1`
+fast-forwarded onto it, and in a main checkout `update-ref refs/heads/main`
+moved main; without them both are refused, HEAD and main are unchanged, and
+`git status` and `git log` still work. The cost is G1-G4's one tier up — no
+saved index refresh, no `git fetch`, no shared-ref reflog.
+
+One consequence worth stating here because it reads like a hole and is not:
+ADR 0038 decision 4's `:ro` binds of `config`, `hooks` and the worktree
+identity chain render NOTHING for this PID now. They are `:ro` over whatever
+read-write mount covers them, and nothing covers them any more —
+`cageOverlay`'s same-mode rule appends nothing, exactly as it always did for
+`<common>/config` in a worktree. INVISIBLE to write is the stronger of the
+two walls; the pin that says so over the whole mount list and both tree
+shapes is `TestNoGitDirIsWritableForAWholeTreeDenyPID`.
 
 ### The worktree common dir is `:ro`, and narrower than L2 (ranger-base-t4f1)
 
@@ -79,7 +109,8 @@ because moving the slot beats freezing it — and other sessions'
 
 What ships now is **narrower than L2 rather than wider**: the common dir
 `:ro`, with read-write overlays of `worktrees/<own>`, `objects` and `logs`,
-and **no ref write at all**. L2's grant is those three plus the session's own
+and **no ref write at all** — for every PID but a whole-tree-deny one, which
+since ADR 0086 D8 gets none of the three (the section above). L2's grant is those three plus the session's own
 `refs/heads/<branch>` and the `.lock` git renames onto it (ranger-base-m2wf),
 plus that ref's parent directory for CREATION only (ranger-base-uuze — the
 branch carries a slash, so git must `mkdir refs/heads/posse`, and `git gc`

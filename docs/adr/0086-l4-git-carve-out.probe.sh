@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# ADR 0086 D8 (ranger-base-56w67): the container tier's git carve-out for a
-# PID that denies the whole tree, BEFORE and AFTER D8, in both shapes a
-# session tree has.
+# ADR 0086 D8: the container tier's git carve-out for a PID that denies the
+# whole tree, BEFORE and AFTER D8, in both shapes a session tree has.
+# Written on the design bead (ranger-base-56w67) when both arms were
+# hypothetical; D8 is BUILT since ranger-base-sk13s, so the "after D8" arms
+# are now what CageMounts renders and the "before D8" arms are what it
+# rendered until then. The mount-list half of that is
+# internal/posse/TestNoGitDirIsWritableForAWholeTreeDenyPID.
 #
 #   bash docs/adr/0086-l4-git-carve-out.probe.sh [parent-dir]
 #
@@ -12,9 +16,9 @@
 # that layering — which writes need which overlay — not the docker engine's
 # bind semantics, which ADR 0014's probes measured (7/7, depth-ordered).
 #
-# Expected: "L4 today" commits by plumbing in both shapes (the linked
+# Expected: "before D8" commits by plumbing in both shapes (the linked
 # worktree's commit is one the launcher's splice fast-forwards posse/s1 onto
-# at close; the main checkout moves refs/heads/main directly); "proposed"
+# at close; the main checkout moves refs/heads/main directly); "after D8"
 # refuses both, and `git status`/`git log` still work in every arm.
 # Exit 0 always; read the lines. Writes only under a fresh temp dir it removes.
 set -u
@@ -34,12 +38,12 @@ plumb_wt='cd '"$R"'/wt; : > newfile 2>/dev/null && echo "  cwd create: ok" || ec
   '"$G"' log --oneline -1 >/dev/null 2>&1 && echo "  log: ok" || echo "  log: FAIL";
   b=$(echo injected | '"$G"' hash-object -w --stdin 2>/dev/null) && echo "  hash-object -w: ok" || echo "  hash-object -w: refused";
   '"$G"' update-index --cacheinfo 100644,${b:-0000000000000000000000000000000000000000},f 2>/dev/null && '"$G"' commit -qm injected 2>/dev/null && echo "  commit (detached): ok" || echo "  commit (detached): refused"'
-echo "LINKED WORKTREE, L4 today (common :ro + rw own/objects/logs):"
+echo "LINKED WORKTREE, before D8 (common :ro + rw own/objects/logs):"
 base --bind $OWN $OWN --bind $COMMON/objects $COMMON/objects --bind $COMMON/logs $COMMON/logs bash -c "$plumb_wt"
 tip=$($G -C wt rev-parse HEAD); br=$($G -C repo rev-parse posse/s1)
 $G -C repo merge-base --is-ancestor $br $tip && [ "$tip" != "$br" ] && echo "  => branch posse/s1 fast-forwards to the injected commit (what spliceDetachedWork does at close): $($G -C repo show -s --format=%s $tip)"
 $G -C wt reset -q --hard $br
-echo "LINKED WORKTREE, proposed (no git-dir overlay):"
+echo "LINKED WORKTREE, after D8 (common :ro and WHOLE, no git-dir overlay):"
 base bash -c "$plumb_wt"
 [ "$($G -C wt rev-parse HEAD)" = "$br" ] && echo "  => worktree HEAD unchanged"
 plumb_main='cd '"$R"'/repo; : > newfile 2>/dev/null && echo "  cwd create: ok" || echo "  cwd create: refused";
@@ -48,11 +52,11 @@ plumb_main='cd '"$R"'/repo; : > newfile 2>/dev/null && echo "  cwd create: ok" |
   t=$(printf "100644 blob %s\tf\n" "${b:-0}" | '"$G"' mktree 2>/dev/null); c=$(echo injected | '"$G"' commit-tree ${t:-0} -p main 2>/dev/null);
   '"$G"' update-ref refs/heads/main ${c:-0} 2>/dev/null && echo "  update-ref refs/heads/main: ok" || echo "  update-ref refs/heads/main: refused"'
 m0=$($G -C repo rev-parse main)
-echo "MAIN CHECKOUT, L4 today (repo :ro + rw .git, :ro config & hooks):"
+echo "MAIN CHECKOUT, before D8 (repo :ro + rw .git, :ro config & hooks):"
 base --bind $COMMON $COMMON --ro-bind $COMMON/config $COMMON/config --ro-bind $COMMON/hooks $COMMON/hooks bash -c "$plumb_main"
 [ "$($G -C repo rev-parse main)" != "$m0" ] && echo "  => refs/heads/main MOVED to: $($G -C repo show -s --format=%s main)"
 $G -C repo update-ref refs/heads/main $m0
-echo "MAIN CHECKOUT, proposed (no .git carve-out):"
+echo "MAIN CHECKOUT, after D8 (no .git carve-out — .git stays under the :ro repo):"
 base bash -c "$plumb_main"
 [ "$($G -C repo rev-parse main)" = "$m0" ] && echo "  => refs/heads/main unchanged"
 rm -rf "$R"

@@ -394,6 +394,62 @@ underneath it. That is the same gap D3 closed one tier down. A tier stricter
 than L2 that is weaker than L2 on the one capability the deny exists to
 remove is not stricter.
 
+**As built (ranger-base-sk13s, `docs/notes.d/ranger-base-sk13s.md`).** One
+branch each, both on `ro` — which is already `deniesFileWrite(ag.Deny)` in
+`CageMounts`, so D8 reads the same predicate D3's doors read and adds no
+second question. The `<dir>/.git` overlay is deleted outright rather than
+conditioned, because that carve-out only ever existed inside the `if ro`
+block the `.beads` one lives in; the `sessionCommonDirWrites` loop is
+skipped for `ro` and the common dir's `Why` says which wall the reader is
+looking at. `sessionCommonDirWrites` itself is unchanged and still answers
+"what a detached commit writes", a fact about the tree: the PID is read at
+the one call site, so that function stays a reader of git.
+- **EIGHT existing pins asserted the grant and flipped**, three more than
+  the bead listed, and the three it missed are the shape the decision is
+  about: `TestWorktreePointerAndIdentityChainAreReadOnly`,
+  `TestAbsentWorktreeConfigIsNeitherBoundNorCreated` and
+  `TestNoGitLockSiblingIsEverBound` each asserted that decision 4's `:ro`
+  binds LAND for this PID — and after D8 there is no read-write mount left
+  for them to land on, so `cageOverlay`'s same-mode rule appends nothing and
+  the wall is INVISIBLE rather than `:ro`. That is 4b's degeneracy arriving
+  in two more shapes by the rule the worktree shape always used, with no
+  conditional added anywhere. `TestWritableExtraCannotOpenTheGitIdentityBinds`
+  splits for the same reason: `writable: [.git/hooks]` no longer brings
+  `<dir>/.git/config` under a read-write mount, so only `writable: [.git]`
+  does.
+- **The new pin is a sweep, not a row** (`cageoverlay_test.go`,
+  `TestNoGitDirIsWritableForAWholeTreeDenyPID`): over a real linked worktree
+  and a main checkout it judges the KIND of every rendered mount against
+  both git dirs, from both sides — no read-write mount at or inside them,
+  and no path under them whose deepest covering mount is read-write
+  (`cageCovering`, the renderer's own resolver). The no-deny front is
+  asserted to FAIL the same sweep in both shapes, which is what stops the
+  pin passing over a renderer that mounts nothing. Mutation-checked
+  2026-11-11: restoring the `<dir>/.git` carve-out reds the main-checkout
+  arm, restoring the overlay loop reds the worktree arm, and each red names
+  the mount and its `Why`.
+- The probe was RE-RUN after the change (2026-11-11, same D1 host, bwrap
+  0.13.1, load 4.5) and its "after D8" arms are now what `CageMounts`
+  renders: in the linked worktree `hash-object -w` and the detached commit
+  are both refused and HEAD is unchanged; in the main checkout
+  `update-ref refs/heads/main` is refused and main is unchanged; `git
+  status` and `git log` work in all four arms. The arms it used to label
+  "proposed" are labelled "after D8" for that reason.
+- The engine-side arm stays off-box, as this decision's own alternative
+  says: `cageoverlaylive_test.go`'s allow-list and bare-`Edit`/`Write` arms
+  now want `git=refused`, UNRUN because the seat cannot reach the docker
+  socket (ranger-base-017dx's venue).
+- **A live pin has been asking for D8 since before the carve-out existed.**
+  `cageinnerliveqa_test.go`'s mount-boundary test (rangerhq-pafo) drives
+  this very PID against a real main checkout and asserts
+  `gitdir=refused` for `touch ./.git/written`, under the message "a boundary
+  with a hole in it is not a boundary". The carve-out made that false — it
+  put a read-write mount under that path, and decision 4 binds only `config`
+  and `hooks` `:ro` — so the pin could only stay green by not running, which
+  on this box it cannot do. Read off the mount list rather than an engine:
+  the row it contradicted is the one this bead inverted. After D8 the two
+  agree.
+
 ADR 0014 §4's sentence "L4's `:ro` repo always carries L2's carve-outs …
 `.beads/` and `.git/`" reasoned "match L2". It still does: L2 no longer
 grants `.git` to this PID, so matching L2 means `.beads/` alone. The

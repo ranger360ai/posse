@@ -179,12 +179,15 @@ func TestAllowListShapeOverlaysWritableExtras(t *testing.T) {
 	wantMode(t, ms, dir, true, "allow-list")
 	wantMode(t, ms, filepath.Join(dir, "docs/adr"), false, "allow-list")
 	wantNoMount(t, ms, filepath.Join(dir, "docs/rca"), "allow-list")
-	// The two carve-outs a `:ro` repo always carries (ADR 0014 §4): the
-	// store, so claim/comment/close survive the tier, and the git dir, so
-	// the session can refresh an index. Both are L2's, and matching L2 is
-	// the ADR's own instruction.
+	// The ONE carve-out a `:ro` repo carries (ADR 0014 §4 as amended by ADR
+	// 0086 D8): the store, so claim/comment/close survive the tier. The git
+	// dir stood beside it — "so the session can refresh an index", matching
+	// L2 on the ADR's own instruction — until D3 took that grant away from
+	// this very PID class at L2 and D8 followed here, because through the
+	// launcher's splice it let such a seat land a commit. Matching L2 now
+	// means `.beads` alone.
 	wantMode(t, ms, filepath.Join(dir, ".beads"), false, "allow-list")
-	wantMode(t, ms, filepath.Join(dir, ".git"), false, "allow-list")
+	wantNoMount(t, ms, filepath.Join(dir, ".git"), "the git dir of a whole-tree-deny PID (ADR 0086 D8)")
 
 	argv := e.RenderArgv(CageRender{Image: "img", Workdir: dir, Mounts: ms, Inner: []string{"x"}})
 	adr := filepath.Join(dir, "docs/adr")
@@ -244,11 +247,13 @@ func TestBareAndFileFilterSpellingsMountNoOverlay(t *testing.T) {
 	wantNoMount(t, filt, filepath.Join(dir, "docs"), "file filter")
 
 	// A PID with only the bare rule is unchanged (ADR 0014 verification 5):
-	// same `:ro` repo, plus the carve-outs, and no overlay invented for it.
+	// same `:ro` repo, plus the one carve-out ADR 0086 D8 leaves it, and no
+	// overlay invented for it. The bare rule IS the whole-tree deny, so the
+	// `.git` row here is D8's and not a second question.
 	bare := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, dir, "s1")
 	wantMode(t, bare, dir, true, "bare")
 	wantMode(t, bare, filepath.Join(dir, ".beads"), false, "bare")
-	wantMode(t, bare, filepath.Join(dir, ".git"), false, "bare")
+	wantNoMount(t, bare, filepath.Join(dir, ".git"), "bare — the git dir is not carved out (ADR 0086 D8)")
 	wantNoMount(t, bare, filepath.Join(dir, "docs/adr"), "bare")
 }
 
@@ -486,6 +491,21 @@ func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
 // packedrefslockl4_qa_test.go, which reds on that twin whatever cageOverlay
 // would have done with it afterwards.
 //
+// **AND THE DENY FRONT GETS NONE OF THE THREE, which is ADR 0086 D8**
+// (ranger-base-sk13s, from the design on ranger-base-56w67). The narrowing
+// above is what makes the three safe for every other PID; for a PID that
+// denies the whole tree they are the whole of what a commit needs, because
+// `MergeSessionWork` runs `spliceDetachedWork` BEFORE every guard and
+// fast-forwards `posse/<session>` onto whatever the detached HEAD names. So
+// the two fronts are no longer one assertion and the loop below says which
+// is which. MEASURED 2026-11-11,
+// `docs/adr/0086-l4-git-carve-out.probe.sh`: with the three overlays a
+// plumbing commit landed in a linked worktree and `posse/s1` fast-forwarded
+// onto it; with none of them `hash-object -w` and the commit are both
+// refused and HEAD is unchanged, while `git status` and `git log` still
+// work. The kind-of-every-mount sweep over both tree shapes is
+// TestNoGitDirIsWritableForAWholeTreeDenyPID.
+//
 // This test measures the MOUNT LIST. That the engine honours a read-write
 // bind over a `:ro` parent is measured in
 // docs/adr/0014-path-scoped-writes.probe.sh (7/7, ranger-base-yu5), and this
@@ -524,9 +544,23 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 	for _, front := range []string{"cage: container\ndeny: [Edit, Write]\n", "cage: container\n"} {
 		ms := a.CageMounts(cageAgent(t, a, front), e, wt, "s1")
 		wantMode(t, ms, common, true, "worktree git common dir ("+front+")")
-		wantMode(t, ms, own[0], false, "the session's own per-worktree git dir")
-		wantMode(t, ms, filepath.Join(common, "objects"), false, "objects")
-		wantMode(t, ms, filepath.Join(common, "logs"), false, "logs")
+		// The three overlays, and the one place the two fronts part
+		// company (ADR 0086 D8). For every PID but a whole-tree-deny one
+		// they are read-write, and the narrowing is what makes that safe.
+		// For a whole-tree-deny PID they are not mounted at all: they are
+		// exactly what a detached-HEAD commit writes, `spliceDetachedWork`
+		// runs before every guard at close, and a seat whose Edit/Write
+		// deny exists to make its output FINDINGS must not land a commit
+		// by the launcher's route either. So the common dir is `:ro` and
+		// WHOLE there, and nothing beneath it is carved back.
+		three := []string{own[0], filepath.Join(common, "objects"), filepath.Join(common, "logs")}
+		for _, p := range three {
+			if strings.Contains(front, "deny") {
+				wantNoMount(t, ms, p, "a whole-tree-deny PID gets no git-dir write at L4 either — ADR 0086 D8 ("+front+")")
+				continue
+			}
+			wantMode(t, ms, p, false, "one of the three regions a detached-HEAD commit writes ("+front+")")
+		}
 		// The DIRECTORY rows, which are the ones that can fail: each is
 		// inside the `:ro` common mount and under NO overlay, so the deepest
 		// bind covering it is the read-only one. A mount of its own here —
@@ -565,11 +599,184 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 	// DROPPED (cageOverlay's Stat guard), which is what the launcher's
 	// mkdir exists to prevent — and it is the arm that proves the three
 	// overlays above are read off the tree rather than spelled from a list.
+	// On the PID that RENDERS them, since ADR 0086 D8: under the deny front
+	// there is no overlay for a missing source to be dropped from, so this
+	// arm would pass over a renderer that had stopped reading the tree.
 	if err := os.RemoveAll(filepath.Join(common, "logs")); err != nil {
 		t.Fatal(err)
 	}
-	ms := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, wt, "s1")
+	ms := a.CageMounts(cageAgent(t, a, "cage: container\n"), e, wt, "s1")
 	wantNoMount(t, ms, filepath.Join(common, "logs"), "logs with no source on disk")
+	wantMode(t, ms, filepath.Join(common, "objects"), false, "objects, in the same pass")
+}
+
+// gitDirWritableComplaints is the KIND of every mount, judged against a set
+// of git directories: the sweep ADR 0086 D6 asks for in place of a
+// membership check. Two directions, because a read-write mount can reach a
+// path under a git dir from either side of it:
+//
+//   - a mount whose destination lies AT or INSIDE one of the git dirs —
+//     every overlay this file is about, `worktrees/<own>`, `objects`,
+//     `logs`, `<dir>/.git` itself;
+//   - a path under a git dir whose DEEPEST covering mount is read-write,
+//     which is how a main checkout's repo mount reaches `.git` without any
+//     overlay of its own. cageCovering is the same resolver the renderer
+//     decides an overlay's mode by, so this asks the question the engine
+//     will answer and not a looser one.
+//
+// A path nothing covers is not a complaint: the cage cannot see it, and
+// INVISIBLE is a stronger wall than `:ro` (cageOverlay's deny direction
+// says the same thing from the other end).
+func gitDirWritableComplaints(ms []CageMount, gitDirs, probes []string) []string {
+	var out []string
+	for _, m := range ms {
+		if m.RO {
+			continue
+		}
+		for _, g := range gitDirs {
+			if underDir(g, m.Dst) {
+				out = append(out, "read-write mount at "+m.Dst+", inside the git dir "+g+" — "+m.Why)
+			}
+		}
+	}
+	for _, p := range probes {
+		i, _ := cageCovering(ms, absResolve(p))
+		if i < 0 {
+			continue
+		}
+		if !ms[i].RO {
+			out = append(out, "the deepest mount deciding "+p+" is read-write ("+ms[i].Dst+") — "+ms[i].Why)
+		}
+	}
+	return out
+}
+
+// ADR 0086 D8 (ranger-base-sk13s, from the design on ranger-base-56w67), and
+// it is the pin D6's fixture rule asks for: a PID that denies the whole tree
+// gets NO read-write mount anywhere under the git dirs of its session, in
+// BOTH shapes a session tree has — a real linked worktree and a main
+// checkout — and the claim is about the KIND of every mount rather than the
+// membership of a list.
+//
+// Why a sweep and not more rows. R0 and this bead's own gap had the same
+// cause (D6): every fixture that drove a whole-tree-deny PID drove ONE
+// shape, so a grant that existed only in the other shape was invisible to
+// the suite. The row-by-row tests above say what is mounted where; this one
+// says that nothing at all of either git dir is writable, so a carve-out put
+// back under a NEW name — a fourth region beside the three, an overlay of
+// `refs`, a `.git` bind spelled some other way — reds here without anybody
+// having to think of it first.
+//
+// The control is the no-deny front, asserted to FAIL the same sweep in both
+// shapes. Without it this pin would pass just as well over a renderer that
+// mounted nothing at all, or over a fixture whose git dir the mount list
+// never reaches; with it, restoring either arm of D8 turns the deny front
+// into the no-deny front and the pin goes red (MEASURED both ways,
+// 2026-11-11: restore the `<dir>/.git` carve-out and the main-checkout arm
+// reds; restore the sessionCommonDirWrites loop and the worktree arm reds).
+//
+// What this pin does NOT judge: a PID that asks for a git dir by name in
+// `writable:`. That is an explicit grant in the PID's own text, honoured
+// identically at L2 (pidWritableExtras, unconditional) and here, and
+// deny-wins over it is TestWritableExtraCannotOpenTheGitIdentityBinds'
+// subject. D8 is about what the TIER hands a PID that asked for nothing.
+func TestNoGitDirIsWritableForAWholeTreeDenyPID(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+
+	// (1) A LINKED WORKTREE — the shape no whole-tree-deny fixture had
+	// before D6, and the one where the launcher's splice is the route to a
+	// landed commit.
+	wt := gitWorktreeFixture(t)
+	own := LinkedGitDirs(wt)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	// What the launcher makes before a caged launch (PrepareSessionHead), so
+	// the no-deny control renders all three overlays and the two fronts
+	// differ by the PID alone.
+	if err := os.MkdirAll(filepath.Join(own[1], "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(own[0], "config.worktree"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(wt, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// (2) A MAIN CHECKOUT, where the carve-out was `.git` WHOLE and
+	// `update-ref refs/heads/main` moved main directly.
+	main := gitRepoFixture(t)
+
+	for _, s := range []struct {
+		name    string
+		dir     string
+		gitDirs []string
+		probes  []string
+	}{
+		{
+			name:    "linked worktree",
+			dir:     wt,
+			gitDirs: []string{own[0], own[1]},
+			probes: []string{
+				filepath.Join(own[0], "index"), filepath.Join(own[0], "HEAD"),
+				filepath.Join(own[0], "gitdir"), filepath.Join(own[0], "commondir"),
+				filepath.Join(own[0], "config.worktree"), filepath.Join(own[0], "logs", "HEAD"),
+				filepath.Join(own[1], "objects"), filepath.Join(own[1], "objects", "pack"),
+				filepath.Join(own[1], "logs", "refs", "heads", "main"),
+				filepath.Join(own[1], "refs", "heads", "main"),
+				filepath.Join(own[1], "packed-refs"), filepath.Join(own[1], "config"),
+				filepath.Join(own[1], "hooks", "pre-push"),
+				filepath.Join(own[1], "worktrees", filepath.Base(own[0])),
+			},
+		},
+		{
+			name:    "main checkout",
+			dir:     main,
+			gitDirs: []string{filepath.Join(main, ".git")},
+			probes: []string{
+				filepath.Join(main, ".git"), filepath.Join(main, ".git", "index"),
+				filepath.Join(main, ".git", "HEAD"), filepath.Join(main, ".git", "objects"),
+				filepath.Join(main, ".git", "refs", "heads", "main"),
+				filepath.Join(main, ".git", "packed-refs"),
+				filepath.Join(main, ".git", "logs", "HEAD"),
+				filepath.Join(main, ".git", "config"),
+				filepath.Join(main, ".git", "hooks", "pre-push"),
+			},
+		},
+	} {
+		t.Run(s.name, func(t *testing.T) {
+			if len(s.probes) == 0 || len(s.gitDirs) == 0 {
+				t.Fatalf("%s names no git dir or no probe, so this holds nothing", s.name)
+			}
+			deny := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, s.dir, "s1")
+			if c := gitDirWritableComplaints(deny, s.gitDirs, s.probes); len(c) != 0 {
+				t.Errorf("a whole-tree-deny PID is handed a git-dir write at L4 (ADR 0086 D8) in a %s:\n  %s\nmounts:\n%s",
+					s.name, strings.Join(c, "\n  "), showMounts(deny))
+			}
+			// The store carve-out is the one that survives D8, and it is
+			// asserted here so "nothing is writable" cannot be satisfied by
+			// a renderer that stopped carving anything out — that would
+			// take claim/comment/close with it (ADR 0002's amendment).
+			wantMode(t, deny, filepath.Join(s.dir, ".beads"), false, s.name+" store carve-out")
+			// The repo itself is `:ro`, which is what makes the git dirs the
+			// only question left.
+			wantMode(t, deny, s.dir, true, s.name+" repo")
+
+			// THE CONTROL. Every other PID is unchanged, so the same sweep
+			// over the same fixture MUST complain: if it does not, either
+			// the fixture puts no git dir within reach of the mount list or
+			// this sweep cannot see a read-write one, and the arm above is
+			// vacuous either way.
+			open := a.CageMounts(cageAgent(t, a, "cage: container\n"), e, s.dir, "s1")
+			if c := gitDirWritableComplaints(open, s.gitDirs, s.probes); len(c) == 0 {
+				t.Errorf("control: a PID that denies nothing must still reach its own git dir in a %s — this sweep saw no read-write mount there, so the deny arm above measured nothing:\nmounts:\n%s",
+					s.name, showMounts(open))
+			}
+		})
+	}
 }
 
 // The overlay is spelled the way the mount it lands on is spelled, not the
@@ -644,9 +851,15 @@ func mountCount(ms []CageMount, p string) int {
 // writable enforces nothing (ADR 0023 non-goal 3, closed at L2 by ADR 0038
 // decision 1).
 //
-// Both writable shapes are here because they reach the same two files by
-// different routes — the repo mount on a read-write repo, the `.git`
-// carve-out on a `:ro` one — and one mechanism has to answer both.
+// Both repo shapes are here because they used to reach the same two files
+// by different routes — the repo mount on a read-write repo, the `.git`
+// carve-out on a `:ro` one — and one mechanism had to answer both. Since
+// ADR 0086 D8 removed that carve-out there is only one WRITABLE route left,
+// and the `:ro` shape's arm asserts the degeneracy instead: nothing covers
+// those files read-write, so the pass appends nothing and INVISIBLE to
+// write replaces `:ro` over read-write. The shape is kept rather than
+// deleted because a carve-out put back anywhere under this `.git` would
+// make its two rows fail.
 //
 // This is the MOUNT LIST. That the engine honours a `:ro` bind of a FILE
 // over a read-write parent the way it honours one of a directory (MEASURED
@@ -697,14 +910,27 @@ func TestGitIdentityFilesAreReadOnlyInBothWritableShapes(t *testing.T) {
 	}
 
 	// (2) The `:ro` repo, where the read-write `.git` carve-out (ADR 0014
-	// §4) is what would otherwise leave both writable. The carve-out itself
-	// must survive — this narrows it, it does not withdraw it.
+	// §4) used to be what otherwise left both writable — and where ADR 0086
+	// D8 withdrew that carve-out outright rather than narrowing it, because
+	// through the launcher's splice it let a seat that may not edit a file
+	// land a commit (in a main checkout, `update-ref refs/heads/main`
+	// directly). So this shape renders NOTHING for either file now: both
+	// resolve inside the `:ro` repo mount, where cageOverlay's same-mode
+	// rule appends nothing, and this becomes the third shape's answer
+	// reached by the same rule rather than a fourth answer of its own. The
+	// claim is not weaker: nothing under this `.git` is writable at all,
+	// which is what the sweep in TestNoGitDirIsWritableForAWholeTreeDenyPID
+	// asserts over the whole mount list and both tree shapes.
+	//
+	// The `.beads` carve-out is the one that survives, and it is here
+	// rather than in a test of its own because "the store still crosses
+	// and the git dir no longer does" is one claim about one PID.
 	ro := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, dir, "s1")
 	wantMode(t, ro, dir, true, ":ro repo")
-	wantMode(t, ro, filepath.Join(dir, ".git"), false, ":ro repo .git carve-out")
+	wantNoMount(t, ro, filepath.Join(dir, ".git"), ":ro repo .git — no carve-out since ADR 0086 D8")
 	wantMode(t, ro, filepath.Join(dir, ".beads"), false, ":ro repo store carve-out")
-	wantMode(t, ro, cfg, true, ":ro repo config")
-	wantMode(t, ro, hooks, true, ":ro repo hooks")
+	wantNoMount(t, ro, cfg, ":ro repo config — already inside the boundary (ADR 0086 D8)")
+	wantNoMount(t, ro, hooks, ":ro repo hooks — already inside the boundary (ADR 0086 D8)")
 
 	// (5) The reachability row still passes: the store of record is under a
 	// read-write bind in the set this launch would render. A wall placed
@@ -749,6 +975,16 @@ func TestNoGitLockSiblingIsEverBound(t *testing.T) {
 			if strings.HasSuffix(p, ".lock") {
 				locks++
 				wantNoMount(t, ms, p, "lock sibling ("+front+")")
+				continue
+			}
+			if strings.Contains(front, "deny") {
+				// Since ADR 0086 D8 nothing covers this PID's `.git`
+				// read-write, so the non-lock entries are not bound
+				// either — the pass appends nothing where the path is
+				// already inside the boundary. The lock claim is the
+				// subject here and it holds on both fronts: the sweep
+				// below is what carries it when the list is empty.
+				wantNoMount(t, ms, p, "config entry "+p+" ("+front+")")
 				continue
 			}
 			wantMode(t, ms, p, true, "config entry "+p+" ("+front+")")
@@ -851,9 +1087,22 @@ func TestWritableExtraCannotOpenTheGitIdentityBinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Since ADR 0086 D8 the `:ro` repo carries no `.git` carve-out, so what
+	// an extra opens is the whole of what the identity pass has to close —
+	// and the two extras no longer open the same thing. `writable: [hooks]`
+	// opens that directory alone, and `config` stays where D8 left it,
+	// inside the `:ro` repo and under no mount at all; `writable: [.git]`
+	// opens the git dir whole and `config` is then covered read-write, so
+	// the `:ro` file bind lands. Either way the extra does not win: the
+	// hooks directory is `:ro` in both, by an EDIT of the bind the extra
+	// added rather than a second mount beside it.
 	for _, extra := range []string{hooks, filepath.Join(dir, ".git")} {
 		ms := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\nwritable: ["+extra+"]\n"), e, dir, "s1")
-		wantMode(t, ms, cfg, true, "config under writable: "+extra)
+		if extra == hooks {
+			wantNoMount(t, ms, cfg, "config under writable: "+extra+" — nothing covers it read-write (ADR 0086 D8)")
+		} else {
+			wantMode(t, ms, cfg, true, "config under writable: "+extra)
+		}
 		wantMode(t, ms, hooks, true, "hooks under writable: "+extra)
 		if n := mountCount(ms, hooks); n != 1 {
 			t.Errorf("writable: %s must edit the bind, not add one, got %d:\n%s", extra, n, showMounts(ms))
@@ -915,15 +1164,33 @@ func TestWorktreePointerAndIdentityChainAreReadOnly(t *testing.T) {
 
 	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
 		ms := a.CageMounts(cageAgent(t, a, front), e, wt, "s1")
-		// The overlay these binds sit on is still read-write: this narrows
+		// The overlay these binds sit on is still read-write for every PID
+		// but the one ADR 0086 D8 takes it from: that narrows
 		// `worktrees/<own>`, it does not withdraw it. Without this row a
 		// wall that took the whole per-worktree dir `:ro` — and with it the
 		// index and HEAD every commit in the cage writes — would look green.
-		wantMode(t, ms, own[0], false, "the session's own per-worktree git dir ("+front+")")
-		for _, p := range chain {
-			wantMode(t, ms, p, true, "identity chain "+filepath.Base(p)+" ("+front+")")
-			if n := mountCount(ms, p); n != 1 {
-				t.Errorf("%s must be bound exactly once (%s), got %d:\n%s", p, front, n, showMounts(ms))
+		//
+		// Under the deny front D8 withdraws it, and the chain degenerates
+		// the way the worktree shape always did for `config` and `hooks`:
+		// the three files are inside the `:ro` common mount, cageOverlay's
+		// same-mode rule appends nothing, and a `:ro` bind over `:ro` is
+		// the one thing this mechanism has never rendered. The wall 4b
+		// exists for is unaffected — the whole git dir is unwritable, so
+		// there is no rewritten `gitdir` or planted `commondir` to freeze
+		// against — and that is the claim the sweep in
+		// TestNoGitDirIsWritableForAWholeTreeDenyPID holds.
+		if strings.Contains(front, "deny") {
+			wantNoMount(t, ms, own[0], "the per-worktree git dir of a whole-tree-deny PID ("+front+")")
+			for _, p := range chain {
+				wantNoMount(t, ms, p, "identity chain "+filepath.Base(p)+" — inside the :ro common mount ("+front+")")
+			}
+		} else {
+			wantMode(t, ms, own[0], false, "the session's own per-worktree git dir ("+front+")")
+			for _, p := range chain {
+				wantMode(t, ms, p, true, "identity chain "+filepath.Base(p)+" ("+front+")")
+				if n := mountCount(ms, p); n != 1 {
+					t.Errorf("%s must be bound exactly once (%s), got %d:\n%s", p, front, n, showMounts(ms))
+				}
 			}
 		}
 		// Everything else `worktrees/<own>` holds after a session's life is
@@ -941,11 +1208,25 @@ func TestWorktreePointerAndIdentityChainAreReadOnly(t *testing.T) {
 			wantMode(t, ms, wt, false, "rw repo ("+front+")")
 			wantMode(t, ms, pointer, true, "the pointer over a rw repo ("+front+")")
 		}
-		// The mount FLAG is the wall, not the struct field.
+		// The mount FLAG is the wall, not the struct field — on the front
+		// that renders the binds. On the other one the flag that matters is
+		// the common dir's own, and it is `:ro`: nothing of the git dir is
+		// handed to the engine read-write (ADR 0086 D8).
 		argv := e.RenderArgv(CageRender{Image: "img", Workdir: wt, Mounts: ms, Inner: []string{"x"}})
-		for _, p := range chain {
-			if !argvHas(argv, "-v", p+":"+p+":ro") {
-				t.Errorf("%s is a mount flag, not a claim (%s): %q", p, front, argv)
+		if strings.Contains(front, "deny") {
+			if !argvHas(argv, "-v", own[1]+":"+own[1]+":ro") {
+				t.Errorf("the common dir must be handed to the engine :ro and whole (%s): %q", front, argv)
+			}
+			for _, p := range chain {
+				if argvHas(argv, "-v", p+":"+p) || argvHas(argv, "-v", p+":"+p+":ro") {
+					t.Errorf("%s is bound at all under a PID that gets no git-dir mount (%s): %q", p, front, argv)
+				}
+			}
+		} else {
+			for _, p := range chain {
+				if !argvHas(argv, "-v", p+":"+p+":ro") {
+					t.Errorf("%s is a mount flag, not a claim (%s): %q", p, front, argv)
+				}
 			}
 		}
 		// The reachability row still passes: a bind placed deeper than
@@ -1032,12 +1313,19 @@ func TestAbsentWorktreeConfigIsNeitherBoundNorCreated(t *testing.T) {
 	if _, err := os.Stat(cw); err == nil {
 		t.Fatalf("the fixture already carries %s, so this measures nothing", cw)
 	}
-	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
-		ms := a.CageMounts(cageAgent(t, a, front), e, wt, "s1")
-		wantNoMount(t, ms, cw, "config.worktree with no source on disk ("+front+")")
-		wantMode(t, ms, filepath.Join(own[0], "gitdir"), true, "gitdir, in the same pass ("+front+")")
-		wantMode(t, ms, filepath.Join(own[0], "commondir"), true, "commondir, in the same pass ("+front+")")
-	}
+	// The read-write front only: it is the one whose pass renders these
+	// binds at all. Since ADR 0086 D8 a whole-tree-deny PID has no
+	// read-write mount under its git dir, so NOTHING in the chain is bound
+	// for it and an absent source would be indistinguishable from a present
+	// one — the sibling rows are what make the drop a Stat on one source
+	// rather than the whole pass falling over, and they need a front that
+	// binds the siblings. That front's own answer to this file is pinned in
+	// TestNoGitDirIsWritableForAWholeTreeDenyPID, which asserts the whole
+	// git dir carries no read-write mount in either tree shape.
+	ms := a.CageMounts(cageAgent(t, a, "cage: container\n"), e, wt, "s1")
+	wantNoMount(t, ms, cw, "config.worktree with no source on disk")
+	wantMode(t, ms, filepath.Join(own[0], "gitdir"), true, "gitdir, in the same pass")
+	wantMode(t, ms, filepath.Join(own[0], "commondir"), true, "commondir, in the same pass")
 	if _, err := os.Stat(cw); err == nil {
 		t.Errorf("rendering the mount list created %s on the host", cw)
 	}

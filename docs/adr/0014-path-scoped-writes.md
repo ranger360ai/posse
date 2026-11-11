@@ -59,7 +59,7 @@ Two shapes, existing keys, deny-wins:
 | shape | PID | meaning |
 |---|---|---|
 | deny-list | `deny: [Edit(docs/adr/**), Write(docs/adr/**)]` | repo writable except that subtree |
-| allow-list | `deny: [Edit, Write]` plus `writable: [docs/adr]` | repo not writable except that subtree (and the `.beads`/`.git` carve-out) |
+| allow-list | `deny: [Edit, Write]` plus `writable: [docs/adr]` | repo not writable except that subtree (and the `.beads` carve-out; `.git` was one too until ADR 0086 D8 — see §4) |
 
 `writable:` extras overlapping a path-scoped deny lose (deny-wins, ADR
 0001). `posse agent check` warns. Bare `Edit`/`Write` plus a
@@ -71,7 +71,7 @@ No new PID key. No glob compiler.
 
 | gate | shims | seatbelt (L2) | container (L4) | codex `-s read-only` |
 |---|---|---|---|---|
-| bare `Edit`/`Write`/`NotebookEdit` | unrealized (claude/grok) | whole-repo (cwd omitted; `.beads`/`.git`/`writable:` stay) | repo `:ro` plus the carve-outs in §4 | **counts** — equivalent to the bare deny |
+| bare `Edit`/`Write`/`NotebookEdit` | unrealized (claude/grok) | whole-repo (cwd omitted; `.beads`/`writable:` stay — `.git` until ADR 0086 D3) | repo `:ro` plus the carve-out in §4 (`.git` until ADR 0086 D8) | **counts** — equivalent to the bare deny |
 | subtree glob | unrealized | trailing `subpath` deny of that directory | `:ro` overlay of that directory | **does not count** — it over-enforces (the persona cannot write the paths the PID left open) |
 | non-subtree glob | unrealized | unrealized | unrealized | unrealized |
 
@@ -233,7 +233,9 @@ this ADR exists to prevent.
    unrealized-by-construction; on `Edit(**)` tells you to write `Edit`;
    on a `writable:` extra inside a denied subtree, warns deny-wins.
 5. A PID with only bare `Edit`/`Write` is unchanged: same matrix, same
-   L2 allow-list, same L4 `:ro` (plus the new `.beads`/`.git` overlays).
+   L2 allow-list, same L4 `:ro` (plus the new `.beads` overlay; the `.git`
+   one this verification was written for is gone — ADR 0086 D8, and the
+   bare rule IS the whole-tree deny that D3 and D8 take it from).
 
 ## Measured versus assumed
 
