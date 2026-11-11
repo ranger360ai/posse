@@ -130,3 +130,44 @@ call: nothing inside a `posse-testhome-*` names the worktree, the pid or the
 run that made it. A stamp file is the input a reaper would need, and inventing
 it without the reaper is half a mechanism — so it is in ranger-base-glogz and
 not in this diff.
+
+### The suite reading, and the hour the box spent to make it readable
+
+`make test` **green, exit 0, three arms, zero reds** (MEASURED 2026-11-11,
+09:33, on the house default `TMPDIR`): `./...` 131.8s cmd/posse / 108.4s
+internal/posse / 145.1s internal/treepins / 1.6s cmd/coldexec, arm 2 80.9s,
+arm 3 97.0s, after 442s queued behind two sibling suites. Both new DISK
+readings printed live on every arm — `941243 free inodes on /tmp` from the
+real column, and `no inode reading for /home/posse/.cache/go-build … this
+filesystem accounts no inodes` from the dynamic-inode branch, which is the
+branch that has no number to print and so had to be built blind-safe.
+
+The reading BEFORE that one was taken with `TMPDIR` under `$HOME`, because
+the quota was still spent, and it came back exit 2 on **7 tests in 3
+packages** — every one of them akk9f's documented workaround class, its
+eight minus `cmd/coldexec`'s cold-exec pin, which passed. All 7 are green on
+`/tmp` once the quota clears. Two notes on that, both costing nothing to
+record and both expensive to rediscover:
+
+- **The two `TestQARecordReachAbstains*` reds are the class at its
+  sharpest.** `rchSkip` skips them with *"TMPDIR resolves under /tmp; the
+  profile's blanket temp grant would cover the fixture"* — so the workaround
+  is the only thing that makes them RUN, and running is how they fail. They
+  are not a test the workaround breaks; they are a test the workaround
+  reaches.
+- **akk9f's "the other 2 cannot be read on this box in EITHER root" is
+  scoped to a spent quota, and the scope is load-bearing.** Both
+  (`cmd/posse`'s `TestClaudeConfigDirIsFenced` and
+  `TestQAStatusPrintsTheSecondStoreLine`) shell out to `go build`, which is
+  what dies on EDQUOT; with /tmp at 11% of its inodes and 27% of its bytes
+  they read, and they read green. Nothing in that fragment needs correcting
+  — but a reader who drops the "while the quota is spent" clause will tell
+  themselves two pins are unreadable here forever, and they are not.
+
+The cost of the first reading was not the suite's. The wait loop on it was
+`until ! pgrep -f 'tmp-vw1cp-suite'`, whose own `bash -c` argv carries that
+string, so the pgrep matched ITSELF and never ended: the suite finished at
+06:48 and the waiter spun until the operator said so. `pgrep -f` of a string
+your own loop carries is the read half of the pattern-kill footgun AGENTS.md
+bans under "Ending anything" — same blindness, and no kill needed to pay for
+it. Wait on the pid.
