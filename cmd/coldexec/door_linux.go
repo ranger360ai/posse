@@ -737,7 +737,10 @@ func (d *door) statVerdict(pid int, err error) (v verdict, hole bool) {
 // those the execve never happens. So after this bead a truncation is no
 // longer an exec let through at full speed; it is a charge spent on an exec
 // that did not occur, and the one thing it leaves behind is a plant marked
-// warm.
+// warm — which is a stated edge of ADR 0085 D5 rather than an aside, and is
+// witnessed by TestATruncatedChargeLeavesItsPlantWarm: the first exec of
+// that plant that really happens reads `warm` and is not held
+// (ranger-base-dgbys).
 //
 // MEASURED 2026-11-11 on the arm the census named — the internal/treepins
 // family of bd-shim plants, filtered, D = 2.5s, the two doors run back to
@@ -793,6 +796,15 @@ func (d *door) recordWithdrawal(n *seccompNotif, taken verdict, pendingTarget st
 // landed, because only then has the door really let a live execve through
 // without knowing what it was. A notification the kernel took back covered
 // nothing and had nothing left to cover (see the note above holes).
+//
+// THAT IS HALF OF ranger-base-j0riv'S RULE and it went three beads with no
+// pin of its own: the delays are held to it by the arms' `delayed` counts,
+// but a hole recorded on the way in left every arm green (MEASURED by
+// mutation, ranger-base-dgbys). Pinned now by
+// TestAHoleIsNotRecordedWhenTheKernelTookTheNotificationBack, which reads
+// it off handle() rather than off a run — the live shape wants the caller
+// gone inside the microseconds of adjudicate's /proc reads, and 900 nudged
+// callers on a quiet box produced none of it.
 //
 // And a withdrawal discovered here is TWO different facts depending on what
 // this handler was holding — recordWithdrawal above has them.

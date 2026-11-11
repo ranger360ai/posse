@@ -494,6 +494,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-en75](ranger-base-en75.md) — The move exception asks git, at a chosen 50% (ranger-base-en75)
 - [ranger-base-dybv](ranger-base-dybv.md) — A close only reports a landing it measured (ranger-base-dybv)
 - [ranger-base-dmzk7](ranger-base-dmzk7.md) — ranger-base-dmzk7 — the ≡ line asked its evidence
+- [ranger-base-dgbys](ranger-base-dgbys.md) — ranger-base-dgbys — two rules in cmd/coldexec that nothing pinned
 - [ranger-base-d91mf](ranger-base-d91mf.md) — A branch whose fix landed under another bead, minus two comment lines (ranger-base-d91mf)
 - [ranger-base-cplx](ranger-base-cplx.md) — ranger-base-cplx — a carried mark has to describe the PID it is about
 - [ranger-base-co5n](ranger-base-co5n.md) — The refusal notice says what the bool says (ranger-base-co5n)

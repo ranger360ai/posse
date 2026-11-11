@@ -55,6 +55,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -547,14 +549,19 @@ tm chmodded ./p
 	}
 }
 
-// withdrawalFixture is the ONE live run the three pins below read, each for
+// withdrawalFixture is the ONE live run the four pins below read, each for
 // its own claim: ARM 14 the classification and the coverage
 // (ranger-base-j0riv), ARM 16 that the restart PAYS the remainder
 // (ranger-base-91fu2), ARM 17 the charge nothing restarts
-// (ranger-base-4kars). It is a helper rather than three copies because the
+// (ranger-base-4kars), ARM 20 what that charge leaves behind
+// (ranger-base-dgbys). It is a helper rather than four copies because the
 // fixture is the expensive part and the claims are read off the same
-// output; it is three pins rather than one because they red for different
+// output; it is four pins rather than one because they red for different
 // reasons and a seat that breaks one should not be told about the others.
+//
+// `after` is shell appended to the run once the nudged caller has ended,
+// and it is empty for every pin but ARM 20 — which is the only one with a
+// question about what the run looks like AFTERWARDS.
 //
 // saRestart PICKS THE ENDING, and it is one line of the caller: with it the
 // handler carries SA_RESTART and the withdrawn execve is RESTARTED (ARM 14,
@@ -594,7 +601,7 @@ tm chmodded ./p
 //     because `tm`'s own exit status is its `echo`'s: ARM 14 reads
 //     `CALLER EXIT 0` to tell a restarted execve from a caller the signal
 //     ended, and that fact and the wall time are both wanted here.
-func withdrawalFixture(t *testing.T, saRestart bool) doorRun {
+func withdrawalFixture(t *testing.T, saRestart bool, after string) doorRun {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skipf("no python3, so the pin cannot install a signal handler in a caller: %v", err)
@@ -641,7 +648,7 @@ c=$?
 e=$(date +%s%N)
 echo "CALLER EXIT $c"
 echo "ELAPSED nudged $(( (e-s)/1000000 ))ms"
-`, "MODE", mode, 1))
+`, "MODE", mode, 1)+after)
 }
 
 // ARM 14: a notification the KERNEL takes back is not a coverage hole, and
@@ -672,7 +679,7 @@ echo "ELAPSED nudged $(( (e-s)/1000000 ))ms"
 // execve adjudicated a second time and run.
 func TestAWithdrawnNotificationIsNotAHole(t *testing.T) {
 	t.Parallel()
-	r := withdrawalFixture(t, true)
+	r := withdrawalFixture(t, true, "")
 
 	// Something was delayed — `held`, which nothing signals — so the door
 	// does not exit 3 over this run.
@@ -864,7 +871,7 @@ kill -0 "$p" 2>/dev/null && echo "ORPHAN $p STILL ANSWERS kill -0" || echo "ORPH
 // `nudged` step of a few tens of ms.
 func TestARestartedExecvePaysTheRestOfItsCharge(t *testing.T) {
 	t.Parallel()
-	r := withdrawalFixture(t, true)
+	r := withdrawalFixture(t, true, "")
 	r.wantCode(t, 0)
 	r.wantNoHoles(t)
 
@@ -931,7 +938,7 @@ func TestARestartedExecvePaysTheRestOfItsCharge(t *testing.T) {
 // and the caller's own exit code say it exactly.
 func TestAChargeNothingRestartsReadsTruncated(t *testing.T) {
 	t.Parallel()
-	r := withdrawalFixture(t, false)
+	r := withdrawalFixture(t, false, "")
 	r.wantCode(t, 0)
 	r.wantNoHoles(t)
 
@@ -1027,4 +1034,224 @@ python3 -I thread.py ./plant
 			"task id — see the note above recordWithdrawal:\n%s", v[1], tid, tgid, r.out)
 	}
 	r.wantDelayed(t, 1)
+}
+
+// ARM 19: a HOLE whose notification the kernel took back is recorded as no
+// hole at all — the second half of ranger-base-j0riv's rule, which that
+// bead landed and pinned nothing of (ranger-base-dgbys).
+//
+// THE RULE IS TWO PARTS and ARM 14 above reaches only the first. (a) a
+// withdrawal is not itself a hole — that is ARM 14, and the mutant that
+// puts `vWithdrawn` back into `holes` reds it. (b) a hole is an execve the
+// door let through without knowing what it was, so WHETHER IT WAS LET
+// THROUGH AT ALL is decided at the answer and nowhere else: adjudicate
+// records no hole, every hole rides down to answer(), and answer() records
+// it only once ID_VALID has said the notification was still live.
+//
+// MEASURED at 436f467c, by mutation: the three lines that revert (b) for
+// the holes — `handle` recording its own pending hole before the answer,
+// which is what the shape looked like before j0riv — leave `go test
+// ./cmd/coldexec` GREEN, at -count=1 and at -count=5. The delay half of the
+// same rule is pinned, by ARM 17's `wantDelayed`: reverting (b) for the
+// delays too reds ARMs 14/16/17 at once. So what was unpinned is exactly
+// the holes, and this is the pin for them.
+//
+// WHY THIS ONE IS NOT A SUPERVISED RUN, which every other pin in this file
+// is. The live shape needs the caller to be GONE while the door is inside
+// readPath or stat for that same notification, and the caller only gets
+// there by being withdrawn — so the window is the microseconds between the
+// door taking the notification off the listener and finishing its /proc
+// reads, against a caller that takes milliseconds to die. MEASURED
+// 2026-11-11 on this box (linux 7.2.15 x86_64, go1.27.3) over 900 nudged
+// EINTR callers — 100 at each of nine nudge intervals from a tight loop to
+// 10ms, 207 of them withdrawn — ZERO produced a hole. The rate the finding
+// that filed this read (11 of 250 runs) was taken on a box under `go test
+// ./...`, which is where j0riv's original red lived and where this file's
+// header says a wall-clock fixture is a flake. A fixture pin would
+// therefore cost seconds a run to assert nothing here and red somewhere
+// else, so this reads the rule off `handle` instead: a hole verdict
+// adjudicate really produced, against an answer that does not land.
+//
+// THE LISTENER IS A CLOSED FD, and that is faithful rather than
+// convenient: answer() branches on ID_VALID returning an error and on
+// nothing else, deliberately — a door is not in a position to tell the
+// kernel's ENOENT for a notification it no longer has from any other
+// reason it cannot ask. The pin asserts the branch that error picks.
+func TestAHoleIsNotRecordedWhenTheKernelTookTheNotificationBack(t *testing.T) {
+	t.Parallel()
+
+	// A pid that is GONE, which is what every real hole in this tree has
+	// been: readPath opens /proc/<pid>/mem and the caller is not there.
+	// Run() waits, so the child is reaped and its /proc entry removed
+	// before this returns.
+	gone := exec.Command("/bin/true")
+	if err := gone.Run(); err != nil {
+		t.Fatalf("running /bin/true to get a pid that is over with: %v", err)
+	}
+	dead := uint32(gone.Process.Pid)
+
+	newDoor := func() *door {
+		return &door{
+			listener: -1, // every ioctl on it fails: see the note above
+			delay:    pinDelay,
+			started:  time.Now(),
+			seen:     map[inode]bool{},
+			inflight: map[charge]*held{},
+		}
+	}
+
+	for _, c := range []struct {
+		name string
+		n    *seccompNotif
+		want verdict
+	}{
+		// The hole the tree actually produces (ranger-base-orgvt measured
+		// 134 of them in one arm before the subreaper flag): the path
+		// argument cannot be read out of the caller.
+		{"unreadable", &seccompNotif{ID: 1, Pid: dead, Data: seccompData{Nr: int32(unix.SYS_EXECVE)}}, vUnreadable},
+		// The hole that says the filter and adjudicate's switch have
+		// drifted apart. Nothing can raise it today, which is why it is
+		// here: it reaches the same rule with no /proc in the way at all.
+		{"foreign", &seccompNotif{ID: 2, Pid: dead, Data: seccompData{Nr: int32(unix.SYS_READ)}}, vForeign},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// THE POSITIVE CONTROL. adjudicate really does come back with
+			// this hole, and really does leave it unrecorded — so what the
+			// assertion below reads is a hole DROPPED at the answer and not
+			// a hole that was never made.
+			d := newDoor()
+			pending, taken, target := d.adjudicate(c.n)
+			if pending != c.want {
+				t.Fatalf("adjudicate answered %s, want %s — this case no longer reaches a hole and "+
+					"the rest of it proves nothing (pid %d reused?)", verdictNames[pending], verdictNames[c.want], dead)
+			}
+			if taken != vWithdrawn {
+				t.Errorf("a hole's withdrawal verdict is %s, want %s: a hole was never a charge, so "+
+					"there is nothing for the kernel to have cut short", verdictNames[taken], verdictNames[vWithdrawn])
+			}
+			if target == "" {
+				t.Errorf("the hole named no target, so recordWithdrawal cannot say what the door " +
+					"could not read")
+			}
+			if n := d.verdicts[c.want].Load(); n != 0 {
+				t.Errorf("adjudicate recorded %d %s itself — it must record no hole at all, because "+
+					"whether the execve was let through is not its to decide", n, verdictNames[c.want])
+			}
+
+			// THE ASSERTION THIS PIN EXISTS FOR.
+			d = newDoor()
+			d.handle(c.n)
+			if n := d.verdicts[c.want].Load(); n != 0 {
+				t.Errorf("the run was charged %d %s for a notification the kernel took back. The "+
+					"door let no live execve through here — there was nothing left to let through — "+
+					"and a hole counted for one is `wantNoHoles` redding on load and not on code, "+
+					"which is ranger-base-j0riv's own symptom", n, verdictNames[c.want])
+			}
+			if n := d.verdicts[vWithdrawn].Load(); n != 1 {
+				t.Errorf("the withdrawal was recorded %d times, want 1: a notification that spends no "+
+					"verdict at all is one the report cannot account for", n)
+			}
+		})
+	}
+}
+
+// ARM 20: what a TRUNCATED charge leaves behind — the plant is marked warm,
+// so the first exec of it that really happens is not held. ADR 0085 D5
+// states that edge and doc.go repeats it; this is its witness
+// (ranger-base-dgbys).
+//
+// ARM 17 above has the first half: a caller whose handler lacks SA_RESTART
+// takes EINTR, its execve never happens, and the charge the door was
+// holding ends with nothing to carry it. What ARM 17 stops short of is the
+// consequence, and the consequence is a coverage claim: `d.seen[key]` was
+// marked before the sleep and is not unmarked, so the NEXT caller's execve
+// of that same plant — the first exec of that inode that occurs at all —
+// reads `warm` and goes through at full speed, which is the one thing ADR
+// 0085 D5's headline says cannot happen.
+//
+// MEASURED 2026-11-11, this box (linux 7.2.15 x86_64, go1.27.3), D = 600ms,
+// against the door at 436f467c: the abandoned execve is charged and the
+// plant's real first exec takes 2ms. Deterministic.
+//
+// IT PINS THE EDGE AS STATED AND NOT A FIX, and the reason is measured
+// rather than preferred. ranger-base-91fu2 made the RESTART case pay —
+// which is every truncation this tree has ever produced, since the only
+// callers here that can be withdrawn at all are the Go runtime's own
+// (SA_RESTART on SIGURG), and that bead measured the truncation count go 11
+// -> 0 over the arm that had them. So the remaining edge needs a caller
+// shape no arm has. Closing it means unmarking the inode when a charge is
+// cut short, and `d.seen` is also what stops two concurrent first execs by
+// DIFFERENT tasks from both paying D — a cost-model change, which ADR 0085
+// D5 decided the other way in as many words ("the `seen` mark stays where
+// it was"). So: if this pin ever reds green-side-up — the second exec
+// reading `delayed` — somebody has closed the edge, and D5's cut-short
+// bullet and doc.go's "WHAT IT DOES NOT COVER" are what to update with it.
+//
+// No wall time ASSERTED, deliberately, and it loses nothing: the door holds an
+// execve if and only if it answers `delayed`, so the verdict on the second
+// exec and the run's own delayed count say "not held" exactly, with none of
+// the load sensitivity this file's header warns a ceiling carries.
+func TestATruncatedChargeLeavesItsPlantWarm(t *testing.T) {
+	t.Parallel()
+	// The sleep is the door's OWN hold and not a guess at one: the handler
+	// holding the truncated charge is asleep until its deadline, and until
+	// it wakes there is nothing a fix could have done about the mark yet.
+	// It is not an assertion — a sleep that fell short would cost this pin
+	// its grip on such a fix and could never red a door that has none — so
+	// the load this file's header warns about cannot reach it.
+	after := fmt.Sprintf("sleep %.1f\ntm firstreal ./plant\n", (pinDelay + 400*time.Millisecond).Seconds())
+	truncatedPlant := regexp.MustCompile(`(?m)^coldexec: truncated +pid \d+ .*plant$`)
+
+	// THE POSITIVE CONTROL IS RETRIED, and that is ranger-base-9n4y9's own
+	// prescription rather than this pin being lenient. The fixture's nudge
+	// can reach the caller as a signal that interrupts the execve BEFORE
+	// the door is holding its notification at all: the kernel then removes
+	// a notification the door never received, the caller takes EINTR and
+	// exits 1 exactly as it should, and no charge was ever cut short — so
+	// the run reached none of the mechanism and has nothing to say about
+	// this pin's subject either way. MEASURED 2026-11-11 on a quiet box, 150
+	// executions of each: this pin and ARM 17 both lost 1, with the same
+	// message and the same cause, which is the rate that bead was filed for.
+	// A trial that cannot be run is not a failing trial; a door that has
+	// stopped truncating fails all of them, so the Fatalf below still fires
+	// for the thing this pin is here to catch.
+	const tries = 4
+	var r doorRun
+	for i := 1; ; i++ {
+		r = withdrawalFixture(t, false, after)
+		if truncatedPlant.MatchString(r.out) {
+			break
+		}
+		if i == tries {
+			t.Fatalf("no truncated verdict named the plant in %d runs, so the door cut no charge "+
+				"short — at ranger-base-9n4y9's measured rate that is not the nudge missing "+
+				"(0.0067^%d), it is the mechanism gone:\n%s", tries, tries, r.out)
+		}
+		t.Logf("run %d reached no truncation — the nudge interrupted the execve before the door "+
+			"held it (ranger-base-9n4y9); retrying", i)
+	}
+	r.wantCode(t, 0)
+	r.wantNoHoles(t)
+	if !strings.Contains(r.out, "CALLER EXIT 1") {
+		t.Fatalf("the caller did not exit 1, so its execve was restarted rather than abandoned — "+
+			"that is ARM 16's ending and the plant below would not be cold either way:\n%s", r.out)
+	}
+	if strings.Count(r.out, "the plant ran") != 1 {
+		t.Fatalf("the plant ran %d times, want exactly 1 — the abandoned execve must NOT have run "+
+			"it and the exec after it must have:\n%s", strings.Count(r.out, "the plant ran"), r.out)
+	}
+
+	// THE ASSERTION THIS PIN EXISTS FOR. That one exec is the first exec of
+	// this inode that ever happened, and the door read it as a repeat.
+	if !regexp.MustCompile(`(?m)^coldexec: warm +pid \d+ .*plant$`).MatchString(r.out) {
+		t.Errorf("the plant's first exec that actually HAPPENED was not read as warm. If it was "+
+			"held, the edge in ADR 0085 D5's cut-short bullet is closed and that bullet, doc.go's "+
+			"\"WHAT IT DOES NOT COVER\" and the note above recordWithdrawal all still say it is "+
+			"open:\n%s", r.out)
+	}
+
+	// And the arithmetic says the same thing without reading a clock:
+	// `held` is the only exec this run paid D for.
+	r.wantDelayed(t, 1)
+	r.cold(t, "held")
 }

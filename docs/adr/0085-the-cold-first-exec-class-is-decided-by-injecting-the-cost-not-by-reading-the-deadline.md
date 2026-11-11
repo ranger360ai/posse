@@ -233,9 +233,23 @@ each stated rather than left silent:
   at full speed. The door still spends the charge and still names it
   `truncated`, never folded into the delayed count, because what it leaves
   behind is a plant marked warm — a LATER exec of that inode is not held.
-  Pinned both halves: `TestARestartedExecvePaysTheRestOfItsCharge` (the
-  wall time, which there is now something to read) and
-  `TestAChargeNothingRestartsReadsTruncated`.
+  Pinned, all three halves: `TestARestartedExecvePaysTheRestOfItsCharge`
+  (the wall time, which there is now something to read),
+  `TestAChargeNothingRestartsReadsTruncated` (the charge), and
+  `TestATruncatedChargeLeavesItsPlantWarm` (what it leaves behind —
+  ranger-base-dgbys, 2026-11-11). That last one is a witness to THIS
+  bullet and not to a fix: it reds if the edge is ever closed, and the
+  close is a cost-model change rather than a tidy, because the mark is
+  also what stops two concurrent first execs by different tasks from both
+  paying D. MEASURED 2026-11-11, D = 600ms, and deterministic: the
+  abandoned `execve` is charged and the plant's real first exec — a
+  different process, and the only exec of that inode that ever happens —
+  takes 2ms. 30 of 30 at cf6506e4 (ranger-base-aifu2) and re-read on the
+  shipped door at 436f467c. What makes the edge affordable is that
+  ranger-base-91fu2 took its reachable half: the only callers in this tree
+  that can be withdrawn at all carry `SA_RESTART`, so they restart and
+  pay, and that bead measured the truncation count over the arm that had
+  them go 11 to 0.
 
 At its end the run prints the number of notifications and the number of
 cold execs it delayed — held to the end and let through, which is what that
