@@ -160,6 +160,14 @@ signals.
   and a 600ms charge against a plant that exec'd in 20ms (MEASURED here, both
   doors built from the same tree: the mutant reds ARM 16 and leaves ARM 14
   green, which is j0riv's design holding).
+  *(ranger-base-91fu2 inverted this pin on the same day, as the section below
+  said it would. ARM 16 is `TestARestartedExecvePaysTheRestOfItsCharge` now
+  and asserts the opposite — `delayed == 2`, no truncation, and a wall-time
+  FLOOR on the nudged exec, because after that bead there is one to read.
+  What is left of this bead's subject is ARM 17,
+  `TestAChargeNothingRestartsReadsTruncated`: a charge nothing restarts, and
+  an execve that therefore never happens. See
+  docs/notes.d/ranger-base-91fu2.md.)*
 
 The second plant is why ARM 14 needed any edit at all: since a truncated
 charge is not in the delayed count, a run whose ONLY plant is the nudged one

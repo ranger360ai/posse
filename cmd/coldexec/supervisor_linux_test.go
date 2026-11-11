@@ -547,13 +547,20 @@ tm chmodded ./p
 	}
 }
 
-// withdrawalFixture is the ONE live run the two pins below read, each for
+// withdrawalFixture is the ONE live run the three pins below read, each for
 // its own claim: ARM 14 the classification and the coverage
-// (ranger-base-j0riv), ARM 16 the accounting (ranger-base-4kars). It is a
-// helper rather than two copies because the fixture is the expensive part
-// and the two claims are read off the same output; it is two pins rather
-// than one because they red for different reasons and a seat that breaks
-// one should not be told about the other.
+// (ranger-base-j0riv), ARM 16 that the restart PAYS the remainder
+// (ranger-base-91fu2), ARM 17 the charge nothing restarts
+// (ranger-base-4kars). It is a helper rather than three copies because the
+// fixture is the expensive part and the claims are read off the same
+// output; it is three pins rather than one because they red for different
+// reasons and a seat that breaks one should not be told about the others.
+//
+// saRestart PICKS THE ENDING, and it is one line of the caller: with it the
+// handler carries SA_RESTART and the withdrawn execve is RESTARTED (ARM 14,
+// ARM 16); without it python3's own default disposition applies, the execve
+// returns EINTR and never happens, and the charge is cut short with nothing
+// to carry it (ARM 17). MEASURED 2026-11-11, both endings on this box.
 //
 // EVERY PART OF IT IS LOAD-BEARING:
 //
@@ -579,23 +586,33 @@ tm chmodded ./p
 //   - `held` is a SECOND plant, exec'd before the caller and never
 //     signalled, and it is what makes `wantCode(t, 0)` an assertion rather
 //     than a coincidence. Since ranger-base-4kars a truncated charge is not
-//     in the delayed count, so a run whose only plant is the nudged one
-//     delays NOTHING and exits 3 — correctly, and it would make both pins
-//     below read an exit code that says nothing about their own subjects.
-//     Its own delay is the paid one, and ARM 16 reads the count off it.
-func withdrawalFixture(t *testing.T) doorRun {
+//     in the delayed count, so an EINTR run whose only plant is the nudged
+//     one delays NOTHING and exits 3 — correctly, and it would make the
+//     pins below read an exit code that says nothing about their own
+//     subjects. ARM 17 reads the count off it.
+//   - the nudged caller is timed by hand and not by the `tm` preamble,
+//     because `tm`'s own exit status is its `echo`'s: ARM 14 reads
+//     `CALLER EXIT 0` to tell a restarted execve from a caller the signal
+//     ended, and that fact and the wall time are both wanted here.
+func withdrawalFixture(t *testing.T, saRestart bool) doorRun {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skipf("no python3, so the pin cannot install an SA_RESTART handler in a caller: %v", err)
+		t.Skipf("no python3, so the pin cannot install a signal handler in a caller: %v", err)
 	}
-	return runDoor(t, `cat > caller.py <<'PY'
+	mode := "eintr"
+	if saRestart {
+		mode = "restart"
+	}
+	return runDoor(t, strings.Replace(`cat > caller.py <<'PY'
 import os, signal, sys, time
 
-# A handler WITH SA_RESTART, which is the Go runtime's own shape. Installed
-# before the fork, so the nudger below can never catch this process with
-# SIGUSR1 still fatal.
+# Installed before the fork, so the nudger below can never catch this
+# process with SIGUSR1 still fatal. siginterrupt(False) is the shortest way
+# to ask for SA_RESTART, which is the Go runtime's own shape; without it
+# python3's default disposition is to interrupt, and the execve takes EINTR.
 signal.signal(signal.SIGUSR1, lambda *a: None)
-signal.siginterrupt(signal.SIGUSR1, False)
+if sys.argv[2] == "restart":
+    signal.siginterrupt(signal.SIGUSR1, False)
 
 me = os.getpid()
 mine = os.readlink("/proc/%d/exe" % me)
@@ -618,9 +635,13 @@ PY
 printf '#!/bin/sh\ntrap "" USR1\necho the plant ran\n' > plant; chmod +x plant
 printf '#!/bin/sh\necho the held plant ran\n' > held; chmod +x held
 tm held ./held
-python3 -I caller.py ./plant
-echo "CALLER EXIT $?"
-`)
+s=$(date +%s%N)
+python3 -I caller.py ./plant MODE
+c=$?
+e=$(date +%s%N)
+echo "CALLER EXIT $c"
+echo "ELAPSED nudged $(( (e-s)/1000000 ))ms"
+`, "MODE", mode, 1))
 }
 
 // ARM 14: a notification the KERNEL takes back is not a coverage hole, and
@@ -644,15 +665,14 @@ echo "CALLER EXIT $?"
 // back, so nothing escapes the door; one execve just spends two
 // notifications.
 //
-// WHAT IT DOES NOT ASSERT, on purpose: anything about the delay. The
-// withdrawal releases the caller at the nudge rather than at D, so this
-// run's injection is TRUNCATED — and that is ARM 16's subject and not this
-// one's. This pin is about the classification and the coverage: no holes,
-// the withdrawal named in the report, and the withdrawn execve adjudicated
-// a second time and run.
+// WHAT IT DOES NOT ASSERT, on purpose: anything about the delay. Whether
+// the charge this withdrawal interrupted is paid by the restart is ARM 16's
+// subject and not this one's. This pin is about the classification and the
+// coverage: no holes, the withdrawal named in the report, and the withdrawn
+// execve adjudicated a second time and run.
 func TestAWithdrawnNotificationIsNotAHole(t *testing.T) {
 	t.Parallel()
-	r := withdrawalFixture(t)
+	r := withdrawalFixture(t, true)
 
 	// Something was delayed — `held`, which nothing signals — so the door
 	// does not exit 3 over this run.
@@ -678,8 +698,10 @@ func TestAWithdrawnNotificationIsNotAHole(t *testing.T) {
 
 	// Coverage: the withdrawn execve was adjudicated a SECOND time — the
 	// restart's own notification — rather than let through blind. Any
-	// verdict counts; what this reads is that there were two of them.
-	adjudications := regexp.MustCompile(`(?m)^coldexec: (delayed|warm|truncated) +pid \d+ .*plant$`).FindAllString(r.out, -1)
+	// verdict counts; what this reads is that there were two of them. A
+	// withdrawal that was holding a charge names the plant it handed on
+	// (ranger-base-91fu2), so `withdrawn` is one of the spellings.
+	adjudications := regexp.MustCompile(`(?m)^coldexec: (delayed|warm|truncated|withdrawn) +pid \d+ .*plant$`).FindAllString(r.out, -1)
 	if len(adjudications) < 2 {
 		t.Errorf("the plant's exec was adjudicated %d times, want at least 2 — the withdrawn "+
 			"notification's restart went through without one:\n%s", len(adjudications), r.out)
@@ -808,80 +830,201 @@ kill -0 "$p" 2>/dev/null && echo "ORPHAN $p STILL ANSWERS kill -0" || echo "ORPH
 	}
 }
 
-// ARM 16: a withdrawal during the delay TRUNCATES the injection, and the
-// door's count says so instead of claiming a delay it did not pay.
+// ARM 16: the RESTART of a withdrawn charge pays the REMAINDER, so a
+// caller the kernel signalled mid-hold is still held D from where its
+// execve entered the kernel.
 //
-// This is ranger-base-4kars, and it is a different claim from ARM 14's: not
-// whether the execve was covered — it was, the restart is adjudicated — but
-// whether the D the report charges was ever spent. `adjudicate` marks
-// `d.seen[key] = true` before it sleeps, so the restart reads the inode as
-// WARM and is answered at once: the plant's exec completes in milliseconds
-// while the first handler sleeps out the full D against a notification
-// nobody is waiting for. MEASURED 2026-11-11, D = 600ms: ~10-20ms against
-// the 600ms the door charged, 40/40 (docs/notes.d/ranger-base-4kars.md).
+// This is ranger-base-91fu2, and it is the inversion of the pin
+// ranger-base-4kars left here. That bead stopped the door CLAIMING a delay
+// it had not paid: `adjudicate` marked the inode before it slept, so the
+// restart read it as warm and was answered at once, and the plant's exec
+// completed in milliseconds against the D the report charged it — MEASURED
+// 2026-11-11, D = 600ms: ~10-20ms, 40/40. It said so instead of hiding it,
+// and left the fix here.
 //
-// Until that bead the door recorded `delayed` on the way INTO the sleep, so
-// this run reported one cold exec held for D, printed `delayed` in
-// -verbose, and a report whose numbers were the only evidence anyone has
-// said the injection happened. That is the silent failure ADR 0085 D5
-// exists to prevent, one level up: not a test flaking on darwin because the
-// door missed it, but a door reporting coverage it did not deliver.
+// The fix is a second map, from (task, inode) to the absolute deadline of a
+// charge in flight. A restarted execve necessarily arrives on the SAME task
+// — the kernel restarts the syscall in place — and a task can only be
+// inside one execve at a time, so a notification matching a live entry IS
+// that restart and nothing else. It sleeps the remainder to the original
+// deadline, which makes the charge ONE charge spent over two or more
+// notifications. ARM 18 pins the kernel fact that makes the key unique.
 //
-// WHAT IT READS, and why none of it is a wall time. The accounting IS the
-// statement: a charge that was held to the end is in the delayed count and
-// one that was cut short is not, so `delayed == 1` over a run with two cold
-// plants — one nudged, one not — says the nudged plant's exec was not held,
-// exactly. This file's header argues the rest: a pin that read the ratio of
-// two wall times would be a flake on a box that reaches a loadavg of
-// 50-100, and the report's arithmetic has no load sensitivity at all.
+// WHAT IT READS, and why one of them IS a wall time now. Before this bead
+// there was nothing to time: the nudged plant's exec was fast and that was
+// the finding. Now the whole claim is that it is slow, and a FLOOR on it is
+// the direct statement — this file's header forbids a RATIO of two wall
+// times on a box that reaches a loadavg of 50-100, and load can only push a
+// floor further the right way. The accounting is read beside it and has no
+// load sensitivity at all: two cold plants in this run and both of them in
+// the delayed count, with no truncation left to explain.
 //
-// THE MUTANT it reds on is the one line this bead moved: recording
-// `vDelayed` in `adjudicate` before the sleep instead of handing it to
-// `answer`. Under that door this run reports 2 delayed and 0 truncated,
-// prints no truncation line, and the 600ms it says it charged the plant was
-// never paid.
-//
-// IF THE TRUNCATION IS EVER FIXED — so that the restart reads cold, or
-// carries the remainder of the original charge, and the plant is held to
-// the end — this pin is ranger-base-91fu2's to INVERT: same fixture, with
-// the nudged plant reading `delayed` and the run reporting no truncation,
-// which is a stronger assertion than this one. It is not a tidy-up, which
-// is why it is a separate bead: the `seen` mark is also what stops two
-// concurrent first execs of one inode from both paying D. The note above
-// recordWithdrawal in door_linux.go has the trade, the measured rate and
-// the one call site it all comes from.
-func TestAWithdrawnNotificationTruncatesTheInjection(t *testing.T) {
+// THE MUTANT it reds on is the one the fix removes: answering the restart
+// warm. Under that door this run reports 1 delayed, 1 truncated, and a
+// `nudged` step of a few tens of ms.
+func TestARestartedExecvePaysTheRestOfItsCharge(t *testing.T) {
 	t.Parallel()
-	r := withdrawalFixture(t)
+	r := withdrawalFixture(t, true)
 	r.wantCode(t, 0)
 	r.wantNoHoles(t)
 
-	// The mechanism was reached: a delay was being held when the kernel
-	// took the notification back. Without this the two assertions below are
-	// satisfied by a run that never truncated anything.
-	if !regexp.MustCompile(`(?m)^coldexec: truncated +pid \d+ .*plant$`).MatchString(r.out) {
-		t.Fatalf("no truncated verdict names the plant, so this run did not cut an injection short "+
-			"and the count below proves nothing:\n%s", r.out)
-	}
-	if !strings.Contains(r.out, "injections were TRUNCATED") {
-		t.Errorf("the report did not name the truncation, so a seat whose door charged a delay it "+
-			"did not pay has nothing to read:\n%s", r.out)
+	// The mechanism was reached: a charge was being held when the kernel
+	// took the notification back, and the line names the plant whose charge
+	// it handed on. Without this the assertions below are satisfied by a run
+	// that was never signalled at all.
+	if !regexp.MustCompile(`(?m)^coldexec: withdrawn +pid \d+ .*plant$`).MatchString(r.out) {
+		t.Fatalf("no withdrawn verdict names the plant, so this run never interrupted a charge "+
+			"and the assertions below prove nothing:\n%s", r.out)
 	}
 
-	// THE ASSERTION THIS PIN EXISTS FOR. Two cold plants in this run and
-	// exactly one of them was held to the end: `held`, which nothing
-	// signals. The nudged plant was charged and cut short, and it is not in
-	// this count.
+	// THE ASSERTION THIS PIN EXISTS FOR: the nudged caller's execve was held
+	// to the end of the charge it started, however many notifications it
+	// took to get there.
+	r.cold(t, "nudged")
+
+	// And the accounting says the same thing from the other side: both cold
+	// plants are in the delayed count, and nothing was cut short.
+	r.wantDelayed(t, 2)
+	r.cold(t, "held")
+	if regexp.MustCompile(`(?m)^coldexec: truncated +pid `).MatchString(r.out) {
+		t.Errorf("a charge read as truncated, so the restart did not carry it:\n%s", r.out)
+	}
+	if strings.Contains(r.out, "charges were TRUNCATED") {
+		t.Errorf("the report still names a truncation, so this run held a charge the door then "+
+			"let go of:\n%s", r.out)
+	}
+
+	// And it ran, under that caller, so what was held was a real execve and
+	// not a notification for something that never happened.
+	if !strings.Contains(r.out, "the plant ran") {
+		t.Errorf("the plant never ran, so the charge was paid by nobody's exec:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "the held plant ran") {
+		t.Errorf("the held plant never ran, so one of the two delays was somebody else's:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "CALLER EXIT 0") {
+		t.Errorf("the caller did not exit 0 — the signal ended it instead of restarting its "+
+			"execve, which is ARM 17's ending and not this one's:\n%s", r.out)
+	}
+}
+
+// ARM 17: a charge NOTHING restarts is what `truncated` means after
+// ranger-base-91fu2, and that execve never happens.
+//
+// Same fixture, one line of the caller different: no `siginterrupt(False)`,
+// so the handler is python3's own default disposition and carries no
+// SA_RESTART. The kernel withdraws the notification, the execve returns
+// EINTR to the caller and is NOT restarted, and the charge the door was
+// holding ends with nothing to carry it. MEASURED 2026-11-11 on this box:
+// InterruptedError, exit 1, and the plant does not run.
+//
+// So this pin is what is LEFT of ranger-base-4kars' subject, and it is a
+// narrower claim than that bead's was: a truncation is no longer an exec
+// that went through at full speed — ARM 16 is that one and it is held now —
+// it is a charge spent on an execve that did not occur. What it leaves
+// behind is a plant marked warm, which is why the verdict is still counted
+// and named rather than folded into `withdrawn`.
+//
+// No wall time, on purpose. "The caller was released at the signal and not
+// at D" would be a CEILING, and a ceiling on a box that reaches a loadavg
+// of 50-100 is this file's header's definition of a flake. The accounting
+// and the caller's own exit code say it exactly.
+func TestAChargeNothingRestartsReadsTruncated(t *testing.T) {
+	t.Parallel()
+	r := withdrawalFixture(t, false)
+	r.wantCode(t, 0)
+	r.wantNoHoles(t)
+
+	// THE ASSERTION THIS PIN EXISTS FOR.
+	if !regexp.MustCompile(`(?m)^coldexec: truncated +pid \d+ .*plant$`).MatchString(r.out) {
+		t.Fatalf("no truncated verdict names the plant, so this run did not cut a charge short "+
+			"and the rest of this pin proves nothing:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "charges were TRUNCATED") {
+		t.Errorf("the report did not name the truncation, so a seat whose door spent a charge on "+
+			"an exec that never happened has nothing to read:\n%s", r.out)
+	}
+
+	// The charge is not in the delayed count: `held` is the only plant this
+	// run held to the end, and it is the reason the door does not exit 3
+	// over a run that delayed nothing.
 	r.wantDelayed(t, 1)
 	r.cold(t, "held")
 
-	// And the truncated plant ran anyway, which is what makes the count a
-	// correction rather than a refusal: the door let that exec through at
-	// full speed and now says so.
-	if !strings.Contains(r.out, "the plant ran") {
-		t.Errorf("the plant never ran, so the truncated charge was not an exec let through:\n%s", r.out)
+	// And the other half of what `truncated` now means: the execve did not
+	// happen, so nothing escaped the door at full speed.
+	if strings.Contains(r.out, "the plant ran") {
+		t.Errorf("the plant ran, so this caller RESTARTED its execve — that is ARM 16's ending, "+
+			"and this run is not the one this pin is about:\n%s", r.out)
 	}
-	if !strings.Contains(r.out, "the held plant ran") {
-		t.Errorf("the held plant never ran, so the one delay this run paid was somebody else's:\n%s", r.out)
+	if !strings.Contains(r.out, "CALLER EXIT 1") {
+		t.Errorf("the caller did not exit 1 — EINTR out of execv is what ends it, and without "+
+			"that this run reached a different ending of the mechanism:\n%s", r.out)
 	}
+}
+
+// ARM 18: a notification names the TASK that raised it, not its thread
+// group — which is the one kernel fact ARM 16's mechanism rests on.
+//
+// The in-flight charge is keyed by (pid, inode), and a restarted execve is
+// told from an unrelated exec of the same plant by that pid alone. The
+// kernel fills `seccomp_notif.pid` from `task_pid_vnr(current)`, so it is
+// the tid; if it were `task_tgid_vnr` two threads of one process exec'ing
+// one plant would collide on the key and a concurrent exec would be
+// mistaken for a restart and made to sleep somebody else's remainder.
+// MEASURED 2026-11-11 (this box, linux 7.2.15 x86_64, go1.27.3): 3 of 3,
+// tid != tgid in all three.
+//
+// Nothing in the arms execs from a non-leader thread today, so this is a
+// pin on an assumption and not on a behaviour anyone has seen break — which
+// is exactly the kind ADR 0085 D5 asks to be written down rather than
+// carried in a comment.
+func TestANonLeaderThreadsExecIsAdjudicatedUnderItsOwnTid(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skipf("no python3, so the pin cannot exec a plant from a second thread: %v", err)
+	}
+	r := runDoor(t, `cat > thread.py <<'PY'
+import os, sys, threading
+
+def go():
+    # The execve happens on THIS task. It keeps only the calling thread, so
+    # the join below never returns.
+    print("TGID %d TID %d" % (os.getpid(), threading.get_native_id()), flush=True)
+    os.execv(sys.argv[1], [sys.argv[1]])
+
+t = threading.Thread(target=go)
+t.start()
+t.join()
+PY
+printf '#!/bin/sh\necho THE THREADED PLANT RAN\n' > plant; chmod +x plant
+python3 -I thread.py ./plant
+`)
+	r.wantCode(t, 0)
+	r.wantNoHoles(t)
+	if !strings.Contains(r.out, "THE THREADED PLANT RAN") {
+		t.Fatalf("the plant never ran, so no execve of it was adjudicated:\n%s", r.out)
+	}
+
+	m := regexp.MustCompile(`TGID (\d+) TID (\d+)`).FindStringSubmatch(r.out)
+	if m == nil {
+		t.Fatalf("the caller printed no tgid/tid pair, so there is nothing to compare:\n%s", r.out)
+	}
+	tgid, tid := m[1], m[2]
+	if tgid == tid {
+		t.Fatalf("the exec'ing thread WAS the group leader (tgid %s), so this run cannot tell the "+
+			"two readings apart:\n%s", tgid, r.out)
+	}
+
+	// THE ASSERTION THIS PIN EXISTS FOR.
+	v := regexp.MustCompile(`(?m)^coldexec: delayed +pid (\d+) .*plant$`).FindStringSubmatch(r.out)
+	if v == nil {
+		t.Fatalf("the plant's first exec was not delayed, so the door did not adjudicate it:\n%s", r.out)
+	}
+	if v[1] != tid {
+		t.Errorf("the notification named pid %s; the exec'ing TASK was tid %s (tgid %s). The "+
+			"in-flight charge key is (pid, inode) and it is unique only while that pid is the "+
+			"task id — see the note above recordWithdrawal:\n%s", v[1], tid, tgid, r.out)
+	}
+	r.wantDelayed(t, 1)
 }

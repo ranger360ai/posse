@@ -192,22 +192,50 @@ each stated rather than left silent:
   2026-11-11). seccomp's wait for the supervisor's answer is interruptible.
   When the stopped caller takes a deliverable signal the kernel REMOVES the
   notification, and a caller whose handler carries `SA_RESTART` restarts the
-  `execve` — whose fresh notification reads the inode as warm, because the
-  charge is marked before the sleep. So that plant's first exec completes in
-  milliseconds against the D the door was holding it for. Nothing escapes
-  the door unadjudicated (ranger-base-j0riv): the restart IS adjudicated,
-  and this is a gap in the DELAY and not in the coverage. MEASURED over all
-  five arms, 364,642 notifications: 12 of 2,453 charges, 0.49%. Every one of
-  them is a planted `bd` exec'd by `internal/posse/bdwriteshim.go`'s
-  `syscall.Exec` — a live Go runtime performing a direct `execve`, which is
-  the one caller shape in this tree that can be withdrawn at all, since a
-  plant exec'd through `os/exec` blocks every signal across fork+exec. The
-  eleven in the internal/treepins arm reproduced identically across two
-  runs, so for that family it is not a rare race. It is counted and named
-  as `truncated`, never folded into the delayed count, which is what D5's
-  taxonomy is for. ranger-base-91fu2 holds the candidate fix — making the
-  restart carry the remainder of the original charge — and will either land
-  it with a pin or record the refusal here.
+  `execve`. Nothing escapes the door unadjudicated (ranger-base-j0riv): the
+  restart IS adjudicated, so this was never a gap in the coverage — it was a
+  gap in the DELAY. Until ranger-base-91fu2 the restart read the inode as
+  warm, because the charge was marked before the sleep, and that plant's
+  first exec completed in milliseconds against the D the door was holding it
+  for. MEASURED over all five arms, 364,642 notifications: 12 of 2,453
+  charges, 0.49%. Every one of them is a planted `bd` exec'd by
+  `internal/posse/bdwriteshim.go`'s `syscall.Exec` — a live Go runtime
+  performing a direct `execve`, which is the one caller shape in this tree
+  that can be withdrawn at all, since a plant exec'd through `os/exec`
+  blocks every signal across fork+exec. The eleven in the internal/treepins
+  arm reproduced identically across two runs, so for that family it was not
+  a rare race.
+
+  **THE RESTART PAYS IT NOW** (ranger-base-91fu2, 2026-11-11), and the
+  charge is what the door holds rather than the notification: an entry keyed
+  by the TASK and the inode, carrying the absolute deadline. A restarted
+  `execve` necessarily arrives on the same task — the kernel restarts the
+  syscall in place — and a task can only be inside one `execve` at a time,
+  so a notification matching a live entry IS that restart and nothing else;
+  it sleeps the REMAINDER, and the `execve` completes no earlier than D from
+  where it entered the kernel however many notifications it spends getting
+  there. MEASURED on the pin's fixture, D = 600ms: the nudged plant's exec
+  goes from 10-11ms to 612ms, and the run reports two delayed and no
+  truncation. The charge stays ONE charge, so the cost model (D once per
+  cold exec, additive within 5% — ranger-base-in8dr) is unchanged, and the
+  `seen` mark stays where it was, so two concurrent first execs by DIFFERENT
+  tasks still pay D once between them. The key is unique only while
+  `seccomp_notif.pid` is the task id and not the thread-group id, which is
+  MEASURED rather than assumed — a non-leader thread's `execve` of a plant
+  is adjudicated under that thread's own tid, 3 of 3, tid != tgid in all
+  three — and pinned by
+  `TestANonLeaderThreadsExecIsAdjudicatedUnderItsOwnTid`.
+
+  So this bullet does not leave the edge list either; like the row above it
+  changes halves. What is left is a charge NOTHING restarts: a caller whose
+  handler lacks `SA_RESTART` takes EINTR and one with no handler dies, and
+  in both of those the `execve` never happens, so no plant exec went through
+  at full speed. The door still spends the charge and still names it
+  `truncated`, never folded into the delayed count, because what it leaves
+  behind is a plant marked warm — a LATER exec of that inode is not held.
+  Pinned both halves: `TestARestartedExecvePaysTheRestOfItsCharge` (the
+  wall time, which there is now something to read) and
+  `TestAChargeNothingRestartsReadsTruncated`.
 
 At its end the run prints the number of notifications and the number of
 cold execs it delayed — held to the end and let through, which is what that

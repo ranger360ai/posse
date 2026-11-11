@@ -67,6 +67,12 @@ type door struct {
 
 	mu   sync.Mutex
 	seen map[inode]bool
+	// inflight is the charges being held right now, keyed by the TASK that
+	// is stopped in the execve and the inode it is exec'ing. A notification
+	// that matches one IS the restart of a charge the kernel cut short, and
+	// it sleeps the REMAINDER of that charge rather than being answered
+	// warm (ranger-base-91fu2) — see the note above recordWithdrawal.
+	inflight map[charge]*held
 
 	notifs atomic.Int64
 	// reaped counts the orphaned descendants the supervisor waited on. It
@@ -125,11 +131,16 @@ const (
 	// Also not a hole, and for a stronger reason than vAbsent's: an execve
 	// the KERNEL did not run. See the note above holes.
 	vWithdrawn
-	// A delay that was HELD when the kernel took the notification back,
-	// which is the one verdict that is neither the door working nor a hole:
-	// the door knew exactly what this exec was and charged it D, and the
-	// execve went through at full speed anyway. See the note above
-	// recordWithdrawal.
+	// A charge the kernel cut short with NOTHING to restart it: the door
+	// charged this exec D, the kernel took the notification back mid-hold,
+	// and no second notification for the same task and inode ever arrived
+	// to carry the remainder. The execve therefore did not happen — a
+	// caller whose handler lacks SA_RESTART takes EINTR, one with no
+	// handler dies — so nothing escaped the door and this is not a hole
+	// either. What is gone is the charge: the plant is marked warm from
+	// here on, so a LATER exec of it is not held. The PAYING shape is
+	// `withdrawn` on the cut-short notification and `delayed` on its
+	// restart. See the note above recordWithdrawal.
 	vTruncated
 	// The holes. Each one is an execve the door let through without
 	// knowing what it was.
@@ -207,6 +218,38 @@ type inode struct {
 	csec, cnsec int64
 }
 
+// charge is one TASK's hold on one inode: the identity of a delay that is
+// in flight. The pid is in the key because a restarted execve necessarily
+// arrives on the same task — the kernel restarts the syscall in place — and
+// a task can only be inside one execve at a time, so a notification that
+// matches an in-flight charge IS that charge's restart and nothing else.
+//
+// MEASURED 2026-11-11 (this box, linux 7.2.15 x86_64, go1.27.3) that the
+// pid in the key is the one the kernel hands out, which is the TASK id and
+// not the thread-group id: a non-leader thread's execve of a plant was
+// adjudicated under the thread's own tid in 3 of 3 runs, tid != tgid in all
+// three. If it were the tgid, two threads of one process exec'ing one plant
+// would collide on this key and the match would no longer be unique. Pinned
+// by TestANonLeaderThreadsExecIsAdjudicatedUnderItsOwnTid.
+type charge struct {
+	pid int
+	key inode
+}
+
+// held is a charge in flight.
+type held struct {
+	// deadline is charge start + D, and it is the whole invariant: no
+	// notification for this charge is answered before it, so the execve
+	// completes no earlier than D after it first entered the kernel —
+	// however many notifications it spends getting there.
+	deadline time.Time
+	// restarted says a second notification for this charge arrived while it
+	// was in flight, which can only be the restart of a withdrawn one. It
+	// is what tells the handler holding the charge that its own withdrawal
+	// handed the charge on rather than cutting it short.
+	restarted bool
+}
+
 // supervise runs argv under the door and answers the exit code to use.
 func supervise(d time.Duration, verbose bool, argv []string) int {
 	if _, err := auditArch(); err != nil {
@@ -273,7 +316,7 @@ func supervise(d time.Duration, verbose bool, argv []string) int {
 			"out of this process's ptrace reach and its execs go un-adjudicated (ADR 0085 D5)", err)
 	}
 
-	dr := &door{delay: d, verbose: verbose, seen: map[inode]bool{}}
+	dr := &door{delay: d, verbose: verbose, seen: map[inode]bool{}, inflight: map[charge]*held{}}
 	// THE EPOCH, and it is here: after this line every file the run creates
 	// is a plant, and every file it does not is the checkout, the toolchain
 	// or the box.
@@ -323,7 +366,8 @@ func supervise(d time.Duration, verbose bool, argv []string) int {
 		if n := dr.verdicts[vTruncated].Load(); n > 0 {
 			fmt.Fprintf(os.Stderr,
 				"coldexec: and it is the truncation above that took them: %d charges were cut "+
-					"short by a withdrawal, so this run held none of them to the end\n", n)
+					"short by a withdrawal that nothing restarted, so this run held none of them "+
+					"to the end\n", n)
 		}
 		return exitNoneDelayed
 	}
@@ -341,14 +385,17 @@ func (d *door) report(delay time.Duration) {
 		fmt.Fprintf(os.Stderr, "coldexec: %d notifications were withdrawn before the door could answer — "+
 			"the kernel does not run an execve whose notification it took back, so none of those escaped "+
 			"the door; a caller whose handler carries SA_RESTART restarts the execve and raises a fresh "+
-			"notification, which is the one this run adjudicated (ranger-base-j0riv)\n", n)
+			"notification, which is the one this run adjudicated (ranger-base-j0riv). One that was "+
+			"holding a charge hands it to that restart, which sleeps the remainder, so the execve is "+
+			"still held %s from where it started (ranger-base-91fu2)\n", n, delay)
 	}
 	if n := d.verdicts[vTruncated].Load(); n > 0 {
-		fmt.Fprintf(os.Stderr, "coldexec: %d injections were TRUNCATED — the kernel withdrew the "+
-			"notification while the door was holding it, so the caller was released at that signal and "+
-			"not at %s, and the restart read the inode as warm. Those first execs went through at full "+
-			"speed and are NOT in the delayed count above; -verbose names each one "+
-			"(ranger-base-4kars)\n", n, delay)
+		fmt.Fprintf(os.Stderr, "coldexec: %d charges were TRUNCATED — the kernel withdrew the "+
+			"notification while the door was holding it and NO restart arrived to carry the remainder, "+
+			"so the caller was released at that signal and not at %s. Those execves did not happen — a "+
+			"caller whose handler lacks SA_RESTART takes EINTR — so nothing escaped the door; what is "+
+			"gone is the charge, and the plant is marked warm from here on. They are NOT in the delayed "+
+			"count above; -verbose names each one (ranger-base-4kars, ranger-base-91fu2)\n", n, delay)
 	}
 	var total int64
 	var parts []string
@@ -456,8 +503,8 @@ func (d *door) drain(served <-chan error) {
 // that goes unanswered is an execve blocked in the kernel forever, so every
 // failure path here falls through to the answer.
 func (d *door) handle(n *seccompNotif) {
-	pending, pendingTarget := d.adjudicate(n)
-	d.answer(n, pending, pendingTarget)
+	pending, taken, pendingTarget := d.adjudicate(n)
+	d.answer(n, pending, taken, pendingTarget)
 }
 
 // adjudicate works out what this execve is about and sleeps D if it is the
@@ -475,8 +522,11 @@ func (d *door) handle(n *seccompNotif) {
 //	  the notification under us (ranger-base-j0riv).
 //	a DELAY is a charge the door claims to have paid, and a notification
 //	  withdrawn mid-sleep released its caller at the signal instead
-//	  (ranger-base-4kars; see the note above recordWithdrawal).
-func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget string) {
+//	  (ranger-base-4kars; see the note above recordWithdrawal). Since
+//	  ranger-base-91fu2 the charge outlives the notification that was
+//	  holding it: a restart inherits the remainder, and the delay is
+//	  recorded by whichever notification is still live at the deadline.
+func (d *door) adjudicate(n *seccompNotif) (pending, taken verdict, pendingTarget string) {
 	pid := int(n.Pid)
 	var addr uint64
 	var flags uint64
@@ -493,12 +543,12 @@ func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget strin
 		// The filter names no other syscall. If one ever arrives, let it
 		// through rather than guess which argument is a path — and say so,
 		// because it means the filter and this switch have drifted apart.
-		return vForeign, fmt.Sprintf("syscall %d", n.Data.Nr)
+		return vForeign, vWithdrawn, fmt.Sprintf("syscall %d", n.Data.Nr)
 	}
 
 	p, err := readPath(pid, addr)
 	if err != nil {
-		return vUnreadable, err.Error()
+		return vUnreadable, vWithdrawn, err.Error()
 	}
 
 	// Resolved the way the kernel will resolve it, and through the
@@ -511,7 +561,7 @@ func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget strin
 		target = fmt.Sprintf("/proc/%d/fd/%d", pid, dirfd)
 	case p == "":
 		d.record(vAbsent, pid, "(empty path)")
-		return vNone, ""
+		return vNone, vWithdrawn, ""
 	case filepath.IsAbs(p):
 		target = p
 	case dirfd == int(unix.AT_FDCWD):
@@ -524,16 +574,16 @@ func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget strin
 	if err := unix.Stat(target, &st); err != nil {
 		v, hole := d.statVerdict(pid, err)
 		if hole {
-			return v, target
+			return v, vWithdrawn, target
 		}
 		d.record(v, pid, target)
-		return vNone, ""
+		return vNone, vWithdrawn, ""
 	}
 	// The ctime, not the mtime: a copied binary keeps its source's mtime
 	// and a `chmod +x` moves only the ctime, and both of those are plants.
 	if !time.Unix(st.Ctim.Sec, st.Ctim.Nsec).After(d.started) {
 		d.record(vOld, pid, target)
-		return vNone, ""
+		return vNone, vWithdrawn, ""
 	}
 	// The ctime again, and for a SECOND decision rather than the same one
 	// twice: this key tells a first exec of this inode-at-this-version from
@@ -544,23 +594,59 @@ func (d *door) adjudicate(n *seccompNotif) (pending verdict, pendingTarget strin
 	// these two fields have; the epoch test above has its own
 	// (ranger-base-8do8p finding 2).
 	key := inode{dev: st.Dev, ino: st.Ino, csec: st.Ctim.Sec, cnsec: st.Ctim.Nsec}
+	ch := charge{pid: pid, key: key}
 	d.mu.Lock()
 	first := !d.seen[key]
 	d.seen[key] = true
-	d.mu.Unlock()
-	if !first {
-		d.record(vWarm, pid, target)
-		return vNone, ""
+	h := d.inflight[ch]
+	switch {
+	case first:
+		h = &held{deadline: time.Now().Add(d.delay)}
+		d.inflight[ch] = h
+	case h != nil:
+		// THE RESTART of a charge the kernel cut short, and it is claimed
+		// under the same lock that published it, so the handler holding the
+		// charge cannot wake between this lookup and this mark.
+		h.restarted = true
 	}
-	// NOT recorded before the sleep (ranger-base-4kars). The delay rides
-	// down to answer() like a hole does, and for the same reason: whether
-	// this exec was really held is decided at the answer and nowhere else.
-	// A notification the kernel takes back mid-sleep released its caller at
-	// the signal rather than at D, so recording the charge here would be
-	// the door reporting a delay it did not pay. See the note above
-	// recordWithdrawal.
-	time.Sleep(d.delay)
-	return vDelayed, target
+	d.mu.Unlock()
+
+	switch {
+	case first:
+		// NOT recorded before the sleep (ranger-base-4kars). The delay
+		// rides down to answer() like a hole does, and for the same reason:
+		// whether this exec was really held is decided at the answer and
+		// nowhere else. A notification the kernel takes back mid-sleep
+		// released its caller at the signal rather than at D, so recording
+		// the charge here would be the door reporting a delay it did not
+		// pay. See the note above recordWithdrawal.
+		time.Sleep(time.Until(h.deadline))
+		d.mu.Lock()
+		delete(d.inflight, ch)
+		handedOver := h.restarted
+		d.mu.Unlock()
+		// What a withdrawal of THIS notification means is now decided by
+		// whether a restart claimed the charge: handed on, and the restart
+		// is the notification that records the delay — or cut short with
+		// nothing to carry it (ranger-base-91fu2). The live verdict is
+		// unaffected: if the answer lands after all, this handler held the
+		// charge for D and let the exec through, which is a delay whatever
+		// arrived behind it.
+		taken := vTruncated
+		if handedOver {
+			taken = vWithdrawn
+		}
+		return vDelayed, taken, target
+	case h != nil:
+		// The REMAINDER of the charge this restart inherited, never a fresh
+		// D: the charge stays ONE charge — the door's cost model is D once
+		// per cold exec (ranger-base-in8dr) — and the execve completes no
+		// earlier than its original start plus D.
+		time.Sleep(time.Until(h.deadline))
+		return vDelayed, vWithdrawn, target
+	}
+	d.record(vWarm, pid, target)
+	return vNone, vWithdrawn, ""
 }
 
 // statVerdict tells a path that is not there from a path the door cannot
@@ -600,46 +686,98 @@ func (d *door) statVerdict(pid int, err error) (v verdict, hole bool) {
 // notification back from a caller that is usually alive, and a caller whose
 // handler carries SA_RESTART then RESTARTS the execve and raises a FRESH
 // notification. Now put that on a cold plant. adjudicate marks
-// `d.seen[key] = true` BEFORE it sleeps, so the restart's notification
-// reads the inode as WARM and is answered at once: the plant's exec
-// completes in milliseconds while the first handler goes on sleeping out
-// the full D against a notification nobody is waiting for.
+// `d.seen[key] = true` BEFORE it sleeps, so UNTIL ranger-base-91fu2 the
+// restart's notification read the inode as WARM and was answered at once:
+// the plant's exec completed in milliseconds while the first handler went
+// on sleeping out the full D against a notification nobody was waiting for.
 //
 // MEASURED 2026-11-11 (this box, linux 7.2.15 x86_64, go1.27.3), D = 600ms,
-// by TestAWithdrawnNotificationTruncatesTheInjection's fixture with a nudge
-// every 10ms: the plant's exec goes through at roughly the first nudge,
-// ~10-20ms, against the 600ms the door charged it. 40/40 runs identical.
-// Without the nudger the same fixture pays the full 600ms.
+// by withdrawalFixture with a nudge every 10ms: the plant's exec went
+// through at roughly the first nudge, ~10-20ms, against the 600ms the door
+// charged it. 40/40 runs identical. Without the nudger the same fixture
+// paid the full 600ms. The mark is still where it was and the paragraph
+// below is still why the delay is counted at the answer; what changed is
+// that the restart no longer reads that mark as the whole story.
 //
 // So the delay is charged at the ANSWER and nowhere else, which is the rule
 // j0riv wrote for the holes applied to the one verdict that was still
 // recorded on the way in. `delayed` now counts delays that were HELD and
-// let through, and a delay the kernel cut short is `truncated` — one
-// verdict per notification, and a count that means what the report says it
-// means. The exit-3 rule (ADR 0085 D5: zero delayed is a failed door) reads
+// let through, and a delay the kernel cut short with nothing to carry it is
+// `truncated` — one verdict per notification, and a count that means what
+// the report says it means. The exit-3 rule (ADR 0085 D5: zero delayed is a failed door) reads
 // the paid count, so a run whose every injection was truncated is a failed
 // door and not a clean suite.
 //
-// WHAT THIS DOES NOT DO is make the restart pay. The inode is still marked
-// before the sleep, so a truncated plant's first exec really did go through
-// at full speed and the report says so rather than claiming otherwise.
-// Moving the mark to the answer would make the restart read cold and pay D
-// again — but the mark is ALSO what stops two concurrent first execs of one
-// inode from both paying D, so that is a semantics change and not a fix,
-// and it is worth its cost only if this ever happens to a plant that
-// matters. MEASURED over all five arms: 12 of 2179 charges, 0.55%, every
-// one of them a planted `bd` exec'd by internal/posse/bdwriteshim.go's
-// syscall.Exec — the one live Go runtime in this tree that execve's a
-// plant directly, which is why that family and no other can be withdrawn
-// (docs/notes.d/ranger-base-4kars.md). Not zero, so ranger-base-91fu2
-// holds the fix and the mechanism sketch; this door's job is to stop
-// claiming those 12 were held.
-func (d *door) recordWithdrawal(n *seccompNotif, pending verdict, pendingTarget string) {
-	if pending == vDelayed {
-		d.record(vTruncated, int(n.Pid), pendingTarget)
-		return
+// AND SINCE ranger-base-91fu2 THE RESTART PAYS IT. The charge is no longer
+// the sleeping handler's — it is an entry in `inflight`, keyed by the task
+// and the inode and carrying the absolute deadline the handler is sleeping
+// to. A notification that matches a live entry IS the restart of that
+// charge: the kernel restarts a withdrawn syscall in place, on the same
+// task, and a task can only be inside one execve at a time. So the restart
+// sleeps the REMAINDER to the original deadline instead of being answered
+// warm, and the execve completes no earlier than charge start + D however
+// many notifications it spends getting there. The charge stays ONE charge,
+// which is the door's cost model (D once per cold exec, additive within 5%
+// — ranger-base-in8dr), and the mark stays where it was, so two concurrent
+// first execs by DIFFERENT tasks still pay D once between them and nothing
+// about that changes.
+//
+// It is the pid in the key that makes the match unique, so what it rests on
+// is the pid being the TASK id and not the thread-group id. MEASURED 2026-11-11
+// (same box): a non-leader thread's execve of a plant is adjudicated under
+// that thread's own tid, 3 of 3, tid != tgid in all three — the kernel fills
+// the field from task_pid_vnr(current). Pinned by
+// TestANonLeaderThreadsExecIsAdjudicatedUnderItsOwnTid.
+//
+// THE ACCOUNTING, which is now one charge over two notifications: the
+// cut-short one reads `withdrawn`, naming the plant whose charge it handed
+// on, and the restart reads `delayed` once its answer lands. `truncated` is
+// what is LEFT — a charge nothing restarted, which is a caller whose
+// handler lacks SA_RESTART (EINTR) or none at all (death), and in both of
+// those the execve never happens. So after this bead a truncation is no
+// longer an exec let through at full speed; it is a charge spent on an exec
+// that did not occur, and the one thing it leaves behind is a plant marked
+// warm.
+//
+// MEASURED 2026-11-11 on the arm the census named — the internal/treepins
+// family of bd-shim plants, filtered, D = 2.5s, the two doors run back to
+// back from this tree: truncations 11 -> 0, delays paid 47 -> 57, and the
+// arm's own wall 118.371s -> 145.762s. That +27.4s is 10.96 D, which is the
+// injection those charges were supposed to deliver and did not.
+//
+// WHAT IT COSTS IS NOTIFICATIONS, and the number is bigger than it looks:
+// 421 -> 3082 over that run, all 2,661 of the new ones withdrawals of the
+// same 11 charges — 243 each, one every ~10ms for the whole 2.5s hold.
+// Before this the first restart was answered warm and the execve completed
+// at once; now the task stays stopped for D and the Go runtime goes on
+// preempting it the whole time, each cycle costing a notification, a
+// goroutine, a /proc read and a stat. The deadline is what ends it: the
+// storm cannot outlast the charge, and the door answers a restart in ~100µs
+// against signals arriving every few ms, so it converges. Over the whole
+// door it is some 2,900 extra notifications and at most 30s.
+//
+// MEASURED over all five arms before the fix: 12 of 2179 charges, 0.55%,
+// every one of them a planted `bd` exec'd by
+// internal/posse/bdwriteshim.go's syscall.Exec — the one live Go runtime in
+// this tree that execve's a plant directly, which is why that family and no
+// other can be withdrawn at all (docs/notes.d/ranger-base-4kars.md). That
+// is the rate this mechanism converts from `truncated` to `withdrawn` plus
+// `delayed`.
+//
+// WHAT IS STILL NOT HELD, stated rather than left silent: a restart that
+// arrives after the deadline has passed finds no entry and is answered warm
+// — correctly, since by then the execve has already been in the kernel for
+// D. The window for that is the withdrawal happening within microseconds of
+// the deadline, and the cost is one line of over-reporting (a `truncated`
+// and a `warm` for an exec that did take D), never an exec let through
+// early.
+func (d *door) recordWithdrawal(n *seccompNotif, taken verdict, pendingTarget string) {
+	if pendingTarget == "" {
+		// A verdict adjudicate settled itself, so there is no target left
+		// to name: the line is the second one this notification spends.
+		pendingTarget = "(the kernel took the notification back before the answer)"
 	}
-	d.record(vWithdrawn, int(n.Pid), "(the kernel took the notification back before the answer)")
+	d.record(taken, int(n.Pid), pendingTarget)
 }
 
 // answer lets the stopped execve run. CONTINUE and not a return value: the
@@ -658,8 +796,8 @@ func (d *door) recordWithdrawal(n *seccompNotif, pending verdict, pendingTarget 
 //
 // And a withdrawal discovered here is TWO different facts depending on what
 // this handler was holding — recordWithdrawal above has them.
-func (d *door) answer(n *seccompNotif, pending verdict, pendingTarget string) {
-	withdrawn := func() { d.recordWithdrawal(n, pending, pendingTarget) }
+func (d *door) answer(n *seccompNotif, pending, taken verdict, pendingTarget string) {
+	withdrawn := func() { d.recordWithdrawal(n, taken, pendingTarget) }
 	id := n.ID
 	if err := ioctlPtr(d.listener, unix.SECCOMP_IOCTL_NOTIF_ID_VALID, unsafe.Pointer(&id)); err != nil {
 		withdrawn()
