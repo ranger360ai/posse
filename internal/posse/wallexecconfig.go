@@ -77,6 +77,53 @@ func claudeExecConfig(home string, stateGrants []string) (dirs, files []string) 
 	return dirs, files
 }
 
+// codex and grok keep their command-bearing config in ONE file each, and
+// unlike claude's `.claude.json` that file can be read-only (ADR 0090 D3,
+// ranger-base-zmk4q). `config.toml` under the CLI's home declares MCP
+// servers, codex's `notify`, grok's hooks, notification hooks, status-line
+// and auth-provider commands — commands every later reader of the file
+// starts outside the wall that wrote it.
+//
+// D3's rule is a launch override where the CLI has one, else a read-only
+// carve if the CLI runs with it. MEASURED 2026-11-11 on the D1 host, codex
+// 0.167.1 and grok 1.0.77, scratch homes, one unbilled turn each against a
+// local fake endpoint:
+//
+//   - codex: `-c notify=[]` beats the file; `-c mcp_servers={}` does NOT —
+//     codex merges tables, so the file's servers survive it. No override
+//     covers the key, so the file is carved. The interactive TUI rewrites
+//     the file mid-session (`[tui]` bookkeeping); bound read-only it logs
+//     the refused write (EBUSY) and completes the turn.
+//   - grok: no flag or env reaches `mcp_servers` (its `GROK_CONFIG` overlay
+//     is allowlisted and drops it). It rewrites the file at startup in both
+//     `-p` and the TUI (`[marketplace]` bookkeeping); bound read-only both
+//     complete the turn.
+//
+// The carve covers every key in the file at once, including the ones no
+// census here named, which is why the per-key override is not also typed:
+// a caged seat that cannot write the file cannot plant `notify` in it.
+//
+// NOT HERE: the other members of those homes (codex hooks.json, plugins/,
+// skills/; grok agents/, plugins/, workflows/) — the class 6akzw carved for
+// claude, filed separately. Grok's `managed_config.toml` and unsigned
+// `requirements.toml` under its home were MEASURED starting no planted
+// server on this unlogged-in host.
+func runtimeConfigFiles(home string, stateGrants []string) (files []string) {
+	if home == "" {
+		return nil
+	}
+	for _, h := range []string{codexHomeIn(home), grokHomeIn(home)} {
+		if !filepath.IsAbs(h) {
+			continue
+		}
+		p := absResolve(filepath.Join(h, "config.toml"))
+		if writeGranted(stateGrants, p) {
+			files = append(files, p)
+		}
+	}
+	return files
+}
+
 // wallHome is the home the wall resolves `~` against: $HOME, the value
 // ExpandTilde reads, so a deny and the grant it narrows are spelled against
 // one home (BwrapStateDirs' own note on the same choice).

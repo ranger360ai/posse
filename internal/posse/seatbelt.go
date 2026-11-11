@@ -1406,6 +1406,9 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	for _, d := range cdirs {
 		add(&c.Deny, d)
 	}
+	// codex's and grok's config.toml, read-only the same way (ADR 0090 D3;
+	// runtimeConfigFiles has the measurement).
+	cfiles = append(cfiles, runtimeConfigFiles(wallHome(), rtGrants)...)
 	for _, f := range cfiles {
 		add(&c.Deny, f)
 		add(&c.DenyFile, f)
