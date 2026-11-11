@@ -4469,14 +4469,20 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	}
 	// Recipe runtime: rides through LaunchRecipe.
 	os.MkdirAll(b.App.RecipesDir, 0o755)
-	os.WriteFile(filepath.Join(b.App.RecipesDir, "hg.yaml"), []byte("name: hg\nagent: security\nruntime: grok\n"), 0o644)
+	// A session dir of its own. With none the recipe launches in $HOME, the
+	// test binary's shared home, where any parallel grok render seeds
+	// `.grok/config.toml` — a name on grok's project-config list — and this
+	// launch then degrades on whatever another test left there
+	// (ranger-base-zvgql; red since ranger-base-zmk4q's seed).
+	hgDir := t.TempDir()
+	os.WriteFile(filepath.Join(b.App.RecipesDir, "hg.yaml"), []byte("name: hg\ndir: "+hgDir+"\nagent: security\nruntime: grok\n"), 0o644)
 	var out strings.Builder
 	if err := b.LaunchRecipe(&out, "hg"); err == nil || !strings.Contains(err.Error(), "refused") {
 		t.Fatalf("security on grok at shims must refuse (grok --deny is L0): %v", err)
 	}
 	// A recipe for a persona whose gates the wall does realize launches.
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"), []byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
-	os.WriteFile(filepath.Join(b.App.RecipesDir, "hg.yaml"), []byte("name: hg\nagent: dev\nruntime: grok\n"), 0o644)
+	os.WriteFile(filepath.Join(b.App.RecipesDir, "hg.yaml"), []byte("name: hg\ndir: "+hgDir+"\nagent: dev\nruntime: grok\n"), 0o644)
 	if err := b.LaunchRecipe(&out, "hg"); err != nil {
 		t.Fatal(err)
 	}

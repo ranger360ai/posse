@@ -103,11 +103,8 @@ func claudeExecConfig(home string, stateGrants []string) (dirs, files []string) 
 // census here named, which is why the per-key override is not also typed:
 // a caged seat that cannot write the file cannot plant `notify` in it.
 //
-// NOT HERE: the other members of those homes (codex hooks.json, plugins/,
-// skills/; grok agents/, plugins/, workflows/) — the class 6akzw carved for
-// claude, filed separately. Grok's `managed_config.toml` and unsigned
-// `requirements.toml` under its home were MEASURED starting no planted
-// server on this unlogged-in host.
+// The other executable members of those homes are runtimeExecMembers'
+// (ranger-base-zvgql).
 func runtimeConfigFiles(home string, stateGrants []string) (files []string) {
 	if home == "" {
 		return nil
@@ -122,6 +119,125 @@ func runtimeConfigFiles(home string, stateGrants []string) (files []string) {
 		}
 	}
 	return files
+}
+
+// config.toml is not the only member of a codex or grok home that a later
+// reader starts or obeys (ranger-base-zvgql, the class 6akzw carved for
+// claude). The members below are carved read-only over the same state grant,
+// by the same rule: dirs whole, files seeded empty when absent so the mount
+// can cover them.
+//
+// MEASURED 2026-11-11 on the D1 host, codex 0.167.1 and grok 1.0.77, scratch
+// homes, one unbilled turn each against a local fake endpoint that logged
+// every request body. "In the request" means a token planted in the member
+// reached the model; "started" means a planted command touched a marker.
+//
+//   - codex: AGENTS.md, AGENTS.override.md and a skill's description under
+//     skills/ are in the request. hooks.json is the CLI's hook file (feature
+//     `hooks`, stable, on); a planted hook did not fire here because codex
+//     gates hooks on a trust review — firing UNMEASURED. plugins/, prompts/
+//     and rules/ (exec-policy approvals) are documented readers, not
+//     exercised. codex installs its system skills into skills/.system at
+//     startup, scripts included; read-only, it skips that install and
+//     completes the turn. A
+//     managed_config.toml or requirements.toml under CODEX_HOME started
+//     nothing while the same server in config.toml did, so neither is here.
+//   - grok: a hooks/*.json SessionStart and UserPromptSubmit hook ran, in
+//     an untrusted folder. lsp.json's server command ran. A plugin under
+//     plugins/ loads with its hooks and MCP server (`grok inspect`).
+//     rules/*.md, a home AGENTS.md, skills/ and commands/ are in the
+//     request, and so are all six instruction names it reads at home level.
+//     managed_config.toml and requirements.toml are DELETED by grok's
+//     startup when it can delete them, which is why ranger-base-zmk4q saw
+//     them start nothing — read-only, both files' hooks ran and both MCP
+//     servers started. They are carved because a seat must not be the one
+//     to write them. trusted_folders.toml decides where project hooks run
+//     for every later grok. Its seed is an empty file, which grants nothing:
+//     ADR 0007 §6f's "posse does not seed the grant" still holds, and the
+//     carve keeps the grant the operator's act, which is that section's
+//     point. installed-plugins/ is where installs land.
+//     agents/, personas/ and workflows/ are documented readers (agents can
+//     declare MCP servers and hooks), not exercised.
+//   - With every member here bound read-only, codex exec and grok -p (with
+//     and without --trust) complete the turn and leave every member
+//     byte-identical. An empty AGENTS.override.md does not shadow
+//     AGENTS.md, and an empty hooks.json is accepted.
+//
+// Residual: ranger-base-74pqi. A seat on another runtime gets no deny for a
+// home nothing granted it.
+var (
+	codexExecDirNames  = []string{"plugins", "prompts", "rules", "skills"}
+	codexExecFileNames = []string{"AGENTS.md", "AGENTS.override.md", "hooks.json"}
+	grokExecDirNames   = []string{"agents", "commands", "hooks", "installed-plugins", "personas", "plugins", "rules", "skills", "workflows"}
+	grokExecFileNames  = []string{
+		"AGENT.md", "AGENTS.md", "Agents.md", "CLAUDE.local.md", "CLAUDE.md", "Claude.md",
+		"lsp.json", "managed_config.toml", "requirements.toml", "settings.json", "trusted_folders.toml",
+	}
+)
+
+// runtimeExecMembers names those members for each CLI home the launching
+// runtime's state grant reaches, following CODEX_HOME / GROK_HOME the way
+// runtimeConfigFiles does.
+func runtimeExecMembers(home string, stateGrants []string) (dirs, files []string) {
+	if home == "" {
+		return nil, nil
+	}
+	for _, cli := range []struct {
+		home        string
+		dirs, files []string
+	}{
+		{codexHomeIn(home), codexExecDirNames, codexExecFileNames},
+		{grokHomeIn(home), grokExecDirNames, grokExecFileNames},
+	} {
+		if !filepath.IsAbs(cli.home) {
+			continue
+		}
+		h := absResolve(cli.home)
+		if !writeGranted(stateGrants, h) {
+			continue
+		}
+		for _, n := range cli.dirs {
+			dirs = append(dirs, filepath.Join(h, n))
+		}
+		for _, n := range cli.files {
+			files = append(files, filepath.Join(h, n))
+		}
+	}
+	return dirs, files
+}
+
+// seedFileWhole creates p holding body, and fails with an IsExist error when
+// p is already there, the way O_CREATE|O_EXCL does. A body that is not empty
+// is written to a temp file beside p and hard-linked into place, so no reader
+// ever sees p with zero bytes. A seed lands in a home that other CLIs read
+// while it is written, and a zero-byte `settings.json` is invalid JSON to
+// them (ranger-base-zvgql: a grok project-config classifier in a parallel
+// test read one mid-seed). The link and not a rename, because a rename would
+// replace a file that appeared since the render.
+func seedFileWhole(p, body string) error {
+	if body == "" {
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		return f.Close()
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(p), "."+filepath.Base(p)+".posse-seed-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	_, werr := tmp.WriteString(body)
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp.Name(), 0o644)
+	}
+	if werr != nil {
+		return werr
+	}
+	return os.Link(tmp.Name(), p)
 }
 
 // wallHome is the home the wall resolves `~` against: $HOME, the value

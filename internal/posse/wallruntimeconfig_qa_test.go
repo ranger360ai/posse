@@ -99,6 +99,79 @@ func TestQAWallRuntimeConfigCarvesEachCLIsConfigToml(t *testing.T) {
 	}
 }
 
+// ranger-base-zvgql: the rest of each home's executable members, at both
+// mechanisms — dirs denied whole, files seeded file-shaped denies — and only
+// over the home this seat's own runtime is granted.
+func TestQAWallRuntimeConfigCarvesEachCLIsExecMembers(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	f := wrcFixtureIn(t, t.TempDir())
+	members := map[string][2][]string{
+		"codex": {codexExecDirNames, codexExecFileNames},
+		"grok":  {grokExecDirNames, grokExecFileNames},
+	}
+	// The members the measurement found read; a list edit that drops one
+	// reds here, not in a seat.
+	for name, must := range map[string][]string{
+		"codex": {"skills", "plugins", "hooks.json", "AGENTS.md", "AGENTS.override.md"},
+		"grok":  {"hooks", "plugins", "installed-plugins", "skills", "commands", "rules", "agents", "lsp.json", "managed_config.toml", "requirements.toml", "trusted_folders.toml", "AGENTS.md", "CLAUDE.md"},
+	} {
+		all := append(append([]string{}, members[name][0]...), members[name][1]...)
+		for _, m := range must {
+			if !containsString(all, m) {
+				t.Errorf("%s: %s is not a carved member (ranger-base-zvgql measured it read)", name, m)
+			}
+		}
+	}
+	for _, name := range []string{"codex", "grok"} {
+		rt := wrcRuntime(name)
+		w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, rt.StateDirs...)
+		c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w, rt.StateDirs...)
+		prof := SeatbeltProfile(f.ag.Name, w, nil, c)
+		h := absResolve(filepath.Join(f.home, "."+name))
+		for _, d := range members[name][0] {
+			p := filepath.Join(h, d)
+			if !containsString(c.Deny, p) || c.FileShaped(p) {
+				t.Errorf("%s: %s must be a directory deny: deny=%v", name, p, c.Deny)
+			}
+			if !strings.Contains(prof, sbQuote(p)) {
+				t.Errorf("%s: the seatbelt profile names no deny over %s", name, p)
+			}
+		}
+		for _, fl := range members[name][1] {
+			p := filepath.Join(h, fl)
+			if !containsString(c.Deny, p) || !c.FileShaped(p) || !c.Seeded(p) {
+				t.Errorf("%s: %s must be a seeded file-shaped deny: deny=%v seed=%v", name, p, c.Deny, c.Seed)
+			}
+			if !strings.Contains(prof, sbQuote(p)) {
+				t.Errorf("%s: the seatbelt profile names no deny over %s", name, p)
+			}
+		}
+		other := map[string]string{"codex": "grok", "grok": "codex"}[name]
+		oh := absResolve(filepath.Join(f.home, "."+other))
+		for _, d := range c.Deny {
+			if underDir(oh, d) {
+				t.Errorf("%s: the carve names %s, which nothing granted this seat", name, d)
+			}
+		}
+	}
+	w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, "~/.claude")
+	c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w, "~/.claude")
+	for _, d := range c.Deny {
+		for _, cli := range []string{".codex", ".grok"} {
+			if underDir(absResolve(filepath.Join(f.home, cli)), d) {
+				t.Errorf("a claude seat's carve names %s", d)
+			}
+		}
+	}
+	// CODEX_HOME moves the members with it.
+	moved := filepath.Join(f.home, "elsewhere", "codex")
+	t.Setenv(CodexHomeVar, moved)
+	dirs, files := runtimeExecMembers(f.home, []string{absResolve(moved)})
+	if want := filepath.Join(absResolve(moved), "hooks.json"); !containsString(files, want) || len(dirs) != len(codexExecDirNames) {
+		t.Errorf("CODEX_HOME=%s: dirs %v files %v, want %s among them", moved, dirs, files, want)
+	}
+}
+
 // The home variable moves the carve with it: the file walled is the file the
 // CLI reads (ADR 0077 D1), and a grant that does not reach it carves nothing.
 func TestQAWallRuntimeConfigFollowsTheHomeVariable(t *testing.T) {
@@ -137,10 +210,22 @@ func TestLiveWallRuntimeConfigRefusesTheWriteUnderTheRenderedWall(t *testing.T) 
 			out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
 			return err == nil, strings.TrimSpace(string(out))
 		}
-		for what, script := range map[string]string{
+		refused := map[string]string{
 			"config.toml append":         "echo x >> " + q(cfg),
 			"config.toml atomic replace": ": > " + q(tmp) + " && mv " + q(tmp) + " " + q(cfg),
-		} {
+		}
+		// ranger-base-zvgql: every other executable member, both ways in.
+		dirs, files := map[string][]string{"codex": codexExecDirNames, "grok": grokExecDirNames}[name],
+			map[string][]string{"codex": codexExecFileNames, "grok": grokExecFileNames}[name]
+		for _, d := range dirs {
+			refused[d+"/ create"] = "mkdir -p " + q(filepath.Join(h, d, "x")) + " && : > " + q(filepath.Join(h, d, "x", "y"))
+		}
+		for _, fl := range files {
+			p, pt := filepath.Join(h, fl), filepath.Join(h, "."+fl+".tmp")
+			refused[fl+" append"] = "echo x >> " + q(p)
+			refused[fl+" atomic replace"] = ": > " + q(pt) + " && mv " + q(pt) + " " + q(p)
+		}
+		for what, script := range refused {
 			if ok, out := try(script); ok {
 				t.Errorf("%s: %s ALLOWED under the rendered wall (ADR 0090 D3)\n out: %s", name, what, out)
 			}
@@ -200,6 +285,18 @@ func TestLiveWallRuntimeConfigEachCLIRunsWithItsConfigReadOnly(t *testing.T) {
 		}
 		cfg := filepath.Join(f.home, "."+name, "config.toml")
 		before, _ := os.ReadFile(cfg)
+		// ranger-base-zvgql: every file member is seeded empty and read-only
+		// for this run, and must come out of it byte-identical. grok deletes
+		// a managed_config.toml or requirements.toml it can delete.
+		members := map[string]string{}
+		for _, fl := range map[string][]string{"codex": codexExecFileNames, "grok": grokExecFileNames}[name] {
+			p := filepath.Join(f.home, "."+name, fl)
+			b, err := os.ReadFile(p)
+			if err != nil {
+				t.Errorf("%s: %s was not seeded by the render: %v", name, fl, err)
+			}
+			members[p] = string(b)
+		}
 		cmd := exec.Command("bwrap", append(append(append([]string{}, r.Argv...), bin), argv[name]...)...)
 		cmd.Dir = f.dir
 		cmd.Env = append(os.Environ(), "FAKE_KEY=sk-dummy")
@@ -210,6 +307,11 @@ func TestLiveWallRuntimeConfigEachCLIRunsWithItsConfigReadOnly(t *testing.T) {
 		}
 		if after, _ := os.ReadFile(cfg); string(after) != string(before) {
 			t.Errorf("%s: config.toml changed under the wall:\n%s", name, after)
+		}
+		for p, b := range members {
+			if after, err := os.ReadFile(p); err != nil || string(after) != b {
+				t.Errorf("%s: %s changed under the wall (err=%v):\n%s", name, p, err, after)
+			}
 		}
 	}
 }
@@ -281,4 +383,35 @@ func wrcFakeModel(w http.ResponseWriter, r *http.Request) {
 		"content": []any{map[string]any{"type": "output_text", "text": wrcReply}}}})
 	ev("response.completed", map[string]any{"response": map[string]any{"id": "r1", "usage": map[string]any{
 		"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}})
+}
+
+// A seed appears whole: never a zero-byte JSON file for a reader to choke
+// on, never over a file that is already there, and no temp left beside it.
+func TestQAWallRuntimeConfigSeedAppearsWhole(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	p := filepath.Join(d, "settings.json")
+	if err := seedFileWhole(p, seedBody(p)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "{}\n" {
+		t.Errorf("seeded %q, want {}", b)
+	}
+	if err := os.WriteFile(p, []byte(`{"x":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedFileWhole(p, seedBody(p)); !os.IsExist(err) {
+		t.Errorf("a seed over an existing file: err=%v, want IsExist", err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != `{"x":1}` {
+		t.Errorf("a seed rewrote an existing file: %q", b)
+	}
+	md := filepath.Join(d, "AGENTS.md")
+	if err := seedFileWhole(md, seedBody(md)); err != nil {
+		t.Fatal(err)
+	}
+	ents, _ := os.ReadDir(d)
+	if len(ents) != 2 {
+		t.Errorf("a seed left something beside it: %v", ents)
+	}
 }

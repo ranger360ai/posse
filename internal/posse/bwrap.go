@@ -1618,20 +1618,13 @@ func runBwrapPrep(prep []PrepStep) error {
 				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
 					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
 			}
-			f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+			err := seedFileWhole(s.Path, seedBody(s.Path))
 			if os.IsExist(err) {
 				continue
 			}
 			if err != nil {
 				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
 					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
-			}
-			_, werr := f.WriteString(seedBody(s.Path))
-			if cerr := f.Close(); werr == nil {
-				werr = cerr
-			}
-			if werr != nil {
-				return werr
 			}
 		default:
 			return Die("cage %s (%s): the render asked the launcher for %q on %s, which posse has no step for — refusing rather than binding a source nothing created (ADR 0080 D18)",

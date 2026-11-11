@@ -1468,6 +1468,13 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// codex's and grok's config.toml, read-only the same way (ADR 0090 D3;
 	// runtimeConfigFiles has the measurement).
 	cfiles = append(cfiles, runtimeConfigFiles(wallHome(), rtGrants)...)
+	// ...and the rest of those homes' executable members
+	// (ranger-base-zvgql; runtimeExecMembers has the measurement).
+	xdirs, xfiles := runtimeExecMembers(wallHome(), rtGrants)
+	for _, d := range xdirs {
+		add(&c.Deny, d)
+	}
+	cfiles = append(cfiles, xfiles...)
 	for _, f := range cfiles {
 		add(&c.Deny, f)
 		add(&c.DenyFile, f)
