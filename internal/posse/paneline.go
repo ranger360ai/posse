@@ -100,10 +100,46 @@ func (a *App) PaneLine(session, cmd string) (string, error) {
 		"# The pane sources this instead of typing it: a line this long is lost in a\n" +
 		"# freshly created pane, whose tty is still in canonical mode (rangerhq-ybec).\n" +
 		cmd + "\n"
-	if err := os.WriteFile(script, []byte(body), 0o600); err != nil {
+	// Written to a fresh name and RENAMED into place, never opened by name
+	// (ranger-base-6akzw). The pane sources this file outside every wall, so
+	// it is code the launcher runs on a seat's behalf, and an open by name
+	// follows whatever already sits at that name — a symlink there would aim
+	// the write at a file of someone else's choosing. A rename replaces the
+	// name instead of following it. The other half is that no caged seat can
+	// write this directory at all (SeatbeltWritable no longer grants the
+	// state dir), which is what closes the window between this write and the
+	// pane's `. `; this half is what holds for a writer the wall does not
+	// cover.
+	if err := writeFileReplacing(script, []byte(body), 0o600); err != nil {
 		return "", err
 	}
 	return ". " + shellQuote(script), nil
+}
+
+// writeFileReplacing writes data to a temp file beside p and renames it over
+// p, so whatever was at p — a file, or a symlink to anywhere — is replaced
+// and never written through. The temp is O_EXCL by os.CreateTemp, so a name
+// planted in advance cannot be it either.
+func writeFileReplacing(p string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(p), "."+filepath.Base(p)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_, err = tmp.Write(data)
+	if err == nil {
+		err = tmp.Chmod(perm)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(name, p)
+	}
+	if err != nil {
+		os.Remove(name)
+	}
+	return err
 }
 
 // DropPaneLine removes a session's spilled line. Called where the session's

@@ -666,7 +666,7 @@ func TestQASeatbeltWritableTmpGrantIsOneDirectoryOnDarwin(t *testing.T) {
 	// had before it was a function: a grant set renders in list order into
 	// the allow block, so reordering it rewrites every seat's seatbelt.sb
 	// for a change that means nothing.
-	want := []string{"Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share", "Library/Application Support/go/telemetry/local"}
+	want := []string{"Library/Caches", "Library/Logs", ".cache", ".npm", "Library/Application Support/go/telemetry/local"}
 	got := homeCacheGrants("darwin")
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("homeCacheGrants(darwin) = %v, want %v (order included)", got, want)
@@ -693,11 +693,21 @@ func TestQASeatbeltWritableTmpGrantIsOneDirectoryOnDarwin(t *testing.T) {
 			t.Errorf("homeCacheGrants(linux) names %q — granting the parent of `local` would let a session flip the operator's box from telemetry mode `local` to `on`, an egress the operator never chose", d)
 		}
 	}
-	// The three shared entries are shared, so a reader comparing two hosts'
+	// The two shared entries are shared, so a reader comparing two hosts'
 	// walls is comparing the same XDG layout.
-	for _, d := range []string{".cache", ".npm", ".local/share"} {
+	for _, d := range []string{".cache", ".npm"} {
 		if !containsString(homeCacheGrants("darwin"), d) || !containsString(lin, d) {
 			t.Errorf("%q must be in both GOOS lists — it is the XDG layout and is real on both", d)
+		}
+	}
+	// And XDG_DATA_HOME is in NEITHER (ranger-base-6akzw): it holds installed
+	// software — mise's command wrappers lead every seat's PATH — so a grant
+	// over it is a seat replacing code every other seat runs.
+	for _, goos := range []string{"darwin", "linux"} {
+		for _, d := range homeCacheGrants(goos) {
+			if d == ".local" || d == ".local/share" || strings.HasPrefix(d, ".local/share/") {
+				t.Errorf("homeCacheGrants(%s) names %q — XDG_DATA_HOME holds installed code that runs outside the wall (ranger-base-y438o)", goos, d)
+			}
 		}
 	}
 }

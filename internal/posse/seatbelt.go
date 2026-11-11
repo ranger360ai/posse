@@ -321,6 +321,34 @@ type SeatbeltCarveOut struct {
 	Keep     []string // literals re-allowed after the deny
 	DenyRead []string // literal files no session may file-read*, whatever grants it
 	DenyFile []string // the Deny entries their producer means as FILES (see above)
+	Seed     []string // the DenyFile entries the launcher creates when absent (see Seeded)
+}
+
+// Seeded reports whether a file-shaped Deny entry is one the launcher may
+// CREATE, empty, when it is absent, so that a mount can cover it.
+//
+// The bwrap mechanism needs this and seatbelt does not. An SBPL subpath deny
+// over a name that is not there refuses its creation; a mount cannot be put
+// over a name that is not there at all, so an absent file-shaped deny renders
+// nothing and the session can create the file (BwrapArgs' deny arm). For
+// git's lockfiles that residual is priced and accepted, because creating them
+// would break the repo. For claude's executable config it is not acceptable —
+// a created settings.json is read by every other claude on the box — and an
+// EMPTY one is exactly as inert as none (seedBody). So the producer that knows
+// says which, the way DenyFile says which entries are files.
+//
+// A subset of DenyFile, and of Deny with it; an entry here that is not in
+// both seeds nothing.
+func (c SeatbeltCarveOut) Seeded(p string) bool {
+	if !c.FileShaped(p) {
+		return false
+	}
+	for _, f := range c.Seed {
+		if f == p {
+			return true
+		}
+	}
+	return false
 }
 
 // FileShaped reports whether a Deny entry's producer means it as a file. The
@@ -621,11 +649,24 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	// session's own dir is granted under both.
 	add(ag.MemoryDir)
 	add(gatesDir)
-	// posse's own state, derived from the home. Everything else under the
-	// home — the promoted set, its manifest, `envs/` — is deliberately
-	// absent, and ConstitutionGrants below is how that is checked rather
-	// than asserted (ADR 0015 §2/§3/§7).
-	add(a.StateDir)
+	// posse's own state dir is NOT granted, and was until ranger-base-6akzw
+	// (finding ranger-base-y438o). It holds what the LAUNCHER and the
+	// dispatcher write and later run or trust outside every wall: the
+	// spilled launch lines a pane sources (launch/), the session records
+	// that carry a seat's `cage:` (herdr/), the rendered skills trees,
+	// backups, the dispatcher's pid and lock files, the work prompts.
+	// A seat that could write those could plant something an uncaged
+	// process runs next. The grant was the legacy `~/.config/rhq/state`
+	// literal made home-relative (ranger-base-cpyb) and never had a
+	// measured writer behind it: every writer of a StateDir member in this
+	// tree is the launcher or the dispatcher (census 2026-11-11,
+	// `filepath.Join(a.StateDir, …)` over cmd/ and internal/). What a seat
+	// does write there is its own gates dir, granted on the line above,
+	// and its two audit logs, re-allowed by SeatbeltCarveOut's Keep.
+	// The promoted set, its manifest and `envs/` were never granted, and
+	// ConstitutionGrants is how that is checked rather than asserted
+	// (ADR 0015 §2/§3/§7).
+	//
 	// The generic caches every CLI on this box writes through. These are
 	// NOT runtime state and stay a literal: they belong to npm, to macOS and
 	// to the XDG layout, not to any engine.
@@ -737,7 +778,7 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 // builds it, and an unreachable arm that decides a WRITE GRANT is the one
 // nobody may hand over on a guess.
 //
-// The shared three are the XDG layout and are real on both. What differs:
+// The shared two are the XDG layout and are real on both. What differs:
 //
 //   - `Library/Caches` and `Library/Logs` are darwin's own and have no
 //     Linux equivalent to name — `.cache` already is it.
@@ -754,11 +795,23 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 // is kept: a grant set is rendered in list order into the profile's allow
 // block, and reordering it would rewrite every seat's `seatbelt.sb` on a
 // change that means nothing.
+//
+// `.local/share` IS NOT A CACHE AND LEFT THE LIST (ranger-base-6akzw, finding
+// ranger-base-y438o). XDG_DATA_HOME is where installed software lives:
+// mise's installs and its command wrappers (first on every seat's PATH on a
+// box that uses it), systemd user units, desktop entries, editor plugins,
+// keyrings. Everything there runs later and outside the wall, so a grant over
+// it let a seat replace code every other seat and the operator execute.
+// Nothing a seat needs writes there: MEASURED 2026-11-11 on the D1 host,
+// `claude -p` under bwrap with `.local/share` read-only exits 0 with its
+// answer, and the files modified there in the prior two days were the
+// operator's shell (zoxide), systemd, mise itself, and one desktop entry
+// claude writes best-effort at startup.
 func homeCacheGrants(goos string) []string {
 	if goos == "darwin" {
-		return []string{"Library/Caches", "Library/Logs", ".cache", ".npm", ".local/share", "Library/Application Support/go/telemetry/local"}
+		return []string{"Library/Caches", "Library/Logs", ".cache", ".npm", "Library/Application Support/go/telemetry/local"}
 	}
-	return []string{".cache", ".npm", ".local/share", ".config/go/telemetry/local"}
+	return []string{".cache", ".npm", ".config/go/telemetry/local"}
 }
 
 // SeatbeltSiblings names the grants whose atomic-write SIBLINGS a caged
@@ -1316,8 +1369,28 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	for _, d := range pidDeniedSubtrees(ag, cwd) {
 		add(&c.Deny, d.Path)
 	}
+	// claude's executable config, read-only over the config-dir grant
+	// (ranger-base-6akzw; claudeExecConfig says why and what was measured).
+	// The files are seeded empty when absent, because a mount cannot cover a
+	// name that is not there and the session could otherwise create it.
+	var rtGrants []string
+	for _, d := range stateDirs {
+		if e := ExpandTilde(d); filepath.IsAbs(e) {
+			rtGrants = append(rtGrants, absResolve(e))
+		}
+	}
+	cdirs, cfiles := claudeExecConfig(wallHome(), rtGrants)
+	for _, d := range cdirs {
+		add(&c.Deny, d)
+	}
+	for _, f := range cfiles {
+		add(&c.Deny, f)
+		add(&c.DenyFile, f)
+		add(&c.Seed, f)
+	}
 	c.Deny = dedupeStrings(c.Deny)
 	c.DenyFile = dedupeStrings(c.DenyFile)
+	c.Seed = dedupeStrings(c.Seed)
 	// The session's own audit trail, by literal so no new file joins it.
 	// Both are already inside a grant (the gates dir), so this re-allows
 	// rather than widens.
@@ -1895,9 +1968,9 @@ func writeGranted(writable []string, p string) bool {
 // be handed is not a store a session may edit.
 //
 // The three things at the home that are deliberately NOT here: `state/`,
-// which is granted above because it is what a session's runtime data IS;
-// `personas/<self>`, §5's named exception; and the gates dir, which lives
-// under state/.
+// which is posse's own runtime data — no longer granted to a seat
+// (ranger-base-6akzw), but not prose in force either; `personas/<self>`,
+// §5's named exception; and the gates dir, which lives under state/.
 func (a *App) HomeConstitutionPaths() []string {
 	var out []string
 	for _, p := range PromotedPaths {

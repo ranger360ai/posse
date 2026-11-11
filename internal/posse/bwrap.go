@@ -150,6 +150,10 @@ const (
 	PrepMkdirAll PrepKind = "mkdir -p"
 	// PrepTouch creates the path as an empty FILE.
 	PrepTouch PrepKind = "touch"
+	// PrepSeed creates the path as a FILE holding its format's empty value
+	// (seedBody), and only when nothing is there: it never rewrites a file
+	// that exists (ranger-base-6akzw).
+	PrepSeed PrepKind = "seed"
 )
 
 // PrepStep is one of those actions beside the reason the render asked for
@@ -443,10 +447,21 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			// config this wall denies. Both are smaller than a directory the
 			// launcher makes unconditionally at every launch, which is what
 			// the mkdir did.
-			if carve.FileShaped(d) {
+			//
+			// THE ONE FILE-SHAPED DENY THAT IS MADE is a Seeded one
+			// (ranger-base-6akzw): claude's executable config, where an empty
+			// file is exactly as inert as none (seedBody) and the residual
+			// above is not — a created settings.json is read by every other
+			// claude sharing the directory, uncaged ones included. The
+			// launcher writes the empty value and the mount goes over it.
+			switch {
+			case carve.Seeded(d):
+				prep = append(prep, PrepStep{PrepSeed, d, "executable config that is not there yet and sits inside a write grant; created empty so the read-only mount can cover it"})
+			case carve.FileShaped(d):
 				continue
+			default:
+				prep = append(prep, PrepStep{PrepMkdirAll, d, "a deny that is not there yet and sits inside a write grant, so the session could create it"})
 			}
-			prep = append(prep, PrepStep{PrepMkdirAll, d, "a deny that is not there yet and sits inside a write grant, so the session could create it"})
 		}
 		argv = append(argv, "--ro-bind", d, d)
 	}
@@ -1409,6 +1424,29 @@ func runBwrapPrep(prep []PrepStep) error {
 			}
 			if err := f.Close(); err != nil {
 				return err
+			}
+		case PrepSeed:
+			// O_EXCL: a file that appeared since the render is left exactly
+			// as it is — the mount covers whatever is there, and the seed's
+			// only job is to make sure SOMETHING is.
+			if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
+				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
+					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
+			}
+			f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+			if os.IsExist(err) {
+				continue
+			}
+			if err != nil {
+				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
+					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
+			}
+			_, werr := f.WriteString(seedBody(s.Path))
+			if cerr := f.Close(); werr == nil {
+				werr = cerr
+			}
+			if werr != nil {
+				return werr
 			}
 		default:
 			return Die("cage %s (%s): the render asked the launcher for %q on %s, which posse has no step for — refusing rather than binding a source nothing created (ADR 0080 D18)",
