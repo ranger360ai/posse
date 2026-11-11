@@ -96,9 +96,9 @@ import (
 // hook-relevant keys (core.hookspath, hook.*, include.*, includeif.*) that
 // the default scope carries, against the ones the overridden scope carries.
 // Equal is allowed — `GIT_CONFIG_GLOBAL=/dev/null` on a box with no global
-// hook config hides nothing, which is every hermetic test fixture in this
-// repo — and different is refused, which is the one case that skips (or
-// re-points) a hook. Two consequences, both deliberate:
+// hook config hides nothing — and different is refused, which is the one case
+// that skips (or re-points) a hook. Three consequences, the first two
+// deliberate:
 //
 //   - Today's claude pin (GIT_CONFIG_SYSTEM=/dev/null) is REFUSED on a commit
 //     wherever system scope carries a hooksPath or hook.* — which is exactly
@@ -107,6 +107,24 @@ import (
 //     system path, at which point the two answers are equal and it passes.
 //   - It costs two extra `git config` execs on a hook-running verb, and only
 //     when one of those variables is present in the environment.
+//   - NOT deliberate, and the sentence above used to claim otherwise: "which
+//     is every hermetic test fixture in this repo" was in the first clause,
+//     and it holds only on a box whose global scope carries no hook-relevant
+//     key. alias.* is one of those keys (ranger-base-z8kym, rightly: an alias
+//     can spell `commit -n`), and an operator with `alias.ci` has four. On
+//     such a box EVERY fixture that unpins global scope to keep the
+//     operator's config out of its own scratch repo is refused on its
+//     commit — MEASURED 2026-11-10, ten tests in cmd/posse and
+//     internal/treepins, all ten reading as drift in whatever they were about
+//     (ranger-base-xa2e3). The fixtures reach this arm at all only because
+//     `exec.Command("git", …)` resolves the bare name against the calling
+//     process's PATH, which on a seat leads with its own gates bin dir; the
+//     way through is to resolve the binary past the gates, which is what
+//     gitOutsideGates is for, and
+//     internal/treepins/fixturegitpin_qa_test.go is the census that keeps
+//     it true. Nothing about this arm changed for it: a fixture commit is
+//     indistinguishable here from a commit into this repo, and that is the
+//     right way round.
 //
 // GLOBAL SCOPE IS JUDGED AGAINST THE LAUNCHER'S FILES (ADR 0079,
 // ranger-base-32ll0). It used to be the same unset-baseline compare as system
