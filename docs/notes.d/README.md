@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-11
 
+- [ranger-base-z9aff](ranger-base-z9aff.md) — The door's second ctime decision, and the triage line that is not mine (ranger-base-z9aff) — 2026-11-11
 - [ranger-base-xdaw9](ranger-base-xdaw9.md) — herdr's typed route loses a prompt into a modal too, and the tell is the screen (ranger-base-xdaw9) — 2026-11-11
 - [ranger-base-sjjf4](ranger-base-sjjf4.md) — ranger-base-sjjf4 — one control strengthened, six decisions pinned — 2026-11-11
 - [ranger-base-s64a5](ranger-base-s64a5.md) — The coldexec door's arm list, derived (ranger-base-s64a5) — 2026-11-11

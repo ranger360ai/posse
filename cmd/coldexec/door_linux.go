@@ -384,6 +384,14 @@ func (d *door) adjudicate(n *seccompNotif) {
 		d.record(vOld, pid, target)
 		return
 	}
+	// The ctime again, and for a SECOND decision rather than the same one
+	// twice: this key tells a first exec of this inode-at-this-version from
+	// a repeat, so the `chmod +x` case above happening one exec LATER — a
+	// metadata-only change to a file already exec'd — has to read cold and
+	// not warm. Witnessed by
+	// TestAReExecAfterAMetadataOnlyChangeIsColdAgain, which is the only pin
+	// these two fields have; the epoch test above has its own
+	// (ranger-base-8do8p finding 2).
 	key := inode{dev: st.Dev, ino: st.Ino, csec: st.Ctim.Sec, cnsec: st.Ctim.Nsec}
 	d.mu.Lock()
 	first := !d.seen[key]

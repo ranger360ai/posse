@@ -483,3 +483,47 @@ tm gained ./gained
 		t.Errorf("the backdated plant did not run, so the second delay was not its exec:\n%s", r.out)
 	}
 }
+
+// ARM 13: the warm/cold DEDUP KEY reads the ctime too, and that is a second
+// decision rather than the same one twice. ARM 12 above witnesses the EPOCH
+// test at door_linux.go's stat; the line below it builds
+// `inode{dev, ino, csec, cnsec}` from `st.Ctim` for a different purpose —
+// telling a first exec of this inode-at-this-version from a repeat — and
+// until now nothing measured THAT: mutating those two fields alone to
+// `st.Mtim` left all twelve pins above green, ok 1.395s (MEASURED
+// 2026-11-11, ranger-base-8do8p finding 2, re-measured here).
+//
+// It is not an equivalent mutant, because the key is only reached once the
+// epoch test has passed: the two readings can part company solely on a
+// SECOND exec of one inode whose ctime moved and whose mtime did not, which
+// is a metadata-only change — the `chmod +x` half of the comment ARM 12
+// quotes, happening to a file that has already been exec'd. Under the mtime
+// key that re-exec reads WARM and is let through at full speed (MEASURED
+// 2026-11-11, two doors built from the same tree: shipped "2 cold first
+// execs delayed ... 0 warm", mutant "1 cold first execs delayed ... 1
+// warm", the second step 1502ms against 3ms). That is a MISSED injection,
+// so a test that would flake on ci.yml's macos-latest leg passes here,
+// which is the one thing ADR 0085 D5 exists to prevent.
+//
+// No pin above can see it: every other plant either predates the door or
+// moves mtime and ctime together — `cp`, `cp -p` onto a fresh inode, a
+// rewrite in place (ARM 6 moves BOTH) — and ARM 12 holds the mtime back but
+// execs each plant once.
+func TestAReExecAfterAMetadataOnlyChangeIsColdAgain(t *testing.T) {
+	t.Parallel()
+	r := runDoor(t, `printf '#!/bin/sh\necho ran\n' > p; chmod +x p
+tm first ./p
+chmod 0750 p
+tm chmodded ./p
+`)
+	r.wantCode(t, 0)
+	r.wantDelayed(t, 2)
+	r.cold(t, "first")
+	// The chmod moves the ctime and leaves the mtime where the printf put
+	// it, so a key built from the mtime calls this exec warm.
+	r.cold(t, "chmodded")
+	r.wantNoHoles(t)
+	if strings.Count(r.out, "ran") != 2 {
+		t.Errorf("the plant did not run twice, so the second delay was not its re-exec:\n%s", r.out)
+	}
+}
