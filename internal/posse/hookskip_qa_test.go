@@ -168,6 +168,11 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		{hsKey0("core.hooksPath", fx.hooksRoot+"/."), "commit -q -m r3 -- f", "hookskip:config-env"},
 		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "empty")), "commit -q -m r4 -- f", "hookskip:config-env"},
 		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "linked")), "commit -q -m r5 -- f", "hookskip:config-env"},
+		// A render-shaped dir OUTSIDE the root, reached through `..`. Only
+		// the ValidName check refuses it: the dir test and the member test
+		// both pass, so r2's `<root>/..` (no member there) cannot pin it.
+		// Built by concatenation: filepath.Join would clean the `..` away.
+		{hsKey0("core.hooksPath", fx.hooksRoot+"/../outside-render"), "commit -q -m r6 -- f", "hookskip:config-env"},
 		// ranger-base-crlty finding 2: clone/init writing a hook-moving key
 		// into the NEW repository's local config. MEASURED 2026-11-10, git
 		// 2.56.0, every spelling below wrote it.
@@ -180,6 +185,9 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		{"", "clone -q -c alias.ci='commit -n' " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c7")), "hookskip:config-write"},
 		{"", "clone -q --template=" + shQuote(fx.hookTpl) + " " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t1")), "hookskip:template"},
 		{"", "clone -q --te " + shQuote(fx.hookTpl) + " " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t2")), "hookskip:template"},
+		// The prefix in its `=` form is its own case arm (--te*=*); the
+		// spaced --te above does not reach it.
+		{"", "clone -q --te=" + shQuote(fx.hookTpl) + " " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t2e")), "hookskip:template"},
 		{"", "init -q --template=" + shQuote(fx.hookTpl) + " " + shQuote(filepath.Join(fx.home, "t3")), "hookskip:template"},
 		{"GIT_TEMPLATE_DIR=" + shQuote(fx.hookTpl) + " ", "clone -q " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t4")), "hookskip:template"},
 		{"GIT_TEMPLATE_DIR=" + shQuote(fx.hookTpl) + " ", "init -q " + shQuote(filepath.Join(fx.home, "t5")), "hookskip:template"},
@@ -287,6 +295,15 @@ func hsPlantRedirects(t *testing.T, fx *hsFixture) {
 	}
 	fwd := "#!/bin/sh\nexec " + shQuote(filepath.Join(fx.home, "managed-hooks", "pre-commit")) + " \"$@\"\n"
 	if err := WriteExecutable(filepath.Join(render, "pre-commit"), []byte(fwd), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Render-shaped (member present, no pre-commit) but beside the root,
+	// not under it: allowed, it would run no hook at all.
+	outside := filepath.Join(filepath.Dir(fx.hooksRoot), "outside-render")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteExecutable(filepath.Join(outside, "posse-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(fx.hooksRoot, "empty"), 0o755); err != nil {
