@@ -45,7 +45,11 @@ consumer of that reading · amended 2026-09-28 (ranger-base-qa73t): §1's
 launch row gains its second form — a runtime declaring `detection:
 reported` launches without a manifest and observes a report-agent label
 within `startup_wait`, with herdr's process reading as the liveness half
-(ADR 0061)*
+(ADR 0061) · amended 2026-11-11 (ranger-base-6hjm5, from
+ranger-base-o8us6): §4 Reachability's "and its git dirs" is the WALL's
+answer and not bd's — a reach target is a path this launch's wall grants,
+never one bd would like, and the gate derived its own and refused an open
+PID in a linked worktree for a write ranger-base-m2wf had narrowed away*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -652,7 +656,10 @@ is the one signal that cannot be watched for.
 
 So reachability is a **launch observable**, not a post-hoc one:
 before dispatch, the cage's grants must reach `beadsHome(cwd)` and
-its git dirs, judged against the **rendered artifact** — for seatbelt
+its git dirs — the git dirs THIS LAUNCH'S WALL GRANTS for that store,
+which is not the same list as the one bd would like and is the whole
+of the 2026-11-11 amendment below (ranger-base-6hjm5) — judged against
+the **rendered artifact** — for seatbelt
 the profile's last-match-wins semantics, not the writable list that
 fed it, because a trailing deny naming the target re-denies it
 silently (measured against ranger-base-h15's proposed carve-out) —
@@ -1151,6 +1158,32 @@ rule-to-flag compilers, and an inference client inside dispatch.
   granted whole — the same gap `sessionGitGrants` already accepts and
   states for the session's own repo, extended to the store's. Nothing
   narrower exists at that wall; narrowing it needs a different wall.
+- §4 Reachability, "its git dirs" is the WALL's answer and not bd's
+  (2026-11-11, ranger-base-6hjm5, from ranger-base-o8us6's reading;
+  `docs/notes.d/ranger-base-6hjm5.md`). The clause above says the grants must
+  reach `beadsHome(cwd)` *and its git dirs*, and `recordTargets` read that as
+  `beadsGitDirs(home)` — `git rev-parse --git-dir` and `--git-common-dir` for
+  the store's own root. In a LINKED WORKTREE whose store of record is inside
+  its own repository that names the common dir `<repo>/.git` WHOLE, which no
+  PID has been granted since ranger-base-m2wf narrowed it to `objects`,
+  `logs`, `packed-refs.lock` and the session's own ref. So the gate refused
+  the launch for a write the wall deliberately withholds — not a wall, a gate
+  nothing can satisfy, which is the same defect ADR 0086 D3 removed for a
+  whole-tree-deny PID and this one had for the PID that denies nothing
+  (MEASURED 2026-11-11, D1 host, through both shipped producers; not exposed
+  on this instance, whose three stores all redirect into another repository).
+  The gate now asks the producer the WALL asks: the store in another repo
+  keeps `beadsGitDirs` whole (bd commits there, ADR 0086 D3's exception), and
+  a store inside the session's own tree takes `sessionGitGrants` — nothing
+  for a whole-tree-deny PID, the narrowed set in a worktree, and
+  `beadsGitDirs`' single `<cwd>/.git` in a main checkout, where `cwd` whole
+  covers it and that probe measures a real grant. THE RULE THIS SETTLES: a
+  reach target is a path this launch's wall grants, never one bd would like;
+  a target the wall does not grant refuses every launch, and a grant the gate
+  does not probe is a wall nobody measures. Both halves are pinned over the
+  pair of producers (`recordreachgrant_qa_test.go`), because on a Linux host
+  the fixture sits under `/tmp` and the blanket temp grant would mask the
+  refusal under a live wall.
 
 ## Alternatives rejected
 

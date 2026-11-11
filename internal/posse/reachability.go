@@ -278,20 +278,86 @@ func recordReachNoStoreClause(mech, cage string, available bool) string {
 // narrowing exists to remove, one shape over. The two conditions are
 // deliberately the same sentence in both files: the gate asks for exactly
 // what the wall grants, or one of them is wrong.
+//
+// AND SAYING THAT SENTENCE ONLY FOR THE DENY PID WAS ITSELF A GATE NOTHING
+// COULD SATISFY (ranger-base-6hjm5, from ranger-base-o8us6's reading). For a
+// store in the session's own repo the git dirs this function has to name are
+// the SESSION's, and `beadsGitDirs` is the wrong producer to ask for them: it
+// answers with `--git-dir` and `--git-common-dir`, so in a LINKED WORKTREE it
+// names the common dir `<repo>/.git` WHOLE — and since ranger-base-m2wf no
+// PID is granted that directory, an open PID included. `sessionGitGrants` is
+// what the wall grants there, and it is narrower by design: `objects`,
+// `logs`, `packed-refs.lock` and the session's OWN ref, which is the measured
+// answer to "what does a commit in a linked worktree write outside its tree".
+// So an open PID — no deny at all — was probed for the whole common dir, read
+// unrealized, and could not launch in any dispatched worktree whose store of
+// record is its own repository.
+//
+// MEASURED 2026-11-11, D1 host, through the two shipped producers over one
+// real linked-worktree fixture, open PID, grants narrowed to the session's
+// own repo by location:
+//
+//	open-PID repo-local grants:
+//	  <cwd>, <repo>/.git/worktrees/<session>, <repo>/.git/objects,
+//	  <repo>/.git/logs, <repo>/.git/packed-refs.lock,
+//	  <repo>/.git/refs/heads/posse/<session>{,.lock}
+//	recordTargets, before this:
+//	  <store>, <repo>/.git/worktrees/<session>, <repo>/.git
+//	PROBED BUT NOT GRANTED: <repo>/.git
+//
+// NOT ranger-base-8t6j1's NARROWING ONE SHAPE OVER, which is why the answer
+// is a different producer and not a wider condition. That bead's control was
+// "the open PID reads OK either way", and it was taken in a MAIN CHECKOUT,
+// where `cwd` is granted whole and covers `.git` — so the `<cwd>/.git` probe
+// there measures a REAL grant and has to stay. Extending this function's
+// `deniesFileWrite` condition to every PID would have dropped it and nothing
+// would have said so, which is the one thing recordGitTargets' main-checkout
+// arm is for.
 func recordTargets(ag *AgentFile, dir, home string) []string {
 	if home == "" || !isDirPath(home) {
 		return nil
 	}
 	out := []string{home}
-	if ag != nil && deniesFileWrite(ag.Deny) && underDir(dir, home) {
-		return out
-	}
-	for _, g := range beadsGitDirs(home) {
+	for _, g := range recordGitTargets(ag, dir, home) {
 		if isDirPath(g) {
 			out = append(out, g)
 		}
 	}
 	return dedupeStrings(out)
+}
+
+// recordGitTargets is the git half of that set, and it asks the WALL's
+// question rather than bd's: what git dirs does this launch's writable set
+// grant for the commit `bd sync` makes. Three answers, in the order the
+// grant itself is built (SeatbeltWritable):
+//
+//   - the store of record is OUTSIDE the session's own tree — another repo.
+//     Its git dirs are granted whole, to every PID, because bd commits there
+//     (ADR 0086 D3's stated exception), so they are targets whole.
+//   - the store is inside the tree and the PID denies the whole tree. No git
+//     grant at all (D3's headline), so no git target: the deny arm of
+//     SeatbeltWritable grants `<cwd>/.beads` and nothing else of this repo.
+//   - the store is inside the tree and the PID denies nothing. The session's
+//     own git grants, which `sessionGitGrants` IS — and in a main checkout
+//     that function answers nothing on purpose ("cwd's own grant already
+//     covers .git"), so there the targets come back from `beadsGitDirs`,
+//     which names exactly the `<cwd>/.git` that grant covers.
+//
+// The three are one sentence each because each is a sentence already written
+// in seatbelt.go. Asking `sessionGitGrants` instead of re-deriving it is the
+// whole point: the gate and the wall cannot disagree about what a session
+// worktree may write if only one of them computes it.
+func recordGitTargets(ag *AgentFile, dir, home string) []string {
+	if !underDir(dir, home) {
+		return beadsGitDirs(home)
+	}
+	if ag != nil && deniesFileWrite(ag.Deny) {
+		return nil
+	}
+	if g := sessionGitGrants(dir); len(g) > 0 {
+		return g
+	}
+	return beadsGitDirs(home)
 }
 
 func isDirPath(p string) bool {

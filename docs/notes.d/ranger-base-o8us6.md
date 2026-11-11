@@ -154,6 +154,13 @@ remove the open PID's own `.git` probe in a main checkout, which is a real
 check and ranger-base-8t6j1's control, so the question is whether the gate
 should derive its targets from the grant set instead of from `beadsGitDirs`.
 
+CLOSED (`docs/notes.d/ranger-base-6hjm5.md`): it derives them from the grant
+set. `recordGitTargets` asks `sessionGitGrants` for a store inside the
+session's own tree — nothing for a whole-tree-deny PID, the narrowed set in a
+worktree — and keeps `beadsGitDirs` for another repo and for a main checkout,
+where that producer names exactly the `<cwd>/.git` the `cwd` grant covers and
+the probe above stays a real check.
+
 ## Where it landed
 
 - `internal/posse/seatbelt.go` — `SeatbeltWritable`'s store-of-record grant,

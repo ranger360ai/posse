@@ -18,6 +18,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-ctxeq](ranger-base-ctxeq.md) — ranger-base-ctxeq — witnessing the Edit/Write wall at the launch, and what a negative probe costs to believe — 2026-11-11
 - [ranger-base-6rr2e](ranger-base-6rr2e.md) — The same class one node over: a git CHILD bound by a declaration (ranger-base-6rr2e) — 2026-11-11
 - [ranger-base-6pew3](ranger-base-6pew3.md) — The reading posse already had, and was spending as a concession (ranger-base-6pew3) — 2026-11-11
+- [ranger-base-6hjm5](ranger-base-6hjm5.md) — The record-reach gate asked for a directory no PID is granted (ranger-base-6hjm5) — 2026-11-11
 - [ranger-base-xa2e3](ranger-base-xa2e3.md) — The gate that guards the tree made the suite that guards the gate unrunnable (ranger-base-xa2e3) — 2026-11-10
 - [ranger-base-uwxs4](ranger-base-uwxs4.md) — The step-7 canary, and the genre wall that moved it (ranger-base-uwxs4) — 2026-11-10
 - [ranger-base-um1bi](ranger-base-um1bi.md) — The two report-only composer readings, on an occupant with no `agent explain` (ranger-base-um1bi) — 2026-11-10

@@ -6,7 +6,10 @@ builds on ADR 0080 D16–D23 (the bwrap mechanism of `seatbelt`) ·
 amended 2026-11-11 (ranger-base-56w67): D8 carries D3 to the container
 tier, and amends ADR 0014 §4's `.git` carve-out ·
 amended 2026-11-11 (ranger-base-o8us6): D3 has a SIXTH door, the
-store-of-record grant, and one of its five cannot fire*
+store-of-record grant, and one of its five cannot fire ·
+amended 2026-11-11 (ranger-base-6hjm5): the sixth door's GATE half, which
+asked a PID that denies nothing for a write ranger-base-m2wf had narrowed
+away*
 
 ## Context
 
@@ -199,6 +202,45 @@ granted, because bd commits there. This holds on both mechanisms.
     takes the branch where the exception is what this decision says it is.
     The grant predates ranger-base-8t6j1; what that bead did was state the
     invariant and enumerate the doors.
+- **The gate half of that door, for the PID that denies NOTHING
+  (ranger-base-6hjm5, `docs/notes.d/ranger-base-6hjm5.md`).** "The gate asks
+  for exactly what the wall grants, or one of them is wrong" was built for
+  this decision's own PID class and no other, and `recordTargets` kept
+  deriving its git targets from `beadsGitDirs` for every PID that denies
+  nothing. That producer answers with `--git-dir` and `--git-common-dir`, so
+  in a LINKED WORKTREE it names the common dir `<repo>/.git` WHOLE — and
+  since ranger-base-m2wf no PID is granted that directory, an open PID
+  included: a session worktree gets `objects`, `logs`, `packed-refs.lock`
+  and its own ref beneath it. So an open PID whose store of record is inside
+  its own repository was probed for the whole common dir, the row read
+  unrealized, and the launch refused for a write the wall deliberately
+  withholds — the same gate-nothing-can-satisfy shape as D3's own, with the
+  rule it cannot satisfy coming from a different bead.
+  - MEASURED 2026-11-11, D1 host, through the two shipped producers over one
+    real linked-worktree fixture, open PID, grants narrowed to the session's
+    own repo by location: the grants were `<cwd>`,
+    `<repo>/.git/worktrees/<session>`, `<repo>/.git/objects`,
+    `<repo>/.git/logs`, `<repo>/.git/packed-refs.lock` and
+    `<repo>/.git/refs/heads/posse/<session>{,.lock}`; the targets were
+    `<store>`, `<repo>/.git/worktrees/<session>` and `<repo>/.git`. Both
+    store shapes read identically — a local `<cwd>/.beads` and a redirect to
+    `<cwd>/inner/.beads`. Producer-level, because the fixture is under `/tmp`
+    and the blanket temp grant would mask the refusal under a live wall.
+  - Not exposed on this instance, for the reason the bullet above gives: all
+    three stores here redirect into another repository, where `beadsGitDirs`
+    grants that repo's `.git` whole and the probe passes against its own
+    grant. The exposed shape is an instance whose store of record is its own
+    repo AND whose sessions are linked worktrees.
+  - The fix is NOT this decision's condition widened to every PID. In a MAIN
+    CHECKOUT `cwd` is granted whole, so the `<cwd>/.git` probe there measures
+    a real grant and is ranger-base-8t6j1's own control; a gate narrowed by
+    "is the store inside my tree" alone would have dropped it silently. So
+    the gate asks the WALL's producer instead of bd's: another repo ->
+    `beadsGitDirs` whole, as this decision's exception says; the session's
+    own tree and a whole-tree-deny PID -> nothing, as D3 says; the session's
+    own tree and any other PID -> `sessionGitGrants`, which is what the wall
+    grants there and answers nothing in a main checkout on purpose, where
+    `beadsGitDirs` names exactly the `<cwd>/.git` that `cwd` covers.
 - **One of those five cannot fire** (MEASURED on ranger-base-md7ag by a
   planted panic and by a surviving mutant). `sessionGitGrantsFor`'s own
   `deniesFileWrite` guard is unreachable: `SeatbeltWritable` calls it only in
