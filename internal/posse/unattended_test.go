@@ -83,7 +83,7 @@ func TestOwnCommandStillLaunchesUnattended(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct{ name, command, want string }{
 		{"appended", `claude --append-system-prompt "$(cat {file})"`,
-			`claude --append-system-prompt "$(cat FILE)" PIN --permission-mode auto --strict-mcp-config`},
+			`claude --append-system-prompt "$(cat FILE)" PIN --strict-mcp-config --permission-mode auto`},
 		{"explicit mode kept", `claude --permission-mode plan {allow}`,
 			`claude --permission-mode plan PIN --strict-mcp-config`},
 		{"foreign program untouched", `run {file} {allow} {deny}`,
@@ -205,16 +205,16 @@ func TestModeIsAppendedAfterAVariadicToolList(t *testing.T) {
 func TestNoPersonaLineTypesTheMode(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct{ name, cmd, want string }{
-		{"bare claude", `claude`, `claude --permission-mode auto`},
+		{"bare claude", `claude`, `claude --strict-mcp-config --permission-mode auto`},
 		{"bare grok", `grok`, `grok --permission-mode auto`},
 		{"bare codex", `codex`, `codex -a never`},
-		{"claude with flags", `claude --model x`, `claude --model x --permission-mode auto`},
+		{"claude with flags", `claude --model x`, `claude --model x --strict-mcp-config --permission-mode auto`},
 		// The operator's own choice is never overridden — this is what
 		// makes the mode a default rather than an imposition.
-		{"explicit mode kept", `claude --permission-mode plan`, `claude --permission-mode plan`},
+		{"explicit mode kept", `claude --permission-mode plan`, `claude --permission-mode plan --strict-mcp-config`},
 		{"explicit codex mode kept", `codex -a on-request`, `codex -a on-request`},
 		// Found by path: an installed CLI named absolutely is the same CLI.
-		{"absolute path", `/opt/bin/claude -x`, `/opt/bin/claude -x --permission-mode auto`},
+		{"absolute path", `/opt/bin/claude -x`, `/opt/bin/claude -x --strict-mcp-config --permission-mode auto`},
 		// And the refusals to guess. A flag typed at the wrong program is a
 		// launch that does not start at all, which is worse than the mode.
 		{"a shell is left alone", `zsh -l`, `zsh -l`},

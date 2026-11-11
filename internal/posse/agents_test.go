@@ -128,7 +128,7 @@ You are p.
 		t.Errorf("legacy file grew lists: %+v", ag)
 	}
 	want := `claude --append-system-prompt "$(cat '` + ag.Path + `')" --settings ` +
-		shellQuote(credentialDirPinJSON()) + " " + ClaudeFleetFlags
+		shellQuote(credentialDirPinJSON()) + " " + ClaudeStrictMCPFlag + " " + ClaudeFleetFlags
 	if got := ag.RenderCommand(); got != want {
 		t.Errorf("legacy rendering changed:\n got %q\nwant %q", got, want)
 	}
@@ -646,9 +646,9 @@ func TestTiers(t *testing.T) {
 		rt         *Runtime
 		tier, want string
 	}{
-		{claude, TierStrong, "claude --model 'claude-fable-5-1' " + ClaudeFleetFlags + " --append-system-prompt"},
-		{claude, TierStandard, "claude --model 'claude-opus-5' " + ClaudeFleetFlags + " --append-system-prompt"},
-		{claude, TierFast, "claude --model 'claude-sonnet-5' " + ClaudeFleetFlags + " --append-system-prompt"},
+		{claude, TierStrong, "claude --model 'claude-fable-5-1' " + ClaudeFleetFlags + " " + ClaudeStrictMCPFlag + " --append-system-prompt"},
+		{claude, TierStandard, "claude --model 'claude-opus-5' " + ClaudeFleetFlags + " " + ClaudeStrictMCPFlag + " --append-system-prompt"},
+		{claude, TierFast, "claude --model 'claude-sonnet-5' " + ClaudeFleetFlags + " " + ClaudeStrictMCPFlag + " --append-system-prompt"},
 		{codex, TierFast, "codex -c model='gpt-5.6-luna' -s workspace-write --add-dir '"},
 		{codex, TierStrong, "codex -c model='gpt-5.6-sol' -s workspace-write --add-dir '"},
 		{grok, TierStrong, "grok -m 'grok-4.6' " + GrokFleetFlags + ` --rules="$(cat '`},

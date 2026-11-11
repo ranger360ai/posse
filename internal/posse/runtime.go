@@ -3544,7 +3544,7 @@ func EnsureUnattendedLine(cmd string) string {
 	exe := filepath.Base(f[0])
 	for i := range builtinRuntimes {
 		if builtinRuntimes[i].Exe() == exe {
-			return EnsureStrictMCPLine(builtinRuntimes[i].EnsureUnattended(cmd))
+			return builtinRuntimes[i].EnsureUnattended(EnsureStrictMCPLine(cmd))
 		}
 	}
 	return cmd

@@ -644,7 +644,7 @@ func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model 
 	// of guarantee for the same kind of template (ranger-base-rq83c), and so
 	// is the strict-MCP flag (ADR 0090 D1) — keyed on the line, not the
 	// runtime, so a declared runtime that starts claude carries it too.
-	return EnsureStrictMCPLine(rt.EnsureUnattended(rt.EnsureSettingsPin(out)))
+	return rt.EnsureUnattended(EnsureStrictMCPLine(rt.EnsureSettingsPin(out)))
 }
 
 // RenderCommand renders on the PID's own runtime with claude's realizer
