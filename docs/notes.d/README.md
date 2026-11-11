@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-z9aff](ranger-base-z9aff.md) — The door's second ctime decision, and the triage line that is not mine (ranger-base-z9aff) — 2026-11-11
+- [ranger-base-y9t65](ranger-base-y9t65.md) — The reaper on a timer, and the four classes it had never heard of (ranger-base-y9t65) — 2026-11-11
 - [ranger-base-xpxo6](ranger-base-xpxo6.md) — The first full run under the execve supervisor: the price, and the red that belonged to no family (ranger-base-xpxo6) — 2026-11-11
 - [ranger-base-xdaw9](ranger-base-xdaw9.md) — herdr's typed route loses a prompt into a modal too, and the tell is the screen (ranger-base-xdaw9) — 2026-11-11
 - [ranger-base-v0nhh](ranger-base-v0nhh.md) — Four closes verified, and the leak the triage blamed the wrong dirs for (ranger-base-v0nhh) — 2026-11-11
