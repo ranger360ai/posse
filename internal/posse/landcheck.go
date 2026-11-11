@@ -243,6 +243,29 @@ func runLandCheckWithin(repo, tree string, limit time.Duration) (landVerdict, st
 	bin := filepath.Join(repo, landCheckScript)
 	cmd := protocolCmd(exec.CommandContext(ctx, bin))
 	cmd.Dir = tree
+	return landChildVerdict(ctx, cmd, limit)
+}
+
+// landChildVerdict is the three-answer read itself, over a child somebody
+// else built. Split out of runLandCheckWithin for ADR 0088's landed check
+// (landedcheck.go), which builds a child this function has no business
+// knowing the shape of — it is a cage binary with a rendered argv, judging a
+// detached worktree, and the ONLY thing it has in common with the land
+// check's child is the contract they are both read under: exit 0 is green,
+// a non-zero exit from a program that RAN is red, and everything else is
+// silence.
+//
+// ONE COPY AND NOT TWO, because the thing that has to stay true in both
+// places is the doctrine below and not the plumbing above it: a gate that
+// reads its own silence as a verdict is the failure question 3 of
+// ranger-base-qk7w6 was afraid of, and a second spelling of it is a second
+// place for "unanswered" to decay into "red".
+//
+// The ctx is a parameter beside the limit it was built from because the
+// deadline arm is read off `ctx.Err()` and the sentence quotes the limit;
+// handing it the cancel func instead would make this the owner of a context
+// the caller has to keep alive past the Run.
+func landChildVerdict(ctx context.Context, cmd *exec.Cmd, limit time.Duration) (landVerdict, string) {
 	cmd.WaitDelay = generatorKillGrace
 	var out tailBuf
 	cmd.Stdout, cmd.Stderr = &out, &out

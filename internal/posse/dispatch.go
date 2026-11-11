@@ -287,6 +287,16 @@ type Dispatcher struct {
 	// *strings.Builder — can still get its own writer back out.
 	rawOut io.Writer
 
+	// landed is ADR 0088's landed-check scheduler (landedcheck.go): every
+	// landing this pass makes says which repo moved, and one caged run
+	// judges the newest tip of each, outside the lock. Made on the first
+	// landing and JOINED at the end of the pass — the check forks `make`
+	// behind a wall, and a caged child that outlives the pass that started
+	// it is an unmarked orphan the fleet load guard kills on any tick
+	// (AGENTS.md, "Something you MEANT to leave running").
+	landed   *landedChecker
+	landedMu sync.Mutex
+
 	// outMu serializes every write to Out/errw() against every other one.
 	// Until ADR 0028 §1, exactly one goroutine ever called into a
 	// Dispatcher's print path (Run's own). Now gather() runs on one
@@ -622,6 +632,38 @@ func (w dispatcherStampOut) Write(p []byte) (int, error) {
 }
 
 func (d *Dispatcher) outWriter() io.Writer { return dispatcherStampOut{d} }
+
+// landedChecks is this pass's landed-check scheduler, made on first use so
+// that a Dispatcher built by hand (every test that does not go through
+// NewDispatcher) gets one too.
+//
+// IT IS HANDED outWriter() AND NOT Out, which is the whole reason a
+// scheduler may write at all: the run loop is another goroutine, and
+// dispatcherStampOut goes through printf's outMu like every other line this
+// pass prints. A writer that did not would interleave a verdict into the
+// middle of a launch line.
+func (d *Dispatcher) landedChecks() *landedChecker {
+	d.landedMu.Lock()
+	defer d.landedMu.Unlock()
+	if d.landed == nil {
+		d.landed = newLandedChecker(d.App, d.outWriter())
+	}
+	return d.landed
+}
+
+// scheduleLandedCheck is the one call every landing site in this package
+// makes, and it is deliberately a predicate on the OUTCOME rather than a
+// line inside MergeSessionWork: ADR 0088 D1 reads main's tree "after every
+// landing", and an outcome that merged nothing moved nothing. A landing of
+// 0 commits is a tip that was already there — the record names its tree
+// already, so a scheduled run would read the cache and return — but saying
+// so here keeps the git call out of the common pass entirely.
+func (d *Dispatcher) scheduleLandedCheck(t *SessionTree, o MergeOutcome) {
+	if t == nil || !o.Merged || o.Commits == 0 {
+		return
+	}
+	d.landedChecks().Schedule(t.Repo, t.Base)
+}
 
 // launchWarns is progressSink's serialized twin, and the writer every
 // launch this dispatcher makes says its own diagnostic lines through:
@@ -2570,6 +2612,14 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 // for this pass alone: passes inside one epoch share it, and it refills when
 // the epoch turns.
 func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) {
+	// ADR 0088 D2: the landed check runs outside the lock and never blocks a
+	// landing — but it is this pass's child, so this pass waits for it. A
+	// pass that returned over a live caged `make` would leave an unmarked
+	// orphan behind, which the fleet load guard ends on any tick. Deferred
+	// at the top so every early return out of this function joins it too,
+	// and FIRST so it runs last: a landing scheduled by anything else
+	// deferred here is still joined.
+	defer d.landedChecks().Wait()
 	// The accounting window (ADR 0003 Dial E, re-denominated by ADR 0028
 	// §2): every bead fired starts burning tokens while the next one
 	// launches, so spend since the EPOCH opened is what `budget_pass:` caps
@@ -6312,6 +6362,12 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 		}
 		d.printf("⤴ %-14s %d commit(s) %s from %s onto %s in %s\n",
 			is.ID, o.Commits, how, t.Branch, t.Base, AbbrevHome(t.Repo))
+		// ADR 0088 D1/D2: main moved, so the landed tree is read — on BOTH
+		// arms, which is why this sits under `case o.Merged` and not under
+		// the replay. It is scheduled and not run: the lock this function
+		// holds is dropped by the deferred Release above, and the pass joins
+		// the run at its end (Run's own defer).
+		d.scheduleLandedCheck(t, o)
 	default:
 		d.printf("⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", is.ID, o.Commits, t.Branch, orDetached(t.Base), o.Reason)
 		noteMergeBlocked(d.Bd, is.Dir, is.ID, persona, t, o, d.printf, d.eprintf)

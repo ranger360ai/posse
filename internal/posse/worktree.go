@@ -3900,12 +3900,24 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 		return err
 	}
 	defer lock.Release()
+	// ADR 0088 D1/D2's landed check, over whatever this command lands. It is
+	// scheduled and joined AFTER the loop and after the lock is dropped, and
+	// both halves of that are deliberate: outside the lock because D2 says
+	// so, and outside the loop because this writer is a plain one — the run
+	// loop is another goroutine, and the dispatcher's serialized writer has
+	// no equivalent here. Coalescing makes the two forms identical anyway:
+	// five trees landed into one repo are one question about the tip they
+	// leave behind.
+	landed, moved := newLandedChecker(a, w), map[string]*SessionTree{}
 	for _, t := range trees {
 		if why := unaccountedFor(t, force); why != "" {
 			fmt.Fprintf(w, "◑ %s\n", why)
 			continue
 		}
 		o, err := MergeSessionWork(a, t)
+		if o.Merged && o.Commits > 0 {
+			moved[t.Repo] = t
+		}
 		switch {
 		case err != nil:
 			fmt.Fprintf(w, "⚠ %s not landed: %v\n", t.Branch, err)
@@ -3928,6 +3940,14 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 			fmt.Fprintf(w, "  %d uncommitted path(s) stay in %s\n", len(o.Dirty), AbbrevHome(t.Path))
 		}
 	}
+	lock.Release() // idempotent; the deferred one above covers the returns inside the loop
+	for _, t := range moved {
+		landed.Schedule(t.Repo, t.Base)
+	}
+	// Joined here for the reason the dispatch pass joins its own: this
+	// command's process exits when it returns, and a caged `make` left
+	// running past that is an unmarked orphan (AGENTS.md).
+	landed.Wait()
 	return nil
 }
 

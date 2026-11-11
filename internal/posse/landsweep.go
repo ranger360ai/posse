@@ -275,6 +275,11 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 				}
 				d.printf("⤴ %-14s %d commit(s) %s from %s onto %s in %s (closed after its pass)\n",
 					id, o.Commits, how, t.Branch, t.Base, AbbrevHome(t.Repo))
+				// ADR 0088 D1/D2, and this is the site D4's coalescing was
+				// written for: a sweep lands every closed bead's branch into
+				// one repo under one lock, and five landings here are one
+				// question about the tip they leave behind.
+				d.scheduleLandedCheck(t, o)
 			case !o.Merged:
 				d.printf("⚠ %-14s %d commit(s) on %s did NOT reach %s: %s\n", id, o.Commits, t.Branch, orDetached(t.Base), o.Reason)
 				// And on the bead, or the ⚠ line is the whole record again and

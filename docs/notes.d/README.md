@@ -53,6 +53,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-6pew3](ranger-base-6pew3.md) — The reading posse already had, and was spending as a concession (ranger-base-6pew3) — 2026-11-11
 - [ranger-base-6hjm5](ranger-base-6hjm5.md) — The record-reach gate asked for a directory no PID is granted (ranger-base-6hjm5) — 2026-11-11
 - [ranger-base-6akzw](ranger-base-6akzw.md) — The caged write set, narrowed to what a seat writes and not what runs later (ranger-base-6akzw) — 2026-11-11
+- [ranger-base-5fond](ranger-base-5fond.md) — The landed check runner: what the cage costs, and the two things it is NOT (ranger-base-5fond) — 2026-11-11
 - [ranger-base-4kars](ranger-base-4kars.md) — A withdrawn notification truncates the injection (ranger-base-4kars) — 2026-11-11
 - [ranger-base-4arlo](ranger-base-4arlo.md) — ranger-base-4arlo — the harness scratchpads, and the gate that reaches them — 2026-11-11
 - [ranger-base-3fm26](ranger-base-3fm26.md) — Four closes, and the three guards their own mutants could not reach (ranger-base-3fm26) — 2026-11-11
