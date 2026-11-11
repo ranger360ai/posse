@@ -1691,7 +1691,8 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			break
 		}
 		if s.PaneID != "" {
-			text, err := c.hb.Mux().Read(posse.Seat{Pane: s.PaneID}, 15, false)
+			// Both halves, for `posse peek`'s reason (ranger-base-nfc2b).
+			text, err := c.hb.Mux().Read(s.Seat(), 15, false)
 			if err != nil {
 				c.status = err.Error()
 				break

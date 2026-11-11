@@ -1451,7 +1451,9 @@ func (b *HerdrBackend) fillPaneModes(out []HerdrSession) {
 		case s.PaneID == "":
 			s.PermissionMode = PaneMode{Why: "this session records no pane, so there is no screen to read"}
 		default:
-			text, err := b.Mux().Read(paneSeat(s.PaneID), paneModeReadLines, false)
+			// s.Seat() and not paneSeat: this row already carries the
+			// session, and a rex block needs it (ranger-base-nfc2b).
+			text, err := b.Mux().Read(s.Seat(), paneModeReadLines, false)
 			if err != nil {
 				s.PermissionMode = PaneMode{Why: fmt.Sprintf("pane read failed: %v", err)}
 				break

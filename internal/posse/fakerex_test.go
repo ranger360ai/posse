@@ -139,7 +139,18 @@ func fakeRex(args []string) int {
 	case "kill":
 		return fakeRexKill(words)
 	case "send", "send-key", "focus":
-		return 0 // recorded in the log; nothing else observable
+		// Recorded in the log; nothing else observable — but the block
+		// target is still resolved, so a seat handed over without its
+		// session is refused here the way the real CLI refuses it
+		// (fakeRexScoped). `focus` spells its block as a bare word.
+		bid := flags["-b"]
+		if verb == "focus" && bid == "" && len(words) > 0 {
+			bid = words[0]
+		}
+		if !fakeRexScoped(flags["-s"], bid) {
+			return 3
+		}
+		return 0
 	case "capture":
 		return fakeRexCapture(flags)
 	case "whoami":
@@ -264,7 +275,51 @@ func fakeRexKill(words []string) int {
 	return 0
 }
 
+// ─── a block is addressed within its session (ranger-base-nfc2b) ─────────────
+
+// fakeRexScoped is the refusal the real CLI makes for a block target that the
+// `-s` session does not hold — printed and exit 3, true when the lookup may
+// go ahead.
+//
+// IT IS WHY THIS FAKE EXISTS AT ALL, and until 2026-11-10 it was the one
+// thing the fake got wrong: every block verb here resolved `-b` out of a flat
+// map and ignored `-s`, so a pane-only Seat read exactly like a full one and
+// the suite was green over a `posse peek` that could not read a seat on the
+// host. MEASURED 2026-11-10 on this box, rex CLI 0.0.1794069975, against a
+// server holding three live sessions: `capture -s <its session> -b <a live
+// block>` printed the screen, and both `capture -s "" -b <that same block>`
+// and `capture -b <that same block>` answered `Error: block target "…" not
+// found` — as did `block call -s "" -b <it> program_status`.
+//
+// AN UNSCOPED `-b` IS REFUSED HERE AND THE REAL CLI SOMETIMES ANSWERS IT,
+// which is deliberate and the one place this fake is STRICTER than rex. With
+// no `-s` the CLI resolves the block inside one default session — `rex window
+// ls` with no `-s` answered for the most recently created session on that
+// same server — so an unscoped verb lands for whichever seat happens to be
+// default and refuses every other one. posse must not depend on which seat
+// that is, so there is nothing here for it to depend on.
+func fakeRexScoped(sid, bid string) bool {
+	if bid == "" {
+		return true // no block target: not this check's business
+	}
+	for _, s := range fakeRexLoadSessions() {
+		if s.SessionID != sid && s.Label != sid {
+			continue
+		}
+		for _, b := range s.Blocks {
+			if b.BlockID == bid {
+				return true
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Error: block target %q not found\n", bid)
+	return false
+}
+
 func fakeRexCapture(flags map[string]string) int {
+	if !fakeRexScoped(flags["-s"], flags["-b"]) {
+		return 3
+	}
 	var text map[string]string
 	fakeRexLoadMap("rex-capture.json", &text)
 	fmt.Println(text[flags["-b"]])
@@ -315,6 +370,9 @@ func fakeRexBlockCmd(flags map[string]string, words []string) int {
 		if len(words) < 2 {
 			fmt.Fprintln(os.Stderr, "Error: call needs a method")
 			return 2
+		}
+		if !fakeRexScoped(flags["-s"], flags["-b"]) {
+			return 3
 		}
 		switch words[1] {
 		case "program_status":

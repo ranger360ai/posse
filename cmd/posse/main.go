@@ -676,7 +676,10 @@ func main() {
 		if s.PaneID == "" {
 			die(posse.Die("session %s has no recorded pane (created outside posse)", args[0]))
 		}
-		text, err := hb.Mux().Read(posse.Seat{Pane: s.PaneID}, lines, false)
+		// s.Seat() and not the pane alone: a rex block is addressed within
+		// its session, and Resolve has just answered with both halves
+		// (ranger-base-nfc2b, RexMux.hold).
+		text, err := hb.Mux().Read(s.Seat(), lines, false)
 		if err != nil {
 			die(err)
 		}

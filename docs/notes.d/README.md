@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-uwxs4](ranger-base-uwxs4.md) — The step-7 canary, and the genre wall that moved it (ranger-base-uwxs4) — 2026-11-10
+- [ranger-base-nfc2b](ranger-base-nfc2b.md) — A rex block has no global name, so `posse peek` could read one seat on the box (ranger-base-nfc2b) — 2026-11-10
 - [ranger-base-ybz6u](ranger-base-ybz6u.md) — `seatbelt (bwrap)` is a label and not a mapping, and the rest of this bead landed twice (ranger-base-ybz6u) — 2026-11-09
 - [ranger-base-x475y](ranger-base-x475y.md) — The stall verdict's work reading reads the tree too (ranger-base-x475y) — 2026-11-09
 - [ranger-base-uxadf](ranger-base-uxadf.md) — The hash spelling, as a census rather than a word ban (ranger-base-uxadf) — 2026-11-09

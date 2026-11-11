@@ -41,6 +41,19 @@ const (
 
 func rexTestSeat() Seat { return Seat{Session: rexTestSession, Pane: rexTestBlock} }
 
+// rexSeedTestSeat puts rexTestSeat's session and block on the fake server.
+//
+// IT IS NOT OPTIONAL SCENERY. The fake resolves a block target within its
+// session the way the real CLI does (fakeRexScoped, ranger-base-nfc2b), so a
+// verb aimed at a block no session holds is refused here exactly as rex
+// refuses it — which is what makes these pins read on the argv that reaches
+// a LIVE block and not on an argv the server would have thrown away.
+func rexSeedTestSeat(t *testing.T) {
+	t.Helper()
+	rexSeedSessions(t, fakeRexSession{SessionID: rexTestSession, Label: "box:dev",
+		Blocks: []fakeRexBlock{{BlockID: rexTestBlock, Flavor: RexTerminalFlavor}}})
+}
+
 // rexRuntimeProc is the measured shape of a block running a runtime: the
 // shell is `child`, the runtime is `foreground`, and `ancestors` holds the
 // shell between them (RexProcess's doc carries the measurement).
@@ -179,6 +192,7 @@ func TestQARexShellIsNamedEvenWhenTheLauncherHasNone(t *testing.T) {
 func TestQARexStartTypesTheLineAndEnter(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestRexMux(t)
+	rexSeedTestSeat(t)
 	if err := m.Start(rexTestSeat(), "claude --resume"); err != nil {
 		t.Fatal(err)
 	}
@@ -207,6 +221,7 @@ func TestQARexCloseKillsTheSession(t *testing.T) {
 func TestQARexFocusAddressesTheBlockInItsSession(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestRexMux(t)
+	rexSeedTestSeat(t)
 	if err := m.Focus(rexTestSeat()); err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +231,7 @@ func TestQARexFocusAddressesTheBlockInItsSession(t *testing.T) {
 func TestQARexSendTextAndSendKeysAddressTheBlock(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestRexMux(t)
+	rexSeedTestSeat(t)
 	if err := m.SendText(rexTestSeat(), "y"); err != nil {
 		t.Fatal(err)
 	}
@@ -239,6 +255,7 @@ func TestQARexSendTextAndSendKeysAddressTheBlock(t *testing.T) {
 func TestQARexReadTailsTextAndTakesVTWhole(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestRexMux(t)
+	rexSeedTestSeat(t)
 	rexSeedCapture(t, rexTestBlock, "one\ntwo\nthree\nfour")
 	got, err := m.Read(rexTestSeat(), 2, false)
 	if err != nil {
@@ -882,5 +899,135 @@ func TestQARexIsTheSecondOccupantOfTheSlot(t *testing.T) {
 	}
 	if _, ok := slot.(ManifestReader); ok {
 		t.Error("RexMux answers the detection preflight, which is herdr's own (ADR 0076 §4)")
+	}
+}
+
+// ─── a pane-only Seat is resolved, not guessed (ranger-base-nfc2b) ───────────
+
+// Claim: every block verb on this occupant addresses the block WITHIN its
+// session, including when the caller handed over a Seat carrying only the
+// pane — which mux.go's Seat doc licenses ("a caller that holds only one
+// half … builds a Seat carrying only that half") and ADR 0076 §2's table
+// reads as herdr ("rex capture -b", "rex send -b").
+//
+// WHAT SHIPPED WITHOUT IT: `posse peek <seat>` on the host printed
+// `rex capture -s  -b block:… --format text --trim: Error: block target
+// "block:…" not found` — the empty `-s` is the dropped half — over a block
+// that was live and listed, and `posse wait` and the `posse list` mode column
+// failed the same way for the same reason. One seat on the box worked: the
+// one rex happened to have as its default session.
+//
+// The seat here is the SECOND session's block on purpose. A fake with one
+// session cannot tell a resolution apart from a lucky default.
+func TestQARexPaneOnlySeatIsResolvedToItsSession(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestRexMux(t)
+	const (
+		other      = "session:fake-other"
+		otherBlock = "block:fake-other"
+	)
+	rexSeedSessions(t,
+		fakeRexSession{SessionID: other, Label: "box:other",
+			Blocks: []fakeRexBlock{{BlockID: otherBlock, Flavor: RexTerminalFlavor}}},
+		fakeRexSession{SessionID: rexTestSession, Label: "box:dev",
+			Blocks: []fakeRexBlock{{BlockID: rexTestBlock, Flavor: RexTerminalFlavor}}},
+	)
+	rexSeedCapture(t, rexTestBlock, "one\ntwo")
+	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "working", App: "claude-code", Owner: &RexOwner{PID: 20, Name: "claude"}}})
+	rexSeedProcess(t, rexTestBlock, rexRuntimeProc())
+
+	pane := Seat{Pane: rexTestBlock} // the half dispatch holds
+
+	if got, err := m.Read(pane, 0, false); err != nil || got != "one\ntwo" {
+		t.Fatalf("Read(pane-only) = %q, %v — want the block's screen", got, err)
+	}
+	rexCallWith(t, "capture", "-s "+rexTestSession, "-b "+rexTestBlock)
+
+	if read, err := m.State(pane); err != nil || read.State != MuxWorking {
+		t.Fatalf("State(pane-only) = %+v, %v — want a working reading", read, err)
+	}
+	rexCallWith(t, "program_status", "-s "+rexTestSession, "-b "+rexTestBlock)
+	rexCallWith(t, "process", "-s "+rexTestSession, "-b "+rexTestBlock)
+
+	if err := m.SendText(pane, "y"); err != nil {
+		t.Fatalf("SendText(pane-only): %v", err)
+	}
+	rexCallWith(t, "send", "-s "+rexTestSession, "-b "+rexTestBlock)
+
+	if err := m.SendKeys(pane, "enter"); err != nil {
+		t.Fatalf("SendKeys(pane-only): %v", err)
+	}
+	rexCallWith(t, "send-key", "-s "+rexTestSession, "-b "+rexTestBlock)
+
+	if err := m.Focus(pane); err != nil {
+		t.Fatalf("Focus(pane-only): %v", err)
+	}
+	rexCallWith(t, "focus", "-s "+rexTestSession, rexTestBlock)
+
+	if err := m.Start(pane, "claude --resume"); err != nil {
+		t.Fatalf("Start(pane-only): %v", err)
+	}
+}
+
+// A block no session holds is an ERROR naming the block, and never a reading.
+// That is what the unscoped call already did (`not found`, exit 3), and
+// State's callers read an error as ignorance on purpose — AwaitFirstReport's
+// three outcomes turn on it.
+func TestQARexAPaneNoSessionHoldsIsRefusedAndNotAReading(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestRexMux(t)
+	rexSeedTestSeat(t)
+
+	read, err := m.State(Seat{Pane: "block:fake-nobody"})
+	if err == nil {
+		t.Fatalf("State over a block no session holds answered a reading: %+v", read)
+	}
+	if !strings.Contains(err.Error(), "block:fake-nobody") {
+		t.Errorf("the refusal does not name the block: %v", err)
+	}
+	if read.State != "" {
+		t.Errorf("a refused resolution still carried a state %q — State's callers branch on the error, and a state beside it is two answers to one question", read.State)
+	}
+	if _, err := m.Read(Seat{Pane: "block:fake-nobody"}, 0, false); err == nil {
+		t.Errorf("Read over a block no session holds did not fail")
+	}
+}
+
+// Wait resolves ONCE and polls the resolved seat — the price note on
+// RexMux.hold rests on it. A resolution per sample would put a `ls` and a
+// `block ls` per session between every two readings of a seat that is
+// already being watched for minutes.
+func TestQARexWaitResolvesThePaneOnceAndNotPerPoll(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestRexMux(t)
+	rexSeedTestSeat(t)
+	// Three samples: two that are not in `until`, then one that is.
+	working := []RexStatusRecord{{State: "working", App: "claude-code", Owner: &RexOwner{PID: 20, Name: "claude"}}}
+	done := []RexStatusRecord{{State: "done", App: "claude-code", Owner: &RexOwner{PID: 20, Name: "claude"}}}
+	rexSeedStatus(t, rexTestBlock, working, working, done)
+	rexSeedProcess(t, rexTestBlock, rexRuntimeProc())
+
+	read, err := m.Wait(Seat{Pane: rexTestBlock}, []string{MuxDone}, 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.State != MuxDone {
+		t.Fatalf("Wait = %+v, want done", read)
+	}
+	var ls, status int
+	for _, c := range rexCalls(t) {
+		switch {
+		case strings.Contains(c, "block ls"):
+		case strings.Contains(c, "ls --json"):
+			ls++
+		case strings.Contains(c, "program_status"):
+			status++
+		}
+	}
+	if status < 3 {
+		t.Fatalf("Wait took %d program_status samples, want the three it was seeded — this pin cannot read the resolution count over fewer", status)
+	}
+	if ls != 1 {
+		t.Errorf("Wait made %d session listings over %d samples, want 1: the pane is resolved before the loop, not inside it", ls, status)
 	}
 }

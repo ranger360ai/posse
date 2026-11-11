@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below*
 
 ## Context
 
@@ -1334,3 +1334,101 @@ turn and changes nothing above). Billed turns spent: 0 of the 3 authorized.
 One write outside the scratch dir: `--trust` added the `live` arm's scratch
 workspace to `~/.bob/trustedFolders.json`, the same kind of entry ch2rb's bob
 arm left.
+
+## Correction: a Rex block is addressed within its session; §2's table reads as herdr (ranger-base-nfc2b, 2026-11-10)
+
+**Context.** §2's table spells Rex's typing and reading verbs `rex send
+-b`, `rex capture -b [--format vt]` and `program_status` — the block
+alone. `Seat`'s own doc licensed the same shape in prose: "a caller that
+holds only one half (dispatch holds a pane it resolved through
+`AgentTarget`) builds a `Seat` carrying only that half, and the verbs it
+then calls are the ones that need it." Both are herdr read as the
+contract. A herdr pane id addresses a pane anywhere on the server; a Rex
+block id does not address a block at all.
+
+MEASURED 2026-11-10 on the always-on host (linux, rex CLI
+0.0.1794069975, local unix socket), against a server holding three live
+sessions:
+
+| call | answer |
+|---|---|
+| `capture -s <its session> -b <a live block of it>` | the screen, exit 0 |
+| `capture -s "" -b <that same live block>` | `Error: block target "…" not found`, exit 3 |
+| `capture -b <that same live block>` | the same refusal |
+| `block call -s "" -b <it> program_status` | the same refusal |
+| `window ls` with no `-s` | answered for the most recently created session |
+
+`-s` is documented as "scope to session SESSION" and reads as optional.
+It is not: with no scope the CLI resolves `-b` inside ONE DEFAULT
+session, so an unscoped block verb lands for whichever seat happens to be
+default and refuses every other one — naming a block that is live and
+listed.
+
+**What it cost.** `posse peek <seat>` on the host printed `rex capture -s
+ -b block:… --format text --trim: Error: block target "block:…" not
+found` — the empty `-s` is the dropped half — for every seat but one, and
+the standing order is to peek before trusting a pane. The same defect ran
+through `posse wait` and the cockpit's peek, and it blanked `posse
+list`'s permission-mode column (ADR 0035 §3) to `mode:?` for every seat
+outside the default session. `posse list` itself was unaffected: `List()`
+builds both halves from the server's own listing.
+
+**Decision.** The occupant resolves a `Seat` whose `Session` is empty,
+for every verb that addresses a block: the session that holds that block,
+found in the server's own `session.list` plus `session.list_blocks`
+(`RexMux.hold`). A caller that holds both halves pays nothing — the guard
+returns at once — and a caller holding only a pane gets the contract
+`Seat`'s doc already promises it. A block no session holds is an **error
+naming the block**, never a reading: that is what the unscoped call
+already did, and `State`'s callers read an error as ignorance on purpose
+(`AwaitFirstReport`'s three outcomes). An occupant admitted later answers
+the same way, or dispatch cannot address it.
+
+The price, MEASURED on the same host and run: `ls` 14-15 ms and `block
+ls` 16 ms per session, so one resolution is 14 + 16N ms — 62 ms over the
+three sessions on that box, ~340 ms over twenty. Each verb resolves once;
+`Wait`, `Prompt` and `AwaitFirstReport` resolve before their loops and
+poll the resolved seat.
+
+**Alternatives rejected.**
+- **Thread a `Seat` through dispatch instead.** It is the architecturally
+  right shape and it is not a bug fix: `awaitTarget`, `awaitDelivered`,
+  `awaitSettled`, `AwaitPromptable`, `PaneHolding`, `ConfirmSubmitted`,
+  `AwaitPersonaMode` and two `target` struct fields are some thirty
+  signatures across twelve files, every one of them on the live dispatch
+  path. That is ranger-base-k0hd6. Doing it does not remove this
+  correction either: the occupant would still be the only thing that can
+  say what a half-a-Seat means.
+- **Memoize block → session.** Sound — Rex's UUIDs are never reused (§5)
+  — and it buys a tenth of a second on verbs nothing calls in a tight
+  loop, against a cache whose staleness story has to be written down.
+- **Read a missing block as a dead seat.** It is tempting, because a
+  block no session holds IS gone. Liveness of a seat is `List()`'s under
+  the correction above, and a second place that judges it is a second
+  answer to one question.
+- **Pass `-s` from the meta at each call site.** That is the first
+  alternative with the plumbing left out: the call sites that have the
+  session were fixed to pass it (`posse peek`, the cockpit's peek, the
+  listing's mode read), and the ones that do not have it are exactly the
+  ones this correction is for.
+
+**Why the suite was green.** The fake rex resolved `-b` out of a flat map
+and ignored `-s`, so a pane-only `Seat` read exactly like a full one. It
+now refuses a block target its `-s` session does not hold, in the real
+CLI's words, and it refuses an unscoped `-b` outright — one place the
+fake is deliberately STRICTER than rex, because posse must not depend on
+which seat is default. Four existing pins had to start seeding the
+session they were addressing; the invariant itself is pinned by
+`TestQARexPaneOnlySeatIsResolvedToItsSession`,
+`TestQARexAPaneNoSessionHoldsIsRefusedAndNotAReading` and
+`TestQARexWaitResolvesThePaneOnceAndNotPerPoll`.
+
+**Measured versus assumed.** MEASURED (the always-on host, 2026-11-10,
+rex CLI 0.0.1794069975): every row of the table, the per-call latencies,
+`posse peek` failing and then working against the live server, `posse
+wait` failing and then working over a pane-only `Seat`, and the `posse
+list` mode column moving from `mode:?` to `mode:auto`. ASSUMED: nothing
+the decision rests on. UNMEASURED: whether a block can change sessions
+(`session.detach_block`/`session.move_block` are session methods, so it
+reads as no) — it is why there is no memo, which would be the only thing
+such a move could break.

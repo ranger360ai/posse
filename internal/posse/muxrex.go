@@ -78,6 +78,84 @@ func (m RexMux) poll() time.Duration {
 // granularity nothing here asks for and multiplies the only cost.
 const rexPollInterval = time.Second
 
+// ─── addressing a block (ranger-base-nfc2b) ──────────────────────────────────
+
+// hold is the seat a block verb addresses: the caller's Seat with its Session
+// filled in when the caller held only a pane.
+//
+// IT EXISTS BECAUSE A REX BLOCK HAS NO GLOBAL NAME, which is the one place
+// ADR 0076 §2's table reads as herdr and is not. The table spells Rex's
+// typing and reading verbs `rex send -b`, `rex capture -b`, `program_status`
+// — the block alone, the way a herdr pane id addresses a pane anywhere on
+// the server — and mux.go's Seat doc licenses exactly that: "a caller that
+// holds only one half (dispatch holds a pane it resolved through
+// AgentTarget) builds a Seat carrying only that half, and the verbs it then
+// calls are the ones that need it."
+//
+// MEASURED 2026-11-10 on this host (linux, rex CLI 0.0.1794069975, local
+// unix socket), against a server holding three live sessions:
+//
+//	capture -s <the session> -b <a live block of it>   the screen, exit 0
+//	capture -s "" -b <that same live block>            Error: block target "…" not found
+//	capture -b <that same live block>                  Error: block target "…" not found
+//	block call -s "" -b <that same live block> program_status   the same refusal
+//
+// `-s` is documented as "scope to session SESSION" and reads as optional, so
+// the shape was easy to believe. It is not optional: with no scope the CLI
+// resolves `-b` inside ONE DEFAULT SESSION — `rex window ls` with no `-s`
+// answered for the most recently created session on the same server — so an
+// unscoped block verb addresses whichever seat happens to be default and
+// answers `not found` for every other one. That is the whole of this bug:
+// `posse peek <seat>` worked for one seat on the box and failed for the rest,
+// and the failure names a block that is live and listed.
+//
+// SO THE OCCUPANT RESOLVES IT RATHER THAN THE CALLERS, which is the narrow
+// half of two ways to be honest. The other is to thread a Seat through every
+// `target string` in dispatch — awaitTarget, awaitDelivered, awaitSettled,
+// AwaitPromptable, PaneHolding, ConfirmSubmitted, AwaitPersonaMode and the
+// two `target` struct fields — some thirty signatures across twelve files,
+// which is ranger-base-k0hd6's bead and not a bug fix. Resolving here makes
+// the contract mux.go already PROMISES its callers true on this occupant,
+// and a caller that does hold both halves pays nothing: the guard returns
+// immediately.
+//
+// THE PRICE, MEASURED on the same host and run: `ls` 14-15 ms and `block ls`
+// 16 ms per session, so one resolution is 14 + 16N ms — 62 ms over the three
+// sessions on this box and ~340 ms over twenty. (muxrex.go's poll-rate note
+// quotes 50-70 ms per call; that was darwin over a different transport.)
+// Each verb resolves ONCE: Wait, Prompt and AwaitFirstReport resolve before
+// their loops and poll the resolved seat, so a wait costs one resolution and
+// not one per sample. There is deliberately no memo of block -> session: it
+// would be sound (Rex's UUIDs are never reused, ADR 0076 §5) and it would
+// buy a tenth of a second on a verb nothing calls in a tight loop.
+//
+// A BLOCK NO SESSION HOLDS IS AN ERROR AND NOT A READING. That is what the
+// unscoped call already did — `not found`, exit 3 — and State's callers read
+// an error as ignorance on purpose (AwaitFirstReport's three outcomes). A
+// resolution that answered "gone" would be this file inventing the liveness
+// judgement ADR 0076 §5 gives to List().
+func (m RexMux) hold(s Seat) (Seat, error) {
+	if s.Session != "" || s.Pane == "" {
+		return s, nil
+	}
+	sess, err := m.R.Sessions()
+	if err != nil {
+		return Seat{}, err
+	}
+	for _, x := range sess {
+		blocks, err := m.R.Blocks(x.SessionID)
+		if err != nil {
+			return Seat{}, err
+		}
+		for _, b := range blocks {
+			if b.BlockID == s.Pane {
+				return Seat{Session: x.SessionID, Pane: s.Pane}, nil
+			}
+		}
+	}
+	return Seat{}, Die("block target %q is in none of this rex server's %d sessions — a rex block is addressed within its session and this seat was handed over without one (ADR 0076 §2's table reads as herdr here; RexMux.hold)", s.Pane, len(sess))
+}
+
 // ─── the ten verbs (ADR 0076 §2) ─────────────────────────────────────────────
 
 // Create opens an unfocused seat: one session, one window, one terminal
@@ -137,6 +215,10 @@ func (m RexMux) Create(label, cwd string, env []EnvVar) (Seat, error) {
 // the process (mux.go's Start doc); on Rex nothing classifies what starts
 // either, because the runtime reports its own state (§3).
 func (m RexMux) Start(s Seat, line string) error {
+	s, err := m.hold(s)
+	if err != nil {
+		return err
+	}
 	if err := m.R.Send(s.Session, s.Pane, line); err != nil {
 		return err
 	}
@@ -162,7 +244,13 @@ func (m RexMux) CloseSaysGone(err error) bool { return rexSessionGone(err) }
 
 // Focus is `rex focus` (session.focus_block), which also makes the block's
 // window the active one.
-func (m RexMux) Focus(s Seat) error { return m.R.FocusBlock(s.Session, s.Pane) }
+func (m RexMux) Focus(s Seat) error {
+	s, err := m.hold(s)
+	if err != nil {
+		return err
+	}
+	return m.R.FocusBlock(s.Session, s.Pane)
+}
 
 // List is `session.list`, joined to each session's blocks and to the
 // program-status reading of every terminal block in it (§2's List row).
@@ -247,12 +335,20 @@ func (m RexMux) List() ([]SeatInfo, error) {
 
 // SendText is `rex send`: the keystrokes with no Enter behind them.
 func (m RexMux) SendText(s Seat, text string) error {
+	s, err := m.hold(s)
+	if err != nil {
+		return err
+	}
 	return m.R.Send(s.Session, s.Pane, text)
 }
 
 // SendKeys is `rex send-key`, in Rex's own key syntax (Rex.SendKey's doc says
 // why the names are passed through rather than translated).
 func (m RexMux) SendKeys(s Seat, keys ...string) error {
+	s, err := m.hold(s)
+	if err != nil {
+		return err
+	}
 	return m.R.SendKey(s.Session, s.Pane, keys...)
 }
 
@@ -263,6 +359,10 @@ func (m RexMux) SendKeys(s Seat, keys ...string) error {
 // cannot get a different snapshot depending on which occupant answered
 // (HerdrMux.Read's doc carries the measurement behind it).
 func (m RexMux) Read(s Seat, lines int, ansi bool) (string, error) {
+	s, err := m.hold(s)
+	if err != nil {
+		return "", err
+	}
 	format := "text"
 	if ansi {
 		format = "vt"
@@ -301,6 +401,10 @@ func (m RexMux) State(s Seat) (MuxReading, error) {
 // never reported — which is every block holding a plain shell, and most of
 // the blocks a List walks.
 func (m RexMux) reading(s Seat) (MuxReading, string, error) {
+	s, err := m.hold(s)
+	if err != nil {
+		return MuxReading{}, "", err
+	}
 	recs, err := m.R.ProgramStatus(s.Session, s.Pane)
 	if err != nil {
 		return MuxReading{}, "", err
@@ -343,6 +447,13 @@ func (m RexMux) reading(s Seat) (MuxReading, string, error) {
 // shape this can actually miss is an instant refusal — which the screen then
 // shows anyway.
 func (m RexMux) Wait(s Seat, until []string, timeoutMS int) (MuxReading, error) {
+	// Once, before the loop: every sample below addresses the same block, so
+	// a pane-only seat is resolved here and not re-resolved per poll (hold's
+	// price note).
+	s, err := m.hold(s)
+	if err != nil {
+		return MuxReading{}, err
+	}
 	if timeoutMS <= 0 {
 		// 0 means "the occupant's own default" (`posse wait --timeout 0`
 		// documents it as the herdr default). herdr's lives in its server;
@@ -417,6 +528,12 @@ func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReadin
 			"starting with '/' opens the CLI's command picker, which eats the Enter and leaves the text sitting in the " +
 			"composer while this call reports success (ADR 0060 D5). Reword it without the leading '/', or drive the " +
 			"picker by hand (posse peek)")
+	}
+	// After the text check, which is about the argument and not the seat:
+	// the refusal above costs nothing and this costs rex calls (hold).
+	s, err := m.hold(s)
+	if err != nil {
+		return MuxReading{}, err
 	}
 	if err := m.R.Send(s.Session, s.Pane, text); err != nil {
 		return MuxReading{}, err
@@ -495,6 +612,10 @@ func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReadin
 // runtime that has already reported by the time this is called has answered
 // the question, and a poller that slept first would spend a second proving it.
 func (m RexMux) AwaitFirstReport(s Seat, within time.Duration) (MuxReading, bool, error) {
+	s, err := m.hold(s)
+	if err != nil {
+		return MuxReading{}, false, err
+	}
 	deadline := time.Now().Add(within)
 	for {
 		read, err := m.State(s)

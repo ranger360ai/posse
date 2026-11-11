@@ -508,6 +508,10 @@ func TestQABothMultiplexersTypeTheWallLineVerbatim(t *testing.T) {
 	}
 
 	r, _ := newTestRexMux(t)
+	// The fake resolves a block target within its session, as rex does
+	// (ranger-base-nfc2b), so the seat has to be on the server before a
+	// verb can address it.
+	rexSeedTestSeat(t)
 	if err := r.Start(rexTestSeat(), line); err != nil {
 		t.Fatal(err)
 	}

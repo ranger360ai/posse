@@ -26,11 +26,24 @@ package posse
 //
 // Both halves are the occupant's own ids and posse reads neither. On herdr
 // they are a workspace id and a pane id; on Rex a session UUID and a block
-// id. A verb takes whichever half it addresses — Close and Focus the
-// session, the typing and reading verbs the pane — so a caller that holds
-// only one half (dispatch holds a pane it resolved through AgentTarget)
-// builds a Seat carrying only that half, and the verbs it then calls are the
-// ones that need it.
+// id. A verb takes whichever half it addresses — Close the session, the
+// typing and reading verbs the pane — so a caller that holds only one half
+// (dispatch holds a pane it resolved through AgentTarget) builds a Seat
+// carrying only that half, and the verbs it then calls are the ones that
+// need it.
+//
+// A PANE-ONLY SEAT IS THE OCCUPANT'S TO RESOLVE, and that sentence is the
+// price of the one above (ranger-base-nfc2b). The half-a-Seat licence is
+// herdr's shape read as the contract: a herdr pane id addresses a pane
+// anywhere on the server, so herdr's occupant needs no session and Focus
+// takes one only because herdr's verb does. A REX BLOCK HAS NO GLOBAL NAME —
+// MEASURED 2026-11-10, `rex capture -b <a live, listed block>` with no `-s`
+// answers `Error: block target "…" not found` unless that block happens to
+// be in rex's default session — so Rex's occupant resolves the missing half
+// itself (RexMux.hold, which carries the measurement and the price). An
+// occupant admitted later answers the same way or the callers above cannot
+// address it. What a caller must NOT do is leave out a half it is holding:
+// resolution costs the occupant rex calls, and `s.Seat()` is free.
 type Seat struct {
 	// Session is the server-side container: herdr's workspace, Rex's
 	// session.
