@@ -710,7 +710,7 @@ QA_PKGCENSUS_ARM3_PINS := TestBackupHasNoOverride|TestQAOneDoorForTheReportedRea
 # door re-runs the TOOL the way fmt-check does, and the two cannot disagree.
 QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ADR_PINS       := TestADRRecordsNameTheLivePackageDirectory|TestADRSweptRecordsStillCiteTheLiveDirectory|TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
-QA_CORPUS_PINS    := TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders|TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable|TestQANoGoSourceWritesABinBashShebang|TestQAEveryShippedScriptThatHashesPicksItsHasherByProbe|TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates
+QA_CORPUS_PINS    := TestQAEveryPlantingPackageHasAColdexecArm|TestQAColdexecArmRegisterIsNotStale|TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders|TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable|TestQANoGoSourceWritesABinBashShebang|TestQAEveryShippedScriptThatHashesPicksItsHasherByProbe|TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates
 QA_REGISTER_PINS  := TestTreePinsRunFromModuleRoot|TestQAEveryTreeWidePinHasADoor|TestQAEveryTreePathHandedThroughAParameterIsDerived|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles|TestQATheClimbFenceStillHasItsBareRootJoinHole
 QA_SCRIPTS_PINS   := TestQANoEntryPointRunsGoTestOnTheDefaultTimeout|TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
@@ -942,6 +942,20 @@ adr-check:
 # (TestKeychainReadIsExecdFromExactlyOneFile) is already here — one file, one
 # door.
 #
+# And the coldexec arm census (ranger-base-s64a5), over every .go file in the
+# tree, test files included — which is where a planted executable lives. It
+# derives `make coldexec-check`'s arm list from the WriteExecutable call sites
+# the tree actually holds (331 in three packages, MEASURED 2026-11-11) rather
+# than from five remembered recipe lines, so a fourth package that starts
+# planting gets a red instead of a door that is green over tests it never ran
+# (ADR 0085 D6). Its partner holds the register that waives a planting package
+# whose arm is another bead's, so a waiver cannot outlive its cause. Here
+# rather than behind execwrite-check because that door runs internal/posse and
+# asks a different question — whether an exec-bit write is routed through
+# WriteExecutable at all — and because this one is a census over this repo's
+# own .go sources, which is this door's sentence. 0.6s between the two
+# (MEASURED 2026-11-11).
+#
 # And the hash-spelling census (ranger-base-uxadf), over the same four shipped
 # directories and so behind this door for the same sentence: a runnable that
 # names `shasum` or `sha256sum` outside a `command -v` probe is a finding,
@@ -1112,6 +1126,20 @@ treepins:
 # to 2.5s once per planted file, the full run is priced under
 # ranger-base-kiwvn, and whether CI should buy it is the operator's call
 # because it costs runner time.
+#
+# THE ARM LIST IS DERIVED, not remembered (ranger-base-s64a5). A package whose
+# tests can flake on darwin's cold first exec is a package that PLANTS an
+# executable, which is a package with a WriteExecutable call site — the one
+# executable writer in this tree, which `make execwrite-check` holds
+# separately. Those two sets have to be equal, and until s64a5 nothing
+# compared them: execwrite-check's floors are a per-directory .go FILE count,
+# a different claim satisfied by a package nobody injects into, and this block
+# stated the coupling in prose alone. internal/treepins' census does it now
+# (coldexecarms_qa_test.go, `make corpus-check`), both ways and with the arm
+# held to running inside the supervisor, so an arm added or lost is a red and
+# not a reading. A planting package whose arm is another bead's work is
+# registered there by name, with that bead, and the register's own partner
+# reds the moment a row stops being true.
 #
 # THE COUNTS NEED NO FILE, and that is the supervisor's second gift. Under the
 # content-rewrite door the report was a TEST BINARY's stderr, and `go test`

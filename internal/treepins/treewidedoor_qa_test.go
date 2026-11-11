@@ -1026,7 +1026,36 @@ package treepins
 // just as silent. 0.33s between the four (MEASURED 2026-11-11, 0.08s, 0.09s,
 // 0.09s and 0.07s on one warm run of the door).
 //
-// and `make tree-check` is all of them — one hundred and thirty-three pins
+// and TWO more into corpus-check's door, for the sentence every other
+// corpus-check row gives — a census over this repo's own .go sources, with a
+// file set the walk discovers (ranger-base-s64a5). What they derive is `make
+// coldexec-check`'s ARM LIST: ADR 0085 D6's door is only as wide as the
+// packages its recipe names, and that set is derivable — a package whose
+// tests can flake on darwin's cold first exec is one that PLANTS an
+// executable, which is one with a WriteExecutable call site, which is the
+// subject execwrite-check already holds. Nothing compared the two: that
+// door's floors are a per-directory .go FILE count, a different claim
+// satisfied by a package nobody injects into, and the coldexec block stated
+// the coupling in prose. The census is 331 call sites in three packages
+// (MEASURED 2026-11-11), it walks test files as well as shipped ones because
+// a plant is a fixture, and the second row is the register that waives a
+// planting package whose arm is another bead's — the one route into the first
+// that does not go through the census, held to being true so a waiver cannot
+// outlive its cause:
+//
+//	TestQAEveryPlantingPackageHasAColdexecArm     make corpus-check
+//	TestQAColdexecArmRegisterIsNotStale           make corpus-check
+//	                                              (both ranger-base-s64a5)
+//
+// Their control arm is undoored, for the reason the four rows above give: it
+// drives both readers over planted source and synthetic recipe lines, so
+// nothing derives it and no unrelated bead can red it. 0.6s between the two
+// (MEASURED 2026-11-11, 0.26s and 0.33s on one warm run of the door). The
+// four mutations the pair was checked against, this bead being two rules and
+// a floor and all three assertions about absence, are in
+// docs/notes.d/ranger-base-s64a5.md.
+//
+// and `make tree-check` is all of them — one hundred and thirty-five pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

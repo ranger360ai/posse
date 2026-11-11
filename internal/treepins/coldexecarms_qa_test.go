@@ -1,0 +1,535 @@
+package treepins
+
+// QA pins for ranger-base-s64a5 — `make coldexec-check`'s arms are DERIVED
+// from the plant census, not remembered.
+//
+// THE DOOR. coldexec-check (Makefile, ADR 0085 D6) runs a suite inside
+// cmd/coldexec, the seccomp execve supervisor, so the FIRST exec of every
+// freshly planted executable is held for COLDEXEC_DELAY. That is the whole of
+// ADR 0085's move: the class is "a test whose verdict changes when the first
+// exec of a planted file is slow", and it is decided by RUNNING the test with
+// that cost injected. The door is therefore only as wide as its arm list, and
+// the arm list was five hand-written recipe lines.
+//
+// THE DEFECT. The set those arms SHOULD equal is derivable and was not
+// derived. A package whose tests can flake on darwin's cold first exec is a
+// package that PLANTS an executable, which is a package with a
+// WriteExecutable call site — the one writer every exec-bit write in this
+// tree goes through, which internal/posse's
+// TestQATreeGoFilesWriteExecutablesUnderTheForkLock establishes separately
+// (make execwrite-check, ranger-base-o6oj4 widened by ranger-base-6cznr).
+// Nothing compared the two. execwrite-check's own floors are a per-directory
+// .go FILE count — a different claim, and one that is satisfied by a package
+// nobody injects into — and the Makefile's coldexec block states the coupling
+// in prose only. A fourth package that starts planting tomorrow gets no arm,
+// no red, and a door that is green over tests it never ran.
+//
+// MEASURED 2026-11-11, this bead, by the census below: 331 plant call sites
+// in exactly three packages — internal/posse 261, internal/treepins 53,
+// cmd/posse 17. (The bead's own description says 345 in those same three,
+// which was `grep -rn 'WriteExecutable('`: 331 calls, the two
+// WriteExecutable DECLARATIONS — internal/posse/execwrite.go and
+// internal/treepins/execwrite_test.go, the package-local copy internal/posse's
+// init.go import cycle forces — and twelve quoted mentions, six in
+// execwritesiblings_qa_test.go's positive-witness table and six in
+// execwritegates_qa_test.go's. This census parses, so a call written inside a
+// string literal is not a call site and a `func WriteExecutable` is not one
+// either.)
+//
+// THE SHAPE, and why it is two pins and a register rather than one pin.
+// Arm 1 is the derivation: every planting package has an arm, and no arm
+// names a package that plants nothing. Both directions, because an arm over
+// a package with no plants injects nothing and is a line a reader will trust.
+//
+// The register (cxaUncoveredPlanters) is the live gap, and it is live because
+// of WHEN this bead landed: coldexec-check had three arms, all
+// internal/posse, and extending it to cmd/posse and internal/treepins is
+// ranger-base-in8dr's own deliverable — after ADR 0085 D6's amendment
+// (ranger-base-dacil) one Makefile line per package, inside the supervisor.
+// So this pin cannot demand those two arms today without reddening the suite
+// over work another bead holds, and it must not go quiet about them either.
+// A row per package, naming the bead that will cover it, is the honest third
+// answer: arm 1 reds for a FOURTH package immediately, and arm 2 reds the
+// moment a registered row stops being true.
+//
+// ARM 2 IS THE COUPLING, not a courtesy. A waiver that outlives its cause is
+// how this door would go back to being remembered — the register is the one
+// route into arm 1 that does not go through the census, which is exactly the
+// parking spot treewidedoor_qa_test.go's twdDoorHolders keeps warning about.
+// So a registered package that has stopped planting, or that HAS an arm now,
+// is a red with a one-line fix: delete the row. ranger-base-in8dr's seat will
+// see that red when it lands its two arms, and the instruction is in the
+// register and in the message.
+//
+// ARM 3 is the control. Arms 1 and 2 both rest on two readers — a matcher
+// over Go source and a reader over a Makefile recipe line — and the cheapest
+// way for either to go green is to stop matching. A census that counts no
+// call sites reports every package as a non-planter and arm 1 passes with
+// nothing to say; so does a recipe reader that finds no arms, in the one
+// direction that is silent. Arm 3 asks both readers, on synthetic input, for
+// both answers. Its own failures are not a floor and no unrelated bead can
+// red it, so it is deliberately not behind a door (the reason three of the
+// corpus-check rows next door give).
+//
+// THE FLOORS are the other half of that. A census is positively checked by
+// arm 3 and floored here: fewer than cxaSiteFloor call sites, or fewer than
+// cxaPlanterFloor packages holding them, and the walk is not reading this
+// tree, so the absence arm 1 asserts measures nothing.
+//
+// Its door is `make corpus-check` — a census over this repo's own .go
+// sources, which is that door's subject exactly, and no new door for the
+// sentence every other corpus-check row gives. Not execwrite-check: that
+// door runs internal/posse and its subject is whether a write is routed
+// through WriteExecutable at all, which is not the question here.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+	"testing"
+)
+
+// cxaTarget is the Makefile door whose arms these pins derive.
+const cxaTarget = "coldexec-check"
+
+// cxaPlantWriter is the ONE executable writer in this tree, and the reason a
+// call site is a plant: execwrite-check holds every exec-bit write to it, so
+// its call sites ARE the tree's planted executables. A second writer would be
+// a planting site this census cannot see — which is why that door, not this
+// one, is what keeps this census complete.
+const cxaPlantWriter = "WriteExecutable"
+
+// cxaSupervisor is the Makefile variable holding the injector each arm runs
+// inside. An arm line that does not name it delays nothing, so it is not an
+// arm — it is a plain `go test` wearing the door's name.
+const cxaSupervisor = "$(COLDEXEC_BIN)"
+
+// The floors under the census. 331 call sites in three packages on
+// 2026-11-11; both are deliberately loose, because their job is to catch a
+// walk that read nothing, not to track the count.
+const (
+	cxaSiteFloor    = 250
+	cxaPlanterFloor = 3
+)
+
+// cxaUncoveredPlanters are the planting packages coldexec-check does not
+// cover yet, each naming the bead that will cover it. Arm 1 exempts these
+// from needing an arm; arm 2 reds the moment a row stops being true, so a row
+// cannot outlive its cause.
+//
+// TO CLEAR A ROW: add the package's arm to coldexec-check's recipe and delete
+// the row. Both rows are ranger-base-in8dr's, and arm 2 is what will tell its
+// seat so.
+var cxaUncoveredPlanters = map[string]string{
+	"cmd/posse":         "ranger-base-in8dr — extend coldexec-check to cmd/posse's 17 plant sites (ADR 0085 D6, one recipe line inside the supervisor)",
+	"internal/treepins": "ranger-base-in8dr — extend coldexec-check to internal/treepins' 53 plant sites, which plant through this package's own WriteExecutable copy (execwrite_test.go)",
+}
+
+// cxaPlantSites returns the number of plant call sites per package directory,
+// slash-separated and relative to the repository root. TestMain chdirs this
+// binary to that root, so the walk is rooted at a plain `.`.
+//
+// Test files are IN, and they are nearly all of it — a plant is a fixture and
+// fixtures live in tests. testdata, vendor, node_modules and dotted
+// directories are out: a .go file there is compiled into no package, so a
+// call site in one is not a call site at all.
+func cxaPlantSites(t *testing.T) (map[string]int, int) {
+	t.Helper()
+	per := map[string]int{}
+	total := 0
+	err := filepath.WalkDir(".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			n := d.Name()
+			if p != "." && (strings.HasPrefix(n, ".") || n == "vendor" || n == "node_modules" || n == "testdata") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel := filepath.ToSlash(p)
+		if !strings.HasSuffix(rel, ".go") {
+			return nil
+		}
+		f, perr := parser.ParseFile(token.NewFileSet(), p, nil, parser.SkipObjectResolution)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", rel, perr)
+		}
+		if n := cxaPlantCalls(f); n > 0 {
+			per[path.Dir(rel)] += n
+			total += n
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the tree for plant call sites: %v", err)
+	}
+	return per, total
+}
+
+// cxaPlantCalls counts calls to the plant writer in one parsed file — bare
+// (`WriteExecutable(...)`, inside internal/posse and internal/treepins, which
+// each hold a copy) and qualified (`posse.WriteExecutable(...)`, everywhere
+// else). A `func WriteExecutable` declaration is not a call and neither is the
+// name inside a string literal; both are why this reads an AST and not a grep.
+func cxaPlantCalls(f *ast.File) int {
+	n := 0
+	ast.Inspect(f, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch fn := call.Fun.(type) {
+		case *ast.Ident:
+			if fn.Name == cxaPlantWriter {
+				n++
+			}
+		case *ast.SelectorExpr:
+			if fn.Sel.Name == cxaPlantWriter {
+				n++
+			}
+		}
+		return true
+	})
+	return n
+}
+
+// cxaArm is one recipe line of the door, read.
+type cxaArm struct {
+	line       string
+	pattern    string // the `./…` package pattern as the recipe spells it
+	dir        string // that pattern's directory, slash-separated and `./` stripped
+	tree       bool   // the `/...` form: the directory AND every package under it
+	supervised bool   // the line runs that pattern inside cxaSupervisor
+}
+
+// covers reports whether this arm runs a package directory, read the way `go
+// test` reads its argument: `./internal/posse` is that package alone and
+// `./internal/posse/...` is it and everything below it.
+//
+// A PREFIX AND NOT AN EQUALITY, and the control arm below is why. The reader
+// this replaced stripped `/...` and compared directories, which made
+// `./internal/...` — one pattern over both planting packages under internal/
+// — read as an arm over a directory called `internal` that plants nothing:
+// two false findings, in both directions at once, over a recipe line that is
+// correct. The two spellings are not distinguishable without resolving the
+// path, and they do not need to be: a prefix is what the pattern MEANS.
+func (a cxaArm) covers(pkg string) bool {
+	if !a.tree {
+		return pkg == a.dir
+	}
+	return a.dir == "" || pkg == a.dir || strings.HasPrefix(pkg, a.dir+"/")
+}
+
+// cxaReadArm reads one recipe line. It reports ok=false for a line that runs
+// no `go test` at all — such a line is not an arm and is not this pin's
+// business — and an error for a line that DOES run one and names no package
+// pattern at all, because that is an arm whose coverage cannot be read and
+// skipping it silently is the whole defect this pin exists for.
+func cxaReadArm(line string) (cxaArm, bool, error) {
+	fields := strings.Fields(line)
+	at := -1
+	for i, f := range fields {
+		if f != "test" || i == 0 {
+			continue
+		}
+		if prev := fields[i-1]; prev == "$(GOBIN)" || prev == "go" {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return cxaArm{}, false, nil
+	}
+	arm := cxaArm{line: line, supervised: strings.Contains(line, cxaSupervisor)}
+	for _, f := range fields[at+1:] {
+		if !strings.HasPrefix(f, "./") {
+			continue
+		}
+		arm.pattern = f
+		rest := strings.TrimPrefix(f, "./")
+		if rest == "..." {
+			arm.dir, arm.tree = "", true
+			return arm, true, nil
+		}
+		if d, ok := strings.CutSuffix(rest, "/..."); ok {
+			arm.dir, arm.tree = d, true
+			return arm, true, nil
+		}
+		arm.dir = rest
+		return arm, true, nil
+	}
+	return cxaArm{}, true, &cxaUnreadableArm{line: line}
+}
+
+// cxaUnreadableArm is an arm line whose package coverage cannot be read.
+type cxaUnreadableArm struct{ line string }
+
+func (e *cxaUnreadableArm) Error() string {
+	return "`make " + cxaTarget + "` has a `go test` recipe line that names no `./…` package pattern:\n  " + e.line +
+		"\nAn arm of this door has to say which packages it runs, because that is what the census below is compared against. Spell the pattern — `./<dir>`, or `./<dir>/...` for the package-tree form that takes a suite slot — and an arm nothing can read becomes an arm something can derive."
+}
+
+// cxaArms reads the door's arms out of the Makefile.
+func cxaArms(t *testing.T, makefile string) []cxaArm {
+	t.Helper()
+	lines := mkRecipeCode(makeRecipe(makefile, cxaTarget))
+	if len(lines) == 0 {
+		t.Fatalf("the Makefile has no `%s` recipe — the door these pins derive is gone, and with it every arm injecting the cold first exec (ADR 0085 D6)", cxaTarget)
+	}
+	var out []cxaArm
+	for _, line := range lines {
+		arm, runs, err := cxaReadArm(line)
+		if !runs {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, arm)
+	}
+	if len(out) == 0 {
+		t.Fatalf("the `%s` recipe runs no `go test` at all:\n  %s\nThe door exists to run a suite with the first exec of every planted executable held, so a recipe with no arm in it is a green door over nothing.", cxaTarget, strings.Join(lines, "\n  "))
+	}
+	return out
+}
+
+// cxaSorted returns a map's keys, sorted, so a finding reads the same twice.
+func cxaSorted[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TestQAEveryPlantingPackageHasAColdexecArm is the derivation: coldexec-check
+// covers every package that plants an executable, and nothing else.
+func TestQAEveryPlantingPackageHasAColdexecArm(t *testing.T) {
+	t.Parallel()
+
+	b, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	arms := cxaArms(t, string(b))
+
+	per, total := cxaPlantSites(t)
+	if total < cxaSiteFloor {
+		t.Fatalf("the census found %d plant call sites in the tree, want at least %d — %s is the one executable writer here (make execwrite-check), and a count this low means this walk is not reading this tree, so the coverage below measures nothing", total, cxaSiteFloor, cxaPlantWriter)
+	}
+	if len(per) < cxaPlanterFloor {
+		t.Fatalf("the census found plant call sites in %d packages (%v), want at least %d — same reason as the site floor above", len(per), cxaSorted(per), cxaPlanterFloor)
+	}
+
+	var covering []cxaArm
+	for _, arm := range arms {
+		if !arm.supervised {
+			t.Errorf("`make %s` runs %s outside %s:\n  %s\nThat line delays no exec, so every planted fixture it reaches execs warm and the arm reports a green suite over exactly the cost the door exists to charge (ADR 0085 D6: POSSE_COLD_EXEC_DELAY reaches the supervisor alone).", cxaTarget, arm.pattern, cxaSupervisor, arm.line)
+			continue
+		}
+		covering = append(covering, arm)
+	}
+	patterns := func() []string {
+		var out []string
+		for _, a := range covering {
+			if !slices.Contains(out, a.pattern) {
+				out = append(out, a.pattern)
+			}
+		}
+		return out
+	}()
+
+	for _, pkg := range cxaSorted(per) {
+		if slices.ContainsFunc(covering, func(a cxaArm) bool { return a.covers(pkg) }) {
+			continue
+		}
+		if why, waived := cxaUncoveredPlanters[pkg]; waived {
+			t.Logf("%s has no %s arm, registered (%s call sites: %d): %s", pkg, cxaTarget, cxaPlantWriter, per[pkg], why)
+			continue
+		}
+		t.Errorf("%s plants an executable and `make %s` has no arm reaching it.\n"+
+			"  %s call sites in %s: %d\n"+
+			"  the door's patterns: %v\n"+
+			"  the packages that plant: %v\n"+
+			"A package that plants an executable and execs it under a deadline is in ADR 0085's class, and the only thing that decides whether a test of it flakes on darwin's cold first exec is running it with that cost injected. Add an arm — one recipe line, `./%s` inside %s — or, if that work belongs to another bead, add a row to cxaUncoveredPlanters naming it.",
+			pkg, cxaTarget, cxaPlantWriter, pkg, per[pkg], patterns, cxaSorted(per), pkg, cxaSupervisor)
+	}
+
+	for _, arm := range covering {
+		if slices.ContainsFunc(cxaSorted(per), arm.covers) {
+			continue
+		}
+		t.Errorf("`make %s` runs an arm over %s, and the census finds no %s call site under it:\n  %s\n"+
+			"  the packages that plant: %v\n"+
+			"The arm costs a suite slot and up to COLDEXEC_DELAY per planted file to inject a cost into packages that plant nothing, and a reader counting the door's reach from its recipe counts this line. Either what it covers stopped planting and the arm goes, or the census stopped seeing it — and the second is the one worth checking first.",
+			cxaTarget, arm.pattern, cxaPlantWriter, arm.line, cxaSorted(per))
+	}
+}
+
+// TestQAColdexecArmRegisterIsNotStale holds cxaUncoveredPlanters to being
+// true. It is the one route into the arm above that does not go through the
+// census, so a row that outlives its cause is this door going back to a
+// remembered list — with the register's own silence in front of it.
+func TestQAColdexecArmRegisterIsNotStale(t *testing.T) {
+	t.Parallel()
+
+	b, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var covering []cxaArm
+	for _, arm := range cxaArms(t, string(b)) {
+		if arm.supervised {
+			covering = append(covering, arm)
+		}
+	}
+	per, _ := cxaPlantSites(t)
+
+	for _, pkg := range cxaSorted(cxaUncoveredPlanters) {
+		if i := slices.IndexFunc(covering, func(a cxaArm) bool { return a.covers(pkg) }); i >= 0 {
+			t.Errorf("cxaUncoveredPlanters still waives %s, and `make %s` has an arm reaching it now:\n  %s\nThe row said that package has no arm; it has one. Delete the row — it is the reason the derivation arm exempts %s, so while it sits there a REGRESSION in that arm is silent.\n  the row reads: %s", pkg, cxaTarget, covering[i].line, pkg, cxaUncoveredPlanters[pkg])
+			continue
+		}
+		if per[pkg] == 0 {
+			t.Errorf("cxaUncoveredPlanters waives %s, and the census finds no %s call site there — that package plants nothing, so there is nothing to waive and nothing for %s to inject. Delete the row.\n  the row reads: %s\n  the packages that plant: %v", pkg, cxaPlantWriter, cxaTarget, cxaUncoveredPlanters[pkg], cxaSorted(per))
+		}
+	}
+}
+
+// TestQAColdexecArmCensusCanStillSayNo drives both readers the two arms above
+// rest on, for both answers. Deliberately not behind a door: it reads planted
+// source and synthetic recipe lines rather than the tree, so nothing derives
+// it and no unrelated bead can red it.
+func TestQAColdexecArmCensusCanStillSayNo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the plant matcher", func(t *testing.T) {
+		// The plain write is ASSEMBLED rather than spelled, for the reason
+		// execwritesiblings_qa_test.go's own control gives: that census is a
+		// BYTE matcher over every .go file in the tree, this file is inside
+		// its walk, and an exec-bit `os.WriteFile` spelled in full here is a
+		// hit on this file's own source whatever the Go around it says. It
+		// cost one red of `make execwrite-check` to learn, which is the door
+		// working.
+		plainWrite := "os.Write" + "File(p, b, 0o755)"
+		for _, c := range []struct {
+			name string
+			src  string
+			want int
+		}{
+			{"a bare call", "package p\nfunc f() { WriteExecutable(p, b, 0o755) }\n", 1},
+			{"a qualified call", "package p\nfunc f() { posse.WriteExecutable(p, b, 0o755) }\n", 1},
+			{"two on one line", "package p\nfunc f() { WriteExecutable(a, b, 0o755); WriteExecutable(c, d, 0o755) }\n", 2},
+			// The two shapes grep counts and this must not: the writer's
+			// own declaration (two in the tree) and the name quoted in a
+			// positive-witness table (twelve in the tree).
+			{"the declaration is not a call", "package p\nfunc WriteExecutable(path string, b []byte, m uint32) error { return nil }\n", 0},
+			{"a quoted mention is not a call", "package p\nvar want = `WriteExecutable(p, b, 0o755)`\n", 0},
+			{"a plain write is not a plant", "package p\nfunc f() { " + plainWrite + " }\n", 0},
+			{"no plant at all", "package p\nfunc f() {}\n", 0},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				f, err := parser.ParseFile(token.NewFileSet(), "x.go", c.src, parser.SkipObjectResolution)
+				if err != nil {
+					t.Fatalf("parse: %v", err)
+				}
+				if got := cxaPlantCalls(f); got != c.want {
+					t.Errorf("cxaPlantCalls = %d, want %d, over:\n%s", got, c.want, c.src)
+				}
+			})
+		}
+	})
+
+	t.Run("the arm reader", func(t *testing.T) {
+		const supervised = "POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test "
+		for _, c := range []struct {
+			name string
+			line string
+			want cxaArm
+			runs bool
+			err  bool
+		}{
+			{"arm 1, the package-tree form", supervised + "./internal/posse/... -timeout 25m -count=1", cxaArm{dir: "internal/posse", tree: true, supervised: true}, true, false},
+			{"a tagged arm, flags before the package", supervised + "-tags posse_arm2 ./internal/posse -timeout 25m -count=1", cxaArm{dir: "internal/posse", supervised: true}, true, false},
+			{"an arm in a directory of its own", supervised + "./cmd/posse -count=1", cxaArm{dir: "cmd/posse", supervised: true}, true, false},
+			{"a bare `go test` is an arm that injects nothing", "$(GOBIN) test ./cmd/posse -count=1", cxaArm{dir: "cmd/posse"}, true, false},
+			{"building the supervisor runs no test", "$(GOBIN) build -o $@ ./cmd/coldexec", cxaArm{}, false, false},
+			{"a recipe line that is not go test", "mkdir -p plugin/bin", cxaArm{}, false, false},
+			{"a subtree pattern is a prefix, not a directory", supervised + "./internal/... -count=1", cxaArm{dir: "internal", tree: true, supervised: true}, true, false},
+			{"the whole module is a prefix of everything", supervised + "./... -count=1", cxaArm{dir: "", tree: true, supervised: true}, true, false},
+			{"a `go test` naming no package is unreadable", supervised + "-count=1", cxaArm{}, true, true},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				arm, runs, err := cxaReadArm(c.line)
+				if runs != c.runs {
+					t.Fatalf("cxaReadArm(%q) runs = %v, want %v", c.line, runs, c.runs)
+				}
+				if (err != nil) != c.err {
+					t.Fatalf("cxaReadArm(%q) err = %v, want err %v", c.line, err, c.err)
+				}
+				if err != nil {
+					return
+				}
+				if arm.dir != c.want.dir || arm.tree != c.want.tree || arm.supervised != c.want.supervised {
+					t.Errorf("cxaReadArm(%q) = {dir:%q tree:%v supervised:%v}, want {dir:%q tree:%v supervised:%v}", c.line, arm.dir, arm.tree, arm.supervised, c.want.dir, c.want.tree, c.want.supervised)
+				}
+			})
+		}
+	})
+
+	// And the prefix itself, which is the reading the table above records and
+	// the one the first reader got wrong.
+	t.Run("an arm's coverage", func(t *testing.T) {
+		for _, c := range []struct {
+			arm  cxaArm
+			pkg  string
+			want bool
+		}{
+			{cxaArm{dir: "internal/posse"}, "internal/posse", true},
+			{cxaArm{dir: "internal/posse"}, "internal/treepins", false},
+			{cxaArm{dir: "internal/posse"}, "internal/posse/sub", false},
+			{cxaArm{dir: "internal/posse", tree: true}, "internal/posse", true},
+			{cxaArm{dir: "internal/posse", tree: true}, "internal/posse/sub", true},
+			{cxaArm{dir: "internal", tree: true}, "internal/posse", true},
+			{cxaArm{dir: "internal", tree: true}, "internal/treepins", true},
+			{cxaArm{dir: "internal", tree: true}, "cmd/posse", false},
+			// A prefix of a NAME is not a prefix of a path.
+			{cxaArm{dir: "internal/poss", tree: true}, "internal/posse", false},
+			{cxaArm{dir: "", tree: true}, "cmd/posse", true},
+		} {
+			if got := c.arm.covers(c.pkg); got != c.want {
+				t.Errorf("cxaArm{dir:%q tree:%v}.covers(%q) = %v, want %v", c.arm.dir, c.arm.tree, c.pkg, got, c.want)
+			}
+		}
+	})
+
+	t.Run("the recipe reader finds the live door", func(t *testing.T) {
+		// The floor under the arm reader: a recipe this reader stopped
+		// understanding reports no arms, and "no arms" is the one reading
+		// under which the coverage arm has nothing to say.
+		b, err := os.ReadFile("Makefile")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var pkgs []string
+		for _, arm := range cxaArms(t, string(b)) {
+			if !slices.Contains(pkgs, arm.pattern) {
+				pkgs = append(pkgs, arm.pattern)
+			}
+		}
+		if len(pkgs) == 0 {
+			t.Fatalf("the reader found no arm in the live `%s` recipe", cxaTarget)
+		}
+		t.Logf("`make %s` arms cover: %v", cxaTarget, pkgs)
+	})
+}
