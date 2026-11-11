@@ -26,6 +26,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-dfgte](ranger-base-dfgte.md) — ranger-base-dfgte — one resolver for the cage map, and the mapping it declines — 2026-11-11
 - [ranger-base-ctxeq](ranger-base-ctxeq.md) — ranger-base-ctxeq — witnessing the Edit/Write wall at the launch, and what a negative probe costs to believe — 2026-11-11
 - [ranger-base-akk9f](ranger-base-akk9f.md) — The disk explainer knew one errno, and this box writes the other (ranger-base-akk9f) — 2026-11-11
+- [ranger-base-aifu2](ranger-base-aifu2.md) — Four closes verified, and the half of a rule its own close argued for (ranger-base-aifu2) — 2026-11-11
 - [ranger-base-6rr2e](ranger-base-6rr2e.md) — The same class one node over: a git CHILD bound by a declaration (ranger-base-6rr2e) — 2026-11-11
 - [ranger-base-6pew3](ranger-base-6pew3.md) — The reading posse already had, and was spending as a concession (ranger-base-6pew3) — 2026-11-11
 - [ranger-base-6hjm5](ranger-base-6hjm5.md) — The record-reach gate asked for a directory no PID is granted (ranger-base-6hjm5) — 2026-11-11
