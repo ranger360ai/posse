@@ -1,9 +1,10 @@
 package treepins
 
-// QA pins for ranger-base-krra — the suite's OTHER environmental red.
+// QA pins for ranger-base-krra — the suite's OTHER environmental red — and for
+// ranger-base-akk9f, the second errno it comes in.
 //
-// Claim: when this box runs out of disk, `make test` says so in words, at the
-// two moments a reader is present.
+// Claim: when this box runs out of room to write, `make test` says so in
+// words, at the two moments a reader is present, and says WHICH way it ran out.
 //
 // MEASURED 2026-08-29 on the machine that runs every session's suite: `make
 // test` came back exit 2 with ~80 reds in internal/posse, every one of them
@@ -21,9 +22,21 @@ package treepins
 // ranger-base-7xla had already put a guard on the sibling red, the -timeout
 // ceiling; this one had none.
 //
+// AND THE SAME RED IN THE OTHER SPELLING (ranger-base-akk9f). MEASURED
+// 2026-11-11 on this box (linux 7.2.15, go1.27.3): `make test` came back exit
+// 2 with arm 1 green and arm 2 red on four unrelated tests, every red a write
+// that said `disk quota exceeded`. Both halves of krra's guard were silent —
+// the block greps one literal, and the DISK line had printed 5915 MB free,
+// above its floor, because /tmp here is a 14G tmpfs mounted `usrquota` and a
+// free-space number cannot see a quota. The quota is per UID and every seat
+// runs as the same user, so it is one BOX-WIDE budget concurrent suites spend
+// together. The two errnos want different advice — ENOSPC sends the reader to
+// `df`, where EDQUOT looks fine — so the block names which one fired, and the
+// arms below require that separation in both directions.
+//
 // The guard lives in scripts/test-times.sh, which is the same place and the
 // same shape as the clock's: a DISK line before the packages run, and a block
-// after a run whose log carries ENOSPC. Neither deletes anything and neither
+// after a run whose log carries ENOSPC or EDQUOT. Neither deletes anything and neither
 // goes red on free space — what to clear on a shared box is the operator's
 // call (`go clean -cache` slows every concurrent session; deleting from
 // $TMPDIR can take a live test's TempDir out from under it), and a floor is a
@@ -92,9 +105,9 @@ func TestQAMakeTestRunsTheSuiteThroughTheDiskAndClockWrapper(t *testing.T) {
 }
 
 // Arm 2: the wrapper still does it. Runs the script's own --self-test, which
-// drives the real script end to end over fixtures — including the ENOSPC log
-// measured on 2026-08-29 — and requires the disk arms by name, so deleting
-// the guard and its arms together still reds this.
+// drives the real script end to end over fixtures — the ENOSPC log measured on
+// 2026-08-29 and the EDQUOT log measured on 2026-11-11 — and requires the disk
+// arms by name, so deleting the guard and its arms together still reds this.
 func TestQATheWrapperStillExplainsAFullDiskAndABrokenStdBuild(t *testing.T) {
 	if _, err := os.Stat(suiteWrapper); err != nil {
 		t.Fatalf("%s is gone: %v", suiteWrapper, err)
@@ -116,6 +129,17 @@ func TestQATheWrapperStillExplainsAFullDiskAndABrokenStdBuild(t *testing.T) {
 		"enospc: exit status 1 preserved",
 		"clean log: no ENOSPC block",
 		"std break: block printed and the compiler line quoted",
+		// ranger-base-akk9f. The two discrimination arms are named on
+		// purpose: a block that fires on both logs with one text passes
+		// every arm above, and is the bug this bead was filed for one
+		// step on — a quota red that sends its reader to `df`.
+		"disk: the preflight says its number is the device, not a quota",
+		"edquot: block printed, and both cases of the spelling counted",
+		"edquot: not reported as a full filesystem",
+		"edquot: names the one variable that moves a run off the quota",
+		"edquot: exit status 1 preserved",
+		"enospc: not reported as a quota",
+		"clean log: no quota block",
 	} {
 		if !strings.Contains(got, "ok    "+want) {
 			t.Errorf("%s --self-test no longer proves %q — the arm is gone, failing, or renamed\n%s", suiteWrapper, want, got)

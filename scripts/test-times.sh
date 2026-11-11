@@ -78,6 +78,21 @@
 #   reader who is already staring at eighty red test names is told which of
 #   them belong to the box.
 #
+# AND THE SAME RED IN THE OTHER ERRNO'S SPELLING (ranger-base-akk9f). The
+# block above greps one literal, and this box produces another: MEASURED
+# 2026-11-11 (linux 7.2.15, go1.27.3, both suite slots held by sibling seats),
+# `make test` came back exit 2 with arm 1 green and arm 2 red on four
+# unrelated tests, every red a write that said `disk quota exceeded`. Both
+# halves of krra's answer were silent — the grep did not fire, and the DISK
+# line had printed 5915 MB free, above its floor, because /tmp here is a 14G
+# tmpfs mounted `usrquota` and a free-space number cannot see a quota. The
+# quota is per UID and every seat runs as the same user, so it is one BOX-WIDE
+# budget that concurrent suites spend together: a sibling seat reds your arm
+# with writes you never made, and `df` reports a device with room throughout.
+# So the block matches both spellings and says WHICH one fired, because the
+# advice differs — ENOSPC sends the reader to `df`, where EDQUOT looks fine —
+# and the DISK line now says its number is the device.
+#
 # It does not delete anything and it does not go red on free space. What to
 # clear on a shared box is the operator's call — `go clean -cache` slows every
 # concurrent session and deleting from /var/folders can take a live test's
@@ -200,7 +215,7 @@ disk_line() {
 # and is skipped unless the answer names a directory that exists, which is also
 # what makes this safe to run under a stub in --self-test.
 disk_preflight() {
-  local gobin=$1 tmp cache tmnt cmnt low=0
+  local gobin=$1 tmp cache tmnt cmnt low=0 qopt=""
 
   tmp=${TMPDIR:-/tmp}
   cache=$("$gobin" env GOCACHE 2>/dev/null)
@@ -219,11 +234,41 @@ disk_preflight() {
     fi
   fi
 
+  # ...and one line saying what that number is NOT (ranger-base-akk9f). df
+  # reports the DEVICE, and a per-user quota on the same filesystem binds long
+  # before the device does: MEASURED 2026-11-11, this line printed 5915 MB free
+  # — above the floor, so not even a warning — on a 14G tmpfs with 2.8-3.2G
+  # free while four tests were already failing EDQUOT. A free-space number
+  # cannot see a quota, so the only honest fix for the number is to say so.
+  #
+  # It does NOT probe a quota. There is no `quota` binary on this box and a
+  # usage/limit reading is a bigger question than a caveat (the bead says so in
+  # as many words). It reads /proc/mounts, which only says whether the
+  # filesystem HAS one, and falls back to the generic sentence where that file
+  # does not exist — darwin, where this script also runs.
+  qopt=""
+  if [ -r /proc/mounts ] && [ -n "$tmnt" ]; then
+    qopt=$(awk -v m="$tmnt" '$2 == m { opts = $4 }
+                             END { if (opts ~ /quota/) {
+                                     n = split(opts, a, ",")
+                                     for (i = 1; i <= n; i++) if (a[i] ~ /quota/) printf "%s ", a[i]
+                                   } }' /proc/mounts 2>/dev/null)
+    qopt=${qopt% }
+  fi
+  if [ -n "$qopt" ]; then
+    printf 'test-times: DISK: that is the DEVICE — %s is mounted %s, so your share of it\n' "$tmnt" "$qopt"
+    printf 'test-times: DISK:   runs out first and df cannot see that (EDQUOT, ranger-base-akk9f).\n'
+  else
+    printf 'test-times: DISK: that is the DEVICE. A per-user quota binds sooner and df cannot\n'
+    printf 'test-times: DISK:   see it, so a red can still be EDQUOT (ranger-base-akk9f).\n'
+  fi
+
   [ "$low" = 0 ] && return 0
   warn "DISK BELOW THE ${DISK_FLOOR_MB} MB FLOOR — a red from this run may belong to the"
   warn "  box rather than to the diff. Every t.TempDir() allocates there, and go reports"
-  warn "  ENOSPC as an ordinary test failure once per test that wanted one: ~80"
-  warn "  unrelated-looking reds naming worktree, watch and dispatch (ranger-base-krra)."
+  warn "  ENOSPC — or EDQUOT, which this number cannot see at all — as an ordinary test"
+  warn "  failure once per test that wanted one: ~80 unrelated-looking reds naming"
+  warn "  worktree, watch and dispatch (ranger-base-krra, ranger-base-akk9f)."
   warn "  Running anyway. What to clear on a shared box is the operator's call, not this"
   warn "  script's: \`go clean -cache\` slows every concurrent session and deleting from"
   warn "  \$TMPDIR can take a live test's TempDir out from under it."
@@ -330,36 +375,105 @@ explain_timeout() {
   } >&2
 }
 
-# explain_disk <logfile> — the block ranger-base-krra exists for. ENOSPC does
-# not name the disk anywhere the reader looks first; it names eighty tests.
+# explain_disk <logfile> — the block ranger-base-krra exists for, in both of
+# the spellings this box produces (ranger-base-akk9f). Neither errno names the
+# disk anywhere the reader looks first; they name eighty tests.
+#
+# TWO ERRNOS, TWO PIECES OF ADVICE, which is why this block says which one
+# fired rather than just "the disk". ENOSPC is "the filesystem is full" and
+# `df` shows it. EDQUOT is "YOUR share of it is spent" and `df` looks FINE — so
+# a quota red sent to `df` by a block that lumped the two together reads as the
+# explainer being wrong about its own box, which is worse than silence.
+#
+# MEASURED 2026-11-11 (linux 7.2.15, go1.27.3): `make test` came back exit 2
+# with arm 1 green and arm 2 red on four unrelated tests — worktree listing,
+# CLI mode, a runtime parity pin, a land-back — every red an EDQUOT write. That
+# is krra's shape exactly, and krra's block stayed silent through all of it
+# because it greps one literal.
 explain_disk() {
-  local log=$1 hits reds
-  grep -q 'no space left on device' "$log" || return 0
-  hits=$(grep -c 'no space left on device' "$log")
+  local log=$1 enospc edquot reds
+  # Case-insensitively, because the two writers of these strings disagree: go's
+  # syscall text is lower case (`disk quota exceeded`) and a Rust tool on the
+  # same run printed `Disk quota exceeded (os error 122)`. Both spellings were
+  # in the one arm-2 log measured above, so neither case is hypothetical.
+  enospc=$(grep -ci 'no space left on device' "$log" 2>/dev/null)
+  edquot=$(grep -ci 'disk quota exceeded' "$log" 2>/dev/null)
+  # `grep -c` exits 1 on no match and still prints 0, so the exit status is not
+  # the signal here — the count is. Anything that is NOT a count (a grep that
+  # was signalled, or never exec'd under load) is read as none: this block is
+  # advisory, and a block about a number this function did not get would be the
+  # apparatus speaking in the product's voice.
+  case $enospc in ''|*[!0-9]*) enospc=0 ;; esac
+  case $edquot in ''|*[!0-9]*) edquot=0 ;; esac
+  [ "$enospc" -gt 0 ] || [ "$edquot" -gt 0 ] || return 0
   reds=$(grep -c '^--- FAIL' "$log")
+  case $reds in ''|*[!0-9]*) reds=0 ;; esac
   {
     echo
     echo '=============================================================='
-    echo "test-times: THE DISK RAN OUT — ${hits} failure(s) said \"no space left on device\""
+    [ "$enospc" -gt 0 ] &&
+      echo "test-times: THE DISK RAN OUT — ${enospc} failure(s) said \"no space left on device\""
+    [ "$edquot" -gt 0 ] &&
+      echo "test-times: THE DISK QUOTA RAN OUT — ${edquot} failure(s) said \"disk quota exceeded\""
     [ "$reds" -gt 0 ] && echo "            (this run reported ${reds} failing test(s) in total)"
     echo
     echo '  Those reds belong to the box, not to the diff. t.TempDir()'
-    echo '  calls t.Fatal on ENOSPC — and a test that merely WRITES into'
-    echo '  one fails the same way — so ONE full filesystem is reported'
-    echo '  ONCE PER TEST that wanted a temp dir. Through the house'
-    echo "  filter it is a list of unrelated names (worktree, watch,"
-    echo '  dispatch, merge) and reads exactly like a broken change.'
-    echo '  Believe none of them until the suite has room and has re-run.'
-    echo
-    echo '  Where it goes, measured on this box (ranger-base-krra):'
-    echo
-    echo '      df -h "${TMPDIR:-/tmp}"'
-    echo '      du -sh "$(go env GOCACHE)"          # reached 41G unattended'
-    echo '      ls -d "${TMPDIR:-/tmp}"/Test* | wc -l   # 670 leaked TempDirs'
-    echo
-    echo '  Clearing either is the operator call this script will not make'
-    echo '  for them: `go clean -cache` slows every concurrent session, and'
-    echo '  deleting from $TMPDIR can take a live test'"'"'s TempDir away.'
+    echo '  calls t.Fatal when the write will not go through — and a'
+    echo '  test that merely WRITES into one fails the same way — so ONE'
+    echo '  place that has run out of room is reported ONCE PER TEST'
+    echo '  that wanted a temp dir. Through the house filter it is a'
+    echo '  list of unrelated names (worktree, watch, dispatch, merge)'
+    echo '  and reads exactly like a broken change. Believe none of them'
+    echo '  until the suite has room and has re-run.'
+    if [ "$enospc" -gt 0 ]; then
+      echo
+      echo '  ENOSPC — THE FILESYSTEM IS FULL, and `df` will show it.'
+      echo '  Where it goes, measured on this box (ranger-base-krra):'
+      echo
+      echo '      df -h "${TMPDIR:-/tmp}"'
+      echo '      du -sh "$(go env GOCACHE)"          # reached 41G unattended'
+      echo '      ls -d "${TMPDIR:-/tmp}"/Test* | wc -l   # 670 leaked TempDirs'
+      echo
+      echo '  Clearing either is the operator call this script will not make'
+      echo '  for them: `go clean -cache` slows every concurrent session, and'
+      echo '  deleting from $TMPDIR can take a live test'"'"'s TempDir away.'
+    fi
+    if [ "$edquot" -gt 0 ]; then
+      echo
+      echo '  EDQUOT — YOUR SHARE IS SPENT, AND `df` WILL LOOK FINE. Not'
+      echo '  the ENOSPC one: the device still has room, the pool you may'
+      echo '  write into does not, so the DISK line above and `df -h` both'
+      echo '  report a box with space while every write fails. MEASURED'
+      echo '  2026-11-11 (ranger-base-akk9f): /tmp here is a 14G tmpfs'
+      echo '  mounted `usrquota`, 2.8-3.2G free on the DEVICE throughout,'
+      echo '  and the preflight printed 5915 MB free — above its floor —'
+      echo '  while four arm-2 tests were already failing on writes.'
+      echo
+      echo '  The quota is per UID and every seat on this box runs as the'
+      echo '  same user, so it is ONE BOX-WIDE budget that all concurrent'
+      echo '  suites spend together: a sibling seat can red your arm with'
+      echo '  writes you never made. What is holding it:'
+      echo
+      echo '      du -sh "${TMPDIR:-/tmp}"/posse-testhome-* 2>/dev/null | sort -h | tail'
+      echo
+      echo '  A tree a minute or two old there is a LIVE sibling suite and'
+      echo '  not residue: nothing to clean, and clearing it is the same'
+      echo '  operator call this script will not make for them.'
+      echo
+      echo '  To get a reading anyway, move the run off the quota:'
+      echo
+      echo '      TMPDIR=$HOME/.cache/posse-tmp-$$ make test-arm2'
+      echo
+      echo '  TMPDIR and not GOTMPDIR (ranger-base-krra): cmd/go hands the'
+      echo '  test binary GOTMPDIR as its own TMPDIR, so setting TMPDIR'
+      echo '  alone moves the build dir and every t.TempDir together,'
+      echo '  while setting GOTMPDIR is the trap that greened a full-disk'
+      echo '  repro. It costs exactly two arm-3 pins, which build their'
+      echo '  grant set from TMPDIR and then look for a fixture outside it'
+      echo '  (seatbeltgitidentity_qa_test.go:281,'
+      echo '  seatbelttelemetry_qa_test.go:76) — re-run those two alone on'
+      echo '  the house default, where both pass in 0.02s.'
+    fi
     echo '=============================================================='
   } >&2
 }
@@ -639,6 +753,12 @@ STUB
   # storage. The std-break fixture is the same hour's build failure.
   printf -- '--- FAIL: TestWatchPidRoundTrip (0.00s)\n    testing.go:1426: TempDir: mkdir /var/folders/dy/x/T/TestWatchPidRoundTrip2288449404: no space left on device\n--- FAIL: TestDispatchMergeBack (0.00s)\n    testing.go:1426: TempDir: mkdir /var/folders/dy/x/T/TestDispatchMergeBack118: no space left on device\nFAIL\tgithub.com/ranger360ai/posse/internal/rhq\t12.3s\nFAIL\n' > "$tmp/enospc.log"
   printf -- '/opt/homebrew/Cellar/go/1.26.5/libexec/src/bytes/iter.go:8:2: package iter is not in std\nFAIL\tgithub.com/ranger360ai/posse/internal/rhq [setup failed]\nFAIL\n' > "$tmp/stdbreak.log"
+  # The disk's THIRD face (ranger-base-akk9f): krra's shape in the other
+  # errno's spelling, from an arm-2 log MEASURED 2026-11-11 on this box. Both
+  # CASES are in this one fixture deliberately — go's syscall text is lower
+  # case and the Rust tool on the same run printed a capital D — so an arm that
+  # counts 2 here is also the arm that proves the match is case-insensitive.
+  printf -- '--- FAIL: TestListingAndSweepAgreeOnWhatOneTreeHolds (0.00s)\n    worktree_test.go:2390: write /tmp/posse-testhome-9f/003/README.md: disk quota exceeded\n--- FAIL: TestCLIStillKnowsTheMode/claude (0.00s)\n    unattended_live_test.go:95: mise install failed copy: Disk quota exceeded (os error 122)\nFAIL\tgithub.com/ranger360ai/posse/internal/posse\t63.2s\nFAIL\n' > "$tmp/edquot.log"
 
   local out rc argv_seen=
   run_arm() { # <fixture> <rc> [extra args to the fake command]
@@ -893,6 +1013,18 @@ STUB
     dump_out
   fi
 
+  # I2: and what that number is NOT (ranger-base-akk9f). The free space df
+  # reports is the DEVICE's; a per-user quota on the same filesystem binds
+  # sooner and df cannot see it, which is how a quota red reached a reader with
+  # "5915 MB free" printed above it and no other word said. Matched on the half
+  # both branches share, since the line names the mount option where
+  # /proc/mounts has one and falls back to the generic sentence where it does
+  # not.
+  case $out in
+    *'test-times: DISK: that is the DEVICE'*) ok 'disk: the preflight says its number is the device, not a quota' ;;
+    *) bad 'disk: the preflight prints free space with no word that a quota binds sooner'; dump_out ;;
+  esac
+
   # J: the floor. BOTH arms, because "no warning" is also what a floor that is
   # never consulted looks like: the same fixture, the same box, the same free
   # space, and only the floor moved.
@@ -928,12 +1060,57 @@ STUB
   esac
   [ "$rc" = 1 ] && ok 'enospc: exit status 1 preserved' || bad "enospc: exit $rc, wanted 1"
 
+  # K2: the quota block (ranger-base-akk9f). Same shape, other errno — and the
+  # arm that carries the bead is the DISCRIMINATION, not the count: an EDQUOT
+  # log reported as a full filesystem sends the reader to `df`, which shows a
+  # device with room, and what they learn there is that this script is wrong
+  # about its own box.
+  run_arm edquot.log 1 -timeout 25m
+  case $out in
+    *'THE DISK QUOTA RAN OUT'*'2 failure(s) said "disk quota exceeded"'*) ok 'edquot: block printed, and both cases of the spelling counted' ;;
+    *) bad 'edquot: no block naming the count'; dump_out ;;
+  esac
+  case $out in
+    *'THE DISK RAN OUT'*) bad 'edquot: reported as ENOSPC — a quota red sent to `df`, where it looks fine' ;;
+    *) ok 'edquot: not reported as a full filesystem' ;;
+  esac
+  case $out in
+    *'`df` WILL LOOK FINE'*) ok 'edquot: says df cannot see it' ;;
+    *) bad 'edquot: does not say df cannot see a quota' ;;
+  esac
+  case $out in
+    *'BOX-WIDE budget'*) ok 'edquot: says the quota is shared, so a sibling seat can red your arm' ;;
+    *) bad 'edquot: does not say whose writes spend the quota' ;;
+  esac
+  case $out in
+    *'TMPDIR and not GOTMPDIR'*) ok 'edquot: names the one variable that moves a run off the quota' ;;
+    *) bad 'edquot: no workaround, or it names GOTMPDIR' ;;
+  esac
+  case $out in
+    *"operator call this script will not make"*) ok 'edquot: names the cleanup as the operator call here too' ;;
+    *) bad 'edquot: does not say who clears the quota' ;;
+  esac
+  [ "$rc" = 1 ] && ok 'edquot: exit status 1 preserved' || bad "edquot: exit $rc, wanted 1"
+
+  # K3: and the other way round, over krra's own fixture. A quota header on a
+  # full filesystem is the same error mirrored: advice about a budget the box
+  # does not have, on a run where `df` would have answered the question.
+  run_arm enospc.log 1 -timeout 25m
+  case $out in
+    *'THE DISK QUOTA RAN OUT'*) bad 'enospc: reported as a quota too — the two errnos are not separated' ;;
+    *) ok 'enospc: not reported as a quota' ;;
+  esac
+
   # L: the negative control for both new blocks, over a log with neither
   # string in it. A block that fires on a clean run is worse than none.
   run_arm clean.log 0 -timeout 25m
   case $out in
     *'THE DISK RAN OUT'*) bad 'clean log: ENOSPC block printed with no ENOSPC in the log' ;;
     *) ok 'clean log: no ENOSPC block' ;;
+  esac
+  case $out in
+    *'THE DISK QUOTA RAN OUT'*) bad 'clean log: quota block printed with no EDQUOT in the log' ;;
+    *) ok 'clean log: no quota block' ;;
   esac
   case $out in
     *'REPORTED MISSING FROM std'*) bad 'clean log: std-break block printed on a clean log' ;;

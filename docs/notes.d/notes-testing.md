@@ -56,6 +56,28 @@ THROUGH the wrapper — without that the explainers are dead code — and runs t
 script's own `--self-test` inside the suite. Numbers:
 `docs/notes.d/ranger-base-krra.md`.
 
+**And it runs out of room two ways, which want different advice**
+(ranger-base-akk9f). On 2026-11-11 the same shape arrived in the other errno:
+`make test` exit 2, arm 1 green, arm 2 red on four unrelated tests — worktree
+listing, CLI mode, a runtime parity pin, a land-back — every red a write that
+said `disk quota exceeded`. Both halves of krra's guard were silent. The block
+greps one literal, and the DISK line had printed `5915 MB free on /tmp`, ABOVE
+its floor, because `/tmp` here is a 14G tmpfs mounted `usrquota` and a
+free-space number cannot see a quota. That quota is per UID and every seat on
+this box runs as the same user, so it is ONE BOX-WIDE budget that concurrent
+suites spend together: a sibling seat reds your arm with writes you never made,
+and `df` reports a device with 2.8-3.2G free throughout. So the block matches
+both spellings case-insensitively (go says `disk quota exceeded`, a Rust tool
+on the same run said `Disk quota exceeded (os error 122)`) and says WHICH one
+fired — ENOSPC sends the reader to `df`, where EDQUOT looks fine — and the DISK
+line now says its number is the device, naming the mount's quota option where
+`/proc/mounts` has one. It still probes no quota: there is no `quota` binary
+here. The workaround the block prints is `TMPDIR` on a filesystem without one
+(`TMPDIR` and never `GOTMPDIR` — krra's trap), and it costs exactly two arm-3
+pins, which build their grant set from `TMPDIR` and then look for a fixture
+outside it; re-run those two alone on the house default. Numbers:
+`docs/notes.d/ranger-base-akk9f.md`.
+
 `go test ./...` (also `make test`) is hermetic: the test binary re-execs as
 a fake `herdr` when `RHQ_FAKE_HERDR=1` (state under `RHQ_FAKE_DIR`), so no
 real herdr server is involved. `RHQ_HERDR_BIN` / `RHQ_BD_BIN` point the
