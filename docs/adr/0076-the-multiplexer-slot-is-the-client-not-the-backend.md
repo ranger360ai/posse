@@ -2064,3 +2064,141 @@ sentence moved. The substring pin is in
   occupant's box can run the other's pin.
 - Amendment 7's two closing bullets are answered and superseded by this
   one: the hole is real, the fix is in, and the tell was not the region.
+
+## Amendment 9: the RECORD may refuse a keystroke too, on the two guards that are evidence (ranger-base-6pew3, 2026-11-11)
+
+Amendment 7 gave the SCREEN a refusal and Amendment 8 gave it to
+herdr's typed route. The other occupant of the same `Prompt` has a
+second reading nobody was spending: §3's liveness guards over the
+block's own `program_status` record. They were read on every prompt
+already — `refuseWithoutComposer` asks `RuntimeOwner` who holds the
+block — and the answer "nothing does" was being used to CONCEDE.
+
+### What broke
+
+`RuntimeOwner` refuses, by name, for all three of §3's cases: no root
+record, a record the block's own shell wrote, and a record whose owner
+is no longer live in the block. `refuseWithoutComposer` read any of
+those as "not a claude, not my business" and returned nil — correctly
+for its own purpose, since a reading written off claude's chrome may
+only decide about claude (Amendment 7 D4) — and `Prompt` then typed
+`rex send` + Enter. So the one place on this occupant that knows
+whether anything is holding a block's keyboard handed its answer to a
+predicate that threw it away, and the two readings posse already had
+for "this record outlived its process" and "that was the shell"
+licensed the keystrokes instead of stopping them.
+
+Nothing upstream catches it on a Rex instance. Both gates that would on
+herdr are herdr-only: `HerdrBackend.explain` answers `muxNotHerdr`, so
+`AwaitPromptable` takes its never-answered concession and dispatch's
+`awaitSettled`/`awaitDelivered` take theirs, and nothing outside
+`muxrex.go` calls `Mux().State` at all. On this instance the delivery
+verb's own refusals ARE the gate — which is Amendment 7 D7's argument
+with the bypass being the whole instance rather than one flag.
+
+### What was measured
+
+2026-11-11, this box, rex CLI 0.0.1794069975-g6c6689, claude 2.1.322, in
+a scratch `rex new` block driven through this verb's own argv.
+docs/notes.d/ranger-base-6pew3.md has the transcript.
+
+| how the claude in the block ended | `program_status` after | `process` after | verdict |
+| --- | --- | --- | --- |
+| `/exit` | `{"records":[]}` | foreground back to the block's shell | unknown |
+| SIGTERM | `{"records":[]}` | same | unknown |
+| SIGKILL | `state=idle`, `owner claude(2292821)` — a dead pid | same | **outlived its writer** |
+
+A generic reporter behaves like the SIGKILL row whatever signal ends it:
+a program that wrote `state=idle` and exited left the record standing
+with its dead pid. That is ADR 0076's head-comment measurement of
+2026-10-31 reproduced, and it is the shape every runtime that cannot
+clear its own record on the way out leaves behind — posse's own reporter
+clears at `SessionEnd` (`CodexHookReport`), an event a killed codex
+never fires.
+
+And the consequence, measured through `rex send` + `rex send-key enter`
+into the SIGKILL row's block: the work prompt `make the LIVENESS
+refusal in RexMux.Prompt, ranger-base-6pew3` was RUN by the block's
+shell — `make: *** No rule to make target 'the'.  Stop.` A prompt whose
+first word happens to be a program on PATH is a program posse ran on
+nobody's behalf, and `make` is a mild one.
+
+### Decision
+
+**D1. The record may refuse a keystroke, on the same terms the screen
+got.** Amendment 7 D1's permitted outputs, for §3's liveness reading:
+"do not send this keystroke", and nothing else. It still may not
+produce a state, admit a runtime, or LICENSE one — a record posse
+cannot read sends nothing it would not have sent.
+
+**D2. Two of §3's three guards may refuse; the third may not.** A
+record naming a pid that is not in this block's process table, and a
+record naming the block's own `child`, are the block saying its
+foreground is not a runtime — positive evidence. "No root record",
+"a record naming no owner", and either read failing are silence, and
+silence licenses nothing and refuses nothing (ADR 0013 §1). The table
+above is why that is not a technicality: a claude that ends the way
+claude normally ends takes its record WITH it, so the commonest
+bare-shell block on this instance is one this cannot refuse. A reading
+that refused on absence would also refuse every seat inside its launch
+window, which is what `AwaitFirstReport` is for.
+
+**D3. So the fix is narrower than the failure, deliberately.** What
+catches a bare shell with no record at all is the readiness gate on
+herdr's side and the launch-stage first-report check on this one. This
+amendment is the half that can be read off evidence, and it is the half
+that was being read and then discarded.
+
+**D4. It is NOT scoped to a runtime, which is where it differs from
+Amendment 7 D4.** That reading is written off claude's own chrome, so
+Amendment 5's limit binds it to claude. This one compares a pid to a pid
+and a name to a name, which is true of codex, grok and whatever is next
+— and the runtimes that cannot clear their record are the ones it
+protects most.
+
+**D5. The verdict is returned beside the error, not decoded out of it.**
+`RuntimeOwner` keeps its signature and its sentences; a sibling
+(`runtimeOwner`) hands back which guard answered, as a value. A refusal
+matched on another function's message text is a refusal that stops
+working the day somebody improves the sentence, and §3's guards are
+already spelled in two places with a pin holding them together
+(`TestQAARuntimeOwnerAnswersExactlyWhenTheReadingIsSeen`) — a third
+spelling in prose is not what that pin can hold.
+
+**D6. The refusal is `agent_not_ready`**, for Amendment 7 D6's reason
+verbatim: nothing was sent, so ADR 0084 D1's `isNotDelivered` hands the
+dispatch claim back rather than keeping it over a seat that was never
+asked anything.
+
+**D7. It runs BEFORE the screen reading, and that is not about cost.** A
+block that has gone back to its shell has no composer to be judged for,
+and the screen it leaves behind is whatever the dead runtime last drew —
+a stale box that would otherwise license the prompt. The owner reading
+is taken once in `Prompt` and handed to both refusals, so the liveness
+half costs nothing on top of what Amendment 7 already pays.
+
+### Consequences
+
+- `RexMux.Prompt`'s cost is unchanged from Amendment 7's three calls:
+  `program_status` and `process`, now read once for both refusals, and
+  one `capture`. A liveness refusal pays for no capture at all.
+- **The hazard, said out loud.** If rex stopped naming the owner of a
+  block a runtime holds, or named it with a pid or a name its own
+  `process` answer disagrees with, this would read "outlived its writer"
+  on live seats and refuse every prompt on the instance. The hermetic
+  arms seed both halves of that comparison and so cannot see it; the
+  live arm of
+  `RHQ_LIVE_REX=1 go test ./internal/posse/ -run TestLiveRexPromptSeesThisSeatsOwnComposer`
+  reads the block the suite is running in and reds on exactly that.
+- A seat whose runtime was SIGKILLed is now refused rather than typed
+  at, and the refusal names the dead owner's pid. What it is not is a
+  relaunch: posse does not start a runtime in a block on a prompt's
+  behalf, and the operator's recovery is the one Amendment 7 D7 names,
+  `posse peek`.
+- **The herdr side of this hole is not decided here.** ranger-base-j687x
+  carries it, with its own measurement: a reported label outlives the
+  CLI it describes on herdr 0.9.1, and `sendTextPrompt` reads only the
+  reporter's `agent_status`. The reading there is
+  `paneShellForeground`/`AtShellPrompt` (ADR 0061 D3.2), not a
+  `program_status` record, so D2's split has to be made again in that
+  vocabulary rather than carried over.

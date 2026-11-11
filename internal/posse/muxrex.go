@@ -563,7 +563,18 @@ func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReadin
 	if err != nil {
 		return MuxReading{}, err
 	}
-	if err := m.refuseWithoutComposer(s); err != nil {
+	// ONE owner reading for BOTH refusals (ranger-base-6pew3). They ask
+	// different questions of it — "is anything holding this keyboard" and
+	// "is the thing holding it a claude whose box is covered" — and the
+	// reading is two rex calls, so it is taken here and handed down rather
+	// than taken twice. The liveness one goes first because it is about
+	// whether there is a runtime at all: a block that has gone back to its
+	// shell has no composer to judge and must not be judged for one.
+	owner, verdict, ownerErr := m.runtimeOwner(s)
+	if err := refuseAtDeadOwner(s, verdict, ownerErr); err != nil {
+		return MuxReading{}, err
+	}
+	if err := m.refuseWithoutComposer(s, owner); err != nil {
 		return MuxReading{}, err
 	}
 	if err := m.R.Send(s.Session, s.Pane, text); err != nil {
@@ -608,6 +619,100 @@ func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReadin
 		return read, nil
 	}
 	return m.Wait(s, []string{MuxIdle, MuxDone, MuxBlocked}, left())
+}
+
+// refuseAtDeadOwner refuses a prompt into a block whose own program_status
+// record says nothing is holding its keyboard — ranger-base-6pew3, which is
+// ranger-base-j687x's argument on this instance's occupant, and ADR 0076 §3's
+// liveness reading finally spent where the keystrokes are.
+//
+// WHAT IT IS FOR. The reading already existed and the delivery verb was
+// CONCEDING to it. `RuntimeOwner` refuses, by name, for all three of §3's
+// cases — and refuseWithoutComposer read that refusal as "not a claude, not
+// my business" and returned nil, so the one place on this occupant that knows
+// whether anything holds the block's keyboard handed its answer to a
+// predicate that threw it away. Nothing upstream catches it either: both
+// gates that would on herdr are herdr-only (`HerdrBackend.explain` answers
+// muxNotHerdr, so AwaitPromptable and dispatch's awaitSettled/awaitDelivered
+// take their never-answered concessions), and nothing outside muxrex.go calls
+// `Mux().State` at all. On a rex instance this verb's own refusals ARE the
+// gate.
+//
+// MEASURED 2026-11-11 on this box, rex CLI 0.0.1794069975-g6c6689, claude
+// 2.1.322, in a scratch `rex new` block — docs/notes.d/ranger-base-6pew3.md
+// has the transcript:
+//
+//	how the claude ended      program_status after        verdict
+//	`/exit`                   {"records":[]}              rexOwnerUnknown
+//	SIGTERM                   {"records":[]}              rexOwnerUnknown
+//	SIGKILL                   state=idle, owner claude    rexOwnerDead
+//	                          (2292821), a dead pid
+//
+// and on the SIGKILL row the block's `process` had fallen back to its own
+// shell (`child` = `foreground` = bash 1686369, no ancestors). Then, through
+// this verb's exact argv — `rex send` + `rex send-key enter` — the work
+// prompt `make the LIVENESS refusal in RexMux.Prompt, ranger-base-6pew3`
+// was RUN by that shell: `make: *** No rule to make target 'the'. Stop.`
+// A prompt whose first word happens to be a program on PATH is a program
+// posse ran on nobody's behalf, and `make` is a mild one.
+//
+// WHICH TWO VERDICTS MAY REFUSE, and it is the whole of the design. `dead`
+// and `shell` are POSITIVE evidence: a record naming a pid that is not in
+// this block's process table, or naming the block's own shell, is the block
+// itself saying its foreground is not a runtime. `rexOwnerUnknown` is not
+// evidence of anything — it is every absence and every failed read in one,
+// and the table above is why that matters rather than being a technicality:
+// a claude that exits the way claude normally exits leaves NO record, so the
+// commonest bare-shell block on this instance is one this cannot refuse. A
+// reading that refused on silence would also refuse every seat in its launch
+// window, which is ADR 0013 §1's unknown-is-not-no in the direction that
+// costs a kept claim rather than a fleet that cannot be prompted.
+//
+// SO IT IS NARROWER THAN THE FAILURE IT ANSWERS, deliberately, and the
+// remainder is somebody else's: what catches a bare shell with no record is
+// the readiness gate on the herdr side and `AwaitFirstReport` at launch on
+// this one. This is the half that can be read off evidence, and it is the
+// half that was being read and then discarded.
+//
+// IT IS NOT SCOPED TO A RUNTIME, which is the one place it differs from
+// refuseWithoutComposer. That reading is written off claude's own chrome, so
+// Amendment 5's limit binds it to claude; this one compares a pid to a pid
+// and a name to a name, which is true of codex, grok and whatever is next.
+// The runtimes that CANNOT clear their record on the way out are the ones
+// this protects most: posse's own reporter clears at `SessionEnd`
+// (CodexHookReport), an event a killed codex never fires.
+//
+// THE CODE IS `agent_not_ready`, for refuseWithoutComposer's reason exactly —
+// dispatch's hand-back allow-list (isNotDelivered, promptstall.go, ADR 0084
+// D1) is the one reader it has, and nothing was sent, so the claim must go
+// back rather than be kept over a seat that was never asked anything.
+//
+// IT COSTS NOTHING. Prompt already takes the owner reading for the composer
+// refusal, and this is handed its verdict.
+func refuseAtDeadOwner(s Seat, verdict rexOwnerVerdict, ownerErr error) error {
+	var said string
+	switch verdict {
+	case rexOwnerDead:
+		said = "its program_status record outlived the process that wrote it, and its foreground has fallen " +
+			"back to the block's own shell"
+	case rexOwnerShell:
+		said = "the block's own shell wrote its program_status record, so the shell is what is at the prompt"
+	default:
+		// rexOwnerAnswers: something holds it. rexOwnerUnknown: nobody said
+		// either way, and that is not a refusal (the note above).
+		return nil
+	}
+	// The reading quoted and LABELLED rather than paraphrased: it carries the
+	// owner's pid and name, which is the evidence an operator goes and checks.
+	reading := ""
+	if ownerErr != nil {
+		reading = " posse's reading: " + ownerErr.Error() + "."
+	}
+	return HerdrAPIError{Code: "agent_not_ready", Message: "nothing was sent: on Rex posse types the prompt in " +
+		"(rex send + Enter) and nothing is holding " + s.Pane + "'s keyboard — " + said + "." + reading +
+		" MEASURED 2026-11-11 (ranger-base-6pew3): a work prompt typed into a block in exactly this state is RUN " +
+		"as a shell command by that shell — `make the LIVENESS refusal in RexMux.Prompt, ranger-base-6pew3` ran " +
+		"`make`. Start a runtime in that block, or look at it first (posse peek), then send this again"}
 }
 
 // promptComposerRecheck is how long refuseWithoutComposer waits before it
@@ -668,16 +773,20 @@ const promptComposerRecheck = 250 * time.Millisecond
 // menu phrases — so on a block held by any other runtime it would find no box
 // on every screen and refuse every prompt forever. ADR 0076 Amendment 5's
 // limit, read the other way: a reading written off one runtime's chrome may
-// only decide about that runtime. So RuntimeOwner gates it, through §3's own
+// only decide about that runtime. So the OWNER gates it, through §3's own
 // three guards (no owner, the block's own shell, a record that outlived its
 // writer), and an owner posse cannot name is an owner this concedes to —
-// unknown is not no.
+// unknown is not no. Since ranger-base-6pew3 the owner is read by the caller
+// and handed in: a zero owner is every one of those three guards refusing,
+// which is the same concession this made when it took the reading itself, and
+// the two guards that are EVIDENCE have already refused by the time this runs
+// (refuseAtDeadOwner).
 //
-// WHAT IT COSTS, per prompt and not per pass: RuntimeOwner's two calls
-// (`program_status`, `process`) plus one `capture` — ~21 ms for the capture
-// (MEASURED, Amendment 5) and the two record reads the readiness gate already
-// makes on the path that has one. A refusal costs one more capture and
-// promptComposerRecheck on top, and only a refusal does.
+// WHAT IT COSTS, per prompt and not per pass: one `capture` on top of the
+// owner reading's two calls (`program_status`, `process`) — ~21 ms for the
+// capture (MEASURED, Amendment 5) and two record reads the readiness gate
+// already makes on the path that has one. A refusal costs one more capture
+// and promptComposerRecheck on top, and only a refusal does.
 //
 // THE HAZARD THIS ADDS, said out loud because it is the price of an absence
 // rule: if a later claude stops drawing the two rules around its box, this
@@ -687,9 +796,8 @@ const promptComposerRecheck = 250 * time.Millisecond
 // silent. It is also pinned against the live binary rather than only against
 // fixtures: TestLiveRexPromptSeesThisSeatsOwnComposer reads the seat the
 // suite is running in.
-func (m RexMux) refuseWithoutComposer(s Seat) error {
-	owner, err := m.RuntimeOwner(s)
-	if err != nil || owner.Name != claudeRuntimeProcName {
+func (m RexMux) refuseWithoutComposer(s Seat, owner RexOwner) error {
+	if owner.Name != claudeRuntimeProcName {
 		return nil
 	}
 	screen, sight := m.readComposerSight(s)
@@ -801,33 +909,82 @@ func (m RexMux) AwaitFirstReport(s Seat, within time.Duration) (MuxReading, bool
 // owner, an owner that IS the block's shell, and an owner that is no longer
 // live in the block. That agreement is pinned rather than asserted —
 // RuntimeOwner answers iff State's reading has Seen (runtimesession_qa_test.go).
+//
+// IT IS A WRAPPER SINCE ranger-base-6pew3, and the thing it drops is the
+// reason. Every caller here reads "posse cannot name this block's owner" and
+// none of them could tell WHICH of §3's guards refused — and two of those
+// three are positive evidence that nothing is holding the keyboard, which is
+// what a delivery verb has to be able to act on (refuseAtDeadOwner). The
+// verdict is returned beside the error rather than decoded out of it, because
+// a refusal matched on its own message text is a refusal that stops working
+// the day somebody improves the sentence.
 func (m RexMux) RuntimeOwner(s Seat) (RexOwner, error) {
+	owner, _, err := m.runtimeOwner(s)
+	return owner, err
+}
+
+// rexOwnerVerdict is WHICH of ADR 0076 §3's guards answered for a block, in
+// the one distinction a reader downstream needs: whether the answer is
+// evidence about the keyboard or an absence of evidence.
+//
+// THE SPLIT IS NOT THE THREE GUARDS. §3 has three refusals and this has two
+// kinds, because the question "may posse type here" divides them differently
+// than the question "can posse name an owner" does:
+//
+//	rexOwnerAnswers   a live owner, named            — type away
+//	rexOwnerDead      the record outlived its writer — nothing holds it
+//	rexOwnerShell     the block's own shell wrote it — nothing holds it
+//	rexOwnerUnknown   no record, no owner, no answer — posse does not know
+//
+// The last one carries the two §3 guards that are an ABSENCE (no record at
+// all, a record naming no owner) plus every way the two reads can fail, and
+// they are one case here for the reason ADR 0013 §1 gives: a seat whose
+// runtime has not reported yet and a seat whose runtime exited cleanly are
+// the same silence, so neither may license a refusal. MEASURED 2026-11-11
+// (ranger-base-6pew3): a claude ended with `/exit` or SIGTERM takes its
+// record WITH it — `{"records":[]}` — so the commonest bare-shell block on
+// this instance reads rexOwnerUnknown and is conceded to. The refusal is for
+// the one that lies.
+type rexOwnerVerdict int
+
+const (
+	rexOwnerUnknown rexOwnerVerdict = iota
+	rexOwnerAnswers
+	rexOwnerDead
+	rexOwnerShell
+)
+
+// runtimeOwner is RuntimeOwner with the verdict kept. The error is fully
+// worded for every case that is not rexOwnerAnswers, so a caller that only
+// wants the error throws the verdict away and one that must act on the KIND
+// of refusal does not have to parse prose.
+func (m RexMux) runtimeOwner(s Seat) (RexOwner, rexOwnerVerdict, error) {
 	s, err := m.hold(s)
 	if err != nil {
-		return RexOwner{}, err
+		return RexOwner{}, rexOwnerUnknown, err
 	}
 	recs, err := m.R.ProgramStatus(s.Session, s.Pane)
 	if err != nil {
-		return RexOwner{}, err
+		return RexOwner{}, rexOwnerUnknown, err
 	}
 	rec := rexRootRecord(recs)
 	if rec == nil {
-		return RexOwner{}, Die("rex block %s holds no program_status record, so nothing says which process has its keyboard", s.Pane)
+		return RexOwner{}, rexOwnerUnknown, Die("rex block %s holds no program_status record, so nothing says which process has its keyboard", s.Pane)
 	}
 	if rec.Owner == nil {
-		return RexOwner{}, Die("rex block %s: its program_status record names no owner, so nothing says a runtime wrote it", s.Pane)
+		return RexOwner{}, rexOwnerUnknown, Die("rex block %s: its program_status record names no owner, so nothing says a runtime wrote it", s.Pane)
 	}
 	proc, err := m.R.Process(s.Session, s.Pane)
 	if err != nil {
-		return RexOwner{}, err
+		return RexOwner{}, rexOwnerUnknown, err
 	}
 	if rexOwnerIsShell(*rec.Owner, proc) {
-		return RexOwner{}, Die("rex block %s: its program_status record was written by the block's own shell (ADR 0076 §3)", s.Pane)
+		return RexOwner{}, rexOwnerShell, Die("rex block %s: its program_status record was written by the block's own shell (ADR 0076 §3)", s.Pane)
 	}
 	if !rexOwnerLive(*rec.Owner, proc) {
-		return RexOwner{}, Die("rex block %s: %s is not a live process in it — the record outlived its writer", s.Pane, rexOwnerString(*rec.Owner))
+		return RexOwner{}, rexOwnerDead, Die("rex block %s: %s is not a live process in it — the record outlived its writer", s.Pane, rexOwnerString(*rec.Owner))
 	}
-	return *rec.Owner, nil
+	return *rec.Owner, rexOwnerAnswers, nil
 }
 
 // ─── who is answering (ADR 0076 §5) ──────────────────────────────────────────

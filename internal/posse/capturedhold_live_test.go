@@ -236,4 +236,18 @@ func TestLiveRexPromptSeesThisSeatsOwnComposer(t *testing.T) {
 	if owner.Name != claudeRuntimeProcName {
 		t.Errorf("this seat's block is owned by %q and not %q, so the composer gate concedes here", owner.Name, claudeRuntimeProcName)
 	}
+	// ranger-base-6pew3's live arm, and it is the other direction of the
+	// same hazard. refuseAtDeadOwner refuses on two of §3's guards, so a
+	// rex that stopped naming this block's owner — or named it with a pid
+	// or a name the process table disagrees with — would read rexOwnerDead
+	// on a seat a claude is sitting in and refuse every prompt on the
+	// instance. The hermetic arms seed both halves of that comparison and
+	// so cannot see it; this seat is a live claude whose record rex wrote.
+	if _, verdict, err := m.runtimeOwner(seat); verdict != rexOwnerAnswers {
+		t.Fatalf("this seat's own live block reads owner verdict %d, want %d (%v).\n"+
+			"  That is the liveness gate turned against the fleet: refuseAtDeadOwner now refuses EVERY prompt on "+
+			"this instance — dispatch, the pulse, relaunch, the probe and `posse prompt` alike. Either rex stopped "+
+			"naming the owner of a block a runtime holds, or its name and pid no longer agree with the block's own "+
+			"`process` answer", verdict, rexOwnerAnswers, err)
+	}
 }
