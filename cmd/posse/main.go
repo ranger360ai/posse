@@ -549,7 +549,7 @@ func main() {
 		// hand path (promptready.go). --now is the operator saying they
 		// mean this pane as it is.
 		if !now {
-			det, note, err := hb.AwaitPromptable(name, target)
+			_, note, err := hb.AwaitPromptable(name, target)
 			if err != nil {
 				die(err)
 			}
@@ -562,8 +562,30 @@ func main() {
 			// Said, not refused: the measured recovery for exactly this
 			// state was a hand `posse prompt`, and a gate that stood in
 			// front of it would block the fix as well as the mistake.
-			if typed := det.Composer(); typed != "" {
-				fmt.Fprintf(out, "warning: %s already has %s — this text is typed after it\n", name, det.Hold().Why())
+			//
+			// READ AS A HOLD AND NOT OFF THE GATE'S OWN DETECTION
+			// (ranger-base-um1bi). The detection this gate returns is only
+			// ever herdr's: on a `multiplexer: rex` instance `agent explain`
+			// is ADR 0076 §4, the gate above concedes and hands back the
+			// ZERO detection, and this warning was therefore silent on every
+			// seat for the life of the instance — not "the box is empty" but
+			// "the question was never asked". PaneHolding is the one reading
+			// of that same region and it routes per occupant: herdr's
+			// previews, or the capture §2's `Read` gives every occupant
+			// (panework.go).
+			//
+			// It also brings the two retirements this call site never had. A
+			// box previewing the line the pane last SUBMITTED is echoing it
+			// (ranger-base-2hvtv), and a box claude drew FAINT is claude's
+			// own suggestion (ranger-base-6o7wm) — neither is a prompt
+			// anybody is holding, and warning about them is how a line that
+			// means "your text is about to be garbled" gets ignored.
+			//
+			// It costs one more `agent explain` on a hand command, measured
+			// at 0.00s against herdr 0.9.1 (promptready.go), plus the two
+			// retirement reads only when there is text to retire.
+			if hold := hb.PaneHolding(target); hold.Typed != "" {
+				fmt.Fprintf(out, "warning: %s already has %s — this text is typed after it\n", name, hold.Why())
 			}
 		}
 		res, err := hb.Mux().Prompt(target, text, wait, timeout)

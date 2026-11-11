@@ -603,6 +603,15 @@ func (b *HerdrBackend) ConfirmSubmitted(target Seat) string {
 	for {
 		det, err := b.explain(target)
 		if err != nil {
+			// ranger-base-um1bi, and it is the same split PaneHolding makes
+			// above: a slot with NO `agent explain` at all (ADR 0076 §4) is
+			// not the concession below. Nothing was asked, nothing will be
+			// on any later poll, and this whole read-back was off for the
+			// life of the instance — so the composer is read the way that
+			// occupant can read it, off a capture.
+			if _, missing := muxVerbMissing(err); missing {
+				return b.confirmSubmittedCaptured(target, deadline)
+			}
 			// The same concession every reading in this file makes: a
 			// diagnostic that will not answer is not evidence of a lost
 			// keystroke.
@@ -624,6 +633,74 @@ func (b *HerdrBackend) ConfirmSubmitted(target Seat) string {
 			if ansi, err := b.Mux().Read(target, 0, true); err == nil && composerIsGhost(ansi, typed) {
 				return ""
 			}
+			return typed
+		}
+		time.Sleep(promptSubmitPoll)
+	}
+}
+
+// confirmSubmittedCaptured is ConfirmSubmitted's read-back on an occupant
+// with no `agent explain` — ranger-base-um1bi, from ranger-base-qzujz.
+//
+// WHY A READING AND NOT A DEGRADE LINE. explainDegrade (muxherdr.go) is the
+// other honest answer to a §4 refusal, and it is the wrong one here on its
+// own terms: its note says the §4 cause is "unavailable on every launch by
+// design", so a line printed for it is not news — it would print on every
+// `posse prompt` on this box, forever, about a reading that IS takeable.
+// `posse prompt` already prints one such line for this same missing verb
+// (the readiness gate's, promptready.go), and a second one for the same
+// cause on the same command is noise where the reading itself is one capture
+// away. So: take the reading, print nothing extra, and report exactly what
+// the herdr arm reports.
+//
+// WHAT IT IS WORTH, which is the question the bead asked first. Whether Rex's
+// own Prompt verb can leave text in the box the way `herdr agent prompt` was
+// MEASURED to (three times, 2026-09-02, the last sitting four hours) is NOT
+// measured on this occupant. What is written down is the mechanism, on this
+// exact delivery shape: ADR 0060 D5 measured a `send-text` + Enter route
+// whose Enter the CLI's command picker ate, leaving the text in the composer
+// "through Esc and C-u" while the call reported success — and RexMux.Prompt
+// IS that shape (`rex send`, then `send-key enter`), which is why its own
+// note ends "Rex has even less to catch it with than herdr — no envelope,
+// and no detection to read the box back with". That sentence names this
+// absence. Prompt refuses a leading `/` outright, so the one measured CAUSE
+// cannot arrive through `posse prompt`; the generic type-then-Enter race the
+// 2026-09-02 measurement caught had no `/` in it, and on this occupant its
+// window is WIDER, because the gate that guards it is itself §4 and concedes
+// here. The reading is report-only either way: if the failure mode turns out
+// not to exist on Rex it costs one capture and never prints a word, and if it
+// does, the alternative is a prompt sitting for hours with nothing saying so.
+//
+// WHAT IT COSTS. An empty or cleared box is one ~20ms capture per poll —
+// ~160ms of rex calls spread across the two-second window. A box with text in
+// it also pays the echo join and the dim read (capturedComposerHold's own
+// measurement: ~330ms per sample on this box), so a genuinely held prompt
+// costs four or five of those inside the window and a retired one costs
+// exactly one, because the retirement answers "" on the first poll.
+//
+// NO SEPARATE GHOST ARM AT THE DEADLINE, unlike the herdr loop above. There
+// the dim read is one extra `agent read` and is deferred to the one poll that
+// is about to warn; here the dim read and the echo join are inside the
+// reading, off the SAME capture, so by the time this sees a Typed at all both
+// retirements have already run and there is nothing left to ask. The echo one
+// is the better reading for this call site and the herdr arm does not have
+// it: posse has just submitted, so a box showing the line claude's own log
+// says was submitted last IS the successful submit, and the herdr arm reaches
+// that only by waiting out the window and asking the dim question.
+//
+// IT ANSWERS "" UNTIL ranger-base-qzujz LANDS, said out loud rather than left
+// for a reader to discover: capturedHold fills Work and leaves Typed, Sent
+// and Ghost empty on this route until that bead's composer reading is in the
+// tree (5fa6bafc, committed on its branch and not yet on main). So this is
+// the route, wired and pinned as a route; the report begins the day the
+// reading behind it does, and nothing further is owed here.
+func (b *HerdrBackend) confirmSubmittedCaptured(target Seat, deadline time.Time) string {
+	for {
+		typed := b.capturedHold(target).Typed
+		if typed == "" {
+			return ""
+		}
+		if !time.Now().Add(promptSubmitPoll).Before(deadline) {
 			return typed
 		}
 		time.Sleep(promptSubmitPoll)

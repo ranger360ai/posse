@@ -37,12 +37,21 @@ import (
 // then the composer between two rules, then the footer. The footer is the
 // caller's to supply, because it is the only part these arms vary.
 func claudeScreen(transcript, footer string) string {
+	return claudeScreenBox(transcript, "❯ ", footer)
+}
+
+// claudeScreenBox is claudeScreen with the composer's contents given, for the
+// arms whose subject is the BOX rather than the footer
+// (confirmsubmitted_qa_test.go, ranger-base-um1bi). One spelling of the
+// screen's shape, because the two readings are located against the same two
+// rules and a fixture that drifted apart would hide a reading that had.
+func claudeScreenBox(transcript, box, footer string) string {
 	rule := strings.Repeat(string(footerRuleRune), 78)
 	return strings.Join([]string{
 		transcript,
 		"",
 		rule,
-		"❯ ",
+		box,
 		rule,
 		"",
 		footer,

@@ -18,6 +18,7 @@ package main
 // along with the mistake.
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,25 @@ import (
 	"github.com/ranger360ai/posse/internal/posse"
 )
 
+// promptSubmitFake is what the arms below vary: the composer region
+// `agent explain` previews, and the two verbs the retirements behind
+// PaneHolding ask NEXT (ranger-base-um1bi). Empty means the verb is
+// unanswered, which is this fake's own shape for "herdr would not say" — and
+// is what the two original arms run with, so the reading they pin is
+// unchanged.
+type promptSubmitFake struct {
+	// box is the `prompt_box_body` preview, inside a JSON document, so a
+	// U+00A0 is spelled `\u00a0`.
+	box string
+	// ansi is `agent read --format ansi`, raw bytes, for the dim-run reading
+	// that tells claude's own suggestion from typed text (ghostbox.go).
+	ansi string
+	// session is `pane get`'s agent_session value — the runtime's own id for
+	// the conversation, which is the join the submit log is read through
+	// (sentline.go).
+	session string
+}
+
 // promptSubmitHerdr writes a fake herdr whose `agent explain` reports an
 // idle pane whose composer holds box, and returns the home it was set up
 // in. The shape of the explain answer is a real capture's (herdr 0.8.2):
@@ -34,11 +54,31 @@ import (
 // region and a preview of it.
 func promptSubmitHerdr(t *testing.T, box string) (home, bin string) {
 	t.Helper()
+	return promptSubmitHerdrWith(t, promptSubmitFake{box: box})
+}
+
+func promptSubmitHerdrWith(t *testing.T, f promptSubmitFake) (home, bin string) {
+	t.Helper()
 	home = t.TempDir()
 	binDir := t.TempDir()
 	herdr := filepath.Join(binDir, "herdr")
+	box := f.box
+	extra := ""
+	if f.ansi != "" {
+		extra += `"agent read")
+  printf '%s' '` + f.ansi + `'
+  exit 0;;
+`
+	}
+	if f.session != "" {
+		extra += `"pane get")
+  printf '%s\n' '{"pane":{"agent":"claude","agent_session":{"kind":"id","value":"` + f.session + `"}}}'
+  exit 0;;
+`
+	}
 	script := `#!/bin/sh
 case "$1 $2" in
+` + extra + `
 "workspace list")
   printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"fresh","agent_status":"idle"}]}}'
   exit 0;;
@@ -69,13 +109,23 @@ exit 1
 	return home, herdr
 }
 
+// promptText is the text every arm sends, named because the echo arm needs
+// claude's submit log to carry exactly it.
+const promptText = "commit and close the bead once the suite is green"
+
 func runPrompt(t *testing.T, home, herdr string) string {
 	t.Helper()
-	cmd := exec.Command(buildRhq(t), "prompt", "fresh", "commit and close the bead once the suite is green")
+	return runPromptEnv(t, home, herdr)
+}
+
+func runPromptEnv(t *testing.T, home, herdr string, extra ...string) string {
+	t.Helper()
+	cmd := exec.Command(buildRhq(t), "prompt", "fresh", promptText)
 	cmd.Env = append(os.Environ(),
 		"RHQ_HOME="+home,
 		"RHQ_HERDR_BIN="+herdr,
 		"HERDR_SOCKET_PATH="+filepath.Join(home, "no-such.sock"))
+	cmd.Env = append(cmd.Env, extra...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("posse prompt: %v\n%s", err, out)
@@ -116,5 +166,126 @@ func TestQAPromptIntoAnEmptyBoxSaysNothing(t *testing.T) {
 	}
 	if !strings.Contains(out, "agent_prompted") {
 		t.Errorf("the prompt did not reach herdr:\n%s", out)
+	}
+}
+
+// ─── the two retirements the warning never had (ranger-base-um1bi) ───────────
+//
+// Both warnings above read the composer, and the pre-type one read it off the
+// readiness gate's own detection — herdr's region preview, and nothing else.
+// That is wrong twice. On a `multiplexer: rex` instance `agent explain` is ADR
+// 0076 §4, the gate concedes and hands back the ZERO detection, so the
+// warning was silent on every seat for the life of the instance; and on herdr
+// it fired over two boxes that nobody is holding text in. The reading that
+// knows the difference is PaneHolding (panework.go), which routes per occupant
+// and carries both retirements, so the call site asks it instead.
+
+// suggestText is claude's own next-prompt suggestion, and suggestBox is the
+// region preview of it — identical, character for character, to a prompt
+// somebody typed. What tells them apart is that claude draws its own FAINT,
+// which herdr's ANSI-stripped preview flattens away (ranger-base-6o7wm).
+const (
+	suggestText = "keep waiting, then commit and close"
+	suggestBox  = "❯\\u00a0" + suggestText + "\\n"
+	suggestANSI = "❯ \x1b[0m\x1b[2m" + suggestText + "\x1b[0m\n"
+)
+
+// A box claude DREW is not a prompt anybody is holding, so neither warning
+// fires — and the prompt still goes out. Before this bead the pre-type line
+// fired on every settled seat whose box carried a suggestion, which is most
+// of them, and a warning that is usually wrong is a warning the operator
+// learns to skip past.
+func TestQAPromptDoesNotWarnAboutClaudesOwnSuggestion(t *testing.T) {
+	home, herdr := promptSubmitHerdrWith(t, promptSubmitFake{box: suggestBox, ansi: suggestANSI})
+	out := runPrompt(t, home, herdr)
+	if strings.Contains(out, "this text is typed after it") {
+		t.Errorf("the pre-type warning called claude's own suggestion a prompt sitting unsent:\n%s", out)
+	}
+	if strings.Contains(out, "typed but not submitted") {
+		t.Errorf("the read-back called claude's own suggestion an unsubmitted prompt:\n%s", out)
+	}
+	if !strings.Contains(out, "agent_prompted") {
+		t.Errorf("the prompt did not reach herdr:\n%s", out)
+	}
+}
+
+// THE WRONG ARM, and the reason the one above is a discriminator rather than
+// a third way of printing nothing: the same characters in the box with NO dim
+// run are a prompt that really is sitting there, and both warnings fire
+// exactly as ranger-base-htafy measured them.
+func TestQAPromptStillWarnsWhenTheSameBoxIsNotDrawnFaint(t *testing.T) {
+	home, herdr := promptSubmitHerdrWith(t, promptSubmitFake{
+		box: suggestBox, ansi: "prompt$ claude\n\n❯ " + suggestText + "\n"})
+	out := runPrompt(t, home, herdr)
+	if !strings.Contains(out, "this text is typed after it") || !strings.Contains(out, suggestText) {
+		t.Errorf("a prompt sitting unsent in the box raised no pre-type warning:\n%s", out)
+	}
+}
+
+// The other retirement: a box previewing the line this pane last SUBMITTED is
+// echoing it, which claude's own submit log says (ranger-base-2hvtv). The
+// pre-type warning is silent — there is nothing for this text to be typed
+// after.
+//
+// The POST-submit read-back still speaks here, and that is not this bead's to
+// change: ConfirmSubmitted's herdr arm has never had the echo check, it is
+// asked straight after posse submitted this very line, and the box
+// legitimately holds it for a moment. The capture route does run it, because
+// there the echo join is inside the one reading (panework.go,
+// confirmSubmittedCaptured).
+func TestQAPromptDoesNotWarnAboutABoxEchoingTheLastSubmit(t *testing.T) {
+	const session = "f4987ef2-86df-48c7-8946-86a5c03e31f9"
+	home, herdr := promptSubmitHerdrWith(t, promptSubmitFake{
+		box:     "❯\\u00a0" + promptText + "\\n",
+		session: session,
+	})
+	configDir := t.TempDir()
+	row := map[string]any{
+		"display":        promptText,
+		"pastedContents": map[string]any{},
+		"project":        "/tmp/proj",
+		"sessionId":      session,
+		"timestamp":      1788000000000,
+	}
+	line, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "history.jsonl"), append(line, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runPromptEnv(t, home, herdr, "CLAUDE_CONFIG_DIR="+configDir)
+	if strings.Contains(out, "this text is typed after it") {
+		t.Errorf("the pre-type warning called a box echoing the line this pane last submitted a prompt sitting unsent:\n%s", out)
+	}
+	if !strings.Contains(out, "agent_prompted") {
+		t.Errorf("the prompt did not reach herdr:\n%s", out)
+	}
+}
+
+// THE WRONG ARM for the echo: the same box and the same store, with the log's
+// last row for this session naming something else — so nothing was echoed and
+// the warning stands.
+func TestQAPromptStillWarnsWhenTheStoreDoesNotKnowTheBox(t *testing.T) {
+	const session = "f4987ef2-86df-48c7-8946-86a5c03e31f9"
+	home, herdr := promptSubmitHerdrWith(t, promptSubmitFake{
+		box:     "❯\\u00a0" + promptText + "\\n",
+		session: session,
+	})
+	configDir := t.TempDir()
+	line, err := json.Marshal(map[string]any{
+		"display": "ok goign to bed", "project": "/tmp/proj", "sessionId": session,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "history.jsonl"), append(line, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := runPromptEnv(t, home, herdr, "CLAUDE_CONFIG_DIR="+configDir)
+	if !strings.Contains(out, "this text is typed after it") {
+		t.Errorf("a prompt nobody has sent raised no pre-type warning:\n%s", out)
 	}
 }

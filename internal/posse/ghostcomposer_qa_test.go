@@ -32,6 +32,17 @@ package posse
 // panework.go's ConfirmSubmitted read the hold and decide nothing, and are
 // correctly out of scope.
 //
+// THOSE TWO ARE ON THIS READING NOW ANYWAY, and the census above is how to
+// keep knowing they still decide nothing (ranger-base-um1bi). `posse
+// prompt`'s pre-type warning calls PaneHolding — a FOURTH line in that grep
+// — and ConfirmSubmitted takes the capture route behind the same §4 door.
+// Both still only print. What moved them is not this bead's reading but ADR
+// 0076 §4: they read the composer through `agent explain`, so both were
+// silent on a `multiplexer: rex` instance, where PaneHolding routes. What
+// they gained from HERE is the retirement — that warning used to fire over a
+// box echoing the line its pane last submitted, because
+// AgentDetection.Hold() carries Work and Typed and neither Sent nor Ghost.
+//
 // The mechanism and its measurement are in sentline.go.
 
 import (
