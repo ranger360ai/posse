@@ -1057,14 +1057,15 @@ tree-check: fmt-check crew-check seed-check history-check doc-check identity-che
 treepins:
 	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 25m -count=1
 
-# THE COLD-FIRST-EXEC DOOR (ADR 0085 D6, ranger-base-pbo1q). It runs
-# internal/posse's three arms with the first exec of every planted executable
-# made slow, which is the whole of ADR 0085's move: the class is "a test whose
-# verdict changes when the first exec of a planted file is slow", and that is
-# decidable by RUNNING the test with the first exec made slow. No reading of
-# the source is needed, and reading was the part that did not work —
-# ranger-base-aru4c censused the tree for this class and 10 of its 14
-# candidate rows turned on a judgement no matcher made.
+# THE COLD-FIRST-EXEC DOOR (ADR 0085 D6, ranger-base-pbo1q). It runs the
+# three packages that plant executables — internal/posse's three tagged arms,
+# cmd/posse and internal/treepins — with the first exec of every planted
+# executable made slow, which is the whole of ADR 0085's move: the class is
+# "a test whose verdict changes when the first exec of a planted file is
+# slow", and that is decidable by RUNNING the test with the first exec made
+# slow. No reading of the source is needed, and reading was the part that did
+# not work — ranger-base-aru4c censused the tree for this class and 10 of its
+# 14 candidate rows turned on a judgement no matcher made.
 #
 # THE CLASS. A test plants a brand-new executable and execs it under a
 # deadline of a few hundred ms. macOS assesses a freshly written executable on
@@ -1105,27 +1106,63 @@ treepins:
 # anything else is the suite's own code. That is why the supervisor is BUILT
 # here rather than `go run`: `go run` reports every nonzero exit as 1.
 #
+# THE ARMS ARE THE PACKAGES THAT PLANT, which is a census and not a
+# judgement (ranger-base-in8dr, ADR 0085 D6). `make execwrite-check`'s
+# tree-wide pin — TestQATreeGoFilesWriteExecutablesUnderTheForkLock, which
+# walks every .go file in the repository — says every exec-bit write in this
+# tree goes through a WriteExecutable, so counting those calls counts the
+# plants: MEASURED 2026-11-11, 345 call sites in exactly three packages,
+# internal/posse 274, internal/treepins 54, cmd/posse 17, and no other
+# package in the tree has one. The last two arrived under the supervisor and
+# needed NOTHING of their own to arrive: internal/treepins keeps its own copy
+# of the writer (`internal/treepins/execwrite_test.go`, because
+# internal/posse's init.go imports the root package and Go refuses the cycle
+# back) and cmd/posse calls `posse.WriteExecutable`, and the door is a
+# PROCESS around `go test` rather than a seam in either of them — so the
+# extension was these two lines and not two injectors, which is the whole
+# point of ADR 0085 D2/D3 as amended.
+#
+# WHAT IS NOT DERIVED, and say it rather than imply it: this list. A package
+# that starts planting executables tomorrow gets covered by nothing until
+# somebody adds its line here, and the pin above cannot notice — its floors
+# are a per-directory FILE count, which is a different claim. ranger-base-s64a5
+# is the bead for deriving the arms from the census instead of listing them.
+#
 # RUN=<regex> is the form a bead types. A bead that adds a planted fixture
-# checks only its own tests, which takes seconds instead of three arms; `-v`
+# checks only its own tests, which takes seconds instead of five arms; `-v`
 # comes with it, because `go test -run` over a name that is not in the build
 # exits 0 and prints `ok` — so a filter naming an arm 2 test prints `ok` over
 # arms 1 and 3 having selected nothing, and the `=== RUN` lines are how a seat
 # tells its test ran from its test passing.
 #
-# AND IT QUEUES WHEN UNFILTERED, like `make test`: three arms, three suite
-# slots (scripts/suite-lock.sh). Arm 1 is spelled `./internal/posse/...` and
-# not `./internal/posse` for that reason alone — the package has no
-# subpackages, so the two select the same one arm, and a package-tree pattern
-# is what suite_lock_wanted queues. The named-package form is deliberately
-# unqueued there, for the arm 1 run a person does while thinking, and
-# reversing that is the architect's call and not a line added here. A `RUN=`
-# filter returns from that rule before it is reached and takes no slot, which
-# is what makes the filtered form seconds rather than a wait.
+# AND IT QUEUES WHEN UNFILTERED, like `make test`: five arms, five suite
+# slots in sequence (scripts/suite-lock.sh). Arm 1 is spelled
+# `./internal/posse/...` and not `./internal/posse` for that reason alone —
+# the package has no subpackages, so the two select the same one arm, and a
+# package-tree pattern is what suite_lock_wanted queues. The named-package
+# form is deliberately unqueued there, for the arm 1 run a person does while
+# thinking, and reversing that is the architect's call and not a line added
+# here. `./cmd/posse/...` and `./internal/treepins/...` are spelled that way
+# for the same reason and neither has subpackages either, so all five select
+# exactly one package each (`go list` says so). internal/treepins would queue
+# under its bare name as well — suite-lock.sh carries a measured exemption
+# naming that one package — and cmd/posse would not, so `/...` is the one
+# spelling that queues every arm here without reading each package's
+# exemption status. A `RUN=` filter returns from that rule before it is
+# reached and takes no slot, which is what makes the filtered form seconds
+# rather than a wait.
 #
 # NOT a prerequisite of `tree-check` or `make test`, and not in CI: D adds up
 # to 2.5s once per planted file, the full run is priced under
 # ranger-base-kiwvn, and whether CI should buy it is the operator's call
-# because it costs runner time.
+# because it costs runner time. The two arms below the internal/posse ones
+# are priced: MEASURED 2026-11-11 on this box with a warm build cache at a
+# loadavg of 5-15, cmd/posse 674.8s doored against 103.5s undoored (6.5x,
+# 231 cold execs held) and internal/treepins 1581.8s against 131.8s (12.0x,
+# 608 held), both GREEN. THE COST IS ADDITIVE AND BARELY OVERLAPPED, which
+# is the useful part: each arm's doored wall is its undoored wall plus D once
+# per cold exec, within 3% and 5% respectively, so an arm can be priced from
+# its cold-exec count before the box is spent on it.
 #
 # THE ARM LIST IS DERIVED, not remembered (ranger-base-s64a5). A package whose
 # tests can flake on darwin's cold first exec is a package that PLANTS an
@@ -1152,6 +1189,24 @@ treepins:
 # PARENT of `go test`, so its report reaches this recipe's stderr red or green,
 # and a run that delayed nothing exits 3 instead of printing a zero nobody
 # reads (cmd/coldexec/door_linux.go, doc.go).
+#
+# AND EVERY ARM CARRIES `-timeout 60m`, NOT the 25m the same packages get
+# under `make test` — the one number here that is not the undoored run's
+# (ranger-base-in8dr). `go test -timeout` bounds the TEST BINARY's own wall
+# and this door adds 2.5s to that wall per planted file: MEASURED 2026-11-11,
+# the internal/treepins arm holds 608 cold first execs, 1520s of injected
+# delay on its own, and at 25m it died on `panic: test timed out after 25m0s`
+# at 1502s, 573 execs in, with tests still parked in t.Parallel. That red is
+# neither ADR 0085's class nor
+# the splitting advice scripts/test-times.sh prints over a slow package: the
+# package did not grow, the door charged it. 60m is that measurement with
+# room for a loaded box, and what it costs is that a real hang under the door
+# takes an hour to surface — the price of not reading the door's own cost as
+# a hang. It is a LITERAL on all five lines and not a variable because the
+# suite's timeout floor is pinned by READING THESE ARGV
+# (internal/treepins/suitetimeout_qa_test.go, arm 2), and a `-timeout` whose
+# value is a make variable is one that pin cannot parse — correctly, since it
+# cannot tell 60m from 6m.
 COLDEXEC_DELAY ?= 2.5s
 COLDEXEC_RUN   := $(if $(RUN),-run '$(RUN)' -v,)
 
@@ -1161,9 +1216,11 @@ $(COLDEXEC_BIN): $(wildcard cmd/coldexec/*.go)
 	$(GOBIN) build -o $@ ./cmd/coldexec
 
 coldexec-check: $(COLDEXEC_BIN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 25m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 25m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 60m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 60m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 60m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./cmd/posse/... -timeout 60m -count=1 $(COLDEXEC_RUN)
+	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./internal/treepins/... -timeout 60m -count=1 $(COLDEXEC_RUN)
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink

@@ -441,13 +441,23 @@ bd sync               # Sync with git
   156-714ms for it, worst 2.17s, against 6.3-10.9ms warm; this box charges
   1.07ms, so an unwarmed fixture written here passes where it is written and
   flakes on ci.yml's macos-latest leg and on the laptop. The door reruns your
-  tests with that cost injected at `WriteExecutable`, the one door every
-  exec-bit write in this tree goes through, and the fix when it reds is a
-  `--warm` pre-flight that pays the first exec OUTSIDE the deadline, with
-  both halves asserted. Filtered it takes seconds and no suite slot;
-  unfiltered it is three arms, three slots and is nobody's prerequisite —
+  tests inside a supervisor (`cmd/coldexec`) that holds the first `execve` of
+  every file created after it started, for every process under it at any
+  depth, and the fix when it reds is a `--warm` pre-flight that pays the
+  first exec OUTSIDE the deadline, with both halves asserted. (It used to
+  inject at `WriteExecutable` instead, rewriting the plant's `#!` line; ADR
+  0085 D2/D3 as amended moved the cost into the `execve` because 26 tests
+  whose subject is a planted file's own bytes could see the rewrite. The
+  rewrite's code survives in internal/posse, reached by no door, until
+  ranger-base-7zkxw retires it.) Filtered it takes seconds and no suite slot;
+  unfiltered it is five arms, five slots and is nobody's prerequisite —
   `tree-check` and `make test` do not run it, and the class had been
-  rediscovered by hand three times before it existed.
+  rediscovered by hand three times before it existed. **Five, because the
+  arms are the packages that PLANT**: internal/posse's three tagged arms,
+  cmd/posse and internal/treepins, which are every package in this tree with
+  a `WriteExecutable` call site at all — 345 of them, MEASURED 2026-11-11,
+  274/54/17 (ranger-base-in8dr). The last two cost two Makefile lines and no
+  injector of their own, because the door is a process around `go test`.
   **Priced at three times the uninjected arms, and the unfiltered form is
   green** (MEASURED 2026-11-10, ranger-base-kiwvn, at a loadavg of 4-11):
   851.4s over the three arms against 280.3s for the same arms uninjected —
@@ -467,3 +477,16 @@ bd sync               # Sync with git
   retires both.
   docs/notes.d/ranger-base-kiwvn.md has the triage, the counters and what
   went to the architecture lane.
+  **The supervisor's first prices, for the two arms it was extended to**
+  (MEASURED 2026-11-11, ranger-base-in8dr, warm cache, loadavg 5-15):
+  cmd/posse 674.8s against 103.5s undoored, 6.5x; internal/treepins 1581.8s
+  against 131.8s, 12.0x; both green, no `--warm` pre-flight needed anywhere.
+  The cost is additive — each arm's doored wall is its undoored wall plus
+  2.5s once per cold exec, within 5% — so budget from the cold-exec count
+  the report prints, and expect an unfiltered five-arm run to cost most of
+  an hour. Every arm therefore carries `-timeout 60m` and not `make test`'s
+  25m: internal/treepins at 25m dies on `panic: test timed out after 25m0s`
+  with tests still running, which is the door's own cost and not a hang.
+  docs/notes.d/ranger-base-in8dr.md has those readings and the one coverage
+  hole they turned up (an orphaned process's execs are un-adjudicated —
+  ranger-base-orgvt).

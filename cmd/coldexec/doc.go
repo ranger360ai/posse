@@ -5,8 +5,12 @@
 //	coldexec [-delay D] -- <argv…>
 //
 // D defaults to POSSE_COLD_EXEC_DELAY, else 2.5s (ADR 0085 D4). The one
-// caller is `make coldexec-check`, which wraps each of internal/posse's
-// three arms in one of these.
+// caller is `make coldexec-check`, which wraps each of its five arms in one
+// of these: internal/posse's three tagged arms, cmd/posse and
+// internal/treepins. Those are the three packages in the tree that plant an
+// executable at all (ranger-base-in8dr), and the last two needed nothing of
+// their own to join — the door is a process around `go test`, so an arm is a
+// Makefile line (ADR 0085 D6).
 //
 // WHAT THE CLASS IS. A test plants a brand-new executable and execs it under
 // a deadline of a few hundred ms. macOS assesses a freshly written

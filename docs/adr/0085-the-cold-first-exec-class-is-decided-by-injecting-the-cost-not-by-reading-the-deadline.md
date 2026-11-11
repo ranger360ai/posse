@@ -130,6 +130,23 @@ each stated rather than left silent:
   does not name: the supervisor refuses to start. It never runs a suite
   uncovered. Requires Linux 5.5 or later (`FLAG_CONTINUE`). The host runs
   7.2.
+- **An ORPHANED descendant**, added here because it is now measured rather
+  than reasoned about (ranger-base-in8dr, 2026-11-11). Reading the path
+  argument needs `PTRACE_MODE_ATTACH` on the caller, which the supervisor
+  has by being its ancestor; on a host with `yama/ptrace_scope=1`, which
+  this one is, an ancestor is the only thing that is allowed. A descendant
+  whose parent EXITED is reparented to init and leaves that reach, so its
+  execs read `unreadable` and a plant it execs is never delayed. MEASURED:
+  145 of the internal/treepins arm's 29744 notifications (134 unreadable,
+  11 gone), 0.49%, against 0 of cmd/posse's 8427 — the treepins holes
+  cluster in the suite-lock self-tests, which orphan holder processes on
+  purpose. Reproduced in isolation at D = 500ms with two identical fresh
+  plants: the child still in the tree is delayed, the orphan's is
+  unreadable. It is counted and named, never silently called old, which is
+  what D5's taxonomy is for. ranger-base-orgvt holds the candidate fix
+  (`PR_SET_CHILD_SUBREAPER` on the supervisor, so an orphan reparents to it
+  rather than to init) and will either land it with a pin or record the
+  refusal here.
 
 At its end the run prints the number of notifications and the number of
 cold execs it delayed. Zero delayed is a failed door, not a clean suite.
@@ -140,7 +157,35 @@ What changes is that each arm's command line runs inside the supervisor.
 `RUN=` filter and staying out of `tree-check` and `make test` are all
 unchanged. The supervisor wraps any `go test`, so cmd/posse and
 internal/treepins (ranger-base-in8dr) each become one Makefile line, with
-no injector of their own. Price: MEASURED for the content rewrite, +571.1s
+no injector of their own. **Those two landed 2026-11-11
+(ranger-base-in8dr), and the five arms are now a census rather than a
+choice**: `make execwrite-check`'s tree-wide pin
+(`TestQATreeGoFilesWriteExecutablesUnderTheForkLock`, which walks every
+`.go` file in the repository) establishes that every exec-bit write in
+this tree goes through a `WriteExecutable`, so counting those calls counts
+the plants — MEASURED 2026-11-11: 345 call sites in exactly three
+packages, internal/posse 274, internal/treepins 54, cmd/posse 17, and no
+other package in the tree has one. internal/treepins' own copy of the
+writer and cmd/posse's call into `posse.WriteExecutable` needed no change
+of any kind, which is D2/D3 paying for itself. The list is still WRITTEN
+and not derived: a fourth package that starts planting tomorrow is covered
+by nothing until its line is added, and that pin's per-directory floors
+are a file count and cannot notice. ranger-base-s64a5 is the bead for
+deriving it. **Price, MEASURED 2026-11-11 (this host, go1.27.3, warm build
+cache, loadavg 5-15, one sibling seat holding the other suite slot):**
+cmd/posse 674.8s injected against 103.5s uninjected, 6.5x, with 231 cold
+execs held; internal/treepins 1581.8s against 131.8s, 12.0x, with 608 held.
+Both arms GREEN, no red in the class and no `--warm` pre-flight needed. The
+cost is additive and barely overlapped — the injected wall is the
+uninjected wall plus D once per cold exec, within 3% on cmd/posse (+571.3s
+against 231 x 2.5s = 577.5s) and 5% on internal/treepins (+1450.0s against
+608 x 2.5s = 1520.0s) — so an arm's doored wall can be predicted from its
+cold-exec count before anybody spends the box on it. These two arms also
+needed the one number the undoored run does not: `-timeout 60m` rather than
+`make test`'s 25m, because `go test -timeout` bounds the test binary's own
+wall and the door spends 1520s of it. internal/treepins at 25m died on
+`panic: test timed out after 25m0s` at 1502s with tests still running,
+which is neither this class nor a package that wants splitting. Price: MEASURED for the content rewrite, +571.1s
 over the three arms (280.3s uninjected, 851.4s injected, 3.04x, loadavg
 4-11, ranger-base-kiwvn). ASSUMED to be at least that for the amended
 door, because it delays everything the rewrite did plus hooks, shims,
