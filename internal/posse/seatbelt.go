@@ -348,8 +348,23 @@ type SeatbeltCarveOut struct {
 // git's lockfiles that residual is priced and accepted, because creating them
 // would break the repo. For claude's executable config it is not acceptable —
 // a created settings.json is read by every other claude on the box — and an
-// EMPTY one is exactly as inert as none (seedBody). So the producer that knows
-// says which, the way DenyFile says which entries are files.
+// EMPTY one is as inert as none for the CLI that reads it (seedBody). So the
+// producer that knows says which, the way DenyFile says which entries are
+// files.
+//
+// "AS INERT AS NONE" IS A CLAIM ABOUT THE CLI, AND POSSE'S OWN CLASSIFIER IS
+// NOT A CLI (ranger-base-f67jx). ProjectConfigTrust reads the session dir, so
+// for a session whose dir IS the home, a seed here is a project-config entry
+// there: `{}` under a keyed list reads clean, which is the case this claim was
+// written for (claude's settings.json, ranger-base-6akzw), but a ZERO-BYTE
+// seed is `invalid JSON` and a `{}` seed under a whole-file entry degrades on
+// presence alone. Since ranger-base-zmk4q seeded `.codex/config.toml` and
+// `.grok/config.toml` — neither of them `.json`, so neither gets a body — a
+// codex or grok launch in $HOME is refused over a file posse made, and
+// removing it is undone by the next launch. MEASURED, with the whole census
+// and the directory arm, in wallseedprojectconfig_qa_test.go; the decision of
+// which side gives is ranger-base-mkrsv. Nothing here is conditioned on it:
+// the wall still has to cover the name.
 //
 // A subset of DenyFile, and of Deny with it; an entry here that is not in
 // both seeds nothing.

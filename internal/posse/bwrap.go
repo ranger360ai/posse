@@ -543,10 +543,15 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			//
 			// THE ONE FILE-SHAPED DENY THAT IS MADE is a Seeded one
 			// (ranger-base-6akzw): claude's executable config, where an empty
-			// file is exactly as inert as none (seedBody) and the residual
-			// above is not — a created settings.json is read by every other
-			// claude sharing the directory, uncaged ones included. The
-			// launcher writes the empty value and the mount goes over it.
+			// file is as inert as none to the CLI that reads it (seedBody) and
+			// the residual above is not — a created settings.json is read by
+			// every other claude sharing the directory, uncaged ones included.
+			// The launcher writes the empty value and the mount goes over it.
+			// It is NOT inert to posse's own project-config classifier when a
+			// session starts in the home these steps write to
+			// (SeatbeltCarveOut.Seeded's second paragraph, ranger-base-f67jx);
+			// the mkdir arm below has the same exposure, and this is the step
+			// list a fix would come through.
 			switch {
 			case carve.Seeded(d):
 				prep = append(prep, PrepStep{PrepSeed, d, "executable config that is not there yet and sits inside a write grant; created empty so the read-only mount can cover it"})

@@ -654,6 +654,16 @@ func (a *App) checkParityResolved(ag *AgentFile, rt *Runtime, res CageRealizeRes
 // such file, or the PID opted in with trust_project_config: true. It is a
 // Degraded entry and never an Unrealized one — like the cage shortfall, it
 // says what this launch gives away, not which gate went unenforced.
+//
+// POSSE IS ONE OF THE PRODUCERS THIS READS (ranger-base-f67jx). The bwrap
+// launcher creates files and directories in the home before it execs the wall
+// (BwrapArgs' PrepSeed/PrepMkdirAll steps), and eight of those paths are
+// project-config entries of some runtime — ten (runtime, entry) rows, since
+// `.claude/` names are on two lists. So a session whose dir IS the home is
+// classified against what posse put there, and "remove the file", which
+// the refusal below names, is undone by the next caged launch. The census and
+// every verdict are pinned in wallseedprojectconfig_qa_test.go; which side
+// gives is ranger-base-mkrsv. Nothing here is conditioned on it yet.
 func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 	if rt == nil || len(rt.ProjectConfig) == 0 || dir == "" {
 		return ""

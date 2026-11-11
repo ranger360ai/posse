@@ -40,6 +40,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-j687x](ranger-base-j687x.md) — ranger-base-j687x — the typed route had no liveness guard, and the trace is why that is a change — 2026-11-11
 - [ranger-base-j0riv](ranger-base-j0riv.md) — A withdrawn notification is not a coverage hole (ranger-base-j0riv) — 2026-11-11
 - [ranger-base-in8dr](ranger-base-in8dr.md) — Two more arms for the cold-first-exec door, and the three things they found (ranger-base-in8dr) — 2026-11-11
+- [ranger-base-f67jx](ranger-base-f67jx.md) — The wall's own prep is a project-config producer (ranger-base-f67jx) — 2026-11-11
 - [ranger-base-ej47m](ranger-base-ej47m.md) — The land check at the replay site: four judgment calls ADR 0087 left open (ranger-base-ej47m) — 2026-11-11
 - [ranger-base-dfgte](ranger-base-dfgte.md) — ranger-base-dfgte — one resolver for the cage map, and the mapping it declines — 2026-11-11
 - [ranger-base-ctxeq](ranger-base-ctxeq.md) — ranger-base-ctxeq — witnessing the Edit/Write wall at the launch, and what a negative probe costs to believe — 2026-11-11
