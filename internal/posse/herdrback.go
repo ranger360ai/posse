@@ -3145,6 +3145,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// and on bwrap claude's entry becomes the config DIRECTORY its
 		// CLAUDE_CONFIG_DIR names (BwrapStateDirs, D19).
 		if wallRendered(cage, rt) {
+			// ADR 0090 D1: a server list the seat can rewrite is the hole
+			// --strict-mcp-config closed, reopened by the line itself.
+			if err := a.MCPConfigWallRefusal(ag, rt, dir, cmd); err != nil {
+				return nil, err
+			}
 			pre, err := a.WallPrefix(ag, rt, dir)
 			if err != nil {
 				return nil, err
@@ -3882,6 +3887,9 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// copy had no `rt != nil` arm, and — worse — nothing tied it to the
 	// refusal the answer is FOR, twenty lines below.
 	if wallRendered(m.Cage, rt) {
+		if err := b.App.MCPConfigWallRefusal(ag, rt, m.Dir, inner); err != nil {
+			return false, err
+		}
 		pre, err := b.App.WallPrefix(ag, rt, m.Dir)
 		if err != nil {
 			return false, err

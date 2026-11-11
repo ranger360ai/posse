@@ -136,3 +136,10 @@ re-verifies from a bwrap seat.
 - MEASURED the same day: `~/.codex` holds only `tmp/` and `~/.grok` holds only
   `docs/`. The CLIs are installed but nothing is logged in, so no codex or
   grok seat runs on this host.
+- MEASURED 2026-11-11 (ranger-base-m0bfv), the same host and claude, against
+  a local fake Messages API that asks for one `Bash` call, with no billed
+  turn: a `projects.<cwd>.allowedTools` rule in `.claude.json` is NOT
+  honoured. The call is refused as "needs approval", exactly as it is with no
+  rule, while the same rule passed as `--allowedTools` runs the call. The
+  Consequences entry above that says UNMEASURED is answered by this reading.
+  docs/notes.d/ranger-base-m0bfv.md has the arms.

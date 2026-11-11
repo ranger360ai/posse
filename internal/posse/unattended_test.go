@@ -77,14 +77,15 @@ func TestRenderedPersonaCommandIsUnattended(t *testing.T) {
 // foreign-program row does not have one. It is spelled through its renderer
 // rather than as a literal because its values are a property of the box;
 // what these rows pin is the POSITION and the fact that nothing else was
-// added.
+// added. `--strict-mcp-config` is the third (ADR 0090 D1), and it is kept
+// where the operator's own mode is kept, because it is not a mode.
 func TestOwnCommandStillLaunchesUnattended(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct{ name, command, want string }{
 		{"appended", `claude --append-system-prompt "$(cat {file})"`,
-			`claude --append-system-prompt "$(cat FILE)" PIN --permission-mode auto`},
+			`claude --append-system-prompt "$(cat FILE)" PIN --permission-mode auto --strict-mcp-config`},
 		{"explicit mode kept", `claude --permission-mode plan {allow}`,
-			`claude --permission-mode plan PIN`},
+			`claude --permission-mode plan PIN --strict-mcp-config`},
 		{"foreign program untouched", `run {file} {allow} {deny}`,
 			`run FILE`},
 	} {

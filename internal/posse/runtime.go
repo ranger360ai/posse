@@ -1628,6 +1628,114 @@ var grokModels = map[string]string{
 // list is a spelling nobody needs to think about twice.
 const ClaudeFleetFlags = `--permission-mode auto`
 
+// ClaudeStrictMCPFlag makes claude start ONLY the MCP servers its own
+// --mcp-config names, and ignore every other source: user and project scope
+// in `.claude.json`, and a repo's `.mcp.json` with its approvals (ADR 0090
+// D1). An MCP server definition is a command, and `.claude.json` is a file a
+// caged seat must be able to rewrite (ADR 0080 D19), so the write cannot be
+// taken away — the READERS are. MEASURED 2026-11-11 on claude 2.1.322: three
+// planted servers (user, project, repo `.mcp.json`) all start without the
+// flag and none starts with it.
+//
+// Its own constant and its own door (EnsureStrictMCPLine), not part of
+// ClaudeFleetFlags: EnsureUnattended keys on that string's FIRST word, so a
+// line that types its own `--permission-mode plan` would keep its mode and
+// lose this flag with it. A mode is the operator's to choose; this is not.
+const ClaudeStrictMCPFlag = `--strict-mcp-config`
+
+// ClaudeMCPConfigFlag is the one MCP source ClaudeStrictMCPFlag leaves open:
+// a line may name its own servers, and that is how the operator gives a seat
+// one. What the launch then guarantees is that no file it names is a file the
+// seat can write (MCPConfigWriteSetRefusal).
+const ClaudeMCPConfigFlag = `--mcp-config`
+
+// claudeExe is the executable the strict-MCP door keys on. The LINE's first
+// word and not a runtime's name, deliberately: a declared runtime whose
+// template starts `claude` reads the same `.claude.json` the built-in does,
+// and the guarantee is about the reader, not about which yaml spelled it.
+const claudeExe = "claude"
+
+// EnsureStrictMCPLine appends ClaudeStrictMCPFlag to a line that starts
+// claude and lacks it — every claude line posse renders or is handed: the
+// built-in template (which already carries it), a PID's own command:, a
+// declared runtime's template, and the `--cmd` of a no-persona launch (ADR
+// 0090 D1). Boolean, so appending at the end is safe beside the variadic
+// lists for the same reason EnsureUnattended's is.
+//
+// The same refusal to guess as the other doors: a line that does not START
+// claude (`env FOO=1 claude`, a wrapper script) is left alone, because posse
+// cannot see that program's dialect. `posse runtime check` names that case
+// rather than letting it pass in silence (strictMCPRow).
+func EnsureStrictMCPLine(cmd string) string {
+	f := strings.Fields(cmd)
+	if len(f) == 0 || filepath.Base(f[0]) != claudeExe {
+		return cmd
+	}
+	for _, w := range f {
+		if w == ClaudeStrictMCPFlag {
+			return cmd
+		}
+	}
+	return cmd + " " + ClaudeStrictMCPFlag
+}
+
+// lineRunsClaude reports whether any word of the line names the claude
+// executable — the case EnsureStrictMCPLine cannot repair because claude is
+// not the line's first word.
+func lineRunsClaude(cmd string) bool {
+	for _, w := range strings.Fields(cmd) {
+		if filepath.Base(strings.Trim(w, `"'`)) == claudeExe {
+			return true
+		}
+	}
+	return false
+}
+
+// MCPConfigFiles returns the values a claude line passes to --mcp-config, as
+// files to check, and the values it cannot check. The flag is variadic (it
+// takes values until the next option token) and takes either a file or an
+// inline JSON object; a value carrying a brace or a quote-delimited fragment
+// of JSON is inline and names no file. A value the launcher cannot resolve
+// to a path WITHOUT running a shell — `$VAR`, a backtick, a `$(…)` — is
+// returned as unverifiable rather than guessed at.
+func MCPConfigFiles(cmd string) (files, unverifiable []string) {
+	f := strings.Fields(cmd)
+	in := false
+	take := func(v string) {
+		v = strings.Trim(v, `"'`)
+		switch {
+		case v == "", strings.ContainsAny(v, "{}"):
+			return
+		case strings.ContainsAny(v, "$`"):
+			// The words after a shell construct are the construct's, not
+			// values: the launch refuses on the first one either way.
+			unverifiable = append(unverifiable, v)
+			in = false
+		default:
+			files = append(files, v)
+		}
+	}
+	for _, w := range f {
+		if strings.HasPrefix(w, ClaudeMCPConfigFlag+"=") {
+			in = true
+			take(strings.TrimPrefix(w, ClaudeMCPConfigFlag+"="))
+			continue
+		}
+		if w == ClaudeMCPConfigFlag {
+			in = true
+			continue
+		}
+		if strings.HasPrefix(w, "-") {
+			in = false
+			continue
+		}
+		if in {
+			take(w)
+		}
+	}
+	return files, unverifiable
+}
+
 // CodexFleetFlags is what a codex persona session needs beyond its sandbox
 // mode and -a never — all three verified on codex-cli 0.147.0 (rangerhq-5oi),
 // and without them a dispatched session either sits on a dialog nobody is
@@ -2339,7 +2447,7 @@ var builtinRuntimes = []Runtime{
 		// surface for a version bump to move under the admission (D9's pin is
 		// for a ROUTED yes, and codex's is the one).
 		ReportsOnRex: true,
-		Command:      `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
+		Command:      `claude {model} ` + ClaudeFleetFlags + ` ` + ClaudeStrictMCPFlag + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
 	// SkillsVerified: re-measured 2026-10-12 (ranger-base-bdias) against the
 	// installed 0.153.4 — still reads <cwd>/.agents/skills only, still
 	// follows a symlink out of the cwd (TestQALiveSkillDiscoveryPerRuntime,
@@ -3424,6 +3532,10 @@ func (a *App) EmojiExact(name string) string {
 // when the flag is absent, so `--cmd "claude --permission-mode plan"` is
 // left exactly as the operator typed it. That is what keeps this a default
 // rather than an imposition on the operator's own session.
+//
+// The strict-MCP flag rides the same door (ADR 0090 D1), and unlike the mode
+// it is not the operator's to choose: a `--cmd claude` with no flag would
+// start every server a caged seat planted in the shared `.claude.json`.
 func EnsureUnattendedLine(cmd string) string {
 	f := strings.Fields(cmd)
 	if len(f) == 0 {
@@ -3432,7 +3544,7 @@ func EnsureUnattendedLine(cmd string) string {
 	exe := filepath.Base(f[0])
 	for i := range builtinRuntimes {
 		if builtinRuntimes[i].Exe() == exe {
-			return builtinRuntimes[i].EnsureUnattended(cmd)
+			return EnsureStrictMCPLine(builtinRuntimes[i].EnsureUnattended(cmd))
 		}
 	}
 	return cmd

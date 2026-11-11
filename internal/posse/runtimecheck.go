@@ -332,6 +332,9 @@ func (a *App) launchRow(rt *Runtime, h ManifestReader) stageRow {
 	if rt.Unattended == "" {
 		un = "NO unattended flag known — a tool call may sit unapproved with nobody watching"
 	}
+	if mcp := strictMCPClause(rt.Command); mcp != "" {
+		un += "; " + mcp
+	}
 	// WHO declared what this row says, and since ADR 0061 that can be the
 	// yaml. The row's value carries `detection: reported` when the profile
 	// declares it, and a `by` that still read "runtime template + herdr
@@ -834,4 +837,22 @@ func sandboxRow(rt *Runtime) stageRow {
 	}
 	r.note = append(r.note, "declared by: "+rt.declaredBy("gate_shell"))
 	return r
+}
+
+// strictMCPClause is the launch row's reading of ADR 0090 D1 for a profile's
+// template: the flag on the line after the door, or — the one case the door
+// cannot repair — claude run behind a first word posse does not recognize,
+// reported the way a missing unattended flag is. "" for a line that runs no
+// claude at all: the flag is that CLI's, and D3 decides the others per CLI.
+func strictMCPClause(template string) string {
+	line := EnsureStrictMCPLine(template)
+	for _, w := range strings.Fields(line) {
+		if w == ClaudeStrictMCPFlag {
+			return ClaudeStrictMCPFlag + " on the line — only --mcp-config servers start (ADR 0090 D1)"
+		}
+	}
+	if lineRunsClaude(line) {
+		return "NO " + ClaudeStrictMCPFlag + " — claude runs behind a first word posse cannot see past, so it starts every MCP server a seat can write into .claude.json or a repo .mcp.json (ADR 0090 D1)"
+	}
+	return ""
 }

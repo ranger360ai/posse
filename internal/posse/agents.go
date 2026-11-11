@@ -135,7 +135,7 @@ const ClaudeFleetSettings = `{"autoMemoryEnabled":false,"permissions":{"defaultM
 
 // DefaultAgentCommand is the claude runtime's template — what a PID with
 // neither runtime: nor command: launches with.
-const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`
+const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` ` + ClaudeStrictMCPFlag + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`
 
 // ClaudeAutoModeDefaults is the sentinel that keeps claude's own
 // `autoMode.allow` list alive when the launch adds an entry of its own.
@@ -641,8 +641,10 @@ func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model 
 	// PID's own command: is the one template posse did not write, and a
 	// persona session that starts asking for approvals is a session nobody
 	// is watching (rangerhq-qs5r). The credential-dir pin is the same kind
-	// of guarantee for the same kind of template (ranger-base-rq83c).
-	return rt.EnsureUnattended(rt.EnsureSettingsPin(out))
+	// of guarantee for the same kind of template (ranger-base-rq83c), and so
+	// is the strict-MCP flag (ADR 0090 D1) — keyed on the line, not the
+	// runtime, so a declared runtime that starts claude carries it too.
+	return EnsureStrictMCPLine(rt.EnsureUnattended(rt.EnsureSettingsPin(out)))
 }
 
 // RenderCommand renders on the PID's own runtime with claude's realizer

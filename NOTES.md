@@ -152,6 +152,11 @@ and decides cleanup where ownership or retained work is ambiguous. Agent instruc
 authorize those decisions by themselves. The local
 [installation checks](docs/notes.d/notes-live-box-checks.md) report what needs attention;
 a green fixture suite does not prove the live installation is current.
+Host procedure: the operator never runs a bare `claude` with
+`CLAUDE_CONFIG_DIR` pointing at the seats' shared config directory — every
+caged seat can write that directory's `.claude.json`, and only a line carrying
+`--strict-mcp-config` ignores the MCP servers in it
+([ADR 0090](docs/adr/0090-a-config-file-a-caged-seat-must-rewrite-is-made-inert-by-removing-its-readers-not-its-writer.md)).
 
 ## Historical sections
 
