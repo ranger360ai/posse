@@ -2,7 +2,7 @@
 // It wraps a command line and makes the FIRST execve of every file created
 // after it started slow, for every process under it, at any depth:
 //
-//	coldexec [-delay D] -- <argv…>
+//	coldexec [-delay D] [-min-temp-mb N] -- <argv…>
 //
 // D defaults to POSSE_COLD_EXEC_DELAY, else 2.5s (ADR 0085 D4). The one
 // caller is `make coldexec-check`, which wraps each of its five arms in one
@@ -119,6 +119,23 @@
 // What the door does NOT change is liveness: reapOrphans waits on every
 // orphan it adopts, so `kill -0` answers ESRCH once it is gone, exactly as
 // it would have under init.
+//
+// AND IT READS THE ROOM FIRST, when -min-temp-mb asks it to. The arms spend
+// the better part of an hour and every test under them writes into $TMPDIR;
+// a box with no room left for that does not produce a verdict about the
+// class, it produces a hundred unrelated red test names and a held-exec
+// count that measures the box (ranger-base-w5z7u, MEASURED 2026-11-11: the
+// cmd/posse arm held 34 cold first execs against its usual 231, because its
+// tests died before they could plant). So below the floor it refuses with
+// exit 2, like any other edge it cannot cover, before anything has run.
+//
+// The number it reads is the QUOTA share where the filesystem has one and
+// free space otherwise, whichever is smaller — on this box /tmp is a tmpfs
+// mounted usrquota, the quota is per uid and every seat runs as the same
+// user, so the binding number is a box-wide budget `df` cannot see at all
+// (ranger-base-akk9f). quotactl_fd(2) answers it for the caller's own uid
+// unprivileged and tmpfs implements it, so this needs no `quota` binary and
+// no privilege. See room_linux.go.
 //
 // At the end it prints the notifications it took and the cold execs it
 // delayed — held to the end and let through, which is what that count means

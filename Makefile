@@ -1207,8 +1207,90 @@ treepins:
 # (internal/treepins/suitetimeout_qa_test.go, arm 2), and a `-timeout` whose
 # value is a make variable is one that pin cannot parse — correctly, since it
 # cannot tell 60m from 6m.
+#
+# AND IT READS THE ROOM BEFORE IT SPENDS THAT HOUR, because a box the arms do
+# not fit in reports the box and not the class (ranger-base-w5z7u). MEASURED
+# 2026-11-11, the five arms back to back from a seat with TMPDIR unset: the
+# suite red with `disk quota exceeded` — on the TESTS, so what the seat read
+# was a hundred unrelated red names (112 of them in the cmd/posse arm alone)
+# and no statement about the class. That arm held 34 cold first execs against
+# the 231 the same arm holds with room, because its tests died before they
+# could plant: the door's own number went with them, which is ADR 0085 D5's
+# case exactly — a run that is not covered and does not say so.
+#
+# THE NUMBER THAT BINDS IS A QUOTA AND NOT FREE SPACE. /tmp here is a 14G
+# tmpfs mounted `usrquota`; the quota is per UID and every seat runs as the
+# same user, so it is ONE BOX-WIDE budget concurrent suites spend together
+# while `df` reports a device with room throughout (ranger-base-akk9f, which
+# left the usage/limit reading out because there is no `quota` binary here).
+# There does not need to be one: `quotactl_fd(2)` answers Q_GETQUOTA for the
+# caller's own uid unprivileged, and tmpfs implements it. MEASURED the same
+# day, uid 1001 on /tmp: an 11130 MB limit, 8888 MB used, 2242 MB of the share
+# left, against 5026 MB free on the device. `-min-temp-mb` reads the smaller
+# of the two and REFUSES below it — exit 2, the same refusal the door already
+# gives a kernel it cannot cover — in milliseconds instead of at the end of an
+# hour, with the binding number on the screen (cmd/coldexec/room_linux.go).
+#
+# WHAT HELD THE ROOM WAS NOT THE ARMS, and the honest statement of it is that
+# a seat cannot tell. MEASURED 2026-11-11 at 08:46: 428 `/tmp/posse-testhome-*`
+# trees, 5.26 GB of it in THREE of them, and 2242 MB of the share left. At
+# 09:00, with this seat writing nothing to /tmp: one such tree, and 7425 MB
+# left. Whether those three were live sibling suites or residue is exactly
+# what nobody at a seat can decide — which is why the door READS the share
+# rather than assuming one, and why clearing anything there stays the
+# operator's call (scripts/test-times.sh says the same). What the arms can
+# answer for is their OWN residue: internal/posse's TestMain removes its home
+# after m.Run(), so a run that COMPLETES cleans up and a run killed by a
+# timeout, a panic or a signal does not.
+#
+# SO EACH ARM TAKES ITS OWN TEMP DIRECTORY AND DROPS IT. $(COLDEXEC_TMP)
+# mkdirs one under $$TMPDIR — under /tmp when that is unset, which is the
+# point: a TMPDIR under /tmp costs nothing, and one anywhere else buys room
+# and COSTS A CLASS (MEASURED 2026-11-11: pins whose premise is that their
+# fixture lies inside a granted root red, because a bare /tmp is in every
+# rendered seatbelt; and surfaces that abbreviate $$HOME to ~ red when TMPDIR
+# is under $$HOME — ranger-base-akk9f, and four of those pins re-measured
+# under this bead on a /var/tmp that is in neither; ranger-base-u8xk4 holds
+# the defect). A seat that has already moved
+# its TMPDIR keeps it: the arm nests inside it rather than overriding it. The
+# trap clears that directory on the way out however the arm ends, so a killed
+# arm answers for its own residue even though TestMain no longer can — and
+# test-times.sh's DISK line reads that same directory, because it reads
+# $$TMPDIR.
 COLDEXEC_DELAY ?= 2.5s
 COLDEXEC_RUN   := $(if $(RUN),-run '$(RUN)' -v,)
+
+# The floor under the room: the measured peak of the largest arm, times a
+# margin for the sibling suites that spend the same box-wide budget.
+#
+# MEASURED 2026-11-11 on this box (linux 7.2.15 x86_64, go1.27.3, D=2.5s),
+# every arm run doored with a PRIVATE TMPDIR on a quota-free filesystem and
+# that directory sampled with `du -sk` every 15s, so the number is the ARM's
+# footprint and not the box's: arm 1 58 MB, arm 2 27 MB, arm 3 44 MB,
+# cmd/posse 381 MB, internal/treepins 61 MB — all five with ZERO quota or
+# space errors, against the 122 and 15 the last two produced on /tmp the same
+# day. The largest is cmd/posse, whose tests copy the working tree per test,
+# and NOT an internal/posse arm: those three share one test home. 2048 is
+# 5.4x that 381 MB.
+#
+# A slightly smaller multiple than scripts/test-times.sh's DISK_FLOOR_MB
+# (903 MB measured, 5120 set, 5.7x), and deliberately: that floor's margin
+# covers a regrown go build cache as well as concurrent suites, and this one
+# does not have to — GOCACHE here is ~/.cache/go-build, on /home, which has
+# no quota and 888 GB. What is left is the concurrency, which is a claim
+# about a shared box and not a measurement. Hence one number in one place,
+# overridable. docs/notes.d/ranger-base-w5z7u.md carries the full readings.
+COLDEXEC_TMP_FLOOR_MB ?= 2048
+
+# The per-run temp directory: NESTED under $TMPDIR, never replacing it, and
+# cleared however the arm ends.
+COLDEXEC_TMP   := T=$$(mktemp -d "$${TMPDIR:-/tmp}/posse-coldexec.XXXXXX") && trap 'rm -rf "$$T"' EXIT INT TERM && TMPDIR=$$T
+# ...and the refusal, which a RUN= filter drops for the same reason it takes no
+# suite slot: the floor is what a whole arm needs, and a filtered run is a
+# handful of tests and seconds. Keeping it there would refuse the one form a
+# bead types all day on a box that is short — a false refusal, and the fastest
+# way to teach a seat to pass -min-temp-mb 0.
+COLDEXEC_ROOM  := $(if $(RUN),,-min-temp-mb $(COLDEXEC_TMP_FLOOR_MB))
 
 COLDEXEC_BIN   := bin/coldexec
 
@@ -1216,11 +1298,11 @@ $(COLDEXEC_BIN): $(wildcard cmd/coldexec/*.go)
 	$(GOBIN) build -o $@ ./cmd/coldexec
 
 coldexec-check: $(COLDEXEC_BIN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 60m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 60m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 60m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./cmd/posse/... -timeout 60m -count=1 $(COLDEXEC_RUN)
-	POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) -- scripts/test-times.sh $(GOBIN) test ./internal/treepins/... -timeout 60m -count=1 $(COLDEXEC_RUN)
+	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 60m -count=1 $(COLDEXEC_RUN)
+	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 60m -count=1 $(COLDEXEC_RUN)
+	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 60m -count=1 $(COLDEXEC_RUN)
+	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test ./cmd/posse/... -timeout 60m -count=1 $(COLDEXEC_RUN)
+	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test ./internal/treepins/... -timeout 60m -count=1 $(COLDEXEC_RUN)
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink

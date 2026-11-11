@@ -49,6 +49,7 @@ func main() {
 	delay := flag.Duration("delay", 0, "D: how long to hold the first execve of an inode created after the door started (default "+delayEnv+", else "+defaultDelay.String()+")")
 	verbose := flag.Bool("verbose", false, "print one line per execve notification: the verdict, the pid and the path (triage; an arm takes tens of thousands)")
 	child := flag.Bool("child", false, "internal: install the filter, hand the listener up to the parent, exec the argv")
+	minTempMB := flag.Int64("min-temp-mb", 0, "refuse to start when the temp directory the run will use (TMPDIR) has less than this many MB of room left — the QUOTA share where the filesystem has one, else free space (0: no check; see room_linux.go)")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
 			"usage: coldexec [-delay D] -- <argv…>\n\n"+
@@ -81,6 +82,11 @@ func main() {
 	if d < 0 {
 		refuse("-delay %s is negative", d)
 	}
+	// Before the filter, the socketpair and the hour: a box the arm cannot
+	// fit in is the same kind of edge as a kernel the filter cannot cover,
+	// and ADR 0085 D5's answer to both is a refusal rather than a run that
+	// reports the box as the class (ranger-base-w5z7u).
+	requireRoom(*minTempMB)
 	os.Exit(supervise(d, *verbose, argv))
 }
 

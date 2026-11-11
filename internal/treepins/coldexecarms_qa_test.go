@@ -106,6 +106,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -124,6 +125,30 @@ const cxaPlantWriter = "WriteExecutable"
 // inside. An arm line that does not name it delays nothing, so it is not an
 // arm — it is a plain `go test` wearing the door's name.
 const cxaSupervisor = "$(COLDEXEC_BIN)"
+
+// cxaRoom and cxaTemp are the other two Makefile variables every arm line
+// carries, and they are named here rather than spelled inline so the pin
+// below and the recipe cannot drift apart silently (ranger-base-w5z7u).
+//
+// cxaRoom is the refusal: the arm reads the room its tests will write into
+// and refuses below a floor, rather than spending an hour and reporting the
+// BOX as the class. cxaTemp is the arm's own temp directory, nested under
+// $TMPDIR and cleared on the way out, so an arm that is killed does not add
+// to the residue that fills the room for the next one.
+const (
+	cxaRoom = "$(COLDEXEC_ROOM)"
+	cxaTemp = "$(COLDEXEC_TMP)"
+)
+
+// What those two variables have to still SAY, because a pin that only checks
+// the arms name them goes green over `COLDEXEC_ROOM :=` emptied to nothing.
+// One substring each, chosen as the part that carries the meaning: the flag
+// that makes the door refuse, and the three things the prelude has to do.
+var cxaVarMustHold = map[string][]string{
+	"COLDEXEC_ROOM":         {"-min-temp-mb", "$(COLDEXEC_TMP_FLOOR_MB)"},
+	"COLDEXEC_TMP":          {"mktemp -d", "TMPDIR=", "trap "},
+	"COLDEXEC_TMP_FLOOR_MB": {},
+}
 
 // The floors under the census. 331 call sites in three packages on
 // 2026-11-11; both are deliberately loose, because their job is to catch a
@@ -425,6 +450,114 @@ func TestQAColdexecArmRegisterIsNotStale(t *testing.T) {
 	}
 }
 
+// TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir holds the other
+// half of an arm: not WHICH packages it runs, which the derivation above
+// holds, but whether it can honestly run them at all (ranger-base-w5z7u).
+//
+// THE DEFECT. The five arms were run back to back on 2026-11-11 from a seat
+// with TMPDIR unset. This box's /tmp is a 14G tmpfs mounted `usrquota`, the
+// quota is per UID and every seat runs as the same user, so it is one
+// BOX-WIDE budget concurrent suites spend together — and 5.26 GB of it was
+// already held by three abandoned `posse-testhome-*` trees 3-7 hours old.
+// The suite red with `disk quota exceeded` on the TESTS: 112 FAILs in the
+// cmd/posse arm alone, and that arm held 34 cold first execs against the 231
+// it holds with room, because its tests died before they could plant. A door
+// whose number measures the box, over a log that reads like a broken change.
+//
+// THE TWO THINGS AN ARM THEREFORE CARRIES, and both are a recipe line away
+// from being dropped by a bead editing an arm for some other reason:
+//
+//   - cxaRoom, the refusal. The door reads the binding number — the QUOTA
+//     share where the filesystem has one, which `df` cannot see at all
+//     (ranger-base-akk9f) — and refuses below the floor, in milliseconds
+//     instead of at the end of an hour. An arm without it is ADR 0085 D5's
+//     own case: a run that is not covered and does not say so.
+//   - cxaTemp, the arm's own temp directory. Nested under $TMPDIR, never
+//     replacing it, and cleared however the arm ends. An arm without it
+//     writes into the shared directory and leaves its residue there when it
+//     is killed, which is exactly the ratchet that filled the room above.
+//
+// It reads the recipe the way the derivation does, and then reads the two
+// variables themselves: a pin that only checks the arms NAME them is one
+// that `COLDEXEC_ROOM :=` emptied to nothing passes.
+//
+// NO DOOR, unlike its two neighbours, and the register says why rather than
+// leaving it to be noticed: this one reads the Makefile and nothing else, so
+// it enumerates no directory and is not tree-wide under
+// treewidedoor_qa_test.go's rule. A door variable here is reserved for pins
+// that ARE — `make tree-check` exists so a filtered run still opens the pins
+// whose subject is the whole tree, and a Makefile reader is not one of them.
+// It runs with the package, which is where a pin about one file belongs.
+func TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir(t *testing.T) {
+	t.Parallel()
+
+	b, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := string(b)
+
+	for _, arm := range cxaArms(t, mk) {
+		if !arm.supervised {
+			// Not an arm of this door at all; the derivation above
+			// reports that, and reporting it twice would make one
+			// dropped supervisor read as two findings.
+			continue
+		}
+		if !strings.Contains(arm.line, cxaRoom) {
+			t.Errorf("`make %s` has an arm that does not read the room before it runs:\n  %s\nAdd %s. Without it the arm starts on a box it does not fit in, its tests die on their writes, and what the log holds is a hundred unrelated red names and a held-exec count that measures the box rather than the class (ranger-base-w5z7u). ADR 0085 D5 is that this door refuses rather than running a suite uncovered, and a box too small is the same kind of edge as a kernel it cannot cover.", cxaTarget, arm.line, cxaRoom)
+		}
+		if !strings.Contains(arm.line, cxaTemp) {
+			t.Errorf("`make %s` has an arm that writes into the shared temp directory:\n  %s\nAdd %s. It nests a per-run directory under $TMPDIR and clears it however the arm ends — so an arm killed by a timeout, a panic or a signal still answers for its own residue. internal/posse's TestMain removes its home after m.Run() and therefore cannot, and on a box whose temp room is a shared quota that residue is spent out of everyone's budget (ranger-base-w5z7u).", cxaTarget, arm.line, cxaTemp)
+		}
+	}
+
+	for _, name := range cxaSorted(cxaVarMustHold) {
+		def, ok := cxaMakeVar(mk, name)
+		if !ok {
+			t.Errorf("the Makefile no longer defines %s, and `make %s`'s arms are written in terms of it — an undefined make variable expands to NOTHING, so every arm would still read as an arm and would carry neither the refusal nor its own temp directory (ranger-base-w5z7u).", name, cxaTarget)
+			continue
+		}
+		for _, want := range cxaVarMustHold[name] {
+			if !strings.Contains(def, want) {
+				t.Errorf("%s no longer carries %q:\n  %s = %s\nThe arms name this variable, so emptying or narrowing it drops the guard from all five of them at once with every arm line still looking right (ranger-base-w5z7u).", name, want, name, def)
+			}
+		}
+	}
+
+	// The floor is the one of the three that is a NUMBER, and a floor of
+	// zero turns the refusal off while every line above still passes.
+	if def, ok := cxaMakeVar(mk, "COLDEXEC_TMP_FLOOR_MB"); ok {
+		n, err := strconv.Atoi(strings.TrimSpace(def))
+		if err != nil {
+			t.Errorf("COLDEXEC_TMP_FLOOR_MB is %q, which is not a number of megabytes — the door takes it as -min-temp-mb, where anything it cannot parse is a flag error and anything <= 0 is the check turned off (ranger-base-w5z7u).", def)
+		} else if n <= 0 {
+			t.Errorf("COLDEXEC_TMP_FLOOR_MB is %d, which turns the refusal off: `-min-temp-mb 0` is the door's own spelling for \"do not check\", and every arm line still names $(COLDEXEC_ROOM) and reads as guarded (ranger-base-w5z7u).", n)
+		}
+	}
+}
+
+// cxaMakeVar reads one `NAME ?= value` or `NAME := value` assignment out of a
+// Makefile. Deliberately the simplest reader that can answer this question —
+// the three variables it is asked about are single-line assignments at the
+// left margin, and a reader that handled continuations and overrides would be
+// a second make nobody has a use for.
+func cxaMakeVar(mk, name string) (string, bool) {
+	for _, line := range strings.Split(mk, "\n") {
+		rest, ok := strings.CutPrefix(line, name)
+		if !ok {
+			continue
+		}
+		rest = strings.TrimLeft(rest, " \t")
+		for _, op := range []string{"?=", ":=", "="} {
+			if v, ok := strings.CutPrefix(rest, op); ok {
+				return strings.TrimSpace(v), true
+			}
+		}
+	}
+	return "", false
+}
+
 // TestQAColdexecArmCensusCanStillSayNo drives both readers the two arms above
 // rest on, for both answers. Deliberately not behind a door: it reads planted
 // source and synthetic recipe lines rather than the tree, so nothing derives
@@ -529,6 +662,41 @@ func TestQAColdexecArmCensusCanStillSayNo(t *testing.T) {
 			if got := c.arm.covers(c.pkg); got != c.want {
 				t.Errorf("cxaArm{dir:%q tree:%v}.covers(%q) = %v, want %v", c.arm.dir, c.arm.tree, c.pkg, got, c.want)
 			}
+		}
+	})
+
+	t.Run("the make variable reader", func(t *testing.T) {
+		// cxaMakeVar is the second reader the room arm rests on, and it fails
+		// the same way the others would: a reader that stops matching reports
+		// "the Makefile no longer defines this", which reds — so the direction
+		// worth proving here is the quiet one, a reader that answers for a
+		// variable it was not asked about.
+		const mk = "COLDEXEC_DELAY ?= 2.5s\n" +
+			"COLDEXEC_TMP_FLOOR_MB ?= 2048\n" +
+			"COLDEXEC_TMP   := T=$$(mktemp -d x) && trap 'rm -rf \"$$T\"' EXIT && TMPDIR=$$T\n" +
+			"COLDEXEC_ROOM  := -min-temp-mb $(COLDEXEC_TMP_FLOOR_MB)\n" +
+			"COLDEXEC_BIN   := bin/coldexec\n"
+		for _, c := range []struct {
+			name string
+			var_ string
+			want string
+			ok   bool
+		}{
+			{"a ?= assignment", "COLDEXEC_TMP_FLOOR_MB", "2048", true},
+			{"a := assignment, padded", "COLDEXEC_ROOM", "-min-temp-mb $(COLDEXEC_TMP_FLOOR_MB)", true},
+			{"a value carrying its own operators", "COLDEXEC_TMP", "T=$$(mktemp -d x) && trap 'rm -rf \"$$T\"' EXIT && TMPDIR=$$T", true},
+			// The one that would make the room arm silent: a prefix of a
+			// real name must not answer with that name's value, or deleting
+			// COLDEXEC_ROOM reads as COLDEXEC_ROOM still being there.
+			{"a variable that is not there", "COLDEXEC_FLOOR", "", false},
+			{"a name that is a prefix of a real one", "COLDEXEC_TM", "", false},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				got, ok := cxaMakeVar(mk, c.var_)
+				if ok != c.ok || got != c.want {
+					t.Errorf("cxaMakeVar(%q) = %q, %v; want %q, %v", c.var_, got, ok, c.want, c.ok)
+				}
+			})
 		}
 	})
 
