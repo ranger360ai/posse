@@ -30,17 +30,22 @@ package posse
 // probe in this package passes when a command SUCCEEDS, so a probe that
 // cannot run at all reads as a failure and is loud. This one passes when a
 // command FAILS, so anything that stops the create from being attempted —
-// a target that is not there, a stub binary that swallows its argv, a
-// namespace that never went up — reads as the wall holding. Three answers
-// and not two, then (ranger-base-fm4p's rule, one file over):
+// a target that is not there, a stub binary that swallows its argv, a prefix
+// that prints its argv back instead of running it, a namespace that never
+// went up — reads as the wall holding. Three answers and not two, then
+// (ranger-base-fm4p's rule, one file over):
 //
 //   - the BASELINE, outside the wall: posse creates and removes the same path
 //     itself first. A path this process cannot write unwalled says nothing
 //     about a wall, so that reading is NOT MEASURED rather than a pass.
 //   - the MARKER, inside it: the walled command echoes a token before the
-//     create, so a run that printed nothing never reached the shell behind
+//     create, so a run that did not print it never reached the shell behind
 //     the prefix. Also NOT MEASURED — and it is the arm a stub `bwrap` in a
-//     fixture lands on, exit 0 with no namespace and no create.
+//     fixture lands on, exit 0 with no namespace and no create. The token is
+//     a whole LINE and not a substring, because the marker is also a literal
+//     in the argv the prefix is handed: a prefix that PRINTS its argument
+//     instead of running it would otherwise be read as the wall refusing a
+//     create nobody attempted (wallWitnessMarkerPrinted, ranger-base-sjjf4).
 //
 // Then a create that did not land, with the baseline passed and the marker
 // printed, is the wall refusing the write and nothing else.
@@ -249,7 +254,7 @@ func wallWitnessRow(w WallRender, target string) (why, unmeasured string) {
 	case landed:
 		return fmt.Sprintf("%s is WRITABLE under the %s wall this launch runs (%s): the witness created %s behind the rendered prefix.%s This deny is realized by nothing — the row said `%s` because the TIER is available on this host, which is a claim about the host and not about this wall (ADR 0086 D5). A whole-tree write deny drops `cwd` from the writable set and every git dir of this session with it (D3), so a create that LANDS means the set, the carve-out's order or the mount list put one of them back",
 			AbbrevHome(target), w.Mechanism, AbbrevHome(w.Artifact), AbbrevHome(path), removeErr, wholeTreeSeatbeltClaim), ""
-	case !strings.Contains(out, marker):
+	case !wallWitnessMarkerPrinted(out, marker):
 		return "", "NOT WITNESSED — the command behind the rendered " + w.Mechanism + " prefix (" + AbbrevHome(w.Artifact) +
 			") never printed its marker, so the create was not attempted and no wall was measured: " + reachProbeReason(out, err) +
 			". A prefix that runs nothing refuses every write there is, which is why this reads as an abstention and not as a pass (ADR 0086 D5)"
@@ -269,12 +274,41 @@ func wallWitnessRow(w WallRender, target string) (why, unmeasured string) {
 // The marker is echoed BEFORE the create and is not the path: a refusal
 // prints the path back in the kernel's own diagnostic, so a marker spelled
 // out of the file name would be "found" in the message that says the create
-// failed.
+// failed. It is echoed ALONE, which is what lets the control read a whole
+// line rather than a substring (wallWitnessMarkerPrinted).
 func wallWitnessProbe(w WallRender, path, marker string) (string, error) {
 	inner := "echo " + marker + "; : > " + shellQuote(path)
 	line := w.Prefix + "/bin/sh -c " + shellQuote(inner)
 	out, err := protocolCmd(exec.Command("/bin/sh", "-c", line)).CombinedOutput()
 	return string(out), err
+}
+
+// wallWitnessMarkerPrinted is the marker control, and it is a whole LINE and
+// never a substring (ranger-base-sjjf4 finding 1, out of ranger-base-7urt1).
+//
+// The marker is a literal INSIDE the argv handed to the prefix (`echo
+// <marker>; : > <path>`), so a prefix that PRINTS its argument instead of
+// running it prints the marker too — and `strings.Contains` cannot tell the
+// shell behind the prefix echoing the marker from the prefix echoing the
+// command it was given. That reading is the exact false pass this file exists
+// to prevent: nothing ran, no file landed, and the row would have said the
+// wall refused a create nobody attempted. `/usr/bin/echo` and `/usr/bin/env
+// printf %s\n` are the two shapes MEASURED 2026-11-11, and both abstain now.
+//
+// A LINE works because the inner command echoes the marker ALONE: a run that
+// reached the shell prints a line that IS the marker, while a prefix echoing
+// its argv prints the marker with the rest of the inner command around it on
+// the same line — or, one argument per line, with `echo ` still in front of
+// it. What this cannot read is a prefix that prints the marker on a line of
+// its own with nothing else, which is a prefix written to defeat this
+// control rather than one that merely does not run its argument.
+func wallWitnessMarkerPrinted(out, marker string) bool {
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.TrimSpace(ln) == marker {
+			return true
+		}
+	}
+	return false
 }
 
 // wallWitnessNonce is the per-probe suffix. The pid alone is what

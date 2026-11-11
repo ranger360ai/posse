@@ -236,6 +236,13 @@ func TestQAStaleLabelRefusalConcedesAForegroundHerdrDidNotReport(t *testing.T) {
 	for name, foreground := range map[string]string{
 		"no foreground processes": "34661|",
 		"no shell_pid":            "0|82630",
+		// The third shape, and the only one of the three that the pid
+		// comparison cannot answer on its own: foreground rows with no `pid`
+		// at all, beside a shell_pid that is missing too. Every pid then
+		// matches the shell and every reported pane would read promptable
+		// (ranger-base-sjjf4 finding 7 — the arm the old `ShellPID == 0`
+		// conjunct was written for and no fixture reached).
+		"no pid in the foreground rows": "0|0",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

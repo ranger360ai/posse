@@ -208,6 +208,17 @@ func TestQAAProcessReadingThatCannotBeTakenIsNotEvidenceOfAShell(t *testing.T) {
 	if p := (PaneProcesses{Foreground: []int{34661}}); p.AtShellPrompt() {
 		t.Error("a process_info with no shell_pid has nothing to compare against")
 	}
+	// And the shape that moved output really produces, which is the one the
+	// comparison above cannot answer: rows that lost their `pid` key, beside
+	// a shell_pid that lost its own. Every foreground pid then "equals" the
+	// shell and every reported pane reads promptable — so a pid of 0 is a pid
+	// NOBODY reported, whatever shell_pid says (ranger-base-sjjf4 finding 7).
+	if p := (PaneProcesses{Foreground: []int{0}}); p.AtShellPrompt() {
+		t.Error("a foreground pid of 0 was read as the pane's own shell — herdr cannot report a foreground pid of 0, so this is an answer whose shape moved, and UNKNOWN is never a yes")
+	}
+	if p := (PaneProcesses{ShellPID: 34661, Foreground: []int{34661, 0}}); p.AtShellPrompt() {
+		t.Error("one unreported pid beside the shell was read as a bare prompt")
+	}
 	if p := (PaneProcesses{ShellPID: 34661, Foreground: []int{34661, 82630}}); p.AtShellPrompt() {
 		t.Error("one non-shell process in the foreground is a CLI holding the tty")
 	}

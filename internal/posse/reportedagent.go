@@ -597,12 +597,26 @@ type PaneProcesses struct {
 // moved into a box where every reported label reads stale and no reported
 // pane is ever promptable. Both are UNKNOWN here, and UNKNOWN refuses
 // nothing — the rule every reading in this repo keeps.
+//
+// WHICH IS READ AS A ZERO PID AND NOT AS A ZERO shell_pid
+// (ranger-base-sjjf4 finding 7, out of ranger-base-7urt1). This guard used
+// to open with `p.ShellPID == 0`, and no input could reach it: a foreground
+// pid herdr really reported is never 0, so the comparison below already
+// answers UNKNOWN for a missing shell_pid — including the "no shell_pid" row
+// its own pin was named for, whose fixture is `shell_pid 0` beside
+// `foreground [82630]`. The ONE input that reached the conjunct was a
+// foreground pid of 0, which it read as UNKNOWN only because the shell_pid
+// happened to be missing too. That input is precisely what a herdr whose
+// foreground rows lost their `pid` key produces — the moved output shape
+// this paragraph is about — so the reading is kept where the PRODUCER can
+// reach it: a foreground pid of 0 is a pid nobody reported, whatever
+// shell_pid says, and a missing shell_pid is still never a yes either way.
 func (p PaneProcesses) AtShellPrompt() bool {
-	if p.ShellPID == 0 || len(p.Foreground) == 0 {
+	if len(p.Foreground) == 0 {
 		return false
 	}
 	for _, pid := range p.Foreground {
-		if pid != p.ShellPID {
+		if pid == 0 || pid != p.ShellPID {
 			return false
 		}
 	}

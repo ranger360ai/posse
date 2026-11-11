@@ -258,6 +258,27 @@ same under the session's git objects dir (D3). Both must fail.
   outside every blanket temp grant. That is this record's own caveat about
   its "move main" row, found three more times by a probe rather than by a
   reader.
+- **Amended 2026-11-11 — the MARKER is a whole output LINE and not a
+  substring (ranger-base-sjjf4 finding 1, out of ranger-base-7urt1).** The
+  as-built enumeration above is short by one shape: a prefix that PRINTS its
+  argument instead of running it. The marker token is a literal inside the
+  argv the prefix is handed (`echo <marker>; : > <path>`), so `/usr/bin/echo`
+  and `/usr/bin/env printf '%s\n'` both print it with nothing run, and a
+  substring reading cannot tell the shell behind the prefix echoing the
+  marker from the prefix echoing the command it was given — the create was
+  never attempted, no file landed, and the row read "the wall refused it",
+  which is the exact false pass this control exists to prevent. The inner
+  command echoes the marker ALONE, so a whole-LINE reading
+  (`wallWitnessMarkerPrinted`, `internal/posse/wallwitness.go`) separates the
+  two and leaves all three shipped stub shapes abstaining as they were. It
+  was never reachable through the production render — the only two producers
+  of `WallRender.Prefix` are `BwrapPrefix` and `SeatbeltPrefix`, and neither
+  binary echoes its argv on any failure — so what this repaired is the
+  STRENGTH of the one control standing between a negative probe and a green
+  row over a seat with no wall, in a package that already stubs the bwrap
+  binary in a fixture. Both shapes are rows of
+  `TestQAWallWitnessAbstainsWhereNothingRanBehindThePrefix` now, and each
+  reds the substring reading.
 
 **D6. The fixture-git lesson (ranger-base-xa2e3, and ppnds finding 3).**
 R0 escaped because no pin ever drove a whole-tree-deny PID in a linked

@@ -14,9 +14,12 @@ package posse
 // replayed tree is red — which is what git's "no textual conflict" cannot
 // see and what nothing compiled before this landed.
 //
-// MUTATION-CHECKED 2026-11-11, all three against the six landing tests here
-// (the three that call runLandCheckWithin directly, and the no-check test,
-// are deliberately insensitive to the first two):
+// MUTATION-CHECKED 2026-11-11, all three against the six landing tests this
+// file held THEN — the count is that measurement's corpus and not a running
+// total, and ranger-base-sjjf4 has since added five arms at the bottom, each
+// naming the mutant it kills (the three that call runLandCheckWithin
+// directly, and the no-check test, are deliberately insensitive to the first
+// two):
 //
 //   - the gate not called at all reds six of them.
 //   - blocking on ANY red rather than on red-over-green reds exactly
@@ -37,9 +40,11 @@ package posse
 // same sentence.
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -527,5 +532,294 @@ func TestALandCheckBlockReProbesOncePerBaseMovement(t *testing.T) {
 	// And main never took the work.
 	if _, err := os.Stat(filepath.Join(repo, "a.txt")); err == nil {
 		t.Error("the branch's file reached main over six blocked passes")
+	}
+}
+
+// ─── the decisions the first round of pins left to a reader ──────────────────
+//
+// The five arms below are ranger-base-sjjf4, out of ranger-base-7urt1's
+// attack on this file's own close: every one of them is a decision
+// landcheck.go states in prose and nothing compiled. Each names the mutant it
+// kills, because a pin over a decision that reds nothing is the shape the
+// decision escaped in.
+
+// THE OPT-IN IS THE FILE AND NOT THE BIT (landCheckShipped), which is this
+// file's one stated divergence from ADR 0087 D1 ("a repo opts in by shipping
+// an EXECUTABLE at …") — and the close that landed it named the literal
+// reading as a one-liner the architecture lane may want, so the gap sat
+// exactly where the next reader would act.
+//
+// MUTANT KILLED: `&& fi.Mode().Perm()&0o111 != 0` appended to
+// landCheckShipped's return. Nothing else in the file sees it, because
+// shipLandCheck chmods every fixture 0755.
+//
+// NON-REGULAR IS NOT SHIPPED is the other half, and it is the loud direction
+// the other way: a FIFO at the path would block the launcher for
+// generatorTimeout while holding the fleet lock and answer nothing
+// (ranger-base-gs9r's shape one function over), and a directory would be
+// exec'd. MUTANT KILLED: `.IsRegular()` dropped for `err == nil`.
+func TestLandCheckShippedReadsTheFileAndNotItsMode(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if landCheckShipped(dir) {
+		t.Fatal("a repo with nothing at the path reads as opted in — that is every repo that has not shipped a check")
+	}
+	path := filepath.Join(dir, landCheckScript)
+
+	// A regular file with no execute bit is an OPT-IN. The mode is left to
+	// exec, whose refusal is a "could not answer" that lands with a ⚠ naming
+	// the file (D3's bottom row); reading the missing bit as "this repo has
+	// no check" is the one failure that silently restores the a2327230 hole
+	// — judged nothing, said nothing.
+	write(t, path, "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !landCheckShipped(dir) {
+		t.Error("a check shipped without the execute bit reads as no check at all — a file at a path with posse's own prefix in it is an opt-in whatever its mode, and the quiet reading is the one that restores the hole")
+	}
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !landCheckShipped(dir) {
+		t.Error("the ordinary shape — a regular file with the bit — does not read as shipped")
+	}
+
+	// And the two shapes that are NOT an opt-in, for the reason the bit is
+	// not asked: both of them would be run.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(path, 0o755); err != nil {
+		t.Skipf("NOTHING MEASURED about the non-regular arm: this filesystem will not hold a FIFO (%v)", err)
+	}
+	if landCheckShipped(dir) {
+		t.Error("an executable FIFO reads as a shipped check — opening it blocks the launcher for the whole generator timeout while it holds the fleet lock, and answers nothing")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if landCheckShipped(dir) {
+		t.Error("a DIRECTORY at the path reads as a shipped check, and the launcher would exec it")
+	}
+}
+
+// The same divergence through a LANDING, which is what makes it a decision
+// rather than a predicate: a base whose copy of the check cannot be exec'd
+// LANDS, and says so. The loud direction, end to end — ⚠ naming the file,
+// nothing recorded, and the work on main.
+//
+// MUTANT KILLED: the same exec-bit conjunct. With it, landCheckShipped reads
+// false, landCheckGate returns all three zero, and the landing is silent —
+// which is the a2327230 night with a check in the repo.
+func TestABaseWhoseCheckHasNoExecuteBitLandsAndSaysSo(t *testing.T) {
+	t.Parallel()
+	a, repo, counter := landCheckRepo(t)
+	tr := landCheckTree(t, a, repo, "s-1", "a.txt", "the seat's own work\n")
+	commitIn(t, repo, "b.txt", "the operator's own work\n", "main: moved on")
+	// The BASE's copy only, which is the copy posse runs (D1). The branch is
+	// untouched, so nothing here is about whose bytes get judged.
+	if err := os.Chmod(filepath.Join(repo, landCheckScript), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !landCheckShipped(repo) {
+		t.Fatal("fixture: the base reads as shipping no check, so this measures the arm where no check exists")
+	}
+	before := landCheckRuns(t, counter)
+
+	o, err := MergeSessionWork(a, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.Merged {
+		t.Fatalf("a check posse could not exec blocked a landing: %s", o.Reason)
+	}
+	for _, want := range []string{"could not judge", landCheckScript, "permission denied", "landed unjudged"} {
+		if !strings.Contains(o.LandCheckWarning, want) {
+			t.Errorf("the ⚠ does not say %q — a repo that opted in and got no verdict is the one thing this must not do quietly:\n%q", want, o.LandCheckWarning)
+		}
+	}
+	if n := landCheckRuns(t, counter) - before; n != 0 {
+		t.Errorf("the check ran %d times over a file nothing can exec", n)
+	}
+	if got := recordedLandCheck(t, repo); got != "" {
+		t.Errorf("a check that answered nothing recorded %q", got)
+	}
+	if body, err := os.ReadFile(filepath.Join(repo, "a.txt")); err != nil || string(body) != "the seat's own work\n" {
+		t.Errorf("the work did not land (%v)", err)
+	}
+}
+
+// D4 IS KEYED ON THE TREE AND NOT THE COMMIT, because the check reads BYTES —
+// stated in landcheck.go, and true of every fixture either way until this
+// one: a fast-forward landing leaves the branch tip and the new base at the
+// same commit, so the two keys are the same string and both readings agree.
+//
+// The fixture that discriminates is a base that MOVES to a commit whose tree
+// was already judged — an `--allow-empty` commit here, a revert-and-reapply
+// in the field. The tree-keyed lookup hits; the commit-keyed one pays a full
+// base probe (checkout --detach, run, restore) for bytes it has already read.
+//
+// MUTANT KILLED: the `^{tree}` suffix dropped from revTreeID's rev-parse. The
+// run count is the discriminator — the record's own first field is written
+// and read by the mutated function, so an assertion spelled through revTreeID
+// moves with it and measures nothing.
+func TestABaseThatMovesToAnAlreadyJudgedTreeIsNotJudgedAgain(t *testing.T) {
+	t.Parallel()
+	a, repo, tr, counter := landCheckBlockedTree(t)
+	before := landCheckRuns(t, counter)
+
+	if o, err := MergeSessionWork(a, tr); err != nil || o.Merged {
+		t.Fatalf("fixture: the first attempt was not blocked (%v, %+v)", err, o)
+	}
+	if first := landCheckRuns(t, counter) - before; first != 2 {
+		t.Fatalf("fixture: the first attempt ran the check %d times, want 2 (the replayed tip, then the base nobody had on record)", first)
+	}
+	base := mustGit(t, repo, "rev-parse", "HEAD")
+	// The record is a TREE id, which is readable without revTreeID: it is
+	// not the commit the base is at.
+	rec := strings.Fields(recordedLandCheck(t, repo))
+	if len(rec) != 2 || rec[0] == base {
+		t.Fatalf("the record reads %q over a base at %s — D4 keys on the tree, and a record keyed on the commit re-probes a tree it has already read", recordedLandCheck(t, repo), abbrevSHA(base))
+	}
+	if rec[0] != mustGit(t, repo, "rev-parse", base+"^{tree}") {
+		t.Fatalf("the record's key is %q, which is neither the base's commit nor its tree", rec[0])
+	}
+
+	// The base moves to a NEW COMMIT with the SAME TREE. Nothing about the
+	// bytes the check reads has changed, so nothing is worth re-running.
+	mustGit(t, repo, "commit", "-q", "--allow-empty", "-m", "main: a commit that changes no bytes")
+	moved := mustGit(t, repo, "rev-parse", "HEAD")
+	if moved == base {
+		t.Fatal("fixture: the base did not move, so this is the unmoved-base arm one test up")
+	}
+	if mustGit(t, repo, "rev-parse", moved+"^{tree}") != rec[0] {
+		t.Fatal("fixture: the empty commit changed the tree, so the lookup would miss for a reason that is not the key")
+	}
+	runs := landCheckRuns(t, counter)
+
+	if o, err := MergeSessionWork(a, tr); err != nil || o.Merged {
+		t.Fatalf("the second attempt landed a replay the first one refused (%v, %+v)", err, o)
+	}
+	if n := landCheckRuns(t, counter) - runs; n != 1 {
+		t.Errorf("the attempt over a base whose TREE was already judged ran the check %d times, want 1 (the replayed tip alone) — the record is keyed on the tree because the check reads bytes, and a commit-keyed record pays a whole base probe per empty commit, revert-and-reapply or amended base", n)
+	}
+}
+
+// D5's RESET ASKS THE HEAD FIRST, and landcheck.go calls that "not a
+// formality": `reset --hard` moves whatever HEAD names, so over a DETACHED
+// session tree it would move HEAD and leave the BRANCH on the replayed tip —
+// the undo silently not happening, which is the one outcome worse than not
+// attempting it.
+//
+// IT IS REACHABLE, which is why this is a pin and not a comment:
+// baseLandCheck returns the base's verdict off the RECORD before reaching its
+// own copy of this guard, so a detached session tree whose base tree is on
+// record green with a red replay arrives here detached.
+//
+// MUTANT KILLED: resetReplay's symbolic-ref guard replaced by a dead branch.
+// Both halves red — the refusal sentence the caller lands with, and the
+// branch ref that a reset over a detached HEAD leaves standing on the replay.
+func TestResetReplayRefusesATreeThatIsNotOnItsOwnBranch(t *testing.T) {
+	t.Parallel()
+	a, repo, _ := landCheckRepo(t)
+	tr := landCheckTree(t, a, repo, "s-1", "a.txt", "the seat's own work\n")
+	pre := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	// A second commit, so a reset that DID happen would move something and
+	// the assertion below is not vacuous.
+	commitIn(t, tr.Path, "c.txt", "what a replay would have written\n", "s-1: the replayed tip")
+	tip := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	mustGit(t, tr.Path, "checkout", "--detach", "-q")
+	if _, err := git(tr.Path, "symbolic-ref", "--short", "HEAD"); err == nil {
+		t.Fatal("fixture: the session tree is still on its branch, so nothing here measures the detached arm")
+	}
+
+	why := resetReplay(tr, pre)
+	if why == "" {
+		t.Fatal("a reset over a DETACHED session tree reported success — it moved HEAD and left the branch on the replayed tip, which is the undo silently not happening (ADR 0087 D5)")
+	}
+	for _, want := range []string{AbbrevHome(tr.Path), tr.Branch, "a reset would not move the branch"} {
+		if !strings.Contains(why, want) {
+			t.Errorf("the refusal does not name %q — the caller lands with this sentence instead of reporting a block it did not make:\n%s", want, why)
+		}
+	}
+	if ref := refSHA(repo, tr.Branch); ref != tip {
+		t.Errorf("%s is at %s after a refused reset, want %s", tr.Branch, abbrevSHA(ref), abbrevSHA(tip))
+	}
+	if head := mustGit(t, tr.Path, "rev-parse", "HEAD"); head != tip {
+		t.Errorf("the detached HEAD moved to %s, want %s — the refusal is "+
+			"that nothing was touched", abbrevSHA(head), abbrevSHA(tip))
+	}
+
+	// baseLandCheck's own copy of the same guard, unpinned for the same
+	// reason: the one tree the launcher may write is the session tree, and
+	// nothing may detach a tree whose HEAD is not where this function would
+	// put it back. A container-tier session works detached on purpose.
+	v, said := baseLandCheck(tr, tip)
+	if v != landUnanswered {
+		t.Errorf("the base probe answered %s over a tree it must not detach — restoring is the half that must be guaranteed, and it cannot be", v)
+	}
+	for _, want := range []string{AbbrevHome(tr.Path), tr.Branch, "could not be checked out there to judge it"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the base probe's cause does not name %q:\n%s", want, said)
+		}
+	}
+	if head := mustGit(t, tr.Path, "rev-parse", "HEAD"); head != tip {
+		t.Errorf("the refused base probe moved the tree to %s", abbrevSHA(head))
+	}
+}
+
+// AND THE ⚠ REACHES A SURFACE. The warning was pinned on the MergeOutcome
+// FIELD alone — four print sites and no test over any of them, so deleting
+// the block that prints it red nothing (ranger-base-sjjf4 finding 6). Two of
+// the four are cheap to reach and are reached here: the operator's own
+// `posse worktrees --land`, and the kill's line set.
+//
+// The other two (dispatch.go, landsweep.go) print the same field from the
+// same outcome one call later; they are named on the bead rather than pinned,
+// because the gap they share is this package's shape and not this decision's
+// — RegeneratedNote, the sibling note these four were modelled on, is
+// asserted at no print surface either.
+func TestTheLandCheckWarningReachesTheSurfacesThatOweIt(t *testing.T) {
+	t.Parallel()
+	// A kill's line set (KillLanding.Lines): the fourth sentence, in the
+	// order it happened — after the generated-file note, before what became
+	// of the tree.
+	l := &KillLanding{Merge: MergeOutcome{
+		Branch:           "posse/s-1",
+		Regenerated:      []string{"docs/notes.d/README.md"},
+		LandCheckWarning: "the land check could not judge the replay (fixture)",
+	}}
+	lines := l.Lines()
+	at := -1
+	for i, ln := range lines {
+		if strings.Contains(ln, l.Merge.LandCheckWarning) {
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Errorf("a kill that landed a replay nothing judged green said nothing about it — the kill's line set is the one record of it:\n%v", lines)
+	} else if at == 0 || !strings.Contains(lines[at-1], "reproduced on") {
+		t.Errorf("the ⚠ is not in the order it happened (the generated-file note, then the check):\n%v", lines)
+	}
+
+	// And the operator's own landing command, which prints it beside the
+	// outcome it belongs to.
+	a, repo, _ := landCheckRepo(t)
+	landCheckTree(t, a, repo, "s-1", "a.txt", "the seat's own work\n")
+	commitIn(t, repo, "broken", "somebody else broke the base\n", "main: moved on, red")
+	var out bytes.Buffer
+	// force, because the gate `posse worktrees --land` reads is the branch's
+	// bead record and this fixture has none — which is unaccountedFor's
+	// subject and not this one's.
+	if err := LandSessionTrees(&out, a, []string{repo}, true); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "already red") || !strings.Contains(got, landCheckScript) {
+		t.Errorf("`posse worktrees --land` landed over a red base and said nothing about it — the human reading this terminal is the whole audience this surface has:\n%s", got)
 	}
 }

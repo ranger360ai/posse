@@ -47,6 +47,8 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -320,6 +322,16 @@ func TestQAWallWitnessAbstainsWhereNothingRanBehindThePrefix(t *testing.T) {
 		{"a stub that swallows the command and exits 0", "/usr/bin/env true "},
 		{"a wall that exits nonzero before running anything", "/usr/bin/env false "},
 		{"a prefix that resolves to nothing", "/nonexistent/posse-no-such-wall "},
+		// And the two that defeated the control while it was a SUBSTRING
+		// (ranger-base-sjjf4 finding 1): the marker is a literal inside the
+		// argv the prefix is handed, so a prefix that PRINTS its argument
+		// prints the marker without running anything — and the row read "the
+		// wall refused the create" over a create nobody attempted, which is
+		// the one false pass this file exists to prevent. Both spellings,
+		// because they print it differently: `echo` puts the whole inner
+		// command on one line, `printf %s\n` one argument per line.
+		{"a prefix that echoes its argv instead of running it", "/usr/bin/echo "},
+		{"a prefix that prints its argv one argument per line", "/usr/bin/env printf '%s\\n' "},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
 			for _, target := range []string{f.tree, f.repo} {
@@ -370,6 +382,90 @@ func wwStubApplyRefusal(t *testing.T, why string) {
 	sandboxApplyRefusal = func() string { return why }
 	bwrapApplyRefusal = func() string { return why }
 	t.Cleanup(func() { sandboxApplyRefusal, bwrapApplyRefusal = sb, bw })
+}
+
+// ─── which wall could not be put up, and which build has no arm for it ──────
+
+// wallWitnessUnmeasured's TWO sentences, one per mechanism, and the one this
+// host does not have driven from the other one (ranger-base-sjjf4 finding 2,
+// out of ranger-base-7urt1).
+//
+// The function is two whole sentences rather than one with the binary
+// substituted in because what the abstention IS differs — applying a profile
+// on one host, unsharing a mount namespace on the other — and so does the
+// clause that says the launch is unaffected, which is the part an operator
+// acts on. Its ONE call site keys on WallMechanism(), so one of the two was
+// dead on every host and NOTHING read either: the abstention arm above
+// asserts `NOT WITNESSED` and never which wall.
+//
+// THROUGH applyWallWitness AND NOT THROUGH THE FUNCTION, because the thing
+// that escaped is the row an operator reads: wallWitnessAbstain wraps the
+// sentence in the availability claim and the mechanism, and the door is what
+// decides which sentence a mechanism gets. wallMechanismForTest is how every
+// other mechanism-keyed LAUNCH arm in this package reaches the other host's
+// arm (bwrapprepauthority_qa_test.go, walllaunchmechanism_qa_test.go), and
+// wall.go's own comment claims exactly that drivability for this function.
+//
+// The apply is stubbed REFUSED, so neither arm renders anything and neither
+// needs this host's wall to be real — the one precondition left is the tier,
+// because wallRendered is what puts a launch behind an L2 wall at all.
+func TestQAWallWitnessAbstentionNamesTheWallThisProcessCannotPutUp(t *testing.T) {
+	// No t.Parallel: wwTempRoot and wallMechanismForTest write process state.
+	if !AvailableCages[CageSeatbelt] {
+		t.Skip("NOTHING MEASURED: this host does not provide the seatbelt tier, so no launch here is behind an L2 wall at all (wallRendered)")
+	}
+	f := wwFixtureIn(t, wwTempRoot(t))
+	for _, tc := range []struct{ goos, mech, says, unaffected, notTheOther string }{
+		{"linux", WallBwrap, "put up a bwrap mount namespace", "its bwrap is typed into a pane", "apply a seatbelt profile"},
+		{"darwin", WallSandboxExec, "apply a seatbelt profile", "its sandbox-exec is typed into a herdr pane", "put up a bwrap mount namespace"},
+	} {
+		t.Run(tc.goos, func(t *testing.T) {
+			wallMechanismForTest(t, tc.goos)
+			if got := WallMechanism(); got != tc.mech {
+				t.Fatalf("a launch pinned to %s reads mechanism %q, want %s — the fixture is not driving the arm it names", tc.goos, got, tc.mech)
+			}
+			wwStubApplyRefusal(t, "the kernel refused the apply (fixture)")
+			p := wwClaim(CageSeatbelt, "Edit")
+			f.a.applyWallWitness(p, f.ag, f.rt, f.tree)
+			row := p.Realized["Edit"].Detail
+			if len(p.Degraded) != 0 || len(p.Unrealized) != 0 {
+				t.Errorf("an abstention degraded the launch: %v %v", p.Degraded, p.Unrealized)
+			}
+			for _, want := range []string{"NOT WITNESSED", "(" + tc.mech + ")", tc.says, tc.unaffected, "the kernel refused the apply (fixture)"} {
+				if !strings.Contains(row, want) {
+					t.Errorf("the %s abstention does not say %q — an operator reads this row to decide whether to re-run `posse gates` outside the cage, and a sentence about the other host's mechanism tells them to do the wrong thing:\n%s", tc.mech, want, row)
+				}
+			}
+			if strings.Contains(row, tc.notTheOther) {
+				t.Errorf("the %s abstention carries the OTHER mechanism's sentence (%q), so the two arms have collapsed into one:\n%s", tc.mech, tc.notTheOther, row)
+			}
+			if strings.Contains(row, "witnessed at launch") {
+				t.Errorf("an abstention must not read like the pass: %q", row)
+			}
+		})
+	}
+	wwNoWitnessFileLeft(t, f.root)
+}
+
+// wallApplyRefusalOn's THIRD arm: a mechanism this build renders no wall for.
+// Its only caller hands it WallMechanism(), which answers one of two
+// mechanisms or "", so nothing ever drove the default — and the sentence is
+// one a ROW prints, so a reader will meet it on a host posse was not built
+// for (ranger-base-sjjf4 finding 2).
+//
+// Asked of the function and not through a launch, which is the whole of the
+// honest reading: there is no host here to put behind a mechanism that does
+// not exist, and wallMechanismForTest pins a GOOS rather than a mechanism.
+func TestQAWallApplyRefusalAnswersAMechanismThisBuildHasNoArmFor(t *testing.T) {
+	t.Parallel()
+	for _, mech := range []string{"", "no-such-mechanism"} {
+		why := wallApplyRefusalOn(mech)
+		for _, want := range []string{"this build renders no wall for mechanism", strconv.Quote(mech), runtime.GOOS, "ADR 0080 D16/D18"} {
+			if !strings.Contains(why, want) {
+				t.Errorf("wallApplyRefusalOn(%q) does not say %q — a mechanism with no arm is a wall nothing puts up, and the row that says so has to name which mechanism and which host:\n%s", mech, want, why)
+			}
+		}
+	}
 }
 
 // The baseline, which is the other way a create fails for a reason that is
