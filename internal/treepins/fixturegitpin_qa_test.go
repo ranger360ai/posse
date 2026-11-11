@@ -79,7 +79,11 @@ package treepins
 // another file. A census keyed on any of those three alone reports the wrong
 // set, so the rule below reads all three:
 //
-//  1. the child's binary is the bare literal "git";
+//  1. the child's binary resolves to the bare name "git" — spelled inline, or
+//     reached one hop through an identifier assigned in the same function
+//     (`gitBin := "git"`), because the shape this pin MANDATES is itself
+//     indirect and an indirected bare name is the same defect
+//     (ranger-base-l0bep);
 //  2. its `.Env` is assigned, in the function that exec'd it, by an identifier
 //     match (protocolchildpath_qa_test.go's rule — two functions in one file
 //     routinely both call their child `cmd`), to a value that either names
@@ -105,7 +109,13 @@ package treepins
 // NOT CLAIMED: that the 39 sites in internal/posse are safe on any other box,
 // or that a seat whose PATH leads with a gates dir is the only way to reach
 // the shim. Both are properties of the environment, not of this tree, which is
-// exactly why arm 1 counts them rather than converting them.
+// exactly why arm 1 counts them rather than converting them. Nor that a
+// binary reached through MORE than one hop is read — a function parameter, a
+// package-level var, a second identifier — which is the same depth the `.Env`
+// half has and is limited for the same reason: a hop further starts reading
+// other packages' helpers, and nothing in the tree needs it. What the one hop
+// buys is symmetry, so neither half of the subject can be restored by moving
+// a token out of the call (ranger-base-l0bep).
 
 import (
 	"fmt"
@@ -132,16 +142,29 @@ import (
 // table above. Listing them would flag the whole green half.
 var fgpUnpinVars = []string{"GIT_CONFIG_GLOBAL=", "GIT_CONFIG_SYSTEM=", "GIT_CONFIG_NOSYSTEM="}
 
+// fgpKid is one bare-name git child of a function, as the first pass over
+// that function's body found it: the line of its exec call, and the
+// identifier the bare name was reached through ("" when the call spells the
+// literal itself).
+type fgpKid struct {
+	line int
+	via  string
+}
+
 // fgpSite is one bare-name git child, with the verdict on its environment.
 type fgpSite struct {
 	file, fn string
 	line     int
 	why      string // "" when the child still carries the launcher's pin
+	via      string // the identifier the bare name was reached through, "" when inline
 	immune   bool   // its package steps out from behind the gates in TestMain
 	local    bool   // its own function strips the gates from $PATH
 }
 
 func (s fgpSite) String() string {
+	if s.via != "" {
+		return fmt.Sprintf("%s:%d (%s): its binary is the bare name \"git\" bound to %s, and %s", s.file, s.line, s.fn, s.via, s.why)
+	}
 	return fmt.Sprintf("%s:%d (%s): %s", s.file, s.line, s.fn, s.why)
 }
 
@@ -205,6 +228,45 @@ func fgpStringLit(e ast.Expr, want string) bool {
 	}
 	v, err := strconv.Unquote(bl.Value)
 	return err == nil && v == want
+}
+
+// fgpBareGit reports whether e names the bare binary "git", and the
+// identifier it was reached through ("" when the literal is in the call
+// itself).
+//
+// ONE HOP, by the same rule and to the same depth as the `.Env` half below:
+// an *ast.Ident first argument is resolved through the assignments to that
+// name in the exec'ing function, and the accept test applied to each is the
+// SAME fgpStringLit the inline spelling gets. So `gitBin := "git"` followed by
+// `exec.Command(gitBin, …)` is read as what it is, and `gitBin :=
+// gitOutsideGates(t)` — a call, not a literal — is not. ANY assignment
+// resolving to the literal is enough: a name bound to the bare word on even
+// one path can reach the shim on that path.
+//
+// This exists because the fix this pin prescribes is itself an indirection
+// (`gitBin := gitOutsideGates(t)`, then exec the variable), so every converted
+// site reads `exec.Command(<ident>, …)`. Without the hop, an author editing
+// one of those sites — or copying the pattern into a package with no
+// gitOutsideGates helper — is one token from the defect and this census stays
+// green over it. MEASURED 2026-11-10 by the verify lane (ranger-base-b079k):
+// a converted site reverted to `gitBin := "git"` read this census ok 0.187s
+// while the tests it protects failed with ranger-base-xa2e3's original
+// refusal. The same mutation reds it now, naming the binding
+// (ranger-base-l0bep; docs/notes.d/ranger-base-l0bep.md has both arms).
+func fgpBareGit(e ast.Expr, local map[string][]ast.Expr) (bool, string) {
+	if fgpStringLit(e, "git") {
+		return true, ""
+	}
+	id, ok := e.(*ast.Ident)
+	if !ok {
+		return false, ""
+	}
+	for _, rhs := range local[id.Name] {
+		if fgpStringLit(rhs, "git") {
+			return true, id.Name
+		}
+	}
+	return false, ""
 }
 
 // fgpNamesUnpin reports whether any string literal under n starts with one of
@@ -287,11 +349,15 @@ func fgpStripsPath(n ast.Node) bool {
 // fgpScan reads the whole test corpus and returns every bound bare-name git
 // child, with the verdict on its environment.
 //
-// The env verdict is resolved ONE HOP, which is what the three sites this bead
-// converted needed: policypins' `env` is a local slice holding the override,
-// pidfence's is an append over a package helper (pfEnv), and adrcensus' is a
-// local replacement slice naming no override at all. A hop further would start
-// reading other packages' helpers, and nothing in the tree needs it.
+// BOTH halves of the verdict are resolved ONE HOP, over the same map of local
+// assignments. The env hop is what the three sites this bead converted needed:
+// policypins' `env` is a local slice holding the override, pidfence's is an
+// append over a package helper (pfEnv), and adrcensus' is a local replacement
+// slice naming no override at all. The BINARY hop is fgpBareGit's, added
+// because the shape this pin mandates is an indirection and the two halves
+// must be read to the same depth or the class re-opens through the shallower
+// one (ranger-base-l0bep). A hop further, on either half, would start reading
+// other packages' helpers, and nothing in the tree needs it.
 func fgpScan(t *testing.T, files []string) []fgpSite {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -333,32 +399,12 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 			if !ok || fd.Body == nil {
 				continue
 			}
-			// The bound bare-name git children of this function.
-			kids := map[string]int{}
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok || len(as.Lhs) != len(as.Rhs) {
-					return true
-				}
-				for i, rhs := range as.Rhs {
-					call, ok := rhs.(*ast.CallExpr)
-					if !ok {
-						continue
-					}
-					bin, ok := fgpExecBin(call)
-					if !ok || !fgpStringLit(bin, "git") {
-						continue
-					}
-					if id, ok := as.Lhs[i].(*ast.Ident); ok && id.Name != "_" {
-						kids[id.Name] = fset.Position(call.Pos()).Line
-					}
-				}
-				return true
-			})
-			if len(kids) == 0 {
-				continue
-			}
-			// Every local assignment, for the one hop.
+			// Every local assignment, for the one hop. Collected BEFORE the
+			// children, because the binary half of the verdict reads it too:
+			// a child bound to `gitBin` is only recognised once `gitBin`'s
+			// own assignment has been seen, and Go does not require that
+			// assignment to come first in source order (a closure defined
+			// above the binding, for one).
 			local := map[string][]ast.Expr{}
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				as, ok := n.(*ast.AssignStmt)
@@ -372,6 +418,36 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 				}
 				return true
 			})
+			// The bound bare-name git children of this function, inline or
+			// one hop away.
+			kids := map[string]fgpKid{}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				as, ok := n.(*ast.AssignStmt)
+				if !ok || len(as.Lhs) != len(as.Rhs) {
+					return true
+				}
+				for i, rhs := range as.Rhs {
+					call, ok := rhs.(*ast.CallExpr)
+					if !ok {
+						continue
+					}
+					bin, ok := fgpExecBin(call)
+					if !ok {
+						continue
+					}
+					bare, via := fgpBareGit(bin, local)
+					if !bare {
+						continue
+					}
+					if id, ok := as.Lhs[i].(*ast.Ident); ok && id.Name != "_" {
+						kids[id.Name] = fgpKid{line: fset.Position(call.Pos()).Line, via: via}
+					}
+				}
+				return true
+			})
+			if len(kids) == 0 {
+				continue
+			}
 			stripsHere := fgpStripsPath(fd.Body)
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				as, ok := n.(*ast.AssignStmt)
@@ -387,7 +463,7 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 					if !ok || i >= len(as.Rhs) {
 						continue
 					}
-					line, ok := kids[recv.Name]
+					kid, ok := kids[recv.Name]
 					if !ok {
 						continue // not a git child this function exec'd
 					}
@@ -430,7 +506,7 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 					// adrcensus fixture assigns `cmd.Env` three times — would
 					// otherwise report its one git child three times, at a
 					// line none of those assignments is on.
-					key := fmt.Sprintf("%s:%d:%s", rel, line, recv.Name)
+					key := fmt.Sprintf("%s:%d:%s", rel, kid.line, recv.Name)
 					if prev, seen := byKey[key]; seen {
 						if prev.why == "" {
 							prev.why = why
@@ -440,8 +516,8 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 						continue
 					}
 					byKey[key] = fgpSite{
-						file: rel, line: line, fn: fd.Name.Name, why: why,
-						immune: immune[dir], local: stripsHere,
+						file: rel, line: kid.line, fn: fd.Name.Name, why: why,
+						via: kid.via, immune: immune[dir], local: stripsHere,
 					}
 					order = append(order, key)
 				}
@@ -472,6 +548,12 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 	// 0 anywhere else. The unit is one finding per CHILD and not per `.Env`
 	// assignment, so these read lower than a per-assignment census of the same
 	// tree, which double-counted every rebound identifier).
+	//
+	// The binary hop ranger-base-l0bep added moved NONE of these: re-read
+	// 2026-11-10 at 6365a923, 773 test files, 66 / 39 / 39, identical to the
+	// reading above. The indirected spelling exists nowhere in the tree today,
+	// so the hop is a guard closing before the class reaches it and not a
+	// finding — which is also why these floors did not need raising.
 	if len(files) < 400 {
 		root, _ := repoRoot()
 		t.Fatalf("the walk read %d _test.go files from %q — the corpus this pin censuses is not there", len(files), root)
@@ -507,17 +589,31 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 		if s.why == "" || s.immune || s.local {
 			continue
 		}
+		fix := "  Resolve the binary past the gates — `gitBin := gitOutsideGates(t)`, then exec that — which both cmd/posse and internal/treepins already carry for this reason (ranger-base-ebhdx). Keep the hermetic env exactly as it is: it is not the part that was wrong."
+		if s.via != "" {
+			// The call already execs a variable, so the line to change is
+			// the binding and not the call: say so, or the prescription
+			// above reads as already done (ranger-base-l0bep).
+			fix = fmt.Sprintf("  The call already execs a variable, so the line to change is the BINDING: `%s := gitOutsideGates(t)` in place of the bare name, which both cmd/posse and internal/treepins already carry for this reason (ranger-base-ebhdx). Keep the hermetic env exactly as it is: it is not the part that was wrong.", s.via)
+		}
 		t.Errorf("%s\n"+
 			"  exec.Command resolves the bare name \"git\" against THIS process's $PATH — never cmd.Env — and a dispatched seat's PATH leads with its own gates bin dir, so this fixture's git is posse's L1 shim. With the launcher's GIT_CONFIG_GLOBAL dropped or overridden, the shim's global-scope compare differs from the launcher's and it refuses the commit outright: hookskip:config-env, ADR 0079, ranger-base-r3pri. The fixture never runs and the failure reads as drift in whatever the test was about (ranger-base-xa2e3).\n"+
-			"  Resolve the binary past the gates — `gitBin := gitOutsideGates(t)`, then exec that — which both cmd/posse and internal/treepins already carry for this reason (ranger-base-ebhdx). Keep the hermetic env exactly as it is: it is not the part that was wrong.",
-			s)
+			"%s",
+			s, fix)
 	}
 }
 
 // Arm 2 — the control. A census that cannot say no reports green over a tree
 // it has stopped reading, and the shapes below are the ones that actually
 // separate this class: the same exec call is a violation or not depending on
-// an env expression one hop away and a line in another file.
+// an env expression one hop away, a BINARY expression one hop away, and a line
+// in another file.
+//
+// The last three cases are the binary hop's, and the first of them is the
+// shape this pin was green over until ranger-base-l0bep: the bare name moved
+// out of the call and into a local binding, which is one token from the
+// prescribed fix and was MEASURED reproducing ranger-base-xa2e3's refusal
+// while the census read ok.
 func TestQAFixtureGitCensusCanStillSayNo(t *testing.T) {
 	t.Parallel()
 
@@ -631,6 +727,46 @@ func TestQAFixtureGitCensusCanStillSayNo(t *testing.T) {
 			cmd.CombinedOutput()
 		}`,
 		want: true,
+	}, {
+		// The gap ranger-base-l0bep closed: byte for byte the shape the fix
+		// mandates, with the one token that makes it the defect again.
+		name: "the blind spot: the bare name moved into a local binding",
+		src: `func f(t *testing.T) {
+			gitBin := "git"
+			env := append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd := exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = env
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		// The hop must not over-match: an identifier is only a bare name
+		// when it resolves to the bare literal, and an absolute path reaches
+		// no $PATH and so no shim.
+		name: "an absolute path in a local binding is not a bare name",
+		src: `func f(t *testing.T) {
+			gitBin := "/usr/bin/git"
+			cmd := exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		// The same binding in ANOTHER function is not this function's: the
+		// hop is local, as the env hop is, so a sibling's `gitBin := "git"`
+		// cannot make a compliant site read as a violation.
+		name: "a bare-name binding in another function does not reach this one",
+		src: `func f(t *testing.T) {
+			gitBin := gitOutsideGates(t)
+			cmd := exec.Command(gitBin, "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+			cmd.CombinedOutput()
+		}
+		func g(t *testing.T) {
+			gitBin := "git"
+			_ = gitBin
+		}`,
+		want: false,
 	}}
 
 	for _, c := range cases {
