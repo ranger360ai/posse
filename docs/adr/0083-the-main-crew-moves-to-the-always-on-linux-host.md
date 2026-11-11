@@ -203,6 +203,12 @@ constitution was missing.
   realized tier, and a rule that tier cannot realize still refuses. The
   map cannot waive a rule.
 - `container` cannot be mapped from or to. Its engine is per home already.
+- *Amended by ADR 0086 D2 (ranger-base-6zqdq, 2026-11-11):* the map is
+  DECLINED for a PID it would leave with a rule unrealized, when the host
+  provides the demanded tier. The PID then launches at its demand instead of
+  being refused. The line `seatbelt: shims` therefore no longer refuses
+  hoover on the host. Removing that line stays this section's end state
+  (ADR 0086 D7).
 
 *As built (ranger-base-1155n, 2026-11-08).* **The key is a family, one
 top-level key per OS**, because posse's YAML is a deliberate flat subset —
