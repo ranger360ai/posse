@@ -4491,6 +4491,13 @@ func (l *KillLanding) Lines() []string {
 	if ln := l.Merge.RegeneratedNote(); ln != "" {
 		out = append(out, ln)
 	}
+	// And a FOURTH, for the third's reason (ADR 0087 D3, landcheck.go): a
+	// kill-time landing can replay the branch and reach the base without the
+	// repo's own check judging the result green, and a kill that went quiet
+	// about that is the one record of it.
+	if ln := l.Merge.LandCheckWarning; ln != "" {
+		out = append(out, ln)
+	}
 	if ln := l.Line(); ln != "" {
 		out = append(out, ln)
 	}

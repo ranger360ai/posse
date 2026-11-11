@@ -1384,6 +1384,20 @@ type MergeOutcome struct {
 	Prior    PriorLanding
 	PriorTip string
 
+	// LandCheckWarning is the ⚠ a REPLAYED landing owes when the repo's own
+	// check (ADR 0087, landcheck.go) did not judge it green and it landed
+	// anyway: the base was already red, or the check could not answer at all.
+	// "" when the check said green, when the repo ships none, and on every
+	// landing that was not a replay.
+	//
+	// Said out loud at every site that prints a landing, beside
+	// RegeneratedNote and for its reason: a tip that reached the base without
+	// being judged is a fact about main that nobody else on the pass will
+	// mention. It is never filed as a bead — D3 makes this arm a landing, and
+	// a handoff over work that DID land is the false strand report
+	// ranger-base-g2xf measured.
+	LandCheckWarning string
+
 	// Regenerated names the generated files this landing REPRODUCED rather
 	// than replayed (ranger-base-7h8k4, generatedindex.go) — committed on the
 	// branch before the fast-forward, or staged into a replayed commit that
@@ -1762,6 +1776,22 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 		o.Reason = fmt.Sprintf("%s moved on and %s has uncommitted changes (%s), %s", t.Base, AbbrevHome(t.Path), strings.Join(o.Dirty, " "), dirtyBlockMark)
 		return o, nil
 	}
+	// THE TIP THE SEAT LEFT, read before the first replay rewrites the branch
+	// — ADR 0087 D5's operand. A landing the repo's own check refuses has to
+	// put the branch back where it was, and after a SUCCESSFUL rebase there is
+	// no `rebase --abort` to do it: the only record of where the branch was is
+	// this sha. Read once and not per attempt, so a block on the third attempt
+	// still restores the seat's tip rather than the second attempt's replay.
+	//
+	// It is taken AFTER the first refreshGeneratedIndex above, which keeps the
+	// one landing commit this function may already have made: on this arm that
+	// call is almost always a no-op (`reaches` is false — the base moved,
+	// which is why we are here), and the exception is a base that moved in the
+	// window between it and the fast-forward. A commit already reported in
+	// o.Regenerated is not the replay's to discard.
+	pre := refSHA(t.Repo, t.Branch)
+	preRegen, preCommits := append([]string(nil), o.Regenerated...), o.Commits
+
 	// The rebase and the fast-forward under it are ONE compare-and-swap on
 	// the base's ref: the rebase computes a new tip from the base it read,
 	// and `merge --ff-only` is the swap, which git refuses unless the base
@@ -1877,6 +1907,31 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 			return o, nil
 		} else if len(regen) > 0 {
 			o.Regenerated, o.Commits = addPath(o.Regenerated, regen...), o.Commits+len(regen)
+		}
+		// NOTHING COMPILED THE COMMIT THE REPLAY JUST CREATED, and until ADR
+		// 0087 nothing ever had: git refuses textual conflicts only, so a
+		// semantic one landed on main silently and every seat's suite went red
+		// (ranger-base-qk7w6, the a2327230 incident; landcheck.go's header has
+		// the measurement and the whole ratchet). Asked HERE, on the exact tip
+		// the swap below will take, after the second notOnBase and the second
+		// refreshGeneratedIndex — the last moment at which what is judged and
+		// what lands are the same bytes.
+		//
+		// It blocks on one case and one only: the replay is red where the base
+		// is green. Everything else lands, and the ⚠ is how it says so.
+		blocked, said, landWarn := landCheckGate(t, pre, wasAt)
+		o.LandCheckWarning = landWarn
+		if blocked {
+			// The branch is back at `pre`, so every commit this attempt made
+			// is gone — including a generated-index commit made above, which
+			// o.Regenerated would otherwise send a reader looking for in a
+			// `git log` that no longer has it.
+			o.Regenerated, o.Commits = append([]string(nil), preRegen...), preCommits
+			o.Reason = landCheckRefusal(t, said)
+			// o.Rebased stays true: the replay DID run, and what the field is
+			// read for is the "rebased and fast-forwarded" wording on a
+			// landing, which this is not. The Reason says it was reset.
+			return o, nil
 		}
 		_, err := git(t.Repo, "merge", "--ff-only", t.Branch)
 		if err == nil {
@@ -2011,6 +2066,31 @@ func constitutionLandRefusal(a *App, t *SessionTree, hit []string) string {
 		strings.Join(hit, ", "),
 		AbbrevHome(t.Repo), t.Base, t.Branch,
 		AbbrevHome(t.Repo), t.Branch, then)
+}
+
+// landCheckRefusal is the sentence a landing refused by the repo's own check
+// embeds in its merge-back bead (ADR 0087, landcheck.go has the whole
+// ratchet). Produced HERE, like every other merge refusal in this package,
+// because mergereasonfloor_qa_test.go derives the class of refusals by
+// parsing this one file and fails closed on a sentence written anywhere else
+// — the mechanism lives in its own file and the wording lives with its
+// siblings, which is the split refreshGeneratedIndex already uses.
+//
+// It reports what this attempt DID — judged the replay, reset it, landed
+// nothing, changed nothing — and never that the branch still holds the work
+// (ranger-base-m3195/eq3ba): the sentence is read out of a bead some
+// unbounded time later, by which point the branch may have been retired out
+// from under it.
+//
+// AND IT NAMES BOTH SIDES, which is the part that makes it actionable. "The
+// check fails" sends a seat to look at a tree that passed its own suite; "the
+// check fails on the replay and passes on the base" says the two sides
+// disagree and that this branch is the side that has to move. The recipe is
+// the rebase the seat would have run anyway, so the work is the same work it
+// would have been had the base moved before the seat committed.
+func landCheckRefusal(t *SessionTree, said string) string {
+	return fmt.Sprintf("%s moved on and replaying %s onto it fails %s, which %s itself passes — landing it would turn a green %s red (ADR 0087), so the replay was reset and this attempt landed nothing and changed nothing. %s said: %s. To finish it by hand: `git -C %s rebase %s`, make the check pass, commit, and `posse worktrees --land`",
+		t.Base, t.Branch, landCheckScript, t.Base, t.Base, landCheckScript, said, AbbrevHome(t.Path), t.Base)
 }
 
 // rebaseStopped answers whether a failed `git rebase` STOPPED — the merge
@@ -3831,6 +3911,9 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 		}
 		if note := o.RegeneratedNote(); note != "" {
 			fmt.Fprintf(w, "⟳ %s\n", note)
+		}
+		if o.LandCheckWarning != "" {
+			fmt.Fprintf(w, "⚠ %s\n", o.LandCheckWarning)
 		}
 		if len(o.Dirty) > 0 {
 			fmt.Fprintf(w, "  %d uncommitted path(s) stay in %s\n", len(o.Dirty), AbbrevHome(t.Path))

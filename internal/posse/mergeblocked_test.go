@@ -814,6 +814,19 @@ func mergeBlockedCases() []mergeBlockedCase {
 			},
 		},
 		{
+			// ADR 0087's ratchet (ranger-base-ej47m, landcheck.go): the replay
+			// fails the repo's own check where the base passes it, so the
+			// replay is reset and the landing refused. The fixture is in
+			// landcheck_test.go, where the rest of the class is pinned — the
+			// same arrangement as the generated-index row above.
+			name: "the replay fails the repo's own land check",
+			arm:  "landing it would turn a green",
+			reason: func(t *testing.T) string {
+				a, _, tr, _ := landCheckBlockedTree(t)
+				return mergeBlockedReason(t, a, tr)
+			},
+		},
+		{
 			name: "the replay conflicts and is aborted",
 			arm:  "the rebase was aborted, so this attempt changed nothing",
 			reason: func(t *testing.T) string {

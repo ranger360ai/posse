@@ -6268,6 +6268,13 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 	if note := o.RegeneratedNote(); note != "" {
 		d.printf("⟳ %-14s %s\n", is.ID, note)
 	}
+	// And the other thing a replayed landing owes out loud: it reached the
+	// base without the repo's own check judging it green (ADR 0087 D3,
+	// landcheck.go). Never filed — this arm LANDED, and a handoff over work
+	// that landed is ranger-base-g2xf's false strand report.
+	if o.LandCheckWarning != "" {
+		d.printf("⚠ %-14s %s\n", is.ID, o.LandCheckWarning)
+	}
 	switch {
 	case len(o.Equivalent) > 0:
 		d.printf("≡ %-14s %s\n", is.ID, o.EquivalentNote())

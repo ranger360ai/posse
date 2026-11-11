@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-xdaw9](ranger-base-xdaw9.md) — herdr's typed route loses a prompt into a modal too, and the tell is the screen (ranger-base-xdaw9) — 2026-11-11
 - [ranger-base-o57rc](ranger-base-o57rc.md) — Two pins that claimed more than they measured (ranger-base-o57rc) — 2026-11-11
+- [ranger-base-ej47m](ranger-base-ej47m.md) — The land check at the replay site: four judgment calls ADR 0087 left open (ranger-base-ej47m) — 2026-11-11
 - [ranger-base-ctxeq](ranger-base-ctxeq.md) — ranger-base-ctxeq — witnessing the Edit/Write wall at the launch, and what a negative probe costs to believe — 2026-11-11
 - [ranger-base-6rr2e](ranger-base-6rr2e.md) — The same class one node over: a git CHILD bound by a declaration (ranger-base-6rr2e) — 2026-11-11
 - [ranger-base-xa2e3](ranger-base-xa2e3.md) — The gate that guards the tree made the suite that guards the gate unrunnable (ranger-base-xa2e3) — 2026-11-10

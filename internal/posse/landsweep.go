@@ -296,6 +296,13 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 			if note := o.RegeneratedNote(); note != "" {
 				d.printf("⟳ %-14s %s\n", id, note)
 			}
+			// And the replayed landing nothing judged green (ADR 0087 D3,
+			// landcheck.go), for the same reason and in the same place: the
+			// base was already red, or the check could not answer, and it
+			// landed anyway. Nothing is filed — this arm landed.
+			if o.LandCheckWarning != "" {
+				d.printf("⚠ %-14s %s\n", id, o.LandCheckWarning)
+			}
 			if len(o.Dirty) > 0 {
 				d.printf("◑ %-14s %d uncommitted path(s) left in %s — closed, and this part did not land\n",
 					id, len(o.Dirty), AbbrevHome(t.Path))
