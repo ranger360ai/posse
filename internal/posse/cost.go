@@ -304,7 +304,66 @@ func (s *Segment) Sum() (u Usage) {
 
 func (s *Segment) Turns() int { return len(s.Msgs) }
 
+// workPromptRe matches the dispatcher's work-prompt header — the "Work beads
+// issue <id>" line every dispatched session's first user turn carries (ADR
+// 0013 §2). It stays ANCHORED on purpose: a bead id named in the middle of a
+// sentence is a mention, and cutting a cost segment on one would attribute
+// another bead's spend to whatever this session happened to quote.
 var workPromptRe = regexp.MustCompile(`^Work beads issue (\S+?)[: (]`)
+
+// harnessWrapOpenRe matches a line that is NOTHING BUT an opening tag —
+// `<pasted_content id="f384">` and its kind — with no text beside it. The
+// strictness is the whole safety argument: a wrapper line carries no prose,
+// so skipping one cannot move the header off the start of a line, and the
+// anchor above keeps meaning what it meant.
+var harnessWrapOpenRe = regexp.MustCompile(`^<[A-Za-z][A-Za-z0-9_-]*(?:[ \t][^>\n]*)?>[ \t]*(?:\n|$)`)
+
+// maxWorkPromptWrap bounds how many wrapper lines are skipped. One is what
+// ships (MEASURED below); the bound exists so a pathological file cannot turn
+// this into a scan of the whole message, not because a second is expected.
+const maxWorkPromptWrap = 4
+
+// BeadFromWorkPrompt reads the bead id out of a session's user turn, and is
+// the ONE place that decides whether a piece of text is a dispatched work
+// prompt. Four readers share it — the Claude, grok and codex cost scanners,
+// the turn-failure reader, and herdr's session->bead pointer — so a prompt
+// shape that one of them can see is a shape all of them can see.
+//
+// It sees through the harness's own wrapper. posse hands the work prompt to
+// the CLI as a positional argument (argvprompt.go), and the CLI decides how
+// that argument is recorded. claude 2.1.322 records a multi-line argv prompt
+// WRAPPED: the user record's text is
+//
+//	"\n\n<pasted_content id=\"f384\">\nWork beads issue ranger-base-888pk (…"
+//
+// so an anchored `^Work beads issue` matched none of it. MEASURED 2026-11-11
+// over every transcript under one instance's config dir (142 project dirs,
+// the oldest record 2026-11-08T12:38Z): 136 dispatched sessions, 136 wrapped,
+// 0 bare — every dispatched seat on that box. The visible damage was not an
+// undercount but a MIS-count: with no segment cut, each seat's whole session
+// fell through to the interactive fallback, so `posse cost` printed no bead
+// rows at all and a day total of zero under armed caps, while the interactive
+// line carried the entire fleet's spend. ADR 0018's ledger brake — the floor
+// under a blind plan guard — was measuring nothing on the day the plan guard
+// was blind. (Figures: ranger-base-888pk, ADR 0024 D1.)
+//
+// Leading whitespace is skipped, then wrapper lines, then the anchored match
+// is tried again. Nothing else is relaxed: a header that is not at the start
+// of a line, after the wrappers, is still not a work prompt.
+func BeadFromWorkPrompt(text string) (string, bool) {
+	t := strings.TrimLeft(text, " \t\r\n")
+	for i := 0; i <= maxWorkPromptWrap; i++ {
+		if m := workPromptRe.FindStringSubmatch(t); m != nil {
+			return m[1], true
+		}
+		w := harnessWrapOpenRe.FindString(t)
+		if w == "" {
+			return "", false
+		}
+		t = strings.TrimLeft(t[len(w):], " \t\r\n")
+	}
+	return "", false
+}
 
 // ScanTranscript segments one Claude Code transcript.
 func ScanTranscript(path string, since time.Time) ([]*Segment, error) {
@@ -343,8 +402,8 @@ func ScanTranscript(path string, since time.Time) ([]*Segment, error) {
 				switch d.Type {
 				case "user":
 					txt := userText(d.Message.Content)
-					if m := workPromptRe.FindStringSubmatch(txt); m != nil {
-						cur = &Segment{Bead: m[1], Runtime: "claude", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}}
+					if bead, ok := BeadFromWorkPrompt(txt); ok {
+						cur = &Segment{Bead: bead, Runtime: "claude", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}}
 						segs = append(segs, cur)
 					} else if cur == nil && txt != "" && !strings.HasPrefix(txt, "<") {
 						cur = &Segment{Bead: "interactive", Runtime: "claude", File: path, Start: ts, End: ts, Msgs: map[string]*Usage{}}

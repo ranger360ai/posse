@@ -247,8 +247,8 @@ func (codexCost) Decode(path string, since time.Time) ([]*Segment, error) {
 					}
 				case p.Type == "message" && p.Role == "user":
 					txt := codexUserText(p.Content)
-					if m := workPromptRe.FindStringSubmatch(txt); m != nil {
-						cur = newCodexSegment(m[1], path, ts, model)
+					if bead, ok := BeadFromWorkPrompt(txt); ok {
+						cur = newCodexSegment(bead, path, ts, model)
 						segs = append(segs, cur)
 					} else if cur == nil && txt != "" && !strings.HasPrefix(txt, "<") {
 						cur = newCodexSegment("interactive", path, ts, model)

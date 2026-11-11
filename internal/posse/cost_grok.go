@@ -182,8 +182,8 @@ func (grokCost) Decode(path string, since time.Time) ([]*Segment, error) {
 				switch up.SessionUpdate {
 				case "user_message_chunk":
 					txt := up.Content.Text
-					if m := workPromptRe.FindStringSubmatch(txt); m != nil {
-						cur = newGrokSegment(m[1], path, ts, up.Meta.ModelID)
+					if bead, ok := BeadFromWorkPrompt(txt); ok {
+						cur = newGrokSegment(bead, path, ts, up.Meta.ModelID)
 						segs = append(segs, cur)
 					} else if cur == nil && txt != "" && !strings.HasPrefix(txt, "<") {
 						cur = newGrokSegment("interactive", path, ts, up.Meta.ModelID)

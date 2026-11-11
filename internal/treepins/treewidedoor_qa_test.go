@@ -599,6 +599,7 @@ package treepins
 //	TestQAEveryTestBinaryReExecKeepsTheChildATestBinary
 //	                                              make pkgcensus-arm2-check
 //	TestQAOnlyWorktreeGoWritesAMergeRefusal       make pkgcensus-arm2-check
+//	TestQAWorkPromptHeaderHasOneReader            make pkgcensus-arm2-check
 //	TestBackupHasNoOverride                       make pkgcensus-arm3-check
 //	TestQAOneDoorForTheReportedReadingAndItNamesNoRuntime
 //	                                              make pkgcensus-arm3-check
@@ -1075,7 +1076,7 @@ package treepins
 // earlier reading on this bead, at a load of 7.87 with BOTH slots held, was
 // 46.2s, which is the same band from the other side.
 //
-// and `make tree-check` is all of them — one hundred and thirty-five pins
+// and `make tree-check` is all of them — one hundred and thirty-six pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
@@ -1092,6 +1093,20 @@ package treepins
 // at a HIGHER load with both slots held. The pin this bead added reports
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
+//
+// THREE WARM READINGS AT ONE HUNDRED AND THIRTY-SIX, the class as this bead
+// leaves it: 42s, 46s then 38s in that order (MEASURED 2026-11-11,
+// ranger-base-888pk, at a one-minute load average of 9.26, 10.55 and 7.09,
+// with ONE suite slot held by a sibling seat throughout). An 8s spread in the
+// same 40s band the dfgte entry below reads at one hundred and thirty-three
+// and the xa2e3 entry at one hundred and twenty-nine — three beads, two days,
+// three class sizes, one band. The headline sentence above still prices the
+// command from a reading at one hundred and twenty-six, and every reading
+// since has been faster over a larger class, so read it for the SHAPE and
+// take the band from here: this class costs about forty seconds, and the
+// thing that moves it is not how many pins are in it. The one pin this bead
+// added reports 0.01s inside pkgcensus-arm2-check, three orders of magnitude
+// under the spread.
 //
 // THREE WARM READINGS AT ONE HUNDRED AND THIRTY-THREE, the class as this
 // bead leaves it: 44s, 43s then 40s in that order (MEASURED 2026-11-11,

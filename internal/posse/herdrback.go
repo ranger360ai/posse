@@ -4087,8 +4087,8 @@ func (b *HerdrBackend) NoteBead(name, id string) {
 // stamps only when the text matches; an operator just chatting with a
 // session leaves its bead pointer untouched.
 func (b *HerdrBackend) NoteBeadFromPrompt(name, text string) {
-	if m := workPromptRe.FindStringSubmatch(text); m != nil {
-		b.NoteBead(name, m[1])
+	if bead, ok := BeadFromWorkPrompt(text); ok {
+		b.NoteBead(name, bead)
 	}
 }
 

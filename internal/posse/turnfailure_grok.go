@@ -244,7 +244,7 @@ func scanGrokTurnOutcome(path, bead string, since time.Time) (out TurnOutcome, o
 				up := d.Params.Update
 				switch up.SessionUpdate {
 				case "user_message_chunk":
-					m := workPromptRe.FindStringSubmatch(up.Content.Text)
+					id, isWork := BeadFromWorkPrompt(up.Content.Text)
 					at, res := grokUpdateTime(d.Timestamp, d.Params.Meta.AgentTimestampMs)
 					// `since` is a time.Now() and carries nanoseconds; the
 					// record carries whatever grok wrote it with. Comparing
@@ -252,7 +252,7 @@ func scanGrokTurnOutcome(path, bead string, since time.Time) (out TurnOutcome, o
 					// record's drops a prompt stamped inside the same
 					// millisecond as the launch — MEASURED, that is both
 					// arms of the edge pin, not a hypothetical.
-					inTurn = m != nil && m[1] == bead && !at.Before(since.Truncate(res))
+					inTurn = isWork && id == bead && !at.Before(since.Truncate(res))
 				case "turn_completed":
 					if !inTurn {
 						break

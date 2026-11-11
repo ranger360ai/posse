@@ -323,8 +323,8 @@ func scanClaudeTurnOutcome(path, bead string, since time.Time) (out TurnOutcome,
 				ts, _ := time.Parse(time.RFC3339Nano, d.Timestamp)
 				switch d.Type {
 				case "user":
-					if m := workPromptRe.FindStringSubmatch(userText(d.Message.Content)); m != nil {
-						inTurn = m[1] == bead && !ts.Before(since)
+					if id, ok := BeadFromWorkPrompt(userText(d.Message.Content)); ok {
+						inTurn = id == bead && !ts.Before(since)
 						if inTurn {
 							// A re-prompt of this same bead opens a new turn:
 							// what the last one spent is not this one's.
