@@ -224,13 +224,29 @@ needed the one number the undoored run does not: `-timeout 60m` rather than
 `make test`'s 25m, because `go test -timeout` bounds the test binary's own
 wall and the door spends 1520s of it. internal/treepins at 25m died on
 `panic: test timed out after 25m0s` at 1502s with tests still running,
-which is neither this class nor a package that wants splitting. Price: MEASURED for the content rewrite, +571.1s
-over the three arms (280.3s uninjected, 851.4s injected, 3.04x, loadavg
-4-11, ranger-base-kiwvn). ASSUMED to be at least that for the amended
-door, because it delays everything the rewrite did plus hooks, shims,
-production renders and binaries. The price is measured again when the
-door is rebuilt, before anyone proposes running it more often. Whether CI
-pays for it is still the operator's call.
+which is neither this class nor a package that wants splitting. **Price,
+MEASURED 2026-11-11 through the supervisor itself (this host, go1.27.3,
+warm build cache, loadavg 1.7-10.7, both halves back to back):
++1688.4s over internal/posse's three arms** — 275.7s undoored against
+1964.1s doored, 7.12x, with 1622 cold execs held (948.9s/476.3s/538.9s
+doored against 106.6s/73.5s/95.6s undoored, ranger-base-xpxo6). That
+retires the ASSUMED floor this line used to carry, the content rewrite's
++571.1s (280.3s to 851.4s, 3.04x, loadavg 4-11, ranger-base-kiwvn): the
+amended door costs **2.96x** that in added wall, and the undoored
+baseline reproduced kiwvn's to within 1.6%, which is what makes the two
+injected numbers comparable at all. With in8dr's two arms, **the
+unfiltered five-arm run is 4220.7s of package time — seventy minutes of
+box**, before five suite-slot waits.
+
+And in8dr's additive rule does not travel to this package: 1622 execs at
+D is 4055.0s of nominal sleep against +1688.4s of wall, **41.6%
+realised** (48.1%/49.9%/29.6% by arm), because internal/posse's plants
+are exec'd from tests that run in parallel — which is what kiwvn measured
+under the rewrite too. So D x cold execs is an upper bound everywhere,
+tight where the plants are exec'd serially (cmd/posse within 3%,
+internal/treepins within 5%) and about twice the truth where they are
+not. Price a new arm from the bound. Whether CI pays for it is still the
+operator's call.
 
 ## Consequences
 
@@ -251,10 +267,25 @@ pays for it is still the operator's call.
   compared a copy against the literal it planted. Any injector that
   rewrites content is visible to every such test, so the amendment moves
   the cost to where those tests cannot see it.
-- The first full run under the amended door will red some tests that the
-  content rewrite never reached: hooks, shims, production renders and
-  copied binaries exec'd under a deadline. Those reds are in the class. Fix
-  each with a `--warm` pre-flight, with both halves asserted.
+- **That full run has happened, and it red nothing in the class**
+  (ranger-base-xpxo6, 2026-11-11). This bullet predicted reds the content
+  rewrite never reached — hooks, shims, production renders and copied
+  binaries exec'd under a deadline — each to be fixed with a `--warm`
+  pre-flight. MEASURED over internal/posse's three arms: arms 1 and 2
+  green first time, all three green undoored, and **no test in this
+  package has a verdict that changes when the first exec of its own
+  planted file is slow**. The advice stands for a red that is in the
+  class; none has been found yet. Of the five red rows the run did
+  produce, four were a `/tmp` whose tmpfs inode table was 100% full
+  (`df -h` read 80% with 2.8G free; ranger-base-vw1cp) and one was a
+  **third kind this ADR had not named: a pin whose own real-time budget
+  loses to the slower box the door creates.** Its planted executable was
+  already warmed and no planted exec happened inside its deadline — it
+  passed 10 of 10 focused under the door — but the window in which its
+  watchdog goroutine had to catch a 20ms tick was 31.8ms wide under arm
+  3's load against ~167ms on a quiet box. Such a red is neither in the
+  class nor a supervisor bug, and the fix belongs in the test's own
+  margin, not in a pre-flight and never in a pass-through list.
 - Exit hatch: delete `cmd/coldexec` and the wrapper in the Makefile line.
   It holds no state beyond an in-memory set of seen inodes. Nothing in
   internal/posse refers to it.

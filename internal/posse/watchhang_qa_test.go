@@ -695,13 +695,38 @@ func TestQAWatchStartsTheWatchdogAndItNamesAStalledPass(t *testing.T) {
 	// writes nothing while it waits on it.
 	bin, _ := hangingBin(t, 6*time.Second)
 	d.Bd = Bd{Bin: bin, Timeout: 2 * time.Second, Hangw: io.Discard}
-	// 10000x: a 32m production budget is ~200ms of real time, inside the
-	// 2s stall, and the watchdog ticks at the 20ms base.
+	// 10000x: a 32m production budget (WatchdogFactor x (PromptWaitMS +
+	// HerdrWaitGrace)) is ~192ms of real time, and the watchdog ticks at
+	// the 20ms base.
 	epoch := time.Now()
 	t0 := time.Date(2026, 9, 3, 4, 53, 18, 0, time.UTC)
 	d.Now = func() time.Time { return t0.Add(time.Since(epoch) * 10000) }
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	// THE SILENCE THIS READS IS THE STALL'S, and until ranger-base-xpxo6 it
+	// was not. LastWrite is seeded by Watch's own noteWrite before the first
+	// pass and the header block writes bare, so with the ctx at 500ms the
+	// only window in which the dog could see the budget broken was
+	// [192ms, whenever pass 1's header printed] — that header being the
+	// first d.printf, and its arrival closing the window. MEASURED
+	// 2026-11-11 on a quiet box: the header lands at ~359ms of real time,
+	// so the window was ~167ms, eight ticks, and the line it produced read
+	// `written nothing for 33m (last line 04:53:19)` — the seed, one fake
+	// second in, and not the stall at all. Under `make coldexec-check`'s
+	// arm 3 the header landed at 223.8ms instead, the window was 31.8ms —
+	// one or two ticks — and the loaded box missed it: a red with nothing
+	// wrong (docs/notes.d/ranger-base-xpxo6.md).
+	//
+	// 2s, so the quiet the dog reads is the 2s stall above, which is what
+	// this test always claimed to be about. Both bounds are wanted. Above
+	// pass 1's header plus the budget, so a tick must land before the
+	// window closes: 2s against a header measured at 223-359ms leaves
+	// ~1.45s, seventy ticks, where 500ms left one. And no later than the
+	// stall's own end at header+2s, so the loop does not come round for a
+	// second pass and pay another stall. MEASURED at this value, with the
+	// ctx as the only variable: 50ms, 100ms, 150ms and 200ms fail
+	// deterministically — the dog dies before the budget is reachable at
+	// all — and every value from 300ms up passes.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if _, err := d.Watch(ctx, "", "", 1, 20*time.Millisecond, 20*time.Millisecond); err != nil {
 		t.Fatal(err)
