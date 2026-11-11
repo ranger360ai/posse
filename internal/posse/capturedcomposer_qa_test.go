@@ -127,6 +127,27 @@ func TestQAACaptureComposerIsBetweenTheLastTwoRules(t *testing.T) {
 			want: "this prompt is sitting unsent in the box and now it gets long enough to wrap across more than one screen line because the terminal is eighty columns wide and this sentence is not",
 		},
 		{
+			// THE LAST TWO RULES, told apart from the FIRST two
+			// (ranger-base-1tt2e, from ranger-base-s3a9g). Every other case
+			// here plants exactly two rules, so the property in this arm's
+			// own name was untested: MEASURED, `if isFooterRule(l) &&
+			// topRule < 0 {` — a first-two reading — left this arm and the
+			// whole package green.
+			//
+			// NOT THEORETICAL. isFooterRule accepts any line that is nothing
+			// but U+2500, which is what claude renders its own markdown
+			// horizontal rules with, so one rule in the TRANSCRIPT makes
+			// three — and a first-two reading then calls transcript the
+			// composer, which is the invented hold capturedcomposer.go's own
+			// head comment refuses.
+			name: "three rules: the composer is between the LAST two",
+			screen: "  as the transcript renders `---`:\n" + rule +
+				"\n  and prose under it\n" + rule + "\n" +
+				mark + "this prompt is sitting unsent in the box\n" + rule +
+				"\n\n" + idleFooter,
+			want: "this prompt is sitting unsent in the box",
+		},
+		{
 			// THE ANCHOR. A `❯` in the transcript is somebody quoting one.
 			name:   "a mark in the transcript is not the composer",
 			screen: "  the composer line is " + mark + "and whatever is typed\n" + rule + "\n" + mark + "\n" + rule + "\n\n" + idleFooter,
@@ -208,6 +229,25 @@ func TestQAAWrappedBoxEchoesTheLineThatWasSubmitted(t *testing.T) {
 	// a short box must not match every long submit that starts with it.
 	if capturedEcho("this prompt", sent) {
 		t.Error("capturedEcho = true for a box holding a prefix of the submit — nothing cut this reading down, so submittedEcho's truncation arm must stay shut")
+	}
+	// THE COLLAPSE ITSELF (ranger-base-1tt2e, from ranger-base-s3a9g).
+	// captureComposer already rejoins the wrapped lines with SINGLE spaces,
+	// and no fixture's submitted side carried a whitespace run, so nothing
+	// above reaches collapseScreenWrap: MEASURED, `return s` in place of
+	// `strings.Join(strings.Fields(s), " ")` left the whole package green.
+	// A submit row carries what was TYPED — double spaces, tabs and all —
+	// so this is the case where the two sides differ only in runs, and the
+	// collapse is the one thing that makes them one line.
+	const runsSent = "commit  the  bead \t and  close it"
+	runsBox := captureComposer(claudeComposerScreen([]string{
+		mark + "commit  the  bead",
+		"  and  close it",
+	}, idleFooter))
+	if !capturedEcho(runsBox, runsSent) {
+		t.Errorf("capturedEcho(%q, %q) = false — the comparison collapses whitespace runs on BOTH sides, which is the one place this route differs from herdr's (capturedcomposer.go); without it a submitted line reads as unsent for every run of whitespace in it", runsBox, runsSent)
+	}
+	if capturedEcho(runsBox, "commit  the  beads \t and  close it") {
+		t.Error("capturedEcho = true for a submit the box is not showing — the collapse folds whitespace and nothing else")
 	}
 }
 
@@ -310,7 +350,7 @@ func TestQAACaptureRouteRetiresABoxEchoingItsOwnLastSubmit(t *testing.T) {
 	const sent = "keep waiting, then commit and close"
 
 	b, _ := newTestBackend(t)
-	b.Slot = rexSeedOwnedBy(t, RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
+	b.Slot = rexSeedOwnedBy(t, &RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
 	history := armClaudeSessionRow(t, b, pid, map[string]any{
 		"pid": pid, "sessionId": qzujzSession, "cwd": "/w", "procStart": start,
 	})
@@ -341,7 +381,7 @@ func TestQAACaptureRouteKeepsAHoldThatNoStoreClaims(t *testing.T) {
 	const typed = "ping me when it's green"
 
 	b, _ := newTestBackend(t)
-	b.Slot = rexSeedOwnedBy(t, RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
+	b.Slot = rexSeedOwnedBy(t, &RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
 	history := armClaudeSessionRow(t, b, pid, map[string]any{
 		"pid": pid, "sessionId": qzujzSession, "procStart": start,
 	})
@@ -370,29 +410,29 @@ func TestQAAEveryFailureOfTheJoinLeavesTheComposerAHold(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		arm   func(t *testing.T, b *HerdrBackend, pid int)
-		owner RexOwner
+		owner *RexOwner
 	}{
 		{
 			name:  "no session row for the owner's pid",
 			arm:   func(t *testing.T, b *HerdrBackend, pid int) { armClaudeSessionRow(t, b, pid, nil) },
-			owner: RexOwner{PID: os.Getpid(), Name: claudeRuntimeProcName},
+			owner: &RexOwner{PID: os.Getpid(), Name: claudeRuntimeProcName},
 		},
 		{
 			name: "a session row the fence rejects",
 			arm: func(t *testing.T, b *HerdrBackend, pid int) {
 				armClaudeSessionRow(t, b, pid, map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": "0"})
 			},
-			owner: RexOwner{PID: os.Getpid(), Name: claudeRuntimeProcName},
+			owner: &RexOwner{PID: os.Getpid(), Name: claudeRuntimeProcName},
 		},
 		{
 			name:  "no store at all, which is every test backend",
 			arm:   func(t *testing.T, b *HerdrBackend, pid int) {},
-			owner: RexOwner{PID: os.Getpid(), Name: claudeRuntimeProcName},
+			owner: &RexOwner{PID: os.Getpid(), Name: claudeRuntimeProcName},
 		},
 		{
 			name:  "a record the block's own shell wrote",
 			arm:   func(t *testing.T, b *HerdrBackend, pid int) { armClaudeSessionRow(t, b, pid, nil) },
-			owner: RexOwner{PID: 10, Name: "zsh"},
+			owner: &RexOwner{PID: 10, Name: "zsh"},
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {

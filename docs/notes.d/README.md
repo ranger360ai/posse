@@ -19,6 +19,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-crlty](ranger-base-crlty.md) — Three hook-skip routes the git shim did not judge (ranger-base-crlty) — 2026-11-10
 - [ranger-base-97w45](ranger-base-97w45.md) — The execve supervisor, as built, and the eight things ADR 0085 left to the build (ranger-base-97w45) — 2026-11-10
 - [ranger-base-8eeoy](ranger-base-8eeoy.md) — Rex's `Prompt` does not leave text in the composer — it loses the prompt instead (ranger-base-8eeoy) — 2026-11-10
+- [ranger-base-1tt2e](ranger-base-1tt2e.md) — Five pins that could not fail for their own subject (ranger-base-1tt2e) — 2026-11-10
 - [ranger-base-ybz6u](ranger-base-ybz6u.md) — `seatbelt (bwrap)` is a label and not a mapping, and the rest of this bead landed twice (ranger-base-ybz6u) — 2026-11-09
 - [ranger-base-x475y](ranger-base-x475y.md) — The stall verdict's work reading reads the tree too (ranger-base-x475y) — 2026-11-09
 - [ranger-base-uxadf](ranger-base-uxadf.md) — The hash spelling, as a census rather than a word ban (ranger-base-uxadf) — 2026-11-09

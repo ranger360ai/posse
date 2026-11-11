@@ -136,6 +136,23 @@ func TestQAAClaudeSessionRowIsFencedAgainstPidReuse(t *testing.T) {
 			want:  "reused",
 		},
 		{
+			// BOTH SIDES EMPTY, which is the one shape the second disjunct
+			// cannot catch: a row with no procStart compares EQUAL to a
+			// kernel reading nobody could take, and `start == ""` is the
+			// only thing that refuses it (ranger-base-1tt2e, from
+			// ranger-base-s3a9g). MEASURED: reducing the fence to
+			// `if row.ProcStart != start {` left the whole package green,
+			// because the two cases above each differ on the other side.
+			// Defensive rather than live today — procStartOf errors where
+			// there is no /proc (procstart_other.go), so claudeSessionIn is
+			// not reached with an empty start from that path — and pinned
+			// because the whole echo reading rests on this fence.
+			name:  "no procStart and no kernel reading do not agree",
+			row:   map[string]any{"pid": pid, "sessionId": qzujzSession},
+			start: "",
+			want:  "reused",
+		},
+		{
 			name:  "a row about another pid is refused",
 			row:   map[string]any{"pid": pid + 1, "sessionId": qzujzSession, "procStart": "24545899"},
 			start: "24545899",
@@ -212,12 +229,18 @@ func TestQAATheSessionStoreIsOffExactlyWhenTheHistoryStoreIs(t *testing.T) {
 // rexSeedOwnedBy puts rexTestSeat on the fake server with one root record
 // owned by `owner`, and a process table in which `live` names the processes
 // the block actually holds.
-func rexSeedOwnedBy(t *testing.T, owner RexOwner, proc RexProcess) RexMux {
+//
+// The owner is a POINTER because nil is one of the three §3 causes, and a
+// cause this helper could not say was a cause RuntimeOwner's agreement pin
+// could not carry a row for (ranger-base-1tt2e): Rex leaves `owner` out when
+// it could not tell the block's foreground process, which is a record that
+// says nothing about a runtime having written it.
+func rexSeedOwnedBy(t *testing.T, owner *RexOwner, proc RexProcess) RexMux {
 	t.Helper()
 	m, _ := newTestRexMux(t)
 	rexSeedTestSeat(t)
 	rexSeedProcess(t, rexTestBlock, proc)
-	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "idle", App: "claude-code", Owner: &owner}})
+	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "idle", App: "claude-code", Owner: owner}})
 	return m
 }
 
@@ -243,19 +266,27 @@ func TestQAARuntimeOwnerAnswersExactlyWhenTheReadingIsSeen(t *testing.T) {
 	// posse has no evidence a runtime is in.
 	for _, c := range []struct {
 		name  string
-		owner RexOwner
+		owner *RexOwner
 		proc  RexProcess
 	}{
-		{"a live runtime owns the record", RexOwner{PID: 20, Name: claudeRuntimeProcName}, claudeProcTable(20)},
-		{"the block's own shell wrote it", RexOwner{PID: 10, Name: "zsh"}, claudeProcTable(20)},
-		{"its owner is gone", RexOwner{PID: 999, Name: claudeRuntimeProcName}, claudeProcTable(20)},
-		{"the owner's name no longer matches that pid", RexOwner{PID: 20, Name: "python3"}, claudeProcTable(20)},
+		{"a live runtime owns the record", &RexOwner{PID: 20, Name: claudeRuntimeProcName}, claudeProcTable(20)},
+		{"the block's own shell wrote it", &RexOwner{PID: 10, Name: "zsh"}, claudeProcTable(20)},
+		{"its owner is gone", &RexOwner{PID: 999, Name: claudeRuntimeProcName}, claudeProcTable(20)},
+		{"the owner's name no longer matches that pid", &RexOwner{PID: 20, Name: "python3"}, claudeProcTable(20)},
+		// THE THIRD CAUSE THE DOC COMMENT ENUMERATES, which had no row
+		// (ranger-base-1tt2e, from ranger-base-s3a9g): all four rows above
+		// carry a non-nil Owner, so "a record with no owner" was unpinned
+		// and `return RexOwner{}, nil` in its place left the whole package
+		// green. A zero owner is pid 0, and the caller is about to read a
+		// file NAMED by that pid — which is the whole of why muxrex.go's
+		// comment says an error is the only other answer.
+		{"its program_status record names no owner", nil, claudeProcTable(20)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			m := rexSeedOwnedBy(t, c.owner, c.proc)
 			// Two record sets, because each verb consumes one from the queue.
-			rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "idle", App: "claude-code", Owner: &c.owner}})
+			rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "idle", App: "claude-code", Owner: c.owner}})
 			read, err := m.State(rexTestSeat())
 			if err != nil {
 				t.Fatalf("State: %v", err)
@@ -274,7 +305,7 @@ func TestQAARexAgentSessionJoinsTheBlocksOwnerToClaudesSessionRow(t *testing.T) 
 	start := ownProcStart(t)
 	pid := os.Getpid()
 	b, _ := newTestBackend(t)
-	b.Slot = rexSeedOwnedBy(t, RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
+	b.Slot = rexSeedOwnedBy(t, &RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
 	armClaudeSessionRow(t, b, pid, map[string]any{
 		"pid": pid, "sessionId": qzujzSession, "cwd": "/w", "procStart": start, "version": "2.1.322",
 	})
@@ -298,12 +329,19 @@ func TestQAARexAgentSessionRefusesARuntimeThatIsNotClaude(t *testing.T) {
 	// Herdr.PaneAgentSession answers only claude's shape too. A codex or a
 	// grok seat has no row in it, and borrowing the join would read a
 	// `sessions/<pid>.json` that is not about that seat at all.
+	// THE ROW IS ARMED WITH THE KERNEL'S OWN START TIME (ranger-base-1tt2e,
+	// from ranger-base-s3a9g). With `"procStart": "1"` against the live value
+	// for os.Getpid() the pid-reuse fence refused first, and its message
+	// carries the word "claude" too — so both assertions below passed with
+	// the name guard NEUTERED, MEASURED over the whole package. Armed as the
+	// sibling arm above arms it, only the name guard can refuse.
+	start := ownProcStart(t)
 	pid := os.Getpid()
 	b, _ := newTestBackend(t)
-	b.Slot = rexSeedOwnedBy(t, RexOwner{PID: pid, Name: "codex"},
+	b.Slot = rexSeedOwnedBy(t, &RexOwner{PID: pid, Name: "codex"},
 		RexProcess{Child: &RexProc{PID: 10, Name: "zsh"}, Foreground: &RexProc{PID: pid, Name: "codex"},
 			Ancestors: []RexProc{{PID: 10, Name: "zsh"}}})
-	armClaudeSessionRow(t, b, pid, map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": "1"})
+	armClaudeSessionRow(t, b, pid, map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": start})
 
 	if got, err := b.paneAgentSession(rexTestSeat()); err == nil {
 		t.Fatalf("paneAgentSession answered %q for a block held by codex", got)

@@ -29,6 +29,7 @@ package posse
 // the footer.
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -176,10 +177,28 @@ func TestQAAHerdrThatFailedDoesNotFallBackToTheCapture(t *testing.T) {
 	// case and it must not move: ignorance is not evidence either way, and
 	// taking a capture instead would make a transient herdr failure read a
 	// DIFFERENT store than the one the reading is defined over.
-	b, _ := newTestBackend(t)
-	rexSeedCapture(t, rexTestBlock, claudeScreen("x", "  ⏵⏵ auto mode on · 1 shell"))
+	//
+	// THE ERROR IS ARMED AND NOT PROVOKED WITH AN UNKNOWN PANE
+	// (ranger-base-1tt2e, from ranger-base-s3a9g). This fake's `agent
+	// explain` explains ANY pane — an idle fallback with no evaluated rules
+	// — so `Seat{Pane: "no-such-pane:0"}` exercised the SUCCESS path, and
+	// this arm then passed on the absence of regions in a reading that had
+	// never failed at all. MEASURED: replacing the muxVerbMissing branch and
+	// the `return PaneHold{}` under it with a bare
+	// `return b.capturedHold(target)` left this arm green and the whole
+	// package green. confirmsubmitted_qa_test.go:86 is the worked example,
+	// and that arm's own comment already says why it had to.
+	b, fake := newTestBackend(t)
+	write(t, filepath.Join(fake, "explain-error"), "internal|fake herdr: no detection for w1:p1")
+	// And the screen the WRONG code would read is seeded on the route it
+	// would take — `pane read`, a herdr occupant's only screen read — so the
+	// fork shows up in the HOLD and not only in what it spent. With no screen
+	// there the fallback answers the empty hold too, and the assertion below
+	// could not tell a capture from a refusal.
+	write(t, filepath.Join(fake, "pane-text", "w1_p1"),
+		claudeScreen("x", "  ⏵⏵ auto mode on · 1 shell"))
 
-	hold := b.PaneHolding(Seat{Pane: "no-such-pane:0"})
+	hold := b.PaneHolding(fakeHerdrSeat)
 	if hold.Waiting() || len(hold.Read.Regions) != 0 {
 		t.Fatalf("a herdr explain that failed produced a reading (%+v) — only a slot with NO such verb (ADR 0076 §4) reaches the capture, because that silence is permanent and this one is news", hold)
 	}
