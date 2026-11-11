@@ -74,4 +74,36 @@ sibling seats throughout (dinesh/ranger-base-xpxo6, gwart/ranger-base-4kars):
 - `make fmt-check` — exit 0
 - `make -k tree-check` — exit 0, 53.2s, all sixteen doors green (it was the only red in all sixteen before this)
 - `scripts/posse-land-check` — green in 4s, 5 checks
-- `make test` — the reading is on the bead's close comment
+- `make test` — arm 1 green (internal/posse 103.3s, cmd/posse 121.2s,
+  internal/treepins 134.4s, cmd/coldexec, cmd/testparallel, all ok, so both
+  cold-exec arms ran). Arms 2 and 3 could not be read on /tmp: four reds in
+  arm 2 and six in arm 3, every one of them a `Disk quota exceeded` write and
+  none related to each other. /tmp here is a 14G tmpfs mounted `usrquota`, and
+  every seat runs as the same uid, so that per-user quota is ONE box-wide
+  budget three concurrent suites spend together — `df` reported 2.8-3.2G free
+  on the device throughout. A re-run queued 553s for a slot and died the same
+  way. Filed as ranger-base-akk9f, with the second half of the finding:
+  test-times.sh's disk explainer greps the literal `no space left on device`,
+  so the EDQUOT spelling printed no cause block at all, which is exactly the
+  class ranger-base-krra built it for.
+
+  The reading, composed, with the deviation declared:
+  arm 2 with TMPDIR on /home (930G ext4, no quota) — `ok 71.1s`, so the quota
+  was the whole of those reds. Arm 3 the same way — green but for exactly two
+  tests, `TestQAGrantStillReachesTheGitConfigInEveryShape/deniesFiles` and
+  `TestSeatbeltWritableReachesGoTelemetryCountersAndNotTheModeSwitch`, both
+  artifacts of the moved root and not of this change: the pins build their
+  grant set in a hermetic environment while `t.TempDir()` still lands under
+  the OUTER TMPDIR, so the fixture falls outside every granted root (the
+  printed set ends in a bare `/tmp`; the file is under /home). The product
+  honours the variable — seatbelt.go:709 adds `$TMPDIR` when non-empty — so
+  this is the two tests' assumption, not a defect. Run on the house default
+  they pass: `go test -tags posse_arm3 -run <those two> ./internal/posse`,
+  `ok 0.022s`.
+
+  So: every arm green, with arms 2 and 3 read on a moved temp root and those
+  two pins read back on the house one. Not the same thing as a plain
+  `make test` green on this box, and said that way on purpose. `/tmp` was
+  never touched — the trees holding the space were a minute old, so they were
+  live sibling suites, and test-times.sh is right that clearing is not a
+  seat's call. `go run ./cmd/checkorphans` clean after every run.
