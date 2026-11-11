@@ -122,7 +122,18 @@ package treepins
 // half has and is limited for the same reason: a hop further starts reading
 // other packages' helpers, and nothing in the tree needs it. What the one hop
 // buys is symmetry, so neither half of the subject can be restored by moving
-// a token out of the call (ranger-base-l0bep).
+// a token out of the call (ranger-base-l0bep). An in-function `var` or
+// `const` binding IS read, and was not until ranger-base-o57rc: it is an
+// *ast.DeclStmt rather than an assignment, so `var gitBin = "git"` resolved
+// to nothing where `gitBin := "git"` reds, and this paragraph read as a
+// complete enumeration while it was not (ranger-base-tfqlr finding 2; the
+// walk that reads it has both arms).
+//
+// NOR that a git CHILD bound by an in-function `var` is seen: the walk that
+// collects the children this function exec'd reads *ast.AssignStmt alone, so
+// `var cmd = exec.Command(gitBin, …)` is invisible and the function is
+// skipped whole — MEASURED 2026-11-11 at policypins_qa_test.go's ppRepo with
+// a caught `var gitBin = "git"` beside it, reading ok (ranger-base-6rr2e).
 //
 // NOR that `exec.LookPath` is read anywhere but in that one hop, on a literal
 // "git", bound to a local identifier the call then execs. Three shapes in this
@@ -307,9 +318,10 @@ func fgpLookPathGit(e ast.Expr) bool {
 // literal.
 //
 // ONE HOP, by the same rule and to the same depth as the `.Env` half below:
-// an *ast.Ident first argument is resolved through the assignments to that
-// name in the exec'ing function, and the accept test applied to each is the
-// SAME fgpStringLit the inline spelling gets. So `gitBin := "git"` followed by
+// an *ast.Ident first argument is resolved through the bindings of that name
+// in the exec'ing function — its assignments and its `var`/`const`
+// declarations alike — and the accept test applied to each is the SAME
+// fgpStringLit the inline spelling gets. So `gitBin := "git"` followed by
 // `exec.Command(gitBin, …)` is read as what it is, and `gitBin :=
 // gitOutsideGates(t)` — a call, not a literal — is not. ANY assignment
 // resolving to the literal is enough: a name bound to the bare word on even
@@ -500,23 +512,73 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 			// recorded: it is the slot the VALUE lands in for every `v, err
 			// := f()` in this corpus, and mapping `err` to f() would be a
 			// false statement about what that name holds.
+			//
+			// AND the same two shapes spelled as a `var` DECLARATION inside
+			// that function, which is an *ast.DeclStmt and not an assignment
+			// at all. Until ranger-base-o57rc this walk read AssignStmt
+			// alone, so `var gitBin = "git"` and `var gitBin, _ =
+			// exec.LookPath("git")` resolved to nothing and read ok at a site
+			// where `gitBin := "git"` reds and names the binding — MEASURED
+			// 2026-11-10 at policypins_qa_test.go's ppRepo, one spelling per
+			// arm, with the two `:=` arms as the positive control
+			// (ranger-base-tfqlr finding 2). The pin's prose above claims
+			// this depth — "the assignments to that name in the exec'ing
+			// function" — and its NOT CLAIMED paragraph enumerates what is
+			// outside it: a function parameter, a package-level var, a second
+			// identifier. An in-function `var` is in neither list, so the
+			// enumeration read as complete and was not. The accept tests are
+			// untouched: a ValueSpec's value meets the same fgpStringLit and
+			// fgpLookPathGit the inline spelling meets, so this is the
+			// recognizer reaching a spelling, not the wider reading
+			// ranger-base-ffojl declined. A `const` spec is the same node and
+			// the same defect one token away, so it is read too.
 			local := map[string][]ast.Expr{}
-			ast.Inspect(fd.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok || len(as.Rhs) == 0 {
-					return true
+			// bind records n names from n values pairwise, or n names from a
+			// single value — in which case only the FIRST name is taken, for
+			// the reason above. An empty name is a target that binds no local
+			// identifier (`f.gitBin`, `a[i]`); it holds its slot so the
+			// pairwise case stays aligned, and is recorded under no name.
+			bind := func(names []string, values []ast.Expr) {
+				if len(values) == 0 {
+					return
 				}
-				if len(as.Lhs) == len(as.Rhs) {
-					for i, l := range as.Lhs {
-						if id, ok := l.(*ast.Ident); ok {
-							local[id.Name] = append(local[id.Name], as.Rhs[i])
+				if len(names) == len(values) {
+					for i, nm := range names {
+						if nm != "" {
+							local[nm] = append(local[nm], values[i])
 						}
 					}
-					return true
+					return
 				}
-				if len(as.Rhs) == 1 {
-					if id, ok := as.Lhs[0].(*ast.Ident); ok {
-						local[id.Name] = append(local[id.Name], as.Rhs[0])
+				if len(values) == 1 && len(names) > 0 && names[0] != "" {
+					local[names[0]] = append(local[names[0]], values[0])
+				}
+			}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				switch s := n.(type) {
+				case *ast.AssignStmt:
+					names := make([]string, len(s.Lhs))
+					for i, l := range s.Lhs {
+						if id, ok := l.(*ast.Ident); ok {
+							names[i] = id.Name
+						}
+					}
+					bind(names, s.Rhs)
+				case *ast.DeclStmt:
+					gd, ok := s.Decl.(*ast.GenDecl)
+					if !ok || (gd.Tok != token.VAR && gd.Tok != token.CONST) {
+						return true
+					}
+					for _, sp := range gd.Specs {
+						vs, ok := sp.(*ast.ValueSpec)
+						if !ok {
+							continue
+						}
+						names := make([]string, len(vs.Names))
+						for i, id := range vs.Names {
+							names[i] = id.Name
+						}
+						bind(names, vs.Values)
 					}
 				}
 				return true

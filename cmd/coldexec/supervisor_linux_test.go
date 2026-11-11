@@ -443,3 +443,43 @@ printf '#!/bin/sh\nexit 0\n' > p; chmod +x p; ./p`)
 		t.Errorf("the run delayed something other than the one plant:\n%s", out)
 	}
 }
+
+// ARM 12: the epoch test reads the CTIME, and a plant whose MTIME predates
+// the run is still a plant. This is the witness for the choice door_linux.go
+// documents at the stat — "the ctime, not the mtime: a copied binary keeps
+// its source's mtime and a `chmod +x` moves only the ctime, and both of
+// those are plants" — which until now nothing measured: mutating
+// `st.Ctim` to `st.Mtim` in that one comparison left all eleven pins above
+// green, ok 1.535s (MEASURED 2026-11-10, ranger-base-tfqlr finding 1), so a
+// later "simplify ctime to mtime" landed green over a door that had stopped
+// covering half of ADR 0085 D5's artifact class.
+//
+// Both halves of the comment are here because each one is a real spelling of
+// that class and the mtime reading misses both. ARM 2 cannot see it: its
+// plant is a plain `cp`, which sets a FRESH mtime, so it is cold under
+// either reading. The mtime-preserving copy is what `cp -p`, `install -p`
+// and a tar/zip extraction do, and the second half is a file that was
+// already in the tree and gains its exec bit — a chmod moves the ctime and
+// nothing else, so under the mutant door both of these read "old" and are
+// let through at full speed. Under the shipped door both pay D, which is
+// what this asserts.
+func TestAPlantWhoseMtimePredatesTheRunStillPaysD(t *testing.T) {
+	t.Parallel()
+	r := runDoor(t, `cp -p /bin/true preserved
+tm preserved ./preserved
+printf '#!/bin/sh\necho ran\n' > gained
+touch -t 202001010000 gained
+chmod +x gained
+tm gained ./gained
+`)
+	r.wantCode(t, 0)
+	r.wantDelayed(t, 2)
+	// The copy keeps /bin/true's mtime; only its ctime is this run's.
+	r.cold(t, "preserved")
+	// `touch -t` puts the mtime in 2020 and the chmod moves the ctime alone.
+	r.cold(t, "gained")
+	r.wantNoHoles(t)
+	if !strings.Contains(r.out, "ran") {
+		t.Errorf("the backdated plant did not run, so the second delay was not its exec:\n%s", r.out)
+	}
+}
