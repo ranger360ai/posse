@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below*
 
 ## Context
 
@@ -1432,3 +1432,121 @@ the decision rests on. UNMEASURED: whether a block can change sessions
 (`session.detach_block`/`session.move_block` are session methods, so it
 reads as no) — it is why there is no memo, which would be the only thing
 such a move could break.
+
+## Amendment 5: a withholding reading may read the screen on Rex; "no screen rules" is about state (ranger-base-r5131, 2026-11-10)
+
+§3 says agent state on Rex comes from the runtime's own report, and
+"Alternatives rejected" declines screen rules on Rex. Both stand. This
+amendment settles what they do NOT cover, because a bead found the gap
+the hard way: a reading whose only possible consequence is to WITHHOLD
+one.
+
+### What broke
+
+ranger-base-htafy reads what a pane herdr calls settled is still
+*holding* — claude's own footer summary of its live background tasks
+(`1 shell, 1 monitor`) and text sitting unsent in its composer — and
+its three callers spend it by not acting: dispatch's `--resume` skip
+does not re-prompt, gather does not count a settle-open, the pulse does
+not file a G2 row. It reads both regions off `agent explain` previews,
+which is §4. So on a `multiplexer: rex` instance every settled seat
+answered the empty hold and all three guards were off, silently, from
+the day the slot changed. Nothing recorded that; §4's "not available"
+was doing its job, and the caller conceding was the bug.
+
+The cost, MEASURED 2026-11-10 20:15-20:17 -05:00 on this host (linux,
+rex CLI 0.0.1794069975, claude 2.1.322), in the seat that filed the
+bead, by backgrounding a declared recorder and ending the turn across
+it: the turn ended at 20:15:53, dispatch counted a settle-open against
+ranger-base-r5131 at 01:15Z and re-prompted a seat that was doing
+exactly what it had been told, and a second pass would have escalated
+that bead to the operator as a `-l question`. The bug reproduced itself
+on the bead that was fixing it.
+
+### What Rex carries, and what it does not
+
+All MEASURED in the same run, 23 samples at 3s across the turn boundary:
+
+- **`program_status` does not carry it.** One root record for the whole
+  settled window — `state=done`, `app=claude-code`, owner `claude` — and
+  no child record at any sample. `rexReading` therefore reads `done`,
+  correctly, and it is the wrong question answered right.
+- **`process` does not carry it.** `child`, `foreground` and the
+  `ancestors` between them are the block-shell → claude chain. A
+  background shell is a child of CLAUDE, not of the block; it never
+  appeared in any reading, and neither did the gate shell taking them.
+- **The footer carries it**, verbatim and across the turn boundary:
+  `⏵⏵ auto mode on · 1 shell` in every settled sample. Same line
+  htafy measured on herdr, in claude's own words, reachable with plain
+  `rex capture --format text`.
+
+### Decision
+
+**A reading that can only withhold a consequence may be taken off the
+screen on either occupant.** It is not a state, it does not enter
+`MuxReading`, it never admits a runtime and it never licenses a
+keystroke. Its one permitted output is "this settle is not one"; it
+cannot produce "this settle IS one", so the worst a wrong one can do is
+cost a pass. That is the opposite risk profile from a detection rule,
+which is why the rejected alternative does not reach it: what §3 and
+that alternative refuse is posse *inventing a state* on Rex — a second
+detection engine standing in for a report the runtime already makes.
+This invents nothing and replaces nothing.
+
+Three limits make that line hold rather than merely state it:
+
+1. **One parser.** The vocabulary of claude's task nouns is written once
+   (`backgroundWorkIn`, internal/posse/panework.go) and both routes —
+   herdr's region preview and the capture — hand their region to it.
+   The second engine the alternative refuses would have been a second
+   copy of this to keep in step with the binary.
+2. **Positional, never a search.** The reading takes only the lines
+   after the screen's last horizontal rule, which is the same place
+   herdr's manifest names `after_last_horizontal_rule`. A scan of the
+   whole screen for the task nouns matches TRANSCRIPT PROSE — this
+   bead's own notes quote `· 1 shell ·` in running text — and a hold
+   invented out of a quotation can never go false, because nobody can
+   clear a line of transcript. Pinned both ways: with the anchor removed
+   the arm reddens, and with the route removed the other arm reddens
+   (`internal/posse/capturedhold_qa_test.go`).
+3. **A failure is still ignorance.** The capture is reached only when
+   §4 says the slot HAS NO SUCH VERB (`muxVerbMissing`, ranger-base-l32dl)
+   — a silence that is permanent for the life of the instance. A herdr
+   that was asked and failed still answers the empty hold, unchanged:
+   that silence is news, and a transient diagnostic failure must not
+   quietly switch which store a reading is defined over.
+
+**The composer half stays §4's.** It is reachable on the screen, but
+the reading that keeps it honest is not: telling a prompt sitting unsent
+from the box echoing a line already submitted needs the runtime's own
+conversation id (`paneAgentSession`), which is §4, and without it every
+echo reads as a hold. That inverts the risk profile above — it invents
+holds — so it is refused here and filed as ranger-base-qzujz, whose
+first job is to find Rex's store of record for "was this submitted".
+
+### Consequences
+
+- `PaneHolding`'s WORK half now answers on both occupants, so htafy's
+  three guards are live on a Rex instance: the `--resume` skip, the
+  settle-open count and the pulse's G2 row.
+- The readings log distinguishes the routes: the capture records the
+  region `capture_after_last_horizontal_rule`, never herdr's
+  `after_last_horizontal_rule`, so a census can say which route
+  withheld a settle (ADR 0066 D1).
+- `rex capture --format text` of a live claude block is the SCREEN, not
+  the scrollback — 60 lines, 8317 bytes, 21 ms, three runs
+  byte-identical (MEASURED 2026-11-10), because claude is on the
+  alternate screen buffer. The `lines` bound is passed anyway: an
+  occupant is free to honour it, and the reading only ever wants the
+  tail.
+- A live pin re-checks the two things outside this repo that the
+  hermetic arms cannot (claude still drawing the summary in the footer,
+  rex still returning the rules):
+  `RHQ_LIVE_REX=1 RHQ_LIVE_REX_WORK=1 go test ./internal/posse/ -run
+  TestLiveCapturedHoldReadsThisSeatsOwnFooter`. It reads the seat it
+  runs in, off `REX_SESSION`/`REX_BLOCK`. MEASURED 2026-11-10 against
+  the real server with one background shell live: `Work = "1 shell"`,
+  `Why = "1 shell still running"`.
+- A runtime that is not claude previews no such footer and answers the
+  empty hold, exactly as it did on herdr. That remains a gap and not a
+  bug: the reading is only ever allowed to say "this settle is not one".

@@ -86,6 +86,16 @@ package posse
 // settle is then judged exactly as it was before this bead. Ignorance is
 // not evidence that an agent is waiting, and a hold invented out of one
 // would keep a genuinely stuck bead claimed forever.
+//
+// BOTH REGIONS WERE ALSO HERDR'S TO READ, and that is a different sentence
+// from the one above it — the regions are claude's, the READ was `agent
+// explain`, which is ADR 0076 §4. So this whole file was off on a
+// `multiplexer: rex` instance, silently, from the day the slot changed: not
+// "claude is not in the pane" but "the question was never asked". The WORK
+// half is realized a second way for that occupant (capturedHold below,
+// ranger-base-r5131), off §2's `Read`, which every occupant has. The
+// composer half is still §4's and is still herdr-only; ranger-base-qzujz
+// carries it.
 
 import (
 	"fmt"
@@ -119,7 +129,27 @@ const (
 	// herdr's — herdr has no region for it, which is the whole reason that
 	// second read exists — so it is spelled apart from the two above.
 	composerANSIRegion = "prompt_box_ansi_line"
+
+	// captureFooterRegion is footerRegion read off a CAPTURE instead of off
+	// herdr's working (capturedHold, ranger-base-r5131). Posse's own name
+	// for composerANSIRegion's reason, and deliberately NOT footerRegion's
+	// spelling: the two are the same line of claude's screen located two
+	// different ways, and a readings census that could not tell them apart
+	// could not say which route a withheld settle was withheld on.
+	captureFooterRegion = "capture_after_last_horizontal_rule"
 )
+
+// captureFooterLines is how much of a captured screen's tail capturedHold
+// asks for. claude's footer is the last two or three lines of it, so this is
+// slack and not a budget: enough that a footer pushed up by a few lines of
+// chrome is still in the window, small enough that nothing here ever parses
+// a scrollback (captureFooter's measurement).
+const captureFooterLines = 40
+
+// footerRuleRune is the character claude draws its horizontal rules with —
+// U+2500 BOX DRAWINGS LIGHT HORIZONTAL (MEASURED 2026-11-10 off a live
+// capture: the rule lines are that rune and nothing else).
+const footerRuleRune = '─'
 
 // backgroundTaskCount matches one counted entry of claude's task summary —
 // the nouns are the binary's own (2.1.258), not a guess. A summary of
@@ -238,7 +268,18 @@ func (d AgentDetection) ComposerTruncated() bool {
 // BackgroundWork returns claude's footer summary of the background tasks it
 // is running, or "" when the footer shows none (or posse cannot see one).
 func (d AgentDetection) BackgroundWork() string {
-	for _, part := range strings.Split(d.regionPreview(footerRegion), footerSep) {
+	return backgroundWorkIn(d.regionPreview(footerRegion))
+}
+
+// backgroundWorkIn is the vocabulary over ONE footer region, whoever read the
+// region. It is split out of BackgroundWork above rather than copied beside
+// it because the capture route below reads the same line off a different
+// store, and a second spelling of claude's task nouns is a second thing to
+// keep in step with the binary — which is the whole objection ADR 0076
+// records to screen rules on Rex ("posse would maintain a second detection
+// engine"). One parser, two ways in.
+func backgroundWorkIn(region string) string {
+	for _, part := range strings.Split(region, footerSep) {
 		if s := backgroundTaskSummary(part); s != "" {
 			return s
 		}
@@ -321,6 +362,18 @@ func (d AgentDetection) Hold() PaneHold {
 func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 	det, err := b.explain(paneSeat(target))
 	if err != nil {
+		// ranger-base-r5131. Two silences wear one error here, and only one
+		// of them is ignorance. A herdr that WAS asked and failed is the
+		// case the note above is about: news, possibly gone by the next
+		// pass, and no evidence either way — the empty hold. A slot with no
+		// `agent explain` AT ALL (ADR 0076 §4) is not that: nothing was
+		// asked, nothing will be on any later pass, and the whole of this
+		// reading was off for the life of the instance. muxVerbMissing is
+		// the predicate written for exactly that distinction
+		// (ranger-base-l32dl), and the capture route is what it reaches.
+		if _, missing := muxVerbMissing(err); missing {
+			return b.capturedHold(target)
+		}
 		return PaneHold{}
 	}
 	hold := det.Hold()
@@ -376,6 +429,125 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 		}
 	}
 	return hold
+}
+
+// capturedHold is the WORK half of this file's reading on an occupant that
+// has no `agent explain` — ranger-base-r5131, and the reason htafy's guard
+// had to be realized twice.
+//
+// WHY IT EXISTS. htafy read both regions off herdr's `agent explain`
+// previews, which is §4 and answers "not available" on a `multiplexer: rex`
+// instance. So on this box every settled seat answered the empty hold, and
+// the three consequences that hold withholds — the --resume skip
+// (dispatch.go), the settle-open count (settleopen.go) and the pulse's G2
+// row (govern.go) — all ran as though htafy had never landed. MEASURED
+// 2026-11-10 on this host (linux, rex CLI 0.0.1794069975, claude 2.1.322),
+// in the seat filing this bead, by backgrounding a declared recorder and
+// ending the turn across it: at 20:15:53 the turn ended, dispatch counted a
+// settle-open against ranger-base-r5131 at 01:15Z and re-prompted it, and a
+// second one would have escalated this bead to the operator. That is the
+// bug, reproduced on itself.
+//
+// WHY THE SCREEN, AND WHY THAT IS NOT ADR 0076's REJECTED ALTERNATIVE.
+// Neither of Rex's own answers carries this fact, both MEASURED in the same
+// run:
+//
+//   - `program_status` holds ONE root record across the whole settled
+//     window — `state=done`, owner claude — and no child record. There is
+//     nothing in it about the shell, so rexReading reads `done` correctly
+//     and uselessly.
+//   - `process` is the block-shell -> claude chain only: `child`,
+//     `foreground` and the `ancestors` between them. A background shell is
+//     a child of CLAUDE, not of the block, and never appeared in any
+//     sample — nor did the gate shell taking them.
+//
+// claude's footer does carry it, verbatim and across the turn boundary:
+// `⏵⏵ auto mode on · 1 shell` in every settled sample. ADR 0076 rejected
+// "screen rules on Rex" and that stands: this is not a rule, not a detection
+// engine and not a state. It reads ONE line claude publishes about itself,
+// through §2's own `Read` verb, which both occupants have, and hands it to
+// the vocabulary parser that was already here. It cannot produce a state,
+// admit a runtime, or license a keystroke; the only thing it can do is what
+// the note at the top of this file already licenses — say "this settle is
+// not one". See ADR 0076, "Amendment 5".
+//
+// THE WORK HALF ONLY, and the gap is named rather than hidden. The composer
+// half needs `prompt_box_body` and then the two stores that tell a held
+// prompt from an echoed or a drawn one, and the first of those
+// (`paneAgentSession`) is itself §4 — so a Typed reading taken here could
+// not run the echo check and would INVENT holds, which is the one direction
+// this file refuses. Typed, Sent and Ghost therefore stay "" on this route
+// and the unsent-prompt half of htafy stays herdr-only; that is
+// ranger-base-qzujz.
+func (b *HerdrBackend) capturedHold(target string) PaneHold {
+	screen, err := b.Mux().Read(paneSeat(target), captureFooterLines, false)
+	if err != nil {
+		// The same direction as every other failure here: a screen posse
+		// could not read is not evidence that an agent has stopped.
+		return PaneHold{}
+	}
+	footer := captureFooter(screen)
+	work := backgroundWorkIn(footer)
+	if work == "" {
+		return PaneHold{}
+	}
+	// The region is recorded whether or not herdr ever saw one, because the
+	// consequence sites log `hold.Read` and a record that named no region
+	// could not say what this withheld on (ADR 0066 D1). `Seen` stays
+	// false: it means "herdr recognized a screen", and on this route herdr
+	// was never asked.
+	return PaneHold{Work: work, Read: ReadingEvidence{
+		Regions: []ReadingRegion{{Name: captureFooterRegion, Bytes: len(footer), Text: footer}},
+	}}
+}
+
+// captureFooter is the lines after the screen's LAST horizontal rule: the
+// same place herdr's manifest names `after_last_horizontal_rule`, located
+// here rather than asked for, because the slot that needs it has no manifest
+// to ask.
+//
+// POSITIONAL AND NOT A SEARCH, which is the part that keeps this safe. A
+// scan of the whole screen for claude's task nouns would match this bead's
+// own prose — a transcript line quoting `· 1 shell ·` would read as live
+// work — and a hold invented out of a quotation keeps a genuinely stuck bead
+// claimed forever, which is the failure the top of this file is written
+// against. Anchoring on the rule means the only lines the vocabulary ever
+// sees are the ones claude draws below its composer.
+//
+// MEASURED 2026-11-10, `rex capture --format text` of a live claude 2.1.322
+// block: 60 lines, 8317 bytes, 21 ms, three runs byte-identical. The tail is
+// a rule, `❯ ` and its U+00A0, a rule, a blank, then the footer — claude is
+// on the alternate screen buffer, so the capture is the SCREEN and not the
+// 64 MiB of scrollback `rex capture` documents for an ordinary block. The
+// `lines` bound is passed anyway: it is what this reading needs, and it is
+// the occupant's to honour rather than this function's to assume.
+//
+// No rule on screen returns "", and so does a screen whose last rule is its
+// last line. Both are "posse saw no footer", which answers the empty hold.
+func captureFooter(screen string) string {
+	lines := strings.Split(screen, "\n")
+	last := -1
+	for i, l := range lines {
+		if isFooterRule(l) {
+			last = i
+		}
+	}
+	if last < 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(lines[last+1:], "\n"))
+}
+
+// isFooterRule is whether one captured line IS one of claude's rules: box
+// drawing horizontal, and nothing else but the spaces around it. A line that
+// merely CONTAINS a run of them is not one — the rule is the whole line, and
+// a prose line drawing a long dash would otherwise move the footer.
+func isFooterRule(line string) bool {
+	s := strings.TrimSpace(line)
+	if s == "" {
+		return false
+	}
+	return strings.Trim(s, string(footerRuleRune)) == ""
 }
 
 // sessionHolding is PaneHolding by session name, for the callers that have

@@ -1030,7 +1030,15 @@ package treepins
 // above tells: the HIGHER load produced the FASTER run, by 2.5s. At this end
 // of the load range the spread is smaller than whatever else moves between
 // two runs, so a seat should price the command from the band and not from the
-// load average. The pin this bead added is 0.17s of either reading.)
+// load average. The pin this bead added is 0.17s of either reading.
+//
+// A third reading over this same class, from another bead the same day:
+// 41.5s (MEASURED 2026-11-10, ranger-base-r5131, at a one-minute load
+// average of 10.79 over a five-minute 6.26, no suite slot held by anyone;
+// that bead added no tree-wide pin and no door, so the class is byte for
+// byte the one above). It lands between the two, at a load between theirs,
+// which settles the ambiguity they left: the 40s band is the price of this
+// class and is reproducible across beads, not an artefact of either run.)
 //
 // The reading before it, taken the same day at one pin fewer: 123-185s over
 // three warm runs at one hundred and
