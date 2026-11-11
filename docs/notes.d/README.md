@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-xdaw9](ranger-base-xdaw9.md) — herdr's typed route loses a prompt into a modal too, and the tell is the screen (ranger-base-xdaw9) — 2026-11-11
+- [ranger-base-pn621](ranger-base-pn621.md) — This repo's own land check: what it costs, and the three things D6 left to the build (ranger-base-pn621) — 2026-11-11
 - [ranger-base-o57rc](ranger-base-o57rc.md) — Two pins that claimed more than they measured (ranger-base-o57rc) — 2026-11-11
 - [ranger-base-md7ag](ranger-base-md7ag.md) — Verifying four closes: what the mutants said, and the sixth door (ranger-base-md7ag) — 2026-11-11
 - [ranger-base-j687x](ranger-base-j687x.md) — ranger-base-j687x — the typed route had no liveness guard, and the trace is why that is a change — 2026-11-11

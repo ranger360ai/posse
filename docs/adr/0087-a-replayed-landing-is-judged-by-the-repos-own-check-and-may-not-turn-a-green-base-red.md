@@ -130,6 +130,27 @@ being affordable is in Alternatives.
   it compiles: a semantic conflict that type-checks still lands. Tests are not
   in the lock (D6).
 - posse stays repo-agnostic. The only new contract is one script path.
+- **This repo's own check shipped under ranger-base-pn621, and the price was
+  re-measured on it.** `scripts/posse-land-check` is D6's body, with two things
+  D6 left to the build: the arm tags AND the packages to vet them in are
+  derived from the tree's own `//go:build` lines rather than listed, so a
+  fourth arm is covered by the commit that declares it and a fourth arm in
+  another package is not vetted into a hole; and the cross-GOOS step reads
+  "whichever of darwin/linux is not native", which on the D1 host is
+  `GOOS=darwin go vet ./...` verbatim and on a darwin launcher is the mirror
+  image rather than a redundant native vet beside an unvetted linux arm.
+  MEASURED 2026-11-11 on the D1 host, the script run against trees exported
+  with `git archive` against the fleet-warm build cache: **7.1-8.7s warm** at
+  loadavgs of 3.4 to 13.8, and **30.1s cold**. Warm holds against the 5.9s in
+  the table above — it is 7s rather than 6s because that table timed its steps
+  over a cache warm for all of them, and a replay's tree has files in it
+  nothing has compiled — and the cold figure is the same table's 15.9s plus
+  the darwin vet measured beside it, so the cost paragraph stands and the
+  exit hatch stays shut. The check exits 1 in 297ms at a2327230 naming both
+  build errors, and 0 at 10d046f9, so the first Consequence above is witnessed
+  rather than inferred. docs/notes.d/ranger-base-pn621.md carries the numbers,
+  the derivation witnesses, and one residual D6 does not state: the
+  `!darwin && !linux` files compile under neither GOOS, here or in ci.yml.
 
 ## Alternatives rejected
 

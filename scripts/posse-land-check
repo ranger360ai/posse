@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# posse-land-check — this repo's answer to ADR 0087's one contract: may the
+# tree at $PWD land on main?
+#
+#   scripts/posse-land-check          judge $PWD; exit 0 green, nonzero red
+#   scripts/posse-land-check --plan   print the commands it would run, run none
+#
+# WHY THIS EXISTS. MergeSessionWork replays a session branch onto a base that
+# moved and then fast-forwards the replayed tip, and until ADR 0087 nothing
+# compiled that tip — git only refuses TEXTUAL conflicts, so a semantic one
+# lands silently. MEASURED on ranger-base-s3a9g: 4fbef672 built clean,
+# ranger-base-r5131's 10d046f9 built clean, and the replay of the first onto
+# the second — a2327230 — is refused by `go build ./...` with two errors and by
+# `go test -c` with seven more. Every seat's `make test`, `tree-check` and
+# `coldexec-check` went red, `make install` could not run, `checkorphans`
+# exited 1, and ci.yml saw it only once main was already red.
+#
+# THE CONTRACT (ADR 0087 D1), and every line of it is load-bearing here:
+#
+#   * No arguments, and **cwd is the tree to judge**. The copy that RUNS is the
+#     BASE checkout's — the copy a human reviewed — with the SESSION tree as
+#     its cwd. So nothing here may resolve a path out of $BASH_SOURCE or $0:
+#     that names the base's directory, a DIFFERENT tree, and a check that
+#     judged its own directory would pass every replay by judging the base
+#     twice while looking exactly like a check. Relative paths and $PWD only.
+#   * Exit 0 is green, any other exit is red, errors on stderr.
+#   * The LAST lines of combined output are the cause — landCheckSaid keeps the
+#     last three non-empty ones and flattens them into a merge-back bead
+#     somebody reads days later. So this fails FAST and prints NOTHING after
+#     the failing tool: the tool's own complaint is the tail, and the step line
+#     printed just above it names what died.
+#
+# WHAT IT MAY NOT DO (D6). It runs operator-side, uncaged, as the launcher,
+# inside the fleet lock, so it EXECUTES NOTHING THE BRANCH WROTE: no `go test`,
+# no `make`, no `go generate`, no script out of the tree being judged. It reads
+# the branch's bytes and hands them to the toolchain, and that is all. `go vet`
+# type-checks test files without running them, which is how it catches the
+# seven `go test -c` errors that `go build` alone misses. `GOTOOLCHAIN=local`
+# is the same rule one layer down: a go.mod asking for a newer toolchain must
+# not make this fetch one and run it. This repo has no cgo and no generate step
+# in the gate, so the toolchain is the only program that runs.
+#
+# EVERY ARM, DERIVED AND NOT LISTED. internal/posse's tests are three binaries
+# split by build tag (ranger-base-qp1hm), and `go vet ./...` builds the DEFAULT
+# build of every package — arm 1 and nothing else, which the day the split
+# landed would have left two thirds of that package's test tree unvetted. So
+# the arms are vetted one at a time, and both the tag list and the packages
+# come out of the tree's own `//go:build` lines rather than a literal
+# `posse_arm2 posse_arm3` here: a fourth arm is covered by the commit that
+# declares it, with nobody remembering this file, and a fourth arm declared in
+# some OTHER package is vetted in that package rather than missed.
+#
+# The scan reads what is ON DISK and not what git tracks, because what is on
+# disk is what the toolchain compiles; and it reads only the lines ABOVE each
+# file's `package` clause, so a build line quoted at column 0 inside a string
+# literal is a mention and not a declaration.
+#
+# FINDING NO ARMS AT ALL IS A RED, not a quiet skip. A derivation that silently
+# returns nothing restores the exact hole this paragraph exists to close — the
+# arm vets vanish and the run still prints green. This repo has arms (the
+# Makefile's three test-arm targets are the other half of the same split), so a
+# zero here is this script broken. The day the arms are genuinely retired, this
+# reds once with that sentence and the fix is to delete this guard in the same
+# commit; a check that could not say that is worth less than the noise.
+#
+# BOTH PLATFORMS, THE NATIVE ONE ONLY ONCE. The darwin-only files compile only
+# under GOOS=darwin and the linux-only ones only under GOOS=linux
+# (backupvolume, loadavg, proctable, procstart, canonicalpath, cmd/coldexec),
+# and ci.yml has a leg for each. D6's body names `GOOS=darwin go vet ./...`
+# because the D1 host is linux, where the plain `go vet ./...` above has
+# already covered linux. This cross-vets whichever of the two is NOT native, so
+# on that host it is D6's body verbatim, and on a darwin launcher it is the
+# mirror image instead of a hole. The GOARCH is the host's, except where the
+# host's arch is one darwin has no port for, which is not a pair go will accept
+# and would be a spurious red rather than a finding.
+#
+# STATED RESIDUAL: the `!darwin && !linux` files (backupvolume_other.go,
+# loadavg_other.go, procstart_other.go, …) compile under neither GOOS, here or
+# in ci.yml. Covering them means a third GOOS and a price nobody has measured.
+#
+# WHAT IT COSTS, paid inside the fleet lock on the replay arm only.
+# MEASURED 2026-11-11 on the D1 host (Linux 7.2.15, 16 cores, go
+# 1.27.3-X:nodwarf5 linux/amd64, GOTOOLCHAIN=local), this script run against a
+# tree exported to a plain directory, the shared GOCACHE warm from the fleet's
+# own builds — which is the state a replay actually finds:
+#
+#   warm, 10d046f9, 20 commits back, loadavg 3.4                    7.1s
+#   warm, HEAD~3,   9 go files from HEAD, loadavg 13.8              7.4s
+#   warm, HEAD~8,  33 go files from HEAD, loadavg 13.5              7.4s
+#   warm, HEAD~20, 60 go files from HEAD, loadavg 13.8              8.7s
+#   warm, this worktree twice over, nothing recompiled              1-2s
+#   cold, GOCACHE emptied, loadavg 7.4 → 15.8                      30.1s
+#
+# and cold per step on a second empty cache, loadavg 16.8 → 19.5: build 7.9s,
+# vet 2.6s, arm2 2.9s, arm3 2.1s, GOOS=darwin 8.5s.
+#
+# So: about 7s warm and 30s cold, against ADR 0087's budget of ~6s warm and
+# ~16s cold. Warm holds — it is 7s and not 6s because the ADR timed its four
+# steps one after another over a cache that was warm for all of them, and a
+# replay's tree has files in it nothing has compiled. The cold figure is the
+# ADR's four steps plus the darwin vet the ADR measured separately (17.7s
+# first-ever there, 8.5s here), and a cold cache is the first replay after a
+# toolchain change or a cache prune rather than a per-landing price. The ~30s
+# WARM ceiling at which the bead said to hand the lock-time price back to
+# architecture is not approached: nothing warm measured above 8.7s, and that
+# at a loadavg of 13.8 on a 16-core box.
+set -euo pipefail
+
+plan_only=0
+case "${1:-}" in
+  '') ;;
+  --plan) plan_only=1; shift ;;
+  -h | --help)
+    printf '%s\n' \
+      'usage: posse-land-check            judge $PWD; exit 0 green, nonzero red' \
+      '       posse-land-check --plan     print the commands it would run, run none' \
+      '' \
+      'ADR 0087 D1/D6. cwd is the tree to judge; this executes nothing that tree wrote.'
+    exit 0
+    ;;
+  *)
+    printf 'posse-land-check: unknown argument %s — the contract takes no arguments and judges $PWD (ADR 0087 D1)\n' "$1" >&2
+    exit 2
+    ;;
+esac
+if [ "$#" -gt 0 ]; then
+  printf 'posse-land-check: unexpected extra arguments: %s\n' "$*" >&2
+  exit 2
+fi
+
+say() { printf 'posse-land-check: %s\n' "$*" >&2; }
+die() {
+  say "$*"
+  exit 1
+}
+
+# One choke point for every child, so the plan and the run cannot disagree
+# about what this check is. Leading VAR=VALUE words are env's own operands,
+# which is how the cross-GOOS steps read in the log exactly as the ADR writes
+# them. The step line goes out BEFORE the child, so on a red it is the line
+# above the tool's complaint and inside landCheckSaid's three-line tail.
+steps=0
+step() {
+  steps=$((steps + 1))
+  say "step $steps: $*"
+  if [ "$plan_only" = 1 ]; then return 0; fi
+  env "$@"
+}
+
+# A tag is DECLARED by a `//go:build` line above a file's package clause. The
+# pairs are `<tag><TAB><dir>`; the dir is the package pattern to vet it in.
+arm_declarations() {
+  find . -name .git -prune -o -name '*.go' -type f -exec awk '
+    FNR == 1 { pre = 1 }
+    /^package[ \t]/ { pre = 0 }
+    pre && /^\/\/go:build/ {
+      dir = FILENAME
+      sub(/\/[^\/]*$/, "", dir)
+      if (dir == FILENAME) dir = "."
+      line = $0
+      while (match(line, /posse_arm[0-9]+/)) {
+        print substr(line, RSTART, RLENGTH) "\t" dir
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+  ' {} + | sort -u
+}
+
+export GOTOOLCHAIN=local
+
+say "judging $PWD"
+[ -f go.mod ] || die "no go.mod here — cwd must be the root of the tree to judge (ADR 0087 D1)"
+
+step go build ./...
+step go vet ./...
+
+declarations=$(arm_declarations)
+tags=$(printf '%s\n' "$declarations" | awk -F'\t' 'NF == 2 { print $1 }' | sort -u)
+[ -n "$tags" ] || die "no posse_arm* build tags found in this tree — this repo has three test arms (ranger-base-qp1hm), so this is the derivation broken and not a tree without arms; see this script's header"
+say "arms declared here: $(printf '%s' "$tags" | tr '\n' ' ')"
+for tag in $tags; do
+  dirs=$(printf '%s\n' "$declarations" | awk -F'\t' -v t="$tag" '$1 == t { print $2 }' | sort -u)
+  # Unquoted on purpose: one package pattern per word.
+  step go vet -tags "$tag" $dirs
+done
+
+native_os=$(go env GOOS)
+native_arch=$(go env GOARCH)
+for goos in darwin linux; do
+  if [ "$goos" != "$native_os" ]; then
+    goarch=$native_arch
+    case "$goos/$goarch" in
+      darwin/amd64 | darwin/arm64 | linux/*) ;;
+      *) goarch=arm64 ;;
+    esac
+    step "GOOS=$goos" "GOARCH=$goarch" go vet ./...
+  fi
+done
+
+if [ "$plan_only" = 1 ]; then
+  say "plan only: $steps steps, nothing run"
+  exit 0
+fi
+say "green in ${SECONDS}s: $steps checks over $PWD"
