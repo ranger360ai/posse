@@ -664,7 +664,16 @@ const personaModeReadLines = 40
 //
 // Returns the note for the caller to print ("" when there is nothing to
 // say) and an error only on PersonaModeFellBack.
-func AwaitPersonaMode(h PaneReader, rt *Runtime, persona, session, pane string, wait time.Duration, poll time.Duration) (string, error) {
+//
+// THE SEAT COMES IN RESOLVED, and on a timed loop that is not a style
+// preference (ranger-base-k0hd6). This reads the pane every `poll` — 250ms
+// through a whole launch wait — so a Seat missing its session half would
+// make the occupant resolve one per read. On Rex that resolution is a
+// `session ls` plus a `block ls` per session, MEASURED at 14 + 16N ms for N
+// sessions on the server (62ms over this box's three, ~340ms over twenty;
+// ranger-base-nfc2b, 2026-11-10, docs/notes.d/ranger-base-k0hd6.md) — which
+// is a poll interval this loop never asked for.
+func AwaitPersonaMode(h PaneReader, rt *Runtime, persona, session string, pane Seat, wait time.Duration, poll time.Duration) (string, error) {
 	c := rt.PersonaMode
 	if c == nil {
 		return "", nil
@@ -676,7 +685,7 @@ func AwaitPersonaMode(h PaneReader, rt *Runtime, persona, session, pane string, 
 	var lastErr error
 	var screen string
 	for {
-		text, err := h.Read(Seat{Pane: pane}, personaModeReadLines, false)
+		text, err := h.Read(pane, personaModeReadLines, false)
 		if err != nil {
 			lastErr = err
 		} else {

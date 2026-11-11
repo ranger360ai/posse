@@ -265,7 +265,7 @@ func TestQAThePromptGateReadsAReportedStateAsPromptable(t *testing.T) {
 	promptReadySession(t, b, "plugged", "400ms")
 	reportedPane(t, fake, "plugged", "idle")
 
-	det, note, err := b.AwaitPromptable("plugged", "w1:p1")
+	det, note, err := b.AwaitPromptable("plugged", fakeHerdrSeat)
 	if err != nil {
 		t.Fatalf("a reported idle pane must be promptable: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestQAThePromptGateRefusesAReportedUnknownState(t *testing.T) {
 	promptReadySession(t, b, "plugged", "400ms")
 	reportedPane(t, fake, "plugged", "unknown")
 
-	_, _, err := b.AwaitPromptable("plugged", "w1:p1")
+	_, _, err := b.AwaitPromptable("plugged", fakeHerdrSeat)
 	if err == nil {
 		t.Fatal("a reported `unknown` is not a promptable state")
 	}

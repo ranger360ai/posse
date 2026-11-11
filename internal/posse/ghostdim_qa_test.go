@@ -148,7 +148,7 @@ func TestQAPaneHoldingSeparatesASuggestionFromATypedLine(t *testing.T) {
 	armScreen(t, fake, idleFooter, suggestBox)
 
 	armComposerANSI(t, fake, ghostWaitANSI)
-	ghost := b.PaneHolding("w1:p1")
+	ghost := b.PaneHolding(fakeHerdrSeat)
 	if ghost.Typed != "" {
 		t.Errorf("a suggestion claude wrote itself is still a prompt sitting unsent: %+v", ghost)
 	}
@@ -162,7 +162,7 @@ func TestQAPaneHoldingSeparatesASuggestionFromATypedLine(t *testing.T) {
 	// THE WRONG ARM. Same preview, same footer, same everything — one dim
 	// run less — and the hold is exactly what it was before this bead.
 	armComposerANSI(t, fake, typedWaitANSI)
-	typed := b.PaneHolding("w1:p1")
+	typed := b.PaneHolding(fakeHerdrSeat)
 	if typed.Ghost != "" {
 		t.Errorf("a line nobody drew faint was called claude's own: %+v", typed)
 	}
@@ -186,7 +186,7 @@ func TestQAAPaneHerdrWillNotReadIsStillAHold(t *testing.T) {
 		[]byte("timeout|no response from the herdr server"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	h := b.PaneHolding("w1:p1")
+	h := b.PaneHolding(fakeHerdrSeat)
 	if h.Ghost != "" || h.Typed != ghostWaitText || !h.Waiting() {
 		t.Fatalf("a herdr that could not read the pane decided the box anyway: %+v", h)
 	}
@@ -204,7 +204,7 @@ func TestQATheSubmitLogAnswersBeforeTheScreenDoes(t *testing.T) {
 	armPaneSession(t, fake, probeSession)
 	armSubmitted(t, b, probeSession, "an older line", ghostWaitText)
 
-	h := b.PaneHolding("w1:p1")
+	h := b.PaneHolding(fakeHerdrSeat)
 	if h.Sent != ghostWaitText {
 		t.Fatalf("the submit log stopped answering for a box that echoes it: %+v", h)
 	}
@@ -391,13 +391,13 @@ func TestQAConfirmSubmittedDoesNotWarnAboutASuggestion(t *testing.T) {
 	armScreen(t, fake, idleFooter, suggestBox)
 
 	armComposerANSI(t, fake, ghostWaitANSI)
-	if left := b.ConfirmSubmitted("w1:p1"); left != "" {
+	if left := b.ConfirmSubmitted(fakeHerdrSeat); left != "" {
 		t.Errorf("a suggestion claude drew after the submit was reported as unsubmitted text: %q", left)
 	}
 	// THE WRONG ARM: the same box undimmed is the prompt that never left,
 	// and the warning is the one ranger-base-htafy measured three times.
 	armComposerANSI(t, fake, typedWaitANSI)
-	if left := b.ConfirmSubmitted("w1:p1"); left != ghostWaitText {
+	if left := b.ConfirmSubmitted(fakeHerdrSeat); left != ghostWaitText {
 		t.Errorf("a prompt still sitting in the box read as submitted: %q", left)
 	}
 }

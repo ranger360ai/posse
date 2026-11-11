@@ -373,7 +373,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 		d.equietf("pulse: cannot read sessions: %v\n", err)
 		return
 	}
-	name, pane, status, found := pulseTarget(sessions, cfg.Persona)
+	name, seat, status, found := pulseTarget(sessions, cfg.Persona)
 	if !found {
 		// Condition (c) from the sensing bead — already in state.Conditions.
 		// Never create a session to deliver into; log and retry next tick.
@@ -406,7 +406,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 	// evidence: the never-answered concession returns a zero detection, and
 	// refusing a pulse because a diagnostic verb is missing would silence
 	// the shop check against an older herdr entirely.
-	det, note, err := d.HB.AwaitPromptable(name, pane)
+	det, note, err := d.HB.AwaitPromptable(name, seat)
 	if err != nil {
 		d.quietf("pulse: skipped (%s not promptable: %v)\n", name, err)
 		return
@@ -456,7 +456,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 	}
 
 	text := pulsePromptText(tick.Conditions)
-	if _, err := d.HB.Mux().Prompt(paneSeat(pane), text, false, 0); err != nil {
+	if _, err := d.HB.Mux().Prompt(seat, text, false, 0); err != nil {
 		d.equietf("pulse: prompt failed for %s: %v\n", name, err)
 		return
 	}
@@ -470,27 +470,27 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 }
 
 // pulseTarget finds cfg.Persona's live session among sessions — first match
-// by agent — returning its session name, herdr status, and the pane herdr's
-// real AgentPrompt/AgentExplain addresses (HerdrSession.PaneID, the root pane
-// on record from session creation — not the session name every other caller
-// in this codebase resolves to a pane through, HerdrBackend.AgentTarget,
-// before speaking to herdr; ranger-base-5qe6). ("", "", "", false) is
+// by agent — returning its session name, herdr status, and the SEAT herdr's
+// real AgentPrompt/AgentExplain addresses (HerdrSession.Seat(), the workspace
+// and root pane on record from session creation — not the session name every
+// other caller in this codebase resolves through HerdrBackend.AgentTarget
+// before speaking to herdr; ranger-base-5qe6). ("", Seat{}, "", false) is
 // condition (c): no live session for persona. Deliberately not filtered by
 // Crew: the whole point of the ADR 0008 §2 carve-out is that this prompt may
 // reach the operator's own conversation.
-func pulseTarget(sessions []HerdrSession, persona string) (name, pane, status string, found bool) {
+func pulseTarget(sessions []HerdrSession, persona string) (name string, seat Seat, status string, found bool) {
 	if persona == "" {
 		// A session herdr reports with no agent would otherwise match, and
 		// delivering a shop check into an arbitrary session is worse than
 		// not delivering one.
-		return "", "", "", false
+		return "", Seat{}, "", false
 	}
 	for _, s := range sessions {
 		if s.Agent == persona {
-			return s.Name, s.PaneID, s.Status, true
+			return s.Name, s.Seat(), s.Status, true
 		}
 	}
-	return "", "", "", false
+	return "", Seat{}, "", false
 }
 
 // pulsePromptText is the fixed 'Pulse check' marker plus the observed

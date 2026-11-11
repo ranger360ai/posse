@@ -3622,7 +3622,7 @@ type pendingBead struct {
 	is      RepoIssue
 	persona string
 	session string
-	target  string // the agent pane — re-waited when a --wait leg times out
+	target  Seat   // the agent seat — re-waited when a --wait leg times out
 	runtime string // transcript adapter for the launched session
 	// resumed: the bead was already this persona's when the pass picked it
 	// up, so a hand-back keeps the assignee.
@@ -3820,7 +3820,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		// Same wait leg the typed path gets from `agent prompt --wait`,
 		// asked for directly — there is no prompt call to hang it off.
 		go func() {
-			res, err := d.HB.Mux().Wait(paneSeat(l.target), []string{"idle", "done", "blocked"}, d.PromptWaitMS)
+			res, err := d.HB.Mux().Wait(l.target, []string{"idle", "done", "blocked"}, d.PromptWaitMS)
 			p.result <- promptResult{res: res, err: err, at: time.Now()}
 		}()
 	default:
@@ -3843,7 +3843,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		// keystroke does not.
 		p.gate = d.gateReading(l.gate, l.target)
 		go func() {
-			res, err := d.HB.Mux().Prompt(paneSeat(l.target), text, true, d.PromptWaitMS)
+			res, err := d.HB.Mux().Prompt(l.target, text, true, d.PromptWaitMS)
 			p.result <- promptResult{res: res, err: err, at: time.Now()}
 		}()
 	}
@@ -4525,7 +4525,7 @@ func (d *Dispatcher) rewait(p *pendingBead) {
 		if floor > 0 {
 			time.Sleep(floor)
 		}
-		res, err := d.HB.Mux().Wait(paneSeat(p.target), []string{"idle", "done", "blocked"}, d.PromptWaitMS)
+		res, err := d.HB.Mux().Wait(p.target, []string{"idle", "done", "blocked"}, d.PromptWaitMS)
 		p.result <- promptResult{res: res, err: err, at: time.Now()}
 	}()
 }
@@ -5336,7 +5336,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 // §2 — whether the work prompt has already been delivered on the launch
 // line, so the caller has nothing to type.
 type launched struct {
-	target    string
+	target    Seat
 	resumed   bool
 	delivered bool // the work prompt rode in as argv; do not prompt again
 	// unseen: delivered, and then herdr never recognized a screen in the
@@ -5727,7 +5727,7 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		launchRuntime, tier = rt, tr
 	}
 	if !l.delivered {
-		if _, err := d.HB.Mux().Prompt(paneSeat(l.target), prompt(), false, 0); err != nil {
+		if _, err := d.HB.Mux().Prompt(l.target, prompt(), false, 0); err != nil {
 			// D1's allow-list holds here too, and the cockpit's answer to
 			// the indeterminate case is not the pass's (ADR 0084 D5). This
 			// prompt carries no `--wait` and there is no gather loop behind
@@ -5774,14 +5774,14 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 // nobody having reported it. The profile is loaded only on the FAILURE path:
 // the happy exit is the first iteration for most launches and it pays nothing
 // for a line it will not print.
-func (d *Dispatcher) awaitTarget(session, runtime string, deadline time.Time, wait time.Duration) (string, error) {
+func (d *Dispatcher) awaitTarget(session, runtime string, deadline time.Time, wait time.Duration) (Seat, error) {
 	for {
 		t, err := d.HB.AgentTarget(session)
 		if err == nil {
 			return t, nil
 		}
 		if time.Now().After(deadline) {
-			return "", Die("%s", d.noAgentLine(session, runtime, wait))
+			return Seat{}, Die("%s", d.noAgentLine(session, runtime, wait))
 		}
 		time.Sleep(d.Poll)
 	}
@@ -5837,11 +5837,11 @@ func (d *Dispatcher) detectionWhy(runtime string) string {
 //     not judge the bead, because starting a settle-wait here would be
 //     waiting on herdr's idle guess, which returns instantly and would read
 //     a session that never worked as one that settled.
-func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Duration) (target string, seen bool, err error) {
+func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Duration) (target Seat, seen bool, err error) {
 	deadline := time.Now().Add(wait)
 	target, err = d.awaitTarget(session, runtime, deadline, wait)
 	if err != nil {
-		return "", false, err
+		return Seat{}, false, err
 	}
 	poll := d.Poll
 	if poll <= 0 {
@@ -5850,7 +5850,7 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 	var lastWhy string
 	var lastGuess AgentDetection // herdr's working behind lastWhy — see awaitSettled
 	for {
-		det, derr := d.HB.explain(paneSeat(target))
+		det, derr := d.HB.explain(target)
 		switch {
 		case derr != nil:
 			// The same concession awaitSettled makes: a diagnostic call
@@ -5926,13 +5926,13 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 // different reading of a different screen and would hide exactly the case
 // this evidence is for.
 //
-// A caller that wants only the pane ignores it, which is every caller but
+// A caller that wants only the target ignores it, which is every caller but
 // launchSession's typed path.
-func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.Duration) (string, AgentDetection, error) {
+func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.Duration) (Seat, AgentDetection, error) {
 	deadline := time.Now().Add(wait)
 	target, err := d.awaitTarget(session, runtime, deadline, wait)
 	if err != nil {
-		return "", AgentDetection{}, err
+		return Seat{}, AgentDetection{}, err
 	}
 
 	// Detection is not readiness: the first live dispatch raced claude's
@@ -5953,7 +5953,7 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 	settle := time.Now().Add(wait)
 	status, gate, err := d.awaitSettled(id, session, target, []string{"idle", "done", "blocked"}, settle, wait)
 	if err != nil {
-		return "", AgentDetection{}, err
+		return Seat{}, AgentDetection{}, err
 	}
 	if status != "idle" && status != "done" {
 		// The screen is NAMED here, and the record written, because this is
@@ -5980,7 +5980,7 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 		if row := LooksLikeLine(looksLike); row != "" {
 			why += "; " + row
 		}
-		return "", AgentDetection{}, Die("agent in %s never settled idle (status %q, %s) — check the session (posse peek %s)", session, status, why, session)
+		return Seat{}, AgentDetection{}, Die("agent in %s never settled idle (status %q, %s) — check the session (posse peek %s)", session, status, why, session)
 	}
 	// ADR 0062 D2, and the LAST thing between a launch and a keystroke. On
 	// a runtime whose PID arrives as a custom mode the launch wrote, an
@@ -6007,7 +6007,7 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 	if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.PersonaMode != nil {
 		note, err := AwaitPersonaMode(d.HB.Mux(), rt, persona, session, target, wait, d.Poll)
 		if err != nil {
-			return "", AgentDetection{}, err
+			return Seat{}, AgentDetection{}, err
 		}
 		if note != "" {
 			d.printf("! %-14s %s\n", id, note)
@@ -6051,7 +6051,7 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 // It returns the state and the detection it accepted, so a caller — the
 // live test, for one — can say what the gate actually opened on rather than
 // re-reading the pane a moment later and asking a different question.
-func (d *Dispatcher) awaitSettled(id, session, target string, until []string, deadline time.Time, wait time.Duration) (string, AgentDetection, error) {
+func (d *Dispatcher) awaitSettled(id, session string, target Seat, until []string, deadline time.Time, wait time.Duration) (string, AgentDetection, error) {
 	// A guess makes `agent wait` return instantly, so the poll is the only
 	// thing pacing this loop — an unset Poll must not become a busy loop
 	// against herdr.
@@ -6073,7 +6073,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		if ms < 1 {
 			ms = 1
 		}
-		res, err := d.HB.Mux().Wait(paneSeat(target), until, ms)
+		res, err := d.HB.Mux().Wait(target, until, ms)
 		if err != nil {
 			return "", AgentDetection{}, err
 		}
@@ -6094,7 +6094,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		// for real — a fresh claude drew its trust dialog in the 30ms
 		// between the two calls, and prompting a dialog is the failure this
 		// gate exists to prevent, not a launch worth saving.
-		det, err := d.HB.explain(paneSeat(target))
+		det, err := d.HB.explain(target)
 		switch {
 		case err != nil:
 			// lastWhy/lastGuess are left alone: an error here is not

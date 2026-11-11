@@ -388,9 +388,16 @@ func TestQAPersonaModeTrustSeesThePluginsGlobAndExemptsPosseAlone(t *testing.T) 
 
 // fakePane answers the slot's Read from a script, one entry per read; the
 // last entry repeats. An entry with err set is a read that failed.
+//
+// It REMEMBERS THE SEAT it was handed, for ranger-base-k0hd6: this gate
+// reads on a 250ms timer through a whole launch wait, and a Seat missing its
+// session half would make the occupant resolve one per read. The pin below
+// asserts both halves arrive, which no fake that discarded the argument
+// could.
 type fakePane struct {
 	reads []fakePaneRead
 	n     int
+	seats []Seat
 }
 
 type fakePaneRead struct {
@@ -398,7 +405,8 @@ type fakePaneRead struct {
 	err  error
 }
 
-func (f *fakePane) Read(Seat, int, bool) (string, error) {
+func (f *fakePane) Read(s Seat, _ int, _ bool) (string, error) {
+	f.seats = append(f.seats, s)
 	r := f.reads[min(f.n, len(f.reads)-1)]
 	f.n++
 	return r.text, r.err
@@ -411,6 +419,10 @@ const (
 	bobFellBack   = "(ℹ) Unknown mode \"posse-p\". Falling back to \"agent\" mode.\n(ℹ) Logged in as someone\n❯   Build Anything, @ for context, / for commands, $ for skills\nAgent Mode (auto-approve)"
 )
 
+// personaModeTestSeat is the seat these pins address: both halves, because
+// that is what AwaitPersonaMode takes since ranger-base-k0hd6.
+var personaModeTestSeat = Seat{Session: "w1", Pane: "w1:p1"}
+
 // (4) D2: the mode taking is read off the pane before the first keystroke.
 func TestQAPersonaModeFooterRefusesAPaneThatFellBack(t *testing.T) {
 	t.Parallel()
@@ -421,17 +433,25 @@ func TestQAPersonaModeFooterRefusesAPaneThatFellBack(t *testing.T) {
 	// than spending the wait.
 	took := &fakePane{reads: []fakePaneRead{{text: bobTookFooter}}}
 	start := time.Now()
-	note, err := AwaitPersonaMode(took, rt, "p", "s1", "w1:p1", 2*time.Second, 10*time.Millisecond)
+	note, err := AwaitPersonaMode(took, rt, "p", "s1", personaModeTestSeat, 2*time.Second, 10*time.Millisecond)
 	if err != nil || note != "" {
 		t.Fatalf("a pane whose footer names the mode was not read as taken: note=%q err=%v", note, err)
 	}
 	if took.n != 1 || time.Since(start) > time.Second {
 		t.Errorf("the gate spent %s over %d reads on a pane that had already taken the mode", time.Since(start), took.n)
 	}
+	// ranger-base-k0hd6: the seat reaches the occupant whole. Half a Seat
+	// here is an occupant resolving the other half on every poll of a loop
+	// that polls for the length of a launch.
+	for i, got := range took.seats {
+		if got != personaModeTestSeat {
+			t.Errorf("read %d addressed %+v, want %+v — the gate must hand the occupant the seat it was given, both halves", i, got, personaModeTestSeat)
+		}
+	}
 
 	// Fell back: refused, by name, quoting the CLI's own sentence.
 	fell := &fakePane{reads: []fakePaneRead{{text: bobFellBack}}}
-	_, err = AwaitPersonaMode(fell, rt, "p", "s2", "w1:p1", 2*time.Second, 10*time.Millisecond)
+	_, err = AwaitPersonaMode(fell, rt, "p", "s2", personaModeTestSeat, 2*time.Second, 10*time.Millisecond)
 	if err == nil {
 		t.Fatal("a pane in Agent Mode after --mode posse-p got a work prompt — that session carries every native rulebook and no persona at all (ADR 0062 D2)")
 	}
@@ -451,7 +471,7 @@ func TestQAPersonaModeFooterRefusesAPaneThatFellBack(t *testing.T) {
 	// evidence; the sentence is only how it is quoted, which is why the
 	// footer is asked first and this still refuses.
 	scrolled := &fakePane{reads: []fakePaneRead{{text: "❯   Build Anything\nAgent Mode (auto-approve)"}}}
-	if _, err := AwaitPersonaMode(scrolled, rt, "p", "s3", "w1:p1", 2*time.Second, 10*time.Millisecond); err == nil {
+	if _, err := AwaitPersonaMode(scrolled, rt, "p", "s3", personaModeTestSeat, 2*time.Second, 10*time.Millisecond); err == nil {
 		t.Error("a pane reading `Agent Mode` with the fallback line already scrolled off got a work prompt")
 	}
 
@@ -462,7 +482,7 @@ func TestQAPersonaModeFooterRefusesAPaneThatFellBack(t *testing.T) {
 		{reads: []fakePaneRead{{text: "a screen with no footer at all"}}},
 		{reads: []fakePaneRead{{err: Die("herdr: no such pane")}}},
 	} {
-		note, err := AwaitPersonaMode(unread, rt, "p", "s4", "w1:p1", 60*time.Millisecond, 10*time.Millisecond)
+		note, err := AwaitPersonaMode(unread, rt, "p", "s4", personaModeTestSeat, 60*time.Millisecond, 10*time.Millisecond)
 		if err != nil {
 			t.Errorf("an unreadable pane refused the launch: %v", err)
 		}

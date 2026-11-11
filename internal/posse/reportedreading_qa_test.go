@@ -147,7 +147,7 @@ func TestQAAStaleReportedLabelRefusesThePromptWithNothingTyped(t *testing.T) {
 	reportedPane(t, fake, "plugged", "idle")
 	atShell(t, fake)
 
-	_, _, err := b.AwaitPromptable("plugged", "w1:p1")
+	_, _, err := b.AwaitPromptable("plugged", fakeHerdrSeat)
 	if err == nil {
 		t.Fatal("a label whose pane is back at its shell is not promptable — a work prompt typed there is run by the shell")
 	}
@@ -243,7 +243,7 @@ func TestQATheSettleLadderOpensOnAReportedDoneAndWaitsOnAReportedWorking(t *test
 			// to name the label because it read one, not because the two
 			// happen to spell the same, which is a way an assertion like
 			// this passes over a line that says nothing.
-			status, det, err := d.awaitSettled("qa-nm5i6", "seat7", "w1:p1",
+			status, det, err := d.awaitSettled("qa-nm5i6", "seat7", fakeHerdrSeat,
 				[]string{"idle", "done", "blocked"}, time.Now().Add(wait), wait)
 			if !tc.opens {
 				if err == nil {
@@ -300,7 +300,7 @@ func TestQAAReportedBlockedIsHandedBackAsGivenEvenWhenTheLabelIsStale(t *testing
 			d.Poll = 20 * time.Millisecond
 			wait := 200 * time.Millisecond
 
-			status, det, err := d.awaitSettled("qa-nm5i6", "plugged", "w1:p1",
+			status, det, err := d.awaitSettled("qa-nm5i6", "plugged", fakeHerdrSeat,
 				[]string{"idle", "done", "blocked"}, time.Now().Add(wait), wait)
 			if err != nil || status != "blocked" {
 				t.Fatalf("a reported blocked is handed back by name for the caller to refuse on: %q %v", status, err)

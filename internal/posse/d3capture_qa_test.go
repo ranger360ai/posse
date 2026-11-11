@@ -157,7 +157,7 @@ func TestQAD3RecordCarriesTheScreenAndNotOnlyItsTruncatedPreviews(t *testing.T) 
 		t.Fatalf("the fixture's heading is inside the 243-character preview — this pin can no longer tell a capture from a preview:\n%s", d3Preview())
 	}
 
-	if _, _, err := b.AwaitPromptable("unseen", "w1:p1"); err == nil {
+	if _, _, err := b.AwaitPromptable("unseen", fakeHerdrSeat); err == nil {
 		t.Fatal("a screen herdr only guessed at is not promptable")
 	}
 
@@ -232,7 +232,7 @@ func TestQAD3ReportedPaneSpendsNoCaptureItHasNoScreenFor(t *testing.T) {
 	reportedPane(t, fake, "plugged", "idle")
 	atShell(t, fake)
 
-	if _, _, err := b.AwaitPromptable("plugged", "w1:p1"); err == nil {
+	if _, _, err := b.AwaitPromptable("plugged", fakeHerdrSeat); err == nil {
 		t.Fatal("a stale reported label is not promptable")
 	}
 	r := d3OneRecord(t, log)
@@ -263,7 +263,7 @@ func TestQAD3ACaptureThatCannotBeTakenCostsOnlyTheCapture(t *testing.T) {
 	}
 	write(t, filepath.Join(fake, "pane-read-error"), "")
 
-	if _, _, err := b.AwaitPromptable("unreadable", "w1:p1"); err == nil {
+	if _, _, err := b.AwaitPromptable("unreadable", fakeHerdrSeat); err == nil {
 		t.Fatal("a screen herdr only guessed at is not promptable, capture or no capture")
 	}
 	r := d3OneRecord(t, log)
@@ -351,7 +351,7 @@ func TestQAD3ADryRunPassSpendsNoCaptureItWillNotWrite(t *testing.T) {
 	det := AgentDetection{State: "idle"}
 
 	d.DryRun = true
-	if ev := d.d3Evidence("w1:p1", det); len(ev.Regions) != 0 {
+	if ev := d.d3Evidence(fakeHerdrSeat, det); len(ev.Regions) != 0 {
 		t.Errorf("a dry run built %d regions, want 0 — the record is not written, so the read that fills it must not be made", len(ev.Regions))
 	}
 	if ran := calls(t, fake); strings.Contains(ran, "pane read") {
@@ -359,7 +359,7 @@ func TestQAD3ADryRunPassSpendsNoCaptureItWillNotWrite(t *testing.T) {
 	}
 
 	d.DryRun = false
-	ev := d.d3Evidence("w1:p1", det)
+	ev := d.d3Evidence(fakeHerdrSeat, det)
 	shot, ok := Reading{Herdr: ev}.ReadingRegionOf(PaneCaptureRegion)
 	if !ok || !strings.Contains(shot.Text, d3Heading) {
 		t.Fatalf("a live pass took no capture (ok=%v) — the dry-run arm above measures nothing if this does not read", ok)
@@ -414,7 +414,7 @@ func TestQAD3TheSettleRefusalRecordCarriesTheScreen(t *testing.T) {
 	// iteration — so the window's size changes how many guesses are served
 	// and nothing about what is written.
 	wait := 200 * time.Millisecond
-	if _, _, err := d.awaitSettled("qa-h9925", "nevers", "w1:p1",
+	if _, _, err := d.awaitSettled("qa-h9925", "nevers", fakeHerdrSeat,
 		[]string{"idle", "done", "blocked"}, time.Now().Add(wait), wait); err == nil {
 		t.Fatal("the gate opened on a screen herdr only guessed at")
 	}
@@ -449,8 +449,11 @@ func TestQAD3TheDeliveredHoldRecordCarriesTheScreen(t *testing.T) {
 	if seen {
 		t.Fatal("herdr recognized nothing here — seen=true would make this the happy path, which writes no record")
 	}
-	if target != "w1:p1" {
-		t.Fatalf("awaitDelivered resolved %q, not the session's pane — the capture is taken at that target", target)
+	// BOTH HALVES (ranger-base-k0hd6): the capture is taken at this target,
+	// and a target carrying only the pane would make the occupant resolve the
+	// session half for every read taken through it.
+	if target != fakeHerdrSeat {
+		t.Fatalf("awaitDelivered resolved %+v, not the session's whole seat — the capture is taken at that target", target)
 	}
 
 	r := d3OneRecord(t, log)

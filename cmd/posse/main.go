@@ -566,7 +566,7 @@ func main() {
 				fmt.Fprintf(out, "warning: %s already has %s — this text is typed after it\n", name, det.Hold().Why())
 			}
 		}
-		res, err := hb.Mux().Prompt(posse.Seat{Pane: target}, text, wait, timeout)
+		res, err := hb.Mux().Prompt(target, text, wait, timeout)
 		if err != nil {
 			die(err)
 		}
@@ -645,7 +645,7 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		res, err := hb.Mux().Wait(posse.Seat{Pane: target}, until, timeout)
+		res, err := hb.Mux().Wait(target, until, timeout)
 		if err != nil {
 			die(err)
 		}

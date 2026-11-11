@@ -3039,6 +3039,14 @@ func fakeBinFor(t *testing.T, name string) string {
 	return bin
 }
 
+// fakeHerdrSeat is the fake herdr's one seat, both halves (ADR 0076 §2's
+// Seat): workspace w1 and its root pane w1:p1, which is what every fixture
+// in this package seeds. Since ranger-base-k0hd6 posse's addressing plumbing
+// takes a Seat and not a pane string, so the pins that used to pass "w1:p1"
+// pass this — and they pass the WHOLE seat, because handing an occupant half
+// a Seat is the thing that bead removed from the dispatch path.
+var fakeHerdrSeat = Seat{Session: "w1", Pane: "w1:p1"}
+
 func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	t.Helper()
 	home := gitTempDir(t)
@@ -3531,8 +3539,12 @@ func TestHerdrAgentTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target != "w1:p1" {
-		t.Errorf("want w1:p1, got %s", target)
+	// BOTH HALVES (ranger-base-k0hd6). AgentTarget is the one place
+	// dispatch's addressing is resolved, and the session half it returns is
+	// the one the occupant's own listing paired with that pane — so no verb
+	// downstream hands the occupant half a Seat.
+	if want := (Seat{Session: "w1", Pane: "w1:p1"}); target != want {
+		t.Errorf("want %+v, got %+v", want, target)
 	}
 }
 

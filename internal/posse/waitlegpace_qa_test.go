@@ -87,7 +87,7 @@ func waitLegGather(t *testing.T, tune func(*Dispatcher)) map[string]string {
 		t.Run(mux, func(t *testing.T) {
 			b, fake := newTestBackend(t)
 			const session = legPaceSession
-			var target string
+			var target Seat
 			if mux == MuxRex {
 				m, _ := newTestRexMux(t)
 				b.Slot = m
@@ -98,7 +98,7 @@ func waitLegGather(t *testing.T, tune func(*Dispatcher)) map[string]string {
 				// foreground, saying working and going on saying it: a
 				// one-element queue is a constant answer (fakerex_test.go).
 				rexSeedStatus(t, rexTestBlock, []RexStatusRecord{rexRuntimeRec(MuxWorking)})
-				target = rexTestBlock
+				target = Seat{Session: rexTestSession, Pane: rexTestBlock}
 				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: rexTestSession, Pane: rexTestBlock,
 					Agent: "ranger", Mux: MuxRex, Socket: m.Server().Addr, Launched: time.Now()}); err != nil {
 					t.Fatal(err)
@@ -110,8 +110,8 @@ func waitLegGather(t *testing.T, tune func(*Dispatcher)) map[string]string {
 					[]byte("timeout|timed out waiting for agent status"), 0o644); err != nil {
 					t.Fatal(err)
 				}
-				target = "w1:p1"
-				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: "w1", Pane: target,
+				target = Seat{Session: "w1", Pane: "w1:p1"}
+				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: target.Session, Pane: target.Pane,
 					Agent: "ranger", Socket: SocketID(), Gen: ServerGen(), Launched: time.Now()}); err != nil {
 					t.Fatal(err)
 				}
@@ -394,7 +394,7 @@ func waitLegGatherEndingOn(t *testing.T, st string) map[string]string {
 		t.Run(mux, func(t *testing.T) {
 			b, fake := newTestBackend(t)
 			const session = legPaceSession
-			var target string
+			var target Seat
 			if mux == MuxRex {
 				m, _ := newTestRexMux(t)
 				b.Slot = m
@@ -403,7 +403,7 @@ func waitLegGatherEndingOn(t *testing.T, st string) map[string]string {
 				rexSeedProcess(t, rexTestBlock, rexRuntimeProc())
 				rexSeedStatus(t, rexTestBlock,
 					[]RexStatusRecord{rexRuntimeRec(MuxWorking)}, []RexStatusRecord{rexRuntimeRec(st)})
-				target = rexTestBlock
+				target = Seat{Session: rexTestSession, Pane: rexTestBlock}
 				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: rexTestSession, Pane: rexTestBlock,
 					Agent: "ranger", Mux: MuxRex, Socket: m.Server().Addr, Launched: time.Now()}); err != nil {
 					t.Fatal(err)
@@ -418,8 +418,8 @@ func waitLegGatherEndingOn(t *testing.T, st string) map[string]string {
 					[]byte("timeout|timed out waiting for agent status"), 0o644); err != nil {
 					t.Fatal(err)
 				}
-				target = "w1:p1"
-				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: "w1", Pane: target,
+				target = Seat{Session: "w1", Pane: "w1:p1"}
+				if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: target.Session, Pane: target.Pane,
 					Agent: "ranger", Socket: SocketID(), Gen: ServerGen(), Launched: time.Now()}); err != nil {
 					t.Fatal(err)
 				}

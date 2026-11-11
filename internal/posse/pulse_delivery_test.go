@@ -367,13 +367,16 @@ func TestPulseTargetEmptyPersonaMatchesNothing(t *testing.T) {
 	t.Parallel()
 	sessions := []HerdrSession{
 		{Name: "agentless", Agent: "", Status: "idle"},
-		{Name: "qa-work", Agent: "qa", PaneID: "w1:p1", Status: "idle"},
+		{Name: "qa-work", Agent: "qa", WorkspaceID: "w1", PaneID: "w1:p1", Status: "idle"},
 	}
 	if name, _, _, found := pulseTarget(sessions, ""); found {
 		t.Errorf("empty persona matched %q; it must match nothing", name)
 	}
-	if name, pane, _, found := pulseTarget(sessions, "qa"); !found || name != "qa-work" || pane != "w1:p1" {
-		t.Errorf("named persona must still match: %q %q %v", name, pane, found)
+	// BOTH HALVES (ranger-base-k0hd6): the pulse's own gate and its prompt
+	// both address this seat, and the session half is on the record already.
+	want := Seat{Session: "w1", Pane: "w1:p1"}
+	if name, seat, _, found := pulseTarget(sessions, "qa"); !found || name != "qa-work" || seat != want {
+		t.Errorf("named persona must still match, with the whole seat: %q %+v %v", name, seat, found)
 	}
 }
 

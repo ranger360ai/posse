@@ -28,12 +28,19 @@ package posse
 // they are a workspace id and a pane id; on Rex a session UUID and a block
 // id. A verb takes whichever half it addresses — Close the session, the
 // typing and reading verbs the pane — so a caller that holds only one half
-// (dispatch holds a pane it resolved through AgentTarget) builds a Seat
-// carrying only that half, and the verbs it then calls are the ones that
-// need it.
+// may build a Seat carrying only that half, and the verbs it then calls
+// are the ones that need it.
+//
+// POSSE'S OWN CALLERS PASS BOTH, and since ranger-base-k0hd6 that includes
+// the dispatch path — which used to be this doc's example of the sentence
+// above. AgentTarget returns the Seat its listing row already paired, and
+// the `target` that runs through awaitTarget, awaitSettled, AwaitPromptable,
+// PaneHolding, ConfirmSubmitted and AwaitPersonaMode is that Seat rather
+// than its pane. paneSeat(), the helper that dropped the session half again
+// at thirty-one call sites, is gone.
 //
 // A PANE-ONLY SEAT IS THE OCCUPANT'S TO RESOLVE, and that sentence is the
-// price of the one above (ranger-base-nfc2b). The half-a-Seat licence is
+// price of the licence above (ranger-base-nfc2b). The half-a-Seat licence is
 // herdr's shape read as the contract: a herdr pane id addresses a pane
 // anywhere on the server, so herdr's occupant needs no session and Focus
 // takes one only because herdr's verb does. A REX BLOCK HAS NO GLOBAL NAME —

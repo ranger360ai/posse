@@ -232,7 +232,7 @@ func TestLiveRuntimeContractWalk(t *testing.T) {
 		t.Fatalf("fire: %v\n%s", err, out.String())
 	}
 	sheet.score("launch", walkWorking, "session %s created and herdr named an agent in pane %s after %s",
-		session, p.target, time.Since(fired).Round(time.Second))
+		session, p.target.Pane, time.Since(fired).Round(time.Second))
 
 	// promptable. The two delivery methods have different observables and
 	// only one of them leaves a file: on `prompt: argv` the prompt rode in
@@ -258,12 +258,12 @@ func TestLiveRuntimeContractWalk(t *testing.T) {
 	case p.delivered:
 		sheet.score("promptable", walkBroken, "%s declares prompt: typed and the prompt arrived some other way", name)
 	default:
-		sheet.score("promptable", walkWorking, "typed into pane %s after awaitAgent reached a named screen (no work-prompt file, by design)", p.target)
+		sheet.score("promptable", walkWorking, "typed into pane %s after awaitAgent reached a named screen (no work-prompt file, by design)", p.target.Pane)
 	}
 
 	// work + settle. gather blocks on the same wait dispatch uses, so the
 	// states herdr passes through have to be sampled beside it.
-	states := newStateWatch(t, b, p.target)
+	states := newStateWatch(t, b, p.target.Pane)
 	inFlight, gerr := d.gather(p)
 	seen := states.stop()
 	t.Logf("gather: inFlight=%v err=%v states=%v\n%s", inFlight, gerr, seen, out.String())
@@ -294,9 +294,9 @@ func TestLiveRuntimeContractWalk(t *testing.T) {
 		// A record miss is the one outcome nobody can act on from a count.
 		// The pane is the evidence — what the session actually said before
 		// it went idle — and it is gone the moment teardown runs.
-		if tail, err := b.H.PaneRead(p.target, 80); err == nil {
+		if tail, err := b.H.PaneRead(p.target.Pane, 80); err == nil {
 			paneTail = tail
-			t.Logf("pane %s, last 80 lines at the record miss:\n%s", p.target, tail)
+			t.Logf("pane %s, last 80 lines at the record miss:\n%s", p.target.Pane, tail)
 		}
 	}
 	comments, _ := d.Bd.Comments(is.Dir, is.ID)
@@ -331,8 +331,8 @@ func TestLiveRuntimeContractWalk(t *testing.T) {
 	// settle. Not "the pane went quiet" — a MATCHED rule, which is the
 	// difference between a settled agent and the idle fallback over a
 	// screen herdr cannot read.
-	if ex, err := b.H.AgentExplain(p.target); err != nil {
-		sheet.score("settle", walkUnknown, "herdr could not explain %s after the turn: %v", p.target, err)
+	if ex, err := b.H.AgentExplain(p.target.Pane); err != nil {
+		sheet.score("settle", walkUnknown, "herdr could not explain %s after the turn: %v", p.target.Pane, err)
 	} else if !ex.Seen() || !containsString([]string{"idle", "done", "blocked"}, ex.State) {
 		sheet.score("settle", walkBroken, "settled state %q came from rule %q (seen=%v) — not a matched settle",
 			ex.State, ex.Rule.ID, ex.Seen())

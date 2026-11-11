@@ -1342,9 +1342,12 @@ arm left.
 alone. `Seat`'s own doc licensed the same shape in prose: "a caller that
 holds only one half (dispatch holds a pane it resolved through
 `AgentTarget`) builds a `Seat` carrying only that half, and the verbs it
-then calls are the ones that need it." Both are herdr read as the
-contract. A herdr pane id addresses a pane anywhere on the server; a Rex
-block id does not address a block at all.
+then calls are the ones that need it." That is the doc's wording at the
+time of this correction; ranger-base-k0hd6 has since dropped the
+parenthesis, which is the LANDED note under the first rejected
+alternative below. Both are herdr read as the contract. A herdr pane id
+addresses a pane anywhere on the server; a Rex block id does not address
+a block at all.
 
 MEASURED 2026-11-10 on the always-on host (linux, rex CLI
 0.0.1794069975, local unix socket), against a server holding three live
@@ -1399,6 +1402,19 @@ poll the resolved seat.
   path. That is ranger-base-k0hd6. Doing it does not remove this
   correction either: the occupant would still be the only thing that can
   say what a half-a-Seat means.
+
+  **LANDED 2026-11-10** (ranger-base-k0hd6, replayed onto this correction
+  as ranger-base-pqahc). `AgentTarget` returns a `Seat`, `paneSeat()` is
+  gone from `internal/posse` and `cmd/posse`, and the thirty-one call
+  sites on the dispatch path pass both halves. **This correction stands
+  unchanged**, exactly as the sentence above says it would: `RexMux.hold`
+  stays and the half-a-Seat licence is NOT withdrawn, because a caller
+  outside posse's own plumbing may still hold one and the occupant is
+  still the only thing that can say what it means. What changed is that
+  posse no longer relies on it — the resolution priced above is paid once,
+  where the pairing is already in hand, instead of per verb. That price
+  was being paid per poll: `AwaitPersonaMode` reads a pane every 250 ms
+  through a launch's startup wait.
 - **Memoize block → session.** Sound — Rex's UUIDs are never reused (§5)
   — and it buys a tenth of a second on verbs nothing calls in a tight
   loop, against a cache whose staleness story has to be written down.

@@ -402,7 +402,7 @@ func TestPromptCrashLeverHasNoHerdrCode(t *testing.T) {
 	write(t, filepath.Join(fake, "prompt-crash"), "3")
 	saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: b.App.WorkspaceLabel("ranger-qa-x-1"), AgentStatus: "idle"}})
 
-	_, err := b.Mux().Prompt(paneSeat("w1:p1"), "the work prompt", true, 10)
+	_, err := b.Mux().Prompt(fakeHerdrSeat, "the work prompt", true, 10)
 	if err == nil {
 		t.Fatalf("the lever must fail the prompt")
 	}

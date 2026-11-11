@@ -359,8 +359,8 @@ func (d AgentDetection) Hold() PaneHold {
 // PaneHolding asks herdr what target's pane is holding. An explain that
 // fails, or a herdr with no explain at all, answers the empty hold — see
 // the note at the top of this file for why that is the only safe direction.
-func (b *HerdrBackend) PaneHolding(target string) PaneHold {
-	det, err := b.explain(paneSeat(target))
+func (b *HerdrBackend) PaneHolding(target Seat) PaneHold {
+	det, err := b.explain(target)
 	if err != nil {
 		// ranger-base-r5131. Two silences wear one error here, and only one
 		// of them is ignorance. A herdr that WAS asked and failed is the
@@ -410,7 +410,7 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 	// it). One `agent read` per settled holder whose box has text no store
 	// claims, which is the grain the two calls above already work at; an
 	// empty box still costs one `explain` and nothing else.
-	if ansi, err := b.Mux().Read(paneSeat(target), 0, true); err == nil {
+	if ansi, err := b.Mux().Read(target, 0, true); err == nil {
 		ghost, read := composerGhostRead(ansi, hold.Typed)
 		// The ansi composer line is recorded whether or not it retired the
 		// claim: a ghost retirement and a box this reading declined to
@@ -554,15 +554,15 @@ func isFooterRule(line string) bool {
 // one and no pane. A session posse cannot find a pane for is not one it can
 // read a screen for, and it holds nothing.
 //
-// The meta's own `pane:` is asked first — the root pane on record from
-// session creation, which is the pane herdr's prompt and explain address
-// (ranger-base-5qe6) — because it is a file read. AgentTarget is the
+// The meta's own Seat is asked first — the workspace and root pane on
+// record from session creation, which is the pane herdr's prompt and explain
+// address (ranger-base-5qe6) — because it is a file read. AgentTarget is the
 // fallback and costs a full `Sessions()` plus an `agent list`; a reading
 // this cheap is what lets the callers ask per settled holder rather than
 // once a pass.
 func (b *HerdrBackend) sessionHolding(session string) PaneHold {
 	if m, ok := b.readMeta(session); ok && m.Pane != "" {
-		return b.PaneHolding(m.Pane)
+		return b.PaneHolding(m.Seat())
 	}
 	target, err := b.AgentTarget(session)
 	if err != nil {
@@ -598,10 +598,10 @@ const (
 // (measured on the same session); a fresh `posse prompt --now` did. So this
 // reports and does not attempt a recovery keystroke that has been shown not
 // to work.
-func (b *HerdrBackend) ConfirmSubmitted(target string) string {
+func (b *HerdrBackend) ConfirmSubmitted(target Seat) string {
 	deadline := time.Now().Add(promptSubmitWait)
 	for {
-		det, err := b.explain(paneSeat(target))
+		det, err := b.explain(target)
 		if err != nil {
 			// The same concession every reading in this file makes: a
 			// diagnostic that will not answer is not evidence of a lost
@@ -621,7 +621,7 @@ func (b *HerdrBackend) ConfirmSubmitted(target string) string {
 			// "typed but not submitted". One ansi read, on the path that was
 			// about to warn and nowhere else; a dim box warns nothing, and
 			// every failure of the reading warns exactly as it did before.
-			if ansi, err := b.Mux().Read(paneSeat(target), 0, true); err == nil && composerIsGhost(ansi, typed) {
+			if ansi, err := b.Mux().Read(target, 0, true); err == nil && composerIsGhost(ansi, typed) {
 				return ""
 			}
 			return typed

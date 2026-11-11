@@ -99,13 +99,13 @@ func TestLiveAwaitAgentAcceptsAStartupScreen(t *testing.T) {
 	// never rendered; naming the wrong runtime here would be invisible, which
 	// is why it is named to match the recipe rather than left blank.
 	target, gate, err := d.awaitAgent("live-7sbo", "developer", "qalive", "grok", d.StartupWait)
-	t.Logf("awaitAgent: %s target=%q gate=%q/%q seen=%v err=%v\n%s",
+	t.Logf("awaitAgent: %s target=%+v gate=%q/%q seen=%v err=%v\n%s",
 		time.Since(start), target, gate.State, gate.Rule.ID, gate.Seen(), err, out.String())
 	if err != nil {
 		t.Fatalf("awaitAgent refused a live pane herdr calls %q/%q: %v", before.State, before.Rule.ID, err)
 	}
-	if target != pane {
-		t.Fatalf("target %q != %q", target, pane)
+	if target.Pane != pane {
+		t.Fatalf("target %+v is not the pane %q the recipe ran in", target, pane)
 	}
 	// The gate's own reading, against a real herdr (ADR 0066 D1 as amended,
 	// ranger-base-o1aoi). It is the reading that TYPES, and it is what a D5

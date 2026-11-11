@@ -384,7 +384,7 @@ func (d *Dispatcher) afterStall(p *pendingBead, grace time.Duration) (state, why
 	if ms < 1 {
 		ms = 1
 	}
-	res, err := d.HB.Mux().Wait(paneSeat(p.target), []string{"working", "blocked"}, ms)
+	res, err := d.HB.Mux().Wait(p.target, []string{"working", "blocked"}, ms)
 	switch {
 	case IsHerdrCode(err, "timeout"):
 		return stallNoTurn, fmt.Sprintf("no turn started in %s either", grace)

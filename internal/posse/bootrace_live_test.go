@@ -67,7 +67,7 @@ func TestLiveAwaitAgentHoldsThroughTheBootRace(t *testing.T) {
 
 	// The dispatch-shaped launch races detection too: herdr has no agent in
 	// this pane until the CLI execs. awaitAgent's loop, inlined.
-	var target string
+	var target Seat
 	for {
 		t2, err := b.AgentTarget("qalive")
 		if err == nil {

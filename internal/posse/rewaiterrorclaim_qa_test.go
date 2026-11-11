@@ -123,7 +123,7 @@ func crashedWaitSeat(t *testing.T) (*Dispatcher, string, *pendingBead) {
 	}
 	now := time.Now()
 	p := &pendingBead{is: RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: t.TempDir()},
-		persona: "ranger", session: rewaitClaimSession, target: "w1:p1", runtime: "claude",
+		persona: "ranger", session: rewaitClaimSession, target: Seat{Session: "w1", Pane: "w1:p1"}, runtime: "claude",
 		result: make(chan promptResult, 1), prompted: now, legAt: now, launched: now}
 	return d, fake, p
 }

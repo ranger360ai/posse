@@ -70,7 +70,7 @@ func TestQAAVerbThisMultiplexerDoesNotHaveIsNotAHerdrThatFailed(t *testing.T) {
 	// backend that stopped producing it.
 	b, _ := newTestBackend(t)
 	b.Slot = rexSeatWithRuntime(t)
-	_, err := b.explain(paneSeat(rexTestBlock))
+	_, err := b.explain(Seat{Session: rexTestSession, Pane: rexTestBlock})
 	if err == nil {
 		t.Fatal("the herdr-only door answered on a non-herdr occupant — §4's whole premise")
 	}
@@ -173,7 +173,7 @@ func TestQATheExplainDegradeSentenceHasOneHome(t *testing.T) {
 // whatever is in the slot (HerdrBackend.herdrMux), so a stub that happened
 // not to be HerdrMux would shut the door for a reason the production box does
 // not have. Rex is the occupant the incident was observed on.
-func noVerbSeat(t *testing.T, b *HerdrBackend, session string, states ...string) string {
+func noVerbSeat(t *testing.T, b *HerdrBackend, session string, states ...string) Seat {
 	t.Helper()
 	m, _ := newTestRexMux(t)
 	b.Slot = m
@@ -194,7 +194,7 @@ func noVerbSeat(t *testing.T, b *HerdrBackend, session string, states ...string)
 		Agent: "ranger", Runtime: "fastcli", Mux: MuxRex, Socket: m.Server().Addr, Launched: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	return rexTestBlock
+	return Seat{Session: rexTestSession, Pane: rexTestBlock}
 }
 
 // Arm 3 — the readiness gate (promptready.go). The gate stands down and says
@@ -269,8 +269,11 @@ func TestQATheDeliveredWaitConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
 	target, seen, err := d.awaitDelivered("ranger-base-l32dl", "ranger-qa-a-1", "fastcli", 150*time.Millisecond)
 	// The degrade, unmoved: it takes the occupant at its word that an agent
 	// is there and gathers.
-	if err != nil || target != rexTestBlock || !seen {
-		t.Fatalf("the delivered wait failed the bead over a verb this multiplexer does not have: %q seen=%v %v\n%s", target, seen, err, out.String())
+	// BOTH HALVES of the seat (ranger-base-k0hd6): awaitDelivered hands back
+	// what AgentTarget resolved, and that is a Seat the occupant can address
+	// without resolving anything of its own.
+	if want := (Seat{Session: rexTestSession, Pane: rexTestBlock}); err != nil || target != want || !seen {
+		t.Fatalf("the delivered wait failed the bead over a verb this multiplexer does not have: %+v seen=%v %v\n%s", target, seen, err, out.String())
 	}
 	line := out.String()
 	for _, want := range []string{"ranger-base-l32dl", "this instance's multiplexer has no agent explain", "ADR 0076 §4", "the work prompt is on its launch line; gathering anyway"} {

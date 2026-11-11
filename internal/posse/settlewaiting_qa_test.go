@@ -239,11 +239,11 @@ func TestQAConfirmSubmittedReportsAPromptThatNeverLeftTheBox(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	armScreen(t, fake, idleFooter, unsentBox)
-	if left := b.ConfirmSubmitted("w1:p1"); !strings.Contains(left, "commit and close the bead") {
+	if left := b.ConfirmSubmitted(fakeHerdrSeat); !strings.Contains(left, "commit and close the bead") {
 		t.Errorf("a prompt still sitting in the box read as submitted: %q", left)
 	}
 	armScreen(t, fake, idleFooter, emptyBox)
-	if left := b.ConfirmSubmitted("w1:p1"); left != "" {
+	if left := b.ConfirmSubmitted(fakeHerdrSeat); left != "" {
 		t.Errorf("an empty box read as unsubmitted: %q", left)
 	}
 }

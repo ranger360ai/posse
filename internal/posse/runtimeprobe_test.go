@@ -486,7 +486,7 @@ func TestProbeSessionExeIsThePanesAnswerAndNotTheLaunchers(t *testing.T) {
 
 	h := fakeProbeHerdr(t, `[ "$1" = pane ] && [ "$2" = run ] || exit 0
 PATH="`+srv+`:$PATH" /bin/sh -c "$4"`)
-	got, err := probeSessionExe(HerdrMux{H: h}, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
+	got, err := probeSessionExe(HerdrMux{H: h}, Seat{Session: "w1", Pane: "%1"}, bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
 	if err != nil {
 		t.Fatalf("the pane would not answer: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestProbeSessionExeSeesThroughTheGatePrefix(t *testing.T) {
 	shim := probeFakeCLI(t, bin, "carol", "the shim")
 	h := fakeProbeHerdr(t, `[ "$1" = pane ] && [ "$2" = run ] || exit 0
 PATH="`+srv+`:$PATH" /bin/sh -c "$4"`)
-	got, err := probeSessionExe(HerdrMux{H: h}, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
+	got, err := probeSessionExe(HerdrMux{H: h}, Seat{Session: "w1", Pane: "%1"}, bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +555,7 @@ func TestProbeSessionExeRefusesWhatItCannotName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			h := fakeProbeHerdr(t, tc.body)
-			got, err := probeSessionExe(HerdrMux{H: h}, "%1", filepath.Join(dir, "bin"), probeFixtureExe, filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
+			got, err := probeSessionExe(HerdrMux{H: h}, Seat{Session: "w1", Pane: "%1"}, filepath.Join(dir, "bin"), probeFixtureExe, filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
 			if err == nil {
 				t.Fatalf("a probe that cannot name its binary must refuse; got %q", got)
 			}

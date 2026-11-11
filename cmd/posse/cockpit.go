@@ -1881,7 +1881,7 @@ func (c *cockpit) promptSession(name, text string) {
 			// progress channel rather than replacing the result.
 			c.note(note)
 		}
-		if _, err := c.hb.Mux().Prompt(posse.Seat{Pane: target}, text, false, 0); err != nil {
+		if _, err := c.hb.Mux().Prompt(target, text, false, 0); err != nil {
 			c.prompts <- err.Error()
 			return
 		}

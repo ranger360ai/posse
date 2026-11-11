@@ -109,7 +109,7 @@ const (
 // diagnostic that is not working is evidence of no state at all — and on
 // the refusal it is the last guess, which is what the error already
 // describes.
-func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, string, error) {
+func (b *HerdrBackend) AwaitPromptable(session string, target Seat) (AgentDetection, string, error) {
 	// No reported pre-check here since ranger-base-nm5i6: AgentExplain's own
 	// refusal is what routes a reported pane onto its reading, so the loop
 	// below reads one and judges it with the same `Seen()` it judges a screen
@@ -132,7 +132,7 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	var lastErr error
 	for {
 		attempts++
-		det, err := b.explain(paneSeat(target))
+		det, err := b.explain(target)
 		switch {
 		case err != nil:
 			lastErr = err

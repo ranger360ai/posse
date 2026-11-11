@@ -707,7 +707,7 @@ func (d *Dispatcher) logReading(session string, r Reading) {
 // The HAND path (AwaitPromptable, logUnrecognized) has no dry run to honour
 // and takes its capture unconditionally: `posse prompt` either refused or
 // it did not.
-func (d *Dispatcher) d3Evidence(target string, det AgentDetection) ReadingEvidence {
+func (d *Dispatcher) d3Evidence(target Seat, det AgentDetection) ReadingEvidence {
 	ev := ReadingEvidenceOf(det)
 	if d.DryRun {
 		return ev
@@ -737,7 +737,7 @@ func (d *Dispatcher) d3Evidence(target string, det AgentDetection) ReadingEviden
 //
 // It is a Dispatcher method for the backend, not for a dry-run guard: fire
 // is unreachable on a dry pass, and that is argued where the call is.
-func (d *Dispatcher) gateReading(det AgentDetection, target string) *ReadingEvidence {
+func (d *Dispatcher) gateReading(det AgentDetection, target Seat) *ReadingEvidence {
 	ev := d.HB.withPaneCaptureNamed(target, PaneCaptureAtPromptRegion, ReadingEvidenceOf(det))
 	return &ev
 }
@@ -808,14 +808,14 @@ func turnReading(find TurnOutcomeReader, observed bool, o TurnOutcome) ReadingEv
 // state beside the code: a screen that changed between the refusal and the
 // read is a case a reader must be able to spot rather than one this function
 // should hide.
-func (d *Dispatcher) logPromptHandBack(session, bead, runtime, target string, promptErr error) {
+func (d *Dispatcher) logPromptHandBack(session, bead, runtime string, target Seat, promptErr error) {
 	decision := DecisionPaneState
 	if IsHerdrCode(promptErr, "agent_blocked") {
 		decision = DecisionDialog
 	}
 	ev := ReadingEvidence{}
-	if target != "" {
-		if det, err := d.HB.explain(paneSeat(target)); err == nil {
+	if target.Pane != "" {
+		if det, err := d.HB.explain(target); err == nil {
 			ev = ReadingEvidenceOf(det)
 		}
 	}
@@ -910,7 +910,7 @@ const PaneCaptureAtPromptRegion = "pane_capture_at_prompt"
 //   - a read that errors or comes back empty. The log is best effort, and a
 //     record that says what herdr saw and nothing else is the record there
 //     has always been.
-func (b *HerdrBackend) withPaneCapture(target string, ev ReadingEvidence) ReadingEvidence {
+func (b *HerdrBackend) withPaneCapture(target Seat, ev ReadingEvidence) ReadingEvidence {
 	return b.withPaneCaptureNamed(target, PaneCaptureRegion, ev)
 }
 
@@ -931,8 +931,8 @@ func (b *HerdrBackend) withPaneCapture(target string, ev ReadingEvidence) Readin
 // that is as true the instant before a keystroke as it is after a refusal.
 // A reported-route gate therefore carries its evidence with no capture on
 // either side — which the record says by holding neither region.
-func (b *HerdrBackend) withPaneCaptureNamed(target, region string, ev ReadingEvidence) ReadingEvidence {
-	if b == nil || target == "" || ev.Reported != "" {
+func (b *HerdrBackend) withPaneCaptureNamed(target Seat, region string, ev ReadingEvidence) ReadingEvidence {
+	if b == nil || target.Pane == "" || ev.Reported != "" {
 		return ev
 	}
 	text, err := b.paneReadDetection(target)
@@ -982,7 +982,7 @@ func (b *HerdrBackend) withPaneCaptureNamed(target, region string, ev ReadingEvi
 // are still a reading. So the caller gets the best reading the evidence it
 // has supports — the preview-only one in those cases — rather than a blank
 // row that would read as "not one of the known screens".
-func (b *HerdrBackend) logUnrecognized(session, target string, d AgentDetection, verdict string) []string {
+func (b *HerdrBackend) logUnrecognized(session string, target Seat, d AgentDetection, verdict string) []string {
 	ev := b.withPaneCapture(target, ReadingEvidenceOf(d))
 	looksLike := ev.LooksLike()
 	b.LogReading(session, Reading{

@@ -823,7 +823,7 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	// not track turns, so the text would land inside whatever is on screen.
 	// "blocked" settles too: an agent stuck on its own dialog is a common
 	// reason to relaunch, and waiting for it to go idle never ends.
-	res, err := b.Mux().Wait(paneSeat(target), []string{"idle", "done", "blocked"}, remaining())
+	res, err := b.Mux().Wait(target, []string{"idle", "done", "blocked"}, remaining())
 	if err != nil {
 		if IsHerdrCode(err, "timeout") {
 			return false, nil
@@ -860,7 +860,7 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	// this call branchless rather than building an argv landing path on
 	// the strength of a failure that was never there.
 	fmt.Fprintf(w, "landing %s (up to %s)…\n", m.Name, timeout)
-	if _, err := b.Mux().Prompt(paneSeat(target), prompt, true, remaining()); err != nil {
+	if _, err := b.Mux().Prompt(target, prompt, true, remaining()); err != nil {
 		if IsHerdrCode(err, "timeout") {
 			return false, nil // the turn is running; that claim is about the wait, not the prompt
 		}

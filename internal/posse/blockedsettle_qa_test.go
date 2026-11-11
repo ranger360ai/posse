@@ -436,7 +436,7 @@ func TestQABlockedSettleTakesNoCaptureOnADryPass(t *testing.T) {
 	det.Rule.ID = "live_blocked_form"
 	det.Rule.Region = "after_last_horizontal_rule"
 	det.Rule.Priority = 980
-	looksLike := d.logBlockedRefusal("a-1", "ranger-qa", "claude", "w1:p1", "blocked", det)
+	looksLike := d.logBlockedRefusal("a-1", "ranger-qa", "claude", fakeHerdrSeat, "blocked", det)
 
 	if len(looksLike) != 0 {
 		t.Errorf("the dry pass named %v — with no capture the only regions are herdr's previews, and this rig arms none, so a non-empty set here means a `pane read` was forked for a record the dry run then refused to write", looksLike)

@@ -153,24 +153,24 @@ func (b *HerdrBackend) explain(s Seat) (AgentDetection, error) {
 // (ranger-base-2hvtv). Its caller asks the store first and treats every
 // failure here as "not an echo", so a slot that cannot answer costs the
 // reading and nothing else.
-func (b *HerdrBackend) paneAgentSession(target string) (string, error) {
+func (b *HerdrBackend) paneAgentSession(target Seat) (string, error) {
 	hm, ok := b.herdrMux()
 	if !ok {
 		return "", muxNotHerdr("pane get agent_session")
 	}
-	return hm.PaneAgentSession(paneSeat(target))
+	return hm.PaneAgentSession(target)
 }
 
 // paneReadDetection is §4's CAPTURE: the screen in the shape a detection
 // fixture is, which is the shape `agent explain --file` reads back (ADR 0066
 // D3). A record whose capture could not be taken holds no region for it,
 // which is what its caller already does for the three silences it knows.
-func (b *HerdrBackend) paneReadDetection(target string) (string, error) {
+func (b *HerdrBackend) paneReadDetection(target Seat) (string, error) {
 	hm, ok := b.herdrMux()
 	if !ok {
 		return "", muxNotHerdr("pane read --source detection")
 	}
-	return hm.PaneReadDetection(paneSeat(target))
+	return hm.PaneReadDetection(target)
 }
 
 // manifests is §4's detection preflight through the occupant: herdr's own
@@ -1181,10 +1181,6 @@ func (s *HerdrSession) Seat() Seat {
 	return Seat{Session: s.WorkspaceID, Pane: s.PaneID}
 }
 
-// paneSeat is a seat addressed by its pane alone — what every caller holding
-// a `target` from AgentTarget has, and all the typing and reading verbs need.
-func paneSeat(pane string) Seat { return Seat{Pane: pane} }
-
 // Sessions merges herdr's live workspace list with the meta files. Meta
 // files pointing at dead workspaces are pruned; foreign workspaces are
 // listed under their label so the cockpit shows the whole herd.
@@ -1451,8 +1447,8 @@ func (b *HerdrBackend) fillPaneModes(out []HerdrSession) {
 		case s.PaneID == "":
 			s.PermissionMode = PaneMode{Why: "this session records no pane, so there is no screen to read"}
 		default:
-			// s.Seat() and not paneSeat: this row already carries the
-			// session, and a rex block needs it (ranger-base-nfc2b).
+			// s.Seat() and not a pane-only Seat: this row already carries
+			// the session, and a rex block needs it (ranger-base-nfc2b).
 			text, err := b.Mux().Read(s.Seat(), paneModeReadLines, false)
 			if err != nil {
 				s.PermissionMode = PaneMode{Why: fmt.Sprintf("pane read failed: %v", err)}
@@ -4533,43 +4529,56 @@ func (b *HerdrBackend) FocusSession(name string) error {
 	return b.Mux().Focus(s.Seat())
 }
 
-// AgentTarget picks the promptable target for a session: the pane of the
+// AgentTarget picks the promptable target for a session: the SEAT of the
 // agent herdr has detected inside its workspace (root pane preferred, for
 // sessions with several agents). This is the dispatch loop's addressing.
 //
 // Through the slot's own listing (ADR 0076 §2) and not herdr's `agent list`
 // alone, because "which pane holds a runtime" is a question every occupant
-// must answer and the pane this returns is what every later verb addresses —
+// must answer and the seat this returns is what every later verb addresses —
 // a herdr-only answer here would make dispatch herdr-only. It costs one
 // `workspace list` on top of the `agent list` this used to make: the poll
 // loop that calls it (awaitTarget) already pays both through Resolve above,
 // so the measured count of `agent list` calls per poll — the countable the
 // startup-wait pin reads — is unchanged at two.
-func (b *HerdrBackend) AgentTarget(name string) (string, error) {
+//
+// IT RETURNS BOTH HALVES (ranger-base-k0hd6). This is the one place
+// dispatch's addressing is decided, and it is already holding the pairing:
+// the loop below has the listing ROW the pane came out of, so the session
+// half costs nothing to carry. Returning the pane alone instead made every
+// verb downstream hand the occupant half a Seat and the occupant pay to
+// resolve the other half back — on Rex a `session ls` plus a `block ls` per
+// session, which the one loop that reads a pane on a timer
+// (AwaitPersonaMode, every 250ms through a launch) was paying per poll.
+//
+// The session id is taken off the ROW and not off `s` above, though the
+// filter has just made them equal: the row is where the occupant itself
+// paired these two ids, which is the fact being returned.
+func (b *HerdrBackend) AgentTarget(name string) (Seat, error) {
 	s, err := b.Resolve(name)
 	if err != nil {
-		return "", err
+		return Seat{}, err
 	}
 	seats, err := b.Mux().List()
 	if err != nil {
-		return "", err
+		return Seat{}, err
 	}
-	var first string
+	var first Seat
 	for _, seat := range seats {
 		if seat.Session != s.WorkspaceID {
 			continue
 		}
 		for _, p := range seat.Panes {
 			if s.PaneID != "" && p.Pane == s.PaneID {
-				return p.Pane, nil
+				return Seat{Session: seat.Session, Pane: p.Pane}, nil
 			}
-			if first == "" {
-				first = p.Pane
+			if first.Pane == "" {
+				first = Seat{Session: seat.Session, Pane: p.Pane}
 			}
 		}
 	}
-	if first == "" {
-		return "", Die("no agent detected in session %s (herdr sees no claude/codex/... there yet)", name)
+	if first.Pane == "" {
+		return Seat{}, Die("no agent detected in session %s (herdr sees no claude/codex/... there yet)", name)
 	}
 	return first, nil
 }

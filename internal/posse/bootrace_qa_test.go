@@ -224,7 +224,7 @@ func TestQALiveGateOpensOnAScreenNotAShellPrompt(t *testing.T) {
 	}
 	deadline := start.Add(d.StartupWait)
 
-	var target string
+	var target Seat
 	for {
 		tg, err := b.AgentTarget("qalive")
 		if err == nil {

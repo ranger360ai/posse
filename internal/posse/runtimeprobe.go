@@ -864,7 +864,7 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 	} else {
 		defer mux.Close(seat)
 	}
-	sessionExe, err := probeSessionExe(mux, rootPane, binDir, launchExe, filepath.Join(dir, "cli.txt"), ProbeSessionExeWait)
+	sessionExe, err := probeSessionExe(mux, seat, binDir, launchExe, filepath.Join(dir, "cli.txt"), ProbeSessionExeWait)
 	if err != nil {
 		return nil, err
 	}
@@ -886,19 +886,19 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 	startBy := time.Now().Add(minDuration(rt.Wait(), o.Timeout))
 	r := probeReading{Canary: canary, BinDir: binDir, Exe: rt.Exe(),
 		Manifest: ReadDetection(mux, rt), Wait: rt.Wait()}
-	pane, kind, err := awaitProbeAgent(mux, wsID, rootPane, startBy)
+	agent, kind, err := awaitProbeAgent(mux, wsID, rootPane, startBy)
 	if err != nil {
 		r.SettleWhy = probeNoAgentWhy(r.Manifest, rt, err)
 	} else {
 		r.AgentKind = kind
-		fmt.Fprintf(out, "  herdr sees %s in %s\n", kind, pane)
+		fmt.Fprintf(out, "  herdr sees %s in %s\n", kind, agent.Pane)
 		if rt.PromptMode() != PromptArgv {
 			// Typed delivery: reach a promptable screen first, then type.
 			// The screen gets the runtime's patience; the TURN gets the rest
 			// of the budget.
-			if _, err := mux.Wait(paneSeat(pane), []string{"idle", "done", "blocked"}, msUntil(startBy)); err != nil {
+			if _, err := mux.Wait(agent, []string{"idle", "done", "blocked"}, msUntil(startBy)); err != nil {
 				r.SettleWhy = "never became promptable: " + err.Error()
-			} else if _, err := mux.Prompt(paneSeat(pane), probePrompt(canary, whereFile, script), true, msUntil(deadline)); err != nil {
+			} else if _, err := mux.Prompt(agent, probePrompt(canary, whereFile, script), true, msUntil(deadline)); err != nil {
 				// agent_prompt_stalled is the one delivery error that does
 				// NOT say the text is missing, and putting it on this side
 				// of the line was the same taxonomy error ranger-base-uauvn
@@ -929,16 +929,16 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 				// never saw the turn start (stallNote).
 				if IsHerdrCode(err, "agent_prompt_stalled") {
 					r.StallWhy = err.Error()
-					fmt.Fprintf(out, "  herdr typed the prompt into %s and saw no turn start inside its own 5s window — reading the pane for the turn anyway (%v)\n", pane, err)
+					fmt.Fprintf(out, "  herdr typed the prompt into %s and saw no turn start inside its own 5s window — reading the pane for the turn anyway (%v)\n", agent.Pane, err)
 				} else {
 					r.SettleWhy = "the prompt was not delivered: " + err.Error()
 				}
 			}
 		}
 		if r.SettleWhy == "" {
-			r.Settled, r.SettleWhy = awaitProbeTurn(mux, pane, whereFile, deadline)
+			r.Settled, r.SettleWhy = awaitProbeTurn(mux, agent, whereFile, deadline)
 		}
-		if det, err := mux.Explain(paneSeat(pane)); err == nil {
+		if det, err := mux.Explain(agent); err == nil {
 			r.Detection = det
 		} else {
 			r.SettleWhy = strings.TrimSpace(r.SettleWhy + " (herdr could not explain the pane: " + err.Error() + ")")
@@ -956,10 +956,10 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 		PosseVersion: Version, Canary: canary,
 		Observables: evalProbe(r),
 	}
-	if !rec.Passed() && pane != "" {
+	if !rec.Passed() && agent.Pane != "" {
 		// A failed probe owes the operator the screen. Read AFTER the
 		// observables so nothing here can change a verdict.
-		if txt, err := mux.Read(paneSeat(pane), 40, false); err == nil && strings.TrimSpace(txt) != "" {
+		if txt, err := mux.Read(agent, 40, false); err == nil && strings.TrimSpace(txt) != "" {
 			fmt.Fprintf(out, "\n  last 40 lines of the probe pane:\n%s\n", indentLines(strings.TrimRight(txt, "\n"), "  | "))
 		}
 	}
@@ -1040,8 +1040,8 @@ const ProbeSessionExeWait = 30 * time.Second
 // The answer is waited for, not assumed. A pane that will not answer is one
 // the probe cannot write an honest record about, so it refuses HERE — before
 // the prompt, which is the half that costs a model turn.
-func probeSessionExe(mux HerdrMux, pane, binDir, exe, file string, wait time.Duration) (string, error) {
-	if pane == "" {
+func probeSessionExe(mux HerdrMux, pane Seat, binDir, exe, file string, wait time.Duration) (string, error) {
+	if pane.Pane == "" {
 		return "", Die("the probe workspace has no root pane — nothing can be asked which binary it would launch")
 	}
 	part := file + ".part"
@@ -1049,7 +1049,7 @@ func probeSessionExe(mux HerdrMux, pane, binDir, exe, file string, wait time.Dur
 	if len(line) > PaneLineMax {
 		return "", Die("the lookup line is %d bytes, over the %d a pane takes (rangerhq-ybec) — it cannot be spilled to a script, because the launch line's own spill would overwrite it", len(line), PaneLineMax)
 	}
-	if err := mux.Start(paneSeat(pane), line); err != nil {
+	if err := mux.Start(pane, line); err != nil {
 		return "", err
 	}
 	deadline := time.Now().Add(wait)
@@ -1096,13 +1096,18 @@ func probeNoAgentWhy(r ManifestReading, rt *Runtime, err error) string {
 }
 
 // awaitProbeAgent waits for herdr to see an agent in the probe's workspace
-// and returns its pane and kind. A CLI that never appears is the failure
+// and returns its SEAT and kind. A CLI that never appears is the failure
 // this reports, and it is a failure of observable 4, not an error.
 // herdr's own `agent list` and not the slot's List: this loop asks about a
 // workspace the probe created an instant ago and holds the id of, so the
 // `workspace list` a join would add answers nothing it does not already
 // know (HerdrMux.Agents carries the rest of the reason).
-func awaitProbeAgent(mux HerdrMux, wsID, rootPane string, deadline time.Time) (pane, kind string, err error) {
+//
+// The seat carries wsID — the workspace the caller just created and asked
+// about — because every verb the probe then addresses that pane with needs
+// both halves (ranger-base-k0hd6), and this is the one place the pairing is
+// already in hand.
+func awaitProbeAgent(mux HerdrMux, wsID, rootPane string, deadline time.Time) (pane Seat, kind string, err error) {
 	for {
 		agents, aerr := mux.Agents()
 		if aerr == nil {
@@ -1111,16 +1116,16 @@ func awaitProbeAgent(mux HerdrMux, wsID, rootPane string, deadline time.Time) (p
 					continue
 				}
 				if rootPane == "" || ag.PaneID == rootPane {
-					return ag.PaneID, ag.Agent, nil
+					return Seat{Session: wsID, Pane: ag.PaneID}, ag.Agent, nil
 				}
-				pane, kind = ag.PaneID, ag.Agent
+				pane, kind = Seat{Session: wsID, Pane: ag.PaneID}, ag.Agent
 			}
-			if pane != "" {
+			if pane.Pane != "" {
 				return pane, kind, nil
 			}
 		}
 		if !time.Now().Add(time.Second).Before(deadline) {
-			return "", "", fmt.Errorf("herdr saw no agent in the probe pane within the timeout")
+			return Seat{}, "", fmt.Errorf("herdr saw no agent in the probe pane within the timeout")
 		}
 		time.Sleep(time.Second)
 	}
@@ -1138,7 +1143,7 @@ func awaitProbeAgent(mux HerdrMux, wsID, rootPane string, deadline time.Time) (p
 // "settled having done nothing" — are indistinguishable at the moment of
 // reading and only one of them is a failure. Burning the timeout on a CLI
 // that really did nothing is the price; a failing probe may be slow.
-func awaitProbeTurn(mux HerdrMux, pane, whereFile string, deadline time.Time) (settled, why string) {
+func awaitProbeTurn(mux HerdrMux, pane Seat, whereFile string, deadline time.Time) (settled, why string) {
 	const slice = 5 * time.Second
 	var last, lastErr string
 	for {
@@ -1146,7 +1151,7 @@ func awaitProbeTurn(mux HerdrMux, pane, whereFile string, deadline time.Time) (s
 		if d := int(slice / time.Millisecond); ms > d {
 			ms = d
 		}
-		res, err := mux.Wait(paneSeat(pane), []string{"idle", "done"}, ms)
+		res, err := mux.Wait(pane, []string{"idle", "done"}, ms)
 		switch {
 		case err != nil:
 			lastErr = err.Error()

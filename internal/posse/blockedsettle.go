@@ -137,12 +137,12 @@ func (d AgentDetection) WhyBlocked() string {
 // `agent wait`'s status would be naming the wrong screen with more confidence
 // than the bare line it replaced — the one outcome worse than saying nothing.
 // The bare detection then stands and WhyBlocked says there is no rule.
-func (d *Dispatcher) blockerEvidence(target, status string) AgentDetection {
+func (d *Dispatcher) blockerEvidence(target Seat, status string) AgentDetection {
 	bare := AgentDetection{State: status}
-	if target == "" {
+	if target.Pane == "" {
 		return bare
 	}
-	det, err := d.HB.explain(paneSeat(target))
+	det, err := d.HB.explain(target)
 	if err != nil || det.State != status {
 		return bare
 	}
@@ -225,7 +225,7 @@ func (d *Dispatcher) blockerEvidence(target, status string) AgentDetection {
 // record is written and no capture is taken, and the set returned is then the
 // preview-only one — the best reading the evidence in hand supports, which is
 // the answer logUnrecognized gives in the same case and for the same reason.
-func (d *Dispatcher) logBlockedRefusal(id, session, runtime, target, status string, det AgentDetection) []string {
+func (d *Dispatcher) logBlockedRefusal(id, session, runtime string, target Seat, status string, det AgentDetection) []string {
 	decision := DecisionPaneState
 	ev := ReadingEvidenceOf(det)
 	var looksLike []string
