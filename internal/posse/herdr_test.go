@@ -315,7 +315,7 @@ func TestMain(m *testing.M) {
 	os.Unsetenv("GIT_CONFIG_GLOBAL")
 	os.Setenv("RHQ_FAKE_HERDR", "1")
 	os.Setenv(EnvPersona, "")
-	// The three CLI home overrides, cleared for the same reason HOME is
+	// The CLI home overrides, cleared for the same reason HOME is
 	// replaced: every locator that honours one reads the OPERATOR's live
 	// store when the variable survives into the test binary, and the temp
 	// HOME above no longer fences it off. This box exports
@@ -323,13 +323,35 @@ func TestMain(m *testing.M) {
 	// once transcriptFiles started following it (ranger-base-yqdov) the
 	// package's cost tests would have walked ~/.claude/projects — 1300+
 	// real project dirs — instead of their own tempdirs. Cleared and not
-	// unset: all three resolvers treat empty as unset and fall back to the
+	// unset: those three resolvers treat empty as unset and fall back to the
 	// home, which is the tempdir. A test that means to move one sets it
 	// back with t.Setenv, exactly as the $CODEX_HOME/$GROK_HOME cost tests
 	// already do.
 	os.Setenv("CLAUDE_CONFIG_DIR", "")
 	os.Setenv("CODEX_HOME", "")
 	os.Setenv("GROK_HOME", "")
+	// And the fourth of the class, UNSET rather than cleared, because this
+	// one resolver does not treat empty as unset (ranger-base-u3kft).
+	// credentialDirNamed (credential.go) reads
+	// CLAUDE_SECURESTORAGE_CONFIG_DIR FIRST — ahead of CLAUDE_CONFIG_DIR and
+	// ahead of the temp HOME — and a PRESENT-BUT-EMPTY value is a third
+	// state there: it shadows CLAUDE_CONFIG_DIR and resolves to the home,
+	// which is not what the three lines above mean when they write "".
+	// os.Unsetenv is the only spelling that takes this variable out of the
+	// resolution entirely.
+	//
+	// MEASURED 2026-11-11 on this box, which exports it from the same
+	// managed-settings file: without this line the package read the
+	// operator's live credential store past the temp HOME, and two tests
+	// red in every arm — TestOneEnvelopeReadsIdenticallyThroughBothStores
+	// (credseam_test.go, untagged, so all three) compared a keychain item
+	// name suffixed with the live directory's hash against one derived after
+	// the test had unset the variable, and
+	// TestTheReportRendersStructuralAbsenceAsSomethingToDo (refresh_test.go,
+	// arm 2) asserted this box has no login and read a real expiry out of
+	// the operator's file. ci.yml exports nothing of the sort, so CI could
+	// not see either. credseamfence_qa_test.go is the pin.
+	os.Unsetenv("CLAUDE_SECURESTORAGE_CONFIG_DIR")
 	// codexSigninProbe (interstitial.go, ranger-base-d1r4x) reads whether
 	// THIS box can authenticate codex, and the temp HOME above has no
 	// ~/.codex/auth.json — a fact every dispatch test that uses the codex
