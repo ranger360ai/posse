@@ -833,6 +833,28 @@ func (h Herdr) AgentSendKeys(target string, keys ...string) error {
 // how a guess reads here.
 type AgentDetection struct {
 	State string `json:"state"`
+	// Agent is herdr's OWN answer to what is in this pane: the manifest
+	// label its detection resolved. It is the one thing on this reading that
+	// says WHOSE chrome the screen is drawn with.
+	//
+	// READ FOR EXACTLY ONE DECISION — the SCOPE of a reading written off
+	// claude's prompt box (refuseWithoutComposerPane, reportedagent.go),
+	// which is ADR 0076 Amendment 5's limit arriving on the herdr route: a
+	// reading written off one runtime's chrome may only decide about that
+	// runtime. Nothing else branches on it and nothing else should; a
+	// predicate over this field anywhere a screen reading is not the subject
+	// is the ADR 0017 §3 shadow-runtime shape.
+	//
+	// MEASURED 2026-11-11 (herdr 0.9.1, claude 2.1.322, this box,
+	// ranger-base-xdaw9): `agent explain <pane> --json` answers
+	// `"agent":"claude"` for a pane whose agent LABEL was overridden through
+	// `pane report-agent` to a name herdr has no manifest for — the one pane
+	// shape where posse's DELIVERY route and herdr's DETECTION disagree
+	// about who holds the keyboard, and the shape the refusal above exists
+	// for. Empty on a reported reading (reportedDetection sets posse's own
+	// fields only), empty on a herdr that does not emit it, and empty is
+	// never evidence.
+	Agent string `json:"agent"`
 	// Rule is herdr's matched rule, and three of its fields are read: the
 	// id, the screen REGION that rule read, and the PRIORITY it won at.
 	// herdr emits all three on `matched_rule` and has since at least 0.8.0

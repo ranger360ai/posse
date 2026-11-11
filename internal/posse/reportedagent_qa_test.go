@@ -130,10 +130,18 @@ func TestQAAnUnreadableRouteDeliversTheWayPosseAlwaysHas(t *testing.T) {
 	}
 }
 
-// ADR 0060 D5, now that the route has a caller. A leading '/' opens the
-// CLI's command picker, the picker eats the Enter, and the text sits in the
-// composer while the call reports success — with no herdr envelope and no
-// `agent explain` behind this route, nothing else would ever say so.
+// ADR 0060 D5, now that the route has a caller. A leading '/' is the CLI's
+// own command syntax, so the prompt never runs as a prompt — with no herdr
+// envelope and no `agent explain` behind this route, nothing else would ever
+// say so.
+//
+// THE STATED REASON IS THE MEASURED ONE SINCE ranger-base-xdaw9. D5 measured
+// an older claude whose picker ate the Enter and left the text in the
+// composer; on claude 2.1.322, MEASURED through this route's own two calls,
+// the joined line is SUBMITTED (`Unknown command: /PROBEXDAW9SLASH`) and the
+// box clears — a LOST prompt, not a held one. The refusal is unchanged, so
+// these substrings are what moved; the Rex copy was corrected under
+// ranger-base-hlnyx off the same measurement on that route.
 func TestQAAReportedPromptRefusesALeadingSlashWithNothingSent(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -143,7 +151,7 @@ func TestQAAReportedPromptRefusesALeadingSlashWithNothingSent(t *testing.T) {
 	if err == nil {
 		t.Fatal("a '/' prompt on the typed route must be refused")
 	}
-	for _, want := range []string{"nothing was sent", "command picker", "eats the Enter", "posse peek"} {
+	for _, want := range []string{"nothing was sent", "the CLI's own command syntax", "Unknown command", "posse peek"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must name %q:\n%v", want, err)
 		}

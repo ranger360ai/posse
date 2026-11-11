@@ -2614,23 +2614,46 @@ func fakeHerdr(args []string) int {
 			return fakeErr(code, msg)
 		}
 		// `explain <pane>` over a pane whose label came from `pane
-		// report-agent` — the real 0.9.1 REFUSES it, and that refusal is the
+		// report-agent` — the real 0.9.1 refuses it when the pane holds a
+		// runtime it has no manifest for, and that refusal is the
 		// discriminator posse's one detection reading routes on (ADR 0061
 		// D3.1, ranger-base-nm5i6; MEASURED shape in reportedagent.go's head
 		// comment). Derived from the same two levers the reported route
 		// already reads — a label in `reported-agent` that `herdr-kinds` does
-		// not name — rather than given a lever of its own, because a fake
-		// that could be armed reported-but-explainable would be a herdr that
-		// has never existed, and every pin of the reported arm could be
-		// satisfied by the detected path instead.
+		// not name — rather than given a lever of its own, because every pin
+		// of the reported arm could otherwise be satisfied by the detected
+		// path instead.
+		//
+		// AND IT IS NOT THE LABEL THAT DECIDES, which is what this branch
+		// assumed until ranger-base-xdaw9 ("a fake that could be armed
+		// reported-but-explainable would be a herdr that has never existed").
+		// That herdr is 0.9.1. MEASURED 2026-11-11 on this box: `pane
+		// report-agent --agent fakebob-xdaw9` over a pane running a live
+		// claude left `agent get` answering `{"agent":"fakebob-xdaw9",
+		// "agent_status":"idle"}` while `agent explain <pane>` went on
+		// answering `agent: claude, state: blocked` off its own manifest. The
+		// report overrides the LABEL; it does not blind herdr's detection.
+		// That is the one pane shape where posse's delivery route and herdr's
+		// detection disagree about who holds the keyboard, and it is the shape
+		// refuseWithoutComposerPane exists for — so the fake must be able to
+		// be in it, derived the same way: explain answers a DETECTION when
+		// explain-agent-name names a kind `herdr-kinds` has a manifest for,
+		// and refuses otherwise.
 		//
 		// AFTER explain-error, so a test that arms its own code still gets it:
 		// that lever is about a herdr that went away, which can happen over
 		// any pane.
 		if b, err := os.ReadFile(filepath.Join(fakeDir(), "reported-agent")); err == nil && len(args) > 2 {
 			label, _, _ := strings.Cut(strings.TrimSpace(string(b)), "|")
-			if kinds, kerr := os.ReadFile(filepath.Join(fakeDir(), "herdr-kinds")); kerr == nil &&
-				!containsString(strings.Fields(string(kinds)), label) {
+			kinds, kerr := os.ReadFile(filepath.Join(fakeDir(), "herdr-kinds"))
+			detected := ""
+			if d, derr := os.ReadFile(filepath.Join(fakeDir(), "explain-agent-name")); derr == nil {
+				detected = strings.TrimSpace(string(d))
+			}
+			known := func(name string) bool {
+				return kerr == nil && containsString(strings.Fields(string(kinds)), name)
+			}
+			if !known(label) && !known(detected) {
 				return fakeErr("agent_explain_unavailable", "fake herdr: "+args[2]+" does not have a detected agent label")
 			}
 		}
@@ -2798,9 +2821,9 @@ func fakeExplain() string {
 			if counted {
 				os.WriteFile(filepath.Join(fakeDir(), "explain-fallback"), []byte(strconv.Itoa(n-1)), 0o644)
 			}
-			return fmt.Sprintf(`{"state":%q,"matched_rule":null,"visible_idle":false,`+
+			return fmt.Sprintf(`{%s"state":%q,"matched_rule":null,"visible_idle":false,`+
 				`"visible_blocker":false,"visible_working":false,`+
-				`"fallback_reason":"default_known_agent_idle_fallback"%s}`, state, fakeExplainRules())
+				`"fallback_reason":"default_known_agent_idle_fallback"%s}`, fakeExplainAgent(), state, fakeExplainRules())
 		}
 	}
 	rule := "fake_" + state
@@ -2815,10 +2838,29 @@ func fakeExplain() string {
 	if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-priority")); err == nil {
 		priority = strings.TrimSpace(string(b))
 	}
-	return fmt.Sprintf(`{"state":%q,"matched_rule":{"id":%q,"region":%q,"priority":%s,"state":%q},`+
+	return fmt.Sprintf(`{%s"state":%q,"matched_rule":{"id":%q,"region":%q,"priority":%s,"state":%q},`+
 		`"visible_idle":%t,"visible_blocker":%t,"visible_working":%t,`+
 		`"fallback_reason":null%s}`,
-		state, rule, region, priority, state, state == "idle", state == "blocked", state == "working", fakeExplainRules())
+		fakeExplainAgent(), state, rule, region, priority, state, state == "idle", state == "blocked", state == "working", fakeExplainRules())
+}
+
+// fakeExplainAgent splices herdr's own `agent` field — the manifest label its
+// DETECTION resolved for the pane — in as the head of either shape.
+//
+//	explain-agent-name   the label `explain <pane>` reports. ABSENT means the
+//	                     key is absent, which is a herdr that does not emit it
+//	                     and the reading every consumer must survive; it is
+//	                     also what keeps every test written before
+//	                     ranger-base-xdaw9 reading the same bytes it did.
+//
+// It is NOT explain-agent-error, which arms the other `explain` question
+// entirely (`--agent <label> --file <screen>`, AgentManifest's probe).
+func fakeExplainAgent() string {
+	b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-agent-name"))
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf(`"agent":%q,`, strings.TrimSpace(string(b)))
 }
 
 // fakeExplainRules splices the explain-rules lever in, as the `,"..."` tail

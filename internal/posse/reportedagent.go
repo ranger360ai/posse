@@ -45,6 +45,7 @@ package posse
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -63,10 +64,14 @@ const herdrPromptStallMS = 5000
 // AgentInfo is `herdr agent get <target>` — the pane's agent label and the
 // state herdr carries for it, whoever put them there.
 //
-// It is the one reading that answers for a reported pane at all: `agent
-// explain` refuses it (agent_explain_unavailable), so every gate in this
-// codebase built on AgentDetection is blind to it, and `agent list` would
-// make a per-pane question cost a whole listing.
+// It is the one reading that answers for a reported pane whose runtime herdr
+// has no manifest for at all: `agent explain` refuses that pane
+// (agent_explain_unavailable), so every gate in this codebase built on
+// AgentDetection is blind to it, and `agent list` would make a per-pane
+// question cost a whole listing. It is also the reading that routes DELIVERY,
+// and there the label is all it reads — a report over a pane herdr does
+// detect routes here while `agent explain` goes on describing the runtime,
+// which is the disagreement the refusal section below is about.
 func (h Herdr) AgentInfo(target string) (HerdrAgent, error) {
 	res, err := h.Run("agent", "get", target)
 	if err != nil {
@@ -138,20 +143,38 @@ func (h Herdr) sendTextPrompt(ag HerdrAgent, text string, wait bool, timeoutMS i
 			Message: "agent " + ag.PaneID + " is blocked awaiting input; nothing was typed"}
 	}
 	// ADR 0060 D5, and the one hazard that gets a guard rather than a line
-	// in a profile now that this route has a caller. A leading '/' opens the
-	// CLI's command picker, and the picker EATS the Enter that follows: the
-	// text sits in the composer, this call reports success, and nobody finds
-	// out — ranger-base-3p0's failure with the cause one layer over. It is
-	// refused on this route only, because this route is the one with no
-	// herdr envelope behind it to say the submit happened and no `agent
-	// explain` to read the box back with (ConfirmSubmitted is blind to a
-	// reported pane by construction).
+	// in a profile now that this route has a caller. A prompt whose first
+	// character is '/' is the CLI's own command syntax, so it never reaches
+	// the agent as a prompt — it is refused on this route only, because this
+	// route is the one with no herdr envelope behind it to say the submit
+	// happened and no `agent explain` to read the box back with
+	// (ConfirmSubmitted is blind to a reported pane by construction).
+	//
+	// WHAT IT DOES ON THIS CLI, measured rather than inherited. ADR 0060 D5
+	// measured an older claude whose picker ATE the Enter and left the text
+	// in the composer "through Esc and C-u", and this refusal said so until
+	// ranger-base-xdaw9. MEASURED 2026-11-11 through THIS route (herdr 0.9.1,
+	// claude 2.1.322, this box): `pane send-text` of
+	// `/PROBEXDAW9SLASH answer with exactly ok` followed by `pane send-keys
+	// enter` SUBMITTED the line — claude answered `Unknown command:
+	// /PROBEXDAW9SLASH` and `Args from unknown skill: answer with exactly
+	// ok` — and the box CLEARED. No picker was ever drawn, because send-text
+	// pastes instead of typing. Both outcomes are a prompt that never runs,
+	// so the refusal stands and only its stated reason moved; the lost-prompt
+	// one is the worse of the two, because nothing is left on the screen for
+	// the next person to find. The Rex copy of this message was corrected
+	// under ranger-base-hlnyx off the same measurement on that route.
 	if strings.HasPrefix(strings.TrimLeft(text, " \t\r\n"), "/") {
 		return nil, Die("nothing was sent: %s is a %s pane herdr labels but does not detect, so posse types the prompt in "+
-			"(pane send-text + Enter) — and a prompt starting with '/' opens the CLI's command picker, which eats the Enter "+
-			"and leaves the text sitting in the composer while this call reports success (ADR 0060 D5). "+
+			"(pane send-text + Enter) — and a prompt starting with '/' is the CLI's own command syntax, not a prompt. "+
+			"MEASURED on claude 2.1.322 through this route (ranger-base-xdaw9): the line is SUBMITTED as "+
+			"`Unknown command: /...`, the box clears, and the prompt is LOST while this call reports success; on an "+
+			"older CLI the command picker took the Enter and left the text sitting in the composer instead (ADR 0060 D5). "+
 			"Reword it without the leading '/', or drive the picker by hand (posse peek)",
 			ag.PaneID, ag.Agent)
+	}
+	if err := h.refuseWithoutComposerPane(ag); err != nil {
+		return nil, err
 	}
 	if _, err := h.Run("pane", "send-text", ag.PaneID, text); err != nil {
 		return nil, err
@@ -213,6 +236,147 @@ func (h Herdr) sendTextPrompt(ag HerdrAgent, text string, wait bool, timeoutMS i
 	return h.AgentWait(ag.PaneID, []string{"idle", "done", "blocked"}, left())
 }
 
+// ─── is there a box to type into at all (ranger-base-xdaw9) ──────────────────
+//
+// THE HOLE, and it is the one ranger-base-hlnyx closed on the Rex route.
+// MEASURED 2026-11-11 on this box (herdr 0.9.1, claude 2.1.322), three
+// attempts through this route's own two calls and three identical outcomes:
+// `pane send-text` + `pane send-keys enter` into a claude pane holding a
+// modal DISCARDED the prompt — the token appeared in none of `pane read`'s
+// three sources (`visible`, `recent`, `recent-unwrapped`), `grep -c` = 0,
+// three times — and the Enter ACTUATED the dialog's highlighted row. Twice
+// that row was `❯ 1. Yes` on a pending Bash permission dialog and the command
+// RAN, the marker file written at the second the prompt was typed; once it was
+// `❯ No, exit` on the folder-trust prompt and the CLI quit. Neither call
+// failed, so this route would have reported a delivered prompt in all three.
+// docs/notes.d/ranger-base-xdaw9.md carries the venue and the screens.
+//
+// HOW A CLAUDE PANE REACHES THIS ROUTE AT ALL, which is the part nobody had
+// measured. `pane report-agent` OVERRIDES herdr's own label on `agent get`
+// while `agent explain` goes on answering with herdr's DETECTION (MEASURED:
+// `agent get` → `{"agent":"fakebob-xdaw9","agent_status":"idle"}` over a pane
+// `agent explain` calls `claude`, `blocked`). So the two authorities this file
+// is built on disagree about one pane: ReportedAgent reads `agent get`, finds
+// a label with no manifest, and takes the typed route — into a live claude.
+// The `agent_blocked` guard above does not catch it either, because the
+// status it reads is the REPORTER's and the reporter said idle.
+//
+// THE TELL IS THE SAME ONE, AND IT IS NOT THE ONE THE BEAD EXPECTED. The
+// guess ranger-base-hlnyx filed this with was that herdr's composer region
+// would be seen carrying the dialog's MENU, so `AgentDetection.Composer()`
+// would answer "" by its chrome clause (composerChromePhrases, panework.go)
+// and the split needed here would be "the region is there and empty" against
+// "the region is a menu drawn over the box". MEASURED, the region does three
+// different things on the three dialogs and none of them is that:
+//
+//	Bash permission dialog   prompt_box_body preview = ""
+//	the /model picker        prompt_box_body preview = ""
+//	the folder-trust prompt  prompt_box_body preview = " Accessing workspace:…"
+//	an open box (idle)       prompt_box_body preview = "❯\u00a0check that the…"
+//
+// So the chrome clause fires on none of them — the first two are empty and
+// the third does not lead with the mark — and the region reading is TWO-valued
+// where the refusal needs three: an empty preview is also what "no rule read
+// that region" looks like, which is what an older herdr, another manifest, or
+// a pane mid-redraw reads as. herdr's own STATE cannot close that gap either:
+// it is `blocked` on the permission dialog and the trust prompt but
+// **`unknown`** on the /model picker (MEASURED, no rule matched), and unknown
+// may never refuse anything (ADR 0013 §1).
+//
+// WHAT IS LEFT IS THE SCREEN, and posse already has the reading for it.
+// `captureComposerSight` (capturedcomposer.go) is a pure function over one
+// captured screen with exactly the three values this needs — open, covered,
+// unreadable — and it was MEASURED 2026-11-11 to judge all four live herdr
+// screens correctly off `pane read --source detection`, the same source
+// `herdr agent explain --file` replays and `etc/herdr/agent-detection/testdata`
+// was captured with (PaneReadDetection's note, ADR 0066 D3):
+//
+//	idle       → composerOpen     (2 U+2500 rules, box between them)
+//	permission → composerCovered  (1 rule; the dialog's own separators are U+254C)
+//	/model     → composerCovered  (0 rules — the phrase arm is what judges it)
+//	trust      → composerCovered  (2 rules, no box)
+//
+// One reading, two multiplexers, one set of fixtures. The alternative was a
+// second predicate over herdr's region previews, which would have been a
+// second spelling of the same judgement for posse to keep in step with the
+// same binary — the objection ADR 0076 records to screen rules in the first
+// place.
+//
+// THE SCOPE IS herdr's OWN DETECTED LABEL, for the reason the Rex side asks
+// RuntimeOwner first: the box this locates is claude's idiom — the mark, the
+// two rules, the five menu phrases — so on a pane held by anything else it
+// would find no box on every screen and refuse every prompt forever. On the
+// designed case of this route (a pane whose RUNTIME herdr has no manifest
+// for, a Bob under a plugin) `agent explain` refuses outright, posse's own
+// reported arm answers with no `Agent` at all, and this concedes — so a real
+// Bob is never judged against claude's chrome, and the refusal reaches
+// exactly the pane shape the hazard was measured on.
+
+// claudeDetectedLabel is the agent label herdr's own detection resolves for
+// claude — the manifest's name, not a process name (claudeRuntimeProcName is
+// that, and it is Rex's reading). MEASURED 2026-11-11 on herdr 0.9.1:
+// `agent explain <pane> --json` → `"agent":"claude"`, manifest
+// `remote:…/agent-detection/remote/claude.toml 2026.10.11.1`.
+const claudeDetectedLabel = "claude"
+
+// refuseWithoutComposerPane refuses a typed prompt into a pane whose screen
+// has no prompt box on it, before either keystroke — the section note above
+// carries the measurement, and ADR 0076 Amendment 7 is the decision it
+// applies.
+//
+// THE CODE IS `agent_not_ready`, and this route borrows it from herdr's
+// taxonomy the way it already borrows `agent_prompt_stalled` and
+// `agent_blocked`: nothing was typed, so dispatch's hand-back allow-list
+// (isNotDelivered, promptstall.go, ADR 0084 D1) must see it and give the
+// claim back rather than keep it over a pane nobody asked anything.
+//
+// WHAT IT COSTS, per prompt and not per pass: one `agent explain` for the
+// scope and one `pane read` for the screen. A refusal costs one more read and
+// promptComposerRecheck, and only a refusal does.
+//
+// THE HAZARD IT ADDS is the same absence-rule hazard the Rex side states out
+// loud: a later claude that stops drawing its two rules reads covered on every
+// settled pane, and this would refuse every typed prompt on such a pane. Loud
+// — the first refusal says so and quotes the screen's last line — where the
+// failure it replaces was silent.
+func (h Herdr) refuseWithoutComposerPane(ag HerdrAgent) error {
+	det, err := h.AgentExplain(ag.PaneID)
+	if err != nil || det.Agent != claudeDetectedLabel {
+		return nil
+	}
+	screen, sight := h.paneComposerSight(ag.PaneID)
+	if sight != composerCovered {
+		return nil
+	}
+	// A screen caught mid-redraw must not read as a dialog
+	// (promptComposerRecheck's note, muxrex.go). Only this path waits.
+	time.Sleep(promptComposerRecheck)
+	if screen, sight = h.paneComposerSight(ag.PaneID); sight != composerCovered {
+		return nil
+	}
+	return HerdrAPIError{Code: "agent_not_ready", Message: "nothing was sent: " + ag.PaneID + " is a " + ag.Agent +
+		" pane herdr labels but does not detect, so posse types the prompt in (pane send-text + Enter) — and there is " +
+		"no prompt box on that pane's screen, which herdr's own detection reads as claude. Something else is drawn " +
+		"where the box goes, and the last line of it reads " + strconv.Quote(ellipsis(captureLastLine(screen), 120)) +
+		". MEASURED 2026-11-11 (ranger-base-xdaw9): a prompt typed into a claude pane holding a dialog is DISCARDED " +
+		"and the Enter actuates the dialog's highlighted row — a pending permission dialog was approved and its " +
+		"command ran, and the folder-trust prompt's `No, exit` quit the CLI. Look at it and clear it by hand " +
+		"(posse peek), then send this again"}
+}
+
+// paneComposerSight takes one screen and judges it, with the screen handed
+// back so a refusal can quote its last line. A `pane read` herdr would not
+// answer is composerUnreadable: a screen posse could not read is not evidence
+// that something else holds the keyboard, which is the direction every
+// reading in this family takes.
+func (h Herdr) paneComposerSight(paneID string) (string, composerSight) {
+	screen, err := h.PaneReadDetection(paneID)
+	if err != nil {
+		return "", composerUnreadable
+	}
+	return screen, captureComposerSight(screen)
+}
+
 // ─── the one detection READING for a reported pane (ADR 0061 D3) ─────────────
 //
 // ranger-base-nm5i6. Everything above is DELIVERY — how a typed prompt
@@ -224,9 +388,12 @@ func (h Herdr) sendTextPrompt(ag HerdrAgent, text string, wait bool, timeoutMS i
 // pane from an AgentDetection — the dispatch settle ladder, the delivered
 // wait, the promptable gate, the pulse, the pane-holding read, the probe's
 // detection observable — and every one of them got there through
-// `Herdr.AgentExplain`. herdr refuses that verb outright for a reported pane
-// (agent_explain_unavailable), so before this block all six read an ERROR and
-// each fell into its own concession: dispatch spent a whole startup wait and
+// `Herdr.AgentExplain`. herdr refuses that verb for a pane whose RUNTIME it
+// has no manifest for (agent_explain_unavailable — and that is the condition,
+// not the reported label: a report over a pane herdr DOES detect is explained
+// anyway, which is the refusal section above), so before this block all six
+// read an ERROR over such a pane and each fell into its own concession:
+// dispatch spent a whole startup wait and
 // then prompted on a state it had not seen, the probe recorded "herdr could
 // not explain the pane", and the promptable gate needed a second ladder of
 // its own (8eqaa's awaitReportedPromptable, folded into the first by this

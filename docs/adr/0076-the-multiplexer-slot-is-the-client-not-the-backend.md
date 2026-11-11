@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below · amended 2026-11-11 (ranger-base-xdaw9): the same refusal on herdr's typed route, measured — `pane report-agent` overrides the label without blinding the detection, so that route types into a live claude, and the tell is the screen and not herdr's composer region, see "Amendment 8" below*
 
 ## Context
 
@@ -1884,3 +1884,183 @@ operator who does mean to drive a dialog has `posse peek`, and §2's
   it was measured carrying the box line and a selection menu at once
   (`composerChromePhrases`, ranger-base-i6t90). ranger-base-xdaw9 carries
   the measurement and the fix.
+
+## Amendment 8: the same refusal on herdr's typed route, and the tell is not the manifest region (ranger-base-xdaw9, 2026-11-11)
+
+Amendment 7 left one question open and said so: whether herdr's `pane
+send-text` + Enter route — `Herdr.sendTextPrompt`, the route for a pane
+herdr LABELS but does not detect — has the same hole, and what its tell
+would be. It guessed that the tell would be herdr's own composer region
+seen carrying the dialog's menu. **The hole is there, three for three.
+The guess about the tell is wrong, measured, and the reading that does
+work is Amendment 7's own.**
+
+### What was measured
+
+MEASURED 2026-11-11 on this host (linux, omarchy 7.2.15-1; herdr 0.9.1,
+no server running until this bead started a scratch one; claude 2.1.322,
+`claude-haiku-5-5`). A pane running a live claude, its agent label
+overridden through `pane report-agent --source probe-xdaw9 --agent
+fakebob-xdaw9 --state idle` so that posse's route reader takes the typed
+route, then that route's own two calls fired into a modal three times.
+docs/notes.d/ranger-base-xdaw9.md has the venue, the call log and the
+screens.
+
+- The prompt text appeared **nowhere**: `herdr pane read` in all three
+  of its sources — `visible`, `recent`, `recent-unwrapped` — `grep -c`
+  = 0, three times, for three distinct tokens.
+- The Enter **actuated the dialog's highlighted row, three for three.**
+  Twice that row was `❯ 1. Yes` on a pending Bash permission dialog and
+  the shell command RAN, each marker file written at the second the
+  prompt was typed. Once it was `❯ No, exit` on the folder-trust prompt,
+  and the CLI quit.
+- Neither herdr call failed, so the route would have reported a
+  delivered prompt in all three. `ConfirmSubmitted` is blind to this
+  route by construction, so nothing downstream would have said so
+  either.
+- The control: `herdr agent prompt <pane>` over the same pane answers
+  `agent_not_ready: agent w1:p1 is not an active named agent` and types
+  nothing. That refusal is why this route exists (ADR 0061, 8eqaa) and
+  it is also why herdr's own blocked rejection (rangerhq-ejf) is not
+  standing in front of these keystrokes.
+
+### How a claude pane reaches a route for panes herdr does not detect
+
+This is the part nobody had measured, and it is the whole mechanism.
+**`pane report-agent` overrides the LABEL and does not blind the
+DETECTION.** MEASURED on the same pane, same instant:
+
+```
+agent get w1:p1      → {"agent":"fakebob-xdaw9","agent_status":"idle",…}
+agent explain w1:p1  → agent: claude   state: blocked
+                       rule: live_blocked_form (region=after_last_horizontal_rule)
+                       manifest: …/agent-detection/remote/claude.toml 2026.10.11.1
+```
+
+So posse's two authorities disagree about one pane. `ReportedAgent`
+reads `agent get`, finds a label with no manifest
+(`fallback_reason: unknown_agent`, MEASURED), and routes the prompt to
+the typed path — into a live claude. The `agent_blocked` guard at the
+head of that path does not catch it, because the status it reads is the
+REPORTER's and the reporter said `idle` over a pane herdr's own
+detection called `blocked`. ADR 0061 D3's property 1 is unaffected: it
+is conditioned on `agent explain` ANSWERING `agent_explain_unavailable`,
+which this pane's does not. What is now known to be narrower than its
+prose is the claim repeated around it — `agent explain` refuses a pane
+whose RUNTIME it has no manifest for, not every pane carrying a reported
+label.
+
+### What the region reads, and why it cannot be the tell
+
+Amendment 7's open bullet expected `prompt_box_body` to carry the
+dialog's menu, so that `AgentDetection.Composer()` would answer `""`
+through its chrome clause and the split needed here would be "the region
+is there and empty" against "the region is a menu drawn over the box".
+MEASURED, the region does three different things across the three
+dialogs and none of them is that:
+
+| screen | herdr's `prompt_box_body` preview | herdr's own `state` |
+|---|---|---|
+| Bash permission dialog | `""` | `blocked` |
+| the `/model` picker | `""` | **`unknown`** (no rule matched) |
+| the folder-trust prompt | `" Accessing workspace:…"` (the dialog's body) | `blocked` |
+| a box on screen (idle) | `"❯ check that the file was created\n"` | `idle` |
+
+Three things fall out and all three close a door:
+
+- **The chrome clause fires on none of them.** Two previews are empty
+  and the third does not lead with the mark, so `Composer()` already
+  answers `""` for all three — by its FIRST clause. The five phrases
+  (`composerChromePhrases`, ranger-base-i6t90) are doing no work here.
+- **The region reading is two-valued where the refusal needs three.** An
+  empty preview is also exactly what "no rule read that region" looks
+  like — an older herdr, another manifest, a pane mid-redraw — and
+  `regionPreview` cannot tell those from a covered box. Amendment 7 D3's
+  third value has nowhere to come from.
+- **herdr's own state cannot stand in for it.** It is `blocked` on two of
+  the dialogs and `unknown` on `/model`, and ADR 0013 §1's
+  unknown-is-not-no forbids refusing on the third. A refusal built on
+  `state` would have passed the two dialogs it was tested against and
+  waved the picker through.
+
+### Decision
+
+**D1. The same refusal, on the same reading.** `Herdr.sendTextPrompt`
+refuses before `pane send-text` when the pane's screen carries claude's
+chrome and no prompt box — `refuseWithoutComposerPane`
+(internal/posse/reportedagent.go) over `captureComposerSight`
+(internal/posse/capturedcomposer.go), which is Amendment 7's reading
+unchanged. Amendment 7's D2 (absence, not the dialog's marks), D3 (three
+values; unknown refuses nothing), D5 (read twice before believing) and
+D6 (`agent_not_ready`, so a dispatch claim is handed back through ADR
+0084 D1's `isNotDelivered`) carry over verbatim and are not restated.
+
+**D2. The screen is `pane read --source detection`.** MEASURED
+2026-11-11: `captureComposerSight`, written off `rex capture` screens,
+judges all four of this route's live herdr screens correctly and
+unchanged — idle `composerOpen`; the permission dialog (1 U+2500 rule),
+the `/model` picker (0 rules, judged by the phrase arm) and the trust
+prompt (2 rules) all `composerCovered`. `--source detection` and not the
+CLI's default `recent` because that is the snapshot `herdr agent explain
+--file` replays and `etc/herdr/agent-detection/testdata` was captured
+with (ADR 0066 D3, `PaneReadDetection`): a refusal judged off a
+different snapshot than herdr's own would be a different measurement.
+The alternative — a second predicate over herdr's region previews —
+would be a second spelling of one judgement to keep in step with the
+same binary, which is the objection this ADR records to screen rules in
+the first place.
+
+**D3. The scope is herdr's OWN detected label, not the reported one.**
+Amendment 7 D4 on this route: the box this reading locates is claude's
+idiom, so on a pane held by anything else it would find no box on every
+screen and refuse every prompt forever. `agent explain`'s `agent` field
+is the evidence — herdr's answer to whose chrome the screen is drawn
+with — and it is now read into `AgentDetection.Agent` for this one
+decision. The designed case of this route (a pane whose RUNTIME herdr
+has no manifest for: a Bob under a plugin) answers
+`agent_explain_unavailable`, posse's reported arm names no agent, and
+this concedes — so a real Bob is never judged against claude's chrome,
+and the refusal reaches exactly the pane shape the hazard was measured
+on. An explain posse cannot take is conceded for the same reason.
+
+**D4. ADR 0060 D5's leading-`/` refusal stands on this route too, with
+its stated reason corrected.** MEASURED 2026-11-11 through this route:
+`pane send-text` of a line beginning `/` followed by `pane send-keys
+enter` SUBMITTED it — claude answered `Unknown command:
+/PROBEXDAW9SLASH` and `Args from unknown skill: answer with exactly ok`
+— and the box cleared. No picker was drawn at all, because `send-text`
+pastes rather than types. D5's composer claim is CLI-version-bound on
+this route exactly as Amendment 7 found it to be on Rex; both outcomes
+are a prompt that never runs, so the refusal is unchanged and only its
+sentence moved. The substring pin is in
+`internal/posse/reportedagent_qa_test.go`.
+
+### Consequences
+
+- This route costs two herdr calls before it types: one `agent explain`
+  for the scope and one `pane read` for the screen. Per prompt, not per
+  pass. A refusal costs one more read and Amendment 7 D5's quarter
+  second, and only a refusal does.
+- **The hazard is Amendment 7's, said out loud again.** If a later
+  claude stops drawing the two rules around its box, this reads
+  "covered" on every settled pane of this shape and refuses every typed
+  prompt on it. Loud — the first refusal says so and quotes the screen's
+  last line — where the failure it replaces was silent.
+- The fake herdr could not be in the measured pane shape before this
+  bead: its `agent explain` branch derived the refusal from the LABEL
+  alone, and its comment said a reported-but-explainable herdr "has
+  never existed". That herdr is 0.9.1. The fake now derives the same
+  refusal from whether herdr has a manifest for the label it DETECTED,
+  which is what was measured, and the levers stay derived rather than
+  free-form.
+- **The absence rule is pinned against the live binary on this occupant
+  too**, and it has to be separately: `RHQ_LIVE_HERDR=1 go test -tags
+  posse_arm3 ./internal/posse -run
+  TestLiveHerdrPaneSeesThisPanesOwnComposer` reads the pane the suite is
+  running in, exactly as Amendment 7's `TestLiveRexPromptSeesThisSeatsOwnComposer`
+  reads its block. One function, two SOURCES: a claude that changed its
+  drawing reds whichever pin is on the box the suite ran on, and a herdr
+  whose `pane read` output shape moved reds only this one — and neither
+  occupant's box can run the other's pin.
+- Amendment 7's two closing bullets are answered and superseded by this
+  one: the hole is real, the fix is in, and the tell was not the region.
