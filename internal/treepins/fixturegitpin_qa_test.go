@@ -72,7 +72,7 @@ package treepins
 //
 // WHY THIS PIN, AND WHY IT IS NOT A GREP. The sites that are red and the sites
 // that are green spell the same thing — `exec.Command("git", …)` — and there
-// are 73 bound ones in the tree's test corpus. What separates them is whether
+// are 66 bound ones in the tree's test corpus. What separates them is whether
 // the child's env still carries the launcher's pin, which is one hop away from
 // the exec call: through a local `env` slice, or through a package helper like
 // pfEnv. And what excuses 45 of them is a single line in one TestMain, in
@@ -102,7 +102,7 @@ package treepins
 // once: parser.ParseFile applies no build constraints, so the untagged,
 // posse_arm2 and posse_arm3 files are all read by one run.
 //
-// NOT CLAIMED: that the 45 sites in internal/posse are safe on any other box,
+// NOT CLAIMED: that the 39 sites in internal/posse are safe on any other box,
 // or that a seat whose PATH leads with a gates dir is the only way to reach
 // the shim. Both are properties of the environment, not of this tree, which is
 // exactly why arm 1 counts them rather than converting them.
@@ -324,7 +324,8 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 		}
 	}
 
-	var out []fgpSite
+	byKey := map[string]fgpSite{}
+	var order []string
 	for _, rel := range files {
 		dir := filepath.ToSlash(filepath.Dir(rel))
 		for _, d := range parsed[rel].Decls {
@@ -424,14 +425,33 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 					case !environ:
 						why = "its env replaces the launcher's rather than building on os.Environ(), so it carries no GIT_CONFIG_GLOBAL at all"
 					}
-					out = append(out, fgpSite{
+					// One finding per CHILD, not per .Env assignment: a
+					// function that rebinds the same identifier — cmd/posse's
+					// adrcensus fixture assigns `cmd.Env` three times — would
+					// otherwise report its one git child three times, at a
+					// line none of those assignments is on.
+					key := fmt.Sprintf("%s:%d:%s", rel, line, recv.Name)
+					if prev, seen := byKey[key]; seen {
+						if prev.why == "" {
+							prev.why = why
+						}
+						prev.local = prev.local || stripsHere
+						byKey[key] = prev
+						continue
+					}
+					byKey[key] = fgpSite{
 						file: rel, line: line, fn: fd.Name.Name, why: why,
 						immune: immune[dir], local: stripsHere,
-					})
+					}
+					order = append(order, key)
 				}
 				return true
 			})
 		}
+	}
+	out := make([]fgpSite, 0, len(order))
+	for _, k := range order {
+		out = append(out, byKey[k])
 	}
 	return out
 }
@@ -446,16 +466,18 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 	// The positive witnesses. Every arm below asserts an absence, and a walk
 	// that has quietly stopped reading says exactly what a clean tree says.
 	// The floors sit under the live counts (MEASURED 2026-11-10 at
-	// ranger-base-xa2e3's commit: 767 test files, 73 bound bare-name git
-	// children, 45 of them handed an env that unpins git's config scope — all
-	// 45 in internal/posse, every one excused by that package's TestMain, and
-	// 0 anywhere else).
+	// ranger-base-xa2e3's commit: 768 test files, 66 bound bare-name git
+	// children, 39 of them handed an env that unpins git's config scope — all
+	// 39 in internal/posse, every one excused by that package's TestMain, and
+	// 0 anywhere else. The unit is one finding per CHILD and not per `.Env`
+	// assignment, so these read lower than a per-assignment census of the same
+	// tree, which double-counted every rebound identifier).
 	if len(files) < 400 {
 		root, _ := repoRoot()
 		t.Fatalf("the walk read %d _test.go files from %q — the corpus this pin censuses is not there", len(files), root)
 	}
 	if len(sites) < 40 {
-		t.Fatalf("found %d bound bare-name git children in %d test files, and 73 sat in the tree on 2026-11-10 — the scan is not reading this tree's fixtures, and arm 2 is then green over whatever they do",
+		t.Fatalf("found %d bound bare-name git children in %d test files, and 66 sat in the tree on 2026-11-10 — the scan is not reading this tree's fixtures, and arm 2 is then green over whatever they do",
 			len(sites), len(files))
 	}
 	var unpinned, immuneUnpinned int
@@ -469,12 +491,12 @@ func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) 
 		}
 	}
 	if unpinned < 20 {
-		t.Errorf("only %d of %d bare-name git children were read as unpinning git's config scope, and 45 did on 2026-11-10.\n"+
+		t.Errorf("only %d of %d bare-name git children were read as unpinning git's config scope, and 39 did on 2026-11-10.\n"+
 			"  That half of the rule is what tells the refused fixture from the allowed one — a count this low means the env hop has stopped resolving and this pin now excuses the class it is a census of.",
 			unpinned, len(sites))
 	}
 	if immuneUnpinned < 20 {
-		t.Errorf("only %d unpinning child(ren) were read as excused by their package's TestMain, and 45 were on 2026-11-10 — internal/posse's `os.Setenv(\"PATH\", PathOutsideGates(\"\"))` (herdr_test.go, rangerhq-8sd) is the one line holding them, and a derivation that has stopped finding it would report them as violations rather than as what they are.",
+		t.Errorf("only %d unpinning child(ren) were read as excused by their package's TestMain, and 39 were on 2026-11-10 — internal/posse's `os.Setenv(\"PATH\", PathOutsideGates(\"\"))` (herdr_test.go, rangerhq-8sd) is the one line holding them, and a derivation that has stopped finding it would report them as violations rather than as what they are.",
 			immuneUnpinned)
 	}
 	t.Logf("%d test files, %d bound bare-name git children, %d unpinning git's config scope, %d of those excused by their package's TestMain",

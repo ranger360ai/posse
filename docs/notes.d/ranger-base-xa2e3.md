@@ -54,7 +54,7 @@ that failed, and it will fail on any box whose operator has git aliases.
 A third fact explains why only two packages were red: **`internal/posse`'s
 `TestMain` steps out from behind the gates for the whole test binary**
 (`herdr_test.go`, `os.Setenv("PATH", PathOutsideGates(""))`, rangerhq-8sd).
-Forty-five of its own git children are the same hazard shape and that one line
+Thirty-nine of its own git children are the same hazard shape and that one line
 is all that holds them.
 
 ## The fix, and what was deliberately not done
@@ -104,17 +104,20 @@ it never is, so listing them would flag the whole green half.
 
 Immunity is **derived**, never listed: a package is excused when its own
 `TestMain` strips the gates from `$PATH`, so the day `internal/posse`'s line
-goes away this pin names its forty-five sites instead of going quiet. A
+goes away this pin names its thirty-nine sites instead of going quiet. A
 function that strips `$PATH` for itself (`bdhookcommit_qa_test.go`'s shape) is
 read as compliant — that is the third honest spelling of the fix. There is no
 exemption roster, for `gittempdirroot_qa_test.go`'s reason: complying is one
 token, the helper is already in both packages, and an exemption mechanism here
 would only ever be used to re-open the class.
 
-MEASURED 2026-11-10 at this bead's commit: 768 test files, 74 bound bare-name
-git children, 45 handed an env that unpins git's config scope — all 45 in
+MEASURED 2026-11-10 at this bead's commit: 768 test files, 66 bound bare-name
+git children, 39 handed an env that unpins git's config scope — all 39 in
 `internal/posse`, every one excused by that package's `TestMain`, and 0
-anywhere else.
+anywhere else. The unit is one finding per CHILD and not per `.Env` assignment:
+`cmd/posse`'s adrcensus fixture rebinds `cmd` and assigns its `.Env` three
+times, and the first reading of this census reported that one child three times
+at a line none of those assignments is on (that reading said 74 and 45).
 
 `TestQAFixtureGitCensusCanStillSayNo` is the control: eleven synthetic sources
 covering each shape that separates this class, including the three converted
@@ -131,7 +134,7 @@ unmutated tree between every arm.
 
 ## Not claimed
 
-That the forty-five sites in `internal/posse` are safe on any other box, or
+That the thirty-nine sites in `internal/posse` are safe on any other box, or
 that a gates-leading `$PATH` is the only route to the shim. Both are properties
 of the environment rather than of this tree, which is why arm 1 counts them
 rather than converting them.
