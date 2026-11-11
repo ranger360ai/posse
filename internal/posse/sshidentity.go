@@ -65,6 +65,32 @@ func bwrapMasksSSHKeys(ag *AgentFile) bool {
 	return deniesGitPush(ag.Deny) || grantsGitPush(ag.Allow) == ""
 }
 
+// sshKeyReadDeny is the list a seat's wall read-denies for ssh: every key
+// liveSSHIdentityFiles resolves, for a seat bwrapMasksSSHKeys says is not the
+// pusher, and nothing for the pusher. ONE function for both mechanisms
+// (ranger-base-7m3up): bwrapRender renders it as /dev/null binds, and
+// RenderSeatbelt as `(deny file-read* (literal …))` through the same
+// Carve.DenyRead, so the two walls cannot disagree about which keys a seat
+// reads. Not inside SeatbeltCarveOut because the resolution reads ssh's
+// configs and can refuse, and that function has no error to refuse with.
+func sshKeyReadDeny(ag *AgentFile, cwd string) ([]string, error) {
+	if !bwrapMasksSSHKeys(ag) {
+		return nil, nil
+	}
+	return liveSSHIdentityFiles(cwd)
+}
+
+// withSSHKeyReadDeny adds sshKeyReadDeny's list to carve.DenyRead and returns
+// the keys it added, so a report can name them as keys.
+func withSSHKeyReadDeny(ag *AgentFile, cwd string, carve *SeatbeltCarveOut) ([]string, error) {
+	keys, err := sshKeyReadDeny(ag, cwd)
+	if err != nil {
+		return nil, err
+	}
+	carve.DenyRead = dedupeStrings(append(carve.DenyRead, keys...))
+	return keys, nil
+}
+
 // sshEnv is what the expansion needs from the account, as values so a pin
 // can drive every arm without the box's own config.
 type sshEnv struct {

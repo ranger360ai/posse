@@ -1576,15 +1576,10 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	}
 	// The ssh keys a seat that is not the pusher must not read
 	// (ranger-base-ighvi): read masks like the runtime credentials, so they
-	// ride DenyRead and BwrapArgs step 5 renders them. Here and not in
-	// SeatbeltCarveOut for the reason Hide is: the darwin profile is its own
-	// bead (ranger-base-7m3up).
-	if bwrapMasksSSHKeys(ag) {
-		keys, err := liveSSHIdentityFiles(cwd)
-		if err != nil {
-			return bwrapRendered{}, err
-		}
-		r.Carve.DenyRead = dedupeStrings(append(r.Carve.DenyRead, keys...))
+	// ride DenyRead and BwrapArgs step 5 renders them. RenderSeatbelt adds
+	// the same list through the same helper (ranger-base-7m3up).
+	if _, err := withSSHKeyReadDeny(ag, cwd, &r.Carve); err != nil {
+		return bwrapRendered{}, err
 	}
 	r.Set, r.Keep = BwrapWritable(ag, writable, cwd)
 	// The seat's own /tmp (ranger-base-7wdb7): the host dir BwrapArgs binds

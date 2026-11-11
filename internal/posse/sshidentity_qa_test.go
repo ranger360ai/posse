@@ -302,3 +302,100 @@ func TestLiveBwrapPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
 		}
 	}
 }
+
+// ranger-base-7m3up: the darwin arm of the same wall. ighvi masked the keys in
+// the bwrap render only, so a seatbelt seat that was not the pusher read
+// every one of them. The profile RenderSeatbelt writes for a push-denied PID
+// names every configured key in its `(deny file-read*` block, the pusher's
+// names none, and the report a seat's operator reads says which lines are ssh
+// keys. Runs on every host: it pins the render, which is what a caged seat
+// (which cannot nest sandbox-exec, ranger-base-xjw9) can still witness.
+func TestRenderSeatbeltDeniesTheConfiguredSSHKeys(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME.
+	f := wrcFixtureIn(t, wallUngrantedDir(t))
+	sf := newSSHFixture(t, filepath.Dir(f.home))
+	t.Setenv("SSHFIX", sf.home)
+	readBlock := func(ag *AgentFile) string {
+		t.Helper()
+		p, err := f.a.RenderSeatbelt(ag, f.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prof := string(b)
+		i := strings.Index(prof, "(deny file-read*")
+		if i < 0 {
+			return ""
+		}
+		end := strings.Index(prof[i:], "\n)")
+		if end < 0 {
+			t.Fatalf("unterminated file-read* deny block:\n%s", prof[i:])
+		}
+		return prof[i : i+end]
+	}
+
+	f.ag.Deny = []string{"Bash(git push:*)"}
+	block := readBlock(f.ag)
+	for _, k := range sf.keys {
+		if lit := "(literal " + sbQuote(absResolve(k)) + ")"; !strings.Contains(block, lit) {
+			t.Errorf("a push-denied seat's seatbelt profile does not read-deny %s, so it holds a key that pushes (ranger-base-7m3up):\n%s", k, block)
+		}
+	}
+	if strings.Contains(block, sbQuote(absResolve(sf.odd))) {
+		t.Errorf("scope: %s (named by no config) is read-denied; the deny is no longer ssh's own resolution — update ranger-base-nl2ha and this arm together", sf.odd)
+	}
+	var rep strings.Builder
+	if err := f.a.SeatbeltReport(f.ag, f.dir, &rep); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range sf.keys {
+		if want := "r " + AbbrevHome(absResolve(k)) + " (file-read* deny — an ssh key"; !strings.Contains(rep.String(), want) {
+			t.Errorf("the wall report does not name %s as a read-denied ssh key:\n%s", k, rep.String())
+		}
+	}
+
+	f.ag.Deny, f.ag.Allow = nil, []string{"Bash(git push:*)"}
+	block = readBlock(f.ag)
+	for _, k := range sf.keys {
+		if strings.Contains(block, sbQuote(absResolve(k))) {
+			t.Errorf("the pusher's seatbelt profile read-denies %s: the one seat that pushes cannot", k)
+		}
+	}
+}
+
+// Live on darwin: under the profile RenderSeatbelt writes for a push-denied
+// PID, sandbox-exec reads no configured key, and the same profile with its
+// read deny stripped reads them all — so a green is not a probe that could
+// never read. Skips where sandbox-exec cannot apply (Linux, a caged seat).
+func TestLiveSeatbeltPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME.
+	sbSkipUnlessSandboxable(t)
+	f := wrcFixtureIn(t, wallUngrantedDir(t))
+	sf := newSSHFixture(t, filepath.Dir(f.home))
+	t.Setenv("SSHFIX", sf.home)
+	f.ag.Deny = []string{"Bash(git push:*)"}
+	walled, err := f.a.RenderSeatbelt(f.ag, f.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range sf.keys {
+		if crdRun(t, walled, k) {
+			t.Errorf("inside a push-denied seat's seatbelt profile, %s was READABLE (ranger-base-7m3up)", k)
+		}
+	}
+	if !crdRun(t, walled, sf.odd) {
+		t.Errorf("scope: %s (named by no config) was refused; the deny is no longer ssh's own resolution — update ranger-base-nl2ha and this arm together", sf.odd)
+	}
+	w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates)
+	c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w)
+	c.DenyRead = nil
+	control := sbRenderProfile(t, "control.sb", SeatbeltProfile(f.ag.Name, w, nil, c))
+	for _, k := range sf.keys {
+		if !crdRun(t, control, k) {
+			t.Errorf("control: %s was refused with no read deny — the probe cannot read, so the arm above proves nothing", k)
+		}
+	}
+}

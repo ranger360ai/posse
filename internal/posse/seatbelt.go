@@ -2238,6 +2238,11 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 	p := filepath.Join(gatesDir, "seatbelt.sb")
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
+	// The ssh keys a seat that is not the pusher must not read
+	// (ranger-base-7m3up; ighvi closed the bwrap arm of the same list).
+	if _, err := withSSHKeyReadDeny(ag, cwd, &carve); err != nil {
+		return "", err
+	}
 	prof := SeatbeltProfile(ag.Name, writable, SeatbeltSiblings(stateDirs, carve), carve, sessionRefDirsFor(ag, cwd)...)
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
@@ -2261,6 +2266,14 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	gatesDir := a.GatesDir(ag.Name)
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
+	sshKeys, err := withSSHKeyReadDeny(ag, cwd, &carve)
+	if err != nil {
+		return err
+	}
+	isSSHKey := map[string]bool{}
+	for _, k := range sshKeys {
+		isSSHKey[k] = true
+	}
 	siblings := SeatbeltSiblings(stateDirs, carve)
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
 	for _, w := range writable {
@@ -2311,6 +2324,10 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 		fmt.Fprintf(out, "    w %s (re-allowed after the deny: the session's own audit trail)\n", AbbrevHome(p))
 	}
 	for _, p := range carve.DenyRead {
+		if isSSHKey[p] {
+			fmt.Fprintf(out, "    r %s (file-read* deny — an ssh key, and this seat is not the pusher; ranger-base-7m3up)\n", AbbrevHome(p))
+			continue
+		}
 		fmt.Fprintf(out, "    r %s (file-read* deny — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
 	}
 	// A grant that reaches the constitution is still named, deny or no
