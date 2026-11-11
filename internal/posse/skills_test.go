@@ -201,8 +201,25 @@ func TestRenderClaudeSkillsKeepsTheExecuteBit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != string(script) {
-		t.Errorf("content: got %q, want %q", got, script)
+	// Against the SOURCE AS IT LIES ON DISK, not against the literal planted
+	// above. copySkillFile's claim is that the copy is the source, which is
+	// what this reads, and it is the stronger of the two: a copier that
+	// rewrote a byte would fail either spelling, while one that copied a
+	// source something else had touched passes only this one.
+	//
+	// It is also what took the test out of `make coldexec-check`'s artifact
+	// class (ranger-base-kiwvn): under the content-rewrite door the planted
+	// source carried the injector's shebang, the copy carried it faithfully,
+	// and a comparison against the literal reported that faithful copy as a
+	// content mismatch. The supervisor that replaced that door leaves the
+	// bytes alone, so the literal would pass again — the reading above is
+	// kept for the first reason, which is about the copier and not the door.
+	want, err := os.ReadFile(filepath.Join(p, "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("content: got %q, want the source's own bytes %q", got, want)
 	}
 	if out, err := exec.Command(rendered).Output(); err != nil || string(out) != "ran\n" {
 		t.Errorf("the rendered copy does not run: got %q, %v", out, err)

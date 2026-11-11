@@ -31,6 +31,7 @@ package posse
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -306,6 +307,121 @@ func TestColdExecPassesThroughAndCountsANonScriptPlant(t *testing.T) {
 	}
 }
 
+// ARM 7 — a plant whose BYTES ARE A PROTOCOL is passed through, counted,
+// and still reads back as what production thinks it is (ranger-base-kiwvn).
+//
+// This is the arm the first full run bought. Under injection, 26 tests red
+// and not one of them was in the class: 23 planted a git hook and let
+// posse's probe decide ours/foreign/stale by comparing it to the render it
+// would write, 2 planted a gate shim whose header gateShimTarget reads out
+// of the first two lines, and the injector's own line is line 2. The rule
+// has to hold three ways at once, so all three are here: the two shapes are
+// left alone, a plant that is NEITHER is still rewritten (or the rule has
+// quietly turned the gate off), and the production reader still recognizes
+// what came through (or the pass-through has been kept for its own sake
+// rather than for the reader it exists for).
+func TestColdExecPassesThroughAPlantWhoseBytesAreAProtocol(t *testing.T) {
+	t.Parallel()
+	inj := coldExecTestInjector(t)
+	dir := t.TempDir()
+
+	// A git hook slot. The body is a chain dispatcher, which is the shape
+	// posse certifies by identity (gateschain_qa_test.go's family).
+	hooks := filepath.Join(dir, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(hooks, "prepare-commit-msg")
+	hookBody := []byte("#!/bin/sh\nd=$(dirname \"$0\")\nexec \"$d/posse-prepare-commit-msg\" \"$@\"\n")
+	if got := inj.rewrite(hook, hookBody); string(got) != string(hookBody) {
+		t.Errorf("a plant into a hook slot was rewritten, so posse's probe reads its own render as foreign:\n%q", got)
+	}
+	if n := inj.hookSlots.Load(); n != 1 {
+		t.Errorf("the hook-slot counter reads %d after one hook plant, want 1 — a blind spot has to be a number", n)
+	}
+
+	// A RELATIVE plant — the shape that makes the basename half of the rule
+	// load-bearing, because the path carries no directory to read at all.
+	// chainrelpath_qa_test.go plants exactly this, from a cwd inside the
+	// hooks dir, since its subject is a prescription surviving its own cd.
+	// No chdir here, and that is the point: the rule is a pure function of
+	// the path STRING, so it answers the same from any cwd — and a chdir
+	// would take this test out of t.Parallel and move a process-wide
+	// variable under every test that is running beside it.
+	if got := inj.rewrite("pre-push", hookBody); string(got) != string(hookBody) {
+		t.Errorf("a relative hook plant was rewritten — the basename is the only signal this one has:\n%q", got)
+	}
+	if n := inj.hookSlots.Load(); n != 2 {
+		t.Errorf("the hook-slot counter reads %d after a relative hook plant, want 2", n)
+	}
+	// And the per-session hooks dir posse RENDERS into, whose slot sits one
+	// level further down than git's own: state/hooks/<session>/<slot>. The
+	// name here is not one of the three, so only the directory can answer.
+	session := filepath.Join(dir, "state", "hooks", "s1")
+	if err := os.MkdirAll(session, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := inj.rewrite(filepath.Join(session, "commit-msg"), hookBody); string(got) != string(hookBody) {
+		t.Errorf("a plant in the rendered per-session hooks dir was rewritten:\n%q", got)
+	}
+	if n := inj.hookSlots.Load(); n != 3 {
+		t.Errorf("the hook-slot counter reads %d after a per-session hook plant, want 3", n)
+	}
+
+	// A gate shim, planted nowhere special: the header is the subject, so
+	// the rule must find it in the content and not in the path.
+	shimBody := []byte(renderShimBody(t))
+	shim := filepath.Join(dir, "git")
+	shimPlanted := inj.rewrite(shim, shimBody)
+	if string(shimPlanted) != string(shimBody) {
+		t.Errorf("a gate shim was rewritten, which pushes the header gateShimTarget reads off line 2:\n%q", shimPlanted)
+	}
+	if n := inj.gateShims.Load(); n != 1 {
+		t.Errorf("the gate-shim counter reads %d after one shim plant, want 1", n)
+	}
+	// And the reader agrees, which is the whole point of the two above: the
+	// bytes that reached the disk are the bytes production identifies. The
+	// rewrite above is the only one — asking twice would count twice, which
+	// is correct for an injector that is counting WRITES.
+	if err := WriteExecutable(shim, shimPlanted, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if target, ok := gateShimTarget(shim); !ok || target != "/usr/bin/git" {
+		t.Errorf("gateShimTarget(%s) = %q, %v after a pass-through; want /usr/bin/git, true — the pass-through is for this reader", shim, target, ok)
+	}
+
+	// THE CONTROL, and it is what keeps this rule from being a way to turn
+	// the gate off: a script in an ordinary directory, whose only marker is
+	// on line 3 and therefore outside the window the reader uses, is
+	// rewritten like any other plant.
+	plain := filepath.Join(dir, "plant.sh")
+	plainBody := []byte("#!/bin/sh\necho ran\n# " + gateShimMarker + "\n")
+	if got := inj.rewrite(plain, plainBody); string(got) == string(plainBody) {
+		t.Errorf("an ordinary script plant was passed through, so this run measures nothing:\n%q", got)
+	}
+	if n := inj.rewritten.Load(); n != 1 {
+		t.Errorf("the rewrite counter reads %d, want 1 — the protocol plants must not be counted as rewrites", n)
+	}
+	if n := inj.hookSlots.Load() + inj.gateShims.Load(); n != 4 {
+		t.Errorf("the protocol counters read %d in total, want 4 — an ordinary plant was counted as a protocol", n)
+	}
+	if n := inj.passedThrough.Load(); n != 0 {
+		t.Errorf("a protocol plant was counted as D5's no-shebang pass-through (counter now %d), which would read as a copied binary", n)
+	}
+}
+
+// renderShimBody is a gate shim as gates.go writes one, which is the body
+// gateShimTarget is built to read: the marker on line 2, the target on an
+// `exec` line. Taken from the renderer rather than typed out, so a change to
+// the header moves this pin with it.
+func renderShimBody(t *testing.T) string {
+	t.Helper()
+	var b strings.Builder
+	fmt.Fprintf(&b, "#!/bin/sh\n# posse gate for %s — %s from the PID's deny: at launch; do not edit (%s)\n", "testpersona", RenderedByPosse(), gateShimMarker)
+	fmt.Fprintf(&b, "exec '%s' \"$@\"\n", "/usr/bin/git")
+	return b.String()
+}
+
 // ARM 6 — the WIRING, in a child process, because the subject is the package
 // variable a parallel suite is reading. Three claims at once, and all three
 // are ADR 0085 D3:
@@ -348,7 +464,7 @@ func TestColdExecHookAppliesOnlyToATestCaller(t *testing.T) {
 	// test caller. Read off the child's own output rather than reasoned
 	// about, because an uninstalled injector prints nothing at all and that
 	// is the failure worth telling apart from a count of zero.
-	if !strings.Contains(string(out), "posse coldexec: 1 plants rewritten, 1 executable plants had no #!") {
+	if !strings.Contains(string(out), "posse coldexec: 1 plants rewritten, 0 of them exec'd at least once; passed through unchanged: 1 with no #!") {
 		t.Errorf("the child did not report one rewrite and one pass-through — the run's own account of what it injected:\n%s", out)
 	}
 }
@@ -358,6 +474,14 @@ func TestColdExecHookAppliesOnlyToATestCaller(t *testing.T) {
 // that also ran the parent would recurse.
 func TestColdExecHookWiringChild(t *testing.T) {
 	t.Parallel()
+	// The report path does not reach a child, which is what keeps a run's
+	// counts the counts of the process the door started. coldExecInstall
+	// unsets the variable after reading it, so this holds however the child
+	// was launched; off the door, where nothing sets it, the claim is
+	// vacuous and costs a string compare.
+	if got := os.Getenv(coldExecReportEnv); got != "" {
+		t.Errorf("the child inherited %s=%q, so its own report will append a line of zeroes to the parent's file", coldExecReportEnv, got)
+	}
 	if os.Getenv("RHQ_QA_COLDEXEC_CHILD") == "" {
 		t.Skip("the child half of TestColdExecHookAppliesOnlyToATestCaller")
 	}

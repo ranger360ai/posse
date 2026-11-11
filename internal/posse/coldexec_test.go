@@ -86,6 +86,24 @@ const coldExecDelayEnv = "POSSE_COLD_EXEC_DELAY"
 // and D is the answer the run was started with.
 const coldExecDefaultDelay = 2500 * time.Millisecond
 
+// coldExecReportEnv names a file the run's report is APPENDED to, and it
+// exists because `go test` eats the report otherwise. Without -v, go test
+// shows a test binary's stderr only when the package FAILS: MEASURED
+// 2026-11-10 (ranger-base-kiwvn) over six arms, the install line and the
+// count report are in every red arm's log and in none of the green ones. So
+// D5's "the gap is a number and not a silence" held only while the door was
+// red, which is the one state nobody needs a coverage number in.
+//
+// NO DOOR SETS IT ANY MORE, and that is not a regression. `make
+// coldexec-check` is the execve supervisor now (cmd/coldexec, ADR 0085 D2 as
+// amended by ranger-base-dacil), which counts in its own process — the PARENT
+// of `go test` — so nothing eats its report and no file is needed. This is
+// the spelling for a BY-HAND run of the content rewrite,
+// `POSSE_COLD_EXEC_DELAY=... go test ./internal/posse/...`, which is the only
+// way left to reach it; ranger-base-7zkxw retires it and this with it. Unset
+// — every other run — changes nothing.
+const coldExecReportEnv = "POSSE_COLD_EXEC_REPORT"
+
 // coldExecMarkerPrefix opens the injected second line. It is what the shim
 // arm keys on — argv[1] naming a file whose line 2 starts with this — which
 // is IsCageLaunch's pattern (cagelauncher.go) applied to a file instead of a
@@ -108,6 +126,21 @@ type coldExecInjector struct {
 	// rewritten counts the plants that were, so a run that injected nothing
 	// at all cannot read as a run that found nothing.
 	rewritten atomic.Int64
+	// reportPath is where report() appends its line, taken from the
+	// environment at install and then UNSET there, so no child of this
+	// process inherits it. A child that does inherit it installs an injector
+	// of its own and appends a line of zeroes: MEASURED 2026-11-10, one such
+	// line from arm 1's run and EIGHT from arm 3's, each from a pin that
+	// re-execs this binary. The owner of the file is the process the door
+	// started, and that is the one the counts are about.
+	reportPath string
+	// hookSlots and gateShims count the plants passed through because their
+	// BYTES are a protocol some production reader decides by
+	// (coldExecProtocolReason). Two counters and not one, because the two
+	// shapes are read by different code and a change to either should move a
+	// number of its own.
+	hookSlots atomic.Int64
+	gateShims atomic.Int64
 }
 
 // rewrite is the hook's body. It builds bytes and nothing else: no open, no
@@ -127,6 +160,14 @@ func (c *coldExecInjector) rewrite(path string, content []byte) []byte {
 	if coldExecAlreadyRewritten(content) {
 		return content
 	}
+	switch coldExecProtocolReason(path, content) {
+	case coldExecProtocolHookSlot:
+		c.hookSlots.Add(1)
+		return content
+	case coldExecProtocolGateShim:
+		c.gateShims.Add(1)
+		return content
+	}
 	interp, body, ok := coldExecShebang(content)
 	if !ok {
 		c.passedThrough.Add(1)
@@ -138,6 +179,90 @@ func (c *coldExecInjector) rewrite(path string, content []byte) []byte {
 	// dir and two counters that both start at zero.
 	nonce := filepath.Join(c.markerDir, fmt.Sprintf("%d-%d", os.Getpid(), c.seq.Add(1)))
 	return []byte("#!" + c.shim + "\n" + coldExecMarkerPrefix + nonce + " " + interp + "\n" + body)
+}
+
+// The two reasons coldExecProtocolReason gives. They are the message a
+// report prints, so they read as a reason and not as an enum.
+const (
+	coldExecProtocolHookSlot = "a git hook slot"
+	coldExecProtocolGateShim = "a gate shim header"
+)
+
+// coldExecProtocolReason reports why these bytes must reach the disk exactly
+// as the test wrote them, and "" when nothing does. A plant it names is
+// passed through and counted, like ADR 0085 D5's non-scripts.
+//
+// WHY IT EXISTS, MEASURED (ranger-base-kiwvn, the first full run under
+// injection: 28 red rows over 26 tests, against three green baseline arms;
+// the second run, with the path half of this rule alone, left 4 of them and
+// each named one of the two keys the first spelling could not see — a
+// relative plant and a per-session hooks dir).
+// Every one of those reds is one shape, and the shape is not a deadline —
+// the plant's own BYTES are the subject. 23 plant a git hook and let posse's
+// probe decide ours/foreign/stale/chained by comparing them to the render it
+// would write; 2 plant a gate shim, which gateShimTarget identifies by
+// gateShimMarker inside the FIRST TWO LINES (possebinary.go) — and the
+// injected line is line 2. Rewriting either makes production answer a
+// question the test did not ask, and the fatal then names a hook as foreign
+// or a shim as a shadow: ADR 0085's `$0`-and-line-numbers artifact class,
+// arriving as a family rather than as a tail.
+//
+// IT IS NOT A NEW RULE. execwrite.go's callerIsTestFile already keeps a shim
+// PRODUCTION code writes byte-exact, in its own words "so the content
+// read-back pins over rendered gates, hooks and probes cannot red for the
+// injector's reason rather than their own". A FIXTURE that plants the same
+// protocol file is the same claim about the same reader, and the writer is
+// the only thing that differs.
+//
+// THE COST IS A BLIND SPOT AND IT IS COUNTED, exactly for D5's reason: a
+// test that plants a hook or a shim and then times its first exec is not
+// reached by this gate, and the run prints how many plants that was rather
+// than leaving a silence.
+// coldExecHookSlots are the three slots posse installs into and identifies
+// by bytes (gates.go, hooksredirect.go). A plant whose basename is one of
+// them, or a chain spelling of one, is a git hook whatever directory it is
+// written into — which is the half of the rule that cannot be read off the
+// path, because `make coldexec-check`'s own first run found a fixture that
+// plants `pre-push` RELATIVE, from a cwd inside the hooks dir
+// (chainrelpath_qa_test.go, whose subject is surviving its own cd).
+var coldExecHookSlots = []string{"pre-commit", "pre-push", "prepare-commit-msg"}
+
+func coldExecProtocolReason(path string, content []byte) string {
+	// THE NAME first, because it is the only signal a relative plant has.
+	// The `-` suffix form is the chain: posse-pre-push, theirs-pre-push,
+	// bd-prepare-commit-msg are all the same slot moved aside, and posse
+	// certifies each of them against a render of its own.
+	base := filepath.Base(path)
+	for _, slot := range coldExecHookSlots {
+		if base == slot || strings.HasSuffix(base, "-"+slot) {
+			return coldExecProtocolHookSlot
+		}
+	}
+	// THEN THE DIRECTORY, for a slot whose name is not one of the three —
+	// git has a score of hook names and an employer may use any of them.
+	// The parent and the grandparent, and no further: the measured shapes
+	// are `.git/hooks/<slot>`, `managed-hooks/<slot>` and the rendered
+	// per-session dir `state/hooks/<session>/<slot>`, while an unbounded
+	// walk would hand the whole gate to any tree that happened to live
+	// under a directory called hooks.
+	dir := filepath.Dir(path)
+	for _, d := range []string{dir, filepath.Dir(dir)} {
+		switch filepath.Base(d) {
+		case "hooks", "managed-hooks":
+			return coldExecProtocolHookSlot
+		}
+	}
+	// The same window gateShimTarget reads (possebinary.go: `head -2`, 512
+	// bytes), so this answers yes exactly when that reader would call the
+	// file a shim.
+	lines := strings.SplitN(string(content), "\n", 3)
+	if len(lines) > 2 {
+		lines = lines[:2]
+	}
+	if strings.Contains(strings.Join(lines, "\n"), gateShimMarker) {
+		return coldExecProtocolGateShim
+	}
+	return ""
 }
 
 // coldExecAlreadyRewritten reports whether these bytes carry the injected
@@ -304,7 +429,10 @@ func coldExecInstall() *coldExecInjector {
 		fmt.Fprintf(os.Stderr, "posse coldexec: marker dir %q contains whitespace — set TMPDIR to a path without any\n", dir)
 		os.Exit(1)
 	}
-	inj := &coldExecInjector{shim: shim, markerDir: dir}
+	inj := &coldExecInjector{shim: shim, markerDir: dir, reportPath: os.Getenv(coldExecReportEnv)}
+	// Consumed, not merely read: see reportPath. The DELAY variable stays
+	// set, because the shim in every child reads it to size its sleep.
+	os.Unsetenv(coldExecReportEnv)
 	coldExecRewrite = inj.rewrite
 	fmt.Fprintf(os.Stderr, "posse coldexec: injecting %s at the first exec of every plant written from a _test.go file (ADR 0085)\n", coldExecDelay())
 	return inj
@@ -321,7 +449,33 @@ func (c *coldExecInjector) report() {
 	if c == nil {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "posse coldexec: %d plants rewritten, %d executable plants had no #! and were passed through unchanged (ADR 0085 D5)\n",
-		c.rewritten.Load(), c.passedThrough.Load())
+	// How many of the rewrites the gate actually REACHED. A marker exists if
+	// and only if a shim took its first-exec branch, so counting them is the
+	// one honest answer to "how much of this run was measured": a plant that
+	// is written and never exec'd was rewritten for nothing, and under this
+	// package's suite most of them are.
+	execd := -1
+	if ents, err := os.ReadDir(c.markerDir); err == nil {
+		execd = len(ents)
+	}
+	line := fmt.Sprintf("posse coldexec: %d plants rewritten, %d of them exec'd at least once; passed through unchanged: %d with no #! (ADR 0085 D5), %d %s, %d %s (ranger-base-kiwvn)\n",
+		c.rewritten.Load(), execd, c.passedThrough.Load(),
+		c.hookSlots.Load(), coldExecProtocolHookSlot,
+		c.gateShims.Load(), coldExecProtocolGateShim)
+	fmt.Fprint(os.Stderr, line)
+	// APPEND, and never truncate: the door points all three arms at one file
+	// and prints it once, so three lines are three arms and not the last one
+	// standing. A failure to write is said out loud rather than swallowed —
+	// an unreadable report is the silence this variable exists to end.
+	if path := c.reportPath; path != "" {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err == nil {
+			_, err = f.WriteString(line)
+			f.Close()
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "posse coldexec: %s=%q: %v\n", coldExecReportEnv, path, err)
+		}
+	}
 	os.RemoveAll(c.markerDir)
 }

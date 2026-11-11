@@ -448,3 +448,22 @@ bd sync               # Sync with git
   unfiltered it is three arms, three slots and is nobody's prerequisite —
   `tree-check` and `make test` do not run it, and the class had been
   rediscovered by hand three times before it existed.
+  **Priced at three times the uninjected arms, and the unfiltered form is
+  green** (MEASURED 2026-11-10, ranger-base-kiwvn, at a loadavg of 4-11):
+  851.4s over the three arms against 280.3s for the same arms uninjected —
+  3.04x, +571.1s — so budget a quarter of an hour of box for the unfiltered
+  form and do not run it out of curiosity. That reading was taken through the
+  door kiwvn ran, the content rewrite, and not through the execve supervisor
+  that runs it now; ranger-base-xpxo6 prices the supervisor and nothing here
+  claims the two cost the same. What the run bought was the supervisor. It
+  red 26 tests and **not one of them was in the class** — every red was a
+  test whose subject is a planted file's own BYTES, a git hook posse
+  certifies by comparing it to its own render, or a gate shim identified by a
+  marker on line 2 — a family and not a tail, and the answer to a family is
+  to stop touching the bytes (ADR 0085 D2/D3 as amended by
+  ranger-base-dacil). The rewrite that could not reach them, and the 49% of
+  plants it could never reach at all (840 of 1711 have no `#!`), survive in
+  internal/posse behind a counted pass-through until ranger-base-7zkxw
+  retires both.
+  docs/notes.d/ranger-base-kiwvn.md has the triage, the counters and what
+  went to the architecture lane.

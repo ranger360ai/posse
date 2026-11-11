@@ -1112,6 +1112,18 @@ treepins:
 # to 2.5s once per planted file, the full run is priced under
 # ranger-base-kiwvn, and whether CI should buy it is the operator's call
 # because it costs runner time.
+#
+# THE COUNTS NEED NO FILE, and that is the supervisor's second gift. Under the
+# content-rewrite door the report was a TEST BINARY's stderr, and `go test`
+# without -v shows that only when the package FAILS: MEASURED 2026-11-10 over
+# six arms (ranger-base-kiwvn), the install line and the count were in every
+# red arm's log and in none of the green ones — so D5's "the gap is a number
+# and not a silence" held only in the one state nobody needs a coverage number
+# in, and kiwvn's answer was a file each arm appended to and the recipe printed
+# back. The supervisor needs none of that: it counts in its OWN process, the
+# PARENT of `go test`, so its report reaches this recipe's stderr red or green,
+# and a run that delayed nothing exits 3 instead of printing a zero nobody
+# reads (cmd/coldexec/door_linux.go, doc.go).
 COLDEXEC_DELAY ?= 2.5s
 COLDEXEC_RUN   := $(if $(RUN),-run '$(RUN)' -v,)
 
