@@ -1055,6 +1055,26 @@ package treepins
 // a floor and all three assertions about absence, are in
 // docs/notes.d/ranger-base-s64a5.md.
 //
+// THREE WARM READINGS AT ONE HUNDRED AND THIRTY-FIVE, the class as this bead
+// leaves it: 46s, 38s then 37s in that order (MEASURED 2026-11-11,
+// ranger-base-s64a5, at a one-minute load average of 3.43, 11.58 and 8.64,
+// with ONE suite slot held by a sibling seat throughout — which this command
+// never queues behind, every door being a `-run` filter). A 9s spread, and it
+// agrees with the dfgte entry above rather than widening it: the 40s band is
+// the price of this class, reproducible across beads and days, and the two
+// pins this bead added report 0.6s between them inside corpus-check, well
+// under the spread.
+//
+// AND THE SPREAD RUNS THE WRONG WAY, which is the only thing here worth a
+// reader's time: the SLOWEST of the three was taken at the LOWEST load (46s
+// at 3.43, against 37s at 8.64). The entries above read the spread as
+// tracking how much the load MOVES rather than how high it is, and three
+// readings cannot settle that. What they do settle is that the direction is
+// not monotone at this end, so a single reading taken on a quiet box is not
+// a floor — price the command at the band and not at its best entry. An
+// earlier reading on this bead, at a load of 7.87 with BOTH slots held, was
+// 46.2s, which is the same band from the other side.
+//
 // and `make tree-check` is all of them — one hundred and thirty-five pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s

@@ -37,9 +37,14 @@ package treepins
 // either.)
 //
 // THE SHAPE, and why it is two pins and a register rather than one pin.
-// Arm 1 is the derivation: every planting package has an arm, and no arm
-// names a package that plants nothing. Both directions, because an arm over
-// a package with no plants injects nothing and is a line a reader will trust.
+// (`arm` below means what it means in the Makefile and in cxaArm — one
+// coldexec-check RECIPE LINE. The pins are named, not numbered, because this
+// file is about arms and a second meaning for the word would be unreadable.)
+//
+// THE DERIVATION is TestQAEveryPlantingPackageHasAColdexecArm: every planting
+// package has an arm reaching it, and no arm covers only packages that plant
+// nothing. Both directions, because an arm over a package with no plants
+// injects nothing and is a recipe line a reader will trust.
 //
 // The register (cxaUncoveredPlanters) is the live gap, and it is live because
 // of WHEN this bead landed: coldexec-check had three arms, all
@@ -49,10 +54,11 @@ package treepins
 // So this pin cannot demand those two arms today without reddening the suite
 // over work another bead holds, and it must not go quiet about them either.
 // A row per package, naming the bead that will cover it, is the honest third
-// answer: arm 1 reds for a FOURTH package immediately, and arm 2 reds the
-// moment a registered row stops being true.
+// answer: the derivation reds for a FOURTH package immediately, and
+// TestQAColdexecArmRegisterIsNotStale reds the moment a registered row stops
+// being true.
 //
-// ARM 2 IS THE COUPLING, not a courtesy. A waiver that outlives its cause is
+// THE REGISTER'S PARTNER IS A COUPLING, not a courtesy. A waiver that outlives its cause is
 // how this door would go back to being remembered — the register is the one
 // route into arm 1 that does not go through the census, which is exactly the
 // parking spot treewidedoor_qa_test.go's twdDoorHolders keeps warning about.
@@ -61,20 +67,21 @@ package treepins
 // see that red when it lands its two arms, and the instruction is in the
 // register and in the message.
 //
-// ARM 3 is the control. Arms 1 and 2 both rest on two readers — a matcher
-// over Go source and a reader over a Makefile recipe line — and the cheapest
-// way for either to go green is to stop matching. A census that counts no
-// call sites reports every package as a non-planter and arm 1 passes with
-// nothing to say; so does a recipe reader that finds no arms, in the one
-// direction that is silent. Arm 3 asks both readers, on synthetic input, for
-// both answers. Its own failures are not a floor and no unrelated bead can
-// red it, so it is deliberately not behind a door (the reason three of the
-// corpus-check rows next door give).
+// THE CONTROL is TestQAColdexecArmCensusCanStillSayNo. The two pins above
+// both rest on two readers — a matcher over Go source and a reader over a
+// Makefile recipe line — and the cheapest way for either to go green is to
+// stop matching. A census that counts no call sites reports every package as
+// a non-planter and the derivation passes with nothing to say; so does a
+// recipe reader that finds no arms, in the one direction that is silent. The
+// control asks both readers, on synthetic input, for both answers. Its own
+// failures are not a floor and no unrelated bead can red it, so it is
+// deliberately not behind a door (the reason three of the corpus-check rows
+// next door give).
 //
 // THE FLOORS are the other half of that. A census is positively checked by
-// arm 3 and floored here: fewer than cxaSiteFloor call sites, or fewer than
-// cxaPlanterFloor packages holding them, and the walk is not reading this
-// tree, so the absence arm 1 asserts measures nothing.
+// the control and floored here: fewer than cxaSiteFloor call sites, or fewer
+// than cxaPlanterFloor packages holding them, and the walk is not reading
+// this tree, so the absence the derivation asserts measures nothing.
 //
 // Its door is `make corpus-check` — a census over this repo's own .go
 // sources, which is that door's subject exactly, and no new door for the
@@ -120,13 +127,14 @@ const (
 )
 
 // cxaUncoveredPlanters are the planting packages coldexec-check does not
-// cover yet, each naming the bead that will cover it. Arm 1 exempts these
-// from needing an arm; arm 2 reds the moment a row stops being true, so a row
-// cannot outlive its cause.
+// cover yet, each naming the bead that will cover it.
+// TestQAEveryPlantingPackageHasAColdexecArm exempts these from needing an
+// arm; TestQAColdexecArmRegisterIsNotStale reds the moment a row stops being
+// true, so a row cannot outlive its cause.
 //
 // TO CLEAR A ROW: add the package's arm to coldexec-check's recipe and delete
-// the row. Both rows are ranger-base-in8dr's, and arm 2 is what will tell its
-// seat so.
+// the row. Both rows are ranger-base-in8dr's, and the register's partner is
+// what will tell its seat so.
 var cxaUncoveredPlanters = map[string]string{
 	"cmd/posse":         "ranger-base-in8dr — extend coldexec-check to cmd/posse's 17 plant sites (ADR 0085 D6, one recipe line inside the supervisor)",
 	"internal/treepins": "ranger-base-in8dr — extend coldexec-check to internal/treepins' 53 plant sites, which plant through this package's own WriteExecutable copy (execwrite_test.go)",
@@ -215,7 +223,7 @@ type cxaArm struct {
 // test` reads its argument: `./internal/posse` is that package alone and
 // `./internal/posse/...` is it and everything below it.
 //
-// A PREFIX AND NOT AN EQUALITY, and the control arm below is why. The reader
+// A PREFIX AND NOT AN EQUALITY, and the control below is why. The reader
 // this replaced stripped `/...` and compared directories, which made
 // `./internal/...` — one pattern over both planting packages under internal/
 // — read as an arm over a directory called `internal` that plants nothing:

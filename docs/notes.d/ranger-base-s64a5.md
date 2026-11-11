@@ -104,8 +104,36 @@ assertions about absence. MEASURED 2026-11-11, each reverted immediately.
    the case the floor exists for: without it the census would report every
    package as a non-planter and the derivation would pass with nothing to say.
 
+## One red that was the tree working
+
+`make execwrite-check` red on the control arm's own fixture. That census is a
+BYTE matcher over every .go file in the tree, this file is inside its walk,
+and the negative case `os.WriteFile(p, b, 0o755)` — written to prove the plant
+matcher does NOT count a plain write — is a hit on this file's own source
+whatever the Go around it says. Assembled now
+(`"os.Write" + "File(p, b, 0o755)"`), which is what
+`execwritesiblings_qa_test.go`'s own control already does and says why.
+
 ## Readings
 
-- `make corpus-check`: the two pins report 0.26s and 0.33s on a warm run.
-- `make register-check`: 24.5s, green with the head comment at one hundred and
+All MEASURED 2026-11-11 on this box, one suite slot held by a sibling seat
+(`dinesh-posse-ranger-base-in8dr`) for most of them.
+
+- `make corpus-check`: 5.0s whole; the two new pins report 0.26s and 0.33s.
+- `make register-check`: 29.8s, green with the head comment at one hundred and
   thirty-five pins and seventeen doors.
+- `make tree-check` whole, three warm runs at the new class size: 46s, 38s,
+  37s, at a one-minute load average of 3.43, 11.58 and 8.64 at each start.
+  The slowest was the one taken at the LOWEST load, which is the entry worth
+  reading — the register's earlier entries read the spread as tracking how
+  much the load MOVES rather than how high it is, and three readings cannot
+  settle that, but the direction is plainly not monotone at this end. An
+  earlier run on this bead, loadavg 7.87 with BOTH slots held, read 46.2s.
+- `internal/treepins` whole (`make treepins`): 130.5s, exit 0, after queueing
+  161s for a suite slot.
+
+A note on a number this page does NOT carry forward: the register's head
+comment prices that package at 589.965s whole, and this run was 130.5s. That
+is one reading against one, on a box in a different state and with a warm
+build cache, so nothing here claims the package got faster — it is recorded
+only so the next reader is not surprised by the gap.
