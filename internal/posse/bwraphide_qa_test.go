@@ -346,3 +346,86 @@ func TestLiveBwrapWithoutHideReachesTheRuntimeDir(t *testing.T) {
 		t.Errorf("control: the FIFO inside an unhidden wall = %q, want present", got[f.fifo])
 	}
 }
+
+// ranger-base-di8da: the hide is a mount in the SEAT's namespace, and the
+// wall shares the host's pid namespace and its /proc (D17). A host process
+// still sees the fixture, so /proc/<host pid>/root and /cwd are a second
+// road to it. The pin holds a plain, dumpable, same-uid child outside the
+// wall, rooted and cwd'd in the hidden dir, and asserts that from inside a
+// hiding wall neither road reaches the listening bus.
+//
+// MEASURED 2026-11-11 (bwrap 0.13.1, Linux 7.2.15, ptrace_scope=1, outside
+// any cage): EACCES on both links. The deciding check is not the target's
+// dumpable state and not Yama, which governs only ATTACH: it is commoncap's
+// cap_ptrace_access_check, which needs the caller in the TARGET's user
+// namespace or CAP_SYS_PTRACE there. An unprivileged bwrap puts the seat in
+// a child user namespace with an empty capability set, so every host process
+// fails it whatever its uid or dumpability. The last assertion pins that
+// reason: if the seat ever shares the host's user namespace, the measured
+// guard is gone even if the links still read EACCES for some other cause.
+//
+// Not closed here:
+// - ranger-base-rfyth
+func TestLiveBwrapHideIsNotWalkedAroundThroughProcRoot(t *testing.T) {
+	t.Parallel()
+	f := bhLiveFixture(t)
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("NOTHING MEASURED: the probe's connect(2) needs python3: " + err.Error())
+	}
+	host := exec.Command("sleep", "300")
+	host.Dir = f.dir
+	if err := host.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.Process.Kill(); _ = host.Wait() })
+	pid := strconv.Itoa(host.Process.Pid)
+	viaRoot := "/proc/" + pid + "/root" + f.sockets[0]
+	viaCwd := "/proc/" + pid + "/cwd/" + filepath.Base(f.sockets[0])
+
+	script := `for p in "$@"; do
+  if python3 -I -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$p" 2>/dev/null; then echo "$p=connected"; else echo "$p=refused"; fi
+done
+echo "USERNS=$(readlink /proc/self/ns/user)"`
+	run := func(prefix []string) map[string]string {
+		t.Helper()
+		args := append(append([]string{}, prefix...), "sh", "-c", script, "sh", viaRoot, viaCwd)
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", prefix, err, out)
+		}
+		res := map[string]string{}
+		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if k, v, ok := strings.Cut(l, "="); ok {
+				res[k] = v
+			}
+		}
+		return res
+	}
+
+	// The control: outside the wall both roads reach the bus, so a refusal
+	// inside is the wall's and not a probe that reaches nothing.
+	out := run(nil)
+	for _, p := range []string{viaRoot, viaCwd} {
+		if out[p] != "connected" {
+			t.Fatalf("control: %s outside the wall = %q, want connected", p, out[p])
+		}
+	}
+
+	hide, err := bwrapRuntimeDirs(f.dir, 2147483000, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv, _, err := BwrapArgs("", nil, SeatbeltCarveOut{Hide: hide})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := run(append([]string{"bwrap"}, argv...))
+	for _, p := range []string{viaRoot, viaCwd} {
+		if in[p] != "refused" {
+			t.Errorf("%s inside a hiding wall = %q, want refused: the hide is walked around through the host pid's /proc entry", p, in[p])
+		}
+	}
+	if in["USERNS"] == "" || in["USERNS"] == out["USERNS"] {
+		t.Errorf("the seat's user namespace is %q, the host's is %q: the measured reason /proc/<host pid>/root is refused no longer holds", in["USERNS"], out["USERNS"])
+	}
+}
