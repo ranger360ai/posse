@@ -508,19 +508,28 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	}
 	if cwd != "" {
 		if deniesFiles {
+			// ADR 0086 D3: cwd/.beads AND NOTHING ELSE OF THE SESSION'S
+			// REPO. bd still claims, comments and closes; git writes
+			// nothing. A `cwd/.git` grant stood here — "index refresh,
+			// hooks' own logs — never a push" — beside the
+			// sessionGitGrants loop in the else arm below, and D3 takes
+			// both away from this arm; sessionGitGrantsFor is where the
+			// whole reason is written. The store of record's own grants
+			// (beadsHome and beadsGitDirs, below) are NOT in that: bd
+			// commits there, and it is another repo.
 			add(filepath.Join(cwd, ".beads"))
-			add(filepath.Join(cwd, ".git")) // index refresh, hooks' own logs — never a push
 		} else {
-			add(cwd)
-		}
-		// A session worktree's `.git` is a FILE, and its index, HEAD, objects
-		// and refs live outside the tree entirely (rangerhq-09o2). Granting
-		// cwd alone leaves a persona that cannot commit in its own tree —
-		// the same shape as the redirect grant below, for the session's own
-		// repo instead of the store of record. Empty in the main checkout,
-		// and narrowed below the common dir (ranger-base-m2wf).
-		for _, g := range sessionGitGrants(cwd) {
-			add(g)
+			add(cwd) // the tree whole, `.git` in a main checkout with it
+			// A session worktree's `.git` is a FILE, and its index, HEAD,
+			// objects and refs live outside the tree entirely
+			// (rangerhq-09o2). Granting cwd alone leaves a persona that
+			// cannot commit in its own tree — the same shape as the
+			// redirect grant below, for the session's own repo instead of
+			// the store of record. Empty in the main checkout, and narrowed
+			// below the common dir (ranger-base-m2wf).
+			for _, g := range sessionGitGrantsFor(ag, cwd) {
+				add(g)
+			}
 		}
 		// The store of record is not under cwd when a redirect moves it
 		// (ADR 0012 D3-C): cwd/.beads holds a path and the database, its
@@ -905,6 +914,65 @@ func sessionGitGrants(cwd string) []string {
 		out = append(out, ref, ref+".lock")
 	}
 	return out
+}
+
+// sessionGitGrantsFor is that set under the PID's own rule, and ADR 0086 D3
+// is the whole of it: A PID THAT DENIES THE WHOLE TREE GETS NO WRITE GRANT
+// INTO ANY GIT DIR OF ITS SESSION. It answers nothing — not the per-worktree
+// git dir, not `objects`, not `logs`, not the ref pair, and (in
+// SeatbeltWritable's arm above) not `<cwd>/.git` either.
+//
+// MECHANISM-NEUTRAL, which is why it is here and not in bwrap.go: the
+// producer says what the PID gets and the last step says how each mechanism
+// grants it, so darwin's profile narrows by the same line that fixes the
+// Linux render. The store of record is NOT in this — `beadsHome` and
+// `beadsGitDirs` are a different repo's, bd commits there, and
+// SeatbeltWritable keeps them for every PID.
+//
+// Two things it fixes, both MEASURED 2026-11-11 on the D1 host (ADR 0086's
+// table):
+//
+//   - R0, the render. In a linked worktree `<cwd>/.git` is a FILE, and bwrap
+//     refuses to bind one (`bwrap cannot grant write on <cwd>/.git: it is
+//     not a directory`, BwrapArgs shape 1's B8 arm). That refusal was the
+//     whole render, so a whole-tree-deny PID could not launch at this
+//     mechanism in ANY dispatched worktree. On darwin the same grant was
+//     already dead — the carve-out denies `<cwd>/.git`'s config chain and
+//     the hooks dir, and SBPL's last match wins — so nothing is lost by
+//     taking it out and one host stops refusing.
+//   - W14/W15, the point of the rule. With `objects` and the ref directory
+//     writable, a seat that cannot edit a FILE still mints a commit by
+//     plumbing (`hash-object -w`, `commit-tree`) and moves
+//     `posse/<session>`, which the launcher fast-forwards onto `main` when
+//     the bead closes. An Edit/Write deny exists to make a findings-only
+//     seat's output findings; a wall that lets it land commits keeps the
+//     rule's letter and loses its point.
+//
+// WHAT IT COSTS, measured as G1–G4: `git status`, `git diff` and `git log`
+// still work — status just no longer saves its index refresh — and
+// `git hash-object -w` is refused. A `git fetch` from inside the seat is
+// refused too. None of that is in the intents of a PID that denies writing
+// the tree it is reading; if such a seat ever needs to commit, it does not
+// have a whole-tree deny, and its deny list is the place to say so.
+func sessionGitGrantsFor(ag *AgentFile, cwd string) []string {
+	if ag != nil && deniesFileWrite(ag.Deny) {
+		return nil
+	}
+	return sessionGitGrants(cwd)
+}
+
+// sessionRefDirsFor is the create-only half under the same rule, for the
+// same reason: the directory git makes to write a ref is a write into the
+// session's git dir, and ADR 0086 D3 takes it with the ref it was for.
+// Without this the darwin profile would still carry a `file-write-create`
+// line over `<common>/refs/heads/posse` for a PID granted no ref — a grant
+// for a write that cannot complete, which is the kind of leftover an
+// operator reads off `posse gates` as a capability.
+func sessionRefDirsFor(ag *AgentFile, cwd string) []string {
+	if ag != nil && deniesFileWrite(ag.Deny) {
+		return nil
+	}
+	return sessionRefDirs(cwd)
 }
 
 // sessionRefDirs names the directories git must CREATE to write that ref,
@@ -1923,7 +1991,7 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 	p := filepath.Join(gatesDir, "seatbelt.sb")
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
-	prof := SeatbeltProfile(ag.Name, writable, SeatbeltSiblings(stateDirs, carve), carve, sessionRefDirs(cwd)...)
+	prof := SeatbeltProfile(ag.Name, writable, SeatbeltSiblings(stateDirs, carve), carve, sessionRefDirsFor(ag, cwd)...)
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
 
@@ -1961,7 +2029,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	// Create-only grants are grants, so an operator reads them here too —
 	// under their own marker, because "w" would say the directory is
 	// writable and it is not (ranger-base-uuze).
-	for _, d := range sessionRefDirs(cwd) {
+	for _, d := range sessionRefDirsFor(ag, cwd) {
 		fmt.Fprintf(out, "    + %s (create only — the directory git makes for the session's ref; nothing inside it is writable)\n", AbbrevHome(d))
 	}
 	// The carve-out under the set it takes back from, for the same reader:

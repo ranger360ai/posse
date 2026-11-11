@@ -767,7 +767,20 @@ const bwrapRefKeepName = ".posse-keep"
 // reason: narrowing the shared producer would take the leaf pair out of the
 // darwin profile too and put ranger-base-uuze's lost commit back on every
 // seatbelt seat on this box.
-func BwrapWritable(writable []string, cwd string) (set []string, keep []string) {
+//
+// IT TAKES THE PID BECAUSE THE SUBSTITUTION IS A GRANT AND NOT A REWRITE
+// (ADR 0086 D3). The ref directory is this mechanism's own addition to the
+// set — it is derived from cwd and the branch, not read off the list — so a
+// PID that was granted no ref would be handed one here by a function that
+// never asked whose wall it was rendering. For a PID that denies the whole
+// tree there is nothing to swap either way: sessionGitGrantsFor answered
+// nothing, so the drop list matches nothing and the only thing left to do is
+// not add the parent. Returning early says that in the one place a reader
+// asks it, instead of leaving it to be inferred from an empty intersection.
+func BwrapWritable(ag *AgentFile, writable []string, cwd string) (set []string, keep []string) {
+	if ag != nil && deniesFileWrite(ag.Deny) {
+		return writable, nil // ADR 0086 D3: no git grant to swap, and no ref directory to add
+	}
 	dirs := LinkedGitDirs(cwd)
 	if len(dirs) != 2 {
 		// A main checkout: sessionGitGrants named only `.git`, a directory,
@@ -848,8 +861,8 @@ func bwrapGitSwap(writable []string, common, branch string) (set []string, keep 
 //
 // Directory-aware, so it is CheckParityIn's and never CheckParity's: both
 // facts come from `git rev-parse` in the launch dir.
-func (a *App) applyBwrapRefGrant(p *Parity, dir string) {
-	if d := bwrapRefGrantDifference(WallMechanism(), p.Cage, a.cageAvailable(p.Cage), dir); d != "" {
+func (a *App) applyBwrapRefGrant(p *Parity, ag *AgentFile, dir string) {
+	if d := bwrapRefGrantDifference(ag, WallMechanism(), p.Cage, a.cageAvailable(p.Cage), dir); d != "" {
 		p.DeclaredDifference = append(p.DeclaredDifference, d)
 	}
 }
@@ -875,8 +888,20 @@ func (a *App) applyBwrapRefGrant(p *Parity, dir string) {
 // wallMechanismRendered admitted sandbox-exec alone and the tier was
 // therefore never in the table there; since D18 a Linux host with bwrap and
 // a passing probe prints this row.
-func bwrapRefGrantDifference(mech, cage string, available bool, dir string) string {
+func bwrapRefGrantDifference(ag *AgentFile, mech, cage string, available bool, dir string) string {
 	if mech != WallBwrap || cage != CageSeatbelt || !available || dir == "" {
+		return ""
+	}
+	// ADR 0086 D3: a PID that denies the whole tree is granted no git dir of
+	// its session at EITHER mechanism, so there is no difference here to
+	// declare — the same silence a detached HEAD gets below, for the same
+	// reason. A line printed only on Linux over a wall both mechanisms now
+	// render identically would read as a bwrap-specific capability, which is
+	// the opposite of what D3 did. What says this wall is real for such a
+	// PID is the Edit/Write row's own witness at the launch (D5), and what
+	// says where it allows writes at all is the writable set `posse gates`
+	// prints above it — on both mechanisms, from one list.
+	if ag != nil && deniesFileWrite(ag.Deny) {
 		return ""
 	}
 	dirs := LinkedGitDirs(dir)
@@ -1317,7 +1342,7 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	}
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	r := bwrapRendered{Carve: a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)}
-	r.Set, r.Keep = BwrapWritable(writable, cwd)
+	r.Set, r.Keep = BwrapWritable(ag, writable, cwd)
 	// D23, after D20's substitution and before the render: what is left of
 	// the set is what posse will bind, and a no-create grant that is not
 	// there has been taken out of it, so BwrapArgs can ask the launcher for

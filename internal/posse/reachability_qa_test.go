@@ -66,7 +66,7 @@ func rchNew(t *testing.T) rchFixture {
 // targets is what the record stage has to be able to write for this launch.
 func (f rchFixture) targets(t *testing.T) []string {
 	t.Helper()
-	got := recordTargets(beadsHome(f.work))
+	got := recordTargets(f.ag, f.work, beadsHome(f.work))
 	// The fixture is the experiment: if it stopped naming the store's own
 	// .beads and .git, every probe below would measure nothing and pass.
 	for _, want := range []string{filepath.Join(f.store, beadsDirName), filepath.Join(f.store, ".git")} {
@@ -539,7 +539,7 @@ func TestRecordReachOnASelfSandboxingRuntime(t *testing.T) {
 	if pre == line {
 		t.Fatalf("the rendered line never named %s, so the control below measures nothing:\n%s", gitDir, line)
 	}
-	row := codexReachRow(pre, f.work, recordTargets(beadsHome(f.work)))
+	row := codexReachRow(pre, f.work, recordTargets(f.ag, f.work, beadsHome(f.work)))
 	if !strings.Contains(row, AbbrevHome(gitDir)) {
 		t.Errorf("without the store's git dir the row must name it: %q", row)
 	}

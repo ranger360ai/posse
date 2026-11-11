@@ -47,10 +47,26 @@ type wgFixture struct {
 
 func wgNewFixture(t *testing.T) wgFixture {
 	t.Helper()
+	// sbRoot: HOME elsewhere, TMPDIR a sibling — nothing here is granted by
+	// accident, and it SKIPS where a root under /tmp would be covered by the
+	// profile's blanket temp grant. Every arm that runs a command under
+	// sandbox-exec needs that, because a kernel reads the whole profile and
+	// a filter applied afterwards would be a claim about a wall nobody has.
+	return wgFixtureIn(t, sbRoot(t))
+}
+
+// wgFixtureIn is that fixture under a root the caller chose, split out for
+// ranger-base-8t6j1: a pin that asserts over the SET rather than by
+// execution can narrow it by exact spelling instead (wgRepoGrants), and it
+// has to, because sbRoot skips wherever TMPDIR resolves under /tmp — which
+// is every Linux box, the host ADR 0086 D3's defect was found on. One
+// fixture body, two roots; a second copy of the worktree shape would be a
+// fixture that can disagree with this one about what a session looks like.
+func wgFixtureIn(t *testing.T, root string) wgFixture {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	root := sbRoot(t) // HOME elsewhere, TMPDIR a sibling: nothing here is granted by accident
 	repo := sbMkdir(t, filepath.Join(root, "repo"))
 	mustGit(t, repo, "init", "-q", "-b", "main", ".")
 	mustGit(t, repo, "config", "user.email", "t@example.com")

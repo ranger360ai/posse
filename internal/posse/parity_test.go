@@ -239,8 +239,13 @@ func TestDispatchRefusesDegradedUnlessAllowed(t *testing.T) {
 
 // L2 seatbelt (rangerhq-5vt): the profile denies file-write* except the
 // session's legitimate targets; with Edit/Write denied the repo itself is
-// read-only but .beads/ and .git/ stay writable; the typed command wraps
-// the runtime in this host's wall; codex cannot be wrapped (nested seatbelt).
+// read-only and `.beads/` stays writable — `.git/` did too until ADR 0086 D3
+// (ranger-base-8t6j1), which takes every git dir of the session's own repo
+// out of such a PID's wall: a seat that cannot edit a file could still mint
+// a commit by plumbing and move `posse/<session>`, and in a linked worktree
+// `<cwd>/.git` is a FILE that refused the whole bwrap render. The typed
+// command wraps the runtime in this host's wall; codex cannot be wrapped
+// (nested seatbelt).
 //
 // The SBPL assertions at the top are sandbox-exec's own grammar and are
 // driven at SeatbeltProfile directly, which renders on either host; what
@@ -260,7 +265,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	w := b.App.SeatbeltWritable(security, repo, gates)
 	joined := strings.Join(w, "\n")
 	real := resolveExisting(repo)
-	for _, want := range []string{filepath.Join(real, ".beads"), filepath.Join(real, ".git"), security.MemoryDir, resolveExisting(gates), filepath.Join(real, "scratch"), "/opt/shared"} {
+	for _, want := range []string{filepath.Join(real, ".beads"), security.MemoryDir, resolveExisting(gates), filepath.Join(real, "scratch"), "/opt/shared"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("writable set missing %q:\n%s", want, joined)
 		}
@@ -268,6 +273,9 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	for _, x := range w {
 		if x == real {
 			t.Error("repo itself must not be writable when Edit/Write are denied")
+		}
+		if x == filepath.Join(real, ".git") {
+			t.Error("the session's own git dir must not be writable when Edit/Write are denied (ADR 0086 D3)")
 		}
 	}
 	if wd := b.App.SeatbeltWritable(dev, repo, gates); !strings.Contains(strings.Join(wd, "\n"), real+"\n") && wd[0] != real {

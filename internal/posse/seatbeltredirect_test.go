@@ -43,11 +43,20 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 		filepath.Join(store, beadsDirName), // the database, jsonl, socket, lock
 		filepath.Join(store, ".git"),       // index.lock for `bd sync`'s commit
 		filepath.Join(work, beadsDirName),  // the redirect file's own dir
-		filepath.Join(work, ".git"),
 	} {
 		if !sbHas(w, want) {
 			t.Errorf("writable set missing %q:\n%s", want, strings.Join(w, "\n"))
 		}
+	}
+	// `<cwd>/.git` WAS in that list until ADR 0086 D3, and the two halves
+	// of this pin now pull in opposite directions on purpose: the STORE OF
+	// RECORD's git dir stays granted because bd commits there, and the
+	// SESSION's own is gone because a seat that cannot edit a file has no
+	// business writing a commit object (W14/W15). A redirect is what makes
+	// them two different repos, which is why this is the pin that holds the
+	// distinction.
+	if sbHas(w, filepath.Join(work, ".git")) {
+		t.Errorf("a PID that denies the whole tree is granted its own session's git dir (ADR 0086 D3):\n%s", strings.Join(w, "\n"))
 	}
 	// The grant is the store of record, not the instance repo: everything
 	// else in that tree stays as unwritable as the tier promises.
@@ -83,9 +92,12 @@ func TestSeatbeltWithoutARedirectGrantsNothingExtra(t *testing.T) {
 			rooted = append(rooted, x)
 		}
 	}
-	want := []string{absResolve(filepath.Join(work, beadsDirName)), absResolve(filepath.Join(work, ".git"))}
+	// `.beads` ALONE since ADR 0086 D3 — `<cwd>/.git` was the second entry
+	// here, and taking it away is what lets this PID's wall render at the
+	// bwrap mechanism at all: in a linked worktree that path is a FILE (R0).
+	want := []string{absResolve(filepath.Join(work, beadsDirName))}
 	if strings.Join(rooted, "\n") != strings.Join(want, "\n") {
-		t.Errorf("only .beads and .git may be granted under cwd:\ngot  %v\nwant %v", rooted, want)
+		t.Errorf("only .beads may be granted under cwd for a PID that denies the whole tree (ADR 0086 D3):\ngot  %v\nwant %v", rooted, want)
 	}
 }
 

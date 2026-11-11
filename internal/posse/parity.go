@@ -784,7 +784,7 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// launch dir — a directory bind and its widening, or no ref grant at all
 	// for a top-level branch in a linked worktree. Declared difference,
 	// never degrading — see bwrap.go. Silent at every other mechanism.
-	a.applyBwrapRefGrant(&p, dir)
+	a.applyBwrapRefGrant(&p, ag, dir)
 	// ADR 0080 D23: a `writable:` extra this PID named OUTSIDE the session
 	// tree that the launch host does not have. The launcher creates the
 	// session's own furniture and not a path it did not derive, so the

@@ -32,6 +32,23 @@ package posse
 // (ADR 0080 D17's residual, closed in `homeCacheGrants`). Varying only what
 // this bead is about is what makes a refusal below attributable: the one
 // thing that differs between the arms is a git grant.
+//
+// THE NARROWING IS WHAT MAKES THE REFUSALS REAL, and ADR 0086's own
+// measurement is the cautionary tale: a code seat rendered its wall over a
+// scratch repo under `/tmp`, which the real set binds READ-WRITE for
+// TMPDIR, so its "move main" row measured nothing. This fixture's repo is
+// under `/tmp` too (gitTempDir), so the set below is SeatbeltWritable's
+// answer narrowed to this fixture's own repo and worktree — the blanket temp
+// grant, the home caches and the gates dir left out, the same reason sbRoot
+// puts its root outside TMPDIR at the other mechanism.
+//
+// SINCE ADR 0086 D3 THE SET COMES FROM THE SHIPPED PRODUCER AND NOT FROM A
+// HAND-BUILT LIST (bgLiveSessionGrants). The git half used to be typed here
+// as `{cwd} + sessionGitGrants(cwd)`, which is the shape of a PID that
+// denies nothing — and D3's whole subject is a PID whose cwd arm is a
+// DIFFERENT list. A hand-built set cannot measure a producer's own branch,
+// which is D6's lesson said twice: R0 escaped because no pin ever drove a
+// whole-tree-deny PID through this render at all.
 
 import (
 	"os"
@@ -65,12 +82,23 @@ func bgLiveSkip(t *testing.T) {
 // it could not measure it.
 type bgLive struct {
 	root, repo, tree string
-	common           string
+	own, common      string
 	argv             []string
 	keep             string
+	ag               *AgentFile
 }
 
+// bgLiveFixture is the fixture for a PID that denies nothing: the arms below
+// it measure what the git grants OPEN, so the PID has to be one that gets
+// them.
 func bgLiveFixture(t *testing.T) bgLive {
+	t.Helper()
+	return bgLiveFixtureFor(t, nil)
+}
+
+// bgLiveFixtureFor is that fixture for one PID's deny list, which is the one
+// input ADR 0086 D3 reads. `nil` is every arm written before it.
+func bgLiveFixtureFor(t *testing.T, deny []string) bgLive {
 	t.Helper()
 	// gitTempDir and not t.TempDir(): a `git init` under a bare root leaves
 	// TempDir's own RemoveAll racing a concurrent write in the repo it made
@@ -96,15 +124,27 @@ func bgLiveFixture(t *testing.T) bgLive {
 	if len(dirs) != 2 {
 		t.Fatalf("no linked worktree was made: LinkedGitDirs(%s) = %v", tree, dirs)
 	}
-	f := bgLive{root: root, repo: repo, tree: tree, common: absResolve(dirs[1])}
-	set, keep := BwrapWritable(append([]string{absResolve(tree)}, sessionGitGrants(tree)...), tree)
-	if len(keep) != 1 {
-		t.Fatalf("the render named %d keep files for posse/s1, want 1: %v", len(keep), keep)
+	f := bgLive{root: root, repo: repo, tree: tree,
+		own: absResolve(dirs[0]), common: absResolve(dirs[1]),
+		ag: &AgentFile{Name: "bg-live", Deny: deny}}
+	set, keep := BwrapWritable(f.ag, bgLiveSessionGrants(t, repo, tree, f.ag), tree)
+	// The keep file is the ref directory's, so a PID granted no ref
+	// directory must be named none — and asserting the COUNT either way is
+	// what keeps this fixture from quietly measuring the wrong wall (ADR
+	// 0086 D3; D20 for the grant it is the keep file of).
+	wantKeep := 1
+	if deniesFileWrite(f.ag.Deny) {
+		wantKeep = 0
 	}
-	f.keep = absResolve(keep[0])
+	if len(keep) != wantKeep {
+		t.Fatalf("the render named %d keep files for posse/s1 under deny %v, want %d: %v", len(keep), deny, wantKeep, keep)
+	}
+	if wantKeep == 1 {
+		f.keep = absResolve(keep[0])
+	}
 	argv, prep, err := BwrapArgs(tree, set, SeatbeltCarveOut{}, keep...)
 	if err != nil {
-		t.Fatalf("BwrapArgs refused the worktree grant: %v", err)
+		t.Fatalf("BwrapArgs refused the worktree grant for deny %v: %v", deny, err)
 	}
 	f.argv = argv
 	// The launcher's half, which runs OUTSIDE the wall: D18 is what makes
@@ -127,10 +167,36 @@ func bgLiveFixture(t *testing.T) bgLive {
 			t.Fatalf("the render asked for a prep step this test cannot run: %s", s)
 		}
 	}
-	if _, err := os.Stat(f.keep); err != nil {
-		t.Fatalf("the prep list did not leave the keep file in place: %v", err)
+	if f.keep != "" {
+		if _, err := os.Stat(f.keep); err != nil {
+			t.Fatalf("the prep list did not leave the keep file in place: %v", err)
+		}
 	}
 	return f
+}
+
+// bgLiveSessionGrants is the cwd half of the SHIPPED writable set for one
+// PID, narrowed to this fixture's own repo and worktree. The narrowing is
+// the file header's third paragraph: everything else SeatbeltWritable grants
+// — TMPDIR (which this fixture is UNDER), the home caches, the gates dir,
+// the memory dir, posse's state dir — belongs to the launch and not to the
+// question, and binding the first of them read-write would make every
+// refusal below meaningless.
+//
+// The App's home is a sibling of the repo, so the filter is the whole of the
+// narrowing and no grant is kept by accident. It is wgRepoGrants, the same
+// narrowing the D3 set pins use (seatbeltdenygitgrant_qa_test.go), because
+// two spellings of "this fixture's own repo" is two answers waiting to
+// disagree about which wall was measured.
+func bgLiveSessionGrants(t *testing.T, repo, tree string, ag *AgentFile) []string {
+	t.Helper()
+	a := NewAppAt(filepath.Join(filepath.Dir(repo), "home"))
+	ag.MemoryDir = filepath.Join(a.Home, "personas", ag.Name)
+	out := wgRepoGrants(a.SeatbeltWritable(ag, tree, a.GatesDir(ag.Name)), repo, tree)
+	if len(out) == 0 {
+		t.Fatalf("the writable set reaches nothing in %s or %s, so the wall below is the read-only root and every arm passes for the wrong reason", repo, tree)
+	}
+	return out
 }
 
 // walled runs one command inside the rendered wall and answers whether it was
@@ -224,6 +290,79 @@ func TestLiveBwrapGitRefsCanMoveAPeerSessionsRef(t *testing.T) {
 	ok, out := f.walled(t, f.gitIn("update-ref", "refs/heads/posse/s2", "HEAD")...)
 	if !ok {
 		t.Fatalf("a peer session's ref in the granted directory was refused — the widening parity declares is not real, and ADR 0080 D20's Consequences entry needs revisiting instead of this test:\n%s", out)
+	}
+}
+
+// ─── ADR 0086 D3: the same render for a PID that denies the whole tree ───────
+
+// G1-G4 and W14/W15 of ADR 0086's table, under the argv posse renders.
+//
+// This is the arm R0 escaped through. Every bwrap fixture with `deniesFiles`
+// before it was a plain directory or a main checkout, so no pin ever drove a
+// whole-tree-deny PID through this render in a LINKED WORKTREE — where
+// `<cwd>/.git` is a FILE and the grant that named it refused the whole
+// render (`bwrap cannot grant write on <cwd>/.git: it is not a directory`).
+// The render succeeding is therefore half of what this measures, and
+// bgLiveFixtureFor fatals on that half before a single arm runs.
+//
+// The other half is why D3 took the git dirs away and not only the file: a
+// seat that cannot write a byte in its tree could still mint a commit by
+// plumbing and move `posse/<session>`, which the launcher fast-forwards onto
+// `main` when the bead closes. So the commit arm reads the OPERATOR's
+// checkout afterwards, like every other arm in this file: a ref write that
+// lands somewhere nothing reads exits 0.
+func TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession(t *testing.T) {
+	t.Parallel()
+	bgLiveSkip(t)
+	f := bgLiveFixtureFor(t, []string{"Edit", "Write"})
+	before := f.branchSha(t, "posse/s1")
+
+	// What the wall must refuse. The cwd create is D5's witness by hand, and
+	// the two plumbing arms are W14/W15: `hash-object -w` is the write that
+	// makes a blob, and the commit is the whole capability.
+	for _, c := range []struct {
+		name string
+		arg  []string
+	}{
+		{"create a file in the session's own tree", []string{"sh", "-c", ": > " + filepath.Join(f.tree, ".posse-wall-witness")}},
+		{"write a loose object with git plumbing", []string{"sh", "-c", "echo x | " + strings.Join(f.gitIn("hash-object", "-w", "--stdin"), " ")}},
+		{"commit on the session's own branch", f.gitIn("commit", "-q", "--allow-empty", "-m", "d3")},
+		{"write the session's own per-worktree git dir", []string{"sh", "-c", "echo x > " + filepath.Join(f.own, "PWNED")}},
+		{"write the shared object store", []string{"sh", "-c", "echo x > " + filepath.Join(f.common, "objects", "PWNED")}},
+		{"move the session's own ref by hand", []string{"sh", "-c", "echo " + before + " > " + filepath.Join(f.common, "refs", "heads", "posse", "s1")}},
+	} {
+		if ok, out := f.walled(t, c.arg...); ok {
+			t.Errorf("%s was ALLOWED under the rendered wall for a PID that denies Edit and Write:\n%s", c.name, out)
+		}
+	}
+	if got := f.branchSha(t, "posse/s1"); got != before {
+		t.Fatalf("posse/s1 moved from %s to %s under a wall that is supposed to grant no git write — the Edit/Write deny exists to make a findings-only seat's output findings, and the launcher fast-forwards this branch onto main (ADR 0086 D3, W14/W15)", before, got)
+	}
+
+	// What it must still allow, G1-G3: reading the repo is the whole of what
+	// a findings-only seat does. `git status` exits 0 and simply does not
+	// save its index refresh — a refusal here is the cost D3 priced, and it
+	// would make the tier unusable for the one PID it was built for.
+	for _, c := range []struct {
+		name string
+		arg  []string
+	}{
+		{"git status", f.gitIn("status", "--porcelain")},
+		{"git log", f.gitIn("log", "--oneline", "-1")},
+		{"git diff", f.gitIn("diff", "HEAD")},
+		{"read a tracked file", []string{"sh", "-c", "cat " + filepath.Join(f.tree, ".git")}},
+	} {
+		if ok, out := f.walled(t, c.arg...); !ok {
+			t.Errorf("%s was REFUSED under the rendered wall, and ADR 0086 G1-G3 measured it allowed:\n%s", c.name, out)
+		}
+	}
+
+	// The store of record is the one thing D3 keeps, because bd commits
+	// there (SeatbeltWritable's beadsHome arm). Here it is `<cwd>/.beads`,
+	// which the prep made, so this is the arm that says the seat can still
+	// claim, comment and close.
+	if ok, out := f.walled(t, "sh", "-c", ": > "+filepath.Join(f.tree, ".beads", "witness")); !ok {
+		t.Errorf("the bead store is not writable, so a findings-only seat cannot claim or close its own bead:\n%s", out)
 	}
 }
 

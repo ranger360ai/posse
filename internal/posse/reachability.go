@@ -89,7 +89,7 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		return
 	}
 	home := beadsHome(dir)
-	targets := recordTargets(home)
+	targets := recordTargets(ag, dir, home)
 	if len(targets) == 0 {
 		// Nothing is there to reach: no store of record under this launch
 		// dir. Said out loud rather than skipped in silence — a check that
@@ -241,11 +241,42 @@ func recordReachNoStoreClause(mech, cage string, available bool) string {
 // common one). Only directories that EXIST are probed — a target that is
 // not there yet is not a target the cage denied, and refusing a launch in a
 // tree with no bead store would be a check about absence, not about a wall.
-func recordTargets(home string) []string {
+//
+// A PID THAT DENIES THE WHOLE TREE IS NOT ASKED FOR A COMMIT IN ITS OWN REPO
+// (ADR 0086 D3, ranger-base-8t6j1). D3 takes every git dir of the SESSION's
+// own repo out of such a PID's wall, deliberately and at both mechanisms —
+// so where the store of record is the session's own tree (no
+// `.beads/redirect`), `beadsGitDirs(home)` names paths this launch is
+// guaranteed not to have, and probing them refuses every such launch for a
+// write the PID's own rule forbids. That is not a wall, it is a gate nothing
+// can satisfy: the only way to pass it would be to re-grant what D3 removed.
+//
+// MEASURED 2026-11-10 on the D1 host, bwrap arm, a main checkout OUTSIDE
+// `/tmp` (the blanket temp grant makes a fixture inside it pass for the
+// wrong reason — ADR 0086's own caveat about its "move main" row): before D3
+// the row read `record reach OK (2 targets)`; after D3 and before this
+// narrowing it read unrealized, naming `<cwd>/.git` and `Read-only file
+// system`, for a PID whose whole output is findings. The open PID reads OK
+// either way, which is the control.
+//
+// THE SAME ANSWER THE CONTAINER ARM ALREADY GIVES one tier down
+// (applyRecordReach's own list: "Only `home` is judged, not its git dirs"),
+// and for the same reason — a `bd` that cannot commit does not take
+// index.lock. What is NOT narrowed is the store of record in ANOTHER repo:
+// D3 keeps those git dirs granted because bd commits there, so they stay
+// targets and a wall that lost them is still a finding. The test is
+// SeatbeltWritable's own base for this PID class (`<dir>/.beads`), so the
+// one shape where a redirect stays inside cwd but outside `.beads` —
+// `<cwd>/inner/.beads`, ranger-base-f5dg's REPRO 2 — is granted and probed
+// rather than silently dropped.
+func recordTargets(ag *AgentFile, dir, home string) []string {
 	if home == "" || !isDirPath(home) {
 		return nil
 	}
 	out := []string{home}
+	if ag != nil && deniesFileWrite(ag.Deny) && underDir(filepath.Join(dir, beadsDirName), home) {
+		return out
+	}
 	for _, g := range beadsGitDirs(home) {
 		if isDirPath(g) {
 			out = append(out, g)

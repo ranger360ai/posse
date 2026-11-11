@@ -108,6 +108,21 @@ granted, because bd commits there. This holds on both mechanisms.
 - G1–G4 show what it costs: `git status` still works but no longer saves
   its index refresh. A `git fetch` from inside the seat is refused. Neither
   is in hoover's intents.
+- **As built (ranger-base-8t6j1, `docs/notes.d/ranger-base-8t6j1.md`).** The
+  rule reaches FIVE doors, not one, and four of them answered a question
+  about this PID's git writes without reading the PID: `SeatbeltWritable`'s
+  arm; the create-only ref directory (`sessionRefDirs`); `BwrapWritable`,
+  which does not filter the set but APPENDS the ref's parent directory
+  derived from `cwd` and the branch — so with D3 in the producer alone the
+  renderer handed the ref grant straight back, `refs/heads/posse` bound
+  read-write; the parity ref-grant row, which goes silent here because after
+  D3 both mechanisms agree and a Linux-only line would read as a
+  bwrap-specific capability; and `recordTargets` (ADR 0013 §4), the one that
+  is a GATE — it probed `<cwd>/.git` and refused the launch for the write
+  this decision removes, wherever the store of record is the session's own
+  tree, which no re-grant-free launch could ever satisfy. All five read one
+  predicate, `deniesFileWrite`. R0 was reproduced and cleared against the
+  live home, and the live wall arm ran on the D1 host.
 
 **D4. What "read-only" means for a verifier that runs suites.** It means
 the mechanism-neutral `SeatbeltWritable` set, after D3. That set is TMPDIR

@@ -50,7 +50,7 @@ import (
 // measuring two things at once (wgFixture.wide's reason).
 func bgSwap(t *testing.T, f wgFixture, cwd string) (set []string, keep []string) {
 	t.Helper()
-	return BwrapWritable(f.a.SeatbeltWritable(f.ag, cwd, f.gates), cwd)
+	return BwrapWritable(f.ag, f.a.SeatbeltWritable(f.ag, cwd, f.gates), cwd)
 }
 
 // bgPrepUnder is the prep list narrowed to the shared git dir, which is the
@@ -222,7 +222,7 @@ func TestQABwrapWritableGrantsNoRefDirWhenHeadIsDetached(t *testing.T) {
 func TestQABwrapWritableLeavesAMainCheckoutAlone(t *testing.T) {
 	f := wgNewFixture(t)
 	in := f.a.SeatbeltWritable(f.ag, f.repo, f.gates)
-	set, keep := BwrapWritable(in, f.repo)
+	set, keep := BwrapWritable(f.ag, in, f.repo)
 
 	if len(keep) != 0 {
 		t.Errorf("a main checkout asked for a keep file: %v", keep)
@@ -248,7 +248,7 @@ func TestQABwrapWritableLeavesAMainCheckoutAlone(t *testing.T) {
 func TestQABwrapArgsRendersTheWorktreeGrantOnlyAfterTheSwap(t *testing.T) {
 	f := wgNewFixture(t)
 	shipped := f.a.SeatbeltWritable(f.ag, f.tree, f.gates)
-	set, keep := BwrapWritable(shipped, f.tree)
+	set, keep := BwrapWritable(f.ag, shipped, f.tree)
 	parent := filepath.Dir(absResolve(f.ref(f.branch)))
 
 	// The control: the L2 set, unswapped, is a wall this mechanism cannot
@@ -377,7 +377,7 @@ func TestQABwrapParityNamesTheRefGrantItWillNotMake(t *testing.T) {
 	f := wgNewFixture(t)
 	mustGit(t, f.tree, "checkout", "-q", "-b", "flat")
 
-	got := bwrapRefGrantDifference(WallBwrap, CageSeatbelt, true, f.tree)
+	got := bwrapRefGrantDifference(f.ag, WallBwrap, CageSeatbelt, true, f.tree)
 	if got == "" {
 		t.Fatal("parity says nothing about a top-level branch that gets no ref grant")
 	}
@@ -400,7 +400,7 @@ func TestQABwrapParityNamesTheRefGrantItWillNotMake(t *testing.T) {
 func TestQABwrapParityStatesTheRefDirWidening(t *testing.T) {
 	f := wgNewFixture(t)
 
-	got := bwrapRefGrantDifference(WallBwrap, CageSeatbelt, true, f.tree)
+	got := bwrapRefGrantDifference(f.ag, WallBwrap, CageSeatbelt, true, f.tree)
 	if got == "" {
 		t.Fatal("parity says nothing about the ref directory it grants")
 	}
@@ -434,7 +434,7 @@ func TestQABwrapParityIsSilentWhereTheGrantIsNotThisMechanisms(t *testing.T) {
 		{"a main checkout has no common dir of anyone else's", WallBwrap, CageSeatbelt, f.repo, true},
 		{"no launch dir, so there is no repo to ask about", WallBwrap, CageSeatbelt, "", true},
 	} {
-		if got := bwrapRefGrantDifference(c.mech, c.cage, c.available, c.dir); got != "" {
+		if got := bwrapRefGrantDifference(f.ag, c.mech, c.cage, c.available, c.dir); got != "" {
 			t.Errorf("%s: parity printed\n%s", c.name, got)
 		}
 	}
@@ -442,7 +442,7 @@ func TestQABwrapParityIsSilentWhereTheGrantIsNotThisMechanisms(t *testing.T) {
 	// DIFFERENCE: seatbelt grants no ref there either, so there is nothing
 	// for a declared difference to declare.
 	mustGit(t, f.tree, "checkout", "-q", "--detach")
-	if got := bwrapRefGrantDifference(WallBwrap, CageSeatbelt, true, f.tree); got != "" {
+	if got := bwrapRefGrantDifference(f.ag, WallBwrap, CageSeatbelt, true, f.tree); got != "" {
 		t.Errorf("a detached HEAD printed a ref-grant difference:\n%s", got)
 	}
 }
@@ -459,7 +459,7 @@ func TestQABwrapRefGrantIsADeclaredDifferenceNotDegradation(t *testing.T) {
 	p := Parity{Cage: CageSeatbelt, Realized: map[string]RealizedGate{}}
 	before := len(p.Degraded)
 
-	f.a.applyBwrapRefGrant(&p, f.tree)
+	f.a.applyBwrapRefGrant(&p, f.ag, f.tree)
 	if len(p.Degraded) != before {
 		t.Fatalf("the ref grant degraded the launch: %v", p.Degraded)
 	}
