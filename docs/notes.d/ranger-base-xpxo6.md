@@ -217,11 +217,31 @@ toolchain install the fake HOME triggers (`.cache/mise` 1.3G and
 `.local/share` 1.0G in the largest). No read-only directory inside any of
 them, so `RemoveAll` was not blocked — those runs simply never got there.
 
-`scripts/test-times.sh` has a disk preflight for exactly this and is blind to
-it: `avail_mb()` is `df -kP <path> | awk ... $4 / 1024`, and column 4 is Avail
-BYTES. With the inode table full and 2.8G of bytes free it printed its
-"Running anyway" line and the arm ran into the wall. Filed with both halves
-and the smallest fix for each as **ranger-base-vw1cp** (P1, `-l code`).
+`scripts/test-times.sh` has a disk preflight for exactly this and read none
+of it: with the inode table full and 2.8G of bytes free it printed its
+"Running anyway" line and the arm ran into the wall.
+
+**Half of that is already somebody's, and the better half of the reading is
+theirs too** — ranger-base-akk9f landed on main while this bead was running
+(cf6506e4), from ranger-base-r5tnw, over the same errno from the other
+direction. It is worth reading before anyone acts on this: the mount carries
+`usrquota`, that quota is per UID, and **every seat on this box runs as
+`posse` — so it is one box-wide budget that all concurrent suites spend
+together**, which is why a sibling seat can red your arm with writes you never
+made. akk9f fixed the explainer (`explain_disk` grepped only `no space left on
+device`, so an EDQUOT red named no cause at all, in either of the two
+spellings this box produces) and made the DISK line say that a free-space
+number cannot see a quota.
+
+What akk9f deliberately did NOT do is probe the budget — "there is no `quota`
+binary on this box". **The inode half of that budget needs no such binary:
+`df -iP` is right there, and it read 100% at the moment of failure while the
+byte column read fine.** MEASURED after akk9f landed: `df -kP` is still the
+only `df` the script runs, and nothing in it reads an inode count. So what is
+left of this finding is one reading the preflight could take and does not, and
+the 425 leaked trees that spend the budget in the first place — which akk9f's
+fragment does not name. Filed as **ranger-base-vw1cp** (P1, `-l code`),
+narrowed by a comment to those two halves so nobody re-does akk9f's.
 
 **Nothing was deleted from `/tmp`**, and that is the script's own ruling, not
 a preference: "What to clear on a shared box is the operator's call, not this
