@@ -53,6 +53,16 @@ no `posse coldexec: injecting …` line, which is TestMain's own banner and
 its absence is how the acceptance's "the rewrite must be OFF" condition is
 read off the log rather than argued (decision 5 below).
 
+That table is THREE runs, not one: twice while the work was in the tree and
+once more over the commit, and all three produced the same counts to the
+notification — 756/226/620 taken, 41/23/31 held. The third is the one to
+cite, because it ran over what landed. The run costs 123s wall for the
+three filtered arms on a quiet box; the unfiltered price is
+ranger-base-xpxo6's to measure. And the house suite over the same commit:
+`make test` rc=0 in 614s, three arms, with this door's own eleven pins
+inside arm 1 at 1.392s — so the door is affordable where it now lives and
+the suite it measures is green without it.
+
 ### The eight decisions
 
 **1. The door's epoch is the supervisor's start, and the PARENT takes it.**
