@@ -29,8 +29,9 @@ import (
 //	hookskip:config-env      on a hook-running verb: GIT_CONFIG_PARAMETERS
 //	                         naming one of those keys; a GIT_CONFIG_KEY_<n>
 //	                         below GIT_CONFIG_COUNT naming one, unless it is
-//	                         core.hooksPath at posse's own ADR 0052 D2
-//	                         redirect (<StateDir>/hooks/<session>); a
+//	                         core.hooksPath at a session dir posse rendered
+//	                         for ADR 0052 D2 (posse_hs_redirect,
+//	                         ranger-base-crlty); a
 //	                         GIT_CONFIG_SYSTEM / GIT_CONFIG_NOSYSTEM that
 //	                         changes what hook config git sees; and a
 //	                         GIT_CONFIG_GLOBAL, HOME or XDG_CONFIG_HOME whose
@@ -40,6 +41,17 @@ import (
 //	                         removing one of those keys or their sections, at
 //	                         any scope, legacy or subcommand form; and
 //	                         `git config --edit`/`-e`/`edit` outright.
+//	                         `git clone -c/--config` writing one into the new
+//	                         repository's local config (ranger-base-crlty).
+//	hookskip:template        (ranger-base-crlty) clone/init --template, or a
+//	                         GIT_TEMPLATE_DIR, whose `config` carries one of
+//	                         those keys — copied in as LOCAL config, which
+//	                         outranks system and global. init.templateDir is
+//	                         one of the keys, so -c/env/config naming it is
+//	                         judged by every arm above.
+//	hookskip:plumbing-commit (ranger-base-crlty) `git commit-tree`, which makes
+//	                         a commit no pre-commit or commit-msg hook saw;
+//	                         update-ref or a fast-forward then lands it.
 //	hookskip:alias           (ranger-base-z8kym) a verb that is not a git
 //	                         builtin is looked up as an alias, under the
 //	                         call's own global options and env, after the
@@ -148,7 +160,14 @@ import (
 // verb deny rules now judge as well (renderAliasDeny, ranger-base-d4bk4); a
 // hand-edited copy of the baked reference in the shim file itself; and a
 // hook-relevant config value carrying a newline, which the global compare
-// cannot judge and so refuses (an over-refusal). A moved HOME /
+// cannot judge and so refuses (an over-refusal); a commit OBJECT written by
+// plumbing other than commit-tree (`hash-object -t commit -w`, `fast-import`,
+// `mktag`-style object writers) and then put on a ref — the ref write is
+// update-ref's ordinary job and cannot be refused, and commit-tree is refused
+// as the ordinary spelling of the route (ranger-base-crlty); and, for the
+// ADR 0052 D2 redirect, another live session's rendered dir or a render
+// forged by hand under <StateDir>/hooks (posse_hs_redirect says why "this
+// session's own" cannot be judged from a per-persona shim). A moved HOME /
 // XDG_CONFIG_HOME is no longer a residual (ADR 0079). An over-refusal
 // one respelling away is the accepted cost in every arm: `-c` values,
 // commit clusters like `-uno` (the `-n` scan cannot tell `-u`'s glued value
@@ -168,7 +187,12 @@ import (
 // the ones a config or scope override is judged on. -c is judged on every
 // verb EXCEPT hookSkipReadVerbs (it costs nothing there and closes
 // `git -c core.hooksPath=x <alias>`, whose verb no list can name).
-var hookSkipVerbs = []string{"commit", "merge", "am", "push", "pull", "rebase", "cherry-pick", "revert"}
+//
+// clone, init and submodule are here for the TEMPLATE (ranger-base-crlty):
+// each writes a new repository's local config, which outranks system and
+// global, so an env-borne init.templateDir or GIT_TEMPLATE_DIR is judged on
+// them as a hooksPath key is on a commit.
+var hookSkipVerbs = []string{"commit", "merge", "am", "push", "pull", "rebase", "cherry-pick", "revert", "clone", "init", "submodule"}
 
 // hookSkipBuiltins are verbs the alias lookup skips: git runs a builtin
 // before it looks for an alias, so no alias of these names can run. It is a
@@ -370,6 +394,7 @@ func hookKeyArms() string {
 		ciGlob("include.") + "*",
 		ciGlob("includeif.") + "*",
 		ciGlob("alias.") + "*",
+		ciGlob("init.templatedir"),
 	}, "|")
 }
 
@@ -377,13 +402,13 @@ func hookKeyArms() string {
 // `--rename-section`/`--remove-section` can take. `core` is in it because
 // removing or renaming the whole section drops core.hooksPath with it.
 func hookSectionArms() string {
-	return hookKeyArms() + "|" + strings.Join([]string{ciGlob("core"), ciGlob("hook"), ciGlob("include"), ciGlob("alias")}, "|")
+	return hookKeyArms() + "|" + strings.Join([]string{ciGlob("core"), ciGlob("hook"), ciGlob("include"), ciGlob("alias"), ciGlob("init")}, "|")
 }
 
 // hookSkipRegexp is what the scope comparison asks `git config
 // --get-regexp` for. git lowercases section and variable names in what it
 // matches against, so the lowercase pattern is the whole set.
-const hookSkipRegexp = `^(core\.hookspath|hook\.|include\.|includeif\.|alias\.)`
+const hookSkipRegexp = `^(core\.hookspath|hook\.|include\.|includeif\.|alias\.|init\.templatedir)`
 
 // renderHookSkipArm writes the arm. real is the git the shim execs ("" when
 // none resolved at render — the scope comparison then fails CLOSED, since
@@ -432,25 +457,29 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	}
 	b.WriteString(renderHookSkipGlobalScope(real, ref))
 
+	b.WriteString(renderHookSkipRedirect(hooksRoot))
+	b.WriteString(renderHookSkipTemplate(real))
+
 	// The env arm, for hook-running verbs.
 	b.WriteString("posse_hs_env() {\n")
-	fmt.Fprintf(&b, "  case \"${GIT_CONFIG_PARAMETERS:-}\" in\n    *%s*|*\\'%s*|*\\'%s*|*\\'%s*|*\\'%s*) posse_hs_refuse hookskip:config-env 'GIT_CONFIG_PARAMETERS names a hook-moving key or an alias' ;;\n  esac\n",
-		ciGlob("hookspath"), ciGlob("hook."), ciGlob("include."), ciGlob("includeif."), ciGlob("alias."))
+	fmt.Fprintf(&b, "  case \"${GIT_CONFIG_PARAMETERS:-}\" in\n    *%s*|*\\'%s*|*\\'%s*|*\\'%s*|*\\'%s*|*%s*) posse_hs_refuse hookskip:config-env 'GIT_CONFIG_PARAMETERS names a hook-moving key or an alias' ;;\n  esac\n",
+		ciGlob("hookspath"), ciGlob("hook."), ciGlob("include."), ciGlob("includeif."), ciGlob("alias."), ciGlob("init.templatedir"))
 	b.WriteString("  posse_hs_n=${GIT_CONFIG_COUNT:-0}\n  case \"$posse_hs_n\" in ''|*[!0-9]*) posse_hs_n=0 ;; esac\n  posse_hs_i=0\n")
 	b.WriteString("  while [ \"$posse_hs_i\" -lt \"$posse_hs_n\" ]; do\n")
 	b.WriteString("    eval \"posse_hs_k=\\${GIT_CONFIG_KEY_$posse_hs_i:-}; posse_hs_v=\\${GIT_CONFIG_VALUE_$posse_hs_i:-}\"\n")
 	b.WriteString("    if posse_hs_key \"$posse_hs_k\"; then\n")
 	allow := "false"
 	if hooksRoot != "" {
-		// The ADR 0052 D2 redirect: core.hooksPath at one session dir under
-		// <StateDir>/hooks — posse's own dispatcher, which forwards to the
-		// managed hooks and so skips nothing.
-		allow = fmt.Sprintf("{ case \"$posse_hs_k\" in %s) case \"$posse_hs_v\" in %s/*/*) false ;; %s/?*) true ;; *) false ;; esac ;; *) false ;; esac; }",
-			ciGlob("core.hookspath"), shQuote(hooksRoot), shQuote(hooksRoot))
+		// The ADR 0052 D2 redirect: core.hooksPath at a session dir posse
+		// rendered under <StateDir>/hooks — its own dispatcher, which
+		// forwards to the managed hooks and so skips nothing.
+		allow = fmt.Sprintf("{ case \"$posse_hs_k\" in %s) posse_hs_redirect \"$posse_hs_v\" ;; *) false ;; esac; }", ciGlob("core.hookspath"))
 	}
 	fmt.Fprintf(&b, "      %s || posse_hs_refuse hookskip:config-env \"GIT_CONFIG_KEY_$posse_hs_i names $posse_hs_k, and not at posse's own ADR 0052 redirect\"\n", allow)
 	b.WriteString("    fi\n    posse_hs_i=$((posse_hs_i+1))\n  done\n")
 	b.WriteString(renderHookSkipGlobalGate(ref))
+	b.WriteString("  if [ -n \"$posse_hs_tmplset\" ] && ! posse_hs_tmpl \"$posse_hs_tmpldir\"; then\n    posse_hs_refuse hookskip:template \"--template $posse_hs_tmpldir carries a hook-moving key into the new repository's local config\"\n  fi\n")
+	b.WriteString("  if [ -n \"${GIT_TEMPLATE_DIR+x}\" ] && ! posse_hs_tmpl \"$GIT_TEMPLATE_DIR\"; then\n    posse_hs_refuse hookskip:template 'GIT_TEMPLATE_DIR carries a hook-moving key into a new repository'\\''s local config'\n  fi\n")
 	b.WriteString("  if { [ -n \"${GIT_CONFIG_SYSTEM+x}\" ] || [ -n \"${GIT_CONFIG_NOSYSTEM:-}\" ]; } && ! posse_hs_scope; then\n    posse_hs_refuse hookskip:config-env 'GIT_CONFIG_SYSTEM/GIT_CONFIG_NOSYSTEM changes the hook config git sees in system scope'\n  fi\n")
 	b.WriteString("}\n")
 
@@ -497,12 +526,12 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	// Options that print and exit before any verb runs: an alias lookup under
 	// them would read their output as an expansion.
 	b.WriteString("      -h|--help|-v|--version|--exec-path|--html-path|--man-path|--info-path|--list-cmds=*) posse_hs_noalias=1; shift ;;\n")
-	b.WriteString("      -c|--config-env)\n        [ $# -ge 2 ] || break\n        posse_hs_key \"$2\" && { posse_hs_cover=1; posse_hs_coverwhy=\"$1 $2 moves or adds a hook, or defines an alias\"; }\n        shift 2 ;;\n")
+	b.WriteString("      -C)\n        posse_hs_seenC=1\n        [ $# -ge 2 ] || break\n        shift 2 ;;\n      -C?*) posse_hs_seenC=1; shift ;;\n      -c|--config-env)\n        [ $# -ge 2 ] || break\n        posse_hs_key \"$2\" && { posse_hs_cover=1; posse_hs_coverwhy=\"$1 $2 moves or adds a hook, or defines an alias\"; }\n        shift 2 ;;\n")
 	b.WriteString("      --config-env=*)\n        posse_hs_key \"${1#--config-env=}\" && { posse_hs_cover=1; posse_hs_coverwhy=\"$1 moves or adds a hook, or defines an alias\"; }\n        shift ;;\n")
 	if pairs := globalValueOpts["git"]; len(pairs) > 0 {
 		var quoted []string
 		for _, o := range pairs {
-			if o == "-c" || o == "--config-env" {
+			if o == "-c" || o == "--config-env" || o == "-C" {
 				continue
 			}
 			quoted = append(quoted, shQuote(o))
@@ -531,6 +560,8 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 			v, shIdent("posse_hs_nv", v), strings.Join(hookSkipNoVerify(v).Opts, "/"))
 	}
 	b.WriteString("    config) posse_hs_config \"$@\" || posse_hs_refuse hookskip:config-write 'git config writes a hook-moving key or an alias' ;;\n")
+	b.WriteString("    clone|init) posse_hs_clone \"$@\" || posse_hs_refuse hookskip:config-write \"git $posse_hs_verb -c/--config writes a hook-moving key or an alias into the new repository's local config\" ;;\n")
+	b.WriteString("    commit-tree) posse_hs_refuse hookskip:plumbing-commit 'git commit-tree makes a commit no pre-commit or commit-msg hook ever saw' ;;\n")
 	b.WriteString("  esac\n")
 	verbs := make([]string, 0, len(hookSkipVerbs))
 	for _, v := range hookSkipVerbs {
@@ -541,8 +572,111 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	fmt.Fprintf(&b, "  case \"$posse_hs_verb\" in %s) posse_hs_envverb=1 ;; esac\n", strings.Join(verbs, "|"))
 	b.WriteString("  return 0\n}\n")
 	b.WriteString(renderHookSkipAlias(real))
-	b.WriteString("posse_hs_argv=\"$*\"; posse_hs_envverb=; posse_hs_cover=; posse_hs_coverwhy=\nposse_hs_check \"$@\"\n")
+	b.WriteString(renderHookSkipClone())
+	b.WriteString("posse_hs_argv=\"$*\"; posse_hs_envverb=; posse_hs_cover=; posse_hs_coverwhy=; posse_hs_seenC=; posse_hs_tmplset=; posse_hs_tmpldir=\nposse_hs_check \"$@\"\n")
 	return b.String()
+}
+
+// renderHookSkipRedirect writes posse_hs_redirect: 0 when its argument is a
+// session hooks dir posse rendered (ADR 0052 D2), 1 otherwise
+// (ranger-base-crlty, finding 1). It used to be a glob — any one-level child
+// of <StateDir>/hooks — and git reads a missing hooksPath as NO hooks, so
+// `<root>/no-such-session` and `<root>/..` each skipped the managed hook at
+// rc 0 (MEASURED by the verify bead, 2026-11-10, git 2.56.0). Now all of:
+//
+//   - exactly <root>/<name>, the string SessionHooksDir builds, with <name>
+//     a ValidName (so no `.`, `..`, empty or nested component);
+//   - a directory and not a symlink;
+//   - holding posse's member posse-prepare-commit-msg, a regular file and not
+//     a symlink — the one file every render writes (posseHookSlots), so an
+//     empty or stray dir there is not a render.
+//
+// NOT "this session's own dir", which is what the verify bead asked for, and why: the
+// shim is rendered once per PERSONA (RenderGates), shared by every session
+// that persona runs, and nothing in a seat's environment names its session
+// that the seat cannot also set. So two residuals stay, named in the
+// RESIDUALS paragraph above: another live session's render (posse's wall
+// runs there and forwards to that session's target), and a render forged by
+// writing under <StateDir>/hooks by hand — posse's own state, the same class
+// as a hand-edited .git/config.
+//
+// With no hooksRoot the arm allows no redirect at all (the caller renders
+// `false` and never calls this), so the function always exists for the env
+// arm to name.
+func renderHookSkipRedirect(hooksRoot string) string {
+	if hooksRoot == "" {
+		return "posse_hs_redirect() { return 1; }\n"
+	}
+	var b strings.Builder
+	b.WriteString("posse_hs_redirect() {\n")
+	fmt.Fprintf(&b, "  case \"$1\" in %s/*) ;; *) return 1 ;; esac\n", shQuote(hooksRoot))
+	fmt.Fprintf(&b, "  posse_hs_rn=${1#%s/}\n", shQuote(hooksRoot))
+	// ValidName: ^[A-Za-z0-9_][A-Za-z0-9_-]*$
+	b.WriteString("  case \"$posse_hs_rn\" in ''|[!A-Za-z0-9_]*|*[!A-Za-z0-9_-]*) return 1 ;; esac\n")
+	b.WriteString("  [ -d \"$1\" ] && [ ! -L \"$1\" ] && [ -f \"$1/posse-prepare-commit-msg\" ] && [ ! -L \"$1/posse-prepare-commit-msg\" ]\n}\n")
+	return b.String()
+}
+
+// renderHookSkipTemplate writes posse_hs_tmpl: 0 when the template dir in
+// its argument carries no hook-relevant key in its `config`, 1 otherwise
+// (ranger-base-crlty, finding 2). `git clone`/`git init` copy that file into
+// the new repository as its LOCAL config, which outranks system and global,
+// so a template naming core.hooksPath skips the managed hook on every
+// commit there — MEASURED 2026-11-10, git 2.56.0: --template, its prefix
+// --te, and GIT_TEMPLATE_DIR each left core.hooksPath=/dev/null in the new
+// repo's local config. Judged by content, not by refusing --template: a
+// template with no hook key changes nothing a scanner relies on.
+//
+// A missing file answers rc 1 like a non-match (MEASURED), so a template dir
+// without a config is allowed. Past 1, git failed and the answer is unknown:
+// refused. A RELATIVE dir under `-C` is refused unread, since git resolves it
+// from the -C dir and this shim does not chdir (MEASURED: `git -C sub init
+// --template=tpl` read sub/tpl) — an over-refusal one respelling away. With
+// no git to ask, refused.
+func renderHookSkipTemplate(real string) string {
+	if real == "" {
+		return "posse_hs_tmpl() { return 1; }\n"
+	}
+	var b strings.Builder
+	b.WriteString("posse_hs_tmpl() {\n")
+	b.WriteString("  case \"$1\" in /*) ;; *) [ -z \"$posse_hs_seenC\" ] || return 1 ;; esac\n")
+	fmt.Fprintf(&b, "  posse_hs_to=$(%s config --file \"$1/config\" --get-regexp %s 2>/dev/null)\n", shQuote(real), shQuote(hookSkipRegexp))
+	b.WriteString("  [ $? -le 1 ] || return 1\n  [ -z \"$posse_hs_to\" ]\n}\n")
+	return b.String()
+}
+
+// renderHookSkipClone writes posse_hs_clone, the scan of `git clone` and
+// `git init`'s own arguments (ranger-base-crlty, finding 2). Two writes into
+// the new repository's local config:
+//
+//   - `clone -c/--config <key>=<value>`: refused here, in pure sh, when the
+//     key is hook-relevant. Every spelling git takes is found by judging each
+//     word three ways — whole (`-c K=V`, `--config K=V`), after its first `=`
+//     when it is a long option (`--config=K=V`, `--co=K=V`), and after its
+//     first `c` when it is a short cluster (`-cK=V`, `-qcK=V`) — and only a
+//     candidate carrying `=` is a key=value. MEASURED 2026-11-10, git 2.56.0:
+//     `-qccore.hooksPath=/x` and `--co=core.hooksPath=/y` each wrote the key.
+//     A word some other option took as its value can read as a candidate too;
+//     that over-refuses, never under.
+//   - `--template <dir>` (and every prefix down to `--te`, which is unique
+//     on both verbs): RECORDED, and judged by posse_hs_tmpl in the env arm,
+//     after the PID's deny rules, because judging it execs git.
+func renderHookSkipClone() string {
+	return `posse_hs_clone() {
+  while [ $# -gt 0 ]; do
+    posse_hs_cw=$1; shift
+    case "$posse_hs_cw" in
+      --) continue ;;
+      --te*=*) posse_hs_tmplset=1; posse_hs_tmpldir=${posse_hs_cw#*=}; continue ;;
+      --te*) [ $# -gt 0 ] || continue; posse_hs_tmplset=1; posse_hs_tmpldir=$1; shift; continue ;;
+    esac
+    for posse_hs_cc in "$posse_hs_cw" "${posse_hs_cw#--*=}" "${posse_hs_cw#-*c}"; do
+      case "$posse_hs_cc" in *=*) posse_hs_key "$posse_hs_cc" && return 1 ;; esac
+    done
+  done
+  return 0
+}
+`
 }
 
 // renderHookSkipAlias writes the alias resolver (ranger-base-z8kym).

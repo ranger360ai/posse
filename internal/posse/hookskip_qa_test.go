@@ -160,7 +160,46 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		{"", "phooks -q -m p4 -- f", "hookskip:config-override"},
 		{"", "psh", "hookskip:alias"},
 		{"", "pabs", "hookskip:alias"},
+		// ranger-base-crlty finding 1: the D2 exemption is posse's RENDER,
+		// not any child of <StateDir>/hooks. git reads a missing hooksPath
+		// as no hooks, so each of these skipped the managed hook at rc 0.
+		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "no-such-session")), "commit -q -m r1 -- f", "hookskip:config-env"},
+		{hsKey0("core.hooksPath", fx.hooksRoot+"/.."), "commit -q -m r2 -- f", "hookskip:config-env"},
+		{hsKey0("core.hooksPath", fx.hooksRoot+"/."), "commit -q -m r3 -- f", "hookskip:config-env"},
+		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "empty")), "commit -q -m r4 -- f", "hookskip:config-env"},
+		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "linked")), "commit -q -m r5 -- f", "hookskip:config-env"},
+		// ranger-base-crlty finding 2: clone/init writing a hook-moving key
+		// into the NEW repository's local config. MEASURED 2026-11-10, git
+		// 2.56.0, every spelling below wrote it.
+		{"", "clone -q -c core.hooksPath=/dev/null " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c1")), "hookskip:config-write"},
+		{"", "clone -q --config core.hooksPath=/dev/null " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c2")), "hookskip:config-write"},
+		{"", "clone -q --config=core.hooksPath=/dev/null " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c3")), "hookskip:config-write"},
+		{"", "clone -q --co=core.hooksPath=/dev/null " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c4")), "hookskip:config-write"},
+		{"", "clone -qccore.hooksPath=/dev/null " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c5")), "hookskip:config-write"},
+		{"", "clone -q -c CORE.HOOKSPATH=/dev/null " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c6")), "hookskip:config-write"},
+		{"", "clone -q -c alias.ci='commit -n' " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "c7")), "hookskip:config-write"},
+		{"", "clone -q --template=" + shQuote(fx.hookTpl) + " " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t1")), "hookskip:template"},
+		{"", "clone -q --te " + shQuote(fx.hookTpl) + " " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t2")), "hookskip:template"},
+		{"", "init -q --template=" + shQuote(fx.hookTpl) + " " + shQuote(filepath.Join(fx.home, "t3")), "hookskip:template"},
+		{"GIT_TEMPLATE_DIR=" + shQuote(fx.hookTpl) + " ", "clone -q " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t4")), "hookskip:template"},
+		{"GIT_TEMPLATE_DIR=" + shQuote(fx.hookTpl) + " ", "init -q " + shQuote(filepath.Join(fx.home, "t5")), "hookskip:template"},
+		// A RELATIVE template under -C is git's to resolve from the -C dir,
+		// which this shim does not do: refused unread, even a clean one.
+		{"", "-C " + shQuote(fx.home) + " init -q --template=clean-tpl t6", "hookskip:template"},
+		// init.templateDir is a hook-moving key now, in every arm.
+		{"", "-c init.templateDir=" + shQuote(fx.hookTpl) + " clone -q " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t7")), "hookskip:config-override"},
+		{hsKey0("init.templateDir", fx.hookTpl), "clone -q " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "t8")), "hookskip:config-env"},
+		{`GIT_CONFIG_PARAMETERS="'init.templatedir'='/x'" `, "init -q " + shQuote(filepath.Join(fx.home, "t9")), "hookskip:config-env"},
+		{"", "config --global init.templateDir " + shQuote(fx.hookTpl), "hookskip:config-write"},
+		// ranger-base-crlty finding 3: a commit no hook saw.
+		{"", "commit-tree HEAD^{tree} -p HEAD -m x", "hookskip:plumbing-commit"},
+		{"", "-C . commit-tree HEAD^{tree} -m x", "hookskip:plumbing-commit"},
 	}
+}
+
+// hsKey0 is the one-entry GIT_CONFIG_KEY form, typed as a seat would.
+func hsKey0(k, v string) string {
+	return "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=" + k + " GIT_CONFIG_VALUE_0=" + shQuote(v) + " "
 }
 
 // hsAllowed are the controls: none may be refused by this arm, and the
@@ -220,12 +259,47 @@ func hsAllowed(fx *hsFixture) []hsLeg {
 		// An alias that carries its OWN hook-key -c is judged on the re-walk,
 		// against the verb it expands to: here a read.
 		{"", "pst", ""},
+		// ranger-base-crlty: clone and init stay ordinary.
+		{"", "clone -q " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "ok1")), ""},
+		{"", "clone -q -c user.name=x --origin up " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "ok2")), ""},
+		{"", "clone -q --template=" + shQuote(fx.cleanTpl) + " " + shQuote(fx.remote) + " " + shQuote(filepath.Join(fx.home, "ok3")), ""},
+		{"GIT_TEMPLATE_DIR=" + shQuote(fx.cleanTpl) + " ", "init -q " + shQuote(filepath.Join(fx.home, "ok4")), ""},
+		{"", "init -q " + shQuote(filepath.Join(fx.home, "ok5")), ""},
+		{"", "config --get init.templateDir", ""},
+		// The D2 redirect posse renders passes, and the managed hook still
+		// runs through its dispatcher (hsPlantRedirects plants it).
+		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "hs-session")), "commit -q -m r -- f", ""},
+	}
+}
+
+// hsPlantRedirects lays out <hooksRoot> for the ranger-base-crlty legs: one
+// render-shaped session dir (posse's member plus a pre-commit dispatcher
+// forwarding to the managed hook, the ADR 0052 D2 shape), an empty dir that
+// is not a render, and a symlink to the render.
+func hsPlantRedirects(t *testing.T, fx *hsFixture) {
+	t.Helper()
+	render := filepath.Join(fx.hooksRoot, "hs-session")
+	if err := os.MkdirAll(render, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteExecutable(filepath.Join(render, "posse-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fwd := "#!/bin/sh\nexec " + shQuote(filepath.Join(fx.home, "managed-hooks", "pre-commit")) + " \"$@\"\n"
+	if err := WriteExecutable(filepath.Join(render, "pre-commit"), []byte(fwd), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(fx.hooksRoot, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(render, filepath.Join(fx.hooksRoot, "linked")); err != nil {
+		t.Fatal(err)
 	}
 }
 
 type hsFixture struct {
 	home, repo, marker, hooksRoot, otherHooks, plantedSystem, globalCopy string
-	realGit                                                              string
+	realGit, remote, hookTpl, cleanTpl                                   string
 }
 
 func hsSetup(t *testing.T) *hsFixture {
@@ -259,7 +333,14 @@ func hsSetup(t *testing.T) *hsFixture {
 	fx.plantedSystem = filepath.Join(fx.home, "planted-system")
 	write(t, fx.plantedSystem, "[core]\n\thooksPath = "+fx.otherHooks+"\n")
 
+	// ranger-base-crlty: two clone/init templates, one whose config moves
+	// the hooks and one that names nothing a scanner relies on.
+	fx.hookTpl = filepath.Join(fx.home, "hook-tpl")
+	fx.cleanTpl = filepath.Join(fx.home, "clean-tpl")
+	write(t, filepath.Join(fx.hookTpl, "config"), "[core]\n\thooksPath = /dev/null\n")
+	write(t, filepath.Join(fx.cleanTpl, "config"), "[core]\n\tautocrlf = false\n")
 	remote := filepath.Join(fx.home, "remote.git")
+	fx.remote = remote
 	for _, c := range [][]string{
 		{"init", "-q", "--bare", remote},
 		{"-C", fx.repo, "init", "-q", "-b", "main"},
@@ -392,6 +473,7 @@ func TestQAHookSkipRefusedOnEveryRuntime(t *testing.T) {
 				t.Fatal(err)
 			}
 			fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
+			hsPlantRedirects(t, fx)
 			persona := "hs-" + rtName
 			// The deny list every crew PID carries.
 			wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
@@ -541,13 +623,17 @@ func TestQAHookSkipNeedsNoPIDRule(t *testing.T) {
 		t.Errorf("GIT_CONFIG_GLOBAL hiding the managed hooksPath must refuse a push: code=%d %q", code, errs)
 	}
 	// And posse's own redirect is the one core.hooksPath the env may carry.
-	redirect := filepath.Join(fx.hooksRoot, "persona-posse-x")
-	if err := os.MkdirAll(redirect, 0o755); err != nil {
-		t.Fatal(err)
+	// It must be posse's RENDER (ranger-base-crlty): a bare dir at the
+	// same path is refused, and the render passes with the managed hook run.
+	hsPlantRedirects(t, fx)
+	leg := hsLeg{env: hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "empty")), args: "commit -q -m r0 -- f"}
+	if errs, code := hsRun(t, fx, prefix, leg); code == 0 || !strings.Contains(errs, "rule: hookskip:config-env,") {
+		t.Errorf("an empty dir under <StateDir>/hooks is not the D2 redirect: code=%d %q", code, errs)
 	}
-	leg := hsLeg{env: "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=" + shQuote(redirect) + " ", args: "commit -q -m r -- f"}
-	if errs, code := hsRun(t, fx, prefix, leg); code != 0 || strings.Contains(errs, "hookskip:") {
-		t.Errorf("the ADR 0052 D2 redirect must pass: code=%d %q", code, errs)
+	before := hsFired(fx)
+	leg = hsLeg{env: hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "hs-session")), args: "commit -q -m r -- f"}
+	if errs, code := hsRun(t, fx, prefix, leg); code != 0 || strings.Contains(errs, "hookskip:") || hsFired(fx) != before+1 {
+		t.Errorf("the ADR 0052 D2 redirect must pass and run the managed hook: code=%d fired=%d %q", code, hsFired(fx)-before, errs)
 	}
 }
 
