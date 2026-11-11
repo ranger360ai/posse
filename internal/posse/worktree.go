@@ -3459,6 +3459,12 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 			}
 		}
 	}
+	// The session's own build cache (ranger-base-olr0g) goes with its tree.
+	// Named before the remove, because the name hashes the RESOLVED path and
+	// a path that is gone resolves to its spelling. Best-effort: a cache left
+	// behind costs disk and nothing else, and no other seat is granted it.
+	home, _ := os.UserHomeDir()
+	seatCache := SeatCacheDir(home, t.Path)
 	if _, err := os.Stat(t.Path); err == nil {
 		args := []string{"worktree", "remove", t.Path}
 		if force {
@@ -3467,6 +3473,9 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 		if _, err := git(t.Repo, args...); err != nil {
 			return err
 		}
+	}
+	if seatCache != "" {
+		_ = os.RemoveAll(seatCache)
 	}
 	_, _ = git(t.Repo, "worktree", "prune")
 	if branchExists(t.Repo, t.Branch) {

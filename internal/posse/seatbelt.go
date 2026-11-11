@@ -719,6 +719,10 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 			add(filepath.Join(home, d))
 		}
 	}
+	// The seat's own build and package cache, in place of the shared ones
+	// homeCacheGrants no longer names (ranger-base-olr0g). One per session
+	// dir, so nothing a seat writes there reaches another process's build.
+	add(SeatCacheDir(home, cwd))
 	// The LAUNCHING runtime's own state dirs, and no other runtime's.
 	// `~/.claude ~/.claude.json ~/.codex ~/.grok` were spelled here as a
 	// literal until ADR 0012 D4, which is why a third-party CLI declared in
@@ -816,11 +820,21 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 // answer, and the files modified there in the prior two days were the
 // operator's shell (zoxide), systemd, mise itself, and one desktop entry
 // claude writes best-effort at startup.
+//
+// `.cache`, `.npm` AND `Library/Caches` LEFT IT TOO (ranger-base-olr0g). They
+// hold content later builds and tools execute without re-checking it — Go's
+// build cache above all, which the operator's own builds of posse read — so
+// what comes back is the one member a seat must share with other seats,
+// `.cache/posse` (the box's lock dir), and each seat builds through a cache of
+// its own instead (wallseatcache.go says what was measured and what it costs).
+// `Library/Caches` is darwin's spelling of the same directory — GOCACHE's
+// default there — and goes for the same reason; ASSUMED from the Linux
+// reading, since this box has no darwin seat to measure.
 func homeCacheGrants(goos string) []string {
 	if goos == "darwin" {
-		return []string{"Library/Caches", "Library/Logs", ".cache", ".npm", "Library/Application Support/go/telemetry/local"}
+		return []string{"Library/Logs", ".cache/posse", "Library/Application Support/go/telemetry/local"}
 	}
-	return []string{".cache", ".npm", ".config/go/telemetry/local"}
+	return []string{".cache/posse", ".config/go/telemetry/local"}
 }
 
 // SeatbeltSiblings names the grants whose atomic-write SIBLINGS a caged
@@ -1396,6 +1410,14 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 		add(&c.Deny, f)
 		add(&c.DenyFile, f)
 		add(&c.Seed, f)
+	}
+	// posse's plan-usage snapshot, read-only over the `.cache/posse` lock-dir
+	// grant (ranger-base-olr0g): the dispatcher's usage guard trusts it, and
+	// its readers already fail quiet on a dir they cannot write.
+	for _, d := range posseCacheReadOnly(wallHome()) {
+		if writeGranted(writable, absResolve(d)) {
+			add(&c.Deny, d)
+		}
 	}
 	c.Deny = dedupeStrings(c.Deny)
 	c.DenyFile = dedupeStrings(c.DenyFile)

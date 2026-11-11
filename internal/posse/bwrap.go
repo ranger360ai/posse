@@ -1488,6 +1488,14 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	if r.Argv, r.Prep, err = BwrapArgs(cwd, r.Set, r.Carve, r.Keep...); err != nil {
 		return bwrapRendered{}, err
 	}
+	// The seat's own caches (ranger-base-olr0g): the dir SeatbeltWritable
+	// granted, and the env that points the tools at it, in one render so the
+	// two cannot name different dirs. Set inside the namespace, so it holds
+	// for every process the wall runs and for nothing outside it.
+	home, _ := os.UserHomeDir()
+	for _, v := range seatCacheEnv(SeatCacheDir(home, cwd)) {
+		r.Argv = append(r.Argv, "--setenv", v.Key, v.Value)
+	}
 	return r, nil
 }
 

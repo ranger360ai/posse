@@ -597,7 +597,11 @@ explain_disk() {
       echo
       echo '  To get a reading anyway, move the run off the quota:'
       echo
-      echo '      TMPDIR=$HOME/.cache/posse-tmp-$$ make test-arm2'
+      echo '      TMPDIR=${POSSE_SEAT_CACHE:-$HOME/.cache}/posse-tmp-$$ make test-arm2'
+      echo
+      echo '  POSSE_SEAT_CACHE is a walled seat'"'"'s own cache dir, the one'
+      echo '  place under the home its wall lets it write (ranger-base-olr0g);'
+      echo '  unset, as on an uncaged seat, the line falls back to ~/.cache.'
       echo
       echo '  TMPDIR and not GOTMPDIR (ranger-base-krra): cmd/go hands'
       echo '  the test binary GOTMPDIR as its own TMPDIR, so setting'

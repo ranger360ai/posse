@@ -251,7 +251,7 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		"new state member":     "mkdir -p " + q(filepath.Join(cfg, "session-env", "s")),
 		"own audit log append": "echo x >> " + q(filepath.Join(f.gates, "refusals.log")),
 		"session tree write":   ": > " + q(filepath.Join(f.dir, "x")),
-		"generic cache write":  "mkdir -p " + q(filepath.Join(f.home, ".cache", "x")),
+		"own cache write":      "mkdir -p \"$GOCACHE/x\"", // ranger-base-olr0g: the seat's own, not ~/.cache
 	}
 	for name, script := range allowed {
 		if ok, out := try(script); !ok {

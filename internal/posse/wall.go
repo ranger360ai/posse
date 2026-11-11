@@ -44,6 +44,7 @@ package posse
 
 import (
 	"io"
+	"os"
 	"runtime"
 	"strconv"
 )
@@ -258,7 +259,12 @@ func (a *App) renderWallOn(mech string, ag *AgentFile, rt *Runtime, cwd string) 
 		if err != nil {
 			return WallRender{}, err
 		}
-		return WallRender{Mechanism: m, Artifact: prof, Prefix: SeatbeltPrefix(prof)}, nil
+		// SBPL has no env of its own, so the seat's cache env (ranger-base-
+		// olr0g) rides in front of sandbox-exec as `/usr/bin/env K=V …`: an
+		// executable, so it reads the same after an `exec` or an assignment
+		// list as sandbox-exec itself did. bwrap's arm sets it in the argv.
+		home, _ := os.UserHomeDir()
+		return WallRender{Mechanism: m, Artifact: prof, Prefix: seatCacheEnvPrefix(seatCacheEnv(SeatCacheDir(home, cwd))) + SeatbeltPrefix(prof)}, nil
 	case WallBwrap:
 		args, err := a.RenderBwrap(ag, rt, cwd)
 		if err != nil {
