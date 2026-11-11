@@ -173,6 +173,9 @@ func (h Herdr) sendTextPrompt(ag HerdrAgent, text string, wait bool, timeoutMS i
 			"Reword it without the leading '/', or drive the picker by hand (posse peek)",
 			ag.PaneID, ag.Agent)
 	}
+	if err := h.refuseAtShellPrompt(ag); err != nil {
+		return nil, err
+	}
 	if err := h.refuseWithoutComposerPane(ag); err != nil {
 		return nil, err
 	}
@@ -234,6 +237,92 @@ func (h Herdr) sendTextPrompt(ag HerdrAgent, text string, wait bool, timeoutMS i
 		}
 	}
 	return h.AgentWait(ag.PaneID, []string{"idle", "done", "blocked"}, left())
+}
+
+// ─── is anything still holding the keyboard (ranger-base-j687x) ──────────────
+//
+// THE HOLE, and it is ADR 0061 D3.2 one layer over. The liveness half of the
+// one detection reading answers this question correctly already, and
+// `AwaitPromptable` refuses on it with ReportedNotSeen's own sentence — but
+// that refusal lives in the READINESS GATE, and the gate is not the only way
+// to this route's two keystrokes. TRACED 2026-11-11, three live callers reach
+// `AgentPrompt` with no liveness reading in front of them:
+//
+//	posse prompt --now   cmd/posse/main.go — the gate is skipped BY NAME, and
+//	                     the gate's own refusal used to offer it as the way past
+//	landThePlane         relaunch.go — gateless on purpose; its note says why
+//	                     (AgentTarget resolved a live PANE, which is not a
+//	                     live CLI, and that is the whole of this bug)
+//	the runtime probe    runtimeprobe.go — gates on `agent wait` alone, which a
+//	                     stale `idle` label settles instantly
+//
+// So the answer is not a comment on the gate. ADR 0076 Amendment 7 D7 put the
+// modal refusal in the DELIVERY VERB rather than the gate and said why: `--now`
+// is the operator saying they mean this pane as it IS, which is a statement
+// about posse's DETECTION of the pane and never a licence to press whatever
+// Enter a dialog has highlighted. A shell that runs every line of a work
+// prompt is the same class of unreviewed action — ranger-base-3p0's original
+// failure with the cause one layer over — so it is refused in the same place
+// by the same rule.
+//
+// WHAT IS MEASURED (2026-11-11, herdr 0.9.1, claude 2.1.322, this box,
+// docs/notes.d/ranger-base-xdaw9.md): a reported label OUTLIVES the CLI it
+// describes on this herdr. A pane running claude, its label overridden through
+// `pane report-agent --agent fakebob-xdaw9 --state idle`; the first probe's
+// Enter actuated the folder-trust prompt's `No, exit` and claude EXITED; `agent
+// get w1:p1` then still read `{"agent":"fakebob-xdaw9","agent_status":"idle"}`
+// over a pane that was a bare shell prompt. That is ADR 0061 Claims fact 1
+// reproduced on a live claude — and `pane send-text` + `pane send-keys enter`
+// into a pane at a shell RUNS the text: the same probe launched claude that
+// way on purpose (`cd <dir> && claude --model …`) and the shell executed it.
+//
+// NO SCOPE CLAUSE, which is the one way this differs from the composer refusal
+// beside it. That one asks `agent explain` whose chrome the screen is drawn
+// with, because the box it locates is claude's idiom and nothing else's. This
+// reading is herdr's own process table — a pid compared to a pid, no argv
+// matched, no shell list kept and no runtime named (ADR 0017 §3) — so it is as
+// true of a Bob under a plugin as of a claude, and on the designed case of
+// this route a LIVE Bob has its own pid in the foreground and is never
+// refused. The pane this refusal reaches is the one shape that has no CLI on
+// it at all.
+//
+// AND NO SECOND LOOK, which is the other difference. promptComposerRecheck
+// exists because a screen can be caught mid-redraw; a foreground process group
+// cannot be caught mid-anything. The reading is "every foreground pid IS the
+// pane's own shell pid", which goes false the instant anything is launched
+// there, so one sample is the whole of it — at the same one `process-info` per
+// prompt the gate already pays per read (MEASURED 0.00s, ADR 0061 Claims).
+
+// refuseAtShellPrompt refuses a typed prompt into a reported pane whose every
+// foreground process is the pane's own shell, before either keystroke. The
+// section note above carries the measurement and the trace.
+//
+// THE CODE IS `agent_not_ready`, borrowed from herdr's taxonomy exactly as the
+// two refusals above borrow theirs: nothing was typed, so dispatch's hand-back
+// allow-list (isNotDelivered, promptstall.go, ADR 0084 D1) must see it and give
+// the claim back rather than keep it over a pane nobody asked anything.
+//
+// UNKNOWN IS NOT A NO, and paneShellForeground is already where that rule
+// lives: a `process-info` that cannot be TAKEN is not evidence that the pane is
+// at a shell, so the label stands on its own and nothing is refused over a
+// diagnostic verb that went missing. An empty foreground and a missing
+// shell_pid are the same concession, taken inside AtShellPrompt.
+//
+// THE SENTENCE IS ReportedNotSeen's, built from the reading this call just
+// took, because one copy of the stale-label clause is the point: the surfaces
+// that print it are the surfaces that used to print three different
+// concessions about one pane. It is never empty here — ReportedAgent is what
+// chose this route and it answers false on a pane with no label at all.
+func (h Herdr) refuseAtShellPrompt(ag HerdrAgent) error {
+	if !h.paneShellForeground(ag.PaneID) {
+		return nil
+	}
+	stale := AgentDetection{State: ag.AgentStatus, Reported: ag.Agent, ShellForeground: true}
+	return HerdrAPIError{Code: "agent_not_ready", Message: "nothing was sent: " + ag.PaneID + " is a " + ag.Agent +
+		" pane herdr labels but does not detect, so posse types the prompt in (pane send-text + Enter), and " +
+		stale.ReportedNotSeen() + ". MEASURED 2026-11-11 (ranger-base-xdaw9): a reported label outlived the claude it " +
+		"described — the CLI exited on a dialog's highlighted row and `agent get` went on reading `idle` over a bare " +
+		"shell prompt. Look at the pane (posse peek), start what should be running there, then send this again"}
 }
 
 // ─── is there a box to type into at all (ranger-base-xdaw9) ──────────────────

@@ -151,10 +151,19 @@ func TestQAAStaleReportedLabelRefusesThePromptWithNothingTyped(t *testing.T) {
 	if err == nil {
 		t.Fatal("a label whose pane is back at its shell is not promptable — a work prompt typed there is run by the shell")
 	}
-	for _, want := range []string{"nothing was sent", "plugged", "STALE", "idle", "SHELL", "posse peek plugged", "--now"} {
+	for _, want := range []string{"nothing was sent", "plugged", "STALE", "idle", "SHELL", "posse peek plugged"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must name %q:\n%v", want, err)
 		}
+	}
+	// AND NOT `--now` (ranger-base-j687x). This refusal used to end by
+	// offering it, because it skipped the gate and every reading of liveness
+	// there was. The DELIVERY verb takes this same reading now
+	// (refuseAtShellPrompt), so a sentence that named --now here would point
+	// the operator at a door that answers agent_not_ready. The other clause
+	// still offers it; promptstalelabel_qa_test.go pins both halves.
+	if strings.Contains(err.Error(), "send it anyway with --now") {
+		t.Errorf("the stale clause must not offer a door that is shut:\n%v", err)
 	}
 	// The whole point, and the only assertion here that would have caught
 	// ranger-base-3p0: not one keystroke went into that pane.
@@ -363,10 +372,19 @@ var reportedReadingFiles = []string{"herdr.go", "reportedagent.go"}
 // reported arm, the liveness read, and the two predicates every consumer
 // judges a pane with. Named rather than derived because the claim is about
 // THESE functions: they are the ones that may not name a runtime.
+//
+// refuseAtShellPrompt is in the list (ranger-base-j687x) and the screen
+// refusal beside it is not, and that is the difference between them stated as
+// a pin: the liveness refusal is this reading applied in the delivery verb — a
+// pid compared to a pid — so it may no more name a runtime than the reading
+// itself. refuseWithoutComposerPane legitimately names claude's detected
+// label, because the box it locates is claude's idiom (ADR 0076 Amendment 8
+// D3), which is exactly why it cannot be held to this rule.
 var reportedReadingFuncs = []string{
 	"AgentExplain", "reportedDetection", "reportedStateIsWatched",
 	"PaneProcessInfo", "paneShellForeground", "AtShellPrompt",
 	"Seen", "ReportedNotSeen", "ReportedAgent", "AgentInfo",
+	"refuseAtShellPrompt",
 }
 
 // The census ADR 0061 D3 rests on, and the arm that makes "one door" a

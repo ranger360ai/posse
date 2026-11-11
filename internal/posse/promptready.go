@@ -174,9 +174,21 @@ func (b *HerdrBackend) AwaitPromptable(session string, target Seat) (AgentDetect
 		// nil keeps that a property of the evidence instead of a claim this
 		// call site makes about it.
 		looksLike := b.logUnrecognized(session, target, lastGuess, "reported-not-seen: "+why)
+		// THE ESCAPE HATCH IS NOT OFFERED ON THE STALE CLAUSE
+		// (ranger-base-j687x). `--now` skips this gate and used to be the
+		// whole sentence's last remedy — but the DELIVERY verb refuses a
+		// reported pane whose foreground is its own shell on this same
+		// reading now (refuseAtShellPrompt, reportedagent.go), so naming
+		// `--now` here would point at a door that answers agent_not_ready.
+		// The other clause is unchanged: a state nobody watched is a pane
+		// posse cannot judge, which is what --now is for.
+		remedy := "or send it anyway with --now"
+		if lastGuess.ShellForeground {
+			remedy = "and --now will not get past this one — the delivery verb takes the same reading (ADR 0061 D3.2)"
+		}
 		return lastGuess, "", Die("nothing was sent: %s is labelled by something other than herdr's own detection, and %s "+
-			"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",
-			session, why, session, lastGuess.WhatHerdrSaw(b.reportedWhy(session), looksLike))
+			"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), %s.%s",
+			session, why, session, remedy, lastGuess.WhatHerdrSaw(b.reportedWhy(session), looksLike))
 	}
 	reason := lastGuess.FallbackReason
 	if reason == "" {

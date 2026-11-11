@@ -547,7 +547,12 @@ func main() {
 		// '/Work' slash command of ranger-base-3p0. Dispatch has waited for
 		// a SEEN screen since rangerhq-3hb5; this is the same gate on the
 		// hand path (promptready.go). --now is the operator saying they
-		// mean this pane as it is.
+		// mean this pane as it is — a statement about posse's DETECTION
+		// of the pane, and never a licence for the keystroke itself, so
+		// the delivery verb's own refusals stand behind it either way: a
+		// claude block with no composer on its screen (ADR 0076 Amendment
+		// 7 D7) and a reported pane whose foreground is its own shell
+		// (ADR 0061 D3.2, ranger-base-j687x).
 		if !now {
 			_, note, err := hb.AwaitPromptable(name, target)
 			if err != nil {
@@ -2982,7 +2987,11 @@ dispatch (beads):
                                  for herdr to recognize the screen, so a prompt
                                  into a CLI still starting up is refused rather
                                  than typed at whatever holds the keyboard
-                                 (ranger-base-3p0) — --now skips that gate
+                                 (ranger-base-3p0) — --now skips that gate, but
+                                 not the delivery verb's own refusals: a pane
+                                 holding a dialog and a reported pane that went
+                                 back to its shell are still refused, because
+                                 neither is a statement about detection
   posse wait <name> [--until <state>]...   wait for idle|done|blocked
   posse peek <name> [<lines>]    read the session's terminal tail
   posse ready [--dir <repo>] [--as <persona>]

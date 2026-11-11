@@ -5,7 +5,10 @@ ranger-base-qa73t (from ranger-base-8eqaa) · amends ADR 0013 §1's launch
 row (its detection refusal, ranger-base-i3q6g) and ADR 0060 D1's "cannot
 dispatch" · sits under ADR 0017 §3 (declare the dimension, never key on
 the name) and ADR 0013 §2 (delivery) · measurements in Claims, recipe
-inline*
+inline · amended 2026-11-11 (ranger-base-j687x): D3.2's liveness reading
+runs in the DELIVERY verb too — the gate is not the only way to the
+keystrokes, and three live callers reach the typed route without it, see
+"Amendment" below*
 
 ## Context
 
@@ -363,3 +366,92 @@ ranger-base-enmu2 (the i3q6g launch refusal this record carves an arm
 into) are open and unbuilt. The beads cut from this record depend on those
 landings; `git log --grep <id>` on main is the record, this sentence is a
 snapshot.*
+
+## Amendment: the liveness reading runs in the DELIVERY verb too, not only inside the gate (ranger-base-j687x, 2026-11-11)
+
+D3.2 said the liveness half "runs inside the reading, so it runs before
+every keystroke the promptable gate admits". Both halves of that are
+true and the sentence is still incomplete: **the gate is not the only
+way to the keystrokes.** TRACED 2026-11-11, three live callers reach
+`Herdr.AgentPrompt` — and therefore 8eqaa's typed route — with no
+liveness reading in front of them:
+
+- **`posse prompt --now`** (`cmd/posse/main.go`). The gate is skipped by
+  name, and until this amendment the gate's own reported refusal offered
+  it as the way past itself.
+- **`landThePlane`** (`internal/posse/relaunch.go`). Gateless on
+  purpose, and its note says why: `AgentTarget` just resolved a live
+  PANE. A live pane is not a live CLI, which is this whole record's
+  title.
+- **the runtime probe** (`internal/posse/runtimeprobe.go`). Gates on
+  `agent wait --until idle|done|blocked`, which a stale `idle` label
+  settles instantly — herdr answers the reported state (Claims).
+
+**D5. The delivery verb takes the same reading before either keystroke.**
+`refuseAtShellPrompt` (`internal/posse/reportedagent.go`) asks
+`paneShellForeground` and refuses with `agent_not_ready`, so nothing is
+typed and ADR 0084 D1's `isNotDelivered` hands a dispatch claim back.
+This is ADR 0076 Amendment 7 D7's argument one layer over: that
+amendment put the modal refusal in the delivery verb rather than the
+gate because `--now` is the operator saying they mean this pane as it
+IS — a statement about posse's DETECTION of the pane, and never a
+licence to press whatever Enter a dialog has highlighted. A shell that
+runs every line of a work prompt is the same class of unreviewed action,
+and it is ranger-base-3p0's original failure with the cause one layer
+over.
+
+**D6. No scope clause and no second look**, which is where this differs
+from the screen refusal it sits beside (ADR 0076 Amendment 8 D3, D5).
+The screen reading asks `agent explain` whose chrome the screen is drawn
+with, because the box it locates is claude's idiom; this one is herdr's
+own process table — a pid compared to a pid, no argv matched and no
+runtime named (ADR 0017 §3) — so it answers for a stranded Bob exactly
+as for a stranded claude, and a LIVE CLI of any kind has its own pid in
+the foreground and is never refused. And a foreground process group
+cannot be caught mid-redraw the way a screen can, so one sample is the
+whole reading: one `process-info` per prompt, MEASURED 0.00s (Claims).
+Every concession is unchanged and is taken where it already lived — a
+`process-info` that cannot be TAKEN, an empty foreground and a missing
+`shell_pid` are all UNKNOWN inside `paneShellForeground`/`AtShellPrompt`,
+and UNKNOWN refuses nothing.
+
+**D7. The gate stops offering `--now` on the stale clause.** Same
+refusal, same remedies, minus the one that no longer works: the
+delivery verb now answers `agent_not_ready` for that pane, so naming
+`--now` there would point the operator at a door that is shut. The other
+clause of `ReportedNotSeen` — a state nobody watched (D3.1) — keeps it,
+because that is a pane posse cannot judge, which is exactly what `--now`
+is for.
+
+### Consequences
+
+- D4's upstream asks are unchanged and so is their priority: after
+  either (a) or (b) lands, this refusal is a redundant read that costs
+  0.00s and stays.
+- The cost is one `process-info` per typed prompt on a reported pane, on
+  top of the one per read the gate already pays. A refusal costs nothing
+  further — it is answered before the scope `agent explain` and the
+  `pane read` the screen refusal spends, which is also why the operator
+  gets the right diagnosis: a pane at a shell has no CLI on it, so the
+  screen refusal would concede it and say nothing.
+- D3.2's claim about reach is corrected rather than widened. Nothing
+  about the reading changed; what changed is that a second surface takes
+  it. `reportedReadingFuncs` (the census arm in
+  `internal/posse/reportedreading_qa_test.go`) now names
+  `refuseAtShellPrompt`, so it is held to "names no runtime" with the
+  rest of the reading — the screen refusal beside it is deliberately not
+  in that list, because it legitimately names claude's detected label.
+- Pins: `internal/posse/promptstalelabel_qa_test.go` (the refusal, the
+  concessions, the scope difference, the order, and both halves of D7).
+
+### Verification (the closer's observables)
+
+6. A reported pane whose every foreground pid is its own `shell_pid`,
+   with a watched state on it, refuses a typed prompt before either
+   keystroke, with `agent_not_ready`, through `HerdrMux.Prompt`; the
+   same pane with a CLI in its foreground is typed into. A
+   `process-info` that errors, an empty foreground and a missing
+   `shell_pid` are all typed into. The stale refusal costs no `agent
+   explain <pane> --json` and no `pane read`.
+7. The gate's stale-label refusal does not offer `--now`; its
+   `unknown`-state refusal still does.
