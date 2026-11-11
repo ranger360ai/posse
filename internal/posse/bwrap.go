@@ -248,9 +248,9 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 	// own (D17, and Alternatives rejected): --unshare-pid (a seat kills its
 	// own pids and `go run ./cmd/checkorphans` reads the box's process
 	// table), --unshare-net (egress is the container tier's), --proc,
-	// --tmpfs /tmp (the multiplexer socket and the shared TMPDIR paths live
-	// there), --new-session (setsid would detach the TUI from its
-	// controlling terminal).
+	// --new-session (setsid would detach the TUI from its controlling
+	// terminal). The host's /tmp IS replaced, by a bind of the seat's own
+	// directory rather than a tmpfs (1c below, ranger-base-7wdb7).
 	argv := []string{
 		"--die-with-parent",
 		"--ro-bind", "/", "/",
@@ -299,6 +299,52 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-ludpp)", h)
 		}
 		argv = append(argv, "--tmpfs", h)
+	}
+
+	// 1c. The seat's own /tmp (ranger-base-7wdb7). The host's /tmp is the
+	// one directory every walled seat and every uncaged process on the box
+	// write to, at one uid: an uncaged `go build` compiles and links there,
+	// node keeps its compile cache there, and the X11 and ICE sockets live
+	// there. So the render binds the seat's private directory OVER it, and
+	// the host's /tmp is in no seat's view — not as a write grant and not as
+	// a read either.
+	//
+	// A BIND, NOT A TMPFS: a seat's temp files outlive nothing on a tmpfs,
+	// and the operator reading a dead seat's `posse-test-signal.log` needs
+	// them on the host. The directory lives under the seat's cache dir, so
+	// the worktree remove that takes the cache takes this too.
+	//
+	// It joins `hidden` for the rest of the render, so the rule that already
+	// holds for the runtime dir holds here: a write grant UNDER /tmp is a
+	// named host directory and still mounts on top (shallowest first), and a
+	// deny or Keep under /tmp that no grant re-opened renders nothing,
+	// because a bind from the host is exactly what this mount exists to keep
+	// out. A grant of /tmp ITSELF is what this replaces, so it is dropped
+	// from the grants below rather than rendered over it.
+	//
+	// A source that itself lies under the host's /tmp (a test home) is still
+	// private: bwrap opens the source before it mounts, so the seat sees
+	// that one directory and nothing beside it.
+	if carve.Tmp != "" {
+		exists, dir, err := bwrapStat(carve.Tmp)
+		if err != nil {
+			return nil, nil, bwrapStatRefusal("private tmp", carve.Tmp, err)
+		}
+		switch {
+		case exists && !dir:
+			return nil, nil, Die("bwrap cannot bind %s over %s: it is not a directory (ranger-base-7wdb7)", carve.Tmp, bwrapTmpMount)
+		case !exists:
+			prep = append(prep, PrepStep{PrepMkdirAll, carve.Tmp, "the seat's private /tmp, bound over the host's so no seat writes where uncaged builds stage what they execute"})
+		}
+		argv = append(argv, "--bind", carve.Tmp, bwrapTmpMount)
+		hidden = append(hidden, bwrapTmpMount)
+		kept := writable[:0:0]
+		for _, w := range writable {
+			if absResolve(w) != bwrapTmpMount {
+				kept = append(kept, w)
+			}
+		}
+		writable = kept
 	}
 
 	// 2. Shape 1: the write grants, shallowest first so a nested grant's
@@ -1478,6 +1524,13 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 		return bwrapRendered{}, err
 	}
 	r.Set, r.Keep = BwrapWritable(ag, writable, cwd)
+	// The seat's own /tmp (ranger-base-7wdb7): the host dir BwrapArgs binds
+	// over /tmp, and the grants it replaces out of the set, so the report
+	// prints the wall the argv builds.
+	home, _ := os.UserHomeDir()
+	if r.Carve.Tmp = bwrapSeatTmp(home, cwd); r.Carve.Tmp != "" {
+		r.Set = bwrapDropTmpGrants(r.Set, os.Getenv("TMPDIR"))
+	}
 	// D23, after D20's substitution and before the render: what is left of
 	// the set is what posse will bind, and a no-create grant that is not
 	// there has been taken out of it, so BwrapArgs can ask the launcher for
@@ -1492,9 +1545,13 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// granted, and the env that points the tools at it, in one render so the
 	// two cannot name different dirs. Set inside the namespace, so it holds
 	// for every process the wall runs and for nothing outside it.
-	home, _ := os.UserHomeDir()
 	for _, v := range seatCacheEnv(SeatCacheDir(home, cwd)) {
 		r.Argv = append(r.Argv, "--setenv", v.Key, v.Value)
+	}
+	// A launcher TMPDIR is a host path, and the seat's temp dir is now its
+	// own /tmp: one value for every seat, whatever the launcher carried.
+	if r.Carve.Tmp != "" {
+		r.Argv = append(r.Argv, "--setenv", "TMPDIR", bwrapTmpMount)
 	}
 	return r, nil
 }

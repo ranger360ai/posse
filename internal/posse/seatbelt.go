@@ -331,6 +331,11 @@ type SeatbeltCarveOut struct {
 	// seatbelt profile never sees it; the darwin side of the same question
 	// is its own bead.
 	Hide []string
+	// Tmp is the host directory bwrap binds over /tmp, so a seat writes its
+	// own temp files and never the host's shared /tmp (SeatTmpDir,
+	// ranger-base-7wdb7). bwrap-only like Hide, filled by bwrapRender; ""
+	// leaves /tmp as the write set says. The darwin side is its own bead.
+	Tmp string
 }
 
 // Seeded reports whether a file-shaped Deny entry is one the launcher may

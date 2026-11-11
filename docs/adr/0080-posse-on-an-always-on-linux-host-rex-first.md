@@ -1599,3 +1599,69 @@ dir with listening sockets and a FIFO, and it carries a control arm that
 reaches them without `Hide`.
 
 **Beads.** ranger-base-ludpp (this), from ranger-base-x9f3s (the finding).
+
+## Amendment: the bwrap wall gives each seat its own /tmp (ranger-base-7wdb7, 2026-11-11)
+
+**Context.** D17's write set granted the host's `/tmp` to every seat, and
+D17's Alternatives rejected `--tmpfs /tmp` because a seat needed the
+multiplexer socket and the shared TMPDIR paths there. `/tmp` is also where
+uncaged processes at the same uid stage content they then run. An uncaged
+`go build` compiles and links in `/tmp/go-build<N>`, and node keeps its
+compile cache in `/tmp/node-compile-cache`. A seat that can write `/tmp` can
+reach those. This is the same class as ranger-base-olr0g's shared caches,
+over a different directory. Since ludpp, the multiplexer's socket is in the
+user runtime dir, which the wall hides. MEASURED on the D1 host for this
+bead: no socket under `/tmp` is one a seat needs. The ones there are X11,
+ICE and a browser's, and a seat should not reach any of them.
+
+**Decision.**
+1. **Each seat gets its own directory bound over `/tmp`**:
+   `<SeatCacheDir>/tmp` (`SeatTmpDir`), rendered after the hides and before
+   the grants. The host's `/tmp` is then not in the seat's view at all,
+   neither to write nor to read. It is a bind, not a tmpfs, so a dead
+   seat's temp files, including `posse-test-signal.log`, stay on the host
+   for the operator to read. It sits under the seat cache dir, so the
+   worktree remove that takes the cache takes it too.
+2. **The grant of `/tmp` itself is dropped**, and so is a launcher `TMPDIR`
+   under `/tmp` (`bwrapDropTmpGrants`). A host path under `/tmp`, bound back
+   over the seat's `/tmp`, would be the shared directory again. The seat
+   gets `TMPDIR=/tmp` instead, which is its own. A PID `writable:` extra
+   under `/tmp` is a named directory and is still bound.
+3. **`/tmp` joins the hidden list for the rest of the render.** A deny or
+   Keep under `/tmp` that no grant re-opened renders nothing, the same as
+   inside the runtime dir.
+4. **It stands down when the home or the session dir is under `/tmp`**
+   (`bwrapSeatTmp`). A private `/tmp` would hide the seat's own tree, and a
+   home under `/tmp` is in the shared directory already. No production
+   launch has that shape. This package's wall fixtures do, so every
+   existing pin renders the wall it did before, and the new pins pass the
+   mount directly.
+
+`--tmpfs /tmp` stays rejected, for the reason in point 1. The multiplexer
+half of that rejection no longer holds on this host.
+
+**Measured.** 2026-11-11, D1 host, bubblewrap 0.13.1, Linux 7.2.15.
+- The live pin puts a file in the host's `/tmp`, shaped like a build's WORK
+  object. Under the new wall the seat sees it absent and cannot overwrite
+  it. The seat's own write to `/tmp` lands in its own dir and not on the
+  host. The control arm grants `/tmp` as before, and there the same probe
+  reads the plant and overwrites it.
+- `bwrapRender` was run once end to end with HOME and the session dir
+  outside `/tmp` and the launcher's `TMPDIR` under it. The argv binds the
+  seat dir at `/tmp` and sets `TMPDIR=/tmp`. The set holds nothing under
+  `/tmp`. Inside, `/tmp` starts empty and is writable, and the host's
+  `/tmp/claude-<uid>` is not there.
+- A user namespace does not reach the host's `/tmp` through
+  `/proc/<host pid>/root` or `/cwd` either: both are refused (EACCES), so
+  the mount cannot be walked around through `/proc`.
+
+The pins are in `internal/posse/bwraptmp_qa_test.go`.
+
+**Residuals, stated rather than closed.**
+- **Darwin.** The seatbelt profile still grants `/private/tmp`. Closing
+  that needs the darwin box, and it is its own bead.
+- **Uncaged processes still share `/tmp` with each other.** This amendment
+  takes walled seats out of it. It does not change where the operator's
+  own builds stage their work.
+
+**Beads.** ranger-base-7wdb7 (this), from ranger-base-olr0g.

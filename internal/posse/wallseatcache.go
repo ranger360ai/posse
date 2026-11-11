@@ -67,6 +67,56 @@ func SeatCacheDir(home, cwd string) string {
 	return filepath.Join(home, seatCacheRootRel, filepath.Base(real)+"-"+hex.EncodeToString(sum[:])[:12])
 }
 
+// bwrapTmpMount is the directory the bwrap wall replaces with the seat's own
+// (ranger-base-7wdb7). Linux only, where /tmp is not a symlink.
+const bwrapTmpMount = "/tmp"
+
+// SeatTmpDir is the host directory a walled session sees as /tmp: `tmp` under
+// its SeatCacheDir, so it is granted to that session alone, and removed with
+// the cache when the worktree goes. "" wherever SeatCacheDir is "".
+func SeatTmpDir(home, cwd string) string {
+	d := SeatCacheDir(home, cwd)
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "tmp")
+}
+
+// bwrapSeatTmp is SeatTmpDir as the bwrap render uses it: "" — the host's
+// /tmp, as before — when the home or the session dir is itself under /tmp.
+// A private /tmp over those would hide the seat's own tree and leave it
+// nothing to chdir into, and a home under /tmp is in the shared directory
+// already, so there is no seat on such a box for this mount to protect. No
+// production launch is that shape (homes and worktrees live under the home);
+// the fixtures of this package's own wall tests are.
+func bwrapSeatTmp(home, cwd string) string {
+	if home == "" || cwd == "" || underDir(bwrapTmpMount, home) || underDir(bwrapTmpMount, cwd) {
+		return ""
+	}
+	return SeatTmpDir(home, cwd)
+}
+
+// bwrapDropTmpGrants takes out of a bwrap write set what the private /tmp
+// replaces: /tmp itself, and a TMPDIR that lies under it. The launcher's
+// TMPDIR is granted as a host path (SeatbeltWritable), and a host path under
+// /tmp bound back on top of the seat's /tmp is the shared directory again —
+// so the seat gets TMPDIR=/tmp instead (bwrapRender), which is its own.
+// A grant under /tmp that is NOT the TMPDIR is a named directory (a PID's
+// `writable:` extra) and stays.
+func bwrapDropTmpGrants(set []string, tmpdir string) []string {
+	drop := map[string]bool{bwrapTmpMount: true}
+	if tmpdir != "" && underDir(bwrapTmpMount, tmpdir) {
+		drop[absResolve(tmpdir)] = true
+	}
+	var out []string
+	for _, p := range set {
+		if !drop[absResolve(p)] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // seatCacheEnv is what points a seat's tools at its own cache, in the order
 // the wall renders it. GOCACHE and npm_config_cache are the two the bead
 // named and the two a seat on this box was measured writing; the rest of
