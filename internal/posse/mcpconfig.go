@@ -63,10 +63,7 @@ func (a *App) mcpWriteSet(mech string, ag *AgentFile, rt *Runtime, cwd string) (
 		}
 		return r.Set, nil, r.Carve.Deny, append(append([]string{}, r.Keep...), r.Carve.Keep...), nil
 	}
-	var stateDirs []string
-	if rt != nil {
-		stateDirs = rt.StateDirs
-	}
+	stateDirs := SeatbeltStateDirs(rt)
 	writable = a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
 	return writable, SeatbeltSiblings(stateDirs, carve), carve.Deny, carve.Keep, nil

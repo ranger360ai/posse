@@ -299,9 +299,11 @@ func TestBwrapStateDirsStillReadsAsAClaudeSeatToTheCredentialWall(t *testing.T) 
 // darwin profile too, putting ranger-base-cypy1's lost config write back on
 // every seatbelt seat on this box with no line anywhere saying so.
 //
-// So: the declaration still carries the file, SeatbeltSiblings still grants
-// its scratch namespace, and BwrapStateDirs is the only thing that knows
-// otherwise.
+// So: the declaration still carries the file, and SeatbeltSiblings still
+// grants its scratch namespace when handed it. Since ADR 0090 D2 the darwin
+// render does drop the file when CLAUDE_CONFIG_DIR is typed — but at the
+// mechanism (SeatbeltStateDirs), pinned in seatbeltclaudeconfigdir_qa_test.go,
+// never in the declaration this pin guards.
 func TestD19LeavesTheDarwinSeatbeltRenderAlone(t *testing.T) {
 	home := bwsHome(t, absResolve(t.TempDir()))
 	rt := bwsClaude(t)

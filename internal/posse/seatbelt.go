@@ -837,6 +837,58 @@ func homeCacheGrants(goos string) []string {
 	return []string{".cache/posse", ".config/go/telemetry/local"}
 }
 
+// SeatbeltStateDirs is rt.StateDirs as the sandbox-exec mechanism grants
+// them: BwrapStateDirs' rule (ADR 0080 D19) at this mechanism, which is ADR
+// 0090 D2. Every seatbelt render reads its state dirs from here — the
+// profile, the report, the reach probe and the MCP-file refusal — so no two
+// of them can disagree about whether the home config file is writable.
+//
+// Only claude's list is reshaped, and only when CLAUDE_CONFIG_DIR is in
+// force, because that is exactly when the line types it (RuntimeHomePin) and
+// so exactly when the seat's config file is not `$HOME/.claude.json`. Unset,
+// the seat writes the home file and the declaration stands (ranger-base-cypy1).
+// Unlike bwrap, an unset variable is not a refusal: sandbox-exec can grant a
+// file plus its sibling namespace, which bwrap cannot (probe B8).
+func SeatbeltStateDirs(rt *Runtime) []string {
+	if rt == nil {
+		return nil
+	}
+	if rt.Name != "claude" {
+		return rt.StateDirs
+	}
+	// $HOME for the reason BwrapStateDirs gives: the dropped entry must
+	// resolve against the same home ExpandTilde resolves the kept ones.
+	home := os.Getenv("HOME")
+	dir, inForce := runtimeHomeOverride(ClaudeConfigDirVar)
+	return seatbeltClaudeStateDirs(rt.StateDirs, dir, inForce, home)
+}
+
+// seatbeltClaudeStateDirs is that answer with the environment already read,
+// so a pin can drive every arm from any host.
+//
+// One narrowing beyond D2's letter: a config dir that IS $HOME puts the
+// seat's file at `$HOME/.claude.json` again, so the entry stays — dropping
+// it there would put ranger-base-cypy1's lost write back. The declared list
+// is otherwise copied verbatim, order intact (an overlaid `state_dir:` keeps
+// its shape, ADR 0021 D1).
+func seatbeltClaudeStateDirs(declared []string, dir string, inForce bool, home string) []string {
+	if !inForce || home == "" || dir == "" {
+		return declared
+	}
+	homeFile := absResolve(filepath.Join(home, claudeConfigFileName))
+	if homeFile == "" || absResolve(filepath.Join(dir, claudeConfigFileName)) == homeFile {
+		return declared
+	}
+	out := make([]string, 0, len(declared))
+	for _, d := range declared {
+		if absResolve(ExpandTilde(d)) == homeFile {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
 // SeatbeltSiblings names the grants whose atomic-write SIBLINGS a caged
 // session must be able to create, and is the whole of ranger-base-cypy1.
 //
@@ -889,15 +941,17 @@ func homeCacheGrants(goos string) []string {
 //     open is a wall with a note beside it. Dropped instead, which is the
 //     tier's own fail-closed direction.
 //
-// The rejected alternative, recorded because it is the obvious one: point
-// the caged launch at `CLAUDE_CONFIG_DIR=$HOME/.claude`, where the config
-// would sit inside an already-granted DIRECTORY and every sibling name the
-// CLI ever invents is covered for free. It is refused because it MOVES the
-// operator's file: an uncaged `claude` reads `~/.claude.json` and a caged
-// one would read another, so MCP servers, history and projects[] diverge
-// between the operator's own sessions and the fleet's, and posse's own
-// trust seeding writes the first path (trust.go). A grant is the change
-// that leaves the operator's config where the operator put it.
+// WHEN THE LINE TYPES CLAUDE_CONFIG_DIR, `~/.claude.json` IS NOT HERE AT ALL
+// (ADR 0090 D2). This comment used to reject `CLAUDE_CONFIG_DIR=$HOME/.claude`
+// because it "moves the operator's file". That was overtaken: ADR 0077 D1
+// types the variable onto every claude line where it is in force
+// (RuntimeHomePin), so such a seat already writes `$CLAUDE_CONFIG_DIR/
+// .claude.json`, inside the granted config tree, and never the home file. The
+// home file and its siblings are then a grant with no writer behind it — and
+// the file the operator's own uncaged claude reads its MCP servers from.
+// SeatbeltStateDirs drops the declared entry before it reaches this function,
+// so both the `(subpath …)` and the sibling regex go. With the variable NOT
+// in force the seat does write the home file, and everything above holds.
 func SeatbeltSiblings(stateDirs []string, carve SeatbeltCarveOut) []string {
 	var out []string
 	for _, d := range stateDirs {

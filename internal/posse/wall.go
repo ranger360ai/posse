@@ -251,11 +251,9 @@ func (a *App) RenderWall(ag *AgentFile, rt *Runtime, cwd string) (WallRender, er
 func (a *App) renderWallOn(mech string, ag *AgentFile, rt *Runtime, cwd string) (WallRender, error) {
 	switch m := mech; m {
 	case WallSandboxExec:
-		var stateDirs []string
-		if rt != nil {
-			stateDirs = rt.StateDirs
-		}
-		prof, err := a.RenderSeatbelt(ag, cwd, stateDirs...)
+		// SeatbeltStateDirs and not rt.StateDirs: with CLAUDE_CONFIG_DIR on
+		// the line the home config file is no seat's to write (ADR 0090 D2).
+		prof, err := a.RenderSeatbelt(ag, cwd, SeatbeltStateDirs(rt)...)
 		if err != nil {
 			return WallRender{}, err
 		}
@@ -310,11 +308,7 @@ func (a *App) WallReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer) 
 	if WallMechanism() == WallBwrap {
 		return a.BwrapReport(ag, rt, cwd, out)
 	}
-	var stateDirs []string
-	if rt != nil {
-		stateDirs = rt.StateDirs
-	}
-	return a.SeatbeltReport(ag, cwd, out, stateDirs...)
+	return a.SeatbeltReport(ag, cwd, out, SeatbeltStateDirs(rt)...)
 }
 
 // wallApplyRefusal is "can THIS PROCESS put up the wall it is about to type",

@@ -52,6 +52,15 @@ file" is stale against ADR 0077 D1 and ranger-base-rwcqg: the variable is
 already typed. The render half can be pinned from any host. The live half
 needs a darwin host.
 
+*As built (ranger-base-ntnst, 2026-11-11).* `SeatbeltStateDirs` in
+`internal/posse/seatbelt.go`, the sandbox-exec twin of `BwrapStateDirs`. Every
+seatbelt reader takes its state dirs from it: the profile and report
+(`wall.go`), the reach probe (`reachability.go`) and D1's MCP-file refusal
+(`mcpconfig.go`). One narrowing beyond the letter: `CLAUDE_CONFIG_DIR=$HOME`
+puts the seat's file back at `$HOME/.claude.json`, so the entry stays there.
+Pinned by `internal/posse/seatbeltclaudeconfigdir_qa_test.go`. The live half
+is not done: no darwin host was available, so it is the verify lane's.
+
 **D3. Codex and grok follow the same rule, decided per CLI by measurement.**
 For each command-bearing key (codex: `mcp_servers`, `notify`; grok: whatever
 its config holds), use a launch override that wins over the file when the CLI

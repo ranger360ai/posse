@@ -166,7 +166,7 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasured(why)}
 			return
 		}
-		prof, err := a.RenderSeatbelt(ag, dir, rt.StateDirs...)
+		prof, err := a.RenderSeatbelt(ag, dir, SeatbeltStateDirs(rt)...)
 		if err != nil {
 			p.unrealized(RecordReachGate, "the seatbelt profile this launch would run under cannot be rendered, so the store of record cannot be judged reachable: "+err.Error())
 			return
