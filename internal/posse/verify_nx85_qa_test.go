@@ -339,7 +339,7 @@ func TestQANoPersonaRelaunchTypesTheModeExactlyOnce(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "bare", Cmd: "claude", Crew: true})
-	if !strings.Contains(calls(t, fake), "claude "+ClaudeFleetFlags) {
+	if !strings.Contains(calls(t, fake), "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags) {
 		t.Fatalf("fixture: create typed no mode:\n%s", calls(t, fake))
 	}
 	if _, err := b.RelaunchAgent("bare", 0); err != nil {
@@ -350,8 +350,11 @@ func TestQANoPersonaRelaunchTypesTheModeExactlyOnce(t *testing.T) {
 		if strings.Contains(line, "claude") && strings.Count(line, "--permission-mode") > 1 {
 			t.Errorf("a re-planned line collected the mode twice: %q", line)
 		}
+		if strings.Contains(line, "claude") && strings.Count(line, ClaudeStrictMCPFlag) > 1 {
+			t.Errorf("a re-planned line collected %s twice (ADR 0090 D1): %q", ClaudeStrictMCPFlag, line)
+		}
 	}
-	if !strings.Contains(log, "claude "+ClaudeFleetFlags) {
+	if !strings.Contains(log, "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags) {
 		t.Errorf("relaunch typed no permission mode:\n%s", log)
 	}
 }

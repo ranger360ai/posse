@@ -250,7 +250,7 @@ func TestNoPersonaLaunchPathsTypeTheMode(t *testing.T) {
 	a := b.App
 
 	mustCreate(t, b, NewSessionOpts{Name: "bare", Cmd: "claude", Crew: true})
-	if log := calls(t, fake); !strings.Contains(log, "claude "+ClaudeFleetFlags) {
+	if log := calls(t, fake); !strings.Contains(log, "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags) {
 		t.Errorf("posse new --cmd typed no permission mode:\n%s", log)
 	}
 
@@ -261,7 +261,7 @@ func TestNoPersonaLaunchPathsTypeTheMode(t *testing.T) {
 	if err := b.LaunchRecipe(io.Discard, "qa-bare"); err != nil {
 		t.Fatalf("recipe: %v", err)
 	}
-	if got := strings.Count(calls(t, fake), "claude "+ClaudeFleetFlags); got != 2 {
+	if got := strings.Count(calls(t, fake), "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags); got != 2 {
 		t.Errorf("a recipe with no agent: typed no permission mode (%d of 2):\n%s", got, calls(t, fake))
 	}
 }
