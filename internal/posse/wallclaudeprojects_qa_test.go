@@ -37,11 +37,11 @@ func cpFixtureIn(t *testing.T, root string) cpFixture {
 	f.main = filepath.Join(root, "home", "src", "repo")
 	wtRoot := filepath.Join(f.home, ".posse", "worktrees")
 	f.a.WorktreeRootDefault = wtRoot
-	tree := filepath.Join(wtRoot, "repo", "dinesh-repo-x1")
+	tree := filepath.Join(wtRoot, "repo", "developer-repo-x1")
 	for _, args := range [][]string{
 		{"init", "-q", "-b", "main", f.main},
 		{"-C", f.main, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "root"},
-		{"-C", f.main, "worktree", "add", "-q", "-b", "posse/dinesh-repo-x1", tree},
+		{"-C", f.main, "worktree", "add", "-q", "-b", "posse/developer-repo-x1", tree},
 	} {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
