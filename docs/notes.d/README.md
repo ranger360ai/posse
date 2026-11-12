@@ -43,6 +43,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-f67jx](ranger-base-f67jx.md) — The wall's own prep is a project-config producer (ranger-base-f67jx) — 2026-11-11
 - [ranger-base-ej47m](ranger-base-ej47m.md) — The land check at the replay site: four judgment calls ADR 0087 left open (ranger-base-ej47m) — 2026-11-11
 - [ranger-base-dfgte](ranger-base-dfgte.md) — ranger-base-dfgte — one resolver for the cage map, and the mapping it declines — 2026-11-11
+- [ranger-base-ddgfr](ranger-base-ddgfr.md) — The landed check's filing: what keys the dedupe, and the row D5's table does not have (ranger-base-ddgfr) — 2026-11-11
 - [ranger-base-d0rnr](ranger-base-d0rnr.md) — claude's own protected config members, carved read-only (ranger-base-d0rnr) — 2026-11-11
 - [ranger-base-ctxeq](ranger-base-ctxeq.md) — ranger-base-ctxeq — witnessing the Edit/Write wall at the launch, and what a negative probe costs to believe — 2026-11-11
 - [ranger-base-b27pn](ranger-base-b27pn.md) — The self-test that filled the inode table, and the trap that was one line (ranger-base-b27pn) — 2026-11-11

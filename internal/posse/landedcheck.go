@@ -328,6 +328,11 @@ type landedChecker struct {
 	a    *App
 	out  io.Writer
 	cage landedCageFn
+	// bd is D5's filer (landedfile.go). A field and not a call to NewBd at
+	// the filing site, so a test drives the fake bd every other filing path
+	// in this package is pinned against, and so one checker spends one
+	// resolution.
+	bd Bd
 
 	mu sync.Mutex
 	// pending is the coalescing set: repo path → the branch that moved.
@@ -353,7 +358,7 @@ type landedChecker struct {
 // serialized `outWriter()`, and the one command path that hands a bare
 // writer schedules after its own last line (LandSessionTrees).
 func newLandedChecker(a *App, out io.Writer) *landedChecker {
-	return &landedChecker{a: a, out: out, cage: boxLandedCage, pending: map[string]string{}}
+	return &landedChecker{a: a, out: out, cage: boxLandedCage, bd: NewBd(), pending: map[string]string{}}
 }
 
 // Schedule says a landing moved `base` in `repo`. It starts the run loop if
@@ -446,7 +451,12 @@ func (c *landedChecker) once(repo, base string) {
 	// happens most: a repo that opted in and has not moved costs one git
 	// config read, and a repo that never opted in pays the same two reads
 	// whichever way round they go.
-	if had, v := landedCheckRecorded(repo); had == tree && v != landUnanswered {
+	//
+	// `had`/`prev` are also D5's other input: the record as it reads BEFORE
+	// this run is the transition's left-hand column, and — when it is green
+	// — the far edge of the window a filed bead names (landedfile.go).
+	had, prev := landedCheckRecorded(repo)
+	if had == tree && prev != landUnanswered {
 		return
 	}
 	if !landedCheckShipped(repo, tree) {
@@ -485,6 +495,10 @@ func (c *landedChecker) once(repo, base string) {
 		// which is the behaviour before any record existed.
 		c.warn("%s judged %s %s and the verdict could not be recorded (%v)", AbbrevHome(repo), abbrevSHA(tip), v, err)
 	}
+	// D5, and AFTER the record for the reason landedfile.go's `file` gives:
+	// of the two orders, this is the one whose failure costs one bead one
+	// landing late instead of two beads for one red stretch.
+	c.file(repo, base, tip, tree, had, prev, v, said)
 }
 
 // judge creates the detached worktree, extracts the judge, and runs it

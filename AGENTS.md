@@ -294,6 +294,11 @@ stall that day, and every one of them a typing habit.
   its pattern — the session-unique spellings above included, `-P $$` among
   them. Keep the pid the launcher printed and `kill` that, or `kill -- -$$`
   for your own process group; `kill`, `kill -0` and `pgrep` still run.
+- **A red `make test` on a fresh `main`: look for the open "main red at"
+  bead before you file your own** (ADR 0088 D5, ranger-base-ddgfr) — the
+  launcher judges main's tree after every landing and files ONE P1 per
+  green-to-red stretch, naming every landing in the window, so the bead you
+  were about to write is probably already there with the window in it.
 - **The full suite: `make test`, never a bare `go test ./...`**
   (ranger-base-uvzjk). Five crew worktrees ran `go test ./...` at the same
   moment on 2026-09-04, on a box with eight cores. `go run
