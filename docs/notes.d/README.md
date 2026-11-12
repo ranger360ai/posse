@@ -19,6 +19,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-w5z7u](ranger-base-w5z7u.md) — The coldexec arms could not fit in the box, and the box has a number (ranger-base-w5z7u) — 2026-11-11
 - [ranger-base-vw1cp](ranger-base-vw1cp.md) — What fills a tmpfs is inodes, and nothing was reading that column (ranger-base-vw1cp) — 2026-11-11
 - [ranger-base-v0nhh](ranger-base-v0nhh.md) — Four closes verified, and the leak the triage blamed the wrong dirs for (ranger-base-v0nhh) — 2026-11-11
+- [ranger-base-u8xk4](ranger-base-u8xk4.md) — The sandbox grant pins did not pass on a bare /tmp — they skipped, 123 of them (ranger-base-u8xk4) — 2026-11-11
 - [ranger-base-u3kft](ranger-base-u3kft.md) — A fence of three over a class of four, and the variable that outranks every member of it (ranger-base-u3kft) — 2026-11-11
 - [ranger-base-tow7x](ranger-base-tow7x.md) — The coldexec register was already clear; what reds `tree-check` now is the box (ranger-base-tow7x) — 2026-11-11
 - [ranger-base-sk13s](ranger-base-sk13s.md) — The L4 git carve-out, withdrawn: three pins the bead did not list, and what the degeneracy looks like (ranger-base-sk13s) — 2026-11-11

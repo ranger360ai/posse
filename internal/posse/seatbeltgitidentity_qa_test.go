@@ -60,20 +60,46 @@ type giShape struct {
 	name string
 	cwd  func(f giFixture) string
 	ag   func(f giFixture) *AgentFile
+	// wallIsOmission is what this shape's rows GRADE, declared rather than
+	// discovered: false means a grant reaches the config and the refusal
+	// the execution table measures is this bead's deny; true means no grant
+	// of this shape reaches it at all, so both arms are refused by the
+	// missing grant and the rows grade the omission wall ADR 0038's Context
+	// names ("only by omission — no deny stands there if a grant ever
+	// widens").
+	//
+	// DECLARED because the alternative is a premise test that discovers
+	// which wall it is standing on and then asserts that same thing — a
+	// pin that cannot fail. With it declared, a grant that widens or
+	// narrows reds THIS pin, by shape name, and the reader is told which
+	// line of which ADR stopped holding (ranger-base-u8xk4).
+	wallIsOmission bool
 }
 
 func giShapes() []giShape {
 	return []giShape{
-		{"main checkout", func(f giFixture) string { return f.repo }, func(f giFixture) *AgentFile { return f.ag }},
-		{"worktree", func(f giFixture) string { return f.tree }, func(f giFixture) *AgentFile { return f.ag }},
-		// A PID that denies file writes is granted `<cwd>/.git` WHOLE
-		// instead of cwd (SeatbeltWritable) — a different route to the same
-		// config file, so it gets its own row.
-		{"deniesFiles", func(f giFixture) string { return f.repo }, func(f giFixture) *AgentFile { return f.denied }},
+		{name: "main checkout", cwd: func(f giFixture) string { return f.repo }, ag: func(f giFixture) *AgentFile { return f.ag }},
+		// ranger-base-m2wf narrowed the COMMON git dir out of a worktree
+		// session's grant, so `<common>/config` is reached by nothing.
+		{name: "worktree", cwd: func(f giFixture) string { return f.tree }, ag: func(f giFixture) *AgentFile { return f.ag }, wallIsOmission: true},
+		// A PID that denies file writes gets NO write grant into any git
+		// dir of its session — ADR 0086 D3 dropped `<cwd>/.git` and the
+		// whole sessionGitGrants set from this arm, which is why this row
+		// grades the omission wall and not the deny. It kept its own row
+		// because the SHAPE is still distinct: cwd is a main checkout, so
+		// `sessionGitConfigFiles` answers with `<repo>/.git/config` and the
+		// deny is spelled for it even though no grant reaches it.
+		//
+		// Until ranger-base-u8xk4 this row was declared a deny row, on the
+		// strength of a `<cwd>/.git` grant D3 had already taken away. It
+		// read green anyway: the fixture lands under /tmp and every
+		// rendered profile grants a blanket `/tmp`, so the premise check
+		// below was satisfied by a literal it is not about.
+		{name: "deniesFiles", cwd: func(f giFixture) string { return f.repo }, ag: func(f giFixture) *AgentFile { return f.denied }, wallIsOmission: true},
 		// cwd's `.beads` redirects into another repo, whose `.git` is
 		// granted whole by beadsGitDirs. That repo's config is the second
 		// file sessionGitConfigFiles names.
-		{"redirect", func(f giFixture) string { return f.work }, func(f giFixture) *AgentFile { return f.ag }},
+		{name: "redirect", cwd: func(f giFixture) string { return f.work }, ag: func(f giFixture) *AgentFile { return f.ag }},
 	}
 }
 
@@ -258,27 +284,26 @@ func TestQAGrantStillReachesTheGitConfigInEveryShape(t *testing.T) {
 		t.Run(s.name, func(t *testing.T) {
 			f := giNewFixture(t)
 			w := f.writable(t, s)
+			set := strings.Join(w, "\n  ")
 			cfg := f.configOf(t, s.cwd(f))
-			if s.name == "worktree" {
-				// The one shape where the grant does NOT reach it:
-				// ranger-base-m2wf narrowed the common dir away, so the
-				// deny stands over a structural wall — which is exactly
-				// what ADR 0038 says it is there for ("only by omission —
-				// no deny stands there if a grant ever widens").
+			if s.wallIsOmission {
 				if sbCovers(w, cfg) {
-					t.Errorf("the narrowed worktree grant reaches %s again — ranger-base-m2wf regressed:\n  %s", cfg, strings.Join(w, "\n  "))
+					t.Errorf("a grant now reaches %s in the %s shape, which giShapes declares an OMISSION-wall shape.\n"+
+						"  the rows for it grade the missing grant, so a grant that covers it moves them back to grading the DENY — set s.wallIsOmission false for this shape once you have checked the deny is what you want measured:\n  %s", cfg, s.name, set)
 				}
-				// Its identity chain IS granted, though, and that is the
-				// half this shape measures.
-				for _, p := range sessionWorktreeIdentityFiles(f.tree) {
-					if !sbCovers(w, p) {
-						t.Errorf("premise gone: %s is in no grant, so denying it measures nothing:\n  %s", p, strings.Join(w, "\n  "))
-					}
-				}
-				return
+			} else if !sbCovers(w, cfg) {
+				t.Errorf("premise gone: %s is in no grant, so denying it measures nothing:\n  %s", cfg, set)
 			}
-			if !sbCovers(w, cfg) {
-				t.Errorf("premise gone: %s is in no grant, so denying it measures nothing:\n  %s", cfg, strings.Join(w, "\n  "))
+			// Its identity chain IS granted in a worktree, and that is the
+			// half that shape measures. Asked of every shape: in the three
+			// others sessionWorktreeIdentityFiles names nothing (there is
+			// no pointer file in a main checkout) and the loop is empty,
+			// which is TestQAMainCheckoutHasNoIdentityChainLiterals' claim
+			// read from here.
+			for _, p := range sessionWorktreeIdentityFiles(s.cwd(f)) {
+				if !sbCovers(w, p) {
+					t.Errorf("premise gone: %s is in no grant, so denying it measures nothing:\n  %s", p, set)
+				}
 			}
 		})
 	}
@@ -402,7 +427,15 @@ func TestQAMainCheckoutHasNoIdentityChainLiterals(t *testing.T) {
 // under one no grant covers the parent of (a worktree's own git dir), so
 // the rename escape is already closed and a new seal entry would be a line
 // an operator has to re-check for nothing.
+//
+// THE NON-VACUITY ARM AT THE BOTTOM is ranger-base-u8xk4's. Two of the four
+// shapes seal NOTHING — in a worktree and under a whole-tree-deny PID no
+// grant covers the parent of anything the carve-out denies, so there is no
+// rename to close — and an equal comparison of two empty lists cannot fail.
+// With sbRoot's premise restored the loop runs on this box for the first
+// time, so what it compares is worth saying out loud.
 func TestQAConfigDenyAddsNoNewRenameSeal(t *testing.T) {
+	sealed := 0
 	for _, s := range giShapes() {
 		t.Run(s.name, func(t *testing.T) {
 			f := giNewFixture(t)
@@ -410,7 +443,13 @@ func TestQAConfigDenyAddsNoNewRenameSeal(t *testing.T) {
 			if strings.Join(before, "\n") != strings.Join(after, "\n") {
 				t.Errorf("the seal changed: was %v, now %v", before, after)
 			}
+			if len(after) > 0 {
+				sealed++
+			}
 		})
+	}
+	if sealed == 0 {
+		t.Errorf("no shape produced a rename seal at all, so every comparison above was two empty lists and could not fail")
 	}
 }
 

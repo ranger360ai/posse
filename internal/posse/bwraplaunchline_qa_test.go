@@ -644,6 +644,39 @@ func TestQAWallReportIsSeatbeltReportOnTheSandboxExecMechanism(t *testing.T) {
 // posse has no business making; for `/private/tmp` it is a mkdir at the
 // filesystem root, which an unprivileged launcher cannot make at all — a
 // refused launch for every seat on the host.
+// The blanket temp grants read directly, both GOOSes from either host, the
+// way homeCacheGrants' arms are read below. It is also the list sbRoot takes
+// away to give its fixtures a root no grant reaches (sbNoBlanketTempGrants,
+// ranger-base-u8xk4), so a member added here is a member that could satisfy
+// every coverage pin in the package — which is the defect that bead was
+// filed for, one spelling over.
+func TestQASeatbeltTempGrantsAreTheThreeBlanketOnes(t *testing.T) {
+	// No t.Parallel: seatbeltTempGrants is a package var since
+	// ranger-base-u8xk4 — sbRoot stubs it for the tests that need a
+	// fixture no blanket grant reaches — and this test READS it. Top-level
+	// parallel tests resume only after every sequential test has run, so a
+	// serial stub cannot overlap a parallel reader; staying sequential is
+	// what keeps that true without anyone having to know it.
+	for _, tc := range []struct {
+		goos, tmpdir string
+		want         []string
+	}{
+		{"darwin", "/var/folders/xx/T", []string{"/var/folders/xx/T", "/private/tmp", "/tmp"}},
+		{"darwin", "", []string{"/private/tmp", "/tmp"}},
+		{"linux", "/var/tmp/seat", []string{"/var/tmp/seat", "/tmp"}},
+		// No `/private` on Linux: the grant renders a `mkdir -p` at the
+		// filesystem root that an unprivileged launcher cannot make, which
+		// is a REFUSED launch for every seat on the host and the whole
+		// reason this is a parameter (ADR 0080 D17's residual).
+		{"linux", "", []string{"/tmp"}},
+	} {
+		got := seatbeltTempGrants(tc.goos, tc.tmpdir)
+		if strings.Join(got, "|") != strings.Join(tc.want, "|") {
+			t.Errorf("seatbeltTempGrants(%s, %q) = %v, want %v (order included — a grant set renders in list order into the allow block)", tc.goos, tc.tmpdir, got, tc.want)
+		}
+	}
+}
+
 func TestQASeatbeltWritableTmpGrantIsOneDirectoryOnDarwin(t *testing.T) {
 	t.Parallel()
 	f := bwlFixture(t)

@@ -272,14 +272,44 @@ func TestQARecordReachRidesTheParityPath(t *testing.T) {
 // The seam is the READER (sandboxApplyRefusal) and not the kernel's
 // permission to read, so both arms run on a host that will apply a profile
 // and inside a session that will not.
+//
+// BOTH MECHANISMS' READERS, since ranger-base-u8xk4. ADR 0080 D18 gave
+// applyRecordReach a second arm, and `applyRecordReach` picks between them
+// on WallMechanism() — so stubbing the sandbox-exec reader alone drives the
+// abstention on darwin and NOTHING on a Linux box, where the bwrap arm asks
+// bwrapApplyRefusal and gets the truth. The two pins below then asserted an
+// abstention row against a Detail of "" and red; what had hidden that was
+// sbRoot's old blanket skip, which took them out of the run entirely on the
+// only host that runs them. This is the spelling wallwitness_qa_test.go's
+// wwStubApplyRefusal already uses for the same pair.
 func rchFakeApplyRefusal(t *testing.T, why string) {
 	t.Helper()
-	old := sandboxApplyRefusal
+	sb, bw := sandboxApplyRefusal, bwrapApplyRefusal
 	sandboxApplyRefusal = func() string { return why }
-	t.Cleanup(func() { sandboxApplyRefusal = old })
+	bwrapApplyRefusal = func() string { return why }
+	t.Cleanup(func() { sandboxApplyRefusal, bwrapApplyRefusal = sb, bw })
 }
 
+// rchKernelRefusal is the darwin kernel's own words. It is what the stub
+// above feeds BOTH readers: the rows the pins assert quote the reason back
+// verbatim whichever mechanism produced them (recordReachUnmeasuredOn), so
+// one literal drives both arms and the pin still reads as the measurement
+// it came from.
 const rchKernelRefusal = "sandbox-exec: sandbox_apply: Operation not permitted"
+
+// rchBlockedRender is the render applyRecordReach would do AFTER the
+// abstention it is being asked for, at this host's mechanism. The pins use
+// it as their fixture check: if the render still succeeds, the guard they
+// are about is not the one being exercised (ranger-base-z4vx).
+func rchBlockedRender(t *testing.T, f rchFixture) error {
+	t.Helper()
+	if WallMechanism() == WallBwrap {
+		_, err := f.a.RenderWall(f.ag, f.rt, f.work)
+		return err
+	}
+	_, err := f.a.RenderSeatbelt(f.ag, f.work, SeatbeltStateDirs(f.rt)...)
+	return err
+}
 
 func TestQARecordReachAbstainsWhenThisProcessMayNotApplyAProfile(t *testing.T) {
 	f := rchNew(t)
@@ -309,6 +339,12 @@ func TestQARecordReachAbstainsWhenThisProcessMayNotApplyAProfile(t *testing.T) {
 	}
 	// And the row itself is the same string the function returns, so the
 	// abstention cannot be a denial wearing different prose one layer down.
+	// The sandbox-exec reader, so this half is asked only where there is a
+	// profile to apply — the bwrap arm's own reader is pinned by
+	// wallmechanism_qa_test.go.
+	if !SeatbeltAvailable() {
+		return
+	}
 	if why, un := seatbeltReachRow(f.profile(t), f.targets(t)); why != "" || un != rchKernelRefusal {
 		t.Errorf("seatbeltReachRow: why=%q unmeasured=%q", why, un)
 	}
@@ -334,6 +370,11 @@ func TestQARecordReachAbstainsWhenThisProcessMayNotApplyAProfile(t *testing.T) {
 // not by uncaging anything: the seam is the reader and the filesystem, so this
 // runs identically on a host that will apply a profile and in a session that
 // will not.
+//
+// AT EITHER MECHANISM: the guard ADR 0080 D18 gave the bwrap arm sits ahead
+// of RenderWall for the same reason and with one reason of its own (the prep
+// bwrap needs WRITES), so the order is the claim on both hosts and
+// rchBlockedRender asks the render this host would really do.
 func TestQARecordReachAbstainsBeforeItRendersTheProfile(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes through a 0500 directory; this fixture cannot block the render")
@@ -341,7 +382,7 @@ func TestQARecordReachAbstainsBeforeItRendersTheProfile(t *testing.T) {
 	f := rchNew(t)
 	rchFakeApplyRefusal(t, rchKernelRefusal)
 
-	// Take the write away from where RenderSeatbelt must land the .sb.
+	// Take the write away from where the render must land its artifact.
 	gates := filepath.Dir(f.a.GatesDir(f.ag.Name))
 	if err := os.MkdirAll(gates, 0o755); err != nil {
 		t.Fatal(err)
@@ -353,8 +394,8 @@ func TestQARecordReachAbstainsBeforeItRendersTheProfile(t *testing.T) {
 
 	// The fixture is the experiment: if the render still succeeds, everything
 	// below is green for the wrong reason (ranger-base-z4vx).
-	if _, err := f.a.RenderSeatbelt(f.ag, f.work, f.rt.StateDirs...); err == nil {
-		t.Fatalf("fixture did not block the render — this pin would measure nothing")
+	if err := rchBlockedRender(t, f); err == nil {
+		t.Fatalf("fixture did not block the %s render — this pin would measure nothing", WallMechanism())
 	}
 
 	p := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work)

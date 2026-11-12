@@ -16,32 +16,118 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 // sbRoot is where every fixture in this file lives, and the reason it is a
 // helper rather than a t.TempDir() call is a failure these tests had on
-// their first run: the profile carries three unconditional temp grants
-// (TMPDIR, /tmp, /private/tmp), and a fixture home under any of them is
-// writable for a reason that has nothing to do with what is being tested.
-// The real home is ~/.config/posse and the real constitution repo is
-// ~/src/…, neither under a temp root, so the honest fixture is one outside
-// them too: TMPDIR is pointed at a SIBLING of the root, which holds none of
-// it. Filtering the blanket grants out of the set afterwards would have
-// been the same thing said less carefully.
+// their first run: the profile carries three BLANKET temp grants (TMPDIR,
+// /tmp, /private/tmp — seatbeltTempGrants), and a fixture home under any of
+// them is writable for a reason that has nothing to do with what is being
+// tested. The real home is ~/.config/posse and the real constitution repo
+// is ~/src/…, neither under a temp root, so the honest fixture is one
+// outside them too: TMPDIR is pointed at a SIBLING of the root, which holds
+// none of it.
+//
+// WHICH IS ONLY HALF THE PREMISE, AND THE HALF THE ENVIRONMENT CAN REFUSE
+// (ranger-base-u8xk4). The root comes from t.TempDir(), so where TMPDIR is
+// itself under /tmp — unset, which is this box and the CI leg, or set to
+// /tmp by hand — the root lands under /tmp and the blanket `/tmp` grant
+// covers it after all. This helper used to answer that with `t.Skip`, and
+// the cost of the skip was the whole class it guards: MEASURED 2026-11-11
+// on this box (linux 7.2.15 x86_64, go1.27.3, TMPDIR unset), **123 tests
+// and subtests skipped on that line** — 53 in arm 1, 22 in arm 2, 48 in
+// arm 3, across the 14 QA files that call sbRoot. Every sandbox grant pin
+// in internal/posse, measuring nothing, in silence, on the only box that
+// runs them.
+//
+// So where the box cannot offer a root outside those grants, the GRANTS
+// move instead: sbNoBlanketTempGrants stubs production's own
+// seatbeltTempGrants to nil for the test, and every fixture below then
+// measures the profile a launch outside a temp root would have had. It is
+// the same premise reached the other way round, and it needs nothing of the
+// box. On a host where the placement works — darwin, whose TMPDIR is under
+// /var/folders — the stub is not installed and the grants are the real
+// ones, because that premise is stronger and it is the one a kernel reads.
 func sbRoot(t *testing.T) string {
 	t.Helper()
 	before := os.Getenv("HOME")
 	wtqaHome(t) // HOME elsewhere too — .claude, .cache and friends
 	sbAssertHomeIsAFixture(t, before)
 	tmp := gitTempDir(t)  // what TMPDIR will name
-	root := gitTempDir(t) // a sibling of it: granted by nothing
-	if underDir("/tmp", root) {
-		t.Skip("TMPDIR resolves under /tmp; the profile's blanket temp grant would cover the fixture")
-	}
+	root := gitTempDir(t) // a sibling of it: granted by nothing it names
 	t.Setenv("TMPDIR", tmp)
+	sbNoBlanketTempGrants(t, root)
 	return root
+}
+
+// sbNoBlanketTempGrants takes the profile's blanket temp grants away for the
+// duration of this test, and ONLY when the fixture root is inside one of
+// them — which is the case sbRoot's placement cannot answer. The reason is
+// in seatbeltTempGrants' own comment; this is where the lever is pulled.
+//
+// A package var written under a t.Cleanup, so it needs the test to be
+// sequential. It is: sbRoot calls t.Setenv, which makes `t.Parallel` a
+// panic in every test downstream of it, so no two of them can be in here at
+// once and no parallel test overlaps a sequential one at the top level.
+//
+// It fires on this box and on ci.yml's ubuntu legs; it does not fire on
+// darwin, where TMPDIR is under /var/folders and the placement holds. The
+// one host it changes a RENDERED profile for is a darwin box whose operator
+// exported TMPDIR=/tmp — which, before this, was a host where every
+// execution pin here graded a wall the blanket grant had already opened.
+func sbNoBlanketTempGrants(t *testing.T, root string) {
+	t.Helper()
+	blanket := seatbeltTempGrants(runtime.GOOS, "")
+	covered := false
+	for _, g := range blanket {
+		if underDir(absResolve(g), absResolve(root)) {
+			covered = true
+		}
+	}
+	if !covered {
+		return
+	}
+	old := seatbeltTempGrants
+	seatbeltTempGrants = func(string, string) []string { return nil }
+	t.Cleanup(func() { seatbeltTempGrants = old })
+}
+
+// TestQASbRootHandsOutARootNoGrantReaches is sbRoot's contract as a test:
+// however the premise was arranged — the fixture placed outside the blanket
+// grants, or the grants taken away — a path under the root it returns is
+// reached by nothing in a rendered writable set. Every grant pin downstream
+// asks "does the grant under test reach my fixture", and that question has
+// an answer only while this holds (ranger-base-u8xk4).
+func TestQASbRootHandsOutARootNoGrantReaches(t *testing.T) {
+	root := sbRoot(t)
+	if tmp := os.Getenv("TMPDIR"); tmp == "" {
+		t.Fatal("sbRoot left TMPDIR unset — every fixture it hands out then lands wherever the box's temp root is, which is the premise this helper exists to take away from the box")
+	} else if absResolve(tmp) == absResolve(root) || underDir(absResolve(tmp), absResolve(root)) {
+		t.Fatalf("sbRoot pointed TMPDIR (%s) at or above the root it returned (%s) — the root is then granted by the profile's own TMPDIR entry and no omission wall under it can be measured", tmp, root)
+	}
+	a := NewAppAt(sbMkdir(t, filepath.Join(root, "posse-home")))
+	ag := &AgentFile{Name: "developer", MemoryDir: sbMkdir(t, filepath.Join(root, "memory"))}
+	w := a.SeatbeltWritable(ag, sbMkdir(t, filepath.Join(root, "work")), a.GatesDir("developer"))
+	if sbCovers(w, filepath.Join(root, "nothing-grants-this")) {
+		t.Errorf("a grant reaches the fixture root %s — the hermetic premise is gone and every grant pin below sbRoot is vacuous:\n  %s", root, strings.Join(w, "\n  "))
+	}
+	// And which of the two arrangements answered, said out loud, so a
+	// reader of a failure above knows which one to go and look at. On a
+	// host that grants a directory the root is inside, the stub must have
+	// fired and the set must carry no blanket grant at all; on a host whose
+	// TMPDIR is elsewhere the grants are real and the placement is what
+	// holds.
+	for _, g := range seatbeltTempGrants(runtime.GOOS, "") {
+		if !underDir(absResolve(g), absResolve(root)) {
+			continue
+		}
+		if containsString(w, absResolve(g)) {
+			t.Errorf("the rendered set still carries the blanket temp grant %s while the fixture root (%s) is inside it — sbNoBlanketTempGrants did not fire:\n  %s", g, root, strings.Join(w, "\n  "))
+		}
+	}
 }
 
 // sbAssertHomeIsAFixture is the line that makes the one above load-bearing
@@ -88,6 +174,12 @@ func sbAssertHomeIsAFixture(t *testing.T, before string) {
 
 // sbCovers reports whether a writable set reaches p — the question the
 // sandbox asks, not string equality: a grant of the parent covers it.
+//
+// The raw set, deliberately: what keeps a fixture from being reached by a
+// grant it is not about is sbRoot's premise and not a filter here
+// (ranger-base-u8xk4), so this stays the question the kernel would ask and
+// every pin that renders a profile for a real kernel is asking the same one
+// the set pins are.
 func sbCovers(w []string, p string) bool {
 	for _, g := range w {
 		if underDir(g, p) {
@@ -138,6 +230,12 @@ func TestQAConstitutionAreaIsInNoWritableSet(t *testing.T) {
 	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
 	w := a.SeatbeltWritable(ag, sbMkdir(t, filepath.Join(root, "work")), a.GatesDir("developer"))
 
+	// Production's own detector over the rendered set. It answers "which of
+	// my constitution paths does this set reach", so it is only a question
+	// about this launch's grants while the fixture is outside the blanket
+	// temp ones — which is sbRoot's premise, and which this box could not
+	// supply until ranger-base-u8xk4 arranged it. Under a blanket `/tmp`
+	// this named all eight promoted members for every fixture.
 	if bad := a.ConstitutionGrants(w); len(bad) > 0 {
 		t.Errorf("the writable set reaches the constitution %v:\n  %s", bad, strings.Join(w, "\n  "))
 	}
@@ -151,11 +249,28 @@ func TestQAConstitutionAreaIsInNoWritableSet(t *testing.T) {
 	}
 }
 
-// The other half of the same set: the paths under the home a session MUST
-// keep. `state/` is what the legacy hardcoded grant was reaching for and
-// getting wrong — it named ~/.config/rhq/state literally, so a fleet on the
-// §2 home rendered a profile with no state grant at all, and a second
-// RHQ_HOME got a grant into the first one's state instead (rangerhq-qfzr).
+// The other half of the same set: the one path under posse's state dir a
+// session MUST keep, and the rest of that dir which it must NOT. `state/`
+// is what the legacy hardcoded grant was reaching for and getting wrong —
+// it named ~/.config/rhq/state literally, so a fleet on the §2 home
+// rendered a profile with no state grant at all, and a second RHQ_HOME got
+// a grant into the first one's state instead (rangerhq-qfzr).
+//
+// THE GRANT IS THE GATES DIR AND NOT THE STATE DIR, since ranger-base-6akzw
+// (the fix half of the security lane's finding ranger-base-y438o). That dir
+// holds what the LAUNCHER and the dispatcher write and later run or trust
+// outside every wall — spilled launch lines a pane sources, session records
+// carrying a seat's `cage:`, rendered skills trees, backups, the
+// dispatcher's pid and lock files, work prompts — so a seat that could
+// write them could plant something an uncaged process runs next.
+// SeatbeltWritable's own comment is the long form; the census behind it
+// found no seat writer at all.
+//
+// This pin asserted the OPPOSITE until ranger-base-u8xk4 — `a.StateDir` and
+// `state/skills` writable, which is y438o's finding stated as a
+// requirement — and read green through the narrowing, because its fixture
+// home is under /tmp and every rendered profile grants a blanket `/tmp`.
+// The security claim 6akzw landed had no pin in this file either way.
 func TestQAStateStaysWritableAndIsDerivedFromTheHome(t *testing.T) {
 	root := sbRoot(t)
 	a := NewAppAt(filepath.Join(root, "home"))
@@ -165,20 +280,31 @@ func TestQAStateStaysWritableAndIsDerivedFromTheHome(t *testing.T) {
 	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(a.PersonasDir(), "developer")}
 	w := a.SeatbeltWritable(ag, cwd, gates)
 
-	for _, p := range []string{a.StateDir, gates, filepath.Join(a.StateDir, "skills")} {
+	// What a seat writes: its own gates dir, which carries its two audit
+	// logs (SeatbeltCarveOut's Keep re-allows those by literal).
+	for _, p := range []string{gates, filepath.Join(gates, "refusals.log"), filepath.Join(gates, "shell.log")} {
 		if !sbCovers(w, p) {
 			t.Errorf("a session cannot write %s:\n  %s", p, strings.Join(w, "\n  "))
 		}
 	}
+	// What the launcher and the dispatcher write and something uncaged runs
+	// or trusts later (ranger-base-6akzw, ADR 0015 §3).
+	for _, p := range []string{a.StateDir, filepath.Join(a.StateDir, "skills"), filepath.Join(a.StateDir, "launch"), filepath.Join(a.StateDir, "herdr")} {
+		if sbCovers(w, p) {
+			t.Errorf("a session can write %s — ranger-base-6akzw took that grant away because an uncaged process runs or trusts what is there:\n  %s", p, strings.Join(w, "\n  "))
+		}
+	}
 	// Derived, not spelled: a second home in the same process gets its own
 	// grant and not the first's — the property a literal path cannot have.
+	// Asked of the gates dir, which is the grant that survived.
 	other := NewAppAt(filepath.Join(root, "home2"))
-	wo := other.SeatbeltWritable(ag, cwd, other.GatesDir("developer"))
-	if sbCovers(wo, a.StateDir) {
-		t.Errorf("a profile rendered for %s grants %s's state:\n  %s", other.Home, a.Home, strings.Join(wo, "\n  "))
+	otherGates := other.GatesDir("developer")
+	wo := other.SeatbeltWritable(ag, cwd, otherGates)
+	if sbCovers(wo, gates) {
+		t.Errorf("a profile rendered for %s grants %s's gates dir:\n  %s", other.Home, a.Home, strings.Join(wo, "\n  "))
 	}
-	if !sbCovers(wo, other.StateDir) {
-		t.Errorf("a profile rendered for %s does not grant its own state:\n  %s", other.Home, strings.Join(wo, "\n  "))
+	if !sbCovers(wo, otherGates) {
+		t.Errorf("a profile rendered for %s does not grant its own gates dir:\n  %s", other.Home, strings.Join(wo, "\n  "))
 	}
 	// And the retired spelling is gone for good: nothing renders a grant
 	// under the pre-0015 home unless that is where the App is rooted.

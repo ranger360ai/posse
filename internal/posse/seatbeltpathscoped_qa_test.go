@@ -153,6 +153,10 @@ func TestQAOnlySubtreeGlobsReachTheProfile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := psNewFixture(t, tc.front)
 			w, c := f.writable(t), f.carve(t)
+			// The bare-spelling row's claim is that cwd is OUT of the allow
+			// block, and a fixture repo under a blanket temp grant is in it
+			// anyway — so until sbRoot's premise held on this box
+			// (ranger-base-u8xk4) that row could not be read here at all.
 			if got := writeGranted(w, f.repo); got != tc.cwdWritable {
 				t.Errorf("cwd writable=%v, want %v — a path-scoped deny must not move the allow block:\n  %s", got, tc.cwdWritable, strings.Join(w, "\n  "))
 			}

@@ -42,6 +42,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -278,7 +279,28 @@ func TestQACredentialReadDenyRendersTheResolvedSpellingForASymlinkedConfigDir(t 
 // posse session runs. This one has no such gate: it renders the real App's
 // profile and reads the text, so the deny is witnessed on every box the
 // suite runs on and not only on an uncaged one.
+//
+// THE SEAT IT RENDERS FOR IS PER-GOOS, since ranger-base-u8xk4, for the
+// reason the two linux rows of the table above spell out: ADR 0080 D19 made
+// the claude deny an OWNERSHIP question off darwin, so the seat that
+// declares `~/.claude` is spared both spellings there and a profile
+// rendered for it names neither. This pin declared exactly that seat and
+// asserted the deny anyway — green only because sbRoot's old blanket skip
+// took it out of the run on the one host where it is false.
+//
+// So: claude's own declaration on darwin, where the file is a
+// keychain-fallback store denied to every seat including its own; and a
+// codex seat elsewhere, which is the shape that observes the deny MOVING
+// with the variable on a box where claude owns its store. The claim is the
+// same claim in both — the literal follows the variable — and it is now
+// asked of a seat the answer is true for.
 func TestQATheRenderedProfileNamesTheMovedFileForEitherVariable(t *testing.T) {
+	// Mirrors the table above row for row: `claudeState` is the owning
+	// seat, `~/.codex` a seat that owns something else.
+	stateDirs := []string{"~/.codex"}
+	if runtime.GOOS == "darwin" {
+		stateDirs = []string{"~/.claude", "~/.claude.json"}
+	}
 	for _, name := range credentialDirVars {
 		t.Run(name, func(t *testing.T) {
 			root := sbRoot(t) // fixture HOME
@@ -290,9 +312,15 @@ func TestQATheRenderedProfileNamesTheMovedFileForEitherVariable(t *testing.T) {
 			a := NewAppAt(filepath.Join(root, "posse-home"))
 			gates := sbMkdir(t, a.GatesDir("developer"))
 			ag := &AgentFile{Name: "developer", MemoryDir: sbMkdir(t, filepath.Join(root, "memory"))}
-			stateDirs := []string{"~/.claude", "~/.claude.json"}
 			w := a.SeatbeltWritable(ag, work, gates, stateDirs...)
 			prof := SeatbeltProfile("developer", w, nil, a.SeatbeltCarveOut(ag, work, gates, w, stateDirs...))
+			// The premise, so a declaration that stopped naming a
+			// non-claude store could not quietly turn this into the spared
+			// arm again: the seat this profile is for does not own claude's
+			// credential unless it is the darwin exception.
+			if runtime.GOOS != "darwin" && len(credentialReadDenyLiterals(runtime.GOOS, stateDirs)) == 0 {
+				t.Fatalf("the %v seat is spared every credential deny on %s, so this profile has nothing to name", stateDirs, runtime.GOOS)
+			}
 
 			// The moved file, and the home's beside it: a fix that merely
 			// SWAPPED the literal would pass the first check and leave a

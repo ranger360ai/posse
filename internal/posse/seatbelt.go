@@ -792,23 +792,61 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 	for _, d := range stateDirs {
 		add(ExpandTilde(d))
 	}
-	if t := os.Getenv("TMPDIR"); t != "" {
-		add(t)
+	for _, d := range seatbeltTempGrants(runtime.GOOS, os.Getenv("TMPDIR")) {
+		add(d)
 	}
-	// The fourth of D17's residual literals, and the one whose cost is a
-	// REFUSED launch rather than a junk directory: on Linux there is no
-	// `/private`, so the prep this grant renders is a `mkdir -p` at the
-	// filesystem root that an unprivileged launcher cannot make. On darwin
-	// the line is redundant anyway — `add` absResolves, `/tmp` IS
-	// `/private/tmp` there, and dedupeStrings below folds the two — so
-	// guarding it changes that profile not at all, which is what
-	// TestQASeatbeltWritableTmpGrantIsOneDirectoryOnDarwin holds.
-	if runtime.GOOS == "darwin" {
-		add("/private/tmp")
-	}
-	add("/tmp")
 	out = append(out, pidWritableExtras(ag, cwd)...)
 	return dedupeStrings(out)
+}
+
+// seatbeltTempGrants names the BLANKET temp grants every rendered profile
+// carries, for a GOOS and a TMPDIR. Blanket because they are not derived
+// from this launch at all: every seat on the box gets the same three,
+// whatever its PID, its cwd or its persona says.
+//
+// It is a named function rather than four lines inline for the reason
+// homeCacheGrants and seatbeltTierAvailableOn are: a host-shaped decision a
+// pin has to be able to read.
+//
+// AND A VAR, for the reason bwrapResolves, bwrapApplyRefusal, bwrapBin and
+// wallMechanismHost are vars: the arm a pin needs is one the box it runs on
+// will not provide. Every sandbox grant pin in this package builds a
+// hermetic fixture — its own home, its own state dir — and then asks
+// whether the grant under test reaches it. That question has an answer only
+// if the fixture is outside these three grants, and on a box whose TMPDIR
+// is under /tmp (unset, which is the default everywhere, or /tmp by hand)
+// no `t.TempDir()` can be: `/tmp` reaches the fixture whatever the grant
+// under test does, and a pin satisfied by that cannot fail for the reason
+// it exists. MEASURED 2026-11-11: 123 tests and subtests across 14 QA files
+// skipped themselves on that premise rather than answer, which is the
+// defect ranger-base-u8xk4 was filed for. sbRoot stubs this to nil on such
+// a box, so the profile those fixtures measure is the profile a launch
+// outside a temp root would have had.
+//
+// PRODUCTION NEVER WRITES IT, and a write in production would be a seat
+// whose profile is missing the temp grant every tool on the box assumes.
+//
+// ORDER IS THE PROFILE'S ORDER and not an accident: a grant set renders in
+// list order into the allow block, so reordering these rewrites every
+// seat's seatbelt.sb for a change that means nothing.
+//
+// The `/private/tmp` entry is the fourth of ADR 0080 D17's residual
+// literals, and the one whose cost is a REFUSED launch rather than a junk
+// directory: on Linux there is no `/private`, so the prep that grant
+// renders is a `mkdir -p` at the filesystem root that an unprivileged
+// launcher cannot make. On darwin the line is redundant anyway — the
+// caller absResolves, `/tmp` IS `/private/tmp` there, and dedupeStrings
+// folds the two — so guarding it changes that profile not at all, which is
+// what TestQASeatbeltWritableTmpGrantIsOneDirectoryOnDarwin holds.
+var seatbeltTempGrants = func(goos, tmpdir string) []string {
+	var out []string
+	if tmpdir != "" {
+		out = append(out, tmpdir)
+	}
+	if goos == "darwin" {
+		out = append(out, "/private/tmp")
+	}
+	return append(out, "/tmp")
 }
 
 // homeCacheGrants names the generic cache directories under the home that

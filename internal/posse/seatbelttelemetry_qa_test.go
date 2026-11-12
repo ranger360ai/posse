@@ -31,13 +31,53 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 // goTelemetryLocal is the directory the four toolchain binaries write their
-// counter files into, spelled from the same home SeatbeltWritable reads.
+// counter files into, spelled from the same home SeatbeltWritable reads —
+// AND FOR A GOOS, because the toolchain spells it differently on each and
+// the grant is per-GOOS too (homeCacheGrants).
+//
+// It was the darwin spelling unconditionally, which asked a linux box
+// whether its writable set covered `~/Library/Application Support/go/
+// telemetry/local`. The set holds the LINUX row,
+// `.config/go/telemetry/local`, so the honest answer there is no — and the
+// only thing that could answer yes was the blanket `/tmp` grant over a
+// fixture home that happened to sit under /tmp. A darwin arm of a per-GOOS
+// grant, decided by a literal that is not about telemetry at all. Nobody
+// saw it because sbRoot skipped this pin on every box with TMPDIR under
+// /tmp; ranger-base-u8xk4 made it run and this is what it then said.
+//
+// The cross-GOOS claim — that each spelling is the right one for its host,
+// and that neither names the parent — is pinned where the function lives
+// (TestQASeatbeltWritableTmpGrantIsOneDirectoryOnDarwin reads both arms of
+// homeCacheGrants from either host). What is pinned HERE is the claim that
+// needs a rendered set: the grant reaches the counters and stops short of
+// the mode switch, for the host this binary is running on.
+//
+// The literals are typed out rather than taken from homeCacheGrants: a pin
+// that read its expectation out of the code under test would go green on
+// any path that code chose.
 func goTelemetryLocal(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "go", "telemetry", "local")
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(home, "Library", "Application Support", "go", "telemetry", "local")
+	}
+	return filepath.Join(home, ".config", "go", "telemetry", "local")
+}
+
+// goTelemetryUnrelated is a neighbour of the telemetry tree that no grant
+// may reach, per GOOS: the directory the toolchain's own tree sits in, which
+// on darwin is shared with every other app's Application Support state and
+// on Linux with every other tool's XDG config.
+func goTelemetryUnrelated(home string) (parent, sibling string) {
+	if runtime.GOOS == "darwin" {
+		parent = filepath.Join(home, "Library", "Application Support")
+		return parent, filepath.Join(parent, "SomeOtherApp")
+	}
+	parent = filepath.Join(home, ".config")
+	return parent, filepath.Join(parent, "some-other-tool")
 }
 
 // The writable set reaches the counters and stops short of the switch. Pure
@@ -59,18 +99,19 @@ func TestSeatbeltWritableReachesGoTelemetryCountersAndNotTheModeSwitch(t *testin
 
 	local := goTelemetryLocal(home)
 	telDir := filepath.Dir(local)
+	parent, sibling := goTelemetryUnrelated(home)
 	for _, tc := range []struct {
 		what string
 		p    string
 		want bool
 	}{
-		{"a counter file the toolchain writes on every invocation", filepath.Join(local, "go@go1.26.5-darwin-arm64-2026-09-02.v1.count"), true},
+		{"a counter file the toolchain writes on every invocation", filepath.Join(local, "go@go1.26.5-"+runtime.GOOS+"-"+runtime.GOARCH+"-2026-09-02.v1.count"), true},
 		{"the local counter directory itself", local, true},
 		{"the mode file that decides whether counters are UPLOADED", filepath.Join(telDir, "mode"), false},
 		{"the telemetry directory the mode file sits in", telDir, false},
 		{"the upload staging directory", filepath.Join(telDir, "upload"), false},
-		{"an unrelated app's Application Support tree", filepath.Join(home, "Library", "Application Support", "SomeOtherApp"), false},
-		{"Application Support itself", filepath.Join(home, "Library", "Application Support"), false},
+		{"an unrelated tool's tree beside the toolchain's", sibling, false},
+		{"the shared parent the toolchain's tree sits in", parent, false},
 	} {
 		if got := sbCovers(w, absResolve(tc.p)); got != tc.want {
 			t.Errorf("%s\n  %s\n  covered by the writable set: got %v, want %v\n  set: %v", tc.what, tc.p, got, tc.want, w)
