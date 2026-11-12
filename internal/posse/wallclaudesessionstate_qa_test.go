@@ -146,6 +146,22 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 		t.Skip("NOTHING MEASURED: " + why)
 	}
 	f, peerSnap, peerHook := cssFixture(t)
+	// The ranger-base-fswhs members: another seat's .claude.json backup with
+	// a far-future stamp, and a checkpoint in its file-history tree.
+	backups, hist := filepath.Join(f.cfg, "backups"), filepath.Join(f.cfg, "file-history")
+	peerBackup := filepath.Join(backups, ".claude.json.backup.99999999999999")
+	peerHist := filepath.Join(hist, "00000000-0000-4000-8000-00000000peer", "0123456789abcdef@v1")
+	for p, body := range map[string]string{
+		peerBackup: "{\"peer\": \"backup\"}\n",
+		peerHist:   "the peer seat's checkpoint\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +177,7 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	q := shellQuote
 	snaps, envs := filepath.Join(f.cfg, "shell-snapshots"), filepath.Join(f.cfg, "session-env")
 	before := map[string][]byte{}
-	for _, p := range []string{peerSnap, peerHook} {
+	for _, p := range []string{peerSnap, peerHook, peerBackup, peerHist} {
 		b, err := os.ReadFile(p)
 		if err != nil {
 			t.Fatal(err)
@@ -174,6 +190,8 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	for name, script := range map[string]string{
 		"peer snapshot listed": "ls " + q(snaps) + " | grep -q peer",
 		"peer hook env listed": "test -e " + q(filepath.Dir(peerHook)),
+		"peer backup listed":   "ls -a " + q(backups) + " | grep -q 99999999999999",
+		"peer checkpoint seen": "test -e " + q(filepath.Dir(peerHist)),
 	} {
 		if ok, out := try(script); ok {
 			t.Errorf("%s: another seat's session state is visible to this one\n script: %s\n out: %s", name, script, out)
@@ -190,12 +208,16 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 		"snapshots dir moved":    "mv " + q(snaps) + " " + q(snaps+".old") + " && mkdir " + q(snaps) + " && echo PLANT > " + q(peerSnap),
 		"session-env dir moved":  "mv " + q(envs) + " " + q(envs+".old"),
 		"config dir moved":       "mv " + q(f.cfg) + " " + q(f.cfg+".old"),
+		"peer backup replace":    "echo PLANT > " + q(peerBackup),
+		"peer checkpoint append": "mkdir -p " + q(filepath.Dir(peerHist)) + " && echo PLANT >> " + q(peerHist),
+		"backups dir moved":      "mv " + q(backups) + " " + q(backups+".old"),
+		"file-history dir moved": "mv " + q(hist) + " " + q(hist+".old"),
 		"snapshots dir via link": "ln -s " + q(snaps) + " " + q(filepath.Join(f.dir, "s")) + " && echo PLANT >> " + q(filepath.Join(f.dir, "s", filepath.Base(peerSnap))),
 	} {
 		_, out := try(script)
 		for p, b := range before {
 			if got, err := os.ReadFile(p); err != nil || string(got) != string(b) {
-				t.Errorf("%s: the peer's %s changed on the host (%q, %v) — it runs ahead of the peer's next Bash command (ranger-base-5632o)\n script: %s\n out: %s", name, filepath.Base(p), got, err, script, out)
+				t.Errorf("%s: the peer's %s changed on the host (%q, %v) — a snapshot or hook env runs ahead of the peer's next Bash command (ranger-base-5632o); a backup or checkpoint is what the peer restores or rewinds to (ranger-base-fswhs)\n script: %s\n out: %s", name, filepath.Base(p), got, err, script, out)
 				_ = os.WriteFile(p, b, 0o644)
 			}
 		}
@@ -218,6 +240,8 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	for _, step := range []struct{ name, script string }{
 		{"own snapshot write", "echo 'MARK=sourced' > " + q(mine)},
 		{"own snapshot sourced", ". " + q(mine) + " && test \"$MARK\" = sourced"},
+		{"own backup write", "echo '{}' > " + q(filepath.Join(backups, ".claude.json.backup.1"))},
+		{"own checkpoint write", "mkdir -p " + q(filepath.Join(hist, "mine")) + " && : > " + q(filepath.Join(hist, "mine", "0123456789abcdef@v1"))},
 		{"own hook env write", "mkdir -p " + q(filepath.Join(envs, "mine")) + " && : > " + q(filepath.Join(envs, "mine", "sessionstart-hook-0.sh"))},
 		// A sibling member outside both private binds still writes. Not
 		// projects/ any more: that is read-only but for the own key since
@@ -234,5 +258,13 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	}
 	if _, err := os.Stat(mine); err == nil {
 		t.Errorf("the seat's own snapshot landed in the SHARED dir %s", snaps)
+	}
+	for _, rel := range []string{filepath.Join("backups", ".claude.json.backup.1"), filepath.Join("file-history", "mine")} {
+		if _, err := os.Stat(filepath.Join(own, rel)); err != nil {
+			t.Errorf("the seat's own %s is not in its private dir on the host: %v", rel, err)
+		}
+		if _, err := os.Stat(filepath.Join(f.cfg, rel)); err == nil {
+			t.Errorf("the seat's own %s landed in the SHARED config dir", rel)
+		}
 	}
 }

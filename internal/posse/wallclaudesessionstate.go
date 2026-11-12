@@ -38,7 +38,11 @@ import "path/filepath"
 // bwrap only. A seatbelt profile cannot bind, and "deny write except the
 // session's own name" cannot be written ahead of a random session id; the
 // darwin side is its own bead.
-var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots"}
+//
+// Two more members join for ranger-base-fswhs: backups/ and file-history/,
+// which are also one file or one dir per session at one uid. Nothing posse
+// runs reads either one, and a seat's own copies go with its seat cache.
+var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history"}
 
 // claudePrivateSessionStateRel is where those members live under the seat's
 // cache dir.
