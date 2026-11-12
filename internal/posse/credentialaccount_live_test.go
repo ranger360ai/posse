@@ -87,7 +87,7 @@ func TestLiveKeychainReadAnswersUnderTheRuntimesAccount(t *testing.T) {
 		// gone, which is why the sentence now carries both.
 		t.Fatalf("the live read failed: %v\n\nIf this is an item-not-found, open %q in Keychain Access and compare its Account field against the one above: that is the pair ranger-base-tghn5 is about, and a mismatch is this change being wrong rather than the credential being absent.", err, KeychainService)
 	}
-	if tok == "" {
+	if tok.Empty() {
 		t.Fatal("the read succeeded and handed back an empty token — the item answered under this account and holds no credential, which is a login state and not an account mismatch; run `claude` and `/login`, then run this again")
 	}
 	// The KEYCHAIN answered, not the file below it. Without this the pin
@@ -150,7 +150,7 @@ func TestQALiveKeychainReadHandsTheChildTheOperatorHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the stubbed read must answer: %v", err)
 	}
-	if tok != operatorHome {
+	if !sameCredToken(tok, operatorHome) {
 		t.Errorf("the `security` child was handed HOME=%q, want the operator's %q — with the package's temp HOME the real binary answers 44 on a keychain it cannot see, and the pin above can never pass", tok, operatorHome)
 	}
 	// And the temp HOME really is different, or the assert above is vacuous.

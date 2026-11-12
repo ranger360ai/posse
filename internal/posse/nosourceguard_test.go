@@ -214,7 +214,7 @@ func TestCodexAndGrokMeterReadsAreNoSourceAndRenderGuardOff(t *testing.T) {
 	for _, rt := range []string{"codex", "grok"} {
 		t.Run(rt, func(t *testing.T) {
 			tok, _, err := MeterToken(rt)()
-			if tok != "" {
+			if !tok.Empty() {
 				t.Error("a runtime with no meter store must hand back no token")
 			}
 			ns := NoSourceReason(err)

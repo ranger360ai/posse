@@ -137,7 +137,7 @@ const (
 // nothing else needs to.
 type ModelLister struct {
 	URL   string
-	Token func() (string, CredMeta, error)
+	Token func() (CredToken, CredMeta, error)
 	// Fallback is the second credential this lister may present, and it is
 	// the whole of ADR 0039 D3d's "meter store as fallback". Token is the
 	// PREFERENCE — on the App path, the session mint the launch is about to
@@ -149,7 +149,7 @@ type ModelLister struct {
 	// nil is one credential and one attempt: the bare constructor below,
 	// and every lister a test injects a Token into, behave exactly as they
 	// did before D3d.
-	Fallback func() (string, CredMeta, error)
+	Fallback func() (CredToken, CredMeta, error)
 	HTTP     *http.Client
 }
 
@@ -185,7 +185,7 @@ func (r *ModelLister) List() ([]string, error) {
 	// process's environment). Nothing has been asked of the endpoint yet,
 	// so this fallback costs no request.
 	fellBack := false
-	if r.Fallback != nil && (err != nil || tok == "") {
+	if r.Fallback != nil && (err != nil || tok.Empty()) {
 		tok, _, err = r.Fallback()
 		fellBack = true
 	}
@@ -221,7 +221,7 @@ func (r *ModelLister) List() ([]string, error) {
 // List because a refused credential is read again with the other one, and a
 // retry that resumed mid-pagination would join the two halves of two
 // different reads into one answer.
-func (r *ModelLister) read(cl *http.Client, tok string) ([]string, error) {
+func (r *ModelLister) read(cl *http.Client, tok CredToken) ([]string, error) {
 	var ids []string
 	url := r.URL + "?limit=100"
 	// Bounded: the catalog is dozens of entries, so three pages is already
@@ -275,7 +275,7 @@ type modelPage struct {
 	LastID  string `json:"last_id"`
 }
 
-func (r *ModelLister) getPage(cl *http.Client, url, tok string) (modelPage, error) {
+func (r *ModelLister) getPage(cl *http.Client, url string, tok CredToken) (modelPage, error) {
 	var page modelPage
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -286,7 +286,7 @@ func (r *ModelLister) getPage(cl *http.Client, url, tok string) (modelPage, erro
 	}
 	// The same pair the plan guard sends: a Claude Code OAuth token goes on
 	// Authorization: Bearer with the oauth beta header, never on x-api-key.
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Authorization", "Bearer "+tok.Reveal())
 	req.Header.Set("anthropic-beta", planBetaHeader)
 	req.Header.Set("anthropic-version", "2023-06-01")
 	resp, err := cl.Do(req)
@@ -385,11 +385,11 @@ type ModelCache struct {
 // The list is resolved by the CALLER and read HERE, once per catalog read
 // rather than once per launch: names are cheap to carry, and the values are
 // read at the moment of the probe (ADR 0039's rejected alternative q3n4e c).
-func (a *App) sessionCatalogToken(sets []string) func() (string, CredMeta, error) {
-	return func() (string, CredMeta, error) {
+func (a *App) sessionCatalogToken(sets []string) func() (CredToken, CredMeta, error) {
+	return func() (CredToken, CredMeta, error) {
 		rt, err := a.LoadRuntime(modelCatalogRuntime)
 		if err != nil {
-			return "", CredMeta{}, err
+			return CredToken{}, CredMeta{}, err
 		}
 		return a.ReadSessionCredentialFrom(rt, sets)
 	}

@@ -73,8 +73,8 @@ func keychainStub(t *testing.T, script string) string {
 // through the GOOS switch and with its binary named: these tests are about
 // that adapter, and a stub answers on any box — so they run, and mean the
 // same thing, under `make test-linux` (ADR 0019 D2).
-func keychainTokenAt(bin string) func() (string, CredMeta, error) {
-	return func() (string, CredMeta, error) {
+func keychainTokenAt(bin string) func() (CredToken, CredMeta, error) {
+	return func() (CredToken, CredMeta, error) {
 		return readStore(keychainStoreAt(bin))
 	}
 }
@@ -409,7 +409,7 @@ func TestKeychainReadResolvesSecurityAbsolutelyNotThroughPATH(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the named binary must answer, not the shim on PATH: %v", err)
 	}
-	if tok != secret {
+	if !sameCredToken(tok, secret) {
 		t.Errorf("token came from somewhere other than the named binary: %q", tok)
 	}
 }

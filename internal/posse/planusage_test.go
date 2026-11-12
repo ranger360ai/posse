@@ -89,7 +89,7 @@ func (ps *planServer) setWindows(fiveH, sevenD float64) {
 func (ps *planServer) reader() *AnthropicPlanReader {
 	return &AnthropicPlanReader{
 		URL:    ps.URL,
-		Token:  func() (string, CredMeta, error) { return ps.token, CredMeta{}, nil },
+		Token:  func() (CredToken, CredMeta, error) { return newCredToken(ps.token), CredMeta{}, nil },
 		HTTP:   ps.client,
 		Shared: true,
 	}
@@ -121,7 +121,7 @@ func planReaderOf(d *Dispatcher) *AnthropicPlanReader { return d.Plan.(*Anthropi
 // failure has to be pointed there — the fake endpoint is not one. Nothing
 // is dialled either way: PlanReader asks for the token first, so the
 // failure is the credential and not the transport.
-func keychainOnly(r *AnthropicPlanReader, tok func() (string, CredMeta, error)) {
+func keychainOnly(r *AnthropicPlanReader, tok func() (CredToken, CredMeta, error)) {
 	r.URL, r.Token = PlanUsageURL, tok
 }
 
@@ -346,8 +346,8 @@ func TestPlanGuardUnreadableFailsOpen(t *testing.T) {
 			ps.body = `{"five_hour":{"utilization":0.93},"seven_day":{"utilization":0.93}}`
 		}, "not the expected JSON"},
 		{"keychain locked", func(ps *planServer, r *AnthropicPlanReader) {
-			keychainOnly(r, func() (string, CredMeta, error) {
-				return "", CredMeta{}, Die("keychain item %q unreadable", KeychainService)
+			keychainOnly(r, func() (CredToken, CredMeta, error) {
+				return CredToken{}, CredMeta{}, Die("keychain item %q unreadable", KeychainService)
 			})
 		}, "keychain"},
 	} {
@@ -425,9 +425,9 @@ func TestPlanReaderRequest(t *testing.T) {
 	if r.URL != ps.URL {
 		t.Fatalf("RHQ_PLAN_USAGE_URL ignored: %s", r.URL)
 	}
-	r.Token = func() (string, CredMeta, error) {
+	r.Token = func() (CredToken, CredMeta, error) {
 		t.Error("the keychain was read for a caller-named endpoint")
-		return fakeToken, CredMeta{}, nil
+		return newCredToken(fakeToken), CredMeta{}, nil
 	}
 	r.HTTP = ps.client
 

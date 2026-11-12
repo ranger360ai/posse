@@ -174,9 +174,9 @@ func NoSourceReason(err error) *NoSource {
 // with no home has no session store to open, and saying so is the honest
 // form of "cannot tell" now that the store is a directory rather than an
 // environment that every process has.
-func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, error) {
+func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (CredToken, CredMeta, error) {
 	if rt == nil {
-		return "", CredMeta{}, Die("credential read: no runtime named")
+		return CredToken{}, CredMeta{}, Die("credential read: no runtime named")
 	}
 	switch p {
 	case CredSession:
@@ -187,10 +187,10 @@ func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, erro
 	case CredMeter:
 		return readMeterCredential(rt.Name)
 	}
-	return "", CredMeta{}, Die("unknown credential purpose %q", p)
+	return CredToken{}, CredMeta{}, Die("unknown credential purpose %q", p)
 }
 
-// MeterToken adapts the meter half to the `func() (string, CredMeta, error)`
+// MeterToken adapts the meter half to the `func() (CredToken, CredMeta, error)`
 // the two HTTP readers hold in a field (AnthropicPlanReader.Token,
 // ModelLister.Token — fields so tests can inject a fake). It takes the
 // runtime's NAME because that is the whole of what a meter store is chosen
@@ -207,8 +207,8 @@ func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, erro
 // one return of one read rather than a second lookup on purpose: two reads
 // of a rotating credential is how the sentence and the token come to
 // disagree, which is the whole of ADR 0019's Context.
-func MeterToken(rt string) func() (string, CredMeta, error) {
-	return func() (string, CredMeta, error) {
+func MeterToken(rt string) func() (CredToken, CredMeta, error) {
+	return func() (CredToken, CredMeta, error) {
 		return readMeterCredential(rt)
 	}
 }
@@ -237,9 +237,9 @@ func MeterUnavailable(rt string) error {
 // read with the persona-less list, and both land on one reader below.
 //
 // sets are set NAMES in launch order, as LaunchEnvSets computes them.
-func (a *App) ReadSessionCredentialFrom(rt *Runtime, sets []string) (string, CredMeta, error) {
+func (a *App) ReadSessionCredentialFrom(rt *Runtime, sets []string) (CredToken, CredMeta, error) {
 	if rt == nil {
-		return "", CredMeta{}, Die("credential read: no runtime named")
+		return CredToken{}, CredMeta{}, Die("credential read: no runtime named")
 	}
 	return a.readSessionCredential(rt, sets)
 }
@@ -270,10 +270,10 @@ func (a *App) ReadSessionCredentialFrom(rt *Runtime, sets []string) (string, Cre
 // the variable (ADR 0019 V5), matched on the VALUE by sessionExpiry — the
 // same source as before, unchanged. No stamp is the zero time, which is
 // "cannot tell" and warns nothing.
-func (a *App) readSessionCredential(rt *Runtime, sets []string) (string, CredMeta, error) {
+func (a *App) readSessionCredential(rt *Runtime, sets []string) (CredToken, CredMeta, error) {
 	name := CageCredential(rt)
 	if name == "" {
-		return "", CredMeta{}, &NoSource{
+		return CredToken{}, CredMeta{}, &NoSource{
 			Runtime: rt.Name, Purpose: CredSession, GOOS: runtime.GOOS,
 			Store: "the env set variable that would carry it is undecided",
 			Arm:   "codex and grok keep plain auth.json files and rangerhq-kiz left their container shape open; decide it (cage_cred: names one for a template-only runtime)",
@@ -281,9 +281,9 @@ func (a *App) readSessionCredential(rt *Runtime, sets []string) (string, CredMet
 	}
 	v, set := a.lastEnvAssignment(name, sets)
 	if v == "" {
-		return "", CredMeta{}, Die("%s names this runtime's session credential and it is in %s — mint it once with `claude setup-token`, put it in an env set (mode 600, never in the repo), and name that set in the PID's envs:", name, noSetPhrase(sets))
+		return CredToken{}, CredMeta{}, Die("%s names this runtime's session credential and it is in %s — mint it once with `claude setup-token`, put it in an env set (mode 600, never in the repo), and name that set in the PID's envs:", name, noSetPhrase(sets))
 	}
-	return v, CredMeta{Source: "env set " + set + " variable " + name, ExpiresAt: a.sessionExpiry(name, v)}, nil
+	return newCredToken(v), CredMeta{Source: "env set " + set + " variable " + name, ExpiresAt: a.sessionExpiry(name, v)}, nil
 }
 
 // noSetPhrase names the sets that were looked in, because "it is not there"
@@ -424,7 +424,7 @@ type runtimeStore struct {
 	// It is a hook and not a second store field because the fall-through is
 	// a rule about WHICH failures rather than a chain: exit 36 and a gate
 	// refusal must never reach the file, and a chain has no place to say so.
-	Fallthrough func(err error) (string, CredMeta, error)
+	Fallthrough func(err error) (CredToken, CredMeta, error)
 }
 
 func (s runtimeStore) absent() *NoSource {
@@ -617,10 +617,10 @@ func meterStoreAt(rt, goos, bin string) (runtimeStore, *NoSource) {
 
 // readMeterCredential is the meter half of Read: pick the platform's store,
 // then read it.
-func readMeterCredential(rt string) (string, CredMeta, error) {
+func readMeterCredential(rt string) (CredToken, CredMeta, error) {
 	store, ns := meterStore(rt, runtime.GOOS)
 	if ns != nil {
-		return "", CredMeta{}, ns
+		return CredToken{}, CredMeta{}, ns
 	}
 	return readStore(store)
 }
@@ -633,9 +633,9 @@ func readMeterCredential(rt string) (string, CredMeta, error) {
 // wrong-shape tests stub a `security` on PATH and ask this, so `make
 // test-linux` proves the darwin branch too and neither branch is a code path
 // only one OS can reach (ADR 0019 D2).
-func readStore(store runtimeStore) (string, CredMeta, error) {
+func readStore(store runtimeStore) (CredToken, CredMeta, error) {
 	if ns := store.absent(); ns != nil {
-		return "", CredMeta{}, ns
+		return CredToken{}, CredMeta{}, ns
 	}
 	blob, err := store.Read()
 	if err != nil {
@@ -646,11 +646,11 @@ func readStore(store runtimeStore) (string, CredMeta, error) {
 		if store.Fallthrough != nil {
 			return store.Fallthrough(err)
 		}
-		return "", CredMeta{}, store.failRead(err)
+		return CredToken{}, CredMeta{}, store.failRead(err)
 	}
 	tok, meta, err := credentialToken(store.Name, blob)
 	if err != nil {
-		return "", CredMeta{}, store.failShape(err)
+		return CredToken{}, CredMeta{}, store.failShape(err)
 	}
 	return tok, meta, nil
 }
@@ -918,9 +918,9 @@ func keychainStoreAt(bin string) runtimeStore {
 	// 44, and only when it is there. `s` is captured rather than passed in
 	// so the primary this speaks for cannot be a different value from the
 	// one that failed.
-	s.Fallthrough = func(err error) (string, CredMeta, error) {
+	s.Fallthrough = func(err error) (CredToken, CredMeta, error) {
 		if !keychainItemNotFound(err) {
-			return "", CredMeta{}, s.failRead(err)
+			return CredToken{}, CredMeta{}, s.failRead(err)
 		}
 		p, ok := keychainFallbackFile()
 		if !ok {
@@ -932,7 +932,7 @@ func keychainStoreAt(bin string) runtimeStore {
 			// the second cause, which is the whole of V9's first sentence.
 			blind := s
 			blind.Fix = keychainFallbackFix
-			return "", CredMeta{}, blind.failRead(err)
+			return CredToken{}, CredMeta{}, blind.failRead(err)
 		}
 		return readStore(keychainFallbackStore(p))
 	}
@@ -1563,20 +1563,20 @@ func unixMillis(n int64) time.Time {
 // key NAMES it actually found. The values are the credential and never
 // appear; the names are schema, and safeKeys covers the one case where a
 // store of the wrong shape is keyed BY something that is not a name.
-func credentialToken(store string, out []byte) (string, CredMeta, error) {
+func credentialToken(store string, out []byte) (CredToken, CredMeta, error) {
 	var top map[string]json.RawMessage
 	// nil map, no error: that is `null`, which decodes into a map and is
 	// not an object. Anything that is not an object is the same diagnosis.
 	if err := json.Unmarshal(out, &top); err != nil || top == nil {
-		return "", CredMeta{}, Die("%s is not the expected JSON (%s, want a JSON object)", store, jsonKind(out))
+		return CredToken{}, CredMeta{}, Die("%s is not the expected JSON (%s, want a JSON object)", store, jsonKind(out))
 	}
 	for _, s := range credShapes {
 		if t := s.Token(top); t != "" {
-			return t, CredMeta{Source: store, Shape: s.Name, ExpiresAt: s.Expires(top)}, nil
+			return newCredToken(t), CredMeta{Source: store, Shape: s.Name, ExpiresAt: s.Expires(top)}, nil
 		}
 	}
 	lead, detail := shapeFailure(top)
-	return "", CredMeta{}, Die("%s %s (tried %s) — %s", store, lead, credShapeNames(), detail)
+	return CredToken{}, CredMeta{}, Die("%s %s (tried %s) — %s", store, lead, credShapeNames(), detail)
 }
 
 // credLeadUnknown is the opening clause for every fork where the token posse

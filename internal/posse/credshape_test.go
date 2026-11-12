@@ -28,7 +28,7 @@ func TestCredentialTokenReadsTheOAuthEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok != fixtureSecret {
+	if !sameCredToken(tok, fixtureSecret) {
 		t.Errorf("token: %q", tok)
 	}
 	if meta.Shape != "claudeAiOauth.accessToken" {
@@ -340,7 +340,7 @@ func TestANonStringAccessTokenIsNoTokenAndLeaksNothing(t *testing.T) {
 			if err == nil {
 				t.Fatalf("a value posse cannot decode must not pass as a token: %q (shape %q)", tok, meta.Shape)
 			}
-			if tok != "" || meta.Shape != "" {
+			if !tok.Empty() || meta.Shape != "" {
 				t.Errorf("failed read must hand back nothing: tok=%q shape=%q", tok, meta.Shape)
 			}
 			if strings.Contains(err.Error(), fixtureSecret) {
@@ -434,7 +434,7 @@ func TestAccessTokenIsMatchedTheWayTheParserMatchesIt(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the parser folds field names, so this reads: %v", err)
 		}
-		if tok != fixtureSecret || meta.Shape != "claudeAiOauth.accessToken" {
+		if !sameCredToken(tok, fixtureSecret) || meta.Shape != "claudeAiOauth.accessToken" {
 			t.Errorf("tok=%q shape=%q", tok, meta.Shape)
 		}
 	})

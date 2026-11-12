@@ -259,16 +259,16 @@ func TestDarwinCompositeReadsTheFileOnExitFortyFourAndOnNothingElse(t *testing.T
 		// gated builds the stub from posse's own L1 shim instead, which is
 		// the one failure that is not a failure of the store at all.
 		gated bool
-		check func(t *testing.T, tok string, meta CredMeta, err error)
+		check func(t *testing.T, tok CredToken, meta CredMeta, err error)
 	}{{
 		name:   "exit 0: the item answers and the file is never opened, fresher or not",
 		script: "#!/bin/sh\ncat <<'JSON'\n" + keychainBlob + "\nJSON\n",
-		check: func(t *testing.T, tok string, meta CredMeta, err error) {
+		check: func(t *testing.T, tok CredToken, meta CredMeta, err error) {
 			if err != nil {
 				t.Fatalf("a keychain that answered is a credential: %v", err)
 			}
-			if tok != keychainOnlyToken {
-				t.Errorf("token = %q, want the keychain item's — the file was read", redact(tok))
+			if !sameCredToken(tok, keychainOnlyToken) {
+				t.Errorf("token = %q, want the keychain item's — the file was read", tok)
 			}
 			if !strings.Contains(meta.Source, "keychain item") || namesTheFallThrough.MatchString(meta.Source) {
 				t.Errorf("Source = %q, want the keychain item's own name", meta.Source)
@@ -285,12 +285,12 @@ func TestDarwinCompositeReadsTheFileOnExitFortyFourAndOnNothingElse(t *testing.T
 	}, {
 		name:   "exit 44: the item is not there, so the file is the store",
 		script: "#!/bin/sh\nexit 44\n",
-		check: func(t *testing.T, tok string, meta CredMeta, err error) {
+		check: func(t *testing.T, tok CredToken, meta CredMeta, err error) {
 			if err != nil {
 				t.Fatalf("exit 44 with a fallback file beside it is a credential (S3): %v", err)
 			}
-			if tok != fallbackOnlyToken {
-				t.Errorf("token = %q, want the fallback file's", redact(tok))
+			if !sameCredToken(tok, fallbackOnlyToken) {
+				t.Errorf("token = %q, want the fallback file's", tok)
 			}
 			// The Source is the whole point of the fall-through: a 401 on
 			// this token has to name where it came from (V9).
@@ -316,16 +316,16 @@ func TestDarwinCompositeReadsTheFileOnExitFortyFourAndOnNothingElse(t *testing.T
 	}, {
 		name:  "a gate refusal never reaches the file: the item was not reached at all",
 		gated: true,
-		check: func(t *testing.T, tok string, meta CredMeta, err error) {
+		check: func(t *testing.T, tok CredToken, meta CredMeta, err error) {
 			var g *GateRefusal
 			if !errors.As(err, &g) {
-				t.Fatalf("want *GateRefusal, got %T: %v (token %q)", err, err, redact(tok))
+				t.Fatalf("want *GateRefusal, got %T: %v (token %q)", err, err, tok)
 			}
 			if cu := CredUnreadableReason(err); cu != nil {
 				t.Errorf("posse's own gate wearing the store's class: %+v", cu)
 			}
-			if tok != "" {
-				t.Errorf("a refused read yields no token, got %q", redact(tok))
+			if !tok.Empty() {
+				t.Errorf("a refused read yields no token, got %q", tok)
 			}
 		},
 	}} {
@@ -351,11 +351,11 @@ func TestDarwinCompositeReadsTheFileOnExitFortyFourAndOnNothingElse(t *testing.T
 // planted and holds a valid envelope, so an adapter that consulted it would
 // have SUCCEEDED here — the error itself is the witness — and one that
 // consulted it and failed would name it in the sentence.
-func unreadableWithTheACLFix(t *testing.T, tok string, meta CredMeta, err error) {
+func unreadableWithTheACLFix(t *testing.T, tok CredToken, meta CredMeta, err error) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("the file was read for a failure that does not fall through: token %q from %q",
-			redact(tok), meta.Source)
+			tok, meta.Source)
 	}
 	cu := CredUnreadableReason(err)
 	if cu == nil {
@@ -370,22 +370,9 @@ func unreadableWithTheACLFix(t *testing.T, tok string, meta CredMeta, err error)
 	if namesTheFallThrough.MatchString(err.Error()) {
 		t.Errorf("a failure that never reached the file must not name it, in any spelling: %q", err)
 	}
-	if tok != "" {
-		t.Errorf("a failed read yields no token, got %q", redact(tok))
+	if !tok.Empty() {
+		t.Errorf("a failed read yields no token, got %q", tok)
 	}
-}
-
-// redact keeps this file's own failure messages under the rule credential.go
-// keeps: a token is never printed, and a fixture that turns out to hold a
-// real one must not be quoted by the test that caught it.
-func redact(tok string) string {
-	switch tok {
-	case "":
-		return ""
-	case keychainOnlyToken, fallbackOnlyToken, fakeToken:
-		return tok
-	}
-	return fmt.Sprintf("<%d bytes, not one of this test's fixtures>", len(tok))
 }
 
 // ─── V9, first sentence: exit 44 and no file ─────────────────────────────────
@@ -605,8 +592,8 @@ func TestPlanReadThreadsTheFallbackSourceIntoIts401(t *testing.T) {
 	r := &AnthropicPlanReader{
 		URL:  PlanUsageURL,
 		HTTP: usageEndpointAnswering(http.StatusUnauthorized),
-		Token: func() (string, CredMeta, error) {
-			return fakeToken, CredMeta{Source: credentialsFileFallback, Shape: "claudeAiOauth.accessToken"}, nil
+		Token: func() (CredToken, CredMeta, error) {
+			return newCredToken(fakeToken), CredMeta{Source: credentialsFileFallback, Shape: "claudeAiOauth.accessToken"}, nil
 		},
 	}
 	_, err := r.Read()
@@ -636,8 +623,8 @@ func TestBlindSkipOn401FromTheFallbackNamesTheFallbackStore(t *testing.T) {
 	pr := planReaderOf(r.d)
 	pr.URL = PlanUsageURL
 	pr.HTTP = usageEndpointAnswering(http.StatusUnauthorized)
-	pr.Token = func() (string, CredMeta, error) {
-		return fakeToken, CredMeta{Source: credentialsFileFallback}, nil
+	pr.Token = func() (CredToken, CredMeta, error) {
+		return newCredToken(fakeToken), CredMeta{Source: credentialsFileFallback}, nil
 	}
 
 	r.at(12 * time.Minute)

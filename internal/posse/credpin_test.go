@@ -34,11 +34,11 @@ func refusingTransport(t *testing.T) *http.Client {
 
 // refusingToken fails the test if the keychain is read at all: a refused
 // host must cost the credential nothing, not even a read into memory.
-func refusingToken(t *testing.T) func() (string, CredMeta, error) {
+func refusingToken(t *testing.T) func() (CredToken, CredMeta, error) {
 	t.Helper()
-	return func() (string, CredMeta, error) {
+	return func() (CredToken, CredMeta, error) {
 		t.Error("the keychain was read for a host the pin refuses")
-		return fakeToken, CredMeta{}, nil
+		return newCredToken(fakeToken), CredMeta{}, nil
 	}
 }
 
@@ -188,7 +188,7 @@ func TestARedirectedCatalogNeverReachesTheCache(t *testing.T) {
 	rt := newRedirectTransport("listener.example", `{"data":[{"id":"probe-model"}],"has_more":false}`)
 	a.ModelLister = &ModelLister{
 		URL:   "http://127.0.0.1:9/v1/models",
-		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		Token: func() (CredToken, CredMeta, error) { return newCredToken(fakeToken), CredMeta{}, nil },
 		HTTP:  rt.client,
 	}
 
@@ -212,7 +212,7 @@ func TestARedirectedCatalogNeverReachesTheCache(t *testing.T) {
 func TestARedirectedUsageResponseIsRefused(t *testing.T) {
 	t.Parallel()
 	rt := newRedirectTransport("listener.example", `{"five_hour":{"utilization":1}}`)
-	r := &AnthropicPlanReader{URL: "http://127.0.0.1:9/usage", Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil }, HTTP: rt.client}
+	r := &AnthropicPlanReader{URL: "http://127.0.0.1:9/usage", Token: func() (CredToken, CredMeta, error) { return newCredToken(fakeToken), CredMeta{}, nil }, HTTP: rt.client}
 	_, err := r.Read()
 	var pin *PinRefusal
 	if !errors.As(err, &pin) {
@@ -231,7 +231,7 @@ func TestThePinnedClientWillNotFollowARedirectOffTheHost(t *testing.T) {
 	cl := pinnedClient(time.Second, "model list endpoint")
 	cl.Transport = rt.client.Transport
 
-	l := &ModelLister{URL: "http://127.0.0.1:9/v1/models", Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil }, HTTP: cl}
+	l := &ModelLister{URL: "http://127.0.0.1:9/v1/models", Token: func() (CredToken, CredMeta, error) { return newCredToken(fakeToken), CredMeta{}, nil }, HTTP: cl}
 	_, err := l.List()
 	var pin *PinRefusal
 	if !errors.As(err, &pin) {
@@ -292,9 +292,9 @@ func newOverrideRig(t *testing.T, status int, body, retryAfter string) *override
 	if r.Shared {
 		t.Fatal("an override's reading must not be shareable")
 	}
-	r.Token = func() (string, CredMeta, error) {
+	r.Token = func() (CredToken, CredMeta, error) {
 		t.Error("the keychain was read for a listener the caller named")
-		return fakeToken, CredMeta{}, nil
+		return newCredToken(fakeToken), CredMeta{}, nil
 	}
 	rig.cache = &PlanCache{
 		Path:   filepath.Join(rig.dir, "plan-usage.json"),
@@ -522,7 +522,7 @@ func TestTheEndpointMayNotRedirectTheCatalogToThisMachine(t *testing.T) {
 	cl.Transport = rt.client.Transport
 	a.ModelLister = &ModelLister{
 		URL:   ModelListURL, // the compiled-in endpoint, not an override
-		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		Token: func() (CredToken, CredMeta, error) { return newCredToken(fakeToken), CredMeta{}, nil },
 		HTTP:  cl,
 	}
 
@@ -555,7 +555,7 @@ func TestACatalogAnsweredByThisMachineIsNotAnAnswer(t *testing.T) {
 	rt := newRedirectTransport("127.0.0.1:9", `{"data":[{"id":"probe-model"}],"has_more":false}`)
 	a.ModelLister = &ModelLister{
 		URL:   ModelListURL,
-		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		Token: func() (CredToken, CredMeta, error) { return newCredToken(fakeToken), CredMeta{}, nil },
 		HTTP:  rt.client,
 	}
 
@@ -582,7 +582,7 @@ func TestAUsageAnswerFromThisMachineNeverBecomesTheFleetsFact(t *testing.T) {
 	r := &AnthropicPlanReader{
 		URL:    PlanUsageURL,
 		Shared: true, // the compiled-in reader: rule 5 does not stand here
-		Token:  func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		Token:  func() (CredToken, CredMeta, error) { return newCredToken(fakeToken), CredMeta{}, nil },
 		HTTP:   rt.client,
 	}
 	if !r.MayShare() {
@@ -657,7 +657,7 @@ func TestAPathOnlyRedirectOnTheSameHostIsStillFollowed(t *testing.T) {
 
 	l := &ModelLister{
 		URL:   srv.URL + "/v1/models",
-		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		Token: func() (CredToken, CredMeta, error) { return newCredToken(fakeToken), CredMeta{}, nil },
 		HTTP:  pinnedClient(5*time.Second, "model list endpoint"),
 	}
 	ids, err := l.List()

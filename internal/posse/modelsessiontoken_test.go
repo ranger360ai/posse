@@ -111,9 +111,9 @@ func (b *bearerLog) presented() []string {
 
 // fixedToken is a credential source that answers, standing in for the meter
 // store — which this file never reads for real.
-func fixedToken(tok string) func() (string, CredMeta, error) {
-	return func() (string, CredMeta, error) {
-		return tok, CredMeta{Source: "a fake meter store"}, nil
+func fixedToken(tok string) func() (CredToken, CredMeta, error) {
+	return func() (CredToken, CredMeta, error) {
+		return newCredToken(tok), CredMeta{Source: "a fake meter store"}, nil
 	}
 }
 
@@ -380,7 +380,7 @@ func TestServerErrorDoesNotSpendTheSecondCredential(t *testing.T) {
 // compare unequal by reflect.Pointer while reporting the same source
 // position (MEASURED, go1.26.5). Building a credential func reads no store;
 // only calling one does, and nothing here calls the meter half.
-func credSource(f func() (string, CredMeta, error)) string {
+func credSource(f func() (CredToken, CredMeta, error)) string {
 	pc := reflect.ValueOf(f).Pointer()
 	fn := runtime.FuncForPC(pc)
 	if fn == nil {
@@ -425,7 +425,7 @@ func TestModelCacheWiresSessionFirstAndTheMeterStoreBehindIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok != fakeSessionMint {
+	if !sameCredToken(tok, fakeSessionMint) {
 		t.Error("the App path's first credential is not the session mint in this environment")
 	}
 }

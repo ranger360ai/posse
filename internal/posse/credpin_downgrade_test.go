@@ -107,7 +107,7 @@ func TestProbe246xoModelListerHandsTheBearerToPlaintext(t *testing.T) {
 	d := &downgradeTransport{body: `{"data":[{"id":"probe-model"}],"has_more":false}`}
 	cl := pinnedClient(10*time.Second, "model list endpoint")
 	cl.Transport = d
-	l := &ModelLister{URL: ModelListURL, Token: func() (string, CredMeta, error) { return "sk-probe-token-246xo", CredMeta{}, nil }, HTTP: cl}
+	l := &ModelLister{URL: ModelListURL, Token: func() (CredToken, CredMeta, error) { return newCredToken("sk-probe-token-246xo"), CredMeta{}, nil }, HTTP: cl}
 	ids, err := l.List()
 	t.Logf("List ids=%v err=%v plainAsked=%v plainSawAuthorization=%v", ids, err, d.plain, d.auth != "")
 	var pin *PinRefusal
@@ -121,7 +121,7 @@ func TestProbe246xoPlanReaderHandsTheBearerToPlaintext(t *testing.T) {
 	d := &downgradeTransport{body: `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`}
 	cl := pinnedClient(10*time.Second, "usage endpoint")
 	cl.Transport = d
-	r := &AnthropicPlanReader{URL: PlanUsageURL, Token: func() (string, CredMeta, error) { return "sk-probe-token-246xo", CredMeta{}, nil }, HTTP: cl}
+	r := &AnthropicPlanReader{URL: PlanUsageURL, Token: func() (CredToken, CredMeta, error) { return newCredToken("sk-probe-token-246xo"), CredMeta{}, nil }, HTTP: cl}
 	u, err := r.Read()
 	t.Logf("Read usage=%+v err=%v plainAsked=%v plainSawAuthorization=%v", u, err, d.plain, d.auth != "")
 	var pin *PinRefusal

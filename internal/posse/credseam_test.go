@@ -191,7 +191,7 @@ func TestTheMeterStoreReadsTheFileTheRuntimeWouldHaveWritten(t *testing.T) {
 			// reading the wrong one is a wrong value here and not merely a
 			// missing error. Nothing quotes a credential in production, but
 			// these are fixtures and the whole finding is which file spoke.
-			if tok != "moved-token" {
+			if !sameCredToken(tok, "moved-token") {
 				t.Errorf("read %q — the adapter is still reading $HOME/.claude, which is the defect", tok)
 			}
 		})
@@ -335,7 +335,7 @@ func TestTheKeychainReadAsksForTheDerivedItemAndTheSentencesNameIt(t *testing.T)
 	if err != nil {
 		t.Fatalf("the stub must answer: %v", err)
 	}
-	if tok != "derived-name-fixture" {
+	if !sameCredToken(tok, "derived-name-fixture") {
 		t.Fatalf("read %q — the envelope this arm measures is not the one that answered", tok)
 	}
 	argv, rerr := os.ReadFile(argvLog)
@@ -475,7 +475,7 @@ func TestTheKeychainReadAsksAsTheRuntimesAccountAndTheSentencesNameIt(t *testing
 	if err != nil {
 		t.Fatalf("the stub must answer: %v", err)
 	}
-	if tok != "account-fixture" {
+	if !sameCredToken(tok, "account-fixture") {
 		t.Fatalf("read %q — the envelope this arm measures is not the one that answered", tok)
 	}
 	argv, rerr := os.ReadFile(argvLog)
@@ -809,14 +809,14 @@ func TestOneEnvelopeReadsIdenticallyThroughBothStores(t *testing.T) {
 			fstore, _ := meterStore("claude", "linux")
 			ftok, fmeta, ferr := readStore(fstore)
 
-			if ktok != ftok || kmeta.Shape != fmeta.Shape || !kmeta.ExpiresAt.Equal(fmeta.ExpiresAt) {
+			if ktok.Fingerprint() != ftok.Fingerprint() || kmeta.Shape != fmeta.Shape || !kmeta.ExpiresAt.Equal(fmeta.ExpiresAt) {
 				t.Errorf("two stores, one envelope, different answers:\n  keychain %q %+v\n  file     %q %+v", ktok, kmeta, ftok, fmeta)
 			}
 			if (kerr == nil) != (ferr == nil) {
 				t.Fatalf("one path failed and the other did not: %v / %v", kerr, ferr)
 			}
 			if kerr == nil {
-				if ktok != secret || !kmeta.ExpiresAt.Equal(expires) {
+				if !sameCredToken(ktok, secret) || !kmeta.ExpiresAt.Equal(expires) {
 					t.Errorf("the reading itself: %q %+v", ktok, kmeta)
 				}
 				if kmeta.Source != keychainStore().Name || fmeta.Source != fstore.Name {
@@ -970,7 +970,7 @@ func TestSessionCredentialReadsTheEnvSetFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok != mint {
+	if !sameCredToken(tok, mint) {
 		t.Errorf("the seam returns the file's value, never the environment's")
 	}
 	if !strings.Contains(meta.Source, key) || !strings.Contains(meta.Source, "default") {
@@ -990,7 +990,7 @@ func TestSessionCredentialReadsTheEnvSetFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok2 != tok || meta2.Source != meta.Source {
+	if tok2.Fingerprint() != tok.Fingerprint() || meta2.Source != meta.Source {
 		t.Errorf("the two entry points are one reader: %q vs %q", meta2.Source, meta.Source)
 	}
 
@@ -1034,7 +1034,7 @@ func TestSessionCredentialIgnoresTheProcessEnvironment(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a name in no named set is absent, whatever the environment holds")
 	}
-	if tok != "" {
+	if !tok.Empty() {
 		t.Errorf("a failed read returns no value")
 	}
 	if !strings.Contains(err.Error(), "claude setup-token") {
@@ -1061,7 +1061,7 @@ func TestSessionCredentialIgnoresTheProcessEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok != last {
+	if !sameCredToken(tok, last) {
 		t.Errorf("the last set in launch order wins")
 	}
 	if !strings.Contains(meta.Source, "over") {
@@ -1069,7 +1069,7 @@ func TestSessionCredentialIgnoresTheProcessEnvironment(t *testing.T) {
 	}
 	// The order is the LIST's, not the alphabet's or the directory's:
 	// reversed, the other one wins.
-	if tok, _, err := a.ReadSessionCredentialFrom(claude, []string{"over", "base"}); err != nil || tok != first {
+	if tok, _, err := a.ReadSessionCredentialFrom(claude, []string{"over", "base"}); err != nil || !sameCredToken(tok, first) {
 		t.Errorf("reversing the launch list reverses the winner: %v", err)
 	}
 }
@@ -1141,10 +1141,10 @@ func TestSessionCredentialReadsNothingOutsideTheEnvStore(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: an unreadable set is skipped, not fatal: %v", e.arm, err)
 		}
-		if tok == outside {
+		if sameCredToken(tok, outside) {
 			t.Errorf("%s: the seam read a file outside the env store", e.arm)
 		}
-		if tok != inside {
+		if !sameCredToken(tok, inside) {
 			t.Errorf("%s: the control set in the same list must still answer", e.arm)
 		}
 		if !strings.Contains(meta.Source, "control") || strings.Contains(meta.Source, e.set) {
@@ -1162,7 +1162,7 @@ func TestSessionCredentialReadsNothingOutsideTheEnvStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the list still answers from the set that is inside the store: %v", err)
 	}
-	if tok != inside || !strings.Contains(meta.Source, "control") {
+	if !sameCredToken(tok, inside) || !strings.Contains(meta.Source, "control") {
 		t.Errorf("a list of escapes behind a contained set answers from the contained set: %q", meta.Source)
 	}
 

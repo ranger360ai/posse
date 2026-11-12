@@ -1104,7 +1104,24 @@ package treepins
 // earlier reading on this bead, at a load of 7.87 with BOTH slots held, was
 // 46.2s, which is the same band from the other side.
 //
-// and `make tree-check` is all of them — one hundred and thirty-eight pins
+// and TWO more into corpus-check's door, for the sentence every other
+// corpus-check row gives — a census over this repo's own .go and test
+// sources, with a file set the walk discovers (ranger-base-3spp4). A
+// credential token is a type that cannot be printed, and its one door to
+// the bytes, CredToken.Reveal, is called only from a register of non-test
+// sites and from no _test.go at all; the second row holds that Reveal names
+// no other method in the tree, which is what keeps a by-name census precise:
+//
+//	TestCredTokenRevealIsCalledOnlyFromTheRegister
+//	                                              make corpus-check
+//	TestCredTokenRevealIsTheOnlyMethodOfThatName  make corpus-check
+//	                                              (both ranger-base-3spp4)
+//
+// Their control arm (TestCredTokenRevealScannerCatchesEachShape) walks a
+// planted fixture and so is not in this class. 0.8s between the two, run in
+// parallel over one parse each (MEASURED 2026-11-12 on one warm filtered run).
+//
+// and `make tree-check` is all of them — one hundred and forty pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

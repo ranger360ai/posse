@@ -43,8 +43,8 @@ func expiryReader(expires time.Time) *AnthropicPlanReader {
 		URL:  PlanUsageURL,
 		HTTP: usageEndpointAnswering(http.StatusUnauthorized),
 		Now:  authNow,
-		Token: func() (string, CredMeta, error) {
-			return fakeToken, CredMeta{Source: KeychainService, Shape: "claudeAiOauth.accessToken", ExpiresAt: expires}, nil
+		Token: func() (CredToken, CredMeta, error) {
+			return newCredToken(fakeToken), CredMeta{Source: KeychainService, Shape: "claudeAiOauth.accessToken", ExpiresAt: expires}, nil
 		},
 	}
 }

@@ -133,7 +133,7 @@ func TestQAKeychainReadThatNeverRanIsNotAnACLOutage(t *testing.T) {
 			t.Parallel()
 			tok, _, err := readStore(keychainStoreAt(tc.bin))
 			if err == nil {
-				t.Fatalf("no read happened, so there is no token: %q", redact(tok))
+				t.Fatalf("no read happened, so there is no token: %q", tok)
 			}
 			tc.check(t, err)
 			for _, w := range tc.says {
@@ -207,9 +207,9 @@ func TestQAReadThatNeverRanDoesNotFallThroughToTheFile(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tok, _, err := readStore(keychainStoreAt(bin))
 			if err == nil {
-				t.Fatalf("the file was read on a keychain that never answered: %q", redact(tok))
+				t.Fatalf("the file was read on a keychain that never answered: %q", tok)
 			}
-			if tok == fallbackOnlyToken {
+			if sameCredToken(tok, fallbackOnlyToken) {
 				t.Fatalf("the fallback file's token came back from a read that never ran")
 			}
 			var nr *CredReadNotRun
@@ -230,8 +230,8 @@ func TestQAReadThatNeverRanDoesNotFallThroughToTheFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("44 with a file beside it is a credential: %v", err)
 		}
-		if tok != fallbackOnlyToken {
-			t.Errorf("token = %q, want the fallback file's", redact(tok))
+		if !sameCredToken(tok, fallbackOnlyToken) {
+			t.Errorf("token = %q, want the fallback file's", tok)
 		}
 	})
 }

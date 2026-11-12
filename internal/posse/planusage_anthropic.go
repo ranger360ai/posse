@@ -27,8 +27,6 @@ package posse
 // Everything here is fail-open: a monitoring failure never halts the fleet.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -100,7 +98,7 @@ var anthropicPlanAdapter = planAdapter{
 // max(cost-window %, plan-window %) — 25p decides, this only exposes Read.
 type AnthropicPlanReader struct {
 	URL   string
-	Token func() (string, CredMeta, error)
+	Token func() (CredToken, CredMeta, error)
 	HTTP  *http.Client
 	// URLErr is a refused RHQ_PLAN_USAGE_URL (credpin.go), carried here
 	// rather than returned by the constructor: every caller of that wants a
@@ -163,11 +161,10 @@ func (r *AnthropicPlanReader) CredFingerprint() string {
 		return ""
 	}
 	tok, _, err := r.Token()
-	if err != nil || tok == "" {
+	if err != nil || tok.Empty() {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(tok))
-	return hex.EncodeToString(sum[:])
+	return tok.Fingerprint()
 }
 
 func (r *AnthropicPlanReader) now() time.Time {
@@ -222,7 +219,7 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// caller chose (ranger-base-dr6u). The seam keeps working; what it
 	// stops getting is the bearer.
 	credentialed := credentialedURL(r.URL, PlanUsageURL)
-	var tok string
+	var tok CredToken
 	// What the seam knows about the credential it handed back, kept for the
 	// one sentence that needs it: a 401 has to name which of the darwin
 	// composite's two stores the token came out of (ADR 0019 D2 as amended,
@@ -249,7 +246,7 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 		if err := pinnedRequest("usage endpoint", req, PlanUsageHost); err != nil {
 			return nil, err
 		}
-		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Authorization", "Bearer "+tok.Reveal())
 	}
 	req.Header.Set("anthropic-beta", planBetaHeader)
 	cl := r.HTTP

@@ -68,7 +68,7 @@ func TestSessionStampRoundTripsThroughTheSeam(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok != mint {
+	if !sameCredToken(tok, mint) {
 		t.Errorf("the seam returns the value the set the launch names carries")
 	}
 	if got := meta.ExpiresAt.Format(stampDate); got != day(20) {
@@ -125,7 +125,7 @@ func TestSeamWithNoHomeRefusesRatherThanPanicking(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a seam with no home has no session store to read")
 	}
-	if tok != "" {
+	if !tok.Empty() {
 		t.Errorf("a seam with no home returned a value")
 	}
 	if !meta.ExpiresAt.IsZero() {
