@@ -426,6 +426,7 @@ func main() {
 		"TestHarnessRatios":                                          "reads blindT",
 		"TestPlanCache429WithoutRetryAfter":                          "reads blindT",
 		"TestPlanCacheCapsALongRetryAfter":                           "reads blindT",
+		"TestPlanCacheCoalescesConcurrentFetches":                    "reads blindT",
 		"TestPlanCacheCorruptSnapshotRefetches":                      "reads blindT",
 		"TestPlanCacheHonoursRetryAfterAcrossCallers":                "reads blindT",
 		"TestPlanCacheLineRendersNothingOnAFailedRead":               "reads blindT",

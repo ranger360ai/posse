@@ -15,6 +15,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-3spp4](ranger-base-3spp4.md) — A credential token is a type that cannot be printed (ranger-base-3spp4) — 2026-11-12
 - [ranger-base-1c91x](ranger-base-1c91x.md) — A launcher TMPDIR outside /tmp leaves the bwrap write set too (ranger-base-1c91x) — 2026-11-12
 - [ranger-base-zvgql](ranger-base-zvgql.md) — codex's and grok's other executable home members, read-only in a caged seat (ranger-base-zvgql) — 2026-11-11
+- [ranger-base-zs686](ranger-base-zs686.md) — A non-blocking fetch claim coalesces the plan-usage endpoint's same-second duplicates (ranger-base-zs686) — 2026-11-11
 - [ranger-base-zmk4q](ranger-base-zmk4q.md) — codex's and grok's config.toml, read-only in a caged seat (ranger-base-zmk4q) — 2026-11-11
 - [ranger-base-zibko](ranger-base-zibko.md) — The red that was a commit old, and the test that seeds the shared home (ranger-base-zibko) — 2026-11-11
 - [ranger-base-z9aff](ranger-base-z9aff.md) — The door's second ctime decision, and the triage line that is not mine (ranger-base-z9aff) — 2026-11-11

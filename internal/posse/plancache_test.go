@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -82,6 +83,68 @@ func TestPlanCacheOneReadingManyCallers(t *testing.T) {
 	}
 	if got := r.hits(); got != 1 {
 		t.Errorf("four callers inside the TTL must cost one request, got %d", got)
+	}
+}
+
+// gatedReader lets a test hold one caller inside its "network call" long
+// enough for a second caller to arrive at the same stale instant — the
+// shape ranger-base-zs686 measured as 48 same-second duplicate reads on a
+// real box, reproduced here on purpose instead of by timing luck.
+type gatedReader struct {
+	inner   PlanReader
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (g *gatedReader) Read() (PlanUsage, error) {
+	g.once.Do(func() { close(g.started) })
+	<-g.release
+	return g.inner.Read()
+}
+
+func (g *gatedReader) MayShare() bool { return g.inner.MayShare() }
+
+// Two callers whose TTL expired in the same instant must cost the endpoint
+// one request, not two (ranger-base-zs686). The loser waits for the
+// winner's snapshot instead of asking for itself.
+func TestPlanCacheCoalescesConcurrentFetches(t *testing.T) {
+	t.Parallel()
+	r := newCacheRig(t)
+	gated := &gatedReader{inner: r.ps.reader(), started: make(chan struct{}), release: make(chan struct{})}
+
+	winner := r.caller("dispatch")
+	winner.Reader = gated
+	loser := r.caller("cockpit")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var winU, loseU PlanUsage
+	var winErr, loseErr error
+	go func() {
+		defer wg.Done()
+		winU, _, winErr = winner.Read(5 * time.Minute)
+	}()
+	<-gated.started // the winner has claimed the fetch and is "making the request"
+	go func() {
+		defer wg.Done()
+		loseU, _, loseErr = loser.Read(5 * time.Minute)
+	}()
+	time.Sleep(20 * time.Millisecond) // give the loser time to lose the claim and start waiting
+	close(gated.release)
+	wg.Wait()
+
+	if winErr != nil {
+		t.Fatalf("winner: %v", winErr)
+	}
+	if loseErr != nil {
+		t.Fatalf("loser: %v", loseErr)
+	}
+	if winU.Line() != loseU.Line() {
+		t.Errorf("same second, different readings: %+v vs %+v", winU, loseU)
+	}
+	if got := r.hits(); got != 1 {
+		t.Errorf("two callers racing the same stale instant must cost one request, got %d", got)
 	}
 }
 

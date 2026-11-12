@@ -44,15 +44,32 @@ package posse
 //     cadence is the evidence: next time the endpoint 429s for hours, that
 //     file settles whether it was us.
 //
-// No lock. Writers here never mutate shared state, they replace a snapshot
-// with a newer one, and last-writer-wins is the right answer for a
-// snapshot: a success landing after a 429 clears the cooldown, which is
-// exactly what a success means. Taking a flock (ADR 0011 §1) across a
-// ten-second HTTP call would trade a rate problem for a liveness one.
+// No lock on the SNAPSHOT. Writers here never mutate shared state, they
+// replace a snapshot with a newer one, and last-writer-wins is the right
+// answer for a snapshot: a success landing after a 429 clears the cooldown,
+// which is exactly what a success means. A BLOCKING flock (ADR 0011 §1)
+// across the ten-second HTTP call would still trade a rate problem for a
+// liveness one — every other reader on the box queued behind one slow
+// request — which is why the snapshot write stays lock-free.
+//
+// There is a second, narrower lock around the FETCH itself, added for
+// ranger-base-zs686's measured 48 same-second duplicate reads: two callers
+// whose TTL expired in the same instant each deciding, independently, to
+// ask the endpoint. It is non-blocking (LOCK_NB) and bounded, which is the
+// difference from the rejected blocking lock above: the loser never waits
+// on the lock, only on the winner's snapshot, for at most
+// planFetchWaitAttempts*planFetchWaitStep — and a holder that is merely
+// slow, or that crashed mid-fetch (flock release IS process death,
+// launchlock.go), costs the loser nothing worse than making its own
+// request, which is exactly what happened before this bead. The common
+// case — two pollers stale at once — now costs one request instead of two;
+// the worst case costs what it always cost.
 //
 // Fail-quiet, like the rest of the plan guard: an unwritable cache dir —
 // or no HOME to resolve one under — costs the sharing, never the reading,
-// and never a line on a stderr the cockpit does not own.
+// and never a line on a stderr the cockpit does not own. The fetch claim
+// fails the same quiet way: no coordination, every caller asks for itself,
+// exactly the pre-ranger-base-zs686 behaviour.
 
 import (
 	"bufio"
@@ -66,6 +83,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -92,6 +110,17 @@ const (
 	// doubling the endpoint's own number lands on (1h → 2h → 4h → 8h), not
 	// a figure invented next to it.
 	planCooldownCeiling = 8 * time.Hour
+	// planFetchWaitStep and planFetchWaitAttempts bound how long a Read that
+	// lost the fetch claim (claimFetch, below) waits for the winner's
+	// snapshot before giving up and asking the endpoint itself — ~1s worst
+	// case, comfortably under the usage endpoint's own round trip and far
+	// under anything that would make a caller feel it as a hang.
+	planFetchWaitStep     = 50 * time.Millisecond
+	planFetchWaitAttempts = 20
+	// planFetchLockSuffix names the sibling file the fetch claim locks —
+	// never removed, for launchlock.go's reason: unlinking it would let the
+	// next claimant flock a fresh inode while the old one is still held.
+	planFetchLockSuffix = ".lock"
 )
 
 // planEntry is the file: one snapshot, plus whatever cooldown the endpoint
@@ -142,6 +171,13 @@ type PlanCache struct {
 	Caller string
 	Reader PlanReader       // the instance's adapter; nil = there is none
 	Now    func() time.Time // nil = time.Now
+	// Sleep is how a Read that lost the fetch claim waits for the winner,
+	// one planFetchWaitStep at a time; nil = time.Sleep. Only a test
+	// overrides it, same reason Now does — the wait is bounded by a count
+	// of attempts rather than a wall-clock deadline exactly so a fake
+	// Sleep can make it instant without lying about how many times Read
+	// checked.
+	Sleep func(time.Duration)
 	// NoAdapter is why Reader is nil (planusage.go). Carried rather than
 	// returned by the constructor, for PlanReader.URLErr's reason: every
 	// caller wants a cache, and the honest place to say "no reading, and
@@ -316,6 +352,14 @@ func (c *PlanCache) now() time.Time {
 	return time.Now()
 }
 
+func (c *PlanCache) sleep(d time.Duration) {
+	if c.Sleep != nil {
+		c.Sleep(d)
+		return
+	}
+	time.Sleep(d)
+}
+
 // Read returns a reading no older than maxAge, and the time that reading
 // was taken — which is the caller's, not now: a cache hit must not reset
 // anybody's blind clock to the present (dispatch.go planGuard).
@@ -388,6 +432,15 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 		} else {
 			return nil, time.Time{}, &planCooldownErr{Left: e.RetryAt.Sub(now)}
 		}
+	}
+	// One request per stale instant, not one per caller who noticed. A
+	// claim taken here is never held past this function, so losing the
+	// race costs only a bounded wait (awaitFetch) — never the duplicate
+	// request itself, when the winner answers in time.
+	if lf, claimed := c.claimFetch(); claimed {
+		defer c.releaseFetch(lf)
+	} else if e2, ok := c.awaitFetch(maxAge); ok {
+		return e2.Windows, e2.At, nil
 	}
 	u, err := r.Read()
 	var rate planRate
@@ -497,6 +550,65 @@ func (c *PlanCache) share(r PlanReader, e planEntry) {
 		return
 	}
 	c.store(e)
+}
+
+// claimFetch is a best-effort "I am the one asking" marker (ranger-base-zs686):
+// a non-blocking flock on planFetchLockSuffix, taken only for the duration of
+// the network call that follows it in Read. false, nil is the answer for a
+// cache with nowhere to key one (c.Path == ""), for any error making or
+// locking the file, and for a lock another process already holds — every
+// one of those costs this caller the coordination, never a wrong reading,
+// because Read falls back to asking for itself exactly as it always has.
+func (c *PlanCache) claimFetch() (*os.File, bool) {
+	if c.Path == "" {
+		return nil, false
+	}
+	dir := filepath.Dir(c.Path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, false
+	}
+	f, err := os.OpenFile(c.Path+planFetchLockSuffix, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, false
+	}
+	if err := flock(f, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, false
+	}
+	return f, true
+}
+
+// releaseFetch gives back a claim claimFetch took. f nil (no claim was ever
+// taken) is a no-op, the same shape launchlock.go's Release uses.
+func (c *PlanCache) releaseFetch(f *os.File) {
+	if f == nil {
+		return
+	}
+	_ = flock(f, syscall.LOCK_UN)
+	f.Close()
+}
+
+// awaitFetch is what a caller that lost claimFetch does instead of asking
+// the endpoint itself: poll the snapshot, planFetchWaitStep at a time, for a
+// reading fresh enough for maxAge. It gives up after planFetchWaitAttempts
+// — never a wall-clock deadline, so a fake Sleep can make the whole wait
+// instant in a test without changing how many times it actually checked —
+// and a caller that gives up falls through to Read's normal fetch, same as
+// if there had been no contention at all.
+//
+// The freshness check re-reads the clock on every attempt rather than
+// reusing the `now` Read captured before the wait started: real time moves
+// while this sleeps, and an entry the winner stamped a moment ago must not
+// be read as "from the future" against a clock this function is holding
+// still.
+func (c *PlanCache) awaitFetch(maxAge time.Duration) (planEntry, bool) {
+	for i := 0; i < planFetchWaitAttempts; i++ {
+		c.sleep(planFetchWaitStep)
+		if e, have := c.load(); have && planFresh(e, c.now(), maxAge) {
+			return e, true
+		}
+	}
+	return planEntry{}, false
 }
 
 // LastReadAt is when the shared snapshot's reading was TAKEN, and whether
