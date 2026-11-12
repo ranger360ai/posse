@@ -157,27 +157,51 @@ fi
 # sqlite refuses to create the shared-memory file and returns CANTOPEN(14).
 # That state has no writer by definition, so a copy is a faithful snapshot, and
 # reading the copy keeps the promise that this never writes the fleet db.
-RO_TMPS=""
-cleanup_ro() { [ -z "$RO_TMPS" ] || rm -rf $RO_TMPS; }
+#
+# THE PICK HAPPENS IN THIS SHELL, NEVER INSIDE A `$(…)` (ranger-base-m3fl5).
+# Both callers of q below are command substitutions, and that is a subshell: an
+# assignment made there dies with it. So while q picked lazily, pick_reader ran
+# in the subshell, set DB_READ and the scratch path there, and the parent's EXIT
+# trap then read an empty variable and removed nothing — and because DB_READ did
+# not persist either, the NEXT query picked again. MEASURED 2026-11-12 (linux,
+# this box) with the fallback driven by a sqlite3 shim that refuses only the
+# mode=ro URI: ONE copy of a 65M beads db left behind by a dry run of this
+# script, and the re-read below would have made a second. q therefore does not
+# pick; the two unconditional calls do, in the shell that owns the trap.
+RO_TMP=""
+cleanup_ro() {
+	# `${RO_TMP:?}` is both the guard and what makes the rm readable: an empty
+	# expansion would make this `rm -rf --`, and the gate cannot prove it is
+	# non-empty without the `:?` (AGENTS.md, "Shapes that stall the seat").
+	[ -z "$RO_TMP" ] || rm -rf -- "${RO_TMP:?}"
+	RO_TMP=""
+}
 trap cleanup_ro EXIT
 DB_READ=""
+# One snapshot at a time: a re-pick gives the previous copy back before taking
+# another, which is what makes the post-apply re-read below free.
 pick_reader() {
+	cleanup_ro
 	if sqlite3 "file:${DB}?mode=ro" "SELECT 1" >/dev/null 2>&1; then
 		DB_READ="file:${DB}?mode=ro"
 		return
 	fi
 	local tmp
 	tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-prune-relates.XXXXXX") || { echo "$(basename "$0"): mktemp failed" >&2; exit 2; }
-	RO_TMPS="$RO_TMPS $tmp"
+	RO_TMP=$tmp
 	cp "$DB" "$tmp/beads.db"
 	[ -f "$DB-wal" ] && cp "$DB-wal" "$tmp/beads.db-wal"
 	DB_READ="$tmp/beads.db"
 }
 
 q() {
-	[ -n "$DB_READ" ] || pick_reader
+	# Never picks. An unpicked DB_READ is a bug in the caller, not a reason to
+	# pick here, so say so instead of handing sqlite3 the empty string.
+	[ -n "$DB_READ" ] || { echo "$(basename "$0"): internal: q ran before pick_reader" >&2; exit 2; }
 	sqlite3 "$DB_READ" "$1"
 }
+
+pick_reader
 
 # One row per symmetric pair, ordered so the output is stable.
 PAIRS_SQL="
@@ -245,8 +269,10 @@ if [ "$APPLY" != 1 ]; then
 	exit 0
 fi
 
-# bd has written since the first read; re-decide how to read.
-DB_READ=""
+# bd has written since the first read; re-decide how to read. Here and not
+# inside the `$(…)` below, for ranger-base-m3fl5's reason: a pick made in that
+# subshell neither replaces the first snapshot nor survives to be given back.
+pick_reader
 left=$(q "$PAIRS_SQL")
 if [ -n "$left" ]; then
 	echo "prune-bd-relates-to: pairs remain after --apply:" >&2
