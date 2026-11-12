@@ -100,6 +100,12 @@
 #                                                is 2x the longest -timeout
 #                                                anything here carries (60m,
 #                                                the coldexec-check arms).
+#                                                ranger-base-i78k9 moved the
+#                                                last nine of those shell
+#                                                roots in here from the
+#                                                `mktemp` class below, where
+#                                                the same leak waited 24h
+#                                                for no reason but its name.
 #   go-build        go-build[0-9]*       120m    Go's $WORK. A RUNNING test
 #                                                binary's /proc/<pid>/exe
 #                                                names it, so this one the
@@ -308,7 +314,7 @@ die2() { echo "$self: $*" >&2; exit 2; }
 # regardless of who else is on the box right now.
 self_test() {
   local tmp fails=0
-  tmp=$(mktemp -d) || { echo "$self --self-test: mktemp failed" >&2; exit 2; }
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-reap-selftest.XXXXXX") || { echo "$self --self-test: mktemp failed" >&2; exit 2; }
   selftest_tmp=$tmp
   SELFTEST_PIDS=()
   trap 'kill "${SELFTEST_PIDS[@]}" 2>/dev/null || true; rm -rf -- "${selftest_tmp:?}"' EXIT
@@ -478,7 +484,7 @@ self_test() {
   # fixtures.
   generic_rig() {  # generic_rig <class-name> <glob-prefix, without the *>
     local cname="$1" prefix="$2" groot fresh agedheld agedfree pid
-    groot=$(mktemp -d)
+    groot=$(mktemp -d "${TMPDIR:-/tmp}/posse-reap-classrig.XXXXXX")
     fresh="$groot/${prefix}fresh1"
     agedheld="$groot/${prefix}heldAAAAAA"
     agedfree="$groot/${prefix}freeAAAAAA"

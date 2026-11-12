@@ -707,7 +707,7 @@ json_rows() {
   done
 }
   local d rc=0 out r full_block full_flow alt slug alts=0
-  d=$(mktemp -d) || return 2
+  d=$(mktemp -d "${TMPDIR:-/tmp}/posse-pid-deny-set.XXXXXX") || return 2
   mkdir -p "$d/block/agents" "$d/flow/agents" "$d/gap/agents" "$d/empty/agents" \
            "$d/superseded/agents"
 

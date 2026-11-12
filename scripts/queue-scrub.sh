@@ -48,7 +48,7 @@ done
 [ -n "$STUB" ] || { echo "queue-scrub: --stub is required" >&2; exit 2; }
 [ -n "$DB" ] || DB="$REPO/.beads/beads.db"
 HERE=$(cd "$(dirname "$0")" && pwd)
-WORK=$(mktemp -d)
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/posse-queue-scrub.XXXXXX")
 trap 'rm -rf -- "${WORK:?}"' EXIT
 
 say() { printf '%s\n' "$*"; }

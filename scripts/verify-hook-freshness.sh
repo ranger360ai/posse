@@ -202,7 +202,7 @@ done <"$config"
 [ "${#entries[@]}" -gt 0 ] ||
   { echo "verify-hook-freshness: no beads_visibility: entries in $config — nothing measured"; exit 2; }
 
-tmp=$(mktemp -d) || { echo "verify-hook-freshness: mktemp failed — nothing measured"; exit 2; }
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-hook-freshness.XXXXXX") || { echo "verify-hook-freshness: mktemp failed — nothing measured"; exit 2; }
 # The behavior arm needs a temporary index INSIDE the repo's git dir (see
 # below), which is the one thing this script writes outside its own tmpdir.
 # Named here so the trap can take it with everything else if we are killed

@@ -371,7 +371,7 @@ self_test() {
 			< <(find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null)
 		printf '%s' "$c"
 	}
-	SELFTEST_TMP=$(mktemp -d)
+	SELFTEST_TMP=$(mktemp -d "${TMPDIR:-/tmp}/posse-gotest-selftest.XXXXXX")
 	trap 'rm -rf "${SELFTEST_TMP:-}"' EXIT
 	local tmp=$SELFTEST_TMP
 

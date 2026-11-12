@@ -549,7 +549,7 @@ selftest_cleanup() { [ -n "${selftest_tmp:-}" ] && rm -rf "$selftest_tmp"; }
 
 self_test() {
   local tmp fails=0
-  tmp=$(mktemp -d) || { echo "$self --self-test: mktemp failed" >&2; exit 2; }
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-verify-box.XXXXXX") || { echo "$self --self-test: mktemp failed" >&2; exit 2; }
   selftest_tmp=$tmp
   trap selftest_cleanup EXIT
 

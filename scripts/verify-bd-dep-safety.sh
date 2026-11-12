@@ -109,7 +109,7 @@ pick_reader() {
 		return
 	fi
 	local tmp
-	tmp=$(mktemp -d) || { echo "$(basename "$0"): mktemp failed" >&2; exit 2; }
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-bd-dep-safety.XXXXXX") || { echo "$(basename "$0"): mktemp failed" >&2; exit 2; }
 	RO_TMPS="$RO_TMPS $tmp"
 	cp "$DB" "$tmp/beads.db"
 	[ -f "$DB-wal" ] && cp "$DB-wal" "$tmp/beads.db-wal"
