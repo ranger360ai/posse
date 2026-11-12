@@ -1,6 +1,7 @@
 package posse
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -29,9 +30,44 @@ import (
 // 2.1.322: `claude -p` with projects/ wholly read-only exits 0 and answers;
 // it writes no transcript and prints nothing about it.
 //
-// bwrap only, like claudePrivateSessionState. The seatbelt side is its own
-// bead.
+// The seatbelt answer (ranger-base-r2uxm) is the SAME list read as SBPL rules
+// in the same order, deny for ReadOnly and allow otherwise
+// (seatbeltProjectsNarrow), so the two mechanisms cannot name different dirs.
+// ASSUMED, not measured from this host: SBPL's last matching rule wins, as
+// SeatbeltCarveOut's Deny already relies on (MEASURED there, macOS 26.4).
 const claudeProjectsDirName = "projects"
+
+// seatbeltProjectsNarrow turns claudeProjectsBinds into the profile's ordered
+// write rules: deny projects/, allow the own key, deny its memory/.
+//
+// A link (or a file) at any of those names drops the reopen, so projects/ is
+// read-only whole. bwrap refuses to render over one instead, because a mount
+// would follow it; SBPL matches the resolved path, so a link at the own key
+// would only make the allow match nothing, but a link at memory/ pointing
+// back into the own key would make the memory claude reads writable under
+// another name. Failing closed costs the seat its transcript and nothing else
+// (MEASURED 2026-11-12, see the top of this file). A link at projects/ itself
+// gets its resolved spelling denied too, since the profile matches that one.
+func seatbeltProjectsNarrow(binds []PrivateBind) []SeatbeltNarrow {
+	if len(binds) == 0 {
+		return nil
+	}
+	for _, pb := range binds {
+		if fi, err := os.Lstat(pb.Dst); err == nil && !fi.IsDir() {
+			projects := binds[0].Dst
+			out := []SeatbeltNarrow{{Path: projects}}
+			if real := absResolve(projects); real != projects {
+				out = append(out, SeatbeltNarrow{Path: real})
+			}
+			return out
+		}
+	}
+	out := make([]SeatbeltNarrow, 0, len(binds))
+	for _, pb := range binds {
+		out = append(out, SeatbeltNarrow{Path: pb.Dst, Allow: !pb.ReadOnly})
+	}
+	return out
+}
 
 // claudeMemoryDirName is the auto-memory dir inside a key dir.
 const claudeMemoryDirName = "memory"

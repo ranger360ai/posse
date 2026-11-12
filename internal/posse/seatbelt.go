@@ -346,6 +346,21 @@ type SeatbeltCarveOut struct {
 	// (claudePrivateSessionState, ranger-base-5632o). bwrap-only like Tmp,
 	// filled by bwrapRender.
 	Private []PrivateBind
+	// Narrow is ORDERED write rules rendered between the allow block and the
+	// trailing deny, each outvoting the one before: claude's projects/ denied,
+	// the seat's own key reopened, its memory/ denied again
+	// (seatbeltProjectsNarrow, ranger-base-r2uxm). Seatbelt-only: bwrap says
+	// the same with in-place binds in Private, and bwrapRender clears this.
+	// Above the carve-out's Deny, so a trailing deny still has the last word
+	// over anything a reopen here names (ADR 0001, deny wins).
+	Narrow []SeatbeltNarrow
+}
+
+// SeatbeltNarrow is one entry of SeatbeltCarveOut.Narrow: a subpath that is
+// write-allowed or write-denied at its place in the list.
+type SeatbeltNarrow struct {
+	Path  string
+	Allow bool
 }
 
 // PrivateBind is one entry of SeatbeltCarveOut.Private: Src is the host dir
@@ -464,7 +479,7 @@ func (c SeatbeltCarveOut) FileShaped(p string) bool {
 
 // Empty reports whether the block renders nothing.
 func (c SeatbeltCarveOut) Empty() bool {
-	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0
+	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0 && len(c.Narrow) == 0
 }
 
 // SeatbeltProfile renders the SBPL profile text: the default deny, the
@@ -515,6 +530,19 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 			fmt.Fprintf(&b, "  (literal %s)\n", sbQuote(p))
 		}
 		b.WriteString(")\n")
+	}
+	// claude's projects/ (ranger-base-r2uxm): one rule per block, in order,
+	// because the order IS the rule. Before the carve-out, so its denies
+	// still outvote a reopen here.
+	if len(carve.Narrow) > 0 {
+		b.WriteString(";; claude projects/ (ranger-base-r2uxm): LAST match wins, so each line\n;; narrows or reopens the one before; the carve-out below still beats all.\n")
+		for _, n := range carve.Narrow {
+			verb := "deny"
+			if n.Allow {
+				verb = "allow"
+			}
+			fmt.Fprintf(&b, "(%s file-write* (subpath %s))\n", verb, sbQuote(n.Path))
+		}
 	}
 	if len(carve.Deny) > 0 || len(carve.Seal) > 0 {
 		b.WriteString(";; the carve-out (ranger-base-h15): LAST match wins in SBPL, so these\n;; override every grant above them, cwd included.\n")
@@ -1648,6 +1676,10 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 			add(&c.Keep, filepath.Join(gatesDir, f))
 		}
 	}
+	// claude's projects/: read-only but for the seat's own key, whose memory/
+	// is read-only again (ranger-base-r2uxm). The same list bwrap binds in
+	// place (claudeProjectsBinds), read as ordered SBPL rules.
+	c.Narrow = seatbeltProjectsNarrow(claudeProjectsBinds(wallHome(), rtGrants, a.claudeOwnSessionTree(cwd)))
 	c.Seal = renameSeal(c.Deny, writable)
 	for _, p := range credentialReadDenyLiterals(runtime.GOOS, stateDirs) {
 		add(&c.DenyRead, p)
@@ -2443,6 +2475,13 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 			continue
 		}
 		fmt.Fprintf(out, "    x %s (trailing deny — beats every grant above; ranger-base-h15)\n", AbbrevHome(p))
+	}
+	for _, n := range carve.Narrow {
+		if n.Allow {
+			fmt.Fprintf(out, "    w %s (re-allowed inside the projects/ deny: this seat's own key dir; ranger-base-r2uxm)\n", AbbrevHome(n.Path))
+			continue
+		}
+		fmt.Fprintf(out, "    x %s (projects/ deny, in order with the line before; ranger-base-r2uxm)\n", AbbrevHome(n.Path))
 	}
 	for _, p := range carve.Seal {
 		fmt.Fprintf(out, "    x %s (rename seal only — writes inside it are unaffected)\n", AbbrevHome(p))

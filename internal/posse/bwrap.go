@@ -1664,6 +1664,9 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// read-only everywhere (ranger-base-ajkqx). After the session state, in
 	// the same step, for the same reason: a seatbelt profile cannot bind.
 	r.Carve.Private = append(r.Carve.Private, claudeProjectsBinds(home, runtimeStateGrants(stateDirs), a.claudeOwnSessionTree(cwd))...)
+	// ...which is what SeatbeltCarveOut's Narrow says in SBPL; the binds
+	// above are this mechanism's spelling of it (ranger-base-r2uxm).
+	r.Carve.Narrow = nil
 	// codex's per-process tmp/ and shell_snapshots/: a private empty tmpfs
 	// each (ranger-base-6ob20). SeatbeltCarveOut denied them, which is the
 	// seatbelt reading; here the deny comes back out, because the deny step
