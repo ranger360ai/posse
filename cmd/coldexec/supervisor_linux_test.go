@@ -932,7 +932,7 @@ kill -0 "$p" 2>/dev/null && echo "ORPHAN $p STILL ANSWERS kill -0" || echo "ORPH
 // single `truncated` line: it can also be a CASCADE of further restarts
 // each superseded in turn (MEASURED: 58 withdrawn, 0 truncated, 1 final
 // warm), so the pin reads the terminal verdict for `plant` and not the
-// presence of `truncated`. Rare on a quiet box (10/150, jian-yang's
+// presence of `truncated`. Rare on a quiet box (10/150, ranger-base-k9xsd's
 // measurement) and not load-only: the window is the withdrawal landing
 // within microseconds of the deadline.
 //
@@ -978,7 +978,7 @@ func TestARestartedExecvePaysTheRestOfItsCharge(t *testing.T) {
 	// notifications, 58 withdrawn, 1 warm, no truncated line at all. Either
 	// way the charge is spent as 1 delayed (`held`) plus a `plant` that
 	// ends in `warm` instead of 2 delayed. Rare on a quiet box (10/150,
-	// jian-yang's measurement) but not load-only: the window is the
+	// ranger-base-k9xsd's measurement) but not load-only: the window is the
 	// withdrawal landing within microseconds of the deadline, not a slow
 	// box.
 	plantWasWarm := regexp.MustCompile(`(?m)^coldexec: warm +pid \d+ .*plant$`).MatchString(r.out)
