@@ -1026,15 +1026,42 @@ func TestARestartedExecvePaysTheRestOfItsCharge(t *testing.T) {
 // and the caller's own exit code say it exactly.
 func TestAChargeNothingRestartsReadsTruncated(t *testing.T) {
 	t.Parallel()
-	r := withdrawalFixture(t, false, "")
+	truncatedPlant := regexp.MustCompile(`(?m)^coldexec: truncated +pid \d+ .*plant$`)
+
+	// THE ASSERTION THIS PIN EXISTS FOR IS ALSO ITS OWN POSITIVE CONTROL,
+	// so it is retried rather than failed outright — ranger-base-9n4y9's own
+	// prescription. The fixture's nudge can reach the caller as a signal
+	// that interrupts the execve BEFORE the door is holding its
+	// notification at all: the kernel then removes a notification the
+	// door never received, the caller takes EINTR and exits 1 exactly as
+	// it should, and no charge was ever cut short — so the run reached
+	// none of the mechanism and has nothing to say about this pin's
+	// subject either way. MEASURED 2026-11-11 on a quiet box, 150
+	// executions: this pin lost 1 of 150 to exactly this ending (ARM 20
+	// lost 1 of its own 150 the same way), which is the rate
+	// ranger-base-9n4y9 was filed for. A trial that cannot be run is not a
+	// failing trial; a door that has stopped truncating fails all of
+	// them, so the Fatalf below still fires for the thing this pin is
+	// here to catch.
+	const tries = 4
+	var r doorRun
+	for i := 1; ; i++ {
+		r = withdrawalFixture(t, false, "")
+		if truncatedPlant.MatchString(r.out) {
+			break
+		}
+		if i == tries {
+			t.Fatalf("no truncated verdict names the plant in %d runs, so this run did not cut a "+
+				"charge short and the rest of this pin proves nothing — at ranger-base-9n4y9's "+
+				"measured rate that is not the nudge missing (0.0067^%d), it is the mechanism "+
+				"gone:\n%s", tries, tries, r.out)
+		}
+		t.Logf("run %d reached no truncation — the nudge interrupted the execve before the door "+
+			"held it (ranger-base-9n4y9); retrying", i)
+	}
 	r.wantCode(t, 0)
 	r.wantNoHoles(t)
 
-	// THE ASSERTION THIS PIN EXISTS FOR.
-	if !regexp.MustCompile(`(?m)^coldexec: truncated +pid \d+ .*plant$`).MatchString(r.out) {
-		t.Fatalf("no truncated verdict names the plant, so this run did not cut a charge short "+
-			"and the rest of this pin proves nothing:\n%s", r.out)
-	}
 	if !strings.Contains(r.out, "charges were TRUNCATED") {
 		t.Errorf("the report did not name the truncation, so a seat whose door spent a charge on "+
 			"an exec that never happened has nothing to read:\n%s", r.out)
