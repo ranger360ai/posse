@@ -919,13 +919,28 @@ kill -0 "$p" 2>/dev/null && echo "ORPHAN $p STILL ANSWERS kill -0" || echo "ORPH
 // the finding. Now the whole claim is that it is slow, and a FLOOR on it is
 // the direct statement — this file's header forbids a RATIO of two wall
 // times on a box that reaches a loadavg of 50-100, and load can only push a
-// floor further the right way. The accounting is read beside it and has no
-// load sensitivity at all: two cold plants in this run and both of them in
-// the delayed count, with no truncation left to explain.
+// floor further the right way.
+//
+// THE ACCOUNTING beside it has two honest spellings, and it is the wall
+// time above that tells them apart from the mutant — ranger-base-k9xsd,
+// found while pinning ranger-base-dgbys. A restart that lands after the
+// deadline has already passed finds no inflight entry left to claim and
+// reads warm, so `plant`'s charge is spent as `warm` instead of `delayed`
+// and the run reports 1 delayed (`held`) rather than 2 — one line of
+// over-reporting on an exec that still paid D, per the note above
+// recordWithdrawal in door_linux.go. What leads there is not always a
+// single `truncated` line: it can also be a CASCADE of further restarts
+// each superseded in turn (MEASURED: 58 withdrawn, 0 truncated, 1 final
+// warm), so the pin reads the terminal verdict for `plant` and not the
+// presence of `truncated`. Rare on a quiet box (10/150, jian-yang's
+// measurement) and not load-only: the window is the withdrawal landing
+// within microseconds of the deadline.
 //
 // THE MUTANT it reds on is the one the fix removes: answering the restart
-// warm. Under that door this run reports 1 delayed, 1 truncated, and a
-// `nudged` step of a few tens of ms.
+// warm unconditionally. Under that door `plant` ALSO ends in `warm` — the
+// same bookkeeping as the rare race above — but every run, and with a
+// `nudged` step of a few tens of ms rather than the ~D the race still
+// pays. The wall time is what the accounting alone cannot tell apart.
 func TestARestartedExecvePaysTheRestOfItsCharge(t *testing.T) {
 	t.Parallel()
 	r := withdrawalFixture(t, true, "")
@@ -943,20 +958,36 @@ func TestARestartedExecvePaysTheRestOfItsCharge(t *testing.T) {
 
 	// THE ASSERTION THIS PIN EXISTS FOR: the nudged caller's execve was held
 	// to the end of the charge it started, however many notifications it
-	// took to get there.
+	// took to get there — and this wall time is what the real mutant still
+	// reds on: a door that stopped carrying the charge answers the restart
+	// warm in milliseconds, every run, not in one row of 150.
 	r.cold(t, "nudged")
 
-	// And the accounting says the same thing from the other side: both cold
-	// plants are in the delayed count, and nothing was cut short.
-	r.wantDelayed(t, 2)
+	// The accounting has two honest spellings. door_linux.go's note above
+	// recordWithdrawal names one of them: a restart that arrives after the
+	// deadline has already passed finds no inflight entry left to claim, so
+	// it is answered warm — one line of over-reporting on an exec that
+	// still paid D, never an exec let through early. The terminal verdict
+	// for `plant` is what tells the two spellings apart, and not the
+	// presence of a `truncated` line: that race can also play out as a
+	// CASCADE of further restarts chasing the same deadline, each withdrawn
+	// in turn (so the notification N1 was holding never itself reads
+	// truncated — it reads withdrawn, handed to a restart that is itself
+	// superseded) until the last one lands past the deleted entry and
+	// reads warm — MEASURED here (ranger-base-k9xsd): 69 execve
+	// notifications, 58 withdrawn, 1 warm, no truncated line at all. Either
+	// way the charge is spent as 1 delayed (`held`) plus a `plant` that
+	// ends in `warm` instead of 2 delayed. Rare on a quiet box (10/150,
+	// jian-yang's measurement) but not load-only: the window is the
+	// withdrawal landing within microseconds of the deadline, not a slow
+	// box.
+	plantWasWarm := regexp.MustCompile(`(?m)^coldexec: warm +pid \d+ .*plant$`).MatchString(r.out)
+	if plantWasWarm {
+		r.wantDelayed(t, 1)
+	} else {
+		r.wantDelayed(t, 2)
+	}
 	r.cold(t, "held")
-	if regexp.MustCompile(`(?m)^coldexec: truncated +pid `).MatchString(r.out) {
-		t.Errorf("a charge read as truncated, so the restart did not carry it:\n%s", r.out)
-	}
-	if strings.Contains(r.out, "charges were TRUNCATED") {
-		t.Errorf("the report still names a truncation, so this run held a charge the door then "+
-			"let go of:\n%s", r.out)
-	}
 
 	// And it ran, under that caller, so what was held was a real execve and
 	// not a notification for something that never happened.
