@@ -999,6 +999,21 @@ package treepins
 // control arm (TestQAFixtureGitCensusCanStillSayNo) enumerates no directory
 // and so is not in this class.
 //
+// and ONE more, folded into corpus-check's door beside the row above, same
+// subject and same file: the OTHER way a bare-name git fixture meets the
+// shim, a verb or flag refused outright whatever the environment, rather
+// than an environment that unpins git's config scope.
+//
+//	TestQANoFixtureGitChildCallsAVerbTheShimRefusesOutright
+//	                                              make corpus-check
+//	                                              (ranger-base-pn99n)
+//
+// NO NEW DOOR, for the same reason the row above gives: same corpus, same
+// AST walk's binary resolution, a different verdict function over the same
+// bound bare-name git children. Its control arm
+// (TestQAArgvRefusalCensusCanStillSayNo) enumerates no directory either and
+// so is not in this class.
+//
 // and FOUR more, folded into pkgcensus-check's door beside the fifteen above,
 // because their subject is that door's own: a census over internal/posse's
 // own sources, read as source, with a file set the sweep discovers rather
@@ -1089,7 +1104,7 @@ package treepins
 // earlier reading on this bead, at a load of 7.87 with BOTH slots held, was
 // 46.2s, which is the same band from the other side.
 //
-// and `make tree-check` is all of them — one hundred and thirty-seven pins
+// and `make tree-check` is all of them — one hundred and thirty-eight pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

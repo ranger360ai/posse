@@ -757,6 +757,334 @@ func fgpScan(t *testing.T, files []string) []fgpSite {
 	return out
 }
 
+// ─── The ARGV half (ranger-base-pn99n, from ranger-base-ltk6x) ──────────────
+//
+// fixturegitpin's arm above pins ONE way a bare-name git fixture meets the
+// seat's own L1 shim: an environment that drops or overrides the launcher's
+// config pin (hookskip:config-env). The worked example that opened this bead
+// is the OTHER way — a verb the shim refuses OUTRIGHT, whatever the
+// environment: cmd/posse/version_test.go built its fixture repo with `git
+// commit-tree`, which hookskip.go has refused since ranger-base-crlty
+// (hookskip:plumbing-commit), and `make test` was red at arm 1 for every
+// gated seat for a day while ungated CI stayed green, because that pin's own
+// env check cannot see a refusal that no environment can fix.
+//
+// Censused 2026-11-11 over cmd/ and internal/treepins, after
+// ranger-base-ltk6x's fix: ZERO sites. This census, like the one above,
+// keeps it at zero rather than fixes anything live.
+//
+// SCOPE. Of hookskip.go's refusal classes that do not depend on the
+// environment, this reads two: hookskip:plumbing-commit (commit-tree
+// outright, am unless it only ends or reads a stalled one) and
+// hookskip:no-verify (-n/--no-verify on the verbs that take it). It does NOT
+// read hookskip:config-write (`git config`/`clone`/`init` writing a
+// hook-moving key) or hookskip:template (--template, GIT_TEMPLATE_DIR):
+// both need the same key-parsing hookskip.go's shell arms do (-c K=V,
+// --config=K=V, a short cluster's glued value), which is a second
+// implementation of that parser and not a read of a literal, and neither has
+// bitten here. Nor Bash(git push:*) or Bash(git commit unless --) — PID
+// denies, judged on a running seat's own argv, not on a fixture's source.
+// Building those is this bead's own NOT CLAIMED paragraph's call to make,
+// left for whoever reads a live site through one of them.
+//
+// DERIVED, NOT RETYPED (fgpHookSkipVerbs): the verb set hookskip:no-verify
+// fires on, and the am exceptions, are read out of hookskip.go's own
+// hookSkipNoVerifyVerbs and hookSkipAmAllowed var declarations, so a verb
+// added to either there is censused here without a second edit. NOT
+// derived: which of those verbs also takes the SHORT -n spelling
+// (fgpArgvShortFormVerbs, below) — that split lives inside hookSkipNoVerify's
+// switch statement in hookskip.go, not in a named var, and parsing a switch
+// is past what this walk buys.
+//
+// NO ONE-HOP for the argv itself, unlike the binary and env halves above:
+// the GAP this closes reads "the exec call's string-literal args", and every
+// site either arm has ever found spells its verb inline
+// (`exec.Command(gitBin, "-C", repo, "commit-tree", …)`). An argv assembled
+// into a []string and spread in with `args...` is past this depth — the
+// same boundary the other two hops stop at — and nothing in this tree does
+// that today. The BINARY is still resolved through fgpBareGit's one hop,
+// unchanged, because a fixture that converts its binary to
+// gitOutsideGates(t) and keeps a stray commit-tree is still wrong, and the
+// binary hop is what tells a live shim-reaching fixture from a scratch repo
+// built with /usr/bin/git.
+//
+// ISOLATED FROM fgpScan ON PURPOSE. This needs only fgpBareGit's binary
+// resolution and fgpStripsPath's immunity/local checks, neither of fgpScan's
+// env-hop machinery — so it walks its own, duplicate, local-binding map
+// (fgpArgvLocalBindings) rather than reach into fgpScan's. Four bugs in a
+// row were found in that exact binding walk (ranger-base-l0bep,
+// ranger-base-o57rc, ranger-base-6rr2e, ranger-base-tfqlr); sharing it would
+// make a future fifth one able to move both arms' verdicts at once, and
+// keeping this walk its own means it cannot.
+
+// fgpHookSkipVerbs reads internal/posse/hookskip.go's own hookSkipNoVerifyVerbs
+// and hookSkipAmAllowed var declarations, so the refused set here is derived
+// from the shim's single source rather than retyped.
+func fgpHookSkipVerbs(t *testing.T) (noVerify, amAllowed []string) {
+	t.Helper()
+	const rel = "internal/posse/hookskip.go"
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, rel, nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parsing %s: %v", rel, err)
+	}
+	want := map[string]*[]string{
+		"hookSkipNoVerifyVerbs": &noVerify,
+		"hookSkipAmAllowed":     &amAllowed,
+	}
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok != token.VAR {
+			continue
+		}
+		for _, sp := range gd.Specs {
+			vs, ok := sp.(*ast.ValueSpec)
+			if !ok || len(vs.Names) != 1 || len(vs.Values) != 1 {
+				continue
+			}
+			slot, ok := want[vs.Names[0].Name]
+			if !ok {
+				continue
+			}
+			cl, ok := vs.Values[0].(*ast.CompositeLit)
+			if !ok {
+				continue
+			}
+			for _, el := range cl.Elts {
+				if bl, ok := el.(*ast.BasicLit); ok && bl.Kind == token.STRING {
+					if v, err := strconv.Unquote(bl.Value); err == nil {
+						*slot = append(*slot, v)
+					}
+				}
+			}
+		}
+	}
+	if len(noVerify) == 0 || len(amAllowed) == 0 {
+		t.Fatalf("reading %s: hookSkipNoVerifyVerbs=%v hookSkipAmAllowed=%v — the shim's own var declarations moved or were renamed, and this census has nothing to derive the refused set from", rel, noVerify, amAllowed)
+	}
+	return noVerify, amAllowed
+}
+
+// fgpArgvShortFormVerbs are the hookSkipNoVerifyVerbs members that take the
+// SHORT -n spelling too (hookskip.go's hookSkipNoVerify: commit and am spell
+// it "-n, --no-verify"; merge, pull, rebase and push have only the long
+// form, because -n means something else on each of them — --dry-run on
+// push, --no-stat on merge/rebase — and is not refused there). NOT derived;
+// see the package comment above.
+var fgpArgvShortFormVerbs = map[string]bool{"commit": true, "am": true}
+
+// fgpArg is one argument of a git child's argv, read as a string literal, or
+// as "not one" when the walk cannot resolve it (a variable, a spread
+// []string...) — which this half of the census treats as opaque rather than
+// guess at, the safe direction when the slot might be the verb itself.
+type fgpArg struct {
+	s  string
+	ok bool
+}
+
+// fgpArgvArgs reads the literal arguments of an exec.Command/CommandContext
+// call, after the binary (fgpExecBin's own slot).
+func fgpArgvArgs(call *ast.CallExpr) []fgpArg {
+	start := 1
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "CommandContext" {
+		start = 2
+	}
+	if start > len(call.Args) {
+		return nil
+	}
+	out := make([]fgpArg, 0, len(call.Args)-start)
+	for _, a := range call.Args[start:] {
+		if bl, ok := a.(*ast.BasicLit); ok && bl.Kind == token.STRING {
+			if v, err := strconv.Unquote(bl.Value); err == nil {
+				out = append(out, fgpArg{s: v, ok: true})
+				continue
+			}
+		}
+		out = append(out, fgpArg{})
+	}
+	return out
+}
+
+// fgpArgvFirstPositional returns the first argument that is not -C (and its
+// value) or another flag with no separate value — the shape every fixture in
+// this tree spells its verb with. An unresolved slot in that position stops
+// the walk rather than guesses past it.
+func fgpArgvFirstPositional(args []fgpArg) (verb string, ok bool) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !a.ok {
+			return "", false
+		}
+		switch {
+		case a.s == "-C":
+			i++
+		case strings.HasPrefix(a.s, "-"):
+		default:
+			return a.s, true
+		}
+	}
+	return "", false
+}
+
+// fgpArgvWhy reports why a git child's argv is refused outright, or "" when
+// it is not — the ARGV counterpart to fgpScan's env-only "why".
+func fgpArgvWhy(args []fgpArg, amAllowed []string, noVerifyVerbs map[string]bool) string {
+	verb, ok := fgpArgvFirstPositional(args)
+	if !ok {
+		return ""
+	}
+	switch verb {
+	case "commit-tree":
+		return "its verb is commit-tree, which hookskip.go refuses outright (hookskip:plumbing-commit) — no pre-commit or commit-msg hook ever sees that commit"
+	case "am":
+		for _, a := range args {
+			if !a.ok {
+				continue
+			}
+			if a.s == "--" {
+				break // the shim itself refuses at "--" too; an allowed word must come before it
+			}
+			for _, allow := range amAllowed {
+				if a.s == allow || strings.HasPrefix(a.s, allow+"=") {
+					return ""
+				}
+			}
+		}
+		return "its verb is am, which hookskip.go refuses outright (hookskip:plumbing-commit) unless its own argv only ends or reads a stalled am"
+	}
+	if !noVerifyVerbs[verb] {
+		return ""
+	}
+	for _, a := range args {
+		if !a.ok {
+			continue
+		}
+		if a.s == "--no-verify" || (a.s == "-n" && fgpArgvShortFormVerbs[verb]) {
+			return fmt.Sprintf("its verb %s carries %s, which hookskip.go refuses outright (hookskip:no-verify)", verb, a.s)
+		}
+	}
+	return ""
+}
+
+// fgpArgvLocalBindings is fgpScan's local-binding walk, duplicated rather
+// than shared; see the package comment above for why.
+func fgpArgvLocalBindings(body *ast.BlockStmt) map[string][]ast.Expr {
+	local := map[string][]ast.Expr{}
+	bind := func(names []string, values []ast.Expr) {
+		if len(values) == 0 {
+			return
+		}
+		if len(names) == len(values) {
+			for i, nm := range names {
+				if nm != "" {
+					local[nm] = append(local[nm], values[i])
+				}
+			}
+			return
+		}
+		if len(values) == 1 && len(names) > 0 && names[0] != "" {
+			local[names[0]] = append(local[names[0]], values[0])
+		}
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			names := make([]string, len(s.Lhs))
+			for i, l := range s.Lhs {
+				if id, ok := l.(*ast.Ident); ok {
+					names[i] = id.Name
+				}
+			}
+			bind(names, s.Rhs)
+		case *ast.DeclStmt:
+			gd, ok := s.Decl.(*ast.GenDecl)
+			if !ok || (gd.Tok != token.VAR && gd.Tok != token.CONST) {
+				return true
+			}
+			for _, sp := range gd.Specs {
+				vs, ok := sp.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				names := make([]string, len(vs.Names))
+				for i, id := range vs.Names {
+					names[i] = id.Name
+				}
+				bind(names, vs.Values)
+			}
+		}
+		return true
+	})
+	return local
+}
+
+// fgpArgvScan returns every bound bare-name git child whose own argv names a
+// verb or flag hookskip.go refuses outright.
+func fgpArgvScan(t *testing.T, files []string) []fgpSite {
+	t.Helper()
+	noVerify, amAllowed := fgpHookSkipVerbs(t)
+	noVerifyVerbs := make(map[string]bool, len(noVerify))
+	for _, v := range noVerify {
+		noVerifyVerbs[v] = true
+	}
+
+	fset := token.NewFileSet()
+	parsed := make(map[string]*ast.File, len(files))
+	immune := map[string]bool{}
+	for _, rel := range files {
+		f, err := parser.ParseFile(fset, rel, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", rel, err)
+		}
+		parsed[rel] = f
+		dir := filepath.ToSlash(filepath.Dir(rel))
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if ok && fd.Recv == nil && fd.Body != nil && fd.Name.Name == "TestMain" && fgpStripsPath(fd.Body) {
+				immune[dir] = true
+			}
+		}
+	}
+
+	var out []fgpSite
+	for _, rel := range files {
+		dir := filepath.ToSlash(filepath.Dir(rel))
+		for _, d := range parsed[rel].Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			local := fgpArgvLocalBindings(fd.Body)
+			stripsHere := fgpStripsPath(fd.Body)
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				bin, ok := fgpExecBin(call)
+				if !ok {
+					return true
+				}
+				bare, via, lookPath := fgpBareGit(bin, local)
+				if !bare {
+					return true
+				}
+				why := fgpArgvWhy(fgpArgvArgs(call), amAllowed, noVerifyVerbs)
+				if why == "" {
+					return true
+				}
+				out = append(out, fgpSite{
+					file: rel, line: fset.Position(call.Pos()).Line, fn: fd.Name.Name,
+					why: why, via: via, lookPath: lookPath,
+					immune: immune[dir], local: stripsHere,
+				})
+				return true
+			})
+		}
+	}
+	return out
+}
+
 // Arm 1 — the class, over the live corpus.
 func TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates(t *testing.T) {
 	t.Parallel()
@@ -1211,6 +1539,221 @@ func TestQAFixtureGitCensusCanStillSayNo(t *testing.T) {
 			got := false
 			for _, s := range fgpScan(t, files) {
 				if s.why != "" && !s.immune && !s.local {
+					got = true
+				}
+			}
+			if got != c.want {
+				t.Errorf("violation=%v, want %v — for %q", got, c.want, c.name)
+			}
+		})
+	}
+}
+
+// Arm 3 — the ARGV class, over the live corpus. Ranger-base-ltk6x already
+// converted the one worked example, so this reads as an invariant rather
+// than a floor: ZERO bound bare-name git children with a refused verb in
+// their own argv, measured 2026-11-11 over cmd/ and internal/treepins.
+func TestQANoFixtureGitChildCallsAVerbTheShimRefusesOutright(t *testing.T) {
+	t.Parallel()
+
+	files := fgpTestFiles(t)
+	if len(files) < 400 {
+		root, _ := repoRoot()
+		t.Fatalf("the walk read %d _test.go files from %q — the corpus this pin censuses is not there", len(files), root)
+	}
+
+	for _, s := range fgpArgvScan(t, files) {
+		if s.immune || s.local {
+			continue
+		}
+		t.Errorf("%s\n"+
+			"  exec.Command resolves the bare name \"git\" against THIS process's $PATH — never cmd.Env — and a dispatched seat's PATH leads with its own gates bin dir, so this fixture's git is posse's L1 shim. The refusal below does not depend on any environment, so no hermetic env fixes it; cmd/posse/version_test.go hit this exact shape with `git commit-tree` (ranger-base-ltk6x).\n"+
+			"  Resolve the binary past the gates (`gitBin := gitOutsideGates(t)`) is not the fix here — the verb itself is refused. Build the fixture a different way: `git apply` then `git commit` in place of `git am`, update-ref or a fast-forward in place of `git commit-tree`, and drop the -n/--no-verify the fixture does not need.",
+			s)
+	}
+}
+
+// Arm 4 — the ARGV census's own control, same shape as arm 2 above: the
+// cases that separate "refused outright" from everything that is not,
+// including the two negative controls that matter most — -n meaning
+// --dry-run on push and --no-stat on merge, never --no-verify — because
+// those are exactly where an over-eager derivation would invert this
+// census's own default and start refusing fixtures that do nothing wrong.
+func TestQAArgvRefusalCensusCanStillSayNo(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		src     string
+		testMan string
+		want    bool
+	}{{
+		name: "commit-tree is refused outright",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "commit-tree", tree)
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "a bare am is refused outright",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "am", patch)
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "am --abort ends a stalled am and is allowed",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "am", "--abort")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		name: "am --show-current-patch=diff reads a stalled am and is allowed",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "am", "--show-current-patch=diff")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		name: "am stops at -- and refuses: a mailbox literally named --abort buys no pass",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "am", "--", "--abort")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "commit -n is refused outright",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "commit", "-qm", "x", "-n")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "commit --no-verify is refused outright",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "commit", "--no-verify", "-qm", "x")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "a plain commit with no -n/--no-verify is not refused",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "commit", "-qm", "x", "--", ".")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		// The load-bearing negative control: push -n is --dry-run, never
+		// --no-verify, and must stay green or this census manufactures its
+		// own over-refusal on its own subject.
+		name: "push -n is --dry-run, not --no-verify, and is not refused",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "push", "-n", "origin", "HEAD")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		name: "push --no-verify is refused outright",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "push", "--no-verify", "origin", "HEAD")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		// The second negative control: merge -n is --no-stat on that verb.
+		name: "merge -n is --no-stat, not --no-verify, and is not refused",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "merge", "-n", "branch")
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		name: "rebase --no-verify is refused outright",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "rebase", "--no-verify", "main")
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "the binary resolved past the gates is compliant whatever its verb",
+		src: `func f(t *testing.T) {
+			gitBin := gitOutsideGates(t)
+			cmd := exec.Command(gitBin, "-C", repo, "commit-tree", tree)
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		name: "the bare name one hop through a local binding is still read",
+		src: `func f(t *testing.T) {
+			gitBin := "git"
+			cmd := exec.Command(gitBin, "-C", repo, "commit-tree", tree)
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "CommandContext is read on its own argument offset",
+		src: `func f(t *testing.T) {
+			cmd := exec.CommandContext(ctx, "git", "-C", repo, "commit-tree", tree)
+			cmd.CombinedOutput()
+		}`,
+		want: true,
+	}, {
+		name: "a verb carried through a variable is past this depth and not read",
+		src: `func f(t *testing.T) {
+			verb := "commit-tree"
+			cmd := exec.Command("git", "-C", repo, verb, tree)
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		name: "another binary's commit-tree-shaped argv is not this class",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command(posseBin, "-C", repo, "commit-tree", tree)
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}, {
+		name: "excused by the package's TestMain",
+		src: `func f(t *testing.T) {
+			cmd := exec.Command("git", "-C", repo, "commit-tree", tree)
+			cmd.CombinedOutput()
+		}`,
+		testMan: `func TestMain(m *testing.M) {
+			os.Setenv("PATH", PathOutsideGates(""))
+			os.Exit(m.Run())
+		}`,
+		want: false,
+	}, {
+		name: "a function that strips the gates for itself is compliant",
+		src: `func f(t *testing.T) {
+			t.Setenv("PATH", posse.PathOutsideGates(""))
+			cmd := exec.Command("git", "-C", repo, "commit-tree", tree)
+			cmd.CombinedOutput()
+		}`,
+		want: false,
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			write := func(name, body string) string {
+				p := filepath.Join(dir, name)
+				src := "package p\n\n" + body + "\n"
+				if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			}
+			files := []string{write("a_test.go", c.src)}
+			if c.testMan != "" {
+				files = append(files, write("main_test.go", c.testMan))
+			}
+			sort.Strings(files)
+			got := false
+			for _, s := range fgpArgvScan(t, files) {
+				if !s.immune && !s.local {
 					got = true
 				}
 			}

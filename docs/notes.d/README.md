@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-pn99n](ranger-base-pn99n.md) — ranger-base-pn99n — the ARGV half of the fixture-git census, and what it does not cover — 2026-11-12
 - [ranger-base-zvgql](ranger-base-zvgql.md) — codex's and grok's other executable home members, read-only in a caged seat (ranger-base-zvgql) — 2026-11-11
 - [ranger-base-zmk4q](ranger-base-zmk4q.md) — codex's and grok's config.toml, read-only in a caged seat (ranger-base-zmk4q) — 2026-11-11
 - [ranger-base-zibko](ranger-base-zibko.md) — The red that was a commit old, and the test that seeds the shared home (ranger-base-zibko) — 2026-11-11
