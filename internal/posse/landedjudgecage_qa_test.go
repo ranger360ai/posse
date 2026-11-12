@@ -179,3 +179,82 @@ func TestQALandedCheckTmp(t *testing.T) {
 		}
 	}
 }
+
+// ranger-base-5m5yq — the judge's environment is an allowlist, not the
+// launcher's. Driven through landedChecker.judge itself, with a judge that
+// writes its own environment where the test can read it: the pin reads what
+// the child GOT, not what a helper returns, so a call site that went back to
+// os.Environ() reds here even if landedJudgeEnv were left intact.
+//
+// The cage is the one thing stubbed (the judge runs as the argv, the way
+// plainCage runs it in arm 2), because cmd.Env is built after the cage
+// renders and is the same list on both mechanisms.
+func TestQALandedCheckJudgeEnvIsTheAllowlist(t *testing.T) {
+	// No t.Parallel: Setenv.
+	root := gitTempDir(t)
+	const planted = "FOO_TOKEN"
+	t.Setenv(planted, "planted-by-the-pin")
+	t.Setenv("GOFLAGS", "-mod=mod") // an allowlisted name that is set reaches it
+
+	repo := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, repo, "init", "-q", "-b", "main", ".")
+	mustGit(t, repo, "config", "user.email", "t@example.com")
+	mustGit(t, repo, "config", "user.name", "t")
+	write(t, filepath.Join(repo, landedCheckScript), "#!/bin/sh\nenv > \"$TMPDIR/judge.env\"\n")
+	mustGit(t, repo, "add", "--", landedCheckScript)
+	mustGit(t, repo, "commit", "-q", "-m", "ship", "--", landedCheckScript)
+	tip := mustGit(t, repo, "rev-parse", "HEAD")
+
+	run := filepath.Join(root, "run-env")
+	if err := os.MkdirAll(run, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = git(repo, "worktree", "remove", "--force", filepath.Join(run, landedTreeName)) })
+
+	c := &landedChecker{a: &App{}, out: &strings.Builder{}, pending: map[string]string{}}
+	c.cage = func(_ *App, judge, _ string, _ []string, env []string) (landedCage, error) {
+		return landedCage{Argv: []string{judge}, Env: env}, nil
+	}
+	if v, said := c.judge(repo, run, tip, revTreeID(repo, tip)); v != landGreen {
+		t.Fatalf("the env-dumping judge did not run green: %v — %s", v, said)
+	}
+	b, err := os.ReadFile(filepath.Join(run, "tmp", "judge.env"))
+	if err != nil {
+		t.Fatalf("the judge wrote no environment: %v", err)
+	}
+
+	allowed := map[string]bool{"TMPDIR": true, "GOCACHE": true}
+	for _, k := range landedJudgeEnvKeys {
+		allowed[k] = true
+	}
+	// What /bin/sh sets for ITSELF before `env` runs, and so not something
+	// the launcher handed over: the cwd and the nesting level, and `_`.
+	shellOwn := map[string]bool{"PWD": true, "OLDPWD": true, "SHLVL": true, "_": true}
+	got := map[string]string{}
+	for _, ln := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		k, v, ok := strings.Cut(ln, "=")
+		if !ok {
+			continue // a continuation of a multi-line value
+		}
+		got[k] = v
+		if !allowed[k] && !shellOwn[k] {
+			t.Errorf("the judge's environment carries %s, which is not in landedJudgeEnvKeys — the launcher's environment crossing the wall (ranger-base-5m5yq)", k)
+		}
+	}
+	if _, ok := got[planted]; ok {
+		t.Errorf("the judge saw %s, planted in the launcher's environment (ranger-base-5m5yq)", planted)
+	}
+	for k, want := range map[string]string{
+		"TMPDIR":  filepath.Join(run, "tmp"),
+		"GOCACHE": landedCheckGoCache(run),
+		"GOFLAGS": "-mod=mod",
+		"PATH":    PathOutsideGates(""),
+	} {
+		if got[k] != want {
+			t.Errorf("the judge's %s is %q, want %q", k, got[k], want)
+		}
+	}
+}

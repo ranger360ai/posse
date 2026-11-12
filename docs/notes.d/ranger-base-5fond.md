@@ -128,12 +128,22 @@ A launcher carries none of those, so the live pin sheds them and the three
 readings above are what a launcher gets. It is worth writing down because it is
 the mirror of the finding ranger-base-r3pqf's close already made from the other
 side — there, `MAKEFLAGS`/`MAKELEVEL` inherited from a parent `make`; here,
-`RHQ_FAKE_HERDR` inherited from a parent `go test`. **The caller's environment
-is an input to this check, and the only actor that scrubs any of it is the
-script.** Posse scrubs nothing of its own. Stated, not fixed: the launcher
-process sets none of these, and a runner that decided which of the operator's
-variables a repo's check may see would be posse legislating about a contract
-whose whole point is that the repo owns what "green" means.
+`RHQ_FAKE_HERDR` inherited from a parent `go test`.
+
+**Superseded by ranger-base-5m5yq.** This section used to end with a residual:
+the caller's environment is an input to this check, the only actor that scrubs
+any of it is the script, and posse deciding which of the operator's variables a
+repo's check may see would be posse legislating about the repo's contract. That
+drew the line in the wrong place. The repo still owns what green means over the
+environment it is HANDED; what crosses the wall is the wall's. The judge's
+environment is now built from nothing — `landedJudgeEnvKeys` in
+`internal/posse/landedcheck.go`, the one list, plus the run's `TMPDIR` and
+`GOCACHE`, through `protocolEnv` — so `RHQ_FAKE_HERDR`, a parent `make`'s
+variables and any token the launcher carries never reach it. A check that
+needs one more variable reds once, and the fix is to name it in that list.
+Pinned by `TestQALandedCheckJudgeEnvIsTheAllowlist`, which runs a judge that
+writes its own environment through `landedChecker.judge` with a planted
+`FOO_TOKEN`.
 
 ## What runs this
 

@@ -131,7 +131,8 @@ type landedCage struct {
 	// of it — which is D3's "never falls back to running uncaged" made
 	// structural rather than remembered.
 	Argv []string
-	// Env is the pairs applied OVER the launcher's own environment.
+	// Env is the pairs applied OVER the judge's allowlisted environment
+	// (landedJudgeEnv) — never over the launcher's own.
 	Env []string
 }
 
@@ -304,6 +305,47 @@ func landedCheckTmp(home, run, tree string) string {
 // judge-only cache, because a persistent one would let landing N plant
 // objects that decide landing N+1's verdict.
 func landedCheckGoCache(run string) string { return filepath.Join(run, "gocache") }
+
+// landedJudgeEnvKeys is THE allowlist: the only names of the launcher's
+// environment the judge is handed (ranger-base-5m5yq). Who the process is
+// and how it prints, then where the go toolchain lives and which one it
+// selects. Everything else the launcher carries stays out — the judge's
+// stderr tail is filed into a bead other seats read, so a token that reached
+// its environment would have a way out. A check that needs one more variable
+// reds once, and the fix is to name it HERE and nowhere else.
+var landedJudgeEnvKeys = []string{
+	"PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "TERM",
+	"GOROOT", "GOPATH", "GOMODCACHE", "GOTOOLCHAIN", "GOFLAGS",
+}
+
+// landedJudgeEnv is the judge's whole environment: the allowlisted names
+// that are set in this process, then `over` (the run's TMPDIR and GOCACHE)
+// on top, then protocolEnv for PATH. A name that is unset is left unset
+// rather than spelled empty — `HOME=` is a different instruction from no
+// HOME at all.
+//
+// It is built FROM NOTHING and not filtered out of os.Environ(), so a name
+// added to the launcher tomorrow is out by construction. The slice starts
+// non-nil because protocolEnv reads a nil list as "the whole of
+// os.Environ()", which is the one environment this function exists to not
+// hand over.
+//
+// Built here rather than with bwrap's --clearenv because cmd.Env is the one
+// lever both mechanisms honour; sandbox-exec has no such flag.
+func landedJudgeEnv(over []string) []string {
+	env := make([]string, 0, len(landedJudgeEnvKeys)+len(over)+1)
+	for _, k := range landedJudgeEnvKeys {
+		if v, ok := os.LookupEnv(k); ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	for _, kv := range over {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			env = envPut(env, k, v)
+		}
+	}
+	return protocolEnv(env)
+}
 
 // landedCheckWritable is D3's write set, and the whole of it: the run's own
 // directory — which holds the detached worktree, the extracted judge, the
@@ -641,18 +683,15 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	// go through protocolEnv would throw that resolution away on the next
 	// line while the call site still read as though it had one.
 	//
-	// THE CHILD'S ENVIRONMENT IS THE LAUNCHER'S, with TMPDIR and GOCACHE
-	// redirected and nothing else (residual: ranger-base-5m5yq) — the land
-	// check's rule, and the contract's. What a repo's check needs out of the environment is the repo's to decide:
-	// this one scrubs make's own variables for itself, because the caller's
-	// environment deciding what a check RUNS is a green over an empty room
-	// (docs/notes.d/ranger-base-r3pqf.md). Posse scrubbing on its behalf
-	// would be posse legislating about a contract whose point is that the
-	// repo owns what "green" means. Stated as a residual in
-	// docs/notes.d/ranger-base-5fond.md rather than fixed here.
+	// THE CHILD'S ENVIRONMENT IS AN ALLOWLIST, not the launcher's
+	// (ranger-base-5m5yq): landedJudgeEnvKeys, with TMPDIR and GOCACHE
+	// redirected on top. The repo still owns what green means over the
+	// environment it is handed — this one scrubs make's own variables for
+	// itself (docs/notes.d/ranger-base-r3pqf.md) — but the wall owns what
+	// crosses it, and a launcher variable is something crossing.
 	cmd := protocolCmd(exec.CommandContext(ctx, cage.Argv[0], cage.Argv[1:]...))
 	cmd.Dir = path
-	cmd.Env = protocolEnv(append(os.Environ(), cage.Env...))
+	cmd.Env = landedJudgeEnv(cage.Env)
 	// landChildVerdict is the binder: it sets the reaping grace beside this
 	// deadline, because a deadline alone bounds the CHILD and not this call
 	// — and this child has grandchildren by construction (`make`, and `go`
