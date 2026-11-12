@@ -2,10 +2,11 @@
 
 package posse
 
-// Pins for ranger-base-f67jx: the launcher's OWN wall prep creates files and
+// Pins for ranger-base-f67jx, flipped to ADR 0091's resolution
+// (ranger-base-f24yz): the launcher's OWN wall prep creates files and
 // directories in the operator's home, and some of those names are entries on
-// a runtime's project-config list. A session that starts in the home is then
-// classified against what posse made there.
+// a runtime's project-config list. A session that starts in the home used to
+// be classified against what posse made there.
 //
 // The coupling neither side could see from where it sits. The seed's
 // correctness argument is about mount coverage and says "an EMPTY one is
@@ -13,28 +14,43 @@ package posse
 // classifier's is about proving a PRESENT file safe, and it has a pin of its
 // own saying "an empty file is not a missing file"
 // (projectconfigtrust_qa_test.go, ranger-base-txd7). Both are right about
-// their own half. Together they mean posse degrades a launch over a file
-// posse created, and the remedy the refusal names — "remove the file" — is
+// their own half. Together they meant posse degraded a launch over a file
+// posse created, and the remedy the refusal names — "remove the file" — was
 // undone by the next caged launch, which seeds it again.
 //
 // It was first seen as a red test: TestPersonaLaunchRuntime's grok recipe
 // named no `dir:`, so it launched in the test binary's shared $HOME, where a
 // parallel test's real bwrap prep had seeded `.grok/config.toml`. That is
-// fixed at the test (ranger-base-zvgql gave the recipe its own dir); these
-// pins are for the mechanism under it, which is not fixed and is not this
-// bead's to decide. The decision is ranger-base-mkrsv.
+// fixed at the test (ranger-base-zvgql gave the recipe its own dir).
 //
-// Two assertions, both MEASURED 2026-11-11 on linux:
+// WHICH SIDE GAVE: the classifier's premise, not the seed (ADR 0091 D1, from
+// ranger-base-mkrsv). A declared executable member of a CLI home is not
+// project scope, because no writer a repo's committer controls can write one
+// — so ProjectConfigTrust SKIPS such an entry and every row below now reads
+// clean. These pins were built to fail by name when that landed, and this is
+// that landing. What they pin now is the property D1 rests on, which is
+// strictly more than the old table said: every project-config entry the wall
+// prep creates is a declared member of the exemption set. A future prep step
+// that creates one OUTSIDE that set reds here with Member false and a
+// degraded Finding beside it — which the old rows could not have caught,
+// since they asserted the degrade.
+//
+// Two assertions, both MEASURED 2026-11-11 on linux and re-measured
+// 2026-11-12 under D1:
 //
 //   - the CENSUS: which project-config entries the wall prep creates, which
-//     runtime's prep creates each, and what the classifier then finds for it.
-//     A new wall member or a new project-config entry that collides reds here
-//     and names itself. The contrast is the point — `{}` seeds (claude's
-//     settings.json) classify CLEAN, zero-byte seeds and mkdir'd directories
-//     do not.
+//     runtime's prep creates each, whether D1 exempts it, what the launch is
+//     told for it, and what the classifier ALONE still says about the thing
+//     that was made. The last column is the fail-closed floor D4 leaves
+//     untouched, and it is the old table unchanged — three shapes, only the
+//     first of them inert: a `{}` seed under a KEYED list declares no key and
+//     reads clean, a `{}` seed under a WHOLE-FILE entry degrades on presence
+//     alone, and a zero-byte seed or an mkdir'd directory fails closed. It is
+//     also the exit hatch's evidence: delete D1's skip and these are the
+//     verdicts that come back.
 //   - the VERDICT: what a launch in that home is told, per runtime, with the
 //     control that the same launch in the same home is clean before the prep
-//     runs.
+//     runs — so the clean reads below are D1's and not the fixture's.
 //
 // bwrap-only, because the seed is (SeatbeltCarveOut.Seeded: a mount cannot
 // cover a name that is not there, and an SBPL subpath deny needs no name).
@@ -58,14 +74,16 @@ import (
 var wspRuntimes = []string{"claude", "codex", "grok"}
 
 // wspEntry is one project-config entry the wall prep creates: who lists it,
-// who makes it, how, and what the classifier says about the thing that was
-// made. Finding "" is a clean read — the seed really was inert for that one.
+// who makes it, how, whether ADR 0091 D1 exempts it, what the launch is told
+// for it, and what the classifier alone says about the thing that was made.
 type wspEntry struct {
 	Runtime string // whose project_config: names the entry
 	Entry   string // the entry, as that runtime declared it
 	By      string // whose wall prep creates it
 	Kind    PrepKind
-	Finding string
+	Member  bool   // D1: <home>/<entry> IS a declared CLI-home exec member
+	Finding string // the walk's answer for this entry; "" is nothing to say
+	Floor   string // projectConfigTrustFile alone — the floor D4 leaves alone
 }
 
 // wspFinding strips the boilerplate either side of the classifier's finding,
@@ -162,6 +180,12 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 	// applied in turn and the entry belongs to the first one after which it
 	// is there.
 	exists := func(p string) bool { _, err := os.Lstat(p); return err == nil }
+	// D1's input, read the way ProjectConfigTrust reads it: off wallHome(),
+	// which the fixture has pointed at f.home, and UNFILTERED by any grant.
+	members := cliHomeExecMembers(wallHome())
+	if len(members) == 0 {
+		t.Fatalf("no CLI home members for HOME=%s — the exemption's input is empty and every row below would be vacuous", wallHome())
+	}
 	var got []wspEntry
 	seen := map[string]bool{}
 	for _, by := range wspRuntimes {
@@ -185,7 +209,10 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 						kind = s.Kind
 					}
 				}
-				got = append(got, wspEntry{name, rel, by, kind, wspFinding(t, projectConfigTrustFile(rt, rel, p))})
+				got = append(got, wspEntry{name, rel, by, kind,
+					isCLIHomeExecMember(members, p),
+					wspFinding(t, projectConfigTrustEntry(rt, f.home, rel, members)),
+					wspFinding(t, projectConfigTrustFile(rt, rel, p))})
 			}
 		}
 	}
@@ -202,8 +229,17 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 		present = "project config is present"
 		inertOK = "" // the seed really was as inert as no file at all
 	)
-	// MEASURED 2026-11-11, linux 7.2.15, go1.27.3. The three findings are
-	// three different mechanisms and only the first row class is inert:
+	// MEASURED 2026-11-11, linux 7.2.15, go1.27.3; the Member and Finding
+	// columns re-measured 2026-11-12 under ADR 0091 D1, same box, go1.27.3.
+	//
+	// EVERY ROW IS A MEMBER, and that is the census's claim now: the wall
+	// prep cannot create a project-config entry it does not also carve,
+	// because the names it seeds and mkdirs come from the same
+	// cliHomeExecMembers list D1's exemption reads (ADR 0091 D2). So every
+	// Finding is "" — the launch is told nothing about any of them.
+	//
+	// The FLOOR column is the pre-D1 table, unchanged, and it is three
+	// different mechanisms of which only the first row class is inert:
 	//
 	//   - a `{}` seed over a KEYED list declares no key, so it reads clean —
 	//     this is the case ranger-base-6akzw's claim was written for, and it
@@ -211,25 +247,26 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 	//   - a `{}` seed over a WHOLE-FILE entry degrades on presence alone, so
 	//     the body never gets a say (.grok/lsp.json, ProjectConfigWholeFile).
 	//   - a ZERO-BYTE seed is invalid JSON, and a directory the prep mkdir'd
-	//     is not a regular file. Both fail closed on a thing posse made.
+	//     is not a regular file. Both still fail closed on the thing posse
+	//     made (D4) — they are simply no longer read for a launch in the home.
 	want := []wspEntry{
-		{"claude", ".claude/settings.json", "claude", PrepSeed, inertOK},
-		{"claude", ".claude/settings.local.json", "claude", PrepSeed, inertOK},
-		{"codex", ".codex/config.toml", "codex", PrepSeed, present},
-		{"grok", ".claude/plugins", "claude", PrepMkdirAll, notFile},
-		{"grok", ".claude/settings.json", "claude", PrepSeed, inertOK},
-		{"grok", ".claude/settings.local.json", "claude", PrepSeed, inertOK},
-		{"grok", ".grok/config.toml", "grok", PrepSeed, invalid},
-		{"grok", ".grok/hooks", "grok", PrepMkdirAll, notFile},
-		{"grok", ".grok/lsp.json", "grok", PrepSeed, present},
-		{"grok", ".grok/plugins", "grok", PrepMkdirAll, notFile},
+		{"claude", ".claude/settings.json", "claude", PrepSeed, true, inertOK, inertOK},
+		{"claude", ".claude/settings.local.json", "claude", PrepSeed, true, inertOK, inertOK},
+		{"codex", ".codex/config.toml", "codex", PrepSeed, true, inertOK, present},
+		{"grok", ".claude/plugins", "claude", PrepMkdirAll, true, inertOK, notFile},
+		{"grok", ".claude/settings.json", "claude", PrepSeed, true, inertOK, inertOK},
+		{"grok", ".claude/settings.local.json", "claude", PrepSeed, true, inertOK, inertOK},
+		{"grok", ".grok/config.toml", "grok", PrepSeed, true, inertOK, invalid},
+		{"grok", ".grok/hooks", "grok", PrepMkdirAll, true, inertOK, notFile},
+		{"grok", ".grok/lsp.json", "grok", PrepSeed, true, inertOK, present},
+		{"grok", ".grok/plugins", "grok", PrepMkdirAll, true, inertOK, notFile},
 	}
 	if len(got) != len(want) {
 		t.Errorf("the collision census changed size: %d rows, want %d\n got: %+v\nwant: %+v", len(got), len(want), got, want)
 	}
 	for i := range got {
 		if i >= len(want) {
-			t.Errorf("new collision, unrecorded: %+v — a wall member or a project_config: entry joined the other list", got[i])
+			t.Errorf("new collision, unrecorded: %+v — a wall member or a project_config: entry joined the other list; if Member is false, D1 does not exempt it and the launch degrades", got[i])
 			continue
 		}
 		if got[i] != want[i] {
@@ -237,14 +274,20 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 		}
 	}
 	for i := len(got); i < len(want); i++ {
-		t.Errorf("recorded collision gone: %+v — if that is the fix, this row and the decision bead go with it", want[i])
+		t.Errorf("recorded collision gone: %+v — a prep step or a project_config: entry was dropped; record the new census", want[i])
 	}
 }
 
-// The verdict a real launch in that home gets, and the remedy the refusal
-// names. ProjectConfigTrust returns the FIRST entry with something to say in
-// declared order, so this is one line per runtime and not a set.
-func TestQAWallSeedProjectConfigRefusesALaunchInTheHomeItSeeded(t *testing.T) {
+// The verdict a real launch in that home gets. ProjectConfigTrust returns the
+// FIRST entry with something to say in declared order, so this is one line
+// per runtime and not a set — and under ADR 0091 D1 every line is clean,
+// which is the whole point of the decision.
+//
+// RENAMED from …RefusesALaunchInTheHomeItSeeded, which is the pin the ADR
+// meant by "both f67jx pins red by name": a name that still said "refuses"
+// over a body asserting clean would be the trap those pins exist to avoid.
+// The `-run 'WallSeedProjectConfig'` filter reaches it either way.
+func TestQAWallSeedProjectConfigLaunchInTheHomeItSeededIsClean(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
 	f := wspFixtureIn(t, t.TempDir())
 	steps := f.prep(t, f.home)
@@ -253,23 +296,25 @@ func TestQAWallSeedProjectConfigRefusesALaunchInTheHomeItSeeded(t *testing.T) {
 			t.Fatalf("prep for %s: %v", name, err)
 		}
 	}
-	// MEASURED 2026-11-11. claude is clean because both of its entries are
-	// `{}` seeds under a keyed list; the other two are not.
-	for _, tc := range []struct{ name, want string }{
-		{"claude", ""},
-		{"codex", "project config is present"},
-		{"grok", "project config classification failed: unreadable: a directory, not a regular file"},
-	} {
-		got := wspFinding(t, ProjectConfigTrust(f.rts[tc.name], f.ag, f.home))
-		if got != tc.want {
-			t.Errorf("%s launching in the home its own wall prepped: got %q, want %q", tc.name, got, tc.want)
+	// MEASURED 2026-11-12 under ADR 0091 D1. Before it, claude alone was
+	// clean — both of its entries are `{}` seeds under a keyed list — while
+	// codex read "project config is present" on its zero-byte config.toml
+	// and grok read "unreadable: a directory, not a regular file" on the
+	// `.claude/plugins` a claude seat's prep had mkdir'd. All three are
+	// members of their own CLI home, so all three are skipped now.
+	for _, name := range wspRuntimes {
+		if got := wspFinding(t, ProjectConfigTrust(f.rts[name], f.ag, f.home)); got != "" {
+			t.Errorf("%s launching in the home its own wall prepped must be clean (ADR 0091 D1): %q", name, got)
 		}
 	}
 
-	// The remedy the refusal text names does not survive the next launch.
-	// Removing the file is what an operator is told to do, and the very next
-	// caged launch seeds it again — so the degrade is not something the
-	// operator can clear while posse keeps launching caged seats there.
+	// THE SEED IS UNCHANGED, AND THAT IS THE RECORD OF WHICH SIDE GAVE. The
+	// file the old refusal told the operator to remove is still re-created by
+	// the very next caged launch — nothing in BwrapArgs' step list moved —
+	// and the classifier still calls that file unreadable when it is asked
+	// about it directly, which is D4's floor. What changed is that a launch
+	// in the home no longer asks: D1 skips the entry before the floor sees
+	// it. Delete the skip and this arm's last two assertions swap places.
 	cfg := filepath.Join(f.home, ".grok", "config.toml")
 	if b, err := os.ReadFile(cfg); err != nil || len(b) != 0 {
 		t.Fatalf("the seed must be a zero-byte file: %v %q", err, b)
@@ -277,13 +322,19 @@ func TestQAWallSeedProjectConfigRefusesALaunchInTheHomeItSeeded(t *testing.T) {
 	if err := os.Remove(cfg); err != nil {
 		t.Fatal(err)
 	}
+	if why := ProjectConfigTrust(f.rts["grok"], f.ag, f.home); why != "" {
+		t.Errorf("a grok launch with the file REMOVED must be clean too — the exemption is about the path, not about what is at it: %s", why)
+	}
 	if err := runBwrapPrep(f.prep(t, f.home)["grok"]); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(cfg); err != nil {
-		t.Errorf("the next launch must seed it again (that is the defect, not a surprise): %v", err)
+		t.Errorf("the next launch must seed it again (unchanged by ADR 0091, which took the classifier's side): %v", err)
+	}
+	if why := ProjectConfigTrust(f.rts["grok"], f.ag, f.home); why != "" {
+		t.Errorf("…and the reseeded file must leave the launch clean: %s", why)
 	}
 	if why := projectConfigTrustFile(f.rts["grok"], ".grok/config.toml", cfg); wspFinding(t, why) == "" {
-		t.Errorf("remove-and-relaunch cleared the finding; if that is the fix, this assertion and ranger-base-mkrsv go with it")
+		t.Errorf("D4's floor is untouched: asked about the file itself, the classifier must still refuse a zero-byte seed")
 	}
 }

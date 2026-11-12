@@ -386,6 +386,34 @@ func cliHomeExecMembers(home string) []cliHomeExecMember {
 	return out
 }
 
+// isCLIHomeExecMember reports whether p IS one of the declared members in
+// members — ADR 0091 D1's exemption, asked by ProjectConfigTrust of every
+// project-config entry resolved against the session dir.
+//
+// EQUALITY, NEVER CONTAINMENT (D3). The member path itself has no writer a
+// repo's committer could be; a path merely UNDER a home does, because a seat
+// whose state grant reaches the home can write anything there that no carve
+// names. `underDir` here would exempt `~/.claude/.claude/settings.json`,
+// which is a live repo→box channel for a session whose dir is `~/.claude`.
+//
+// samePath and not string equality, for samePath's own reason (two spellings
+// of one path, case included) plus one of D1's: a repo can symlink its entry
+// AT a home member (`.grok/config.toml → ~/.grok/config.toml`), and samePath
+// follows the link, so that entry is exempt. Accepted deliberately — the repo
+// supplies a pointer and the operator supplies the content, and a repo cannot
+// write the target.
+//
+// members is the caller's hoisted cliHomeExecMembers(wallHome()): one runtime
+// declares up to ten entries and the set is the same for all of them.
+func isCLIHomeExecMember(members []cliHomeExecMember, p string) bool {
+	for _, m := range members {
+		if samePath(p, m.path) {
+			return true
+		}
+	}
+	return false
+}
+
 // carvedCLIHomeExecMembers is the one filter the three carves share: the
 // members one carve claims and a state grant reaches, dirs and files apart,
 // in the order cliHomeExecMembers declares them.

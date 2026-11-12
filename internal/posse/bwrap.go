@@ -640,11 +640,13 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			// the residual above is not — a created settings.json is read by
 			// every other claude sharing the directory, uncaged ones included.
 			// The launcher writes the empty value and the mount goes over it.
-			// It is NOT inert to posse's own project-config classifier when a
+			// It was NOT inert to posse's own project-config classifier when a
 			// session starts in the home these steps write to
-			// (SeatbeltCarveOut.Seeded's second paragraph, ranger-base-f67jx);
-			// the mkdir arm below has the same exposure, and this is the step
-			// list a fix would come through.
+			// (SeatbeltCarveOut.Seeded's second paragraph, ranger-base-f67jx),
+			// and the mkdir arm below had the same exposure. Neither is fixed
+			// here: ADR 0091 D1 took the classifier's side of it instead, so
+			// nothing in this step list changed and nothing in it needs to
+			// (ProjectConfigTrust, parity.go).
 			switch {
 			case carve.Seeded(d):
 				prep = append(prep, PrepStep{PrepSeed, d, "executable config that is not there yet and sits inside a write grant; created empty so the read-only mount can cover it"})

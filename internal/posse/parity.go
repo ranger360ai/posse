@@ -655,15 +655,36 @@ func (a *App) checkParityResolved(ag *AgentFile, rt *Runtime, res CageRealizeRes
 // Degraded entry and never an Unrealized one — like the cage shortfall, it
 // says what this launch gives away, not which gate went unenforced.
 //
-// POSSE IS ONE OF THE PRODUCERS THIS READS (ranger-base-f67jx). The bwrap
-// launcher creates files and directories in the home before it execs the wall
-// (BwrapArgs' PrepSeed/PrepMkdirAll steps), and eight of those paths are
-// project-config entries of some runtime — ten (runtime, entry) rows, since
-// `.claude/` names are on two lists. So a session whose dir IS the home is
-// classified against what posse put there, and "remove the file", which
-// the refusal below names, is undone by the next caged launch. The census and
-// every verdict are pinned in wallseedprojectconfig_qa_test.go; which side
-// gives is ranger-base-mkrsv. Nothing here is conditioned on it yet.
+// POSSE WAS ONE OF THE PRODUCERS THIS READ, AND A CLI HOME'S MEMBERS ARE NOT
+// PROJECT SCOPE (ranger-base-f67jx, decided by ADR 0091 from
+// ranger-base-mkrsv). The bwrap launcher creates files and directories in the
+// home before it execs the wall (BwrapArgs' PrepSeed/PrepMkdirAll steps), and
+// eight of those paths are project-config entries of some runtime — ten
+// (runtime, entry) rows, since `.claude/` names are on two lists. So a
+// session whose dir IS the home was classified against what posse put there,
+// and "remove the file", which the refusal below names, was undone by the
+// next caged launch.
+//
+// ADR 0091 D1 puts the mistake in the premise rather than in the seed or in
+// this classifier. The question here is "what does this dir add, from a
+// writer I did not choose?", and a DECLARED EXECUTABLE MEMBER of a CLI home
+// has no such writer at all: a seat whose state grant reaches the home gets
+// each member carved read-only, and a seat whose grant does not reach it
+// cannot write there by any route (cliHomeExecMembers, which is why the
+// exemption reads that list UNFILTERED). The writers left are the operator,
+// the operator's own CLIs, and posse's empty seeds, so degrading on one buys
+// nothing — and for its own home a CLI reads that config from every dir
+// anyway, which launching in `$HOME` changes nothing about. Such an entry is
+// therefore SKIPPED, the way personaModeOwnsAll skips posse's own
+// persona-mode dir, by EQUALITY and never containment (D3).
+//
+// The fail-closed floor is untouched (D4): projectConfigTrustFile is the same
+// function it was, and every entry this does not skip still degrades on a
+// zero-byte or non-object file. D1 changes which paths are read, not how they
+// are read. The census and every verdict are pinned in
+// wallseedprojectconfig_qa_test.go, and D3's neighbours — a `.claude` inside
+// a `.claude`, a `$HOME/.mcp.json` no carve covers, a repo's own
+// `.grok/config.toml` — in projectconfigtrust_qa_test.go.
 func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 	if rt == nil || len(rt.ProjectConfig) == 0 || dir == "" {
 		return ""
@@ -675,15 +696,38 @@ func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 	// one with something to say is the message. One line names one file
 	// because one file is enough to refuse the launch, and the operator's next
 	// move (remove it, or opt the PID in) is the same either way.
+	//
+	// The member list is hoisted: it is the same set for every entry, and
+	// building it walks three CLI homes.
+	members := cliHomeExecMembers(wallHome())
 	for _, rel := range rt.ProjectConfig {
-		if personaModeOwnsAll(rt, dir, rel) {
-			continue
-		}
-		if why := projectConfigTrustFile(rt, rel, filepath.Join(dir, rel)); why != "" {
+		if why := projectConfigTrustEntry(rt, dir, rel, members); why != "" {
 			return why
 		}
 	}
 	return ""
+}
+
+// projectConfigTrustEntry is ONE declared entry's answer for a session
+// starting in dir: the two exemptions — posse's own persona-mode dir
+// (ADR 0062 D1.4) and a CLI home's own executable member (ADR 0091 D1) — and
+// then the classifier. An exemption SKIPS the entry, which is why it returns
+// the same "" a clean read returns: the launch is told nothing either way,
+// and what differs is which paths were read at all.
+//
+// Split out of the walk because the f67jx census reads this answer PER ENTRY
+// while ProjectConfigTrust returns only the first offender in declared order,
+// and a census that re-spelled the exemptions would be a second
+// implementation of them.
+func projectConfigTrustEntry(rt *Runtime, dir, rel string, members []cliHomeExecMember) string {
+	if personaModeOwnsAll(rt, dir, rel) {
+		return ""
+	}
+	p := filepath.Join(dir, rel)
+	if isCLIHomeExecMember(members, p) {
+		return ""
+	}
+	return projectConfigTrustFile(rt, rel, p)
 }
 
 // personaModeOwnsAll answers the one exemption this check has (ADR 0062

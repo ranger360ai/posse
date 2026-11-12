@@ -372,18 +372,39 @@ type PrivateBind struct {
 // files.
 //
 // "AS INERT AS NONE" IS A CLAIM ABOUT THE CLI, AND POSSE'S OWN CLASSIFIER IS
-// NOT A CLI (ranger-base-f67jx). ProjectConfigTrust reads the session dir, so
-// for a session whose dir IS the home, a seed here is a project-config entry
-// there: `{}` under a keyed list reads clean, which is the case this claim was
-// written for (claude's settings.json, ranger-base-6akzw), but a ZERO-BYTE
-// seed is `invalid JSON` and a `{}` seed under a whole-file entry degrades on
-// presence alone. Since ranger-base-zmk4q seeded `.codex/config.toml` and
-// `.grok/config.toml` — neither of them `.json`, so neither gets a body — a
-// codex or grok launch in $HOME is refused over a file posse made, and
-// removing it is undone by the next launch. MEASURED, with the whole census
-// and the directory arm, in wallseedprojectconfig_qa_test.go; the decision of
-// which side gives is ranger-base-mkrsv. Nothing here is conditioned on it:
-// the wall still has to cover the name.
+// NOT A CLI (ranger-base-f67jx) — SO THE CLASSIFIER GAVE, NOT THE SEED
+// (ADR 0091, from ranger-base-mkrsv). ProjectConfigTrust reads the session
+// dir, so for a session whose dir IS the home a seed here was also a
+// project-config entry there, and the claim held for only one of the three
+// shapes: `{}` under a keyed list reads clean (claude's settings.json,
+// ranger-base-6akzw), while a ZERO-BYTE seed is `invalid JSON` and a `{}`
+// seed under a whole-file entry degrades on presence alone. Since
+// ranger-base-zmk4q seeded `.codex/config.toml` and `.grok/config.toml` —
+// neither of them `.json`, so neither gets a body — a codex or grok launch in
+// $HOME was refused over a file posse made, and removing it was undone by the
+// next launch.
+//
+// ADR 0091 D1 answers it on the other side: a declared executable member of a
+// CLI home is not project scope at all, because nothing a repo's committer
+// controls can write one (ProjectConfigTrust has the argument;
+// cliHomeExecMembers is the list both sides read). So this claim no longer
+// has to be true of posse's classifier — the classifier no longer asks it of
+// these paths — and it stays what it always was, a claim about the CLI that
+// reads the seed. Nothing here is conditioned on D1 either way: the wall
+// still has to cover the name.
+//
+// The exemption is the SAME on darwin, where nothing is seeded, and that is
+// mechanical rather than assumed: the carve block that produces these members
+// (SeatbeltCarveOut, the claudeExecConfig / runtimeConfigFiles /
+// runtimeExecMembers calls) takes no GOOS and narrows the launching runtime's
+// own state grant, which is GOOS-independent too — only the writable set's
+// cache and temp grants are per-GOOS (homeCacheGrants, seatbeltTempGrants),
+// and those feed no carve here. TestQAWallExecConfigCarvesClaudesExecutableConfig
+// renders the profile and reads the deny lines back on every GOOS, so a
+// darwin divergence would red there.
+//
+// MEASURED, with the whole census and the directory arm, in
+// wallseedprojectconfig_qa_test.go.
 //
 // A subset of DenyFile, and of Deny with it; an entry here that is not in
 // both seeds nothing.

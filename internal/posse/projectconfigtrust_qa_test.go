@@ -224,3 +224,170 @@ func TestQAProjectConfigTrustIsRecheckedOnRelaunch(t *testing.T) {
 		t.Errorf("nothing may be destroyed before the re-check: %s", s)
 	}
 }
+
+// ADR 0091 D1/D3's NEGATIVE CONTROLS (ranger-base-f24yz). D1 exempts an entry
+// that resolves to a declared executable member of a CLI home, by EQUALITY.
+// These are the neighbours of such a member, and each one still classifies
+// exactly as it did — each names the process it protects, which is the one
+// this check was always about: the classifier reading REPO-WRITTEN executable
+// config.
+//
+// HELD BY NOTHING OTHERWISE, and that is MEASURED and not argued — three
+// mutations at HEAD, 2026-11-12, linux 7.2.15, go1.27.3:
+//
+//	mutation                                  arm 1 census/verdict   this test
+//	D1's skip deleted (the ADR's exit hatch)   RED, both pins         RED
+//	samePath -> samePath || underDir(home)     green                  RED (a, d)
+//	keyed on samePath(dir, wallHome())         green                  RED (b, d)
+//
+// So the f67jx pins in arm 1 do hold D1 itself — they are what reds when the
+// exit hatch is taken — and they hold NOTHING about its width: every one of
+// their ten rows IS a member, so a census of members cannot tell a correct
+// exemption from an over-wide one. That is this test's whole job.
+func TestQAProjectConfigTrustExemptsOnlyTheHomeMemberItself(t *testing.T) {
+	// No t.Parallel: the exemption resolves against wallHome() and the CLI
+	// home variables, which this sets.
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	for _, d := range []string{
+		filepath.Join(home, ".claude"), filepath.Join(home, ".codex"), filepath.Join(home, ".grok"),
+		filepath.Join(root, "posse", "state"),
+	} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(CodexHomeVar, "")
+	t.Setenv(GrokHomeVar, "")
+	t.Setenv(ClaudeConfigDirVar, filepath.Join(home, ".claude"))
+
+	a := &App{Home: filepath.Join(root, "posse"), StateDir: filepath.Join(root, "posse", "state")}
+	ag := &AgentFile{Name: "dev"}
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grok, err := a.LoadRuntime("grok")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THE POSITIVE CONTROL every arm below is measured against: a ZERO-BYTE
+	// settings.json at the member itself. That body is `invalid JSON` to the
+	// classifier everywhere else in this file (the txd7 pin's "empty" row),
+	// and a launch in the home is clean on it — so the arms below are reading
+	// D1's equality and not some property of the bytes.
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rt := range []*Runtime{claude, grok} {
+		if why := ProjectConfigTrust(rt, ag, home); why != "" {
+			t.Fatalf("%s: the member itself must be exempt (ADR 0091 D1): %s", rt.Name, why)
+		}
+	}
+
+	// (a) A `.claude` INSIDE a CLI home. `dir=~/.claude` resolves claude's
+	// own declared entry to `~/.claude/.claude/settings.json`: inside a home,
+	// named by no carve, and writable by any seat whose state grant reaches
+	// the config dir — so it is a live repo→box channel and classifies as
+	// before. This is the arm an `underDir` exemption would have lost, and
+	// the example the ADR spells out in D3.
+	t.Run("a-claude-inside-a-claude-is-no-member", func(t *testing.T) {
+		inner := filepath.Join(home, ".claude", ".claude")
+		if err := os.MkdirAll(inner, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(inner, "settings.json"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, rt := range []*Runtime{claude, grok} {
+			got := projectConfigVerdict(t, ProjectConfigTrust(rt, ag, filepath.Join(home, ".claude")))
+			if !strings.HasPrefix(got, "project config classification failed: invalid JSON") {
+				t.Errorf("%s launching in ~/.claude: want invalid JSON over the inner settings.json, got %q", rt.Name, got)
+			}
+		}
+	})
+
+	// (b) `$HOME/.mcp.json`. It is in NO CLI home and covered by NO carve, so
+	// a seat with a home grant can write it and a `$HOME` launch still
+	// degrades on it. This is the arm the rejected `dir == $HOME` exemption
+	// would have lost (ADR 0091, alternative 2, which also names
+	// `$HOME/.cursor/*`).
+	t.Run("b-home-mcp-json-is-in-no-home-and-no-carve", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(home, ".mcp.json"), []byte(`{"mcpServers":{}}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := projectConfigVerdict(t, ProjectConfigTrust(grok, ag, home)); got != "matched top-level project config keys: mcpServers" {
+			t.Errorf("$HOME/.mcp.json must still degrade a grok launch in $HOME: %q", got)
+		}
+		// The contrast that says this is grok's DECLARED LIST talking and not
+		// the directory: claude names no `.mcp.json` entry, so the same file
+		// leaves a claude launch in the same dir clean.
+		if why := ProjectConfigTrust(claude, ag, home); why != "" {
+			t.Errorf("claude declares no .mcp.json entry: %s", why)
+		}
+	})
+
+	// (c) A REPO's own `.grok/config.toml`, outside every home. The writer
+	// here is the repo's committer, which is the threat the whole check is
+	// for, and the exemption must not reach it by sharing the entry's name
+	// with a member.
+	t.Run("c-a-repos-own-grok-config-is-no-member", func(t *testing.T) {
+		repo := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(repo, ".grok"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, ".grok", "config.toml"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := projectConfigVerdict(t, ProjectConfigTrust(grok, ag, repo)); !strings.HasPrefix(got, "project config classification failed: invalid JSON") {
+			t.Errorf("a repo's own .grok/config.toml must still degrade: %q", got)
+		}
+	})
+
+	// (d) The one case the ADR ACCEPTS, pinned so it is a decision and not a
+	// surprise: a repo may symlink its entry AT a home member, samePath
+	// follows the link, and the entry is exempt. The repo supplies a pointer
+	// and the operator supplies the content; a repo cannot write the target.
+	// Its control is the same link pointing at a home path that is NOT a
+	// member, which degrades — so what the link buys is the member and not
+	// the home.
+	t.Run("d-a-link-at-a-member-is-exempt-and-only-at-a-member", func(t *testing.T) {
+		target := filepath.Join(home, ".grok", "config.toml")
+		if err := os.WriteFile(target, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		notMember := filepath.Join(home, ".grok", "bundles.d", "config.toml")
+		if err := os.MkdirAll(filepath.Dir(notMember), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(notMember, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct{ name, at, want string }{
+			{"at-the-member", target, ""},
+			{"at-a-home-path-no-carve-names", notMember, "project config classification failed: invalid JSON"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				repo := t.TempDir()
+				if err := os.MkdirAll(filepath.Join(repo, ".grok"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(tc.at, filepath.Join(repo, ".grok", "config.toml")); err != nil {
+					t.Fatal(err)
+				}
+				got := projectConfigVerdict(t, ProjectConfigTrust(grok, ag, repo))
+				if tc.want == "" {
+					if got != "" {
+						t.Errorf("a link at %s must be exempt: %q", AbbrevHome(tc.at), got)
+					}
+					return
+				}
+				if !strings.HasPrefix(got, tc.want) {
+					t.Errorf("a link at %s: want %q, got %q", AbbrevHome(tc.at), tc.want, got)
+				}
+			})
+		}
+	})
+}
