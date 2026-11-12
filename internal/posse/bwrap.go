@@ -155,6 +155,10 @@ const (
 	// (seedBody), and only when nothing is there: it never rewrites a file
 	// that exists (ranger-base-6akzw).
 	PrepSeed PrepKind = "seed"
+	// PrepMaskPoint creates the path as an EMPTY 0600 file when it is absent,
+	// and leaves anything already there alone: the mount point of a /dev/null
+	// mask (SeatbeltCarveOut.Masked, ranger-base-l751c).
+	PrepMaskPoint PrepKind = "mask point"
 )
 
 // PrepStep is one of those actions beside the reason the render asked for
@@ -511,6 +515,39 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 		if reopens(d) {
 			continue // hidden already, and the tmpfs is the stronger statement
 		}
+		if carve.Masked(d) {
+			// A MASKED deny is covered with /dev/null, never with itself
+			// (ranger-base-l751c, claudeManagedCache): what is at the name
+			// is an answer a later reader obeys, so the seat must neither
+			// write it nor read a copy someone else planted there. The
+			// source is the host's /dev/null, which always exists.
+			//
+			// The NAME must be a regular file or nothing. bwrap follows a
+			// symlink at the destination, so a mount "over" a planted link
+			// lands on its target and leaves the name a seat can rename
+			// over; a directory cannot take a file mount at all. Both are
+			// refused, in the tier's fail-closed direction.
+			fi, err := os.Lstat(d)
+			switch {
+			case err == nil && !fi.Mode().IsRegular():
+				return nil, nil, Die("bwrap cannot mask %s: it is a %s, not a file, and a mount over it would not cover the name (ranger-base-l751c). Remove it on the host; claude recreates it as a file", d, fi.Mode().Type())
+			case err != nil && !os.IsNotExist(err):
+				return nil, nil, bwrapStatRefusal("mask", d, err)
+			case err != nil:
+				if !writeGranted(grants, d) {
+					continue // nothing inside the wall can bring this path into being
+				}
+				// bwrap would make the mount point itself, 0444, and the
+				// host keeps it. claude rewrites these caches in place
+				// (O_TRUNC, no rename), so a 0444 file would stop the
+				// operator's own claude caching for good. An empty 0600
+				// file is what claude itself would create, and reads as
+				// no stored copy (MEASURED, claudeManagedCache).
+				prep = append(prep, PrepStep{PrepMaskPoint, d, "a cached server answer that is not there yet and sits inside a write grant; created empty (no answer) so /dev/null can be mounted over the name"})
+			}
+			argv = append(argv, "--ro-bind", "/dev/null", d)
+			continue
+		}
 		exists, _, err := bwrapStat(d)
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("deny", d, err)
@@ -594,7 +631,10 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			// launcher makes unconditionally at every launch, which is what
 			// the mkdir did.
 			//
-			// THE ONE FILE-SHAPED DENY THAT IS MADE is a Seeded one
+			// (A Masked deny never reaches this arm: its empty mount point
+			// is made above, ranger-base-l751c.)
+			//
+			// THE ONE FILE-SHAPED DENY THAT IS MADE HERE is a Seeded one
 			// (ranger-base-6akzw): claude's executable config, where an empty
 			// file is as inert as none to the CLI that reads it (seedBody) and
 			// the residual above is not — a created settings.json is read by
@@ -1713,6 +1753,21 @@ func runBwrapPrep(prep []PrepStep) error {
 				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
 					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
 			}
+		case PrepMaskPoint:
+			// O_EXCL for PrepSeed's reason: whatever appeared since the
+			// render is what the mask covers. 0600 and empty, as claude
+			// creates these itself.
+			f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			if os.IsExist(err) {
+				continue
+			}
+			if err != nil {
+				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because a mount needs a name to cover (ADR 0080 D17/D18)",
+					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
+			}
+			if err := f.Close(); err != nil {
+				return err
+			}
 		default:
 			return Die("cage %s (%s): the render asked the launcher for %q on %s, which posse has no step for — refusing rather than binding a source nothing created (ADR 0080 D18)",
 				CageSeatbelt, WallBwrap, string(s.Kind), s.Path)
@@ -1865,6 +1920,10 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 		byRule[d.Path] = append(byRule[d.Path], d.Rule)
 	}
 	for _, p := range shallowestFirst(carve.Deny) {
+		if carve.Masked(p) {
+			fmt.Fprintf(out, "    x %s (/dev/null bound over it, never seeded — a cached server answer claude obeys; ranger-base-l751c)\n", AbbrevHome(p))
+			continue
+		}
 		if r := byRule[p]; len(r) > 0 {
 			fmt.Fprintf(out, "    x %s (read-only bind over the grant above — the PID's %s; ADR 0014 §3)\n", AbbrevHome(p), strings.Join(r, ", "))
 			continue

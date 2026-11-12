@@ -322,6 +322,10 @@ type SeatbeltCarveOut struct {
 	DenyRead []string // literal files no session may file-read*, whatever grants it
 	DenyFile []string // the Deny entries their producer means as FILES (see above)
 	Seed     []string // the DenyFile entries the launcher creates when absent (see Seeded)
+	// Mask is the DenyFile entries bwrap covers with /dev/null instead of
+	// with themselves, present or absent, and never seeds (see Masked).
+	// Seatbelt renders them as the plain Deny they also are.
+	Mask []string
 	// Hide is the directories a seat sees EMPTY, whatever is in them on the
 	// host: the user runtime dir and nothing else today (bwrapRuntimeDirs,
 	// ranger-base-ludpp). Like Seed, the bwrap mechanism needs it and
@@ -388,6 +392,28 @@ func (c SeatbeltCarveOut) Seeded(p string) bool {
 		return false
 	}
 	for _, f := range c.Seed {
+		if f == p {
+			return true
+		}
+	}
+	return false
+}
+
+// Masked reports whether a file-shaped Deny entry is one bwrap covers with
+// /dev/null (ranger-base-l751c, claudeManagedCache). It is for a file whose
+// CONTENT is an answer a later reader obeys, so that neither the seat's write
+// nor a seed of posse's would be inert. The mask hides whatever the host has
+// at the name from the seat, and the name cannot be written, renamed over or
+// removed while the mount is on it. Absent, the launcher makes an empty 0600
+// mount point, which that file's reader takes as no answer at all.
+//
+// A subset of DenyFile, and of Deny with it; an entry here that is not in
+// both masks nothing.
+func (c SeatbeltCarveOut) Masked(p string) bool {
+	if !c.FileShaped(p) {
+		return false
+	}
+	for _, f := range c.Mask {
 		if f == p {
 			return true
 		}
@@ -1567,6 +1593,14 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 		add(&c.DenyFile, f)
 		add(&c.Seed, f)
 	}
+	// claude's server-policy caches: a write deny with NO seed, and at bwrap
+	// a /dev/null mask (ranger-base-l751c; claudeManagedCache has the
+	// measurement).
+	for _, f := range claudeManagedCache(wallHome(), rtGrants) {
+		add(&c.Deny, f)
+		add(&c.DenyFile, f)
+		add(&c.Mask, f)
+	}
 	// posse's plan-usage snapshot, read-only over the `.cache/posse` lock-dir
 	// grant (ranger-base-olr0g): the dispatcher's usage guard trusts it, and
 	// its readers already fail quiet on a dir they cannot write.
@@ -1578,6 +1612,7 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	c.Deny = dedupeStrings(c.Deny)
 	c.DenyFile = dedupeStrings(c.DenyFile)
 	c.Seed = dedupeStrings(c.Seed)
+	c.Mask = dedupeStrings(c.Mask)
 	// The session's own audit trail, by literal so no new file joins it.
 	// Both are already inside a grant (the gates dir), so this re-allows
 	// rather than widens.

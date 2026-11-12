@@ -17,6 +17,7 @@ package posse
 //	go test ./internal/posse -run 'WallExecConfig' -v
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -306,6 +307,181 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 	for name, script := range allowed {
 		if ok, out := try(script); !ok {
 			t.Errorf("%s: REFUSED under the rendered wall — claude or the seat needs this write\n script: %s\n out: %s", name, script, out)
+		}
+	}
+}
+
+// ranger-base-l751c: claude's server-policy caches are a deny with NO seed at
+// both mechanisms, and a /dev/null mask at bwrap whether or not the file is
+// there. claudeManagedCache has the measurement this rests on.
+func TestQAWallExecConfigMasksClaudesManagedCacheWithoutSeeding(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f := weFixtureIn(t, wallUngrantedDir(t))
+	planted := filepath.Join(f.cfg, "remote-settings.json")
+	if err := os.WriteFile(planted, []byte(`{"env":{"X":"planted"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"remote-settings.json", "policy-limits.json", "remote-settings-consent.json", "remote-settings-helper-consent"} {
+		if !containsString(claudeManagedCacheFileNames, n) {
+			t.Errorf("%s is not on the list — claude obeys or trusts what is cached there (ranger-base-l751c)", n)
+		}
+	}
+	stateDirs, err := BwrapStateDirs(f.rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, stateDirs...)
+	c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w, stateDirs...)
+	prof := SeatbeltProfile(f.ag.Name, w, nil, c)
+	cfg := absResolve(f.cfg)
+	for _, n := range claudeManagedCacheFileNames {
+		p := filepath.Join(cfg, n)
+		if !containsString(c.Deny, p) || !c.Masked(p) {
+			t.Errorf("%s must be a masked file-shaped deny: deny=%v mask=%v", p, c.Deny, c.Mask)
+		}
+		if c.Seeded(p) {
+			t.Errorf("%s is SEEDED — a seed is a stored answer of posse's making that every claude on the box reads", p)
+		}
+		if !strings.Contains(prof, sbQuote(p)) {
+			t.Errorf("the seatbelt profile names no deny over %s", n)
+		}
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := strings.Join(r.Argv, "\x00")
+	for _, n := range claudeManagedCacheFileNames {
+		p := filepath.Join(cfg, n)
+		if !strings.Contains(argv, "\x00--ro-bind\x00/dev/null\x00"+p+"\x00") {
+			t.Errorf("bwrap does not mask %s with /dev/null", n)
+		}
+		if strings.Contains(argv, "\x00--ro-bind\x00"+p+"\x00"+p+"\x00") {
+			t.Errorf("bwrap binds %s over itself — the seat would read what is planted there", n)
+		}
+		var kinds []PrepKind
+		for _, s := range r.Prep {
+			if s.Path == p {
+				kinds = append(kinds, s.Kind)
+			}
+		}
+		want := []PrepKind{PrepMaskPoint}
+		if p == absResolve(planted) {
+			want = nil // there already: the mask covers it, nothing is made
+		}
+		if fmt.Sprint(kinds) != fmt.Sprint(want) {
+			t.Errorf("%s: prep %v, want %v", n, kinds, want)
+		}
+	}
+	// A seat on another runtime gets none of it.
+	other := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w, "~/.codex")
+	if len(other.Mask) != 0 {
+		t.Errorf("a codex seat's carve masks %v — the mask narrows claude's own state grant and nothing else", other.Mask)
+	}
+}
+
+// A planted link or a directory at a masked name refuses the render: a bwrap
+// mount follows a link to its target and leaves the name open to a rename.
+func TestQAWallExecConfigMaskRefusesALinkOrADirAtTheName(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	for _, shape := range []string{"link", "dir"} {
+		t.Run(shape, func(t *testing.T) {
+			f := weFixtureIn(t, wallUngrantedDir(t))
+			p := filepath.Join(f.cfg, "remote-settings.json")
+			var err error
+			if shape == "link" {
+				err = os.Symlink(filepath.Join(f.cfg, "elsewhere.json"), p)
+			} else {
+				err = os.Mkdir(p, 0o755)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates); err == nil || !strings.Contains(err.Error(), "cannot mask") {
+				t.Errorf("a %s at %s rendered (err=%v) — the mask would not cover the name", shape, p, err)
+			}
+		})
+	}
+}
+
+// The mask point is empty and 0600, and never touches what is already there.
+func TestQAWallExecConfigMaskPointIsEmpty0600AndNeverOverwrites(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	have := filepath.Join(d, "policy-limits.json")
+	if err := os.WriteFile(have, []byte(`{"restrictions":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fresh := filepath.Join(d, "remote-settings.json")
+	if err := runBwrapPrep([]PrepStep{{PrepMaskPoint, have, "t"}, {PrepMaskPoint, fresh, "t"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(have); string(got) != `{"restrictions":{}}` {
+		t.Errorf("the mask point rewrote a file that was there: %q", got)
+	}
+	fi, err := os.Stat(fresh)
+	if err != nil || fi.Size() != 0 || fi.Mode().Perm() != 0o600 {
+		t.Errorf("the mask point is not an empty 0600 file (claude rewrites these in place, so 0444 would lock it out): %v %v", fi, err)
+	}
+}
+
+// The live join: posse's own render under the real bwrap. Every masked name
+// refuses a write, an append, a replace and a removal; a copy planted on the
+// host before the launch reads as nothing inside; and the host is left with
+// the planted copy byte-identical and every absent member an empty 0600 file.
+func TestLiveWallExecConfigMasksClaudesManagedCache(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	wrcNeedBwrap(t)
+	f := weFixtureIn(t, wallUngrantedDir(t))
+	planted := filepath.Join(f.cfg, "remote-settings.json")
+	const plant = `{"env":{"L751C":"planted"}}`
+	if err := os.WriteFile(planted, []byte(plant), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	try := func(script string) (bool, string) {
+		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		return err == nil, strings.TrimSpace(string(out))
+	}
+	q := shellQuote
+	for _, n := range claudeManagedCacheFileNames {
+		p := filepath.Join(f.cfg, n)
+		tmp := filepath.Join(f.cfg, n+".l751c.tmp")
+		for name, script := range map[string]string{
+			"write":   "echo '{}' > " + q(p),
+			"append":  "echo x >> " + q(p),
+			"replace": "echo '{}' > " + q(tmp) + " && mv " + q(tmp) + " " + q(p),
+			"remove":  "rm -f " + q(p),
+		} {
+			if ok, out := try(script); ok {
+				t.Errorf("%s %s: ALLOWED under the rendered wall (ranger-base-l751c)\n out: %s", name, n, out)
+			}
+		}
+	}
+	if ok, out := try("cat " + q(planted)); strings.Contains(out, "planted") {
+		t.Errorf("the seat reads the planted copy through the mask (ok=%v): %s", ok, out)
+	}
+	// Control: the config dir itself is still the seat's to write.
+	if ok, out := try("echo x >> " + q(filepath.Join(f.cfg, "history.jsonl"))); !ok {
+		t.Errorf("history append REFUSED — claude needs its config dir: %s", out)
+	}
+	for _, n := range claudeManagedCacheFileNames {
+		p := filepath.Join(f.cfg, n)
+		if p == planted {
+			if b, _ := os.ReadFile(p); string(b) != plant {
+				t.Errorf("the planted copy changed on the host: %q", b)
+			}
+			continue
+		}
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() != 0 || fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s on the host after the run is not an empty 0600 file: %v %v", n, fi, err)
 		}
 	}
 }

@@ -72,7 +72,7 @@ import (
 //     write, and the files are byte-identical afterwards. No member exists
 //     in this box's live config dir, so no seat on it has written one.
 //
-// Residual: ranger-base-h5vij.
+// Residual: ranger-base-h5vij. Its caches are claudeManagedCache's.
 var (
 	claudeExecConfigDirNames  = []string{"agents", "commands", "daemon", "hooks", "output-styles", "plugins", "routines", "rules", "skills", "workflows"}
 	claudeExecConfigFileNames = []string{"CLAUDE.md", "daemon.json", "launch.json", "scheduled_tasks.json", "settings.json", "settings.local.json"}
@@ -105,6 +105,83 @@ func claudeExecConfig(home string, stateGrants []string) (dirs, files []string) 
 		files = append(files, filepath.Join(cfg, n))
 	}
 	return dirs, files
+}
+
+// claude's config dir also holds CACHES of server-fetched policy, and one of
+// them is obeyed as policy (ranger-base-l751c, census ranger-base-h5vij).
+// remote-settings.json is the stored copy of the account's managed settings,
+// loaded at POLICY tier for an account claude deems eligible: any API-key
+// login against api.anthropic.com, team and enterprise OAuth. Policy tier
+// carries env, permissions and hooks. policy-limits.json is the stored copy of
+// the org's policy limits. The rest of the list is their signature, stamp and
+// consent siblings, the same set claude 2.1.322's own sandbox write-denies
+// (read from its binary, at the `remote-settings-helper-consent` loop and the
+// `rEe`/`u4e`/`FQe`/`d_t` name helpers it applies to each cache).
+//
+// MEASURED 2026-11-12 on the D1 host, claude 2.1.322, bwrap 0.13.1, unbilled:
+// a scratch CLAUDE_CONFIG_DIR, an API-key login with no base-URL override, run
+// in a private user+net+mount namespace where api.anthropic.com resolves to a
+// local TLS fake (the namespace has only lo, so nothing left the box). The
+// fake fails the settings fetch, so a stored copy is the only source, and asks
+// for one Bash call that prints the env it got.
+//
+//   - An UNSIGNED planted `{"env":{...}}` is OBEYED: its variable reaches the
+//     Bash tool. The stored-copy gate is the server flag tengu_fizzy_widget,
+//     and its served value is cached in `.claude.json`'s
+//     cachedGrowthBookFeatures, which the seat writes every turn (it cannot
+//     be carved: ranger-base-nv3el). Flag false: obeyed. Flag absent (a fresh
+//     cache): obeyed. Flag true: refused. So the gate cannot protect this
+//     cache against a seat, and this carve is the only control.
+//   - With /dev/null bound over every member, the same planted copy is NOT
+//     obeyed, the turn exits 0, and settings the server serves are still
+//     applied for the run (claude holds them in memory; a `-p` run persists
+//     nothing anyway).
+//   - An EMPTY 0600 member reads as no stored copy ("no cached settings") to
+//     an uncaged eligible claude, and that turn exits 0 too.
+//
+// So the members are NOT seeded. A `{}` seed would be a stored answer of
+// posse's making ("no managed settings") that every claude on the box reads.
+// At bwrap, /dev/null is bound over each one, present or absent
+// (SeatbeltCarveOut.Mask), and an absent one gets an empty 0600 mount point
+// first, because bwrap's own is 0444 and claude rewrites these caches IN
+// PLACE (O_TRUNC, no rename), so a 0444 one would stop the operator's own
+// claude from ever caching again. At seatbelt, the write deny needs no name.
+//
+// This box's own login is a Max OAuth account, which reads as ineligible, and
+// none of these exists in its live config dir. The exposure is a box running
+// posse on an API key or a team plan.
+var claudeManagedCacheFileNames = []string{
+	"policy-limits.json",
+	"policy-limits.json.signature-iat.json",
+	"policy-limits.json.signature.json",
+	"policy-limits.json.stamp.json",
+	"remote-settings-consent.json",
+	"remote-settings-helper-consent",
+	"remote-settings.json",
+	"remote-settings.json.signature-iat.json",
+	"remote-settings.json.signature.json",
+	"remote-settings.json.synced-at",
+}
+
+// claudeManagedCache names those members for the config dir a seat on this box
+// would use, under the same guard as claudeExecConfig: only when the
+// launching runtime's state grant reaches that dir.
+func claudeManagedCache(home string, stateGrants []string) (files []string) {
+	if home == "" {
+		return nil
+	}
+	cfg := ClaudeConfigDirIn(home)
+	if !filepath.IsAbs(cfg) {
+		return nil
+	}
+	cfg = absResolve(cfg)
+	if !writeGranted(stateGrants, cfg) {
+		return nil
+	}
+	for _, n := range claudeManagedCacheFileNames {
+		files = append(files, filepath.Join(cfg, n))
+	}
+	return files
 }
 
 // codex and grok keep their command-bearing config in ONE file each, and
