@@ -51,7 +51,16 @@ import (
 //	                         judged by every arm above.
 //	hookskip:plumbing-commit (ranger-base-crlty) `git commit-tree`, which makes
 //	                         a commit no pre-commit or commit-msg hook saw;
-//	                         update-ref or a fast-forward then lands it.
+//	                         update-ref or a fast-forward then lands it. And
+//	                         (ranger-base-o6ip1) `git am`, which commits a
+//	                         patch FILE with only pre-applypatch run — no
+//	                         prior unscanned object needed, and posse's own
+//	                         L3 prepare-commit-msg skipped too. Every am but
+//	                         the four that end or read one: --abort, --quit,
+//	                         --skip, --show-current-patch, which AGENTS.md
+//	                         and gates.go's sequencer arm both tell seats to
+//	                         type. `git apply` then `git commit` is the
+//	                         respelling, and it meets both hooks.
 //	hookskip:alias           (ranger-base-z8kym) a verb that is not a git
 //	                         builtin is looked up as an alias, under the
 //	                         call's own global options and env, after the
@@ -160,14 +169,23 @@ import (
 // verb deny rules now judge as well (renderAliasDeny, ranger-base-d4bk4); a
 // hand-edited copy of the baked reference in the shim file itself; and a
 // hook-relevant config value carrying a newline, which the global compare
-// cannot judge and so refuses (an over-refusal); a commit OBJECT written by
-// plumbing other than commit-tree (`hash-object -t commit -w`, `fast-import`,
-// `mktag`-style object writers) and then put on a ref — the ref write is
-// update-ref's ordinary job and cannot be refused, and commit-tree is refused
-// as the ordinary spelling of the route (ranger-base-crlty); and, for the
-// ADR 0052 D2 redirect, another live session's rendered dir or a render
-// forged by hand under <StateDir>/hooks (posse_hs_redirect says why "this
-// session's own" cannot be judged from a per-persona shim). A moved HOME /
+// cannot judge and so refuses (an over-refusal); A COMMIT MADE BY ANYTHING
+// BUT `git commit` OR `git merge` — cherry-pick/revert/rebase of a stash or
+// other unscanned object, `git stash create`, `git replace --graft`, and
+// plumbing (`hash-object -t commit -w`, `fast-import`, `mktag`-style object
+// writers) — each put on a ref (ranger-base-o6ip1, from ranger-base-2lls3;
+// MEASURED 2026-11-11, git 2.56.0, in the measured-residual pin below). The
+// sequencer runs no pre-commit by git's DESIGN, so `git stash push` then
+// `git cherry-pick -m 1 stash@{0}` lands working-tree content past both
+// hooks through two porcelain verbs and no plumbing at all; a refusal cannot
+// hold it, because cherry-picking an existing commit is the ordinary way to
+// move one, and the ref write is update-ref's ordinary job. What IS refused
+// is each route's dedicated spelling, where the whole point of the verb is a
+// commit no hook saw: commit-tree (ranger-base-crlty) and am
+// (ranger-base-o6ip1). And, for the ADR 0052 D2 redirect, another live
+// session's rendered dir or a render forged by hand under <StateDir>/hooks
+// (posse_hs_redirect says why "this session's own" cannot be judged from a
+// per-persona shim). A moved HOME /
 // XDG_CONFIG_HOME is no longer a residual (ADR 0079). An over-refusal
 // one respelling away is the accepted cost in every arm: `-c` values,
 // commit clusters like `-uno` (the `-n` scan cannot tell `-u`'s glued value
@@ -363,6 +381,29 @@ func hookSkipNoVerify(verb string) spoiler {
 // hookSkipNoVerifyVerbs is the order the per-verb helpers are rendered in.
 var hookSkipNoVerifyVerbs = []string{"commit", "am", "merge", "pull", "rebase", "push"}
 
+// hookSkipVerbExtra is a SECOND refusal for a verb hookSkipNoVerifyVerbs
+// already writes a case arm for, spliced into that arm by the case loop in
+// renderHookSkipArm. A standalone `am)` arm after the loop would be dead
+// code: sh takes the first matching arm (ranger-base-o6ip1).
+var hookSkipVerbExtra = map[string]string{
+	"am": "posse_hs_am \"$@\" || posse_hs_refuse hookskip:plumbing-commit 'git am commits a patch FILE with only pre-applypatch run — never pre-commit or commit-msg, and not the L3 prepare-commit-msg posse renders; git apply then git commit is the respelling, and am --abort/--quit/--skip/--show-current-patch still run'",
+}
+
+// hookSkipAmAllowed are the only `git am` forms a seat may still type: each
+// ENDS or READS an am already in progress and commits nothing. AGENTS.md's
+// sequencer paragraph and gates.go's sequencerVerbs comment both tell seats
+// to type `git am --abort`/`--quit` to clear a stalled tree, so refusing
+// those would refuse the house's own advice.
+//
+// EXACT spellings, not prefixes, and that is the safe direction: this arm
+// refuses am by DEFAULT, so an unlisted abbreviation (`--abor`, which git
+// itself accepts) is an over-refusal one respelling away — the accepted cost
+// in every arm here. A prefix GLOB would do the opposite and admit the wrong
+// option outright: `--s*` reaches --signoff and --scissors, both of which
+// commit. `--continue`/`--resolved` are deliberately absent for the same
+// reason — continuing an am is what finally writes its commit.
+var hookSkipAmAllowed = []string{"--abort", "--quit", "--skip", "--show-current-patch"}
+
 // ciGlob spells s as a case-insensitive sh glob: `core` → `[Cc][Oo][Rr][Ee]`.
 // git compares section and variable names case-insensitively, so a literal
 // arm would miss `-c CORE.HOOKSPATH=`.
@@ -556,8 +597,17 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	fmt.Fprintf(&b, "  posse_hs_aliasverb=\n  case \"$posse_hs_verb\" in %s) ;; -*) ;; *) [ -n \"$posse_hs_noalias\" ] || posse_hs_aliasverb=1 ;; esac\n", strings.Join(bi, "|"))
 	b.WriteString("  case \"$posse_hs_verb\" in\n")
 	for _, v := range hookSkipNoVerifyVerbs {
-		fmt.Fprintf(&b, "    %s) %s \"$@\" && posse_hs_refuse hookskip:no-verify '%s skips its hooks' ;;\n",
+		fmt.Fprintf(&b, "    %s) %s \"$@\" && posse_hs_refuse hookskip:no-verify '%s skips its hooks'",
 			v, shIdent("posse_hs_nv", v), strings.Join(hookSkipNoVerify(v).Opts, "/"))
+		// A second `am)` arm below would be dead code — sh takes the first
+		// matching arm — so a verb that is refused for a SECOND reason is
+		// refused inside the arm this loop already wrote for it. The
+		// no-verify check goes first either way, because `am -n` has the
+		// more specific reason (ranger-base-o6ip1).
+		if extra := hookSkipVerbExtra[v]; extra != "" {
+			b.WriteString("\n      " + extra)
+		}
+		b.WriteString(" ;;\n")
 	}
 	b.WriteString("    config) posse_hs_config \"$@\" || posse_hs_refuse hookskip:config-write 'git config writes a hook-moving key or an alias' ;;\n")
 	b.WriteString("    clone|init) posse_hs_clone \"$@\" || posse_hs_refuse hookskip:config-write \"git $posse_hs_verb -c/--config writes a hook-moving key or an alias into the new repository's local config\" ;;\n")
@@ -573,6 +623,7 @@ func renderHookSkipArm(real, dateBin, hooksRoot string, ref hookSkipGlobalRef) s
 	b.WriteString("  return 0\n}\n")
 	b.WriteString(renderHookSkipAlias(real))
 	b.WriteString(renderHookSkipClone())
+	b.WriteString(renderHookSkipAm())
 	b.WriteString("posse_hs_argv=\"$*\"; posse_hs_envverb=; posse_hs_cover=; posse_hs_coverwhy=; posse_hs_seenC=; posse_hs_tmplset=; posse_hs_tmpldir=\nposse_hs_check \"$@\"\n")
 	return b.String()
 }
@@ -677,6 +728,39 @@ func renderHookSkipClone() string {
   return 0
 }
 `
+}
+
+// renderHookSkipAm writes posse_hs_am: 0 (let it run) when the argv names
+// one of hookSkipAmAllowed, 1 (refuse) otherwise (ranger-base-o6ip1, from
+// ranger-base-2lls3). So a bare `git am` is refused too — with no mailbox
+// argument it reads one from stdin, which commits exactly the same way.
+//
+// MEASURED 2026-11-11, git 2.56.0, Linux, /usr/bin/git in a scratch repo
+// with a managed pre-commit in global scope: `git am <patch>` landed the
+// commit at rc 0 with pre-commit unrun, and did so with the working tree
+// DIRTY as well, when the patch touched a file the tree had not. Only
+// pre-applypatch ran. `am --abort/--quit/--skip/--show-current-patch` with
+// nothing in progress each exit 128 on git's own `fatal: Resolve operation
+// not in progress` — refused by git, not by this arm, which is why the
+// --abort control is pinned against a REAL stalled am
+// (TestQAHookSkipAmAbortStillEndsAStalledAm).
+//
+// The scan STOPS at `--`: every word after it is a mailbox path, and a file
+// literally named `--abort` must not buy a pass. Stopping there refuses,
+// which is the direction every arm in this file errs in.
+func renderHookSkipAm() string {
+	var b strings.Builder
+	b.WriteString("posse_hs_am() {\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
+	b.WriteString("      --) return 1 ;;\n")
+	arms := make([]string, 0, len(hookSkipAmAllowed)+1)
+	for _, o := range hookSkipAmAllowed {
+		arms = append(arms, shQuote(o))
+	}
+	// --show-current-patch takes an optional =diff/=raw, and reads either way.
+	arms = append(arms, shQuote("--show-current-patch=")+"*")
+	fmt.Fprintf(&b, "      %s) return 0 ;;\n", strings.Join(arms, "|"))
+	b.WriteString("    esac\n    shift\n  done\n  return 1\n}\n")
+	return b.String()
 }
 
 // renderHookSkipAlias writes the alias resolver (ranger-base-z8kym).
@@ -817,6 +901,17 @@ func renderAliasDeny(haveVerbRules bool) string {
 // HookSkipGate is the parity row the arm is reported under (CheckParity).
 // It names no PID rule because it answers to none.
 const HookSkipGate = "git hook-skip forms (-n/--no-verify, -c/env/config hooksPath)"
+
+// HookSkipCommitResidual is the ONE wording for the commit routes this arm
+// does not hold, used in the parity row's Detail (parity.go) and asserted,
+// route by route, against the legs the measured-residual pin actually runs
+// (TestQAHookSkipCommitResidualRoutesAreMeasured) — so the disclosure and
+// the measurement cannot drift apart. It used to say "plumbing other than
+// commit-tree", which named neither of the two all-PORCELAIN routes
+// ranger-base-2lls3 measured, and so read narrower than the wall is
+// (ranger-base-o6ip1). The RESIDUALS paragraph at the head of this file is
+// the long form of the same sentence.
+const HookSkipCommitResidual = "a commit made by anything but git commit or git merge: cherry-pick/revert/rebase of a stash or other unscanned object (git stash push then git cherry-pick -m 1 stash@{0} needs no plumbing at all), git stash create, git replace --graft, and plumbing (hash-object -t commit -w, fast-import), each put on a ref — git runs no pre-commit on any of them, by design, and the ref write is update-ref's ordinary job; the dedicated spellings commit-tree and am ARE refused"
 
 // ─── The global-scope reference (ADR 0079, ranger-base-32ll0) ────────────────
 //

@@ -32,6 +32,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-orgvt](ranger-base-orgvt.md) — ranger-base-orgvt — an orphaned descendant's execs, and what closing them cost — 2026-11-11
 - [ranger-base-olr0g](ranger-base-olr0g.md) — The shared caches leave the caged write set; each seat builds through its own (ranger-base-olr0g) — 2026-11-11
 - [ranger-base-o8us6](ranger-base-o8us6.md) — ADR 0086 D3's sixth door: the exception that did not test its own reason (ranger-base-o8us6) — 2026-11-11
+- [ranger-base-o6ip1](ranger-base-o6ip1.md) — Two commit routes past the hook-skip wall: one refused, one disclosed (ranger-base-o6ip1) — 2026-11-11
 - [ranger-base-o57rc](ranger-base-o57rc.md) — Two pins that claimed more than they measured (ranger-base-o57rc) — 2026-11-11
 - [ranger-base-ntnst](ranger-base-ntnst.md) — The home config file leaves the seatbelt write set when the line names the config dir (ranger-base-ntnst) — 2026-11-11
 - [ranger-base-n2yaw](ranger-base-n2yaw.md) — Two gates that judged what nobody had measured (ranger-base-n2yaw) — 2026-11-11

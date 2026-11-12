@@ -573,7 +573,7 @@ func (a *App) checkParityResolved(ag *AgentFile, rt *Runtime, res CageRealizeRes
 	// this launch was asked to hold.
 	for _, g := range p.Realized {
 		if g.Class == Cooperative && strings.HasPrefix(g.Detail, "L1 shim") {
-			p.Realized[HookSkipGate] = RealizedGate{Class: Cooperative, Detail: "L1 git shim on every seat, no PID rule needed; residual by class: /usr/bin/git, env -i, a hand-edited config file, a commit object written by plumbing other than commit-tree (hash-object -t commit -w, fast-import) and put on a ref"}
+			p.Realized[HookSkipGate] = RealizedGate{Class: Cooperative, Detail: "L1 git shim on every seat, no PID rule needed; residual by class: /usr/bin/git, env -i, a hand-edited config file, and " + HookSkipCommitResidual}
 			break
 		}
 	}

@@ -41,11 +41,27 @@ init --template=tpl` read `sub/tpl`. `git config --file <missing>
 **3. `git commit-tree`** is refused (`hookskip:plumbing-commit`). It is the
 ordinary plumbing spelling of a commit no hook saw. The ref write that lands
 it (`update-ref`, `merge --ff-only`, `reset --soft`) is ordinary and cannot be
-refused. So a commit object written by OTHER plumbing (`hash-object -t commit
--w`, `fast-import`) is disclosed as residual by class, in hookskip.go's
-RESIDUALS and in the parity row's detail (`parity.go`). That same row also
-stopped claiming "HOME/XDG_CONFIG_HOME moved" as a residual, which ADR 0079
-closed.
+refused. So the other routes to a commit no hook saw are disclosed as residual
+by class, in hookskip.go's RESIDUALS and in the parity row's detail
+(`parity.go`). That same row also stopped claiming "HOME/XDG_CONFIG_HOME
+moved" as a residual, which ADR 0079 closed.
+
+*Amended by ranger-base-o6ip1 (2026-11-11), from hoover's finding
+ranger-base-2lls3.* The wording this bead landed read "a commit object written
+by plumbing other than commit-tree (`hash-object -t commit -w`,
+`fast-import`)", and that named the class too narrowly in two ways: it said
+PLUMBING, when `git am` commits a patch file with no prior object at all and
+`git stash push` + `git cherry-pick -m 1 stash@{0}` lands uncommitted
+working-tree content through two porcelain verbs; and it said OBJECT, when the
+sequencer runs no `pre-commit` whatever the object's provenance. `git am` is
+refused now, for the same reason `commit-tree` is — it is the dedicated
+spelling of a commit no hook saw — keeping `--abort`, `--quit`, `--skip` and
+`--show-current-patch`, which AGENTS.md tells seats to type. The sequencer and
+stash routes cannot be refused (cherry-picking an existing commit is the
+ordinary way to move one) and are disclosed instead, under one wording in
+`HookSkipCommitResidual` that the parity row uses and a measured-residual pin
+executes: **a commit made by anything but `git commit` or `git merge`**.
+See `docs/notes.d/ranger-base-o6ip1.md`.
 
 `scripts/queue-cutover.sh` uses `commit-tree`. It is an operator script for
 the cutover window. Run from a seat, it would now be refused at that step.
@@ -60,8 +76,23 @@ managed hook through its dispatcher).
 Posting to the issue is the operator's call (writing under the operator's
 name). Suggested addition:
 
-> The shim also refuses `git commit-tree`. A commit object written by other
-> plumbing (`git hash-object -t commit -w`, `git fast-import`) and then moved
-> onto a ref with `update-ref` is past the shim by class, like an absolute
-> `/usr/bin/git`. The ADR 0052 redirect exemption accepts any session dir
-> posse rendered, not only the calling session's own.
+> The shim also refuses `git commit-tree` and `git am`. A commit made any
+> other way than `git commit` or `git merge` — cherry-pick, revert or rebase
+> of a stash or other unscanned object, `git stash create`, `git replace
+> --graft`, or plumbing (`git hash-object -t commit -w`, `git fast-import`) —
+> and then put on a ref is past the shim by class, like an absolute
+> `/usr/bin/git`: git runs no `pre-commit` on any of those, by design. The ADR
+> 0052 redirect exemption accepts any session dir posse rendered, not only the
+> calling session's own.
+
+That quote is this bead's draft, corrected in place by **ranger-base-o6ip1**
+so it no longer understates the class (it said "other plumbing", and the two
+worst routes are porcelain). It is still NOT POSTED — publishing under the
+operator's name is crew line 2 — and it is no longer the live draft: the one
+the operator posts covers `git am` and the sequencer/stash routes together
+and lives on **ranger-base-2lls3**, which stays open until it is posted and
+hoover has re-verified. Nothing is withheld here: 2lls3 records the operator's
+decision that this arm's residuals are public, because the arm is published as
+a cooperative wall and the whole fix for these two routes IS the disclosure —
+so AGENTS.md's "a hole still open is named by bead id and nothing else" does
+not bind them (it scopes to a residual under a `vuln-private` bead).

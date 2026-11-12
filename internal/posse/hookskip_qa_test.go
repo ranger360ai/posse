@@ -202,6 +202,48 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		// ranger-base-crlty finding 3: a commit no hook saw.
 		{"", "commit-tree HEAD^{tree} -p HEAD -m x", "hookskip:plumbing-commit"},
 		{"", "-C . commit-tree HEAD^{tree} -m x", "hookskip:plumbing-commit"},
+		// ranger-base-o6ip1 (from ranger-base-2lls3): `git am`. The strongest
+		// route of the two 2lls3 measured, because the input is any text
+		// file — no prior unscanned commit object is needed, and the content
+		// never meets pre-commit or commit-msg. MEASURED 2026-11-11, git
+		// 2.56.0, Linux, /usr/bin/git in a scratch repo with the managed
+		// pre-commit in global scope: `am <patch>` landed the commit at rc 0
+		// with pre-commit unrun (only pre-applypatch ran), with the working
+		// tree clean and with it dirty. am was already in hookSkipVerbs and
+		// hookSkipNoVerifyVerbs, so -n was refused and the patch route was
+		// not — which is why these legs are the verb and not a flag.
+		//
+		// Every spelling the census named: plain, -C, -c, --config-env, an
+		// alias that expands to am, a flag before the mailbox, and `--`.
+		// MEASURED with the refusal taken out of the rendered arm
+		// (hookSkipVerbExtra emptied), 2026-11-11: these seven each exited 0
+		// and MOVED HEAD with the managed pre-commit unrun, while `am -n`
+		// and `am --no-verify` stayed refused under hookskip:no-verify — so
+		// the no-verify arm keeps the more specific reason and these seven
+		// are the hole. The two legs after them are spelling pins and not
+		// landing witnesses, and say so.
+		{"", "am " + shQuote(fx.amPatches[0]), "hookskip:plumbing-commit"},
+		{"", "-C . am " + shQuote(fx.amPatches[1]), "hookskip:plumbing-commit"},
+		// A -c whose key is NOT hook-relevant: the refusal must be the am
+		// one, not config-override standing in for it.
+		{"", "-c user.name=someone am " + shQuote(fx.amPatches[2]), "hookskip:plumbing-commit"},
+		{"", "--config-env=user.name=HOME am " + shQuote(fx.amPatches[3]), "hookskip:plumbing-commit"},
+		{"", "pam " + shQuote(fx.amPatches[4]), "hookskip:plumbing-commit"},
+		{"", "am --3way " + shQuote(fx.amPatches[5]), "hookskip:plumbing-commit"},
+		// The scan stops at `--`, so a mailbox named like an allowed option
+		// buys no pass — and a mailbox after `--` is still refused.
+		{"", "am -- " + shQuote(fx.amPatches[6]), "hookskip:plumbing-commit"},
+		// The two SPELLING pins. Neither lands a commit in this fixture —
+		// with the refusal out, bare `am` read the test's empty stdin and
+		// exited 0 having applied nothing, and `am --continue` exited 128
+		// with no am in progress (MEASURED 2026-11-11) — but each is a form
+		// that commits when it has its input, and the arm must not admit
+		// either on the strength of carrying no mailbox argument. Bare `am`
+		// reads a mailbox from stdin; --continue is what finally writes a
+		// stalled am's commit, which is why it is not one of the four
+		// allowed forms beside --abort.
+		{"", "am", "hookskip:plumbing-commit"},
+		{"", "am --continue", "hookskip:plumbing-commit"},
 	}
 }
 
@@ -277,6 +319,21 @@ func hsAllowed(fx *hsFixture) []hsLeg {
 		// The D2 redirect posse renders passes, and the managed hook still
 		// runs through its dispatcher (hsPlantRedirects plants it).
 		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "hs-session")), "commit -q -m r -- f", ""},
+		// ranger-base-o6ip1: the four `am` forms that END or READ an am in
+		// progress commit nothing, and AGENTS.md's sequencer paragraph plus
+		// gates.go's sequencerVerbs comment both tell seats to type --abort
+		// and --quit to clear a stalled tree. With no am in progress git
+		// itself exits 128 on each (`fatal: Resolve operation not in
+		// progress`, MEASURED 2026-11-11, git 2.56.0), so what these legs
+		// pin is that the refusal is GIT's and not this arm's. The --abort
+		// control against a real stalled am, which must exit 0, is
+		// TestQAHookSkipAmAbortStillEndsAStalledAm.
+		{"", "am --abort", ""},
+		{"", "am --quit", ""},
+		{"", "am --skip", ""},
+		{"", "am --show-current-patch", ""},
+		{"", "am --show-current-patch=diff", ""},
+		{"", "-C . am --abort", ""},
 	}
 }
 
@@ -317,7 +374,20 @@ func hsPlantRedirects(t *testing.T, fx *hsFixture) {
 type hsFixture struct {
 	home, repo, marker, hooksRoot, otherHooks, plantedSystem, globalCopy string
 	realGit, remote, hookTpl, cleanTpl                                   string
+	// One mailbox per refused `am` leg (ranger-base-o6ip1). A slice and not
+	// a map keyed by name: an index past the end panics loudly in the leg
+	// table, where a missing key would hand the leg an empty path and go on
+	// refusing — the leg would still pass and would witness nothing.
+	amPatches []string
 }
+
+// hsAmPatchCount is how many mailboxes hsSetup builds, one per refused `am`
+// leg that carries a patch argument. Each ADDS a file of its own that the
+// repo does not have, so every leg applies cleanly to the seed in whatever
+// order the table runs them. That is what makes the mutation check real:
+// with the refusal dropped, each leg lands a commit the managed hook never
+// saw, rather than the first landing and the rest failing to apply.
+const hsAmPatchCount = 7
 
 func hsSetup(t *testing.T) *hsFixture {
 	t.Helper()
@@ -379,6 +449,23 @@ func hsSetup(t *testing.T) *hsFixture {
 	hsRealGit(t, fx, "-C", fx.repo, "add", "--", "f")
 	hsRealGit(t, fx, "-C", fx.repo, "commit", "-q", "-m", "seed", "--", "f")
 	hsRealGit(t, fx, "-C", fx.repo, "push", "-q", "origin", "main")
+	// ranger-base-o6ip1: the `am` mailboxes. Each is a format-patch of a
+	// commit that adds one new file, built past the shim and then rolled
+	// back, so each applies to the seed on its own. The patch touches a file
+	// the legs never write, which matters: hsRun rewrites `f` before every
+	// leg, and `git am` applies over a dirty tree as long as the patch does
+	// not touch what is dirty (MEASURED 2026-11-11, git 2.56.0 — it landed
+	// the commit at rc 0 with the managed pre-commit unrun either way).
+	for i := 0; i < hsAmPatchCount; i++ {
+		name := "amfile-" + string(rune('a'+i))
+		write(t, filepath.Join(fx.repo, name), "am\n")
+		hsRealGit(t, fx, "-C", fx.repo, "add", "--", name)
+		hsRealGit(t, fx, "-C", fx.repo, "commit", "-q", "-m", "am leg "+name, "--", name)
+		p := filepath.Join(fx.home, name+".patch")
+		hsRealGitStdout(t, fx, p, "-C", fx.repo, "format-patch", "-1", "--stdout")
+		fx.amPatches = append(fx.amPatches, p)
+		hsRealGit(t, fx, "-C", fx.repo, "reset", "-q", "--hard", "HEAD^")
+	}
 	// Persistent aliases, planted past the shim (ranger-base-z8kym).
 	for k, v := range map[string]string{
 		"pci":    "commit -n",
@@ -394,6 +481,8 @@ func hsSetup(t *testing.T) *hsFixture {
 		"pstat": "status",
 		"pst":   "-c core.hooksPath=/dev/null status",
 		"prm":   "-c core.hooksPath=/dev/null remote -v prune origin",
+		// ranger-base-o6ip1: an alias for am, judged on the re-walk.
+		"pam": "am",
 	} {
 		hsRealGit(t, fx, "-C", fx.repo, "config", "alias."+k, v)
 	}
@@ -448,6 +537,35 @@ func hsRealGit(t *testing.T, fx *hsFixture, args ...string) {
 	}
 }
 
+// hsRealGitStdout runs the real git past the shim and writes its stdout to
+// path — how the `am` mailboxes are built (ranger-base-o6ip1).
+func hsRealGitStdout(t *testing.T, fx *hsFixture, path string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(fx.realGit, args...)
+	cmd.Env = hsEnv(fx)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	write(t, path, string(out))
+}
+
+// hsRepoOut reads one trimmed line from the real git IN THE FIXTURE REPO,
+// past the shim: the before-and-after facts a residual route is judged on.
+// Not hookskipglobal_qa_test.go's hsGitOut, which answers the global-scope
+// pins' "want" side — that one takes the args whole and keeps the trailing
+// newline, because a config dump compared byte for byte needs both.
+func hsRepoOut(t *testing.T, fx *hsFixture, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(fx.realGit, append([]string{"-C", fx.repo}, args...)...)
+	cmd.Env = hsEnv(fx)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func hsFired(fx *hsFixture) int {
 	b, _ := os.ReadFile(fx.marker)
 	return strings.Count(string(b), "fired")
@@ -483,23 +601,7 @@ func TestQAHookSkipRefusedOnEveryRuntime(t *testing.T) {
 		t.Run(rtName, func(t *testing.T) {
 			t.Parallel()
 			fx := hsSetup(t)
-			home := t.TempDir()
-			a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
-			rt, err := a.LoadRuntime(rtName)
-			if err != nil {
-				t.Fatal(err)
-			}
-			fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
-			hsPlantRedirects(t, fx)
-			persona := "hs-" + rtName
-			// The deny list every crew PID carries.
-			wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if rt.Name != rtName {
-				t.Fatalf("loaded runtime %q, want %q", rt.Name, rtName)
-			}
+			wrapped, gatesDir := hsWrap(t, fx, rtName, "hs-"+rtName)
 
 			// The plain commit runs the hook — the control the whole arm is for.
 			if errs, code := hsRun(t, fx, wrapped, hsLeg{args: "commit -q -m plain -- f"}); code != 0 || hsFired(fx) != 1 {
@@ -548,6 +650,186 @@ func TestQAHookSkipRefusedOnEveryRuntime(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// hsWrap renders one persona's gates for rtName and returns the launch-line
+// prefix a seat is typed under, plus its gates dir. The crew deny list, the
+// D2 redirect plants and the StateDir wiring are the same ones
+// TestQAHookSkipRefusedOnEveryRuntime uses (ranger-base-o6ip1).
+func hsWrap(t *testing.T, fx *hsFixture, rtName, persona string) (string, string) {
+	t.Helper()
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state"), GitScopeEnv: hsEnv(fx)}
+	rt, err := a.LoadRuntime(rtName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Name != rtName {
+		t.Fatalf("loaded runtime %q, want %q", rt.Name, rtName)
+	}
+	fx.hooksRoot = filepath.Join(a.StateDir, "hooks")
+	hsPlantRedirects(t, fx)
+	// The deny list every crew PID carries.
+	wrapped, gatesDir, _, err := a.WrapWithGates(persona, rt, []string{"Bash(git push:*)", "Bash(git commit unless --)"}, t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wrapped, gatesDir
+}
+
+// hsRunLine types `<prefix>sh -c '<line>'` in the repo: the gate prefix
+// applied to ONE command, an inner shell, so every bare `git` in a
+// multi-command route is answered by the shim. Not `prefix + line`, which
+// hsRun can do only because its line is a single command — the prefix may
+// END in `/usr/bin/env -u <HOMEVAR>` (RuntimeHomePin), so a `;` typed after
+// it would leave the second command ungated (ranger-base-o6ip1).
+func hsRunLine(t *testing.T, fx *hsFixture, prefix, line string) (string, int) {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", prefix+"sh -c "+shQuote(line))
+	cmd.Dir = fx.repo
+	cmd.Env = hsEnv(fx)
+	var errb strings.Builder
+	cmd.Stderr = &errb
+	err := cmd.Run()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	return errb.String(), code
+}
+
+// The am --abort control, against a REAL stalled am (ranger-base-o6ip1).
+// AGENTS.md's sequencer paragraph and gates.go's sequencerVerbs comment both
+// tell a seat to type `git am --abort` to clear a tree an am left half
+// applied, so the one thing the am refusal must not do is refuse that. The
+// hsAllowed legs can only show that the refusal comes from git when nothing
+// is in progress; this one shows the command still WORKS when something is.
+//
+// MEASURED 2026-11-11, git 2.56.0, Linux: a patch that conflicts leaves
+// .git/rebase-apply at rc 128, `git am --abort` then exits 0 and removes it,
+// and it does so with the working tree dirty — which is the shape hsRun
+// leaves, since it rewrites `f` before every leg. The dirty `f` survives the
+// abort untouched (` M f` before and after).
+func TestQAHookSkipAmAbortStillEndsAStalledAm(t *testing.T) {
+	t.Parallel()
+	fx := hsSetup(t)
+	wrapped, _ := hsWrap(t, fx, "claude", "hs-am-abort")
+
+	// A commit the first mailbox cannot apply over, so the am stalls.
+	write(t, filepath.Join(fx.repo, "amfile-a"), "someone else\n")
+	hsRealGit(t, fx, "-C", fx.repo, "add", "--", "amfile-a")
+	hsRealGit(t, fx, "-C", fx.repo, "commit", "-q", "-m", "conflicting amfile-a", "--", "amfile-a")
+	// Past the shim on purpose: the am under test here is the --abort.
+	stall := exec.Command(fx.realGit, "-C", fx.repo, "am", fx.amPatches[0])
+	stall.Env = hsEnv(fx)
+	if out, err := stall.CombinedOutput(); err == nil {
+		t.Fatalf("the mailbox applied cleanly — this fixture needs one that conflicts:\n%s", out)
+	}
+	applyDir := filepath.Join(fx.repo, ".git", "rebase-apply")
+	if _, err := os.Stat(applyDir); err != nil {
+		t.Fatalf("a stalled am left no .git/rebase-apply, so --abort has nothing to end: %v", err)
+	}
+
+	errs, code := hsRun(t, fx, wrapped, hsLeg{args: "am --abort"})
+	if strings.Contains(errs, "hookskip:") {
+		t.Fatalf("git am --abort was refused by the hook-skip arm, and AGENTS.md tells seats to type it: %q", errs)
+	}
+	if code != 0 {
+		t.Fatalf("git am --abort: code=%d, want 0 (%s)", code, errs)
+	}
+	if _, err := os.Stat(applyDir); !os.IsNotExist(err) {
+		t.Errorf(".git/rebase-apply survived `git am --abort` through the shim: %v", err)
+	}
+}
+
+// The measured-residual row for the commit routes this arm does NOT hold
+// (ranger-base-o6ip1, from ranger-base-2lls3). Every other pin in this file
+// asserts a refusal; this one asserts the opposite, and that is the point:
+// HookSkipCommitResidual and the RESIDUALS paragraph tell an operator these
+// routes are past the wall, and a disclosure nothing executes drifts from
+// the wall it describes. The arm used to disclose "plumbing other than
+// commit-tree", which named neither of the two ALL-PORCELAIN routes below.
+//
+// Each route must: exit 0, not be refused by this arm, leave the managed
+// pre-commit unrun, and put a new commit object on a ref. And each must be
+// NAMED in HookSkipCommitResidual, so the prose and the measurement cannot
+// drift apart.
+//
+// A refusal cannot hold any of them. cherry-pick, revert and rebase of an
+// existing commit are the ordinary way to move one and run no pre-commit by
+// git's design; `update-ref` writing a ref is its ordinary job. What is
+// refused instead is each route's dedicated spelling, where a commit no hook
+// saw is the whole point of the verb: commit-tree (ranger-base-crlty) and am
+// (this bead). One runtime, not two: the arm is runtime-independent and
+// TestQAHookSkipRefusedOnEveryRuntime already executes it through each, and
+// a residual is a fact about git.
+func TestQAHookSkipCommitResidualRoutesAreMeasured(t *testing.T) {
+	t.Parallel()
+	fx := hsSetup(t)
+	wrapped, _ := hsWrap(t, fx, "claude", "hs-residual")
+
+	routes := []struct {
+		what  string // the route, for the failure message
+		names string // the token HookSkipCommitResidual must name it by
+		line  string // the sh that performs it, every git shimmed
+		proof func(t *testing.T, before string)
+	}{{
+		what:  "stash push then cherry-pick -m 1 stash@{0}",
+		names: "cherry-pick",
+		// The route the verify lane predicted would replace a `stash
+		// create` refusal (ranger-base-sbfop's residual): two porcelain
+		// verbs, no plumbing, and it lands UNCOMMITTED working-tree content.
+		line: "echo residual-1 >> f && git stash push -q && git cherry-pick -m 1 stash@{0}",
+		proof: func(t *testing.T, before string) {
+			if after := hsRepoOut(t, fx, "rev-parse", "HEAD"); after == before {
+				t.Error("HEAD did not move, so this route landed nothing and witnesses nothing")
+			}
+			if s := hsRepoOut(t, fx, "log", "-1", "--format=%s"); !strings.HasPrefix(s, "WIP on ") {
+				t.Errorf("HEAD subject %q is not the stash commit this route cherry-picked", s)
+			}
+		},
+	}, {
+		what:  "stash create then update-ref",
+		names: "stash create",
+		line:  "echo residual-2 >> f && c=$(git stash create) && [ -n \"$c\" ] && git update-ref refs/heads/hs-residual \"$c\"",
+		proof: func(t *testing.T, before string) {
+			if ty := hsRepoOut(t, fx, "cat-file", "-t", "refs/heads/hs-residual"); ty != "commit" {
+				t.Errorf("refs/heads/hs-residual is a %q, want a commit", ty)
+			}
+		},
+	}, {
+		what:  "replace --graft",
+		names: "replace --graft",
+		line:  "git replace --graft HEAD",
+		proof: func(t *testing.T, before string) {
+			if l := hsRepoOut(t, fx, "replace", "-l"); l == "" {
+				t.Error("no replace ref, so this route landed nothing and witnesses nothing")
+			}
+		},
+	}}
+
+	for _, r := range routes {
+		if !strings.Contains(HookSkipCommitResidual, r.names) {
+			t.Errorf("HookSkipCommitResidual does not name %q, so %s is measured here and disclosed nowhere:\n%s", r.names, r.what, HookSkipCommitResidual)
+		}
+		before := hsRepoOut(t, fx, "rev-parse", "HEAD")
+		fired := hsFired(fx)
+		errs, code := hsRunLine(t, fx, wrapped, r.line)
+		if strings.Contains(errs, "hookskip:") {
+			t.Errorf("%s: refused by the hook-skip arm — it is disclosed as a residual, so either the disclosure or the refusal is wrong: %q", r.what, errs)
+			continue
+		}
+		if code != 0 {
+			t.Errorf("%s: code=%d, want 0 — a route that no longer runs cannot be the residual the prose claims (%s)", r.what, code, errs)
+			continue
+		}
+		if n := hsFired(fx); n != fired {
+			t.Errorf("%s: the managed pre-commit fired %d time(s) — it is no longer a residual, and the disclosure overstates the hole", r.what, n-fired)
+		}
+		r.proof(t, before)
 	}
 }
 
