@@ -313,6 +313,10 @@ var landingDropRegister = []landingDrop{
 		why:   "`make fmt-check` is a target in this repo's Makefile and the five pins the bullet censuses are tests in this repo's internal/posse — a fresh work repo has no Makefile to hang the door off and none of the tests to name (ranger-base-rulbl)",
 	},
 	{
+		match: "bead before you file your own",
+		why:   "the landed check is opt-in per repo by shipping `scripts/posse-landed-check` (ADR 0088 D1, residual (3)), so a fresh work repo's landings are judged by nothing and no `main red at` bead is ever filed for it — and the bullet's subject is a red `make test`, which a fresh work repo has no more than it has the suite queue two rows up (ranger-base-ddgfr)",
+	},
+	{
 		match: "make coldexec-check RUN=",
 		why:   "`make coldexec-check` is a target in this repo's Makefile and the cost it injects comes from a seam in this repo's own internal/posse test binary — a fresh work repo has neither, and the class the door decides is a property of THIS repo's test fixtures rather than of anyone's landing discipline (ADR 0085, ranger-base-pbo1q)",
 	},
