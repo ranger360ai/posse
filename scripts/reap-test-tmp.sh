@@ -502,6 +502,63 @@ self_test() {
     fi
   fi
 
+  # ─── ranger-base-x2blo: a candidate that vanished before the probe ────────
+  # `flock` opens its lock path with O_CREAT, so before the `[ -d "$d" ]`
+  # guard a candidate removed between the walk and the probe was RE-CREATED
+  # as a 0-byte regular FILE, answered rc=0 and was offered as collectable —
+  # an inode the sweep made itself and, every class's `find` being `-type d`,
+  # one no later run could see.
+  #
+  # THIS ARM CALLS `flock_filter` DIRECTLY, alone among the arms here, and
+  # that is the point rather than a shortcut: the window the guard closes is
+  # between the `find` and the probe inside one pipeline, and nothing a
+  # fixture can plant reopens that window on demand. Feeding the function the
+  # one input the race produces — a candidate path that is not there — tests
+  # the guard itself and not a race's timing. It is why the `--self-test`
+  # dispatch sits below the function's definition.
+  #
+  # Every decision below is a shell builtin over a variable the probe already
+  # filled, and the one FAIL message that quotes a file reads it with bash's
+  # own `$(< file)` rather than a `cat` — the rule `st` above states, for the
+  # reason it states: a forked matcher that is signalled, or that cannot be
+  # exec'd under load, reads back empty and the arm misreports.
+  local gone goneheld goneout freed freedout
+  gone="$tmp/vanished-candidate"
+  goneheld="$tmp/vanished-candidate.held"
+  goneout=$(printf '%s\n' "$gone" | flock_filter "$goneheld")
+  if [ -e "$gone" ]; then
+    echo "  FAIL the flock probe re-created a vanished candidate (it exists and is not a dir): $gone"
+    fails=$((fails + 1))
+    rm -rf -- "${gone:?}"
+  else
+    echo "  ok   a vanished candidate is not re-created by the flock probe"
+  fi
+  if [ -n "$goneout" ]; then
+    echo "  FAIL a vanished candidate was offered as collectable: $goneout"
+    fails=$((fails + 1))
+  else
+    echo "  ok   a vanished candidate is not offered as collectable"
+  fi
+  # Dropped silently, not reported: there is no dir to keep and nothing for
+  # the next reader to act on, so it belongs in neither stream.
+  if [ -s "$goneheld" ]; then
+    echo "  FAIL a vanished candidate was reported as kept: $(< "$goneheld")"
+    fails=$((fails + 1))
+  else
+    echo "  ok   a vanished candidate is not reported as kept"
+  fi
+  # Control, so the guard cannot pass by rejecting everything: a real, free
+  # dir still comes through the probe as a candidate.
+  freed="$tmp/free-candidate"
+  mkdir -p "$freed"
+  freedout=$(printf '%s\n' "$freed" | flock_filter "$goneheld")
+  if [ "$freedout" = "$freed" ]; then
+    echo "  ok   control: a free dir still passes the flock probe"
+  else
+    echo "  FAIL control: a free dir did not pass the flock probe, got '$freedout'"
+    fails=$((fails + 1))
+  fi
+
   # ─── ranger-base-q0yxp: pin the three fixture-prefix classes ──────────────
   # coldexec-pins, testparallel-selftest and pkcensus-selftest share every
   # gate with posse-scratch/go-build/go-testtmp (no class-specific code, only
@@ -564,11 +621,6 @@ while [ $# -gt 0 ]; do
     *) die2 "unknown argument: $1" ;;
   esac
 done
-
-if [ "$selftest" -eq 1 ]; then
-  self_test
-  exit $?
-fi
 
 # Default: /tmp AND this shell's $TMPDIR when that is somewhere else. The
 # dirs belong to the RUNS, not to whoever sweeps — a seat working around the
@@ -663,11 +715,28 @@ class_filter() {
 # rather than on stdout because this function runs inside the `found=$( … )`
 # command substitution, where stdout is the candidate list and where a
 # counter increment would die with the subshell.
+#
+# A VANISHED CANDIDATE IS DROPPED BEFORE THE PROBE, because `flock` opens its
+# lock path with O_CREAT (ranger-base-x2blo, found by ranger-base-9rbfq).
+# MEASURED 2026-11-11, flock from util-linux 2.42.4: a free dir answers rc=0,
+# a busy one rc=9, a mode-000 one rc=66 — the three answers the case below
+# claims to distinguish — and a path that does NOT EXIST answers rc=0 with
+# `flock` having CREATED it, `-rw-r--r--`. Without this guard a dir removed
+# between the walk and the probe came back as a 0-byte regular FILE at that
+# path, reported clean and offered as collectable; in a dry run nothing then
+# removed it, and since every class's `find` is `-type d` no later run could
+# ever see it again — the sweep leaking an inode it made itself, on the quota
+# it exists to protect, and against this file's own claim two decisions up
+# that "a busy lock can only ever make this script collect LESS". `-d` and
+# not `-e`: a candidate is a directory or it is not a candidate. The removal
+# loop at the foot of this script opens with the same O_CREAT and needs no
+# guard, because its own `rm -rf` takes back whatever `flock` just made.
 flock_filter() {  # $1 = file to record the dirs this run may not touch
   local out="$1" d rc
   : > "$out"
   while IFS= read -r d; do
     [ -n "$d" ] || continue
+    [ -d "$d" ] || continue
     rc=0
     flock -n -E 9 "$d" true 2>/dev/null || rc=$?
     case "$rc" in
@@ -677,6 +746,18 @@ flock_filter() {  # $1 = file to record the dirs this run may not touch
     esac
   done
 }
+
+# THE SELF-TEST DISPATCHES HERE, below `flock_filter`, and not up beside the
+# argument parsing where it used to sit (ranger-base-x2blo): one of its arms
+# calls `flock_filter` directly, and a shell function has to be DEFINED
+# before it is called, not merely before it is read. The two preflights it
+# now passes through on the way — /proc and flock(1) — are both things every
+# arm's `"$0"` sub-invocation needs anyway, so a box missing either gets one
+# clear line instead of a dozen failing arms.
+if [ "$selftest" -eq 1 ]; then
+  self_test
+  exit $?
+fi
 
 if [ ${#want_classes[@]} -gt 0 ]; then
   for c in "${want_classes[@]}"; do
