@@ -353,8 +353,14 @@ type SeatbeltCarveOut struct {
 // seat's own copy lives only as long as the seat, for members whose contents
 // belong to one process and never outlive it (codexEphemeralDirs,
 // ranger-base-6ob20).
+//
+// Src == Dst is a bind IN PLACE, not a copy: the host dir itself, re-bound so
+// that ReadOnly can narrow a write grant over it or a later entry can reopen
+// one inside it (claudeProjectsBinds, ranger-base-ajkqx). ReadOnly renders
+// `--ro-bind` instead of `--bind`.
 type PrivateBind struct {
 	Src, Dst string
+	ReadOnly bool
 }
 
 // Seeded reports whether a file-shaped Deny entry is one the launcher may

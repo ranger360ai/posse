@@ -456,6 +456,11 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 	// the grants, so it lands on top of the grant that holds it, and before
 	// the denies, which name other members and never these.
 	//
+	// claude's projects/ rides the same slot with binds IN PLACE (Src ==
+	// Dst; claudeProjectsBinds, ranger-base-ajkqx): read-only over the grant,
+	// the seat's own key dir read-write on top, its memory/ read-only on top
+	// of that. List order is mount order, so each narrows the one before.
+	//
 	// THE DESTINATION IS LSTAT'D, NOT STAT'D. It sits in a dir every seat can
 	// write, so a symlink there could have been planted by another seat, and
 	// bwrap would mount on wherever it points. A destination that is not a
@@ -480,6 +485,19 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 		if !writeGranted(grants, pb.Dst) {
 			continue
 		}
+		bind := "--bind"
+		if pb.ReadOnly {
+			bind = "--ro-bind"
+		}
+		if pb.Src == pb.Dst {
+			// In place (ranger-base-ajkqx): the lstat above is the source's
+			// too, and an absent one is made once, here.
+			if err != nil {
+				prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "a dir of the shared config that is re-bound in place to narrow or reopen the grant over it; a mount needs a directory to cover"})
+			}
+			argv = append(argv, bind, pb.Dst, pb.Dst)
+			continue
+		}
 		if err != nil {
 			prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "the shared member a private copy is mounted over; a mount needs a directory to cover"})
 		}
@@ -500,7 +518,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 		case !exists:
 			prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
 		}
-		argv = append(argv, "--bind", pb.Src, pb.Dst)
+		argv = append(argv, bind, pb.Src, pb.Dst)
 	}
 
 	// 3. Shape 2: the carve-out's denies, read-only over the grants above
@@ -1642,6 +1660,10 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// (ranger-base-5632o). Here and not in SeatbeltCarveOut for the reason
 	// Tmp is: a seatbelt profile cannot bind.
 	r.Carve.Private = claudePrivateSessionState(home, cwd, runtimeStateGrants(stateDirs))
+	// projects/ read-only but for the seat's own key dir, and memory/
+	// read-only everywhere (ranger-base-ajkqx). After the session state, in
+	// the same step, for the same reason: a seatbelt profile cannot bind.
+	r.Carve.Private = append(r.Carve.Private, claudeProjectsBinds(home, runtimeStateGrants(stateDirs), a.claudeOwnSessionTree(cwd))...)
 	// codex's per-process tmp/ and shell_snapshots/: a private empty tmpfs
 	// each (ranger-base-6ob20). SeatbeltCarveOut denied them, which is the
 	// seatbelt reading; here the deny comes back out, because the deny step

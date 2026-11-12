@@ -219,7 +219,10 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 		{"own snapshot write", "echo 'MARK=sourced' > " + q(mine)},
 		{"own snapshot sourced", ". " + q(mine) + " && test \"$MARK\" = sourced"},
 		{"own hook env write", "mkdir -p " + q(filepath.Join(envs, "mine")) + " && : > " + q(filepath.Join(envs, "mine", "sessionstart-hook-0.sh"))},
-		{"projects still write", ": > " + q(filepath.Join(f.cfg, "projects", "x"))},
+		// A sibling member outside both private binds still writes. Not
+		// projects/ any more: that is read-only but for the own key since
+		// ranger-base-ajkqx, and this fixture's cwd is no session worktree.
+		{"config dir still writes", ": > " + q(filepath.Join(f.cfg, "x"))},
 	} {
 		name, script := step.name, step.script
 		if ok, out := try(script); !ok {

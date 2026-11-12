@@ -377,6 +377,10 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		"skills tree plant":            ": > " + q(filepath.Join(st, "skills", "x")),
 		"dispatch pid append":          "echo x >> " + q(filepath.Join(st, "dispatch-watch.pid")),
 		"state dir new file":           ": > " + q(filepath.Join(st, "new")),
+		// ranger-base-ajkqx: projects/ is read-only but for a seat's own key
+		// dir, and this fixture's cwd is no session worktree, so it has none.
+		// wallclaudeprojects_qa_test.go has the own-key half.
+		"projects write": ": > " + q(filepath.Join(cfg, "projects", "x")),
 	}
 	for name, script := range refused {
 		if ok, out := try(script); ok {
@@ -385,7 +389,6 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 	}
 	allowed := map[string]string{
 		"history append":       "echo x >> " + q(filepath.Join(cfg, "history.jsonl")),
-		"projects write":       ": > " + q(filepath.Join(cfg, "projects", "x")),
 		".claude.json replace": "echo '{}' > " + q(filepath.Join(cfg, ".claude.json.tmp.1")) + " && mv " + q(filepath.Join(cfg, ".claude.json.tmp.1")) + " " + q(filepath.Join(cfg, ".claude.json")),
 		"new state member":     "mkdir -p " + q(filepath.Join(cfg, "session-env", "s")),
 		"own audit log append": "echo x >> " + q(filepath.Join(f.gates, "refusals.log")),
