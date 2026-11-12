@@ -1709,6 +1709,15 @@ func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 		if name, ok := d.App.CanonAgent(is.Assignee); ok {
 			return routeLane{seats: []routeMatch{{name: name}}, why: "assignee"}
 		}
+		// The assignee check, not label routing, gets the last word on an
+		// explicitly assigned bead (ranger-base-8qck5): an assignee this
+		// app cannot load as a PID — the operator's own name among them —
+		// is still an assignment, and falling through to labelMatches here
+		// routed it to whoever owned the label instead, which created a
+		// seat (and the seat's worktree) for a bead the fire loop then lost
+		// the claim on at `bd claim` time. Denied here, before any seat is
+		// offered, exactly as the coordinator clause above already is.
+		return routeLane{deny: fmt.Sprintf("held by %s, which is not a loadable persona — not a lane; the operator reassigns or works it by hand", is.Assignee)}
 	}
 	if cands := d.labelMatches(coord, is); len(cands) > 0 {
 		return routeLane{seats: cands, label: cands[0].label, why: routeWhy(cands)}
@@ -5688,10 +5697,9 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		persona = lane.seats[seat].name
 	}
 	// A claimed bead belongs to its assignee. laneFor prefers a loadable
-	// assignee, but falls through to label match / default_persona when the
-	// assignee is not a persona this app can load — which would launch a
-	// stranger onto a bead someone else holds (rangerhq-lwx). `d` acts on the
-	// holder the row named or it does not act.
+	// assignee and otherwise denies outright (ranger-base-8qck5), so this
+	// arm is belt-and-suspenders now rather than the only guard: `d` acts
+	// on the holder the row named or it does not act.
 	if is.Status == "in_progress" && is.Assignee != "" && persona != is.Assignee {
 		return "", Die("%s is held by %s, which is not a loadable persona — not dispatched", is.ID, is.Assignee)
 	}

@@ -216,6 +216,40 @@ func TestClaimLossDoesNotCountTowardTheSessionFailureCeiling(t *testing.T) {
 	}
 }
 
+// ranger-base-8qck5, MEASURED 2026-11-11: a bead `bd ready` hands over
+// carrying an assignee the app cannot load as a PID — the operator's own
+// name among them — routed by LABEL instead, because laneFor fell through
+// to labelMatches whenever CanonAgent failed. A seat was offered, a session
+// and its worktree were created, and only then did `bd claim` lose the
+// race the bead's own assignee field had already settled: "claim lost: X
+// holds it", a spent launch for nothing. The fix is laneFor denying an
+// unloadable assignee outright, before any seat is offered, so the pass
+// must never reach a session or a claim for a bead like this one.
+func TestReadyBeadAssignedToNonPersonaIsNotDispatched(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "devops", "[devops, security]")
+	qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["devops","security"],"assignee":"someone-else"}]`, "")
+	agentPerLaunch(t, fake)
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if n != 0 || !strings.Contains(out, "unroutable (held by someone-else, which is not a loadable persona") {
+		t.Errorf("want the bead skipped unroutable, got n=%d:\n%s", n, out)
+	}
+	if strings.Contains(calls(t, fake), "workspace create") {
+		t.Errorf("no session or worktree may be created for an operator-assigned bead:\n%s", calls(t, fake))
+	}
+	if strings.Contains(bdCalls(t, fake), "--claim") {
+		t.Errorf("no claim may be attempted for an operator-assigned bead:\n%s", bdCalls(t, fake))
+	}
+}
+
 // The other arm of the split, unchanged from rangerhq-81d: a failure that
 // is about the PERSONA on this runtime — here a runtime that will not load
 // at all — still benches the slot, because every bead routed to it would

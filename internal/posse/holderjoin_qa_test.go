@@ -150,9 +150,10 @@ func TestCrewSlotHolderIsNotResumed(t *testing.T) {
 	}
 }
 
-// The smaller half of rangerhq-lwx: Route falls through to label match when
-// the assignee is not a loadable persona, which would launch a stranger onto
-// a bead someone else holds. `d` acts on the holder the row named or not at all.
+// The smaller half of rangerhq-lwx, tightened by ranger-base-8qck5: laneFor
+// denies outright when the assignee is not a loadable persona, rather than
+// falling through to label match, which would launch a stranger onto a bead
+// someone else holds. `d` acts on the holder the row named or not at all.
 func TestHeldByNonPersonaIsNotDispatched(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)

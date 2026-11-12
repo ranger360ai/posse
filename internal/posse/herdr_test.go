@@ -4166,28 +4166,38 @@ func TestDispatchResume(t *testing.T) {
 	}
 
 	// A different holder is a real conflict — no prompt. The bead is OPEN
-	// here, which is the only way a pass can MEET that conflict: `show` is
-	// what Bd.Claim falls back to when the claim does not come back, and it
-	// names somebody else (ranger-base-bknod). The old fixture put an
-	// in_progress row assigned to someone-else in `ready`, which no store
-	// answers that way, and which the claimed scan drops before the loop
-	// anyway — its assignee is not a lane of one at its own holder
-	// (interrupted.go's heldLane), so it is not an interrupted run of
+	// here, which is the only way a pass can MEET that conflict: the old
+	// fixture put an in_progress row assigned to someone-else in `ready`,
+	// which no store answers that way, and which the claimed scan drops
+	// before the loop anyway — its assignee is not a lane of one at its own
+	// holder (interrupted.go's heldLane), so it is not an interrupted run of
 	// ANYBODY this app can launch. The claimed listing is emptied with it: a
 	// store that says a-1 is open does not also list it as claimed.
+	//
+	// ranger-base-8qck5: laneFor now denies this outright — an assignee it
+	// cannot load as a PID is still an assignment, and it must not fall
+	// through to label routing, which used to reach `bd claim` (and the
+	// `show` fallback below, now unread) only to lose the race the ready
+	// row's own assignee field had already settled. The conflict is caught
+	// before any seat, session or worktree is spent on it.
 	os.WriteFile(filepath.Join(repo, "fake-ready.json"),
 		[]byte(`[{"id":"a-1","title":"t","labels":["go"],"assignee":"someone-else"}]`), 0o644)
 	os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(`[]`), 0o644)
 	os.WriteFile(filepath.Join(repo, "fake-show.json"),
 		[]byte(`[{"id":"a-1","title":"t","status":"in_progress","assignee":"someone-else"}]`), 0o644)
+	claimsBefore := strings.Count(bdCalls(t, fake), "a-1 --claim")
 	d2 := newTestDispatcher(t, b)
 	d2.Bd = d.Bd
 	n, err = d2.Run("", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 0 || !strings.Contains(dispatcherOut(d2), "claim lost") {
-		t.Errorf("want claim-lost skip, got n=%d:\n%s", n, dispatcherOut(d2))
+	out2 := dispatcherOut(d2)
+	if n != 0 || !strings.Contains(out2, "unroutable (held by someone-else, which is not a loadable persona") {
+		t.Errorf("want unroutable skip, got n=%d:\n%s", n, out2)
+	}
+	if got := strings.Count(bdCalls(t, fake), "a-1 --claim"); got != claimsBefore {
+		t.Errorf("a bead already assigned elsewhere must not be claimed (%d → %d):\n%s", claimsBefore, got, bdCalls(t, fake))
 	}
 }
 
