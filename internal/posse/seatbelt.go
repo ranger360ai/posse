@@ -922,6 +922,11 @@ func homeCacheGrants(goos string) []string {
 // the seat writes the home file and the declaration stands (ranger-base-cypy1).
 // Unlike bwrap, an unset variable is not a refusal: sandbox-exec can grant a
 // file plus its sibling namespace, which bwrap cannot (probe B8).
+//
+// The declared tree it reshapes is `~/.claude`, not the variable's directory
+// (ranger-base-10dh6): when CLAUDE_CONFIG_DIR names a directory other than
+// `~/.claude`, that directory must join the grant — seatbeltClaudeStateDirs
+// is where it does.
 func SeatbeltStateDirs(rt *Runtime) []string {
 	if rt == nil {
 		return nil
@@ -944,6 +949,15 @@ func SeatbeltStateDirs(rt *Runtime) []string {
 // it there would put ranger-base-cypy1's lost write back. The declared list
 // is otherwise copied verbatim, order intact (an overlaid `state_dir:` keeps
 // its shape, ADR 0021 D1).
+//
+// THE DIRECTORY ITSELF JOINS THE LIST (ranger-base-10dh6), the way
+// bwrapClaudeStateDirs puts it first: the declared tree is `~/.claude`, and
+// when CLAUDE_CONFIG_DIR names a DIFFERENT directory that directory was
+// granted nowhere — the profile walled `~/.claude` and the seat wrote
+// `dir/.claude.json`, outside every grant, the file lost in exactly the
+// shape D19 fixed at bwrap and this mechanism had not. When `dir` IS
+// `~/.claude` (the default-location arm) it is already in `declared`, so it
+// is left there rather than duplicated.
 func seatbeltClaudeStateDirs(declared []string, dir string, inForce bool, home string) []string {
 	if !inForce || home == "" || dir == "" {
 		return declared
@@ -952,7 +966,10 @@ func seatbeltClaudeStateDirs(declared []string, dir string, inForce bool, home s
 	if homeFile == "" || absResolve(filepath.Join(dir, claudeConfigFileName)) == homeFile {
 		return declared
 	}
-	out := make([]string, 0, len(declared))
+	out := make([]string, 0, len(declared)+1)
+	if absResolve(dir) != absResolve(filepath.Join(home, ".claude")) {
+		out = append(out, dir)
+	}
 	for _, d := range declared {
 		if absResolve(ExpandTilde(d)) == homeFile {
 			continue

@@ -83,6 +83,26 @@ func TestQASeatbeltRenderKeepsHomeClaudeJSONWhenConfigDirUnset(t *testing.T) {
 	}
 }
 
+// ranger-base-10dh6: CLAUDE_CONFIG_DIR naming a directory OTHER than
+// ~/.claude must itself be granted. The declared tree is `~/.claude`; a seat
+// whose line resolves the config file to a DIFFERENT directory writes there,
+// and without this grant that directory is walled nowhere — the file lost
+// silently, in the shape D19 already fixed at bwrap and this mechanism had
+// not (on this box the two paths are the same, so nothing was lost here
+// before this pin).
+func TestQASeatbeltRenderGrantsAConfigDirElsewhereThanHome(t *testing.T) {
+	f := weFixtureIn(t, wallUngrantedDir(t))
+	elsewhere := filepath.Join(filepath.Dir(f.home), "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(ClaudeConfigDirVar, elsewhere)
+	prof := sbcdProfile(t, f)
+	if !strings.Contains(prof, `(subpath "`+elsewhere+`")`) {
+		t.Errorf("the profile does not grant %s — %s names it and the seat writes its config file there, outside every grant without it (ranger-base-10dh6)", elsewhere, ClaudeConfigDirVar)
+	}
+}
+
 // Every seatbelt reader takes the same list: the MCP-file refusal (ADR 0090
 // D1) judges the write set the profile grants, not the declaration.
 func TestQASeatbeltMCPWriteSetAgreesWithTheProfile(t *testing.T) {
@@ -118,7 +138,7 @@ func TestQASeatbeltClaudeStateDirsArms(t *testing.T) {
 	}{
 		{"not in force: the seat writes the home file", "", false, home, decl},
 		{"in force, default location", filepath.Join(home, ".claude"), true, home, []string{"~/.claude", "/opt/extra"}},
-		{"in force, elsewhere", other, true, home, []string{"~/.claude", "/opt/extra"}},
+		{"in force, elsewhere", other, true, home, []string{other, "~/.claude", "/opt/extra"}},
 		// CLAUDE_CONFIG_DIR=$HOME puts the seat's file back at $HOME/.claude.json.
 		{"in force at $HOME itself", home, true, home, decl},
 		{"no home: nothing to resolve the entry against", other, true, "", decl},
