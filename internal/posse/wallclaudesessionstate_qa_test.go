@@ -207,14 +207,21 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	// The seat's own: claude's writes, then a LATER shell sourcing the
 	// snapshot, which is what the Bash tool does on every command. Both land
 	// in the seat's own dir on the host and never in the shared one.
+	//
+	// A SLICE, not a map: "own snapshot sourced" reads the file "own snapshot
+	// write" creates, and map iteration order is random — as a map this block
+	// sourced an absent file in 6/40, 2/20 and 3/27 runs, and reddened arm 1
+	// four times (ranger-base-l1d9i). The plant loops above are maps because
+	// each of their steps is independent.
 	own := filepath.Join(SeatCacheDir(f.home, f.dir), claudePrivateSessionStateRel)
 	mine := filepath.Join(snaps, "snapshot-bash-2-mine.sh")
-	for name, script := range map[string]string{
-		"own snapshot write":   "echo 'MARK=sourced' > " + q(mine),
-		"own snapshot sourced": ". " + q(mine) + " && test \"$MARK\" = sourced",
-		"own hook env write":   "mkdir -p " + q(filepath.Join(envs, "mine")) + " && : > " + q(filepath.Join(envs, "mine", "sessionstart-hook-0.sh")),
-		"projects still write": ": > " + q(filepath.Join(f.cfg, "projects", "x")),
+	for _, step := range []struct{ name, script string }{
+		{"own snapshot write", "echo 'MARK=sourced' > " + q(mine)},
+		{"own snapshot sourced", ". " + q(mine) + " && test \"$MARK\" = sourced"},
+		{"own hook env write", "mkdir -p " + q(filepath.Join(envs, "mine")) + " && : > " + q(filepath.Join(envs, "mine", "sessionstart-hook-0.sh"))},
+		{"projects still write", ": > " + q(filepath.Join(f.cfg, "projects", "x"))},
 	} {
+		name, script := step.name, step.script
 		if ok, out := try(script); !ok {
 			t.Errorf("%s: REFUSED under the rendered wall — claude needs this\n script: %s\n out: %s", name, script, out)
 		}
