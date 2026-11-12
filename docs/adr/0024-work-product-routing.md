@@ -30,7 +30,11 @@ same bytes — ADR 0082, ranger-base-5wq6g) · amended 2026-11-09 (D2 check
 3: a username equal to one of posse's own shipped names — the module's
 last element or any example role it has shipped — is not derived, from a
 shipped closed set and never from the tree; ranger-base-87jw1, from
-ranger-base-sydnc)*
+ranger-base-sydnc) · amended 2026-11-12 (D2 gains check 4: an open
+`vuln-private` bead named with more than its id, over the same staged
+markdown set as check 2 and the same commit-message reader as check 3 —
+the mechanical wall for the operator ruling AGENTS.md "Landing the plane"
+already wrote as prose, ranger-base-ihp7y, from ranger-base-lcuec)*
 
 ## Context
 
@@ -109,7 +113,7 @@ are deliberately distinct.
 |---|---|
 | 0048 D1–D4 instance vocabulary, complete staged scope, message and seed pin | Scan coverage and Decision 2; 0050 remains an independent ceiling |
 
-## Decision 2 — the wall: three checks in the existing commit hook
+## Decision 2 — the wall: four checks in the existing commit hook
 
 The enforcement point is the `prepare-commit-msg` hook the harness
 already installs — the layer that refuses at the typed line. The slot's
@@ -119,7 +123,7 @@ coverage argument: linked worktrees share the common hooks dir
 (MEASURED, git 2.39.3, rangerhq-b38m), so one install covers every
 persona worktree; the launcher's bead-close fast-forward moves commits
 and creates none, so commit time is the last moment content is written
-anywhere. All three checks run only in a **public**-stamped repo, on the
+anywhere. All four checks run only in a **public**-stamped repo, on the
 stamp mechanism hrz already has (unmarked is public; refreshed at
 install and at every persona launch).
 
@@ -302,6 +306,67 @@ install and at every persona launch).
    single quote, the same init-panic class as the pattern list. The bead
    id prefix does not trip this: the literal is a path with slashes, the
    prefix a hyphenated word.
+
+4. **Vuln-private residuals.** *Added 2026-11-12 (ranger-base-ihp7y, from
+   the operator ruling on ranger-base-lcuec).* AGENTS.md "Landing the
+   plane" already wrote this as prose: a public commit message or notes
+   fragment may describe the hole its fix CLOSES, but a residual still
+   OPEN under a bead labelled `vuln-private` is named by bead id and
+   nothing else — no description, path, mechanism or reproduction —
+   until that residual's own fix lands and the bead closes. This check
+   is the wall for it.
+
+   Same staged set as check 2 (the SHIPPED markdown pathspecs, every
+   path, not only `docs/notes.d/*.md` — the rule's own wording is "a
+   commit message or notes fragment", and NOTES.md, a README or an ADR
+   is exactly as public as a fragment), and the same commit MESSAGE
+   reader as check 3's third arm — one reader, shared, rather than a
+   second copy of it (a second `messageArm` call renders a second
+   reference-diff reader with no source that wants it, the defect
+   `TestQAHookReadersAllDisableMoveDetection` exists to catch). Unlike
+   checks 0-3, it has no path arm: a vuln-private bead id in a staged
+   FILENAME names nothing about the shape this check judges, and bd
+   stages no new path that could carry one.
+
+   **The judge is a live question, not a derived literal, and that is
+   why it is the one check in this hook that shells out to the `posse`
+   binary instead of scanning a render-time stamp.** Every other check's
+   subject — an identity literal, a guard value, a crew name, a docs
+   genre — is a FACT ABOUT THE BOX, frozen into the hook at install time
+   (`posse gates install-hooks`) because the hook is POSIX sh and
+   re-deriving it at commit time would mean a second parser in a second
+   language. A bead's open/closed status and its labels are the opposite:
+   live facts about THIS repo's beads store, true today and false
+   tomorrow, which a render-time stamp cannot hold without going stale
+   the moment anyone closes the bead. Querying bd FROM THE SHELL was
+   rejected for the reason ADR 0068 names: bd's own timeout is a
+   Go-level mechanism (`Bd.Timeout`, `beads.go`) built on
+   `exec.CommandContext`, and POSIX sh has no portable, orphan-free way
+   to bound a subprocess's runtime that does not mean backgrounding a
+   process and killing it from a sibling — exactly the shape AGENTS.md's
+   "Leaked gate-shell children" paragraph already names as a recurring
+   defect on this box. Going through the `posse` binary gets
+   `Bd.Available()`'s PATH-shim-aware probe and
+   `Bd.OpenLabeledAny`'s own `--limit 0`, both-store-class-correct open
+   filter (`beads.go`) for free, in a language with a unit test instead
+   of a second implementation in `sed` that can disagree with the first.
+
+   **Fails open, by the same test ADR 0068 D1 applies to the beads
+   jsonl's own content arm**: no `posse` or `bd` on PATH, bd unreachable,
+   bd erroring for any reason, or no `vuln-private` bead open at all —
+   every one of these is silently skipped rather than refused. A refusal
+   over "I could not find out" is a refusal with no remedy the committer
+   can perform (rewriting the message or the staged file cannot fix a
+   store the hook could not reach), which is exactly ADR 0068's lockout
+   shape.
+
+   **Class-only, like checks 0 and 2's configured-pattern arms**: the
+   refusal names the flagged bead id — safe, since the id is already as
+   visible as the bd store itself — and never the line it matched or the
+   description withheld. The DESCRIPTION is the one thing this check
+   exists to keep out of a terminal and `refusals.log` alike; printing it
+   there to explain the refusal would partially recreate the leak the
+   check refuses.
 
 Refusal, override, and honesty are hrz's, verbatim: the refusal names
 the matched class, the rule, and the way through; the override is

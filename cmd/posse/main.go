@@ -1685,7 +1685,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir...] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv>")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir...] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv> | posse gates vuln-private-scan")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1725,6 +1725,20 @@ func main() {
 				die(werr)
 			}
 			if refused {
+				os.Exit(1)
+			}
+			return
+		}
+		if args[0] == "vuln-private-scan" {
+			// ADR 0024 D2 check 4 (ranger-base-ihp7y) — called by the
+			// commit-guard hook's own shell arm, never typed by hand:
+			// stdin is the staged markdown additions or the cleaned
+			// commit message, and the only answer that matters is
+			// whether anything was printed (RunGatesVulnPrivateScan's
+			// own doc comment: "empty output is a clean scan"). The exit
+			// code is set to match for a human running this by hand, but
+			// the shell side never reads it.
+			if posse.RunGatesVulnPrivateScan(posse.NewBd(), ".", os.Stdin, out) {
 				os.Exit(1)
 			}
 			return
@@ -3255,6 +3269,15 @@ catalog:
                                  held for exactly as long as bd runs. On success this call has
                                  become bd; it returns only on a refusal (exit 1: the lock timed
                                  out, or the line cliff) or a usage error.
+  posse gates vuln-private-scan
+                                 ADR 0024 D2 check 4 — the commit-guard hook's own judge, piped
+                                 the staged markdown additions or the cleaned commit message on
+                                 stdin, never typed by hand. Prints one line per currently OPEN
+                                 vuln-private bead named with more than its bare id (AGENTS.md
+                                 "Landing the plane"); exit 1 then, else silent exit 0 — no bd on
+                                 PATH, no store, no open vuln-private bead, and nothing on stdin
+                                 all fail open rather than refuse (ADR 0068's lockout lesson: a
+                                 refusal over "could not find out" has no remedy to name).
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]

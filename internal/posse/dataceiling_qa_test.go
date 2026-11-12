@@ -537,8 +537,23 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 	if hook := qaNoHome.CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); strings.Contains(hook, dataCeilingScanLabel) ||
 		strings.Contains(hook, "─── the data ceiling") || strings.Contains(hook, "third arm: the commit MESSAGE") ||
 		strings.Contains(hook, "REPORTING reader: .beads/*.jsonl") ||
-		strings.Contains(hook, `posse_msg=$(cat "$1"`) {
-		t.Error("an empty ceiling list must render no block at all — the message arm and the REPORTING reader included: an instance with no ceiling pays for no read")
+		strings.Contains(hook, identityScanLabel) || strings.Contains(hook, guardValueScanLabel) || strings.Contains(hook, crewScanLabel) {
+		t.Error("an empty ceiling list must render no ceiling block, and an empty identity/pattern set must render no check-3 scan — the REPORTING reader included: an instance with nothing configured there pays for no read")
+	}
+	// Check 4 (ADR 0024 D2 check 4, ranger-base-ihp7y) is UNCONDITIONAL,
+	// unlike check 3: it does not depend on a derived identity literal or
+	// a configured pattern, only on whether this repo has any OPEN
+	// vuln-private bead — a live fact no render-time stamp can hold — so
+	// its message arm (identityGuardCheck's extraMessage) renders even
+	// when qaNoHome derives nothing and the pattern set is empty. It
+	// reuses check 3's reader rather than opening a second one
+	// (checkThreeMessageHead's own comment), which is why "the commit
+	// MESSAGE" banner above now says "check 3 (+ check 4, same reader)"
+	// and not "third arm" — the asserted-absent phrase above is check
+	// 3's retired wording and the ceiling's own, never check 4's.
+	if hook := qaNoHome.CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); !strings.Contains(hook, `posse_msg=$(cat "$1"`) ||
+		!strings.Contains(hook, "vuln-private residual scan") {
+		t.Error("check 4's message arm must render even with nothing else configured — a vuln-private residual is a live fact about THIS repo's open beads, not about derived identity literals or configured patterns")
 	}
 }
 

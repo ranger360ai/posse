@@ -3776,10 +3776,12 @@ const commitGuardHead = `#!/bin/sh
 # visibility stamp; the beads jsonl is scanned by a reader that REPORTS
 # and does not refuse, because bd stages that file into every commit and
 # no committer can take the line back out — ADR 0068 D1), the beads
-# visibility guard (rangerhq-hrz, extended by ADR 0024 D2 checks 1+2+3 to a
-# docs-genre allowlist, an OpsPatterns scan over staged markdown, and a scan
+# visibility guard (rangerhq-hrz, extended by ADR 0024 D2 checks 1+2+3+4 to
+# a docs-genre allowlist, an OpsPatterns scan over staged markdown, a scan
 # for this box's own identity literals and this instance's config patterns
-# over every staged file, every added path and the commit message), the
+# over every staged file, every added path and the commit message, and a
+# scan (through the posse binary) for an open vuln-private bead id named
+# with more than itself in staged markdown or the commit message), the
 # constitution-path guard (ranger-base-ak3e) and the shared-index commit
 # guard (rangerhq-lmq9). No ADR citation wall: ADR 0051's check is the
 # on-demand "posse gates adr-census", never a commit-time refusal
@@ -4133,7 +4135,92 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   if [ -n "$posse_added" ]; then
     posse_bad=''
 ` + shippedChecks.String() + markdownRefusal.render("    ") + `  fi
-` + identityGuardCheck(identity, set.Extra) + `fi
+` + identityGuardCheck(identity, set.Extra, vulnPrivateSource()) + vulnPrivateContentCheck() + `fi
+`
+}
+
+// vulnPrivateChecks is check 4's judge, rendered once and shared by its
+// content arm and its message arm (vulnPrivateSource) alike: it pipes
+// whichever text the caller already scanned into $posse_added — the staged
+// markdown additions, or the cleaned commit message messageArm already
+// computed — through the posse binary and folds any hit into $posse_bad,
+// posse_check's own idiom (empty output is a clean scan). See
+// vulnprivate.go's header comment for why the judge is a Go subprocess and
+// never bd queried directly from this shell (ADR 0068's lockout lesson: bd's
+// own timeout is a Go-level mechanism this POSIX sh has no portable,
+// orphan-free way to reproduce). Resolved fresh at COMMIT time, unlike the
+// identity literals above: there is nothing here to freeze at install time
+// — an id's open/closed status is exactly the live fact a render-time stamp
+// cannot hold. Absent `posse` on PATH, the arm is silently skipped — the
+// same fail-open answer as an unreachable bd, because the committer has no
+// more of a remedy for a missing binary than for an unreachable store.
+func vulnPrivateChecks(indent string) string {
+	return indent + `if command -v posse >/dev/null 2>&1; then
+` + indent + `  posse_vp_hit=$(printf '%s' "$posse_added" | posse gates vuln-private-scan 2>/dev/null)
+` + indent + `  [ -z "$posse_vp_hit" ] || posse_bad="$posse_bad$posse_vp_hit"
+` + indent + `fi
+`
+}
+
+// vulnPrivateSource is check 4's visScanSource (ADR 0024 D2 check 4,
+// ranger-base-ihp7y, from the operator ruling on ranger-base-lcuec):
+// AGENTS.md "Landing the plane" says a residual still open under a
+// `vuln-private` bead is named by bead id and nothing else, until that
+// residual's own fix lands. Its message half is passed to
+// identityGuardCheck as an extraMessage source, so it shares check 3's
+// reader rather than opening a second one (checkThreeMessageHead's own
+// comment says why); it carries no content or path refusal of its own —
+// vulnPrivateContentCheck renders the content arm by hand, over a narrower
+// staged set than check 3's (markdown only, no path arm at all).
+func vulnPrivateSource() visScanSource {
+	return visScanSource{
+		checks: vulnPrivateChecks,
+		message: visGuardRefusal{
+			badVar:       "posse_bad",
+			label:        "vuln-private residual scan",
+			logTail:      "(public repo, commit message)",
+			overrideAt:   " (commit message)",
+			overrideWhat: "an open vuln-private bead id is named with more than its id in a public repo",
+			header:       "an open vuln-private residual named with more than its bead id in the commit MESSAGE",
+			rule:         VulnPrivateRule,
+			matched:      commitMessageMatched,
+			wayThrough:   VulnPrivateMessageWayThrough,
+		},
+	}
+}
+
+// vulnPrivateContentCheck renders check 4's content arm: the SHIPPED
+// markdown pathspecs — the same staged set as check 2, every path, not
+// only docs/notes.d/*.md — for the reason check 2 is not narrower than
+// that either: the rule's own wording is "a public commit message or
+// notes fragment", and NOTES.md, a README or an ADR is exactly as public
+// as a fragment under docs/notes.d/. No path arm (unlike check 3): a
+// vuln-private id in a FILENAME names nothing about the shape this check
+// judges, and bd stages no new path that could carry one.
+func vulnPrivateContentCheck() string {
+	refusal := visGuardRefusal{
+		badVar:       "posse_bad",
+		label:        "vuln-private residual scan",
+		logTail:      publicRepoLogTail,
+		overrideWhat: "an open vuln-private bead id is named with more than its id in a public repo",
+		header:       "an open vuln-private residual named with more than its bead id",
+		rule:         VulnPrivateRule,
+		matched:      "flagged:",
+		wayThrough:   VulnPrivateWayThrough,
+	}
+	return `
+  # ─── check 4: vuln-private residuals named with more than a bead id ────
+  # AGENTS.md "Landing the plane" (operator ruling 2026-11-11,
+  # ranger-base-lcuec): a residual still open under a vuln-private bead is
+  # named by bead id and nothing else. Same staged set as check 2 — the
+  # SHIPPED markdown pathspecs, every path. The message half of this same
+  # check runs above, inside check 3's message arm (identityGuardCheck's
+  # extraMessage) — one reader for every source that scans the message.
+  posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- ` + markdownPathspecArgs() + ` 2>/dev/null |
+    grep -a '^+' | grep -av '^+++')
+  if [ -n "$posse_added" ]; then
+    posse_bad=''
+` + vulnPrivateChecks("    ") + refusal.render("    ") + `  fi
 `
 }
 
@@ -5278,8 +5365,23 @@ already; the second layer for it is a commit-msg hook.`)
 // hit from a content hit for the reader — is to run the same matcher over
 // one path at a time. Same rendered literal set, same posse_check, same
 // override, same refusals.log shape, public-stamped repositories only.
-func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
-	if len(identity) == 0 && len(extra) == 0 {
+// extraMessage is additional visScanSources that scan ONLY the commit
+// message, through the SAME shared reader as check 3's own message arm —
+// never a second call to messageArm, which would render a second copy of
+// its reference reader (the "commit -v" shaped posse_rest diff) and trip
+// TestQAHookReadersAllDisableMoveDetection's "exactly one" count. Check 4
+// (ranger-base-ihp7y) is the one caller today: a vuln-private residual's
+// bead id is exactly as message-shaped as an identity literal, and the
+// reader that handles git's commit.cleanup for one handles it for both.
+// They do NOT join check 3's content/path sources (twoArmScan's own
+// `sources`): twoArmScan's per-path loop runs every source's checks()
+// against each staged PATH name, which is check 3's own rule for an
+// operator-shaped artifact (ranger-base-dmsbu) and nothing check 4's rule
+// is about — a vuln-private id in a FILENAME names nothing, and running
+// check 4's judge once per staged path would be check 3's cost for no
+// reason of check 4's own.
+func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern, extraMessage ...visScanSource) string {
+	if len(identity) == 0 && len(extra) == 0 && len(extraMessage) == 0 {
 		return ""
 	}
 	// FOUR SOURCES OUT OF TWO ARGUMENTS. The derived slice carries three
@@ -5550,8 +5652,18 @@ vocabulary — fixture figures, blessed defaults, documented key values —
 and a message has no shape table to disposition the residue by
 (ranger-base-1nbtn, pinned by TestQAShippedPatternsDoNotScanTheCommit-
 Message).`)
-	return twoArmScan("  ", "check 3", head, "", sources) +
-		messageArm("  ", checkThreeMessageHead, sources)
+	var out strings.Builder
+	if len(sources) > 0 {
+		out.WriteString(twoArmScan("  ", "check 3", head, "", sources))
+	}
+	msgSources := sources
+	if len(extraMessage) > 0 {
+		msgSources = append(append([]visScanSource{}, sources...), extraMessage...)
+	}
+	if len(msgSources) > 0 {
+		out.WriteString(messageArm("  ", checkThreeMessageHead, msgSources))
+	}
+	return out.String()
 }
 
 // crewPathSkip is the crew arm's TREE filter (ranger-base-p7e0z, fixing what
@@ -5613,7 +5725,13 @@ the same path is refused exactly as before.`) +
 // what a writer is told, and check 3 has two things to tell them the
 // ceiling does not: this arm is INSIDE the visibility gate, and the
 // ceiling's message arm has already run and refuses first.
-var checkThreeMessageHead = "\n" + shComment("  ", `─── check 3, third arm: the commit MESSAGE ─────────────────────────────
+//
+// SHARED WITH CHECK 4 since ranger-base-ihp7y (identityGuardCheck's
+// extraMessage parameter): a vuln-private residual's bead id is exactly as
+// message-shaped as an identity literal, and a second call to messageArm
+// would render a second copy of the reader below — one hook, one reference
+// reader, every source that scans the message judging the SAME read of it.
+var checkThreeMessageHead = "\n" + shComment("  ", `─── check 3 (+ check 4, same reader): the commit MESSAGE ───────────────
 "$1" is the message file git is about to take — the same file the ceiling
 above and the shared-index arm below already read, through the same
 reader. WHAT IS READ IS WHAT GIT WILL KEEP, and git's CLEANUP MODE
