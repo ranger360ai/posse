@@ -162,21 +162,38 @@ type landedCageFn func(a *App, judge, tree string, writable []string, env []stri
 // empty prefix is a run with no wall and nothing said, which is the one
 // outcome D3 names by hand.
 func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCage, error) {
+	// THE READ HALF OF THE CARVE IS NOT EMPTY (ranger-base-6b46n). Under
+	// `--ro-bind / /`, and under a seatbelt profile that allows every read
+	// it does not deny, an empty DenyRead is not "no narrowing" — it is the
+	// whole host's read surface, so the judge read every no-passphrase ssh
+	// key this box pushes with and every runtime's credential file. The
+	// judge is landed code, and D3 cages it because landing reviews nothing,
+	// so it gets the masks a seat that is not the pusher gets: every
+	// runtime's credential (no runtime owns this child, so none is spared)
+	// and ssh's own key list, through the SAME helper both seat renders
+	// call, with no PID — and no PID is not the pusher (bwrapMasksSSHKeys).
+	var carve SeatbeltCarveOut
+	for _, p := range credentialReadDenyLiterals(runtime.GOOS, nil) {
+		carve.DenyRead = append(carve.DenyRead, absResolve(p))
+	}
+	if _, err := withSSHKeyReadDeny(nil, tree, &carve); err != nil {
+		return landedCage{}, err
+	}
 	switch m := WallMechanism(); m {
 	case WallBwrap:
 		if !bwrapAvailableOn(runtime.GOOS) {
 			return landedCage{}, Die("the landed check cannot run: this host realizes cage %s with %s and %s (ADR 0088 D3), so there is no wall to put it behind",
 				CageSeatbelt, m, orElse(bwrapApplyRefusal(), "it does not resolve on the gates-free PATH"))
 		}
-		// The carve-out is empty on purpose, and it is the one place this
-		// render is DELIBERATELY poorer than a seat's. A seat's carve-out is
-		// about what a PERSONA may reach inside its grants — credential
-		// denies, the rename seal, the runtime dir's control endpoints. This
-		// child's grant is a worktree the launcher just created and a build
-		// cache; there is nothing inside either for a deny to narrow, and a
-		// carve-out composed to look like a seat's would be a wall whose
-		// shape nobody could derive from what it protects.
-		argv, prep, err := BwrapArgs(tree, writable, SeatbeltCarveOut{})
+		// The carve-out's WRITE half is empty on purpose, and it is the one
+		// place this render is DELIBERATELY poorer than a seat's. A seat's
+		// write denies are about what a PERSONA may reach inside its grants —
+		// the rename seal, the runtime dir's control endpoints. This child's
+		// grant is a worktree the launcher just created and a build cache;
+		// there is nothing inside either for a write deny to narrow. Its READ
+		// half is the masks above, which are about the whole host and not
+		// about the grants, and are not optional for the same reason.
+		argv, prep, err := BwrapArgs(tree, writable, carve)
 		if err != nil {
 			return landedCage{}, err
 		}
@@ -207,7 +224,7 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 		// opens this file needs it to say what the wall is for rather than
 		// to name a persona that has nothing to do with it.
 		prof := filepath.Join(filepath.Dir(judge), "landed-check.sb")
-		if err := os.WriteFile(prof, []byte(SeatbeltProfile("landed-check", writable, nil, SeatbeltCarveOut{})), 0o644); err != nil {
+		if err := os.WriteFile(prof, []byte(SeatbeltProfile("landed-check", writable, nil, carve)), 0o644); err != nil {
 			return landedCage{}, err
 		}
 		return landedCage{Argv: []string{"sandbox-exec", "-f", prof, judge}, Env: env}, nil

@@ -53,6 +53,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-6rr2e](ranger-base-6rr2e.md) — The same class one node over: a git CHILD bound by a declaration (ranger-base-6rr2e) — 2026-11-11
 - [ranger-base-6pew3](ranger-base-6pew3.md) — The reading posse already had, and was spending as a concession (ranger-base-6pew3) — 2026-11-11
 - [ranger-base-6hjm5](ranger-base-6hjm5.md) — The record-reach gate asked for a directory no PID is granted (ranger-base-6hjm5) — 2026-11-11
+- [ranger-base-6b46n](ranger-base-6b46n.md) — The landed-check cage gets the seat's secret masks, and a census holds every cage render to them (ranger-base-6b46n) — 2026-11-11
 - [ranger-base-6akzw](ranger-base-6akzw.md) — The caged write set, narrowed to what a seat writes and not what runs later (ranger-base-6akzw) — 2026-11-11
 - [ranger-base-5fond](ranger-base-5fond.md) — The landed check runner: what the cage costs, and the two things it is NOT (ranger-base-5fond) — 2026-11-11
 - [ranger-base-5632o](ranger-base-5632o.md) — claude's shell snapshots and session-env, private to each seat (ranger-base-5632o) — 2026-11-11

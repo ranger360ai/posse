@@ -1056,6 +1056,19 @@ package treepins
 // a floor and all three assertions about absence, are in
 // docs/notes.d/ranger-base-s64a5.md.
 //
+// and ONE more into pkgcensus-check's door, for the sentence every other
+// pkgcensus row gives — an AST census over the module's non-test sources,
+// keyed on a call and not on a name list (ranger-base-6b46n). Every function
+// that renders a cage (BwrapArgs, SeatbeltProfile) must reach the ssh key
+// mask and the credential denies before it renders; the landed-check cage
+// was a third render path that reached neither, green under every per-path
+// pin because each of those rendered through one of the other two:
+//
+//	TestQAEveryCageRenderCarriesTheSecretMasks    make pkgcensus-check
+//	                                              (ranger-base-6b46n)
+//
+// 0.07s on one warm run of the door (MEASURED 2026-11-11).
+//
 // THREE WARM READINGS AT ONE HUNDRED AND THIRTY-FIVE, the class as this bead
 // leaves it: 46s, 38s then 37s in that order (MEASURED 2026-11-11,
 // ranger-base-s64a5, at a one-minute load average of 3.43, 11.58 and 8.64,
@@ -1076,7 +1089,7 @@ package treepins
 // earlier reading on this bead, at a load of 7.87 with BOTH slots held, was
 // 46.2s, which is the same band from the other side.
 //
-// and `make tree-check` is all of them — one hundred and thirty-six pins
+// and `make tree-check` is all of them — one hundred and thirty-seven pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
