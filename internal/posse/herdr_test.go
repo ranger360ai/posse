@@ -2373,6 +2373,25 @@ func fakeHerdr(args []string) int {
 			}
 			return fakeErr(code, msg)
 		}
+		// list-delay-ms holds the LISTING the way a loaded box does, which
+		// is the lever for a slow status probe: dispatch reads an agent's
+		// state off this one call (agentStatus → Resolve → Sessions), so a
+		// delay here makes ONE probe cost wall without changing a single
+		// thing it reads. "ms", like create-delay-ms, one verb over.
+		//
+		// A SINGLE SLOW READ and not many quick ones, which is the shape the
+		// incident had: under `make coldexec-check` the supervisor charges
+		// 2.5s for the first execve of any file it has not seen (ADR 0085),
+		// and that was one probe outlasting a whole WaitCeiling
+		// (ranger-base-s14uz). The rex arm can already be made slow by
+		// seeding unknown records for statusAfterTimeout to re-ask over, but
+		// that is a probe that asks REPEATEDLY, which is a different fixture
+		// about a different thing.
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "list-delay-ms")); err == nil {
+			if ms, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && ms > 0 {
+				time.Sleep(time.Duration(ms) * time.Millisecond)
+			}
+		}
 		// Like real herdr, a workspace's agent_status mirrors the agent
 		// detected in it (agents.json), unless the test set it directly.
 		ws := fakeHiddenFromList(fakeLoadWS())

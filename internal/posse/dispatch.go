@@ -4163,11 +4163,55 @@ wait:
 		if d.sayLegError(p) {
 			d.printf("◷ %-14s wait leg ended: %v\n", p.is.ID, r.err)
 		}
-		waited := time.Since(p.prompted).Round(time.Second)
+		// ONE READING, TAKEN HERE, FOR EVERY ARM BELOW — the number that is
+		// printed and the number the ceiling is decided on are the same
+		// sample (ranger-base-s14uz). It used to be two: `waited` here, and
+		// a FRESH `time.Since(p.prompted)` inside the ceiling test on the
+		// other side of the status probe. The two are of the same quantity
+		// and disagree by exactly the probe's duration, so whichever arm was
+		// taken the operator read a number the code had not decided on —
+		// and a probe slower than the remaining budget took the CEILING arm
+		// at the first leg, printing the stale reading as it went.
+		// MEASURED 2026-11-11 under `make coldexec-check`, where a first
+		// exec costs 2.5s: this loop's own pacing pins red on the `rex`
+		// sub-case with "this gather never reached the re-wait arm", in one
+		// doored arm-1 run and not the next, and the line read "after 0s" —
+		// the tell, 0s being what was sampled before the probe that blew a
+		// 2s ceiling (ranger-base-w5z7u).
+		//
+		// AND THE SAMPLE IS TAKEN BEFORE THE PROBE, not after it, which is
+		// the half the bead left open. Three reasons, in the order they
+		// bind:
+		//
+		//   - What every arm prints is how long the prompt had been in
+		//     flight when the leg that just ended did. The probe's own wall
+		//     belongs to the probe, and the arm that cares already reports
+		//     it separately: statusPhrase in `default` names the probe that
+		//     failed, so a post-probe sample would have that one line
+		//     double-count — "wait timed out after 12s and herdr could not
+		//     say" over a 2s leg and a StatusGrace spent failing.
+		//   - The ceiling decides whether to grant ANOTHER leg, and that
+		//     decision is about the AGENT. Sampled before the probe it
+		//     cannot be moved by how slow herdr was to answer; sampled
+		//     after, a probe that outlasts the whole budget is
+		//     indistinguishable from an agent that has worked the ceiling's
+		//     length — "claim kept, not judged this pass" landing on a seat
+		//     one leg old.
+		//   - Nothing is lost by it. p.prompted is fixed, so the probe's
+		//     wall is counted by the NEXT leg's sample: the ceiling is
+		//     reached at most one leg late (LegFloor + one leg +
+		//     StatusGrace), never missed.
+		//
+		// `elapsed` is the sample and `waited` its rendering. The ceiling is
+		// tested against the sample rather than the rounded value because
+		// Round is half-up: deciding on `waited` would trip the ceiling up
+		// to 500ms early, which is a second defect of this same family.
+		elapsed := time.Since(p.prompted)
+		waited := elapsed.Round(time.Second)
 		st, sterr := d.statusAfterTimeout(p.session)
 		switch st {
 		case "working":
-			if d.WaitCeiling > 0 && time.Since(p.prompted) >= d.WaitCeiling {
+			if d.WaitCeiling > 0 && elapsed >= d.WaitCeiling {
 				d.printf("◷ %-14s still working in %s after %s — claim kept, not judged this pass\n", p.is.ID, p.session, waited)
 				return true, nil
 			}

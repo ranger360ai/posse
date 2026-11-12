@@ -519,3 +519,148 @@ func TestQAWaitLegErrorIsSaidOnTheUnnamedStateArmOnEveryMultiplexer(t *testing.T
 		}
 	}
 }
+
+// ─── and the number the ceiling DECIDES on is the number it PRINTS ──────────
+//
+// ranger-base-s14uz. The working arm read the elapsed time twice: `waited`
+// before the status probe, for every line below to print, and a fresh
+// `time.Since(p.prompted)` inside the ceiling test on the other side of it.
+// Two samples of one quantity, disagreeing by exactly the probe's duration —
+// so whichever arm was taken, the number the operator read was not the number
+// the code decided on, and a probe slower than the remaining budget took the
+// CEILING arm at the first leg while printing the stale sample.
+//
+// HOW IT SURFACED, which is why this pin lives in this file: under
+// `make coldexec-check` the supervisor charges 2.5s for the first execve of
+// any file it has not seen (ADR 0085), and against this file's 2s ceiling one
+// probe spent the whole budget. Both re-wait pins above red on the `rex`
+// sub-case with "this gather never reached the re-wait arm", in one doored
+// arm-1 run and not the next — and the output read "after 0s", which is the
+// tell and not the symptom: 0s is what was sampled BEFORE the probe that blew
+// a 2s ceiling (ranger-base-w5z7u's description, where this was first seen).
+//
+// WHAT IS PINNED IS THE INVARIANT AND NOT THE SYMPTOM. "The ceiling arm never
+// prints an elapsed reading under the ceiling" is true on any box at any
+// speed, and it is false exactly when the two samples have been allowed to
+// diverge again. A loaded box can only make the FIRST leg end later, which
+// moves this fixture toward the arm it already asserts rather than into a
+// false red — the same direction argument the rate pins above make.
+//
+// ONE OCCUPANT, deliberately: the subject is gather's own clock, which is
+// above the occupant seam and reads the same whichever one answered. What
+// differs is the lever that makes a probe slow, and the herdr one is the
+// honest shape — ONE read that costs wall, which is what a cold exec is. The
+// rex arm can be made slow only by seeding records statusAfterTimeout
+// re-asks over, i.e. a probe that asks repeatedly, which is a fixture about
+// something else.
+
+// legPaceSlowProbe is how long the status probe is held: past legPaceCeiling,
+// and the figure the coldexec door charges a first exec, because that is what
+// held it on the day this was filed.
+const legPaceSlowProbe = 2500 * time.Millisecond
+
+// waitLegGatherSlowProbe runs one bounded gather over a herdr seat that reads
+// WORKING throughout, a wait leg that fails at once, and a status probe held
+// for legPaceSlowProbe — longer than the whole WaitCeiling. Same fixture as
+// waitLegGather's herdr branch otherwise, and `delivered` is set for the same
+// reason (ADR 0013 §2: on the argv path a wait failure says nothing about
+// delivery, which is what makes the loop reach the re-wait on any leg error).
+func waitLegGatherSlowProbe(t *testing.T) string {
+	t.Helper()
+	b, fake := newTestBackend(t)
+	const session = legPaceSession
+	saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: b.App.WorkspaceLabel(session), AgentStatus: "working"}})
+	workingClaude(t, fake)
+	if err := os.WriteFile(filepath.Join(fake, "wait-error"),
+		[]byte("timeout|timed out waiting for agent status"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: fakeHerdrSeat.Session, Pane: fakeHerdrSeat.Pane,
+		Agent: "ranger", Socket: SocketID(), Gen: ServerGen(), Launched: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	d := newTestDispatcher(t, b)
+	d.PromptWaitMS = 1
+	d.WaitCeiling = legPaceCeiling
+	d.LegFloor = 0
+	d.ProgressEvery = 0
+	// waitLegGather's own control, for the same reason: a seat reading
+	// anything but working settles or holds on its first leg and pins
+	// nothing. Taken BEFORE the delay is armed, which also pays the fake
+	// herdr's first exec here — under the coldexec door that one is charged
+	// 2.5s, and charged to whoever execs first, which must not be the leg
+	// this fixture needs to end inside the ceiling.
+	if st, err := d.agentStatus(session); err != nil || st != "working" {
+		t.Fatalf("the fixture seat reads (%q, %v), want working — nothing below would be about a slow probe", st, err)
+	}
+	if err := os.WriteFile(filepath.Join(fake, "list-delay-ms"),
+		[]byte(strconv.Itoa(int(legPaceSlowProbe/time.Millisecond))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	p := &pendingBead{is: RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: t.TempDir()},
+		persona: "ranger", session: session, target: fakeHerdrSeat, runtime: "claude", delivered: true,
+		result: make(chan promptResult, 1), prompted: now, legAt: now, launched: now}
+	d.rewait(p)
+	inFlight, err := d.gather(p)
+	got := dispatcherOut(d)
+	if err != nil {
+		t.Fatalf("gather over a working seat failed: %v\n%s", err, got)
+	}
+	if !inFlight {
+		t.Fatalf("gather judged a seat that never stopped working, so this did not end on the ceiling:\n%s", got)
+	}
+	return got
+}
+
+// ceilingElapsed is the elapsed reading the WaitCeiling arm printed — the
+// number the operator reads, parsed back out of the line that says it.
+func ceilingElapsed(t *testing.T, out string) time.Duration {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "still working in ") || !strings.Contains(line, "claim kept") {
+			continue
+		}
+		_, rest, ok := strings.Cut(line, " after ")
+		if !ok {
+			t.Fatalf("the ceiling line names no elapsed reading at all: %q", line)
+		}
+		field, _, _ := strings.Cut(rest, " ")
+		d, err := time.ParseDuration(field)
+		if err != nil {
+			t.Fatalf("the ceiling line's elapsed reading %q does not parse as a duration (%v): %q", field, err, line)
+		}
+		return d
+	}
+	t.Fatalf("this gather never reached the WaitCeiling arm, so it pins nothing about what that arm decided on:\n%s", out)
+	return 0
+}
+
+// THE INVARIANT: the ceiling arm's own line never reports an elapsed time
+// under the ceiling it just enforced.
+func TestQAWaitCeilingPrintsTheReadingItDecidedOn(t *testing.T) {
+	t.Parallel()
+	out := waitLegGatherSlowProbe(t)
+	if got := ceilingElapsed(t, out); got < legPaceCeiling {
+		t.Errorf("the ceiling arm fired at %s but printed %s — the elapsed time is sampled before the status probe and the ceiling is tested against a fresh reading taken after it, so the number printed is not the number decided on (ranger-base-s14uz):\n%s",
+			legPaceCeiling, got, out)
+	}
+}
+
+// AND THE CONSEQUENCE, which is what red the two re-wait pins above: a probe
+// that outlasts the whole budget must not spend the FIRST leg's verdict. The
+// loop is a settle-based wait — the timeout is a check-in and not a deadline
+// — so "claim kept, not judged this pass" on a seat one leg old is the
+// ceiling's own verdict landing on herdr's latency.
+//
+// This asserts the re-wait arm was reached, which needs leg 1 to end inside
+// legPaceCeiling: one fork of this test binary against 2s, the same budget
+// every pin in this file already lives on.
+func TestQAASlowStatusProbeDoesNotSpendTheFirstLeg(t *testing.T) {
+	t.Parallel()
+	out := waitLegGatherSlowProbe(t)
+	if legs(out) == 0 {
+		t.Errorf("a gather whose first leg ended inside the ceiling went straight to the ceiling arm — the %s status probe was counted against a %s budget by a reading taken after it (ranger-base-s14uz):\n%s",
+			legPaceSlowProbe, legPaceCeiling, out)
+	}
+}
