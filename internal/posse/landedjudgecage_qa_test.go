@@ -1,0 +1,181 @@
+//go:build !posse_arm2 && !posse_arm3
+
+package posse
+
+// ranger-base-4nzpo — the landed-check judge is never stronger than a seat.
+//
+// The process this protects: `posse dispatch`'s landing path →
+// landedChecker.judge → boxLandedCage. The judge is landed code, run on every
+// landing as no persona, and it does not go through RenderWall, so the
+// host-scoped masks a seat gets there did not reach it. This pin drives the
+// judge's own call site with the box's real renderer and asserts each mask
+// on what it rendered: no network, the runtime dir hidden, a private /tmp
+// inside the run dir, a build cache of the run's own, and no write grant on
+// the box's shared build cache. Delete it and a regression puts landed code
+// back inside the launcher's next build, or back on the session bus, with
+// no test red.
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestQALandedCheckJudgeIsNoStrongerThanASeat(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME, and this sets XDG_RUNTIME_DIR.
+	f := newLandedCageFixture(t)
+	// A runtime dir of the fixture's own, so the hide row is never vacuous
+	// on a host that has none.
+	rtd := filepath.Join(f.root, "runtime")
+	if err := os.MkdirAll(rtd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", rtd)
+
+	repo := filepath.Join(f.root, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, repo, "init", "-q", "-b", "main", ".")
+	mustGit(t, repo, "config", "user.email", "t@example.com")
+	mustGit(t, repo, "config", "user.name", "t")
+	write(t, filepath.Join(repo, landedCheckScript), "#!/bin/sh\nexit 0\n")
+	mustGit(t, repo, "add", "--", landedCheckScript)
+	mustGit(t, repo, "commit", "-q", "-m", "ship", "--", landedCheckScript)
+	tip := mustGit(t, repo, "rev-parse", "HEAD")
+
+	run := filepath.Join(f.root, "run-pin")
+	if err := os.MkdirAll(run, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = git(repo, "worktree", "remove", "--force", filepath.Join(run, landedTreeName)) })
+
+	// The renderer is the box's; the seam only keeps what it was handed and
+	// what it rendered, and then refuses, so the judge never runs.
+	var (
+		rendered    landedCage
+		renderErr   error
+		gotWritable []string
+		gotEnv      []string
+	)
+	c := &landedChecker{a: &App{}, out: &strings.Builder{}, pending: map[string]string{}}
+	c.cage = func(a *App, judge, tree string, writable, env []string) (landedCage, error) {
+		gotWritable, gotEnv = writable, env
+		rendered, renderErr = boxLandedCage(a, judge, tree, writable, env)
+		return landedCage{}, Die("pin: rendered and not run")
+	}
+	c.judge(repo, run, tip, revTreeID(repo, tip))
+	if gotWritable == nil {
+		t.Fatal("landedChecker.judge never reached the cage renderer, so nothing below was asked")
+	}
+	if renderErr != nil {
+		t.Skip("NOTHING MEASURED: no landed-check cage renders on this host: " + renderErr.Error())
+	}
+
+	// D2: the run's own cache, and nothing granting the box's.
+	gocache := filepath.Join(run, "gocache")
+	if !containsString(gotEnv, "GOCACHE="+gocache) {
+		t.Errorf("the judge's env is %v, want GOCACHE=%s — a cache of the run's own (ranger-base-4nzpo)", gotEnv, gocache)
+	}
+	shared := goBuildCache()
+	if shared == "" {
+		t.Fatal("goBuildCache resolved nothing, so the shared-cache row cannot be asked")
+	}
+	for _, w := range gotWritable {
+		if writeGranted([]string{absResolve(w)}, absResolve(shared)) {
+			t.Errorf("the judge's write set grants %s, which covers the box's shared build cache %s — landed code writing into the launcher's next build (ranger-base-4nzpo)", w, shared)
+		}
+	}
+
+	switch WallMechanism() {
+	case WallBwrap:
+		argv, line := rendered.Argv, bwJoin(rendered.Argv)
+		if bwIndex(argv, "--unshare-net") < 0 {
+			t.Errorf("the judge's cage shares the host network namespace — want --unshare-net (ranger-base-4nzpo):\n  %s", line)
+		}
+		hide, err := liveBwrapRuntimeDirs()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !containsString(hide, absResolve(rtd)) {
+			t.Fatalf("the fixture's runtime dir %s is not among the live ones %v, so the hide row would not test it", rtd, hide)
+		}
+		for _, h := range hide {
+			if bwIndex(argv, "--tmpfs", h) < 0 {
+				t.Errorf("the judge's cage does not hide the runtime dir %s, so it reaches the session bus and the user service manager (ranger-base-4nzpo):\n  %s", h, line)
+			}
+		}
+		if bwIndex(argv, "--bind", filepath.Join(run, "tmp"), bwrapTmpMount) < 0 {
+			t.Errorf("the judge's /tmp is not bound to %s, so it writes where the box's uncaged builds stage (ranger-base-4nzpo):\n  %s", filepath.Join(run, "tmp"), line)
+		}
+		if bwIndex(argv, "--setenv", "GOCACHE", gocache) < 0 {
+			t.Errorf("the judge's cage does not set GOCACHE=%s (ranger-base-4nzpo):\n  %s", gocache, line)
+		}
+		for i := 0; i+2 < len(argv); i++ {
+			if argv[i] == "--bind" && writeGranted([]string{argv[i+2]}, absResolve(shared)) {
+				t.Errorf("the judge's cage binds %s writable, which covers the box's shared build cache %s (ranger-base-4nzpo)", argv[i+2], shared)
+			}
+		}
+	case WallSandboxExec:
+		b, err := os.ReadFile(filepath.Join(run, "landed-check.sb"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		prof := string(b)
+		// ASSUMED, NOT MEASURED: no darwin host runs this (ranger-base-bfla6).
+		// What is pinned is that the rule is rendered, and last.
+		if !strings.HasSuffix(prof, landedCheckSeatbeltNet(run)) {
+			t.Errorf("the landed-check profile does not end with the network rule (ranger-base-4nzpo):\n%s", prof)
+		}
+		if strings.Contains(prof, "(subpath "+sbQuote(absResolve(shared))+")") {
+			t.Errorf("the landed-check profile grants the box's shared build cache %s (ranger-base-4nzpo)", shared)
+		}
+	default:
+		t.Fatalf("boxLandedCage rendered a cage on mechanism %q, which this pin does not know how to read", WallMechanism())
+	}
+}
+
+// The darwin rule, read on any host: deny everything, then loopback IP and
+// the run's own unix sockets back, in that order (last match wins in SBPL).
+func TestQALandedCheckSeatbeltNetRule(t *testing.T) {
+	t.Parallel()
+	r := landedCheckSeatbeltNet("/var/landed/run-1")
+	deny := strings.Index(r, "(deny network*)")
+	if deny < 0 {
+		t.Fatalf("the rule denies no network:\n%s", r)
+	}
+	for _, allow := range []string{
+		`(allow network* (local ip "localhost:*"))`,
+		`(allow network* (remote ip "localhost:*"))`,
+		`(allow network* (local unix-socket (subpath "/var/landed/run-1")))`,
+		`(allow network* (remote unix-socket (subpath "/var/landed/run-1")))`,
+	} {
+		i := strings.Index(r, allow)
+		if i < 0 {
+			t.Errorf("the rule lacks %s:\n%s", allow, r)
+		} else if i < deny {
+			t.Errorf("%s comes before the deny, so the deny outvotes it:\n%s", allow, r)
+		}
+	}
+	if strings.Contains(r, "(allow network* (remote ip \"*") || strings.Contains(r, "(allow network*)") {
+		t.Errorf("the rule allows non-loopback network:\n%s", r)
+	}
+}
+
+// landedCheckTmp stands down where a private /tmp would hide the judge's
+// own tree, and is the run's own dir everywhere else.
+func TestQALandedCheckTmp(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ home, run, tree, want string }{
+		{"/home/u", "/home/u/.posse/landed-check/run-1", "/home/u/.posse/landed-check/run-1/tree", "/home/u/.posse/landed-check/run-1/tmp"},
+		{"/tmp/h", "/home/u/run", "/home/u/run/tree", ""},
+		{"/home/u", "/tmp/run", "/tmp/run/tree", ""},
+		{"/home/u", "/home/u/run", "/tmp/tree", ""},
+		{"", "/home/u/run", "/home/u/run/tree", ""},
+	} {
+		if got := landedCheckTmp(c.home, c.run, c.tree); got != c.want {
+			t.Errorf("landedCheckTmp(%q, %q, %q) = %q, want %q", c.home, c.run, c.tree, got, c.want)
+		}
+	}
+}

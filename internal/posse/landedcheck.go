@@ -50,9 +50,9 @@ package posse
 // scheduled one would either block the cockpit for a minute or leak a caged
 // child into a process that is about to exit. A tree landed by a kill is
 // read by the next landing into that repo, one tip later. (5) The child
-// inherits the launcher's environment with TMPDIR redirected and nothing
-// else, which is ADR 0087 D1's rule and the contract's: what a repo's check
-// needs out of the environment is the repo's to decide, and this repo's
+// inherits the launcher's environment with TMPDIR and GOCACHE redirected
+// and nothing else (residual: ranger-base-5m5yq), which is ADR 0087 D1's
+// rule and the contract's: what a repo's check needs out of the environment is the repo's to decide, and this repo's
 // scrubs make's own variables for itself after its author measured a green
 // over an empty room (docs/notes.d/ranger-base-r3pqf.md). Posse scrubs
 // nothing on a repo's behalf.
@@ -146,8 +146,9 @@ type landedCage struct {
 type landedCageFn func(a *App, judge, tree string, writable []string, env []string) (landedCage, error)
 
 // boxLandedCage is D3: the box's own cage tier, bwrap on Linux and
-// sandbox-exec on darwin, with the landed worktree and the shared build
-// cache writable and nothing else.
+// sandbox-exec on darwin, with the run dir (the landed worktree, its TMPDIR
+// and its own build cache) writable and nothing else, and no network but
+// loopback (ranger-base-4nzpo).
 //
 // IT GOES THROUGH THE SAME RENDERERS A SEAT'S WALL GOES THROUGH — BwrapArgs
 // and SeatbeltProfile — and not through RenderWall, which is a different
@@ -179,6 +180,10 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 	if _, err := withSSHKeyReadDeny(nil, tree, &carve); err != nil {
 		return landedCage{}, err
 	}
+	// THE JUDGE IS NEVER STRONGER THAN A SEAT (ranger-base-4nzpo). The
+	// run dir is the judge's own directory, the one judge() made and the one
+	// the darwin profile is written into.
+	run := filepath.Dir(judge)
 	switch m := WallMechanism(); m {
 	case WallBwrap:
 		if !bwrapAvailableOn(runtime.GOOS) {
@@ -189,17 +194,30 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 		// place this render is DELIBERATELY poorer than a seat's. A seat's
 		// write denies are about what a PERSONA may reach inside its grants —
 		// the rename seal, the runtime dir's control endpoints. This child's
-		// grant is a worktree the launcher just created and a build cache;
-		// there is nothing inside either for a write deny to narrow. Its READ
+		// grant is a run dir the launcher just created; there is nothing
+		// inside it for a write deny to narrow. Its READ
 		// half is the masks above, which are about the whole host and not
 		// about the grants, and are not optional for the same reason.
+		//
+		// The host-scoped masks a seat gets through bwrapRender, which this
+		// render does not go through (ranger-base-4nzpo): the user runtime
+		// dir hidden (ranger-base-ludpp) and a private /tmp
+		// (ranger-base-7wdb7) — here the run's own tmp dir, so it goes with
+		// the run.
+		hide, err := liveBwrapRuntimeDirs()
+		if err != nil {
+			return landedCage{}, err
+		}
+		carve.Hide = hide
+		home, _ := os.UserHomeDir()
+		carve.Tmp = landedCheckTmp(home, run, tree)
 		argv, prep, err := BwrapArgs(tree, writable, carve)
 		if err != nil {
 			return landedCage{}, err
 		}
 		// The prep is not housekeeping: bwrap binds only a source that
 		// exists, so a write grant that is not there yet (the run's TMPDIR,
-		// a build cache this box has never filled) is a mkdir the launcher
+		// its private /tmp) is a mkdir the launcher
 		// makes OUTSIDE the namespace, in the order BwrapArgs emitted it.
 		if err := runBwrapPrep(prep); err != nil {
 			return landedCage{}, err
@@ -208,6 +226,12 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 		if err != nil {
 			return landedCage{}, err
 		}
+		// No network (ranger-base-4nzpo). Added HERE and not in BwrapArgs,
+		// because a seat keeps its egress ("egress is the container tier's")
+		// and the judge has no persona that needs any. bwrap brings the new
+		// namespace up with loopback, so a check that listens on 127.0.0.1
+		// still runs.
+		argv = append(argv, landedCheckBwrapNet)
 		for _, kv := range env {
 			if k, v, ok := strings.Cut(kv, "="); ok {
 				argv = append(argv, "--setenv", k, v)
@@ -224,7 +248,11 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 		// opens this file needs it to say what the wall is for rather than
 		// to name a persona that has nothing to do with it.
 		prof := filepath.Join(filepath.Dir(judge), "landed-check.sb")
-		if err := os.WriteFile(prof, []byte(SeatbeltProfile("landed-check", writable, nil, carve)), 0o644); err != nil {
+		// The network rule goes AFTER the whole profile: last match wins in
+		// SBPL, so nothing above can re-open what it closes. Seatbelt has no
+		// spelling for Hide or Tmp — it mediates operations, not a mount
+		// view, and a write to /tmp is already outside the grant.
+		if err := os.WriteFile(prof, []byte(SeatbeltProfile("landed-check", writable, nil, carve)+landedCheckSeatbeltNet(run)), 0o644); err != nil {
 			return landedCage{}, err
 		}
 		return landedCage{Argv: []string{"sandbox-exec", "-f", prof, judge}, Env: env}, nil
@@ -232,10 +260,55 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 	return landedCage{}, Die("the landed check cannot run: posse has no wall render for this host (%s), and ADR 0088 D3 never runs it uncaged", runtime.GOOS)
 }
 
+// landedCheckBwrapNet is the judge's network on bwrap: a namespace of its own,
+// which bwrap brings up with loopback and nothing else (ranger-base-4nzpo).
+const landedCheckBwrapNet = "--unshare-net"
+
+// landedCheckSeatbeltNet is the same rule on seatbelt: every network
+// operation denied, then loopback IP and unix sockets inside the run dir
+// allowed back. The unix-socket half is not decoration — connecting to a
+// unix socket is a network operation in SBPL and not a file write, so
+// without it the host's agent sockets stay reachable under the write deny.
+// SBPL's ip filter takes only `*` or `localhost` as the host, so
+// "loopback only" is exact.
+//
+// ASSUMED, NOT MEASURED: there is no darwin host behind this render
+// (ranger-base-bfla6 carries the probe).
+func landedCheckSeatbeltNet(run string) string {
+	r := sbQuote(absResolve(run))
+	return ";; the landed check's network (ranger-base-4nzpo): loopback and the run's own\n;; unix sockets, nothing else. Last, so it outvotes everything above.\n" +
+		"(deny network*)\n" +
+		"(allow network* (local ip \"localhost:*\"))\n" +
+		"(allow network* (remote ip \"localhost:*\"))\n" +
+		"(allow network* (local unix-socket (subpath " + r + ")))\n" +
+		"(allow network* (remote unix-socket (subpath " + r + ")))\n"
+}
+
+// landedCheckTmp is the directory bwrap binds over the judge's /tmp: `tmp`
+// in the run dir, the same directory judge() hands the check as TMPDIR. ""
+// — the host's /tmp — when the home, the run or the tree is itself under
+// /tmp, for bwrapSeatTmp's reason: a private /tmp over them leaves the judge
+// nothing to chdir into. No production run is that shape (the run dir is
+// under the state dir); this package's fixtures are.
+func landedCheckTmp(home, run, tree string) string {
+	for _, p := range []string{home, run, tree} {
+		if p == "" || underDir(bwrapTmpMount, p) {
+			return ""
+		}
+	}
+	return filepath.Join(run, "tmp")
+}
+
+// landedCheckGoCache is the judge's build cache: fresh in every run and
+// removed with it (ranger-base-4nzpo). Fresh rather than a persistent
+// judge-only cache, because a persistent one would let landing N plant
+// objects that decide landing N+1's verdict.
+func landedCheckGoCache(run string) string { return filepath.Join(run, "gocache") }
+
 // landedCheckWritable is D3's write set, and the whole of it: the run's own
-// directory — which holds the detached worktree, the extracted judge and the
-// TMPDIR its children write into — the worktree's private git directory, and
-// the box's shared build cache.
+// directory — which holds the detached worktree, the extracted judge, the
+// TMPDIR its children write into and the run's own build cache — and the
+// worktree's private git directory.
 //
 // THE WORKTREE'S GIT DIR IS PART OF THE WORKTREE, not part of the repo. A
 // linked worktree keeps its own HEAD, index and logs under
@@ -249,11 +322,11 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 // and where a stranded lock is the operator's to remove and never a seat's
 // (AGENTS.md, ADR 0059 D3).
 //
-// THE BUILD CACHE IS SHARED ON PURPOSE (D3: "the worktree is writable, and
-// so is the shared build cache"). A private cache would make every landed
-// check a cold build — MEASURED 74s cold against 49-64s warm for this repo's
-// check — and the cache is content-addressed, so a landed tree's entries are
-// the same entries the next seat's build wants.
+// THE BOX'S SHARED BUILD CACHE IS NOT IN IT (ranger-base-4nzpo). It used to
+// be, to save a cold build. But it is the cache every uncaged build of this
+// box reads, posse's own included, so a grant on it was landed code writing
+// into the launcher's next build. The run builds through
+// landedCheckGoCache instead, inside the run dir granted above.
 func landedCheckWritable(run, tree string) []string {
 	w := []string{run}
 	// ASKED OF GIT AND NOT SPELLED. A linked worktree's admin directory is
@@ -267,9 +340,6 @@ func landedCheckWritable(run, tree string) []string {
 	if g, err := git(tree, "rev-parse", "--absolute-git-dir"); err == nil && g != "" {
 		w = append(w, g)
 	}
-	if c := goBuildCache(); c != "" {
-		w = append(w, c)
-	}
 	return dedupeStrings(w)
 }
 
@@ -280,9 +350,9 @@ func landedCheckWritable(run, tree string) []string {
 // child on a path whose whole subject is that exactly one child runs and
 // that it runs caged.
 //
-// "" is a box whose cache cannot be named, which costs a cold build and
-// never a wrong answer: the grant is simply not rendered and the check's own
-// `go` says what it could not write.
+// It is no longer granted (landedCheckWritable says why). It stays named so
+// the cage's pin can say what must NOT be writable, in the same resolution
+// the grant used to use.
 func goBuildCache() string {
 	if c := os.Getenv("GOCACHE"); c != "" {
 		return c
@@ -526,8 +596,14 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	}
 	// TMPDIR inside the run dir rather than the host's /tmp, because the run
 	// dir is the grant: the check's children stage and link there, and under
-	// D3 nothing outside this directory and the build cache is writable.
-	env := []string{"TMPDIR=" + tmp}
+	// D3 nothing outside this directory is writable. GOCACHE beside it, for
+	// the same reason and for landedCheckWritable's: a cache of this run's
+	// own, gone when the run is.
+	gocache := landedCheckGoCache(run)
+	if err := os.MkdirAll(gocache, 0o755); err != nil {
+		return landUnanswered, fmt.Sprintf("the landed check's own build cache could not be made (%v)", err)
+	}
+	env := []string{"TMPDIR=" + tmp, "GOCACHE=" + gocache}
 	cage, err := c.cageFn()(c.a, judge, path, landedCheckWritable(run, path), env)
 	if err != nil {
 		// D3's one hard rule, and the reason the argv comes out of a
@@ -558,9 +634,9 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	// go through protocolEnv would throw that resolution away on the next
 	// line while the call site still read as though it had one.
 	//
-	// THE CHILD'S ENVIRONMENT IS THE LAUNCHER'S, with TMPDIR redirected and
-	// nothing else — the land check's rule, and the contract's. What a
-	// repo's check needs out of the environment is the repo's to decide:
+	// THE CHILD'S ENVIRONMENT IS THE LAUNCHER'S, with TMPDIR and GOCACHE
+	// redirected and nothing else (residual: ranger-base-5m5yq) — the land
+	// check's rule, and the contract's. What a repo's check needs out of the environment is the repo's to decide:
 	// this one scrubs make's own variables for itself, because the caller's
 	// environment deciding what a check RUNS is a green over an empty room
 	// (docs/notes.d/ranger-base-r3pqf.md). Posse scrubbing on its behalf

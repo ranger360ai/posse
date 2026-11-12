@@ -67,6 +67,9 @@ The write set that makes it work is three entries (`landedCheckWritable`):
 - **the shared build cache**, resolved without forking `go env`
   (`$GOCACHE`, else `$XDG_CACHE_HOME/go-build`, else the per-OS default). A
   private cache would make every landed check a cold build.
+  **Withdrawn by ranger-base-4nzpo**: the shared cache is the launcher's own
+  build's, so the judge now builds through a fresh `<run>/gocache` inside the
+  run dir, and the write set is the first two entries.
 
 ## Two things the runner is NOT, each because a measurement said so
 

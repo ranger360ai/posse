@@ -58,6 +58,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-6akzw](ranger-base-6akzw.md) — The caged write set, narrowed to what a seat writes and not what runs later (ranger-base-6akzw) — 2026-11-11
 - [ranger-base-5fond](ranger-base-5fond.md) — The landed check runner: what the cage costs, and the two things it is NOT (ranger-base-5fond) — 2026-11-11
 - [ranger-base-5632o](ranger-base-5632o.md) — claude's shell snapshots and session-env, private to each seat (ranger-base-5632o) — 2026-11-11
+- [ranger-base-4nzpo](ranger-base-4nzpo.md) — The landed-check judge gets a seat's host masks, no network, and a build cache of its own run (ranger-base-4nzpo) — 2026-11-11
 - [ranger-base-4kars](ranger-base-4kars.md) — A withdrawn notification truncates the injection (ranger-base-4kars) — 2026-11-11
 - [ranger-base-4arlo](ranger-base-4arlo.md) — ranger-base-4arlo — the harness scratchpads, and the gate that reaches them — 2026-11-11
 - [ranger-base-3fm26](ranger-base-3fm26.md) — Four closes, and the three guards their own mutants could not reach (ranger-base-3fm26) — 2026-11-11
