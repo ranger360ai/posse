@@ -328,43 +328,35 @@ func TestMain(m *testing.M) {
 	os.Unsetenv("GIT_CONFIG_GLOBAL")
 	os.Setenv("RHQ_FAKE_HERDR", "1")
 	os.Setenv(EnvPersona, "")
-	// The CLI home overrides, cleared for the same reason HOME is
+	// The CLI home overrides, taken out of force for the same reason HOME is
 	// replaced: every locator that honours one reads the OPERATOR's live
 	// store when the variable survives into the test binary, and the temp
-	// HOME above no longer fences it off. This box exports
-	// CLAUDE_CONFIG_DIR from a managed-settings file on every launch, so
-	// once transcriptFiles started following it (ranger-base-yqdov) the
-	// package's cost tests would have walked ~/.claude/projects — 1300+
-	// real project dirs — instead of their own tempdirs. Cleared and not
-	// unset: those three resolvers treat empty as unset and fall back to the
-	// home, which is the tempdir. A test that means to move one sets it
-	// back with t.Setenv, exactly as the $CODEX_HOME/$GROK_HOME cost tests
-	// already do.
-	os.Setenv("CLAUDE_CONFIG_DIR", "")
-	os.Setenv("CODEX_HOME", "")
-	os.Setenv("GROK_HOME", "")
-	// And the fourth of the class, UNSET rather than cleared, because this
-	// one resolver does not treat empty as unset (ranger-base-u3kft).
-	// credentialDirNamed (credential.go) reads
-	// CLAUDE_SECURESTORAGE_CONFIG_DIR FIRST — ahead of CLAUDE_CONFIG_DIR and
-	// ahead of the temp HOME — and a PRESENT-BUT-EMPTY value is a third
-	// state there: it shadows CLAUDE_CONFIG_DIR and resolves to the home,
-	// which is not what the three lines above mean when they write "".
-	// os.Unsetenv is the only spelling that takes this variable out of the
-	// resolution entirely.
+	// HOME above no longer fences it off. This box exports CLAUDE_CONFIG_DIR
+	// and CLAUDE_SECURESTORAGE_CONFIG_DIR from a managed-settings file on
+	// every launch; the first once had the cost tests walking
+	// ~/.claude/projects (ranger-base-yqdov), and the second — which this
+	// fence used to miss, because it named three variables by hand and the
+	// resolver honours four — had the package reading the operator's live
+	// credential store (ranger-base-u3kft: two tests red in every arm on
+	// this box, invisible on CI, which exports neither).
 	//
-	// MEASURED 2026-11-11 on this box, which exports it from the same
-	// managed-settings file: without this line the package read the
-	// operator's live credential store past the temp HOME, and two tests
-	// red in every arm — TestOneEnvelopeReadsIdenticallyThroughBothStores
-	// (credseam_test.go, untagged, so all three) compared a keychain item
-	// name suffixed with the live directory's hash against one derived after
-	// the test had unset the variable, and
-	// TestTheReportRendersStructuralAbsenceAsSomethingToDo (refresh_test.go,
-	// arm 2) asserted this box has no login and read a real expiry out of
-	// the operator's file. ci.yml exports nothing of the sort, so CI could
-	// not see either. credseamfence_qa_test.go is the pin.
-	os.Unsetenv("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	// So the list is no longer spelled here (ranger-base-vxir7).
+	// FenceCLIHomes (clihomefence.go) UNSETS every name the resolvers
+	// themselves honour — never "", which for CLAUDE_SECURESTORAGE_CONFIG_DIR
+	// is a third state that shadows CLAUDE_CONFIG_DIR — and then ASKS the
+	// resolvers: an answer outside this temp HOME stops the binary here,
+	// naming the resolver and the variable NAMES in force. That catches the
+	// variable no list knows about, too. A test that means to move one sets
+	// it with t.Setenv, exactly as the $CODEX_HOME/$GROK_HOME cost tests
+	// already do. Not a panic, unlike the other two binaries: a panic here
+	// would leave the temp HOME this process just made (ranger-base-32bdv).
+	if err := FenceCLIHomes(home, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "posse test: %v\n", err)
+		if ownHome {
+			removeTestHome(home)
+		}
+		os.Exit(1)
+	}
 	// codexSigninProbe (interstitial.go, ranger-base-d1r4x) reads whether
 	// THIS box can authenticate codex, and the temp HOME above has no
 	// ~/.codex/auth.json — a fact every dispatch test that uses the codex

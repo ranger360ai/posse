@@ -132,6 +132,10 @@ func planEnvAt(home, url string) []string {
 	return append(os.Environ(),
 		"HOME="+filepath.Join(home, "h"),
 		"CLAUDE_CONFIG_DIR="+filepath.Join(home, "h", ".claude"),
+		// TestMain points CODEX_HOME into its fence (ranger-base-vxir7), so
+		// the sandbox HOME's codex dir is named here, where seedCodexHint
+		// writes, rather than reached through the $HOME fallback.
+		"CODEX_HOME="+filepath.Join(home, "h", ".codex"),
 		"RHQ_HOME="+home,
 		"RHQ_HERDR_BIN="+filepath.Join(home, "herdr-must-not-run"),
 		"RHQ_PLAN_USAGE_URL="+url,

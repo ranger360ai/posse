@@ -34,8 +34,8 @@ package main
 //
 // internal/posse/herdr_test.go's TestMain is the same fence one package
 // over, in its other spelling: it replaces HOME for the whole binary and
-// then CLEARS the three CLI home overrides, because an empty
-// CLAUDE_CONFIG_DIR falls back to a HOME that is already a tempdir. This
+// then UNSETS every CLI home override (posse.FenceCLIHomes with no rows),
+// because each resolver then falls back to a HOME that is already a tempdir. This
 // package cannot borrow that spelling — main_test.go's readyEnv keeps the
 // operator's HOME deliberately, so that the child abbreviates paths against
 // the same $HOME this process does — so the fence has to name a directory.
@@ -50,6 +50,23 @@ import (
 	"github.com/ranger360ai/posse/internal/posse"
 )
 
+// cliHomeFenceRoot is the dir TestMain fences every runtime home into, kept
+// so credentialfence_test.go can re-apply the same fence.
+var cliHomeFenceRoot string
+
+// cliHomeFenceRows points every runtime home INTO root. This package keeps
+// the operator's HOME (main_test.go's readyEnv), so unsetting alone would
+// leave each resolver on its $HOME fallback — the operator's ~/.claude,
+// ~/.codex and ~/.grok. A test that means a home under its own sandbox HOME
+// sets the variable with t.Setenv or on its child's env, as planEnvAt does.
+func cliHomeFenceRows(root string) map[string]string {
+	return map[string]string{
+		posse.ClaudeConfigDirVar: root,
+		posse.CodexHomeVar:       filepath.Join(root, ".codex"),
+		posse.GrokHomeVar:        filepath.Join(root, ".grok"),
+	}
+}
+
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "posse-configdir-fence-")
 	if err != nil {
@@ -58,19 +75,19 @@ func TestMain(m *testing.M) {
 	// Set, not appended to some env slice: os.Environ() is what the 18
 	// child-env sites in this package's 11 test files build from, so one row
 	// here is carried by every child this binary launches.
-	if err := os.Setenv("CLAUDE_CONFIG_DIR", dir); err != nil {
-		panic("config-dir fence: " + err.Error())
-	}
-	// The credential locator reads CLAUDE_SECURESTORAGE_CONFIG_DIR FIRST,
-	// ahead of the row above (credentialDirNamed, credential.go), so a seat
-	// whose launcher exports it walks every child straight past the fence to
-	// the operator's real credential store (ranger-base-6sddu). Unset, not
-	// "": a present-but-empty value is a third state that shadows
-	// CLAUDE_CONFIG_DIR and resolves to $HOME/.claude, which in this package
-	// is the operator's. credentialfence_test.go holds this function against
-	// credential.go's own list of the variables, so a third name reds here.
-	if err := os.Unsetenv("CLAUDE_SECURESTORAGE_CONFIG_DIR"); err != nil {
-		panic("config-dir fence: " + err.Error())
+	//
+	// The list of variables is not spelled here (ranger-base-vxir7).
+	// posse.FenceCLIHomes UNSETS every name the resolvers honour —
+	// CLAUDE_SECURESTORAGE_CONFIG_DIR among them, which outranks
+	// CLAUDE_CONFIG_DIR and which this fence once missed (ranger-base-6sddu)
+	// — then applies cliHomeFenceRows, then ASKS the resolvers, and panics
+	// naming the resolver and the variable NAMES in force if any answers
+	// outside dir. credentialfence_test.go puts each honoured variable into
+	// force on purpose, so that pin is not blind on CI.
+	cliHomeFenceRoot = dir
+	if err := posse.FenceCLIHomes(dir, cliHomeFenceRows(dir)); err != nil {
+		os.RemoveAll(dir) // a panic skips the RemoveAll at the foot
+		panic(err.Error())
 	}
 	// The cache fence, for the same reason and in the same one place. Since
 	// ADR 0080 D11 the plan-usage snapshot and its read log live under

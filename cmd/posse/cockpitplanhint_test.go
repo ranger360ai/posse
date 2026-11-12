@@ -108,6 +108,9 @@ func TestCockpitCodexHintAgesBetweenPlanTicks(t *testing.T) {
 func TestCockpitCodexHintComesFromTheRolloutsOnDisk(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// TestMain fences CODEX_HOME into its own dir (ranger-base-vxir7); this
+	// test's rollouts live under its own HOME, so it says so.
+	t.Setenv(posse.CodexHomeVar, filepath.Join(home, ".codex"))
 	at := time.Date(2026, 8, 31, 14, 0, 0, 0, time.UTC)
 	seedCodexRollout(t, home, at.Add(-42*time.Minute), oneWindow(62, at.Add(24*time.Hour)))
 

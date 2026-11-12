@@ -46,6 +46,21 @@ import (
 	"github.com/ranger360ai/posse/internal/posse"
 )
 
+// cliHomeFenceRoot is the dir TestMain fences every runtime home into, kept
+// so credentialfence_test.go can re-apply the same fence.
+var cliHomeFenceRoot string
+
+// cliHomeFenceRows points every runtime home INTO root, because this package
+// keeps the operator's HOME and unsetting alone would leave each resolver on
+// its $HOME fallback. cmd/posse/configdirfence_test.go carries the same rows.
+func cliHomeFenceRows(root string) map[string]string {
+	return map[string]string{
+		posse.ClaudeConfigDirVar: root,
+		posse.CodexHomeVar:       filepath.Join(root, ".codex"),
+		posse.GrokHomeVar:        filepath.Join(root, ".grok"),
+	}
+}
+
 func TestMain(m *testing.M) {
 	// All tree-relative reads, stats, walks and inherited exec working
 	// directories resolve through the same root, before any parallel test.
@@ -64,19 +79,15 @@ func TestMain(m *testing.M) {
 	// Set, not appended to some env slice: os.Environ() is what every
 	// os.Environ()-based child-env site in this package's test files builds
 	// from, so one row here is carried by every child this binary launches.
-	if err := os.Setenv("CLAUDE_CONFIG_DIR", dir); err != nil {
-		panic("config-dir fence: " + err.Error())
-	}
-	// The credential locator reads CLAUDE_SECURESTORAGE_CONFIG_DIR FIRST,
-	// ahead of the row above (credentialDirNamed, credential.go), so a seat
-	// whose launcher exports it walks every child straight past the fence to
-	// the operator's real credential store (ranger-base-6sddu). Unset, not
-	// "": a present-but-empty value is a third state that shadows
-	// CLAUDE_CONFIG_DIR and resolves to $HOME/.claude, which in this package
-	// is the operator's. credentialfence_test.go holds this function against
-	// credential.go's own list of the variables, so a third name reds here.
-	if err := os.Unsetenv("CLAUDE_SECURESTORAGE_CONFIG_DIR"); err != nil {
-		panic("config-dir fence: " + err.Error())
+	//
+	// The list of variables is not spelled here (ranger-base-vxir7) — see
+	// cmd/posse/configdirfence_test.go's TestMain, which this is: unset every
+	// name the resolvers honour, apply cliHomeFenceRows, ask the resolvers,
+	// panic naming resolver and variable NAMES if any answers outside dir.
+	cliHomeFenceRoot = dir
+	if err := posse.FenceCLIHomes(dir, cliHomeFenceRows(dir)); err != nil {
+		os.RemoveAll(dir) // a panic skips the RemoveAll at the foot
+		panic(err.Error())
 	}
 	code := m.Run()
 	os.RemoveAll(dir)
