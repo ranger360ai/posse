@@ -388,6 +388,162 @@ func TestARedWhoseStretchBeadIsNoLongerOpenFilesOneAgain(t *testing.T) {
 	}
 }
 
+// AND THE OTHER TWO THINGS THE STORE CAN SAY ARE NOT THAT (ranger-base-w9w37).
+// The arm above is "the bead is gone", which is the one answer D5's red→red
+// row may answer by filing. A read that FAILED and a comment that failed are
+// different facts, and ADR 0073 measured both as the norm under concurrency
+// rather than the exception — so the twin they used to file was a P1, a seat,
+// a worktree and a suite run, for a red stretch that already had a bead.
+//
+// A read that failed: nothing is known about this stretch's bead, and an
+// unknown is re-asked by the next landing for free.
+func TestARedWhoseStretchBeadCouldNotBeReadFilesNoTwin(t *testing.T) {
+	t.Parallel()
+	c, out, repo, _ := ldfFixture(t)
+	ldfGreen(t, c, repo)
+	ldfBreak(t, repo)
+	ldfJudge(t, c, repo)
+	first := ldfFiled(t, c, repo)
+
+	// The lane listing fails the way a locked database fails it.
+	marker := filepath.Join(repo, "fake-list-fail")
+	write(t, marker, "")
+	commitIn(t, repo, "more.txt", "a landing onto a red main\n", "ranger-base-cccc3: something else entirely")
+	ldfJudge(t, c, repo)
+	if err := os.Remove(marker); err != nil { // …so the assertions below can read the store
+		t.Fatal(err)
+	}
+
+	if is := ldfFiled(t, c, repo); is.ID != first.ID {
+		t.Fatalf("a store that could not be read filed %s beside %s — a failed read is not evidence that this stretch has no bead (ADR 0088 D5)", is.ID, first.ID)
+	}
+	if cs := ldfComments(t, c, repo, first.ID); len(cs) != 0 {
+		t.Errorf("%d comment(s) on %s although the listing that finds it failed: %s", len(cs), first.ID, ldfCommentTexts(cs))
+	}
+	for _, want := range []string{"could not be read", "nothing was filed"} {
+		if s := out.String(); !strings.Contains(s, want) {
+			t.Errorf("the pass does not say %q — a landing that filed nothing over an unreadable store must say so, because this log is then the only record of the red:\n%s", want, s)
+		}
+	}
+}
+
+// A comment that failed: the bead was read as OPEN one line earlier, so the
+// twin's own body — "the bead for this red stretch is not open any more" —
+// was a sentence the filer had already disproved.
+func TestARedWhoseCommentFailedFilesNoTwinOverABeadItReadAsOpen(t *testing.T) {
+	t.Parallel()
+	c, out, repo, _ := ldfFixture(t)
+	ldfGreen(t, c, repo)
+	ldfBreak(t, repo)
+	ldfJudge(t, c, repo)
+	first := ldfFiled(t, c, repo)
+
+	write(t, filepath.Join(repo, "fake-comment-fail"), "database is locked")
+	commitIn(t, repo, "more.txt", "a landing onto a red main\n", "ranger-base-cccc3: something else entirely")
+	ldfJudge(t, c, repo)
+
+	if is := ldfFiled(t, c, repo); is.ID != first.ID {
+		t.Fatalf("a failed `bd comments add` filed %s beside %s, which the same pass had just read as OPEN (ADR 0088 D5)", is.ID, first.ID)
+	}
+	if cs := ldfComments(t, c, repo, first.ID); len(cs) != 0 {
+		t.Errorf("the fixture's failing add landed a comment anyway, so this arm measured nothing: %s", ldfCommentTexts(cs))
+	}
+	s := out.String()
+	if !strings.Contains(s, "was not commented on") {
+		t.Errorf("a comment that could not be written is not said:\n%s", s)
+	}
+	if strings.Contains(s, "not open any more") {
+		t.Errorf("the pass says this stretch's bead is gone over a bead it read as open:\n%s", s)
+	}
+}
+
+// THE RECORD IS THE GREEN→RED ROW'S WHOLE DEDUPE (ranger-base-w9w37), so a
+// verdict that could not be recorded files nothing. `recordLandedCheck` is
+// best effort by contract (ADR 0088 D4) and a `git config` write on a
+// checkout several personas share loses `.git/config.lock` to any concurrent
+// one — a shape AGENTS.md and ADR 0059 D3 both already name on this box.
+// Left ungated it is the ranger-base-4v4r6 incident exactly: the record keeps
+// naming the stale GREEN tree, so every later red reads green→red again.
+// MEASURED 2026-11-11, three red landings over a held lock: three open P1s.
+//
+// The marker cannot cover this row — a bead stays open after its stretch ends
+// (closing it is the fixer's), so an open bead cannot tell a NEW stretch from
+// a repeat reading of this one. What the gate costs instead is one landing:
+// the next judge of the same tree re-asks, and files when the record lands.
+func TestAVerdictThatCouldNotBeRecordedFilesNothingUntilTheRecordLands(t *testing.T) {
+	t.Parallel()
+	c, out, repo, _ := ldfFixture(t)
+	green := ldfGreen(t, c, repo)
+	ldfBreak(t, repo)
+
+	// The one write that fails is recordLandedCheck's: `git config` cannot
+	// take a lock that is already there, and MEASURED on this box nothing
+	// else a judged landing runs needs it — `worktree add`, `add`, `commit`
+	// and `worktree remove` all go through with this lock held.
+	lock := filepath.Join(repo, ".git", "config.lock")
+	write(t, lock, "")
+
+	// Three red landings, each on a new tree, with the record unwritable
+	// throughout.
+	for i, next := range []string{"one.txt", "two.txt", ""} {
+		ldfJudge(t, c, repo)
+		if tree, v := landedCheckRecorded(repo); tree != green || v != landGreen {
+			t.Fatalf("the record moved to %s %s although its write failed, so this arm measured nothing", tree, v)
+		}
+		if open := ldfBeads(t, c, repo); len(open) != 0 {
+			t.Fatalf("landing %d filed %s over a verdict that was never recorded — every later red reads green→red again, so this is one P1 per landing (ranger-base-4v4r6)", i+1, ldfTitles(open))
+		}
+		if next != "" {
+			ldfLandUnderLock(t, repo, next, "a further landing onto a red main\n", "ranger-base-iiii9: more work")
+		}
+	}
+	for _, want := range []string{"could not be recorded", "nothing was filed"} {
+		if s := out.String(); !strings.Contains(s, want) {
+			t.Errorf("the pass does not say %q — a red main that goes unfiled must say so in the log that is then its only record:\n%s", want, s)
+		}
+	}
+
+	// The lock frees. The same red tree is judged again, the record lands,
+	// and so does the one bead D5 owes this stretch — one landing late and
+	// not one per landing.
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	tip := mustGit(t, repo, "rev-parse", "HEAD")
+	ldfJudge(t, c, repo)
+
+	tree := revTreeID(repo, tip)
+	if got, v := landedCheckRecorded(repo); got != tree || v != landRed {
+		t.Fatalf("the record reads %s %s after the lock freed, want %s red", got, v, tree)
+	}
+	is := ldfFiled(t, c, repo)
+	if want := "main red at " + abbrevSHA(tree); is.Title != want {
+		t.Errorf("the bead is titled %q, want %q", is.Title, want)
+	}
+	if !strings.Contains(is.Description, abbrevSHA(green)) {
+		t.Errorf("the bead does not name %s, the tree last recorded green — the window is still bounded by the record it finally wrote:\n%s", abbrevSHA(green), is.Description)
+	}
+	// …and the ratchet is unharmed: the next red comments on that bead.
+	ldfLandUnderLock(t, repo, "three.txt", "one more landing onto a red main\n", "ranger-base-jjj10: more work still")
+	ldfJudge(t, c, repo)
+	if got := ldfFiled(t, c, repo); got.ID != is.ID {
+		t.Fatalf("the landing after the record landed filed %s beside %s", got.ID, is.ID)
+	}
+	if cs := ldfComments(t, c, repo, is.ID); len(cs) != 1 {
+		t.Errorf("%d comment(s) on %s, want the one naming the newest tree: %s", len(cs), is.ID, ldfCommentTexts(cs))
+	}
+}
+
+// ldfLandUnderLock lands one commit without touching `git config`, which
+// commitIn does on every call: a fixture holding `.git/config.lock` cannot
+// afford that, and wtRepo has set the identity already.
+func ldfLandUnderLock(t *testing.T, repo, path, body, msg string) {
+	t.Helper()
+	write(t, filepath.Join(repo, path), body)
+	mustGit(t, repo, "add", "--", path)
+	mustGit(t, repo, "commit", "-q", "-m", msg, "--", path)
+}
+
 // ATTRIBUTION IS THE STORE'S ANSWER AND NOT A PREFIX. "fix: a typo" has the
 // shape of this shop's provenance line, and a filer that read English as a
 // bead id would attribute a red main to the word `fix` and assign the bead

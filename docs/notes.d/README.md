@@ -29,6 +29,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-y9t65](ranger-base-y9t65.md) — The reaper on a timer, and the four classes it had never heard of (ranger-base-y9t65) — 2026-11-11
 - [ranger-base-xpxo6](ranger-base-xpxo6.md) — The first full run under the execve supervisor: the price, and the red that belonged to no family (ranger-base-xpxo6) — 2026-11-11
 - [ranger-base-xdaw9](ranger-base-xdaw9.md) — herdr's typed route loses a prompt into a modal too, and the tell is the screen (ranger-base-xdaw9) — 2026-11-11
+- [ranger-base-w9w37](ranger-base-w9w37.md) — The landed-check filer's two unmeasured arms: a bool that read three facts as one, and the row whose dedupe is the record (ranger-base-w9w37) — 2026-11-11
 - [ranger-base-w5z7u](ranger-base-w5z7u.md) — The coldexec arms could not fit in the box, and the box has a number (ranger-base-w5z7u) — 2026-11-11
 - [ranger-base-vw1cp](ranger-base-vw1cp.md) — What fills a tmpfs is inodes, and nothing was reading that column (ranger-base-vw1cp) — 2026-11-11
 - [ranger-base-v0nhh](ranger-base-v0nhh.md) — Four closes verified, and the leak the triage blamed the wrong dirs for (ranger-base-v0nhh) — 2026-11-11

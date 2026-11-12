@@ -132,7 +132,26 @@ type landedLanding struct {
 // `had` and `prev` are the record as it read BEFORE this run — once() has
 // them already, for D4's cache, and they are the only source of the last
 // green tree: by the time this runs the record names this tree instead.
-func (c *landedChecker) file(repo, base, tip, tree, had string, prev, v landVerdict, said string) {
+//
+// AND `recorded` SAYS WHETHER THE RECORD WAS WRITTEN, because the green→red
+// row is the one row whose dedupe IS that record (ranger-base-w9w37). The
+// marker in the store dedupes the other rows — it is what makes a second red
+// comment instead of file — but a green→red transition files whatever is
+// already open, by construction: a bead stays open after its stretch ends
+// (closing it is the fixer's), so "an open bead exists" cannot tell a NEW
+// stretch from a repeat reading of this one. Only the record can, and a `git
+// config` write that lost `.git/config.lock` leaves it naming the stale GREEN
+// tree — so every later red reads green→red again and files again, one P1 per
+// landing, which is the ranger-base-4v4r6 incident this rule exists to end.
+// MEASURED 2026-11-11 (ranger-base-w9w37): three red landings judged over a
+// held lock, three open P1s.
+//
+// So a verdict that could not be recorded files NOTHING and says so. The next
+// landing re-judges the same tree — which is what D4's cache does everywhere
+// else — and the bead arrives when the record does, one landing late, instead
+// of once per landing. The comment rows are not gated: their dedupe is the
+// marker, which the record has no part in.
+func (c *landedChecker) file(repo, base, tip, tree, had string, prev, v landVerdict, said string, recorded bool) {
 	switch {
 	case v == landUnanswered:
 		// D5's bottom row, and it is never reached from once() — which
@@ -152,37 +171,84 @@ func (c *landedChecker) file(repo, base, tip, tree, had string, prev, v landVerd
 		// attributed, so this files. That is the degenerate half of this
 		// row and not a second rule: it leaves one OPEN bead per red
 		// stretch, which is what D5's last sentence is for.
-		if c.commentStretch(repo, base, fmt.Sprintf("still red at %s (%s), %s — ADR 0088 D5", abbrevSHA(tree), abbrevSHA(tip), said), "") {
+		//
+		// GONE IS ONE OF THREE THINGS THE STORE CAN SAY, and only this one
+		// may be answered by filing (ranger-base-w9w37). A read that FAILED
+		// says nothing about whether this stretch has a bead; a bead found
+		// OPEN whose comment failed says it has one. A bool collapsed all
+		// three into "did not comment", so a locked database or a failed
+		// `bd comments add` filed a twin P1 whose body read "the bead for
+		// this red stretch is not open any more" — false in the third case,
+		// which the line above had just disproved, and unknown in the second.
+		switch c.commentStretch(repo, base, fmt.Sprintf("still red at %s (%s), %s — ADR 0088 D5", abbrevSHA(tree), abbrevSHA(tip), said), "") {
+		case landedStretchOpen:
+			return
+		case landedStretchUnknown:
+			// The ⚠ commentStretch printed is the record of this verdict, and
+			// it must not also become a P1: an unknown is re-asked by the
+			// next landing for free, and a twin is a seat, a worktree and a
+			// suite run.
+			c.say("· %s: nothing was filed for the red at %s — the store could not say whether this red stretch already has a bead, and the next landing asks again (ADR 0088 D5)", AbbrevHome(repo), abbrevSHA(tree))
 			return
 		}
+		// landedStretchNone: the store answered, and this stretch has no open
+		// bead. The degenerate half, and the only one that files.
 		c.fileRed(repo, base, tip, tree, had, prev, said, "the bead for this red stretch is not open any more")
 	default:
+		// green -> red, and the first ever red: D5's filing row, gated on the
+		// record for the reason this function's header gives. The record is
+		// this row's whole dedupe, so a filing over a record that was never
+		// written is one P1 per landing.
+		if !recorded {
+			c.say("· %s: nothing was filed for the red at %s — the verdict could not be recorded (⚠ above), so this green→red reading is the stale record's and not a transition; the next landing re-judges this tree (ADR 0088 D5)", AbbrevHome(repo), abbrevSHA(tree))
+			return
+		}
 		c.fileRed(repo, base, tip, tree, had, prev, said, "")
 	}
 }
 
+// landedStretchState is what the store could say about this stretch's open
+// bead. Three answers and not a bool, because exactly one of them may be
+// answered by filing a bead (ranger-base-w9w37) — see file's red→red arm.
+type landedStretchState int
+
+const (
+	// landedStretchUnknown: the store could not be read, so whether this
+	// stretch has an open bead is not known. Never a reason to file.
+	landedStretchUnknown landedStretchState = iota
+	// landedStretchNone: the store answered and no OPEN bead carries this
+	// stretch's marker. The one answer that files.
+	landedStretchNone
+	// landedStretchOpen: the bead is there and open. Whether the comment
+	// LANDED is a separate question — said in the log either way, and not
+	// this one, which is only whether the stretch already has a bead.
+	landedStretchOpen
+)
+
 // commentStretch puts one comment on the open bead for this repo and base,
-// and reports whether it found one. `absent` is what to say when there is
-// none; empty says nothing, for the caller that has something better to do
+// and reports what the STORE said about that bead rather than whether the
+// comment landed — the two are different facts and the caller's question is
+// the first one (ranger-base-w9w37). `absent` is what to say when there is
+// no bead; empty says nothing, for the caller that has something better to do
 // about it than print.
-func (c *landedChecker) commentStretch(repo, base, text, absent string) bool {
+func (c *landedChecker) commentStretch(repo, base, text, absent string) landedStretchState {
 	is, err := c.openStretchBead(repo, base)
 	if err != nil {
 		c.warn("%s: the open landed-check bead could not be read, so %q was not recorded on it (%v)", AbbrevHome(repo), text, err)
-		return false
+		return landedStretchUnknown
 	}
 	if is.ID == "" {
 		if absent != "" {
 			c.say("· %s: %s", AbbrevHome(repo), absent)
 		}
-		return false
+		return landedStretchNone
 	}
 	if err := c.bd.Comment(repo, is.ID, text, VerifyActor); err != nil {
 		c.warn("%s: %s was not commented on (%v) — the verdict is in this log and nowhere else", AbbrevHome(repo), is.ID, err)
-		return false
+		return landedStretchOpen
 	}
 	c.say("· %s: %s — %s", AbbrevHome(repo), is.ID, text)
-	return true
+	return landedStretchOpen
 }
 
 // openStretchBead is the open bead this rule filed for this repo and base,

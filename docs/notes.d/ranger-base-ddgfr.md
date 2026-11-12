@@ -71,6 +71,12 @@ bounded: the bead it files is the one the next red comments on, so a close
 mid-stretch costs exactly one extra bead and not one per landing.
 `TestARedWhoseStretchBeadIsNoLongerOpenFilesOneAgain` is that arm.
 
+That bound reads on the arm as shipped here only because of what landed later:
+"the bead is gone" was one of three answers this arm collapsed into one bool,
+and a failed `bd list` or a failed `bd comments add` filed the same twin — see
+docs/notes.d/ranger-base-w9w37.md, which also has the row whose dedupe turned
+out to be D4's record rather than this marker.
+
 ## Attribution: the store says what a bead id is, not a regexp
 
 The window is every commit between the tree last recorded green and the

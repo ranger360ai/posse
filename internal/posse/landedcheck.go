@@ -559,16 +559,23 @@ func (c *landedChecker) once(repo, base string) {
 		// because until that bead lands this line IS the record a human reads.
 		c.warn("%s is RED at %s — %s — %s (ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckScript, said)
 	}
+	recorded := true
 	if err := recordLandedCheck(repo, tree, v); err != nil {
 		// Best effort by contract, for recordLandCheck's reason: a config
 		// write that fails leaves the next landing judging this tree again,
 		// which is the behaviour before any record existed.
+		//
+		// It is also D5's whole dedupe for the green→red row, so the filer
+		// is TOLD (ranger-base-w9w37): over a record still naming the stale
+		// green tree, every later red reads green→red again, and a filer
+		// that did not know would file one P1 per landing.
+		recorded = false
 		c.warn("%s judged %s %s and the verdict could not be recorded (%v)", AbbrevHome(repo), abbrevSHA(tip), v, err)
 	}
 	// D5, and AFTER the record for the reason landedfile.go's `file` gives:
 	// of the two orders, this is the one whose failure costs one bead one
 	// landing late instead of two beads for one red stretch.
-	c.file(repo, base, tip, tree, had, prev, v, said)
+	c.file(repo, base, tip, tree, had, prev, v, said, recorded)
 }
 
 // judge creates the detached worktree, extracts the judge, and runs it
