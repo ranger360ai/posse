@@ -86,25 +86,12 @@ var (
 // is the only grant that reaches the directory on a box whose home is not
 // itself under a granted path. A seat on another runtime gets no deny lines
 // for a directory nothing granted it.
+//
+// The names, the paths and the grant they are narrowing are
+// cliHomeExecMembers': this is that one list's claude rows, filtered
+// (ADR 0091 D2).
 func claudeExecConfig(home string, stateGrants []string) (dirs, files []string) {
-	if home == "" {
-		return nil, nil
-	}
-	cfg := ClaudeConfigDirIn(home)
-	if !filepath.IsAbs(cfg) {
-		return nil, nil
-	}
-	cfg = absResolve(cfg)
-	if !writeGranted(stateGrants, cfg) {
-		return nil, nil
-	}
-	for _, n := range claudeExecConfigDirNames {
-		dirs = append(dirs, filepath.Join(cfg, n))
-	}
-	for _, n := range claudeExecConfigFileNames {
-		files = append(files, filepath.Join(cfg, n))
-	}
-	return dirs, files
+	return carvedCLIHomeExecMembers(home, stateGrants, carveClaudeExecConfig)
 }
 
 // claude's config dir also holds CACHES of server-fetched policy, and one of
@@ -211,20 +198,10 @@ func claudeManagedCache(home string, stateGrants []string) (files []string) {
 // a caged seat that cannot write the file cannot plant `notify` in it.
 //
 // The other executable members of those homes are runtimeExecMembers'
-// (ranger-base-zvgql).
+// (ranger-base-zvgql), and both halves are rows of the one
+// cliHomeExecMembers list this filters (ADR 0091 D2).
 func runtimeConfigFiles(home string, stateGrants []string) (files []string) {
-	if home == "" {
-		return nil
-	}
-	for _, h := range []string{codexHomeIn(home), grokHomeIn(home)} {
-		if !filepath.IsAbs(h) {
-			continue
-		}
-		p := absResolve(filepath.Join(h, "config.toml"))
-		if writeGranted(stateGrants, p) {
-			files = append(files, p)
-		}
-	}
+	_, files = carvedCLIHomeExecMembers(home, stateGrants, carveRuntimeConfigFile)
 	return files
 }
 
@@ -313,6 +290,119 @@ var (
 	}
 )
 
+// cliHomeExecCarve names which of the three carves claims a member. One
+// list, three consumers (ADR 0091 D2): the member set is declared once and
+// each carve is that list filtered, so a name dropped from a carve drops out
+// of the classifier's exemption in the same edit, and a name added to the
+// exemption is carved. They cannot drift, for the same reason
+// personaModeOwnsAll reads PersonaMode.
+type cliHomeExecCarve int
+
+const (
+	carveClaudeExecConfig  cliHomeExecCarve = iota // claudeExecConfig
+	carveRuntimeConfigFile                         // runtimeConfigFiles
+	carveRuntimeExecMember                         // runtimeExecMembers
+)
+
+// cliHomeExecMember is one declared executable member of one CLI home,
+// spelled the way the carve that claims it has always spelled it.
+//
+// guard is the path whose write grant admits the member, and it is NOT always
+// the member itself: claude's members are admitted by the config DIRECTORY's
+// grant and codex's and grok's exec members by their HOME's — those carves
+// narrow a directory grant whole — while each config.toml is admitted by its
+// own path. Keeping the guard as data per member is what makes this one list
+// byte-identical to the three functions it replaced. writeGranted asks
+// containment, so a grant that covers a home covers every member under it and
+// the three guards agree; where they part is a grant that lands INSIDE a home
+// (a PID's `writable:` naming one member, or one subdirectory), which admits
+// the narrower carve's member and not the wider carve's — the answer those
+// three functions already gave, and the one
+// TestQAWallExecConfigCarvesAreTheOneMemberListFiltered's last arm reads back
+// over a grant naming a config.toml alone.
+type cliHomeExecMember struct {
+	path  string           // the member, absolute and symlink-resolved
+	guard string           // the path whose write grant admits it
+	dir   bool             // directory-shaped, not file-shaped
+	carve cliHomeExecCarve // which carve claims it
+}
+
+// cliHomeExecMembers is the UNFILTERED set of declared executable members of
+// every CLI home a seat on this box reads: claude's config dir
+// (ClaudeConfigDirIn, following CLAUDE_CONFIG_DIR) with its dir and file
+// names, and codex's and grok's homes (codexHomeIn / grokHomeIn, following
+// CODEX_HOME / GROK_HOME) with theirs plus `config.toml`. `home` is
+// wallHome(), the $HOME the carve resolves against.
+//
+// Both sides read this one list (ADR 0091 D2). The three carves take it
+// filtered by writeGranted — carvedCLIHomeExecMembers — and ProjectConfigTrust
+// reads it UNFILTERED, because the reason a member is not project scope is
+// that no seat can write it either way round: a seat whose state grant
+// reaches the home gets the member carved read-only, and a seat whose grant
+// does not reach it cannot write there at all. A filtered list would exempt
+// only the first of those two.
+//
+// The resolution is per carve and deliberately kept so: claude's members and
+// the exec members are joined onto a RESOLVED home, while a config.toml path
+// is resolved WHOLE. The two spellings differ only when the member itself is
+// a symlink, and each is the path its own mechanism has always matched on.
+func cliHomeExecMembers(home string) []cliHomeExecMember {
+	if home == "" {
+		return nil
+	}
+	var out []cliHomeExecMember
+	add := func(carve cliHomeExecCarve, guard, path string, dir bool) {
+		out = append(out, cliHomeExecMember{path: path, guard: guard, dir: dir, carve: carve})
+	}
+	if cfg := ClaudeConfigDirIn(home); filepath.IsAbs(cfg) {
+		cfg = absResolve(cfg)
+		for _, n := range claudeExecConfigDirNames {
+			add(carveClaudeExecConfig, cfg, filepath.Join(cfg, n), true)
+		}
+		for _, n := range claudeExecConfigFileNames {
+			add(carveClaudeExecConfig, cfg, filepath.Join(cfg, n), false)
+		}
+	}
+	for _, cli := range []struct {
+		home        string
+		dirs, files []string
+	}{
+		{codexHomeIn(home), codexExecDirNames, codexExecFileNames},
+		{grokHomeIn(home), grokExecDirNames, grokExecFileNames},
+	} {
+		if !filepath.IsAbs(cli.home) {
+			continue
+		}
+		cfgFile := absResolve(filepath.Join(cli.home, "config.toml"))
+		add(carveRuntimeConfigFile, cfgFile, cfgFile, false)
+		h := absResolve(cli.home)
+		for _, n := range cli.dirs {
+			add(carveRuntimeExecMember, h, filepath.Join(h, n), true)
+		}
+		for _, n := range cli.files {
+			add(carveRuntimeExecMember, h, filepath.Join(h, n), false)
+		}
+	}
+	return out
+}
+
+// carvedCLIHomeExecMembers is the one filter the three carves share: the
+// members one carve claims and a state grant reaches, dirs and files apart,
+// in the order cliHomeExecMembers declares them.
+func carvedCLIHomeExecMembers(home string, stateGrants []string, carve cliHomeExecCarve) (dirs, files []string) {
+	for _, m := range cliHomeExecMembers(home) {
+		if m.carve != carve || !writeGranted(stateGrants, m.guard) {
+			continue
+		}
+		if m.dir {
+			dirs = append(dirs, m.path)
+		} else {
+			files = append(files, m.path)
+		}
+	}
+	return dirs, files
+}
+
 // codexEphemeralDirNames are the members of a codex home that hold
 // per-PROCESS state another process then runs (ranger-base-6ob20, finding
 // ranger-base-74pqi rows 1 and 2):
@@ -355,33 +445,10 @@ func codexEphemeralDirs(home string, stateGrants []string) (dirs []string) {
 
 // runtimeExecMembers names those members for each CLI home the launching
 // runtime's state grant reaches, following CODEX_HOME / GROK_HOME the way
-// runtimeConfigFiles does.
+// runtimeConfigFiles does — the same cliHomeExecMembers list, the same
+// filter, a different carve (ADR 0091 D2).
 func runtimeExecMembers(home string, stateGrants []string) (dirs, files []string) {
-	if home == "" {
-		return nil, nil
-	}
-	for _, cli := range []struct {
-		home        string
-		dirs, files []string
-	}{
-		{codexHomeIn(home), codexExecDirNames, codexExecFileNames},
-		{grokHomeIn(home), grokExecDirNames, grokExecFileNames},
-	} {
-		if !filepath.IsAbs(cli.home) {
-			continue
-		}
-		h := absResolve(cli.home)
-		if !writeGranted(stateGrants, h) {
-			continue
-		}
-		for _, n := range cli.dirs {
-			dirs = append(dirs, filepath.Join(h, n))
-		}
-		for _, n := range cli.files {
-			files = append(files, filepath.Join(h, n))
-		}
-	}
-	return dirs, files
+	return carvedCLIHomeExecMembers(home, stateGrants, carveRuntimeExecMember)
 }
 
 // seedFileWhole creates p holding body, and fails with an IsExist error when

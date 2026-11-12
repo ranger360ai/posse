@@ -181,6 +181,94 @@ func TestQAWallExecConfigCarvesClaudesOwnProtectedMembers(t *testing.T) {
 	}
 }
 
+// ADR 0091 D2: ONE unfiltered member list, and the three carves are that list
+// filtered by the state grant. Every pin above walks a carve's own name
+// lists, so none of them can see a member the list declares and no carve
+// emits, or a carve emitting a path the list does not name — which is the
+// drift D2 exists to make impossible, because D1's classifier reads the
+// unfiltered list to decide what is not project scope. This reads both
+// directions at once, over a grant that reaches all three homes.
+func TestQAWallExecConfigCarvesAreTheOneMemberListFiltered(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	f := wrcFixtureIn(t, t.TempDir())
+	var grants []string
+	for _, h := range []string{".claude", ".codex", ".grok"} {
+		grants = append(grants, absResolve(filepath.Join(f.home, h)))
+	}
+	cdirs, cfiles := claudeExecConfig(f.home, grants)
+	xdirs, xfiles := runtimeExecMembers(f.home, grants)
+	carvedDirs := append(append([]string{}, cdirs...), xdirs...)
+	carvedFiles := append(append(append([]string{}, cfiles...), runtimeConfigFiles(f.home, grants)...), xfiles...)
+
+	want := len(claudeExecConfigDirNames) + len(claudeExecConfigFileNames) +
+		2 + // codex's config.toml and grok's
+		len(codexExecDirNames) + len(codexExecFileNames) +
+		len(grokExecDirNames) + len(grokExecFileNames)
+	members := cliHomeExecMembers(f.home)
+	if len(members) != want {
+		t.Errorf("cliHomeExecMembers names %d members, want %d — one row per declared name of all three homes", len(members), want)
+	}
+	if n := len(carvedDirs) + len(carvedFiles); n != len(members) {
+		t.Errorf("the three carves emit %d paths over a grant reaching every home, the list names %d", n, len(members))
+	}
+	shape := map[string]bool{} // member path -> directory-shaped
+	for _, m := range members {
+		if _, dup := shape[m.path]; dup {
+			t.Errorf("cliHomeExecMembers declares %s twice", m.path)
+		}
+		shape[m.path] = m.dir
+	}
+	for _, c := range []struct {
+		paths []string
+		dir   bool
+	}{{carvedDirs, true}, {carvedFiles, false}} {
+		for _, p := range c.paths {
+			d, ok := shape[p]
+			switch {
+			case !ok:
+				t.Errorf("a carve denies %s, which cliHomeExecMembers does not name — D1's exemption would miss a path the wall carves", p)
+			case d != c.dir:
+				t.Errorf("%s is carved dir=%v and declared dir=%v", p, c.dir, d)
+			default:
+				delete(shape, p)
+			}
+		}
+	}
+	for p := range shape {
+		t.Errorf("cliHomeExecMembers names %s, which no carve emits over a grant reaching every home — D1 would exempt a path nothing walls", p)
+	}
+
+	// The half D1 rests on: the list takes no grant and filters nothing, so
+	// it still names every member for a seat whose grant reaches no home at
+	// all — the seat that cannot write there by any route.
+	if d, fl := claudeExecConfig(f.home, nil); len(d)+len(fl) != 0 {
+		t.Errorf("claudeExecConfig over no grant: %v %v", d, fl)
+	}
+	if fl := runtimeConfigFiles(f.home, nil); len(fl) != 0 {
+		t.Errorf("runtimeConfigFiles over no grant: %v", fl)
+	}
+	if d, fl := runtimeExecMembers(f.home, nil); len(d)+len(fl) != 0 {
+		t.Errorf("runtimeExecMembers over no grant: %v %v", d, fl)
+	}
+	if got := cliHomeExecMembers(f.home); len(got) != want {
+		t.Errorf("cliHomeExecMembers names %d members over no grant, want %d", len(got), want)
+	}
+	if got := cliHomeExecMembers(""); len(got) != 0 {
+		t.Errorf("cliHomeExecMembers(\"\") names %v — no home, no members", got)
+	}
+
+	// And the guards are not interchangeable: a grant naming only a
+	// config.toml admits that carve, whose guard is the file, and not the
+	// exec-member carve, whose guard is the home.
+	only := []string{absResolve(filepath.Join(f.home, ".codex", "config.toml"))}
+	if fl := runtimeConfigFiles(f.home, only); len(fl) != 1 || fl[0] != only[0] {
+		t.Errorf("a grant over %s carves %v, want that file alone", only[0], fl)
+	}
+	if d, fl := runtimeExecMembers(f.home, only); len(d)+len(fl) != 0 {
+		t.Errorf("a grant over %s alone carves %v %v — each carve narrows the grant its own guard names", only[0], d, fl)
+	}
+}
+
 // A seed never rewrites what is there, and writes the empty value of its
 // format when nothing is.
 func TestQAWallExecConfigSeedCreatesEmptyAndNeverOverwrites(t *testing.T) {
