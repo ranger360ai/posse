@@ -108,6 +108,44 @@
 #                                                for the compile-only case.
 #   go-testtmp      Test*[0-9]           120m    t.TempDir() with TMPDIR=/tmp.
 #                                                Bounded by the same -timeout.
+#   coldexec-pins   coldexec-pins*       120m    cmd/coldexec's OLD build-dir
+#                                                name, pre-ranger-base-7hyn8.
+#                                                The fix renamed every FUTURE
+#                                                one into posse-coldexec-pins-*,
+#                                                which posse-scratch already
+#                                                covers, so this class exists
+#                                                only to drain the pre-fix
+#                                                backlog under the dead name
+#                                                (278 dirs, 914M, ranger-base-
+#                                                m0j9n) — nothing on this box
+#                                                creates this name again. Same
+#                                                grace as go-build: the dir
+#                                                held one `go build` of the
+#                                                same shape.
+#   testparallel-   testparallel-        120m    cmd/testparallel's own
+#    selftest          selftest*                 self-test fixture: one
+#                                                 os.MkdirTemp per test binary
+#                                                 (sync.Once), no remover
+#                                                 (ranger-base-4dw7b, open),
+#                                                 holding a built
+#                                                 `testparallel` binary a
+#                                                 RUNNING test execs — the
+#                                                 scan sees it exactly the way
+#                                                 go-build's does. Same bound.
+#   pkcensus-       pkcensus-            120m    scripts/pattern-kill-
+#    selftest           selftest.*                census.py --self-test's own
+#                                                  fixture root (ranger-base-
+#                                                  4dw7b, open): a few planted
+#                                                  transcripts, no build, no
+#                                                  long-running exec. No
+#                                                  -timeout bounds it either,
+#                                                  since it is a plain python3
+#                                                  invocation and not a `go
+#                                                  test` arm, so it takes the
+#                                                  same 120m the owned classes
+#                                                  above use rather than a
+#                                                  number argued from a run
+#                                                  that does not exist.
 #   claude-scratch  claude-<uid>/        1440m    the harness's PER-SESSION
 #                     <slug>/<uuid>               scratchpad, two levels down
 #                                                 from a root we do not own, and
@@ -428,6 +466,42 @@ self_test() {
     fi
   fi
 
+  # ─── ranger-base-q0yxp: pin the three fixture-prefix classes ──────────────
+  # coldexec-pins, testparallel-selftest and pkcensus-selftest share every
+  # gate with posse-scratch/go-build/go-testtmp (no class-specific code, only
+  # a row in the table), so this pins the ROW rather than new logic — exactly
+  # the two gates ranger-base-m0j9n's ask named: "owned by posse, named by no
+  # live process, older than the class grace". A dir still inside its grace
+  # is kept regardless of anything else; a dir a live process cwd's into is
+  # kept whatever its age; a dir with neither is collected. Each class gets
+  # its own fresh `mktemp -d` root so the three runs cannot see each other's
+  # fixtures.
+  generic_rig() {  # generic_rig <class-name> <glob-prefix, without the *>
+    local cname="$1" prefix="$2" groot fresh agedheld agedfree pid
+    groot=$(mktemp -d)
+    fresh="$groot/${prefix}fresh1"
+    agedheld="$groot/${prefix}heldAAAAAA"
+    agedfree="$groot/${prefix}freeAAAAAA"
+    mkdir -p "$fresh" "$agedheld" "$agedfree"
+    touch -t "$old" "$agedheld" "$agedfree"
+    ( cd "$agedheld" && exec sleep 60 ) >/dev/null 2>&1 </dev/null & pid=$!
+    sleep 1
+    "$0" --root "$groot" --class "$cname" --apply --quiet --no-bead \
+      >/dev/null 2>&1 || true
+    if [ -d "$fresh" ]; then echo "  ok   $cname: dir inside its grace kept"
+    else echo "  FAIL $cname: dir inside its grace was collected"; fails=$((fails + 1)); fi
+    if [ -d "$agedheld" ]; then echo "  ok   $cname: dir a live process cwd's into kept"
+    else echo "  FAIL $cname: dir a live process cwd's into was collected"; fails=$((fails + 1)); fi
+    if [ -d "$agedfree" ]; then echo "  FAIL $cname: aged, unheld dir was kept, want collected"; fails=$((fails + 1))
+    else echo "  ok   $cname: aged, unheld, unnamed dir collected"; fi
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    rm -rf -- "${groot:?}"
+  }
+  generic_rig coldexec-pins 'coldexec-pins'
+  generic_rig testparallel-selftest 'testparallel-selftest'
+  generic_rig pkcensus-selftest 'pkcensus-selftest.'
+
   echo
   if [ "$fails" -gt 0 ]; then echo "$self --self-test: $fails arm(s) FAILED"; return 1; fi
   echo "$self --self-test: all arms pass"
@@ -506,6 +580,9 @@ class_table='posse-testhome|posse-testhome-*|60|1
 posse-scratch|posse-*|120|1
 go-build|go-build[0-9]*|120|1
 go-testtmp|Test*[0-9]|120|1
+coldexec-pins|coldexec-pins*|120|1
+testparallel-selftest|testparallel-selftest*|120|1
+pkcensus-selftest|pkcensus-selftest.*|120|1
 mktemp|tmp.??????????|1440|1
 claude-scratch|claude-[0-9]*/*/*|1440|3'
 
