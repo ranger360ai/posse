@@ -71,10 +71,50 @@ const (
 
 var (
 	buildOnce sync.Once
+	doorDir   string
 	doorBin   string
 	buildErr  error
 	buildOut  string
 )
+
+// doorDirPrefix names the one directory these pins build the door into, and
+// it begins "posse-" for a reason TestMain below cannot cover
+// (ranger-base-7hyn8). TestMain removes the dir on a normal exit; it does not
+// run at all when this binary is SIGKILLed or dies on a -timeout panic, and
+// this box kills suites (AGENTS.md, "Ending anything"). What collects THAT
+// run's dir is scripts/reap-test-tmp.sh, whose posse-scratch class is the
+// glob `posse-*` at a 120m grace — 2x the longest -timeout anything here
+// carries — so a root inside posse's own temp namespace is collectable by
+// construction and a root outside it is invisible to the reaper forever. The
+// old name was `coldexec-pins`, matched by no class: MEASURED 2026-11-11 on
+// this box, 278 of them on /tmp holding 914M, against a 14G tmpfs that had
+// been at 100% of its 1,048,576 inodes that morning.
+const doorDirPrefix = "posse-coldexec-pins-"
+
+// TestMain removes the directory builtDoor builds into. That removal cannot
+// be a t.Cleanup — the build is shared by every test in this binary and
+// therefore outlives each of them, which is why there was no remover at all
+// until ranger-base-7hyn8 — and it cannot be a defer, because os.Exit runs
+// none.
+//
+// A removal that fails REDS the package rather than returning quietly. The
+// house shape elsewhere (cmd/posse/configdirfence_test.go's TestMain) drops
+// the error, and dropping it here is how this leak would come back silently:
+// nothing else in the tree ever looks at this dir. The dir holds one file we
+// built ourselves, under TMPDIR, with no other writer, so a failure here is
+// a fact about the filesystem worth a name.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if doorDir != "" {
+		if err := os.RemoveAll(doorDir); err != nil {
+			fmt.Fprintf(os.Stderr, "coldexec pins: removing the door build dir %s: %v\n", doorDir, err)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}
+	os.Exit(code)
+}
 
 // builtDoor builds cmd/coldexec once per test binary and answers the path. `go
 // test` runs a test binary with its own package directory as the working
@@ -83,11 +123,12 @@ var (
 func builtDoor(t *testing.T) string {
 	t.Helper()
 	buildOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "coldexec-pins")
+		dir, err := os.MkdirTemp("", doorDirPrefix)
 		if err != nil {
 			buildErr = err
 			return
 		}
+		doorDir = dir
 		doorBin = filepath.Join(dir, "coldexec")
 		out, err := exec.Command("go", "build", "-o", doorBin, ".").CombinedOutput()
 		buildErr, buildOut = err, string(out)
@@ -96,6 +137,22 @@ func builtDoor(t *testing.T) string {
 		t.Fatalf("building the door under test: %v\n%s", buildErr, buildOut)
 	}
 	return doorBin
+}
+
+// TestTheDoorIsBuiltInsidePossesOwnTempNamespace pins the half of
+// ranger-base-7hyn8's fix that TestMain cannot: the name. TestMain's removal
+// covers every exit this binary chooses, and the reaper's `posse-*` glob
+// covers the ones it does not — a kill, a -timeout panic, a box that goes
+// down mid-run. Rename the dir out of posse's namespace and both halves look
+// fine: the pins stay green, the dirs stop being collectable, and nobody
+// finds out until /tmp is out of inodes. Asserted over the dir that was
+// actually created, not over the constant, so handing os.MkdirTemp some
+// other literal reds here too.
+func TestTheDoorIsBuiltInsidePossesOwnTempNamespace(t *testing.T) {
+	dir := filepath.Dir(builtDoor(t))
+	if !strings.HasPrefix(filepath.Base(dir), "posse-") {
+		t.Errorf("the door is built into %s, which scripts/reap-test-tmp.sh cannot see: its posse-scratch class is the glob `posse-*` and no class of its class table matches anything else. A run that dies before TestMain's removal therefore leaks this dir permanently — MEASURED 2026-11-11, 278 dirs and 914M of them on this box's /tmp under the old `coldexec-pins` name.", dir)
+	}
 }
 
 // doorRun is one supervised run: what it printed, what it exited with, how
