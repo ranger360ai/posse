@@ -201,7 +201,20 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 		home, ownHome = dir, true
+		// ADR 0089 D1, and it sits immediately after the MkdirTemp on
+		// purpose: every statement between the two is a window in which only
+		// the grace protects this dir. An adopting child takes no lock — it
+		// did not make the dir, and the reaper's /proc scan is what covers it.
+		lockTestHome(dir)
 	}
+	// Whether THIS process made the dir, kept where a pin can read it.
+	// testHomeLock is not that fact: it is nil both for an adopting child,
+	// which correctly holds no lock, and for a creator whose flock failed,
+	// which is the defect — so a pin keyed on it alone skips silently in
+	// exactly the case it exists to catch (MEASURED under ranger-base-z056i:
+	// deleting the lockTestHome call above left TestTheCreatorHoldsAFlockOn-
+	// ItsTempHome SKIPPING rather than redding).
+	testHomeOwned = ownHome
 	// …and the two pins below are the CREATOR's work alone. An adopting
 	// child inherits GOMODCACHE, GOCACHE and the three MISE_*_DIR from the
 	// process that set them, so re-deriving them would buy nothing — and
@@ -451,6 +464,71 @@ func removeTestHome(home string) {
 	if err := os.RemoveAll(home); err != nil {
 		fmt.Fprintf(os.Stderr, "posse test: temp HOME %s NOT removed: %v\n", home, err)
 	}
+}
+
+// testHomeLock is the open file description that holds ADR 0089 D1's
+// exclusive flock on this process's temp HOME. It is a PACKAGE var and not a
+// local in TestMain for one reason: *os.File carries a finalizer that closes
+// the fd when the value becomes unreachable, and a closed fd is a released
+// lock. A local that nothing reads again is unreachable the moment m.Run is
+// called, so the lock would be dropped by a GC cycle somewhere in the middle
+// of the run rather than at death — the one failure this mechanism cannot
+// have, because the release IS the death certificate.
+//
+// nil means this process does not hold the lock, which is three different
+// facts: it is an adopting re-exec child (it made no dir), the open failed,
+// or the flock failed. testHomeOwned is what separates the first from the
+// other two, and a pin that wants to know whether D1 is in effect needs
+// both.
+var testHomeLock *os.File
+
+// testHomeOwned is TestMain's ownHome, kept for the pins: true in the process
+// that CREATED the temp HOME, false in every re-exec child that adopted it.
+var testHomeOwned bool
+
+// lockTestHome takes ADR 0089 D1's lock on the temp HOME this process just
+// created, so that scripts/reap-test-tmp.sh can read a live run's dir as
+// LIVE and not as collectable.
+//
+// WHY A LOCK AT ALL, when the reaper already scans /proc for anyone naming
+// the dir. Because the scan cannot see US. MEASURED 2026-11-11 (ADR 0089,
+// from ranger-base-glogz): Go's os.Setenv does not rewrite
+// /proc/<pid>/environ, so the `HOME=` the reaper reads off this process is
+// still the operator's; our cwd is the package dir; and before this function
+// existed we held no fd on the dir either. A dry run against a live probe of
+// exactly this shape, with the dir's mtime set back two hours, printed `live
+// temp HOMEs seen: 0` and `collectable: 1 dirs`. The 60m grace was the whole
+// of the protection, and an arm with `-timeout 60m` on a loaded box outlives
+// it.
+//
+// The lock is on the DIRECTORY's own fd, not on a file inside it, so nothing
+// appears under $HOME that a test could see. Go opens with O_CLOEXEC, so a
+// re-exec child does not inherit it — which is correct: a child must not be
+// able to keep its parent's home alive after the parent is gone, and the
+// scan reaches children anyway (they were exec'd after the Setenv, so their
+// environ really does name the dir).
+//
+// EVERY FAILURE IS SOFT. One stderr line and the run goes on: the dir is
+// then exactly as protected as it was before this bead — by the scan and by
+// the grace — and a suite that refused to run because a lock could not be
+// taken would be a worse trade than the leak it was guarding.
+//
+// Through the package's own flock helper (launchlock.go) and not a bare
+// syscall.Flock, which is what every other lock site here does: it carries
+// the EINTR retry a Go process needs, because the runtime's own preemption
+// signal lands on the call.
+func lockTestHome(dir string) {
+	f, err := os.Open(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "posse test: temp HOME %s NOT locked: %v\n", dir, err)
+		return
+	}
+	if err := flock(f, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		fmt.Fprintf(os.Stderr, "posse test: temp HOME %s NOT locked: %v\n", dir, err)
+		f.Close()
+		return
+	}
+	testHomeLock = f
 }
 
 // ─── the fake bd ─────────────────────────────────────────────────────────────

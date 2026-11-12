@@ -35,10 +35,17 @@
 #
 # ─── WHAT IT TAKES, AND WHY EACH CLASS HAS ITS OWN GRACE ────────────────────
 #
-# A dir is collected only when BOTH hold:
+# A dir is collected only when ALL THREE hold (ADR 0089 D2):
+#   - `flock -n` on the dir succeeds, so no live creator is holding the lock
+#     ADR 0089 D1 makes it take;
 #   - no live process names it — through ANY value in its environment, its
 #     argv, its cwd, its exe, or any open fd; and
 #   - its mtime is at least its class's grace old.
+#
+# THE LOCK IS THE ONLY ONE OF THE THREE THAT IS A POSITIVE PROOF OF LIFE, and
+# exactly one class has a creator we could make take it. For every other
+# class the two gates below are all there is, so the next paragraph is what
+# still holds for them.
 #
 # THE SCAN IS A BEST-EFFORT NEGATIVE AND THE GRACE IS THE REAL GATE. ADR 0089
 # measured why: Go's os.Setenv does not rewrite /proc/<pid>/environ, so a test
@@ -47,20 +54,34 @@
 # the path lives in a shell variable, which is not argv, not cwd and not an
 # fd. So every class's grace below is set against the longest run that could
 # still be holding one of its dirs, and the scan only ever makes the answer
-# more conservative. ADR 0089 D1-D2 closes this for posse-testhome-* by
-# having the creator hold a flock the kernel releases at death; when
-# ranger-base-z056i lands, the `flock -n` step goes in the candidate filter
-# below, ahead of the held-set filter, and that class's grace stops being
-# load-bearing. No other class has a creator we can make take a lock, so for
-# them the grace is all there is — which is ADR 0089's own objection to
-# grace, stated here rather than hidden.
+# more conservative. ADR 0089 D1-D2 closed this for posse-testhome-*
+# (ranger-base-z056i): internal/posse's TestMain opens its temp HOME and takes
+# LOCK_EX on the directory fd for the whole life of the process, the kernel
+# releases that lock on SIGKILL and on a -timeout panic alike, and the `flock
+# -n` step in the candidate filter below reads a busy lock as a live creator.
+# Release IS death there, so that class's grace stops being load-bearing —
+# though it is NOT removed, because it is still the only thing covering the
+# microseconds between MkdirTemp and the flock, and the only thing covering a
+# binary BUILT BEFORE D1 that is still running. No other class has a creator
+# we can make take a lock, so for them the grace is all there is — which is
+# ADR 0089's own objection to grace, stated here rather than hidden.
+#
+# THE LOCK STEP RUNS FOR EVERY CLASS ANYWAY, and that is deliberate rather
+# than sloppy: a busy lock can only ever make this script collect LESS, and a
+# future creator in any class that announces itself the same way is then
+# covered by construction instead of by an edit here.
 #
 #   class           glob                 grace   why that number
 #   ───────────────────────────────────────────────────────────────────────
 #   posse-testhome  posse-testhome-*      60m    internal/posse TestMain's
 #                                                one temp HOME per test tree;
 #                                                the original class, grace
-#                                                unchanged from 32bdv.
+#                                                unchanged from 32bdv — and
+#                                                the one class whose live
+#                                                creator holds a flock, so
+#                                                the grace here is now
+#                                                insurance rather than the
+#                                                gate (ADR 0089 D1).
 #   posse-scratch   posse-*              120m    every other posse-named
 #                                                scratch root — the shell
 #                                                `mktemp -d` roots in
@@ -256,6 +277,19 @@ done
 
 [ -d /proc/self ] || die2 "no /proc — this reads process state and will not guess without it"
 
+# AND flock(1), for the same reason and with the same answer: refuse, never
+# fall back (ADR 0089 D2). Without it the only gates left are the /proc scan —
+# which ADR 0089 MEASURED reading a LIVE test home as collectable, because
+# os.Setenv never rewrites /proc/<pid>/environ — and the grace, which a 60m
+# `-timeout` arm on a loaded box outlives. A silent fall-back to those two is
+# precisely the state this bead was filed to end, and it would look like a
+# clean run. util-linux has shipped flock(1) everywhere this script can run
+# (it needs /proc, so linux); a seat whose cage does not expose /usr/bin/flock
+# gets this line and exit 2, and the operator names the dir on the launch
+# line.
+command -v flock >/dev/null 2>&1 ||
+  die2 "no flock(1) (util-linux) — ADR 0089 D2's proof-of-death is the creator's own lock, and without it the remaining gates were MEASURED calling a live run's temp HOME collectable. Refusing rather than sweeping on the scan and the grace alone."
+
 # ─── the class table ────────────────────────────────────────────────────────
 # name|glob|grace in minutes|depth. Order matters only for reporting: a dir
 # that two classes both match (posse-testhome-* is also posse-*) is reported
@@ -290,6 +324,44 @@ class_filter() {
     [ -f "$tx" ] || continue
     [ -n "$(find "$tx" -maxdepth 0 -mmin "+$grace" -print 2>/dev/null)" ] || continue
     printf '%s\n' "$d"
+  done
+}
+
+# ─── ADR 0089 D2 STEP 1: THE CREATOR'S OWN LOCK ─────────────────────────────
+#
+# The first of the three gates, and the only one that is a POSITIVE proof of
+# life rather than a failure to find death. A dir whose creator is alive
+# cannot be collected, whatever the scan missed and whatever the mtime says.
+#
+# `flock -n` and never a blocking one: the question is "is anybody holding
+# this right now", and a wait would turn the reaper into a process that parks
+# for the length of someone else's suite.
+#
+# -E 9 SO THE TWO WAYS OF FAILING STAY APART. A plain `flock` exits 1 both
+# when the lock is taken and when it could not open the dir at all, and the
+# two are different facts a reader needs: the first is a working seat, the
+# second is a permission or a race the operator should know about. Both keep
+# the dir — anything other than a clean acquisition does — but a sweep that
+# reported them as one thing would hide the second behind the first forever.
+#
+# BUSY IS REPORTED, NOT SWALLOWED. A run whose numbers moved because a seat
+# was working has to say so, or the next reader prices the reaper against a
+# sweep that was never allowed to happen. The skipped dirs go in a FILE
+# rather than on stdout because this function runs inside the `found=$( … )`
+# command substitution, where stdout is the candidate list and where a
+# counter increment would die with the subshell.
+flock_filter() {  # $1 = file to record the dirs this run may not touch
+  local out="$1" d rc
+  : > "$out"
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    rc=0
+    flock -n -E 9 "$d" true 2>/dev/null || rc=$?
+    case "$rc" in
+      0) printf '%s\n' "$d" ;;
+      9) printf 'HELD (lock) %s\n' "$d" >> "$out" ;;
+      *) printf 'UNREADABLE (flock exit %s) %s\n' "$rc" "$d" >> "$out" ;;
+    esac
   done
 }
 
@@ -356,8 +428,8 @@ rawrefs=$(
 ) || true
 
 held=$(mktemp); held3=$(mktemp); stale=$(mktemp); rootlist=$(mktemp)
-livedirs=$(mktemp)
-trap 'rm -f "$held" "$held3" "$stale" "$rootlist" "$livedirs"' EXIT
+livedirs=$(mktemp); lockheld=$(mktemp)
+trap 'rm -f "$held" "$held3" "$stale" "$rootlist" "$livedirs" "$lockheld"' EXIT
 
 printf '%s\n' "${roots[@]}" > "$rootlist"
 
@@ -449,10 +521,18 @@ echo "harness registry: $claude_live live sessions in $claude_sessions   live cl
 sort -u "$livedirs" "$held3" -o "$held3"
 
 # ─── the candidate walk, class by class ─────────────────────────────────────
-# ADR 0089 D2's `flock -n "$d" true` test goes HERE, ahead of the held-set
-# filter, once ranger-base-z056i lands: a busy lock is proof the creator is
-# alive, and it makes posse-testhome-*'s grace stop carrying the whole
-# weight.
+# ADR 0089 D2's three gates, in this order: `flock_filter` (step 1, the
+# creator's own lock — a busy lock is proof the creator is alive, and it is
+# what stopped posse-testhome-*'s grace from carrying the whole weight), then
+# the held-set filter (step 2, the /proc scan, unchanged), then the grace,
+# which `find -mmin` has already applied by the time anything reaches here
+# (step 3, unchanged).
+#
+# THE LOCK IS FIRST BECAUSE IT IS THE CHEAPEST TRUE ANSWER: one open and one
+# non-blocking syscall per candidate, against a scan of every /proc entry
+# that is already done by now anyway. Order is not correctness here — the
+# three gates are ANDed and any one of them keeps a dir — it is only which
+# reason a reader is shown for a dir that two of them would have kept.
 : > "$stale"
 while IFS='|' read -r cname cglob cgrace cdepth; do
   [ -n "$cname" ] || continue
@@ -487,9 +567,14 @@ while IFS='|' read -r cname cglob cgrace cdepth; do
           find "$top" -maxdepth "$((cdepth - 1))" -mindepth "$((cdepth - 1))" -type d -uid "$me" -path "$top/${cglob#*/}" -mmin "+$grace" -print 2>/dev/null || true
         done
       fi
-    done | sort -u | { grep -vxF -f "$heldfile" || true; } | { grep -vxF -f "$stale" || true; } | class_filter "$cname" "$grace"
+    done | sort -u | flock_filter "$lockheld" | { grep -vxF -f "$heldfile" || true; } | { grep -vxF -f "$stale" || true; } | class_filter "$cname" "$grace"
   )
   cn=$(printf '%s\n' "$found" | grep -c . || true)
+  lk=$(grep -c . < "$lockheld" || true)
+  if [ "$lk" -gt 0 ]; then
+    echo "class $cname: $lk dir(s) kept by ADR 0089 D2 step 1 — a live creator's own flock, so the scan was not needed"
+    if [ "$quiet" -eq 0 ]; then sed 's/^/  /' < "$lockheld"; fi
+  fi
   echo "class $cname ($cglob, grace ${grace}m, depth $cdepth): $cn collectable"
   [ "$cn" -gt 0 ] && printf '%s\n' "$found" | grep . >> "$stale"
 done <<< "$class_table"
@@ -511,9 +596,32 @@ if [ "$apply" -eq 0 ]; then
   exit 0
 fi
 
+# REMOVED UNDER THE LOCK, one dir at a time (ADR 0089 D2). The walk above
+# took the lock, let it go, and then went on to scan /proc and price the set —
+# seconds in which a creator that was microseconds past its MkdirTemp can
+# arrive and announce itself. Taking the lock again here closes that window:
+# whatever this removes, it removes while holding the one thing a live
+# creator would be holding instead. It costs nothing, because a creator never
+# reopens its home by path, so there is nobody for this to block.
+#
+# This is why the removal is a loop rather than the one `xargs … rm -rf` it
+# replaced: the lock is per-dir, and a dir that was claimed between the walk
+# and now has to be SAID rather than taken. `${d:?}` because an empty
+# expansion here would be `rm -rf --`, and the guard is what makes that
+# impossible rather than merely unlikely (AGENTS.md).
 if [ "$n" -gt 0 ]; then
-  xargs -a "$stale" -r -d '\n' rm -rf --
-  echo "collected $n dirs"
+  removed=0 claimed=0 failed=0
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    rc=0
+    flock -n -E 9 "$d" rm -rf -- "${d:?}" || rc=$?
+    case "$rc" in
+      0) removed=$((removed + 1)) ;;
+      9) claimed=$((claimed + 1)); echo "  NOT removed, a creator took the lock since the walk: $d" ;;
+      *) failed=$((failed + 1));  echo "  NOT removed, rm or flock exited $rc: $d" ;;
+    esac
+  done < "$stale"
+  echo "collected $removed of $n dirs (claimed since the walk: $claimed, failed: $failed)"
 fi
 
 # The <slug> dir between the harness root and a session dir is the harness's

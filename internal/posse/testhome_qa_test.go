@@ -21,9 +21,11 @@ package posse
 // the toolchain before answering the wrapper.
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -154,4 +156,335 @@ func TestTheTempHomeIsOnePerTestTree(t *testing.T) {
 			t.Errorf("%s appeared during this test — something still cuts a second temp HOME", s)
 		}
 	}
+}
+
+// ─── ADR 0089: the creator's lock, and the reaper that reads it ──────────────
+//
+// WHAT THE PIN BELOW PROTECTS, stated as ADR 0006 §7 asks: an operator typing
+// `scripts/reap-test-tmp.sh --apply` while suites are in flight, and that
+// sweep removing the temp HOME of a run that is still using it. MEASURED
+// 2026-11-11 before this bead (ADR 0089, from ranger-base-glogz): a live
+// probe of TestMain's exact shape, with its dir's mtime set back two hours,
+// was reported `live temp HOMEs seen: 0` and `collectable: 1 dirs`. Nothing
+// about that run looked wrong, which is the whole problem — the dir's own
+// creator was invisible to every gate the reaper had, because os.Setenv does
+// not rewrite /proc/<pid>/environ and the process held no fd on the dir.
+//
+// Two pins, in the two places the mechanism can break independently:
+//
+//   - TestTheCreatorHoldsAFlockOnItsTempHome asks only whether THIS process
+//     is holding the lock. It is the D1 half, it needs no script and no
+//     child, and it is the one that reds if the fd is ever dropped (a local
+//     instead of the package var, a stray Close, a refactor that moves the
+//     flock after a return path).
+//   - TestTheReaperKeepsALiveTempHomeAndTakesADeadOne is the D1+D2 round
+//     trip: a real creator child, a real mtime past the grace, and the real
+//     script's real verdict on both sides of a kill -9.
+
+// qrtReapScript returns scripts/reap-test-tmp.sh, or "" when this tree does
+// not hold it.
+//
+// THE ROOT COMES THROUGH THIS HELPER RATHER THAN OUT OF THE PIN'S OWN BODY,
+// and that is a classification and not a style choice. The tree-wide class in
+// internal/treepins/treewidedoor_qa_test.go is derived from "the test's own
+// body calls qibRepoRoot", and every member of it needs a Makefile door
+// because its subject is the TREE: any bead that adds a file anywhere can red
+// it. This pin's subject is ONE script and ONE TestMain, and no file added
+// anywhere else can touch it, so it is not in that class. The shape that says
+// so is qspSeedScript's, which that file's own comment names as the
+// precedent: "qspSeedScript looks up one path at the root and its callers red
+// only when that script changes, which is not this class".
+func qrtReapScript(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(qibRepoRoot(t), "scripts", "reap-test-tmp.sh")
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
+
+// qrtFlockProbe asks flock(1) the one question the reaper asks: can an
+// exclusive, non-blocking lock be taken on this directory right now. It
+// returns 0 when the lock was free, 9 when somebody is holding it, and
+// anything else when flock could not even open the dir — the same three
+// answers, spelled the same way, as the script's own flock_filter.
+func qrtFlockProbe(t *testing.T, dir string) int {
+	t.Helper()
+	cmd := exec.Command("flock", "-n", "-E", "9", dir, "true")
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode()
+		}
+		t.Fatalf("flock -n %s: %v", dir, err)
+	}
+	return 0
+}
+
+// qrtSkipUnlessReapable skips when this platform or this cage cannot run the
+// reaper at all. The script reads /proc and refuses without it, and ADR 0089
+// D3 leaves it linux-only; flock(1) is util-linux and the script refuses
+// without that too (exit 2, never a silent fall-back to the two gates ADR
+// 0089 measured collecting a live run's home).
+func qrtSkipUnlessReapable(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skipf("scripts/reap-test-tmp.sh reads /proc and is linux-only (ADR 0089 D3); this is %s", runtime.GOOS)
+	}
+	if _, err := exec.LookPath("flock"); err != nil {
+		t.Skipf("no flock(1) on PATH in this cage: %v — the script itself refuses with exit 2 here, which is the designed answer", err)
+	}
+}
+
+// D1, asked of the process doing the asking. The creator of a temp HOME holds
+// an exclusive flock on it for its whole life, so the kernel's release of
+// that lock is this run's death certificate and nothing has to be inferred
+// from a pid, a stamp or an mtime (ADR 0011 §1's argument, one directory
+// over).
+//
+// SKIPPED IN AN ADOPTING CHILD, which is the ownHome guard read from the
+// outside: a re-exec child shares its parent's home and must not lock it, or
+// the parent's own lock would be the thing it collided with.
+//
+// THE SKIP IS KEYED ON testHomeOwned AND NOT ON testHomeLock, and that is the
+// difference between a pin and a decoration. testHomeLock is nil for an
+// adopting child AND for a creator whose flock failed, so a skip keyed on it
+// reads "correctly took no lock" over a process that was supposed to have one
+// — MEASURED under ranger-base-z056i by deleting TestMain's lockTestHome
+// call, which left this test SKIPPING green while the round trip below reddened.
+func TestTheCreatorHoldsAFlockOnItsTempHome(t *testing.T) {
+	t.Parallel()
+	qrtSkipUnlessReapable(t)
+
+	home := os.Getenv("HOME")
+	if home == "" {
+		t.Fatal("no $HOME — TestMain always sets one")
+	}
+	if !testHomeOwned {
+		t.Skip("this process adopted its parent's temp HOME and correctly takes no lock on it")
+	}
+
+	// From OUTSIDE the process, because that is the only vantage the reaper
+	// ever has. A syscall.Flock on our own second fd would succeed: flock
+	// locks are per open file description and the same process re-locking is
+	// not a conflict, so an in-process probe would pass over a lock nobody
+	// else can see.
+	if got := qrtFlockProbe(t, home); got != 9 {
+		why := ""
+		if testHomeLock == nil {
+			why = " TestMain prints a 'temp HOME … NOT locked' line when the flock itself failed — look for it above; if there is none, the lockTestHome call is gone."
+		}
+		t.Errorf("flock -n on the temp HOME %s answered %d, want 9 (busy) — ADR 0089 D1's lock is not held, so scripts/reap-test-tmp.sh has nothing to read and this run's dir is protected by its mtime alone. A 60m-timeout arm on a loaded box outlives that grace.%s", home, got, why)
+	}
+}
+
+// TestTempHomeLockChild is the creator arm of the round trip below. It reports
+// the temp HOME it made through a file the parent names, then sits still until
+// it is SIGKILLed — which is the shape the whole mechanism exists for, because
+// neither a signal handler nor a deferred RemoveAll can run after one.
+//
+// It reports the home through a file rather than through stdout because the
+// parent has to read it WHILE this process is still alive, and reading a pipe
+// that the child is still writing is the one thing a *bytes.Buffer shared with
+// a running exec.Cmd must not do.
+func TestTempHomeLockChild(t *testing.T) {
+	ready := os.Getenv("RHQ_QA_TESTHOME_LOCK_READY")
+	if ready == "" {
+		t.Skip("child of TestTheReaperKeepsALiveTempHomeAndTakesADeadOne")
+	}
+	// "NOLOCK" rather than silence, so a parent whose child reached this
+	// point without a lock gets told that instead of a timeout — the two
+	// have completely different causes and only one of them is this bead's.
+	report := os.Getenv("HOME")
+	if testHomeLock == nil {
+		report = "NOLOCK " + report
+	}
+	if err := os.WriteFile(ready, []byte(report), 0o644); err != nil {
+		t.Fatalf("reporting the temp HOME: %v", err)
+	}
+	// Long enough that a loaded box cannot outrun the parent's two reaper
+	// runs, short enough to be a bounded leak if the parent dies without
+	// killing us (it kills us in a defer).
+	time.Sleep(2 * time.Minute)
+}
+
+// D1 and D2 together, end to end, against the real script: the reaper keeps a
+// live run's temp HOME and takes the same dir once its creator is gone.
+//
+// WHY THE MTIME IS MOVED BACK. The grace is the gate that used to carry all
+// the weight, and a dir minutes old is kept by it whatever the lock says — so
+// a pin that did not age the dir would pass identically with D1 deleted. Three
+// hours back puts it past every grace this class has ever had, which leaves
+// the lock as the only thing that can still keep it.
+func TestTheReaperKeepsALiveTempHomeAndTakesADeadOne(t *testing.T) {
+	t.Parallel()
+	qrtSkipUnlessReapable(t)
+	script := qrtReapScript(t)
+	if script == "" {
+		t.Skip("this tree holds no scripts/reap-test-tmp.sh")
+	}
+
+	// The child's TMPDIR and the reaper's --root are the same dir, so the
+	// candidate set is exactly one dir and every count below is exact.
+	// Resolved, because MkdirTemp's answer is and the script compares paths
+	// as text.
+	root := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	ready := filepath.Join(t.TempDir(), "childhome")
+	childLog := filepath.Join(t.TempDir(), "child.log")
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	logf, err := os.Create(childLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logf.Close()
+
+	child := exec.Command(exe, "-test.run=^TestTempHomeLockChild$", "-test.v")
+	// Three variables out of the child's environment, each for its own
+	// reason, and the loop takes them OUT rather than listing what goes in
+	// because the child needs the rest of this binary's world (PATH,
+	// GOMODCACHE, the MISE_*_DIRs) to start at all:
+	//   - RHQ_FAKE_HERDR, or TestMain answers as the fake substrate and the
+	//     child never runs a test (reexecenv_qa_test.go is the census);
+	//   - RHQ_TEST_HOME, or the child ADOPTS our home, creates nothing and
+	//     takes no lock — it is the whole point that this child is a CREATOR;
+	//   - TMPDIR, replaced below, so os.MkdirTemp lands under the one root
+	//     the reaper is pointed at.
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "RHQ_FAKE_HERDR=") ||
+			strings.HasPrefix(kv, envTestHome+"=") ||
+			strings.HasPrefix(kv, "TMPDIR=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	child.Env = append(env, "TMPDIR="+root, "RHQ_QA_TESTHOME_LOCK_READY="+ready)
+	child.Stdout, child.Stderr = logf, logf
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	reaped := false
+	defer func() {
+		if !reaped {
+			_ = child.Process.Kill()
+			_, _ = child.Process.Wait()
+		}
+	}()
+
+	var childHome string
+	deadline := time.Now().Add(90 * time.Second)
+	for childHome == "" {
+		if b, rerr := os.ReadFile(ready); rerr == nil && len(b) > 0 {
+			childHome = strings.TrimSpace(string(b))
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the creator child never reported a temp HOME in 90s\n%s", qrtRead(childLog))
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if rest, bad := strings.CutPrefix(childHome, "NOLOCK "); bad {
+		t.Fatalf("the creator child made %s and did not lock it — ADR 0089 D1 is not in effect, and TestMain's 'NOT locked' line says why:\n%s", rest, qrtRead(childLog))
+	}
+	if filepath.Dir(childHome) != root {
+		t.Fatalf("the child's temp HOME %s is not under the root %s this test points the reaper at — the TMPDIR handover did not take, and every count below would be measuring the wrong dir", childHome, root)
+	}
+	t.Logf("creator child pid %d, temp HOME %s", child.Process.Pid, childHome)
+
+	// Past every grace this class has ever carried, so the lock is the only
+	// gate left that can keep the dir.
+	past := time.Now().Add(-3 * time.Hour)
+	if err := os.Chtimes(childHome, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := qrtFlockProbe(t, childHome); got != 9 {
+		t.Errorf("flock -n on the live child's temp HOME %s answered %d, want 9 (busy)", childHome, got)
+	}
+
+	// ─── while the creator lives ───
+	out := qrtReap(t, script, root)
+	lockLine := "  HELD (lock) " + childHome
+	if !strings.Contains(out, lockLine) {
+		t.Errorf("a dry run over a LIVE creator's temp HOME did not report it held by the lock.\nwant a line: %s\ngot:\n%s", lockLine, out)
+	}
+	if !strings.Contains(out, "): 0 collectable") {
+		t.Errorf("a dry run over a LIVE creator's temp HOME called it collectable — this is the bug ADR 0089 was written for, and an operator's --apply would have removed a running suite's $HOME.\n%s", out)
+	}
+	// THE SCAN SEES IT TOO NOW, and the reason is worth saying because it is
+	// not the one the ADR expected. MEASURED 2026-11-11 under this bead: an
+	// flock holder's lock fd appears in its own /proc/<pid>/fd, so D1's open
+	// directory fd is picked up by the reaper's existing fd arm as well —
+	// which is the "keep an fd open so the fd scan sees the creator"
+	// alternative ADR 0089 rejected, arriving for free beside the lock it
+	// chose. The environ arm is still blind (os.Setenv does not rewrite
+	// /proc/<pid>/environ) and the fd arm is still conditional on a readable
+	// /proc, which is exactly why the lock and not the fd is the decision.
+	//
+	// Logged and not asserted, in BOTH directions: a cage that masks /proc
+	// takes the second signal away and must not red a pin whose subject is
+	// the first one.
+	if strings.Contains(out, "\n  HELD "+childHome) {
+		t.Logf("the /proc fd arm saw the dir as well, through D1's own lock fd — a second, /proc-dependent signal beside the lock")
+	} else {
+		t.Logf("the /proc scan did not see the dir at all, as ADR 0089 measured: the lock is doing all of the work here")
+	}
+
+	// ─── and once it is gone ───
+	if err := child.Process.Kill(); err != nil {
+		t.Fatalf("kill -9 the creator child: %v", err)
+	}
+	_, _ = child.Process.Wait()
+	reaped = true
+
+	// The kernel releases the lock at death, but "at death" is not "by the
+	// time Wait returned" on every box, so poll for it rather than sleep a
+	// number somebody guessed.
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		if qrtFlockProbe(t, childHome) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the lock on %s was still held 15s after kill -9 — the release IS the death certificate, so a lock that outlives its holder is the one failure this mechanism cannot have", childHome)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	out = qrtReap(t, script, root)
+	if strings.Contains(out, "HELD (lock) "+childHome) {
+		t.Errorf("the dead creator's temp HOME is still reported held by a lock — a lock that survives its holder is a stale lock, and the mechanism would be a pidfile with extra steps.\n%s", out)
+	}
+	if !strings.Contains(out, "): 1 collectable") {
+		t.Errorf("a dry run after kill -9 did not offer the abandoned temp HOME %s for collection — the reaper now keeps dirs it should take, which is a 14G tmpfs every seat shares filling up quietly.\n%s", childHome, out)
+	}
+}
+
+// qrtReap runs the reaper as a dry run over one root and one class, and
+// t.Fatals on any exit code: a sweep that refused (exit 2 for a missing
+// flock(1) or /proc, exit 3 for a blind scan) is not a verdict and must never
+// be read as one.
+func qrtReap(t *testing.T, script, root string) string {
+	t.Helper()
+	cmd := exec.Command("bash", script, "--root", root, "--class", "posse-testhome", "--min-age", "60")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s --root %s: %v\n%s", script, root, err, out)
+	}
+	return string(out)
+}
+
+func qrtRead(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "(" + err.Error() + ")"
+	}
+	return string(b)
 }

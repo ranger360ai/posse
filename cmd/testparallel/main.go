@@ -510,6 +510,16 @@ func main() {
 		// rest of its state is a t.TempDir and a child process it alone
 		// starts.
 		"TestColdExecHookWiringChild": "reads coldExecRewrite",
+		// testHomeLock and testHomeOwned (1): ADR 0089 D1's lock on the temp
+		// HOME, and TestMain's own ownHome. Both are assigned in TestMain
+		// before m.Run and by nothing else in the tree, so once any test can
+		// run they are constants for the life of the binary and reading them
+		// races nothing — the same argument as coldExecRewrite above, and
+		// the same shape. This test reads the pair to ask whether THIS
+		// process is the creator and whether it is holding the lock; the
+		// measurement itself is an out-of-process `flock -n` on $HOME, which
+		// is read-only and answers the same for every reader.
+		"TestTheCreatorHoldsAFlockOnItsTempHome": "reads testHomeLock and testHomeOwned",
 	}
 	// ── filter 2: written package-level vars named anywhere reachable ────
 	varTainted := propagateIn(funcs, func(g *fn) bool {
