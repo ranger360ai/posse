@@ -112,7 +112,7 @@ done
 # XDG_STATE_HOME goes with it: herdr picks the HIGHEST version among local
 # override / cached remote / bundled, and an isolated state dir keeps a newer
 # cached remote out of the answer.
-stage=$(mktemp -d "${TMPDIR:-/tmp}/verify-detection.XXXXXX") || exit 2
+stage=$(mktemp -d "${TMPDIR:-/tmp}/posse-detection.XXXXXX") || exit 2
 trap 'rm -rf "$stage"' EXIT
 staged=$stage/config/herdr/agent-detection
 mkdir -p "$staged" "$stage/state"

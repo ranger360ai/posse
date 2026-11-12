@@ -131,7 +131,7 @@ have_sha="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
 [ "$have_sha" = "$PINNED_SHA" ] ||
   skip "herdr-bob is at $have_sha, the patch was cut against $PINNED_SHA -- re-cut it"
 
-T="$(mktemp -d "${TMPDIR:-/tmp}/verify-herdr-bob.XXXXXX")" || exit 1
+T="$(mktemp -d "${TMPDIR:-/tmp}/posse-herdr-bob.XXXXXX")" || exit 1
 STARTED_PIDS=""
 cleanup() {
   local p

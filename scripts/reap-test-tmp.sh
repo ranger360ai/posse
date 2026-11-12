@@ -106,6 +106,19 @@
 #                                                `mktemp` class below, where
 #                                                the same leak waited 24h
 #                                                for no reason but its name.
+#                                                ranger-base-tbukc moved five
+#                                                more in (posse-claude-trust-
+#                                                key, posse-detection, posse-
+#                                                herdr-bob, posse-herdr-bob-
+#                                                rules, posse-gate-freshness)
+#                                                from NO class at all: they
+#                                                already HAD a template, so
+#                                                they matched neither `posse-*`
+#                                                nor the `tmp.??????????` below
+#                                                and NO row reached them — a
+#                                                leaked one was never
+#                                                collected, which is worse
+#                                                than i78k9's 24h wait.
 #   go-build        go-build[0-9]*       120m    Go's $WORK. A RUNNING test
 #                                                binary's /proc/<pid>/exe
 #                                                names it, so this one the

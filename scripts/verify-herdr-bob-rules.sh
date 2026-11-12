@@ -127,7 +127,7 @@ have_sha="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
 [ "$have_sha" = "$PINNED_SHA" ] ||
   skip "herdr-bob is at $have_sha, match_rules was read from $PINNED_SHA -- re-check the extraction"
 
-T="$(mktemp -d "${TMPDIR:-/tmp}/verify-herdr-bob-rules.XXXXXX")" || exit 1
+T="$(mktemp -d "${TMPDIR:-/tmp}/posse-herdr-bob-rules.XXXXXX")" || exit 1
 WATCH_PIDS=""
 cleanup() {
   local p

@@ -30,7 +30,7 @@
 # the script says so rather than inventing a key.
 set -euo pipefail
 
-cfg=$(mktemp -d "${TMPDIR:-/tmp}/claude-trust-key.XXXXXX")
+cfg=$(mktemp -d "${TMPDIR:-/tmp}/posse-claude-trust-key.XXXXXX")
 trap 'rm -rf "$cfg"' EXIT
 printf '{}\n' >"$cfg/.claude.json"
 

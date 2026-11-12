@@ -135,7 +135,7 @@ fi
 [ "${#wrappers[@]}" -gt 0 ] || nothing "no PreToolUse hook in $config_dir names bd-argv-gate.sh (the gate is not installed on this box)"
 
 # -- the reference ----------------------------------------------------------
-ref=$(mktemp -d "${TMPDIR:-/tmp}/gate-head.XXXXXX") || nothing "cannot make a scratch dir"
+ref=$(mktemp -d "${TMPDIR:-/tmp}/posse-gate-freshness.XXXXXX") || nothing "cannot make a scratch dir"
 trap 'rm -rf "$ref"' EXIT HUP INT TERM
 for f in bd-argv-gate.sh bd-argv-gate.py; do
   git -C "$repo" show "HEAD:scripts/$f" > "$ref/$f" 2>/dev/null \
