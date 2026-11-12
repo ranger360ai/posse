@@ -58,6 +58,8 @@ worktree is writable, and so is the shared build cache. Nothing else is. ADR
 actor and not the lock. Landing adds no human review, so the code is no more
 trusted after it lands. If no cage renders, the result is "no answer": print
 ⚠ and do nothing more. It never falls back to running uncaged.
+*(Amended 2026-11-12, below: the shared build cache is no longer granted,
+and the cage is never stronger than a seat's.)*
 
 **D4 — One run at a time, and runs coalesce.** At most one landed check is in
 flight. When it finishes, if main's tree has moved, the next run judges the
@@ -144,3 +146,111 @@ somebody did.
 - **Run it uncaged as the launcher, since the code is now on main.** Landing
   is a fast-forward, not a review. The operator chooses to run main uncaged.
   The launcher would do it automatically on every landing.
+
+## Amendment: the judge is never stronger than a seat (ranger-base-ze6ie, from ranger-base-hy1aj, 2026-11-12)
+
+D3 said the worktree is writable, "and so is the shared build cache", and
+nothing else. That sentence was about FILES. It was true of files and still
+left the judge stronger than any seat. `boxLandedCage` renders through
+`BwrapArgs` and `SeatbeltProfile`, not `RenderWall`, because the judge has no
+persona (a synthetic one would be a seat posse announces and does not have).
+So every host-scoped mask that `RenderWall` gives a seat missed it. MEASURED
+2026-11-11 from inside the D3 cage on the Linux host (bwrap 0.13.1):
+
+- the **user runtime dir** was in view: the session bus, the user service
+  manager (a same-uid client can start a unit, and that unit runs uncaged),
+  and the agent sockets;
+- the **host `/tmp`** was in view;
+- the **network namespace** was the host's;
+- the **shared Go build cache** was writable. ranger-base-olr0g measured that
+  an archive planted there runs inside the next uncaged build that reads it,
+  posse's own included. That puts code from a landing inside the launcher.
+- the **environment** was the launcher's whole `os.Environ()`, and the
+  check's output tail is filed into a bead that other seats read.
+
+The question that opened this asked only about the network. A netns closes
+none of the other four: they are path sockets, a writable dir, and the
+environment.
+
+**D3.1 — The rule: the judge is never stronger than a seat.** It gets every
+host-scoped mask a seat gets. Since no persona owns it, it also keeps none of
+the egress a seat keeps. On bwrap: `Hide` = the live runtime dirs, `Tmp` = a
+`tmp` dir inside the run dir (it stands down, as a seat's does, when the
+home, run dir or tree is itself under `/tmp`), and `--unshare-net`, added at
+the judge's call site only. bwrap brings the new namespace up with loopback,
+so a check that listens on 127.0.0.1 still runs. On seatbelt, a network rule
+appended last: `(deny network*)`, then loopback IP and unix sockets under the
+run dir allowed back. Seats keep "egress is the container tier's".
+(ranger-base-4nzpo.)
+
+**D3.2 — The judge builds through a cache of its own, fresh per run.** This
+reverses D3's shared-cache grant. `GOCACHE=<run>/gocache` lives inside the
+run dir, which is already the grant and is already removed after the run.
+`goBuildCache()` is out of the write set. (ranger-base-4nzpo.)
+
+**D3.3 — The environment is an allowlist, not the launcher's.** `cmd.Env` is
+built from nothing: the names in `landedJudgeEnvKeys` (`PATH HOME USER LOGNAME
+LANG LC_ALL TZ TERM GOROOT GOPATH GOMODCACHE GOTOOLCHAIN GOFLAGS`), each only
+if set, then the cage's `TMPDIR` and `GOCACHE`, then `protocolEnv`. It is
+`cmd.Env` rather than bwrap's `--clearenv` because `cmd.Env` works on both
+mechanisms. The repo still owns what green means over the environment it is
+handed. What crosses the wall is the wall's call. A check that needs one more
+variable reds once, and the fix is to name it in that one list. This
+supersedes the residual in `docs/notes.d/ranger-base-5fond.md`.
+(ranger-base-5m5yq.)
+
+**D3.4 — Pinned at the real call site.** `TestQALandedCheckJudgeIsNoStrongerThanASeat`
+and `TestQALandedCheckJudgeEnvIsTheAllowlist`
+(`internal/posse/landedjudgecage_qa_test.go`, arm 1) drive
+`landedChecker.judge`, the function `posse dispatch` runs after every landing.
+If they are deleted, a regression can put landed code back inside the
+launcher's next build, or back on the session bus, and no test reds. Each
+was mutation-red, one change at a time (the notes for 4nzpo and 5m5yq list
+the mutants).
+
+**Measurements.** MEASURED, Linux host, go1.27.3, `scripts/posse-landed-check`
+on posse's own tree:
+
+| cage | wall | load (1m) | source |
+|---|---|---|---|
+| D3.1 + shared cache, built by hand | 73s | 4.0 | hy1aj, 2026-11-11 |
+| D3.1 + D3.2, cold / warm, built by hand | 78s / 72s | 5.9 / 5.5 | hy1aj, 2026-11-11 |
+| D3.1 + D3.2 + cleared env, built by hand | 70s | 4.0 | hy1aj, 2026-11-11 |
+| as shipped, 4nzpo | 76s | 2.2 | 4nzpo, 2026-11-11 |
+| as shipped, 4nzpo + 5m5yq | 106s | 4.8 → 12.5 | 5m5yq, 2026-11-12 (one reading) |
+
+The check needs no network, no bus and no inherited variable. The private
+cache costs about 6s cold. Every reading is under D6's 120s ceiling. The last
+one is the closest, and it is one reading on a loaded box. If a series of
+quiet-box readings crosses 120s, D6 sends the price back here.
+
+**Consequences.**
+- ASSUMED: a landing that raises `go` past the box's toolchain, or adds a
+  module no seat on the box has downloaded, reds the judge with go's own
+  "cannot download" line. That red is honest, because the box cannot build it
+  offline. The exit hatch is that the operator fetches, and the next landing
+  re-judges.
+- Residual: a host mask added to `RenderWall` later does not reach the judge
+  unless D3.4's pin is extended. Exit hatch: factor one `hostCarve()` that
+  both call, the day a third host mask appears.
+- The seatbelt rule is rendered and pinned. It is not measured here, because
+  the box has no darwin host.
+
+**Alternatives rejected.**
+- *`--unshare-net` alone, as asked.* It closes egress, loopback and abstract
+  sockets, and it leaves the runtime dir, `/tmp`, the cache and the
+  environment open. It would look like the hole was closed while the largest
+  channel stayed open.
+- *Route the judge through `RenderWall` with a synthetic persona.* This is
+  the clever one: every mask, present and future, for free. It is a fake
+  seat, though, and it would hand the judge a seat's egress.
+- *A persistent judge-only cache.* It saves about 6s, and it lets landing N
+  plant objects that decide landing N+1's verdict.
+- *Inherit the environment and scrub it by pattern* (`*TOKEN*`, `*KEY*`). That
+  is a denylist, and it rots: the next credential's name is not on it.
+- *Leave the environment alone, because the launcher has no tokens today.*
+  That was MEASURED true. It is a property of whoever started the launcher,
+  not of posse.
+
+Not closed here:
+- ranger-base-bfla6
