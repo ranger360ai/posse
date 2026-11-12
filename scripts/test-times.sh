@@ -873,6 +873,14 @@ self_test() {
   # — its exit status included — instead of only the report function.
   cat > "$tmp/bin/faketest" <<'STUB'
 #!/usr/bin/env bash
+# I4's one real answer (ranger-base-nr3qf): only for exactly `env GOCACHE`,
+# and only when the caller exported REAL_GOCACHE for this one invocation —
+# every other call, and every other arm's $REAL_GOCACHE-less run, still
+# gets the fictional answer below.
+if [ "${1:-}" = env ] && [ "${2:-}" = GOCACHE ] && [ -n "${REAL_GOCACHE:-}" ]; then
+  printf '%s\n' "$REAL_GOCACHE"
+  exit 0
+fi
 printf '%s\n' "$@" > "$STUB_ARGV"
 cat "$STUB_OUT"
 # The two shapes an outside kill takes (ranger-base-6nx72). `self` is the
@@ -1190,33 +1198,41 @@ STUB
   # Two branches, and both are live on this box: /tmp is a tmpfs with a
   # table, and /home — where GOCACHE sits — is a filesystem that allocates
   # inodes as it goes and prints `0 0 0 -`.
-  local idf= ihdr= irow= ifree_col= want_ifree= iused_col= i=
-  local -a ihf=() irf=()
-  idf=$(LC_ALL=C df -iP "${TMPDIR:-/tmp}" 2>/dev/null)
-  irow=${idf#*$'\n'}
-  if [ "$irow" != "$idf" ]; then
-    ihdr=${idf%%$'\n'*}
-    irow=${irow%%$'\n'*}
-    read -ra ihf <<<"$ihdr"
-    read -ra irf <<<"$irow"
-    i=0
-    while [ "$i" -lt "${#ihf[@]}" ]; do
-      case ${ihf[$i]} in
-        IFree|ifree) ifree_col=$i ;;
-        IUsed|iused) iused_col=$i ;;
+  #
+  # ifree_reading <path> is this arm's own independent reading, mirroring
+  # free_inodes()'s "0 0 0 is no table at all" rule without calling it, so
+  # this and I4 below test the product's rule rather than agreeing with it
+  # by construction. Pulled out to a function because I4 needs the same
+  # reading over a second path.
+  ifree_reading() {
+    local path=$1 d h r fcol= ucol= v i=0
+    local -a hf=() rf=()
+    d=$(LC_ALL=C df -iP "$path" 2>/dev/null)
+    r=${d#*$'\n'}
+    [ "$r" != "$d" ] || return 0
+    h=${d%%$'\n'*}
+    r=${r%%$'\n'*}
+    read -ra hf <<<"$h"
+    read -ra rf <<<"$r"
+    while [ "$i" -lt "${#hf[@]}" ]; do
+      case ${hf[$i]} in
+        IFree|ifree) fcol=$i ;;
+        IUsed|iused) ucol=$i ;;
       esac
       i=$((i + 1))
     done
-    if [ -n "$ifree_col" ]; then
-      want_ifree=${irf[$ifree_col]-}
-      case $want_ifree in ''|*[!0-9]*) want_ifree= ;; esac
-      # the dynamic-inode spelling: a table of zero is no table at all
-      if [ -n "$want_ifree" ] && [ -n "$iused_col" ] && [ "$want_ifree" = 0 ] &&
-         [ "${irf[$iused_col]-}" = 0 ]; then
-        want_ifree=
-      fi
+    [ -n "$fcol" ] || return 0
+    v=${rf[$fcol]-}
+    case $v in ''|*[!0-9]*) return 0 ;; esac
+    # the dynamic-inode spelling: a table of zero is no table at all
+    if [ -n "$ucol" ] && [ "$v" = 0 ] && [ "${rf[$ucol]-}" = 0 ]; then
+      return 0
     fi
-  fi
+    printf '%s' "$v"
+  }
+
+  local want_ifree=
+  want_ifree=$(ifree_reading "${TMPDIR:-/tmp}")
 
   run_arm clean.log 0 -timeout 25m
   local inode_line_ok=0
@@ -1265,6 +1281,56 @@ STUB
       *) ok 'inodes floor: warns below the floor, and quotes the floor it used (no table here: asserts silence instead)' ;;
     esac
     ok 'inodes floor: says it is running anyway (no table here: nothing to say it about)'
+  fi
+
+  # I4: the zero-zero branch of free_inodes()'s own rule, which I3 above
+  # never reaches (ranger-base-nr3qf finding 3, escaped from
+  # ranger-base-vw1cp). I3 drives the real script over $TMPDIR, and on
+  # every box this harness has run on that is the has-a-table branch; the
+  # stub `go` every arm in this file hands disk_preflight has never named a
+  # real GOCACHE, so the preflight's SECOND filesystem — the one the
+  # comment above I3 already names as the no-table one — never appears in
+  # `$out` at all. A mutant at free_inodes's zero-zero line is invisible to
+  # `--self-test` under the default $TMPDIR for exactly that reason.
+  #
+  # So this arm hands the stub the one real answer the one call that
+  # matters needs — the real `go` on this seat's own PATH, answering `env
+  # GOCACHE` for itself — and nothing else: REAL_GOCACHE is exported for
+  # this run_arm call alone (a bash simple-command prefix assignment,
+  # restored after), so every other arm in this file still drives the
+  # fictional go it has always driven.
+  local real_cache=
+  if command -v go >/dev/null 2>&1; then
+    real_cache=$(go env GOCACHE 2>/dev/null)
+    [ -n "$real_cache" ] && [ -d "$real_cache" ] || real_cache=
+  fi
+  if [ -z "$real_cache" ]; then
+    bad 'inodes: no real `go env GOCACHE` directory found — this arm has nothing to point the preflight at'
+  else
+    local cache_want_ifree=
+    cache_want_ifree=$(ifree_reading "$real_cache")
+    REAL_GOCACHE=$real_cache run_arm clean.log 0 -timeout 25m
+    if [ -n "$cache_want_ifree" ]; then
+      case $out in
+        *'test-times: DISK: '[0-9]*' free inodes on '*'the go build cache'*)
+          ok 'inodes: the preflight takes the real inode reading for the go build cache' ;;
+        *)
+          bad "inodes: df -iP says the real GOCACHE ($real_cache) has $cache_want_ifree free inodes and no DISK line names a count for it"
+          dump_out ;;
+      esac
+    else
+      case $out in
+        *'test-times: DISK: no inode reading for '*'the go build cache'*)
+          ok 'inodes: the preflight takes the real inode reading for the go build cache (none here, and it says so)' ;;
+        *)
+          # THE ASSERTION THIS ARM EXISTS FOR: the real GOCACHE accounts no
+          # inodes and the preflight must say so rather than print a count —
+          # exactly what dropping the zero-zero guard at free_inodes's line
+          # 286 stops it from doing.
+          bad 'inodes: the real go build cache filesystem accounts no inodes and the preflight neither said so nor printed a count for it'
+          dump_out ;;
+      esac
+    fi
   fi
 
   # J: the floor. BOTH arms, because "no warning" is also what a floor that is

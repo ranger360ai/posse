@@ -1093,6 +1093,65 @@ python3 -I thread.py ./plant
 	r.wantDelayed(t, 1)
 }
 
+// ARM 21 (ranger-base-nr3qf, escaped from ranger-base-91fu2): the `pid`
+// component of the in-flight charge key is asserted by NO other arm here,
+// although ARM 18 above exists only to pin the kernel fact that makes it
+// sound — a key of `(pid, inode)` is unique only because the pid the kernel
+// hands a task's notification is that task's own, so two DIFFERENT tasks
+// exec'ing the same fresh inode at the same time can never collide on it.
+//
+// REPRO (MEASURED 2026-11-11, this box): zero the pid in the key at
+// door_linux.go:597 (`charge{pid: 0, key: key}`) and every other arm in this
+// file, 14/15/16/17/18 included, stays green — none of them puts two
+// DIFFERENT tasks on the same fresh inode at once. This one does: two
+// separate `sh`-forked tasks exec the one plant concurrently. Shipped, the
+// loser of the race is simply warm — the door's cost model charges an inode
+// once, not per task (ADR 0085 D5, see ARM 20's header) — so this run reads
+// 1 delayed, 1 warm. Zero the pid and the two charges collide on one map
+// entry: the loser's own exec is misread as the RESTART of the winner's
+// charge and is made to sleep the winner's remainder too, so the run reads
+// 2 delayed, 0 warm.
+func TestTwoTasksExecingOnePlantConcurrentlyChargeOnlyOneOfThem(t *testing.T) {
+	t.Parallel()
+	r := runDoor(t, `printf '#!/bin/sh\necho THE PLANT RAN\n' > plant; chmod +x plant
+tm first ./plant &
+tm second ./plant &
+wait
+`)
+	r.wantCode(t, 0)
+	r.wantNoHoles(t)
+
+	// THE ASSERTION THIS PIN EXISTS FOR: of the two concurrent execs of one
+	// fresh inode, exactly one pays D. Two tasks colliding on a pid-less key
+	// read 2 here, and no other arm's count would move.
+	r.wantDelayed(t, 1)
+
+	cold := 0
+	for _, label := range []string{"first", "second"} {
+		d, ok := r.elapsed[label]
+		if !ok {
+			t.Fatalf("the run timed no step called %q, so it measured nothing:\n%s", label, r.out)
+		}
+		if d >= pinPartition {
+			cold++
+		}
+	}
+	if cold != 1 {
+		t.Errorf("%d of the two concurrent execs paid D, want exactly 1 — a pid-less key would make the "+
+			"second collide with the first's charge and pay it too:\n%s", cold, r.out)
+	}
+
+	if n := strings.Count(r.out, "THE PLANT RAN"); n != 2 {
+		t.Errorf("the plant ran %d times, want 2 — both concurrent execs must have gone through:\n%s", n, r.out)
+	}
+	// Neither exec was withdrawn or restarted: this is plain concurrency, not
+	// a signal cutting a charge short (that is ARMs 16/17's subject).
+	if strings.Contains(r.out, "truncated") || strings.Contains(r.out, "withdrawn") {
+		t.Errorf("a charge read as truncated or withdrawn — this run signalled nothing, so there was "+
+			"nothing to cut short or hand on:\n%s", r.out)
+	}
+}
+
 // ARM 19: a HOLE whose notification the kernel took back is recorded as no
 // hole at all — the second half of ranger-base-j0riv's rule, which that
 // bead landed and pinned nothing of (ranger-base-dgbys).

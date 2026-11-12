@@ -420,3 +420,27 @@ func TestQALandedCheckReadsADoubleColonTestRule(t *testing.T) {
 		t.Errorf("planned %q over a `test::` rule, want [%q] — a derivation stripping one colon plans the goal `:`", steps, want)
 	}
 }
+
+// TestQALandedCheckDropsTheOrderOnlySeparator: `test: door-a | door-b` makes
+// door-b an ORDER-ONLY prerequisite — still a prerequisite, still a goal this
+// check must run — but `|` is punctuation and not one. make's own data base
+// prints the separator verbatim (`test: door-a | door-b`), so a derivation
+// that scanned the line as plain words would plan `make … door-a | door-b`,
+// and that is not three words to a real make invocation: it is `make
+// door-a`, a shell pipe, and a bare `|` make reads as a goal of its own,
+// which dies at "No rule to make target '|'. Stop." — a landing read red
+// over a Makefile spelling, the one failure mode this script's header says
+// the derivation exists to avoid (ranger-base-nr3qf finding 1, escaped from
+// ranger-base-r3pqf).
+func TestQALandedCheckDropsTheOrderOnlySeparator(t *testing.T) {
+	t.Parallel()
+	mk := "test: door-a | door-b\n" +
+		"\t@touch " + ldcArmWitness + "\n" +
+		"door-a:\n\t@:\n" +
+		"door-b:\n\t@:\n"
+	steps := ldcPlan(t, ldcTree(t, mk))
+	want := "make --no-print-directory door-a door-b"
+	if len(steps) != 1 || steps[0] != want {
+		t.Errorf("planned %q over a `test: door-a | door-b` rule, want [%q] — the order-only separator is not a goal and a derivation that plans it fails `make` outright", steps, want)
+	}
+}

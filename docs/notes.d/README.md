@@ -483,6 +483,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-oz39](ranger-base-oz39.md) — `posse peek <lines>` refuses a bad count (ranger-base-oz39)
 - [ranger-base-oruvy](ranger-base-oruvy.md) — A merge-back block overtaken while it was measuring (ranger-base-oruvy)
 - [ranger-base-ok1x](ranger-base-ok1x.md) — The runtime probe measures one binary and records another (ranger-base-ok1x)
+- [ranger-base-nr3qf](ranger-base-nr3qf.md) — Three pin gaps, one per code close (ranger-base-nr3qf)
 - [ranger-base-n6s2u](ranger-base-n6s2u.md) — codex's sign-in screens read `blocked` now (ranger-base-n6s2u)
 - [ranger-base-myai](ranger-base-myai.md) — The L1 commit wall's spoiler table was incomplete, not just literal (ranger-base-myai)
 - [ranger-base-mp0v](ranger-base-mp0v.md) — The queue repo's visibility stamp is reconciled and probed on every queue commit (ranger-base-mp0v)
