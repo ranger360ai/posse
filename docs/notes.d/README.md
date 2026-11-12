@@ -52,6 +52,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-aifu2](ranger-base-aifu2.md) — Four closes verified, and the half of a rule its own close argued for (ranger-base-aifu2) — 2026-11-11
 - [ranger-base-91fu2](ranger-base-91fu2.md) — A restarted execve pays the rest of its charge (ranger-base-91fu2) — 2026-11-11
 - [ranger-base-888pk](ranger-base-888pk.md) — The ledger read $0 for every dispatched seat, because the CLI wrapped the prompt (ranger-base-888pk) — 2026-11-11
+- [ranger-base-7hyn8](ranger-base-7hyn8.md) — A fixture root the reaper could never see, and the two halves of removing it (ranger-base-7hyn8) — 2026-11-11
 - [ranger-base-6rr2e](ranger-base-6rr2e.md) — The same class one node over: a git CHILD bound by a declaration (ranger-base-6rr2e) — 2026-11-11
 - [ranger-base-6pew3](ranger-base-6pew3.md) — The reading posse already had, and was spending as a concession (ranger-base-6pew3) — 2026-11-11
 - [ranger-base-6hjm5](ranger-base-6hjm5.md) — The record-reach gate asked for a directory no PID is granted (ranger-base-6hjm5) — 2026-11-11
