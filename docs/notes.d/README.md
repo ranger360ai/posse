@@ -13,6 +13,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-m3fl5](ranger-base-m3fl5.md) — A cleanup trap that owned nothing, because the pick ran in a subshell (ranger-base-m3fl5) — 2026-11-12
 - [ranger-base-l751c](ranger-base-l751c.md) — claude's server-policy caches, masked and never seeded (ranger-base-l751c) — 2026-11-12
 - [ranger-base-ksa79](ranger-base-ksa79.md) — grok's compat layer is a reader of claude's and cursor's MCP servers and hooks, switched off on the line (ranger-base-ksa79) — 2026-11-12
+- [ranger-base-ghhgb](ranger-base-ghhgb.md) — ranger-base-ghhgb — the nudge that outlived the execve, and the signal that cannot — 2026-11-12
 - [ranger-base-6ob20](ranger-base-6ob20.md) — The rest of codex's and grok's CLI-written home members, carved or private (ranger-base-6ob20) — 2026-11-12
 - [ranger-base-3spp4](ranger-base-3spp4.md) — A credential token is a type that cannot be printed (ranger-base-3spp4) — 2026-11-12
 - [ranger-base-1c91x](ranger-base-1c91x.md) — A launcher TMPDIR outside /tmp leaves the bwrap write set too (ranger-base-1c91x) — 2026-11-12

@@ -67,6 +67,29 @@ const (
 	// pinPartition is the line between "paid D" and "did not". See the
 	// header: it is nowhere near either side's real cost.
 	pinPartition = 400 * time.Millisecond
+	// nudgeSignal is the signal withdrawalFixture nudges a stopped execve
+	// with, and the one property this file needs of it is that its DEFAULT
+	// disposition is IGNORE (ranger-base-ghhgb).
+	//
+	// The nudger's guard is a poll, so it has a window: between the execve
+	// completing and the nudger's next readlink the signal lands on the
+	// PLANT — whose disposition for it is the default, because execve resets
+	// a handled one to SIG_DFL. Under SIGUSR1 that killed the plant after
+	// its exec had already landed: `CALLER EXIT 138`, 2 of ARM 16's 150
+	// executions on a QUIET box and then ARM 14 on the very next full `make
+	// test`, which is arm 1 and nobody's optional door.
+	//
+	// SIGURG closes the window instead of narrowing it, and it is also the
+	// real shape: it is the signal the Go runtime preempts with, which is
+	// what produces withdrawals under this door in the wild (the note above
+	// `holes` in door_linux.go). A nudge that lands on a REUSED pid is
+	// harmless for the same reason.
+	//
+	// MEASURED 2026-11-12 (this box, linux 7.2.15 x86_64), the same
+	// deliberately post-exec nudge under each: SIGURG leaves the plant
+	// running and the caller exits 0, SIGUSR1 exits 138. ARM 21 is the pin,
+	// and it reads this constant so that a seat changing it reds there.
+	nudgeSignal = "SIGURG"
 )
 
 var (
@@ -643,10 +666,20 @@ tm chmodded ./p
 //     until the exec lands, which is deterministic in both directions —
 //     a signal that arrives too early is simply handled and retried, and
 //     the instant /proc/<pid>/exe changes the plant is running under that
-//     pid and must not be signalled. 40/40 identical on a quiet box,
-//     MEASURED 2026-11-11.
-//   - the plant traps USR1 to nothing, which covers the microseconds
-//     between the exec landing and the nudger's next readlink.
+//     pid and the nudging stops. 40/40 identical on a quiet box, MEASURED
+//     2026-11-11.
+//   - the nudge is `nudgeSignal`, whose DEFAULT disposition is Ignore, and
+//     THAT is what makes the guard above safe rather than nearly safe
+//     (ranger-base-ghhgb). The guard is a poll, so between the execve
+//     completing and the nudger's next readlink a nudge lands on the
+//     plant, which faces the default disposition because execve reset the
+//     caller's handler to SIG_DFL. An ignored signal is a no-op there from
+//     the plant's first instruction, so the window costs nothing. The
+//     plant used to `trap "" USR1` instead — a trap it has to be RUNNING
+//     to install, covering most of those microseconds and not all of them:
+//     `CALLER EXIT 138`, 2 of ARM 16's 150 executions on a quiet box and
+//     then ARM 14 on the next full `make test`. ARM 21 pins the property;
+//     the plant traps nothing now.
 //   - `held` is a SECOND plant, exec'd before the caller and never
 //     signalled, and it is what makes `wantCode(t, 0)` an assertion rather
 //     than a coincidence. Since ranger-base-4kars a truncated charge is not
@@ -667,28 +700,33 @@ func withdrawalFixture(t *testing.T, saRestart bool, after string) doorRun {
 	if saRestart {
 		mode = "restart"
 	}
-	return runDoor(t, strings.Replace(`cat > caller.py <<'PY'
+	return runDoor(t, strings.NewReplacer("MODE", mode, "NUDGESIG", nudgeSignal).Replace(`cat > caller.py <<'PY'
 import os, signal, sys, time
 
-# Installed before the fork, so the nudger below can never catch this
-# process with SIGUSR1 still fatal. siginterrupt(False) is the shortest way
+# Installed before the fork, so a nudge can never arrive while this process
+# is still at NUDGESIG's own default disposition — which is Ignore, and an
+# ignored signal does not interrupt the stopped execve at all, so the run
+# would reach none of the mechanism. siginterrupt(False) is the shortest way
 # to ask for SA_RESTART, which is the Go runtime's own shape; without it
 # python3's default disposition is to interrupt, and the execve takes EINTR.
-signal.signal(signal.SIGUSR1, lambda *a: None)
+signal.signal(signal.NUDGESIG, lambda *a: None)
 if sys.argv[2] == "restart":
-    signal.siginterrupt(signal.SIGUSR1, False)
+    signal.siginterrupt(signal.NUDGESIG, False)
 
 me = os.getpid()
 mine = os.readlink("/proc/%d/exe" % me)
 if os.fork() == 0:
     # Nudge the parent until its execve has landed. The guard is the
     # parent's OWN exe link: while it still reads as this python the execve
-    # has not completed, so a signal can only land on the stopped syscall.
+    # has not completed, so the signal lands on the stopped syscall. It is a
+    # poll, so it has a window on the other side — a nudge CAN reach the
+    # plant once the execve completes, and what makes that harmless is the
+    # choice of signal and not this loop (see nudgeSignal, ARM 21).
     for _ in range(500):
         try:
             if os.readlink("/proc/%d/exe" % me) != mine:
                 break
-            os.kill(me, signal.SIGUSR1)
+            os.kill(me, signal.NUDGESIG)
         except OSError:
             break
         time.sleep(0.01)
@@ -696,7 +734,7 @@ if os.fork() == 0:
 
 os.execv(sys.argv[1], [sys.argv[1]])
 PY
-printf '#!/bin/sh\ntrap "" USR1\necho the plant ran\n' > plant; chmod +x plant
+printf '#!/bin/sh\necho the plant ran\n' > plant; chmod +x plant
 printf '#!/bin/sh\necho the held plant ran\n' > held; chmod +x held
 tm held ./held
 s=$(date +%s%N)
@@ -705,7 +743,7 @@ c=$?
 e=$(date +%s%N)
 echo "CALLER EXIT $c"
 echo "ELAPSED nudged $(( (e-s)/1000000 ))ms"
-`, "MODE", mode, 1)+after)
+`)+after)
 }
 
 // ARM 14: a notification the KERNEL takes back is not a coverage hole, and
@@ -1428,4 +1466,111 @@ func TestATruncatedChargeLeavesItsPlantWarm(t *testing.T) {
 	// `held` is the only exec this run paid D for.
 	r.wantDelayed(t, 1)
 	r.cold(t, "held")
+}
+
+// ARM 21: a nudge that lands on the PLANT, after the execve it was aimed at
+// has already completed, leaves the plant running — which is the one
+// property withdrawalFixture needs of `nudgeSignal` and the one it did not
+// have (ranger-base-ghhgb).
+//
+// WHAT BROKE. The nudger's guard is the caller's own /proc/<pid>/exe, and a
+// poll has a window on the far side of the fact it polls: the execve
+// completes, the plant is running under that same pid, and the nudger's
+// next readlink is up to 10ms away. The signal lands on the plant. Its
+// disposition there is the DEFAULT — execve resets a handled one to
+// SIG_DFL, so nothing the caller installed survives into the plant — and
+// SIGUSR1's default is to terminate. CAUGHT in a full `make test` arm 1,
+// 2026-11-11: `CALLER EXIT 138`, the plant delayed 614ms and never run, on
+// a pin whose door had done everything it asserts. 2 of ARM 16's 150
+// executions on a quiet box, and then ARM 14 on the next full run.
+//
+// The fixture's old answer was `trap "" USR1` as the plant's first line,
+// which is a trap the plant has to be RUNNING to install: it covered most
+// of those microseconds and could not cover all of them. The answer now is
+// a signal whose default disposition is Ignore, which has no window at all.
+//
+// WHAT THIS PIN PROTECTS, and it is not the door: it is the four pins that
+// read withdrawalFixture. A seat that spells `nudgeSignal` SIGUSR1 again —
+// or SIGTERM, SIGINT, SIGHUP, any of the defaults that kill — gets back a
+// sub-percent flake in arm 1 whose message points at the door and not at
+// the fixture, which cost this bead to read the first time. Here it is one
+// deterministic red instead: the plant dies and nothing prints.
+//
+// IT IS DETERMINISTIC BY INVERTING THE GUARD. The nudger waits for the exe
+// link to CHANGE and signals then, so the signal is in the post-exec window
+// every run rather than 2 times in 150. The handler is installed in the
+// caller exactly as the fixture installs it, because the composition is the
+// claim: the caller handles it, execve resets that, the default is
+// harmless. And the nudger writes `nudged` 50ms AFTER the kill, so the
+// plant cannot see the file — and cannot print — until long after a fatal
+// signal would have ended it.
+//
+// MEASURED 2026-11-12 (this box, linux 7.2.15 x86_64), the same script
+// under each signal: SIGURG printed THE PLANT SURVIVED THE NUDGE and the
+// caller exited 0; SIGUSR1 printed neither line and exited 138.
+func TestANudgeThatLandsAfterTheExecveLeavesThePlantRunning(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skipf("no python3, so the pin cannot install a signal handler in a caller: %v", err)
+	}
+	r := runDoor(t, strings.NewReplacer("NUDGESIG", nudgeSignal).Replace(`cat > post.py <<'PY'
+import os, signal, sys, time
+
+# Installed exactly as withdrawalFixture installs it. The claim under test
+# is the composition: execve resets this to SIG_DFL, and NUDGESIG's default
+# disposition is Ignore, so the plant survives a nudge it cannot have
+# trapped yet.
+signal.signal(signal.NUDGESIG, lambda *a: None)
+signal.siginterrupt(signal.NUDGESIG, False)
+
+me = os.getpid()
+mine = os.readlink("/proc/%d/exe" % me)
+if os.fork() == 0:
+    # withdrawalFixture's guard INVERTED: wait until the execve HAS landed,
+    # then nudge. The plant is the process behind this pid by then, so the
+    # post-exec window is reached every run and not 2 times in 150. The
+    # 50ms is what makes the negative control deterministic too: the plant
+    # learns nothing until long after a fatal signal would have ended it.
+    for _ in range(1000):
+        try:
+            if os.readlink("/proc/%d/exe" % me) != mine:
+                os.kill(me, signal.NUDGESIG)
+                time.sleep(0.05)
+                open("nudged", "w").close()
+                break
+        except OSError:
+            break
+        time.sleep(0.01)
+    os._exit(0)
+
+os.execv(sys.argv[1], [sys.argv[1]])
+PY
+printf '#!/bin/sh\ni=0\nwhile [ ! -f nudged ] && [ $i -lt 1000 ]; do sleep 0.01; i=$((i+1)); done\nif [ -f nudged ]; then echo THE PLANT SURVIVED THE NUDGE; else echo THE NUDGE NEVER LANDED; fi\n' > plant; chmod +x plant
+python3 -I post.py ./plant
+echo "CALLER EXIT $?"
+`))
+
+	// THE ASSERTION THIS PIN EXISTS FOR, in both halves: the nudge really
+	// did land on the plant, and the plant was still there afterwards.
+	if strings.Contains(r.out, "THE NUDGE NEVER LANDED") {
+		t.Fatalf("the plant timed out waiting to be nudged, so the arm is not set up and its "+
+			"survival below says nothing — the nudger never saw the exe link change:\n%s", r.out)
+	}
+	if !strings.Contains(r.out, "THE PLANT SURVIVED THE NUDGE") {
+		t.Errorf("the plant was nudged after its execve had landed and did not live to say so: "+
+			"nudgeSignal is %s, whose default disposition kills. execve resets the caller's "+
+			"handler to SIG_DFL, so the plant faces that default — and withdrawalFixture's "+
+			"nudger hits this window about 1%% of the time, which is ranger-base-ghhgb's "+
+			"flake in arm 1:\n%s", nudgeSignal, r.out)
+	}
+	if !strings.Contains(r.out, "CALLER EXIT 0") {
+		t.Errorf("the caller did not exit 0 — the nudge ended the plant it landed on, which is "+
+			"the flake this pin exists to keep out of withdrawalFixture:\n%s", r.out)
+	}
+
+	// And the run is a real door run: the plant's own exec was the one cold
+	// exec in it, so the door does not exit 3 over this one either.
+	r.wantCode(t, 0)
+	r.wantDelayed(t, 1)
+	r.wantNoHoles(t)
 }
