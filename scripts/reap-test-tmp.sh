@@ -32,6 +32,12 @@
 #       scripts/reap-test-tmp.sh --claude-projects DIR  the harness's session
 #                                                transcripts (default
 #                                                ~/.claude/projects)
+#       scripts/reap-test-tmp.sh --self-test     prove the claude-scratch gating
+#                                                arms and the claude_procs `-p`
+#                                                exclusion, against a scratch
+#                                                root only (`make
+#                                                verify-reap-test-tmp`, a
+#                                                prerequisite of `make test`)
 #
 # ─── WHAT IT TAKES, AND WHY EACH CLASS HAS ITS OWN GRACE ────────────────────
 #
@@ -233,12 +239,200 @@
 set -euo pipefail
 
 self=$(basename "$0")
-apply=0 min_age="" roots=() want_classes=() quiet=0
+apply=0 min_age="" roots=() want_classes=() quiet=0 selftest=0
 claude_sessions="${HOME:-/nonexistent}/.claude/sessions"
 claude_projects="${HOME:-/nonexistent}/.claude/projects"
 pressure_at=70 pressure_min_age=60 bead_at=85 bead_repo="" no_bead=0 bead_cooldown=24
 
 die2() { echo "$self: $*" >&2; exit 2; }
+
+# ─── self-test (ranger-base-2smyx findings 2 and 4) ─────────────────────────
+#
+# THERE WAS NO TEST ANYWHERE IN THE TREE for the claude-scratch class's
+# gating -- pid liveness, procStart, transcript freshness -- and the
+# eleven-row table that licensed it at ranger-base-4arlo lived only in a
+# close comment (`grep -rl reap-test-tmp --include='*_test.go' .` finds
+# nothing). This is that table, committed, run against a fresh `mktemp -d`
+# root every time rather than against the real /tmp -- plus a second rig
+# below it for finding 4's fix, which this table cannot exercise because
+# none of its own fixtures are claude-EXE processes.
+#
+# A `-p`/`--print` RUN NEVER WRITES A REGISTRY FILE, so counting it toward
+# claude_procs made the blindness control (below, "the harness's live-session
+# registry") refuse the whole class for a reason that is not blindness: on a
+# shared box a sibling seat's own `claude -p` pin is exactly such a run. The
+# fix excludes it; this rig proves the exclusion by COUNT rather than by the
+# blind flag, because this box runs real, ambient, same-uid `claude`
+# processes this script can see (every seat here is uid posse) and the
+# blind flag only fires when the registry is EMPTY, which a busy box's own
+# traffic cannot be made to guarantee either way -- the count a planted
+# process moves, or does not move, is the one thing this rig can pin
+# regardless of who else is on the box right now.
+self_test() {
+  local tmp fails=0
+  tmp=$(mktemp -d) || { echo "$self --self-test: mktemp failed" >&2; exit 2; }
+  selftest_tmp=$tmp
+  SELFTEST_PIDS=()
+  trap 'kill "${SELFTEST_PIDS[@]}" 2>/dev/null || true; rm -rf -- "${selftest_tmp:?}"' EXIT
+
+  mkdir -p "$tmp/root" "$tmp/sessions" "$tmp/projects"
+  local me old slug
+  me=$(id -u); old='202611010000'; slug='-selftest-reap'
+
+  mk() {  # mk <uuid> <has-transcript:yes|no> <transcript-fresh:yes|no>
+    # u/tx/fresh/d assigned one at a time, never on one `local` line: a
+    # combined `local u="$1" d="...$u"` expands $u before the assignment to
+    # u lands (ranger-base-2smyx's own note on the rig this is built from).
+    local u tx fresh d
+    u="$1"
+    tx="$2"
+    fresh="$3"
+    d="$tmp/root/claude-$me/$slug/$u"
+    mkdir -p "$d"; : > "$d/marker"
+    if [ "$tx" = yes ]; then
+      mkdir -p "$tmp/projects/$slug"
+      : > "$tmp/projects/$slug/$u.jsonl"
+      [ "$fresh" = yes ] || touch -t "$old" "$tmp/projects/$slug/$u.jsonl"
+    fi
+    touch -t "$old" "$d/marker" "$d"
+  }
+  # st <pid> -- /proc/<pid>/stat's field 22 (starttime), parsed with bash
+  # parameter expansion rather than a forked `sed | awk` -- an assertion arm's
+  # matcher must not fork (TestQANoAssertionArmDecidesThroughAForkedMatcher):
+  # a `sed`/`awk` that is signalled, or that cannot be exec'd under load,
+  # would read back as an empty procStart and the arm would misreport a KEEP
+  # as something the test never actually exercised. `$(< file)` is bash's own
+  # builtin read, not `cat`. comm (the parenthesised field) can itself hold a
+  # ')', so stripping through the LAST ') ' -- `##*) ` is greedy -- is the
+  # same rule the production parser uses two call sites below.
+  st() {
+    local line rest
+    line=$(< "/proc/$1/stat" 2>/dev/null) || { printf '\n'; return 0; }
+    rest=${line##*") "}
+    local -a f=()
+    read -r -a f <<< "$rest"
+    printf '%s\n' "${f[19]:-}"
+  }
+  reg() {  # reg <uuid> <pid> <procStart|OMIT>
+    local u p s
+    u="$1"
+    p="$2"
+    s="$3"
+    if [ "$s" = OMIT ]; then
+      printf '{"pid":%s,"sessionId":"%s","status":"idle"}\n' "$p" "$u"
+    else
+      printf '{"pid":%s,"sessionId":"%s","procStart":"%s","status":"idle"}\n' "$p" "$u" "$s"
+    fi > "$tmp/sessions/$p.json"
+  }
+
+  echo "$self --self-test:"
+
+  # ONE PID PER REGISTRY FILE: the files are keyed by pid, so three arms
+  # sharing one holder would overwrite each other and the live arm would
+  # read as unregistered.
+  sleep 60 >/dev/null 2>&1 </dev/null & local pa=$!
+  sleep 60 >/dev/null 2>&1 </dev/null & local pc=$!
+  sleep 60 >/dev/null 2>&1 </dev/null & local pd=$!
+  mk A yes no;  reg A "$pa" "$(st "$pa")"   # KEEP: pid live, procStart matches
+  mk B yes no;  reg B 999999 1              # COLLECT: registered pid is dead
+  mk C yes no;  reg C "$pc" 1               # COLLECT: live pid, wrong procStart
+  mk D yes no;  reg D "$pd" OMIT            # KEEP: no procStart field, pid alive
+  mk E yes yes                              # KEEP: transcript fresh
+  mk F no  no                               # KEEP: no transcript is no signal
+  mk G yes no                               # COLLECT: unregistered, both old
+  mk H yes no                               # KEEP: a process is cwd'd inside
+  ( cd "$tmp/root/claude-$me/$slug/H" && exec sleep 60 ) >/dev/null 2>&1 </dev/null & local ph=$!
+  SELFTEST_PIDS=("$pa" "$pc" "$pd" "$ph")
+  sleep 1
+
+  "$0" --root "$tmp/root" --class claude-scratch --apply --quiet \
+    --claude-sessions "$tmp/sessions" --claude-projects "$tmp/projects" --no-bead \
+    >/dev/null 2>&1 || true
+
+  local u got
+  for u in A D E F H; do
+    [ -d "$tmp/root/claude-$me/$slug/$u" ] && got=KEPT || got=COLLECTED
+    if [ "$got" = KEPT ]; then echo "  ok   $u kept"
+    else echo "  FAIL $u: want KEPT, got COLLECTED"; fails=$((fails + 1)); fi
+  done
+  for u in B C G; do
+    [ -d "$tmp/root/claude-$me/$slug/$u" ] && got=KEPT || got=COLLECTED
+    if [ "$got" = COLLECTED ]; then echo "  ok   $u collected"
+    else echo "  FAIL $u: want COLLECTED, got KEPT"; fails=$((fails + 1)); fi
+  done
+
+  kill "$pa" "$pc" "$pd" "$ph" 2>/dev/null || true
+  wait "$pa" "$pc" "$pd" "$ph" 2>/dev/null || true
+  SELFTEST_PIDS=()
+
+  # ─── finding 4's own rig: does `-p` stay out of claude_procs? ─────────────
+  # A real ELF file named "claude" is required: /proc/<pid>/exe resolves
+  # through a symlink to its REAL target, so a symlink named "claude" would
+  # read back as whatever it points at, never as ".../claude" itself. A
+  # plain copy of /bin/sleep is a distinct inode at a path that ends the way
+  # the production `case "$(readlink exe)" in */claude)` wants it to.
+  local sleepbin fakeclaude n0 n1 n2 pfake
+  sleepbin=$(command -v sleep) || { echo "  FAIL no sleep(1) on PATH to copy for the fake claude binary"; fails=$((fails + 1)); sleepbin=""; }
+  fakeclaude="$tmp/claude"
+  # count_claude_procs reads the script's own "... live claude processes: N"
+  # line with bash parameter expansion -- `${out#*"needle"}` then cut at the
+  # next newline -- the same shape as scripts/test-times.sh's `line_after`,
+  # and not a forked `sed`/`grep` for the reason `st` above gives.
+  count_claude_procs() {
+    local out rest
+    out=$("$0" --root "$tmp/root" --class claude-scratch --quiet \
+      --claude-sessions "$tmp/sessions" --claude-projects "$tmp/projects" --no-bead 2>&1) || true
+    rest=${out#*"live claude processes: "}
+    [ "$rest" = "$out" ] && { printf '\n'; return 1; }
+    printf '%s\n' "${rest%%$'\n'*}"
+  }
+  if [ -n "$sleepbin" ]; then
+    cp "$sleepbin" "$fakeclaude"
+    chmod +x "$fakeclaude"
+
+    n0=$(count_claude_procs)
+    case $n0 in
+      ''|*[!0-9]*)
+        echo "  FAIL could not read 'live claude processes: N' back from the script's own output"
+        fails=$((fails + 1))
+        n0=0
+        ;;
+    esac
+
+    "$fakeclaude" -p 30 >/dev/null 2>&1 </dev/null & pfake=$!
+    sleep 1
+    n1=$(count_claude_procs)
+    kill "$pfake" 2>/dev/null || true
+    wait "$pfake" 2>/dev/null || true
+    case $n1 in ''|*[!0-9]*) echo "  FAIL could not read claude_procs after the -p run"; fails=$((fails + 1)); n1="($n1)" ;; esac
+
+    if [ "$n1" = "$n0" ]; then
+      echo "  ok   a 'claude -p' run is excluded from claude_procs ($n0 -> $n1)"
+    else
+      echo "  FAIL a 'claude -p' run changed claude_procs from $n0 to $n1 -- it must be excluded"
+      fails=$((fails + 1))
+    fi
+
+    "$fakeclaude" 30 >/dev/null 2>&1 </dev/null & pfake=$!
+    sleep 1
+    n2=$(count_claude_procs)
+    kill "$pfake" 2>/dev/null || true
+    wait "$pfake" 2>/dev/null || true
+    case $n2 in ''|*[!0-9]*) echo "  FAIL could not read claude_procs after the non-print run"; fails=$((fails + 1)); n2="($n2)" ;; esac
+
+    if [ "$n2" = "$((n0 + 1))" ]; then
+      echo "  ok   control: the same process without -p IS counted ($n0 -> $n2)"
+    else
+      echo "  FAIL control: a non-print claude process changed claude_procs from $n0 to $n2, want $((n0 + 1))"
+      fails=$((fails + 1))
+    fi
+  fi
+
+  echo
+  if [ "$fails" -gt 0 ]; then echo "$self --self-test: $fails arm(s) FAILED"; return 1; fi
+  echo "$self --self-test: all arms pass"
+  return 0
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -247,6 +441,7 @@ while [ $# -gt 0 ]; do
     --min-age) min_age="${2:?--min-age needs minutes}"; shift 2 ;;
     --class)   want_classes+=("${2:?--class needs a name}"); shift 2 ;;
     --quiet)   quiet=1; shift ;;
+    --self-test) selftest=1; shift ;;
     --pressure-at)      pressure_at="${2:?--pressure-at needs a percentage}"; shift 2 ;;
     --pressure-min-age) pressure_min_age="${2:?--pressure-min-age needs minutes}"; shift 2 ;;
     --bead-at)          bead_at="${2:?--bead-at needs a percentage}"; shift 2 ;;
@@ -259,6 +454,11 @@ while [ $# -gt 0 ]; do
     *) die2 "unknown argument: $1" ;;
   esac
 done
+
+if [ "$selftest" -eq 1 ]; then
+  self_test
+  exit $?
+fi
 
 # Default: /tmp AND this shell's $TMPDIR when that is somewhere else. The
 # dirs belong to the RUNS, not to whoever sweeps — a seat working around the
@@ -491,9 +691,31 @@ fi
 # registry file and no count, which cannot make the class take anything it
 # otherwise would not. The other direction would hand the sweep a window where
 # the registry reads empty and the class believes it.
+#
+# A `claude -p`/`--print` RUN IS NOT PART OF THIS POPULATION (ranger-base-2smyx
+# finding 4). It never writes a registry file — there is no session to resume
+# and no pane to idle in — so counting it alongside interactive sessions makes
+# the blindness control refuse the whole class for a reason that is not
+# blindness: this repo's own suite runs live `claude -p` pins, so a quiet box
+# with one sibling seat mid-pin and no interactive session alive reads as
+# blind when nothing is wrong. claude_could_register excludes exactly the runs
+# that could never appear in $claude_sessions; an unreadable cmdline (the
+# process died, or /proc denies it) counts the pid anyway, which keeps the
+# control's fail-safe direction — it can only ever make claude_procs equal to
+# or smaller than a hand-count would, never larger, so this can only move the
+# control AWAY from a spurious refusal and never toward a missed one.
+claude_could_register() {  # claude_could_register <pid-dir, e.g. /proc/1234>
+  local arg
+  while IFS= read -r -d '' arg; do
+    case "$arg" in -p|--print) return 1 ;; esac
+  done < "$1/cmdline" 2>/dev/null
+  return 0
+}
 claude_blind=0 claude_live=0 claude_procs=0
 for pid in /proc/[0-9]*; do
-  case "$(readlink "$pid/exe" 2>/dev/null)" in */claude) claude_procs=$((claude_procs + 1)) ;; esac
+  case "$(readlink "$pid/exe" 2>/dev/null)" in
+    */claude) claude_could_register "$pid" && claude_procs=$((claude_procs + 1)) ;;
+  esac
 done
 : > "$livedirs"
 if [ -d "$claude_sessions" ]; then

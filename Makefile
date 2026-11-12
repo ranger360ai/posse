@@ -64,7 +64,7 @@ ifeq ($(words $(BUILD_SOURCE)),1)
 LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
 endif
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -327,7 +327,7 @@ release-notes:
 # and the arm2/arm3 tagged lines are exactly the ones an untagged arm-tags
 # mistake can fail to *compile*, which would abort the recipe before the
 # door ever ran.
-test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax tree-check
+test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp tree-check
 	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
@@ -336,7 +336,7 @@ test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-patte
 
 # One arm each, for CI, which runs them as three jobs. A seat wanting the
 # whole thing types `make test`.
-test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax tree-check
+test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -497,6 +497,19 @@ verify-shell-syntax:
 verify-python-syntax:
 	@scripts/python-syntax.py --self-test
 	@scripts/python-syntax.py
+
+# The claude-scratch class's gating -- pid liveness, procStart, transcript
+# freshness -- had no pin anywhere in the tree (ranger-base-2smyx finding 2):
+# the eleven-row table that licensed it at ranger-base-4arlo lived only in a
+# close comment, so an edit to the gating could red nothing. The self-test is
+# that table, committed, run against a fresh `mktemp -d` root every time,
+# never against the real /tmp, plus a second rig for finding 4's fix -- a
+# `claude -p` run must not inflate the blindness control's process count,
+# since it never writes a registry file and this repo's own suite runs live
+# `claude -p` pins. A few seconds: three short-lived `sleep` holders and two
+# cold execs of a copied `sleep` binary under a name ending in "claude".
+verify-reap-test-tmp:
+	@scripts/reap-test-tmp.sh --self-test
 
 # The suite through the reusing wrapper (ranger-base-nw9zg). NOT a faster
 # `make test` and not a replacement for it: measured on 40 invocations against
