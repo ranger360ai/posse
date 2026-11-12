@@ -193,17 +193,88 @@ func runtimeConfigFiles(home string, stateGrants []string) (files []string) {
 //     byte-identical. An empty AGENTS.override.md does not shadow
 //     AGENTS.md, and an empty hooks.json is accepted.
 //
-// Residual: ranger-base-74pqi. A seat on another runtime gets no deny for a
-// home nothing granted it.
+// A seat on another runtime gets no deny for a home nothing granted it.
+//
+// The second half of each list is ranger-base-6ob20's (finding
+// ranger-base-74pqi, whose comments carry the per-member readings):
+//
+//   - grok's census is grok's OWN: its sandbox doc
+//     (docs/user-guide/18-sandbox.md, "Direct global write protection", as
+//     shipped with grok 1.0.77) write-denies bundled/ and bundles/ ("anything
+//     placed there loads as a built-in skill, agent, or workflow"),
+//     hooks-paths (a registry whose absolute targets load as hook JSON) and
+//     sandbox.toml (the profiles a config.toml profile name selects). Beside
+//     those: bin/, the managed install a running leader relaunches onto, with
+//     channel-switch.json, which picks its channel; and memory-v2/, whose
+//     index is injected into every later session when memory is on. A seat
+//     has no business updating the operator's grok, so its line also carries
+//     GROK_DISABLE_AUTOUPDATER=1 (the runtime's LineEnv). grok makes an empty
+//     hooks-paths itself, so the empty seed is the vendor's own shape.
+//   - codex: .tmp/ holds a git clone of the curated plugin marketplace and its
+//     sha, and `codex plugin list` names plugin sources inside that clone, so
+//     a writer's copy is installed under the curated label. memories/ is read
+//     by an operator who turns the memories feature on.
+//   - codex's tmp/ and shell_snapshots/ are a different class and are not in
+//     these lists: codexEphemeralDirs has them.
+//
+// MEASURED 2026-11-12 on the D1 host, codex 0.167.2 and grok 1.0.77, the
+// zvgql method (scratch homes, a local fake endpoint, no billed turn): with
+// every member here bound read-only, `codex exec` and `grok -p` complete the
+// turn and leave every seeded member byte-identical
+// (TestLiveWallRuntimeConfigEachCLIRunsWithItsConfigReadOnly). The rest of
+// the readings are in docs/notes.d/ranger-base-6ob20.md.
+//
+// Residual: ranger-base-qyq59.
 var (
-	codexExecDirNames  = []string{"plugins", "prompts", "rules", "skills"}
+	codexExecDirNames  = []string{".tmp", "memories", "plugins", "prompts", "rules", "skills"}
 	codexExecFileNames = []string{"AGENTS.md", "AGENTS.override.md", "hooks.json"}
-	grokExecDirNames   = []string{"agents", "commands", "hooks", "installed-plugins", "personas", "plugins", "rules", "skills", "workflows"}
+	grokExecDirNames   = []string{"agents", "bin", "bundled", "bundles", "commands", "hooks", "installed-plugins", "memory-v2", "personas", "plugins", "rules", "skills", "workflows"}
 	grokExecFileNames  = []string{
 		"AGENT.md", "AGENTS.md", "Agents.md", "CLAUDE.local.md", "CLAUDE.md", "Claude.md",
-		"lsp.json", "managed_config.toml", "requirements.toml", "settings.json", "trusted_folders.toml",
+		"channel-switch.json", "hooks-paths",
+		"lsp.json", "managed_config.toml", "requirements.toml", "sandbox.toml", "settings.json", "trusted_folders.toml",
 	}
 )
+
+// codexEphemeralDirNames are the members of a codex home that hold
+// per-PROCESS state another process then runs (ranger-base-6ob20, finding
+// ranger-base-74pqi rows 1 and 2):
+//
+//   - tmp/: every codex process makes a fresh `tmp/arg0-linux/codex-arg0*`
+//     dir and puts it FIRST on PATH for every command it runs. MEASURED
+//     (74pqi): each process makes its own, and removes stale ones whose lock
+//     is not held.
+//   - shell_snapshots/: a `<thread>.sh` written at every start, shell code
+//     the session sources before its commands.
+//
+// Nothing there persists past the process that made it, so the exposure is a
+// LIVE window: while an uncaged codex sharing the home runs, its dir sits
+// inside a caged seat's grant. The answer is the 5632o shape, not a carve: on
+// bwrap each seat gets an empty private tmpfs over both (bwrapRender), so it
+// writes its own and sees nobody else's; seatbelt cannot mount, so it carves
+// them read-only (SeatbeltCarveOut). MEASURED (74pqi) codex prints `could not
+// create PATH aliases` and proceeds when tmp/ is unwritable.
+var codexEphemeralDirNames = []string{"shell_snapshots", "tmp"}
+
+// codexEphemeralDirs names those dirs for the codex home a seat's state grant
+// reaches, following CODEX_HOME, or nothing.
+func codexEphemeralDirs(home string, stateGrants []string) (dirs []string) {
+	if home == "" {
+		return nil
+	}
+	h := codexHomeIn(home)
+	if !filepath.IsAbs(h) {
+		return nil
+	}
+	h = absResolve(h)
+	if !writeGranted(stateGrants, h) {
+		return nil
+	}
+	for _, n := range codexEphemeralDirNames {
+		dirs = append(dirs, filepath.Join(h, n))
+	}
+	return dirs
+}
 
 // runtimeExecMembers names those members for each CLI home the launching
 // runtime's state grant reaches, following CODEX_HOME / GROK_HOME the way

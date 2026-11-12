@@ -29,6 +29,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // The variable NAMES, one constant each. They are spelled here rather than
@@ -154,6 +155,29 @@ func runtimeHomeOverride(name string) (string, bool) {
 // state/launch/<session>.sh and sources it — the expected state since
 // 2026-09-01, when every persona's line rendered past the limit — so the
 // cost is one more line over the cliff, never a line that is lost.
+// GrokDisableAutoUpdaterVar is grok's documented switch for its own updater,
+// typed on every grok seat's line (Runtime.LineEnv, ranger-base-6ob20).
+const GrokDisableAutoUpdaterVar = "GROK_DISABLE_AUTOUPDATER"
+
+// RuntimeLineEnv renders rt.LineEnv as shell assignments, each value quoted,
+// for the same prefix RuntimeHomePin goes in. An assignment after that pin's
+// `/usr/bin/env -u X` is an env NAME=VALUE operand, which sets it the same
+// way (TranscriptPin's note on the composition).
+func RuntimeLineEnv(rt *Runtime) string {
+	if rt == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, kv := range rt.LineEnv {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			continue
+		}
+		b.WriteString(k + "=" + shQuote(v) + " ")
+	}
+	return b.String()
+}
+
 func RuntimeHomePin(rt *Runtime) string {
 	if rt == nil || rt.HomeVar == "" {
 		return ""

@@ -2332,7 +2332,7 @@ func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, dir, cmd
 		typed = ""
 	}
 	mode, _ := a.SessionTranscripts(hookRepo(dir))
-	return GatePrefix(binDir, typed) + RuntimeHomePin(rt) + TranscriptPin(rt, mode) + cmd, gatesDir, shell, nil
+	return GatePrefix(binDir, typed) + RuntimeHomePin(rt) + RuntimeLineEnv(rt) + TranscriptPin(rt, mode) + cmd, gatesDir, shell, nil
 }
 
 // ─── L3: git pre-push hook ───────────────────────────────────────────────────

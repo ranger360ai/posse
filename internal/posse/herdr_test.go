@@ -3502,6 +3502,7 @@ func warnBuf(t *testing.T, b *HerdrBackend) *syncBuf {
 var gatePrefixRe = regexp.MustCompile(
 	`PATH='[^']*':"\$PATH" (SHELL='[^']*' GROK_SHELL='[^']*' )?` +
 		`((` + declaredHomeVars() + `)='[^']*' |/usr/bin/env -u (` + declaredHomeVars() + `) )?` +
+		`((` + declaredLineEnvVars() + `)='[^']*' )*` +
 		`((` + declaredTranscriptVars() + `)='[^']*' |/usr/bin/env -u (` + declaredTranscriptVars() + `) )?`)
 
 // declaredHomeVars is the alternation of every built-in's HomeVar, sorted so
@@ -3514,6 +3515,26 @@ func declaredHomeVars() string {
 // declaredTranscriptVars is the same alternation over TranscriptOffVar.
 func declaredTranscriptVars() string {
 	return declaredRuntimeVars(func(rt Runtime) string { return rt.TranscriptOffVar })
+}
+
+// declaredLineEnvVars is the alternation of every NAME a built-in's LineEnv
+// types (RuntimeLineEnv, ranger-base-6ob20) — grok's updater switch today.
+// A fixed pair rather than a two-armed pin, folded in for the same reason:
+// an assertion naming the persona command after it is not about it, and
+// TestQAWallRuntimeConfigGrokLineDisablesTheUpdater reads the raw line.
+func declaredLineEnvVars() string {
+	seen := map[string]bool{}
+	var names []string
+	for _, rt := range builtinRuntimes {
+		for _, kv := range rt.LineEnv {
+			if k, _, ok := strings.Cut(kv, "="); ok && k != "" && !seen[k] {
+				seen[k] = true
+				names = append(names, regexp.QuoteMeta(k))
+			}
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, "|")
 }
 
 // declaredRuntimeVars is the one derivation both of the above take, so a

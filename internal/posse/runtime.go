@@ -713,6 +713,12 @@ type Runtime struct {
 	// while every posse-side reading of that CLI still went to $HOME — a
 	// lever that reads as connected and is not (ADR 0017 §1).
 	HomeVar string
+	// LineEnv is fixed NAME=VALUE pairs typed onto every launch line of this
+	// runtime, beside the home pin (RuntimeLineEnv renders them). grok's
+	// GROK_DISABLE_AUTOUPDATER=1 is the only one today (ranger-base-6ob20):
+	// a seat has no business updating the operator's grok install, whose
+	// bin/ its wall now carves read-only anyway. Built-in only, like HomeVar.
+	LineEnv []string
 	// EnvRequired are the environment variable NAMES a session on this
 	// runtime cannot work without — the Bedrock/Vertex shape, where the CLI
 	// is installed and on PATH and every launch is a dead pane because
@@ -2580,6 +2586,10 @@ var builtinRuntimes = []Runtime{
 		// read config.toml under it, and a seat reading a different home is a
 		// seat whose answers posse measured somewhere else (ADR 0077 D1).
 		HomeVar: GrokHomeVar,
+		// line env: grok's own documented switch for its updater
+		// (docs/user-guide/14-headless-mode.md, grok 1.0.77), so no seat
+		// relaunches anyone onto a build it fetched (ranger-base-6ob20).
+		LineEnv: []string{GrokDisableAutoUpdaterVar + "=1"},
 		// project_config: the repo→box channel that was UNDECLARED here
 		// until ranger-base-l12j9 — eight entries and claude's two keys,
 		// MEASURED on grok 1.0.52 (0920c8169e27) on 2026-10-31. The list,

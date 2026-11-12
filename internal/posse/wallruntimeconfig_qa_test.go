@@ -112,8 +112,13 @@ func TestQAWallRuntimeConfigCarvesEachCLIsExecMembers(t *testing.T) {
 	// The members the measurement found read; a list edit that drops one
 	// reds here, not in a seat.
 	for name, must := range map[string][]string{
-		"codex": {"skills", "plugins", "hooks.json", "AGENTS.md", "AGENTS.override.md"},
-		"grok":  {"hooks", "plugins", "installed-plugins", "skills", "commands", "rules", "agents", "lsp.json", "managed_config.toml", "requirements.toml", "trusted_folders.toml", "AGENTS.md", "CLAUDE.md"},
+		"codex": {"skills", "plugins", "hooks.json", "AGENTS.md", "AGENTS.override.md",
+			// ranger-base-6ob20 (finding 74pqi rows 3 and 4)
+			".tmp", "memories"},
+		"grok": {"hooks", "plugins", "installed-plugins", "skills", "commands", "rules", "agents", "lsp.json", "managed_config.toml", "requirements.toml", "trusted_folders.toml", "AGENTS.md", "CLAUDE.md",
+			// ranger-base-6ob20: grok's own sandbox write-deny census, plus
+			// the managed install, its channel and memory-v2 (74pqi 6-10)
+			"bundled", "bundles", "hooks-paths", "sandbox.toml", "bin", "channel-switch.json", "memory-v2"},
 	} {
 		all := append(append([]string{}, members[name][0]...), members[name][1]...)
 		for _, m := range must {
@@ -413,5 +418,252 @@ func TestQAWallRuntimeConfigSeedAppearsWhole(t *testing.T) {
 	ents, _ := os.ReadDir(d)
 	if len(ents) != 2 {
 		t.Errorf("a seed left something beside it: %v", ents)
+	}
+}
+
+// ranger-base-6ob20: codex's tmp/ and shell_snapshots/ hold one process's
+// PATH aliases and sourced shell snapshot. At the bwrap mechanism a seat gets
+// an empty private tmpfs over each, mounted after the home grant and covered
+// by no read-only bind from the host; at seatbelt, which cannot mount, both
+// are directory denies. A seat on another runtime gets neither.
+func TestQAWallRuntimeConfigCodexEphemeralDirsArePrivateOrReadOnly(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	f := wrcFixtureIn(t, t.TempDir())
+	h := absResolve(filepath.Join(f.home, ".codex"))
+	eph := []string{filepath.Join(h, "shell_snapshots"), filepath.Join(h, "tmp")}
+
+	rt := wrcRuntime("codex")
+	w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, rt.StateDirs...)
+	c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w, rt.StateDirs...)
+	prof := SeatbeltProfile(f.ag.Name, w, nil, c)
+	for _, d := range eph {
+		if !containsString(c.Deny, d) || c.FileShaped(d) {
+			t.Errorf("seatbelt: %s must be a directory deny (ranger-base-6ob20): deny=%v", d, c.Deny)
+		}
+		if !strings.Contains(prof, sbQuote(d)) {
+			t.Errorf("seatbelt: the profile names no deny over %s", d)
+		}
+	}
+
+	r, err := f.a.bwrapRender(f.ag, rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := bindIndex(r.Argv, h, h)
+	if grant < 0 {
+		t.Fatalf("the fixture's codex home is not granted, so nothing here is measured: %q", r.Argv)
+	}
+	for _, d := range eph {
+		if containsString(r.Carve.Deny, d) {
+			t.Errorf("bwrap: %s is still a deny, and its read-only bind from the host would cover the private tmpfs", d)
+		}
+		at := -1
+		for i := 0; i+1 < len(r.Argv); i++ {
+			if r.Argv[i] == "--tmpfs" && r.Argv[i+1] == d {
+				at = i
+			}
+			if (r.Argv[i] == "--ro-bind" || r.Argv[i] == "--bind") && i+2 < len(r.Argv) && r.Argv[i+2] == d {
+				t.Errorf("bwrap: %s is bound from the host at %d (%s %s) — the seat would see the shared dir", d, i, r.Argv[i], r.Argv[i+1])
+			}
+		}
+		switch {
+		case at < 0:
+			t.Errorf("bwrap: no private tmpfs over %s (ranger-base-6ob20)\n argv: %q", d, r.Argv)
+		case at < grant:
+			t.Errorf("bwrap: the tmpfs over %s comes before the home grant at %d, so the grant covers it again", d, grant)
+		}
+	}
+
+	// grok and claude seats: nothing over codex's home.
+	for _, other := range []*Runtime{wrcRuntime("grok"), {Name: "claude", StateDirs: []string{"~/.claude"}}} {
+		ow := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, other.StateDirs...)
+		oc := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, ow, other.StateDirs...)
+		for _, d := range eph {
+			if containsString(oc.Deny, d) {
+				t.Errorf("%s: the carve names %s, which nothing granted this seat", other.Name, d)
+			}
+		}
+		if other.Name != "grok" {
+			continue
+		}
+		or, err := f.a.bwrapRender(f.ag, other, f.dir, f.gates)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pb := range or.Carve.Private {
+			if underDir(h, pb.Dst) {
+				t.Errorf("grok: a private mount over %s, in a home nothing granted this seat", pb.Dst)
+			}
+		}
+	}
+
+	// CODEX_HOME moves them.
+	moved := filepath.Join(f.home, "elsewhere", "codex")
+	t.Setenv(CodexHomeVar, moved)
+	if got := codexEphemeralDirs(f.home, []string{absResolve(moved)}); len(got) != 2 || got[1] != filepath.Join(absResolve(moved), "tmp") {
+		t.Errorf("CODEX_HOME=%s: %v", moved, got)
+	}
+	if got := codexEphemeralDirs(f.home, []string{h}); len(got) != 0 {
+		t.Errorf("CODEX_HOME moved away from the grant, yet %v", got)
+	}
+}
+
+// The live half of the private tmpfs: under posse's render and the real
+// bwrap, what another process put in the host's $CODEX_HOME/tmp and
+// shell_snapshots/ is NOT visible from inside the seat, the seat can write
+// its own there, and nothing it writes or moves reaches the host's dirs.
+func TestLiveWallRuntimeConfigCodexEphemeralDirsArePrivate(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	wrcNeedBwrap(t)
+	f := wrcFixtureIn(t, wallUngrantedDir(t))
+	h := filepath.Join(f.home, ".codex")
+	alias := filepath.Join(h, "tmp", "arg0-linux", "codex-arg0HOST", "git")
+	snap := filepath.Join(h, "shell_snapshots", "host-thread.sh")
+	for _, p := range []string{alias, snap} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# another process's\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := f.a.bwrapRender(f.ag, wrcRuntime("codex"), f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	try := func(script string) (bool, string) {
+		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		return err == nil, strings.TrimSpace(string(out))
+	}
+	q := shellQuote
+	tmp, snaps := filepath.Join(h, "tmp"), filepath.Join(h, "shell_snapshots")
+	for what, script := range map[string]string{
+		"host alias visible":    "test -e " + q(alias),
+		"host snapshot visible": "test -e " + q(snap),
+		"host tmp listed":       "ls -A " + q(tmp) + " | grep -q .",
+		"host snapshots listed": "ls -A " + q(snaps) + " | grep -q .",
+	} {
+		if ok, out := try(script); ok {
+			t.Errorf("%s: another process's per-process codex state is visible inside the seat (ranger-base-6ob20)\n out: %s", what, out)
+		}
+	}
+	for what, script := range map[string]string{
+		"own alias":    "mkdir -p " + q(filepath.Dir(alias)) + " && echo SEAT > " + q(alias),
+		"own snapshot": "echo SEAT > " + q(snap) + " && echo SEAT > " + q(filepath.Join(snaps, "seat.sh")),
+	} {
+		if ok, out := try(script); !ok {
+			t.Errorf("%s: REFUSED in the private tmpfs — codex writes its own here\n out: %s", what, out)
+		}
+	}
+	for what, script := range map[string]string{
+		"tmp moved":       "mv " + q(tmp) + " " + q(tmp+".old"),
+		"snapshots moved": "mv " + q(snaps) + " " + q(snaps+".old"),
+	} {
+		_, _ = try(script)
+		if _, err := os.Stat(filepath.Join(h, filepath.Base(tmp)+".old")); err == nil {
+			t.Errorf("%s: the host's tmp/ was renamed out from under the mount", what)
+		}
+		if _, err := os.Stat(snaps + ".old"); err == nil {
+			t.Errorf("%s: the host's shell_snapshots/ was renamed out from under the mount", what)
+		}
+	}
+	for _, p := range []string{alias, snap} {
+		if b, err := os.ReadFile(p); err != nil || string(b) != "# another process's\n" {
+			t.Errorf("%s changed on the host (%q, %v)", p, b, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(snaps, "seat.sh")); err == nil {
+		t.Errorf("the seat's own snapshot reached the host's shell_snapshots/")
+	}
+}
+
+// The seatbelt reading, measured where it can be: codex completes a turn with
+// tmp/ and shell_snapshots/ READ-ONLY, which is what a darwin seat gets. The
+// render is posse's own with the private tmpfs swapped back for the deny
+// SeatbeltCarveOut made, so only those two mounts differ.
+func TestLiveWallRuntimeConfigCodexRunsWithEphemeralDirsReadOnly(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	wrcNeedBwrap(t)
+	bin := wrcRealBinary("codex")
+	if bin == "" {
+		t.Skip("NOTHING MEASURED: codex does not resolve to a binary on this host")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(wrcFakeModel))
+	defer srv.Close()
+	f := wrcFixtureIn(t, wallUngrantedDir(t))
+	r, err := f.a.bwrapRender(f.ag, wrcRuntime("codex"), f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, _, err := BwrapArgs(f.dir, r.Set, r.Carve, r.Keep...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tail := r.Argv[len(base):] // the --setenv lines bwrapRender adds after BwrapArgs
+	ro := r.Carve
+	ro.Private = nil
+	eph := codexEphemeralDirs(f.home, runtimeStateGrants(wrcRuntime("codex").StateDirs))
+	if len(eph) != 2 {
+		t.Fatalf("no ephemeral dirs for the fixture's codex home: %v", eph)
+	}
+	for _, pb := range r.Carve.Private {
+		if !containsString(eph, pb.Dst) {
+			ro.Private = append(ro.Private, pb)
+		}
+	}
+	ro.Deny = append(append([]string{}, r.Carve.Deny...), eph...)
+	argv, prep, err := BwrapArgs(f.dir, r.Set, ro, r.Keep...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep(prep); err != nil {
+		t.Fatal(err)
+	}
+	argv = append(argv, tail...)
+	cmd := exec.Command("bwrap", append(append(argv, bin), "exec", "--skip-git-repo-check",
+		"-c", `model_provider="fake"`,
+		"-c", fmt.Sprintf(`model_providers.fake={name="fake",base_url=%q,wire_api="responses",env_key="FAKE_KEY"}`, srv.URL+"/v1"),
+		"hi")...)
+	cmd.Dir = f.dir
+	cmd.Env = append(os.Environ(), "FAKE_KEY=sk-dummy")
+	out, err := cmd.CombinedOutput()
+	t.Logf("codex with tmp/ and shell_snapshots/ read-only: err=%v, reply seen=%v, aliases refused=%v", err, strings.Contains(string(out), wrcReply), strings.Contains(string(out), "PATH aliases"))
+	if err != nil || !strings.Contains(string(out), wrcReply) {
+		t.Errorf("codex did not complete a turn with tmp/ and shell_snapshots/ read-only (the seatbelt reading): %v\n%s", err, out)
+	}
+	for _, d := range eph {
+		if ents, _ := os.ReadDir(d); len(ents) != 0 {
+			t.Errorf("%s gained %d entries under a read-only mount", d, len(ents))
+		}
+	}
+}
+
+// grok's line carries its own updater switch, and only grok's does.
+func TestQAWallRuntimeConfigGrokLineDisablesTheUpdater(t *testing.T) {
+	t.Parallel()
+	want := GrokDisableAutoUpdaterVar + "='1' "
+	if got := RuntimeLineEnv(builtinRuntime(t, "grok")); got != want {
+		t.Errorf("grok's line env %q, want %q (ranger-base-6ob20)", got, want)
+	}
+	for _, name := range []string{"claude", "codex"} {
+		if got := RuntimeLineEnv(builtinRuntime(t, name)); got != "" {
+			t.Errorf("%s's line carries %q", name, got)
+		}
+	}
+	// And it reaches the line WrapWithGates types, beside the home pin, and
+	// the shell then hands it to grok.
+	a := &App{Home: t.TempDir(), StateDir: t.TempDir()}
+	wrapped, _, _, err := a.WrapWithGates("wrc-line", builtinRuntime(t, "grok"), nil, t.TempDir(), "sh -c 'echo v=$"+GrokDisableAutoUpdaterVar+"'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(wrapped, RuntimeHomePin(builtinRuntime(t, "grok"))+want) {
+		t.Errorf("the wrapped grok line does not carry %q after the home pin: %q", want, wrapped)
+	}
+	if out, _ := exec.Command("sh", "-c", wrapped).CombinedOutput(); !strings.Contains(string(out), "v=1") {
+		t.Errorf("the variable did not reach the command: %s", out)
 	}
 }

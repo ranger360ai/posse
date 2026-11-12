@@ -85,8 +85,12 @@ func TestQAWallClaudeSessionStateRendersPrivateBindsOverTheGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ro.Carve.Private) != 0 {
-		t.Errorf("a codex seat gets private binds into claude's config dir, which nothing granted it: %v", ro.Carve.Private)
+	// A codex seat has private mounts of its own since ranger-base-6ob20
+	// (codexEphemeralDirs), in its own home; none may land in claude's.
+	for _, pb := range ro.Carve.Private {
+		if underDir(cfg, pb.Dst) {
+			t.Errorf("a codex seat gets a private bind into claude's config dir, which nothing granted it: %v", pb)
+		}
 	}
 }
 

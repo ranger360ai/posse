@@ -345,7 +345,10 @@ type SeatbeltCarveOut struct {
 }
 
 // PrivateBind is one entry of SeatbeltCarveOut.Private: Src is the host dir
-// the seat sees at Dst.
+// the seat sees at Dst. An empty Src is an empty tmpfs at Dst instead: the
+// seat's own copy lives only as long as the seat, for members whose contents
+// belong to one process and never outlive it (codexEphemeralDirs,
+// ranger-base-6ob20).
 type PrivateBind struct {
 	Src, Dst string
 }
@@ -1532,6 +1535,13 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// (ranger-base-zvgql; runtimeExecMembers has the measurement).
 	xdirs, xfiles := runtimeExecMembers(wallHome(), rtGrants)
 	for _, d := range xdirs {
+		add(&c.Deny, d)
+	}
+	// codex's per-process tmp/ and shell_snapshots/: read-only HERE, which is
+	// the seatbelt reading. bwrapRender takes them back out of Deny and gives
+	// the seat a private tmpfs over each instead (codexEphemeralDirs,
+	// ranger-base-6ob20).
+	for _, d := range codexEphemeralDirs(wallHome(), rtGrants) {
 		add(&c.Deny, d)
 	}
 	cfiles = append(cfiles, xfiles...)

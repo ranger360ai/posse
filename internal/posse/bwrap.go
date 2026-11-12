@@ -479,6 +479,13 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 		if err != nil {
 			prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "the shared member a private copy is mounted over; a mount needs a directory to cover"})
 		}
+		if pb.Src == "" {
+			// An empty tmpfs: nothing on the host to stat or make, and
+			// nothing a host process wrote at Dst is visible under it
+			// (ranger-base-6ob20).
+			argv = append(argv, "--tmpfs", pb.Dst)
+			continue
+		}
 		exists, dir, err := bwrapStat(pb.Src)
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("private source", pb.Src, err)
@@ -1593,6 +1600,24 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// (ranger-base-5632o). Here and not in SeatbeltCarveOut for the reason
 	// Tmp is: a seatbelt profile cannot bind.
 	r.Carve.Private = claudePrivateSessionState(home, cwd, runtimeStateGrants(stateDirs))
+	// codex's per-process tmp/ and shell_snapshots/: a private empty tmpfs
+	// each (ranger-base-6ob20). SeatbeltCarveOut denied them, which is the
+	// seatbelt reading; here the deny comes back out, because the deny step
+	// mounts after this one and its read-only bind FROM THE HOST would cover
+	// the tmpfs with the very dir it exists to keep out. Same home as the
+	// deny was spelled against, so the two cannot name different dirs.
+	if eph := codexEphemeralDirs(wallHome(), runtimeStateGrants(stateDirs)); len(eph) > 0 {
+		kept := r.Carve.Deny[:0:0]
+		for _, d := range r.Carve.Deny {
+			if !containsString(eph, d) {
+				kept = append(kept, d)
+			}
+		}
+		r.Carve.Deny = kept
+		for _, d := range eph {
+			r.Carve.Private = append(r.Carve.Private, PrivateBind{Dst: d})
+		}
+	}
 	// D23, after D20's substitution and before the render: what is left of
 	// the set is what posse will bind, and a no-create grant that is not
 	// there has been taken out of it, so BwrapArgs can ask the launcher for
