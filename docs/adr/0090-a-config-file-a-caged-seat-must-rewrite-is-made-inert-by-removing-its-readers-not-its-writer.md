@@ -27,6 +27,7 @@ Who reads that file today:
 | every posse-launched claude, caged or not | `~/.claude/.claude.json` (the line types `CLAUDE_CONFIG_DIR`) | yes, at both mechanisms |
 | the operator's own `claude`, no variable set | `~/.claude.json` | bwrap: no (D19 dropped it). seatbelt: **yes**, it is still granted (`SeatbeltSiblings`) |
 | claude started inside a seat | either | inside the same cage, so no escape |
+| every posse-launched grok, through its harness-compatibility layer (added by ranger-base-ksa79) | `$HOME/.claude.json` for MCP servers, never `CLAUDE_CONFIG_DIR`'s; `~/.claude/settings.json` for hooks | the same answers as the operator's `claude` row for `.claude.json`; `settings.json` is carved read-only (ranger-base-6akzw) |
 
 ## Decision
 
@@ -67,6 +68,19 @@ its config holds), use a launch override that wins over the file when the CLI
 has one. Otherwise carve the file read-only, if the CLI still runs with it
 read-only. This host runs neither CLI (MEASURED below), so the work waits for a
 host that does.
+
+*As built for grok's compat layer (ranger-base-ksa79, 2026-11-12).* grok also
+reads OTHER CLIs' command-bearing files: claude's MCP servers and hooks (the
+table's last row) and cursor's MCP servers from `~/.cursor/mcp.json`. Every
+cell is on by default. grok has a launch override for each one, and it wins
+over `config.toml`, so the rule's first branch applies. Every grok line now
+carries `GROK_CLAUDE_MCPS_ENABLED=0`, `GROK_CLAUDE_HOOKS_ENABLED=0`,
+`GROK_CURSOR_MCPS_ENABLED=0` and `GROK_CURSOR_HOOKS_ENABLED=0`
+(`Runtime.LineEnv`, rendered by `RuntimeLineEnv`). Pinned live by
+`TestLiveGrokLineStartsNoCompatMCPOrHook`: posse's rendered line starts no
+planted server or hook, and the same line without the variables starts all
+five. That second arm is the control. No function is lost: this host has no
+MCP server in either claude file, and it has no `~/.cursor`.
 
 **D4. The pin is live, under the rendered wall, and carries its own
 controls.** Inside posse's real bwrap render for a claude seat, the pin writes
@@ -152,3 +166,15 @@ re-verifies from a bwrap seat.
   rule, while the same rule passed as `--allowedTools` runs the call. The
   Consequences entry above that says UNMEASURED is answered by this reading.
   docs/notes.d/ranger-base-m0bfv.md has the arms.
+- MEASURED 2026-11-12 (ranger-base-ksa79), D1 host, grok 1.0.77, scratch
+  HOME, one unbilled `grok -p` turn per arm against a local fake endpoint.
+  Plants: a server in `$HOME/.claude.json`, claude hooks (SessionStart,
+  UserPromptSubmit, Stop, PreToolUse) in `~/.claude/settings.json`, a server
+  in `~/.cursor/mcp.json`, and cursor hooks in `~/.cursor/hooks.json`. With
+  nothing set, both servers and claude's three turn hooks ran. PreToolUse had
+  no tool call to fire on. Each claude variable at 0 stopped only its own
+  reader. With all four at 0, nothing ran. The turn completed in every arm.
+  `grok inspect` reads the cells `OFF (env)` even when `config.toml` sets them
+  true. No cursor hook fired with the variable unset either, so that switch
+  rests on grok's docs (`05-configuration.md`), not on a reading.
+  docs/notes.d/ranger-base-ksa79.md has the arms.

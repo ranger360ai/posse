@@ -159,6 +159,29 @@ func runtimeHomeOverride(name string) (string, bool) {
 // typed on every grok seat's line (Runtime.LineEnv, ranger-base-6ob20).
 const GrokDisableAutoUpdaterVar = "GROK_DISABLE_AUTOUPDATER"
 
+// grok's harness-compatibility layer reads OTHER CLIs' command-bearing files:
+// claude's MCP servers from $HOME/.claude.json and its hooks from
+// ~/.claude/settings.json, cursor's from ~/.cursor/mcp.json and hooks.json.
+// Every cell defaults on. These are the documented environment twins of the
+// `[compat.<vendor>] mcps|hooks` cells, and the environment wins over
+// config.toml. ADR 0090 D3's rule — a launch override where the CLI has one —
+// types all four off on every grok line (ranger-base-ksa79).
+//
+// MEASURED 2026-11-12, grok 1.0.77, scratch HOME, one unbilled turn against a
+// local fake endpoint: a server in $HOME/.claude.json, one in
+// ~/.cursor/mcp.json and claude's SessionStart, UserPromptSubmit and Stop
+// hooks all ran with nothing set; each variable at 0 stopped exactly its own
+// reader, with all four set nothing ran, and the turn completed in every arm.
+// `grok inspect` reads the cells `OFF (env)` over a config.toml that sets them
+// true. A cursor hook was not seen to fire with the variable unset either, so
+// GrokCursorHooksVar is typed on the docs, not on a reading.
+const (
+	GrokClaudeMCPsVar  = "GROK_CLAUDE_MCPS_ENABLED"
+	GrokClaudeHooksVar = "GROK_CLAUDE_HOOKS_ENABLED"
+	GrokCursorMCPsVar  = "GROK_CURSOR_MCPS_ENABLED"
+	GrokCursorHooksVar = "GROK_CURSOR_HOOKS_ENABLED"
+)
+
 // RuntimeLineEnv renders rt.LineEnv as shell assignments, each value quoted,
 // for the same prefix RuntimeHomePin goes in. An assignment after that pin's
 // `/usr/bin/env -u X` is an env NAME=VALUE operand, which sets it the same

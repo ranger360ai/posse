@@ -714,10 +714,13 @@ type Runtime struct {
 	// lever that reads as connected and is not (ADR 0017 §1).
 	HomeVar string
 	// LineEnv is fixed NAME=VALUE pairs typed onto every launch line of this
-	// runtime, beside the home pin (RuntimeLineEnv renders them). grok's
-	// GROK_DISABLE_AUTOUPDATER=1 is the only one today (ranger-base-6ob20):
-	// a seat has no business updating the operator's grok install, whose
-	// bin/ its wall now carves read-only anyway. Built-in only, like HomeVar.
+	// runtime, beside the home pin (RuntimeLineEnv renders them). grok is the
+	// only runtime with any today: GROK_DISABLE_AUTOUPDATER=1
+	// (ranger-base-6ob20), because a seat has no business updating the
+	// operator's grok install, whose bin/ its wall now carves read-only
+	// anyway; and its compat layer's MCP and hook readers of claude's and
+	// cursor's files, off (ranger-base-ksa79, ADR 0090 D3). Built-in only,
+	// like HomeVar.
 	LineEnv []string
 	// EnvRequired are the environment variable NAMES a session on this
 	// runtime cannot work without — the Bedrock/Vertex shape, where the CLI
@@ -2588,8 +2591,13 @@ var builtinRuntimes = []Runtime{
 		HomeVar: GrokHomeVar,
 		// line env: grok's own documented switch for its updater
 		// (docs/user-guide/14-headless-mode.md, grok 1.0.77), so no seat
-		// relaunches anyone onto a build it fetched (ranger-base-6ob20).
-		LineEnv: []string{GrokDisableAutoUpdaterVar + "=1"},
+		// relaunches anyone onto a build it fetched (ranger-base-6ob20). And
+		// the compat layer's four command-bearing readers of claude's and
+		// cursor's files, off (ADR 0090 D3, ranger-base-ksa79; the
+		// measurement is beside the constants in runtimehome.go).
+		LineEnv: []string{GrokDisableAutoUpdaterVar + "=1",
+			GrokClaudeMCPsVar + "=0", GrokClaudeHooksVar + "=0",
+			GrokCursorMCPsVar + "=0", GrokCursorHooksVar + "=0"},
 		// project_config: the repo→box channel that was UNDECLARED here
 		// until ranger-base-l12j9 — eight entries and claude's two keys,
 		// MEASURED on grok 1.0.52 (0920c8169e27) on 2026-10-31. The list,

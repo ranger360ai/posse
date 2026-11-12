@@ -10,6 +10,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 - [ranger-base-vxir7](ranger-base-vxir7.md) — The CLI-home fence, derived from the resolvers and checked by asking them (ranger-base-vxir7) — 2026-11-12
 - [ranger-base-pn99n](ranger-base-pn99n.md) — ranger-base-pn99n — the ARGV half of the fixture-git census, and what it does not cover — 2026-11-12
+- [ranger-base-ksa79](ranger-base-ksa79.md) — grok's compat layer is a reader of claude's and cursor's MCP servers and hooks, switched off on the line (ranger-base-ksa79) — 2026-11-12
 - [ranger-base-6ob20](ranger-base-6ob20.md) — The rest of codex's and grok's CLI-written home members, carved or private (ranger-base-6ob20) — 2026-11-12
 - [ranger-base-3spp4](ranger-base-3spp4.md) — A credential token is a type that cannot be printed (ranger-base-3spp4) — 2026-11-12
 - [ranger-base-1c91x](ranger-base-1c91x.md) — A launcher TMPDIR outside /tmp leaves the bwrap write set too (ranger-base-1c91x) — 2026-11-12

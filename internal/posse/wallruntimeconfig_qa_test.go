@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 type wrcFixture struct {
@@ -645,8 +646,9 @@ func TestLiveWallRuntimeConfigCodexRunsWithEphemeralDirsReadOnly(t *testing.T) {
 func TestQAWallRuntimeConfigGrokLineDisablesTheUpdater(t *testing.T) {
 	t.Parallel()
 	want := GrokDisableAutoUpdaterVar + "='1' "
-	if got := RuntimeLineEnv(builtinRuntime(t, "grok")); got != want {
-		t.Errorf("grok's line env %q, want %q (ranger-base-6ob20)", got, want)
+	compat := GrokClaudeMCPsVar + "='0' " + GrokClaudeHooksVar + "='0' " + GrokCursorMCPsVar + "='0' " + GrokCursorHooksVar + "='0' "
+	if got := RuntimeLineEnv(builtinRuntime(t, "grok")); got != want+compat {
+		t.Errorf("grok's line env %q, want %q (ranger-base-6ob20, ranger-base-ksa79)", got, want+compat)
 	}
 	for _, name := range []string{"claude", "codex"} {
 		if got := RuntimeLineEnv(builtinRuntime(t, name)); got != "" {
@@ -665,5 +667,86 @@ func TestQAWallRuntimeConfigGrokLineDisablesTheUpdater(t *testing.T) {
 	}
 	if out, _ := exec.Command("sh", "-c", wrapped).CombinedOutput(); !strings.Contains(string(out), "v=1") {
 		t.Errorf("the variable did not reach the command: %s", out)
+	}
+}
+
+// ranger-base-ksa79, ADR 0090 D3: grok's harness-compatibility layer starts
+// claude's MCP servers ($HOME/.claude.json) and hooks (~/.claude/settings.json)
+// and cursor's MCP servers (~/.cursor/mcp.json), every cell on by default.
+// posse's rendered grok line switches those readers off. Live, against a local
+// fake endpoint, no turn billed: the line WrapWithGates types starts none of
+// the planted commands, and the same line without RuntimeLineEnv — the control
+// — starts them, which is what reds this pin if a grok release moves or
+// renames the switches.
+func TestLiveGrokLineStartsNoCompatMCPOrHook(t *testing.T) {
+	t.Parallel()
+	bin := wrcRealBinary("grok")
+	if bin == "" {
+		t.Skip("NOTHING MEASURED: grok does not resolve to a binary on this host")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(wrcFakeModel))
+	defer srv.Close()
+	rt := builtinRuntime(t, "grok")
+	a := &App{Home: t.TempDir(), StateDir: t.TempDir()}
+	wrapped, _, _, err := a.WrapWithGates("ksa79-line", rt, nil, t.TempDir(),
+		bin+" --permission-mode auto -m fake -p hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := RuntimeLineEnv(rt)
+	if !strings.Contains(wrapped, env) {
+		t.Fatalf("the wrapped grok line does not carry its line env %q: %q", env, wrapped)
+	}
+	run := func(arm, line string) []string {
+		home, marks := t.TempDir(), t.TempDir()
+		write := func(rel, body string) {
+			p := filepath.Join(home, rel)
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write(".grok/config.toml", fmt.Sprintf(
+			"[models]\ndefault = \"fake\"\n\n[model.fake]\nmodel = \"fake\"\nbase_url = %q\nenv_key = \"FAKE_KEY\"\napi_backend = \"chat_completions\"\n",
+			srv.URL+"/v1"))
+		server := func(m string) string {
+			return fmt.Sprintf(`{"command":"/bin/sh","args":["-c","touch %s; sleep 3"]}`, filepath.Join(marks, m))
+		}
+		write(".claude.json", `{"mcpServers":{"plant":`+server("claude-mcp")+`}}`)
+		write(".cursor/mcp.json", `{"mcpServers":{"cplant":`+server("cursor-mcp")+`}}`)
+		hook := func(m string) string {
+			return fmt.Sprintf(`[{"hooks":[{"type":"command","command":"touch %s"}]}]`, filepath.Join(marks, m))
+		}
+		write(".claude/settings.json", `{"hooks":{"SessionStart":`+hook("claude-sessionstart")+
+			`,"UserPromptSubmit":`+hook("claude-promptsubmit")+`,"Stop":`+hook("claude-stop")+`}}`)
+		work := filepath.Join(home, "work")
+		if err := os.MkdirAll(work, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", line)
+		cmd.Dir = work
+		cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + home, "FAKE_KEY=sk-dummy"}
+		out, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(string(out), wrcReply) {
+			t.Fatalf("%s arm: grok did not complete a turn: %v\n%s", arm, err, out)
+		}
+		// An MCP server is started asynchronously; give it the moment its
+		// touch needs before reading the markers.
+		time.Sleep(time.Second)
+		ents, _ := os.ReadDir(marks)
+		var got []string
+		for _, e := range ents {
+			got = append(got, e.Name())
+		}
+		t.Logf("%s arm: started %v", arm, got)
+		return got
+	}
+	if got := run("control", strings.Replace(wrapped, env, "", 1)); len(got) < 5 {
+		t.Errorf("control arm (the line without its line env) started %v, want claude's MCP server, its three hooks and cursor's MCP server: a grok release moved these readers, so this pin no longer proves the switches work", got)
+	}
+	if got := run("posse", wrapped); len(got) != 0 {
+		t.Errorf("posse's rendered grok line started %v: a compat-layer MCP server or hook ran (ADR 0090 D3, ranger-base-ksa79)", got)
 	}
 }
