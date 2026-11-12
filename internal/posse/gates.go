@@ -5731,6 +5731,21 @@ the same path is refused exactly as before.`) +
 // message-shaped as an identity literal, and a second call to messageArm
 // would render a second copy of the reader below — one hook, one reference
 // reader, every source that scans the message judging the SAME read of it.
+//
+// THE BANNER'S FIRST LINE IS A LANDMARK four pins locate this arm by, and
+// renaming it is therefore a four-file edit (ranger-base-zby5f, which is
+// what the rename below cost): TestQACheckThreeMessageArmRenders,
+// TestQACheckThreeMessageArmIsSeenIdenticallyByTheL3Probe (both arm 3,
+// checkthreemessage_qa_test.go), TestQACeilingBannerDoesNotDenyCheckThrees-
+// MessageArm (arm 3, ceilingarmclaim_qa_test.go) and
+// TestQADataCeilingRendersAboveTheGateUnderEveryStamp (arm 3,
+// dataceiling_qa_test.go), the last of which asserts check 3's RETIRED
+// wording — "third arm: the commit MESSAGE", still the ceiling's own — is
+// absent from a render with nothing configured. That is why this head says
+// "check 3 (+ check 4, same reader)" and not "check 3, third arm": check 4
+// is unconditional, so this banner renders even when check 3 derives and
+// configures nothing, and the old spelling would have made that absence
+// assertion unsatisfiable.
 var checkThreeMessageHead = "\n" + shComment("  ", `─── check 3 (+ check 4, same reader): the commit MESSAGE ───────────────
 "$1" is the message file git is about to take — the same file the ceiling
 above and the shared-index arm below already read, through the same

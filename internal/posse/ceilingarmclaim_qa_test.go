@@ -39,6 +39,14 @@ import (
 // block renders at all — and reads its prose two ways: the false claim is
 // absent, and both message arms are present. Either arm alone would pass
 // over an empty render.
+//
+// THE CONTROL'S LANDMARK IS CHECK 3'S BANNER, so it moves when that banner
+// does: ranger-base-ihp7y shared the arm with check 4 and renamed the head
+// to "check 3 (+ check 4, same reader)", and this control went on looking
+// for "check 3, third arm" from e5b3d160 until ranger-base-zby5f —
+// reporting, correctly, that the absence assertion above measured nothing.
+// checkThreeMessageHead's comment names every pin that locates the arm
+// this way.
 func TestQACeilingBannerDoesNotDenyCheckThreesMessageArm(t *testing.T) {
 	t.Parallel()
 	render := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{
@@ -69,7 +77,7 @@ func TestQACeilingBannerDoesNotDenyCheckThreesMessageArm(t *testing.T) {
 	// above is a swept claim and not an empty hook.
 	for _, banner := range []string{
 		"the data ceiling, third arm: the commit message",
-		"check 3, third arm: the commit message",
+		"check 3 (+ check 4, same reader): the commit message",
 	} {
 		if !strings.Contains(flat, banner) {
 			t.Errorf("control: the rendered hook is missing %q, so the absence assertion above measured nothing", banner)

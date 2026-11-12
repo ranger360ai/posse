@@ -703,8 +703,54 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 	notPathLookups := map[string]bool{
 		// git is what RUNS the hooks; deliberately absent from HOOK_DEPS.
 		"git": true,
+		// posse is THIS REPO'S OWN binary, and it is deliberately absent
+		// from HOOK_DEPS too (ranger-base-zby5f, over check 4's judge:
+		// gates.go's vulnPrivateChecks pipes the staged markdown or the
+		// commit message through `posse gates vuln-private-scan`). HOOK_DEPS
+		// is the list the clean-room probe looks for in a DISTRO IMAGE, and
+		// no distro ships posse — so naming it there would report every
+		// distro MISSING it forever: a finding nobody can act on, in the
+		// one list whose whole job is to produce findings, drowning the
+		// ones it exists to make. The hook already answers its own absence:
+		// every call sits behind `command -v posse`, and a box without the
+		// binary skips the arm (the same fail-open answer as an unreachable
+		// bd — vulnPrivateChecks' comment, and ADR 0068's lockout lesson),
+		// so a distro without posse is not a distro the hooks break on.
+		// That guard is this exemption's premise and it is MEASURED below,
+		// not asserted here.
+		"posse": true,
 		// hook files in the dispatcher's own dir, reached as "$d/<name>".
 		neighbour: true, "posse-prepare-commit-msg": true,
+	}
+
+	// THE PREMISE, MEASURED: one PATH-lookup test per call to the binary.
+	// Counted over the RENDER and not through shellCommandWords, which
+	// returns each name once at its first occurrence — here that is the
+	// `command -v posse` test itself (`command -v` leaves the name in a
+	// command position), so the scanner can say THAT the binary is named
+	// and never how often it is run.
+	//
+	// So the call is counted by its rendered shape, the pipeline that feeds
+	// it (`| posse <verb>`, check 4's judge at its content arm and its
+	// message arm). A call written in another shape counts zero here and
+	// reds this on purpose: the exemption above is the reason to come and
+	// read this, and an unguarded call is the thing it must not cover.
+	//
+	// MUTATION-CHECKED (go test -overlay, tree untouched, 2026-11-12): the
+	// guard replaced by `if true` reds this with 2 runs behind 0 tests; the
+	// judge reached without its pipeline reds it with 0 runs behind 2 tests
+	// — the two directions told apart, and neither is a shape the census
+	// below can see, since `posse` is exempt from it by name.
+	const posseLookup = "command -v posse >/dev/null 2>&1"
+	for _, name := range sortedKeys(rendered) {
+		runs := strings.Count(rendered[name], "| posse ")
+		if guards := strings.Count(rendered[name], posseLookup); guards != runs {
+			t.Errorf("%s: %d run(s) of the posse binary (`| posse <verb>`) behind %d `%s` test(s). "+
+				"HOOK_DEPS deliberately does not name `posse` — see the exemption above — and that "+
+				"holds only while every call fails open on its own. Guard the call; if it is written "+
+				"in a shape this count cannot see, count that shape here too.",
+				name, runs, guards, posseLookup)
+		}
 	}
 
 	called, blind := hookCensus(rendered, notPathLookups)

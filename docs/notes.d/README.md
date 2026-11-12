@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-zby5f](ranger-base-zby5f.md) — Two reds from one landing: a dependency no distro has, and a landmark that moved (ranger-base-zby5f) — 2026-11-12
 - [ranger-base-vxir7](ranger-base-vxir7.md) — The CLI-home fence, derived from the resolvers and checked by asking them (ranger-base-vxir7) — 2026-11-12
 - [ranger-base-pn99n](ranger-base-pn99n.md) — ranger-base-pn99n — the ARGV half of the fixture-git census, and what it does not cover — 2026-11-12
 - [ranger-base-m3fl5](ranger-base-m3fl5.md) — A cleanup trap that owned nothing, because the pick ran in a subshell (ranger-base-m3fl5) — 2026-11-12

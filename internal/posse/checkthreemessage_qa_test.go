@@ -334,11 +334,23 @@ func TestQAIdentityGuardMessageRefusalLeavesTheMessageAndOverrides(t *testing.T)
 // PIN (s): the render. Both sources carry each posse_check call THREE times
 // — content, path, message — the arm sorts after the path arm and inside
 // the gate, the ceiling's message arm sorts BEFORE the gate line, and an
-// empty identity with an empty pattern list renders no arm at all.
+// empty identity with an empty pattern list renders no check-3 arm at all.
+//
+// THE LANDMARK IS THE BANNER THIS ARM RENDERS, and it moved once already
+// (ranger-base-zby5f): ranger-base-ihp7y shared the arm with check 4 and
+// renamed the head from "check 3, third arm" to "check 3 (+ check 4, same
+// reader)" — deliberately, because check 4 is unconditional and
+// dataceiling_qa_test.go asserts "third arm: the commit MESSAGE" ABSENT
+// from a render with nothing configured. This pin, the L3 pin below and
+// TestQACeilingBannerDoesNotDenyCheckThreesMessageArm locate the arm by
+// that banner and were left on the old spelling from e5b3d160 until
+// ranger-base-zby5f, so checkThreeMessageHead's own comment now names
+// every pin that locates the arm this way.
 //
 // MUTATION-CHECKED: the arm removed reds the counts and the order; the arm
 // rendered above the gate reds the gate assertion (and PIN (m)'s private
-// control); an arm rendered for an empty check 3 reds the last block.
+// control); a check-3 arm rendered for an empty check 3, or check 4's
+// message arm made conditional on check 3, reds the last block.
 func TestQACheckThreeMessageArmRenders(t *testing.T) {
 	t.Parallel() // renders and reads strings; no repo, no env (ranger-base-pj87l)
 	extra := []OpsPattern{{Class: qaInstanceClass, ERE: qaInstanceERE}}
@@ -351,7 +363,7 @@ func TestQACheckThreeMessageArmRenders(t *testing.T) {
 	// names did (ranger-base-cdxpf); the landmark is its stable head.
 	content := strings.Index(hook, "─── check 3: identity literals")
 	path := strings.Index(hook, "check 3, second arm: the same patterns over ADDED staged PATHS")
-	message := strings.Index(hook, "check 3, third arm: the commit MESSAGE")
+	message := strings.Index(hook, "check 3 (+ check 4, same reader): the commit MESSAGE")
 	ceilingMsg := strings.Index(hook, "the data ceiling, third arm: the commit MESSAGE")
 	if gate < 0 || content < 0 || path < 0 || message < 0 || ceilingMsg < 0 {
 		t.Fatalf("a landmark is missing (gate=%d content=%d path=%d message=%d ceilingMsg=%d)", gate, content, path, message, ceilingMsg)
@@ -396,11 +408,28 @@ func TestQACheckThreeMessageArmRenders(t *testing.T) {
 		}
 	}
 
-	// Nothing derived and nothing configured is still nothing — the message
-	// arm included: a box with neither pays for no read of the message file.
+	// Nothing derived and nothing configured renders none of CHECK 3 — but
+	// the shared message READER still renders, and that is check 4's
+	// (ranger-base-ihp7y): an open vuln-private bead is a live fact about
+	// this repo, not a derived literal or a configured pattern, so check 4
+	// is unconditional and reuses this arm's reader rather than opening a
+	// second one. What an empty check 3 must cost is check 3's own three
+	// arms, not the reader they share; the other half — that the reader is
+	// there for check 4 with nothing configured at all — is pinned by
+	// TestQADataCeilingRendersAboveTheGateUnderEveryStamp.
 	bare := qaNoHome.CommitGuardHook(VisibilityPublic, OpsPatternSet{})
-	if strings.Contains(bare, "check 3, third arm") || strings.Contains(bare, `posse_msg=$(cat "$1"`) {
-		t.Error("an empty check 3 and an empty ceiling must render no message arm at all")
+	for _, never := range []string{
+		"─── check 3: identity literals",
+		"check 3, second arm: the same patterns over ADDED staged PATHS",
+		"an operator identity literal in the commit MESSAGE",
+		identityScanLabel,
+	} {
+		if strings.Contains(bare, never) {
+			t.Errorf("an empty check 3 and an empty ceiling must render no check-3 arm, got %q", never)
+		}
+	}
+	if !strings.Contains(bare, `posse_msg=$(cat "$1"`) {
+		t.Error("check 4's message arm is unconditional, so the reader it shares with check 3 must render even when check 3 is empty")
 	}
 }
 
@@ -417,7 +446,7 @@ func TestQACheckThreeMessageArmIsSeenIdenticallyByTheL3Probe(t *testing.T) {
 	if p := a.probeL3Hooks(w.pub, false); !p.CommitGuard {
 		t.Errorf("L3 must vouch for the hook it just stamped: %s", p.CommitGuardDegraded)
 	}
-	if !strings.Contains(qaHookFile(t, w.pub), "check 3, third arm: the commit MESSAGE") {
+	if !strings.Contains(qaHookFile(t, w.pub), "check 3 (+ check 4, same reader): the commit MESSAGE") {
 		t.Error("the stamped hook does not carry check 3's commit-message arm")
 	}
 	vis, _ := a.BeadsVisibility(w.pub)
