@@ -97,15 +97,17 @@ func bwrapSeatTmp(home, cwd string) string {
 }
 
 // bwrapDropTmpGrants takes out of a bwrap write set what the private /tmp
-// replaces: /tmp itself, and a TMPDIR that lies under it. The launcher's
-// TMPDIR is granted as a host path (SeatbeltWritable), and a host path under
-// /tmp bound back on top of the seat's /tmp is the shared directory again —
-// so the seat gets TMPDIR=/tmp instead (bwrapRender), which is its own.
-// A grant under /tmp that is NOT the TMPDIR is a named directory (a PID's
-// `writable:` extra) and stays.
+// replaces: /tmp itself, and the launcher's TMPDIR WHEREVER it lies. That
+// TMPDIR is granted as a host path (SeatbeltWritable) and is one directory
+// every seat on the box shares; the seat is handed TMPDIR=/tmp instead
+// (bwrapRender), which is its own. Under /tmp, the grant would bind the
+// shared dir back on top of the seat's /tmp; anywhere else (a TMPDIR under
+// the home) it was a second shared temp dir nothing in the seat is pointed
+// at any more (ranger-base-1c91x). A grant under /tmp that is NOT the
+// TMPDIR is a named directory (a PID's `writable:` extra) and stays.
 func bwrapDropTmpGrants(set []string, tmpdir string) []string {
 	drop := map[string]bool{bwrapTmpMount: true}
-	if tmpdir != "" && underDir(bwrapTmpMount, tmpdir) {
+	if tmpdir != "" {
 		drop[absResolve(tmpdir)] = true
 	}
 	var out []string

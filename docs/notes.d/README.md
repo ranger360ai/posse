@@ -12,6 +12,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-pn99n](ranger-base-pn99n.md) — ranger-base-pn99n — the ARGV half of the fixture-git census, and what it does not cover — 2026-11-12
 - [ranger-base-6ob20](ranger-base-6ob20.md) — The rest of codex's and grok's CLI-written home members, carved or private (ranger-base-6ob20) — 2026-11-12
 - [ranger-base-3spp4](ranger-base-3spp4.md) — A credential token is a type that cannot be printed (ranger-base-3spp4) — 2026-11-12
+- [ranger-base-1c91x](ranger-base-1c91x.md) — A launcher TMPDIR outside /tmp leaves the bwrap write set too (ranger-base-1c91x) — 2026-11-12
 - [ranger-base-zvgql](ranger-base-zvgql.md) — codex's and grok's other executable home members, read-only in a caged seat (ranger-base-zvgql) — 2026-11-11
 - [ranger-base-zmk4q](ranger-base-zmk4q.md) — codex's and grok's config.toml, read-only in a caged seat (ranger-base-zmk4q) — 2026-11-11
 - [ranger-base-zibko](ranger-base-zibko.md) — The red that was a commit old, and the test that seeds the shared home (ranger-base-zibko) — 2026-11-11

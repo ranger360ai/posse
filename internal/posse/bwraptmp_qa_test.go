@@ -104,9 +104,61 @@ func TestBwrapDropTmpGrantsTakesTmpAndATmpdirUnderIt(t *testing.T) {
 	if got != "/home/h/src/repo /tmp/named-extra" {
 		t.Fatalf("bwrapDropTmpGrants = %q", got)
 	}
-	got = strings.Join(bwrapDropTmpGrants(set, "/home/h/tmp"), " ")
-	if got != "/home/h/src/repo /tmp/launcher-tmp /tmp/named-extra" {
-		t.Fatalf("a TMPDIR outside /tmp drops only /tmp itself: %q", got)
+}
+
+// ranger-base-1c91x: a launcher TMPDIR OUTSIDE /tmp is a shared host dir
+// too, and the seat is already handed TMPDIR=/tmp, so it goes as well. Only
+// it: the seat's own tree beside it, and a sibling with the TMPDIR as a name
+// prefix, stay.
+func TestBwrapDropTmpGrantsTakesATmpdirOutsideTmp(t *testing.T) {
+	t.Parallel()
+	set := []string{"/home/h/src/repo", "/tmp", "/home/h/tmp", "/home/h/tmp-named", "/tmp/named-extra"}
+	got := strings.Join(bwrapDropTmpGrants(set, "/home/h/tmp"), " ")
+	if got != "/home/h/src/repo /home/h/tmp-named /tmp/named-extra" {
+		t.Fatalf("a TMPDIR outside /tmp must leave the set too: %q", got)
+	}
+	got = strings.Join(bwrapDropTmpGrants(set, ""), " ")
+	if got != "/home/h/src/repo /home/h/tmp /home/h/tmp-named /tmp/named-extra" {
+		t.Fatalf("no TMPDIR drops /tmp itself and nothing else: %q", got)
+	}
+}
+
+// The same at the render: a launcher TMPDIR under a fixture home, a session
+// outside /tmp, and the rendered write set and argv carry no grant of it —
+// while the seat's /tmp and TMPDIR=/tmp are what it gets instead.
+func TestQABwrapRenderGrantsNoLauncherTmpdirOutsideTmp(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME, TMPDIR and the CLI home variables.
+	f := wrcFixtureIn(t, wallUngrantedDir(t))
+	launcherTmp := filepath.Join(f.home, "launcher-tmp")
+	if err := os.MkdirAll(launcherTmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", launcherTmp)
+	// The control: the write set the wall started from DOES carry it, so the
+	// arm below measures the drop and not a grant that was never there.
+	lt := absResolve(launcherTmp)
+	if w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, "~/.codex"); !containsString(w, lt) {
+		t.Fatalf("control: SeatbeltWritable does not grant the launcher TMPDIR %s, so this pin measures nothing: %v", lt, w)
+	}
+
+	r, err := f.a.bwrapRender(f.ag, wrcRuntime("codex"), f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Carve.Tmp == "" {
+		t.Fatalf("no seat tmp for a session outside /tmp (home %s)", f.home)
+	}
+	for _, p := range r.Set {
+		if absResolve(p) == lt {
+			t.Errorf("the launcher TMPDIR %s is still in the write set %v", launcherTmp, r.Set)
+		}
+	}
+	line := bwJoin(r.Argv)
+	if strings.Contains(line, " "+launcherTmp+" ") || strings.Contains(line, " "+lt+" ") {
+		t.Errorf("the launcher TMPDIR %s reaches the argv:\n  %s", launcherTmp, line)
+	}
+	if !strings.Contains(line, "--setenv TMPDIR "+bwrapTmpMount) {
+		t.Errorf("the seat is not handed TMPDIR=%s:\n  %s", bwrapTmpMount, line)
 	}
 }
 
