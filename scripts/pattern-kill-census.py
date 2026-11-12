@@ -131,6 +131,7 @@ import json
 import os
 import random
 import re
+import shutil
 import sys
 import tempfile
 import warnings
@@ -138,6 +139,21 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
+
+# The one directory --self-test plants its fixture transcripts in, and it
+# begins "posse-" for the half the try/finally below cannot cover
+# (ranger-base-4dw7b). The finally removes the root on every exit this process
+# chooses, an uncaught exception included; it does not run when python3 is
+# SIGKILLed, and this box kills things. What collects THAT run's root is
+# scripts/reap-test-tmp.sh, whose posse-scratch class is the glob `posse-*` at
+# a 120m grace, so a root inside posse's own temp namespace is collectable by
+# construction and a root outside it is reapable only for as long as someone
+# keeps a dead name in that script's class table. The old prefix was
+# `pkcensus-selftest.`, which matched no class at all until ranger-base-q0yxp
+# added one to drain the backlog: MEASURED 2026-11-12 on this box, 157 roots on
+# /tmp — 5.6M, but it was the 1,048,576-inode ceiling and not the 14G that /tmp
+# hit at 100% on 2026-11-11 (ranger-base-w5z7u, ranger-base-l23nb).
+SELFTEST_DIR_PREFIX = "posse-pkcensus-selftest."
 PAIR_CAP = timedelta(hours=6)          # a resumed session must not invent hours
 MIN_RUN_SECONDS = 60                   # below this the null swamps the signal
 DEFAULT_WINDOW = 10.0                  # seconds after a kill that count as a hit
@@ -708,7 +724,35 @@ def self_test():
           "the suite subset admits the suite script and excludes `killall yes`")
 
     # --- end-to-end arms over planted transcripts --------------------------
-    root = tempfile.mkdtemp(prefix="pkcensus-selftest.")
+    # The arms are a function of their own so that this root has a remover
+    # that is not a comment: the fixtures are planted ONCE for every arm below
+    # and therefore outlive each of them, which is why there was no remover at
+    # all until ranger-base-4dw7b and why one run of `make test` left one root
+    # behind. A removal that FAILS is a BAD arm rather than a silent return —
+    # nothing else on this box ever looks at this root, so a dropped error
+    # here is how the leak comes back quietly — and it is raised through
+    # `check` rather than as an exception so that it cannot mask the body's.
+    root = tempfile.mkdtemp(prefix=SELFTEST_DIR_PREFIX)
+    check(os.path.basename(root).startswith("posse-"),
+          f"the fixture root {root} is inside posse's own temp namespace, so "
+          f"scripts/reap-test-tmp.sh can collect a run that is killed before "
+          f"the removal below (its posse-scratch class is the glob `posse-*`; "
+          f"the old `pkcensus-selftest.` name matched no class at all). "
+          f"Asserted over the root that was CREATED, not over "
+          f"SELFTEST_DIR_PREFIX, so handing mkdtemp another literal reds here")
+    try:
+        _endtoend_arms(root, check)
+    finally:
+        try:
+            shutil.rmtree(root)
+        except OSError as err:
+            check(False, f"removing the fixture root {root}: {err}")
+
+    print(f"\n{ok} ok, {fail} bad")
+    return 1 if fail else 0
+
+
+def _endtoend_arms(root, check):
     day = "2026-09-01T%s.000Z"
     # victim A: a FOREGROUND suite, 300s, ending 2s after the kill
     _write(os.path.join(root, "proj-victim-a", "sess-a.jsonl"), [
@@ -830,9 +874,6 @@ def self_test():
     check(sum(null) == 0,
           "on a fixture with two runs and one kill the null scores 0, so the "
           "observed 1 is not something any displacement would have produced")
-
-    print(f"\n{ok} ok, {fail} bad")
-    return 1 if fail else 0
 
 
 def main(argv=None):

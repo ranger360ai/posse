@@ -141,30 +141,47 @@
 #                                                grace as go-build: the dir
 #                                                held one `go build` of the
 #                                                same shape.
-#   testparallel-   testparallel-        120m    cmd/testparallel's own
-#    selftest          selftest*                 self-test fixture: one
+#   testparallel-   testparallel-        120m    cmd/testparallel's OLD
+#    selftest          selftest*                 self-test fixture name,
+#                                                 pre-ranger-base-4dw7b: one
 #                                                 os.MkdirTemp per test binary
-#                                                 (sync.Once), no remover
-#                                                 (ranger-base-4dw7b, open),
+#                                                 (sync.Once) and no remover,
 #                                                 holding a built
 #                                                 `testparallel` binary a
 #                                                 RUNNING test execs — the
 #                                                 scan sees it exactly the way
 #                                                 go-build's does. Same bound.
+#                                                 That fix gave it a TestMain
+#                                                 remover and renamed every
+#                                                 FUTURE one into posse-
+#                                                 testparallel-selftest-*,
+#                                                 which posse-scratch already
+#                                                 covers, so this class now
+#                                                 exists only to drain the
+#                                                 pre-fix backlog under a dead
+#                                                 name (115 dirs, 365M,
+#                                                 MEASURED 2026-11-12) —
+#                                                 nothing on this box creates
+#                                                 this name again.
 #   pkcensus-       pkcensus-            120m    scripts/pattern-kill-
-#    selftest           selftest.*                census.py --self-test's own
-#                                                  fixture root (ranger-base-
-#                                                  4dw7b, open): a few planted
-#                                                  transcripts, no build, no
-#                                                  long-running exec. No
-#                                                  -timeout bounds it either,
-#                                                  since it is a plain python3
-#                                                  invocation and not a `go
-#                                                  test` arm, so it takes the
-#                                                  same 120m the owned classes
-#                                                  above use rather than a
-#                                                  number argued from a run
-#                                                  that does not exist.
+#    selftest           selftest.*                census.py --self-test's OLD
+#                                                  fixture-root name, ditto
+#                                                  (ranger-base-4dw7b: a
+#                                                  try/finally remover, and
+#                                                  the name moved to posse-
+#                                                  pkcensus-selftest.*). A few
+#                                                  planted transcripts, no
+#                                                  build, no long-running
+#                                                  exec. No -timeout bounds it
+#                                                  either, since it is a plain
+#                                                  python3 invocation and not
+#                                                  a `go test` arm, so it
+#                                                  takes the same 120m the
+#                                                  owned classes above use
+#                                                  rather than a number argued
+#                                                  from a run that does not
+#                                                  exist. Backlog: 157 dirs,
+#                                                  5.6M, MEASURED 2026-11-12.
 #   claude-scratch  claude-<uid>/        1440m    the harness's PER-SESSION
 #                     <slug>/<uuid>               scratchpad, two levels down
 #                                                 from a root we do not own, and

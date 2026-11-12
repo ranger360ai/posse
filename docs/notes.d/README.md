@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-ksa79](ranger-base-ksa79.md) — grok's compat layer is a reader of claude's and cursor's MCP servers and hooks, switched off on the line (ranger-base-ksa79) — 2026-11-12
 - [ranger-base-ghhgb](ranger-base-ghhgb.md) — ranger-base-ghhgb — the nudge that outlived the execve, and the signal that cannot — 2026-11-12
 - [ranger-base-6ob20](ranger-base-6ob20.md) — The rest of codex's and grok's CLI-written home members, carved or private (ranger-base-6ob20) — 2026-11-12
+- [ranger-base-4dw7b](ranger-base-4dw7b.md) — The same fixture-root leak at its two remaining sites, in Go and in Python (ranger-base-4dw7b) — 2026-11-12
 - [ranger-base-3spp4](ranger-base-3spp4.md) — A credential token is a type that cannot be printed (ranger-base-3spp4) — 2026-11-12
 - [ranger-base-1c91x](ranger-base-1c91x.md) — A launcher TMPDIR outside /tmp leaves the bwrap write set too (ranger-base-1c91x) — 2026-11-12
 - [ranger-base-zvgql](ranger-base-zvgql.md) — codex's and grok's other executable home members, read-only in a caged seat (ranger-base-zvgql) — 2026-11-11

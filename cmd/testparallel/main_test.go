@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,9 +29,67 @@ import (
 
 var (
 	buildOnce sync.Once
+	toolDir   string
 	toolBin   string
 	buildErr  error
 )
+
+// toolDirPrefix names the one directory these pins build the tool into, and it
+// begins "posse-" for the half TestMain below cannot cover (ranger-base-4dw7b,
+// the shape ranger-base-7hyn8 fixed in cmd/coldexec and this file was the
+// original of). TestMain removes the dir on every exit this binary chooses; it
+// does not run at all when the binary is SIGKILLed or dies on a -timeout
+// panic, and this box kills suites (AGENTS.md, "Ending anything"). What
+// collects THAT run's dir is scripts/reap-test-tmp.sh, whose posse-scratch
+// class is the glob `posse-*` at a 120m grace — 2x the longest -timeout
+// anything here carries — so a root inside posse's own temp namespace is
+// collectable by construction and a root outside it is reapable only for as
+// long as someone keeps a dead name in that script's class table. The old name
+// was `testparallel-selftest`, which matched no class at all until
+// ranger-base-q0yxp added one to drain the backlog: MEASURED 2026-11-12 on
+// this box, 115 of them on /tmp holding 365M, one per run of this package.
+const toolDirPrefix = "posse-testparallel-selftest-"
+
+// TestMain removes the directory tool() builds into. That removal cannot be a
+// t.Cleanup — the build is shared by every test in this binary, under a
+// sync.Once, and therefore outlives each of them, which is why there was no
+// remover at all until ranger-base-4dw7b — and it cannot be a defer, because
+// os.Exit runs none.
+//
+// A removal that fails REDS the package rather than returning quietly: nothing
+// else in the tree ever looks at this dir, so a dropped error here is how this
+// leak comes back silently. The dir holds one binary we built ourselves, under
+// TMPDIR, with no other writer, so a failure is a fact about the filesystem
+// worth a name.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if toolDir != "" {
+		if err := os.RemoveAll(toolDir); err != nil {
+			fmt.Fprintf(os.Stderr, "testparallel pins: removing the tool build dir %s: %v\n", toolDir, err)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}
+	os.Exit(code)
+}
+
+// TestTheToolIsBuiltInsidePossesOwnTempNamespace pins the half of
+// ranger-base-4dw7b's fix that TestMain cannot: the name. TestMain's removal
+// covers every exit this binary chooses, and the reaper's `posse-*` glob covers
+// the ones it does not — a kill, a -timeout panic, a box that goes down
+// mid-run. Rename the dir out of posse's namespace and both halves still look
+// fine: the pins stay green, the dirs stop being collectable, and nobody finds
+// out until /tmp is out of inodes (it was the 1,048,576-inode ceiling, not the
+// 14G, that /tmp hit at 100% on 2026-11-11). Asserted over the dir that was
+// actually created, not over the constant, so handing os.MkdirTemp some other
+// literal reds here too.
+func TestTheToolIsBuiltInsidePossesOwnTempNamespace(t *testing.T) {
+	dir := filepath.Dir(tool(t))
+	if !strings.HasPrefix(filepath.Base(dir), "posse-") {
+		t.Errorf("the tool is built into %s, which scripts/reap-test-tmp.sh covers only by a class row naming that literal: its posse-scratch class is the glob `posse-*` and no other class of its table matches a name of this shape. A run that dies before TestMain's removal therefore leaks this dir for as long as the dead name is kept in that table — MEASURED 2026-11-12, 115 dirs and 365M of them on this box's /tmp under the old `testparallel-selftest` name.", dir)
+	}
+}
 
 // tool builds cmd/testparallel once per test binary and answers the path.
 // `go test` runs a test binary with its own package directory as the working
@@ -38,11 +97,12 @@ var (
 func tool(t *testing.T) string {
 	t.Helper()
 	buildOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "testparallel-selftest")
+		dir, err := os.MkdirTemp("", toolDirPrefix)
 		if err != nil {
 			buildErr = err
 			return
 		}
+		toolDir = dir
 		toolBin = filepath.Join(dir, "testparallel")
 		out, err := exec.Command("go", "build", "-o", toolBin, ".").CombinedOutput()
 		if err != nil {
