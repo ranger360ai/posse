@@ -35,8 +35,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A directory two levels under the worktree root that is NOT a linked git
@@ -45,7 +47,10 @@ import (
 // every other fixture already fails.
 func TestQAWallClaudeProjectsOwnTreeNeedsALinkedWorktreeAndNotJustThePathShape(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
-	f := cpFixtureIn(t, t.TempDir())
+	// gitTempDir and not t.TempDir: this arm runs `git init` itself, for the
+	// standalone-repository impostor, and a bare root under an init is what
+	// TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot refuses.
+	f := cpFixtureIn(t, gitTempDir(t))
 	root, err := f.a.WorktreeRoot()
 	if err != nil {
 		t.Fatal(err)
@@ -235,5 +240,110 @@ func TestLiveWallClaudeProjectsRefusesTheWriteVerbsThePinDoesNotTry(t *testing.T
 		if _, err := os.Lstat(filepath.Join(own, "stolen.jsonl")); err == nil {
 			t.Errorf("%s: a hardlink to a peer transcript exists inside the seat's own key dir on the host", step.name)
 		}
+	}
+}
+
+// D3's PREMISE, as a pin rather than as a scratch rig. The design's third
+// decision — a seat whose cwd is not its own session worktree gets projects/
+// read-only WHOLE — rests on one measurement: that the real claude runs with
+// its transcript dir unwritable instead of dying on it. If it died, D3 would
+// take the `--session-id` exit hatch, and every probe seat and every seat in
+// the shared checkout would be launching a CLI that cannot start.
+//
+// It was MEASURED before the build (ranger-base-ajkqx's step-0 comment, claude
+// 2.1.322) in a rig that lived in a session scratchpad and is gone, so nothing
+// in the tree re-asks it — and it is a claim about the INSTALLED CLI, which
+// moves under us. This arm asks the real binary both ways in one run: under a
+// wall rendered for a cwd that is not the seat's own it ends by itself and
+// leaves projects/ byte-for-byte as it found it, and under the own-cwd wall the
+// same binary in the same minute writes its transcript. The second half is what
+// stops the first from passing over a claude that writes nothing anywhere.
+//
+// Unbilled: a dead loopback endpoint, as the ranger-base-ajkqx live pin uses.
+// NOT re-measured here, and left as the close's own reading: that the run exits
+// 0 and prints an answer, which needs a serving endpoint.
+func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	wrcNeedBwrap(t)
+	bin := wrcRealBinary("claude")
+	if bin == "" {
+		t.Skip("NOTHING MEASURED: no claude binary on this box")
+	}
+	f := cpFixtureIn(t, wallUngrantedDir(t))
+	projects := filepath.Join(f.cfg, "projects")
+
+	run := func(t *testing.T, cwd string) string {
+		t.Helper()
+		r, err := f.a.bwrapRender(f.ag, f.rt, cwd, f.gates)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := runBwrapPrep(r.Prep); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), bin, "-p", "say hi")...)
+		cmd.Dir = cwd
+		cmd.Env = append(os.Environ(), "HOME="+f.home, ClaudeConfigDirVar+"="+f.cfg,
+			"ANTHROPIC_BASE_URL=http://127.0.0.1:1", "ANTHROPIC_API_KEY=sk-dead-9xt70",
+			"DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "CLAUDE_CODE_MAX_RETRIES=0")
+		done := make(chan struct{})
+		var out []byte
+		go func() { out, _ = cmd.CombinedOutput(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(90 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+			t.Fatalf("claude -p under the wall for cwd %s did not end in 90s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out:\n%s", cwd, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	// The premise of the premise: for this cwd projects/ really is read-only
+	// whole, with nothing reopened inside it.
+	if got := f.a.claudeOwnSessionTree(f.main); got != "" {
+		t.Fatalf("the fixture's main checkout is read as the seat's own session worktree (%q), so the run below is not the D3 case", got)
+	}
+	binds := claudeProjectsBinds(f.home, runtimeStateGrants(SeatbeltStateDirs(f.rt)), f.a.claudeOwnSessionTree(f.main))
+	if len(binds) != 1 || !binds[0].ReadOnly {
+		t.Fatalf("projects/ is not read-only whole for the main checkout: %+v", binds)
+	}
+
+	beforeTree := map[string]string{}
+	walk := func() map[string]string {
+		seen := map[string]string{}
+		_ = filepath.Walk(projects, func(p string, fi os.FileInfo, err error) error {
+			if err != nil || fi.IsDir() {
+				return nil
+			}
+			b, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return nil
+			}
+			seen[p] = string(b)
+			return nil
+		})
+		return seen
+	}
+	beforeTree = walk()
+	if len(beforeTree) == 0 {
+		t.Fatal("the fixture planted no file under projects/, so an unchanged tree below proves nothing")
+	}
+
+	out := run(t, f.main)
+	t.Logf("real claude -p with projects/ read-only whole (cwd %s): %s", f.main, out)
+	if after := walk(); !reflect.DeepEqual(after, beforeTree) {
+		t.Errorf("the real claude changed projects/ from a cwd that is not the seat's own session worktree\n before: %v\n after:  %v\n out: %s", beforeTree, after, out)
+	}
+
+	// The control, same binary, same minute: with its own key dir reopened
+	// it does write a transcript. Without this the arm above would pass over
+	// a claude that writes no transcript under any wall at all.
+	own := filepath.Join(projects, claudeProjectDir(absResolve(f.dir)))
+	before, _ := filepath.Glob(filepath.Join(own, "*.jsonl"))
+	ctl := run(t, f.dir)
+	after, _ := filepath.Glob(filepath.Join(own, "*.jsonl"))
+	if len(after) <= len(before) {
+		t.Errorf("the control wrote no transcript in its own key dir %s, so the reading above is not a measurement of the NARROWING\n out: %s", own, ctl)
 	}
 }
