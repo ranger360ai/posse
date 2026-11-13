@@ -73,9 +73,53 @@ import (
 //     in this box's live config dir, so no seat on it has written one.
 //
 // Residual: ranger-base-h5vij. Its caches are claudeManagedCache's.
+//
+// The third part of the list is ranger-base-ka66w's. These are the rest of
+// claude 2.1.322's own sandbox write-deny over the config dir, read from
+// the binary at the block that write-denies `jobs`, `seed-admin`,
+// `cowork_plugins` and `loop.md`, and at its `Qgo` list (todos, statsig,
+// logs, access-audit). What a later claude does with each one (read from
+// the binary's text, NOT exercised):
+//
+//   - cowork_plugins/ is the alternate plugin root (CLAUDE_CODE_USE_COWORK_PLUGINS).
+//     seed-admin/ is the plugin-seed admin dir. claude makes it itself, 0700, when
+//     it sandboxes. Both hold code a later claude loads.
+//   - agent-memory/ is user-scope subagent memory, read into a later
+//     subagent's prompt. agent-memory-local/ is the local-scope one at
+//     `<cwd>/.claude/`, so in the default config dir it belongs to the
+//     HOME project, for the reason scheduled_tasks.json does above.
+//   - jobs/ is background-session state. claude groups it with daemon/ as
+//     something the daemon acts on without asking.
+//   - mcp-skill-archives/ holds skills. mcp-discovery-cache/, shares/,
+//     state/ and the Qgo four are on claude's list. Their readers are
+//     UNMEASURED, so they are carved on claude's word, as routines/ was.
+//
+// None of them exists in this box's live config dir after months of seats
+// (MEASURED 2026-11-12), so no seat has needed to write one.
+//
+// loop.md is the default /loop prompt. claude 2.1.322 reads
+// `<project>/.claude/loop.md`, then `<config>/loop.md`. It trims each one
+// and takes an empty one as "no loop file": the reader returns null when the
+// trimmed length is 0 (read from the binary). seedBody gives a `.md` name an
+// EMPTY seed and never `{}`, so the seed is no prompt. To an uncaged claude,
+// the empty file is the same as the file being absent.
+//
+// It is seeded and not /dev/null-masked like claudeManagedCache. MEASURED
+// 2026-11-12, bwrap 0.13.1: the mask reads as EACCES inside the wall, because
+// bwrap binds nodev. claude's loop reader returns null on a not-found test and
+// on EISDIR, and rethrows anything else (read from the binary). Whether that
+// test admits EACCES is UNMEASURED, so a mask could break a seat's own /loop.
+// Inside the wall the seed reads as empty.
+//
+// Residual: ranger-base-66k22.
 var (
-	claudeExecConfigDirNames  = []string{"agents", "commands", "daemon", "hooks", "output-styles", "plugins", "routines", "rules", "skills", "workflows"}
-	claudeExecConfigFileNames = []string{"CLAUDE.md", "daemon.json", "launch.json", "scheduled_tasks.json", "settings.json", "settings.local.json"}
+	claudeExecConfigDirNames = []string{
+		"access-audit", "agent-memory", "agent-memory-local", "agents", "commands", "cowork_plugins",
+		"daemon", "hooks", "jobs", "logs", "mcp-discovery-cache", "mcp-skill-archives",
+		"output-styles", "plugins", "routines", "rules", "seed-admin", "shares", "skills",
+		"state", "statsig", "todos", "workflows",
+	}
+	claudeExecConfigFileNames = []string{"CLAUDE.md", "daemon.json", "launch.json", "loop.md", "scheduled_tasks.json", "settings.json", "settings.local.json"}
 )
 
 // claudeExecConfig names those members for the config directory a seat on

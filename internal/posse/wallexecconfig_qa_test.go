@@ -163,6 +163,10 @@ func TestQAWallExecConfigCarvesClaudesExecutableConfig(t *testing.T) {
 	declared := []string{
 		"agents", "commands", "daemon", "hooks", "output-styles",
 		"plugins", "routines", "rules", "skills", "workflows",
+		// ranger-base-ka66w, 2026-11-12.
+		"access-audit", "agent-memory", "agent-memory-local", "cowork_plugins",
+		"jobs", "logs", "mcp-discovery-cache", "mcp-skill-archives",
+		"seed-admin", "shares", "state", "statsig", "todos", "loop.md",
 		"CLAUDE.md", "daemon.json", "launch.json", "scheduled_tasks.json",
 		"settings.json", "settings.local.json",
 	}
@@ -203,6 +207,61 @@ func TestQAWallExecConfigCarvesClaudesOwnProtectedMembers(t *testing.T) {
 		if seedBody(n) != "{}\n" {
 			t.Errorf("%s would be seeded %q, not the empty JSON object a reader takes as nothing configured", n, seedBody(n))
 		}
+	}
+}
+
+// ranger-base-ka66w: the rest of claude 2.1.322's own write-deny over its
+// config dir is on the carve's dir list. Hand-typed, so a name taken out of
+// the table reds here. claudeExecConfig's comment says what each one is.
+func TestQAWallExecConfigCarvesTheRestOfClaudesProtectedDirs(t *testing.T) {
+	t.Parallel()
+	for _, n := range []string{
+		"jobs", "seed-admin", "cowork_plugins", "agent-memory", "agent-memory-local",
+		"mcp-skill-archives", "mcp-discovery-cache", "shares", "state",
+		"todos", "statsig", "logs", "access-audit",
+	} {
+		if !containsString(claudeExecConfigDirNames, n) {
+			t.Errorf("%s/ is not carved. claude write-denies it in its own sandbox, and a later claude loads, obeys or acts on what is there (ranger-base-ka66w)", n)
+		}
+	}
+}
+
+// ranger-base-ka66w: loop.md is a /loop prompt. It is a seeded file-shaped
+// deny like the other carved files, and its seed is EMPTY. claude reads an
+// empty loop.md as no loop file, and `{}` would be a prompt. It is not
+// /dev/null-masked, because inside the wall the mask reads as EACCES
+// (claudeExecConfig's comment), and this pin reds if it ever is.
+func TestQAWallExecConfigSeedsClaudesLoopFileEmpty(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f := weFixtureIn(t, wallUngrantedDir(t))
+	if got := seedBody("loop.md"); got != "" {
+		t.Errorf("loop.md would be seeded %q — anything non-empty there is a /loop prompt every claude on the box reads", got)
+	}
+	stateDirs, err := BwrapStateDirs(f.rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, stateDirs...)
+	c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w, stateDirs...)
+	p := filepath.Join(absResolve(f.cfg), "loop.md")
+	if !containsString(c.Deny, p) || !c.FileShaped(p) || !c.Seeded(p) {
+		t.Errorf("%s must be a seeded file-shaped deny: deny=%v seed=%v", p, c.Deny, c.Seed)
+	}
+	if c.Masked(p) {
+		t.Errorf("%s is MASKED — /dev/null reads as EACCES inside the wall, and claude's loop reader may rethrow that", p)
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if argv := strings.Join(r.Argv, "\x00"); !strings.Contains(argv, "\x00--ro-bind\x00"+p+"\x00"+p+"\x00") {
+		t.Errorf("bwrap does not bind %s read-only over itself", p)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(p); err != nil || len(b) != 0 {
+		t.Errorf("the seeded %s is not an empty file: %q %v", p, b, err)
 	}
 }
 
@@ -465,13 +524,30 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		"launch.json append":           "echo x >> " + q(filepath.Join(cfg, "launch.json")),
 		"scheduled_tasks.json append":  "echo x >> " + q(filepath.Join(cfg, "scheduled_tasks.json")),
 		"scheduled_tasks.json replace": "echo '{}' > " + q(filepath.Join(cfg, "t.tmp")) + " && mv " + q(filepath.Join(cfg, "t.tmp")) + " " + q(filepath.Join(cfg, "scheduled_tasks.json")),
-		"launch line append":           "echo x >> " + q(filepath.Join(st, "launch", "peer.sh")),
-		"launch line plant":            ": > " + q(filepath.Join(st, "launch", "other.sh")),
-		"herdr record plant":           ": > " + q(filepath.Join(st, "herdr", "x")),
-		"backup plant":                 ": > " + q(filepath.Join(st, "backup", "x")),
-		"skills tree plant":            ": > " + q(filepath.Join(st, "skills", "x")),
-		"dispatch pid append":          "echo x >> " + q(filepath.Join(st, "dispatch-watch.pid")),
-		"state dir new file":           ": > " + q(filepath.Join(st, "new")),
+		// ranger-base-ka66w: the rest of claude's own write-deny. Each dir
+		// row makes its dir first, for d0rnr's reason above.
+		"access-audit plant":        "mkdir -p " + q(filepath.Join(cfg, "access-audit")) + " && : > " + q(filepath.Join(cfg, "access-audit", "x")),
+		"agent-memory plant":        "mkdir -p " + q(filepath.Join(cfg, "agent-memory")) + " && : > " + q(filepath.Join(cfg, "agent-memory", "x")),
+		"agent-memory-local plant":  "mkdir -p " + q(filepath.Join(cfg, "agent-memory-local")) + " && : > " + q(filepath.Join(cfg, "agent-memory-local", "x")),
+		"cowork_plugins plant":      "mkdir -p " + q(filepath.Join(cfg, "cowork_plugins")) + " && : > " + q(filepath.Join(cfg, "cowork_plugins", "x")),
+		"jobs plant":                "mkdir -p " + q(filepath.Join(cfg, "jobs")) + " && : > " + q(filepath.Join(cfg, "jobs", "x")),
+		"logs plant":                "mkdir -p " + q(filepath.Join(cfg, "logs")) + " && : > " + q(filepath.Join(cfg, "logs", "x")),
+		"mcp-discovery-cache plant": "mkdir -p " + q(filepath.Join(cfg, "mcp-discovery-cache")) + " && : > " + q(filepath.Join(cfg, "mcp-discovery-cache", "x")),
+		"mcp-skill-archives plant":  "mkdir -p " + q(filepath.Join(cfg, "mcp-skill-archives")) + " && : > " + q(filepath.Join(cfg, "mcp-skill-archives", "x")),
+		"seed-admin plant":          "mkdir -p " + q(filepath.Join(cfg, "seed-admin")) + " && : > " + q(filepath.Join(cfg, "seed-admin", "x")),
+		"shares plant":              "mkdir -p " + q(filepath.Join(cfg, "shares")) + " && : > " + q(filepath.Join(cfg, "shares", "x")),
+		"state plant":               "mkdir -p " + q(filepath.Join(cfg, "state")) + " && : > " + q(filepath.Join(cfg, "state", "x")),
+		"statsig plant":             "mkdir -p " + q(filepath.Join(cfg, "statsig")) + " && : > " + q(filepath.Join(cfg, "statsig", "x")),
+		"todos plant":               "mkdir -p " + q(filepath.Join(cfg, "todos")) + " && : > " + q(filepath.Join(cfg, "todos", "x")),
+		"loop.md append":            "echo x >> " + q(filepath.Join(cfg, "loop.md")),
+		"loop.md replace":           "echo x > " + q(filepath.Join(cfg, "l.tmp")) + " && mv " + q(filepath.Join(cfg, "l.tmp")) + " " + q(filepath.Join(cfg, "loop.md")),
+		"launch line append":        "echo x >> " + q(filepath.Join(st, "launch", "peer.sh")),
+		"launch line plant":         ": > " + q(filepath.Join(st, "launch", "other.sh")),
+		"herdr record plant":        ": > " + q(filepath.Join(st, "herdr", "x")),
+		"backup plant":              ": > " + q(filepath.Join(st, "backup", "x")),
+		"skills tree plant":         ": > " + q(filepath.Join(st, "skills", "x")),
+		"dispatch pid append":       "echo x >> " + q(filepath.Join(st, "dispatch-watch.pid")),
+		"state dir new file":        ": > " + q(filepath.Join(st, "new")),
 		// ranger-base-ajkqx: projects/ is read-only but for a seat's own key
 		// dir, and this fixture's cwd is no session worktree, so it has none.
 		// wallclaudeprojects_qa_test.go has the own-key half.
@@ -527,6 +603,12 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		if ok, out := try(script); !ok {
 			t.Errorf("%s: REFUSED under the rendered wall — claude or the seat needs this write\n script: %s\n out: %s", name, script, out)
 		}
+	}
+	// ranger-base-ka66w: the carved loop.md READS, and reads empty. claude
+	// takes empty as no loop file. An error here (the EACCES a /dev/null
+	// mask gives) is one claude's loop reader may rethrow.
+	if ok, out := try("cat " + q(filepath.Join(cfg, "loop.md"))); !ok || out != "" {
+		t.Errorf("loop.md under the rendered wall does not read as an empty file (ok=%v): %q", ok, out)
 	}
 }
 

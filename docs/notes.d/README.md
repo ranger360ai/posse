@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-m3fl5](ranger-base-m3fl5.md) — A cleanup trap that owned nothing, because the pick ran in a subshell (ranger-base-m3fl5) — 2026-11-12
 - [ranger-base-l751c](ranger-base-l751c.md) — claude's server-policy caches, masked and never seeded (ranger-base-l751c) — 2026-11-12
 - [ranger-base-ksa79](ranger-base-ksa79.md) — grok's compat layer is a reader of claude's and cursor's MCP servers and hooks, switched off on the line (ranger-base-ksa79) — 2026-11-12
+- [ranger-base-ka66w](ranger-base-ka66w.md) — The rest of claude's own protected config members, carved read-only (ranger-base-ka66w) — 2026-11-12
 - [ranger-base-ghhgb](ranger-base-ghhgb.md) — ranger-base-ghhgb — the nudge that outlived the execve, and the signal that cannot — 2026-11-12
 - [ranger-base-ajkqx](ranger-base-ajkqx.md) — claude's projects/, read-only in a caged seat but for its own key dir (ranger-base-ajkqx) — 2026-11-12
 - [ranger-base-9xt70](ranger-base-9xt70.md) — Four arms for distinctions four closes introduced and nobody asked about (ranger-base-9xt70) — 2026-11-12
