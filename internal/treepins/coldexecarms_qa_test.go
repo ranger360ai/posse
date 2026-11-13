@@ -180,6 +180,33 @@ var cxaVarMustHold = map[string][]string{
 // abbreviate $HOME). This pin green while four unrelated pins red is the
 // confusion the close exists to prevent, so the root is the one part of this
 // variable that is read as a SHAPE and not as a word.
+//
+// THE SHAPE IS TWO TESTS AND NOT ONE (ranger-base-o80tw, from
+// ranger-base-epvoy's verify of ranger-base-nxus6). A prefix test alone
+// cannot tell nesting from a walk back OUT of it, and "nested under" is the
+// claim: `$${TMPDIR:-/tmp}/../../var/tmp/posse-coldexec.XXXXXX` begins with
+// this root and is rooted somewhere else entirely, which is both of the
+// things the arm's directory must not be — beside $TMPDIR, and at a path of
+// its own. MEASURED 2026-11-12, against the Makefile's COLDEXEC_TMP line,
+// with the prefix test as the only root check:
+//
+//	# $${TMPDIR:-/tmp}/posse-coldexec.XXXXXX
+//	#   ->  $${TMPDIR:-/tmp}/../../var/tmp/posse-coldexec.XXXXXX
+//	go test ./internal/treepins \
+//	  -run TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir -count=1
+//	# ok -- and go test ./cmd/coldexec -run 'Room|Quota|Temp' is ok too
+//
+// This carries less than the mutant above and the bead it escaped from is
+// why: every spelling anybody would actually type to buy room on /tmp still
+// reds on the prefix test alone — a root at /var/tmp, a root under $HOME, a
+// TMPDIR with the /tmp fallback removed, and `mktemp -d` dropped for a fixed
+// path, all four re-measured on 2026-11-12. What escaped is a spelling
+// nobody argues for. It is closed rather than left because a prefix test
+// standing in for a nesting claim is the same shape ranger-base-nxus6 closed
+// one layer down, and the guard is one expression: the remainder after the
+// root is a SINGLE path element. That is what "nested under" means, and it
+// is also all `mktemp -d` can make — it creates one directory and no
+// parents, so a deeper template is a recipe that cannot run either.
 const cxaTempRoot = "$${TMPDIR:-/tmp}"
 
 // The floors under the census. 331 call sites in three packages on
@@ -559,7 +586,8 @@ func TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir(t *testing.T) {
 
 	// And COLDEXEC_TMP's root, which is a shape and not a word: the
 	// directory the arms run in has to be NESTED under $TMPDIR, with a bare
-	// /tmp as its only fallback.
+	// /tmp as its only fallback. Two tests, because a prefix test alone
+	// cannot tell nesting from a walk back out of it — see cxaTempRoot.
 	if def, ok := cxaMakeVar(mk, "COLDEXEC_TMP"); ok {
 		tmpl, found := cxaMktempTemplate(def)
 		switch {
@@ -569,6 +597,10 @@ func TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir(t *testing.T) {
 			t.Errorf("COLDEXEC_TMP's directory is rooted at %q, not nested under %s:\n  COLDEXEC_TMP = %s\n"+
 				"The arm's temp directory goes UNDER $TMPDIR, never beside it and never at a path of its own. A root anywhere else buys the room and costs a class: four pins whose premise is the unconditional bare /tmp in every rendered seatbelt go red, and this pin green while they are red is the confusion ranger-base-w5z7u's close exists to prevent (ranger-base-u8xk4 holds that defect, ranger-base-akk9f the surfaces that abbreviate $HOME). A seat that has already moved its TMPDIR keeps it — the arm nests inside it. If the room on /tmp is the problem, that is the operator's to clear and the door's to REFUSE over, not this variable's to route around (ranger-base-nxus6).",
 				tmpl, cxaTempRoot, def)
+		case strings.Contains(strings.TrimPrefix(tmpl, cxaTempRoot+"/"), "/"):
+			t.Errorf("COLDEXEC_TMP's directory is %q, which begins at %s but is not NESTED one element under it:\n  COLDEXEC_TMP = %s\n"+
+				"The case above is a prefix test, and a prefix test cannot tell nesting from a walk back out: %s/../../var/tmp/posse-coldexec.XXXXXX satisfies it while being both of the things this directory must not be — beside $TMPDIR, and at a path of its own. The remainder after the root is a single path element, which is what \"nested under\" means and all `mktemp -d` can make: it creates one directory and no parents, so a deeper template is also a recipe that cannot run. If the room on /tmp is the problem, that is the operator's to clear and the door's to REFUSE over, not this variable's to route around (ranger-base-o80tw, from ranger-base-epvoy's verify of ranger-base-nxus6).",
+				tmpl, cxaTempRoot, def, cxaTempRoot)
 		}
 	}
 

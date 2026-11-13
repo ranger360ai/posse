@@ -193,12 +193,44 @@ func TestQALandedCheckTmp(t *testing.T) {
 // The cage is the one thing stubbed (the judge runs as the argv, the way
 // plainCage runs it in arm 2), because cmd.Env is built after the cage
 // renders and is the same list on both mechanisms.
+//
+// TWO ARMS ARE WRITTEN AGAINST A STATE THIS BINARY DOES NOT HAVE BY DEFAULT,
+// and both were holes until ranger-base-o80tw (ranger-base-epvoy's verify of
+// ranger-base-5m5yq found them):
+//
+//   - The PATH row — ADR 0077 D3's half of the two the call site calls "two
+//     halves of ONE rule" — could not discriminate. This package's TestMain
+//     does os.Setenv("PATH", PathOutsideGates("")) process-wide
+//     (herdr_test.go), so os.Getenv("PATH") here ALREADY equalled the value
+//     the row wants and PathOutsideGates is idempotent over it: dropping
+//     protocolEnv from landedJudgeEnv left this test green (MEASURED
+//     2026-11-12). A gates-shaped element is prepended below so the wanted
+//     and the got values differ when the strip is absent. The PROPERTY was
+//     pinned elsewhere even then — the same mutant reds internal/treepins'
+//     TestQAEveryProtocolChildRunsOutsideTheGates, naming the line — but
+//     that census says of itself that it is syntactic, so this row was a pin
+//     claiming a check it did not make.
+//
+//   - An allowlisted name that is UNSET must be ABSENT, not spelled empty.
+//     landedJudgeEnv's os.LookupEnv guard is the whole of that, and nothing
+//     held it: the membership loop ALLOWS every allowlisted name and the
+//     value rows read only TMPDIR, GOCACHE, GOFLAGS and PATH, so replacing
+//     the guard with os.Getenv left this test green too (MEASURED
+//     2026-11-12). `LC_ALL=` and `GOFLAGS=` are not the same instruction as
+//     absent, and what reads them is a repo's `make`.
 func TestQALandedCheckJudgeEnvIsTheAllowlist(t *testing.T) {
 	// No t.Parallel: Setenv.
 	root := gitTempDir(t)
 	const planted = "FOO_TOKEN"
 	t.Setenv(planted, "planted-by-the-pin")
 	t.Setenv("GOFLAGS", "-mod=mod") // an allowlisted name that is set reaches it
+
+	// An allowlisted name that is NOT set. t.Setenv first and then Unsetenv,
+	// in that order: the Setenv is what registers the restore, so this
+	// absence cannot leak into a later test in this binary.
+	const unset = "LC_ALL"
+	t.Setenv(unset, "")
+	os.Unsetenv(unset)
 
 	repo := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
@@ -217,6 +249,16 @@ func TestQALandedCheckJudgeEnvIsTheAllowlist(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = git(repo, "worktree", "remove", "--force", filepath.Join(run, landedTreeName)) })
+
+	// A gates-shaped element at the head of this process's PATH, so the PATH
+	// row below can discriminate. Last of the Setenvs and after the git
+	// fixture, so nothing above resolves a binary against it; the dir need
+	// not exist, because isGatesPath judges a `gates` path ELEMENT and runs
+	// no filesystem call. Without this, see the comment above: the row's want
+	// and the judge's got are the same string whether or not protocolEnv ran.
+	// bdgatesfreepath_test.go is the house spelling of the same plant.
+	t.Setenv("PATH", filepath.Join(root, "state", "gates", "launcher", "bin")+
+		string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	c := &landedChecker{a: &App{}, out: &strings.Builder{}, pending: map[string]string{}}
 	c.cage = func(_ *App, judge, _ string, _ []string, env []string) (landedCage, error) {
@@ -250,6 +292,9 @@ func TestQALandedCheckJudgeEnvIsTheAllowlist(t *testing.T) {
 	}
 	if _, ok := got[planted]; ok {
 		t.Errorf("the judge saw %s, planted in the launcher's environment (ranger-base-5m5yq)", planted)
+	}
+	if v, ok := got[unset]; ok {
+		t.Errorf("the judge's environment carries %s=%q, and %s is UNSET in the launcher — an allowlisted name that is not set must be ABSENT and not present-and-empty, because `%s=` is a different instruction from no %s at all. landedJudgeEnv's os.LookupEnv guard is the whole of that property and this is the only arm over it (ranger-base-o80tw, from ranger-base-epvoy's verify of ranger-base-5m5yq)", unset, v, unset, unset, unset)
 	}
 	for k, want := range map[string]string{
 		"TMPDIR":  filepath.Join(run, "tmp"),
