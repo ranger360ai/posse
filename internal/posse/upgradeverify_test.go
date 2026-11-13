@@ -27,6 +27,8 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -139,11 +141,19 @@ func TestFakePosseBytesIsAFunctionOfItsReceiver(t *testing.T) {
 // through a format this file invents — so upgradeParseStatus is pinned
 // against the thing it actually has to read, and a landing that changes
 // GovReport's columns reds here rather than silently emptying the diff.
-func stubUpgradeProbe(t *testing.T) {
+// upgradeProbeLog records the cwd each probed verb was run in, which is what
+// ADR 0092 D4 amendment 2 made a property of this verb rather than of
+// whoever typed it. Keyed by the whole argv so `gates dev` and `gates ops`
+// are two entries and `version` is its own.
+type upgradeProbeLog struct{ Dir map[string]string }
+
+func stubUpgradeProbe(t *testing.T) *upgradeProbeLog {
 	t.Helper()
+	log := &upgradeProbeLog{Dir: map[string]string{}}
 	saved := upgradeProbe
 	t.Cleanup(func() { upgradeProbe = saved })
-	upgradeProbe = func(bin string, argv ...string) (int, string) {
+	upgradeProbe = func(dir, bin string, argv ...string) (int, string) {
+		log.Dir[strings.Join(argv, " ")] = dir
 		f, err := readFakePosse(bin)
 		if err != nil {
 			return -1, ""
@@ -177,6 +187,7 @@ func stubUpgradeProbe(t *testing.T) {
 		}
 		return 2, "fake posse: unknown verb\n"
 	}
+	return log
 }
 
 // d4Fixture is upgradeFixture plus the two fake binaries D4 compares: the
@@ -184,6 +195,11 @@ func stubUpgradeProbe(t *testing.T) {
 type d4Fixture struct {
 	upgradeFixture
 	now, next fakePosse
+	probe     *upgradeProbeLog
+	// repos is what CmdUpgrade reads off `beads_visibility:` and the plan
+	// carries into the verify block's re-render line. Empty unless a pin
+	// asks for it: the fixture declares no repos of its own.
+	repos []string
 }
 
 func newD4Fixture(t *testing.T, now, next fakePosse) d4Fixture {
@@ -199,7 +215,7 @@ func newD4Fixture(t *testing.T, now, next fakePosse) d4Fixture {
 	if err := WriteExecutable(f.target, f.now.bytes(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stubUpgradeProbe(t)
+	f.probe = stubUpgradeProbe(t)
 	stubUpgradeSteps(t,
 		func(w io.Writer, dir string) error { return nil },
 		func(w io.Writer, dir, repo, out string) error {
@@ -224,6 +240,7 @@ func (f d4Fixture) run(t *testing.T, personas ...string) (string, error) {
 		t.Fatalf("upgradeResolve: %v", err)
 	}
 	plan.Personas = personas
+	plan.Repos = f.repos
 	var out bytes.Buffer
 	err = upgradeRunPlan(&out, plan)
 	return out.String(), err
@@ -337,9 +354,6 @@ func TestUpgradeRollsBackOnAGainedBinaryRenderedConditionAndNotOnAShopOne(t *tes
 		back bool
 		says string
 	}{
-		// G12 — an L3 hook wall is degraded, judged against THIS binary's
-		// own render of the wall. Nothing but the swap can have changed it.
-		{"a G12 hook-wall row", GovCondition{ID: "G12", Class: GovLane, Key: "hook-wall:pre-commit:~/src/x", Detail: "the wall at ~/src/x is not this binary's render"}, true, "LANE G12"},
 		// G17 — a cage map that lowers a tier, read out of promoted config
 		// and judged by this binary's own resolver.
 		{"a G17 cage-map row", GovCondition{ID: "G17", Class: GovLane, Key: "cage-realize:linux", Detail: "cage_realize_linux: seatbelt→shims"}, true, "LANE G17"},
@@ -364,6 +378,18 @@ func TestUpgradeRollsBackOnAGainedBinaryRenderedConditionAndNotOnAShopOne(t *tes
 		// moved further forward than this install did while the suite ran.
 		// A good install can deepen it, so it can never be evidence.
 		{"a G11 launcher-behind row", GovCondition{ID: "G11", Class: GovLane, Key: "launcher-behind:16", Detail: "the launcher is 17 commits behind"}, false, ""},
+		// G12 IS THE OTHER INSTALL SUBJECT (ADR 0092 D4 amendment 1,
+		// ranger-base-qfhph). A repo's git hook is a COPY of this binary's
+		// render, and D7 keeps the re-render out of this verb's scope — so
+		// a G12 row after the swap is the designed state after every
+		// landing that changes the render, saying the operator's half has
+		// not happened yet and nothing about whether the new binary is
+		// broken. Identity cannot answer that question in any case: it
+		// cannot tell a binary that renders a BROKEN hook from one that
+		// renders a DIFFERENT one. The row is reported, never a trigger —
+		// TestUpgradeReportsTheReRenderWhenTheSwapRaisesG12 pins what the
+		// operator is told instead.
+		{"a G12 hook-wall row", GovCondition{ID: "G12", Class: GovLane, Key: "hook-wall:prepare-commit-msg:~/src/x", Detail: "the wall at ~/src/x is not this binary's render"}, false, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newD4Fixture(t,
@@ -428,13 +454,13 @@ func TestUpgradeRollsBackWhenStatusStopsAnswering(t *testing.T) {
 	// it, so everything but that one verb answers exactly as it would.
 	saved := upgradeProbe
 	t.Cleanup(func() { upgradeProbe = saved })
-	upgradeProbe = func(bin string, argv ...string) (int, string) {
+	upgradeProbe = func(dir, bin string, argv ...string) (int, string) {
 		if len(argv) == 1 && argv[0] == "status" {
 			if read, err := readFakePosse(bin); err == nil && read.Stamp == f.c {
 				return 2, "panic: assignment to entry in nil map\n"
 			}
 		}
-		return saved(bin, argv...)
+		return saved(dir, bin, argv...)
 	}
 	out, err := f.run(t)
 	if err == nil {
@@ -491,6 +517,124 @@ func TestUpgradeDoesNotRollBackWhenAParityBlockLosesARow(t *testing.T) {
 	}
 }
 
+// ─── D4 amendment 1 · what the operator is told about the hook wall ──────────
+
+// The G12 rows a good install raises are not a trigger, and they are not
+// silence either: ADR 0092 D4 amendment 1 gives the verb one duty over them,
+// which is to print the re-render D7 keeps out of its scope.
+func TestUpgradeReportsTheReRenderWhenTheSwapRaisesG12(t *testing.T) {
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa"},
+		fakePosse{Conds: GovSet{
+			{ID: "G12", Class: GovLane, Key: "hook-wall:pre-push:~/src/x", Detail: "ours but stale"},
+			{ID: "G12", Class: GovLane, Key: "hook-wall:prepare-commit-msg:~/src/x", Detail: "ours but stale"},
+		}})
+	f.repos = []string{"/srv/src/x", "/srv/src/y"}
+	out, err := f.run(t)
+	if err != nil {
+		t.Fatalf("two new G12 rows rolled the install back: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "gained 2 G12 hook-wall row(s)") {
+		t.Errorf("the report does not say how many hook-wall rows the swap raised:\n%s", out)
+	}
+	if !strings.Contains(out, "posse gates install-hooks /srv/src/x /srv/src/y") {
+		t.Errorf("the report does not print the re-render over the declared repos:\n%s", out)
+	}
+	if !strings.Contains(out, "never runs it") {
+		t.Errorf("the report does not say the verb leaves that command to the operator (ADR 0092 D7):\n%s", out)
+	}
+	// And the install really stood: the line is a note, not a refusal.
+	if body, _ := os.ReadFile(f.target); !bytes.Equal(body, f.next.bytes()) {
+		t.Errorf("the new binary is not in place: %q", body)
+	}
+}
+
+// The other direction. An install that raised no hook-wall row has nothing
+// to tell the operator, and a standing line would train them to skip it.
+func TestUpgradeDoesNotPrintTheReRenderWithoutANewG12Row(t *testing.T) {
+	standing := GovCondition{ID: "G12", Class: GovLane, Key: "hook-wall:pre-push:~/src/x", Detail: "ours but stale"}
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", Conds: GovSet{standing}},
+		fakePosse{Conds: GovSet{standing}})
+	f.repos = []string{"/srv/src/x"}
+	out, err := f.run(t)
+	if err != nil {
+		t.Fatalf("a standing G12 row rolled the install back: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "install-hooks") {
+		t.Errorf("the report prescribes a re-render over a wall this install did not change:\n%s", out)
+	}
+}
+
+// ─── D4 amendment 2 · where the gates readings are taken ─────────────────────
+
+// `posse gates <p>` probes the L3 hooks OF ITS CWD, so the delegate's cwd
+// used to decide which tree D4's two readings compared — and a delegate
+// standing in a worktree of a declared repo read a wall the render change
+// had just made stale. The cwd is the verb's now, fixed to the source repo
+// D3.1 named, whatever directory the command was typed in.
+func TestUpgradeGatesReadingsRunInTheSourceRepoWhateverTheCallersCwd(t *testing.T) {
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", Gates: map[string]fakeGates{"dev": {}}},
+		fakePosse{Gates: map[string]fakeGates{"dev": {}}})
+	// Somewhere that is NOT the source repo, which is the whole premise:
+	// the old code inherited exactly this.
+	elsewhere := t.TempDir()
+	t.Chdir(elsewhere)
+	if out, err := f.run(t, "dev"); err != nil {
+		t.Fatalf("upgradeRunPlan: %v\n%s", err, out)
+	}
+	if got := f.probe.Dir["gates dev"]; got != f.repo {
+		t.Errorf("`posse gates dev` ran in %q, want the source repo %q — the cwd of this reading is the verb's, not the delegate's (ADR 0092 D4 amendment 2)", got, f.repo)
+	}
+	// version and status are left on the inherited cwd deliberately:
+	// neither reads the cwd's hooks, and pinning it says so rather than
+	// leaving the next reader to wonder whether it was an oversight.
+	for _, verb := range []string{"version", "status"} {
+		if got, ok := f.probe.Dir[verb]; !ok || got != "" {
+			t.Errorf("`posse %s` ran with cwd %q (recorded=%v), want the inherited one — only the gates readings are placed", verb, got, ok)
+		}
+	}
+}
+
+// And the probe itself really changes directory, which is the half a stub
+// cannot show. Nothing is planted: `pwd` is a binary that is already on the
+// box and whose whole output is the answer.
+//
+// NO t.Parallel: the second half reads this process's own cwd, and the test
+// above chdirs it. Serial is the honest answer for a pin whose subject is
+// where a child process starts.
+func TestUpgradeProbeRunsTheBinaryInTheDirectoryItIsGiven(t *testing.T) {
+	pwd, err := exec.LookPath("pwd")
+	if err != nil {
+		t.Skipf("no pwd(1) on this box: %v", err)
+	}
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out := upgradeProbe(dir, pwd)
+	if code != 0 {
+		t.Fatalf("pwd in %s exited %d: %s", dir, code, out)
+	}
+	if got := strings.TrimSpace(out); got != dir {
+		t.Errorf("upgradeProbe ran in %q, want %q", got, dir)
+	}
+	// An empty dir inherits this process's cwd, which is what the version
+	// and status readings pass.
+	here, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	here, err = filepath.EvalSymlinks(here)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, out := upgradeProbe("", pwd); strings.TrimSpace(out) != here {
+		t.Errorf("an empty dir ran in %q, want this process's cwd %q", strings.TrimSpace(out), here)
+	}
+}
+
 // ─── the readers ─────────────────────────────────────────────────────────────
 
 // upgradeGatesRed counts ADR 0017 §2's three presentation words and not a
@@ -512,13 +656,70 @@ parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime:
     ✗ Bash(bd admin:*) → not realized at this tier
     ⊘ SelfSandbox: declared difference
 `
-	// One REFUSED line, one DEGRADED header, one ✗ row. The ✓, ⚖ and ⊘ rows
-	// are each a verdict that is NOT "a gate the wall does not hold".
-	if got, want := upgradeGatesRed(report), 3; got != want {
+	// One REFUSED line and one ✗ row. The ✓, ⚖ and ⊘ rows are each a
+	// verdict that is NOT "a gate the wall does not hold", and the DEGRADED
+	// HEADER is a summary of the ✗ rows beneath it rather than a row of its
+	// own (ADR 0092 D4 amendment 2).
+	if got, want := upgradeGatesRed(report), 2; got != want {
 		t.Errorf("upgradeGatesRed = %d, want %d — over:\n%s", got, want, report)
 	}
 	if got := upgradeGatesRed("  claude @ shims/standard: RATIFIED DEGRADATION\n"); got != 0 {
 		t.Errorf("RATIFIED DEGRADATION counts as %d not-held row(s), want 0 — it is a difference the promoted constitution already waived, standing on every reading", got)
+	}
+	// The header alone, with nothing under it — which Parity.String cannot
+	// actually produce (the word is written exactly when there is at least
+	// one ✗ row) and which is therefore the cleanest statement of the
+	// claim: the header counts nothing by itself.
+	if got := upgradeGatesRed("  codex @ shims/standard: DEGRADED\n"); got != 0 {
+		t.Errorf("the parity header counts as %d not-held row(s) on its own, want 0 — it summarizes the ✗ rows below it, and counting both counts one wall twice", got)
+	}
+	// And the word is not simply dropped: the multiplexer line is a real
+	// refusal of ADR 0076's that opens with it and is nobody's header.
+	mux := "multiplexer: DEGRADED — herdr has no detection manifest for argv0 \"zsh\", so posse will not dispatch here\n"
+	if got := upgradeGatesRed(mux); got != 1 {
+		t.Errorf("a DEGRADED line that is not a parity header counts as %d, want 1 — the exclusion is the header's SHAPE, not the word:\n%s", got, mux)
+	}
+}
+
+// ADR 0092 D4 amendment 2's other half: the L3 hook rows come out of the
+// count. `posse gates <p>` asks ADR 0023's IDENTITY question of its cwd's
+// hooks — byte-for-byte against this binary's own render — so a landing that
+// changes the render makes those rows appear the instant the new binary is
+// in place, in every repo posse guards. That is G12's situation one surface
+// over, and it is the install's follow-through rather than evidence about
+// the binary.
+//
+// The fixture's L3 lines come from l3DegradeLine itself, not from a string
+// this file invents, so a reword over there reds here rather than silently
+// emptying the exclusion.
+func TestUpgradeGatesRedLeavesOutTheL3HookRows(t *testing.T) {
+	t.Parallel()
+	l3 := func(slot string) string {
+		return "    ✗ " + l3DegradeLine(slot, "/x/.git/hooks/"+slot, "this layer is not realized", "", l3Stale) + "\n"
+	}
+	// A report whose ONLY not-held rows are L3 rows counts zero — the
+	// header included, or the exclusion would buy nothing.
+	onlyL3 := "  claude @ shims/standard: DEGRADED\n" + l3("pre-push") + l3("prepare-commit-msg")
+	if got := upgradeGatesRed(onlyL3); got != 0 {
+		t.Errorf("upgradeGatesRed = %d over a report whose only not-held rows are L3 hook rows, want 0 — a render change makes those rows in every guarded repo, which is what D7 leaves to the operator:\n%s", got, onlyL3)
+	}
+	// And a non-L3 row in the same block still counts. This is the half
+	// that says the exclusion did not turn the gates arm off.
+	withOne := onlyL3 + "    ✗ Bash(bd admin:*) → not realized at this tier\n"
+	if got := upgradeGatesRed(withOne); got != 1 {
+		t.Errorf("upgradeGatesRed = %d, want 1 — the wall lost a gate that is not a hook, and that is exactly what this count exists for:\n%s", got, withOne)
+	}
+	// A forward gap is NOT an L3 hook row: it is about an employer's hook
+	// this session would skip (ADR 0052 M4) and names no slot of posse's.
+	gap := "    ✗ L3 managed hooks — ~/src/x/.githooks/commit-msg — managed hook commit-msg not forwarded\n"
+	if got := upgradeGatesRed(gap); got != 1 {
+		t.Errorf("a managed-hook forward gap counts as %d, want 1 — the exclusion is posse's own two slots, not every line that says L3:\n%s", got, gap)
+	}
+	// The ✓ half of the same probe mentions the slot too, and a realized
+	// gate was never a not-held row to begin with.
+	ok := "    ✓ Bash(git push:*)             → cooperative (L1 shim) + L3 pre-push hook (render probed, dispatch verified)\n"
+	if got := upgradeGatesRed(ok); got != 0 {
+		t.Errorf("a realized gate counts as %d not-held row(s), want 0:\n%s", got, ok)
 	}
 }
 
@@ -580,8 +781,11 @@ func TestUpgradeStampOfReadsTheCommitOutOfTheVersionLine(t *testing.T) {
 // NEW binary printed and this one cannot name is a condition it invented.
 func TestUpgradeUnknownConditionCodeIsTreatedAsBinaryRendered(t *testing.T) {
 	t.Parallel()
-	if got := upgradeCondSource("G12"); got != upgradeBinaryRendered {
-		t.Errorf("G12 reads as %v, want binary-rendered", got)
+	if got := upgradeCondSource("G12"); got != upgradeInstallSubject {
+		t.Errorf("G12 reads as %v, want install-subject — a repo's git hook is a COPY of this binary's render, and D7 leaves the re-render to the operator (ADR 0092 D4 amendment 1)", got)
+	}
+	if got := upgradeCondSource("G7"); got != upgradeBinaryRendered {
+		t.Errorf("G7 reads as %v, want binary-rendered", got)
 	}
 	if got := upgradeCondSource("G1"); got != upgradeShopState {
 		t.Errorf("G1 reads as %v, want shop-state", got)

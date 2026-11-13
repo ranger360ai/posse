@@ -191,6 +191,12 @@ type upgradePlan struct {
 	// what the pins drive, and a roster read from the ambient home would
 	// make every one of them depend on whose box the suite is on.
 	Personas []string
+	// Repos is the set of guarded checkouts a G12 row after the swap would
+	// be ABOUT: the repos `beads_visibility:` declares, minus the ones the
+	// sweep skips. The verify block prints the operator's re-render over
+	// them (ADR 0092 D4 amendment 1) and this verb never runs it. A field
+	// of the plan for Personas' reason.
+	Repos []string
 }
 
 // gitCount is `git rev-list --count <range>` as a number.
@@ -511,6 +517,16 @@ func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
 	// `posse gates <p>` describes the wall a persona WOULD launch behind, so
 	// a persona with no seat open is exactly as much evidence as one with.
 	plan.Personas = a.ListAgents()
+	// D4 amendment 1's repos, read from the same place G12 reads them and
+	// filtered the same way: a skipped repo raises no G12 row, and a
+	// managed one is a repo posse must not be told to write (ADR 0052 D1).
+	// Read here rather than at verify time so that the plan carries
+	// everything the run prints, as Personas does.
+	for _, r := range a.SweepHookWallIdentity().Repos {
+		if r.Skip == "" {
+			plan.Repos = append(plan.Repos, r.Dir)
+		}
+	}
 	return upgradeRunPlan(w, plan)
 }
 
@@ -586,7 +602,7 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 	// above — and it is spent on a run that is already going to swap, so it
 	// never delays a refusal.
 	fmt.Fprintf(w, "\n── snapshot before the swap (ADR 0092 D4) ──\n")
-	before := upgradeRead(plan.Target, plan.Personas)
+	before := upgradeRead(plan.Target, plan.Repo, plan.Personas)
 	fmt.Fprintf(w, "  %s\n", before.Line())
 
 	// BEFORE the swap, not after: the reader who needs this line most is

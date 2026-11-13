@@ -49,7 +49,12 @@ package posse
 // WHAT COUNTS AS "THE BINARY RENDERS IT" is the table below, which is this
 // bead's first deliverable: ADR 0092 D4 named G12, G17 and the binary header
 // and called the set ASSUMED. It is MEASURED here, and the measurement found
-// a third code the ADR did not name (G7). The partition is pinned by
+// a third code the ADR did not name (G7). D4's amendment then moved G12 back
+// OUT of it — a repo's git hook is a copy, and D7 leaves the re-render to the
+// operator, so a G12 row after the swap is the install's own footprint rather
+// than evidence against the binary (ranger-base-qfhph; the table's G12 block
+// has the whole argument). What trips the rollback is therefore G7, G17 and
+// any row this binary cannot name at all. The partition is pinned by
 // TestQAEveryStatusConditionCodeHasAnUpgradeClass, whose door is `make
 // pkgcensus-check`.
 
@@ -85,14 +90,31 @@ const (
 	// the binary that just landed, and trips the rollback.
 	upgradeBinaryRendered
 
-	// upgradeInstallSubject — the row is ABOUT WHICH BINARY IS INSTALLED,
-	// so the upgrade moves it by construction and in a direction the repo's
-	// tip decides. G11 is the whole of this class: it counts commits from
-	// the installed stamp to the tip of the source repo, the install moves
-	// the stamp forward, and the tip may have moved further forward than
-	// that while the suite ran — so G11 can legitimately appear or deepen
-	// across a GOOD install. Excluded for a different reason from
-	// upgradeShopState's, which is why it is not that constant.
+	// upgradeInstallSubject — the row is ABOUT THE INSTALL ITSELF: which
+	// binary is in place, or what the install still has to be followed by.
+	// Either way the upgrade moves the row by construction, so a row that
+	// appeared is this verb's own footprint and not evidence against the
+	// binary it just put there. Excluded for a different reason from
+	// upgradeShopState's — whose store moves on its own while nobody is
+	// installing anything — which is why it is not that constant.
+	//
+	// Two members, and the second is why this class is "the install's
+	// follow-through" and not "the build stamp" (ADR 0092 D4 as amended by
+	// ranger-base-qfhph):
+	//
+	//	G11  WHICH BINARY IS INSTALLED. It counts commits from the
+	//	     installed stamp to the tip of the source repo. The install
+	//	     moves the stamp forward, and the tip may have moved further
+	//	     forward than that while the suite ran — so G11 can
+	//	     legitimately appear or DEEPEN across a good install.
+	//	G12  THE HALF OF THE INSTALL THIS VERB DOES NOT DO. Each declared
+	//	     repo's git hook is a COPY of this binary's render, and D7 keeps
+	//	     `posse gates install-hooks` out of this verb's scope on purpose.
+	//	     So a G12 row after the swap is the DESIGNED state after every
+	//	     install that changes the render: it says the operator's half has
+	//	     not happened yet, not that the new binary is broken. The report
+	//	     prints the re-render for them (upgradeHookWallLine) and this
+	//	     verb never runs it.
 	upgradeInstallSubject
 )
 
@@ -117,8 +139,9 @@ const (
 //	G9   bd + config                 shop     a bead becomes ready
 //	G10  verify-box.yaml             shop     a periodic control writes it
 //	G11  the build stamp             INSTALL  this verb moves it
-//	G12  the hooks dirs              BINARY   judged against THIS binary's
-//	                                          own render of the wall
+//	G12  the hooks dirs              INSTALL  a COPY of this binary's render,
+//	                                          re-rendered by the operator
+//	                                          after the install (D7)
 //	G13  config + git                shop     git state moves
 //	G14  the personas dir            shop     memory lands
 //	G15  the session meta            shop     sessions open and close
@@ -146,32 +169,46 @@ const (
 // be missed. For G7 the price is named: a watch loop that dies, or goes
 // mute, inside the suite window rolls the install back and says it did.
 //
-// G12 IS CLASSIFIED AS ADR 0092 D4 ASKS FOR, AND D4 CONFLICTS WITH D7 OVER
-// IT. Filed for the architecture lane as ranger-base-qfhph; said here
-// because this table is where the next reader meets it.
+// G12 IS AN INSTALL SUBJECT, WHICH IS THE ARCHITECT'S RESOLUTION OF A
+// CONFLICT THIS TABLE USED TO CARRY (ranger-base-qfhph, ADR 0092 D4
+// amendment 1). The first cut classified it as binary-rendered because D4
+// named it in as many words, and filed the conflict; this is the answer that
+// came back, and it is said here because this table is where the next reader
+// meets G12.
 //
-// G12's probe is BYTE-FOR-BYTE identity between each declared repo's
-// installed git hook and this binary's own render of it (hookfresh.go,
-// l3AskIdentity). So a commit that changes the hook render makes every
-// declared repo's wall read "ours but stale" THE MOMENT the new binary is in
-// place — and D7 keeps `posse gates install-hooks` out of this verb's scope
-// on purpose ("repo hooks are an L3 wall install, and G12 lists them for the
-// operator"). The designed sequence is therefore: install, G12 goes stale,
-// the operator re-renders. D4 reads step two as a new red and undoes step
-// one, so the verb refuses exactly the landings that change the wall.
+// THE CONFLICT. G12's probe is BYTE-FOR-BYTE identity between each declared
+// repo's installed git hook and this binary's own render of it
+// (hookfresh.go, l3AskIdentity). A git hook in a repo is a COPY, and D7
+// keeps `posse gates install-hooks` out of this verb's scope on purpose
+// ("repo hooks are an L3 wall install, and G12 lists them for the
+// operator"). So a commit that changes the hook render makes every declared
+// repo's wall read "ours but stale" THE MOMENT the new binary is in place,
+// and the designed sequence is: install, G12 goes stale, the operator
+// re-renders. Classed as binary-rendered, D4 read step two as a new red and
+// undid step one — the verb refused exactly the landings that change the
+// wall.
 //
-// It is worse than a frequency problem, because l3AskIdentity cannot be the
-// evidence D4 wants from it even in principle: that probe DROPS the
+// WHY IDENTITY CANNOT BE THE EVIDENCE D4 WANTS, which is what makes this a
+// reclassification rather than a tolerance: l3AskIdentity DROPS ADR 0023's
 // behaviour half on purpose, and its own header says what the drop gives up
 // — "the behavior half catches a RENDERER regression ... it is already asked
-// at every launch and once per watch loop". What is left is identity, which
-// answers "these bytes are not this binary's render" and cannot tell a
-// binary that renders a BROKEN hook from one that renders a DIFFERENT one.
+// at every launch and once per watch loop". What is left answers "these
+// bytes are not this binary's render", and cannot tell a binary that renders
+// a BROKEN hook from one that renders a DIFFERENT one. A row that cannot
+// distinguish those two is not evidence about a binary at all.
 //
-// Implemented as written rather than quietly reclassified: D4 names G12 in
-// as many words, nothing is live until the operator promotes the drafts (D7),
-// and the resolution — D4 excluding G12, or D7 letting this verb re-render
-// the repo hooks — is the architect's and not this file's.
+// WHAT ASKS THE QUESTION INSTEAD. The behaviour half is a property of the
+// binary alone and the same in every repo, so D4's amendment asks it
+// directly, through `posse gates render-probe` (amendment 3, built under
+// ranger-base-apf87). Identity stays what it always was: a per-repo fact
+// about the follow-through, which the operator owns and which G12 tells
+// them. The verb prints the re-render line for them and never runs it.
+//
+// THE RESIDUAL, accepted and named: the behaviour probe execs a render from
+// a temp file, so it cannot see a render that refuses correctly from a temp
+// file and is installed wrong by `install-hooks` (a bad mode, a bad chain).
+// That shows up at the operator's re-render, or at the next launch's
+// identity∧behaviour probe in that repo — never silently.
 //
 // AN UNKNOWN CODE IS NOT SHOP-STATE. upgradeCondSource answers
 // upgradeBinaryRendered for a row this table does not name, and that is the
@@ -191,7 +228,7 @@ var upgradeConditionSource = map[string]upgradeCondClass{
 	"G9":  upgradeShopState,
 	"G10": upgradeShopState,
 	"G11": upgradeInstallSubject,
-	"G12": upgradeBinaryRendered,
+	"G12": upgradeInstallSubject,
 	"G13": upgradeShopState,
 	"G14": upgradeShopState,
 	"G15": upgradeShopState,
@@ -253,21 +290,82 @@ func upgradeParseStatus(out string) map[string]int {
 // gate is NOT held — ADR 0092 D4's "a DEGRADED or REFUSED row it did not
 // have", counted rather than diffed for the reason this file's header gives.
 //
-// Three markers, which are ADR 0017 §2's presentation constants and not this
-// file's invention: the parity block's ` DEGRADED` header (Parity.String),
-// its `✗` rows (one per gate the wall does not hold), and the `REFUSED here`
-// lines the Rex admission block prints above it. `RATIFIED DEGRADATION` is
-// deliberately not one of them and does not match `DEGRADED`: it is a real
-// difference that the promoted constitution already waived, so it is
-// standing state on every reading of a mapped host rather than news.
+// The markers are ADR 0017 §2's presentation constants and not this file's
+// invention: the parity block's `✗` rows (one per gate the wall does not
+// hold), the `REFUSED here` lines the Rex admission block prints above it,
+// and a `DEGRADED` line that is not a parity block's own header — the
+// multiplexer line is one. `RATIFIED DEGRADATION` is deliberately none of
+// them and matches no marker: it is a real difference the promoted
+// constitution already waived, so it is standing state on every reading of a
+// mapped host rather than news.
+//
+// THE PARITY BLOCK'S ` DEGRADED` HEADER IS NOT COUNTED (ADR 0092 D4
+// amendment 2, ranger-base-qfhph). Parity.String writes that word exactly
+// when len(p.Degraded) > 0 and then prints one `✗` row per entry, so the
+// header is a SUMMARY of the rows beneath it and counting it was counting
+// the same wall twice. It is excluded by its own shape — `<runtime> @
+// <cage>/<tier>: DEGRADED` — and not by dropping the word, because the same
+// report carries a multiplexer line that opens `DEGRADED — ` for a real
+// refusal of ADR 0076's, and that one is still a row.
+//
+// L3 HOOK ROWS ARE LEFT OUT (the same amendment, and the reason the header
+// mattered at all). `posse gates <p>` probes the L3 hooks of its cwd
+// (parity.go applyL3Probe) and asks ADR 0023's IDENTITY question of them —
+// byte-for-byte against this binary's own render. A commit that changes the
+// render therefore makes those rows appear the moment the new binary is in
+// place, in any repo posse guards, which is G12's situation one surface
+// over: the designed state after an install whose follow-through (D7's
+// re-render) has not happened yet. So they are excluded here for the reason
+// G12 is excluded in the table above, and a report whose only not-held rows
+// are L3 rows counts ZERO — the header included, or the exclusion would buy
+// nothing.
+//
+// What is NOT excluded: a forward gap (`L3 managed hooks — …`), which is
+// about an employer's hook this session would skip and names no slot of
+// posse's, and every non-L3 `✗` row, which is what this count exists for.
 func upgradeGatesRed(out string) int {
 	n := 0
 	for _, ln := range strings.Split(out, "\n") {
-		if strings.Contains(ln, "DEGRADED") || strings.Contains(ln, "REFUSED") || strings.ContainsRune(ln, '✗') {
-			n++
+		if !upgradeNotHeldRow(ln) || upgradeNamesL3Slot(ln) {
+			continue
 		}
+		n++
 	}
 	return n
+}
+
+// upgradeParityHeader is the one line Parity.String writes above its rows —
+// `%s @ %s/%s:` plus the verdict word — and it is matched here by that shape
+// so that the SUMMARY of a block is not counted beside the rows it
+// summarizes. A line that merely opens with the word (the multiplexer's
+// `DEGRADED — …`) is a row of its own and does not match.
+var upgradeParityHeader = regexp.MustCompile(`^\S+ @ .+/[^/]*: DEGRADED$`)
+
+// upgradeNotHeldRow is the marker test: does this line of a gates report say
+// a gate is not held?
+func upgradeNotHeldRow(ln string) bool {
+	if strings.Contains(ln, "REFUSED") || strings.ContainsRune(ln, '✗') {
+		return true
+	}
+	return strings.Contains(ln, "DEGRADED") && !upgradeParityHeader.MatchString(strings.TrimSpace(ln))
+}
+
+// upgradeL3Slots are the two hook slots posse renders and parity.go probes
+// by identity — ADR 0092 D4 amendment 2 names both.
+var upgradeL3Slots = []string{"pre-push", "prepare-commit-msg"}
+
+// upgradeNamesL3Slot answers whether a report row is about one of those
+// slots. It matches the opening `l3DegradeLine` and `l3DegradeLineIn` both
+// write and `applyHookResult` echoes — `L3 <slot> hook` — rather than the
+// bare slot name, so a gate row that merely mentions a push is not read as a
+// hook row.
+func upgradeNamesL3Slot(ln string) bool {
+	for _, slot := range upgradeL3Slots {
+		if strings.Contains(ln, "L3 "+slot+" hook") {
+			return true
+		}
+	}
+	return false
 }
 
 // upgradeStampOf is the commit `posse version` names, out of a line shaped
@@ -305,8 +403,21 @@ type upgradeGatesReading struct {
 	Red  int
 }
 
-// upgradeProbe runs the binary under test and hands back its exit code and
-// its two streams interleaved.
+// upgradeProbe runs the binary under test in dir and hands back its exit
+// code and its two streams interleaved. An empty dir inherits this process's
+// cwd, which is what the readings that do not depend on one pass.
+//
+// WHY A DIRECTORY IS AN ARGUMENT AT ALL (ADR 0092 D4 amendment 2,
+// ranger-base-qfhph). `posse gates <p>` probes the L3 hooks OF ITS CWD and
+// asks ADR 0023's identity question of them. This verb runs from wherever
+// the delegate typed it — and a delegate standing in a worktree of a
+// declared repo made the two sides of D4's diff read two different trees,
+// one of them a tree whose hooks a render change had just made stale. So the
+// gates readings run with their cwd FIXED to the source repo D3.1 names, and
+// both sides read the same tree wherever the verb was typed. `version` and
+// `status` are left on the inherited cwd deliberately: neither reads the
+// cwd's hooks, and status's own repo-shaped inputs are the absolute paths
+// `beads_visibility:` declares.
 //
 // A package var for the reason the three steps in upgrade.go are: the thing
 // worth pinning is what this file DOES with the readings, and a pin cannot
@@ -321,14 +432,17 @@ type upgradeGatesReading struct {
 // `Bash(posse promote:*)`). The binary itself is named by absolute path, so
 // the shim cannot answer for it; what protocolCmd buys is the CHILD's PATH,
 // because `posse status` and `posse gates` both shell out to git and bd.
-var upgradeProbe = func(bin string, argv ...string) (int, string) {
+var upgradeProbe = func(dir, bin string, argv ...string) (int, string) {
 	cmd := protocolCmd(exec.Command(bin, argv...))
+	cmd.Dir = dir
 	var b strings.Builder
 	cmd.Stdout, cmd.Stderr = &b, &b
 	return upgradeExitCode(cmd.Run()), b.String()
 }
 
-// upgradeRead takes one side of the comparison off the binary at bin.
+// upgradeRead takes one side of the comparison off the binary at bin, with
+// the `posse gates` readings run in repo (ADR 0092 D4 amendment 2 — see
+// upgradeProbe's header for why that argument exists).
 //
 // `posse status`'s EXIT CODE IS NOT READ, and that is the measurement ADR
 // 0092 D4 rests on: it exits 1 on any shop with any open condition at all
@@ -349,12 +463,12 @@ var upgradeProbe = func(bin string, argv ...string) (int, string) {
 // THIS process's environment, which is the delegate's own and therefore the
 // instance's HOME, not the `HOME=/elsewhere` spelling that left a running
 // seat's git refused by its own gate (ranger-base-atq78).
-func upgradeRead(bin string, personas []string) upgradeReading {
+func upgradeRead(bin, repo string, personas []string) upgradeReading {
 	r := upgradeReading{Status: map[string]int{}, Gates: map[string]upgradeGatesReading{}}
-	if code, out := upgradeProbe(bin, "version"); code == 0 {
+	if code, out := upgradeProbe("", bin, "version"); code == 0 {
 		r.Ran, r.Stamp = true, upgradeStampOf(out)
 	}
-	_, out := upgradeProbe(bin, "status")
+	_, out := upgradeProbe("", bin, "status")
 	r.Status = upgradeParseStatus(out)
 	// The one line `posse status` prints unconditionally, which is what
 	// makes it the anchor for "this command answered at all". A binary that
@@ -367,8 +481,11 @@ func upgradeRead(bin string, personas []string) upgradeReading {
 			r.Unread++
 		}
 	}
+	// repo and not the inherited cwd — the probe's header says why, and it
+	// is the one argument in this function that is about WHERE rather than
+	// what.
 	for _, p := range personas {
-		code, gout := upgradeProbe(bin, "gates", p)
+		code, gout := upgradeProbe(repo, bin, "gates", p)
 		r.Gates[p] = upgradeGatesReading{Exit: code, Red: upgradeGatesRed(gout)}
 	}
 	return r
@@ -463,6 +580,63 @@ func upgradeVerdict(to string, before, after upgradeReading) []string {
 	return why
 }
 
+// upgradeG12 is the one row name this verb's own install is expected to
+// raise and is not allowed to roll back for — the L3 hook wall.
+const upgradeG12 = "G12"
+
+// upgradeHookWallGained counts the G12 rows the after-reading has that the
+// before-reading lacked, across both classes `posse status` can print them
+// in. Only gains count: a row that CLEARED is an install that happened to
+// fix a wall, and nothing is owed the operator for that.
+func upgradeHookWallGained(before, after upgradeReading) int {
+	n := 0
+	for row, count := range after.Status {
+		f := strings.Fields(row)
+		if len(f) == 0 || f[len(f)-1] != upgradeG12 {
+			continue
+		}
+		if gained := count - before.Status[row]; gained > 0 {
+			n += gained
+		}
+	}
+	return n
+}
+
+// upgradeHookWallLine is ADR 0092 D4 amendment 1's one duty to the operator
+// (ranger-base-qfhph): when the swap raised G12 rows, say so and print the
+// command that closes them.
+//
+// IT IS A REPORT AND NOT AN ACT. D7 keeps `posse gates install-hooks` out of
+// this verb's scope on purpose — it writes the commit wall into every
+// declared checkout, one of them the constitution repo — so this prints the
+// line and the operator types it. The verb never runs it, and the delegate
+// is not asked to either: they post this report on the install bead, which
+// is where D6 says the record lives.
+//
+// The repos are the plan's, which are the ones `beads_visibility:` declares
+// and the sweep could measure. A skipped repo (absent, or a managed hooks
+// path posse may not write) raises no G12 row and must not appear in a
+// command prescribing a write there — ADR 0052 D1 is the one instruction
+// this line could give that would be worse than giving none.
+func upgradeHookWallLine(plan upgradePlan, before, after upgradeReading) string {
+	gained := upgradeHookWallGained(before, after)
+	if gained == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "  note: `posse status` gained %d %s hook-wall row(s). Each repo's git hook is a COPY of this binary's render and this commit changed the render, so those rows say the install's second half has not happened — not that the new binary is wrong (ADR 0092 D4 as amended, D7).\n", gained, upgradeG12)
+	if len(plan.Repos) == 0 {
+		fmt.Fprintf(&b, "    re-render them with `posse gates install-hooks <repo>…` — the operator's, and this verb never runs it.\n")
+		return b.String()
+	}
+	repos := make([]string, 0, len(plan.Repos))
+	for _, r := range plan.Repos {
+		repos = append(repos, AbbrevHome(r))
+	}
+	fmt.Fprintf(&b, "    for the operator to type — this verb never runs it:\n      posse gates install-hooks %s\n", strings.Join(repos, " "))
+	return b.String()
+}
+
 func upgradeSortedKeys(m map[string]int) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -531,13 +705,20 @@ func upgradeRollback(target string) error {
 // does not: either way the run did not install anything the caller may
 // report as installed.
 func upgradeVerify(w io.Writer, plan upgradePlan, before upgradeReading) error {
-	after := upgradeRead(plan.Target, plan.Personas)
+	after := upgradeRead(plan.Target, plan.Repo, plan.Personas)
 	fmt.Fprintf(w, "  before: %s\n", before.Line())
 	fmt.Fprintf(w, "  after:  %s\n", after.Line())
 
 	why := upgradeVerdict(plan.To, before, after)
 	if len(why) == 0 {
 		fmt.Fprintf(w, "  ✓ nothing the binary renders is newly red — the install stands\n")
+		// D7's half of the install, printed only now: on a run that is
+		// about to be undone the hook walls are about a binary that will
+		// not be there, and prescribing a re-render against it would be
+		// the one wrong instruction this block can give.
+		if line := upgradeHookWallLine(plan, before, after); line != "" {
+			fmt.Fprint(w, line)
+		}
 		return nil
 	}
 	for _, r := range why {

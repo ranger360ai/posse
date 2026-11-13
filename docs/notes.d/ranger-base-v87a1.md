@@ -30,7 +30,7 @@ twelve-minute `make test` runs?*
 | G9 | govern.go | bd + config | yes — a bead becomes ready | shop |
 | G10 | verifybox.go | verify-box.yaml | yes — a periodic control writes it | shop |
 | G11 | launcherlag.go | the build stamp | **this verb moves it** | **INSTALL** |
-| G12 | govern.go | the hooks dirs | no — judged against this binary's own render | **BINARY** |
+| G12 | govern.go | the hooks dirs | **this install's follow-through moves it** — see below | **INSTALL** |
 | G13 | queuejsonl.go | config + git | yes — git state moves | shop |
 | G14 | memoryland.go | the personas dir | yes — memory lands | shop |
 | G15 | govern.go | the session meta | yes — sessions open and close | shop |
@@ -38,8 +38,12 @@ twelve-minute `make test` runs?*
 | G17 | govern.go | config + the promoted map | no — a static map, judged by this binary's own cage resolver | **BINARY** |
 | — | govern.go | git, herdr, the clock | yes — the three pulse-era carry-overs | shop |
 
-Fourteen excluded, three that trip a rollback, one excluded for a reason of
-its own.
+Fourteen excluded as shop-state, two that trip a rollback (G7, G17), and two
+excluded as subjects of the install itself (G11, G12). The G12 line is the
+one this bead got wrong and ranger-base-qfhph corrected — the row below it
+was written while it was still a trigger, and the correction is recorded at
+the end of that section rather than by deleting the argument that produced
+the conflict.
 
 ### G7 is the one the ADR did not name
 
@@ -72,11 +76,16 @@ further forward than the install did while the suite ran. A good install can
 therefore deepen it. That is a third class and not a quiet member of the
 second: its store does not "move on its own", this verb moves it.
 
-### G12 is a trigger, and D4 conflicts with D7 over it
+### G12 was a trigger, and D4 conflicted with D7 over it — RESOLVED
 
-Filed as **ranger-base-qfhph** (`-l architecture`, P1). Built as D4 is
-*written* — G12 trips a rollback — because D4 names it in as many words and
-nothing of ADR 0092 is live until the operator promotes the drafts (D7).
+Filed as **ranger-base-qfhph** (`-l architecture`, P1), and **resolved by it
+on 2026-11-13**: G12 is an install subject now, beside G11. The resolution is
+at the end of this section; the conflict is kept above it because the
+argument is what the answer turns on.
+
+Built, first, as D4 is *written* — G12 trips a rollback — because D4 names it
+in as many words and nothing of ADR 0092 is live until the operator promotes
+the drafts (D7).
 
 G12's predicate is byte-for-byte identity between each repo named by
 `beads_visibility:` and *this binary's* own render of the git hook
@@ -100,11 +109,63 @@ What is left answers "these bytes are not this binary's render", and cannot
 tell a binary that renders a BROKEN hook from one that renders a DIFFERENT
 one.
 
-Two resolutions, both the architect's: D4 excludes G12 and classes it with
-G11 as "the row is about the install having happened"; or D7 lets the verb
-re-render the repo hooks as a third arm beside D5's gate copy, under the same
-keep/swap/rollback discipline. The flip is one line of
-`upgradeConditionSource` plus one test-table row either way.
+Two resolutions were offered to the architect: D4 excludes G12 and classes it
+with G11 as "the row is about the install having happened"; or D7 lets the
+verb re-render the repo hooks as a third arm beside D5's gate copy, under the
+same keep/swap/rollback discipline.
+
+#### The resolution (ranger-base-qfhph, built under ranger-base-hm4gf)
+
+**Neither option as offered**, and the conflict was wider than G12. `posse
+gates <p>` asks the same identity question of ITS CWD's hooks (parity.go
+`applyL3Probe`), and the verb's probe inherited the delegate's cwd — so (a)
+on its own would have left the gates arm rolling back every render change
+whenever the delegate stood in a worktree of a declared repo. (b) would make
+the triggers mean what D4 wants, but it makes the delegate a writer of the
+commit wall in four shared checkouts, one of them the constitution repo, and
+takes back a line the operator approved as written.
+
+The decided form is the split `l3AskIdentity`'s own header already makes:
+**identity is a per-repo fact about the follow-through, behaviour is a fact
+about the binary.** The verb owns the binary, so it judges behaviour; the
+operator owns the follow-through, so G12 tells them. Three parts, the first
+two built here:
+
+1. **G12 joins G11 in `upgradeInstallSubject`.** A G12 row after the swap is
+   not a trigger. When the after-reading has G12 rows the before-reading
+   lacked, the verify block prints `posse gates install-hooks <repos>` for
+   the operator and **never runs it** (`upgradeHookWallLine`). The repos are
+   `plan.Repos` — what `beads_visibility:` declares, minus the ones the
+   sweep skips, because a managed hooks path is a repo posse must not be
+   told to write (ADR 0052 D1).
+2. **The gates arm stops reading hook identity too.** `upgradeProbe` takes a
+   directory, and the `gates <p>` readings run with their cwd fixed to the
+   source repo D3.1 names, so both sides read the same tree wherever the
+   delegate typed the verb. `version` and `status` keep the inherited cwd:
+   neither reads the cwd's hooks. `upgradeGatesRed` leaves out every row
+   that names an L3 hook slot (`pre-push`, `prepare-commit-msg`) and no
+   longer counts the parity block's ` DEGRADED` header, which is a summary
+   of the `✗` rows beneath it — so a report whose only not-held rows are L3
+   rows counts **zero**. The header is excluded by its SHAPE and not by
+   dropping the word: the multiplexer line opens `DEGRADED — ` and is a real
+   row.
+3. **Behaviour is asked directly**, through a new read-only `posse gates
+   render-probe` — amendment 3, **ranger-base-apf87**, not built here.
+
+One residual is accepted and named in ADR 0092: the behaviour probe execs a
+render from a temp file, so it cannot see a render that refuses correctly
+from a temp file and is installed wrong by `install-hooks` (a bad mode, a bad
+chain). That shows up at the operator's re-render, or at the next launch's
+identity∧behaviour probe in that repo — never silently.
+
+Pins (all in `internal/posse/upgradeverify_test.go`):
+`TestUpgradeRollsBackOnAGainedBinaryRenderedConditionAndNotOnAShopOne`'s G12
+row, now in the half that must NOT roll back;
+`TestUpgradeReportsTheReRenderWhenTheSwapRaisesG12` and
+`TestUpgradeDoesNotPrintTheReRenderWithoutANewG12Row`;
+`TestUpgradeGatesRedLeavesOutTheL3HookRows`;
+`TestUpgradeGatesReadingsRunInTheSourceRepoWhateverTheCallersCwd` and
+`TestUpgradeProbeRunsTheBinaryInTheDirectoryItIsGiven`.
 
 ### An unknown code is binary-rendered
 
@@ -192,12 +253,15 @@ matters is the unknown-code one.
   `len(set) > 0`), so on a live instance it is 1 before the swap and 1 after
   it whatever happened in between. The OUTPUT is the reading.
 - **`posse gates <p>`'s exit code IS read**, 0 → non-zero, which is D4's own
-  second bullet. Its not-held rows are counted by ADR 0017 §2's three
-  presentation words: the parity block's ` DEGRADED` header, its `✗` rows,
-  and the `REFUSED here` lines above it. `RATIFIED DEGRADATION` is
-  deliberately not one — it is standing state on every reading of a host
-  whose cage map lowers a tier, so counting it would put a permanent non-zero
-  on both sides of every diff.
+  second bullet. Its not-held rows are counted by ADR 0017 §2's presentation
+  words: the parity block's `✗` rows, the `REFUSED here` lines above it, and
+  a `DEGRADED` line that is not a parity block's own header. `RATIFIED
+  DEGRADATION` is deliberately not one — it is standing state on every
+  reading of a host whose cage map lowers a tier, so counting it would put a
+  permanent non-zero on both sides of every diff. *(Amended by
+  ranger-base-qfhph: the ` DEGRADED` header was a marker at first and is not
+  one now, and the L3 hook rows come out of the count — see the G12 section's
+  resolution.)*
 - **The `?` lines are reported and never a trigger.** They are `posse
   status`'s unreadable-store lines. D4 lists three triggers and an unreadable
   store is none of them, and most of what produces one — herdr unreachable,
