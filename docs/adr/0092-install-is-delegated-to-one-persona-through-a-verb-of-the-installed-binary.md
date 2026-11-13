@@ -113,6 +113,14 @@ condition lines keyed by code and subject. Conditions that move on their own
 ASSUMED complete here. The build bead must list every condition code by
 source and pin the set.
 
+*Amended by the build bead (ranger-base-v87a1, 2026-11-13): the code set is
+MEASURED, and found a code this section did not name — G7, whose `arm-broken`
+keys read a static config through this binary's own interval grammar. The
+"keyed by code and subject" sentence is realized as a count per (class, code)
+and not as a subject-keyed diff, because the two sides of this diff are two
+different binaries and neither the printed detail nor `GovCondition.Key` is a
+stable interface between them. See "Measured versus assumed" below.*
+
 **D5 — The bd argv gate copy is in scope (2tnbv's class), as a second arm of
 the same verb, under the same guardrails.** The copy under
 `~/.config/posse/gate/` is mechanism source from this repo, not a permission
@@ -240,3 +248,83 @@ binary the window is roughly 16 ms per install. D3.5 stands as written, and the
 figure is now a pin rather than a paragraph
 (`TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort`).
 docs/notes.d/ranger-base-zhw0h.md has the table.
+
+D4's condition-code exclusion set is no longer ASSUMED — MEASURED 2026-11-13
+by the build bead (ranger-base-v87a1), by census over internal/posse's own
+shipped sources: **18 rows**, G1-G17 plus the one row name the three
+pulse-era carry-overs share, in five files (govern.go, launcherlag.go,
+memoryland.go, queuejsonl.go, verifybox.go). The question asked of each was
+this section's own — does the row's store of record move while the verb's
+`make test` runs? Fourteen do and are excluded. **G12** (the hooks dirs,
+judged against this binary's own render) and **G17** (a static promoted map,
+judged by this binary's own cage resolver) are the two this section named.
+**G11** is excluded for a reason of its own: it is ABOUT which binary is
+installed, so a good install can deepen it when origin/main moved further
+forward than the install did while the suite ran.
+
+**The measurement found a third code this section did not name: G7.** Its
+`loop-dead` and log-mute keys are a flock and an mtime, but its `arm-broken`
+keys read `autostart_interval:` and `autostart_via:` out of a config file
+nothing touches during an upgrade and refuse them through *this binary's*
+`ParseInterval` and `AutostartVia`. A new binary whose interval grammar
+narrowed would disarm the fleet's only instrument — URGENT, and silent by
+construction — and under the assumed set that install would have landed
+clean. A code is classified by its most binary predicate, because the two
+errors are not the same size: a false rollback costs one re-run of the verb
+and leaves the fleet on the binary it was already running, with the reason
+printed; a missed one leaves a broken binary dispatching a live fleet. The
+price is named in the code — a watch loop that dies, or goes mute, inside the
+suite window rolls the install back and says so.
+
+The partition is pinned by `TestQAEveryStatusConditionCodeHasAnUpgradeClass`
+(door `make pkgcensus-check`), whose file set is discovered rather than
+spelled, so a row added tomorrow in a file that does not exist today still
+reds it until somebody classifies it.
+
+**D4's trigger is a COUNT per (class, code), not a diff keyed by subject** —
+the one place the build bead reads this ADR differently from the way it is
+written, and the reason is that the two sides of the diff are two different
+binaries. The subject lives in `GovCondition.Key`, which `posse status` does
+not print; the only subject a reader of that output has is the DETAIL, which
+govern.go documents as the half that may move freely ("percentages, ages —
+nothing keys on it"). Diffing it would roll back a good install because a
+watch log aged four minutes between the two readings, or because a landing
+reworded a sentence. Keying on `Key` itself would not help even if it were
+printed: G11's key carries a lag BUCKET and G7's a log-age class. What is
+stable across two binaries of this tree is the pair this ADR itself names —
+the class (URGENT | LANE) and the row (G1…G17, or the carry-over's em dash).
+The cost is stated rather than hidden: a SUBSTITUTION inside one code, the
+new binary clearing one G12 row and raising a different one in the same
+breath, leaves the count unchanged and does not trip. A binary that makes a
+wall worse makes MORE rows, which is the shape that trips.
+
+**D4 and D7 conflict over G12, and the build left D4 as written.** Filed as
+ranger-base-qfhph. G12's predicate is byte-for-byte identity between each
+repo `beads_visibility:` names and *this binary's* own render of the git hook
+(hookfresh.go, `l3AskIdentity`); MEASURED on this box 2026-11-13,
+`verify-hook-freshness` reports all four repos matching the installed
+binary's render and no G12 row stands. So a commit that changes the hook
+render makes every declared repo read "ours but stale" the instant the new
+binary is in place — and D7 keeps `posse gates install-hooks` out of this
+verb's scope on purpose, so the designed sequence is install, G12 goes stale,
+the operator re-renders. D4 reads step two as a new red and undoes step one:
+the verb refuses exactly the landings that change the wall. And
+`l3AskIdentity` cannot be the evidence D4 wants even in principle, because it
+drops the behaviour half on purpose — identity alone cannot tell a binary
+that renders a BROKEN hook from one that renders a DIFFERENT one. Two
+resolutions, both the architect's: D4 excludes G12 and classes it with G11;
+or D7 lets the verb re-render the repo hooks as a third arm beside D5's gate
+copy, under the same keep/swap/rollback discipline.
+
+An UNKNOWN code is treated as binary-rendered, which is the correct answer
+rather than a fallback: the table is complete for the binary doing the
+judging (the pin says so), so a row the NEW binary printed and the old one
+cannot name is a condition the new binary invented.
+
+The automatic rollback is write-beside-then-`rename(2)` rather than the
+`install -m 0755` D4 prints. Both are "not through the new binary" — it is
+the old binary's own code, in a process exec'd from the old inode — and the
+printed one is for a human typing it after this process has exited. For the
+arm that runs while a fleet may be launching, the `install(1)` measurement
+above applies with its full force. `<target>.prev` is left in place
+afterwards, so the printed command stays true for whoever reads the report.

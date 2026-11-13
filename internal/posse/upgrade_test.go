@@ -359,6 +359,13 @@ func TestUpgradeRefusesAnUnwritableTargetBeforeRunningTheSuite(t *testing.T) {
 // order, the swap happens, and D6's line is LAST.
 func TestUpgradeGreenPathSwapsAndEndsWithTheRecordLine(t *testing.T) {
 	f := newUpgradeFixture(t)
+	// D4 reads the target before and after the swap, so the binaries this
+	// pin writes have to be able to answer. The fixture's "OLD BINARY\n"
+	// reads as a binary that runs and names no commit, which is all the
+	// BEFORE side is asked for; the one the build writes is stamped with
+	// the commit being installed, which is what D4's first bullet checks.
+	stubUpgradeProbe(t)
+	built := fakePosse{Stamp: f.c}
 	var order []string
 	stubUpgradeSteps(t,
 		func(w io.Writer, dir string) error {
@@ -378,7 +385,7 @@ func TestUpgradeGreenPathSwapsAndEndsWithTheRecordLine(t *testing.T) {
 			if repo != f.repo {
 				t.Errorf("the build was handed %q as the source checkout to stamp, want %q — a stamp naming the throwaway worktree is dead by the time anything reads it (ranger-base-eiwhk)", repo, f.repo)
 			}
-			return os.WriteFile(out, []byte("NEW BINARY\n"), 0o644)
+			return os.WriteFile(out, built.bytes(), 0o644)
 		},
 		func(w io.Writer, wt, target string) string {
 			order = append(order, "epilogue")
@@ -400,7 +407,7 @@ func TestUpgradeGreenPathSwapsAndEndsWithTheRecordLine(t *testing.T) {
 	if got := strings.Join(order, ","); got != "test,build,epilogue" {
 		t.Errorf("the steps ran %s, want test,build,epilogue (ADR 0092 D3)", got)
 	}
-	if body, _ := os.ReadFile(f.target); string(body) != "NEW BINARY\n" {
+	if body, _ := os.ReadFile(f.target); !bytes.Equal(body, built.bytes()) {
 		t.Errorf("the target holds %q after a green run, want the new binary", body)
 	}
 	if body, _ := os.ReadFile(upgradePrevPath(f.target)); string(body) != "OLD BINARY\n" {

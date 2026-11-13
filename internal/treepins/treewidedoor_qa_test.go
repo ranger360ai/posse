@@ -1196,7 +1196,32 @@ package treepins
 // the mktemp one above is not. 0.30s for the census, which is the cost of
 // parsing 1026 .go files, and 0.00s for the control (MEASURED 2026-11-12).
 //
-// and `make tree-check` is all of them — one hundred and forty-four pins
+// and one more into pkgcensus-check's door — the same sentence the g31e0,
+// pruuq and rviq5 rows above are in on, QA_PKGCENSUS_PINS' subject being a
+// reading of this repo's own Go sources whose file SET is discovered. It
+// walks internal/posse's own shipped .go for every `posse status` condition
+// row the binary can print — the four-argument row closure and the
+// GovCondition literal, elided form included — and reds until every one of
+// them carries a class in upgradeConditionSource (ranger-base-v87a1). That
+// table is what `posse upgrade`'s automatic rollback is computed over (ADR
+// 0092 D4): a row the binary RENDERS rolls an install back when it appears
+// between the two readings, and a row that MOVES ON ITS OWN while the verb's
+// twelve-minute `make test` runs must not. An unclassified row is handled as
+// the first, which is the safe answer and not the right one — a shop-state
+// row left unclassified rolls back every upgrade from the day it first
+// appears:
+//
+//	TestQAEveryStatusConditionCodeHasAnUpgradeClass
+//	                                              make pkgcensus-check
+//	                                              (ranger-base-v87a1)
+//
+// Its control arm (TestQAUpgradeClassCensusSeesBothRowShapes) runs the same
+// census over a fixture planted under t.TempDir() and so is not in this
+// class, the same way the mktemp, trap-state and temp-root controls above
+// are not. 0.07s for the census over 18 rows in five files, and 0.00s for
+// the control (MEASURED 2026-11-13, one warm filtered run).
+//
+// and `make tree-check` is all of them — one hundred and forty-five pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

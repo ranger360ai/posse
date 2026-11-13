@@ -47,12 +47,15 @@ package posse
 // wider window, not a narrower one. The rename closes it either way.
 // docs/notes.d/ranger-base-zhw0h.md has the probe.
 //
-// WHAT IS NOT HERE. The status/gates snapshot-and-diff and the automatic
-// rollback on a new red are D4 and belong to ranger-base-v87a1; the bd argv
-// gate copy arm is D5 and belongs to ranger-base-41l0r. This file prints the
-// rollback command before it swaps — the half of D4 that costs nothing and
-// is worth everything if the next step goes wrong — and nothing else of
-// either.
+// WHAT IS NOT HERE. The bd argv gate copy arm is D5 and belongs to
+// ranger-base-41l0r. D4 — the status/gates snapshot taken before the swap,
+// the diff taken after it through the NEW binary, and the automatic rollback
+// on a new red — landed under ranger-base-v87a1 and lives in
+// upgradeverify.go, which also carries the partition of `posse status`
+// condition codes that decides what counts as a new red. This file prints
+// the rollback command before it swaps, which is the half of D4 that costs
+// nothing and is worth everything if the next step goes wrong, and calls
+// into that one between the swap and the epilogue.
 
 import (
 	"errors"
@@ -183,6 +186,11 @@ type upgradePlan struct {
 	From   string // the installed binary's stamped commit, as git resolved it
 	To     string // the commit to install
 	Count  int    // commits in From..To
+	// Personas is the roster D4 snapshots `posse gates <p>` for. It is a
+	// field of the plan rather than a read inside the run because the run is
+	// what the pins drive, and a roster read from the ambient home would
+	// make every one of them depend on whose box the suite is on.
+	Personas []string
 }
 
 // gitCount is `git rev-list --count <range>` as a number.
@@ -498,6 +506,11 @@ func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
 	if err != nil {
 		return err
 	}
+	// D4's roster: every persona this home declares, snapshotted before the
+	// swap and read again after it. ListAgents and not the live sessions —
+	// `posse gates <p>` describes the wall a persona WOULD launch behind, so
+	// a persona with no seat open is exactly as much evidence as one with.
+	plan.Personas = a.ListAgents()
 	return upgradeRunPlan(w, plan)
 }
 
@@ -566,6 +579,16 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 		return Die("posse upgrade: the build at %s failed (%v) — nothing was swapped", shortSha(plan.To), err)
 	}
 
+	// D4's snapshot, taken HERE: after the build, so it is as close to the
+	// swap as a reading can be, and before the keep so that nothing about
+	// the target has moved when it is taken. Its cost is one `posse status`
+	// and one `posse gates` per persona, which is seconds against the suite
+	// above — and it is spent on a run that is already going to swap, so it
+	// never delays a refusal.
+	fmt.Fprintf(w, "\n── snapshot before the swap (ADR 0092 D4) ──\n")
+	before := upgradeRead(plan.Target, plan.Personas)
+	fmt.Fprintf(w, "  %s\n", before.Line())
+
 	// BEFORE the swap, not after: the reader who needs this line most is
 	// the one whose next command is the one that broke (ADR 0092 D4).
 	fmt.Fprintf(w, "\nrollback, if the new binary misbehaves: %s\n", upgradeRollbackCmd(plan.Target))
@@ -574,6 +597,17 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 		return err
 	}
 	fmt.Fprintf(w, "installed: %s (%s)\n", AbbrevHome(plan.Target), shortSha(plan.To))
+
+	// D4's judgement, BEFORE the epilogue and not after it. The epilogue
+	// runs two scripts out of the new worktree and hands one of them the
+	// just-installed binary as POSSE — so on a binary this step is about to
+	// undo, it is work spent through the thing under suspicion, and its gate
+	// word would describe a binary that is no longer there by the time D6's
+	// line prints.
+	fmt.Fprintf(w, "\n── verify (ADR 0092 D4) ──\n")
+	if err := upgradeVerify(w, plan, before); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(w, "\n── epilogue (ADR 0092 D3.6) ──\n")
 	gate := upgradeEpilogue(w, wt, plan.Target)
