@@ -133,7 +133,11 @@ def read_records(path):
 
 def arm_a(bd, out):
     """Build a no-db store, defer in it, say what came back."""
-    root = tempfile.mkdtemp(prefix="nodb-defer-")
+    # Inside posse's temp namespace (ranger-base-qbg7c), for the reason
+    # self_test's root below carries it: the try/finally covers every exit
+    # this process chooses and scripts/reap-test-tmp.sh's `posse-*` glob is
+    # what covers the ones it does not.
+    root = tempfile.mkdtemp(prefix="posse-nodb-defer-")
     try:
         beads = os.path.join(root, ".beads")
         os.mkdir(beads)
@@ -295,7 +299,10 @@ def self_test(out):
         if not ok:
             fails.append(label)
 
-    d = tempfile.mkdtemp(prefix="nodb-defer-selftest-")
+    # Inside posse's temp namespace (ranger-base-qbg7c): a SIGKILL runs no
+    # finally, and `posse-*` at a 120m grace is the one class of
+    # scripts/reap-test-tmp.sh that reaches a shell-or-python scratch root.
+    d = tempfile.mkdtemp(prefix="posse-nodb-defer-selftest-")
     devnull = open(os.devnull, "w")
     try:
         # arm A, three stubs, three verdicts. A rig that cannot tell them

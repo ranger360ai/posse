@@ -84,7 +84,12 @@ func liveCageRepo(t *testing.T, probe string) string {
 // so a tree that would not go away left no trace at all (ranger-base-0gp7d).
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "posse6so")
+	// `posse-6so` and not `posse6so`: the reaper's posse-scratch glob is
+	// `posse-*`, WITH the hyphen, so the old name looked like it was inside
+	// posse's temp namespace and was matched by no class at all
+	// (ranger-base-qbg7c). One byte, and it is the whole of the difference
+	// between a killed run's root being collectable and not.
+	dir, err := os.MkdirTemp("/tmp", "posse-6so")
 	if err != nil {
 		t.Fatal(err)
 	}

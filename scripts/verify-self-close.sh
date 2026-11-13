@@ -58,8 +58,18 @@ HERDR=${HERDR:-$(command -v herdr)}
 
 SESSION="selfclose-$$"
 FLEET_SOCK=${HOME}/.config/herdr/herdr.sock
-# Short root: sun_path caps the socket path at ~104 bytes.
-HHOME=$(mktemp -d /private/tmp/pselfclose.XXXXXX)
+# Short root: sun_path caps the socket path at ~104 bytes. /private/tmp and
+# NOT ${TMPDIR:-/tmp}: this gate is darwin-only and darwin's TMPDIR is a
+# per-user /var/folders/… path that spends most of those 104 bytes on its own,
+# so the house template would break the one constraint this line exists for.
+# /private/tmp is what darwin's /tmp resolves TO, which is where
+# scripts/reap-test-tmp.sh's default root already looks — so the `posse-`
+# prefix is the half that makes a killed run's root collectable here
+# (ranger-base-qbg7c), and the path is why this root keeps its row in
+# internal/treepins/mktemproot_qa_test.go's mtExempt. The longest path under
+# it is .config/herdr/sessions/$SESSION/herdr.sock, which leaves ~17 bytes
+# unspent.
+HHOME=$(mktemp -d /private/tmp/posse-selfclose.XXXXXX)
 SESS_SOCK="$HHOME/.config/herdr/sessions/${SESSION}/herdr.sock"
 OUT="$HHOME/out"
 CWD="$HHOME/cwd"

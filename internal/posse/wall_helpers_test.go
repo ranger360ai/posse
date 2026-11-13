@@ -158,13 +158,21 @@ func wallMechanismForTest(t *testing.T, goos string) {
 // TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot).
 func wallUngrantedDir(t *testing.T) string {
 	t.Helper()
-	const base = "/var/tmp"
-	if st, err := os.Stat(base); err != nil || !st.IsDir() {
-		t.Skip("NOTHING MEASURED: no " + base + " on this host, so there is no fixture root outside every blanket temp grant")
+	// Named `varTmpRoot` and not `base`, which internal/posse binds to a
+	// different literal seven times over in systemdunit_test.go: the
+	// tree-wide temp-root census (internal/treepins/temproot_qa_test.go)
+	// resolves a parent name across the whole package and DROPS a name the
+	// package binds twice rather than guessing, so under the old spelling
+	// this root was scored out of that census's scope entirely
+	// (ranger-base-qbg7c). One token, and it is the difference between the
+	// census reading this line and not reading it.
+	const varTmpRoot = "/var/tmp"
+	if st, err := os.Stat(varTmpRoot); err != nil || !st.IsDir() {
+		t.Skip("NOTHING MEASURED: no " + varTmpRoot + " on this host, so there is no fixture root outside every blanket temp grant")
 	}
-	d, err := os.MkdirTemp(base, "posse-ungranted-")
+	d, err := os.MkdirTemp(varTmpRoot, "posse-ungranted-")
 	if err != nil {
-		t.Skip("NOTHING MEASURED: cannot make a fixture root under " + base + ": " + err.Error())
+		t.Skip("NOTHING MEASURED: cannot make a fixture root under " + varTmpRoot + ": " + err.Error())
 	}
 	t.Cleanup(func() { removeAllTolerant(t, d) })
 	d = absResolve(d)

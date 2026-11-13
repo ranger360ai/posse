@@ -250,7 +250,13 @@ def self_test(out):
         if not ok:
             fails.append(label)
 
-    d = tempfile.mkdtemp(prefix="nodb-set-defer-selftest-")
+    # Inside posse's temp namespace (ranger-base-qbg7c): the finally below
+    # covers every exit this process chooses, and nothing covers a SIGKILL or
+    # a box that goes down. What collects THAT run's root is
+    # scripts/reap-test-tmp.sh, whose posse-scratch class is the glob
+    # `posse-*` at a 120m grace, and no other class of its table reaches a
+    # name of this shape.
+    d = tempfile.mkdtemp(prefix="posse-nodb-set-defer-selftest-")
     devnull = open(os.devnull, "w")
     off = local_offset()
     try:

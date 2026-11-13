@@ -1137,7 +1137,28 @@ package treepins
 // credential-token one above is not. 0.02s for the pair on one warm filtered
 // run (MEASURED 2026-11-12).
 //
-// and `make tree-check` is all of them — one hundred and forty-one pins
+// and one more into corpus-check's door — the same rule as the row above, in
+// the two languages that pin could not read, and the fourth hand census of
+// this family is what it is for (ranger-base-qbg7c). Every live
+// os.MkdirTemp, tempfile.mkdtemp and tempfile.TemporaryDirectory whose
+// PARENT is a shared temp directory carries a prefix beginning `posse-`, the
+// one namespace scripts/reap-test-tmp.sh has a glob for. It walks `.` for
+// every .go and .py file in the tree, so an unrelated bead's new temp root
+// joins the census without anyone editing it — which is the whole of what
+// the three hand censuses before it did not have. Behind corpus-check and
+// not scripts-check because its subject is this repo's own .go and .py
+// sources, which is that door's sentence:
+//
+//	TestQAEveryTempRootInTheTreeIsInPossesTempNamespace
+//	                                              make corpus-check
+//	                                              (ranger-base-qbg7c)
+//
+// Its control arm (TestQATheTempRootCensusCanStillSayNo) plants Go and
+// Python fixtures under t.TempDir() and so is not in this class, the same way
+// the mktemp one above is not. 0.30s for the census, which is the cost of
+// parsing 1026 .go files, and 0.00s for the control (MEASURED 2026-11-12).
+//
+// and `make tree-check` is all of them — one hundred and forty-two pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

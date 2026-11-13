@@ -222,7 +222,13 @@ fi
 
 # Short root: sun_path caps the socket path at ~104 bytes. Made here and not
 # with the other paths above so that --self-test touches no filesystem.
-HHOME=$(mktemp -d /private/tmp/pghost.XXXXXX)
+# /private/tmp and NOT ${TMPDIR:-/tmp} for the reason verify-self-close.sh
+# gives at the same line: darwin's TMPDIR is a long /var/folders/… path and
+# this gate is darwin-only. The `posse-` prefix is the half that still
+# applies — /private/tmp is what darwin's /tmp resolves to, and
+# scripts/reap-test-tmp.sh's posse-scratch glob is the only class that
+# reaches a root there (ranger-base-qbg7c).
+HHOME=$(mktemp -d /private/tmp/posse-ghost.XXXXXX)
 SESS_SOCK="$HHOME/.config/herdr/sessions/${SESSION}/herdr.sock"
 OUT="$HHOME/out"
 mkdir -p "$OUT"

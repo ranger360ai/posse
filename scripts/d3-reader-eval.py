@@ -516,7 +516,11 @@ def main(argv: list[str]) -> int:
     if not shutil.which("herdr"):
         print("d3-reader-eval: herdr not on PATH", file=sys.stderr)
         return 2
-    with tempfile.TemporaryDirectory(prefix="d3-reader-eval.") as tmp:
+    # Inside posse's temp namespace (ranger-base-qbg7c): the context manager
+    # removes the root on every exit this process chooses, and a SIGKILL is
+    # not one of them — `posse-*` at a 120m grace is then the only class of
+    # scripts/reap-test-tmp.sh that reaches it.
+    with tempfile.TemporaryDirectory(prefix="posse-d3-reader-eval.") as tmp:
         stage = Path(tmp) / "stage"
         work = Path(tmp) / "screens"
         stage.mkdir()

@@ -238,8 +238,15 @@ func bhLiveFixture(t *testing.T) bhLive {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
 	// Short, and not t.TempDir(): a unix socket path is limited to 108 bytes
-	// and a test-named temp dir eats most of them.
-	dir, err := os.MkdirTemp("", "bwh")
+	// and a test-named temp dir eats most of them. Short INSIDE posse's temp
+	// namespace, which is what the `posse-` carries (ranger-base-qbg7c): the
+	// t.Cleanup below covers every exit this binary chooses and nothing
+	// covers a SIGKILL or a -timeout panic, so the dir a killed run leaves is
+	// collectable only by scripts/reap-test-tmp.sh's posse-scratch class, the
+	// glob `posse-*` at a 120m grace. The longest path under here is
+	// `gnupg/S.gpg-agent.ssh`, 22 bytes, so the six the prefix adds leave
+	// ~60 of the 108 unspent on this box.
+	dir, err := os.MkdirTemp("", "posse-bwh")
 	if err != nil {
 		t.Fatal(err)
 	}

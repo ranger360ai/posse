@@ -174,7 +174,14 @@ func btLive(t *testing.T) (plant, seatTmp string) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	work, err := os.MkdirTemp(bwrapTmpMount, "bwt7wdb7-")
+	// Inside posse's temp namespace (ranger-base-qbg7c): bwrapTmpMount is
+	// `/tmp`, the t.Cleanup below runs on no SIGKILL and no -timeout panic,
+	// and `posse-*` at a 120m grace is the only class of
+	// scripts/reap-test-tmp.sh that reaches a root there. The parent being
+	// spelled as a package const is why the tree-wide census reads one
+	// (internal/treepins/temproot_qa_test.go) — a grep for `MkdirTemp("/tmp"`
+	// does not find this line.
+	work, err := os.MkdirTemp(bwrapTmpMount, "posse-bwt7wdb7-")
 	if err != nil {
 		t.Fatal(err)
 	}

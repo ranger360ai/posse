@@ -12,6 +12,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-x2blo](ranger-base-x2blo.md) — The reaper's probe created the inode it was asked to find (ranger-base-x2blo) — 2026-11-12
 - [ranger-base-w8n6w](ranger-base-w8n6w.md) — A scratch root under scripts/ names a namespace the reaper has a class for (ranger-base-w8n6w) — 2026-11-12
 - [ranger-base-vxir7](ranger-base-vxir7.md) — The CLI-home fence, derived from the resolvers and checked by asking them (ranger-base-vxir7) — 2026-11-12
+- [ranger-base-qbg7c](ranger-base-qbg7c.md) — The residual fixture-root class, and the census that ends the hand count (ranger-base-qbg7c) — 2026-11-12
 - [ranger-base-pn99n](ranger-base-pn99n.md) — ranger-base-pn99n — the ARGV half of the fixture-git census, and what it does not cover — 2026-11-12
 - [ranger-base-nxus6](ranger-base-nxus6.md) — Two pins that were green against the mutant they exist to catch (ranger-base-nxus6) — 2026-11-12
 - [ranger-base-m3fl5](ranger-base-m3fl5.md) — A cleanup trap that owned nothing, because the pick ran in a subshell (ranger-base-m3fl5) — 2026-11-12

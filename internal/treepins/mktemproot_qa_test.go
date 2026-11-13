@@ -59,11 +59,20 @@ package treepins
 // `mktemp -d` reds until someone says which of the two it is.
 //
 // WHAT IT DOES NOT REACH, said once so no reader has to rediscover it: a
-// `mktemp` with no `-d` (a FILE, which no class in that table globs), a root
-// built by `mkdir -p "$TMPDIR/$$"` or any other spelling of the same idea, and
-// a root created by Go's os.MkdirTemp (the tests' half of the posse-scratch
-// class, pinned nowhere here). The subject is the one thing all three beads in
-// this family found: `mktemp -d` under scripts/.
+// `mktemp` with no `-d` (a FILE, which no class in that table globs), and a
+// root built by `mkdir -p "$TMPDIR/$$"` or any other spelling of the same
+// idea. The subject is the one thing all three beads in this family found:
+// `mktemp -d` under scripts/.
+//
+// A root created by Go's os.MkdirTemp or Python's tempfile WAS on that list —
+// "the tests' half of the posse-scratch class, pinned nowhere here" — and is
+// temproot_qa_test.go's now (ranger-base-qbg7c, which found ten such roots
+// outside the namespace plus an eleventh this file's own census could never
+// have seen). The two pins are one rule over two languages and deliberately
+// not one reader: this one is a line-based shell reader and that one is a
+// go/parser census, so folding them would mean a shell parse or an AST over
+// bash. Each says in prose which languages it owns, and `make scripts-check`
+// and `make corpus-check` are the two doors.
 
 import (
 	"fmt"
@@ -203,12 +212,12 @@ var mtExempt = []struct{ Script, Template, Reason string }{
 		"nested INSIDE posse-audit-silent-reverts.* — SR_TMPROOT is itself a conforming root made at :607, and this is the per-case dir under it. The PARENT is what the reaper collects, and collecting it takes this with it; naming the parent's template again here would be a second place for it to drift.",
 	},
 	{
-		"scripts/verify-ghost-composer.sh", "/private/tmp/pghost.XXXXXX",
-		"darwin-only: /private/tmp is the real path of darwin's /tmp and this gate does not run on linux at all (its own head comment says so). Renaming it is safe and is simply not this bead's work; it stays visible here rather than being silently matched by a wider rule.",
+		"scripts/verify-ghost-composer.sh", "/private/tmp/posse-ghost.XXXXXX",
+		"darwin-only, and the PATH is the exemption now rather than the whole template (ranger-base-qbg7c renamed the prefix into posse's namespace). /private/tmp is what darwin's /tmp resolves to, so the reaper's default root already looks there and `posse-*` reaches this root; what it cannot have is ${TMPDIR:-/tmp}, because darwin's TMPDIR is a per-user /var/folders/… path and a unix socket under it would blow the 104-byte sun_path cap this line exists to stay inside.",
 	},
 	{
-		"scripts/verify-self-close.sh", "/private/tmp/pselfclose.XXXXXX",
-		"darwin-only, the same way, AND pinned BY NAME in internal/posse/selfclose_qa_test.go — so renaming it is a two-file change across the arm boundary, which is why ranger-base-tbukc left it out when it renamed the other five.",
+		"scripts/verify-self-close.sh", "/private/tmp/posse-selfclose.XXXXXX",
+		"darwin-only and length-bound the same way, with the same half-fix: the prefix is inside posse's namespace (ranger-base-qbg7c) and the hardcoded /private/tmp is what stays. It is ALSO pinned by name in internal/posse/selfclose_qa_test.go, so the rename was a two-file change across the arm boundary — which is why ranger-base-tbukc left it alone and why this row is the place that says the path is deliberate.",
 	},
 }
 

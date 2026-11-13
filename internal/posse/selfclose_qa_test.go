@@ -63,7 +63,7 @@ func TestQASelfCloseScriptKeepsItsFleetFences(t *testing.T) {
 		`[ "$sock" != "$SESS_SOCK" ]`,
 		`[ "$sock" = "$FLEET_SOCK" ]`,
 		"unset HERDR_ENV HERDR_SOCKET_PATH",
-		`HHOME=$(mktemp -d /private/tmp/pselfclose.XXXXXX)`,
+		`HHOME=$(mktemp -d /private/tmp/posse-selfclose.XXXXXX)`,
 		`env HOME="$HHOME"`,
 		"REFUSING:",
 		"session delete",

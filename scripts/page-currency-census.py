@@ -468,7 +468,11 @@ def self_test():
             fail += 1
             print("  BAD   %s" % what)
 
-    tmp = tempfile.mkdtemp(prefix="page-currency-selftest-")
+    # Inside posse's temp namespace (ranger-base-qbg7c): the removal below
+    # runs on every exit this process chooses and on none that it does not,
+    # so a killed run's root is collectable only by
+    # scripts/reap-test-tmp.sh's posse-scratch class (glob `posse-*`, 120m).
+    tmp = tempfile.mkdtemp(prefix="posse-page-currency-selftest-")
 
     def page(name, body):
         path = os.path.join(tmp, name)
