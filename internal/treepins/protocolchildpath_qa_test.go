@@ -129,6 +129,14 @@ var pcExemptFuncs = map[string]string{
 		"purpose — the gated-bd arms assert what posse does there. A door that " +
 		"resolved its child outside the gates would be injecting its cost into " +
 		"a different suite than the one a seat runs.",
+	"internal/posse/wallwatch_linux.go:runWallWatch": "the bwrap seat's " +
+		"wall-watch sidecar (ranger-base-ihnnl), which the pane's launch line " +
+		"runs in front of bwrap — so it runs IN the seat's line, and its child " +
+		"is the seat itself. The environment it hands on is the one posse " +
+		"TYPED onto that seat, gates dir leading PATH on purpose (ADR 0009), " +
+		"and protocolCmd would strip the seat's own gates. The binary is the " +
+		"absolute path the render resolved through protocolBin (BwrapPrefix, " +
+		"bwrapBin), so there is no name for a shim to answer to.",
 }
 
 // pcEnvBinders are the functions that put ADR 0077 D3's PATH onto a child's

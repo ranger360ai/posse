@@ -180,8 +180,8 @@ func TestLiveLandedCheckCageReadsNoSecret(t *testing.T) {
 // green because every pin rendered through one of the other two.
 //
 // So the subject is the render and not a name list: any function in the
-// MODULE's non-test sources that calls a cage renderer (BwrapArgs,
-// SeatbeltProfile) must, at a line before its first render, call
+// MODULE's non-test sources that calls a cage renderer (BwrapArgs, its
+// watched twin bwrapArgsWatched, SeatbeltProfile) must, at a line before its first render, call
 // withSSHKeyReadDeny AND reach the credential denies — through
 // SeatbeltCarveOut, which carries them, or credentialReadDenyLiterals
 // directly. A render whose carve arrives from a caller would fail this: say
@@ -193,7 +193,7 @@ func TestLiveLandedCheckCageReadsNoSecret(t *testing.T) {
 // render today — bwrapRender, RenderSeatbelt and boxLandedCage.
 func TestQAEveryCageRenderCarriesTheSecretMasks(t *testing.T) {
 	t.Parallel()
-	renders := map[string]bool{"BwrapArgs": true, "SeatbeltProfile": true}
+	renders := map[string]bool{"BwrapArgs": true, "bwrapArgsWatched": true, "SeatbeltProfile": true}
 	fset := token.NewFileSet()
 	paths := 0
 	for _, src := range cdmModuleSources(t) {

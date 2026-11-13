@@ -109,11 +109,12 @@ func TestQALaunchAtTheOtherHostsWallMechanism(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			p, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "ranger"})
+			dir := t.TempDir()
+			p, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: dir, Agent: "ranger"})
 			if err != nil {
 				t.Fatalf("planLaunch at the %s mechanism: %v", tc.mech, err)
 			}
-			wrap, artifact := wallWrapForTest(t, a.GatesDir("ranger"))
+			wrap, artifact := wallLaunchWrapForTest(t, a.GatesDir("ranger"), "ranger", dir)
 			// The LINE. `wrap` ends in a space and the runtime command
 			// follows it, so this says the prefix is typed in front of the
 			// command and not merely somewhere on the line.

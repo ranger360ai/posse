@@ -442,8 +442,15 @@ func TestQARenderWallIsTheOneSwitchBetweenTheTiersTwoMechanisms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pre != w.Prefix {
-		t.Errorf("WallPrefix = %q but RenderWall says %q — one answer, or the two launch call sites can type a binary for a wall they did not render", pre, w.Prefix)
+	// The launch's line is Launch where the render has one — at bwrap, the
+	// same prefix with `posse wall-watch` in front of the binary
+	// (ranger-base-ihnnl) — and Prefix otherwise.
+	launch := w.Prefix
+	if w.Launch != "" {
+		launch = w.Launch
+	}
+	if pre != launch {
+		t.Errorf("WallPrefix = %q but RenderWall says %q — one answer, or the two launch call sites can type a binary for a wall they did not render", pre, launch)
 	}
 	if w.Mechanism != WallMechanism() {
 		t.Errorf("RenderWall on this box chose %q, and this host's mechanism is %q", w.Mechanism, WallMechanism())

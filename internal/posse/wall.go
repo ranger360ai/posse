@@ -211,6 +211,12 @@ type WallRender struct {
 	// space included, and is what every reader of this wall should run
 	// rather than recompose.
 	Prefix string
+	// Launch is what a LAUNCH types instead of Prefix, when it differs: at
+	// bwrap, Prefix with `posse wall-watch` standing between the line and
+	// the binary (ranger-base-0qpsw D1). A probe keeps Prefix — it applies
+	// the wall for one command and is gone before a rename could matter —
+	// and "" means a launch types Prefix too.
+	Launch string
 }
 
 // ─── WHERE A RENDER THAT IS NOT A LAUNCH LANDS (ranger-base-6s5mo) ──────────
@@ -535,7 +541,13 @@ func (a *App) renderWallInto(mech string, w wallWrite, ag *AgentFile, rt *Runtim
 		if err != nil {
 			return WallRender{}, err
 		}
-		return WallRender{Mechanism: m, Artifact: args, Prefix: BwrapPrefix(bin, args)}, nil
+		self, err := wallWatchBin()
+		if err != nil {
+			return WallRender{}, Die("cage %s (%s): cannot locate this posse binary for the wall-watch sidecar (%v), and a seat with no watcher is a seat whose walls can come off unseen (ranger-base-0qpsw D1)", CageSeatbelt, WallBwrap, err)
+		}
+		mounts := filepath.Join(filepath.Dir(args), bwrapMountsName)
+		return WallRender{Mechanism: m, Artifact: args, Prefix: BwrapPrefix(bin, args),
+			Launch: WallWatchPrefix(self, mounts, ag.Name, cwd, bin, args)}, nil
 	}
 	return WallRender{}, Die("cage %s: posse has no render for wall mechanism %q (this host is %s, and posse renders %s and %s and nothing else), so there is no L2 write wall to type here (ADR 0080 D16/D18)",
 		CageSeatbelt, mech, runtime.GOOS, WallSandboxExec, WallBwrap)
@@ -554,6 +566,9 @@ func (a *App) WallPrefix(ag *AgentFile, rt *Runtime, cwd string) (string, error)
 	w, err := a.RenderWall(ag, rt, cwd)
 	if err != nil {
 		return "", err
+	}
+	if w.Launch != "" {
+		return w.Launch, nil
 	}
 	return w.Prefix, nil
 }

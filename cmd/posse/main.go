@@ -295,6 +295,13 @@ func main() {
 	if posse.IsHookReport(os.Args) {
 		os.Exit(posse.RunHookReport(os.Args, os.Stdin, os.Stdout, os.Stderr))
 	}
+	// Fifth entry point (ranger-base-ihnnl): the sidecar a bwrap seat's
+	// launch line starts in front of bwrap, which holds the seat to the walls
+	// its render put up (ranger-base-0qpsw D1). The pane runs it and nobody
+	// types it, it reads no config, and it returns bwrap's own exit code.
+	if posse.IsWallWatch(os.Args) {
+		os.Exit(posse.RunWallWatch(os.Args, os.Stderr))
+	}
 	// The home refusal is here and not deeper because it must reach every
 	// subcommand, and because the three entry points that legitimately run
 	// in a scrubbed environment (IsCageLaunch, IsCageReap, IsHookReport)

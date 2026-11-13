@@ -67,6 +67,27 @@ func wallWrapForTest(t *testing.T, gatesDir string) (wrap, artifact string) {
 	}
 }
 
+// wallLaunchWrapForTest is what a LAUNCH types for that wall: the same as
+// wallWrapForTest at sandbox-exec, and at bwrap the `posse wall-watch`
+// sidecar in front of the binary (ranger-base-ihnnl) — built from
+// WallWatchPrefix, the one spelling the render types.
+func wallLaunchWrapForTest(t *testing.T, gatesDir, seat, dir string) (wrap, artifact string) {
+	t.Helper()
+	wrap, artifact = wallWrapForTest(t, gatesDir)
+	if WallMechanism() != WallBwrap {
+		return wrap, artifact
+	}
+	bin, err := bwrapBin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, err := wallWatchBin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return WallWatchPrefix(self, filepath.Join(gatesDir, bwrapMountsName), seat, dir, bin, artifact), artifact
+}
+
 // sandboxExecWallOnly skips a test whose assertions are sandbox-exec's own
 // vocabulary — an SBPL line, a `(subpath …)` grant, an atomic-write sibling
 // regex — on a host whose mechanism is something else. The bwrap readings of

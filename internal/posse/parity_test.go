@@ -357,7 +357,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 		t.Errorf("this launch materialized %s — bd creates the store of record on first write, at every mechanism (ADR 0080 D23)", filepath.Join(real, beadsDirName))
 	}
 	log := calls(t, fake)
-	wrap, wallPath := wallWrapForTest(t, gates)
+	wrap, wallPath := wallLaunchWrapForTest(t, gates, "security", repo)
 	if !strings.Contains(log, "GATES "+wrap+"grok") || !strings.Contains(log, "--env RHQ_CAGE=seatbelt") {
 		t.Errorf("%s wrap missing:\n%s", WallMechanism(), log)
 	}

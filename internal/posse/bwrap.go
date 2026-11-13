@@ -255,6 +255,36 @@ func (s PrepStep) String() string { return string(s.Kind) + " " + s.Path }
 // for the same reason — the value of this answer is that a seat runs behind
 // it.
 func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ...string) ([]string, []PrepStep, error) {
+	var watch []WallWatchMount
+	return bwrapArgsInto(&watch, cwd, writable, carve, refKeep...)
+}
+
+// bwrapArgsWatched is BwrapArgs with its third output: every mount it put
+// over a name that is a WALL — Hide (the runtime dir's tmpfs and the seat's
+// /tmp), Private, Masked and Deny — in render order (ranger-base-0qpsw D1).
+// `posse wall-watch` holds the seat to that list: a host rename or unlink
+// over any of those names detaches the mount in every namespace, and the
+// seat would then read and write the host's object at that name.
+//
+// THE OPENINGS ARE NOT IN IT. A write grant, a Keep file, an ssh allow bind
+// re-OPEN something, so a detached one leaves the seat with less than it
+// was given and never more — the wall underneath is still there. Recording
+// them would turn an operator's `rm -rf` of a stale cache into a P1.
+//
+// The list is taken HERE, beside the argv it describes, and not re-derived
+// from the argv later: a destination in the argv does not say whether it
+// is a wall or an opening, and the render is the one place that knows.
+func bwrapArgsWatched(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ...string) ([]string, []PrepStep, []WallWatchMount, error) {
+	var watch []WallWatchMount
+	argv, prep, err := bwrapArgsInto(&watch, cwd, writable, carve, refKeep...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return argv, prep, watch, nil
+}
+
+func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carve SeatbeltCarveOut, refKeep ...string) ([]string, []PrepStep, error) {
+	watch := func(kind, p string) { *watchp = append(*watchp, WallWatchMount{Kind: kind, Path: p}) }
 	// 1. The base. --die-with-parent so a seat's wall dies with the pane
 	// that holds it; --ro-bind / / because the default is to deny writes
 	// everywhere, which at this mechanism is spelled as a read-only mount of
@@ -325,6 +355,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-ludpp)", h)
 		}
 		argv = append(argv, "--tmpfs", h)
+		watch(WallWatchHide, h)
 	}
 
 	// 1c. The seat's own /tmp (ranger-base-7wdb7). The host's /tmp is the
@@ -363,6 +394,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			prep = append(prep, PrepStep{PrepMkdirAll, carve.Tmp, "the seat's private /tmp, bound over the host's so no seat writes where uncaged builds stage what they execute"})
 		}
 		argv = append(argv, "--bind", carve.Tmp, bwrapTmpMount)
+		watch(WallWatchHide, bwrapTmpMount)
 		hidden = append(hidden, bwrapTmpMount)
 		kept := writable[:0:0]
 		for _, w := range writable {
@@ -518,6 +550,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 				prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "a dir of the shared config that is re-bound in place to narrow or reopen the grant over it; a mount needs a directory to cover"})
 			}
 			argv = append(argv, bind, pb.Dst, pb.Dst)
+			watch(WallWatchPrivate, pb.Dst)
 			continue
 		}
 		if err != nil {
@@ -528,6 +561,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			// nothing a host process wrote at Dst is visible under it
 			// (ranger-base-6ob20).
 			argv = append(argv, "--tmpfs", pb.Dst)
+			watch(WallWatchPrivate, pb.Dst)
 			continue
 		}
 		exists, dir, err := bwrapStat(pb.Src)
@@ -541,6 +575,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
 		}
 		argv = append(argv, bind, pb.Src, pb.Dst)
+		watch(WallWatchPrivate, pb.Dst)
 	}
 
 	// 3. Shape 2: the carve-out's denies, read-only over the grants above
@@ -586,6 +621,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 				prep = append(prep, PrepStep{PrepMaskPoint, d, "a cached server answer that is not there yet and sits inside a write grant; created empty (no answer) so /dev/null can be mounted over the name"})
 			}
 			argv = append(argv, "--ro-bind", "/dev/null", d)
+			watch(WallWatchMasked, d)
 			continue
 		}
 		exists, _, err := bwrapStat(d)
@@ -697,6 +733,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 			}
 		}
 		argv = append(argv, "--ro-bind", d, d)
+		watch(WallWatchDeny, d)
 	}
 
 	// Seal RENDERS NOTHING, and that is a decision with two measurements
@@ -1597,6 +1634,10 @@ const (
 	// bwrapTextName is the readable twin. Nothing reads it back, which is
 	// why it may carry a header and a prep list the argv has no room for.
 	bwrapTextName = "bwrap.txt"
+	// bwrapMountsName is the walls among the argv's mounts, which `posse
+	// wall-watch` holds the seat to (ranger-base-0qpsw D1; wallwatch.go has
+	// the format).
+	bwrapMountsName = "bwrap.mounts"
 )
 
 // RenderBwrap is ADR 0080 D18's half of the launch: it renders this seat's
@@ -1692,6 +1733,12 @@ func (a *App) renderBwrapWall(ag *AgentFile, rt *Runtime, cwd string, w wallWrit
 	if err := os.WriteFile(filepath.Join(dest, bwrapTextName), []byte(bwrapReadable(ag.Name, args, r.Argv, r.Prep, r.Absent)), 0o644); err != nil {
 		return "", bwrapRendered{}, err
 	}
+	// The watcher's list, beside the argv it describes and written by the
+	// same render (ranger-base-0qpsw D1). After the prep, so a mount point
+	// the launcher just made resolves like every other one.
+	if err := os.WriteFile(filepath.Join(dest, bwrapMountsName), wallWatchMountsBytes(r.Watch), 0o644); err != nil {
+		return "", bwrapRendered{}, err
+	}
 	return args, r, nil
 }
 
@@ -1718,6 +1765,10 @@ type bwrapRendered struct {
 	// Argv and Prep are D17's two outputs.
 	Argv []string
 	Prep []PrepStep
+	// Watch is the walls among Argv's mounts (bwrapArgsWatched), which the
+	// launch hands `posse wall-watch` as the mounts file (ranger-base-0qpsw
+	// D1).
+	Watch []WallWatchMount
 }
 
 // bwrapRender is the list-to-argv half with no write in it: the two
@@ -1804,7 +1855,7 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	if r.Set, r.Absent, err = bwrapBindExisting(r.Set, bwrapNoCreate(ag, cwd)); err != nil {
 		return bwrapRendered{}, err
 	}
-	if r.Argv, r.Prep, err = BwrapArgs(cwd, r.Set, r.Carve, r.Keep...); err != nil {
+	if r.Argv, r.Prep, r.Watch, err = bwrapArgsWatched(cwd, r.Set, r.Carve, r.Keep...); err != nil {
 		return bwrapRendered{}, err
 	}
 	// The seat's own caches (ranger-base-olr0g): the dir SeatbeltWritable
