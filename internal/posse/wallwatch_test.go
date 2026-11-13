@@ -18,7 +18,8 @@ import (
 )
 
 // The render records its WALLS and only its walls: Hide, Private, Masked,
-// Deny are watched; a write grant (an opening) is not.
+// Deny and step 5's read masks (ranger-base-y4cm6) are watched; a write
+// grant and the ssh allow bind-backs (openings) are not.
 func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -28,12 +29,17 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 	deny := filepath.Join(grant, "settings.json")
 	mask := filepath.Join(grant, "policy-cache.json")
 	hide := filepath.Join(root, "run")
-	for _, d := range []string{grant, priv, src, hide} {
+	sshDir := filepath.Join(root, ".ssh")
+	sshCfg := filepath.Join(sshDir, "config")
+	sshHosts := filepath.Join(sshDir, "known_hosts")
+	sshKey := filepath.Join(sshDir, "id_ed25519")
+	cred := filepath.Join(root, "sibling", "credentials.json")
+	for _, d := range []string{grant, priv, src, hide, sshDir, filepath.Dir(cred)} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, f := range []string{deny, mask} {
+	for _, f := range []string{deny, mask, sshCfg, sshHosts, sshKey, cred} {
 		if err := os.WriteFile(f, []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -44,6 +50,8 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 		DenyFile: []string{deny, mask},
 		Mask:     []string{mask},
 		Private:  []PrivateBind{{Src: src, Dst: priv}},
+		SSHDir:   []string{sshDir},
+		DenyRead: []string{cred, sshKey},
 	}
 	_, _, watch, err := bwrapArgsWatched("", []string{grant}, carve)
 	if err != nil {
@@ -54,9 +62,19 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 		{WallWatchPrivate, priv},
 		{WallWatchMasked, mask},
 		{WallWatchDeny, deny},
+		{WallWatchReadMask, sshDir},
+		{WallWatchReadMask, cred},
 	}
 	if !reflect.DeepEqual(watch, want) {
 		t.Errorf("watched walls =\n %v\nwant\n %v\n(the write grant %s is an opening and must not be watched)", watch, want, grant)
+	}
+	// The bind-backs under the ssh tmpfs are the holes deliberately left in
+	// that wall, and the key under it renders no mount at all, so none of
+	// the three is watched.
+	for _, p := range []string{sshCfg, sshHosts, sshKey} {
+		if wallWatchListed(watch, p) {
+			t.Errorf("%s is watched: it is an opening under the %s tmpfs, not a wall of its own", p, sshDir)
+		}
 	}
 	// BwrapArgs's own output is unchanged by the third one.
 	a1, p1, _ := BwrapArgs("", []string{grant}, carve)

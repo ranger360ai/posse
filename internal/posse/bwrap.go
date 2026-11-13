@@ -261,15 +261,30 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 
 // bwrapArgsWatched is BwrapArgs with its third output: every mount it put
 // over a name that is a WALL — Hide (the runtime dir's tmpfs and the seat's
-// /tmp), Private, Masked and Deny — in render order (ranger-base-0qpsw D1).
+// /tmp), Private, Masked, Deny and ReadMask (step 5's ssh dir tmpfs and its
+// /dev/null credential binds) — in render order (ranger-base-0qpsw D1, the
+// read masks added by ranger-base-w6ip0's decision as ranger-base-y4cm6).
 // `posse wall-watch` holds the seat to that list: a host rename or unlink
 // over any of those names detaches the mount in every namespace, and the
 // seat would then read and write the host's object at that name.
 //
+// A READ MASK IS A WALL AND ITS COST IS ACCEPTED. A credential file that a
+// host tool refreshes by atomic rename detaches the /dev/null over it, so
+// every live seat that masks that credential is killed at each refresh.
+// MEASURED 2026-11-13 by stat only: claude's credentials file has birth and
+// mtime 1 ms apart after a refresh, so the refresher does write a new
+// inode. The cost is zero on this box today — every bwrap seat is claude
+// and no sibling runtime's credential store exists — and ranger-base-a8qfg
+// is the shape that removes it before a non-claude runtime goes bwrap. The
+// ssh tmpfs and the keys under it have no rename refresher.
+//
 // THE OPENINGS ARE NOT IN IT. A write grant, a Keep file, an ssh allow bind
 // re-OPEN something, so a detached one leaves the seat with less than it
 // was given and never more — the wall underneath is still there. Recording
-// them would turn an operator's `rm -rf` of a stale cache into a P1.
+// them would turn an operator's `rm -rf` of a stale cache into a P1. That
+// is why the config and known_hosts bound back UNDER the ssh tmpfs are not
+// watched while the tmpfs itself is: the tmpfs is the wall, those two are
+// the holes deliberately left in it.
 //
 // The list is taken HERE, beside the argv it describes, and not re-derived
 // from the argv later: a destination in the argv does not say whether it
@@ -824,6 +839,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-12ggv)", d)
 		}
 		argv = append(argv, "--tmpfs", d)
+		watch(WallWatchReadMask, d)
 		sshHidden = append(sshHidden, d)
 		for _, f := range carve.sshDirAllowed(d) {
 			exists, dir, err := bwrapStat(f)
@@ -848,6 +864,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			continue
 		}
 		argv = append(argv, "--ro-bind", "/dev/null", f)
+		watch(WallWatchReadMask, f)
 	}
 	return argv, prep, nil
 }

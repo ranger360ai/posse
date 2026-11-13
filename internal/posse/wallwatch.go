@@ -3,8 +3,9 @@ package posse
 // `posse wall-watch` (ranger-base-ihnnl, design ranger-base-0qpsw D1+D2):
 // the sidecar a bwrap seat's launch line starts in front of bwrap. It holds
 // the seat to the list of WALL mounts its render put over a name — Hide,
-// Private, Masked, Deny (bwrapArgsWatched) — and when one of them leaves the
-// seat's mount table it kills the seat and files a P1 security bead.
+// Private, Masked, Deny, ReadMask (bwrapArgsWatched) — and when one of them
+// leaves the seat's mount table it kills the seat and files a P1 security
+// bead.
 //
 // A mount over a name does not survive a host rename or unlink of that name:
 // the kernel detaches it in every namespace, the seat's included, and the
@@ -54,6 +55,14 @@ const (
 	WallWatchPrivate = "private"
 	WallWatchMasked  = "masked"
 	WallWatchDeny    = "deny"
+	// WallWatchReadMask is step 5's credential read masks: the ssh dir's
+	// tmpfs and the /dev/null binds over another runtime's credential files
+	// (ranger-base-w6ip0's decision, cut as ranger-base-y4cm6). Its own kind
+	// and not Deny's, because what the reader must do with it differs: a
+	// read mask that came off handed the seat a CREDENTIAL in cleartext, so
+	// the D2 bead's reviewer judges that credential for ROTATION and not
+	// only the writes after the detach time.
+	WallWatchReadMask = "read-mask"
 )
 
 // wallWatchDedupe is D2's window: a later detection of the same host path
@@ -456,12 +465,24 @@ func wallWatchDescription(d wallWatchDetach, ms []WallWatchMount) string {
 	}
 	fmt.Fprintf(&b, "\nkilled: %s\n", wallWatchKilled(d))
 	b.WriteString("\nREVIEW: every write to the host object at each path above after the detach time — the seat could make them until the kill. Find what renamed or removed the name; dispatch relaunches the seat behind a fresh render.\n")
+	if wallWatchHasKind(ms, WallWatchReadMask) {
+		b.WriteString("ROTATE: a " + WallWatchReadMask + " above is what kept a CREDENTIAL unreadable — another runtime's credential file, or the ssh keys this seat may not read. The seat could READ it in cleartext from the detach time until the kill, so judge every credential under those paths for rotation, not only the writes.\n")
+	}
 	b.WriteString("Later detections of the same path within 10 minutes are comments on this bead.\n\n")
 	for _, m := range ms {
 		b.WriteString(wallWatchMarker(m.Path))
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func wallWatchHasKind(ms []WallWatchMount, kind string) bool {
+	for _, m := range ms {
+		if m.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func wallWatchComment(d wallWatchDetach, ms []WallWatchMount) string {
