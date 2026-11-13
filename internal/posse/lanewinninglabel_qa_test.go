@@ -176,3 +176,81 @@ func TestQALaneKeepsAPIDThatCarriesTheWinningLabelSecond(t *testing.T) {
 		t.Errorf("a PID that carries the winning label is a seat wherever it lists it: got %v (%s)", names, label)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ranger-base-5793u — the residual the narrowing left: the HEAD's order.
+//
+// CHARACTERIZATION, NOT A DECISION. The test above removes the frontmatter
+// ordering accident for a FOLLOWER (a PID is a seat wherever it lists the
+// winning label). It leaves that same accident load-bearing for the HEAD:
+// `win := out[0].label` is `matched[0]`, the first of the PREFERRED PID's own
+// labels that the bead carries, in that PID's frontmatter order — and since
+// the narrowing landed, that value no longer only NAMES the lane, it decides
+// who is in it. ranger-base-5793u is open on whether that should be true; the
+// ADR 0011 §4 amendment is the architecture lane's (ranger-base-svoux). This
+// test is what the code DOES, at a6dfd084, so that whichever answer lands has
+// to come through here and read the bead. If you are the seat that fixes it:
+// arms A and B are meant to agree, and the fix is the expectation in this
+// table, not a new file.
+//
+// The three arms differ in ONE input — the head PID's two labels, swapped (A
+// vs B) or a cross-cutting label listed first (C). Bead and roster are
+// otherwise identical. `crosscut` stands for the real label several of this
+// instance's PIDs share, which is its own vocabulary and is named on the bead
+// rather than here (ADR 0024 D3, restate-and-cite). Arm B drops a code-only seat from a code bead and
+// seats a qa-only seat in its place; arm C is ranger-base-equhp's own
+// incident shape reached the other way, a code deliverable whose lane holds
+// the security PID and not the second code seat.
+//
+// The bead labels are passed ALPHABETICALLY because that is the only order
+// routing ever sees: MEASURED 2026-11-13, bd normalizes a bead's labels to
+// alphabetical order at create — 689 of 689 multi-label beads in this
+// instance's store are sorted, and two beads whose `bd create` typed the
+// other order (`-l risk -l question`, `-l devops -l debt`) read back
+// ['question','risk'] and ['debt','devops']. `BdIssue.Labels` is decoded
+// straight from that JSON (beads.go:492), so "the bead's label order" is the
+// alphabet and not the filer's intent. docs/notes.d/ranger-base-5793u.md.
+func TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder(t *testing.T) {
+	t.Parallel()
+	for _, arm := range []struct {
+		name     string
+		personas [][2]string
+		bead     []string
+		want     string
+		label    string
+	}{
+		{
+			"A head lists code first",
+			[][2]string{{"developer", "[code, qa]"}, {"developer-2", "[code]"}, {"tester", "[qa]"}},
+			[]string{"code", "qa"}, "developer,developer-2", "code",
+		},
+		{
+			"B same roster, head's two labels swapped",
+			[][2]string{{"developer", "[qa, code]"}, {"developer-2", "[code]"}, {"tester", "[qa]"}},
+			[]string{"code", "qa"}, "developer,tester", "qa",
+		},
+		{
+			"C a cross-cutting label listed first puts the security PID in a code lane",
+			[][2]string{
+				{"developer", "[crosscut, code, feature, bug]"},
+				{"developer-2", "[code, feature, bug]"},
+				{"watcher", "[security, audit, crosscut]"},
+			},
+			[]string{"code", "crosscut"}, "developer,watcher", "crosscut",
+		},
+	} {
+		t.Run(arm.name, func(t *testing.T) {
+			t.Parallel()
+			b, _ := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			for _, p := range arm.personas {
+				writePersona(t, b.App, p[0], p[1])
+			}
+			names, label := laneOf(t, d, arm.bead...)
+			if strings.Join(names, ",") != arm.want || label != arm.label {
+				t.Errorf("lane is %v (%s), want %s (%s) — if this is the fix landing, ranger-base-5793u and this comment are what to read",
+					names, label, arm.want, arm.label)
+			}
+		})
+	}
+}

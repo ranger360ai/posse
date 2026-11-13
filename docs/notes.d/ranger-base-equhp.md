@@ -85,3 +85,27 @@ confirmed RED against the pre-fix `return out` and green after:
 
 - ranger-base-g8fmb (the code deliverable the misroute was costing passes on;
   it is still open and still needs a code seat)
+
+## Correction (2026-11-13, ranger-base-5793u)
+
+The residual paragraph above ("What decides WHICH label wins") is right about
+one half and wrong about the other.
+
+Right: with every `route_order:` tied, which lane's alphabetically-first
+persona heads the sort was the same before this fix and after it.
+
+Wrong: "the fix neither creates nor widens it". Before the narrowing, the
+preferred PID's own label order moved only the label the route report PRINTED;
+every overlapping persona was in the lane either way. After it, the same input
+decides MEMBERSHIP (dispatch.go:1808) — so a head PID that lists `qa` before
+`code` drops a code-only seat from a code bead, and one that lists a
+cross-cutting label first puts the findings-only security PID in a code lane,
+which is this fix's own incident shape reached the other way. That consequence
+is new here. Three arms, re-measured and pinned:
+`TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder`,
+docs/notes.d/ranger-base-5793u.md.
+
+Also: "an instance where a `[code, security]` bead should go to the security
+seat says so with the key" still holds, but the other direction does not —
+`route_order:` changes WHO is preferred, never which of that PID's labels
+wins. What the lane's winning label should be is open at ranger-base-svoux.
