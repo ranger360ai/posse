@@ -56,7 +56,7 @@ Three layers nest, and each has a different blast radius when edited:
 
 | layer | what an edit changes | gate between edit and effect today |
 |---|---|---|
-| posse (mechanism) | what a wall *is* — gates, seatbelt, parity | `make install`: fleet runs the installed binary via `plugin/bin/posse`; install is human-run and persona-denied (**MEASURED**, Makefile + settings) |
+| posse (mechanism) | what a wall *is* — gates, seatbelt, parity | `make install`: fleet runs the installed binary via `plugin/bin/posse`; install is human-run and persona-denied (**MEASURED**, Makefile + settings; *ADR 0092, proposed 2026-11-13, delegates it to one configured persona through `posse upgrade`, origin/main commits only*) |
 | constitution (PIDs, config, recipes, skills, envs) | the prose injected into every future session | **none**: `~/.config/rhq` is a symlink into the instance repo, one inode (**MEASURED**); a saved PID is in force at the next launch, uncommitted edits included (ranger-base-5na) |
 | project work | one repo's contents | ordinary review |
 
