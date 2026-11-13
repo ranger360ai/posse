@@ -74,7 +74,7 @@ would refuse the qualified `git commit -- <path>` the PID allows. See
 ```
 claude: claude {model} --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}
 codex:  codex {model} {skills} {deny} -a never --disable hooks -c allow_login_shell=false -c "projects={\"$PWD\"={trust_level=\"trusted\"}}" -c developer_instructions="$(cat {file})"
-grok:   grok {model} {skills} --permission-mode auto --rules="$(cat {file})" {allow} {deny}
+grok:   grok {model} {skills} --permission-mode auto --no-leader --rules="$(cat {file})" {allow} {deny}
 ```
 
 **The dispatch contract (ADR 0013, `internal/posse/runtimecheck.go`).** A

@@ -554,6 +554,46 @@ func codexEphemeralDirs(home string, stateGrants []string) (dirs []string) {
 	return dirs
 }
 
+// grokEphemeralDirNames is grok's member of the same class
+// (ranger-base-76mcd): daemon/run/ holds the unix sockets of grok's
+// per-name daemons (`daemon/run/<name>`, grok 1.0.77's own strings). A read-
+// only carve does not stop connect(2) on a socket (the x9f3s class), so on
+// bwrap each seat gets an empty private tmpfs there: it sees no socket an
+// uncaged grok made, and the one it makes is its own. MEASURED 2026-11-13,
+// bubblewrap 0.13.1, D1 host: a socket a host process creates in daemon/run
+// after the seat launched is ENOENT under the tmpfs.
+//
+// The seat's own grok is kept off any leader by GrokNoLeaderFlag.
+//
+// Residual: ranger-base-l2gk9.
+var grokEphemeralDirNames = []string{filepath.Join("daemon", "run")}
+
+// grokEphemeralDirs names those dirs for the grok home a seat's state grant
+// reaches, following GROK_HOME, or nothing.
+func grokEphemeralDirs(home string, stateGrants []string) (dirs []string) {
+	if home == "" {
+		return nil
+	}
+	h := grokHomeIn(home)
+	if !filepath.IsAbs(h) {
+		return nil
+	}
+	h = absResolve(h)
+	if !writeGranted(stateGrants, h) {
+		return nil
+	}
+	for _, n := range grokEphemeralDirNames {
+		dirs = append(dirs, filepath.Join(h, n))
+	}
+	return dirs
+}
+
+// runtimeEphemeralDirs is every CLI's per-process dirs the seat's state
+// grant reaches: codex's and grok's. Both mechanisms read this one list.
+func runtimeEphemeralDirs(home string, stateGrants []string) []string {
+	return append(codexEphemeralDirs(home, stateGrants), grokEphemeralDirs(home, stateGrants)...)
+}
+
 // runtimeExecMembers names those members for each CLI home the launching
 // runtime's state grant reaches, following CODEX_HOME / GROK_HOME the way
 // runtimeConfigFiles does — the same cliHomeExecMembers list, the same

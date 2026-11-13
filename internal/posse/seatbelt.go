@@ -1686,11 +1686,12 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	for _, d := range xdirs {
 		add(&c.Deny, d)
 	}
-	// codex's per-process tmp/ and shell_snapshots/: read-only HERE, which is
+	// codex's per-process tmp/ and shell_snapshots/, and grok's daemon/run/
+	// (ranger-base-76mcd): read-only HERE, which is
 	// the seatbelt reading. bwrapRender takes them back out of Deny and gives
 	// the seat a private tmpfs over each instead (codexEphemeralDirs,
 	// ranger-base-6ob20).
-	for _, d := range codexEphemeralDirs(wallHome(), rtGrants) {
+	for _, d := range runtimeEphemeralDirs(wallHome(), rtGrants) {
 		add(&c.Deny, d)
 	}
 	// claude's debug/, the same two-step: write-denied HERE, and taken back

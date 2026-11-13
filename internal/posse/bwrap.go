@@ -1812,13 +1812,14 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// ...which is what SeatbeltCarveOut's Narrow says in SBPL; the binds
 	// above are this mechanism's spelling of it (ranger-base-r2uxm).
 	r.Carve.Narrow = nil
-	// codex's per-process tmp/ and shell_snapshots/: a private empty tmpfs
+	// codex's per-process tmp/ and shell_snapshots/, and grok's daemon/run/
+	// (ranger-base-76mcd): a private empty tmpfs
 	// each (ranger-base-6ob20). SeatbeltCarveOut denied them, which is the
 	// seatbelt reading; here the deny comes back out, because the deny step
 	// mounts after this one and its read-only bind FROM THE HOST would cover
 	// the tmpfs with the very dir it exists to keep out. Same home as the
 	// deny was spelled against, so the two cannot name different dirs.
-	if eph := codexEphemeralDirs(wallHome(), runtimeStateGrants(stateDirs)); len(eph) > 0 {
+	if eph := runtimeEphemeralDirs(wallHome(), runtimeStateGrants(stateDirs)); len(eph) > 0 {
 		kept := r.Carve.Deny[:0:0]
 		for _, d := range r.Carve.Deny {
 			if !containsString(eph, d) {

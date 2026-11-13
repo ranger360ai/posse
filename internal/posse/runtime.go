@@ -1690,6 +1690,53 @@ func EnsureStrictMCPLine(cmd string) string {
 	return cmd + " " + ClaudeStrictMCPFlag
 }
 
+// GrokNoLeaderFlag makes the grok TUI start its own agent even when the
+// operator's config.toml sets `[cli] use_leader = true` (ranger-base-76mcd).
+// With leader mode on, a grok TUI connects to GROK_HOME/leader.sock and
+// hands that leader its tool calls; if none is running it spawns one,
+// `grok agent leader --no-exit-on-disconnect`, which outlives the pane. A
+// leader the seat did not start is not in the seat's cage, so a caged seat
+// that used one would run its tools uncaged. grok's own sandbox refuses the
+// leader for that reason; posse's cage is not grok's sandbox, so grok does
+// not know to. There is no environment twin of the config key
+// (`strings` over grok 1.0.77 names GROK_LEADER_SOCKET and nothing that
+// switches the mode), so it is a flag.
+//
+// MEASURED 2026-11-13, grok 1.0.77, D1 host, scratch home, fake endpoint
+// (ranger-base-qyq59): with use_leader on, the TUI spawns a leader
+// listening on GROK_HOME/leader.sock; with --no-leader there is no leader
+// and no socket. `grok -p` never uses the leader. MEASURED (this bead):
+// grok refuses `--no-leader` given twice ("cannot be used multiple times")
+// and refuses it beside `--leader` ("cannot be used with"), both as exit-2
+// parse errors — so the door appends only when the flag is absent, and a
+// hand-written line that asks for `--leader` fails to start, which is the
+// closed side to fail on.
+const GrokNoLeaderFlag = `--no-leader`
+
+// grokExe is the executable the no-leader door keys on — the LINE's first
+// word, for claudeExe's reason: a declared runtime whose template starts
+// grok reads the same config.toml the built-in does.
+const grokExe = "grok"
+
+// EnsureNoLeaderLine appends GrokNoLeaderFlag to a line that starts grok and
+// lacks it — the built-in template (which already carries it), a PID's own
+// command:, a declared runtime's template and the `--cmd` of a no-persona
+// launch. Boolean, so appending at the end is safe for EnsureStrictMCPLine's
+// reason. A line that does not START grok is left alone, for the same
+// refusal to guess.
+func EnsureNoLeaderLine(cmd string) string {
+	f := strings.Fields(cmd)
+	if len(f) == 0 || filepath.Base(f[0]) != grokExe {
+		return cmd
+	}
+	for _, w := range f {
+		if w == GrokNoLeaderFlag {
+			return cmd
+		}
+	}
+	return cmd + " " + GrokNoLeaderFlag
+}
+
 // lineRunsClaude reports whether any word of the line names the claude
 // executable — the case EnsureStrictMCPLine cannot repair because claude is
 // not the line's first word.
@@ -2691,7 +2738,7 @@ var builtinRuntimes = []Runtime{
 		// value is the `grok --version` line MINUS its trailing ` [stable]`,
 		// for skills_verified's reason one field over (skillsVersionRelease).
 		ReportsOnRex: true, RexVerified: "grok 1.0.52 (0920c8169e27)", RexPrecondition: RexPreGrokProgramStatus,
-		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
+		Command: `grok {model} {skills} ` + GrokFleetFlags + ` ` + GrokNoLeaderFlag + ` --rules="$(cat {file})" {allow} {deny}`},
 	// bob — the fourth built-in, declared from ADR 0060 D1's table and
 	// measured on bobshell 2.0.5. The LAUNCH row is the one that is unmet
 	// (herdr 0.8.2 has no `bob` kind), and nothing here hides it: the
@@ -3584,7 +3631,7 @@ func EnsureUnattendedLine(cmd string) string {
 	exe := filepath.Base(f[0])
 	for i := range builtinRuntimes {
 		if builtinRuntimes[i].Exe() == exe {
-			return builtinRuntimes[i].EnsureUnattended(EnsureStrictMCPLine(cmd))
+			return builtinRuntimes[i].EnsureUnattended(EnsureNoLeaderLine(EnsureStrictMCPLine(cmd)))
 		}
 	}
 	return cmd

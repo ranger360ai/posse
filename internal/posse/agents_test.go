@@ -436,7 +436,7 @@ func TestRuntimeRealizers(t *testing.T) {
 	grok := render("grok")
 	// --rules= (not --rules ): a PID starts with "---", which grok's arg
 	// parser reads as a flag in the separated form and dies on (rangerhq-vjl).
-	if !strings.HasPrefix(grok, "grok -m 'grok-4.6' "+GrokFleetFlags+` --rules="$(cat '`) ||
+	if !strings.HasPrefix(grok, "grok -m 'grok-4.6' "+GrokFleetFlags+" "+GrokNoLeaderFlag+` --rules="$(cat '`) ||
 		!strings.Contains(grok, "--allow 'Bash(bd:*)' --deny 'Edit' --deny 'Write' --deny 'Bash(git push:*)'") {
 		t.Errorf("grok: %s", grok)
 	}
@@ -651,9 +651,9 @@ func TestTiers(t *testing.T) {
 		{claude, TierFast, "claude --model 'claude-sonnet-5' " + ClaudeFleetFlags + " " + ClaudeStrictMCPFlag + " --append-system-prompt"},
 		{codex, TierFast, "codex -c model='gpt-5.6-luna' -s workspace-write --add-dir '"},
 		{codex, TierStrong, "codex -c model='gpt-5.6-sol' -s workspace-write --add-dir '"},
-		{grok, TierStrong, "grok -m 'grok-4.6' " + GrokFleetFlags + ` --rules="$(cat '`},
-		{grok, TierStandard, "grok -m 'grok-4.6' " + GrokFleetFlags + ` --rules="$(cat '`},
-		{grok, TierFast, "grok -m 'grok-4.5' " + GrokFleetFlags + ` --rules="$(cat '`},
+		{grok, TierStrong, "grok -m 'grok-4.6' " + GrokFleetFlags + " " + GrokNoLeaderFlag + ` --rules="$(cat '`},
+		{grok, TierStandard, "grok -m 'grok-4.6' " + GrokFleetFlags + " " + GrokNoLeaderFlag + ` --rules="$(cat '`},
+		{grok, TierFast, "grok -m 'grok-4.5' " + GrokFleetFlags + " " + GrokNoLeaderFlag + ` --rules="$(cat '`},
 	} {
 		if got := ag.RenderCommandFor(c.rt, "claude", c.tier); !strings.HasPrefix(got, c.want) || strings.Contains(got, "{model}") {
 			t.Errorf("%s/%s: %s", c.rt.Name, c.tier, got)

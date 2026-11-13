@@ -643,8 +643,9 @@ func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model 
 	// is watching (rangerhq-qs5r). The credential-dir pin is the same kind
 	// of guarantee for the same kind of template (ranger-base-rq83c), and so
 	// is the strict-MCP flag (ADR 0090 D1) — keyed on the line, not the
-	// runtime, so a declared runtime that starts claude carries it too.
-	return rt.EnsureUnattended(EnsureStrictMCPLine(rt.EnsureSettingsPin(out)))
+	// runtime, so a declared runtime that starts claude carries it too. So is
+	// grok's --no-leader, the same way (EnsureNoLeaderLine, ranger-base-76mcd).
+	return rt.EnsureUnattended(EnsureNoLeaderLine(EnsureStrictMCPLine(rt.EnsureSettingsPin(out))))
 }
 
 // RenderCommand renders on the PID's own runtime with claude's realizer

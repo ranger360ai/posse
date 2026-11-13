@@ -206,7 +206,7 @@ func TestNoPersonaLineTypesTheMode(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct{ name, cmd, want string }{
 		{"bare claude", `claude`, `claude --strict-mcp-config --permission-mode auto`},
-		{"bare grok", `grok`, `grok --permission-mode auto`},
+		{"bare grok", `grok`, `grok --no-leader --permission-mode auto`},
 		{"bare codex", `codex`, `codex -a never`},
 		{"claude with flags", `claude --model x`, `claude --model x --strict-mcp-config --permission-mode auto`},
 		// The operator's own choice is never overridden — this is what
