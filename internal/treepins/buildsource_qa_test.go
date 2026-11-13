@@ -81,9 +81,20 @@ func TestQATheDevBuildStampsTheBuildSource(t *testing.T) {
 // checkout and not the throwaway worktree it compiles in.
 func TestQATheCleanBuildStampsTheSourceCheckoutAndNotItsTempWorktree(t *testing.T) {
 	body := readTreeFile(t, "scripts/clean-build.sh")
-	want := "-X " + posse.BuildSourceSymbol + "=$repo"
+	want := "-X " + posse.BuildSourceSymbol + "=$source_repo"
 	if !strings.Contains(body, want) {
 		t.Fatalf("scripts/clean-build.sh does not carry %q — `make install` is the build the bead was filed against, so without this the installed binary reads UNKNOWN forever on any box whose queue is not posse (ranger-base-eiwhk)", want)
+	}
+	// $source_repo DEFAULTS to $repo and is only ever something else for
+	// `posse upgrade`, which runs this script inside a throwaway worktree
+	// of the commit it is installing and so has to name the real checkout
+	// itself (ADR 0092 D3.3, ranger-base-zhw0h). Pinned as a default rather
+	// than as a free variable: a `source_repo=` that stopped falling back
+	// to $repo would leave every ordinary `make install` stamping nothing,
+	// which is ranger-base-eiwhk exactly, with this file still green on the
+	// line above.
+	if !strings.Contains(body, "source_repo=${POSSE_BUILD_SOURCE:-$repo}") {
+		t.Error("the build source no longer DEFAULTS to $repo — every build but `posse upgrade` must stamp the checkout it was run in, with no variable set (ranger-base-eiwhk)")
 	}
 	// $src is `git worktree add`'s detached checkout of HEAD and is REMOVED
 	// by this script's own trap on the way out. Stamping it would bake a

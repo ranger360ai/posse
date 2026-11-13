@@ -2608,6 +2608,34 @@ func main() {
 			die(err)
 		}
 
+	case "upgrade":
+		// `make install`, delegated (ADR 0092 D1). A verb of the binary
+		// already installed rather than a script under scripts/, because a
+		// script is matched in the seat's own worktree and its guardrails
+		// could be edited out by the seat they bind. Who may run it is
+		// config `install_delegate:` and not a PID line (D2), so no other
+		// PID needs a new deny; `make install` stays denied for everyone.
+		args, help := argLead(args)
+		usage := "posse upgrade [<sha>]"
+		if help {
+			fmt.Fprintf(out, "usage: %s\n", usage)
+			os.Exit(0)
+		}
+		var uo posse.UpgradeOpts
+		for _, v := range args {
+			switch {
+			case strings.HasPrefix(v, "-"):
+				die(posse.Die("unknown flag: %s — usage: %s", v, usage))
+			case uo.Sha == "":
+				uo.Sha = v
+			default:
+				die(posse.Die("usage: %s", usage))
+			}
+		}
+		if err := a.CmdUpgrade(out, uo); err != nil {
+			die(err)
+		}
+
 	case "help", "-h", "--help":
 		help()
 	case "version", "--version":
@@ -3379,6 +3407,31 @@ catalog:
                                  Every launch re-hashes the promoted set against
                                  promoted.json: dispatch refuses on a mismatch,
                                  an interactive launch warns DEGRADED.
+  posse upgrade [<sha>]          ADR 0092 — install a commit of posse over the
+                                 binary this command is running out of. <sha>
+                                 defaults to refs/remotes/origin/main in the posse
+                                 source checkout (config posse_repo:, else beads:,
+                                 else the binary's own build stamp), and MUST be an
+                                 ancestor of it: only a commit the coordinator has
+                                 PUSHED may be installed, because that push is the
+                                 record that posse-land-check and the vuln-private
+                                 scan ran. This verb never fetches. It also refuses
+                                 a sha that is not a descendant of the installed
+                                 binary's stamp — going backwards is a rollback, and
+                                 a rollback is the one coreutils command this prints
+                                 before it swaps. Then: make test at that sha in a
+                                 fresh detached worktree (red, or no answer, refuses
+                                 before anything is written), clean-build there, keep
+                                 the live binary as <target>.prev, and rename(2) the
+                                 new one over the target — never install(1), which
+                                 unlinks first and leaves a window in which a launch
+                                 execs a missing or short file (MEASURED). Epilogue
+                                 is make install's. One box-wide flock, so two
+                                 upgrades never overlap; it runs for as long as the
+                                 suite does, so background it and wait on its pid.
+                                 WHO: config install_delegate: names the one persona
+                                 that may run it. No key refuses every persona; the
+                                 operator (no RHQ_PERSONA) may always run it.
 
 governance:
   posse status                   the condition set: what needs a human right now,

@@ -67,6 +67,24 @@ func SuiteLockDir() string {
 	if d := os.Getenv("POSSE_SUITE_LOCK_DIR"); d != "" {
 		return d
 	}
+	return posseCacheDir()
+}
+
+// posseCacheDir is this box's `~/.cache/posse` — the directory the suite
+// slots live in, and (ranger-base-zhw0h, ADR 0092 D3) the upgrade lock
+// beside them. Spelled once rather than twice because the thing both locks
+// claim is the BOX, so two spellings of where they live would be two boxes
+// the day one of them drifted.
+//
+// POSSE_SUITE_LOCK_DIR is deliberately NOT read here: it is the suite
+// queue's own override, matching suite_lock_dir() in scripts/suite-lock.sh,
+// and a seat that moved its suite slots has not asked for the box's upgrade
+// lock to move with them.
+//
+// A scrubbed environment (no HOME) answers "" rather than inventing a home,
+// for ExpandTilde's reason (ranger-base-a3t1): an invented home makes every
+// absolute path a child of it.
+func posseCacheDir() string {
 	if c := os.Getenv("XDG_CACHE_HOME"); c != "" {
 		return filepath.Join(c, "posse")
 	}

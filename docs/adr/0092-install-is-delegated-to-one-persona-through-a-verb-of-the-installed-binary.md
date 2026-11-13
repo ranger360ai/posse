@@ -187,5 +187,25 @@ MEASURED 2026-11-13 on this host at 0.5.3+70ab74b7: project deny of `make instal
 and `make deploy`; seatbelt realized as shims; `~/.local/bin` and the gate dir
 writable from a shims seat; `main == origin/main` at 70ab74b7 (0 ahead);
 `posse status` exits 1 with open conditions; `posse gates <p>` exits 0.
-ASSUMED: `install(1)` is non-atomic; `make test`'s wall in D3.2; and that the
-D4 condition-code exclusion set is complete.
+ASSUMED: that the D4 condition-code exclusion set is complete.
+
+D3.2's wall: MEASURED 2026-11-13 by the build bead, 11m57s for a green
+`make test` (all three arms plus the tree-wide doors) at 983ae5d on this box
+under normal suite-slot contention — a FLOOR for the verb, which adds a
+`git worktree add` and may compile against a colder cache. The Consequences
+section's ASSUMED 15-25 min stands as the envelope to plan against.
+docs/notes.d/ranger-base-zhw0h.md has both readings.
+
+`install(1)` IS non-atomic — MEASURED 2026-11-13 by the build bead
+(ranger-base-zhw0h), GNU coreutils 9.12 on this host, 64 MiB over 64 MiB on
+tmpfs with a reader stat-ing the target in a tight loop, three trials each
+(tmpfs is this box's fastest surface, so these are floors): `install -m
+0755` left the target ABSENT for 1,791-2,473 of ~84,000 observations and SHORT
+for 12,606-13,384 of them, across ~10,600-11,253 distinct intermediate sizes,
+over a 58 ms window — so it both unlinks and then writes in sequence, and both
+halves are reachable by an exec. Write-beside-then-`rename(2)`, the same probe:
+zero absent, zero short, one size, every trial. Scaled to this box's 17.8 MB
+binary the window is roughly 16 ms per install. D3.5 stands as written, and the
+figure is now a pin rather than a paragraph
+(`TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort`).
+docs/notes.d/ranger-base-zhw0h.md has the table.

@@ -6,6 +6,11 @@
 #   make release  → bin/posse-release     clean build of HEAD, in a temp worktree
 #   make install  → $(BINDIR)/posse       the fleet's binary (PATH + plugin)
 # `install` is denied to fleet personas (.claude/settings.json); a human runs it.
+# A persona that is meant to install runs `posse upgrade` instead — a verb of
+# the binary already installed, under the guardrails this target has none of
+# (ADR 0092: origin/main only, `make test` green at that exact commit, the
+# previous binary kept, and rename(2) rather than the install(1) below). The
+# deny stays, for the delegate too; config `install_delegate:` names who may.
 #
 # install builds `release`, never `build`: personas share this checkout, so the
 # working tree usually holds somebody's unfinished edits. See scripts/clean-build.sh.

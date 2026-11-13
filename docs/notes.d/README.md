@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-zhw0h](ranger-base-zhw0h.md) — install(1) leaves the target absent for part of every install (ranger-base-zhw0h) — 2026-11-13
 - [ranger-base-wzo36](ranger-base-wzo36.md) — A trap reads what the shell that owns it assigned, and nothing else (ranger-base-wzo36) — 2026-11-13
 - [ranger-base-tq5tj](ranger-base-tq5tj.md) — ranger-base-tq5tj — the delta needed a baseline, so the pin forbids a baseline — 2026-11-13
 - [ranger-base-sxez7](ranger-base-sxez7.md) — The census went blind one root at a time, and its floor was seven below the live count (ranger-base-sxez7) — 2026-11-13

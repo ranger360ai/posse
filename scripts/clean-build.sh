@@ -96,14 +96,24 @@ git -C "$repo" worktree add --detach --quiet "$src" HEAD
 # Whitespace is REFUSED rather than quoted: go splits the -ldflags value on
 # spaces, so a path with one would become a second linker flag. Not stamping
 # leaves the reading exactly as it is today, which is the safe direction.
+#
+# POSSE_BUILD_SOURCE overrides which checkout is stamped, and has exactly one
+# caller: `posse upgrade` (ADR 0092 D3.3, ranger-base-zhw0h). That verb runs
+# this script INSIDE a throwaway detached worktree of the commit it is
+# installing, so $repo there is the worktree — a directory the verb removes
+# minutes later, which is the same dead-path stamp this script's own pin
+# refuses $src for (internal/treepins/buildsource_qa_test.go). The verb hands
+# in the real source checkout instead. `:-` so an empty value falls back too.
+# Unset everywhere else, which is every other build, and then this is $repo.
+source_repo=${POSSE_BUILD_SOURCE:-$repo}
 ldflags="-X github.com/ranger360ai/posse/internal/posse.Build=$sha"
-case $repo in
+case $source_repo in
 *[[:space:]]*)
-	echo "clean-build: $repo contains whitespace — not stamping the build source" >&2
+	echo "clean-build: $source_repo contains whitespace — not stamping the build source" >&2
 	echo "  the freshness reading will look only in beads: and the cwd (ranger-base-eiwhk)" >&2
 	;;
 *)
-	ldflags="$ldflags -X github.com/ranger360ai/posse/internal/posse.BuildSource=$repo"
+	ldflags="$ldflags -X github.com/ranger360ai/posse/internal/posse.BuildSource=$source_repo"
 	;;
 esac
 

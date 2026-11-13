@@ -70,6 +70,18 @@ default_emoji: ⚙️
 # ships carrying no crew name.
 # coordinator: <persona name>
 
+# The one persona allowed to run `posse upgrade` — install a pushed commit of
+# posse over the binary this box runs (ADR 0092 D2). UNSET, WHICH IS THE
+# DEFAULT, REFUSES EVERY PERSONA; you (no RHQ_PERSONA) may always run it. The
+# verb carries the guardrails itself and they are not negotiable from here: the
+# commit must already be an ancestor of refs/remotes/origin/main (it never
+# fetches — the push is the record that your land checks ran), `make test` must
+# pass at that exact commit in a throwaway worktree, and the previous binary is
+# kept beside the new one for a one-command rollback the verb prints before it
+# swaps. `make install` stays denied to every persona, the delegate included.
+# Deleting this key is the exit hatch; the verb is then yours alone again.
+# install_delegate: <persona name>
+
 # ─── this instance, on a shared herdr ────────────────────────────────────────
 # A tag for this home's sessions in herdr's ONE workspace list. Leave it
 # unset unless a second posse home shares this machine's herdr server.
