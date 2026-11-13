@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -141,10 +141,22 @@ and fresh fire path acquire it as §5 specifies. Watch holds its separate
 availability and log health are distinct observations (ADR 0029).
 
 **4. Availability-first lanes and serial seats** (folded from 0020).
-A lane is the set of personas whose labels intersect the bead's; no lane
-registry exists. A recognized explicit assignee is a lane of one and never
-falls through. Label matches sort by `route_order:` ascending — a PID
-frontmatter key, lower first, default 50 — then persona name; the
+A lane is ONE label, and its seats are every persona whose PID carries it;
+no lane registry exists. A recognized explicit assignee is a lane of one and
+never falls through. Otherwise every non-coordinator persona whose labels
+intersect the bead's is a candidate, sorted by `route_order:` ascending — a
+PID frontmatter key, lower first, default 50 — then persona name. The
+preferred candidate's label (the first of its PID's labels the bead carries)
+is the lane, and the seats are the candidates whose PID carries that label
+anywhere in its matching set, not only first. The route report's roster
+("first of N") and the lane-busy line are that lane, because they are the
+hiring signal: lane concurrency is seat count. So `route_order:` decides the
+whole lane, not only its head; an instance that wants a `[code, security]`
+bead in the security lane says so with the key. A bead carries the labels of
+all the work it touches, so it is NOT a lane. The union of every overlapping
+persona read a code deliverable labelled `[code, debt, security,
+vuln-private]` as one lane holding a findings-only PID, which was seated
+when the code seats were busy (ranger-base-equhp, amended 2026-11-13). The
 configured default persona is the last routing fallback. The coordinator
 is excluded on every route (0033). Under the launcher lock,
 every fresh launcher, including cockpit `d`, takes the first eligible seat:

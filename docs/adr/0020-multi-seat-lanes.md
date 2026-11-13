@@ -2,7 +2,7 @@
 
 *Status: superseded 2026-09-05 by ADR 0011 · ADR simplification, operator ruling 2026-09-05.*
 
-The surviving decision is in [0011 — current contract](0011-dispatch-model.md), Decision §§4–5 and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+The surviving decision is in [0011 — current contract](0011-dispatch-model.md), Decision §§4–5 and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy. One place where the body now disagrees with the current rule: §2's "Which lane?" bullet takes as candidates every persona whose labels intersect the bead's. Since 2026-11-13 the lane is only the preferred candidate's one label (0011 §4, ranger-base-equhp).
 
 ## Historical record (superseded in full)
 
