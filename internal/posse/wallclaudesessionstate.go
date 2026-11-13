@@ -42,7 +42,71 @@ import "path/filepath"
 // Two more members join for ranger-base-fswhs: backups/ and file-history/,
 // which are also one file or one dir per session at one uid. Nothing posse
 // runs reads either one, and a seat's own copies go with its seat cache.
-var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history"}
+//
+// debug/ joins for ranger-base-ntt1w, and the direction of that one is the
+// other way round: the seat is the PLANTER and an uncaged claude the writer.
+// MEASURED 2026-11-13 (ranger-base-gab5i, claude 2.1.323): a claude running
+// with debug on writes <cfg>/debug/<session id>.txt BY PATH and follows a
+// symlink there — appending to an existing target and creating a missing one
+// — and it reopens the log by path on every write, so swapping the live log
+// for a link mid-session redirects the rest of it. The session id is readable
+// out of sessions/*.json, so nothing has to be guessed. If <cfg>/debug ITSELF
+// is a link, every log goes into the link's target dir. So a caged seat that
+// can write this directory gets claude-authored text appended into any
+// uid-writable file outside its wall, and a file created at any path it
+// names. (debug/latest is inert: claude unlinks and recreates it rather than
+// following it.)
+//
+// Same answer, same shape: a private copy per seat. The seat's own claude
+// writes and reads its own debug/ and no other seat's, and the name an
+// uncaged claude opens is one no seat can reach. The render already refuses a
+// link at the member's name (BwrapArgs step 2c lstats every Dst), which is
+// what keeps the bind off a mount point another seat chose.
+//
+// Nothing posse runs reads <cfg>/debug, so a private copy costs the box
+// nothing.
+var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history", "debug"}
+
+// claudeDebugDirName is the member above whose carve the two mechanisms spell
+// differently: bwrap gives the seat a private copy (it is in the list above),
+// seatbelt has no bind and write-denies the directory instead.
+const claudeDebugDirName = "debug"
+
+// claudeDebugDir is <cfg>/debug for a seat on this box, under the same guard
+// as claudePrivateSessionState: "" unless the launching runtime's own state
+// grant reaches claude's config dir, since a directory nothing granted needs
+// no deny.
+//
+// SeatbeltCarveOut adds it to Deny, which is the SEATBELT reading: a profile
+// cannot bind, and "deny every name but this session's own" cannot be written
+// ahead of a random session id. bwrapRender takes it back out again, because
+// the deny step's read-only bind FROM THE HOST would land on top of the
+// private bind and put the shared directory back — the same two-step
+// codexEphemeralDirs makes (ranger-base-6ob20).
+//
+// COST at seatbelt: the seat's own claude loses its debug log. MEASURED
+// 2026-11-13 on this Linux host, claude 2.1.323, with <cfg>/debug chmod 0555
+// (EACCES, the refusal SBPL gives) — both over a config dir whose debug/
+// already held a log and over a fresh one: a full turn with debug on exits 0
+// with its answer, writes no log and no `latest`, and says nothing about it
+// on stderr. The failure is swallowed, so no --debug-file reroute is needed.
+// ASSUMED that SBPL's refusal is swallowed the same way, on the same ground
+// ranger-base-wj93u assumes it for history.jsonl: the host is Linux and the
+// code path is the one claude takes for any errno here.
+func claudeDebugDir(home string, stateGrants []string) string {
+	if home == "" {
+		return ""
+	}
+	cfg := ClaudeConfigDirIn(home)
+	if !filepath.IsAbs(cfg) {
+		return ""
+	}
+	cfg = absResolve(cfg)
+	if !writeGranted(stateGrants, cfg) {
+		return ""
+	}
+	return filepath.Join(cfg, claudeDebugDirName)
+}
 
 // claudePrivateSessionStateRel is where those members live under the seat's
 // cache dir.

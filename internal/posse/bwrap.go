@@ -1779,6 +1779,24 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 			r.Carve.Private = append(r.Carve.Private, PrivateBind{Dst: d})
 		}
 	}
+	// claude's debug/ (ranger-base-ntt1w) comes out of Deny for the same
+	// reason and in the same direction, but its private bind is already in
+	// the list above — it is a member of claudeSessionStateDirNames, so the
+	// seat KEEPS its own debug log on the host rather than getting an empty
+	// tmpfs. Only the deny has to go: the deny step mounts after the private
+	// one, and its read-only bind from the host would put the shared
+	// directory back over the seat's copy. Spelled against wallHome(), the
+	// home SeatbeltCarveOut denied it under, so the two cannot name different
+	// dirs.
+	if dbg := claudeDebugDir(wallHome(), runtimeStateGrants(stateDirs)); dbg != "" {
+		kept := r.Carve.Deny[:0:0]
+		for _, d := range r.Carve.Deny {
+			if d != dbg {
+				kept = append(kept, d)
+			}
+		}
+		r.Carve.Deny = kept
+	}
 	// D23, after D20's substitution and before the render: what is left of
 	// the set is what posse will bind, and a no-create grant that is not
 	// there has been taken out of it, so BwrapArgs can ask the launcher for

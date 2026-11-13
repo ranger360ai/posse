@@ -77,6 +77,16 @@ func TestQAWallClaudeSessionStateRendersPrivateBindsOverTheGrant(t *testing.T) {
 			t.Errorf("the private bind over %s comes before the config-dir grant at %d, so the grant covers it again", dst, grant)
 		}
 	}
+	// debug/ is the one member SeatbeltCarveOut also DENIES, because seatbelt
+	// cannot bind (claudeDebugDir, ranger-base-ntt1w). At this mechanism the
+	// deny has to come back out: the deny step mounts after the private one,
+	// so a read-only bind from the host would put the shared directory back
+	// over the seat's own copy and undo the bind the loop above just checked.
+	dbg := filepath.Join(cfg, claudeDebugDirName)
+	if containsString(r.Carve.Deny, dbg) {
+		t.Errorf("%s is still in the bwrap carve-out's Deny, so the deny step re-binds the SHARED dir over the seat's private copy of it (ranger-base-ntt1w)\n deny: %v", dbg, r.Carve.Deny)
+	}
+
 	other := &Runtime{Name: "codex", StateDirs: []string{"~/.codex"}}
 	if err := os.MkdirAll(filepath.Join(f.home, ".codex"), 0o755); err != nil {
 		t.Fatal(err)
@@ -151,9 +161,16 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	backups, hist := filepath.Join(f.cfg, "backups"), filepath.Join(f.cfg, "file-history")
 	peerBackup := filepath.Join(backups, ".claude.json.backup.99999999999999")
 	peerHist := filepath.Join(hist, "00000000-0000-4000-8000-00000000peer", "0123456789abcdef@v1")
+	// The ranger-base-ntt1w member: an uncaged claude's live debug log, and
+	// the file outside the wall a planted link would redirect it into.
+	dbg := filepath.Join(f.cfg, claudeDebugDirName)
+	peerDebug := filepath.Join(dbg, "00000000-0000-4000-8000-00000000peer.txt")
+	target := filepath.Join(wallUngrantedDir(t), "redirect-target")
 	for p, body := range map[string]string{
 		peerBackup: "{\"peer\": \"backup\"}\n",
 		peerHist:   "the peer seat's checkpoint\n",
+		peerDebug:  "the uncaged seat's debug log\n",
+		target:     "a file outside every wall\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -177,7 +194,7 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	q := shellQuote
 	snaps, envs := filepath.Join(f.cfg, "shell-snapshots"), filepath.Join(f.cfg, "session-env")
 	before := map[string][]byte{}
-	for _, p := range []string{peerSnap, peerHook, peerBackup, peerHist} {
+	for _, p := range []string{peerSnap, peerHook, peerBackup, peerHist, peerDebug, target} {
 		b, err := os.ReadFile(p)
 		if err != nil {
 			t.Fatal(err)
@@ -192,6 +209,7 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 		"peer hook env listed": "test -e " + q(filepath.Dir(peerHook)),
 		"peer backup listed":   "ls -a " + q(backups) + " | grep -q 99999999999999",
 		"peer checkpoint seen": "test -e " + q(filepath.Dir(peerHist)),
+		"peer debug log seen":  "test -e " + q(peerDebug),
 	} {
 		if ok, out := try(script); ok {
 			t.Errorf("%s: another seat's session state is visible to this one\n script: %s\n out: %s", name, script, out)
@@ -212,6 +230,15 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 		"peer checkpoint append": "mkdir -p " + q(filepath.Dir(peerHist)) + " && echo PLANT >> " + q(peerHist),
 		"backups dir moved":      "mv " + q(backups) + " " + q(backups+".old"),
 		"file-history dir moved": "mv " + q(hist) + " " + q(hist+".old"),
+		// ranger-base-ntt1w: an uncaged claude reopens its debug log BY PATH
+		// on every write and follows a link there, so a link left at the
+		// live log's name redirects the rest of it; a link at <cfg>/debug
+		// itself redirects every seat's logs at once.
+		"peer debug log append":  "echo PLANT >> " + q(peerDebug),
+		"peer debug log relink":  "rm -f " + q(peerDebug) + " && ln -s " + q(target) + " " + q(peerDebug),
+		"debug log name created": "ln -s " + q(target) + " " + q(filepath.Join(dbg, "00000000-0000-4000-8000-0000000000ab.txt")),
+		"debug dir moved":        "mv " + q(dbg) + " " + q(dbg+".old"),
+		"debug dir relinked":     "rm -rf " + q(dbg) + " && ln -s " + q(filepath.Dir(target)) + " " + q(dbg),
 		"snapshots dir via link": "ln -s " + q(snaps) + " " + q(filepath.Join(f.dir, "s")) + " && echo PLANT >> " + q(filepath.Join(f.dir, "s", filepath.Base(peerSnap))),
 	} {
 		_, out := try(script)
@@ -223,6 +250,25 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 		}
 		if _, err := os.Stat(snaps + ".old"); err == nil {
 			t.Errorf("%s: the shared shell-snapshots dir was renamed out from under the mount", name)
+		}
+		// ranger-base-ntt1w, the shape the bytes above cannot state: what an
+		// uncaged claude opens must still be a FILE and a DIRECTORY, and no
+		// new name may appear under the shared debug dir for its next
+		// session to open. A link that nothing has been written through yet
+		// leaves every byte on the host as it was.
+		if fi, err := os.Lstat(peerDebug); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+			t.Errorf("%s: the shared debug log is now %v (%v) — claude reopens it by path and follows a link, so the rest of that session's log lands wherever this points (ranger-base-ntt1w)\n script: %s\n out: %s", name, fi, err, script, out)
+			_ = os.Remove(peerDebug)
+			_ = os.WriteFile(peerDebug, before[peerDebug], 0o644)
+		}
+		if fi, err := os.Lstat(dbg); err != nil || !fi.IsDir() {
+			t.Errorf("%s: the shared debug dir is now %v (%v) — every debug-on claude on the box writes its log through it (ranger-base-ntt1w)\n script: %s\n out: %s", name, fi, err, script, out)
+		}
+		for _, p := range []string{dbg + ".old", filepath.Join(dbg, "00000000-0000-4000-8000-0000000000ab.txt")} {
+			if _, err := os.Lstat(p); err == nil {
+				t.Errorf("%s: %s exists on the host — the seat reached the SHARED debug dir (ranger-base-ntt1w)\n script: %s\n out: %s", name, p, script, out)
+				_ = os.Remove(p)
+			}
 		}
 	}
 
@@ -243,6 +289,11 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 		{"own backup write", "echo '{}' > " + q(filepath.Join(backups, ".claude.json.backup.1"))},
 		{"own checkpoint write", "mkdir -p " + q(filepath.Join(hist, "mine")) + " && : > " + q(filepath.Join(hist, "mine", "0123456789abcdef@v1"))},
 		{"own hook env write", "mkdir -p " + q(filepath.Join(envs, "mine")) + " && : > " + q(filepath.Join(envs, "mine", "sessionstart-hook-0.sh"))},
+		// The seat's own claude keeps its debug log, which is why debug/ is a
+		// private bind here and a flat write deny at seatbelt (where the log
+		// is lost and the turn still completes — claudeDebugDir's MEASURED).
+		{"own debug log write", "echo 'debug line' > " + q(filepath.Join(dbg, "11111111-1111-4111-8111-111111111111.txt"))},
+		{"own debug latest relink", "ln -sf " + q(filepath.Join(dbg, "11111111-1111-4111-8111-111111111111.txt")) + " " + q(filepath.Join(dbg, "latest"))},
 		// A sibling member outside both private binds still writes. Not
 		// projects/ any more: that is read-only but for the own key since
 		// ranger-base-ajkqx, and this fixture's cwd is no session worktree.
@@ -259,12 +310,61 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	if _, err := os.Stat(mine); err == nil {
 		t.Errorf("the seat's own snapshot landed in the SHARED dir %s", snaps)
 	}
-	for _, rel := range []string{filepath.Join("backups", ".claude.json.backup.1"), filepath.Join("file-history", "mine")} {
-		if _, err := os.Stat(filepath.Join(own, rel)); err != nil {
+	for _, rel := range []string{
+		filepath.Join("backups", ".claude.json.backup.1"),
+		filepath.Join("file-history", "mine"),
+		filepath.Join(claudeDebugDirName, "11111111-1111-4111-8111-111111111111.txt"),
+		filepath.Join(claudeDebugDirName, "latest"),
+	} {
+		if _, err := os.Lstat(filepath.Join(own, rel)); err != nil {
 			t.Errorf("the seat's own %s is not in its private dir on the host: %v", rel, err)
 		}
-		if _, err := os.Stat(filepath.Join(f.cfg, rel)); err == nil {
+		if _, err := os.Lstat(filepath.Join(f.cfg, rel)); err == nil {
 			t.Errorf("the seat's own %s landed in the SHARED config dir", rel)
 		}
+	}
+}
+
+// The seatbelt half of the debug/ carve (ranger-base-ntt1w). A profile cannot
+// bind, so what bwrap says with a private copy this says with a write deny
+// over the whole directory: the seat may neither write a log there nor create
+// or unlink a NAME under it, which is what a planted link would be. Rendered
+// from any host; whether sandbox-exec honours it is the verify lane's, the
+// same split the projects pins take.
+//
+//	go test ./internal/posse -run 'WallClaudeSessionStateSeatbelt' -v
+func TestQAWallClaudeSessionStateSeatbeltDeniesTheSharedDebugDir(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f := cpFixtureIn(t, wallUngrantedDir(t))
+	cfg := absResolve(f.cfg)
+	want := "(subpath " + sbQuote(filepath.Join(cfg, claudeDebugDirName)) + ")"
+
+	prof, c := sbRender(t, f, f.rt, f.dir)
+	if sbLine(prof, "(subpath "+sbQuote(cfg)+")") < 0 {
+		t.Fatalf("the fixture's config dir is not in the allow block, so nothing here is measured:\n%s", prof)
+	}
+	carve := sbLine(prof, "(deny file-write*")
+	line := sbLine(prof, want)
+	switch {
+	case carve < 0:
+		t.Errorf("the fixture rendered no carve-out deny block, so nothing here is measured\n%s", prof)
+	case line < 0:
+		t.Errorf("no write deny over %s — an uncaged claude opens <cfg>/debug/<session id>.txt by path and follows a link, so any caged seat can redirect its log (ranger-base-ntt1w)\n%s", want, prof)
+	case line < carve:
+		t.Errorf("%s renders at line %d, before the carve-out's deny block at %d, so it is an ALLOW and not the deny this bead needs\n%s", want, line, carve, prof)
+	}
+	if !containsString(c.Deny, filepath.Join(cfg, claudeDebugDirName)) {
+		t.Errorf("the carve-out's Deny does not name the shared debug dir: %v", c.Deny)
+	}
+
+	// A seat on another runtime is granted no claude config dir, so it gets
+	// no line for one — the guard claudeDebugDir shares with every other
+	// member of this carve.
+	other := &Runtime{Name: "codex", StateDirs: []string{"~/.codex"}}
+	if err := os.MkdirAll(filepath.Join(f.home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if oprof, _ := sbRender(t, f, other, f.dir); sbLine(oprof, want) >= 0 {
+		t.Errorf("a codex seat's profile names %s, a directory nothing granted it\n%s", want, oprof)
 	}
 }

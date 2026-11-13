@@ -1693,6 +1693,14 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	for _, d := range codexEphemeralDirs(wallHome(), rtGrants) {
 		add(&c.Deny, d)
 	}
+	// claude's debug/, the same two-step: write-denied HERE, and taken back
+	// out by bwrapRender, which binds a private copy over it instead
+	// (claudeDebugDir, ranger-base-ntt1w). A subpath deny, so it covers
+	// CREATING and UNLINKING a name under it and not only writing one that is
+	// already there — the deny has to stop a link being planted at
+	// <cfg>/debug/<session id>.txt, which an uncaged claude would then follow.
+	// The directory itself is denied too, so it cannot be replaced wholesale.
+	add(&c.Deny, claudeDebugDir(wallHome(), rtGrants))
 	cfiles = append(cfiles, xfiles...)
 	for _, f := range cfiles {
 		add(&c.Deny, f)
