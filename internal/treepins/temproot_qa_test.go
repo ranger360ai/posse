@@ -102,29 +102,59 @@ package treepins
 // re-run: the census reds naming the site and the line, eight for eight, and
 // the arm is green over the tree as it stands.
 //
+// MEASURED 2026-11-13 (linux, this box), after ranger-base-sxez7's two fixes
+// below: 15 Go roots and 7 Python over 1029 .go files in 8 package
+// directories and 15 .py files, 0.36s, all 22 inside the namespace — the same
+// 22, because no live site has an ambiguous temp parent today. Three probes
+// answered: qbg7c's own incident replayed (`varTmpRoot` renamed back to
+// `base`) now reads 15 and not 14, a planted site whose parent name the
+// package binds to both "/tmp" and "/var/tmp" reds where it used to pass, and
+// a live root taken out of scope by a spelling no reader here can read
+// (`os.Getenv("X")+varTmpRoot`) reds at the roots floor where it used to pass
+// at 14. docs/notes.d/ranger-base-sxez7.md has the three readings.
+//
 // THE ELEVENTH SITE IS WHY THE PARENT IS RESOLVED THROUGH IDENTIFIERS.
 // ranger-base-qbg7c's own hand census named ten sites and the reader found
 // one more: internal/posse/bwraptmp_qa_test.go's `bwt7wdb7-`, whose parent is
 // the package const `bwrapTmpMount` — `"/tmp"`, declared in a different file
 // of that package (wallseatcache.go). A grep for `MkdirTemp("/tmp"` cannot
 // see that line and neither can a grep for `MkdirTemp(""`. So trStrings
-// resolves a name to its literal across the whole package, and drops any name
-// the package binds to two different literals rather than guessing which one
-// a call site meant. That resolution is what makes the census stricter: a
-// parent it cannot read is scored OUT of scope, which is the one direction in
-// which this reader is loose, and it is said here rather than half-handled. A
-// PREFIX it cannot read is scored RED, because there the strict answer is the
-// safe one and the remedy is one line at the call site.
+// resolves a name to its literal across the whole package. A PREFIX it cannot
+// read is scored RED, because there the strict answer is the safe one and the
+// remedy is one line at the call site.
 //
-// AND THE AMBIGUITY RULE COST A LIVE SITE ON ITS FIRST RUN, which is the best
-// evidence of what that looseness is: internal/posse/wall_helpers_test.go's
-// `/var/tmp` root held its parent in a local `const base`, and internal/posse
-// also binds `base` to a seven-line yaml literal in systemdunit_test.go, so
-// the name was dropped and the root was scored out of scope — 14 Go roots
-// where a hand count says 15. The fix is at the call site and not in the
-// reader: that const is `varTmpRoot` now, the census reads 15, and the
-// alternative (resolving per function rather than per package) would have
-// cost the cross-file resolution that found site eleven in the first place.
+// AN AMBIGUOUS PARENT IS SCORED IN, NOT OUT (ranger-base-sxez7, and this is
+// the one rule in this file that has been reversed). trStrings used to DROP
+// any name the package binds to two different literals, and a dropped name
+// took its call site out of the census with it — so a root could leave the
+// census in silence, for a reason the author of the rename that caused it
+// could not see. That is not hypothetical, and the evidence is this census's
+// own first run in this same package: internal/posse/wall_helpers_test.go's
+// `/var/tmp` root held its parent in a local `const base`, internal/posse
+// also binds `base` to a seven-line yaml literal in systemdunit_test.go, the
+// name was dropped, and the census read 14 Go roots where a hand count said
+// 15. ranger-base-qbg7c caught that by hand-counting and fixed the CALL SITE
+// (`base` -> `varTmpRoot`), and left the reader's rule standing; nobody would
+// be hand-counting the next one.
+//
+// The rule now (trParent): a name the package binds to more than one literal
+// is still not RESOLVED to either — the reader does not guess which one a
+// call site meant — but if ANY of its bindings is a shared temp parent, the
+// root is IN scope and its prefix is demanded. That can only add in-scope
+// roots and never remove one; it costs a false positive only at a call site
+// whose parent name really is bound to a shared temp directory somewhere in
+// its package, and the remedy there is the one-token rename
+// ranger-base-qbg7c already made once. Prefix resolution is unchanged and
+// still strict: an ambiguous name in a PREFIX resolves to nothing, which
+// reds.
+//
+// WHAT IS STILL LOOSE, said here rather than half-handled: a parent this
+// reader cannot read AT ALL — a function parameter, a name bound to no string
+// literal, a `+` chain over either — is scored OUT of scope. The ROOTS FLOOR
+// at the foot of the pin is what covers that direction, and it is why the
+// floor sits AT the live count rather than under it: a root that leaves the
+// census for any reason, including one this reader never learns to read, reds
+// the door instead of passing it.
 //
 // (Site three of the ten was not a site: internal/treepins/
 // gittempdirroot_qa_test.go:373's `os.MkdirTemp("/tmp", "x")` is TEXT inside
@@ -153,6 +183,25 @@ import (
 // ten sites was `posse6so`, which looks like it is inside the namespace and
 // is matched by no class at all.
 const trRequired = "posse-"
+
+// trGoRoots and trPyRootsN are the live in-scope root counts, and the roots
+// floor below is the count ITSELF rather than a margin under it
+// (ranger-base-sxez7). A margin is what the files floor wants, because a
+// landing moves the file count every day and nothing is learned from it; a
+// ROOT count moves only when somebody adds or removes a temp root, and the
+// whole job of that floor is to notice one leaving. At `gos < 8` against a
+// live 15 it noticed nothing: seven roots could have left the census one at a
+// time, by ordinary rename, with the door green every time — and one already
+// had, on this census's first run (see the head comment).
+//
+// So these are exact, and a landing that legitimately REMOVES a temp root
+// reds this arm and edits these two lines, which is the intended cost and the
+// cheap half of it. They are the numbers the t.Logf below prints, so a run
+// with -v re-measures them.
+const (
+	trGoRoots  = 15
+	trPyRootsN = 7
+)
 
 // trTempParents — the parent directories that make a root this pin's
 // business. The empty string is Go's "use $TMPDIR else /tmp"; the three
@@ -185,15 +234,21 @@ func (r trRoot) At() string { return fmt.Sprintf("%s:%d", r.File, r.Line) }
 // right-hand side is a single string literal, package level and function
 // level alike.
 //
-// A name the package binds to two DIFFERENT literals is dropped rather than
-// resolved to either. A flat map is what lets the parent resolve across files
-// — `bwrapTmpMount` is declared in wallseatcache.go and used in
-// bwraptmp_qa_test.go — and dropping the ambiguous names is what keeps that
-// flatness from inventing an answer when two functions both have a local
-// called `dir`.
-func trStrings(files map[string]*ast.File) map[string]string {
-	out := map[string]string{}
-	bad := map[string]bool{}
+// It returns TWO maps, because the two things a name can be read for want
+// opposite answers when the package binds it twice. `env` holds the names
+// bound to exactly one distinct literal, and that is the only resolution any
+// caller gets — the reader never guesses which binding a call site meant.
+// `amb` holds every name bound to two or more, mapped to all of them, sorted;
+// trParent uses it to score an ambiguous PARENT in scope rather than dropping
+// the call site, which is the reversal ranger-base-sxez7 made and the head
+// comment argues. Nothing resolves a prefix out of `amb`.
+//
+// A flat map is what lets the parent resolve across files — `bwrapTmpMount`
+// is declared in wallseatcache.go and used in bwraptmp_qa_test.go — and
+// holding the ambiguous names apart is what keeps that flatness from
+// inventing an answer when two functions both have a local called `dir`.
+func trStrings(files map[string]*ast.File) (env map[string]string, amb map[string][]string) {
+	all := map[string][]string{}
 	bind := func(name string, rhs ast.Expr) {
 		if name == "" || name == "_" {
 			return
@@ -202,11 +257,12 @@ func trStrings(files map[string]*ast.File) map[string]string {
 		if !ok {
 			return
 		}
-		if prev, seen := out[name]; seen && prev != lit {
-			bad[name] = true
-			return
+		for _, prev := range all[name] {
+			if prev == lit {
+				return
+			}
 		}
-		out[name] = lit
+		all[name] = append(all[name], lit)
 	}
 	paths := make([]string, 0, len(files))
 	for p := range files {
@@ -234,10 +290,16 @@ func trStrings(files map[string]*ast.File) map[string]string {
 			return true
 		})
 	}
-	for name := range bad {
-		delete(out, name)
+	env, amb = map[string]string{}, map[string][]string{}
+	for name, lits := range all {
+		if len(lits) == 1 {
+			env[name] = lits[0]
+			continue
+		}
+		sort.Strings(lits)
+		amb[name] = lits
 	}
-	return out
+	return env, amb
 }
 
 // trLit unquotes a string literal, and nothing else.
@@ -303,6 +365,61 @@ func trIsTempDirCall(e ast.Expr) bool {
 	return ok && ewdIsSel(call.Fun, "os", "TempDir")
 }
 
+// trUnparen strips redundant parentheses.
+func trUnparen(e ast.Expr) ast.Expr {
+	for {
+		p, ok := e.(*ast.ParenExpr)
+		if !ok {
+			return e
+		}
+		e = p.X
+	}
+}
+
+// trParent reads a call's PARENT argument: whether it names a shared temp
+// directory, and how it was read, for the diagnostic.
+//
+// Three readings, in the order that matters (see the head comment, "AN
+// AMBIGUOUS PARENT IS SCORED IN, NOT OUT"):
+//
+//   - `os.TempDir()`, the other spelling of "straight into $TMPDIR".
+//   - A string the reader resolves outright — a literal, a name bound once in
+//     the package, or a `+` chain of those. In scope iff that string is one
+//     of trTempParents.
+//   - A bare name the package binds to SEVERAL literals, which the reader
+//     refuses to resolve to any one of them. In scope if ANY of those
+//     bindings is a shared temp parent, so that the next `const base` does
+//     not take its call site out of the census in silence. Only the name
+//     itself, through parens: a `+` chain over an ambiguous name is not read
+//     this way, because the concatenation would have to come out equal to
+//     "/tmp" and no live site spells that.
+func trParent(e ast.Expr, env map[string]string, amb map[string][]string) (string, bool) {
+	if trIsTempDirCall(e) {
+		return "os.TempDir()", true
+	}
+	if s, ok := trStr(e, env); ok {
+		if trTempParents[s] {
+			return strconv.Quote(s), true
+		}
+		return "", false
+	}
+	id, ok := trUnparen(e).(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	var hits []string
+	for _, s := range amb[id.Name] {
+		if trTempParents[s] {
+			hits = append(hits, strconv.Quote(s))
+		}
+	}
+	if len(hits) == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%s, which this package binds to %d different literals — %s among them",
+		id.Name, len(amb[id.Name]), strings.Join(hits, " and ")), true
+}
+
 // trGoPkg reads one package directory's files and returns every in-scope
 // os.MkdirTemp in them.
 //
@@ -321,7 +438,7 @@ func trGoPkg(files []string) ([]trRoot, error) {
 		}
 		parsed[p] = f
 	}
-	env := trStrings(parsed)
+	env, amb := trStrings(parsed)
 	var out []trRoot
 	paths := make([]string, 0, len(parsed))
 	for p := range parsed {
@@ -335,15 +452,7 @@ func trGoPkg(files []string) ([]trRoot, error) {
 			if !ok || !ewdIsSel(call.Fun, "os", "MkdirTemp") || len(call.Args) != 2 {
 				return true
 			}
-			parent, inScope := "", false
-			switch {
-			case trIsTempDirCall(call.Args[0]):
-				parent, inScope = "os.TempDir()", true
-			default:
-				if s, ok := trStr(call.Args[0], env); ok && trTempParents[s] {
-					parent, inScope = strconv.Quote(s), true
-				}
-			}
+			parent, inScope := trParent(call.Args[0], env, amb)
 			if !inScope {
 				return true
 			}
@@ -418,8 +527,8 @@ var (
 // scripts/pattern-kill-census.py holds its own prefix (SELFTEST_DIR_PREFIX).
 // Anchored at column 0 so a local inside a function is not read as one — a
 // local is bound at the call site's own indentation and a reader that took
-// both would have the same collision problem the Go half solves by dropping
-// ambiguous names.
+// both would have the same collision problem the Go half answers in
+// trParent.
 var trPyAssign = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:(?:"((?:[^"\\]|\\.)*)")|(?:'((?:[^'\\]|\\.)*)'))\s*(?:#.*)?$`)
 
 // trPyRoots reads one .py file and returns every in-scope mkdtemp /
@@ -440,20 +549,36 @@ func trPyRoots(path string) ([]trRoot, error) {
 		return nil, err
 	}
 	lines := strings.Split(string(b), "\n")
-	env := map[string]string{}
-	bad := map[string]bool{}
+	// env and amb split the module's string names the way trStrings splits a
+	// Go package's, and for the same reason: a name bound twice resolves to
+	// nothing, but an ambiguous `dir=` still puts its call site IN scope when
+	// any of those bindings is a shared temp parent, rather than dropping the
+	// root in silence (ranger-base-sxez7).
+	all := map[string][]string{}
 	for _, line := range lines {
-		if m := trPyAssign.FindStringSubmatch(line); m != nil {
-			val := m[2] + m[3]
-			if prev, seen := env[m[1]]; seen && prev != val {
-				bad[m[1]] = true
-				continue
+		m := trPyAssign.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		val, seen := m[2]+m[3], false
+		for _, prev := range all[m[1]] {
+			if prev == val {
+				seen = true
+				break
 			}
-			env[m[1]] = val
+		}
+		if !seen {
+			all[m[1]] = append(all[m[1]], val)
 		}
 	}
-	for name := range bad {
-		delete(env, name)
+	env, amb := map[string]string{}, map[string][]string{}
+	for name, vals := range all {
+		if len(vals) == 1 {
+			env[name] = vals[0]
+			continue
+		}
+		sort.Strings(vals)
+		amb[name] = vals
 	}
 
 	var out []trRoot
@@ -474,10 +599,18 @@ func trPyRoots(path string) ([]trRoot, error) {
 			val, name := m[1]+m[2], m[3]
 			switch {
 			case name != "":
-				if s, ok := env[name]; ok && trTempParents[s] {
+				switch s, ok := env[name]; {
+				case ok && trTempParents[s]:
 					parent = "dir=" + name + " (" + strconv.Quote(s) + ")"
-				} else {
+				case ok:
 					inScope = false
+				default:
+					if hits := trPyTempHits(amb[name]); hits != "" {
+						parent = "dir=" + name + ", which this module binds to " +
+							strconv.Itoa(len(amb[name])) + " different literals — " + hits + " among them"
+					} else {
+						inScope = false
+					}
 				}
 			case trTempParents[val]:
 				parent = "dir=" + strconv.Quote(val)
@@ -505,6 +638,18 @@ func trPyRoots(path string) ([]trRoot, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// trPyTempHits renders the shared temp parents among an ambiguous name's
+// bindings, and the empty string when none of them is one.
+func trPyTempHits(vals []string) string {
+	var hits []string
+	for _, s := range vals {
+		if trTempParents[s] {
+			hits = append(hits, strconv.Quote(s))
+		}
+	}
+	return strings.Join(hits, " and ")
 }
 
 // trPyArgs returns the argument text of a call whose opening paren has
@@ -615,18 +760,19 @@ func TestQAEveryTempRootInTheTreeIsInPossesTempNamespace(t *testing.T) {
 
 	// Reader sanity before the arms trust it. An assertion that every root
 	// is in the namespace is satisfied by a walk that found none, and a walk
-	// that found none is silent about it. The floors sit well under the live
-	// counts (1026 .go files in 8 package directories, 15 .py files, MEASURED
-	// 2026-11-12) so an ordinary landing does not move them.
+	// that found none is silent about it. THESE floors sit well under the live
+	// counts (1029 .go files in 8 package directories, 15 .py files, MEASURED
+	// 2026-11-13) so an ordinary landing does not move them; the ROOTS floor
+	// at the foot of this function is exact, for the reason trGoRoots gives.
 	goFiles := 0
 	for _, files := range goPkgs {
 		goFiles += len(files)
 	}
 	if goFiles < 500 || len(goPkgs) < 5 {
-		t.Fatalf("the walk found %d .go file(s) in %d package directory(ies) — the walk is broken, not the tree (1026 in 8, MEASURED 2026-11-12)", goFiles, len(goPkgs))
+		t.Fatalf("the walk found %d .go file(s) in %d package directory(ies) — the walk is broken, not the tree (1029 in 8, MEASURED 2026-11-13)", goFiles, len(goPkgs))
 	}
 	if len(pys) < 10 {
-		t.Fatalf("the walk found %d .py file(s) — the walk is broken, not the tree (15, MEASURED 2026-11-12): %v", len(pys), pys)
+		t.Fatalf("the walk found %d .py file(s) — the walk is broken, not the tree (15, MEASURED 2026-11-13): %v", len(pys), pys)
 	}
 
 	var roots []trRoot
@@ -684,8 +830,9 @@ func TestQAEveryTempRootInTheTreeIsInPossesTempNamespace(t *testing.T) {
 	// -v, rather than being a date and a claim.
 	t.Logf("in-scope temp roots: %d Go, %d Python, over %d .go files in %d package directories and %d .py files",
 		gos, pyn, goFiles, len(goPkgs), len(pys))
-	if gos < 8 || pyn < 5 {
-		t.Fatalf("the census found %d in-scope Go root(s) and %d Python root(s) — the reader is broken, not the tree (11 and 7, MEASURED 2026-11-12)", gos, pyn)
+	if gos < trGoRoots || pyn < trPyRootsN {
+		t.Fatalf("the census found %d in-scope Go root(s) and %d Python root(s), want at least %d and %d (MEASURED 2026-11-13, linux, this box)\n"+
+			"A root LEAVING this census is what this floor is for, and it does not care why: a reader that stopped recognising a call, a parent spelled some way trParent cannot read, or a temp root genuinely deleted all read the same here. Check the diff for a call site whose parent or prefix changed spelling; if a root really was removed, trGoRoots/trPyRootsN at the head of this file are the two lines to lower, and lowering them is a decision rather than a formality — a floor under the live count is the state this pin was in when ranger-base-sxez7 found that seven roots could leave it in silence.", gos, pyn, trGoRoots, trPyRootsN)
 	}
 }
 
@@ -719,6 +866,8 @@ func TestQATheTempRootCensusCanStillSayNo(t *testing.T) {
 		`const goodPrefix = "posse-probe-"`,
 		`const badPrefix = "probe-"`,
 		`const ambiguous = "/tmp"`,
+		`const halfTemp = "/tmp"`,
+		`const neither = "/opt/a"`,
 		"",
 	}, "\n"))
 	body := write("probe.go", strings.Join([]string{
@@ -737,12 +886,19 @@ func TestQATheTempRootCensusCanStillSayNo(t *testing.T) {
 		`	os.MkdirTemp("", runtimeName)`,                   // 13 RED, unreadable prefix
 		`	os.MkdirTemp(parent, "f-")`,                      // 14 out: parent unreadable
 		`	os.MkdirTemp(someHome, "g-")`,                    // 15 out: parent unbound
-		`	os.MkdirTemp(ambiguous, "h-")`,                   // 16 out: two bindings, dropped
+		`	os.MkdirTemp(ambiguous, "h-")`,                   // 16 RED: two bindings, BOTH temp
 		`	os.CreateTemp("", "i-")`,                         // 17 out: a FILE
 		`	_ = "os.MkdirTemp(\"/tmp\", \"x\") in a string"`, // 18 out: text, not a call
 		`	t.TempDir()`,                                     // 19 out: the Test*[0-9] class
+		`	os.MkdirTemp(halfTemp, "j-")`,                    // 20 RED: two bindings, ONE temp
+		`	os.MkdirTemp(neither, "k-")`,                     // 21 out: two bindings, NEITHER temp
+		`	os.MkdirTemp("", ambiguous)`,                     // 22 RED: ambiguous PREFIX, unreadable
 		`	ambiguous := "/var/tmp"`,
 		`	_ = ambiguous`,
+		`	halfTemp := "/opt/scratch"`,
+		`	_ = halfTemp`,
+		`	neither := "/opt/b"`,
+		`	_ = neither`,
 		`}`,
 		"",
 	}, "\n"))
@@ -770,10 +926,14 @@ func TestQATheTempRootCensusCanStillSayNo(t *testing.T) {
 		{11, "posse-e-", true},
 		{12, "e-", true},
 		{13, "", false},
+		{16, "h-", true},
+		{20, "j-", true},
+		{22, "", false},
 	}
 	if fmt.Sprint(gotSeen) != fmt.Sprint(wantSeen) {
 		t.Errorf("the Go reader found\n  %v\nwant\n  %v\n"+
-			"The lines that must be IN are the four parent spellings and the two the head resolution reaches; the ones that must be OUT are an unreadable parent, an unbound name, a name the package binds twice, os.CreateTemp, a call inside a string literal, and t.TempDir().", gotSeen, wantSeen)
+			"The lines that must be IN are the four parent spellings, the two the head resolution reaches, and the two ambiguous parents (16, 20); the ones that must be OUT are an unreadable parent, an unbound name, an ambiguous name no binding of which is a temp parent (21), os.CreateTemp, a call inside a string literal, and t.TempDir().\n"+
+			"Lines 16, 20 and 21 are ranger-base-sxez7's rule and the three readings it has to tell apart: `ambiguous` is bound to \"/tmp\" and \"/var/tmp\" and is IN, `halfTemp` to \"/tmp\" and \"/opt/scratch\" and is IN on the strength of the one binding, `neither` to two non-temp literals and is OUT. Line 22 is the other half of that rule — an ambiguous name in a PREFIX resolves to nothing, which is unreadable and reds.", gotSeen, wantSeen)
 	}
 	var reds int
 	for _, r := range got {
@@ -781,8 +941,8 @@ func TestQATheTempRootCensusCanStillSayNo(t *testing.T) {
 			reds++
 		}
 	}
-	if reds != 5 {
-		t.Errorf("the Go rule reds %d of the planted roots, want 5 (lines 5, 7, 9, 12 and 13) — a census that cannot say no is not a census", reds)
+	if reds != 8 {
+		t.Errorf("the Go rule reds %d of the planted roots, want 8 (lines 5, 7, 9, 12, 13, 16, 20 and 22) — a census that cannot say no is not a census", reds)
 	}
 
 	// ─── Python ───
@@ -817,6 +977,24 @@ func TestQATheTempRootCensusCanStillSayNo(t *testing.T) {
 		// `dir="/opt"` is read as this call's parent, and the root drops OUT
 		// of the census silently. This is the arm that discriminates.
 		`    q = tempfile.mkdtemp(prefix='posse-q\'s-')  # not dir="/opt"`,
+		// ranger-base-sxez7's rule in the Python half, and the bindings sit
+		// AFTER the calls that use them on purpose: trPyRoots reads every
+		// module-level assignment in one pass before it reads any call, so a
+		// second binding further down the file is what makes the name
+		// ambiguous for a call above it, and that is the shape a rename
+		// actually arrives in.
+		`AMB = "/tmp"`,     // 26
+		`AMB = "/var/tmp"`, // 27  both bindings are temp parents
+		`HALF = "/tmp"`,    // 28
+		`HALF = "/opt/b"`,  // 29  one binding is
+		`NOPE = "/opt/a"`,  // 30
+		`NOPE = "/opt/b"`,  // 31  neither is
+		``,                 // 32
+		`def g():`,         // 33
+		`    r = tempfile.mkdtemp(dir=AMB, prefix="r-")`,  // 34 RED
+		`    s = tempfile.mkdtemp(dir=HALF, prefix="s-")`, // 35 RED
+		`    t = tempfile.mkdtemp(dir=NOPE, prefix="t-")`, // 36 out: no temp binding
+		`    u = tempfile.mkdtemp(dir=TMP, prefix=AMB)`,   // 37 RED: ambiguous prefix
 		"",
 	}, "\n"))
 	pyGot, err := trPyRoots(py)
@@ -840,10 +1018,14 @@ func TestQATheTempRootCensusCanStillSayNo(t *testing.T) {
 		{23, "posse-o-", true},
 		{24, "posse-p-(1)", true},
 		{25, `posse-q\'s-`, true},
+		{34, "r-", true},
+		{35, "s-", true},
+		{37, "", false},
 	}
 	if fmt.Sprint(pySeen) != fmt.Sprint(pyWant) {
 		t.Errorf("the Python reader found\n  %v\nwant\n  %v\n"+
-			"The comment line, the mkstemp, the non-temp dir= and the unresolved dir= must be OUT; a mkdtemp inside a string literal is deliberately IN, because a line-based reader that tried to tell those apart would need a Python parse and the cost of being wrong here is six characters.", pySeen, pyWant)
+			"The comment line, the mkstemp, the non-temp dir= and the unresolved dir= must be OUT; a mkdtemp inside a string literal is deliberately IN, because a line-based reader that tried to tell those apart would need a Python parse and the cost of being wrong here is six characters.\n"+
+			"Lines 34-37 are ranger-base-sxez7's rule, the same three readings the Go arm above makes: an ambiguous `dir=` whose bindings include a shared temp parent is IN (34, 35), one whose bindings include none is OUT (36), and an ambiguous `prefix=` resolves to nothing and reds (37).", pySeen, pyWant)
 	}
 	var pyReds int
 	for _, r := range pyGot {
@@ -851,7 +1033,7 @@ func TestQATheTempRootCensusCanStillSayNo(t *testing.T) {
 			pyReds++
 		}
 	}
-	if pyReds != 5 {
-		t.Errorf("the Python rule reds %d of the planted roots, want 5 (lines 11, 13, 14, 17 and 22) — including the one with no prefix= at all, whose default is tempfile's own `tmp`", pyReds)
+	if pyReds != 8 {
+		t.Errorf("the Python rule reds %d of the planted roots, want 8 (lines 11, 13, 14, 17, 22, 34, 35 and 37) — including the one with no prefix= at all, whose default is tempfile's own `tmp`", pyReds)
 	}
 }
