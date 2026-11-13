@@ -180,3 +180,35 @@ It writes to the shared store — `git worktree add` registers under the repo's
 common `.git/worktrees/` — which is why the env gate is not a formality, and
 it puts `posse.landedCheck` back the way it found it so a measurement cannot
 hand the next landing a cached verdict the launcher did not take.
+
+## 2026-11-12: the reading at the amendment (ranger-base-wti8j)
+
+D6's ceiling was crossed, and because the kill WAS the ceiling the crossing
+was silent (ADR 0088's amendment, ranger-base-7idk4). D6.1 split the two
+numbers — `landedCheckLimit` is now a ten-minute hang bound and
+`landedCheckCeiling` a 240s price nothing kills on — and this pin was re-run
+over the tree holding the split.
+
+MEASURED 2026-11-12, linux 7.2.15-1-omarchy, 16 cores, caged (bwrap), warm
+shared cache, tip `1f2d470c`, both suite slots free:
+
+| run | exit | the judge's own wall | the pin's wall | loadavg (1m) before |
+|---|---|---|---|---|
+| caged, warm, judged by its OWN copy (nothing recorded green) | 0 | **114.1s** | 114.2s | 5.91 |
+
+Green, and inside D6.2's 240s ceiling by about 126s. Two readings fall out of
+it that the table above could not give:
+
+* **The judge's own wall is on the verdict line now** (D6.2), which is what
+  makes those two columns separable at all: 114.1s inside the judge against
+  114.2s around `Schedule`+`Wait`. So the scheduling, the two git config
+  reads, the detached worktree's creation and its removal cost about 0.1s
+  between them. The price is the check; nothing else in the runner is worth
+  measuring.
+* **It is slower than the 70-71s at the top of this page, and the tree is
+  why.** Those readings judged `436f467c` on 2026-11-11. The doors have grown
+  since — `verify-reap-test-tmp` became the tenth prerequisite of `make test`
+  that day — and the amendment prices the body at 85.1s uncaged, door by
+  door, on a quieter box. That is D6's derivation working exactly as designed,
+  and it is the whole reason a fixed kill over a body that grows was going to
+  be crossed sooner or later.

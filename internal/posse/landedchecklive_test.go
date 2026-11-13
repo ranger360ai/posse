@@ -134,6 +134,9 @@ func TestLiveLandedCheck(t *testing.T) {
 	if took > landedCheckCeiling {
 		over = "OVER"
 	}
+	// Both numbers through landedCheckWall, so the log compares like with
+	// like: the verdict line above says `114.1s` and Duration.String would
+	// have said `4m0s` for the ceiling beside it.
 	t.Logf("MEASURED %s, %s D6.2's %s ceiling — a series of quiet-box readings over it sends the price back to architecture (ADR 0088 D6.2)",
-		took.Round(time.Second), over, landedCheckCeiling)
+		landedCheckWall(took), over, landedCheckWall(landedCheckCeiling))
 }
