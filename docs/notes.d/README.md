@@ -18,6 +18,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-pn99n](ranger-base-pn99n.md) — ranger-base-pn99n — the ARGV half of the fixture-git census, and what it does not cover — 2026-11-12
 - [ranger-base-nxus6](ranger-base-nxus6.md) — Two pins that were green against the mutant they exist to catch (ranger-base-nxus6) — 2026-11-12
 - [ranger-base-m3fl5](ranger-base-m3fl5.md) — A cleanup trap that owned nothing, because the pick ran in a subshell (ranger-base-m3fl5) — 2026-11-12
+- [ranger-base-ltfq7](ranger-base-ltfq7.md) — The HOOK_DEPS posse exemption, pinned by containment instead of by a count of one shape (ranger-base-ltfq7) — 2026-11-12
 - [ranger-base-l751c](ranger-base-l751c.md) — claude's server-policy caches, masked and never seeded (ranger-base-l751c) — 2026-11-12
 - [ranger-base-ksa79](ranger-base-ksa79.md) — grok's compat layer is a reader of claude's and cursor's MCP servers and hooks, switched off on the line (ranger-base-ksa79) — 2026-11-12
 - [ranger-base-ka66w](ranger-base-ka66w.md) — The rest of claude's own protected config members, carved read-only (ranger-base-ka66w) — 2026-11-12

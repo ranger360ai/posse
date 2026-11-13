@@ -145,9 +145,96 @@ import (
 //
 // A report is not a bug in the hook. It is this file saying the census stopped
 // being derivable there, which is the finding ranger-base-lxkdi asked for.
+//
+// It is the DEDUPING face of shellCommandSites below, which is the scanner
+// itself: HOOK_DEPS is a set, so the census wants each name once. A caller that
+// needs to know how OFTEN a name is run, or what it is run behind, reads the
+// sites (ranger-base-ltfq7).
 func shellCommandWords(src string) (words, blind []shellCall) {
-	var out []shellCall
+	sites, blind := shellCommandSites(src)
 	seen := map[string]bool{}
+	for _, s := range sites {
+		if !seen[s.Name] {
+			seen[s.Name] = true
+			words = append(words, s.shellCall)
+		}
+	}
+	return words, blind
+}
+
+// shellSite is one command position as the scanner found it — every
+// occurrence, not the first one per name — with the two lexical facts a caller
+// cannot recover from a name alone (ranger-base-ltfq7):
+//
+//   - Prefix, the words the scan walked past while the command position stayed
+//     open: `command -v posse` arrives here as Prefix ["command", "-v"], Name
+//     "posse", which is how a PROBE of a binary is told from a RUN of it. A
+//     substring of the render cannot: `command -v` leaves the name in a command
+//     position, so the name alone says only that the binary is mentioned.
+//   - Guards, the names tested by every `command -v <name>` guard whose BODY
+//     this site sits inside, innermost last. That is containment and not a
+//     count: two runs under one guard are guarded, which is the direction a
+//     count of runs against a count of guards gets wrong.
+//
+// Both are derived from the same lexer state as the words, which is the whole
+// point — see TestHookDepsNamesEveryCommandTheRenderedHooksCall's premise
+// block, the one caller that reads them.
+type shellSite struct {
+	shellCall
+	Prefix []string
+	Guards []string
+}
+
+// ifFrame is one `if ... then ... fi` the scan is inside. condGuards collects
+// the binaries probed in the CONDITION; `then` promotes them to bodyGuards,
+// `else` drops them (the else branch is what runs when the probe FAILED), and
+// `elif` starts the frame over.
+type ifFrame struct {
+	inCond     bool
+	condGuards []string
+	bodyGuards []string
+}
+
+// isCommandProbe reports whether a command position's prefix makes it a test
+// for the binary's presence rather than a run of it: the `command -v name`
+// idiom, which is the shape every guard in this repo's hooks is written in.
+// Any option word carrying a `v` counts (`-v`, `-V`, `-pv`), since all of them
+// make `command` print rather than exec. A probe spelled some other way —
+// `type name`, `which name` — is not one of these, and reds as an unguarded
+// run, which is the loud direction.
+func isCommandProbe(prefix []string) bool {
+	cmd, v := false, false
+	for _, w := range prefix {
+		switch {
+		case w == "command":
+			cmd = true
+		case cmd && strings.HasPrefix(w, "-") && strings.ContainsAny(w, "vV"):
+			v = true
+		}
+	}
+	return cmd && v
+}
+
+// isNegatedProbe reports whether the `!` reserved word stands in front of this
+// command position. `if ! command -v posse; then` is the INVERSE of a guard —
+// its body is what runs when the binary is ABSENT — so such a probe must not
+// establish one, and a call in that body then reads unguarded, which is what
+// it is. Without this the inversion read as a guard and covered the call: the
+// one false GREEN in this mechanism, and the direction that matters.
+func isNegatedProbe(prefix []string) bool {
+	for _, w := range prefix {
+		if w == "!" {
+			return true
+		}
+	}
+	return false
+}
+
+// shellCommandSites is the scanner itself, and the COMPLETENESS contract on
+// shellCommandWords above is its contract: every bucket named there is a claim
+// about this function. It returns every command position rather than the first
+// per name, with the Prefix and Guards shellSite documents.
+func shellCommandSites(src string) (sites []shellSite, blind []shellCall) {
 	report := func(name string, off int) {
 		blind = append(blind, shellCall{Name: name, Line: 1 + strings.Count(src[:off], "\n")})
 	}
@@ -168,11 +255,33 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 		}
 		return end
 	}
-	emit := func(w string, off int) {
-		if !seen[w] {
-			seen[w] = true
-			out = append(out, shellCall{Name: w, Line: 1 + strings.Count(src[:off], "\n")})
+	// prefix is the words walked past since the current command position
+	// opened, and ifStack the `if`s the scan is inside: both are read by emit
+	// and both are declared before it so the arms below can maintain them.
+	var prefix []string
+	var ifStack []ifFrame
+	// guardsInScope is the bodyGuards of every enclosing if, innermost last.
+	guardsInScope := func() []string {
+		var out []string
+		for _, f := range ifStack {
+			out = append(out, f.bodyGuards...)
 		}
+		return out
+	}
+	emit := func(w string, off int) {
+		s := shellSite{
+			shellCall: shellCall{Name: w, Line: 1 + strings.Count(src[:off], "\n")},
+			Prefix:    append([]string(nil), prefix...),
+			Guards:    guardsInScope(),
+		}
+		// A probe inside a condition is what makes that `if` a guard. Recorded
+		// here, from the same state that classified it, so the two cannot
+		// disagree.
+		if n := len(ifStack); n > 0 && ifStack[n-1].inCond &&
+			isCommandProbe(s.Prefix) && !isNegatedProbe(s.Prefix) {
+			ifStack[n-1].condGuards = append(ifStack[n-1].condGuards, w)
+		}
+		sites = append(sites, s)
 	}
 	isWord := func(c byte) bool {
 		return c == '_' || c == '.' || c == '/' || c == '-' ||
@@ -252,6 +361,7 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 			case c == '$' && i+1 < len(src) && src[i+1] == '(':
 				substStack = append(substStack, substFrame{inDouble: true, assignVal: assignVal})
 				inDouble, assignVal, cmdPos = false, false, true
+				prefix = nil
 				i += 2
 			case c == '$' && i+1 < len(src) && src[i+1] == '{':
 				i = skipOver(skipBraceExpansion(src, i), i+2, "${", i)
@@ -301,6 +411,7 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 		case c == '$' && i+1 < len(src) && src[i+1] == '(':
 			substStack = append(substStack, substFrame{assignVal: assignVal})
 			assignVal, cmdPos = false, true
+			prefix = nil
 			i += 2
 		case c == '$' && i+1 < len(src) && src[i+1] == '{':
 			i = skipOver(skipBraceExpansion(src, i), i+2, "${", i)
@@ -320,7 +431,10 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 				report(">", start)
 			}
 		case c == '!' && cmdPos:
-			// `! cmd` — a reserved word, and the command follows it.
+			// `! cmd` — a reserved word, and the command follows it. It joins
+			// the prefix because `if ! command -v posse; then` is the inverse
+			// of a guard, and isNegatedProbe is what reads it there.
+			prefix = append(prefix, "!")
 			i++
 		case c == ')':
 			// A `)` closing a command substitution we opened is unambiguous, so
@@ -341,12 +455,14 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 			} else {
 				cmdPos = true
 			}
+			prefix = nil
 			i++
 		case c == ';' && i+1 < len(src) && src[i+1] == ';':
 			if topCase() == caseBody {
 				setCase(casePattern)
 			}
 			cmdPos, assignVal = false, false
+			prefix = nil
 			i += 2
 		case c == '`':
 			// Read as a separator so the word after it is at least scanned as a
@@ -355,9 +471,11 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 			// THAT is a false positive.
 			report("`", i)
 			cmdPos, assignVal = true, false
+			prefix = nil
 			i++
 		case c == '\n' || c == ';' || c == '|' || c == '&' || c == '(' || c == '{':
 			cmdPos, assignVal = true, false
+			prefix = nil
 			i++
 		case c == ' ' || c == '\t':
 			assignVal = false
@@ -419,15 +537,48 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 				// that takes a VALUE is where this stops — `exec -a nm awk`
 				// derives "nm" — and it stops LOUDLY, with a name no HOOK_DEPS
 				// holds, which is the direction this file can survive.
-			case w == "if" || w == "then" || w == "else" || w == "elif" ||
-				w == "while" || w == "until" || w == "do" || w == "time" ||
+				prefix = append(prefix, w)
+			// The `if` family is read apart from the other words that hold the
+			// command position open, because it is also what maintains ifStack:
+			// `then` is where a condition's probes become the body's guards,
+			// `else` is where they stop applying (that branch is what runs when
+			// the probe FAILED), and `elif` starts the frame over
+			// (ranger-base-ltfq7). cmdPos is left exactly as these arms found
+			// it, which is what it was before the split.
+			case w == "if":
+				ifStack = append(ifStack, ifFrame{inCond: true})
+				prefix = append(prefix, w)
+			case w == "then":
+				if n := len(ifStack); n > 0 {
+					ifStack[n-1].inCond = false
+					ifStack[n-1].bodyGuards = ifStack[n-1].condGuards
+				}
+				prefix = append(prefix, w)
+			case w == "elif":
+				if n := len(ifStack); n > 0 {
+					ifStack[n-1] = ifFrame{inCond: true}
+				}
+				prefix = append(prefix, w)
+			case w == "else":
+				if n := len(ifStack); n > 0 {
+					ifStack[n-1].inCond = false
+					ifStack[n-1].bodyGuards = nil
+				}
+				prefix = append(prefix, w)
+			case w == "while" || w == "until" || w == "do" || w == "time" ||
 				w == "exec" || w == "command":
 				// A command follows these; stay in a command position. exec and
 				// command are builtins that RUN their argument, so unlike the
 				// wrappers below there is no option table to walk past.
+				prefix = append(prefix, w)
 			case w == "for" || w == "select":
 				cmdPos = false // name, `in`, and a word list — not commands
-			case w == "fi" || w == "done":
+			case w == "fi":
+				if n := len(ifStack); n > 0 {
+					ifStack = ifStack[:n-1]
+				}
+				cmdPos = false
+			case w == "done":
 				cmdPos = false
 			default:
 				if runsAnotherCommand[w] {
@@ -443,7 +594,7 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 			i++
 		}
 	}
-	return out, blind
+	return sites, blind
 }
 
 // substFrame is the scanner state a `$( )` saves and its `)` restores.
@@ -723,34 +874,88 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 		neighbour: true, "posse-prepare-commit-msg": true,
 	}
 
-	// THE PREMISE, MEASURED: one PATH-lookup test per call to the binary.
-	// Counted over the RENDER and not through shellCommandWords, which
-	// returns each name once at its first occurrence — here that is the
-	// `command -v posse` test itself (`command -v` leaves the name in a
-	// command position), so the scanner can say THAT the binary is named
-	// and never how often it is run.
+	// THE PREMISE, MEASURED: every run of the binary sits inside the body of a
+	// `command -v posse` guard.
 	//
-	// So the call is counted by its rendered shape, the pipeline that feeds
-	// it (`| posse <verb>`, check 4's judge at its content arm and its
-	// message arm). A call written in another shape counts zero here and
-	// reds this on purpose: the exemption above is the reason to come and
-	// read this, and an unguarded call is the thing it must not cover.
+	// Read off shellCommandSites — the scanner's own command positions — and
+	// not off a substring of today's render, which is the whole of
+	// ranger-base-ltfq7. The count this replaces was `strings.Count(body, "|
+	// posse ")` against the guard literal, and it was wrong in both
+	// directions at once (both MEASURED 2026-11-12, go test -overlay, tree
+	// untouched; docs/notes.d/ranger-base-ltfq7.md has the readings):
 	//
-	// MUTATION-CHECKED (go test -overlay, tree untouched, 2026-11-12): the
-	// guard replaced by `if true` reds this with 2 runs behind 0 tests; the
-	// judge reached without its pipeline reds it with 0 runs behind 2 tests
-	// — the two directions told apart, and neither is a shape the census
-	// below can see, since `posse` is exempt from it by name.
-	const posseLookup = "command -v posse >/dev/null 2>&1"
+	//   - SILENT on an unguarded call in any other shape. One line appended to
+	//     vulnPrivateChecks after its `fi`, rendering as
+	//     `posse_vp_extra=$(posse gates vuln-private-scan </dev/null
+	//     2>/dev/null)`, passed internal/posse WHOLE in all three arms — runs
+	//     and guards both unchanged at 2, because the call is not in the
+	//     counted shape, and `posse` is exempt from hookCensus BY NAME so the
+	//     census could not see it either. That is the exact state the
+	//     exemption above says this block exists to prevent.
+	//   - RED on safe code. Two counted calls under ONE guard — guarded, by
+	//     inspection — read "4 run(s) behind 2".
+	//
+	// Containment answers both, and needs no list of call shapes to maintain:
+	// a run is any `posse` command position whose prefix is not the `command
+	// -v` probe (isCommandProbe), and it must carry `posse` among the guards
+	// of the enclosing `if` bodies. Two runs under one guard are both
+	// contained; a run after the `fi` is contained by nothing.
+	//
+	// MUTATION-CHECKED (same rig, 2026-11-12, ranger-base-ltfq7): the
+	// appended unguarded line above reds this; the guard replaced by `if true`
+	// reds it; moving a call into the guard's `else` branch reds it; inverting
+	// the guard to `if ! command -v posse` reds it. The previous version's
+	// second mutant — the judge reached without its pipeline, still guarded —
+	// is GREEN here, and correctly so: the premise is that the call fails
+	// open, not that it is written as a pipeline.
+	//
+	// STILL RED on safe code, named rather than denied, because this file has
+	// twice proved that an absolute here is a claim the next reader stops
+	// checking: only an `if` BODY counts as containment. A guard written as an
+	// AND-list (`command -v posse >/dev/null 2>&1 && posse gates ...`) or as a
+	// `while`/`until` condition is not one, so the run reads unguarded. No
+	// hook is written either way, and both shapes have a row in
+	// TestShellCommandSitesTellsAProbeFromARunAndNamesItsGuards so the residue
+	// is measured; if a hook grows one, teach ifStack that compound rather
+	// than widening this.
+	const posseLookup = "command -v posse"
+	runs, probes := 0, 0
 	for _, name := range sortedKeys(rendered) {
-		runs := strings.Count(rendered[name], "| posse ")
-		if guards := strings.Count(rendered[name], posseLookup); guards != runs {
-			t.Errorf("%s: %d run(s) of the posse binary (`| posse <verb>`) behind %d `%s` test(s). "+
-				"HOOK_DEPS deliberately does not name `posse` — see the exemption above — and that "+
-				"holds only while every call fails open on its own. Guard the call; if it is written "+
-				"in a shape this count cannot see, count that shape here too.",
-				name, runs, guards, posseLookup)
+		sites, _ := shellCommandSites(rendered[name])
+		for _, s := range sites {
+			if s.Name != "posse" {
+				continue
+			}
+			if isCommandProbe(s.Prefix) {
+				probes++
+				continue
+			}
+			runs++
+			guarded := false
+			for _, g := range s.Guards {
+				if g == "posse" {
+					guarded = true
+				}
+			}
+			if !guarded {
+				t.Errorf("%s:%d: the posse binary is run here and no enclosing `%s` guard covers it "+
+					"(guards in scope: %v). HOOK_DEPS deliberately does not name `posse` — see the "+
+					"exemption above — and that holds only while every call fails open on its own. "+
+					"Put the call inside `if %s >/dev/null 2>&1; then ... fi`.",
+					name, s.Line, posseLookup, s.Guards, posseLookup)
+			}
 		}
+	}
+	// Not vacuous: a render that calls the binary nowhere would satisfy every
+	// assertion above and leave the exemption covering nothing, so the block
+	// would go quiet exactly when it stopped being needed. Both halves are
+	// asserted over the three hooks together, since only prepare-commit-msg
+	// calls posse at all.
+	if runs == 0 || probes == 0 {
+		t.Errorf("%d run(s) of the posse binary behind %d `%s` probe(s) across the rendered hooks — "+
+			"this block measures the exemption's premise and has nothing to measure. If no hook calls "+
+			"the binary any more, the `posse` entry in notPathLookups above is what to delete.",
+			runs, probes, posseLookup)
 	}
 
 	called, blind := hookCensus(rendered, notPathLookups)
@@ -803,6 +1008,86 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 		t.Errorf("scripts/cleanroom.sh HOOK_DEPS names %d command(s) no rendered hook calls: %s\n"+
 			"A name in that list is a claim the hooks need it. Remove them, or say here why the scanner cannot see the call.",
 			len(spurious), strings.Join(spurious, ", "))
+	}
+}
+
+// ranger-base-ltfq7: the premise block above reads two facts off the scanner —
+// probe-or-run, and which guards contain the site — and the live render
+// exercises exactly one shape of each. These are the rows: every shape the
+// block answers, including the two it answers RED on safe code, so the residue
+// named in its STILL RED paragraph is measured rather than asserted.
+//
+// A label per `posse` command position, in scan order: "probe" for a presence
+// test, "run guarded" for a call inside a `command -v posse` guard's body,
+// "run" for a call covered by nothing.
+func TestShellCommandSitesTellsAProbeFromARunAndNamesItsGuards(t *testing.T) {
+	t.Parallel()
+	const probe = "command -v posse >/dev/null 2>&1"
+	const judge = `posse_vp_hit=$(printf '%s' "$posse_added" | posse gates vuln-private-scan 2>/dev/null)`
+	for _, tc := range []struct {
+		name string
+		src  string
+		want []string
+	}{
+		// The two halves on their own.
+		{"probe alone", probe, []string{"probe"}},
+		{"probe spelled -V", "command -V posse", []string{"probe"}},
+		{"run alone", "posse gates vuln-private-scan", []string{"run"}},
+
+		// The live render's shape, and the mutants of it.
+		{"the rendered shape", "if " + probe + "; then\n  " + judge + "\nfi\n",
+			[]string{"probe", "run guarded"}},
+		{"a run after the fi", "if " + probe + "; then\n  " + judge + "\nfi\nposse gates vuln-private-scan\n",
+			[]string{"probe", "run guarded", "run"}},
+		{"two runs under one guard", "if " + probe + "; then\n  " + judge + "\n  " + judge + "\nfi\n",
+			[]string{"probe", "run guarded", "run guarded"}},
+		{"a run in the else branch", "if " + probe + "; then\n  :\nelse\n  " + judge + "\nfi\n",
+			[]string{"probe", "run"}},
+		{"the guard replaced by if true", "if true; then\n  " + judge + "\nfi\n",
+			[]string{"run"}},
+
+		// Containment is a stack, and it is per binary.
+		{"nested if under the guard", "if " + probe + "; then\n  if [ -n \"$x\" ]; then\n    " + judge + "\n  fi\nfi\n",
+			[]string{"probe", "run guarded"}},
+		{"an elif is a fresh frame", "if [ -n \"$x\" ]; then\n  posse a\nelif " + probe + "; then\n  posse b\nfi\n",
+			[]string{"run", "probe", "run guarded"}},
+		{"another binary's guard covers nothing here", "if command -v bd >/dev/null 2>&1; then\n  posse a\nfi\n",
+			[]string{"run"}},
+		{"an inverted probe establishes no guard", "if ! " + probe + "; then\n  posse a\nfi\n",
+			[]string{"probe", "run"}},
+
+		// The residue the premise block names: a guard that is not an `if`
+		// body reads as no guard at all. Both are safe code and both red
+		// there, which is the direction that is loud.
+		{"and-list guard", probe + " && posse gates vuln-private-scan", []string{"probe", "run"}},
+		{"while-loop guard", "while " + probe + "; do\n  posse a\ndone\n", []string{"probe", "run"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sites, _ := shellCommandSites(tc.src)
+			var got []string
+			for _, s := range sites {
+				if s.Name != "posse" {
+					continue
+				}
+				switch {
+				case isCommandProbe(s.Prefix):
+					got = append(got, "probe")
+				default:
+					label := "run"
+					for _, g := range s.Guards {
+						if g == "posse" {
+							label = "run guarded"
+						}
+					}
+					got = append(got, label)
+				}
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("shellCommandSites(%q) read the posse positions as %v, want %v",
+					tc.src, got, tc.want)
+			}
+		})
 	}
 }
 
