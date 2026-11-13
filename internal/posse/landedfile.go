@@ -257,11 +257,23 @@ func (c *landedChecker) commentStretch(repo, base, text, absent string) landedSt
 // file, and a stretch that ended is over however long its bead stays open),
 // so the newest marker-carrying bead is this stretch's by construction.
 func (c *landedChecker) openStretchBead(repo, base string) (BdIssue, error) {
-	open, err := c.bd.OpenLabeledAny(repo, landedFileLabel)
+	return c.openMarkedBead(landedFileLabel, repo, landedFileMarker(repo, base))
+}
+
+// openMarkedBead is the mechanics of that dedupe, over one lane and one
+// marker: the NEWEST open bead in `label` whose description carries `marker`
+// as a whole line, or a zero issue when there is none.
+//
+// ONE IMPLEMENTATION, because D6.3's health bead dedupes the same way over a
+// different lane and a different marker (landedhealth.go), and the only
+// thing worth keeping in step between the two is this: which bead counts
+// when there are several, and what "carries the marker" means.
+func (c *landedChecker) openMarkedBead(label, repo, marker string) (BdIssue, error) {
+	open, err := c.bd.OpenLabeledAny(repo, label)
 	if err != nil {
 		return BdIssue{}, err
 	}
-	marker, best := landedFileMarker(repo, base), BdIssue{}
+	best := BdIssue{}
 	for _, is := range open {
 		if !landedDescriptionCarries(is.Description, marker) {
 			continue

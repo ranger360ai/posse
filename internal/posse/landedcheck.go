@@ -497,11 +497,17 @@ type landedChecker struct {
 	a    *App
 	out  io.Writer
 	cage landedCageFn
-	// bd is D5's filer (landedfile.go). A field and not a call to NewBd at
-	// the filing site, so a test drives the fake bd every other filing path
-	// in this package is pinned against, and so one checker spends one
-	// resolution.
+	// bd is D5's filer (landedfile.go) and D6.3's (landedhealth.go). A field
+	// and not a call to NewBd at the filing site, so a test drives the fake
+	// bd every other filing path in this package is pinned against, and so
+	// one checker spends one resolution.
 	bd Bd
+	// ceiling overrides D6.2's price for a test, and zero means
+	// landedCheckCeiling (ceilingOf, landedhealth.go). A seam for the same
+	// reason `cage` is one: a 240s wall cannot be reached inside a test, so
+	// without it the arm where an answered run is OVER the price — the arm
+	// D6.3 exists to file — would have no spelling here either.
+	ceiling time.Duration
 
 	mu sync.Mutex
 	// pending is the coalescing set: repo path → the branch that moved.
@@ -520,6 +526,11 @@ type landedChecker struct {
 	// checker and not per run, because the record stays empty until the
 	// first green and the sentence is about the configuration, not the tip.
 	saidOwnCopy bool
+	// quietSaid is D6.3's other input, per repo: the sentence the LAST
+	// unanswered run gave, so the bead filed on the second consecutive
+	// silence can carry both (rememberQuietSaid, landedhealth.go). In
+	// memory and not in the record, which D6.3 spells `<tree> <n>`.
+	quietSaid map[string]string
 }
 
 // newLandedChecker builds one. `out` must be a writer the caller is willing
@@ -651,17 +662,20 @@ func (c *landedChecker) once(repo, base string) {
 	// the cage and the check — and not the two git config reads above it or
 	// the worktree removal the defer does below.
 	//
-	// `took` is kept rather than formatted on the spot because
-	// ranger-base-lhiy1 (D6.3) reads it: an answered run over
-	// landedCheckCeiling, and a second consecutive unanswered one, each file
-	// one architecture bead, and both of those decisions are made in this
-	// switch with the Duration in hand.
+	// `took` is kept rather than formatted on the spot because D6.3 reads it
+	// (landedhealth.go): an answered run over landedCheckCeiling, and a
+	// second consecutive unanswered one, each file one architecture bead,
+	// and both of those decisions are made with the Duration in hand.
 	start := time.Now()
 	v, said := c.judge(repo, run, tip, tree)
 	took := time.Since(start)
 	switch v {
 	case landUnanswered:
 		c.warn("%s landed at %s and was NOT judged after %s — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said)
+		// D6.3, and this is the arm it exists for: silence records nothing
+		// and files nothing under D5, so the watchdog on the detector is
+		// the only thing that can say the judge has stopped answering.
+		c.health(repo, tree, v, took, said)
 		return
 	case landGreen:
 		c.say("✓ %s green at %s in %s (%s, ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript)
@@ -688,6 +702,11 @@ func (c *landedChecker) once(repo, base string) {
 	// of the two orders, this is the one whose failure costs one bead one
 	// landing late instead of two beads for one red stretch.
 	c.file(repo, base, tip, tree, had, prev, v, said, recorded)
+	// D6.3, after D5 and not instead of it: the two are about different
+	// subjects — the tree, and the judge — and an answered run can be both
+	// a red main and a crossing of the price. Its own counter resets here,
+	// and the ceiling is read off this wall.
+	c.health(repo, tree, v, took, said)
 }
 
 // judge creates the detached worktree, extracts the judge, and runs it

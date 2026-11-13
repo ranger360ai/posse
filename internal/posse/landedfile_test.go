@@ -687,43 +687,48 @@ func TestAFiledBeadWhoseReadBackFailedIsSaidAndNotFiledTwice(t *testing.T) {
 // It is an allow-list rather than a search for `Close`, because the next way
 // to answer a bead without reading it is `update --status`, and the pin
 // should red on that too.
+//
+// BOTH FILERS, because D6.3's health bead has the same last sentence with a
+// different owner — "closing is architecture's" (landedhealth.go) — and a
+// close added there would read like tidying up for exactly the same reason.
 func TestQATheFilerNeverClosesOrOtherwiseAnswersABead(t *testing.T) {
 	t.Parallel()
-	const src = "landedfile.go"
-	f, err := parser.ParseFile(token.NewFileSet(), src, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	allowed := map[string]bool{
-		"Create":         true, // D5's one filing
-		"Comment":        true, // D5's three comment rows
-		"Show":           true, // the window's attribution
-		"OpenLabeledAny": true, // finding the open bead for this stretch
-		"Available":      true, // and asking whether there is a bd at all
-	}
-	verbs := 0
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
+	for _, src := range []string{"landedfile.go", "landedhealth.go"} {
+		f, err := parser.ParseFile(token.NewFileSet(), src, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		allowed := map[string]bool{
+			"Create":         true, // D5's one filing, and D6.3's
+			"Comment":        true, // D5's three comment rows, and D6.3's one
+			"Show":           true, // the window's attribution
+			"OpenLabeledAny": true, // finding the open bead for this stretch
+			"Available":      true, // and asking whether there is a bd at all
+		}
+		verbs := 0
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			recv, ok := sel.X.(*ast.SelectorExpr)
+			if !ok || recv.Sel.Name != "bd" {
+				return true
+			}
+			verbs++
+			if !allowed[sel.Sel.Name] {
+				t.Errorf("%s:%d calls bd.%s — ADR 0088 gives these rules one write (a bead) and one amendment (a comment); closing or answering a bead is the fixer's, or architecture's",
+					src, call.Pos(), sel.Sel.Name)
+			}
 			return true
+		})
+		if verbs == 0 {
+			t.Errorf("%s makes no bd call at all, so this pin is reading the wrong thing", src)
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		recv, ok := sel.X.(*ast.SelectorExpr)
-		if !ok || recv.Sel.Name != "bd" {
-			return true
-		}
-		verbs++
-		if !allowed[sel.Sel.Name] {
-			t.Errorf("%s:%d calls bd.%s — ADR 0088 D5 gives this rule one write (a bead) and one amendment (a comment); closing or answering a bead is the fixer's",
-				src, call.Pos(), sel.Sel.Name)
-		}
-		return true
-	})
-	if verbs == 0 {
-		t.Errorf("%s makes no bd call at all, so this pin is reading the wrong thing", src)
 	}
 }
 
