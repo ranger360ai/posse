@@ -350,13 +350,22 @@ die2() { echo "$self: $*" >&2; exit 2; }
 # claude_procs made the blindness control (below, "the harness's live-session
 # registry") refuse the whole class for a reason that is not blindness: on a
 # shared box a sibling seat's own `claude -p` pin is exactly such a run. The
-# fix excludes it; this rig proves the exclusion by COUNT rather than by the
-# blind flag, because this box runs real, ambient, same-uid `claude`
-# processes this script can see (every seat here is uid posse) and the
-# blind flag only fires when the registry is EMPTY, which a busy box's own
-# traffic cannot be made to guarantee either way -- the count a planted
-# process moves, or does not move, is the one thing this rig can pin
-# regardless of who else is on the box right now.
+# fix excludes it; this rig proves the exclusion by MEMBERSHIP -- is the
+# fixture's own pid in the set the counter reports -- and not by the blind
+# flag, which only fires when the registry is EMPTY and which a busy box's
+# own traffic cannot be made to guarantee either way.
+#
+# IT USED TO PROVE IT BY COUNT, differencing two box-wide censuses taken a
+# second apart, and that is the one shape it cannot use (ranger-base-0wvu6).
+# This box runs real, ambient, same-uid `claude` processes this script can
+# see and SHOULD see (every seat here is uid posse), so any sibling seat's
+# launch landing between the two readings shifted both of them: `10 -> 11 ->
+# 12` with the rig's own contribution being `0 -> 0 -> +1`, both arms red
+# together, the message naming the reaper, and `make test` dead before a
+# single package ran because verify-reap-test-tmp is a prerequisite of it
+# (CAUGHT 2026-11-11 and again 2026-11-12, both passing on a rerun minutes
+# later). A membership test asks the same question with nobody else's traffic
+# in the answer.
 self_test() {
   local tmp fails=0
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-reap-selftest.XXXXXX") || { echo "$self --self-test: mktemp failed" >&2; exit 2; }
@@ -458,63 +467,147 @@ self_test() {
   # A real ELF file named "claude" is required: /proc/<pid>/exe resolves
   # through a symlink to its REAL target, so a symlink named "claude" would
   # read back as whatever it points at, never as ".../claude" itself. A
-  # plain copy of /bin/sleep is a distinct inode at a path that ends the way
-  # the production `case "$(readlink exe)" in */claude)` wants it to.
-  local sleepbin fakeclaude n0 n1 n2 pfake
-  sleepbin=$(command -v sleep) || { echo "  FAIL no sleep(1) on PATH to copy for the fake claude binary"; fails=$((fails + 1)); sleepbin=""; }
+  # plain copy of a system binary is a distinct inode at a path that ends the
+  # way the production `case "$(readlink exe)" in */claude)` wants it to.
+  #
+  # THE FIXTURE IS A COPY OF tee(1), NOT OF sleep(1) (ranger-base-0wvu6),
+  # because `-p` has to be an argument the fixture SURVIVES. MEASURED
+  # 2026-11-12 on this box (linux, coreutils 9.x): `sleep -p 30` is `invalid
+  # option -- 'p'`, exit 1, gone before the rig's `sleep 1` is over — so the
+  # `-p` arm was reading "the process I started is not counted" over a
+  # process that had already exited, and would have read exactly the same
+  # with claude_could_register deleted. `tee -p` is a real option
+  # (--output-error=warn-nopipe) and tee with no file operand idles on stdin,
+  # so this fixture is alive, countable, and carries the `-p` the production
+  # filter has to see. Both arms assert that liveness AT THE MOMENT OF THE
+  # CENSUS: a fixture that died is reported as a broken rig and never as a
+  # passing exclusion. That is the vacuity the old spelling could not detect,
+  # and the reason this arm's verdict is a membership test and not a delta —
+  # a delta over an absent process and a delta over an excluded one are the
+  # same number.
+  local teebin fakeclaude fifo pkeep pfake cen cn cpids
+  local -a cparr=()
+  teebin=$(command -v tee) || { echo "  FAIL no tee(1) on PATH to copy for the fake claude binary"; fails=$((fails + 1)); teebin=""; }
   fakeclaude="$tmp/claude"
-  # count_claude_procs reads the script's own "... live claude processes: N"
-  # line with bash parameter expansion -- `${out#*"needle"}` then cut at the
-  # next newline -- the same shape as scripts/test-times.sh's `line_after`,
-  # and not a forked `sed`/`grep` for the reason `st` above gives.
-  count_claude_procs() {
-    local out rest
+  fifo="$tmp/keepopen"
+
+  # claude_census runs the production counter ONCE and hands back both facts
+  # it reports about that population — the count and the pids — as
+  # "<count>|<pid> <pid> ...", or "ABSENT|" when either line is missing. One
+  # run, so the two are the same loop's answer and the arms below never
+  # compare one census to another. Both lines are read with bash parameter
+  # expansion — `${out#*"needle"}` then cut at the next newline, the same
+  # shape as scripts/test-times.sh's `line_after` — and not a forked
+  # `sed`/`grep`, for the reason `st` above gives.
+  claude_census() {
+    local out rest n pids
     out=$("$0" --root "$tmp/root" --class claude-scratch --quiet \
       --claude-sessions "$tmp/sessions" --claude-projects "$tmp/projects" --no-bead 2>&1) || true
     rest=${out#*"live claude processes: "}
-    [ "$rest" = "$out" ] && { printf '\n'; return 1; }
-    printf '%s\n' "${rest%%$'\n'*}"
+    [ "$rest" = "$out" ] && { printf 'ABSENT|\n'; return 1; }
+    n=${rest%%$'\n'*}
+    rest=${out#*"claude pids counted:"}
+    [ "$rest" = "$out" ] && { printf 'ABSENT|\n'; return 1; }
+    pids=${rest%%$'\n'*}
+    printf '%s|%s\n' "$n" "$pids"
   }
-  if [ -n "$sleepbin" ]; then
-    cp "$sleepbin" "$fakeclaude"
+
+  # start_fake <argv...> — one live claude-exe process with that argv, its pid
+  # in $pfake. The keeper holds the fifo's write end open so tee never reads
+  # EOF; its pid is known too, so neither process is left to a grace period,
+  # and both go in SELFTEST_PIDS so a signalled self-test takes them with it.
+  #
+  # THE KEEPER'S BOUND IS NOT A DEADLINE FOR THE ARM. Both processes are
+  # killed by stop_fake the moment the census is read, so the only thing the
+  # number does is cap what a SIGKILLed self-test could leave behind (two idle
+  # processes, no CPU). It is 300s and not the census's few seconds because a
+  # keeper that expires first ends the fake, and the arm would then report a
+  # broken rig over nothing but a loaded box — which is the class of defect
+  # this rewrite exists to remove, one apparatus down.
+  start_fake() {
+    sleep 300 > "$fifo" 2>/dev/null & pkeep=$!
+    "$fakeclaude" "$@" < "$fifo" >/dev/null 2>&1 & pfake=$!
+    SELFTEST_PIDS=("$pkeep" "$pfake")
+    sleep 1
+  }
+  stop_fake() {
+    kill "$pfake" "$pkeep" 2>/dev/null || true
+    wait "$pfake" 2>/dev/null || true
+    wait "$pkeep" 2>/dev/null || true
+    SELFTEST_PIDS=()
+  }
+
+  if [ -n "$teebin" ]; then
+    cp "$teebin" "$fakeclaude"
     chmod +x "$fakeclaude"
+    mkfifo "$fifo"
 
-    n0=$(count_claude_procs)
-    case $n0 in
-      ''|*[!0-9]*)
-        echo "  FAIL could not read 'live claude processes: N' back from the script's own output"
-        fails=$((fails + 1))
-        n0=0
-        ;;
-    esac
-
-    "$fakeclaude" -p 30 >/dev/null 2>&1 </dev/null & pfake=$!
-    sleep 1
-    n1=$(count_claude_procs)
-    kill "$pfake" 2>/dev/null || true
-    wait "$pfake" 2>/dev/null || true
-    case $n1 in ''|*[!0-9]*) echo "  FAIL could not read claude_procs after the -p run"; fails=$((fails + 1)); n1="($n1)" ;; esac
-
-    if [ "$n1" = "$n0" ]; then
-      echo "  ok   a 'claude -p' run is excluded from claude_procs ($n0 -> $n1)"
+    # The pid list is what the two arms below decide through, so it is worth
+    # nothing unless it is the count's own evidence. This arm compares the two
+    # WITHIN ONE RUN — no second census, so no sibling seat's launch can reach
+    # it — and it is also where an unparseable or missing line is caught: in a
+    # membership arm a list that could not be read reads as "my pid is not in
+    # it", which is the answer the exclusion arm wants.
+    cen=$(claude_census) || true
+    cn=${cen%%|*}
+    cpids=${cen#*|}
+    cparr=()
+    read -r -a cparr <<< "$cpids"
+    if [ "$cn" = ABSENT ]; then
+      echo "  FAIL the script printed no 'live claude processes: N' / 'claude pids counted:' pair — the arms below have nothing to read"
+      fails=$((fails + 1))
+    elif [ "${#cparr[@]}" = "$cn" ]; then
+      echo "  ok   claude_procs ($cn) and the pids it reports (${#cparr[@]}) agree"
     else
-      echo "  FAIL a 'claude -p' run changed claude_procs from $n0 to $n1 -- it must be excluded"
+      echo "  FAIL claude_procs says $cn but the script reported ${#cparr[@]} pid(s) ($cpids) — the list is not that count's evidence"
       fails=$((fails + 1))
     fi
 
-    "$fakeclaude" 30 >/dev/null 2>&1 </dev/null & pfake=$!
-    sleep 1
-    n2=$(count_claude_procs)
-    kill "$pfake" 2>/dev/null || true
-    wait "$pfake" 2>/dev/null || true
-    case $n2 in ''|*[!0-9]*) echo "  FAIL could not read claude_procs after the non-print run"; fails=$((fails + 1)); n2="($n2)" ;; esac
-
-    if [ "$n2" = "$((n0 + 1))" ]; then
-      echo "  ok   control: the same process without -p IS counted ($n0 -> $n2)"
-    else
-      echo "  FAIL control: a non-print claude process changed claude_procs from $n0 to $n2, want $((n0 + 1))"
+    start_fake -p
+    cen=$(claude_census) || true
+    cn=${cen%%|*}
+    cpids=${cen#*|}
+    if ! kill -0 "$pfake" 2>/dev/null; then
+      echo "  FAIL the '-p' fixture (pid $pfake) was already gone when the census ran — this arm proves nothing about the exclusion, and the rig is what is broken"
       fails=$((fails + 1))
+    elif [ "$cn" = ABSENT ]; then
+      echo "  FAIL could not read the counted pids back from the script's own output after the -p run"
+      fails=$((fails + 1))
+    else
+      case " $cpids " in
+        *" $pfake "*)
+          echo "  FAIL a live 'claude -p' run (pid $pfake) IS in claude_procs — it must be excluded (counted:$cpids)"
+          fails=$((fails + 1))
+          ;;
+        *)
+          echo "  ok   a live 'claude -p' run (pid $pfake) is excluded from claude_procs"
+          ;;
+      esac
     fi
+    stop_fake
+
+    start_fake
+    cen=$(claude_census) || true
+    cn=${cen%%|*}
+    cpids=${cen#*|}
+    if ! kill -0 "$pfake" 2>/dev/null; then
+      echo "  FAIL control: the non-print fixture (pid $pfake) was already gone when the census ran — the rig is what is broken"
+      fails=$((fails + 1))
+    elif [ "$cn" = ABSENT ]; then
+      echo "  FAIL could not read the counted pids back from the script's own output after the non-print run"
+      fails=$((fails + 1))
+    else
+      case " $cpids " in
+        *" $pfake "*)
+          echo "  ok   control: the same binary without -p IS counted (pid $pfake)"
+          ;;
+        *)
+          echo "  FAIL control: a non-print claude process (pid $pfake) is NOT in claude_procs — the exclusion above is excluding everything, or the exe match is broken (counted:$cpids)"
+          fails=$((fails + 1))
+          ;;
+      esac
+    fi
+    stop_fake
   fi
 
   # ─── ranger-base-x2blo: a candidate that vanished before the probe ────────
@@ -920,10 +1013,26 @@ claude_could_register() {  # claude_could_register <pid-dir, e.g. /proc/1234>
   done < "$1/cmdline" 2>/dev/null
   return 0
 }
-claude_blind=0 claude_live=0 claude_procs=0
+# IT REPORTS WHICH PIDS IT COUNTED and not only how many (ranger-base-0wvu6).
+# Two readers need that. A human reading the REFUSED line below is told a
+# number and a registry that does not name it, and the next question is always
+# "which processes?" — a count cannot be chased and a pid can. And the
+# `--self-test` arm for this exclusion can then ask the question it actually
+# means — is MY fixture's pid in the counted set — instead of differencing two
+# box-wide censuses taken a second apart, which is a subtraction any sibling
+# seat's launch moves (that rig red two arms of `make test` on this box on
+# 2026-11-11 and again on 2026-11-12, both times over an unrelated claude
+# process that arrived mid-rig). The list is derived in the same loop as the
+# count, so the two cannot disagree.
+claude_blind=0 claude_live=0 claude_procs=0 claude_counted=""
 for pid in /proc/[0-9]*; do
   case "$(readlink "$pid/exe" 2>/dev/null)" in
-    */claude) claude_could_register "$pid" && claude_procs=$((claude_procs + 1)) ;;
+    */claude)
+      if claude_could_register "$pid"; then
+        claude_procs=$((claude_procs + 1))
+        claude_counted="$claude_counted ${pid#/proc/}"
+      fi
+      ;;
   esac
 done
 : > "$livedirs"
@@ -949,6 +1058,11 @@ if [ -d "$claude_sessions" ]; then
 fi
 if [ "$claude_procs" -gt 0 ] && [ "$claude_live" -eq 0 ]; then claude_blind=1; fi
 echo "harness registry: $claude_live live sessions in $claude_sessions   live claude processes: $claude_procs"
+# Its own line, below the count and never folded into it: the count line is
+# parsed by `${out#*"live claude processes: "}` cut at the next newline, here
+# and in --self-test, so anything appended to it would be read as part of the
+# number. Empty when nothing was counted — the count line above says 0.
+echo "claude pids counted:$claude_counted"
 sort -u "$livedirs" "$held3" -o "$held3"
 
 # ─── the candidate walk, class by class ─────────────────────────────────────
