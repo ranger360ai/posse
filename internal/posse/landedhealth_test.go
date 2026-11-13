@@ -545,3 +545,132 @@ func TestASilentJudgeOverAnUnreadableStoreFilesNothingAndTheNextLandingAsksAgain
 		}
 	}
 }
+
+// A COUNT THAT CAME THROUGH A FAILED RESET IS NOT A PATTERN, AND THE BEAD
+// SAYS WHICH (ranger-base-4jroi, from verifying ranger-base-lhiy1 under
+// ranger-base-vzn36). The path: one silence counts, the answered run after it
+// cannot write the reset — `.git/config.lock` to any concurrent persona, a
+// shape AGENTS.md and ADR 0059 D3 both name as routine on this box — and the
+// NEXT silence crosses the threshold over a count that spans an answered
+// run.
+//
+// Both halves of the bead that crossing used to file were false. It claimed
+// two CONSECUTIVE silences, when an answered GREEN run sat between them, and
+// it blamed the absent first sentence on "another launcher process", when ONE
+// launcher judged all three runs and cleared that sentence itself two lines
+// above the failed reset. The reader of this bead is architecture; it sent
+// them looking for a restart that never happened.
+//
+// WHY NO LANDING IS NEEDED BETWEEN THE ANSWERED RUN AND THE SILENCE. D4's
+// cache answers for a tree already on record, so a stretch that resumes over
+// an unchanged tip normally needs a new commit to reach the judge at all
+// (TestASilentJudgeAndARedMainAreTwoBeadsInTwoLanes). Here the lock blocks
+// EVERY `git config` write, the verdict's own included, so the answered run
+// records nothing and the tip is still unjudged — which is also what the
+// shape looks like in the wild, where one lost lock is one lost lock.
+func TestASilenceCountedThroughAFailedResetClaimsNoPatternAndNoRestart(t *testing.T) {
+	t.Parallel()
+	c, out, repo, _ := ldfFixture(t)
+
+	// Silence 1: counted, nothing filed, and its sentence is in memory.
+	c.cage = lhSilentCage(lhSaidOne)
+	ldfJudge(t, c, repo)
+	if n := lhQuiet(t, repo); n != 1 {
+		t.Fatalf("%s counted %d after one unanswered run, want 1 — the arm below needs a landed count for the failed reset to carry", landedQuietKey, n)
+	}
+
+	// The judge answers, and the reset it owes cannot be written.
+	lock := filepath.Join(repo, ".git", "config.lock")
+	write(t, lock, "")
+	c.cage = plainCage
+	ldfJudge(t, c, repo)
+	if n := lhQuiet(t, repo); n != 1 {
+		t.Fatalf("%s reads %d after an answered run whose reset failed, want the 1 it could not clear — this arm measures the count that CARRIES", landedQuietKey, n)
+	}
+	if s := out.String(); !strings.Contains(s, "could not be reset") {
+		t.Fatalf("the answered run did not warn that %s could not be reset, so the path this arm is about was never walked:\n%s", landedQuietKey, s)
+	}
+
+	// The lock frees, and the next silence crosses the threshold.
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	c.cage = lhSilentCage(lhSaidThree)
+	ldfJudge(t, c, repo)
+
+	if n := lhQuiet(t, repo); n != 2 {
+		t.Fatalf("%s counted %d after the second silence, want 2 — counting from 1 again is ranger-base-w9w37's rule and is NOT what this arm disputes", landedQuietKey, n)
+	}
+	is := lhFiled(t, c, repo)
+	for _, want := range []string{
+		"THEY ARE NOT CONSECUTIVE", // the claim the count cannot carry
+		"could not be written",     // and why: the reset, not a restart
+		"the ANSWERED run between the two cleared it",
+		lhSaidThree,              // the one sentence this process does have
+		landedHealthMarker(repo), // still the one bead per stretch
+		"closing is architecture's",
+	} {
+		if !strings.Contains(is.Description, want) {
+			t.Errorf("the bead does not name %q:\n%s", want, is.Description)
+		}
+	}
+	for _, bad := range []struct{ s, why string }{
+		{"another launcher process", "ONE launcher judged all three runs; the absent sentence is this process's own, cleared by the answered run"},
+		{"consecutive judged runs", "an answered GREEN run sat between the two silences, so the pair is not consecutive"},
+		{lhSaidOne, "the sentence from BEFORE the answered run is not this stretch's — landedhealth.go clears it on the answered run, and that clear is right"},
+	} {
+		if strings.Contains(is.Description, bad.s) {
+			t.Errorf("the bead claims %q — %s:\n%s", bad.s, bad.why, is.Description)
+		}
+	}
+}
+
+// …and the restart wording is still the restart's, which is what makes the
+// arm above a DISTINCTION rather than a second constant. A crossing is two
+// runs of one long-lived launcher by construction (ADR 0028 §1), and when it
+// is not, the bead says the earlier sentence is held by the process that has
+// it rather than inventing one — ADR 0088 D6.3's own residual, and the cause
+// ranger-base-lhiy1 recorded as ASSUMED.
+//
+// A SECOND CHECKER OVER THE SAME REPO IS THE RESTART. The counter is a git
+// config record and survives it; the sentence is in memory (D6.3 spells the
+// record `<tree> <n>`) and does not. The App is shared because what this arm
+// is about is the checker's own map, and the cage closure is shared so the
+// second refusal still has a sentence of its own.
+func TestASilenceAfterALauncherRestartSaysTheEarlierSentenceIsHeldElsewhere(t *testing.T) {
+	t.Parallel()
+	c, out, repo, _ := ldfFixture(t)
+	c.cage = lhSilentCage(lhSaidOne, lhSaidTwo)
+
+	ldfJudge(t, c, repo)
+	if n := lhQuiet(t, repo); n != 1 {
+		t.Fatalf("%s counted %d after one unanswered run, want 1", landedQuietKey, n)
+	}
+
+	next := newLandedChecker(c.a, out)
+	next.cage, next.bd = c.cage, c.bd
+	ldfJudge(t, next, repo)
+
+	if n := lhQuiet(t, repo); n != 2 {
+		t.Fatalf("%s counted %d after the restarted launcher's silence, want 2 — the record is what survives a restart", landedQuietKey, n)
+	}
+	is := lhFiled(t, next, repo)
+	for _, want := range []string{
+		"another launcher process", // this branch's own cause
+		"consecutive judged runs",  // and the count IS consecutive here
+		lhSaidTwo,
+	} {
+		if !strings.Contains(is.Description, want) {
+			t.Errorf("the bead does not name %q:\n%s", want, is.Description)
+		}
+	}
+	for _, bad := range []struct{ s, why string }{
+		{"THEY ARE NOT CONSECUTIVE", "both runs were silent and nothing answered between them"},
+		{"could not be reset", "no reset was owed or attempted on this path"},
+		{lhSaidOne, "the first run's sentence is in the process that died, and this bead may not invent it"},
+	} {
+		if strings.Contains(is.Description, bad.s) {
+			t.Errorf("the bead claims %q — %s:\n%s", bad.s, bad.why, is.Description)
+		}
+	}
+}

@@ -178,7 +178,7 @@ func (c *landedChecker) healthSilent(repo, tree string, n int, said string) {
 	}
 	c.fileHealth(repo, tree,
 		fmt.Sprintf("landed check silent at %s", AbbrevHome(repo)),
-		c.silentDescription(repo, tree, n, prev, said))
+		c.silentDescription(repo, tree, n, prev, said, c.quietUnreset[repo]))
 }
 
 // healthAnswered is the bottom two rows: the counter resets, an open bead is
@@ -186,6 +186,14 @@ func (c *landedChecker) healthSilent(repo, tree string, n int, said string) {
 // filed.
 func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Duration) {
 	over := took > c.ceilingOf()
+	if n == 0 {
+		// Nothing on the counter, so nothing carried over an answered run
+		// either: a record somebody zeroed by hand must not leave this mark
+		// behind to caveat the next honest crossing. Free — a map delete is
+		// no git write and no bd call, which is what the early return below
+		// and TestAGreenLandingSpendsNoBdCall are about.
+		c.markQuietUnreset(repo, false)
+	}
 	if n == 0 && !over {
 		// The ordinary landing on a healthy main: answered, inside the
 		// price, nothing to reset and nothing to say. It spends no git
@@ -202,6 +210,13 @@ func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Durat
 			reset = false
 			c.warn("%s: the judge answered and %s could not be reset (%v) — the next unanswered run counts from %d (ADR 0088 D6.3)", AbbrevHome(repo), landedQuietKey, err, n)
 		}
+		// AND THE NEXT SILENCE MAY NOT CALL THAT COUNT CONSECUTIVE
+		// (ranger-base-4jroi). Counting on from n is ranger-base-w9w37's rule
+		// working — a count whose write did not land keeps counting rather
+		// than files — but the count now spans THIS run, which answered. The
+		// mark is what lets silentDescription say so, instead of claiming a
+		// pattern and blaming a launcher restart that did not happen.
+		c.markQuietUnreset(repo, !reset)
 	}
 	is, st := c.healthBeadState(repo)
 	switch st {
@@ -287,16 +302,36 @@ func (c *landedChecker) fileHealth(repo, tree, title, desc string) {
 
 // silentDescription is what architecture reads first: that no landing is
 // being judged at all, and the two sentences the two runs gave for it.
-func (c *landedChecker) silentDescription(repo, tree string, n int, prev, said string) string {
+//
+// `unreset` IS A CLAIM THIS BEAD MAY NOT MAKE WITHOUT (ranger-base-4jroi).
+// The count reads as consecutive silences only while every answered run in
+// between reset it; over a reset that could not be written it spans a run
+// that ANSWERED, and both halves of the bead this function used to write
+// were then false — a pattern that did not happen, and a launcher restart
+// that did not happen either. The reader of this bead is architecture, and a
+// bead that sends them looking for a restart costs a seat.
+func (c *landedChecker) silentDescription(repo, tree string, n int, prev, said string, unreset bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", landedHealthMarker(repo))
-	fmt.Fprintf(&b, "The landed check at %s returned NO ANSWER on %d consecutive judged runs, the last of them over tree %s. While that is true, no landing is judged, nothing is recorded, and ADR 0088 D5 files nothing — a deadline and a refused cage are both spelled as SILENCE (D3), so this bead is the only thing that says so.\n\n",
-		AbbrevHome(repo), n, abbrevSHA(tree))
-	b.WriteString("What the runs said:\n\n")
-	if prev == "" {
-		fmt.Fprintf(&b, "    1. (not recorded: the earlier run was judged by another launcher process, which is where this sentence is held)\n    2. %s\n\n", orElse(oneLine(said), "it said nothing"))
+	if unreset {
+		fmt.Fprintf(&b, "The landed check at %s returned NO ANSWER on %d of the judged runs counted under %s, the last of them over tree %s. THEY ARE NOT CONSECUTIVE, which is what this count otherwise means: a run between them ANSWERED, and the reset that answered run owed the counter could not be written (the ⚠ is in the launcher's log). A count whose write did not land keeps counting rather than files (ranger-base-w9w37's rule), so this one carried on over that answer instead of starting again from 1. Read %d as how many of the last few judged runs were silent, and the answered one in the middle as saying the judge is unreliable rather than dead.\n\n",
+			AbbrevHome(repo), n, landedQuietKey, abbrevSHA(tree), n)
 	} else {
+		fmt.Fprintf(&b, "The landed check at %s returned NO ANSWER on %d consecutive judged runs, the last of them over tree %s.\n\n",
+			AbbrevHome(repo), n, abbrevSHA(tree))
+	}
+	b.WriteString("While the judge is not answering, no landing is judged, nothing is recorded, and ADR 0088 D5 files nothing — a deadline and a refused cage are both spelled as SILENCE (D3), so this bead is the only thing that says so.\n\n")
+	b.WriteString("What the runs said:\n\n")
+	switch {
+	case prev != "":
 		fmt.Fprintf(&b, "    1. %s\n    2. %s\n\n", oneLine(prev), orElse(oneLine(said), "it said nothing"))
+	case unreset:
+		// Not another process's sentence: this process cleared it itself,
+		// two lines above the failed reset, and that clear is right — a
+		// sentence from before an answered run is not this stretch's.
+		fmt.Fprintf(&b, "    1. (not recorded: the ANSWERED run between the two cleared it, which is right — a sentence from before an answered run is not this stretch's)\n    2. %s\n\n", orElse(oneLine(said), "it said nothing"))
+	default:
+		fmt.Fprintf(&b, "    1. (not recorded: the earlier run was judged by another launcher process, which is where this sentence is held)\n    2. %s\n\n", orElse(oneLine(said), "it said nothing"))
 	}
 	fmt.Fprintf(&b, "The two numbers to read it against (ADR 0088 D6.1/D6.2): the judge is killed at %s, which bounds a HANG and not a price, and the price at which this design goes back to architecture is %s, read off answered runs. A run killed at the bound says `no answer in %s`; anything else above is a cage, a worktree or a git read that could not be made.\n\n",
 		landedCheckLimit, landedCheckCeiling, landedCheckLimit)
@@ -342,6 +377,25 @@ func (c *landedChecker) rememberQuietSaid(repo, said string) {
 		c.quietSaid = map[string]string{}
 	}
 	c.quietSaid[repo] = said
+}
+
+// markQuietUnreset holds, or clears, "this repo's count came through an
+// answered run whose reset did not land" (ranger-base-4jroi). Set by
+// healthAnswered and read by the silent row's description, which is the only
+// thing that may not claim a consecutive pattern over it.
+//
+// A delete rather than a false, so an absent entry and a cleared one are one
+// reading — landedQuietRecorded's rule one file over, and the same
+// goroutine-ownership note as rememberQuietSaid's.
+func (c *landedChecker) markQuietUnreset(repo string, unreset bool) {
+	if !unreset {
+		delete(c.quietUnreset, repo)
+		return
+	}
+	if c.quietUnreset == nil {
+		c.quietUnreset = map[string]bool{}
+	}
+	c.quietUnreset[repo] = true
 }
 
 // landedQuietRecorded reads the counter. ANY other shape is no record, which

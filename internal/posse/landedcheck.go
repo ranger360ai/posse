@@ -531,6 +531,17 @@ type landedChecker struct {
 	// silence can carry both (rememberQuietSaid, landedhealth.go). In
 	// memory and not in the record, which D6.3 spells `<tree> <n>`.
 	quietSaid map[string]string
+	// quietUnreset is set for a repo whose counter came through an answered
+	// run that could NOT reset it (ranger-base-4jroi): the count then spans
+	// a run that answered, so it is no longer a count of CONSECUTIVE
+	// silences and the bead filed on the next one may not claim one
+	// (silentDescription, landedhealth.go). In memory beside quietSaid and
+	// for the same reason — the record is spelled `<tree> <n>` and a third
+	// field reads as no record at all
+	// (TestTheQuietCounterReadsZeroOverAnyShapeThatIsNotItsOwn) — so a
+	// launcher that restarted carries neither, which is exactly the case the
+	// other wording of that branch is for.
+	quietUnreset map[string]bool
 }
 
 // newLandedChecker builds one. `out` must be a writer the caller is willing

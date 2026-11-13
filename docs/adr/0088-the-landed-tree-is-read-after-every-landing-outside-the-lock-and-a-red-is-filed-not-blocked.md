@@ -350,6 +350,14 @@ deadline when it is one.
   neither. A crossing is two runs of one long-lived launcher by construction
   (ADR 0028 §1); a launcher that restarted between the two files a bead saying
   the earlier sentence is not recorded, rather than inventing one.
+  **And a restart is not the only way to get there** (ranger-base-4jroi): an
+  answered run whose reset of `posse.landedCheckQuiet` could not be written —
+  a `.git/config.lock` lost to a concurrent persona — clears that sentence and
+  leaves the count standing, so the next silence crosses the threshold over a
+  count that spans an ANSWERED run. The bead now says which of the two it is,
+  and over the second it claims no consecutive pattern: the mark is in memory
+  beside the sentence, so a restart carries neither and reads as the restart
+  it is.
 
 **Alternatives rejected.**
 - *(a) alone: raise the limit and stop.* That fixes today and keeps the defect.
