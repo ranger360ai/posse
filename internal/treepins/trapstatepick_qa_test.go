@@ -62,12 +62,15 @@ package treepins
 // (55 of them nested inside another) and 16 trap-state setters — among them
 // reap-test-tmp.sh's `start_fake` and `stop_fake`, which are nested in its
 // self_test and both assign the pid list its trap kills. TWO of the sixteen
-// are reached in a subshell and both are on tsExempt below with their
-// reasons — and they are the two
-// halves of this rule: `watch_once` by its own call site, `drop_pid` only
-// through `watch_once`, which is the shape 197ea0b8^ had. The two scripts the
-// rule was written for hold 4 setters between them (`pick_reader` and
-// `cleanup_ro` in each) and all four are clean.
+// were reached in a subshell when this was written and were exempted with
+// their reasons — and they were the two halves of this rule:
+// verify-herdr-bob-rules.sh's `watch_once` by its own call site, `drop_pid`
+// only through `watch_once`, which is the shape 197ea0b8^ had. Both were
+// hoisted out of the `got="$(watch_once …)"` the same day
+// (ranger-base-myjcz), so the census now reads all sixteen clean and
+// tsExempt is empty. The two scripts the rule was written for hold 4 setters
+// between them (`pick_reader` and `cleanup_ro` in each) and all four are
+// clean.
 //
 // THE READER IS A LEXER AND NOT A PARSE, and loose in the direction that
 // costs a false RED rather than a false pass — brewguard_qa_test.go's rule
@@ -846,16 +849,16 @@ func (s *tsScript) CodeAt(line int) string {
 //
 // An exemption is a claim that the trap reading nothing costs nothing, and
 // that is a claim about the script, so it carries prose and not a flag.
-var tsExempt = []struct{ Script, Func, Reason string }{
-	{
-		"scripts/verify-herdr-bob-rules.sh", "watch_once",
-		"Called as `got=\"$(watch_once …)\"` twice, so its `WATCH_PIDS=\"$WATCH_PIDS $p\"` lands in the subshell and the parent's `cleanup` has an empty list. It costs nothing on the ordinary path: the same subshell kills AND `wait`s for that pid before it returns, so by the time the assignment is lost there is nothing for the trap to kill. What it does not cover is a run killed BETWEEN the `&` and the `kill` — the parent's trap then cannot name a bob-watch it never heard of, and removes $T out from under it. That window is the subject of ranger-base-myjcz; it is not fixed here because this script SKIPS on this box (herdr-bob is not installed) and a fix nothing here can execute is a fix nobody has run.",
-	},
-	{
-		"scripts/verify-herdr-bob-rules.sh", "drop_pid",
-		"Same call, one frame further in: `drop_pid` is called only from `watch_once`, so it inherits that subshell and its `WATCH_PIDS=$keep` dies with it too. Harmless for the same reason and open for the same one — it is removing a pid from a list the parent will never read. Filed with its caller under ranger-base-myjcz. This row is also what keeps the TRANSITIVE arm of the census live over the real tree: it is the only member outside the control fixtures whose taint comes from its caller rather than from its own call site, which is exactly the shape 197ea0b8^ had.",
-	},
-}
+// EMPTY, and that is the state to keep it in. It held two rows —
+// verify-herdr-bob-rules.sh's `watch_once` and the `drop_pid` it calls — from
+// 2026-11-13 until ranger-base-myjcz hoisted both out of the
+// `got="$(watch_once …)"` that tainted them, the same morning. The TRANSITIVE
+// arm those rows also covered (a setter tainted by its CALLER rather than by
+// its own call site, the 197ea0b8^ shape) now has no member in the real tree
+// and is carried by the planted fixtures alone —
+// TestQATheTrapStateReaderCanStillSayNo, which is where to look if that arm
+// ever has to be argued about again.
+var tsExempt = []struct{ Script, Func, Reason string }{}
 
 // tsRoots — the directory this census walks, as a LITERAL at the walk, because
 // treewidedoor_qa_test.go derives the tree-wide class from an enumeration

@@ -627,7 +627,27 @@ exit 0
 FAKE
 chmod +x "$T/bin/herdr"
 
-watch_once() { # config-dir, log-tag
+# It answers in $WATCH_ANSWER rather than on stdout, and the two callers read
+# that instead of `$(watch_once …)`: a command substitution is a subshell, so
+# the `WATCH_PIDS="$WATCH_PIDS $p"` below would be made in a child and die with
+# it, and `cleanup` -- which runs in the shell this script STARTED in -- would
+# have an empty list to kill for the whole run. Same sentence as
+# scripts/macos-install-probe.sh's $BOUNDED, and the same defect
+# ranger-base-m3fl5 fixed one script over; pinned by
+# internal/treepins/trapstatepick_qa_test.go (ranger-base-wzo36,
+# ranger-base-myjcz).
+#
+# MEASURED 2026-11-13 at the pre-fix spelling, linux, bash 5.3.20, against a
+# stand-in checkout: a `kill -TERM` of this script's own pid 1s into the poll
+# below did not reach the trap for 9 MORE seconds -- the parent was blocked in
+# the command substitution, so the handler could not run until the subshell
+# returned -- and when it did run it killed nothing, because the list was the
+# parent's. The subshell's own `kill` is what ended that watcher, and the
+# script carried on past the trap into the second arm with $T removed under it
+# and two FAILs it had not measured. Hoisted, the handler is reached inside the
+# 1s `sleep` and kills the pid it registered.
+WATCH_ANSWER=          # the last `watch started (… rules <p>)` path, set by watch_once
+watch_once() { # config-dir, log-tag -> $WATCH_ANSWER
   local cfg=$1 tag=$2 i=0
   rm -rf "$T/state-$tag"; mkdir -p "$T/state-$tag/panes" "$T/state-$tag/heartbeat"
   env PATH="$T/bin:$PATH" HERDR_BIN_PATH="$T/bin/herdr" \
@@ -643,11 +663,11 @@ watch_once() { # config-dir, log-tag
   kill "$p" 2>/dev/null || true
   wait "$p" 2>/dev/null || true
   drop_pid "$p"
-  last_rules_path "$T/state-$tag/herdr-bob.log"
+  WATCH_ANSWER="$(last_rules_path "$T/state-$tag/herdr-bob.log")"
 }
 
 echo "seeding (the real bob-watch, fake herdr, scratch state and config):"
-got="$(watch_once "$T/seed" seed)"
+watch_once "$T/seed" seed; got=$WATCH_ANSWER
 if [ "$got" = "$T/seed/rules.json" ] && same_file "$T/seed/rules.json" "$SRC/rules.json"; then
   ok "a fresh config dir is seeded from the plugin's own copy, and read from there"
 else
@@ -655,7 +675,7 @@ else
 fi
 
 cp "$OVERRIDE" "$T/kept/rules.json"
-got="$(watch_once "$T/kept" kept)"
+watch_once "$T/kept" kept; got=$WATCH_ANSWER
 if [ "$got" = "$T/kept/rules.json" ] && same_file "$T/kept/rules.json" "$OVERRIDE"; then
   ok "an installed override is preferred over the plugin's copy and never refreshed"
 else

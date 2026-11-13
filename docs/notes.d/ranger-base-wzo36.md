@@ -70,6 +70,12 @@ bug filed for the window they leave open. They are not fixed here because
 installed, and the script pins herdr-bob's own HEAD at `:24`, so the rig
 cannot be faked up) — a fix nothing here can execute is a fix nobody has run.
 
+(Both rows were deleted the same day: ranger-base-myjcz hoisted `watch_once`
+out of that command substitution and `tsExempt` is empty again. The mutation
+table below is the record of what was run here and stays as it is; the row it
+renames no longer exists to rename. The transitive arm now has no member in
+the real tree and is carried by the planted fixtures alone.)
+
 The four setters in the two scripts the rule was written for (`pick_reader`
 and `cleanup_ro` in each) are all clean, and no script has a top-level
 assignment to trap state inside a subshell.
