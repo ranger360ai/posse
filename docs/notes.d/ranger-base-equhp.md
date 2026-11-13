@@ -106,6 +106,18 @@ is new here. Three arms, re-measured and pinned:
 docs/notes.d/ranger-base-5793u.md.
 
 Also: "an instance where a `[code, security]` bead should go to the security
-seat says so with the key" still holds, but the other direction does not —
+seat says so with the key" still holds, but the key is not the only dial —
 `route_order:` changes WHO is preferred, never which of that PID's labels
-wins. What the lane's winning label should be is open at ranger-base-svoux.
+wins.
+
+SETTLED: ADR 0011 §4, amended 2026-11-13 (ranger-base-svoux, commit
+70ab74b7). The head PID's label order is the SECOND routing key, not an
+accident: a PID lists its primary lane first, `route_order:` decides who
+heads, and the head's order decides which of its labels is the lane. A
+follower's order still decides nothing, which is what this fix pinned. So
+this fragment's "the answer is the key, not more code" was right in kind and
+one key short, and the sentence it qualified — that the residual is unchanged
+by this fix — stays wrong for the reason above. Listing a cross-cutting label
+first is a stated configuration error with the order as its remedy; §4 has
+the measurement (20 of 20 PIDs already list their lane first) and the
+`lane:` exit hatch.

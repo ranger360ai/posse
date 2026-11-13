@@ -160,8 +160,11 @@ func TestQARouteOrderPicksWhichLabelWinsTheBead(t *testing.T) {
 
 // The narrowing reads the PID's whole matching set, not the one label the
 // walk happened to record first. A PID carrying both `qa` and `code` matches
-// on whichever it LISTS first; dropping it from a code lane for that would be
-// an ordering accident inside a PID's frontmatter, which is nobody's decision.
+// on whichever it LISTS first; dropping it from a code lane for that would
+// read a FOLLOWER's frontmatter order as a decision, and a follower's order
+// decides nothing (ADR 0011 §4, ranger-base-svoux). That order is a key at
+// the HEAD of the candidates only, where it names that PID's own lane —
+// TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder below.
 func TestQALaneKeepsAPIDThatCarriesTheWinningLabelSecond(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
@@ -178,29 +181,33 @@ func TestQALaneKeepsAPIDThatCarriesTheWinningLabelSecond(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ranger-base-5793u — the residual the narrowing left: the HEAD's order.
+// ranger-base-5793u — the head PID's label order IS the second routing key.
 //
-// CHARACTERIZATION, NOT A DECISION. The test above removes the frontmatter
-// ordering accident for a FOLLOWER (a PID is a seat wherever it lists the
-// winning label). It leaves that same accident load-bearing for the HEAD:
-// `win := out[0].label` is `matched[0]`, the first of the PREFERRED PID's own
-// labels that the bead carries, in that PID's frontmatter order — and since
-// the narrowing landed, that value no longer only NAMES the lane, it decides
-// who is in it. ranger-base-5793u is open on whether that should be true; the
-// ADR 0011 §4 amendment is the architecture lane's (ranger-base-svoux). This
-// test is what the code DOES, at a6dfd084, so that whichever answer lands has
-// to come through here and read the bead. If you are the seat that fixes it:
-// arms A and B are meant to agree, and the fix is the expectation in this
-// table, not a new file.
+// DECIDED, ADR 0011 §4 (ranger-base-svoux, commit 70ab74b7). A PID lists its
+// PRIMARY lane first, and two keys decide a lane, both written by a human in
+// a reviewed file: `route_order:` decides WHO heads the candidates, and the
+// head's own label order decides WHICH of its labels is the lane
+// (dispatch.go, `win := out[0].label`). The test above is the other half — a
+// FOLLOWER's order decides nothing, it is a seat wherever it carries the
+// winning label. Since ranger-base-equhp's narrowing this key decides
+// MEMBERSHIP and not only the label the route report prints, which is why it
+// is pinned rather than left to the reader.
 //
 // The three arms differ in ONE input — the head PID's two labels, swapped (A
 // vs B) or a cross-cutting label listed first (C). Bead and roster are
-// otherwise identical. `crosscut` stands for the real label several of this
-// instance's PIDs share, which is its own vocabulary and is named on the bead
-// rather than here (ADR 0024 D3, restate-and-cite). Arm B drops a code-only seat from a code bead and
-// seats a qa-only seat in its place; arm C is ranger-base-equhp's own
-// incident shape reached the other way, a code deliverable whose lane holds
-// the security PID and not the second code seat.
+// otherwise identical.
+//
+// A and B are MEANT to differ: that difference is the dial. C is the stated
+// configuration error §4 names — a PID that lists a cross-cutting label first
+// makes that label its lane and every PID carrying it a seat, so a code
+// deliverable's lane holds the findings-only security PID and not the second
+// code seat, which is equhp's own incident shape reached the other way. Its
+// remedy is the PID's order, not code: a cross-cutting label and a
+// legitimately shared lane label are spelled alike, so no static rule can
+// refuse it, and it shows at run time in the route report's `label:` and
+// roster. `team` is §4's spelling for the real label several of this
+// instance's PIDs share — the instance's own vocabulary, named on the bead
+// and not here (ADR 0024 D3, restate-and-cite).
 //
 // The bead labels are passed ALPHABETICALLY because that is the only order
 // routing ever sees: MEASURED 2026-11-13, bd normalizes a bead's labels to
@@ -208,8 +215,9 @@ func TestQALaneKeepsAPIDThatCarriesTheWinningLabelSecond(t *testing.T) {
 // instance's store are sorted, and two beads whose `bd create` typed the
 // other order (`-l risk -l question`, `-l devops -l debt`) read back
 // ['question','risk'] and ['debt','devops']. `BdIssue.Labels` is decoded
-// straight from that JSON (beads.go:492), so "the bead's label order" is the
-// alphabet and not the filer's intent. docs/notes.d/ranger-base-5793u.md.
+// straight from that JSON (beads.go:492). That is why §4 rejected taking the
+// winning label from the BEAD's order: it would be the alphabet and not the
+// filer. docs/notes.d/ranger-base-5793u.md.
 func TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder(t *testing.T) {
 	t.Parallel()
 	for _, arm := range []struct {
@@ -230,13 +238,13 @@ func TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder(t *testing.T) {
 			[]string{"code", "qa"}, "developer,tester", "qa",
 		},
 		{
-			"C a cross-cutting label listed first puts the security PID in a code lane",
+			"C the stated configuration error: a cross-cutting label listed first",
 			[][2]string{
-				{"developer", "[crosscut, code, feature, bug]"},
+				{"developer", "[team, code, feature, bug]"},
 				{"developer-2", "[code, feature, bug]"},
-				{"watcher", "[security, audit, crosscut]"},
+				{"watcher", "[security, audit, team]"},
 			},
-			[]string{"code", "crosscut"}, "developer,watcher", "crosscut",
+			[]string{"code", "team"}, "developer,watcher", "team",
 		},
 	} {
 		t.Run(arm.name, func(t *testing.T) {
@@ -248,7 +256,7 @@ func TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder(t *testing.T) {
 			}
 			names, label := laneOf(t, d, arm.bead...)
 			if strings.Join(names, ",") != arm.want || label != arm.label {
-				t.Errorf("lane is %v (%s), want %s (%s) — if this is the fix landing, ranger-base-5793u and this comment are what to read",
+				t.Errorf("lane is %v (%s), want %s (%s) — the head PID's label order is the lane (ADR 0011 §4); arm C is the stated configuration error, not a regression",
 					names, label, arm.want, arm.label)
 			}
 		})

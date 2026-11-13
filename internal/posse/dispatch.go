@@ -1737,11 +1737,13 @@ func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 // that matched and the PID's stated place in the queue.
 //
 // `matched` is every one of this PID's labels the bead carries, in the PID's
-// own order, and `label` is its head. The whole set is kept because the lane
-// is narrowed to ONE label after the sort (labelMatches): a PID that carries
-// both `qa` and `code` matches on whichever it happens to list first, and
-// dropping it from a `code` lane for that would be an ordering accident
-// rather than a decision.
+// own order, and `label` is its head — this PID's own lane, because a PID
+// lists its PRIMARY lane first (ADR 0011 §4, ranger-base-svoux). The whole
+// set is kept because the lane is narrowed to ONE label after the sort
+// (labelMatches), and that order is a key only at the HEAD of the candidates:
+// a PID that carries both `qa` and `code` matches on whichever it happens to
+// list first, and dropping it from a `code` lane for that would read a
+// FOLLOWER's order as a decision, which it is not.
 type routeMatch struct {
 	name    string
 	label   string
@@ -1754,6 +1756,17 @@ type routeMatch struct {
 // persona name (ListAgents' order — stable, so the sort never reshuffles a
 // tie). The winning label is the preferred candidate's, and the lane is
 // everyone else who carries that same label.
+//
+// TWO keys decide a lane, both written by a human in a reviewed file (ADR
+// 0011 §4, ranger-base-svoux): `route_order:` decides WHO heads the
+// candidates, and the head's own label order decides WHICH of its labels is
+// the lane, because a PID lists its primary lane first. A follower's order
+// decides nothing. The stated consequence: a PID that lists a cross-cutting
+// label first makes that label its lane and every PID carrying it a seat — a
+// configuration error whose remedy is the PID's order and not code, since a
+// cross-cutting label and a legitimately shared lane label are spelled alike.
+// It shows at run time in the route report's `label:` and roster, and is
+// pinned by TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder.
 //
 // It is NOT every persona whose labels overlap the bead's (ranger-base-equhp).
 // A bead carries the labels of all the work it touches, so the union read one
