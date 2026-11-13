@@ -172,7 +172,11 @@ func TestQALandedCheckTmp(t *testing.T) {
 		{"/tmp/h", "/home/u/run", "/home/u/run/tree", ""},
 		{"/home/u", "/tmp/run", "/tmp/run/tree", ""},
 		{"/home/u", "/home/u/run", "/tmp/tree", ""},
-		{"", "/home/u/run", "/home/u/run/tree", ""},
+		// No home is no home under /tmp: the run's own tmp, not a stand-down
+		// (ranger-base-f1rpw).
+		{"", "/home/u/run", "/home/u/run/tree", "/home/u/run/tmp"},
+		{"/home/u", "", "/home/u/run/tree", ""},
+		{"/home/u", "/home/u/run", "", ""},
 	} {
 		if got := landedCheckTmp(c.home, c.run, c.tree); got != c.want {
 			t.Errorf("landedCheckTmp(%q, %q, %q) = %q, want %q", c.home, c.run, c.tree, got, c.want)

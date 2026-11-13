@@ -210,6 +210,8 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 			return landedCage{}, err
 		}
 		carve.Hide = hide
+		// The error is discarded on purpose: the home only decides whether
+		// it sits under /tmp, and an unknown home cannot (ranger-base-f1rpw).
 		home, _ := os.UserHomeDir()
 		carve.Tmp = landedCheckTmp(home, run, tree)
 		argv, prep, err := BwrapArgs(tree, writable, carve)
@@ -290,9 +292,17 @@ func landedCheckSeatbeltNet(run string) string {
 // — the host's /tmp — when the home, the run or the tree is itself under
 // /tmp, for bwrapSeatTmp's reason: a private /tmp over them leaves the judge
 // nothing to chdir into. No production run is that shape (the run dir is
-// under the state dir); this package's fixtures are.
+// under the state dir); this package's fixtures are. An empty run or tree is
+// a stand-down, but an empty home is not (ranger-base-f1rpw): no home is no
+// home under /tmp, so nothing of the judge's is hidden by a private one. The
+// `home != ""` is not the old emptiness test: underDir resolves "" to the
+// cwd, so without it an empty home would stand down whenever the launcher
+// happens to sit under /tmp.
 func landedCheckTmp(home, run, tree string) string {
-	for _, p := range []string{home, run, tree} {
+	if home != "" && underDir(bwrapTmpMount, home) {
+		return ""
+	}
+	for _, p := range []string{run, tree} {
 		if p == "" || underDir(bwrapTmpMount, p) {
 			return ""
 		}
