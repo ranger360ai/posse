@@ -17,6 +17,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-ckcly](ranger-base-ckcly.md) — One space fewer, and check 4 went quiet again (ranger-base-ckcly) — 2026-11-13
 - [ranger-base-4jroi](ranger-base-4jroi.md) — A count that came through a failed reset is not a pattern (ranger-base-4jroi) — 2026-11-13
 - [ranger-base-4cmqw](ranger-base-4cmqw.md) — claude's debug/, private per seat at bwrap and write-denied at seatbelt (ranger-base-4cmqw) — 2026-11-13
+- [ranger-base-2nj35](ranger-base-2nj35.md) — The remedy nobody tested, one check over (ranger-base-2nj35) — 2026-11-13
 - [ranger-base-0whbv](ranger-base-0whbv.md) — ranger-base-0whbv — a green rerun is not a verification of a flake — 2026-11-13
 - [ranger-base-zby5f](ranger-base-zby5f.md) — Two reds from one landing: a dependency no distro has, and a landmark that moved (ranger-base-zby5f) — 2026-11-12
 - [ranger-base-x2blo](ranger-base-x2blo.md) — The reaper's probe created the inode it was asked to find (ranger-base-x2blo) — 2026-11-12
