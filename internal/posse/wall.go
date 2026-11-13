@@ -45,6 +45,7 @@ package posse
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -247,19 +248,144 @@ type wallWrite struct {
 	// Dir is the directory the artifact is written into. "" is the
 	// persona's live gates dir, which only a LAUNCH may ask for.
 	Dir string
-	// NoPrep skips the host-side prep (PrepStep, bwrap.go). A REPORT sets
-	// it: the prep is a write outside the namespace in the seat's name, made
-	// from the caller's environment, and a command whose whole job is to
-	// describe the wall has no business making it. A PROBE does not: it runs
-	// the argv, and bwrap binds only a source that exists, so a probe with
-	// no prep would measure a wall that cannot come up and report the
-	// difference as this host's.
-	NoPrep bool
+	// Prep is what this render does about the host-side prep (wallPrep
+	// below). The zero value is the launch's.
+	Prep wallPrep
 }
 
 // live reports whether this is the launch's own render — the one write that
 // may land in the persona's gates dir.
 func (w wallWrite) live() bool { return w.Dir == "" }
+
+// ─── WHAT A READER MAY MAKE ON THE HOST (ranger-base-qd9ei) ─────────────────
+
+// wallPrep is wallWrite's second decision: what a render does about the
+// host-side prep this mechanism needs (PrepStep, bwrap.go). THREE values,
+// because there are three renders and the launch's answer is wrong for both
+// of the others — ranger-base-6s5mo left two and this is its residual.
+//
+// THE PREP IS A WRITE OUTSIDE THE NAMESPACE, IN THE SEAT'S NAME, FROM
+// WHOEVER'S ENVIRONMENT TYPED THE COMMAND. bwrap binds only a source that
+// exists, so the render emits a step for every bind source that is NOT there
+// — a `mkdir` for a write grant, a `touch` for the ref keep file and the
+// session's audit log, an EMPTY FILE for a seeded config the read-only mount
+// has to cover. Every one of BwrapArgs' emission sites is guarded on a stat,
+// so a step exists exactly where its path is absent, and that is the fact
+// prepRequire rests on: a render that asked for NO prep is a wall whose
+// every source is already on this host, and applying it writes nothing.
+//
+// AND AN EMPTY SEEDED FILE IS NOT HARMLESS, which is why a reader abstains
+// rather than skipping. `posse gates <persona>` walks parity ONCE PER
+// RUNTIME in the catalog and parity's two probes RENDER AND APPLY, so a
+// report typed with a HOME that is not the launcher's made that HOME's prep
+// paths: MEASURED 2026-11-12 from a bwrap-caged seat into a fresh empty
+// HOME — `.bob`, `.cache/posse/plan-usage`, `.cache/posse-seat/<session>`,
+// `.config/go/telemetry/local`, and 24 members of `.grok`. One of those
+// seeds is how ranger-base-f67jx was found: a zero-byte `~/.grok/config.toml`
+// planted by a probe's prep, which posse's OWN project-config classifier
+// then read as `invalid JSON: unexpected end of JSON input` and refused a
+// later launch over — a P1 red in one arm of `make test`, invisible to any
+// `-run` filter because one test plants it and another reads it
+// (docs/notes.d/ranger-base-zibko.md has the chain).
+type wallPrep int
+
+const (
+	// prepMake is the LAUNCH's answer, and a probe asked on a launch's
+	// behalf takes it too: that process IS the launcher, it will write these
+	// same paths itself a few hundred lines later (WallPrefix, herdrback.go),
+	// and the probes run BEFORE that — so a probe with no prep on a first
+	// launch into a fresh tree would measure a wall that cannot come up and
+	// report the difference as this host's.
+	prepMake wallPrep = iota
+	// prepSkip is a REPORT's: render the artifact under reportWallDir,
+	// describe it, make nothing. A command whose whole job is to describe
+	// the wall has no business making it.
+	prepSkip
+	// prepRequire is a READER'S PROBE's: make nothing, and refuse to judge a
+	// wall whose sources are not all here. It cannot simply skip the prep —
+	// it APPLIES what it renders — and it may not make it either, so it
+	// measures nothing and says so. That is the third answer both probes
+	// already have for a wall they could not apply: not granted, not denied
+	// — NOT APPLIED (ADR 0013 §4, ranger-base-heur; ADR 0086 D5).
+	prepRequire
+)
+
+// parityAsk is who wants a directory-aware parity matrix, and it decides
+// exactly one thing: which wallPrep the two probes that APPLY the wall
+// render with (applyRecordReach, applyWallWitness). It is threaded from
+// checkParityIn rather than derived, because nothing the matrix reads can
+// tell a launch from a description of one — the inputs are identical and the
+// difference is in who is asking.
+//
+// NOT the `red *l3Redirect` parameter, which is non-nil only from the
+// launcher today and is a fact about git's dispatch path: a second meaning
+// hung on it would make one of the two drift silently the first time a
+// caller has a redirect and no launch, or a launch and no redirect.
+//
+// THE ZERO VALUE IS THE READER, deliberately: a caller that says nothing
+// gets the answer that writes nothing outside the namespace.
+type parityAsk int
+
+const (
+	// askedByReader is `posse gates <persona>` and every pin that drives the
+	// door directly — a description of a launch that is not happening.
+	askedByReader parityAsk = iota
+	// askedByLaunch is CreateSession, about to run a session in this dir.
+	askedByLaunch
+)
+
+func (k parityAsk) prep() wallPrep {
+	if k == askedByLaunch {
+		return prepMake
+	}
+	return prepRequire
+}
+
+// wallPrepAbsentError is prepRequire's refusal: this render needs a host
+// path that is not there and this caller may not make it.
+//
+// A TYPE AND NOT A SENTENCE, because the two probes have to tell it apart
+// from every other way a render fails. A render that FAILS is a finding that
+// takes the row away and refuses the launch — ADR 0086 D5's R0, the whole
+// reason the witness exists — and a wall whose furniture is merely absent is
+// an abstention that refuses nothing. Collapsed into one error string they
+// would be one branch, and the loud half is the wrong one: a `posse gates`
+// in a HOME no seat has launched from would print a wall this host cannot
+// realize, over a launch that would have made the path and come up fine.
+type wallPrepAbsentError struct {
+	// Mechanism is the wall's, for the row's own sentence.
+	Mechanism string
+	// Step is the FIRST step the render asked for, in BwrapArgs' emission
+	// order — which is shallowest-first, so it is also the most useful one
+	// to name: a grant's mkdir comes before the touch of a file inside it.
+	Step PrepStep
+	// N is how many steps the render asked for in all, so a row can say
+	// "and 7 more" without carrying the list into a parity Detail.
+	N int
+}
+
+func (e *wallPrepAbsentError) Error() string {
+	return fmt.Sprintf("cage %s (%s): this wall binds %s (%s)%s, and this host does not have it — only a LAUNCH makes what the namespace cannot, so a reader has nothing here to apply (ranger-base-qd9ei)",
+		CageSeatbelt, e.Mechanism, AbbrevHome(e.Step.Path), e.Step.Why, e.andMore())
+}
+
+// andMore is the count clause, "" for the single step so the common case
+// reads as one path and not as "and 0 more".
+func (e *wallPrepAbsentError) andMore() string {
+	if e.N < 2 {
+		return ""
+	}
+	return fmt.Sprintf(" and %d more path%s", e.N-1, plural(e.N-1, "", "s"))
+}
+
+// wallPrepAbsent is that error if `err` is one, else nil.
+func wallPrepAbsent(err error) *wallPrepAbsentError {
+	var e *wallPrepAbsentError
+	if errors.As(err, &e) {
+		return e
+	}
+	return nil
+}
 
 // reportWallBase is the one directory this process writes a NON-LAUNCH wall
 // into: a fresh temp dir, made once and reused for the life of the process.
@@ -298,25 +424,36 @@ func (a *App) reportWallDir(persona string) (string, error) {
 }
 
 // wallWriteToRead is the wallWrite a reader of this persona's wall takes:
-// `prep` says whether the reader will APPLY what it renders (a probe does, a
-// report does not).
-func (a *App) wallWriteToRead(persona string, prep bool) (wallWrite, error) {
+// the artifact under reportWallDir, and `prep` saying what the reader may
+// make on the host (wallPrep — a report makes nothing, a probe asked on a
+// launch's behalf makes what a launch makes, and a probe asked by a reader
+// requires it to be there already).
+func (a *App) wallWriteToRead(persona string, prep wallPrep) (wallWrite, error) {
 	dir, err := a.reportWallDir(persona)
 	if err != nil {
 		return wallWrite{}, err
 	}
-	return wallWrite{Dir: dir, NoPrep: !prep}, nil
+	return wallWrite{Dir: dir, Prep: prep}, nil
 }
 
-// RenderWallToJudge is RenderWall for a caller that will APPLY the wall to
+// renderWallToJudge is RenderWall for a caller that will APPLY the wall to
 // measure this host rather than launch behind it — parity's reachability row
-// and the Edit/Write witness (reachability.go, wallwitness.go). The render,
-// the prep and the prefix are the launch's, byte for byte; the one
-// difference is that the artifact is written under reportWallDir, so a probe
-// run from `posse gates` cannot replace a live seat's wall with one keyed to
-// the caller's environment (ranger-base-6s5mo).
-func (a *App) RenderWallToJudge(ag *AgentFile, rt *Runtime, cwd string) (WallRender, error) {
-	w, err := a.wallWriteToRead(ag.Name, true)
+// and the Edit/Write witness (reachability.go, wallwitness.go). The render
+// and the prefix are the launch's, byte for byte; what differs is that the
+// artifact is written under reportWallDir, so a probe run from `posse gates`
+// cannot replace a live seat's wall with one keyed to the caller's
+// environment (ranger-base-6s5mo) — and that the host-side prep is made only
+// where this probe is a LAUNCH's (`ask`, ranger-base-qd9ei). A reader's
+// probe over a wall whose sources are not all here fails with
+// wallPrepAbsentError, which both callers read as their third answer.
+//
+// UNEXPORTED since it took `ask`, and that is not cosmetic: the parameter's
+// type is the package's own, so an exported door would be one no caller
+// outside this package could call — and the two callers that matter are the
+// two probes beside it. Whoever wants a judged wall from outside wants a
+// parity matrix, which is CheckParityIn.
+func (a *App) renderWallToJudge(ag *AgentFile, rt *Runtime, cwd string, ask parityAsk) (WallRender, error) {
+	w, err := a.wallWriteToRead(ag.Name, ask.prep())
 	if err != nil {
 		return WallRender{}, err
 	}
@@ -370,7 +507,7 @@ func (a *App) renderWallOn(mech string, ag *AgentFile, rt *Runtime, cwd string) 
 
 // renderWallInto is that render with `w` saying where the artifact lands and
 // whether the prep runs — the launch's `wallWrite{}` for renderWallOn above,
-// and a reader's for RenderWallToJudge. Split out rather than parameterizing
+// and a reader's for renderWallToJudge. Split out rather than parameterizing
 // renderWallOn, so that the production mechanism switch keeps one caller
 // passing WallMechanism() and the destination is a parameter nobody has to
 // choose twice.

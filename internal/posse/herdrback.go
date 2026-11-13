@@ -2924,7 +2924,12 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 				}
 			}
 		}
-		parity := a.checkParityIn(ag, rt, cage, tier, dir, hooksProbe)
+		// askedByLaunch: this process IS the launcher, so parity's two
+		// probes may make the host-side prep the wall they render needs —
+		// the same prep WallPrefix below runs a few hundred lines later, and
+		// without it a first launch into a fresh tree would judge a wall
+		// that cannot come up (parityAsk, wall.go — ranger-base-qd9ei).
+		parity := a.checkParityIn(ag, rt, cage, tier, dir, hooksProbe, askedByLaunch)
 		if wroteCommitWall && preHeal.Repo && preHeal.CommitGuardVerdict.reStamped() {
 			warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
 		}

@@ -215,13 +215,12 @@ func grwBakedLine(shim string) string {
 // from the caller's environment, and a command whose job is to describe the
 // wall makes none of it.
 //
-// What this arm does NOT claim: that the command writes nothing at all under
-// a caller's HOME. Parity's two probes (applyRecordReach, applyWallWitness)
-// render AND APPLY, so they keep the prep — a probe with no prep would
-// measure a wall that cannot come up and report the difference as this
-// host's. Those writes are `mkdir`s and `touch`es of this PID's own grants
-// and they are docs/notes.d/ranger-base-zibko.md's and ranger-base-f67jx's
-// subject, not this bead's; ranger-base-6s5mo's comment names the residual.
+// This arm is the REPORT's own render, which is all ranger-base-6s5mo
+// closed: parity's two probes (applyRecordReach, applyWallWitness) render
+// AND APPLY, so they kept the prep and still made it in whatever HOME typed
+// the command — once per runtime in the catalog. That residual is
+// ranger-base-qd9ei, and the arm below it is the one that says the whole
+// command writes nothing there.
 func TestQAGatesReportMakesNoHostPrepOfItsOwn(t *testing.T) {
 	bin := buildRhq(t)
 	rhq := grwHome(t)
@@ -242,4 +241,77 @@ func TestQAGatesReportMakesNoHostPrepOfItsOwn(t *testing.T) {
 			t.Errorf("a report wrote %s. The wall a launch reads is the launch's to render — a reader's copy goes under its own dir and is named on the head line (ranger-base-6s5mo)", p)
 		}
 	}
+}
+
+// ranger-base-qd9ei, the residual, through the same binary: `posse gates
+// <persona>` makes NO path in the HOME it was typed from — not in its own
+// render, and not in parity's two probes either.
+//
+// THE BEAD'S OWN MEASUREMENT, as an arm. MEASURED 2026-11-12 from a
+// bwrap-caged seat with `HOME=<fresh empty dir>`: `.bob`,
+// `.cache/posse/plan-usage`, `.cache/posse-seat/<session>`,
+// `.config/go/telemetry/local` and 24 members of `.grok` created in that
+// HOME — a mkdir or an O_EXCL touch per path this PID's grants name, made
+// once per runtime in the catalog because that is how often the parity table
+// renders. `~/.grok/config.toml` among them, seeded EMPTY, which posse's own
+// project-config classifier then reads as `invalid JSON: unexpected end of
+// JSON input` and refuses a later launch in that home over
+// (ranger-base-f67jx, docs/notes.d/ranger-base-zibko.md).
+//
+// A WHOLE-TREE READING AND NOT A LIST OF NAMES (ADR 0078's rule): the paths
+// are a function of the catalog this instance ships and of every grant every
+// runtime declares, so an arm naming `.grok` would go quiet the day a
+// runtime is renamed. What is pinned is the count: a fresh HOME is empty
+// before and empty after.
+//
+// TWO RUNS, because they are different claims. The first renders the wall
+// and the shims (nothing on disk yet); the second finds them there and
+// reads. Either could have been the one that prepped.
+func TestQAGatesReportMakesNoPathInTheHomeItWasTypedFrom(t *testing.T) {
+	bin := buildRhq(t)
+	rhq := grwHome(t)
+
+	for _, tc := range []struct{ what string }{
+		{"the run that renders the wall"},
+		{"the run that reads it back"},
+	} {
+		home := t.TempDir()
+		if left := grwTreeUnder(t, home); len(left) != 0 {
+			t.Fatalf("%s: the fixture HOME is not empty to begin with, so this arm measures nothing:\n  %s", tc.what, strings.Join(left, "\n  "))
+		}
+		out, code := grwRun(t, bin, rhq, home)
+		if code != 0 {
+			t.Fatalf("%s: `posse gates builder` exited %d — reading a wall must not fail:\n%s", tc.what, code, out)
+		}
+		if left := grwTreeUnder(t, home); len(left) != 0 {
+			t.Errorf("%s: the command made %d path(s) in the HOME it was typed from:\n  %s\nThe host-side prep is a write outside the namespace in the seat's name, from whatever environment typed the command. Only a LAUNCH makes it; a reader's probe finds it already there or says it measured nothing (ranger-base-qd9ei)", tc.what, len(left), strings.Join(left, "\n  "))
+		}
+		// And the command is not thereby empty: it still printed the parity
+		// table for every runtime, which is where the two probes live. An
+		// arm whose subject is "it wrote nothing" passes for free over a
+		// command that did nothing.
+		if !strings.Contains(out, "cage") {
+			t.Errorf("%s: no parity block in the output, so the arm above passes over a command that printed no wall at all:\n%s", tc.what, out)
+		}
+	}
+}
+
+// grwTreeUnder is every path under a directory, so an arm can say "nothing
+// was made in here" rather than "not the one path I thought of".
+func grwTreeUnder(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p != root {
+			out = append(out, p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

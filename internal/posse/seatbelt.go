@@ -2451,9 +2451,10 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 // same words: the render is identical, the gates dir is an input to it
 // either way, and only a LAUNCH writes into it.
 //
-// NoPrep is nothing here, deliberately: sandbox-exec grants a path that does
-// not exist, so this mechanism has no prep to skip (RenderBwrap's own note on
-// why the other one does).
+// `w.Prep` is nothing here, deliberately: sandbox-exec grants a path that
+// does not exist, so this mechanism has no prep to make, to skip or to
+// require (RenderBwrap's own note on why the other one has all three, and
+// wallPrep's on what a reader's probe does about it).
 func (a *App) renderSeatbeltInto(w wallWrite, ag *AgentFile, cwd string, stateDirs ...string) (string, error) {
 	gatesDir := a.GatesDir(ag.Name)
 	dest := w.Dir
@@ -2490,7 +2491,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	// A REPORT, so the profile lands in this process's report dir and never
 	// over the live one — BwrapReport's own reason, at the other mechanism
 	// (ranger-base-6s5mo).
-	w, err := a.wallWriteToRead(ag.Name, false)
+	w, err := a.wallWriteToRead(ag.Name, prepSkip)
 	if err != nil {
 		return err
 	}

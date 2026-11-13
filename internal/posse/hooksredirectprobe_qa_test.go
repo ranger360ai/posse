@@ -300,7 +300,10 @@ func TestQARedirectParityNamesTheSessionDirAndTheManagedHooksBehindIt(t *testing
 		t.Fatal(err)
 	}
 
-	p := f.a.checkParityIn(ag, rt, CageShims, TierStrong, f.repo, &l3Redirect{Hooks: f.hooks, Managed: f.managed})
+	// askedByLaunch: a redirect in hand is the launcher's own, and these arms
+	// are a launch's matrix (parityAsk, wall.go). It reaches no wall here —
+	// cage shims renders none — so it is the honest value and not a choice.
+	p := f.a.checkParityIn(ag, rt, CageShims, TierStrong, f.repo, &l3Redirect{Hooks: f.hooks, Managed: f.managed}, askedByLaunch)
 	if len(p.Degraded) != 0 {
 		t.Fatalf("a managed repo with a fresh render launches UNdegraded (ADR 0052 D3): %v", p.Degraded)
 	}
@@ -343,14 +346,14 @@ func TestQARedirectParityDegradesAnUnforwardedManagedHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	red := &l3Redirect{Hooks: f.hooks, Managed: f.managed}
-	if p := f.a.checkParityIn(ag, rt, CageShims, TierStrong, f.repo, red); len(p.Degraded) != 0 {
+	if p := f.a.checkParityIn(ag, rt, CageShims, TierStrong, f.repo, red, askedByLaunch); len(p.Degraded) != 0 {
 		t.Fatalf("fixture must start clean: %v", p.Degraded)
 	}
 
 	if err := os.Remove(filepath.Join(f.hooks, "pre-commit")); err != nil {
 		t.Fatal(err)
 	}
-	p := f.a.checkParityIn(ag, rt, CageShims, TierStrong, f.repo, red)
+	p := f.a.checkParityIn(ag, rt, CageShims, TierStrong, f.repo, red, askedByLaunch)
 	if len(p.Degraded) != 1 || !strings.Contains(p.Degraded[0], "managed hook pre-commit not forwarded") {
 		t.Fatalf("an employer hook this session would skip must degrade the launch: %v", p.Degraded)
 	}

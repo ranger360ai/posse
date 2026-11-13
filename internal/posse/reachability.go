@@ -84,7 +84,13 @@ const reachProbeFile = ".posse-reach-probe"
 //     where a real `bd sync` commits (ranger-base-w68m; the mount side of
 //     the redirect target landed in ranger-base-yu5, this is the row that
 //     judges it instead of abstaining).
-func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
+//
+// `ask` says whether this matrix is a LAUNCH's or a reader's, and it decides
+// one thing: whether the probe below may make the host-side prep the wall it
+// renders needs (parityAsk, wall.go — ranger-base-qd9ei). A reader's probe
+// that would have to write a caller's HOME to put the namespace up measures
+// nothing instead, and says so in this row's own third answer.
+func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string, ask parityAsk) {
 	if dir == "" || ag == nil || rt == nil {
 		return
 	}
@@ -140,14 +146,28 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasuredOn(WallBwrap, why)}
 			return
 		}
-		// RenderWallToJudge and not RenderWall: this row RENDERS and then
+		// renderWallToJudge and not RenderWall: this row RENDERS and then
 		// APPLIES, and it is read off `posse gates <persona>` as well as off
 		// a launch — so the artifact goes under reportWallDir and the live
-		// gates dir is never written by a reader (ranger-base-6s5mo). The
-		// prep still runs: bwrap binds only a source that exists, so a probe
-		// with no prep would measure a wall that cannot come up.
-		w, err := a.RenderWallToJudge(ag, rt, dir)
+		// gates dir is never written by a reader (ranger-base-6s5mo).
+		//
+		// THE PREP RUNS ONLY FOR A LAUNCH (ranger-base-qd9ei). bwrap binds
+		// only a source that exists, so a probe with no prep would measure a
+		// wall that cannot come up and report the difference as this host's —
+		// and the paths it would make are whatever HOME typed the command, so
+		// a READER may not make them. Where a reader's wall needs one that is
+		// not there, the render refuses with wallPrepAbsentError and this row
+		// takes its third answer below, which is the same answer it already
+		// gives a wall this process could not apply.
+		w, err := a.renderWallToJudge(ag, rt, dir, ask)
 		if err != nil {
+			if absent := wallPrepAbsent(err); absent != nil {
+				// Class "": unmeasured, not enforcement, and NOT a finding —
+				// see recordReachUnmeasuredPrep for why this one is not the
+				// unrealized() below it.
+				p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasuredPrep(absent)}
+				return
+			}
 			p.unrealized(RecordReachGate, "the "+WallBwrap+" wall this launch would run under cannot be rendered, so the store of record cannot be judged reachable: "+err.Error())
 			return
 		}
@@ -174,8 +194,10 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		}
 		// renderSeatbeltInto a reader's destination, for the arm above's
 		// reason: a probe run from a report must not write the live profile
-		// (ranger-base-6s5mo).
-		ww, err := a.wallWriteToRead(ag.Name, true)
+		// (ranger-base-6s5mo). `ask` carries through for symmetry and reaches
+		// nothing here — this mechanism grants a path that does not exist, so
+		// it has no prep at all (renderSeatbeltInto's own note).
+		ww, err := a.wallWriteToRead(ag.Name, ask.prep())
 		if err != nil {
 			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasured(err.Error())}
 			return
@@ -236,6 +258,27 @@ func recordReachUnmeasuredOn(mech, why string) string {
 		") and the probe that judges the store of record IS one, so the store is neither reachable nor unreachable here. " +
 		"The launch this row judges is unaffected: its sandbox-exec is typed into a herdr pane, outside this process's sandbox. " +
 		"Re-run `posse gates` outside the cage for a verdict (ADR 0013 §4, ranger-base-heur)"
+}
+
+// recordReachUnmeasuredPrep is the third answer for the OTHER thing that can
+// stop this probe from being applied: not a process that cannot put the
+// namespace up, but a wall whose bind sources are not all on this host — and
+// a reader that may not make them (wallPrep, wall.go — ranger-base-qd9ei).
+//
+// IT IS AN ABSTENTION AND NOT THE `unrealized` BESIDE IT, for this row's
+// founding reason in ADR 0013 §4's own words: a launch must not be degraded
+// by a check that did not run. Here it is sharper than that, because the
+// launch this row describes is the very thing that would MAKE the path: the
+// launcher runs the same prep before it types the wall, so "this wall cannot
+// come up" would be false about the only launch the row is about.
+//
+// It names the path and the remedy rather than the mechanism's refusal,
+// because nothing was refused: there is simply no wall here yet to judge.
+func recordReachUnmeasuredPrep(e *wallPrepAbsentError) string {
+	return "NOT MEASURED — the " + e.Mechanism + " wall this launch would run under binds " + AbbrevHome(e.Step.Path) +
+		" (" + e.Step.Why + ")" + e.andMore() + ", and this host does not have it. " +
+		"The probe that judges the store of record RUNS that wall, and only a LAUNCH makes what the namespace cannot — a reader makes no path in whatever HOME typed the command (ranger-base-6s5mo/qd9ei) — so the store is neither reachable nor unreachable here. " +
+		"The launch this row judges is unaffected: it runs that same prep itself before it types the wall. Read the row off a launch (`posse new`, `posse relaunch`), or re-run `posse gates` from the launcher's own environment once one has run (ADR 0013 §4, ranger-base-heur; ADR 0080 D17/D18)"
 }
 
 // recordReachNoStoreClause is the mechanism's half of the row above, "" at

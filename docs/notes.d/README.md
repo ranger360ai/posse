@@ -14,6 +14,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-vxir7](ranger-base-vxir7.md) — The CLI-home fence, derived from the resolvers and checked by asking them (ranger-base-vxir7) — 2026-11-12
 - [ranger-base-v9hv1](ranger-base-v9hv1.md) — A merge-back's worst conflict is the one git does not report (ranger-base-v9hv1) — 2026-11-12
 - [ranger-base-u1z89](ranger-base-u1z89.md) — A leaked scratch FILE is outside every class the reaper has (ranger-base-u1z89) — 2026-11-12
+- [ranger-base-qd9ei](ranger-base-qd9ei.md) — Only a launch makes what the namespace cannot (ranger-base-qd9ei) — 2026-11-12
 - [ranger-base-qbg7c](ranger-base-qbg7c.md) — The residual fixture-root class, and the census that ends the hand count (ranger-base-qbg7c) — 2026-11-12
 - [ranger-base-pn99n](ranger-base-pn99n.md) — ranger-base-pn99n — the ARGV half of the fixture-git census, and what it does not cover — 2026-11-12
 - [ranger-base-nxus6](ranger-base-nxus6.md) — Two pins that were green against the mutant they exist to catch (ranger-base-nxus6) — 2026-11-12

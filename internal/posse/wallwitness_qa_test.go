@@ -38,6 +38,14 @@ package posse
 // at all. So three of the arms below drive exactly those, and each must read
 // NOT WITNESSED and never "".
 //
+// EVERY ARM HERE DRIVES `askedByLaunch`, which is the matrix this ADR is
+// about: the launcher's own, where the witness may make the host-side prep
+// the wall it renders needs, because the launcher is about to make it anyway
+// (parityAsk, wall.go). The READER's answer to the same question — a `posse
+// gates <persona>` that would have to write a caller's HOME to put the
+// namespace up, and abstains instead — is ranger-base-qd9ei's, pinned in
+// readerprobeprep_qa_test.go beside the row it changes.
+//
 // EVERY ARM RUNS IN A REAL LINKED WORKTREE AND IN A MAIN CHECKOUT (D6). R0
 // escaped because no pin ever drove a whole-tree-deny PID in a linked
 // worktree, where `<cwd>/.git` is a FILE; the objects dir this witness probes
@@ -235,7 +243,7 @@ func TestLiveWallWitnessHoldsUnderTheRenderedWall(t *testing.T) {
 			// And the door: the row parity claimed is upgraded in place, with
 			// D5's own words on it.
 			p := wwClaim(CageSeatbelt, "Edit")
-			f.a.applyWallWitness(p, f.ag, f.rt, tc.cwd)
+			f.a.applyWallWitness(p, f.ag, f.rt, tc.cwd, askedByLaunch)
 			want := wholeTreeSeatbeltClaim + " (" + w.Mechanism + "), witnessed at launch"
 			if got := p.Realized["Edit"].Detail; got != want {
 				t.Errorf("the witnessed row reads %q, want %q (ADR 0086 D5)", got, want)
@@ -272,7 +280,7 @@ func TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate(t *testing.T) {
 	} {
 		t.Run(tc.what, func(t *testing.T) {
 			p := wwClaim(CageSeatbelt, "Edit", "Write")
-			f.a.applyWallWitness(p, f.ag, f.rt, tc.cwd)
+			f.a.applyWallWitness(p, f.ag, f.rt, tc.cwd, askedByLaunch)
 			for _, gate := range []string{"Edit", "Write"} {
 				if _, ok := p.Realized[gate]; ok {
 					t.Errorf("%s is still a REALIZED row over a wall that allows the create: %q — Realized must not keep a row for a rule nothing holds (ADR 0086 D5)", gate, p.Realized[gate].Detail)
@@ -352,7 +360,7 @@ func TestQAWallWitnessAbstainsWhereNothingRanBehindThePrefix(t *testing.T) {
 	wwSkipUnlessTheWallIsReal(t)
 	wwStubApplyRefusal(t, "the kernel refused the apply (fixture)")
 	p := wwClaim(CageSeatbelt, "Edit")
-	f.a.applyWallWitness(p, f.ag, f.rt, f.tree)
+	f.a.applyWallWitness(p, f.ag, f.rt, f.tree, askedByLaunch)
 	row := p.Realized["Edit"].Detail
 	switch {
 	case len(p.Degraded) != 0 || len(p.Unrealized) != 0:
@@ -437,7 +445,7 @@ func TestQAWallWitnessAbstentionNamesTheWallThisProcessCannotPutUp(t *testing.T)
 			}
 			wwStubApplyRefusal(t, "the kernel refused the apply (fixture)")
 			p := wwClaim(CageSeatbelt, "Edit")
-			f.a.applyWallWitness(p, f.ag, f.rt, f.tree)
+			f.a.applyWallWitness(p, f.ag, f.rt, f.tree, askedByLaunch)
 			row := p.Realized["Edit"].Detail
 			if len(p.Degraded) != 0 || len(p.Unrealized) != 0 {
 				t.Errorf("an abstention degraded the launch: %v %v", p.Degraded, p.Unrealized)
@@ -513,7 +521,7 @@ func TestQAWallWitnessTakesTheRowAwayWhenTheWallCannotBeRenderedAtAll(t *testing
 	broken := NewAppAt(filepath.Join(blocked, "home"))
 
 	p := wwClaim(CageSeatbelt, "Edit")
-	broken.applyWallWitness(p, f.ag, f.rt, f.tree)
+	broken.applyWallWitness(p, f.ag, f.rt, f.tree, askedByLaunch)
 	if _, ok := p.Realized["Edit"]; ok {
 		t.Errorf("the row survived a wall that cannot be rendered: %q", p.Realized["Edit"].Detail)
 	}
@@ -529,7 +537,7 @@ func TestQAWallWitnessTakesTheRowAwayWhenTheWallCannotBeRenderedAtAll(t *testing
 	// The control: the SAME call over the same fixture with a home that
 	// works renders, so what this arm varied is the render and nothing else.
 	q := wwClaim(CageSeatbelt, "Edit")
-	f.a.applyWallWitness(q, f.ag, f.rt, f.tree)
+	f.a.applyWallWitness(q, f.ag, f.rt, f.tree, askedByLaunch)
 	if len(q.Unrealized) != 0 && strings.Contains(strings.Join(q.Unrealized, "\n"), "cannot be rendered") {
 		t.Fatalf("the control cannot render either, so the arm above measures nothing: %v", q.Unrealized)
 	}
@@ -646,7 +654,7 @@ func TestQAWallWitnessSaysNothingAboutARowItDidNotClaim(t *testing.T) {
 			for k, v := range tc.rows {
 				p.Realized[k] = v
 			}
-			f.a.applyWallWitness(p, f.ag, tc.rt, f.tree)
+			f.a.applyWallWitness(p, f.ag, tc.rt, f.tree, askedByLaunch)
 			for k, v := range tc.rows {
 				if got := p.Realized[k]; got != v {
 					t.Errorf("the witness rewrote a row it did not claim: %s was %+v, now %+v", k, v, got)
@@ -660,7 +668,7 @@ func TestQAWallWitnessSaysNothingAboutARowItDidNotClaim(t *testing.T) {
 	// No cwd at all: `posse gates <persona>` with no directory asks the
 	// dir-independent matrix, and nothing here may run.
 	p := wwClaim(CageSeatbelt, "Edit")
-	f.a.applyWallWitness(p, f.ag, f.rt, "")
+	f.a.applyWallWitness(p, f.ag, f.rt, "", askedByLaunch)
 	if got := p.Realized["Edit"].Detail; got != wholeTreeSeatbeltClaim {
 		t.Errorf("the witness ran without a launch dir: %q", got)
 	}
@@ -670,17 +678,25 @@ func TestQAWallWitnessSaysNothingAboutARowItDidNotClaim(t *testing.T) {
 // ─── the wiring ──────────────────────────────────────────────────────────────
 
 // D5 is a LAUNCH observable, so the door has to be the one a launch goes
-// through. CreateSession and `posse gates` both reach CheckParityIn; a
-// witness wired only into a function nobody calls is a wall whose record
-// still says `L2 seatbelt` because the tier is available — the exact row ADR
-// 0086 D5 replaced.
+// through. CreateSession reaches `checkParityIn`; a witness wired only into
+// a function nobody calls is a wall whose record still says `L2 seatbelt`
+// because the tier is available — the exact row ADR 0086 D5 replaced.
+//
+// THE LAUNCH'S DOOR AND NOT `CheckParityIn` (ranger-base-qd9ei). Both used
+// to be the same call. They are not any more: the exported one is the
+// READER's — `posse gates <persona>` — and a reader's witness renders
+// without making the host-side prep, so over a fixture whose furniture is
+// not on this host it abstains, correctly, and would red this arm for a
+// reason that is nothing to do with the wiring. What is pinned here is that
+// a LAUNCH witnesses; that a reader abstains rather than writing a caller's
+// HOME is readerprobeprep_qa_test.go's.
 func TestQAWallWitnessReachesTheLaunchThroughCheckParityIn(t *testing.T) {
 	// No t.Parallel: wwRoot sets TMPDIR and HOME for this process.
 	wwSkipUnlessTheWallIsReal(t)
 	f := wwFixtureIn(t, wwRoot(t))
-	p := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.tree)
+	p := f.a.checkParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.tree, nil, askedByLaunch)
 	if got := p.Realized["Edit"].Detail; !strings.Contains(got, "witnessed at launch") {
-		t.Errorf("CheckParityIn's Edit row reads %q — the witness is not on the launch path, so a launch's record names a wall nobody typed (ADR 0086 D5)\n%s", got, p.String())
+		t.Errorf("a launch's parity matrix reads Edit %q — the witness is not on the launch path, so a launch's record names a wall nobody typed (ADR 0086 D5)\n%s", got, p.String())
 	}
 	// And the dir-independent matrix is untouched: a persona-shaped statement
 	// has no cwd to witness in, and must not pretend otherwise.

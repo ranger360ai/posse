@@ -143,7 +143,7 @@ func TestQATheReportRenderRunsNoPrepAndTheLaunchRenderDoes(t *testing.T) {
 	f := bwlFixture(t)
 	bwlStubBin(t, "/usr/bin/bwrap")
 
-	report, err := f.a.wallWriteToRead(f.ag.Name, false)
+	report, err := f.a.wallWriteToRead(f.ag.Name, prepSkip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,11 @@ func TestLiveWallWitnessProbeDoesNotWriteTheLiveWall(t *testing.T) {
 	intact := rwwPlantLive(t, f.a, f.ag.Name, name)
 
 	p := wwClaim(CageSeatbelt, "Edit")
-	f.a.applyWallWitness(p, f.ag, f.rt, f.tree)
+	// askedByLaunch, so the probe really renders and applies: a reader's
+	// probe over a wall that needs prep abstains without rendering at all,
+	// which would pass this arm for free (ranger-base-qd9ei's own pin,
+	// readerprobeprep_qa_test.go, is the other half).
+	f.a.applyWallWitness(p, f.ag, f.rt, f.tree, askedByLaunch)
 	// The probe really ran — otherwise the sentinel survives for the one
 	// reason this pin must not accept.
 	if got := p.Realized["Edit"].Detail; !strings.Contains(got, "witnessed at launch") {

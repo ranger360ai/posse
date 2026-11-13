@@ -321,6 +321,33 @@ same under the session's git objects dir (D3). Both must fail.
   binary in a fixture. Both shapes are rows of
   `TestQAWallWitnessAbstainsWhereNothingRanBehindThePrefix` now, and each
   reds the substring reading.
+- **Amended 2026-11-12 — a FOURTH thing that makes this witness abstain: a
+  reader's wall whose host-side furniture is not there (ranger-base-qd9ei,
+  the residual of ranger-base-6s5mo).** The as-built enumeration above lists
+  ways nothing RAN; this is the way nothing is allowed to run.
+  `applyWallWitness` renders and applies, and at the bwrap mechanism the
+  render asks the launcher for host-side writes outside the namespace
+  (`PrepStep`, ADR 0080 D17/D18) — so this door, reached from `posse gates
+  <persona>` once per runtime in the catalog, made those paths in whatever
+  HOME typed the command. It does not any more: a LAUNCH's witness makes
+  them (it IS the launcher, and `WallPrefix` makes the same set a few
+  hundred lines later), a READER's requires them to be there already and
+  otherwise abstains with the path named. Which one is asking is
+  `parityAsk`, threaded from `checkParityIn`. The verdict where the
+  furniture IS there is unchanged, because every prep step is emitted only
+  where its path is absent — so a reader abstains exactly where it could not
+  have measured and not one row more. MEASURED 2026-11-12 on the D1 host:
+  `posse gates hoover` from a `cage: shims` seat's worktree abstains on 9
+  rows (Edit, Write and ADR 0013 §4's record row, for each of 3 runtimes at
+  this tier), each naming the absent seat-private `/tmp` of that launch dir;
+  the same command at the defect wrote 39 paths into the caller's HOME, one
+  of them an empty `~/.grok/config.toml` that posse's own project-config
+  classifier then refuses a launch over (ranger-base-f67jx). It is an
+  abstention and never the finding this row exists for: the launch the row
+  describes is the thing that makes the path, so "this deny is realized by
+  nothing" would be false about the only launch it is about — and would
+  refuse it. docs/notes.d/ranger-base-qd9ei.md has the measurements, the
+  pins, and the make-measure-remove option it rejected.
 
 **D6. The fixture-git lesson (ranger-base-xa2e3, and ppnds finding 3).**
 R0 escaped because no pin ever drove a whole-tree-deny PID in a linked

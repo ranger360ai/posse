@@ -696,6 +696,32 @@ arm, which claims "cage <x> has no file wall — every path this session
 can write, it can write" — a stronger claim than "unmeasured," and
 false.
 
+**The third answer's second reason (added 2026-11-12,
+ranger-base-qd9ei).** The paragraph above is about a probe this process
+could not APPLY. There is a second way to measure nothing, and it
+arrived with the mechanism: at `bwrap` the rendered wall binds only
+sources that exist, so the render asks the launcher for host-side
+writes outside the namespace first (`PrepStep`, ADR 0080 D17/D18) — and
+this row is read off `posse gates <persona>` as well as off a launch,
+once per runtime in the catalog. A READER may not make those paths:
+they are whatever HOME typed the command, and one of them is a config
+file seeded EMPTY that posse's own project-config classifier then
+refuses a later launch over (ranger-base-f67jx). So a launch's probe
+makes the prep — it is the launcher, and it writes the same set itself
+before it types the wall — and a reader's requires it to be there
+already, else this row reads NOT MEASURED with the path named. The
+verdict where the furniture IS there is unchanged, because a prep step
+is emitted only where its path is absent; a reader abstains exactly
+where it could not have measured. It lands in `Realized` like the first
+reason and for a sharper version of the same rule: the launch this row
+judges is the very thing that makes the path, so "the store is
+unreachable" would be false about the only launch the row is about, and
+through `unrealized()` would refuse it. MEASURED 2026-11-12 on the D1
+host, `posse gates hoover` from a `cage: shims` seat's worktree: 3 rows
+of this gate abstain, one per runtime at that tier; the same command at
+the defect wrote 39 paths into the caller's HOME.
+docs/notes.d/ranger-base-qd9ei.md has the measurements and the pins.
+
 **Reap guard.** A session whose bead is still `in_progress` and whose
 cwd is dirty is **not killed** by an ordinary reap. `--force` is the
 operator saying they have looked at that session's unfinished work: it

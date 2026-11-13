@@ -63,6 +63,13 @@ the artifact goes, and whether the prep runs.
   `applyWallWitness` render and then APPLY; bwrap binds only a source that
   exists, so a probe with no prep would measure a wall that cannot come up
   and report the difference as this host's.
+  **Amended by ranger-base-qd9ei (2026-11-12), this bead's residual: kept
+  for a LAUNCH's probe and not for a reader's.** A reader's probe requires
+  the furniture to be there already and abstains, with the path named, when
+  it is not — so the three answers are four, and which one a probe takes is
+  `parityAsk`. The reason the bullet above gives still holds, and is why a
+  reader abstains rather than skipping. See
+  docs/notes.d/ranger-base-qd9ei.md.
 
 ## Not closed here
 

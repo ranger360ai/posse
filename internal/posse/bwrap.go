@@ -172,6 +172,19 @@ const (
 // order the shapes render, so a grant's mkdir always precedes the touch of a
 // Keep file inside it; a launcher that reorders them, or runs them
 // concurrently, breaks that and nothing says so.
+//
+// A STEP IS EMITTED ONLY WHERE ITS PATH IS ABSENT, and that is relied on
+// twice over. runBwrapPrep says why it matters for a `touch` (it can never
+// truncate a live seat's `refusals.log`), and `prepRequire` reads the list's
+// EMPTINESS as a verdict: a render that asked for no step is a wall whose
+// every bind source is already on this host, so a reader may apply it
+// without writing anything (wallPrep, wall.go — ranger-base-qd9ei). Every
+// emission site below is guarded on a stat; one that stops being is a probe
+// that silently starts measuring a wall it cannot put up. The pin is
+// TestQAEveryBwrapPrepStepNamesAPathThatIsNotThere, and it holds the FACT
+// rather than a count of the sites — of each step, that its path is not
+// there; and of the same render after the prep has run, that it asks for
+// nothing.
 type PrepStep struct {
 	Kind PrepKind
 	Path string
@@ -1633,11 +1646,13 @@ func (a *App) RenderBwrap(ag *AgentFile, rt *Runtime, cwd string) (string, error
 // gates` is where an operator reads the wall off the output, and a report
 // whose head line names a file that is not there is worse than no report.
 //
-// `w` SAYS WHICH OF THE THREE RENDERS THIS IS (wallWrite, wall.go). The
-// render below is identical in all three — the persona's LIVE gates dir is
-// an input to it either way, so the mount set a report prints and a probe
+// `w` SAYS WHICH OF THE RENDERS THIS IS (wallWrite, wall.go). The render
+// below is identical in all of them — the persona's LIVE gates dir is an
+// input to it either way, so the mount set a report prints and a probe
 // judges is the set a launch would grant — and what `w` chooses is where the
-// two files land and whether the prep runs. Only a launch writes
+// two files land and what becomes of the prep: made (a launch), skipped (a
+// report), or REQUIRED to be there already (a reader's probe, which applies
+// the argv and may not write a caller's HOME — ranger-base-qd9ei). Only a launch writes
 // `a.GatesDir(ag.Name)`: a report that rewrote it left a running seat's git
 // refused by its own shim (ranger-base-atq78/6s5mo, and see wallWrite's own
 // header for the measurement).
@@ -1654,9 +1669,20 @@ func (a *App) renderBwrapWall(ag *AgentFile, rt *Runtime, cwd string, w wallWrit
 	if err != nil {
 		return "", bwrapRendered{}, err
 	}
-	if !w.NoPrep {
+	switch w.Prep {
+	case prepMake:
 		if err := runBwrapPrep(r.Prep); err != nil {
 			return "", bwrapRendered{}, err
+		}
+	case prepRequire:
+		// A READER'S PROBE (ranger-base-qd9ei). It applies what it renders,
+		// so it cannot skip the prep the way a report does — and it may not
+		// make it, because the paths are whatever HOME typed the command.
+		// Every step is emitted only where its path is ABSENT, so a step at
+		// all is the answer: this wall cannot come up without a write only a
+		// launch may make, and the probe's job is to say it measured nothing.
+		if len(r.Prep) > 0 {
+			return "", bwrapRendered{}, &wallPrepAbsentError{Mechanism: WallBwrap, Step: r.Prep[0], N: len(r.Prep)}
 		}
 	}
 	args := filepath.Join(dest, bwrapArgsName)
@@ -1993,7 +2019,7 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 	// with no prep run (wallWrite, wall.go). The head line still names a file
 	// that is there — which is why this report renders at all — and the live
 	// wall one line below is named and untouched (ranger-base-6s5mo).
-	w, err := a.wallWriteToRead(ag.Name, false)
+	w, err := a.wallWriteToRead(ag.Name, prepSkip)
 	if err != nil {
 		return err
 	}

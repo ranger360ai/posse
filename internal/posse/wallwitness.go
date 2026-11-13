@@ -91,7 +91,11 @@ const wholeTreeSeatbeltClaim = "L2 " + CageSeatbelt
 // tier, a self-sandboxing runtime, a path-scoped subtree deny and an already
 // unrealized rule all carry a different Detail or none, and every one of them
 // is a wall this witness has nothing to say about.
-func (a *App) applyWallWitness(p *Parity, ag *AgentFile, rt *Runtime, dir string) {
+// `ask` is applyRecordReach's own parameter and decides the same one thing:
+// whether this witness may make the host-side prep the wall it renders needs
+// (parityAsk, wall.go — ranger-base-qd9ei). A reader's does not, and abstains
+// where the wall would need it.
+func (a *App) applyWallWitness(p *Parity, ag *AgentFile, rt *Runtime, dir string, ask parityAsk) {
 	if dir == "" || ag == nil || rt == nil {
 		return
 	}
@@ -114,13 +118,22 @@ func (a *App) applyWallWitness(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		wallWitnessAbstain(p, rows, wallWitnessUnmeasured(WallMechanism(), why))
 		return
 	}
-	// RenderWallToJudge and not RenderWall: this witness renders and then
+	// renderWallToJudge and not RenderWall: this witness renders and then
 	// APPLIES, and it runs on the report path too (`posse gates <persona>`
 	// walks the same parity matrix), so the artifact goes under
 	// reportWallDir and a reader never writes the live gates dir
-	// (ranger-base-6s5mo). The prep still runs — see RenderWallToJudge.
-	w, err := a.RenderWallToJudge(ag, rt, dir)
+	// (ranger-base-6s5mo). The host-side prep is made only for a LAUNCH —
+	// see renderWallToJudge and wallPrep (ranger-base-qd9ei).
+	w, err := a.renderWallToJudge(ag, rt, dir, ask)
 	if err != nil {
+		// A wall whose sources are not all here is the THIRD answer and not
+		// R0's finding below: nothing was refused, there is simply no wall
+		// to witness yet — and the launch this row describes is the thing
+		// that would make the path (wallWitnessUnmeasuredPrep).
+		if absent := wallPrepAbsent(err); absent != nil {
+			wallWitnessAbstain(p, rows, wallWitnessUnmeasuredPrep(absent))
+			return
+		}
 		// R0's own case, and the one this row exists for: the tier is
 		// available, the claim was printed, and the wall cannot be built.
 		for _, gate := range rows {
@@ -346,6 +359,21 @@ func createAndRemove(path string) error {
 // abstention IS differs — applying a profile on one host, unsharing a mount
 // namespace on the other — and so does the clause that says the launch is
 // unaffected, which is the part an operator acts on.
+// wallWitnessUnmeasuredPrep is recordReachUnmeasuredPrep's twin for this
+// row: the wall this reader would witness binds a host path that is not
+// there, and only a launch makes it (wallPrep, wall.go —
+// ranger-base-qd9ei). An abstention and never the finding, for the reason
+// that row gives: the launch this row describes runs the same prep before it
+// types the wall, so a row reading "this deny is realized by nothing" would
+// be false about the only launch it is about — and it would refuse that
+// launch.
+func wallWitnessUnmeasuredPrep(e *wallPrepAbsentError) string {
+	return "NOT WITNESSED: the " + e.Mechanism + " wall this launch runs behind binds " + AbbrevHome(e.Step.Path) +
+		" (" + e.Step.Why + ")" + e.andMore() + ", and this host does not have it. " +
+		"The witness that proves this deny RUNS that wall, and only a LAUNCH makes what the namespace cannot — a reader makes no path in whatever HOME typed the command (ranger-base-6s5mo/qd9ei) — so the wall is neither held nor broken here. " +
+		"The launch this row judges is unaffected: it runs that same prep itself before it types the wall. Read the row off a launch (`posse new`, `posse relaunch`), or re-run `posse gates` from the launcher's own environment once one has run (ADR 0086 D5; ADR 0080 D17/D18)"
+}
+
 func wallWitnessUnmeasured(mech, why string) string {
 	if mech == WallBwrap {
 		return "NOT WITNESSED: this posse process is not known to be able to put up a bwrap mount namespace (" + why +

@@ -124,6 +124,26 @@ job:
   `enforced (L2 seatbelt (bwrap), witnessed at launch)` and the
   `⊘ cage_realize: … declined for this PID` line.
 
+  **Amended 2026-11-12 (ranger-base-qd9ei): that second bullet's two rows now
+  read `NOT WITNESSED` from a report, and the recipe is still good for the
+  `⊘ cage_realize` line it was written for.** A reader's probe no longer makes
+  the host-side prep the bwrap wall needs — the prep went into whatever HOME
+  typed the command, and one of its seeds is refused by posse's own
+  project-config classifier at the next launch (ranger-base-f67jx) — so where
+  that furniture is not already on the host the witness abstains with the path
+  named instead of measuring. MEASURED 2026-11-12: `posse gates hoover` from a
+  `cage: shims` seat's worktree abstains on Edit, Write and `record: store of
+  record` for each runtime at that tier, each naming the absent seat-private
+  `/tmp` of that launch DIR — which a copy of the home does not change, since
+  the path is keyed by HOME and cwd and only a launch in that cwd makes it. So
+  a verify seat reading those two rows off a report reads an abstention and
+  must not file it as a red. What a copied home still carries unchanged is the
+  `⊘ cage_realize: … declined for this PID` line, which is this section's own
+  subject, and the mount set the report prints. The witness rows are a
+  LAUNCH's observable again, which is what ADR 0086 D5 calls them; whether
+  `posse gates` should offer an opt-in that makes the furniture and measures
+  is ranger-base-jg3le, which names this recipe as the caller that wanted it.
+
 Two traps there. `posse gates`' FIRST parity block is `posse.DefaultCage` as a
 literal for every persona, so a PID whose demand the map declines is read off
 the SECOND block — reading the first as the PID's wall is the mistake. And the

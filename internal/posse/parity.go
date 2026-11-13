@@ -843,8 +843,14 @@ func projectConfigTrustMessage(rt *Runtime, path, finding string) string {
 // session starts in. CreateSession and `posse gates` use it; CheckParity
 // stays the dir-independent matrix (a PID × runtime × cage × tier
 // statement) so nothing that only describes a persona has to invent a cwd.
+//
+// EVERY CALLER OF THIS DOOR IS A READER (`posse gates <persona>`, and the
+// pins), which is what it passes on to the two probes that APPLY the wall:
+// they render it, and a reader's render makes nothing on the host
+// (parityAsk, wall.go — ranger-base-qd9ei). A LAUNCH comes through
+// checkParityIn below and says so.
 func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) Parity {
-	return a.checkParityIn(ag, rt, cage, tier, dir, nil)
+	return a.checkParityIn(ag, rt, cage, tier, dir, nil, askedByReader)
 }
 
 // checkParityIn is CheckParityIn with ADR 0052 D3's redirect in hand: the
@@ -853,7 +859,11 @@ func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) 
 // re-derived. Every other caller — `posse gates` in a cwd, the preflight
 // — has no session and passes nil, which is the probe reading
 // git's own dispatch path exactly as it always has.
-func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, red *l3Redirect) Parity {
+// `ask` is the other thing only the launcher knows, and it is a SECOND
+// parameter rather than a reading of `red` for the reason parityAsk's own
+// header gives: the two are true of the launcher together today and neither
+// implies the other.
+func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, red *l3Redirect, ask parityAsk) Parity {
 	p := a.CheckParity(ag, rt, cage, tier)
 	a.applyL3Probe(&p, ag, rt, dir, red)
 	applyPushEffectNote(&p, ag.Deny)
@@ -861,14 +871,14 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// the same reason L3 is — which .beads bd opens is a fact about a
 	// concrete launch dir, not about a persona — and the dir is already in
 	// hand here (reachability.go, ranger-base-hxhb).
-	a.applyRecordReach(&p, ag, rt, dir)
+	a.applyRecordReach(&p, ag, rt, dir, ask)
 	// ADR 0086 D5: the Edit/Write rows proved by a WITNESS — the rendered
 	// wall typed over a create in this launch dir and in its git objects dir
 	// — rather than by the tier being available on this host. Directory-aware
 	// for applyRecordReach's reason, and after it deliberately: both render
 	// the same wall, and the one that can abstain BEFORE rendering goes first
 	// (wallwitness.go).
-	a.applyWallWitness(&p, ag, rt, dir)
+	a.applyWallWitness(&p, ag, rt, dir, ask)
 	// ADR 0074 D1: a container launch over a store holding a SQLite
 	// database is a gate this cage cannot realize, whatever record:
 	// reachability says about the mount — reachability judges whether the
