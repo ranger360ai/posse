@@ -36,6 +36,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -194,6 +195,61 @@ func TestALandedTreeThatFailsTheCheckIsRecordedRedWithItsCause(t *testing.T) {
 	}
 	if n := len(landedRuns(t, log)); n != 1 {
 		t.Errorf("the check ran %d times for one landing", n)
+	}
+}
+
+// landedWallSaid is D6.2's wall as a verdict line says it: seconds with one
+// decimal, which is the unit the 240s ceiling is written in. A regexp and
+// not a literal because the number is a MEASUREMENT — what has to hold is
+// that one is printed, not what this box took.
+var landedWallSaid = regexp.MustCompile(`\b\d+\.\ds\b`)
+
+// D6.2 (ADR 0088's amendment, ranger-base-7idk4): EVERY verdict line prints
+// its wall — the green, the red, and the ⚠ that says there is no verdict at
+// all. The ceiling is 240s and it is READ off these lines instead of
+// enforced by a kill, so a line without a wall leaves the price unreadable,
+// which is exactly the defect the amendment was written for: while one number
+// was both the kill and the price, the only signal a crossing could produce
+// was the absence of one.
+//
+// The unanswered arm is in here beside the two verdicts on purpose. That is
+// the line the 2026-11-12 crossing actually printed, and the question a
+// reader had then — "was this a hang, or was it slow?" — is answerable only
+// if the silence carries a wall too.
+func TestEveryVerdictLinePrintsItsWall(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, want string
+		arm        func(*testing.T) (*landedChecker, *bytes.Buffer, string)
+	}{
+		{"green", "green at", func(t *testing.T) (*landedChecker, *bytes.Buffer, string) {
+			c, out, repo, _, _ := landedCheckFixture(t, 0)
+			return c, out, repo
+		}},
+		{"red", "is RED at", func(t *testing.T) (*landedChecker, *bytes.Buffer, string) {
+			c, out, repo, _, _ := landedCheckFixture(t, 1)
+			return c, out, repo
+		}},
+		{"no answer", "NOT judged", func(t *testing.T) (*landedChecker, *bytes.Buffer, string) {
+			c, out, repo, _, _ := landedCheckFixture(t, 0)
+			c.cage = refusedCage
+			return c, out, repo
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c, out, repo := tc.arm(t)
+			c.Schedule(repo, "main")
+			c.Wait()
+			s := out.String()
+			if !strings.Contains(s, tc.want) {
+				t.Fatalf("the %s arm printed no verdict line (want one naming %q):\n%s", tc.name, tc.want, s)
+			}
+			if !landedWallSaid.MatchString(s) {
+				t.Errorf("the %s verdict line carries no wall, so D6.2's %s ceiling cannot be read off it — and reading these lines is the only reader that ceiling has, now that nothing kills on it:\n%s",
+					tc.name, landedCheckCeiling, s)
+			}
+		})
 	}
 }
 

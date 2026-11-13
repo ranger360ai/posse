@@ -7,7 +7,12 @@ package posse
 // `scripts/posse-landed-check`.
 //
 //	RHQ_LIVE_LANDEDCHECK=1 go test -tags posse_arm2 ./internal/posse \
-//	  -run TestLiveLandedCheck -v -timeout 10m
+//	  -run TestLiveLandedCheck -v -timeout 15m
+//
+// PAST landedCheckLimit ON PURPOSE. Since D6.1 that bound is ten minutes,
+// which is also go test's default, so a judge that really hung would be
+// killed by the TEST's clock first and the run would read as a panicking
+// suite rather than as the deadline this pin now names (D6.4).
 //
 // WHY IT IS SEPARATE FROM landedcheck_test.go. That file stubs the cage,
 // deliberately: a suite that rendered a real wall would be pinning bwrap's
@@ -99,6 +104,16 @@ func TestLiveLandedCheck(t *testing.T) {
 	s := out.String()
 	t.Logf("MEASURED %s: %s", took.Round(time.Second), strings.TrimSpace(s))
 	if strings.Contains(s, "NOT judged") {
+		// D6.4: A FAILURE MUST NAME ITS OWN CAUSE. The verdict already
+		// distinguishes the two silences, so this must too. A deadline is a
+		// PRICE — the judge ran and was killed holding its answer — and
+		// reading it as a wrong write set is what sent the 2026-11-12
+		// crossing to the wrong lane (ranger-base-7idk4). The phrase is
+		// landChildVerdict's own, which is where the sentence is built.
+		if strings.Contains(s, "no answer in ") {
+			t.Fatalf("the judge hit landedCheckLimit (%s) over %s after %s; this is a price, see ADR 0088 D6 — the tree is not red, the judge was killed holding the answer:\n%s",
+				landedCheckLimit, AbbrevHome(top), took.Round(time.Second), s)
+		}
 		t.Fatalf("the box's real cage could not judge %s in %s — this is D3's write set being wrong, not the tree being red:\n%s", AbbrevHome(top), took.Round(time.Second), s)
 	}
 	if s == "" {
@@ -106,10 +121,19 @@ func TestLiveLandedCheck(t *testing.T) {
 	}
 	// Red is a legitimate answer about a tree and is NOT a failure of this
 	// pin — what this measures is that the cage can carry the check at all.
-	// D6's ceiling is a 120s warm run, at which the price goes back to
-	// architecture; it is logged rather than asserted, because a suite
-	// running beside two other seats' suites is not the box D6 priced.
-	if took > landedCheckLimit {
-		t.Errorf("the run took %s, past the %s bound — a deadline is spelled as silence, so this would be a landing judged by nothing", took, landedCheckLimit)
+	//
+	// D6.2's ceiling is 240s and it is READ, never enforced: a run past it
+	// still answers, and the reader that turns a crossing into an
+	// architecture bead is ranger-base-lhiy1's, over the launcher's own runs.
+	// So this is logged and not asserted, for two reasons. A suite running
+	// beside two other seats' suites is not the box D6 priced — and the
+	// assertion that used to sit here compared the wall to the KILL, which
+	// is now ten minutes and bounds a hang rather than a price, so it would
+	// have asserted nothing a reader of this log needs (ADR 0088 D6.1/D6.2).
+	over := "under"
+	if took > landedCheckCeiling {
+		over = "OVER"
 	}
+	t.Logf("MEASURED %s, %s D6.2's %s ceiling — a series of quiet-box readings over it sends the price back to architecture (ADR 0088 D6.2)",
+		took.Round(time.Second), over, landedCheckCeiling)
 }

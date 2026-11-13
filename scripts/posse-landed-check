@@ -92,7 +92,11 @@
 # said. This file quoting them as well would be two places to keep in step by
 # hand, which is how the figure in the second one goes stale while both look
 # authoritative (AGENTS.md's own rule about the tree-check reading). D6's
-# ceiling is a 120s warm run, at which the price goes back to architecture.
+# ceiling is a 240s warm run, at which the price goes back to architecture
+# (D6.2, amended by ranger-base-7idk4 — it was 120s, which was also the kill,
+# and one number doing both jobs could only report a crossing as silence).
+# Nothing kills on 240s: the kill is `landedCheckLimit`, ten minutes, and it
+# bounds a hang.
 set -euo pipefail
 
 plan_only=0

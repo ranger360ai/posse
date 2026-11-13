@@ -76,6 +76,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 // landedCheckScript is D1's contract, and it is ADR 0087 D1's verbatim with
@@ -99,16 +100,62 @@ const landedCheckScript = "scripts/posse-landed-check"
 // would be a store nothing ever prunes.
 const landedCheckKey = "posse.landedCheck"
 
-// landedCheckLimit bounds one run. generatorTimeout, the same bound every
-// other non-git child the landing path starts carries, and it sits above
-// D6's own ceiling with room: this repo's check is MEASURED at 49-64s warm
-// and 74s cold (docs/notes.d/ranger-base-r3pqf.md), against a D6 ceiling of
-// 120s at which the price goes back to architecture.
+// landedCheckLimit bounds one run, and what it bounds is a HANG and not a
+// price (ADR 0088 D6.1, amended by ranger-base-7idk4). Its own constant at
+// ten minutes, deliberately NOT generatorTimeout any more: that was one
+// number doing two jobs — the price at which the design goes back to
+// architecture, and the kill — and D6 derives the judge's body from the
+// Makefile on purpose, so the body grows with every door somebody adds. A
+// fixed kill over a growing body gets crossed, and on 2026-11-12 it was:
+// the judge took 125.3s twice against generatorTimeout's 120s and was
+// killed. D3 spells a deadline as SILENCE, so every landing went unjudged,
+// D5 never filed, and the only signal the crossing could produce was the
+// absence of one.
 //
-// A deadline here is NOT a red. It is spelled as silence by
+// TEN MINUTES IS 4x THE HIGHEST READING (150s, MEASURED 2026-11-12 uncaged
+// over the same tree; the caged readings are in
+// docs/notes.d/ranger-base-5fond.md and the 85.1s door-by-door derivation is
+// in ADR 0088's amendment). A bound this loose is cheap HERE and nowhere
+// else in the landing path, for D2's reason: this judge holds no lock and no
+// seat, so a hung one delays the next coalesced judgement by at most one
+// landing gap — median 713s over 167 landings, MEASURED the same day.
+//
+// THE CEILING IS A SECOND NUMBER AND IS NOT THIS ONE (landedCheckCeiling,
+// D6.2). Keeping them apart is the fix: a price that is read off answered
+// runs can be reported, and a price enforced by a kill can only be reported
+// by the silence it causes.
+//
+// A deadline here is still NOT a red. It is spelled as silence by
 // landChildVerdict, which is the whole doctrine this runner shares with the
 // land check.
-const landedCheckLimit = generatorTimeout
+const landedCheckLimit = 10 * time.Minute
+
+// landedCheckCeiling is D6.2's price: the wall at which this design goes
+// back to architecture. It is READ off answered runs and never enforced by a
+// kill — every verdict line prints its wall, and a run past this number
+// still answers.
+//
+// 240s is chosen for ATTRIBUTION and not for box time. D5 names every
+// landing between the tree last recorded green and this red one, and a judge
+// that answers inside the p25 landing gap (253s, MEASURED 2026-11-12 over
+// 167 landings on main) keeps that window to one landing most of the time
+// (ASSUMED: that is the property worth a price review; the gaps are
+// MEASURED). The accepted price is the 110-150s this repo's check costs,
+// about 52 landings a day, coalesced and outside the lock.
+//
+// READING IT IS ranger-base-lhiy1's (D6.3): an answered run over this
+// ceiling files one architecture bead carrying the wall, which is how the
+// next crossing becomes a bead instead of something a verify lane happens to
+// find five hours later. This runner prints the wall and compares nothing.
+const landedCheckCeiling = 240 * time.Second
+
+// landedCheckWall is how a run's wall is said on a verdict line (D6.2), and
+// it is one function so the three lines cannot drift from each other.
+// Seconds with one decimal, which is the unit ADR 0088's readings and its
+// 240s ceiling are written in: Duration.String says `1m52s` for a 112s run
+// and leaves the reader converting before they can compare it to the
+// ceiling.
+func landedCheckWall(d time.Duration) string { return fmt.Sprintf("%.1fs", d.Seconds()) }
 
 // landedCheckWorkDir is where the launcher puts one run's scratch: the
 // detached worktree, the extracted judge, and the TMPDIR the check's own
@@ -598,18 +645,31 @@ func (c *landedChecker) once(repo, base string) {
 		_, _ = git(repo, "worktree", "remove", "--force", filepath.Join(run, landedTreeName))
 		_ = os.RemoveAll(run)
 	}()
+	// D6.2: EVERY verdict line prints its wall, including the one that says
+	// there is no verdict. Timed around c.judge and not around the whole of
+	// once(), because what the ceiling prices is the judge — the worktree,
+	// the cage and the check — and not the two git config reads above it or
+	// the worktree removal the defer does below.
+	//
+	// `took` is kept rather than formatted on the spot because
+	// ranger-base-lhiy1 (D6.3) reads it: an answered run over
+	// landedCheckCeiling, and a second consecutive unanswered one, each file
+	// one architecture bead, and both of those decisions are made in this
+	// switch with the Duration in hand.
+	start := time.Now()
 	v, said := c.judge(repo, run, tip, tree)
+	took := time.Since(start)
 	switch v {
 	case landUnanswered:
-		c.warn("%s landed at %s and was NOT judged — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)", AbbrevHome(repo), abbrevSHA(tip), said)
+		c.warn("%s landed at %s and was NOT judged after %s — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said)
 		return
 	case landGreen:
-		c.say("✓ %s green at %s (%s, ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckScript)
+		c.say("✓ %s green at %s in %s (%s, ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript)
 	default:
 		// The verdict and the cause, which is the sentence ranger-base-ddgfr
 		// turns into a bead. It is printed here whole rather than summarized,
 		// because until that bead lands this line IS the record a human reads.
-		c.warn("%s is RED at %s — %s — %s (ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckScript, said)
+		c.warn("%s is RED at %s in %s — %s — %s (ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, said)
 	}
 	recorded := true
 	if err := recordLandedCheck(repo, tree, v); err != nil {
