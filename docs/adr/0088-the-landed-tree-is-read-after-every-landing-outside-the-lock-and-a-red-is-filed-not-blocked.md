@@ -336,6 +336,20 @@ deadline when it is one.
   D6.3 off, and it holds nothing hostage.
 - Not changed: the derivation (D6), the fresh private cache (D3.2), the
   allowlist (D3.3).
+- As built (ranger-base-lhiy1): the table's last row is reached only by an
+  answered run that has something to say — a counter that was not zero, or a
+  wall over the ceiling. Asking the store on every answered run would be one
+  `bd list` per landing on a healthy main, on the pass that joins the judge's
+  goroutine, which D5's own cost pin refuses. Every row still fires: a bead
+  filed for silence is commented on by the run that ends its stretch, and a
+  ceiling bead by the next crossing. What is given up is a comment on an
+  answered run inside the price with nothing on the counter, where the open
+  bead already carries that line.
+- Residual (ranger-base-lhiy1): the two `said` lines a silent bead carries are
+  held in memory, because D6.3 spells the record `<tree> <n>` and a sentence is
+  neither. A crossing is two runs of one long-lived launcher by construction
+  (ADR 0028 §1); a launcher that restarted between the two files a bead saying
+  the earlier sentence is not recorded, rather than inventing one.
 
 **Alternatives rejected.**
 - *(a) alone: raise the limit and stop.* That fixes today and keeps the defect.
