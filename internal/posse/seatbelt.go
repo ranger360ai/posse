@@ -2387,14 +2387,32 @@ func beadsGitDirs(home string) []string {
 	return dedupeStrings(out)
 }
 
-// RenderSeatbelt writes the profile for a persona session and returns its
+// RenderSeatbelt writes the profile for a persona LAUNCH and returns its
 // path (RHQ_HOME/state/gates/<persona>/seatbelt.sb).
 func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (string, error) {
+	return a.renderSeatbeltInto(wallWrite{}, ag, cwd, stateDirs...)
+}
+
+// renderSeatbeltInto is that render with `w` saying where the profile lands
+// (wallWrite, wall.go): the live gates dir for a launch, and this process's
+// report dir for a reader — `posse gates <persona>` and parity's two probes.
+// renderBwrapWall's twin half of ranger-base-6s5mo, and the same rule in the
+// same words: the render is identical, the gates dir is an input to it
+// either way, and only a LAUNCH writes into it.
+//
+// NoPrep is nothing here, deliberately: sandbox-exec grants a path that does
+// not exist, so this mechanism has no prep to skip (RenderBwrap's own note on
+// why the other one does).
+func (a *App) renderSeatbeltInto(w wallWrite, ag *AgentFile, cwd string, stateDirs ...string) (string, error) {
 	gatesDir := a.GatesDir(ag.Name)
-	if err := os.MkdirAll(gatesDir, 0o755); err != nil {
-		return "", err
+	dest := w.Dir
+	if w.live() {
+		dest = gatesDir
+		if err := os.MkdirAll(dest, 0o755); err != nil {
+			return "", err
+		}
 	}
-	p := filepath.Join(gatesDir, "seatbelt.sb")
+	p := filepath.Join(dest, "seatbelt.sb")
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
 	// The ssh keys a seat that is not the pusher must not read
@@ -2418,7 +2436,14 @@ func (a *App) RenderSeatbelt(ag *AgentFile, cwd string, stateDirs ...string) (st
 // set it is a property of; `posse gates <persona>` is where an operator
 // reads it (ADR 0015 verification items 5 and 6).
 func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs ...string) error {
-	prof, err := a.RenderSeatbelt(ag, cwd, stateDirs...)
+	// A REPORT, so the profile lands in this process's report dir and never
+	// over the live one — BwrapReport's own reason, at the other mechanism
+	// (ranger-base-6s5mo).
+	w, err := a.wallWriteToRead(ag.Name, false)
+	if err != nil {
+		return err
+	}
+	prof, err := a.renderSeatbeltInto(w, ag, cwd, stateDirs...)
 	if err != nil {
 		return err
 	}
@@ -2435,6 +2460,8 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	}
 	siblings := SeatbeltSiblings(stateDirs, carve)
 	fmt.Fprintf(out, "  %s rendered for cwd %s (writable set below):\n", AbbrevHome(prof), AbbrevHome(cwd))
+	fmt.Fprintf(out, "    (a REPORT copy, rendered from this shell's environment. The profile a launch reads is %s and this command did not write it — only a launch does; ranger-base-6s5mo)\n",
+		AbbrevHome(filepath.Join(gatesDir, "seatbelt.sb")))
 	for _, w := range writable {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
 	}

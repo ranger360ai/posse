@@ -543,6 +543,15 @@ func TestQABothMultiplexersTypeTheWallLineVerbatim(t *testing.T) {
 // this report renders rather than composing: SeatbeltReport writes its
 // profile for the same reason, and ADR 0015 §2's structural claim is checked
 // against the grant set here rather than restated.
+//
+// SINCE ranger-base-6s5mo THAT FILE IS A REPORT COPY, under reportWallDir,
+// and the head line names it: the report renders the same wall from the same
+// inputs — the live gates dir among them — and writes those bytes where they
+// can break nothing. The live artifact is the launch's alone, because a
+// report that wrote it rewrote a RUNNING seat's wall from whatever
+// environment typed the command (ranger-base-atq78: 26 FAIL in that seat's
+// suite, exit 0, nothing said). TestQAReportRenderLeavesTheLiveWallAlone
+// below is that half.
 func TestQABwrapReportPrintsTheWallItWroteThroughTheSameMarkers(t *testing.T) {
 	// No t.Parallel: bwlStubBin writes a package-level var.
 	f := bwlFixture(t)
@@ -553,12 +562,25 @@ func TestQABwrapReportPrintsTheWallItWroteThroughTheSameMarkers(t *testing.T) {
 	}
 	got := b.String()
 	head, _, _ := strings.Cut(got, "\n")
-	args := filepath.Join(f.a.GatesDir(f.ag.Name), bwrapArgsName)
+	live := filepath.Join(f.a.GatesDir(f.ag.Name), bwrapArgsName)
+	copyDir, err := f.a.reportWallDir(f.ag.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := filepath.Join(copyDir, bwrapArgsName)
 	if !strings.Contains(head, AbbrevHome(args)) {
 		t.Errorf("the report's head line is %q and does not name the artifact: %s", head, AbbrevHome(args))
 	}
 	if _, err := os.Stat(args); err != nil {
 		t.Errorf("the report named %s and did not write it (%v) — a head line naming a file that is not there is worse than no report", args, err)
+	}
+	if strings.Contains(head, AbbrevHome(live)) {
+		t.Errorf("the report's head line names the LIVE wall %s — only a launch writes that, and a report that did left a running seat's git refused by its own shim (ranger-base-6s5mo): %q", AbbrevHome(live), head)
+	}
+	// ...and the operator is told where the live one is, or the copy's path
+	// reads as the wall.
+	if !strings.Contains(got, AbbrevHome(live)) {
+		t.Errorf("the report never names the wall a launch reads (%s), so the copy above reads as the wall itself:\n%s", AbbrevHome(live), got)
 	}
 	if !strings.Contains(head, CageSeatbelt+" ("+WallBwrap+")") {
 		t.Errorf("the report must say which mechanism put this wall up: %q", head)

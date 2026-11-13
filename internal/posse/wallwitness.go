@@ -114,7 +114,12 @@ func (a *App) applyWallWitness(p *Parity, ag *AgentFile, rt *Runtime, dir string
 		wallWitnessAbstain(p, rows, wallWitnessUnmeasured(WallMechanism(), why))
 		return
 	}
-	w, err := a.RenderWall(ag, rt, dir)
+	// RenderWallToJudge and not RenderWall: this witness renders and then
+	// APPLIES, and it runs on the report path too (`posse gates <persona>`
+	// walks the same parity matrix), so the artifact goes under
+	// reportWallDir and a reader never writes the live gates dir
+	// (ranger-base-6s5mo). The prep still runs — see RenderWallToJudge.
+	w, err := a.RenderWallToJudge(ag, rt, dir)
 	if err != nil {
 		// R0's own case, and the one this row exists for: the tier is
 		// available, the claim was printed, and the wall cannot be built.

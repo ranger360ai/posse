@@ -1570,7 +1570,7 @@ const (
 // `credentialReadDenyLiterals` and `sessionRefDirs` answer once, and only the
 // last step differs.
 func (a *App) RenderBwrap(ag *AgentFile, rt *Runtime, cwd string) (string, error) {
-	args, _, err := a.renderBwrapWall(ag, rt, cwd)
+	args, _, err := a.renderBwrapWall(ag, rt, cwd, wallWrite{})
 	return args, err
 }
 
@@ -1579,23 +1579,38 @@ func (a *App) RenderBwrap(ag *AgentFile, rt *Runtime, cwd string) (string, error
 // composed. SeatbeltReport renders its profile for the same reason — `posse
 // gates` is where an operator reads the wall off the output, and a report
 // whose head line names a file that is not there is worse than no report.
-func (a *App) renderBwrapWall(ag *AgentFile, rt *Runtime, cwd string) (string, bwrapRendered, error) {
+//
+// `w` SAYS WHICH OF THE THREE RENDERS THIS IS (wallWrite, wall.go). The
+// render below is identical in all three — the persona's LIVE gates dir is
+// an input to it either way, so the mount set a report prints and a probe
+// judges is the set a launch would grant — and what `w` chooses is where the
+// two files land and whether the prep runs. Only a launch writes
+// `a.GatesDir(ag.Name)`: a report that rewrote it left a running seat's git
+// refused by its own shim (ranger-base-atq78/6s5mo, and see wallWrite's own
+// header for the measurement).
+func (a *App) renderBwrapWall(ag *AgentFile, rt *Runtime, cwd string, w wallWrite) (string, bwrapRendered, error) {
 	gatesDir := a.GatesDir(ag.Name)
-	if err := os.MkdirAll(gatesDir, 0o755); err != nil {
-		return "", bwrapRendered{}, err
+	dest := w.Dir
+	if w.live() {
+		dest = gatesDir
+		if err := os.MkdirAll(dest, 0o755); err != nil {
+			return "", bwrapRendered{}, err
+		}
 	}
 	r, err := a.bwrapRender(ag, rt, cwd, gatesDir)
 	if err != nil {
 		return "", bwrapRendered{}, err
 	}
-	if err := runBwrapPrep(r.Prep); err != nil {
-		return "", bwrapRendered{}, err
+	if !w.NoPrep {
+		if err := runBwrapPrep(r.Prep); err != nil {
+			return "", bwrapRendered{}, err
+		}
 	}
-	args := filepath.Join(gatesDir, bwrapArgsName)
+	args := filepath.Join(dest, bwrapArgsName)
 	if err := os.WriteFile(args, bwrapArgsBytes(r.Argv), 0o644); err != nil {
 		return "", bwrapRendered{}, err
 	}
-	if err := os.WriteFile(filepath.Join(gatesDir, bwrapTextName), []byte(bwrapReadable(ag.Name, args, r.Argv, r.Prep, r.Absent)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dest, bwrapTextName), []byte(bwrapReadable(ag.Name, args, r.Argv, r.Prep, r.Absent)), 0o644); err != nil {
 		return "", bwrapRendered{}, err
 	}
 	return args, r, nil
@@ -1921,13 +1936,23 @@ func bwrapReadable(persona, args string, argv []string, prep []PrepStep, absent 
 // disagreeing with the wall. So the order below is the argv's order, which is
 // the wall's semantics: later covers earlier.
 func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer) error {
-	args, r, err := a.renderBwrapWall(ag, rt, cwd)
+	// A REPORT, so: rendered into this process's read-only-by-intent dir and
+	// with no prep run (wallWrite, wall.go). The head line still names a file
+	// that is there — which is why this report renders at all — and the live
+	// wall one line below is named and untouched (ranger-base-6s5mo).
+	w, err := a.wallWriteToRead(ag.Name, false)
+	if err != nil {
+		return err
+	}
+	args, r, err := a.renderBwrapWall(ag, rt, cwd, w)
 	if err != nil {
 		return err
 	}
 	set, keep, carve, prep := r.Set, r.Keep, r.Carve, r.Prep
 	fmt.Fprintf(out, "  %s rendered for cwd %s (cage %s (%s); the mount set below, later covers earlier):\n",
 		AbbrevHome(args), AbbrevHome(cwd), CageSeatbelt, WallBwrap)
+	fmt.Fprintf(out, "    (a REPORT copy, rendered from this shell's environment and with NO prep run. The wall a launch reads is %s and this command did not write it — only a launch does, so a reader cannot replace what a running seat is behind; ranger-base-6s5mo)\n",
+		AbbrevHome(filepath.Join(a.GatesDir(ag.Name), bwrapArgsName)))
 	for _, w := range shallowestFirst(set) {
 		fmt.Fprintf(out, "    w %s\n", AbbrevHome(w))
 	}
@@ -1970,9 +1995,12 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 		fmt.Fprintf(out, "    r %s (/dev/null bound over it — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
 	}
 	// The prep, which an operator can read nowhere else: these are writes
-	// posse makes on the HOST, outside the namespace, in the seat's name.
+	// posse makes on the HOST, outside the namespace, in the seat's name —
+	// at a LAUNCH. This report ran none of them, and says so, because the
+	// alternative is a reader making them from whatever environment happens
+	// to be in the shell (ranger-base-6s5mo).
 	for _, s := range prep {
-		fmt.Fprintf(out, "    ! %s (prep, run by the launcher before the wall: %s)\n", s, s.Why)
+		fmt.Fprintf(out, "    ! %s (prep the launcher runs before the wall, NOT run by this report: %s)\n", s, s.Why)
 	}
 	// No siblings: a mount cannot name the scratch namespace beside a file,
 	// and D19 makes it moot by granting claude's config DIRECTORY.

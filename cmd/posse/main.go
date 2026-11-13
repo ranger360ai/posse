@@ -1918,13 +1918,44 @@ func main() {
 		// disk — which is exactly what a live session is running behind — and
 		// says so. It only dies when there is nothing to read either: then
 		// the report would be an invention.
-		gatesDir, binDir, gateShell, renderErr := a.RenderGates(ag.Name, ag.Deny)
-		if renderErr != nil {
-			gatesDir = a.GatesDir(ag.Name)
-			binDir = filepath.Join(gatesDir, "bin")
+		//
+		// AND SINCE ranger-base-6s5mo THAT READ IS THE ORDINARY PATH, not
+		// only the caged one. A REPORT MAY CREATE A WALL THAT IS NOT THERE
+		// AND NEVER REPLACES ONE THAT IS. The re-render was keyed to the
+		// environment of whoever typed the command, and the git shim bakes
+		// the launcher's HOME in as a literal and refuses any git whose HOME
+		// is not it (rule hookskip:config-env, ADR 0079 D1) — so
+		// `HOME=/elsewhere posse gates <p>`, from this seat, a sibling seat
+		// or an operator shell, left that running seat's git refused by its
+		// own gate: 26 FAIL in the seat's `make test`, 24 of them fixtures'
+		// own `git init`, exit 0, and not one line saying anything had been
+		// written (ranger-base-atq78, MEASURED 2026-11-11).
+		//
+		// The render stays for the first one, because the reason for
+		// rendering at all is renderBwrapWall's — a report whose head line
+		// names a file that is not there is worse than no report — and a
+		// persona with no wall on disk has no live seat to break. Where a
+		// wall IS there, reading it is both the safe answer and the TRUE
+		// one. A PID edit reaches the shims at the next launch, which is
+		// already how every render-time input reaches them (RenderedByPosse,
+		// ranger-base-mmhhc).
+		gatesDir := a.GatesDir(ag.Name)
+		binDir := filepath.Join(gatesDir, "bin")
+		gateShell := ""
+		// "" when this report rendered the dir itself; else why it did not,
+		// and whether that is a FAULT (a render that could not write) or the
+		// rule above.
+		notRendered, renderFault := "", false
+		if _, err := os.Stat(binDir); err == nil {
+			notRendered = "a wall is already on disk, and a report does not replace a live seat's — only a launch writes these shims (ranger-base-6s5mo)"
+			gateShell = posse.GateShellOn(gatesDir)
+		} else if gd, bdir, sh, rerr := a.RenderGates(ag.Name, ag.Deny); rerr == nil {
+			gatesDir, binDir, gateShell = gd, bdir, sh
+		} else {
+			notRendered, renderFault = rerr.Error(), true
 			gateShell = posse.GateShellOn(gatesDir)
 			if _, statErr := os.Stat(binDir); statErr != nil {
-				die(fmt.Errorf("cannot render %s's gates (%v), and none are on disk to report: %v", ag.Name, renderErr, statErr))
+				die(fmt.Errorf("cannot render %s's gates (%v), and none are on disk to report: %v", ag.Name, rerr, statErr))
 			}
 		}
 		tier := a.ResolveTier("", ag)
@@ -2074,9 +2105,18 @@ func main() {
 		fmt.Fprintln(out, "permission mode on the pane — read from the live screen, never from the launch line (ADR 0035 §3):")
 		hb.SessionModeReport(out, ag.Name)
 		fmt.Fprintf(out, "%s\n", posse.AbbrevHome(gatesDir))
-		if renderErr != nil {
-			fmt.Fprintf(out, "  ⚠️  NOT re-rendered: %v\n", renderErr)
+		// WHAT THIS COMMAND WROTE UNDER state/gates, said out loud: until
+		// ranger-base-6s5mo it rewrote the dir on every run and printed
+		// nothing at all about it.
+		switch {
+		case notRendered == "":
+			fmt.Fprintln(out, "  WROTE this dir just now: no wall was on disk for this persona, so the report rendered the shims and the gate shell from THIS shell's environment. Every later run reads them; only a launch rewrites them (ranger-base-6s5mo).")
+		case renderFault:
+			fmt.Fprintf(out, "  ⚠️  NOT re-rendered: %s\n", notRendered)
 			fmt.Fprintln(out, "      Reporting the shims ON DISK instead — which is what a live session is running behind. Expected from inside a cage, where the gates dir is read-only by design (ADR 0015 §2); anywhere else it is a real fault. Any deny below with NO SHIM is unrealized at L1.")
+		default:
+			fmt.Fprintf(out, "  NOT re-rendered: %s\n", notRendered)
+			fmt.Fprintln(out, "      Reporting the shims ON DISK — which is what a live session is running behind. This command writes nothing here: a re-render from a stranger's environment is what left a live seat's git refused by its own shim (ranger-base-atq78). A PID edit, or a NO SHIM line below, reaches them at the next launch — `posse relaunch <session>` for a live seat, `posse new` for a fresh one; with no seat running, removing this dir lets the next report render it.")
 		}
 		if gateShell == "" {
 			fmt.Fprintln(out, "  gate shell: NONE rendered (SHELL/GROK_SHELL point at the real shell — ADR 0009 §2; expected only under a runtime with gate_shell: false)")

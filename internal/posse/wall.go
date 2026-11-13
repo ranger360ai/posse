@@ -43,10 +43,15 @@ package posse
 // what keeps the next mechanism from shipping as a name alone.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 )
 
 // The mechanism names. Each is the BINARY that puts the wall up, which is
@@ -207,6 +212,117 @@ type WallRender struct {
 	Prefix string
 }
 
+// ─── WHERE A RENDER THAT IS NOT A LAUNCH LANDS (ranger-base-6s5mo) ──────────
+
+// wallWrite is what a render DOES besides rendering: which directory its
+// artifact is written into, and whether the host-side prep bwrap needs is
+// run. Three callers, three answers, and until ranger-base-6s5mo they all
+// got the launch's.
+//
+// WHY A LAUNCH IS NOT THE ONLY RENDER. The wall is a FILE at both mechanisms
+// — bwrap reads its argv off fd 3, sandbox-exec takes a profile path — so a
+// report that names one and a probe that APPLIES one each need the bytes on
+// disk somewhere. RenderWall's own header says why they come through the
+// same render: a wall judged from anything but the artifact that runs is the
+// class reachability.go refuses. What it did not say is where the bytes go,
+// and the answer was `a.GatesDir(persona)` for all three.
+//
+// WHAT THAT COST, MEASURED. `posse gates <persona>` is a report (AGENTS.md
+// points a seat at it to READ its wall) and it rendered the live dir of
+// whatever persona was on the command line, from the environment of whoever
+// typed the command. The git shim bakes the launcher's HOME in as a literal
+// and refuses any git whose HOME is not it (rule hookskip:config-env, ADR
+// 0079 D1), so `HOME=/elsewhere posse gates <p>` left that running seat's
+// git refused by its own gate: 26 FAIL in the seat's `make test`, 24 of them
+// fixtures' own `git init`, exit 0, and not one output line saying anything
+// had been written (ranger-base-atq78, MEASURED 2026-11-11 on a cage:shims
+// seat; the security half is breakage only — a shims seat's L1 rail is
+// cooperative by declaration, so no arm was disarmed).
+//
+// SO: ONLY A LAUNCH NAMES THE LIVE DIR. A report and a probe render exactly
+// what a launch would, element for element — the live gates dir is still
+// among the render's INPUTS, so the set they print and judge is the set a
+// launch would grant — and write those bytes under reportWallDir instead.
+type wallWrite struct {
+	// Dir is the directory the artifact is written into. "" is the
+	// persona's live gates dir, which only a LAUNCH may ask for.
+	Dir string
+	// NoPrep skips the host-side prep (PrepStep, bwrap.go). A REPORT sets
+	// it: the prep is a write outside the namespace in the seat's name, made
+	// from the caller's environment, and a command whose whole job is to
+	// describe the wall has no business making it. A PROBE does not: it runs
+	// the argv, and bwrap binds only a source that exists, so a probe with
+	// no prep would measure a wall that cannot come up and report the
+	// difference as this host's.
+	NoPrep bool
+}
+
+// live reports whether this is the launch's own render — the one write that
+// may land in the persona's gates dir.
+func (w wallWrite) live() bool { return w.Dir == "" }
+
+// reportWallBase is the one directory this process writes a NON-LAUNCH wall
+// into: a fresh temp dir, made once and reused for the life of the process.
+//
+// ONE PER PROCESS AND NOT ONE PER CALL. A report renders once, but the parity
+// table it prints renders twice per runtime in the catalog (applyRecordReach
+// and applyWallWitness, both of which APPLY what they render), so an
+// `os.MkdirTemp` per render would leave a dozen directories behind per
+// command — for a command an operator types all day. Reused, the second
+// render of a persona's wall overwrites the first, which is also what makes
+// the path printable: the head line of `posse gates` names a file that is
+// still there when the operator goes to read it.
+var (
+	reportWallOnce sync.Once
+	reportWallBase string
+	reportWallErr  error
+)
+
+// reportWallDir is where a non-launch render of this persona's wall lands.
+//
+// KEYED BY THE INSTANCE AS WELL AS THE PERSONA. `a.StateDir` is what makes
+// two homes two walls (seatbeltinstancestate_qa_test.go builds exactly that
+// pair in one process), and a hash of it rather than the path because a path
+// is not a file name. 0700 on the base, because these bytes describe a
+// seat's wall and nothing outside this process needs them.
+func (a *App) reportWallDir(persona string) (string, error) {
+	reportWallOnce.Do(func() {
+		reportWallBase, reportWallErr = os.MkdirTemp("", "posse-wall-report-")
+	})
+	if reportWallErr != nil {
+		return "", fmt.Errorf("cannot make a directory to render %s's wall into for reading (a report and a probe never write the live gates dir — ranger-base-6s5mo): %w", persona, reportWallErr)
+	}
+	sum := sha256.Sum256([]byte(a.StateDir))
+	dir := filepath.Join(reportWallBase, hex.EncodeToString(sum[:])[:12], filepath.Base(persona))
+	return dir, os.MkdirAll(dir, 0o755)
+}
+
+// wallWriteToRead is the wallWrite a reader of this persona's wall takes:
+// `prep` says whether the reader will APPLY what it renders (a probe does, a
+// report does not).
+func (a *App) wallWriteToRead(persona string, prep bool) (wallWrite, error) {
+	dir, err := a.reportWallDir(persona)
+	if err != nil {
+		return wallWrite{}, err
+	}
+	return wallWrite{Dir: dir, NoPrep: !prep}, nil
+}
+
+// RenderWallToJudge is RenderWall for a caller that will APPLY the wall to
+// measure this host rather than launch behind it — parity's reachability row
+// and the Edit/Write witness (reachability.go, wallwitness.go). The render,
+// the prep and the prefix are the launch's, byte for byte; the one
+// difference is that the artifact is written under reportWallDir, so a probe
+// run from `posse gates` cannot replace a live seat's wall with one keyed to
+// the caller's environment (ranger-base-6s5mo).
+func (a *App) RenderWallToJudge(ag *AgentFile, rt *Runtime, cwd string) (WallRender, error) {
+	w, err := a.wallWriteToRead(ag.Name, true)
+	if err != nil {
+		return WallRender{}, err
+	}
+	return a.renderWallInto(WallMechanism(), w, ag, rt, cwd)
+}
+
 // RenderWall renders this launch's L2 wall and returns what posse wrote and
 // what it will type. THE ONE PLACE THE MECHANISM IS CHOSEN (ADR 0080 D18):
 // every caller that used to render a profile and type `SeatbeltPrefix`
@@ -249,11 +365,21 @@ func (a *App) RenderWall(ag *AgentFile, rt *Runtime, cwd string) (WallRender, er
 // caller choosing its own would be a seat walled by one mechanism and
 // reported under another.
 func (a *App) renderWallOn(mech string, ag *AgentFile, rt *Runtime, cwd string) (WallRender, error) {
+	return a.renderWallInto(mech, wallWrite{}, ag, rt, cwd)
+}
+
+// renderWallInto is that render with `w` saying where the artifact lands and
+// whether the prep runs — the launch's `wallWrite{}` for renderWallOn above,
+// and a reader's for RenderWallToJudge. Split out rather than parameterizing
+// renderWallOn, so that the production mechanism switch keeps one caller
+// passing WallMechanism() and the destination is a parameter nobody has to
+// choose twice.
+func (a *App) renderWallInto(mech string, w wallWrite, ag *AgentFile, rt *Runtime, cwd string) (WallRender, error) {
 	switch m := mech; m {
 	case WallSandboxExec:
 		// SeatbeltStateDirs and not rt.StateDirs: with CLAUDE_CONFIG_DIR on
 		// the line the home config file is no seat's to write (ADR 0090 D2).
-		prof, err := a.RenderSeatbelt(ag, cwd, SeatbeltStateDirs(rt)...)
+		prof, err := a.renderSeatbeltInto(w, ag, cwd, SeatbeltStateDirs(rt)...)
 		if err != nil {
 			return WallRender{}, err
 		}
@@ -264,7 +390,7 @@ func (a *App) renderWallOn(mech string, ag *AgentFile, rt *Runtime, cwd string) 
 		home, _ := os.UserHomeDir()
 		return WallRender{Mechanism: m, Artifact: prof, Prefix: seatCacheEnvPrefix(seatCacheEnv(SeatCacheDir(home, cwd))) + SeatbeltPrefix(prof)}, nil
 	case WallBwrap:
-		args, err := a.RenderBwrap(ag, rt, cwd)
+		args, _, err := a.renderBwrapWall(ag, rt, cwd, w)
 		if err != nil {
 			return WallRender{}, err
 		}

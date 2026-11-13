@@ -140,7 +140,13 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasuredOn(WallBwrap, why)}
 			return
 		}
-		w, err := a.RenderWall(ag, rt, dir)
+		// RenderWallToJudge and not RenderWall: this row RENDERS and then
+		// APPLIES, and it is read off `posse gates <persona>` as well as off
+		// a launch — so the artifact goes under reportWallDir and the live
+		// gates dir is never written by a reader (ranger-base-6s5mo). The
+		// prep still runs: bwrap binds only a source that exists, so a probe
+		// with no prep would measure a wall that cannot come up.
+		w, err := a.RenderWallToJudge(ag, rt, dir)
 		if err != nil {
 			p.unrealized(RecordReachGate, "the "+WallBwrap+" wall this launch would run under cannot be rendered, so the store of record cannot be judged reachable: "+err.Error())
 			return
@@ -166,7 +172,15 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasured(why)}
 			return
 		}
-		prof, err := a.RenderSeatbelt(ag, dir, SeatbeltStateDirs(rt)...)
+		// renderSeatbeltInto a reader's destination, for the arm above's
+		// reason: a probe run from a report must not write the live profile
+		// (ranger-base-6s5mo).
+		ww, err := a.wallWriteToRead(ag.Name, true)
+		if err != nil {
+			p.Realized[RecordReachGate] = RealizedGate{Detail: recordReachUnmeasured(err.Error())}
+			return
+		}
+		prof, err := a.renderSeatbeltInto(ww, ag, dir, SeatbeltStateDirs(rt)...)
 		if err != nil {
 			p.unrealized(RecordReachGate, "the seatbelt profile this launch would run under cannot be rendered, so the store of record cannot be judged reachable: "+err.Error())
 			return

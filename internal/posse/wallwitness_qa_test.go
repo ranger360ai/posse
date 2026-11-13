@@ -366,7 +366,18 @@ func TestQAWallWitnessAbstainsWhereNothingRanBehindThePrefix(t *testing.T) {
 	// process that cannot put the namespace up should not be writing the args
 	// file and making the host-side prep to find out (applyRecordReach's own
 	// reason, one file over).
-	if _, err := os.Stat(filepath.Join(f.a.GatesDir("witness"), wallArtifactName(WallMechanism()))); err == nil {
+	//
+	// Stated over the PROBE's own render dir and no longer over the gates dir
+	// (ranger-base-6s5mo): the witness renders under reportWallDir now, so a
+	// gates dir with no artifact in it is true of every run and would say
+	// nothing about this one. The live dir gets its own arm, where the
+	// subject is the probe that RAN —
+	// TestLiveWallWitnessProbeDoesNotWriteTheLiveWall.
+	dir, err := f.a.reportWallDir("witness")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, wallArtifactName(WallMechanism()))); err == nil {
 		t.Errorf("the abstention rendered the wall anyway — rendering WRITES, and the apply refusal is asked first for exactly that reason")
 	}
 	wwNoWitnessFileLeft(t, f.root)
