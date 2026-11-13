@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-wzo36](ranger-base-wzo36.md) — A trap reads what the shell that owns it assigned, and nothing else (ranger-base-wzo36) — 2026-11-13
+- [ranger-base-tq5tj](ranger-base-tq5tj.md) — ranger-base-tq5tj — the delta needed a baseline, so the pin forbids a baseline — 2026-11-13
 - [ranger-base-sxez7](ranger-base-sxez7.md) — The census went blind one root at a time, and its floor was seven below the live count (ranger-base-sxez7) — 2026-11-13
 - [ranger-base-hxenz](ranger-base-hxenz.md) — ranger-base-hxenz — the reaper forked once per pid per route, and `--self-test` paid it seven times — 2026-11-13
 - [ranger-base-equhp](ranger-base-equhp.md) — A lane was the union of every persona sharing ANY of a bead's labels (ranger-base-equhp) — 2026-11-13

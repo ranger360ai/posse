@@ -542,6 +542,12 @@ verify-python-syntax:
 # that rig, `scripts/reap-selftest-ambient.sh` re-asks the question under
 # ambient arrivals: it reds the old spelling 5 of 5 runs and this one 0 of 8,
 # where a clean rerun of this target passes the old spelling 8 times out of 8.
+# THE EDIT is held in the suite now (ranger-base-tq5tj,
+# internal/treepins/ambientcensus_qa_test.go): no verdict in that region may
+# read a census value across a later census, each fixture arm must grade
+# membership of the pid the rig planted, and the rule's positive control is
+# the 7725ba75^ delta spelling itself, embedded in the pin. It reads one file
+# in milliseconds, which is why the harness is still nobody's prerequisite.
 verify-reap-test-tmp:
 	@scripts/reap-test-tmp.sh --self-test
 

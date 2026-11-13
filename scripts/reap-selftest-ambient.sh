@@ -43,14 +43,27 @@
 #
 # So: a clean run proves nothing (the pre-fix rig passes 8 of 8 on a quiet
 # minute), a churn proves something a third of the time, and the ramp reds the
-# old spelling every time it is run. 26-35s per run either way.
+# old spelling every time it is run. 26-35s per run either way at that tree.
 #
-# IT IS NOBODY'S PREREQUISITE, and that is deliberate. It plants 26-35
-# processes per run and costs half a minute, so putting it in `make test`
-# would spend that on every seat to re-answer a question the tree's own
-# membership arms already answer deterministically and for free. Type it when
-# you have EDITED the finding-4 rig, or when you are judging a report that
-# reads like a box-wide count.
+# RE-MEASURED 2026-11-13 at a8575914 (same box, 16 cores, loadavg 2.0-2.9),
+# after ranger-base-hxenz cut the self-test from 23-35s to 7-9s: the ramp still
+# reds 7725ba75^ 3 of 3 and passes HEAD 3 of 3, but it now costs 8s and 8
+# arrivals per run here, against 24-25s and 24-25 arrivals at the pre-fix tree
+# -- which predates that cut, and is why that column did not move. The arrival
+# count is not a knob: it is one process per second of the run this harness
+# perturbs, so it fell with that wall and will rise again if the rig gets
+# slower. Both halves of the "half a minute and 25-35 processes" figure every
+# bead in this family quoted are the pre-hxenz reading (ranger-base-tq5tj).
+#
+# IT IS NOBODY'S PREREQUISITE, and that is deliberate. Even at 8s it would
+# spend every seat's `make test` on 8 planted claude-exe processes to
+# re-answer a question the tree's own membership arms already answer
+# deterministically and for free -- and what was unprotected was never the
+# BEHAVIOUR but the EDIT, which is held in the suite now by a shape pin that
+# reads one file in milliseconds (internal/treepins/ambientcensus_qa_test.go,
+# ranger-base-tq5tj). Type this when you have EDITED the finding-4 rig, or
+# when you are judging a report that reads like a box-wide count: that pin is
+# a proxy for this harness, not a substitute for it.
 #
 # BLAST RADIUS. One copy of tee(1), named `claude` under this run's own
 # `mktemp -d` root, exec'd up to --cap times; each process idles on a fifo
