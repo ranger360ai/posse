@@ -484,6 +484,40 @@ self_test() {
     --claude-sessions "$tmp/sessions" --claude-projects "$tmp/projects" --no-bead \
     >/dev/null 2>&1 || true
 
+  # THE FOUR HOLDERS MUST STILL BE ALIVE (ranger-base-bttuj). The sweep above
+  # IS this rig's census, and every verdict below is about what it saw; a
+  # holder that died before it ran makes the arm it holds decide over a
+  # population that is not the one the row names. Checked after the sweep and
+  # not before, because "alive on both sides of it" is what says alive DURING
+  # it — these are sleeps, and a sleep does not come back.
+  #
+  # ARM C IS WHY THIS GATE EXISTS, and it is the only one of the four whose
+  # failure direction is unsafe. C registers a live pid with a WRONG procStart
+  # and wants COLLECTED; a dead pid is collected too, by the `[ -d
+  # /proc/$rpid ]` gate one line above the procStart match it is there to
+  # grade. So with a dead holder C passes whether that match exists or not.
+  # MEASURED 2026-11-12 on this box: with the match at :1125 deleted and C's
+  # holder left alive, C reds (`want COLLECTED, got KEPT`); with the same
+  # deletion and the holder exiting at once, the whole self-test is green.
+  # That is the vacuity ranger-base-lydqn finding 4's `-p` arm shipped with
+  # and ranger-base-0wvu6 closed one arm up, in the same shape: a fixture
+  # whose death is indistinguishable from the behaviour it asserts.
+  # A, D and H are fail-safe — each wants KEPT and a dead holder collects its
+  # dir, so they red on their own — but they red saying "want KEPT, got
+  # COLLECTED", which reads as a reaper defect. They are named here too so
+  # the rig reports itself instead.
+  #
+  # `kill -0` is a builtin: an assertion arm's matcher must not fork
+  # (TestQANoAssertionArmDecidesThroughAForkedMatcher, ranger-base-t07yx).
+  local hpid hname
+  for hname in A:$pa C:$pc D:$pd H:$ph; do
+    hpid=${hname#*:}
+    if ! kill -0 "$hpid" 2>/dev/null; then
+      echo "  FAIL arm ${hname%%:*}'s holder (pid $hpid) was already gone when the sweep ran — that arm proves nothing about the reaper, and the rig is what is broken"
+      fails=$((fails + 1))
+    fi
+  done
+
   local u got
   for u in A D E F H; do
     [ -d "$tmp/root/claude-$me/$slug/$u" ] && got=KEPT || got=COLLECTED

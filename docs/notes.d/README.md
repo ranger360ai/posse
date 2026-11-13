@@ -23,6 +23,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-ksa79](ranger-base-ksa79.md) — grok's compat layer is a reader of claude's and cursor's MCP servers and hooks, switched off on the line (ranger-base-ksa79) — 2026-11-12
 - [ranger-base-ka66w](ranger-base-ka66w.md) — The rest of claude's own protected config members, carved read-only (ranger-base-ka66w) — 2026-11-12
 - [ranger-base-ghhgb](ranger-base-ghhgb.md) — ranger-base-ghhgb — the nudge that outlived the execve, and the signal that cannot — 2026-11-12
+- [ranger-base-bttuj](ranger-base-bttuj.md) — ranger-base-bttuj — the same dead-fixture vacuity, one arm up — 2026-11-12
 - [ranger-base-ajkqx](ranger-base-ajkqx.md) — claude's projects/, read-only in a caged seat but for its own key dir (ranger-base-ajkqx) — 2026-11-12
 - [ranger-base-9xt70](ranger-base-9xt70.md) — Four arms for distinctions four closes introduced and nobody asked about (ranger-base-9xt70) — 2026-11-12
 - [ranger-base-6ob20](ranger-base-6ob20.md) — The rest of codex's and grok's CLI-written home members, carved or private (ranger-base-6ob20) — 2026-11-12
