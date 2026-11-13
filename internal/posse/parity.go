@@ -778,21 +778,33 @@ func personaModeOwnsAll(rt *Runtime, dir, rel string) bool {
 // can answer whether the key narrowing applies to this one; `p` is that entry
 // resolved against the session dir.
 func projectConfigTrustFile(rt *Runtime, rel, p string) string {
-	if len(rt.ProjectConfigKeys) == 0 || slices.Contains(rt.ProjectConfigWholeFile, rel) {
-		if _, err := os.Stat(p); err != nil {
-			return ""
-		}
-		return projectConfigTrustMessage(rt, p, "project config is present")
-	}
-
-	// Lstat distinguishes a missing config from an existing path whose target
-	// cannot be read (including a dangling symlink). Only the former is clean.
+	// PRESENCE, for BOTH branches, is an Lstat. It distinguishes a missing
+	// config from an existing path whose target cannot be read (including a
+	// dangling symlink). Only the former is clean.
+	//
+	// It is hoisted above the branch because the whole-file branch used to
+	// ask os.Stat here, which FOLLOWS the link, and returned clean when that
+	// stat failed — so a dangling symlink at a whole-file entry read as the
+	// same "" an empty session dir gets, while the keyed branch — which
+	// already asked this Lstat, and carried this comment — degraded on
+	// exactly that shape. The branch documented as the
+	// conservative one (presence alone is the predicate) was the permissive
+	// one, in a check whose whole job is to fail closed
+	// (ranger-base-rgyto, escaped from ranger-base-2zkcy with .grok/lsp.json
+	// and widened by ranger-base-g3pfl to .claude/scheduled_tasks.json).
+	// A dangling link is PRESENT: Lstat answers for it, and the whole-file
+	// branch says so without reading anything.
 	if _, err := os.Lstat(p); err != nil {
 		if os.IsNotExist(err) {
 			return ""
 		}
 		return projectConfigTrustMessage(rt, p, "project config classification failed: unreadable: "+err.Error())
 	}
+
+	if len(rt.ProjectConfigKeys) == 0 || slices.Contains(rt.ProjectConfigWholeFile, rel) {
+		return projectConfigTrustMessage(rt, p, "project config is present")
+	}
+
 	// An existing path that is not a regular file can never be proved to be a
 	// readable top-level JSON object, and asking by reading is not free:
 	// open(2) on a FIFO with no writer never returns, so the launch used to

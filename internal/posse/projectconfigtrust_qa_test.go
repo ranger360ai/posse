@@ -494,3 +494,127 @@ func TestQAProjectConfigTrustTakesNoMembersFromARelativeHomeVariable(t *testing.
 		})
 	}
 }
+
+// ranger-base-rgyto (finding from ranger-base-h0lla's verify): the WHOLE-FILE
+// branch asks the same presence question the keyed branch asks.
+//
+// Both branches are now one hoisted os.Lstat. Before it, the whole-file
+// branch decided presence with os.Stat — which FOLLOWS the link — and
+// returned clean when that stat failed, so a DANGLING SYMLINK at a
+// whole-file entry got the same "" an empty session dir gets, while the
+// keyed branch degraded on exactly that shape (the arm above). The field is
+// documented as "presence is the predicate" and a dangling link is present:
+// Lstat answers for it without reading anything. MEASURED 2026-11-13 at the
+// commit before this one (linux 7.2.15 x86_64, go1.27.3): dangling →
+// "" CLEAN for .claude/scheduled_tasks.json and .grok/lsp.json, against
+// "unreadable" for .claude/settings.json.
+//
+// Mutation-checked at this commit (2026-11-13, linux 7.2.15, go1.27.3):
+// `os.Lstat` → `os.Stat` in projectConfigTrustFile's hoisted presence check
+// reds BOTH whole-file rows here AND the keyed arm above. That is the hoist
+// saying so — there is one presence check now, so one mutation reaches both
+// branches, and before the hoist the same mutation reddened only the keyed
+// arm while these two rows did not exist to red.
+//
+// The entries are read off the runtimes rather than spelled, and BOTH
+// whole-file entries in the tree are exercised — grok's `.grok/lsp.json` is
+// what says this is about the class (ranger-base-2zkcy, which introduced it)
+// and not about claude's cron file (ranger-base-g3pfl, which doubled it).
+func TestQAProjectConfigTrustWholeFileDanglingSymlinkIsPresent(t *testing.T) {
+	t.Parallel()
+	a := &App{Home: t.TempDir(), StateDir: t.TempDir()}
+
+	type entry struct {
+		rt  *Runtime
+		rel string
+	}
+	var entries []entry
+	for _, name := range []string{"claude", "grok"} {
+		rt, err := a.LoadRuntime(name)
+		if err != nil {
+			t.Fatalf("load %s: %v", name, err)
+		}
+		if len(rt.ProjectConfigWholeFile) == 0 {
+			t.Fatalf("%s declares no whole-file entry — the exemption this pin is about is gone", name)
+		}
+		for _, rel := range rt.ProjectConfigWholeFile {
+			entries = append(entries, entry{rt, rel})
+		}
+	}
+	if len(entries) < 2 {
+		t.Fatalf("both whole-file entries in the tree must be here, got %d", len(entries))
+	}
+
+	// plant builds a session dir holding ONE whole-file entry in the shape
+	// the row names, and returns the launch-level finding for it.
+	plant := func(t *testing.T, e entry, shape func(p string)) string {
+		t.Helper()
+		dir := t.TempDir()
+		p := filepath.Join(dir, filepath.FromSlash(e.rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if shape != nil {
+			shape(p)
+		}
+		return projectConfigVerdict(t, ProjectConfigTrust(e.rt, nil, dir))
+	}
+
+	const present = "project config is present"
+	for _, e := range entries {
+		t.Run(e.rt.Name+"-"+strings.ReplaceAll(e.rel, "/", "-"), func(t *testing.T) {
+			// THE ROW THIS PIN EXISTS FOR.
+			got := plant(t, e, func(p string) {
+				if err := os.Symlink(filepath.Join(filepath.Dir(p), "no-such-target.json"), p); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := os.Lstat(p); err != nil {
+					t.Fatalf("fixture is not a symlink: %v", err)
+				}
+				if _, err := os.Stat(p); err == nil {
+					t.Fatal("fixture symlink is not dangling")
+				}
+			})
+			if got != present {
+				t.Errorf("a dangling %s must be present, not clean: %q", e.rel, got)
+			}
+
+			// The control: with nothing planted the same dir is clean, so
+			// the row above is measuring the link and not the dir.
+			if got := plant(t, e, nil); got != "" {
+				t.Errorf("a dir with no %s is clean: %q", e.rel, got)
+			}
+
+			// And the shapes that already degraded still do, by the same
+			// finding — the fix moved one row of the table, not the branch.
+			for _, tc := range []struct {
+				name  string
+				shape func(p string)
+			}{
+				{"symlink-to-a-body", func(p string) {
+					target := filepath.Join(filepath.Dir(p), "elsewhere.json")
+					if err := os.WriteFile(target, []byte(`{}`), 0o644); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(target, p); err != nil {
+						t.Fatal(err)
+					}
+				}},
+				{"directory", func(p string) {
+					if err := os.MkdirAll(p, 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}},
+				{"regular-file", func(p string) {
+					if err := os.WriteFile(p, []byte(`{"anything":{}}`), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}},
+			} {
+				if got := plant(t, e, tc.shape); got != present {
+					t.Errorf("%s as a %s must be present: %q", e.rel, tc.name, got)
+				}
+			}
+		})
+	}
+}
