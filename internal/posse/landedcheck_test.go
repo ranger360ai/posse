@@ -245,9 +245,22 @@ func TestEveryVerdictLinePrintsItsWall(t *testing.T) {
 			if !strings.Contains(s, tc.want) {
 				t.Fatalf("the %s arm printed no verdict line (want one naming %q):\n%s", tc.name, tc.want, s)
 			}
-			if !landedWallSaid.MatchString(s) {
-				t.Errorf("the %s verdict line carries no wall, so D6.2's %s ceiling cannot be read off it — and reading these lines is the only reader that ceiling has, now that nothing kills on it:\n%s",
-					tc.name, landedCheckCeiling, s)
+			// The wall is matched against the verdict LINE and not the
+			// whole buffer, which is what this pin's name claims and what
+			// D6.2 says (ranger-base-mdku2). Against the buffer, a wall
+			// moved onto a line of its own — or any other number shaped
+			// like one, anywhere in the output — keeps the pin green while
+			// the verdict line it names carries nothing.
+			line := tc.want
+			for _, l := range strings.Split(s, "\n") {
+				if strings.Contains(l, tc.want) {
+					line = l
+					break
+				}
+			}
+			if !landedWallSaid.MatchString(line) {
+				t.Errorf("the %s verdict line carries no wall, so D6.2's %s ceiling cannot be read off it — and reading these lines is the only reader that ceiling has, now that nothing kills on it:\n%s\nwhole output:\n%s",
+					tc.name, landedCheckCeiling, line, s)
 			}
 		})
 	}
