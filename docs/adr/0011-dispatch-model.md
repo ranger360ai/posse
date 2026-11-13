@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · amended 2026-11-13 (§4 a PID's label order is the second routing key: its first label is its lane — ranger-base-svoux) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -152,7 +152,30 @@ anywhere in its matching set, not only first. The route report's roster
 ("first of N") and the lane-busy line are that lane, because they are the
 hiring signal: lane concurrency is seat count. So `route_order:` decides the
 whole lane, not only its head; an instance that wants a `[code, security]`
-bead in the security lane says so with the key. A bead carries the labels of
+bead in the security lane says so with the key.
+
+**A PID's label order is the second key** (ranger-base-svoux, 2026-11-13).
+A PID lists its PRIMARY lane first; the rest are its aliases and the
+cross-cutting labels it also answers to. Two keys therefore decide a lane,
+both written by a human in a reviewed file: `route_order:` decides WHO heads
+the candidates, and the head's own label order decides WHICH of its labels
+is the lane. A follower's order decides nothing — it is a seat wherever it
+carries the winning label. The stated consequence: a PID that lists a
+cross-cutting label first makes that label its lane, and every PID carrying
+it a seat — `[team, code, …]` heading a `[code, team]` bead, where `team` is
+a label five lanes share, seats a findings-only PID that carries `team`
+instead of the second code seat. That
+is a configuration error and its remedy is the order, not code; no static
+rule can refuse it, because a cross-cutting label and a legitimately shared
+lane label (`ops` is business-manager's fifth label and the ops PID's
+first) are spelled alike, and only the author knows which one they meant.
+It shows at run time in the route report's `label:` and roster. MEASURED
+2026-11-13 on the instance this was decided in: 20 of 20 PIDs (9 shipped
+examples, 11 instance) already list their lane label first, and over 3,694
+beads this rule and the alphabetical alternative below seat identical sets.
+If the error is ever observed in a route report, the exit hatch is an
+explicit `lane:` PID key defaulting to the first label — the same dial,
+named. A bead carries the labels of
 all the work it touches, so it is NOT a lane. The union of every overlapping
 persona read a code deliverable labelled `[code, debt, security,
 vuln-private]` as one lane holding a findings-only PID, which was seated
@@ -364,6 +387,21 @@ Sequencing and future tense below describe the original build; current lifecycle
   coordinator follows, and the class analysis predicts new pairwise
   incidents at a steady rate. The fix is three small beads, not a
   rewrite.
+- **The lane's winning label from the bead's label order** (§4,
+  ranger-base-svoux). It reads as "the filer decides", which is the
+  attractive part, and it is not that: bd stores a bead's labels sorted
+  (MEASURED 2026-11-13: 689 of 689 multi-label beads alphabetical, and two
+  typed in the other order read back sorted), so routing never sees a
+  filer's order. What it really means is "the alphabetically first of the
+  head's matched labels" — an input nobody chose and no instance can dial.
+  It gives the wanted lane on every characterized arm only because `code`
+  sorts early. Rejected for failing the very criterion that made the PID
+  order look wrong, with less recourse.
+- **An explicit `lane:` PID key now** (§4). The clever one: it removes the
+  question of whether order means anything. But 20 of 20 PIDs already put
+  the lane first, so it would default to `labels[0]` and change no route
+  while adding a key every PID can contradict its own labels with. Kept as
+  §4's exit hatch, for the day a route report shows the misordering.
 
 ## Appendix A — historical prior-art review (2026-08-21; implementation snapshots are not current status)
 
