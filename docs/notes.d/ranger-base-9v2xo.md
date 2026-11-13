@@ -22,7 +22,7 @@ no real credential was read:
 
 | reader | target | result |
 |---|---|---|
-| uncaged, same uid, live target | `/proc/<pid>/root/etc/hostname` | reads `stacarchy` |
+| uncaged, same uid, live target | `/proc/<pid>/root/etc/hostname` | reads the host's name |
 | uncaged | `/proc/1/root/...` | `Permission denied` (pid 1 is root's) |
 | inside `--ro-bind / / --unshare-user --tmpfs <dir>` | `<dir>/fixture_key` | `No such file or directory` (the tmpfs) |
 | same seat | `/proc/<the host shell's pid>/root<dir>/fixture_key` | `Permission denied` |
