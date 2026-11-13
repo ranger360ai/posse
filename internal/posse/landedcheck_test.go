@@ -253,6 +253,19 @@ func TestEveryVerdictLinePrintsItsWall(t *testing.T) {
 	}
 }
 
+// D6.1 and D6.2 as a RELATION, which is the part of the amendment neither
+// number can say on its own: the kill has to sit ABOVE the price. An
+// answered run is the only reader the ceiling has, so a limit at or under it
+// means every crossing is spelled as silence again — the 2026-11-12 defect
+// exactly, with new numbers in it.
+func TestTheHangBoundSitsAboveThePrice(t *testing.T) {
+	t.Parallel()
+	if landedCheckLimit <= landedCheckCeiling {
+		t.Errorf("landedCheckLimit is %s and landedCheckCeiling is %s — a kill at or under the price can only ever report a crossing as silence (ADR 0088 D6.1/D6.2)",
+			landedCheckLimit, landedCheckCeiling)
+	}
+}
+
 // DONE-WHEN (1): runs coalesce to the NEWEST tip. Two landings arrive while
 // one check is in flight; when it ends, exactly one more run happens and it
 // judges the newest tip — not the one that was current when the landing was
