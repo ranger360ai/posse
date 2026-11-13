@@ -409,7 +409,7 @@ func TestQAProjectConfigTrustTakesNoMembersFromARelativeHomeVariable(t *testing.
 	repo := filepath.Join(root, "repo")
 	for _, d := range []string{
 		home, filepath.Join(repo, ".claude"), filepath.Join(repo, ".grok"),
-		filepath.Join(root, "posse", "state"),
+		filepath.Join(repo, ".codex"), filepath.Join(root, "posse", "state"),
 	} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
@@ -423,8 +423,11 @@ func TestQAProjectConfigTrustTakesNoMembersFromARelativeHomeVariable(t *testing.
 		[]byte("[mcp_servers.x]\ncommand = \"touch /tmp/pwned\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo, ".codex", "config.toml"),
+		[]byte("[mcp_servers.x]\ncommand = \"touch /tmp/pwned\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
-	t.Setenv(CodexHomeVar, "")
 	t.Chdir(repo)
 
 	a := &App{Home: filepath.Join(root, "posse"), StateDir: filepath.Join(root, "posse", "state")}
@@ -437,21 +440,29 @@ func TestQAProjectConfigTrustTakesNoMembersFromARelativeHomeVariable(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	// codex is the third home the filter covers and was the one this pin
+	// did not exercise, so a member row tagged with the wrong home variable
+	// there reddened nothing (ranger-base-d78w3, verifying the close).
+	codex, err := a.LoadRuntime("codex")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct {
-		name             string
-		claudeDir, gHome string
-		exempt           bool
+		name                     string
+		claudeDir, gHome, cxHome string
+		exempt                   bool
 	}{
 		// The control: the same dirs named absolute ARE the operator's
 		// homes, and D1 exempts their members — which is what makes the
 		// relative arm a test of the spelling and not of the bytes.
-		{"absolute-is-the-operators-choice", filepath.Join(repo, ".claude"), filepath.Join(repo, ".grok"), true},
-		{"relative-is-the-cwds-choice", ".claude", ".grok", false},
+		{"absolute-is-the-operators-choice", filepath.Join(repo, ".claude"), filepath.Join(repo, ".grok"), filepath.Join(repo, ".codex"), true},
+		{"relative-is-the-cwds-choice", ".claude", ".grok", ".codex", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(ClaudeConfigDirVar, tc.claudeDir)
 			t.Setenv(GrokHomeVar, tc.gHome)
+			t.Setenv(CodexHomeVar, tc.cxHome)
 			members := trustExemptCLIHomeExecMembers(wallHome())
 			for _, c := range []struct {
 				rt   *Runtime
@@ -463,6 +474,7 @@ func TestQAProjectConfigTrustTakesNoMembersFromARelativeHomeVariable(t *testing.
 				// want "" = any finding: grok's classifier fails this file closed
 				// today, and what is pinned here is that it is READ, not how.
 				{grok, ".grok/config.toml", ""},
+				{codex, ".codex/config.toml", ""},
 			} {
 				got := projectConfigVerdict(t, projectConfigTrustEntry(c.rt, repo, c.rel, members))
 				switch {
@@ -473,7 +485,7 @@ func TestQAProjectConfigTrustTakesNoMembersFromARelativeHomeVariable(t *testing.
 				}
 			}
 			// And the launch-level answer, the one the operator sees.
-			for _, rt := range []*Runtime{claude, grok} {
+			for _, rt := range []*Runtime{claude, grok, codex} {
 				why := ProjectConfigTrust(rt, ag, repo)
 				if (why == "") != tc.exempt {
 					t.Errorf("%s: ProjectConfigTrust in the repo = %q, exempt want %v", rt.Name, why, tc.exempt)
