@@ -506,12 +506,32 @@ verify-python-syntax:
 # never against the real /tmp, plus a second rig for finding 4's fix -- a
 # `claude -p` run must not inflate the blindness control's process count,
 # since it never writes a registry file and this repo's own suite runs live
-# `claude -p` pins. 23-35s over 16 runs on linux (MEASURED 2026-11-13,
-# ranger-base-0whbv): three short-lived `sleep` holders for the table, and two
+# `claude -p` pins: three short-lived `sleep` holders for the table, and two
 # cold execs of a copied tee(1) under a name ending in "claude" for finding 4
 # -- tee and not sleep because `sleep -p` is an invalid option and the arm was
 # reading an exclusion over a process that had already exited
 # (ranger-base-bttuj).
+#
+# 7.3-7.5s over three warm runs on linux at a one-minute load average of 4.7
+# (MEASURED 2026-11-13, ranger-base-hxenz). Before that bead it was 23-35s
+# over 16 runs (MEASURED 2026-11-13, ranger-base-0whbv) and 23.8-43.9s over
+# the 4 interleaved before/after pairs that priced the cut -- the costliest
+# `make test` prerequisite either way; `make register-check` is the biggest
+# door now and nothing here is narrower than it was. WHERE THE TIME WENT:
+# the rig runs scripts/reap-test-tmp.sh seven more times -- four sweeps and
+# three censuses -- and each of those paid three box-wide per-pid fork loops
+# (a `readlink` per cwd, exe and open fd; two `tr`s per pid; a `stat` and a
+# subshell per pid for the blindness control). ~2,300 forks over this box's
+# 384 processes, 2.6-3.9s per invocation, against 0.21-0.27s for the same
+# three loops spelled with one `find -printf '%l'`, one `stat` and bash's own
+# `read -d ''` (MEASURED over 5 interleaved pairs; set-equality and the
+# fail-safe direction are argued at each of the three sites in that script).
+# WHAT IS LEFT is six `sleep 1` settles in the rig itself -- about 6s of the
+# 7.3 -- each one a fixture becoming visible in /proc before the arm that
+# reads it runs. Those are deliberate and their fail-safe direction is
+# defended in the script; a bounded poll on each arm's own precondition would
+# cut them, and that is the next thing to do here if this door ever matters
+# again.
 #
 # FINDING 4'S TWO ARMS GRADE MEMBERSHIP, NOT A COUNT (ranger-base-0wvu6): is
 # the pid this rig planted in the pid list the counter reports from the same
@@ -1019,10 +1039,18 @@ corpus-check:
 # the drift arm copies the working tree), so they are in the class they
 # derive; the two that only read the Makefile are the one declared exemption
 # from that, listed in treewidedoor_qa_test.go's twdDoorHolders. Their own
-# door, not folded into corpus-check, because of what they cost: ~20s, nearly
-# all of it the drift arm running four of the doors above for real against a
-# scratch copy of the tree. That number should be visible on its own line
-# rather than buried in someone else's door.
+# door, not folded into corpus-check, because of what they cost: 22.7-33.7s
+# over three warm runs at a one-minute load average of 4.7-5.5 (MEASURED
+# 2026-11-13, ranger-base-hxenz; the comment said ~20s), nearly all of it the
+# drift arm running four of the doors above for real against a scratch copy
+# of the tree. That number should be visible on its own line rather than
+# buried in someone else's door. It is the costliest `make test` prerequisite
+# now that verify-reap-test-tmp is 7.3-7.5s, which makes it the next thing the
+# landed-check judge pays for. The answer there is to make THIS door cheaper,
+# never to drop it from the judge: ADR 0088's 7idk4 amendment rejects
+# alternative (b) -- "narrow the body: drop register-check and
+# verify-reap-test-tmp from the judge" -- because that undoes D6's derivation,
+# the one property that covers tomorrow's door.
 register-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_REGISTER_PINS))$$'
 

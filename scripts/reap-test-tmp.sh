@@ -1044,14 +1044,45 @@ fi
 # Everything is folded to the one top-level entry under a root that would
 # contain it, because the candidate set is -maxdepth 1 under those roots: a
 # ref anywhere inside /tmp/tmp.ABCDEFGHIJ/r/.git holds /tmp/tmp.ABCDEFGHIJ.
+#
+# ONE FORK FOR EVERY SYMLINK ON THE BOX, AND NONE FOR THE environ/cmdline
+# READS (ranger-base-hxenz). This loop used to fork `readlink` once per cwd,
+# once per exe and once per open fd, and `tr` twice per pid — about 2,300
+# forks over this box's 384 processes. MEASURED 2026-11-13, linux, quiet box
+# (load 0.65): 1.492s per invocation of this script, of which 1.134s was the
+# readlinks and 0.374s the `tr`s. `--self-test` runs this script seven more
+# times (four sweeps and three censuses), which is what made
+# `verify-reap-test-tmp` the costliest `make test` prerequisite at 23-35s.
+#
+#   readlinks → one `find -printf '%l'` over every /proc/<pid>/{cwd,exe,fd}
+#     at once: 1.134s → 0.015s. `%l` reads the link, it does not resolve it,
+#     which is `readlink`'s contract too — a dangling cwd and a `socket:[N]`
+#     fd come back spelled the same way. `-P` is find's default, so the three
+#     starting points that ARE symlinks are reported, not followed.
+#   environ/cmdline → bash's own NUL-delimited `read -d ''`: 0.374s → 0.047s.
+#     The trailing token is printed after the loop as well, because a cmdline
+#     that does not end in NUL (a process that rewrote its own argv) leaves
+#     its LAST token in $tok with `read` returning 1 — and `tr` would have
+#     emitted that token, so dropping it would lose a ref, which is the one
+#     direction this scan may not move in.
+#
+# Set-equality was MEASURED over 5 interleaved pairs of each shape on
+# 2026-11-13: every difference was process churn or the observing shape's own
+# footprint (find's exe, and the /proc/<pid>/fd dirs find holds open while it
+# walks them). find's footprint is larger than the loop's and names nothing
+# under a candidate root, so it can only hold a dir, never free one.
 rawrefs=$(
-  for pid in /proc/[0-9]*; do
-    tr '\0' '\n' < "$pid/environ" 2>/dev/null
-    tr '\0' '\n' < "$pid/cmdline" 2>/dev/null
-    readlink "$pid/cwd" 2>/dev/null
-    readlink "$pid/exe" 2>/dev/null
-    for fd in "$pid"/fd/*; do readlink "$fd" 2>/dev/null; done
-  done 2>/dev/null | grep -oE '/[^[:space:]:,="'"'"']+' | sort -u
+  {
+    for pid in /proc/[0-9]*; do
+      for f in environ cmdline; do
+        tok=
+        while IFS= read -r -d '' tok; do printf '%s\n' "$tok"; tok=; done < "$pid/$f"
+        [ -n "$tok" ] && printf '%s\n' "$tok"
+      done
+    done 2>/dev/null
+    find /proc/[0-9]*/cwd /proc/[0-9]*/exe /proc/[0-9]*/fd \
+      -maxdepth 1 -type l -printf '%l\n' 2>/dev/null
+  } | grep -oE '/[^[:space:]:,="'"'"']+' | sort -u
 ) || true
 
 # ONE DIR, SIX FILES INSIDE IT (ranger-base-u1z89). These were six bare
@@ -1107,13 +1138,35 @@ fold_refs 1 "$held"
 fold_refs 3 "$held3"
 
 # ─── the blindness control ──────────────────────────────────────────────────
+# ONE `stat` FOR THE WHOLE TABLE AND NO SUBSHELL PER PID (ranger-base-hxenz).
+# This was a `stat -c %u` fork and a `(exec 3< …)` subshell fork per process:
+# 0.411s per invocation MEASURED 2026-11-13 on this box's 384 processes,
+# against 0.007s for the shape below, same two answers.
+#
+# THE GLOB IS EXPANDED HERE AND NOT INSIDE THE COMMAND SUBSTITUTION, which is
+# the whole reason for the array. Expanded by the `$( )` subshell it would
+# also match that subshell's own pid — a same-uid process that did not exist
+# when this line was reached — and `others` would read one high. The number
+# this prints is the one a reader is asked to trust when the refusal below
+# fires, so it may not count the counter.
+#
+# The readability probe still OPENS the file rather than testing `-r`: a
+# same-uid environ can be mode-readable and still denied by ptrace_may_access,
+# and an open is the only thing that asks the question the refusal is about.
+# It is `{ true; } 3< …` and not `(exec 3< …)` because a compound command's
+# redirection failure is not fatal and needs no fork; `2>/dev/null` comes
+# FIRST because redirections are applied left to right and the diagnostic is
+# emitted while the failing one is being set up.
 me=$(id -u) others=0 readable=0
-for pid in /proc/[0-9]*; do
+procdirs=(/proc/[0-9]*)
+uidlines=$(stat -c '%n %u' -- "${procdirs[@]}" 2>/dev/null) || true
+while read -r pid uid; do
+  [ -n "$pid" ] || continue
   [ "$pid" = "/proc/$$" ] && continue
-  [ "$(stat -c %u "$pid" 2>/dev/null)" = "$me" ] || continue
+  [ "$uid" = "$me" ] || continue
   others=$((others + 1))
-  if (exec 3< "$pid/environ") 2>/dev/null; then readable=$((readable + 1)); fi
-done
+  if { true; } 2>/dev/null 3< "$pid/environ"; then readable=$((readable + 1)); fi
+done <<< "$uidlines"
 held_n=$(grep -c . < "$held" || true)
 echo "same-uid processes: $others   environs readable: $readable   candidates a live process names: $held_n"
 if [ "$held_n" -gt 0 ] && [ "$quiet" -eq 0 ]; then sed 's/^/  HELD /' < "$held"; fi
@@ -1188,17 +1241,29 @@ claude_could_register() {  # claude_could_register <pid-dir, e.g. /proc/1234>
 # 2026-11-11 and again on 2026-11-12, both times over an unrelated claude
 # process that arrived mid-rig). The list is derived in the same loop as the
 # count, so the two cannot disagree.
+#
+# ONE `find` FOR EVERY exe LINK ON THE BOX (ranger-base-hxenz), where this was
+# a `readlink` fork per process: 0.384s per invocation against 0.007s,
+# MEASURED 2026-11-13 over 384 processes, with the counted pid lists
+# byte-identical. The pid comes back as `%p` — /proc/<pid>/exe — so it is
+# still derived from the same entry the link was read from, and the count and
+# the list are still produced by this one loop, which is what
+# ranger-base-0wvu6 made them for. `read -r exelink exetarget` gives the REST
+# of the line to $exetarget, so an exe target with a space in it
+# (`… (deleted)`) is read whole and still fails the `*/claude` match, which is
+# what `readlink` did with it too.
 claude_blind=0 claude_live=0 claude_procs=0 claude_counted=""
-for pid in /proc/[0-9]*; do
-  case "$(readlink "$pid/exe" 2>/dev/null)" in
+while read -r exelink exetarget; do
+  case "$exetarget" in
     */claude)
+      pid=${exelink%/exe}
       if claude_could_register "$pid"; then
         claude_procs=$((claude_procs + 1))
         claude_counted="$claude_counted ${pid#/proc/}"
       fi
       ;;
   esac
-done
+done < <(find /proc/[0-9]*/exe -maxdepth 0 -type l -printf '%p %l\n' 2>/dev/null)
 : > "$livedirs"
 if [ -d "$claude_sessions" ]; then
   for f in "$claude_sessions"/*.json; do
