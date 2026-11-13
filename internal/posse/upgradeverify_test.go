@@ -25,7 +25,9 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -49,6 +51,15 @@ type fakePosse struct {
 type fakeGates struct{ Exit, Red int }
 
 // bytes marshals a fake binary to the file the probe will read.
+//
+// The GATES rows go out in sorted persona order, and that is load-bearing
+// rather than tidy: every rollback pin writes the fixture with one call and
+// then asserts on a SECOND call's output (rolledBack compares the live file
+// to f.now.bytes()), so a map-ranged marshaller makes the two disagree
+// whenever Go hands them different orders. MEASURED 2026-11-13 at 2dc8dd75:
+// the one pin with two personas in Gates red 7 of 20 runs, with BOTH orders
+// among the failures — the tell that neither order was wrong and the
+// marshaller simply was not a function of its receiver (ranger-base-fpny6).
 func (f fakePosse) bytes() []byte {
 	var b strings.Builder
 	if f.Broken {
@@ -58,7 +69,8 @@ func (f fakePosse) bytes() []byte {
 	for _, c := range f.Conds {
 		fmt.Fprintf(&b, "COND %s\t%s\t%s\t%s\n", c.Class, c.ID, c.Key, c.Detail)
 	}
-	for p, g := range f.Gates {
+	for _, p := range slices.Sorted(maps.Keys(f.Gates)) {
+		g := f.Gates[p]
 		fmt.Fprintf(&b, "GATES %s %d %d\n", p, g.Exit, g.Red)
 	}
 	return []byte(b.String())
@@ -95,6 +107,29 @@ func readFakePosse(path string) (fakePosse, error) {
 		}
 	}
 	return f, nil
+}
+
+// The fixture's own marshaller is pinned, because every rollback pin in this
+// file compares bytes written by one call to bytes rendered by another, and a
+// disagreement between them reds as "the rollback did not restore the binary"
+// — a message that sends the next reader into upgradeRollback, which is not
+// where the fault was (ranger-base-fpny6). Two personas is the smallest fixture
+// that can expose it; the loop is what makes a map range fail here reliably
+// rather than one run in three.
+func TestFakePosseBytesIsAFunctionOfItsReceiver(t *testing.T) {
+	t.Parallel()
+	f := fakePosse{Stamp: "aaaaaaa", Gates: map[string]fakeGates{
+		"dev": {Red: 1}, "ops": {Exit: 1, Red: 2}, "sec": {}, "qa": {Red: 3},
+	}}
+	want := f.bytes()
+	for i := 0; i < 200; i++ {
+		if got := f.bytes(); !bytes.Equal(got, want) {
+			t.Fatalf("two renderings of one fixture differ on call %d:\n  %q\n  %q", i, want, got)
+		}
+	}
+	if !strings.Contains(string(want), "GATES dev 0 1\nGATES ops 1 2\n") {
+		t.Errorf("the GATES rows are not in sorted persona order:\n%s", want)
+	}
 }
 
 // stubUpgradeProbe makes every `posse <verb>` this package would exec answer
