@@ -271,12 +271,21 @@ type sfHit struct {
 	role       string // "verdict" (a violation), "message", "fixture", "heredoc"
 }
 
-// sfWalk walks l[from:to] the way the shell lexes it and answers two things
+// sfWalk walks l[from:to] the way the shell lexes it and answers three things
 // about the position `to`: the quote context still OPEN there (0 for none),
-// and whether an unquoted, top-level `;`, `|` or `&` was crossed on the way.
-// Both callers below read one of the two, and they share this walk because the
-// state machine is the hard part: quoting, `$( … )` and backtick nesting, and
-// the fact that a separator or a `(` inside a quoted string is neither.
+// whether an unquoted, top-level `;`, `|` or `&` was crossed on the way, and
+// how many `$( … )`, backtick and `( … )` frames are still open around it.
+// Each caller reads one or two of the three, and they share this walk because
+// the state machine is the hard part: quoting, `$( … )` and backtick nesting,
+// and the fact that a separator or a `(` inside a quoted string is neither.
+//
+// THE DEPTH IS THE THIRD ANSWER, added by ranger-base-wzo36 for
+// trapstatepick_qa_test.go, whose whole subject is whether a call sits inside
+// a subshell: a `$( … )`, a backtick and a `( … )` are three spellings of
+// "the assignments made in here die with it", and this walk already told them
+// apart to know that a `(` inside quotes is not one. It is the SAME frame
+// count the quote stack below is keyed on, so a repair to the nesting reaches
+// both readers and they cannot come to disagree about what a subshell is.
 //
 // A `$( … )` or a backtick RESETS the quote context, because what is inside it
 // is a command again — that nesting is the shape every legitimate message fork
@@ -286,7 +295,7 @@ type sfHit struct {
 //	x="a `grep -q y $f` b"
 //
 // runs a real grep, and blinding on the enclosing quotes alone would hide it.
-func sfWalk(l string, from, to int) (quote byte, sawSep bool) {
+func sfWalk(l string, from, to int) (quote byte, sawSep bool, subshell int) {
 	if to > len(l) {
 		to = len(l)
 	}
@@ -335,7 +344,7 @@ func sfWalk(l string, from, to int) (quote byte, sawSep bool) {
 			sawSep = true
 		}
 	}
-	return quote, sawSep
+	return quote, sawSep, depth
 }
 
 // sfMessageReaches reports whether a matcher whose match ends at `to` is still
@@ -350,7 +359,7 @@ func sfWalk(l string, from, to int) (quote byte, sawSep bool) {
 // message for all five helpers, and the same hole was inherited by every
 // `bad … \` continuation line.
 func sfMessageReaches(l string, from, to int) bool {
-	_, sawSep := sfWalk(l, from, to)
+	_, sawSep, _ := sfWalk(l, from, to)
 	return !sawSep
 }
 
@@ -371,7 +380,7 @@ func sfMessageReaches(l string, from, to int) bool {
 // next reader to route around the scan, and this scan has exactly one route
 // (see THE SUBJECT READER above) that is meant to be taken on purpose.
 func sfIsText(l string, at int) bool {
-	quote, _ := sfWalk(l, 0, at)
+	quote, _, _ := sfWalk(l, 0, at)
 	return quote != 0
 }
 

@@ -1153,6 +1153,28 @@ package treepins
 // (MEASURED 2026-11-12, ranger-base-u1z89, one warm filtered run) — the file
 // arm reads the same files the root arm already parsed.
 //
+// and one more into scripts-check's door, for that same sentence — a census
+// over scripts/, with a file set the walk discovers (ranger-base-wzo36). In a
+// script that registers an EXIT trap, the variable that trap READS is
+// assigned in the shell that registered it: the function that assigns one is
+// never called from inside a `$( … )`, a backtick, a `( … )`, a pipeline
+// component or a background job, and never from another function only reached
+// that way. The subject is the REACHABILITY of a setter rather than a line,
+// which is why the rule is transitive and why prose did not hold it — at
+// 197ea0b8^ the pick sat at the top of `q`'s body at no depth at all, and it
+// was `q` whose every caller was a command substitution, one leaked copy of a
+// 69M beads db per QUERY with five doors green over it:
+//
+//	TestQAEveryTrapStateSetterRunsInTheTrapsOwnShell
+//	                                              make scripts-check
+//	                                              (ranger-base-wzo36)
+//
+// Its control arm (TestQATheTrapStateReaderCanStillSayNo) runs the reader
+// over fixtures planted under t.TempDir() — the 197ea0b8^ shape among them,
+// which is that bead's own done-when — and so is not in this class, the same
+// way the mktemp one above is not. 0.13s for the census and 0.00s for the
+// control (MEASURED 2026-11-13, one warm filtered run).
+//
 // and one more into corpus-check's door — the same rule as the row above, in
 // the two languages that pin could not read, and the fourth hand census of
 // this family is what it is for (ranger-base-qbg7c). Every live
@@ -1174,7 +1196,7 @@ package treepins
 // the mktemp one above is not. 0.30s for the census, which is the cost of
 // parsing 1026 .go files, and 0.00s for the control (MEASURED 2026-11-12).
 //
-// and `make tree-check` is all of them — one hundred and forty-three pins
+// and `make tree-check` is all of them — one hundred and forty-four pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

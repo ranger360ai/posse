@@ -759,7 +759,7 @@ QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ADR_PINS       := TestADRRecordsNameTheLivePackageDirectory|TestADRSweptRecordsStillCiteTheLiveDirectory|TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
 QA_CORPUS_PINS    := TestQAEveryPlantingPackageHasAColdexecArm|TestQAColdexecArmRegisterIsNotStale|TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders|TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable|TestQANoGoSourceWritesABinBashShebang|TestQAEveryShippedScriptThatHashesPicksItsHasherByProbe|TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates|TestQANoFixtureGitChildCallsAVerbTheShimRefusesOutright|TestCredTokenRevealIsCalledOnlyFromTheRegister|TestCredTokenRevealIsTheOnlyMethodOfThatName|TestQAEveryTempRootInTheTreeIsInPossesTempNamespace
 QA_REGISTER_PINS  := TestTreePinsRunFromModuleRoot|TestQAEveryTreeWidePinHasADoor|TestQAEveryTreePathHandedThroughAParameterIsDerived|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles|TestQATheClimbFenceStillHasItsBareRootJoinHole
-QA_SCRIPTS_PINS   := TestQANoEntryPointRunsGoTestOnTheDefaultTimeout|TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt|TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered|TestQAEveryMktempFileInTheShippedShellIsRosteredOrExempt
+QA_SCRIPTS_PINS   := TestQANoEntryPointRunsGoTestOnTheDefaultTimeout|TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt|TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered|TestQAEveryMktempFileInTheShippedShellIsRosteredOrExempt|TestQAEveryTrapStateSetterRunsInTheTrapsOwnShell
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
 
 # The crew-name trio, one door between them because they are one question —
@@ -1090,6 +1090,24 @@ register-check:
 # (ranger-base-m0j9n, -i78k9, -tbukc): each renamed the roots it found, none
 # left anything that asserts the property, and tbukc's five carried a template
 # that matched no class at all, so a leaked one was never collected.
+#
+# The sixth pin is that one's own second arm (ranger-base-u1z89): a `mktemp`
+# with NO `-d` makes a FILE, every candidate walk in reap-test-tmp.sh is
+# `-type d`, and a leaked scratch file is therefore outside all nine classes.
+# It arrived with its sibling and shares its reader, which is why it had no
+# paragraph here until this one was written.
+#
+# The seventh pin is the trap-state census (ranger-base-wzo36): in a script
+# under scripts/ that registers an EXIT trap, the variable that trap READS is
+# assigned in the shell that registered it -- so a function that assigns one
+# is never called from inside a `$( … )`, a backtick, a `( … )`, a pipeline
+# component or a background job, and never from another function that is only
+# reached that way. Its subject is the REACHABILITY of a setter and not a
+# line: at 197ea0b8^ `pick_reader` was called at the top of `q`'s body, at no
+# depth at all, and it was `q` whose every caller was a command substitution
+# -- one leaked copy of a 69M beads db per QUERY (ranger-base-m3fl5) with
+# verify-shell-syntax, verify-bd-dep-safety, verify-bd-no-relate-pairs,
+# prune-bd-relates-to and tree-check all green over it.
 scripts-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_SCRIPTS_PINS))$$'
 
