@@ -1,6 +1,9 @@
 # ADR 0092 — `make install` is delegated to one persona, through a verb of the binary already installed, and only for a commit already on origin/main
 
-*Status: proposed 2026-11-13 (ranger-base-whnge, from ranger-base-wi08c, on the
+*Status: accepted 2026-11-13 — the operator approved it as written that day
+("ADR 0092 APPROVED as written. Build it.", relayed on ranger-base-whnge;
+marked under ranger-base-estjw, which also amends D6's gate field below) ·
+proposed 2026-11-13 (ranger-base-whnge, from ranger-base-wi08c, on the
 operator's ruling of 2026-11-13) · owner: architect · amends ADR 0015 §1 (the
 mechanism repo's row: "install is human-run and persona-denied") and the
 coordinator PID's "three keys" (promotions) · nothing here is live until the
@@ -125,7 +128,31 @@ the operator.
 
 **D6 — Guardrail 4 is the delegate's, and the verb hands it the line.** The
 verb's last stdout line is
-`upgraded <old>..<new> (<n> commits) · gate <fresh|installed|unchanged> · rollback: <D4 command>`.
+`upgraded <old>..<new> (<n> commits) · gate <word> · rollback: <D4 command>`.
+
+*The gate word (amended at acceptance, ranger-base-estjw).* As drafted, D6
+said `fresh|installed|unchanged`, the D5 build bead said
+`fresh|installed|unchanged|refused`, and the D1-D3 build shipped
+`fresh|stale|unknown`, because D5's arm was not built yet. Three vocabularies
+for one field. `fresh` and `unchanged` both meant "the installed copy already
+matched". The decided set, once D5 lands, is four words, one per outcome of
+the arm:
+
+- `unchanged`: the installed copy was already byte-identical to `<sha>`'s.
+  Nothing was written, and the behaviour arms were green.
+- `installed`: both files were swapped by rename, and the behaviour arms were
+  green.
+- `refused`: the arm wrote nothing because the hook path did not resolve or
+  had moved (a settings edit, the operator's), or the arm wrote and a
+  behaviour arm went red, so both `.prev` copies are back. The binary arm's
+  outcome is not affected either way.
+- `unknown`: `verify-gate-freshness` measured nothing (its exit 2).
+
+`fresh` and `stale` are the verify-only words of the build that came before
+D5. D5 retires them: `fresh` becomes `unchanged`, and `stale` becomes
+`installed` or `refused`. Nothing parses this line. The delegate posts it on
+the bead and a human reads it, so the retirement costs no reader.
+
 For every install, the delegate posts that line on the install bead, and files
 one `-l security` bead for the security persona. That bead names the range and
 every bead id in it that carries `security` or `vuln-private`, by id only
@@ -141,6 +168,10 @@ draft sits in the instance tree's `docs/drafts/`, named on ranger-base-whnge. It
 holds the PID's prose, the config key, and the coordinator PID's
 three-keys sentence. The operator promotes it after D1–D5 land, and not before:
 a PID that names a verb not yet installed is a promise the wall cannot keep.
+At acceptance one more gate was added before the promote: the security
+persona's review of the verb as built, which reads it as a whole rather than
+close by close. The verb replaces the binary that fences every seat, so it gets
+that whole read before a seat is allowed to run it.
 
 ## Consequences
 
