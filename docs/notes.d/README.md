@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-0whbv](ranger-base-0whbv.md) — ranger-base-0whbv — a green rerun is not a verification of a flake — 2026-11-13
 - [ranger-base-zby5f](ranger-base-zby5f.md) — Two reds from one landing: a dependency no distro has, and a landmark that moved (ranger-base-zby5f) — 2026-11-12
 - [ranger-base-x2blo](ranger-base-x2blo.md) — The reaper's probe created the inode it was asked to find (ranger-base-x2blo) — 2026-11-12
 - [ranger-base-w8n6w](ranger-base-w8n6w.md) — A scratch root under scripts/ names a namespace the reaper has a class for (ranger-base-w8n6w) — 2026-11-12

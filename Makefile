@@ -506,8 +506,22 @@ verify-python-syntax:
 # never against the real /tmp, plus a second rig for finding 4's fix -- a
 # `claude -p` run must not inflate the blindness control's process count,
 # since it never writes a registry file and this repo's own suite runs live
-# `claude -p` pins. A few seconds: three short-lived `sleep` holders and two
-# cold execs of a copied `sleep` binary under a name ending in "claude".
+# `claude -p` pins. 23-35s over 16 runs on linux (MEASURED 2026-11-13,
+# ranger-base-0whbv): three short-lived `sleep` holders for the table, and two
+# cold execs of a copied tee(1) under a name ending in "claude" for finding 4
+# -- tee and not sleep because `sleep -p` is an invalid option and the arm was
+# reading an exclusion over a process that had already exited
+# (ranger-base-bttuj).
+#
+# FINDING 4'S TWO ARMS GRADE MEMBERSHIP, NOT A COUNT (ranger-base-0wvu6): is
+# the pid this rig planted in the pid list the counter reports from the same
+# loop as its count. They used to difference two BOX-WIDE censuses a second
+# apart, which on this box is a subtraction any sibling seat's launch moves --
+# 3 of 8 back-to-back runs red on 2026-11-12 over a comment-only edit, this
+# target being a prerequisite of `make test` (ranger-base-0whbv). If you edit
+# that rig, `scripts/reap-selftest-ambient.sh` re-asks the question under
+# ambient arrivals: it reds the old spelling 5 of 5 runs and this one 0 of 8,
+# where a clean rerun of this target passes the old spelling 8 times out of 8.
 verify-reap-test-tmp:
 	@scripts/reap-test-tmp.sh --self-test
 
