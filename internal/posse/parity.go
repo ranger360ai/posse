@@ -671,7 +671,9 @@ func (a *App) checkParityResolved(ag *AgentFile, rt *Runtime, res CageRealizeRes
 // has no such writer at all: a seat whose state grant reaches the home gets
 // each member carved read-only, and a seat whose grant does not reach it
 // cannot write there by any route (cliHomeExecMembers, which is why the
-// exemption reads that list UNFILTERED). The writers left are the operator,
+// exemption reads that list UNFILTERED by grant — through
+// trustExemptCLIHomeExecMembers, which drops a home whose variable was typed
+// relative, ranger-base-afqqz). The writers left are the operator,
 // the operator's own CLIs, and posse's empty seeds, so degrading on one buys
 // nothing — and for its own home a CLI reads that config from every dir
 // anyway, which launching in `$HOME` changes nothing about. Such an entry is
