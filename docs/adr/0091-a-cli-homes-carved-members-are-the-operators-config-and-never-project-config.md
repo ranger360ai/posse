@@ -52,6 +52,19 @@ not project scope.** `ProjectConfigTrust` skips an entry when
 skips the entry rather than classifying it clean, the way `personaModeOwnsAll`
 skips posse's own persona-mode dir.
 
+The premise is that the operator chose the home, and that premise needs the
+home variable to be ABSOLUTE (ranger-base-afqqz, finding ranger-base-lu513).
+`runtimeHomeOverride` absolutizes a relative `CLAUDE_CONFIG_DIR`, `CODEX_HOME`
+or `GROK_HOME` against posse's cwd, and that cwd is the session dir when the
+operator types `posse <persona>` in a repo. So `CLAUDE_CONFIG_DIR=.claude`
+would make the repo's own `.claude/settings.json` a "member". The writer of
+that file is the committer, and the cwd chose it, not the operator. The
+exemption therefore reads `trustExemptCLIHomeExecMembers`. That is the
+unfiltered list minus every member whose variable's raw value is set and not
+absolute. Such an entry is classified like any other. The carves keep those
+members, and `runtimeHomeOverride` keeps absolutizing for its other
+consumers. The `$HOME` default and absolute overrides are unchanged.
+
 **D2. One list, read by both sides.** The member set is one unfiltered
 function, `cliHomeExecMembers(home)`. It covers `ClaudeConfigDirIn`,
 `codexHomeIn` and `grokHomeIn` with their dir and file names, plus

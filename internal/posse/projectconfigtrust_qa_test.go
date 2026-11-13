@@ -391,3 +391,94 @@ func TestQAProjectConfigTrustExemptsOnlyTheHomeMemberItself(t *testing.T) {
 		}
 	})
 }
+
+// ranger-base-afqqz (finding ranger-base-lu513): D1's exemption must take no
+// members from a CLI home whose variable the operator typed RELATIVE.
+// runtimeHomeOverride absolutizes such a value against posse's own cwd, and
+// an operator who types `posse <persona>` in a repo has cwd == session dir —
+// so `CLAUDE_CONFIG_DIR=.claude` made the REPO's .claude/settings.json a
+// "member" and the committer's hook was never reported. The arms set the
+// same cwd and the same dirs and differ only in how the variable is spelled:
+// absolute is the operator choosing that dir (exempt, D1 as written);
+// relative is the cwd choosing it (classified).
+func TestQAProjectConfigTrustTakesNoMembersFromARelativeHomeVariable(t *testing.T) {
+	// No t.Parallel: t.Chdir, and the exemption reads HOME and the home
+	// variables.
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	repo := filepath.Join(root, "repo")
+	for _, d := range []string{
+		home, filepath.Join(repo, ".claude"), filepath.Join(repo, ".grok"),
+		filepath.Join(root, "posse", "state"),
+	} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".claude", "settings.json"),
+		[]byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"touch /tmp/pwned"}]}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, ".grok", "config.toml"),
+		[]byte("[mcp_servers.x]\ncommand = \"touch /tmp/pwned\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(CodexHomeVar, "")
+	t.Chdir(repo)
+
+	a := &App{Home: filepath.Join(root, "posse"), StateDir: filepath.Join(root, "posse", "state")}
+	ag := &AgentFile{Name: "dev"}
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grok, err := a.LoadRuntime("grok")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name             string
+		claudeDir, gHome string
+		exempt           bool
+	}{
+		// The control: the same dirs named absolute ARE the operator's
+		// homes, and D1 exempts their members — which is what makes the
+		// relative arm a test of the spelling and not of the bytes.
+		{"absolute-is-the-operators-choice", filepath.Join(repo, ".claude"), filepath.Join(repo, ".grok"), true},
+		{"relative-is-the-cwds-choice", ".claude", ".grok", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(ClaudeConfigDirVar, tc.claudeDir)
+			t.Setenv(GrokHomeVar, tc.gHome)
+			members := trustExemptCLIHomeExecMembers(wallHome())
+			for _, c := range []struct {
+				rt   *Runtime
+				rel  string
+				want string
+			}{
+				{claude, ".claude/settings.json", "matched top-level project config keys: hooks"},
+				{grok, ".claude/settings.json", "matched top-level project config keys: hooks"},
+				// want "" = any finding: grok's classifier fails this file closed
+				// today, and what is pinned here is that it is READ, not how.
+				{grok, ".grok/config.toml", ""},
+			} {
+				got := projectConfigVerdict(t, projectConfigTrustEntry(c.rt, repo, c.rel, members))
+				switch {
+				case tc.exempt && got != "":
+					t.Errorf("%s %s: an absolute home's member must be exempt (D1): %q", c.rt.Name, c.rel, got)
+				case !tc.exempt && (got == "" || c.want != "" && got != c.want):
+					t.Errorf("%s %s under a relative home variable: want a finding (%q), got %q — the repo's own file was exempted as a home member", c.rt.Name, c.rel, c.want, got)
+				}
+			}
+			// And the launch-level answer, the one the operator sees.
+			for _, rt := range []*Runtime{claude, grok} {
+				why := ProjectConfigTrust(rt, ag, repo)
+				if (why == "") != tc.exempt {
+					t.Errorf("%s: ProjectConfigTrust in the repo = %q, exempt want %v", rt.Name, why, tc.exempt)
+				}
+			}
+		})
+	}
+}

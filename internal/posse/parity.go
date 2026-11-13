@@ -699,7 +699,7 @@ func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 	//
 	// The member list is hoisted: it is the same set for every entry, and
 	// building it walks three CLI homes.
-	members := cliHomeExecMembers(wallHome())
+	members := trustExemptCLIHomeExecMembers(wallHome())
 	for _, rel := range rt.ProjectConfig {
 		if why := projectConfigTrustEntry(rt, dir, rel, members); why != "" {
 			return why

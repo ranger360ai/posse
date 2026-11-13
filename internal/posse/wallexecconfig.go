@@ -369,6 +369,11 @@ type cliHomeExecMember struct {
 	guard string           // the path whose write grant admits it
 	dir   bool             // directory-shaped, not file-shaped
 	carve cliHomeExecCarve // which carve claims it
+	// homeVar is the variable that can relocate this member's home
+	// (CLAUDE_CONFIG_DIR, CODEX_HOME or GROK_HOME). Only the classifier
+	// reads it — trustExemptCLIHomeExecMembers, ranger-base-afqqz — and the
+	// carves ignore it.
+	homeVar string
 }
 
 // cliHomeExecMembers is the UNFILTERED set of declared executable members of
@@ -384,7 +389,9 @@ type cliHomeExecMember struct {
 // that no seat can write it either way round: a seat whose state grant
 // reaches the home gets the member carved read-only, and a seat whose grant
 // does not reach it cannot write there at all. A filtered list would exempt
-// only the first of those two.
+// only the first of those two. (UNFILTERED by grant only: the classifier
+// takes it through trustExemptCLIHomeExecMembers, which drops a home whose
+// variable was typed relative — ranger-base-afqqz.)
 //
 // The resolution is per carve and deliberately kept so: claude's members and
 // the exec members are joined onto a RESOLVED home, while a config.toml path
@@ -395,37 +402,69 @@ func cliHomeExecMembers(home string) []cliHomeExecMember {
 		return nil
 	}
 	var out []cliHomeExecMember
-	add := func(carve cliHomeExecCarve, guard, path string, dir bool) {
-		out = append(out, cliHomeExecMember{path: path, guard: guard, dir: dir, carve: carve})
+	add := func(carve cliHomeExecCarve, homeVar, guard, path string, dir bool) {
+		out = append(out, cliHomeExecMember{path: path, guard: guard, dir: dir, carve: carve, homeVar: homeVar})
 	}
 	if cfg := ClaudeConfigDirIn(home); filepath.IsAbs(cfg) {
 		cfg = absResolve(cfg)
 		for _, n := range claudeExecConfigDirNames {
-			add(carveClaudeExecConfig, cfg, filepath.Join(cfg, n), true)
+			add(carveClaudeExecConfig, ClaudeConfigDirVar, cfg, filepath.Join(cfg, n), true)
 		}
 		for _, n := range claudeExecConfigFileNames {
-			add(carveClaudeExecConfig, cfg, filepath.Join(cfg, n), false)
+			add(carveClaudeExecConfig, ClaudeConfigDirVar, cfg, filepath.Join(cfg, n), false)
 		}
 	}
 	for _, cli := range []struct {
-		home        string
-		dirs, files []string
+		home, homeVar string
+		dirs, files   []string
 	}{
-		{codexHomeIn(home), codexExecDirNames, codexExecFileNames},
-		{grokHomeIn(home), grokExecDirNames, grokExecFileNames},
+		{codexHomeIn(home), CodexHomeVar, codexExecDirNames, codexExecFileNames},
+		{grokHomeIn(home), GrokHomeVar, grokExecDirNames, grokExecFileNames},
 	} {
 		if !filepath.IsAbs(cli.home) {
 			continue
 		}
 		cfgFile := absResolve(filepath.Join(cli.home, "config.toml"))
-		add(carveRuntimeConfigFile, cfgFile, cfgFile, false)
+		add(carveRuntimeConfigFile, cli.homeVar, cfgFile, cfgFile, false)
 		h := absResolve(cli.home)
 		for _, n := range cli.dirs {
-			add(carveRuntimeExecMember, h, filepath.Join(h, n), true)
+			add(carveRuntimeExecMember, cli.homeVar, h, filepath.Join(h, n), true)
 		}
 		for _, n := range cli.files {
-			add(carveRuntimeExecMember, h, filepath.Join(h, n), false)
+			add(carveRuntimeExecMember, cli.homeVar, h, filepath.Join(h, n), false)
 		}
+	}
+	return out
+}
+
+// trustExemptCLIHomeExecMembers is the member set ProjectConfigTrust's
+// exemption reads (ADR 0091 D1): cliHomeExecMembers UNFILTERED by grant, less
+// every member whose home variable's RAW value is set and not absolute
+// (ranger-base-afqqz, finding ranger-base-lu513).
+//
+// WHY THE RAW VALUE. runtimeHomeOverride absolutizes a relative
+// CLAUDE_CONFIG_DIR/CODEX_HOME/GROK_HOME against posse's own cwd, on purpose
+// (c33j6/sczjy), so by the time cliHomeExecMembers asks filepath.IsAbs the
+// answer is always yes and that check refuses nothing a variable can carry.
+// posse's cwd is the session dir whenever the operator types `posse <persona>`
+// in the repo, so `CLAUDE_CONFIG_DIR=.claude` makes the REPO's `.claude` the
+// "home", and D1 then exempted exactly the committer's settings.json — the
+// file the check exists to read. D1's premise is that a member has no writer
+// the operator did not choose; a cwd-relative home breaks it, because the
+// cwd chooses.
+//
+// Narrowed HERE and nowhere else: the carves keep the members (a read-only
+// carve over the path is right either way round), and runtimeHomeOverride
+// keeps absolutizing for every other consumer. The default $HOME derivation
+// and absolute overrides are untouched, so D1's $HOME-launch case stands.
+// Empty is unset, as everywhere in posse.
+func trustExemptCLIHomeExecMembers(home string) []cliHomeExecMember {
+	var out []cliHomeExecMember
+	for _, m := range cliHomeExecMembers(home) {
+		if v := os.Getenv(m.homeVar); v != "" && !filepath.IsAbs(v) {
+			continue
+		}
+		out = append(out, m)
 	}
 	return out
 }
@@ -447,7 +486,7 @@ func cliHomeExecMembers(home string) []cliHomeExecMember {
 // supplies a pointer and the operator supplies the content, and a repo cannot
 // write the target.
 //
-// members is the caller's hoisted cliHomeExecMembers(wallHome()): one runtime
+// members is the caller's hoisted trustExemptCLIHomeExecMembers(wallHome()): one runtime
 // declares up to ten entries and the set is the same for all of them.
 func isCLIHomeExecMember(members []cliHomeExecMember, p string) bool {
 	for _, m := range members {

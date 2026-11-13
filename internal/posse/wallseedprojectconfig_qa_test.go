@@ -182,7 +182,7 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 	exists := func(p string) bool { _, err := os.Lstat(p); return err == nil }
 	// D1's input, read the way ProjectConfigTrust reads it: off wallHome(),
 	// which the fixture has pointed at f.home, and UNFILTERED by any grant.
-	members := cliHomeExecMembers(wallHome())
+	members := trustExemptCLIHomeExecMembers(wallHome())
 	if len(members) == 0 {
 		t.Fatalf("no CLI home members for HOME=%s — the exemption's input is empty and every row below would be vacuous", wallHome())
 	}
