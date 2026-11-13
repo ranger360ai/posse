@@ -138,7 +138,21 @@ cleanup() {
   for p in $STARTED_PIDS; do kill "$p" 2>/dev/null || true; done
   rm -rf "$T"
 }
-trap cleanup EXIT INT TERM
+# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# (ranger-base-kkp5g). A handler that RETURNS is right on EXIT and wrong on a
+# signal: bash runs it and then RESUMES at the statement after the one the
+# signal interrupted, with the apparatus gone — here the fake herdr under $T
+# and every pid in STARTED_PIDS. The arms below would then report FAILs for
+# properties nothing measured. MEASURED 2026-11-13 on this script's sibling,
+# scripts/verify-herdr-bob-rules.sh, where a `kill -TERM` produced exactly
+# that: two red verdicts, neither false, both unmeasured.
+#
+# 128+signo, and the `exit` runs the EXIT trap so cleanup still happens
+# exactly once. Same spelling as scripts/queue-cutover.sh:405-408; pinned by
+# internal/treepins/trapsignalexit_qa_test.go.
+trap cleanup EXIT
+trap 'echo "verify-herdr-bob: interrupted (SIGINT) -- the apparatus is gone; no verdicts" >&2; exit 130' INT
+trap 'echo "verify-herdr-bob: interrupted (SIGTERM) -- the apparatus is gone; no verdicts" >&2; exit 143' TERM
 
 # ---------------------------------------------------------------- fake herdr
 # Answers only the verbs bob-watch and bob-watchctl use, and records every

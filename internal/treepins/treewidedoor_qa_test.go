@@ -1175,6 +1175,46 @@ package treepins
 // way the mktemp one above is not. 0.13s for the census and 0.00s for the
 // control (MEASURED 2026-11-13, one warm filtered run).
 //
+// and TWO more into that same door, which arrived together because they share
+// that reader (ranger-base-kkp5g). The first is the same question one signal
+// over: a `trap` registered on a catchable DEADLY signal has a handler that
+// cannot RETURN. On EXIT a handler that returns is the contract; on INT or
+// TERM bash runs it and then RESUMES the script at the statement after the
+// one the signal interrupted, over the apparatus the handler just gave back.
+// MEASURED on scripts/verify-herdr-bob-rules.sh — a `kill -TERM` ran
+// `cleanup`, `rm -rf "$T"` took the scratch dir, and the run carried on into
+// its second arm and printed two FAILs for properties that were never false
+// and never measured, which is the one failure that script's `apparatus()`
+// and `harness()` exist to prevent, one level up. Six of the tree's nine such
+// handlers returned.
+//
+// The second holds the READER rather than a rule about scripts, and it is in
+// this class for the same reason its sibling is — it enumerates scripts/ at a
+// relative literal. Every line of code under scripts/ is inside some logical
+// line's extent or inside a TERMINATED heredoc body; there is no third place
+// for one to be. Its absence is why the hole it closes lasted: that reader
+// was dropping the tails of four scripts, 908 physical lines, verify-box.sh
+// from :271 to :898, because a heredoc opened on a line that also opened a
+// bracket frame armed the body-skip for a terminator the join had already
+// eaten — and NOTHING was red, because the drop set no `Lost` and every floor
+// in the census above stayed comfortably clear over the files it could not
+// see. A floor cannot catch that, which is the whole argument for the arm:
+//
+//	TestQAEveryTrapOnADeadlySignalEndsTheShell
+//	                                              make scripts-check
+//	                                              (ranger-base-kkp5g)
+//	TestQATheShellReaderReadsEveryLineUnderScripts
+//	                                              make scripts-check
+//	                                              (ranger-base-kkp5g)
+//
+// Their two control arms (TestQATheSignalTrapReaderCanStillSayNo, sixteen
+// planted scripts including the bead's own shape and both sides of the
+// one-level call follow, and TestQATheSignalTrapRosterIsTwoWay) are not in
+// this class, the same way the trap-state control above is not: the first
+// plants under t.TempDir() and the second reads the roster's own rows by
+// name. 0.14s for the signal census, 0.39s for the coverage arm and 0.01s for
+// the two controls (MEASURED 2026-11-13, one warm filtered run).
+//
 // and one more into corpus-check's door — the same rule as the row above, in
 // the two languages that pin could not read, and the fourth hand census of
 // this family is what it is for (ranger-base-qbg7c). Every live
@@ -1221,7 +1261,7 @@ package treepins
 // are not. 0.07s for the census over 18 rows in five files, and 0.00s for
 // the control (MEASURED 2026-11-13, one warm filtered run).
 //
-// and `make tree-check` is all of them — one hundred and forty-five pins
+// and `make tree-check` is all of them — one hundred and forty-seven pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

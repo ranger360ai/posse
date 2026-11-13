@@ -80,7 +80,23 @@ cleanup() {
 	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :
 	rm -rf "$tmp"
 }
-trap cleanup EXIT INT TERM
+# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# (ranger-base-kkp5g). A handler that RETURNS is right on EXIT and wrong on a
+# signal: bash runs it and then RESUMES this script at the statement after the
+# one the signal interrupted, with everything the handler just gave back
+# already gone. Here that is $src, the temp worktree the build reads — and a
+# `kill -TERM` of this pid does NOT reach the `go build` child, so the build
+# completes, cleanup removes its source under it, and the run carries on to
+# `echo "clean-build: built $out"` and exits 0. An interrupted `make install`
+# would then install. MEASURED 2026-11-13 on this shape, both signals.
+#
+# The `exit` runs the EXIT trap, so cleanup still happens exactly once and the
+# status names the signal (128+signo). Same spelling as
+# scripts/queue-cutover.sh:405-408; pinned by
+# internal/treepins/trapsignalexit_qa_test.go.
+trap cleanup EXIT
+trap 'echo "clean-build: interrupted (SIGINT) — this run did not finish" >&2; exit 130' INT
+trap 'echo "clean-build: interrupted (SIGTERM) — this run did not finish" >&2; exit 143' TERM
 
 git -C "$repo" worktree add --detach --quiet "$src" HEAD
 

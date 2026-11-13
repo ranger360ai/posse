@@ -226,7 +226,25 @@ cleanup() {
 	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :
 	rm -rf "$tmp"
 }
-trap cleanup EXIT INT TERM
+# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# (ranger-base-kkp5g), for scripts/clean-build.sh's reason one script over and
+# with more at stake: this runs on a tag, in
+# .github/workflows/release.yml. A handler that RETURNS is right on EXIT and
+# wrong on a signal — bash runs it and then RESUMES at the next statement with
+# $src and $tmp/stage already removed. Most placements then die on a `cd` into
+# one of them under `set -e`, but a signal in the tail does not: the
+# `sum … > checksums.txt` child never sees a `kill -TERM` of this pid, so it
+# completes, cleanup runs, and the script carries on to
+# `echo "wrote $OUT/checksums.txt"` and exits 0 — a cancelled release
+# reporting a complete artifact set to whatever reads that status.
+#
+# The `exit` runs the EXIT trap, so cleanup still happens exactly once and the
+# status names the signal (128+signo). Same spelling as
+# scripts/queue-cutover.sh:405-408; pinned by
+# internal/treepins/trapsignalexit_qa_test.go.
+trap cleanup EXIT
+trap 'echo "release-artifacts: interrupted (SIGINT) — $OUT is incomplete" >&2; exit 130' INT
+trap 'echo "release-artifacts: interrupted (SIGTERM) — $OUT is incomplete" >&2; exit 143' TERM
 git -C "$repo" worktree add --detach --quiet "$src" "$REV"
 
 echo "release-artifacts: $VERSION from $sha"

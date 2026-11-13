@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-rgyto](ranger-base-rgyto.md) — ranger-base-rgyto — the whole-file project-config branch now asks Lstat too — 2026-11-13
 - [ranger-base-myjcz](ranger-base-myjcz.md) — ranger-base-myjcz — verify-herdr-bob-rules.sh's watcher pid, and the box that could not run it — 2026-11-13
 - [ranger-base-lx5jk](ranger-base-lx5jk.md) — claude's sessions/ registry, private per seat at bwrap, and the rex join reads the private row first (ranger-base-lx5jk) — 2026-11-13
+- [ranger-base-kkp5g](ranger-base-kkp5g.md) — A cleanup handler trapped on INT/TERM that RETURNS lets a signalled run print FAILs it never measured (ranger-base-kkp5g) — 2026-11-13
 - [ranger-base-hxenz](ranger-base-hxenz.md) — ranger-base-hxenz — the reaper forked once per pid per route, and `--self-test` paid it seven times — 2026-11-13
 - [ranger-base-fpny6](ranger-base-fpny6.md) — A fixture marshaller that ranged a map blamed the code under test (ranger-base-fpny6) — 2026-11-13
 - [ranger-base-equhp](ranger-base-equhp.md) — A lane was the union of every persona sharing ANY of a bead's labels (ranger-base-equhp) — 2026-11-13

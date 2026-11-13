@@ -161,7 +161,30 @@ last_rules_path() {
   done <"$1"
   printf '%s' "$out"
 }
-trap cleanup EXIT INT TERM
+# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# (ranger-base-kkp5g). THIS SCRIPT IS WHERE THE DEFECT WAS MEASURED. A handler
+# that RETURNS is right on EXIT and wrong on a signal: bash runs it and then
+# RESUMES at the statement after the one the signal interrupted, with the
+# apparatus gone. MEASURED 2026-11-13 (linux 7.2.15, bash 5.3.20) — a
+# `kill -TERM` of this pid during the seeding arms ran `cleanup`, which killed
+# the watcher and `rm -rf "$T"`-ed the scratch dir, and the run carried straight
+# on into the second arm, re-made $T by mkdir, and printed
+#
+#   FAIL fresh seeding: watcher read 'nothing', seeded file does NOT match …
+#   FAIL override not read: watcher read 'nothing', and the file was OVERWRITTEN
+#   verify-herdr-bob-rules: 2 check(s) failed
+#
+# with exit 1. Neither property was false; both were unmeasured. That is the
+# one failure `apparatus()` and `harness()` above exist to prevent
+# (ranger-base-vf3pf), one level up — and the trap was the one arm that could
+# not say "that was the apparatus".
+#
+# 128+signo, which is exactly what `apparatus()` reads as NOT AN ANSWER, so a
+# signalled run speaks this script's own language. The `exit` runs the EXIT
+# trap, so cleanup still happens exactly once.
+trap cleanup EXIT
+trap 'echo "verify-herdr-bob-rules: interrupted (SIGINT) -- that is the apparatus and not the property; no verdicts" >&2; exit 130' INT
+trap 'echo "verify-herdr-bob-rules: interrupted (SIGTERM) -- that is the apparatus and not the property; no verdicts" >&2; exit 143' TERM
 
 # ------------------------------------------------------- the two jq questions
 # JQ IS THE READER OF THE SUBJECT HERE AND IT CANNOT BE BASH. Both questions

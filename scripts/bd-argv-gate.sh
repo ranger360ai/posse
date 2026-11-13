@@ -87,6 +87,36 @@ esac
 # mkdir the bead expected to pay for. Neither number is visible against this
 # gate's own spread on a busy box: three consecutive readings of the
 # UNCHANGED gate at a load of 17-19 read 36.9, 48.5 and 63.4 ms per call.
+#
+# THE SIGNAL ARMS OF THIS TRAP DELIBERATELY RETURN, WHICH IS THE OPPOSITE OF
+# THE HOUSE RULE (ranger-base-kkp5g). Everywhere else under scripts/, a
+# handler trapped on a deadly signal must EXIT, because bash otherwise runs it
+# and RESUMES the script over a torn-down apparatus. Here resuming is the
+# better answer, and every alternative is worse:
+#
+#   - This is a PreToolUse hook, so its EXIT STATUS IS ITS VERDICT. Claude's
+#     contract, MEASURED against the real binary under ranger-base-3bqn: exit
+#     2 blocks the tool call, ANY OTHER nonzero shows stderr and RUNS IT — a
+#     hook that exited 1 let the refused command through. So `exit 130`/`exit
+#     143` here is fail-OPEN, on the one script in that census where failing
+#     open is the whole stake.
+#   - An unconditional `exit 2` instead would refuse every signalled Bash call
+#     on the box whether or not it names bd, which is the fleet-wide false
+#     refusal the same bead forbids.
+#   - Dropping the signals from the trap is worse again: bash's default
+#     disposition then kills the gate before it can answer (fail open) AND
+#     leaks $errd.
+#
+# Resuming is what lets the gate still reach its own fail-closed decision, and
+# MEASURED 2026-11-13 it does: bash RESTORES $? across a signal handler, so
+# `rc=$?` below still reads the parser's status and not the handler's. What
+# resumption costs is one line of PROSE and no verdict — the `grep -q
+# '^bd-argv-gate:' "$err"` below reads a file inside the removed $errd, so a
+# parser that refused WITH A REASON is reported by the generic "parser
+# unavailable" line instead of its own. Still exit 2, still fail closed.
+#
+# Rostered as the one exemption in internal/treepins/trapsignalexit_qa_test.go
+# (tsgExempt), which reds if this trap ever starts ending the shell.
 errd=$(mktemp -d "${TMPDIR:-/tmp}/posse-bd-argv-gate.XXXXXX") || errd=
 if [ -n "$errd" ]; then
   err="$errd/stderr"

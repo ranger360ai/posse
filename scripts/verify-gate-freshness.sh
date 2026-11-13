@@ -136,7 +136,22 @@ fi
 
 # -- the reference ----------------------------------------------------------
 ref=$(mktemp -d "${TMPDIR:-/tmp}/posse-gate-freshness.XXXXXX") || nothing "cannot make a scratch dir"
-trap 'rm -rf "$ref"' EXIT HUP INT TERM
+# EXIT keeps the bare handler; the signals answer through `nothing`
+# (ranger-base-kkp5g). A handler that RETURNS is right on EXIT and wrong on a
+# signal: bash runs it and then RESUMES this script at the statement after the
+# one the signal interrupted, with $ref — the HEAD copy every probe below
+# compares the installed gate against — already removed. The probes then read
+# a missing reference and this script reports FINDINGs nothing measured, as
+# `stale` or `broken`, to a reader that turns them into a box-wide freshness
+# verdict (ADR 0092).
+#
+# `nothing` and not a bare `exit 143`, because this script already has a
+# channel for "I measured nothing" and its consumer reads it: exit 2, which
+# ADR 0092 renders as `unknown`. A signalled run is the purest case of it.
+trap 'rm -rf "$ref"' EXIT
+trap 'nothing "interrupted (SIGINT)"' INT
+trap 'nothing "interrupted (SIGTERM)"' TERM
+trap 'nothing "interrupted (SIGHUP)"' HUP
 for f in bd-argv-gate.sh bd-argv-gate.py; do
   git -C "$repo" show "HEAD:scripts/$f" > "$ref/$f" 2>/dev/null \
     || nothing "HEAD carries no scripts/$f"

@@ -55,22 +55,36 @@ package treepins
 // ever assigned, which is the defect whatever the variable is for.
 //
 // MEASURED 2026-11-13 (linux 7.2.15 x86_64, go1.27.3, this box; the readings
-// and who took them are in docs/notes.d/ranger-base-wzo36.md, which the crew
-// census does not scan):
-// 64 files under scripts/, 48 of them shell, 25 of those registering an EXIT
-// trap, 46 handler-read variables between them, 426 shell functions censused
-// (55 of them nested inside another) and 16 trap-state setters — among them
-// reap-test-tmp.sh's `start_fake` and `stop_fake`, which are nested in its
-// self_test and both assign the pid list its trap kills. TWO of the sixteen
-// were reached in a subshell when this was written and were exempted with
-// their reasons — and they were the two halves of this rule:
-// verify-herdr-bob-rules.sh's `watch_once` by its own call site, `drop_pid`
-// only through `watch_once`, which is the shape 197ea0b8^ had. Both were
-// hoisted out of the `got="$(watch_once …)"` the same day
-// (ranger-base-myjcz), so the census now reads all sixteen clean and
-// tsExempt is empty. The two scripts the rule was written for hold 4 setters
-// between them (`pick_reader` and `cleanup_ro` in each) and all four are
-// clean.
+// and who took them are in docs/notes.d/ranger-base-wzo36.md and
+// docs/notes.d/ranger-base-kkp5g.md, which the crew census does not scan):
+// 64 files under scripts/, 48 of them shell, 27 of those registering an EXIT
+// trap, 48 handler-read variables between them, 436 shell functions censused
+// (55 raw definition matches of them nested inside another, which is 441
+// matches for 436 names — gotest.sh defines four names twice, see "WHAT IT
+// DOES NOT REACH") and 17 trap-state setters — among them reap-test-tmp.sh's
+// `start_fake` and `stop_fake`, which are nested in its self_test and both
+// assign the pid list its trap kills. TWO of them were reached in a subshell
+// when this was written and were exempted with their reasons — and they were
+// the two halves of this rule: verify-herdr-bob-rules.sh's `watch_once` by
+// its own call site, `drop_pid` only through `watch_once`, which is the shape
+// 197ea0b8^ had. Both were hoisted out of the `got="$(watch_once …)"` the
+// same day (ranger-base-myjcz), so the census now reads all seventeen clean
+// and tsExempt is empty. The two scripts the rule was written for hold 4
+// setters between them (`pick_reader` and `cleanup_ro` in each) and all four
+// are clean.
+//
+// FIVE OF THOSE FIGURES MOVED THE SAME DAY, and not because the tree did:
+// 25→27 EXIT traps, 46→48 read variables, 426→436 functions and 16→17
+// setters are what appeared when ranger-base-kkp5g fixed the heredoc arm of
+// tsReadLines (see the comment at its `bgHeredoc` call). Until then a
+// heredoc opened on a line that also opened a bracket frame armed the
+// body-skip for a terminator the join had ALREADY eaten, so the reader
+// skipped the rest of the file looking for a second one — four files and 908
+// physical lines dropped with `lost` empty, verify-box.sh's
+// `trap selftest_cleanup EXIT` at :554 and its `self_test` setter among
+// them. This census was green over all of it. A floor cannot catch that
+// (every one of them was still comfortably clear), which is the argument for
+// the coverage assertion in that fix's own notes.
 //
 // THE READER IS A LEXER AND NOT A PARSE, and loose in the direction that
 // costs a false RED rather than a false pass — brewguard_qa_test.go's rule
@@ -194,6 +208,8 @@ type tsFunc struct {
 	Subshell   bool            // the body is `( … )`, so it is a subshell itself
 	Locals     map[string]bool // names it declares local
 	Assigns    map[string]int  // global name -> the line it is assigned on
+	Body       string          // its lines, masked, for a reader asking what it DOES
+	BodyRaw    string          // the same bytes unmasked, where a NAME is read from
 }
 
 // tsSite is one place a function name appears in command position.
@@ -208,6 +224,24 @@ type tsSite struct {
 
 // At renders the site the way a diagnostic leads with it.
 func (s tsSite) At(script string) string { return fmt.Sprintf("%s:%d", script, s.Line) }
+
+// tsTrap is ONE `trap` registration, whatever it is registered on. This pin
+// reads only the EXIT ones; trapsignalexit_qa_test.go reads the rest, and the
+// two share this reader rather than lexing scripts/ twice — a second walk is
+// a second answer to "what does this script trap", and the two could come to
+// disagree about it (the same reason ranger-base-wzo36 gave sfWalk a third
+// return instead of writing a second shell walk).
+type tsTrap struct {
+	Line    int      // the physical line the registration starts on
+	Signals []string // the words after the handler, upper-cased, `SIG` stripped
+	Handler string   // the bare function name, or the inline handler's text
+	IsFunc  bool     // Handler names a function this script defines
+	Body    string   // the handler's code: the function's body, or the inline text
+	Code    string   // the physical line as written, for a diagnostic
+}
+
+// At renders the registration the way a diagnostic leads with it.
+func (t tsTrap) At(script string) string { return fmt.Sprintf("%s:%d", script, t.Line) }
 
 // Subshell reports whether the call ran in a child of the shell that reached
 // it. A bracket frame and a pipeline component are the same answer: the
@@ -233,6 +267,7 @@ func tsIsShell(path string, body []byte) bool {
 // tsScript is one script's reading.
 type tsScript struct {
 	Path     string
+	Traps    []tsTrap        // EVERY registration, for trapsignalexit_qa_test.go
 	Handlers []string        // what each `trap <h> … EXIT` named
 	ReadVars map[string]bool // the names those handlers read
 	Funcs    map[string]*tsFunc
@@ -244,6 +279,8 @@ type tsScript struct {
 	Shell    bool                // it is shell at all; nothing below is read when it is not
 	Lost     string              // where the reader lost the lexing, if it did
 	Lines    []string            // the file as written, for diagnostics
+	Logical  []tsLogical         // the logical lines, for a coverage reading
+	Here     map[int]bool        // physical lines consumed as heredoc BODY, 1-based
 }
 
 // tsMaskParamExp replaces the INSIDE of every `${ … }` with a neutral byte,
@@ -347,14 +384,30 @@ func tsCommentCut(text string, after int) int {
 // "is the opener itself inside a quoted string" probe is sfQuoted's — a
 // phantom heredoc would swallow real lines, which is this reader's one loose
 // direction that could go quiet, so it is the one borrowed with a guard.
-func tsReadLines(masked, raw []string) (out []tsLogical, lost string) {
-	hereTerm, hereDash := "", false
+// `here` holds the physical lines consumed as heredoc BODY, and only those of
+// a heredoc whose TERMINATOR was found: a pending body is committed when the
+// terminator arrives and DROPPED if the file ends first. That is not
+// bookkeeping, it is the whole control on this reader's one loose direction
+// (ranger-base-kkp5g). A phantom heredoc swallows real lines, and the reader
+// cannot tell its own phantom from a real body — so the lines it skipped are
+// not evidence that they were data. An unterminated heredoc also sets `lost`,
+// so a census is told it could not read the file; the dropped `here` entries
+// are what let the coverage arm say the same thing without taking this
+// reader's word for it.
+func tsReadLines(masked, raw []string) (out []tsLogical, lost string, here map[int]bool) {
+	hereTerm, hereDash, hereLine := "", false, 0
+	var herePend []int
+	here = map[int]bool{}
 	for i := 0; i < len(masked); i++ {
 		line := raw[i]
 		code := strings.TrimSpace(line)
 		if hereTerm != "" {
+			herePend = append(herePend, i+1)
 			if line == hereTerm || (hereDash && code == hereTerm) {
-				hereTerm = ""
+				for _, n := range herePend {
+					here[n] = true
+				}
+				hereTerm, herePend = "", nil
 			}
 			continue
 		}
@@ -385,11 +438,51 @@ func tsReadLines(masked, raw []string) (out []tsLogical, lost string) {
 			}
 		}
 		out = append(out, tsLogical{Line: start + 1, Text: text, Raw: rawText})
-		if m := bgHeredoc.FindStringSubmatchIndex(text); m != nil && !sfQuoted(text[:m[0]]) {
+		// The heredoc skip is armed ONLY when the opener sits on the LAST
+		// physical line of this logical line — which is to say, only when
+		// its body has not already been eaten by the join above.
+		//
+		// WHY, MEASURED 2026-11-13 (ranger-base-kkp5g). A frame opened on the
+		// same line as a heredoc opener makes the join swallow the body AND
+		// its terminator looking for the close:
+		//
+		//	done < <("$PYTHON" - "$config_dir" <<'PY'    verify-gate-freshness.sh:107
+		//	…23 lines of python…
+		//	PY
+		//	)                                            …:132, where depth hits 0
+		//
+		// The opener is still in `text`, so arming on it unconditionally set
+		// hereTerm="PY" for a `PY` that had already gone by — and the reader
+		// then skipped every remaining line of the file looking for a second
+		// one, to EOF, with `lost` EMPTY because no join had run away. Four
+		// files under scripts/ and 908 physical lines were being dropped in
+		// silence: verify-box.sh from 271 to 898 (627 lines, its
+		// `trap selftest_cleanup EXIT` at :554 among them),
+		// verify-bd-argv-gate.sh 50→182, verify-gate-freshness.sh 132→262 and
+		// reap-timer-unit.sh 244→263. A census that cannot see a file's tail
+		// reports it clean, which is the one thing `lost` exists to prevent.
+		//
+		// The test is exact rather than a heuristic: bash reads a heredoc
+		// body starting at the line AFTER the one carrying the opener, so if
+		// that line is not the last the join consumed, those lines are
+		// already in `text` and nothing is left to skip.
+		if m := bgHeredoc.FindStringSubmatchIndex(text); m != nil && !sfQuoted(text[:m[0]]) &&
+			strings.Count(text[:m[0]], "\n") == strings.Count(text, "\n") {
 			hereTerm, hereDash = rawText[m[4]:m[5]], rawText[m[2]:m[3]] == "-"
+			hereLine = start + 1 + strings.Count(text[:m[0]], "\n")
 		}
 	}
-	return out, lost
+	// A heredoc still open at EOF is a heredoc that was never there: a real
+	// one is terminated, and bash would refuse the script otherwise. So this
+	// reader armed on something that was not an opener, or on one whose body
+	// it had already consumed, and everything from there to EOF was skipped.
+	// Saying so through `lost` is what stops both pins reporting the file
+	// clean over lines they never saw — the hole ranger-base-kkp5g measured
+	// at 908 lines across four files, every floor clear and nothing red.
+	if hereTerm != "" && lost == "" {
+		lost = fmt.Sprintf("%d: a heredoc %q opened here is never terminated, so lines %d-%d were skipped as its body", hereLine, hereTerm, hereLine+1, len(raw))
+	}
+	return out, lost, here
 }
 
 // tsBraceDelta counts the block braces on a logical line — the ones outside
@@ -597,8 +690,8 @@ func tsRead(path string) (*tsScript, error) {
 		return s, nil
 	}
 	s.Lines = strings.Split(string(b), "\n")
-	logical, lost := tsReadLines(strings.Split(tsMaskParamExp(string(b)), "\n"), s.Lines)
-	s.Lost = lost
+	logical, lost, here := tsReadLines(strings.Split(tsMaskParamExp(string(b)), "\n"), s.Lines)
+	s.Lost, s.Here, s.Logical = lost, here, logical
 
 	// 1. functions, by brace count over the logical lines.
 	for i := 0; i < len(logical); i++ {
@@ -642,6 +735,27 @@ func tsRead(path string) (*tsScript, error) {
 			s.Order = append(s.Order, f.Name)
 		}
 		s.Funcs[f.Name] = f
+	}
+
+	// 1b. each function's own body, masked and raw. Two readers need it: this
+	//     one, for the names a handler function mentions, and
+	//     trapsignalexit_qa_test.go, which asks whether a function ENDS THE
+	//     SHELL — both of its own body and of a function its body calls, one
+	//     level deep.
+	//
+	//     A definition nested inside another contributes its lines to BOTH,
+	//     which for "does this exit" is the loose-toward-pass direction (an
+	//     `exit` in an inner function is read as the outer one's too). The
+	//     alternative is subtracting inner extents, and no handler under
+	//     scripts/ holds a nested definition (MEASURED 2026-11-13), so the
+	//     subtraction would be untested machinery.
+	for _, l := range logical {
+		for _, f := range s.Funcs {
+			if l.Line >= f.Start && l.Line <= f.End {
+				f.Body += l.Text + "\n"
+				f.BodyRaw += l.Raw + "\n"
+			}
+		}
 	}
 
 	// 2. what each function declares local, and what it assigns.
@@ -694,10 +808,14 @@ func tsRead(path string) (*tsScript, error) {
 		}
 	}
 
-	// 3. the EXIT traps and the names their handlers read.
+	// 3. every trap registration, and for the EXIT ones the names their
+	//    handlers read. The registrations are kept whatever they are
+	//    registered on, because ranger-base-kkp5g's rule is about the ones
+	//    that are NOT EXIT; this pin filters to EXIT immediately below and
+	//    its own reading is unchanged by their being recorded.
 	for _, l := range logical {
 		code := strings.TrimSpace(l.Text)
-		if !strings.HasPrefix(code, "trap ") || !tsExitWord.MatchString(code) {
+		if !strings.HasPrefix(code, "trap ") {
 			continue
 		}
 		// The handler is taken from the RAW text: a trap written inline is
@@ -706,26 +824,36 @@ func tsRead(path string) (*tsScript, error) {
 		rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l.Raw), "trap "))
 		handler := tsFirstWord(rest)
 		if handler == "" || handler == "-" {
+			// `trap '' SIG` ignores and `trap - SIG` resets. Neither runs
+			// code, so neither can tear an apparatus down and resume, and
+			// neither is trap state. Both rules skip them.
+			continue
+		}
+		// bodyText is MASKED, for a command-position test (the signal rule);
+		// bodyRaw is the same bytes unmasked, which is where a variable NAME
+		// is read from (this one). A handler naming a function resolves to
+		// that function's body; an inline one is its own text.
+		f, isFunc := s.Funcs[handler]
+		bodyText, bodyRaw := tsMaskParamExp(handler), handler
+		if isFunc {
+			bodyText, bodyRaw = f.Body, f.BodyRaw
+		}
+		s.Traps = append(s.Traps, tsTrap{
+			Line:    l.Line,
+			Signals: tsTrapSignals(rest),
+			Handler: handler,
+			IsFunc:  isFunc,
+			Body:    bodyText,
+			Code:    s.CodeAt(l.Line),
+		})
+		if !tsExitWord.MatchString(code) {
 			continue
 		}
 		s.Handlers = append(s.Handlers, handler)
-		body := handler
-		if f, ok := s.Funcs[handler]; ok {
-			var parts []string
-			for _, h := range logical {
-				if h.Line >= f.Start && h.Line <= f.End {
-					parts = append(parts, h.Raw)
-				}
+		for _, m := range tsVarRef.FindAllStringSubmatch(bodyRaw, -1) {
+			if isFunc && f.Locals[m[1]] {
+				continue
 			}
-			body = strings.Join(parts, "\n")
-			for _, m := range tsVarRef.FindAllStringSubmatch(body, -1) {
-				if !f.Locals[m[1]] {
-					s.ReadVars[m[1]] = true
-				}
-			}
-			continue
-		}
-		for _, m := range tsVarRef.FindAllStringSubmatch(body, -1) {
 			s.ReadVars[m[1]] = true
 		}
 	}
@@ -830,6 +958,40 @@ func tsFirstWord(rest string) string {
 		return rest[1:]
 	}
 	return strings.Fields(rest)[0]
+}
+
+// tsTrapSignals returns the signal words of a `trap <handler> <sig>…`, from
+// the same `rest` tsFirstWord takes its handler from — so the two cannot
+// disagree about where the handler ends and the signals begin, which is the
+// whole of what this function has to get right.
+//
+// Normalised the way `trap` itself reads them: case-insensitive and with an
+// optional `SIG` prefix, so `TERM`, `term` and `SIGTERM` are one answer. A
+// numeric spelling is kept as its digits and tsgDeadly knows the four that
+// matter; none appears under scripts/ today (MEASURED 2026-11-13).
+func tsTrapSignals(rest string) []string {
+	if rest == "" {
+		return nil
+	}
+	if q := rest[0]; q == '\'' || q == '"' {
+		if end := strings.IndexByte(rest[1:], q); end >= 0 {
+			rest = rest[2+end:]
+		} else {
+			rest = ""
+		}
+	} else if i := strings.IndexAny(rest, " \t"); i >= 0 {
+		rest = rest[i:]
+	} else {
+		rest = ""
+	}
+	var out []string
+	for _, w := range strings.Fields(rest) {
+		w = strings.ToUpper(strings.Trim(w, `'"`))
+		if w = strings.TrimPrefix(w, "SIG"); w != "" {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // CodeAt returns one physical line of the script as it is written, for a
@@ -951,9 +1113,11 @@ func TestQAEveryTrapStateSetterRunsInTheTrapsOwnShell(t *testing.T) {
 	// assertion that every setter is clean is satisfied by a census that
 	// found none, and a census that found none says nothing about it.
 	// MEASURED 2026-11-13 (see the head comment): 48 shell files of the 64
-	// under scripts/, 25 with an EXIT trap, 46 handler-read names, 426
-	// functions, 16 setters. Each floor sits well under its reading, so an
-	// ordinary landing does not move it.
+	// under scripts/, 27 with an EXIT trap, 48 handler-read names, 436
+	// functions, 17 setters. Each floor sits well under its reading, so an
+	// ordinary landing does not move it — and, as the head comment's last
+	// paragraph says, that clearance is exactly why none of them noticed the
+	// reader dropping four files' tails.
 	if shell < 40 || trapped < 18 || vars < 32 || funcs < 300 || setters < 10 {
 		t.Fatalf("the census found %d shell file(s), %d with an EXIT trap, %d handler-read name(s), %d function(s) and %d trap-state setter(s) — the reader is broken, not the tree (MEASURED 2026-11-13: see the head comment)", shell, trapped, vars, funcs, setters)
 	}
