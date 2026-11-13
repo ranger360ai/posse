@@ -145,10 +145,35 @@ func TestQAWallExecConfigCarvesClaudesExecutableConfig(t *testing.T) {
 		}
 	}
 	// The SBPL half: the same carve renders a deny line per member.
+	//
+	// HAND-TYPED AND COMPLETE, where the two loops above read the tables
+	// (ranger-base-nxus6). Those loops are the thing under test supplying
+	// its own fixture: take a name out of claudeExecConfigDirNames and the
+	// loop asks about one member fewer, so every per-entry mutant of either
+	// table is equivalent to them. This list is the other reader, and it is
+	// written out rather than derived for exactly that reason. It is also
+	// the half that runs on EVERY host: the live pin below grades the same
+	// mutation on the kernel's errno, and it skips where bwrap is not the
+	// mechanism.
+	//
+	// Both tables, in full, as of 2026-11-12. A member added to a table and
+	// not added here reds with the member named — which is the direction
+	// that keeps the two lists one list.
 	prof := SeatbeltProfile(f.ag.Name, w, nil, c)
-	for _, n := range []string{"settings.json", "skills", "plugins", "CLAUDE.md"} {
+	declared := []string{
+		"agents", "commands", "daemon", "hooks", "output-styles",
+		"plugins", "routines", "rules", "skills", "workflows",
+		"CLAUDE.md", "daemon.json", "launch.json", "scheduled_tasks.json",
+		"settings.json", "settings.local.json",
+	}
+	for _, n := range declared {
 		if !strings.Contains(prof, sbQuote(filepath.Join(cfg, n))) {
-			t.Errorf("the seatbelt profile names no deny over %s", n)
+			t.Errorf("the seatbelt profile names no deny over %s — claude runs or obeys what is planted there, and the carve is the only thing standing between a caged seat and that write (ranger-base-y438o, ranger-base-d0rnr)", n)
+		}
+	}
+	for _, n := range append(append([]string{}, claudeExecConfigDirNames...), claudeExecConfigFileNames...) {
+		if !containsString(declared, n) {
+			t.Errorf("%s is a declared member of claude's config-dir carve and this pin's hand-typed list does not name it — add it. The list is hand-typed so that a name taken OUT of a table reds; a name added to a table and not here is the same drift running the other way (ranger-base-nxus6).", n)
 		}
 	}
 	// And a seat on another runtime gets none of it.
@@ -317,8 +342,73 @@ func TestQAWallExecConfigLaunchLineReplacesAPlantedLink(t *testing.T) {
 	}
 }
 
+// wallRefusalWords are the kernel's own words for a write the WALL refused.
+// A refused row is graded on these and not on the shell's exit status, which
+// is the whole of ranger-base-nxus6's fix below.
+//
+// MEASURED 2026-11-11 (ranger-base-2smyx) and re-measured 2026-11-12 over
+// every row of the table below, on this box (linux 7.2.15 x86_64, bwrap):
+// 26 of the 28 rows read `Read-only file system` — the ro-bind over the path
+// or over its parent — and the two `mv` rows read `Device or resource busy`,
+// because their destination IS a bind mount and a rename onto a mount point
+// is refused by the mount rather than by the mode. Nothing else was
+// observed, and in particular no row reads `No such file or directory`.
+//
+// Deliberately only the two that were measured. A row added later that the
+// wall refuses some other way — a seccomp verdict, a write through a
+// /dev/null mask — reds here with the shell's words on the screen, and the
+// fix is to measure it and add it with its date, never to widen this list on
+// a guess. The list being tight is what makes it a witness.
+var wallRefusalWords = []string{
+	"Read-only file system",
+	"Device or resource busy",
+}
+
+// wallRefusedBy returns the words that grade `out` as a wall refusal, or "".
+func wallRefusedBy(out string) string {
+	for _, w := range wallRefusalWords {
+		if strings.Contains(out, w) {
+			return w
+		}
+	}
+	return ""
+}
+
 // The live join: posse's own render, the real bwrap, a write at every row of
 // y438o's table refused, and the writes claude needs still allowed.
+//
+// EVERY REFUSED ROW IS GRADED ON THE ERRNO, not on the exit status
+// (ranger-base-nxus6, from ranger-base-2smyx's verify of ranger-base-6akzw).
+// A nonzero exit is not evidence of a wall. Five of claudeExecConfigDirNames'
+// ten members — agents, commands, hooks, output-styles, rules — have no
+// directory in weFixtureIn and exist at run time ONLY because they are
+// denies, since a deny inside a write grant makes BwrapArgs emit a
+// PrepMkdirAll. So taking a name out of the table took the deny and the
+// directory together, and the row passed on a missing parent instead of on a
+// read-only one. MEASURED 2026-11-11:
+//
+//	for n in agents commands hooks output-styles rules; do
+//	  sed -i "s/\"$n\", //" internal/posse/wallexecconfig.go
+//	  go test ./internal/posse -run WallExecConfig -count=1   # ok, every time
+//	done
+//
+// The render pins' own table loops could not grade it either — they read the
+// table under test, so every per-entry mutant is equivalent to them — which
+// is why TestQAWallExecConfigCarvesClaudesExecutableConfig now holds a
+// hand-typed list of all sixteen members as well. That list is the witness
+// on a host where bwrap is not the mechanism; here it is the shell's own
+// words:
+//
+//	agents  fixture-dir-exists=true   .../agents/x: Read-only file system
+//	hooks   fixture-dir-exists=false  .../hooks/x:  No such file or directory
+//
+// The second half of the same gap is a member with no row at all: dropping
+// `output-styles` or `rules` changed nothing here because neither was tried.
+// So the rows below are held to covering every declared member, by a loop at
+// the end of this test that reads the tables to DEMAND a row and never to
+// supply one. A mutant that drops a name drops its demand and keeps its
+// hand-typed row, which is the asymmetry that makes a derived coverage check
+// safe and the rows themselves worth hand-typing.
 func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
 	if runtime.GOOS != "linux" {
@@ -357,12 +447,17 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		"agents plant":               ": > " + q(filepath.Join(cfg, "agents", "x")),
 		"commands plant":             ": > " + q(filepath.Join(cfg, "commands", "x")),
 		"hooks plant":                ": > " + q(filepath.Join(cfg, "hooks", "x")),
+		"output-styles plant":        ": > " + q(filepath.Join(cfg, "output-styles", "x")),
+		"rules plant":                ": > " + q(filepath.Join(cfg, "rules", "x")),
 		// ranger-base-d0rnr: claude's own protected members. The dirs and
 		// files are absent in the fixture, so these rows also hold the prep
 		// that creates them before the mount. A dir row makes its dir first,
 		// as a seat would: without the `mkdir -p` it is refused by ENOENT
 		// whether or not the carve is there (MEASURED, the mutation that
-		// dropped the names read these three green).
+		// dropped the names read these three green). That is the same gap
+		// the errno grading closes for the other ten; the `mkdir -p` stays
+		// because it is also what a seat does, and the two witnesses are
+		// independent.
 		"workflows plant":              "mkdir -p " + q(filepath.Join(cfg, "workflows")) + " && : > " + q(filepath.Join(cfg, "workflows", "x.js")),
 		"routines plant":               "mkdir -p " + q(filepath.Join(cfg, "routines")) + " && : > " + q(filepath.Join(cfg, "routines", "x.md")),
 		"daemon plant":                 "mkdir -p " + q(filepath.Join(cfg, "daemon")) + " && : > " + q(filepath.Join(cfg, "daemon", "x")),
@@ -383,8 +478,41 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		"projects write": ": > " + q(filepath.Join(cfg, "projects", "x")),
 	}
 	for name, script := range refused {
-		if ok, out := try(script); ok {
+		ok, out := try(script)
+		switch {
+		case ok:
 			t.Errorf("%s: ALLOWED under the rendered wall (ranger-base-y438o row)\n script: %s\n out: %s", name, script, out)
+		case wallRefusedBy(out) == "":
+			t.Errorf("%s: refused, and NOT BY THE WALL — the shell's words are none of %v.\n"+
+				" script: %s\n out: %s\n"+
+				"A nonzero exit is not evidence of a deny. `No such file or directory` here means the path's parent is absent, which is what a member of claudeExecConfigDirNames looks like when its name has been taken OUT of the table: the deny and the PrepMkdirAll that creates the directory go together, so the row would pass on the missing parent and the carve could be dropped silently (ranger-base-nxus6). Either the fixture stopped creating what this row writes into, or the carve stopped being there.",
+				name, wallRefusalWords, script, out)
+		}
+	}
+	// Every declared member of claude's config dir is tried above. The rows
+	// are hand-typed on purpose — they are the only reader of those tables
+	// that a per-entry mutant cannot move — so this reads the tables to
+	// DEMAND a row and never to supply one.
+	for _, m := range []struct {
+		names []string
+		dir   bool
+	}{{claudeExecConfigDirNames, true}, {claudeExecConfigFileNames, false}} {
+		for _, n := range m.names {
+			want := filepath.Join(cfg, n)
+			if m.dir {
+				want += string(filepath.Separator)
+			}
+			tried := false
+			for _, script := range refused {
+				if strings.Contains(script, want) {
+					tried = true
+					break
+				}
+			}
+			if tried {
+				continue
+			}
+			t.Errorf("no row of this table writes to %s, a declared member of claude's config-dir carve — so nothing here can tell whether the wall refuses it, and taking %q out of the table would change nothing in the only pin that reads the errno (ranger-base-nxus6). Add a row.", want, n)
 		}
 	}
 	allowed := map[string]string{

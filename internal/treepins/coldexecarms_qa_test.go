@@ -143,12 +143,44 @@ const (
 // What those two variables have to still SAY, because a pin that only checks
 // the arms name them goes green over `COLDEXEC_ROOM :=` emptied to nothing.
 // One substring each, chosen as the part that carries the meaning: the flag
-// that makes the door refuse, and the three things the prelude has to do.
+// that makes the door refuse, and the two things the prelude has to do that
+// are a word rather than a shape — hand the nested directory on, and clear it
+// however the arm ends.
+//
+// COLDEXEC_TMP's third property is WHERE the directory is, and it is held by
+// cxaTempRoot below and NOT by a word here (ranger-base-nxus6). "mktemp -d"
+// used to be a row and is deliberately not one: the root check cannot pass
+// without finding that token, so a value that has stopped running mktemp
+// would red in two places and one dropped guard would read as two findings.
 var cxaVarMustHold = map[string][]string{
 	"COLDEXEC_ROOM":         {"-min-temp-mb", "$(COLDEXEC_TMP_FLOOR_MB)"},
-	"COLDEXEC_TMP":          {"mktemp -d", "TMPDIR=", "trap "},
+	"COLDEXEC_TMP":          {"TMPDIR=", "trap "},
 	"COLDEXEC_TMP_FLOOR_MB": {},
 }
+
+// cxaTempRoot is the root COLDEXEC_TMP's directory has to be nested under,
+// and it is the whole of the property cxaTemp's comment claims: $TMPDIR when
+// the seat has one, a bare /tmp when it has not, and nothing else.
+//
+// THE DEFECT IT CLOSES (ranger-base-nxus6, from ranger-base-2smyx's verify of
+// ranger-base-w5z7u). The three substrings this pin used to require —
+// "mktemp -d", "TMPDIR=", "trap " — are all satisfied by a value rooted
+// anywhere at all, so the pin was green against the one mutant it most needs
+// to catch. MEASURED 2026-11-11:
+//
+//	sed -i 's|\$\${TMPDIR:-/tmp}|/var/tmp|' Makefile   # the COLDEXEC_TMP line
+//	go test ./internal/treepins \
+//	  -run TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir -count=1
+//	# ok -- and go test ./cmd/coldexec -run 'Room|Quota|Temp' is ok too
+//
+// and that mutant is exactly the edit ranger-base-w5z7u argues against. A
+// TMPDIR off /tmp buys the room and COSTS A CLASS: four pins whose premise is
+// the unconditional bare /tmp in every rendered seatbelt go red
+// (ranger-base-u8xk4 holds the defect, ranger-base-akk9f the surfaces that
+// abbreviate $HOME). This pin green while four unrelated pins red is the
+// confusion the close exists to prevent, so the root is the one part of this
+// variable that is read as a SHAPE and not as a word.
+const cxaTempRoot = "$${TMPDIR:-/tmp}"
 
 // The floors under the census. 331 call sites in three packages on
 // 2026-11-11; both are deliberately loose, because their job is to catch a
@@ -525,6 +557,21 @@ func TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir(t *testing.T) {
 		}
 	}
 
+	// And COLDEXEC_TMP's root, which is a shape and not a word: the
+	// directory the arms run in has to be NESTED under $TMPDIR, with a bare
+	// /tmp as its only fallback.
+	if def, ok := cxaMakeVar(mk, "COLDEXEC_TMP"); ok {
+		tmpl, found := cxaMktempTemplate(def)
+		switch {
+		case !found:
+			t.Errorf("COLDEXEC_TMP no longer runs `mktemp -d` on a template this pin can read:\n  COLDEXEC_TMP = %s\nThe arms carry this variable as their whole prelude, so where its directory IS cannot be read off the arm lines — it is read here or nowhere (ranger-base-nxus6).", def)
+		case !strings.HasPrefix(tmpl, cxaTempRoot+"/"):
+			t.Errorf("COLDEXEC_TMP's directory is rooted at %q, not nested under %s:\n  COLDEXEC_TMP = %s\n"+
+				"The arm's temp directory goes UNDER $TMPDIR, never beside it and never at a path of its own. A root anywhere else buys the room and costs a class: four pins whose premise is the unconditional bare /tmp in every rendered seatbelt go red, and this pin green while they are red is the confusion ranger-base-w5z7u's close exists to prevent (ranger-base-u8xk4 holds that defect, ranger-base-akk9f the surfaces that abbreviate $HOME). A seat that has already moved its TMPDIR keeps it — the arm nests inside it. If the room on /tmp is the problem, that is the operator's to clear and the door's to REFUSE over, not this variable's to route around (ranger-base-nxus6).",
+				tmpl, cxaTempRoot, def)
+		}
+	}
+
 	// The floor is the one of the three that is a NUMBER, and a floor of
 	// zero turns the refusal off while every line above still passes.
 	if def, ok := cxaMakeVar(mk, "COLDEXEC_TMP_FLOOR_MB"); ok {
@@ -535,6 +582,37 @@ func TestQAEveryColdexecArmReadsTheRoomAndTakesItsOwnTempDir(t *testing.T) {
 			t.Errorf("COLDEXEC_TMP_FLOOR_MB is %d, which turns the refusal off: `-min-temp-mb 0` is the door's own spelling for \"do not check\", and every arm line still names $(COLDEXEC_ROOM) and reads as guarded (ranger-base-w5z7u).", n)
 		}
 	}
+}
+
+// cxaMktempTemplate returns the template argument of the first `mktemp -d` in
+// a Makefile variable's value, with one layer of shell quoting removed.
+//
+// Deliberately the simplest reader that can answer "what is this directory
+// rooted at", for the same reason cxaMakeVar is: the one value it is asked
+// about is a single `mktemp -d "<template>"` and a reader that handled word
+// splitting, nested substitution and `$(...)` would be a second shell nobody
+// has a use for. It answers false rather than guessing when the token is not
+// there, and the caller reports that as its own finding.
+func cxaMktempTemplate(def string) (string, bool) {
+	_, rest, ok := strings.Cut(def, "mktemp -d")
+	if !ok {
+		return "", false
+	}
+	rest = strings.TrimLeft(rest, " \t")
+	if rest == "" {
+		return "", false
+	}
+	if q := rest[0]; q == '"' || q == '\'' {
+		arg, _, ok := strings.Cut(rest[1:], string(q))
+		return arg, ok
+	}
+	words := strings.FieldsFunc(rest, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == ')' || r == ';'
+	})
+	if len(words) == 0 {
+		return "", false
+	}
+	return words[0], true
 }
 
 // cxaMakeVar reads one `NAME ?= value` or `NAME := value` assignment out of a
