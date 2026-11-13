@@ -6,7 +6,7 @@
 <title>posse — deputize the crew, keep the badge</title>
 <meta name="description" content="posse is the open-source crew harness from ranger360: deputize a crew of AI agents with real guardrails, dispatch them over a shared work graph, and keep the badge yourself.">
 <meta property="og:title" content="posse — deputize the crew, keep the badge">
-<meta property="og:description" content="An open-source crew harness for AI agents: personas with hard guardrails, a dependency-aware work queue, one cockpit, and an operator who keeps the keys.">
+<meta property="og:description" content="An open-source crew harness for AI agents: personas with hard guardrails, a dependency-aware work queue, live crew state on herdr or Rex, and an operator who keeps the keys.">
 <meta property="og:url" content="https://posse.bot/">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,6 61,38 95,38 67,58 78,92 50,71 22,92 33,58 5,38 39,38' fill='%23a03a1c'/%3E%3C/svg%3E">
@@ -308,6 +308,8 @@
     .rise:nth-child(10) { animation-delay: .95s; }
     .rise:nth-child(11) { animation-delay: 1.05s; }
     .rise:nth-child(12) { animation-delay: 1.15s; }
+    .rise:nth-child(13) { animation-delay: 1.25s; }
+    .rise:nth-child(14) { animation-delay: 1.35s; }
     @keyframes rise {
       to { opacity: 1; transform: none; }
     }
@@ -340,7 +342,8 @@
       open-source crew harness: you deputize a crew of agents &mdash; each
       one a persona with a name, a job, hard guardrails, and its own memory
       &mdash; dispatch them over a shared, dependency-aware work queue, and
-      watch the whole crew from one cockpit. The agents get genuine
+      watch the whole crew&rsquo;s live state from the multiplexer you
+      already run: herdr or Rex. The agents get genuine
       autonomy inside their bounds; the keys that matter never leave the
       operator&rsquo;s hand.
     </p>
@@ -360,8 +363,9 @@
 <span class="ps1">$</span> mkdir -p ~/code/myproj
 <span class="ps1">$</span> posse new myproj --dir ~/code/myproj --cmd claude
 <span class="ps1">$</span> posse prompt myproj "fix the failing test" --wait
-<span class="ps1">$</span> posse cockpit   <span class="cmt"># the whole crew at a glance, blocked-first</span></code></pre>
-    <p class="terminal-caption">a release binary — no go needed &middot; <a href="https://github.com/ranger360ai/posse/blob/main/INSTALL.md#1-prerequisites">still needs herdr &amp; beads</a> &middot; from source: see the readme</p>
+<span class="ps1">$</span> posse list      <span class="cmt"># live state per seat, on herdr or Rex</span>
+<span class="ps1">$</span> posse cockpit   <span class="cmt"># on herdr: the whole crew, blocked-first</span></code></pre>
+    <p class="terminal-caption">a release binary — no go needed &middot; <a href="https://github.com/ranger360ai/posse/blob/main/INSTALL.md#1-prerequisites">still needs beads, plus herdr or Rex</a> &middot; from source: see the readme</p>
   </section>
 
   <div class="star-rule rise" aria-hidden="true">&#9733;</div>
@@ -375,18 +379,32 @@
       </li>
       <li>
         <span class="name"><a href="https://github.com/gastownhall/beads">beads</a><small>work substrate</small></span>
-        <span class="what">dependency-aware task graph, agent mail, project memory</span>
+        <span class="what">dependency-aware task graph and project memory</span>
       </li>
       <li>
-        <span class="name"><a href="https://herdr.dev">herdr</a><small>oversight</small></span>
-        <span class="what">workspaces and live agent state &mdash; working, blocked, idle</span>
+        <span class="name"><a href="https://herdr.dev">herdr</a> or <a href="https://superlogical.com/rex">Rex</a><small>multiplexer &middot; pick one</small></span>
+        <span class="what">where the seats run, and their live state &mdash; working, blocked, idle. herdr reads it off the screen; on Rex (in beta) the runtime reports its own</span>
       </li>
       <li>
         <span class="name">runtimes<small>interchangeable</small></span>
-        <span class="what">Claude Code, Codex, whatever rides next &mdash; the labor, not the harness</span>
+        <span class="what">Claude Code, Codex, Grok, IBM Bob, whatever rides next &mdash; the labor, not the harness</span>
       </li>
     </ul>
   </section>
+
+  <!-- what's next: offered for the operator to keep or cut (ranger-base-w9k9o);
+       delete from here to the matching end comment to cut it -->
+  <div class="star-rule rise" aria-hidden="true">&#9733;</div>
+
+  <section class="story rise">
+    <h2>What&rsquo;s next</h2>
+    <p>
+      An enforced cage on Linux, to match the one macOS seats already run
+      in. A cockpit for Rex, so both multiplexers get the blocked-first
+      view. And more runtimes reporting their own state on Rex.
+    </p>
+  </section>
+  <!-- end what's next -->
 
   <div class="star-rule rise" aria-hidden="true">&#9733;</div>
 
