@@ -18,6 +18,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -231,6 +232,23 @@ func TestQALandedCheckJudgeEnvIsTheAllowlist(t *testing.T) {
 	const unset = "LC_ALL"
 	t.Setenv(unset, "")
 	os.Unsetenv(unset)
+
+	// AND THE PREMISE OF THAT ARM, WHICH NOTHING HELD (ranger-base-bdjot, the
+	// verify of ranger-base-o80tw's close). The absence assertion below reads
+	// "an ALLOWLISTED name that is unset is ABSENT", and the only thing making
+	// `unset` allowlisted is landedJudgeEnvKeys — which this test reads to
+	// BUILD its own `allowed` map, so the fixture comes from the list under
+	// test and every mutant of that list is equivalent to it. MEASURED: drop
+	// "LC_ALL" from landedJudgeEnvKeys and this test is green, because the
+	// name is then absent for the wrong reason; drop it AND replace
+	// landedJudgeEnv's os.LookupEnv guard with os.Getenv — the mutant the arm
+	// below exists to kill — and the pair is green too. landedJudgeEnvKeys has
+	// no reader anywhere else in this module (census 2026-11-13: landedcheck.go
+	// and this file), so no other arm could have said otherwise. One line, so
+	// that the arm reds when its premise leaves rather than going quiet.
+	if !slices.Contains(landedJudgeEnvKeys, unset) {
+		t.Fatalf("%s is not in landedJudgeEnvKeys, so the unset-name arm below has no premise: it asserts that an ALLOWLISTED name which is not set is ABSENT from the judge's environment, and a name that is not allowlisted is absent for a different reason. Name another allowlisted value here, do not delete the arm — it is the only one over landedJudgeEnv's os.LookupEnv guard (ranger-base-bdjot)", unset)
+	}
 
 	repo := filepath.Join(root, "repo")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
