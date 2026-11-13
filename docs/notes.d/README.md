@@ -12,6 +12,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-tq5tj](ranger-base-tq5tj.md) — ranger-base-tq5tj — the delta needed a baseline, so the pin forbids a baseline — 2026-11-13
 - [ranger-base-sxez7](ranger-base-sxez7.md) — The census went blind one root at a time, and its floor was seven below the live count (ranger-base-sxez7) — 2026-11-13
 - [ranger-base-rgyto](ranger-base-rgyto.md) — ranger-base-rgyto — the whole-file project-config branch now asks Lstat too — 2026-11-13
+- [ranger-base-lx5jk](ranger-base-lx5jk.md) — claude's sessions/ registry, private per seat at bwrap, and the rex join reads the private row first (ranger-base-lx5jk) — 2026-11-13
 - [ranger-base-hxenz](ranger-base-hxenz.md) — ranger-base-hxenz — the reaper forked once per pid per route, and `--self-test` paid it seven times — 2026-11-13
 - [ranger-base-equhp](ranger-base-equhp.md) — A lane was the union of every persona sharing ANY of a bead's labels (ranger-base-equhp) — 2026-11-13
 - [ranger-base-ckcly](ranger-base-ckcly.md) — One space fewer, and check 4 went quiet again (ranger-base-ckcly) — 2026-11-13

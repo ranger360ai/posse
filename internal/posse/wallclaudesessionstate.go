@@ -65,7 +65,21 @@ import "path/filepath"
 //
 // Nothing posse runs reads <cfg>/debug, so a private copy costs the box
 // nothing.
-var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history", "debug"}
+//
+// sessions/ joins for ranger-base-lx5jk. It is claude's peer registry: one
+// <pid>.json row per live session, carrying the socket other sessions connect
+// to, beside <pid>.<hash>.key peer tokens. Two readers trust it, and both are
+// what this protects. EVERY claude on the box reads it for peer discovery
+// (ListAgents/SendMessage) and connects where a row points, an uncaged one
+// included. And posse's own rex join (runtimesession.go) reads a row's
+// sessionId, which feeds sentline's echo verdict. A private copy means the
+// seat registers into its own dir, sees no peer's row, and cannot write one.
+//
+// Unlike the members above, posse DOES read this one, so the bind has a
+// reader-side half: claudeSessionOfPID reads the seat's private row (found
+// through /proc/<pid>/cwd) before the shared one. A caged claude survives the
+// bind with its own registration intact (MEASURED, ranger-base-tii0u).
+var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history", "debug", claudeSessionsDir}
 
 // claudeDebugDirName is the member above whose carve the two mechanisms spell
 // differently: bwrap gives the seat a private copy (it is in the list above),

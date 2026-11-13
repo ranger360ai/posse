@@ -43,3 +43,24 @@ func procStartOf(pid int) (string, error) {
 	}
 	return fields[procStatStartField-3], nil
 }
+
+// procCwdOf is the kernel's own reading of where pid is running:
+// `readlink /proc/<pid>/cwd`. runtimesession.go's private-first read takes
+// it to find a caged seat's own session row (ranger-base-lx5jk), and it sits
+// here because it is the same file family as the fence above: the kernel's
+// answer about a process, not the process's answer about itself. A row's own
+// `cwd` field would be the thing being located saying where it is.
+//
+// A cwd that has been removed reads back with a " (deleted)" suffix; that is
+// returned as it is, names no seat cache anyone made, and the caller's read
+// of it fails into the shared row.
+func procCwdOf(pid int) (string, error) {
+	if pid <= 0 {
+		return "", Die("no working directory for pid %d", pid)
+	}
+	cwd, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/cwd")
+	if err != nil {
+		return "", Die("working directory of pid %d: %v", pid, err)
+	}
+	return cwd, nil
+}

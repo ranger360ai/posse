@@ -74,6 +74,14 @@ type HerdrBackend struct {
 	// must never read the operator's own prompt history, and a reading
 	// nobody named is worse than the reading this bead started from.
 	ClaudeHistory string
+	// ClaudeSeatHome is the home claudeHistoryPath hangs that log off, and
+	// the one the bwrap render's private sessions/ bind is spelled against:
+	// the rex join reads a caged seat's private session row under
+	// SeatCacheDir(ClaudeSeatHome, …) before the shared one
+	// (runtimesession.go, ranger-base-lx5jk). Same discipline as
+	// ClaudeHistory: NewHerdrBackend fills it, every test backend leaves it
+	// empty, and empty reads no private row at all.
+	ClaudeSeatHome string
 	// PaneModes makes Sessions() read each session's pane for the permission
 	// mode it is actually in (permissionmode.go). Off by default because it
 	// costs one herdr call per readable session and Sessions() is also the
@@ -354,7 +362,7 @@ type NewSessionOpts struct {
 
 func NewHerdrBackend(a *App) *HerdrBackend {
 	b := &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile(),
-		ClaudeHistory: claudeHistoryPath(), Bd: NewBd()}
+		ClaudeHistory: claudeHistoryPath(), ClaudeSeatHome: claudeSeatHome(), Bd: NewBd()}
 	// WHICH OCCUPANT HOLDS THIS INSTANCE'S SEATS (ADR 0076 §6). The Slot is
 	// filled for a NON-herdr occupant only, and that asymmetry is the
 	// mechanical form of "the default stays herdr and herdr's code paths do

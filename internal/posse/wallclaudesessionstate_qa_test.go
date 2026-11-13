@@ -17,8 +17,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // cssFixture is weFixture plus another seat's live session state in the
@@ -366,5 +368,154 @@ func TestQAWallClaudeSessionStateSeatbeltDeniesTheSharedDebugDir(t *testing.T) {
 	}
 	if oprof, _ := sbRender(t, f, other, f.dir); sbLine(oprof, want) >= 0 {
 		t.Errorf("a codex seat's profile names %s, a directory nothing granted it\n%s", want, oprof)
+	}
+}
+
+// The live sessions/ pin (ranger-base-lx5jk): the rendered wall, the real
+// bwrap, a bystander's row and peer-token key planted in the SHARED
+// sessions/, and the seat's own registration.
+//
+// THE PROTECTED PROCESSES. An uncaged claude's peer discovery reads every row
+// in the shared sessions/ and connects to its messagingSocketPath, sending
+// the key file's token; a seat that can repoint a row or write a key gets the
+// uncaged session's messages and answers into its context. And sentline's
+// echo verdict reads the sessionId posse's rex join takes from the row, so a
+// rewritten row misdirects it. Both are protected by `sessions` being in
+// claudeSessionStateDirNames: drop the name and every plant below lands on
+// the host, and the seat's own row lands in the shared dir.
+func TestLiveWallClaudeSessionStateKeepsThePeerRegistryPrivate(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	if runtime.GOOS != "linux" {
+		t.Skip("bwrap is the Linux mechanism of the seatbelt tier (ADR 0080 D16)")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("bwrap is not on PATH: " + err.Error())
+	}
+	if why := liveBwrapApplyRefusal(); why != "" {
+		t.Skip("NOTHING MEASURED: " + why)
+	}
+	f, _, _ := cssFixture(t)
+	sess := filepath.Join(f.cfg, claudeSessionsDir)
+	peerRow := filepath.Join(sess, "99999.json")
+	peerKey := filepath.Join(sess, "99999."+strings.Repeat("ab", 32)+".key")
+	elsewhere := wallUngrantedDir(t)
+	for p, body := range map[string]string{
+		peerRow: `{"pid":99999,"sessionId":"00000000-0000-4000-8000-00000000peer","procStart":"1","messagingSocketPath":"/run/user/1/peer.sock"}` + "\n",
+		peerKey: "the uncaged peer's token\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	try := func(script string) (bool, string) {
+		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		return err == nil, strings.TrimSpace(string(out))
+	}
+	q := shellQuote
+	before := map[string][]byte{}
+	for _, p := range []string{peerRow, peerKey} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[p] = b
+	}
+	names := func() []string {
+		ents, _ := os.ReadDir(sess)
+		var out []string
+		for _, e := range ents {
+			out = append(out, e.Name())
+		}
+		return out
+	}
+	shared := names()
+	const protects = "an uncaged claude's peer discovery connects to a row's socket with its key's token, and sentline's echo verdict reads posse's join of the row (ranger-base-lx5jk)"
+
+	// The peer is not visible. Asked FIRST: a plant below creates the
+	// peer's name in this seat's own private dir.
+	if ok, out := try("ls -a " + q(sess) + " | grep -q 99999"); ok {
+		t.Errorf("the bystander's row is visible to the seat, so it can read a peer's token or socket — %s\n out: %s", protects, out)
+	}
+
+	for name, script := range map[string]string{
+		"peer row repointed":      "echo '{\"pid\":99999,\"messagingSocketPath\":\"" + f.dir + "/evil.sock\"}' > " + q(peerRow),
+		"peer row replaced":       "echo '{}' > " + q(sess+"/x.tmp") + " && mv " + q(sess+"/x.tmp") + " " + q(peerRow),
+		"peer key rewritten":      "echo FORGED > " + q(peerKey),
+		"live-looking row added":  "echo '{\"pid\":1,\"sessionId\":\"x\",\"pidDomain\":\"elsewhere\"}' > " + q(filepath.Join(sess, "1.json")),
+		"sessions dir moved":      "mv " + q(sess) + " " + q(sess+".old") + " && mkdir " + q(sess),
+		"sessions dir relinked":   "rm -rf " + q(sess) + " && ln -s " + q(elsewhere) + " " + q(sess),
+		"sessions dir via a link": "ln -s " + q(sess) + " " + q(filepath.Join(f.dir, "s")) + " && echo FORGED > " + q(filepath.Join(f.dir, "s", filepath.Base(peerKey))),
+	} {
+		_, out := try(script)
+		for p, b := range before {
+			if got, err := os.ReadFile(p); err != nil || string(got) != string(b) {
+				t.Errorf("%s: the shared %s changed on the host (%q, %v) — %s\n script: %s\n out: %s", name, filepath.Base(p), got, err, protects, script, out)
+				_ = os.WriteFile(p, b, 0o600)
+			}
+		}
+		if fi, err := os.Lstat(sess); err != nil || !fi.IsDir() {
+			t.Fatalf("%s: the shared sessions/ is now %v (%v) — %s\n script: %s\n out: %s", name, fi, err, protects, script, out)
+		}
+		if got := names(); strings.Join(got, ",") != strings.Join(shared, ",") {
+			t.Errorf("%s: the shared sessions/ holds %v, was %v — a new row there reads as a live peer to every claude on the box; %s\n script: %s\n out: %s", name, got, shared, protects, script, out)
+		}
+		_ = os.RemoveAll(sess + ".old")
+		_ = os.Remove(filepath.Join(f.dir, "s"))
+	}
+
+	// The seat's own registration: a process under the wall writes its row
+	// as claude does — its own pid (the host's: no --unshare-pid) and the
+	// kernel's start time — and stays alive so the fence can be taken.
+	own := filepath.Join(SeatCacheDir(f.home, f.dir), claudePrivateSessionStateRel, claudeSessionsDir)
+	const ownSession = "22222222-2222-4222-8222-222222222222"
+	reg := `st=$(cut -d' ' -f22 /proc/$$/stat) && printf '{"pid":%s,"sessionId":"` + ownSession + `","procStart":"%s"}' "$$" "$st" > ` + q(sess) + `/$$.json && exec sleep 60`
+	cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", reg)...)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	var row string
+	for deadline := time.Now().Add(10 * time.Second); row == "" && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		ents, _ := os.ReadDir(own)
+		for _, e := range ents {
+			if b, err := os.ReadFile(filepath.Join(own, e.Name())); err == nil && strings.Contains(string(b), ownSession) && strings.HasSuffix(string(b), "}") {
+				row = e.Name()
+			}
+		}
+	}
+	if row == "" {
+		t.Fatalf("the seat's own row never landed in its private dir %s — %s; shared dir holds %v", own, protects, names())
+	}
+	pid, err := strconv.Atoi(strings.TrimSuffix(row, ".json"))
+	if err != nil {
+		t.Fatalf("own row %q is not named by a pid", row)
+	}
+	if _, err := os.Stat(filepath.Join(sess, row)); err == nil {
+		t.Errorf("the seat's own row landed in the SHARED sessions/ — %s", protects)
+	}
+	// A host-side row in the shared dir for the same pid, fenced right but
+	// naming another conversation: the join must still answer the seat's own.
+	start, err := procStartOf(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoy := filepath.Join(sess, row)
+	if err := os.WriteFile(decoy, []byte(`{"pid":`+strconv.Itoa(pid)+`,"sessionId":"33333333-3333-4333-8333-333333333333","procStart":"`+start+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(decoy)
+	got, err := claudeSessionOfPID(filepath.Join(f.cfg, claudeHistoryFile), f.home, pid)
+	if err != nil || got != ownSession {
+		t.Errorf("the rex join answered %q, %v for the caged seat's pid %d, want its own %q from the private row — sentline's echo verdict reads whichever conversation this names", got, err, pid, ownSession)
 	}
 }

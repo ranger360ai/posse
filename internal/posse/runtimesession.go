@@ -178,11 +178,46 @@ func claudeSessionIn(path string, pid int, start string) (string, error) {
 	return row.SessionID, nil
 }
 
-// claudeSessionOfPID is claudeSessionIn with the fence taken.
-func claudeSessionOfPID(history string, pid int) (string, error) {
+// claudePrivateSessionRowPath is the row for one pid in the seat-private
+// sessions/ a caged claude seat registers into (ranger-base-lx5jk): the
+// SeatCacheDir of the directory the KERNEL says that pid runs in, under the
+// home the private bind was rendered against. "" when there is no home — every
+// test backend, by the same discipline as ClaudeHistory — or no cwd reading.
+func claudePrivateSessionRowPath(home, cwd string, pid int) string {
+	seat := SeatCacheDir(home, cwd)
+	if seat == "" || pid <= 0 {
+		return ""
+	}
+	return filepath.Join(seat, claudePrivateSessionStateRel, claudeSessionsDir, strconv.Itoa(pid)+".json")
+}
+
+// claudeSessionOfPID is claudeSessionIn with the fence taken, over the
+// seat's PRIVATE row first and the shared one second (ranger-base-lx5jk).
+//
+// WHY TWO ROWS. A caged claude seat's sessions/ is a private bind
+// (claudeSessionStateDirNames), so its row is no longer in the shared dir at
+// all; without this read every caged seat's echo reading would go off. The
+// private dir is found through /proc/<pid>/cwd — the kernel's reading, the
+// same file family as the fence — and never through the row's own `cwd`,
+// which would be the thing being located saying where it is.
+//
+// WHY THIS ORDER IS SAFE. After the bind, only that seat (or the host) can
+// write its private row, and only the host can write the shared one. So
+// either source is honest about the pid it names, and a seat that lies in its
+// own private row misleads only its own echo reading. The fence is taken on
+// EACH row, and a private row that is absent or refused falls through to the
+// shared one: an uncaged seat has no private dir, and that is its normal case.
+func claudeSessionOfPID(history, home string, pid int) (string, error) {
 	start, err := procStartOf(pid)
 	if err != nil {
 		return "", err
+	}
+	if home != "" && history != "" {
+		if cwd, err := procCwdOf(pid); err == nil {
+			if id, err := claudeSessionIn(claudePrivateSessionRowPath(home, cwd, pid), pid, start); err == nil {
+				return id, nil
+			}
+		}
 	}
 	return claudeSessionIn(claudeSessionRowPath(history, pid), pid, start)
 }
@@ -204,5 +239,5 @@ func (b *HerdrBackend) rexAgentSession(rm RexMux, target Seat) (string, error) {
 	if owner.Name != claudeRuntimeProcName {
 		return "", Die("rex block %s is held by %s(%d) and not claude — the submit log this id is for is claude's own", target.Pane, owner.Name, owner.PID)
 	}
-	return claudeSessionOfPID(b.ClaudeHistory, owner.PID)
+	return claudeSessionOfPID(b.ClaudeHistory, b.ClaudeSeatHome, owner.PID)
 }

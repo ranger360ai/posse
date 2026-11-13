@@ -23,3 +23,11 @@ import "runtime"
 func procStartOf(pid int) (string, error) {
 	return "", Die("no process start time reading on %s, so a claude session row cannot be fenced against pid reuse (procstart_other.go)", runtime.GOOS)
 }
+
+// procCwdOf has no `/proc` to read either. Nothing reaches it off linux
+// today — procStartOf refuses first and the join stops there — and it
+// answers "not available" rather than a guess so that stays true if that
+// order ever changes.
+func procCwdOf(pid int) (string, error) {
+	return "", Die("no process working directory reading on %s (procstart_other.go)", runtime.GOOS)
+}

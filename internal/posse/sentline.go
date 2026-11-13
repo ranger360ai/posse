@@ -141,11 +141,24 @@ type submittedRow struct {
 // (runtimehome_qa_test.go), beside the census that says no second read of
 // these names grows back.
 func claudeHistoryPath() string {
-	home, err := os.UserHomeDir()
-	if _, named := runtimeHomeOverride(ClaudeConfigDirVar); (err != nil || home == "") && !named {
+	home := claudeSeatHome()
+	if _, named := runtimeHomeOverride(ClaudeConfigDirVar); home == "" && !named {
 		return ""
 	}
 	return filepath.Join(ClaudeConfigDirIn(home), claudeHistoryFile)
+}
+
+// claudeSeatHome is the home claudeHistoryPath resolves, or "" when there is
+// none. One read, so the history path and the private session row
+// (HerdrBackend.ClaudeSeatHome, ranger-base-lx5jk) cannot hang off two
+// different homes. It is os.UserHomeDir for the reason the bwrap render's
+// private binds are: that is the home they are spelled against.
+func claudeSeatHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
 }
 
 // lastSubmitted returns the text of the most recent prompt submitted in the

@@ -369,3 +369,88 @@ func TestQAAnOccupantWithNeitherRouteStillAnswersSection4(t *testing.T) {
 		t.Errorf("the §4 refusal names the verb %q, want the runtime-session read", verb)
 	}
 }
+
+// ─── the seat-private row (ranger-base-lx5jk) ────────────────────────────────
+
+// A caged claude seat's sessions/ is a private bind, so its row lives under
+// SeatCacheDir(home, its cwd) and not in the shared dir. The join reads that
+// row FIRST, fenced like the shared one, and falls through to the shared row
+// when the private one is absent or refused. The protected reading is
+// sentline's echo verdict: without the private read every caged seat's echo
+// goes off, and with it read SECOND a host-side row would outrank the seat's
+// own.
+func TestQAARexJoinReadsTheSeatsPrivateRowBeforeTheSharedOne(t *testing.T) {
+	t.Parallel()
+
+	start := ownProcStart(t)
+	pid := os.Getpid()
+	cwd, err := procCwdOf(pid)
+	if err != nil {
+		t.Fatalf("procCwdOf(own pid) = %v — the kernel's cwd reading is what finds the private row", err)
+	}
+	const sharedSession = "11111111-1111-4111-8111-111111111111"
+	history := armClaudeSessionRow(t, nil, pid, map[string]any{"pid": pid, "sessionId": sharedSession, "procStart": start})
+	home := t.TempDir()
+	priv := claudePrivateSessionRowPath(home, cwd, pid)
+	if want := filepath.Join(SeatCacheDir(home, cwd), claudePrivateSessionStateRel, claudeSessionsDir, strconv.Itoa(pid)+".json"); priv != want {
+		t.Fatalf("private row path = %q, want %q — the dir the bwrap render binds over <cfg>/sessions", priv, want)
+	}
+	if err := os.MkdirAll(filepath.Dir(priv), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeRow := func(row map[string]any) {
+		t.Helper()
+		raw, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(priv, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Sequential: every step rewrites the one private row.
+	for _, c := range []struct {
+		name          string
+		row           map[string]any // nil = no private row
+		history, home string
+		want          string // "" = refused
+	}{
+		{"the private row answers before the shared one", map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": start}, history, home, qzujzSession},
+		{"no private row falls through to the shared one", nil, history, home, sharedSession},
+		{"a private row that fails the fence falls through", map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": "1"}, history, home, sharedSession},
+		{"a private row about another pid falls through", map[string]any{"pid": pid + 1, "sessionId": qzujzSession, "procStart": start}, history, home, sharedSession},
+		// The test-backend discipline: no home, no private read.
+		{"no home reads no private row", map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": start}, history, "", sharedSession},
+		// And the store's off bit stays one bit: a backend that reads no
+		// history reads no session row of either kind.
+		{"no history store reads nothing, private row or not", map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": start}, "", home, ""},
+	} {
+		_ = os.Remove(priv)
+		if c.row != nil {
+			writeRow(c.row)
+		}
+		got, err := claudeSessionOfPID(c.history, c.home, pid)
+		switch {
+		case c.want == "" && err == nil:
+			t.Errorf("%s: answered %q, want a refusal", c.name, got)
+		case c.want != "" && err != nil:
+			t.Errorf("%s: %v, want %q", c.name, err, c.want)
+		case got != c.want:
+			t.Errorf("%s: answered %q, want %q — sentline reads the echo of whichever conversation this names", c.name, got, c.want)
+		}
+	}
+
+	// Through the backend: a test backend leaves the home empty, as it leaves
+	// ClaudeHistory, and the field is what the join is handed.
+	b, _ := newTestBackend(t)
+	if b.ClaudeSeatHome != "" {
+		t.Fatalf("a test backend carries ClaudeSeatHome %q — it would read a private row under a real home", b.ClaudeSeatHome)
+	}
+	b.Slot = rexSeedOwnedBy(t, &RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
+	b.ClaudeHistory, b.ClaudeSeatHome = history, home
+	writeRow(map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": start})
+	if got, err := b.paneAgentSession(rexTestSeat()); err != nil || got != qzujzSession {
+		t.Errorf("paneAgentSession = %q, %v; want the private row's %q — rexAgentSession must hand the join ClaudeSeatHome", got, err, qzujzSession)
+	}
+}
