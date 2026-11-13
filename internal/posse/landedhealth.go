@@ -143,6 +143,22 @@ func (c *landedChecker) health(repo, tree string, v landVerdict, took time.Durat
 // healthSilent is the top two rows: count this silence, and on the second
 // consecutive one file the bead that says the judge is not judging.
 func (c *landedChecker) healthSilent(repo, tree string, n int, said string) {
+	if n == 0 {
+		// The SAME clear healthAnswered does on the same reading, and for
+		// the same reason: a count that reads zero carried nothing over
+		// anything, whichever verdict is being counted. Without it the mark
+		// is cleared on one of the two paths out of `health`, so a record
+		// somebody zeroed by hand — or one landedQuietRecorded could not
+		// parse, which it reads as zero deliberately — leaves the caveat
+		// standing, and the next crossing of two GENUINELY consecutive
+		// silences files a bead saying THEY ARE NOT CONSECUTIVE. That is
+		// ranger-base-4jroi's own defect with the sign flipped: a D6.3
+		// description claiming something that did not happen, sending
+		// architecture to look for an answered run that never ran
+		// (ranger-base-9n98o). Free, like the other one — a map delete is
+		// no git write and no bd call.
+		c.markQuietUnreset(repo, false)
+	}
 	// Read the remembered sentence BEFORE overwriting it: the bead carries
 	// both runs' `said` lines, and this run is the second of them.
 	prev := c.quietSaid[repo]
@@ -192,6 +208,10 @@ func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Durat
 		// behind to caveat the next honest crossing. Free — a map delete is
 		// no git write and no bd call, which is what the early return below
 		// and TestAGreenLandingSpendsNoBdCall are about.
+		//
+		// healthSilent makes the same reading on its own way in, because a
+		// hand-zeroed record reaches the next crossing by EITHER path and
+		// the clear has to be on both (ranger-base-9n98o).
 		c.markQuietUnreset(repo, false)
 	}
 	if n == 0 && !over {

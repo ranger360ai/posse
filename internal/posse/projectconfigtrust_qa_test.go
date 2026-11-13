@@ -618,3 +618,91 @@ func TestQAProjectConfigTrustWholeFileDanglingSymlinkIsPresent(t *testing.T) {
 		})
 	}
 }
+
+// ranger-base-9n98o (finding from ranger-base-obato's verify of
+// ranger-base-rgyto): the hoisted presence check FAILS CLOSED, and until this
+// arm existed that half of it was held by nothing.
+//
+// ranger-base-rgyto hoisted the Lstat above the branch and is well pinned for
+// the row it MOVED — a dangling symlink at a whole-file entry (the arm
+// above), where every mutant including a full revert of the hoist reds. What
+// the same change carried with it, and named in its own commit message as a
+// widening — "a non-IsNotExist Lstat error now degrades 'classification
+// failed: unreadable' there too, where it used to be called clean" — had no
+// arm at all. MEASURED 2026-11-13 (linux 7.2.15 x86_64, go1.27.3): replacing
+// that degrade with `return ""` — failing OPEN on a project-config entry the
+// launch cannot classify, in a check whose whole job is to fail closed — was
+// GREEN over `-run 'TestQAProjectConfigTrust|ProjectConfig'`. The gap
+// predates the hoist on the keyed branch; the hoist doubled the surface it
+// leaves unguarded, exactly as ranger-base-g3pfl doubled the surface of the
+// defect ranger-base-rgyto fixed.
+//
+// AN UNSEARCHABLE PARENT IS THE CHEAP SHAPE: no root, no fixture beyond a
+// chmod, and it is a real one — a repo can ship a mode-0 directory, and a
+// launch that cannot read what is inside one may not call it clean.
+//
+// EVERY DECLARED ENTRY OF EVERY RUNTIME, read off the runtimes rather than
+// spelled, because what this is about is the check and not one of the four
+// paths that reach it: a runtime that declares a new project-config entry
+// tomorrow is in this arm the day it lands. Asserted per ENTRY, which is the
+// answer the f67jx census reads, because two entries can share a parent and
+// ProjectConfigTrust returns only the first offender in declared order — and
+// then once at the launch level, which is the answer the operator sees.
+func TestQAProjectConfigTrustUnreadablePresenceFailsClosed(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the mode bits this arm plants; the Lstat would succeed")
+	}
+	a := &App{Home: t.TempDir(), StateDir: t.TempDir()}
+	members := trustExemptCLIHomeExecMembers(wallHome())
+
+	const want = "project config classification failed: unreadable: "
+	seen := 0
+	for _, name := range a.ListRuntimes() {
+		rt, err := a.LoadRuntime(name)
+		if err != nil {
+			t.Fatalf("load %s: %v", name, err)
+		}
+		for _, rel := range rt.ProjectConfig {
+			seen++
+			t.Run(name+"-"+strings.ReplaceAll(rel, "/", "-"), func(t *testing.T) {
+				dir := t.TempDir()
+				p := filepath.Join(dir, filepath.FromSlash(rel))
+				parent := filepath.Dir(p)
+				if err := os.MkdirAll(parent, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				// The entry IS there. What the launch cannot do is see it.
+				if err := os.WriteFile(p, []byte(`{"anything":{}}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				// The control first, while the dir is still readable: this
+				// body is classified, so the finding below is the chmod's
+				// and not the file's.
+				if got := projectConfigVerdict(t, projectConfigTrustEntry(rt, dir, rel, members)); strings.HasPrefix(got, want) {
+					t.Fatalf("%s %s is already unreadable before the chmod, so this arm measures nothing: %q", name, rel, got)
+				}
+				if err := os.Chmod(parent, 0o000); err != nil {
+					t.Fatal(err)
+				}
+				// t.TempDir's own cleanup cannot descend into a mode-0 dir.
+				t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+
+				got := projectConfigVerdict(t, projectConfigTrustEntry(rt, dir, rel, members))
+				if !strings.HasPrefix(got, want) || !strings.Contains(got, "permission denied") {
+					t.Errorf("%s %s under an unsearchable parent = %q, want %q… naming the permission error — an entry the launch cannot classify may not be called clean (ADR 0002 amendment 2026-08-26 §4)", name, rel, got, want)
+				}
+				// And the launch-level answer. Another entry sharing this
+				// parent may be the one it names, which is why the row
+				// above is the per-entry one; what is asserted here is that
+				// the walk does not hand the operator a clean launch.
+				if why := ProjectConfigTrust(rt, nil, dir); why == "" {
+					t.Errorf("%s: the launch is clean with %s unreadable", name, rel)
+				}
+			})
+		}
+	}
+	if seen < 2 {
+		t.Fatalf("%d declared project-config entries reached this arm — the runtimes in this tree declare more than that, so the enumeration is reading nothing", seen)
+	}
+}

@@ -674,3 +674,129 @@ func TestASilenceAfterALauncherRestartSaysTheEarlierSentenceIsHeldElsewhere(t *t
 		}
 	}
 }
+
+// A HAND-ZEROED COUNTER CARRIES NO CAVEAT, BY EITHER PATH OUT OF `health`
+// (ranger-base-9n98o, from ranger-base-obato's verify of ranger-base-4jroi).
+// This is the arm above with the sign flipped, and it is the defect that
+// arm's own fix introduced.
+//
+// `quietUnreset` exists so a count that spans an ANSWERED run may not be
+// called a pattern. The mark is set on one path — a reset that could not be
+// written — and the record it caveats is a line of git config a human can
+// edit, which landedQuietRecorded says in as many words: any shape it cannot
+// parse reads as ZERO, "because this is one line of git config a human can
+// edit". So the record reaches zero without an answered run all the time: an
+// operator unsets it, or half-writes it. The mark must go with it, or the
+// next crossing of two silences that really were consecutive files a bead
+// saying THEY ARE NOT CONSECUTIVE — architecture sent looking for an
+// answered run and a lost lock that never happened, which is exactly the
+// cost ranger-base-4jroi was filed to stop.
+//
+// TWO ROWS, because the clear has to be on BOTH paths and each row kills the
+// mutant on one of them (mutation-checked 2026-11-13, linux 7.2.15 x86_64,
+// go1.27.3, one change at a time):
+//
+//   - "straight-to-the-next-silence" reds when healthSilent's `n == 0` clear
+//     is dropped — the fix this bead carries. Before it, this row filed the
+//     verbatim "THEY ARE NOT CONSECUTIVE" bead over two consecutive
+//     silences.
+//   - "through-an-answered-run" reds when healthAnswered's `n == 0` clear
+//     (landedhealth.go) is dropped. MEASURED: that deletion was GREEN over
+//     every D6.3 arm in this file before this row existed, including the two
+//     ranger-base-4jroi added — a live line, pinned by nothing.
+//
+// Both rows reach the crossing by a different route and assert the same
+// thing, which is what says the subject is the RECORD reading zero and not
+// either path's bookkeeping.
+func TestAHandZeroedQuietCounterLeavesNoUnresetCaveatBehind(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		answered bool // does an answered run read the zeroed record first?
+	}{
+		{"straight-to-the-next-silence", false},
+		{"through-an-answered-run", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c, out, repo, _ := ldfFixture(t)
+
+			// Silence 1, counted: the count the failed reset below carries.
+			c.cage = lhSilentCage(lhSaidOne)
+			ldfJudge(t, c, repo)
+			if n := lhQuiet(t, repo); n != 1 {
+				t.Fatalf("%s counted %d after one unanswered run, want 1", landedQuietKey, n)
+			}
+
+			// The judge answers and the reset it owes cannot be written, so
+			// the mark is SET. This is the only path that sets it, and the
+			// arm above is what pins the bead it is right to caveat.
+			lock := filepath.Join(repo, ".git", "config.lock")
+			write(t, lock, "")
+			c.cage = plainCage
+			ldfJudge(t, c, repo)
+			if err := os.Remove(lock); err != nil {
+				t.Fatal(err)
+			}
+			if !c.quietUnreset[repo] {
+				t.Fatalf("the failed reset left no unreset mark, so this arm measured nothing: %s", out.String())
+			}
+
+			// THE HAND ZERO. An operator clears the counter; nothing has
+			// answered since the failed reset, and the mark is still set.
+			mustGit(t, repo, "config", "--unset", landedQuietKey)
+			if n := lhQuiet(t, repo); n != 0 {
+				t.Fatalf("the fixture did not zero %s: it reads %d", landedQuietKey, n)
+			}
+
+			if tc.answered {
+				// The second route in: an ANSWERED run reads the zeroed
+				// record before any silence does. The tip has not moved and
+				// nothing was recorded over it (the lock blocked the
+				// verdict's own write too), so this run reaches the judge.
+				ldfJudge(t, c, repo)
+				if c.quietUnreset[repo] {
+					t.Fatalf("an answered run over a zeroed %s left the mark standing", landedQuietKey)
+				}
+				// …and that run DID record a green, so the crossing below
+				// needs a tree D4's cache has not answered for.
+				commitIn(t, repo, "after-the-zero.txt", "a landing after the hand zero\n", "ranger-base-9n98o: a landing the judge has not seen")
+			}
+
+			// Two silences, consecutive, nothing between them.
+			c.cage = lhSilentCage(lhSaidTwo, lhSaidThree)
+			ldfJudge(t, c, repo)
+			if n := lhQuiet(t, repo); n != 1 {
+				t.Fatalf("%s counted %d after the first silence past the hand zero, want 1 — the zeroed record is what makes these two the whole stretch", landedQuietKey, n)
+			}
+			ldfJudge(t, c, repo)
+			if n := lhQuiet(t, repo); n != 2 {
+				t.Fatalf("%s counted %d at the crossing, want 2", landedQuietKey, n)
+			}
+
+			is := lhFiled(t, c, repo)
+			for _, want := range []string{
+				"consecutive judged runs", // because they were
+				lhSaidTwo, lhSaidThree,    // and both of them are this stretch's
+				landedHealthMarker(repo),
+			} {
+				if !strings.Contains(is.Description, want) {
+					t.Errorf("the bead does not name %q:\n%s", want, is.Description)
+				}
+			}
+			for _, bad := range []struct{ s, why string }{
+				{"THEY ARE NOT CONSECUTIVE", "both runs were silent and nothing answered between them — the count they crossed on started from the zeroed record, not from the one the failed reset could not clear"},
+				// Spelled whole, because lhSaidTwo is a cage sentence about
+				// a run dir that "could not be written" and the shorter
+				// phrase matches it.
+				{"the reset that answered run owed the counter could not be written", "no reset was owed over this stretch; the one that failed was before the hand zero and is not this count's"},
+				{"the ANSWERED run between the two cleared it", "there was no answered run between the two"},
+				{lhSaidOne, "the sentence from before the hand zero is not this stretch's"},
+			} {
+				if strings.Contains(is.Description, bad.s) {
+					t.Errorf("the bead claims %q — %s:\n%s", bad.s, bad.why, is.Description)
+				}
+			}
+		})
+	}
+}

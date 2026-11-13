@@ -18,6 +18,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-hxenz](ranger-base-hxenz.md) — ranger-base-hxenz — the reaper forked once per pid per route, and `--self-test` paid it seven times — 2026-11-13
 - [ranger-base-equhp](ranger-base-equhp.md) — A lane was the union of every persona sharing ANY of a bead's labels (ranger-base-equhp) — 2026-11-13
 - [ranger-base-ckcly](ranger-base-ckcly.md) — One space fewer, and check 4 went quiet again (ranger-base-ckcly) — 2026-11-13
+- [ranger-base-9n98o](ranger-base-9n98o.md) — A hand-zeroed quiet counter carries no caveat, and two fail-closed arms get doors (ranger-base-9n98o) — 2026-11-13
 - [ranger-base-5793u](ranger-base-5793u.md) — The narrowing made one PID's frontmatter order decide the lane, and ADR 0011 §4 made it a key (ranger-base-5793u) — 2026-11-13
 - [ranger-base-4jroi](ranger-base-4jroi.md) — A count that came through a failed reset is not a pattern (ranger-base-4jroi) — 2026-11-13
 - [ranger-base-4cmqw](ranger-base-4cmqw.md) — claude's debug/, private per seat at bwrap and write-denied at seatbelt (ranger-base-4cmqw) — 2026-11-13
