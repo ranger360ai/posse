@@ -220,6 +220,43 @@
 #   - anything not owned by this uid. `find -uid` is on every candidate
 #     walk, which is what keeps the generic `tmp.*` namespace from reaching
 #     root's or another user's dirs.
+#   - a leaked scratch FILE — and this one is a DECISION, not the oversight
+#     it looks like (ranger-base-u1z89). Every candidate walk below is
+#     `-type d`, so the table above is a table of DIRECTORY classes and a
+#     file in a swept root sits outside all nine rows: not a 24h quarantine,
+#     no walk that could reach it whatever it is named, even when its name
+#     is exactly the `tmp.??????????` the last row globs. A `-type f` arm
+#     was refused and the PRODUCERS were moved instead — every scratch file
+#     this tree makes now lives inside a `posse-*` dir its own script owns,
+#     so posse-scratch collects the parent and the file goes with it
+#     (internal/treepins/mktemproot_qa_test.go pins both halves, so the next
+#     one reds in the suite rather than in /tmp). Three reasons, in the
+#     order they decided it:
+#       - ALL THREE GATES ARE WEAKER ON A FILE. The lock is vacuous: no
+#         creator on this box takes a lock on its scratch file, so step 1
+#         stops being a positive proof of life and becomes a step that
+#         always says yes. The /proc fd that names it is open only while
+#         something is writing to it. And a shell's `f=$(mktemp)` is in no
+#         argv, which is ADR 0089's own measurement one file type over. The
+#         grace would be the whole gate, which is ADR 0089's objection to
+#         grace — and the only class where no creator could be made to fix
+#         it.
+#       - THE GLOB COULD NOT BE `posse-*`. MEASURED 2026-11-12 on this box:
+#         38 depth-1 files in /tmp against 10847 dirs, and three of the 38
+#         are deliberate, stable-named artifacts a person is meant to come
+#         back and read — posse-test-signal.log (726163 bytes: the process
+#         table at the instant a suite was signalled, which AGENTS.md sends
+#         the reader to), posse-coldexec-report and posse-make-install.log.
+#         A `posse-*` file arm collects the evidence. A template-shaped glob
+#         could tell them apart, which is one more rule to keep true.
+#       - AND IT WOULD HAVE BOUGHT ONE INODE. Exactly one of those 38 files
+#         was a leaked scratch file (posse-test-times.n3Ffyo, 0 bytes,
+#         2026-11-11). The producers were 10 call sites in 5 files and every
+#         one of them is ours.
+#     What was already on the floor before the fix is the reboot's: /tmp is
+#     a tmpfs here, the same collector of last resort the aged-out
+#     claude-scratch dirs get. docs/notes.d/ranger-base-u1z89.md has the
+#     census and the names.
 #
 # ─── THE HARNESS SCRATCHPADS, AND THE GATE THEY NEEDED (ranger-base-4arlo) ──
 #
@@ -929,9 +966,25 @@ rawrefs=$(
   done 2>/dev/null | grep -oE '/[^[:space:]:,="'"'"']+' | sort -u
 ) || true
 
-held=$(mktemp); held3=$(mktemp); stale=$(mktemp); rootlist=$(mktemp)
-livedirs=$(mktemp); lockheld=$(mktemp)
-trap 'rm -f "$held" "$held3" "$stale" "$rootlist" "$livedirs" "$lockheld"' EXIT
+# ONE DIR, SIX FILES INSIDE IT (ranger-base-u1z89). These were six bare
+# `mktemp` FILES: six inodes, in a root this script itself sweeps, under
+# mktemp(1)'s `tmp.XXXXXXXXXX` namespace — which the `mktemp` class globs by
+# name and which every candidate walk below then excludes with `-type d`. So
+# the reaper's own leavings were in the one leak class the reaper cannot see,
+# on the quota it exists to protect. One `mktemp -d` is also one fork instead
+# of six, and `$stale.body` (the bead arm, at the foot of this script) lands
+# inside it as a seventh.
+#
+# The six are then CREATED EMPTY, which mktemp did for free: several of them
+# are read before anything writes to them (`grep -c . < "$lockheld"` for a
+# class whose walk found nothing, and `$stale` on the way into the dedupe
+# filter), and a missing file there would be a diagnostic about this script
+# instead of a count.
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/posse-reap.XXXXXX") || die2 "mktemp -d failed — there is nowhere to keep this run's candidate lists"
+held="$scratch/held" held3="$scratch/held3" stale="$scratch/stale"
+rootlist="$scratch/rootlist" livedirs="$scratch/livedirs" lockheld="$scratch/lockheld"
+: > "$held"; : > "$held3"; : > "$stale"; : > "$rootlist"; : > "$livedirs"; : > "$lockheld"
+trap 'rm -rf -- "${scratch:?}"' EXIT
 
 printf '%s\n' "${roots[@]}" > "$rootlist"
 
@@ -980,6 +1033,29 @@ if [ "$readable" -eq 0 ] && [ "$others" -gt 0 ]; then
   echo "$self: $others same-uid processes and not one environ could be opened — the scan is blind here, refusing to delete" >&2
   exit 3
 fi
+
+# AND THIS RUN'S OWN SCRATCH DIR, which is now a `posse-*` dir at depth 1 in
+# a root this script sweeps (ranger-base-u1z89). Appended BELOW the report
+# above on purpose: it is not something the /proc scan found, and a line
+# reading `HELD <this run's own dir>` under a count of what live processes
+# name would be a false reading of the one number this script asks a reader
+# to trust.
+#
+# The scan genuinely cannot see it. `rawrefs` is read BEFORE the dir exists,
+# and even afterwards the path lives in a shell variable, which is ADR 0089's
+# own "invisible to the scan" one step over. What has kept it out so far is
+# the grace — 120m against a dir that lives seconds — but `--min-age 0`, or
+# `--min-age` under any value a run can outlive, would nominate it, take its
+# lock, and `rm -rf` the candidate list this script is reading from. Until
+# this bead the HOLE was what protected it: the six files it replaced were
+# `-type f` and no walk could see them.
+#
+# SAID OUT LOUD, because an exclusion nothing prints is an exclusion nobody
+# can check: the window it covers needs a run lasting longer than its own
+# `--min-age`, which no ordinary run reaches, so this line is the only thing
+# a reader — or a rig — can read it off.
+printf '%s\n' "$scratch" >> "$held"
+[ "$quiet" -eq 1 ] || echo "this run's own scratch dir, held out of every class: $scratch"
 
 # ─── the harness's live-session registry, and its own blindness control ─────
 # Only class claude-scratch reads this. One file per LIVE session, removed at

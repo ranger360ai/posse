@@ -1,7 +1,10 @@
 package treepins
 
-// QA pin for ranger-base-w8n6w — a `mktemp -d` root under scripts/ names a
-// namespace scripts/reap-test-tmp.sh has a class for.
+// QA pins for ranger-base-w8n6w — a `mktemp -d` root under scripts/ names a
+// namespace scripts/reap-test-tmp.sh has a class for — and for
+// ranger-base-u1z89, which is the same question one file type over: a
+// `mktemp` with NO `-d` makes a FILE, and no walk in that script can see a
+// file at all.
 //
 // THE DEFECT IS A CENSUS, NOT A ROOT. This is the third bead in one family to
 // walk scripts/ by hand and the third to find roots the reaper cannot collect:
@@ -24,8 +27,11 @@ package treepins
 //     dead fixture names kept only to drain a pre-fix backlog. A root outside
 //     it is matched by no row, which is tbukc's finding.
 //   - `${TMPDIR:-/tmp}` is where the reaper LOOKS. Its default roots are /tmp
-//     and this shell's $TMPDIR when that is somewhere else (reap-test-tmp.sh
-//     :625-632), so a root spelled against TMPDIR lands in a scanned root
+//     and this shell's $TMPDIR when that is somewhere else (reap-test-tmp.sh,
+//     the `roots=(/tmp)` default under "Default: /tmp AND this shell's
+//     $TMPDIR" — :775-778 today, and cited by its words because w8n6w's
+//     ":625-632" had already rotted by the end of the day it was written),
+//     so a root spelled against TMPDIR lands in a scanned root
 //     whether the seat has one or not. A hardcoded `/tmp/posse-x.XXXXXX`
 //     would be collected on this box and would also ignore the TMPDIR a caged
 //     seat is given, which is the one case where the two differ.
@@ -33,14 +39,51 @@ package treepins
 //     is asserted so that the pin's answer is a template and not a prefix a
 //     reader guessed at.
 //
-// MEASURED 2026-11-12 (linux, this box), after tbukc's renames: 36 grep hits
-// for `mktemp -d` under scripts/, of which 8 are comment lines explaining the
-// mechanism and 1 is prose inside verify-box.sh's quoted ROSTER heredoc. The
-// reader below reports the other 27 as live roots — 24 of them already the
-// house spelling and three on mtExempt with their reasons. The bead's own hand
-// census said "28 grep hits, one of them prose": it was run with the comment
-// lines already filtered out, and 27 + 1 is the same answer from the other
-// side. That is the last hand census of this directory.
+// AND THE SAME QUESTION ONE FILE TYPE OVER (ranger-base-u1z89). The last
+// paragraph of this comment used to say the pin does not reach a `mktemp`
+// with no `-d`, "a FILE, which no class in that table globs". That was true
+// and it was not a scope — it was a worse hole than the one above. EVERY
+// candidate walk in reap-test-tmp.sh is `-type d`, so the class table is a
+// table of DIRECTORY classes and a leaked scratch file is outside all nine
+// rows: not tbukc's "no row globs this name" but "no walk could reach it
+// whatever it is named", the `tmp.??????????` row that globs exactly what a
+// bare `mktemp` produces included. The high-frequency producer was
+// scripts/bd-argv-gate.sh, which made one per bd-ish tool call of every seat
+// on this box.
+//
+// THE FILE RULE IS A PROHIBITION, NOT A TEMPLATE: a live `mktemp` with no
+// `-d` is on mfExempt with its reason, or it reds. There is no conforming
+// spelling to offer, because the house answer is not to make a scratch file
+// in a swept root at all — make the dir THE RULE ABOVE describes and put a
+// fixed-name file inside it, which needs no second mktemp. All ten producers
+// were fixed that way (see docs/notes.d/ranger-base-u1z89.md) and what the
+// census finds now is two calls, both rostered and neither in /tmp.
+//
+// IT WALKS plugin/ AS WELL AS scripts/, AND ONLY THE FILE ARM DOES. The root
+// census's subject is the directory three beads walked by hand, and widening
+// it would be a claim about roots nobody has censused; the file rule is new
+// and has no legacy, so it starts at every directory in this tree that holds
+// shipped shell. plugin/ holds one script, and that script was one of the ten
+// producers. docs/adr/*.probe.sh is out of both on purpose: those are
+// operator-run artifacts rather than this tree's machinery, and their bare
+// `mktemp -d` roots do land in the reaper's `tmp.??????????` class, which
+// collects them at 24h.
+//
+// MEASURED 2026-11-12 (linux, this box), with ranger-base-u1z89's fixes in:
+// 43 grep hits for `mktemp -d` under scripts/, of which 11 are comment lines
+// explaining the mechanism and 1 is prose inside verify-box.sh's quoted
+// ROSTER heredoc. The reader below reports the other 31 as live roots — 28 of
+// them the house spelling and three on mtExempt with their reasons. The walk
+// sees 63 files under scripts/ and 65 with plugin/, and finds 2 live `mktemp`
+// FILE calls, both on mfExempt: reap-test-tmp.sh's own class-table row, which
+// a line reader cannot tell from a call, and gotest.sh's per-slot build temp,
+// which is under $CACHE and not in /tmp. w8n6w read 36 hits / 8 comments / 27
+// roots / 24 conforming over the same directory earlier the same day, and
+// said 56 files. The seven extra grep hits are u1z89's four producers turning
+// from files into dirs plus three comment lines naming the mechanism; the
+// file count moved with whatever else landed between the two readings, which
+// is the one number here nobody should read a story into. Neither count was a
+// hand census.
 //
 // THE READER IS LINE-BASED AND LOOSE IN THE SAFE DIRECTION. Comment lines are
 // dropped, because every one of this family's beads is explained in prose
@@ -54,15 +97,17 @@ package treepins
 // root this script creates — but it is not nothing either: a heredoc that
 // RENDERS a script with a bare `mktemp -d` in it leaks a dir under the
 // rendered script's name, which is exactly the hole with no class row. There
-// is one such line in the tree today and it is prose in a roster table, so the
-// pin holds the classification instead of guessing it: a new heredoc naming
-// `mktemp -d` reds until someone says which of the two it is.
+// are two such lines in the tree today and both are prose in the same roster
+// table, so the pin holds the classification instead of guessing it: a new
+// heredoc naming `mktemp` reds until someone says which of the two it is.
+// Both KINDS go in that one list and the ROOT arm checks it, because mtText
+// is one claim per file and splitting it would make two places answer for one
+// heredoc.
 //
-// WHAT IT DOES NOT REACH, said once so no reader has to rediscover it: a
-// `mktemp` with no `-d` (a FILE, which no class in that table globs), and a
-// root built by `mkdir -p "$TMPDIR/$$"` or any other spelling of the same
-// idea. The subject is the one thing all three beads in this family found:
-// `mktemp -d` under scripts/.
+// WHAT IT DOES NOT REACH, said once so no reader has to rediscover it: a root
+// built by `mkdir -p "$TMPDIR/$$"` or any other spelling of the same idea. The
+// `mktemp` with no `-d` that used to head this list is the second arm's whole
+// subject now (ranger-base-u1z89).
 //
 // A root created by Go's os.MkdirTemp or Python's tempfile WAS on that list —
 // "the tests' half of the posse-scratch class, pinned nowhere here" — and is
@@ -76,6 +121,7 @@ package treepins
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -99,34 +145,39 @@ var mtMktempWord = regexp.MustCompile(`\bmktemp\b`)
 // rather than a strict one.
 var mtArgFlags = map[string]bool{"-p": true, "--tmpdir": true, "--suffix": true}
 
-// mtRoot is one `mktemp -d` the reader found: where it is, the line, and the
+// mtRoot is one `mktemp` the reader found: where it is, the line, the
 // template it names — empty when it names none, which is the bare
-// `d=$(mktemp -d)` ranger-base-i78k9 found nine of.
+// `d=$(mktemp -d)` ranger-base-i78k9 found nine of — and whether the call
+// asked for a directory.
 type mtRoot struct {
 	Script   string
 	Line     int
 	Code     string
 	Template string
+	Dir      bool
 }
 
 // At returns the `path:line` a diagnostic leads with.
 func (r mtRoot) At() string { return fmt.Sprintf("%s:%d", r.Script, r.Line) }
 
-// mtParse reads one runnable line and reports the `mktemp -d` on it. It
-// answers ok=false for a line that names mktemp without a `-d` flag, which is
-// a file and not a root in any of the reaper's classes.
+// mtParse reads one runnable line and reports the `mktemp` on it: the
+// template it names, and whether it asked for a directory. It used to answer
+// ok=false for a call with no `-d` — "a file and not a root in any of the
+// reaper's classes" — and that sentence was the hole ranger-base-u1z89
+// found, not a scope. Both kinds are reported now and isDir is what tells
+// the two arms apart.
 //
 // One call per line: both halves of this tree spell it `x=$(mktemp -d …)` on a
-// line of its own (MEASURED 2026-11-12, all 27). A second call on the same
+// line of its own (MEASURED 2026-11-12, all 32). A second call on the same
 // line would be missed, which is the loose direction — but a line-based reader
 // has no way to find it that does not amount to a shell parse, so it is said
 // here rather than half-handled.
-func mtParse(code string) (template string, ok bool) {
+func mtParse(code string) (template string, isDir, ok bool) {
 	loc := mtMktempWord.FindStringIndex(code)
 	if loc == nil {
-		return "", false
+		return "", false, false
 	}
-	isDir, skipNext := false, false
+	skipNext := false
 	for _, f := range strings.Fields(code[loc[1]:]) {
 		if skipNext {
 			skipNext = false
@@ -152,21 +203,19 @@ func mtParse(code string) (template string, ok bool) {
 		template = strings.TrimLeft(strings.TrimRight(f, `)"';&|`), `"'`)
 		break
 	}
-	if !isDir {
-		return "", false
-	}
-	return template, true
+	return template, isDir, true
 }
 
-// mtRead reads <script> and returns every live `mktemp -d` in it, plus every
-// one inside a heredoc BODY, kept apart because they are two different claims
-// (see the head comment). The heredoc matcher is brewguard_qa_test.go's
-// bgHeredoc: one spelling of that structure in this package, so a repair to
-// either reader reaches both.
-func mtRead(script string) (roots, text []mtRoot, err error) {
+// mtRead reads <script> and returns every live `mktemp -d` in it as a root,
+// every live `mktemp` with no `-d` as a file, and every call of either kind
+// inside a heredoc BODY as text — three lists because they are three
+// different claims (see the head comment). The heredoc matcher is
+// brewguard_qa_test.go's bgHeredoc: one spelling of that structure in this
+// package, so a repair to either reader reaches both.
+func mtRead(script string) (roots, files, text []mtRoot, err error) {
 	b, err := os.ReadFile(script)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	hereTerm, hereDash := "", false
 	for i, line := range strings.Split(string(b), "\n") {
@@ -177,8 +226,8 @@ func mtRead(script string) (roots, text []mtRoot, err error) {
 				hereTerm = ""
 				continue
 			}
-			if tmpl, ok := mtParse(code); ok {
-				at.Template = tmpl
+			if tmpl, dir, ok := mtParse(code); ok {
+				at.Template, at.Dir = tmpl, dir
 				text = append(text, at)
 			}
 			continue
@@ -189,12 +238,16 @@ func mtRead(script string) (roots, text []mtRoot, err error) {
 		if m := bgHeredoc.FindStringSubmatch(code); m != nil {
 			hereTerm, hereDash = m[2], m[1] == "-"
 		}
-		if tmpl, ok := mtParse(code); ok {
-			at.Template = tmpl
-			roots = append(roots, at)
+		if tmpl, dir, ok := mtParse(code); ok {
+			at.Template, at.Dir = tmpl, dir
+			if dir {
+				roots = append(roots, at)
+			} else {
+				files = append(files, at)
+			}
 		}
 	}
-	return roots, text, nil
+	return roots, files, text, nil
 }
 
 // mtExempt — the live roots that do NOT name the house template, with the
@@ -225,44 +278,94 @@ var mtExempt = []struct{ Script, Template, Reason string }{
 // is. Keyed by script: the claim is about the file's heredocs, and a second
 // line in the same file is the same claim.
 var mtText = map[string]string{
-	"scripts/verify-box.sh": "prose, inside the quoted `ROSTER_EOF` heredoc that IS this script's roster table — the row for verify-reap-test-tmp describes that check as running against a fresh mktemp -d root. The heredoc is read by this script's own census and never executed by anything.",
+	"scripts/verify-box.sh": "prose, inside the quoted `ROSTER_EOF` heredoc that IS this script's roster table — two rows: verify-reap-test-tmp describes that check as running against a fresh `mktemp -d` root, and verify-pattern-kill-census says its fixtures sit \"in a mktemp root\", which the reader scores as a FILE call because the words -d are not in that sentence. The heredoc is read by this script's own census and never executed by anything.",
 }
 
-// Every live `mktemp -d` under scripts/ names a namespace the reaper has a
-// class for, or is rostered with its reason. Two-way, like brewguard's and
-// boxcheck's: a row no longer found by the census reds as stale, so neither
-// list can go quiet while staying green.
+// mfExempt — the live `mktemp` calls with no `-d`, with the reason. The file
+// rule has no conforming spelling to pass (see the head comment): the house
+// answer is a dir from the rule above with a fixed-name file inside it, so
+// every live file call is either a row here or a red.
 //
-// It WALKS, for the reason ranger-base-80zqb gave one file over: an os.ReadDir
-// of scripts/ reads one level, so "every root under scripts/" would be a claim
-// about the top of the directory only. scripts/ is flat today and nothing is
-// escaping; the walk is what makes the claim good the day it is not, and
-// asserting flatness instead would be a layout ruling this pin has no business
-// making.
-func TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered(t *testing.T) {
-	t.Parallel()
-	var files []string
-	if err := filepath.WalkDir("scripts", func(path string, d os.DirEntry, err error) error {
+// ONE ROW, AND IT IS ALSO THE ARM'S BLINDNESS CONTROL. A census whose live
+// count is one cannot prove it is sighted by counting the way the root arm's
+// `roots < 20` floor does — but this list is checked both ways, so a reader
+// that stopped finding anything reds on a stale row rather than going quiet.
+var mfExempt = []struct{ Script, Template, Reason string }{
+	{
+		"scripts/reap-test-tmp.sh", "|tmp.??????????|1440|1",
+		"NOT A CALL: it is the `mktemp` row of that script's own class_table, a multi-line single-quoted string whose rows are `name|glob|grace|depth`. A line-based reader cannot see that it is inside a quoted block — the same blindness mtText answers for a heredoc — and the fix is this row rather than a narrower matcher, so the file census and the root census keep ONE reader between them. The whole template is the rest of the table row, so changing that class's grace or depth reds this row: update the string, it is two characters.",
+	},
+	{
+		"scripts/gotest.sh", "$CACHE/.build.$sl.XXXXXX",
+		"not in a root the reaper sweeps: $CACHE is $HOME/.cache/posse/testbin, the binary cache this script owns and prunes itself (--prune, KEEP). It is a temp file for an ATOMIC rename into that cache, so it has to be created on the cache's own filesystem, and a dir would be the wrong shape for a `mv` of one file.",
+	},
+}
+
+// mtFileSet sorts what an arm's walk found and holds it to a floor.
+//
+// BOTH ARMS SPELL THE WALK THEMSELVES, and that duplication is deliberate:
+// treewidedoor_qa_test.go derives this class — "a QA test whose subject is
+// the TREE" — from an enumeration rooted at a path spelled as a LITERAL in
+// the test, and a walk moved behind a `roots ...string` parameter is a
+// spelling that rule cannot see. MEASURED 2026-11-12: with the walk in a
+// variadic helper, `make register-check` reported BOTH arms "no longer
+// derived as tree-wide ... the pin is back to being a package-tree run
+// away", which is the hole that whole register exists to close. So what is
+// shared is everything that is a RULE — the reader, the floor, the rosters —
+// and what is repeated is eight lines of os.DirEntry boilerplate with no
+// claim in it.
+//
+// Each arm WALKS, for the reason ranger-base-80zqb gave one file over: an
+// os.ReadDir of scripts/ reads one level, so "every root under scripts/"
+// would be a claim about the top of the directory only. scripts/ is flat
+// today and nothing is escaping; the walk is what makes the claim good the
+// day it is not, and asserting flatness instead would be a layout ruling this
+// pin has no business making.
+//
+// The floor is reader sanity before either arm trusts its own census: an
+// assertion that every root is rostered is satisfied by a walk that found
+// none, and a walk that found none is silent about it. It sits well under the
+// live counts (63 files under scripts/, 65 with plugin/, MEASURED
+// 2026-11-12), so an ordinary landing does not move it.
+func mtFileSet(t *testing.T, roots []string, found []string) []string {
+	t.Helper()
+	sort.Strings(found)
+	if len(found) < 40 {
+		t.Fatalf("the walk of %v found only %d file(s) — the walk is broken, not the tree: %v", roots, len(found), found)
+	}
+	return found
+}
+
+// mtWalkInto is the body of each arm's walk, kept here so the two cannot
+// disagree about what counts as a file. The WalkDir CALL stays in the arm —
+// see mtFileSet on why.
+func mtWalkInto(out *[]string) fs.WalkDirFunc {
+	return func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() || !d.Type().IsRegular() {
 			return nil
 		}
-		files = append(files, path)
+		*out = append(*out, path)
 		return nil
-	}); err != nil {
-		t.Fatalf("walk scripts/: %v", err)
 	}
-	sort.Strings(files)
-	// Reader sanity before the arms trust it. An assertion that every root is
-	// rostered is satisfied by a walk that found none, and a walk that found
-	// none is silent about it. Both floors sit well under the live counts (56
-	// files, 27 roots, MEASURED 2026-11-12) so an ordinary landing does not
-	// move them.
-	if len(files) < 40 {
-		t.Fatalf("the walk of scripts/ found only %d file(s) — the walk is broken, not the tree: %v", len(files), files)
+}
+
+// Every live `mktemp -d` under scripts/ names a namespace the reaper has a
+// class for, or is rostered with its reason. Two-way, like brewguard's and
+// boxcheck's: a row no longer found by the census reds as stale, so neither
+// list can go quiet while staying green.
+func TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered(t *testing.T) {
+	t.Parallel()
+	walkRoots := []string{"scripts"}
+	var walked []string
+	for _, root := range []string{"scripts"} {
+		if err := filepath.WalkDir(root, mtWalkInto(&walked)); err != nil {
+			t.Fatalf("walk %s: %v", root, err)
+		}
 	}
+	paths := mtFileSet(t, walkRoots, walked)
 
 	type key struct{ script, template string }
 	exempt := map[key]string{}
@@ -272,8 +375,8 @@ func TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered(t *testing.T) {
 	seenExempt := map[key]bool{}
 	seenText := map[string]bool{}
 	roots := 0
-	for _, path := range files {
-		found, text, err := mtRead(path)
+	for _, path := range paths {
+		found, _, text, err := mtRead(path)
 		if err != nil {
 			t.Errorf("read %s: %v", path, err)
 			continue
@@ -314,7 +417,7 @@ func TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered(t *testing.T) {
 		}
 	}
 	if roots < 20 {
-		t.Fatalf("the census found only %d live `mktemp -d` root(s) under scripts/ — the reader is broken, not the tree (27, MEASURED 2026-11-12)", roots)
+		t.Fatalf("the census found only %d live `mktemp -d` root(s) under scripts/ — the reader is broken, not the tree (31, MEASURED 2026-11-12)", roots)
 	}
 	for _, e := range mtExempt {
 		if !seenExempt[key{e.Script, e.Template}] {
@@ -324,6 +427,65 @@ func TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered(t *testing.T) {
 	for p := range mtText {
 		if !seenText[p] {
 			t.Errorf("mtText names %s and the census finds no `mktemp -d` in a heredoc body there — delete the row rather than leave a classification nobody will check again", p)
+		}
+	}
+}
+
+// And no live `mktemp` with no `-d` anywhere in the shipped shell, unless it
+// is rostered on mfExempt with its reason (ranger-base-u1z89). The rule is a
+// prohibition rather than a template: a scratch FILE in a root the reaper
+// sweeps is reached by none of its nine classes, because every candidate walk
+// there is `-type d`, and the fix is to make the dir the rule above describes
+// and put a fixed-name file inside it — which needs no second mktemp at all.
+//
+// Two-way, like the root arm: a row that the census no longer finds reds as
+// stale, which is the only liveness signal an arm with one live member has.
+func TestQAEveryMktempFileInTheShippedShellIsRosteredOrExempt(t *testing.T) {
+	t.Parallel()
+	// The list is spelled twice on purpose: the one the `range` reads has to
+	// be a LITERAL where the walk is, or treewidedoor_qa_test.go stops
+	// deriving this arm as tree-wide (mtFileSet's comment has the
+	// measurement). The copy in walkRoots is only what a diagnostic prints.
+	walkRoots := []string{"scripts", "plugin"}
+	var walked []string
+	for _, root := range []string{"scripts", "plugin"} {
+		if err := filepath.WalkDir(root, mtWalkInto(&walked)); err != nil {
+			t.Fatalf("walk %s: %v", root, err)
+		}
+	}
+	paths := mtFileSet(t, walkRoots, walked)
+
+	type key struct{ script, template string }
+	exempt := map[key]string{}
+	for _, e := range mfExempt {
+		exempt[key{e.Script, e.Template}] = e.Reason
+	}
+	seen := map[key]bool{}
+	for _, path := range paths {
+		_, found, _, err := mtRead(path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		for _, r := range found {
+			k := key{r.Script, r.Template}
+			if reason, ok := exempt[k]; ok {
+				seen[k] = true
+				if len(strings.TrimSpace(reason)) < 40 {
+					t.Errorf("%s is exempted from the no-scratch-file rule with no reason worth reading (%q) — an exemption nobody can check is the rule being dropped quietly", r.At(), reason)
+				}
+				continue
+			}
+			t.Errorf("%s makes a scratch FILE as %s\n"+
+				"  template: %q\n"+
+				"  want:     a `mktemp -d \"${TMPDIR:-/tmp}/posse-<what>.XXXXXX\"` and a fixed-name file inside it, or a row in mfExempt (%s) with the reason\n"+
+				"Every candidate walk in scripts/reap-test-tmp.sh is `-type d`, so a leaked scratch FILE is outside all nine of its classes — not a 24h quarantine but no walk that could reach it whatever it is named, the `tmp.??????????` row that globs a bare mktemp's own name included. /tmp here is a 14G tmpfs with one box-wide inode budget for uid posse, and the near-outage that script exists for was inode exhaustion at 29%% of bytes. The reaper's own refusal of a `-type f` arm, and the three reasons for it, are in that script's \"WHAT IT WILL NOT TAKE\" header.",
+				r.At(), r.Code, r.Template, "internal/treepins/mktemproot_qa_test.go")
+		}
+	}
+	for _, e := range mfExempt {
+		if !seen[key{e.Script, e.Template}] {
+			t.Errorf("mfExempt names %s with template %q and the census finds no such call — a stale roster row is an exemption over nothing, and over a live population this small it is also the only way this census can say it has gone blind", e.Script, e.Template)
 		}
 	}
 }
@@ -355,13 +517,14 @@ func TestQATheMktempRootReaderCanStillSayNo(t *testing.T) {
 		`hard=$(mktemp -d /tmp/posse-probe.XXXXXX) || exit 1`,
 		`nested=$(mktemp -d "$PARENT/XXXXXX")`,
 		`file=$(mktemp "${TMPDIR:-/tmp}/posse-probe.XXXXXX")`,
+		"barefile=$(mktemp)",
 		"cat <<'DATA'",
 		"rendered=$(mktemp -d)",
 		"DATA",
 		`last=$(mktemp -d "${TMPDIR:-/tmp}/posse-probe-last.XXXXXX") # trailing comment`,
 		"",
 	}, "\n"))
-	roots, text, err := mtRead(script)
+	roots, fileCalls, text, err := mtRead(script)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,13 +537,23 @@ func TestQATheMktempRootReaderCanStillSayNo(t *testing.T) {
 		"4=",
 		"5=/tmp/posse-probe.XXXXXX",
 		"6=$PARENT/XXXXXX",
-		"11=${TMPDIR:-/tmp}/posse-probe-last.XXXXXX",
+		"12=${TMPDIR:-/tmp}/posse-probe-last.XXXXXX",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("live roots = %v, want %v — the comment, the `mktemp` with no -d, and the heredoc body are the three the census must not read as roots, and the trailing-comment line is the one it must", got, want)
+		t.Errorf("live roots = %v, want %v — the comment and the heredoc body are the two the census must not read as roots, the `mktemp` with no -d is a FILE and belongs in the other list, and the trailing-comment line is the one it must read", got, want)
 	}
-	if len(text) != 1 || text[0].Line != 9 {
-		t.Errorf("heredoc-body roots = %v, want the one at line 9 — a `mktemp -d` in a rendered script is a classification this pin holds, not a line it drops", text)
+	// The same line the root list must NOT carry has to turn up here, or the
+	// file rule is reading nothing (ranger-base-u1z89).
+	var gotFiles []string
+	for _, r := range fileCalls {
+		gotFiles = append(gotFiles, fmt.Sprintf("%d=%s", r.Line, r.Template))
+	}
+	wantFiles := []string{"7=${TMPDIR:-/tmp}/posse-probe.XXXXXX", "8="}
+	if strings.Join(gotFiles, " ") != strings.Join(wantFiles, " ") {
+		t.Errorf("live file calls = %v, want %v — a `mktemp` with no -d is the subject of the file arm, templated or bare, and a reader that drops either is the hole ranger-base-u1z89 closed", gotFiles, wantFiles)
+	}
+	if len(text) != 1 || text[0].Line != 10 || !text[0].Dir {
+		t.Errorf("heredoc-body calls = %v, want the one `mktemp -d` at line 10 — a call in a rendered script is a classification this pin holds, not a line it drops, and which KIND it is is half of that classification", text)
 	}
 
 	// The rule itself, over the near misses. Each of these is a root the
@@ -416,20 +589,31 @@ func TestQATheMktempRootReaderCanStillSayNo(t *testing.T) {
 	for _, tc := range []struct {
 		code     string
 		template string
+		isDir    bool
 		ok       bool
 	}{
-		{`d=$(mktemp -d "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "${TMPDIR:-/tmp}/posse-x.XXXXXX", true},
-		{`d=$(mktemp --directory "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "${TMPDIR:-/tmp}/posse-x.XXXXXX", true},
-		{`d=$(mktemp -d)`, "", true},
-		{`d=$(mktemp -d -p "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "", true},
-		{`d=$(mktemp -u -d "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "${TMPDIR:-/tmp}/posse-x.XXXXXX", true},
-		{`f=$(mktemp "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "", false},
-		{`f=$(mktemp)`, "", false},
-		{`echo "no mktemp call here"`, "", false},
+		{`d=$(mktemp -d "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "${TMPDIR:-/tmp}/posse-x.XXXXXX", true, true},
+		{`d=$(mktemp --directory "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "${TMPDIR:-/tmp}/posse-x.XXXXXX", true, true},
+		{`d=$(mktemp -d)`, "", true, true},
+		{`d=$(mktemp -d -p "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "", true, true},
+		{`d=$(mktemp -u -d "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "${TMPDIR:-/tmp}/posse-x.XXXXXX", true, true},
+		// A FILE is reported now, where it used to be dropped as "not a root
+		// in any of the reaper's classes" — which was true and was the hole
+		// (ranger-base-u1z89). The line after it is the one that pays for
+		// that looseness: a runnable line that merely NAMES mktemp without a
+		// `-d` reads as a file call with the next word as its template, and
+		// the answer to that is a row in mfExempt saying it is prose, the
+		// way mtText already answers it for a heredoc. Over-counting costs a
+		// roster row and a sentence; under-counting is the next bead in this
+		// family.
+		{`f=$(mktemp "${TMPDIR:-/tmp}/posse-x.XXXXXX")`, "${TMPDIR:-/tmp}/posse-x.XXXXXX", false, true},
+		{`f=$(mktemp)`, "", false, true},
+		{`echo "no mktemp call here"`, "call", false, true},
+		{`echo "nothing to see"`, "", false, false},
 	} {
-		tmpl, ok := mtParse(tc.code)
-		if ok != tc.ok || tmpl != tc.template {
-			t.Errorf("mtParse(%q) = (%q, %v), want (%q, %v)", tc.code, tmpl, ok, tc.template, tc.ok)
+		tmpl, isDir, ok := mtParse(tc.code)
+		if ok != tc.ok || isDir != tc.isDir || tmpl != tc.template {
+			t.Errorf("mtParse(%q) = (%q, %v, %v), want (%q, %v, %v)", tc.code, tmpl, isDir, ok, tc.template, tc.isDir, tc.ok)
 		}
 	}
 }

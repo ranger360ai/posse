@@ -59,8 +59,41 @@ case $input in
   *) exit 0 ;;
 esac
 
-err=$(mktemp "${TMPDIR:-/tmp}/bd-argv-gate.XXXXXX") || err=/dev/null
-[ "$err" = /dev/null ] || trap 'rm -f "$err"' EXIT HUP INT TERM
+# THE SCRATCH FILE LIVES INSIDE A DIR, AND THE DIR IS WHAT GETS COLLECTED
+# (ranger-base-u1z89). This was a bare `mktemp` FILE in /tmp, made once per
+# bd-ish tool call of every seat on this box — by far the most frequent
+# scratch creator here — and every candidate walk in
+# scripts/reap-test-tmp.sh is `-type d`. So a leaked one was outside all
+# nine of the reaper's classes: not the 24h quarantine the generic
+# `tmp.??????????` namespace gets, but no walk that could ever reach it
+# whatever it was named. The trap covers the ordinary path and every
+# catchable signal; SIGKILL and the OOM killer are what leak, and on a 14G
+# tmpfs with one box-wide inode budget for uid posse an inode is an inode.
+#
+# A `posse-*` dir is collected by the reaper's posse-scratch class at 120m,
+# so the leak becomes two inodes with an owner instead of one with none, and
+# it costs no extra PROCESS: `mktemp -d` is the same single fork `mktemp`
+# was, and `rm -rf` the same single fork as `rm -f`.
+#
+# WHAT IT DOES COST, measured on the gate itself rather than argued from the
+# syscalls. MEASURED 2026-11-12 (linux, this box), this file against its
+# predecessor, interleaved, three pairs of 200 calls on a payload that
+# reaches the parser, at a one-minute load average of 1.7-1.9: 26.7, 26.6
+# then 26.5 ms per call for the file and 27.0, 26.7 then 26.7 for the dir —
+# +194 us, 0.73%, the same sign in all three pairs. A create-write-remove
+# micro-benchmark of the two shapes on their own read +24 us (1333 against
+# 1357 us over four interleaved pairs of 300, at a load of 15-20), so most
+# of the 194 us is `rm -rf`'s extra syscalls over a directory and not the
+# mkdir the bead expected to pay for. Neither number is visible against this
+# gate's own spread on a busy box: three consecutive readings of the
+# UNCHANGED gate at a load of 17-19 read 36.9, 48.5 and 63.4 ms per call.
+errd=$(mktemp -d "${TMPDIR:-/tmp}/posse-bd-argv-gate.XXXXXX") || errd=
+if [ -n "$errd" ]; then
+  err="$errd/stderr"
+  trap 'rm -rf -- "${errd:?}"' EXIT HUP INT TERM
+else
+  err=/dev/null
+fi
 
 # -S -E: no site dir, and PYTHON* env ignored — a PYTHONPATH pointing at a
 # fake `shlex.py` would otherwise be a way to neuter the parser. Also the

@@ -1640,8 +1640,17 @@ esac
 
 budget=$(budget_of "$@") && explicit=1 || { budget=600; explicit=0; }
 
-log=$(mktemp "${TMPDIR:-/tmp}/posse-test-times.XXXXXX") || { warn 'could not create a log file'; exit 1; }
-trap 'rm -f "$log"' EXIT
+# THE LOG LIVES INSIDE A DIR (ranger-base-u1z89). It used to be a bare
+# `mktemp` FILE, and this one is the leak that was actually on the box:
+# /tmp/posse-test-times.n3Ffyo, 0 bytes, 2026-11-11, from a run that was
+# killed past its traps. Every candidate walk in scripts/reap-test-tmp.sh is
+# `-type d`, so a file named out of this template matched none of the nine
+# classes and nothing would ever have collected it. The dir does match
+# posse-scratch (`posse-*`, 120m — 2x the longest -timeout anything here
+# carries), which is the same row the self-test's own root at :855 uses.
+logd=$(mktemp -d "${TMPDIR:-/tmp}/posse-test-times.XXXXXX") || { warn 'could not create a log file'; exit 1; }
+log="$logd/log"
+trap 'rm -rf -- "${logd:?}"' EXIT
 
 # WHOSE RUN THIS IS (ranger-base-6nx72). Every session on this box runs a
 # suite with a byte-identical argv, so `pgrep -f test-times.sh` answers "which

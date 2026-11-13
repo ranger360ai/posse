@@ -1132,10 +1132,26 @@ package treepins
 //	                                              make scripts-check
 //	                                              (ranger-base-w8n6w)
 //
-// Its control arm (TestQATheMktempRootReaderCanStillSayNo) reads planted
-// fixtures under t.TempDir() and so is not in this class, the same way the
-// credential-token one above is not. 0.02s for the pair on one warm filtered
-// run (MEASURED 2026-11-12).
+// and one more into the same door, which is the same question one file type
+// over (ranger-base-u1z89). A `mktemp` with NO `-d` makes a FILE, and every
+// candidate walk in scripts/reap-test-tmp.sh is `-type d` — so a leaked
+// scratch file is outside all nine of its classes, with no walk that could
+// reach it whatever it is named. The row above reaches no such call by
+// construction, so the rule needed its own arm: no live `mktemp` without a
+// `-d` anywhere in the shipped shell unless it is rostered with its reason.
+// It is the one row here that walks plugin/ as well as scripts/, and its own
+// head comment says why:
+//
+//	TestQAEveryMktempFileInTheShippedShellIsRosteredOrExempt
+//	                                              make scripts-check
+//	                                              (ranger-base-u1z89)
+//
+// One control arm serves both rows (TestQATheMktempRootReaderCanStillSayNo):
+// it reads planted fixtures under t.TempDir() and so is not in this class,
+// the same way the credential-token one above is not. 0.02s for the pair on
+// one warm filtered run (MEASURED 2026-11-12), and 0.03s for the three
+// (MEASURED 2026-11-12, ranger-base-u1z89, one warm filtered run) — the file
+// arm reads the same files the root arm already parsed.
 //
 // and one more into corpus-check's door — the same rule as the row above, in
 // the two languages that pin could not read, and the fourth hand census of
@@ -1158,7 +1174,7 @@ package treepins
 // the mktemp one above is not. 0.30s for the census, which is the cost of
 // parsing 1026 .go files, and 0.00s for the control (MEASURED 2026-11-12).
 //
-// and `make tree-check` is all of them — one hundred and forty-two pins
+// and `make tree-check` is all of them — one hundred and forty-three pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
@@ -1175,6 +1191,40 @@ package treepins
 // at a HIGHER load with both slots held. The pin this bead added reports
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
+//
+// THREE WARM READINGS AT ONE HUNDRED AND FORTY-THREE, the class as this bead
+// LANDS: 44s, 49s then 41s in that order (MEASURED 2026-11-12,
+// ranger-base-v9hv1, at a one-minute load average of 4.35, 8.07 and 11.46
+// over a five-minute 3.42, 4.81 and 6.08, with NEITHER suite slot held by
+// anyone for any of the three and the binary warmed by the register-check,
+// scripts-check and corpus-check runs before them). ranger-base-u1z89 closed
+// at one hundred and forty-two and its merge-back replay (this bead) landed
+// it beside ranger-base-qbg7c's corpus-check pin, so the class as it reaches
+// main is 143 and the entry below is the LAST reading taken without that pin.
+// An 8s band, in the same place as u1z89's: the FASTEST of the three is the
+// run at the highest load and the slowest is the one on the quietest box,
+// which is the fifth reading in this chain to say the variable is not the
+// average. Nothing was held and nothing was waiting, so what moved here is
+// only how much the load moved — 4 to 11 over two and a half minutes of a
+// box nobody else was testing on. The two pins between them cost 0.45s
+// (0.15s for the whole scripts-check door, 0.30s for qbg7c's census), two
+// orders of magnitude under that band.
+//
+// THREE WARM READINGS AT ONE HUNDRED AND FORTY-TWO, the class as this bead
+// leaves it: 39s, 39s then 52s in that order (MEASURED 2026-11-12,
+// ranger-base-u1z89, at a one-minute load average of 6.78, 5.73 and 4.95 over
+// a five-minute 7.98, 7.58 and 7.14, with ONE suite slot held by a sibling
+// seat throughout and a warm-up run discarded at 53s). The fastest band this
+// command has produced, at the largest class it had run then — the two 39s
+// readings are 7s under ranger-base-h1q5o's 55-56s floor on a quieter box and
+// a third smaller class, so the "about forty seconds" the 136 entry below
+// settles on is still the price and the floor above it is still stale. The
+// 13s step up on the third run came with the load going DOWN and the slot
+// changing hands (pid 338831 to 908900), which is the fourth reading in this
+// chain to say the slowest warm run is not the one at the highest average.
+// The pin this bead added reports 0.15s for the whole scripts-check door it
+// joined, seven pins between them, which is two orders of magnitude under
+// that step.
 //
 // THREE WARM READINGS AT ONE HUNDRED AND THIRTY-SIX, the class as this bead
 // leaves it: 42s, 46s then 38s in that order (MEASURED 2026-11-11,

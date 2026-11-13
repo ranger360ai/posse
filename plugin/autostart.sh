@@ -213,12 +213,19 @@ loopwho=
 loopsaid=
 loopwhy=
 loop_alive() {
-	local errf
-	errf=$(mktemp 2>/dev/null) || errf=
+	local errd errf
+	# A DIR WITH THE FILE INSIDE IT, never a bare `mktemp`
+	# (ranger-base-u1z89). This hook runs at every herdr startup, and a bare
+	# one leaves a FILE in /tmp when the hook is killed past its traps —
+	# every candidate walk in scripts/reap-test-tmp.sh is `-type d`, so such
+	# a file is collected by nothing, ever. A `posse-*` dir is taken by that
+	# script's posse-scratch class at 120m.
+	errd=$(mktemp -d "${TMPDIR:-/tmp}/posse-autostart.XXXXXX" 2>/dev/null) || errd=
+	errf=${errd:+$errd/stderr}
 	loopsaid=$("$RHQ" dispatch --watch-status 2>"${errf:-/dev/null}")
 	if [ -n "$errf" ]; then
 		loopwhy=$(cat "$errf")
-		rm -f "$errf"
+		rm -rf -- "${errd:?}"
 	fi
 	case "$loopsaid" in
 	"watch-loop: running"*)

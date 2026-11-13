@@ -164,11 +164,19 @@ else
 	die "neither sha256sum nor shasum is on PATH — the cache key is a sha256 and there is nothing to compute it with (ranger-base-sydnc)"
 fi
 hash_selfcheck() {
-	local probe want='9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08' got
-	probe=$(mktemp) || return 1
-	printf '%s' 'test' >"$probe" || { rm -f "$probe"; return 1; }
-	got=$(sha256_file "$probe") || { rm -f "$probe"; return 1; }
-	rm -f "$probe"
+	local probed probe want='9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08' got
+	# A DIR WITH THE PROBE INSIDE IT, never a bare `mktemp`
+	# (ranger-base-u1z89). A bare one makes a FILE under mktemp(1)'s own
+	# `tmp.XXXXXXXXXX` namespace, and while scripts/reap-test-tmp.sh has a
+	# class globbing exactly that name, every candidate walk it has is
+	# `-type d` — so a file left there by a killed run is reached by no row
+	# at all, not even the 24h one that spells its name. The dir is
+	# `posse-*`, which the posse-scratch class takes at 120m.
+	probed=$(mktemp -d "${TMPDIR:-/tmp}/posse-gotest-hashcheck.XXXXXX") || return 1
+	probe="$probed/probe"
+	printf '%s' 'test' >"$probe" || { rm -rf -- "${probed:?}"; return 1; }
+	got=$(sha256_file "$probe") || { rm -rf -- "${probed:?}"; return 1; }
+	rm -rf -- "${probed:?}"
 	got=${got%% *}
 	[ "$got" = "$want" ]
 }
