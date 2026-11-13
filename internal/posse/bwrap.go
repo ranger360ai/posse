@@ -248,6 +248,14 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 	// the whole tree; --dev-bind /dev /dev for seatbelt's own
 	// (regex #"^/dev/") grant, which every runtime needs for its tty.
 	//
+	// What is deliberately PRESENT: --unshare-user, explicitly and not left
+	// to whatever bwrap decides for itself (ranger-base-racfc). The seat must
+	// sit in a child user namespace, because the /proc/<host pid>/root guard
+	// (ranger-base-di8da) depends on it, and a guard whose premise is an
+	// implicit choice of the bwrap build is a guard nobody can read off the
+	// render. No --uid/--gid: the identity map stays, so the seat's own uid
+	// is the one it owns files as.
+	//
 	// What is deliberately absent, each because the seat needs the host's
 	// own (D17, and Alternatives rejected): --unshare-pid (a seat kills its
 	// own pids and `go run ./cmd/checkorphans` reads the box's process
@@ -259,6 +267,7 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 		"--die-with-parent",
 		"--ro-bind", "/", "/",
 		"--dev-bind", "/dev", "/dev",
+		"--unshare-user",
 	}
 	// A render with no session dir — `posse gates` asked about a persona and
 	// not a launch — omits the flag rather than passing it an empty string,

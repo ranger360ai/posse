@@ -111,6 +111,10 @@ func TestBwrapArgsRendersD17Base(t *testing.T) {
 		"--die-with-parent",
 		"--ro-bind", "/", "/",
 		"--dev-bind", "/dev", "/dev",
+		// ranger-base-racfc: a child user namespace, rendered and not left
+		// to the bwrap build; the /proc/<host pid>/root guard
+		// (ranger-base-di8da) rests on it
+		"--unshare-user",
 		"--chdir", bwAt("proj"),
 		// ranger-base-ludpp: the agent and bus addresses, always
 		"--unsetenv", "DBUS_SESSION_BUS_ADDRESS",
@@ -660,6 +664,7 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 		"--die-with-parent",
 		"--ro-bind", "/", "/",
 		"--dev-bind", "/dev", "/dev",
+		"--unshare-user",
 		"--chdir", cwd,
 		// ranger-base-ludpp: the agent and bus addresses, always
 		"--unsetenv", "DBUS_SESSION_BUS_ADDRESS",
