@@ -289,6 +289,19 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 // The list is taken HERE, beside the argv it describes, and not re-derived
 // from the argv later: a destination in the argv does not say whether it
 // is a wall or an opening, and the render is the one place that knows.
+//
+// SO THE TAXONOMY ABOVE IS NOT WHAT HOLDS THE LIST TOTAL, and a reader
+// should not take it for one (ranger-base-mxbq0 finding 2): a kind added to
+// this render with no watch() call would leave both paragraphs reading
+// complete. What holds it is a pin that derives the expectation from the
+// ARGV — every destination this function mounts over is either in the watch
+// list or in an opening set computed from the INPUTS, and every watched path
+// is a destination the argv carries. It can do what this function cannot
+// because it holds both ends: the render sees only paths, the pin was handed
+// the lists they came from. TestWallWatchEveryRenderedMountIsAWallOrANamed
+// Opening in wallwatch_test.go, with TestWallWatchFixturesCarryEveryCarveOut
+// Field holding its inputs total over SeatbeltCarveOut. A new mount shape
+// here reds one of the two; adding it to the taxonomy above reds nothing.
 func bwrapArgsWatched(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ...string) ([]string, []PrepStep, []WallWatchMount, error) {
 	var watch []WallWatchMount
 	argv, prep, err := bwrapArgsInto(&watch, cwd, writable, carve, refKeep...)

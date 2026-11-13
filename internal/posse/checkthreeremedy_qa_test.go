@@ -37,12 +37,25 @@ package posse
 // names a noun the SENTENCE uses and the line or path that noun describes,
 // and asserts the noun is still in the sentence AND the wall still does
 // what it says. So a narrowing of the rule that leaves the sentence alone
-// reds, and a rewording that drops a promise reds too. Beside the rows,
-// each test asserts the phrases that make the remedy a GENERALIZATION
-// rather than an exemption — ckcly's "a LETTER beside the id" half, one
-// constant over: a reword that re-promises what the rule refuses ("a
-// comment in a fixture may keep it") has to displace one of them to be
-// coherent.
+// reds, and a rewording that drops a promise reds too.
+//
+// THAT IS TWO OF THE THREE DIRECTIONS, and this file's first version said
+// it was all of them. The claim was that a reword re-promising what the
+// rule refuses "has to displace one of them to be coherent" — MEASURED
+// FALSE 2026-11-13 (ranger-base-mxbq0 finding 1, from the verify at
+// ranger-base-6rj8w): a clause APPENDED to either constant displaces no
+// phrase any row greps for, and both mutants stayed green in all three
+// arms. One of the two was also false about the rule, which is the loop
+// ranger-base-68631 finding 6 names — a remedy sending a refused writer
+// somewhere they are refused again. A promise that is ADDED has by
+// construction no phrase for a pin to be missing, so nothing shaped like
+// these rows can see it; the third direction needs the sentence read as a
+// CLOSED set, which is TestQARemedySentencesAreClosedSets
+// (remedyclosedset_test.go, over all four remedy constants in the tree).
+// What that reader buys is not the catch itself but the STEP: an edit to
+// either constant reds there until its author has come back here and
+// measured the clause they wrote. Which is why these test names — "Promises
+// Only What Check Three Allows" — are true now and were not before.
 //
 // ARM 3, with the message pins (checkthreemessage_qa_test.go): both tests
 // drive the real hook through a visWall, so they belong in one arm rather
@@ -90,17 +103,12 @@ import (
 	"testing"
 )
 
-// remedyPromises reports whether remedy sentence s makes promise p.
-//
-// Whitespace-collapsed on both sides, which is the one difference from
-// check 4's plain strings.Contains: these two constants are HARD-WRAPPED at
-// the width a terminal refusal prints, so a phrase worth naming straddles a
-// line break ("this\ninstance's path", "a fresh added\nentry") and a raw
-// Contains would be a pin on the wrapping. Re-wrapping a refusal is not
-// drift; re-wording it is.
-func remedyPromises(s, p string) bool {
-	return strings.Contains(strings.Join(strings.Fields(s), " "), strings.Join(strings.Fields(p), " "))
-}
+// remedyPromises and the closed-set reader over all four remedy constants
+// live in remedyclosedset_test.go, untagged so they run in every arm.
+// Reading a phrase out of a sentence is HALF the pattern (ranger-base-mxbq0
+// finding 1): it catches a promise dropped and never one added, so the rows
+// below are what measures each clause and
+// TestQARemedySentencesAreClosedSets is what makes an author write one.
 
 // TestQAIdentityRemedyPromisesOnlyWhatCheckThreeAllows reads
 // IdentityWayThrough — the remedy BOTH the content arm and the path arm
@@ -162,7 +170,13 @@ func TestQAIdentityRemedyPromisesOnlyWhatCheckThreeAllows(t *testing.T) {
 		if !strings.Contains(out, "an operator identity literal in a staged file") {
 			t.Errorf("%s must be refused by the CONTENT arm, which is the arm whose remedy this is:\n%s", row.noun, out)
 		}
-		if !strings.Contains(out, "generalize whatever") {
+		// remedyPromises and not a raw Contains, for the reason it exists:
+		// the refusal prints this sentence HARD-WRAPPED, and "generalize
+		// whatever" straddles the break in the constant's current wrapping.
+		// MEASURED 2026-11-13 (ranger-base-mxbq0): a pure RE-WRAP of
+		// IdentityWayThrough, no word changed, red this line — a pin on the
+		// wrapping, which is this bead's own class one file over.
+		if !remedyPromises(out, "generalize whatever") {
 			t.Errorf("the refusal must print the remedy this test reads:\n%s", out)
 		}
 		// The remedy performed. A refusal whose way through is still

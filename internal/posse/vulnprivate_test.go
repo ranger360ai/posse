@@ -204,6 +204,16 @@ func TestVulnPrivateHitsAcceptsABareIDOnACRLFLine(t *testing.T) {
 // is still clean, so the sentence and the behaviour cannot drift apart in
 // either direction — a narrowing of the rule that leaves the sentence alone
 // reds, and a rewording that drops a promise reds too.
+//
+// THE THIRD DIRECTION IS NOT HERE AND IS NOT NOWHERE
+// (ranger-base-mxbq0 finding 1): a clause APPENDED to either check-4 remedy
+// displaces no noun below, so nothing shaped like these rows can see it.
+// TestQARemedySentencesAreClosedSets (remedyclosedset_test.go) reads all
+// four of the tree's remedy constants as closed sets for that, and reds on
+// an edit until its author has come back here and given the new clause a
+// row. remedyPromises is that file's helper too — one spelling over both
+// checks, where this file's plain strings.Contains and check 3's
+// whitespace-collapsing Contains used to be two.
 func TestVulnPrivateHitsAcceptsEveryDecorationTheRemedyPromises(t *testing.T) {
 	t.Parallel()
 	ids := []string{"ranger-base-l751c"}
@@ -217,7 +227,7 @@ func TestVulnPrivateHitsAcceptsEveryDecorationTheRemedyPromises(t *testing.T) {
 		{"quotes", `"ranger-base-l751c"`},
 		{"punctuation", "- ranger-base-l751c;"},
 	} {
-		if !strings.Contains(VulnPrivateWayThrough, row.noun) {
+		if !remedyPromises(VulnPrivateWayThrough, row.noun) {
 			t.Errorf("the remedy no longer promises %q, and this row exists because the sentence and the rule went out of step once already (ranger-base-68631 finding 6): %q", row.noun, VulnPrivateWayThrough)
 		}
 		if got := vulnPrivateHits(row.line, ids); got != nil {
@@ -273,7 +283,7 @@ func TestVulnPrivateMessageRemedyPromisesOnlyWhatTheRuleAllows(t *testing.T) {
 		{"punctuation", "- ranger-base-l751c;"},
 		{"decoration", "- **`ranger-base-l751c`**"},
 	} {
-		if !strings.Contains(VulnPrivateMessageWayThrough, row.noun) {
+		if !remedyPromises(VulnPrivateMessageWayThrough, row.noun) {
 			t.Errorf("the message remedy no longer promises %q, and this row exists because the sentence and the rule went out of step once already (ranger-base-68631 finding 6, unpinned on this arm until ranger-base-ckcly): %q", row.noun, VulnPrivateMessageWayThrough)
 		}
 		if got := vulnPrivateHits(row.line, ids); got != nil {
@@ -283,7 +293,7 @@ func TestVulnPrivateMessageRemedyPromisesOnlyWhatTheRuleAllows(t *testing.T) {
 	// And the half the sentence REFUSES, held the same way: it names a
 	// letter, because that is the rule vulnPrivateBare implements. A
 	// sentence that went back to enumerating bytes would drop this noun.
-	if !strings.Contains(VulnPrivateMessageWayThrough, "a LETTER beside the id") {
+	if !remedyPromises(VulnPrivateMessageWayThrough, "a LETTER beside the id") {
 		t.Errorf("the message remedy no longer names the rule it enforces — vulnPrivateBare refuses a LETTER, in any script, and a remedy that enumerates bytes instead is the shape ranger-base-68631 finding 6 was filed over: %q", VulnPrivateMessageWayThrough)
 	}
 	for _, line := range []string{

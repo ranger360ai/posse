@@ -15,6 +15,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-sxez7](ranger-base-sxez7.md) — The census went blind one root at a time, and its floor was seven below the live count (ranger-base-sxez7) — 2026-11-13
 - [ranger-base-rgyto](ranger-base-rgyto.md) — ranger-base-rgyto — the whole-file project-config branch now asks Lstat too — 2026-11-13
 - [ranger-base-myjcz](ranger-base-myjcz.md) — ranger-base-myjcz — verify-herdr-bob-rules.sh's watcher pid, and the box that could not run it — 2026-11-13
+- [ranger-base-mxbq0](ranger-base-mxbq0.md) — Two pins that were green over the hole they were written for (ranger-base-mxbq0) — 2026-11-13
 - [ranger-base-lx5jk](ranger-base-lx5jk.md) — claude's sessions/ registry, private per seat at bwrap, and the rex join reads the private row first (ranger-base-lx5jk) — 2026-11-13
 - [ranger-base-kkp5g](ranger-base-kkp5g.md) — A cleanup handler trapped on INT/TERM that RETURNS lets a signalled run print FAILs it never measured (ranger-base-kkp5g) — 2026-11-13
 - [ranger-base-hxenz](ranger-base-hxenz.md) — ranger-base-hxenz — the reaper forked once per pid per route, and `--self-test` paid it seven times — 2026-11-13

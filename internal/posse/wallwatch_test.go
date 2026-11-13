@@ -17,53 +17,292 @@ import (
 	"time"
 )
 
-// The render records its WALLS and only its walls: Hide, Private, Masked,
-// Deny and step 5's read masks (ranger-base-y4cm6) are watched; a write
-// grant and the ssh allow bind-backs (openings) are not.
-func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
-	t.Parallel()
+// ─── the render's walls, held from the ARGV and not from a list ─────────────
+//
+// WHY THERE IS A DERIVATION HERE AT ALL (ranger-base-mxbq0 finding 2,
+// discovered from the verify at ranger-base-6rj8w). The pin below used to be
+// a reflect.DeepEqual against a hand-written literal over a fixture that
+// carried only the kinds already recorded, so it could not see a wall kind
+// the FIXTURE omitted: MEASURED 2026-11-13, a render whose watch list came
+// back EMPTY passed the pin named "records every wall" unchanged, because
+// the fixture asked for none of the kinds that render had. That is how
+// ranger-base-w6ip0 came to be found by hand instead of by this file, and a
+// literal of six leaves the sixth-to-seventh step the same silent one.
+//
+// So the expectation is DERIVED, the shape this tree already uses for a
+// class that must stay total (make corpus-check, pkgcensus, treewidedoor):
+// every destination BwrapArgs mounts over is either in the watch list or in
+// an opening set computed from the render's own INPUTS, and every watched
+// path is a destination the argv really carries. A new mount with no watch()
+// call reds; a watch() call with no mount reds; and an option the table
+// below does not classify reds rather than being skipped, because a mount
+// flag nobody classified is exactly the hole this replaces.
+//
+// THE FIXTURE IS HELD TOTAL FROM THE OTHER END TOO
+// (TestWallWatchFixturesCarryEveryCarveOutField): a derivation over an argv
+// says nothing about a shape the inputs never asked for, so every field of
+// SeatbeltCarveOut must have a value in one of the renders here. A field
+// added to that struct tomorrow reds until somebody gives it one and says
+// which side of the rule its mount falls on.
+
+// bwrapMountOpt is one option BwrapArgs can emit: how many arguments it
+// takes, and whether the last of them is a mount DESTINATION.
+type bwrapMountOpt struct {
+	args  int
+	mount bool
+}
+
+// bwrapRenderOpts is CLOSED on purpose. The pin's claim is about the render
+// and not about this table, so an option the render emits and this table
+// does not name is an error and never a skip — the skip is what would let a
+// seventh mount kind arrive unwatched and green.
+var bwrapRenderOpts = map[string]bwrapMountOpt{
+	"--die-with-parent": {0, false},
+	"--unshare-user":    {0, false},
+	"--chdir":           {1, false},
+	"--unsetenv":        {1, false},
+	"--tmpfs":           {1, true},
+	"--bind":            {2, true},
+	"--ro-bind":         {2, true},
+	"--dev-bind":        {2, true},
+}
+
+// bwrapMountDests answers every path argv mounts over, in render order.
+func bwrapMountDests(t *testing.T, argv []string) []string {
+	t.Helper()
+	var dests []string
+	for i := 0; i < len(argv); {
+		o, ok := bwrapRenderOpts[argv[i]]
+		if !ok {
+			t.Fatalf("argv[%d] = %q is an option bwrapRenderOpts does not classify, so this file cannot say whether its destination is a wall or an opening. Add it there — and if it mounts, decide in bwrapArgsInto whether it takes a watch() call: an unclassified mount is how ranger-base-w6ip0 escaped.\nargv: %q", i, argv[i], argv)
+		}
+		if i+o.args >= len(argv) {
+			t.Fatalf("argv[%d] = %q wants %d arguments and the argv ends: %q", i, argv[i], o.args, argv)
+		}
+		if o.mount {
+			dests = append(dests, argv[i+o.args])
+		}
+		i += o.args + 1
+	}
+	return dests
+}
+
+// wwRender is one render this file holds to the wall/opening rule.
+type wwRender struct {
+	what     string
+	cwd      string
+	writable []string
+	carve    SeatbeltCarveOut
+	refKeep  []string
+}
+
+// wwOpenings answers which of a render's destinations RE-OPEN something, as
+// dst -> why, derived from the render's inputs and never from the argv.
+//
+// Derived, because that is what makes the pin's other half total: a new
+// input list that renders a wall is caught by having no watch() call, and a
+// new input list that renders an OPENING is caught here — the author has to
+// come to this function and say so in as many words, which is the step the
+// hand-written literal did not have.
+func wwOpenings(c wwRender) map[string]string {
+	o := map[string]string{
+		// Step 1's base. Not a mount over a name a host can rename out from
+		// under a seat: it is the floor the rest of the wall stands on, and
+		// the one destination whose detaching has no meaning.
+		"/": "the read-only base of step 1",
+		// seatbelt's (regex #"^/dev/") grant, which every runtime's tty needs.
+		"/dev": "step 1's dev bind",
+	}
+	for _, w := range c.writable {
+		o[w] = "a write grant: a detached one leaves the seat with LESS than it was given"
+		o[absResolve(w)] = "a write grant: a detached one leaves the seat with LESS than it was given"
+	}
+	for _, f := range c.carve.Keep {
+		o[f] = "a Keep file, bound back over the deny above it"
+	}
+	for _, d := range c.carve.SSHDir {
+		for _, f := range c.carve.sshDirAllowed(d) {
+			o[f] = "an ssh allow bind: a hole deliberately left in the " + d + " tmpfs, which is the wall"
+		}
+	}
+	return o
+}
+
+// wwEveryShape is the canonical render: every field of SeatbeltCarveOut that
+// bwrapArgsInto reads a mount out of, plus the two it deliberately reads
+// nothing out of (Seal, whose rename a mount point cannot be carried away
+// by, and Narrow, which bwrapRender clears), plus a write grant and a D20
+// ref keep. Both tests below drive it.
+func wwEveryShape(t *testing.T) wwRender {
+	t.Helper()
 	root := t.TempDir()
 	grant := filepath.Join(root, "cfg")
 	priv := filepath.Join(grant, "shell-snapshots")
 	src := filepath.Join(root, "seat", "shell-snapshots")
 	deny := filepath.Join(grant, "settings.json")
 	mask := filepath.Join(grant, "policy-cache.json")
+	gates := filepath.Join(grant, "gates")
 	hide := filepath.Join(root, "run")
 	sshDir := filepath.Join(root, ".ssh")
-	sshCfg := filepath.Join(sshDir, "config")
-	sshHosts := filepath.Join(sshDir, "known_hosts")
-	sshKey := filepath.Join(sshDir, "id_ed25519")
 	cred := filepath.Join(root, "sibling", "credentials.json")
-	for _, d := range []string{grant, priv, src, hide, sshDir, filepath.Dir(cred)} {
+	// Absent on purpose: a Seeded file-shaped deny inside a grant (the
+	// launcher writes it empty and the mount goes over it), and the ref keep
+	// that renders no mount at all.
+	seeded := filepath.Join(grant, "settings-seeded.json")
+	for _, d := range []string{grant, priv, src, hide, sshDir, gates, filepath.Dir(cred)} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, f := range []string{deny, mask, sshCfg, sshHosts, sshKey, cred} {
+	for _, f := range []string{
+		deny, mask, cred,
+		filepath.Join(sshDir, "config"), filepath.Join(sshDir, "known_hosts"), filepath.Join(sshDir, "id_ed25519"),
+		filepath.Join(gates, "refusals.log"),
+	} {
 		if err := os.WriteFile(f, []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	carve := SeatbeltCarveOut{
-		Hide:     []string{hide},
-		Deny:     []string{deny, mask},
-		DenyFile: []string{deny, mask},
-		Mask:     []string{mask},
-		Private:  []PrivateBind{{Src: src, Dst: priv}},
-		SSHDir:   []string{sshDir},
-		DenyRead: []string{cred, sshKey},
+	return wwRender{
+		what:     "every shape",
+		writable: []string{grant},
+		refKeep:  []string{filepath.Join(grant, "refs-keep")},
+		carve: SeatbeltCarveOut{
+			Hide:     []string{hide},
+			Deny:     []string{deny, mask, gates, seeded},
+			DenyFile: []string{deny, mask, seeded},
+			Mask:     []string{mask},
+			Seed:     []string{seeded},
+			Seal:     []string{grant},
+			Keep:     []string{filepath.Join(gates, "refusals.log")},
+			Narrow:   []SeatbeltNarrow{{Path: priv, Allow: false}},
+			Private:  []PrivateBind{{Src: src, Dst: priv}},
+			SSHDir:   []string{sshDir},
+			DenyRead: []string{cred, filepath.Join(sshDir, "id_ed25519")},
+		},
 	}
-	_, _, watch, err := bwrapArgsWatched("", []string{grant}, carve)
+}
+
+// wwPrivateTmp is its own render because carve.Tmp mounts over /tmp
+// (bwrapTmpMount) and every path a t.TempDir fixture has is UNDER /tmp — so
+// in one fixture with the shapes above, `reopens` would skip the denies and
+// the ssh tmpfs that no write grant re-opens, and the render would be
+// measuring almost nothing. Here the one shape is the point.
+func wwPrivateTmp(t *testing.T) wwRender {
+	t.Helper()
+	root := t.TempDir()
+	tmp := filepath.Join(root, "seat-tmp")
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return wwRender{what: "the seat's private /tmp", carve: SeatbeltCarveOut{Tmp: tmp}}
+}
+
+func wwRenders(t *testing.T) []wwRender {
+	t.Helper()
+	return []wwRender{wwEveryShape(t), wwPrivateTmp(t)}
+}
+
+// Every mount the render emits is either a WALL it watches or an opening
+// wwOpenings names, and every wall it watches is a mount the argv carries.
+// The pin ranger-base-ihnnl shipped read a hand-written list instead, and a
+// wall kind the fixture omitted was invisible to it (head comment above).
+func TestWallWatchEveryRenderedMountIsAWallOrANamedOpening(t *testing.T) {
+	t.Parallel()
+	for _, c := range wwRenders(t) {
+		argv, prep, watch, err := bwrapArgsWatched(c.cwd, c.writable, c.carve, c.refKeep...)
+		if err != nil {
+			t.Fatalf("%s: %v", c.what, err)
+		}
+		open := wwOpenings(c)
+		watched := map[string]bool{}
+		for _, w := range watch {
+			watched[w.Path] = true
+		}
+		dests := bwrapMountDests(t, argv)
+		seen := map[string]bool{}
+		for _, d := range dests {
+			seen[d] = true
+			switch {
+			case watched[d] && open[d] != "":
+				t.Errorf("%s: %s is watched AND named an opening (%s) — a destination is one or the other, and the openings are not watched because a detached one leaves the seat with less and never more", c.what, d, open[d])
+			case watched[d], open[d] != "":
+			default:
+				t.Errorf("%s: the render mounts over %s and neither watches it nor names it an opening. If it is a WALL, give it a watch() call in bwrapArgsInto; if it re-opens something, say so in wwOpenings. An unclassified mount is a seat whose wall a host rename detaches with nothing watching (ranger-base-w6ip0).\nargv: %q", c.what, d, argv)
+			}
+		}
+		for _, w := range watch {
+			if !seen[w.Path] {
+				t.Errorf("%s: %s is watched as a %s and the argv mounts nothing over it — `posse wall-watch` would then read the HOST's mount at that name as the seat's wall, and a bead filed off it names a wall that was never put up.\nargv: %q", c.what, w.Path, w.Kind, argv)
+			}
+		}
+		// BwrapArgs's own output is unchanged by the third one.
+		a1, p1, err := BwrapArgs(c.cwd, c.writable, c.carve, c.refKeep...)
+		if err != nil {
+			t.Fatalf("%s: %v", c.what, err)
+		}
+		if !reflect.DeepEqual(a1, argv) || !reflect.DeepEqual(p1, prep) {
+			t.Errorf("%s: BwrapArgs and bwrapArgsWatched rendered different walls", c.what)
+		}
+	}
+}
+
+// The derivation above is only as total as the inputs it is driven with, so
+// the inputs are held total too: every field of SeatbeltCarveOut has a value
+// in one of the renders here. A field added to that struct reds this until
+// somebody gives it one — at which point the test above says whether its
+// mount is a wall or an opening, which is the question the hand-written
+// literal let an author skip.
+func TestWallWatchFixturesCarryEveryCarveOutField(t *testing.T) {
+	t.Parallel()
+	cs := wwRenders(t)
+	rt := reflect.TypeOf(SeatbeltCarveOut{})
+	for i := 0; i < rt.NumField(); i++ {
+		set := false
+		for _, c := range cs {
+			if !reflect.ValueOf(c.carve).Field(i).IsZero() {
+				set = true
+			}
+		}
+		if !set {
+			t.Errorf("SeatbeltCarveOut.%s has no value in any render here, so TestWallWatchEveryRenderedMountIsAWallOrANamedOpening says nothing about the mount it makes. Give it one in wwEveryShape (or its own render, as carve.Tmp has), and classify what it mounts: a watch() call in bwrapArgsInto, or an entry in wwOpenings", rt.Field(i).Name)
+		}
+	}
+	// The two inputs that are parameters rather than fields.
+	one := cs[0]
+	if len(one.writable) == 0 || len(one.refKeep) == 0 {
+		t.Errorf("%s must carry a write grant and a D20 ref keep: the grant is the opening the rule is stated against, and the keep is the one input that renders NO mount", one.what)
+	}
+}
+
+// The render records its WALLS and only its walls: Hide, Private, Masked,
+// Deny and step 5's read masks (ranger-base-y4cm6) are watched; a write
+// grant and the ssh allow bind-backs (openings) are not. This is the KINDS
+// and the ORDER, which the derivation above does not read — the derivation
+// holds the set, this holds what each member is called and when it is
+// mounted. Both are needed: a wall recorded under the wrong kind is a bead
+// that names the wrong wall.
+func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
+	t.Parallel()
+	c := wwEveryShape(t)
+	grant := c.writable[0]
+	root := filepath.Dir(grant)
+	sshDir := c.carve.SSHDir[0]
+	_, _, watch, err := bwrapArgsWatched(c.cwd, c.writable, c.carve, c.refKeep...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []WallWatchMount{
-		{WallWatchHide, hide},
-		{WallWatchPrivate, priv},
-		{WallWatchMasked, mask},
-		{WallWatchDeny, deny},
+		{WallWatchHide, filepath.Join(root, "run")},
+		{WallWatchPrivate, filepath.Join(grant, "shell-snapshots")},
+		// shallowestFirst sorts the deny list, so gates, policy-cache.json,
+		// settings-seeded.json, settings.json — the mask under its own kind.
+		{WallWatchDeny, filepath.Join(grant, "gates")},
+		{WallWatchMasked, filepath.Join(grant, "policy-cache.json")},
+		{WallWatchDeny, filepath.Join(grant, "settings-seeded.json")},
+		{WallWatchDeny, filepath.Join(grant, "settings.json")},
 		{WallWatchReadMask, sshDir},
-		{WallWatchReadMask, cred},
+		{WallWatchReadMask, filepath.Join(root, "sibling", "credentials.json")},
 	}
 	if !reflect.DeepEqual(watch, want) {
 		t.Errorf("watched walls =\n %v\nwant\n %v\n(the write grant %s is an opening and must not be watched)", watch, want, grant)
@@ -71,16 +310,15 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 	// The bind-backs under the ssh tmpfs are the holes deliberately left in
 	// that wall, and the key under it renders no mount at all, so none of
 	// the three is watched.
-	for _, p := range []string{sshCfg, sshHosts, sshKey} {
-		if wallWatchListed(watch, p) {
+	for _, p := range []string{"config", "known_hosts", "id_ed25519"} {
+		if wallWatchListed(watch, filepath.Join(sshDir, p)) {
 			t.Errorf("%s is watched: it is an opening under the %s tmpfs, not a wall of its own", p, sshDir)
 		}
 	}
-	// BwrapArgs's own output is unchanged by the third one.
-	a1, p1, _ := BwrapArgs("", []string{grant}, carve)
-	a2, p2, _, _ := bwrapArgsWatched("", []string{grant}, carve)
-	if !reflect.DeepEqual(a1, a2) || !reflect.DeepEqual(p1, p2) {
-		t.Error("BwrapArgs and bwrapArgsWatched rendered different walls")
+	// And the D20 ref keep, which renders no mount: watching it would be the
+	// other direction of the same silence.
+	if wallWatchListed(watch, c.refKeep[0]) {
+		t.Errorf("%s is watched and the render mounts nothing over it", c.refKeep[0])
 	}
 }
 
