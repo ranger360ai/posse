@@ -147,12 +147,15 @@ func vulnPrivateIndent(line string) int {
 	return n
 }
 
-// vulnPrivateOpensUnit reports whether a line begins a markdown block of its
-// own — a list item or a heading — rather than continuing the one above it.
+// vulnPrivateListItem reports whether a line opens a markdown LIST item — a
+// bullet or a numbered item — as opposed to a heading or ordinary prose.
 // A list marker needs whitespace after it, which is both markdown's own rule
 // and what keeps `**bold**` on an indented line from reading as a bullet and
 // buying itself a unit.
-func vulnPrivateOpensUnit(line string) bool {
+//
+// It is separate from vulnPrivateOpensUnit because a list item is the only
+// block here that takes a LAZY CONTINUATION — see vulnPrivateUnits.
+func vulnPrivateListItem(line string) bool {
 	s := strings.TrimLeft(vulnPrivateContent(line), " \t")
 	if s == "" {
 		return false
@@ -160,8 +163,6 @@ func vulnPrivateOpensUnit(line string) bool {
 	switch s[0] {
 	case '-', '*', '+':
 		return len(s) == 1 || s[1] == ' ' || s[1] == '\t'
-	case '#':
-		return true
 	}
 	i := 0
 	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -170,9 +171,19 @@ func vulnPrivateOpensUnit(line string) bool {
 	return i > 0 && i < len(s) && (s[i] == '.' || s[i] == ')')
 }
 
+// vulnPrivateOpensUnit reports whether a line begins a markdown block of its
+// own — a list item or a heading — rather than continuing the one above it.
+func vulnPrivateOpensUnit(line string) bool {
+	if vulnPrivateListItem(line) {
+		return true
+	}
+	s := strings.TrimLeft(vulnPrivateContent(line), " \t")
+	return s != "" && s[0] == '#'
+}
+
 // vulnPrivateUnits groups lines into the blocks the bareness test judges:
 // each line's index maps to the index of the line that OPENS its block, so a
-// bullet and the lines indented under it are one unit.
+// bullet and the lines that continue it are one unit.
 //
 // WHY A UNIT AND NOT A LINE (ranger-base-68631 finding 1). The check was
 // strictly per-line, and the shape AGENTS.md's own ruling prescribes is a
@@ -188,7 +199,26 @@ func vulnPrivateOpensUnit(line string) bool {
 // carries the text is the same escape read upwards — and the grouping is one
 // pass with a stack, so the cost is linear in the text however deep it nests.
 //
-// THE RESIDUAL IS DELIBERATE AND IT IS THE PARAGRAPH:
+// AND THE CONTINUATION IS LAZY, NOT INDENTED (ranger-base-ckcly finding 1,
+// escaped from the fix above). The pop loop dropped every opener at or past
+// the current line's indent, so text at COLUMN 0 under a top-level bullet
+// bought a unit of its own and passed SILENT — one space fewer than the
+// indented shape this grouping was written to catch:
+//
+//   - <open id>\n  <text>   flagged, rc 1
+//   - <open id>\n<text>     SILENT, rc 0, before this
+//
+// Markdown reads the second as a lazy continuation of the list item, so a
+// line that does not open a block of its own never pops a LIST item off the
+// stack, whatever its indent. It is the list item alone, and not every
+// opener: a heading wrapped onto a second line is NOT a lazy continuation —
+// its second line opens a new paragraph — and charging one to the heading
+// above it reds a bare id written under a wrapped `### Finding N: …`, which
+// this tree already contains (docs/notes.d/ranger-base-nr3qf.md, MEASURED:
+// 2 ids newly flagged over 674 tracked markdown files by the wider rule,
+// 0 by this one).
+//
+// THREE RESIDUALS ARE DELIBERATE, and the first is the PARAGRAPH:
 //
 //	## Not closed here\n\n- <open id>\n\n<text>   SILENT, rc 0
 //
@@ -204,6 +234,29 @@ func vulnPrivateOpensUnit(line string) bool {
 // lands and the paragraph stays open, stated here and pinned as deliberate
 // by TestVulnPrivateHitsLeavesTheSeparateParagraphOpen.
 //
+// The second is a description written as a block of its OWN under the bare
+// id — a nested bullet, a numbered item, a heading:
+//
+//   - <open id>\n  - <text>   SILENT, rc 0
+//
+// That one is bought rather than merely left: ranger-base-lcuec.md's own
+// section names ANOTHER bead, in a sentence, in a nested bullet under a bare
+// id, and charging it upwards reds that document for text the rule does not
+// bind. Pinned as a control in
+// TestVulnPrivateHitsFlagsADescriptionOnTheContinuationLine.
+//
+// The third is a prose RUN at column 0 with no list item above it:
+//
+//	<open id>\n<text>   SILENT, rc 0
+//
+// Markdown reads that as one paragraph and this grouping reads two units,
+// because a non-opener continues a LIST item and nothing else. Closing it —
+// letting a non-opener continue a non-opener too — was MEASURED at 36 ids
+// newly flagged over the 679 tracked markdown files of this tree, every one
+// of them ordinary prose naming a bead id on its own line, so it is ADR
+// 0068's class again and stays open. The remedy AGENTS.md prescribes is a
+// bulleted "Not closed here" section, which the first rule above covers.
+//
 // And one more the TEXT cannot carry: the content arm reads ADDED lines
 // only, so a continuation already in the file is not in $posse_added at all
 // — the same bound checks 0-3 share, and not this grouping's to fix.
@@ -217,10 +270,18 @@ func vulnPrivateUnits(lines []string) []int {
 			continue
 		}
 		ind := vulnPrivateIndent(line)
-		for len(openers) > 0 && vulnPrivateIndent(lines[openers[len(openers)-1]]) >= ind {
+		opens := vulnPrivateOpensUnit(line)
+		for len(openers) > 0 {
+			top := openers[len(openers)-1]
+			if !opens && vulnPrivateListItem(lines[top]) {
+				break // markdown's lazy continuation of that list item
+			}
+			if vulnPrivateIndent(lines[top]) < ind {
+				break
+			}
 			openers = openers[:len(openers)-1]
 		}
-		if len(openers) > 0 && !vulnPrivateOpensUnit(line) {
+		if len(openers) > 0 && !opens {
 			unitOf[i] = unitOf[openers[len(openers)-1]]
 			continue
 		}
@@ -230,7 +291,7 @@ func vulnPrivateUnits(lines []string) []int {
 }
 
 // vulnPrivateHits reports which of ids is named, in some UNIT of text
-// (vulnPrivateUnits: a line and the lines indented under it), beside
+// (vulnPrivateUnits: a line and the lines that continue it), beside
 // anything vulnPrivateBare refuses — the shape AGENTS.md "Landing the plane"
 // refuses. Every id present in a unit is stripped from it before the
 // bareness test runs, so "- ranger-base-a, ranger-base-b" reads as bare for
@@ -324,11 +385,15 @@ func vulnPrivateHits(text string, ids []string) []string {
 // pattern's value to).
 //
 // It names the UNIT and not the line (ranger-base-68631 finding 1): the
-// scope is a line plus whatever is indented under it, and a committer told
-// "a line here" who then reads a clean-looking bullet has been sent to the
-// wrong place to look. Which line it was stays withheld either way.
+// scope is a line plus whatever continues it, and a committer told "a line
+// here" who then reads a clean-looking bullet has been sent to the wrong
+// place to look. Which line it was stays withheld either way.
+//
+// It says CONTINUING and not "indented under" (ranger-base-ckcly finding 1):
+// markdown's lazy continuation sits at column 0, so the old wording sent a
+// committer looking for an indent that is not there.
 func vulnPrivateHitLine(id string) string {
-	return "  " + id + ": a line here, or a line indented under it, carries more than the bare id — the text is withheld (AGENTS.md \"Landing the plane\")\n"
+	return "  " + id + ": a line here, or a line continuing it, carries more than the bare id — the text is withheld (AGENTS.md \"Landing the plane\")\n"
 }
 
 // RunGatesVulnPrivateScan is check 4's judge: stdin is the text a

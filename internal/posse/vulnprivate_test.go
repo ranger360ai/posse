@@ -103,6 +103,18 @@ func TestVulnPrivateHitsFlagsADescriptionOnTheContinuationLine(t *testing.T) {
 		"- ranger-base-l751c\n  **the heap overflow** in the parser\n",
 		"- the residual that stays open:\n  ranger-base-l751c\n",
 		"+- ranger-base-l751c\n+  the heap overflow in the parser\n",
+		// ranger-base-ckcly finding 1: the LAZY continuation, one space
+		// fewer than the row above it. Markdown reads a column-0 line under
+		// a list item as a continuation of that item; the pop loop read it
+		// as a unit of its own, so this passed SILENT, rc 0, through the
+		// shipped subcommand.
+		"- ranger-base-l751c\nthe heap overflow in the parser\n",
+		"1. ranger-base-l751c\nthe heap overflow in the parser\n",
+		"## Not closed here\n\n- ranger-base-l751c\nthe heap overflow in the parser\n",
+		"+- ranger-base-l751c\n+the heap overflow in the parser\n",
+		// Lazily continuing the INNER item of a nested list, which is the
+		// item markdown's paragraph is open in.
+		"- ranger-base-wuuqi stays open\n  - ranger-base-l751c\nthe heap overflow in the parser\n",
 	} {
 		if got := vulnPrivateHits(text, ids); len(got) != 1 || got[0] != ids[0] {
 			t.Errorf("vulnPrivateHits(%q) = %v, want [%s] — a description in the id's own bullet must be flagged", text, got, ids[0])
@@ -117,9 +129,18 @@ func TestVulnPrivateHitsFlagsADescriptionOnTheContinuationLine(t *testing.T) {
 		"- ranger-base-l751c\n  - ranger-base-wuuqi stays open, the operator's call\n",
 		"- ranger-base-l751c\n- ranger-base-wuuqi stays open, the operator's call\n",
 		"+- ranger-base-l751c\n+- ranger-base-wuuqi stays open, the operator's call\n",
+		// And the control the lazy-continuation rule is NARROWED for
+		// (ranger-base-ckcly finding 1): a HEADING wrapped onto a second
+		// line does not take a lazy continuation — markdown opens a new
+		// paragraph there — so a bare id on that second line is not charged
+		// the heading's words. A rule that popped every opener alike reds
+		// docs/notes.d/ranger-base-nr3qf.md, which is written this way, and
+		// its remedy would be one the writer has already performed.
+		"### Finding 1: the pin gap (escaped from\nranger-base-l751c)\n",
+		"## Not closed here\nranger-base-l751c\n",
 	} {
 		if got := vulnPrivateHits(text, ids); got != nil {
-			t.Errorf("vulnPrivateHits(%q) = %v, want no hit — a sibling or nested bullet about another bead is its own unit", text, got)
+			t.Errorf("vulnPrivateHits(%q) = %v, want no hit — a sibling or nested bullet about another bead, and the second line of a wrapped HEADING, are each a unit of their own", text, got)
 		}
 	}
 }
@@ -223,6 +244,54 @@ func TestVulnPrivateHitsAcceptsEveryDecorationTheRemedyPromises(t *testing.T) {
 	} {
 		if got := vulnPrivateHits(line, ids); len(got) != 1 || got[0] != ids[0] {
 			t.Errorf("vulnPrivateHits(%q) = %v, want [%s] — a word beside the id is the description the rule refuses, whatever its script", line, got, ids[0])
+		}
+	}
+}
+
+// TestVulnPrivateMessageRemedyPromisesOnlyWhatTheRuleAllows is
+// ranger-base-ckcly finding 2, and it is the same shape as the test above
+// one constant over. ranger-base-68631 finding 6 was filed against BOTH
+// remedy sentences — VulnPrivateWayThrough and VulnPrivateMessageWayThrough
+// — and only the first got a pin, so the message arm's sentence could drift
+// back to the enumerate-the-bytes shape that finding was filed over and
+// nothing in the tree would say so (reader census 2026-11-13: two comment
+// lines and gates.go's one call site, no test).
+//
+// It is the arm that matters MORE, by finding 5's own reasoning: the content
+// arm's base rate for a CR is zero because git normalizes what it stages,
+// and "the live route is the MESSAGE arm, which git does not normalize".
+//
+// MEASURED through `go test -overlay`, tracked tree unmodified: before this
+// test, re-promising what the rule refuses ("punctuation, decoration and a
+// short label beside the id are fine") and reverting the sentence to a byte
+// list both stayed GREEN.
+func TestVulnPrivateMessageRemedyPromisesOnlyWhatTheRuleAllows(t *testing.T) {
+	t.Parallel()
+	ids := []string{"ranger-base-l751c"}
+	for _, row := range []struct{ noun, line string }{
+		{"stands alone", "ranger-base-l751c"},
+		{"punctuation", "- ranger-base-l751c;"},
+		{"decoration", "- **`ranger-base-l751c`**"},
+	} {
+		if !strings.Contains(VulnPrivateMessageWayThrough, row.noun) {
+			t.Errorf("the message remedy no longer promises %q, and this row exists because the sentence and the rule went out of step once already (ranger-base-68631 finding 6, unpinned on this arm until ranger-base-ckcly): %q", row.noun, VulnPrivateMessageWayThrough)
+		}
+		if got := vulnPrivateHits(row.line, ids); got != nil {
+			t.Errorf("vulnPrivateHits(%q) = %v, want no hit — the message remedy promises %s is fine, so refusing it prints a way through that does not go through", row.line, got, row.noun)
+		}
+	}
+	// And the half the sentence REFUSES, held the same way: it names a
+	// letter, because that is the rule vulnPrivateBare implements. A
+	// sentence that went back to enumerating bytes would drop this noun.
+	if !strings.Contains(VulnPrivateMessageWayThrough, "a LETTER beside the id") {
+		t.Errorf("the message remedy no longer names the rule it enforces — vulnPrivateBare refuses a LETTER, in any script, and a remedy that enumerates bytes instead is the shape ranger-base-68631 finding 6 was filed over: %q", VulnPrivateMessageWayThrough)
+	}
+	for _, line := range []string{
+		"ranger-base-l751c heap overflow in the parser",
+		"- ranger-base-l751c переполнение",
+	} {
+		if got := vulnPrivateHits(line, ids); len(got) != 1 || got[0] != ids[0] {
+			t.Errorf("vulnPrivateHits(%q) = %v, want [%s] — the message remedy says a LETTER beside the id is out, so the rule must refuse one", line, got, ids[0])
 		}
 	}
 }
