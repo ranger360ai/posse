@@ -1121,7 +1121,23 @@ package treepins
 // planted fixture and so is not in this class. 0.8s between the two, run in
 // parallel over one parse each (MEASURED 2026-11-12 on one warm filtered run).
 //
-// and `make tree-check` is all of them — one hundred and forty pins
+// and one more into scripts-check's door, for the sentence every other
+// scripts-check row gives — a census over scripts/, with a file set the walk
+// discovers (ranger-base-w8n6w). A live `mktemp -d` under scripts/ names the
+// one scratch namespace scripts/reap-test-tmp.sh has a class for, or is
+// rostered with the reason the reaper does not need to reach it. Three beads
+// in a row censused that directory by hand and left nothing that asserts it:
+//
+//	TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered
+//	                                              make scripts-check
+//	                                              (ranger-base-w8n6w)
+//
+// Its control arm (TestQATheMktempRootReaderCanStillSayNo) reads planted
+// fixtures under t.TempDir() and so is not in this class, the same way the
+// credential-token one above is not. 0.02s for the pair on one warm filtered
+// run (MEASURED 2026-11-12).
+//
+// and `make tree-check` is all of them — one hundred and forty-one pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
@@ -1498,7 +1514,15 @@ package treepins
 // yet, which is the same conclusion from the other side: the readings that
 // ran wide ran beside somebody. So a seat pricing the command from the low end
 // of any of these is reading a quiet box, and the high end is what it costs
-// beside someone else's suite. Cold, with internal/treepins' test binary to
+// beside someone else's suite. ranger-base-w8n6w read 50.9-60.5s at one
+// hundred and forty-one pins, three warm runs with a one-minute load average
+// of 8.9, 8.8 and 15.0 before each and BOTH suite slots held by sibling seats
+// throughout — the quiet band, read beside two suites, with the FASTEST run
+// the one at the top of that load. Held slots did not widen this reading,
+// which is the same conclusion the entries above reach from the other side:
+// what tracks is how much the load MOVES, and this box was steady. Its one
+// added pin and that pin's control arm cost 0.02s between them. Cold, with
+// internal/treepins' test binary to
 // compile as well as internal/posse's, the same command read 92.6s.)
 //
 // THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to

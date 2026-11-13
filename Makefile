@@ -725,7 +725,7 @@ QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ADR_PINS       := TestADRRecordsNameTheLivePackageDirectory|TestADRSweptRecordsStillCiteTheLiveDirectory|TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
 QA_CORPUS_PINS    := TestQAEveryPlantingPackageHasAColdexecArm|TestQAColdexecArmRegisterIsNotStale|TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders|TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable|TestQANoGoSourceWritesABinBashShebang|TestQAEveryShippedScriptThatHashesPicksItsHasherByProbe|TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates|TestQANoFixtureGitChildCallsAVerbTheShimRefusesOutright|TestCredTokenRevealIsCalledOnlyFromTheRegister|TestCredTokenRevealIsTheOnlyMethodOfThatName
 QA_REGISTER_PINS  := TestTreePinsRunFromModuleRoot|TestQAEveryTreeWidePinHasADoor|TestQAEveryTreePathHandedThroughAParameterIsDerived|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles|TestQATheClimbFenceStillHasItsBareRootJoinHole
-QA_SCRIPTS_PINS   := TestQANoEntryPointRunsGoTestOnTheDefaultTimeout|TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt
+QA_SCRIPTS_PINS   := TestQANoEntryPointRunsGoTestOnTheDefaultTimeout|TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt|TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
 
 # The crew-name trio, one door between them because they are one question —
@@ -1002,6 +1002,9 @@ register-check:
 # fork-arm census over every *.sh, and the brew-guard census over every file
 # that names brew. ~1s (0.99-1.16s over three warm runs, MEASURED 2026-10-31
 # at a one-minute load average of 22; it was ~0.9s before the brew census).
+# 0.54-0.57s over three warm runs on linux at a load of 8.4, with the fifth
+# pin in (MEASURED 2026-11-12, ranger-base-w8n6w) -- that pin's own 0.02s is
+# not what moved it, the box is: both readings stand, each with its own.
 # Type it when you add or rename anything under scripts/ -- AND when you add or
 # rename a verify-* TARGET in this file, which is the third pin here
 # (ranger-base-hrf47). That one censuses the other direction of the same
@@ -1021,6 +1024,16 @@ register-check:
 # which three hand-typed paths in three arms were not: the fourth caller,
 # scripts/macos-install-probe.sh, read the operator's own brew unguarded in
 # `paths` mode and nothing in the suite was red.
+#
+# The fifth pin is the mktemp-root census (ranger-base-w8n6w): a live
+# `mktemp -d` under scripts/ names the template
+# `${TMPDIR:-/tmp}/posse-<what>.XXXXXX` -- the one namespace
+# scripts/reap-test-tmp.sh's class table has a glob for -- or is on that pin's
+# roster with the reason the reaper does not need to reach it. Its subject is
+# the SET of scratch roots, which three beads in a row censused by hand
+# (ranger-base-m0j9n, -i78k9, -tbukc): each renamed the roots it found, none
+# left anything that asserts the property, and tbukc's five carried a template
+# that matched no class at all, so a leaked one was never collected.
 scripts-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_SCRIPTS_PINS))$$'
 

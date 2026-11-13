@@ -119,6 +119,21 @@
 #                                                leaked one was never
 #                                                collected, which is worse
 #                                                than i78k9's 24h wait.
+#                                                Those three beads each
+#                                                censused scripts/ BY HAND and
+#                                                left nothing asserting the
+#                                                result; ranger-base-w8n6w
+#                                                pinned it instead, so a
+#                                                `mktemp -d` under scripts/
+#                                                now has to name
+#                                                $TMPDIR/posse-<what>.XXXXXX
+#                                                or carry its reason
+#                                                (`make scripts-check`,
+#                                                internal/treepins/
+#                                                mktemproot_qa_test.go). That
+#                                                pin is why a FOURTH hand
+#                                                census is not how row 28
+#                                                gets found.
 #   go-build        go-build[0-9]*       120m    Go's $WORK. A RUNNING test
 #                                                binary's /proc/<pid>/exe
 #                                                names it, so this one the
