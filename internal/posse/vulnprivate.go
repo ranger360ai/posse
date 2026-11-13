@@ -45,6 +45,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // VulnPrivateLabel is the bd label AGENTS.md "Landing the plane" names
@@ -61,72 +62,245 @@ const VulnPrivateRule = "AGENTS.md \"Landing the plane\" (operator ruling 2026-1
 // VulnPrivateWayThrough is the content/path-arm remedy: the staged file is
 // still on disk and still the writer's own to edit, unlike the message arm
 // below.
-const VulnPrivateWayThrough = "the way through: write the bare id alone — a list bullet, backticks, bold " +
-	"and surrounding punctuation are fine, nothing else is. The detail belongs " +
-	"on the bead, where the audience is already the right one."
+//
+// IT NAMES THE RULE AND NOT A LIST OF BYTES (ranger-base-68631 finding 6).
+// The sentence used to promise "a list bullet, backticks, bold and
+// surrounding punctuation", over a whitelist of eleven punctuation bytes
+// that admitted none of `[id]`, `"id"`, `'id'`, `_id_`, `<id>`, `> id`,
+// `| id |`, a bullet glyph, an em dash or a trailing `/` — ten shapes a
+// writer types and the remedy said were fine. A remedy that is wrong about
+// what it allows is ADR 0068's class one step in: the way through does not
+// go through. vulnPrivateBare is the rule now — no LETTER beside the id, in
+// any script — so this sentence can be true without enumerating anything.
+const VulnPrivateWayThrough = "the way through: write the bare id alone — whitespace, a list bullet or " +
+	"numbering, backticks, bold markers, brackets, quotes and punctuation are all " +
+	"fine; a LETTER is not, because a word beside the id is the description the " +
+	"rule refuses. The detail belongs on the bead, where the audience is already " +
+	"the right one."
 
 // VulnPrivateMessageWayThrough mirrors IdentityMessageWayThrough's shape
 // (visibility.go): the text is not in a file the writer can edit, it is
 // .git/COMMIT_EDITMSG, local and unreplicated until the next commit
 // overwrites it.
 const VulnPrivateMessageWayThrough = "the way through: rewrite the commit message so the open `vuln-private` id " +
-	"stands alone — decoration is fine, a description, path, mechanism or " +
-	"reproduction is not. Nothing was committed: HEAD is unchanged and your tree " +
+	"stands alone — punctuation and decoration are fine, a LETTER beside the id " +
+	"is not, so a description, path, mechanism or reproduction is out. " +
+	"Nothing was committed: HEAD is unchanged and your tree " +
 	"and index are exactly where you left them. The message you typed is still " +
 	"in .git/COMMIT_EDITMSG, a local file that never replicates and that your " +
 	"next commit overwrites."
 
-// vulnPrivateDecoration is every byte a line may carry beside an open
-// vuln-private id and still read as "named by bead id and nothing else":
-// whitespace, a list bullet or numbering, backticks, bold markers, and the
-// ordinary punctuation that separates two bare ids sharing one line or
-// bullet. A LETTER IS NEVER IN THIS SET — "see", "stays open", "and" are
-// exactly the descriptive text the rule refuses, and the strictness is
-// deliberate: AGENTS.md says "and nothing else", not "and little else".
-const vulnPrivateDecoration = " \t.,:;()*+#`-0123456789"
+// vulnPrivateBare reports whether what is left of a unit after every open
+// vuln-private id in it is removed still reads as "named by bead id and
+// nothing else": NO LETTER, in any script.
+//
+// THE RULE IS THE COMPLEMENT OF A WHITELIST, and that is the whole of
+// ranger-base-68631 findings 5 and 6. This used to be
+// `strings.Trim(rest, " \t.,:;()*+#`-0123456789") == ""`, and the comment on
+// that set already said the operative half out loud — "A LETTER IS NEVER IN
+// THIS SET" — while the set itself had to guess every byte that is not one.
+// It guessed short twice, in opposite directions:
+//
+//   - `\r` was missing, so a BARE id on a CRLF line was refused with a
+//     remedy telling the writer to do the thing they had just done
+//     (finding 5). Base rate zero in this tree — `git grep -lI $'\r'` finds
+//     no tracked file with a CR and there is no .gitattributes eol policy —
+//     but the MESSAGE arm reads text git never normalizes.
+//   - ten ordinary quoting and decoration shapes were missing, all of them
+//     promised by the remedy sentence (finding 6).
+//
+// A letter test cannot guess short: descriptive text needs words, a word
+// needs a letter, and unicode.IsLetter says so for every script rather than
+// for ASCII alone — so a Cyrillic or Han description is refused by the same
+// line that refuses an English one, which no byte whitelist of this shape
+// was ever going to do. Digits stay allowed, as they were (`1.` numbering,
+// and a date beside an id discloses nothing a bd id does not).
+func vulnPrivateBare(rest string) bool {
+	for _, r := range rest {
+		if unicode.IsLetter(r) {
+			return false
+		}
+	}
+	return true
+}
 
-// vulnPrivateHits reports which of ids is named, on some line of text,
-// beside anything but vulnPrivateDecoration — the shape AGENTS.md "Landing
-// the plane" refuses. Every id present on a line is stripped from it
-// before the bareness test runs, so "- ranger-base-a, ranger-base-b" reads
-// as bare for both (two bare ids sharing one bullet, exactly the form
+// vulnPrivateContent discounts ONE leading unified-diff `+` from a line.
+//
+// The content arm's text is `git diff --cached -U0 … | grep -a '^+'`
+// (gates.go's $posse_added), so every line it scans carries one and the
+// indentation this file measures sits AFTER it — without this, `+- <id>`
+// and `+  <description>` both read as column 0 and the continuation rule
+// below would be dead in the one arm that reads a file. The message arm's
+// lines carry no `+`, and a message line that genuinely begins with one
+// loses a column of indent, which can only make a unit narrower.
+func vulnPrivateContent(line string) string {
+	return strings.TrimPrefix(line, "+")
+}
+
+// vulnPrivateIndent is the column a line's content starts at.
+func vulnPrivateIndent(line string) int {
+	s := vulnPrivateContent(line)
+	n := 0
+	for n < len(s) && (s[n] == ' ' || s[n] == '\t') {
+		n++
+	}
+	return n
+}
+
+// vulnPrivateOpensUnit reports whether a line begins a markdown block of its
+// own — a list item or a heading — rather than continuing the one above it.
+// A list marker needs whitespace after it, which is both markdown's own rule
+// and what keeps `**bold**` on an indented line from reading as a bullet and
+// buying itself a unit.
+func vulnPrivateOpensUnit(line string) bool {
+	s := strings.TrimLeft(vulnPrivateContent(line), " \t")
+	if s == "" {
+		return false
+	}
+	switch s[0] {
+	case '-', '*', '+':
+		return len(s) == 1 || s[1] == ' ' || s[1] == '\t'
+	case '#':
+		return true
+	}
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return i > 0 && i < len(s) && (s[i] == '.' || s[i] == ')')
+}
+
+// vulnPrivateUnits groups lines into the blocks the bareness test judges:
+// each line's index maps to the index of the line that OPENS its block, so a
+// bullet and the lines indented under it are one unit.
+//
+// WHY A UNIT AND NOT A LINE (ranger-base-68631 finding 1). The check was
+// strictly per-line, and the shape AGENTS.md's own ruling prescribes is a
+// "Not closed here" SECTION — so a description on the line BELOW a bare id
+// passed clean, MEASURED end-to-end through the shipped subcommand:
+//
+//   - <open id> <text>      flagged, rc 1
+//   - <open id>\n  <text>   SILENT, rc 0
+//
+// The second is how anyone writes a bullet with detail under it, and it is
+// the whole of what this file exists to refuse. A unit is a bullet plus its
+// continuation, in BOTH directions — a bare id indented under a line that
+// carries the text is the same escape read upwards — and the grouping is one
+// pass with a stack, so the cost is linear in the text however deep it nests.
+//
+// THE RESIDUAL IS DELIBERATE AND IT IS THE PARAGRAPH:
+//
+//	## Not closed here\n\n- <open id>\n\n<text>   SILENT, rc 0
+//
+// A blank line closes every open unit, so a description in its own paragraph
+// below the section is not charged to the ids above it. Widening to the
+// paragraph or to the SECTION was weighed and refused: ranger-base-lcuec.md's
+// own "Not closed here" names ordinary beads — not vuln-private, and so not
+// this check's business at all (TestVulnPrivateHitsIgnoresUnknownIDs) — in
+// full sentences, in the same section as the bare ids. Section scope reds
+// that document, which is a refusal with no remedy the writer can perform
+// over text the rule does not bind: ADR 0068's class, bought to close a
+// shape nobody has typed. The continuation rule has no such cost, so it
+// lands and the paragraph stays open, stated here and pinned as deliberate
+// by TestVulnPrivateHitsLeavesTheSeparateParagraphOpen.
+//
+// And one more the TEXT cannot carry: the content arm reads ADDED lines
+// only, so a continuation already in the file is not in $posse_added at all
+// — the same bound checks 0-3 share, and not this grouping's to fix.
+func vulnPrivateUnits(lines []string) []int {
+	unitOf := make([]int, len(lines))
+	var openers []int // stack of opener line indices, by ascending indent
+	for i, line := range lines {
+		unitOf[i] = i
+		if strings.TrimSpace(vulnPrivateContent(line)) == "" {
+			openers = openers[:0] // a blank line closes every open unit
+			continue
+		}
+		ind := vulnPrivateIndent(line)
+		for len(openers) > 0 && vulnPrivateIndent(lines[openers[len(openers)-1]]) >= ind {
+			openers = openers[:len(openers)-1]
+		}
+		if len(openers) > 0 && !vulnPrivateOpensUnit(line) {
+			unitOf[i] = unitOf[openers[len(openers)-1]]
+			continue
+		}
+		openers = append(openers, i)
+	}
+	return unitOf
+}
+
+// vulnPrivateHits reports which of ids is named, in some UNIT of text
+// (vulnPrivateUnits: a line and the lines indented under it), beside
+// anything vulnPrivateBare refuses — the shape AGENTS.md "Landing the plane"
+// refuses. Every id present in a unit is stripped from it before the
+// bareness test runs, so "- ranger-base-a, ranger-base-b" reads as bare for
+// both (two bare ids sharing one bullet, exactly the form
 // ranger-base-lcuec.md's own "Not closed here" uses), and an id entirely
 // absent from text costs nothing beyond one strings.Contains.
 //
 // ids are bd's own issue ids — alnum and a hyphen, dispatch.go's beadIDRe —
 // so a literal strings.ReplaceAll never needs escaping the way a shell ERE
 // would.
+//
+// CASE-INSENSITIVE (ranger-base-68631 finding 7). It was strings.Contains
+// over the text as typed, so `- RANGER-BASE-<ID> heap overflow` was
+// invisible — the lowest-cost miss of that bead's seven and the least likely
+// to be typed, but a check whose whole job is a mechanical reading of an id
+// has no business caring how the writer shifted it. The fold is done ONCE
+// over the whole text rather than per comparison: a bd id is ASCII, so
+// ASCII-folding it is exact, and nothing downstream reads the text's case —
+// vulnPrivateBare asks about letter-ness, which survives folding, and
+// vulnPrivateHitLine prints the id as the CALLER spelled it and never the
+// line (which is the one thing this check exists to keep out of a terminal).
 func vulnPrivateHits(text string, ids []string) []string {
 	if text == "" || len(ids) == 0 {
 		return nil
 	}
-	present := make([]string, 0, len(ids))
+	lower := strings.ToLower(text)
+	// folded ids, paired with the caller's own spelling for the report.
+	type foldedID struct{ id, folded string }
+	present := make([]foldedID, 0, len(ids))
 	for _, id := range ids {
-		if id != "" && strings.Contains(text, id) {
-			present = append(present, id)
+		if id == "" {
+			continue
+		}
+		if f := strings.ToLower(id); strings.Contains(lower, f) {
+			present = append(present, foldedID{id, f})
 		}
 	}
 	if len(present) == 0 {
 		return nil
 	}
+	lines := strings.Split(lower, "\n")
+	unitOf := vulnPrivateUnits(lines)
+	units := make(map[int]string, len(lines))
+	order := make([]int, 0, len(lines))
+	for i, line := range lines {
+		u := unitOf[i]
+		if _, seen := units[u]; !seen {
+			order = append(order, u)
+		}
+		units[u] += line + "\n"
+	}
 	hit := make(map[string]bool, len(present))
-	for _, line := range strings.Split(text, "\n") {
-		var onLine []string
-		for _, id := range present {
-			if strings.Contains(line, id) {
-				onLine = append(onLine, id)
+	for _, u := range order {
+		unit := units[u]
+		var inUnit []foldedID
+		for _, p := range present {
+			if strings.Contains(unit, p.folded) {
+				inUnit = append(inUnit, p)
 			}
 		}
-		if len(onLine) == 0 {
+		if len(inUnit) == 0 {
 			continue
 		}
-		rest := line
-		for _, id := range onLine {
-			rest = strings.ReplaceAll(rest, id, "")
+		rest := unit
+		for _, p := range inUnit {
+			rest = strings.ReplaceAll(rest, p.folded, "")
 		}
-		if strings.Trim(rest, vulnPrivateDecoration) != "" {
-			for _, id := range onLine {
-				hit[id] = true
+		if !vulnPrivateBare(rest) {
+			for _, p := range inUnit {
+				hit[p.id] = true
 			}
 		}
 	}
@@ -148,8 +322,13 @@ func vulnPrivateHits(text string, ids []string) []string {
 // exists to keep out of a terminal and refusals.log alike (the same
 // class-only rule ADR 0048 D2 and ADR 0050 D2 already hold a CONFIGURED
 // pattern's value to).
+//
+// It names the UNIT and not the line (ranger-base-68631 finding 1): the
+// scope is a line plus whatever is indented under it, and a committer told
+// "a line here" who then reads a clean-looking bullet has been sent to the
+// wrong place to look. Which line it was stays withheld either way.
 func vulnPrivateHitLine(id string) string {
-	return "  " + id + ": a line here carries more than the bare id — the text is withheld (AGENTS.md \"Landing the plane\")\n"
+	return "  " + id + ": a line here, or a line indented under it, carries more than the bare id — the text is withheld (AGENTS.md \"Landing the plane\")\n"
 }
 
 // RunGatesVulnPrivateScan is check 4's judge: stdin is the text a

@@ -351,6 +351,43 @@ func TestQAWallExecConfigCarvesAreTheOneMemberListFiltered(t *testing.T) {
 	if d, fl := runtimeExecMembers(f.home, only); len(d)+len(fl) != 0 {
 		t.Errorf("a grant over %s alone carves %v %v — each carve narrows the grant its own guard names", only[0], d, fl)
 	}
+
+	// AND THE OTHER TWO GUARD KINDS (ranger-base-68631 finding 2). The arm
+	// above reads the config.toml guard, whose guard IS the member, and it
+	// was the only one with an arm — so three mutants that swap a `guard` to
+	// the member itself left the whole committed filter GREEN (MEASURED:
+	// claude's members guarded by themselves, claude's dir rows alone, and
+	// the codex/grok exec members guarded by themselves — `go test -run
+	// 'Seatbelt|Bwrap|WallExecConfig|WallRuntimeConfig|WallSeed|ProjectConfig|Parity'
+	// ./internal/posse` ok 7.0s under each). The per-member guard is the one
+	// thing cliHomeExecMembers' data shape exists to preserve, and nothing
+	// in the tree held two thirds of it.
+	//
+	// The answer those mutants change is a DENY OVER A PATH THE OPERATOR
+	// EXPLICITLY GRANTED: with `writable:` naming one member inside the
+	// config dir, the shipped carve narrows nothing — the grant does not
+	// reach the DIRECTORY its guard names — while the mutant carves that one
+	// member read-only. Each half gets its control, so the arm cannot pass
+	// by carving nothing at all.
+	inClaudeCfg := []string{absResolve(filepath.Join(f.home, ".claude", "skills"))}
+	if d, fl := claudeExecConfig(f.home, inClaudeCfg); len(d)+len(fl) != 0 {
+		t.Errorf("a grant naming only %s carves %v %v — claude's members are admitted by the config DIRECTORY's grant, so a grant that lands INSIDE the directory reaches no member, and a deny here would narrow a path the operator granted by name", inClaudeCfg[0], d, fl)
+	}
+	cfgGrant := []string{absResolve(ClaudeConfigDirIn(f.home))}
+	if d, fl := claudeExecConfig(f.home, cfgGrant); len(d) != len(claudeExecConfigDirNames) || len(fl) != len(claudeExecConfigFileNames) {
+		t.Errorf("control: a grant over the config dir %s carves %d dirs and %d files, want %d and %d — if this is empty the arm above passes over a carve that does nothing", cfgGrant[0], len(d), len(fl), len(claudeExecConfigDirNames), len(claudeExecConfigFileNames))
+	}
+	inCodexHome := []string{absResolve(filepath.Join(f.home, ".codex", "skills"))}
+	if d, fl := runtimeExecMembers(f.home, inCodexHome); len(d)+len(fl) != 0 {
+		t.Errorf("a grant naming only %s carves %v %v — an exec member is admitted by its HOME's grant, which that carve narrows WHOLE, so a grant inside the home reaches no member", inCodexHome[0], d, fl)
+	}
+	if fl := runtimeConfigFiles(f.home, inCodexHome); len(fl) != 0 {
+		t.Errorf("a grant naming only %s carves %v — a config.toml is admitted by its own path and that grant is not it", inCodexHome[0], fl)
+	}
+	codexHomeGrant := []string{absResolve(codexHomeIn(f.home))}
+	if d, fl := runtimeExecMembers(f.home, codexHomeGrant); len(d) != len(codexExecDirNames) || len(fl) != len(codexExecFileNames) {
+		t.Errorf("control: a grant over %s carves %d dirs and %d files, want %d and %d — codex's exec members and nobody else's", codexHomeGrant[0], len(d), len(fl), len(codexExecDirNames), len(codexExecFileNames))
+	}
 }
 
 // A seed never rewrites what is there, and writes the empty value of its

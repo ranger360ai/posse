@@ -29,6 +29,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-ajkqx](ranger-base-ajkqx.md) — claude's projects/, read-only in a caged seat but for its own key dir (ranger-base-ajkqx) — 2026-11-12
 - [ranger-base-9xt70](ranger-base-9xt70.md) — Four arms for distinctions four closes introduced and nobody asked about (ranger-base-9xt70) — 2026-11-12
 - [ranger-base-6ob20](ranger-base-6ob20.md) — The rest of codex's and grok's CLI-written home members, carved or private (ranger-base-6ob20) — 2026-11-12
+- [ranger-base-68631](ranger-base-68631.md) — Seven escapes from four closes: three walls that were narrower than their own prose, and three arms with nothing behind them (ranger-base-68631) — 2026-11-12
 - [ranger-base-5m5yq](ranger-base-5m5yq.md) — The landed-check judge's environment is an allowlist (ranger-base-5m5yq) — 2026-11-12
 - [ranger-base-4dw7b](ranger-base-4dw7b.md) — The same fixture-root leak at its two remaining sites, in Go and in Python (ranger-base-4dw7b) — 2026-11-12
 - [ranger-base-3spp4](ranger-base-3spp4.md) — A credential token is a type that cannot be printed (ranger-base-3spp4) — 2026-11-12

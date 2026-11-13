@@ -748,15 +748,56 @@ self_test() {
   # kept whatever its age; a dir with neither is collected. Each class gets
   # its own fresh `mktemp -d` root so the three runs cannot see each other's
   # fixtures.
+  #
+  # THE HELD FIXTURE COMES IN TWO (ranger-base-68631 finding 3). `( cd "$d"
+  # && exec sleep 60 )` is named by /proc/<pid>/cwd AND by PWD in
+  # /proc/<pid>/environ, so EITHER ref alone keeps the dir, and an arm built
+  # on that shape pins neither — the pre-existing arm H above has it too,
+  # which is where this rig copied it from. MEASURED, three mutants of the
+  # ref scan below, `bash <copy> --self-test` each time: dropping the `cwd`
+  # readlink passed every arm, dropping the `environ` read passed every arm,
+  # dropping BOTH failed H and all three class arms. So nothing held the cwd
+  # readlink, which is the route the header above says the scan exists for in
+  # the first place: a Go holder whose os.Setenv never rewrites
+  # /proc/<pid>/environ.
+  #
+  # `env -i` is the whole of the two single-route fixtures. It clears the
+  # environment of the exec'd process, PWD included, so each dir's path is in
+  # that process's /proc entry exactly ONCE and in none of the other refs the
+  # scan reads — not cmdline (`env` consumes the assignment and then execs,
+  # so the final argv is `sleep 60`), not exe (sleep's own path), not an fd
+  # (all three are /dev/null):
+  #
+  #   agedcwd  named by /proc/<pid>/cwd alone      (cd into it, empty env)
+  #   agedenv  named by /proc/<pid>/environ alone  (cwd /, one variable)
+  #
+  # so dropping EITHER ref from the scan reds exactly the arm that reads it —
+  # which is what the two-ref fixture above could not do in either direction.
+  # The binary is named by ABSOLUTE path because `env -i` clears PATH before
+  # the exec, so a bare `sleep` would not be found; no absolute sleep is
+  # reported as a FAIL rather than skipped, because a fixture that silently
+  # does not start is an arm passing over an unmeasured route, which is this
+  # finding again one level up.
   generic_rig() {  # generic_rig <class-name> <glob-prefix, without the *>
-    local cname="$1" prefix="$2" groot fresh agedheld agedfree pid
+    local cname="$1" prefix="$2" groot fresh agedheld agedcwd agedenv agedfree pid cwdpid envpid sleepabs p
     groot=$(mktemp -d "${TMPDIR:-/tmp}/posse-reap-classrig.XXXXXX")
     fresh="$groot/${prefix}fresh1"
     agedheld="$groot/${prefix}heldAAAAAA"
+    agedcwd="$groot/${prefix}cwdAAAAAAA"
+    agedenv="$groot/${prefix}envAAAAAAA"
     agedfree="$groot/${prefix}freeAAAAAA"
-    mkdir -p "$fresh" "$agedheld" "$agedfree"
-    touch -t "$old" "$agedheld" "$agedfree"
+    mkdir -p "$fresh" "$agedheld" "$agedcwd" "$agedenv" "$agedfree"
+    touch -t "$old" "$agedheld" "$agedcwd" "$agedenv" "$agedfree"
     ( cd "$agedheld" && exec sleep 60 ) >/dev/null 2>&1 </dev/null & pid=$!
+    cwdpid="" envpid=""
+    sleepabs=$(command -v sleep) || sleepabs=""
+    case $sleepabs in
+      /*)
+        ( cd "$agedcwd" && exec env -i "$sleepabs" 60 ) >/dev/null 2>&1 </dev/null & cwdpid=$!
+        ( cd / && exec env -i "POSSE_REAP_SELFTEST_HOLD=$agedenv" "$sleepabs" 60 ) >/dev/null 2>&1 </dev/null & envpid=$!
+        ;;
+      *)  echo "  FAIL $cname: no absolute sleep(1) on PATH, so the single-route holders never started and the cwd and environ routes are UNMEASURED"; fails=$((fails + 1)) ;;
+    esac
     sleep 1
     "$0" --root "$groot" --class "$cname" --apply --quiet --no-bead \
       >/dev/null 2>&1 || true
@@ -764,10 +805,23 @@ self_test() {
     else echo "  FAIL $cname: dir inside its grace was collected"; fails=$((fails + 1)); fi
     if [ -d "$agedheld" ]; then echo "  ok   $cname: dir a live process cwd's into kept"
     else echo "  FAIL $cname: dir a live process cwd's into was collected"; fails=$((fails + 1)); fi
+    if [ -n "$cwdpid" ]; then
+      if [ -d "$agedcwd" ]; then echo "  ok   $cname: dir named ONLY by a live process's cwd kept"
+      else echo "  FAIL $cname: dir named ONLY by a live process's cwd was collected -- the /proc/<pid>/cwd readlink is the route this script's header claims, and this is the only arm that reads it"; fails=$((fails + 1)); fi
+    fi
+    if [ -n "$envpid" ]; then
+      if [ -d "$agedenv" ]; then echo "  ok   $cname: dir named ONLY by a live process's environ kept"
+      else echo "  FAIL $cname: dir named ONLY by a live process's environ was collected -- the environ read is what 32bdv widened to EVERY value, and this is the only arm that reads it alone"; fails=$((fails + 1)); fi
+    fi
     if [ -d "$agedfree" ]; then echo "  FAIL $cname: aged, unheld dir was kept, want collected"; fails=$((fails + 1))
     else echo "  ok   $cname: aged, unheld, unnamed dir collected"; fi
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
+    for p in "$cwdpid" "$envpid"; do
+      [ -n "$p" ] || continue
+      kill "$p" 2>/dev/null || true
+      wait "$p" 2>/dev/null || true
+    done
     rm -rf -- "${groot:?}"
   }
   generic_rig coldexec-pins 'coldexec-pins'
