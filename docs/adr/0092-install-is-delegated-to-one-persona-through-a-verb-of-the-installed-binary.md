@@ -121,6 +121,46 @@ and not as a subject-keyed diff, because the two sides of this diff are two
 different binaries and neither the printed detail nor `GovCondition.Key` is a
 stable interface between them. See "Measured versus assumed" below.*
 
+*Amended by the architect (ranger-base-qfhph, 2026-11-13): the hook wall is
+judged by BEHAVIOUR, never by identity.* The third bullet named G12 as
+binary-rendered, and that was wrong. A git hook in a repo is a COPY. This verb
+leaves the copy behind on purpose (D7), so "the copy is not this binary's
+render" is the designed state after every install that changes the render. It
+says the install's second half has not happened yet. It does not say the new
+binary is broken. What D4 wants to know about the hook wall is whether the NEW
+binary's render still refuses. That is ADR 0023's behaviour half, and it is a
+property of the binary alone, the same in every repo. So:
+
+1. **G12 joins G11 in the install-subject class.** A G12 row after the swap
+   is not a trigger. It is how the operator learns that a re-render is due,
+   which is the job D7 already gave it. When the after-reading has G12 rows
+   the before-reading did not, the verb's report prints the
+   `posse gates install-hooks <repos>` line for the operator. It does not run
+   that line.
+2. **The gates arm stops reading hook identity too.** `posse gates <p>`
+   probes the L3 hooks of its CWD (parity.go `applyL3Probe`, identity AND
+   behaviour). The verb's probe inherits the delegate's cwd, and a delegate
+   in a worktree of a declared repo reads that repo's common hooks dir. So
+   the second bullet tripped on a render change exactly as G12 did, and
+   excluding G12 alone would have fixed nothing. The gates readings now run
+   with their cwd fixed to the source repo D3.1 names. That way both sides
+   read the same tree wherever the delegate typed the verb. The not-held
+   count leaves out every row that names an L3 hook slot (`pre-push`,
+   `prepare-commit-msg`), and does not count the DEGRADED header by itself.
+   A report whose only not-held rows are L3 rows counts zero.
+3. **Behaviour is asked directly, through one new read-only verb.**
+   `posse gates render-probe [dir]` runs only the behaviour half
+   (`execOwnRenders`) against `dir`, which defaults to the source repo. It
+   writes no hook and uses only its own private temp dir. It exits 0 when
+   every render refuses what it must, 1 when one does not, and 2 when it
+   could not ask. The trigger: the NEW binary answers anything other than 0,
+   unless the old binary gave that same non-zero answer before the swap (a
+   box property such as a broken `/bin/sh`, which is reported and is not a
+   reason to roll back). An old binary that does not have the verb answers
+   neither 0 nor 1. That reading counts as "not asked", so the new binary
+   must answer 0. A pin keeps the verb in every later binary, because the
+   OLD binary's code is what calls it.
+
 **D5 — The bd argv gate copy is in scope (2tnbv's class), as a second arm of
 the same verb, under the same guardrails.** The copy under
 `~/.config/posse/gate/` is mechanism source from this repo, not a permission
@@ -215,6 +255,13 @@ that whole read before a seat is allowed to run it.
   for automation.
 - *Reuse ADR 0088's landed-check verdict for guardrail 2.* That verdict is
   `make test`'s prerequisites only. The operator asked for `make test`.
+- *Judge the hook wall by identity (D4 as first written), by excluding G12
+  alone, or by letting the verb re-render the repo hooks.* See
+  ranger-base-qfhph's paragraph under "Measured versus assumed". The first
+  refuses every landing that changes the wall. The second is incomplete,
+  because the gates arm carries the same probe. The third widens the
+  delegate's writes into four shared checkouts so that one trigger reads
+  cleanly.
 - *Gate copy out of scope.* That would leave 2tnbv's class as an operator
   ask forever, though its source, review path and blast class are the
   binary's. The line that matters, the settings file that names the hook,
@@ -315,6 +362,30 @@ that renders a BROKEN hook from one that renders a DIFFERENT one. Two
 resolutions, both the architect's: D4 excludes G12 and classes it with G11;
 or D7 lets the verb re-render the repo hooks as a third arm beside D5's gate
 copy, under the same keep/swap/rollback discipline.
+
+**Resolved by ranger-base-qfhph (D4's amendment above), and neither option
+was taken as offered.** Read from the code at 2dc8dd75: the conflict was
+wider than G12. `posse gates <p>` asks the same identity question of its cwd's
+hooks, and the verb's probe inherits that cwd. (a) on its own would have left
+the gates arm rolling back every render change whenever the delegate stood in
+a worktree of a declared repo. It would also have left the renderer unwatched
+by anything the verb reads. (b) would make the triggers mean what D4 wants.
+But it makes the delegate a writer of the commit wall in four shared
+checkouts, one of them the constitution repo, and it puts a four-repo
+re-render inside the rollback. That is a lot of reach to buy one probe. It
+also takes back a line (D7) the operator approved as written. The decided
+form is the split the probe's own header already makes: identity is a
+per-repo fact about the follow-through, and behaviour is a fact about the
+binary. The verb owns the binary, so it judges behaviour, and the operator
+owns the follow-through, so G12 tells them. One residual is accepted. The
+behaviour probe execs the render from a temp file, so it cannot see a render
+that refuses correctly from a temp file but is installed wrong by
+`install-hooks` (a bad mode or a bad chain). That shows up at the operator's
+re-render, or at the next launch's identity∧behaviour probe in that repo,
+which re-renders the session's own repo anyway. It never shows up silently.
+ASSUMED, for the build to MEASURE: that `execOwnRenders` against the source
+repo does not depend on the hooks installed there (its header says it never
+execs the file at a dispatch path).
 
 An UNKNOWN code is treated as binary-rendered, which is the correct answer
 rather than a fallback: the table is complete for the binary doing the
