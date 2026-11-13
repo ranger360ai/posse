@@ -254,3 +254,106 @@ quiet-box readings crosses 120s, D6 sends the price back here.
 
 Not closed here:
 - ranger-base-bfla6
+
+## Amendment: the deadline bounds a hang, the ceiling is a reading, and a silent judge is filed (ranger-base-7idk4, 2026-11-12)
+
+D6's ceiling was crossed (ranger-base-7idk4). The judge took 125.3s twice and
+was killed at `landedCheckLimit` = `generatorTimeout` = 120s. MEASURED by holden
+the same day, uncaged on the same tree, the check itself is GREEN at 110-150s.
+A deadline is spelled as silence (D3), so every landing went unjudged, D5 never
+filed, and nothing said so. The ⚠ line reached dispatch's output, which nobody
+reads.
+
+The defect is not the 120s. **One number was doing two jobs.** It was the
+price at which the design comes back to architecture, and it was also the
+kill. D6 derives the body on purpose, so the body grows with every door. A
+fixed kill on a body that grows will be crossed, and when it was, the crossing
+was silent. That made the ceiling unreachable by design: the only signal it
+could produce was the absence of one.
+
+MEASURED 2026-11-12 by richard: linux 7.2.15-1-omarchy, 16 cores, uncaged,
+warm shared cache, `7725ba75`, one `make` per door, loadavg 6.4-7.2:
+
+| door | wall |
+|---|---|
+| `verify-reap-test-tmp` | 24.8s (alone again: 46.2s, 30.1s) |
+| `register-check` | 23.6s |
+| `verify-test-times` | 6.4s |
+| `corpus-check` | 5.6s |
+| the other 21 | 0.1-4.1s each, 24.7s together |
+| **total** | **85.1s** |
+
+Two doors make up 57% of the run. `verify-reap-test-tmp` became the tenth
+prerequisite on 2026-11-12 (`24bfa8d9`). Its Makefile comment prices it at "a
+few seconds". Landings on main, MEASURED with `git log --first-parent` over 3
+days: 167 landings, gap median 713s, p25 253s, p10 4s (bunches, which D4
+coalesces).
+
+**D6.1 — `landedCheckLimit` is its own constant: 10 minutes, and it bounds a
+hang, not a price.** It is no longer `generatorTimeout`. 600s is 4× the
+highest reading (150s). The judge holds no lock and no seat (D2), so a long
+bound costs one thing: a hung judge delays the next coalesced judgement by at
+most one median landing gap. A deadline still answers silence, never red. D3's
+doctrine is unchanged.
+
+**D6.2 — The ceiling is 240s, and it is read off answered runs, never enforced
+by a kill.** Every verdict line prints its wall. The number is chosen for
+attribution, not for box time. D5 names every landing in the window, and a
+check that finishes under the p25 landing gap (253s) keeps that window to one
+landing most of the time (ASSUMED: that is the property worth a price review;
+the gaps are MEASURED). The price of 110-150s per landing is accepted: about
+52 landings a day, coalesced, outside the lock.
+
+**D6.3 — The judge's own health is filed, because silence was the failure
+here.** This is a watchdog on the detector. It needs one more repo-level config
+record, `posse.landedCheckQuiet = <tree> <n>`: the count of consecutive judged
+runs that returned no answer. Any answered verdict resets it. D4's record is
+untouched, so D5's left-hand column still names the last green tree.
+
+| event | action |
+|---|---|
+| 2nd consecutive unanswered run | file one `-t bug` P1, `-l architecture`, "landed check silent at <repo>", carrying both `said` lines |
+| further unanswered, bead open | nothing (the bead already says so) |
+| answered run over 240s, no such bead open | file the same bead class, "landed check over its D6 ceiling at <repo>", with the wall |
+| answered run, bead open | one comment "answered at <tree> in <wall>"; closing is architecture's |
+
+Two runs, not one. A single silence is a stranded lock or a cage hiccup, which
+is exactly what D3's ⚠ is for. Two in a row is a pattern, and holden's two of
+two would have filed on the second landing. Dedupe follows D5: one open bead
+per stretch, found by a marker in its description.
+
+**D6.4 — A failure must name its own cause (code lane).**
+`landedchecklive_test.go` reads a deadline as "D3'S WRITE SET BEING WRONG". The
+verdict already distinguishes "no answer in <limit>". The test must say
+deadline when it is one.
+
+**Consequences.**
+- The 110-150s check answers again. Detection is about 2.5 minutes after a
+  landing, against five hours before ADR 0088 and never during the crossing.
+- The next crossing is a bead, at 240s answered or at the second silence. It
+  is no longer something a verify lane happens to find.
+- Exit hatch: one constant and one config key. Deleting the key's reader turns
+  D6.3 off, and it holds nothing hostage.
+- Not changed: the derivation (D6), the fresh private cache (D3.2), the
+  allowlist (D3.3).
+
+**Alternatives rejected.**
+- *(a) alone: raise the limit and stop.* That fixes today and keeps the defect.
+  The next door added crosses the new number just as silently.
+- *(b) Narrow the body: drop `register-check` and `verify-reap-test-tmp` from
+  the judge, or give it a hand-listed goal.* It undoes D6's derivation, the one
+  property that covers tomorrow's door. The two doors' cost is filed against
+  the doors instead (ranger-base-7idk4's code beads).
+- *(b′) `make -j` with `--output-sync`, then re-run the failed door serially
+  so it lands in the tail.* This is the clever one. MEASURED, the longest door
+  is 25-46s, so the judge would take about 50s. It breaks D1's "the last lines
+  are the cause" unless the serial re-run is added, which makes it a second
+  runner. It also takes several cores per landing beside seats' suites. Once
+  the kill is a hang bound, it buys latency nobody has asked for. Revisit if
+  D6.3 files an over-ceiling bead.
+- *(c) A warm cache for the judge.* It reverses D3.2. MEASURED by holden, a
+  fresh cache is not the driver (138s fresh against 150s warm).
+- *(d) alone: keep 120s and only make the silence loud.* Then every landing
+  files the silence and none is judged. Loud and blind together.
+- *Record "unanswered" in D4's own key.* That would overwrite the last green
+  tree, which D5 needs as the far edge of a red window.
