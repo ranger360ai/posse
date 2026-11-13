@@ -736,7 +736,51 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 	// stated in terms of; ranger-base-yca4g is the re-run that reads which
 	// error. Nothing here depends on which it is — the claim this render
 	// makes is "the read gets no bytes".
+	//
+	// 5a. ~/.ssh first, as an ALLOWLIST (ranger-base-12ggv): an empty tmpfs
+	// over the directory, then ssh's config and known_hosts bound back
+	// read-only. The key list in DenyRead is ssh's own resolution, so a key
+	// no config names was readable; under the tmpfs nothing in the directory
+	// is, named or not. After the grants and denies so nothing mounted
+	// earlier lands on top of it, and the shape is 1b's, at a read wall.
+	//
+	// A FILE at ~/.ssh refuses the render (a tmpfs covers only a directory,
+	// and a mask that silently renders nothing is the failure this tier
+	// refuses). One inside a directory the seat already sees empty (1b/1c)
+	// renders nothing: the hide is the stronger statement, and a mount there
+	// would make its mount point on the host.
+	var sshHidden []string
+	for _, d := range shallowestFirst(carve.SSHDir) {
+		if reopens(d) {
+			continue
+		}
+		exists, dir, err := bwrapStat(d)
+		if err != nil {
+			return nil, nil, bwrapStatRefusal("ssh dir", d, err)
+		}
+		switch {
+		case !exists:
+			continue // nothing there to read
+		case !dir:
+			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-12ggv)", d)
+		}
+		argv = append(argv, "--tmpfs", d)
+		sshHidden = append(sshHidden, d)
+		for _, f := range carve.sshDirAllowed(d) {
+			exists, dir, err := bwrapStat(f)
+			if err != nil {
+				return nil, nil, bwrapStatRefusal("ssh allow", f, err)
+			}
+			if !exists || dir {
+				continue // a directory at that name is not a file ssh reads, and binding it would reopen a tree
+			}
+			argv = append(argv, "--ro-bind", f, f)
+		}
+	}
 	for _, f := range shallowestFirst(carve.DenyRead) {
+		if writeGranted(sshHidden, f) {
+			continue // under the tmpfs already, and a /dev/null mount would only make its name
+		}
 		exists, _, err := bwrapStat(f)
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("read deny", f, err)
@@ -1993,6 +2037,9 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 	}
 	for _, p := range shallowestFirst(carve.DenyRead) {
 		fmt.Fprintf(out, "    r %s (/dev/null bound over it — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
+	}
+	for _, d := range shallowestFirst(carve.SSHDir) {
+		fmt.Fprintf(out, "    r %s/ (empty tmpfs over it with %s bound back read-only — this seat is not the pusher; ranger-base-12ggv)\n", AbbrevHome(d), strings.Join(sshDirAllowlist, " and "))
 	}
 	// The prep, which an operator can read nowhere else: these are writes
 	// posse makes on the HOST, outside the namespace, in the seat's name —

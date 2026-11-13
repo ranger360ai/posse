@@ -61,8 +61,12 @@ func newSSHFixture(t *testing.T, root string) sshFixture {
 		key(".ssh/hosts/github-a.key"),
 		key(".ssh/hosts/github-b.key"),
 		key(".ssh/agentpick"),
+		// OUTSIDE ~/.ssh: the allowlist cannot reach it, so the named-key
+		// mask still must (ranger-base-12ggv keeps the /dev/null binds).
+		key("keys/outside_deploy"),
 	)
 	f.odd = key(".ssh/nobody_named_me")
+	writeFile(t, filepath.Join(ssh, "known_hosts"), "KNOWN github.com ssh-ed25519 AAAA\n", 0o644)
 	writeFile(t, filepath.Join(ssh, "config"), `# a comment line
 Host github-posse
   HostName github.com
@@ -80,6 +84,8 @@ Host perhost-*
   IdentityFile ~/.ssh/hosts/%h.key
 Host agent
   IdentityFile ~/.ssh/agentpick.pub
+Host outside
+  IdentityFile ~/keys/outside_deploy
 Include conf.d/*.conf
 `, 0o600)
 	writeFile(t, filepath.Join(ssh, "conf.d", "10-inc.conf"), "Host inc\n  IdentityFile ~/.ssh/inc_deploy\n", 0o600)
@@ -216,9 +222,31 @@ func TestBwrapRenderMasksTheConfiguredSSHKeys(t *testing.T) {
 			lastBind = i
 		}
 	}
+	// ~/.ssh is an allowlist (ranger-base-12ggv): an empty tmpfs after every
+	// grant, then config and known_hosts bound back over it, in that order.
+	sshDir := absResolve(filepath.Join(sf.home, ".ssh"))
+	tmpfs := bwIndex(r.Argv, "--tmpfs", sshDir)
+	if tmpfs < 0 {
+		t.Errorf("a push-denied seat's wall mounts no tmpfs over %s, so a key no config names is readable (ranger-base-12ggv):\n  %s", sshDir, line)
+	} else if tmpfs < lastBind {
+		t.Errorf("the tmpfs over %s is mounted before a write grant, which can bind the host's back:\n  %s", sshDir, line)
+	}
+	for _, n := range sshDirAllowlist {
+		p := filepath.Join(sshDir, n)
+		if i := bwIndex(r.Argv, "--ro-bind", p, p); i < 0 || i < tmpfs {
+			t.Errorf("%s is not bound back read-only AFTER the tmpfs over %s (at %d, tmpfs at %d):\n  %s", p, sshDir, i, tmpfs, line)
+		}
+	}
 	for _, k := range sf.keys {
 		k = absResolve(k)
 		i := bwIndex(r.Argv, "--ro-bind", "/dev/null", k)
+		if underDir(sshDir, k) {
+			// Under the tmpfs: a /dev/null mount would only make its name.
+			if i >= 0 {
+				t.Errorf("%s is masked with /dev/null under the tmpfs that already hides it:\n  %s", k, line)
+			}
+			continue
+		}
 		if i < 0 {
 			t.Errorf("a push-denied seat's wall does not mask %s, so it holds a key that pushes (ranger-base-ighvi):\n  %s", k, line)
 		} else if i < lastBind {
@@ -235,6 +263,108 @@ func TestBwrapRenderMasksTheConfiguredSSHKeys(t *testing.T) {
 		if bwIndex(r.Argv, "--ro-bind", "/dev/null", absResolve(k)) >= 0 {
 			t.Errorf("the pusher's wall masks %s: the one seat that pushes cannot", k)
 		}
+	}
+	if i := bwIndex(r.Argv, "--tmpfs", sshDir); i >= 0 {
+		t.Errorf("the pusher's wall hides %s: the one seat that pushes cannot read its keys", sshDir)
+	}
+	if len(r.Carve.SSHDir) != 0 {
+		t.Errorf("the pusher's carve-out names ssh dirs %v", r.Carve.SSHDir)
+	}
+}
+
+// ranger-base-12ggv: a file at ~/.ssh refuses the render — an empty tmpfs
+// covers only a directory, and a hide that renders nothing is the silence the
+// tier refuses. A ~/.ssh that is not there renders nothing and is no error.
+func TestBwrapArgsRefusesAnSSHDirThatIsNotADirectory(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	f := filepath.Join(root, "file", ".ssh")
+	writeFile(t, f, "not a dir\n", 0o600)
+	if _, _, err := BwrapArgs("", nil, SeatbeltCarveOut{SSHDir: []string{f}}); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("a FILE at %s rendered a wall (err=%v): the keys beside it would stay readable", f, err)
+	}
+	absent := filepath.Join(root, "nohome", ".ssh")
+	argv, _, err := BwrapArgs("", nil, SeatbeltCarveOut{SSHDir: []string{absent}})
+	if err != nil {
+		t.Errorf("an absent ~/.ssh refused: %v", err)
+	}
+	if bwIndex(argv, "--tmpfs", absent) >= 0 {
+		t.Errorf("an absent ~/.ssh got a tmpfs, which bwrap would have to create: %v", argv)
+	}
+	// A config the carve-out read-denies by name is not bound back.
+	dir := filepath.Join(root, "home", ".ssh")
+	cfg := filepath.Join(dir, "config")
+	writeFile(t, cfg, "Host x\n", 0o600)
+	argv, _, err = BwrapArgs("", nil, SeatbeltCarveOut{SSHDir: []string{dir}, DenyRead: []string{cfg}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bwIndex(argv, "--ro-bind", cfg, cfg) >= 0 {
+		t.Errorf("the allowlist bound back %s, which DenyRead names — deny wins: %v", cfg, argv)
+	}
+}
+
+// ranger-base-12ggv, the seatbelt half: the profile denies file-read* on the
+// ~/.ssh subpath and only THEN allows config and known_hosts — SBPL is last
+// match wins, so the order is the rule. The pusher's profile carries neither.
+func TestRenderSeatbeltSSHDirIsADenyThenAllow(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME.
+	f := wrcFixtureIn(t, wallUngrantedDir(t))
+	sf := newSSHFixture(t, filepath.Dir(f.home))
+	t.Setenv("SSHFIX", sf.home)
+	sshDir := absResolve(filepath.Join(sf.home, ".ssh"))
+	profile := func(ag *AgentFile) string {
+		t.Helper()
+		p, err := f.a.RenderSeatbelt(ag, f.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	f.ag.Deny = []string{"Bash(git push:*)"}
+	prof := profile(f.ag)
+	// The subpath line, inside a deny block (the passwd home's ~/.ssh may
+	// precede it in the same block).
+	deny := strings.Index(prof, "  (subpath "+sbQuote(sshDir)+")\n")
+	if deny >= 0 {
+		open := strings.LastIndex(prof[:deny], "(deny file-read*\n")
+		if open < 0 || strings.Contains(prof[open:deny], ")\n(") {
+			deny = -1 // not inside a file-read* deny block
+		} else {
+			deny = open
+		}
+	}
+	if deny < 0 {
+		t.Fatalf("a push-denied seat's profile does not read-deny the subpath %s (ranger-base-12ggv):\n%s", sshDir, prof)
+	}
+	allow := strings.Index(prof[deny:], "(allow file-read*\n")
+	if allow < 0 {
+		t.Fatalf("no file-read* allow follows the %s deny, so ssh's config is unreadable too:\n%s", sshDir, prof[deny:])
+	}
+	tail := prof[deny+allow:]
+	for _, n := range sshDirAllowlist {
+		if lit := "(literal " + sbQuote(filepath.Join(sshDir, n)) + ")"; !strings.Contains(tail, lit) {
+			t.Errorf("%s is not re-allowed AFTER the subpath deny:\n%s", lit, prof[deny:])
+		}
+	}
+	if strings.Contains(prof[:deny], "(allow file-read*") {
+		t.Errorf("a file-read* allow precedes the %s deny, which would outvote nothing:\n%s", sshDir, prof)
+	}
+	var rep strings.Builder
+	if err := f.a.SeatbeltReport(f.ag, f.dir, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if want := "r " + AbbrevHome(sshDir) + "/ (file-read* subpath deny"; !strings.Contains(rep.String(), want) {
+		t.Errorf("the wall report does not name %s as read-denied:\n%s", sshDir, rep.String())
+	}
+
+	f.ag.Deny, f.ag.Allow = nil, []string{"Bash(git push:*)"}
+	if prof := profile(f.ag); strings.Contains(prof, "(subpath "+sbQuote(sshDir)+")") {
+		t.Errorf("the pusher's profile names %s: the one seat that pushes cannot read its keys", sshDir)
 	}
 }
 
@@ -260,12 +390,14 @@ func TestLiveBwrapPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
 	if err := runBwrapPrep(r.Prep); err != nil {
 		t.Fatal(err)
 	}
+	cfg := filepath.Join(sf.home, ".ssh", "config")
+	known := filepath.Join(sf.home, ".ssh", "known_hosts")
 	read := func(argv []string) map[string]string {
 		t.Helper()
 		script := `for p in "$@"; do printf '%s=' "$p"; cat -- "$p" 2>/dev/null | head -c 64 | tr -d '\n'; echo; done`
 		args := append(append([]string{}, argv...), "sh", "-c", script, "sh")
 		args = append(args, sf.keys...)
-		args = append(args, sf.odd)
+		args = append(args, sf.odd, cfg, known)
 		out, err := exec.Command("bwrap", args...).CombinedOutput()
 		if err != nil {
 			t.Fatalf("bwrap: %v\n%s", err, out)
@@ -284,10 +416,18 @@ func TestLiveBwrapPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
 			t.Errorf("inside a push-denied seat's wall, %s read %q — want no bytes (ranger-base-ighvi)", k, got[k])
 		}
 	}
-	// Scope: the mask is ssh's resolution and not a glob, so a file no config
-	// names is untouched (ranger-base-nl2ha). Measured, so a widening is seen.
-	if !strings.HasPrefix(got[sf.odd], "PRIVATE") {
-		t.Errorf("scope: %s (named by no config) read %q; the mask is no longer ssh's own resolution — update ranger-base-nl2ha and this arm together", sf.odd, got[sf.odd])
+	// A key no config names, at no default name (ranger-base-nl2ha): the
+	// allowlist over ~/.ssh covers it (ranger-base-12ggv). This arm was the
+	// residual — it read PRIVATE — until the tmpfs landed.
+	if got[sf.odd] != "" {
+		t.Errorf("inside a push-denied seat's wall, %s (named by no config) read %q — want no bytes (ranger-base-12ggv)", sf.odd, got[sf.odd])
+	}
+	// The allowlist is an allowlist: ssh's config and known_hosts still read.
+	if !strings.HasPrefix(got[cfg], "# a comment line") {
+		t.Errorf("inside a push-denied seat's wall, %s read %q — the allowlist lost ssh's config", cfg, got[cfg])
+	}
+	if !strings.HasPrefix(got[known], "KNOWN") {
+		t.Errorf("inside a push-denied seat's wall, %s read %q — the allowlist lost known_hosts", known, got[known])
 	}
 
 	// The control: the same probe, a wall with no read masks.
@@ -296,7 +436,7 @@ func TestLiveBwrapPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = read(ctl)
-	for _, k := range sf.keys {
+	for _, k := range append(append([]string{}, sf.keys...), sf.odd) {
 		if !strings.HasPrefix(got[k], "PRIVATE") {
 			t.Errorf("control: %s inside an unmasked wall read %q — the probe cannot read, so the arm above proves nothing", k, got[k])
 		}
@@ -344,8 +484,11 @@ func TestRenderSeatbeltDeniesTheConfiguredSSHKeys(t *testing.T) {
 			t.Errorf("a push-denied seat's seatbelt profile does not read-deny %s, so it holds a key that pushes (ranger-base-7m3up):\n%s", k, block)
 		}
 	}
+	// Scope of THIS block: the literals are ssh's own resolution, so a file no
+	// config names is not one of them — the ~/.ssh subpath deny after it is
+	// what covers that file (ranger-base-12ggv, TestRenderSeatbeltSSHDirIsADenyThenAllow).
 	if strings.Contains(block, sbQuote(absResolve(sf.odd))) {
-		t.Errorf("scope: %s (named by no config) is read-denied; the deny is no longer ssh's own resolution — update ranger-base-nl2ha and this arm together", sf.odd)
+		t.Errorf("scope: %s (named by no config) is a read-deny literal; the list is no longer ssh's own resolution", sf.odd)
 	}
 	var rep strings.Builder
 	if err := f.a.SeatbeltReport(f.ag, f.dir, &rep); err != nil {
@@ -386,14 +529,19 @@ func TestLiveSeatbeltPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
 			t.Errorf("inside a push-denied seat's seatbelt profile, %s was READABLE (ranger-base-7m3up)", k)
 		}
 	}
-	if !crdRun(t, walled, sf.odd) {
-		t.Errorf("scope: %s (named by no config) was refused; the deny is no longer ssh's own resolution — update ranger-base-nl2ha and this arm together", sf.odd)
+	// A key no config names (ranger-base-nl2ha): the ~/.ssh subpath deny
+	// covers it (ranger-base-12ggv), and the allows after it keep the config.
+	if crdRun(t, walled, sf.odd) {
+		t.Errorf("inside a push-denied seat's seatbelt profile, %s (named by no config) was READABLE (ranger-base-12ggv)", sf.odd)
+	}
+	if cfg := filepath.Join(sf.home, ".ssh", "config"); !crdRun(t, walled, cfg) {
+		t.Errorf("inside a push-denied seat's seatbelt profile, %s was refused — the allow after the subpath deny is not outvoting it", cfg)
 	}
 	w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates)
 	c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w)
-	c.DenyRead = nil
+	c.DenyRead, c.SSHDir = nil, nil
 	control := sbRenderProfile(t, "control.sb", SeatbeltProfile(f.ag.Name, w, nil, c))
-	for _, k := range sf.keys {
+	for _, k := range append(append([]string{}, sf.keys...), sf.odd) {
 		if !crdRun(t, control, k) {
 			t.Errorf("control: %s was refused with no read deny — the probe cannot read, so the arm above proves nothing", k)
 		}

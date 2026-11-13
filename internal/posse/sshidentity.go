@@ -23,9 +23,16 @@ package posse
 // an ssh remote whose key is masked either — a deploy key is one credential
 // for both directions. A seat that needs a fetch uses an https remote.
 //
+// AND AN ALLOWLIST OVER ~/.ssh (ranger-base-12ggv, closing ranger-base-nl2ha).
+// The list above cannot see a key that no config names and that is not at a
+// default name, so the same seats also read nothing under ~/.ssh but ssh's
+// config and known_hosts (SeatbeltCarveOut.SSHDir). Still not a glob: the
+// allowlist names what a seat may read, never which files are keys, so a key
+// copied there under any name is covered. The two halves are both needed —
+// the allowlist is the directory, the list is everywhere a config points.
+//
 // Not closed here:
-// - ranger-base-nl2ha
-// - ranger-base-7m3up
+// - ranger-base-w4q8r
 
 import (
 	"errors"
@@ -81,13 +88,23 @@ func sshKeyReadDeny(ag *AgentFile, cwd string) ([]string, error) {
 }
 
 // withSSHKeyReadDeny adds sshKeyReadDeny's list to carve.DenyRead and returns
-// the keys it added, so a report can name them as keys.
+// the keys it added, so a report can name them as keys. For the same seats it
+// fills carve.SSHDir with ~/.ssh for both homes (ranger-base-12ggv): the
+// allowlist covers what the list cannot — a key no config names — and the
+// list still covers what the allowlist cannot, a configured key OUTSIDE
+// ~/.ssh. One helper for every render, so no wall gets one half.
 func withSSHKeyReadDeny(ag *AgentFile, cwd string, carve *SeatbeltCarveOut) ([]string, error) {
 	keys, err := sshKeyReadDeny(ag, cwd)
 	if err != nil {
 		return nil, err
 	}
 	carve.DenyRead = dedupeStrings(append(carve.DenyRead, keys...))
+	if bwrapMasksSSHKeys(ag) {
+		for _, h := range liveSSHHomes() {
+			carve.SSHDir = append(carve.SSHDir, absResolve(filepath.Join(h, ".ssh")))
+		}
+		carve.SSHDir = dedupeStrings(carve.SSHDir)
+	}
 	return keys, nil
 }
 
@@ -371,19 +388,14 @@ func sshGlobUnescape(s string) string {
 // finds its config by, and $HOME, which every other reader on the box uses.
 // On a normal host they are one directory and one list.
 func liveSSHIdentityFiles(cwd string) ([]string, error) {
-	homes := []string{os.Getenv("HOME")}
 	name := os.Getenv("USER")
 	if u, err := user.Current(); err == nil {
-		homes = append([]string{u.HomeDir}, homes...)
 		name = u.Username
 	}
 	host, _ := os.Hostname()
 	var out []string
 	system := sshSystemConfig
-	for _, h := range dedupeStrings(homes) {
-		if h == "" {
-			continue
-		}
+	for _, h := range liveSSHHomes() {
 		got, err := sshIdentityFiles(sshEnv{Home: h, User: name, UID: os.Getuid(), Host: host, Cwd: cwd, System: system})
 		if err != nil {
 			return nil, err
@@ -396,4 +408,14 @@ func liveSSHIdentityFiles(cwd string) ([]string, error) {
 		abs = append(abs, absResolve(p))
 	}
 	return shallowestFirst(abs), nil
+}
+
+// liveSSHHomes is the two homes the ssh question has, passwd's first, non-empty
+// and once each: the list liveSSHIdentityFiles walks and the dirs SSHDir hides.
+func liveSSHHomes() []string {
+	homes := []string{os.Getenv("HOME")}
+	if u, err := user.Current(); err == nil {
+		homes = append([]string{u.HomeDir}, homes...)
+	}
+	return dedupeStrings(homes)
 }

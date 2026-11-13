@@ -354,6 +354,35 @@ type SeatbeltCarveOut struct {
 	// Above the carve-out's Deny, so a trailing deny still has the last word
 	// over anything a reopen here names (ADR 0001, deny wins).
 	Narrow []SeatbeltNarrow
+	// SSHDir is the ~/.ssh directories a seat that is not the pusher reads
+	// NOTHING in but sshDirAllowlist (ranger-base-12ggv): an allowlist over
+	// the directory, so a key no ssh config names is unreadable too —
+	// DenyRead's list is ssh's own resolution and cannot see one. Both
+	// mechanisms render it: bwrap as an empty tmpfs with the allowlist
+	// re-bound, seatbelt as a subpath read deny with literal allows AFTER it
+	// (last match wins). Filled by withSSHKeyReadDeny, beside the key list.
+	SSHDir []string
+}
+
+// sshDirAllowlist is what a masked seat still reads under an SSHDir: ssh's
+// client config and the host keys it checks a server against. No key is
+// either, and a seat that is not the pusher has no key to connect with anyway
+// (ranger-base-ighvi's COST), so this is what keeps `ssh -G` and a known_hosts
+// lookup answering and nothing more.
+var sshDirAllowlist = []string{"config", "known_hosts"}
+
+// sshDirAllowed is the allowlist's paths under dir, less any the carve-out
+// read-denies by name: a literal deny is never outvoted by this allow, in
+// either mechanism (ADR 0001, deny wins).
+func (c SeatbeltCarveOut) sshDirAllowed(dir string) []string {
+	var out []string
+	for _, n := range sshDirAllowlist {
+		p := filepath.Join(dir, n)
+		if !containsString(c.DenyRead, p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // SeatbeltNarrow is one entry of SeatbeltCarveOut.Narrow: a subpath that is
@@ -479,7 +508,7 @@ func (c SeatbeltCarveOut) FileShaped(p string) bool {
 
 // Empty reports whether the block renders nothing.
 func (c SeatbeltCarveOut) Empty() bool {
-	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0 && len(c.Narrow) == 0
+	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0 && len(c.Narrow) == 0 && len(c.SSHDir) == 0
 }
 
 // SeatbeltProfile renders the SBPL profile text: the default deny, the
@@ -573,6 +602,28 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 			fmt.Fprintf(&b, "  (literal %s)\n", sbQuote(p))
 		}
 		b.WriteString(")\n")
+	}
+	if len(carve.SSHDir) > 0 {
+		// ORDERED, unlike the block above: the allows outvote the subpath
+		// deny only because they come after it (last match wins). They never
+		// outvote a DenyRead literal — sshDirAllowed drops any it names.
+		b.WriteString(";; ~/.ssh read allowlist (ranger-base-12ggv): LAST match wins, so the\n;; subpath deny comes first and ssh's config and known_hosts come back after it.\n")
+		b.WriteString("(deny file-read*\n")
+		for _, d := range carve.SSHDir {
+			fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(d))
+		}
+		b.WriteString(")\n")
+		var allow []string
+		for _, d := range carve.SSHDir {
+			allow = append(allow, carve.sshDirAllowed(d)...)
+		}
+		if len(allow) > 0 {
+			b.WriteString("(allow file-read*\n")
+			for _, p := range allow {
+				fmt.Fprintf(&b, "  (literal %s)\n", sbQuote(p))
+			}
+			b.WriteString(")\n")
+		}
 	}
 	return b.String()
 }
@@ -2522,6 +2573,9 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 			continue
 		}
 		fmt.Fprintf(out, "    r %s (file-read* deny — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
+	}
+	for _, d := range carve.SSHDir {
+		fmt.Fprintf(out, "    r %s/ (file-read* subpath deny — this seat is not the pusher, so it reads nothing here but %s; ranger-base-12ggv)\n", AbbrevHome(d), strings.Join(sshDirAllowlist, " and "))
 	}
 	// A grant that reaches the constitution is still named, deny or no
 	// deny: the carve-out is a wall, not a licence to grant it. What the

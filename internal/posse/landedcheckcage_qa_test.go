@@ -70,7 +70,17 @@ func TestQALandedCheckCageRendersTheSecretMasks(t *testing.T) {
 	switch WallMechanism() {
 	case WallBwrap:
 		line := bwJoin(cage.Argv)
+		// A key under ~/.ssh is covered by the tmpfs over the directory
+		// (ranger-base-12ggv); everything else by its own /dev/null bind.
+		sshDir := absResolve(filepath.Join(f.ssh.home, ".ssh"))
+		hidden := bwIndex(cage.Argv, "--tmpfs", sshDir) >= 0
+		if !hidden {
+			t.Errorf("the landed-check cage mounts no tmpfs over %s, so a key no config names is readable to the judge (ranger-base-12ggv):\n  %s", sshDir, line)
+		}
 		for _, s := range f.secrets {
+			if hidden && underDir(sshDir, absResolve(s)) {
+				continue
+			}
 			if bwIndex(cage.Argv, "--ro-bind", "/dev/null", absResolve(s)) < 0 {
 				t.Errorf("the landed-check cage does not mask %s, so the judge — landed code — reads it (ranger-base-6b46n):\n  %s", s, line)
 			}
