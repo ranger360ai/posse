@@ -1735,15 +1735,45 @@ func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 
 // routeMatch is one persona whose labels overlap a bead's, with the label
 // that matched and the PID's stated place in the queue.
+//
+// `matched` is every one of this PID's labels the bead carries, in the PID's
+// own order, and `label` is its head. The whole set is kept because the lane
+// is narrowed to ONE label after the sort (labelMatches): a PID that carries
+// both `qa` and `code` matches on whichever it happens to list first, and
+// dropping it from a `code` lane for that would be an ordering accident
+// rather than a decision.
 type routeMatch struct {
-	name  string
-	label string
-	order int
+	name    string
+	label   string
+	matched []string
+	order   int
 }
 
-// labelMatches is every persona that could take this bead by label, in the
-// order routing prefers them: `route_order:` ascending, then persona name
-// (ListAgents' order — stable, so the sort never reshuffles a tie).
+// labelMatches is the lane: the personas that could take this bead on ONE
+// label, in the order routing prefers them — `route_order:` ascending, then
+// persona name (ListAgents' order — stable, so the sort never reshuffles a
+// tie). The winning label is the preferred candidate's, and the lane is
+// everyone else who carries that same label.
+//
+// It is NOT every persona whose labels overlap the bead's (ranger-base-equhp).
+// A bead carries the labels of all the work it touches, so the union read one
+// bead's label set as one lane and seated personas who share no label with the
+// winner. MEASURED 2026-11-13 in the dispatch watch log, over
+// ranger-base-g8fmb — labelled [code, debt, security, vuln-private], a code
+// deliverable on an instance with three code seats and one security seat. The
+// union reported a four-name `code lane busy:` line, and with the three code
+// seats busy it seated the SECURITY seat as `label:code (seat 3/4: …)` —
+// twice, at strong tier both times. That PID denies Edit and Write (findings
+// only), so the seat cannot do a code deliverable; it can only hand the bead
+// back, which costs a strong-tier seat and requeues the bead to lose the same
+// race again. A security finding handed to the code lane carries `-l code -l
+// security` by convention, so the shape recurs on each one.
+//
+// A lane is a set of LABELS and a seat is a persona whose PID labels intersect
+// THEM (ADR 0020 §1, folded into ADR 0011 §4) — the bead's own label set is
+// not that lane. Narrowed, a bead labelled [code, security] whose code seats
+// are all busy waits for a later pass, which is what a busy lane does; it does
+// not overflow into the security PID.
 func (d *Dispatcher) labelMatches(coord string, is RepoIssue) []routeMatch {
 	var out []routeMatch
 	for _, name := range d.App.ListAgents() {
@@ -1756,15 +1786,30 @@ func (d *Dispatcher) labelMatches(coord string, is RepoIssue) []routeMatch {
 		if err != nil {
 			continue
 		}
+		var matched []string
 		for _, pl := range ag.Labels {
 			if hasLabel(is.Labels, pl) {
-				out = append(out, routeMatch{name: name, label: pl, order: ag.RouteOrder})
-				break
+				matched = append(matched, pl)
 			}
+		}
+		if len(matched) > 0 {
+			out = append(out, routeMatch{name: name, label: matched[0], matched: matched, order: ag.RouteOrder})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].order < out[j].order })
-	return out
+	if len(out) == 0 {
+		return nil
+	}
+	// The narrowing. out[0] is the preferred candidate, so its head label is
+	// the lane's, and only the PIDs carrying that label are its seats.
+	win := out[0].label
+	lane := make([]routeMatch, 0, len(out))
+	for _, m := range out {
+		if hasLabel(m.matched, win) {
+			lane = append(lane, m)
+		}
+	}
+	return lane
 }
 
 // routeMaxRoster is how many names the why line prints before summarizing.
