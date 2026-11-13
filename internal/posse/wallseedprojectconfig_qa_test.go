@@ -245,11 +245,19 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 	//     this is the case ranger-base-6akzw's claim was written for, and it
 	//     is the only one where it holds.
 	//   - a `{}` seed over a WHOLE-FILE entry degrades on presence alone, so
-	//     the body never gets a say (.grok/lsp.json, ProjectConfigWholeFile).
+	//     the body never gets a say (.grok/lsp.json and
+	//     .claude/scheduled_tasks.json, ProjectConfigWholeFile).
 	//   - a ZERO-BYTE seed is invalid JSON, and a directory the prep mkdir'd
 	//     is not a regular file. Both still fail closed on the thing posse
 	//     made (D4) — they are simply no longer read for a launch in the home.
+	//
+	// ROW ADDED 2026-11-13 (ranger-base-g3pfl, linux 7.2.15): claude's
+	// `.claude/scheduled_tasks.json` joined its project_config: as a
+	// whole-file entry, and the wall already seeded it `{}` as a home member
+	// (claudeExecConfigFileNames) — so D1 skips it and its floor is the
+	// whole-file class, `present`, beside .grok/lsp.json.
 	want := []wspEntry{
+		{"claude", ".claude/scheduled_tasks.json", "claude", PrepSeed, true, inertOK, present},
 		{"claude", ".claude/settings.json", "claude", PrepSeed, true, inertOK, inertOK},
 		{"claude", ".claude/settings.local.json", "claude", PrepSeed, true, inertOK, inertOK},
 		{"codex", ".codex/config.toml", "codex", PrepSeed, true, inertOK, present},

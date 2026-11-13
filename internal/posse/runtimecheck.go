@@ -806,7 +806,7 @@ func projectConfigRow(rt *Runtime) stageRow {
 			// an entry the keys do not reach is a reader's exception to the
 			// line above, and an unprinted exception is a check nobody can
 			// read off the grid (ADR 0017 §2).
-			r.note = append(r.note, "the narrowing does NOT reach "+strings.Join(rt.ProjectConfigWholeFile, ", ")+" — presence alone degrades the launch there, because that entry's executable content sits under no top-level key the narrowing could name (grok's .grok/lsp.json is keyed by LSP server name). Built-in only; no yaml declares it.")
+			r.note = append(r.note, "the narrowing does NOT reach "+strings.Join(rt.ProjectConfigWholeFile, ", ")+" — presence alone degrades the launch there, because that entry's executable content sits under no top-level key the narrowing could name (grok's .grok/lsp.json is keyed by LSP server name; claude's .claude/scheduled_tasks.json holds cron prompts under `tasks`). Built-in only; no yaml declares it.")
 		}
 	} else {
 		r.note = append(r.note, "the WHOLE FILE is the predicate: its mere presence degrades the launch. That is the conservative side, and where project_config_keys: is unset it is where this stays.")

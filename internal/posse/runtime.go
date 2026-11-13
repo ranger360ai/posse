@@ -409,7 +409,9 @@ type Runtime struct {
 	// if ProjectConfigKeys were empty, and for exactly one reason — the
 	// entry's executable content is not under a top-level key.
 	//
-	// grok's `.grok/lsp.json` is the whole of it today: its top level is
+	// Two entries today. claude's `.claude/scheduled_tasks.json` holds cron
+	// prompts under `tasks` (ClaudeScheduledTasks, ranger-base-pvg36), and
+	// grok's `.grok/lsp.json`: its top level is
 	// LSP SERVER NAMES, each carrying a `command` grok spawns under folder
 	// trust (MEASURED 2026-10-31, see grokProjectConfig). It names neither
 	// `hooks` nor `mcpServers`, so as a plain keyed entry it would read
@@ -1872,6 +1874,26 @@ const ClaudeProjectConfig = ".claude/settings.json"
 // class, same check.
 const ClaudeProjectConfigLocal = ".claude/settings.local.json"
 
+// ClaudeScheduledTasks is claude's project cron file: the scheduler loads
+// `<project>/.claude/scheduled_tasks.json` and enqueues each task's prompt as
+// a turn when the REPL is idle, with no human turn (claude 2.1.322, read from
+// the binary; the reader is behind a server-side gate that is off today, so
+// ASSUMED and not exercised — ranger-base-pvg36). claude itself writes the
+// path into the shared .git/info/exclude, so a copy in a session tree does
+// not show in `git status`.
+//
+// It is a WHOLE-FILE entry (claudeProjectConfigWholeFile): its top level is
+// `tasks`, not `hooks` or `mcpServers`, so under the key narrowing it would
+// read clean over a live channel — the same wrong verdict grok's
+// `.grok/lsp.json` is listed for.
+const ClaudeScheduledTasks = ".claude/scheduled_tasks.json"
+
+// claudeProjectConfigWholeFile is claude's key-narrowing exemption, for the
+// one reason Runtime.ProjectConfigWholeFile exists: the entry's executable
+// content (here, prompts that run as turns) sits under no top-level key the
+// narrowing names. Presence is the predicate.
+var claudeProjectConfigWholeFile = []string{ClaudeScheduledTasks}
+
 // GrokFleetFlags is what a grok persona session needs to run unattended —
 // verified in rangerhq-vjl on grok 1.0.x (the headless mode matrix on
 // 1.0.0, the live fleet sessions on 1.0.5 after the CLI self-updated
@@ -2399,7 +2421,7 @@ const BobCageCred = "BOB_API_KEY"
 // an allowed later unify"). ranger-base-dg5 is the dispatch half that reads
 // this column.
 var builtinRuntimes = []Runtime{
-	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", ProjectConfig: []string{ClaudeProjectConfig, ClaudeProjectConfigLocal}, ProjectConfigKeys: []string{"hooks", "mcpServers"}, Unattended: ClaudeFleetFlags,
+	{Name: "claude", Builtin: true, Realize: realizeClaude, Skills: skillsClaude, Models: claudeModels, ModelFlag: "--model %s", ProjectConfig: []string{ClaudeProjectConfig, ClaudeProjectConfigLocal, ClaudeScheduledTasks}, ProjectConfigKeys: []string{"hooks", "mcpServers"}, ProjectConfigWholeFile: claudeProjectConfigWholeFile, Unattended: ClaudeFleetFlags,
 		Egress: []string{"api.anthropic.com", "platform.claude.com"}, Interstitials: ClaudeInterstitials,
 		// CredBin: the binary this CLI reads and writes its own
 		// OAuth credential with on darwin — measured on the release artifact,

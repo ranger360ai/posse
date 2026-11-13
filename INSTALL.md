@@ -1801,7 +1801,7 @@ The every-repo half is every file or directory a built-in runtime reads out
 of its session directory before the first model turn, and posse derives it
 from those runtimes' own declarations rather than keeping a list beside them:
 `.bob/custom_modes.yaml`, `.bob/hooks`, `.bob/mcp.json`, `.bob/plugins`,
-`.bob/settings`, `.claude/plugins`, `.claude/settings.json`,
+`.bob/settings`, `.claude/plugins`, `.claude/scheduled_tasks.json`, `.claude/settings.json`,
 `.claude/settings.local.json`, `.codex/config.toml`, `.cursor/hooks.json`,
 `.cursor/mcp.json`, `.grok/config.toml`, `.grok/hooks`, `.grok/lsp.json`,
 `.grok/plugins` and `.mcp.json`. A commit to one of those lands on your main

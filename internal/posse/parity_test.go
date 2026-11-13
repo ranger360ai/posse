@@ -640,8 +640,11 @@ func TestClaudeProjectConfigTrustIsKeyedAndFailsClosed(t *testing.T) {
 	settingsDir := filepath.Join(repo, ".claude")
 	settings := filepath.Join(settingsDir, "settings.json")
 
-	if len(claude.ProjectConfig) != 2 || claude.ProjectConfig[0] != ClaudeProjectConfig ||
-		claude.ProjectConfig[1] != ClaudeProjectConfigLocal || len(claude.ProjectConfigKeys) != 2 ||
+	// The third entry is the cron file, checked on presence and so outside
+	// the key narrowing this test is about (ranger-base-g3pfl).
+	if len(claude.ProjectConfig) != 3 || claude.ProjectConfig[0] != ClaudeProjectConfig ||
+		claude.ProjectConfig[1] != ClaudeProjectConfigLocal || claude.ProjectConfig[2] != ClaudeScheduledTasks ||
+		strings.Join(claude.ProjectConfigWholeFile, " ") != ClaudeScheduledTasks || len(claude.ProjectConfigKeys) != 2 ||
 		claude.ProjectConfigKeys[0] != "hooks" || claude.ProjectConfigKeys[1] != "mcpServers" {
 		t.Fatalf("claude project-config declaration: %+v", claude)
 	}
