@@ -481,3 +481,67 @@ func TestTheQuietCounterReadsZeroOverAnyShapeThatIsNotItsOwn(t *testing.T) {
 		t.Errorf("landedQuietRecorded over an absent key = %q %d, want %q 0", tree, n, "")
 	}
 }
+
+// A STORE THAT CANNOT ANSWER IS NOT A STORE THAT SAID NO (ranger-base-w9w37;
+// this arm added verifying ranger-base-lhiy1 under ranger-base-vzn36).
+// healthBeadState's three answers are landedfile.go's three and not a bool,
+// and only landedStretchNone may be answered by FILING: a `bd list` that
+// fails — a locked database, a repo with no bd init — must file nothing, say
+// which answer it got, and leave the next landing to ask again, because a
+// stretch whose bead cannot be read is a stretch that may already have one.
+//
+// WHY THIS ARM EXISTS. The mutant it kills is `healthBeadState` returning
+// landedStretchNone on a read error, and MEASURED 2026-11-13 all nine of
+// D6.3's other pins are GREEN with that mutant in place — the fail-open arm
+// was the one branch of this rule that no fixture walked. What it costs is
+// the price healthBeadState's own header names: one P1 architecture bead per
+// landing for as long as the store is unreadable, which is a seat, a
+// worktree and a suite run each.
+//
+// The counter still advances over the unknown answer, and that is the
+// design, not a hole: the COUNT is this row's dedupe and the store read is
+// the second gate, so the crossing is remembered and re-asked rather than
+// spent. The third run here is what proves that — same stretch, store
+// healthy again, exactly one bead.
+func TestASilentJudgeOverAnUnreadableStoreFilesNothingAndTheNextLandingAsksAgain(t *testing.T) {
+	t.Parallel()
+	c, out, repo, _ := ldfFixture(t)
+	c.cage = lhSilentCage(lhSaidOne, lhSaidTwo, lhSaidThree)
+	fail := filepath.Join(repo, "fake-list-fail")
+
+	// One silence: counted, and this run asks the store nothing at all.
+	ldfJudge(t, c, repo)
+
+	// The second is the crossing — and the store cannot be asked.
+	write(t, fail, "")
+	ldfJudge(t, c, repo)
+
+	if n := lhQuiet(t, repo); n != 2 {
+		t.Fatalf("%s counted %d after two unanswered runs, want 2 — the count is written before the store is asked, so an unreadable store may not cost the crossing", landedQuietKey, n)
+	}
+	argv := ldfArgv(t)
+	// POSITIVE CONTROL first: the run really did reach the store read, so
+	// the absence asserted next is an absence of filing and not of running.
+	if !strings.Contains(argv, "--label-any "+landedHealthLabel) {
+		t.Fatalf("no `bd list` for the %s lane reached the fake bd, so this arm measured nothing — it has to get as far as the store read for a refusal there to mean anything:\n%s", landedHealthLabel, argv)
+	}
+	if strings.Contains(argv, " create ") {
+		t.Errorf("a bead was filed over a store that could not say whether this stretch already has one — only landedStretchNone may be answered by filing (ranger-base-w9w37):\n%s", argv)
+	}
+	if s := out.String(); !strings.Contains(s, "the store could not say whether this silent stretch already has a bead") {
+		t.Errorf("the pass did not say the store could not answer, so a reader cannot tell this from a run that filed nothing because there was nothing to file:\n%s", s)
+	}
+
+	// THE PROMISE: the next landing asks again. Same silent stretch, store
+	// healthy, and now exactly one bead carrying the last two sentences.
+	if err := os.Remove(fail); err != nil {
+		t.Fatal(err)
+	}
+	ldfJudge(t, c, repo)
+	is := lhFiled(t, c, repo)
+	for _, want := range []string{lhSaidTwo, lhSaidThree, landedHealthMarker(repo)} {
+		if !strings.Contains(is.Description, want) {
+			t.Errorf("the bead filed by the run after the unreadable one does not name %q:\n%s", want, is.Description)
+		}
+	}
+}
