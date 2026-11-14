@@ -12,6 +12,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
 - [ranger-base-gi6ge](ranger-base-gi6ge.md) — The bullet and the diff marker are the same byte (ranger-base-gi6ge) — 2026-11-14
 - [ranger-base-ed07e](ranger-base-ed07e.md) — A fix could not describe the hole it closed, and its bead could not close first (ranger-base-ed07e) — 2026-11-14
+- [ranger-base-cgr1h](ranger-base-cgr1h.md) — The pulse waiter: what the ADR settled, and the four things it did not (ranger-base-cgr1h) — 2026-11-14
 - [ranger-base-99mvt](ranger-base-99mvt.md) — A mount SHAPE the fixture reflection could not see, one level down (ranger-base-99mvt) — 2026-11-14
 - [ranger-base-85xxm](ranger-base-85xxm.md) — ranger-base-85xxm — the sweep's own death, and a gate pinned by the abort below it — 2026-11-14
 - [ranger-base-4fx5x](ranger-base-4fx5x.md) — An exemption that drops an id from the SCAN also drops it from the STRIP (ranger-base-4fx5x) — 2026-11-14

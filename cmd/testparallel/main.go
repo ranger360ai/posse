@@ -261,6 +261,7 @@ func main() {
 		"TestQASeedCageHomeChildSeeder": "child of a cross-process test",
 		"TestLaunchLockChildHolder":     "child of a cross-process test",
 		"TestWatchLockHolderChild":      "child of a cross-process test",
+		"TestPulseWaitHolderChild":      "child of a cross-process test",
 		"TestTempHomeChild":             "child of a cross-process test",
 		// Tests that assert on flock ACQUISITION. Two of them side by side
 		// read a released lock as still held, on lock files that are per
@@ -289,6 +290,24 @@ func main() {
 		"TestWatchStatusNeverTurnsAnUnaskableQuestionIntoNone": "asserts flock acquisition",
 		"TestWatchStatusNamesTheLogAndItsAge":                  "asserts flock acquisition",
 		"TestWatchReleasesLockBetweenPasses":                   "asserts flock acquisition",
+		// The pulse waiter's lock (ADR 0093 D3, ranger-base-cgr1h): the same
+		// family, on state/pulse.wait.lock instead of the watch's. Every one
+		// of these either arms the waiter or asks whether a waiter is armed,
+		// which is the 9l77f shape exactly. The two tests in
+		// pulsewait_test.go that take NEITHER — the reading's own table and
+		// the renag-life fallback — carry t.Parallel and are deliberately
+		// not here.
+		"TestPulseWaitPrintsTheEntriesPastTheCursor":          "asserts flock acquisition",
+		"TestPulseWaitBlocksUntilAnEntryArrives":              "asserts flock acquisition",
+		"TestPulseWaitStaleCursorPrintsGapThenWhatIsKept":     "asserts flock acquisition",
+		"TestPulseWaitTreatsARestartedFeedAsAGap":             "asserts flock acquisition",
+		"TestPulseWaitSelfExitsAfterTheRenagWithNothingToSay": "asserts flock acquisition",
+		"TestPulseWaitRefusesASecondWaiter":                   "asserts flock acquisition",
+		"TestPulseWaitRefusalSurvivesAnUnrecordedHolder":      "asserts flock acquisition",
+		"TestPulseWaiterArmedTracksTheLock":                   "asserts flock acquisition",
+		"TestPulseWaitHoldsTheLockWhileItBlocks":              "asserts flock acquisition",
+		"TestPulseWaitLockDiesWithItsProcess":                 "asserts flock acquisition",
+		"TestPulseWaitEveryExitNamesTheCursorLast":            "asserts flock acquisition",
 		// The two that ranger-base-zppcv moved into launchlock_test.go. The
 		// first carried t.Parallel in worktree_test.go and is the only
 		// acquisition test the rule above had missed: it releases a lock and

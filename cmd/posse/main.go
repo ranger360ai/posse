@@ -1476,6 +1476,53 @@ func main() {
 		}
 		fmt.Fprintf(out, "resumed by %s · lifted a pause%s; the next pass dispatches\n", by, posse.PauseClause(p))
 
+	case "pulse":
+		// THE PULSE'S PRIMARY CHANNEL (ADR 0093 D1/D3, ranger-base-cgr1h).
+		// The coordinator arms this as a background command and its runtime
+		// re-invokes the session when the command exits, so a delivery is an
+		// exit and not a keystroke — nothing is written to the pane's input,
+		// which is what ends the splice class by construction.
+		//
+		// The verb takes no session, no persona and no backend: it reads one
+		// text file under state/ and holds one lock. That is why `hb` does
+		// not appear in this arm, and pulsewaitpane_qa_test.go is the census
+		// that keeps it that way.
+		args = need(args, 1, "posse pulse wait [--after <seq>]")
+		switch args[0] {
+		case "wait":
+			after := 0
+			rest := args[1:]
+			for i := 0; i < len(rest); i++ {
+				switch rest[i] {
+				case "--after":
+					// validCount, not a dropped strconv error: the five
+					// flags rangerhq-ytkl found all read bad input as 0, and
+					// 0 here is the deliberate cold start — "give me
+					// whatever the feed is keeping" — so a typo'd cursor
+					// that silently became 0 would replay the backlog and
+					// look like a delivery.
+					if i+1 >= len(rest) || !validCount(rest[i+1]) {
+						die(posse.Die("posse pulse wait --after <seq>   (a non-negative sequence number; omit it for whatever the feed keeps)"))
+					}
+					after, _ = strconv.Atoi(rest[i+1])
+					i++
+				default:
+					die(posse.Die("posse pulse wait: unknown argument %q", rest[i]))
+				}
+			}
+			// SIGINT/SIGTERM end the wait cleanly — the runtime takes its
+			// background commands down with the session, and that is not a
+			// failure of the waiter's.
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			err := posse.PulseWait(ctx, a, posse.PulseWaitOptions{After: after}, out)
+			stop()
+			if err != nil {
+				die(err)
+			}
+		default:
+			die(posse.Die("posse pulse wait [--after <seq>]"))
+		}
+
 	case "cockpit":
 		if err := runCockpit(a, hb, out); err != nil {
 			die(err)
@@ -3541,6 +3588,34 @@ governance:
                                  back ok, or that names no check the run
                                  knows, is itself a G10 row: a suppression
                                  nobody retires is a check going dark
+  posse pulse wait               ADR 0093 D1 — the pulse's PRIMARY channel: block
+             [--after <seq>]     until state/pulse.feed holds an entry past <seq>,
+                                 print those entries, end with the line to come
+                                 back with (next: posse pulse wait --after <last>)
+                                 and exit 0. The coordinator arms it as a
+                                 background command and its runtime re-invokes the
+                                 session when the command exits, so a delivery is
+                                 an EXIT and not a keystroke — nothing is typed
+                                 into the pane, which is what ends the splice
+                                 class rather than making it unlikely. The cursor
+                                 lives here on the command line, so the waiter
+                                 holds no state and a late re-arm with an old
+                                 <seq> gets the backlog instead of losing it;
+                                 omit --after for whatever the feed is keeping.
+                                 It holds flock(state/pulse.wait.lock) for its
+                                 whole life with its pid and start time inside
+                                 (D3) — that held lock is what the watch reads to
+                                 know a listener exists, so a SECOND waiter is
+                                 refused and a waiter that cannot take the lock
+                                 refuses itself rather than listening invisibly.
+                                 A <seq> the feed can no longer account for (fallen
+                                 off the 500-line cap, or a feed that restarted
+                                 under it) prints 'gap' first and then everything
+                                 kept. With nothing to say for one pulse_renag: it
+                                 prints 'still:' and exits anyway — a bounded life
+                                 is what makes a WEDGED waiter, which holds the
+                                 lock and silences the typed path, tellable from a
+                                 healthy one on a quiet shop
   posse pause "<why>"            stop dispatching until told otherwise. Writes
                                  state/pause.yaml (by:, at:, why: — the why is
                                  mandatory and is what every declining pass
