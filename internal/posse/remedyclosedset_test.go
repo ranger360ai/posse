@@ -165,24 +165,32 @@ same residual a refused staged file leaves.`,
 		},
 		{
 			"VulnPrivateWayThrough (check 4, the content and path arms)",
-			"TestVulnPrivateHitsAcceptsEveryDecorationTheRemedyPromises (vulnprivate_test.go)",
+			"TestVulnPrivateHitsAcceptsEveryDecorationTheRemedyPromises and\n\t\t\t\tTestRunGatesVulnPrivateScanExemptsTheCommittingTreesOwnBead (vulnprivate_test.go)",
 			VulnPrivateWayThrough,
 			`the way through: write the bare id alone — whitespace, a list bullet or
 numbering, backticks, bold markers, brackets, quotes and punctuation are all
 fine; a LETTER is not, because a word beside the id is the description the
 rule refuses. The detail belongs on the bead, where the audience is already
-the right one.`,
+the right one. One id is never flagged here: the bead this tree's branch is
+recorded for, whose fix is landing in this commit. So a flagged id names
+ANOTHER hole — or this tree carries no such record, which a session worktree
+always has and a shared checkout never does: write the fragment from your
+worktree.`,
 		},
 		{
 			"VulnPrivateMessageWayThrough (check 4, the message arm)",
-			"TestVulnPrivateMessageRemedyPromisesOnlyWhatTheRuleAllows (vulnprivate_test.go)",
+			"TestVulnPrivateMessageRemedyPromisesOnlyWhatTheRuleAllows and\n\t\t\t\tTestRunGatesVulnPrivateScanExemptsTheCommittingTreesOwnBead (vulnprivate_test.go)",
 			VulnPrivateMessageWayThrough,
 			`the way through: rewrite the commit message so the open ` + "`vuln-private`" + ` id
 stands alone — punctuation and decoration are fine, a LETTER beside the id
 is not, so a description, path, mechanism or reproduction is out. Nothing
 was committed: HEAD is unchanged and your tree and index are exactly where
 you left them. The message you typed is still in .git/COMMIT_EDITMSG, a
-local file that never replicates and that your next commit overwrites.`,
+local file that never replicates and that your next commit overwrites. One
+id is never flagged here: the bead this tree's branch is recorded for, whose
+fix is landing in this commit. So a flagged id names ANOTHER hole — or this
+tree carries no such record, which a session worktree always has and a
+shared checkout never does.`,
 		},
 	} {
 		remedyIsClosed(t, c.name, c.rows, c.got, c.want)

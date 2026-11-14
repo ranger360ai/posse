@@ -34,7 +34,12 @@ ranger-base-sydnc) · amended 2026-11-12 (D2 gains check 4: an open
 `vuln-private` bead named with more than its id, over the same staged
 markdown set as check 2 and the same commit-message reader as check 3 —
 the mechanical wall for the operator ruling AGENTS.md "Landing the plane"
-already wrote as prose, ranger-base-ihp7y, from ranger-base-lcuec)*
+already wrote as prose, ranger-base-ihp7y, from ranger-base-lcuec) ·
+amended 2026-11-14 (D2 check 4: the scan drops ONE open id before it
+reads — the bead the committing tree's own branch is recorded for — which
+is AGENTS.md's own "may describe the hole its fix CLOSES", unrealizable
+under a live-status judge because a dispatched fix must commit BEFORE its
+bead closes; ranger-base-ed07e, from ranger-base-g8fmb)*
 
 ## Context
 
@@ -359,6 +364,55 @@ install and at every persona launch).
    can perform (rewriting the message or the staged file cannot fix a
    store the hook could not reach), which is exactly ADR 0068's lockout
    shape.
+
+   **One open id is dropped before the scan: the bead the committing
+   tree's own branch is recorded for.** *Added 2026-11-14
+   (ranger-base-ed07e, from ranger-base-g8fmb).* The rule's own first
+   clause — a message or fragment MAY describe the hole its fix CLOSES —
+   had no way to be true under this judge. The judge reads LIVE bead
+   status, and a dispatched fix cannot close its bead before it commits:
+   the close is what fast-forwards the session branch onto the repo's
+   branch, so closing first strands the work in a tree that is retired,
+   and a follow-up commit after the close is a commit nobody lands. For
+   the whole of the window in which a vuln-private fix is committable,
+   its own bead is open — so the wall read the fix's own subject line as
+   a disclosure of the hole it was closing. MEASURED 2026-11-14 on this
+   repo's `main`: SEVEN commits whose entire subject is a bare bead id
+   (ranger-base-76mcd, -g8fmb, -yaha3, -a544g, -wj93u, -k06gw, -heypq,
+   2026-11-13 16:48 through 2026-11-14 00:18), every one a vuln-private
+   bead's own fix, against zero in the 2,590 commits up to and including
+   check 4's own landing (`e5b3d160`), and three of those fixes' notes
+   fragments held back on their beads unlanded. That is this shop's
+   provenance rule (AGENTS.md: "599 of 608 commits on `main` name a bead,
+   and everything that asks 'why is this here' reads that") answered with
+   an id and nothing else.
+
+   **The signal is the branch RECORD, never a parse of a name.**
+   `branch.<branch>.posseBead` (`beadKey`, `worktree.go`) is written at
+   every launch into a session tree and says which bead that tree was
+   cut FOR — the same record `landClosedTrees` refuses to guess past,
+   and `unaccountedFor` already says why the session NAME is not an
+   answer: `SessionForBead` joins persona, repo and bead with `-` and
+   all three may contain one. A tree with no record gets no exemption,
+   which is the shared checkout's `main`: there the committer is one of
+   eleven personas and git cannot say which, so both remedy sentences
+   send them to their worktree rather than guess. A detached HEAD —
+   a container-tier seat, launched that way on purpose
+   (`PrepareSessionHead`, ranger-base-t4f1) — still has a record: the
+   branch comes from the linked worktree's own admin dir name, which IS
+   the session, and `SessionBranch` is the branch; the BEAD still comes
+   from the record, so a worktree made by hand gets nothing.
+
+   **The residual is stated, not closed**: a commit in a session tree
+   that describes its own bead's hole WITHOUT carrying the fix — a WIP
+   commit, or a session that lands a fragment and is then blocked —
+   publishes that description. No commit-time wall can tell a fix from a
+   WIP, and the one signal that could (the bead closing) is the signal
+   that is unavailable by construction, which is the whole reason this
+   exemption exists. What bounds it is that the exempted id is the
+   committing tree's OWN: the writer is the one person who both knows
+   the hole and is landing against it, and the "Not closed here" section
+   the rule was written over names OTHER beads, which are still flagged.
 
    **Class-only, like checks 0 and 2's configured-pattern arms**: the
    refusal names the flagged bead id — safe, since the id is already as

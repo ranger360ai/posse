@@ -43,6 +43,7 @@ package posse
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -76,7 +77,11 @@ const VulnPrivateWayThrough = "the way through: write the bare id alone — whit
 	"numbering, backticks, bold markers, brackets, quotes and punctuation are all " +
 	"fine; a LETTER is not, because a word beside the id is the description the " +
 	"rule refuses. The detail belongs on the bead, where the audience is already " +
-	"the right one."
+	"the right one. One id is never flagged here: the bead this tree's branch is " +
+	"recorded for, whose fix is landing in this commit. So a flagged id names " +
+	"ANOTHER hole — or this tree carries no such record, which a session worktree " +
+	"always has and a shared checkout never does: write the fragment from your " +
+	"worktree."
 
 // VulnPrivateMessageWayThrough mirrors IdentityMessageWayThrough's shape
 // (visibility.go): the text is not in a file the writer can edit, it is
@@ -88,7 +93,10 @@ const VulnPrivateMessageWayThrough = "the way through: rewrite the commit messag
 	"Nothing was committed: HEAD is unchanged and your tree " +
 	"and index are exactly where you left them. The message you typed is still " +
 	"in .git/COMMIT_EDITMSG, a local file that never replicates and that your " +
-	"next commit overwrites."
+	"next commit overwrites. One id is never flagged here: the bead this tree's " +
+	"branch is recorded for, whose fix is landing in this commit. So a flagged id " +
+	"names ANOTHER hole — or this tree carries no such record, which a session " +
+	"worktree always has and a shared checkout never does."
 
 // vulnPrivateBare reports whether what is left of a unit after every open
 // vuln-private id in it is removed still reads as "named by bead id and
@@ -396,6 +404,74 @@ func vulnPrivateHitLine(id string) string {
 	return "  " + id + ": a line here, or a line continuing it, carries more than the bare id — the text is withheld (AGENTS.md \"Landing the plane\")\n"
 }
 
+// vulnPrivateOwnBead answers which bead the COMMITTING TREE was cut for, so
+// check 4 can leave that one id alone. "" is "this tree answers for no bead",
+// and it is the only honest answer for a tree with no record — never a guess.
+//
+// WHY THERE HAS TO BE AN EXEMPTION AT ALL (ranger-base-ed07e). AGENTS.md
+// "Landing the plane" says a public commit message or notes fragment MAY
+// describe the hole its fix CLOSES; only a residual still OPEN is named by
+// bead id and nothing else. This check judges by LIVE bead status, and a
+// dispatched fix cannot close its bead before it commits — the close is what
+// fast-forwards the branch onto the repo's branch, so closing first strands
+// the work in a tree that is retired. For the whole of the window in which a
+// vuln-private fix is committable, its own bead is open, and the wall read
+// the fix's own subject line as a disclosure of the hole it was closing.
+//
+// MEASURED 2026-11-14 on this repo's main: SEVEN commits whose entire
+// subject is a bare bead id, 2026-11-13 16:48 through 2026-11-14 00:18 —
+// ranger-base-76mcd, -g8fmb, -yaha3, -a544g, -wj93u, -k06gw, -heypq, every
+// one of them a vuln-private bead's own fix, every one of them with no
+// subject, no body and no fragment. Zero in the 2,590 commits up to and
+// including check 4's own landing. That is AGENTS.md's provenance rule ("599 of 608
+// commits on main name a bead, and everything that asks 'why is this here'
+// reads that") answered with an id and nothing else, and three of those
+// fixes' notes fragments held back on their beads, unlanded
+// (ranger-base-g8fmb, -yaha3, -wj93u — the three instances this bead was
+// filed over). The alternative decision, a documented landing order, has no
+// order to document: close-then-commit races the launcher's fast-forward,
+// and a follow-up commit after the close is a commit in a retired tree.
+//
+// THE SIGNAL IS THE BRANCH RECORD AND NEVER A PARSE OF A NAME.
+// `branch.<branch>.posseBead` (beadKey) is written at every launch into a
+// session tree and says which bead that tree was cut FOR — the same record
+// landClosedTrees refuses to guess past, and `unaccountedFor` says why a
+// parse of the session NAME is not an answer: SessionForBead joins persona,
+// repo and bead with '-' and all three may contain one. A tree with no
+// record gets no exemption, which is the shared checkout's `main`: there the
+// committer is one of eleven personas and git cannot say which, so the
+// remedy sentences send them to their worktree instead of guessing.
+//
+// A DETACHED HEAD STILL HAS A BRANCH RECORD. A container-tier seat is
+// launched on a detached HEAD on purpose, because a ref-less commit is what
+// buys the `:ro` common dir (PrepareSessionHead, ranger-base-t4f1), so
+// `symbolic-ref` answers nothing there. The branch its work belongs to is
+// the one `spliceDetachedWork` puts it back on, and that branch is derivable
+// from the linked worktree's own admin dir name, which IS the session
+// (SessionBranch: "the branch is derivable from the name alone — which is
+// what lets a kill or a merge find the branch with nothing but the meta").
+// The derivation names the BRANCH only; the bead still comes from the
+// record, so a worktree someone made by hand gets nothing.
+//
+// THE RESIDUAL, stated rather than closed: a commit in a session tree that
+// describes its own bead's hole WITHOUT carrying the fix — a WIP commit, or
+// a session that lands a fragment and is then blocked — publishes that
+// description. No commit-time wall can tell a fix from a WIP, and the one
+// signal that could (the bead closing) is the signal that is unavailable by
+// construction, which is the whole of why this exemption exists. What bounds
+// it is that the exempted id is the committing tree's OWN: the writer is the
+// one person who both knows the hole and is landing against it.
+func vulnPrivateOwnBead(dir string) string {
+	if branch, err := git(dir, "symbolic-ref", "--short", "HEAD"); err == nil && branch != "" {
+		return beadOf(dir, branch)
+	}
+	gitDir, err := git(dir, "rev-parse", "--git-dir")
+	if err != nil || filepath.Base(filepath.Dir(gitDir)) != "worktrees" {
+		return ""
+	}
+	return beadOf(dir, SessionBranch(filepath.Base(gitDir)))
+}
+
 // RunGatesVulnPrivateScan is check 4's judge: stdin is the text a
 // commit-guard arm already computed (the staged markdown additions, or the
 // cleaned commit message — gates.go's $posse_added either way), dir is the
@@ -410,6 +486,11 @@ func vulnPrivateHitLine(id string) string {
 // the exact "still open" set this check needs, and not what a bare
 // `bd list --status open` would answer (beads.go: in_progress, blocked and
 // deferred are open questions too).
+//
+// ONE OPEN ID IS DROPPED BEFORE THE SCAN: the bead `dir`'s own branch is
+// recorded for (vulnPrivateOwnBead). AGENTS.md already allows a fix to
+// describe the hole it CLOSES, and this is the only place that permission
+// can be realized — the fix must commit while its bead is still open.
 func RunGatesVulnPrivateScan(bd Bd, dir string, stdin io.Reader, stdout io.Writer) (hit bool) {
 	content, err := io.ReadAll(stdin)
 	if err != nil || len(content) == 0 {
@@ -422,9 +503,20 @@ func RunGatesVulnPrivateScan(bd Bd, dir string, stdin io.Reader, stdout io.Write
 	if err != nil || len(issues) == 0 {
 		return false
 	}
-	ids := make([]string, len(issues))
-	for i, is := range issues {
-		ids[i] = is.ID
+	// Asked only once there is something to exempt FROM, so a repo with no
+	// open vuln-private bead pays no git call at all — the same reason the
+	// bd query sits behind Available() rather than in front of it.
+	own := vulnPrivateOwnBead(dir)
+	ids := make([]string, 0, len(issues))
+	for _, is := range issues {
+		// EqualFold because vulnPrivateHits is case-insensitive and this
+		// has no business being stricter than the thing it feeds: the
+		// record is bd's own id as posse wrote it, but a committer who
+		// shifted the id in their message is still naming their own bead.
+		if own != "" && strings.EqualFold(is.ID, own) {
+			continue
+		}
+		ids = append(ids, is.ID)
 	}
 	flagged := vulnPrivateHits(string(content), ids)
 	for _, id := range flagged {

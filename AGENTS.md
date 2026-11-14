@@ -156,6 +156,17 @@ stall that day, and every one of them a typing habit.
   the next fix's section names the one after it. This is ADR 0024 D1's
   "when in doubt, instance" at the one place its genre arm already reads
   public: the fix is public work, the unfixed hole is not.
+  **YOUR OWN bead is exempt, and in your worktree the wall knows it**
+  (ranger-base-ed07e): the commit-time check drops the one id your branch is
+  recorded for — `branch.<branch>.posseBead`, written at launch — because a
+  dispatched fix must commit BEFORE its bead closes, the close being what
+  fast-forwards the branch, so under a live-status judge a fix could never
+  describe the hole it was closing. Write the subject line and the fragment
+  you would write for any other bead. A SHARED checkout carries no such
+  record and gets no exemption: write a vuln-private fix's own fragment from
+  your worktree. MEASURED 2026-11-14: before this landed, seven commits on
+  `main` whose entire message was a bare bead id, and three fixes' fragments
+  held on their beads unlanded.
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.

@@ -428,3 +428,147 @@ func TestRunGatesVulnPrivateScanEmptyStdinIsClean(t *testing.T) {
 		t.Errorf("empty input must never hit, got: %q", out.String())
 	}
 }
+
+// ─── the committing tree's OWN bead (ranger-base-ed07e) ─────────────────────
+
+// vpOwnTree is a session worktree of a one-commit repo, on a session branch
+// whose `posseBead` record names bead, with the fake bd fixture staged in
+// the WORKTREE — which is the dir the hook's cwd is and the dir the scan is
+// handed. A real repo is the whole point: the record lives in git config and
+// the branch is read with git's own plumbing, so a `mkdir .git` stand-in
+// would measure nothing.
+func vpOwnTree(t *testing.T, bead, issues string) string {
+	t.Helper()
+	repo := wtRepo(t)
+	session := "ranger-posse-" + bead
+	branch := SessionBranch(session)
+	wt := filepath.Join(gitTempDir(t), session)
+	mustGit(t, repo, "worktree", "add", "-q", "-b", branch, wt)
+	if bead != "" {
+		if err := recordBead(repo, branch, bead); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFakeOpenLabeled(t, wt, issues)
+	return wt
+}
+
+// TestRunGatesVulnPrivateScanExemptsTheCommittingTreesOwnBead is the whole
+// of ranger-base-ed07e: a dispatched fix must commit BEFORE its bead closes,
+// because the close is what fast-forwards the branch — so for the only
+// window in which the fix is committable its own bead is open, and the wall
+// read the fix's own subject line as a disclosure. AGENTS.md "Landing the
+// plane" already allows a commit message or notes fragment to describe the
+// hole its fix CLOSES; this is where that permission is realized.
+func TestRunGatesVulnPrivateScanExemptsTheCommittingTreesOwnBead(t *testing.T) {
+	t.Parallel()
+	dir := vpOwnTree(t, "ranger-base-l751c",
+		`[{"id":"ranger-base-l751c","status":"in_progress","labels":["code","security","vuln-private"]}]`)
+	for _, text := range []string{
+		// The house commit subject, which is what the seven bare-id
+		// commits of 2026-11-13/14 had to give up.
+		"ranger-base-l751c: the seatbelt render denies the config dir\n",
+		// And the fix's own notes fragment, held back on three beads.
+		"## Not closed here\n\n- ranger-base-l751c: the mechanism, in a bullet\n",
+	} {
+		var out strings.Builder
+		if RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader(text), &out) {
+			t.Errorf("the committing tree's own bead must not be flagged over %q, got: %q", text, out.String())
+		}
+	}
+}
+
+// TestRunGatesVulnPrivateScanStillFlagsAnotherOpenResidual is the exemption's
+// control, and the only reason it is one id and not a waiver: the "Not closed
+// here" section AGENTS.md prescribes names OTHER beads, and the hold-back
+// incident that wrote the rule was a fix describing the NEXT hole.
+func TestRunGatesVulnPrivateScanStillFlagsAnotherOpenResidual(t *testing.T) {
+	t.Parallel()
+	dir := vpOwnTree(t, "ranger-base-l751c", `[
+		{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]},
+		{"id":"ranger-base-fixt2","status":"open","labels":["vuln-private"]}]`)
+	var out strings.Builder
+	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader(
+		"ranger-base-l751c: the fix this commit carries\n\nNot closed here:\n- ranger-base-fixt2 the residual's mechanism\n"), &out)
+	if !hit {
+		t.Fatalf("another open residual named with text must still be flagged; output: %q", out.String())
+	}
+	if strings.Contains(out.String(), "ranger-base-l751c") {
+		t.Errorf("the exempted own bead must not appear in the refusal: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "ranger-base-fixt2") {
+		t.Errorf("the refusal must name the id it flagged: %q", out.String())
+	}
+}
+
+// TestRunGatesVulnPrivateScanExemptsNothingWithNoBranchRecord: a tree that
+// answers for no bead gets no exemption. That is the shared checkout's
+// `main` — where the committer is one of eleven personas and git cannot say
+// which — and every tree made by hand. "" is never read as a bead.
+func TestRunGatesVulnPrivateScanExemptsNothingWithNoBranchRecord(t *testing.T) {
+	t.Parallel()
+	dir := vpOwnTree(t, "", `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+	var out strings.Builder
+	if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader("ranger-base-l751c: a description\n"), &out) {
+		t.Errorf("no branch record is no exemption, got no hit: %q", out.String())
+	}
+	// And the main checkout itself, on `main`, with the same bead open.
+	repo := wtRepo(t)
+	writeFakeOpenLabeled(t, repo, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+	out.Reset()
+	if !RunGatesVulnPrivateScan(qaFakeBd(t), repo, strings.NewReader("ranger-base-l751c: a description\n"), &out) {
+		t.Errorf("the shared checkout's main carries no record and gets no exemption, got no hit: %q", out.String())
+	}
+}
+
+// TestRunGatesVulnPrivateScanExemptsTheOwnBeadOnADetachedHead: a
+// container-tier seat is launched on a detached HEAD on purpose
+// (PrepareSessionHead, ranger-base-t4f1), so `symbolic-ref` answers nothing
+// and the branch comes from the linked worktree's own admin dir name — which
+// IS the session, and SessionBranch is the branch. The BEAD still comes from
+// the record, so this measures the fallback and not a parse of the name.
+func TestRunGatesVulnPrivateScanExemptsTheOwnBeadOnADetachedHead(t *testing.T) {
+	t.Parallel()
+	dir := vpOwnTree(t, "ranger-base-l751c",
+		`[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+	mustGit(t, dir, "checkout", "-q", "--detach")
+	if _, err := git(dir, "symbolic-ref", "--short", "HEAD"); err == nil {
+		t.Fatal("this tree was supposed to be detached; the fallback is not under test")
+	}
+	var out strings.Builder
+	if RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader("ranger-base-l751c: the fix\n"), &out) {
+		t.Errorf("a detached session tree's own bead must still be exempt, got: %q", out.String())
+	}
+}
+
+// TestVulnPrivateOwnBeadIsNotAParseOfTheWorktreeName is the exemption's
+// narrowest pin: the admin dir name names the BRANCH, and nothing more. A
+// worktree someone made by hand, on a branch with no `posseBead` record,
+// answers "" even though its name ends in something id-shaped — because
+// SessionForBead joins persona, repo and bead with '-' and all three may
+// contain one, which is why unaccountedFor refuses the same parse.
+func TestVulnPrivateOwnBeadIsNotAParseOfTheWorktreeName(t *testing.T) {
+	t.Parallel()
+	repo := wtRepo(t)
+	wt := filepath.Join(gitTempDir(t), "ranger-posse-ranger-base-l751c")
+	mustGit(t, repo, "worktree", "add", "-q", "-b", "posse/ranger-posse-ranger-base-l751c", wt)
+	if got := vulnPrivateOwnBead(wt); got != "" {
+		t.Errorf("vulnPrivateOwnBead over an unrecorded branch = %q, want \"\" — the name is not the record", got)
+	}
+	// DETACHED, which is the only path the admin-dir name is read on at
+	// all: attached, `symbolic-ref` answers and the name is never consulted,
+	// so a pin that stops here leaves the fallback's own parse unmeasured.
+	// MEASURED: a mutant that falls back to `strings.Split(name, "-")[2:]`
+	// survives the attached half of this test and reds on this line.
+	mustGit(t, wt, "checkout", "-q", "--detach")
+	if got := vulnPrivateOwnBead(wt); got != "" {
+		t.Errorf("vulnPrivateOwnBead over an unrecorded DETACHED worktree = %q, want \"\" — the admin dir name names the BRANCH, and the bead comes from the record or from nowhere", got)
+	}
+	if got := vulnPrivateOwnBead(repo); got != "" {
+		t.Errorf("vulnPrivateOwnBead over the main checkout = %q, want \"\"", got)
+	}
+	// Not a repo at all, which is every existing end-to-end test's dir.
+	if got := vulnPrivateOwnBead(t.TempDir()); got != "" {
+		t.Errorf("vulnPrivateOwnBead outside a repo = %q, want \"\"", got)
+	}
+}
