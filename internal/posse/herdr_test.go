@@ -4197,6 +4197,43 @@ func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 // test passed in.
 func dispatcherOut(d *Dispatcher) string { return d.baseOut().(*strings.Builder).String() }
 
+// dispatcherOutLive is dispatcherOut for a read taken while a writer
+// goroutine is still LIVE, and the lock is the whole of the difference: it
+// takes outMu, which every write to Out already holds (quietf, printf and the
+// rest — dispatch.go), so the read cannot land inside an append.
+//
+// WHY THERE ARE TWO. A strings.Builder is not safe for concurrent use and the
+// helper above takes no lock, so a read racing an append observes a torn
+// slice header and the Builder panics —
+//
+//	panic: runtime error: unsafe.String: ptr is nil and len is not zero
+//
+// which ends the whole ARM's binary rather than one test, so every other test
+// in that run reports nothing. MEASURED 2026-11-14 (ranger-base-np54s): one
+// occurrence in a full `make test`'s arm 3, and deterministic on the first
+// iteration under -race. Run alone and unloaded the same test passes in
+// 0.034s, which is why the class is worth a named helper instead of a
+// re-run.
+//
+// WHY dispatcherOut STAYS THE DEFAULT. Nearly every one of its call sites
+// reads after the writer has STOPPED — the pass returned, or the loop was
+// cancelled and its goroutine joined — and those reads are already ordered by
+// that join. Widening the common helper would put a lock acquisition on all
+// of them to describe a hazard they do not have, and would leave the next
+// reader unable to tell the two cases apart. Use this one where there is a
+// goroutine you have not joined yet; a census of polling reads
+// (ranger-base-np54s, grep over internal/posse/*_test.go) found exactly one,
+// in suspend_qa_test.go.
+//
+// It guards the Builder and not the Out FIELD. Watch's swap of Out and rawOut
+// (teeWatchLog, watch.go) takes no lock, and needs none: it runs in Watch's
+// preamble, before any writer goroutine exists.
+func dispatcherOutLive(d *Dispatcher) string {
+	d.outMu.Lock()
+	defer d.outMu.Unlock()
+	return d.baseOut().(*strings.Builder).String()
+}
+
 func writePersona(t *testing.T, a *App, name, labels string) {
 	t.Helper()
 	os.MkdirAll(a.AgentsDir, 0o755)

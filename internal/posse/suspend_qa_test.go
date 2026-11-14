@@ -595,10 +595,17 @@ func TestQASuspendWitnessRunsWithNoBudgetAndIsSeededByWatch(t *testing.T) {
 		}()
 		c.advance(6*time.Hour, time.Second)
 		deadline := time.After(5 * time.Second)
-		for !strings.Contains(dispatcherOut(d), "SUSPENDED") {
+		// dispatcherOutLive, not dispatcherOut: the loop above is still
+		// running and writes the line this polls for, so the read has to hold
+		// the outMu its write holds. The plain helper locks nothing, and a
+		// read that lands inside the Builder's append panics and takes the
+		// whole arm's binary with it (ranger-base-np54s; herdr_test.go has
+		// the measurement). The assertion is unchanged — this still waits for
+		// the witness to say it, rather than sleeping and assuming.
+		for !strings.Contains(dispatcherOutLive(d), "SUSPENDED") {
 			select {
 			case <-deadline:
-				t.Fatalf("a watchdog loop with neither budget set never read the clocks:\n%s", dispatcherOut(d))
+				t.Fatalf("a watchdog loop with neither budget set never read the clocks:\n%s", dispatcherOutLive(d))
 			default:
 				time.Sleep(time.Millisecond)
 			}
