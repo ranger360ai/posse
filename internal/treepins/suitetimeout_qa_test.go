@@ -279,11 +279,12 @@ func isComment(line string) bool {
 //
 // This is the only cross-line state the reader keeps, and it is armed by one
 // recognisable shape: a quote opened immediately after the `-c` of a command
-// that is NOT a shell. scripts/posse-wall-check:246 is it —
+// that is NOT a shell. The `read_verdict` function in
+// scripts/posse-wall-check is it —
 //
-//	printf '%s\n' "$pins_json" | python3 -I -c '
+//	printf '%s\n' "$1" | python3 -I -c '
 //
-// and the 130 lines under it are python, not shell. One of them reads
+// and the 128 lines under it are python, not shell. One of them reads
 //
 //	not go test framing. One rule for a failure line and for a skip line,
 //
@@ -334,7 +335,7 @@ func embeddedProgramQuote(line string) rune {
 
 // afterEmbeddedProgram returns what is left of a line after the quote that
 // closes an embedded program, and whether that quote was on it. The
-// remainder is shell again — `' "$go_rc" "$marker" "$pattern" || rc=$?` is
+// remainder is shell again — `' "$2" "$member_marker" "$member_pattern"` is
 // the live one — so it is handed back to be read rather than dropped.
 func afterEmbeddedProgram(line string, q rune) (string, bool) {
 	if i := strings.IndexRune(line, q); i >= 0 {

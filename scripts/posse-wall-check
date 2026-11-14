@@ -2,8 +2,9 @@
 # posse-wall-check — ADR 0097 D3's body: did the wall's live pins MEASURE in
 # the tree at $PWD, and did every one of them pass?
 #
-#   scripts/posse-wall-check          judge $PWD's wall pins; 0 green, 1 red, 3 no answer
-#   scripts/posse-wall-check --plan   print the commands it would run, run none
+#   scripts/posse-wall-check              judge $PWD's wall pins; 0 green, 1 red, 3 no answer
+#   scripts/posse-wall-check --plan       print the commands it would run, run none
+#   scripts/posse-wall-check --self-test  drive the verdict parser over planted streams
 #
 # WHY THIS EXISTS. ADR 0096 D3 makes every live pin that nests a bwrap abstain
 # inside a wall that forbids nesting, and every seat is such a wall. The
@@ -55,6 +56,15 @@
 # Exit 2 is not in that table and is not reachable from the runner: it is what
 # a caller gets for breaking D1's no-argument contract, as it is at the
 # sibling check.
+#
+# AND `--self-test` IS WHERE THAT TABLE IS READ (ranger-base-zpx1k). Ten
+# planted `go test -json` streams, one per shape the run can take, each
+# asserting the exit AND a line of the message — because the defect the arm
+# was written for was a message that CRASHED, not a verdict that was wrong,
+# and a status-only check cannot tell a crash from exit 1. `make
+# verify-wall-check` runs it in 0.23s and `make test` depends on it;
+# internal/treepins/wallcheckselftest_qa_test.go holds all three of those
+# open and shows the arms can still fail.
 #
 # MEMBERSHIP IS READ OFF THE MARKER AND NEVER OFF THE NAME (D3). A member is a
 # test whose output carries D4's line
@@ -131,11 +141,26 @@
 # `-timeout 15m` is the floor this repo holds every `go test` entry point to
 # (internal/treepins/suitetimeout_qa_test.go: internal/posse has been measured
 # at 623.2s, so the 10m default is a coin flip whose red names no test). The
-# pin that would hold THIS file to it globs `scripts/*.sh` and cannot see an
-# extensionless script — ranger-base-enhtx — so until that is widened the flag
-# is kept by hand. It is a backstop either way, not the bound: what bounds a
-# hang is the runner's `landedCheckLimit`, ten minutes (D5), which fires
-# first, and the measured venue run is about 100s.
+# pin that holds THIS file to it globbed `scripts/*.sh` and could see no
+# extensionless script until ranger-base-enhtx widened its corpus; it reads
+# this file now, and this file is the only live `go test` that widening
+# found. It is a backstop either way, not the bound: what bounds a hang is
+# the runner's `landedCheckLimit`, ten minutes (D5), which fires first, and
+# the measured venue run is about 100s.
+#
+# WHY THE PARSER IS NOT A FILE OF ITS OWN (ranger-base-zpx1k). The verdict is
+# read by python, and the obvious home for it is a `scripts/wall-check-parse.py`
+# beside this one, which `make verify-python-syntax` would compile and a Go pin
+# could drive. It cannot live there, and D1 above is why: a sibling file can be
+# found only out of `$BASH_SOURCE`/`$0`, which that contract forbids outright
+# because it names a DIFFERENT tree, or through a relative path, which under
+# that same contract names the tree being JUDGED. Take the second and the shell
+# comes from this check's last green tree while the parser comes from the
+# landing — a landing weakening the half that decides its own verdict, which is
+# the one thing D1's paragraph exists to shut. So the parser stays here, inside
+# `read_verdict`, and `--self-test` drives it over planted `go test -json`
+# streams instead. docs/notes.d/ranger-base-zpx1k.md has the argument in full
+# and what the door cost.
 #
 # WHAT IT COSTS: docs/notes.d/ranger-base-lagas.md, which is the ONE place the
 # readings are said. Quoting them here as well would be two places to keep in
@@ -144,13 +169,16 @@
 set -euo pipefail
 
 plan_only=0
+self_test=0
 case "${1:-}" in
   '') ;;
   --plan) plan_only=1; shift ;;
+  --self-test) self_test=1; shift ;;
   -h | --help)
     printf '%s\n' \
-      'usage: posse-wall-check            judge $PWD; 0 green, 1 red, 3 no answer' \
-      '       posse-wall-check --plan     print the commands it would run, run none' \
+      'usage: posse-wall-check              judge $PWD; 0 green, 1 red, 3 no answer' \
+      '       posse-wall-check --plan       print the commands it would run, run none' \
+      '       posse-wall-check --self-test  drive the verdict parser over planted streams' \
       '' \
       "ADR 0097 D3. cwd is the tree to judge; it runs that tree's wall pins in this process's venue."
     exit 0
@@ -177,73 +205,38 @@ member_pattern='^Test(QA)?Live(Bwrap|Wall)'
 member_marker='wall venue: measuring (ADR 0097)'
 venue_env=POSSE_WALL_VENUE
 
-# Both children as arrays, so `--plan` prints the argv the run would exec
-# rather than a second spelling of it. The baseline is D17's base mount and
-# nothing else, which is `bwrapApplyProbeArgv` in internal/posse: a process
-# that cannot make THAT namespace cannot run any arm of any live pin here,
-# whatever else a pin's own argv asks for.
-baseline_argv=(bwrap --ro-bind / / /bin/true)
-pins_argv=(go test -count=1 -json -timeout 15m -run "$member_pattern" ./internal/posse)
-
-say "judging $PWD"
-if [ "$plan_only" = 1 ]; then
-  say "step 1: ${baseline_argv[*]}"
-  say "step 2: ${pins_argv[*]}"
-  say "plan only: 2 steps, nothing run"
-  exit 0
-fi
-
-# The cwd guard, and it answers 3 rather than 1 on purpose: a runner pointed
-# at a directory that is not this tree has measured nothing, and D5's
-# watchdog is the reader for that. A red here would file a wall regression
-# against whoever landed last.
-if [ ! -d internal/posse ]; then
-  say "no internal/posse here — cwd must be the root of the tree to judge (ADR 0088 D1)"
-  printf 'wall check: no answer — %s is not a tree this check can judge\n' "$PWD" >&2
-  exit 3
-fi
-
-say "step 1: ${baseline_argv[*]}"
-if ! command -v bwrap > /dev/null 2>&1; then
-  say "no bwrap on PATH, so the baseline cannot even be asked (ADR 0097 D5 counts a host with no bwrap as unanswered)"
-  printf 'venue cannot nest: bwrap: not found on PATH\n' >&2
-  exit 3
-fi
-baseline_rc=0
-baseline_out=$("${baseline_argv[@]}" 2>&1) || baseline_rc=$?
-if [ "$baseline_rc" != 0 ]; then
-  say "the baseline bwrap did not start, so this process is not ADR 0097 D1's venue and nothing below it could measure (ADR 0086 D5)"
-  printf 'venue cannot nest: %s\n' "${baseline_out:-bwrap exited $baseline_rc with no output}" >&2
-  exit 3
-fi
-say "baseline: a bwrap starts from here, so a refusal below is the tree's doing"
-if [ "${!venue_env:-}" != 1 ]; then
-  say "note: $venue_env is not 1 in this process, so the members will ABSTAIN rather than fail on a refusal (ADR 0097 D4). The runner sets it; a hand run outside the venue gets exit 3."
-fi
-
-# Asked BEFORE the 95s run and not after it, because without the parser there
-# is no verdict to be had: a missing python3 would otherwise cost a venue run
-# and then exit 127, which is off D3's table entirely and is no answer at all
-# (`verify-bd-argv-gate.sh` says the same sentence one directory over).
-if ! command -v python3 > /dev/null 2>&1; then
-  say "no python3 on PATH, and the verdict is read by it — nothing can be measured here"
-  printf 'wall check: no answer — no python3 on PATH to read the run\n' >&2
-  exit 3
-fi
-
-say "step 2: ${pins_argv[*]}"
-go_rc=0
-pins_json=$("${pins_argv[@]}" 2>&1) || go_rc=$?
-say "go test exited $go_rc in ${SECONDS}s; reading membership off the marker"
-
-# The verdict. Python because this is a JSON stream with per-test output
-# accumulation in it, which is the one shape awk makes unreadable, and
+# THE VERDICT, and it is python because this is a JSON stream with per-test
+# output accumulation in it, which is the one shape awk makes unreadable, and
 # `python3 -I` as the sibling scripts spell it: no site packages, no
 # PYTHONPATH, nothing from the landed tree on the import path. The three
-# literals and `go test`'s status arrive as argv, so there is still exactly
-# one spelling of each.
-rc=0
-printf '%s\n' "$pins_json" | python3 -I -c '
+# literals above and `go test`'s status arrive as argv, so there is still
+# exactly one spelling of each.
+#
+# IT IS A FUNCTION, which is the whole of ranger-base-zpx1k: `--self-test`
+# below drives THIS parser over planted `go test -json` streams, with no `go
+# test`, no bwrap and no venue, so the three exits are read by something. A
+# function around the same `python3 -I -c` invocation, and not a
+# `scripts/wall-check-parse.py` beside this file, for the reason the header's
+# "WHY THE PARSER IS NOT A FILE OF ITS OWN" paragraph gives: a sibling file
+# could only be found through a relative path, and under ADR 0088 D1 a
+# relative path names the tree being JUDGED.
+#
+# AND NOT A SHELL VARIABLE HOLDING THE SOURCE EITHER, which was the first
+# draft. `TestQANoEntryPointRunsGoTestOnTheDefaultTimeout` reads every shell
+# file under scripts/ for a `go test` on the default timeout, and it suspends
+# that reading over an embedded program by arming on ONE shape: a quote opened
+# right after the `-c` of a command that is not a shell (ranger-base-enhtx,
+# internal/treepins/suitetimeout_qa_test.go). A `parser_py='` opener is not
+# that shape, so the docstring line below that reads `not go test framing`
+# came back as an entry point running on the 10m default. Keeping the `-c`
+# spelling keeps that reader armed.
+#
+# read_verdict <go test -json stream> <go test exit status>
+#
+# The parser's ONE call site, so the run and the self-test cannot drift into
+# driving different things. Its exit status is this check's exit status.
+read_verdict() {
+  printf '%s\n' "$1" | python3 -I -c '
 import json
 import sys
 
@@ -372,5 +365,322 @@ if go_rc != 0:
     for name in others:
         out("  note: FAIL %s: %s" % (name, evidence(name)))
 out("wall check: green, %d pins measured" % len(members))
-' "$go_rc" "$member_marker" "$member_pattern" || rc=$?
+' "$2" "$member_marker" "$member_pattern"
+}
+
+# ---------------------------------------------------------------------------
+# `--self-test` (ranger-base-zpx1k): ADR 0097 D3's three exits, driven over
+# planted `go test -json` streams.
+#
+# WHY IT EXISTS. The mapping from a run to the three exits is the whole value
+# of this file over `go test; echo $?`, and until this arm nothing in the
+# suite read it: `make verify-python-syntax` censuses `.py` FILES, so a parser
+# reached through `python3 -I -c` inside a shell script is outside its corpus —
+# and a syntax check would not have caught what actually went wrong anyway.
+#
+# WHAT ACTUALLY WENT WRONG, which is why every arm asserts a LINE and not
+# just a status. The first draft of the abstention arm carried a format string
+# with three conversions and two arguments — a `%s` typed where `/var/tmp` was
+# meant. It raised `TypeError` and this script exited 1: a RED where the
+# contract says 3, over a tree whose pins had merely gone dark, which D5's
+# ratchet would have filed as `wall pins red at <tree>` against whoever landed
+# last. So the one arm D5's "an abstention is never a pass" exists for was the
+# one arm that could not answer. Reading the code did not find it; running it
+# did. A status-only self-test would have caught it here and missed the same
+# typo in the member-FAIL arm, where a crash and the verdict share exit 1 —
+# hence a required line per arm, and a refusal of any traceback in all of
+# them.
+#
+# IT RUNS NO `go test`, STARTS NO BWRAP AND MAKES NO TEMP FILE. The parser is
+# a function of a stream, a status and the two literals, so the arms need none
+# of the venue the real run needs. That is what lets this be a `make test`
+# prerequisite (`make verify-wall-check`) rather than a thing somebody types.
+
+# `go test -json` as `go tool test2json` writes it: a per-test output event, a
+# per-test verdict event, and a package-level output event — which is where a
+# build error, a panic and the final `ok`/`FAIL` line land.
+st_out() { printf '{"Action":"output","Package":"posse/internal/posse","Test":"%s","Output":"%s\\n"}\n' "$1" "$2"; }
+st_act() { printf '{"Action":"%s","Package":"posse/internal/posse","Test":"%s","Elapsed":0.01}\n' "$1" "$2"; }
+st_pkg() { printf '{"Action":"output","Package":"posse/internal/posse","Output":"%s\\n"}\n' "$1"; }
+
+# A member is a test the nest gate let proceed, which is to say one whose
+# output carries D4's marker — and the marker comes from $member_marker above
+# and never from a second spelling of it, so a reworded contract reds these
+# arms at the same time as it reds the run.
+st_marker() { st_out "$1" "    wallvenue_test.go:142: $member_marker"; }
+
+st_fails=0
+st_arms=0
+
+# st_arm <label> <go test status> <want exit> <stream> [<line the verdict must carry>...]
+#
+# The verdict is decided with `case` and `[ ]` and nothing forked: a matcher
+# that cannot be exec'd under load would otherwise report the property false
+# when the apparatus is what failed, and this arm gates `make test` before a
+# single package runs (ranger-base-t07yx).
+st_arm() {
+  local label=$1 go_rc=$2 want=$3 stream=$4
+  shift 4
+  local got=0 out ok=1 need
+  st_arms=$((st_arms + 1))
+  out=$(read_verdict "$stream" "$go_rc" 2>&1) || got=$?
+  if [ "$got" != "$want" ]; then
+    printf 'FAIL  %s: the parser answered %s, and ADR 0097 D3 says %s\n' "$label" "$got" "$want"
+    ok=0
+  fi
+  for need in "$@"; do
+    case "$out" in
+      *"$need"*) ;;
+      *)
+        printf 'FAIL  %s: nothing in the verdict said: %s\n' "$label" "$need"
+        ok=0
+        ;;
+    esac
+  done
+  case "$out" in
+    *Traceback*)
+      printf 'FAIL  %s: the parser RAISED instead of answering, which is ranger-base-lagas exactly\n' "$label"
+      ok=0
+      ;;
+  esac
+  if [ "$ok" = 1 ]; then
+    printf 'ok    %s\n' "$label"
+  else
+    printf '%s\n' "$out"
+    st_fails=$((st_fails + 1))
+  fi
+}
+
+run_self_test() {
+  local green red abstain nomember nofilter build note noverdict subtest
+  local last_out last_line
+
+  # Exit 0. Two members, both passed, nothing else in the run.
+  green=$(
+    st_marker TestLiveWallVenueA
+    st_act pass TestLiveWallVenueA
+    st_marker TestLiveWallVenueB
+    st_act pass TestLiveWallVenueB
+  )
+  st_arm 'green: every member passed' 0 0 "$green" \
+    'wall check: green, 2 pins measured'
+
+  # Exit 1. A member FAILed, which is the wall regression this whole venue
+  # exists to find.
+  red=$(
+    st_marker TestLiveWallVenueA
+    st_act pass TestLiveWallVenueA
+    st_marker TestLiveWallVenueB
+    st_out TestLiveWallVenueB '    wallvenue_test.go:88: planted red: the nested bwrap was let through'
+    st_act fail TestLiveWallVenueB
+    st_pkg 'FAIL    posse/internal/posse     81.802s'
+  )
+  st_arm 'red: a member FAILed' 1 1 "$red" \
+    'wall pins RED: 1 of 2 member(s) FAILed' \
+    'FAIL TestLiveWallVenueB: wallvenue_test.go:88: planted red'
+
+  # Exit 3, and THE ARM THAT CRASHED IN DRAFT. A member that printed the
+  # marker and then skipped for its own reason is ADR 0097 D5's `/var/tmp`
+  # row: a fixture change unrelated to the wall took 18 pins dark while
+  # `go test` exited 0. An abstention is never a pass.
+  abstain=$(
+    st_marker TestLiveWallVenueA
+    st_act pass TestLiveWallVenueA
+    st_marker TestLiveWallVenueB
+    st_out TestLiveWallVenueB '    wallvenue_test.go:120: fixture root under /var/tmp is read-only here, so this pin cannot measure'
+    st_act skip TestLiveWallVenueB
+  )
+  st_arm 'abstention: a member SKIPped after the marker' 0 3 "$abstain" \
+    'wall pins NOT MEASURED: 1 of 2 member(s) abstained' \
+    '/var/tmp' \
+    'SKIP TestLiveWallVenueB: wallvenue_test.go:120: fixture root'
+
+  # Exit 3. Tests ran and none of them printed the marker, which is what a
+  # reworded handshake literal looks like from here: the filter still selects
+  # the two non-members, so the run is green by exit code and measured none of
+  # the pins D3 counts.
+  nomember=$(
+    st_out TestLiveWallWitnessHoldsUnderTheRenderedWall '    wallwitness_test.go:30: the availability probe answers through shipped code'
+    st_act pass TestLiveWallWitnessHoldsUnderTheRenderedWall
+    st_out TestLiveWallWitnessProbeDoesNotWriteTheLiveWall '    wallwitness_test.go:61: nothing was written'
+    st_act pass TestLiveWallWitnessProbeDoesNotWriteTheLiveWall
+  )
+  st_arm 'abstention: tests ran and none printed the marker' 0 3 "$nomember" \
+    'no member ran' \
+    'the 2 test(s) the filter' \
+    'PASS TestLiveWallWitnessHoldsUnderTheRenderedWall'
+
+  # Exit 3. A `-run` filter that selects nothing prints `ok` and exits 0 —
+  # the hole `seed-check` hit twice.
+  nofilter=$(
+    st_pkg 'testing: warning: no tests to run'
+    st_pkg 'PASS'
+    st_pkg 'ok      posse/internal/posse     0.015s'
+  )
+  st_arm 'abstention: the filter selected no test at all' 0 3 "$nofilter" \
+    'no member ran' \
+    'selected no test at all' \
+    'no tests to run'
+
+  # Exit 1. A tree that does not build is this check red, and the tail is the
+  # compiler's. Note the shape: no test event ever arrives, so membership is
+  # zero here too, and only `go test`'s STATUS separates this from the arm
+  # above.
+  build=$(
+    st_pkg '# posse/internal/posse [posse/internal/posse.test]'
+    st_pkg 'internal/posse/wallvenue_test.go:88:15: undefined: bwrapNestSkip'
+    st_pkg 'FAIL    posse/internal/posse [build failed]'
+  )
+  st_arm 'red: the tree did not build' 1 1 "$build" \
+    'go test exited 1 before any test ran' \
+    'undefined: bwrapNestSkip'
+
+  # Exit 0 with a `note:`. One of the two tests inside D3's filter that print
+  # no marker failed, every member passed, and `go test` exited nonzero. That
+  # is a red for `make test` and not for this check.
+  note=$(
+    st_marker TestLiveWallVenueA
+    st_act pass TestLiveWallVenueA
+    st_out TestLiveWallWitnessProbeDoesNotWriteTheLiveWall '    wallwitness_test.go:61: the probe wrote the live wall'
+    st_act fail TestLiveWallWitnessProbeDoesNotWriteTheLiveWall
+  )
+  st_arm 'green: a NON-member failed and every member passed' 1 0 "$note" \
+    'note: every member passed and go test still exited 1' \
+    'note: FAIL TestLiveWallWitnessProbeDoesNotWriteTheLiveWall' \
+    'wall check: green, 1 pins measured'
+
+  # Exit 3. A member that printed the marker and reported no verdict is a run
+  # that did not finish — a panic, or the deadline — both of which D5 counts
+  # as unanswered, and which from the JSON are indistinguishable.
+  noverdict=$(
+    st_marker TestLiveWallVenueA
+    st_act pass TestLiveWallVenueA
+    st_marker TestLiveWallVenueB
+    st_pkg 'panic: test timed out after 15m0s'
+    st_pkg 'running tests:'
+    st_pkg '  TestLiveWallVenueB (14m59s)'
+  )
+  st_arm 'abstention: a member printed the marker and reported no verdict' 2 3 "$noverdict" \
+    'wall pins NOT MEASURED: 1 of 2 member(s) abstained' \
+    'reported no verdict at all' \
+    'panic: test timed out after 15m0s' \
+    'NO VERDICT TestLiveWallVenueB'
+
+  # Exit 1. Membership and the verdict are both the TOP-LEVEL test, because
+  # that is the name the filter selects and the name `go test` reports under —
+  # so a marker and a failure that arrive from a subtest still name the pin.
+  subtest=$(
+    st_marker TestLiveBwrapGitRefs/refuses
+    st_out TestLiveBwrapGitRefs/refuses '    wallvenue_test.go:200: planted subtest red: the shared git state was readable'
+    st_act fail TestLiveBwrapGitRefs/refuses
+    st_act fail TestLiveBwrapGitRefs
+  )
+  st_arm 'red: the marker and the failure come from a subtest' 1 1 "$subtest" \
+    'wall pins RED: 1 of 1 member(s) FAILed' \
+    'FAIL TestLiveBwrapGitRefs: wallvenue_test.go:200: planted subtest red'
+
+  # And the LAST line, which ADR 0088 D1 makes load-bearing: the runner keeps
+  # the last few non-empty lines of combined output and flattens them into a
+  # bead somebody reads later. The `note:` arm is the one green shape with
+  # anything printed above the mandated sentence, so it is the one that can
+  # get the ordering wrong.
+  st_arms=$((st_arms + 1))
+  last_out=$(read_verdict "$note" 1 2>&1) || true
+  last_line=${last_out##*$'\n'}
+  if [ "$last_line" = 'wall check: green, 1 pins measured' ]; then
+    printf 'ok    green: the mandated sentence is the LAST line\n'
+  else
+    printf 'FAIL  green: the mandated sentence is the LAST line, and this run ended on: %s\n' "$last_line"
+    st_fails=$((st_fails + 1))
+  fi
+
+  if [ "$st_fails" != 0 ]; then
+    printf 'posse-wall-check --self-test: %s of %s arm(s) FAILED\n' "$st_fails" "$st_arms" >&2
+    return 1
+  fi
+  printf 'posse-wall-check --self-test: %s arms clean (ADR 0097 D3 exits 0/1/3, D5 abstention)\n' "$st_arms"
+  return 0
+}
+
+# Both children as arrays, so `--plan` prints the argv the run would exec
+# rather than a second spelling of it. The baseline is D17's base mount and
+# nothing else, which is `bwrapApplyProbeArgv` in internal/posse: a process
+# that cannot make THAT namespace cannot run any arm of any live pin here,
+# whatever else a pin's own argv asks for.
+baseline_argv=(bwrap --ro-bind / / /bin/true)
+pins_argv=(go test -count=1 -json -timeout 15m -run "$member_pattern" ./internal/posse)
+
+# The self-test is dispatched BEFORE anything says "judging": it judges no
+# tree, reads no path and needs no venue, so it must not print a line that
+# says otherwise. A missing python3 is exit 1 here and exit 3 in the judge
+# below, and the difference is deliberate — for the judge, "nothing could be
+# measured" is D5's unanswered; for a `make test` prerequisite it is a red,
+# because a gate that passes when it measured nothing is the silence this
+# repo keeps re-finding.
+if [ "$self_test" = 1 ]; then
+  if ! command -v python3 > /dev/null 2>&1; then
+    say "no python3 on PATH, and the parser these arms drive IS python — nothing can be measured"
+    printf 'posse-wall-check --self-test: no python3 on PATH, so no arm ran\n' >&2
+    exit 1
+  fi
+  rc=0
+  run_self_test || rc=$?
+  exit "$rc"
+fi
+
+say "judging $PWD"
+if [ "$plan_only" = 1 ]; then
+  say "step 1: ${baseline_argv[*]}"
+  say "step 2: ${pins_argv[*]}"
+  say "plan only: 2 steps, nothing run"
+  exit 0
+fi
+
+# The cwd guard, and it answers 3 rather than 1 on purpose: a runner pointed
+# at a directory that is not this tree has measured nothing, and D5's
+# watchdog is the reader for that. A red here would file a wall regression
+# against whoever landed last.
+if [ ! -d internal/posse ]; then
+  say "no internal/posse here — cwd must be the root of the tree to judge (ADR 0088 D1)"
+  printf 'wall check: no answer — %s is not a tree this check can judge\n' "$PWD" >&2
+  exit 3
+fi
+
+say "step 1: ${baseline_argv[*]}"
+if ! command -v bwrap > /dev/null 2>&1; then
+  say "no bwrap on PATH, so the baseline cannot even be asked (ADR 0097 D5 counts a host with no bwrap as unanswered)"
+  printf 'venue cannot nest: bwrap: not found on PATH\n' >&2
+  exit 3
+fi
+baseline_rc=0
+baseline_out=$("${baseline_argv[@]}" 2>&1) || baseline_rc=$?
+if [ "$baseline_rc" != 0 ]; then
+  say "the baseline bwrap did not start, so this process is not ADR 0097 D1's venue and nothing below it could measure (ADR 0086 D5)"
+  printf 'venue cannot nest: %s\n' "${baseline_out:-bwrap exited $baseline_rc with no output}" >&2
+  exit 3
+fi
+say "baseline: a bwrap starts from here, so a refusal below is the tree's doing"
+if [ "${!venue_env:-}" != 1 ]; then
+  say "note: $venue_env is not 1 in this process, so the members will ABSTAIN rather than fail on a refusal (ADR 0097 D4). The runner sets it; a hand run outside the venue gets exit 3."
+fi
+
+# Asked BEFORE the 95s run and not after it, because without the parser there
+# is no verdict to be had: a missing python3 would otherwise cost a venue run
+# and then exit 127, which is off D3's table entirely and is no answer at all
+# (`verify-bd-argv-gate.sh` says the same sentence one directory over).
+if ! command -v python3 > /dev/null 2>&1; then
+  say "no python3 on PATH, and the verdict is read by it — nothing can be measured here"
+  printf 'wall check: no answer — no python3 on PATH to read the run\n' >&2
+  exit 3
+fi
+
+say "step 2: ${pins_argv[*]}"
+go_rc=0
+pins_json=$("${pins_argv[@]}" 2>&1) || go_rc=$?
+say "go test exited $go_rc in ${SECONDS}s; reading membership off the marker"
+
+# The verdict, read by the parser defined above: ADR 0097 D3's three exits are
+# decided in there, and `rc` is what it answered.
+rc=0
+read_verdict "$pins_json" "$go_rc" || rc=$?
 exit "$rc"

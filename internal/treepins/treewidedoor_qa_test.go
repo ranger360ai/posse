@@ -4170,9 +4170,17 @@ var twdExecDispositions = map[string]string{
 	"scripts/gotest.sh":              "`find`s only $CACHE and its own scratch tree, never a tracked path",
 	"scripts/macos-install-probe.sh": "probes a scratch install root under $D; the only tracked file it reads is the formula it is handed",
 	"scripts/path-warning.sh":        "reads the PATH string it is given",
-	"scripts/tap-formula.sh":         "renders a formula from the --checksums file named on its command line",
-	"scripts/test-linux.sh":          "assembles a docker invocation; it lists nothing",
-	"scripts/test-times.sh":          "runs `go test` and parses its output; the one `ls` in it is inside an advice string it prints",
+	// ranger-base-zpx1k. The mode the pins here run is `--self-test`, which
+	// drives the body's own verdict parser over planted `go test -json`
+	// streams held in the script: it opens no file, makes no temp file and
+	// starts no child but python3. Its JUDGE mode runs `go test` over
+	// ./internal/posse and reads the cwd for one `[ -d internal/posse ]`
+	// guard, which is one named directory and not an enumeration either — a
+	// bead adding a file anywhere in the tree cannot change what it reads.
+	"scripts/posse-wall-check": "in --self-test, the mode the pins here run, it reads nothing at all: the fixtures are in the script and the only child is python3; its judge mode runs `go test ./internal/posse` and stats that one directory, enumerating nothing",
+	"scripts/tap-formula.sh":   "renders a formula from the --checksums file named on its command line",
+	"scripts/test-linux.sh":    "assembles a docker invocation; it lists nothing",
+	"scripts/test-times.sh":    "runs `go test` and parses its output; the one `ls` in it is inside an advice string it prints",
 	// ranger-base-41l0r. It opens the operator's settings.json and the gate
 	// files that settings' hook names, and in its full mode it extracts two
 	// tracked paths from HEAD by name (`git show HEAD:scripts/bd-argv-gate.*`).

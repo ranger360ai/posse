@@ -69,7 +69,7 @@ ifeq ($(words $(BUILD_SOURCE)),1)
 LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
 endif
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check land-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check land-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-wall-check verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -332,7 +332,7 @@ release-notes:
 # and the arm2/arm3 tagged lines are exactly the ones an untagged arm-tags
 # mistake can fail to *compile*, which would abort the recipe before the
 # door ever ran.
-test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp tree-check
+test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-wall-check tree-check
 	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
@@ -341,7 +341,7 @@ test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-patte
 
 # One arm each, for CI, which runs them as three jobs. A seat wanting the
 # whole thing types `make test`.
-test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp tree-check
+test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-wall-check tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -555,6 +555,37 @@ verify-python-syntax:
 # in milliseconds, which is why the harness is still nobody's prerequisite.
 verify-reap-test-tmp:
 	@scripts/reap-test-tmp.sh --self-test
+
+# ADR 0097 D3's three exits, read by something at last (ranger-base-zpx1k).
+# 0.23s over three runs, ten arms, no go test and no bwrap.
+#
+# THE DEFECT. scripts/posse-wall-check maps a venue run to the three exits ADR
+# 0097 D3 defines -- 0 green, 1 a member FAILed or the tree did not build, 3
+# nobody answered -- and that mapping is the whole of its value over
+# `go test; echo $$?`. Nothing in the suite read it. verify-python-syntax
+# censuses `.py` FILES, so a parser reached through `python3 -I -c` inside a
+# shell script is outside its corpus (as it is for queue-scrub.sh,
+# suite-lock.sh and ceiling-fill.sh), and
+# a syntax check would not have caught what went wrong anyway: the first draft
+# of the ABSTENTION arm -- the one arm D5's "an abstention is never a pass"
+# exists for -- carried a format string with three conversions and two
+# arguments, raised TypeError, and exited 1 where the contract says 3. D5's
+# ratchet would have filed `wall pins red at <tree>` against whoever landed
+# last, over a tree whose pins had merely gone dark. Found by running it, not
+# by reading it; the same class as ranger-base-ietka.
+#
+# WHY A --self-test AND NOT scripts/wall-check-parse.py. A sibling file could
+# only be found through a relative path, and ADR 0088 D1 makes a relative path
+# name the tree being JUDGED -- so the parser would come from the landing and
+# the shell from the last green tree, which is the one thing that contract
+# forbids. docs/notes.d/ranger-base-zpx1k.md has the argument in full.
+#
+# The LIVE half of the script is deliberately not here: it needs a nesting
+# venue and ~95s, it is ranger-base-wplhv's runner that schedules it, and
+# `bash docs/adr/0097-wall-venue.probe.sh venue+check` is how a person runs it
+# in the wall the ADR measured.
+verify-wall-check:
+	@scripts/posse-wall-check --self-test
 
 # The suite through the reusing wrapper (ranger-base-nw9zg). NOT a faster
 # `make test` and not a replacement for it: measured on 40 invocations against
