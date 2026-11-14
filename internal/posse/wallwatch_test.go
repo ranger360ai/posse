@@ -133,12 +133,26 @@ func wwOpenings(c wwRender) map[string]string {
 // nothing out of (Seal, whose rename a mount point cannot be carried away
 // by, and Narrow and DenyAll, which bwrapRender clears), plus a write grant and a D20
 // ref keep. Both tests below drive it.
+//
+// AND EVERY FIELD OF PrivateBind, which is a second axis the fields of
+// SeatbeltCarveOut do not reach (ranger-base-99mvt, from the verify at
+// ranger-base-7h7cs). `Private` is a slice of a struct whose own fields pick
+// which ARM of the private loop renders, so one dir-shaped entry satisfies a
+// reflection over SeatbeltCarveOut while leaving whole arms unrendered: that
+// is how ranger-base-a544g's FILE bind (bwrap.go's pb.File arm) arrived
+// watched by no pin — MEASURED 2026-11-13, deleting its one
+// `watch(WallWatchPrivate, pb.Dst)` reds nothing. So the three entries below
+// are the three arms: a dir COPY (Src != Dst), a FILE, and a dir bound IN
+// PLACE read-only (claudeProjectsBinds' shape, ranger-base-ajkqx).
 func wwEveryShape(t *testing.T) wwRender {
 	t.Helper()
 	root := t.TempDir()
 	grant := filepath.Join(root, "cfg")
 	priv := filepath.Join(grant, "shell-snapshots")
 	src := filepath.Join(root, "seat", "shell-snapshots")
+	hist := filepath.Join(grant, "history.jsonl")
+	histSrc := filepath.Join(root, "seat", "history.jsonl")
+	inPlace := filepath.Join(grant, "projects")
 	deny := filepath.Join(grant, "settings.json")
 	mask := filepath.Join(grant, "policy-cache.json")
 	gates := filepath.Join(grant, "gates")
@@ -150,13 +164,13 @@ func wwEveryShape(t *testing.T) wwRender {
 	// launcher writes it empty and the mount goes over it), and the ref keep
 	// that renders no mount at all.
 	seeded := filepath.Join(grant, "settings-seeded.json")
-	for _, d := range []string{grant, priv, src, hide, sshDir, tsnet, gates, filepath.Dir(cred)} {
+	for _, d := range []string{grant, priv, src, inPlace, hide, sshDir, tsnet, gates, filepath.Dir(cred)} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, f := range []string{
-		deny, mask, cred,
+		deny, mask, cred, hist, histSrc,
 		filepath.Join(sshDir, "config"), filepath.Join(sshDir, "known_hosts"), filepath.Join(sshDir, "id_ed25519"),
 		filepath.Join(gates, "refusals.log"),
 	} {
@@ -169,16 +183,22 @@ func wwEveryShape(t *testing.T) wwRender {
 		writable: []string{grant},
 		refKeep:  []string{filepath.Join(grant, "refs-keep")},
 		carve: SeatbeltCarveOut{
-			Hide:        []string{hide},
-			Deny:        []string{deny, mask, gates, seeded},
-			DenyFile:    []string{deny, mask, seeded},
-			Mask:        []string{mask},
-			Seed:        []string{seeded},
-			Seal:        []string{grant},
-			Keep:        []string{filepath.Join(gates, "refusals.log")},
-			Narrow:      []SeatbeltNarrow{{Path: priv, Allow: false}},
-			DenyAll:     []string{priv},
-			Private:     []PrivateBind{{Src: src, Dst: priv}},
+			Hide:     []string{hide},
+			Deny:     []string{deny, mask, gates, seeded},
+			DenyFile: []string{deny, mask, seeded},
+			Mask:     []string{mask},
+			Seed:     []string{seeded},
+			Seal:     []string{grant},
+			Keep:     []string{filepath.Join(gates, "refusals.log")},
+			Narrow:   []SeatbeltNarrow{{Path: priv, Allow: false}},
+			DenyAll:  []string{priv},
+			Private: []PrivateBind{
+				{Src: src, Dst: priv},
+				// ranger-base-a544g's shape: a regular file at both ends.
+				{Src: histSrc, Dst: hist, File: true},
+				// ranger-base-ajkqx's: bound in place to narrow the grant.
+				{Src: inPlace, Dst: inPlace, ReadOnly: true},
+			},
 			SSHDir:      []string{sshDir},
 			DenyReadDir: []string{tsnet},
 			DenyRead:    []string{cred, filepath.Join(sshDir, "id_ed25519")},
@@ -256,6 +276,10 @@ func TestWallWatchEveryRenderedMountIsAWallOrANamedOpening(t *testing.T) {
 // somebody gives it one — at which point the test above says whether its
 // mount is a wall or an opening, which is the question the hand-written
 // literal let an author skip.
+//
+// PrivateBind's fields are held the same way, one level down, because a
+// field on a carve field's ELEMENT type is a new mount shape that leaves
+// the carve field itself non-zero (ranger-base-99mvt).
 func TestWallWatchFixturesCarryEveryCarveOutField(t *testing.T) {
 	t.Parallel()
 	cs := wwRenders(t)
@@ -269,6 +293,25 @@ func TestWallWatchFixturesCarryEveryCarveOutField(t *testing.T) {
 		}
 		if !set {
 			t.Errorf("SeatbeltCarveOut.%s has no value in any render here, so TestWallWatchEveryRenderedMountIsAWallOrANamedOpening says nothing about the mount it makes. Give it one in wwEveryShape (or its own render, as carve.Tmp has), and classify what it mounts: a watch() call in bwrapArgsInto, or an entry in wwOpenings", rt.Field(i).Name)
+		}
+	}
+	// And every field of PrivateBind, the one carve field whose element type
+	// picks which ARM of a render loop runs (ranger-base-99mvt): a field
+	// added there is a mount SHAPE, and the loop above cannot see it because
+	// `Private` is already non-zero. ranger-base-a544g's File arm shipped
+	// watched by nothing for exactly that reason.
+	pt := reflect.TypeOf(PrivateBind{})
+	for i := 0; i < pt.NumField(); i++ {
+		set := false
+		for _, c := range cs {
+			for _, pb := range c.carve.Private {
+				if !reflect.ValueOf(pb).Field(i).IsZero() {
+					set = true
+				}
+			}
+		}
+		if !set {
+			t.Errorf("PrivateBind.%s has no value in any render here, so the arm of bwrapArgsInto's private loop it selects renders in no fixture and TestWallWatchEveryRenderedMountIsAWallOrANamedOpening says nothing about the mount that arm makes. Give it a PrivateBind entry in wwEveryShape and classify what it mounts: a watch() call in bwrapArgsInto, or an entry in wwOpenings", pt.Field(i).Name)
 		}
 	}
 	// The two inputs that are parameters rather than fields.
@@ -297,7 +340,11 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 	}
 	want := []WallWatchMount{
 		{WallWatchHide, filepath.Join(root, "run")},
+		// The private binds in list order, one per arm of that loop: the dir
+		// copy, the FILE (ranger-base-a544g) and the in-place read-only dir.
 		{WallWatchPrivate, filepath.Join(grant, "shell-snapshots")},
+		{WallWatchPrivate, filepath.Join(grant, "history.jsonl")},
+		{WallWatchPrivate, filepath.Join(grant, "projects")},
 		// shallowestFirst sorts the deny list, so gates, policy-cache.json,
 		// settings-seeded.json, settings.json — the mask under its own kind.
 		{WallWatchDeny, filepath.Join(grant, "gates")},
