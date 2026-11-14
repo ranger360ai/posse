@@ -12,6 +12,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
 - [ranger-base-ed07e](ranger-base-ed07e.md) — A fix could not describe the hole it closed, and its bead could not close first (ranger-base-ed07e) — 2026-11-14
 - [ranger-base-85xxm](ranger-base-85xxm.md) — ranger-base-85xxm — the sweep's own death, and a gate pinned by the abort below it — 2026-11-14
+- [ranger-base-4fx5x](ranger-base-4fx5x.md) — An exemption that drops an id from the SCAN also drops it from the STRIP (ranger-base-4fx5x) — 2026-11-14
 - [ranger-base-41l0r](ranger-base-41l0r.md) — The fence that fences every seat was refreshed by hand, and nothing noticed when it was not (ranger-base-41l0r) — 2026-11-14
 - [ranger-base-1fsc9](ranger-base-1fsc9.md) — A safety filter put where nothing could read it (ranger-base-1fsc9) — 2026-11-14
 - [ranger-base-zhw0h](ranger-base-zhw0h.md) — install(1) leaves the target absent for part of every install (ranger-base-zhw0h) — 2026-11-13
