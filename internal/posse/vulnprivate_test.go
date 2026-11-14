@@ -698,6 +698,50 @@ func TestRunGatesVulnPrivateScanStillFlagsAnotherOpenResidual(t *testing.T) {
 	}
 }
 
+// TestRunGatesVulnPrivateScanStripsTheExemptedOwnBeadToo is ranger-base-n2veh
+// finding 1, escaped from the exemption above (commit e3b41b30). The own id
+// was dropped from the ids handed to vulnPrivateHits, which took it out of
+// the PRESENCE test (intended) and out of the STRIP that runs before the
+// bareness test (not intended) — so the own id's own letters were read as a
+// description of whatever OTHER open id shared its unit, and a unit carrying
+// nothing but those two ids was REFUSED naming the other one. The remedy it
+// printed — "a flagged id names ANOTHER hole", "write the bare id alone" —
+// had already been performed, which is ADR 0068's class and the cost
+// vulnprivate.go's own comments cite as the one to avoid.
+//
+// MEASURED 2026-11-14 at 025d2e58, both shapes below HIT and named
+// ranger-base-fixt2.
+func TestRunGatesVulnPrivateScanStripsTheExemptedOwnBeadToo(t *testing.T) {
+	t.Parallel()
+	dir := vpOwnTree(t, "ranger-base-l751c", `[
+		{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]},
+		{"id":"ranger-base-fixt2","status":"open","labels":["vuln-private"]}]`)
+	// Two bare ids sharing one unit read as bare for BOTH, which is the
+	// invariant vulnPrivateHits' doc comment states. Exempting one of them
+	// from the report must not turn the other's bullet into a hit.
+	for _, text := range []string{
+		"Not closed here:\n- ranger-base-l751c, ranger-base-fixt2\n",
+		"ranger-base-l751c ranger-base-fixt2\n",
+	} {
+		var out strings.Builder
+		if RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(text), &out) {
+			t.Errorf("a unit of nothing but bare ids must be clean over %q, got: %q", text, out.String())
+		}
+	}
+	// Two controls that lived in the same MEASURED run: the exemption must
+	// not have become a waiver, and the own bead is still exempt alone.
+	var out strings.Builder
+	if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(
+		"Not closed here:\n- ranger-base-fixt2 the residual's mechanism\n"), &out) {
+		t.Error("another open residual named with text must still be flagged")
+	}
+	out.Reset()
+	if RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(
+		"ranger-base-l751c: the fix this commit carries\n"), &out) {
+		t.Errorf("the committing tree's own bead must still be exempt, got: %q", out.String())
+	}
+}
+
 // TestRunGatesVulnPrivateScanExemptsNothingWithNoBranchRecord: a tree that
 // answers for no bead gets no exemption. That is the shared checkout's
 // `main` — where the committer is one of eleven personas and git cannot say

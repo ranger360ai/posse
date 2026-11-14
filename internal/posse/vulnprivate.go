@@ -391,6 +391,16 @@ func vulnPrivateUnits(lines []string) []int {
 // ranger-base-lcuec.md's own "Not closed here" uses), and an id entirely
 // absent from text costs nothing beyond one strings.Contains.
 //
+// SO EVERY OPEN ID MUST BE PASSED, and an id the CALLER wants to let by is
+// dropped from the returned slice and never from ids (ranger-base-n2veh,
+// escaped from ranger-base-ed07e). The sentence above is an invariant over
+// what is passed, not a promise this function can keep on its own: hold one
+// id back and its own letters stop being stripped, so they are read as a
+// description of whatever other id shares the unit, and `- <held>, <other>`
+// is refused naming <other> over a remedy the writer already performed.
+// RunGatesVulnPrivateScan's own-bead exemption is the only such caller and
+// it filters the result.
+//
 // ids are bd's own issue ids — alnum and a hyphen, dispatch.go's beadIDRe —
 // so a literal strings.ReplaceAll never needs escaping the way a shell ERE
 // would.
@@ -612,29 +622,43 @@ func RunGatesVulnPrivateScan(bd Bd, dir string, arm VulnPrivateArm, stdin io.Rea
 	if len(ids) == 0 {
 		return false
 	}
-	// Asked only once there is something to exempt FROM, so a repo with no
-	// open vuln-private bead pays no git call at all — the same reason the
-	// bd query sits behind Available() rather than in front of it.
-	if own := vulnPrivateOwnBead(dir); own != "" {
-		kept := ids[:0]
-		for _, id := range ids {
-			// EqualFold because vulnPrivateHits is case-insensitive and
-			// this has no business being stricter than the thing it feeds:
-			// the record is bd's own id as posse wrote it, but a committer
-			// who shifted the id in their message is still naming their own
-			// bead.
-			if strings.EqualFold(id, own) {
-				continue
-			}
-			kept = append(kept, id)
-		}
-		ids = kept
-	}
 	text := string(content)
 	if arm == VulnPrivateContentArm {
 		text = vulnPrivateUndiff(text)
 	}
+	// EVERY open id goes INTO the scan, and the exemption comes off what
+	// comes OUT (ranger-base-n2veh, escaped from ranger-base-ed07e).
+	// vulnPrivateHits strips the ids it finds in a unit before asking
+	// whether any letter is left, so an id held back from the call is an id
+	// whose own letters are read as a description of whatever OTHER open id
+	// shares its unit: `- <own>, <other>` was REFUSED naming <other>, over a
+	// remedy — "a flagged id names ANOTHER hole", "write the bare id alone" —
+	// the writer had already performed. That is ADR 0068's class, and it is
+	// the cost the doc comments here cite as the one to avoid. Dropping the
+	// own id from the REPORT is the same exemption over a unit the function
+	// can still read whole, so vulnPrivateHits' stated invariant — every id
+	// present in a unit is stripped from it — stays true of every call.
 	flagged := vulnPrivateHits(text, ids)
+	// Asked only once something is flagged, so a clean commit message pays
+	// no git call at all — the same reason the bd query sits behind
+	// Available() rather than in front of it.
+	if len(flagged) > 0 {
+		if own := vulnPrivateOwnBead(dir); own != "" {
+			kept := flagged[:0]
+			for _, id := range flagged {
+				// EqualFold because vulnPrivateHits is case-insensitive and
+				// this has no business being stricter than the thing it
+				// reads: the record is bd's own id as posse wrote it, but a
+				// committer who shifted the id in their message is still
+				// naming their own bead.
+				if strings.EqualFold(id, own) {
+					continue
+				}
+				kept = append(kept, id)
+			}
+			flagged = kept
+		}
+	}
 	for _, id := range flagged {
 		fmt.Fprint(stdout, vulnPrivateHitLine(id))
 	}

@@ -15,6 +15,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-q749c](ranger-base-q749c.md) — The nest helper's venue contract, and the two literals a shipped script reads (ranger-base-q749c) — 2026-11-14
 - [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
 - [ranger-base-n7hsa](ranger-base-n7hsa.md) — ranger-base-n7hsa — the orientation page's own pin had no door — 2026-11-14
+- [ranger-base-n2veh](ranger-base-n2veh.md) — The exemption moved to the other side of the call (ranger-base-n2veh) — 2026-11-14
 - [ranger-base-lagas](ranger-base-lagas.md) — The wall check's body, its three exits, and the arm that crashed on the one case it exists for (ranger-base-lagas) — 2026-11-14
 - [ranger-base-ietka](ranger-base-ietka.md) — A closed-set pin whose failure message crashed on the one direction it exists for (ranger-base-ietka) — 2026-11-14
 - [ranger-base-hi2lt](ranger-base-hi2lt.md) — ranger-base-hi2lt — the bwrap render refuses a main checkout's `.git/config` deny — 2026-11-14
