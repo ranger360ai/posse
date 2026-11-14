@@ -311,7 +311,7 @@ func TestQAAnInfoWithoutIssueCountIsAnErrorNotZero(t *testing.T) {
 	}
 }
 
-// D1: all five list readers go through the one door. A sixth reader added
+// D1: all six list readers go through the one door. A sixth reader added
 // past it would put the silent shape straight back, and nothing else in the
 // suite would notice — each of these returns an empty list on its own
 // fixture-free default, so this arm is the whole of the guard.
@@ -330,6 +330,7 @@ func TestQAEveryListReaderRefusesAZeroRowStore(t *testing.T) {
 		{"InProgress", func() ([]BdIssue, error) { return bd.InProgress(dir) }},
 		{"OpenLabeledAny", func() ([]BdIssue, error) { return bd.OpenLabeledAny(dir, "question") }},
 		{"AllLabeledAny", func() ([]BdIssue, error) { return bd.AllLabeledAny(dir, "merge-blocked") }},
+		{"OpenIssues", func() ([]BdIssue, error) { return bd.OpenIssues(dir) }},
 	} {
 		issues, err := c.read()
 		if !IsBdStoreUnread(err) {

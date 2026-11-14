@@ -54,6 +54,31 @@ import (
 // security residual whose DETAIL belongs in the private store alone.
 const VulnPrivateLabel = "vuln-private"
 
+// VulnPrivateMarker is the filing convention's other way of asking: a bead
+// whose description's FIRST non-blank line opens with it ("VULN-PRIVATE:
+// name by id only in public text ...") is withheld exactly as a labelled
+// one is (ranger-base-yno5e). Case-sensitive and anchored at the start of
+// that line, because beads that DISCUSS the convention mention the word in
+// prose and ask for nothing.
+const VulnPrivateMarker = "VULN-PRIVATE:"
+
+// vulnPrivateAsked says whether an issue asks for check 4's withholding:
+// the label, or the marker opening its description's first non-blank line.
+func vulnPrivateAsked(is BdIssue) bool {
+	for _, l := range is.Labels {
+		if strings.TrimSpace(l) == VulnPrivateLabel {
+			return true
+		}
+	}
+	for _, line := range strings.Split(is.Description, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		return strings.HasPrefix(line, VulnPrivateMarker)
+	}
+	return false
+}
+
 // VulnPrivateRule is what a check-4 refusal names.
 const VulnPrivateRule = "AGENTS.md \"Landing the plane\" (operator ruling 2026-11-11, ranger-base-lcuec), " +
 	"read with ADR 0024 D1: a residual still open under a `vuln-private` bead is named " +
@@ -546,11 +571,21 @@ func vulnPrivateOwnBead(dir string) string {
 // not say.
 //
 // THE QUERY RUNS ONCE PER CALL, not once per candidate id in the text:
-// bd.OpenLabeledAny already pages --limit 0 and already drops closed rows
+// bd.OpenIssues already pages --limit 0 and already drops closed rows
 // on both store classes bd ships (beads.go, OpenLabeledAny's own doc) —
 // the exact "still open" set this check needs, and not what a bare
 // `bd list --status open` would answer (beads.go: in_progress, blocked and
 // deferred are open questions too).
+//
+// THE ID SET IS THE LABEL OR THE MARKER (ranger-base-yno5e): an open bead
+// is withheld when it carries VulnPrivateLabel OR its description's first
+// non-blank line opens with VulnPrivateMarker — the filing convention's own
+// words for asking. Keyed on the label alone, a writer who wrote the line
+// and forgot the label asked for withholding and got none; MEASURED
+// 2026-11-13, three open beads were in exactly that shape (ranger-base-
+// u0ynq). So the one query is now bd.OpenIssues — the same open set
+// OpenLabeledAny means, without the label filter — and both arms are read
+// off its rows.
 //
 // ONE OPEN ID IS DROPPED BEFORE THE SCAN: the bead `dir`'s own branch is
 // recorded for (vulnPrivateOwnBead). AGENTS.md already allows a fix to
@@ -564,24 +599,36 @@ func RunGatesVulnPrivateScan(bd Bd, dir string, arm VulnPrivateArm, stdin io.Rea
 	if !bd.Available() {
 		return false
 	}
-	issues, err := bd.OpenLabeledAny(dir, VulnPrivateLabel)
-	if err != nil || len(issues) == 0 {
+	issues, err := bd.OpenIssues(dir)
+	if err != nil {
+		return false
+	}
+	ids := make([]string, 0, len(issues))
+	for _, is := range issues {
+		if vulnPrivateAsked(is) {
+			ids = append(ids, is.ID)
+		}
+	}
+	if len(ids) == 0 {
 		return false
 	}
 	// Asked only once there is something to exempt FROM, so a repo with no
 	// open vuln-private bead pays no git call at all — the same reason the
 	// bd query sits behind Available() rather than in front of it.
-	own := vulnPrivateOwnBead(dir)
-	ids := make([]string, 0, len(issues))
-	for _, is := range issues {
-		// EqualFold because vulnPrivateHits is case-insensitive and this
-		// has no business being stricter than the thing it feeds: the
-		// record is bd's own id as posse wrote it, but a committer who
-		// shifted the id in their message is still naming their own bead.
-		if own != "" && strings.EqualFold(is.ID, own) {
-			continue
+	if own := vulnPrivateOwnBead(dir); own != "" {
+		kept := ids[:0]
+		for _, id := range ids {
+			// EqualFold because vulnPrivateHits is case-insensitive and
+			// this has no business being stricter than the thing it feeds:
+			// the record is bd's own id as posse wrote it, but a committer
+			// who shifted the id in their message is still naming their own
+			// bead.
+			if strings.EqualFold(id, own) {
+				continue
+			}
+			kept = append(kept, id)
 		}
-		ids = append(ids, is.ID)
+		ids = kept
 	}
 	text := string(content)
 	if arm == VulnPrivateContentArm {

@@ -361,9 +361,14 @@ func qaFakeBd(t *testing.T) Bd {
 	return Bd{Bin: fakeBinFor(t, "bd")}
 }
 
-func writeFakeOpenLabeled(t *testing.T, dir, json string) {
+// writeFakeOpenIssues seeds the fixture the scan's ONE query reads. Since
+// ranger-base-yno5e that query is bd.OpenIssues — a bare `bd list --json`,
+// no `--label-any` — so the fake binary serves it fake-list.json and not
+// fake-list-labeled.json (herdr_test.go's `list` case: the labeled file is
+// the `--label-any` query's own, with an empty default).
+func writeFakeOpenIssues(t *testing.T, dir, json string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, "fake-list-labeled.json"), []byte(json), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "fake-list.json"), []byte(json), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -373,7 +378,7 @@ func writeFakeOpenLabeled(t *testing.T, dir, json string) {
 func TestRunGatesVulnPrivateScanFlagsAnOpenResidualWithText(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["code","security","vuln-private"]}]`)
+	writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["code","security","vuln-private"]}]`)
 	var out strings.Builder
 	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader("## Not closed here\n- ranger-base-l751c: the remote-settings cache\n"), &out)
 	if !hit {
@@ -392,7 +397,7 @@ func TestRunGatesVulnPrivateScanFlagsAnOpenResidualWithText(t *testing.T) {
 func TestRunGatesVulnPrivateScanBareIDIsClean(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["code","security","vuln-private"]}]`)
+	writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["code","security","vuln-private"]}]`)
 	var out strings.Builder
 	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader("## Not closed here\n- ranger-base-l751c\n"), &out)
 	if hit {
@@ -407,7 +412,7 @@ func TestRunGatesVulnPrivateScanBareIDIsClean(t *testing.T) {
 func TestRunGatesVulnPrivateScanClosedResidualIsNotFlagged(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"closed","labels":["code","security","vuln-private"]}]`)
+	writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"closed","labels":["code","security","vuln-private"]}]`)
 	if err := os.WriteFile(filepath.Join(dir, "fake-list-keep-closed"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -448,6 +453,59 @@ func TestRunGatesVulnPrivateScanEmptyStdinIsClean(t *testing.T) {
 	}
 }
 
+// ranger-base-yno5e: check 4's id set is the label OR the marker line. One
+// row per arm the bead names — (a) marker without label flagged, (b) label
+// without marker still flagged, (c) the word in prose is not a request,
+// (d) a closed marker-only bead is no longer a residual.
+//
+// NO REAL BEAD ID IS FIXTURE DATA HERE, which is ranger-base-crwxs:
+// `ranger-base-zzzz1` is made up and resolves to nothing in any store, the
+// same spelling parkedwork_test.go uses for the same reason. This table was
+// first written against a real, OPEN `vuln-private` id, beside placeholder
+// descriptions ("the mechanism, spelled out") that described nothing of it —
+// and the push gate held the commit anyway, correctly: a public tree does
+// not carry an open residual's id next to the shape of a disclosure, and
+// nobody reading the fixture can tell a placeholder from a leak. The rule
+// the fixture exercises is the rule the fixture obeys.
+func TestRunGatesVulnPrivateScanMarkerOrLabel(t *testing.T) {
+	t.Parallel()
+	const said = "- ranger-base-zzzz1: the mechanism, spelled out\n"
+	for _, c := range []struct {
+		name, fixture string
+		keepClosed    bool
+		want          bool
+	}{
+		{"marker-without-label", `[{"id":"ranger-base-zzzz1","status":"open","labels":["security"],"description":"VULN-PRIVATE: name by id only in public text.\nmore"}]`, false, true},
+		{"marker-after-blank-lines", `[{"id":"ranger-base-zzzz1","status":"blocked","description":"\n  \nVULN-PRIVATE: name by id only."}]`, false, true},
+		{"marker-crlf", `[{"id":"ranger-base-zzzz1","status":"deferred","description":"VULN-PRIVATE: id only.\r\nmore"}]`, false, true},
+		{"label-without-marker", `[{"id":"ranger-base-zzzz1","status":"in_progress","labels":["vuln-private"],"description":"a plain description"}]`, false, true},
+		{"word-mid-prose", `[{"id":"ranger-base-zzzz1","status":"open","labels":["security"],"description":"A bead whose description says VULN-PRIVATE: but no label."}]`, false, false},
+		{"marker-not-on-line-one", `[{"id":"ranger-base-zzzz1","status":"open","description":"Finding.\nVULN-PRIVATE: id only."}]`, false, false},
+		{"word-without-colon", `[{"id":"ranger-base-zzzz1","status":"open","description":"VULN-PRIVATE beads are named by id."}]`, false, false},
+		{"lowercase-marker", `[{"id":"ranger-base-zzzz1","status":"open","description":"vuln-private: id only."}]`, false, false},
+		{"closed-marker-only", `[{"id":"ranger-base-zzzz1","status":"closed","description":"VULN-PRIVATE: id only."}]`, true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeFakeOpenIssues(t, dir, c.fixture)
+			if c.keepClosed {
+				if err := os.WriteFile(filepath.Join(dir, "fake-list-keep-closed"), nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out strings.Builder
+			hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(said), &out)
+			if hit != c.want {
+				t.Fatalf("hit = %v, want %v; output: %q", hit, c.want, out.String())
+			}
+			if hit && strings.Contains(out.String(), "mechanism") {
+				t.Errorf("output must withhold the text: %q", out.String())
+			}
+		})
+	}
+}
+
 // ─── the two arms, which are one byte apart (ranger-base-gi6ge) ─────────────
 
 // TestRunGatesVulnPrivateScanReadsAPlusBulletInTheMessage is
@@ -483,7 +541,7 @@ func TestRunGatesVulnPrivateScanReadsAPlusBulletInTheMessage(t *testing.T) {
 		"+ ranger-base-l751c\nthe heap overflow in the parser\n",
 	} {
 		dir := t.TempDir()
-		writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+		writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
 		var out strings.Builder
 		if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(text), &out) {
 			t.Errorf("scan(%q) over the MESSAGE arm = no hit, want one — every bullet spelling vulnPrivateListItem names carries a lazy continuation, `+` included", text)
@@ -517,7 +575,7 @@ func TestRunGatesVulnPrivateScanReadsTheContentArmsDiffMarker(t *testing.T) {
 		"+1. ranger-base-l751c\n+the heap overflow in the parser\n",
 	} {
 		dir := t.TempDir()
-		writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+		writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
 		var out strings.Builder
 		if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateContentArm, strings.NewReader(text), &out) {
 			t.Errorf("scan(%q) over the CONTENT arm = no hit, want one — the diff marker is discounted, so what is left is a bullet and its continuation", text)
@@ -540,7 +598,7 @@ func TestRunGatesVulnPrivateScanReadsTheContentArmsDiffMarker(t *testing.T) {
 		"+ ranger-base-l751c\n+the heap overflow in the parser\n",
 	} {
 		dir := t.TempDir()
-		writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+		writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
 		var out strings.Builder
 		if RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateContentArm, strings.NewReader(text), &out) {
 			t.Errorf("scan(%q) over the CONTENT arm = %q, want no hit", text, out.String())
@@ -588,7 +646,7 @@ func vpOwnTree(t *testing.T, bead, issues string) string {
 			t.Fatal(err)
 		}
 	}
-	writeFakeOpenLabeled(t, wt, issues)
+	writeFakeOpenIssues(t, wt, issues)
 	return wt
 }
 
@@ -653,7 +711,7 @@ func TestRunGatesVulnPrivateScanExemptsNothingWithNoBranchRecord(t *testing.T) {
 	}
 	// And the main checkout itself, on `main`, with the same bead open.
 	repo := wtRepo(t)
-	writeFakeOpenLabeled(t, repo, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+	writeFakeOpenIssues(t, repo, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
 	out.Reset()
 	if !RunGatesVulnPrivateScan(qaFakeBd(t), repo, VulnPrivateMessageArm, strings.NewReader("ranger-base-l751c: a description\n"), &out) {
 		t.Errorf("the shared checkout's main carries no record and gets no exemption, got no hit: %q", out.String())

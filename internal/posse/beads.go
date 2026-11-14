@@ -1044,6 +1044,31 @@ func (b Bd) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
 	return open, nil
 }
 
+// OpenIssues is OpenLabeledAny with no label filter: every OPEN issue in
+// the repo, by the same promise — closed rows dropped here on both store
+// classes, in_progress/blocked/deferred kept, --limit 0. Its one reader is
+// check 4 (RunGatesVulnPrivateScan, ranger-base-yno5e), which needs the
+// open beads whose DESCRIPTION asks for withholding as well as the labelled
+// ones, in one query.
+//
+// Not ListAll: `--all` hands back every closed bead too, only for this to
+// drop them — MEASURED 2026-11-14 on the shop store, 0.25s for `list --all`
+// against 0.06s for the bare list, and this runs inside every commit.
+func (b Bd) OpenIssues(dir string) ([]BdIssue, error) {
+	issues, err := b.listIssues(dir, "list", "--json", "--limit", "0")
+	if err != nil {
+		return nil, err
+	}
+	open := issues[:0]
+	for _, is := range issues {
+		if is.Status == "closed" {
+			continue
+		}
+		open = append(open, is)
+	}
+	return open, nil
+}
+
 // AllLabeledAny is the same query with `--all` and no open filter: every
 // issue carrying one of the labels, CLOSED ONES INCLUDED — and included on
 // both store classes, where OpenLabeledAny excludes them on both.
