@@ -576,7 +576,10 @@ func TestWallWatchBwrapRenderWritesTheMountsFileAndTheLaunchLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	mounts := filepath.Join(filepath.Dir(w.Artifact), bwrapMountsName)
-	if want := WallWatchPrefix("/opt/posse", mounts, f.ag.Name, f.dir, "/usr/bin/bwrap", w.Artifact); w.Launch != want {
+	// The socket-wall step rides on the launch line too (ranger-base-6rndn),
+	// so the expectation is built from the one spelling of it rather than
+	// written out here a second time.
+	if want := WallWatchPrefix("/opt/posse", mounts, f.ag.Name, f.dir, "/usr/bin/bwrap", w.Artifact) + wallUnixWrapForTest(t); w.Launch != want {
 		t.Errorf("WallRender.Launch =\n %q\nwant\n %q", w.Launch, want)
 	}
 	if w.Prefix != BwrapPrefix("/usr/bin/bwrap", w.Artifact) {

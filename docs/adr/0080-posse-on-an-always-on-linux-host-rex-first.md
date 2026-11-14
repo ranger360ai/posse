@@ -1669,3 +1669,196 @@ The pins are in `internal/posse/bwraptmp_qa_test.go`.
   own builds stage their work.
 
 **Beads.** ranger-base-7wdb7 (this), from ranger-base-olr0g.
+
+## Amendment: the seat gets a socket wall, and B7 was never the shipped wall's property (2026-11-13)
+
+*This amendment's bead, and the finding it answers, are `vuln-private`. They
+are named by bare id in the Beads block below and nowhere else, which is
+AGENTS.md "Landing the plane" — a hole still open is named by its id and
+nothing else. What is described here is what this change SHUTS, which the
+same ruling allows and which is why the code looks the way it does.*
+
+**Context.** `--ro-bind / /` does not stop `connect(2)`: the kernel's
+read-only check does not cover a socket, which D17's own render already says
+(`bwrapArgsInto` 1b, and the reason the user runtime dir gets a tmpfs —
+ranger-base-ludpp). What that tmpfs cannot reach is a socket inside a **write
+grant**, which the seat must be able to write and therefore cannot have
+emptied. Both halves of the mount answer fail there: a `--ro-bind /dev/null`
+over a live socket is detached by the host's own unlink and re-bind, and a
+socket absent at launch has nothing to bind over at all. So a process in a
+caged seat could reach a host daemon listening on such a path and hand it
+work, whatever the seat's runtime.
+
+D13 rejected Landlock as the Linux cage TIER and every word of that holds:
+Landlock is allow-only, so the trailing deny under a grant — the whole of
+what the wall defends — has no Landlock spelling. What D13's "Alternatives
+rejected" left open was the LAYER: "bwrap plus a Landlock layer for the
+scopes bwrap lacks ... A scope-only ruleset may not block [the nested
+bwrap], but that is ASSUMED and unread." ABI 9 added
+`LANDLOCK_ACCESS_FS_RESOLVE_UNIX`, which refuses exactly the resolution no
+mount can, so that line is what this amendment reads.
+
+**Findings.** MEASURED 2026-11-13 on the D1 host (Linux 7.2.15-1-omarchy,
+bubblewrap 0.13.1, Landlock ABI 10, linux-api-headers 7.3-1) by
+`docs/adr/0080-resolve-unix.probe.sh`, 14 rows, every one as its EXPECT.
+
+- **The right does what the fix needs.** Handled with no allow rule,
+  `connect(2)` is EACCES to a socket bound before `restrict_self` (U1) **and
+  to one an unrestricted process binds after** (U2) — the case no mount
+  covers; `sendmsg(2)` with an explicit address likewise (U4); the domain
+  survives `execve` (U5); a socket created inside the domain still connects
+  (U3); and ordinary file read, write, mkdir and rename are untouched (U11),
+  which is what "the bwrap wall stays the file wall" means in practice.
+- **An allow rule, if one is ever needed, names a DIRECTORY and never a
+  socket** (U12, U13). A rule on the socket FILE is keyed on the inode it was
+  added for, so the host's unlink-and-re-bind — the same move that defeats a
+  mount over a socket — leaves it covering nothing (EACCES: a daemon restart
+  would silently cut the seat off). A DIRECTORY rule covers a socket bound in
+  it afterwards, and is also the only way to allow one that is ABSENT at
+  launch, since an `O_PATH` open of it would be ENOENT and there would be no
+  rule to add.
+- **It costs the nested mount namespace** (U9, U10). A domain handling any
+  filesystem right — this one included — forbids `mount(2)`, so a nested
+  bwrap cannot start inside it: `bwrap: Failed to make / slave: Operation not
+  permitted`. That is D14's probe B7, "a runtime's own bwrap must still nest
+  inside ours", which D13 names as the property Landlock fails. It fails here
+  too. RESOLVE_UNIX is not a scope — it is `handled_access_fs` — and the
+  topology hooks read the PRESENCE of a filesystem domain, not which right it
+  handles.
+- **And that cost is already paid, because B7 does not hold for the wall
+  posse ships.** MEASURED the same day against a rendered `bwrap.args` and
+  against the installed wall of a live caged seat, with no Landlock anywhere:
+  a nested bwrap inside the real wall fails with `bwrap: setting up uid map:
+  Read-only file system`, and `unshare -rm` with `cannot open
+  /proc/self/uid_map: Read-only file system`. The cause is in D17's own text:
+  `--proc` is **deliberately absent** from the render, so `/proc` inside a
+  seat is the host's, bound read-only by `--ro-bind / /`, and a nested user
+  namespace cannot write its own uid map — long before it reaches a mount. B7
+  was measured on `0080-linux-cage.probe.sh`'s `$BW`, which carries `--proc
+  /proc`. That is not the wall `bwrapArgsInto` renders.
+  The same reading has a consequence nobody had written down: inside a real
+  caged seat `TestLiveBwrapGitRefsCommitsOnTheSessionBranch` FAILS, and
+  `TestLiveWallClaudeProjectsRefusesPeerPlants` and
+  `TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall` go to
+  `SKIP: NOTHING MEASURED` — so three of the wall's own live pins cannot
+  measure the wall from inside it, and one of them reds `make test` there.
+  That is ranger-base-rwet4, for richard, and not this amendment's to decide:
+  nothing below depends on how it goes, because this layer adds no refusal
+  the shipped wall does not already impose.
+- **The census, so the allow list can be empty and say so.** MEASURED
+  2026-11-13 on D1 over every host pathname listener. Every socket a seat
+  could otherwise resolve is either inside the runtime dir the render already
+  hides (the session bus, the gpg and ssh agents, the keyring, p11-kit,
+  pulse, pipewire, the user systemd, rex's own `server.sock` and
+  `login-server.sock`, and the other seats' `cc-socks/*.sock`) or belongs to
+  the system and is of no use to a seat (`/run/systemd/*`, `/run/dbus`,
+  `/run/udev`, `/run/polkit`, `/run/cups`, `/run/avahi-daemon`,
+  `/run/tailscale`, `/run/wpa_supplicant`, `/run/ssh-unix-local`,
+  `/etc/pacman.d/gnupg`). **No socket exists anywhere under the home.**
+  ranger-base-ludpp had already measured the same answer from the other side:
+  what a seat needs bound back out of the hidden runtime dir is nothing. The
+  one host socket posse ever hands a session is herdr's, through the
+  container tier's opt-in `sockets:` (`CageSocketMounts`), which no shipped
+  PID declares.
+
+**Decision.**
+- **D27. A bwrap seat runs behind a Landlock domain that handles
+  RESOLVE_UNIX and no other right, applied inside the cage.** The file wall
+  stays the bwrap wall, byte for byte. The layer is one word on the launch
+  line — `posse wall-unix --` — typed after bwrap's own `--`, so it wraps
+  exactly the runtime command bwrap would otherwise have exec'd, and the
+  domain therefore covers the runtime and everything the seat forks from it.
+- **D28. No allow rule, on the census above.** If one is ever needed it names
+  a DIRECTORY, on U12/U13. A per-socket allow is forbidden rather than
+  discouraged: it is defeated by the very move this class of bug is about.
+- **D29. The step applies the domain and then BECOMES the runtime**
+  (`syscall.Exec`), so the seat's pid, its controlling terminal and its exit
+  status are the runtime's own, exactly as they are when bwrap execs the
+  runtime itself. It resolves the runtime on the seat's own PATH
+  (`exec.LookPath`, gates dir first) and not gates-free: the L1 shims are
+  aimed at the runtime process itself, and resolving past them would take the
+  shell-verb denies off the one process they most have to cover.
+- **D30. It refuses rather than execs when the domain cannot be applied.**
+  The render only types the step on a host whose ABI it has already read as
+  sufficient, so a failure there is a wall posse reported and does not have —
+  D4's rule. A refusal costs one seat; a silent exec would put every host
+  socket back in reach with the wall report still saying the layer is up.
+- **D31. Below ABI 9 the step is not rendered, and `posse gates` says
+  DEGRADED — never silence.** `WallUnixDegraded` carries the sentence, and
+  the report prints both arms, because an operator reading a wall has to be
+  able to tell the half that is up from the half that is not.
+- **D32. The step is on the LAUNCH spelling only, not on `Prefix`.** That is
+  the rule the wall-watch sidecar already follows and for its reason:
+  `Launch` is the line a seat is opened with (`WallPrefix` prefers it), and
+  `Prefix` is what the reachability and witness PROBES type — "probes type
+  it, and they run no watcher". Those probes' subject is the FILE wall, which
+  this layer does not touch, so a step on their line buys nothing and costs
+  something real: a second binary to resolve, and so a new way for the probe
+  to abstain. It cost exactly that when it was first written onto both — the
+  witness read `NOT WITNESSED … never printed its marker`, which under ADR
+  0086 D5 is an abstention and not a pass.
+- **D33. The probe is `docs/adr/0080-resolve-unix.probe.sh`**, and its U9/U10
+  EXPECT cells say `refused`: they record what the kernel does, not what the
+  design wanted. Each prints a detail line with the stderr the one-word cell
+  drops, which is B5's lesson (ranger-base-yca4g) and D21's T6's
+  (ranger-base-bjk4k) — a cell that throws the stream away cannot tell a wall
+  refusing a thing from a tool that never started.
+
+**Alternatives rejected.**
+- **A `--tmpfs` over the write grant.** It is the right answer for every
+  directory a seat can afford to have emptied, and it holds across the
+  unlink-and-re-bind (MEASURED: the probe's N4 row reads ENOENT) — which is
+  why ranger-base-ludpp's hide stays exactly as it is and this layer is only
+  for the residual. Over a write grant it would empty the grant.
+- **An enumerated deny of the known host sockets.** Default-allow by
+  omission: the directory nobody listed is the hole, and the whole point here
+  is a socket that was not there when the list was written.
+- **`--unshare-net`.** Pathname sockets resolve through the filesystem and
+  not the net namespace (the bind-mounted `docker.sock` pattern). D17 rejects
+  it for its own reasons as well.
+- **seccomp.** It cannot read a connect path.
+- **An operator rule that no such daemon runs beside caged seats.** A
+  detective control, and it covers one daemon out of the class.
+
+**Measured versus assumed.**
+- MEASURED 2026-11-13, D1 host, as above: the probe's 14 rows; the nested
+  bwrap failing inside a real rendered wall and inside a live caged seat's
+  installed wall; the socket census; and, end to end behind the step on
+  D17's base, `claude --version` and `git --version` starting, argv and exit
+  status passing through, and a host socket reading EACCES inside the started
+  runtime while the control arm connects.
+- MEASURED, this tree: the render carries the step on the launch line, in
+  that one position, and not on the probe line or on a seatbelt line
+  (`internal/posse/wallunixrender_qa_test.go`); and the live pin — an uncaged
+  process binding a socket after the seat launched, against a control arm
+  that connects (`internal/posse/wallunixlive_test.go`).
+- ASSUMED, still: that no runtime posse launches needs a host pathname socket
+  it has not declared. The census is of the HOST's listeners and of what
+  ranger-base-ludpp measured a seat asking for; it is not a reading of every
+  runtime's future. A runtime that grows one fails visibly — EACCES at
+  connect, and `posse gates` names the layer — and the answer is a directory
+  rule under D28, never a socket.
+- Out of scope: the darwin half, which is unmeasured and unrendered. Its
+  bead is in the block below.
+
+**Two bugs this change's own pins caught**, both in the arm that exists to
+refuse, and both kept here because the next person to write a wrapper like
+this will write them again:
+1. **The step defaulted its command to its own argv** when the line carried
+   no `--`. The arm meant to refuse an empty line instead restricted the
+   calling process and exec'd `posse` — it took down the test binary. The
+   command is now only what follows `--`, and nothing when there is no `--`.
+2. **The live pin's seat inherited `RHQ_FAKE_HERDR`.** The seat is the test
+   binary re-exec'd, and internal/posse's `TestMain` turns any posse test
+   binary carrying that marker into a fake bd: both arms answered `fake bd:
+   unhandled -test.run=…` and exited 1, so the control arm would have
+   reported a connect that never happened. Shed for the child now — the same
+   cause `docs/notes.d/ranger-base-4cmqw.md`'s neighbours ran into, and the
+   reason `landedchecklive_test.go` sheds it too.
+
+**Beads.**
+
+- ranger-base-6rndn
+- ranger-base-l2gk9
+- ranger-base-q9bqu
+- ranger-base-rwet4

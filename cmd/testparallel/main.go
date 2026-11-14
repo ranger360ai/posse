@@ -263,6 +263,7 @@ func main() {
 		"TestWatchLockHolderChild":      "child of a cross-process test",
 		"TestPulseWaitHolderChild":      "child of a cross-process test",
 		"TestTempHomeChild":             "child of a cross-process test",
+		"TestWallUnixSeatChild":         "child of a cross-process test",
 		// Tests that assert on flock ACQUISITION. Two of them side by side
 		// read a released lock as still held, on lock files that are per
 		// test — 3-6 failures in 60 at -parallel 8 over launchlock_test.go

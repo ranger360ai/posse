@@ -67,6 +67,28 @@ func wallWrapForTest(t *testing.T, gatesDir string) (wrap, artifact string) {
 	}
 }
 
+// wallUnixWrapForTest is the socket-wall step as the render appends it to the
+// LAUNCH spelling (ranger-base-6rndn), or "" where there is none — another
+// mechanism, or a kernel below Landlock ABI 9. Here rather than inline in
+// wallLaunchWrapForTest for this file's own stated reason: a pin comparing a
+// launch line against an expectation must compare it to the ONE spelling of
+// that line, and the step is part of it now.
+//
+// NOT in wallWrapForTest, which is `Prefix`: that is the probes' spelling and
+// carries no launch-only wrapper, the same rule the wall-watch sidecar
+// follows (wall.go's bwrap arm says why).
+func wallUnixWrapForTest(t *testing.T) string {
+	t.Helper()
+	if !WallUnixAvailable() {
+		return ""
+	}
+	self, err := wallWatchBin()
+	if err != nil {
+		t.Fatalf("this host renders the socket wall and this posse binary does not resolve, so no launch here renders a line at all: %v", err)
+	}
+	return WallUnixPrefix(self)
+}
+
 // wallLaunchWrapForTest is what a LAUNCH types for that wall: the same as
 // wallWrapForTest at sandbox-exec, and at bwrap the `posse wall-watch`
 // sidecar in front of the binary (ranger-base-ihnnl) — built from
@@ -85,7 +107,8 @@ func wallLaunchWrapForTest(t *testing.T, gatesDir, seat, dir string) (wrap, arti
 	if err != nil {
 		t.Fatal(err)
 	}
-	return WallWatchPrefix(self, filepath.Join(gatesDir, bwrapMountsName), seat, dir, bin, artifact), artifact
+	return WallWatchPrefix(self, filepath.Join(gatesDir, bwrapMountsName), seat, dir, bin, artifact) +
+		wallUnixWrapForTest(t), artifact
 }
 
 // The ADR 0096 D3 nest gate used to live here, untagged. It is in

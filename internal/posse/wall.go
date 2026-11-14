@@ -546,8 +546,33 @@ func (a *App) renderWallInto(mech string, w wallWrite, ag *AgentFile, rt *Runtim
 			return WallRender{}, Die("cage %s (%s): cannot locate this posse binary for the wall-watch sidecar (%v), and a seat with no watcher is a seat whose walls can come off unseen (ranger-base-0qpsw D1)", CageSeatbelt, WallBwrap, err)
 		}
 		mounts := filepath.Join(filepath.Dir(args), bwrapMountsName)
+		// The socket wall, INSIDE the cage (ranger-base-6rndn). Appended
+		// after bwrap's own `--`, so what it wraps is exactly the runtime
+		// command bwrap would otherwise have exec'd itself, and the domain
+		// therefore covers the runtime and everything the seat forks from it.
+		//
+		// ON `Launch` AND NOT ON `Prefix`, which is the rule the wall-watch
+		// sidecar already follows and for its reason: `Launch` is the line a
+		// seat is opened with (WallPrefix prefers it), and `Prefix` is what
+		// the reachability and witness PROBES type — "probes type it, and
+		// they run no watcher" (wallwatch_test.go). Those probes' subject is
+		// the FILE wall, which this layer does not touch, so a step on their
+		// line would buy nothing and cost something real: a second binary to
+		// resolve, and so a new way for the probe to abstain. It cost exactly
+		// that when it was first written onto both — the witness read
+		// `NOT WITNESSED … never printed its marker`, which under ADR 0086 D5
+		// is an abstention and not a pass. The report says the layer is up in
+		// its own words (BwrapReport), which is where a reader reads it.
+		//
+		// Empty on a kernel below ABI 9, and loudly: `WallUnixDegraded`
+		// carries that sentence into the wall report rather than letting an
+		// absent layer read as an applied one.
+		inner := ""
+		if wallUnixAvailableFor(mech) {
+			inner = WallUnixPrefix(self)
+		}
 		return WallRender{Mechanism: m, Artifact: args, Prefix: BwrapPrefix(bin, args),
-			Launch: WallWatchPrefix(self, mounts, ag.Name, cwd, bin, args)}, nil
+			Launch: WallWatchPrefix(self, mounts, ag.Name, cwd, bin, args) + inner}, nil
 	}
 	return WallRender{}, Die("cage %s: posse has no render for wall mechanism %q (this host is %s, and posse renders %s and %s and nothing else), so there is no L2 write wall to type here (ADR 0080 D16/D18)",
 		CageSeatbelt, mech, runtime.GOOS, WallSandboxExec, WallBwrap)

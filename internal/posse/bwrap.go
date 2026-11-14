@@ -2435,6 +2435,23 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 	for _, s := range prep {
 		fmt.Fprintf(out, "    ! %s (prep the launcher runs before the wall, NOT run by this report: %s)\n", s, s.Why)
 	}
+	// The socket wall (ranger-base-6rndn), AND IT CARRIES NO MARKER. Every
+	// marker in this report is a statement about a MOUNT, and this layer
+	// renders none: it is a word on the launch line. A sixth marker would be
+	// a sixth thing an operator has to learn, in the report whose whole point
+	// is that it speaks the other mechanism's vocabulary — so this is a
+	// sentence, indented with the rest, the way the head note above it is.
+	//
+	// BOTH ARMS PRINT. An operator reading a wall has to be able to tell the
+	// half that is up from the half that is not, and the degraded arm is the
+	// one that must never be silence — a seat whose socket wall is absent can
+	// still connect(2) to any host pathname socket in its view. The degraded
+	// sentence leads with its own loud word and needs no marker to be found.
+	if d := WallUnixDegraded(WallBwrap); d != "" {
+		fmt.Fprintf(out, "    %s\n", d)
+	} else {
+		fmt.Fprintf(out, "    socket wall: `%s` on the line inside the cage — a Landlock domain handling RESOLVE_UNIX and no other right, so connect(2) and sendmsg(2) to every host pathname socket in this seat's view are EACCES, including one an uncaged process binds after launch (ADR 0080 D27). No allow rule: MEASURED, a seat needs none. The mounts above are unchanged by it.\n", WallUnixVerb)
+	}
 	// No siblings: a mount cannot name the scratch namespace beside a file,
 	// and D19 makes it moot by granting claude's config DIRECTORY.
 	a.reportConstitutionGrants(ag, out, set, nil, carve.Deny)

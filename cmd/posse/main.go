@@ -302,6 +302,16 @@ func main() {
 	if posse.IsWallWatch(os.Args) {
 		os.Exit(posse.RunWallWatch(os.Args, os.Stderr))
 	}
+	// Sixth entry point (ranger-base-6rndn): the socket wall, applied INSIDE
+	// the bwrap cage on the far side of bwrap's `--`. Here for the same
+	// reasons as the five above — the launch line runs it, nobody types it,
+	// and it reads no config — plus one of its own: it must become the
+	// runtime, so it may not be a call that returns. On success it does not
+	// return at all (syscall.Exec), and the only thing it can come back with
+	// is the refusal that says this seat will not open.
+	if posse.IsWallUnix(os.Args) {
+		die(posse.RunWallUnix(os.Args))
+	}
 	// The home refusal is here and not deeper because it must reach every
 	// subcommand, and because the three entry points that legitimately run
 	// in a scrubbed environment (IsCageLaunch, IsCageReap, IsHookReport)
