@@ -96,15 +96,21 @@ func landedRuns(t *testing.T, log string) []landedRun {
 	return runs
 }
 
-// plainCage is the stub: the judge as its own argv, with the environment the
+// plainCage is the stub: the child as its own argv, with the environment the
 // renderer was handed. It renders no wall, which is exactly what makes it
 // unfit for production and fit for a suite — see this file's header.
-func plainCage(_ *App, judge, _ string, _ []string, env []string) (landedCage, error) {
-	return landedCage{Argv: []string{judge}, Env: env}, nil
+//
+// IT IGNORES THE KIND (ADR 0097 D1's flag), and that is right for every arm
+// that uses it: what the kind decides is three bwrap flags, and a stub that
+// renders no bwrap has nowhere to put them. The venue's own argv is pinned
+// against the REAL renderer instead (wallvenueargv_qa_test.go), which is the
+// only place it can be read.
+func plainCage(_ *App, _ landedCageKind, child, _ string, _ []string, env []string) (landedCage, error) {
+	return landedCage{Argv: []string{child}, Env: env}, nil
 }
 
 // refusedCage is D3's bottom row: a mechanism that will not render.
-func refusedCage(_ *App, _, _ string, _ []string, _ []string) (landedCage, error) {
+func refusedCage(_ *App, _ landedCageKind, _, _ string, _ []string, _ []string) (landedCage, error) {
 	return landedCage{}, Die("no cage renders on this host (fixture)")
 }
 
@@ -152,7 +158,7 @@ func TestALandedTreeIsJudgedAndItsVerdictRecorded(t *testing.T) {
 	if len(runs) != 1 || runs[0].Tip != tip {
 		t.Fatalf("the landed tree was not judged: %+v (want one run over %s)", runs, abbrevSHA(tip))
 	}
-	if tree, v := landedCheckRecorded(repo); tree != revTreeID(repo, tip) || v != landGreen {
+	if tree, v := landedRecorded(landedJudgeRule, repo); tree != revTreeID(repo, tip) || v != landGreen {
 		t.Errorf("%s = %q %s, want the tip's tree recorded green — D4's cache is what makes a coalesced run free", landedCheckKey, tree, v)
 	}
 	if s := out.String(); !strings.Contains(s, abbrevSHA(tip)) || !strings.Contains(s, "green") {
@@ -184,7 +190,7 @@ func TestALandedTreeThatFailsTheCheckIsRecordedRedWithItsCause(t *testing.T) {
 	c.Schedule(repo, "main")
 	c.Wait()
 
-	if tree, v := landedCheckRecorded(repo); tree != revTreeID(repo, tip) || v != landRed {
+	if tree, v := landedRecorded(landedJudgeRule, repo); tree != revTreeID(repo, tip) || v != landRed {
 		t.Errorf("%s = %q %s, want the tip's tree recorded red", landedCheckKey, tree, v)
 	}
 	s := out.String()
@@ -414,7 +420,7 @@ func TestARefusedCageGivesNoAnswerAndNeverRunsUncaged(t *testing.T) {
 	if runs := landedRuns(t, log); len(runs) != 0 {
 		t.Fatalf("the judge RAN with no cage rendered (%+v) — ADR 0088 D3: it never falls back to running uncaged", runs)
 	}
-	if tree, v := landedCheckRecorded(repo); tree != "" || v != landUnanswered {
+	if tree, v := landedRecorded(landedJudgeRule, repo); tree != "" || v != landUnanswered {
 		t.Errorf("%s = %q %s after a run that could not be made, want nothing recorded — a cache entry written over silence is read by the next run as a judgement", landedCheckKey, tree, v)
 	}
 	s := out.String()
@@ -456,7 +462,7 @@ func TestTheLandingReturnsBeforeTheCheckFinishes(t *testing.T) {
 	if took > 2*time.Second {
 		t.Errorf("the landing spent %s inside the landed check — ADR 0088 D2: the landing has already happened and the check never blocks it", took)
 	}
-	if _, v := landedCheckRecorded(repo); v != landUnanswered {
+	if _, v := landedRecorded(landedJudgeRule, repo); v != landUnanswered {
 		t.Errorf("a verdict was on record while the check was still running (%s), so the landing had waited for it after all", v)
 	}
 
@@ -467,7 +473,7 @@ func TestTheLandingReturnsBeforeTheCheckFinishes(t *testing.T) {
 	if n := len(landedRuns(t, log)); n != 1 {
 		t.Errorf("%d runs after the pass joined, want 1", n)
 	}
-	if _, v := landedCheckRecorded(repo); v != landGreen {
+	if _, v := landedRecorded(landedJudgeRule, repo); v != landGreen {
 		t.Errorf("the verdict is %s after the join — the pass waits for its own child, which is what keeps a caged `make` from outliving the process that started it", v)
 	}
 }
@@ -488,7 +494,7 @@ func TestARepoThatShipsNoLandedCheckIsLeftAlone(t *testing.T) {
 	if s := out.String(); s != "" {
 		t.Errorf("a repo with no %s said:\n%s", landedCheckScript, s)
 	}
-	if _, v := landedCheckRecorded(repo); v != landUnanswered {
+	if _, v := landedRecorded(landedJudgeRule, repo); v != landUnanswered {
 		t.Errorf("a repo with no check has a verdict on record (%s)", v)
 	}
 	if out, err := git(repo, "worktree", "list"); err == nil && strings.Count(out, "\n") != 0 {
@@ -557,7 +563,16 @@ func TestAtMostOneCheckIsInFlight(t *testing.T) {
 // about a branch that does not exist rather than one that is taken.
 func TestQATheLandedCheckExecsNothingButTheCagesOwnArgv(t *testing.T) {
 	t.Parallel()
-	const src = "landedcheck.go"
+	qaExecsOnlyTheCagesArgv(t, "landedcheck.go")
+}
+
+// qaExecsOnlyTheCagesArgv is that reading over one source file, because ADR
+// 0097 D2's wall check has the same rule and the same sentence to print
+// (wallcheck_test.go): one child, and its program is the cage's rendered
+// argv. One implementation, so the two cannot drift into reading different
+// shapes — which is what would make the newer of the two the weaker.
+func qaExecsOnlyTheCagesArgv(t *testing.T, src string) {
+	t.Helper()
 	f, err := parser.ParseFile(token.NewFileSet(), src, nil, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -596,6 +611,6 @@ func TestQATheLandedCheckExecsNothingButTheCagesOwnArgv(t *testing.T) {
 		return true
 	})
 	if execs != 1 {
-		t.Errorf("%s has %d exec call(s); this file starts exactly one child and it is the caged judge", src, execs)
+		t.Errorf("%s has %d exec call(s); this file starts exactly one child and it is the caged one", src, execs)
 	}
 }

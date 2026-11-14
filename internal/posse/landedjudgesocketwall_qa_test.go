@@ -150,7 +150,7 @@ func TestQALandedJudgeCageArgvHidesTheRunDirAndTheRuntimeRoots(t *testing.T) {
 		}
 	}
 
-	cage, err := boxLandedCage(&App{}, filepath.Join(f.run, "judge"), f.tree, []string{f.run}, nil)
+	cage, err := boxLandedCage(&App{}, landedCageJudge, filepath.Join(f.run, "judge"), f.tree, []string{f.run}, nil)
 	if err != nil {
 		t.Skip("NOTHING MEASURED: this host has no landed-check cage to render: " + err.Error())
 	}

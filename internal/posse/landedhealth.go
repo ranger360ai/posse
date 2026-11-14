@@ -103,46 +103,40 @@ const (
 	landedHealthMarkerPrefix = "landed-check health: "
 )
 
-// landedHealthMarker is the marker line for one repo. Per REPO and not per
-// base, which is the one place this differs from D5's: the counter is a
-// repo-level git config record and the bead D6.3 titles says "at <repo>",
-// because a judge that cannot answer cannot answer about any branch.
-func landedHealthMarker(repo string) string {
-	return fmt.Sprintf("%s%s (ADR 0088 D6.3)", landedHealthMarkerPrefix, AbbrevHome(repo))
-}
-
-// ceilingOf is D6.2's price as this checker reads it. A field with a zero
-// default rather than the constant at the call site, for landedChecker.cage's
-// reason: a 240s wall is unreachable inside a test, and the arm that must
-// exist is the one where an answered run IS over the price. An override can
-// only change when this rule files — never whether the judge is killed, which
-// is landedCheckLimit's job and has no seam at all.
-func (c *landedChecker) ceilingOf() time.Duration {
-	if c.ceiling <= 0 {
-		return landedCheckCeiling
-	}
-	return c.ceiling
-}
+// The marker line itself is landedRule.healthMarker (landedrule.go), per REPO
+// and not per base — which is the one place this differs from D5's: the
+// counter is a repo-level git config record and the bead D6.3 titles says "at
+// <repo>", because a check that cannot answer cannot answer about any branch.
+// It is on the rule because ADR 0097 D5 gives the wall check this same
+// watchdog, keyed separately, and the markers may not collide.
+//
+// ceilingOf is on the rule's file too, and is the same number for both: see
+// landedrule.go.
 
 // health is D6.3, called once per judged run with the verdict and the wall
 // once() measured. It is called on the UNANSWERED arm too — before once()
 // returns on silence — because silence is the event this whole rule exists
 // for.
-func (c *landedChecker) health(repo, tree string, v landVerdict, took time.Duration, said string) {
+//
+// `r` IS WHICH CHECK'S WATCHDOG THIS IS (ADR 0097 D5): its counter, its
+// marker, its lane is the same lane, and the noun this file calls it by. The
+// table is one table, and the wall check's silence is counted over its own
+// record and filed on its own bead.
+func (c *landedChecker) health(r landedRule, repo, tree string, v landVerdict, took time.Duration, said string) {
 	if repo == "" || tree == "" {
 		return
 	}
-	_, n := landedQuietRecorded(repo)
+	_, n := landedQuietRecorded(r, repo)
 	if v == landUnanswered {
-		c.healthSilent(repo, tree, n, said)
+		c.healthSilent(r, repo, tree, n, said)
 		return
 	}
-	c.healthAnswered(repo, tree, n, took)
+	c.healthAnswered(r, repo, tree, n, took)
 }
 
 // healthSilent is the top two rows: count this silence, and on the second
 // consecutive one file the bead that says the judge is not judging.
-func (c *landedChecker) healthSilent(repo, tree string, n int, said string) {
+func (c *landedChecker) healthSilent(r landedRule, repo, tree string, n int, said string) {
 	if n == 0 {
 		// The SAME clear healthAnswered does on the same reading, and for
 		// the same reason: a count that reads zero carried nothing over
@@ -157,19 +151,19 @@ func (c *landedChecker) healthSilent(repo, tree string, n int, said string) {
 		// architecture to look for an answered run that never ran
 		// (ranger-base-9n98o). Free, like the other one — a map delete is
 		// no git write and no bd call.
-		c.markQuietUnreset(repo, false)
+		c.markQuietUnreset(r, repo, false)
 	}
 	// Read the remembered sentence BEFORE overwriting it: the bead carries
 	// both runs' `said` lines, and this run is the second of them.
-	prev := c.quietSaid[repo]
-	c.rememberQuietSaid(repo, said)
+	prev := c.quietSaid[r.memKey(repo)]
+	c.rememberQuietSaid(r, repo, said)
 	n++
-	if err := recordLandedQuiet(repo, tree, n); err != nil {
+	if err := recordLandedQuiet(r, repo, tree, n); err != nil {
 		// The count IS this row's dedupe (see the header), so a count that
 		// did not land files nothing. The next landing re-judges and counts
 		// again, which is one bead one landing late instead of one per
 		// landing.
-		c.warn("%s: the judge did not answer and %s could not be written (%v) — nothing is filed for it, and the next landing counts again (ADR 0088 D6.3)", AbbrevHome(repo), landedQuietKey, err)
+		c.warn("%s: the %s did not answer and %s could not be written (%v) — nothing is filed for it, and the next landing counts again (%s)", AbbrevHome(repo), r.Agent, r.QuietKey, err, r.HealthADR)
 		return
 	}
 	if n < landedQuietThreshold {
@@ -178,29 +172,28 @@ func (c *landedChecker) healthSilent(repo, tree string, n int, said string) {
 		// for it.
 		return
 	}
-	is, st := c.healthBeadState(repo)
+	is, st := c.healthBeadState(r, repo)
 	switch st {
 	case landedStretchUnknown:
 		// An unknown is re-asked by the next landing for free, and a twin
 		// P1 is a seat, a worktree and a suite run — landedfile.go's rule
 		// on the same three answers.
-		c.say("· %s: nothing was filed for the silent judge — the store could not say whether this silent stretch already has a bead, and the next landing asks again (ADR 0088 D6.3)", AbbrevHome(repo))
+		c.say("· %s: nothing was filed for the silent %s — the store could not say whether this silent stretch already has a bead, and the next landing asks again (%s)", AbbrevHome(repo), r.Agent, r.HealthADR)
 		return
 	case landedStretchOpen:
 		// Row 2: nothing. The bead already says the judge is silent, and
 		// this run is more of the same sentence.
-		c.say("· %s: the judge did not answer for the %s consecutive time and %s already says so (ADR 0088 D6.3)", AbbrevHome(repo), ordinal(n), is.ID)
+		c.say("· %s: the %s did not answer for the %s consecutive time and %s already says so (%s)", AbbrevHome(repo), r.Agent, ordinal(n), is.ID, r.HealthADR)
 		return
 	}
-	c.fileHealth(repo, tree,
-		fmt.Sprintf("landed check silent at %s", AbbrevHome(repo)),
-		c.silentDescription(repo, tree, n, prev, said, c.quietUnreset[repo]))
+	c.fileHealth(r, repo, tree, r.silentTitle(repo),
+		c.silentDescription(r, repo, tree, n, prev, said, c.quietUnreset[r.memKey(repo)]))
 }
 
 // healthAnswered is the bottom two rows: the counter resets, an open bead is
 // told the judge answered, and a wall over the ceiling with no bead open is
 // filed.
-func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Duration) {
+func (c *landedChecker) healthAnswered(r landedRule, repo, tree string, n int, took time.Duration) {
 	over := took > c.ceilingOf()
 	if n == 0 {
 		// Nothing on the counter, so nothing carried over an answered run
@@ -212,7 +205,7 @@ func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Durat
 		// healthSilent makes the same reading on its own way in, because a
 		// hand-zeroed record reaches the next crossing by EITHER path and
 		// the clear has to be on both (ranger-base-9n98o).
-		c.markQuietUnreset(repo, false)
+		c.markQuietUnreset(r, repo, false)
 	}
 	if n == 0 && !over {
 		// The ordinary landing on a healthy main: answered, inside the
@@ -221,14 +214,14 @@ func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Durat
 		// asking the store only when there is something to say.
 		return
 	}
-	c.rememberQuietSaid(repo, "")
+	c.rememberQuietSaid(r, repo, "")
 	reset := true
 	if n > 0 {
 		// "Any answered verdict resets it" (D6.3). Written only when there
 		// is something to reset, so the common case above stays free.
-		if err := recordLandedQuiet(repo, tree, 0); err != nil {
+		if err := recordLandedQuiet(r, repo, tree, 0); err != nil {
 			reset = false
-			c.warn("%s: the judge answered and %s could not be reset (%v) — the next unanswered run counts from %d (ADR 0088 D6.3)", AbbrevHome(repo), landedQuietKey, err, n)
+			c.warn("%s: the %s answered and %s could not be reset (%v) — the next unanswered run counts from %d (%s)", AbbrevHome(repo), r.Agent, r.QuietKey, err, n, r.HealthADR)
 		}
 		// AND THE NEXT SILENCE MAY NOT CALL THAT COUNT CONSECUTIVE
 		// (ranger-base-4jroi). Counting on from n is ranger-base-w9w37's rule
@@ -236,19 +229,19 @@ func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Durat
 		// than files — but the count now spans THIS run, which answered. The
 		// mark is what lets silentDescription say so, instead of claiming a
 		// pattern and blaming a launcher restart that did not happen.
-		c.markQuietUnreset(repo, !reset)
+		c.markQuietUnreset(r, repo, !reset)
 	}
-	is, st := c.healthBeadState(repo)
+	is, st := c.healthBeadState(r, repo)
 	switch st {
 	case landedStretchUnknown:
-		c.say("· %s: the store could not say whether the judge has an open health bead, so this answered run is in this log and nowhere else, and the next landing asks again (ADR 0088 D6.3)", AbbrevHome(repo))
+		c.say("· %s: the store could not say whether the %s has an open health bead, so this answered run is in this log and nowhere else, and the next landing asks again (%s)", AbbrevHome(repo), r.Agent, r.HealthADR)
 		return
 	case landedStretchOpen:
 		// Row 4. Never a close: closing is architecture's, exactly as D5
 		// leaves a red main's bead to the fixer.
-		text := fmt.Sprintf("answered at %s in %s (ADR 0088 D6.3) — closing this bead is architecture's, so the launcher does not.", abbrevSHA(tree), landedCheckWall(took))
+		text := fmt.Sprintf("answered at %s in %s (%s) — closing this bead is architecture's, so the launcher does not.", abbrevSHA(tree), landedCheckWall(took), r.HealthADR)
 		if over {
-			text = fmt.Sprintf("answered at %s in %s, still over the %s ceiling (ADR 0088 D6.2/D6.3) — closing this bead is architecture's, so the launcher does not.", abbrevSHA(tree), landedCheckWall(took), landedCheckCeiling)
+			text = fmt.Sprintf("answered at %s in %s, still over the %s ceiling (%s) — closing this bead is architecture's, so the launcher does not.", abbrevSHA(tree), landedCheckWall(took), landedCheckCeiling, r.CeilingADR)
 		}
 		if err := c.bd.Comment(repo, is.ID, text, VerifyActor); err != nil {
 			c.warn("%s: %s was not commented on (%v) — %q is in this log and nowhere else", AbbrevHome(repo), is.ID, err, text)
@@ -263,21 +256,19 @@ func (c *landedChecker) healthAnswered(repo, tree string, n int, took time.Durat
 		return
 	}
 	if !reset {
-		c.say("· %s: nothing was filed for the %s run — %s could not be written (⚠ above), and a rule whose record did not land files once per landing (ADR 0088 D6.3)", AbbrevHome(repo), landedCheckWall(took), landedQuietKey)
+		c.say("· %s: nothing was filed for the %s run — %s could not be written (⚠ above), and a rule whose record did not land files once per landing (%s)", AbbrevHome(repo), landedCheckWall(took), r.QuietKey, r.HealthADR)
 		return
 	}
-	c.fileHealth(repo, tree,
-		fmt.Sprintf("landed check over its D6 ceiling at %s", AbbrevHome(repo)),
-		c.ceilingDescription(repo, tree, took))
+	c.fileHealth(r, repo, tree, r.ceilingTitle(repo), c.ceilingDescription(r, repo, tree, took))
 }
 
 // healthBeadState is the three answers the store can give about this repo's
 // health bead, which are landedfile.go's three and not a bool
 // (ranger-base-w9w37): only landedStretchNone may be answered by filing.
-func (c *landedChecker) healthBeadState(repo string) (BdIssue, landedStretchState) {
-	is, err := c.openMarkedBead(landedHealthLabel, repo, landedHealthMarker(repo))
+func (c *landedChecker) healthBeadState(r landedRule, repo string) (BdIssue, landedStretchState) {
+	is, err := c.openMarkedBead(landedHealthLabel, repo, r.healthMarker(repo))
 	if err != nil {
-		c.warn("%s: the open landed-check health bead could not be read (%v)", AbbrevHome(repo), err)
+		c.warn("%s: the open %s health bead could not be read (%v)", AbbrevHome(repo), r.Name, err)
 		return BdIssue{}, landedStretchUnknown
 	}
 	if is.ID == "" {
@@ -290,11 +281,11 @@ func (c *landedChecker) healthBeadState(repo string) (BdIssue, landedStretchStat
 // assignee is the landing whose tree first held both halves, and there is no
 // such landing here — the finding is about the judge's own numbers, and ADR
 // 0006 §1 wants no `-a` unless the work needs that person.
-func (c *landedChecker) fileHealth(repo, tree, title, desc string) {
+func (c *landedChecker) fileHealth(r landedRule, repo, tree, title, desc string) {
 	// The cheap half of the visibility guard, as D5's filing does it: this
 	// description carries a check's own output tail and a cage renderer's
 	// error, so it carries whatever those carried. Warn, never refuse.
-	c.a.WarnOpsContent(c.out, repo, "the landed-check health bead for "+AbbrevHome(repo), title+"\n"+desc)
+	c.a.WarnOpsContent(c.out, repo, "the "+r.Name+" health bead for "+AbbrevHome(repo), title+"\n"+desc)
 	// The type and the priority are D5's own two constants, because D6.3
 	// names the same two words (`-t bug` P1) and a second spelling of them
 	// would be two literals to keep in step for nothing. The LABEL is the
@@ -316,7 +307,7 @@ func (c *landedChecker) fileHealth(repo, tree, title, desc string) {
 	case err != nil:
 		c.warn("%s: %q could NOT be filed (%v) — this log is the only record of it", AbbrevHome(repo), title, err)
 	default:
-		c.say("· %s: filed %s P%d %q, unassigned (ADR 0088 D6.3)", AbbrevHome(repo), id, landedFilePriority, title)
+		c.say("· %s: filed %s P%d %q, unassigned (%s)", AbbrevHome(repo), id, landedFilePriority, title, r.HealthADR)
 	}
 }
 
@@ -330,17 +321,22 @@ func (c *landedChecker) fileHealth(repo, tree, title, desc string) {
 // were then false — a pattern that did not happen, and a launcher restart
 // that did not happen either. The reader of this bead is architecture, and a
 // bead that sends them looking for a restart costs a seat.
-func (c *landedChecker) silentDescription(repo, tree string, n int, prev, said string, unreset bool) string {
+func (c *landedChecker) silentDescription(r landedRule, repo, tree string, n int, prev, said string, unreset bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", landedHealthMarker(repo))
+	fmt.Fprintf(&b, "%s\n\n", r.healthMarker(repo))
 	if unreset {
-		fmt.Fprintf(&b, "The landed check at %s returned NO ANSWER on %d of the judged runs counted under %s, the last of them over tree %s. THEY ARE NOT CONSECUTIVE, which is what this count otherwise means: a run between them ANSWERED, and the reset that answered run owed the counter could not be written (the ⚠ is in the launcher's log). A count whose write did not land keeps counting rather than files (ranger-base-w9w37's rule), so this one carried on over that answer instead of starting again from 1. Read %d as how many of the last few judged runs were silent, and the answered one in the middle as saying the judge is unreliable rather than dead.\n\n",
-			AbbrevHome(repo), n, landedQuietKey, abbrevSHA(tree), n)
+		fmt.Fprintf(&b, "The %s at %s returned NO ANSWER on %d of the judged runs counted under %s, the last of them over tree %s. THEY ARE NOT CONSECUTIVE, which is what this count otherwise means: a run between them ANSWERED, and the reset that answered run owed the counter could not be written (the ⚠ is in the launcher's log). A count whose write did not land keeps counting rather than files (ranger-base-w9w37's rule), so this one carried on over that answer instead of starting again from 1. Read %d as how many of the last few judged runs were silent, and the answered one in the middle as saying the %s is unreliable rather than dead.\n\n",
+			r.Name, AbbrevHome(repo), n, r.QuietKey, abbrevSHA(tree), n, r.Agent)
 	} else {
-		fmt.Fprintf(&b, "The landed check at %s returned NO ANSWER on %d consecutive judged runs, the last of them over tree %s.\n\n",
-			AbbrevHome(repo), n, abbrevSHA(tree))
+		fmt.Fprintf(&b, "The %s at %s returned NO ANSWER on %d consecutive judged runs, the last of them over tree %s.\n\n",
+			r.Name, AbbrevHome(repo), n, abbrevSHA(tree))
 	}
-	b.WriteString("While the judge is not answering, no landing is judged, nothing is recorded, and ADR 0088 D5 files nothing — a deadline and a refused cage are both spelled as SILENCE (D3), so this bead is the only thing that says so.\n\n")
+	// What the silence COSTS, which is the one sentence here that is about
+	// the check and not about the counter: the judge's silence is a landing
+	// nobody judged, and the wall check's is a landing whose pins nobody
+	// measured. Both end "and <its ratchet> files nothing", because that is
+	// why this bead exists at all.
+	fmt.Fprintf(&b, "While the %s is not answering, %s — a deadline and a refused cage are both spelled as SILENCE (D3), so this bead is the only thing that says so.\n\n", r.Agent, r.SilentCost)
 	b.WriteString("What the runs said:\n\n")
 	switch {
 	case prev != "":
@@ -353,26 +349,24 @@ func (c *landedChecker) silentDescription(repo, tree string, n int, prev, said s
 	default:
 		fmt.Fprintf(&b, "    1. (not recorded: the earlier run was judged by another launcher process, which is where this sentence is held)\n    2. %s\n\n", orElse(oneLine(said), "it said nothing"))
 	}
-	fmt.Fprintf(&b, "The two numbers to read it against (ADR 0088 D6.1/D6.2): the judge is killed at %s, which bounds a HANG and not a price, and the price at which this design goes back to architecture is %s, read off answered runs. A run killed at the bound says `no answer in %s`; anything else above is a cage, a worktree or a git read that could not be made.\n\n",
-		landedCheckLimit, landedCheckCeiling, landedCheckLimit)
-	fmt.Fprintf(&b, "What to do: run `%s` by hand on a fresh checkout of %s and time it. If it answers, the silence is the cage or the worktree and the sentences above name which; if it does not, D6's derived body has outgrown %s and the bound is the thing to review. ",
-		landedCheckScript, AbbrevHome(repo), landedCheckLimit)
-	b.WriteString("The launcher comments `answered at <tree> in <wall>` on this bead when the judge answers again, and does NOT close it: closing is architecture's (ADR 0088 D6.3).\n")
+	fmt.Fprintf(&b, "The two numbers to read it against (%s): the %s is killed at %s, which bounds a HANG and not a price, and the price at which this design goes back to architecture is %s, read off answered runs. A run killed at the bound says `no answer in %s`; anything else above is a cage, a worktree or a git read that could not be made.\n\n",
+		r.BoundsADR, r.Agent, landedCheckLimit, landedCheckCeiling, landedCheckLimit)
+	fmt.Fprintf(&b, r.SilentAdvice, r.Script, AbbrevHome(repo), landedCheckLimit)
+	fmt.Fprintf(&b, "The launcher comments `answered at <tree> in <wall>` on this bead when the %s answers again, and does NOT close it: closing is architecture's (%s).\n", r.Agent, r.HealthADR)
 	return b.String()
 }
 
 // ceilingDescription is D6.2's reading, filed. The wall is the finding, so
 // the wall is the first number in it.
-func (c *landedChecker) ceilingDescription(repo, tree string, took time.Duration) string {
+func (c *landedChecker) ceilingDescription(r landedRule, repo, tree string, took time.Duration) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", landedHealthMarker(repo))
-	fmt.Fprintf(&b, "The landed check at %s ANSWERED at tree %s, and it took %s — over its D6 ceiling of %s (ADR 0088 D6.2). The verdict itself is in the pass's own log and in whatever ADR 0088 D5 filed for it; this bead is about the price.\n\n",
-		AbbrevHome(repo), abbrevSHA(tree), landedCheckWall(took), landedCheckCeiling)
-	fmt.Fprintf(&b, "WHY THAT NUMBER IS A PRICE AND NOT A TIMEOUT. The ceiling is chosen for ATTRIBUTION: D5's bead names every landing between the tree last recorded green and the red one, and a judge that answers inside the p25 landing gap keeps that window to one landing most of the time. A judge this slow widens every window it reports. Nothing was killed — the hang bound is %s and it is a separate number (D6.1) — so the judge is still answering and the detector is still working.\n\n",
-		landedCheckLimit)
-	fmt.Fprintf(&b, "What to do: price the doors (`%s` is the prerequisites of `make test`, derived from the Makefile, so the body grows with every door somebody adds) and decide whether the price is worth paying. ", landedCheckScript)
-	b.WriteString("ADR 0088 D6's alternative (b′) — `make -j --output-sync` with a serial re-run of the failed door — is deferred with \"revisit if D6.3 files an over-ceiling bead\" written on it, and this is that bead. Alternative (b), narrowing the body by hand, costs D6's derivation and is refused there. ")
-	b.WriteString("The launcher comments `answered at <tree> in <wall>` on this bead on every later run it has something to say about, and does NOT close it: closing is architecture's (ADR 0088 D6.3).\n")
+	fmt.Fprintf(&b, "%s\n\n", r.healthMarker(repo))
+	fmt.Fprintf(&b, "The %s at %s ANSWERED at tree %s, and it took %s — over %s of %s (%s). The verdict itself is in the pass's own log and in whatever %s filed for it; this bead is about the price.\n\n",
+		r.Name, AbbrevHome(repo), abbrevSHA(tree), landedCheckWall(took), r.CeilingTitle, landedCheckCeiling, r.PriceADR, r.FileADR)
+	fmt.Fprintf(&b, "WHY THAT NUMBER IS A PRICE AND NOT A TIMEOUT. The ceiling is chosen for ATTRIBUTION: D5's bead names every landing between the tree last recorded green and the red one, and a %s that answers inside the p25 landing gap keeps that window to one landing most of the time. A %s this slow widens every window it reports. Nothing was killed — the hang bound is %s and it is a separate number (D6.1) — so the %s is still answering and the detector is still working.\n\n",
+		r.Agent, r.Agent, landedCheckLimit, r.Agent)
+	fmt.Fprintf(&b, r.CeilingAdvice, r.Script)
+	fmt.Fprintf(&b, "The launcher comments `answered at <tree> in <wall>` on this bead on every later run it has something to say about, and does NOT close it: closing is architecture's (%s).\n", r.HealthADR)
 	return b.String()
 }
 
@@ -388,15 +382,19 @@ func (c *landedChecker) ceilingDescription(repo, tree string, took time.Duration
 // saidOwnCopy's rule and for its reason; the mutex Schedule and loop share
 // is what carries the writes across one cycle's end to the next cycle's
 // goroutine.
-func (c *landedChecker) rememberQuietSaid(repo, said string) {
+//
+// KEYED BY RULE AND REPO (landedRule.memKey): one launcher judges one repo
+// under both rules, and a map keyed on the repo alone would file the wall
+// check's sentence on the judge's bead (ADR 0097 D5).
+func (c *landedChecker) rememberQuietSaid(r landedRule, repo, said string) {
 	if said == "" {
-		delete(c.quietSaid, repo)
+		delete(c.quietSaid, r.memKey(repo))
 		return
 	}
 	if c.quietSaid == nil {
 		c.quietSaid = map[string]string{}
 	}
-	c.quietSaid[repo] = said
+	c.quietSaid[r.memKey(repo)] = said
 }
 
 // markQuietUnreset holds, or clears, "this repo's count came through an
@@ -407,23 +405,23 @@ func (c *landedChecker) rememberQuietSaid(repo, said string) {
 // A delete rather than a false, so an absent entry and a cleared one are one
 // reading — landedQuietRecorded's rule one file over, and the same
 // goroutine-ownership note as rememberQuietSaid's.
-func (c *landedChecker) markQuietUnreset(repo string, unreset bool) {
+func (c *landedChecker) markQuietUnreset(r landedRule, repo string, unreset bool) {
 	if !unreset {
-		delete(c.quietUnreset, repo)
+		delete(c.quietUnreset, r.memKey(repo))
 		return
 	}
 	if c.quietUnreset == nil {
 		c.quietUnreset = map[string]bool{}
 	}
-	c.quietUnreset[repo] = true
+	c.quietUnreset[r.memKey(repo)] = true
 }
 
 // landedQuietRecorded reads the counter. ANY other shape is no record, which
-// is landedCheckRecorded's rule and for its reason: this is one line of git
+// is landedRecorded's rule and for its reason: this is one line of git
 // config a human can edit, and a half-parsed count must read as zero rather
 // than as a stretch nobody measured.
-func landedQuietRecorded(repo string) (string, int) {
-	out, err := git(repo, "config", "--get", landedQuietKey)
+func landedQuietRecorded(r landedRule, repo string) (string, int) {
+	out, err := git(repo, "config", "--get", r.QuietKey)
 	if err != nil {
 		return "", 0
 	}
@@ -443,14 +441,14 @@ func landedQuietRecorded(repo string) (string, int) {
 // unset reset would make "already clear" indistinguishable from "the write
 // failed" — and the failure of a write is the one thing this rule's filing
 // is gated on.
-func recordLandedQuiet(repo, tree string, n int) error {
+func recordLandedQuiet(r landedRule, repo, tree string, n int) error {
 	if tree == "" {
 		return nil
 	}
 	if n < 0 {
 		n = 0
 	}
-	_, err := git(repo, "config", landedQuietKey, tree+" "+strconv.Itoa(n))
+	_, err := git(repo, "config", r.QuietKey, tree+" "+strconv.Itoa(n))
 	return err
 }
 

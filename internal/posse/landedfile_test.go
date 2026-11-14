@@ -103,7 +103,7 @@ func ldfJudge(t *testing.T, c *landedChecker, repo string) {
 func ldfGreen(t *testing.T, c *landedChecker, repo string) string {
 	t.Helper()
 	ldfJudge(t, c, repo)
-	tree, v := landedCheckRecorded(repo)
+	tree, v := landedRecorded(landedJudgeRule, repo)
 	if v != landGreen {
 		t.Fatalf("the fixture did not reach a recorded green: %s %s", tree, v)
 	}
@@ -235,7 +235,7 @@ func TestAGreenToRedTransitionFilesOneAttributedP1NamingEveryLandingInTheWindow(
 		abbrevSHA(older), // the OLDER landing, which is green on its own base
 		ldfOlderBead, ldfOlderWho,
 		ldfNewerBead, ldfNewerWho,
-		landedFileMarker(repo, "main"), // the dedupe of record
+		landedJudgeRule.fileMarker(repo, "main"), // the dedupe of record
 	} {
 		if !strings.Contains(is.Description, want) {
 			t.Errorf("the bead does not name %q:\n%s", want, is.Description)
@@ -298,7 +298,7 @@ func TestARedThatGoesGreenCommentsGreenAndLeavesTheBeadOpen(t *testing.T) {
 	fixed := mustGit(t, repo, "rev-parse", "HEAD")
 	ldfJudge(t, c, repo)
 
-	if _, v := landedCheckRecorded(repo); v != landGreen {
+	if _, v := landedRecorded(landedJudgeRule, repo); v != landGreen {
 		t.Fatalf("the fixture never went green again: %s", v)
 	}
 	is := ldfFiled(t, c, repo) // still exactly one, and still OPEN
@@ -328,7 +328,7 @@ func TestAGreenThatStaysGreenFilesNothingAndSaysNothingAboutBeads(t *testing.T) 
 	commitIn(t, repo, "fine.txt", "an ordinary landing\n", "ranger-base-eeee5: ordinary work")
 	ldfJudge(t, c, repo)
 
-	if _, v := landedCheckRecorded(repo); v != landGreen {
+	if _, v := landedRecorded(landedJudgeRule, repo); v != landGreen {
 		t.Fatalf("the second green was not recorded: %s", v)
 	}
 	if open := ldfBeads(t, c, repo); len(open) != 0 {
@@ -487,7 +487,7 @@ func TestAVerdictThatCouldNotBeRecordedFilesNothingUntilTheRecordLands(t *testin
 	// throughout.
 	for i, next := range []string{"one.txt", "two.txt", ""} {
 		ldfJudge(t, c, repo)
-		if tree, v := landedCheckRecorded(repo); tree != green || v != landGreen {
+		if tree, v := landedRecorded(landedJudgeRule, repo); tree != green || v != landGreen {
 			t.Fatalf("the record moved to %s %s although its write failed, so this arm measured nothing", tree, v)
 		}
 		if open := ldfBeads(t, c, repo); len(open) != 0 {
@@ -513,7 +513,7 @@ func TestAVerdictThatCouldNotBeRecordedFilesNothingUntilTheRecordLands(t *testin
 	ldfJudge(t, c, repo)
 
 	tree := revTreeID(repo, tip)
-	if got, v := landedCheckRecorded(repo); got != tree || v != landRed {
+	if got, v := landedRecorded(landedJudgeRule, repo); got != tree || v != landRed {
 		t.Fatalf("the record reads %s %s after the lock freed, want %s red", got, v, tree)
 	}
 	is := ldfFiled(t, c, repo)
@@ -599,7 +599,7 @@ func TestAFirstEverRedNamesTheJudgedLandingAndSaysTheWindowIsUnbounded(t *testin
 // reads back, and the arm has to be able to say no.
 func TestTheStretchMarkerIsMatchedAsAWholeLine(t *testing.T) {
 	t.Parallel()
-	marker := landedFileMarker("/src/posse", "main")
+	marker := landedJudgeRule.fileMarker("/src/posse", "main")
 	for _, tc := range []struct {
 		desc string
 		want bool
@@ -609,8 +609,8 @@ func TestTheStretchMarkerIsMatchedAsAWholeLine(t *testing.T) {
 		{"first\n" + marker + "\nlast", true, "the marker among other lines"},
 		{"  " + marker + "  ", true, "the marker with surrounding space, which bd may round-trip"},
 		{"a subject mentioning " + marker + " inline", false, "a line that merely CONTAINS the marker"},
-		{landedFileMarker("/src/posse", "release"), false, "another branch's marker"},
-		{landedFileMarker("/src/other", "main"), false, "another repo's marker"},
+		{landedJudgeRule.fileMarker("/src/posse", "release"), false, "another branch's marker"},
+		{landedJudgeRule.fileMarker("/src/other", "main"), false, "another repo's marker"},
 		{"", false, "nothing"},
 	} {
 		if got := landedDescriptionCarries(tc.desc, marker); got != tc.want {

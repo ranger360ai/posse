@@ -125,21 +125,19 @@ func bwrapNestProbe() string {
 // reason. It is compiled once per gated pin and there are 32 of them.
 const wallVenueMarker = "wall venue: measuring (ADR 0097)"
 
-// wallVenueEnvVar is the variable ADR 0097 D1 adds to the venue run's
-// environment allowlist, and the ONLY thing that tells a test process it is
-// inside the venue rather than inside a seat. The two walls are
-// indistinguishable from in here on every other signal — both are a bwrap
-// under `--ro-bind / /` — which is why D1 makes the marker an environment
-// variable the renderer adds rather than something the process can probe.
+// THE VENUE'S ENVIRONMENT VARIABLE is the second of the three literals this
+// block held, and the ONLY thing that tells a test process it is inside the
+// venue rather than inside a seat: both walls are a bwrap under `--ro-bind /
+// /` and are indistinguishable from in here on every other signal, which is
+// why ADR 0097 D1 makes it something the RENDERER adds.
 //
-// THE SPELLING IS SHARED WITH NOTHING YET. D1's venue is rendered by
-// `boxLandedCage` through a flag, and that work is its own bead; until it
-// lands, this const is the one place the name is written in this tree. The
-// bead that teaches boxLandedCage the flag must read it from here or lift it
-// into shipped code — a second literal is the drift that makes a venue run
+// THE SPELLING IS SHIPPED CODE'S NOW (ranger-base-wplhv): the const lives in
+// wallcheck.go, beside the render that WRITES it, and this file reads it. It
+// was declared here until that render landed, because nothing in the tree
+// wrote the variable yet — which made a test file the one copy nothing could
+// be rendered against. A second literal is the drift that makes a venue run
 // abstain on all 32 members while reporting exit 3, which D5's watchdog
 // reports as silence and not as a wall regression.
-const wallVenueEnvVar = "POSSE_WALL_VENUE"
 
 // wallVenueMemberPattern is ADR 0097 D3's `-run` filter, which is also D4's
 // rule about a member's NAME. One literal for both, because the drift D4

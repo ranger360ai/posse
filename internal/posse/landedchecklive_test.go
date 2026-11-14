@@ -87,7 +87,7 @@ func TestLiveLandedCheck(t *testing.T) {
 	// that left `posse.landedCheck` pointing at this tree would hand the
 	// next landing a cached verdict this test measured rather than the
 	// launcher did.
-	had, hadV := landedCheckRecorded(top)
+	had, hadV := landedRecorded(landedJudgeRule, top)
 	t.Cleanup(func() {
 		if had == "" {
 			_, _ = git(top, "config", "--unset", landedCheckKey)

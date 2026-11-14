@@ -96,13 +96,10 @@ const (
 	landedAttributeMax = 12
 )
 
-// landedFileMarker is the marker line for one repo's base. It carries both,
-// because a beads store can serve more than one repo here — two of this
-// instance's three stores are reached through a `.beads/redirect` — so "the
-// open bead" has to be the open bead for THIS branch of THIS repo.
-func landedFileMarker(repo, base string) string {
-	return fmt.Sprintf("%s%s %s (ADR 0088 D5)", landedFileMarkerPrefix, AbbrevHome(repo), base)
-}
+// The marker line itself is landedRule.fileMarker (landedrule.go): ADR 0097
+// D5 gives the wall check this same ratchet over its own records, so the one
+// thing that may not be shared is the marker, and the rule is where the two
+// spellings live side by side.
 
 // landedLanding is one commit in the window: what git says, and what the
 // store says about it. Bead and Persona are empty until attribute fills
@@ -151,7 +148,13 @@ type landedLanding struct {
 // else — and the bead arrives when the record does, one landing late, instead
 // of once per landing. The comment rows are not gated: their dedupe is the
 // marker, which the record has no part in.
-func (c *landedChecker) file(repo, base, tip, tree, had string, prev, v landVerdict, said string, recorded bool) {
+//
+// `r` IS WHICH CHECK'S RATCHET THIS IS (ADR 0097 D5). The table is one table;
+// the record it is read from, the marker it dedupes by and the subject its
+// bead names are the rule's. Every sentence below that differs between the
+// two is a field on it (landedrule.go) and not a branch here — a branch would
+// be a second table reading as one.
+func (c *landedChecker) file(r landedRule, repo, base, tip, tree, had string, prev, v landVerdict, said string, recorded bool) {
 	switch {
 	case v == landUnanswered:
 		// D5's bottom row, and it is never reached from once() — which
@@ -161,8 +164,8 @@ func (c *landedChecker) file(repo, base, tip, tree, had string, prev, v landVerd
 	case v == landGreen && prev != landRed:
 		return // green -> green, and the first ever green: the record is the whole of it
 	case v == landGreen:
-		c.commentStretch(repo, base, fmt.Sprintf("green at %s (%s, ADR 0088 D5) — closing this bead is the fixer's job, so the launcher does not.", abbrevSHA(tree), abbrevSHA(tip)),
-			"main went green and there is no open bead to say so on")
+		c.commentStretch(r, repo, base, fmt.Sprintf("green at %s (%s, %s) — closing this bead is the fixer's job, so the launcher does not.", abbrevSHA(tree), abbrevSHA(tip), r.FileADR),
+			r.subject(base)+" went green and there is no open bead to say so on")
 	case prev == landRed:
 		// red -> red: one comment naming the new tree, no new bead. When the
 		// stretch's bead is GONE — a fixer closed it while main was still
@@ -180,7 +183,7 @@ func (c *landedChecker) file(repo, base, tip, tree, had string, prev, v landVerd
 		// `bd comments add` filed a twin P1 whose body read "the bead for
 		// this red stretch is not open any more" — false in the third case,
 		// which the line above had just disproved, and unknown in the second.
-		switch c.commentStretch(repo, base, fmt.Sprintf("still red at %s (%s), %s — ADR 0088 D5", abbrevSHA(tree), abbrevSHA(tip), said), "") {
+		switch c.commentStretch(r, repo, base, fmt.Sprintf("still red at %s (%s), %s — %s", abbrevSHA(tree), abbrevSHA(tip), said, r.FileADR), "") {
 		case landedStretchOpen:
 			return
 		case landedStretchUnknown:
@@ -188,22 +191,22 @@ func (c *landedChecker) file(repo, base, tip, tree, had string, prev, v landVerd
 			// it must not also become a P1: an unknown is re-asked by the
 			// next landing for free, and a twin is a seat, a worktree and a
 			// suite run.
-			c.say("· %s: nothing was filed for the red at %s — the store could not say whether this red stretch already has a bead, and the next landing asks again (ADR 0088 D5)", AbbrevHome(repo), abbrevSHA(tree))
+			c.say("· %s: nothing was filed for the red at %s — the store could not say whether this red stretch already has a bead, and the next landing asks again (%s)", AbbrevHome(repo), abbrevSHA(tree), r.FileADR)
 			return
 		}
 		// landedStretchNone: the store answered, and this stretch has no open
 		// bead. The degenerate half, and the only one that files.
-		c.fileRed(repo, base, tip, tree, had, prev, said, "the bead for this red stretch is not open any more")
+		c.fileRed(r, repo, base, tip, tree, had, prev, said, "the bead for this red stretch is not open any more")
 	default:
 		// green -> red, and the first ever red: D5's filing row, gated on the
 		// record for the reason this function's header gives. The record is
 		// this row's whole dedupe, so a filing over a record that was never
 		// written is one P1 per landing.
 		if !recorded {
-			c.say("· %s: nothing was filed for the red at %s — the verdict could not be recorded (⚠ above), so this green→red reading is the stale record's and not a transition; the next landing re-judges this tree (ADR 0088 D5)", AbbrevHome(repo), abbrevSHA(tree))
+			c.say("· %s: nothing was filed for the red at %s — the verdict could not be recorded (⚠ above), so this green→red reading is the stale record's and not a transition; the next landing re-judges this tree (%s)", AbbrevHome(repo), abbrevSHA(tree), r.FileADR)
 			return
 		}
-		c.fileRed(repo, base, tip, tree, had, prev, said, "")
+		c.fileRed(r, repo, base, tip, tree, had, prev, said, "")
 	}
 }
 
@@ -231,10 +234,10 @@ const (
 // the first one (ranger-base-w9w37). `absent` is what to say when there is
 // no bead; empty says nothing, for the caller that has something better to do
 // about it than print.
-func (c *landedChecker) commentStretch(repo, base, text, absent string) landedStretchState {
-	is, err := c.openStretchBead(repo, base)
+func (c *landedChecker) commentStretch(r landedRule, repo, base, text, absent string) landedStretchState {
+	is, err := c.openStretchBead(r, repo, base)
 	if err != nil {
-		c.warn("%s: the open landed-check bead could not be read, so %q was not recorded on it (%v)", AbbrevHome(repo), text, err)
+		c.warn("%s: the open %s bead could not be read, so %q was not recorded on it (%v)", AbbrevHome(repo), r.Name, text, err)
 		return landedStretchUnknown
 	}
 	if is.ID == "" {
@@ -256,8 +259,8 @@ func (c *landedChecker) commentStretch(repo, base, text, absent string) landedSt
 // a green->red transition files whatever is already open (D5's table says
 // file, and a stretch that ended is over however long its bead stays open),
 // so the newest marker-carrying bead is this stretch's by construction.
-func (c *landedChecker) openStretchBead(repo, base string) (BdIssue, error) {
-	return c.openMarkedBead(landedFileLabel, repo, landedFileMarker(repo, base))
+func (c *landedChecker) openStretchBead(r landedRule, repo, base string) (BdIssue, error) {
+	return c.openMarkedBead(landedFileLabel, repo, r.fileMarker(repo, base))
 }
 
 // openMarkedBead is the mechanics of that dedupe, over one lane and one
@@ -299,7 +302,7 @@ func landedDescriptionCarries(desc, marker string) bool {
 
 // fileRed files D5's one bead. `why` is the extra sentence for the
 // degenerate red->red arm, empty on the ordinary green->red one.
-func (c *landedChecker) fileRed(repo, base, tip, tree, had string, prev landVerdict, said, why string) {
+func (c *landedChecker) fileRed(r landedRule, repo, base, tip, tree, had string, prev landVerdict, said, why string) {
 	// THE FAR EDGE OF THE WINDOW, and the one thing only the caller knows.
 	// The record has already been overwritten with this red by the time this
 	// runs (see file's header on the order), so the green tree is gone from
@@ -314,14 +317,14 @@ func (c *landedChecker) fileRed(repo, base, tip, tree, had string, prev landVerd
 	}
 	window, note := landedWindow(repo, tip, green)
 	note = joinNotes(note, c.attribute(repo, window))
-	title := fmt.Sprintf("%s red at %s", base, abbrevSHA(tree))
-	desc := c.redDescription(repo, base, tip, tree, green, said, why, note, window)
+	title := r.redTitle(base, tree)
+	desc := c.redDescription(r, repo, base, tip, tree, green, said, why, note, window)
 	// The cheap half of the visibility guard, as verify-after does it
 	// (rangerhq-hrz): this description is built out of a check's output and
 	// a repo's commit subjects, so it carries whatever those carried. Warn,
 	// never refuse — a red main that goes unfiled because its tail named a
 	// path is worse than one filed and flagged.
-	c.a.WarnOpsContent(c.out, repo, "the landed-check bead for "+abbrevSHA(tree), title+"\n"+desc)
+	c.a.WarnOpsContent(c.out, repo, "the "+r.Name+" bead for "+abbrevSHA(tree), title+"\n"+desc)
 	assignee := ""
 	if len(window) > 0 {
 		assignee = window[0].Persona
@@ -359,21 +362,27 @@ func landedAssignedTo(assignee string) string {
 // redDescription is what the fixer reads first: the verdict, the cause, and
 // the window — in that order, because the first question is "what is broken"
 // and the second is "which two landings met".
-func (c *landedChecker) redDescription(repo, base, tip, tree, green, said, why, note string, window []landedLanding) string {
+func (c *landedChecker) redDescription(r landedRule, repo, base, tip, tree, green, said, why, note string, window []landedLanding) string {
 	var b strings.Builder
 	// The marker, first line, on its own (see the header): this is the
 	// dedupe of record and the next red reads it back.
-	fmt.Fprintf(&b, "%s\n\n", landedFileMarker(repo, base))
-	fmt.Fprintf(&b, "%s is RED at %s (tree %s) in %s, judged by `%s` after a landing, outside the lock (ADR 0088 D1/D2).\n\n",
-		base, abbrevSHA(tip), abbrevSHA(tree), AbbrevHome(repo), landedCheckScript)
+	fmt.Fprintf(&b, "%s\n\n", r.fileMarker(repo, base))
+	fmt.Fprintf(&b, "%s is RED at %s (tree %s) in %s, judged by `%s` %s.\n\n",
+		r.subject(base), abbrevSHA(tip), abbrevSHA(tree), AbbrevHome(repo), r.Script, r.RedWhen)
 	fmt.Fprintf(&b, "The check's last lines:\n\n    %s\n\n", orElse(oneLine(said), "it said nothing"))
 	if why != "" {
-		fmt.Fprintf(&b, "Filed although this is not a green→red transition: %s (ADR 0088 D5's red→red row).\n\n", why)
+		fmt.Fprintf(&b, "Filed although this is not a green→red transition: %s (%s's red→red row).\n\n", why, r.FileADR)
 	}
 	b.WriteString(landedWindowSection(green, note, window))
-	fmt.Fprintf(&b, "\nWhat to do: reproduce with `%s` on a fresh %s — it is the prerequisites of `make test`, so a seat hits the same red before any suite arm runs. ", landedCheckScript, base)
-	b.WriteString("Fix it on a branch and land it as usual. ")
-	fmt.Fprintf(&b, "The launcher comments `green at <tree>` on this bead when %s is green again and does NOT close it: closing is the fixer's job (ADR 0088 D5).\n", base)
+	b.WriteString("\n")
+	// The rule's own paragraph, and the one place this description is not
+	// the same sentence for both checks: how a reader REPRODUCES the red.
+	// The judge's body is every seat's prerequisites, so "run it on a fresh
+	// main" is the whole instruction; the wall check's members abstain on a
+	// seat (ADR 0096 D3), so the same sentence there would send a reader to
+	// a green run. The verbs are named on landedRule.RedAdvice.
+	fmt.Fprintf(&b, r.RedAdvice, r.Script, r.subject(base))
+	fmt.Fprintf(&b, "The launcher comments `green at <tree>` on this bead when %s is green again and does NOT close it: closing is the fixer's job (%s).\n", r.subject(base), r.FileADR)
 	return b.String()
 }
 

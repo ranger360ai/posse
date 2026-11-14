@@ -61,9 +61,9 @@ func TestQALandedCheckJudgeIsNoStrongerThanASeat(t *testing.T) {
 		gotEnv      []string
 	)
 	c := &landedChecker{a: &App{}, out: &strings.Builder{}, pending: map[string]string{}}
-	c.cage = func(a *App, judge, tree string, writable, env []string) (landedCage, error) {
+	c.cage = func(a *App, kind landedCageKind, judge, tree string, writable, env []string) (landedCage, error) {
 		gotWritable, gotEnv = writable, env
-		rendered, renderErr = boxLandedCage(a, judge, tree, writable, env)
+		rendered, renderErr = boxLandedCage(a, kind, judge, tree, writable, env)
 		return landedCage{}, Die("pin: rendered and not run")
 	}
 	c.judge(repo, run, tip, revTreeID(repo, tip))
@@ -279,7 +279,7 @@ func TestQALandedCheckJudgeEnvIsTheAllowlist(t *testing.T) {
 		string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	c := &landedChecker{a: &App{}, out: &strings.Builder{}, pending: map[string]string{}}
-	c.cage = func(_ *App, judge, _ string, _ []string, env []string) (landedCage, error) {
+	c.cage = func(_ *App, _ landedCageKind, judge, _ string, _ []string, env []string) (landedCage, error) {
 		return landedCage{Argv: []string{judge}, Env: env}, nil
 	}
 	if v, said := c.judge(repo, run, tip, revTreeID(repo, tip)); v != landGreen {

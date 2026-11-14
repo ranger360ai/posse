@@ -44,7 +44,7 @@ func TestTheCommentRowsAreNotGatedOnTheRecordTheFilingRowIs(t *testing.T) {
 	ldfBreak(t, repo)
 	ldfJudge(t, c, repo) // green→red, recorded: one bead for the stretch
 	first := ldfFiled(t, c, repo)
-	redTree, v := landedCheckRecorded(repo)
+	redTree, v := landedRecorded(landedJudgeRule, repo)
 	if v != landRed {
 		t.Fatalf("the fixture did not reach a recorded red (%s %s), so nothing below is measured", redTree, v)
 	}
@@ -60,7 +60,7 @@ func TestTheCommentRowsAreNotGatedOnTheRecordTheFilingRowIs(t *testing.T) {
 	// written record once the warn scrolls, so it must still land.
 	ldfLandUnderLock(t, repo, "second.txt", "a landing onto a red main\n", "ranger-base-lll11: more work on a red main")
 	ldfJudge(t, c, repo)
-	if got, gv := landedCheckRecorded(repo); got != redTree || gv != landRed {
+	if got, gv := landedRecorded(landedJudgeRule, repo); got != redTree || gv != landRed {
 		t.Fatalf("the record moved to %s %s although its write failed, so this arm measured nothing", got, gv)
 	}
 	if is := ldfFiled(t, c, repo); is.ID != first.ID {
@@ -89,7 +89,7 @@ func TestTheCommentRowsAreNotGatedOnTheRecordTheFilingRowIs(t *testing.T) {
 	}
 	ldfLandUnderLock(t, repo, "third.txt", "another landing onto a red main\n", "ranger-base-mmm12: and more")
 	ldfJudge(t, c, repo)
-	if got, gv := landedCheckRecorded(repo); got != redTree || gv != landRed {
+	if got, gv := landedRecorded(landedJudgeRule, repo); got != redTree || gv != landRed {
 		t.Fatalf("the record moved to %s %s although its write failed, so the degenerate arm measured nothing", got, gv)
 	}
 	again := ldfFiled(t, c, repo)
@@ -109,7 +109,7 @@ func TestTheCommentRowsAreNotGatedOnTheRecordTheFilingRowIs(t *testing.T) {
 	ldfLandUnderLock(t, repo, "fixed.txt", "the fix for the red\n", "ranger-base-nnn13: fix the red")
 	mustGit(t, repo, "commit", "-q", "-m", "ranger-base-nnn13: drop the breakage", "--", "boom.txt")
 	ldfJudge(t, c, repo)
-	if got, gv := landedCheckRecorded(repo); got != redTree || gv != landRed {
+	if got, gv := landedRecorded(landedJudgeRule, repo); got != redTree || gv != landRed {
 		t.Fatalf("the record moved to %s %s although its write failed, so the green arm measured nothing", got, gv)
 	}
 	if is := ldfFiled(t, c, repo); is.ID != again.ID {

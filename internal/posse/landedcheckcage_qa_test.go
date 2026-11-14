@@ -67,7 +67,7 @@ func TestQALandedCheckCageRendersTheSecretMasks(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
 	tsnet := absResolve(filepath.Join(f.ssh.home, ".local", "state", "rex", "tsnet"))
 	writeFile(t, filepath.Join(tsnet, "node", "tailscaled.state"), "PRIVATE\n", 0o600)
-	cage, err := boxLandedCage(&App{}, judge, f.tree, []string{f.run}, nil)
+	cage, err := boxLandedCage(&App{}, landedCageJudge, judge, f.tree, []string{f.run}, nil)
 	if err != nil {
 		t.Skip("NOTHING MEASURED: this host has no landed-check cage to render: " + err.Error())
 	}
@@ -151,7 +151,7 @@ func TestLiveLandedCheckCageReadsNoSecret(t *testing.T) {
 		return res
 	}
 
-	cage, err := boxLandedCage(&App{}, judge, f.tree, []string{f.run}, nil)
+	cage, err := boxLandedCage(&App{}, landedCageJudge, judge, f.tree, []string{f.run}, nil)
 	if err != nil {
 		t.Skip("NOTHING MEASURED: no landed-check cage on this host: " + err.Error())
 	}

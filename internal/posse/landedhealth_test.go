@@ -46,7 +46,7 @@ import (
 // renderer is called from too.
 func lhSilentCage(said ...string) landedCageFn {
 	n := 0
-	return func(*App, string, string, []string, []string) (landedCage, error) {
+	return func(*App, landedCageKind, string, string, []string, []string) (landedCage, error) {
 		s := said[len(said)-1]
 		if n < len(said) {
 			s = said[n]
@@ -98,7 +98,7 @@ func lhCreateFields() string {
 // lhQuiet is the counter as the record holds it.
 func lhQuiet(t *testing.T, repo string) int {
 	t.Helper()
-	_, n := landedQuietRecorded(repo)
+	_, n := landedQuietRecorded(landedJudgeRule, repo)
 	return n
 }
 
@@ -144,9 +144,9 @@ func TestTwoConsecutiveSilencesFileOneArchitectureBeadCarryingBothSaidLines(t *t
 	for _, want := range []string{
 		lhSaidOne, lhSaidTwo, // BOTH sentences: one run's is not a pattern
 		abbrevSHA(tree),
-		landedHealthMarker(repo),    // the dedupe of record
-		landedCheckLimit.String(),   // the hang bound, so a reader can tell a kill from a refusal
-		landedCheckCeiling.String(), // and the price, which is the other number
+		landedJudgeRule.healthMarker(repo), // the dedupe of record
+		landedCheckLimit.String(),          // the hang bound, so a reader can tell a kill from a refusal
+		landedCheckCeiling.String(),        // and the price, which is the other number
 		"no landing is judged",
 		"closing is architecture's",
 	} {
@@ -216,7 +216,7 @@ func TestAnAnsweredRunOverTheCeilingFilesWithItsWall(t *testing.T) {
 	// It ANSWERED: the verdict is on record and the judge really ran. A
 	// filing over a run that was killed would be the silent row wearing
 	// this row's title.
-	if tree, v := landedCheckRecorded(repo); tree != revTreeID(repo, tip) || v != landGreen {
+	if tree, v := landedRecorded(landedJudgeRule, repo); tree != revTreeID(repo, tip) || v != landGreen {
 		t.Fatalf("the run did not answer green (%s %s), so this arm is not the one being measured", tree, v)
 	}
 	if n := len(landedRuns(t, log)); n != 1 {
@@ -230,7 +230,7 @@ func TestAnAnsweredRunOverTheCeilingFilesWithItsWall(t *testing.T) {
 		t.Errorf("the bead carries no wall, which is the whole finding — D6.2's ceiling is READ off answered runs:\n%s", is.Description)
 	}
 	for _, want := range []string{
-		landedHealthMarker(repo),
+		landedJudgeRule.healthMarker(repo),
 		abbrevSHA(revTreeID(repo, tip)),
 		landedCheckLimit.String(), // nothing was killed, and the bead says which number did not fire
 		"closing is architecture's",
@@ -302,7 +302,7 @@ func TestAnAnsweredRunAfterSilenceCommentsResetsTheCounterAndLeavesTheBeadOpen(t
 	if n := len(landedRuns(t, log)); n != 1 {
 		t.Fatalf("%d judge run(s) after the cage was fixed, want 1 — the answered arm was never reached", n)
 	}
-	if _, v := landedCheckRecorded(repo); v != landGreen {
+	if _, v := landedRecorded(landedJudgeRule, repo); v != landGreen {
 		t.Fatalf("the run did not answer green (%s)", v)
 	}
 	if n := lhQuiet(t, repo); n != 0 {
@@ -419,10 +419,10 @@ func TestASilentJudgeAndARedMainAreTwoBeadsInTwoLanes(t *testing.T) {
 	if cs := ldfComments(t, c, repo, red.ID); len(cs) != 0 {
 		t.Errorf("the silent judge commented on D5's red-main bead: %s", ldfCommentTexts(cs))
 	}
-	if landedDescriptionCarries(health.Description, landedFileMarker(repo, "main")) {
+	if landedDescriptionCarries(health.Description, landedJudgeRule.fileMarker(repo, "main")) {
 		t.Errorf("the health bead carries D5's marker, so the next red main would comment on it instead of filing:\n%s", health.Description)
 	}
-	if landedDescriptionCarries(red.Description, landedHealthMarker(repo)) {
+	if landedDescriptionCarries(red.Description, landedJudgeRule.healthMarker(repo)) {
 		t.Errorf("D5's bead carries the health marker, so the next silence would comment on a red main's bead instead of filing:\n%s", red.Description)
 	}
 }
@@ -442,7 +442,7 @@ func TestTheCeilingSeamDefaultsToTheShippedPrice(t *testing.T) {
 }
 
 // The counter's own parse table. ANY other shape is no record, which is
-// landedCheckRecorded's rule and for its reason: this is one line of git
+// landedRecorded's rule and for its reason: this is one line of git
 // config a human can edit, and a half-parsed count must read as ZERO — the
 // direction that files nothing — rather than as a stretch nobody measured.
 func TestTheQuietCounterReadsZeroOverAnyShapeThatIsNotItsOwn(t *testing.T) {
@@ -467,7 +467,7 @@ func TestTheQuietCounterReadsZeroOverAnyShapeThatIsNotItsOwn(t *testing.T) {
 		if _, err := git(repo, "config", landedQuietKey, tc.set); err != nil {
 			t.Fatalf("the fixture could not set %q: %v", tc.set, err)
 		}
-		tree, n := landedQuietRecorded(repo)
+		tree, n := landedQuietRecorded(landedJudgeRule, repo)
 		if tree != tc.tree || n != tc.n {
 			t.Errorf("landedQuietRecorded over %q = %q %d, want %q %d — %s", tc.set, tree, n, tc.tree, tc.n, tc.why)
 		}
@@ -477,7 +477,7 @@ func TestTheQuietCounterReadsZeroOverAnyShapeThatIsNotItsOwn(t *testing.T) {
 	if _, err := git(repo, "config", "--unset", landedQuietKey); err != nil {
 		t.Fatal(err)
 	}
-	if tree, n := landedQuietRecorded(repo); tree != "" || n != 0 {
+	if tree, n := landedQuietRecorded(landedJudgeRule, repo); tree != "" || n != 0 {
 		t.Errorf("landedQuietRecorded over an absent key = %q %d, want %q 0", tree, n, "")
 	}
 }
@@ -539,7 +539,7 @@ func TestASilentJudgeOverAnUnreadableStoreFilesNothingAndTheNextLandingAsksAgain
 	}
 	ldfJudge(t, c, repo)
 	is := lhFiled(t, c, repo)
-	for _, want := range []string{lhSaidTwo, lhSaidThree, landedHealthMarker(repo)} {
+	for _, want := range []string{lhSaidTwo, lhSaidThree, landedJudgeRule.healthMarker(repo)} {
 		if !strings.Contains(is.Description, want) {
 			t.Errorf("the bead filed by the run after the unreadable one does not name %q:\n%s", want, is.Description)
 		}
@@ -606,8 +606,8 @@ func TestASilenceCountedThroughAFailedResetClaimsNoPatternAndNoRestart(t *testin
 		"THEY ARE NOT CONSECUTIVE", // the claim the count cannot carry
 		"could not be written",     // and why: the reset, not a restart
 		"the ANSWERED run between the two cleared it",
-		lhSaidThree,              // the one sentence this process does have
-		landedHealthMarker(repo), // still the one bead per stretch
+		lhSaidThree,                        // the one sentence this process does have
+		landedJudgeRule.healthMarker(repo), // still the one bead per stretch
 		"closing is architecture's",
 	} {
 		if !strings.Contains(is.Description, want) {
@@ -738,7 +738,7 @@ func TestAHandZeroedQuietCounterLeavesNoUnresetCaveatBehind(t *testing.T) {
 			if err := os.Remove(lock); err != nil {
 				t.Fatal(err)
 			}
-			if !c.quietUnreset[repo] {
+			if !c.quietUnreset[landedJudgeRule.memKey(repo)] {
 				t.Fatalf("the failed reset left no unreset mark, so this arm measured nothing: %s", out.String())
 			}
 
@@ -755,7 +755,7 @@ func TestAHandZeroedQuietCounterLeavesNoUnresetCaveatBehind(t *testing.T) {
 				// nothing was recorded over it (the lock blocked the
 				// verdict's own write too), so this run reaches the judge.
 				ldfJudge(t, c, repo)
-				if c.quietUnreset[repo] {
+				if c.quietUnreset[landedJudgeRule.memKey(repo)] {
 					t.Fatalf("an answered run over a zeroed %s left the mark standing", landedQuietKey)
 				}
 				// …and that run DID record a green, so the crossing below
@@ -778,7 +778,7 @@ func TestAHandZeroedQuietCounterLeavesNoUnresetCaveatBehind(t *testing.T) {
 			for _, want := range []string{
 				"consecutive judged runs", // because they were
 				lhSaidTwo, lhSaidThree,    // and both of them are this stretch's
-				landedHealthMarker(repo),
+				landedJudgeRule.healthMarker(repo),
 			} {
 				if !strings.Contains(is.Description, want) {
 					t.Errorf("the bead does not name %q:\n%s", want, is.Description)

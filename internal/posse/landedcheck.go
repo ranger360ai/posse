@@ -191,7 +191,39 @@ type landedCage struct {
 // reason on this box and cannot be written at all on the other.
 //
 // Production has exactly one implementation and it is boxLandedCage.
-type landedCageFn func(a *App, judge, tree string, writable []string, env []string) (landedCage, error)
+type landedCageFn func(a *App, kind landedCageKind, child, tree string, writable []string, env []string) (landedCage, error)
+
+// landedCageKind is ADR 0097 D1's flag, and it is the WHOLE of the venue's
+// difference from the judge: one renderer, one set of masks, one layer list,
+// with a flag that adds three things to it.
+//
+// A FLAG AND NOT A SECOND RENDERER, which is the decision and not a style
+// note (D1, ranger-base-hy1aj's lesson). Every mask added to the judge later
+// — a runtime state root, a socket directory, a credential nobody has
+// declared yet — reaches the venue by construction, because there is nothing
+// for it to be added to twice. A second renderer is a layer the venue would
+// not inherit, and the one it misses is the one nobody notices.
+type landedCageKind int
+
+const (
+	// landedCageJudge is ADR 0088 D3's cage: the landed check's judge, which
+	// runs this repo's `make` doors over a detached worktree.
+	landedCageJudge landedCageKind = iota
+	// landedCageVenue is ADR 0097 D1's venue: that cage plus
+	// `--unshare-pid --proc /proc`, a private /var/tmp, and
+	// POSSE_WALL_VENUE=1. It is where the wall's 32 live pins can nest a
+	// bwrap of their own, which is the capability it exists for and the one
+	// axis on which it is weaker than a seat (D1's third bullet).
+	landedCageVenue
+)
+
+// String names the kind in a refusal a human reads.
+func (k landedCageKind) String() string {
+	if k == landedCageVenue {
+		return "wall venue"
+	}
+	return "judge"
+}
 
 // boxLandedCage is D3: the box's own cage tier, bwrap on Linux and
 // sandbox-exec on darwin, with the run dir (the landed worktree, its TMPDIR
@@ -210,7 +242,24 @@ type landedCageFn func(a *App, judge, tree string, writable []string, env []stri
 // AN UNAVAILABLE MECHANISM REFUSES rather than returning an empty argv. An
 // empty prefix is a run with no wall and nothing said, which is the one
 // outcome D3 names by hand.
-func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCage, error) {
+//
+// THE VENUE IS THIS CAGE PLUS EXACTLY THREE THINGS (ADR 0097 D1), and the
+// `kind` flag is where they are added. They are added at the END of the bwrap
+// argv and after the carve-out, so this render's own masks and the base mount
+// are untouched by them: `--unshare-pid --proc /proc` (a pid namespace of the
+// venue's own and a procfs over it, which is what lets a process inside write
+// its own uid_map and nest a bwrap — ADR 0096 arm C), a private /var/tmp (the
+// ADR's own fourth row: without it 18 pins go dark under `--ro-bind / /`), and
+// POSSE_WALL_VENUE=1 (the only signal that tells a test process it is the
+// venue and not a seat — D1, wallvenue_test.go's wallVenueActive).
+//
+// ON SANDBOX-EXEC THE VENUE REFUSES. The step does not exist on darwin (ADR
+// 0096: no darwin change), and a render that quietly handed back the judge's
+// profile would be a wall check measuring in a wall that forbids nesting —
+// every member abstaining, exit 3, and D5's watchdog filing silence at a host
+// that was never asked to answer. The caller checks the mechanism before it
+// gets here (wallcheck.go); this refusal is what makes that structural.
+func boxLandedCage(a *App, kind landedCageKind, judge, tree string, writable, env []string) (landedCage, error) {
 	// THE READ HALF OF THE CARVE IS NOT EMPTY (ranger-base-6b46n). Under
 	// `--ro-bind / /`, and under a seatbelt profile that allows every read
 	// it does not deny, an empty DenyRead is not "no narrowing" — it is the
@@ -267,6 +316,20 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 		if err != nil {
 			return landedCage{}, err
 		}
+		if kind == landedCageVenue {
+			// ADR 0097 D1's three additions, and the one condition the
+			// second of them carries: the /var/tmp bind STANDS DOWN WHEN
+			// Tmp DOES. That is one condition and not two — carve.Tmp is
+			// empty exactly when the home, the run or the tree is itself
+			// under /tmp (landedCheckTmp), which is this package's fixture
+			// shape and not a production one — and a private /var/tmp over
+			// a tree living under one of them would leave the check nothing
+			// to chdir into, for the same reason the private /tmp would.
+			var mkdir []PrepStep
+			argv, mkdir = wallVenueArgv(argv, run, carve.Tmp != "")
+			prep = append(prep, mkdir...)
+			env = append(append([]string{}, env...), wallVenueEnvVar+"=1")
+		}
 		// The prep is not housekeeping: bwrap binds only a source that
 		// exists, so a write grant that is not there yet (the run's TMPDIR,
 		// its private /tmp) is a mkdir the launcher
@@ -291,6 +354,15 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 		}
 		return landedCage{Argv: append(append([]string{bin}, argv...), "--", judge), Env: env}, nil
 	case WallSandboxExec:
+		if kind == landedCageVenue {
+			// ADR 0097 D1/D2: the step does not exist here. A profile has no
+			// spelling for a pid namespace or a mount view, so the "venue"
+			// this arm could render would be the judge's wall with a
+			// different name — and the wall check inside it would abstain on
+			// every member, answer exit 3, and reach a reader as D5's
+			// silence rather than as "this host does not do this".
+			return landedCage{}, Die("there is no %s on this host: ADR 0097 D1's venue is a bwrap and this host realizes cage %s with %s (ADR 0096: no darwin change), so the wall check's step does not exist here", kind, CageSeatbelt, m)
+		}
 		if !SeatbeltAvailable() {
 			return landedCage{}, Die("the landed check cannot run: this host realizes cage %s with %s and %s (ADR 0088 D3), so there is no wall to put it behind",
 				CageSeatbelt, m, orElse(sandboxApplyRefusal(), "it does not resolve"))
@@ -356,7 +428,7 @@ func landedCheckTmp(home, run, tree string) string {
 			return ""
 		}
 	}
-	return filepath.Join(run, "tmp")
+	return landedCheckTmpDir(run)
 }
 
 // landedCheckGoCache is the judge's build cache: fresh in every run and
@@ -692,12 +764,18 @@ type landedChecker struct {
 	// saidOwnCopy is D1's "said once": the first run with no green tree on
 	// record judges with the landed tree's own copy, and says so. Per
 	// checker and not per run, because the record stays empty until the
-	// first green and the sentence is about the configuration, not the tip.
-	saidOwnCopy bool
+	// first green and the sentence is about the configuration, not the tip —
+	// and per RULE AND REPO rather than a bool, because one launcher runs
+	// two checks with a record each (ADR 0097 D5, landedRule.memKey).
+	saidOwnCopy map[string]bool
 	// quietSaid is D6.3's other input, per repo: the sentence the LAST
 	// unanswered run gave, so the bead filed on the second consecutive
 	// silence can carry both (rememberQuietSaid, landedhealth.go). In
 	// memory and not in the record, which D6.3 spells `<tree> <n>`.
+	// Keyed by landedRule.memKey and not by the repo alone, like
+	// quietUnreset and saidOwnCopy: one launcher judges one repo under two
+	// rules, and a map keyed on the repo would have the wall check's last
+	// sentence filed as the judge's (ADR 0097 D5).
 	quietSaid map[string]string
 	// quietUnreset is set for a repo whose counter came through an answered
 	// run that could NOT reset it (ranger-base-4jroi): the count then spans
@@ -814,11 +892,11 @@ func (c *landedChecker) once(repo, base string) {
 	// `had`/`prev` are also D5's other input: the record as it reads BEFORE
 	// this run is the transition's left-hand column, and — when it is green
 	// — the far edge of the window a filed bead names (landedfile.go).
-	had, prev := landedCheckRecorded(repo)
+	had, prev := landedRecorded(landedJudgeRule, repo)
 	if had == tree && prev != landUnanswered {
 		return
 	}
-	if !landedCheckShipped(repo, tree) {
+	if !landedCheckShipped(landedJudgeRule, repo, tree) {
 		return // the repo has not opted in, which is every repo until it does
 	}
 	run, err := os.MkdirTemp(landedCheckWorkDirEnsured(c.a), "run-")
@@ -854,7 +932,13 @@ func (c *landedChecker) once(repo, base string) {
 		// D6.3, and this is the arm it exists for: silence records nothing
 		// and files nothing under D5, so the watchdog on the detector is
 		// the only thing that can say the judge has stopped answering.
-		c.health(repo, tree, v, took, said)
+		c.health(landedJudgeRule, repo, tree, v, took, said)
+		// ADR 0097 D2: the wall check runs after a judgement that answered
+		// GREEN, so this one says it did not run and why. It records
+		// nothing and counts nothing — "not run (judge no answer)" is
+		// neither a green nor a silence of its own, which is what keeps one
+		// broken tree to one filed bead.
+		c.wall(repo, base, tip, tree, run, v)
 		return
 	case landGreen:
 		c.say("✓ %s green at %s in %s (%s, ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript)
@@ -865,7 +949,7 @@ func (c *landedChecker) once(repo, base string) {
 		c.warn("%s is RED at %s in %s — %s — %s (ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, said)
 	}
 	recorded := true
-	if err := recordLandedCheck(repo, tree, v); err != nil {
+	if err := recordLandedCheck(landedJudgeRule, repo, tree, v); err != nil {
 		// Best effort by contract, for recordLandCheck's reason: a config
 		// write that fails leaves the next landing judging this tree again,
 		// which is the behaviour before any record existed.
@@ -880,12 +964,19 @@ func (c *landedChecker) once(repo, base string) {
 	// D5, and AFTER the record for the reason landedfile.go's `file` gives:
 	// of the two orders, this is the one whose failure costs one bead one
 	// landing late instead of two beads for one red stretch.
-	c.file(repo, base, tip, tree, had, prev, v, said, recorded)
+	c.file(landedJudgeRule, repo, base, tip, tree, had, prev, v, said, recorded)
 	// D6.3, after D5 and not instead of it: the two are about different
 	// subjects — the tree, and the judge — and an answered run can be both
 	// a red main and a crossing of the price. Its own counter resets here,
 	// and the ceiling is read off this wall.
-	c.health(repo, tree, v, took, said)
+	c.health(landedJudgeRule, repo, tree, v, took, said)
+	// ADR 0097 D2, LAST: the wall check is a second check after the judge
+	// and not part of its body, so the judge's own record, bead and health
+	// are written before a venue run that costs about 100s. It runs on this
+	// same tree, in this same run dir, inside the defer above — so the
+	// worktree it judges is the one the judge judged, byte for byte, and the
+	// removal still happens once.
+	c.wall(repo, base, tip, tree, run, v)
 }
 
 // judge creates the detached worktree, extracts the judge, and runs it
@@ -903,11 +994,11 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	if _, err := git(repo, "worktree", "add", "--detach", path, tip); err != nil {
 		return landUnanswered, fmt.Sprintf("a detached worktree of %s could not be created (%s)", abbrevSHA(tip), gitSaid(err))
 	}
-	judge, from, err := c.extractJudge(repo, run, tree)
+	judge, from, err := c.extract(landedJudgeRule, repo, run, tree)
 	if err != nil {
 		return landUnanswered, err.Error()
 	}
-	tmp := filepath.Join(run, "tmp")
+	tmp := landedCheckTmpDir(run)
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		return landUnanswered, fmt.Sprintf("the landed check's own temp dir could not be made (%v)", err)
 	}
@@ -920,27 +1011,15 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	if err := os.MkdirAll(gocache, 0o755); err != nil {
 		return landUnanswered, fmt.Sprintf("the landed check's own build cache could not be made (%v)", err)
 	}
-	env := []string{"TMPDIR=" + tmp, "GOCACHE=" + gocache}
-	cage, err := c.cageFn()(c.a, judge, path, landedCheckWritable(run, path), env)
+	env := landedRunEnv(run)
+	cage, err := c.cageFn()(c.a, landedCageJudge, judge, path, landedCheckWritable(run, path), env)
 	if err != nil {
 		// D3's one hard rule, and the reason the argv comes out of a
 		// renderer instead of being built here: a cage that will not render
 		// is the end of the run. There is no uncaged arm to fall through to.
 		return landUnanswered, oneLine(err.Error())
 	}
-	if from == tree && !c.saidOwnCopy {
-		// D1's "said once", and said HERE rather than where the judge is
-		// extracted: a run whose cage refused never judged anything, and
-		// burning the once on it would mean the first run that really ran
-		// said nothing about judging itself. The fallback is the
-		// configuration speaking, not this tip — there is no green tree on
-		// record to take the judge from, so the tree being judged is judging
-		// itself, and a landing that weakened the script would have weakened
-		// its own gate. It stays true until the first green lands, which is
-		// why once per process is the right number.
-		c.saidOwnCopy = true
-		c.say("· %s is judged by its OWN %s — no tree is recorded green in %s yet (ADR 0088 D1)", AbbrevHome(repo), landedCheckScript, landedCheckKey)
-	}
+	c.sayOwnCopy(landedJudgeRule, repo, from, tree)
 	ctx, cancel := context.WithTimeout(context.Background(), landedCheckLimit)
 	defer cancel()
 	// protocolCmd around the construction and protocolEnv around the
@@ -965,6 +1044,32 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	// — and this child has grandchildren by construction (`make`, and `go`
 	// under it).
 	return landChildVerdict(ctx, cmd, landedCheckLimit)
+}
+
+// sayOwnCopy is ADR 0088 D1's "said once", per RULE: the first run with no
+// green tree on that rule's record judges with the landed tree's own copy,
+// and says so.
+//
+// SAID AT THE CALL SITE AND NOT WHERE THE COPY IS EXTRACTED: a run whose cage
+// refused never judged anything, and burning the once on it would mean the
+// first run that really ran said nothing about judging itself. The fallback
+// is the configuration speaking, not this tip — there is no green tree on
+// record to take the copy from, so the tree being judged is judging itself,
+// and a landing that weakened the script would have weakened its own gate. It
+// stays true until the first green lands, which is why once per process is
+// the right number.
+//
+// PER RULE AND NOT PER CHECKER (ADR 0097 D5): one launcher runs both checks,
+// and a single bool would let the judge's sentence spend the wall check's.
+func (c *landedChecker) sayOwnCopy(r landedRule, repo, from, tree string) {
+	if from != tree || c.saidOwnCopy[r.memKey(repo)] {
+		return
+	}
+	if c.saidOwnCopy == nil {
+		c.saidOwnCopy = map[string]bool{}
+	}
+	c.saidOwnCopy[r.memKey(repo)] = true
+	c.say("· %s is judged by its OWN %s — no tree is recorded green in %s yet (%s)", AbbrevHome(repo), r.Script, r.Key, r.RunADR)
 }
 
 // cageFn is the renderer this checker uses, defaulting to the box's. A
@@ -996,24 +1101,24 @@ func (c *landedChecker) cageFn() landedCageFn {
 // A recorded tree that no longer has the script (it was added after that
 // tree, or the record predates the opt-in) falls back the same way, because
 // "the judge is not there" is not a statement about the tree being judged.
-func (c *landedChecker) extractJudge(repo, run, tree string) (path, from string, err error) {
+func (c *landedChecker) extract(r landedRule, repo, run, tree string) (path, from string, err error) {
 	from = tree
-	if had, v := landedCheckRecorded(repo); v == landGreen && had != "" {
+	if had, v := landedRecorded(r, repo); v == landGreen && had != "" {
 		from = had
 	}
 	// gitRaw and not git: a judge is BYTES, and git() trims its output. A
 	// trimmed shell script usually still runs, which is exactly what makes
 	// that the wrong tool here — the one thing this gate may not do is judge
 	// with a copy that is not the copy on record.
-	body, gerr := gitRaw(repo, "cat-file", "blob", from+":"+landedCheckScript)
+	body, gerr := gitRaw(repo, "cat-file", "blob", from+":"+r.Script)
 	if gerr != nil && from != tree {
 		from = tree
-		body, gerr = gitRaw(repo, "cat-file", "blob", from+":"+landedCheckScript)
+		body, gerr = gitRaw(repo, "cat-file", "blob", from+":"+r.Script)
 	}
 	if gerr != nil {
-		return "", "", fmt.Errorf("%s could not be read out of %s (%s)", landedCheckScript, abbrevSHA(from), gitSaid(gerr))
+		return "", "", fmt.Errorf("%s could not be read out of %s (%s)", r.Script, abbrevSHA(from), gitSaid(gerr))
 	}
-	path = filepath.Join(run, "judge")
+	path = filepath.Join(run, r.Extract)
 	// 0o755: the blob's own mode is not asked. landCheckShipped's reasoning
 	// one file over applies here with the sides swapped — there the execute
 	// bit is left to exec so a missing one is loud; here the bytes come out
@@ -1021,7 +1126,7 @@ func (c *landedChecker) extractJudge(repo, run, tree string) (path, from string,
 	// the mode and a mode that cannot exec would be posse refusing its own
 	// write.
 	if werr := WriteExecutable(path, body, 0o755); werr != nil {
-		return "", "", fmt.Errorf("%s could not be written for the cage to exec (%v)", landedCheckScript, werr)
+		return "", "", fmt.Errorf("%s could not be written for the cage to exec (%v)", r.Script, werr)
 	}
 	return path, from, nil
 }
@@ -1036,8 +1141,10 @@ func (c *landedChecker) extractJudge(repo, run, tree string) (path, from string,
 // out of git and judges a worktree the launcher is about to create, and the
 // operator's checkout can be mid-rebase, dirty, or on another branch
 // entirely. `cat-file -e` is the question git answers about a tree.
-func landedCheckShipped(repo, tree string) bool {
-	_, err := git(repo, "cat-file", "-e", tree+":"+landedCheckScript)
+// It is also ADR 0097 D2's opt-in for the wall check, asked of the same tree
+// with that rule's own script: a repo ships one, both or neither.
+func landedCheckShipped(r landedRule, repo, tree string) bool {
+	_, err := git(repo, "cat-file", "-e", tree+":"+r.Script)
 	return err == nil
 }
 
@@ -1045,20 +1152,24 @@ func landedCheckShipped(repo, tree string) bool {
 // contract, and silence is never written: landUnanswered has no spelling in
 // the record because the next run must read "nothing on record" and ask
 // again, not "unanswered" and wonder.
-func recordLandedCheck(repo, tree string, v landVerdict) error {
+func recordLandedCheck(r landedRule, repo, tree string, v landVerdict) error {
 	if tree == "" || v == landUnanswered {
 		return nil
 	}
-	_, err := git(repo, "config", landedCheckKey, tree+" "+v.String())
+	_, err := git(repo, "config", r.Key, tree+" "+v.String())
 	return err
 }
 
-// landedCheckRecorded reads it back. A record in any other shape is no
+// landedRecorded reads it back. A record in any other shape is no
 // record, which is landCheckRecorded's rule and for its reason: this is one
 // line of git config a human can edit, and a half-parsed verdict is the one
 // thing that must not be read as green.
-func landedCheckRecorded(repo string) (string, landVerdict) {
-	out, err := git(repo, "config", "--get", landedCheckKey)
+// It takes the RULE and not the key, so that a reader of a call site sees
+// which check's record is being read — the two are one line of git config
+// apiece and a bare key at a call site is the kind of argument that gets
+// copied into the wrong one (ADR 0097 D5).
+func landedRecorded(r landedRule, repo string) (string, landVerdict) {
+	out, err := git(repo, "config", "--get", r.Key)
 	if err != nil {
 		return "", landUnanswered
 	}
