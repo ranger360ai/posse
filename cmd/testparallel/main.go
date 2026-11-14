@@ -553,6 +553,7 @@ func main() {
 		"TestLiveBwrapWithoutHideReachesTheRuntimeDir":                     "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapSeatTmpKeepsTheSeatOutOfTheHostsTmp":                 "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWithoutSeatTmpReachesTheHostsTmp":                    "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveWallWatchDiscardsAPromptLargerThanTheTerminalQueue":       "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchDiscardsWhatWasTypedIntoTheKilledSeat":           "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead":      "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchPassesTheSeatsOwnExitCode":                       "reads bwrapNestOnce and bwrapNestWhy",

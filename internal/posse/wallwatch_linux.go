@@ -261,16 +261,96 @@ func runWallWatch(r wallWatchRun) int {
 // watcher had just killed was evaluated by that shell, uncaged, command
 // substitutions and all.
 //
-// A flush and not a read: nothing typed into a dead seat was meant for the
-// shell, and a read would have to decide where the input ends. TCIFLUSH on a
-// stdin that is not a terminal is ENOTTY, and there is nothing to discard.
+// A FLUSH ALONE IS NOT ENOUGH, because a flush reaches only what has already
+// ARRIVED (ranger-base-69vw5). The terminal's input queue holds 4096 bytes
+// and no dispatch work prompt is that small (MEASURED 2026-11-14, Linux
+// 7.2.15: the smallest is 4211 bytes, a real one ~4600), so a prompt typed
+// at a dead seat is still mid-write when the watcher returns: the queue is
+// full, the sender is held behind it, and a flush only makes room for the
+// rest — which then arrives into an empty queue whose next reader is the
+// shell. So the watcher reads and discards until the sender has stopped
+// (nothing for wallWatchDrainQuiet), with ICANON off for the drain so a line
+// still waiting for its Enter is as readable as a whole one, then flushes,
+// restores the terminal and flushes once more. wallWatchDrainMost bounds a
+// sender that never stops. Nothing typed into a dead seat was meant for the
+// shell, so none of it is kept.
+//
+// The drain reads only from a terminal the watcher may read: one whose
+// foreground group is the watcher's own, or one that is not its controlling
+// terminal at all. A background read of the controlling terminal would stop
+// the watcher on SIGTTIN and hand the pane to the shell with the input
+// unread; there it falls back to the flush. A stdin that is not a terminal
+// has nothing to discard.
 //
 // Residual: ranger-base-ie4mx.
 func wallWatchDiscardTyped(in *os.File) {
+	discardTyped(in, wallWatchDrainQuiet, wallWatchDrainMost)
+}
+
+// The drain ends after this long with nothing typed, or after the second
+// whatever the sender is doing. Rex types a prompt as one `rex send` and its
+// Enter as a second call tens of ms later; the quiet window spans that gap,
+// so the Enter goes with the text.
+const (
+	wallWatchDrainQuiet = 250 * time.Millisecond
+	wallWatchDrainMost  = 5 * time.Second
+)
+
+func discardTyped(in *os.File, quiet, most time.Duration) {
 	if in == nil {
 		return
 	}
-	_ = unix.IoctlSetInt(int(in.Fd()), unix.TCFLSH, unix.TCIFLUSH)
+	fd := int(in.Fd())
+	old, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+	if err != nil {
+		return // not a terminal
+	}
+	flush := func() { _ = unix.IoctlSetInt(fd, unix.TCFLSH, unix.TCIFLUSH) }
+	if pg, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP); err == nil && pg != unix.Getpgrp() {
+		flush()
+		return
+	}
+	raw := *old
+	raw.Lflag &^= unix.ICANON
+	raw.Cc[unix.VMIN], raw.Cc[unix.VTIME] = 0, 0
+	if err := unix.IoctlSetTermios(fd, unix.TCSETS, &raw); err != nil {
+		flush()
+		return
+	}
+	buf := make([]byte, 32<<10)
+	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	deadline := time.Now().Add(most)
+	for {
+		wait := time.Until(deadline)
+		if wait <= 0 {
+			break
+		}
+		if wait > quiet {
+			wait = quiet
+		}
+		fds[0].Revents = 0
+		n, err := unix.Poll(fds, int(wait/time.Millisecond)+1)
+		if err != nil {
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			break
+		}
+		if n == 0 {
+			break // quiet: the sender has stopped
+		}
+		if fds[0].Revents&unix.POLLIN == 0 {
+			break // hung up or invalid: nobody is typing any more
+		}
+		if got, err := unix.Read(fd, buf); err != nil && !errors.Is(err, unix.EINTR) && !errors.Is(err, unix.EAGAIN) {
+			break
+		} else if got == 0 && err == nil {
+			break
+		}
+	}
+	flush()
+	_ = unix.IoctlSetTermios(fd, unix.TCSETS, old)
+	flush()
 }
 
 // readMountinfo rereads the table from the top through the fd poll(2) is
