@@ -252,8 +252,9 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 		// render does not go through (ranger-base-4nzpo): the user runtime
 		// dir hidden (ranger-base-ludpp) and a private /tmp
 		// (ranger-base-7wdb7) — here the run's own tmp dir, so it goes with
-		// the run.
-		hide, err := liveBwrapRuntimeDirs()
+		// the run. The SYSTEM run dir and the runtimes' own state roots go
+		// beside them (landedJudgeHides, ranger-base-8ukiy).
+		hide, err := landedJudgeHides()
 		if err != nil {
 			return landedCage{}, err
 		}
@@ -363,6 +364,172 @@ func landedCheckTmp(home, run, tree string) string {
 // judge-only cache, because a persistent one would let landing N plant
 // objects that decide landing N+1's verdict.
 func landedCheckGoCache(run string) string { return filepath.Join(run, "gocache") }
+
+// ─── THE JUDGE'S SOCKET WALL (ranger-base-8ukiy) ────────────────────────────
+
+// landedCheckRunDir is the SYSTEM run dir, hidden whole.
+//
+// WHY A DIRECTORY AND NOT A LIST OF SOCKETS. `--unshare-net` takes away the
+// network namespace and takes away nothing else: a PATHNAME unix socket is
+// reached through the mount namespace, so every system daemon's endpoint
+// under /run answers a caged process exactly as it answers the operator —
+// same uid, same file. MEASURED 2026-11-14 on the D1 host (Linux 7.2.15),
+// `find /run -xdev -type s -perm -o+w` outside /run/user: 31 world-writable
+// sockets, among them `/run/tailscale/tailscaled.sock` (srw-rw-rw-), the
+// dbus system bus, polkit's agent-helper, cups, avahi, ssh-unix-local and
+// about 25 systemd varlink/journal endpoints. tailscaled's LocalAPI carries
+// a dial endpoint (`tailscale nc`), so a judge allowed to write to it could
+// make TCP connections around `--unshare-net` and the judge's "no network"
+// would stop being true. Whether this uid was in fact allowed to is a read
+// that belongs to the operator and is never probed from a seat; the hide is
+// what makes the answer stop mattering here.
+//
+// A CENSUS OF LIVE SOCKETS WOULD NOT HOLD. A socket bound after the render,
+// or unlinked and re-bound, is not covered by a list taken at render time,
+// and the landing path renders once per run. An empty tmpfs over the DIRECTORY
+// does hold across a re-bind (ranger-base-6rndn's N4), so the list is
+// structural and fixed, and a daemon this box grows next month is hidden
+// without anyone naming it — bwrapRuntimeDirs' "an allowlist, not a
+// denylist" one directory up.
+//
+// THE JUDGE NEEDS NOTHING IN IT. Its body is this repo's `make` doors over a
+// detached worktree (scripts/posse-landed-check), with TMPDIR and GOCACHE in
+// the run dir. /run/user is hidden inside it already; `/var/run` is a
+// symlink to it and needs no entry of its own. What a hide COULD break is
+// name resolution: `/etc/resolv.conf` is a symlink into
+// `/run/systemd/resolve` on this host and nsswitch names `systemd` for
+// passwd and `resolve` for hosts. Dangling, those degrade rather than fail —
+// `files` answers this uid out of /etc/passwd and there is no network to
+// resolve for — and MEASURED 2026-11-14 a full judge run of this tree behind
+// the hide is green (the reading is on the bead and in
+// docs/notes.d/ranger-base-8ukiy.md).
+//
+// AND IT IS THE VENUE'S ONLY LAYER. ADR 0097 D1 renders the wall venue as
+// this cage plus three additions, so the venue inherits this; it cannot take
+// ranger-base-6rndn's Landlock step instead, because a Landlock FS domain
+// forbids mount and the venue exists to nest.
+const landedCheckRunDir = "/run"
+
+// landedJudgeHides is the judge's whole Hide list: the user runtime dir
+// (ranger-base-ludpp), the system run dir above, and every registered
+// runtime's own state root.
+//
+// One function because ADR 0097 D1 renders the venue through this same
+// renderer: a second producer is a layer the venue would not inherit, which
+// is ranger-base-hy1aj's lesson.
+func landedJudgeHides() ([]string, error) {
+	hide, err := liveBwrapRuntimeDirs()
+	if err != nil {
+		return nil, err
+	}
+	hide = append(hide, absResolve(landedCheckRunDir))
+	// The error is discarded for landedCheckTmp's reason one call up: the
+	// home only decides whether a hide would swallow it, and an unknown home
+	// cannot be swallowed.
+	home, _ := os.UserHomeDir()
+	for _, d := range landedJudgeRuntimeRoots() {
+		if err := landedJudgeHideRefusal(d, home); err != nil {
+			return nil, err
+		}
+		exists, dir, err := bwrapStat(d)
+		if err != nil {
+			return nil, bwrapStatRefusal("runtime state root", d, err)
+		}
+		// A state entry that names a FILE is skipped and not refused. Every
+		// claude install on this box has one — `~/.claude.json` is declared
+		// beside `~/.claude` — and a tmpfs can only be mounted over a
+		// directory, so refusing would be a judge that never runs on the
+		// box it was written for. Nothing is lost: a file is not a directory
+		// a CLI can bind a socket in, which is the whole of what this layer
+		// is about, and the file's own secrets are already masked by
+		// credentialReadDenyLiterals above.
+		if exists && !dir {
+			continue
+		}
+		hide = append(hide, d)
+	}
+	return dedupeStrings(hide), nil
+}
+
+// landedJudgeRuntimeRoots is item 2 of the fix: each registered runtime's own
+// state root, TAKEN FROM THE REGISTRY and never from a scan.
+//
+// WHY THE JUDGE GETS THEM AT ALL. A runtime's state root is where its CLI
+// binds its control socket — grok's leader socket is `$GROK_HOME/leader.sock`
+// (runtime.go) — and that is an endpoint under the read-only home which a
+// caged process of the same uid can still connect to, because connecting is
+// not a write. The judge belongs to no
+// runtime and needs none of them; a seat gets its OWN runtime's state as a
+// write grant and is spared this list by being a seat, which this child is
+// not.
+//
+// BOTH SPELLINGS PER RUNTIME, which is credentialReadDenyLiterals' rule in
+// this file's terms: the DECLARED built-in literal (`~/.grok`) and the
+// directory the CLI's own home variable moves it to when that variable is in
+// force. Whatever the CLI wrote before the variable moved it is still sitting
+// in the home, and a hide over an absent path costs nothing — the hide loop
+// skips what is not there.
+//
+// THE BUILT-IN LITERAL AND NOT THE OVERLAY, deliberately. `state_dir:` in a
+// runtimes/*.yaml REPLACES the built-in list (ADR 0021 D1), but it is posse's
+// DECLARATION of where a CLI keeps state and it does not move where the CLI
+// actually binds. So this reads builtinRuntimes directly: no App, no yaml
+// read at render time, and the same answer on every box.
+//
+// RESIDUAL, stated: a runtime DECLARED only in a runtimes/*.yaml contributes
+// nothing here. Its state root is named by that yaml and nowhere in this
+// binary, and reading it would make the judge's wall depend on a file the
+// landing path parses at render time. Residuals of this layer are
+// ranger-base-1xyso's.
+func landedJudgeRuntimeRoots() []string {
+	var out []string
+	add := func(p string) {
+		p = ExpandTilde(p)
+		// credentialDenyable's predicate, for its reason: the declared
+		// literals are `~/…` and ExpandTilde hands one back unchanged when
+		// there is no HOME, which names no directory. absResolve would hang
+		// it off the launcher's cwd — a tmpfs over an ordinary directory
+		// beside the launcher, and no wall at all over the runtime's state.
+		if !filepath.IsAbs(p) {
+			return
+		}
+		out = append(out, absResolve(p))
+	}
+	for i := range builtinRuntimes {
+		// A VALUE COPY and not &builtinRuntimes[i]: cmd/testparallel reads a
+		// taken address as a WRITE, and marking this table written taints
+		// every parallel test that names it — 27 of them, MEASURED by
+		// `make corpus-check` on the pointer form (ranger-base-8ukiy).
+		rt := builtinRuntimes[i]
+		for _, d := range rt.StateDirs {
+			add(d)
+		}
+		if rt.HomeVar != "" {
+			if v, inForce := runtimeHomeOverride(rt.HomeVar); inForce {
+				add(v)
+			}
+		}
+	}
+	return dedupeStrings(out)
+}
+
+// landedJudgeHideRefusal is bwrapRuntimeDirs' guard applied to a runtime's
+// state root, and it REFUSES for that function's reason rather than skipping:
+// an empty tmpfs over `/`, over a top-level directory, or over a directory
+// holding the home is not a narrower wall, it is a judge with no tree — and
+// a landing that reads ⚠ naming the variable beats one whose judge dies on
+// its own plumbing and reads red. Reachable only from an operator's own
+// `CLAUDE_CONFIG_DIR=$HOME`-shaped value; the declared literals cannot be
+// either shape.
+func landedJudgeHideRefusal(p, home string) error {
+	if strings.Count(filepath.Clean(p), string(filepath.Separator)) < 2 {
+		return Die("the landed check will not hide the runtime state root %s: an empty tmpfs over / or a top-level directory leaves the judge with no tree. Point the runtime's home variable at a directory of its own (ranger-base-8ukiy)", p)
+	}
+	if home != "" && underDir(p, absResolve(home)) {
+		return Die("the landed check will not hide the runtime state root %s: it holds the home %s, and an empty tmpfs over it leaves the judge with no home, no module cache and no tree. Point the runtime's home variable at a directory of its own (ranger-base-8ukiy)", p, home)
+	}
+	return nil
+}
 
 // landedJudgeEnvKeys is THE allowlist: the only names of the launcher's
 // environment the judge is handed (ranger-base-5m5yq). Who the process is
