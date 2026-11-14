@@ -434,9 +434,31 @@ stall that day, and every one of them a typing habit.
   make register-check   ~22s   the register itself: every tree-wide pin has a door
   make scripts-check   ~0.9s   censuses over scripts/, and verify-* targets vs the box roster
   make pid-check        ~10s   the shipped PIDs under examples/agents/
+  make land-check      ~1.5s   the launcher's own land gate, cross-GOOS vet and all
   ```
 
-  **`make tree-check` is all of them, 55-56s warm over three runs on a quiet
+  The last of those is the odd one out and the one worth knowing about: it is
+  not a tree-wide pin, it is `scripts/posse-land-check`, the gate that judges
+  a REPLAYED landing — and its fifth step vets the NOT-native GOOS, which is
+  the only thing on this box that does. GOOS appeared nowhere in the Makefile
+  until this door, so a file that compiles here and not on darwin sat behind a
+  green `make test`, a green `make tree-check` and a green `go vet ./...`, and
+  the first thing to say so was the coordinator's pre-push gate: that is how
+  ranger-base-zd4d4 was held and re-filed as ranger-base-tea4e. ADR 0087's
+  residual 1 — "the unreplayed arm can still land a tip the seat never built;
+  that is seat discipline" — says why the door has to exist: an UNREPLAYED
+  fast-forward runs that gate nowhere, so nobody read its verdict until that
+  pre-push gate did. 1.5s warm, 8.2s with the darwin build cache cold, is what
+  that discipline costs now it is typed for you.
+
+  **`make tree-check` is all of them, 50-61s warm over three runs with the
+  land-check door on the line** (MEASURED 2026-11-14 on the landing that added
+  it: 55s, 61s then 50s in that order, at a one-minute load average of 14.01,
+  11.93 and 15.02 with one suite slot held by a sibling seat throughout —
+  and 51s, 41s then 41s earlier the same day on the same work at a load of
+  1.71 to 4.51 with nothing held, which is the same thing every entry here
+  says about which variable tracks). Before that door it read
+  **55-56s warm over three runs on a quiet
   box and 92.6s cold** (MEASURED 2026-10-31, ranger-base-h1q5o: 56s, 55s and
   55s in that order, at a one-minute load average of 4.56, 3.70 and 3.25 with
   no suite slot held by anyone, and 72s on the run before those three with

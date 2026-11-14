@@ -54,6 +54,16 @@ pin.
 | `make register-check` | the register itself: every tree-wide pin has a door |
 | `make scripts-check` | censuses over `scripts/` |
 | `make pid-check` | the shipped PIDs under `examples/agents/` |
+| `make land-check` | the launcher's own land gate, `scripts/posse-land-check`, whose fifth step vets the not-native GOOS |
+
+The last row is not a tree-wide pin and is the one door here that runs no
+test. It is the gate that judges a replayed landing, and it is on this list
+because its cross-GOOS step is the only thing in the repository that compiles
+the tree for the platform the development box is not: a file that builds here
+and not on darwin was a tree with a green suite, a green `make tree-check`
+and a green `go vet ./...`, found first by the coordinator's pre-push gate
+([ADR 0087](../../docs/adr/0087-a-replayed-landing-is-judged-by-the-repos-own-check-and-may-not-turn-a-green-base-red.md)
+residual 1). The Makefile's own comment on that door says the rest of it.
 
 `make tree-check` is every one of them in one command, and it is a
 prerequisite of `make test` for the reason `fmt-check` is: a full run fails

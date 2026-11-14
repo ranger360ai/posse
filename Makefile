@@ -69,7 +69,7 @@ ifeq ($(words $(BUILD_SOURCE)),1)
 LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
 endif
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check land-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -1193,7 +1193,48 @@ scripts-check:
 pid-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_PID_PINS))$$'
 
-# The whole class, one command: every tree-wide pin in both packages. No
+# THE LAUNCHER'S OWN LAND GATE, typed by a seat before it commits (ADR 0087
+# residual 1, ranger-base-ujyjd finding 4). scripts/posse-land-check is what
+# judges a REPLAYED landing, and `go build ./...` plus a native `go vet` are
+# only four of its five steps: the fifth cross-vets the NOT-native GOOS, and
+# that is the one question nothing else on this box asks. GOOS appeared
+# nowhere in this file, so a file that compiles on linux and not on darwin —
+# a test file with no build constraint reaching for a helper declared only
+# under one GOOS — is a tree whose `make test`, `make tree-check` and
+# `go vet ./...` are all green. That is not hypothetical: it is how
+# ranger-base-zd4d4 came to be held at the coordinator's pre-push gate and
+# re-filed as ranger-base-tea4e, over a tree every local signal called
+# finished. ADR 0087's residual 1 — "the unreplayed arm can still land a tip
+# the seat never built; that is seat discipline" — is this door, because an
+# unreplayed fast-forward runs that gate NOWHERE and the seat has to.
+#
+# THE SCRIPT ITSELF, NOT A GOOS LINE OF OUR OWN. The non-native GOOS and its
+# GOARCH are DERIVED over there (that script's header and its last loop),
+# including the caveat for a host arch darwin has no port for, so a recipe
+# that re-derived them here would be a second implementation to keep in step
+# by hand — free to go narrower than the gate while both look green, which is
+# the whole reason fmt-check and notes-check re-run their TOOL instead of
+# reimplementing it. Running the gate cannot drift from the gate, it answers
+# four more questions than a bare cross-vet does, and it is cheaper than
+# either copy: 1.5s warm, 8.2s with the darwin build cache cold (MEASURED
+# 2026-11-14, this box, loadavg 3.5, five steps green; the cross-vet alone is
+# 0.3s warm, so what the other four steps cost warm is about a second).
+#
+# `go` and not the GOBIN override, because the subject is what the GATE runs:
+# posse execs this script and chooses no toolchain for it, so a door that
+# substituted one would be answering a question the coordinator never asks.
+#
+# LAST on tree-check's line rather than first. A darwin break would be found
+# a minute sooner at the head of the list, and that minute is worth less than
+# leaving an order alone that is written down on three pages (this file,
+# internal/treepins/README.md and AGENTS.md, all three held to this line by
+# treewidedoor_qa_test.go's arm 4).
+land-check:
+	scripts/posse-land-check
+
+# The whole class, one command: every tree-wide pin in both packages, and
+# since ranger-base-ujyjd the land gate above, which is not a pin at all —
+# it is the one door here whose subject is a build this box does not do. No
 # recipe of its own — the doors are its prerequisites, so `make -n tree-check`
 # prints exactly what a seat would otherwise have to type. It is a
 # prerequisite of `make test` for rulbl's reason: a full run fails on it in
@@ -1202,7 +1243,7 @@ pid-check:
 # treewidedoor_qa_test.go's head comment says it once, derived from this
 # file by its arm 4, and a second copy here would be the second place to
 # drift.
-tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check
+tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check land-check
 
 # THE UNFILTERED TREE-PIN RUN, THROUGH THE WRAPPER SO IT QUEUES
 # (ranger-base-1a0hi). `tree-check` above is the doors a seat types after a

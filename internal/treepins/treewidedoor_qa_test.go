@@ -1361,8 +1361,36 @@ package treepins
 // its evidence. The seventh test in that file is the scanner's own control
 // and is undoored, like every control arm above.
 //
+// and one door that stands in front of no pin at all (ranger-base-ujyjd,
+// finding 4 of the ranger-base-hbjma verify):
+//
+//	(no pin)                                      make land-check    ~1.5s
+//
+// It is `scripts/posse-land-check`, the gate ADR 0087 has judge a REPLAYED
+// landing, and its fifth step vets the NOT-native GOOS. Nothing else in this
+// repository compiles the tree for the platform this box is not: GOOS
+// appeared nowhere in the Makefile, so a test file with no build constraint
+// reaching for a helper declared only under one GOOS is a tree whose
+// `make test`, whose `make tree-check` and whose `go vet ./...` are all
+// green, and whose first dissent comes from the coordinator's pre-push gate
+// — which is how ranger-base-zd4d4 was held and re-filed as
+// ranger-base-tea4e. ADR 0087's own residual 1 ("the unreplayed arm can
+// still land a tip the seat never built; that is seat discipline") is the
+// reason it belongs on a list a seat types: an UNREPLAYED fast-forward runs
+// that gate nowhere.
+//
+// It is counted as a door here because arm 4 counts `tree-check`'s
+// prerequisites, which is what a seat pays for and what the three pages hold
+// each other to. It is NOT in twdDoors, and that is not an oversight: every
+// row there carries a `-run` variable and a package, arm 2 is two-way over
+// them, and a row with no pins would be a door arm 2 reads as empty. The
+// register is the register of tree-wide PINS; this is the list of what
+// `make tree-check` runs, and since this bead the two are not the same list.
+// Arm 1 is one-way (twdDoors → the prerequisite line) and so says nothing
+// about it, which is correct — there is no filter here to hold to a pin.
+//
 // and `make tree-check` is all of them — one hundred and fifty-six pins
-// and eighteen doors, 71.3-77.7s over three warm runs at one hundred and
+// and nineteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
 // 8.42 over a five-minute 11.15, 10.04 and 9.71, with NO suite slot held for
@@ -1379,8 +1407,23 @@ package treepins
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
 //
-// THREE WARM READINGS AT ONE HUNDRED AND FORTY-THREE, the class as this bead
-// LANDS: 44s, 49s then 41s in that order (MEASURED 2026-11-12,
+// THREE WARM READINGS WITH THE NINETEENTH DOOR ON THE LINE, the class as
+// ranger-base-ujyjd lands it: 55s, 61s then 50s in that order (MEASURED
+// 2026-11-14, at a one-minute load average of 14.01, 11.93 and 15.02 over a
+// five-minute 11.13, 10.98 and 12.48, with ONE suite slot held by a sibling
+// seat throughout and both binaries warmed by the arm-4 run before them).
+// The new door is `make land-check` and it is 1.5s of that warm — 8.2s with
+// the darwin build cache cold, and 0.3s for its cross-GOOS step alone — so
+// the 11s band is not its cost; it is the load, which is where this chain's
+// every reading puts it. An earlier set of three on the same work at one
+// hundred and forty-eight, before ranger-base-q749c's and
+// ranger-base-n7hsa's pins landed beside it, read 51s, 41s then 41s at a
+// load of 1.71 to 4.51 with no slot held by anyone: a quiet box and a
+// shorter list, 10s faster, and the two sets together say again that the
+// variable is the box and not the class.
+//
+// THREE WARM READINGS AT ONE HUNDRED AND FORTY-THREE, the class as that bead
+// LANDED: 44s, 49s then 41s in that order (MEASURED 2026-11-12,
 // ranger-base-v9hv1, at a one-minute load average of 4.35, 8.07 and 11.46
 // over a five-minute 3.42, 4.81 and 6.08, with NEITHER suite slot held by
 // anyone for any of the three and the binary warmed by the register-check,
