@@ -283,10 +283,18 @@ func TestCutDestinationKeysChangeNothing(t *testing.T) {
 	// line names the archive directory, and three scratch homes would
 	// differ by that alone — which would make the comparison below pass
 	// whatever the code did, and the control arm pass with it.
+	// BOTH SPELLINGS, and that is the whole of ranger-base-6ca29 here: posse
+	// prints a path under $HOME in its tilde form (posseRendered, main_test.go)
+	// and this child carries the operator's own HOME, so which spelling a
+	// scratch home has in the output depends on where the box's TMPDIR is.
+	// Replacing only the raw one left the three homes differing by the path
+	// after all on a box whose TMPDIR is under the home — the comparison then
+	// reds, and the control arm below cannot say it was the rendering.
 	say := func(cfg string) string {
 		home := backupHome(t, cfg)
 		_, out := runBackupPosse(t, bin, home, "backup", "status")
-		return strings.ReplaceAll(out, home, "<home>")
+		out = strings.ReplaceAll(out, home, "<home>")
+		return strings.ReplaceAll(out, posseRendered(home), "<home>")
 	}
 	base := say(armed)
 	withDest := say(armed + "backup_dest: /Volumes/NoSuchDisk\nbackup_keep_dest: 4\n")

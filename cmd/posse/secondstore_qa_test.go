@@ -68,10 +68,13 @@ func TestQAStatusPrintsTheSecondStoreLine(t *testing.T) {
 	if line == "" {
 		t.Fatalf("status printed nothing about the second store:\n%s", out)
 	}
+	// The two paths go through posseRendered (main_test.go): the line is the
+	// command's own OUTPUT, so a path under $HOME is in it in its tilde form
+	// and the raw spelling is absent (ranger-base-6ca29).
 	for _, want := range []string{
-		filepath.Join(repo, ".beads"), // the path
-		"beads.db, issues.jsonl",      // what is in it
-		filepath.Join(instance, ".beads"),
+		posseRendered(filepath.Join(repo, ".beads")), // the path
+		"beads.db, issues.jsonl",                     // what is in it
+		posseRendered(filepath.Join(instance, ".beads")),
 		"delete it (ADR 0012 D3)", // the fix
 	} {
 		if !strings.Contains(line, want) {

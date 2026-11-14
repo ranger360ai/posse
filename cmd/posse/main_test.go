@@ -138,6 +138,33 @@ func buildRhq(t *testing.T) string {
 	return bin
 }
 
+// posseRendered is a path as posse PRINTS it, and it is the comparison every
+// assertion in this package over a RENDERED path has to make (ranger-base-6ca29).
+//
+// Every fixture here is a `t.TempDir()`, so its path is wherever the box's
+// TMPDIR points — and posse abbreviates a path under $HOME to its tilde form
+// before printing it (AbbrevHome, app.go), against the HOME the CHILD carries.
+// Most children in this package inherit the operator's real HOME deliberately
+// (main_test.go's readyEnv, statusEnv — so that the child abbreviates paths
+// against the same $HOME this process does; configdirfence_test.go's header
+// says why). So on a box whose TMPDIR is under the home the two spellings of
+// one fixture path differ, and an assertion against the raw path reds while
+// the product is right. Pointing TMPDIR at the home is the obvious move when
+// /tmp is a full tmpfs, which is what found this.
+//
+// MEASURED 2026-11-13, TMPDIR=$HOME/tmp, one `-run` filter per test: three
+// tests in this package red that way — TestQAStatusPrintsTheSecondStoreLine,
+// TestClaudeConfigDirIsFenced, TestCutDestinationKeysChangeNothing — each
+// naming the right thing and reading exactly like a product bug.
+//
+// Asserting THROUGH it is not a weaker claim. Where TMPDIR is outside the home
+// AbbrevHome is the identity and the assertion is the one it always was; where
+// it is inside, the claim becomes "the path as posse renders it", which is what
+// the reader of that line is being promised either way. The wall-witness pin
+// one package over already spells its own assertion this way
+// (internal/posse/wallwitness_qa_test.go's AbbrevHome(tc.cwd)).
+func posseRendered(p string) string { return posse.AbbrevHome(p) }
+
 // ranger-base-g98: a machine with neither config home seeds the new posse
 // path. This runs the command, rather than only checking NewApp's string,
 // because the contract includes the complete embedded instance.

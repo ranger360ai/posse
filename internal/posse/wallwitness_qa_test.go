@@ -19,10 +19,19 @@ package posse
 //     the production render really walls the tree and the witness must read
 //     WITNESSED. That is the live arm, and it runs unasked on whichever
 //     mechanism this host has.
-//   - under `/tmp` (wwTempRoot): `SeatbeltWritable` grants `/tmp` and TMPDIR
-//     unconditionally (seatbelt.go) — on both mechanisms — so the same
-//     render over the same PID leaves the tree WRITABLE, and the witness must
-//     take the row away and name the path.
+//   - under `/tmp` (wwTempRoot): the blanket `/tmp` grant reaches the tree
+//     and the bwrap render leaves it there — a seat whose cwd is under `/tmp`
+//     gets no private tmp bound over it (bwrapSeatTmp) — so the same render
+//     over the same PID leaves the tree WRITABLE, and the witness must take
+//     the row away and name the path.
+//
+// BOTH ROOTS ARE NAMED LITERALS AND NEITHER IS `t.TempDir()`. Each arm's
+// premise is a PLACEMENT relative to the writable set, and a root taken from
+// the box's TMPDIR is a premise the box chooses: wwTempRoot was gitTempDir
+// until ranger-base-6ca29, and on a box whose TMPDIR sits outside `/tmp` the
+// "wall must not hold" arm red in ten places claiming ADR 0086 D5 had been
+// violated, over production code that was right. wwTempRoot's own comment
+// has that measurement.
 //
 // Same production code, same PID, opposite verdicts, and the difference is
 // the wall and not the test. That is what ADR 0086's own caveat about its
@@ -83,13 +92,95 @@ func wwRoot(t *testing.T) string {
 	return wallUngrantedDir(t)
 }
 
-// wwTempRoot is the other half of the pair: a root INSIDE the blanket temp
-// grant, where the same render leaves the tree writable. gitTempDir, so it is
-// the tolerant root the init rule asks for and the grant is TMPDIR's own.
+// wwTempRoot is the other half of the pair: a root where the same render
+// leaves the tree WRITABLE, so the witness must take the row away.
+//
+// ROOTED AT `/tmp` BY NAME, the way wwRoot's half is rooted at `/var/tmp` by
+// name, and not at `t.TempDir()` (ranger-base-6ca29). It used to be
+// gitTempDir — "the tolerant root the init rule asks for, and the grant is
+// TMPDIR's own" — and the second half of that sentence is wrong at the bwrap
+// mechanism. The launcher's TMPDIR is granted by `SeatbeltWritable` and then
+// taken straight back out: the render binds the seat's PRIVATE tmp over
+// `/tmp` and drops BOTH `/tmp` and the launcher's TMPDIR from the write set
+// (bwrapDropTmpGrants, wallseatcache.go), because one temp directory shared
+// by every seat on the box is exactly what that mount exists to keep out.
+//
+// What really makes this arm's wall not hold is narrower, and it is `/tmp`
+// itself: `bwrapSeatTmp` returns "" — no private tmp, so the blanket `/tmp`
+// grant survives and covers the tree — precisely when the home or the cwd is
+// under `/tmp`, which is this fixture and no production launch. So the
+// premise is a PLACEMENT and the placement has to be named here rather than
+// inherited from wherever the box points TMPDIR.
+//
+// MEASURED 2026-11-13 on this box (linux, bwrap), one `-run` filter, through
+// the production render over the same whole-tree-deny PID:
+//
+//	TMPDIR unset (fixture under /tmp)  no private-tmp bind in the argv, the
+//	                                   create LANDS, the row is taken away
+//	TMPDIR=/var/tmp/x                  `--bind <seat>/tmp /tmp`, `--setenv
+//	                                   TMPDIR /tmp`, and NO bind of /var/tmp/x
+//	                                   anywhere: the create is refused and
+//	                                   this pin red in ten places claiming
+//	                                   ADR 0086 D5 had been violated
+//
+// Same production code, same PID; the difference was where the box puts its
+// temp files, and `make test`'s verdict moved with it.
+//
+// On darwin the `/tmp` grant is an SBPL allow with no substitution behind it,
+// so the name is right there too, by a shorter road.
 func wwTempRoot(t *testing.T) string {
 	t.Helper()
+	// `wwTmpRoot` and not bwrapTmpMount, which is the same literal one file
+	// over: the tree-wide temp-root census resolves a parent NAME across the
+	// whole package (internal/treepins/temproot_qa_test.go), and a name bound
+	// twice is a name it will not resolve to either binding.
+	const wwTmpRoot = "/tmp"
 	wtqaHome(t)
-	return absResolve(gitTempDir(t))
+	if st, err := os.Stat(wwTmpRoot); err != nil || !st.IsDir() {
+		t.Skip("NOTHING MEASURED: no " + wwTmpRoot + " on this host, so there is no fixture root the blanket temp grant reaches")
+	}
+	// `posse-` prefixed because the parent is a shared temp directory: nothing
+	// else is reaped on this box (temproot_qa_test.go's trRequired).
+	d, err := os.MkdirTemp(wwTmpRoot, "posse-wwtmp-")
+	if err != nil {
+		t.Skip("NOTHING MEASURED: cannot make a fixture root under " + wwTmpRoot + ": " + err.Error())
+	}
+	t.Cleanup(func() { removeAllTolerant(t, d) })
+	return absResolve(d)
+}
+
+// wwRequireTheWallAllowsTheCreate is wwTempRoot's premise as one reading, and
+// it is the control the "wall does not hold" arm had no spelling for
+// (ranger-base-6ca29).
+//
+// That arm judges a PARITY — six assertions, all of them downstream of a
+// create that must land — so a fixture the wall really walls reds every one of
+// them with ADR 0086 D5 in the message, over production code that refused a
+// write exactly as the PID told it to. The witness over cwd, taken alone and
+// first, is the one reading that separates "the design is broken" from "this
+// fixture is in the wrong place", and only the second has ever been true here.
+//
+// It is the witness and not a containment test over the writable set, for the
+// reason the arms below use a real wall rather than a stub: the bwrap render
+// substitutes mounts after the set is computed (bwrapDropTmpGrants), so a set
+// that reaches the tree and a seat that can write it are two different claims,
+// and this is the one the rows rest on. Fatal, because every assertion after
+// it would be measuring the other fixture.
+func wwRequireTheWallAllowsTheCreate(t *testing.T, f wwFixture, cwd string) {
+	t.Helper()
+	w, err := f.a.RenderWall(f.ag, f.rt, cwd)
+	if err != nil {
+		t.Fatalf("the wall for a whole-tree-deny PID in %s cannot be rendered: %v — that is R0, and ADR 0086 D3 is supposed to have cleared it", cwd, err)
+	}
+	why, unmeasured := wallWitnessRow(w, cwd)
+	switch {
+	case unmeasured != "":
+		t.Fatalf("PREMISE GONE, nothing measured: the witness could not read %s under the real %s wall, so the rows below would grade a probe that never ran:\n%s", cwd, w.Mechanism, unmeasured)
+	case why == "":
+		t.Fatalf("PREMISE GONE: the real %s wall REFUSED the create in %s, so this fixture's wall holds and every assertion below it is about the other half of the pair.\n"+
+			"  This arm needs a tree the rendered wall leaves writable, and the placement that buys it is a root under /tmp (wwTempRoot): at bwrap a seat whose cwd is NOT under /tmp gets the seat's private tmp bound over /tmp and both /tmp and the launcher's TMPDIR dropped from the write set (bwrapSeatTmp, bwrapDropTmpGrants).\n"+
+			"  So read this as 'the fixture moved', not as 'ADR 0086 D5 is broken' — a TMPDIR outside /tmp is what produced it before the root was named (ranger-base-6ca29).", w.Mechanism, cwd)
+	}
 }
 
 // wwFixtureIn is the fixture body under a root the caller chose. One body,
@@ -261,14 +352,23 @@ func TestLiveWallWitnessHoldsUnderTheRenderedWall(t *testing.T) {
 
 // ─── the other half of the pair: a wall that does not hold ───────────────────
 
-// The same production render over the same PID, one root over. `/tmp` is in
-// every writable set this package builds, so the tree is writable under the
-// wall, the create LANDS, and D5 says what must happen: the file is removed,
-// the rule is unrealized with the path named, and the launch refuses.
+// The same production render over the same PID, one root over. The blanket
+// `/tmp` grant reaches the tree and the render leaves it there, so the tree is
+// writable under the wall, the create LANDS, and D5 says what must happen: the
+// file is removed, the rule is unrealized with the path named, and the launch
+// refuses.
 //
 // This is the fixture whose wall does not hold, and it is a REAL wall rather
 // than a stub one — which is the only way to pin that the finding names a
 // path an operator can go and look at.
+//
+// THE PREMISE IS CHECKED FIRST, and separately from the rows (ranger-base-6ca29).
+// Every assertion below reads "the wall allowed the create" off the parity,
+// so a fixture the wall actually WALLS fails all six of them at once, each
+// quoting ADR 0086 D5 at production code that was doing its job — which is
+// what a TMPDIR outside `/tmp` used to produce here. The witness over the cwd
+// is the one reading that tells the two apart, so it is taken by itself and
+// its failure says the premise is gone rather than that the design is broken.
 func TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate(t *testing.T) {
 	// No t.Parallel: wwTempRoot sets HOME for this process.
 	wwSkipUnlessTheWallIsReal(t)
@@ -279,6 +379,7 @@ func TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate(t *testing.T) {
 		{"a main checkout", f.repo},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
+			wwRequireTheWallAllowsTheCreate(t, f, tc.cwd)
 			p := wwClaim(CageSeatbelt, "Edit", "Write")
 			f.a.applyWallWitness(p, f.ag, f.rt, tc.cwd, askedByLaunch)
 			for _, gate := range []string{"Edit", "Write"} {

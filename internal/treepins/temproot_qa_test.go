@@ -198,8 +198,19 @@ const trRequired = "posse-"
 // reds this arm and edits these two lines, which is the intended cost and the
 // cheap half of it. They are the numbers the t.Logf below prints, so a run
 // with -v re-measures them.
+//
+// EXACT IN ONE DIRECTION ONLY, which is the drift ranger-base-6ca29 walked
+// into: the arm is `gos < trGoRoots`, so a landing that ADDS a root passes it
+// in silence and leaves this line under the live count — the very state
+// ranger-base-sxez7 wrote the paragraph above about, reached from the other
+// side. MEASURED 2026-11-13 (linux, this box): the census read 16 Go roots
+// against a trGoRoots of 15 with ranger-base-6ca29's own change backed out,
+// so one root had been added here since sxez7's reading without this line
+// moving; 17 with wwTempRoot's `/tmp` root, which is the number below. So
+// RE-READ THE LOGGED COUNT WHEN YOU ADD A TEMP ROOT and set this to it: the
+// floor cannot ask you to.
 const (
-	trGoRoots  = 15
+	trGoRoots  = 17
 	trPyRootsN = 7
 )
 

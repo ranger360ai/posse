@@ -174,8 +174,12 @@ func TestClaudeConfigDirIsFenced(t *testing.T) {
 	}
 	// The path is asserted whole and alone: the renderer wraps the ROW, so
 	// "unreadable <path>" is split across lines while the path itself is not.
-	if !strings.Contains(out, fence) {
-		t.Errorf("the trust probe never names the fenced config dir %s — the resolution landed somewhere else:\n%s", fence, out)
+	// Through posseRendered (main_test.go), because the fence is a MkdirTemp
+	// under the box's TMPDIR and this child carries the operator's own HOME —
+	// so where TMPDIR is under that home the output names the fence in its
+	// tilde form and the raw spelling is nowhere in it (ranger-base-6ca29).
+	if !strings.Contains(out, posseRendered(fence)) {
+		t.Errorf("the trust probe never names the fenced config dir %s — the resolution landed somewhere else:\n%s", posseRendered(fence), out)
 	}
 	// The PHRASES are asserted against the unwrapped output, because they are
 	// several words long and the same wrap that leaves a path intact splits
@@ -214,7 +218,7 @@ func TestClaudeConfigDirIsFenced(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("posse runtime check claude (planted): exit %d\n%s", code, out)
 	}
-	for _, want := range []string{"is already trusted in", "is already set in", planted} {
+	for _, want := range []string{"is already trusted in", "is already set in", posseRendered(planted)} {
 		if !strings.Contains(flatten(out), want) {
 			t.Errorf("with a planted config dir the probe never printed %q — this verb no longer reads the config dir, so the arm above proves nothing:\n%s", want, out)
 		}
