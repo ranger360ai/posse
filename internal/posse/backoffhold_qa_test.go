@@ -194,6 +194,58 @@ func TestQAPausedPassRecordsABlockWithNoKnownLift(t *testing.T) {
 	}
 }
 
+// Arm 4: a block does not outlive the pass that found it — added by
+// ranger-base-ujp0c, verifying this bead.
+//
+// passBlock is pass-denominated, and the whole of that is Run clearing it
+// at its head beside planTrip (dispatch.go). MEASURED 2026-11-13, D1 host,
+// at 2bb926f3: with that one line dropped, every pin above stays GREEN.
+// The reading does not decay on its own — hold reads it on every later
+// pass, and a STALE cap block's lift is in the past, so hold clamps the
+// sleep to one margin. The loop then takes a pass a second for the rest of
+// its life, with the ladder pinned at whatever `prev` was and the cadence
+// line naming an epoch turn that went by hours ago. That is this bead's own
+// defect inverted, and no arm above could see it, because each builds its
+// block inside the pass it measures.
+//
+// Both arms of Run that reach the backoff are here: the one that launched,
+// and the one that found nothing to launch and returned before epochRoom.
+func TestQAABlockDoesNotOutliveItsPass(t *testing.T) {
+	t.Parallel()
+	// The premise, asserted rather than assumed, so this pin says what a
+	// stale block COSTS and not merely that the field was zeroed.
+	stale := passBlock{why: "the launch cap", until: time.Now().Add(-2 * time.Hour)}
+	if _, nap := stale.hold(40*time.Minute, 40*time.Minute, time.Now()); nap != BlockLiftMargin {
+		t.Fatalf("a block whose lift went by holds the loop to %s, not one margin — this pin's premise has moved", nap)
+	}
+
+	for _, tc := range []struct{ name, ready string }{
+		{"a pass that launched", `[{"id":"a-1","title":"t","labels":["go"]}]`},
+		{"a pass with no ready work", `[]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, fake := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			d.StartupWait = 100 * time.Millisecond
+			writePersona(t, b.App, "ranger", "[go]")
+			qaRepo(t, b.App, tc.ready, "")
+			idleClaude(t, fake)
+			// The pass before this one was blocked by a cap that has long
+			// since turned.
+			d.blocked = stale
+			if _, err := d.Run("", "", 1); err != nil {
+				t.Fatal(err)
+			}
+			if d.blocked.on() {
+				t.Errorf("a block left by an earlier pass survived this one (%+v), so every later pass is held to one margin "+
+					"and the loop spins at a pass a second (ranger-base-5tkz9, ranger-base-ujp0c):\n%s",
+					d.blocked, dispatcherOut(d))
+			}
+		})
+	}
+}
+
 // Arm 3: the loop puts the reading and the arithmetic together.
 //
 // The fixture is the incident in miniature — the cap spent a few seconds
