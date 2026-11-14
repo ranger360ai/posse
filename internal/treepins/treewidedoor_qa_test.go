@@ -4407,19 +4407,7 @@ func TestQAEveryTrackedProgramATreePinRunsIsDispositioned(t *testing.T) {
 	// cost of over-inclusion is one row saying what a program reads; the cost
 	// of under-inclusion is a pin whose subject is a tracked directory and
 	// whose door nobody ever asked for.
-	var undispositioned []string
-	for name, f := range all {
-		for _, prog := range f.execTree {
-			if registered[prog] {
-				continue
-			}
-			if _, ok := twdExecDispositions[prog]; ok {
-				continue
-			}
-			undispositioned = append(undispositioned, f.where+" "+name+" runs "+prog)
-		}
-	}
-	sort.Strings(undispositioned)
+	undispositioned := twdUndispositioned(all, registered)
 	for _, u := range undispositioned {
 		t.Errorf("%s — a tracked program of this repo's own, run by a test or a test helper in %s, and nothing here says what it reads. If it enumerates a tracked directory, its callers are tree-wide pins and belong in twdIndirect with a door; if it reads only what it is handed, say so in twdExecDispositions. Undispositioned is the one answer this census does not take, because a program's reading is outside Go and the default has to be inclusion.", u, twdTreepinsPkg)
 	}
@@ -4506,17 +4494,86 @@ func (y *b) run() { exec.Command("scripts/test-times.sh").Run() }`,
 			}
 		})
 	}
+
+	// AND THE OTHER HALF OF THE RULE: THE CENSUS READS A DECLARATION THAT IS
+	// NOT A TEST (ranger-base-rs6qo, verifying ranger-base-b3w9x). The three
+	// arms above drive twdAnalyze and twdDeclName, so they hold what ONE
+	// declaration is read as; they say nothing about WHICH declarations the
+	// census asks, and that was the other half of the defect — the loop
+	// filtered `all` down to `f.test`.
+	//
+	// MEASURED 2026-11-14: putting that one line back left every other arm of
+	// this pin green, including the methods floor and the two-way dead-row
+	// check, because the live tree's only program reached that way
+	// (scripts/bd-argv-gate.py, out of parserGate) is dispositioned — and a
+	// planted `exec.Command("scripts/suite-lock.sh")` in a method AND in a
+	// plain helper both walked through with the pin green. Typed over source
+	// for the reason the three arms above are: there is no UNdispositioned
+	// program in this package today, so a live assertion would be satisfied by
+	// a census that had gone back to reading only the tests.
+	t.Run("the census reads a declaration that is not a test", func(t *testing.T) {
+		const plant = "scripts/suite-lock.sh"
+		if _, ok := twdExecDispositions[plant]; ok {
+			t.Fatalf("%s is dispositioned now, so this arm's fixture no longer carries an UNdispositioned program and the arm asserts nothing. Name another tracked program that is not in twdExecDispositions — do not delete the arm: it is the only thing here that reds when the census goes back to reading `f.test` only, which is half of ranger-base-b3w9x's fix.", plant)
+		}
+		for _, c := range []struct {
+			name string
+			src  string
+		}{
+			{"a method on a rig", "type zrig struct{}\nfunc (r *zrig) run() { exec.Command(" + strconv.Quote(plant) + ").Run() }\nfunc TestZ(t *testing.T) {}"},
+			{"a plain helper beside it", "func zhelper() { exec.Command(" + strconv.Quote(plant) + ").Run() }\nfunc TestZ(t *testing.T) {}"},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				got := twdUndispositioned(twdFixtureFuncs(t, c.src), map[string]bool{})
+				if len(got) != 1 || !strings.Contains(got[0], plant) {
+					t.Errorf("the census reports %v over a fixture whose only exec of %s is in %s — want exactly that one program. A census that reads only the test bodies asks its question in the one place a rig never writes the answer, and an undispositioned program there is a pin whose real reach can be a tracked directory with no Makefile door (ranger-base-b3w9x). The source was:\n%s", got, plant, c.name, c.src)
+				}
+			})
+		}
+	})
 }
 
-// twdFixtureExecs runs the exec rule over one snippet and reports what each
-// declaration in it hands to exec.Command. Through twdAnalyze and
-// twdDeclName, the same two functions twdParseDir reads the tree with, so a
-// fixture that passes here cannot be passing against a friendlier copy.
+// twdUndispositioned is the exec census's OWN rule: which of the programs a
+// parsed package hands to exec.Command have nothing saying what they read.
+//
+// A FUNCTION, AND THAT IS THE POINT (ranger-base-rs6qo, verifying
+// ranger-base-b3w9x). The rule has two halves — which declarations it reads,
+// and which programs it pardons — and the first half was the defect
+// ranger-base-b3w9x closed: the loop filtered `all` down to `f.test`, so the
+// two shapes a rig actually execs through, a method on the rig and a plain
+// helper beside it, were outside the question. MEASURED 2026-11-14: with that
+// one line put back, every arm of this pin stays GREEN — the live tree's only
+// such program is dispositioned, so nothing reds — and a planted
+// `exec.Command("scripts/suite-lock.sh")` in either shape walks straight
+// through. Inlined in the pin the half could come back unheld; as a function
+// the arm below drives it over typed source, where the program is
+// undispositioned on purpose.
+func twdUndispositioned(all map[string]*twdFunc, registered map[string]bool) []string {
+	var out []string
+	for name, f := range all {
+		for _, prog := range f.execTree {
+			if registered[prog] {
+				continue
+			}
+			if _, ok := twdExecDispositions[prog]; ok {
+				continue
+			}
+			out = append(out, f.where+" "+name+" runs "+prog)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// twdFixtureFuncs parses one snippet as a test file of this package and reads
+// every declaration in it with twdAnalyze and twdDeclName — the same two
+// functions twdParseDir reads the tree with, so a fixture that passes here
+// cannot be passing against a friendlier copy.
 //
 // The programs named in a fixture have to be real tracked files:
 // twdTrackedProgram lstats the path, because a bare word is resolved on PATH
 // and a package directory is Go source the rules above read directly.
-func twdFixtureExecs(t *testing.T, src string) map[string][]string {
+func twdFixtureFuncs(t *testing.T, src string) map[string]*twdFunc {
 	t.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "fixture_test.go", "package treepins\n"+src+"\n", 0)
@@ -4524,10 +4581,20 @@ func twdFixtureExecs(t *testing.T, src string) map[string][]string {
 		t.Fatalf("parse fixture: %v\n%s", err, src)
 	}
 	env := twdNewPkgEnv(fset, map[string]*ast.File{"fixture_test.go": file})
-	out := map[string][]string{}
+	out := map[string]*twdFunc{}
 	for _, fn := range twdDecls(file) {
-		f := twdAnalyze(fn, "fixture", env)
-		out[f.name] = f.execTree
+		out[twdDeclName(fn)] = twdAnalyze(fn, "fixture", env)
+	}
+	return out
+}
+
+// twdFixtureExecs is that map reduced to what each declaration hands to
+// exec.Command.
+func twdFixtureExecs(t *testing.T, src string) map[string][]string {
+	t.Helper()
+	out := map[string][]string{}
+	for name, f := range twdFixtureFuncs(t, src) {
+		out[name] = f.execTree
 	}
 	return out
 }

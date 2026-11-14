@@ -250,3 +250,50 @@ func TestQATheVenueCallSiteDiffersFromTheJudgesInTheKindAndTheChildOnly(t *testi
 		t.Errorf("the venue's env is %v and the judge's is %v — POSSE_WALL_VENUE is added by the RENDER (D1), so a call site that passed it would be a second place the venue is decided, and landedRunEnv is the one spelling of the rest", v.env, j.env)
 	}
 }
+
+// D1's OTHER HALF, READ FROM THIS HOST: on sandbox-exec the venue REFUSES.
+//
+// The arm above has this case, and only a darwin host takes it — so on the box
+// this is developed on, and on every Linux leg of ci.yml, the one refusal the
+// venue adds is never executed. MEASURED 2026-11-14 (ranger-base-rs6qo,
+// verifying ranger-base-wplhv): deleting that `if kind == landedCageVenue`
+// block outright left every arm of both tables and both argv pins green.
+// `wallMechanismForTest` is exactly what that costs to fix — it is why
+// `wallMechanismHost` is a var (ranger-base-temhf) — so the refusal is read
+// here rather than left to a host nobody on this fleet runs the suite on.
+//
+// WHAT IT WOULD COST TO BE WRONG (ADR 0097 D1/D2): a render that handed back
+// the judge's profile under the venue's name is a wall check measuring inside
+// a wall that forbids nesting — every member abstaining, exit 3, and D5's
+// watchdog filing "wall check silent at <repo>" at a host that was never asked
+// to answer. The caller checks the mechanism first
+// (TestAHostWhoseWallIsNotABwrapRunsNoVenueAndCountsNoSilence); this refusal
+// is what makes that structural rather than a single guard.
+//
+// SERIAL, no t.Parallel: the fixture sets HOME and wallMechanismForTest writes
+// a package-level var.
+func TestQATheVenueRefusesOnTheOtherHostsWallMechanism(t *testing.T) {
+	f := newLandedCageFixture(t)
+	wallMechanismForTest(t, "darwin")
+	if m := WallMechanism(); m != WallSandboxExec {
+		t.Fatalf("WallMechanism() reads %q behind wallMechanismForTest(darwin), so this pin cannot reach the arm it exists for", m)
+	}
+	cage, err := boxLandedCage(&App{}, landedCageVenue, filepath.Join(f.run, "judge"), f.tree, []string{f.run}, landedRunEnv(f.run))
+	if err == nil {
+		t.Fatalf("the venue RENDERED on %s: %v — ADR 0097 D1 says the step does not exist here, and a cage that renders is a wall check that runs and abstains on every member", WallSandboxExec, cage.Argv)
+	}
+	// The refusal has to say WHOSE decision it is, because the reader of this
+	// line is someone whose wall check stopped running: the two records it
+	// cites are what separate "this host does not do this" from a render that
+	// broke, and the mechanism is what separates it from a missing seatbelt.
+	for _, want := range []string{"ADR 0097", "ADR 0096", CageSeatbelt, WallSandboxExec} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q, so a reader cannot tell a host decision from a broken render: %v", want, err)
+		}
+	}
+	// And the judge still renders behind the same mechanism, or this arm would
+	// pass over a render that refuses everything.
+	if _, jerr := boxLandedCage(&App{}, landedCageJudge, filepath.Join(f.run, "judge"), f.tree, []string{f.run}, landedRunEnv(f.run)); jerr != nil && !strings.Contains(jerr.Error(), "sandbox-exec") && !strings.Contains(jerr.Error(), CageSeatbelt) {
+		t.Errorf("the JUDGE refused on %s for a reason that is not the mechanism (%v), so the venue's refusal above may be that same reason and not D1's", WallSandboxExec, jerr)
+	}
+}

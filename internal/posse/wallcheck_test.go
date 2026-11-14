@@ -526,6 +526,56 @@ func TestATreeThatShipsNoWallCheckIsLeftAloneEntirely(t *testing.T) {
 	}
 }
 
+// A HOST WHOSE WALL IS NOT A BWRAP RUNS NO VENUE, AND HAS NOT GONE SILENT.
+//
+// This is the second of the three questions `wall` asks in order (wallcheck.go's
+// header), and it was the one with no row: ADR 0097 D2 says the step DOES NOT
+// EXIST where the wall mechanism is not bwrap (ADR 0096: no darwin change), so
+// it says so, records nothing, and counts nothing. "Counts nothing" is the
+// load-bearing half — a host that was never asked to answer has not gone
+// silent, and a counted silence here reaches D5's watchdog as "wall check
+// silent at <repo>", a bead filed against nobody, on every landing, forever.
+//
+// MEASURED 2026-11-14 (ranger-base-rs6qo, verifying ranger-base-wplhv):
+// deleting that guard outright left every other arm of both tables green, and
+// so did deleting the venue's own sandbox-exec refusal in boxLandedCage — the
+// second is held by wallvenueargv_qa_test.go's `case WallSandboxExec` arm,
+// which only a darwin host takes. `wallMechanismForTest` is what makes the
+// first readable from here, which is what it exists for (ranger-base-temhf).
+//
+// SERIAL, no t.Parallel: wallMechanismForTest writes a package-level var.
+func TestAHostWhoseWallIsNotABwrapRunsNoVenueAndCountsNoSilence(t *testing.T) {
+	c, out, repo, log := wckFixture(t)
+	wallMechanismForTest(t, "darwin")
+	if m := WallMechanism(); m != WallSandboxExec {
+		t.Fatalf("WallMechanism() reads %q behind wallMechanismForTest(darwin), so this arm cannot put the step on a host that is not a bwrap and measures nothing", m)
+	}
+	ldfJudge(t, c, repo)
+
+	// The positive control, and this arm is worthless without it: the JUDGE
+	// still ran and answered green, so the step was reached and declined
+	// rather than never asked.
+	if _, v := landedRecorded(landedJudgeRule, repo); v != landGreen {
+		t.Fatalf("the judge did not reach green, so this arm measured nothing:\n%s", out)
+	}
+	if runs := landedRuns(t, log); len(runs) != 0 {
+		t.Fatalf("the wall check RAN on a host whose wall is %s: %v — ADR 0097 D1's venue is a bwrap, so the step does not exist here", WallSandboxExec, runs)
+	}
+	if tree, v := wckRecorded(t, repo); tree != "" || v != landUnanswered {
+		t.Errorf("%s reads %q %s on a host where the step does not exist — a step that cannot run records nothing", wallCheckKey, tree, v)
+	}
+	if n := wckQuiet(t, repo); n != 0 {
+		t.Errorf("%s counted %d on a host whose wall is %s — a host that was never asked to answer has not gone silent, and a counted silence here files D5's watchdog bead against nobody on every landing (ADR 0097 D2)", wallCheckQuietKey, n, WallSandboxExec)
+	}
+	wckNone(t, c, repo, landedFileLabel, wallCheckRule.fileMarker(repo, "main"))
+	wckNone(t, c, repo, landedHealthLabel, wallCheckRule.healthMarker(repo))
+	for _, want := range []string{"wall check not run", WallSandboxExec, "the step does not exist here"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the pass does not say %q, so a reader cannot tell a host decision from a step that silently did nothing:\n%s", want, out)
+		}
+	}
+}
+
 // AND THE TWO RULES ARE TWO STRETCHES IN ONE LANE (ADR 0097 D5's one hard
 // requirement about the markers). Both ratchets file `-l code`, so a marker
 // either rule could match would make a red wall comment on a red main's bead
