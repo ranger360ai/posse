@@ -4904,11 +4904,13 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 //	                            below). Read WHOLE.
 //	default, unset, absent      "default" is not a mode, it is "strip if the
 //	                            message is edited, whitespace if not", and
-//	                            "$2" is the only handle this hook has on
-//	                            edited-ness: "message" is -m and -F, where git
-//	                            appends NO template and KEEPS a '#'-leading
-//	                            line, so a pasted markdown heading commits and
-//	                            the read is whole; anything else is the editor
+//	                            "$2" = "message" beside GIT_EDITOR=: is the
+//	                            handle on edited-ness ($posse_typed,
+//	                            ranger-base-mfryj): that is -m and -F with no
+//	                            -e, where git appends NO template and KEEPS a
+//	                            '#'-leading line, so a pasted markdown heading
+//	                            commits and the read is whole; anything else —
+//	                            `-m -e`, a conflicted `rebase --continue` — is the editor
 //	                            path, a commit.template, a merge, a squash, an
 //	                            --amend, where git has already written the
 //	                            "On branch <name>" line, the status block
@@ -4975,20 +4977,15 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // the note says what IS above the cut instead (MessageScissorsNote, rewritten
 // by ranger-base-xfgcn). It is
 // keptModeNote below, driven by $posse_kept, which messageArm sets only when
-// the config named one of the three AND "$2" is not "message": on -m/-F git
-// appends no template and every line is the writer's own, so the old remedy
-// is doable exactly as written and the note stays quiet. RESIDUAL, stated:
-// `git commit -m ... -e` opens an editor and DOES get a template while "$2"
-// is still "message" (MEASURED, git 2.50.1: source "message", the Please-enter
-// block in the file, and the whole block landed in the object), so that one
-// writer gets the unqualified remedy — the quiet direction, and the same shape
-// as the --cleanup flag being invisible. Closing it would mean asking whether
-// the file HOLDS comment lines, and the only reader of that which is not a
-// second copy of git's rule is stripspace itself — which cannot separate a
-// template git wrote from a '#' line the writer typed with -m, so it would buy
-// this path by mis-firing on that one.
-// The layer that could tell a typed line from a written one is still the
-// commit-msg hook this file names as missing; the remedy did not need it.
+// the config named one of the three AND the message is not a typed one
+// ($posse_typed: "$2" is "message" AND git says it opens no editor): on
+// -m/-F git appends no template and every line is the writer's own, so the
+// old remedy is doable exactly as written and the note stays quiet. The
+// `git commit -m ... -e` residual that used to be stated here (MEASURED, git
+// 2.50.1: source "message", the Please-enter block in the file, and the
+// whole block landed in the object under verbatim) is closed by the same
+// $posse_typed: git exports GIT_EDITOR=: to this hook exactly when it opens
+// no editor, so `-e` is no longer read as typed (ranger-base-mfryj, below).
 //
 // WHAT THE FULL-FILE READ COST, measured before the split: ONE untracked
 // file whose NAME carried a ceiling class — never staged, never typed —
@@ -5204,6 +5201,29 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // on the right of a pipeline (the rangerhq-kk6e lesson, at the top of this
 // hook).
 //
+// "$2" = "message" IS NOT "NO EDITOR" (ranger-base-mfryj). `-m`/`-F` with
+// `-e`, and every conflicted `rebase --continue` or `cherry-pick --continue`
+// (the sequencer commits with a message file AND an editor), hand the hook
+// "message" while git writes its whole template into "$1" — "interactive
+// rebase in progress", "Last command done" quoting other commits' subjects,
+// "You are currently rebasing branch '<session branch>'" (whose name carries
+// a bead id), "Changes to be committed" quoting PATHS — and then strips all
+// of it, because default cleanup is "strip" whenever git edits. The arm read
+// that file whole and refused text git was never going to commit: one seat
+// abandoned a rebase over it (ranger-base-ujyjd). What git DOES tell the hook
+// is whether it uses an editor: when it does not, it exports GIT_EDITOR=: to
+// prepare-commit-msg (commit.c run_commit_hook), and only then is default
+// cleanup "whitespace". MEASURED, git 2.56.0, hook printing "$2" and
+// $GIT_EDITOR with GIT_EDITOR=true in the caller's environment: -m, -F,
+// `--amend --no-edit` and a clean sequencer pick saw ":" and kept a '#'
+// line; `-m -e`, `--amend`, a commit.template editor commit and a
+// conflicted `rebase --continue` saw "true" and git stripped every '#' line.
+// So "$2" = "message" reads whole only beside GIT_EDITOR=: ($posse_typed),
+// which closes the `-m -e` residual stated above too. The one way the two
+// disagree is a caller who exports GIT_EDITOR=: themselves and passes `-e`:
+// git edits with a no-op editor and strips, the hook sees ":" and reads
+// whole — over-refusal, which is where the arm stood before this.
+//
 // RESIDUALS, stated. Fail-CLOSED: `-v` as a FLAG on `-F`/`-m` — git
 // truncates at a marker the writer typed (measured) and appends no diff,
 // so the arm reads what git throws away; a core.commentChar of '-' or '+'
@@ -5250,12 +5270,14 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i3 + `  if [ "${posse_l%%:*}" -gt "$posse_cut" ]; then printf '%s\n' "${posse_l#*:}"; fi
 ` + i3 + `done)
 ` + i1 + `fi
+` + i1 + `posse_typed=''
+` + i1 + `if [ "${2:-}" = "message" ] && [ "${GIT_EDITOR-}" = : ]; then posse_typed=1; fi
 ` + i1 + `case "$posse_clean" in
 ` + i1 + `  strip) posse_clean=strip ;;
 ` + i1 + `  verbatim|whitespace|scissors)
-` + i2 + `if [ "${2:-}" != "message" ]; then posse_kept=$posse_clean; fi
+` + i2 + `if [ -z "$posse_typed" ]; then posse_kept=$posse_clean; fi
 ` + i2 + `posse_clean=whole ;;
-` + i1 + `  *) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;
+` + i1 + `  *) if [ -n "$posse_typed" ]; then posse_clean=whole; else posse_clean=strip; fi ;;
 ` + i1 + `esac
 ` + i1 + `if [ -n "$posse_cut" ]; then
 ` + i2 + `posse_msg=$(head -n "$((posse_cut - 1))" "$1" 2>/dev/null; printf '%s\n' "$posse_rest")

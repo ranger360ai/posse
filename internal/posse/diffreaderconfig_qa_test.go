@@ -259,6 +259,82 @@ func TestQACeilingMessageArmDoesNotRefuseOnAMergesConflictList(t *testing.T) {
 	}
 }
 
+// PIN: a conflicted `rebase --continue` is the editor path although "$2" is
+// "message" (ranger-base-mfryj). The sequencer commits with a message file
+// AND an editor, so git writes its whole template — the rebase status, the
+// "Changes to be committed" PATHS, the branch being rebased — and strips it
+// at cleanup. Keyed on "$2" alone the arm read that file whole, and a staged
+// path whose NAME carried a class refused a rebase whose message is clean:
+// on ranger-base-ujyjd the same shape (a branch name carrying an open
+// vuln-private id, check 4) could not be continued at all.
+//
+// FIXTURE PREMISES, asserted: the hook really was handed "$2" = "message",
+// and COMMIT_EDITMSG really did carry the class on a '#' line.
+// CONTROL: with -F and no editor, the class on a typed line is still refused.
+func TestQACeilingMessageArmDoesNotRefuseOnARebaseContinueTemplate(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	rel := "assets/" + qaExportStem + "42.csv"
+	w.plant(t, w.priv, rel, "base\n")
+	if out, err := w.git(w.priv, nil, "checkout", "-q", "-b", "side"); err != nil {
+		t.Fatalf("git checkout -b side: %v %s", err, out)
+	}
+	w.plant(t, w.priv, rel, "side\n")
+	if out, err := w.git(w.priv, nil, "checkout", "-q", "main"); err != nil {
+		t.Fatalf("git checkout main: %v %s", err, out)
+	}
+	w.plant(t, w.priv, rel, "main\n")
+	if out, err := w.git(w.priv, nil, "checkout", "-q", "side"); err != nil {
+		t.Fatalf("git checkout side: %v %s", err, out)
+	}
+	if out, err := w.git(w.priv, w.persona, "rebase", "main"); err == nil {
+		t.Fatalf("fixture premise: the rebase must CONFLICT on %s:\n%s", rel, out)
+	}
+	write(t, filepath.Join(w.priv, filepath.FromSlash(rel)), "resolved\n")
+	if out, err := w.git(w.priv, nil, "add", "--", rel); err != nil {
+		t.Fatalf("git add %s: %v %s", rel, err, out)
+	}
+	// A recorder chained in front of nothing: it only notes "$2", which is
+	// the premise this pin rests on, and leaves the wall's own hook to judge.
+	argLog := filepath.Join(t.TempDir(), "source")
+	env := append(append([]string(nil), w.persona...), "GIT_EDITOR=true", "QA_SOURCE_LOG="+argLog)
+	hook := filepath.Join(w.priv, ".git", "hooks", "prepare-commit-msg")
+	orig, rerr := os.ReadFile(hook)
+	if rerr != nil {
+		t.Fatalf("fixture premise: the wall installs a prepare-commit-msg hook: %v", rerr)
+	}
+	body := strings.Replace(string(orig), "\n", "\n[ -n \"${QA_SOURCE_LOG:-}\" ] && printf '%s\\n' \"${2:-}\" > \"$QA_SOURCE_LOG\"\n", 1)
+	if err := WriteExecutable(hook, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := w.git(w.priv, env, "rebase", "--continue"); err != nil {
+		t.Fatalf("git wrote the staged path into its own '#' block and strips it — a conflicted "+
+			"rebase --continue is the editor path even though \"$2\" is \"message\", so it must land: %v\n%s", err, out)
+	}
+	if src, _ := os.ReadFile(argLog); strings.TrimSpace(string(src)) != "message" {
+		t.Fatalf("fixture premise: the sequencer must hand the hook \"$2\" = \"message\", got %q", src)
+	}
+	msg, rerr := os.ReadFile(filepath.Join(w.priv, ".git", "COMMIT_EDITMSG"))
+	if rerr != nil {
+		t.Fatalf("reading COMMIT_EDITMSG: %v", rerr)
+	}
+	if !strings.Contains(string(msg), "#\tmodified:   "+rel) {
+		t.Fatalf("fixture premise: git's template must have carried the class on a '#' line:\n%s", msg)
+	}
+	landed, err := w.git(w.priv, nil, "log", "-1", "--format=%B")
+	if err != nil {
+		t.Fatalf("git log: %v %s", err, landed)
+	}
+	if strings.Contains(landed, qaExportStem) {
+		t.Errorf("the class reached the commit object after all — the arm was right to read it:\n%s", landed)
+	}
+
+	// CONTROL: no editor, so git keeps a '#' line — still read whole, still refused.
+	w.stage(t, w.priv, "internal/posse/ctl.go", "package posse\n")
+	if out, err := w.gitIn(w.priv, w.persona, "# cite "+qaExportStem+"42\n", "commit", "-F", "-", "--", "internal/posse/ctl.go"); err == nil {
+		t.Fatalf("fixture premise: a class on a '#' line typed with -F (no editor) lands and must still be refused:\n%s", out)
+	}
+}
+
 // PIN, structural: ONE message reader per wall, in TWO forms, keyed on git's
 // CLEANUP MODE — and the -m/-F fallback is still the whole file
 // (ranger-base-h3s6q, re-keyed by ranger-base-6y3z2). The split is the fix;
@@ -305,14 +381,19 @@ func TestQAMessageArmReadsTwoWaysKeyedOnTheCleanupMode(t *testing.T) {
 		// everywhere else (ranger-base-b21e0). It is empty where "$2" is
 		// "message", because git appends no template on that path and the
 		// unqualified "rewrite the commit message" is doable as written.
-		{`if [ "${2:-}" != "message" ]; then posse_kept=$posse_clean; fi`, 2},
+		{`if [ -z "$posse_typed" ]; then posse_kept=$posse_clean; fi`, 2},
 		{`posse_kept=''`, 2},
 		// "strip" strips on EVERY path, -m/-F included: that is the
 		// over-refusal half of ranger-base-6y3z2.
 		{`strip) posse_clean=strip ;;`, 2},
-		// "$2" survives as the fallback for "default"/unset and nothing
-		// else — and there it still reads -m/-F whole.
-		{`*) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;`, 2},
+		// "Typed" is "$2" = "message" AND git's own GIT_EDITOR=: — the
+		// export git makes to this hook exactly when it opens no editor.
+		// "$2" alone read `-m -e` and a conflicted `rebase --continue`
+		// whole, template and all (ranger-base-mfryj).
+		{`if [ "${2:-}" = "message" ] && [ "${GIT_EDITOR-}" = : ]; then posse_typed=1; fi`, 2},
+		// The typed message survives as the fallback for "default"/unset
+		// and nothing else — and there it still reads -m/-F whole.
+		{`*) if [ -n "$posse_typed" ]; then posse_clean=whole; else posse_clean=strip; fi ;;`, 2},
 		// The file is read once per wall, ABOVE the branch: the scissors
 		// cut is git's on every mode, so both reads take the same bytes
 		// (ranger-base-xfgcn).

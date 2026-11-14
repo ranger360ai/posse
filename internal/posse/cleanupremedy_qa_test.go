@@ -48,7 +48,7 @@ package posse
 //
 //	keptModeNote returns "" always     (the PRE-b21e0 arm) — the two presence
 //	                                   pins RED, the absence pin GREEN.
-//	the `[ "${2:-}" != "message" ]`    — the absence pin RED on its verbatim
+//	the `[ -z "$posse_typed" ]`        — the absence pin RED on its verbatim
 //	guard removed from messageArm        arm alone, both presence pins GREEN.
 //	the `= scissors` test replaced      — the cut-line pin RED, everything
 //	by `false`                           else GREEN, INCLUDING the scissors
@@ -401,7 +401,7 @@ func TestQAMessageArmStopsAtGitsCutLineUnderScissors(t *testing.T) {
 // The crew's own commit form is `git commit -F - -- <paths>` (AGENTS.md), so the
 // message is typed the way the crew types one.
 //
-// MUTATION: remove `[ "${2:-}" != "message" ]` from messageArm and this pin goes
+// MUTATION: remove `[ -z "$posse_typed" ]` from messageArm and this pin goes
 // RED on the verbatim arm while both presence pins stay green — so it measures
 // the guard and not the note.
 func TestQAMessageRemedyStaysQuietWhereTheWriterTypedTheMessage(t *testing.T) {
