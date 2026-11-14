@@ -3008,8 +3008,9 @@ func twdNewPkgEnv(fset *token.FileSet, byPath map[string]*ast.File) *twdPkgEnv {
 // from the root, and every file in the tree is then its subject.
 var twdWalkers = map[string]bool{"WalkDir": true, "Walk": true, "ReadDir": true, "Glob": true}
 
-// twdFunc is one function declared in internal/posse/*_test.go: who it calls,
-// and whether its own body reaches outside the package.
+// twdFunc is one declaration in a package's *_test.go — a function or a
+// method, named by twdDeclName: who it calls, and whether its own body
+// reaches outside the package.
 type twdFunc struct {
 	name  string
 	where string
@@ -3623,7 +3624,14 @@ func twdParseTreepins(t *testing.T) (map[string]*twdFunc, int) {
 	return twdParseDir(t, twdTreepinsPkg)
 }
 
-// twdParseDir reads every function declared in one package's *_test.go.
+// twdParseDir reads every function declared in one package's *_test.go —
+// METHODS INCLUDED, keyed by twdDeclName (ranger-base-b3w9x). It skipped
+// every declaration with a receiver until then, and a rig that execs one of
+// this repo's own programs from a method is the natural shape for a rig:
+// `exec.Command("scripts/verify-gate-freshness.sh", …)` inside `(*gamRig).run`
+// was invisible to the exec census below, so a pin whose real reach is a
+// tracked directory could get no door and go quiet. That is the escape the
+// register exists to close, so the parse reads the receiver declarations too.
 func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 	t.Helper()
 	paths := twdTestFiles(t, pkg)
@@ -3647,11 +3655,7 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 	out := map[string]*twdFunc{}
 	tests := 0
 	for i, file := range files {
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || fn.Body == nil {
-				continue
-			}
+		for _, fn := range twdDecls(file) {
 			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", paths[i], fset.Position(fn.Pos()).Line), env)
 			if f.test {
 				tests++
@@ -3662,6 +3666,62 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 	return out, tests
 }
 
+// twdDecls is the INCLUSION RULE: which declarations of one parsed test file
+// this register reads. Every body with a body, methods included.
+//
+// One function, called by twdParseDir and by all three fixture drivers, for
+// the reason twdAnalyze is one function (ranger-base-b3w9x): the skip is part
+// of the rule, so a fixture that applied its own would pass over exactly the
+// declarations the tree's parse was dropping — which is how a method's
+// exec.Command sat outside the census under a green pin.
+func twdDecls(file *ast.File) []*ast.FuncDecl {
+	var out []*ast.FuncDecl
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		out = append(out, fn)
+	}
+	return out
+}
+
+// twdDeclName names one declaration in a package's test files, uniquely: a
+// plain function by its own name, a METHOD by its receiver type and its name
+// — `(*hfRig).run`.
+//
+// The qualification is not decoration. `run` is a method name several rigs in
+// internal/treepins spell, and a map keyed by the bare name would let one
+// rig's reading stand for another's and drop every reading but the last.
+// Nothing resolves a method CALL — `r.run(t)` is a selector on a local whose
+// type this file does not compute — so a method is a leaf of the call graph
+// here: its own body is read, and no reach is propagated from it. That is why
+// the exec census below reads every declaration rather than only the tests
+// (ranger-base-b3w9x).
+func twdDeclName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return fn.Name.Name
+	}
+	recv := fn.Recv.List[0].Type
+	star := ""
+	if s, ok := recv.(*ast.StarExpr); ok {
+		star, recv = "*", s.X
+	}
+	// A generic receiver is spelled `Rig[T]`; the type name is what
+	// distinguishes it, so the parameters are dropped.
+	if idx, ok := recv.(*ast.IndexExpr); ok {
+		recv = idx.X
+	}
+	if idx, ok := recv.(*ast.IndexListExpr); ok {
+		recv = idx.X
+	}
+	name := "?"
+	if id, ok := recv.(*ast.Ident); ok {
+		name = id.Name
+	}
+	return "(" + star + name + ")." + fn.Name.Name
+}
+
 // twdAnalyze reads ONE function declaration: who it calls, and every way its
 // body reaches outside its own package. Every rule in this file is in here,
 // so the fixture-driven mutation check below drives the same code the tree is
@@ -3669,9 +3729,9 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 // copy that can agree with the fixture and disagree with the tree.
 func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdPkgEnv) *twdFunc {
 	f := &twdFunc{
-		name:  fn.Name.Name,
+		name:  twdDeclName(fn),
 		where: where,
-		test:  strings.HasPrefix(fn.Name.Name, "Test"),
+		test:  fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test"),
 		calls: map[string]bool{},
 	}
 	env := twdBodyRelEnv(fn.Body, pkg.rel)
@@ -4079,8 +4139,34 @@ var twdIndirect = []struct {
 // subprocess reads. What bounds this is that the census defaults to
 // INCLUSION — an enumerating program makes its callers members — and that
 // the list of programs is short enough to have been read.
+//
+// A declaration with a RECEIVER was the third escape and no longer is
+// (ranger-base-b3w9x): twdDecls reads methods, so an exec.Command in a rig's
+// own method is in the census like any other. What a method still does not
+// do is PROPAGATE — `r.run(t)` is a selector on a local whose type this file
+// does not compute, so a method is a leaf of the reach closure, and the rule
+// that would make its CALLER a class member cannot see the edge. The exec
+// census does not need the edge, because it asks every declaration rather
+// than only the tests; the enumeration rules above do, so a method that
+// WalkDirs a tracked directory is read and its caller is still underived.
+// That one is FENCED rather than left to this paragraph — an arm of the pin
+// below refuses a method with a relEnum and names the fix — because a
+// residual nobody can red is the shape every bead in this register's history
+// was filed for. Nothing in the package is spelled that way today, and the
+// fix when something is remains the one ranger-base-41l0r took by hand: put
+// the reading in a plain function, where the hop is an *ast.Ident the
+// closure already follows.
 var twdExecDispositions = map[string]string{
-	"scripts/bd-argv-gate.sh":        "parses one command line out of its argv and stdin; it opens no directory at all",
+	// ranger-base-b3w9x. The wrapper delegates to the parser beside it
+	// (`py=${BD_ARGV_GATE_PY:-"$self_dir/bd-argv-gate.py"}`), so the two have
+	// one reading between them and it is said the same way twice. The ONE
+	// directory either of them opens is the one the stdin payload's own `cwd`
+	// field names, through `git status --porcelain` in the close arm
+	// (ADR 0041 §3); every pin in this package hands that field a fixture
+	// tree under t.TempDir(), or omits it, and neither program resolves a
+	// tracked path of its own.
+	"scripts/bd-argv-gate.sh":        "parses one command line out of its argv and stdin and hands it to bd-argv-gate.py; the only directory it reaches is the one the payload's cwd names, never a tracked path",
+	"scripts/bd-argv-gate.py":        "parses one command line out of its stdin payload; the only directory it reads is the one that payload's cwd names, through `git status --porcelain` in the close arm, and the pins here hand it a fixture tree — it enumerates no tracked path",
 	"scripts/gotest.sh":              "`find`s only $CACHE and its own scratch tree, never a tracked path",
 	"scripts/macos-install-probe.sh": "probes a scratch install root under $D; the only tracked file it reads is the formula it is handed",
 	"scripts/path-warning.sh":        "reads the PATH string it is given",
@@ -4246,17 +4332,47 @@ func twdClassOf(t *testing.T, pkg string) []string {
 
 // The fence on the indirect register: every row still names a real pin
 // running a real program over the directory it claims, and every tracked
-// program a test in this package execs is dispositioned.
+// program a test OR A TEST HELPER in this package execs is dispositioned.
 //
 // The directory check is not decoration. If scripts/notes-index.py is pointed
 // at another directory tomorrow, the row above becomes a claim about a
 // reading that no longer happens — and the door would keep passing while the
 // pin's subject moved out from under it.
+//
+// "or a test helper" is ranger-base-b3w9x, and it is two widenings of one
+// question. The census read `all`, which until then held no declaration with
+// a RECEIVER at all, and it then filtered `all` down to the TESTS — so the
+// two shapes a rig actually execs through, a method on the rig and a plain
+// helper beside it, were both outside the question. The hole is not
+// theoretical at either end: a method's exec.Command was reported DEAD by the
+// two-way arm below while the undispositioned arm said nothing
+// (ranger-base-41l0r took the function shape by hand for that reason), and
+// the first run of the widened census found scripts/bd-argv-gate.py running
+// undispositioned out of parserGate, a plain helper, where it had sat since
+// that pin was written.
 func TestQAEveryTrackedProgramATreePinRunsIsDispositioned(t *testing.T) {
 	t.Parallel()
 	all, funcs := twdParseTreepins(t)
 	if funcs < 200 {
 		t.Fatalf("only %d test functions parsed under %s — the walk this pin reads is finding nothing", funcs, twdTreepinsPkg)
+	}
+
+	// And the floor on the OTHER widening, which no fixture can hold: the
+	// parse reads declarations with a receiver. The fixture arm below drives
+	// twdDecls, so it cannot pass against a friendlier inclusion rule — but
+	// it says nothing about whether the TREE's parse found any method to
+	// apply it to, and a package that stopped declaring methods would make
+	// this half of the census vacuous without saying so.
+	// MEASURED 2026-11-14: 53 method declarations in internal/treepins/*_test.go
+	// (206 in internal/posse's, read by the same parse).
+	methods := 0
+	for name := range all {
+		if strings.HasPrefix(name, "(") {
+			methods++
+		}
+	}
+	if methods < 20 {
+		t.Fatalf("the parse names %d declarations with a receiver under %s (53 on 2026-11-14) — either the package stopped declaring methods or twdDecls has gone back to skipping them, and a rig that execs one of this repo's own programs from a method would be outside the census below with nothing saying so (ranger-base-b3w9x)", methods, twdTreepinsPkg)
 	}
 
 	registered := map[string]bool{}
@@ -4281,11 +4397,18 @@ func TestQAEveryTrackedProgramATreePinRunsIsDispositioned(t *testing.T) {
 		}
 	}
 
+	// EVERY declaration, not only the tests (ranger-base-b3w9x). A rig execs
+	// through a helper — `gamRun(t, r, flags...)`, `(*hfRig).run` — so the
+	// exec.Command is almost never in the test's own body, and a census that
+	// read only test bodies was asking the question in the one place the
+	// answer is not written. Nothing here resolves a method call, so no reach
+	// closure can carry a method's exec back to its caller; the census is
+	// over-inclusive instead, which is this register's standing default. The
+	// cost of over-inclusion is one row saying what a program reads; the cost
+	// of under-inclusion is a pin whose subject is a tracked directory and
+	// whose door nobody ever asked for.
 	var undispositioned []string
 	for name, f := range all {
-		if !f.test {
-			continue
-		}
 		for _, prog := range f.execTree {
 			if registered[prog] {
 				continue
@@ -4298,7 +4421,7 @@ func TestQAEveryTrackedProgramATreePinRunsIsDispositioned(t *testing.T) {
 	}
 	sort.Strings(undispositioned)
 	for _, u := range undispositioned {
-		t.Errorf("%s — a tracked program of this repo's own, run by a test in %s, and nothing here says what it reads. If it enumerates a tracked directory, its callers are tree-wide pins and belong in twdIndirect with a door; if it reads only what it is handed, say so in twdExecDispositions. Undispositioned is the one answer this census does not take, because a program's reading is outside Go and the default has to be inclusion.", u, twdTreepinsPkg)
+		t.Errorf("%s — a tracked program of this repo's own, run by a test or a test helper in %s, and nothing here says what it reads. If it enumerates a tracked directory, its callers are tree-wide pins and belong in twdIndirect with a door; if it reads only what it is handed, say so in twdExecDispositions. Undispositioned is the one answer this census does not take, because a program's reading is outside Go and the default has to be inclusion.", u, twdTreepinsPkg)
 	}
 
 	// Two-way, so the disposition list cannot keep rows for programs nothing
@@ -4318,8 +4441,95 @@ func TestQAEveryTrackedProgramATreePinRunsIsDispositioned(t *testing.T) {
 	}
 	sort.Strings(dead)
 	for _, d := range dead {
-		t.Errorf("twdExecDispositions carries %s (%q), which no test in %s hands to exec.Command any more — drop the row rather than leave a disposition for a reading that does not happen", d, twdExecDispositions[d], twdTreepinsPkg)
+		t.Errorf("twdExecDispositions carries %s (%q), which no declaration in %s hands to exec.Command any more — drop the row rather than leave a disposition for a reading that does not happen", d, twdExecDispositions[d], twdTreepinsPkg)
 	}
+
+	// AND THE FENCE ON WHAT A METHOD STILL CANNOT DO (ranger-base-b3w9x).
+	// twdDecls reads methods now, so the exec census above sees one; the
+	// REACH closure cannot, because `r.run(t)` is a selector on a local
+	// whose type this file does not compute, and the enumeration rules make
+	// a test a member by propagating from the body that enumerates to its
+	// callers. So a method that enumerates a tracked directory is read and
+	// its caller is still underived — a pin with no door, which is the one
+	// outcome this register exists to prevent. Prose said that and prose is
+	// not a fence: the arm says it, with the one-line fix in the message.
+	var enumMethods []string
+	for name, f := range all {
+		if strings.HasPrefix(name, "(") && len(f.relEnum) > 0 {
+			enumMethods = append(enumMethods, f.where+" "+name+" "+strings.Join(f.relEnum, " "))
+		}
+	}
+	sort.Strings(enumMethods)
+	for _, m := range enumMethods {
+		t.Errorf("%s — that is a reading of a tracked directory from a METHOD, and the reach closure in this file follows *ast.Ident calls only, so the test that calls it is NOT in the derived class and will never be asked for a Makefile door. Move the enumeration into a plain function and call it from the method (ranger-base-41l0r did that by hand for the same reason), or give this file a way to resolve a receiver's type.", m)
+	}
+
+	// THE FIXTURE ARM, and it is the whole of ranger-base-b3w9x's fix: both
+	// censuses above read `all`, so both are only as wide as twdParseDir's
+	// own skip list. That skip list dropped every declaration with a
+	// receiver, and a rig that execs one of this repo's own programs from a
+	// method — the natural shape for a rig — was outside the question. The
+	// register's default is INCLUSION, so an undispositioned program there
+	// was a pin whose real reach could be a tracked directory with no door
+	// and nothing saying so.
+	//
+	// Typed over source rather than asserted over the tree on purpose: there
+	// is no method in this package execing a tracked program TODAY, so a live
+	// assertion would be satisfied by a parse that had gone back to skipping
+	// receivers. The three cases are the hole, the shape that already worked,
+	// and the collision the qualification exists for.
+	for _, c := range []struct {
+		name string
+		src  string
+		want map[string][]string
+	}{
+		{"a method's exec is read, under its receiver's name", `
+type rig struct{}
+func (r *rig) run(t *testing.T) { exec.Command("scripts/notes-index.py", "--check").Run() }`,
+			map[string][]string{"(*rig).run": {"scripts/notes-index.py"}}},
+		{"a plain helper's exec is read, as it always was", `
+func run(t *testing.T) { exec.Command("scripts/notes-index.py", "--check").Run() }`,
+			map[string][]string{"run": {"scripts/notes-index.py"}}},
+		{"two rigs' same-named methods do not collide", `
+type a struct{}
+type b struct{}
+func (x a) run() { exec.Command("scripts/notes-index.py").Run() }
+func (y *b) run() { exec.Command("scripts/test-times.sh").Run() }`,
+			map[string][]string{"(a).run": {"scripts/notes-index.py"}, "(*b).run": {"scripts/test-times.sh"}}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := twdFixtureExecs(t, c.src)
+			for name, want := range c.want {
+				if !slices.Equal(got[name], want) {
+					t.Errorf("the exec census reads %s as running %v, want %v — a tracked program this package's tests run would then be outside the question both arms above ask, so its pin could reach a tracked directory with no door. The source was:%s", name, got[name], want, c.src)
+				}
+			}
+		})
+	}
+}
+
+// twdFixtureExecs runs the exec rule over one snippet and reports what each
+// declaration in it hands to exec.Command. Through twdAnalyze and
+// twdDeclName, the same two functions twdParseDir reads the tree with, so a
+// fixture that passes here cannot be passing against a friendlier copy.
+//
+// The programs named in a fixture have to be real tracked files:
+// twdTrackedProgram lstats the path, because a bare word is resolved on PATH
+// and a package directory is Go source the rules above read directly.
+func twdFixtureExecs(t *testing.T, src string) map[string][]string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture_test.go", "package treepins\n"+src+"\n", 0)
+	if err != nil {
+		t.Fatalf("parse fixture: %v\n%s", err, src)
+	}
+	env := twdNewPkgEnv(fset, map[string]*ast.File{"fixture_test.go": file})
+	out := map[string][]string{}
+	for _, fn := range twdDecls(file) {
+		f := twdAnalyze(fn, "fixture", env)
+		out[f.name] = f.execTree
+	}
+	return out
 }
 
 // The mutation check the derivation needs, because the thing being derived is
@@ -4442,11 +4652,7 @@ func twdFixtureEnumerates(t *testing.T, src string) bool {
 	}
 	env := twdNewPkgEnv(fset, map[string]*ast.File{"fixture_test.go": file})
 	all := map[string]*twdFunc{}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
-			continue
-		}
+	for _, fn := range twdDecls(file) {
 		f := twdAnalyze(fn, "fixture", env)
 		all[f.name] = f
 	}
@@ -4465,9 +4671,8 @@ func twdFixtureClimbs(t *testing.T, src string) bool {
 		t.Fatalf("parse fixture: %v\n%s", err, src)
 	}
 	env := twdNewPkgEnv(fset, map[string]*ast.File{"fixture_test.go": file})
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil || fn.Name.Name != "TestX" {
+	for _, fn := range twdDecls(file) {
+		if fn.Name.Name != "TestX" {
 			continue
 		}
 		return twdAnalyze(fn, "fixture", env).climbEnum

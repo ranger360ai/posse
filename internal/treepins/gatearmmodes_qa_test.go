@@ -144,11 +144,15 @@ func gamPlant(t *testing.T, path, body string) {
 // gamRun invokes the real script with one of the arm's flag lists, reading
 // the operator's hook out of this rig's config dir.
 //
-// A FUNCTION AND NOT A METHOD ON gamRig, deliberately: twdParseDir skips
-// every declaration with a receiver (treewidedoor_qa_test.go), so an
-// exec.Command inside a method is invisible to the census that holds every
-// tracked program a pin runs to a disposition — and this pin runs one. The
-// shape that makes the register true is the shape that lets it see the call.
+// A FUNCTION AND NOT A METHOD ON gamRig. It had to be when it was written:
+// twdParseDir skipped every declaration with a receiver, so an exec.Command
+// inside a method was invisible to the census that holds every tracked
+// program a pin runs to a disposition — and this pin runs one. That hole is
+// closed (ranger-base-b3w9x, treewidedoor_qa_test.go): methods are read and
+// the census asks every declaration, not only the tests. The shape is kept
+// because the OTHER half of the register still needs it — the reach closure
+// follows *ast.Ident calls, so a reading propagates to its callers from a
+// plain function and from nothing else.
 func gamRun(t *testing.T, r *gamRig, flags ...string) (string, int) {
 	t.Helper()
 	cmd := exec.Command("scripts/verify-gate-freshness.sh", flags...)
