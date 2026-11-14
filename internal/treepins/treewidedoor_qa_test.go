@@ -4396,6 +4396,12 @@ const twdExcludedFloor = 2.0
 // name" or "it is a control arm" — those are the parking-spot reasons the
 // retired hand register was growing on, and under the complement neither one
 // earns an exclusion (ADR 0098 D2).
+//
+// THE SECONDS ARE ONE RUN SHAPE (ADR 0098 D2 as amended, ranger-base-a7sqc):
+// the test's -json Elapsed in an unfiltered, warm-cache run of the whole
+// package (`make treepins`). A re-reading taken alone under -run is a
+// different quantity, and it cannot move a row either way. The race-arm
+// census reads 1.67-1.76s alone against its 2.85s row.
 type twdExcluded struct {
 	seconds float64
 	box     string
@@ -4431,7 +4437,9 @@ const twdExcludedRouteSuite = "make test"
 // three race-arm rows read 27.91s, 27.72s and 25.26s an hour earlier with
 // internal/posse's arm builds COLD, and the seconds below are the warm
 // figures on purpose: a row has to clear the floor at the test's cheapest
-// measured price, not at its most expensive.
+// CACHE STATE, not at its most expensive. "Cheapest" ranges over cold against
+// warm and never over run shape. Every row is read inside the whole package,
+// and none is read alone (ADR 0098 D2 as amended, ranger-base-a7sqc).
 // docs/notes.d/ranger-base-3cpcg.md has both readings.
 //
 // THE TWELFTH ROW WAS TAKEN OUT, and it is the one row this table should

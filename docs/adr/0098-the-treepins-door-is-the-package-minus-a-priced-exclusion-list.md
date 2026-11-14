@@ -1,6 +1,7 @@
 # ADR 0098 — The treepins door is the package minus a priced exclusion list
 
-*Status: accepted 2026-11-14 (ranger-base-m6mzg) · owner: architect · changes
+*Status: accepted 2026-11-14 (ranger-base-m6mzg) · D2 amended 2026-11-14
+(ranger-base-a7sqc): the run shape the floor is measured in · owner: architect · changes
 the internal/treepins half of the tree-wide-pin class in
 `internal/treepins/treewidedoor_qa_test.go` · the internal/posse half is
 unchanged*
@@ -76,6 +77,26 @@ price. A row may not be justified by "it reads a file by name" or "it is a
 control arm". Those were the old parking-spot reasons, and under D1 neither
 one earns an exclusion. The floor is 2.0s measured. A test cheaper than that
 costs the door less than the miss would cost a seat.
+
+*(amended 2026-11-14, ranger-base-a7sqc.)* **Measured over what.** A row's
+seconds, and the floor they are held against, are the test's `-json`
+`Elapsed` in an unfiltered, warm-build-cache run of the whole package
+(`make treepins`, which is `scripts/test-times.sh`). They are not the test run
+alone under `-run`, and not a cold-cache run. That is two rulings on two axes:
+
+- *Warm*, because a cold build is paid once per tree and not once per door
+  run. The race-arm rows read 25-28s cold and about 2.9s warm.
+- *In the package*, because the door and `make test` both run the test there,
+  beside its siblings, and nothing runs it alone. A price no route pays
+  cannot say what a row saves. An excluded test is absent from the door's own
+  run, so the whole package is the nearest shape anyone can re-read, and it
+  is the shape the table was first taken in.
+
+A reading in another shape is not evidence against a row. To challenge a row,
+re-read it in this shape. Known limit: for a `t.Parallel` test (the race-arm
+census is one), `Elapsed` overstates the wall the door saves. That saving is
+unmeasured. It is one more reason the floor is necessary and never
+sufficient.
 
 **D3. An excluded test keeps a door if the old key derives it.** If the
 enumeration rule or the root-helper rule derives a test (the existing

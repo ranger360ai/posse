@@ -70,7 +70,11 @@ The two bold rows are the race-arm census, which compiles `internal/posse`'s
 three arms: run 1 paid for those builds and run 2 read them out of the cache.
 **The rows carry the warm figures on purpose** — a row has to clear the floor
 at the test's cheapest measured price, not at its most expensive, or the floor
-is doing no work.
+is doing no work. *(Corrected by ranger-base-a7sqc.)* "Cheapest" here means
+the cheapest cache state, warm against cold. It never means the cheapest run
+shape: ADR 0098 D2 as amended prices a row inside an unfiltered run of the
+whole package, which is where both runs above were taken. A test run alone is
+a different quantity, and the race-arm census reads 1.67-1.76s that way.
 
 Ten of the twelve are the suite apparatus testing itself: `suite-lock.sh`'s
 queue and strict arms, `test-times.sh`'s and `gotest.sh`'s self-tests and
