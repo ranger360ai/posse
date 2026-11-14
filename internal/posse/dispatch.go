@@ -366,6 +366,14 @@ type Dispatcher struct {
 	planTrip  string
 	planBlind string
 
+	// blocked is why this pass launched nothing while it had something to
+	// launch — the launch cap spent, or a pause in force — and when that
+	// reason lifts (backoffhold.go, ranger-base-5tkz9). Pass-denominated
+	// like the two above: Run clears it at its head, and Watch reads it
+	// after the pass to keep the idle backoff from reading a block as an
+	// empty queue.
+	blocked passBlock
+
 	// guardTrippedSince is the governance surface's G4 streak clock: when
 	// the plan guard first tripped in the current unbroken run of tripped
 	// passes, zero when the last pass did not trip. It lives here for
@@ -2698,6 +2706,10 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// ADR 0010: the guard's verdict is one pass's reading — a new pass takes
 	// it fresh or not at all.
 	d.planTrip, d.planBlind = "", ""
+	// ranger-base-5tkz9: so is "this pass was blocked from launching, and
+	// here is when that lifts" — the reading Watch's backoff reads so it
+	// does not take a spent cap for an empty queue (backoffhold.go).
+	d.blocked = passBlock{}
 	// ADR 0013 §5: the account stage's caps, counts and per-pass tallies are
 	// this pass's too — a --watch loop must not report last pass's launches
 	// or brake on a ledger count it took an hour ago.
@@ -2913,6 +2925,11 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// and the next pass reads the file again. --dry-run has already said
 	// what a real pass would do here, and goes on to show the routing.
 	if paused.Present && !d.DryRun {
+		// A declined pass is not a quiet queue (ranger-base-5tkz9): the
+		// backoff must not grow over it. No lift instant — a pause ends
+		// when a human types `posse resume`, so holding the ladder where it
+		// is, is the whole of what this block can honestly ask for.
+		d.noteBlocked("the pause", time.Time{})
 		return 0, nil
 	}
 	var beads []RepoIssue

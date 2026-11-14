@@ -156,8 +156,16 @@ func (d *Dispatcher) epochRoom(max int) (int, bool) {
 	if room > 0 {
 		return room, true
 	}
+	end := d.epochEnd()
 	d.printf("◷ launch cap: %d of %d attempt(s) spent this epoch — nothing launched until it turns at %s (ADR 0028 §2; raise autostart_max_beads:/-n or dispatch_epoch:)\n",
-		d.epochAttempts, max, d.epochEnd().Local().Format("15:04:05"))
+		d.epochAttempts, max, end.Local().Format("15:04:05"))
+	// And the same fact in the form the SCHEDULE needs it
+	// (ranger-base-5tkz9, backoffhold.go): this pass launched nothing
+	// because of the cap and not because the queue was empty, and the cap
+	// comes back at the turn. Without it the idle backoff grew over the
+	// exhaustion — a 40m wait set 28 seconds before the turn, measured
+	// twice on 2026-11-13 — and idled the whole shop into the next epoch.
+	d.noteBlocked("the launch cap", end)
 	return 0, false
 }
 

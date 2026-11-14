@@ -2,8 +2,11 @@ package posse
 
 // posse dispatch --watch: passes in a loop. Pass, sleep, repeat; a quiet
 // pass (nothing dispatched) doubles the sleep up to a cap, a busy one
-// snaps it back to the base interval. The context — SIGTERM or SIGINT, wired
-// in cmd/posse — ends the loop.
+// snaps it back to the base interval. A pass that launched nothing because
+// it was BLOCKED rather than because the queue was empty neither climbs that
+// ladder nor sleeps past the block's own end (backoffhold.go,
+// ranger-base-5tkz9). The context — SIGTERM or SIGINT, wired in cmd/posse —
+// ends the loop.
 //
 // "Between passes" is what that used to mean, and under a rolling Run (ADR
 // 0028 §1) it stopped being a bound at all: the Run did not return while a
@@ -48,6 +51,12 @@ import (
 
 // NextInterval is the backoff schedule: dispatched work resets to base;
 // a quiet pass doubles the current interval, capped at max.
+//
+// "Quiet" is a reading about the QUEUE, and this function cannot tell a
+// quiet pass from a BLOCKED one — a pass that found work and was refused by
+// the launch cap or a pause reaches it with dispatched=0 like any other. The
+// loop applies passBlock.hold to the answer for exactly that reason
+// (backoffhold.go, ranger-base-5tkz9).
 func NextInterval(cur, base, max time.Duration, dispatched int) time.Duration {
 	if dispatched > 0 || cur <= 0 {
 		return base
@@ -444,7 +453,18 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		// doubling the interval over that would back the shop off exactly
 		// when its seats are about to come free.
 		held := d.inFlightCount()
-		wait = NextInterval(wait, base, maxInterval, n+held)
+		prev := wait
+		grown := NextInterval(wait, base, maxInterval, n+held)
+		// A pass that launched nothing because it was BLOCKED — the launch
+		// cap spent, a pause in force — made no statement about the queue,
+		// so the ladder does not climb on it and a block that names its own
+		// end schedules the next pass just after that end
+		// (ranger-base-5tkz9, backoffhold.go). `wait` stays the ladder and
+		// `sleep` is what this pass actually waits, because a ladder
+		// doubling from a wait that was cut to an epoch turn would lose the
+		// backoff it is a ladder of.
+		var sleep time.Duration
+		wait, sleep = d.blocked.hold(grown, prev, d.now())
 		verb := "dispatched"
 		if d.DryRun {
 			// Same wording as the one-shot arm (cmd/posse/main.go:865): a
@@ -452,12 +472,18 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			// seated, so n is real, but nothing launched this pass.
 			verb = "would be dispatched"
 		}
-		d.printf("   %d %s · next pass in %s (ctrl-c to stop)\n", n, verb, wait.Round(time.Second))
+		// The hold's clause goes AFTER the ctrl-c parenthetical, not between
+		// it and the number: `scripts/pass-census.py` reads this line's wait
+		// with `next pass in (\S+) \(ctrl-c`, and a clause in between would
+		// take every cap-blocked pass out of the one instrument that
+		// measures what a pass on this box costs (ADR 0063 D4).
+		d.printf("   %d %s · next pass in %s (ctrl-c to stop)%s\n",
+			n, verb, sleep.Round(time.Second), d.blocked.clause(grown, wait, sleep))
 		// One timer per pass; a carried leg landing cuts it short instead
 		// of waiting it out (ADR 0028 §1) — the next pass's own fireLoop
 		// re-verifies against bd and herdr before it acts on anything that
 		// wake implied.
-		timer := time.NewTimer(wait)
+		timer := time.NewTimer(sleep)
 		for tick := false; !tick; {
 			select {
 			case <-ctx.Done():
