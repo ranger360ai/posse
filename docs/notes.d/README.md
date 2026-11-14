@@ -14,6 +14,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-tq5tj](ranger-base-tq5tj.md) — ranger-base-tq5tj — the delta needed a baseline, so the pin forbids a baseline — 2026-11-13
 - [ranger-base-sxez7](ranger-base-sxez7.md) — The census went blind one root at a time, and its floor was seven below the live count (ranger-base-sxez7) — 2026-11-13
 - [ranger-base-rgyto](ranger-base-rgyto.md) — ranger-base-rgyto — the whole-file project-config branch now asks Lstat too — 2026-11-13
+- [ranger-base-qwv80](ranger-base-qwv80.md) — A host name is an instance's own vocabulary, and the entry that walls it is bare (ranger-base-qwv80) — 2026-11-13
 - [ranger-base-myjcz](ranger-base-myjcz.md) — ranger-base-myjcz — verify-herdr-bob-rules.sh's watcher pid, and the box that could not run it — 2026-11-13
 - [ranger-base-mxbq0](ranger-base-mxbq0.md) — Two pins that were green over the hole they were written for (ranger-base-mxbq0) — 2026-11-13
 - [ranger-base-lx5jk](ranger-base-lx5jk.md) — claude's sessions/ registry, private per seat at bwrap, and the rex join reads the private row first (ranger-base-lx5jk) — 2026-11-13
