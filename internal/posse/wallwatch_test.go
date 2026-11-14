@@ -131,7 +131,7 @@ func wwOpenings(c wwRender) map[string]string {
 // wwEveryShape is the canonical render: every field of SeatbeltCarveOut that
 // bwrapArgsInto reads a mount out of, plus the two it deliberately reads
 // nothing out of (Seal, whose rename a mount point cannot be carried away
-// by, and Narrow, which bwrapRender clears), plus a write grant and a D20
+// by, and Narrow and DenyAll, which bwrapRender clears), plus a write grant and a D20
 // ref keep. Both tests below drive it.
 func wwEveryShape(t *testing.T) wwRender {
 	t.Helper()
@@ -176,6 +176,7 @@ func wwEveryShape(t *testing.T) wwRender {
 			Seal:     []string{grant},
 			Keep:     []string{filepath.Join(gates, "refusals.log")},
 			Narrow:   []SeatbeltNarrow{{Path: priv, Allow: false}},
+			DenyAll:  []string{priv},
 			Private:  []PrivateBind{{Src: src, Dst: priv}},
 			SSHDir:   []string{sshDir},
 			DenyRead: []string{cred, filepath.Join(sshDir, "id_ed25519")},

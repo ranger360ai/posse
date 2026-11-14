@@ -1842,6 +1842,9 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// ...which is what SeatbeltCarveOut's Narrow says in SBPL; the binds
 	// above are this mechanism's spelling of it (ranger-base-r2uxm).
 	r.Carve.Narrow = nil
+	// sessions/ is a private bind here (claudeSessionStateDirNames); the
+	// read-and-write deny is seatbelt's spelling (ranger-base-yaha3).
+	r.Carve.DenyAll = nil
 	// codex's per-process tmp/ and shell_snapshots/, and grok's daemon/run/
 	// (ranger-base-76mcd): a private empty tmpfs
 	// each (ranger-base-6ob20). SeatbeltCarveOut denied them, which is the

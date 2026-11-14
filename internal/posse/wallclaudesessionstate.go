@@ -122,6 +122,38 @@ func claudeDebugDir(home string, stateGrants []string) string {
 	return filepath.Join(cfg, claudeDebugDirName)
 }
 
+// claudeSessionsRegistry is the seatbelt reading of the sessions/ member
+// (ranger-base-yaha3, the darwin half of ranger-base-lx5jk): <cfg>/sessions,
+// plus its resolved spelling when that differs (a link there is matched by
+// SBPL at its target), under claudeDebugDir's guard. SeatbeltCarveOut puts
+// these in DenyAll, which denies READ as well as write: a profile cannot
+// bind a private copy, and the read half also keeps a seat off its peers'
+// .key tokens, which on darwin no runtime-dir mask is known to hide.
+//
+// COST at seatbelt: the seat's own claude cannot register, so no peer can
+// discover it, and posse's rex join has no row to read. The join is already
+// off on darwin (procStartOf answers "not available" off linux), so that
+// half costs nothing. MEASURED 2026-11-13 on Linux, claude 2.1.323, with
+// sessions/ unreadable and unwritable (EACCES): the turn completes, exit 0
+// (ranger-base-tii0u). ASSUMED, no darwin box: SBPL's refusal is handled the
+// same way, and a subpath deny behaves as it does for projects/
+// (ranger-base-r2uxm).
+//
+// bwrapRender clears DenyAll; its spelling of the same member is the private
+// bind claudeSessionStateDirNames already gives it.
+func claudeSessionsRegistry(home string, stateGrants []string) []string {
+	dbg := claudeDebugDir(home, stateGrants)
+	if dbg == "" {
+		return nil
+	}
+	p := filepath.Join(filepath.Dir(dbg), claudeSessionsDir)
+	out := []string{p}
+	if real := absResolve(p); real != p {
+		out = append(out, real)
+	}
+	return out
+}
+
 // claudePrivateSessionStateRel is where those members live under the seat's
 // cache dir.
 const claudePrivateSessionStateRel = "claude"

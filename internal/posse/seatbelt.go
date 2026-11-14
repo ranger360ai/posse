@@ -354,6 +354,12 @@ type SeatbeltCarveOut struct {
 	// Above the carve-out's Deny, so a trailing deny still has the last word
 	// over anything a reopen here names (ADR 0001, deny wins).
 	Narrow []SeatbeltNarrow
+	// DenyAll is subpaths denied READ AND WRITE, rendered after everything
+	// else so no grant or reopen outvotes them: claude's sessions/ peer
+	// registry (claudeSessionsRegistry, ranger-base-yaha3). Seatbelt-only
+	// like Narrow: bwrap gives the same member a private bind, and
+	// bwrapRender clears this.
+	DenyAll []string
 	// SSHDir is the ~/.ssh directories a seat that is not the pusher reads
 	// NOTHING in but sshDirAllowlist (ranger-base-12ggv): an allowlist over
 	// the directory, so a key no ssh config names is unreadable too —
@@ -508,7 +514,7 @@ func (c SeatbeltCarveOut) FileShaped(p string) bool {
 
 // Empty reports whether the block renders nothing.
 func (c SeatbeltCarveOut) Empty() bool {
-	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0 && len(c.Narrow) == 0 && len(c.SSHDir) == 0
+	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0 && len(c.Narrow) == 0 && len(c.SSHDir) == 0 && len(c.DenyAll) == 0
 }
 
 // SeatbeltProfile renders the SBPL profile text: the default deny, the
@@ -624,6 +630,16 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 			}
 			b.WriteString(")\n")
 		}
+	}
+	// LAST, so it has the last word over every allow above (the ssh
+	// allowlist and the carve-out's Keep included).
+	if len(carve.DenyAll) > 0 {
+		b.WriteString(";; read and write deny (ranger-base-yaha3): nothing above reopens these.\n")
+		b.WriteString("(deny file-read* file-write*\n")
+		for _, p := range carve.DenyAll {
+			fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(p))
+		}
+		b.WriteString(")\n")
 	}
 	return b.String()
 }
@@ -1740,6 +1756,8 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// is read-only again (ranger-base-r2uxm). The same list bwrap binds in
 	// place (claudeProjectsBinds), read as ordered SBPL rules.
 	c.Narrow = seatbeltProjectsNarrow(claudeProjectsBinds(wallHome(), rtGrants, a.claudeOwnSessionTree(cwd)))
+	// claude's sessions/ peer registry: no read, no write (ranger-base-yaha3).
+	c.DenyAll = claudeSessionsRegistry(wallHome(), rtGrants)
 	c.Seal = renameSeal(c.Deny, writable)
 	for _, p := range credentialReadDenyLiterals(runtime.GOOS, stateDirs) {
 		add(&c.DenyRead, p)
@@ -2570,6 +2588,9 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 			continue
 		}
 		fmt.Fprintf(out, "    x %s (projects/ deny, in order with the line before; ranger-base-r2uxm)\n", AbbrevHome(n.Path))
+	}
+	for _, p := range carve.DenyAll {
+		fmt.Fprintf(out, "    x %s (read and write deny: claude's peer registry; ranger-base-yaha3)\n", AbbrevHome(p))
 	}
 	for _, p := range carve.Seal {
 		fmt.Fprintf(out, "    x %s (rename seal only — writes inside it are unaffected)\n", AbbrevHome(p))
