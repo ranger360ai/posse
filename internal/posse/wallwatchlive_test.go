@@ -62,6 +62,15 @@ func wwLiveFixture(t *testing.T) wwLiveSeat {
 // it leaves behind, so the kill is judged on a process bwrap did not start).
 func (s wwLiveSeat) launch(t *testing.T, st wallWatchStore, seat string, lock string) (code chan int, bwrapPid *int) {
 	t.Helper()
+	devnull, _ := os.Open(os.DevNull)
+	t.Cleanup(func() { devnull.Close() })
+	return s.launchOn(t, st, seat, lock, devnull)
+}
+
+// launchOn is launch with the watcher's stdin named — the pane's terminal,
+// for a pin about what is typed at it (ranger-base-heypq).
+func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock string, stdin *os.File) (code chan int, bwrapPid *int) {
+	t.Helper()
 	carve := SeatbeltCarveOut{
 		Deny:     []string{s.deny},
 		DenyFile: []string{s.deny},
@@ -86,8 +95,6 @@ func (s wwLiveSeat) launch(t *testing.T, st wallWatchStore, seat string, lock st
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { af.Close() })
-	devnull, _ := os.Open(os.DevNull)
-	t.Cleanup(func() { devnull.Close() })
 	var stderr strings.Builder
 	code = make(chan int, 1)
 	pid := new(int)
@@ -95,7 +102,7 @@ func (s wwLiveSeat) launch(t *testing.T, st wallWatchStore, seat string, lock st
 		code <- runWallWatch(wallWatchRun{
 			Opts: wallWatchOpts{Mounts: s.mounts, Seat: seat, Dir: s.grant,
 				Bwrap: []string{"bwrap", "--args", "3", "--", "sh", "-c", "sleep 300 & echo $! > " + shellQuote(s.bgpid) + "; wait"}},
-			Args: af, Stdin: devnull, Stdout: &stderr, Stderr: &stderr,
+			Args: af, Stdin: stdin, Stdout: &stderr, Stderr: &stderr,
 			Store: st, Lock: lock, PollInterval: 50 * time.Millisecond,
 			OnDetach: func(d wallWatchDetach) { *pid = d.BwrapPid },
 		})

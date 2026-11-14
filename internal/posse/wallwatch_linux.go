@@ -99,6 +99,10 @@ func runWallWatch(r wallWatchRun) int {
 		say("cannot start bwrap: %v", err)
 		return 2
 	}
+	// From here on every return hands the terminal back to the pane's shell,
+	// which is OUTSIDE the cage, so whatever was typed at the seat and not
+	// read by it goes with nobody (ranger-base-heypq).
+	defer wallWatchDiscardTyped(r.Stdin)
 	infoW.Close()
 	blockR.Close()
 	if sigs != nil {
@@ -238,6 +242,35 @@ func runWallWatch(r wallWatchRun) int {
 			return respond(gone, false)
 		}
 	}
+}
+
+// wallWatchDiscardTyped throws away terminal input nobody has read yet, as
+// the watcher's last act (ranger-base-heypq).
+//
+// THE WATCHER CAN OUTLIVE ITS SEAT. Its kill path files a bead before it
+// returns (respond), which is a bd call and seconds long, and in that time
+// the watcher is the pane's foreground process while the agent behind it is
+// dead. On a Rex instance the watcher is also the program_status record's
+// OWNER — Rex records the terminal's foreground process-group leader, and
+// the launch line makes the watcher that leader (MEASURED 2026-11-13 on this
+// box: a block's `foreground` and its record's owner are the pid that equals
+// the tty's tpgid) — so the liveness refusal in RexMux.Prompt reads a live
+// owner and lets the keystrokes through. The watcher never reads its stdin,
+// so the line discipline holds them, and the next reader is the pane's
+// interactive shell: OBSERVED 2026-11-13, a bead prompt typed into a seat the
+// watcher had just killed was evaluated by that shell, uncaged, command
+// substitutions and all.
+//
+// A flush and not a read: nothing typed into a dead seat was meant for the
+// shell, and a read would have to decide where the input ends. TCIFLUSH on a
+// stdin that is not a terminal is ENOTTY, and there is nothing to discard.
+//
+// Residual: ranger-base-ie4mx.
+func wallWatchDiscardTyped(in *os.File) {
+	if in == nil {
+		return
+	}
+	_ = unix.IoctlSetInt(int(in.Fd()), unix.TCFLSH, unix.TCIFLUSH)
 }
 
 // readMountinfo rereads the table from the top through the fd poll(2) is
