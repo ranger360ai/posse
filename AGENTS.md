@@ -428,6 +428,7 @@ stall that day, and every one of them a typing habit.
   make pkgcensus-arm2-check    the same, for what only -tags posse_arm2 builds
   make pkgcensus-arm3-check    the same, for what only -tags posse_arm3 builds
   make notes-check     ~0.3s   docs/notes.d/README.md lists every fragment (a TOOL)
+  make orientation-check ~0.1s neither orientation page orders you to the remote
   make adr-check       ~1.6s   ADR citations resolve, exemptions name real files
   make corpus-check      ~5s   censuses over this repo's own .go, test and script sources
   make register-check   ~22s   the register itself: every tree-wide pin has a door
@@ -478,11 +479,21 @@ stall that day, and every one of them a typing habit.
   is in treewidedoor_qa_test.go's head comment, which is also the one place
   that may say how many pins there are) — that is the one
   command to type after a filtered run, and it is a prerequisite of `make
-  test` for the same reason `fmt-check` is. Two of them are worth typing on
+  test` for the same reason `fmt-check` is. Three of them are worth typing on
   their own: `make crew-check` when your change touched `cmd/`, `internal/`,
-  `etc/`, `examples/` or any `*_test.go`, and **`make notes-check` whenever
+  `etc/`, `examples/` or any `*_test.go`, **`make notes-check` whenever
   you add a `docs/notes.d/<bead-id>.md` fragment** — which is most beads, and
-  which is why that one escaped for as long as it did. `crew-check` replaces
+  which is why that one escaped for as long as it did — and
+  **`make orientation-check` whenever you edit THIS page or `INSTALL.md`**,
+  because a `bd init` in the checkout, a second `bd onboard` or a bd upgrade
+  puts back a "Landing the Plane" section whose every step the `pre-push`
+  gate refuses, and the readers who edit a standing-orders page are the
+  readers least likely to be running a suite (ranger-base-n7hsa). It reds on
+  any line of this page that names that verb without also saying who does it
+  — `Never push`, `operator pushes`, `pre-push` and `git push:*` are the four
+  spellings it lets by, which is the whole vocabulary this page has for
+  discussing the mandate, and the first draft of this bullet reddened the
+  door it was documenting. `crew-check` replaces
   the hand-composed `grep -rn '<every crew name>' cmd etc examples internal
   *_test.go` that standing orders used to carry: it prints path, line and the
   offending name, and it IS the pin, so it cannot disagree with the suite.

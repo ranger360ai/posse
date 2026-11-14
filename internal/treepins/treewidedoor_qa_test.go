@@ -1312,8 +1312,57 @@ package treepins
 // not. 0.37s for the census, which is the cost of parsing internal/posse's
 // 885 .go files, and 0.00s for the control (MEASURED 2026-11-14).
 //
-// and `make tree-check` is all of them — one hundred and fifty pins
-// and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
+// and SIX more, which are the first members of this class admitted by a DOOR
+// alone — nothing derives them and nothing will under the present rule
+// (ranger-base-n7hsa). internal/treepins' half keys membership on an
+// ENUMERATION rooted at a relative tree path, and these six read ONE NAMED
+// tracked page each: AGENTS.md, the file dispatch hands every seat at session
+// start, and INSTALL.md §9, the recipe that keeps bd's push mandate out of
+// it. Reading one named file is the enumeration rule's own stated negative
+// case, so the exclusion is working as designed — and the cost it was
+// designed to accept is this one: the pin over the crew's orientation page
+// was reachable only by an unfiltered run of this 589.965s package, in arm 1,
+// so a `make test` aborted there and arms 2 and 3 never ran at all. MEASURED
+// 2026-11-14 at 37a94cd9: two reader-directed push orders appended to
+// AGENTS.md, `make fmt-check` green, `make tree-check` green at 60s over
+// every door it has, and the pin red in 0.007s naming both lines.
+//
+//	TestRepoAgentsMdCarriesNoPushMandate          make orientation-check
+//	TestInstallSection9ReconcilesThePlantedAgentsMd
+//	                                              make orientation-check
+//	TestInstallSection9RecipeCutsTheMandateOutOfWhatBdPlants
+//	                                              make orientation-check
+//	TestInstallSection9RecipeStopsAtTheNextHeading
+//	                                              make orientation-check
+//	TestInstallSection9RecipeIsSafeWithNothingToCut
+//	                                              make orientation-check
+//	TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun
+//	                                              make orientation-check
+//	                                              (all six ranger-base-n7hsa)
+//
+// A NEW DOOR rather than a fold, because no existing door's subject is
+// theirs: doc-check is the prose door and it runs ./internal/posse, which
+// these pins do not live in, and the five internal/treepins doors are the
+// notes index, the ADR citations, this repo's own sources, this register
+// itself and scripts/. 0.063-0.069s for the six (MEASURED 2026-11-14, three
+// warm runs at a one-minute load average of 11.74), and the filter is
+// spelled out rather than left as `-run PushMandate` — only two of that
+// file's seven tests carry that substring, so the obvious filter runs the
+// AGENTS.md pin and the control and leaves the five §9 arms where they were.
+//
+// AND SIX twdDoorHolders ROWS, which is the part worth reading rather than
+// counting. That register is the one hand route into a door variable, its
+// own comment called itself a parking spot, and it went from three rows to
+// nine in one landing — seven of the nine now sharing ranger-base-hrf47's
+// single cause, a pin whose subject is a NAMED tracked file this tree ships.
+// Six rows for one cause is the argument that the KEY should read this shape,
+// not that this register should keep growing, and it is filed as that
+// argument: ranger-base-m6mzg, to the architecture lane, with these rows as
+// its evidence. The seventh test in that file is the scanner's own control
+// and is undoored, like every control arm above.
+//
+// and `make tree-check` is all of them — one hundred and fifty-six pins
+// and eighteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
 // 8.42 over a five-minute 11.15, 10.04 and 9.71, with NO suite slot held for
@@ -1890,6 +1939,13 @@ var twdDoors = []twdDoor{
 	{"QA_PKGCENSUS_ARM3_PINS", "pkgcensus-arm3-check", twdPossePkg, false, 3},
 	// internal/treepins (ranger-base-g6sb1).
 	{"QA_NOTES_PINS", "notes-check", twdTreepinsPkg, true, 1},
+	// The orientation pages' push mandate (ranger-base-n7hsa). Every pin
+	// behind this door reads AGENTS.md or INSTALL.md BY NAME and enumerates
+	// nothing, so all six are door-holders rather than derived members —
+	// see twdDoorHolders, where the six rows and the one cause they share
+	// are the argument that it is the KEY that should change and not this
+	// register.
+	{"QA_ORIENTATION_PINS", "orientation-check", twdTreepinsPkg, false, 1},
 	{"QA_ADR_PINS", "adr-check", twdTreepinsPkg, false, 1},
 	{"QA_CORPUS_PINS", "corpus-check", twdTreepinsPkg, false, 1},
 	{"QA_REGISTER_PINS", "register-check", twdTreepinsPkg, false, 1},
@@ -4007,10 +4063,32 @@ var twdExecDispositions = map[string]string{
 // This is the ONE way into a door variable that does not go through the
 // derivation, which is why it is a list with reasons rather than a flag: it
 // is exactly the shape of parking spot this file keeps warning about. Arm 2
-// holds each row to being a real test in the package its door runs, and two
-// rows is what it should stay near. A pin put here to dodge the two-way
+// holds each row to being a real test in the package its door runs, and
+// every row has to name its own cause. A pin put here to dodge the two-way
 // check would be a pin whose membership nothing derived and whose door
 // nothing justified.
+//
+// WHAT A ROW MAY NOT SAY is "it reads a file by name" and stop. Reading a
+// named file is the enumeration rule's own negative case
+// (TestQATheTreepinsEnumerationRuleMatchesWhatItClaims), so that sentence is
+// only why NOTHING DERIVES the pin — it is not a reason for a door. The
+// reason is the second half, which ranger-base-hrf47's row already wrote
+// down: an unrelated bead editing that file reds the pin exactly as a tree
+// walk would, and nothing under 589.965s says so.
+//
+// "TWO ROWS IS WHAT IT SHOULD STAY NEAR" is what this comment said until
+// ranger-base-n7hsa, and it was three when it said it — hrf47's row made it
+// three and left the numeral, which is the drift arm 4 exists to catch one
+// page further out. It is NINE now, and the sentence is gone rather than
+// decremented, because the six that arrived at once are not six decisions:
+// seven of the nine share one cause, a pin whose subject is a NAMED tracked
+// file this tree ships as orientation (the Makefile and verify-box.sh for
+// hrf47's; AGENTS.md and INSTALL.md §9 for n7hsa's six). A cause that
+// arrives six at a time is a key the derivation should be reading, not a
+// list this register should be growing — which is ranger-base-m6mzg, filed
+// to the architecture lane with these rows as its evidence. Until that is
+// ruled, a row is the honest way in and a numeral here would be a bound
+// nobody is holding.
 var twdDoorHolders = map[string]string{
 	"TestQAEveryTreepinsDoorFilterNamesItsPins":            "asks what make's expansion of each internal/treepins door filter selects; it reads the Makefile and runs `go test -list`",
 	"TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles": "arm 4 — holds this file's head comment and the treepins README's door table to the Makefile's own pin and door counts; it reads the Makefile, this file and that README",
@@ -4027,6 +4105,36 @@ var twdDoorHolders = map[string]string{
 	// so scripts-check went green over this one for as long as both existed
 	// (the escape ranger-base-hrf47 was filed for).
 	"TestQABoxCheckCensusCoversEveryVerifyTarget": "censuses the Makefile's verify-* targets against the roster and EXCLUDED table of scripts/verify-box.sh; it reads those two files by name and enumerates nothing",
+	// ranger-base-n7hsa. SIX rows, one per pin behind `make
+	// orientation-check`, and they are hrf47's cause six times over rather
+	// than six new ones. Their subject is the push mandate bd plants: a
+	// `bd init` in the checkout, a second `bd onboard` or a bd upgrade puts
+	// back an AGENTS.md section ordering the reader to push, which every
+	// PID denies and the pre-push gate refuses, and INSTALL.md §9 is the
+	// recipe that cuts it out. Each pin reads one or both of those pages by
+	// name, so the enumeration rule cannot see any of them — and each is
+	// red by any bead that edits the page it reads, which is what earns the
+	// door.
+	//
+	// MEASURED 2026-11-14 at 37a94cd9: two reader-directed push orders
+	// appended to AGENTS.md, `make fmt-check` green, `make tree-check`
+	// green at 60s over the whole of it, and the pin red in 0.007s. The
+	// subject is the page handed to every seat at session start, so the
+	// readers who edit it are the readers least likely to be running the
+	// suite — and the pins lived in arm 1, so the only run that reported
+	// the mandate was a `make test` that then aborted before arms 2 and 3.
+	//
+	// The seventh test in that file, TestPushMandateCheckerDiscriminates,
+	// is NOT here and has no door: it drives the scanner over planted
+	// fixtures, so nothing derives it and no unrelated bead can red it —
+	// the same reason every control arm named in this file's head comment
+	// is undoored.
+	"TestRepoAgentsMdCarriesNoPushMandate":                              "reads AGENTS.md by name for a reinstated push mandate; any bead that edits the crew's orientation page reds it",
+	"TestInstallSection9ReconcilesThePlantedAgentsMd":                   "reads INSTALL.md §9 by name for the conflict it states and the reconciliation it prescribes; any bead that edits that section reds it",
+	"TestInstallSection9RecipeCutsTheMandateOutOfWhatBdPlants":          "extracts §9's shell recipe out of INSTALL.md and runs it over the AGENTS.md bd plants; any bead that edits the recipe reds it",
+	"TestInstallSection9RecipeStopsAtTheNextHeading":                    "the same extracted recipe, over a fixture with a section after the mandate; any bead that edits the recipe reds it",
+	"TestInstallSection9RecipeIsSafeWithNothingToCut":                   "the same extracted recipe, over a fixture with no Landing section; any bead that edits the recipe reds it",
+	"TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun": "runs §9's extracted recipe twice, the second pass over this repo's OWN AGENTS.md; any bead that edits either page reds it",
 }
 
 // twdTreepinsTreeWideTests returns the tests in internal/treepins whose

@@ -69,7 +69,7 @@ ifeq ($(words $(BUILD_SOURCE)),1)
 LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
 endif
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -767,6 +767,7 @@ QA_PKGCENSUS_ARM3_PINS := TestBackupHasNoOverride|TestQAOneDoorForTheReportedRea
 # its pin's whole body is `python3 scripts/notes-index.py --check`, so the
 # door re-runs the TOOL the way fmt-check does, and the two cannot disagree.
 QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
+QA_ORIENTATION_PINS := TestRepoAgentsMdCarriesNoPushMandate|TestInstallSection9ReconcilesThePlantedAgentsMd|TestInstallSection9RecipeCutsTheMandateOutOfWhatBdPlants|TestInstallSection9RecipeStopsAtTheNextHeading|TestInstallSection9RecipeIsSafeWithNothingToCut|TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun
 QA_ADR_PINS       := TestADRRecordsNameTheLivePackageDirectory|TestADRSweptRecordsStillCiteTheLiveDirectory|TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
 QA_CORPUS_PINS    := TestQAEveryPlantingPackageHasAColdexecArm|TestQAColdexecArmRegisterIsNotStale|TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders|TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable|TestQANoGoSourceWritesABinBashShebang|TestQAEveryShippedScriptThatHashesPicksItsHasherByProbe|TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates|TestQANoFixtureGitChildCallsAVerbTheShimRefusesOutright|TestCredTokenRevealIsCalledOnlyFromTheRegister|TestCredTokenRevealIsTheOnlyMethodOfThatName|TestQAEveryTempRootInTheTreeIsInPossesTempNamespace|TestQAEveryLaunchLineAssertionReadsBothPlacesTheLineLandsIn
 QA_REGISTER_PINS  := TestTreePinsRunFromModuleRoot|TestQAEveryTreeWidePinHasADoor|TestQAEveryTreePathHandedThroughAParameterIsDerived|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles|TestQATheClimbFenceStillHasItsBareRootJoinHole
@@ -982,6 +983,46 @@ pkgcensus-arm3-check:
 notes-check:
 	@python3 scripts/notes-index.py --check
 
+# THE ORIENTATION PAGES' PUSH MANDATE (ranger-base-n7hsa). AGENTS.md is the
+# file dispatch hands every seat at session start and INSTALL.md §9 is the
+# recipe that keeps bd's push mandate out of it — a `bd init` in the checkout,
+# a second `bd onboard` or a bd upgrade can put the mandate back, which is
+# what internal/treepins/pushmandate_qa_test.go exists to say. Six of that
+# file's seven tests read one of those two pages BY NAME, so nothing in the
+# register's derivation can see them: reading one named file is the
+# enumeration rule's own negative case
+# (TestQATheTreepinsEnumerationRuleMatchesWhatItClaims), and that exclusion is
+# working as designed.
+#
+# DOORED ANYWAY, for the reason ranger-base-hrf47's door-holder row gives one
+# door over: nothing about reading a file by name makes a pin reachable. Any
+# bead that edits AGENTS.md or INSTALL.md reds these, and until this door
+# existed the only thing that would say so was an unfiltered run of a
+# 589.965s package — in arm 1, so the recipe aborted there and arms 2 and 3
+# never ran at all. MEASURED 2026-11-14 at 37a94cd9, load 8.10 falling to
+# 6.57: two reader-directed push orders appended to AGENTS.md, `make
+# fmt-check` green, `make tree-check` green at 60s over the whole of it, and
+# the pin red in 0.007s naming both lines. The subject is the one page whose
+# readers are the readers least likely to be running the suite, so that gap
+# reported a reinstated mandate hours after the file started telling every
+# seat to push.
+#
+# NOT `-run PushMandate`, which is the filter a seat reaches for and the one
+# the filing bead named: only two of the file's seven tests carry that
+# substring, so it runs the AGENTS.md pin and the checker control and leaves
+# the five §9 arms exactly where they were (MEASURED 2026-11-14, `go test
+# -list PushMandate`). The variable spells all six.
+#
+# The seventh test is TestPushMandateCheckerDiscriminates, the scanner's own
+# control, and it is deliberately NOT here for the reason every control arm in
+# this register is undoored: it drives the scanner over planted fixtures, so
+# no unrelated bead can red it and nothing derives it. 0.063-0.069s for the
+# six (MEASURED 2026-11-14, three warm runs at a one-minute load average of
+# 11.74).
+# Type it when you edit AGENTS.md or INSTALL.md.
+orientation-check:
+	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_ORIENTATION_PINS))$$'
+
 # The ADR citation corpus: every .go file in the tree indexed, every ADR in
 # docs/adr/ read, and the two held to each other — a cited file that moved,
 # an exemption that names nothing, the executable supplements. ~1.5s.
@@ -1161,7 +1202,7 @@ pid-check:
 # treewidedoor_qa_test.go's head comment says it once, derived from this
 # file by its arm 4, and a second copy here would be the second place to
 # drift.
-tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check
+tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check
 
 # THE UNFILTERED TREE-PIN RUN, THROUGH THE WRAPPER SO IT QUEUES
 # (ranger-base-1a0hi). `tree-check` above is the doors a seat types after a

@@ -13,6 +13,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-r3qz6](ranger-base-r3qz6.md) — The pulse's channel switch: what D3 and D4 landed, and the three places the code reads the page narrowly (ranger-base-r3qz6) — 2026-11-14
 - [ranger-base-q749c](ranger-base-q749c.md) — The nest helper's venue contract, and the two literals a shipped script reads (ranger-base-q749c) — 2026-11-14
 - [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
+- [ranger-base-n7hsa](ranger-base-n7hsa.md) — ranger-base-n7hsa — the orientation page's own pin had no door — 2026-11-14
 - [ranger-base-ietka](ranger-base-ietka.md) — A closed-set pin whose failure message crashed on the one direction it exists for (ranger-base-ietka) — 2026-11-14
 - [ranger-base-hi2lt](ranger-base-hi2lt.md) — ranger-base-hi2lt — the bwrap render refuses a main checkout's `.git/config` deny — 2026-11-14
 - [ranger-base-gi6ge](ranger-base-gi6ge.md) — The bullet and the diff marker are the same byte (ranger-base-gi6ge) — 2026-11-14

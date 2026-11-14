@@ -48,6 +48,7 @@ pin.
 | `make pkgcensus-arm2-check` | the same, for the pins built only under `posse_arm2` |
 | `make pkgcensus-arm3-check` | the same, for the pins built only under `posse_arm3` |
 | `make notes-check` | `docs/notes.d/README.md` lists every fragment (a tool) |
+| `make orientation-check` | no push mandate in `AGENTS.md`, and the `INSTALL.md` recipe that keeps it out |
 | `make adr-check` | ADR citations resolve, exemptions name real files |
 | `make corpus-check` | censuses over this repository's own Go, test and shipped-runnable sources |
 | `make register-check` | the register itself: every tree-wide pin has a door |
