@@ -21,6 +21,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-n7hsa](ranger-base-n7hsa.md) — ranger-base-n7hsa — the orientation page's own pin had no door — 2026-11-14
 - [ranger-base-n2veh](ranger-base-n2veh.md) — The exemption moved to the other side of the call (ranger-base-n2veh) — 2026-11-14
 - [ranger-base-lagas](ranger-base-lagas.md) — The wall check's body, its three exits, and the arm that crashed on the one case it exists for (ranger-base-lagas) — 2026-11-14
+- [ranger-base-ig79v](ranger-base-ig79v.md) — Two pin gaps from the ranger-base-66v31 verify, and why one of them is a pin and not a deletion — 2026-11-14
 - [ranger-base-ietka](ranger-base-ietka.md) — A closed-set pin whose failure message crashed on the one direction it exists for (ranger-base-ietka) — 2026-11-14
 - [ranger-base-hi2lt](ranger-base-hi2lt.md) — ranger-base-hi2lt — the bwrap render refuses a main checkout's `.git/config` deny — 2026-11-14
 - [ranger-base-gi6ge](ranger-base-gi6ge.md) — The bullet and the diff marker are the same byte (ranger-base-gi6ge) — 2026-11-14

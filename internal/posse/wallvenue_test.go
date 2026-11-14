@@ -21,6 +21,7 @@ package posse
 // helpers in it are read by tests in all three arms.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -183,18 +184,54 @@ func wallVenueTopLevel(name string) string {
 // Unset is the ordinary case and the only quiet one: every seat and every
 // operator `make test` runs with no such variable, and D4 says behaviour
 // there is exactly ADR 0096 D3's.
+//
+// THE RULE IS wallVenueFromEnv AND THIS IS ITS WIRING, split for
+// bwrapNestDecision's reason and for a measurement (ranger-base-ig79v,
+// finding 2(a) of the ranger-base-66v31 verify): with the parse inline here,
+// turning the refusal arm into a `t.Logf` — a value that is neither empty nor
+// `1` read as a quiet no, which is the one reading D1 says it must never get
+// — survived every pin ranger-base-q749c added, because a helper that takes a
+// *testing.T can only be exercised by a test willing to be failed by it. A
+// pure function of the VALUE can be driven over every spelling an operator or
+// a mis-render can hand it.
 func wallVenueActive(t *testing.T) bool {
 	t.Helper()
-	switch v := os.Getenv(wallVenueEnvVar); v {
-	case "":
-		return false
-	case "1":
-		return true
-	default:
-		t.Fatalf("%s is set to %q, and ADR 0097 D1 renders the venue with exactly %s=1. Read as 'not the venue' this would abstain every member of the wall check, which answers exit 3 and reaches a reader as D5's \"wall check silent\" rather than as a wall regression — so it is refused here instead. Set it to 1, or unset it.",
-			wallVenueEnvVar, v, wallVenueEnvVar)
-		return false
+	venue, refusal := wallVenueFromEnv(os.Getenv(wallVenueEnvVar))
+	if refusal != "" {
+		t.Fatal(refusal)
 	}
+	return venue
+}
+
+// wallVenueFromEnv is that rule, as a function of the variable's value and
+// nothing else: the venue answer, and the words to fail with when the value
+// is one ADR 0097 D1 never renders. A non-empty refusal is always a red —
+// never a quiet `false` — and the two returns are deliberately not one
+// `(bool, error)`: there is no arm in which a caller may carry on with the
+// answer AND the refusal, and nothing here is recoverable.
+//
+// EXACT MATCH, NO TRIMMING AND NO CASE FOLDING. `1` is what D1's render
+// writes (landedcheck.go appends `POSSE_WALL_VENUE=1` verbatim), so ` 1`,
+// `1\n`, `01`, `true` and `TRUE` are all values no renderer of ours produced
+// — they are a hand-typed or mis-rendered venue, which is the case this
+// refusal exists for. Guessing at what one of them meant is how the venue
+// stops being something the RENDERER says and starts being something the
+// member infers.
+//
+// THE REFUSAL IS AN ASSUMED PAST D4's LETTER, which ranger-base-q749c flagged
+// for the architecture lane and this pin does not settle: D4 says what unset
+// and `1` mean and is silent on the rest. What the pin holds is which answer
+// is IN FORCE today, so narrowing it back to a quiet no is a diff that reds a
+// row and not a change nobody notices (TestQAWallVenueEnvParseIsADR0097D1s).
+func wallVenueFromEnv(v string) (venue bool, refusal string) {
+	switch v {
+	case "":
+		return false, ""
+	case "1":
+		return true, ""
+	}
+	return false, fmt.Sprintf("%s is set to %q, and ADR 0097 D1 renders the venue with exactly %s=1. Read as 'not the venue' this would abstain every member of the wall check, which answers exit 3 and reaches a reader as D5's \"wall check silent\" rather than as a wall regression — so it is refused here instead. Set it to 1, or unset it.",
+		wallVenueEnvVar, v, wallVenueEnvVar)
 }
 
 // nestAction is what the gate does to its caller: the three answers ADR 0097
@@ -279,15 +316,63 @@ func bwrapNestDecision(name, refusal string, venue bool) (nestAction, string) {
 // D17's base, with every skip line quoted. The MARKER is different — it is
 // read by a shipped script rather than by a person, so wallvenue_qa_test.go
 // holds it to the ADR's literal.
+//
+// THE EMISSION IS NOW PINNED, and it was not (ranger-base-ig79v, finding 2(b)
+// of the ranger-base-66v31 verify). With the switch inline here, replacing
+// `t.Log(msg)` with `_ = msg` — the marker DECIDED and never EMITTED —
+// survived all five of ranger-base-q749c's pins and left a venue run green,
+// silent and uncountable: 34 pass, 0 fail, rc=0 and ZERO marker lines, which
+// `scripts/posse-wall-check` answers exit 3 for and D5's watchdog files as
+// "wall check silent" rather than as the wall regression the run existed to
+// find (ADR 0097's own `/var/tmp` row, one mechanism over). Nothing could
+// have caught it: the gate's only callers are the 32 members, every one of
+// them takes the same row in any one process, and none of them asserts that
+// the gate logged anything. So the switch moved to bwrapNestAct, which takes
+// its sink as an interface a pin can hand a recorder.
 func bwrapNestSkip(t *testing.T) {
 	t.Helper()
-	venue := wallVenueActive(t)
-	switch act, msg := bwrapNestDecision(t.Name(), liveBwrapNestRefusal(), venue); act {
+	act, msg := bwrapNestDecision(t.Name(), liveBwrapNestRefusal(), wallVenueActive(t))
+	bwrapNestAct(t, act, msg)
+}
+
+// nestSink is the gate's caller as the gate uses it: the three sinks ADR 0097
+// D4's three actions reach for, plus Helper so a marker line still reports
+// the MEMBER's own file and line rather than this file's (what the venue's
+// readers see in `go test -json`, and what the body's own fixtures spell).
+// *testing.T satisfies it; so does a recorder in a pin.
+//
+// AN INTERFACE AND NOT THREE func VALUES: the mapping from action to sink is
+// the half that was unpinned, and three `func(string)` parameters would let a
+// pin assert that SOMETHING was called while a wiring that passed t.Skip
+// where t.Log belongs read green. Named methods cannot be swapped silently.
+type nestSink interface {
+	Helper()
+	Log(args ...any)
+	Skip(args ...any)
+	Fatal(args ...any)
+}
+
+// bwrapNestAct is the gate's action half: it does to its caller what
+// bwrapNestDecision decided, and it decides nothing itself.
+//
+// t.Fatal AND t.Log, NOT THE `f` SPELLINGS: bwrap's stderr is pasted into the
+// abstention and the venue red, and a `%` anywhere in it would be read as a
+// verb by a format call with no arguments.
+//
+// nestMeasure LOGS AND RETURNS, which is the one arm that is not an exit:
+// the marker is emitted the moment the gate lets the pin proceed, so a pin
+// that then skips for its own reason is still counted a member
+// (bwrapNestSkip's "WHERE THE MEMBERSHIP MARKER GOES"). The other two arms
+// never return through a *testing.T, and a recorder in a pin is the only
+// caller for which they do.
+func bwrapNestAct(s nestSink, act nestAction, msg string) {
+	s.Helper()
+	switch act {
 	case nestMeasure:
-		t.Log(msg)
+		s.Log(msg)
 	case nestAbstain:
-		t.Skip(msg)
+		s.Skip(msg)
 	default:
-		t.Fatal(msg)
+		s.Fatal(msg)
 	}
 }

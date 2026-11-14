@@ -38,6 +38,7 @@ package posse
 // and a dangling reference is not.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -399,5 +400,212 @@ func TestQAWallVenueMemberPatternIsAnchored(t *testing.T) {
 		if re.MatchString(in) {
 			t.Errorf("%s matches %q, which no `-run` filter would select", wallVenueMemberPattern, in)
 		}
+	}
+}
+
+// ─── ranger-base-ig79v: the gate's WIRING, which the five pins above left ──
+// ─── unread (findings 2(a) and 2(b) of the ranger-base-66v31 verify) ───────
+//
+// The five pins above read the gate's pure RULE five ways and its wiring not
+// at all, and two mutants measured that gap (MEASURED 2026-11-14, each one
+// literal replacement run against all five):
+//
+//  2(a) wallVenueActive's refusal arm, `t.Fatalf` to `t.Logf`, so a
+//       POSSE_WALL_VENUE that is neither empty nor `1` is read as a quiet no
+//       — the ONE reading ADR 0097 D1's own comment says it must never get.
+//       SURVIVED. The parse was inline in a helper that takes a *testing.T,
+//       and such a helper can only be exercised by a test willing to be
+//       failed by it, so none of its three arms was pinned.
+//
+//  2(b) bwrapNestSkip's nestMeasure arm, `t.Log(msg)` to `_ = msg`, so the
+//       membership marker is DECIDED and never EMITTED. SURVIVED, and the
+//       consequence was measured on the same prebuilt binary: 34 pass, 0
+//       fail, rc=0 and ZERO marker lines. `scripts/posse-wall-check` reads
+//       membership off that line and nothing else (ADR 0097 D3), so the run
+//       a venue would read is green, silent and uncountable — exit 3, filed
+//       by D5's watchdog as "wall check silent" rather than as the wall
+//       regression the run existed to find. That is ADR 0097's own
+//       `/var/tmp` row arriving one mechanism over.
+//
+// Both are now pinned the way the rule is: by splitting the part that has no
+// *testing.T in it (wallVenueFromEnv) out of the part that is three lines of
+// plumbing, and by giving the action half a sink (nestSink) a pin can hand a
+// recorder.
+
+// ARM 5 — the env parse, over every value a renderer, an operator or a
+// mis-render can hand it. Pure: no environment write, so it is parallel and
+// needs no door.
+//
+// WHAT IS IN FORCE AND NOT WHAT D4 SAYS, deliberately. D4 writes what unset
+// and `1` mean and is silent on the rest, so the refusal is an ASSUMED
+// ranger-base-q749c flagged for the architecture lane. This pin holds the
+// answer that is in force today, so narrowing it back to a quiet no is a diff
+// that reds a row here — a decision someone makes — rather than a change
+// nobody notices.
+func TestQAWallVenueEnvParseIsADR0097D1s(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct {
+		why     string
+		v       string
+		venue   bool
+		refused bool
+	}{
+		// The two values D1 is about. Unset is the ordinary case — every
+		// seat and every operator `make test` — and the only quiet no.
+		{"unset", "", false, false},
+		{"the venue, exactly as landedcheck.go renders it", "1", true, false},
+
+		// Everything else is a refusal and not a quiet no, because reading
+		// it as "not the venue" abstains all 32 members, answers exit 3 and
+		// reaches a reader as D5's "wall check silent".
+		{"a hand-typed off", "0", false, true},
+		{"a hand-typed yes", "yes", false, true},
+		{"a hand-typed true", "true", false, true},
+		{"a shouted true", "TRUE", false, true},
+		{"a value nobody meant", "2", false, true},
+		// The near misses, which is why the match is exact: no trimming and
+		// no case folding, so a mis-render that appended a newline or padded
+		// the value is refused rather than guessed at.
+		{"a trailing newline", "1\n", false, true},
+		{"a leading space", " 1", false, true},
+		{"a trailing space", "1 ", false, true},
+		{"a zero-padded one", "01", false, true},
+		// A `%` in the value, which is the reason wallVenueActive hands the
+		// refusal to t.Fatal and not to t.Fatalf: a verb in a format call
+		// with no arguments prints `%!v(MISSING)` over the operator's own
+		// typo.
+		{"a value with a format verb in it", "%d%s", false, true},
+	} {
+		venue, refusal := wallVenueFromEnv(c.v)
+		if venue != c.venue {
+			t.Errorf("%s: wallVenueFromEnv(%q) venue = %v, want %v", c.why, c.v, venue, c.venue)
+		}
+		if (refusal != "") != c.refused {
+			t.Errorf("%s: wallVenueFromEnv(%q) refused = %v, want %v (said: %q)", c.why, c.v, refusal != "", c.refused, refusal)
+			continue
+		}
+		if !c.refused {
+			continue
+		}
+		// A refusal has to be readable by the operator who typed the value:
+		// it names the variable, quotes what was there, and says what D1
+		// renders. A row that only asserted "non-empty" would pass over a
+		// refusal that says nothing.
+		for _, want := range []string{wallVenueEnvVar, fmt.Sprintf("%q", c.v), wallVenueEnvVar + "=1"} {
+			if !strings.Contains(refusal, want) {
+				t.Errorf("%s: the refusal for %q does not carry %s:\n  %s", c.why, c.v, want, refusal)
+			}
+		}
+		if venue {
+			t.Errorf("%s: wallVenueFromEnv(%q) refused AND answered venue — there is no arm in which a caller may carry on with both", c.why, c.v)
+		}
+	}
+}
+
+// ARM 6 — the wiring of that rule to the environment: which VARIABLE
+// wallVenueActive reads, and that it returns the rule's answer unchanged.
+//
+// NOT PARALLEL, because it writes the environment (t.Setenv refuses a
+// parallel test), and that is the whole reason this arm is separate from arm
+// 5 rather than a row in it. Go resumes parallel tests only after the last
+// sequential top-level test returns, so no member of the venue class is
+// reading the variable while this arm holds it.
+//
+// THE REFUSAL ARM IS NOT HERE and cannot be: reaching it means failing this
+// test with the words under test. Its words are arm 5's, and what is left
+// unread is one `t.Fatal` call — the smallest residual the split leaves.
+func TestQAWallVenueActiveReadsADR0097D1sVariable(t *testing.T) {
+	for _, c := range []struct {
+		why   string
+		v     string
+		venue bool
+	}{
+		// Empty is what os.Getenv answers for unset too, which is the one
+		// shape t.Setenv cannot tell apart — and wallVenueFromEnv is a
+		// function of the value, so neither can the rule.
+		{"empty", "", false},
+		{"the venue", "1", true},
+	} {
+		t.Run(c.why, func(t *testing.T) {
+			t.Setenv(wallVenueEnvVar, c.v)
+			if got := wallVenueActive(t); got != c.venue {
+				t.Errorf("with %s=%q, wallVenueActive = %v, want %v — the helper reads some other variable, or drops the rule's answer", wallVenueEnvVar, c.v, got, c.venue)
+			}
+		})
+	}
+}
+
+// nestRecorder is a nestSink that records instead of exiting, so a pin can
+// read what the gate DID to its caller. The real sinks are a *testing.T's:
+// two of them never return, and that is exactly why the mapping from action
+// to sink could not be read from inside the class the gate gates.
+type nestRecorder struct {
+	helpers int
+	logged  []string
+	skipped []string
+	failed  []string
+}
+
+func (r *nestRecorder) Helper()           { r.helpers++ }
+func (r *nestRecorder) Log(args ...any)   { r.logged = append(r.logged, fmt.Sprint(args...)) }
+func (r *nestRecorder) Skip(args ...any)  { r.skipped = append(r.skipped, fmt.Sprint(args...)) }
+func (r *nestRecorder) Fatal(args ...any) { r.failed = append(r.failed, fmt.Sprint(args...)) }
+func (r *nestRecorder) calls() (int, int, int) {
+	return len(r.logged), len(r.skipped), len(r.failed)
+}
+
+// ARM 7 — the action half: each of D4's three actions reaches its own sink,
+// carrying the words the rule decided, and reaches no other sink. This is
+// finding 2(b)'s pin: `_ = msg` in the nestMeasure arm now reds here, and so
+// does a wiring that logs where it should skip.
+func TestQAWallVenueGateEmitsTheMarkerItDecides(t *testing.T) {
+	t.Parallel()
+
+	const refusal = "bwrap: setting up uid map: Read-only file system"
+	for _, c := range []struct {
+		why  string
+		act  nestAction
+		msg  string
+		log  int
+		skip int
+		fail int
+	}{
+		{"nestMeasure logs the marker and does not exit", nestMeasure, wallVenueMarker, 1, 0, 0},
+		{"nestAbstain skips with D3's sentence", nestAbstain, bwrapNestSkipPrefix + refusal, 0, 1, 0},
+		{"nestFail is a red", nestFail, "the tree did this", 0, 0, 1},
+	} {
+		rec := &nestRecorder{}
+		bwrapNestAct(rec, c.act, c.msg)
+		log, skip, fail := rec.calls()
+		if log != c.log || skip != c.skip || fail != c.fail {
+			t.Errorf("%s: bwrapNestAct(%v) called Log/Skip/Fatal %d/%d/%d times, want %d/%d/%d",
+				c.why, c.act, log, skip, fail, c.log, c.skip, c.fail)
+			continue
+		}
+		// The words, not just the sink: a gate that reaches the right sink
+		// with the wrong string is a marker line the venue cannot count and
+		// an abstention a reader cannot act on.
+		got := append(append(append([]string{}, rec.logged...), rec.skipped...), rec.failed...)
+		if len(got) != 1 || got[0] != c.msg {
+			t.Errorf("%s: the gate passed %q, want exactly %q", c.why, got, c.msg)
+		}
+		// t.Helper, so the marker line `go test -json` carries names the
+		// MEMBER's own file and line — which is what the body's fixtures
+		// spell and what a reader greps back to.
+		if rec.helpers != 1 {
+			t.Errorf("%s: Helper called %d times, want 1 — the gate's own file and line would stand where the member's belongs", c.why, rec.helpers)
+		}
+	}
+
+	// And the composition, end to end over the one arm that is not an exit:
+	// the marker the GATE emits is the marker the RULE decided, which is the
+	// literal `scripts/posse-wall-check` greps. Arm 1 reads the rule's half
+	// of this; the mutant finding 2(b) measured sat between the two.
+	rec := &nestRecorder{}
+	act, msg := bwrapNestDecision("TestLiveWallWatchPassesTheSeatsOwnExitCode", "", false)
+	bwrapNestAct(rec, act, msg)
+	if len(rec.logged) != 1 || rec.logged[0] != wallVenueMarker {
+		t.Errorf("a member the gate lets proceed emitted %q, and the venue counts members by the line %q and by nothing else (ADR 0097 D3) — a run that decides the marker and never prints it is green, silent and uncountable", rec.logged, wallVenueMarker)
 	}
 }

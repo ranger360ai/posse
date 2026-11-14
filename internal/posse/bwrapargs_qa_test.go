@@ -1283,3 +1283,126 @@ func TestBwrapArgsGitConfigRefusalAsksTheSeatsOwnGrants(t *testing.T) {
 		})
 	}
 }
+
+// AND THE SESSION-DIR HALF OF THE KEY, DISCRIMINATED — which is what the two
+// pins above between them could not do (ranger-base-ig79v, finding 1 of the
+// ranger-base-66v31 verify).
+//
+// MEASURED 2026-11-14: dropping `bwrapGitConfigRepo(d) == absResolve(cwd)`
+// from D1's key — keeping the seat's-own-grants narrowing and losing the
+// session-dir one — left `go test ./internal/posse` and `go test ./cmd/posse`
+// green WHOLE. The pin named for that half
+// (TestBwrapArgsGitConfigRefusalIsTheSessionDirsOwnGitDir) cannot fail when
+// it goes: its fixture puts the blanket grant at the fixture ROOT, above the
+// cwd, so the `own` filter one conjunct earlier has already excluded it and
+// the row passes for the OTHER discriminator's reason. The matching mutant on
+// the first narrowing DOES die, so one half of the key was pinned and the
+// other was not.
+//
+// WHY THE CONJUNCT STAYS, because the finding offered deleting it as the
+// cheaper answer and the reading it rests on is a property of a DIFFERENT
+// file. It is true today that `sessionGitConfigFiles` (seatbelt.go) is the
+// only producer that can put a `<X>/.git/config` into the Deny list, and that
+// it names exactly two — the cwd's own repository's config, for which the
+// conjunct is true by construction, and the store of record's, added only
+// when the store is NOT under the cwd (`!underDir(cwd, home)`), where no
+// grant at or under the cwd can contain it and `writeGranted(own, d)` is
+// already false. So on every Deny list production builds today the conjunct
+// decides nothing, which is why both packages are green over its removal.
+//
+// That is a reason to PIN it at the render's own boundary, not a reason to
+// drop it:
+//
+//   - D1's own sentence is "the check reads the render, not the launch path",
+//     and BwrapArgs is exported and takes the carve-out as an argument. Its
+//     contract is over the Deny lists it can be HANDED, not over the two
+//     entries one producer happens to emit this week.
+//   - The redundancy is a cross-file invariant that nothing compares. A third
+//     producer — or a PID-scoped deny that resolves to a nested repo's git
+//     dir — widens the key silently, and the deletion's safety argument would
+//     have to be re-derived by whoever adds it. A pin that would have to say
+//     "no producer may name a non-cwd `.git/config` inside an own grant" is a
+//     harder thing to write than the row below.
+//   - Dropping it makes the refusal WIDER, not narrower: it is the direction
+//     ranger-base-hi2lt measured refusing seven renders in this package. A
+//     refusal is a launch that does not happen, so the cost of widening it by
+//     accident is paid by a seat that never starts.
+//
+// ADR 0095 D1's realized note already states the residual this row is the
+// other side of ("a main checkout whose `.git` is writable through some other
+// grant of its own ... `bwrapGitConfigRepo` is where it would join"), and no
+// line of it changes with this pin.
+//
+// THE ROW. A repository UNDER the cwd whose `.git/config` is denied, inside a
+// write grant at or under the cwd: both of the key's other two conjuncts hold
+// (the file is there, and the seat can write it), and only the session-dir
+// one says no. Nothing in ADR 0095's table renames a NESTED repository's
+// config — the host writers it measures are dispatch's hires and reaps, the
+// landing check and the operator's `git config`, every one of them in the
+// session's own repo — so the wall over that file holds and refusing the
+// render would cost a seat its launch for nothing.
+func TestBwrapArgsGitConfigRefusalIsNotANestedRepositorysConfig(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		grantee string // the one grant at or under the cwd
+	}{
+		{"an ordinary PID: the cwd is the grant, and it holds both git dirs", "repo"},
+		{"a grant UNDER the cwd that holds only the nested repo", "repo/vendor"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, bwAt := bwTree(t,
+				[]string{"repo/.git", "repo/vendor/dep/.git"},
+				[]string{"repo/.git/config", "repo/vendor/dep/.git/config"})
+			own := bwAt("repo", ".git", "config")
+			nested := bwAt("repo", "vendor", "dep", ".git", "config")
+			// `root` is the blanket grant ABOVE the session dir — /tmp's role
+			// in this package's fixtures — and it is in every arm here, so it
+			// cannot be what decides any of them. The grant that matters is
+			// the second, which is at or under the cwd and so survives the
+			// `own` filter.
+			grants := []string{root, filepath.Join(root, tc.grantee)}
+
+			argv, _, watched, err := bwrapArgsWatched(bwAt("repo"), grants,
+				SeatbeltCarveOut{Deny: []string{nested}, DenyFile: []string{nested}})
+			if err != nil {
+				t.Fatalf("a NESTED repository's .git/config, denied inside a write grant of the seat's own, refused the render. That is not ADR 0095 D1's shape — D1's Context is `the seat's grant is the cwd, which contains the whole .git`, and no host writer in its table renames a nested repo's config — so this costs a seat its launch for a rename nobody makes: %v", err)
+			}
+			// And it renders the mount, so the row cannot pass by the deny
+			// having been skipped: the file IS inside a write grant, so
+			// ranger-base-166va's skip does not apply, and what keeps the
+			// seat off it is this mount and the watch on it.
+			if !strings.Contains(bwJoin(argv), "--ro-bind "+nested+" "+nested) {
+				t.Errorf("the nested repo's config rendered no mount, so a granted directory holds it with no wall:\n%s", bwJoin(argv))
+			}
+			if !wallWatchListed(watched, nested) {
+				t.Errorf("the mount is rendered and not watched: %v", watched)
+			}
+
+			// THE CONTROL, and it is what makes the arm above a
+			// discrimination rather than a render that refuses nothing: the
+			// same tree, the same cwd and the same grants, with the SESSION
+			// DIR's own config in the Deny list instead. Refused in the first
+			// row, where the cwd grant holds `.git`; in the second the seat's
+			// only own grant is `repo/vendor`, which does not, and that is
+			// TestBwrapArgsGitConfigRefusalAsksTheSeatsOwnGrants' row — so
+			// the expectation tracks the grantee and not the path.
+			wantOwnRefused := tc.grantee == "repo"
+			_, _, err = BwrapArgs(bwAt("repo"), grants,
+				SeatbeltCarveOut{Deny: []string{own}, DenyFile: []string{own}})
+			if (err != nil) != wantOwnRefused {
+				t.Fatalf("the SESSION DIR's own config: refused = %v, want %v (the seat's own grant is %s): %v", err != nil, wantOwnRefused, tc.grantee, err)
+			}
+
+			// Both in one list, in the order the deny loop would not pick:
+			// the nested one is shallower than nothing here, so this says the
+			// refusal is not an artefact of the first entry it reads.
+			_, _, err = BwrapArgs(bwAt("repo"), grants,
+				SeatbeltCarveOut{Deny: []string{nested, own}, DenyFile: []string{nested, own}})
+			if (err != nil) != wantOwnRefused {
+				t.Fatalf("both configs denied at once: refused = %v, want %v (the seat's own grant is %s): %v", err != nil, wantOwnRefused, tc.grantee, err)
+			}
+		})
+	}
+}
