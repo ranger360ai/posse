@@ -492,6 +492,32 @@ func TestUpgradeBuildHandsCleanBuildTheRealSourceCheckout(t *testing.T) {
 // target as fast as it can for the whole swap, and the claim is that every
 // observation is one of exactly two complete files. A swap that went back
 // to install(1), or that truncated the target in place, reds here.
+//
+// The reader's window is two 20 ms samples AND a wait for the witness
+// (ranger-base-51ttd). The samples are what the absence check above is
+// measured over, so they are unconditional and unchanged; the waits are
+// what stop a descheduled reader from spending the arm. MEASURED 2026-11-14
+// at a box loadavg of 5.9 rising past 30, a reader that managed 3 reads in
+// those 40 ms did all 3 on one side of the rename, and the witness
+// t.Fatal'd on "I could not measure" — which reds internal/posse, and a red
+// internal/posse exits `make test` 2 for every seat on the box. Waiting for
+// the witness costs wall time where sampling for it cost a red.
+//
+// What the witness does NOT prove is that the loop covered the swap, and it
+// is worth being plain about that here because the name invites the
+// stronger reading. MEASURED 2026-11-14 on this box at a loadavg of 2.8,
+// 12 trials of this exact reader against a deliberately non-atomic
+// install(1)-style write (unlink, then write 8 MiB in 64 KiB chunks): the
+// gap was observed in 3 trials of 12, and the witness read MET in 12 of 12
+// — "saw old, then saw new" is satisfied just as well by a reader
+// descheduled across the whole write as by one that read through it. So
+// this pin's power to catch a return to install(1) rests on the ~24
+// observations those 40 ms buy against the width of the gap, and not on the
+// witness; the witness only rules out the reader having been absent from
+// BOTH sides, which is the vacuous pass it was written for. Making the
+// assertion itself powerful is a denser probe and its own change —
+// ranger-base-6sbng, with the trial-by-trial numbers in
+// docs/notes.d/ranger-base-51ttd.md.
 func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -531,27 +557,26 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 		}
 	}()
 	// Let the reader get going, so the swap lands inside its loop rather
-	// than before it.
+	// than before it — and then, if 20 ms was not enough to get it one
+	// complete read, WAIT for that read instead of proceeding without it.
+	// The sleep is what the absence check is measured over and the wait is
+	// what keeps the witness reachable; neither substitutes for the other.
 	time.Sleep(20 * time.Millisecond)
+	sawOldBeforeSwap := waitForAtLeast(&sawOld, 1, swapWitnessBudget)
 	if err := upgradeSwap(target, staged); err != nil {
 		stop.Store(true)
 		<-done
 		t.Fatalf("upgradeSwap: %v", err)
 	}
 	time.Sleep(20 * time.Millisecond)
+	sawNewAfterSwap := waitForAtLeast(&sawNew, 1, swapWitnessBudget)
 	stop.Store(true)
 	<-done
 
-	// THE POSITIVE WITNESS, and this pin needs one more than most: a reader
-	// descheduled for the whole swap window reports zero absent and zero
-	// partial for the same reason a correct swap does, which is a vacuous
-	// pass that no absence check can tell from the real thing. Seeing BOTH
-	// complete versions is proof the loop was actually running on either
-	// side of the rename.
-	if sawOld.Load() == 0 || sawNew.Load() == 0 {
-		t.Fatalf("the reader saw the old binary %d times and the new one %d times over %d reads — it was not running across the swap, so the absence below measures nothing",
-			sawOld.Load(), sawNew.Load(), reads.Load())
-	}
+	// THE SUBJECT. It is read first, and unconditionally, because a nonzero
+	// reading here is a real finding whatever the witness says: the reader
+	// saw a state the target is never allowed to be in, and no amount of
+	// "the box was busy" makes that observation go away.
 	if absent.Load() != 0 || partial.Load() != 0 {
 		t.Errorf("over %d reads the target was absent %d times and neither-version %d times — the swap is not atomic, and a launch inside that window execs a missing or short binary (ADR 0092 D3.5)",
 			reads.Load(), absent.Load(), partial.Load())
@@ -561,6 +586,55 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	}
 	if body, _ := os.ReadFile(upgradePrevPath(target)); !bytes.Equal(body, old) {
 		t.Error("the .prev copy does not hold the binary that was live")
+	}
+
+	// THE POSITIVE WITNESS, and this pin needs one more than most: a reader
+	// descheduled for the whole swap window reports zero absent and zero
+	// partial for the same reason a correct swap does, which is a vacuous
+	// pass that no absence check can tell from the real thing. Seeing BOTH
+	// complete versions is proof the loop was actually running on either
+	// side of the rename.
+	//
+	// Unmet, it SKIPS and does not red, and the three checks above are why
+	// that is honest rather than a hole: everything about this swap that
+	// can be judged from its end state has already been judged, and the
+	// skip is reachable only when all of it was green. What is left over is
+	// exactly "this run observed nothing", which is neither a swap that
+	// left a gap (the red this pin exists to print) nor a swap that did not
+	// (the green it is entitled to) — and an unreachable witness must not
+	// be able to spend a whole arm, because a red internal/posse exits
+	// `make test` 2 for every seat on the box. A skip after a t.Error still
+	// reports FAIL, so a real gap outranks it.
+	if !sawOldBeforeSwap || !sawNewAfterSwap {
+		t.Skipf("the reader saw the old binary %d times and the new one %d times over %d reads, after sampling 20ms and then waiting %s a side — it never completed a read on one whole side of the rename, so the absence checked above measures nothing and this run is not a reading (ranger-base-51ttd)",
+			sawOld.Load(), sawNew.Load(), reads.Load(), swapWitnessBudget)
+	}
+}
+
+// swapWitnessBudget is how long the pin above waits for its reader
+// goroutine to be scheduled on one side of the rename. It bounds a wait for
+// a thing that normally happens in microseconds, so it is sized to be
+// unreachable rather than tight: the focused pin runs in 0.06s, and the
+// loaded run that made this budget necessary had its 3 reads inside 40ms —
+// one read a side is all the witness asks for, so nothing but a reader
+// starved for ten seconds can reach the end of it.
+const swapWitnessBudget = 10 * time.Second
+
+// waitForAtLeast polls until c has reached want, and REPORTS whether it did
+// rather than failing. The caller's answer to "the reader never got
+// scheduled" is not its answer to "the swap left a gap" — see the witness
+// at the foot of the pin above — and a helper that calls t.Fatal cannot
+// tell the two apart.
+func waitForAtLeast(c *atomic.Int64, want int64, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	for {
+		if c.Load() >= want {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return c.Load() >= want
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
