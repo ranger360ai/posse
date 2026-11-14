@@ -736,6 +736,66 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			// means, and dropping it would widen the wall.
 			continue
 		}
+		// AND THE OTHER SHAPE THE SKIP ABOVE LEAVES: a `.git/config` deny
+		// that a write grant CONTAINS (ADR 0095 D1). The arm above covers
+		// the linked worktree, where no grant reaches the common dir's top
+		// and nothing is rendered. In a main checkout the grant is the cwd
+		// and it holds the whole `.git`, so the same deny is a mount inside
+		// a writable directory — and every host writer in ADR 0095's table
+		// replaces that file by rename, which detaches the mount and makes
+		// `posse wall-watch` kill the seat (ranger-base-0qpsw D2). The kill
+		// is CORRECT here, because after the detach the seat can write
+		// `.git/config` itself and `core.hooksPath`, `core.fsmonitor` and
+		// `core.sshCommand` in it are commands a later unsandboxed git runs.
+		// So there is nothing to repair in the render: a seat in this shape
+		// dies at the next hire, reap or landing check in its own repo, and
+		// the remedy is a tree whose grant does not contain the file.
+		//
+		// REFUSED AT THE RENDER AND NOT AT A LAUNCH PATH, which is D1's own
+		// sentence: `posse new`, a recipe, dispatch's detached-HEAD fallback
+		// and whatever calls this next all meet it at one place, in the
+		// tier's fail-closed direction, rather than each growing a check of
+		// its own.
+		//
+		// THE SESSION DIR'S OWN GIT DIR, and that half of the key is the
+		// ADR's Context sentence verbatim — "the seat's grant is the cwd,
+		// which contains the whole `.git`" — rather than any grant that
+		// happens to lie above some repository. MEASURED 2026-11-14
+		// (ranger-base-hi2lt): keyed on containment alone this arm also
+		// refused five renders whose seat is in a LINKED worktree, because
+		// `bwrapSeatTmp` answers "" when the home or the session dir is
+		// itself under /tmp — every fixture in this package is — and with no
+		// private /tmp the render keeps the blanket `/tmp` write grant, which
+		// then contains the main checkout's `.git/config` too. That refusal
+		// is not WRONG (through that grant the seat really can write the
+		// file), but it is not this shape, and no production launch has it:
+		// homes and worktrees live under the home, so `carve.Tmp` is set and
+		// `bwrapDropTmpGrants` takes /tmp out of the set. A main checkout
+		// whose `.git` is writable through some OTHER grant — a PID
+		// `writable:` extra naming the repo root — is the residual, stated
+		// rather than closed, and bwrapGitConfigRepo is where it joins.
+		//
+		// AND THE WRITABILITY IS ASKED OF THE SEAT'S OWN GRANTS, for the
+		// same measurement read from the other end. A grant strictly ABOVE
+		// the session dir is not the cwd grant D1 is about, and taking it as
+		// one refuses a shape that is fine in production: a whole-tree-deny
+		// PID in a main checkout holds no grant on the cwd at all (ADR 0086
+		// D3 — only `<cwd>/.beads`), so nothing of its own can write
+		// `.git/config` and there is no wall to take off; under the fixture
+		// /tmp grant above, the blanket entry said otherwise and refused it
+		// (TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate). So
+		// the question is put to the grants at or under the cwd, which is
+		// what "the seat's grant is the cwd" means and all a main-checkout
+		// seat has.
+		own := grants[:0:0]
+		for _, g := range grants {
+			if underDir(cwd, g) {
+				own = append(own, g)
+			}
+		}
+		if exists && writeGranted(own, d) && bwrapGitConfigRepo(d) == absResolve(cwd) {
+			return nil, nil, Die("bwrap cannot wall %s inside a writable %s: every host git config write (each dispatch hire and reap in this repo, the landing check, the operator's own `git config` / `branch -D`) replaces that file by rename, which takes the wall off, and wall-watch then kills the seat (ranger-base-0qpsw D2, ADR 0095). Run this seat in a linked worktree: dispatch it, or launch it from one", d, filepath.Dir(d))
+		}
 		if !exists {
 			// A deny on a path that is not there is not nothing: if the
 			// session can CREATE it, an unmounted name is a hole that opens
@@ -992,6 +1052,36 @@ func grantInside(grants []string, d string) bool {
 		}
 	}
 	return false
+}
+
+// bwrapGitConfigRepo answers the repository whose `<repo>/.git/config` a deny
+// path IS, or "" for every other path — ADR 0095 D1's key, read off the render
+// and nothing else.
+//
+// OFF THE PATH AND NOT OFF GIT, for the reason D1 gives for keying the whole
+// refusal to the render: the caller is handed lists of paths and one cwd, and
+// a deny can belong to a repo that is not the cwd's (sessionGitConfigFiles
+// also names the beads store of record's, when a redirect puts it in another
+// repo). A `git rev-parse` per deny entry would make the refusal depend on
+// which repo the renderer happened to be standing in, and would ask the
+// filesystem a question whose answer the carve-out already carries.
+//
+// KEYED TO `.git/config` BECAUSE THAT IS WHAT THE TABLE MEASURED (ADR 0095's
+// Context): a git dir under another name, or a `config.worktree`, is not a
+// file any host writer posse runs was measured replacing. A Deny inside a
+// grant on some other file has the same mechanism and is Not decided here —
+// if wall-watch ever files one, this is the function its name joins.
+//
+// IT ANSWERS THE REPOSITORY and not a bool, because the caller compares that
+// answer to the SESSION DIR: a deny is this shape only when the git dir is
+// the cwd's own (the call site says why, and what keying on containment alone
+// was measured to refuse besides).
+func bwrapGitConfigRepo(d string) string {
+	gitDir := filepath.Dir(d)
+	if filepath.Base(d) != "config" || filepath.Base(gitDir) != ".git" {
+		return ""
+	}
+	return filepath.Dir(gitDir)
 }
 
 // bwrapStat is the one filesystem question the shapes above ask, with "could

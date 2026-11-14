@@ -1013,3 +1013,273 @@ func bwqaIn(list []string, p string) bool {
 	}
 	return false
 }
+
+// ─── ADR 0095 D1: the main checkout's `.git/config`, refused at the render ───
+
+// THE SHAPE ranger-base-166va's SKIP LEAVES OPEN, and the reason it is a
+// refusal rather than another skip.
+//
+// Both rows below carry the same Deny entry at the same spelling —
+// `<repo>/.git/config`, which is what `sessionGitConfigFiles` names for a
+// linked worktree AND for a main checkout, because it asks git for the config
+// git would read and a worktree's is the COMMON one. What differs is the write
+// grant:
+//
+//   - linked worktree: the grants are objects, the per-worktree git dir and
+//     the tree itself, and none of them contains the common dir's top. The
+//     deny is outside every grant, the read-only base already refuses the
+//     write, and 166va's arm renders no mount — so a host rename of that
+//     file detaches nothing and wall-watch has nothing to kill.
+//   - main checkout: `.git` is a DIRECTORY inside the cwd, the cwd is the
+//     grant, so the deny is a mount INSIDE a writable directory. Dropping the
+//     mount here would hand the seat `.git/config` — where `core.hooksPath`,
+//     `core.fsmonitor` and an alias are each a command a later unsandboxed
+//     git runs — and keeping it is a wall every host config write takes off
+//     (ADR 0095's measured table: every dispatch hire, every reap, the
+//     landing check, the operator's own `git config` and `branch -D`), after
+//     which wall-watch kills the seat. Neither arm of that is a render
+//     anybody wants, so D1 refuses the render instead.
+//
+// WHAT IT PROTECTS is a launch, not a file: a caged crew or detached-HEAD
+// fallback seat in this shape launches green today and is killed within
+// minutes by the next hire or reap, filing a P1 security bead each time
+// (ranger-base-166va, -uppgy). The refusal costs that launch and no triage.
+//
+// MUTATION-CHECKED: deleting the refusal block in BwrapArgs' deny arm reds
+// the main-checkout row alone and leaves the linked-worktree row — and
+// TestBwrapArgsRendersNothingForAnExistingDenyNoGrantOverlaps, which is where
+// that row's fixture comes from — green.
+func TestBwrapArgsRefusesAMainCheckoutsGitConfigDenyInsideAGrant(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		refuse bool
+	}{
+		{"a main checkout: .git is a directory inside the cwd grant", true},
+		{"a linked worktree: no grant reaches the common dir's top", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// One tree for both rows: a repo with a real `.git` directory,
+			// and beside it a linked worktree whose own grants are the ones
+			// BwrapWritable narrows a worktree seat to (ADR 0080 D20).
+			_, bwAt := bwTree(t,
+				[]string{"repo", "repo/.git/objects", "repo/.git/worktrees/wt", "wt"},
+				[]string{"repo/.git/config"})
+			config := bwAt("repo", ".git", "config")
+			cwd, grants := bwAt("wt"), []string{
+				bwAt("wt"), bwAt("repo", ".git", "objects"), bwAt("repo", ".git", "worktrees", "wt"),
+			}
+			if tc.refuse {
+				// The main checkout: ONE grant, the cwd, and it contains the
+				// whole `.git`. This is what `posse new`, a recipe and
+				// dispatch's detached-HEAD fallback all render.
+				cwd, grants = bwAt("repo"), []string{bwAt("repo")}
+			}
+
+			argv, _, watched, err := bwrapArgsWatched(cwd, grants,
+				SeatbeltCarveOut{Deny: []string{config}, DenyFile: []string{config}})
+			if !tc.refuse {
+				if err != nil {
+					t.Fatalf("a linked worktree's render was refused — no grant of its contains %s, so this is 166va's skip and not D1's shape: %v", config, err)
+				}
+				// The same two assertions 166va's own arm makes, here so the
+				// mutation check has both ends in one place: the refusal must
+				// not be reachable by a path that also stops rendering.
+				if line := bwJoin(argv); strings.Contains(line, config) {
+					t.Fatalf("the common dir's config was mounted over its name, which a host rename detaches:\n%s", line)
+				}
+				if wallWatchListed(watched, config) {
+					t.Fatalf("wall-watch holds a worktree seat to a deny that renders no mount: %v", watched)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("a main checkout's %s rendered inside a writable %s. Either the wall comes off at the next host `git config` and wall-watch kills the seat, or the mount was dropped and the seat can plant core.hooksPath (ADR 0095 D1):\n%s",
+					config, bwAt("repo", ".git"), bwJoin(argv))
+			}
+			// The message is the whole deliverable of a refusal: whoever
+			// reads it is holding a seat that will not launch, and has to
+			// learn from this line alone which file, why a mount cannot hold
+			// it, and what to do instead.
+			for _, want := range []string{
+				config,               // which file
+				bwAt("repo", ".git"), // and the writable directory it sits in
+				"rename",             // the mechanism that takes the wall off
+				"ranger-base-0qpsw",  // whose rule kills the seat
+				"ADR 0095",           // and where this refusal is decided
+				"linked worktree",    // the remedy
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not name %q — a reader cannot act on it:\n%v", want, err)
+				}
+			}
+		})
+	}
+}
+
+// The key is `.git/config` and the containment is a WRITE GRANT, and neither
+// half is enough on its own. Pinned as a table because each row is a spelling
+// a later reader could fold into the refusal, and every one of them would
+// refuse a render this fleet makes every day.
+func TestBwrapArgsGitConfigRefusalIsKeyedNarrowly(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		deny   []string // under the fixture root
+		refuse bool
+	}{
+		// The shape itself, as the control for every row below it.
+		{"<repo>/.git/config inside the grant", []string{"repo/.git/config"}, true},
+		// The lock sibling rides the same Deny list (sessionGitConfigFiles
+		// adds `config` and `config.lock` together) and is NOT the key: no
+		// host writer posse runs replaces a lock in place, and refusing on it
+		// would refuse every render that carries the pair.
+		{"<repo>/.git/config.lock", []string{"repo/.git/config.lock"}, false},
+		// `config.worktree` and its lock are the identity chain's, same list,
+		// same answer: measured by nobody as replaced, so Not decided here.
+		{"<repo>/.git/config.worktree", []string{"repo/.git/config.worktree"}, false},
+		// A `config` that is not a git dir's. ADR 0095's table is about git's
+		// own writers, so the directory's NAME is half the key — otherwise
+		// any project with a `config` file in a granted directory stops
+		// rendering.
+		{"<repo>/etc/config", []string{"repo/etc/config"}, false},
+		// A git dir under another name is not refused either. Keyed to the
+		// measured spelling, and said out loud in bwrapGitConfigRepo rather
+		// than guessed at here.
+		{"<repo>/.gitdir/config", []string{"repo/.gitdir/config"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, bwAt := bwTree(t,
+				[]string{"repo/.git", "repo/etc", "repo/.gitdir"},
+				[]string{"repo/.git/config", "repo/.git/config.lock", "repo/.git/config.worktree",
+					"repo/etc/config", "repo/.gitdir/config"})
+			var deny []string
+			for _, d := range tc.deny {
+				deny = append(deny, filepath.Join(root, d))
+			}
+
+			_, _, err := BwrapArgs(bwAt("repo"), []string{bwAt("repo")},
+				SeatbeltCarveOut{Deny: deny, DenyFile: deny})
+			if (err != nil) != tc.refuse {
+				t.Fatalf("refused = %v, want %v (deny %v): %v", err != nil, tc.refuse, tc.deny, err)
+			}
+		})
+	}
+}
+
+// And the other half of the key: the very same path OUTSIDE every write grant
+// renders nothing and refuses nothing. This is the arm that says D1 did not
+// quietly become "a bwrap seat may never be rendered in a repo with a
+// `.git/config`" — which is every linked-worktree seat on this box.
+func TestBwrapArgsGitConfigOutsideEveryGrantStillOnlySkips(t *testing.T) {
+	t.Parallel()
+	_, bwAt := bwTree(t, []string{"repo/.git", "elsewhere"}, []string{"repo/.git/config"})
+	config := bwAt("repo", ".git", "config")
+
+	argv, _, err := BwrapArgs(bwAt("elsewhere"), []string{bwAt("elsewhere")},
+		SeatbeltCarveOut{Deny: []string{config}, DenyFile: []string{config}})
+	if err != nil {
+		t.Fatalf("a .git/config deny that no grant contains refused the render — D1's condition is the CONTAINMENT, not the path (ADR 0095 D1): %v", err)
+	}
+	if line := bwJoin(argv); strings.Contains(line, config) {
+		t.Fatalf("166va's skip stopped skipping:\n%s", line)
+	}
+}
+
+// THE OTHER HALF OF D1's KEY, and the one a reader is most likely to drop:
+// the git dir has to be the SESSION DIR's own. A `.git/config` that a write
+// grant contains but that belongs to some repo ELSEWHERE under that grant is
+// not this shape and renders as it always did.
+//
+// MEASURED 2026-11-14 (ranger-base-hi2lt) rather than reasoned: keyed on
+// containment alone, this arm refused five renders in internal/posse whose
+// seat is in a linked worktree — `bwrapSeatTmp` answers "" when the home or
+// the session dir is itself under /tmp, which every fixture in this package
+// is, so with no private /tmp the render keeps the blanket `/tmp` write grant
+// and that grant contains the main checkout's `.git/config` as well. Through
+// that grant the seat really can write the file, so the refusal was not
+// wrong; it was not D1's shape, and no production launch is in it (homes and
+// worktrees live under the home, so `carve.Tmp` is set and
+// `bwrapDropTmpGrants` takes /tmp out of the set before this loop sees it).
+//
+// So this row is the fixture shape, built on purpose: a blanket grant above
+// BOTH trees, a seat in the linked worktree, and the main checkout's config
+// in the Deny list exactly as `sessionGitConfigFiles` puts it there.
+func TestBwrapArgsGitConfigRefusalIsTheSessionDirsOwnGitDir(t *testing.T) {
+	t.Parallel()
+	root, bwAt := bwTree(t,
+		[]string{"repo/.git/objects", "repo/.git/worktrees/wt", "wt"},
+		[]string{"repo/.git/config"})
+	config := bwAt("repo", ".git", "config")
+	// The blanket grant: the fixture root itself, which contains the main
+	// checkout AND the worktree the seat sits in. This is `/tmp`'s role in
+	// the renders that found it.
+	grants := []string{root, bwAt("wt"), bwAt("repo", ".git", "objects"), bwAt("repo", ".git", "worktrees", "wt")}
+
+	argv, _, watched, err := bwrapArgsWatched(bwAt("wt"), grants,
+		SeatbeltCarveOut{Deny: []string{config}, DenyFile: []string{config}})
+	if err != nil {
+		t.Fatalf("a seat in a linked worktree was refused because a blanket grant above both trees contains the MAIN checkout's config. That is not ADR 0095 D1's shape — D1's Context is `the seat's grant is the cwd, which contains the whole .git` — and keying on containment alone reds five unrelated wall pins in this package: %v", err)
+	}
+	// It renders nothing either, which is 166va's arm: the deny IS inside a
+	// write grant here, so that arm does not skip it — what keeps the mount
+	// off the name is... nothing. Asserted as it is rather than as it ought
+	// to be: the mount IS rendered, because the seat can write the file, and
+	// the kill wall-watch would do at a host rename is the honest one. The
+	// row's claim is only that the RENDER is not refused.
+	if !strings.Contains(bwJoin(argv), "--ro-bind "+config+" "+config) {
+		t.Errorf("a deny inside a write grant rendered no mount, so the blanket grant above it is writable with no wall:\n%s", bwJoin(argv))
+	}
+	if !wallWatchListed(watched, config) {
+		t.Errorf("the mount is rendered and not watched: %v", watched)
+	}
+	// And the control, so this row cannot pass by refusing nothing at all:
+	// the same tree, the same Deny, with the MAIN CHECKOUT as the cwd and
+	// the cwd grant a main-checkout seat really gets.
+	if _, _, err := BwrapArgs(bwAt("repo"), append(grants, bwAt("repo")),
+		SeatbeltCarveOut{Deny: []string{config}, DenyFile: []string{config}}); err == nil {
+		t.Error("the same config was not refused with the main checkout as the session dir and the cwd granted — then D1 refuses nothing")
+	}
+}
+
+// THE WRITABILITY IS THE SEAT'S OWN, which is the same measurement from the
+// other end. Both rows below are a seat whose session dir IS a main checkout,
+// so D1's first clause holds in both; what differs is whether anything the
+// seat holds can write that config.
+//
+// The second row is ADR 0086 D3's PID: one that denies Edit and Write gets no
+// grant on its cwd at all — only `<cwd>/.beads`, so `bd` can still claim and
+// close — and therefore cannot write `.git/config` whatever lies above the
+// box. There is no wall for a host rename to take off, so there is nothing to
+// refuse, and refusing anyway took the wall-witness rows away from a PID the
+// design had just cleared (ranger-base-hi2lt, MEASURED: that pin red in both
+// its arms with the question put to every grant instead of the seat's own).
+func TestBwrapArgsGitConfigRefusalAsksTheSeatsOwnGrants(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		grantee string // the one grant at or under the cwd
+		refuse  bool
+	}{
+		{"an ordinary PID: the cwd is the grant, and it holds the whole .git", "repo", true},
+		{"a whole-tree-deny PID (ADR 0086 D3): only <cwd>/.beads is granted", "repo/.beads", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, bwAt := bwTree(t, []string{"repo/.git", "repo/.beads"}, []string{"repo/.git/config"})
+			config := bwAt("repo", ".git", "config")
+			// `root` is the blanket grant above the session dir — /tmp's
+			// role in production's absence and in this package's fixtures.
+			// It is in BOTH rows, so it cannot be what decides either.
+			grants := []string{root, filepath.Join(root, tc.grantee)}
+
+			_, _, err := BwrapArgs(bwAt("repo"), grants,
+				SeatbeltCarveOut{Deny: []string{config}, DenyFile: []string{config}})
+			if (err != nil) != tc.refuse {
+				t.Fatalf("refused = %v, want %v (the seat's own grant is %s): %v", err != nil, tc.refuse, tc.grantee, err)
+			}
+		})
+	}
+}

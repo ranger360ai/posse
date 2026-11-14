@@ -108,10 +108,19 @@ func TestQAWallClaudeProjectsRendersOwnKeyInsideAReadOnlyProjects(t *testing.T) 
 		t.Errorf("projects binds out of order: grant %d, projects ro %d, own rw %d, own memory ro %d — each must narrow the one before", grant, ro, rw, mro)
 	}
 
+	// A cwd that is NOT the seat's own session worktree: projects/ read-only
+	// whole, nothing reopened inside it.
+	//
+	// THE MAIN CHECKOUT IS NOT IN THIS TABLE ANY MORE and has its own arm
+	// below instead: since ADR 0095 D1 a bwrap render whose session dir is a
+	// main checkout is REFUSED, so there is no argv to read the rows off
+	// (ranger-base-hi2lt). What this table is about — a non-own cwd — the
+	// other two rows carry unchanged, and the refusal is a stronger
+	// statement than "projects/ is read-only there", not a weaker one: a
+	// seat in that shape does not launch at all.
 	for name, cwd := range map[string]string{
-		"the main checkout": f.main,
-		"a plain dir":       filepath.Join(f.home, "plain"),
-		"under the tree":    filepath.Join(f.dir, "sub"),
+		"a plain dir":    filepath.Join(f.home, "plain"),
+		"under the tree": filepath.Join(f.dir, "sub"),
 	} {
 		if err := os.MkdirAll(cwd, 0o755); err != nil {
 			t.Fatal(err)
@@ -131,6 +140,23 @@ func TestQAWallClaudeProjectsRendersOwnKeyInsideAReadOnlyProjects(t *testing.T) 
 				t.Errorf("%s: a write bind into projects/ at %d (%s), for a seat that has no own key", name, i, nr.Argv[i+2])
 			}
 		}
+	}
+
+	// The main checkout, which this fixture still builds and which every
+	// pure reader here still answers for: it is not the seat's own session
+	// worktree, and `claudeProjectsBinds` gives it one read-only bind. What
+	// changed is that no WALL can be rendered for it (ADR 0095 D1), so the
+	// row above became this one.
+	if got := f.a.claudeOwnSessionTree(f.main); got != "" {
+		t.Errorf("the main checkout (%s) is read as the seat's own session worktree (%q)", f.main, got)
+	}
+	if binds := claudeProjectsBinds(f.home, runtimeStateGrants(SeatbeltStateDirs(f.rt)), f.a.claudeOwnSessionTree(f.main)); len(binds) != 1 || !binds[0].ReadOnly {
+		t.Errorf("projects/ is not read-only whole for the main checkout: %+v", binds)
+	}
+	if _, err := f.a.bwrapRender(f.ag, f.rt, f.main, f.gates); err == nil {
+		t.Errorf("a bwrap wall was rendered with the main checkout %s as the session dir — every host git config write in that repo takes the .git/config wall off and wall-watch kills the seat (ADR 0095 D1)", f.main)
+	} else if !strings.Contains(err.Error(), "ADR 0095") {
+		t.Errorf("the main checkout's render was refused for some other reason than D1: %v", err)
 	}
 
 	other := &Runtime{Name: "codex", StateDirs: []string{"~/.codex"}}

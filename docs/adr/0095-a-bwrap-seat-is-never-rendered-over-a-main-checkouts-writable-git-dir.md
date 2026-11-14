@@ -68,17 +68,79 @@ same refusal at the same place. It is keyed to `.git/config` because that is
 the file the table shows host writers replace. Other Denies inside a grant
 are not changed here (see Not decided here).
 
+*Realized 2026-11-14 (ranger-base-hi2lt), and both halves of "a write grant
+contains it" are tighter than that sentence reads:* the git dir must be the
+SESSION DIR's own (`<cwd>/.git/config`, which is this decision's own Context
+sentence — "the seat's grant is the cwd, which contains the whole `.git`"),
+and the write grant must be one at or under that cwd. MEASURED, by taking the
+sentence literally first: keyed on containment by ANY grant, the refusal also
+hit seven renders in internal/posse's own wall pins, five of them seats in a
+LINKED worktree. The cause is a fixture shape, not a design hole —
+`bwrapSeatTmp` answers "" when the home or the session dir is itself under
+`/tmp`, which every fixture in that package is, and with no private `/tmp` the
+render keeps the blanket `/tmp` write grant, which then contains the main
+checkout's `.git/config` as well as the worktree. Through that grant the seat
+really can write the file, so neither refusal was wrong; neither was this
+shape. The sixth and seventh were the honest shape with the wrong writer: a
+whole-tree-deny PID in a main checkout holds no grant on its cwd at all (ADR
+0086 D3 — only `<cwd>/.beads`), so nothing of its own can write
+`.git/config`, and asking every grant instead of the seat's own took the
+wall-witness rows away from a PID this ADR's neighbour had just cleared.
+No production launch is in either shape: homes and worktrees live under the
+home, so `carve.Tmp` is set and `bwrapDropTmpGrants` takes `/tmp` out of the
+set before the deny loop sees it. A main checkout whose `.git` is writable
+through some other grant of its own — a PID `writable:` extra naming the repo
+root — is a residual stated rather than closed, and `bwrapGitConfigRepo`
+(bwrap.go) is where it would join.
+
+The two fixtures that were in the honest shape changed with this decision
+rather than against it, and that is the Consequence below arriving: the
+claude-projects render table dropped its main-checkout row for an arm
+asserting the refusal, and the live non-own-cwd pin runs in a plain directory,
+which carries the property it is about ("not the seat's own session worktree")
+identically.
+
 **D2. Dispatch's fallback takes the refusal as "not launchable now".** A
 detached-HEAD repo already makes dispatch fall back to the shared checkout.
 For a bwrap seat that fallback now fails at render. It must go through the
 existing launch-failure path (`unclaimAfterLaunchFailure`), with the bead
 handed back and one reason line per pass, and must not become a new
-claim/unclaim storm every tick. ASSUMED that the existing path already
-behaves this way for any render refusal. The implementation bead checks it.
+claim/unclaim storm every tick.
+
+*Realized 2026-11-14 (ranger-base-hi2lt), and no worse than the ASSUMED:*
+one reason line per pass on both delivery paths, and the bd writes are one
+claim and one unclaim on the ARGV path and **nothing at all** on the typed
+one. The refusal is a plain error, so dispatch's fire loop takes it through
+the `default` arm — a fact about the persona on this runtime, which it is,
+since every bead routed there renders the same wall over the same checkout —
+and benches that slot for the rest of the pass, so a pass pays the refusal
+once and not once per bead. On the argv path the claim is the fence and goes
+first (ADR 0013 §2 step 1), so the refusal hands it back through
+`unclaimAfterLaunchFailure`; on a `prompt: typed` runtime the claim comes
+after the create, so a refused create never reaches it. **This box lives on
+the quieter half today:** claude is `prompt: typed` and is the only runtime
+that both renders a posse wall and is dispatched here (codex declares
+SelfSandbox, so no posse wall is rendered for it at any tier and it can never
+meet D1; grok is the argv runtime posse does wrap, and is the row the
+measurement uses). The worktree is NOT cut either — `PlanSessionTree`
+answering nil is the premise of the shape — so unlike ADR 0076 D7's refusals
+this one leaves nothing for `posse worktrees --land` to sweep. Pinned by
+`TestQADetachedHeadFallbackMeetsTheMainCheckoutRefusal` and
+`TestQADetachedHeadFallbackRefusalCostsOneLinePerPass`
+(internal/posse/bwrapmaincheckoutfallback_qa_test.go).
 
 **D3. `posse gates` shows it before a launch does.** The planned-render row
 for a session whose dir is a main checkout names this refusal, so an
 operator reading the wall sees it before typing `posse new`.
+
+*Realized 2026-11-14 (ranger-base-hi2lt) by D1 and the row that was already
+there:* the gates report renders this wall through `BwrapReport`, and a render
+that refuses prints as `bwrap wall not rendered: <the refusal>`
+(cmd/posse/main.go). Nothing was added — what the bead did was check that the
+row names the whole refusal rather than summarising it, and pin it, because
+that one generic arm is the only thing standing between D1's message and the
+operator (`TestQAGatesNamesTheMainCheckoutGitConfigRefusal`,
+cmd/posse/gatesmaincheckoutwall_qa_test.go).
 
 ## Consequences
 
@@ -134,10 +196,12 @@ operator reading the wall sees it before typing `posse new`.
   example a project's own `.claude/settings.json` under the cwd grant) has the
   same mechanism. Nothing posse runs is measured replacing one while a seat
   is live, so D1 does not refuse them. If wall-watch files one, it extends
-  D1's key list, still read from the render.
+  D1's key list, still read from the render — `bwrapGitConfigRepo` (bwrap.go)
+  is that key, and a name joins it there.
 
 ## Lineage
 
 | date | bead | change |
 |---|---|---|
 | 2026-11-13 | ranger-base-nk45q | written |
+| 2026-11-14 | ranger-base-hi2lt | D1 implemented (`bwrapGitConfigRepo`, `BwrapArgs`' deny arm), with both halves of its condition tightened to the session dir's own git dir and the seat's own grants — see D1's Realized note for what the literal reading was measured to refuse; D2's and D3's ASSUMED discharged with their Realized notes |

@@ -299,14 +299,33 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 		return strings.TrimSpace(string(out))
 	}
 
+	// THE NON-OWN CWD IS A PLAIN DIRECTORY AND NOT THE MAIN CHECKOUT, which
+	// it was until ranger-base-hi2lt. ADR 0095 D1 refuses a bwrap render
+	// whose session dir is a main checkout — every host git config write in
+	// that repo takes the `.git/config` wall off and wall-watch kills the
+	// seat — so there is no wall to hand the real binary for that cwd, and
+	// the main checkout is now asserted to be unrenderable rather than run
+	// in (the arm just below). What this pin is about is a cwd that is NOT
+	// the seat's own session worktree, and a plain directory carries that
+	// property identically: `claudeOwnSessionTree` answers "" for both, and
+	// `claudeProjectsBinds` gives both the same single read-only bind, which
+	// is the premise asserted below over the cwd actually used.
+	nonOwn := filepath.Join(f.home, "plain")
+	if err := os.MkdirAll(nonOwn, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.a.bwrapRender(f.ag, f.rt, f.main, f.gates); err == nil {
+		t.Errorf("a bwrap wall was rendered with the main checkout %s as the session dir (ADR 0095 D1) — if that is deliberate again, this pin should go back to running the real binary there, which is the more realistic D3 case", f.main)
+	}
+
 	// The premise of the premise: for this cwd projects/ really is read-only
 	// whole, with nothing reopened inside it.
-	if got := f.a.claudeOwnSessionTree(f.main); got != "" {
-		t.Fatalf("the fixture's main checkout is read as the seat's own session worktree (%q), so the run below is not the D3 case", got)
+	if got := f.a.claudeOwnSessionTree(nonOwn); got != "" {
+		t.Fatalf("the fixture's non-own cwd is read as the seat's own session worktree (%q), so the run below is not the D3 case", got)
 	}
-	binds := claudeProjectsBinds(f.home, runtimeStateGrants(SeatbeltStateDirs(f.rt)), f.a.claudeOwnSessionTree(f.main))
+	binds := claudeProjectsBinds(f.home, runtimeStateGrants(SeatbeltStateDirs(f.rt)), f.a.claudeOwnSessionTree(nonOwn))
 	if len(binds) != 1 || !binds[0].ReadOnly {
-		t.Fatalf("projects/ is not read-only whole for the main checkout: %+v", binds)
+		t.Fatalf("projects/ is not read-only whole for a non-own cwd: %+v", binds)
 	}
 
 	beforeTree := map[string]string{}
@@ -330,8 +349,8 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 		t.Fatal("the fixture planted no file under projects/, so an unchanged tree below proves nothing")
 	}
 
-	out := run(t, f.main)
-	t.Logf("real claude -p with projects/ read-only whole (cwd %s): %s", f.main, out)
+	out := run(t, nonOwn)
+	t.Logf("real claude -p with projects/ read-only whole (cwd %s): %s", nonOwn, out)
 	if after := walk(); !reflect.DeepEqual(after, beforeTree) {
 		t.Errorf("the real claude changed projects/ from a cwd that is not the seat's own session worktree\n before: %v\n after:  %v\n out: %s", beforeTree, after, out)
 	}
