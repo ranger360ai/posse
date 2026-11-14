@@ -562,17 +562,42 @@ func (a *App) cmdUpgrade(w io.Writer, o UpgradeOpts, reads upgradeReads) error {
 	// `posse gates <p>` describes the wall a persona WOULD launch behind, so
 	// a persona with no seat open is exactly as much evidence as one with.
 	plan.Personas = a.ListAgents()
-	// D4 amendment 1's repos, read from the same place G12 reads them and
-	// filtered the same way: a skipped repo raises no G12 row, and a
-	// managed one is a repo posse must not be told to write (ADR 0052 D1).
-	// Read here rather than at verify time so that the plan carries
-	// everything the run prints, as Personas does.
-	for _, r := range a.SweepHookWallIdentity().Repos {
+	// D4 amendment 1's repos. Read here rather than at verify time so that
+	// the plan carries everything the run prints, as Personas does; the
+	// filter itself is upgradeHookWallRepos, which is where a pin can read
+	// it.
+	plan.Repos = append(plan.Repos, upgradeHookWallRepos(a.SweepHookWallIdentity())...)
+	return upgradeRunPlan(w, plan)
+}
+
+// upgradeHookWallRepos is D4 amendment 1's repo list: which of the walls
+// config declares may appear in the report's `posse gates install-hooks`
+// line. Read from the same place G12 reads them and filtered the same way —
+// a skipped repo raises no G12 row, and a managed one is a repo posse must
+// not be told to write (ADR 0052 D1). Repos come back in config order, which
+// is the order the sweep reports and the order the operator's config lists,
+// so the printed line reads as the config does.
+//
+// A FUNCTION over the sweep value, and not the three lines it replaces
+// inside cmdUpgrade, because of where cmdUpgrade sits: its reads go in
+// through upgradeReads but SweepHookWallIdentity does not, so reaching the
+// loop from a test meant a real stamp, a real checkout and a box lock, and
+// d4Fixture.run overwrites plan.Repos outright rather than deriving it. The
+// ADR 0052 D1 filter — the whole of this verb's obligation to that ADR — was
+// therefore deletable green: `if true` in place of `if r.Skip == ""` put a
+// managed checkout and an absent one both into the one instruction that ADR
+// says this verb must never give, over 77 tests, in 2.2s, ok
+// (ranger-base-1fsc9, escaped from ranger-base-hm4gf). A HookWallSweep is a
+// slice of structs, so here the same filter needs no binary, no App and no
+// seam. Nothing was added to move it: cmdUpgrade calls this instead.
+func upgradeHookWallRepos(s HookWallSweep) []string {
+	var out []string
+	for _, r := range s.Repos {
 		if r.Skip == "" {
-			plan.Repos = append(plan.Repos, r.Dir)
+			out = append(out, r.Dir)
 		}
 	}
-	return upgradeRunPlan(w, plan)
+	return out
 }
 
 // upgradeRunPlan is D3.2 through D3.6 and D6 — everything this verb WRITES,
