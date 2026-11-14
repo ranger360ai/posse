@@ -376,6 +376,28 @@ type SeatbeltCarveOut struct {
 	// render it: bwrap as an empty tmpfs, seatbelt as a subpath read deny
 	// after every read allow.
 	DenyReadDir []string
+	// DenyConnect is paths no seat may connect(2) to a unix socket at:
+	// grok's leader and daemon sockets today (grokSocketPaths). It is the
+	// ONE field about an operation that is not a file operation at all —
+	// connecting to a pathname socket is `network-outbound` in SBPL, which
+	// no file-read* or file-write* rule above it reaches and nothing in this
+	// profile ever allows by name. So it needs no last-match-wins position
+	// against the blocks above; it is rendered last anyway, which is the
+	// cheaper invariant to keep (SeatbeltProfile).
+	//
+	// Seatbelt-only, like Narrow and DenyAll: the other mechanism answers
+	// the same question with a mount and a Linux wall of its own, and
+	// bwrapRender clears this.
+	//
+	// ASSUMED, NOT MEASURED: that the kernel resolves the path at CONNECT
+	// time, so a socket bound after the seat launched, or unlinked and
+	// re-bound at the same name, is refused too. That is the whole property
+	// the field is worth anything for, and this box is Linux — there is no
+	// darwin host behind this render. The live pin that measures it, with a
+	// control arm, is seatbeltunixconnect_qa_test.go; on a non-darwin host
+	// it reads NOTHING MEASURED and on a darwin one it reds if the
+	// assumption is wrong.
+	DenyConnect []string
 }
 
 // sshDirAllowlist is what a masked seat still reads under an SSHDir: ssh's
@@ -663,6 +685,37 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 		b.WriteString("(deny file-read* file-write*\n")
 		for _, p := range carve.DenyAll {
 			fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(p))
+		}
+		b.WriteString(")\n")
+	}
+	// Last, and about an operation nothing above this line mentions: a
+	// connect(2) to a pathname unix socket is `network-outbound` in SBPL and
+	// not a file write, so the write deny over a socket's directory and the
+	// grant that reaches a socket's own name both say nothing about it
+	// (ranger-base-q9bqu). `(allow default)` at the top is the only rule
+	// above that reaches it, which is what this one is here to take back.
+	//
+	// `subpath` and not `path-literal` for every entry, including the ones
+	// their producer means as a single socket. Both spellings are attested
+	// for a unix-socket filter and `subpath` is the one this tree already
+	// emits (landedCheckSeatbeltNet), so a targeted deny costs no new
+	// unmeasured spelling; over a socket path a subpath is never narrower
+	// than a literal, only wider by names underneath a socket, of which
+	// there are none. There is no darwin host here to measure either on
+	// (the field's own comment, and the live pin).
+	//
+	// NOT a broad `(deny network-outbound (remote unix-socket))` with
+	// allow-backs, which would match the other mechanism's shape: macOS
+	// resolves DNS through a unix socket at /private/var/run/mDNSResponder
+	// (sourced from third-party sandbox profiles 2026-11-14, not measured
+	// here), so the broad form needs an allowlist of what a darwin seat
+	// really needs, and that census is a darwin box's to take. Residual:
+	// ranger-base-11upf.
+	if len(carve.DenyConnect) > 0 {
+		b.WriteString(";; host unix sockets (ranger-base-q9bqu): a connect(2) is network-outbound\n;; in SBPL, which no file rule above reaches.\n")
+		b.WriteString("(deny network-outbound\n")
+		for _, p := range carve.DenyConnect {
+			fmt.Fprintf(&b, "  (remote unix-socket (subpath %s))\n", sbQuote(p))
 		}
 		b.WriteString(")\n")
 	}
@@ -1735,6 +1788,15 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	for _, d := range runtimeEphemeralDirs(wallHome(), rtGrants) {
 		add(&c.Deny, d)
 	}
+	// ...and the CONNECT half of the same question, which that write deny
+	// does not answer: grok's leader and daemon sockets are paths a seat
+	// may not connect(2) to (grokSocketPaths, ranger-base-q9bqu). Spelled
+	// against the same home, and deliberately NOT narrowed by rtGrants —
+	// grokSocketPaths' own comment says why a seat with no grok grant is
+	// the case that matters. bwrapRender clears it.
+	for _, p := range grokSocketPaths(wallHome()) {
+		add(&c.DenyConnect, p)
+	}
 	// claude's debug/, the same two-step: write-denied HERE, and taken back
 	// out by bwrapRender, which binds a private copy over it instead
 	// (claudeDebugDir, ranger-base-ntt1w). A subpath deny, so it covers
@@ -2640,6 +2702,16 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	}
 	for _, d := range carve.DenyReadDir {
 		fmt.Fprintf(out, "    r %s/ (file-read* subpath deny — the rex tsnet node's state, a tailnet credential no seat reads; ranger-base-k06gw)\n", AbbrevHome(d))
+	}
+	// Its own marker, `c`, because it is the one line here about an
+	// operation that is neither a read nor a write: a connect(2) to a unix
+	// socket is network-outbound in SBPL, and an operator reading `x` or `r`
+	// beside one of these paths would be told the wrong thing about what is
+	// walled (ranger-base-q9bqu). Printed at all for this block's own stated
+	// reason — a deny that only a profile knows about is a deny nobody
+	// checks.
+	for _, p := range carve.DenyConnect {
+		fmt.Fprintf(out, "    c %s (network-outbound deny — no seat connects to a unix socket here, whatever its runtime; grok's leader and daemon sockets)\n", AbbrevHome(p))
 	}
 	// A grant that reaches the constitution is still named, deny or no
 	// deny: the carve-out is a wall, not a licence to grant it. What the

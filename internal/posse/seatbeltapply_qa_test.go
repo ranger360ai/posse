@@ -215,7 +215,15 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	// Thirteen since ranger-base-wj93u: wallclaudehistoryseatbelt_qa_test.go
 	// plants a link at history.jsonl under a caged claude seat's rendered
 	// profile and expects the kernel to refuse it.
-	if len(scanned) != 13 {
-		t.Errorf("expected the thirteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	//
+	// Fourteen since ranger-base-q9bqu: seatbeltunixconnect_qa_test.go asks
+	// the kernel whether a `(deny network-outbound (remote unix-socket …))`
+	// refuses a connect(2) to a socket bound after the profile was applied.
+	// It spells its own `exec.Command("sandbox-exec"` rather than borrowing
+	// sbRun, because its rows have to create the socket while the sandboxed
+	// child is already running — and it is in this corpus for exactly the
+	// reason the others are.
+	if len(scanned) != 14 {
+		t.Errorf("expected the fourteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }

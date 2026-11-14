@@ -202,6 +202,14 @@ func wwEveryShape(t *testing.T) wwRender {
 			SSHDir:      []string{sshDir},
 			DenyReadDir: []string{tsnet},
 			DenyRead:    []string{cred, filepath.Join(sshDir, "id_ed25519")},
+			// Seatbelt-only, like Narrow and DenyAll above, and unlike
+			// either it renders no mount AT ALL on this mechanism — it is
+			// about connect(2) on a socket and not about a path's contents
+			// (ranger-base-q9bqu). It is here because the field census
+			// above is total, and it must leave the watch list below
+			// untouched: a field bwrapRender clears is a wall this
+			// mechanism never put up.
+			DenyConnect: []string{filepath.Join(grant, "leader.sock")},
 		},
 	}
 }

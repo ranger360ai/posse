@@ -2050,6 +2050,13 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// read-and-write deny is seatbelt's spelling (ranger-base-yaha3,
 	// ranger-base-wj93u).
 	r.Carve.DenyAll = nil
+	// The sockets a seat may not connect to are this mechanism's own
+	// question and it answers them with a mount and a Linux-only wall, not
+	// with a path rule: grok's daemon/run is a private tmpfs in the step
+	// below. DenyConnect is the seatbelt spelling, like Narrow and DenyAll
+	// above.
+	// Residual: ranger-base-l2gk9.
+	r.Carve.DenyConnect = nil
 	// codex's per-process tmp/ and shell_snapshots/, and grok's daemon/run/
 	// (ranger-base-76mcd): a private empty tmpfs
 	// each (ranger-base-6ob20). SeatbeltCarveOut denied them, which is the

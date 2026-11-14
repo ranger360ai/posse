@@ -598,6 +598,54 @@ func grokEphemeralDirs(home string, stateGrants []string) (dirs []string) {
 	return dirs
 }
 
+// grokLeaderSockName is grok's leader socket at the root of its home (grok
+// 1.0.77's own string). A seat's own grok never makes one — GrokNoLeaderFlag
+// is on every line posse renders (ranger-base-76mcd) — so a name under a
+// grok home spelled here is the OPERATOR's leader and not the seat's.
+const grokLeaderSockName = "leader.sock"
+
+// grokSocketPaths names every path under a grok home that holds a grok
+// leader's or daemon's unix socket: the leader socket at the home root and
+// the per-name daemon sockets under daemon/run (grokEphemeralDirNames).
+// Nothing a seat needs is at either — a grok seat starts no leader, and on
+// seatbelt daemon/run is a directory WRITE deny already, so a seat has no
+// socket of its own there to lose (grokleader_qa_test.go reads that deny).
+//
+// It is the seatbelt mechanism's list and the carve-out's DenyConnect is
+// where it lands: connecting to a unix socket is `network-outbound` in SBPL
+// and not a file write, so neither the write deny over daemon/run nor the
+// home grant that reaches leader.sock says anything about a connect(2). The
+// bwrap mechanism answers the same question with a mount and a Linux-only
+// wall and never reads this (bwrapRender clears DenyConnect).
+//
+// NO STATE-GRANT FILTER, unlike grokEphemeralDirs beside it, and that is
+// the whole difference between the two mechanisms' reach. A mount can only
+// cover what is in the seat's view, so the bwrap tmpfs is keyed on the home
+// being granted; a seatbelt profile is `(allow default)` over the WHOLE
+// filesystem, so a codex or claude seat with no grok grant at all can still
+// resolve and connect to a grok home's sockets. Keying the deny on this
+// launch's grant would leave it open for every seat that is not a grok
+// seat — the same reasoning the state dir's `hooks` deny records, one
+// directory over.
+//
+// `home` is the wall's home (wallHome), and GROK_HOME moves the answer
+// exactly as it moves grokEphemeralDirs'.
+func grokSocketPaths(home string) (paths []string) {
+	if home == "" {
+		return nil
+	}
+	h := grokHomeIn(home)
+	if !filepath.IsAbs(h) {
+		return nil
+	}
+	h = absResolve(h)
+	paths = append(paths, filepath.Join(h, grokLeaderSockName))
+	for _, n := range grokEphemeralDirNames {
+		paths = append(paths, filepath.Join(h, n))
+	}
+	return paths
+}
+
 // runtimeEphemeralDirs is every CLI's per-process dirs the seat's state
 // grant reaches: codex's and grok's. Both mechanisms read this one list.
 func runtimeEphemeralDirs(home string, stateGrants []string) []string {

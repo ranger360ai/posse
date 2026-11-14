@@ -550,13 +550,17 @@ func main() {
 		// OpsPatterns (2)
 		"TestQAEveryOpsHitInTrackedMarkdownIsRuled": "reads OpsPatterns",
 		"TestQAOpsShapeTableCanStillSayNo":          "reads OpsPatterns",
-		// sandboxApplyRefusal (4). The fourth reaches the seam through
+		// sandboxApplyRefusal (5). The fourth reaches the seam through
 		// sbSkipUnlessSandboxable, added at its head under ranger-base-26y03
-		// because a caged seat cannot nest the sandbox the arm launches.
+		// because a caged seat cannot nest the sandbox the arm launches. So
+		// does the fifth (ranger-base-q9bqu), which reaches it through its
+		// own runner as well; its own state is a listening socket under a
+		// per-test fixture root and it writes no package var.
 		"TestQASandboxApplyProbeAgreesWithARenderedProfile": "calls sandboxApplyRefusal",
 		"TestQASandboxApplyProbeGrid":                       "calls sandboxApplyRefusal",
 		"TestQASandboxExecStaysOnPathInsideTheCage":         "calls sandboxApplyRefusal",
 		"TestQASelfCheckAnswersInsideASeatbelt":             "calls sandboxApplyRefusal",
+		"TestLiveSeatbeltUnixConnectDenyHoldsAtConnectTime": "calls sandboxApplyRefusal",
 		// coldExecRewrite (1): the cold-first-exec injector's one seam into
 		// internal/posse/execwrite.go (ADR 0085 D2/D3). It is assigned in
 		// TestMain, before m.Run, and by nothing else in the tree — so once
