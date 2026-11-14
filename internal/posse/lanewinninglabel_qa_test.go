@@ -209,6 +209,17 @@ func TestQALaneKeepsAPIDThatCarriesTheWinningLabelSecond(t *testing.T) {
 // instance's PIDs share — the instance's own vocabulary, named on the bead
 // and not here (ADR 0024 D3, restate-and-cite).
 //
+// THAT REMEDY IS THIS ARM'S AND NOT THE WHOLE SHAPE'S (ranger-base-bskno).
+// The order is a remedy here because arm C's head matches on TWO labels, so
+// there is something to order. There is a second route to the same lane where
+// there is not: a head whose `matched` set holds exactly ONE element takes
+// that label as the lane whatever order any PID lists its labels in, and when
+// that element is the cross-cutting label the lane can hold no seat that can
+// do the work at all. §4 does not cover it and this arm's fixture cannot
+// reach it. It is measured by
+// TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat below; its remedy
+// is open at ranger-base-d7lsc.
+//
 // The bead labels are passed ALPHABETICALLY because that is the only order
 // routing ever sees: MEASURED 2026-11-13, bd normalizes a bead's labels to
 // alphabetical order at create — 689 of 689 multi-label beads in this
@@ -258,6 +269,138 @@ func TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder(t *testing.T) {
 			if strings.Join(names, ",") != arm.want || label != arm.label {
 				t.Errorf("lane is %v (%s), want %s (%s) — the head PID's label order is the lane (ADR 0011 §4); arm C is the stated configuration error, not a regression",
 					names, label, arm.want, arm.label)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ranger-base-bskno — the SECOND route to a cross-cutting lane, and this one
+// no order reaches.
+//
+// Arm C above is §4's stated configuration error: a PID that LISTS a
+// cross-cutting label first makes that label its lane, and §4's stated remedy
+// is the order. That remedy reaches arm C, where the head's `matched` set has
+// two elements and the order really does decide. It does not reach this test.
+// When the head candidate's `matched` set holds exactly ONE element and that
+// element is the cross-cutting label, that label is the lane whatever order
+// any PID lists its labels in — there is nothing to order. The roster below
+// has §4's remedy already applied everywhere: every PID lists its own lane
+// label first, as RE-MEASURED 2026-11-14 all 11 of this instance's PIDs do
+// (and as 20 of 20 did on 2026-11-13, counting the shipped examples), and the
+// misroute still happens.
+//
+// Sharper than arm C, and sharper than ranger-base-equhp's incident. equhp
+// was a lane that SOMETIMES reached a seat which could only hand the bead
+// back. Here the lane holds no seat that can do the deliverable at all:
+// `ops-seat` is the only devops seat on the roster and `watcher` the only
+// security seat, and neither is in its own deliverable's lane, so the bead
+// cannot be seated on a capable seat on any pass.
+//
+// TWO CONTROLS, MEASURED 2026-11-14 through these same arms by mutating
+// `labelMatches` and reverting after the reading:
+//
+//   - PRE-NARROWING (`return out` for `return lane`): all four arms red, with
+//     the lane reading `[aaa-dev ops-seat zz-arch]` and `[aaa-dev watcher
+//     zz-arch]`. Before ranger-base-equhp's narrowing the capable seat was
+//     always IN the lane and only the printed label was wrong, so the
+//     EXCLUSION half is new with it — what ranger-base-5793u established for
+//     the frontmatter-order half.
+//   - §4'S REJECTED ALTERNATIVE (`win` as the alphabetically first of
+//     `out[0].matched`): all four arms green and byte-identical, because a
+//     one-element matched set has the same first element in either order.
+//
+// So this shape is orthogonal to the (a)/(b) choice §4 settled — neither the
+// decided rule nor the rejected one reaches it — and it is not a reopen of
+// ranger-base-svoux.
+//
+// CHARACTERIZATION, not a decision — the same posture arm C's table went in
+// with under ranger-base-5793u while ranger-base-svoux was out. The remedy is
+// with the architecture lane as ranger-base-d7lsc, which carries the three
+// shapes: (a) prefer the next candidate whose matched set holds a non-shared
+// label, (b) state this as a second configuration error whose remedy is not
+// the order, (c) the explicit `lane:` PID key §4 already names as its exit
+// hatch. Under (b) this table stands as written. Under (a) or (c) it must be
+// rewritten to the table the finding asked for — the same roster, with the
+// lane HOLDING the seat that can do the work — and the red is the deliberate
+// signal that the behaviour moved.
+//
+// NOT FIRING ON THIS INSTANCE TODAY: RE-MEASURED 2026-11-14, 0 of 3,851 beads
+// in this store carry the cross-cutting label at all (0 of 3,795 a day
+// earlier). It is declared on 5 of this instance's 11 PIDs, every one
+// of which lists its own lane label first and none of which lists the shared
+// one first, and it has never been filed on a bead. There is exactly one
+// devops PID and one security PID, so both rows below are the live roster's
+// shape; ONE bead carrying the label plus a lane label turns a row on.
+//
+// `team` is §4's spelling for the real label several of this instance's PIDs
+// share — the instance's own vocabulary, named on the bead and not here (ADR
+// 0024 D3, ADR 0048 D2; the code and architecture lanes were each refused by
+// the visibility gate for the real literal under ranger-base-5793u and
+// ranger-base-svoux).
+func TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat(t *testing.T) {
+	t.Parallel()
+	// head is aaa-dev's own labels. The default lists its lane label first,
+	// which is §4's remedy already applied; the reordered arms are the proof
+	// that no order is a remedy here.
+	const headLaneFirst = "[code, feature, bug, team]"
+	for _, arm := range []struct {
+		name     string
+		head     string
+		bead     []string
+		want     string
+		label    string
+		stranded string
+	}{
+		{
+			"devops deliverable: the only devops seat is not in its lane",
+			headLaneFirst, []string{"devops", "team"},
+			"aaa-dev,zz-arch", "team", "ops-seat",
+		},
+		{
+			"security deliverable: the only security seat is not in its lane",
+			headLaneFirst, []string{"security", "team"},
+			"aaa-dev,zz-arch", "team", "watcher",
+		},
+		{
+			"the order is not a remedy: head lists its lane label last",
+			"[team, code, feature, bug]", []string{"devops", "team"},
+			"aaa-dev,zz-arch", "team", "ops-seat",
+		},
+		{
+			"the order is not a remedy: head's labels alphabetical",
+			"[bug, code, feature, team]", []string{"devops", "team"},
+			"aaa-dev,zz-arch", "team", "ops-seat",
+		},
+	} {
+		t.Run(arm.name, func(t *testing.T) {
+			t.Parallel()
+			b, _ := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			writePersona(t, b.App, "aaa-dev", arm.head)
+			writePersona(t, b.App, "ops-seat", "[devops, infra, ci]")
+			writePersona(t, b.App, "watcher", "[security, audit, vuln]")
+			writePersona(t, b.App, "zz-arch", "[architecture, design, team]")
+
+			names, label := laneOf(t, d, arm.bead...)
+			if strings.Join(names, ",") != arm.want || label != arm.label {
+				t.Errorf("lane is %v (%s), want %s (%s) — the head's matched set is the cross-cutting label alone, so that label is the lane and no PID's order moves it (ranger-base-bskno, remedy open at ranger-base-d7lsc)",
+					names, label, arm.want, arm.label)
+			}
+			for _, n := range names {
+				if n == arm.stranded {
+					t.Fatalf("%s is in the lane now — the behaviour moved, which is what ranger-base-d7lsc's (a)/(c) would do; rewrite this table deliberately: %v (%s)",
+						arm.stranded, names, label)
+				}
+			}
+
+			// The control: the narrowing has not stranded the dropped seat's
+			// own label. Its lane is its own, and only the deliverable that
+			// ALSO carries the cross-cutting label loses it.
+			solo, soloLabel := laneOf(t, d, arm.bead[0])
+			if strings.Join(solo, ",") != arm.stranded || soloLabel != arm.bead[0] {
+				t.Errorf("%s lane regressed: got %v (%s), want %s (%s)",
+					arm.bead[0], solo, soloLabel, arm.stranded, arm.bead[0])
 			}
 		})
 	}

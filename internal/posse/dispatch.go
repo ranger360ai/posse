@@ -1752,6 +1752,10 @@ func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 // a PID that carries both `qa` and `code` matches on whichever it happens to
 // list first, and dropping it from a `code` lane for that would read a
 // FOLLOWER's order as a decision, which it is not.
+//
+// A head's order is a key only where `matched` holds more than one label. On
+// a one-element set it decides nothing and nothing can be ordered, so the
+// label is the lane unconditionally — see labelMatches (ranger-base-bskno).
 type routeMatch struct {
 	name    string
 	label   string
@@ -1775,6 +1779,26 @@ type routeMatch struct {
 // cross-cutting label and a legitimately shared lane label are spelled alike.
 // It shows at run time in the route report's `label:` and roster, and is
 // pinned by TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder.
+//
+// That remedy covers the route §4 names and not a second route to the same
+// lane (ranger-base-bskno). The order is a remedy only where the head matches
+// on more than one label; when the head's `matched` set holds exactly ONE
+// element, that label is the lane whatever order any PID lists its labels in,
+// because there is nothing to order. Where that element is the cross-cutting
+// label the lane can hold NO seat that can do the deliverable — on a roster
+// with one devops PID and one security PID, neither is in its own
+// deliverable's lane, so the bead cannot be seated on a capable seat on any
+// pass. MEASURED 2026-11-14: every PID on this instance already lists its lane
+// label first, which is §4's remedy applied everywhere, and the misroute still
+// happens; against the pre-narrowing body the capable seat was in the lane and
+// only the printed label was wrong, so the exclusion is new with equhp's
+// narrowing. Not firing today — 0 of 3,851 beads carry the label, declared on
+// 5 of 11 PIDs and never filed. The remedy is open at ranger-base-d7lsc
+// (three shapes: prefer the next candidate matching a non-shared label; state
+// it in §4 as a second configuration error whose remedy is not the order; or
+// §4's `lane:` exit hatch). Characterized meanwhile by
+// TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat, which reds by
+// name if the behaviour moves.
 //
 // It is NOT every persona whose labels overlap the bead's (ranger-base-equhp).
 // A bead carries the labels of all the work it touches, so the union read one
