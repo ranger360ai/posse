@@ -77,6 +77,44 @@ func wantFeed(t *testing.T, b *HerdrBackend, want ...string) {
 	}
 }
 
+// feedCfg is the delivery config every end-to-end arm here drives, and since
+// ADR 0093 D3 (ranger-base-r3qz6) it says two more things than it did.
+//
+// `Feed: true` is the shipped default (`pulse_feed:` absent — LoadPulseConfig),
+// and without it there is no feed at all: the hatch turns the whole channel
+// off, which is what `pulse_feed: off` is for and what pulseswitch_test.go
+// pins.
+//
+// `Interval` is here ONLY because the wedge bound is one renag plus one tick
+// (pulseWedgeBound): these ticks are driven by hand, so the interval times
+// nothing, and ten minutes buys the clock-stepping arms below room to move
+// without their fixture's waiter aging out of the bound.
+func feedCfg() PulseConfig {
+	return PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute,
+		Interval: 10 * time.Minute, Feed: true}
+}
+
+// feedListener arms the waiter lock for the rest of the test, so these arms
+// run over the channel the feed is DELIVERED by since D3 rather than over the
+// typed fallback.
+//
+// IT IS WHAT KEEPS EVERY EXPECTED BODY BELOW UNCHANGED, which is why it is
+// worth a note: the line is this file's subject, and on a free lock the set
+// gains `pulse-unarmed` (govern.go) — a second standing key in every body and
+// a `standing: N` one higher, none of it about the delta. A listening waiter
+// is also the honest fixture now: the feed line IS the delivery, and the
+// record advances with it exactly as it did behind a typed prompt.
+//
+// The cost is that these four tests take an flock, so none of them carries
+// t.Parallel and cmd/testparallel names them (ranger-base-9l77f: two
+// acquisition tests side by side read a released lock as still held). The
+// helper is pulseswitch_test.go's, in this same arm, where the switch's own
+// arms are.
+func feedListener(t *testing.T, b *HerdrBackend, started time.Time) {
+	t.Helper()
+	psArmWaiter(t, b, started)
+}
+
 // A delta, end to end through pulseOnce, over the three things that can
 // happen to a key: it appears, another appears beside it, one of them
 // clears.
@@ -85,7 +123,6 @@ func wantFeed(t *testing.T, b *HerdrBackend, want ...string) {
 // standing unpushed key must not be on that line. A feed that re-sent the
 // set would pass every other assertion here.
 func TestPulseFeedAppendsADeltaNotTheSet(t *testing.T) {
-	t.Parallel()
 	b, fake := newTestBackend(t)
 	cid := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	did := personaSession(t, b, fake, "developer-work", "developer", "idle", false)
@@ -96,7 +133,8 @@ func TestPulseFeedAppendsADeltaNotTheSet(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
+	cfg := feedCfg()
+	feedListener(t, b, clock)
 	unpushed := "unpushed:" + repo + ":1"
 
 	d.pulseOnce(cfg)
@@ -139,14 +177,14 @@ func TestPulseFeedAppendsADeltaNotTheSet(t *testing.T) {
 // such a move, and read as a `-`/`+` pair each one says a repo stopped
 // having unpushed commits and then started again.
 func TestPulseFeedCountMoveIsOneTildeToken(t *testing.T) {
-	t.Parallel()
 	b, fake := newTestBackend(t)
 	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	repo := unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
+	cfg := feedCfg()
+	feedListener(t, b, clock)
 
 	d.pulseOnce(cfg)
 	wantFeed(t, b, "+unpushed:"+repo+":1 standing: 1")
@@ -178,14 +216,14 @@ func TestPulseFeedCountMoveIsOneTildeToken(t *testing.T) {
 // appends nothing at all. Without it this test would pass over a feed that
 // wrote a line every tick.
 func TestPulseFeedRenagSaysStillAndNamesTheKeys(t *testing.T) {
-	t.Parallel()
 	b, fake := newTestBackend(t)
 	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	repo := unpushedRepo(t, b)
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
+	cfg := feedCfg()
+	feedListener(t, b, clock)
 	unpushed := "unpushed:" + repo + ":1"
 
 	d.pulseOnce(cfg)
@@ -216,7 +254,6 @@ func TestPulseFeedRenagSaysStillAndNamesTheKeys(t *testing.T) {
 // The planted record is what makes the hold visible: a key from the store
 // that went dark, which this tick cannot compute and must not bury.
 func TestPulseFeedPartialReadHoldsRatherThanClears(t *testing.T) {
-	t.Parallel()
 	b, fake := newTestBackend(t)
 	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
 	repo := unpushedRepo(t, b)
@@ -230,7 +267,8 @@ func TestPulseFeedPartialReadHoldsRatherThanClears(t *testing.T) {
 	if d.Bd.Available() {
 		t.Fatalf("fixture: %s resolved", d.Bd.Bin)
 	}
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
+	cfg := feedCfg()
+	feedListener(t, b, clock)
 
 	unpushed := "unpushed:" + repo + ":1"
 	gone := "question:ranger-base-gone"

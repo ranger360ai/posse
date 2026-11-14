@@ -164,6 +164,19 @@ type GovInputs struct {
 	PulsePersona string
 	Pulsing      bool
 
+	// PulseFeed and PulseWedge are the two things the `pulse-unarmed`
+	// carry-over needs out of the pulse's config and cannot read for
+	// itself: whether ADR 0093's channel is on at all (`pulse_feed:`), and
+	// how old a lock-holding waiter may be before it is wedged rather than
+	// listening (pulse_renag plus one tick, pulseWedgeBound).
+	//
+	// Both come from LoadPulseConfig in every caller, like PulsePersona
+	// above, and a zero PulseWedge ages nothing — a reader that cannot say
+	// what the bound is must not judge a holder against a default this
+	// instance does not run.
+	PulseFeed  bool
+	PulseWedge time.Duration
+
 	// GuardTrippedSince is G4's streak clock — when the plan guard first
 	// tripped in the current unbroken run of tripped passes. It lives in the
 	// watch process's memory like blindSince, lost on restart, and a fresh
@@ -449,6 +462,11 @@ func ReadPause(path string) Pause {
 // reason spelled at its site below — 0036 asked for the fact on the surface,
 // not for a number — and it stayed one when G10 arrived, because a row does
 // not earn a number by seniority.
+//
+// And a fourth since ranger-base-r3qz6: `pulse-unarmed`, nothing listening
+// on the pulse feed while a coordinator session is live (ADR 0093 D3). A
+// carry-over for the same reason the backup row is one: the ADR asked for
+// the fact on the surface and named the key, not for a number.
 //
 // A store that cannot be READ is not a store that says no. bd scan failures
 // come back as errors alongside whatever was computed: the set is then
@@ -955,6 +973,61 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	if in.Pulsing && in.PulsePersona != "" && !livePersona {
 		add("", GovLane, "no-live:"+in.PulsePersona,
 			fmt.Sprintf("no live session for %s — the pulse has nowhere to deliver", in.PulsePersona))
+	}
+
+	// ── carry-over · the pulse feed has no listener (ADR 0093 D3) ────────
+	//
+	// A CARRY-OVER and not a G-row, on the backup row's rule below: ADR 0093
+	// asks for the fact on the surface ("a condition `pulse-unarmed` joins
+	// the set while the lock is free and a coordinator session is live, so
+	// `posse status` shows it as well"), not for a number, and a row name
+	// is a promise that ADR 0029's table describes the condition. Nothing
+	// has asked for the number.
+	//
+	// LANE: the shop is not stopped and delivery is not stopped either —
+	// the typed fallback is live, and it says so in the text it types. What
+	// earns a row is that the splice class is open again for as long as
+	// this stands, and that the operator is the only one who can close it.
+	//
+	// THE GATES, each one load-bearing:
+	//
+	//   - the pulse is ARMED and has a persona. An unarmed pulse delivers
+	//     nothing through either channel, so a waiter nobody needs is not a
+	//     condition.
+	//   - `pulse_feed:` is on. With the hatch set there is no feed, no
+	//     probe and nothing to arm, and a row telling the operator to arm a
+	//     channel they switched off would be the surface arguing with the
+	//     config.
+	//   - a coordinator session is LIVE (ADR 0093 D3's own wording).
+	//     Without one the condition is `no-live:` above — the pulse has
+	//     nowhere to deliver at all, which is a bigger fact than which
+	//     channel it would have used, and saying both would be two rows for
+	//     one stopped delivery.
+	//
+	// ONE KEY FOR TWO CAUSES, which is where this parts company with G7's
+	// key-per-cause rule, and deliberately: the fact is "nothing is
+	// listening on the feed", the remedy is the same command either way, and
+	// a free lock that becomes a wedged one is not news the coordinator can
+	// act on differently. The cause is in the detail, which is where a
+	// human reads it, and ADR 0093 D3 names this key for both.
+	//
+	// A PROBE THAT CANNOT BE TAKEN IS NOT AN ALL-CLEAR AND NOT A CONDITION:
+	// it goes to `failed`, so the set is PARTIAL, because whether anyone is
+	// listening is exactly what could not be read. The watch's own tick
+	// concedes the other way (PulseListener.Listening) — there the question
+	// is whether to type into a pane that may be listening, and here it is
+	// what to tell a human.
+	if in.Pulsing && in.PulseFeed && in.PulsePersona != "" && livePersona {
+		l := ReadPulseListener(in.App, now, in.PulseWedge)
+		switch {
+		case l.Err != nil:
+			failed = append(failed, fmt.Errorf("pulse waiter lock %s: %w — pulse-unarmed unknown",
+				AbbrevHome(PulseWaitLockPath(in.App)), l.Err))
+		case !l.Listening():
+			add("", GovLane, "pulse-unarmed", fmt.Sprintf(
+				"the pulse feed has no listener (%s) — deltas are being typed into %s's pane instead, which is the splice ADR 0093 ends; arm it with `%s`",
+				l.Line(), in.PulsePersona, PulseWaitCommand(pulseFeedCursor(PulseFeedPath(in.App)))))
+		}
 	}
 
 	// ── carry-over · the on-box backup is stale (ADR 0036 §6) ────────────
@@ -1542,6 +1615,10 @@ func StatusInputs(a *App, hb *HerdrBackend, errw io.Writer) GovInputs {
 	// watch loop's to report.
 	if cfg, err := LoadPulseConfig(a); err == nil && cfg.Armed {
 		in.PulsePersona, in.Pulsing = cfg.Persona, true
+		// ADR 0093 D3's switch is read live here too, which is the point of
+		// it being an flock: `posse status` is a separate process with no
+		// memory of the loop, and the kernel answers both the same way.
+		in.PulseFeed, in.PulseWedge = cfg.Feed, pulseWedgeBound(cfg)
 	}
 	return in
 }

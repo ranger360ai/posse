@@ -380,6 +380,45 @@ func captureShowsClaudeChrome(screen string) bool {
 	return false
 }
 
+// ─── the door the pulse's typed fallback reads (ADR 0093 D4) ─────────────────
+
+// rexComposerHold is this file's reading on ONE seat, for a caller that must
+// know whether the occupant answered at all: `false` is "not Rex, so this
+// reading was never taken", and that is the whole of ADR 0093 D4's "on rex
+// only" (ranger-base-r3qz6).
+//
+// WHY A DOOR AND NOT PaneHolding. PaneHolding asks the occupant and routes
+// to the capture only where `agent explain` is missing (ADR 0076 §4), so on
+// herdr it answers herdr's own composer reading — the phantom-prone one
+// ranger-base-wr624 took out of the pulse's path after ~586 consecutive
+// skips over a box `posse peek` showed empty. D4 is explicit that herdr
+// stays report-only, so the caller needs the reading that has
+// ranger-base-qzujz's discriminator behind it (the runtime's own submit log,
+// asked first) and needs to be told when it is not available — which a hold
+// that is empty for three different reasons cannot say.
+//
+// It is also narrower than capturedHold on purpose: no footer, so no work
+// reading. The pulse's question is about the KEYBOARD, and whether the seat
+// has a background shell running is both already answered upstream (the
+// readiness gate's state rule) and none of this delivery's business.
+//
+// A capture rex would not answer is the EMPTY hold with `true` beside it:
+// available, read nothing. That is this family's standing direction — a
+// screen posse could not read is not evidence — and here it means the pulse
+// types, which is the honest residual D4 names (the window between the
+// capture and the Enter).
+func (b *HerdrBackend) rexComposerHold(target Seat) (PaneHold, bool) {
+	rm, ok := b.rexMux()
+	if !ok {
+		return PaneHold{}, false
+	}
+	screen, err := rm.Read(target, captureFooterLines, false)
+	if err != nil {
+		return PaneHold{}, true
+	}
+	return b.capturedComposerHold(target, screen, PaneHold{}), true
+}
+
 // captureLastLine is the last line of a screen with anything on it, trimmed.
 // On claude's dialogs that line is the dialog's own hint — the one line that
 // says which dialog it is — which is what the refusal quotes.

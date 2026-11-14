@@ -37,6 +37,7 @@ the vocabulary is closed at nine or that every process has identical inputs.
 | `unpushed:<repo>:<n>` | Local git upstream comparison for configured bead repositories; no upstream yields no finding | Existing carry-over, no G id |
 | `no-live:<persona>` | Missing delivery target, only when pulse is armed and a target exists | Existing carry-over, no G id |
 | `backup-stale` | Armed backup policy and archive observation under ADR 0036; no archive is stale | LANE, no G id |
+| `pulse-unarmed` | Nothing is listening on the pulse feed while the pulse is armed, `pulse_feed:` is on and a coordinator session is live: the waiter's `flock(state/pulse.wait.lock)` is free, or held by a waiter older than `pulse_renag` plus one tick, which is wedged by its own maximum life (ADR 0093 D3). One key for both causes, which the detail names, because the fact and the remedy are one. A probe that cannot be taken is a partial view and never a row | LANE, no G id |
 
 The table describes current computations, not a new enum. Key is identity;
 changing detail text, age or percentage alone must not make a fresh pulse

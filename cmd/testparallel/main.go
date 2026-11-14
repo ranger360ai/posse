@@ -308,6 +308,26 @@ func main() {
 		"TestPulseWaitHoldsTheLockWhileItBlocks":              "asserts flock acquisition",
 		"TestPulseWaitLockDiesWithItsProcess":                 "asserts flock acquisition",
 		"TestPulseWaitEveryExitNamesTheCursorLast":            "asserts flock acquisition",
+		// D3's switch and the feed arms that now run behind a listening
+		// waiter (ADR 0093, ranger-base-r3qz6): each one either arms the
+		// waiter lock or probes it, which is the same 9l77f shape. The arms
+		// in those two files that take NEITHER — the config spellings, the
+		// wedge bound at the unit, the cap over pulseFeedWrite, and the
+		// free-lock fallback — carry t.Parallel and are deliberately not
+		// here.
+		"TestPulseFeedIsTheDeliveryWhileAWaiterHoldsTheLock":        "asserts flock acquisition",
+		"TestPulseFeedDeliversToAWorkingCoordinator":                "asserts flock acquisition",
+		"TestPulseTypesWhenTheWaiterIsWedged":                       "asserts flock acquisition",
+		"TestPulseWaiterAtExactlyTheRenagIsStillListening":          "asserts flock acquisition",
+		"TestPulseConcedesToAHolderItCannotAge":                     "asserts flock acquisition",
+		"TestPulseConcedesAnUnaskableProbeToTheFeed":                "asserts flock acquisition",
+		"TestPulseFeedArmDoesNotAdvanceTheRecordWhenTheAppendFails": "asserts flock acquisition",
+		"TestPulseFeedOffKeepsTheTypedPathUnchanged":                "asserts flock acquisition",
+		"TestPulseFeedAppendsADeltaNotTheSet":                       "asserts flock acquisition",
+		"TestPulseFeedCountMoveIsOneTildeToken":                     "asserts flock acquisition",
+		"TestPulseFeedRenagSaysStillAndNamesTheKeys":                "asserts flock acquisition",
+		"TestPulseFeedPartialReadHoldsRatherThanClears":             "asserts flock acquisition",
+		"TestQAPulseUnarmedIsTheRowWhileNobodyIsListening":          "asserts flock acquisition",
 		// The two that ranger-base-zppcv moved into launchlock_test.go. The
 		// first carried t.Parallel in worktree_test.go and is the only
 		// acquisition test the rule above had missed: it releases a lock and

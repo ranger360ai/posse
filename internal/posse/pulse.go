@@ -26,9 +26,17 @@ package posse
 // state/pulse.feed — what moved since the last delivery, not the whole set
 // — and state/pulse.yaml's dedup half is `delivered_keys` (the keys that
 // were said) in place of the fingerprint it computed them into. The feed is
-// the channel D1's `posse pulse wait` reads; in THIS slice the typed pulse
-// is still the delivery and the feed is its faithful record, and D3 is what
-// swaps which of the two is primary.
+// the channel D1's `posse pulse wait` reads.
+//
+// And since D3 (ranger-base-r3qz6) the FEED is the primary channel: a due
+// tick probes the waiter's flock, and a waiter that is listening gets the
+// delta on the feed with nothing typed into any pane — which is what ends
+// the splice class by construction. The keyboard is the fallback for a
+// coordinator that is not armed, it says so in the text it types (`arm the
+// feed:`), it refuses to type over text the operator left in the box on rex
+// (D4), and `pulse-unarmed` carries the same fact to `posse status`
+// (govern.go). `pulse_feed: off` is the exit hatch: no feed, no probe, no
+// reminder, no condition, and ADR 0027's typed path exactly as it was.
 //
 // That widening broke ADR 0027 §1's "never bd, never the plan endpoint"
 // boundary, deliberately and with the design's eyes open: G2/G3/G9 are bd
@@ -83,6 +91,41 @@ type PulseConfig struct {
 	Interval time.Duration
 	Persona  string
 	Renag    time.Duration
+
+	// Feed is ADR 0093's channel: the delta feed, the waiter lock that
+	// switches delivery onto it (D3), the typed fallback's reminder and the
+	// `pulse-unarmed` condition. `pulse_feed: off` turns all four off and
+	// leaves ADR 0027's typed path exactly as it was — the ADR's exit
+	// hatch, and the default is ON.
+	//
+	// WHAT THE HATCH DOES NOT TURN OFF, said here because "unchanged" is
+	// the ADR's word and this is a deliberate reading of it: D4's composer
+	// hold stays armed (deliverPulse). The hatch exists so that a feed or a
+	// waiter that misbehaves cannot silence the shop check; D4 is a guard
+	// on the KEYBOARD, not part of the feed, and switching it off with the
+	// feed would make the exit hatch a splice regression — the operator
+	// would reach for it precisely when the pulse is typing most, which is
+	// when the hold matters. ranger-base-r3qz6's bead carries this.
+	Feed bool
+}
+
+// pulseFeedOff spells the hatch. `off`, `never`, `0` and `false` all read as
+// off, which is graceAfter's vocabulary plus the boolean spelling
+// model_preflight: uses — one shop, one way to say off.
+//
+// ANY OTHER VALUE READS AS ON, including a typo. Both directions cost
+// something and this is the cheaper one: a mistyped hatch leaves the new
+// channel running, where a rule of "anything but `on` is off" would let one
+// mistyped character take the feed, the waiter and the condition out
+// silently. It is not an error either — LoadPulseConfig's error disarms the
+// whole pulse for the loop, which is far too much for a hatch nobody is
+// obliged to set.
+func pulseFeedOff(v string) bool {
+	switch strings.TrimSpace(v) {
+	case "off", "never", "0", "false":
+		return true
+	}
+	return false
 }
 
 // LoadPulseConfig reads config.yaml's pulse_* keys. Disarmed (pulse_interval
@@ -101,6 +144,7 @@ func LoadPulseConfig(a *App) (PulseConfig, error) {
 		Interval: interval,
 		Persona:  pulsePersona(a),
 		Renag:    DefaultPulseRenag,
+		Feed:     !pulseFeedOff(a.CfgGet("pulse_feed", "")),
 	}
 	if v := a.CfgGet("pulse_renag", ""); v != "" {
 		if d, err := ParseInterval(v); err == nil {
@@ -140,6 +184,29 @@ func PulseFeedPath(a *App) string { return filepath.Join(a.StateDir, "pulse.feed
 // that is about four and a half days, and the deltas this feed carries are
 // much quieter than the sets they replaced.
 const PulseFeedLines = 500
+
+// pulseWedgeBound is how old a lock-holding waiter may be before D3's probe
+// reads it as wedged rather than as a listener: one pulse_renag plus one
+// tick (ranger-base-r3qz6's bead, from ADR 0093's "a waiter older than that
+// is wedged").
+//
+// WHY THE EXTRA TICK. The waiter's own maximum life is exactly pulse_renag
+// (pulseWaitLife), so a healthy waiter armed one instant before a tick is
+// `renag` old at the tick that would judge it — and judging it wedged there
+// would be judging a waiter that is at this moment exiting on purpose, with
+// its replacement a turn away. The slack is one INTERVAL because the thing
+// being tolerated is the gap between the waiter's clock and the tick that
+// reads it, and that gap is at most one tick by construction.
+//
+// A disarmed or unconfigured pulse answers zero, which ages nothing: a
+// bound guessed from defaults would judge a holder against an interval this
+// instance does not run.
+func pulseWedgeBound(cfg PulseConfig) time.Duration {
+	if cfg.Renag <= 0 {
+		return 0
+	}
+	return cfg.Renag + cfg.Interval
+}
 
 // PulseState is the ticker's whole persisted record, and since ADR 0027's
 // 2026-09-05 simplification that is delivery bookkeeping and nothing else:
@@ -494,6 +561,30 @@ func PulseFeedSeq(line string) (int, bool) {
 	return n, true
 }
 
+// pulseFeedMaxSeq is the highest sequence number the feed can still account
+// for, and 0 for a feed with no readable entry at all. The MAXIMUM and not
+// the last line's, for the reason pulseFeedWrite's own note gives: a corrupt
+// tail would otherwise restart the sequence.
+//
+// Two readers, one reading (ranger-base-r3qz6): the next sequence number to
+// hand out is this plus one, and the cursor the typed fallback tells the
+// coordinator to arm with is this exactly — the newest entry it could
+// already have. Arming with it means the coordinator's first wake carries
+// the delta the fallback just typed, once, which is the direction that
+// repeats a line rather than losing one.
+func pulseFeedMaxSeq(entries []string) int {
+	max := 0
+	for _, ln := range entries {
+		if n, ok := PulseFeedSeq(ln); ok && n > max {
+			max = n
+		}
+	}
+	return max
+}
+
+// pulseFeedCursor is pulseFeedMaxSeq over the feed on disk.
+func pulseFeedCursor(path string) int { return pulseFeedMaxSeq(pulseFeedEntries(path)) }
+
 // pulseFeedWrite appends one entry to the feed and returns its sequence
 // number. Read, append, cap, atomic rewrite — a whole-file writer like
 // WritePulseState beside it, and for the same reason: the ticker goroutine
@@ -511,12 +602,7 @@ func PulseFeedSeq(line string) (int, bool) {
 // like nothing happening.
 func pulseFeedWrite(path string, at time.Time, body string) (int, error) {
 	entries := pulseFeedEntries(path)
-	seq := 1
-	for _, ln := range entries {
-		if n, ok := PulseFeedSeq(ln); ok && n >= seq {
-			seq = n + 1
-		}
-	}
+	seq := pulseFeedMaxSeq(entries) + 1
 	entries = append(entries, fmt.Sprintf("%d %s %s", seq, at.UTC().Format(time.RFC3339), body))
 	if len(entries) > PulseFeedLines {
 		entries = entries[len(entries)-PulseFeedLines:]
@@ -540,19 +626,24 @@ func pulseFeedWrite(path string, at time.Time, body string) (int, error) {
 // and the typed path's can be read against each other out of one log — which
 // is what ADR 0093's done-when rows 1 and 3 ask for.
 //
-// A feed that cannot be written is a diagnostic and never a failed tick. In
-// this slice the typed pulse has already gone out by the time this is
-// called, so a failed append costs the feed one line and the delivery
-// nothing; the record still advances, because what it records is that the
-// coordinator was told.
-func (d *Dispatcher) appendPulseFeed(at time.Time, body string) {
+// WHETHER A FAILED APPEND IS A FAILED DELIVERY DEPENDS ON THE ARM, which is
+// why this hands back `ok` since ADR 0093 D3 (ranger-base-r3qz6). On the
+// typed arm the prompt has already gone out by the time this is called, so a
+// failed append costs the feed one line and the delivery nothing — the
+// record still advances, because what it records is that the coordinator was
+// told. On the FEED arm the append IS the delivery: a line that did not land
+// said nothing, so the record must not advance and the next tick retries.
+// Both readings are at the call sites; what is here is the diagnostic, which
+// is the same either way.
+func (d *Dispatcher) appendPulseFeed(at time.Time, body string) (int, bool) {
 	path := PulseFeedPath(d.App)
 	seq, err := pulseFeedWrite(path, at, body)
 	if err != nil {
 		d.equietf("pulse: cannot append %s: %v\n", AbbrevHome(path), err)
-		return
+		return 0, false
 	}
 	d.quietf("pulse: feed %d %s\n", seq, body)
+	return seq, true
 }
 
 // pulseLoop runs the shop check every cfg.Interval until ctx ends — the
@@ -631,7 +722,10 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 		// renag clock so the next non-empty set — even an identical episode
 		// — is a fresh delivery rather than a renag.
 		if !tick.Partial {
-			if len(state.DeliveredKeys) > 0 {
+			// Gated on the hatch like every other line (`pulse_feed: off`
+			// writes no feed at all); the RECORD is reset either way,
+			// because dedup state is ADR 0027's and predates the channel.
+			if cfg.Feed && len(state.DeliveredKeys) > 0 {
 				d.appendPulseFeed(tick.At, "cleared all")
 			}
 			state.DeliveredKeys = nil
@@ -696,6 +790,8 @@ func (d *Dispatcher) govInputs(cfg PulseConfig) GovInputs {
 		Caller:            "pulse",
 		PulsePersona:      cfg.Persona,
 		Pulsing:           true,
+		PulseFeed:         cfg.Feed,
+		PulseWedge:        pulseWedgeBound(cfg),
 		GuardTrippedSince: d.guardStreak(),
 		Suspended:         d.suspendedSince,
 		Spend:             d.Spend,
@@ -751,6 +847,46 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 	due := changed || state.PromptedAt.IsZero() || tick.At.Sub(state.PromptedAt) >= cfg.Renag
 	if !due {
 		return
+	}
+
+	// ── ADR 0093 D3 · which channel this delivery goes out on ────────────
+	//
+	// The switch is a non-blocking probe of the waiter's flock, and the
+	// whole reason it is a lock and not a record is that release IS death
+	// (pulsewait.go): a coordinator whose waiter, session or box has gone
+	// cannot leave the switch on behind it.
+	//
+	// A LISTENING WAITER MEANS THE FEED IS THE DELIVERY and nothing is
+	// typed, which is what ends the splice class by construction rather
+	// than by care — the measured failure is three spliced coordinator
+	// turns on 2026-11-13 alone, two writers on one byte stream with no
+	// lock (ADR 0093 Context). It also means delivery cannot be refused: a
+	// waiter is blocked on a FILE, so there is no idle-only gate to pass,
+	// no startup wait and no undeliverable class. Everything below this arm
+	// — the persona, the target, the readiness gate, the composer — exists
+	// because the old channel was a keyboard.
+	//
+	// THE PROBE'S ERROR IS NOT AN ANSWER. PulseListener.Listening concedes
+	// on it, and the line below says so: a probe nobody could take read as
+	// "nobody is listening" is exactly what types into the pane of a
+	// session that is.
+	if cfg.Feed {
+		listener := ReadPulseListener(d.App, tick.At, pulseWedgeBound(cfg))
+		if listener.Err != nil {
+			d.equietf("pulse: waiter lock %s %s — delivering on the feed anyway, because a probe that could not be taken is ignorance and never `nobody is listening` (ADR 0093 D3)\n",
+				AbbrevHome(PulseWaitLockPath(d.App)), listener.Line())
+		}
+		if listener.Listening() {
+			d.deliverPulseOnFeed(tick, state, delta, listener)
+			return
+		}
+		// Free, or held by a waiter past its own maximum life. Either way
+		// no one is listening, so the typed fallback runs and the text
+		// gains the reminder that arms the feed (D4, pulsePromptText) — a
+		// coordinator that forgot to re-arm is reminded through the old
+		// channel rather than going dark, and `pulse-unarmed` says the same
+		// thing on `posse status` (govern.go).
+		d.quietf("pulse: %s — falling back to the typed pulse (ADR 0093 D3)\n", listener.Line())
 	}
 
 	if cfg.Persona == "" {
@@ -851,7 +987,59 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 			name, ellipsis(typed, 60))
 	}
 
-	text := pulsePromptText(tick.Conditions)
+	// ── ADR 0093 D4 · the fallback refuses to type over the operator ─────
+	//
+	// The reading is ranger-base-qzujz's, off ONE capture of this seat's
+	// screen: the composer, then the echo check against the line this
+	// pane's own runtime says it last submitted, then the ghost check for a
+	// line claude drew faint (capturedcomposer.go). What is left after
+	// those two is text somebody TYPED and has not sent, and typing a shop
+	// check after it submits one garbled message made of two.
+	//
+	// REX ONLY, and that is the whole of what distinguishes this from the
+	// gate ranger-base-wr624 removed. herdr's composer reading is the
+	// phantom-prone one — a region that still carried a line the operator
+	// had already sent, ~586 consecutive skips and the pulse arm off for
+	// ~10 hours of 2026-09-04 — and it cannot clear itself, because only a
+	// new operator message replaces the phantom. It stays report-only
+	// (above). This reading has the discriminator that one lacked: a store
+	// of record for "was this submitted", asked FIRST, and every failure on
+	// the way answers "not an echo" and leaves the text a hold.
+	//
+	// THE HOLD IS A SKIP AND NOT A FAILURE: the record is left unadvanced,
+	// so the same delta is retried next tick and nothing is gated behind
+	// renag for a delivery that never went out. That is the same shape as
+	// every other skip above it.
+	//
+	// THE RESIDUAL IS HONEST (ADR 0093 D4): the operator can type in the
+	// few ms between this capture and `rex send`, or between `send` and the
+	// Enter. D1's waiter is what closes that window; this shrinks it on the
+	// path D3 should be making rare, and the line below is what explains a
+	// garbled turn after the fact.
+	if hold, ok := d.HB.rexComposerHold(seat); ok {
+		switch {
+		case hold.Typed != "":
+			d.quietf("pulse: held — %s box holds operator text (%q)\n", name, ellipsis(hold.Typed, 60))
+			return
+		case hold.Sent != "":
+			// Reported, never acted on: this is the reading wr624's gate
+			// could not take, and saying it is what makes the hold above
+			// evidence of a reading rather than of a fixture.
+			d.quietf("pulse: %s box echoes its own last submit (%q) — not a hold\n", name, ellipsis(hold.Sent, 60))
+		case hold.Ghost != "":
+			d.quietf("pulse: %s box holds claude's own suggestion (%q) — not a hold\n", name, ellipsis(hold.Ghost, 60))
+		}
+	}
+
+	// The reminder rides on the typed text when the feed is armed at all
+	// (D3): the cursor is the newest entry the feed holds NOW, so the
+	// coordinator's first wake after arming carries this delivery's own
+	// line — once — rather than starting after it.
+	arm := ""
+	if cfg.Feed {
+		arm = PulseWaitCommand(pulseFeedCursor(PulseFeedPath(d.App)))
+	}
+	text := pulsePromptText(tick.Conditions, arm)
 	if _, err := d.HB.Mux().Prompt(seat, text, false, 0); err != nil {
 		d.equietf("pulse: prompt failed for %s: %v\n", name, err)
 		return
@@ -868,19 +1056,80 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 	state.DeliveredKeys = pulseDelivered(tick.Conditions, delta.Held)
 	state.PromptedAt = tick.At
 
-	// The feed line goes out HERE, after the prompt landed, and that is this
-	// slice's whole shape (ADR 0093 D2, "typed delivery unchanged"): the
-	// typed pulse is still the delivery and the feed is its faithful record,
-	// so the two advance together with the record that says what was said.
+	// The feed line goes out HERE, after the prompt landed, and it still
+	// does under D3 — which is the one place this file reads D3's prose
+	// narrowly, so it is argued rather than assumed (ranger-base-r3qz6).
 	//
-	// D3 is what moves this: there the line is appended on any due tick,
-	// before the lock decides whether anything gets typed at all. Appending
-	// it that early TODAY would be wrong in both available ways — advance
-	// the record with it and a delta is lost whenever the coordinator is
-	// away, which is 986 of the 1323 ticks ADR 0093 measured; leave the
-	// record unadvanced and every blocked tick re-appends the same delta
-	// until the 500-line cap eats the feed.
-	d.appendPulseFeed(tick.At, pulseFeedBody(delta, state.DeliveredKeys))
+	// D3 says that on a free lock "the watch appends the line anyway and
+	// falls back to the typed pulse". Read as "append on any due tick,
+	// whatever happens to the typed delivery", that is one of the two
+	// orders ranger-base-hkqpq measured and rejected, and the rejection
+	// does not weaken with a waiter in the world:
+	//
+	//   - append and ADVANCE on a due tick: the ticks where the typed pulse
+	//     cannot land — 986 of 1323 in ADR 0093's own 70h window, a
+	//     coordinator blocked or working — consume their delta into a feed
+	//     that, on this arm, nobody is holding the lock on. Said to nobody,
+	//     by a record that says it was said.
+	//   - append on a due tick, advance only on delivery: every such tick
+	//     re-appends the same delta. At a 2m interval the 500-line cap is
+	//     full in about 17 hours of a sleeping coordinator and the oldest
+	//     real entries are gone.
+	//
+	// So the invariant is the one hkqpq landed and D3 moves rather than
+	// retires: THE APPEND AND THE RECORD ADVANCE ARE ONE ACT, with the
+	// delivery. When a waiter is listening the feed IS the delivery and
+	// both happen there (deliverPulseOnFeed); when it is not, the typed
+	// pulse is the delivery and both happen here. A tick that said nothing
+	// writes nothing, and the delta it could not say is still owed, because
+	// the record it is computed against has not moved.
+	//
+	// What that costs, exactly: a coordinator that re-arms after a stretch
+	// of ticks it could not be typed to gets the NET delta at the next due
+	// tick, not one line per intermediate step. A key that appeared and
+	// cleared inside that stretch is never named. The alternative is one of
+	// the two measured failures above.
+	//
+	// Under the hatch there is no line at all: `pulse_feed: off` is ADR
+	// 0027's typed path unchanged, and a path that still wrote the feed
+	// would be a hatch that turned off only the half of the channel the
+	// coordinator can see.
+	if cfg.Feed {
+		d.appendPulseFeed(tick.At, pulseFeedBody(delta, state.DeliveredKeys))
+	}
+}
+
+// deliverPulseOnFeed is delivery when a waiter is listening (ADR 0093 D3):
+// the feed line IS the delivery, nothing is typed, and the record advances
+// with the line that carried it.
+//
+// IT CANNOT BE REFUSED and that is the point of the channel — a waiter is
+// blocked on a file, not sitting at a keyboard, so there is no idle-only
+// rule to pass, no readiness gate, no composer to read and no undeliverable
+// case. The 1002 ticks ADR 0093 measured as skipped (986 blocked, 16
+// working) are deliveries on this arm.
+//
+// A FAILED APPEND IS A FAILED DELIVERY HERE, which is the one asymmetry with
+// the typed arm: the line is the whole of what was said, so when it does not
+// land the record stays where it was and the next tick retries the same
+// delta. Nothing is lost and nothing is announced that was not said.
+//
+// The listener rides in only to be named in the log. It decided the arm
+// already, and the line is what lets ADR 0093's done-when rows 1 and 3 be
+// read out of one log: a `→ feed` with the holder beside it, against a
+// `→ prompted`.
+func (d *Dispatcher) deliverPulseOnFeed(tick pulseTick, state *PulseState, delta pulseDelta, l PulseListener) {
+	// Held keys go back into the record alongside what was seen, exactly as
+	// on the typed arm, so the NEXT tick's delta is against everything
+	// standing and not against the subset this tick could read.
+	standing := pulseDelivered(tick.Conditions, delta.Held)
+	seq, ok := d.appendPulseFeed(tick.At, pulseFeedBody(delta, standing))
+	if !ok {
+		return
+	}
+	state.DeliveredKeys = standing
+	state.PromptedAt = tick.At
+	d.quietf("pulse: %s → feed %d (%s)\n", strings.Join(tick.Conditions, "; "), seq, l.Line())
 }
 
 // pulseTarget finds cfg.Persona's live session among sessions — first match
@@ -912,8 +1161,24 @@ func pulseTarget(sessions []HerdrSession, persona string) (name string, seat Sea
 // tells the session what to re-verify rather than what to do — dispatch's
 // own stores (rhq list, git, bd) stay the record. One line, like every
 // other prompt this codebase assembles (workPrompt, LandingPrompt).
-func pulsePromptText(conditions []string) string {
-	return fmt.Sprintf(
+//
+// `arm` is ADR 0093 D3's reminder — the command that arms the feed, with the
+// cursor in it — and "" is every delivery that does not need one: a pulse
+// with `pulse_feed: off`, which is ADR 0027's path unchanged. A typed pulse
+// only ever goes out when no waiter is listening, so when the feed is on,
+// the reminder is on every one of them: the coordinator is being typed at
+// BECAUSE it is not armed, and a reminder it only gets sometimes is one it
+// cannot rely on.
+//
+// Appended rather than woven in, which keeps the marker and the conditions
+// byte-identical to what the fingerprint, the watch log and every grep over
+// this text already see (GovLines is the same bytes — see govern.go).
+func pulsePromptText(conditions []string, arm string) string {
+	text := fmt.Sprintf(
 		"Pulse check: %s — re-verify against live state (rhq list, git, bd) before acting, then work your standing intents. No authority; the stores stay the record.",
 		strings.Join(conditions, "; "))
+	if arm != "" {
+		text += " — arm the feed: " + arm
+	}
+	return text
 }

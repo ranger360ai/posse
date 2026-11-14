@@ -257,6 +257,111 @@ func PulseWaiterArmed(a *App) (bool, error) {
 	return false, nil
 }
 
+// PulseListener is one probe of the waiter lock as the WATCH has to read it
+// (ADR 0093 D3, ranger-base-r3qz6): not "is a process holding this file" but
+// "is there a listener that will print what I append".
+//
+// Those are two questions because of the wedge (ADR 0093's "what breaks if
+// this is wrong"): a waiter that holds the lock and cannot print silences the
+// typed path, and from outside, a wedged process and a healthy one waiting on
+// a quiet shop are the same thing — both hold the lock and say nothing. What
+// tells them apart is AGE, which is why the waiter has a maximum life
+// (pulseWaitLife): it exits after one pulse_renag even with nothing to say,
+// so a holder older than that bound is not waiting, it is stuck.
+//
+// Armed stays the kernel's answer and nothing else's. Age is the body's, and
+// the body is the only record of when the holder armed — which is a
+// DEPARTURE from this file's "the body decides nothing", and a narrow one:
+// the body still decides nothing about whether a waiter is armed, and a
+// holder whose body cannot be read is NOT judged wedged (Wedged false, Age
+// zero). ADR 0013 §1's unknown-is-not-no, in the direction that keeps the
+// keyboard quiet: the cost is a wedged waiter whose stamp never landed
+// silencing the typed path for as long as it sits there, against the cost of
+// typing into the pane of a session that is listening, which is the splice
+// this whole ADR exists to end.
+type PulseListener struct {
+	// Armed is the kernel's answer to D3's switch: some process holds
+	// flock(state/pulse.wait.lock).
+	Armed bool
+	// Holder is the recorded identity, nil when the body could not be read.
+	// It names the holder in a message and decides nothing.
+	Holder *PulseWaiter
+	// Age is how long the holder says it has been armed; zero when unknown,
+	// which is every holder with no readable `started:`.
+	Age time.Duration
+	// Wedged is Armed, with a recorded age past the bound. A waiter that
+	// should have self-exited and did not.
+	Wedged bool
+	// Err is "the probe could not be asked" — never "no waiter". Its one
+	// honest reading is ignorance, and the two callers differ on what they
+	// do with it: the watch concedes (Listening below), and `posse status`
+	// reports the set as PARTIAL rather than claiming the feed is unarmed.
+	Err error
+}
+
+// Listening is D3's switch: does this delivery go to the feed rather than to
+// a keyboard.
+//
+// AN UNANSWERABLE PROBE ANSWERS TRUE, which is the one surprising line in
+// this file and the one PulseWaiterArmed's own note demands: reading
+// ignorance as "no listener" is what types a pulse into a pane somebody is
+// listening on. The cost of conceding is that a delta reaches a feed nobody
+// reads and the coordinator waits for the next one; the cost of the other
+// direction is the measured splice. A probe that cannot be taken is also
+// visible — the tick logs it, and `posse status` carries it as a partial
+// read — so it is a concession nobody has to infer.
+func (l PulseListener) Listening() bool { return l.Err != nil || (l.Armed && !l.Wedged) }
+
+// Line is how a log line or a condition names what this probe found. One
+// spelling, because the watch's log and `posse status`'s detail are read
+// against each other.
+func (l PulseListener) Line() string {
+	switch {
+	case l.Err != nil:
+		return "could not be asked (" + l.Err.Error() + ")"
+	case !l.Armed:
+		return "no waiter holds the lock"
+	case l.Wedged:
+		return fmt.Sprintf("a waiter has held the lock for %s (%s) — past its own maximum life, so it is wedged",
+			l.Age.Round(time.Second), l.Holder.Line())
+	default:
+		return "a waiter is armed (" + l.Holder.Line() + ")"
+	}
+}
+
+// ReadPulseListener takes the probe and ages what it found. `bound` is the
+// wedge bound — pulse_renag plus one tick, the caller's to compute, because
+// the interval is config and this file reads none.
+//
+// A zero or negative bound ages nothing: no holder is wedged, which is the
+// behaviour of every caller that cannot say what the bound is.
+func ReadPulseListener(a *App, now time.Time, bound time.Duration) PulseListener {
+	armed, err := PulseWaiterArmed(a)
+	if err != nil {
+		return PulseListener{Err: err}
+	}
+	l := PulseListener{Armed: armed}
+	if !armed {
+		return l
+	}
+	l.Holder, _ = ReadPulseWaiter(PulseWaitLockPath(a))
+	if l.Holder == nil || l.Holder.Started.IsZero() || bound <= 0 {
+		return l
+	}
+	l.Age = now.Sub(l.Holder.Started)
+	l.Wedged = l.Age > bound
+	return l
+}
+
+// PulseWaitCommand is the command the coordinator arms the feed with, and
+// the only place its spelling lives. Three readers now — the waiter's own
+// `next:` line, the typed fallback's reminder, and the `pulse-unarmed`
+// condition's detail (ADR 0093 D3/D4) — and all three are text a human
+// pastes, so a second spelling is a command that does not run.
+func PulseWaitCommand(after int) string {
+	return fmt.Sprintf("posse pulse wait --after %d", after)
+}
+
 // pulseFeedAfter is the whole of the waiter's reading of the feed: which
 // entries a cursor is owed, whether the feed can still account for that
 // cursor, and the cursor to hand back.
@@ -460,6 +565,6 @@ func PulseWait(ctx context.Context, a *App, opt PulseWaitOptions, out io.Writer)
 // lives. The coordinator pastes this line back, so the text is the contract:
 // it must be a command that runs, with the cursor in it.
 func pulseWaitNext(out io.Writer, after int) error {
-	_, err := fmt.Fprintf(out, "next: posse pulse wait --after %d\n", after)
+	_, err := fmt.Fprintln(out, "next: "+PulseWaitCommand(after))
 	return err
 }
