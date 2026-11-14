@@ -181,6 +181,42 @@ func claudeSessionsRegistry(home string, stateGrants []string) []string {
 	return out
 }
 
+// claudePromptHistory is the seatbelt reading of claude's prompt history
+// (ranger-base-wj93u, the darwin half of ranger-base-a544g): <cfg>/history.jsonl
+// and <cfg>/paste-cache, each plus its resolved spelling when that differs,
+// under claudeDebugDir's guard. SeatbeltCarveOut appends these to DenyAll.
+// The process it protects is the operator's prompt recall on darwin: an
+// uncaged claude replays a history row's paste body, inline or from
+// paste-cache/<hash>.txt, as the operator's own submitted turn.
+//
+// A `(subpath …)` naming a file matches that name and nothing beside it, so
+// history.jsonl rides the same subpath block as the directories: one form,
+// and a superset of the literal the design named. Denying file-write* at the
+// NAME refuses unlink, create and a rename onto it as well as the append, so
+// a seat cannot swap in a link the operator's claude would follow. Denying
+// read keeps the operator's prompts and pastes out of the seat too.
+//
+// COST: a caged darwin seat appends no history, so sentline reads its
+// composer as a hold rather than an echo. MEASURED 2026-11-13 on Linux,
+// claude 2.1.323, both names unreadable and unwritable (EACCES): every turn
+// completes, the failed write is logged and dropped (ranger-base-tgc4b).
+// ASSUMED, no darwin box: SBPL's refusal is handled the same way.
+func claudePromptHistory(home string, stateGrants []string) []string {
+	dbg := claudeDebugDir(home, stateGrants)
+	if dbg == "" {
+		return nil
+	}
+	var out []string
+	for _, n := range []string{claudeHistoryFile, claudePasteCacheDir} {
+		p := filepath.Join(filepath.Dir(dbg), n)
+		out = append(out, p)
+		if real := absResolve(p); real != p {
+			out = append(out, real)
+		}
+	}
+	return out
+}
+
 // claudePrivateSessionStateRel is where those members live under the seat's
 // cache dir.
 const claudePrivateSessionStateRel = "claude"

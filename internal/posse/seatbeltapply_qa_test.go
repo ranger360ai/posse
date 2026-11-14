@@ -211,7 +211,11 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	// whether the codex hook's /dev/tty open survives a profile posse
 	// rendered (ADR 0076 Amendment 2's darwin ASSUMED), so it is a
 	// sandbox-exec like any other here and goes behind the same gate.
-	if len(scanned) != 12 {
-		t.Errorf("expected the twelve sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	//
+	// Thirteen since ranger-base-wj93u: wallclaudehistoryseatbelt_qa_test.go
+	// plants a link at history.jsonl under a caged claude seat's rendered
+	// profile and expects the kernel to refuse it.
+	if len(scanned) != 13 {
+		t.Errorf("expected the thirteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }
