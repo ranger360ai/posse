@@ -404,11 +404,9 @@ func (b *HerdrBackend) PaneHolding(target Seat) PaneHold {
 	// copy of a fact that store owns), where the reading below is the same
 	// derived copy read a second way — so where both could speak, the one
 	// with a store behind it does.
-	if sess, err := b.paneAgentSession(target); err == nil {
-		if sent, ok := lastSubmitted(b.ClaudeHistory, sess); ok && submittedEcho(hold.Typed, sent, det.ComposerTruncated()) {
-			hold.Sent, hold.Typed = sent, ""
-			return hold
-		}
+	if sent, ok := b.paneLastSubmitted(target); ok && submittedEcho(hold.Typed, sent, det.ComposerTruncated()) {
+		hold.Sent, hold.Typed = sent, ""
+		return hold
 	}
 	// ranger-base-6o7wm. The other way that text is nobody's to clear:
 	// claude drew it. A suggestion is in NO store — claude logs submits and

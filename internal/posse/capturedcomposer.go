@@ -269,11 +269,9 @@ func (b *HerdrBackend) capturedComposerHold(target Seat, screen string, hold Pan
 		Bytes: len(hold.Typed),
 		Text:  hold.Typed,
 	})
-	if sess, err := b.paneAgentSession(target); err == nil {
-		if sent, ok := lastSubmitted(b.ClaudeHistory, sess); ok && capturedEcho(hold.Typed, sent) {
-			hold.Sent, hold.Typed = sent, ""
-			return hold
-		}
+	if sent, ok := b.paneLastSubmitted(target); ok && capturedEcho(hold.Typed, sent) {
+		hold.Sent, hold.Typed = sent, ""
+		return hold
 	}
 	// ranger-base-6o7wm's reading, through this occupant's own ansi capture.
 	// Recorded whether or not it retired the claim, for ADR 0066 D1's reason

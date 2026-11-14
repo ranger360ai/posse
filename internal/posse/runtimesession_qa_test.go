@@ -454,3 +454,105 @@ func TestQAARexJoinReadsTheSeatsPrivateRowBeforeTheSharedOne(t *testing.T) {
 		t.Errorf("paneAgentSession = %q, %v; want the private row's %q — rexAgentSession must hand the join ClaudeSeatHome", got, err, qzujzSession)
 	}
 }
+
+// ─── the seat-private submit log (ranger-base-a544g) ─────────────────────────
+
+// historyRow is one claude submit row in the shape lastSubmitted reads.
+func historyRow(t *testing.T, session, display string) string {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"display": display, "sessionId": session, "project": "/p", "timestamp": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw) + "\n"
+}
+
+// A caged claude seat's history.jsonl is a private file bind, so its submits
+// land under SeatCacheDir(home, its cwd) and never in the shared log. The
+// echo read takes that log FIRST and falls through to the shared one; a
+// session in neither answers "no echo". The protected reading is sentline's
+// echo verdict (panework.go, capturedcomposer.go): read only the shared log
+// and every caged seat's echo goes off, read the private one second and a
+// host-side row would outrank the seat's own.
+func TestQAEchoReadsTheSeatsPrivateSubmitLogBeforeTheSharedOne(t *testing.T) {
+	t.Parallel()
+
+	start := ownProcStart(t)
+	pid := os.Getpid()
+	cwd, err := procCwdOf(pid)
+	if err != nil {
+		t.Fatalf("procCwdOf(own pid) = %v — the kernel's cwd reading is what finds the private log", err)
+	}
+	history := armClaudeSessionRow(t, nil, pid, map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": start})
+	if err := os.WriteFile(history, []byte(historyRow(t, qzujzSession, "the shared row")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	priv := claudePrivateHistoryPath(home, cwd)
+	if want := filepath.Join(SeatCacheDir(home, cwd), claudePrivateSessionStateRel, claudeHistoryFile); priv != want {
+		t.Fatalf("private log path = %q, want %q — the file the bwrap render binds over <cfg>/history.jsonl", priv, want)
+	}
+	if err := os.MkdirAll(filepath.Dir(priv), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sequential: every step rewrites the one private log.
+	for _, c := range []struct {
+		name          string
+		private       string // "" = no private log
+		history, home string
+		want          string
+		ok            bool
+	}{
+		{"the private row answers before the shared one", historyRow(t, qzujzSession, "the seat's own row"), history, home, "the seat's own row", true},
+		{"no private log falls through to the shared one", "", history, home, "the shared row", true},
+		{"a private log without the session falls through", historyRow(t, "11111111-1111-4111-8111-111111111111", "another session"), history, home, "the shared row", true},
+		{"no home reads no private log", historyRow(t, qzujzSession, "the seat's own row"), history, "", "the shared row", true},
+		{"no shared log reads nothing, private log or not", historyRow(t, qzujzSession, "the seat's own row"), "", home, "", false},
+	} {
+		_ = os.Remove(priv)
+		if c.private != "" {
+			if err := os.WriteFile(priv, []byte(c.private), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, ok := lastSubmittedOfPID(c.history, c.home, pid, qzujzSession)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s: answered %q, %v; want %q, %v — sentline's echo verdict is this line", c.name, got, ok, c.want, c.ok)
+		}
+	}
+	if got, ok := lastSubmittedOfPID(history, home, pid, "00000000-0000-4000-8000-000000000000"); ok {
+		t.Errorf("a session in neither log answered %q — it must read as no echo", got)
+	}
+
+	// Through the backend, on rex: the owner pid the occupant names is the pid
+	// whose cwd finds the private log, and both echo callers ask this door.
+	b, _ := newTestBackend(t)
+	b.Slot = rexSeedOwnedBy(t, &RexOwner{PID: pid, Name: claudeRuntimeProcName}, claudeProcTable(pid))
+	b.ClaudeHistory, b.ClaudeSeatHome = history, home
+	if err := os.WriteFile(priv, []byte(historyRow(t, qzujzSession, "the seat's own row")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := b.paneLastSubmitted(rexTestSeat()); !ok || got != "the seat's own row" {
+		t.Errorf("paneLastSubmitted = %q, %v; want the private log's row — the rex arm must hand the read the owner pid and ClaudeSeatHome", got, ok)
+	}
+}
+
+// Both echo callers ask paneLastSubmitted and not lastSubmitted over the
+// shared log: a caller that went back to the shared-only read would lose
+// every caged seat's echo, and nothing else would notice.
+func TestQAEchoCallersAskThePrivateFirstDoor(t *testing.T) {
+	t.Parallel()
+	for _, f := range []string{"panework.go", "capturedcomposer.go"} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(src), "b.paneLastSubmitted(target)") {
+			t.Errorf("%s does not ask b.paneLastSubmitted — the echo read would skip a caged seat's private log (ranger-base-a544g)", f)
+		}
+		if strings.Contains(string(src), "lastSubmitted(b.ClaudeHistory") {
+			t.Errorf("%s reads the shared submit log directly — the private log must be read first (ranger-base-a544g)", f)
+		}
+	}
+}

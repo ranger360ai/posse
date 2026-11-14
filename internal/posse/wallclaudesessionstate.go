@@ -79,7 +79,34 @@ import "path/filepath"
 // reader-side half: claudeSessionOfPID reads the seat's private row (found
 // through /proc/<pid>/cwd) before the shared one. A caged claude survives the
 // bind with its own registration intact (MEASURED, ranger-base-tii0u).
-var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history", "debug", claudeSessionsDir}
+//
+// paste-cache/ joins for ranger-base-a544g, beside a FILE bind over
+// history.jsonl (claudePrivateSessionState, below). history.jsonl gets one
+// row per interactive submit, and a short paste rides INLINE in that row;
+// paste-cache/ holds the body of a long paste a row names by hash. Two
+// readers act on what they find, and both are what this protects:
+//
+//   - the operator's prompt recall (up-arrow, history search) in an UNCAGED
+//     claude loads rows for its cwd and fills each paste from the row or the
+//     cache file, re-hashing nothing. A seat that plants a row or rewrites a
+//     cached paste changes what the operator submits under their own name.
+//   - posse's sentline (lastSubmittedOfPID) reads the last row for a seat's
+//     session as the echo-vs-hold verdict; a planted row makes a held draft
+//     read as an echo, and posse types over it.
+//
+// A private copy means the seat appends its own rows and pastes privately,
+// reads nobody else's (the operator's prompts included), and writes none.
+// The file bind is a mountpoint inside the seat's namespace, so the seat
+// cannot unlink or rename over it. The reader-side half is
+// lastSubmittedOfPID: the private log first, found through /proc/<pid>/cwd.
+// MEASURED, design ranger-base-tgc4b: claude 2.1.323 interactive, private
+// file and dir binds, every turn answered and recall worked from the private
+// copy. Not closed here: ranger-base-0qpsw.
+var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history", "debug", claudeSessionsDir, claudePasteCacheDir}
+
+// claudePasteCacheDir is claude's long-paste store, a member of the list
+// above (ranger-base-a544g).
+const claudePasteCacheDir = "paste-cache"
 
 // claudeDebugDirName is the member above whose carve the two mechanisms spell
 // differently: bwrap gives the seat a private copy (it is in the list above),
@@ -182,6 +209,14 @@ func claudePrivateSessionState(home, cwd string, stateGrants []string) []Private
 			Dst: filepath.Join(cfg, n),
 		})
 	}
+	// history.jsonl is a FILE, so its private copy is a file bind; why it is
+	// private at all is above claudeSessionStateDirNames. The source is the
+	// path lastSubmittedOfPID reads, from the one helper.
+	out = append(out, PrivateBind{
+		Src:  claudePrivateHistoryPath(home, cwd),
+		Dst:  filepath.Join(cfg, claudeHistoryFile),
+		File: true,
+	})
 	return out
 }
 

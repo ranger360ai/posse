@@ -13,12 +13,14 @@ package posse
 //	go test ./internal/posse -run 'WallClaudeSessionState' -v
 
 import (
+	"bufio"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -517,5 +519,265 @@ func TestLiveWallClaudeSessionStateKeepsThePeerRegistryPrivate(t *testing.T) {
 	got, err := claudeSessionOfPID(filepath.Join(f.cfg, claudeHistoryFile), f.home, pid)
 	if err != nil || got != ownSession {
 		t.Errorf("the rex join answered %q, %v for the caged seat's pid %d, want its own %q from the private row — sentline's echo verdict reads whichever conversation this names", got, err, pid, ownSession)
+	}
+}
+
+// ─── history.jsonl and paste-cache/ (ranger-base-a544g) ──────────────────────
+
+// The render: a claude seat's history.jsonl is a FILE bind of its own private
+// log over the shared one, after the config-dir grant, and the launcher makes
+// both ends as empty 0600 files when they are absent (a mount needs a name to
+// cover). paste-cache/ is a member of claudeSessionStateDirNames, which the
+// dir-bind pin above walks.
+func TestQAWallClaudeSessionStateRendersTheHistoryFileBind(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f, _, _ := cssFixture(t)
+	if !containsString(claudeSessionStateDirNames, "paste-cache") {
+		t.Errorf("paste-cache is not a private member %v — every seat can rewrite a paste the operator's prompt recall fills in (ranger-base-a544g)", claudeSessionStateDirNames)
+	}
+	shared := filepath.Join(f.cfg, claudeHistoryFile)
+	if err := os.Remove(shared); err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := absResolve(f.cfg)
+	grant := bindIndex(r.Argv, cfg, cfg)
+	if grant < 0 {
+		t.Fatalf("the fixture's config dir is not granted, so nothing here is measured: %q", r.Argv)
+	}
+	src, dst := claudePrivateHistoryPath(f.home, f.dir), filepath.Join(cfg, claudeHistoryFile)
+	switch i := bindIndex(r.Argv, src, dst); {
+	case i < 0:
+		t.Fatalf("no private file bind of %s over %s — every seat can plant a row the operator's prompt recall submits (ranger-base-a544g)\n argv: %q", src, dst, r.Argv)
+	case i < grant:
+		t.Errorf("the history bind comes before the config-dir grant at %d, so the grant covers it again", grant)
+	}
+	var points []string
+	for _, s := range r.Prep {
+		if s.Kind == PrepMaskPoint {
+			points = append(points, s.Path)
+		}
+	}
+	if !containsString(points, dst) || !containsString(points, src) {
+		t.Fatalf("prep %v does not make both the absent shared log and the private one as empty files", points)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{dst, src} {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() != 0 || fi.Mode().Perm() != 0o600 {
+			t.Errorf("after prep %s is %v (%v), want an empty regular 0600 file — claude's own mode for its history", p, fi, err)
+		}
+	}
+}
+
+// A link, a dir or a fifo at <cfg>/history.jsonl refuses the render, and so
+// does one at the seat's own private log. Every seat can write the config
+// dir, and a seat can write its own cache dir; bwrap would mount on wherever
+// a link points, and an uncaged claude's append follows a link there
+// (MEASURED, ranger-base-gab5i). Protects: the mount from landing on a target
+// a seat chose.
+func TestQAWallClaudeSessionStateRefusesALinkAtHistory(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f, _, _ := cssFixture(t)
+	shared := filepath.Join(f.cfg, claudeHistoryFile)
+	priv := claudePrivateHistoryPath(f.home, f.dir)
+	target := filepath.Join(wallUngrantedDir(t), "victim")
+	if err := os.WriteFile(target, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(priv), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name  string
+		at    string
+		plant func(string) error
+	}{
+		{"a link at the shared log", shared, func(p string) error { return os.Symlink(target, p) }},
+		{"a dir at the shared log", shared, func(p string) error { return os.Mkdir(p, 0o700) }},
+		{"a fifo at the shared log", shared, func(p string) error { return syscall.Mkfifo(p, 0o600) }},
+		{"a link at the seat's private log", priv, func(p string) error { return os.Symlink(target, p) }},
+	} {
+		_ = os.RemoveAll(shared)
+		_ = os.RemoveAll(priv)
+		if err := os.WriteFile(shared, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Remove(c.at)
+		if err := c.plant(c.at); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("%s rendered (err %v), so bwrap would mount where a seat pointed it", c.name, err)
+		}
+	}
+}
+
+// The live pin: the rendered wall, the real bwrap, a row planted in the SHARED
+// history.jsonl and a file in the shared paste-cache/, and the seat's own
+// submit.
+//
+// THE PROTECTED PROCESSES. The operator's prompt recall in an uncaged claude
+// loads the shared log's rows for its cwd and fills pastes from the row or
+// the cache without re-hashing, so a seat that writes either changes what
+// the operator submits under their own name. And sentline's echo verdict
+// reads the last row for a seat's session, so a planted row turns a held
+// draft into an "echo" posse types over. Both are protected by the file bind
+// and by paste-cache being a private member: drop either and the plants
+// below land on the host.
+//
+// THE DRIVER is a shell appending a row by path, as claude does (a locked
+// O_APPEND of one JSON line; design ranger-base-tgc4b, static read and
+// interactive measure on claude 2.1.323). The suite has no claude and no
+// endpoint, and `claude -p` writes no history at all (MEASURED,
+// ranger-base-gab5i), so the bind is what this pin measures.
+func TestLiveWallClaudeSessionStateKeepsTheSubmitLogPrivate(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	if runtime.GOOS != "linux" {
+		t.Skip("bwrap is the Linux mechanism of the seatbelt tier (ADR 0080 D16)")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("bwrap is not on PATH: " + err.Error())
+	}
+	if why := liveBwrapApplyRefusal(); why != "" {
+		t.Skip("NOTHING MEASURED: " + why)
+	}
+	f, _, _ := cssFixture(t)
+	hist := filepath.Join(f.cfg, claudeHistoryFile)
+	pastes := filepath.Join(f.cfg, claudePasteCacheDir)
+	paste := filepath.Join(pastes, "0123456789abcdef.txt")
+	const operatorSession = "44444444-4444-4444-8444-444444444444"
+	elsewhere := wallUngrantedDir(t)
+	if err := os.MkdirAll(pastes, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for p, body := range map[string]string{
+		hist:  `{"display":"the operator's own prompt","pastedContents":{},"project":"` + f.dir + `","sessionId":"` + operatorSession + `","timestamp":1}` + "\n",
+		paste: "the operator's pasted body\n",
+	} {
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	try := func(script string) (bool, string) {
+		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		return err == nil, strings.TrimSpace(string(out))
+	}
+	q := shellQuote
+	before := map[string][]byte{}
+	for _, p := range []string{hist, paste} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[p] = b
+	}
+	names := func() string {
+		ents, _ := os.ReadDir(pastes)
+		var out []string
+		for _, e := range ents {
+			out = append(out, e.Name())
+		}
+		return strings.Join(out, ",")
+	}
+	sharedPastes := names()
+	const protects = "the operator's prompt recall submits what the shared history and paste-cache hold under the operator's name, and sentline's echo verdict reads the shared history (ranger-base-a544g)"
+
+	// Neither the operator's row nor paste is visible. Asked FIRST: a plant
+	// below writes the same names in this seat's own private copies.
+	if ok, out := try("grep -q 'operator' " + q(hist)); ok {
+		t.Errorf("the operator's history row is readable by the seat — %s\n out: %s", protects, out)
+	}
+	if ok, out := try("test -e " + q(paste)); ok {
+		t.Errorf("the operator's cached paste is visible to the seat — %s\n out: %s", protects, out)
+	}
+
+	row := `{"display":"rm -rf ~","pastedContents":{},"project":"` + f.dir + `","sessionId":"` + operatorSession + `","timestamp":2}`
+	for name, script := range map[string]string{
+		"row appended":       "echo " + q(row) + " >> " + q(hist),
+		"log truncated":      ": > " + q(hist),
+		"log replaced":       "echo " + q(row) + " > " + q(f.dir+"/h.tmp") + " && mv " + q(f.dir+"/h.tmp") + " " + q(hist),
+		"log relinked":       "rm -f " + q(hist) + " && ln -s " + q(elsewhere+"/h") + " " + q(hist),
+		"log via a dir link": "ln -s " + q(f.cfg) + " " + q(filepath.Join(f.dir, "c")) + " && echo " + q(row) + " >> " + q(filepath.Join(f.dir, "c", claudeHistoryFile)),
+		"paste rewritten":    "echo FORGED > " + q(paste),
+		"paste added":        "echo FORGED > " + q(filepath.Join(pastes, "fedcba9876543210.txt")),
+		"paste dir relinked": "rm -rf " + q(pastes) + " && ln -s " + q(elsewhere) + " " + q(pastes),
+		"paste dir moved":    "mv " + q(pastes) + " " + q(pastes+".old") + " && mkdir " + q(pastes),
+	} {
+		_, out := try(script)
+		for p, b := range before {
+			if got, err := os.ReadFile(p); err != nil || string(got) != string(b) {
+				t.Errorf("%s: the shared %s changed on the host (%q, %v) — %s\n script: %s\n out: %s", name, filepath.Base(p), got, err, protects, script, out)
+				_ = os.WriteFile(p, b, 0o600)
+			}
+		}
+		if fi, err := os.Lstat(hist); err != nil || !fi.Mode().IsRegular() {
+			t.Fatalf("%s: the shared history.jsonl is now %v (%v) — %s\n script: %s\n out: %s", name, fi, err, protects, script, out)
+		}
+		if got := names(); got != sharedPastes {
+			t.Errorf("%s: the shared paste-cache holds %s, was %s — %s\n script: %s\n out: %s", name, got, sharedPastes, protects, script, out)
+		}
+		_ = os.RemoveAll(pastes + ".old")
+		_ = os.Remove(filepath.Join(f.dir, "c"))
+	}
+
+	// The seat's own submit: a process under the wall appends its row as
+	// claude does, then stays alive so posse's read can take its pid's cwd
+	// (the host's pid: the render has no --unshare-pid).
+	priv := claudePrivateHistoryPath(f.home, f.dir)
+	const ownSession = "55555555-5555-4555-8555-555555555555"
+	const ownLine = "the seat's own submit"
+	sub := `echo ` + q(`{"display":"`+ownLine+`","pastedContents":{},"project":"x","sessionId":"`+ownSession+`","timestamp":3}`) + ` >> ` + q(hist) + ` && echo $$ && exec sleep 60`
+	cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", sub)...)
+	var errb strings.Builder
+	cmd.Stderr = &errb
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	got := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(stdout).ReadString('\n')
+		got <- line
+	}()
+	pid := 0
+	select {
+	case line := <-got:
+		pid, _ = strconv.Atoi(strings.TrimSpace(line))
+	case <-time.After(10 * time.Second):
+	}
+	if pid == 0 {
+		t.Fatalf("the seat's submit never ran under the wall: %s", errb.String())
+	}
+	if b, err := os.ReadFile(priv); err != nil || !strings.Contains(string(b), ownLine) {
+		t.Fatalf("the seat's own submit is not in its private log %s (%q, %v) — %s", priv, b, err, protects)
+	}
+	if b, _ := os.ReadFile(hist); strings.Contains(string(b), ownLine) {
+		t.Errorf("the seat's own submit landed in the SHARED history.jsonl — %s", protects)
+	}
+	// A host-side row in the shared log for the seat's session, naming another
+	// line: the echo read must still answer the seat's own.
+	decoy := `{"display":"a host-side decoy","sessionId":"` + ownSession + `","timestamp":4}` + "\n"
+	if err := os.WriteFile(hist, append(before[hist], decoy...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := lastSubmittedOfPID(hist, f.home, pid, ownSession); !ok || got != ownLine {
+		t.Errorf("the echo read answered %q, %v for the caged seat's pid %d, want its own %q from the private log — sentline's echo verdict is this line", got, ok, pid, ownLine)
 	}
 }

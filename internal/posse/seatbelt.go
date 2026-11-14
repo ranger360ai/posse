@@ -408,9 +408,16 @@ type SeatbeltNarrow struct {
 // that ReadOnly can narrow a write grant over it or a later entry can reopen
 // one inside it (claudeProjectsBinds, ranger-base-ajkqx). ReadOnly renders
 // `--ro-bind` instead of `--bind`.
+//
+// File makes it a FILE bind: Src and Dst are regular files, and the render
+// refuses anything else at either name — a link, a dir, a fifo — rather than
+// following it (claude's history.jsonl, ranger-base-a544g). An absent one is
+// created empty at 0600 by the launcher, since a mount needs a name to cover.
+// File binds take a Src of their own; in place and tmpfs are dir shapes.
 type PrivateBind struct {
 	Src, Dst string
 	ReadOnly bool
+	File     bool
 }
 
 // Seeded reports whether a file-shaped Deny entry is one the launcher may

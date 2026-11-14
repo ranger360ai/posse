@@ -157,7 +157,8 @@ const (
 	PrepSeed PrepKind = "seed"
 	// PrepMaskPoint creates the path as an EMPTY 0600 file when it is absent,
 	// and leaves anything already there alone: the mount point of a /dev/null
-	// mask (SeatbeltCarveOut.Masked, ranger-base-l751c).
+	// mask (SeatbeltCarveOut.Masked, ranger-base-l751c), and both ends of a
+	// private FILE bind (PrivateBind.File, ranger-base-a544g).
 	PrepMaskPoint PrepKind = "mask point"
 )
 
@@ -557,6 +558,44 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// a link there would resolve outside the grant and be skipped, not
 	// refused.
 	for _, pb := range carve.Private {
+		if pb.File {
+			// A FILE bind (ranger-base-a544g): the same lstat discipline, for
+			// a regular file. Both names are lstat'd, the source too: it sits
+			// in the seat's own cache dir, which that seat can write, so a
+			// link there is one the seat chose, and following it would bind
+			// any file the uid can write into the next launch's namespace.
+			fi, err := os.Lstat(pb.Dst)
+			switch {
+			case err == nil && !fi.Mode().IsRegular():
+				return nil, nil, Die("bwrap cannot bind a private file over %s: it is not a regular file (a link, a dir or a special file is there, and every seat can write its parent) — remove it and relaunch (ranger-base-a544g)", pb.Dst)
+			case err != nil && !os.IsNotExist(err):
+				return nil, nil, bwrapStatRefusal("private member", pb.Dst, err)
+			}
+			if !writeGranted(grants, pb.Dst) {
+				continue
+			}
+			if err != nil {
+				prep = append(prep, PrepStep{PrepMaskPoint, pb.Dst, "the shared file a private copy is mounted over; created empty at 0600 because a mount needs a name to cover"})
+			}
+			sfi, serr := os.Lstat(pb.Src)
+			switch {
+			case serr == nil && !sfi.Mode().IsRegular():
+				return nil, nil, Die("bwrap cannot bind %s over %s: it is not a regular file (a link, a dir or a special file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-a544g)", pb.Src, pb.Dst)
+			case serr != nil && !os.IsNotExist(serr):
+				return nil, nil, bwrapStatRefusal("private source", pb.Src, serr)
+			case serr != nil:
+				prep = append(prep,
+					PrepStep{PrepMkdirAll, filepath.Dir(pb.Src), "the seat's private copy of shared claude state lives here"},
+					PrepStep{PrepMaskPoint, pb.Src, "the seat's private copy of a file every claude seat shares, created empty at 0600 as claude creates it"})
+			}
+			bind := "--bind"
+			if pb.ReadOnly {
+				bind = "--ro-bind"
+			}
+			argv = append(argv, bind, pb.Src, pb.Dst)
+			watch(WallWatchPrivate, pb.Dst)
+			continue
+		}
 		fi, err := os.Lstat(pb.Dst)
 		switch {
 		case err == nil && !fi.IsDir():

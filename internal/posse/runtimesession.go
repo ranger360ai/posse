@@ -232,12 +232,49 @@ func claudeSessionOfPID(history, home string, pid int) (string, error) {
 // three are already decided in muxrex.go. A pid taken past them would be a
 // pid posse has no evidence is a live runtime.
 func (b *HerdrBackend) rexAgentSession(rm RexMux, target Seat) (string, error) {
+	_, sess, err := b.rexClaudeOwnerSession(rm, target)
+	return sess, err
+}
+
+// rexClaudeOwnerSession is rexAgentSession with the owner's pid kept: the
+// submit-log read needs it to find a caged seat's private log
+// (lastSubmittedOfPID, ranger-base-a544g), and asking the occupant twice
+// could answer two different owners.
+func (b *HerdrBackend) rexClaudeOwnerSession(rm RexMux, target Seat) (int, string, error) {
 	owner, err := rm.RuntimeOwner(target)
 	if err != nil {
-		return "", err
+		return 0, "", err
 	}
 	if owner.Name != claudeRuntimeProcName {
-		return "", Die("rex block %s is held by %s(%d) and not claude — the submit log this id is for is claude's own", target.Pane, owner.Name, owner.PID)
+		return 0, "", Die("rex block %s is held by %s(%d) and not claude — the submit log this id is for is claude's own", target.Pane, owner.Name, owner.PID)
 	}
-	return claudeSessionOfPID(b.ClaudeHistory, b.ClaudeSeatHome, owner.PID)
+	sess, err := claudeSessionOfPID(b.ClaudeHistory, b.ClaudeSeatHome, owner.PID)
+	return owner.PID, sess, err
+}
+
+// paneLastSubmitted is sentline's echo question for one pane: the last line
+// the pane's claude session submitted, and whether any store answered. Both
+// echo callers (panework.go, capturedcomposer.go) ask it, so the order below
+// is spelled once.
+//
+// On rex the owner pid is known, so the seat's private log is read before the
+// shared one (lastSubmittedOfPID). On herdr there is no owner pid, so the read
+// stays shared-only and a caged herdr seat reads as a hold, the safe direction
+// (ranger-base-tgc4b D2). Every failure on the way answers "no".
+func (b *HerdrBackend) paneLastSubmitted(target Seat) (string, bool) {
+	if hm, ok := b.herdrMux(); ok {
+		sess, err := hm.PaneAgentSession(target)
+		if err != nil {
+			return "", false
+		}
+		return lastSubmitted(b.ClaudeHistory, sess)
+	}
+	if rm, ok := b.rexMux(); ok {
+		pid, sess, err := b.rexClaudeOwnerSession(rm, target)
+		if err != nil {
+			return "", false
+		}
+		return lastSubmittedOfPID(b.ClaudeHistory, b.ClaudeSeatHome, pid, sess)
+	}
+	return "", false
 }

@@ -223,6 +223,44 @@ func lastSubmitted(path, session string) (string, bool) {
 	return last, found
 }
 
+// claudePrivateHistoryPath is the submit log a caged claude seat writes
+// instead of the shared one (ranger-base-a544g): <SeatCacheDir>/claude/
+// history.jsonl, the source the bwrap render binds over <cfg>/history.jsonl
+// (claudePrivateSessionState). "" with no seat dir to hang it off.
+func claudePrivateHistoryPath(home, cwd string) string {
+	seat := SeatCacheDir(home, cwd)
+	if seat == "" {
+		return ""
+	}
+	return filepath.Join(seat, claudePrivateSessionStateRel, claudeHistoryFile)
+}
+
+// lastSubmittedOfPID is lastSubmitted over the seat's PRIVATE log first and
+// the shared one second, for a session whose runtime pid posse knows (the rex
+// join's owner; ranger-base-a544g, design ranger-base-tgc4b D2).
+//
+// WHY TWO LOGS. A caged claude seat's history.jsonl is a private file bind,
+// so its submits never reach the shared log; read only the shared one and
+// every caged seat's echo reading goes off. The private log is found through
+// /proc/<pid>/cwd, the kernel's reading, as claudeSessionOfPID finds the
+// private session row (procCwdOf; one helper, not two).
+//
+// WHY THIS ORDER IS SAFE. After the bind, only that seat (or the host) can
+// write its private log and only the host can write the shared one, so a seat
+// that lies in its own log misleads only its own echo verdict. A session in
+// neither log answers "no echo", as before. No home or no shared log reads
+// no private log either: the test-backend discipline ClaudeSeatHome keeps.
+func lastSubmittedOfPID(history, home string, pid int, session string) (string, bool) {
+	if home != "" && history != "" && pid > 0 {
+		if cwd, err := procCwdOf(pid); err == nil {
+			if sent, ok := lastSubmitted(claudePrivateHistoryPath(home, cwd), session); ok {
+				return sent, true
+			}
+		}
+	}
+	return lastSubmitted(history, session)
+}
+
 // submittedEcho reports whether the composer preview IS the line the pane
 // last submitted.
 //
