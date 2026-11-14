@@ -69,8 +69,8 @@ func TestPulseDoesNotPromptAPaneHerdrOnlyGuessesAt(t *testing.T) {
 			t.Errorf("the skip must say %q:\n%s", want, out)
 		}
 	}
-	// Undelivered leaves no trace: the same fingerprint is due next tick.
-	if state := ReadPulseState(PulsePath(b.App)); state.PromptedFingerprint != "" || !state.PromptedAt.IsZero() {
+	// Undelivered leaves no trace: the same delta is due next tick.
+	if state := ReadPulseState(PulsePath(b.App)); len(state.DeliveredKeys) != 0 || !state.PromptedAt.IsZero() {
 		t.Errorf("a pulse that never went out advanced its bookkeeping: %+v", state)
 	}
 }

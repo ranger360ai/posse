@@ -22,6 +22,14 @@ package posse
 // the observation itself (time, conditions, current fingerprint) lives in
 // memory for the length of one tick.
 //
+// Since ADR 0093 D2 a due tick also appends one DELTA line to
+// state/pulse.feed — what moved since the last delivery, not the whole set
+// — and state/pulse.yaml's dedup half is `delivered_keys` (the keys that
+// were said) in place of the fingerprint it computed them into. The feed is
+// the channel D1's `posse pulse wait` reads; in THIS slice the typed pulse
+// is still the delivery and the feed is its faithful record, and D3 is what
+// swaps which of the two is primary.
+//
 // That widening broke ADR 0027 §1's "never bd, never the plan endpoint"
 // boundary, deliberately and with the design's eyes open: G2/G3/G9 are bd
 // facts and G5/G6 are meter facts, and a surface that cannot see them is
@@ -36,6 +44,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -108,10 +118,52 @@ func LoadPulseConfig(a *App) (PulseConfig, error) {
 // like everything under state/ (gitignored).
 func PulsePath(a *App) string { return filepath.Join(a.StateDir, "pulse.yaml") }
 
+// PulseFeedPath is state/pulse.feed, the delta feed a due tick appends to
+// (ADR 0093 D2) and `posse pulse wait` reads (D1) — machine-local under
+// state/ like the record beside it, and deliberately a plain text file one
+// line per delivery, so a human can tail it and the waiter needs nothing but
+// the first field of a line.
+//
+// It holds no state anything else depends on (ADR 0093's exit hatch): lose
+// the file and the next delivery starts a fresh sequence, which costs an
+// armed waiter one `gap`.
+func PulseFeedPath(a *App) string { return filepath.Join(a.StateDir, "pulse.feed") }
+
+// PulseFeedLines is the cap: an append keeps the newest 500 entries and
+// drops the rest (ADR 0093 D2).
+//
+// By LINE COUNT and not by age or bytes, because the one reader that cares
+// asks for a sequence number — `--after <seq>` — and a cap on lines is the
+// only cap whose consequence for that reader is statable: at most 500
+// entries of backlog, and a `--after` older than the oldest kept entry gets
+// `gap`. At the measured 4.6 deliveries an hour (ADR 0093's 70h window)
+// that is about four and a half days, and the deltas this feed carries are
+// much quieter than the sets they replaced.
+const PulseFeedLines = 500
+
 // PulseState is the ticker's whole persisted record, and since ADR 0027's
 // 2026-09-05 simplification that is delivery bookkeeping and nothing else:
-// the fingerprint actually prompted, and when. One file, one writer
-// (pulseOnce).
+// the keys actually delivered, and when. One file, one writer (pulseOnce).
+//
+// `delivered_keys` replaced `prompted_fingerprint` with ADR 0093 D2, and it
+// is the same datum one step less cooked: the fingerprint was these keys
+// joined, and a dedup is all a joined string can answer. A DELTA needs the
+// keys themselves — which appeared, which cleared, which one's count moved —
+// so the field now holds what the fingerprint was made of. Dedup is
+// unchanged by it: an empty delta is exactly a fingerprint that matched.
+//
+// ADR 0093 D2 is explicit that this partly reverses ADR 0027's "no persisted
+// conditions", and why it is not the thing that rule forbade: this field is
+// what was SAID, not a mirror of status, and nothing reads it as health —
+// `posse status` still recomputes the set from the stores.
+//
+// The old field needs no migration job, for the third time in this file's
+// life and by the same mechanism: the reader asks for the key it wants and
+// never for the one that left, so a `prompted_fingerprint:` record loads
+// delivered_keys EMPTY — delivery is unknown, not known-empty, and both
+// render the same way — and the first due tick after the upgrade says the
+// whole standing set as `+`. One re-announcement per upgrade, which is the
+// cost the renag interval already budgets for.
 //
 // It used to carry four more fields. Three of them — at, conditions,
 // fingerprint — were rangerhq-4ish's sensing snapshot, written every tick
@@ -126,18 +178,37 @@ func PulsePath(a *App) string { return filepath.Join(a.StateDir, "pulse.yaml") }
 // last tick's snapshot, not the shop — and the watch log's own `pulse:` line
 // carries the same keys with a pass header dating them.
 type PulseState struct {
-	PromptedFingerprint string    // "" once the condition set clears
-	PromptedAt          time.Time // zero until the first successful prompt
+	DeliveredKeys []string  // nil once the condition set clears
+	PromptedAt    time.Time // zero until the first successful prompt
 }
+
+// Fingerprint is the delivered keys joined the way GovSet.Fingerprint joins
+// a computed set's, so the two compare directly. It is the dedup question
+// and nothing else; the delta is pulseDiff's.
+func (s PulseState) Fingerprint() string { return strings.Join(s.DeliveredKeys, "|") }
 
 // pulseTick is one tick's OBSERVATION: computed in memory, handed to
 // delivery, and dropped when the tick ends (ADR 0027 — "compute observation
 // time, conditions and current fingerprint in memory each tick"). Nothing
 // here reaches state/pulse.yaml.
+//
+// The fingerprint left with ADR 0093 D2 and is not replaced by a second
+// field: delivery's question is now the delta, which is computed from
+// Conditions against the record, and a joined copy carried beside them would
+// be a second spelling of the same answer for nobody to read. `set.Keys()`
+// is sorted, so PulseState.Fingerprint() still reconstructs it exactly where
+// the dedup question is asked of the RECORD.
 type pulseTick struct {
-	At          time.Time
-	Conditions  []string
-	Fingerprint string
+	At         time.Time
+	Conditions []string
+
+	// Partial says a store this tick asked could not be read, so the
+	// condition set is what was SEEN and not what is there (pulseOnce's
+	// `failed`). It rides on the observation because that is what it is a
+	// property of, and delivery needs it: under ADR 0093 D2 a partial read
+	// is never a clear, so a key that vanished from an unreadable store is
+	// HELD rather than marked `-`.
+	Partial bool
 }
 
 // WritePulseState writes the delivery bookkeeping to disk, whole-file, the
@@ -153,7 +224,7 @@ type pulseTick struct {
 // ran at all, which is the only difference a disarmed watch leaves behind.
 func WritePulseState(path string, s PulseState) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "prompted_fingerprint: %s\n", s.PromptedFingerprint)
+	fmt.Fprintf(&b, "delivered_keys: %s\n", strings.Join(s.DeliveredKeys, "|"))
 	if s.PromptedAt.IsZero() {
 		fmt.Fprintf(&b, "prompted_at:\n")
 	} else {
@@ -170,20 +241,318 @@ func WritePulseState(path string, s PulseState) error {
 // field's zero value — the pulse's first tick, not an error worth failing
 // the loop over.
 //
-// This is also the whole migration for the six-field files written before
-// the 2026-09-05 simplification: it asks YamlGet for the two keys it wants
-// and never for the four that left, so an old record loads its dedup and
-// the first tick after the upgrade rewrites the file two keys wide. No
-// migration job, and no version stamp to get wrong (ADR 0027).
+// This is also the whole migration for every earlier shape of the file: it
+// asks YamlGet for the two keys it wants and never for the ones that left —
+// the six-field record's four (2026-09-05) and `prompted_fingerprint` (ADR
+// 0093 D2) — so an old record loads what still exists and the first tick
+// after the upgrade rewrites the file two keys wide. No migration job, and
+// no version stamp to get wrong (ADR 0027).
+//
+// `delivered_keys` is read the way it is written, `|`-joined on one flat
+// line, which is the shape the fingerprint already had: every YamlGet
+// property the old field relied on (the " #" cut, the matched-quote strip,
+// a value that is one line) is the same property, over the same bytes.
 func ReadPulseState(path string) PulseState {
 	var s PulseState
-	s.PromptedFingerprint = YamlGet(path, "prompted_fingerprint")
+	for _, k := range strings.Split(YamlGet(path, "delivered_keys"), "|") {
+		if k = strings.TrimSpace(k); k != "" {
+			s.DeliveredKeys = append(s.DeliveredKeys, k)
+		}
+	}
 	if v := YamlGet(path, "prompted_at"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			s.PromptedAt = t
 		}
 	}
 	return s
+}
+
+// pulseMove is one condition whose trailing COUNT moved while the condition
+// itself stood: `unpushed:<dir>:5` becoming `unpushed:<dir>:7`. Stem is the
+// key without that count, From and To the counts as written.
+type pulseMove struct{ Stem, From, To string }
+
+// pulseDelta is what one due tick has to SAY: the keys that appeared, the
+// keys that cleared, and the counted keys whose number moved (ADR 0093 D2).
+// Held is the fourth outcome and the only one that is not news — delivered
+// keys this tick could not see, because a store could not be read, which are
+// carried forward rather than announced as cleared.
+type pulseDelta struct {
+	Appeared []string
+	Cleared  []string
+	Moved    []pulseMove
+	Held     []string
+}
+
+// Empty is "nothing to say", which is also exactly the old dedup answer: a
+// delta with no appeared, cleared or moved key is a condition set whose
+// fingerprint matched the delivered one. Held does not count — a key that
+// went unread is not a change, and announcing one would turn every outage
+// of a store into a delivery.
+func (d pulseDelta) Empty() bool {
+	return len(d.Appeared) == 0 && len(d.Cleared) == 0 && len(d.Moved) == 0
+}
+
+// pulseCountStem splits a condition key that ends in a decimal count:
+// `unpushed:/src/posse:7` → (`unpushed:/src/posse`, `7`, true). Anything
+// else is (…, false).
+//
+// GENERIC on purpose, rather than keyed on the one prefix that has a count
+// today. The whole point of D2's `~` is that a number ticking over is one
+// condition standing and not a condition clearing beside a new one
+// appearing; a rule that knew only `unpushed:` would render the next counted
+// key somebody adds as a `+`/`-` pair, which is the noise this exists to
+// remove, and it would do it silently. The cost of being generic is that a
+// key whose trailing number is not a count reads as one — `guard-credential:2`
+// after `guard-credential:1` renders `~guard-credential:1→2` — and that line
+// is still true and still shorter than the pair it replaces.
+func pulseCountStem(key string) (stem, count string, ok bool) {
+	i := strings.LastIndex(key, ":")
+	if i <= 0 || i == len(key)-1 {
+		return "", "", false
+	}
+	n := key[i+1:]
+	for j := 0; j < len(n); j++ {
+		if n[j] < '0' || n[j] > '9' {
+			return "", "", false
+		}
+	}
+	return key[:i], n, true
+}
+
+// pulseDiff is the delta from the keys last delivered to the keys this tick
+// computed. Both arrive sorted (GovSet is sorted by Key, and delivered_keys
+// was written from such a set), and every output here preserves that order,
+// so a feed line's tokens read in the same order the keys do everywhere else
+// in this codebase.
+//
+// partial is the tick's own Partial: with a store unread, a key that
+// disappeared is HELD rather than cleared (ADR 0093 D2). The hold is blanket
+// rather than attributed, and that is a deliberate widening of the ADR's
+// sentence: ShopCheck's `failed` carries errors, not the keys those errors
+// would have produced, so there is no way to tell which vanished key belongs
+// to the store that refused. Holding every vanished key on a partial tick is
+// the only version of the rule this code can actually enforce, and it fails
+// in the direction the rule names — a condition held one tick too long,
+// never an unobserved condition announced as cleared. Keys that APPEARED are
+// still news on a partial tick: those were seen.
+//
+// A move survives a partial tick for the same reason — both halves of it
+// were observed, the old count in the record and the new one on the screen.
+func pulseDiff(delivered, now []string, partial bool) pulseDelta {
+	var d pulseDelta
+	had := make(map[string]bool, len(delivered))
+	for _, k := range delivered {
+		had[k] = true
+	}
+	have := make(map[string]bool, len(now))
+	for _, k := range now {
+		have[k] = true
+	}
+
+	var gone, fresh []string
+	for _, k := range delivered {
+		if !have[k] {
+			gone = append(gone, k)
+		}
+	}
+	for _, k := range now {
+		if !had[k] {
+			fresh = append(fresh, k)
+		}
+	}
+
+	// Pair what left against what arrived, by stem. A set is keyed by the
+	// WHOLE key, so one stem can contribute at most one gone key and one
+	// fresh key, and first-wins is therefore total rather than a tie-break.
+	goneCount := map[string]string{}
+	for _, k := range gone {
+		if stem, n, ok := pulseCountStem(k); ok {
+			if _, dup := goneCount[stem]; !dup {
+				goneCount[stem] = n
+			}
+		}
+	}
+	paired := map[string]bool{}
+	for _, k := range fresh {
+		stem, to, ok := pulseCountStem(k)
+		if !ok {
+			continue
+		}
+		from, ok := goneCount[stem]
+		if !ok {
+			continue
+		}
+		d.Moved = append(d.Moved, pulseMove{Stem: stem, From: from, To: to})
+		paired[k] = true
+		paired[stem+":"+from] = true
+		// Consumed, so this is a MATCHING and not a lookup: one gone key
+		// cannot be the `from` of two moves. Not reachable through today's
+		// keys — the only other counted key, `hook-wall:<slot>:<config>`,
+		// carries a config path and never bare digits, so no stem can have
+		// two members of one set — but the rule above is generic by design
+		// and a second counted family is exactly what it is generic for.
+		delete(goneCount, stem)
+	}
+
+	for _, k := range fresh {
+		if !paired[k] {
+			d.Appeared = append(d.Appeared, k)
+		}
+	}
+	for _, k := range gone {
+		switch {
+		case paired[k]:
+		case partial:
+			d.Held = append(d.Held, k)
+		default:
+			d.Cleared = append(d.Cleared, k)
+		}
+	}
+	return d
+}
+
+// pulseDelivered is what delivered_keys becomes once this tick's line is
+// out: what the tick saw, plus what it held. Sorted, because delivered_keys
+// is compared against a sorted GovSet's fingerprint and a held key spliced
+// in at the end would read as a changed set forever after.
+func pulseDelivered(now, held []string) []string {
+	if len(held) == 0 {
+		return now
+	}
+	out := make([]string, 0, len(now)+len(held))
+	out = append(out, now...)
+	out = append(out, held...)
+	sort.Strings(out)
+	return out
+}
+
+// pulseFeedBody renders one entry's payload — everything after the sequence
+// number and the timestamp (ADR 0093 D2).
+//
+// A delta is sigil-per-token and space-separated, `+` then `-` then `~`, in
+// the ADR's own order; `standing: N` closes it with a count and no keys,
+// because the full set is `posse status`'s to print and re-reading it here
+// is the thing D2 replaced. Every token is space-free — a move is rendered
+// as its key with the count replaced (`~unpushed:/src/posse:5→7`) rather
+// than as the ADR's prose `unpushed 5→7` — so the whole line splits on
+// whitespace and `posse pulse wait` needs no grammar to find the sequence
+// number or to count what moved.
+//
+// An empty delta is the renag, and it is the one line that names keys: the
+// coordinator is being told nothing has changed, so "nothing has changed
+// about WHAT" has to be on the line or it carries no information at all.
+func pulseFeedBody(d pulseDelta, standing []string) string {
+	if d.Empty() {
+		return "still: " + strings.Join(standing, "; ")
+	}
+	tok := make([]string, 0, len(d.Appeared)+len(d.Cleared)+len(d.Moved)+1)
+	for _, k := range d.Appeared {
+		tok = append(tok, "+"+k)
+	}
+	for _, k := range d.Cleared {
+		tok = append(tok, "-"+k)
+	}
+	for _, m := range d.Moved {
+		tok = append(tok, fmt.Sprintf("~%s:%s→%s", m.Stem, m.From, m.To))
+	}
+	tok = append(tok, fmt.Sprintf("standing: %d", len(standing)))
+	return strings.Join(tok, " ")
+}
+
+// pulseFeedEntries reads the feed's kept entries. A missing or unreadable
+// feed reads as no entries — the first delivery on a fresh instance, not an
+// error worth failing a tick over, same rule as ReadPulseState's.
+func pulseFeedEntries(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, ln := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(ln) != "" {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
+// PulseFeedSeq is an entry's sequence number, the first whitespace-separated
+// field. (0, false) for a line that does not start with one — exported
+// because the waiter's `--after <seq>` compares against exactly this
+// reading, and two implementations of a line format is how a feed and its
+// reader drift.
+func PulseFeedSeq(line string) (int, bool) {
+	f, _, ok := strings.Cut(strings.TrimSpace(line), " ")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(f)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// pulseFeedWrite appends one entry to the feed and returns its sequence
+// number. Read, append, cap, atomic rewrite — a whole-file writer like
+// WritePulseState beside it, and for the same reason: the ticker goroutine
+// is the only writer, so the cheapest correct thing is to own the file.
+//
+// The rewrite goes through a temp file and a rename because this one has a
+// READER that is not the writer: `posse pulse wait` may be mid-read at any
+// moment, and a reader of an O_APPEND-then-truncate feed can see a file with
+// its oldest lines gone and its newest not yet there. A rename is one step
+// for that reader.
+//
+// The sequence number is the MAXIMUM parseable one in the file plus one, not
+// the last line's: a corrupt tail would otherwise restart the sequence and
+// hand an armed waiter numbers it has already passed, which looks exactly
+// like nothing happening.
+func pulseFeedWrite(path string, at time.Time, body string) (int, error) {
+	entries := pulseFeedEntries(path)
+	seq := 1
+	for _, ln := range entries {
+		if n, ok := PulseFeedSeq(ln); ok && n >= seq {
+			seq = n + 1
+		}
+	}
+	entries = append(entries, fmt.Sprintf("%d %s %s", seq, at.UTC().Format(time.RFC3339), body))
+	if len(entries) > PulseFeedLines {
+		entries = entries[len(entries)-PulseFeedLines:]
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return 0, err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.Join(entries, "\n")+"\n"), 0o644); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return 0, err
+	}
+	return seq, nil
+}
+
+// appendPulseFeed is pulseFeedWrite with this loop's logging: the entry also
+// goes to the watch log, on its own `pulse: feed` line, so the feed's rate
+// and the typed path's can be read against each other out of one log — which
+// is what ADR 0093's done-when rows 1 and 3 ask for.
+//
+// A feed that cannot be written is a diagnostic and never a failed tick. In
+// this slice the typed pulse has already gone out by the time this is
+// called, so a failed append costs the feed one line and the delivery
+// nothing; the record still advances, because what it records is that the
+// coordinator was told.
+func (d *Dispatcher) appendPulseFeed(at time.Time, body string) {
+	path := PulseFeedPath(d.App)
+	seq, err := pulseFeedWrite(path, at, body)
+	if err != nil {
+		d.equietf("pulse: cannot append %s: %v\n", AbbrevHome(path), err)
+		return
+	}
+	d.quietf("pulse: feed %d %s\n", seq, body)
 }
 
 // pulseLoop runs the shop check every cfg.Interval until ctx ends — the
@@ -227,25 +596,47 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 	for _, err := range failed {
 		d.equietf("pulse: shop check partial: %v\n", err)
 	}
-	tick := pulseTick{At: d.now(), Conditions: set.Keys(), Fingerprint: set.Fingerprint()}
+	tick := pulseTick{
+		At:         d.now(),
+		Conditions: set.Keys(),
+		Partial:    len(failed) > 0,
+	}
 	path := PulsePath(d.App)
 	state := ReadPulseState(path)
 
 	if len(tick.Conditions) == 0 {
-		// Cleared set resets the renag clock — the next non-empty set, even
-		// one with the same fingerprint as a previous episode, is a fresh
-		// prompt, not a renag.
-		//
-		// "Cleared" is only ever a statement about what this tick COMPUTED.
-		// The partial lines above are the other half of it: a store that
+		// "Cleared" is only ever a statement about what this tick COMPUTED,
+		// and the partial lines above are the other half of it: a store that
 		// could not be read contributes no keys, so an empty set here can
-		// mean "nothing is wrong" or "we could not look", and the reset
-		// claims the first while the log says which it was. What it must
-		// never do is claim an unobserved condition cleared, and it does
-		// not — it forgets a delivery, it does not assert an all-clear, and
-		// nothing downstream reads this file for one (ADR 0027).
-		state.PromptedFingerprint = ""
-		state.PromptedAt = time.Time{}
+		// mean "nothing is wrong" or "we could not look".
+		//
+		// Until ADR 0093 D2 the tick reset the bookkeeping either way, and
+		// the argument that made that safe was "it forgets a delivery, it
+		// does not assert an all-clear, and nothing downstream reads this
+		// file for one". Half of that argument is now false twice over: the
+		// next tick's delta reads this field, and the feed line this arm
+		// would append — `cleared all` — is an all-clear in as many words,
+		// said to the coordinator. So the reset is gated on the read having
+		// been COMPLETE, which is D2's "a partial read is never a clear"
+		// applied to the one case where every key vanished at once.
+		//
+		// A partial empty tick therefore holds everything and says nothing:
+		// no feed line, and the record untouched, so the next complete tick
+		// decides. Held, not forgotten — forgetting would cost the whole
+		// standing set re-announced as `+` when the store came back, which
+		// is the re-reading of seven unchanged keys D2 exists to end.
+		//
+		// A COMPLETE empty tick is the clear it always was: it appends one
+		// `cleared all` line if there was anything to clear, and resets the
+		// renag clock so the next non-empty set — even an identical episode
+		// — is a fresh delivery rather than a renag.
+		if !tick.Partial {
+			if len(state.DeliveredKeys) > 0 {
+				d.appendPulseFeed(tick.At, "cleared all")
+			}
+			state.DeliveredKeys = nil
+			state.PromptedAt = time.Time{}
+		}
 	} else {
 		d.deliverPulse(cfg, tick, &state)
 	}
@@ -342,7 +733,12 @@ func pulseTakesPrompt(status string) bool { return status == "idle" || status ==
 // nothing here calls MarkCrew/MarkCrewOnOperatorPrompt, it sets no crew
 // mark. The prompt itself carries no authority; the stores stay the record.
 func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseState) {
-	changed := state.PromptedFingerprint != tick.Fingerprint
+	// The delta is computed FIRST, from the record as it stands, because it
+	// is both halves of the question: whether this tick has anything to say
+	// (the old `changed` arm — an empty delta is a fingerprint that matched)
+	// and, if it is due, what the feed line says (ADR 0093 D2).
+	delta := pulseDiff(state.DeliveredKeys, tick.Conditions, tick.Partial)
+	changed := !delta.Empty()
 	// A record with a fingerprint but no readable timestamp is a HALF-read
 	// record, and it reads as never prompted — not as a window that has not
 	// elapsed. Guarding the renag arm with `!IsZero()` alone would answer
@@ -463,10 +859,28 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 	d.quietf("pulse: %s → prompted %s\n", strings.Join(tick.Conditions, "; "), name)
 
 	// Delivered, so the clock restarts here and nowhere else — same two
-	// fields whether this was a new fingerprint or a repeat, because there
-	// is one interval now and no ladder position to advance.
-	state.PromptedFingerprint = tick.Fingerprint
+	// fields whether this was a new delta or a renag, because there is one
+	// interval now and no ladder position to advance.
+	//
+	// Held keys go back into the record alongside what was seen, so the
+	// delta the NEXT tick computes is against everything standing and not
+	// against the subset this tick could read.
+	state.DeliveredKeys = pulseDelivered(tick.Conditions, delta.Held)
 	state.PromptedAt = tick.At
+
+	// The feed line goes out HERE, after the prompt landed, and that is this
+	// slice's whole shape (ADR 0093 D2, "typed delivery unchanged"): the
+	// typed pulse is still the delivery and the feed is its faithful record,
+	// so the two advance together with the record that says what was said.
+	//
+	// D3 is what moves this: there the line is appended on any due tick,
+	// before the lock decides whether anything gets typed at all. Appending
+	// it that early TODAY would be wrong in both available ways — advance
+	// the record with it and a delta is lost whenever the coordinator is
+	// away, which is 986 of the 1323 ticks ADR 0093 measured; leave the
+	// record unadvanced and every blocked tick re-appends the same delta
+	// until the 500-line cap eats the feed.
+	d.appendPulseFeed(tick.At, pulseFeedBody(delta, state.DeliveredKeys))
 }
 
 // pulseTarget finds cfg.Persona's live session among sessions — first match

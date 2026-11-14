@@ -271,6 +271,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-00fyg](ranger-base-00fyg.md) — ADR 0078 built: the tree-wide class stops depending on how a test spells its root (ranger-base-00fyg) — 2026-11-01
 - [ranger-base-zvg7q](ranger-base-zvg7q.md) — The pin that only had positional parameters on darwin (ranger-base-zvg7q) — 2026-11
 - [ranger-base-temhf](ranger-base-temhf.md) — Seven tests that asserted a host, and the seam that made them unfixable (ranger-base-temhf) — 2026-11
+- [ranger-base-hkqpq](ranger-base-hkqpq.md) — The pulse feed's first slice: where the delta line is appended, and why not where the bead says (ranger-base-hkqpq) — 2026-11
 - [ranger-base-azd7l](ranger-base-azd7l.md) — `cd ""` was a silent no-op until bash 5.3, and a dead guard woke up (ranger-base-azd7l) — 2026-11
 
 ## 2026-10

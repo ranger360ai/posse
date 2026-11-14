@@ -339,20 +339,29 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state/pulse.yaml not written: %v", err)
 	}
-	// The condition text at all, anywhere: it used to reach the file twice,
-	// as a `conditions:` item and inside the `fingerprint:` join.
+	// The condition text at all, anywhere. It used to reach the file twice,
+	// as a `conditions:` item and inside the `fingerprint:` join, and the
+	// 2026-09-05 simplification took both out.
+	//
+	// ADR 0093 D2 put condition keys back in — `delivered_keys` holds them
+	// — and did not weaken this arm, because the two are different claims
+	// and this fixture separates them: the target here is BLOCKED, so the
+	// tick senses the condition, logs it on the line asserted above, and
+	// delivers nothing. A record that names a condition nobody was told
+	// about is the OBSERVATION persisted, which is still the thing ADR 0027
+	// forbids and `posse status` recomputes instead.
 	if strings.Contains(string(state), "blocked:coordinator-shop") {
-		t.Errorf("state/pulse.yaml still carries the observed condition:\n%s", state)
+		t.Errorf("state/pulse.yaml carries a condition this tick never delivered:\n%s", state)
 	}
-	// And the four removed keys, anchored — "fingerprint:" is a suffix of
-	// "prompted_fingerprint:", so a plain Contains would call the surviving
-	// field a removed one and pass for the wrong reason.
-	for _, gone := range []string{"at:", "conditions:", "fingerprint:", "renag_interval:"} {
+	// And the five removed keys, anchored — "fingerprint:" is a suffix of
+	// "prompted_fingerprint:", so a plain Contains would call one removed
+	// field's name a sighting of the other and pass for the wrong reason.
+	for _, gone := range []string{"at:", "conditions:", "fingerprint:", "renag_interval:", "prompted_fingerprint:"} {
 		if lineHasKey(string(state), gone) {
-			t.Errorf("state/pulse.yaml still carries %q, which ADR 0027 removed:\n%s", gone, state)
+			t.Errorf("state/pulse.yaml still carries %q, which ADR 0027/0093 removed:\n%s", gone, state)
 		}
 	}
-	if !lineHasKey(string(state), "prompted_fingerprint:") || !lineHasKey(string(state), "prompted_at:") {
+	if !lineHasKey(string(state), "delivered_keys:") || !lineHasKey(string(state), "prompted_at:") {
 		t.Errorf("state/pulse.yaml must still carry the two delivery fields:\n%s", state)
 	}
 }

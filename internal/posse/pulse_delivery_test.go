@@ -121,7 +121,7 @@ func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 	}
 
 	state := ReadPulseState(PulsePath(b.App))
-	if state.PromptedFingerprint == "" || state.PromptedAt.IsZero() {
+	if len(state.DeliveredKeys) == 0 || state.PromptedAt.IsZero() {
 		t.Errorf("bookkeeping not recorded after a successful prompt: %+v", state)
 	}
 }
@@ -220,7 +220,7 @@ func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
 
 	// Untouched bookkeeping: the very next tick (no renag wait) retries.
 	state := ReadPulseState(PulsePath(b.App))
-	if state.PromptedFingerprint != "" || !state.PromptedAt.IsZero() {
+	if len(state.DeliveredKeys) != 0 || !state.PromptedAt.IsZero() {
 		t.Errorf("a skipped prompt must not advance delivery bookkeeping: %+v", state)
 	}
 
@@ -308,7 +308,7 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 	clock = clock.Add(time.Minute) // well inside the 30m renag window
 	d.pulseOnce(cfg)
 	state := ReadPulseState(PulsePath(b.App))
-	if state.PromptedFingerprint != "" || !state.PromptedAt.IsZero() {
+	if len(state.DeliveredKeys) != 0 || !state.PromptedAt.IsZero() {
 		t.Errorf("a cleared set must reset the renag clock: %+v", state)
 	}
 
@@ -413,8 +413,8 @@ func TestPulseGrownSetPromptsInsideRenagWindow(t *testing.T) {
 		t.Fatalf("setup: want exactly one prompt for the first set, got %d", n)
 	}
 	first := ReadPulseState(PulsePath(b.App))
-	if strings.Contains(first.PromptedFingerprint, "blocked:") {
-		t.Fatalf("setup: the first set must not already carry a blocked condition: %q", first.PromptedFingerprint)
+	if strings.Contains(first.Fingerprint(), "blocked:") {
+		t.Fatalf("setup: the first set must not already carry a blocked condition: %q", first.Fingerprint())
 	}
 
 	// The developer blocks one minute in — deep inside the 30m window.
@@ -431,8 +431,8 @@ func TestPulseGrownSetPromptsInsideRenagWindow(t *testing.T) {
 	}
 
 	state := ReadPulseState(PulsePath(b.App))
-	if !strings.Contains(state.PromptedFingerprint, "blocked:developer-work") {
-		t.Errorf("the delivery record must carry the NEW fingerprint, got %q", state.PromptedFingerprint)
+	if !strings.Contains(state.Fingerprint(), "blocked:developer-work") {
+		t.Errorf("the delivery record must carry the NEW keys, got %q", state.Fingerprint())
 	}
 	// The record is written to the second, so this is "moved to the second
 	// tick", not an instant equality: what it pins is that the renag clock

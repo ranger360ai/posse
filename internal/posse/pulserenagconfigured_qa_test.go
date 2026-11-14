@@ -154,7 +154,7 @@ func TestQAPulseFailedPromptRetriesOnTheNextTick(t *testing.T) {
 	if got := errOut.String(); !strings.Contains(got, "pulse: prompt failed for") {
 		t.Fatalf("fixture: the failure must be reported on Err:\n%s", got)
 	}
-	if s := ReadPulseState(PulsePath(b.App)); s.PromptedFingerprint != "" || !s.PromptedAt.IsZero() {
+	if s := ReadPulseState(PulsePath(b.App)); len(s.DeliveredKeys) != 0 || !s.PromptedAt.IsZero() {
 		t.Fatalf("a failed prompt must not advance the delivery record: %+v", s)
 	}
 
@@ -167,7 +167,7 @@ func TestQAPulseFailedPromptRetriesOnTheNextTick(t *testing.T) {
 	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 2 {
 		t.Errorf("the tick after a failed prompt must retry immediately, not wait out the renag interval: %d attempts", n)
 	}
-	if s := ReadPulseState(PulsePath(b.App)); s.PromptedFingerprint == "" || s.PromptedAt.IsZero() {
+	if s := ReadPulseState(PulsePath(b.App)); len(s.DeliveredKeys) == 0 || s.PromptedAt.IsZero() {
 		t.Errorf("the retry that succeeded must record the delivery: %+v", s)
 	}
 }
