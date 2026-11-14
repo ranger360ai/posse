@@ -236,7 +236,14 @@ func TestQAEmptySetResetIsNotAnAllClear(t *testing.T) {
 	// not exist at all.
 	var errOut strings.Builder
 	d.Err = &errOut
-	cfg := PulseConfig{Armed: true, Persona: "", Renag: 30 * time.Minute}
+	// Feed on, which is the shipped default (`pulse_feed:` absent —
+	// LoadPulseConfig) and what this arm needs: the `cleared all` line is
+	// the feed's, and the hatch writes no feed at all (ADR 0093 D2's exit
+	// hatch, wired in ranger-base-r3qz6). The waiter lock is left alone —
+	// `pulse-unarmed` cannot fire with no persona named, and an empty set
+	// types nothing either way, so the channel switch never reaches this
+	// tick.
+	cfg := PulseConfig{Armed: true, Persona: "", Renag: 30 * time.Minute, Feed: true}
 
 	// A delivery record from before the outage, planted rather than earned:
 	// what is under test is the hold, not how the record got there.
