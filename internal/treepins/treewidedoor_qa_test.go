@@ -3937,6 +3937,13 @@ var twdExecDispositions = map[string]string{
 	"scripts/tap-formula.sh":         "renders a formula from the --checksums file named on its command line",
 	"scripts/test-linux.sh":          "assembles a docker invocation; it lists nothing",
 	"scripts/test-times.sh":          "runs `go test` and parses its output; the one `ls` in it is inside an advice string it prints",
+	// ranger-base-41l0r. It opens the operator's settings.json and the gate
+	// files that settings' hook names, and in its full mode it extracts two
+	// tracked paths from HEAD by name (`git show HEAD:scripts/bd-argv-gate.*`).
+	// Three named files and no directory: a bead that adds a file anywhere in
+	// the tree cannot change what it reads. The modes the pins here run,
+	// --print-wrappers and --behaviour-only, read no tracked path at all.
+	"scripts/verify-gate-freshness.sh": "reads the operator's settings.json and the installed gate pair the hook names, plus two tracked files it extracts from HEAD BY NAME; it enumerates no directory",
 }
 
 // twdDoorHolders are tests a door variable may name although no class rule

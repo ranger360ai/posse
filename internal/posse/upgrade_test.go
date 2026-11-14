@@ -236,7 +236,7 @@ func TestUpgradeResolveRefusesARepoWithNoOriginMain(t *testing.T) {
 // stubUpgradeSteps replaces the three shelling-out steps for one test and
 // restores them after. They are package vars precisely so a pin can refuse
 // a twenty-minute suite and still assert the order around it.
-func stubUpgradeSteps(t *testing.T, test func(io.Writer, string) error, build func(io.Writer, string, string, string) error, epilogue func(io.Writer, string, string) string) {
+func stubUpgradeSteps(t *testing.T, test func(io.Writer, string) error, build func(io.Writer, string, string, string) error, epilogue func(io.Writer, string, upgradePlan) string) {
 	t.Helper()
 	savedTest, savedBuild, savedEpilogue := upgradeTest, upgradeBuild, upgradeEpilogue
 	t.Cleanup(func() { upgradeTest, upgradeBuild, upgradeEpilogue = savedTest, savedBuild, savedEpilogue })
@@ -255,9 +255,9 @@ func TestUpgradeRefusesOnARedSuiteBeforeAnythingIsWritten(t *testing.T) {
 			built = true
 			return nil
 		},
-		func(w io.Writer, wt, target string) string {
+		func(w io.Writer, wt string, plan upgradePlan) string {
 			t.Error("the epilogue ran after a red suite")
-			return "fresh"
+			return upgradeGateUnchanged
 		})
 
 	plan, err := upgradeResolve(f.repo, f.target, f.a, "")
@@ -305,9 +305,9 @@ func TestUpgradeRefusesOnAFailedBuildWithoutSwapping(t *testing.T) {
 			}
 			return errors.New("exit status 2")
 		},
-		func(w io.Writer, wt, target string) string {
+		func(w io.Writer, wt string, plan upgradePlan) string {
 			t.Error("the epilogue ran after a failed build")
-			return "fresh"
+			return upgradeGateUnchanged
 		})
 
 	plan, err := upgradeResolve(f.repo, f.target, f.a, "")
@@ -335,7 +335,7 @@ func TestUpgradeRefusesAnUnwritableTargetBeforeRunningTheSuite(t *testing.T) {
 			return nil
 		},
 		func(w io.Writer, dir, repo, out string) error { return nil },
-		func(w io.Writer, wt, target string) string { return "fresh" })
+		func(w io.Writer, wt string, plan upgradePlan) string { return upgradeGateUnchanged })
 
 	// A directory where the staging file has to go is the simplest
 	// unwritable target there is, and it needs no chmod — which under a
@@ -391,12 +391,12 @@ func TestUpgradeGreenPathSwapsAndEndsWithTheRecordLine(t *testing.T) {
 			}
 			return os.WriteFile(out, built.bytes(), 0o644)
 		},
-		func(w io.Writer, wt, target string) string {
+		func(w io.Writer, wt string, plan upgradePlan) string {
 			order = append(order, "epilogue")
-			if target != f.target {
-				t.Errorf("the epilogue was handed %q as POSSE, want the just-installed %q", target, f.target)
+			if plan.Target != f.target {
+				t.Errorf("the epilogue was handed %q as POSSE, want the just-installed %q", plan.Target, f.target)
 			}
-			return "fresh"
+			return upgradeGateUnchanged
 		})
 
 	plan, err := upgradeResolve(f.repo, f.target, f.a, "")
@@ -427,7 +427,7 @@ func TestUpgradeGreenPathSwapsAndEndsWithTheRecordLine(t *testing.T) {
 	// D6: the last line, and the rollback command is in it.
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
 	last := lines[len(lines)-1]
-	want := fmt.Sprintf("upgraded %s..%s (2 commits) · gate fresh · rollback: %s", shortSha(f.a), shortSha(f.c), upgradeRollbackCmd(f.target))
+	want := fmt.Sprintf("upgraded %s..%s (2 commits) · gate %s · rollback: %s", shortSha(f.a), shortSha(f.c), upgradeGateUnchanged, upgradeRollbackCmd(f.target))
 	if last != want {
 		t.Errorf("the last stdout line is\n  %q\nwant\n  %q", last, want)
 	}
@@ -564,23 +564,44 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	}
 }
 
-// The gate word is read off verify-gate-freshness's own exit codes
-// (0 clean, 1 findings, 2 nothing measured), and the default is the one
-// that claims nothing.
-func TestUpgradeGateWordReadsTheVerifierExitCode(t *testing.T) {
+// D6's four-word gate field, read off verify-gate-freshness's own exit codes
+// (0 clean, 1 findings, 2 nothing measured) by the gate arm, and the default
+// is the one that claims nothing.
+//
+// The exit codes are read HERE as well as in upgradegate_test.go's arm pins
+// because this is the reading that cannot be stubbed: a real *exec.ExitError
+// from a real child, so a change to how a child's status is recovered reds
+// with the code it stopped seeing. `fresh` and `stale` are retired
+// (ranger-base-estjw) — the words are now what the ARM did, and an arm that
+// installs has two outcomes where a reading had one.
+func TestUpgradeExitCodeIsWhatTheVerifierActuallyExitedWith(t *testing.T) {
 	t.Parallel()
-	if got := upgradeGateWord(nil); got != "fresh" {
-		t.Errorf("exit 0 reads as %q, want fresh", got)
+	if got := upgradeExitCode(nil); got != 0 {
+		t.Errorf("a child that exited 0 reads as %d", got)
 	}
-	for code, want := range map[int]string{1: "stale", 2: "unknown", 127: "unknown"} {
-		if got := upgradeGateWord(exitErr(t, code)); got != want {
-			t.Errorf("exit %d reads as %q, want %q", code, got, want)
+	for _, code := range []int{1, 2, 127} {
+		if got := upgradeExitCode(exitErr(t, code)); got != code {
+			t.Errorf("exit %d is recovered as %d — this is the code the gate arm's verdict is read off", code, got)
 		}
 	}
 	// An error that is not an exit at all — the script could not be run —
-	// must not read as clean.
-	if got := upgradeGateWord(errors.New("no such file")); got != "unknown" {
-		t.Errorf("a child that never ran reads as %q, want unknown", got)
+	// must not read as clean, or a gate arm that never probed anything would
+	// report its green word.
+	if got := upgradeExitCode(errors.New("no such file")); got == 0 {
+		t.Error("a child that never ran reads as exit 0")
+	}
+	// And the four words are the four D6 settled on: `fresh` and `stale`
+	// were the verify-only words of the build that had no arm to report on.
+	words := []string{upgradeGateUnchanged, upgradeGateInstalled, upgradeGateRefused, upgradeGateUnknown}
+	seen := map[string]bool{}
+	for _, w := range words {
+		if w == "fresh" || w == "stale" {
+			t.Errorf("%q is a retired word of the pre-D5 build (ADR 0092 D6 as amended, ranger-base-estjw)", w)
+		}
+		if seen[w] {
+			t.Errorf("%q is two of the four words — one word per outcome is what makes the field readable", w)
+		}
+		seen[w] = true
 	}
 }
 
@@ -784,9 +805,9 @@ func TestUpgradeTakesTheBoxLockBeforeItResolvesAnything(t *testing.T) {
 			return errors.New("exit status 1")
 		},
 		func(w io.Writer, dir, repo, out string) error { t.Error("the build ran with no lock held"); return nil },
-		func(w io.Writer, wt, target string) string {
+		func(w io.Writer, wt string, plan upgradePlan) string {
 			t.Error("the epilogue ran with no lock held")
-			return "fresh"
+			return upgradeGateUnchanged
 		})
 
 	held := errors.New("upgrade lock: held by another upgrade")
@@ -820,9 +841,9 @@ func TestUpgradeTargetsTheRunningBinaryAndTheLagsCheckout(t *testing.T) {
 	stubUpgradeSteps(t,
 		func(w io.Writer, dir string) error { return errors.New("exit status 1") },
 		func(w io.Writer, dir, repo, out string) error { t.Error("the build ran after a red suite"); return nil },
-		func(w io.Writer, wt, target string) string {
+		func(w io.Writer, wt string, plan upgradePlan) string {
 			t.Error("the epilogue ran after a red suite")
-			return "fresh"
+			return upgradeGateUnchanged
 		})
 
 	s := &upgradeSeams{

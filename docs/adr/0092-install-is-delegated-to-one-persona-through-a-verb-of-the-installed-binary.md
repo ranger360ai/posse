@@ -182,6 +182,23 @@ untouched). It rolls back on any arm red. When the hook's path itself moves,
 that is a settings edit: the verb refuses the gate arm and names the edit for
 the operator.
 
+*Realized by the build bead (ranger-base-41l0r, 2026-11-14) in two parts
+this section left open. (a) BOTH readings — where the hook reaches, and
+whether the gate installed there works — are taken by running
+`verify-gate-freshness` itself, which grew two read-only modes for it
+(`--print-wrappers`, `--behaviour-only`). That script already holds this
+tree's one reading of the operator's hook entry and its one spelling of the
+three arms; a second reader of either would drift from it silently, and the
+direction it drifts in is this verb installing a box-wide fence and calling
+it green. The script still installs nothing — the half that WRITES is in the
+binary, which is D1's own argument one file over. (b) "did not resolve or had
+moved" is FIVE shapes, each a state the operator's settings can really be in:
+no PreToolUse hook names the wrapper; the hook command names a relative path;
+the settings name more than one wrapper; the named path holds no file; the
+named path is a symlink. Each writes nothing and prints the settings entry
+plus the one install command. docs/notes.d/ranger-base-41l0r.md has the table
+and the reasons.*
+
 **D6 — Guardrail 4 is the delegate's, and the verb hands it the line.** The
 verb's last stdout line is
 `upgraded <old>..<new> (<n> commits) · gate <word> · rollback: <D4 command>`.
@@ -208,6 +225,21 @@ the arm:
 D5. D5 retires them: `fresh` becomes `unchanged`, and `stale` becomes
 `installed` or `refused`. Nothing parses this line. The delegate posts it on
 the bead and a human reads it, so the retirement costs no reader.
+
+*Two outcomes the four words did not name, decided by the build bead
+(ranger-base-41l0r, 2026-11-14) and now part of this field's meaning. An
+installed copy that is already `<sha>`'s and whose behaviour arms go RED
+reads `refused`: not `unchanged`, which claims the arms were green, and not
+`unknown`, because the arms measured something. The break is under the bytes
+— no python3, a bad mode, a settings entry pointing at something unexpected
+— and reinstalling the same bytes is the one prescription that cannot work,
+so the arm reports and stops. And an exit 2 taken AFTER the swap reads
+`unknown` and leaves the install standing: every path that answers 2 in that
+mode is a box property the installed bytes cannot cause, a gate whose
+interpreter is gone is equally dead on either version of the pair, and a
+rollback would hide which copy is in place behind a word that means "I
+measured nothing". The `.prev` pair and the two rollback commands are in the
+report either way.*
 
 For every install, the delegate posts that line on the install bead, and files
 one `-l security` bead for the security persona. That bead names the range and
@@ -439,6 +471,31 @@ An UNKNOWN code is treated as binary-rendered, which is the correct answer
 rather than a fallback: the table is complete for the binary doing the
 judging (the pin says so), so a row the NEW binary printed and the old one
 cannot name is a condition the new binary invented.
+
+**D5's class is live on this box, MEASURED 2026-11-14 by the build bead
+(ranger-base-41l0r): `make verify-gate-freshness` read
+`bd-argv-gate.sh is STALE — it is not HEAD's` against `~/src/posse @
+db4dc29b`, with the parser fresh and all three behaviour arms holding.** One
+file of the fence every Bash call on this box runs through, stale in the live
+copy, with the detective control that says so wired into `make install` since
+ranger-base-d0jo and ranger-base-2tnbv already closed once by hand for the
+same drift. That is the whole argument for the arm being an arm.
+
+The arm's own rollback is pinned by MUTATION rather than by assertion count,
+because what it promises is a negative — MEASURED 2026-11-14, three one-line
+changes to upgradegate.go: never taking the "already identical" branch reds
+on the word and on the `.prev` files that appeared; restoring the wrapper
+alone reds on the parser, naming a half-restored pair as a combination nobody
+ran; and deleting the symlink arm is **green**, because the
+not-a-regular-file arm catches that shape too. The box is equally safe
+either way and the only thing lost is the one thing the operator needs from
+it — why their arrangement was not refreshed — so the pin now asserts the
+word `symlink` in the refusal. The three behaviour arms being reachable
+through the flags the arm passes is pinned where the script can be run
+against a planted gate (internal/treepins/gatearmmodes_qa_test.go, which
+extracts those flags from the arm's own source): without it, a rename of
+either mode leaves every install reporting `gate unknown` with the box's
+copy never refreshed, and nothing in Go can see it.
 
 The automatic rollback is write-beside-then-`rename(2)` rather than the
 `install -m 0755` D4 prints. Both are "not through the new binary" — it is

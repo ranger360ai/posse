@@ -56,15 +56,40 @@
 # the fence refuses is not a fix.
 #
 # Exit 0 clean · 1 findings · 2 nothing measured.
+#
+# TWO READ-ONLY MODES FOR THE UPGRADE ARM (ADR 0092 D5, ranger-base-41l0r).
+# `posse upgrade` installs this box's gate copy from the commit it is
+# installing, and to do that it needs two answers this script already has and
+# nothing else on the box does:
+#
+#   --print-wrappers   WHERE the gate is installed — one absolute path per
+#                      line, read out of the operator's settings exactly as
+#                      the full run reads it. Exit 0 with at least one path,
+#                      else 2 through `nothing`.
+#   --behaviour-only   DOES the installed gate work — the three behaviour
+#                      arms below and nothing else: no HEAD reference, no
+#                      identity comparison, no reading of this repo at all.
+#                      Exit 0 all three hold · 1 an arm red · 2 nothing
+#                      measured.
+#
+# Both are here rather than in Go for the one reason that matters: a second
+# reader of the operator's hook entry, or a second copy of the three arms,
+# would drift from this one silently — and the direction it drifts in is a
+# verb that installs a box-wide fence and calls it green. They install
+# nothing (see WHAT IT WILL NOT DO below, which is unchanged: the arm that
+# WRITES is in the binary, where a persona's worktree cannot edit it).
 set -uo pipefail
 
 warn_only=0
 wrapper_override=""
+mode=full                    # full | wrappers | behaviour
 while [ $# -gt 0 ]; do
   case "$1" in
     --warn) warn_only=1 ;;   # report and exit 0 — `make install` uses this
     --wrapper) shift; wrapper_override="${1:-}" ;;
-    *) echo "usage: $(basename "$0") [--warn] [--wrapper PATH]" >&2; exit 2 ;;
+    --print-wrappers) mode=wrappers ;;
+    --behaviour-only) mode=behaviour ;;
+    *) echo "usage: $(basename "$0") [--warn] [--wrapper PATH] [--print-wrappers] [--behaviour-only]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -72,7 +97,8 @@ done
 nothing() { echo "verify-gate-freshness: $* — nothing measured"; exit 2; }
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || nothing "cannot locate the repo"
-git -C "$here" rev-parse --verify -q HEAD >/dev/null 2>&1 || nothing "$here has no HEAD"
+repo="$here"
+linked=0
 
 # THE REFERENCE IS THE MAIN CHECKOUT'S HEAD, NOT THIS TREE'S. A persona runs
 # in a linked worktree (~/.posse/worktrees/...) whose HEAD carries work that
@@ -81,12 +107,22 @@ git -C "$here" rev-parse --verify -q HEAD >/dev/null 2>&1 || nothing "$here has 
 # prescribe installing a persona's branch box-wide — the precise thing the
 # copy exists to prevent. --git-common-dir is the main .git for a linked
 # worktree and a bare `.git` for the main checkout itself.
-common=$(git -C "$here" rev-parse --git-common-dir) || nothing "cannot resolve the git common dir"
-case "$common" in /*) ;; *) common="$here/$common" ;; esac
-repo=$(cd -- "$common/.." 2>/dev/null && pwd) || repo="$here"
-git -C "$repo" rev-parse --verify -q HEAD >/dev/null 2>&1 || repo="$here"
-linked=0
-[ "$repo" = "$here" ] || linked=1
+#
+# ASKED ONLY WHEN A REFERENCE IS NEEDED. `--print-wrappers` reads the
+# operator's settings and `--behaviour-only` reads the installed files; both
+# are facts about the BOX and neither looks at a commit, so neither may be
+# refused by a repository question. That is not a convenience: the upgrade
+# arm runs this script out of a throwaway worktree, and a mode that demanded
+# a resolvable HEAD would tie a box reading to the state of a tree the verb
+# deletes minutes later.
+if [ "$mode" = full ]; then
+  git -C "$here" rev-parse --verify -q HEAD >/dev/null 2>&1 || nothing "$here has no HEAD"
+  common=$(git -C "$here" rev-parse --git-common-dir) || nothing "cannot resolve the git common dir"
+  case "$common" in /*) ;; *) common="$here/$common" ;; esac
+  repo=$(cd -- "$common/.." 2>/dev/null && pwd) || repo="$here"
+  git -C "$repo" rev-parse --verify -q HEAD >/dev/null 2>&1 || repo="$here"
+  [ "$repo" = "$here" ] || linked=1
+fi
 
 PYTHON="${BD_ARGV_GATE_PYTHON:-python3}"
 command -v "$PYTHON" >/dev/null 2>&1 || nothing "no $PYTHON on PATH (the gate itself needs it)"
@@ -134,6 +170,16 @@ fi
 
 [ "${#wrappers[@]}" -gt 0 ] || nothing "no PreToolUse hook in $config_dir names bd-argv-gate.sh (the gate is not installed on this box)"
 
+# `--print-wrappers` stops HERE, which is the whole of that mode: the lines
+# above are the one resolution of the operator's hook entry in this tree, and
+# this prints its answer rather than describing it. One absolute path per
+# line and nothing else on stdout, so a caller can read it without parsing
+# prose; the no-hook case has already exited 2 through `nothing`.
+if [ "$mode" = wrappers ]; then
+  printf '%s\n' "${wrappers[@]}"
+  exit 0
+fi
+
 # -- the reference ----------------------------------------------------------
 ref=$(mktemp -d "${TMPDIR:-/tmp}/posse-gate-freshness.XXXXXX") || nothing "cannot make a scratch dir"
 # EXIT keeps the bare handler; the signals answer through `nothing`
@@ -152,16 +198,24 @@ trap 'rm -rf "$ref"' EXIT
 trap 'nothing "interrupted (SIGINT)"' INT
 trap 'nothing "interrupted (SIGTERM)"' TERM
 trap 'nothing "interrupted (SIGHUP)"' HUP
-for f in bd-argv-gate.sh bd-argv-gate.py; do
-  git -C "$repo" show "HEAD:scripts/$f" > "$ref/$f" 2>/dev/null \
-    || nothing "HEAD carries no scripts/$f"
-done
-
-# Bare `git diff HEAD -- <paths>`, never the two-dot form: another persona's
-# staged edit to these files is exactly the state that must not be installed
-# box-wide (ADR 0022, and the same trap ranger-base-erba landed b291784 for).
 dirty=0
-git -C "$repo" diff --quiet HEAD -- scripts/bd-argv-gate.sh scripts/bd-argv-gate.py || dirty=1
+# The scratch dir and its traps are taken in every mode — `nothing` is this
+# script's one channel for "I measured nothing" whichever mode asked, and a
+# trap armed on a variable that is only sometimes set is the shape
+# ranger-base-kkp5g's incident had. What is skipped under --behaviour-only is
+# the READING: that mode judges the installed files alone, so a reference it
+# would never compare against is a git call that can only fail.
+if [ "$mode" != behaviour ]; then
+  for f in bd-argv-gate.sh bd-argv-gate.py; do
+    git -C "$repo" show "HEAD:scripts/$f" > "$ref/$f" 2>/dev/null \
+      || nothing "HEAD carries no scripts/$f"
+  done
+
+  # Bare `git diff HEAD -- <paths>`, never the two-dot form: another persona's
+  # staged edit to these files is exactly the state that must not be installed
+  # box-wide (ADR 0022, and the same trap ranger-base-erba landed b291784 for).
+  git -C "$repo" diff --quiet HEAD -- scripts/bd-argv-gate.sh scripts/bd-argv-gate.py || dirty=1
+fi
 
 # Two classes, kept apart because they take different repairs. `stale` is an
 # identity or presence finding and a reinstall fixes it. `broken` is a
@@ -179,31 +233,40 @@ probe() {                                # probe <wrapper> <command>; sets rc/ou
   rc=$?
 }
 
-echo "verify-gate-freshness: reference $repo @ $(git -C "$repo" rev-parse --short HEAD) · ${#wrappers[@]} installed gate(s)"
-[ "$linked" -eq 0 ] || echo "  (run from the linked worktree $here — the reference is still the main checkout, which is what promote installs)"
+if [ "$mode" = behaviour ]; then
+  echo "verify-gate-freshness: behaviour only · ${#wrappers[@]} installed gate(s) · no reference read (ADR 0092 D5)"
+else
+  echo "verify-gate-freshness: reference $repo @ $(git -C "$repo" rev-parse --short HEAD) · ${#wrappers[@]} installed gate(s)"
+  [ "$linked" -eq 0 ] || echo "  (run from the linked worktree $here — the reference is still the main checkout, which is what promote installs)"
+fi
 
 for w in "${wrappers[@]}"; do
   echo ""
   echo "  $w"
   py="${w%/*}/bd-argv-gate.py"
 
-  # -- identity
+  # -- identity (presence and mode in every mode: a file that is not there
+  #    cannot be probed, and an un-executable one is not the gate whatever
+  #    its bytes say. The COMPARISONS are the reference's, so they are the
+  #    half --behaviour-only leaves out.)
   if [ ! -f "$w" ]; then
     finding "the hook names a file that is not there — every Bash call on this box runs with no gate"
     continue
   fi
   [ -x "$w" ] || finding "not executable — the hook execs it directly, with no interpreter in front"
-  if cmp -s "$w" "$ref/bd-argv-gate.sh"; then
-    echo "    fresh    bd-argv-gate.sh matches HEAD"
-  else
-    finding "bd-argv-gate.sh is STALE — it is not HEAD's"
-  fi
-  if [ ! -r "$py" ]; then
-    finding "bd-argv-gate.py is missing or unreadable beside the wrapper ($py)"
-  elif cmp -s "$py" "$ref/bd-argv-gate.py"; then
-    echo "    fresh    bd-argv-gate.py matches HEAD"
-  else
-    finding "bd-argv-gate.py is STALE — it is not HEAD's"
+  if [ "$mode" != behaviour ]; then
+    if cmp -s "$w" "$ref/bd-argv-gate.sh"; then
+      echo "    fresh    bd-argv-gate.sh matches HEAD"
+    else
+      finding "bd-argv-gate.sh is STALE — it is not HEAD's"
+    fi
+    if [ ! -r "$py" ]; then
+      finding "bd-argv-gate.py is missing or unreadable beside the wrapper ($py)"
+    elif cmp -s "$py" "$ref/bd-argv-gate.py"; then
+      echo "    fresh    bd-argv-gate.py matches HEAD"
+    else
+      finding "bd-argv-gate.py is STALE — it is not HEAD's"
+    fi
   fi
 
   # -- behavior, against the installed file
@@ -228,13 +291,41 @@ for w in "${wrappers[@]}"; do
 done
 
 echo ""
+gate_dir="${wrappers[0]%/*}"
+
+# --behaviour-only answers its own question and stops. It cannot borrow
+# either prescription below: one says reinstall, which this mode has not
+# earned the right to say (it never compared a byte against a reference), and
+# the other says the installed files ARE HEAD's, which it did not measure.
+# What it DOES know is that the files it probed are the files the hook
+# reaches, so the break is under them.
+if [ "$mode" = behaviour ]; then
+  if [ "$findings" -eq 0 ]; then
+    echo "verify-gate-freshness: behaviour holds — all three arms pass against the installed gate"
+    exit 0
+  fi
+  cat <<EOF
+verify-gate-freshness: findings above, from the behaviour arms alone — no
+identity was compared, so this says the installed gate does not WORK and
+says nothing about which bytes it holds. The break is under the files the
+hook reaches: python3 (the wrapper's default, or BD_ARGV_GATE_PYTHON), the
+parser's mode, or the settings entry pointing somewhere unexpected.
+Reproduce the arm by hand:
+
+  printf '{"tool_name":"Bash","tool_input":{"command":"bd daemon stop"}}' | $gate_dir/bd-argv-gate.sh
+
+A working gate answers that with a deny decision on stdout and exit 0.
+EOF
+  [ "$warn_only" -eq 1 ] && exit 0
+  exit 1
+fi
+
 if [ "$findings" -eq 0 ]; then
   [ "$dirty" -eq 0 ] || echo "verify-gate-freshness: note — scripts/bd-argv-gate.* differ from HEAD in this checkout; the installed copies match HEAD, which is what promote installs"
   echo "verify-gate-freshness: fresh — the installed gate is HEAD's and all three arms hold"
   exit 0
 fi
 
-gate_dir="${wrappers[0]%/*}"
 echo "verify-gate-freshness: findings above"
 echo ""
 if [ "$stale" -eq 0 ]; then

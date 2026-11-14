@@ -259,13 +259,13 @@ func newD4Fixture(t *testing.T, now, next fakePosse) d4Fixture {
 		func(w io.Writer, dir, repo, out string) error {
 			return os.WriteFile(out, f.next.bytes(), 0o644)
 		},
-		func(w io.Writer, wt, target string) string {
+		func(w io.Writer, wt string, plan upgradePlan) string {
 			// The epilogue must not run on a rollback, so a pin that
 			// expects one asserts on this through the report rather than
 			// here: a t.Error in a shared helper would fire for the pins
 			// that legitimately reach it.
 			fmt.Fprintln(w, "EPILOGUE RAN")
-			return "fresh"
+			return upgradeGateUnchanged
 		})
 	return f
 }
@@ -371,7 +371,7 @@ func TestUpgradeAcceptsTheShortStampTheBuildWrites(t *testing.T) {
 		func(w io.Writer, dir, repo, out string) error {
 			return os.WriteFile(out, short.bytes(), 0o644)
 		},
-		func(w io.Writer, wt, target string) string { return "fresh" })
+		func(w io.Writer, wt string, plan upgradePlan) string { return upgradeGateUnchanged })
 	var out bytes.Buffer
 	if err := upgradeRunPlan(&out, plan); err != nil {
 		t.Fatalf("a binary stamped with git's own short form was rolled back: %v\n%s", err, out.String())

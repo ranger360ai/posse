@@ -47,8 +47,10 @@ package posse
 // wider window, not a narrower one. The rename closes it either way.
 // docs/notes.d/ranger-base-zhw0h.md has the probe.
 //
-// WHAT IS NOT HERE. The bd argv gate copy arm is D5 and belongs to
-// ranger-base-41l0r. D4 — the status/gates snapshot taken before the swap,
+// WHAT IS NOT HERE. The bd argv gate copy arm is D5 and lives in
+// upgradegate.go (ranger-base-41l0r), reached from this file's epilogue,
+// which is also where D6's gate word now comes from. D4 — the status/gates
+// snapshot taken before the swap,
 // the diff taken after it through the NEW binary, and the automatic rollback
 // on a new red — landed under ranger-base-v87a1 and lives in
 // upgradeverify.go, which also carries the partition of `posse status`
@@ -357,12 +359,21 @@ var upgradeBuild = func(w io.Writer, dir, repo, out string) error {
 	return cmd.Run()
 }
 
-// upgradeEpilogue is D3.6 — `make install`'s own two checks, run from the
-// worktree, and it answers D6's gate word. Advisory both: a stale hook or
-// gate copy is not a reason to fail an install that already happened (the
+// upgradeEpilogue is D3.6 and D5 — the gate copy arm, then `make install`'s
+// own hook-freshness check, both run from the worktree, and it answers D6's
+// gate word. Advisory both: a stale hook, or a gate copy that could not be
+// refreshed, is not a reason to fail an install that already happened (the
 // Makefile's own words).
-var upgradeEpilogue = func(w io.Writer, wt, target string) string {
-	gate := upgradeGateWord(upgradeStep(w, wt, filepath.Join(wt, "scripts", "verify-gate-freshness.sh")))
+//
+// THE GATE HALF IS AN ARM NOW, not a reading. It used to be
+// `verify-gate-freshness` run for its exit code — a detective control
+// reporting that the box's copy was stale, which is what it had been doing
+// at `make install` since ranger-base-d0jo and which moved nothing. D5 gave
+// the arm to this verb: same source, same review path, same blast class as
+// the binary. upgradegate.go is the whole of it, and the word it returns is
+// the four-word set D6 settled on at acceptance.
+var upgradeEpilogue = func(w io.Writer, wt string, plan upgradePlan) string {
+	gate := upgradeGateArm(w, wt, plan)
 	hook := protocolCmd(exec.Command(filepath.Join(wt, "scripts", "verify-hook-freshness.sh"), "--quiet"))
 	hook.Dir = wt
 	hook.Stdout, hook.Stderr = w, w
@@ -370,7 +381,7 @@ var upgradeEpilogue = func(w io.Writer, wt, target string) string {
 	// it must be the one just installed — the Makefile passes $(BINDIR)/posse
 	// for the same reason. Through protocolEnv, because assigning Env
 	// replaces the gates-free PATH protocolCmd put on this child.
-	hook.Env = protocolEnv(append(os.Environ(), "POSSE="+target))
+	hook.Env = protocolEnv(append(os.Environ(), "POSSE="+plan.Target))
 	_ = hook.Run()
 	return gate
 }
@@ -432,32 +443,15 @@ func upgradeSwap(target, staged string) error {
 	return nil
 }
 
-// upgradeGateWord is D6's gate field, read off verify-gate-freshness's exit
-// code: 0 clean, 1 findings, 2 nothing measured (that script's own header).
-//
-// WHY IT IS RUN WITHOUT --warn, which is the one spelling that differs from
-// `make install`'s epilogue. `--warn` exists so a finding cannot fail an
-// install, and it buys that by exiting 0 whatever it found — which would
-// leave this field with nothing to read. The verb gets the same property by
-// consuming the code rather than propagating it: the operator sees the
-// identical report, the upgrade is not failed by it, and D6's line says what
-// it said.
-//
-// `installed` and `unchanged` are D5's words and are not reachable yet: the
-// arm that installs the gate copy is ranger-base-41l0r. Until it lands, a
-// stale copy is reported as stale and left exactly where it was.
-func upgradeGateWord(err error) string {
-	switch upgradeExitCode(err) {
-	case 0:
-		return "fresh"
-	case 1:
-		return "stale"
-	default:
-		return "unknown"
-	}
-}
-
 // upgradeExitCode is a child's exit status, or -1 when it did not run.
+//
+// Read by the gate arm as well as by the steps above, and there it is read
+// WITHOUT `--warn` — the one spelling that differs from `make install`'s
+// epilogue. `--warn` exists so a finding cannot fail an install, and it
+// buys that by exiting 0 whatever it found, which would leave D6's field
+// with nothing to read. The verb gets the same property by consuming the
+// code rather than propagating it: the operator sees the identical report,
+// the upgrade is not failed by it, and D6's line says what it said.
 func upgradeExitCode(err error) int {
 	if err == nil {
 		return 0
@@ -699,8 +693,8 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 		return err
 	}
 
-	fmt.Fprintf(w, "\n── epilogue (ADR 0092 D3.6) ──\n")
-	gate := upgradeEpilogue(w, wt, plan.Target)
+	fmt.Fprintf(w, "\n── epilogue: the gate copy arm (ADR 0092 D5) and the hook wall reading (D3.6) ──\n")
+	gate := upgradeEpilogue(w, wt, plan)
 
 	// D6 — the LAST stdout line, and the one the delegate posts on the
 	// install bead. Everything above may be long; this is the record.

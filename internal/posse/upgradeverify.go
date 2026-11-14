@@ -44,7 +44,12 @@ package posse
 // unchanged and does not trip. A new binary that makes a wall worse makes
 // MORE rows, which is the shape that trips; one that makes a different wall
 // worse while fixing the first is exotic, and the epilogue's
-// verify-gate-freshness report still prints under it.
+// verify-hook-freshness reading still prints under it. (That used to say
+// verify-gate-freshness, which was the wrong half of the epilogue for a
+// hook-wall row and is, since ADR 0092 D5, not run there in its reporting
+// form at all: the gate half is an install arm now and asks the script only
+// its three behaviour questions — upgradegate.go. verify-hook-freshness is
+// the reading that was always the one about walls.)
 //
 // WHAT COUNTS AS "THE BINARY RENDERS IT" is the table below, which is this
 // bead's first deliverable: ADR 0092 D4 named G12, G17 and the binary header
