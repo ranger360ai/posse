@@ -597,6 +597,7 @@ func main() {
 		"TestLiveWallWatchBackstopKillsASeatWhoseWatcherIsGone":            "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchDiscardsAPromptLargerThanTheTerminalQueue":       "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchDiscardsWhatWasTypedIntoTheKilledSeat":           "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveWallWatchKillsASeatWhoseBackstopRecordCannotBeWritten":    "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead":      "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchPassesTheSeatsOwnExitCode":                       "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch":       "reads bwrapNestOnce and bwrapNestWhy",
