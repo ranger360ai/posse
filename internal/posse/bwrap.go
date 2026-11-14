@@ -578,91 +578,23 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// comes AFTER the lstat, because writeGranted resolves its argument, and
 	// a link there would resolve outside the grant and be skipped, not
 	// refused.
+	// FOUR ARMS, ONE WATCH (ranger-base-4tsa7). bwrapPrivateArgs renders the
+	// entry — the File bind, the dir bound in place, the empty tmpfs, the dir
+	// copy — and the `watch` call is made HERE, once, over whatever it
+	// returned, because every one of those mounts is a wall and the arm that
+	// made it does not change that. bwrapPrivateArgs' head comment has what
+	// the per-arm watch cost us and why an arm that renders nothing says so
+	// with a bool.
 	for _, pb := range carve.Private {
-		if pb.File {
-			// A FILE bind (ranger-base-a544g): the same lstat discipline, for
-			// a regular file. Both names are lstat'd, the source too: it sits
-			// in the seat's own cache dir, which that seat can write, so a
-			// link there is one the seat chose, and following it would bind
-			// any file the uid can write into the next launch's namespace.
-			fi, err := os.Lstat(pb.Dst)
-			switch {
-			case err == nil && !fi.Mode().IsRegular():
-				return nil, nil, Die("bwrap cannot bind a private file over %s: it is not a regular file (a link, a dir or a special file is there, and every seat can write its parent) — remove it and relaunch (ranger-base-a544g)", pb.Dst)
-			case err != nil && !os.IsNotExist(err):
-				return nil, nil, bwrapStatRefusal("private member", pb.Dst, err)
-			}
-			if !writeGranted(grants, pb.Dst) {
-				continue
-			}
-			if err != nil {
-				prep = append(prep, PrepStep{PrepMaskPoint, pb.Dst, "the shared file a private copy is mounted over; created empty at 0600 because a mount needs a name to cover"})
-			}
-			sfi, serr := os.Lstat(pb.Src)
-			switch {
-			case serr == nil && !sfi.Mode().IsRegular():
-				return nil, nil, Die("bwrap cannot bind %s over %s: it is not a regular file (a link, a dir or a special file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-a544g)", pb.Src, pb.Dst)
-			case serr != nil && !os.IsNotExist(serr):
-				return nil, nil, bwrapStatRefusal("private source", pb.Src, serr)
-			case serr != nil:
-				prep = append(prep,
-					PrepStep{PrepMkdirAll, filepath.Dir(pb.Src), "the seat's private copy of shared claude state lives here"},
-					PrepStep{PrepMaskPoint, pb.Src, "the seat's private copy of a file every claude seat shares, created empty at 0600 as claude creates it"})
-			}
-			bind := "--bind"
-			if pb.ReadOnly {
-				bind = "--ro-bind"
-			}
-			argv = append(argv, bind, pb.Src, pb.Dst)
-			watch(WallWatchPrivate, pb.Dst)
-			continue
-		}
-		fi, err := os.Lstat(pb.Dst)
-		switch {
-		case err == nil && !fi.IsDir():
-			return nil, nil, Die("bwrap cannot bind a private dir over %s: it is not a directory (a link or a file is there, and every seat can write its parent) — remove it and relaunch (ranger-base-5632o)", pb.Dst)
-		case err != nil && !os.IsNotExist(err):
-			return nil, nil, bwrapStatRefusal("private member", pb.Dst, err)
-		}
-		if !writeGranted(grants, pb.Dst) {
-			continue
-		}
-		bind := "--bind"
-		if pb.ReadOnly {
-			bind = "--ro-bind"
-		}
-		if pb.Src == pb.Dst {
-			// In place (ranger-base-ajkqx): the lstat above is the source's
-			// too, and an absent one is made once, here.
-			if err != nil {
-				prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "a dir of the shared config that is re-bound in place to narrow or reopen the grant over it; a mount needs a directory to cover"})
-			}
-			argv = append(argv, bind, pb.Dst, pb.Dst)
-			watch(WallWatchPrivate, pb.Dst)
-			continue
-		}
+		add, steps, ok, err := bwrapPrivateArgs(pb, grants)
 		if err != nil {
-			prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "the shared member a private copy is mounted over; a mount needs a directory to cover"})
+			return nil, nil, err
 		}
-		if pb.Src == "" {
-			// An empty tmpfs: nothing on the host to stat or make, and
-			// nothing a host process wrote at Dst is visible under it
-			// (ranger-base-6ob20).
-			argv = append(argv, "--tmpfs", pb.Dst)
-			watch(WallWatchPrivate, pb.Dst)
+		prep = append(prep, steps...)
+		if !ok {
 			continue
 		}
-		exists, dir, err := bwrapStat(pb.Src)
-		if err != nil {
-			return nil, nil, bwrapStatRefusal("private source", pb.Src, err)
-		}
-		switch {
-		case exists && !dir:
-			return nil, nil, Die("bwrap cannot bind %s over %s: it is not a directory (ranger-base-5632o)", pb.Src, pb.Dst)
-		case !exists:
-			prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
-		}
-		argv = append(argv, bind, pb.Src, pb.Dst)
+		argv = append(argv, add...)
 		watch(WallWatchPrivate, pb.Dst)
 	}
 
@@ -1041,6 +973,107 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		watch(WallWatchReadMask, f)
 	}
 	return argv, prep, nil
+}
+
+// bwrapPrivateArgs renders ONE carve.Private entry: the mount options to
+// append, the prep steps the launcher must run before the seat starts, and
+// whether it rendered a mount at all. Shape 2c's call site says which arm
+// each field selects and why each lstat is an lstat.
+//
+// IT IS A FUNCTION SO THAT THE WATCH IS NOT (ranger-base-4tsa7). Every arm
+// here mounts over pb.Dst and every one of those mounts is a wall, so the
+// one `watch(WallWatchPrivate, pb.Dst)` is made by the caller over whatever
+// this returned. While each arm made its own, an arm could be added without
+// one and nothing said so: ranger-base-6ob20's empty tmpfs arm was MEASURED
+// on 2026-11-14 to be watched by no pin — deleting its watch call left `-run
+// TestWallWatch` green, where deleting any of the other three red two tests,
+// because the fixture that drives those pins rendered three arms and that
+// was not one of them. A fixture entry fixes the instance; having no per-arm
+// watch to forget is what fixes the class, and a FIFTH arm added below is
+// watched by writing no new line at all.
+//
+// `ok` IS FALSE FOR THE ONE THING THAT IS NOT A MOUNT: a destination inside
+// no write grant renders nothing (D23 and the call site's last paragraph).
+// It is a third return rather than an empty slice because "rendered nothing"
+// and "rendered something" is exactly the distinction the caller's watch
+// call hangs on, and a nil slice that means one of them by convention is how
+// the per-arm watch got forgotten in the first place.
+func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bool, error) {
+	var prep []PrepStep
+	bind := "--bind"
+	if pb.ReadOnly {
+		bind = "--ro-bind"
+	}
+	if pb.File {
+		// A FILE bind (ranger-base-a544g): the same lstat discipline, for
+		// a regular file. Both names are lstat'd, the source too: it sits
+		// in the seat's own cache dir, which that seat can write, so a
+		// link there is one the seat chose, and following it would bind
+		// any file the uid can write into the next launch's namespace.
+		fi, err := os.Lstat(pb.Dst)
+		switch {
+		case err == nil && !fi.Mode().IsRegular():
+			return nil, nil, false, Die("bwrap cannot bind a private file over %s: it is not a regular file (a link, a dir or a special file is there, and every seat can write its parent) — remove it and relaunch (ranger-base-a544g)", pb.Dst)
+		case err != nil && !os.IsNotExist(err):
+			return nil, nil, false, bwrapStatRefusal("private member", pb.Dst, err)
+		}
+		if !writeGranted(grants, pb.Dst) {
+			return nil, nil, false, nil
+		}
+		if err != nil {
+			prep = append(prep, PrepStep{PrepMaskPoint, pb.Dst, "the shared file a private copy is mounted over; created empty at 0600 because a mount needs a name to cover"})
+		}
+		sfi, serr := os.Lstat(pb.Src)
+		switch {
+		case serr == nil && !sfi.Mode().IsRegular():
+			return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a regular file (a link, a dir or a special file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-a544g)", pb.Src, pb.Dst)
+		case serr != nil && !os.IsNotExist(serr):
+			return nil, nil, false, bwrapStatRefusal("private source", pb.Src, serr)
+		case serr != nil:
+			prep = append(prep,
+				PrepStep{PrepMkdirAll, filepath.Dir(pb.Src), "the seat's private copy of shared claude state lives here"},
+				PrepStep{PrepMaskPoint, pb.Src, "the seat's private copy of a file every claude seat shares, created empty at 0600 as claude creates it"})
+		}
+		return []string{bind, pb.Src, pb.Dst}, prep, true, nil
+	}
+	fi, err := os.Lstat(pb.Dst)
+	switch {
+	case err == nil && !fi.IsDir():
+		return nil, nil, false, Die("bwrap cannot bind a private dir over %s: it is not a directory (a link or a file is there, and every seat can write its parent) — remove it and relaunch (ranger-base-5632o)", pb.Dst)
+	case err != nil && !os.IsNotExist(err):
+		return nil, nil, false, bwrapStatRefusal("private member", pb.Dst, err)
+	}
+	if !writeGranted(grants, pb.Dst) {
+		return nil, nil, false, nil
+	}
+	if pb.Src == pb.Dst {
+		// In place (ranger-base-ajkqx): the lstat above is the source's
+		// too, and an absent one is made once, here.
+		if err != nil {
+			prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "a dir of the shared config that is re-bound in place to narrow or reopen the grant over it; a mount needs a directory to cover"})
+		}
+		return []string{bind, pb.Dst, pb.Dst}, prep, true, nil
+	}
+	if err != nil {
+		prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "the shared member a private copy is mounted over; a mount needs a directory to cover"})
+	}
+	if pb.Src == "" {
+		// An empty tmpfs: nothing on the host to stat or make, and
+		// nothing a host process wrote at Dst is visible under it
+		// (ranger-base-6ob20).
+		return []string{"--tmpfs", pb.Dst}, prep, true, nil
+	}
+	exists, dir, err := bwrapStat(pb.Src)
+	if err != nil {
+		return nil, nil, false, bwrapStatRefusal("private source", pb.Src, err)
+	}
+	switch {
+	case exists && !dir:
+		return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a directory (ranger-base-5632o)", pb.Src, pb.Dst)
+	case !exists:
+		prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
+	}
+	return []string{bind, pb.Src, pb.Dst}, prep, true, nil
 }
 
 // grantInside says whether any write grant lies at or under d — the other

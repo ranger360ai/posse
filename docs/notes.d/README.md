@@ -38,6 +38,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-5owgm](ranger-base-5owgm.md) — An untrapped terminating signal runs bash's EXIT trap, so one clause of the bd-argv-gate exemption was false in three places — and HUP now speaks in the five splits — 2026-11-14
 - [ranger-base-5ex01](ranger-base-5ex01.md) — A candidate heads only on an anchor, and the lane's label stopped being the head seat's own (ranger-base-5ex01) — 2026-11-14
 - [ranger-base-51ttd](ranger-base-51ttd.md) — A positive witness bounded by a clock, and what it turned out not to witness (ranger-base-51ttd) — 2026-11-14
+- [ranger-base-4tsa7](ranger-base-4tsa7.md) — ranger-base-4tsa7 — the private loop's fourth arm, and one watch instead of four — 2026-11-14
 - [ranger-base-4fx5x](ranger-base-4fx5x.md) — An exemption that drops an id from the SCAN also drops it from the STRIP (ranger-base-4fx5x) — 2026-11-14
 - [ranger-base-41l0r](ranger-base-41l0r.md) — The fence that fences every seat was refreshed by hand, and nothing noticed when it was not (ranger-base-41l0r) — 2026-11-14
 - [ranger-base-3cpcg](ranger-base-3cpcg.md) — ranger-base-3cpcg — the treepins door is the package minus a priced table — 2026-11-14

@@ -9,6 +9,9 @@ package posse
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -141,9 +144,22 @@ func wwOpenings(c wwRender) map[string]string {
 // reflection over SeatbeltCarveOut while leaving whole arms unrendered: that
 // is how ranger-base-a544g's FILE bind (bwrap.go's pb.File arm) arrived
 // watched by no pin — MEASURED 2026-11-13, deleting its one
-// `watch(WallWatchPrivate, pb.Dst)` reds nothing. So the three entries below
-// are the three arms: a dir COPY (Src != Dst), a FILE, and a dir bound IN
-// PLACE read-only (claudeProjectsBinds' shape, ranger-base-ajkqx).
+// `watch(WallWatchPrivate, pb.Dst)` reds nothing. So the FOUR entries below
+// are the four arms: a dir COPY (Src != Dst), a FILE, a dir bound IN PLACE
+// read-only (claudeProjectsBinds' shape, ranger-base-ajkqx), and an empty
+// TMPFS (Src == "", ranger-base-6ob20).
+//
+// AND A FIELD REFLECTION CANNOT HOLD THAT COUNT (ranger-base-4tsa7, from the
+// verify at ranger-base-zkuwa). The tmpfs arm is selected by a field's ZERO
+// value, so the reflection in TestWallWatchFixturesCarryEveryCarveOutField —
+// which demands each PrivateBind field be NON-ZERO in some render — could
+// never ask for it, and it shipped rendered by no fixture at all: MEASURED
+// 2026-11-14, deleting ITS watch call left `-run TestWallWatch` green, where
+// deleting any of the other three red two tests. The fourth entry below is
+// that instance. The COUNT is held by
+// TestWallWatchFixturesRenderEveryPrivateArm, which reads the arms off
+// bwrapPrivateArgs' own returns, and the watch is now the private loop's one
+// exit point rather than a line each arm can be written without.
 func wwEveryShape(t *testing.T) wwRender {
 	t.Helper()
 	root := t.TempDir()
@@ -153,6 +169,11 @@ func wwEveryShape(t *testing.T) wwRender {
 	hist := filepath.Join(grant, "history.jsonl")
 	histSrc := filepath.Join(root, "seat", "history.jsonl")
 	inPlace := filepath.Join(grant, "projects")
+	// The tmpfs arm's destination is deliberately NOT created: a
+	// runtimeEphemeralDirs member need not exist on the host, and the arm
+	// makes its mount point in prep, which is the half an existing dir would
+	// hide.
+	eph := filepath.Join(grant, "ephemeral")
 	deny := filepath.Join(grant, "settings.json")
 	mask := filepath.Join(grant, "policy-cache.json")
 	gates := filepath.Join(grant, "gates")
@@ -198,6 +219,10 @@ func wwEveryShape(t *testing.T) wwRender {
 				{Src: histSrc, Dst: hist, File: true},
 				// ranger-base-ajkqx's: bound in place to narrow the grant.
 				{Src: inPlace, Dst: inPlace, ReadOnly: true},
+				// ranger-base-6ob20's: an empty tmpfs, selected by an empty
+				// Src — codex's tmp/ and shell_snapshots/ and grok's
+				// daemon/run/ (runtimeEphemeralDirs) are this shape.
+				{Dst: eph},
 			},
 			SSHDir:      []string{sshDir},
 			DenyReadDir: []string{tsnet},
@@ -329,6 +354,95 @@ func TestWallWatchFixturesCarryEveryCarveOutField(t *testing.T) {
 	}
 }
 
+// wwPrivateArms is the private loop's arms, written as the entry that
+// SELECTS each one, in bwrapPrivateArgs' own branch order. It is a closed
+// mirror, the way bwrapRenderOpts is a closed mirror of the options the
+// render emits, and the test below is what keeps it from drifting.
+var wwPrivateArms = []struct {
+	name string
+	is   func(PrivateBind) bool
+}{
+	{"a FILE bind at both ends (ranger-base-a544g)", func(pb PrivateBind) bool { return pb.File }},
+	{"a dir bound IN PLACE (ranger-base-ajkqx)", func(pb PrivateBind) bool { return !pb.File && pb.Src == pb.Dst }},
+	{"an empty TMPFS (ranger-base-6ob20)", func(pb PrivateBind) bool { return !pb.File && pb.Src != pb.Dst && pb.Src == "" }},
+	{"a dir COPY out of the seat's own cache (ranger-base-5632o)", func(pb PrivateBind) bool { return !pb.File && pb.Src != pb.Dst && pb.Src != "" }},
+}
+
+// Every arm of bwrapPrivateArgs renders in one of the fixtures here, and the
+// ARM COUNT is read off that function's own returns rather than off the
+// table above (ranger-base-4tsa7, from the verify at ranger-base-zkuwa).
+//
+// WHY NOT THE FIELD REFLECTION ABOVE. It demands each PrivateBind field be
+// non-zero in some render, so an arm selected by a field's ZERO value is one
+// it can never ask for — and that is the tmpfs arm, `Src == ""`. It shipped
+// rendered by no fixture, and the close that widened the reflection to
+// PrivateBind's fields claimed in as many words that a field added there
+// "cannot again be rendered by no fixture", which holds only for arms a
+// non-zero value selects. An arm is not a field, so it is counted as an arm.
+func TestWallWatchFixturesRenderEveryPrivateArm(t *testing.T) {
+	t.Parallel()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "bwrap.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fn *ast.FuncDecl
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == "bwrapPrivateArgs" {
+			fn = fd
+		}
+	}
+	if fn == nil {
+		t.Fatal("bwrap.go has no bwrapPrivateArgs. If the private loop's arms went back inline, they took one watch(WallWatchPrivate, pb.Dst) call per arm with them — the line ranger-base-6ob20's tmpfs arm was written without, and which no pin could see (ranger-base-4tsa7)")
+	}
+	// One `return <argv>, <prep>, true, nil` per arm: an arm that renders a
+	// mount is exactly a return that says it rendered one.
+	arms := 0
+	ast.Inspect(fn, func(n ast.Node) bool {
+		r, ok := n.(*ast.ReturnStmt)
+		if !ok || len(r.Results) != 4 {
+			return true
+		}
+		if id, ok := r.Results[2].(*ast.Ident); ok && id.Name == "true" {
+			arms++
+		}
+		return true
+	})
+	if arms != len(wwPrivateArms) {
+		t.Fatalf("bwrapPrivateArgs renders %d arms and wwPrivateArms names %d. An arm there is a new mount SHAPE: name it above and give wwEveryShape a PrivateBind entry that selects it, or TestWallWatchEveryRenderedMountIsAWallOrANamedOpening never renders that arm and says nothing about the mount it makes", arms, len(wwPrivateArms))
+	}
+	cs := wwRenders(t)
+	for _, arm := range wwPrivateArms {
+		rendered := false
+		for _, c := range cs {
+			for _, pb := range c.carve.Private {
+				if arm.is(pb) {
+					rendered = true
+				}
+			}
+		}
+		if !rendered {
+			t.Errorf("no PrivateBind entry in any render here is %s, so that arm of bwrapPrivateArgs renders in no fixture. Give wwEveryShape one", arm.name)
+		}
+	}
+	// And the mirror is a PARTITION over the entries: one an arm claims
+	// twice, or none claims, is a table that has drifted off the branch
+	// order it mirrors, and the count above would still read right.
+	for _, c := range cs {
+		for _, pb := range c.carve.Private {
+			hit := 0
+			for _, arm := range wwPrivateArms {
+				if arm.is(pb) {
+					hit++
+				}
+			}
+			if hit != 1 {
+				t.Errorf("%s: the PrivateBind %+v is selected by %d of wwPrivateArms' arms, want exactly 1 — the table no longer mirrors bwrapPrivateArgs' branch order", c.what, pb, hit)
+			}
+		}
+	}
+}
+
 // The render records its WALLS and only its walls: Hide, Private, Masked,
 // Deny and step 5's read masks (ranger-base-y4cm6) are watched; a write
 // grant and the ssh allow bind-backs (openings) are not. This is the KINDS
@@ -349,10 +463,12 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 	want := []WallWatchMount{
 		{WallWatchHide, filepath.Join(root, "run")},
 		// The private binds in list order, one per arm of that loop: the dir
-		// copy, the FILE (ranger-base-a544g) and the in-place read-only dir.
+		// copy, the FILE (ranger-base-a544g), the in-place read-only dir and
+		// the empty tmpfs (ranger-base-6ob20, ranger-base-4tsa7).
 		{WallWatchPrivate, filepath.Join(grant, "shell-snapshots")},
 		{WallWatchPrivate, filepath.Join(grant, "history.jsonl")},
 		{WallWatchPrivate, filepath.Join(grant, "projects")},
+		{WallWatchPrivate, filepath.Join(grant, "ephemeral")},
 		// shallowestFirst sorts the deny list, so gates, policy-cache.json,
 		// settings-seeded.json, settings.json — the mask under its own kind.
 		{WallWatchDeny, filepath.Join(grant, "gates")},
