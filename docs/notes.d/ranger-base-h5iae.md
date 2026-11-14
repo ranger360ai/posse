@@ -94,6 +94,17 @@ never exec'd as a file of its own.
 
 ## Not closed here
 
+- ranger-base-np54s (P1) — found by this bead's own `make test` and nothing to
+  do with its change: `internal/posse/suspend_qa_test.go:598` polls
+  `dispatcherOut(d)` — a bare `strings.Builder` — while `d.watchdogLoop` writes
+  the SUSPENDED line from a goroutine, so arm 3 can die on `panic: unsafe.
+  String: ptr is nil and len is not zero` and take the whole package run with
+  it. `go test -race -tags posse_arm3 -count=5 -run
+  '^TestQASuspendWitnessRunsWithNoBudgetAndIsSeededByWatch$'` names the race on
+  the first iteration; run alone and unloaded the test passes in 0.034s, which
+  is the expensive half. Arms 1 and 2 were green in the same run and arm 3
+  re-ran green at 102.0s.
+
 - ranger-base-a7sqc — ranger-base-l50hz's FINDING 2, an ADR 0098 D2 reading
   that is architecture's to make and not a verifier's or a developer's: the
   `twdTreepinsExcluded` row for `TestQATheRaceArmCensusRefusesTheWrongShapes`
