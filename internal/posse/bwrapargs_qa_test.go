@@ -353,6 +353,51 @@ func TestBwrapArgsRendersNothingForAMissingDenyOutsideEveryGrant(t *testing.T) {
 	}
 }
 
+// The EXISTING half of the same rule (ranger-base-166va). A deny that is
+// there and that no grant overlaps sits under the read-only base already, so
+// a read-only bind of it over itself adds no wall — and a mount over a name
+// is what a host rename detaches. The shape is a linked worktree's: the
+// common dir's objects, logs and the worktree's own dir are granted, its
+// `config` is denied, and the host rewrites that config by lock-and-rename at
+// every hire, reap and land check. Rendered and watched, each of those killed
+// a seat that could not write the file either way.
+//
+// The other direction is still a wall: a deny that CONTAINS a grant lands on
+// top of it and closes it, so it renders and is watched.
+//
+// MUTATION-CHECKED: deleting the skip arm in BwrapArgs reds the first half;
+// dropping its grantInside condition reds the second.
+func TestBwrapArgsRendersNothingForAnExistingDenyNoGrantOverlaps(t *testing.T) {
+	t.Parallel()
+	_, bwAt := bwTree(t,
+		[]string{"wt", "common/objects", "common/worktrees/wt", "shut/open"},
+		[]string{"common/config"})
+	config := bwAt("common", "config")
+	shut, open := bwAt("shut"), bwAt("shut", "open")
+
+	argv, _, watched, err := bwrapArgsWatched(bwAt("wt"),
+		[]string{bwAt("wt"), bwAt("common", "objects"), bwAt("common", "worktrees", "wt"), open},
+		SeatbeltCarveOut{Deny: []string{config, shut}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := bwJoin(argv)
+	if strings.Contains(line, config) {
+		t.Fatalf("a deny under the read-only base and inside no grant was mounted over its name, which a host rename detaches:\n%s", line)
+	}
+	for _, w := range watched {
+		if w.Path == config {
+			t.Fatalf("wall-watch holds the seat to a deny that renders no mount: %v", watched)
+		}
+	}
+	if !strings.Contains(line, "--ro-bind "+shut+" "+shut) {
+		t.Fatalf("a deny that contains a grant was dropped, which reopens the grant under it:\n%s", line)
+	}
+	if !wallWatchListed(watched, shut) {
+		t.Fatalf("the deny that contains a grant renders a mount and is not watched: %v", watched)
+	}
+}
+
 // THE DIVERGENCE ARM (and the reason BwrapArgs asks "is the deny inside a
 // write grant" rather than D17's literal "is its nearest EXISTING ancestor
 // inside a write grant").

@@ -695,6 +695,26 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("deny", d, err)
 		}
+		if exists && !writeGranted(grants, d) && !grantInside(grants, d) {
+			// OUTSIDE EVERY GRANT IT RENDERS NOTHING, the private-member
+			// arm's rule for that arm's reason (ranger-base-166va): the
+			// read-only base already refuses every write there, so a
+			// read-only bind of the name over itself adds no wall — and it
+			// adds a mount over a NAME, which a host rename detaches. The
+			// shared repo's `<common>/config` is the case that found it: a
+			// linked worktree's seat is granted objects, logs, its own
+			// worktree dir and its ref dir and never the common dir's top,
+			// yet every hire, reap and land check rewrites that config by
+			// lock-and-rename, the deny's mount came off, and wall-watch
+			// killed a seat that could not have written the file either way.
+			//
+			// BOTH DIRECTIONS ARE ASKED. A deny that CONTAINS a grant
+			// (a deny over a dir whose child an earlier bind opened) is
+			// still rendered: its mount lands on top and closes that child,
+			// which is last-match-wins and the narrowing the carve-out
+			// means, and dropping it would widen the wall.
+			continue
+		}
 		if !exists {
 			// A deny on a path that is not there is not nothing: if the
 			// session can CREATE it, an unmounted name is a hole that opens
@@ -919,6 +939,17 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		watch(WallWatchReadMask, f)
 	}
 	return argv, prep, nil
+}
+
+// grantInside says whether any write grant lies at or under d — the other
+// direction of writeGranted, for a mount over d that would cover it.
+func grantInside(grants []string, d string) bool {
+	for _, g := range grants {
+		if underDir(d, g) {
+			return true
+		}
+	}
+	return false
 }
 
 // bwrapStat is the one filesystem question the shapes above ask, with "could
