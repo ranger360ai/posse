@@ -127,8 +127,11 @@ func TestClaudeConfigDirIsFenced(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("posse runtime check claude: exit %d\n%s", code, out)
 	}
-	if !strings.Contains(out, fence) {
-		t.Errorf("the trust probe never names the fenced config dir %s — the resolution landed somewhere else:\n%s", fence, out)
+	// Through posseRendered, for the reason its comment gives: the fence is a
+	// MkdirTemp under the box's TMPDIR and this child carries the operator's
+	// own HOME (ranger-base-6ca29).
+	if !strings.Contains(out, posseRendered(fence)) {
+		t.Errorf("the trust probe never names the fenced config dir %s — the resolution landed somewhere else:\n%s", posseRendered(fence), out)
 	}
 	for _, live := range []string{"is already trusted in", "is already set in"} {
 		if strings.Contains(flatten(out), live) {
@@ -158,12 +161,33 @@ func TestClaudeConfigDirIsFenced(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("posse runtime check claude (planted): exit %d\n%s", code, out)
 	}
-	for _, want := range []string{"is already trusted in", "is already set in", planted} {
+	for _, want := range []string{"is already trusted in", "is already set in", posseRendered(planted)} {
 		if !strings.Contains(flatten(out), want) {
 			t.Errorf("with a planted config dir the probe never printed %q — this verb no longer reads the config dir, so the arm above proves nothing:\n%s", want, out)
 		}
 	}
 }
+
+// posseRendered is a path as posse PRINTS it, and it is the comparison any
+// assertion in this package over a RENDERED path has to make
+// (ranger-base-6ca29). cmd/posse/main_test.go holds the same one line for the
+// same reason — a test helper does not cross a package, and the reason is
+// written out there.
+//
+// The short version: posse abbreviates a path under $HOME to its tilde form
+// before printing it (AbbrevHome, internal/posse/app.go), against the HOME the
+// CHILD carries. This package's TestMain fences the CLI config dirs and NOT
+// $HOME, so its children carry the operator's own — which makes every fixture
+// path here, `t.TempDir()` and `os.MkdirTemp` alike, a path with two spellings
+// on any box whose TMPDIR is under the home. Asserting the raw one reds while
+// the product is right.
+//
+// MEASURED 2026-11-13, `make test` with TMPDIR=$HOME/tmp: this was the ONE
+// red left in the tree after the three in cmd/posse were fixed, and it was
+// found by that full run and not by reading — the two packages that keep the
+// operator's HOME are the two where the class can occur, and this is the
+// other one.
+func posseRendered(p string) string { return posse.AbbrevHome(p) }
 
 func buildRhq(t *testing.T) string {
 	t.Helper()

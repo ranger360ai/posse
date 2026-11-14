@@ -356,7 +356,28 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(real, beadsDirName)); serr == nil {
 		t.Errorf("this launch materialized %s — bd creates the store of record on first write, at every mechanism (ADR 0080 D23)", filepath.Join(real, beadsDirName))
 	}
-	log := calls(t, fake)
+	// launchLog and not calls(): which of two places the rendered line lands
+	// in is a fact about its LENGTH, not about the launch — over PaneLineMax
+	// it is spilled to state/launch/<session>.sh and the pane types
+	// `. <script>` instead (paneline.go). This pin read calls.log alone and so
+	// measured how long its own fixture paths happened to be.
+	//
+	// MEASURED 2026-11-13 on this box, this test's grok line, against
+	// PaneLineMax = 1023 (ranger-base-6ca29):
+	//
+	//	TMPDIR unset        959 bytes   typed    64 bytes of headroom
+	//	TMPDIR=$HOME/tmp/… 1325 bytes   SPILLED  and the pin red with
+	//	                                         `bwrap wrap missing` over a
+	//	                                         launch that was correctly walled
+	//
+	// 366 bytes for a TMPDIR 17 characters longer than `/tmp`, because the
+	// gate prefix alone spells the gates dir four times and the rendered grok
+	// args spell the fixture home a dozen more. So the margin was 64 bytes:
+	// ranger-base-rq83c walked six fixtures over this same cliff with ~110
+	// bytes of an unrelated credential-dir pin, which this one had less room
+	// for than any of them. ranger-base-90y3c is the other earlier landing.
+	// launchLog reads both places and already carried the warning.
+	log := launchLog(t, b.App, fake)
 	wrap, wallPath := wallLaunchWrapForTest(t, gates, "security", repo)
 	if !strings.Contains(log, "GATES "+wrap+"grok") || !strings.Contains(log, "--env RHQ_CAGE=seatbelt") {
 		t.Errorf("%s wrap missing:\n%s", WallMechanism(), log)
@@ -415,9 +436,80 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	if ok, err := b.RelaunchAgent("hg", time.Second); err != nil || !ok {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
-	if got := calls(t, fake); strings.Count(got, wrap+"grok") != 2 {
+	// THE RELAUNCH'S OWN LINE, resolved, and not a count over the whole log.
+	// `strings.Count(…) != 2` stood here — launch plus relaunch — and it is
+	// two length-dependent claims rather than one (ranger-base-6ca29): the
+	// spilled script is REWRITTEN at every launch, so once either line is
+	// over the cliff the log holds `. '<script>'` twice and the wrapped grok
+	// line once, and a count can never be 2 again however right the relaunch
+	// is. Reading the relaunch's line alone is also the stronger assertion,
+	// and the shape codexwritable_test.go's relaunch pin already argues for:
+	// the launch's own wrap is asserted above, so a count here was asking one
+	// question twice and this asks the one that is left.
+	// The half the count ALSO bought, kept and spelled out: that the relaunch
+	// typed a line at all. Without it, a relaunch that typed nothing would
+	// leave the launch's own line last and the assertion below would read it
+	// and pass. `w1:p1` is the grok session's pane — the codex arm above is
+	// w2:p1 — and counting panes is length-independent where counting the
+	// wrap was not.
+	if n := strings.Count(calls(t, fake), "pane run w1:p1 "); n != 2 {
+		t.Errorf("the grok pane was launched into %d time(s), want 2 (the launch and the relaunch) — the wall assertion below reads the LAST line and would otherwise re-read the launch's", n)
+	}
+	if got := wwdResolvedLastPaneRun(t, fake); !strings.Contains(got, wrap+"grok") {
 		t.Errorf("relaunch must keep the %s wall:\n%s", WallMechanism(), got)
 	}
+}
+
+// wwdResolvedLastPaneRun is the LAST line typed into a pane, resolved through
+// the script when it was spilled rather than typed (paneline.go) — so an
+// assertion over it is about what the launch put on the line and not about how
+// long the line was.
+//
+// A third copy of this reader, and the build tags are the whole reason: arm 1
+// has `resolvedTypedLine` (codexwritable_test.go) and `paneRunLines`
+// (paneline_test.go), both behind `!posse_arm2 && !posse_arm3`, and a test
+// helper does not cross a build tag any more than it crosses a package.
+// Moving either into the untagged file would change the arm partition
+// armtags_qa_test.go pins, which is a bigger change than fourteen lines and
+// not this bead's.
+//
+// The LAST line, because the relaunch is the last thing that typed one and the
+// script holds only the most recent render.
+func wwdResolvedLastPaneRun(t *testing.T, fake string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(fake, "calls.log"))
+	if err != nil {
+		t.Fatalf("no call log: %v", err)
+	}
+	last := ""
+	for _, ln := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(ln, "pane run ") {
+			last = ln
+		}
+	}
+	if last == "" {
+		t.Fatalf("no `pane run` line in the call log, so nothing was launched:\n%s", raw)
+	}
+	// `pane run <target> <cmd>`: take the command, the way paneRunLines does,
+	// so the `. '` test below is a PREFIX of the command and cannot match a
+	// quoted fragment somewhere inside one.
+	_, cmd, ok := strings.Cut(strings.TrimPrefix(last, "pane run "), " ")
+	if !ok {
+		t.Fatalf("pane run with no command: %q", last)
+	}
+	rest, ok := strings.CutPrefix(cmd, ". '")
+	if !ok {
+		return cmd // typed verbatim
+	}
+	path, _, ok := strings.Cut(rest, "'")
+	if !ok {
+		t.Fatalf("a sourced pane line with no script path: %q", last)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("spilled launch script %s: %v", path, err)
+	}
+	return string(body)
 }
 
 // ADR 0003 §3: cheaper models read the PID's prose less reliably, so tier
