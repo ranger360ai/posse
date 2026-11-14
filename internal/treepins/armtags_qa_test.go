@@ -710,9 +710,13 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 // (treewidedoor_qa_test.go), so no `-run` door could find it and under the
 // door model this file was written against it would have had none. It needs
 // no entry anyway — `make treepins-check` is this package MINUS
-// $(QA_TREEPINS_EXCLUDED)'s twelve priced rows, this arm is in none of them,
-// and that target is on `make tree-check`'s line. VERIFIED 2026-11-14 on
-// 1d03f9d1. It is the case 3cpcg's door was named for: "a pin written
+// $(QA_TREEPINS_EXCLUDED)'s priced table, this arm is in none of it, and that
+// target is on `make tree-check`'s line. VERIFIED 2026-11-14 on b6baef66.
+// No count of that table is stated here on purpose: it is the Makefile's, it
+// moved from 12 rows to 11 under ranger-base-gyz7a while this bead's suite
+// was running, and a number repeated in prose is a number that drifts
+// (AGENTS.md says the same of the tree-wide pin count).
+// It is the case 3cpcg's door was named for: "a pin written
 // tomorrow is doored the moment it is written", and the pin that most needed
 // a door was the one nothing could find.
 //
