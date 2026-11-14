@@ -2,7 +2,9 @@
 
 *Status: accepted 2026-11-11 (ranger-base-oe9ja, from ranger-base-qregu) ·
 owner: architect · builds on ADR 0087 (the replay gate and its ratchet) and
-ADR 0011 §1 (the launcher lock)*
+ADR 0011 §1 (the launcher lock) · a second check, the wall venue, runs after
+each green judgement under the same cage, ratchet and watchdog
+([ADR 0097](0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md))*
 
 ## Context
 

@@ -104,6 +104,11 @@ EXPECT cell in public.
   nowhere else. That is a pin with no scheduled place to measure. It is
   filed, not solved here, as ranger-base-m2ii4: a required, caged venue
   for those pins. Implementation of D2–D4 is ranger-base-pvkhn.
+  *Answered by [ADR 0097](0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md)
+  (2026-11-14). It also corrects the count: 32 pins fail to nest on a
+  seat's `/proc`, not three, and D3's helper must reach all of them.
+  When ADR 0097 was written, the in-flight layer had been held off `main`.
+  D1 still holds on the render alone (arm A).*
 - **Same-uid host processes keep their `/proc` knobs closed to seats.**
   That property was accidental before. It is now recorded and pinned by
   D2's never-list.
