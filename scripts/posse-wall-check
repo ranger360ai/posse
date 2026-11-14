@@ -1,0 +1,376 @@
+#!/usr/bin/env bash
+# posse-wall-check — ADR 0097 D3's body: did the wall's live pins MEASURE in
+# the tree at $PWD, and did every one of them pass?
+#
+#   scripts/posse-wall-check          judge $PWD's wall pins; 0 green, 1 red, 3 no answer
+#   scripts/posse-wall-check --plan   print the commands it would run, run none
+#
+# WHY THIS EXISTS. ADR 0096 D3 makes every live pin that nests a bwrap abstain
+# inside a wall that forbids nesting, and every seat is such a wall. The
+# landed-check judge is one too, and it does not run the suite arms anyway
+# (ADR 0088 D6). So 32 pins measured only when an operator ran `make test`
+# uncaged, and nothing schedules that: a pin that runs nowhere protects
+# nothing. ADR 0097 gives them a venue — the judge's cage plus
+# `--unshare-pid --proc /proc`, a private `/var/tmp`, and `POSSE_WALL_VENUE=1`
+# (D1) — entered after each GREEN judgement (D2). This file is what runs in
+# it. Nothing here renders the venue; D1's flag on `boxLandedCage` does, and
+# the runner is ranger-base-wplhv.
+#
+# THE CONTRACT (ADR 0088 D1, which D3 keeps verbatim), every line of it
+# load-bearing here exactly as it is in scripts/posse-landed-check:
+#
+#   * No arguments, and **cwd is the tree to judge**. The copy that RUNS comes
+#     from this check's last green tree, not from the tree being judged — a
+#     landing that weakens this script does not change what judges it. So
+#     nothing here may resolve a path out of $BASH_SOURCE or $0: that names a
+#     DIFFERENT tree, and a check that judged its own directory would pass
+#     every landing by judging the recorded-green tree twice while looking
+#     exactly like a check. Relative paths and $PWD only — which is why the
+#     run below is `./internal/posse` and the guard reads `internal/posse`.
+#   * Errors on stderr, and the LAST lines of combined output are the cause:
+#     the runner keeps the last few non-empty ones and flattens them into a
+#     bead somebody reads later. So every arm here prints its tail LAST and
+#     prints nothing after it, and on green the final line is the one sentence
+#     D3 writes.
+#
+# THREE EXITS, AND WHY THREE (ADR 0097 D3's table, D5's reader):
+#
+#   0  green — every member passed. Last line: `wall check: green, <n> pins measured`
+#   1  red   — a member FAILed, or the tree did not build
+#   3  no answer — the baseline did not nest, no member ran, or a member
+#      abstained
+#
+# The third exit is the whole point of this file over `go test; echo $?`. ADR
+# 0097 D5: **an abstention is never a pass**, and the venue has two ways to
+# produce a run that is green by exit code and measured nothing. The first is
+# the ADR's own `/var/tmp` row: `wallUngrantedDir` made its fixture root under
+# `/var/tmp`, `--ro-bind / /` made that read-only, and 18 pins went dark —
+# a helper change unrelated to the wall, over which `go test` exited 0. The
+# second is a `-run` filter that selects nothing, which prints `ok` (the hole
+# `seed-check` hit twice). Both reach a reader as D5's watchdog — "wall check
+# silent at <repo>" on the second consecutive one — instead of as a wall
+# regression nobody files, and neither can be mistaken for the ratchet's
+# green-to-red step.
+#
+# Exit 2 is not in that table and is not reachable from the runner: it is what
+# a caller gets for breaking D1's no-argument contract, as it is at the
+# sibling check.
+#
+# MEMBERSHIP IS READ OFF THE MARKER AND NEVER OFF THE NAME (D3). A member is a
+# test whose output carries D4's line
+#
+#     wall venue: measuring (ADR 0097)
+#
+# which the nest gate logs the moment it lets a pin proceed — BEFORE the pin
+# can skip for its own reason, so a pin that then goes dark is still counted
+# and still turns this verdict into exit 3. That ordering is what makes the
+# `/var/tmp` row visible at all. Counting by NAME instead would count the two
+# tests inside D3's filter that are not members (they ask the availability
+# probe through shipped code and never nest), and would have counted all 18
+# dark pins as present.
+#
+# THE BASELINE GOES FIRST, for the reason ADR 0086 D5 gives: without proof
+# that a bwrap STARTS from this process, a pin that expects a refusal passes
+# over nothing. ADR 0097 measured that exact false pass —
+# `TestLiveBwrapGitRefsRefusesTheSharedGitState` passes on a seat because its
+# bwrap never started, so the refusal it asserts reads true. A failed baseline
+# is therefore not a red: it says this process is not a venue, nothing below
+# it could measure, and the answer is exit 3.
+#
+# THE FILTER, THE MARKER AND THE VARIABLE ARE A HANDSHAKE with
+# internal/posse/wallvenue_test.go, and this file cannot be compiled against
+# that package. All three are held to ADR 0097 itself by
+# `TestQAWallVenueContractLiteralsAreADR0097s` (`make doc-check`), which is
+# the only copy both sides can be held to. If you change one here, change it
+# there and in the record, in one commit: reworded on one side only, this body
+# counts zero members and answers exit 3, which D5 reports as silence rather
+# than as the wall regression the run existed to find.
+#
+# `go test` DIRECTLY AND NOT `make`, which is the other difference from the
+# sibling check. D4 puts the nest gate in an arm 1 file precisely so that a
+# member written into arm 2 or arm 3 does not compile, so the venue needs ONE
+# untagged filtered run and never the three arms. A `-run` filter also takes
+# no suite slot (AGENTS.md, "The full suite"), which is what lets this run
+# outside the fleet lock holding nothing, as ADR 0097 D2 requires.
+#
+# WHY THE RUN GOES THROUGH A SHELL VARIABLE AND NOT A TEMP FILE OR A PIPE.
+# The parser needs BOTH halves of the run: the JSON, and `go test`'s own exit
+# STATUS — the status is the only thing that separates "the tree did not
+# build" (exit 1, step 4) from "the filter selected nothing" (exit 3). A
+# pipeline hands the parser one or the other, and a temp file wants somewhere
+# writable, which under ADR 0088 D3 is the landed tree and the build cache and
+# not much else. A variable needs neither, the way the sibling's probe
+# makefile arrives on stdin rather than through a process substitution.
+#
+# THE CALLER'S ENVIRONMENT MAY NOT CHANGE WHAT THIS CHECK RUNS. `GOFLAGS` is
+# on the judge's environment allowlist (landedJudgeEnvKeys), and `go test`
+# takes flags out of it: a `-tags posse_arm2` there excludes
+# wallvenue_test.go, the package then fails to compile with `undefined:
+# bwrapNestSkip`, and this check reds a tree that is fine — a P1 bead filed
+# against a persona for a variable nobody here typed. Command-line flags win
+# over `GOFLAGS` for everything this file names, so the hazard is entirely in
+# what it does NOT name; it is scrubbed rather than overridden so the run is
+# the same from the runner, a seat's shell and a hand invocation.
+#
+# A FAILURE THAT IS NOT A MEMBER'S IS REPORTED AND IS NOT THIS CHECK'S RED.
+# Two tests inside D3's filter print no marker. If one of them fails while
+# every member passes, this still exits 0 — the subject of ADR 0097 is the 32
+# pins that measure nowhere else — and says so in a `note:` line above the
+# green sentence, because a `go test` that exited nonzero under a green
+# verdict is the one shape a reader of this output would otherwise have to
+# guess at. Those two reds are every seat's `make test` and the judge's
+# business, not this check's.
+#
+# WHAT RUNS THIS. ranger-base-wplhv's step (ADR 0097 D1/D2/D5). To run it
+# yourself inside the ADR's own venue, which is the wall that was measured:
+#
+#     bash docs/adr/0097-wall-venue.probe.sh venue+check
+#
+# and `seat-proc+check` for the arm where the baseline refuses.
+#
+# `-timeout 15m` is the floor this repo holds every `go test` entry point to
+# (internal/treepins/suitetimeout_qa_test.go: internal/posse has been measured
+# at 623.2s, so the 10m default is a coin flip whose red names no test). The
+# pin that would hold THIS file to it globs `scripts/*.sh` and cannot see an
+# extensionless script — ranger-base-enhtx — so until that is widened the flag
+# is kept by hand. It is a backstop either way, not the bound: what bounds a
+# hang is the runner's `landedCheckLimit`, ten minutes (D5), which fires
+# first, and the measured venue run is about 100s.
+#
+# WHAT IT COSTS: docs/notes.d/ranger-base-lagas.md, which is the ONE place the
+# readings are said. Quoting them here as well would be two places to keep in
+# step by hand, which is how the figure in the second one goes stale while
+# both look authoritative.
+set -euo pipefail
+
+plan_only=0
+case "${1:-}" in
+  '') ;;
+  --plan) plan_only=1; shift ;;
+  -h | --help)
+    printf '%s\n' \
+      'usage: posse-wall-check            judge $PWD; 0 green, 1 red, 3 no answer' \
+      '       posse-wall-check --plan     print the commands it would run, run none' \
+      '' \
+      "ADR 0097 D3. cwd is the tree to judge; it runs that tree's wall pins in this process's venue."
+    exit 0
+    ;;
+  *)
+    printf 'posse-wall-check: unknown argument %s — the contract takes no arguments and judges $PWD (ADR 0088 D1, kept by ADR 0097 D3)\n' "$1" >&2
+    exit 2
+    ;;
+esac
+if [ "$#" -gt 0 ]; then
+  printf 'posse-wall-check: unexpected extra arguments: %s\n' "$*" >&2
+  exit 2
+fi
+
+unset GOFLAGS
+
+say() { printf 'posse-wall-check: %s\n' "$*" >&2; }
+
+# The three literals of D4's contract, each written ONCE here so the plan and
+# the run cannot disagree and so a reader greps one line per literal. Their
+# other side is internal/posse/wallvenue_test.go; the record both are held to
+# is ADR 0097 (see the header's handshake paragraph).
+member_pattern='^Test(QA)?Live(Bwrap|Wall)'
+member_marker='wall venue: measuring (ADR 0097)'
+venue_env=POSSE_WALL_VENUE
+
+# Both children as arrays, so `--plan` prints the argv the run would exec
+# rather than a second spelling of it. The baseline is D17's base mount and
+# nothing else, which is `bwrapApplyProbeArgv` in internal/posse: a process
+# that cannot make THAT namespace cannot run any arm of any live pin here,
+# whatever else a pin's own argv asks for.
+baseline_argv=(bwrap --ro-bind / / /bin/true)
+pins_argv=(go test -count=1 -json -timeout 15m -run "$member_pattern" ./internal/posse)
+
+say "judging $PWD"
+if [ "$plan_only" = 1 ]; then
+  say "step 1: ${baseline_argv[*]}"
+  say "step 2: ${pins_argv[*]}"
+  say "plan only: 2 steps, nothing run"
+  exit 0
+fi
+
+# The cwd guard, and it answers 3 rather than 1 on purpose: a runner pointed
+# at a directory that is not this tree has measured nothing, and D5's
+# watchdog is the reader for that. A red here would file a wall regression
+# against whoever landed last.
+if [ ! -d internal/posse ]; then
+  say "no internal/posse here — cwd must be the root of the tree to judge (ADR 0088 D1)"
+  printf 'wall check: no answer — %s is not a tree this check can judge\n' "$PWD" >&2
+  exit 3
+fi
+
+say "step 1: ${baseline_argv[*]}"
+if ! command -v bwrap > /dev/null 2>&1; then
+  say "no bwrap on PATH, so the baseline cannot even be asked (ADR 0097 D5 counts a host with no bwrap as unanswered)"
+  printf 'venue cannot nest: bwrap: not found on PATH\n' >&2
+  exit 3
+fi
+baseline_rc=0
+baseline_out=$("${baseline_argv[@]}" 2>&1) || baseline_rc=$?
+if [ "$baseline_rc" != 0 ]; then
+  say "the baseline bwrap did not start, so this process is not ADR 0097 D1's venue and nothing below it could measure (ADR 0086 D5)"
+  printf 'venue cannot nest: %s\n' "${baseline_out:-bwrap exited $baseline_rc with no output}" >&2
+  exit 3
+fi
+say "baseline: a bwrap starts from here, so a refusal below is the tree's doing"
+if [ "${!venue_env:-}" != 1 ]; then
+  say "note: $venue_env is not 1 in this process, so the members will ABSTAIN rather than fail on a refusal (ADR 0097 D4). The runner sets it; a hand run outside the venue gets exit 3."
+fi
+
+# Asked BEFORE the 95s run and not after it, because without the parser there
+# is no verdict to be had: a missing python3 would otherwise cost a venue run
+# and then exit 127, which is off D3's table entirely and is no answer at all
+# (`verify-bd-argv-gate.sh` says the same sentence one directory over).
+if ! command -v python3 > /dev/null 2>&1; then
+  say "no python3 on PATH, and the verdict is read by it — nothing can be measured here"
+  printf 'wall check: no answer — no python3 on PATH to read the run\n' >&2
+  exit 3
+fi
+
+say "step 2: ${pins_argv[*]}"
+go_rc=0
+pins_json=$("${pins_argv[@]}" 2>&1) || go_rc=$?
+say "go test exited $go_rc in ${SECONDS}s; reading membership off the marker"
+
+# The verdict. Python because this is a JSON stream with per-test output
+# accumulation in it, which is the one shape awk makes unreadable, and
+# `python3 -I` as the sibling scripts spell it: no site packages, no
+# PYTHONPATH, nothing from the landed tree on the import path. The three
+# literals and `go test`'s status arrive as argv, so there is still exactly
+# one spelling of each.
+rc=0
+printf '%s\n' "$pins_json" | python3 -I -c '
+import json
+import sys
+
+go_rc = int(sys.argv[1])
+marker = sys.argv[2]
+pattern = sys.argv[3]
+
+FRAMES = ("=== ", "--- ", "PASS", "FAIL", "ok  ", "SKIP")
+
+status = {}
+outputs = {}
+members = set()
+raw = []
+tests_seen = False
+
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line.strip():
+        continue
+    if not line.startswith("{"):
+        raw.append(line)
+        continue
+    try:
+        event = json.loads(line)
+    except ValueError:
+        raw.append(line)
+        continue
+    name = event.get("Test") or ""
+    action = event.get("Action") or ""
+    text = event.get("Output") or ""
+    if not name:
+        # Package-level and build events. A build failure lands here, which
+        # is why this is kept rather than dropped.
+        if text.strip():
+            raw.append(text.rstrip("\n"))
+        continue
+    tests_seen = True
+    # Membership and verdicts are both the TOP-LEVEL test, because that is
+    # the name the -run filter selects and the name go test reports under.
+    top = name.split("/", 1)[0]
+    if action == "output":
+        if marker in text:
+            members.add(top)
+        outputs.setdefault(top, []).append(text.rstrip("\n"))
+    elif action in ("pass", "fail", "skip") and name == top:
+        status[top] = action
+
+
+def evidence(top):
+    """The first line of a test output that is EVIDENCE: the first
+    `file.go:NN:` line that is not the marker, else the first line that is
+    not go test framing. One rule for a failure line and for a skip line,
+    because t.Fatal, t.Skip and t.Log all print in that shape and the gate
+    logs the marker before either of the other two."""
+    fallback = ""
+    for line in outputs.get(top, []):
+        text = line.strip()
+        if not text or marker in text or text.startswith(FRAMES):
+            continue
+        if ".go:" in text:
+            return text[:300]
+        if not fallback:
+            fallback = text[:300]
+    return fallback or "(no output)"
+
+
+def tail(lines, keep):
+    return [l for l in lines if l.strip()][-keep:]
+
+
+def out(text):
+    sys.stderr.write(text + "\n")
+
+
+failed = sorted(t for t in members if status.get(t) == "fail")
+skipped = sorted(t for t in members if status.get(t) == "skip")
+quiet = sorted(t for t in members if t not in status)
+
+# Step 4: go test never reached a test. A tree that does not build is this
+# check red, and the tail is the compilers.
+if not tests_seen and go_rc != 0:
+    out("go test exited %d before any test ran, so there is nothing to judge: a tree that does not build is this check red (ADR 0097 D3). Its tail:" % go_rc)
+    for line in tail(raw, 12):
+        out("  " + line)
+    sys.exit(1)
+
+if failed:
+    out("wall pins RED: %d of %d member(s) FAILed in this venue (ADR 0097 D3). Each one with its first failure line:" % (len(failed), len(members)))
+    for name in failed:
+        out("  FAIL %s: %s" % (name, evidence(name)))
+    sys.exit(1)
+
+if not members:
+    out("no member ran: nothing in this run printed %r, so the venue measured none of the pins ADR 0097 D3 counts. An abstention is never a pass (D5), so this is exit 3 and not green." % marker)
+    if status:
+        out("  the %d test(s) the filter %s selected, and what each one said:" % (len(status), pattern))
+        for name in sorted(status)[:8]:
+            out("  %s %s: %s" % (status[name].upper(), name, evidence(name)))
+    else:
+        out("  the filter %s selected no test at all. Tail of the run:" % pattern)
+        for line in tail(raw, 8):
+            out("  " + line)
+    sys.exit(3)
+
+if skipped or quiet:
+    out("wall pins NOT MEASURED: %d of %d member(s) abstained, which is exit 3 and never a pass (ADR 0097 D5) — the /var/tmp row of that record is a fixture change that took 18 pins dark over a green exit code. Each one with its own line:" % (len(skipped) + len(quiet), len(members)))
+    # The raw tail goes ABOVE the per-member lines, not below them: a member
+    # that printed the marker and reported no verdict is a run that did not
+    # finish — a panic, or the deadline, which D5 counts as unanswered — and
+    # the reason is in that tail rather than in the test output. Above,
+    # because the runner keeps the LAST few non-empty lines and the names are
+    # what D3 says the tail must carry.
+    if quiet:
+        out("  %d of them reported no verdict at all, so this run did not finish — a panic, or the deadline (D5 counts both as unanswered). Tail of the run:" % len(quiet))
+        for line in tail(raw, 4):
+            out("    " + line)
+    for name in skipped:
+        out("  SKIP %s: %s" % (name, evidence(name)))
+    for name in quiet:
+        out("  NO VERDICT %s: %s" % (name, evidence(name)))
+    sys.exit(3)
+
+if go_rc != 0:
+    others = sorted(name for name, action in status.items() if action == "fail")
+    out("note: every member passed and go test still exited %d — %d test(s) inside %s printed no marker and failed. That is a red for `make test` and not for this check, whose subject is the members (ADR 0097 D3):" % (go_rc, len(others), pattern))
+    for name in others:
+        out("  note: FAIL %s: %s" % (name, evidence(name)))
+out("wall check: green, %d pins measured" % len(members))
+' "$go_rc" "$member_marker" "$member_pattern" || rc=$?
+exit "$rc"

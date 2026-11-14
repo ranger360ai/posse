@@ -7,6 +7,7 @@
 # (ADR 0088 D3.2). Writes only that run dir and the go test cache inside it.
 #
 #   bash docs/adr/0097-wall-venue.probe.sh [uncaged|venue|seat-proc|judge+venue]
+#   bash docs/adr/0097-wall-venue.probe.sh [venue+check|seat-proc+check]
 #
 # Arms:
 #   uncaged      the pins as an operator's `make test` runs them (the control)
@@ -16,6 +17,20 @@
 #                host /proc a seat has (ADR 0096 arm A): the pins cannot nest
 #   judge+venue  scripts/posse-landed-check, then the pins, in one venue run:
 #                the price of folding them into the judge (rejected, D2)
+#   venue+check  D3's BODY — `scripts/posse-wall-check` — in that same venue,
+#                with D1's POSSE_WALL_VENUE=1. This is the arm the body is
+#                developed and re-measured against (ranger-base-lagas): it
+#                must exit 0 and say `wall check: green, <n> pins measured`
+#   seat-proc+check  the same body where the baseline cannot nest: exit 3 and
+#                a `venue cannot nest:` tail, which is the shape D5 counts as
+#                unanswered rather than as a red
+#
+# A `+check` arm prints the last four lines of the body's stderr and no JSON
+# counters, because that body writes its JSON nowhere: the tail IS its answer
+# (ADR 0088 D1), and the counters above it are the body's own reading.
+#
+# The wall each arm renders is chosen by the word BEFORE the first `+`, so
+# `seat-proc+check` is seat-proc's wall and `judge+venue` stays the venue's.
 #
 # MEASURED 2026-11-14, Linux 7.2.15, bubblewrap 0.13.1, go1.27.3, 16 cores:
 # see the ADR's table. A cell that reads differently reopens D1.
@@ -35,7 +50,7 @@ arm() {
     --bind "$run/tmp" /tmp --bind "$run/vartmp" /var/tmp --chdir "$TREE"
     --setenv TMPDIR "$run/tmp" --setenv GOCACHE "$run/gocache")
   start=$(date +%s%N)
-  case $mode in
+  case ${mode%%+*} in
   uncaged) (cd "$TREE" && bash -c "$body") > "$run/out.json" 2> "$run/err" ;;
   seat-proc) bwrap "${wall[@]}" bash -c "$body" > "$run/out.json" 2> "$run/err" ;;
   *) bwrap "${wall[@]}" --unshare-pid --proc /proc bash -c "$body" > "$run/out.json" 2> "$run/err" ;;
@@ -43,6 +58,12 @@ arm() {
   rc=$?
   end=$(date +%s%N)
   printf 'ARM %-12s rc=%s wall=%ss load=%s\n' "$mode" "$rc" "$(( (end - start) / 1000000000 ))" "$(cut -d' ' -f1 /proc/loadavg)"
+  case $mode in
+  *+check)
+    tail -4 "$run/err" | sed 's/^/   /'
+    return 0
+    ;;
+  esac
   python3 -I -c '
 import json, sys, collections
 c = collections.Counter(); first = {}
@@ -66,6 +87,12 @@ for t, (a, why) in sorted(first.items()):
 for m in "$@"; do
   case $m in
   judge+venue) arm "$m" "scripts/posse-landed-check && $PINS" ;;
+  # D1 adds POSSE_WALL_VENUE=1 to the venue run's environment allowlist, and
+  # the renderer that will do it is its own bead — so here it is a plain
+  # assignment in front of the body rather than a --setenv on the wall, which
+  # would change what the pins arms above measure (with it set, a refusal is a
+  # FAIL and not a skip, which is the seat-proc row of the ADR's table).
+  *+check) arm "$m" "POSSE_WALL_VENUE=1 scripts/posse-wall-check" ;;
   *) arm "$m" "$PINS" ;;
   esac
 done
