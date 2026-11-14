@@ -138,7 +138,7 @@ cleanup() {
   for p in $STARTED_PIDS; do kill "$p" 2>/dev/null || true; done
   rm -rf "$T"
 }
-# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# EXIT keeps the bare handler; INT, TERM and HUP get one that EXITS
 # (ranger-base-kkp5g). A handler that RETURNS is right on EXIT and wrong on a
 # signal: bash runs it and then RESUMES at the statement after the one the
 # signal interrupted, with the apparatus gone — here the fake herdr under $T
@@ -150,9 +150,17 @@ cleanup() {
 # 128+signo, and the `exit` runs the EXIT trap so cleanup still happens
 # exactly once. Same spelling as scripts/queue-cutover.sh:405-408; pinned by
 # internal/treepins/trapsignalexit_qa_test.go.
+#
+# HUP's arm buys the LINE and not the cleanup (ranger-base-5owgm). MEASURED
+# 2026-11-13 (linux 7.2.15, bash 5.3.20, on this script under
+# ranger-base-kbaah's rig): an UNTRAPPED terminating signal still runs bash's
+# EXIT trap, exits 128+signo and does not resume, so a HUP at 1s already gave
+# exit 129 with $T removed and every STARTED_PIDS killed -- and ZERO output.
+# The line is the whole of what the split bought, so HUP gets one too.
 trap cleanup EXIT
 trap 'echo "verify-herdr-bob: interrupted (SIGINT) -- the apparatus is gone; no verdicts" >&2; exit 130' INT
 trap 'echo "verify-herdr-bob: interrupted (SIGTERM) -- the apparatus is gone; no verdicts" >&2; exit 143' TERM
+trap 'echo "verify-herdr-bob: interrupted (SIGHUP) -- the apparatus is gone; no verdicts" >&2; exit 129' HUP
 
 # ---------------------------------------------------------------- fake herdr
 # Answers only the verbs bob-watch and bob-watchctl use, and records every

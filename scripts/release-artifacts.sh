@@ -226,7 +226,7 @@ cleanup() {
 	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :
 	rm -rf "$tmp"
 }
-# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# EXIT keeps the bare handler; INT, TERM and HUP get one that EXITS
 # (ranger-base-kkp5g), for scripts/clean-build.sh's reason one script over and
 # with more at stake: this runs on a tag, in
 # .github/workflows/release.yml. A handler that RETURNS is right on EXIT and
@@ -242,9 +242,18 @@ cleanup() {
 # status names the signal (128+signo). Same spelling as
 # scripts/queue-cutover.sh:405-408; pinned by
 # internal/treepins/trapsignalexit_qa_test.go.
+#
+# HUP's arm buys the LINE and not the cleanup (ranger-base-5owgm). MEASURED
+# 2026-11-13 (linux 7.2.15, bash 5.3.20): an UNTRAPPED terminating signal
+# still runs bash's EXIT trap, exits 128+signo and does not resume — so a
+# hung-up run already cleaned up, in silence. It matters most here: this runs
+# in .github/workflows/release.yml, where a cancelled job's log is the only
+# record, and "$OUT is incomplete" is the sentence that keeps a partial
+# artifact set from being read as a release.
 trap cleanup EXIT
 trap 'echo "release-artifacts: interrupted (SIGINT) — $OUT is incomplete" >&2; exit 130' INT
 trap 'echo "release-artifacts: interrupted (SIGTERM) — $OUT is incomplete" >&2; exit 143' TERM
+trap 'echo "release-artifacts: interrupted (SIGHUP) — $OUT is incomplete" >&2; exit 129' HUP
 git -C "$repo" worktree add --detach --quiet "$src" "$REV"
 
 echo "release-artifacts: $VERSION from $sha"

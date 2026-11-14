@@ -103,9 +103,14 @@ esac
 #   - An unconditional `exit 2` instead would refuse every signalled Bash call
 #     on the box whether or not it names bd, which is the fleet-wide false
 #     refusal the same bead forbids.
-#   - Dropping the signals from the trap is worse again: bash's default
-#     disposition then kills the gate before it can answer (fail open) AND
-#     leaks $errd.
+#   - Dropping INT/TERM/HUP from the trap is worse again: bash's default
+#     disposition then kills the gate before it can answer, which is fail
+#     open. That is the whole of the reason and it is enough. It does NOT
+#     leak $errd, which this bullet used to claim: MEASURED 2026-11-13 (linux
+#     7.2.15, bash 5.3.20; ranger-base-5owgm, docs/notes.d/ranger-base-kbaah.md),
+#     an UNTRAPPED terminating signal still RUNS bash's EXIT trap, exits
+#     128+signo and does not resume — so `rm -rf -- "${errd:?}"` happens
+#     anyway and the scratch dir goes either way.
 #
 # Resuming is what lets the gate still reach its own fail-closed decision, and
 # MEASURED 2026-11-13 it does: bash RESTORES $? across a signal handler, so

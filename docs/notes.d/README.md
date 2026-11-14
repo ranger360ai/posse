@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-cgr1h](ranger-base-cgr1h.md) — The pulse waiter: what the ADR settled, and the four things it did not (ranger-base-cgr1h) — 2026-11-14
 - [ranger-base-99mvt](ranger-base-99mvt.md) — A mount SHAPE the fixture reflection could not see, one level down (ranger-base-99mvt) — 2026-11-14
 - [ranger-base-85xxm](ranger-base-85xxm.md) — ranger-base-85xxm — the sweep's own death, and a gate pinned by the abort below it — 2026-11-14
+- [ranger-base-5owgm](ranger-base-5owgm.md) — An untrapped terminating signal runs bash's EXIT trap, so one clause of the bd-argv-gate exemption was false in three places — and HUP now speaks in the five splits — 2026-11-14
 - [ranger-base-4fx5x](ranger-base-4fx5x.md) — An exemption that drops an id from the SCAN also drops it from the STRIP (ranger-base-4fx5x) — 2026-11-14
 - [ranger-base-41l0r](ranger-base-41l0r.md) — The fence that fences every seat was refreshed by hand, and nothing noticed when it was not (ranger-base-41l0r) — 2026-11-14
 - [ranger-base-1fsc9](ranger-base-1fsc9.md) — A safety filter put where nothing could read it (ranger-base-1fsc9) — 2026-11-14

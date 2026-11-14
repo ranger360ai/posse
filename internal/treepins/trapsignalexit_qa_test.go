@@ -83,15 +83,18 @@ package treepins
 // arms decide. KILL and STOP are not in scope either: bash refuses to trap
 // them, so there is no handler to have an opinion about.
 //
-// THE CENSUS, MEASURED 2026-11-13 after this bead's five splits: 48 shell
-// files of the 64 under scripts/, 49 trap registrations between them, 18 on a
-// deadly signal, 17 of those ending the shell and ONE exempted — which is the
-// whole of this rule's negative side, and why the roster carries prose. Of
-// the 17: eleven are this bead's (two each in clean-build.sh,
-// release-artifacts.sh, verify-herdr-bob.sh and verify-herdr-bob-rules.sh,
-// three in verify-gate-freshness.sh) and six were already right
-// (queue-cutover.sh's three, reap-selftest-ambient.sh's one, test-times.sh's
-// two re-raises).
+// THE CENSUS, MEASURED 2026-11-14 (ranger-base-5owgm, which gave the four
+// splits that lacked it a HUP arm): 48 shell files of the 64 under scripts/,
+// 53 trap registrations between them, 22 on a deadly signal, 21 of those
+// ending the shell and ONE exempted — which is the whole of this rule's
+// negative side, and why the roster carries prose. Of the 21: fifteen are
+// ranger-base-kkp5g's five splits as this bead completed them — three each
+// in clean-build.sh, release-artifacts.sh, verify-herdr-bob.sh,
+// verify-herdr-bob-rules.sh and verify-gate-freshness.sh, INT/TERM/HUP — and
+// six were already right (queue-cutover.sh's three,
+// reap-selftest-ambient.sh's one, test-times.sh's two re-raises).
+// MEASURED 2026-11-13, the same census before those four HUP arms: 49
+// registrations, 18 on a deadly signal, 17 ending the shell.
 //
 // IT SHARES ranger-base-wzo36'S READER. trapstatepick_qa_test.go already
 // lexes every script under scripts/ — logical lines, function extents,
@@ -125,9 +128,19 @@ package treepins
 //     `exit` in command position and this rule calls it clean, though it can
 //     still return. That is a false PASS, and it is here because the honest
 //     alternative is a control-flow parse of a handler body for a shape no
-//     member has: MEASURED 2026-11-13, all nine registrations on a deadly
-//     signal under scripts/ reach their `exit` or their re-raise
-//     unconditionally. The repair if one ever appears is to require the exit
+//     member has: MEASURED 2026-11-14 by reading all 21 of them, every
+//     registration on a deadly signal under scripts/ whose handler ends the
+//     shell reaches its `exit` or its re-raise unconditionally — the twelve
+//     `echo …; exit N` arms of the four splits, verify-gate-freshness.sh's
+//     three calls to `nothing`, queue-cutover.sh's three bare exits,
+//     reap-selftest-ambient.sh's `cleanup; exit 130` and test-times.sh's two
+//     re-raises. (This sentence read "all nine" until ranger-base-5owgm.
+//     Nine was already stale when ranger-base-kkp5g's five splits landed —
+//     the same file's census said 18 and 17 in the same breath — and nobody
+//     can now recover the predicate that counted nine, so it is replaced by
+//     the census's own `ending`, which is the figure the floor below reads
+//     and cannot drift away from this prose unnoticed.) The repair if one
+//     ever appears is to require the exit
 //     as the handler's LAST statement, which is a reading of the body this
 //     reader already has the lines for.
 //   - A call is followed ONE level and no further. A handler whose body
@@ -199,8 +212,13 @@ var tsgExempt = []struct{ Script, Handler, Reason string }{
 			"unconditional `exit 2` instead would refuse every signalled Bash call on the " +
 			"box whether or not it names bd, which is the fleet-wide false refusal that " +
 			"same note forbids. Dropping INT/TERM/HUP from the trap is worse again: bash's " +
-			"default disposition then kills the gate before it can answer (fail open) AND " +
-			"leaks $errd. Resuming is what lets the gate still reach its own fail-closed " +
+			"default disposition then kills the gate before it can answer, which is fail open — " +
+			"the whole of the reason and enough on its own. It does NOT leak $errd, which this " +
+			"row used to claim: MEASURED 2026-11-13 (linux 7.2.15, bash 5.3.20; " +
+			"ranger-base-5owgm, docs/notes.d/ranger-base-kbaah.md) an UNTRAPPED terminating " +
+			"signal still RUNS bash's EXIT trap, exits 128+signo and does not resume, so " +
+			"`rm -rf -- \"${errd:?}\"` happens anyway. " +
+			"Resuming is what lets the gate still reach its own fail-closed " +
 			"decision, and MEASURED 2026-11-13 it does: bash RESTORES $? across a signal " +
 			"handler, so `rc=$?` at :102 still reads the parser's status and not the " +
 			"handler's. What resumption costs is one line of PROSE and no verdict — " +
@@ -305,14 +323,15 @@ func TestQAEveryTrapOnADeadlySignalEndsTheShell(t *testing.T) {
 	// Floors, so a reader that stopped reading cannot pass quietly. An
 	// assertion that every handler ends the shell is satisfied by a census
 	// that found no handlers, and a census that found none says nothing
-	// about it. MEASURED 2026-11-13, after this bead's five splits: 48 shell
-	// files of the 64 under scripts/, 49 trap registrations between them, 18
-	// on a deadly signal and 17 of those ending the shell — the eighteenth
-	// is bd-argv-gate.sh's exempted row, which is the whole population of
-	// this rule's negative side. Each floor sits under its reading, so an
-	// ordinary landing does not move it.
+	// about it. MEASURED 2026-11-14 (ranger-base-5owgm's four HUP arms): 48
+	// shell files of the 64 under scripts/, 53 trap registrations between
+	// them, 22 on a deadly signal and 21 of those ending the shell — the
+	// twenty-second is bd-argv-gate.sh's exempted row, which is the whole
+	// population of this rule's negative side. Each floor sits under its
+	// reading, so an ordinary landing does not move it — these still sit
+	// under the 2026-11-13 reading one bead below (49/18/17), on purpose.
 	if shell < 40 || registrations < 42 || deadly < 15 || ending < 14 {
-		t.Fatalf("the census found %d shell file(s), %d trap registration(s), %d on a deadly signal and %d of those ending the shell — the reader is broken, not the tree (MEASURED 2026-11-13: see the head comment)", shell, registrations, deadly, ending)
+		t.Fatalf("the census found %d shell file(s), %d trap registration(s), %d on a deadly signal and %d of those ending the shell — the reader is broken, not the tree (MEASURED 2026-11-14: see the head comment)", shell, registrations, deadly, ending)
 	}
 	for _, e := range tsgExempt {
 		if !seen[key{e.Script, e.Handler}] {

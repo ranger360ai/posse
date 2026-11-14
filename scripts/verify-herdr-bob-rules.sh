@@ -161,7 +161,7 @@ last_rules_path() {
   done <"$1"
   printf '%s' "$out"
 }
-# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# EXIT keeps the bare handler; INT, TERM and HUP get one that EXITS
 # (ranger-base-kkp5g). THIS SCRIPT IS WHERE THE DEFECT WAS MEASURED. A handler
 # that RETURNS is right on EXIT and wrong on a signal: bash runs it and then
 # RESUMES at the statement after the one the signal interrupted, with the
@@ -182,9 +182,17 @@ last_rules_path() {
 # 128+signo, which is exactly what `apparatus()` reads as NOT AN ANSWER, so a
 # signalled run speaks this script's own language. The `exit` runs the EXIT
 # trap, so cleanup still happens exactly once.
+#
+# HUP's arm buys the LINE and not the cleanup (ranger-base-5owgm). MEASURED
+# 2026-11-13 (linux 7.2.15, bash 5.3.20, on this script under
+# ranger-base-kbaah's rig): an UNTRAPPED terminating signal still runs bash's
+# EXIT trap, exits 128+signo and does not resume, so a HUP at 1s already gave
+# exit 129 with $T removed and the watcher killed -- and ZERO output. 129 is
+# an apparatus answer like the other two, and now it says so.
 trap cleanup EXIT
 trap 'echo "verify-herdr-bob-rules: interrupted (SIGINT) -- that is the apparatus and not the property; no verdicts" >&2; exit 130' INT
 trap 'echo "verify-herdr-bob-rules: interrupted (SIGTERM) -- that is the apparatus and not the property; no verdicts" >&2; exit 143' TERM
+trap 'echo "verify-herdr-bob-rules: interrupted (SIGHUP) -- that is the apparatus and not the property; no verdicts" >&2; exit 129' HUP
 
 # ------------------------------------------------------- the two jq questions
 # JQ IS THE READER OF THE SUBJECT HERE AND IT CANNOT BE BASH. Both questions

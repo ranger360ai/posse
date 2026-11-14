@@ -80,9 +80,15 @@ it** — a hook that exited 1 let the refused command through. So:
 - An unconditional `exit 2` would refuse every signalled Bash call on the box
   whether or not it names bd — the fleet-wide false refusal ranger-base-3bqn
   forbids.
-- Dropping the signals from the trap is worse again: bash's default
-  disposition kills the gate before it can answer (fail open) **and** leaks
-  `$errd`.
+- Dropping INT/TERM/HUP from the trap is worse again: bash's default
+  disposition kills the gate before it can answer, which is **fail open**.
+  That is the whole of the reason and it is enough. It does **not** leak
+  `$errd`, which this bullet used to claim: MEASURED 2026-11-13 (linux
+  7.2.15, bash 5.3.20 — ranger-base-5owgm, and
+  [ranger-base-kbaah](ranger-base-kbaah.md), "bash runs the EXIT trap on an
+  UNTRAPPED terminating signal"), an untrapped terminating signal still
+  **runs** bash's EXIT trap, exits 128+signo and does not resume, so
+  `rm -rf -- "${errd:?}"` happens anyway.
 
 Resuming is what lets the gate still reach its own fail-closed decision, and
 MEASURED 2026-11-13 it does: **bash restores `$?` across a signal handler**,

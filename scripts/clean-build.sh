@@ -80,7 +80,7 @@ cleanup() {
 	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :
 	rm -rf "$tmp"
 }
-# EXIT keeps the bare handler; INT and TERM get one that EXITS
+# EXIT keeps the bare handler; INT, TERM and HUP get one that EXITS
 # (ranger-base-kkp5g). A handler that RETURNS is right on EXIT and wrong on a
 # signal: bash runs it and then RESUMES this script at the statement after the
 # one the signal interrupted, with everything the handler just gave back
@@ -94,9 +94,17 @@ cleanup() {
 # status names the signal (128+signo). Same spelling as
 # scripts/queue-cutover.sh:405-408; pinned by
 # internal/treepins/trapsignalexit_qa_test.go.
+#
+# HUP's arm buys the LINE and not the cleanup (ranger-base-5owgm). MEASURED
+# 2026-11-13 (linux 7.2.15, bash 5.3.20): an UNTRAPPED terminating signal
+# still runs bash's EXIT trap, exits 128+signo and does not resume — so a
+# hung-up run already removed $tmp and the temp worktree, in silence, and
+# what was missing was only the reason. An operator whose terminal went away
+# reads 129 and now reads why.
 trap cleanup EXIT
 trap 'echo "clean-build: interrupted (SIGINT) — this run did not finish" >&2; exit 130' INT
 trap 'echo "clean-build: interrupted (SIGTERM) — this run did not finish" >&2; exit 143' TERM
+trap 'echo "clean-build: interrupted (SIGHUP) — this run did not finish" >&2; exit 129' HUP
 
 git -C "$repo" worktree add --detach --quiet "$src" HEAD
 
