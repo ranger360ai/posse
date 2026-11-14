@@ -339,6 +339,95 @@ func TestPulseFeedSequenceSurvivesACorruptTail(t *testing.T) {
 	if seq != 4 {
 		t.Errorf("next seq = %d, want 4 — one past the highest READABLE entry", seq)
 	}
+
+	// ...and the arm that separates "highest readable" from "the last line
+	// that parsed", which the corrupt tail above does NOT (ranger-base-xim7t,
+	// verifying ranger-base-hkqpq). An unparseable tail is skipped by BOTH
+	// rules, so both answer 4 over the fixture above and the `>= seq` half of
+	// pulseFeedWrite's guard was asserted by nothing: MEASURED 2026-11-14,
+	// cutting it to a bare `if n, ok := PulseFeedSeq(ln); ok` left this whole
+	// file green.
+	//
+	// What tells them apart is a PARSEABLE line whose number is LOWER than one
+	// above it. Out of order rather than corrupt, so there is nothing for a
+	// parse to reject, and last-line-wins then re-issues a number an armed
+	// waiter has already passed — which is this test's own stated failure, the
+	// one that is silent on both sides.
+	outOfOrder := []string{
+		"1 " + at.UTC().Format(time.RFC3339) + " +k1 standing: 1",
+		"2 " + at.UTC().Format(time.RFC3339) + " +k2 standing: 2",
+		"5 " + at.UTC().Format(time.RFC3339) + " +k5 standing: 3",
+		"3 " + at.UTC().Format(time.RFC3339) + " -k3 standing: 2",
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(outOfOrder, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seq, err = pulseFeedWrite(path, at, "+k6 standing: 3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seq != 6 {
+		t.Errorf("over entries 1, 2, 5, 3 the next seq = %d, want 6 — one past the HIGHEST readable entry and not one past the last one (which would re-issue 4, a number a waiter on --after 5 has already passed)", seq)
+	}
+}
+
+// The rewrite goes through `path + ".tmp"` and a rename, which is the one
+// property the feed has for the sake of a reader that is not its writer:
+// `posse pulse wait` may be mid-read at any moment, and a reader of a feed
+// written in place can see a file with its oldest lines gone and its newest
+// not yet there (ADR 0093 D1/D2, ranger-base-cgr1h is the waiter).
+//
+// Pinned here because the cap test's `os.Stat(path + ".tmp")` cannot pin it:
+// that is an ABSENCE, and a writer which creates no temp file at all
+// satisfies it. MEASURED 2026-11-14 (ranger-base-xim7t, verifying
+// ranger-base-hkqpq): replacing the temp+rename with a direct
+// `os.WriteFile(path, …)` left every pulse pin in all three arms green.
+//
+// So the control is positive and it is the temp path itself: a DIRECTORY
+// planted at `path + ".tmp"` is a path os.WriteFile cannot write, so a
+// writer that goes through it fails and a writer that does not succeeds.
+// The second half is the atomicity the rename buys — a write that failed
+// leaves the reader's file exactly as it was, never half-replaced.
+func TestPulseFeedRewriteGoesThroughATempFileAndARename(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "pulse.feed")
+	at := time.Now()
+	if _, err := pulseFeedWrite(path, at, "+k1 standing: 1"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Mkdir(path+".tmp", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seq, err := pulseFeedWrite(path, at, "+k2 standing: 2")
+	if err == nil {
+		t.Errorf("pulseFeedWrite returned seq %d and no error with a directory at %s — the rewrite is not going through that temp path, so nothing stands between a mid-read waiter and a half-replaced file", seq, filepath.Base(path+".tmp"))
+	}
+
+	// And the rename's own guarantee: the failed write left the feed whole.
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the feed itself did not survive a failed rewrite: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("a failed rewrite changed the feed:\n before %q\n after  %q", before, after)
+	}
+
+	// With the temp path writable again the same call goes through, so the
+	// arm above failed on the plant and not on something about the fixture.
+	if err := os.Remove(path + ".tmp"); err != nil {
+		t.Fatal(err)
+	}
+	if seq, err = pulseFeedWrite(path, at, "+k2 standing: 2"); err != nil || seq != 2 {
+		t.Fatalf("pulseFeedWrite after the plant was removed = %d, %v; want 2, nil", seq, err)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf("the temp file survived the rename: %v", err)
+	}
 }
 
 // pulseDiff's own rules, at the level they live, because the pairing is the

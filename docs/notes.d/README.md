@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-zb476](ranger-base-zb476.md) — A launch-line assertion reads both places the line lands in (ranger-base-zb476) — 2026-11-14
+- [ranger-base-xim7t](ranger-base-xim7t.md) — ranger-base-xim7t — a fixture that cannot separate the two rules — 2026-11-14
 - [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
 - [ranger-base-gi6ge](ranger-base-gi6ge.md) — The bullet and the diff marker are the same byte (ranger-base-gi6ge) — 2026-11-14
 - [ranger-base-ed07e](ranger-base-ed07e.md) — A fix could not describe the hole it closed, and its bead could not close first (ranger-base-ed07e) — 2026-11-14
