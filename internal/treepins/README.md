@@ -47,17 +47,43 @@ pin.
 | `make pkgcensus-check` | censuses over `internal/posse`'s own sources (arm 1 and shared) |
 | `make pkgcensus-arm2-check` | the same, for the pins built only under `posse_arm2` |
 | `make pkgcensus-arm3-check` | the same, for the pins built only under `posse_arm3` |
-| `make notes-check` | `docs/notes.d/README.md` lists every fragment (a tool) |
-| `make orientation-check` | no push mandate in `AGENTS.md`, and the `INSTALL.md` recipe that keeps it out |
-| `make adr-check` | ADR citations resolve, exemptions name real files |
-| `make corpus-check` | censuses over this repository's own Go, test and shipped-runnable sources |
-| `make register-check` | the register itself: every tree-wide pin has a door |
-| `make scripts-check` | censuses over `scripts/` |
+| `make treepins-check` | every pin in this package, minus a priced exclusion table |
 | `make pid-check` | the shipped PIDs under `examples/agents/` |
 | `make land-check` | the launcher's own land gate, `scripts/posse-land-check`, whose fifth step vets the not-native GOOS |
 
-The last row is not a tree-wide pin and is the one door here that runs no
-test. It is the gate that judges a replayed landing, and it is on this list
+The `treepins-check` row is the one door named by what it does **not** run
+([ADR 0098](../../docs/adr/0098-the-treepins-door-is-the-package-minus-a-priced-exclusion-list.md)).
+Every other door is a `-run` filter, so a door is the pins it names — and in
+this package that key stopped paying for itself: a pin here reads a tracked
+file it names as often as it walks a directory, and a named read is the
+enumeration rule's own negative case, so the pins that most needed a door
+were the ones no derivation could find. Seven of the nine hand-written
+exemptions in `treewidedoor_qa_test.go` arrived for that one cause. Named the
+other way round — the package minus `$(QA_TREEPINS_EXCLUDED)` — a pin written
+tomorrow is behind the door the moment it is written, and the only hand-kept
+state is the exclusion table, where every row carries its measured seconds,
+the box, the date and the route that still runs it.
+
+Six doors came off `tree-check`'s line when it arrived, and all six are still
+here to type, each a subset of the one that replaced them:
+
+- `make notes-check` — `docs/notes.d/README.md` lists every fragment (a tool)
+- `make orientation-check` — no push mandate in `AGENTS.md`, and the
+  `INSTALL.md` recipe that keeps it out
+- `make adr-check` — ADR citations resolve, exemptions name real files
+- `make corpus-check` — censuses over this repository's own Go, test and
+  shipped-runnable sources
+- `make register-check` — the register itself: every tree-wide pin has a door
+- `make scripts-check` — censuses over `scripts/`
+
+They are not on the table above because that table is held to
+`tree-check`'s prerequisite line, membership and order, by
+`treewidedoor_qa_test.go`'s arm 4 — and a reader pricing a partial run is
+owed the list `make tree-check` actually runs.
+
+The last row of that table is not a tree-wide pin and is the one door here
+that runs no test. It is the gate that judges a replayed landing, and it is
+on this list
 because its cross-GOOS step is the only thing in the repository that compiles
 the tree for the platform the development box is not: a file that builds here
 and not on darwin was a tree with a green suite, a green `make tree-check`
@@ -68,9 +94,15 @@ residual 1). The Makefile's own comment on that door says the rest of it.
 `make tree-check` is every one of them in one command, and it is a
 prerequisite of `make test` for the reason `fmt-check` is: a full run fails
 on it in seconds rather than at the end of a long package. MEASURED
-2026-10-04 on the development box: 46.5–77.2s warm over three runs, 92.6s
-cold, the spread being box load rather than the build cache
-([ranger-base-g6sb1](../../docs/notes.d/ranger-base-g6sb1.md)). Two doors are
+2026-11-14 with the complement door on the line: 83–92s warm over three runs,
+against 42–43s for the door list it replaced in the same window, so about
+forty seconds for a door that cannot go stale
+([ranger-base-3cpcg](../../docs/notes.d/ranger-base-3cpcg.md), which has every
+reading and the twelve priced rows). It read 46.5–77.2s warm and 92.6s cold
+before `treepins-check` and before five doors were added after it (MEASURED
+2026-10-04,
+[ranger-base-g6sb1](../../docs/notes.d/ranger-base-g6sb1.md)); the spread in
+both is box load rather than the build cache. Two doors are
 worth typing alone — `make crew-check` when a change touched `cmd/`,
 `internal/`, `etc/`, `examples/` or any `*_test.go`, and `make notes-check`
 whenever a `docs/notes.d/<bead-id>.md` fragment is added.

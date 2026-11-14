@@ -69,7 +69,7 @@ ifeq ($(words $(BUILD_SOURCE)),1)
 LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
 endif
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check land-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-wall-check verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check treepins-check pid-check land-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-wall-check verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -801,9 +801,37 @@ QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ORIENTATION_PINS := TestRepoAgentsMdCarriesNoPushMandate|TestInstallSection9ReconcilesThePlantedAgentsMd|TestInstallSection9RecipeCutsTheMandateOutOfWhatBdPlants|TestInstallSection9RecipeStopsAtTheNextHeading|TestInstallSection9RecipeIsSafeWithNothingToCut|TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun
 QA_ADR_PINS       := TestADRRecordsNameTheLivePackageDirectory|TestADRSweptRecordsStillCiteTheLiveDirectory|TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
 QA_CORPUS_PINS    := TestQAEveryPlantingPackageHasAColdexecArm|TestQAColdexecArmRegisterIsNotStale|TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders|TestQAEveryProbeForAProtocolChildsNameGoesThroughProtocolAvailable|TestQANoGoSourceWritesABinBashShebang|TestQAEveryShippedScriptThatHashesPicksItsHasherByProbe|TestQAEveryFixtureGitThatUnpinsGitsConfigRunsOutsideTheGates|TestQANoFixtureGitChildCallsAVerbTheShimRefusesOutright|TestCredTokenRevealIsCalledOnlyFromTheRegister|TestCredTokenRevealIsTheOnlyMethodOfThatName|TestQAEveryTempRootInTheTreeIsInPossesTempNamespace|TestQAEveryLaunchLineAssertionReadsBothPlacesTheLineLandsIn
-QA_REGISTER_PINS  := TestTreePinsRunFromModuleRoot|TestQAEveryTreeWidePinHasADoor|TestQAEveryTreePathHandedThroughAParameterIsDerived|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles|TestQATheClimbFenceStillHasItsBareRootJoinHole
+QA_REGISTER_PINS  := TestTreePinsRunFromModuleRoot|TestQAEveryTreeWidePinHasADoor|TestQAEveryTreePathHandedThroughAParameterIsDerived|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles|TestQATheClimbFenceStillHasItsBareRootJoinHole|TestQATheTreepinsComplementDoorIsThePackageMinusItsPricedTable
 QA_SCRIPTS_PINS   := TestQANoEntryPointRunsGoTestOnTheDefaultTimeout|TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt|TestQAEveryMktempDirRootUnderScriptsIsReapedOrRostered|TestQAEveryMktempFileInTheShippedShellIsRosteredOrExempt|TestQAEveryTrapStateSetterRunsInTheTrapsOwnShell|TestQAEveryTrapOnADeadlySignalEndsTheShell|TestQATheShellReaderReadsEveryLineUnderScripts
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
+
+# THE COMPLEMENT (ADR 0098, ranger-base-3cpcg). Every variable above is a
+# `-run` filter: a door is the pins it NAMES, and a pin nobody names is a pin
+# nobody doors. In internal/treepins that key stopped paying for itself —
+# seven of nine hand rows in twdDoorHolders arrived for one cause, a pin whose
+# subject is a tracked file it reads BY NAME, which no derivation over the
+# source can see (ADR 0098 Context). So this package's door is spelled the
+# other way round: the whole package MINUS the tests on this line. A pin
+# written tomorrow is doored by `make treepins-check` the moment it is
+# written, with nobody remembering to door it.
+#
+# A NAME HERE IS A PRICE, NOT A PARKING SPOT (ADR 0098 D2). Each one has a row
+# in internal/treepins/treewidedoor_qa_test.go's twdTreepinsExcluded giving
+# its MEASURED seconds, the box, the date and the route that still runs it,
+# and arm 5 there holds this line and that table equal in both directions and
+# refuses a row under the 2.0s floor. "It reads a file by name" and "it is a
+# control arm" are not reasons — those were the old parking-spot reasons and
+# under the complement neither one earns an exclusion.
+#
+# These twelve are the suite wrappers' own self-tests (scripts/test-times.sh,
+# scripts/suite-lock.sh, scripts/gotest.sh), the race-arm census that compiles
+# internal/posse's three arms, the tracked-file digit census and the bd argv
+# gate's verb arm: 75.3s of the package's 167.3s of summed test time, over
+# twelve tests of 481 (MEASURED 2026-11-14 warm, this box, through
+# scripts/test-times.sh; the three race-arm rows read 25-28s rather than ~3s
+# in the reading before it, with internal/posse's arm builds cold). They are
+# run by `make test`, which runs this package whole.
+QA_TREEPINS_EXCLUDED := TestNoTrackedFileCarriesADigitRealisticDetectorShape|TestQABdArgvGateResolvesTheVerb|TestQAEveryRaceArmCandidateTestIsCompiledIntoSomeArm|TestQASuiteLockSelfTestIgnoresAnAmbientPosseEnvironment|TestQASuiteLockStrictArmFailsWhenTheQueuedPathKillsTheWrapper|TestQATheFilteredRunArmFailsOnEvidenceAndNotOnATimeout|TestQATheQueuedArmsFailOnEvidenceAndNotOnASlowFork|TestQATheRaceArmCensusRefusesTheWrongShapes|TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails|TestQATheSuiteQueueSelfTestCanFail|TestQATheSuiteQueueStillProvesItQueues|TestQATheWrapperStillExplainsAFullDiskAndABrokenStdBuild
 
 # The crew-name trio, one door between them because they are one question —
 # does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
@@ -1217,6 +1245,47 @@ register-check:
 scripts-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_SCRIPTS_PINS))$$'
 
+# THE TREEPINS DOOR, AND IT IS THE PACKAGE MINUS A PRICED LIST (ADR 0098 D1,
+# ranger-base-3cpcg). Every door above stands in front of the pins it NAMES,
+# and that is why this package needed a different shape: a pin here is
+# `os.ReadFile("AGENTS.md")` as often as it is a directory walk, and a named
+# read is the enumeration rule's own negative case — so the pins that most
+# need a door are exactly the ones no derivation can find. Nine hand rows in
+# twdDoorHolders, seven of them for that one cause, is what the naming key
+# cost (ADR 0098 Context). Named the other way round, the question answers
+# itself: a pin written tomorrow is behind this door the moment it is
+# written, and the only hand-kept state is $(QA_TREEPINS_EXCLUDED), where
+# every name carries its price.
+#
+# It REPLACES notes-check, orientation-check, adr-check, corpus-check,
+# register-check and scripts-check on `tree-check`'s line, and those six stay
+# as targets a seat can still type, because each runs a subset of this one.
+# pid-check stays on that line as well: its two pins are 0.44s and 0.00s here
+# (MEASURED 2026-11-14 — the ~10s on its own comment is not this box's
+# price), so they are inside this door too and the door above it is a
+# second, cheaper way to ask.
+#
+# WHAT IT COSTS, AND WHAT IT REPLACES: 67.7-85.3s over three warm runs
+# against 29.2s for the six doors it takes off the line, which puts
+# `make tree-check` at 83.1-91.5s where the nineteen doors were 42.0-43.0s
+# (MEASURED 2026-11-14, this box, warm, no suite slot held by anyone
+# throughout — docs/notes.d/ranger-base-3cpcg.md has every reading with its
+# load average). Forty seconds, for a door that cannot go stale.
+#
+# It takes NO suite slot and is not meant to (ADR 0098's assumption, held):
+# 152-172s of process CPU over 67.7-85.3s of wall is 2.0-2.25 cores of this
+# box's sixteen, read at a one-minute load average of 10.0 to 17.6. A queued
+# arm is a median of 393.5s of wall and most of the box; this is seventy
+# seconds and a seventh of it. A seat that ADDS a tree-wide pin still types
+# `make treepins` — the whole package, through the wrapper, queued — for the
+# reason that target's own comment gives.
+#
+# Type it when you add a tree-wide pin to internal/treepins, or instead of
+# the six subset doors when you are not sure which of them your change
+# touches.
+treepins-check:
+	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -skip '^($(QA_TREEPINS_EXCLUDED))$$'
+
 # The shipped PIDs under examples/agents/, read as a directory rather than by
 # name: the narrowed hook rows, and beads' own hooks still allowed to run.
 # ~10s (it launches posse against fixture homes).
@@ -1263,8 +1332,15 @@ pid-check:
 land-check:
 	scripts/posse-land-check
 
-# The whole class, one command: every tree-wide pin in both packages, and
-# since ranger-base-ujyjd the land gate above, which is not a pin at all —
+# The whole class, one command: every tree-wide pin in both packages — the
+# internal/posse half as the doors that NAME their pins, the internal/treepins
+# half as `treepins-check`, which is that package minus $(QA_TREEPINS_EXCLUDED)
+# (ADR 0098 D1). Six targets came off this line when that door arrived and all
+# six are still here to type: notes-check, orientation-check, adr-check,
+# corpus-check, register-check, scripts-check, each a subset of the one door
+# that replaced them.
+#
+# And since ranger-base-ujyjd the land gate above, which is not a pin at all —
 # it is the one door here whose subject is a build this box does not do. No
 # recipe of its own — the doors are its prerequisites, so `make -n tree-check`
 # prints exactly what a seat would otherwise have to type. It is a
@@ -1274,7 +1350,7 @@ land-check:
 # treewidedoor_qa_test.go's head comment says it once, derived from this
 # file by its arm 4, and a second copy here would be the second place to
 # drift.
-tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check pid-check land-check
+tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check treepins-check pid-check land-check
 
 # THE UNFILTERED TREE-PIN RUN, THROUGH THE WRAPPER SO IT QUEUES
 # (ranger-base-1a0hi). `tree-check` above is the doors a seat types after a

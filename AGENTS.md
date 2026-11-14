@@ -427,15 +427,27 @@ stall that day, and every one of them a typing habit.
   make pkgcensus-check ~2.9s   censuses over internal/posse's own sources (arm 1)
   make pkgcensus-arm2-check    the same, for what only -tags posse_arm2 builds
   make pkgcensus-arm3-check    the same, for what only -tags posse_arm3 builds
-  make notes-check     ~0.3s   docs/notes.d/README.md lists every fragment (a TOOL)
-  make orientation-check ~0.1s neither orientation page orders you to the remote
-  make adr-check       ~1.6s   ADR citations resolve, exemptions name real files
-  make corpus-check      ~5s   censuses over this repo's own .go, test and script sources
-  make register-check   ~22s   the register itself: every tree-wide pin has a door
-  make scripts-check   ~0.9s   censuses over scripts/, and verify-* targets vs the box roster
+  make treepins-check   ~70s   every tree-wide pin in internal/treepins, minus a priced table
   make pid-check        ~10s   the shipped PIDs under examples/agents/
   make land-check      ~1.5s   the launcher's own land gate, cross-GOOS vet and all
   ```
+
+  **The treepins door is named by what it does NOT run** (ADR 0098,
+  ranger-base-3cpcg), and it is the one door on that list spelled that way.
+  Every other door is a `-run` filter, so a door is the pins it NAMES — and
+  in internal/treepins that key stopped paying: a pin there reads a tracked
+  file it names as often as it walks a directory, a named read is the
+  derivation's own negative case, and so the pins that most needed a door
+  were the ones nothing could find. `treepins-check` is that package minus
+  `$(QA_TREEPINS_EXCLUDED)`, twelve priced rows in
+  `treewidedoor_qa_test.go`'s `twdTreepinsExcluded` — each with its measured
+  seconds, box, date and the route that still runs it — so a pin written
+  tomorrow is doored the moment it is written. Six targets came off
+  `tree-check`'s line when it landed and every one of them is still there to
+  type, each a subset of the one door that replaced them: `make notes-check`
+  (the notes index, a TOOL), `make orientation-check` (neither orientation
+  page orders you to the remote), `make adr-check`, `make corpus-check`,
+  `make register-check` and `make scripts-check`.
 
   The last of those is the odd one out and the one worth knowing about: it is
   not a tree-wide pin, it is `scripts/posse-land-check`, the gate that judges
@@ -451,7 +463,18 @@ stall that day, and every one of them a typing habit.
   pre-push gate did. 1.5s warm, 8.2s with the darwin build cache cold, is what
   that discipline costs now it is typed for you.
 
-  **`make tree-check` is all of them, 50-61s warm over three runs with the
+  **`make tree-check` is all of them, 83-92s warm over three runs with the
+  complement door on the line** (MEASURED 2026-11-14, ranger-base-3cpcg:
+  91.5s, 83.1s then 91.0s in that order, at a one-minute load average of
+  12.53, 11.76 and 7.01 with NEITHER suite slot held by anyone throughout and
+  one warm-up discarded — against 42.4s, 43.0s and 42.0s for the door list it
+  replaced, measured in the same window at a load of 6.4-7.9. That is the one
+  reading in this chain not comparable to the one before it: the line lost six
+  targets and gained one that runs a whole package, so +40 to +49s is what a
+  door that cannot go stale costs here.
+  `make treepins-check` is 67.7-85.3s of it, 2.0-2.25 cores of sixteen, and
+  it takes no suite slot — docs/notes.d/ranger-base-3cpcg.md has every
+  reading). Before that door it read **50-61s warm over three runs with the
   land-check door on the line** (MEASURED 2026-11-14 on the landing that added
   it: 55s, 61s then 50s in that order, at a one-minute load average of 14.01,
   11.93 and 15.02 with one suite slot held by a sibling seat throughout —

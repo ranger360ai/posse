@@ -35,6 +35,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-5ex01](ranger-base-5ex01.md) — A candidate heads only on an anchor, and the lane's label stopped being the head seat's own (ranger-base-5ex01) — 2026-11-14
 - [ranger-base-4fx5x](ranger-base-4fx5x.md) — An exemption that drops an id from the SCAN also drops it from the STRIP (ranger-base-4fx5x) — 2026-11-14
 - [ranger-base-41l0r](ranger-base-41l0r.md) — The fence that fences every seat was refreshed by hand, and nothing noticed when it was not (ranger-base-41l0r) — 2026-11-14
+- [ranger-base-3cpcg](ranger-base-3cpcg.md) — ranger-base-3cpcg — the treepins door is the package minus a priced table — 2026-11-14
 - [ranger-base-1fsc9](ranger-base-1fsc9.md) — A safety filter put where nothing could read it (ranger-base-1fsc9) — 2026-11-14
 - [ranger-base-05ooy](ranger-base-05ooy.md) — The coordinator's arming text: the draft, and the four hazards it is written against (ranger-base-05ooy) — 2026-11-14
 - [ranger-base-zhw0h](ranger-base-zhw0h.md) — install(1) leaves the target absent for part of every install (ranger-base-zhw0h) — 2026-11-13

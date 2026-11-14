@@ -212,6 +212,9 @@ package treepins
 //	TestQAEveryTreepinsDoorFilterNamesItsPins     make register-check
 //	TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles
 //	                                              make register-check
+//	TestQATheTreepinsComplementDoorIsThePackageMinusItsPricedTable
+//	                                              make register-check
+//	                                              (ranger-base-3cpcg)
 //	TestQABoxCheckCensusCoversEveryVerifyScript   make scripts-check ~0.9s
 //	TestQANoAssertionArmDecidesThroughAForkedMatcher
 //	                                              make scripts-check
@@ -1389,8 +1392,42 @@ package treepins
 // Arm 1 is one-way (twdDoors → the prerequisite line) and so says nothing
 // about it, which is correct — there is no filter here to hold to a pin.
 //
-// and `make tree-check` is all of them — one hundred and fifty-six pins
-// and nineteen doors, 71.3-77.7s over three warm runs at one hundred and
+// AND ONE DOOR THAT IS NAMED BY WHAT IT DOES NOT RUN (ADR 0098,
+// ranger-base-3cpcg):
+//
+//	(every pin in internal/treepins,          make treepins-check  ~70s
+//	 minus twelve priced rows)
+//
+// It is the internal/treepins half of this class, and it replaced six
+// `-run` doors on `tree-check`'s line: notes-check, orientation-check,
+// adr-check, corpus-check, register-check and scripts-check, all six still
+// targets a seat can type and each a subset of this one. The reason is the
+// inventory above read the other way round: in this package a pin's subject
+// is a tracked file it names as often as it is a directory it walks, a named
+// read is the enumeration rule's own negative case, and so the pins that
+// most needed a door were the ones no derivation could find. Seven of
+// twdDoorHolders' nine rows are that one cause, which is an argument about
+// the KEY and not about the register (ADR 0098 Context) — so the key here is
+// now the complement: everything except twdTreepinsExcluded, where each row
+// carries the seconds, the box, the date and the route that still runs it. A
+// pin written tomorrow is doored the moment it is written.
+//
+// LIKE land-check IT IS NOT IN twdDoors, and for the same structural reason:
+// every row there carries a `-run` variable arm 2 measures against the
+// class, and this door's variable is the list of tests it SKIPS — the
+// opposite set, which arm 2 would read as a door naming twelve pins that are
+// not members. It is held by arm 5 instead, which is the whole of ADR 0098's
+// hand-kept state. Arm 1 reaches it the derived way: a treepins door whose
+// every pin is outside the table is a subset of this one, so `tree-check`
+// reaching treepins-check is what reaches it.
+//
+// It is counted as a door below for arm 4's reason — the count is
+// `tree-check`'s prerequisites, which is what a seat pays for — and the
+// twelve rows are NOT counted as pins, because the pin count is the union of
+// the door variables and an exclusion is not a membership.
+//
+// and `make tree-check` is all of them — one hundred and fifty-seven pins
+// and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
 // 8.42 over a five-minute 11.15, 10.04 and 9.71, with NO suite slot held for
@@ -1406,6 +1443,30 @@ package treepins
 // at a HIGHER load with both slots held. The pin this bead added reports
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
+//
+// THREE WARM READINGS WITH THE COMPLEMENT DOOR ON THE LINE, and the first
+// reading in this chain that is not comparable to the one before it: the
+// line went from nineteen doors to fourteen and one of the fourteen is a
+// whole package (ADR 0098, ranger-base-3cpcg). 91.5s, 83.1s then 91.0s in
+// that order (MEASURED 2026-11-14, at a one-minute load average of 12.53,
+// 11.76 and 7.01, with NEITHER suite slot held by anyone throughout and one
+// warm-up run discarded), against 42.4s, 43.0s and 42.0s for the nineteen
+// doors in the same window at a load of 6.4-7.9. So +40 to +49s, and
+// `make treepins-check` is 67.7-85.3s of the after column against 29.2s for
+// the six doors it took off the line.
+//
+// WHY THE BEFORE COLUMN IS A DOOR SET AND NOT A PREREQUISITE LINE: arm 5
+// pins treepins-check onto that line, so a tree carrying this register and
+// the old line reds at ~40s rather than finishing. The nineteen targets were
+// named as one serial `make` invocation instead, with this file and the
+// Makefile left alone. docs/notes.d/ranger-base-3cpcg.md has every reading,
+// the twelve priced rows and both of each row's measurements.
+//
+// The forty seconds buy the one thing the naming key could not: a pin
+// written tomorrow is doored the moment it is written. What it is NOT is a
+// suite — 152-172s of process CPU over that wall is 2.0-2.25 cores of
+// sixteen, read at a load average up to 17.6 — so it takes no slot and makes
+// nobody queue.
 //
 // THREE WARM READINGS WITH THE NINETEENTH DOOR ON THE LINE, the class as
 // ranger-base-ujyjd lands it: 55s, 61s then 50s in that order (MEASURED
@@ -1924,6 +1985,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The two packages in the class. internal/posse is ~950s whole and
@@ -2093,9 +2155,34 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	for _, d := range twdDoors {
 		doors = append(doors, d.target)
 	}
-	for _, door := range doors {
-		if !mkRuns(tree, door) {
-			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, treeLine)
+	// TWO WAYS TO BE REACHED since ADR 0098 (ranger-base-3cpcg), and which
+	// one applies is DERIVED rather than listed. internal/treepins' door is
+	// the package minus $(QA_TREEPINS_EXCLUDED), so a door over this package
+	// whose every pin is outside that table is a SUBSET of the complement
+	// and `tree-check` reaches it by reaching treepins-check — which is how
+	// six targets came off that line and stayed typeable. A door with an
+	// excluded pin is not covered and has to be named on the line itself.
+	//
+	// Derived because a listed answer would be the thing this file keeps
+	// finding: a row that says "covered" for a door whose pin was priced
+	// into the table later, and a line a seat reads as complete while one
+	// pin is back to being a package-tree run away.
+	excluded := map[string]bool{}
+	for _, name := range twdVar(t, src, twdComplementVar) {
+		excluded[name] = true
+	}
+	if len(excluded) == 0 {
+		t.Errorf("$(%s) is empty — that is not illegal, but it means the complement door now runs this package whole, and the wiring below would stop distinguishing a covered door from an uncovered one. If the table really was emptied, say so here.", twdComplementVar)
+	}
+	for _, d := range twdDoors {
+		if d.pkg == twdTreepinsPkg && twdComplementRuns(t, src, d, excluded) {
+			if !mkRuns(tree, twdComplementDoor) && !mkRuns(tree, d.target) {
+				t.Errorf("`make tree-check` reaches neither `%s` nor `%s`, and every pin $(%s) names is inside the complement — so one tree-wide pin is back to being a package-tree run away: %q", twdComplementDoor, d.target, d.variable, treeLine)
+			}
+			continue
+		}
+		if !mkRuns(tree, d.target) {
+			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", d.target, treeLine)
 		}
 	}
 
@@ -2113,7 +2200,11 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	if !mkRuns(phony, "tree-check") {
 		t.Errorf(".PHONY does not name tree-check — a file of that name in the tree would silence it: %q", phonyLine)
 	}
-	for _, door := range doors {
+	// The complement door among them (ranger-base-3cpcg): it is not a
+	// twdDoors row — it has no `-run` variable for arm 2 to measure — so
+	// without this append the one door that stands in front of a whole
+	// package would be the one door a file of its name could silence.
+	for _, door := range append(append([]string(nil), doors...), twdComplementDoor) {
 		if !mkRuns(phony, door) {
 			t.Errorf(".PHONY does not name %s — a file of that name in the tree would silence it: %q", door, phonyLine)
 		}
@@ -4274,6 +4365,109 @@ var twdDoorHolders = map[string]string{
 	"TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun": "runs §9's extracted recipe twice, the second pass over this repo's OWN AGENTS.md; any bead that edits either page reds it",
 }
 
+// twdComplementDoor is internal/treepins' door, and it is the only door in
+// this register that is named by what it does NOT run (ADR 0098 D1,
+// ranger-base-3cpcg). Every other door is a `-run` filter: the door is the
+// pins it names, and a pin nobody names is a pin nobody doors. Here that key
+// stopped paying — a pin in this package is `os.ReadFile("AGENTS.md")` as
+// often as it is a directory walk, a named read is the enumeration rule's own
+// negative case, and so the pins that most needed a door were exactly the
+// ones no derivation could find. Seven of twdDoorHolders' nine rows are that
+// one cause (ADR 0098 Context).
+//
+// So membership here is the complement: every test in the package except the
+// ones twdTreepinsExcluded prices. A pin written tomorrow is doored the
+// moment it is written. The six doors this replaced on `tree-check`'s line —
+// notes-check, orientation-check, adr-check, corpus-check, register-check,
+// scripts-check — are still targets, each a subset of this one.
+const (
+	twdComplementDoor = "treepins-check"
+	twdComplementVar  = "QA_TREEPINS_EXCLUDED"
+)
+
+// twdExcludedFloor is ADR 0098 D2's floor, in seconds. Below it a test costs
+// the door less than the miss would cost a seat, so the row is not worth the
+// escape window it opens.
+const twdExcludedFloor = 2.0
+
+// twdExcluded is one row of that table: what the test cost, where and when
+// that was measured, and the route that still runs it.
+//
+// The PRICE is the reason. A row may not be justified by "it reads a file by
+// name" or "it is a control arm" — those are the parking-spot reasons
+// twdDoorHolders was growing on, and under the complement neither one earns
+// an exclusion (ADR 0098 D2).
+type twdExcluded struct {
+	seconds float64
+	box     string
+	date    string
+	route   string
+}
+
+// twdExcludedBoxD1 is the box every row below was measured on. Named once
+// because they were measured in one run; a row measured elsewhere names its
+// own box, which is the whole point of the field — every wall reading in this
+// repository is per box and per load.
+const twdExcludedBoxD1 = "D1 host, Linux 7.2.15, go1.27.3, 16 cores"
+
+// twdExcludedRouteSuite is the route for a test that no door runs: `make
+// test`, which runs this package whole in arm 1.
+const twdExcludedRouteSuite = "make test"
+
+// twdTreepinsExcluded is the complement door's exclusion table — the one
+// piece of hand-kept state ADR 0098 leaves, and the Makefile variable the
+// door skips is held equal to it in both directions by arm 5.
+//
+// WHAT THESE TWELVE ARE. Ten are the suite apparatus testing itself:
+// scripts/suite-lock.sh's queue and strict arms, scripts/test-times.sh's and
+// scripts/gotest.sh's self-tests and their disk and fork arms, and the
+// race-arm census, which compiles internal/posse's three arms to ask whether
+// every candidate test is in one. Each forks a real wrapper, or a real `go`,
+// and that is where the seconds go. The other two are the tracked-file digit
+// census and the bd argv gate's verb arm.
+//
+// 75.3s of the package's 167.3s of summed test time, twelve tests of 481
+// (MEASURED 2026-11-14, warm, through scripts/test-times.sh — the reading
+// each row's seconds come from). The three race-arm rows read 27.91s, 27.72s
+// and 25.26s an hour earlier with internal/posse's arm builds COLD, and the
+// seconds below are the warm figures on purpose: a row has to clear the floor
+// at the test's cheapest measured price, not at its most expensive.
+// docs/notes.d/ranger-base-3cpcg.md has both readings.
+//
+// NOT HERE: TestQATheWrapperSelfTestCanFail at 1.56s, the nearest test under
+// the floor, and TestQATheTreeWideDoorsReportRealDrift at 22.2s, which is the
+// most expensive test the door runs. The drift arm is the strongest thing
+// this file does and register-check is still on no seat's critical path, so it
+// stays inside the door rather than being priced out of it; what ADR 0098
+// bought was a door over the pins nobody names, not a cheaper register.
+var twdTreepinsExcluded = map[string]twdExcluded{
+	"TestQATheQueuedArmsFailOnEvidenceAndNotOnASlowFork":               {25.20, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails": {11.78, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQASuiteLockStrictArmFailsWhenTheQueuedPathKillsTheWrapper":    {6.11, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQATheWrapperStillExplainsAFullDiskAndABrokenStdBuild":         {5.98, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQASuiteLockSelfTestIgnoresAnAmbientPosseEnvironment":          {4.06, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQATheFilteredRunArmFailsOnEvidenceAndNotOnATimeout":           {4.03, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQATheSuiteQueueStillProvesItQueues":                           {4.01, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQATheSuiteQueueSelfTestCanFail":                               {3.00, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestNoTrackedFileCarriesADigitRealisticDetectorShape":             {2.95, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQAEveryRaceArmCandidateTestIsCompiledIntoSomeArm":             {2.91, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQATheRaceArmCensusRefusesTheWrongShapes":                      {2.85, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+	"TestQABdArgvGateResolvesTheVerb":                                  {2.39, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
+}
+
+// twdComplementRuns reports whether the complement door runs every pin one
+// door variable names — which is what makes that door a SUBSET of
+// treepins-check and so reachable through it on `tree-check`'s line.
+func twdComplementRuns(t *testing.T, makefile string, d twdDoor, excluded map[string]bool) bool {
+	t.Helper()
+	for _, name := range twdVar(t, makefile, d.variable) {
+		if excluded[name] {
+			return false
+		}
+	}
+	return true
+}
+
 // twdTreepinsTreeWideTests returns the tests in internal/treepins whose
 // subject is the TREE: the derived ones, plus the registered indirect ones.
 //
@@ -5965,6 +6159,184 @@ func TestQAEveryTreepinsDoorFilterNamesItsPins(t *testing.T) {
 		if !twdSameSet(listed, want) {
 			t.Errorf("`make %s`'s filter selects %v, and $(%s) names %v — the regex make assembles and the pins the variable holds are not the same set, so the door runs fewer tests than its own membership says and still prints `ok`:\n%s", door.target, listed, door.variable, want, listing)
 		}
+	}
+}
+
+// Arm 5: internal/treepins' door is that package minus a priced table, and
+// every row in the table is a price (ADR 0098 D1-D3, ranger-base-3cpcg).
+//
+// WHY THIS ARM IS THE WHOLE DESIGN. The complement spelling buys one property
+// — a pin written tomorrow is doored the moment it is written — and it pays
+// for it with a list of names that silence the door. Nothing else in this file
+// can see that list: arm 1 reads what a door RUNS, arm 2 reads what a door
+// NAMES, and a test quietly added to $(QA_TREEPINS_EXCLUDED) is named by
+// nothing and run by nothing, which is ranger-base-ik44f arriving again
+// through the one gap the new spelling opens. So the table is held here, four
+// ways:
+//
+//  1. the Makefile variable and twdTreepinsExcluded are the same set, both
+//     directions, and every name in them is a real test in this package;
+//  2. every row is at or above twdExcludedFloor and carries a box and a date
+//     — the price is the reason, so a row without one is not a decision
+//     anybody took (D2);
+//  3. every row's ROUTE is real: `make test`, or a door whose own variable
+//     names that test. A route nothing runs is the escape with a sentence in
+//     front of it;
+//  4. a test the old derivation DERIVES may not be excluded unless a door
+//     variable also names it (D3) — so nothing that is doored today loses its
+//     door, and the derivation goes on deciding which members cannot be
+//     excluded for free.
+//
+// And the door's own shape, for arm 1's reasons one package over: the recipe
+// skips exactly the variable, anchored, reads the package it claims, answers
+// from no cache and writes nothing. Plus the half a regex actually gets wrong
+// — make's expansion of the `-skip` is handed to `go test -list`, the same
+// substitution TestQAEveryTreepinsDoorFilterNamesItsPins makes on a `-run`,
+// so what is checked is make's own text and not a copy of it.
+func TestQATheTreepinsComplementDoorIsThePackageMinusItsPricedTable(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+
+	// (1) The variable and the table, both ways.
+	var rows []string
+	for name := range twdTreepinsExcluded {
+		rows = append(rows, name)
+	}
+	sort.Strings(rows)
+	variable := twdVar(t, src, twdComplementVar)
+	if !twdSameSet(variable, rows) {
+		t.Errorf("$(%s) = %v and twdTreepinsExcluded holds %v — the names the door SKIPS and the names this file has PRICED are not the same set, so either a test is silenced by a row nobody wrote or a row is pricing an exclusion that is not happening", twdComplementVar, variable, rows)
+	}
+
+	members := twdTestNames(t, twdTreepinsPkg)
+	// A floor under the membership check, not on it: "every row names a real
+	// test" is satisfied by a package nobody parsed.
+	if len(members) < 200 {
+		t.Fatalf("only %d test functions declared in %s — the parse this arm checks the rows against found nothing, so a green here says only that", len(members), twdTreepinsPkg)
+	}
+
+	doored := map[string]string{}
+	for _, d := range twdDoors {
+		for _, name := range twdVar(t, src, d.variable) {
+			doored[name] = d.variable
+		}
+	}
+	_, derived, _ := twdTreepinsTreeWideTests(t)
+
+	for _, name := range rows {
+		row := twdTreepinsExcluded[name]
+		if !members[name] {
+			t.Errorf("twdTreepinsExcluded prices %s and %s declares no such test — the door is skipping a name that is not there, which is a row that silences nothing and reads as if it did", name, twdTreepinsPkg)
+		}
+
+		// (2) The price, and where it came from.
+		if row.seconds < twdExcludedFloor {
+			t.Errorf("twdTreepinsExcluded prices %s at %.2fs, under the %.1fs floor — below that the door costs less to run the test than a seat costs to miss it, so the row buys nothing and widens the window a pin can escape through (ADR 0098 D2)", name, row.seconds, twdExcludedFloor)
+		}
+		if row.box == "" || row.date == "" {
+			t.Errorf("twdTreepinsExcluded's row for %s gives no box (%q) or no date (%q) — every wall reading in this repository is per box and per load, so a bare number is not a price anybody can check or re-take", name, row.box, row.date)
+		} else if _, err := time.Parse("2006-01-02", row.date); err != nil {
+			t.Errorf("twdTreepinsExcluded's row for %s dates its reading %q, which is not a YYYY-MM-DD date: %v", name, row.date, err)
+		}
+
+		// (3) The route that still runs it.
+		switch {
+		case row.route == twdExcludedRouteSuite:
+		case strings.HasPrefix(row.route, "make "):
+			door := strings.TrimSpace(strings.TrimPrefix(row.route, "make "))
+			var found *twdDoor
+			for i := range twdDoors {
+				if twdDoors[i].target == door {
+					found = &twdDoors[i]
+					break
+				}
+			}
+			if found == nil {
+				t.Errorf("twdTreepinsExcluded's row for %s names the route `%s`, and no door in this register has that target — the route is the reader's answer to \"then what runs it\", so a route nothing runs is the exclusion with a sentence in front of it", name, row.route)
+				break
+			}
+			if !slices.Contains(twdVar(t, src, found.variable), name) {
+				t.Errorf("twdTreepinsExcluded's row for %s names the route `%s`, and $(%s) does not name that test — the door is real and it does not run this pin, so the row's route is false", name, row.route, found.variable)
+			}
+		default:
+			t.Errorf("twdTreepinsExcluded's row for %s names the route %q, which is neither %q nor a `make <door>` — the route has to be something a seat can type", name, row.route, twdExcludedRouteSuite)
+		}
+
+		// (4) D3: the derivation still decides who cannot be excluded for
+		// free. It no longer decides membership — under D1 every test in the
+		// package is a member — but a test the old key DERIVES is one the
+		// register has already called tree-wide, and taking it out of the
+		// complement with no door of its own is exactly the escape this file
+		// exists for.
+		if slices.Contains(derived, name) {
+			if v, ok := doored[name]; !ok {
+				t.Errorf("twdTreepinsExcluded prices %s out of the complement door, and the enumeration or root-helper rule DERIVES it as tree-wide with no Makefile door naming it — so after this row nothing runs it but a package-tree run. Give it a door, or leave it inside the complement (ADR 0098 D3).", name)
+			} else {
+				t.Logf("%s is excluded and derived; its door is $(%s) (ADR 0098 D3)", name, v)
+			}
+		}
+	}
+
+	// The door's wiring and shape.
+	if _, tree := mkPrereqs(t, src, "tree-check"); !mkRuns(tree, twdComplementDoor) {
+		t.Errorf("`make tree-check` no longer reaches `%s` — that door is the whole internal/treepins half of this class, so every pin in the package that no other door names is back to being a package-tree run away", twdComplementDoor)
+	}
+	rawRecipe := makeRecipe(src, twdComplementDoor)
+	if len(rawRecipe) == 0 {
+		t.Fatalf("the Makefile has no `%s` target", twdComplementDoor)
+	}
+	recipe := strings.Join(mkRecipeCode(rawRecipe), "\n")
+	if recipe == "" {
+		t.Fatalf("`make %s`'s recipe is all comments — make hands the shell a no-op and the door is dark: %q", twdComplementDoor, rawRecipe)
+	}
+	if !strings.Contains(recipe, "-skip '^($("+twdComplementVar+"))$$'") {
+		t.Errorf("`make %s` no longer skips exactly $(%s), anchored — a door spelled as a complement is only as honest as the list it complements, and an unanchored or hand-narrowed skip can silence a pin nobody priced:\n%s", twdComplementDoor, twdComplementVar, recipe)
+	}
+	if strings.Contains(recipe, "-run ") {
+		t.Errorf("`make %s` passes `-run`, so it is a NAMING door again and the package's unnamed pins are outside it — which is the key ADR 0098 replaced:\n%s", twdComplementDoor, recipe)
+	}
+	if !strings.Contains(recipe, "./"+twdTreepinsPkg) {
+		t.Errorf("`make %s` no longer names ./%s — the door runs a package its pins do not live in, so it is green over all of them:\n%s", twdComplementDoor, twdTreepinsPkg, recipe)
+	}
+	if strings.Contains(recipe, "./...") {
+		t.Errorf("`make %s` runs the package tree, which is ~950s of internal/posse on top of the wall this door exists to bound:\n%s", twdComplementDoor, recipe)
+	}
+	if !strings.Contains(recipe, "-count=1") {
+		t.Errorf("`make %s` may answer from go's test cache, so it can report a tree it never read:\n%s", twdComplementDoor, recipe)
+	}
+	if strings.Contains(recipe, "-tags ") {
+		t.Errorf("`make %s` passes `-tags`, and internal/treepins is one binary with no arm tags — a tag here selects a build this package does not have:\n%s", twdComplementDoor, recipe)
+	}
+	if strings.Contains(recipe, " -w") || strings.Contains(recipe, "rm ") {
+		t.Errorf("`make %s` writes — the point of a door is that a seat can ask the question without changing the tree:\n%s", twdComplementDoor, recipe)
+	}
+
+	// And what make's own expansion of that skip actually selects. `-list`
+	// in place of `-skip`, one substitution on make's text, so the regex
+	// under test is still make's: it selects without running, and a skip
+	// that make mangles into matching more or fewer tests than the table
+	// prices fails here rather than silently widening the door's blind spot.
+	expanded := twdExpand(t, twdComplementDoor)
+	listing := strings.Replace(expanded, "-skip ", "-list ", 1)
+	if listing == expanded {
+		t.Fatalf("`make %s` has no `-skip ` to read as a `-list `, so this arm cannot ask what its silence covers:\n%s", twdComplementDoor, expanded)
+	}
+	out, err := exec.Command("sh", "-c", listing).CombinedOutput()
+	if err != nil {
+		t.Fatalf("listing `make %s`'s skip failed: %v\n%s", twdComplementDoor, err, out)
+	}
+	var listed []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "Test") {
+			listed = append(listed, strings.TrimSpace(line))
+		}
+	}
+	if !twdSameSet(listed, rows) {
+		t.Errorf("`make %s`'s skip selects %v, and twdTreepinsExcluded prices %v — the regex make assembles and the table this file holds are not the same set, so the door is silent over tests nobody priced or pays for tests this file says it skips:\n%s", twdComplementDoor, listed, rows, listing)
 	}
 }
 
