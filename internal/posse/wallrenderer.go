@@ -3,9 +3,11 @@ package posse
 // Whether the binary that RENDERS this box's walls carries the walls that
 // landed (ranger-base-vso72, from ranger-base-mmhhc) — and, since
 // ranger-base-atvd4, whether it carries the launch-time CHECKS that landed
-// too. Two categories, counted and named separately in one sentence at the
-// two surfaces that make the claim: `posse gates` and the promote epilogue.
-// LaunchCheckSources' own comment holds that half's reason and measurement.
+// too, and since ranger-base-m1obc whether it carries the COMMIT-time gates
+// it JUDGES. Three categories, counted and named separately in one sentence
+// at the two surfaces that make the claim: `posse gates` and the promote
+// epilogue. LaunchCheckSources' and CommitGateSources' own comments hold
+// those halves' reasons and measurements.
 //
 // THE GAP. `posse promote` records the renderer and never reads it.
 // promote.go stamps `m.Posse = VersionString()` beside the source SHA it
@@ -149,6 +151,80 @@ var LaunchCheckSources = []string{
 	"internal/posse/wallwitness.go",
 }
 
+// CommitGateSources are the tracked paths whose commits can change a
+// COMMIT-time gate this binary JUDGES: the judge behind every `posse gates
+// <verb>` the commit-guard hook body invokes. Today that is ADR 0024 D2
+// check 4 and vulnprivate.go alone.
+//
+// THE THIRD CATEGORY, and why neither existing list can see it
+// (ranger-base-m1obc, from ranger-base-v81vo). A wall is install-gated
+// because the installed binary RENDERS it; a launch-time check because the
+// installed binary DECIDES it at launch; this one because the installed
+// binary JUDGES it at COMMIT time. The hook BODY is a render — gates.go
+// writes it and is already in WallRenderSources — but the judge it pipes
+// through is a SUBPROCESS of whatever `posse` is on PATH, resolved fresh at
+// commit time on purpose (vulnPrivateChecks: "an id's open/closed status is
+// exactly the live fact a render-time stamp cannot hold"). So the body can
+// be perfectly current while the verdict is a binary behind, and the whole
+// install-gated consequence lands on a file in neither list:
+// vulnprivate.go writes no `do not edit` header, which is the wall class's
+// key (internal/treepins/wallrendersources_qa_test.go arm 1), and it
+// declares no func naming *Parity and constructs no Runtime, which are the
+// launch-check class's two keys (launchchecksources_qa_test.go). It is
+// CORRECTLY outside both, exactly as runtime.go was correctly outside
+// WallRenderSources, and hand-adding it to either would red that list's pin
+// AND attach the wrong cost sentence.
+//
+// MEASURED 2026-11-14 on this box over its own exposure window — installed
+// 0.5.3+7d0f8c31 against origin/main at 1d03f9d1, 59 commits:
+//
+//	rendering a wall             8
+//	deciding a launch-time check 7
+//	judging a commit-time gate   4  (e3b41b30, 6067b1d7, e208dba9, 72fe7738)
+//
+// Of those four, exactly ONE appeared in the printed reading at all —
+// 6067b1d7, which also touched gates.go and so was counted under "rendering
+// a wall", beside a cost sentence about seatbelts, gate shims, cage mounts
+// and hooks. That sentence is true of gates.go and says nothing about why
+// the seat is being refused. The other three were inside the headline 59 and
+// named by no category. What the staleness cost, reproduced twice from the
+// reading seat: ranger-base-ed07e's own-bead exemption is one of the four,
+// so until it was installed an open vuln-private bead's own fix could carry
+// no descriptive commit subject and its notes fragment could not land at all
+// — and the gate's "rewrite it so the id stands alone" remedy is
+// unachievable for a fragment, both its `## … (<id>)` heading and
+// scripts/notes-index.py's generated index line being flagged.
+// docs/notes.d/ranger-base-v81vo.md section 3 has the whole reading.
+//
+// A FLOOR, read as one, for WallRenderSources' reason and with the same
+// derivation discipline: internal/treepins' commitgatesources pin holds the
+// derived half (the verb must be named in the rendered commit-guard hook
+// body AND dispatched by cmd/posse to a `RunGates*` entry point, and the
+// internal/posse file declaring that entry point is the member), and nothing
+// keys OFF this list — the line always reports the WHOLE lag and always
+// names `make install`.
+//
+// NOT bd-write, which is a FOURTH category and not this one
+// (ranger-base-m1obc done-when 4, unpriced there and unpriced here).
+// bdwritelock.go is install-gated through the same callback shape — the bd
+// gate shim is a render, and `posse gates bd-write` resolves its judge fresh
+// — but it is taken at WRITE time, not commit time, its consequence is a
+// lost or duplicated bead write (ADR 0073) and not a refused commit, and its
+// invoking render is the bd shim rather than a hook body. By this file's own
+// rule — two categories that differ in prose and in pathspecs are two rows —
+// that is another row, and internal/treepins' derivation excludes it by
+// construction because the bd shim is not a hook body — asserted both ways
+// round, so the two rows cannot merge because a clause widened.
+// ranger-base-7fjmv carries it, and prices it: this bead did not.
+//
+// NOT DISJOINT from either sibling, and not pinned to be, for the reason
+// LaunchCheckSources gives: gates.go renders the hook body and would be
+// honestly counted in two categories if it ever also held a judge. The
+// per-category counts do not sum; the headline is the whole lag either way.
+var CommitGateSources = []string{
+	"internal/posse/vulnprivate.go",
+}
+
 // wallCommitsShown is how many of a category's lagging commits the line
 // names before deferring to the git command it prints. Three, for the reason
 // PromoteVerdict.Line() caps at three: a promote epilogue has to stay
@@ -156,19 +232,28 @@ var LaunchCheckSources = []string{
 const wallCommitsShown = 3
 
 // WallRenderer is one reading of "does the installed binary carry the walls
-// it renders and the launch-time checks it decides?".
+// it renders, the launch-time checks it decides and the commit-time gates it
+// judges?".
 //
 // Lag is the measurement, taken by launcherlag.go against the checkout the
 // binary's own stamp names. Commits is the wall-rendering subset of that
-// lag, newest first, and CheckCommits the launch-check subset; Why and
-// CheckWhy are why that subset could not be read — empty when it was,
-// including when it was legitimately empty.
+// lag, newest first, CheckCommits the launch-check subset and GateCommits
+// the commit-gate subset; Why, CheckWhy and GateWhy are why that subset
+// could not be read — empty when it was, including when it was legitimately
+// empty.
+//
+// Three pairs and no map, because categories() is the one place the
+// narrowings are composed and a row there is cheaper to read than a key
+// nothing enumerates (ranger-base-m1obc, taking lagCategory's own rule:
+// a third category gets a row, not a branch).
 type WallRenderer struct {
 	Lag          LauncherLag
 	Commits      []string
 	Why          string
 	CheckCommits []string
 	CheckWhy     string
+	GateCommits  []string
+	GateWhy      string
 	// Release is what the binary knows about itself when the lag could not
 	// be read at all: on a release install there is no checkout to compare
 	// against and never will be, and the walls are that tag's
@@ -180,11 +265,12 @@ type WallRenderer struct {
 	Release ReleaseIdentity
 }
 
-// ReadWallRenderer narrows a lag reading to the wall-rendering commits in it
-// and to the launch-check commits in it. Two `git log`s over two pathspec
-// lists, and only when there is a lag to narrow: a binary at the tip has
-// nothing to list, and asking anyway would put two forks in the watch pass's
-// budget for answers that are always empty.
+// ReadWallRenderer narrows a lag reading to the wall-rendering commits in
+// it, the launch-check commits in it and the commit-gate commits in it.
+// Three `git log`s over three pathspec lists, and only when there is a lag
+// to narrow: a binary at the tip has nothing to list, and asking anyway
+// would put three forks in the watch pass's budget for answers that are
+// always empty.
 func ReadWallRenderer(l LauncherLag) WallRenderer {
 	w := WallRenderer{Lag: l, Release: Release()}
 	if !l.Known() || l.Behind == 0 {
@@ -192,6 +278,7 @@ func ReadWallRenderer(l LauncherLag) WallRenderer {
 	}
 	w.Commits, w.Why = narrowLag(l, WallRenderSources, "wall-rendering")
 	w.CheckCommits, w.CheckWhy = narrowLag(l, LaunchCheckSources, "launch-check")
+	w.GateCommits, w.GateWhy = narrowLag(l, CommitGateSources, "commit-gate")
 	return w
 }
 
@@ -227,9 +314,12 @@ func (a *App) WallRenderer(extra ...string) WallRenderer {
 	return ReadWallRenderer(FindLauncher(VersionString(), a.launcherCandidates(true, extra...)))
 }
 
-// lagCategory is one narrowing of a lag rendered for a human. The two
+// lagCategory is one narrowing of a lag rendered for a human. The
 // categories differ in prose and in pathspecs and in nothing else, so they
-// are one type: a third category added later gets a row, not a branch.
+// are one type: a third category added later gets a row, not a branch. One
+// was (ranger-base-m1obc, the commit-time gate) and it did — three rows in
+// categories(), two fields on WallRenderer, one `narrowLag` call, and not a
+// line of new branching anywhere that renders.
 type lagCategory struct {
 	commits []string
 	why     string
@@ -246,8 +336,11 @@ type lagCategory struct {
 	sources []string
 }
 
-// categories is the two narrowings, wall first — the order ranger-base-vso72
-// shipped and the order the bead's example sentence reads in.
+// categories is the three narrowings, wall first — the order
+// ranger-base-vso72 shipped and the order the bead's example sentence reads
+// in — then launch-check and then commit-gate, each appended in the order it
+// landed. The order is the sentence's order at both surfaces, so a reader
+// who learned the line once does not have to re-learn it when a row is added.
 func (w WallRenderer) categories() []lagCategory {
 	return []lagCategory{{
 		commits:  w.Commits,
@@ -267,6 +360,15 @@ func (w WallRenderer) categories() []lagCategory {
 			" `make install`:",
 		list:    "LaunchCheckSources",
 		sources: LaunchCheckSources,
+	}, {
+		commits:  w.GateCommits,
+		why:      w.GateWhy,
+		gerund:   "judging a commit-time gate",
+		question: "how many of them judge a commit-time gate",
+		cost: "every commit in every repo whose hooks this box installed is judged by the OLD judge, and the hook BODY that pipes to it is a render that can be perfectly current while the judge behind it is a binary behind — so the gate refuses what the landed judge would pass and the committer has no remedy to type (ranger-base-v81vo: a posse 59 commits behind ran ADR 0024 D2 check 4 without ranger-base-ed07e's own-bead exemption, and an open vuln-private bead's own fix could carry no descriptive commit subject and its notes fragment could not land at all — reproduced twice from the reading seat)." +
+			" `make install`:",
+		list:    "CommitGateSources",
+		sources: CommitGateSources,
 	}}
 }
 
@@ -332,7 +434,7 @@ func (w WallRenderer) Lines(where string) []string {
 		// why no dev build can get here, and on the three refusals that
 		// keep a dirty, mis-tagged or commitless build out.
 		return []string{
-			head + " is release " + w.Release.Tag + " — the walls it renders and the launch-time checks it decides are the ones tagged " + w.Release.Tag + ", which is what a release install carries",
+			head + " is release " + w.Release.Tag + " — the walls it renders, the launch-time checks it decides and the commit-time gates it judges are the ones tagged " + w.Release.Tag + ", which is what a release install carries",
 			"  no local comparison was possible — " + l.Why + " — and whether a newer release has been published is not read here: that is a network call, and this line is printed at every launch. So this names which release is in force, never that it is the newest one — `brew upgrade ranger360ai/tap/posse` is what moves this box forward, and `make install` from a checkout is what a fleet box does instead",
 		}
 	case !l.Known():
@@ -343,7 +445,7 @@ func (w WallRenderer) Lines(where string) []string {
 		// checks it decides are still the ones every seat on this box
 		// launches behind.
 		out := []string{head + " · UNKNOWN whether this binary carries the wall renders and the launch-time checks that landed: " + l.Why +
-			" — every seatbelt, gate shim, gate shell, cage mount set and hook here is rendered by THIS binary, and every parity verdict a launch reports is decided by it, so read this as UNKNOWN and never as OK"}
+			" — every seatbelt, gate shim, gate shell, cage mount set and hook here is rendered by THIS binary, every parity verdict a launch reports is decided by it, and every commit-time gate verdict a hook body pipes out to it is judged by it, so read this as UNKNOWN and never as OK"}
 		// A stamp that was there and could not be believed is said out
 		// loud under it. Dropping it would make a mis-stamped or forged
 		// release identity render exactly like the ordinary dev build
@@ -353,15 +455,16 @@ func (w WallRenderer) Lines(where string) []string {
 		}
 		return out
 	case l.Behind == 0:
-		return []string{head + fmt.Sprintf(" is the tip of %s in %s — the walls it renders and the launch-time checks it decides at every launch are current%s",
+		return []string{head + fmt.Sprintf(" is the tip of %s in %s — the walls it renders, the launch-time checks it decides at every launch and the commit-time gates it judges at every commit are current%s",
 			l.Base, AbbrevHome(l.Repo), w.dirtyClause())}
 	}
 	// Behind > 0. The whole lag leads in every case, because `make install`
 	// is the remedy for all of it and the per-category counts only say how
-	// loud to read it. Both counts are named whatever they are: a category
+	// loud to read it. EVERY count is named whatever it is: a category
 	// that is said only when it is nonzero is a category whose zero cannot
 	// be told from a reading that never ran, which is the silence
-	// ranger-base-atvd4 is about.
+	// ranger-base-atvd4 is about — and the silence ranger-base-m1obc found
+	// again, for the commit-time gate, inside a headline of 59.
 	cats := w.categories()
 	sums := make([]string, 0, len(cats))
 	for _, c := range cats {
@@ -375,8 +478,8 @@ func (w WallRenderer) Lines(where string) []string {
 		said = said || c.said()
 	}
 	if !said {
-		// Not an all-clear, and worded so it cannot be read as one: both
-		// pathspec lists are floors (see their declarations), and the lag is
+		// Not an all-clear, and worded so it cannot be read as one: every
+		// pathspec list is a floor (see their declarations), and the lag is
 		// still a lag. No git command: each would list nothing, and a
 		// command an operator runs for an empty answer teaches them to
 		// mistrust the surface.
@@ -384,7 +487,11 @@ func (w WallRenderer) Lines(where string) []string {
 		for _, c := range cats {
 			names = append(names, c.list)
 		}
-		return []string{lead + " — none of them touching a path posse renders a wall from or decides a launch-time check in; those paths are current as far as they go, and both lists (" +
+		// "all N lists" counts the rows rather than spelling a number, so a
+		// fourth category cannot leave this sentence claiming three
+		// (ranger-base-m1obc: a row, not a branch, and not a literal either).
+		return []string{lead + " — none of them touching a path posse renders a wall from, decides a launch-time check in or judges a commit-time gate in; those paths are current as far as they go, and " +
+			fmt.Sprintf("all %d lists (", len(names)) +
 			strings.Join(names, ", ") + ") are a FLOOR, so `make install` closes the rest"}
 	}
 	out := []string{lead}
