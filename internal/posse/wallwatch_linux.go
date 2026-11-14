@@ -200,6 +200,28 @@ func runWallWatch(r wallWatchRun) int {
 	if len(missing) > 0 {
 		return respond(missing, true)
 	}
+	// The backstop's copy of this reading (ranger-base-zd4d4, 0qpsw D3),
+	// written BEFORE the release: a seat whose command runs is a seat the
+	// dispatch tick can find, or it does not run.
+	self := os.Getpid()
+	start, serr := procStartTime(self)
+	record := filepath.Join(wallWatchRecordDir(r.Opts.Mounts), strconv.Itoa(self)+".json")
+	if serr == nil {
+		serr = writeWallWatchRecord(record, wallWatchRecord{
+			Seat: r.Opts.Seat, Dir: r.Opts.Dir,
+			WatcherPid: self, WatcherStart: start,
+			BwrapPid: cmd.Process.Pid, SeatPid: info.ChildPid, MntNS: info.MntNamespace,
+			Watch: watch, Base: base, Released: now(),
+		})
+	}
+	if serr != nil {
+		say("cannot write this seat's record for the dispatch backstop (%v) — killing the seat rather than running it where only this process can see it (ranger-base-0qpsw D3)", serr)
+		_, _ = wallWatchKill(cmd.Process.Pid, info.MntNamespace)
+		blockW.Close()
+		<-done
+		return 1
+	}
+	defer os.Remove(record)
 	// Every wall is up: let the seat's command run.
 	if _, err := blockW.Write([]byte{1}); err != nil {
 		say("cannot release the seat (%v)", err)
@@ -376,15 +398,25 @@ func readMountinfo(f *os.File) (mountTable, error) {
 // view until it is killed too. Several rounds, because a process can fork
 // between a scan and its kill.
 func wallWatchKill(bwrapPid int, mntns uint64) (killed []int, errText string) {
+	return wallWatchKillWith(bwrapPid, func() []int { return wallWatchSeatPids(bwrapPid, mntns) })
+}
+
+// wallWatchKillWith is the kill rounds over any census. first, when > 0, is
+// signalled before the first round (the watcher's own bwrap child); the
+// backstop passes 0, because a bwrap pid read from a record whose watcher
+// is gone may name a recycled, unrelated process.
+func wallWatchKillWith(first int, census func() []int) (killed []int, errText string) {
 	seen := map[int]bool{}
-	_ = syscall.Kill(bwrapPid, syscall.SIGKILL)
-	killed = append(killed, bwrapPid)
-	seen[bwrapPid] = true
+	if first > 0 {
+		_ = syscall.Kill(first, syscall.SIGKILL)
+		killed = append(killed, first)
+		seen[first] = true
+	}
 	for round := 0; round < 20; round++ {
-		pids := wallWatchSeatPids(bwrapPid, mntns)
+		pids := census()
 		left := 0
 		for _, p := range pids {
-			if p == bwrapPid {
+			if first > 0 && p == first {
 				continue
 			}
 			left++
@@ -398,11 +430,12 @@ func wallWatchKill(bwrapPid int, mntns uint64) (killed []int, errText string) {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	return killed, fmt.Sprintf("processes in the seat's mount namespace were still alive after 20 rounds of SIGKILL: %v", wallWatchSeatPids(bwrapPid, mntns))
+	return killed, fmt.Sprintf("processes in the seat's mount namespace were still alive after 20 rounds of SIGKILL: %v", census())
 }
 
 // wallWatchSeatPids is the live process table's answer to "which of these
-// is the seat": in its mount namespace, or a descendant of bwrap. A zombie
+// is the seat": in its mount namespace, or a descendant of bwrap or of a
+// process that is (bwrapPid 0 names no bwrap: the backstop's census). A zombie
 // holds no fd and no namespace, so it is not counted.
 func wallWatchSeatPids(bwrapPid int, mntns uint64) []int {
 	ents, err := os.ReadDir("/proc")
@@ -441,7 +474,7 @@ func wallWatchSeatPids(bwrapPid int, mntns uint64) []int {
 			continue
 		}
 		for p, hops := parent[pid], 0; p > 1 && hops < 4096; p, hops = parent[p], hops+1 {
-			if p == bwrapPid {
+			if p == bwrapPid || inNS[p] {
 				out = append(out, pid)
 				break
 			}
@@ -490,3 +523,70 @@ func wallWatchSeatReady(pid, fd int) error {
 // noise; the window it leaves is the gap ranger-base-0qpsw accepts, at this
 // width rather than its ~1 ms.
 const wallWatchInterval = 250 * time.Millisecond
+
+// procStartTime is field 22 of /proc/<pid>/stat: when the process started,
+// in clock ticks since boot. With the pid it names one process for the
+// life of the box, which the pid alone does not.
+func procStartTime(pid int) (string, error) {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return "", err
+	}
+	s := string(b)
+	i := strings.LastIndexByte(s, ')')
+	if i < 0 {
+		return "", fmt.Errorf("/proc/%d/stat has no comm field", pid)
+	}
+	// Fields after the comm start at field 3 (state); 22 is index 19.
+	f := strings.Fields(s[i+1:])
+	if len(f) < 20 {
+		return "", fmt.Errorf("/proc/%d/stat has %d fields after the comm, want at least 20", pid, len(f))
+	}
+	return f[19], nil
+}
+
+// wallWatchProcProbe is the backstop's reading of the live process table.
+type wallWatchProcProbe struct{}
+
+func (wallWatchProcProbe) WatcherAlive(r wallWatchRecord) bool {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(r.WatcherPid) + "/stat")
+	if err != nil {
+		return false
+	}
+	if st, _, ok := procStatStateParent(string(b)); !ok || st == 'Z' || st == 'X' {
+		return false
+	}
+	start, err := procStartTime(r.WatcherPid)
+	return err == nil && start == r.WatcherStart
+}
+
+// SeatPids is by mount namespace alone (and descent from it): the record's
+// bwrap pid is not trusted, for wallWatchKillWith's reason.
+func (wallWatchProcProbe) SeatPids(r wallWatchRecord) []int {
+	return wallWatchSeatPids(0, r.MntNS)
+}
+
+func (wallWatchProcProbe) Table(pids []int) (mountTable, error) {
+	var last error
+	for _, p := range pids {
+		b, err := os.ReadFile("/proc/" + strconv.Itoa(p) + "/mountinfo")
+		if err == nil && len(b) > 0 {
+			return parseMountinfo(b), nil
+		}
+		if err == nil {
+			err = io.ErrUnexpectedEOF
+		}
+		last = err
+	}
+	return nil, last
+}
+
+func (wallWatchProcProbe) Kill(r wallWatchRecord) ([]int, string) {
+	return wallWatchKillWith(0, func() []int { return wallWatchSeatPids(0, r.MntNS) })
+}
+
+// WallWatchBackstop is one dispatch-tick pass of ranger-base-0qpsw D3 over
+// every bwrap seat this state dir launched (wallWatchBackstop).
+func (a *App) WallWatchBackstop(st wallWatchStore) []string {
+	return wallWatchBackstop(a.StateDir, st, wallWatchLockPath(), time.Now, wallWatchProcProbe{})
+}

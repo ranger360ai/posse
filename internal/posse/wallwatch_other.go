@@ -18,3 +18,7 @@ func RunWallWatch(argv []string, stderr io.Writer) int {
 // runWallWatch is the same refusal for the live pin, which skips before it
 // gets here on any host but Linux.
 func runWallWatch(r wallWatchRun) int { return RunWallWatch(nil, r.Stderr) }
+
+// WallWatchBackstop has no seat to check off Linux: no wall-watch runs here,
+// so no record is written (ranger-base-zd4d4).
+func (a *App) WallWatchBackstop(st wallWatchStore) []string { return nil }

@@ -29,9 +29,10 @@ package posse
 //
 //  1. It launches NOTHING. The pass's reading decides whether to dispatch;
 //     this one only reports, and — where `load_guard_kill: true` — ends what
-//     the orphan predicate names. A clock that could launch would be a
-//     second dispatcher racing the first for the launcher lock, the busy map
-//     and the epoch, and none of those are shaped for two writers.
+//     the orphan predicate names, and the bwrap seat whose wall came off
+//     (the wall-watch backstop, guardTick). A clock that could launch would
+//     be a second dispatcher racing the first for the launcher lock, the
+//     busy map and the epoch, and none of those are shaped for two writers.
 //
 //  2. THE ORPHAN CENSUS RUNS WHETHER OR NOT THE BOX IS OVER THE LINE.
 //     Arm 1 has always ridden "only on a pass the guard is already skipping"
@@ -85,6 +86,14 @@ func (d *Dispatcher) guardLoop(ctx context.Context, every time.Duration) {
 // visible (ranger-base-0fz98 finding 3; watchdog.go's head).
 func (d *Dispatcher) guardTick() {
 	if line := d.App.GuardTickLine(d.quietErrWriter()); line != "" {
+		d.quietf("%s\n", line)
+	}
+	// The wall-watch backstop (ranger-base-zd4d4, ranger-base-0qpsw D3) rides
+	// this clock for this clock's reason: it must not depend on a pass, and a
+	// seat whose watcher is gone is caught at THIS interval or not at all.
+	// Quiet like the rest of the tick: a seat that holds its walls under a
+	// live watcher prints nothing.
+	for _, line := range d.App.WallWatchBackstop(d.Bd) {
 		d.quietf("%s\n", line)
 	}
 }

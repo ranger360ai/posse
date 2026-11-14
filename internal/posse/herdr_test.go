@@ -59,6 +59,12 @@ func TestMain(m *testing.M) {
 	// points at — the same entry point cmd/posse/main.go has — and, in argv
 	// mode, the engine that launcher execs, which records the argv that
 	// really arrived so a test can see argv[0] for itself.
+	// And as `posse wall-watch`, the same entry point cmd/posse/main.go has,
+	// for the backstop's live pin (ranger-base-zd4d4): a watcher that pin can
+	// KILL has to be a process of its own, not a goroutine of this one.
+	if IsWallWatch(os.Args) {
+		os.Exit(RunWallWatch(os.Args, os.Stderr))
+	}
 	if IsCageLaunch(os.Args) {
 		fmt.Fprintln(os.Stderr, RunCageLaunch(os.Args)) // returns only on failure
 		os.Exit(1)

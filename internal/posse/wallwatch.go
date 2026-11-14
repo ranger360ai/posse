@@ -31,6 +31,7 @@ package posse
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -335,6 +336,10 @@ type wallWatchDetach struct {
 	AtLaunch bool
 	// KillErr is the kill's own failure, if the seat could not be ended.
 	KillErr string
+	// Backstop is set when the dispatch watch tick found the detach rather
+	// than the seat's own watcher (ranger-base-zd4d4, 0qpsw D3), and says
+	// whether that watcher was still alive at the time.
+	Backstop string
 }
 
 // wallWatchStore is the slice of Bd the filing uses — an interface so the
@@ -459,6 +464,9 @@ func wallWatchDescription(d wallWatchDetach, ms []WallWatchMount) string {
 	if d.AtLaunch {
 		fmt.Fprintf(&b, "when: at launch, before the seat's command ran (it never ran)\n")
 	}
+	if d.Backstop != "" {
+		fmt.Fprintf(&b, "found by: the dispatch watch tick, not the seat's watcher (ranger-base-0qpsw D3) — %s. The detach time above is when the tick SAW it; the detach itself may be up to one tick interval earlier, so review from then.\n", d.Backstop)
+	}
 	b.WriteString("\nwalls that came off:\n")
 	for _, m := range ms {
 		fmt.Fprintf(&b, "  - %s (%s)\n", m.Path, m.Kind)
@@ -489,6 +497,126 @@ func wallWatchComment(d wallWatchDetach, ms []WallWatchMount) string {
 	return fmt.Sprintf("wall-watch: seat %s (%s) lost the same wall at %s — %s; killed: %s", d.Seat, AbbrevHome(d.Dir), d.At.UTC().Format(time.RFC3339Nano), wallWatchPaths(ms), wallWatchKilled(d))
 }
 
+// ── The backstop (ranger-base-zd4d4, design ranger-base-0qpsw D3) ──────────
+//
+// The dispatch watch tick runs the SAME diff as the watcher
+// (wallWatchDetached) over every live bwrap seat. It can only do that with
+// the watcher's launch reading in hand — the diff is by mount id, and the
+// ids are the ones the seat had when its command was released — so the
+// watcher writes that reading down: one record per seat, in the persona's
+// gates dir beside the mounts file the launch handed it, which is a dir no
+// seat may write. The watcher removes its record when it returns; a record
+// whose watcher is gone is exactly what the backstop is for.
+//
+// Per record, per tick:
+//   - no process left in the seat's mount namespace → the seat is over;
+//     the record is dropped once its watcher is gone too;
+//   - a wall missing from the seat's table → D2's response, unchanged: the
+//     seat is killed and the detach filed (and deduped) as the watcher
+//     would have filed it;
+//   - walls intact but the watcher gone → ONE bead for that seat, because a
+//     detector that dies says nothing (ranger-base-7idk4's lesson), and the
+//     tick keeps diffing the seat for as long as it lives.
+
+// wallWatchRecordDir is where a watcher started with this mounts file keeps
+// its record: beside the mounts file, so the launch's own dir decides it and
+// the sidecar still reads no config.
+func wallWatchRecordDir(mounts string) string {
+	return filepath.Join(filepath.Dir(mounts), "wall-watch")
+}
+
+// wallWatchRecordGlob is every record under one state dir: the gates dir of
+// every persona.
+func wallWatchRecordGlob(stateDir string) string {
+	return filepath.Join(stateDir, "gates", "*", "wall-watch", "*.json")
+}
+
+// wallWatchRecord is one watched seat, as its watcher saw it at release.
+type wallWatchRecord struct {
+	Seat string `json:"seat"`
+	Dir  string `json:"dir"`
+	// WatcherPid and WatcherStart are the watcher's identity: the start time
+	// (/proc/<pid>/stat field 22) is what tells a live watcher from a
+	// recycled pid.
+	WatcherPid   int    `json:"watcher_pid"`
+	WatcherStart string `json:"watcher_start"`
+	BwrapPid     int    `json:"bwrap_pid"`
+	SeatPid      int    `json:"seat_pid"`
+	MntNS        uint64 `json:"mnt_namespace"`
+	// Watch and Base are wallWatchDetached's two inputs besides the table.
+	Watch    []WallWatchMount    `json:"watch"`
+	Base     map[string][]string `json:"base"`
+	Released time.Time           `json:"released"`
+	// OrphanFiled is the bead the backstop filed when it found this seat
+	// running with its watcher gone, so it is filed once per seat.
+	OrphanFiled string `json:"orphan_filed,omitempty"`
+}
+
+// writeWallWatchRecord writes a record whole or not at all: a reader
+// mid-write must never see half of one.
+func writeWallWatchRecord(path string, r wallWatchRecord) error {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func readWallWatchRecord(path string) (wallWatchRecord, error) {
+	var r wallWatchRecord
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return r, err
+	}
+	if err := json.Unmarshal(b, &r); err != nil {
+		return r, fmt.Errorf("%s is not a wall-watch record: %v", AbbrevHome(path), err)
+	}
+	if r.MntNS == 0 || r.WatcherPid <= 0 {
+		return r, fmt.Errorf("%s names no mount namespace or no watcher, so no seat can be found from it", AbbrevHome(path))
+	}
+	return r, nil
+}
+
+// wallWatchOrphanMarker is the line the dead-watcher bead carries.
+func wallWatchOrphanMarker(r wallWatchRecord) string {
+	return fmt.Sprintf("wall-watch gone: watcher %d of seat %s (ranger-base-0qpsw D3)", r.WatcherPid, r.Seat)
+}
+
+func wallWatchOrphanTitle(r wallWatchRecord) string {
+	return fmt.Sprintf("security: the wall-watch of seat %s is gone and the seat still runs", r.Seat)
+}
+
+func wallWatchOrphanDescription(r wallWatchRecord, live []int, at time.Time) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Filed by the dispatch watch tick (ranger-base-0qpsw D3). This bwrap seat's `posse wall-watch` sidecar is no longer running, and processes in the seat's mount namespace still are. Its walls were all still up when the tick looked, so nothing has been killed.\n\n")
+	fmt.Fprintf(&b, "seat: %s\nsession dir: %s\nwatcher pid: %d (gone) · bwrap pid: %d · seat pid: %d\nreleased at: %s\nfound at: %s\nstill running: %s\n",
+		r.Seat, r.Dir, r.WatcherPid, r.BwrapPid, r.SeatPid,
+		r.Released.UTC().Format(time.RFC3339Nano), at.UTC().Format(time.RFC3339Nano), wallWatchPidList(live))
+	b.WriteString("\nWHAT THIS MEANS: from the moment the watcher ended, a host rename over one of this seat's walls is caught by the watch tick and not within 250 ms — the seat's window is the tick interval. The tick keeps diffing this seat and kills it on a detach as the watcher would have.\n")
+	b.WriteString("REVIEW: find what ended the watcher (it does not exit while its seat runs), and end the seat if it should not be running.\n\n")
+	b.WriteString(wallWatchOrphanMarker(r))
+	b.WriteByte('\n')
+	return b.String()
+}
+
+func wallWatchPidList(ps []int) string {
+	var s []string
+	for _, p := range ps {
+		s = append(s, strconv.Itoa(p))
+	}
+	if len(s) == 0 {
+		return "none"
+	}
+	return "pids " + strings.Join(s, " ")
+}
+
 func wallWatchKilled(d wallWatchDetach) string {
 	if d.KillErr != "" {
 		return "NOT CONFIRMED — " + d.KillErr
@@ -501,4 +629,106 @@ func wallWatchKilled(d wallWatchDetach) string {
 		return "nothing was left to kill"
 	}
 	return "pids " + strings.Join(ps, " ")
+}
+
+// wallWatchProbe is what the backstop asks the live process table. An
+// interface so the decisions below are pinned without a seat; the Linux
+// answer is wallWatchProcProbe.
+type wallWatchProbe interface {
+	// WatcherAlive: the record's watcher pid is running AND is the process
+	// that wrote the record (same start time).
+	WatcherAlive(r wallWatchRecord) bool
+	// SeatPids: every live process of the seat — in its mount namespace, or
+	// descended from one that is.
+	SeatPids(r wallWatchRecord) []int
+	// Table: the seat's mount table, read through the first of pids that
+	// still answers.
+	Table(pids []int) (mountTable, error)
+	// Kill: end the seat as the watcher's D2 does.
+	Kill(r wallWatchRecord) (killed []int, errText string)
+}
+
+// wallWatchBackstop is one tick of D3 over every record under stateDir. It
+// returns the lines worth printing; a tick that found every seat holding
+// its walls under a live watcher returns none.
+func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func() time.Time, p wallWatchProbe) []string {
+	paths, err := filepath.Glob(wallWatchRecordGlob(stateDir))
+	if err != nil {
+		return []string{fmt.Sprintf("⛨ wall-watch backstop: cannot list the seat records (%v) — no bwrap seat was checked this tick", err)}
+	}
+	var out []string
+	for _, path := range paths {
+		r, err := readWallWatchRecord(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue // its watcher returned between the glob and the read
+			}
+			out = append(out, fmt.Sprintf("⛨ wall-watch backstop: %v — that seat is NOT checked", err))
+			continue
+		}
+		alive := p.WatcherAlive(r)
+		pids := p.SeatPids(r)
+		if len(pids) == 0 {
+			// The seat is over. A watcher still alive owns its record and
+			// removes it on its way out; a dead one cannot.
+			if !alive {
+				_ = os.Remove(path)
+			}
+			continue
+		}
+		t, terr := p.Table(pids)
+		if terr != nil {
+			if len(p.SeatPids(r)) == 0 {
+				continue // it ended between the census and the read
+			}
+			out = append(out, fmt.Sprintf("⛨ wall-watch backstop: cannot read seat %s's mount table (%v) — its walls are NOT checked this tick", r.Seat, terr))
+			continue
+		}
+		if gone := wallWatchDetached(r.Watch, r.Base, t); len(gone) > 0 {
+			d := wallWatchDetach{Seat: r.Seat, Dir: r.Dir, BwrapPid: r.BwrapPid, SeatPid: r.SeatPid, At: now(), Missing: gone}
+			d.Backstop = fmt.Sprintf("its watcher (pid %d) was gone", r.WatcherPid)
+			if alive {
+				d.Backstop = fmt.Sprintf("its watcher (pid %d) was alive and had not acted", r.WatcherPid)
+			}
+			d.Killed, d.KillErr = p.Kill(r)
+			out = append(out, fmt.Sprintf("⛨ wall-watch backstop: KILLED seat %s — the wall over %s came off; %s (ranger-base-0qpsw D3)", r.Seat, wallWatchPaths(gone), d.Backstop))
+			filed, commented, ferr := fileWallWatchDetach(st, d, now(), lock)
+			if filed != "" {
+				out = append(out, "  filed "+filed)
+			}
+			for _, id := range commented {
+				out = append(out, "  recorded on "+id+" (the same path, inside ten minutes)")
+			}
+			if ferr != nil {
+				out = append(out, fmt.Sprintf("  ⚠ the record is incomplete: %v — this line is the record", ferr))
+			}
+			if !alive {
+				_ = os.Remove(path)
+			}
+			continue
+		}
+		if alive || r.OrphanFiled != "" {
+			continue
+		}
+		// Walls intact, watcher gone: say so once for this seat.
+		id, cerr := st.Create(r.Dir, BdNew{
+			Title:       wallWatchOrphanTitle(r),
+			Description: wallWatchOrphanDescription(r, pids, now()),
+			Labels:      []string{"security"},
+			Priority:    "1",
+			Type:        "bug",
+			Actor:       VerifyActor,
+		})
+		if cerr != nil || id == "" {
+			out = append(out, fmt.Sprintf("⛨ wall-watch backstop: seat %s runs with its watcher (pid %d) gone, and the bead could not be filed (%v) — this line is the record; the tick keeps diffing the seat", r.Seat, r.WatcherPid, cerr))
+			continue
+		}
+		r.OrphanFiled = id
+		line := fmt.Sprintf("⛨ wall-watch backstop: seat %s runs with its watcher (pid %d) gone — filed %s; the tick keeps diffing the seat", r.Seat, r.WatcherPid, id)
+		if werr := writeWallWatchRecord(path, r); werr != nil {
+			line += fmt.Sprintf(" (⚠ could not mark the record filed, %v — the next tick files again)", werr)
+		}
+		out = append(out, line)
+	}
+	return out
 }

@@ -628,3 +628,148 @@ func TestWallWatchUnreadableStoreStillFiles(t *testing.T) {
 		t.Errorf("err = %v, want it to say the dedupe was skipped", err)
 	}
 }
+
+// ─── the dispatch tick's backstop (ranger-base-zd4d4, 0qpsw D3) ─────────────
+
+// fakeWallWatchProbe is a process table the test writes.
+type fakeWallWatchProbe struct {
+	alive  bool
+	pids   []int
+	table  mountTable
+	killed int
+}
+
+func (p *fakeWallWatchProbe) WatcherAlive(wallWatchRecord) bool { return p.alive }
+func (p *fakeWallWatchProbe) SeatPids(wallWatchRecord) []int    { return p.pids }
+func (p *fakeWallWatchProbe) Table([]int) (mountTable, error)   { return p.table, nil }
+func (p *fakeWallWatchProbe) Kill(wallWatchRecord) ([]int, string) {
+	p.killed++
+	k := p.pids
+	p.pids = nil
+	return k, ""
+}
+
+func wwBackstopRecord(t *testing.T) (state, path string, r wallWatchRecord) {
+	t.Helper()
+	state = t.TempDir()
+	mounts := filepath.Join(state, "gates", "developer", "bwrap.mounts")
+	r = wallWatchRecord{
+		Seat: "developer", Dir: "/w/developer", WatcherPid: 100, WatcherStart: "5", BwrapPid: 101, SeatPid: 102, MntNS: 4026533000,
+		Watch: []WallWatchMount{{WallWatchDeny, "/h/.claude/settings.json"}, {WallWatchPrivate, "/h/.claude/shell-snapshots"}},
+		Base:  map[string][]string{"/h/.claude/settings.json": {"40"}, "/h/.claude/shell-snapshots": {"41"}},
+	}
+	path = filepath.Join(wallWatchRecordDir(mounts), "100.json")
+	if err := writeWallWatchRecord(path, r); err != nil {
+		t.Fatal(err)
+	}
+	return state, path, r
+}
+
+func wwIntact() mountTable {
+	return mountTable{"/h/.claude/settings.json": {"40"}, "/h/.claude/shell-snapshots": {"41"}}
+}
+
+func TestWallWatchBackstopKillsAndFilesADetachWhoseWatcherIsGone(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 {
+		t.Fatalf("killed %d times, want 1: %q", p.killed, lines)
+	}
+	if len(st.issues) != 1 {
+		t.Fatalf("%d beads, want 1: %+v", len(st.issues), st.issues)
+	}
+	d := st.issues[0].Description
+	for _, want := range []string{wallWatchMarker("/h/.claude/settings.json"), "seat: developer", "dispatch watch tick", "was gone", "pids 102 103"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("the bead does not say %q:\n%s", want, d)
+		}
+	}
+	if strings.Contains(d, wallWatchMarker("/h/.claude/shell-snapshots")) {
+		t.Errorf("the bead names a wall that stayed up:\n%s", d)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record of a killed seat whose watcher is gone was kept (%v)", err)
+	}
+}
+
+func TestWallWatchBackstopActsOnADetachEvenWithTheWatcherAlive(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{alive: true, pids: []int{102}, table: mountTable{}}
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 || len(st.issues) != 1 || !strings.Contains(st.issues[0].Description, "was alive and had not acted") {
+		t.Fatalf("killed=%d issues=%+v", p.killed, st.issues)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the record belongs to its live watcher, which removes it; the tick removed it (%v)", err)
+	}
+}
+
+func TestWallWatchBackstopFilesADeadWatcherOnceAndKeepsDiffing(t *testing.T) {
+	t.Parallel()
+	state, path, r := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{103}, table: wwIntact()}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 0 {
+		t.Errorf("a seat with every wall up was killed")
+	}
+	if len(st.issues) != 1 || !strings.Contains(st.issues[0].Description, wallWatchOrphanMarker(r)) || st.issues[0].Priority != 1 {
+		t.Fatalf("want one P1 naming the dead watcher, got %+v (lines %q)", st.issues, lines)
+	}
+	got, err := readWallWatchRecord(path)
+	if err != nil || got.OrphanFiled != st.issues[0].ID {
+		t.Fatalf("the record does not carry the filed bead: %+v, %v", got, err)
+	}
+	// The next tick files nothing more...
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if len(st.issues) != 1 {
+		t.Errorf("the second tick filed again: %d beads", len(st.issues))
+	}
+	// ...and still diffs: the wall comes off, the seat is killed.
+	p.table = mountTable{"/h/.claude/shell-snapshots": {"41"}}
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 || len(st.issues) != 2 {
+		t.Errorf("after the detach: killed=%d beads=%d, want 1 and 2", p.killed, len(st.issues))
+	}
+}
+
+func TestWallWatchBackstopIsSilentOverAHealthySeatAndDropsAnEndedOne(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{alive: true, pids: []int{102}, table: wwIntact()}
+	if lines := wallWatchBackstop(state, st, "", time.Now, p); len(lines) != 0 || len(st.issues) != 0 {
+		t.Fatalf("a healthy seat under a live watcher said %q and filed %d", lines, len(st.issues))
+	}
+	// Seat over, watcher alive: the watcher owns the record.
+	p.pids = nil
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("removed a live watcher's record (%v)", err)
+	}
+	// Seat over, watcher gone: nothing to file, the record goes.
+	p.alive = false
+	if lines := wallWatchBackstop(state, st, "", time.Now, p); len(lines) != 0 || len(st.issues) != 0 {
+		t.Errorf("an ended seat said %q and filed %d", lines, len(st.issues))
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("an ended seat's orphaned record was kept (%v)", err)
+	}
+}
+
+func TestWallWatchBackstopSaysWhenARecordCannotBeRead(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	bad := filepath.Join(state, "gates", "x", "wall-watch", "7.json")
+	os.MkdirAll(filepath.Dir(bad), 0o755)
+	os.WriteFile(bad, []byte("{not json"), 0o644)
+	lines := wallWatchBackstop(state, &fakeWallWatchStore{}, "", time.Now, &fakeWallWatchProbe{})
+	if len(lines) != 1 || !strings.Contains(lines[0], "NOT checked") {
+		t.Errorf("an unreadable record must be said, not skipped: %q", lines)
+	}
+}
