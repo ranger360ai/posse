@@ -346,7 +346,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// or an `unshare -r` (ADR 0096 D1, its table arm A). A runtime's own
 	// sandbox is therefore a declared absence here — the bwrap wall is the
 	// file wall — and the live pins that exec a bwrap abstain inside a seat
-	// rather than failing (D3, bwrapNestSkip in wall_helpers_test.go).
+	// rather than failing (D3, bwrapNestSkip in wallvenue_test.go).
 	//
 	// --bind /proc /proc IS THE SAME ABSENCE, spelled the way a later bead
 	// would more likely spell it. With the pid namespace shared, bwrap

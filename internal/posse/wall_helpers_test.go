@@ -19,10 +19,7 @@ package posse
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
-	"sync"
 	"testing"
 )
 
@@ -91,110 +88,9 @@ func wallLaunchWrapForTest(t *testing.T, gatesDir, seat, dir string) (wrap, arti
 	return WallWatchPrefix(self, filepath.Join(gatesDir, bwrapMountsName), seat, dir, bin, artifact), artifact
 }
 
-// ─── ADR 0096 D3: a live pin that nests a bwrap abstains loudly ─────────────
-
-// bwrapNestSkipPrefix is the ONE sentence D3 mandates, as a const so every
-// pin prints the same words and a reader greps one string. The reason is
-// named in it on purpose: a skip that does not say why reads as coverage
-// (ADR 0096, Alternatives rejected).
-const bwrapNestSkipPrefix = "NOTHING MEASURED: this process is inside a wall that forbids nesting (ADR 0096 D1): "
-
-var (
-	bwrapNestOnce sync.Once
-	bwrapNestWhy  string
-)
-
-// liveBwrapNestRefusal asks, ONCE PER PROCESS, whether a bwrap starts from
-// here: "" when one did, and bwrap's own stderr when it did not.
-//
-// SEPARATE FROM liveBwrapApplyRefusal ON PURPOSE (ADR 0096 D3), and that is
-// the whole point of this helper rather than a convenience. That function
-// answers AvailableCages' question — "does this HOST provide the seatbelt
-// tier" — and "" there means posse may announce the wall. Here "" means "a
-// nested namespace was MEASURED from this process". The two share a probe
-// today only because one exec happens to answer both; they must never share a
-// meaning, because a host that provides the tier perfectly well still refuses
-// a nested bwrap to every process already inside a seat. D17's render leaves
-// `--proc` out, so inside a seat `/proc` is the host's procfs under the
-// read-only base, a nested user namespace cannot write its own `uid_map`, and
-// every nested bwrap fails before it reaches a mount (ADR 0096's table, arm
-// A). Once the Landlock layer of ranger-base-6rndn lands the kernel refuses
-// the mount instead, and the two questions answer differently for good. A pin
-// printing the availability sentence would then tell its reader this box has
-// no bwrap, which is false.
-//
-// ITS OWN sync.Once and not that function's, for the re-arming reason
-// liveBwrapApplyRefusal states: by the time any pin asks, whatever called
-// AvailableCages first in this binary has already cached the host answer, and
-// a sync.Once cannot be re-armed (ranger-base-npqem's lesson, same shape).
-//
-// MEASURED 2026-11-14, D1 host, Linux 7.2.15, bubblewrap 0.13.1: uncaged this
-// returns "", and from a process inside D17's base plus `--unshare-user` it
-// returns `bwrap: setting up uid map: Read-only file system`.
-func liveBwrapNestRefusal() string {
-	bwrapNestOnce.Do(func() { bwrapNestWhy = bwrapNestProbe() })
-	return bwrapNestWhy
-}
-
-// bwrapNestProbe is that ask, unmemoized.
-//
-// bwrapApplyProbeArgv, so D17's base mount keeps ONE spelling in this
-// package: `--ro-bind / /` is the mount every render of D17 begins with, so a
-// process that cannot make THAT namespace cannot run any arm of any live pin
-// here, whatever else the pin's own argv asks for.
-//
-// BARE `bwrap` AND NOT protocolCmd's gates-free resolution, which is the one
-// place this differs from bwrapApplyProbe rather than twinning it. The
-// question there is posse's — "which file would a launch exec" (ADR 0077 D3,
-// because that exec IS one of posse's own children). The question here is
-// each pin's own: "will the exec I am about to make start". Every live pin in
-// this package types `exec.Command("bwrap", …)` on the ambient PATH and gates
-// on `exec.LookPath("bwrap")`, so this probe has to resolve the same way or a
-// green gate could precede a red exec. A shim standing in for `bwrap` makes
-// this probe refuse, and refusing is the right direction: the pin's own exec
-// would have met that same shim.
-//
-// EVERY FAILURE IS AN ABSTENTION, as at bwrapApplyProbe and for the opposite
-// reason to sandboxApplyProbe's: a missing /bin/true or a bwrap too old for
-// these flags must not be turned into a measurement nobody took. "Could not
-// ask" is not "a namespace was made".
-func bwrapNestProbe() string {
-	out, err := exec.Command("bwrap", bwrapApplyProbeArgv...).CombinedOutput()
-	if err == nil {
-		return ""
-	}
-	if s := strings.TrimSpace(string(out)); s != "" {
-		return s
-	}
-	return err.Error()
-}
-
-// bwrapNestSkip is THE GATE: every live pin in this package that execs a
-// bwrap calls it, after its own GOOS and `LookPath("bwrap")` gates — which is
-// what lets this one skip the fork off Linux — and before it renders
-// anything.
-//
-// IT NEVER FAILS. On this fleet every dispatched seat is caged, so inside one
-// the answer is no for a reason that is the wall WORKING, and a red that is
-// not a regression teaches people to rerun until green (ADR 0096,
-// Alternatives rejected). The pins it gates therefore measure only on an
-// uncaged run, which is a pin with no scheduled venue — filed as
-// ranger-base-m2ii4 and not solved here.
-//
-// THE SENTENCE IS PINNED BY NOTHING, deliberately, and this is the one place
-// that says so. A pin would have to read ADR 0096 D3's own prose to be worth
-// more than a second copy of the literal, and a test in THIS package that
-// reads the tree joins the class that needs a Makefile door of its own
-// (AGENTS.md, "A `-run` filter cannot reach a tree-wide pin"). What stands in
-// its place is a measurement on the bead and in
-// docs/notes.d/ranger-base-pvkhn.md: the same binary run uncaged and inside
-// D17's base, with every skip line quoted.
-func bwrapNestSkip(t *testing.T) {
-	t.Helper()
-	if why := liveBwrapNestRefusal(); why != "" {
-		t.Skip(bwrapNestSkipPrefix + why)
-	}
-}
+// The ADR 0096 D3 nest gate used to live here, untagged. It is in
+// wallvenue_test.go now, behind the arm 1 build tag, because ADR 0097 D4
+// makes a member in arm 2 or arm 3 a compile error (ranger-base-q749c).
 
 // sandboxExecWallOnly skips a test whose assertions are sandbox-exec's own
 // vocabulary — an SBPL line, a `(subpath …)` grant, an atomic-write sibling

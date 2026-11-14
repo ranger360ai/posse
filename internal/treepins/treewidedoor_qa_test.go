@@ -137,6 +137,34 @@ package treepins
 //	                                              make doc-check
 //	                                              (both ranger-base-c768n)
 //
+// and two more into that same door, again of that shape and again a coupling
+// nothing compared — ADR 0097 D4's venue contract (ranger-base-q749c). Three
+// literals in internal/posse/wallvenue_test.go are read by
+// `scripts/posse-wall-check`, which cannot be compiled against that package:
+// the venue's membership MARKER, which that script greps out of
+// `go test -json` to count members; the member `-run` PATTERN, which it types
+// as its filter; and the environment VARIABLE that tells a test process it is
+// the venue and not a seat. Each drifts silently — a reworded marker counts
+// zero members and answers exit 3, which ADR 0097 D5 reports as "wall check
+// silent" rather than as a wall regression — so the first pin holds all three
+// to ADR 0097 itself. The second censuses every tracked file for a test name
+// D4 RETIRED and did not replace, per file rather than per line so that a
+// sentence recording the rename is allowed and a dangling reference is not:
+// a `-run` filter that selects nothing exits 0 and prints `ok`, which is the
+// one failure this whole class refuses:
+//
+//	TestQAWallVenueContractLiteralsAreADR0097s    make doc-check
+//	TestQANoRetiredWallVenueMemberNameDanglesInTheTree
+//	                                              make doc-check
+//	                                              (both ranger-base-q749c)
+//
+// Their two siblings are not in this class and need no door: the gate's RULE
+// is a pure function (bwrapNestDecision, read by
+// TestQAWallVenueGateRuleIsADR0097D4s with no wall and no
+// environment), and the dangling-reference matcher's control reads planted
+// bodies. 0.07s for the census over 1952 tracked files and 0.00s for the
+// other three (MEASURED 2026-11-14).
+//
 // and then a whole SECOND PACKAGE, which the register could not see at all
 // until ranger-base-g6sb1. internal/treepins is 589.965s whole — the same
 // wall internal/posse is, one directory over — and every rule above keys on
@@ -1284,7 +1312,7 @@ package treepins
 // not. 0.37s for the census, which is the cost of parsing internal/posse's
 // 885 .go files, and 0.00s for the control (MEASURED 2026-11-14).
 //
-// and `make tree-check` is all of them — one hundred and forty-eight pins
+// and `make tree-check` is all of them — one hundred and fifty pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

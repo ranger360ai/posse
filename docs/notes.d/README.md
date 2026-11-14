@@ -11,6 +11,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-zb476](ranger-base-zb476.md) — A launch-line assertion reads both places the line lands in (ranger-base-zb476) — 2026-11-14
 - [ranger-base-xim7t](ranger-base-xim7t.md) — ranger-base-xim7t — a fixture that cannot separate the two rules — 2026-11-14
 - [ranger-base-r3qz6](ranger-base-r3qz6.md) — The pulse's channel switch: what D3 and D4 landed, and the three places the code reads the page narrowly (ranger-base-r3qz6) — 2026-11-14
+- [ranger-base-q749c](ranger-base-q749c.md) — The nest helper's venue contract, and the two literals a shipped script reads (ranger-base-q749c) — 2026-11-14
 - [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
 - [ranger-base-ietka](ranger-base-ietka.md) — A closed-set pin whose failure message crashed on the one direction it exists for (ranger-base-ietka) — 2026-11-14
 - [ranger-base-hi2lt](ranger-base-hi2lt.md) — ranger-base-hi2lt — the bwrap render refuses a main checkout's `.git/config` deny — 2026-11-14

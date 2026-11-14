@@ -36,7 +36,7 @@ ranger-base-nv3el (the design).
   line carries it.
 - `TestQAMCPConfigInsideTheWriteSetIsRefusedAtBothMechanisms`: ten cases at
   each of the two mechanisms.
-- `TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall`: the live
+- `TestLiveWallStrictMCPStartsOnlyTheLineServers`: the live
   join (ADR 0090 D4). It uses posse's bwrap render with `--unshare-net` added
   in front (a narrowing). First control: the plant into the seat's
   `.claude.json` and a repo `.mcp.json` SUCCEEDS. Under the rendered line plus

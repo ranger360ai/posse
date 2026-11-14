@@ -162,7 +162,7 @@ func glLeaders(home string) (pids []int) {
 // MEASURED 2026-11-13, grok 1.0.77, bubblewrap 0.13.1, D1 host: the control
 // arm leaves leader.sock and a `grok agent leader --no-exit-on-disconnect`
 // that outlives the TUI; posse's line leaves neither.
-func TestLiveGrokLeaderUseLeaderTUIUnderTheWallStartsNoLeader(t *testing.T) {
+func TestLiveWallGrokLeaderUseLeaderTUIStartsNoLeader(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
 	wrcNeedBwrap(t)
 	bin := wrcRealBinary("grok")

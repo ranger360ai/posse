@@ -451,7 +451,7 @@ func main() {
 	//   - "reads bwrapNestOnce and bwrapNestWhy": a sync.Once memo and the
 	//     string it fills, written exactly once by the first caller of
 	//     liveBwrapNestRefusal and never again (ADR 0096 D3's gate,
-	//     internal/posse/wall_helpers_test.go). This is a FOURTH kind of
+	//     internal/posse/wallvenue_test.go). This is a FOURTH kind of
 	//     clearance and the strongest of the four, so it is worth saying how
 	//     it differs: the write really does happen during a parallel test,
 	//     which the three reasons above all avoid. What makes it safe is not

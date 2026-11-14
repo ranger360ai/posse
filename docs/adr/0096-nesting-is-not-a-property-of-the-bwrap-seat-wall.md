@@ -78,7 +78,11 @@ process: does `bwrap --ro-bind / / true` start from here? Every live pin
 that execs a bwrap calls it. Today that is
 `TestLiveBwrapGitRefsCommitsOnTheSessionBranch` and its siblings behind
 `bgLiveSkip`, `TestLiveWallClaudeProjectsRefusesPeerPlants` and
-`TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall`. When the
+`TestLiveWallStrictMCPStartsOnlyTheLineServers` (renamed into
+[ADR 0097](0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md)
+D4's filter under ranger-base-q749c; it was
+`TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall` when this
+record was written). When the
 answer is no, the pin skips with
 `NOTHING MEASURED: this process is inside a wall that forbids nesting (ADR 0096 D1): <bwrap's stderr>`.
 The helper is separate from `liveBwrapApplyRefusal`, which answers "does

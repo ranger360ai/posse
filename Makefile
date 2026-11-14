@@ -682,7 +682,7 @@ QA_CREW_PINS      := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsName
 QA_TOOL_PINS      := TestTreeIsGofmtClean
 QA_SEED_PINS      := TestShelfPIDsLintCleanAsASet|TestExampleAgentsArePIDs|TestExampleAgentsHandoffsAreShapes|TestShelfPIDsGuardFailsRatherThanSkipsWhenShort|TestShippedPIDsDenyPromote|TestShippedPIDsDenyRefresh|TestEmbeddedSeedMatchesExamplesDir|TestQAThePolicyDropInsDoNotSetTheSameKeyTwice|TestQAKnownScreenReaderNamesEveryFixtureExactly|TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale|TestSeedConfigDocumentedNumberDefaultsAreTheConstants|TestSeedConfigDocumentedNumberRegisterIsNotStale|TestQABobFixturesAreStillUnknownToHerdr|TestQAVerifyDetectionFailsACommittedRuleDeletion|TestQAVerifyDetectionCheckInstallFailsAStaleInstall|TestQAVerifyDetectionReplaysEveryFixtureItShips|TestQAVerifyDetectionFailsAnOverrideDeletion|TestQAVerifyDetectionNamesTheManifestThatAnswered|TestQAVerifyDetectionReplaysADeclaredNoOverrideAgent
 QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
-QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists|TestQAEveryNotesFragmentCitationResolves|TestQAPublicDocBaseIsTheSpellingTheSiteShips|TestQAClaudeAutoModeCarveOutIsADR0070D2Verbatim|TestQAPrescribedGitDiffChecksStateTheirFormat|TestQAPrescribedGitDiffChecksRunUnderADiffDriver
+QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists|TestQAEveryNotesFragmentCitationResolves|TestQAPublicDocBaseIsTheSpellingTheSiteShips|TestQAClaudeAutoModeCarveOutIsADR0070D2Verbatim|TestQAPrescribedGitDiffChecksStateTheirFormat|TestQAPrescribedGitDiffChecksRunUnderADiffDriver|TestQAWallVenueContractLiteralsAreADR0097s|TestQANoRetiredWallVenueMemberNameDanglesInTheTree
 QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
 QA_OPS_PINS       := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
 QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
@@ -894,6 +894,19 @@ history-check:
 # door's — prose over shipped code and docs — and they reached it through a
 # `../..` literal, which the class derivation cannot see, so they had no
 # door. Type it when you write a `git diff` into any of those pages.
+#
+# And the two ADR 0097 D4 added (ranger-base-q749c), both prose pins over the
+# record and over the tree. The first holds three literals in
+# internal/posse/wallvenue_test.go to ADR 0097 itself — the venue's membership
+# MARKER, its member `-run` PATTERN and its environment VARIABLE — because
+# every one of them is a handshake with `scripts/posse-wall-check`, which
+# cannot be compiled against that package, so each drifts silently: a reworded
+# marker counts zero members and answers exit 3, which D5 reports as "wall
+# check silent" rather than as a wall regression. The second censuses every
+# tracked file for a test name D4 RETIRED and did not replace, because a
+# `-run` filter that selects nothing exits 0 and prints `ok`. Type it when you
+# touch those literals, that record, or any prose or door that names a
+# `^Test(QA)?Live(Bwrap|Wall)` pin.
 doc-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_DOC_PINS))$$'
 

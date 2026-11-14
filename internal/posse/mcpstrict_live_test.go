@@ -58,7 +58,7 @@ func liveClaudeBin() string {
 	return ""
 }
 
-func TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall(t *testing.T) {
+func TestLiveWallStrictMCPStartsOnlyTheLineServers(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
 	if runtime.GOOS != "linux" {
 		t.Skip("bwrap is the Linux mechanism of the seatbelt tier (ADR 0080 D16); the darwin arm is the verify lane's re-verify")
