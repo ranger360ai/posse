@@ -1261,7 +1261,30 @@ package treepins
 // are not. 0.07s for the census over 18 rows in five files, and 0.00s for
 // the control (MEASURED 2026-11-13, one warm filtered run).
 //
-// and `make tree-check` is all of them — one hundred and forty-seven pins
+// and one more into corpus-check's door, for the same reason the temp-root
+// row above is in it: its subject is this repo's own Go sources and its file
+// set is discovered (ranger-base-zb476). Every pin in internal/posse that
+// asserts on a LAUNCH LINE reads it through `launchLog`, which reads both
+// places a rendered line can land, and not through `calls`, which reads only
+// what was TYPED — over PaneLineMax the line is spilled to
+// state/launch/<session>.sh and the pane sources it instead (paneline.go).
+// Which place it lands in is a fact about the line's LENGTH, so the verdict
+// moves with TMPDIR and with any landing that adds bytes: three beads fixed
+// the one site their own measurement reddened and left the class, and in
+// production every persona's line spills, so a pin that reads only the typed
+// form can be green over a spilled line nobody read:
+//
+//	TestQAEveryLaunchLineAssertionReadsBothPlacesTheLineLandsIn
+//	                                              make corpus-check
+//	                                              (ranger-base-zb476)
+//
+// Its control arm (TestQATheLaunchLineAssertionCensusCanStillSayNo) plants
+// Go fixtures under t.TempDir() and so is not in this class, the same way
+// the mktemp, trap-state, temp-root and upgrade-class controls above are
+// not. 0.37s for the census, which is the cost of parsing internal/posse's
+// 885 .go files, and 0.00s for the control (MEASURED 2026-11-14).
+//
+// and `make tree-check` is all of them — one hundred and forty-eight pins
 // and seventeen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

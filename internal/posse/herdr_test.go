@@ -3600,6 +3600,113 @@ func launchLog(t *testing.T, a *App, fake string) string {
 	return gatePrefixRe.ReplaceAllString(out, "GATES ")
 }
 
+// ─── the line-level readers ─────────────────────────────────────────────────
+//
+// Four readers of the fake herdr's log live here now, and the reason there
+// are four rather than one is that they answer four different questions
+// about the same bytes (ranger-base-zb476, whose census is over the first two
+// — internal/treepins/launchlineread_qa_test.go). resolvedTypedLine below is
+// not a fifth: it is the spill resolver the fourth is built out of, and it is
+// the right thing to call when a pin already holds the one line it cares
+// about.
+//
+//	calls           every herdr argv, gate prefixes collapsed. Right for
+//	                every assertion about herdr's OWN argv — `workspace
+//	                create`, `agent prompt`, `--env RHQ_TIER=fast` — none of
+//	                which can spill. WRONG for a launch line.
+//	launchLog       calls PLUS every spilled script. "Does any launch carry
+//	                this?", and the reader every launch-line assertion wants.
+//	paneRunLines    the RAW typed `pane run` commands, in order, with
+//	                nothing resolved or collapsed. For a subject that IS the
+//	                typed bytes: their length, and whether this line spilled.
+//	launchLines     paneRunLines resolved and collapsed. "How many launches
+//	                carried this, and in what order?" — which launchLog
+//	                cannot answer, because the spilled script is rewritten at
+//	                every launch, so one session launched twice leaves ONE
+//	                script and a count over launchLog reads 1 where a count
+//	                over typed lines reads 2.
+//
+// paneRunLines and resolvedTypedLine were in paneline_test.go and
+// codexwritable_test.go, both arm 1 only, which is why ranger-base-6ca29
+// added a third whole-log reader rather than reach for them from a shared
+// file. They are here instead: moved, not copied, so there is still one
+// reader per question and every arm can ask.
+
+// paneRunLines returns the raw, un-collapsed `pane run` commands the fake
+// herdr was given, in the order it was given them — raw because the subject
+// it was written for is how long the line is, and calls() rewrites the gate
+// prefix to a marker.
+func paneRunLines(t *testing.T, fake string) []string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(fake, "calls.log"))
+	if err != nil {
+		t.Fatalf("no call log: %v", err)
+	}
+	var out []string
+	for _, ln := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(ln, "pane run ") {
+			continue
+		}
+		rest := strings.TrimPrefix(ln, "pane run ")
+		_, cmd, ok := strings.Cut(rest, " ")
+		if !ok {
+			t.Fatalf("pane run with no command: %q", ln)
+		}
+		out = append(out, cmd)
+	}
+	return out
+}
+
+// resolvedTypedLine is what a typed pane line actually runs: the line
+// itself, or the body of the script a spilled line sources (paneline.go).
+func resolvedTypedLine(t *testing.T, ln string) string {
+	t.Helper()
+	rest, ok := strings.CutPrefix(ln, ". '")
+	if !ok {
+		return ln
+	}
+	path, _, ok := strings.Cut(rest, "'")
+	if !ok {
+		t.Fatalf("a sourced pane line with no script path: %q", ln)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("spilled launch script %s: %v", path, err)
+	}
+	return string(body)
+}
+
+// launchLines is launchLog's LINE-level sibling: one entry per `pane run`,
+// in order, each the command that launch really put on the pane, with gate
+// prefixes collapsed the way calls() collapses them. It is the two readers
+// above composed and nothing else, so no third copy of either rule exists.
+//
+// Reach for it when the claim is about HOW MANY launches carried something,
+// or about which one did. For "does any launch carry this", launchLog is the
+// shorter answer.
+func launchLines(t *testing.T, fake string) []string {
+	t.Helper()
+	var out []string
+	for _, ln := range paneRunLines(t, fake) {
+		out = append(out, gatePrefixRe.ReplaceAllString(resolvedTypedLine(t, ln), "GATES "))
+	}
+	return out
+}
+
+// launchLineCount is how many of those lines carry want — the spill-blind
+// `strings.Count(calls(t, fake), want)` done in a way that reads the same
+// whether each line was typed or spilled.
+func launchLineCount(t *testing.T, fake, want string) int {
+	t.Helper()
+	n := 0
+	for _, ln := range launchLines(t, fake) {
+		if strings.Contains(ln, want) {
+			n++
+		}
+	}
+	return n
+}
+
 // promptWindow is one held `agent prompt`: the interval it was in flight,
 // in nanoseconds, and how it was released — "gathered" when the prompt
 // barrier reached its count, "timeout" when that prompt was still the only
@@ -4584,8 +4691,16 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
-	if got := calls(t, fake); strings.Count(got, "GATES codex -c model='gpt-5.6-sol' -s read-only") != 2 {
-		t.Errorf("relaunch must reuse the session's runtime:\n%s", got)
+	// launchLineCount and not strings.Count over calls(): the claim is that
+	// TWO launches carried the codex line, and a count over calls.log counts
+	// only the ones that were TYPED — a line over PaneLineMax is spilled to
+	// state/launch/<session>.sh (paneline.go). launchLog is no good here
+	// either, and this is the one site in the class where that is true: h2's
+	// script is rewritten at the relaunch, so a spilled pair leaves ONE copy
+	// and the count reads 1. Counting resolved `pane run` lines reads 2
+	// either way (ranger-base-zb476).
+	if got := launchLineCount(t, fake, "GATES codex -c model='gpt-5.6-sol' -s read-only"); got != 2 {
+		t.Errorf("relaunch must reuse the session's runtime (%d of 2 launches typed codex):\n%s", got, launchLog(t, b.App, fake))
 	}
 	// Recipe runtime: rides through LaunchRecipe.
 	os.MkdirAll(b.App.RecipesDir, 0o755)
@@ -4606,7 +4721,7 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	if err := b.LaunchRecipe(&out, "hg"); err != nil {
 		t.Fatal(err)
 	}
-	if got := calls(t, fake); !strings.Contains(got, `GATES grok -m 'grok-4.6' `+GrokFleetFlags+" "+GrokNoLeaderFlag+` --rules="$(cat '`) {
+	if got := launchLog(t, b.App, fake); !strings.Contains(got, `GATES grok -m 'grok-4.6' `+GrokFleetFlags+" "+GrokNoLeaderFlag+` --rules="$(cat '`) {
 		t.Errorf("recipe runtime: not applied:\n%s", got)
 	}
 }

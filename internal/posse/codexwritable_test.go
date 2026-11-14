@@ -281,25 +281,12 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	}
 }
 
-// resolvedTypedLine is what a typed pane line actually runs: the line
-// itself, or the body of the script a spilled line sources (paneline.go).
-// Reading ONE line matters here — see the relaunch pin below.
-func resolvedTypedLine(t *testing.T, ln string) string {
-	t.Helper()
-	rest, ok := strings.CutPrefix(ln, ". '")
-	if !ok {
-		return ln
-	}
-	path, _, ok := strings.Cut(rest, "'")
-	if !ok {
-		t.Fatalf("a sourced pane line with no script path: %q", ln)
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("spilled launch script %s: %v", path, err)
-	}
-	return string(body)
-}
+// resolvedTypedLine, which used to live here, is in herdr_test.go now,
+// beside the other readers of the fake herdr's log (ranger-base-zb476). It
+// was moved rather than copied for the same reason paneRunLines was: this
+// file is arm 1 only, and the spill resolver is what makes a relaunch pin in
+// any arm readable. Reading ONE line is still what matters here — see the
+// relaunch pin below.
 
 // The OTHER site that renders a persona line. RelaunchAgent re-types the
 // whole command into the surviving shell of a session whose CLI died, and it

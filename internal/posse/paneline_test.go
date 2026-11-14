@@ -17,29 +17,12 @@ import (
 	"time"
 )
 
-// paneRunLines returns the raw, un-collapsed `pane run` lines the fake herdr
-// was given — raw because the whole question here is how long the line is,
-// and calls() rewrites the gate prefix to a marker.
-func paneRunLines(t *testing.T, fake string) []string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(fake, "calls.log"))
-	if err != nil {
-		t.Fatalf("no call log: %v", err)
-	}
-	var out []string
-	for _, ln := range strings.Split(string(b), "\n") {
-		if !strings.HasPrefix(ln, "pane run ") {
-			continue
-		}
-		rest := strings.TrimPrefix(ln, "pane run ")
-		_, cmd, ok := strings.Cut(rest, " ")
-		if !ok {
-			t.Fatalf("pane run with no command: %q", ln)
-		}
-		out = append(out, cmd)
-	}
-	return out
-}
+// paneRunLines, which used to live here, is in herdr_test.go now, beside the
+// other readers of the fake herdr's log (ranger-base-zb476). It was moved
+// rather than copied: this file is arm 1 only, and a relaunch pin in a
+// shared file needs the same reader. Its subject is unchanged and is still
+// this file's — the RAW typed bytes, because the whole question here is how
+// long the line is.
 
 func TestPaneLineTypesWhatFitsVerbatim(t *testing.T) {
 	t.Parallel()

@@ -339,13 +339,21 @@ func TestQANoPersonaRelaunchTypesTheModeExactlyOnce(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	mustCreate(t, b, NewSessionOpts{Name: "bare", Cmd: "claude", Crew: true})
-	if !strings.Contains(calls(t, fake), "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags) {
-		t.Fatalf("fixture: create typed no mode:\n%s", calls(t, fake))
+	// launchLog and not calls(): the claim is about the typed LINE, and a
+	// line over PaneLineMax is spilled to state/launch/<session>.sh with the
+	// pane sourcing it instead (paneline.go). A `--cmd` line is short today,
+	// which is a fact about this fixture and not about the launch — the
+	// reader that does not depend on it is the one to use
+	// (ranger-base-zb476). The per-line arm below reads the spilled script's
+	// own line the same way it reads a typed one, so the double-flag check
+	// gains the spilled case rather than losing it.
+	if !strings.Contains(launchLog(t, b.App, fake), "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags) {
+		t.Fatalf("fixture: create typed no mode:\n%s", launchLog(t, b.App, fake))
 	}
 	if _, err := b.RelaunchAgent("bare", 0); err != nil {
 		t.Fatalf("relaunch: %v", err)
 	}
-	log := calls(t, fake)
+	log := launchLog(t, b.App, fake)
 	for _, line := range strings.Split(log, "\n") {
 		if strings.Contains(line, "claude") && strings.Count(line, "--permission-mode") > 1 {
 			t.Errorf("a re-planned line collected the mode twice: %q", line)

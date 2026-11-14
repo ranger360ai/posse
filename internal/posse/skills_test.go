@@ -340,7 +340,13 @@ func TestSkillsParity(t *testing.T) {
 	if m == nil || !strings.Contains(m.Degraded, "no per-session skill surface") {
 		t.Errorf("meta must record the degradation: %+v", m)
 	}
-	log := calls(t, fake)
+	// launchLog and not calls(): `--plugin-dir` is on the LAUNCH line, and a
+	// rendered line over PaneLineMax is spilled to state/launch/<session>.sh
+	// with calls.log holding only `. '<script>'` (paneline.go). This arm is
+	// an absence, so a calls()-only reader would read a line it never saw as
+	// the absence — and the `--env` arms below are herdr's own create line,
+	// which launchLog carries unchanged (ranger-base-zb476).
+	log := launchLog(t, a, fake)
 	if strings.Contains(log, "--plugin-dir") {
 		t.Errorf("plain gets no skills flag:\n%s", log)
 	}
@@ -697,7 +703,11 @@ func TestSkillsOnCodexAcceptance(t *testing.T) {
 	if _, err := os.Stat(bound); err != nil {
 		t.Fatalf("codex must find the skill at %s: %v", bound, err)
 	}
-	log := calls(t, fake)
+	// launchLog and not calls(), for the same reason the `plain` arm in
+	// TestSkillsParity reads it: both the absence of `--plugin-dir` and the
+	// presence of `-s read-only` are claims about the launch LINE, which is
+	// spilled to a script over PaneLineMax (paneline.go, ranger-base-zb476).
+	log := launchLog(t, a, fake)
 	if strings.Contains(log, "--plugin-dir") || strings.Contains(log, "{skills}") {
 		t.Errorf("codex takes no skills flag:\n%s", log)
 	}

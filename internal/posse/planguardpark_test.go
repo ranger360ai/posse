@@ -117,7 +117,13 @@ func TestTripChoosesNoProviderForTheBead(t *testing.T) {
 	if strings.Contains(out, "overflow") || strings.Contains(f.errb.String(), "overflow") {
 		t.Errorf("nothing offers a second pool:\nout: %s\nerr: %s", out, f.errb.String())
 	}
-	if log := calls(t, f.fake); strings.Contains(log, "GATES grok ") || strings.Contains(log, "workspace create") {
+	// launchLog and not calls(): this arm is an ABSENCE, so the reader has to
+	// see both places a rendered line can land. Over PaneLineMax the line is
+	// spilled to state/launch/<session>.sh and calls.log holds only
+	// `. '<script>'` — which carries neither `GATES ` nor `grok` — so a
+	// calls()-only reader would have read a grok launch that really happened
+	// as the absence this pin is asserting (paneline.go, ranger-base-zb476).
+	if log := launchLog(t, f.b.App, f.fake); strings.Contains(log, "GATES grok ") || strings.Contains(log, "workspace create") {
 		t.Errorf("a parked bead creates no session anywhere, least of all on a second pool:\n%s", log)
 	}
 	// And nothing wrote the ledger the removed mechanism kept.

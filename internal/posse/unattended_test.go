@@ -250,7 +250,17 @@ func TestNoPersonaLaunchPathsTypeTheMode(t *testing.T) {
 	a := b.App
 
 	mustCreate(t, b, NewSessionOpts{Name: "bare", Cmd: "claude", Crew: true})
-	if log := calls(t, fake); !strings.Contains(log, "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags) {
+	// launchLog and not calls(), both here and in the count below: the claim
+	// is about the typed LINE, and a line over PaneLineMax is spilled to
+	// state/launch/<session>.sh with the pane sourcing it (paneline.go,
+	// ranger-base-zb476). The COUNT survives the move because the two
+	// launches are two different SESSIONS — `bare` and the `qa-bare` recipe —
+	// so they spill to two different scripts and the total is two whichever
+	// place each one landed in. A count over one session launched twice would
+	// not be: the script is rewritten per launch, which is why
+	// TestPersonaLaunchRuntime's relaunch count is spelled over
+	// `pane run` lines instead.
+	if log := launchLog(t, a, fake); !strings.Contains(log, "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags) {
 		t.Errorf("posse new --cmd typed no permission mode:\n%s", log)
 	}
 
@@ -261,7 +271,7 @@ func TestNoPersonaLaunchPathsTypeTheMode(t *testing.T) {
 	if err := b.LaunchRecipe(io.Discard, "qa-bare"); err != nil {
 		t.Fatalf("recipe: %v", err)
 	}
-	if got := strings.Count(calls(t, fake), "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags); got != 2 {
-		t.Errorf("a recipe with no agent: typed no permission mode (%d of 2):\n%s", got, calls(t, fake))
+	if got := strings.Count(launchLog(t, a, fake), "claude "+ClaudeStrictMCPFlag+" "+ClaudeFleetFlags); got != 2 {
+		t.Errorf("a recipe with no agent: typed no permission mode (%d of 2):\n%s", got, launchLog(t, a, fake))
 	}
 }
