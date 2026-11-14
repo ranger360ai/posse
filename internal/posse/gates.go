@@ -6862,10 +6862,40 @@ exit $((posse_push_bad + posse_commit_bad))
 // The slot files are named for their slots rather than randomly: the random
 // part is the directory, and inside a 0700 directory there is no name to
 // enumerate.
+//
+// TWO-VALUED, and the third value lives next door: a probe that could not be
+// TAKEN reads here as both slots failing, which is what every caller of this
+// function wants (a launch that cannot ask whether its own render refuses
+// degrades, it does not pass). The caller that needs the difference is
+// `posse gates render-probe` (ADR 0092 D4 amendment 3), whose exit 2 is "I
+// could not ask" — so the body is execOwnRendersAsked and this is its
+// two-valued face.
 func execOwnRenders(dir string, wantPrePush bool, commitRender string) (prePushOK, commitOK bool) {
-	scratch, err := probeScratchDir()
+	prePushOK, commitOK, err := execOwnRendersAsked(dir, wantPrePush, commitRender)
 	if err != nil {
 		return false, false
+	}
+	return prePushOK, commitOK
+}
+
+// execOwnRendersAsked is execOwnRenders with "could not ask" told apart from
+// "asked, and a render did not refuse" — a non-nil error is the first, and
+// its text is the reason, for a caller that has to print one.
+//
+// THE TWO ARE NOT THE SAME FINDING. "This binary renders a hook that no
+// longer refuses" is evidence against the binary; "this process could not
+// write a 0700 temp dir" or "/bin/sh did not run the probe to its own exit
+// line" is evidence about the box it is running on, and ADR 0092 D4
+// amendment 3 rolls an install back for the first and reports the second.
+// Only the exit codes the probe script itself can produce — 0 through 3, one
+// bit per slot — are an answer; anything else means the script did not reach
+// its own `exit` and nothing was measured, whatever bits the number happens
+// to carry. (Before this split, a hypothetical 4 read as BOTH slots fine:
+// 4&1 and 4&2 are both zero.)
+func execOwnRendersAsked(dir string, wantPrePush bool, commitRender string) (prePushOK, commitOK bool, err error) {
+	scratch, err := probeScratchDir()
+	if err != nil {
+		return false, false, fmt.Errorf("no private directory to render into: %w", err)
 	}
 	defer os.RemoveAll(scratch)
 
@@ -6873,20 +6903,20 @@ func execOwnRenders(dir string, wantPrePush bool, commitRender string) (prePushO
 	if wantPrePush {
 		f, err := writeTempRender(scratch, "pre-push", PrePushHook)
 		if err != nil {
-			return false, false
+			return false, false, fmt.Errorf("cannot write the pre-push render: %w", err)
 		}
 		pushTemp = f
 	}
 	commitTemp, err := writeTempRender(scratch, "prepare-commit-msg", commitRender)
 	if err != nil {
-		return false, false
+		return false, false, fmt.Errorf("cannot write the prepare-commit-msg render: %w", err)
 	}
 
 	// The message file the commit render is handed. Not exec'd, and inside
 	// the same 0700 directory for the same reason.
 	msgPath := filepath.Join(scratch, "commit-msg")
 	if err := os.WriteFile(msgPath, nil, 0o600); err != nil {
-		return false, false
+		return false, false, fmt.Errorf("cannot write the commit message the render is handed: %w", err)
 	}
 
 	cmd := protocolCmd(exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe", pushTemp, commitTemp, msgPath))
@@ -6903,18 +6933,18 @@ func execOwnRenders(dir string, wantPrePush bool, commitRender string) (prePushO
 	if repo, ok := MainCheckout(dir); ok {
 		cmd.Dir = repo
 	}
-	err = cmd.Run()
+	runErr := cmd.Run()
 	code := 0
-	if err != nil {
+	if runErr != nil {
 		code = -1
-		if ee, ok := err.(*exec.ExitError); ok {
+		if ee, ok := runErr.(*exec.ExitError); ok {
 			code = ee.ExitCode()
 		}
 	}
-	if code < 0 {
-		return false, false
+	if code < 0 || code > 3 {
+		return false, false, fmt.Errorf("the probe shell did not run the renders to its own exit line (%v)", runErr)
 	}
-	return !wantPrePush || code&1 == 0, code&2 == 0
+	return !wantPrePush || code&1 == 0, code&2 == 0, nil
 }
 
 // probeScratchDir is the private directory execOwnRenders builds this
@@ -6960,6 +6990,115 @@ func writeTempRender(dir, slot, body string) (string, error) {
 		return "", err
 	}
 	return name, nil
+}
+
+// RenderProbeMark opens every line `posse gates render-probe` prints, and it
+// is a load-bearing part of the verb rather than decoration — ADR 0092 D4
+// amendment 3 reads this verb ACROSS TWO BINARIES, and the reading has to be
+// able to say it was taken at all.
+//
+// MEASURED 2026-11-13, this box, posse at 34bbe053 (the commit before this
+// verb existed): `posse gates render-probe` on a binary WITHOUT the verb
+// prints `posse: no such agent: render-probe` and exits **1** — because the
+// verb name falls through the gates arm's sub-verb ladder to LoadAgent, and
+// an unknown persona is a die(). ADR 0092 D4 amendment 3 assumed the
+// opposite ("An old binary that does not have the verb answers neither 0 nor
+// 1"), and on that assumption exit 1 from the old binary would have been
+// read as the verb's own "a render does not refuse" — so a NEW binary whose
+// render really had stopped refusing would have been excused as a box
+// property and left installed. That is the expensive direction of the two.
+//
+// So "was it asked" is carried by this mark on stdout and not by the exit
+// code: upgradeRead counts an answer as the verb's only when a line of the
+// output opens with it (upgradeRenderAsked). The exit codes are exactly the
+// three the ADR names; what the mark adds is the fourth state the ADR
+// thought the exit code already gave it.
+const RenderProbeMark = "render-probe:"
+
+// RunGatesRenderProbe is `posse gates render-probe [dir]` — ADR 0092 D4
+// amendment 3 (ranger-base-qfhph), built on ranger-base-apf87.
+//
+// WHAT IT ASKS, and why that is a verb of its own. ADR 0023's hook wall has
+// two halves: IDENTITY (are the bytes at the dispatch path this binary's
+// render?) and BEHAVIOUR (does this binary's render refuse what it gates?).
+// Identity is a property of a REPO — and of a copy that `posse upgrade`
+// leaves behind on purpose (ADR 0092 D7), so after an install that changes
+// the render it is stale by design and says nothing about the new binary.
+// Behaviour is a property of the BINARY ALONE, the same in every repo, and
+// it is the half D4 wants: a new binary whose render no longer refuses is
+// broken, whatever any repo's hooks say. This verb is that half, asked
+// directly, so the rollback decision rests on it instead of on identity.
+//
+// IT WRITES NO HOOK. Nothing is installed, nothing at the dispatch path is
+// read, and the only writes are inside one private 0700 temp directory this
+// call creates and removes (probeScratchDir). That is what makes it safe for
+// `posse upgrade` to run twice per install, once through each binary, and
+// safe for anyone to type in any repo.
+//
+// THE EXIT CODE IS THE ANSWER: 0 every render refused what it must, 1 one of
+// them did not, 2 it could not be asked. Both the stdout line and the exit
+// code are printed, because a human typing this wants words and the caller
+// in upgradeverify.go wants a number — and see RenderProbeMark for why the
+// number alone is not enough across two binaries.
+//
+// dir defaults to the posse source checkout D3.1 names, which is the tree
+// `posse upgrade` reads everything else in. A dir that is not a git checkout
+// is exit 2 and not exit 1: the renders are exec'd WITH THAT DIRECTORY AS
+// THEIR CWD and both of them run git, so a non-repository is a probe that
+// could not be taken rather than a render that failed.
+func (a *App) RunGatesRenderProbe(dir string, w io.Writer) int {
+	unasked := func(format string, args ...any) int {
+		fmt.Fprintf(w, "%s could not ask — %s\n", RenderProbeMark, fmt.Sprintf(format, args...))
+		return 2
+	}
+	if dir == "" {
+		lag := a.LauncherOverFleet()
+		if !lag.Known() || lag.Repo == "" {
+			return unasked("no directory was named and the posse source checkout could not be resolved: %s", lag.Why)
+		}
+		dir = lag.Repo
+	}
+	dir = absResolve(ExpandTilde(dir))
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return unasked("%s is not a directory", AbbrevHome(dir))
+	}
+	// Not read for a hook path — nothing here looks at one — but because it
+	// is git's own answer to "is this a checkout", and the renders need one
+	// to run in.
+	if _, err := hooksDir(dir); err != nil {
+		return unasked("%s is not a git checkout, and both renders run git in the directory they are asked about", AbbrevHome(dir))
+	}
+
+	// The SAME render the install and the launch would write for this repo,
+	// derived the one way (commitGuardLiterals), or the question being asked
+	// is about some other binary's hook. A derivation this process cannot
+	// complete degrades to no literals, exactly as probeL3HooksAsk does: a
+	// value that cannot be rendered already failed its install loudly, and
+	// the question here — does this body refuse an unqualified commit — is
+	// not one the literals decide.
+	visibility, _ := a.BeadsVisibility(hookRepo(dir))
+	identity, _ := a.commitGuardLiterals(dir)
+	commitRender := a.CommitGuardHook(visibility, a.OpsPatternSet(), identity...)
+
+	prePushOK, commitOK, err := execOwnRendersAsked(dir, true, commitRender)
+	if err != nil {
+		return unasked("%v", err)
+	}
+	say := func(ok bool) string {
+		if ok {
+			return "refuses"
+		}
+		return "DOES NOT REFUSE"
+	}
+	fmt.Fprintf(w, "%s %s · pre-push %s · prepare-commit-msg %s\n",
+		RenderProbeMark, AbbrevHome(dir), say(prePushOK), say(commitOK))
+	if prePushOK && commitOK {
+		return 0
+	}
+	// One line naming what it means, because this exit code is the one that
+	// undoes an install and the delegate posts the output on the bead.
+	fmt.Fprintf(w, "%s this binary's own render of a slot above no longer refuses the operation it gates (ADR 0023's behaviour half) — nothing installed anywhere is implicated, and nothing was written\n", RenderProbeMark)
+	return 1
 }
 
 // l3DegradeLine is the full, ready-to-display Degraded entry for one slot:

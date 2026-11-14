@@ -1692,7 +1692,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir...] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv> | posse gates vuln-private-scan")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir...] [--chain] | posse gates managed-hooks [dir] | posse gates render-probe [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv> | posse gates vuln-private-scan")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1798,6 +1798,30 @@ func main() {
 			}
 			fmt.Fprintln(out, line)
 			return
+		}
+		// ADR 0092 D4 amendment 3 (ranger-base-apf87) — ADR 0023's BEHAVIOUR
+		// half alone, asked of this binary's own renders and of nothing on
+		// disk. Read-only: no hook is written, no dispatch path is read, and
+		// the only writes are in one private temp dir this call removes.
+		//
+		// `posse upgrade` runs it through BOTH binaries around the swap, so
+		// it must stay in the binary: the OLD binary's code is what calls
+		// it, and a release that dropped it would make every later upgrade
+		// read "not asked" and demand a 0 from a verb that is gone. The pin
+		// is TestQAGatesRenderProbeVerbIsInTheBinary.
+		//
+		// die() is not used for the verdict: 0/1/2 are all answers this verb
+		// gives on purpose, and die() prints a second message over the line
+		// RunGatesRenderProbe already wrote.
+		if args[0] == "render-probe" {
+			dir := ""
+			if len(args) > 1 {
+				dir = posse.ExpandTilde(args[1])
+				if abs, aerr := filepath.Abs(dir); aerr == nil {
+					dir = abs
+				}
+			}
+			os.Exit(a.RunGatesRenderProbe(dir, out))
 		}
 		if args[0] == "install-hooks" {
 			chain := false
@@ -3303,6 +3327,18 @@ catalog:
                                  repo, and unwritable by this uid)? Exit 0 managed — printing the
                                  line every posse caller prints about it — exit 1 not. Nothing is
                                  written or probed beyond one create-and-remove in the directory.
+  posse gates render-probe [dir]
+                                 ADR 0023's BEHAVIOUR half alone (ADR 0092 D4 amendment 3),
+                                 read-only: does THIS BINARY's own render of each L3 slot still
+                                 refuse the operation it gates? The renders are written to a
+                                 private 0700 temp dir and exec'd from there — no hook is
+                                 written and nothing at a dispatch path is read, so identity
+                                 (whose bytes hold the slot) is not asked at all. Exit 0 every
+                                 render refuses, 1 one of them does not, 2 it could not be
+                                 asked. dir defaults to the posse source checkout; it is the
+                                 cwd the renders run in, so a non-repository is exit 2.
+                                 posse upgrade runs this through both binaries around its
+                                 swap, and rolls back on a new non-zero answer.
   posse gates adr-census [files...]
                                  ADR 0051's on-demand audit — nothing runs it for you — over every
                                  line of every docs/adr record (default docs/adr/*.md and

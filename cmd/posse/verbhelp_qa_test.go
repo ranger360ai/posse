@@ -198,9 +198,10 @@ func TestAParentVerbAnswersWithEveryEntryUnderIt(t *testing.T) {
 	// written against: ranger-base-1jmtm gave `posse gates wrap` an entry
 	// while this one was in flight (ranger-base-lw0s5 merged the two),
 	// ranger-base-a0vdz (ADR 0072 B2) gave `posse gates bd-line` one too,
-	// ranger-base-x0xct (ADR 0073 B2) gave `posse gates bd-write` one, and
+	// ranger-base-x0xct (ADR 0073 B2) gave `posse gates bd-write` one,
 	// ranger-base-ihp7y (ADR 0024 D2 check 4) gave `posse gates
-	// vuln-private-scan` one.
+	// vuln-private-scan` one, and ranger-base-apf87 (ADR 0092 D4 amendment
+	// 3) gave `posse gates render-probe` one — nine.
 	// `runtime` is 4 rather than 3: ranger-base-f5jbs added `posse runtime
 	// drift`, the box-wide skills_verified: reading that carries an exit
 	// code.
@@ -208,7 +209,7 @@ func TestAParentVerbAnswersWithEveryEntryUnderIt(t *testing.T) {
 	// parent is what this pin exists to catch — so it is updated by hand
 	// when the catalog gains one, never derived from the thing under test.
 	for verb, want := range map[string]int{
-		"cage": 3, "runtime": 4, "agent": 3, "gates": 8, "backup": 3,
+		"cage": 3, "runtime": 4, "agent": 3, "gates": 9, "backup": 3,
 		"scorecard": 2, "cost": 2, "refresh": 2, "list": 1, "init": 1,
 	} {
 		block, ok := catalogHelp([]string{verb, "--help"})

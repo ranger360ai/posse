@@ -161,6 +161,14 @@ property of the binary alone, the same in every repo. So:
    must answer 0. A pin keeps the verb in every later binary, because the
    OLD binary's code is what calls it.
 
+   *Amended by the build bead (ranger-base-apf87, 2026-11-13): an old binary
+   without the verb answers **1**, not "neither 0 nor 1" — MEASURED, see
+   "Measured versus assumed". So "not asked" is read off a MARK on stdout
+   (`render-probe:`, opening every line this verb prints) and never off the
+   exit code, which is the only way to tell that old binary's `no such
+   agent` from the verb's own "a render does not refuse". The trigger and
+   the three exit codes are otherwise exactly as written above.*
+
 **D5 — The bd argv gate copy is in scope (2tnbv's class), as a second arm of
 the same verb, under the same guardrails.** The copy under
 `~/.config/posse/gate/` is mechanism source from this repo, not a permission
@@ -386,6 +394,46 @@ which re-renders the session's own repo anyway. It never shows up silently.
 ASSUMED, for the build to MEASURE: that `execOwnRenders` against the source
 repo does not depend on the hooks installed there (its header says it never
 execs the file at a dispatch path).
+
+**No longer ASSUMED — MEASURED 2026-11-13 by the build bead
+(ranger-base-apf87), and it holds.** `posse gates render-probe` answered
+**exit 0 with a byte-identical verdict line in all seven readings**, over
+two arms. Arm A asked it of the real source checkout three times without
+writing a byte there, moving git's hook dispatch path instead of its files
+(`core.hooksPath` through `GIT_CONFIG_*`): hooks as installed, hooks
+neutered to `exit 0` bodies, hooks absent. Arm B asked it of a scratch
+checkout whose hooks really were absent, then installed by `posse gates
+install-hooks`, then overwritten with `exit 0` bodies, then removed again.
+The claim is now a pin as well as a reading
+(`TestRenderProbeAnswerDoesNotMoveWithTheInstalledHooks`), with the
+exit-1 and exit-2 arms pinned beside it so that "the same answer every
+time" cannot be a constant function. docs/notes.d/ranger-base-apf87.md has
+the readings and the method.
+
+**D4 amendment 3's "an old binary that does not have the verb answers
+neither 0 nor 1" is FALSE on this box — MEASURED 2026-11-13 by the build
+bead (ranger-base-apf87) at 34bbe053, the commit before the verb existed:
+`posse gates render-probe` prints `posse: no such agent: render-probe` and
+exits 1.** The gates arm's sub-verb ladder falls through to `LoadAgent`, and
+an unknown persona is a `die()`, which exits 1 — the same code the verb
+itself uses for "a render does not refuse". Read as the amendment wrote it,
+the first install after this verb lands would have been both-red-same: the
+old binary's `no such agent` excused as a box property, and a new binary
+whose render really had stopped refusing left installed. That is the
+expensive direction. The amendment's INTENT is kept exactly — a non-zero
+answer only excuses the new binary when the OLD binary gave that same answer
+*from the verb* — and the realization carries "was it asked" on stdout
+instead: every line this verb prints opens with `render-probe:`
+(`posse.RenderProbeMark`), and `upgradeRead` counts an answer as the verb's
+only when a line does. The three exit codes are exactly the three the
+amendment names; the mark is the fourth state it thought the exit code
+already gave it. Pinned by
+`TestUpgradeDoesNotExcuseANewRedWithAnOldBinaryThatLacksTheVerb` and
+`TestUpgradeRenderAskedReadsTheMarkAndNotTheExitCode`, and the verb's
+presence in every later binary by `TestQAGatesRenderProbeVerbIsInTheBinary`
+— which is load-bearing for the reason the amendment gives: the OLD binary's
+code is what calls it, so a release that dropped the verb would read as "not
+asked" and roll every later install back.
 
 An UNKNOWN code is treated as binary-rendered, which is the correct answer
 rather than a fallback: the table is complete for the binary doing the

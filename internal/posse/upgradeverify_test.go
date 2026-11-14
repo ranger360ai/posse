@@ -48,6 +48,20 @@ type fakePosse struct {
 	Stamp  string
 	Conds  GovSet
 	Gates  map[string]fakeGates
+
+	// Render is what `posse gates render-probe <dir>` answers (ADR 0092 D4
+	// amendment 3), and the zero value is the healthy one — 0, every render
+	// refuses — so every pin written before this field stays about what it
+	// was written about.
+	Render int
+	// NoRenderProbe is a binary from BEFORE that verb existed, and it does
+	// not answer 2: MEASURED 2026-11-13 at 34bbe053, `posse gates
+	// render-probe` on such a binary falls through the gates sub-verb
+	// ladder to LoadAgent and dies with `no such agent: render-probe`,
+	// EXIT 1 — the same code the verb itself uses for "a render does not
+	// refuse". That collision is why the reading is a mark on stdout and
+	// not an exit code, and this flag is how the pins exercise it.
+	NoRenderProbe bool
 }
 
 type fakeGates struct{ Exit, Red int }
@@ -75,6 +89,10 @@ func (f fakePosse) bytes() []byte {
 		g := f.Gates[p]
 		fmt.Fprintf(&b, "GATES %s %d %d\n", p, g.Exit, g.Red)
 	}
+	if f.NoRenderProbe {
+		b.WriteString("NO-RENDER-PROBE\n")
+	}
+	fmt.Fprintf(&b, "RENDER %d\n", f.Render)
 	return []byte(b.String())
 }
 
@@ -106,6 +124,10 @@ func readFakePosse(path string) (fakePosse, error) {
 				red, _ := strconv.Atoi(p[2])
 				f.Gates[p[0]] = fakeGates{Exit: exit, Red: red}
 			}
+		case ln == "NO-RENDER-PROBE":
+			f.NoRenderProbe = true
+		case strings.HasPrefix(ln, "RENDER "):
+			f.Render, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "RENDER ")))
 		}
 	}
 	return f, nil
@@ -176,6 +198,22 @@ func stubUpgradeProbe(t *testing.T) *upgradeProbeLog {
 				return 1, b.String()
 			}
 			return 0, b.String()
+		// Before the two-argument `gates <persona>` arm, because this one
+		// is three arguments and reading it as a persona named
+		// "render-probe" is exactly the fall-through the real OLD binary
+		// does (and the reason NoRenderProbe exists).
+		case len(argv) >= 2 && argv[0] == "gates" && argv[1] == "render-probe":
+			if f.NoRenderProbe {
+				return 1, "posse: no such agent: render-probe (looked in ~/fake/agents)\n"
+			}
+			slot := "refuses"
+			if f.Render == 1 {
+				slot = "DOES NOT REFUSE"
+			}
+			if f.Render == 2 {
+				return 2, RenderProbeMark + " could not ask — fake\n"
+			}
+			return f.Render, fmt.Sprintf("%s ~/fake · pre-push %s · prepare-commit-msg %s\n", RenderProbeMark, slot, slot)
 		case len(argv) == 2 && argv[0] == "gates":
 			g := f.Gates[argv[1]]
 			var b strings.Builder
@@ -632,6 +670,192 @@ func TestUpgradeProbeRunsTheBinaryInTheDirectoryItIsGiven(t *testing.T) {
 	}
 	if _, out := upgradeProbe("", pwd); strings.TrimSpace(out) != here {
 		t.Errorf("an empty dir ran in %q, want this process's cwd %q", strings.TrimSpace(out), here)
+	}
+}
+
+// ─── D4 amendment 3 · the hook wall judged by behaviour ──────────────────────
+//
+// The three readings the amendment distinguishes, and the whole of why the
+// mark exists:
+//
+//	new-red         the new binary answers non-zero where the old answered
+//	                0 — this binary's own render stopped refusing. Roll back.
+//	both-red-same   both binaries answer the same non-zero code — a box
+//	                property (a broken /bin/sh, an unwritable $TMPDIR). The
+//	                fleet was already running with it: report, do not roll
+//	                back.
+//	old-unasked     the old binary has no such verb. Its exit 1 is `no such
+//	                agent` and not a render verdict (MEASURED, see
+//	                fakePosse.NoRenderProbe), so nothing excuses the new
+//	                binary and it must answer 0.
+
+func TestUpgradeRollsBackWhenTheNewBinarysRenderStopsRefusing(t *testing.T) {
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", Render: 0},
+		fakePosse{Render: 1})
+	out, err := f.run(t)
+	if err == nil {
+		t.Fatalf("a binary whose own hook render no longer refuses was left installed:\n%s", out)
+	}
+	if !strings.Contains(out, "render-probe` exited 1") {
+		t.Errorf("the report does not name the render probe's answer:\n%s", out)
+	}
+	if !strings.Contains(out, "no longer refuses") {
+		t.Errorf("the report does not say what exit 1 means:\n%s", out)
+	}
+	f.rolledBack(t)
+}
+
+// Exit 2 is "could not ask", and through the NEW binary alone it is still a
+// rollback: an install nobody could judge on ADR 0023's behaviour half is an
+// install this gate did not clear.
+func TestUpgradeRollsBackWhenOnlyTheNewBinaryCannotBeAsked(t *testing.T) {
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", Render: 0},
+		fakePosse{Render: 2})
+	out, err := f.run(t)
+	if err == nil {
+		t.Fatalf("an install whose behaviour probe could not be taken was left in place:\n%s", out)
+	}
+	if !strings.Contains(out, "could not be taken at all") {
+		t.Errorf("the report does not say the probe could not be taken:\n%s", out)
+	}
+	f.rolledBack(t)
+}
+
+// both-red-same. A box property is reported and is not a reason to roll
+// back — the fleet has been running on the old binary with the same answer.
+func TestUpgradeDoesNotRollBackWhenBothBinariesGiveTheSameRenderAnswer(t *testing.T) {
+	for _, code := range []int{1, 2} {
+		t.Run(fmt.Sprintf("exit%d", code), func(t *testing.T) {
+			f := newD4Fixture(t,
+				fakePosse{Stamp: "aaaaaaa", Render: code},
+				fakePosse{Render: code})
+			out, err := f.run(t)
+			if err != nil {
+				t.Fatalf("an answer both binaries give rolled the install back: %v\n%s", err, out)
+			}
+			if !strings.Contains(out, fmt.Sprintf("render-probe` exits %d through BOTH binaries", code)) {
+				t.Errorf("the report does not say the answer is a property of the box:\n%s", out)
+			}
+			if !strings.Contains(out, "not of the install") {
+				t.Errorf("the report does not say the install is not implicated:\n%s", out)
+			}
+			if body, _ := os.ReadFile(f.target); !bytes.Equal(body, f.next.bytes()) {
+				t.Errorf("the new binary is not in place: %q", body)
+			}
+		})
+	}
+}
+
+// And the note is not standing furniture: a clean probe on both sides says
+// nothing.
+func TestUpgradeSaysNothingAboutTheRenderProbeWhenBothSidesAnswerZero(t *testing.T) {
+	f := newD4Fixture(t, fakePosse{Stamp: "aaaaaaa"}, fakePosse{})
+	out, err := f.run(t)
+	if err != nil {
+		t.Fatalf("a clean render probe rolled the install back: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "BOTH binaries") {
+		t.Errorf("the report carries the box-property note over a clean probe:\n%s", out)
+	}
+	// The reading is still printed in the before/after lines, because a
+	// delegate reading the block has to see that it was taken.
+	if n := strings.Count(out, "render-probe 0"); n < 2 {
+		t.Errorf("the before and after lines do not both carry the probe's answer (%d):\n%s", n, out)
+	}
+}
+
+// old-unasked, and the reading this whole mechanism turns on. The OLD binary
+// here is one from before the verb existed: it exits 1, which is also the
+// verb's own code for "a render does not refuse". Were the exit code the
+// reading, this fixture would be both-red-same and a NEW binary whose render
+// really had stopped refusing would have been excused.
+func TestUpgradeDoesNotExcuseANewRedWithAnOldBinaryThatLacksTheVerb(t *testing.T) {
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", NoRenderProbe: true},
+		fakePosse{Render: 1})
+	out, err := f.run(t)
+	if err == nil {
+		t.Fatalf("exit 1 from a binary WITHOUT the verb excused a real render failure:\n%s", out)
+	}
+	if !strings.Contains(out, "did not have the verb, so nothing excuses it") {
+		t.Errorf("the report reads the old binary's exit 1 as a render verdict:\n%s", out)
+	}
+	if !strings.Contains(out, "NOT ASKED") {
+		t.Errorf("the before line does not say the old binary was not asked:\n%s", out)
+	}
+	f.rolledBack(t)
+}
+
+// The same old binary with a GOOD new one installs cleanly — the first
+// upgrade after this verb lands is exactly this reading, and a gate that
+// refused it would make the verb unlandable.
+func TestUpgradeStandsWhenTheOldBinaryLacksTheVerbAndTheNewOneAnswersZero(t *testing.T) {
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", NoRenderProbe: true},
+		fakePosse{Render: 0})
+	out, err := f.run(t)
+	if err != nil {
+		t.Fatalf("the first install of the verb rolled itself back: %v\n%s", err, out)
+	}
+	if body, _ := os.ReadFile(f.target); !bytes.Equal(body, f.next.bytes()) {
+		t.Errorf("the new binary is not in place: %q", body)
+	}
+}
+
+// A NEW binary that answers without the mark cannot be judged, and this is
+// the runtime half of the pin that keeps the verb in the binary: a release
+// that dropped it reads here as "not asked" and rolls back.
+func TestUpgradeRollsBackWhenTheNewBinaryHasNoRenderProbeVerb(t *testing.T) {
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", Render: 0},
+		fakePosse{NoRenderProbe: true})
+	out, err := f.run(t)
+	if err == nil {
+		t.Fatalf("a new binary without the verb was left installed:\n%s", out)
+	}
+	if !strings.Contains(out, "did not answer through the new binary") {
+		t.Errorf("the report does not say the verb did not answer:\n%s", out)
+	}
+	f.rolledBack(t)
+}
+
+// The reading is taken in the source repo and names it as the verb's
+// argument too — amendment 2's defect one verb along: a default resolved
+// inside the probed binary could differ from the one resolved here.
+func TestUpgradeRenderProbeIsAskedAboutTheSourceRepo(t *testing.T) {
+	f := newD4Fixture(t, fakePosse{Stamp: "aaaaaaa"}, fakePosse{})
+	if _, err := f.run(t); err != nil {
+		t.Fatalf("upgradeRunPlan: %v", err)
+	}
+	key := "gates render-probe " + f.repo
+	if got, ok := f.probe.Dir[key]; !ok || got != f.repo {
+		t.Errorf("the render probe ran as %q in %q, want it asked about %s and run there too:\n%v",
+			key, got, f.repo, f.probe.Dir)
+	}
+}
+
+// upgradeRenderAsked reads the MARK and not the exit code, and it reads it
+// off any line of the output — the verb prints its reason line second on an
+// exit 1, and a `could not ask` line is the whole of an exit 2.
+func TestUpgradeRenderAskedReadsTheMarkAndNotTheExitCode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"the verb's clean line", RenderProbeMark + " ~/src/posse · pre-push refuses · prepare-commit-msg refuses\n", true},
+		{"the verb's could-not-ask line", RenderProbeMark + " could not ask — /bin/sh is not there\n", true},
+		{"a binary without the verb", "posse: no such agent: render-probe (looked in ~/homes/x/agents)\n", false},
+		{"a leading blank line", "\n  " + RenderProbeMark + " ~/x · pre-push refuses · prepare-commit-msg refuses\n", true},
+		{"silence", "", false},
+		{"the mark in the middle of a sentence", "nothing here mentions render-probe: at the start of a line\n", false},
+	} {
+		if got := upgradeRenderAsked(tc.out); got != tc.want {
+			t.Errorf("%s: upgradeRenderAsked = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 

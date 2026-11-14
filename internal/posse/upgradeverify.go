@@ -393,6 +393,17 @@ type upgradeReading struct {
 	Status    map[string]int                 // conditions by "<class> <row>"
 	Unread    int                            // `?` lines — reported, never a trigger
 	Gates     map[string]upgradeGatesReading // by persona
+
+	// Render is `posse gates render-probe <repo>`'s exit code and
+	// RenderAsked says whether that code came from the verb at all — ADR
+	// 0092 D4 amendment 3, and the two fields are inseparable. A binary
+	// WITHOUT the verb exits 1 with `no such agent: render-probe`
+	// (MEASURED, RenderProbeMark), which is also the verb's own code for "a
+	// render does not refuse", so the exit code alone cannot tell the
+	// before-reading of an old binary apart from a real finding. The mark
+	// on stdout is what does.
+	Render      int
+	RenderAsked bool
 }
 
 // upgradeGatesReading is one persona's `posse gates <p>`: the exit code D4
@@ -488,7 +499,32 @@ func upgradeRead(bin, repo string, personas []string) upgradeReading {
 		code, gout := upgradeProbe(repo, bin, "gates", p)
 		r.Gates[p] = upgradeGatesReading{Exit: code, Red: upgradeGatesRed(gout)}
 	}
+	// ADR 0092 D4 amendment 3: the hook wall's BEHAVIOUR half, asked of the
+	// binary under test directly instead of inferred from any repo's hook
+	// files. The repo is named as an argument AND as the cwd, for amendment
+	// 2's reason doubled: the verb's own default is the source checkout, and
+	// a default that resolved differently in the two processes would be the
+	// same two-trees defect this reading exists to avoid.
+	//
+	// Read-only on both sides (the verb writes no hook and only its own
+	// private temp dir), so running it twice per install costs nothing a
+	// snapshot may not spend.
+	code, rout := upgradeProbe(repo, bin, "gates", "render-probe", repo)
+	r.Render, r.RenderAsked = code, upgradeRenderAsked(rout)
 	return r
+}
+
+// upgradeRenderAsked says whether the output came from the render-probe verb
+// — the mark on stdout and not the exit code, for the reason
+// RenderProbeMark's own header MEASURES: a binary without the verb exits 1,
+// which is the verb's own "a render does not refuse".
+func upgradeRenderAsked(out string) bool {
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(ln), RenderProbeMark) {
+			return true
+		}
+	}
+	return false
 }
 
 // Line is the one-line form of a reading, for the verify block.
@@ -508,8 +544,15 @@ func (r upgradeReading) Line() string {
 	if r.StatusRan {
 		status = fmt.Sprintf("status %d condition(s), %d unreadable store(s)", conds, r.Unread)
 	}
-	return fmt.Sprintf("%s · gates %d persona(s), %d not-held row(s), %d non-zero exit(s)",
-		status, len(r.Gates), red, exits)
+	// The render probe's answer in words, because "render-probe 1" and
+	// "render-probe NOT ASKED" are the two readings a delegate has to be
+	// able to tell apart from the block alone (ADR 0092 D4 amendment 3).
+	render := "render-probe NOT ASKED (this binary has no such verb)"
+	if r.RenderAsked {
+		render = fmt.Sprintf("render-probe %d", r.Render)
+	}
+	return fmt.Sprintf("%s · gates %d persona(s), %d not-held row(s), %d non-zero exit(s) · %s",
+		status, len(r.Gates), red, exits, render)
 }
 
 // upgradeVerdict is every reason the swap must be undone — all of them, not
@@ -577,7 +620,70 @@ func upgradeVerdict(to string, before, after upgradeReading) []string {
 			why = append(why, fmt.Sprintf("`posse gates %s` gained %d DEGRADED/REFUSED row(s) (%d → %d)", p, a.Red-b.Red, b.Red, a.Red))
 		}
 	}
+
+	// ADR 0092 D4 AMENDMENT 3's TRIGGER — the hook wall judged by behaviour.
+	// The new binary must answer 0, unless the old binary gave that same
+	// non-zero answer, which makes it a property of the box (a broken
+	// /bin/sh, a $TMPDIR this uid cannot write) and not of the install. A
+	// box property is reported, in upgradeRenderNote, and is not a reason to
+	// roll back: the fleet was already running with it.
+	//
+	// AN OLD ANSWER THAT DID NOT COME FROM THE VERB EXCUSES NOTHING, which
+	// is the amendment's "counts as not asked, so the new binary must answer
+	// 0" — and it is a MARK and not an exit code that says so (see
+	// upgradeReading.Render). The first install after the verb lands is
+	// exactly this case: the old binary answers 1 for a reason that has
+	// nothing to do with any render.
+	switch {
+	case !after.RenderAsked:
+		why = append(why, fmt.Sprintf("`posse gates render-probe` did not answer through the new binary (exit %d, and no %q line) — that verb is how this gate asks whether the new binary's own hook renders still refuse (ADR 0092 D4 amendment 3), and the OLD binary's code is what calls it, so a binary without it cannot be judged",
+			after.Render, RenderProbeMark))
+	case after.Render == 0:
+		// Every render of the new binary refuses what it gates. Nothing
+		// owed, and no note: a line printed on every good install is a line
+		// the delegate stops reading.
+	case before.RenderAsked && before.Render == after.Render:
+		// The old binary, asked the same question in the same place,
+		// answered the same thing. upgradeRenderNote says so.
+	default:
+		meant := map[int]string{
+			1: "one of this binary's own L3 hook renders no longer refuses the operation it gates",
+			2: "the probe could not be taken at all",
+		}[after.Render]
+		if meant == "" {
+			meant = "the verb answered with a code it does not define"
+		}
+		was := fmt.Sprintf("the old binary answered %d", before.Render)
+		if !before.RenderAsked {
+			was = "the old binary did not have the verb, so nothing excuses it"
+		}
+		why = append(why, fmt.Sprintf("`posse gates render-probe` exited %d through the new binary — %s (%s)", after.Render, meant, was))
+	}
 	return why
+}
+
+// upgradeRenderNote is the report half of amendment 3's trigger: the one
+// case where the behaviour probe comes back non-zero through the new binary
+// and is NOT a reason to roll back, because the old binary said the same
+// thing and the fleet has been running on it.
+//
+// It prints rather than refusing, because that is what the amendment asks
+// for — "a box property such as a broken /bin/sh, which is reported and is
+// not a reason to roll back" — and because the delegate posts this block on
+// the install bead, where a probe nobody can take is worth a line whoever
+// reads it next.
+func upgradeRenderNote(before, after upgradeReading) string {
+	if after.Render == 0 || !after.RenderAsked || !before.RenderAsked || before.Render != after.Render {
+		return ""
+	}
+	what := map[int]string{
+		1: "an L3 hook render that does not refuse what it gates — the SAME render on both sides, so the commit this run installed did not cause it",
+		2: "a probe that cannot be taken here at all, which is a broken /bin/sh or a $TMPDIR this uid cannot write",
+	}[after.Render]
+	if what == "" {
+		what = "a code the verb does not define"
+	}
+	return fmt.Sprintf("  note: `posse gates render-probe` exits %d through BOTH binaries, so it is a property of this box and not of the install (ADR 0092 D4 amendment 3): %s. The hook wall's behaviour half was in this state before this command ran, and is worth fixing before the next upgrade.\n", after.Render, what)
 }
 
 // upgradeG12 is the one row name this verb's own install is expected to
@@ -719,6 +825,10 @@ func upgradeVerify(w io.Writer, plan upgradePlan, before upgradeReading) error {
 		if line := upgradeHookWallLine(plan, before, after); line != "" {
 			fmt.Fprint(w, line)
 		}
+		// Amendment 3's report half, printed beside D7's for the same
+		// reason: an install that stood on a box where the behaviour probe
+		// cannot be taken is a fact about the next upgrade too.
+		fmt.Fprint(w, upgradeRenderNote(before, after))
 		return nil
 	}
 	for _, r := range why {

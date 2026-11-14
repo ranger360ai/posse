@@ -150,7 +150,13 @@ two built here:
    dropping the word: the multiplexer line opens `DEGRADED — ` and is a real
    row.
 3. **Behaviour is asked directly**, through a new read-only `posse gates
-   render-probe` — amendment 3, **ranger-base-apf87**, not built here.
+   render-probe` — amendment 3, **ranger-base-apf87**, not built here. Built
+   there, with two measurements: the amendment's one ASSUMED holds (the
+   answer does not move with what is installed at the dispatch path, seven
+   readings), and its "an old binary without the verb answers neither 0 nor
+   1" does not — it answers 1, the verb's own code for "a render does not
+   refuse", so "was it asked" is a mark on stdout and never the exit code.
+   docs/notes.d/ranger-base-apf87.md has both.
 
 One residual is accepted and named in ADR 0092: the behaviour probe execs a
 render from a temp file, so it cannot see a render that refuses correctly
