@@ -383,6 +383,12 @@ die2() { echo "$self: $*" >&2; exit 2; }
 # below it for finding 4's fix, which this table cannot exercise because
 # none of its own fixtures are claude-EXE processes.
 #
+# ROW I IS NOT FROM THAT TABLE (ranger-base-85xxm). The table's rows are A
+# through H; I is a dead registered pid carrying NO procStart, which is the
+# one combination the registered-pid liveness gate decides ALONE, and which
+# the table's own rows between them never produce. Its comment, at the row,
+# has the measurement.
+#
 # A `-p`/`--print` RUN NEVER WRITES A REGISTRY FILE, so counting it toward
 # claude_procs made the blindness control (below, "the harness's live-session
 # registry") refuse the whole class for a reason that is not blindness: on a
@@ -462,6 +468,25 @@ self_test() {
 
   echo "$self --self-test:"
 
+  # A DEAD REGISTERED PID, DERIVED AND THEN CHECKED, never a literal
+  # (ranger-base-85xxm). Two rows below register a pid that has to be DEAD --
+  # B (dead pid, procStart present) and I (dead pid, no procStart) -- and B's
+  # was a hardcoded 999999. linux's pid counter wraps at
+  # /proc/sys/kernel/pid_max, and this box was already issuing pids past
+  # 4,000,000 against a pid_max of 4,194,304 when this was written (MEASURED
+  # 2026-11-14), so 999999 is a number the kernel will hand out again -- and
+  # on that wrap both rows would be registering a LIVE process and reporting
+  # `want COLLECTED, got KEPT`, which reads as a reaper defect when the rig is
+  # what moved. pid_max is one PAST the largest pid the kernel allocates, so
+  # it and pid_max+1 are dead by construction however far the counter has
+  # gone. Checked anyway, by the arm below the holder gate: "dead by
+  # construction" is a claim about a directory this rig can simply look at,
+  # and an assumption a rig can check is one it has no business carrying.
+  local deadb deadi
+  deadb=999999
+  if [ -r /proc/sys/kernel/pid_max ]; then deadb=$(< /proc/sys/kernel/pid_max); fi
+  deadi=$((deadb + 1))
+
   # ONE PID PER REGISTRY FILE: the files are keyed by pid, so three arms
   # sharing one holder would overwrite each other and the live arm would
   # read as unregistered.
@@ -469,7 +494,7 @@ self_test() {
   sleep 60 >/dev/null 2>&1 </dev/null & local pc=$!
   sleep 60 >/dev/null 2>&1 </dev/null & local pd=$!
   mk A yes no;  reg A "$pa" "$(st "$pa")"   # KEEP: pid live, procStart matches
-  mk B yes no;  reg B 999999 1              # COLLECT: registered pid is dead
+  mk B yes no;  reg B "$deadb" 1            # COLLECT: registered pid is dead
   mk C yes no;  reg C "$pc" 1               # COLLECT: live pid, wrong procStart
   mk D yes no;  reg D "$pd" OMIT            # KEEP: no procStart field, pid alive
   mk E yes yes                              # KEEP: transcript fresh
@@ -477,12 +502,80 @@ self_test() {
   mk G yes no                               # COLLECT: unregistered, both old
   mk H yes no                               # KEEP: a process is cwd'd inside
   ( cd "$tmp/root/claude-$me/$slug/H" && exec sleep 60 ) >/dev/null 2>&1 </dev/null & local ph=$!
+
+  # I: THE ONE COMBINATION THE REGISTERED-PID LIVENESS GATE DECIDES ALONE
+  # (ranger-base-85xxm). A registered pid that is DEAD and carries NO
+  # procStart is the only shape `[ -d "/proc/$rpid" ] || continue` is the
+  # whole of the answer for -- B is dead-with-procStart, so the procStart
+  # match just below that gate would exclude B whatever the gate did, and D is
+  # live-without-procStart. The two halves of B and D never met, so no
+  # fixture reached it.
+  #
+  # BEFORE THIS ROW, deleting that gate did red B, C and G -- which is what
+  # ranger-base-bttuj recorded -- but it red through an ABORT and not through
+  # any arm's verdict: with the gate gone the `sed … "/proc/$rpid/stat"` two
+  # lines below it is handed a dead pid's missing file, and `set -euo
+  # pipefail` ends the sweep. MEASURED 2026-11-14 on this box, two mutants one
+  # change at a time: making that single pipeline crash-proof ALONE leaves
+  # every arm passing at exit 0 (the control, so the crash-proofing changes no
+  # verdict of its own), and the same crash-proofing PLUS the gate deleted
+  # ALSO leaves every arm passing at exit 0. The gate's only killer was an
+  # abort one `|| true` away from gone, and a plausible robustness edit made
+  # for an unrelated reason would have taken it with it in silence. With this
+  # row the gate's removal reds on its semantics: a dead pid with no procStart
+  # reaches `claude_live++`, its dir goes into $livedirs, and the dir is kept.
+  #
+  # ITS OWN uuid AND ITS OWN REGISTRY FILE, never an edit to B's. That shape
+  # bolted onto B reaches `claude_live++` and the `for sd` walk, which arms B
+  # through G and the three class rigs below then read differently (MEASURED
+  # on ranger-base-uc338).
+  mk I yes no;  reg I "$deadi" OMIT         # COLLECT: registered pid dead AND no procStart
   SELFTEST_PIDS=("$pa" "$pc" "$pd" "$ph")
   sleep 1
 
-  "$0" --root "$tmp/root" --class claude-scratch --apply --quiet \
+  # THE SWEEP IS THE BIGGEST FIXTURE IN THIS RIG, AND ITS DEATH MUST BE
+  # VISIBLE (ranger-base-85xxm). Its exit status and its output were both
+  # discarded here -- `>/dev/null 2>&1 || true` -- so a sweep that aborted
+  # mid-run was indistinguishable from one that ran and decided. MEASURED
+  # 2026-11-14 on this box with `exit 3` injected immediately after the census
+  # lines and before the class walk: A, D, E, F and H all report `ok`, over a
+  # population nothing ever collected from, and B, C and G report `want
+  # COLLECTED, got KEPT` -- a reaper defect, when what happened is that the
+  # reaper exited. Not one line of that output named the abort. It is the same
+  # lesson one apparatus up from ranger-base-bttuj's holder gate, in that
+  # bead's own words: ask which way an arm fails if its fixture dies.
+  #
+  # TWO OBSERVABLES, both read with bash parameter expansion and no forked
+  # matcher (TestQANoAssertionArmDecidesThroughAForkedMatcher):
+  #   - the exit status, which is what `set -euo pipefail` turns any abort in
+  #     the sweep into, and whose repro is the `exit 3` mutant above;
+  #   - the `worst: … -> …` line, which the sweep prints AFTER its removal
+  #     loop. An `exit 0` planted early is the one abort an exit status cannot
+  #     see, and this is the last thing a completed --apply run says. It is
+  #     that line and deliberately NOT `collected N of M dirs`, which is
+  #     printed only when the walk found something: a reaper that collected
+  #     nothing would then be reported as a broken rig, which is this bead's
+  #     own defect with the blame reversed.
+  #
+  # The `local` names are assigned one per line and never on the `local` line
+  # itself, for the reason `mk` above gives.
+  local sweep_out sweep_rc sweep_rest
+  sweep_rc=0
+  sweep_out=$("$0" --root "$tmp/root" --class claude-scratch --apply --quiet \
     --claude-sessions "$tmp/sessions" --claude-projects "$tmp/projects" --no-bead \
-    >/dev/null 2>&1 || true
+    2>&1) || sweep_rc=$?
+  sweep_rest=${sweep_out#*"worst: "}
+  if [ "$sweep_rc" -ne 0 ]; then
+    echo "  FAIL the sweep every verdict below reads exited $sweep_rc — those arms would be deciding over a population nothing collected from, and the rig is what is broken. Its whole output:"
+    printf '%s\n' "$sweep_out"
+    fails=$((fails + 1))
+  elif [ "$sweep_rest" = "$sweep_out" ]; then
+    echo "  FAIL the sweep exited 0 but printed no 'worst: … -> …' line, which only a run that reached the end of its removal prints — the verdicts below may be reading a population it never walked. Its whole output:"
+    printf '%s\n' "$sweep_out"
+    fails=$((fails + 1))
+  else
+    echo "  ok   the sweep ran to completion (exit 0, worst: ${sweep_rest%%$'\n'*})"
+  fi
 
   # THE FOUR HOLDERS MUST STILL BE ALIVE (ranger-base-bttuj). The sweep above
   # IS this rig's census, and every verdict below is about what it saw; a
@@ -518,13 +611,29 @@ self_test() {
     fi
   done
 
+  # AND THE TWO DEAD-PID ROWS MUST REALLY BE DEAD (ranger-base-85xxm). B and I
+  # both want COLLECTED *because* nothing is holding them, so a pid the
+  # kernel's counter has come back round to makes each of them report `want
+  # COLLECTED, got KEPT` -- a reaper defect over a rig that is what changed.
+  # The same failure direction as the four holders above, from the other side.
+  # `[ -d ]` is a builtin, so this arm cannot be emptied by a matcher that
+  # never ran.
+  local dpid dname
+  for dname in B:$deadb I:$deadi; do
+    dpid=${dname#*:}
+    if [ -d "/proc/$dpid" ]; then
+      echo "  FAIL arm ${dname%%:*} registers $dpid as a DEAD pid and that pid is ALIVE — the kernel's pid counter has reached it, so that arm is grading a live process and the rig is what is broken"
+      fails=$((fails + 1))
+    fi
+  done
+
   local u got
   for u in A D E F H; do
     [ -d "$tmp/root/claude-$me/$slug/$u" ] && got=KEPT || got=COLLECTED
     if [ "$got" = KEPT ]; then echo "  ok   $u kept"
     else echo "  FAIL $u: want KEPT, got COLLECTED"; fails=$((fails + 1)); fi
   done
-  for u in B C G; do
+  for u in B C G I; do
     [ -d "$tmp/root/claude-$me/$slug/$u" ] && got=KEPT || got=COLLECTED
     if [ "$got" = COLLECTED ]; then echo "  ok   $u collected"
     else echo "  FAIL $u: want COLLECTED, got KEPT"; fails=$((fails + 1)); fi
