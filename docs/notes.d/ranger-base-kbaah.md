@@ -52,6 +52,16 @@ reading below** (md5 asserted identical before and after the mutations, and
 ranger-base-5b3lq asks for, and nothing here is a verdict about herdr-bob. It
 is a reading of the two files' trap lines, which is what this bead was for.
 
+**And it is what the tree stands on, because the mac run has no date.** This
+bead was filed as an operator ask. By the time it was worked, the operator had
+already ruled otherwise: 2026-11-13, on ranger-base-z5kgj — darwin and
+mac-only verification **waits until a crew seat exists on that box**, because
+the operator is not a routine runner of crew checks. So "ask the mac" is not a
+plan with a date on it, and the choice was never between this reading and a
+better one soon; it was between this reading and none. ranger-base-5b3lq
+carries the mac clause, deferred under that ruling, and this bead's own clause
+was folded into it so one pass covers both whenever that seat exists.
+
 `set -m` throughout, for ranger-base-kkp5g's reason: a background child of a
 non-interactive shell has INT set to `SIG_IGN`, bash cannot trap a signal
 ignored on entry, and an INT arm without it measures nothing and looks like a
