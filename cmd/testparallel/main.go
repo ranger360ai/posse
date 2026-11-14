@@ -318,6 +318,7 @@ func main() {
 		"TestPulseFeedIsTheDeliveryWhileAWaiterHoldsTheLock":        "asserts flock acquisition",
 		"TestPulseFeedDeliversToAWorkingCoordinator":                "asserts flock acquisition",
 		"TestPulseTypesWhenTheWaiterIsWedged":                       "asserts flock acquisition",
+		"TestPulseReminderCursorIsTheFeedsNewestEntryNotZero":       "asserts flock acquisition",
 		"TestPulseWaiterAtExactlyTheRenagIsStillListening":          "asserts flock acquisition",
 		"TestPulseConcedesToAHolderItCannotAge":                     "asserts flock acquisition",
 		"TestPulseConcedesAnUnaskableProbeToTheFeed":                "asserts flock acquisition",

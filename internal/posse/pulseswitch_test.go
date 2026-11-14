@@ -172,6 +172,84 @@ func TestPulseTypesAndRemindsWhenNoWaiterIsArmed(t *testing.T) {
 	}
 }
 
+// The cursor in that reminder is a READING OF THE FEED, over a feed that
+// already holds entries. The arm above cannot say so: its fixture's feed is
+// empty at the moment the text is composed — the typed arm appends its own
+// line after the Prompt — so pulseFeedCursor() answers 0 there and the
+// reading and the constant 0 are the same number. Nothing else types a
+// reminder over a non-empty feed.
+//
+// MEASURED 2026-11-14 (ranger-base-wjnfr, escaped from ranger-base-r3qz6),
+// two one-line mutants of pulse.go's `PulseWaitCommand(pulseFeedCursor(...))`,
+// each over an otherwise unmodified tree:
+//
+//	PulseWaitCommand(0)                          ok — SURVIVED the arm above
+//	PulseWaitCommand(pulseFeedCursor(...) + 1)   FAIL, that arm
+//
+// So the off-by-one direction was caught and "no cursor at all" was not, and
+// what the surviving mutant costs is not prose: over a non-empty feed
+// `--after 0` hands the coordinator every kept entry — up to PulseFeedLines
+// — on its first wake, instead of this delivery's own line alone.
+//
+// This arm catches both directions, which is why the want is computed from
+// the feed rather than written out: the reading is 1 here, `+1` would make
+// it the 2 the typed path's own append is about to produce, and 0 is the
+// mutant said by name below.
+//
+// Two ticks, because a non-empty feed and a free lock is a coordinator that
+// armed, was fed, and then let its waiter go — the real shape, not a planted
+// file. No t.Parallel and an entry in cmd/testparallel: tick one takes the
+// waiter's flock (ranger-base-9l77f).
+func TestPulseReminderCursorIsTheFeedsNewestEntryNotZero(t *testing.T) {
+	b, fake, d, clock, key := psCoordinator(t)
+	cfg := psCfg()
+
+	// Tick one: a listening waiter, so the feed IS the delivery and nothing
+	// is typed. This is the only thing this tick is here for — to put a
+	// line in the feed the way the feed really gains lines.
+	lock := psArmWaiter(t, b, *clock)
+	d.pulseOnce(cfg)
+	if log := calls(t, fake); strings.Contains(log, "agent prompt") {
+		t.Fatalf("the fixture tick typed instead of feeding, so the reminder below is composed over the wrong feed:\n%s", log)
+	}
+	wantFeed(t, b, "+"+key+" standing: 1")
+
+	// The fixture's own claim, said before it is leaned on: an empty feed
+	// here would make this arm the one it replaces.
+	cursor := pulseFeedCursor(PulseFeedPath(b.App))
+	if cursor <= 0 {
+		t.Fatalf("the feed's max seq is %d, so the cursor and the constant 0 are the same number and this arm pins nothing", cursor)
+	}
+
+	// The waiter goes, and the lock going free is what it is to go: release
+	// IS death (pulsewait.go). Cleanup releases it again and Release is
+	// idempotent on a nil f.
+	lock.Release()
+
+	// Tick two: nobody listening, so the typed fallback runs. It is due
+	// because `pulse-unarmed` is exactly what a free lock adds to the set
+	// (govern.go), so the delta is non-empty without touching the clock.
+	d.pulseOnce(cfg)
+
+	if out := dispatcherOut(d); !strings.Contains(out, "→ prompted coordinator-work") {
+		t.Fatalf("no typed fallback over the now-free lock:\n%s", out)
+	}
+	log := calls(t, fake)
+	want := "arm the feed: " + PulseWaitCommand(cursor)
+	if !strings.Contains(log, want) {
+		t.Errorf("the reminder is not %q, so the coordinator is told to arm at the wrong place:\n%s", want, log)
+	}
+	// Said separately because it is the mutant: `--after 0` is not a cursor
+	// that is merely off, it is a replay of every kept entry.
+	if strings.Contains(log, PulseWaitCommand(0)) {
+		t.Errorf("the reminder arms at 0 over a feed holding %d entries, which replays the lot:\n%s", cursor, log)
+	}
+	// And the append still happens after the text is composed, which is the
+	// other half of why the cursor means "this delivery's own line": the
+	// feed gained an entry past the one the reminder names.
+	wantFeed(t, b, "+"+key+" standing: 1", "+pulse-unarmed standing: 2")
+}
+
 // A waiter that holds the lock past its own maximum life is WEDGED, not
 // listening: the waiter self-exits after one pulse_renag with nothing to
 // say (pulseWaitLife), so a holder older than that plus one tick cannot be
