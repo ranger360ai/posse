@@ -471,9 +471,54 @@ func upgradeExitCode(err error) int {
 
 // ─── the verb ────────────────────────────────────────────────────────────────
 
+// upgradeReads is the verb's three readings of the live box, handed in
+// rather than taken — so the one function that WIRES the guardrails
+// together is reachable from a pin (ranger-base-anczm).
+//
+// WHY IT EXISTS. Until this seam, nothing in the tree reached the verb, and
+// each of the three guardrails it adds could be deleted with the suite and
+// `make tree-check` both green: the D2 fence call below, the dirty-stamp
+// refusal, and the D3 flock. MEASURED 2026-11-13 — three one-line
+// mutations, `go test -run TestUpgrade ./internal/posse` green for all
+// three. What WAS pinned is upgradeFence as a pure function and
+// upgradeRunPlan's step order, which is every part except the wiring.
+//
+// A SEAM for dispatch.Lag's reason. All three readings key off the running
+// binary's own build stamp, and a TEST binary carries none at all
+// (cagestale.go's header) — VersionString() is "+dev", so an end-to-end
+// reading abstains before the verb's first refusal is reached. Handing them
+// in is what makes a real stamp and a real repo available to a pin.
+//
+// PARAMETERS and not package vars like the three steps below, because all
+// three call sites are in one function and this package's suite is
+// parallel: a var swapped under one test answers questions no other test
+// asked (runningPosse's own header, applied to the test side).
+//
+// WHAT IS STILL UNREACHABLE, said here so nobody reads the seam as total:
+// CmdUpgrade, which binds these three names to the real readings and does
+// nothing else — no branch, no refusal. That is the residue every seam of
+// this shape leaves — dispatch.Lag and GovInputs.Lag leave the same one —
+// and it is the smallest piece this file can leave unreached.
+type upgradeReads struct {
+	Bin  func() PosseBinary                    // RunningPosse
+	Lag  func() LauncherLag                    // (*App).LauncherOverFleet
+	Lock func(io.Writer) (*upgradeLock, error) // lockUpgrade
+}
+
 // CmdUpgrade installs a commit of posse that is already on origin/main and
 // whose suite is green, over the binary this process is running out of.
 func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
+	return a.cmdUpgrade(w, o, upgradeReads{
+		Bin:  RunningPosse,
+		Lag:  a.LauncherOverFleet,
+		Lock: lockUpgrade,
+	})
+}
+
+// cmdUpgrade is the verb over readings a pin can supply: D2's fence, D1's
+// stamp refusal, D3's lock and the plan, each refusing before the next one
+// reads anything.
+func (a *App) cmdUpgrade(w io.Writer, o UpgradeOpts, reads upgradeReads) error {
 	if err := upgradeFence(os.Getenv(EnvPersona), a.UpgradeDelegate()); err != nil {
 		return err
 	}
@@ -484,7 +529,7 @@ func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
 	// here would be a path to go wrong on a box that moved it. The running
 	// binary needs no default and cannot be wrong, and it is also D1's own
 	// subject: the installer a seat cannot edit is the one it is executing.
-	bin := RunningPosse()
+	bin := reads.Bin()
 	if bin.Err != nil || bin.Exe == "" {
 		return Die("posse upgrade: this process cannot name its own binary (%v), so there is no target to replace", bin.Err)
 	}
@@ -494,7 +539,7 @@ func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
 	// ldflags and a build from a dirty tree all land here: each is a binary
 	// whose code is not a commit anybody pushed, which is the whole of what
 	// guardrail 1 is about.
-	lag := a.LauncherOverFleet()
+	lag := reads.Lag()
 	if lag.Dirty {
 		return Die("posse upgrade: the running binary (%s) was built from a tree with uncommitted edits — its code is in no commit, so nothing can say it came through this gate (ADR 0092 D1). Install from a clean commit first.", bin.Version)
 	}
@@ -502,7 +547,7 @@ func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
 		return Die("posse upgrade: %s (looked for the posse source checkout via config posse_repo:, then beads:, then this binary's build stamp — ADR 0092 D3.1 needs one to read %s in)", lag.Why, upgradeDefaultRef)
 	}
 
-	lock, err := lockUpgrade(w)
+	lock, err := reads.Lock(w)
 	if err != nil {
 		return err
 	}
@@ -533,11 +578,15 @@ func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
 // upgradeRunPlan is D3.2 through D3.6 and D6 — everything this verb WRITES,
 // in the order that is the guardrail.
 //
-// Separate from CmdUpgrade because the order is the thing worth pinning and
-// CmdUpgrade cannot be reached from a test: it reads the running binary's
-// own build stamp, and a test binary carries none (launcherlag.go's seam
-// argument, applied here). CmdUpgrade is the four reads that produce a plan;
-// this is what the plan then does.
+// Separate from cmdUpgrade because the order is the thing worth pinning and
+// it is pinnable here with no seam at all: a plan is four strings, so this
+// half needs neither a build stamp nor a box lock to reach. cmdUpgrade is
+// the four reads that produce a plan; this is what the plan then does.
+//
+// It used to say cmdUpgrade "cannot be reached from a test", which was true
+// of the reads and not of the wiring — three guardrails were deletable
+// green because of it (upgradeReads' header). The reads go in through
+// upgradeReads now; that is the only part of this split that moved.
 func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 	fmt.Fprintf(w, "posse upgrade · %s → %s (%d commit(s)) · source %s · target %s\n",
 		shortSha(plan.From), shortSha(plan.To), plan.Count, AbbrevHome(plan.Repo), AbbrevHome(plan.Target))

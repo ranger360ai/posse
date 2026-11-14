@@ -23,6 +23,10 @@ package posse
 //	                the Makefile uses.
 //	the record      D6's line is LAST on stdout and the rollback command is
 //	                printed BEFORE the swap it might have to undo.
+//	the wiring      the verb reaches those guardrails in that order, and a
+//	                refusal reads nothing after it (ranger-base-anczm — the
+//	                three above were deletable green until the seam at the
+//	                foot of this file).
 
 import (
 	"bytes"
@@ -608,5 +612,249 @@ func TestUpgradeLockPathSitsInThePosseCacheDir(t *testing.T) {
 	}
 	if got, want := SuiteLockDir(), "/tmp/elsewhere"; got != want {
 		t.Errorf("SuiteLockDir() = %q, want %q — the refactor that shared the cache dir must not have cost the suite its own override", got, want)
+	}
+}
+
+// ─── the wiring, ranger-base-anczm ───────────────────────────────────────────
+//
+// Everything above this line pins a guardrail as a FUNCTION: upgradeFence
+// over its two strings, upgradeResolve over a repo, upgradeRunPlan over a
+// plan. None of them pinned the verb that calls them, because nothing in
+// the tree reached it — and three guardrails were therefore deletable with
+// the suite and `make tree-check` both green (MEASURED 2026-11-13, one
+// one-line mutation each: the fence call unwired, `if lag.Dirty` made
+// `if false && lag.Dirty`, the flock removed; `go test -run TestUpgrade
+// ./internal/posse` green for all three, 18 PASS 0 FAIL).
+//
+// THE SHAPE OF EVERY PIN HERE. A deleted guardrail changes no output — it
+// changes which READINGS happen after it. So the seams record the order
+// they were asked in, and each pin asserts what the verb did not read as
+// well as what it did. An unwired fence reads the binary; a dropped
+// dirty-stamp refusal reaches the lock; a removed flock reaches the resolve.
+
+// upgradeSeams is a recording upgradeReads, plus the answers it should give.
+// The zero value answers with a binary that cannot name itself, which is
+// the verb's second refusal and a safe default for a pin about the first.
+type upgradeSeams struct {
+	bin     PosseBinary
+	lag     LauncherLag
+	lockErr error
+
+	read []string // the readings the verb took, in the order it took them
+}
+
+func (s *upgradeSeams) reads() upgradeReads {
+	return upgradeReads{
+		Bin: func() PosseBinary {
+			s.read = append(s.read, "bin")
+			return s.bin
+		},
+		Lag: func() LauncherLag {
+			s.read = append(s.read, "lag")
+			return s.lag
+		},
+		Lock: func(w io.Writer) (*upgradeLock, error) {
+			s.read = append(s.read, "lock")
+			if s.lockErr != nil {
+				return nil, s.lockErr
+			}
+			// A zero upgradeLock holds no fd, so it holds no lock and
+			// Release is still safe to defer — this pin is about the lock
+			// being TAKEN in the right place, and taking the box's real one
+			// would serialize the suite against every other seat.
+			return &upgradeLock{}, nil
+		},
+	}
+}
+
+func (s *upgradeSeams) order() string { return strings.Join(s.read, ",") }
+
+// D2 is the FIRST statement of the verb, and a refusal by it reads nothing
+// at all — not the running binary, not the lag, not the box lock. That is
+// the difference between a fence and a fence-shaped function nobody calls.
+func TestUpgradeFenceRefusesBeforeTheVerbReadsAnything(t *testing.T) {
+	a := wtApp(t)
+	write(t, a.ConfigPath, "operator: someone\n") // no install_delegate:
+	t.Setenv(EnvPersona, "wheelwright")
+
+	s := &upgradeSeams{}
+	err := a.cmdUpgrade(io.Discard, UpgradeOpts{}, s.reads())
+	if err == nil {
+		t.Fatal("the verb ran under a persona with no install_delegate: configured — the fleet's binary is installable by anybody (ADR 0092 D2)")
+	}
+	if !strings.Contains(err.Error(), "no "+UpgradeDelegateKey+": is configured") {
+		t.Errorf("the refusal is not D2's:\n%v", err)
+	}
+	if s.order() != "" {
+		t.Errorf("the verb read %s after refusing, so the fence is not its first statement — a reading taken past a refusal is a guardrail that only looks like one", s.order())
+	}
+}
+
+// The other direction, and it is half the claim: the delegate is let
+// THROUGH the fence and the verb then reads the running binary. Without
+// this arm a fence hard-wired to refuse would pass the pin above.
+func TestUpgradeFenceLetsTheDelegateReachTheBinaryRead(t *testing.T) {
+	a := wtApp(t)
+	write(t, a.ConfigPath, "install_delegate: farrier\n")
+	t.Setenv(EnvPersona, "farrier")
+
+	s := &upgradeSeams{} // the zero binary: no Exe, which is refusal two
+	err := a.cmdUpgrade(io.Discard, UpgradeOpts{}, s.reads())
+	if err == nil {
+		t.Fatal("the verb accepted a process that cannot name its own binary — there is no target to replace")
+	}
+	if !strings.Contains(err.Error(), "cannot name its own binary") {
+		t.Errorf("the delegate was refused by something other than the binary read:\n%v", err)
+	}
+	if s.order() != "bin" {
+		t.Errorf("the delegate's run read %s, want bin — the fence must let the one named persona through, and the binary is what it reads next", s.order())
+	}
+}
+
+// D1: a binary built from a tree with uncommitted edits does not get to
+// install the fleet's. The refusal is BEFORE the lock, so a `go run` does
+// not queue behind somebody's real twenty-minute upgrade to be told no.
+func TestUpgradeRefusesADirtyStampBeforeTakingTheBoxLock(t *testing.T) {
+	a := wtApp(t)
+	t.Setenv(EnvPersona, "") // the operator, so D2 is not what refuses
+
+	s := &upgradeSeams{
+		bin: PosseBinary{Exe: "/nonexistent/bin/posse", Version: "0.4.0+abc1234-dirty"},
+		lag: LauncherLag{Version: "0.4.0+abc1234-dirty", Rev: "abc1234", Dirty: true, Repo: "/src/posse", Base: "main"},
+	}
+	err := a.cmdUpgrade(io.Discard, UpgradeOpts{}, s.reads())
+	if err == nil {
+		t.Fatal("a binary built from a dirty tree installed the fleet's — its code is in no commit, so nothing can say it came through this gate (ADR 0092 D1)")
+	}
+	if !strings.Contains(err.Error(), "uncommitted edits") {
+		t.Errorf("the refusal is not D1's:\n%v", err)
+	}
+	// The version is the reader's only handle on WHICH binary was dirty.
+	if !strings.Contains(err.Error(), s.bin.Version) {
+		t.Errorf("the refusal does not name the running version %q:\n%v", s.bin.Version, err)
+	}
+	if s.order() != "bin,lag" {
+		t.Errorf("the verb read %s, want bin,lag — a refusal that already took the box lock made every other delegate wait for it", s.order())
+	}
+}
+
+// The same read's other refusal: no checkout to resolve `origin/main` in.
+// Also before the lock, and for the same reason.
+func TestUpgradeRefusesAnUnresolvableSourceCheckoutBeforeTheLock(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		lag  LauncherLag
+	}{
+		// Why set at all is an abstention: FindLauncher could not take the
+		// reading, so there is no checkout it can name.
+		{"no reading", LauncherLag{Rev: "abc1234", Why: "no posse checkout is configured"}},
+		// And a reading that answered with no repo, which is the same hole
+		// by another route.
+		{"no repo", LauncherLag{Rev: "abc1234", Base: "main"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := wtApp(t)
+			t.Setenv(EnvPersona, "")
+			s := &upgradeSeams{bin: PosseBinary{Exe: "/nonexistent/bin/posse", Version: "0.4.0+abc1234"}, lag: c.lag}
+			err := a.cmdUpgrade(io.Discard, UpgradeOpts{}, s.reads())
+			if err == nil {
+				t.Fatal("the verb ran with no source checkout to read origin/main in (ADR 0092 D3.1)")
+			}
+			if !strings.Contains(err.Error(), upgradeDefaultRef) {
+				t.Errorf("the refusal does not name the ref it cannot read:\n%v", err)
+			}
+			if s.order() != "bin,lag" {
+				t.Errorf("the verb read %s, want bin,lag", s.order())
+			}
+		})
+	}
+}
+
+// D3: the box-wide lock is taken BEFORE the resolve, so two delegates who
+// typed the verb at once do not both resolve, both test and both swap. A
+// lock the verb never takes reaches the resolve instead — and that is what
+// the stubbed steps below are watching for.
+func TestUpgradeTakesTheBoxLockBeforeItResolvesAnything(t *testing.T) {
+	f := newUpgradeFixture(t)
+	a := wtApp(t)
+	t.Setenv(EnvPersona, "")
+	stubUpgradeSteps(t,
+		func(w io.Writer, dir string) error {
+			t.Error("`make test` ran although the box upgrade lock was never granted — this run resolved and spent a suite behind another upgrade's back (ADR 0092 D3)")
+			return errors.New("exit status 1")
+		},
+		func(w io.Writer, dir, repo, out string) error { t.Error("the build ran with no lock held"); return nil },
+		func(w io.Writer, wt, target string) string {
+			t.Error("the epilogue ran with no lock held")
+			return "fresh"
+		})
+
+	held := errors.New("upgrade lock: held by another upgrade")
+	s := &upgradeSeams{
+		bin:     PosseBinary{Exe: f.target, Version: "0.4.0+" + shortSha(f.a)},
+		lag:     LauncherLag{Version: "0.4.0+" + shortSha(f.a), Rev: f.a, Repo: f.repo, Base: "main"},
+		lockErr: held,
+	}
+	err := a.cmdUpgrade(io.Discard, UpgradeOpts{}, s.reads())
+	if !errors.Is(err, held) {
+		t.Errorf("cmdUpgrade returned %v, want the lock's own error — a lock refusal the verb swallows is a run that proceeded unserialized", err)
+	}
+	if s.order() != "bin,lag,lock" {
+		t.Errorf("the verb read %s, want bin,lag,lock", s.order())
+	}
+}
+
+// The target is the binary THIS PROCESS IS RUNNING OUT OF, and the source
+// checkout is the one the lag reading named. Both are read in the verb and
+// neither appears anywhere else, so this is the only place either can be
+// pinned.
+//
+// It runs the plan as far as the suite and no further: a red `make test`
+// refuses before anything is written (the pin above this section proves
+// that separately), which makes the header line a free and complete reading
+// of what the verb resolved.
+func TestUpgradeTargetsTheRunningBinaryAndTheLagsCheckout(t *testing.T) {
+	f := newUpgradeFixture(t)
+	a := wtApp(t)
+	t.Setenv(EnvPersona, "")
+	stubUpgradeSteps(t,
+		func(w io.Writer, dir string) error { return errors.New("exit status 1") },
+		func(w io.Writer, dir, repo, out string) error { t.Error("the build ran after a red suite"); return nil },
+		func(w io.Writer, wt, target string) string {
+			t.Error("the epilogue ran after a red suite")
+			return "fresh"
+		})
+
+	s := &upgradeSeams{
+		bin: PosseBinary{Exe: f.target, Version: "0.4.0+" + shortSha(f.a)},
+		lag: LauncherLag{Version: "0.4.0+" + shortSha(f.a), Rev: f.a, Repo: f.repo, Base: "main"},
+	}
+	var out bytes.Buffer
+	if err := a.cmdUpgrade(&out, UpgradeOpts{}, s.reads()); err == nil {
+		t.Fatal("a red `make test` did not refuse the upgrade")
+	} else if !strings.Contains(err.Error(), "did not pass") {
+		t.Fatalf("the refusal is not the suite's:\n%v", err)
+	}
+	if s.order() != "bin,lag,lock" {
+		t.Fatalf("the verb read %s, want bin,lag,lock", s.order())
+	}
+
+	head := strings.SplitN(out.String(), "\n", 2)[0]
+	want := fmt.Sprintf("posse upgrade · %s → %s (2 commit(s)) · source %s · target %s",
+		shortSha(f.a), shortSha(f.c), AbbrevHome(f.repo), AbbrevHome(f.target))
+	if head != want {
+		t.Errorf("the run's first line is\n  %q\nwant\n  %q\n— the target is RunningPosse().Exe and the source is the lag reading's checkout; a second spelling of either is a path to go wrong on a box that moved it (upgrade.go's WHICH BINARY note)", head, want)
+	}
+
+	// And `<sha>` reaches the resolve, which is the other thing the verb
+	// plumbs and nothing else can see.
+	out.Reset()
+	s2 := &upgradeSeams{bin: s.bin, lag: s.lag}
+	if err := a.cmdUpgrade(&out, UpgradeOpts{Sha: " " + f.b + " "}, s2.reads()); err == nil {
+		t.Fatal("a red `make test` did not refuse the upgrade")
+	}
+	head = strings.SplitN(out.String(), "\n", 2)[0]
+	if !strings.Contains(head, fmt.Sprintf("%s → %s (1 commit(s))", shortSha(f.a), shortSha(f.b))) {
+		t.Errorf("`posse upgrade <sha>` resolved something other than the sha it was given:\n  %q", head)
 	}
 }
