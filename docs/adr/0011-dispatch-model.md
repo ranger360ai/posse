@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · amended 2026-11-13 (§4 a PID's label order is the second routing key: its first label is its lane — ranger-base-svoux) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · amended 2026-11-13 (§4 a PID's label order is the second routing key: its first label is its lane — ranger-base-svoux) · amended 2026-11-14 (§4 a head must be anchored on its own lane or a single-lane label; a one-label cross-cutting match does not head — ranger-base-d7lsc) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -175,7 +175,34 @@ examples, 11 instance) already list their lane label first, and over 3,694
 beads this rule and the alphabetical alternative below seat identical sets.
 If the error is ever observed in a route report, the exit hatch is an
 explicit `lane:` PID key defaulting to the first label — the same dial,
-named. A bead carries the labels of
+named.
+
+**A head that matches only another lane's label does not head**
+(ranger-base-d7lsc, 2026-11-14). The order is a key only where there is
+something to order. A head whose matched set is ONE cross-cutting label
+makes that label the lane however every PID is ordered: under a roster that
+puts `team` second-or-later on a code PID and an architecture PID, a
+`[devops, team]` bead is a `team` lane of those two, and the only devops seat
+is not in it — no seat in the lane can do the work, on any pass. So routing
+reads the convention it already relies on. A PID's first label is its lane;
+a label's LANES are the first labels of every non-coordinator PID carrying
+it. A candidate's anchor is the first of its matched labels, in its PID's
+order, that is its own first label or belongs to exactly one lane. The head is
+the first candidate in the sort that has an anchor, and the lane is that
+anchor. Seats are unchanged: every candidate whose PID carries the lane label.
+If no candidate has an anchor (a `[team]` bead), the rule above applies
+unchanged. This leaves the first configuration error where it was: a PID that
+lists `team` FIRST anchors on it, because it declared that as its lane, and
+its remedy is still the order. `ops` (business-manager's fifth label, the ops
+PID's first) is two lanes' label but anchors the ops PID, so the spelling
+problem above does not arise: the rule asks each PID about its OWN lane, never
+whether a spelling is cross-cutting. MEASURED 2026-11-14 over 3,856 beads
+(3,474 with a candidate) and the instance's live roster: 0 routes change. One
+label on that roster spans more than one lane, and 0 beads carry it. Over the
+fixture roster both stranded rows seat the capable PID, and arm C's misordered
+head and `[code, security]` route as before.
+
+A bead carries the labels of
 all the work it touches, so it is NOT a lane. The union of every overlapping
 persona read a code deliverable labelled `[code, debt, security,
 vuln-private]` as one lane holding a findings-only PID, which was seated
@@ -402,6 +429,25 @@ Sequencing and future tense below describe the original build; current lifecycle
   the lane first, so it would default to `labels[0]` and change no route
   while adding a key every PID can contradict its own labels with. Kept as
   §4's exit hatch, for the day a route report shows the misordering.
+  Re-priced for the one-label head (ranger-base-d7lsc): the key's default
+  is the same first label the anchor reads, so it buys that rule nothing and
+  still costs a seat-visible key.
+- **State the one-label head as a second configuration error, no code**
+  (§4, ranger-base-d7lsc). This was the recommendation the bead came with,
+  and it is zero-risk. Rejected because its remedy cannot be followed: the
+  error is "do not carry a cross-cutting label where another lane's bead can
+  arrive carrying it", and every PID carrying such a label is exposed to
+  every other lane's beads. A remedy no author can apply is a disclaimer.
+  The reason to prefer it, zero risk to live routes, holds for the anchor
+  too: MEASURED, 0 of 3,474 change.
+- **Primary-first: heads are the candidates that match their own first label**
+  (§4, ranger-base-d7lsc). The simplest rule that fixes both stranded rows.
+  Rejected on MEASUREMENT: it changes 2 live routes, and one of them is the
+  incident this section was amended for. ranger-base-d4bk4, a code fix
+  labelled `[bug, security]`, would leave the code lane, which matches it on
+  the alias `bug`, and go to the findings-only security PID. An alias and a
+  cross-cutting label are both "not first". What separates them is whether
+  their carriers share one lane.
 
 ## Appendix A — historical prior-art review (2026-08-21; implementation snapshots are not current status)
 
