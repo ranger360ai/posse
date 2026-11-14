@@ -169,6 +169,16 @@ func wwBigPrompt() string {
 // is waiting behind it; the channel closes when the whole write has landed.
 func wwTypeInFlight(t *testing.T, master, slave *os.File, p string) <-chan struct{} {
 	t.Helper()
+	return wwTypeInFlightPausing(t, master, slave, p, len(p), 0)
+}
+
+// wwTypeInFlightPausing is wwTypeInFlight for a sender that stops between
+// writes: p goes in chunks of chunk bytes with gap between them. A sender
+// that never pauses cannot tell one quiet window from another — the drain's
+// poll has a 1ms floor, so even a window of 0 keeps up with it — and the
+// window exists for the one that does (ranger-base-kybwp).
+func wwTypeInFlightPausing(t *testing.T, master, slave *os.File, p string, chunk int, gap time.Duration) <-chan struct{} {
+	t.Helper()
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -180,7 +190,15 @@ func wwTypeInFlight(t *testing.T, master, slave *os.File, p string) <-chan struc
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = master.Write([]byte(p))
+		for rest := []byte(p); len(rest) > 0; {
+			n := min(chunk, len(rest))
+			if _, err := master.Write(rest[:n]); err != nil {
+				return
+			}
+			if rest = rest[n:]; len(rest) > 0 && gap > 0 {
+				time.Sleep(gap)
+			}
+		}
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for wwPending(t, slave) < 3900 {
@@ -241,6 +259,52 @@ func TestWallWatchDiscardsAPromptLargerThanTheTerminalQueue(t *testing.T) {
 	}
 	if after.Lflag != before.Lflag || after.Cc != before.Cc {
 		t.Errorf("the drain left the pane's terminal changed: lflag %#x → %#x, cc %v → %v", before.Lflag, after.Lflag, before.Cc, after.Cc)
+	}
+}
+
+// ranger-base-kybwp: the quiet window is the largest pause in the sender the
+// drain sits through — the loop ends on the first poll that finds nothing —
+// so it is the whole of the fix's tolerance for a sender that stops between
+// writes, and a sender writing in one piece cannot see it. Rex types a prompt
+// and its Enter as two calls tens of ms apart (wallWatchDrainQuiet's comment);
+// wwSenderGap stands for that pause, repeated between every chunk.
+const (
+	wwSenderChunk = 512
+	wwSenderGap   = 30 * time.Millisecond
+)
+
+func TestWallWatchDrainSitsThroughASenderThatPauses(t *testing.T) {
+	t.Parallel()
+	if wwSenderGap >= wallWatchDrainQuiet {
+		t.Fatalf("wallWatchDrainQuiet = %v is no longer than the %v a sender pauses between writes: the drain ends at the first pause and the rest of the prompt reaches the pane's shell (ranger-base-kybwp)", wallWatchDrainQuiet, wwSenderGap)
+	}
+	dir := t.TempDir()
+	mounts := filepath.Join(dir, "bwrap.mounts")
+	if err := os.WriteFile(mounts, wallWatchMountsBytes([]WallWatchMount{{Kind: WallWatchDeny, Path: filepath.Join(dir, "x")}}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	af, err := os.Open(mounts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer af.Close()
+	master, slave := wwPty(t)
+	done := wwTypeInFlightPausing(t, master, slave, wwBigPrompt(), wwSenderChunk, wwSenderGap)
+	var out strings.Builder
+	start := time.Now()
+	runWallWatch(wallWatchRun{
+		Opts:  wallWatchOpts{Mounts: mounts, Seat: "x", Dir: dir, Bwrap: []string{"/bin/false"}},
+		Args:  af,
+		Stdin: slave, Stdout: &out, Stderr: &out,
+		Store: &fakeWallWatchStore{},
+	})
+	took := time.Since(start)
+	wwNothingReachesTheShell(t, done, slave)
+	// The quiet window ended the drain, not the cap: what this pin holds is
+	// that a pause does not end it early, and that is only measured if the
+	// drain stopped on its own.
+	if took >= wallWatchDrainMost {
+		t.Errorf("the drain ran %v, the whole of wallWatchDrainMost (%v): it was ended by the cap, so this pin no longer says anything about the quiet window", took, wallWatchDrainMost)
 	}
 }
 
