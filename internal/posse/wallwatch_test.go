@@ -144,12 +144,13 @@ func wwEveryShape(t *testing.T) wwRender {
 	gates := filepath.Join(grant, "gates")
 	hide := filepath.Join(root, "run")
 	sshDir := filepath.Join(root, ".ssh")
+	tsnet := filepath.Join(root, "state", "rex", "tsnet")
 	cred := filepath.Join(root, "sibling", "credentials.json")
 	// Absent on purpose: a Seeded file-shaped deny inside a grant (the
 	// launcher writes it empty and the mount goes over it), and the ref keep
 	// that renders no mount at all.
 	seeded := filepath.Join(grant, "settings-seeded.json")
-	for _, d := range []string{grant, priv, src, hide, sshDir, gates, filepath.Dir(cred)} {
+	for _, d := range []string{grant, priv, src, hide, sshDir, tsnet, gates, filepath.Dir(cred)} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -168,18 +169,19 @@ func wwEveryShape(t *testing.T) wwRender {
 		writable: []string{grant},
 		refKeep:  []string{filepath.Join(grant, "refs-keep")},
 		carve: SeatbeltCarveOut{
-			Hide:     []string{hide},
-			Deny:     []string{deny, mask, gates, seeded},
-			DenyFile: []string{deny, mask, seeded},
-			Mask:     []string{mask},
-			Seed:     []string{seeded},
-			Seal:     []string{grant},
-			Keep:     []string{filepath.Join(gates, "refusals.log")},
-			Narrow:   []SeatbeltNarrow{{Path: priv, Allow: false}},
-			DenyAll:  []string{priv},
-			Private:  []PrivateBind{{Src: src, Dst: priv}},
-			SSHDir:   []string{sshDir},
-			DenyRead: []string{cred, filepath.Join(sshDir, "id_ed25519")},
+			Hide:        []string{hide},
+			Deny:        []string{deny, mask, gates, seeded},
+			DenyFile:    []string{deny, mask, seeded},
+			Mask:        []string{mask},
+			Seed:        []string{seeded},
+			Seal:        []string{grant},
+			Keep:        []string{filepath.Join(gates, "refusals.log")},
+			Narrow:      []SeatbeltNarrow{{Path: priv, Allow: false}},
+			DenyAll:     []string{priv},
+			Private:     []PrivateBind{{Src: src, Dst: priv}},
+			SSHDir:      []string{sshDir},
+			DenyReadDir: []string{tsnet},
+			DenyRead:    []string{cred, filepath.Join(sshDir, "id_ed25519")},
 		},
 	}
 }
@@ -303,6 +305,7 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 		{WallWatchDeny, filepath.Join(grant, "settings-seeded.json")},
 		{WallWatchDeny, filepath.Join(grant, "settings.json")},
 		{WallWatchReadMask, sshDir},
+		{WallWatchReadMask, filepath.Join(root, "state", "rex", "tsnet")},
 		{WallWatchReadMask, filepath.Join(root, "sibling", "credentials.json")},
 	}
 	if !reflect.DeepEqual(watch, want) {

@@ -895,7 +895,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// refuses). One inside a directory the seat already sees empty (1b/1c)
 	// renders nothing: the hide is the stronger statement, and a mount there
 	// would make its mount point on the host.
-	var sshHidden []string
+	var readHidden []string
 	for _, d := range shallowestFirst(carve.SSHDir) {
 		if reopens(d) {
 			continue
@@ -912,7 +912,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		}
 		argv = append(argv, "--tmpfs", d)
 		watch(WallWatchReadMask, d)
-		sshHidden = append(sshHidden, d)
+		readHidden = append(readHidden, d)
 		for _, f := range carve.sshDirAllowed(d) {
 			exists, dir, err := bwrapStat(f)
 			if err != nil {
@@ -924,8 +924,29 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			argv = append(argv, "--ro-bind", f, f)
 		}
 	}
+	// 5b. DenyReadDir (ranger-base-k06gw): 5a's tmpfs with nothing bound
+	// back, refused on the same terms. An absent directory renders nothing,
+	// and a seat cannot create it either — nothing grants its parent.
+	for _, d := range shallowestFirst(carve.DenyReadDir) {
+		if reopens(d) || writeGranted(readHidden, d) {
+			continue
+		}
+		exists, dir, err := bwrapStat(d)
+		if err != nil {
+			return nil, nil, bwrapStatRefusal("read-deny dir", d, err)
+		}
+		switch {
+		case !exists:
+			continue
+		case !dir:
+			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-k06gw)", d)
+		}
+		argv = append(argv, "--tmpfs", d)
+		watch(WallWatchReadMask, d)
+		readHidden = append(readHidden, d)
+	}
 	for _, f := range shallowestFirst(carve.DenyRead) {
-		if writeGranted(sshHidden, f) {
+		if writeGranted(readHidden, f) {
 			continue // under the tmpfs already, and a /dev/null mount would only make its name
 		}
 		exists, _, err := bwrapStat(f)
@@ -1893,6 +1914,7 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	if _, err := withSSHKeyReadDeny(ag, cwd, &r.Carve); err != nil {
 		return bwrapRendered{}, err
 	}
+	withRexNodeReadDeny(&r.Carve)
 	r.Set, r.Keep = BwrapWritable(ag, writable, cwd)
 	// The seat's own /tmp (ranger-base-7wdb7): the host dir BwrapArgs binds
 	// over /tmp, and the grants it replaces out of the set, so the report
@@ -2250,6 +2272,9 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 	}
 	for _, d := range shallowestFirst(carve.SSHDir) {
 		fmt.Fprintf(out, "    r %s/ (empty tmpfs over it with %s bound back read-only — this seat is not the pusher; ranger-base-12ggv)\n", AbbrevHome(d), strings.Join(sshDirAllowlist, " and "))
+	}
+	for _, d := range shallowestFirst(carve.DenyReadDir) {
+		fmt.Fprintf(out, "    r %s/ (empty tmpfs over it, nothing bound back — the rex tsnet node's state, a tailnet credential no seat reads; ranger-base-k06gw)\n", AbbrevHome(d))
 	}
 	// The prep, which an operator can read nowhere else: these are writes
 	// posse makes on the HOST, outside the namespace, in the seat's name —

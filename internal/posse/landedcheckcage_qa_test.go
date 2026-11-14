@@ -63,6 +63,10 @@ func TestQALandedCheckCageRendersTheSecretMasks(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME.
 	f := newLandedCageFixture(t)
 	judge := filepath.Join(f.run, "judge")
+	// The rex tsnet node's state (ranger-base-k06gw): a directory, hidden whole.
+	t.Setenv("XDG_STATE_HOME", "")
+	tsnet := absResolve(filepath.Join(f.ssh.home, ".local", "state", "rex", "tsnet"))
+	writeFile(t, filepath.Join(tsnet, "node", "tailscaled.state"), "PRIVATE\n", 0o600)
 	cage, err := boxLandedCage(&App{}, judge, f.tree, []string{f.run}, nil)
 	if err != nil {
 		t.Skip("NOTHING MEASURED: this host has no landed-check cage to render: " + err.Error())
@@ -70,6 +74,9 @@ func TestQALandedCheckCageRendersTheSecretMasks(t *testing.T) {
 	switch WallMechanism() {
 	case WallBwrap:
 		line := bwJoin(cage.Argv)
+		if bwIndex(cage.Argv, "--tmpfs", tsnet) < 0 {
+			t.Errorf("the landed-check cage mounts no tmpfs over %s, so the judge reads the rex node credential (ranger-base-k06gw):\n  %s", tsnet, line)
+		}
 		// A key under ~/.ssh is covered by the tmpfs over the directory
 		// (ranger-base-12ggv); everything else by its own /dev/null bind.
 		sshDir := absResolve(filepath.Join(f.ssh.home, ".ssh"))
@@ -99,6 +106,9 @@ func TestQALandedCheckCageRendersTheSecretMasks(t *testing.T) {
 			if !strings.Contains(prof[i:], `"`+absResolve(s)+`"`) {
 				t.Errorf("the landed-check profile does not deny reading %s (ranger-base-6b46n)", s)
 			}
+		}
+		if !strings.Contains(prof[i:], "(subpath "+sbQuote(tsnet)+")") {
+			t.Errorf("the landed-check profile does not deny reading under %s (ranger-base-k06gw)", tsnet)
 		}
 	default:
 		t.Fatalf("boxLandedCage rendered a cage on mechanism %q, which this pin does not know how to read", WallMechanism())
@@ -242,6 +252,9 @@ func TestQAEveryCageRenderCarriesTheSecretMasks(t *testing.T) {
 			before := func(name string) bool { return first[name] != 0 && first[name] < render }
 			if !before("withSSHKeyReadDeny") {
 				t.Errorf("%s renders a cage at line %d without calling withSSHKeyReadDeny first — the child reads the ssh keys this box pushes with (ranger-base-6b46n, ranger-base-ighvi)", who, render)
+			}
+			if !before("withRexNodeReadDeny") {
+				t.Errorf("%s renders a cage at line %d without calling withRexNodeReadDeny first — the child reads the rex tsnet node's tailnet credential (ranger-base-k06gw)", who, render)
 			}
 			if !before("SeatbeltCarveOut") && !before("credentialReadDenyLiterals") {
 				t.Errorf("%s renders a cage at line %d without reaching the credential denies first (SeatbeltCarveOut or credentialReadDenyLiterals) — the child reads every runtime's credential file (ranger-base-6b46n, ranger-base-hw18)", who, render)

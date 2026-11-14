@@ -370,6 +370,12 @@ type SeatbeltCarveOut struct {
 	// re-bound, seatbelt as a subpath read deny with literal allows AFTER it
 	// (last match wins). Filled by withSSHKeyReadDeny, beside the key list.
 	SSHDir []string
+	// DenyReadDir is directories no seat reads ANYTHING under, with nothing
+	// bound back: SSHDir's shape without its allowlist. The rex tsnet node's
+	// state today (withRexNodeReadDeny, ranger-base-k06gw). Both mechanisms
+	// render it: bwrap as an empty tmpfs, seatbelt as a subpath read deny
+	// after every read allow.
+	DenyReadDir []string
 }
 
 // sshDirAllowlist is what a masked seat still reads under an SSHDir: ssh's
@@ -523,7 +529,7 @@ func (c SeatbeltCarveOut) FileShaped(p string) bool {
 
 // Empty reports whether the block renders nothing.
 func (c SeatbeltCarveOut) Empty() bool {
-	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0 && len(c.Narrow) == 0 && len(c.SSHDir) == 0 && len(c.DenyAll) == 0
+	return len(c.Deny) == 0 && len(c.Seal) == 0 && len(c.DenyRead) == 0 && len(c.Narrow) == 0 && len(c.SSHDir) == 0 && len(c.DenyReadDir) == 0 && len(c.DenyAll) == 0
 }
 
 // SeatbeltProfile renders the SBPL profile text: the default deny, the
@@ -639,6 +645,16 @@ func SeatbeltProfile(persona string, writable, siblings []string, carve Seatbelt
 			}
 			b.WriteString(")\n")
 		}
+	}
+	// After the ssh allowlist, so no read allow above outvotes it (last
+	// match wins).
+	if len(carve.DenyReadDir) > 0 {
+		b.WriteString(";; directory read deny (ranger-base-k06gw): nothing under these is read, nothing is allowed back.\n")
+		b.WriteString("(deny file-read*\n")
+		for _, d := range carve.DenyReadDir {
+			fmt.Fprintf(&b, "  (subpath %s)\n", sbQuote(d))
+		}
+		b.WriteString(")\n")
 	}
 	// LAST, so it has the last word over every allow above (the ssh
 	// allowlist and the carve-out's Keep included).
@@ -2511,6 +2527,7 @@ func (a *App) renderSeatbeltInto(w wallWrite, ag *AgentFile, cwd string, stateDi
 	if _, err := withSSHKeyReadDeny(ag, cwd, &carve); err != nil {
 		return "", err
 	}
+	withRexNodeReadDeny(&carve)
 	prof := SeatbeltProfile(ag.Name, writable, SeatbeltSiblings(stateDirs, carve), carve, sessionRefDirsFor(ag, cwd)...)
 	return p, os.WriteFile(p, []byte(prof), 0o644)
 }
@@ -2545,6 +2562,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	if err != nil {
 		return err
 	}
+	withRexNodeReadDeny(&carve)
 	isSSHKey := map[string]bool{}
 	for _, k := range sshKeys {
 		isSSHKey[k] = true
@@ -2619,6 +2637,9 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 	}
 	for _, d := range carve.SSHDir {
 		fmt.Fprintf(out, "    r %s/ (file-read* subpath deny — this seat is not the pusher, so it reads nothing here but %s; ranger-base-12ggv)\n", AbbrevHome(d), strings.Join(sshDirAllowlist, " and "))
+	}
+	for _, d := range carve.DenyReadDir {
+		fmt.Fprintf(out, "    r %s/ (file-read* subpath deny — the rex tsnet node's state, a tailnet credential no seat reads; ranger-base-k06gw)\n", AbbrevHome(d))
 	}
 	// A grant that reaches the constitution is still named, deny or no
 	// deny: the carve-out is a wall, not a licence to grant it. What the

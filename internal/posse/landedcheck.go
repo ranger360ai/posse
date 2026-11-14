@@ -228,6 +228,7 @@ func boxLandedCage(a *App, judge, tree string, writable, env []string) (landedCa
 	if _, err := withSSHKeyReadDeny(nil, tree, &carve); err != nil {
 		return landedCage{}, err
 	}
+	withRexNodeReadDeny(&carve) // ranger-base-k06gw
 	// THE JUDGE IS NEVER STRONGER THAN A SEAT (ranger-base-4nzpo). The
 	// run dir is the judge's own directory, the one judge() made and the one
 	// the darwin profile is written into.
