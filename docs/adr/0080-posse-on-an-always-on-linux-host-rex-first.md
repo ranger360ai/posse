@@ -531,6 +531,10 @@ codex's `linux-sandbox` README.
     credentialDirVarsIn.
   - A runtime's own bwrap must still nest inside ours (probe B7). That is
     the property Landlock fails.
+    *Amended 2026-11-14 by [ADR 0096](0096-nesting-is-not-a-property-of-the-bwrap-seat-wall.md)
+    (ranger-base-rwet4): B7 was measured on the probe's `$BW`, which carries
+    `--proc /proc`. D17's render does not carry it, and nothing nests inside
+    a shipped seat. Nesting is not a property of this tier.*
 - **D15. The probe is the gate:** `docs/adr/0080-linux-cage.probe.sh`. It
   needs Linux, python3 and bwrap, and makes no repo writes. Its L-rows
   confirm the three Landlock refusals above. Its B-rows check every
