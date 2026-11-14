@@ -167,6 +167,8 @@ func TestQAWallExecConfigCarvesClaudesExecutableConfig(t *testing.T) {
 		"access-audit", "agent-memory", "agent-memory-local", "cowork_plugins",
 		"jobs", "logs", "mcp-discovery-cache", "mcp-skill-archives",
 		"seed-admin", "shares", "state", "statsig", "todos", "loop.md",
+		// ranger-base-g8fmb, 2026-11-13.
+		"local",
 		"CLAUDE.md", "daemon.json", "launch.json", "scheduled_tasks.json",
 		"settings.json", "settings.local.json",
 	}
@@ -219,6 +221,8 @@ func TestQAWallExecConfigCarvesTheRestOfClaudesProtectedDirs(t *testing.T) {
 		"jobs", "seed-admin", "cowork_plugins", "agent-memory", "agent-memory-local",
 		"mcp-skill-archives", "mcp-discovery-cache", "shares", "state",
 		"todos", "statsig", "logs", "access-audit",
+		// ranger-base-g8fmb: the legacy local install, launcher and all.
+		"local",
 	} {
 		if !containsString(claudeExecConfigDirNames, n) {
 			t.Errorf("%s/ is not carved. claude write-denies it in its own sandbox, and a later claude loads, obeys or acts on what is there (ranger-base-ka66w)", n)
@@ -568,6 +572,7 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 		"agent-memory-local plant":  "mkdir -p " + q(filepath.Join(cfg, "agent-memory-local")) + " && : > " + q(filepath.Join(cfg, "agent-memory-local", "x")),
 		"cowork_plugins plant":      "mkdir -p " + q(filepath.Join(cfg, "cowork_plugins")) + " && : > " + q(filepath.Join(cfg, "cowork_plugins", "x")),
 		"jobs plant":                "mkdir -p " + q(filepath.Join(cfg, "jobs")) + " && : > " + q(filepath.Join(cfg, "jobs", "x")),
+		"local plant":               "mkdir -p " + q(filepath.Join(cfg, "local")) + " && : > " + q(filepath.Join(cfg, "local", "claude")),
 		"logs plant":                "mkdir -p " + q(filepath.Join(cfg, "logs")) + " && : > " + q(filepath.Join(cfg, "logs", "x")),
 		"mcp-discovery-cache plant": "mkdir -p " + q(filepath.Join(cfg, "mcp-discovery-cache")) + " && : > " + q(filepath.Join(cfg, "mcp-discovery-cache", "x")),
 		"mcp-skill-archives plant":  "mkdir -p " + q(filepath.Join(cfg, "mcp-skill-archives")) + " && : > " + q(filepath.Join(cfg, "mcp-skill-archives", "x")),

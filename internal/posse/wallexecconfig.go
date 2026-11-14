@@ -97,6 +97,16 @@ import (
 // None of them exists in this box's live config dir after months of seats
 // (MEASURED 2026-11-12), so no seat has needed to write one.
 //
+// local/ is ranger-base-g8fmb's, the member ka66w's read missed. claude
+// 2.1.322 and 2.1.323 both push `<config>/local` onto the same deny, in the
+// statement just before `jobs`. It is the legacy local-install dir:
+// node_modules and the claude launcher, so code a later claude RUNS when it
+// is launched from that install. It is a persistence path only on a box that
+// uses the legacy installer (this one runs claude from mise), and it is
+// absent from this box's live config dir (MEASURED 2026-11-12).
+//
+// Residual: ranger-base-uygrb.
+//
 // loop.md is the default /loop prompt. claude 2.1.322 reads
 // `<project>/.claude/loop.md`, then `<config>/loop.md`. It trims each one
 // and takes an empty one as "no loop file": the reader returns null when the
@@ -115,7 +125,7 @@ import (
 var (
 	claudeExecConfigDirNames = []string{
 		"access-audit", "agent-memory", "agent-memory-local", "agents", "commands", "cowork_plugins",
-		"daemon", "hooks", "jobs", "logs", "mcp-discovery-cache", "mcp-skill-archives",
+		"daemon", "hooks", "jobs", "local", "logs", "mcp-discovery-cache", "mcp-skill-archives",
 		"output-styles", "plugins", "routines", "rules", "seed-admin", "shares", "skills",
 		"state", "statsig", "todos", "workflows",
 	}
