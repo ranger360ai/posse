@@ -409,6 +409,20 @@ func main() {
 	//     writer (rchFakeApplyRefusal in reachability_qa_test.go) is serial.
 	//     Go resumes paused parallel tests only after the whole sequential
 	//     pass is done, so a serial writer never overlaps a parallel reader.
+	//   - "reads bwrapNestOnce and bwrapNestWhy": a sync.Once memo and the
+	//     string it fills, written exactly once by the first caller of
+	//     liveBwrapNestRefusal and never again (ADR 0096 D3's gate,
+	//     internal/posse/wall_helpers_test.go). This is a FOURTH kind of
+	//     clearance and the strongest of the four, so it is worth saying how
+	//     it differs: the write really does happen during a parallel test,
+	//     which the three reasons above all avoid. What makes it safe is not
+	//     timing but sync.Once's own guarantee — every Do returns after the
+	//     one f has returned, so no reader can observe a half-written value
+	//     and the var is a constant from the first read onward. Nothing else
+	//     in the tree assigns either, which is what makes "once" true rather
+	//     than hoped for. A test that assigned them to drive the gate would
+	//     break this line, and that is why the clearance names the vars and
+	//     not the helper.
 	//
 	// A clearance is not permanent: it says what the test's body did when it
 	// was read. Add a write to one of these and the reason above stops being
@@ -521,6 +535,28 @@ func main() {
 		// measurement itself is an out-of-process `flock -n` on $HOME, which
 		// is read-only and answers the same for every reader.
 		"TestTheCreatorHoldsAFlockOnItsTempHome": "reads testHomeLock and testHomeOwned",
+		// bwrapNestOnce and bwrapNestWhy (15): ADR 0096 D3's gate, reached
+		// through bgLiveSkip, bhLiveFixture, btLive and wwLiveFixture. Every
+		// one of these arms execs a real bwrap, so each asks the gate whether
+		// THIS process can nest one; the answer is memoized because the only
+		// thing that could change it is this box gaining or losing a wall,
+		// which does not happen inside one test binary. The rest of each
+		// test's state is its own temp root.
+		"TestLiveBwrapGitRefsCanMoveAPeerSessionsRef":                      "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapGitRefsCommitsAfterAnOutsidePackRefs":                "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapGitRefsCommitsOnTheSessionBranch":                    "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapGitRefsRefusesTheSharedGitState":                     "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapGitRefsWithoutTheKeepFileNeverCommitsIntoAPrunedDir": "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession":             "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapHideIsNotWalkedAroundThroughProcRoot":                "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapHidesTheRuntimeDirsControlEndpoints":                 "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapWithoutHideReachesTheRuntimeDir":                     "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapSeatTmpKeepsTheSeatOutOfTheHostsTmp":                 "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapWithoutSeatTmpReachesTheHostsTmp":                    "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveWallWatchDiscardsWhatWasTypedIntoTheKilledSeat":           "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead":      "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveWallWatchPassesTheSeatsOwnExitCode":                       "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch":       "reads bwrapNestOnce and bwrapNestWhy",
 	}
 	// ── filter 2: written package-level vars named anywhere reachable ────
 	varTainted := propagateIn(funcs, func(g *fn) bool {

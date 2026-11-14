@@ -140,9 +140,7 @@ func TestLiveWallSeatCacheRefusesSharedCachePlants(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	if why := liveBwrapApplyRefusal(); why != "" {
-		t.Skip("NOTHING MEASURED: " + why)
-	}
+	bwrapNestSkip(t)
 	f := scFixture(t)
 	other := SeatCacheDir(f.home, filepath.Join(filepath.Dir(f.dir), "other-seat"))
 	if err := os.MkdirAll(filepath.Join(other, "go-build"), 0o755); err != nil {

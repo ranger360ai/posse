@@ -335,6 +335,27 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// --new-session (setsid would detach the TUI from its controlling
 	// terminal). The host's /tmp IS replaced, by a bind of the seat's own
 	// directory rather than a tmpfs (1c below, ranger-base-7wdb7).
+	//
+	// --proc HAS A SECOND REASON SINCE ADR 0096 D2, and that ADR is where a
+	// bead reaching for it has to argue. D17 left it out to keep the host's
+	// pid namespace; ADR 0096 priced putting it back and decided the render
+	// does not change, so the absence is now a rejected proposal and not only
+	// an omission. The consequence to read off THIS line: because /proc stays
+	// the host's procfs under `--ro-bind / /`, a nested user namespace cannot
+	// write its own uid_map, so nothing forked inside a seat can nest a bwrap
+	// or an `unshare -r` (ADR 0096 D1, its table arm A). A runtime's own
+	// sandbox is therefore a declared absence here — the bwrap wall is the
+	// file wall — and the live pins that exec a bwrap abstain inside a seat
+	// rather than failing (D3, bwrapNestSkip in wall_helpers_test.go).
+	//
+	// --bind /proc /proc IS THE SAME ABSENCE, spelled the way a later bead
+	// would more likely spell it. With the pid namespace shared, bwrap
+	// 0.13.1's --proc /proc mounts no new procfs: it produces a read-write
+	// recursive bind of the host's, the same device and byte-identical
+	// mountinfo lines (ADR 0096's table, arms B and D). Either spelling opens
+	// five /proc/<pid> knobs on same-uid HOST processes to every seat, one of
+	// which (coredump_filter) decides what another process's crash writes
+	// out. TestBwrapArgsNeverUnsharesWhatTheSeatNeeds holds both.
 	argv := []string{
 		"--die-with-parent",
 		"--ro-bind", "/", "/",

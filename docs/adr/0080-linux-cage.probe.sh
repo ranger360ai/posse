@@ -146,6 +146,18 @@ row "B6 umount the deny from a nested userns" refused \
 row "B6b remount the deny rw from a nested userns" refused \
   "$(try $BW unshare -rm mount -o remount,bind,rw "$W/tree/deny")"
 # B7: a runtime's OWN sandbox nested inside ours (claude uses bwrap).
+#
+# THIS $BW IS NOT THE SHIPPED WALL, and that is what B7 is a row about (ADR
+# 0096). $BW carries `--proc /proc`; D17's render deliberately does not, so
+# inside a shipped seat /proc is the host's procfs under the read-only bind, a
+# nested user namespace cannot write its own uid_map, and nothing nests. B7
+# stays a true row about this $BW and about bwrap as a MECHANISM, and it was
+# never a property of the tier — reading it as one is what ADR 0096 D1
+# corrected, after the wall's own live pins were found nesting a bwrap and
+# then failing, or abstaining for the wrong reason, inside a caged seat
+# (eleven test files; docs/notes.d/ranger-base-pvkhn.md has the census). The
+# row for the shipped wall is `T-nest` in 0080-bwrap-tier.probe.sh, whose
+# $BASE is D17's, and it EXPECTS refused.
 row "B7 bwrap inside bwrap" allowed "$(try $BW bwrap --ro-bind / / --dev /dev true)"
 # B8: the atomic config write against a bind-mounted FILE: rename onto a
 # mountpoint is EBUSY. This is why the seat's config must live in a DIR grant.

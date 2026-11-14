@@ -156,9 +156,7 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	if why := liveBwrapApplyRefusal(); why != "" {
-		t.Skip("NOTHING MEASURED: " + why)
-	}
+	bwrapNestSkip(t)
 	f, peerSnap, peerHook := cssFixture(t)
 	// The ranger-base-fswhs members: another seat's .claude.json backup with
 	// a far-future stamp, and a checkpoint in its file-history tree.
@@ -393,9 +391,7 @@ func TestLiveWallClaudeSessionStateKeepsThePeerRegistryPrivate(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	if why := liveBwrapApplyRefusal(); why != "" {
-		t.Skip("NOTHING MEASURED: " + why)
-	}
+	bwrapNestSkip(t)
 	f, _, _ := cssFixture(t)
 	sess := filepath.Join(f.cfg, claudeSessionsDir)
 	peerRow := filepath.Join(sess, "99999.json")
@@ -644,9 +640,7 @@ func TestLiveWallClaudeSessionStateKeepsTheSubmitLogPrivate(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	if why := liveBwrapApplyRefusal(); why != "" {
-		t.Skip("NOTHING MEASURED: " + why)
-	}
+	bwrapNestSkip(t)
 	f, _, _ := cssFixture(t)
 	hist := filepath.Join(f.cfg, claudeHistoryFile)
 	pastes := filepath.Join(f.cfg, claudePasteCacheDir)

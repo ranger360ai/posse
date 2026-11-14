@@ -136,6 +136,26 @@ func TestBwrapArgsRendersD17Base(t *testing.T) {
 // against the flag SPELLINGS rather than against a count — and it is the arm
 // that would catch a later bead reaching for a namespace flag to close
 // something else.
+//
+// `--proc` HAS A SECOND REASON SINCE ADR 0096 D2, and it is the one a later
+// bead will meet. D17 left the flag out to keep the host's pid namespace; ADR
+// 0096 measured what putting it back would BUY and what it would cost, and
+// decided the render does not change. So this row now holds a decision that
+// was argued on its merits and rejected, not only an omission: the exit hatch
+// (ADR 0096) names re-pricing five `/proc/<pid>` knobs on same-uid host
+// processes as the price of flipping it.
+//
+// AND A `--bind` WHOSE DESTINATION IS /proc, because that is THE SAME MOUNT
+// (ADR 0096's table, arms B and D: with the pid namespace shared, bwrap
+// 0.13.1's `--proc /proc` does not mount a new procfs — it produces a
+// read-write recursive bind of the host's, same device `0:24`, byte-identical
+// mountinfo lines). A never-list that named only the flag would pass a render
+// that spelled the rejected mount the other way, and the `--bind` spelling is
+// the one a later bead would reach for: bwrap's fallback to a host bind is a
+// BUILD behaviour, the same reason ranger-base-racfc spells `--unshare-user`
+// explicitly rather than trusting what this build decides. Written as a PAIR
+// and not as a flag, because `--bind` itself is how every write grant
+// renders: the fixture's own grants carry it twice.
 func TestBwrapArgsNeverUnsharesWhatTheSeatNeeds(t *testing.T) {
 	t.Parallel()
 	root, bwAt := bwTree(t, []string{"proj", "state"}, []string{"cred"})
@@ -149,7 +169,35 @@ func TestBwrapArgsNeverUnsharesWhatTheSeatNeeds(t *testing.T) {
 	for _, never := range []string{"--unshare-pid", "--unshare-net", "--unshare-all", "--proc", "--tmpfs", "--new-session"} {
 		for _, a := range argv {
 			if a == never {
-				t.Fatalf("%s is in the render (ADR 0080 D17, Alternatives rejected): %v", never, argv)
+				t.Fatalf("%s is in the render (ADR 0080 D17 and ADR 0096 D2, Alternatives rejected): %v", never, argv)
+			}
+		}
+	}
+	// The mount-shape arm: any bind-like flag whose DESTINATION is /proc.
+	//
+	// The DESTINATION and not the source, because the destination is what the
+	// seat then reads — `--ro-bind /proc /proc` is the same widening with one
+	// knob shut, and a bind of something else ONTO /proc is a stranger one
+	// still. Scanned over the whole argv and not the base, so a grant list
+	// that reached /proc through a later shape reds here too.
+	//
+	// All ten of bwrap 0.13.1's bind spellings and not the three this render
+	// emits today (`--bind`, `--ro-bind`, `--dev-bind`): the subject is what a
+	// later bead might TYPE, and every one of these takes its destination as
+	// the argument after next. The flags that make a mount of their own at a
+	// destination — `--proc`, `--dev`, `--tmpfs`, `--mqueue`, `--overlay` —
+	// are deliberately not here. `--proc` is on the never-list above, and a
+	// `--tmpfs /proc` is not this widening but the opposite one: an empty
+	// procfs that blinds the seat, which is D17's own reason for keeping the
+	// host's and would be its own bead.
+	for i, a := range argv {
+		switch a {
+		case "--bind", "--bind-try", "--bind-fd", "--bind-data",
+			"--ro-bind", "--ro-bind-try", "--ro-bind-fd", "--ro-bind-data",
+			"--dev-bind", "--dev-bind-try":
+			if i+2 < len(argv) && argv[i+2] == "/proc" {
+				t.Fatalf("%s mounts %s onto /proc, which is the mount ADR 0096 D2 rejects spelled the other way (its table, arms B and D): %v",
+					a, argv[i+1], argv)
 			}
 		}
 	}

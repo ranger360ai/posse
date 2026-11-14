@@ -63,6 +63,11 @@ import (
 // bgLiveSkip is the one gate. `bwrap` and not a resolved absolute path (D18
 // types the absolute one) because this is a test asking whether the host HAS
 // the binary, not which file a launch line should name.
+//
+// bwrapNestSkip is the third question and the one that used to be missing:
+// every arm below execs a bwrap, and a process already inside a seat cannot
+// start one (ADR 0096 D1). Until D3 these arms FAILED there rather than
+// abstaining — the wall working read as a regression.
 func bgLiveSkip(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
@@ -71,6 +76,7 @@ func bgLiveSkip(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
+	bwrapNestSkip(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")
 	}

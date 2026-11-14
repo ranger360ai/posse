@@ -379,6 +379,7 @@ func TestLiveBwrapPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
+	bwrapNestSkip(t) // ADR 0096 D3: both arms below exec a bwrap
 	f := wrcFixtureIn(t, wallUngrantedDir(t))
 	sf := newSSHFixture(t, filepath.Dir(f.home))
 	t.Setenv("SSHFIX", sf.home)

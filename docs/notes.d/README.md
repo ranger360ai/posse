@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
 - [ranger-base-zhw0h](ranger-base-zhw0h.md) — install(1) leaves the target absent for part of every install (ranger-base-zhw0h) — 2026-11-13
 - [ranger-base-wzo36](ranger-base-wzo36.md) — A trap reads what the shell that owns it assigned, and nothing else (ranger-base-wzo36) — 2026-11-13
 - [ranger-base-v87a1](ranger-base-v87a1.md) — Which `posse status` rows are evidence about the binary (ranger-base-v87a1) — 2026-11-13

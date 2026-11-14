@@ -66,9 +66,7 @@ func TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall(t *testing.T)
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	if why := liveBwrapApplyRefusal(); why != "" {
-		t.Skip("NOTHING MEASURED: " + why)
-	}
+	bwrapNestSkip(t)
 	bin := liveClaudeBin()
 	if bin == "" {
 		t.Skip("NOTHING MEASURED: no claude binary on this host")

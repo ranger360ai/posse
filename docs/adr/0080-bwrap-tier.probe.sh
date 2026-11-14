@@ -110,6 +110,31 @@ $GITW $G cherry-pick --allow-empty "$PICK" >/dev/null 2>&1
 row "T5 cherry-pick exits, CHERRY_PICK_HEAD state" leaks \
   "$( [ -f "$C/worktrees/wt/CHERRY_PICK_HEAD" ] && echo leaks || echo clean)"
 
+echo "== T-nest a runtime's own bwrap inside the D17 base (ADR 0096 D4) =="
+# ADR 0080 D14's B7 bullet reads `allowed`, and it is a true row about a
+# DIFFERENT wall: 0080-linux-cage.probe.sh's $BW carries `--proc /proc`, and
+# $BASE here — D17's — does not. So inside a shipped seat /proc is the host's
+# procfs under the read-only bind, a nested user namespace cannot write its own
+# uid_map, and nothing nests (ADR 0096 D1, its table arm A). This row is the
+# one that records what the SHIPPED wall does, which is the point of having it:
+# the next "nesting works" claim has to change an EXPECT cell in public.
+#
+# The stderr goes UNDER the row and not in the cell, which is the B5 lesson
+# (ranger-base-yca4g): `refused` is the claim about WHETHER, and the kernel's
+# own words are the claim about WHY — a `refused` that is really a missing
+# /bin/true is not this row passing.
+#
+# MEASURED 2026-11-14, D1 host, Linux 7.2.15, bubblewrap 0.13.1, run uncaged:
+# refused, `bwrap: setting up uid map: Read-only file system`. The same cell
+# and the same words with `--unshare-user` added as D17's render spells it
+# explicitly (ranger-base-racfc), so this row reads the shipped wall even
+# though $BASE leaves that flag to the bwrap build.
+$BASE bwrap --ro-bind / / /bin/true >/dev/null 2>"$W/tnest.err"
+tnrc=$?
+row "T-nest bwrap inside the D17 base" refused \
+  "$( [ $tnrc -eq 0 ] && echo allowed || echo refused )"
+echo "   T-nest detail (not a row): exit=$tnrc stderr=$(head -c 200 "$W/tnest.err" | tr '\n' ' ')"
+
 echo "== T6 codex's own sandbox nested in ours (D21) =="
 # AMENDED after the first host run (ranger-base-bjk4k). That run read T6
 # refused against an expected allowed, and the three rows as they stood could

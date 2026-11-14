@@ -4,8 +4,9 @@ package posse
 
 // Live pin for ranger-base-ihnnl (ranger-base-0qpsw D1+D2): a real bwrap seat
 // rendered by bwrapArgsWatched, watched by runWallWatch, loses a wall to a
-// HOST rename — and is killed, with one bead filed. Skips off Linux and
-// without bwrap, like the other live bwrap pins (bgLiveSkip's rule).
+// HOST rename — and is killed, with one bead filed. Skips off Linux, without
+// bwrap, and inside a wall that forbids nesting, like the other live bwrap
+// pins (bgLiveSkip's rule, ADR 0096 D3).
 //
 //	go test ./internal/posse -run TestLiveWallWatch -v
 
@@ -33,6 +34,9 @@ func wwLiveFixture(t *testing.T) wwLiveSeat {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
+	// ADR 0096 D3: every seat below is a real bwrap, started by runWallWatch
+	// from this process, so inside a caged seat there is no seat to watch.
+	bwrapNestSkip(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

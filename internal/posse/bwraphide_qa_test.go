@@ -237,6 +237,7 @@ func bhLiveFixture(t *testing.T) bhLive {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
+	bwrapNestSkip(t) // ADR 0096 D3: the arms below exec a bwrap
 	// Short, and not t.TempDir(): a unix socket path is limited to 108 bytes
 	// and a test-named temp dir eats most of them. Short INSIDE posse's temp
 	// namespace, which is what the `posse-` carries (ranger-base-qbg7c): the

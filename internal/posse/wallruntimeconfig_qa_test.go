@@ -322,6 +322,16 @@ func TestLiveWallRuntimeConfigEachCLIRunsWithItsConfigReadOnly(t *testing.T) {
 	}
 }
 
+// wrcNeedBwrap gates every live pin that renders a wall and hands it to the
+// real binary — here and in wallclaudeprojects, wallclaudeprojectsattack,
+// wallexecconfig and grokleader.
+//
+// The third question is bwrapNestSkip's and not liveBwrapApplyRefusal's since
+// ADR 0096 D3. It used to be the availability probe, which answers
+// AvailableCages' "does this host provide the tier" — so inside a caged seat
+// these pins skipped saying the box had no bwrap, which is false and reads to
+// a tidying bead as a host to fix. The question a pin about to exec a bwrap
+// has is whether THIS process can nest one.
 func wrcNeedBwrap(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
@@ -330,9 +340,7 @@ func wrcNeedBwrap(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	if why := liveBwrapApplyRefusal(); why != "" {
-		t.Skip("NOTHING MEASURED: " + why)
-	}
+	bwrapNestSkip(t)
 }
 
 // wrcRealBinary is the CLI's own binary, past mise's command wrapper when

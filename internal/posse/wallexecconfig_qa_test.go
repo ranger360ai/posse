@@ -517,9 +517,7 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
-	if why := liveBwrapApplyRefusal(); why != "" {
-		t.Skip("NOTHING MEASURED: " + why)
-	}
+	bwrapNestSkip(t)
 	f := weFixtureIn(t, wallUngrantedDir(t))
 	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
 	if err != nil {
