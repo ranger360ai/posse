@@ -53,13 +53,32 @@ where the preferred seat's own head label is `team` and the lane is `docs`.
 
 ## Measurement
 
-MEASURED 2026-11-14 (linux 7.2.15 x86_64, go1.27.3, scratch census over `bd
-list --all --json --limit 6000` and this instance's 10 non-coordinator PIDs),
-carried from ranger-base-d7lsc's decision: 3,856 beads, 3,474 with a
-candidate, and the anchor changes **0** of those routes. Primary-first changes
-2. Exactly one label on the live roster spans more than one lane, and 0 beads
-carry it, so the stranded rows are a shape the roster permits and no bead has
-reached.
+RE-MEASURED 2026-11-14 (linux 7.2.15 x86_64, go1.27.3) THROUGH THIS CODE, not
+through the scratch census the decision was taken on: a throwaway in-package
+test called the shipped `labelMatches` against the live `agents/` dir and a
+`bd list --all --json --limit 6000` dump, beside a copy of the pre-anchor body
+and a copy of primary-first, over the same App. 3,888 beads, 3,500 with a
+candidate; the anchor changes **0** of those routes and primary-first changes
+**2** — `[architecture, feature]` and `[bug, security]`, the second being
+ranger-base-d4bk4. Exactly one label on the live roster spans more than one
+lane (four, in fact) and 0 beads carry it, so the stranded rows are a shape the
+roster permits and no bead has reached. The census agrees with
+ranger-base-d7lsc's reading over a store that has grown by 32 beads since.
+
+THE SHIPPED EXAMPLES ROSTER, which ranger-base-d7lsc could only ASSUME,
+MEASURED the same way: a scratch home whose `agents/` is `examples/agents/`,
+over every 1-, 2- and 3-label combination of that roster's 30-label
+vocabulary. One label there spans two lanes — `ops`, the ops PID's first label
+and business-manager's fifth — and **148 of 4,525** combinations change, every
+one of them a bead carrying `ops`. In each, business-manager stops heading a
+bead it matched on its fifth label alone and the lane becomes that of a
+candidate whose own first label matched: `[code, ops]` goes from an `ops` lane
+of `business-manager, ops` to `developer`, `[ci, ops]` to `devops`. No diff
+leaves business-manager in the lane, and no diff is of a bead without `ops`.
+That is the ASSUMED outcome, measured: on an `[ops, X]` bead where
+business-manager would head, the route moves to the next anchored candidate,
+and which candidate that is remains a name-order accident there. Primary-first
+would change 1,427 of the 4,525.
 
 ## The pin, and the two directions the fix can be wrong
 
