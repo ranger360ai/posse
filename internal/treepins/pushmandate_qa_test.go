@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // bdPlantedLanding is the section bd 0.49.1 substitutes into the AGENTS.md it
@@ -121,15 +122,52 @@ func namesWhoPushes(doc string) bool {
 // `git push` and `PUSH TO REMOTE` all still land; only a push buried inside a
 // longer word is let go.
 //
+// WORD is now "a word of PROSE", because the narrowing above left the same
+// hole one step out (ranger-base-y0qvh). A letter precedes the match in
+// `NoPushMandate` and in `CorpusHides`, so those were let by — but nothing
+// precedes it in `pushmandate_qa_test.go`, `pushMentionFaults` or
+// `internal/treepins/pushmandate_qa_test.go`, which are the spellings of
+// every identifier in THIS file. The page that has to document this pin was
+// the one page the pin forbade from naming it, and the workaround a seat
+// reaches for under a red suite is to drop the filename — which costs the
+// reader the pointer. So the match is also rejected when the TOKEN around it
+// names code: it carries an underscore, a slash, an interior dot, or a
+// camelCase hump. Those are the characters an English word cannot have, which
+// is why the discriminator is the token's shape and not its position — and
+// not a backticked span either, since `git push` in "Work is NOT complete
+// until `git push` succeeds" is the mandate itself (the mutant arm below
+// holds that reading dead). `pushes`, `pushed`, `pushing` and `PUSH` stay
+// prose: they are letters all the way, and all-caps is not a hump.
+//
+// WHAT IT STILL CANNOT SEE, stated rather than discovered later: an order
+// spelled ONLY as code — "run `scripts/push.sh` to finish" — is let by, because
+// by shape that is the same token as `internal/treepins/pushmandate_qa_test.go`
+// and nothing short of asking the filesystem tells them apart. Two things
+// cover it. readerDirectedPushOrders matches bd's six exact phrases and is
+// where the mandate bd actually plants is caught, whatever this scanner thinks;
+// and §9's human `grep -n -i "push"` is wider than both on purpose. A reader
+// who wants the narrowest honest claim for the line scanner: it catches an
+// order written in English, and says nothing about one written as a command.
+//
 // INSTALL.md §9 still prescribes the human form, `grep -n -i "push"`, and
 // that is deliberate: a person reading a grep hit can tell a test name from a
 // mandate in one glance, and a wider net is the right one when a person is
 // the filter. This is the automated half, where a false positive costs a red
 // suite instead of a second of attention.
 func pushMentionFaults(doc string) []string {
+	return pushFaultsWith(mentionsPushAsAWord, doc)
+}
+
+// pushFaultsWith is the per-line half — the four exempting spellings and the
+// line numbering — over a substitute mention predicate. The real scanner is
+// the predicate below; the mutants in TestPushMandateScannerMutantsDieInTheirOwnGroup
+// are spelled as the one decision each of them changes and share everything
+// else with it, so a mutant reading can only be about that decision
+// (ranger-base-y0qvh).
+func pushFaultsWith(mentions func(string) bool, doc string) []string {
 	var faults []string
 	for i, line := range strings.Split(doc, "\n") {
-		if !mentionsPushAsAWord(line) {
+		if !mentions(line) {
 			continue
 		}
 		if strings.Contains(line, "Never push") || strings.Contains(line, "operator pushes") ||
@@ -142,23 +180,109 @@ func pushMentionFaults(doc string) []string {
 }
 
 // mentionsPushAsAWord reports whether the line names push, case-insensitively,
-// at a position no letter precedes.
+// as a word of prose: at a position no letter precedes, and not inside a token
+// that names code. The loop keeps looking after a rejected match, so a line
+// that names a colliding identifier AND orders the reader still answers true
+// (ranger-base-3nyqf for the first rule, ranger-base-y0qvh for the second).
+//
+// The fold is asciiLowered and not strings.ToLower, because both rules read
+// the line by BYTE OFFSET at an index taken from the folded copy, and
+// strings.ToLower does not preserve byte length: 27 runes change width under
+// it, 25 narrower and 2 wider (MEASURED 2026-11-14 over all of Unicode,
+// ranger-base-y0qvh; the pin is below). A narrower one slides the index left
+// and the order escapes — `İpush it yourself` and `Kpush it yourself` (U+0130,
+// U+212A Kelvin) both read as faultless under ToLower, because the byte the
+// letter rule inspects is the `i`/`k` the fold produced rather than the line's
+// own. A wider one slides it right and the token reader walks off the end:
+// `Ⱥpush` (U+023A) panicked with `slice bounds out of range [:7] with length
+// 6`, and a panic takes the whole package binary down with it, so every other
+// test in the run is lost (ranger-base-ietka's class). The needle is ASCII, so
+// an ASCII-only fold loses nothing: no non-ASCII rune lowercases to any of
+// `p`, `u`, `s` or `h`.
 func mentionsPushAsAWord(line string) bool {
-	low := strings.ToLower(line)
+	low := asciiLowered(line)
 	for at := 0; ; {
 		i := strings.Index(low[at:], "push")
 		if i < 0 {
 			return false
 		}
 		i += at
-		if i == 0 || !isASCIILetter(low[i-1]) {
+		if (i == 0 || !isASCIILetter(low[i-1])) && !pushTokenNamesCode(pushTokenAround(line, i)) {
 			return true
 		}
 		at = i + len("push")
 	}
 }
 
-func isASCIILetter(b byte) bool { return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' }
+// pushTokenAround returns the identifier-or-path token the match at i sits
+// inside: the maximal run of characters a Go identifier or a repo path can be
+// spelled with. Leading and trailing `.`, `/` and `_` are trimmed, because at
+// a token's EDGE each of those is punctuation rather than part of a name, and
+// it is the interior ones that say "code":
+//
+//   - `.` — without the trim, "The operator pushes." reads as code, the
+//     sentence's own full stop being taken for a path's extension dot.
+//   - `_` — without it, markdown emphasis does: "you must _push_ it yourself"
+//     is an order, and `_push_` carries an underscore. Found attacking the
+//     widening rather than writing it (ranger-base-y0qvh); both are group-1
+//     cases now.
+//
+// An interior one survives the trim, so `pushmandate_qa_test.go` and
+// `_internal/push_` are both still code.
+func pushTokenAround(line string, i int) string {
+	return strings.Trim(pushTokenSpanAround(line, i), "./_")
+}
+
+// pushTokenSpanAround is that span before the edges are trimmed. It is split
+// out so the trim can have a mutant of its own: dropping it is a one-token
+// edit, and what it reopens is an order reading as code.
+func pushTokenSpanAround(line string, i int) string {
+	lo, hi := i, i+len("push")
+	for lo > 0 && isPushTokenByte(line[lo-1]) {
+		lo--
+	}
+	for hi < len(line) && isPushTokenByte(line[hi]) {
+		hi++
+	}
+	return line[lo:hi]
+}
+
+func isPushTokenByte(b byte) bool {
+	return isASCIILetter(b) || b >= '0' && b <= '9' || b == '_' || b == '.' || b == '/'
+}
+
+// pushTokenNamesCode reports whether a token is a code identifier or a path
+// rather than an English word: it carries a character English cannot (`_`,
+// `/`, an interior `.`) or a camelCase hump. A hump is a lowercase letter
+// followed by an uppercase one, NOT just any capital past position zero —
+// `PUSH TO REMOTE` is the mandate's own shouting and has to stay prose.
+func pushTokenNamesCode(token string) bool {
+	if strings.ContainsAny(token, "_/.") {
+		return true
+	}
+	for i := 1; i < len(token); i++ {
+		if isASCIILower(token[i-1]) && isASCIIUpper(token[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// asciiLowered folds A-Z and nothing else, so the result is byte-for-byte the
+// same length as its input and an index into it is an index into the original.
+func asciiLowered(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if isASCIIUpper(c) {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
+
+func isASCIILetter(b byte) bool { return isASCIILower(b) || isASCIIUpper(b) }
+func isASCIILower(b byte) bool  { return b >= 'a' && b <= 'z' }
+func isASCIIUpper(b byte) bool  { return b >= 'A' && b <= 'Z' }
 
 // TestPushMandateCheckerDiscriminates is the control: without it the pins
 // below would pass on any text at all, the mandate included.
@@ -178,52 +302,368 @@ func TestPushMandateCheckerDiscriminates(t *testing.T) {
 		t.Error("namesWhoPushes rejects the reconciled wording — it would be red forever")
 	}
 
-	// The line scanner, both ways. A narrowing is only worth having if it
-	// still catches what it was narrowed from (ranger-base-rulbl).
-	for _, order := range []string{
-		"- Work is NOT complete until `git push` succeeds",
-		"- NEVER stop before pushing - that leaves work stranded locally",
-		"you must push it yourself when the branch is ready",
-		"6. **Verify** - All changes committed AND pushed",
-		"PUSH TO REMOTE",
-	} {
+	// The line scanner, three groups, each held by its own mutant in
+	// TestPushMandateScannerMutantsDieInTheirOwnGroup below.
+	for _, order := range pushOrdersThatMustFault {
 		if got := pushMentionFaults(order); len(got) != 1 {
 			t.Errorf("the line scanner misses a reader-directed push order — the narrowing went too far: %q", order)
 		}
 	}
-	for _, fine := range []string{
-		"- **Never push.** The operator pushes.",
-		"every crew PID denies `Bash(git push:*)`",
-		"this repo's `pre-push` gate refuses it",
-		// The collision that made the narrowing necessary: a real test
-		// name, written down in a real table in AGENTS.md.
-		"  TestTestCorpusHidesNoCrewNameBehindAnEscape  no fast door yet",
-	} {
+	for _, fine := range pushLinesThatMustNotFault {
 		if got := pushMentionFaults(fine); len(got) != 0 {
 			t.Errorf("the line scanner reds a line that orders nobody to push: %q -> %v", fine, got)
 		}
 	}
-
-	// BOTH ON ONE LINE, which is the case the nine arms above cannot see
-	// (ranger-base-3nyqf, found verifying ranger-base-rulbl under
-	// ranger-base-y0r3m). Every line above holds exactly one "push", so the
-	// loop in mentionsPushAsAWord — the part that keeps looking after it
-	// rejects a letter-preceded match — was never exercised, and replacing
-	// the whole function with a single strings.Index passed all nine.
-	//
-	// A line naming a colliding identifier AND ordering the reader is not
-	// hypothetical: the AGENTS.md bullet ranger-base-rulbl added censuses
-	// tree-wide pins by name in a table, TestTestCorpusHidesNoCrewName
-	// BehindAnEscape among them, and ranger-base-ik44f is the bead for
-	// giving those rows a door — which is prose written beside those names.
-	// Without this arm, the seat who simplifies the scanner restores the
-	// blind spot it was narrowed to remove, and the suite says nothing.
-	for _, both := range []string{
-		"  TestTestCorpusHidesNoCrewNameBehindAnEscape — run it before you push",
-		"See TestTestCorpusHidesNoCrewNameBehindAnEscape, then push the branch yourself",
-	} {
+	for _, both := range pushBothOnOneLine {
 		if got := pushMentionFaults(both); len(got) != 1 {
 			t.Errorf("the line scanner stops at the first push-shaped substring: a line that names a colliding identifier AND orders the reader must still fault: %q -> %v", both, got)
+		}
+	}
+}
+
+// The three groups, lifted out of the arm above so the mutation arm can say
+// which group kills which wrong scanner (ranger-base-y0qvh). A widening of
+// the scanner adds a case to each.
+
+// pushOrdersThatMustFault is group 1: the reader-directed orders. A narrowing
+// is only worth having if it still catches what it was narrowed from
+// (ranger-base-rulbl).
+var pushOrdersThatMustFault = []string{
+	"- Work is NOT complete until `git push` succeeds",
+	"- NEVER stop before pushing - that leaves work stranded locally",
+	"you must push it yourself when the branch is ready",
+	"6. **Verify** - All changes committed AND pushed",
+	"PUSH TO REMOTE",
+	// ranger-base-y0qvh's three, for the token reader: a sentence's full
+	// stop is not a path's interior dot, markdown's emphasis underscore is
+	// not an identifier's, and all-caps is not a camelCase hump. Each
+	// confusion turns an order into code — the last one the mandate's own
+	// shouting. The first two were found attacking the widening, which is
+	// why they are orders nobody would otherwise think to write down.
+	"3. Then push. That is the last step.",
+	"you must _push_ it yourself when the branch is ready",
+	"4. **PUSH TO REMOTE** - This is MANDATORY:",
+}
+
+// pushLinesThatMustNotFault is group 2: the four exempting spellings, the
+// collision that made the narrowing necessary, and the code this file is
+// written in.
+var pushLinesThatMustNotFault = []string{
+	"- **Never push.** The operator pushes.",
+	"every crew PID denies `Bash(git push:*)`",
+	"this repo's `pre-push` gate refuses it",
+	// The collision that made the narrowing necessary: a real test
+	// name, written down in a real table in AGENTS.md.
+	"  TestTestCorpusHidesNoCrewNameBehindAnEscape  no fast door yet",
+	// ranger-base-y0qvh: the four spellings of this pin's OWN code, which
+	// are what a page documenting its door has to write down. Three of
+	// these faulted before the widening; the fourth was let by only by
+	// accident — the word sits mid-identifier in NoPushMandate, where a
+	// letter precedes it. All four are now let by on purpose.
+	"the four spellings are in `pushmandate_qa_test.go`'s own scanner",
+	"`make orientation-check` runs internal/treepins/pushmandate_qa_test.go",
+	"QA_ORIENTATION_PINS is the door; pushMentionFaults is the scanner",
+	"see TestRepoAgentsMdCarriesNoPushMandate for the AGENTS.md half",
+}
+
+// pushBothOnOneLine is group 3: BOTH ON ONE LINE, the case the other two
+// groups cannot see (ranger-base-3nyqf, found verifying ranger-base-rulbl
+// under ranger-base-y0r3m). Every line in those groups holds exactly one
+// "push", so the loop in mentionsPushAsAWord — the part that keeps looking
+// after it rejects a match — was never exercised, and replacing the whole
+// function with a single strings.Index passed all nine.
+//
+// A line naming a colliding identifier AND ordering the reader is not
+// hypothetical: the AGENTS.md bullet ranger-base-rulbl added censuses
+// tree-wide pins by name in a table, TestTestCorpusHidesNoCrewNameBehindAn
+// Escape among them, and ranger-base-ik44f is the bead for giving those rows
+// a door — which is prose written beside those names. Without this group, the
+// seat who simplifies the scanner restores the blind spot it was narrowed to
+// remove, and the suite says nothing.
+var pushBothOnOneLine = []string{
+	"  TestTestCorpusHidesNoCrewNameBehindAnEscape — run it before you push",
+	"See TestTestCorpusHidesNoCrewNameBehindAnEscape, then push the branch yourself",
+	// ranger-base-y0qvh's: here the match that must be SKIPPED is skipped
+	// by the token rule and not the letter rule — a backtick precedes it,
+	// not a letter — so this is the case that keeps the new rule per-MATCH
+	// instead of per-line: a page that names this pin's file is free to do
+	// so, and is still held to the mandate in the same sentence.
+	"`pushmandate_qa_test.go` is the pin; push the branch yourself when it is green",
+}
+
+// mentionsPushLetterRuleOnly is the scanner as ranger-base-rulbl left it: a
+// match no LETTER precedes is a mention, whatever the token around it looks
+// like. It is the pre-widening behaviour, kept as a mutant so group 2 has to
+// go on proving the widening is there — three of that group's four code lines
+// fault under it, and the fourth (`NoPushMandate`) does not, which is the
+// accident ranger-base-y0qvh found.
+//
+// Every mutant here takes the FIXED fold (asciiLowered), including this one,
+// which rulbl's scanner did not have. A mutant is worth reading only when it
+// differs from the real scanner in the one decision it is named for, and the
+// fold is a separate defect with its own arm below.
+func mentionsPushLetterRuleOnly(line string) bool {
+	low := asciiLowered(line)
+	for at := 0; ; {
+		i := strings.Index(low[at:], "push")
+		if i < 0 {
+			return false
+		}
+		i += at
+		if i == 0 || !isASCIILetter(low[i-1]) {
+			return true
+		}
+		at = i + len("push")
+	}
+}
+
+// mentionsPushBacktickExempt is the OTHER widening ranger-base-y0qvh's bead
+// listed — "or it sits inside a backticked span" — and the reason the one
+// that landed keys on the token's shape instead. The mandate's central line
+// spells its order in backticks ("Work is NOT complete until `git push`
+// succeeds"), so this reading lets the push mandate itself through. Group 1
+// is what says so.
+func mentionsPushBacktickExempt(line string) bool {
+	low := asciiLowered(line)
+	for at := 0; ; {
+		i := strings.Index(low[at:], "push")
+		if i < 0 {
+			return false
+		}
+		i += at
+		if (i == 0 || !isASCIILetter(low[i-1])) && strings.Count(line[:i], "`")%2 == 0 {
+			return true
+		}
+		at = i + len("push")
+	}
+}
+
+// mentionsPushUntrimmedToken is the token rule with the edge trim dropped —
+// the token taken as the raw span. Group 1 is what says so, twice: a
+// sentence's full stop and markdown's emphasis underscore both land at a
+// token's edge, so "Then push." and "_push_" are code under this reading and
+// the orders escape.
+func mentionsPushUntrimmedToken(line string) bool {
+	low := asciiLowered(line)
+	for at := 0; ; {
+		i := strings.Index(low[at:], "push")
+		if i < 0 {
+			return false
+		}
+		i += at
+		if (i == 0 || !isASCIILetter(low[i-1])) && !pushTokenNamesCode(pushTokenSpanAround(line, i)) {
+			return true
+		}
+		at = i + len("push")
+	}
+}
+
+// mentionsPushWholeLineCodeExempt asks the token question of the LINE rather
+// than of the match: if any push on the line names code, the line goes. It is
+// the shortcut a seat writes when the four code spellings are all they have
+// in front of them, and it passes every case in groups 1 and 2. Group 3 is
+// the only reader it has.
+func mentionsPushWholeLineCodeExempt(line string) bool {
+	low := asciiLowered(line)
+	prose, code := false, false
+	for at := 0; ; {
+		i := strings.Index(low[at:], "push")
+		if i < 0 {
+			break
+		}
+		i += at
+		if i == 0 || !isASCIILetter(low[i-1]) {
+			if pushTokenNamesCode(pushTokenAround(line, i)) {
+				code = true
+			} else {
+				prose = true
+			}
+		}
+		at = i + len("push")
+	}
+	return prose && !code
+}
+
+// mentionsPushFirstMatchOnly is ranger-base-3nyqf's mutant, carried forward:
+// the loop replaced by a single strings.Index. It passed all nine arms that
+// existed then, and the widening gives it a second way in — the first match
+// on a line that names this file is now a REJECTED match, so a scanner that
+// stops there sees nothing at all.
+func mentionsPushFirstMatchOnly(line string) bool {
+	low := asciiLowered(line)
+	i := strings.Index(low, "push")
+	if i < 0 {
+		return false
+	}
+	return (i == 0 || !isASCIILetter(low[i-1])) && !pushTokenNamesCode(pushTokenAround(line, i))
+}
+
+// TestPushMandateScannerMutantsDieInTheirOwnGroup is the mutation check the
+// control arm's three groups exist to be: each group is the named killer of a
+// wrong scanner, so a group that stopped discriminating is reported as such
+// instead of sitting green beside two that still do (ranger-base-y0qvh).
+//
+// ranger-base-3nyqf's finding was that nine arms in two groups passed a
+// scanner with the loop replaced by a single strings.Index, and it was found
+// by a verifier running that mutant by hand. Running it by hand is what this
+// arm stops being necessary: the mutants are in the file, beside the groups
+// that kill them, and a widening that adds a case to each group has to say
+// which mutant the new case is for.
+//
+// Named `PushMandateScanner…`, as are the two arms below it, so that the
+// filter this file's own notes prescribe — `go test ./internal/treepins
+// -count=1 -run PushMandate`, which is what ranger-base-n7hsa measured at
+// 0.089s — selects every pin in the file. A pin here whose name does not
+// carry that substring is a pin nothing a seat types will reach, which is
+// n7hsa's finding one level in.
+func TestPushMandateScannerMutantsDieInTheirOwnGroup(t *testing.T) {
+	for _, m := range []struct {
+		name     string
+		group    string
+		lines    []string
+		want     int
+		mentions func(string) bool
+	}{
+		{
+			name:  "the pre-widening scanner (a letter before the match, and nothing about the token)",
+			group: "the lines that must not fault",
+			lines: pushLinesThatMustNotFault, want: 0,
+			mentions: mentionsPushLetterRuleOnly,
+		},
+		{
+			name:  "a backticked-span exemption instead of a token-shape one",
+			group: "the orders that must fault",
+			lines: pushOrdersThatMustFault, want: 1,
+			mentions: mentionsPushBacktickExempt,
+		},
+		{
+			name:  "the token's edges left untrimmed",
+			group: "the orders that must fault",
+			lines: pushOrdersThatMustFault, want: 1,
+			mentions: mentionsPushUntrimmedToken,
+		},
+		{
+			name:  "the token question asked of the line instead of the match",
+			group: "both on one line",
+			lines: pushBothOnOneLine, want: 1,
+			mentions: mentionsPushWholeLineCodeExempt,
+		},
+		{
+			name:  "no loop: one strings.Index (ranger-base-3nyqf's mutant)",
+			group: "both on one line",
+			lines: pushBothOnOneLine, want: 1,
+			mentions: mentionsPushFirstMatchOnly,
+		},
+	} {
+		// The real scanner answers `want` on every line of the group —
+		// otherwise a mutant reading below is an artifact of a group that
+		// is already broken rather than of the mutant's own edit.
+		for _, line := range m.lines {
+			if got := pushMentionFaults(line); len(got) != m.want {
+				t.Fatalf("%q: the real scanner answers %d faults, want %d — fix that before reading any mutant verdict: %v", line, len(got), m.want, got)
+			}
+		}
+		var killers []string
+		for _, line := range m.lines {
+			if len(pushFaultsWith(m.mentions, line)) != m.want {
+				killers = append(killers, line)
+			}
+		}
+		if len(killers) == 0 {
+			t.Errorf("no case in %q kills the mutant %q — that group has stopped being the reader of its own rule, and the rule can be edited out of mentionsPushAsAWord with every pin in this file green", m.group, m.name)
+			continue
+		}
+		t.Logf("%s — killed by %d of %d cases in %q, first: %q", m.name, len(killers), len(m.lines), m.group, killers[0])
+	}
+}
+
+// TestPushMandateScannerReadsTheFileBdPlants is the group-1 case that
+// is not a hand-written line at all: the file `bd init` actually plants, read
+// by the LINE scanner. The control arm has always read that fixture with
+// readerDirectedPushOrders, which matches six exact phrases — so a widening
+// of the line scanner could have let the real mandate through while every
+// phrase arm stayed green, and the only reader of the line scanner was seven
+// lines somebody typed (ranger-base-y0qvh).
+//
+// MEASURED 2026-11-14, this box, at posse main fcfcdbf6: eight of the planted
+// file's lines fault, and all eight are reader-directed. Pinned as a floor
+// rather than an equality — bd's template is upstream's to change, and a
+// NINTH mandate line is not a reason to red this tree — but the floor is the
+// count, so a widening that silences any one of the eight is.
+func TestPushMandateScannerReadsTheFileBdPlants(t *testing.T) {
+	got := pushMentionFaults(bdPlantedAgentsMd)
+	if len(got) < 8 {
+		t.Errorf("the line scanner finds %d faults in the file bd 0.49.1 plants, want at least 8 — a widening has silenced one of the mandate's own lines:\n%s", len(got), strings.Join(got, "\n"))
+	}
+	// The four exempting spellings must not be what is carrying it: the
+	// planted file names none of them, so every fault above is the scanner's
+	// own judgement and not an accident of the skip list.
+	for _, spelling := range []string{"Never push", "operator pushes", "pre-push", "git push:*"} {
+		if strings.Contains(bdPlantedAgentsMd, spelling) {
+			t.Errorf("the planted fixture now carries the exempting spelling %q — the arm above is no longer reading what it claims to", spelling)
+		}
+	}
+	t.Logf("pushMentionFaults(bdPlantedAgentsMd) = %d faults", len(got))
+}
+
+// TestPushMandateScannerFoldIsByteLengthPreserving holds the defect that attacking
+// the widening turned up (ranger-base-y0qvh). Both of the scanner's rules
+// read the line by BYTE OFFSET at an index taken from the folded copy, and
+// `strings.ToLower` is not length-preserving, so the two disagree on where
+// the match is:
+//
+//   - narrower (25 runes): the index slides left and the ORDER ESCAPES.
+//     `İpush it yourself` (U+0130) and `Kpush it yourself` (U+212A Kelvin)
+//     both read as faultless, because the byte the letter rule inspects is
+//     the `i`/`k` the fold produced, not the line's own. That half is
+//     ranger-base-rulbl's, live since the letter rule landed.
+//   - wider (2 runes): the index slides right and the token reader walks off
+//     the end. `Ⱥpush` (U+023A) panicked with `slice bounds out of range
+//     [:7] with length 6`. That half is this bead's own, introduced by the
+//     token rule and never shipped.
+//
+// A panic is the worse of the two: it takes the package BINARY down, so every
+// other test in the run is lost with it and the reader meant to name one line
+// of AGENTS.md names nothing (ranger-base-ietka's class).
+func TestPushMandateScannerFoldIsByteLengthPreserving(t *testing.T) {
+	var wider, narrower []rune
+	for r := rune(0); r <= 0x10FFFF; r++ {
+		if !utf8.ValidRune(r) {
+			continue
+		}
+		s := string(r)
+		if got := asciiLowered(s); len(got) != len(s) {
+			t.Fatalf("asciiLowered is not byte-length-preserving at U+%04X: %d bytes -> %d — every byte offset the scanner takes from it is then wrong", r, len(s), len(got))
+		}
+		switch l := len(strings.ToLower(s)); {
+		case l > len(s):
+			wider = append(wider, r)
+		case l < len(s):
+			narrower = append(narrower, r)
+		}
+	}
+	// If this ever reads zero, the hazard has gone away and the comment above
+	// is wrong — which is worth a red, because the next seat will read it and
+	// conclude the fold does not matter.
+	if len(wider) == 0 || len(narrower) == 0 {
+		t.Fatalf("strings.ToLower no longer changes byte width (%d wider, %d narrower) — this arm is pinning a hazard that no longer exists", len(wider), len(narrower))
+	}
+	t.Logf("strings.ToLower changes byte width on %d runes: %d narrower, %d wider", len(wider)+len(narrower), len(narrower), len(wider))
+
+	// Every one of them, in front of an order, with the panic caught so the
+	// failure names the rune instead of killing the binary.
+	for _, r := range append(append([]rune{}, wider...), narrower...) {
+		for _, line := range []string{string(r) + "push", string(r) + "push it yourself", "see " + string(r) + "push"} {
+			func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						t.Errorf("the scanner panicked on U+%04X before an order (%q): %v", r, line, rec)
+					}
+				}()
+				if got := pushMentionFaults(line); len(got) != 1 {
+					t.Errorf("U+%04X before an order (%q) reads as %d faults, want 1 — a rune whose case fold changes width is not a letter and does not bury the word after it", r, line, len(got))
+				}
+			}()
 		}
 	}
 }

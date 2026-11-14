@@ -11,7 +11,13 @@ package posse
 // the constant, nothing pinned the quote. This is that half.
 //
 // The rest of the pins for cmfj (§9's cut-and-append recipe, run rather than
-// read, and this repo's own AGENTS.md) live in ../../pushmandate_qa_test.go.
+// read, and this repo's own AGENTS.md) live in
+// internal/treepins/pushmandate_qa_test.go. The path used to be written
+// relative — `../../pushmandate_qa_test.go`, which resolves to the repo root
+// and has not named a file there since those pins moved into
+// internal/treepins; corrected while widening that file's scanner
+// (ranger-base-y0qvh). `-run PushMandate` over internal/treepins is the
+// filter that reaches all five of them.
 
 import (
 	"os"
