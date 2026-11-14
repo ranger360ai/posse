@@ -2903,6 +2903,31 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		return 0, nil
 	}
 
+	// The back-pointer onto a close whose commit is parked off the base —
+	// parkedwork.go, filed as
+	// ranger-base-yc3i3
+	// — the push gate holds a commit by
+	// resetting the base and keeping a ref, and the bead the commit was made
+	// for says nothing — six closed beads deep on 2026-11-14, every one of
+	// them reading as shipped.
+	//
+	// Here beside verify-after and the CI watch because it is the same kind
+	// of thing — the harness writing the one line a convention cannot be
+	// trusted with — and excluded from --dry-run on verify-after's rule: a
+	// comment is acting. It never gates the pass and it reopens nothing
+	// (ADR 0006 §2); the sweep above lands what can land, and this one is
+	// only ever about work that is deliberately held.
+	if !d.DryRun {
+		dirs := d.App.BeadsDirs()
+		if dirFilter != "" {
+			dirs = []string{dirFilter}
+		}
+		d.App.NoteParkedWork(d.Bd, dirs, d.Out, d.errw())
+	}
+	if d.stopHere("the parked-work check") {
+		return 0, nil
+	}
+
 	// The bead-loss alarm (rangerhq-fuom): bd's auto-import can delete rows
 	// and logs nothing when it does, so a pass says out loud what the git
 	// census says is missing. Read-only, so it runs under --dry-run too and

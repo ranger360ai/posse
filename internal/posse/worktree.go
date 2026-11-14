@@ -2459,10 +2459,16 @@ func blockedPinRef(branch string) string { return blockedPinPrefix + branch }
 // check it out and `git branch -a` must not grow a row per retire.
 //
 // NOTHING PRUNES IT, and that is the whole cost of the record: one
-// packed-refs line per retired tree, no objects added (they are already in
-// the store), and no reader in posse that enumerates it —
-// `git for-each-ref refs/posse/retired --sort=committerdate` is the
-// operator's index and `git update-ref -d` their prune.
+// packed-refs line per retired tree and no objects added (they are already
+// in the store). `git for-each-ref refs/posse/retired --sort=committerdate`
+// is the operator's index and `git update-ref -d` their prune.
+//
+// POSSE READS IT TOO NOW, and this paragraph used to say it never did. Since
+// ranger-base-yc3i3
+// parkedwork.go enumerates these refs every pass to find work
+// the push gate held — a commit this prefix is the last copy of, whose bead
+// is closed and says nothing about it. That reader never writes a ref and
+// never prunes one; it writes a comment on the bead.
 const retiredTipPrefix = "refs/posse/retired/"
 
 // retiredTipRef is where THIS branch's tip is kept when its tree is retired.

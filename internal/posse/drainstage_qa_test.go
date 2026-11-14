@@ -178,6 +178,12 @@ var epilogueStages = []string{
 	"credentialExpiry",
 	"VerifyAfter",
 	"CIWatch",
+	// The back-pointer onto a close whose commit is parked off the base
+	// (parkedwork.go, filed as
+	// ranger-base-yc3i3
+	// ): a git child per configured dir and a bd read per closed bead its
+	// census names.
+	"NoteParkedWork",
 	"WarnLostBeads",
 	// The queue read is a stage like the rest — a bd child per configured
 	// dir — and it is the last one before anything is spent, which is why
