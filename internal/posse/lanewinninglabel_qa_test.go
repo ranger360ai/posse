@@ -31,6 +31,8 @@ package posse
 // a spent seat AND the same latency.
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -500,5 +502,125 @@ func TestQALanesLabelIsTheAnchorNotThePreferredSeatsOwnLabel(t *testing.T) {
 	}
 	if !strings.Contains(why, "label:docs (first of 2: aaa-dev, zz-docs)") {
 		t.Errorf("the route report must name the label the lane was chosen on: %q", why)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ranger-base-a9gbq — the two load-bearing lines of ranger-base-5ex01's lane
+// census that it landed unpinned (ranger-base-0a1jk findings 2 and 3). Both
+// are in `labelMatches`, both were specified on their bead and stated in a
+// code comment, and deleting either left every shipped lane and route pin
+// green: `go test -tags posse_arm2 ./internal/posse -run
+// 'TestQALane|TestQARoute|TestQABusy|TestQAHeadAnchors'` read ok in 1.449s
+// with the guard gone (MEASURED 2026-11-14, linux, at 3d4703e7).
+//
+// Neither is a behaviour defect — the shipped code is right today. What was
+// missing is anything that says so, and the roster each needs is a shape no
+// fixture above happened to have: a PID with NO `labels:` key, and a
+// coordinator whose PID carries a label some other lane also carries.
+
+// FINDING 2 — a PID that declares no labels is not a lane and not a panic.
+//
+// `primary := ag.Labels[0]` indexes the slice on the line after the guard, so
+// without it a roster holding one label-less PID panics in labelMatches:
+// `index out of range [0] with length 0`, on every pass, for every bead with
+// a candidate. No fixture on the tree had that shape and the SHIPPED examples
+// roster does — examples/agents/architect.md has no `labels:` key at all — so
+// the panic was one `posse dispatch` away from any instance that installed
+// the published roster.
+//
+// The PID is written here rather than through writePersona, which always
+// writes a `labels:` line: the whole subject is a frontmatter that omits the
+// key. Deliberately `architect.md`, after the shipped PID that has this shape.
+func TestQARosterWithALabellessPIDIsNotAPanic(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "architect.md"),
+		[]byte("---\nname: architect\ndescription: test\n---\nYou are architect.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writePersona(t, b.App, "developer", "[code, feature, bug]")
+	// The fixture is only a fixture if the roster really holds both: a PID
+	// the loader dropped would make this pass over a one-name roster.
+	if got := d.App.ListAgents(); len(got) != 2 {
+		t.Fatalf("the roster is %v, want both PIDs — the label-less one is the subject", got)
+	}
+	if ag, err := d.App.LoadAgent("architect"); err != nil || len(ag.Labels) != 0 {
+		t.Fatalf("architect.md loads as %+v (err %v), want a PID with no labels", ag.Labels, err)
+	}
+
+	names, label := laneOf(t, d, "code")
+	if strings.Join(names, ",") != "developer" || label != "code" {
+		t.Errorf("a PID with no labels is not a lane and not a panic: got %v (%s)", names, label)
+	}
+}
+
+// FINDING 3 — the coordinator is excluded from the LANE CENSUS, not only
+// from candidacy, and the two exclusions are different claims.
+//
+// A label's lanes are the first labels of every non-coordinator PID carrying
+// it (ADR 0011 §4 as amended 2026-11-14), and a label belonging to exactly
+// one lane is what an anchor rests on. Counting the coordinator does not
+// merely print a different label: she carries a lane's vocabulary for triage,
+// so a label she shares with one real seat reads as TWO lanes, that seat's
+// anchor disappears, and the bead goes to whichever unanchored candidate
+// sorts first. That is ranger-base-bskno's defect exactly — the one seat that
+// can do the deliverable stranded outside its own lane.
+//
+// The roster below cannot be reached by any fixture above, because the lane
+// pins set no `coordinator:` key: `isCoordinator` answers false for every
+// name in them, so the line is unobservable there however many arms they add.
+//
+// `ops-seat`'s anchor rests ENTIRELY on `devops` belonging to one lane, and
+// the coordinator carries `devops` under a different first label — which is
+// this instance's own live shape one label over: `ops` is carried by a
+// business-first PID and by the coordinator, so the coordinator is the only
+// reason `ops` reads as one lane, and 36 open and closed beads carry it. No
+// live route moves today, because the harm also needs the unanchored
+// candidate to sort first and this roster's does not — but that is a
+// name-order accident and not a property, which is why the line needs a pin
+// and not a note (ranger-base-0a1jk finding 3).
+//
+// MEASURED both ways 2026-11-14 at 3d4703e7: shipped, `lane=[ops-seat]
+// label=devops`; with the exclusion dropped and candidacy left intact,
+// `lane=[aaa-dev zz-arch] label=team` — byte for byte ranger-base-bskno's
+// characterization table. The mutant for the mutation check is that pair of
+// edits: delete the `if isCoordinator(coord, name) { continue }` from the
+// census walk, and narrow the candidate append to `if len(matched) > 0 &&
+// !isCoordinator(coord, name) {`.
+func TestQACoordinatorIsOutOfTheLaneCensusAndNotOnlyOutOfCandidacy(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	if err := os.WriteFile(b.App.ConfigPath, []byte("coordinator: coord-seat\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writePersona(t, b.App, "aaa-dev", "[code, feature, bug, team]")
+	writePersona(t, b.App, "coord-seat", "[triage, devops]")
+	// `devops` is NOT this PID's first label, so counting the coordinator
+	// gives the label two lanes and takes this seat's anchor away.
+	writePersona(t, b.App, "ops-seat", "[infra, devops]")
+	writePersona(t, b.App, "zz-arch", "[architecture, team]")
+	// The fixture is only a fixture if the config really names her: with the
+	// key unread, isCoordinator is false and this test passes over the
+	// behaviour it exists to refuse.
+	if got := d.App.Coordinator(); got != "coord-seat" {
+		t.Fatalf("the config names the coordinator as %q, want coord-seat", got)
+	}
+
+	names, label := laneOf(t, d, "devops", "team")
+	if strings.Join(names, ",") != "ops-seat" || label != "devops" {
+		t.Errorf("lane is %v (%s), want [ops-seat] (devops) — the coordinator is out of the LANE CENSUS: "+
+			"counting her label-for-triage as a second lane takes ops-seat's anchor away and strands the only "+
+			"seat that can do this deliverable (ranger-base-bskno's defect, ADR 0011 §4)", names, label)
+	}
+	// And she is still out of candidacy, which is the other claim: a bead on
+	// a label only she carries is not her lane.
+	if l := d.laneFor(RepoIssue{BdIssue: BdIssue{ID: "a-1", Labels: []string{"triage"}}}); len(l.seats) != 0 {
+		t.Errorf("a `triage` bead seated %+v — the coordinator is not a lane (ADR 0033 §2)", l.seats)
 	}
 }

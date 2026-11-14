@@ -66,6 +66,16 @@ package treepins
 // legacy `// +build` line, a tag like `ignore`), any of which takes a file
 // out of every arm while its build line still reads "shared".
 //
+// Arm 8 is armPlatformAxis held to ci.yml's matrix. The file-set half reads
+// the toolchain on the HOST, so once a platform filename suffix became
+// something this tree deliberately does — three `_linux_test.go` files
+// landed on 2026-11-14 — that half reported all three as missing on darwin
+// and reddened three of the matrix's six jobs (ranger-base-0a1jk finding 1,
+// fixed under ranger-base-a9gbq). Representing the suffix is the fix, and arm
+// 8 is what keeps the representation from being a silencer: a platform the
+// matrix stops running is a platform whose files run nowhere. See
+// armPlatformAxis.
+//
 // Arm 7 is the fifth way this rots, found once the first four were held
 // (ranger-base-f8zw2). Arm 6 lives in the repo ROOT package, which only arm
 // 1's `./...` line builds — so the arms a mistagged file actually reds, 2
@@ -133,11 +143,88 @@ var armModeAxis = map[string]bool{
 	"race":  false,
 }
 
-// armPlaces answers where a build line puts a file: whether it belongs to
-// arm a at all, and whether the build mode this census measures compiles it
-// there. The two are separate questions and only the mode axis answers them
-// differently — an arm's own files are built whenever their arm is.
-func armPlaces(build string, a int) (in, built bool) {
+// armPlatformAxis names the GOOS a test file's FILENAME may constrain it to,
+// mapped to the ci.yml runner that builds it. It is a THIRD axis that is not
+// the arm partition, and it is the only one of the three the build line
+// cannot express at all: Go reads the constraint off the NAME, so
+// armBuildLine reads "" and every arm above correctly calls the file shared.
+// What the file-set half must not then do is call the toolchain a liar for
+// declining to build `x_linux_test.go` on darwin.
+//
+// REPRESENTABLE, and that is the decision this axis is (ranger-base-a9gbq,
+// out of ranger-base-0a1jk's finding 1). A deliberately platform-constrained
+// test file is legal and sometimes necessary: internal/posse has three, each
+// naming a symbol only wallwatch_linux.go declares, and the land gate's
+// `GOOS=darwin go vet ./...` (step 5) reds on a test file that does not
+// compile there even though nothing would run it. The suffix is a
+// DECLARATION, like a build tag, and this census does not second-guess a
+// declaration. What it owes its reader is that the file runs in SOME job,
+// which is the whole of ranger-base-6m7rd's worry — and that is what this
+// axis answers rather than silences.
+//
+// So the axis holds exactly the GOOSes ci.yml runs, and every other platform
+// or architecture suffix is left unrepresented ON PURPOSE. Such a file reads
+// as shared, the toolchain builds it in no job of the matrix, and the
+// file-set half reds for all three arms with the message that names the
+// cause — `x_windows_test.go`, `x_plan9_test.go` and `x_amd64_test.go` each
+// get exactly the reading 6m7rd built, because each is a file whose tests run
+// nowhere. (An ARCH suffix is unrepresentable rather than merely unlisted:
+// the matrix's two runners are amd64 and arm64, so `x_amd64_test.go` runs on
+// one of them and not the other, and "which jobs build it" stops being a
+// property of the axis. Nothing in the tree has one.)
+//
+// MEASURED 2026-11-14, this box, at 3d4703e7: `go list` over internal/posse
+// names 371 test files natively and 368 under `GOOS=darwin GOARCH=amd64`,
+// the three being the `_linux_test.go` files above — which is the whole of
+// finding 1, since `want` was computed from the build line alone and so held
+// all 371 on either platform.
+//
+// TestQAArmPlatformAxisIsThePlatformsCIRuns holds this map to that matrix, so
+// adding or dropping a runner there is a red here and not a drift: a matrix
+// that stopped running macos-latest would make a `_darwin_test.go` file a
+// file nothing runs, and the axis would be claiming otherwise.
+var armPlatformAxis = map[string]string{
+	"linux":  "ubuntu",
+	"darwin": "macos",
+}
+
+// armFileGOOS is the GOOS a test file's NAME constrains it to, and "" when
+// its name constrains nothing this census represents. Only the axis
+// spellings count — Go's suffix rule reaches every GOOS and GOARCH its
+// toolchain knows, and a suffix outside the axis is deliberately not read
+// here (armPlatformAxis).
+func armFileGOOS(name string) string {
+	stem := strings.TrimSuffix(name, "_test.go")
+	for goos := range armPlatformAxis {
+		if strings.HasSuffix(stem, "_"+goos) {
+			return goos
+		}
+	}
+	return ""
+}
+
+// armPlaces answers where a file goes: whether it belongs to arm a at all,
+// and whether the build this census measures compiles it there. The two are
+// separate questions, and the two axes that are not the arm partition are
+// the only things that answer them differently — an arm's own files are
+// built whenever their arm is.
+//
+// It takes the armFile and not the build line because the platform axis is
+// a fact about the NAME. That is the one input the build line does not carry
+// and the one finding 1 was computed without.
+func armPlaces(f armFile, a int) (in, built bool) {
+	in, built = armPlacesBuild(f.build, a)
+	// The platform axis answers only the second question: a name-constrained
+	// file belongs to its arm on every platform and is BUILT only where the
+	// toolchain builds it, for the same reason the mode axis's unbuilt half
+	// is not built.
+	if goos := armFileGOOS(f.name); goos != "" && goos != runtime.GOOS {
+		built = false
+	}
+	return in, built
+}
+
+func armPlacesBuild(build string, a int) (in, built bool) {
 	if build == "" {
 		return true, true
 	}
@@ -487,9 +574,13 @@ func TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm(t *testing.T) {
 		// A pin has to be in the arm its door selects AND built by the
 		// default mode — a door passes no mode flag whatever its tag — or
 		// the filter selects nothing and the door exits 0.
-		if in, built := armPlaces(f.build, p.door.arm); !in || !built {
-			t.Errorf("door pin %s lives in %s (%q) and `make %s` runs arm %d: the door's `-run` filter selects nothing there, "+
-				"so it exits 0 over a pin it never ran", p.name, f.name, f.build, p.door.target, p.door.arm)
+		// The whole armFile and not its build line: a door pin in a file
+		// whose NAME constrains it to another platform is the same rot one
+		// axis over — the door exits 0 there over a pin that platform never
+		// compiled (armPlatformAxis).
+		if in, built := armPlaces(f, p.door.arm); !in || !built {
+			t.Errorf("door pin %s lives in %s (%q) and `make %s` runs arm %d on %s: the door's `-run` filter selects nothing there, "+
+				"so it exits 0 over a pin it never ran", p.name, f.name, f.build, p.door.target, p.door.arm, runtime.GOOS)
 		}
 	}
 	// A floor, because every check above is over names read off the
@@ -559,8 +650,129 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 		// and the placement the type-check arm reads off the same line —
 		// arm 2, so that "every arm" is asserted somewhere other than the
 		// default one.
-		if in, built := armPlaces(c.build, 2); in != c.wantIn || built != c.wantBuilt {
+		f := armFile{name: "x_test.go", build: c.build}
+		if in, built := armPlaces(f, 2); in != c.wantIn || built != c.wantBuilt {
 			t.Errorf("armPlaces(%q, 2) = in=%v built=%v, want in=%v built=%v", c.build, in, built, c.wantIn, c.wantBuilt)
+		}
+	}
+
+	// THE PLATFORM AXIS says no the same way, and over the input the build
+	// line does not carry: the file's NAME. Only an axis spelling is read,
+	// so a suffix outside it leaves the file shared-and-built — which is
+	// what makes the file-set half red it for all three arms rather than
+	// quietly excusing it (armPlatformAxis).
+	for _, c := range []struct {
+		name     string
+		wantGOOS string
+		what     string
+	}{
+		{"wallwatchtty_linux_test.go", "linux", "the axis reads a GOOS the matrix runs"},
+		{"x_darwin_test.go", "darwin", "both axis spellings, not just this host's"},
+		{"x_windows_test.go", "", "a GOOS the matrix does not run is NOT represented"},
+		{"x_amd64_test.go", "", "an architecture suffix is not represented"},
+		{"x_linux_amd64_test.go", "", "GOOS_GOARCH is an arch constraint too"},
+		{"wallwatchlive_test.go", "", "an ordinary name constrains nothing"},
+		{"sublinux_test.go", "", "the suffix is a `_`-delimited component, not a substring"},
+	} {
+		if got := armFileGOOS(c.name); got != c.wantGOOS {
+			t.Errorf("armFileGOOS(%q) = %q, want %q — %s", c.name, got, c.wantGOOS, c.what)
+		}
+		// A file this host does not build is still IN its arm: the axis
+		// answers the second question only, so a `missing` on the other
+		// platform is the toolchain agreeing, not a drift.
+		in, built := armPlaces(armFile{name: c.name}, 1)
+		wantBuilt := c.wantGOOS == "" || c.wantGOOS == runtime.GOOS
+		if !in || built != wantBuilt {
+			t.Errorf("armPlaces(%q, 1) = in=%v built=%v, want in=true built=%v (on %s)",
+				c.name, in, built, wantBuilt, runtime.GOOS)
+		}
+	}
+}
+
+// ARM 8 — the platform axis IS the platforms ci.yml runs.
+//
+// armPlatformAxis is the one axis in this file whose correctness rests on a
+// fact outside it: whether a `_<goos>_test.go` file runs in any job at all is
+// a property of the MATRIX, not of this census. Hardcoding the pair and
+// asserting nothing would make the axis a way to silence the file-set half —
+// drop macos-latest from the matrix and every `_darwin_test.go` file in the
+// tree goes quiet, with this census vouching for it.
+//
+// Both directions, because each is a different mistake: a runner with no axis
+// entry is a platform whose own files would be reported as missing on it (the
+// finding-1 shape, one platform over), and an axis entry with no runner is a
+// suffix the axis excuses and no job builds.
+//
+// DOORED BY THE COMPLEMENT, and without being named (ADR 0098,
+// ranger-base-3cpcg). This arm is NOT in the tree-wide class its siblings are
+// in: it reads ONE tracked file by a relative literal and enumerates no
+// directory, which is the treepins rule's own negative case
+// (treewidedoor_qa_test.go), so no `-run` door could find it and under the
+// door model this file was written against it would have had none. It needs
+// no entry anyway — `make treepins-check` is this package MINUS
+// $(QA_TREEPINS_EXCLUDED)'s twelve priced rows, this arm is in none of them,
+// and that target is on `make tree-check`'s line. VERIFIED 2026-11-14 on
+// 1d03f9d1. It is the case 3cpcg's door was named for: "a pin written
+// tomorrow is doored the moment it is written", and the pin that most needed
+// a door was the one nothing could find.
+//
+// MUTATION-CHECKED 2026-11-14 at 1d03f9d1 on linux, three mutants, each red
+// for its own reason and no other arm moved. Adding `"windows": "windows"` to
+// the axis reds the second direction; deleting the `"darwin"` entry reds the
+// first; renaming ci.yml's `os:` key reds the fatal. The middle one is the
+// control that says why this arm is not redundant with the file-set half: with
+// darwin dropped from the axis, TestQAEverySuiteArmTypeChecks stays GREEN on
+// this box, because linux is still represented here — the half it silences is
+// the one running in the job nobody is looking at.
+func TestQAArmPlatformAxisIsThePlatformsCIRuns(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join(".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read ci.yml: %v", err)
+	}
+	m := regexp.MustCompile(`(?m)^[\t ]*os:[\t ]*\[([^\]]*)\]`).FindStringSubmatch(string(b))
+	if m == nil {
+		t.Fatal("ci.yml has no `os: [...]` matrix line: the platform axis cannot be held to a matrix this census " +
+			"cannot read, and an unheld axis is a way to silence the file-set half (armPlatformAxis)")
+	}
+	var runners []string
+	for _, r := range strings.Split(m[1], ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			runners = append(runners, r)
+		}
+	}
+	if len(runners) == 0 {
+		t.Fatalf("ci.yml's matrix line %q names no runner", m[0])
+	}
+	// Every runner is some axis platform's.
+	for _, r := range runners {
+		found := ""
+		for goos, prefix := range armPlatformAxis {
+			if strings.HasPrefix(r, prefix) {
+				found = goos
+				break
+			}
+		}
+		if found == "" {
+			t.Errorf("ci.yml's matrix runs %s and armPlatformAxis names no GOOS for it — a `_<goos>_test.go` file "+
+				"for that platform would be reported missing in every arm of the job that DOES build it, which is "+
+				"ranger-base-0a1jk's finding 1 one platform over. Add it here, or say why it is unrepresentable",
+				r)
+		}
+	}
+	// And every axis platform is some runner's.
+	for goos, prefix := range armPlatformAxis {
+		found := false
+		for _, r := range runners {
+			if strings.HasPrefix(r, prefix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("armPlatformAxis represents GOOS %q (runner prefix %q) and ci.yml's matrix %v runs no such job — "+
+				"so a `_%s_test.go` file's tests run NOWHERE, and this axis is excusing the file-set half's report of it",
+				goos, prefix, runners, goos)
 		}
 	}
 }
@@ -620,7 +832,7 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 // live class, not just a floor: every arm above decides which arm a file is
 // in by reading its `//go:build` line, and Go has other ways to take a file
 // out of a build that leave that line untouched and legal — a platform
-// filename suffix (`x_linux_test.go`), a legacy `// +build` line with no
+// filename suffix (`x_windows_test.go`), a legacy `// +build` line with no
 // `//go:build` beside it, a tag nothing passes (`//go:build ignore`). The
 // filename-suffix case is silent in every direction: armBuildLine reads ""
 // (shared, legal), arm 1 is green, and the file's tests run nowhere at all —
@@ -630,12 +842,35 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 // the build is a constraint this file cannot see; a name in the build but not
 // the census means the two readers have drifted.
 //
+// THE SUFFIXES THE MATRIX RUNS ARE THE EXCEPTION, and they are read off the
+// name rather than excused (armPlatformAxis, arm 8, ranger-base-a9gbq). The
+// example above was `x_linux_test.go` until this tree had three of those on
+// purpose, at which point "its tests run nowhere at all" stopped being true
+// of them and the half reported them as missing on the one platform that
+// does not build them. A suffix OUTSIDE the axis is unchanged in every
+// direction, which is why the example moved to `x_windows_test.go` rather
+// than being dropped.
+//
 // MUTATION-CHECKED (ranger-base-6m7rd), on ranger-base-pv5vt at 55af5461.
-// Renaming a shared file to `*_linux_test.go` fails the
-// file-set half for all three arms while the vet half stays green — the
-// finding in one mutant. Giving a shared file `//go:build !posse_arm3` fires
-// the "built but not in the census" direction for arms 1 and 2 (armClassify
-// puts an unrecognized expression in `unknown`, not in any arm's set).
+// Renaming a shared file to `*_linux_test.go` failed the file-set half for
+// all three arms while the vet half stayed green — the finding in one mutant.
+// RE-CHECKED 2026-11-14 at 1d03f9d1 on linux, with the platform axis in —
+// and the control is restated rather than dropped, because the axis is
+// exactly what moved it. Renaming the shared internal/posse/agents_test.go to
+// `agents_windows_test.go` reds the file-set half for all three arms (3
+// `reads as arm N` lines, one per arm); renaming the SAME file to
+// `agents_linux_test.go` is green, which is the fix. The arm-1-tagged
+// wallwatchtty_linux_test.go renamed to `_windows_test.go` reds arm 1 alone,
+// because its build line puts it in no other arm's `want` — one line, not
+// three, and the same finding.
+// Inverting one of the three real files' suffix to `_darwin_test.go` reds
+// nothing here and is correctly silent: on this host the axis takes it out of
+// `want` and the toolchain takes it out of `built`, which is the two readers
+// agreeing. What catches that mutant is the arm the file's own tests are in,
+// on the platform that runs them. Giving a shared file `//go:build
+// !posse_arm3` fires the "built but not in the census" direction for arms 1
+// and 2 (armClassify puts an unrecognized expression in `unknown`, not in any
+// arm's set).
 
 // armListTestFiles is the `go list -f` template the file-set half reads the
 // `built` set with. It names BOTH of Go's test-file kinds, because armFiles
@@ -713,7 +948,7 @@ func TestQAEverySuiteArmTypeChecks(t *testing.T) {
 			}
 			want := map[string]bool{}
 			for _, f := range files {
-				if in, built := armPlaces(f.build, a); in && built {
+				if in, built := armPlaces(f, a); in && built {
 					want[f.name] = true
 				}
 			}
@@ -731,10 +966,13 @@ func TestQAEverySuiteArmTypeChecks(t *testing.T) {
 			sort.Strings(missing)
 			sort.Strings(extra)
 			for _, n := range missing {
-				t.Errorf("%s/%s reads as arm %d here and the toolchain does not build it there — "+
-					"a constraint this census cannot see (a `// +build` line, a platform filename suffix, a tag like `ignore`) "+
-					"has taken the file out of the arm while its build line still says it is in",
-					armPkgDir, n, a)
+				t.Errorf("%s/%s reads as arm %d here and the toolchain does not build it there on %s — "+
+					"a constraint this census cannot see (a `// +build` line, a tag like `ignore`, or a platform or "+
+					"architecture filename suffix outside armPlatformAxis) has taken the file out of the arm while its "+
+					"build line still says it is in. A file whose name constrains it to a GOOS the ci.yml matrix RUNS is "+
+					"representable — see armPlatformAxis, which is why the three `_linux_test.go` files are not reported "+
+					"here on darwin; a suffix outside that axis names no job of the matrix, so its tests run nowhere",
+					armPkgDir, n, a, runtime.GOOS)
 			}
 			for _, n := range extra {
 				t.Errorf("%s/%s is built into arm %d and this census does not put it there — the two readers of the partition have drifted",
