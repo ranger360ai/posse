@@ -60,6 +60,7 @@ package posse
 // rows instead.
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -95,7 +96,19 @@ func remedyIsClosed(t *testing.T, name, rows, got, want string) {
 	if g == w {
 		return
 	}
-	t.Errorf("%s has changed, and this pin is CLOSED over its whole text — every clause of a remedy is a promise a refused writer performs, so a clause with no behavioural row is a way through that nobody measured (ranger-base-68631 finding 6, re-found as ranger-base-mxbq0 finding 1).\n"+
+	t.Error(remedyClosedSetFailure(name, rows, g, w))
+}
+
+// remedyClosedSetFailure renders what remedyIsClosed prints, over texts that
+// are already whitespace-collapsed.
+//
+// A function and not an inline Errorf so that the MESSAGE has a door of its
+// own (ranger-base-ietka): it is the half of this pin that tells an author
+// what to do next, there is no way to read a t.Errorf back, and it is the
+// half that crashed. TestQARemedyClosedSetFailureReportsEveryDirectionOfDrift
+// is that door.
+func remedyClosedSetFailure(name, rows, g, w string) string {
+	return fmt.Sprintf("%s has changed, and this pin is CLOSED over its whole text — every clause of a remedy is a promise a refused writer performs, so a clause with no behavioural row is a way through that nobody measured (ranger-base-68631 finding 6, re-found as ranger-base-mxbq0 finding 1).\n"+
 		"  is:   %q\n  want: %q\n  first difference at byte %d:\n    is:   %q\n    want: %q\n"+
 		"Go to %s, add or amend the row that measures what changed, and then make this text match. A re-WRAP is not drift and does not reach here: both sides are whitespace-collapsed.",
 		name, g, w, remedyDiffAt(g, w), remedyTail(g, w), remedyTail(w, g), rows)
@@ -116,14 +129,21 @@ func remedyDiffAt(a, b string) int {
 }
 
 // remedyTail answers what is left of a from the first byte it differs from b,
-// clipped so a failure is readable.
+// clipped so a failure is readable. Empty when a ran out first — a is a
+// prefix of b, so nothing of a is left to print.
 //
 // Clipped by RUNE and not by byte: every one of these sentences carries an
 // em dash, so a byte clip would print a half rune in the one message a
 // reader of this pin ever sees.
+//
+// The i < len(a) bound is load-bearing and not defensive: remedyDiffAt
+// answers min(len(a), len(b)), so when a is a prefix of b — which is what
+// remedyTail(want, got) is handed the moment a remedy gains an APPENDED
+// clause — i IS len(a) and a[i] panics (ranger-base-ietka). len(a) is always
+// a rune boundary, so there is nothing for the backup to do there anyway.
 func remedyTail(a, b string) string {
 	i := remedyDiffAt(a, b)
-	for i > 0 && !utf8.RuneStart(a[i]) {
+	for i > 0 && i < len(a) && !utf8.RuneStart(a[i]) {
 		i-- // the divergence fell inside a multibyte rune
 	}
 	r := []rune(a[i:])
@@ -212,5 +232,85 @@ func TestQARemedyPromisesReadsAcrossAHardWrap(t *testing.T) {
 	// The collapse is not a licence to ignore word boundaries.
 	if remedyPromises(wrapped, "contentto") {
 		t.Error("remedyPromises collapsed a phrase's own spaces away")
+	}
+}
+
+// The failure MESSAGE's own door, over all four directions a remedy sentence
+// can drift — and it exists because the message crashed on the one direction
+// the closed set is FOR (ranger-base-ietka, found while tripping this pin on
+// purpose under ranger-base-ed07e).
+//
+// remedyDiffAt answers min(len(a), len(b)) when one text is a prefix of the
+// other, so an APPENDED clause made remedyTail index want[len(want)]:
+//
+//	panic: runtime error: index out of range [316] with length 316
+//
+// MEASURED 2026-11-14 (this Linux host, go1.27.3). 316 is the whole of
+// VulnPrivateWayThrough as it stood at e3b41b30^, because the append that
+// crashed this reader was ranger-base-ed07e's own: the exemption clause that
+// sentence now ends with. So the first edit of a remedy after this file
+// landed hit it, and the author's reward for going to the rows as the
+// message asks was a stack trace. Re-measured here with the clause appended
+// again through `go test -overlay` over the 613-byte sentence of today: one
+// named FAIL, exit 1, the diff at byte 613 and `want: ""`.
+//
+// A drop and an in-place edit reported fine; only the append crashed — and
+// an append is exactly what this file was written for, because a promise
+// that was ADDED displaces no phrase any remedyPromises row greps for. The
+// panic also took the package BINARY down, so every other test in the run
+// was lost with it: the reader that was supposed to say "go measure the
+// clause you just wrote" said nothing and reddened everything.
+//
+// The mid-rune row is the other half of the same loop: without the backup a
+// byte clip prints half an em dash, and every one of these sentences has one.
+func TestQARemedyClosedSetFailureReportsEveryDirectionOfDrift(t *testing.T) {
+	t.Parallel()
+	const base = "the way through: generalize whatever carries it — ADR 0024 D3."
+	const clause = " Either arm also clears if you stage the file under docs/."
+	for _, c := range []struct{ what, got, want, gotTail, wantTail string }{
+		{
+			"a clause APPENDED — the direction that panicked",
+			base + clause, base,
+			clause, "",
+		},
+		{
+			"a clause DROPPED",
+			base, base + clause,
+			"", clause,
+		},
+		{
+			// The tails start at the DIGIT, not at the "D": the diff is a
+			// byte offset, so the message zooms to the byte that moved.
+			"a clause edited IN PLACE",
+			strings.Replace(base, "D3", "D1", 1), base,
+			"1.", "3.",
+		},
+		{
+			"a divergence INSIDE a multibyte rune",
+			strings.Replace(base, "—", "–", 1), base,
+			"– ADR 0024 D3.", "— ADR 0024 D3.",
+		},
+	} {
+		g, w := remedyText(c.got), remedyText(c.want)
+		if g == w {
+			t.Fatalf("%s: the row does not diverge, so it measures nothing", c.what)
+		}
+		if tail := remedyTail(g, w); tail != c.gotTail {
+			t.Errorf("%s: remedyTail(is, want) = %q, want %q", c.what, tail, c.gotTail)
+		}
+		if tail := remedyTail(w, g); tail != c.wantTail {
+			t.Errorf("%s: remedyTail(want, is) = %q, want %q", c.what, tail, c.wantTail)
+		}
+		msg := remedyClosedSetFailure("SomeWayThrough", "somerows_test.go", g, w)
+		for _, must := range []string{
+			"SomeWayThrough",
+			"somerows_test.go",
+			fmt.Sprintf("%q", c.gotTail),
+			fmt.Sprintf("%q", c.wantTail),
+		} {
+			if !strings.Contains(msg, must) {
+				t.Errorf("%s: the failure message does not carry %s — it is the only thing an author of this edit reads:\n%s", c.what, must, msg)
+			}
+		}
 	}
 }
