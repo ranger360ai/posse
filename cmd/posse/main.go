@@ -1692,7 +1692,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir...] [--chain] | posse gates managed-hooks [dir] | posse gates render-probe [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv> | posse gates vuln-private-scan")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir...] [--chain] | posse gates managed-hooks [dir] | posse gates render-probe [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv> | posse gates vuln-private-scan [--message]")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1745,7 +1745,23 @@ func main() {
 			// own doc comment: "empty output is a clean scan"). The exit
 			// code is set to match for a human running this by hand, but
 			// the shell side never reads it.
-			if posse.RunGatesVulnPrivateScan(posse.NewBd(), ".", os.Stdin, out) {
+			//
+			// `--message` says the text is the commit MESSAGE and not the
+			// staged diff's added lines (ranger-base-gi6ge): a `+` is a
+			// diff marker in the one and a markdown bullet in the other,
+			// and only the caller can tell them apart. NO FLAG IS THE
+			// CONTENT ARM, which is VulnPrivateArm's own zero and for the
+			// reason given there — an installed hook older than this
+			// binary passes nothing, and that window must behave as the
+			// tree behaved before, never lose the arm that was right.
+			arm := posse.VulnPrivateContentArm
+			for _, a := range args[1:] {
+				if a != "--message" {
+					die(posse.Die("posse gates vuln-private-scan: unknown argument %q (the only one is --message)", a))
+				}
+				arm = posse.VulnPrivateMessageArm
+			}
+			if posse.RunGatesVulnPrivateScan(posse.NewBd(), ".", arm, os.Stdin, out) {
 				os.Exit(1)
 			}
 			return
@@ -3380,7 +3396,7 @@ catalog:
                                  held for exactly as long as bd runs. On success this call has
                                  become bd; it returns only on a refusal (exit 1: the lock timed
                                  out, or the line cliff) or a usage error.
-  posse gates vuln-private-scan
+  posse gates vuln-private-scan [--message]
                                  ADR 0024 D2 check 4 — the commit-guard hook's own judge, piped
                                  the staged markdown additions or the cleaned commit message on
                                  stdin, never typed by hand. Prints one line per currently OPEN
@@ -3389,6 +3405,11 @@ catalog:
                                  PATH, no store, no open vuln-private bead, and nothing on stdin
                                  all fail open rather than refuse (ADR 0068's lockout lesson: a
                                  refusal over "could not find out" has no remedy to name).
+                                 --message says the text is the commit MESSAGE; without it the
+                                 text is the staged diff's added lines and one leading + per
+                                 line is discounted as the diff marker. Only the caller can tell
+                                 those apart — a + is a markdown bullet in the one and a diff
+                                 marker in the other (ranger-base-gi6ge).
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]

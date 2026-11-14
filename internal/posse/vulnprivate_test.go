@@ -88,10 +88,15 @@ func TestVulnPrivateHitsMultilineOnlyFlagsTheBadLine(t *testing.T) {
 // rc 0.
 //
 // Both directions, because a unit is read from either end: the text above an
-// indented bare id is the same escape upside down. And the `+`-prefixed
-// spelling, because the content arm scans `git diff --cached | grep '^+'`
-// (gates.go's $posse_added) and nothing else — a rule that read indentation
-// from column 0 would be dead in the one arm that reads a file.
+// indented bare id is the same escape upside down.
+//
+// EVERY ROW HERE IS PLAIN MARKDOWN, and the `+`-prefixed content-arm
+// spellings that used to sit among them have moved to
+// TestRunGatesVulnPrivateScanReadsTheContentArmsDiffMarker. That is
+// ranger-base-gi6ge: the diff marker is discounted ONCE at the arm boundary
+// (vulnPrivateUndiff) instead of inside these readers, so this function sees
+// markdown and nothing else — which is what lets the `+` BULLET rows below
+// be read as bullets at all.
 func TestVulnPrivateHitsFlagsADescriptionOnTheContinuationLine(t *testing.T) {
 	t.Parallel()
 	ids := []string{"ranger-base-l751c"}
@@ -102,7 +107,6 @@ func TestVulnPrivateHitsFlagsADescriptionOnTheContinuationLine(t *testing.T) {
 		"- ranger-base-l751c\n  > the heap overflow in the parser\n",
 		"- ranger-base-l751c\n  **the heap overflow** in the parser\n",
 		"- the residual that stays open:\n  ranger-base-l751c\n",
-		"+- ranger-base-l751c\n+  the heap overflow in the parser\n",
 		// ranger-base-ckcly finding 1: the LAZY continuation, one space
 		// fewer than the row above it. Markdown reads a column-0 line under
 		// a list item as a continuation of that item; the pop loop read it
@@ -111,7 +115,22 @@ func TestVulnPrivateHitsFlagsADescriptionOnTheContinuationLine(t *testing.T) {
 		"- ranger-base-l751c\nthe heap overflow in the parser\n",
 		"1. ranger-base-l751c\nthe heap overflow in the parser\n",
 		"## Not closed here\n\n- ranger-base-l751c\nthe heap overflow in the parser\n",
-		"+- ranger-base-l751c\n+the heap overflow in the parser\n",
+		// ranger-base-gi6ge: EVERY bullet spelling vulnPrivateListItem
+		// names, because the lazy continuation it carries is the list
+		// item's and a spelling that is not read as a list item does not
+		// carry one. `-` and `1.` are above; these two are the rest.
+		//
+		// `+` is the one that escaped, and it escaped in the MESSAGE arm:
+		// the diff-marker strip used to run inside vulnPrivateListItem's
+		// own reader, so a message line `+ <id>` lost its `+` before
+		// anything could read a bullet there, read as prose at indent 1,
+		// and the description below it bought a unit of its own. MEASURED
+		// 2026-11-14 end-to-end through the shipped subcommand, one open
+		// id with the description at column 0 on the next line: `-`, `*`
+		// and `1.` each rc 1, `+` rc 0 — and `+` with the description
+		// INDENTED rc 1, so one space was the whole of the difference.
+		"* ranger-base-l751c\nthe heap overflow in the parser\n",
+		"+ ranger-base-l751c\nthe heap overflow in the parser\n",
 		// Lazily continuing the INNER item of a nested list, which is the
 		// item markdown's paragraph is open in.
 		"- ranger-base-wuuqi stays open\n  - ranger-base-l751c\nthe heap overflow in the parser\n",
@@ -128,7 +147,7 @@ func TestVulnPrivateHitsFlagsADescriptionOnTheContinuationLine(t *testing.T) {
 	for _, text := range []string{
 		"- ranger-base-l751c\n  - ranger-base-wuuqi stays open, the operator's call\n",
 		"- ranger-base-l751c\n- ranger-base-wuuqi stays open, the operator's call\n",
-		"+- ranger-base-l751c\n+- ranger-base-wuuqi stays open, the operator's call\n",
+		"+ ranger-base-l751c\n+ ranger-base-wuuqi stays open, the operator's call\n",
 		// And the control the lazy-continuation rule is NARROWED for
 		// (ranger-base-ckcly finding 1): a HEADING wrapped onto a second
 		// line does not take a lazy continuation — markdown opens a new
@@ -356,7 +375,7 @@ func TestRunGatesVulnPrivateScanFlagsAnOpenResidualWithText(t *testing.T) {
 	dir := t.TempDir()
 	writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["code","security","vuln-private"]}]`)
 	var out strings.Builder
-	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader("## Not closed here\n- ranger-base-l751c: the remote-settings cache\n"), &out)
+	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader("## Not closed here\n- ranger-base-l751c: the remote-settings cache\n"), &out)
 	if !hit {
 		t.Fatalf("want a hit, got none; output: %q", out.String())
 	}
@@ -375,7 +394,7 @@ func TestRunGatesVulnPrivateScanBareIDIsClean(t *testing.T) {
 	dir := t.TempDir()
 	writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["code","security","vuln-private"]}]`)
 	var out strings.Builder
-	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader("## Not closed here\n- ranger-base-l751c\n"), &out)
+	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader("## Not closed here\n- ranger-base-l751c\n"), &out)
 	if hit {
 		t.Errorf("a bare id must not be flagged, got: %q", out.String())
 	}
@@ -393,7 +412,7 @@ func TestRunGatesVulnPrivateScanClosedResidualIsNotFlagged(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader("- ranger-base-l751c: now public, the fix shipped\n"), &out)
+	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader("- ranger-base-l751c: now public, the fix shipped\n"), &out)
 	if hit {
 		t.Errorf("a closed vuln-private residual is no longer this check's business, got: %q", out.String())
 	}
@@ -408,7 +427,7 @@ func TestRunGatesVulnPrivateScanFailsOpenWithNoBd(t *testing.T) {
 	dir := t.TempDir()
 	bd := Bd{Bin: filepath.Join(dir, "no-such-bd-binary")}
 	var out strings.Builder
-	hit := RunGatesVulnPrivateScan(bd, dir, strings.NewReader("- ranger-base-l751c: a description that would otherwise trip this\n"), &out)
+	hit := RunGatesVulnPrivateScan(bd, dir, VulnPrivateMessageArm, strings.NewReader("- ranger-base-l751c: a description that would otherwise trip this\n"), &out)
 	if hit {
 		t.Errorf("no bd on PATH must fail open, got: %q", out.String())
 	}
@@ -423,9 +442,129 @@ func TestRunGatesVulnPrivateScanEmptyStdinIsClean(t *testing.T) {
 	// with its own usage error rather than an issue list, and a bug that
 	// skipped the empty-input guard would surface as a false hit here.
 	var out strings.Builder
-	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader(""), &out)
+	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(""), &out)
 	if hit {
 		t.Errorf("empty input must never hit, got: %q", out.String())
+	}
+}
+
+// ─── the two arms, which are one byte apart (ranger-base-gi6ge) ─────────────
+
+// TestRunGatesVulnPrivateScanReadsAPlusBulletInTheMessage is
+// ranger-base-gi6ge, end-to-end through the judge the hook calls: a `+`
+// bullet in a COMMIT MESSAGE is a list item like any other, so the line
+// below it is that item's lazy continuation.
+//
+// WHAT FAILED. vulnPrivateListItem names four bullet spellings — `-`, `*`,
+// `+` and a number — and ranger-base-ckcly's lazy-continuation fix reached
+// three of them. The diff-marker strip ran inside the line readers, so a
+// message line `+ <id>` lost its `+` before anything could read a bullet
+// there: it read as prose at indent 1, carried no lazy continuation, and the
+// description below it bought a unit of its own and passed SILENT. The
+// comment that reasoned the risk away said such a line loses "a column of
+// indent, which can only make a unit narrower" — narrower by exactly the
+// line that holds the description.
+//
+// MEASURED 2026-11-14 on the shipped tree, these five texts through `posse
+// gates vuln-private-scan` against an open vuln-private id: rows 1-4 rc 1,
+// row 5 rc 0. The fix is vulnPrivateUndiff — one strip at the ARM BOUNDARY
+// and none inside the readers — and the arm is a parameter because a `+` is
+// a bullet in one arm and a marker in the other, which the text cannot say.
+func TestRunGatesVulnPrivateScanReadsAPlusBulletInTheMessage(t *testing.T) {
+	t.Parallel()
+	for _, text := range []string{
+		"- ranger-base-l751c\nthe heap overflow in the parser\n",
+		"* ranger-base-l751c\nthe heap overflow in the parser\n",
+		"1. ranger-base-l751c\nthe heap overflow in the parser\n",
+		// The row that was already caught, and the one space that was the
+		// whole of the difference from the row below it.
+		"+ ranger-base-l751c\n  the heap overflow in the parser\n",
+		// THIS ONE. Silent on the shipped tree.
+		"+ ranger-base-l751c\nthe heap overflow in the parser\n",
+	} {
+		dir := t.TempDir()
+		writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+		var out strings.Builder
+		if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(text), &out) {
+			t.Errorf("scan(%q) over the MESSAGE arm = no hit, want one — every bullet spelling vulnPrivateListItem names carries a lazy continuation, `+` included", text)
+		}
+		if strings.Contains(out.String(), "heap") {
+			t.Errorf("the output must withhold the description, class-only: %q", out.String())
+		}
+	}
+}
+
+// TestRunGatesVulnPrivateScanReadsTheContentArmsDiffMarker is the other arm,
+// and it is what the fix above must not cost. The content arm's text is `git
+// diff --cached -U0 … | grep -a '^+'` (gates.go's $posse_added), so every
+// line of it carries a unified-diff `+` that is no part of the file and the
+// indentation this check measures sits AFTER it — without the discount,
+// `+- <id>` and `+  <description>` both read as column 0 and the
+// continuation rule is dead in the one arm that reads a file.
+//
+// The `++ <id>` rows are the proof the discount is a DISCOUNT and not a ban
+// on the byte: a markdown `+` bullet staged in a file arrives here as `++`,
+// keeps one `+` after the strip, and is read as the bullet it is. Dropping
+// `+` from vulnPrivateListItem instead of moving the strip would have lost
+// exactly these.
+func TestRunGatesVulnPrivateScanReadsTheContentArmsDiffMarker(t *testing.T) {
+	t.Parallel()
+	for _, text := range []string{
+		"+- ranger-base-l751c\n+  the heap overflow in the parser\n",
+		"+- ranger-base-l751c\n+the heap overflow in the parser\n",
+		"++ ranger-base-l751c\n+  the heap overflow in the parser\n",
+		"++ ranger-base-l751c\n+the heap overflow in the parser\n",
+		"+1. ranger-base-l751c\n+the heap overflow in the parser\n",
+	} {
+		dir := t.TempDir()
+		writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+		var out strings.Builder
+		if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateContentArm, strings.NewReader(text), &out) {
+			t.Errorf("scan(%q) over the CONTENT arm = no hit, want one — the diff marker is discounted, so what is left is a bullet and its continuation", text)
+		}
+	}
+	// The controls, so the discount cannot pass by flagging everything.
+	for _, text := range []string{
+		// A sibling bullet about another bead, which is the shape
+		// ranger-base-lcuec.md's own "Not closed here" uses.
+		"+- ranger-base-l751c\n+- ranger-base-wuuqi stays open, the operator's call\n",
+		// A BARE id, which is what the wall's own remedy prescribes.
+		"+- ranger-base-l751c\n",
+		// Declared residual 3 read through this arm: the file's own lines
+		// are ` <id>` and `the heap overflow …`, which markdown reads as
+		// ONE paragraph and this grouping reads as two units — a prose run
+		// at column 0 with no list item above it (vulnPrivateUnits' third
+		// residual). Stated, not new: the same text in the message arm is
+		// the `+ <id>` row of the test above, and the arm is the whole of
+		// the difference between them.
+		"+ ranger-base-l751c\n+the heap overflow in the parser\n",
+	} {
+		dir := t.TempDir()
+		writeFakeOpenLabeled(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+		var out strings.Builder
+		if RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateContentArm, strings.NewReader(text), &out) {
+			t.Errorf("scan(%q) over the CONTENT arm = %q, want no hit", text, out.String())
+		}
+	}
+}
+
+// TestVulnPrivateChecksSpellsTheArmPerArm: the judge cannot read its arm off
+// the text, so the RENDER has to say it — and only the message arm says
+// anything, because an installed hook older than this binary says nothing at
+// all and that window must behave as the content arm always did
+// (VulnPrivateArm's own comment, ranger-base-gi6ge).
+func TestVulnPrivateChecksSpellsTheArmPerArm(t *testing.T) {
+	t.Parallel()
+	content := vulnPrivateContentCheck()
+	if strings.Contains(content, "vuln-private-scan --message") {
+		t.Errorf("check 4's CONTENT arm must not pass --message — its lines each carry a diff marker:\n%s", content)
+	}
+	if !strings.Contains(content, "| posse gates vuln-private-scan 2>/dev/null") {
+		t.Errorf("check 4's CONTENT arm must call the judge with no arm flag:\n%s", content)
+	}
+	msg := vulnPrivateSource().checks("  ")
+	if !strings.Contains(msg, "| posse gates vuln-private-scan --message 2>/dev/null") {
+		t.Errorf("check 4's MESSAGE arm must pass --message — a `+` there is a markdown bullet, not a diff marker:\n%s", msg)
 	}
 }
 
@@ -472,7 +611,7 @@ func TestRunGatesVulnPrivateScanExemptsTheCommittingTreesOwnBead(t *testing.T) {
 		"## Not closed here\n\n- ranger-base-l751c: the mechanism, in a bullet\n",
 	} {
 		var out strings.Builder
-		if RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader(text), &out) {
+		if RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(text), &out) {
 			t.Errorf("the committing tree's own bead must not be flagged over %q, got: %q", text, out.String())
 		}
 	}
@@ -488,7 +627,7 @@ func TestRunGatesVulnPrivateScanStillFlagsAnotherOpenResidual(t *testing.T) {
 		{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]},
 		{"id":"ranger-base-fixt2","status":"open","labels":["vuln-private"]}]`)
 	var out strings.Builder
-	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader(
+	hit := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader(
 		"ranger-base-l751c: the fix this commit carries\n\nNot closed here:\n- ranger-base-fixt2 the residual's mechanism\n"), &out)
 	if !hit {
 		t.Fatalf("another open residual named with text must still be flagged; output: %q", out.String())
@@ -509,14 +648,14 @@ func TestRunGatesVulnPrivateScanExemptsNothingWithNoBranchRecord(t *testing.T) {
 	t.Parallel()
 	dir := vpOwnTree(t, "", `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
 	var out strings.Builder
-	if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader("ranger-base-l751c: a description\n"), &out) {
+	if !RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader("ranger-base-l751c: a description\n"), &out) {
 		t.Errorf("no branch record is no exemption, got no hit: %q", out.String())
 	}
 	// And the main checkout itself, on `main`, with the same bead open.
 	repo := wtRepo(t)
 	writeFakeOpenLabeled(t, repo, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
 	out.Reset()
-	if !RunGatesVulnPrivateScan(qaFakeBd(t), repo, strings.NewReader("ranger-base-l751c: a description\n"), &out) {
+	if !RunGatesVulnPrivateScan(qaFakeBd(t), repo, VulnPrivateMessageArm, strings.NewReader("ranger-base-l751c: a description\n"), &out) {
 		t.Errorf("the shared checkout's main carries no record and gets no exemption, got no hit: %q", out.String())
 	}
 }
@@ -536,7 +675,7 @@ func TestRunGatesVulnPrivateScanExemptsTheOwnBeadOnADetachedHead(t *testing.T) {
 		t.Fatal("this tree was supposed to be detached; the fallback is not under test")
 	}
 	var out strings.Builder
-	if RunGatesVulnPrivateScan(qaFakeBd(t), dir, strings.NewReader("ranger-base-l751c: the fix\n"), &out) {
+	if RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateMessageArm, strings.NewReader("ranger-base-l751c: the fix\n"), &out) {
 		t.Errorf("a detached session tree's own bead must still be exempt, got: %q", out.String())
 	}
 }

@@ -4139,11 +4139,11 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 `
 }
 
-// vulnPrivateChecks is check 4's judge, rendered once and shared by its
-// content arm and its message arm (vulnPrivateSource) alike: it pipes
-// whichever text the caller already scanned into $posse_added — the staged
-// markdown additions, or the cleaned commit message messageArm already
-// computed — through the posse binary and folds any hit into $posse_bad,
+// vulnPrivateChecks is check 4's judge, rendered once for its content arm
+// and its message arm (vulnPrivateSource) alike: it pipes whichever text the
+// caller already scanned into $posse_added — the staged markdown additions,
+// or the cleaned commit message messageArm already computed — through the
+// posse binary and folds any hit into $posse_bad,
 // posse_check's own idiom (empty output is a clean scan). See
 // vulnprivate.go's header comment for why the judge is a Go subprocess and
 // never bd queried directly from this shell (ADR 0068's lockout lesson: bd's
@@ -4154,12 +4154,25 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 // cannot hold. Absent `posse` on PATH, the arm is silently skipped — the
 // same fail-open answer as an unreachable bd, because the committer has no
 // more of a remedy for a missing binary than for an unreachable store.
-func vulnPrivateChecks(indent string) string {
-	return indent + `if command -v posse >/dev/null 2>&1; then
-` + indent + `  posse_vp_hit=$(printf '%s' "$posse_added" | posse gates vuln-private-scan 2>/dev/null)
+//
+// THE ONE THING THAT DIFFERS BETWEEN THE TWO ARMS IS `arm` (ranger-base-gi6ge,
+// escaped from ranger-base-ckcly finding 1). The content arm's $posse_added is
+// `git diff --cached -U0 … | grep -a '^+'`, so every line of it carries a
+// unified-diff marker; the message arm's is the commit message, whose lines
+// carry nothing. A `+` is also a markdown bullet, and at column 0 the two are
+// the same byte — so the judge has to be TOLD, and `--message` is how. It is
+// the message arm that spells the flag and the content arm that spells
+// nothing: see VulnPrivateArm (vulnprivate.go) for why the zero goes that way
+// round and not the other, which is about an installed hook older than the
+// posse on PATH.
+func vulnPrivateChecks(arm string) func(indent string) string {
+	return func(indent string) string {
+		return indent + `if command -v posse >/dev/null 2>&1; then
+` + indent + `  posse_vp_hit=$(printf '%s' "$posse_added" | posse gates vuln-private-scan` + arm + ` 2>/dev/null)
 ` + indent + `  [ -z "$posse_vp_hit" ] || posse_bad="$posse_bad$posse_vp_hit"
 ` + indent + `fi
 `
+	}
 }
 
 // vulnPrivateSource is check 4's visScanSource (ADR 0024 D2 check 4,
@@ -4174,7 +4187,9 @@ func vulnPrivateChecks(indent string) string {
 // staged set than check 3's (markdown only, no path arm at all).
 func vulnPrivateSource() visScanSource {
 	return visScanSource{
-		checks: vulnPrivateChecks,
+		// --message: this arm's text is the commit message, whose lines carry
+		// no unified-diff marker (vulnPrivateChecks, ranger-base-gi6ge).
+		checks: vulnPrivateChecks(" --message"),
 		message: visGuardRefusal{
 			badVar:       "posse_bad",
 			label:        "vuln-private residual scan",
@@ -4208,6 +4223,9 @@ func vulnPrivateContentCheck() string {
 		matched:      "flagged:",
 		wayThrough:   VulnPrivateWayThrough,
 	}
+	// No `--message`: this arm's lines each carry a unified-diff `+`, which
+	// is the judge's own zero (VulnPrivateArm, ranger-base-gi6ge).
+	checks := vulnPrivateChecks("")
 	return `
   # ─── check 4: vuln-private residuals named with more than a bead id ────
   # AGENTS.md "Landing the plane" (operator ruling 2026-11-11,
@@ -4220,7 +4238,7 @@ func vulnPrivateContentCheck() string {
     grep -a '^+' | grep -av '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
-` + vulnPrivateChecks("    ") + refusal.render("    ") + `  fi
+` + checks("    ") + refusal.render("    ") + `  fi
 `
 }
 

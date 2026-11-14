@@ -132,24 +132,80 @@ func vulnPrivateBare(rest string) bool {
 	return true
 }
 
-// vulnPrivateContent discounts ONE leading unified-diff `+` from a line.
+// VulnPrivateArm says which of check 4's two arms a scan is reading. It is
+// the one fact about the text that the TEXT cannot carry, and it is the whole
+// of ranger-base-gi6ge.
 //
 // The content arm's text is `git diff --cached -U0 … | grep -a '^+'`
-// (gates.go's $posse_added), so every line it scans carries one and the
-// indentation this file measures sits AFTER it — without this, `+- <id>`
-// and `+  <description>` both read as column 0 and the continuation rule
-// below would be dead in the one arm that reads a file. The message arm's
-// lines carry no `+`, and a message line that genuinely begins with one
-// loses a column of indent, which can only make a unit narrower.
-func vulnPrivateContent(line string) string {
-	return strings.TrimPrefix(line, "+")
+// (gates.go's $posse_added), so every line of it carries a unified-diff `+`
+// that is no part of the file. The message arm's text is the cleaned commit
+// message, whose lines carry nothing — git normalizes a commit message not at
+// all. Only the caller knows which, and the caller always does: gates.go
+// renders one arm each (vulnPrivateContentCheck, vulnPrivateSource). Reading
+// it off the text would be a guess, and a guess is wrong on the one shape
+// that matters — a message every line of which begins with `+`.
+//
+// THE CONTENT ARM IS THE ZERO, and that is about SKEW rather than taste. A
+// rendered hook is a COPY of this binary's render, and only two things
+// re-render one — `posse gates install-hooks` and a session create
+// (hookfresh.go) — so an installed hook older than the posse on PATH passes
+// no arm at all. With the content arm as the zero, that window behaves
+// exactly as this tree behaved before this fix: the message-arm hole below
+// stays open until the hook is re-rendered, and nothing that worked stops
+// working. With the message arm as the zero it would be the CONTENT arm that
+// silently lost its continuation reading in that same window — a new hole
+// opened by a fix, in the arm that was never wrong.
+type VulnPrivateArm bool
+
+const (
+	// VulnPrivateContentArm: every line carries a unified-diff `+`.
+	VulnPrivateContentArm VulnPrivateArm = false
+	// VulnPrivateMessageArm: the lines are the commit message's own.
+	VulnPrivateMessageArm VulnPrivateArm = true
+)
+
+// vulnPrivateUndiff discounts ONE leading unified-diff `+` from every line of
+// the CONTENT arm's text, so that everything below it reads plain markdown
+// and nothing in the markdown reader knows what a diff is. Without it
+// `+- <id>` and `+  <description>` both read as column 0 and the continuation
+// rule below would be dead in the one arm that reads a file.
+//
+// IT IS PER-TEXT AT THE ARM BOUNDARY, AND NOT PER-LINE INSIDE THE READER,
+// which is ranger-base-gi6ge (escaped from ranger-base-ckcly finding 1). The
+// strip used to sit inside the line readers, where it ran on the message
+// arm's lines too — and `+` is BOTH a markdown bullet marker and the diff
+// marker this discounts, which at column 0 are the same byte. So a message
+// line `+ <id>` lost its `+` before vulnPrivateListItem could see a bullet,
+// read as prose at indent 1, carried no lazy continuation, and the
+// description below it bought a unit of its own and passed SILENT. MEASURED
+// 2026-11-14 end-to-end through the shipped subcommand, one open id and a
+// description on the next line at column 0: `- <id>`, `* <id>` and `1. <id>`
+// each rc 1, `+ <id>` rc 0 — and `+ <id>` with the description INDENTED rc 1,
+// so one space was the whole of the difference.
+//
+// The comment that used to sit here reasoned the risk away: a message line
+// that genuinely begins with a `+` "loses a column of indent, which can only
+// make a unit narrower." It loses a column of indent AND its list-item
+// identity, and since ranger-base-ckcly the list-item identity is what
+// carries the continuation — so "narrower" was narrower by exactly the line
+// that holds the description. That understatement is what hid this.
+//
+// Stripping here keeps the marker's one reader in one place and leaves `+` a
+// plain bullet everywhere else: the content arm still reads `++ <id>` as a
+// bulleted id (one `+` survives the strip), and the message arm reads
+// `+ <id>` as one.
+func vulnPrivateUndiff(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimPrefix(line, "+")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // vulnPrivateIndent is the column a line's content starts at.
 func vulnPrivateIndent(line string) int {
-	s := vulnPrivateContent(line)
 	n := 0
-	for n < len(s) && (s[n] == ' ' || s[n] == '\t') {
+	for n < len(line) && (line[n] == ' ' || line[n] == '\t') {
 		n++
 	}
 	return n
@@ -164,7 +220,7 @@ func vulnPrivateIndent(line string) int {
 // It is separate from vulnPrivateOpensUnit because a list item is the only
 // block here that takes a LAZY CONTINUATION — see vulnPrivateUnits.
 func vulnPrivateListItem(line string) bool {
-	s := strings.TrimLeft(vulnPrivateContent(line), " \t")
+	s := strings.TrimLeft(line, " \t")
 	if s == "" {
 		return false
 	}
@@ -185,7 +241,7 @@ func vulnPrivateOpensUnit(line string) bool {
 	if vulnPrivateListItem(line) {
 		return true
 	}
-	s := strings.TrimLeft(vulnPrivateContent(line), " \t")
+	s := strings.TrimLeft(line, " \t")
 	return s != "" && s[0] == '#'
 }
 
@@ -258,7 +314,10 @@ func vulnPrivateOpensUnit(line string) bool {
 //	<open id>\n<text>   SILENT, rc 0
 //
 // Markdown reads that as one paragraph and this grouping reads two units,
-// because a non-opener continues a LIST item and nothing else. Closing it —
+// because a non-opener continues a LIST item and nothing else. A BLOCKQUOTED
+// bullet falls inside this one rather than beside it (ranger-base-uc338's
+// shape census): nothing here reads `>` as anything, so `> - <id>` is prose
+// and `> <text>` under it has no list item above it. Closing it —
 // letting a non-opener continue a non-opener too — was MEASURED at 36 ids
 // newly flagged over the 679 tracked markdown files of this tree, every one
 // of them ordinary prose naming a bead id on its own line, so it is ADR
@@ -273,7 +332,7 @@ func vulnPrivateUnits(lines []string) []int {
 	var openers []int // stack of opener line indices, by ascending indent
 	for i, line := range lines {
 		unitOf[i] = i
-		if strings.TrimSpace(vulnPrivateContent(line)) == "" {
+		if strings.TrimSpace(line) == "" {
 			openers = openers[:0] // a blank line closes every open unit
 			continue
 		}
@@ -474,11 +533,17 @@ func vulnPrivateOwnBead(dir string) string {
 
 // RunGatesVulnPrivateScan is check 4's judge: stdin is the text a
 // commit-guard arm already computed (the staged markdown additions, or the
-// cleaned commit message — gates.go's $posse_added either way), dir is the
-// repo whose beads store answers, and the return says whether anything was
-// printed — which is also the whole of what the shell side needs to know
-// (gates.go's posse_vp_check: empty output is a clean scan, exactly
-// posse_check's own idiom).
+// cleaned commit message — gates.go's $posse_added either way), arm says
+// WHICH of those two it is, dir is the repo whose beads store answers, and
+// the return says whether anything was printed — which is also the whole of
+// what the shell side needs to know (gates.go's posse_vp_check: empty output
+// is a clean scan, exactly posse_check's own idiom).
+//
+// ARM IS A PARAMETER AND NEVER A READING OF THE TEXT (VulnPrivateArm, and
+// ranger-base-gi6ge): the content arm's lines each carry a unified-diff `+`
+// and the message arm's carry nothing, `+` is also a markdown bullet marker,
+// and at column 0 the two are the same byte. The caller knows; the text does
+// not say.
 //
 // THE QUERY RUNS ONCE PER CALL, not once per candidate id in the text:
 // bd.OpenLabeledAny already pages --limit 0 and already drops closed rows
@@ -491,7 +556,7 @@ func vulnPrivateOwnBead(dir string) string {
 // recorded for (vulnPrivateOwnBead). AGENTS.md already allows a fix to
 // describe the hole it CLOSES, and this is the only place that permission
 // can be realized — the fix must commit while its bead is still open.
-func RunGatesVulnPrivateScan(bd Bd, dir string, stdin io.Reader, stdout io.Writer) (hit bool) {
+func RunGatesVulnPrivateScan(bd Bd, dir string, arm VulnPrivateArm, stdin io.Reader, stdout io.Writer) (hit bool) {
 	content, err := io.ReadAll(stdin)
 	if err != nil || len(content) == 0 {
 		return false
@@ -518,7 +583,11 @@ func RunGatesVulnPrivateScan(bd Bd, dir string, stdin io.Reader, stdout io.Write
 		}
 		ids = append(ids, is.ID)
 	}
-	flagged := vulnPrivateHits(string(content), ids)
+	text := string(content)
+	if arm == VulnPrivateContentArm {
+		text = vulnPrivateUndiff(text)
+	}
+	flagged := vulnPrivateHits(text, ids)
 	for _, id := range flagged {
 		fmt.Fprint(stdout, vulnPrivateHitLine(id))
 	}
