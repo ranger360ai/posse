@@ -187,7 +187,9 @@ func TestQALaneKeepsAPIDThatCarriesTheWinningLabelSecond(t *testing.T) {
 // PRIMARY lane first, and two keys decide a lane, both written by a human in
 // a reviewed file: `route_order:` decides WHO heads the candidates, and the
 // head's own label order decides WHICH of its labels is the lane
-// (dispatch.go, `win := out[0].label`). The test above is the other half — a
+// (dispatch.go, `labelMatches`: `win` is the head's anchor, which on a head
+// that lists its own lane label and matches it IS that first label). The test
+// above is the other half — a
 // FOLLOWER's order decides nothing, it is a seat wherever it carries the
 // winning label. Since ranger-base-equhp's narrowing this key decides
 // MEMBERSHIP and not only the label the route report prints, which is why it
@@ -209,16 +211,20 @@ func TestQALaneKeepsAPIDThatCarriesTheWinningLabelSecond(t *testing.T) {
 // instance's PIDs share — the instance's own vocabulary, named on the bead
 // and not here (ADR 0024 D3, restate-and-cite).
 //
-// THAT REMEDY IS THIS ARM'S AND NOT THE WHOLE SHAPE'S (ranger-base-bskno).
-// The order is a remedy here because arm C's head matches on TWO labels, so
-// there is something to order. There is a second route to the same lane where
-// there is not: a head whose `matched` set holds exactly ONE element takes
-// that label as the lane whatever order any PID lists its labels in, and when
-// that element is the cross-cutting label the lane can hold no seat that can
-// do the work at all. §4 does not cover it and this arm's fixture cannot
-// reach it. It is measured by
-// TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat below; its remedy
-// is open at ranger-base-d7lsc.
+// THAT REMEDY IS THIS ARM'S AND NOT THE WHOLE SHAPE'S (ranger-base-bskno,
+// decided at ranger-base-d7lsc). The order is a remedy here because arm C's
+// head matches on TWO labels, so there is something to order — and under the
+// anchor rule it still is: this head lists `team` FIRST, so `team` is the lane
+// it DECLARES, it anchors on it, and arm C routes exactly as it did. There is
+// a second route to the same lane where there is nothing to order: a head
+// whose `matched` set holds exactly ONE element, and that element neither its
+// own first label nor a single lane's. That head took the label as the lane
+// whatever order any PID listed its labels in, and where the element was the
+// cross-cutting label the lane held no seat that could do the work at all.
+// §4 did not cover it and this arm's fixture cannot reach it. It is now
+// decided as code: such a candidate does not head.
+// TestQAHeadAnchorsOnItsOwnLaneOrASingleLaneLabel below is that rule, and
+// carries this arm's shape as a control.
 //
 // The bead labels are passed ALPHABETICALLY because that is the only order
 // routing ever sees: MEASURED 2026-11-13, bd normalizes a bead's labels to
@@ -275,74 +281,91 @@ func TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ranger-base-bskno — the SECOND route to a cross-cutting lane, and this one
-// no order reaches.
+// ranger-base-d7lsc — A CANDIDATE HEADS ONLY ON AN ANCHOR, so the capable
+// seat is the lane on the route no order reaches.
 //
-// Arm C above is §4's stated configuration error: a PID that LISTS a
-// cross-cutting label first makes that label its lane, and §4's stated remedy
-// is the order. That remedy reaches arm C, where the head's `matched` set has
-// two elements and the order really does decide. It does not reach this test.
-// When the head candidate's `matched` set holds exactly ONE element and that
-// element is the cross-cutting label, that label is the lane whatever order
-// any PID lists its labels in — there is nothing to order. The roster below
-// has §4's remedy already applied everywhere: every PID lists its own lane
-// label first, as RE-MEASURED 2026-11-14 all 11 of this instance's PIDs do
-// (and as 20 of 20 did on 2026-11-13, counting the shipped examples), and the
-// misroute still happens.
+// THE SHAPE (found as ranger-base-bskno, characterized there over the
+// behaviour this table replaces). Arm C above is ADR 0011 §4's stated
+// configuration error: a PID that LISTS a cross-cutting label first makes
+// that label its lane, and §4's stated remedy is the order. That remedy
+// reaches arm C, where the head's `matched` set has two elements and the
+// order really does decide. It did not reach this one. When the head
+// candidate's `matched` set held exactly ONE element and that element was the
+// cross-cutting label, that label was the lane whatever order any PID listed
+// its labels in — there was nothing to order. The roster below has §4's
+// remedy already applied everywhere: every PID lists its own lane label
+// first, as RE-MEASURED 2026-11-14 all 11 of this instance's PIDs do (and as
+// 20 of 20 did on 2026-11-13, counting the shipped examples), and the
+// misroute still happened.
 //
 // Sharper than arm C, and sharper than ranger-base-equhp's incident. equhp
 // was a lane that SOMETIMES reached a seat which could only hand the bead
-// back. Here the lane holds no seat that can do the deliverable at all:
+// back. There the lane held no seat that could do the deliverable at all:
 // `ops-seat` is the only devops seat on the roster and `watcher` the only
-// security seat, and neither is in its own deliverable's lane, so the bead
-// cannot be seated on a capable seat on any pass.
+// security seat, and neither was in its own deliverable's lane, so the bead
+// could not be seated on a capable seat on any pass.
 //
-// TWO CONTROLS, MEASURED 2026-11-14 through these same arms by mutating
-// `labelMatches` and reverting after the reading:
+// THE RULE, decided at ranger-base-d7lsc and written into ADR 0011 §4 as
+// amended 2026-11-14 (commit 8a0a93d1), built in `labelMatches` under
+// ranger-base-5ex01. A label's LANES are the first labels of every
+// non-coordinator PID carrying it. A candidate's ANCHOR is the first of its
+// matched labels, in its PID's order, that is its own first label or belongs
+// to exactly one lane. The head is the first candidate in the `route_order`
+// sort that HAS an anchor, and the lane is that anchor. Seats are unchanged:
+// every candidate carrying the lane label. Where no candidate has an anchor,
+// out[0]'s head label is the lane as before.
 //
-//   - PRE-NARROWING (`return out` for `return lane`): all four arms red, with
-//     the lane reading `[aaa-dev ops-seat zz-arch]` and `[aaa-dev watcher
-//     zz-arch]`. Before ranger-base-equhp's narrowing the capable seat was
-//     always IN the lane and only the printed label was wrong, so the
-//     EXCLUSION half is new with it — what ranger-base-5793u established for
-//     the frontmatter-order half.
-//   - §4'S REJECTED ALTERNATIVE (`win` as the alphabetically first of
-//     `out[0].matched`): all four arms green and byte-identical, because a
-//     one-element matched set has the same first element in either order.
+// WHAT THIS TABLE HOLDS, row by row — the two stranded rows now seat the
+// capable PID, and everything the rule must NOT move is a control beside
+// them:
 //
-// So this shape is orthogonal to the (a)/(b) choice §4 settled — neither the
-// decided rule nor the rejected one reaches it — and it is not a reopen of
-// ranger-base-svoux.
+//   - rows 1-4: the finding's two rows, over the head orders where the head
+//     does not declare the shared label. `aaa-dev` matches the bead on
+//     `team` alone, which is neither its own lane nor one lane's, so it does
+//     not head; the only devops seat heads a devops bead and the only
+//     security seat a security one. These are the rows that moved.
+//   - row 5: the FIRST configuration error, which keeps the remedy it has
+//     (§4, ranger-base-svoux). A head that lists `team` first DECLARED that
+//     as its lane, so it anchors on it and the lane is `team` — arm C's
+//     shape reached through a one-element matched set, and still an error
+//     whose remedy is the PID's order and not code.
+//   - row 6: nothing to anchor on. A bead carrying ONLY the shared label has
+//     no capable-seat answer to find, so the rule leaves it where it was: a
+//     `team` lane of the two carriers.
+//   - rows 7-8: the head's own lane still wins when it matches it, with and
+//     without another lane's label on the bead.
+//   - row 9: the ALIAS arm, and the reason primary-first was rejected
+//     (ranger-base-d4bk4's shape: a code fix labelled `[bug, security]`).
+//     `bug` is not `aaa-dev`'s declared lane, but every PID carrying `bug`
+//     is in the code lane, so matching it is a code match and the fix stays
+//     with the code seat. Primary-first would hand it to the findings-only
+//     security PID, which is equhp's own incident.
 //
-// CHARACTERIZATION, not a decision — the same posture arm C's table went in
-// with under ranger-base-5793u while ranger-base-svoux was out. The remedy is
-// with the architecture lane as ranger-base-d7lsc, which carries the three
-// shapes: (a) prefer the next candidate whose matched set holds a non-shared
-// label, (b) state this as a second configuration error whose remedy is not
-// the order, (c) the explicit `lane:` PID key §4 already names as its exit
-// hatch. Under (b) this table stands as written. Under (a) or (c) it must be
-// rewritten to the table the finding asked for — the same roster, with the
-// lane HOLDING the seat that can do the work — and the red is the deliberate
-// signal that the behaviour moved.
+// MEASURED 2026-11-14 (linux, scratch census over `bd list --all --json
+// --limit 6000` and this instance's 10 non-coordinator PIDs): 3,856 beads,
+// 3,474 with a candidate, and the anchor changes 0 of those routes.
+// Primary-first changes 2. Exactly one label on the live roster spans more
+// than one lane and 0 beads carry it, so rows 1-5 are a shape the roster
+// permits and no bead has yet reached.
 //
-// NOT FIRING ON THIS INSTANCE TODAY: RE-MEASURED 2026-11-14, 0 of 3,851 beads
-// in this store carry the cross-cutting label at all (0 of 3,795 a day
-// earlier). It is declared on 5 of this instance's 11 PIDs, every one
-// of which lists its own lane label first and none of which lists the shared
-// one first, and it has never been filed on a bead. There is exactly one
-// devops PID and one security PID, so both rows below are the live roster's
-// shape; ONE bead carrying the label plus a lane label turns a row on.
+// THE DELIBERATE RED. This table is the rewrite ranger-base-bskno's
+// characterization pin asked for — same roster, the lane HOLDING the seat
+// that can do the work. It reds if `win` reverts to `out[0].label`: rows 1-4
+// read `aaa-dev,zz-arch` (`team`) under the old body, which is the measured
+// before-state, and `capable` is asserted by name so the message says which
+// seat went missing rather than only that a set differed. VERIFIED by that
+// mutation, 2026-11-14 (ranger-base-5ex01).
 //
 // `team` is §4's spelling for the real label several of this instance's PIDs
 // share — the instance's own vocabulary, named on the bead and not here (ADR
 // 0024 D3, ADR 0048 D2; the code and architecture lanes were each refused by
 // the visibility gate for the real literal under ranger-base-5793u and
 // ranger-base-svoux).
-func TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat(t *testing.T) {
+func TestQAHeadAnchorsOnItsOwnLaneOrASingleLaneLabel(t *testing.T) {
 	t.Parallel()
 	// head is aaa-dev's own labels. The default lists its lane label first,
 	// which is §4's remedy already applied; the reordered arms are the proof
-	// that no order is a remedy here.
+	// that the anchor does not need an order to be the remedy.
 	const headLaneFirst = "[code, feature, bug, team]"
 	for _, arm := range []struct {
 		name     string
@@ -350,27 +373,54 @@ func TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat(t *testing.T) {
 		bead     []string
 		want     string
 		label    string
-		stranded string
+		capable  string // must be IN the lane, by name
+		stranded string // must NOT be in the lane, by name
+		solo     string // the lane for bead[0] alone; "" skips the control
 	}{
 		{
-			"devops deliverable: the only devops seat is not in its lane",
+			"1 a devops deliverable heads on the only devops seat",
 			headLaneFirst, []string{"devops", "team"},
-			"aaa-dev,zz-arch", "team", "ops-seat",
+			"ops-seat", "devops", "ops-seat", "", "ops-seat",
 		},
 		{
-			"security deliverable: the only security seat is not in its lane",
+			"2 a security deliverable heads on the only security seat",
 			headLaneFirst, []string{"security", "team"},
-			"aaa-dev,zz-arch", "team", "watcher",
+			"watcher", "security", "watcher", "", "watcher",
 		},
 		{
-			"the order is not a remedy: head lists its lane label last",
-			"[team, code, feature, bug]", []string{"devops", "team"},
-			"aaa-dev,zz-arch", "team", "ops-seat",
-		},
-		{
-			"the order is not a remedy: head's labels alphabetical",
+			"3 the head's order is not the remedy: shared label last, lane label second",
 			"[bug, code, feature, team]", []string{"devops", "team"},
-			"aaa-dev,zz-arch", "team", "ops-seat",
+			"ops-seat", "devops", "ops-seat", "", "ops-seat",
+		},
+		{
+			"4 the same, on the security deliverable",
+			"[bug, code, feature, team]", []string{"security", "team"},
+			"watcher", "security", "watcher", "", "watcher",
+		},
+		{
+			"5 control: a head that lists the shared label FIRST declared it, and anchors on it",
+			"[team, code, feature, bug]", []string{"devops", "team"},
+			"aaa-dev,zz-arch", "team", "", "ops-seat", "ops-seat",
+		},
+		{
+			"6 control: nothing to anchor on, so the shared label is still the lane",
+			headLaneFirst, []string{"team"},
+			"aaa-dev,zz-arch", "team", "", "", "",
+		},
+		{
+			"7 control: the head's own lane wins when the bead carries it",
+			headLaneFirst, []string{"code", "team"},
+			"aaa-dev", "code", "aaa-dev", "zz-arch", "",
+		},
+		{
+			"8 control: [code, security] is the code lane",
+			headLaneFirst, []string{"code", "security"},
+			"aaa-dev", "code", "aaa-dev", "watcher", "",
+		},
+		{
+			"9 control, the alias arm: a [bug, security] code fix stays with the code seat",
+			headLaneFirst, []string{"bug", "security"},
+			"aaa-dev", "bug", "aaa-dev", "watcher", "",
 		},
 	} {
 		t.Run(arm.name, func(t *testing.T) {
@@ -384,24 +434,71 @@ func TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat(t *testing.T) {
 
 			names, label := laneOf(t, d, arm.bead...)
 			if strings.Join(names, ",") != arm.want || label != arm.label {
-				t.Errorf("lane is %v (%s), want %s (%s) — the head's matched set is the cross-cutting label alone, so that label is the lane and no PID's order moves it (ranger-base-bskno, remedy open at ranger-base-d7lsc)",
+				t.Errorf("lane is %v (%s), want %s (%s) — a candidate heads only on an anchor: the first matched label that is its own first label or belongs to one lane (ADR 0011 §4, ranger-base-d7lsc)",
 					names, label, arm.want, arm.label)
 			}
+			seated := false
 			for _, n := range names {
-				if n == arm.stranded {
-					t.Fatalf("%s is in the lane now — the behaviour moved, which is what ranger-base-d7lsc's (a)/(c) would do; rewrite this table deliberately: %v (%s)",
-						arm.stranded, names, label)
+				if n == arm.capable {
+					seated = true
+				}
+				if arm.stranded != "" && n == arm.stranded {
+					t.Fatalf("%s is in the lane and must not be: %v (%s)", arm.stranded, names, label)
 				}
 			}
+			if arm.capable != "" && !seated {
+				t.Fatalf("%s is not in the lane — the seat that can do this deliverable must be the one that heads it: %v (%s)",
+					arm.capable, names, label)
+			}
 
-			// The control: the narrowing has not stranded the dropped seat's
-			// own label. Its lane is its own, and only the deliverable that
-			// ALSO carries the cross-cutting label loses it.
-			solo, soloLabel := laneOf(t, d, arm.bead[0])
-			if strings.Join(solo, ",") != arm.stranded || soloLabel != arm.bead[0] {
-				t.Errorf("%s lane regressed: got %v (%s), want %s (%s)",
-					arm.bead[0], solo, soloLabel, arm.stranded, arm.bead[0])
+			// The control ranger-base-bskno's pin carried, kept: the
+			// narrowing never stranded the dropped seat's own LABEL, only
+			// the deliverable that also carried the shared one. Still true,
+			// and on rows 1-4 it is now the same lane either way.
+			if arm.solo != "" {
+				solo, soloLabel := laneOf(t, d, arm.bead[0])
+				if strings.Join(solo, ",") != arm.solo || soloLabel != arm.bead[0] {
+					t.Errorf("%s lane regressed: got %v (%s), want %s (%s)",
+						arm.bead[0], solo, soloLabel, arm.solo, arm.bead[0])
+				}
 			}
 		})
+	}
+}
+
+// The lane's label is the ANCHOR, and the anchor can belong to a candidate
+// the sort does not offer first. `aaa-dev` matches this bead on `team` and
+// `docs`, neither its own lane nor one lane's, so it does not head; `zz-docs`
+// heads on `docs`, which IS its own lane. Both carry `docs`, so both are
+// seats and `aaa-dev` is still the preferred one — but its own head label is
+// `team`, and `team` is not what this lane was chosen on.
+//
+// Pinned because `routeLane.label` and `routeWhy` read that label off
+// `seats[0]` until ranger-base-5ex01, where they could only ever agree: the
+// winning label WAS out[0]'s own. Under the anchor they can differ, and a
+// route report naming a label the lane was not chosen on is the same defect
+// ranger-base-2yj5 built the why line to answer — "why did that persona get
+// this bead", answered with the wrong label.
+func TestQALanesLabelIsTheAnchorNotThePreferredSeatsOwnLabel(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "aaa-dev", "[code, team, docs]")
+	writePersona(t, b.App, "zz-docs", "[docs, team]")
+
+	names, label := laneOf(t, d, "docs", "team")
+	if strings.Join(names, ",") != "aaa-dev,zz-docs" {
+		t.Errorf("both PIDs carry the anchor, so both are seats: got %v (%s)", names, label)
+	}
+	if label != "docs" {
+		t.Errorf("the lane's label is the anchor the head was chosen on, got %q — aaa-dev's own head label is `team`", label)
+	}
+
+	p, why := d.Route(RepoIssue{BdIssue: BdIssue{ID: "a-1", Labels: []string{"docs", "team"}}})
+	if p != "aaa-dev" {
+		t.Errorf("the preferred seat is unchanged by which candidate anchored: got %q (%s)", p, why)
+	}
+	if !strings.Contains(why, "label:docs (first of 2: aaa-dev, zz-docs)") {
+		t.Errorf("the route report must name the label the lane was chosen on: %q", why)
 	}
 }

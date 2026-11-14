@@ -1727,8 +1727,11 @@ func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 		// offered, exactly as the coordinator clause above already is.
 		return routeLane{deny: fmt.Sprintf("held by %s, which is not a loadable persona — not a lane; the operator reassigns or works it by hand", is.Assignee)}
 	}
-	if cands := d.labelMatches(coord, is); len(cands) > 0 {
-		return routeLane{seats: cands, label: cands[0].label, why: routeWhy(cands)}
+	// The lane's label comes back BESIDE the seats, because since
+	// ranger-base-5ex01 it is the head's anchor and not always seats[0]'s own
+	// head label (labelMatches, ADR 0011 §4 as amended 2026-11-14).
+	if cands, win := d.labelMatches(coord, is); len(cands) > 0 {
+		return routeLane{seats: cands, label: win, why: routeWhy(win, cands)}
 	}
 	if def := d.App.CfgGet("default_persona", ""); def != "" {
 		if isCoordinator(coord, def) {
@@ -1745,20 +1748,27 @@ func (d *Dispatcher) laneFor(is RepoIssue) routeLane {
 // that matched and the PID's stated place in the queue.
 //
 // `matched` is every one of this PID's labels the bead carries, in the PID's
-// own order, and `label` is its head — this PID's own lane, because a PID
-// lists its PRIMARY lane first (ADR 0011 §4, ranger-base-svoux). The whole
-// set is kept because the lane is narrowed to ONE label after the sort
-// (labelMatches), and that order is a key only at the HEAD of the candidates:
-// a PID that carries both `qa` and `code` matches on whichever it happens to
-// list first, and dropping it from a `code` lane for that would read a
-// FOLLOWER's order as a decision, which it is not.
+// own order; `primary` is `Labels[0]`, the lane this PID DECLARES, because a
+// PID lists its PRIMARY lane first (ADR 0011 §4, ranger-base-svoux); and
+// `label` is `matched`'s head. The whole set is kept because the lane is
+// narrowed to ONE label after the sort (labelMatches), and that order is a
+// key only at the HEAD of the candidates: a PID that carries both `qa` and
+// `code` matches on whichever it happens to list first, and dropping it from
+// a `code` lane for that would read a FOLLOWER's order as a decision, which
+// it is not.
 //
-// A head's order is a key only where `matched` holds more than one label. On
-// a one-element set it decides nothing and nothing can be ordered, so the
-// label is the lane unconditionally — see labelMatches (ranger-base-bskno).
+// `label` is this PID's own head and NOT necessarily the lane's. A head's
+// order is a key only where `matched` holds more than one label; on a
+// one-element set there is nothing to order, so since ranger-base-5ex01 a
+// candidate heads only on an ANCHOR — the first matched label that is its
+// `primary` or belongs to exactly one lane — and a candidate with no anchor
+// does not head at all (labelMatches, ADR 0011 §4 as amended 2026-11-14,
+// ranger-base-d7lsc). The lane's label is therefore read off
+// routeLane.label, never off seats[0].
 type routeMatch struct {
 	name    string
 	label   string
+	primary string
 	matched []string
 	order   int
 }
@@ -1766,8 +1776,9 @@ type routeMatch struct {
 // labelMatches is the lane: the personas that could take this bead on ONE
 // label, in the order routing prefers them — `route_order:` ascending, then
 // persona name (ListAgents' order — stable, so the sort never reshuffles a
-// tie). The winning label is the preferred candidate's, and the lane is
-// everyone else who carries that same label.
+// tie). The winning label is the preferred ANCHORED candidate's anchor, and
+// the lane is everyone else who carries that same label. It is returned
+// beside the seats because it is no longer always seats[0]'s own head label.
 //
 // TWO keys decide a lane, both written by a human in a reviewed file (ADR
 // 0011 §4, ranger-base-svoux): `route_order:` decides WHO heads the
@@ -1780,25 +1791,47 @@ type routeMatch struct {
 // It shows at run time in the route report's `label:` and roster, and is
 // pinned by TestQALaneWinningLabelTurnsOnTheHeadPIDsFrontmatterOrder.
 //
-// That remedy covers the route §4 names and not a second route to the same
-// lane (ranger-base-bskno). The order is a remedy only where the head matches
-// on more than one label; when the head's `matched` set holds exactly ONE
-// element, that label is the lane whatever order any PID lists its labels in,
-// because there is nothing to order. Where that element is the cross-cutting
-// label the lane can hold NO seat that can do the deliverable — on a roster
-// with one devops PID and one security PID, neither is in its own
-// deliverable's lane, so the bead cannot be seated on a capable seat on any
-// pass. MEASURED 2026-11-14: every PID on this instance already lists its lane
-// label first, which is §4's remedy applied everywhere, and the misroute still
-// happens; against the pre-narrowing body the capable seat was in the lane and
-// only the printed label was wrong, so the exclusion is new with equhp's
-// narrowing. Not firing today — 0 of 3,851 beads carry the label, declared on
-// 5 of 11 PIDs and never filed. The remedy is open at ranger-base-d7lsc
-// (three shapes: prefer the next candidate matching a non-shared label; state
-// it in §4 as a second configuration error whose remedy is not the order; or
-// §4's `lane:` exit hatch). Characterized meanwhile by
-// TestQALaneIsTheCrossCuttingLabelWhenTheHeadMatchesOnlyThat, which reds by
-// name if the behaviour moves.
+// That remedy covers the route §4 names and not a SECOND route to the same
+// lane, which no order reaches (ranger-base-bskno). The order is a remedy
+// only where the head matches on more than one label; when the head's
+// `matched` set holds exactly ONE element, that label is the lane whatever
+// order any PID lists its labels in, because there is nothing to order. Where
+// that element is the cross-cutting label the lane can hold NO seat that can
+// do the deliverable — on a roster with one devops PID and one security PID,
+// neither is in its own deliverable's lane, so the bead cannot be seated on a
+// capable seat on any pass. MEASURED 2026-11-14: every PID on this instance
+// already lists its lane label first, which is §4's remedy applied
+// everywhere, and the misroute still happened; against the pre-narrowing body
+// the capable seat was in the lane and only the printed label was wrong, so
+// the exclusion is new with equhp's narrowing.
+//
+// So A CANDIDATE HEADS ONLY ON AN ANCHOR (decided at ranger-base-d7lsc, ADR
+// 0011 §4 as amended 2026-11-14; built here under ranger-base-5ex01). A
+// label's LANES are the first labels of every non-coordinator PID carrying
+// it, read off this same walk — over every PID and not only the candidates,
+// because the question is about the ROSTER and not about this bead. A
+// candidate's anchor is the first of its `matched` labels, in its PID's
+// order, that is its own first label or belongs to exactly one lane. The head
+// is the first candidate in the sort that HAS an anchor, and the lane is that
+// anchor; where no candidate has one — a bead carrying nothing but the shared
+// label — out[0]'s head label is the lane, exactly as before. Seats are
+// unchanged, every candidate carrying the lane label, so this moves which
+// LABEL is the lane and never who is in it for a given label. The first
+// configuration error keeps its remedy: a PID that lists the shared label
+// FIRST anchors on it, because it declared that as its lane.
+//
+// Two rules were rejected on measurement, both now in §4's Alternatives: the
+// explicit `lane:` PID key (its default is the first label the anchor already
+// reads, so it buys this nothing and still costs a seat-visible key — it
+// stays §4's exit hatch), and primary-first, where a head must match its own
+// first label. Primary-first moves 2 of 3,474 live routes, one of them a code
+// fix labelled `[bug, security]` whose only code match is the alias `bug`: it
+// leaves the code lane for the findings-only security PID, which is equhp's
+// own shape. An alias and a cross-cutting label are both "not first"; what
+// separates them is whether their carriers share one lane. MEASURED
+// 2026-11-14 over 3,856 beads (3,474 with a candidate) against this
+// instance's live roster, the anchor changes 0 routes. Pinned by
+// TestQAHeadAnchorsOnItsOwnLaneOrASingleLaneLabel.
 //
 // It is NOT every persona whose labels overlap the bead's (ranger-base-equhp).
 // A bead carries the labels of all the work it touches, so the union read one
@@ -1819,11 +1852,19 @@ type routeMatch struct {
 // not that lane. Narrowed, a bead labelled [code, security] whose code seats
 // are all busy waits for a later pass, which is what a busy lane does; it does
 // not overflow into the security PID.
-func (d *Dispatcher) labelMatches(coord string, is RepoIssue) []routeMatch {
+func (d *Dispatcher) labelMatches(coord string, is RepoIssue) ([]routeMatch, string) {
 	var out []routeMatch
+	// label -> the first labels of the PIDs carrying it. A label with one
+	// entry is one lane's, however many PIDs carry it; two or more and it
+	// spans lanes, so matching it alone says nothing about which lane's work
+	// this is. Collected over every PID the roster has, candidate or not —
+	// the anchor asks a question about the ROSTER.
+	lanes := map[string]map[string]bool{}
 	for _, name := range d.App.ListAgents() {
 		// Her PID's labels: make her label-routable; they are a lane's
-		// vocabulary, and she is not a lane.
+		// vocabulary, and she is not a lane. Excluded from the lane counting
+		// for the same reason she is excluded from candidacy — counting her
+		// would make a label she carries for triage read as a second lane.
 		if isCoordinator(coord, name) {
 			continue
 		}
@@ -1831,30 +1872,72 @@ func (d *Dispatcher) labelMatches(coord string, is RepoIssue) []routeMatch {
 		if err != nil {
 			continue
 		}
+		if len(ag.Labels) == 0 {
+			continue
+		}
+		primary := ag.Labels[0]
 		var matched []string
 		for _, pl := range ag.Labels {
+			if lanes[pl] == nil {
+				lanes[pl] = map[string]bool{}
+			}
+			lanes[pl][primary] = true
 			if hasLabel(is.Labels, pl) {
 				matched = append(matched, pl)
 			}
 		}
 		if len(matched) > 0 {
-			out = append(out, routeMatch{name: name, label: matched[0], matched: matched, order: ag.RouteOrder})
+			out = append(out, routeMatch{name: name, label: matched[0], primary: primary, matched: matched, order: ag.RouteOrder})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].order < out[j].order })
 	if len(out) == 0 {
-		return nil
+		return nil, ""
 	}
-	// The narrowing. out[0] is the preferred candidate, so its head label is
-	// the lane's, and only the PIDs carrying that label are its seats.
+	// The narrowing. The head is the first candidate the sort offers that has
+	// an ANCHOR, and the lane is its anchor; only the PIDs carrying that
+	// label are its seats. With no anchor anywhere — a bead carrying nothing
+	// but a label several lanes share — out[0]'s head label is the lane, as
+	// it was before ranger-base-5ex01.
 	win := out[0].label
+	for _, m := range out {
+		if a := m.anchor(lanes); a != "" {
+			win = a
+			break
+		}
+	}
 	lane := make([]routeMatch, 0, len(out))
 	for _, m := range out {
 		if hasLabel(m.matched, win) {
 			lane = append(lane, m)
 		}
 	}
-	return lane
+	return lane, win
+}
+
+// anchor is the label this candidate may head a lane ON: the first of its
+// matched labels, in its PID's order, that is the lane the PID DECLARES (its
+// first label) or that belongs to exactly one lane. "" means this candidate
+// matched the bead only on labels that are neither — another lane's work, as
+// far as its own PID says — and a candidate with no anchor does not head
+// (ADR 0011 §4, ranger-base-d7lsc).
+//
+// Both arms are needed and neither subsumes the other. A PID's own first
+// label anchors it whatever else carries that spelling, which is what leaves
+// §4's first configuration error with the remedy it has — a PID that lists
+// the shared label first declared it as its lane and gets it. The one-lane
+// arm is what keeps an ALIAS working: `bug` on a code PID is not that PID's
+// declared lane, but if every PID carrying `bug` is in the code lane then
+// matching it is still a code match, and a `[bug, security]` code fix stays
+// in the code lane (ranger-base-d4bk4 — the measurement that rejected
+// primary-first).
+func (m routeMatch) anchor(lanes map[string]map[string]bool) string {
+	for _, l := range m.matched {
+		if l == m.primary || len(lanes[l]) == 1 {
+			return l
+		}
+	}
+	return ""
 }
 
 // routeMaxRoster is how many names the why line prints before summarizing.
@@ -1867,8 +1950,14 @@ const routeMaxRoster = 4
 // came from needed a script to answer "why did that persona get this
 // bead"; the pass already printed `label:code`, and "(first of 2: <who
 // won>, <who did not>)" is the rest of the sentence (ranger-base-2yj5).
-func routeWhy(c []routeMatch) string {
-	why := "label:" + c[0].label
+//
+// `win` is passed in rather than read off `c[0]`: the lane's label is the
+// head's ANCHOR, and the first seat the sort offers can carry that label
+// second while its own head label is another (labelMatches,
+// ranger-base-5ex01). Reading it off `c[0]` printed a label that was not the
+// one the lane was chosen on.
+func routeWhy(win string, c []routeMatch) string {
+	why := "label:" + win
 	if len(c) == 1 {
 		return why
 	}
