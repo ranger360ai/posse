@@ -58,11 +58,15 @@ this package that key stopped paying for itself: a pin here reads a tracked
 file it names as often as it walks a directory, and a named read is the
 enumeration rule's own negative case, so the pins that most needed a door
 were the ones no derivation could find. Seven of the nine hand-written
-exemptions in `treewidedoor_qa_test.go` arrived for that one cause. Named the
-other way round — the package minus `$(QA_TREEPINS_EXCLUDED)` — a pin written
-tomorrow is behind the door the moment it is written, and the only hand-kept
-state is the exclusion table, where every row carries its measured seconds,
-the box, the date and the route that still runs it.
+exemptions that key cost `treewidedoor_qa_test.go` arrived for that one cause,
+and all nine are gone: under the complement a door variable may name any test
+in this package, so there is nothing to exempt
+([ADR 0098](../../docs/adr/0098-the-treepins-door-is-the-package-minus-a-priced-exclusion-list.md)
+D4). Named the other way round — the package minus
+`$(QA_TREEPINS_EXCLUDED)` — a pin written tomorrow is behind the door the
+moment it is written, and the only hand-kept state is the exclusion table,
+where every row carries its measured seconds, the box, the date and the route
+that still runs it.
 
 Six doors came off `tree-check`'s line when it arrived, and all six are still
 here to type, each a subset of the one that replaced them:

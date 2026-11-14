@@ -61,7 +61,9 @@ package treepins
 // THE REGISTER'S PARTNER IS A COUPLING, not a courtesy. A waiver that outlives its cause is
 // how this door would go back to being remembered — the register is the one
 // route into arm 1 that does not go through the census, which is exactly the
-// parking spot treewidedoor_qa_test.go's twdDoorHolders keeps warning about.
+// parking spot treewidedoor_qa_test.go keeps warning about — and whose own
+// instance of it, twdDoorHolders, grew to nine rows and was retired for that
+// reason (ADR 0098 D4, ranger-base-gyz7a).
 // So a registered package that has stopped planting, or that HAS an arm now,
 // is a red with a one-line fix: delete the row.
 //

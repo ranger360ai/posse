@@ -808,10 +808,12 @@ QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetB
 # THE COMPLEMENT (ADR 0098, ranger-base-3cpcg). Every variable above is a
 # `-run` filter: a door is the pins it NAMES, and a pin nobody names is a pin
 # nobody doors. In internal/treepins that key stopped paying for itself —
-# seven of nine hand rows in twdDoorHolders arrived for one cause, a pin whose
-# subject is a tracked file it reads BY NAME, which no derivation over the
-# source can see (ADR 0098 Context). So this package's door is spelled the
-# other way round: the whole package MINUS the tests on this line. A pin
+# seven of the nine hand-written exemptions it cost arrived for one cause, a
+# pin whose subject is a tracked file it reads BY NAME, which no derivation
+# over the source can see (ADR 0098 Context). So this package's door is
+# spelled the other way round: the whole package MINUS the tests on this
+# line, and the exemption register those nine rows lived in is retired for
+# this package (ADR 0098 D4, ranger-base-gyz7a). A pin
 # written tomorrow is doored by `make treepins-check` the moment it is
 # written, with nobody remembering to door it.
 #
@@ -823,15 +825,23 @@ QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetB
 # control arm" are not reasons — those were the old parking-spot reasons and
 # under the complement neither one earns an exclusion.
 #
-# These twelve are the suite wrappers' own self-tests (scripts/test-times.sh,
+# These eleven are the suite wrappers' own self-tests (scripts/test-times.sh,
 # scripts/suite-lock.sh, scripts/gotest.sh), the race-arm census that compiles
-# internal/posse's three arms, the tracked-file digit census and the bd argv
-# gate's verb arm: 75.3s of the package's 167.3s of summed test time, over
-# twelve tests of 481 (MEASURED 2026-11-14 warm, this box, through
-# scripts/test-times.sh; the three race-arm rows read 25-28s rather than ~3s
-# in the reading before it, with internal/posse's arm builds cold). They are
-# run by `make test`, which runs this package whole.
-QA_TREEPINS_EXCLUDED := TestNoTrackedFileCarriesADigitRealisticDetectorShape|TestQABdArgvGateResolvesTheVerb|TestQAEveryRaceArmCandidateTestIsCompiledIntoSomeArm|TestQASuiteLockSelfTestIgnoresAnAmbientPosseEnvironment|TestQASuiteLockStrictArmFailsWhenTheQueuedPathKillsTheWrapper|TestQATheFilteredRunArmFailsOnEvidenceAndNotOnATimeout|TestQATheQueuedArmsFailOnEvidenceAndNotOnASlowFork|TestQATheRaceArmCensusRefusesTheWrongShapes|TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails|TestQATheSuiteQueueSelfTestCanFail|TestQATheSuiteQueueStillProvesItQueues|TestQATheWrapperStillExplainsAFullDiskAndABrokenStdBuild
+# internal/posse's three arms, and the bd argv gate's verb arm: 72.4s of the
+# package's 167.3s of summed test time, over eleven tests of 481 (MEASURED
+# 2026-11-14 warm, this box, through scripts/test-times.sh; the three race-arm
+# rows read 25-28s rather than ~3s in the reading before it, with
+# internal/posse's arm builds cold). They are run by `make test`, which runs
+# this package whole.
+#
+# It was TWELVE until ranger-base-gyz7a, and the twelfth is the lesson the
+# floor needed: TestNoTrackedFileCarriesADigitRealisticDetectorShape reads
+# every tracked file through `git ls-files` — the widest reading of the tree
+# in the package, and the pin ADR 0098's Context names as the second
+# direction the old key missed. It cleared the 2.0s floor at 2.95s, so the row
+# was legal; the floor is a necessary condition on a row and never a
+# sufficient one. It is inside the door now, for 3.08-3.16s of it.
+QA_TREEPINS_EXCLUDED := TestQABdArgvGateResolvesTheVerb|TestQAEveryRaceArmCandidateTestIsCompiledIntoSomeArm|TestQASuiteLockSelfTestIgnoresAnAmbientPosseEnvironment|TestQASuiteLockStrictArmFailsWhenTheQueuedPathKillsTheWrapper|TestQATheFilteredRunArmFailsOnEvidenceAndNotOnATimeout|TestQATheQueuedArmsFailOnEvidenceAndNotOnASlowFork|TestQATheRaceArmCensusRefusesTheWrongShapes|TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails|TestQATheSuiteQueueSelfTestCanFail|TestQATheSuiteQueueStillProvesItQueues|TestQATheWrapperStillExplainsAFullDiskAndABrokenStdBuild
 
 # The crew-name trio, one door between them because they are one question —
 # does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
@@ -1161,8 +1171,9 @@ corpus-check:
 # The register's own arms — the thing that says every tree-wide pin has a
 # door. Most of them are themselves tree-wide (they parse whole packages, and
 # the drift arm copies the working tree), so they are in the class they
-# derive; the two that only read the Makefile are the one declared exemption
-# from that, listed in treewidedoor_qa_test.go's twdDoorHolders. Their own
+# derive; the two that only read the Makefile are derived by nothing, and
+# needed a declared exemption to sit in this variable until ADR 0098 D4 made
+# every test in the package a member of `make treepins-check`. Their own
 # door, not folded into corpus-check, because of what they cost: 22.7-33.7s
 # over three warm runs at a one-minute load average of 4.7-5.5 (MEASURED
 # 2026-11-13, ranger-base-hxenz; the comment said ~20s), nearly all of it the
@@ -1194,8 +1205,10 @@ register-check:
 # behind no door for as long as it existed -- a target added without its row
 # reddened only an unfiltered 589.965s run of ./internal/treepins, which is the
 # gap ranger-base-rulbl named (that bead wrote no fragment -- its prose is the
-# AGENTS.md bullet "A `-run` filter cannot reach a tree-wide pin"). Its
-# door-holder row and its reason are in twdDoorHolders.
+# AGENTS.md bullet "A `-run` filter cannot reach a tree-wide pin"). It was the
+# third of the nine hand-written exemptions that key cost, and it needs none
+# now: ADR 0098 D4 makes every test in the package a member of
+# `make treepins-check` (ranger-base-gyz7a).
 #
 # The fourth pin is the brew-guard census (ranger-base-mk6gw): a file under
 # scripts/ that names brew on a runnable line is on bgRoster -- and then has to
@@ -1250,12 +1263,14 @@ scripts-check:
 # and that is why this package needed a different shape: a pin here is
 # `os.ReadFile("AGENTS.md")` as often as it is a directory walk, and a named
 # read is the enumeration rule's own negative case — so the pins that most
-# need a door are exactly the ones no derivation can find. Nine hand rows in
-# twdDoorHolders, seven of them for that one cause, is what the naming key
-# cost (ADR 0098 Context). Named the other way round, the question answers
-# itself: a pin written tomorrow is behind this door the moment it is
-# written, and the only hand-kept state is $(QA_TREEPINS_EXCLUDED), where
-# every name carries its price.
+# need a door are exactly the ones no derivation can find. Nine hand-written
+# exemptions, seven of them for that one cause, is what the naming key cost
+# (ADR 0098 Context) — all nine retired by D4 (ranger-base-gyz7a), because
+# under the complement a door variable may name any test in this package and
+# nothing has to be exempted from anything. Named the other way round, the
+# question answers itself: a pin written tomorrow is behind this door the
+# moment it is written, and the only hand-kept state is
+# $(QA_TREEPINS_EXCLUDED), where every name carries its price.
 #
 # It REPLACES notes-check, orientation-check, adr-check, corpus-check,
 # register-check and scripts-check on `tree-check`'s line, and those six stay

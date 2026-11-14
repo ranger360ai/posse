@@ -439,10 +439,11 @@ stall that day, and every one of them a typing habit.
   file it names as often as it walks a directory, a named read is the
   derivation's own negative case, and so the pins that most needed a door
   were the ones nothing could find. `treepins-check` is that package minus
-  `$(QA_TREEPINS_EXCLUDED)`, twelve priced rows in
+  `$(QA_TREEPINS_EXCLUDED)`, the priced rows in
   `treewidedoor_qa_test.go`'s `twdTreepinsExcluded` — each with its measured
   seconds, box, date and the route that still runs it — so a pin written
-  tomorrow is doored the moment it is written. Six targets came off
+  tomorrow is doored the moment it is written, with no hand-written exemption
+  anywhere (ADR 0098 D4). Six targets came off
   `tree-check`'s line when it landed and every one of them is still there to
   type, each a subset of the one door that replaced them: `make notes-check`
   (the notes index, a TOOL), `make orientation-check` (neither orientation

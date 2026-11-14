@@ -236,9 +236,9 @@ package treepins
 //	TestQAEveryHerdrClientHolderStillHoldsIt      make corpus-check
 //	                                              (both ranger-base-csnzn)
 //
-// (Three of those rows are exempt from the two-way check, listed with their
-// reasons in twdDoorHolders, all three for the same cause: they read the
-// MAKEFILE by name rather than enumerating the tree, and
+// (Three of those rows needed a hand exemption from the two-way check for as
+// long as this half keyed membership on a derivation, all three for the same
+// cause: they read the MAKEFILE by name rather than enumerating the tree, and
 // `os.ReadFile("Makefile")` is the enumeration rule's own negative case. Two
 // are the last two rows of register-check — the register's own arms. The
 // third is the scripts-check row ranger-base-hrf47 added, and it is the one
@@ -251,7 +251,9 @@ package treepins
 // Its derived sibling three rows up globs scripts/, so scripts-check was
 // green over it the whole time. A pin whose file set is spelled is not the
 // same as a pin only its own bead can red, and the door is what closes that
-// gap — not the rule.)
+// gap — not the rule. All three are inside `make treepins-check` by
+// construction since ADR 0098, and the register that carried their reasons is
+// retired: ranger-base-gyz7a, D4.)
 //
 // and one more into corpus-check's door for that same reason — a census over
 // this repo's own shipped .go, holding every bounded child to naming its
@@ -367,9 +369,10 @@ package treepins
 // one step, against the walker table rootparam_qa_test.go already builds, so
 // no new mechanism is coined and no second copy of "what is a param-rooted
 // walk" exists to drift. The alternative was a third hand register beside
-// twdIndirect and twdDoorHolders, and neither of their reasons reaches these
-// — twdIndirect is for an enumeration no rule over Go source can derive, and
-// one derives these today, one file over, under a fixture arm.
+// twdIndirect and the door-holder exemptions ADR 0098 D4 has since retired,
+// and neither of their reasons reached these — twdIndirect is for an
+// enumeration no rule over Go source can derive, and one derives these
+// today, one file over, under a fixture arm.
 //
 //	TestOneCredentialAcquirerAndNoOther           make corpus-check
 //	TestNoNewShadowPredicate                      make corpus-check
@@ -657,13 +660,16 @@ package treepins
 // which carry a `-run` door before their tagged internal/posse line
 // (ranger-base-p1r17).
 //
-// AND IT IS A DERIVED MEMBERSHIP, not fifteen rows in twdDoorHolders. That
-// map is the one way into a door variable that does not go through the
-// derivation, its own comment calls it the parking spot this file keeps
-// warning about, and all three of its rows are there for one cause — a pin
-// that reads named files and enumerates nothing. A census that enumerates is
-// the opposite case, and fifteen rows there would have been the register
-// conceding the class it exists to derive.
+// AND IT IS A DERIVED MEMBERSHIP, not fifteen rows in the hand register. The
+// register in question was twdDoorHolders, the one way into a door variable
+// that did not go through the derivation; its own comment called it the
+// parking spot this file keeps warning about, and all three of its rows were
+// there for one cause — a pin that reads named files and enumerates nothing.
+// A census that enumerates is the opposite case, and fifteen rows there would
+// have been the register conceding the class it exists to derive. (That map
+// is gone: it grew to nine rows, which is what ADR 0098 reads as an argument
+// about the KEY, and D4 retired it — ranger-base-gyz7a. The reasoning here
+// stands as the posse half's own, which keeps its derived key.)
 //
 // THE SEED ALSO FOUND ONE THE DECISION DID NOT: fifteen, against the
 // fourteen the record lists. The fifteenth is
@@ -1353,16 +1359,19 @@ package treepins
 // file's seven tests carry that substring, so the obvious filter runs the
 // AGENTS.md pin and the control and leaves the five §9 arms where they were.
 //
-// AND SIX twdDoorHolders ROWS, which is the part worth reading rather than
-// counting. That register is the one hand route into a door variable, its
+// AND SIX HAND-REGISTER ROWS, which was the part worth reading rather than
+// counting. twdDoorHolders was the one hand route into a door variable, its
 // own comment called itself a parking spot, and it went from three rows to
-// nine in one landing — seven of the nine now sharing ranger-base-hrf47's
-// single cause, a pin whose subject is a NAMED tracked file this tree ships.
-// Six rows for one cause is the argument that the KEY should read this shape,
-// not that this register should keep growing, and it is filed as that
-// argument: ranger-base-m6mzg, to the architecture lane, with these rows as
-// its evidence. The seventh test in that file is the scanner's own control
-// and is undoored, like every control arm above.
+// nine in one landing — seven of the nine sharing ranger-base-hrf47's single
+// cause, a pin whose subject is a NAMED tracked file this tree ships. Six
+// rows for one cause is the argument that the KEY should read this shape, not
+// that this register should keep growing, and it was filed as that argument:
+// ranger-base-m6mzg, to the architecture lane, with these rows as its
+// evidence. It was ruled that way (ADR 0098), the key here is the complement
+// now, and all six are inside `make treepins-check` with no row anywhere —
+// the register is retired (D4, ranger-base-gyz7a). The seventh test in that
+// file is the scanner's own control and needs no door of its own, like every
+// control arm above, and is inside the complement too.
 //
 // and one door that stands in front of no pin at all (ranger-base-ujyjd,
 // finding 4 of the ranger-base-hbjma verify):
@@ -1396,7 +1405,7 @@ package treepins
 // ranger-base-3cpcg):
 //
 //	(every pin in internal/treepins,          make treepins-check  ~70s
-//	 minus twelve priced rows)
+//	 minus eleven priced rows)
 //
 // It is the internal/treepins half of this class, and it replaced six
 // `-run` doors on `tree-check`'s line: notes-check, orientation-check,
@@ -1405,25 +1414,29 @@ package treepins
 // inventory above read the other way round: in this package a pin's subject
 // is a tracked file it names as often as it is a directory it walks, a named
 // read is the enumeration rule's own negative case, and so the pins that
-// most needed a door were the ones no derivation could find. Seven of
-// twdDoorHolders' nine rows are that one cause, which is an argument about
-// the KEY and not about the register (ADR 0098 Context) — so the key here is
-// now the complement: everything except twdTreepinsExcluded, where each row
-// carries the seconds, the box, the date and the route that still runs it. A
-// pin written tomorrow is doored the moment it is written.
+// most needed a door were the ones no derivation could find. Seven of the
+// nine hand rows that key cost were that one cause, which is an argument
+// about the KEY and not about the register (ADR 0098 Context) — so the key
+// here is now the complement: everything except twdTreepinsExcluded, where
+// each row carries the seconds, the box, the date and the route that still
+// runs it. A pin written tomorrow is doored the moment it is written, and the
+// hand register those nine rows lived in is retired for this package (D4,
+// ranger-base-gyz7a): a door variable may name any test in it with no row.
 //
 // LIKE land-check IT IS NOT IN twdDoors, and for the same structural reason:
 // every row there carries a `-run` variable arm 2 measures against the
 // class, and this door's variable is the list of tests it SKIPS — the
-// opposite set, which arm 2 would read as a door naming twelve pins that are
-// not members. It is held by arm 5 instead, which is the whole of ADR 0098's
-// hand-kept state. Arm 1 reaches it the derived way: a treepins door whose
+// opposite set, which arm 2 would read as a door naming eleven tests it does
+// not run. It is held by arm 5 instead, which is the whole of ADR 0098's
+// hand-kept state, and by arm 2's own treepins half, which reads that
+// variable as the complement of what the package declares (D4,
+// ranger-base-gyz7a). Arm 1 reaches it the derived way: a treepins door whose
 // every pin is outside the table is a subset of this one, so `tree-check`
 // reaching treepins-check is what reaches it.
 //
 // It is counted as a door below for arm 4's reason — the count is
 // `tree-check`'s prerequisites, which is what a seat pays for — and the
-// twelve rows are NOT counted as pins, because the pin count is the union of
+// eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
 // and `make tree-check` is all of them — one hundred and fifty-seven pins
@@ -1443,6 +1456,22 @@ package treepins
 // at a HIGHER load with both slots held. The pin this bead added reports
 // 0.30s inside seed-check, which is below that 6.4s spread by an order of
 // magnitude, so none of this band is its cost either.
+//
+// THREE WARM READINGS WITH THE COMPLEMENT DOOR THREE SECONDS HEAVIER, and
+// the one entry in this chain over an UNCHANGED class — same one hundred and
+// fifty-seven pins, same fourteen doors (ranger-base-gyz7a, ADR 0098 D4).
+// 110s, 117s then 102s in that order (MEASURED 2026-11-14, at a one-minute
+// load average of 18.84, 7.21 and 20.04, with ONE suite slot held by a
+// sibling seat through the first two and BOTH held by sibling seats by the
+// end of the third; `make treepins-check` reported 74.0s inside the first).
+// What this bead added to the door is 3.08-3.16s — the tracked-file digit
+// census, priced out of the complement by ranger-base-3cpcg at 2.95s and put
+// back inside it here, because it reads every tracked file through
+// `git ls-files` and is the widest reading of the tree in the package. Three
+// seconds against a 15s band, so the band is the slots and not the row: the
+// entry below read 83.1-91.5s with NEITHER slot held, and this one is the
+// seventh reading in this chain to say the variable is how much of the box
+// somebody else is holding.
 //
 // THREE WARM READINGS WITH THE COMPLEMENT DOOR ON THE LINE, and the first
 // reading in this chain that is not comparable to the one before it: the
@@ -2046,10 +2075,12 @@ var twdDoors = []twdDoor{
 	{"QA_NOTES_PINS", "notes-check", twdTreepinsPkg, true, 1},
 	// The orientation pages' push mandate (ranger-base-n7hsa). Every pin
 	// behind this door reads AGENTS.md or INSTALL.md BY NAME and enumerates
-	// nothing, so all six are door-holders rather than derived members —
-	// see twdDoorHolders, where the six rows and the one cause they share
-	// are the argument that it is the KEY that should change and not this
-	// register.
+	// nothing, so no derivation finds any of the six — which is why they
+	// needed six hand-written exemptions when membership here was derived,
+	// and why six rows for one cause was read as an argument about the KEY
+	// (ADR 0098 Context). Under the complement they need nothing: a treepins
+	// door variable may name any test in the package (D4,
+	// ranger-base-gyz7a), and `make treepins-check` runs all six anyway.
 	{"QA_ORIENTATION_PINS", "orientation-check", twdTreepinsPkg, false, 1},
 	{"QA_ADR_PINS", "adr-check", twdTreepinsPkg, false, 1},
 	{"QA_CORPUS_PINS", "corpus-check", twdTreepinsPkg, false, 1},
@@ -3632,7 +3663,8 @@ func twdBodyRelEnv(body *ast.BlockStmt, pkg *twdRelEnv) *twdRelEnv {
 // more tests hand arParse a fixture root, so the parameter cannot be
 // replaced with a literal the way scanRealBdCallSites' was
 // (ranger-base-0ckgm). The alternative was a third hand register beside
-// twdIndirect and twdDoorHolders, and neither of their reasons covers these:
+// twdIndirect and the door-holder exemptions ADR 0098 D4 has since retired,
+// and neither of their reasons covered these:
 // twdIndirect is for an enumeration no rule over GO source can derive, and
 // rpScan derives this one today, one file over, under a fixture arm. A
 // hand-written row for a pin a shipped rule already finds is the parking
@@ -4036,20 +4068,41 @@ func twdPosseEnumOnlyTests(t *testing.T) []string {
 // index`. The pin was right, its remediation line was exact, and nothing a
 // seat could type in under ten minutes would ever have asked it.
 //
-// THE KEY, and why it is not the obvious one. "A test in a package whose
-// TestMain chdirs to the repo root, that reads a tree path" is the honest
-// description of the blind spot, but it is not a usable key: MEASURED
-// 2026-10-04, 291 of internal/treepins' 362 tests name a path the tree holds.
-// Four fifths of a package is not a class. What actually separates a pin that
-// an unrelated bead can red from one it cannot is whether the reading
-// ENUMERATES — whether the set of files read is spelled in the test, or
-// discovered. A test that reads "Makefile" reds when somebody edits the
-// Makefile, which is the bead that edited it. A test that globs
-// "docs/notes.d/*.md" reds when ANY bead writes its fragment there. So the
-// key is a WalkDir/Walk/ReadDir/Glob rooted at a relative tree path. It found
-// twenty tests in the package as it stood before this bead — and that number
-// is frozen prose, like every other count in this comment: the live one is
-// in the `make tree-check` sentence above, which arm 4 derives.
+// THE KEY g6sb1 CHOSE, AND WHY IT IS NO LONGER WHAT DECIDES MEMBERSHIP.
+// "A test in a package whose TestMain chdirs to the repo root, that reads a
+// tree path" is the honest description of the blind spot, but it was not a
+// usable key for a door spelled as a list of NAMES: MEASURED 2026-10-04, 291
+// of internal/treepins' 362 tests name a path the tree holds, and four fifths
+// of a package is not a door variable anybody can hand-spell. So g6sb1 keyed
+// on whether the reading ENUMERATES — whether the set of files read is
+// spelled in the test, or discovered. A test that reads "Makefile" reds when
+// somebody edits the Makefile, which is the bead that edited it; a test that
+// globs "docs/notes.d/*.md" reds when ANY bead writes its fragment there. So
+// the key was a WalkDir/Walk/ReadDir/Glob rooted at a relative tree path. It
+// found twenty tests in the package as it stood then — frozen prose, like
+// every other count in this comment: the live one is in the `make tree-check`
+// sentence above, which arm 4 derives.
+//
+// BOTH HALVES OF THAT ARGUMENT WERE READ AGAIN AND BOTH GAVE WAY (ADR 0098,
+// ranger-base-3cpcg and -gyz7a). The first half — "the bead that edited the
+// Makefile is the bead that reds" — is false in practice: that bead's seat
+// never sees the red, because nothing leads from AGENTS.md to a pin over it
+// and no `-run` filter names one, which is what ranger-base-n7hsa measured.
+// The second half was a cost never priced, and priced it is affordable the
+// other way round: the door here is the package MINUS $(QA_TREEPINS_EXCLUDED)
+// now, four fifths of a package and more, because a complement is spelled in
+// eleven names and a list would have been four hundred. So membership in this
+// half is no longer derived at all — every test the package declares is a
+// member unless a priced row says otherwise (D1), the hand register that
+// carried the pins no derivation could find is retired (D4), and a door
+// variable may name any test in the package with no row.
+//
+// WHAT THE DERIVATION BELOW STILL DECIDES, and why it is all still here: a
+// test it DERIVES may not be priced out of the complement without a door of
+// its own (D3, held by arm 5). The register has already called such a test
+// tree-wide, so excluding it for free is exactly the escape this file exists
+// for. The floors in arm 2 are therefore still load-bearing — a derivation
+// that quietly stops matching stops guarding the table.
 //
 // IT WAS WIDER THAN THE POSSE RULE, and that is the disagreement ADR 0078
 // settled by widening the other half. Over there a walk rooted at a
@@ -4281,89 +4334,27 @@ var twdExecDispositions = map[string]string{
 	"scripts/verify-gate-freshness.sh": "reads the operator's settings.json and the installed gate pair the hook names, plus two tracked files it extracts from HEAD BY NAME; it enumerates no directory",
 }
 
-// twdDoorHolders are tests a door variable may name although no class rule
-// derives them: the arms that hold the register itself open. They read the
-// Makefile and run `make -n`, which is not a reading of the tree, so nothing
-// in this file can find them — and they live in the same 589.965s package as
-// the pins they guard, so left out of a door the register's own floor is as
-// unreachable as the pins were.
+// THE HAND REGISTER IS RETIRED FOR THIS PACKAGE (ADR 0098 D4,
+// ranger-base-gyz7a). What stood here was twdDoorHolders: a map of tests a
+// door variable was allowed to name although no class rule derived them, each
+// with its own reason, and the one route into a door variable that did not go
+// through the derivation. Its own comment called it the parking spot this
+// file keeps warning about, it was bounded by a sentence rather than by a
+// mechanism ("two rows is what it should stay near"), and it went from three
+// rows to nine in one landing — seven of the nine sharing ranger-base-hrf47's
+// single cause, a pin whose subject is a NAMED tracked file this tree ships.
 //
-// This is the ONE way into a door variable that does not go through the
-// derivation, which is why it is a list with reasons rather than a flag: it
-// is exactly the shape of parking spot this file keeps warning about. Arm 2
-// holds each row to being a real test in the package its door runs, and
-// every row has to name its own cause. A pin put here to dodge the two-way
-// check would be a pin whose membership nothing derived and whose door
-// nothing justified.
+// Nine rows was the argument, and ADR 0098 took it: a cause that arrives six
+// at a time is a key the derivation should be reading. Under D1 the key here
+// is the complement — every test in the package is a member unless
+// twdTreepinsExcluded prices it out — so a door variable may now name ANY
+// test in internal/treepins with no row anywhere, and every one of those nine
+// tests is behind `make treepins-check` by construction rather than by a
+// sentence. The two-way check below is the complement read both ways instead
+// (D4), and the only hand-kept state left in this half is the priced table.
 //
-// WHAT A ROW MAY NOT SAY is "it reads a file by name" and stop. Reading a
-// named file is the enumeration rule's own negative case
-// (TestQATheTreepinsEnumerationRuleMatchesWhatItClaims), so that sentence is
-// only why NOTHING DERIVES the pin — it is not a reason for a door. The
-// reason is the second half, which ranger-base-hrf47's row already wrote
-// down: an unrelated bead editing that file reds the pin exactly as a tree
-// walk would, and nothing under 589.965s says so.
-//
-// "TWO ROWS IS WHAT IT SHOULD STAY NEAR" is what this comment said until
-// ranger-base-n7hsa, and it was three when it said it — hrf47's row made it
-// three and left the numeral, which is the drift arm 4 exists to catch one
-// page further out. It is NINE now, and the sentence is gone rather than
-// decremented, because the six that arrived at once are not six decisions:
-// seven of the nine share one cause, a pin whose subject is a NAMED tracked
-// file this tree ships as orientation (the Makefile and verify-box.sh for
-// hrf47's; AGENTS.md and INSTALL.md §9 for n7hsa's six). A cause that
-// arrives six at a time is a key the derivation should be reading, not a
-// list this register should be growing — which is ranger-base-m6mzg, filed
-// to the architecture lane with these rows as its evidence. Until that is
-// ruled, a row is the honest way in and a numeral here would be a bound
-// nobody is holding.
-var twdDoorHolders = map[string]string{
-	"TestQAEveryTreepinsDoorFilterNamesItsPins":            "asks what make's expansion of each internal/treepins door filter selects; it reads the Makefile and runs `go test -list`",
-	"TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles": "arm 4 — holds this file's head comment and the treepins README's door table to the Makefile's own pin and door counts; it reads the Makefile, this file and that README",
-	// ranger-base-hrf47. The third exemption, and the first that is not one of
-	// this register's own arms: it censuses every verify-* target in the
-	// Makefile against the roster and EXCLUDED table of scripts/verify-box.sh,
-	// reading those two files BY NAME. So the enumeration rule cannot see it
-	// (`os.ReadFile("Makefile")` is the rule's own negative case — see
-	// TestQATheTreepinsEnumerationRuleMatchesWhatItClaims), while the thing
-	// that makes it tree-wide in the sense the class means is unaffected: an
-	// unrelated bead adding a verify-* target reds it, and until this row
-	// existed nothing but an unfiltered 589.965s package run would say so. Its
-	// sibling in the same file IS derived, because that one globs scripts/ —
-	// so scripts-check went green over this one for as long as both existed
-	// (the escape ranger-base-hrf47 was filed for).
-	"TestQABoxCheckCensusCoversEveryVerifyTarget": "censuses the Makefile's verify-* targets against the roster and EXCLUDED table of scripts/verify-box.sh; it reads those two files by name and enumerates nothing",
-	// ranger-base-n7hsa. SIX rows, one per pin behind `make
-	// orientation-check`, and they are hrf47's cause six times over rather
-	// than six new ones. Their subject is the push mandate bd plants: a
-	// `bd init` in the checkout, a second `bd onboard` or a bd upgrade puts
-	// back an AGENTS.md section ordering the reader to push, which every
-	// PID denies and the pre-push gate refuses, and INSTALL.md §9 is the
-	// recipe that cuts it out. Each pin reads one or both of those pages by
-	// name, so the enumeration rule cannot see any of them — and each is
-	// red by any bead that edits the page it reads, which is what earns the
-	// door.
-	//
-	// MEASURED 2026-11-14 at 37a94cd9: two reader-directed push orders
-	// appended to AGENTS.md, `make fmt-check` green, `make tree-check`
-	// green at 60s over the whole of it, and the pin red in 0.007s. The
-	// subject is the page handed to every seat at session start, so the
-	// readers who edit it are the readers least likely to be running the
-	// suite — and the pins lived in arm 1, so the only run that reported
-	// the mandate was a `make test` that then aborted before arms 2 and 3.
-	//
-	// The seventh test in that file, TestPushMandateCheckerDiscriminates,
-	// is NOT here and has no door: it drives the scanner over planted
-	// fixtures, so nothing derives it and no unrelated bead can red it —
-	// the same reason every control arm named in this file's head comment
-	// is undoored.
-	"TestRepoAgentsMdCarriesNoPushMandate":                              "reads AGENTS.md by name for a reinstated push mandate; any bead that edits the crew's orientation page reds it",
-	"TestInstallSection9ReconcilesThePlantedAgentsMd":                   "reads INSTALL.md §9 by name for the conflict it states and the reconciliation it prescribes; any bead that edits that section reds it",
-	"TestInstallSection9RecipeCutsTheMandateOutOfWhatBdPlants":          "extracts §9's shell recipe out of INSTALL.md and runs it over the AGENTS.md bd plants; any bead that edits the recipe reds it",
-	"TestInstallSection9RecipeStopsAtTheNextHeading":                    "the same extracted recipe, over a fixture with a section after the mandate; any bead that edits the recipe reds it",
-	"TestInstallSection9RecipeIsSafeWithNothingToCut":                   "the same extracted recipe, over a fixture with no Landing section; any bead that edits the recipe reds it",
-	"TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun": "runs §9's extracted recipe twice, the second pass over this repo's OWN AGENTS.md; any bead that edits either page reds it",
-}
+// The internal/posse half keeps its derived key and has no such register: it
+// never had one, and ADR 0098's Consequences leave that package alone.
 
 // twdComplementDoor is internal/treepins' door, and it is the only door in
 // this register that is named by what it does NOT run (ADR 0098 D1,
@@ -4372,8 +4363,9 @@ var twdDoorHolders = map[string]string{
 // stopped paying — a pin in this package is `os.ReadFile("AGENTS.md")` as
 // often as it is a directory walk, a named read is the enumeration rule's own
 // negative case, and so the pins that most needed a door were exactly the
-// ones no derivation could find. Seven of twdDoorHolders' nine rows are that
-// one cause (ADR 0098 Context).
+// ones no derivation could find. Seven of the nine hand rows that key cost
+// were that one cause (ADR 0098 Context), and the register that held them is
+// retired (D4 — see the paragraph above this one).
 //
 // So membership here is the complement: every test in the package except the
 // ones twdTreepinsExcluded prices. A pin written tomorrow is doored the
@@ -4388,15 +4380,22 @@ const (
 // twdExcludedFloor is ADR 0098 D2's floor, in seconds. Below it a test costs
 // the door less than the miss would cost a seat, so the row is not worth the
 // escape window it opens.
+//
+// IT IS NECESSARY AND NOT SUFFICIENT, which is the one thing the floor's own
+// wording can be read as denying ("the price is the reason"). Arm 5 refuses a
+// row under the floor and nothing anywhere obliges a row over it: a test
+// above the floor MAY be priced out, and whether it should be is a judgement
+// about what the door is for. The worked example is the row
+// ranger-base-gyz7a took out at 2.95s — see twdTreepinsExcluded's comment.
 const twdExcludedFloor = 2.0
 
 // twdExcluded is one row of that table: what the test cost, where and when
 // that was measured, and the route that still runs it.
 //
 // The PRICE is the reason. A row may not be justified by "it reads a file by
-// name" or "it is a control arm" — those are the parking-spot reasons
-// twdDoorHolders was growing on, and under the complement neither one earns
-// an exclusion (ADR 0098 D2).
+// name" or "it is a control arm" — those are the parking-spot reasons the
+// retired hand register was growing on, and under the complement neither one
+// earns an exclusion (ADR 0098 D2).
 type twdExcluded struct {
 	seconds float64
 	box     string
@@ -4418,28 +4417,44 @@ const twdExcludedRouteSuite = "make test"
 // piece of hand-kept state ADR 0098 leaves, and the Makefile variable the
 // door skips is held equal to it in both directions by arm 5.
 //
-// WHAT THESE TWELVE ARE. Ten are the suite apparatus testing itself:
-// scripts/suite-lock.sh's queue and strict arms, scripts/test-times.sh's and
-// scripts/gotest.sh's self-tests and their disk and fork arms, and the
-// race-arm census, which compiles internal/posse's three arms to ask whether
-// every candidate test is in one. Each forks a real wrapper, or a real `go`,
-// and that is where the seconds go. The other two are the tracked-file digit
-// census and the bd argv gate's verb arm.
+// WHAT THESE ELEVEN ARE, AND THEY ARE ONE FAMILY. Ten are the suite
+// apparatus testing itself: scripts/suite-lock.sh's queue and strict arms,
+// scripts/test-times.sh's and scripts/gotest.sh's self-tests and their disk
+// and fork arms, and the race-arm census, which compiles internal/posse's
+// three arms to ask whether every candidate test is in one. Each forks a real
+// wrapper, or a real `go`, and that is where the seconds go. The eleventh is
+// the bd argv gate's verb arm, which forks scripts/bd-argv-gate.py.
 //
-// 75.3s of the package's 167.3s of summed test time, twelve tests of 481
+// 72.4s of the package's 167.3s of summed test time, eleven tests of 481
 // (MEASURED 2026-11-14, warm, through scripts/test-times.sh — the reading
-// each row's seconds come from). The three race-arm rows read 27.91s, 27.72s
-// and 25.26s an hour earlier with internal/posse's arm builds COLD, and the
-// seconds below are the warm figures on purpose: a row has to clear the floor
-// at the test's cheapest measured price, not at its most expensive.
+// each row's seconds come from, less the twelfth row's 2.95s; see below). The
+// three race-arm rows read 27.91s, 27.72s and 25.26s an hour earlier with
+// internal/posse's arm builds COLD, and the seconds below are the warm
+// figures on purpose: a row has to clear the floor at the test's cheapest
+// measured price, not at its most expensive.
 // docs/notes.d/ranger-base-3cpcg.md has both readings.
 //
-// NOT HERE: TestQATheWrapperSelfTestCanFail at 1.56s, the nearest test under
-// the floor, and TestQATheTreeWideDoorsReportRealDrift at 22.2s, which is the
-// most expensive test the door runs. The drift arm is the strongest thing
-// this file does and register-check is still on no seat's critical path, so it
-// stays inside the door rather than being priced out of it; what ADR 0098
-// bought was a door over the pins nobody names, not a cheaper register.
+// THE TWELFTH ROW WAS TAKEN OUT, and it is the one row this table should
+// never have had (ranger-base-gyz7a).
+// TestNoTrackedFileCarriesADigitRealisticDetectorShape reads EVERY TRACKED
+// FILE through `git ls-files`, which is the widest reading of the tree in
+// this package, and ADR 0098's own Context names it as the second direction
+// the old key missed: an exec is not a WalkDir, so it had no door and no row.
+// It cleared the 2.0s floor at 2.95s and so had a legal row — which is the
+// lesson, said in the type comment above and worth saying once with a name
+// attached: the floor is a NECESSARY condition on a row and never a
+// sufficient one. What a row costs is a door, and 3.08-3.16s of door
+// (MEASURED 2026-11-14, three warm runs at a one-minute load average of
+// 10.1-10.8, this box) against seventy-odd is four per cent for the pin that
+// motivated the ADR.
+//
+// NOT HERE EITHER: TestQATheWrapperSelfTestCanFail at 1.56s, the nearest test
+// under the floor, and TestQATheTreeWideDoorsReportRealDrift at 22.2s, which
+// is the most expensive test the door runs. The drift arm is the strongest
+// thing this file does and register-check is still on no seat's critical
+// path, so it stays inside the door rather than being priced out of it; what
+// ADR 0098 bought was a door over the pins nobody names, not a cheaper
+// register.
 var twdTreepinsExcluded = map[string]twdExcluded{
 	"TestQATheQueuedArmsFailOnEvidenceAndNotOnASlowFork":               {25.20, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
 	"TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails": {11.78, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
@@ -4449,7 +4464,6 @@ var twdTreepinsExcluded = map[string]twdExcluded{
 	"TestQATheFilteredRunArmFailsOnEvidenceAndNotOnATimeout":           {4.03, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
 	"TestQATheSuiteQueueStillProvesItQueues":                           {4.01, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
 	"TestQATheSuiteQueueSelfTestCanFail":                               {3.00, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
-	"TestNoTrackedFileCarriesADigitRealisticDetectorShape":             {2.95, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
 	"TestQAEveryRaceArmCandidateTestIsCompiledIntoSomeArm":             {2.91, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
 	"TestQATheRaceArmCensusRefusesTheWrongShapes":                      {2.85, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
 	"TestQABdArgvGateResolvesTheVerb":                                  {2.39, twdExcludedBoxD1, "2026-11-14", twdExcludedRouteSuite},
@@ -5117,62 +5131,90 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	}
 	t.Logf("parsed %d test functions under %s, %d of them tree-wide (%d derived, %d registered indirect)", tpFuncs, twdTreepinsPkg, len(tpNames), len(tpDerived), len(twdIndirect))
 
-	// Both ways, per package. Both directions are the bug: a pin with no
-	// door is ranger-base-ik44f arriving again, and a door naming a test
-	// that is not in its package's class is a `-run` filter matching
+	// internal/posse's half, both ways. Both directions are the bug: a pin
+	// with no door is ranger-base-ik44f arriving again, and a door naming a
+	// test that is not in its package's class is a `-run` filter matching
 	// nothing, which passes in silence.
-	for _, class := range []struct {
-		pkg   string
-		names []string
-	}{
-		{twdPossePkg, names},
-		{twdTreepinsPkg, tpNames},
-	} {
-		found := map[string]bool{}
-		for _, name := range class.names {
-			found[name] = true
-			d, ok := doored[name]
-			if !ok {
-				t.Errorf("%s (%s) reads the tree and no Makefile door names it — it is reachable only by a `-run` filter that happens to spell it, which is ranger-base-ik44f arriving again. Give it a door, or add it to one whose subject it shares.", name, class.pkg)
-				continue
-			}
-			if d.pkg != class.pkg {
-				t.Errorf("%s is a tree-wide test in %s and $(%s) doors it with `go test ./%s` — the door runs a package the pin does not live in, so its filter matches nothing and it passes in silence", name, class.pkg, d.variable, d.pkg)
-			}
+	//
+	// ONE PACKAGE HERE, where this loop used to run over two (ADR 0098 D4,
+	// ranger-base-gyz7a). internal/treepins' half is a COMPLEMENT now and is
+	// read below, because neither direction of this shape means anything
+	// there any more: every test in that package is a member, so "no door
+	// names it" is false by construction, and a door variable may name any
+	// test in it, so "named but not derived" is allowed rather than a bug.
+	found := map[string]bool{}
+	for _, name := range names {
+		found[name] = true
+		d, ok := doored[name]
+		if !ok {
+			t.Errorf("%s (%s) reads the tree and no Makefile door names it — it is reachable only by a `-run` filter that happens to spell it, which is ranger-base-ik44f arriving again. Give it a door, or add it to one whose subject it shares.", name, twdPossePkg)
+			continue
 		}
-		members := twdTestNames(t, class.pkg)
-		for name, d := range doored {
-			if d.pkg != class.pkg || found[name] {
-				continue
-			}
-			if _, holder := twdDoorHolders[name]; holder {
-				if !members[name] {
-					t.Errorf("twdDoorHolders registers %s and %s declares no such test — the one exemption from the derivation is holding a door open for a name that is not there", name, class.pkg)
-				}
-				continue
-			}
-			if members[name] {
-				// The test is there; the DERIVATION stopped calling it
-				// tree-wide. That is the more interesting of the two
-				// failures and it has a usual cause, so name it: the rule
-				// reads a spelling, and a reading rewritten into a
-				// spelling it cannot see goes quiet without the pin
-				// changing at all. This arm found exactly that on
-				// 2026-10-04, when twdTestFiles' glob was briefly composed
-				// from a parameter.
-				t.Errorf("$(%s) names %s, which IS a test in %s and is no longer derived as tree-wide. Either it stopped reading the tree, in which case drop it from the door — or its reading was rewritten into a spelling the rule cannot see, which is the usual cause: an enumeration root composed from a variable instead of spelled as a literal. The door still passes; the pin is back to being a package-tree run away.", d.variable, name, class.pkg)
-				continue
-			}
-			t.Errorf("$(%s) names %s, which is not a test in %s at all — the door's `-run` filter matches nothing there and passes in silence", d.variable, name, class.pkg)
+		if d.pkg != twdPossePkg {
+			t.Errorf("%s is a tree-wide test in %s and $(%s) doors it with `go test ./%s` — the door runs a package the pin does not live in, so its filter matches nothing and it passes in silence", name, twdPossePkg, d.variable, d.pkg)
 		}
 	}
-
-	// And the exemption list cannot keep rows no door uses: a door-holder
-	// nothing doors is a reason recorded for a decision nobody took.
-	for name := range twdDoorHolders {
-		if _, ok := doored[name]; !ok {
-			t.Errorf("twdDoorHolders registers %s and no Makefile door names it — drop the row, or give it the door the row says it needs", name)
+	members := twdTestNames(t, twdPossePkg)
+	for name, d := range doored {
+		if d.pkg != twdPossePkg || found[name] {
+			continue
 		}
+		if members[name] {
+			// The test is there; the DERIVATION stopped calling it
+			// tree-wide. That is the more interesting of the two failures
+			// and it has a usual cause, so name it: the rule reads a
+			// spelling, and a reading rewritten into a spelling it cannot
+			// see goes quiet without the pin changing at all. This arm found
+			// exactly that on 2026-10-04, when twdTestFiles' glob was
+			// briefly composed from a parameter.
+			t.Errorf("$(%s) names %s, which IS a test in %s and is no longer derived as tree-wide. Either it stopped reading the tree, in which case drop it from the door — or its reading was rewritten into a spelling the rule cannot see, which is the usual cause: an enumeration root composed from a variable instead of spelled as a literal. The door still passes; the pin is back to being a package-tree run away.", d.variable, name, twdPossePkg)
+			continue
+		}
+		t.Errorf("$(%s) names %s, which is not a test in %s at all — the door's `-run` filter matches nothing there and passes in silence", d.variable, name, twdPossePkg)
+	}
+
+	// internal/treepins' half, which is the SAME QUESTION over a door named
+	// by what it does not run (ADR 0098 D1/D4, ranger-base-gyz7a). Every
+	// test the package declares is either run by `make treepins-check` — the
+	// package minus $(QA_TREEPINS_EXCLUDED) — or priced out of it by a row,
+	// and every row names a test that exists. That is the whole of membership
+	// here: no derivation decides it, so there is no exemption register to
+	// keep and a door variable needs no row to name a test.
+	//
+	// READ FROM THE MAKEFILE, not from the Go table, which is what keeps this
+	// a coverage check rather than a tautology: the names the DOOR skips are
+	// $(QA_TREEPINS_EXCLUDED), and the question is whether the tests it
+	// therefore does not run are the tests this file has priced. Arm 5 holds
+	// the same pair from the other end — the price, the box, the date, the
+	// route and the door's own shape — so a name added to one side alone
+	// reds in both places and for two different reasons.
+	tpMembers := twdTestNames(t, twdTreepinsPkg)
+	if len(tpMembers) < 200 {
+		t.Fatalf("only %d test functions declared in %s — the parse this half checks the complement against found nothing, so a green here says only that", len(tpMembers), twdTreepinsPkg)
+	}
+	skipped := map[string]bool{}
+	for _, name := range twdVar(t, src, twdComplementVar) {
+		skipped[name] = true
+		if _, priced := twdTreepinsExcluded[name]; !priced {
+			t.Errorf("$(%s) makes `make %s` skip %s and twdTreepinsExcluded prices no such row — the complement door does not run that test and nothing in this file says what it cost or what still runs it, which is a pin behind no door with no decision in front of it (ADR 0098 D2/D4)", twdComplementVar, twdComplementDoor, name)
+		}
+	}
+	for name := range twdTreepinsExcluded {
+		if !tpMembers[name] {
+			t.Errorf("twdTreepinsExcluded prices %s and %s declares no such test — the door is skipping a name that is not there, so the row reads as a decision about a test nobody has", name, twdTreepinsPkg)
+		}
+	}
+	t.Logf("%s: %d tests declared, %d of them priced out of %s, %d run by it", twdTreepinsPkg, len(tpMembers), len(skipped), twdComplementDoor, len(tpMembers)-len(skipped))
+
+	// And a treepins door variable may name any test in the package, with no
+	// row anywhere — what it may not do is name something the package does
+	// not declare, which is a `-run` filter matching nothing and printing
+	// `ok`. That is the one failure the complement does not make impossible.
+	for name, d := range doored {
+		if d.pkg != twdTreepinsPkg || tpMembers[name] {
+			continue
+		}
+		t.Errorf("$(%s) names %s, which is not a test in %s at all — the door's `-run` filter matches nothing there and passes in silence", d.variable, name, twdTreepinsPkg)
 	}
 }
 
@@ -6641,8 +6683,10 @@ func twdReadmeDoors(t *testing.T, path string) []string {
 
 // twdAgentsPath is the crew-wide page that carries the third copy of the door
 // list. Read by NAME, like the Makefile and the README: that is the
-// enumeration rule's own negative case, so this arm stays a door-holder
-// rather than becoming a derived member of the class (twdDoorHolders).
+// enumeration rule's own negative case, so nothing derives this arm as a
+// member of the class. It needed a hand exemption to sit in a door variable
+// for as long as that decided membership; under the complement it does not,
+// and `make treepins-check` runs it either way (ADR 0098 D1/D4).
 const twdAgentsPath = "AGENTS.md"
 
 // twdAgentsSection returns the lines of AGENTS.md's tree-wide-pin bullet,
