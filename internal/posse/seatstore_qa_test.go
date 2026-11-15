@@ -29,7 +29,10 @@ func TestQASeatStoreCageMountsTheSeatStoreOverObjects(t *testing.T) {
 	if len(dirs) != 2 {
 		t.Fatalf("a linked worktree has two git dirs, got %v", dirs)
 	}
-	l := seatStoreFrom(dirs[0], dirs[1])
+	l, ok := seatStoreFor(wt)
+	if !ok {
+		t.Fatal("no store layout for a linked worktree")
+	}
 	for _, d := range []string{l.Store, l.Base, filepath.Join(dirs[1], "logs")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
@@ -78,13 +81,15 @@ func TestQASeatStoreCageMountsAreDeepestOverAWholeCommonGrant(t *testing.T) {
 		t.Fatalf("a linked worktree has two git dirs, got %v", dirs)
 	}
 	own, common := absResolve(dirs[0]), absResolve(dirs[1])
-	l := seatStoreFrom(own, common)
+	home, _ := os.UserHomeDir()
+	wall := SeatWallDir(home, wt)
+	l := seatStoreFrom(own, common, wall)
 	in := []CageMount{
 		{Src: common, Dst: common, Why: "a store of record that grants the common dir whole"},
 		{Src: own, Dst: own, Why: "the per-worktree dir"},
 		{Src: l.Objects, Dst: l.Objects, Why: "the old overlay of the shared store"},
 	}
-	ms := seatStoreCageMounts(in, own, common)
+	ms := seatStoreCageMounts(in, own, common, wall)
 	m, ok := mountAt(ms, l.Objects)
 	if !ok || m.RO || absResolve(m.Src) != l.Store {
 		t.Fatalf("<common>/objects under a whole-common grant is %+v (ok=%v), want the seat store read-write", m, ok)
@@ -151,6 +156,14 @@ func TestQASeatStorePrepareFollowsNoLinkOutOfTheStore(t *testing.T) {
 				t.Fatal(err)
 			}
 			l, _ := seatStoreFor(tr.Path)
+			// The wall dir by hand, because the plant goes in before the
+			// launcher's own mkdir of it (ADR 0100 D1 moved the store
+			// there). Nothing in production can do this — no render grants
+			// the wall root — and that is the point: the os.Root discipline
+			// stays as the refusal a plant by anything ELSE still meets.
+			if err := os.MkdirAll(l.Wall, 0o755); err != nil {
+				t.Fatal(err)
+			}
 			victim := filepath.Join(t.TempDir(), "victim")
 			if err := os.MkdirAll(filepath.Join(victim, "info"), 0o755); err != nil {
 				t.Fatal(err)

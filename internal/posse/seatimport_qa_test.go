@@ -7,12 +7,15 @@ package posse
 // import, and a landing refuses a tip whose objects the shared store lacks.
 //
 // The seat store is SIMULATED, as the design's probe did: the seat's git
-// runs with GIT_OBJECT_DIRECTORY=<own git dir>/seat-objects, whose
-// info/alternates names the shared store. That is what a walled seat's git
-// sees once its `objects` is bound over; no bwrap is needed to pin what the
-// launcher does with the result.
+// runs with GIT_OBJECT_DIRECTORY=<the store>, whose info/alternates names
+// the shared store. That is what a walled seat's git sees once its
+// `objects` is bound over; no bwrap is needed to pin what the launcher does
+// with the result. The store is at the shipped placement —
+// `<SeatWallDir>/seat-objects` since ADR 0100 D1 — and the pins whose
+// subject is the OLD placement say so by name (siLegacyStoreFor).
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,6 +292,169 @@ func TestQASeatImportWatchPassClearsGcOverAStagedBlob(t *testing.T) {
 	}
 	if _, err := git(repo, "gc", "-q"); err != nil {
 		t.Fatalf("gc still fails after the watch-pass import: %v", err)
+	}
+}
+
+// ─── ADR 0100 D1: the wall store, the legacy arm, and the retire order ──────
+
+// THE FIRST LAUNCH THAT RENDERS THE WALL STORE DRAINS THE LEGACY ONE. The
+// store moved out of the per-worktree git dir, and nothing binds the old
+// place any more — so a seat whose branch tip is readable only out of it
+// would come up with a git that cannot read its own HEAD. The import is the
+// one route those objects have ever had into the shared store, and it is
+// not a move: renaming the directory would be the uncaged launcher writing
+// through the seat-writable components ADR 0100 exists to stop trusting.
+//
+// MUTATION RUN: dropping the importLegacySeatStore call from
+// prepareSeatStore reds the first arm (the tip never reaches the shared
+// store, and the relaunched seat's store is empty), and the second
+// (a store that will not import no longer refuses the launch).
+func TestQASeatImportFirstWallLaunchDrainsTheLegacyStore(t *testing.T) {
+	t.Parallel()
+	if !seatStoreMechanism(false) {
+		t.Skip("NOTHING MEASURED: this host's walled tier renders no seat store (ADR 0099 D7)")
+	}
+	a, repo := wtApp(t), wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A seat of the old placement: its store is in the git dir, and the
+	// commit it made is in no other store on the box.
+	legacy := siLegacyStoreFor(t, tr)
+	head := siSeatCommit(t, tr, legacy, "fix.txt", "the work\n", "s-1: the fix")
+	if siHas(t, repo, head) {
+		t.Fatal("CONTROL: the seat's commit is already in the shared store, so this cannot see the drain")
+	}
+
+	if err := PrepareSessionHead(tr, true, false, io.Discard); err != nil {
+		t.Fatalf("the first wall launch over a legacy store was refused: %v", err)
+	}
+	if !siHas(t, repo, head) {
+		t.Fatalf("the seat's commit %s is in neither store after the first wall launch: the launch bound a NEW empty store over <common>/objects and left the tip readable only in a directory nothing binds (ADR 0100 D1)", abbrevSHA(head))
+	}
+	l, ok := seatStoreFor(tr.Path)
+	if !ok || l.Store == "" {
+		t.Fatal("no wall store layout after the launch")
+	}
+	if fi, err := os.Stat(l.Store); err != nil || !fi.IsDir() {
+		t.Fatalf("the launch left no wall store at %s: %v", l.Store, err)
+	}
+	// And the origin file beside it, which is the only way an orphaned wall
+	// store is ever found again.
+	tree, common, ok := readSeatWallOrigin(l.Wall)
+	switch {
+	case !ok:
+		t.Errorf("the wall dir %s carries no origin file: once the tree is gone nothing can tell which repo's store this is (ADR 0100 D1)", l.Wall)
+	case tree != absResolve(tr.Path) || common != absResolve(filepath.Dir(l.Objects)):
+		t.Errorf("the origin file names tree %s / common %s, want %s / %s", tree, common, absResolve(tr.Path), absResolve(filepath.Dir(l.Objects)))
+	}
+
+	// And a legacy store that will NOT import refuses the launch rather
+	// than rendering a wall store over a history git cannot read.
+	bad := siBadObject(t, legacy, "ab")
+	err = PrepareSessionHead(tr, true, false, io.Discard)
+	if err == nil {
+		t.Fatalf("a launch ran over a legacy store that would not import (%s), so whatever is left in it is readable by nobody", bad)
+	}
+	if !strings.Contains(err.Error(), "legacy store") {
+		t.Errorf("the refusal does not say which store it is about: %v", err)
+	}
+}
+
+// THE RETIRE ORDER (ADR 0100 D1): import both arms, then `worktree remove`
+// and `prune`, then RemoveAll the wall dir. The wall dir is the only copy of
+// what the seat committed, so a removal that ran before the import — or an
+// import that failed and did not stop the removal — is the work gone.
+//
+// MUTATION RUN: moving RemoveSessionTree's RemoveAll of the wall dir above
+// the importSeatObjects call, or dropping that call, reds the first arm (the
+// commit is gone with the dir). Removing the wall dir on a FAILED import
+// reds the second.
+func TestQASeatImportRetireTakesTheWallDirOnlyAfterTheImport(t *testing.T) {
+	t.Parallel()
+	_, repo, tr, store := siTree(t)
+	l, ok := seatStoreFor(tr.Path)
+	if !ok || !insideDir(l.Wall, store) {
+		t.Fatalf("CONTROL: the fixture's store %s is not inside the wall dir %s, so nothing below is about the wall dir", store, l.Wall)
+	}
+	head := siSeatCommit(t, tr, store, "fix.txt", "the work\n", "s-1: the fix")
+	if siHas(t, repo, head) {
+		t.Fatal("CONTROL: the commit is in the shared store already")
+	}
+
+	// A store that will not import keeps the tree AND the wall dir.
+	bad := siBadObject(t, store, "cd")
+	if err := RemoveSessionTree(tr, true); err == nil {
+		t.Fatal("a forced retire removed a tree whose wall store would not import")
+	}
+	if _, err := os.Stat(l.Wall); err != nil {
+		t.Fatalf("the wall dir went with a refused retire, and with it the only copy of the seat's commit: %v", err)
+	}
+	if err := os.Remove(bad); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RemoveSessionTree(tr, true); err != nil {
+		t.Fatal(err)
+	}
+	if !siHas(t, repo, head) {
+		t.Fatalf("the retire took the seat's commit %s with its wall dir", abbrevSHA(head))
+	}
+	if _, err := os.Stat(l.Wall); err == nil {
+		t.Errorf("the wall dir %s outlived the retire — its private /tmp, its claude state and its store are nobody's now", l.Wall)
+	}
+}
+
+// The ORPHAN arm: a tree deleted by hand leaves a wall dir whose name hashes
+// a path that no longer resolves, so the sweep finds it by the origin file
+// the launcher wrote. prune imports it, then removes the dir — and a wall
+// dir whose origin names ANOTHER repo's common dir is neither imported nor
+// removed, which is the whole of what that file is read for.
+//
+// MUTATION RUN: dropping the wall arm from orphanedSeatStores reds the
+// first half; dropping the common-dir test in seatWallDirsFor reds the
+// second (this repo's prune imports the other repo's objects).
+func TestQASeatImportPruneImportsAnOrphanedWallStoreOfThisRepoOnly(t *testing.T) {
+	t.Parallel()
+	_, repo, tr, store := siTree(t)
+	head := siSeatCommit(t, tr, store, "fix.txt", "the work\n", "s-1: the fix")
+	l, _ := seatStoreFor(tr.Path)
+
+	// Another repo's retired seat, beside it in the same wall root.
+	other := wtApp(t)
+	otherRepo := wtRepo(t)
+	otr, err := other.EnsureSessionTree(otherRepo, "s-9", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareSessionHead(otr, true, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	otherStore := siStoreFor(t, otr, "")
+	otherHead := siSeatCommit(t, otr, otherStore, "theirs.txt", "their work\n", "s-9: theirs")
+	ol, _ := seatStoreFor(otr.Path)
+	if err := os.RemoveAll(otr.Path); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.RemoveAll(tr.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := pruneWorktrees(repo); err != nil {
+		t.Fatal(err)
+	}
+	if !siHas(t, repo, head) {
+		t.Fatalf("the prune did not import the orphaned wall store: %s is readable nowhere now", abbrevSHA(head))
+	}
+	if _, err := os.Stat(l.Wall); err == nil {
+		t.Errorf("the orphaned wall dir %s survived its prune", l.Wall)
+	}
+	if siHas(t, repo, otherHead) {
+		t.Errorf("this repo's prune imported %s out of another repo's wall store — a sweep that reads no origin file cannot tell them apart", abbrevSHA(otherHead))
+	}
+	if _, err := os.Stat(ol.Wall); err != nil {
+		t.Errorf("this repo's prune removed another repo's wall dir %s, and its store with it: %v", ol.Wall, err)
 	}
 }
 

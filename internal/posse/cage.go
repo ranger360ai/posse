@@ -551,8 +551,19 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 			// one (ranger-base-21i98, ADR 0099 D1): the overlay just made at
 			// `<common>/objects` is replaced in place by the store's bind,
 			// and the shared store is read-only at the side path beside it.
+			//
+			// The store's SOURCE is under the seat's WALL dir since ADR
+			// 0100 D1 (`<SeatWallDir>/seat-objects`) and no longer inside
+			// the per-worktree git dir, which this tier mounts read-write
+			// for the seat: an engine resolves a bind source on the host
+			// at mount time, so a source the seat can rename is a source
+			// the seat can redirect onto the shared store. The home is
+			// read here for the same reason bwrapRender reads it — the
+			// dir is one per session dir — and an unknown one is the
+			// fail-closed mount seatStoreCageMounts names.
 			if own := LinkedGitDirs(dir); len(own) == 2 {
-				ms = seatStoreCageMounts(ms, own[0], common)
+				home, _ := os.UserHomeDir()
+				ms = seatStoreCageMounts(ms, own[0], common, SeatWallDir(home, dir))
 			}
 		}
 	}

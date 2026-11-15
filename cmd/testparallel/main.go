@@ -599,6 +599,7 @@ func main() {
 		"TestLiveBwrapSeatStoreRefusesRewritingASharedObject":              "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapSeatStoreLandsHonestWorkAndNeverATamperedObject":     "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapSeatStoreOperatorGcAfterTheWatchPassImport":          "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapSeatStoreHostPathIsUnreachableInTheWall":             "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapHideIsNotWalkedAroundThroughProcRoot":                "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapHidesTheRuntimeDirsControlEndpoints":                 "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWithoutHideReachesTheRuntimeDir":                     "reads bwrapNestOnce and bwrapNestWhy",

@@ -3713,19 +3713,19 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 	if seatCache != "" {
 		_ = os.RemoveAll(seatCache)
 	}
-	// AFTER the import at the top of this function and after `worktree
-	// remove`, never before (ADR 0100 D1's retire order: import both arms,
-	// then the worktree removal, then this). Today the wall dir holds the
-	// seat's private /tmp and its private claude state, and removing it
-	// early would cost nothing but a confusing error. When D1's last member
-	// lands here — the seat's own object store, which holds committed work
-	// that only the import rescues — this order is what keeps the removal
-	// from taking it. Written that way now, so the slice that adds the
-	// source adds a source and not a reordering.
+	_ = pruneWorktrees(t.Repo)
+	// LAST, and that is ADR 0100 D1's retire order in full: import both
+	// arms, then `worktree remove`/`prune`, then this. The wall dir holds
+	// the seat's private /tmp, its private claude state and — since
+	// ranger-base-ltmyh — ITS OBJECT STORE, which holds committed work that
+	// only the import at the top of this function rescues. That import is
+	// what licenses this line: it refuses the whole removal when it fails,
+	// so nothing below it ever deletes the last copy of anything. Moving
+	// this line above the import, or dropping the import, is the mutation
+	// the pins drive.
 	if seatWall != "" {
 		_ = os.RemoveAll(seatWall)
 	}
-	_ = pruneWorktrees(t.Repo)
 	if branchExists(t.Repo, t.Branch) {
 		del := "-d"
 		// `branch -d` asks reachability, which is the same by-sha question

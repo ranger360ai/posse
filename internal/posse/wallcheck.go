@@ -210,12 +210,25 @@ var wallCheckRule = landedRule{
 //
 // `tmp` is carve.Tmp's presence, and it gates the /var/tmp bind alone: see
 // the call site for why they stand down together.
-func wallVenueArgv(argv []string, run string, tmp bool) ([]string, []PrepStep) {
+//
+// `grants` IS THE VENUE'S WRITE SET, and it is here for ADR 0100 D2(b): the
+// /var/tmp SOURCE is `var-tmp` inside the run dir, and the run dir is what
+// the venue grants, so that component lies strictly inside a write grant and
+// is a mount of nothing — loose, by the predicate BwrapArgs applies to every
+// other source it renders. The fix is the ADR's own, an in-place bind and
+// never an exemption, and it is conditional on the grant for the reason
+// BwrapArgs' step 2a-bis gives: in place is a READ-WRITE mount, so emitting
+// it where no grant covers the source would hand out a write nobody asked
+// for. A caller that grants the venue nothing gets the argv it always got.
+func wallVenueArgv(argv []string, run string, tmp bool, grants []string) ([]string, []PrepStep) {
 	out := append(argv, wallVenuePidNS, wallVenueProc, wallVenueProcMount)
 	if !tmp {
 		return out, nil
 	}
 	src := filepath.Join(run, wallVenueVarTmpName)
+	if bwrapStrictlyInsideGrant(src, grants) {
+		out = append(out, "--bind", src, src)
+	}
 	return append(out, "--bind", src, wallVenueVarTmpMount),
 		[]PrepStep{{PrepMkdirAll, src, "ADR 0097 D1's private /var/tmp for the wall venue; bwrap cannot bind a source that does not exist, and 18 live pins put their fixture root there"}}
 }

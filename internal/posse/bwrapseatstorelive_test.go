@@ -62,7 +62,10 @@ func bsLiveFixture(t *testing.T) bsLive {
 		t.Fatalf("no linked worktree: %v", dirs)
 	}
 	f.own, f.common = absResolve(dirs[0]), absResolve(dirs[1])
-	l := seatStoreFrom(dirs[0], dirs[1])
+	l, ok := seatStoreFor(tr.Path)
+	if !ok {
+		t.Fatalf("no seat store layout for the linked worktree %s", tr.Path)
+	}
 	f.store, f.base = l.Store, l.Base
 	if b, err := os.ReadFile(filepath.Join(f.store, "info", "alternates")); err != nil || strings.TrimSpace(string(b)) != f.base {
 		t.Fatalf("the walled prepare did not leave a store whose alternates name the side path %s: %q %v", f.base, b, err)
@@ -72,12 +75,38 @@ func bsLiveFixture(t *testing.T) bsLive {
 	if !wantsPath(f.set, filepath.Join(f.common, "objects")) {
 		t.Fatalf("CONTROL: the writable set does not grant <common>/objects, so the store bind has nothing to cover: %v", f.set)
 	}
-	f.argv = f.render(t, f.set, seatStoreBinds(ag, tr.Path))
-	if len(seatStoreBinds(ag, tr.Path)) != 2 {
+	binds, err := seatStoreBinds(ag, bsLiveHome(t), tr.Path)
+	if err != nil {
+		t.Fatalf("seatStoreBinds refused the fixture's tree: %v", err)
+	}
+	f.argv = f.render(t, f.set, binds)
+	if len(binds) != 2 {
 		t.Fatal("CONTROL: seatStoreBinds rendered no store for a committing PID in a linked worktree")
 	}
 	f.argvBefore = f.render(t, f.set, nil)
 	return f
+}
+
+// bsLiveHome is the home the render composes this seat's wall dir from (ADR
+// 0100 D1), which is where the store now lives. The binary's own temp HOME,
+// the one every fixture here runs under.
+func bsLiveHome(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Fatalf("no home for the fixture, so no seat wall dir and no store: %v", err)
+	}
+	return home
+}
+
+// binds is the fixture's store binds, re-rendered.
+func (f bsLive) binds(t *testing.T) []PrivateBind {
+	t.Helper()
+	b, err := seatStoreBinds(&AgentFile{Name: "bs-live"}, bsLiveHome(t), f.tr.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 // render is BwrapArgs over the set with these private binds, plus the
@@ -177,7 +206,7 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		argv []string
 	}{
 		{"as rendered", f.argv},
-		{"with <common> granted whole", f.render(t, append(append([]string{}, f.set...), f.common), seatStoreBinds(&AgentFile{Name: "bs-live"}, f.tr.Path))},
+		{"with <common> granted whole", f.render(t, append(append([]string{}, f.set...), f.common), f.binds(t))},
 	} {
 		for _, p := range []string{file, side} {
 			for _, c := range []struct {
@@ -224,6 +253,50 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	}
 	if got := mustGit(t, f.repo, "cat-file", "-p", sha); got+"\n" != honest {
 		t.Errorf("the operator's cat-file serves %q for %s", got, sha[:12])
+	}
+}
+
+// ADR 0100 D1, live: the seat reaches its store's CONTENTS through the mount
+// at `<common>/objects` and cannot touch the store's own HOST path, nor any
+// component of it. That is the whole of what moving the source bought — the
+// store used to sit inside the per-worktree git dir, which this seat is
+// granted, so a leftover of it could rename `seat-objects` to a link at
+// `<common>/objects` and have the NEXT launch bind the SHARED store
+// read-write over that name, no race to win.
+//
+// MUTATION RUN: putting the store back under the git dir (seatStoreFrom's
+// Store) reds every row here — the seat can write its own store's name
+// again — and reds TestQABwrapSeatStoreSourceIsPinnedInTheRender beside it.
+func TestLiveBwrapSeatStoreHostPathIsUnreachableInTheWall(t *testing.T) {
+	t.Parallel()
+	f := bsLiveFixture(t)
+	wall := filepath.Dir(f.store)
+	if !insideDir(SeatWallRoot(bsLiveHome(t)), f.store) {
+		t.Fatalf("CONTROL: the store %s is not under this box's wall root, so the rows below measure some other directory", f.store)
+	}
+	// The CONTENTS are reachable, at the mount and only there: the control
+	// that says the rows below are about the name and not about the store.
+	if ok, out := f.in(t, f.argv, "x\n", f.git("hash-object", "-w", "--stdin")...); !ok {
+		t.Fatalf("CONTROL: the seat cannot write an object at all, so nothing below is about the wall:\n%s", out)
+	}
+	for _, c := range []struct{ name, sh string }{
+		{"write into the store by its host path", "printf evil > " + f.store + "/evil"},
+		{"rename the store itself", "mv -f " + f.store + " " + f.store + ".x"},
+		{"replace the store with a link to the shared one", "rm -rf -- " + f.store + " && ln -s " + filepath.Join(f.common, "objects") + " " + f.store},
+		{"write in the wall dir above it", "printf evil > " + wall + "/evil"},
+		{"rename the wall dir", "mv -f " + wall + " " + wall + ".x"},
+	} {
+		if ok, out := f.in(t, f.argv, "", "sh", "-c", c.sh); ok {
+			t.Errorf("a walled seat could %s — the next launch's bind source is the seat's to choose (ADR 0100 D1)\n %s\n%s", c.name, c.sh, out)
+		}
+	}
+	// And the store is still a directory with the alternates the launcher
+	// wrote, so none of the rows above half-succeeded.
+	if fi, err := os.Lstat(f.store); err != nil || !fi.IsDir() {
+		t.Fatalf("the store is no longer a directory after those attempts: %v %v", fi, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(f.store, "info", "alternates")); err != nil || strings.TrimSpace(string(b)) != f.base {
+		t.Errorf("the store's alternates changed under the wall: %q %v", b, err)
 	}
 }
 
@@ -282,8 +355,14 @@ func TestLiveBwrapSeatStoreLandsHonestWorkAndNeverATamperedObject(t *testing.T) 
 		if !ok {
 			t.Fatalf("the seat could not write the forged object:\n%s", forged)
 		}
-		from := filepath.Join(f.store, forged[:2], forged[2:])
-		to := filepath.Join(f.store, claimed[:2], claimed[2:])
+		// THROUGH `<common>/objects`, which is the only name the seat has
+		// for its own store since ADR 0100 D1: the store's host path is
+		// under the seat's wall dir, which no render grants, so inside the
+		// namespace it is under the read-only `/`. The arm below measures
+		// that; here the point is the tamper, and the tamper is what a seat
+		// can really do.
+		inStore := func(sha string) string { return filepath.Join(f.common, "objects", sha[:2], sha[2:]) }
+		from, to := inStore(forged), inStore(claimed)
 		if ok, out := f.in(t, f.argv, "", "mv", "-f", from, to); !ok {
 			t.Fatalf("CONTROL: the seat could not rewrite an object in its OWN store, so this is not the tamper the landing is for:\n%s", out)
 		}

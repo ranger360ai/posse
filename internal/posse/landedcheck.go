@@ -340,8 +340,16 @@ func boxLandedCage(a *App, kind landedCageKind, judge, tree string, writable, en
 			// a tree living under one of them would leave the check nothing
 			// to chdir into, for the same reason the private /tmp would.
 			var mkdir []PrepStep
-			argv, mkdir = wallVenueArgv(argv, run, carve.Tmp != "")
+			argv, mkdir = wallVenueArgv(argv, run, carve.Tmp != "", writable)
 			prep = append(prep, mkdir...)
+			// The venue's additions come AFTER BwrapArgs, so BwrapArgs'
+			// own D2(b) step never saw them: the one source among them is
+			// asked here instead, against the same write set the render
+			// was given (ADR 0100 D2(b), and the ADR's "checked over EVERY
+			// bwrap argv the package renders").
+			if err := bwrapRefuseUnpinnedSource(argv, writable); err != nil {
+				return landedCage{}, err
+			}
 			env = append(append([]string{}, env...), wallVenueEnvVar+"=1")
 		}
 		// The prep is not housekeeping: bwrap binds only a source that

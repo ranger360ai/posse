@@ -67,12 +67,28 @@ import (
 // themselves are held to ADR 0097 by TestQAWallVenueContractLiteralsAreADR0097s
 // (the environment variable) and by the ADR's own D1 text (the two flags),
 // which is why this file quotes neither.
+//
+// THE /var/tmp ADDITION IS TWO BINDS AND NOT ONE SINCE ADR 0100 D2(b), and
+// it is still ONE of D1's three things. The second is the SAME source bound
+// IN PLACE: that source is `var-tmp` inside the run dir, the run dir is what
+// the venue grants, and a source whose own name lies inside a write grant
+// and is no mount of the render is one a process in that namespace can
+// rename — so the next render of that name binds what it points at. The
+// in-place bind makes the name a mount, which is what refuses the rename
+// (EBUSY, ADR 0100 P4/P4b). It GRANTS NOTHING: in place is read-write over a
+// path the run-dir grant already made read-write, so no capability is added
+// and D1's third bullet has nothing new to price. It is emitted only where
+// that grant exists (wallVenueArgv), which is why this list composes it the
+// same way the render decides it.
 func wallVenueExpectedAdditions(run string) []string {
-	return []string{
-		wallVenuePidNS, wallVenueProc, wallVenueProcMount,
-		"--bind", filepath.Join(run, wallVenueVarTmpName), wallVenueVarTmpMount,
-		"--setenv", wallVenueEnvVar, "1",
+	src := filepath.Join(run, wallVenueVarTmpName)
+	out := []string{wallVenuePidNS, wallVenueProc, wallVenueProcMount}
+	if bwrapStrictlyInsideGrant(src, []string{run}) {
+		out = append(out, "--bind", src, src)
 	}
+	return append(out,
+		"--bind", src, wallVenueVarTmpMount,
+		"--setenv", wallVenueEnvVar, "1")
 }
 
 // wallVenueArgvDelta is the multiset difference both ways: tokens `to` has

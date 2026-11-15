@@ -55,9 +55,32 @@ import (
 	"time"
 )
 
-// seatStoreName is a seat's own object store, inside its per-worktree git
-// dir, so `git worktree remove` and `git worktree prune` take it with the
-// rest of that dir — which is why both are preceded by an import.
+// TWO ARMS, SINCE ADR 0100 D1 (ranger-base-ltmyh). The store moved out of
+// the per-worktree git dir and into the seat's WALL dir, so every importer
+// here asks about two places:
+//
+//   - the WALL arm, `<SeatWallDir>/seat-objects`. For a live tree the dir is
+//     composed from the tree path, as the render composes it. For an ORPHAN
+//     it cannot be — the dir's name hashes the RESOLVED tree path and a tree
+//     that is gone resolves to its spelling — so the wall ROOT is swept for
+//     `origin` files naming this common dir (seatstore.go), which is the
+//     file the launcher writes for exactly this reason.
+//   - the LEGACY arm, `<own worktree git dir>/seat-objects`, unchanged. It
+//     stays until a census reads no admin dir holding one; its removal is
+//     ranger-base-tbg3h and not this bead. Nothing writes a legacy store any
+//     more, so after the first launch of each seat the arm costs one listing
+//     and one `cat-file --batch-check` per store.
+//
+// THE REMOVAL ORDER IS PART OF THIS FILE'S CONTRACT (ADR 0100 D1): import
+// both arms, then `git worktree remove`/`prune`, then RemoveAll the wall
+// dir. A failed import refuses the removal, as it always did — the wall
+// store holds committed work and the dir is the only copy.
+
+// seatStoreName is a seat's own object store: `<SeatWallDir>/seat-objects`
+// since ADR 0100 D1, and before it a directory of this same name inside the
+// per-worktree git dir, which `git worktree remove` and `git worktree prune`
+// delete with the rest of that dir — which is why both are still preceded by
+// an import.
 const seatStoreName = "seat-objects"
 
 // seatImportTimeout bounds one import's pack/index pipe. An import moves
@@ -85,6 +108,79 @@ func seatStoreAt(admin string) (string, bool) {
 	store := filepath.Join(admin, seatStoreName)
 	_, err := os.Lstat(store)
 	return store, err == nil || !errors.Is(err, fs.ErrNotExist)
+}
+
+// seatWallStoreIn is the store inside one wall dir, and whether there is
+// one. seatStoreAt's question at the other arm, with its Lstat for its
+// reason.
+func seatWallStoreIn(wall string) (string, bool) {
+	if wall == "" {
+		return "", false
+	}
+	store := filepath.Join(wall, seatStoreName)
+	_, err := os.Lstat(store)
+	return store, err == nil || !errors.Is(err, fs.ErrNotExist)
+}
+
+// seatWallStoreAt is the wall store of a LIVE session tree, composed from
+// the tree path exactly as the render composes it. "" with no home: a
+// launcher that cannot name a wall dir rendered no wall store either
+// (seatStoreNoWall), so there is nothing of that arm's to import.
+func seatWallStoreAt(tree string) (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", false
+	}
+	return seatWallStoreIn(SeatWallDir(home, tree))
+}
+
+// seatWallDir is one wall dir the sweep found, with the tree its origin file
+// names.
+type seatWallDir struct{ dir, tree string }
+
+// seatWallDirsFor sweeps the wall ROOT for every wall dir whose origin names
+// this common dir — orphansOnly keeping the ones whose tree is gone, which
+// is the set `git worktree prune` is about to take the admin dirs of.
+//
+// THE SWEEP IS WHY THE origin FILE EXISTS. A wall dir is named by a hash of
+// the resolved session tree path, so for a tree that is already gone there
+// is no path to hash and no way to tell this repo's abandoned store from
+// another repo's. An entry with no origin file is every wall dir made before
+// ADR 0100's store slice landed: it holds a private /tmp and claude state
+// and no store, so skipping it loses nothing.
+func seatWallDirsFor(common string, orphansOnly bool) []seatWallDir {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || common == "" {
+		return nil
+	}
+	root := SeatWallRoot(home)
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	want := absResolve(common)
+	var out []seatWallDir
+	for _, e := range ents {
+		// IsDir is the lstat kind, so a link at a wall dir's name is not
+		// swept. Nothing can plant one — no render grants the root — and a
+		// sweep that followed one would import another directory's files
+		// under this repo's name.
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, e.Name())
+		tree, c, ok := readSeatWallOrigin(dir)
+		if !ok || absResolve(c) != want {
+			continue
+		}
+		if orphansOnly {
+			if _, err := os.Stat(tree); err == nil {
+				continue
+			}
+		}
+		out = append(out, seatWallDir{dir: dir, tree: tree})
+	}
+	return out
 }
 
 // openSeatStore opens the store as an os.Root, from its PARENT: os.OpenRoot
@@ -133,14 +229,16 @@ func seatAdmins(repo string) []seatAdmin {
 	return out
 }
 
-// importSeatObjects imports THIS session's store into the shared one. nil is
-// "imported, or there was nothing to import".
+// importSeatObjects imports THIS session's stores — both arms — into the
+// shared one. nil is "imported, or there was nothing to import".
 //
-// The store is the one git itself would delete: a tree that exists is asked
-// for its own git dir (that is the dir `worktree remove` takes), and only an
-// answer inside the repo's own worktrees/ is taken. A tree that is already
-// gone has no answer to ask, so every store whose tree is missing is
-// imported — exactly the set `worktree prune` is about to take.
+// The legacy store is the one git itself would delete: a tree that exists is
+// asked for its own git dir (that is the dir `worktree remove` takes), and
+// only an answer inside the repo's own worktrees/ is taken. The wall store
+// is the one RemoveSessionTree deletes after the removal, and it is composed
+// from the tree path. A tree that is already gone has no answer to ask, so
+// every store whose tree is missing is imported — exactly the set `worktree
+// prune` is about to take.
 func importSeatObjects(t *SessionTree) error {
 	if t == nil || t.Repo == "" {
 		return nil
@@ -155,20 +253,30 @@ func importSeatObjects(t *SessionTree) error {
 			if len(dirs) != 2 || !pathUnder(dirs[0], filepath.Join(common, "worktrees")) {
 				return nil
 			}
-			store, ok := seatStoreAt(dirs[0])
-			if !ok {
-				return nil
-			}
-			return importSeatStore(t.Repo, store)
+			return importStores(t.Repo, liveSeatStores(t.Path, dirs[0]))
 		}
 	}
 	return importOrphanedSeatStores(t.Repo)
 }
 
-// importOrphanedSeatStores imports every store whose tree is gone — what
-// `worktree prune` would delete next.
-func importOrphanedSeatStores(repo string) error {
-	var errs []error
+// liveSeatStores is both arms for one live session tree: the wall store, and
+// the legacy store in its admin dir.
+func liveSeatStores(tree, admin string) []string {
+	var out []string
+	if store, ok := seatWallStoreAt(tree); ok {
+		out = append(out, store)
+	}
+	if store, ok := seatStoreAt(admin); ok {
+		out = append(out, store)
+	}
+	return out
+}
+
+// orphanedSeatStores is both arms over the stores whose tree is gone: the
+// legacy stores in the admin dirs `worktree prune` would delete, and the
+// wall stores the origin sweep finds for this repo.
+func orphanedSeatStores(repo string) []string {
+	var out []string
 	for _, a := range seatAdmins(repo) {
 		if a.tree != "" {
 			if _, err := os.Stat(a.tree); err == nil {
@@ -176,39 +284,104 @@ func importOrphanedSeatStores(repo string) error {
 			}
 		}
 		if store, ok := seatStoreAt(a.admin); ok {
-			if err := importSeatStore(repo, store); err != nil {
-				errs = append(errs, err)
-			}
+			out = append(out, store)
 		}
 	}
-	return errors.Join(errs...)
+	for _, w := range seatWallDirsFor(repoCommonDir(repo), true) {
+		if store, ok := seatWallStoreIn(w.dir); ok {
+			out = append(out, store)
+		}
+	}
+	return out
+}
+
+// importOrphanedSeatStores imports every store whose tree is gone — what
+// `worktree prune` would delete next, and the wall dirs that go with them.
+func importOrphanedSeatStores(repo string) error {
+	return importStores(repo, orphanedSeatStores(repo))
 }
 
 // importAllSeatStores is the watch pass's call: every store in the repo,
-// live or orphaned. One store's failure does not stop the others.
+// live or orphaned, at both arms. One store's failure does not stop the
+// others.
 func importAllSeatStores(repo string) error {
-	var errs []error
+	var stores []string
 	for _, a := range seatAdmins(repo) {
 		if store, ok := seatStoreAt(a.admin); ok {
-			if err := importSeatStore(repo, store); err != nil {
-				errs = append(errs, err)
-			}
+			stores = append(stores, store)
+		}
+	}
+	for _, w := range seatWallDirsFor(repoCommonDir(repo), false) {
+		if store, ok := seatWallStoreIn(w.dir); ok {
+			stores = append(stores, store)
+		}
+	}
+	return importStores(repo, stores)
+}
+
+// importStores is the loop every caller above shares: one store's failure
+// does not stop the others, and every failure is reported.
+func importStores(repo string, stores []string) error {
+	var errs []error
+	for _, store := range stores {
+		if err := importSeatStore(repo, store); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
 }
 
+// importLegacySeatStore drains the ADR 0099 store in the per-worktree git
+// dir before a launch renders the wall store over `<common>/objects` (ADR
+// 0100 D1's NO MIGRATION exception). Called by prepareSeatStore, and a
+// refusal here refuses the LAUNCH: before this import the seat's own branch
+// tip may be readable only out of that store, and a seat whose git cannot
+// read its own HEAD is worse than a seat that did not start.
+//
+// It is not a move. Renaming the directory would be the uncaged launcher
+// writing through the seat-writable components ADR 0100 exists to stop
+// trusting; the import is the one route those objects have ever had into
+// the shared store, and it re-hashes every one of them (importSeatStore).
+// What is left behind is an emptied-of-meaning directory the legacy arm
+// keeps meeting at one listing per launch.
+func importLegacySeatStore(repo string, l seatStoreLayout) error {
+	if repo == "" {
+		return nil
+	}
+	store, ok := seatStoreAt(l.Own)
+	if !ok {
+		return nil
+	}
+	if err := importSeatStore(repo, store); err != nil {
+		return Die("seat store: the legacy store %s could not be imported (%v), and this seat's own branch tip may be readable only there — the launch is refused rather than rendering a wall store over a history git cannot read (ADR 0100 D1). Fix or remove what will not import, and relaunch", AbbrevHome(store), err)
+	}
+	return nil
+}
+
 // pruneWorktrees is `git worktree prune` that cannot take an un-imported
-// store with it. A store that will not import keeps EVERY stale admin dir in
-// the repo — prune takes them all or none — which is best effort exactly as
-// the bare prune it replaces was: a stale registration costs a refused
-// `worktree add` of that one path, and a lost store costs the work.
+// store with it, at both arms: the admin dirs the prune deletes, and the
+// wall dirs of the same gone trees, which it removes AFTER the prune (ADR
+// 0100 D1's retire order — import both arms, then the removal, then the
+// wall dir).
+//
+// A store that will not import keeps EVERY stale admin dir in the repo —
+// prune takes them all or none — which is best effort exactly as the bare
+// prune it replaces was: a stale registration costs a refused `worktree add`
+// of that one path, and a lost store costs the work. The wall dirs are
+// removed best-effort for the other half of the same reason: a directory
+// left behind costs disk, and no other seat is granted it.
 func pruneWorktrees(repo string) error {
+	walls := seatWallDirsFor(repoCommonDir(repo), true)
 	if err := importOrphanedSeatStores(repo); err != nil {
 		return err
 	}
-	_, err := git(repo, "worktree", "prune")
-	return err
+	if _, err := git(repo, "worktree", "prune"); err != nil {
+		return err
+	}
+	for _, w := range walls {
+		_ = os.RemoveAll(w.dir)
+	}
+	return nil
 }
 
 // importSeatStore is the import itself, for one store.

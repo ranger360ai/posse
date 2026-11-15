@@ -3,7 +3,8 @@
 *Status: accepted 2026-11-15 (architect sign-off ranger-base-6w88m) · owner:
 architect · extends ADR 0080 D17's render and ADR 0099 D1's seat store; their
 other lines stand · fix: ranger-base-5f5kb (D1's claude state and private
-/tmp, D2(a), D3)*
+/tmp, D2(a), D3), ranger-base-ltmyh (D1's seat store and its two-arm import,
+D2(b), which amended D2(b)'s own last paragraph on a measurement)*
 
 ## Context
 
@@ -76,7 +77,8 @@ THE SEAT STORE IS THE EXCEPTION, because it holds committed work:
   that name this common dir and whose tree is gone. The legacy arm is today's
   seatStoreAt path, unchanged.
 - The legacy arm stays until a census reads no admin dir holding a
-  seat-objects. Its removal is a later bead, not this one.
+  seat-objects. Its removal is a later bead, not this one
+  (ranger-base-tbg3h).
 - Retire, reap and prune run in this order: import both arms, then `git
   worktree remove`/prune, then RemoveAll the wall dir. An import that fails
   keeps the wall dir and refuses the removal, as pruneWorktrees already does.
@@ -99,9 +101,30 @@ claude and seat-store sources all fail this, which is the pin. The seat
 store's side bind passes legitimately: its source `<common>/objects` is
 inside a `<common>` grant but is the store's own mount.
 
-Today the landed-check and venue sources lie under `StateDir/landed-check/
-run-*`, which no walled seat writes. They pass both invariants, and the pin
-says so.
+The landed-check and venue sources lie under `StateDir/landed-check/run-*`,
+which no walled seat writes. They pass D2(a) and the pin says so.
+
+AMENDED 2026-11-15 (ranger-base-ltmyh, the slice that built the predicate):
+they did NOT pass D2(b), and this ADR's first text said they did. MEASURED
+by running the predicate over the two rendered argvs: the judge's private
+/tmp is `tmp` INSIDE the run dir, the run dir is the one thing either render
+grants, so that component lies strictly inside a write grant and is a mount
+of neither render — loose, by the definition two paragraphs up. The venue's
+private /var/tmp is the same shape (`var-tmp` in the same run dir). "No
+walled seat writes the run dir" is an argument about WHO can write it, which
+is true and is not what the predicate asks; a rule that holds for everything
+but two renders is a rule with an exemption to maintain, and this ADR
+refuses exemptions for the destination arm in D4(a)'s own words.
+
+THE FIX IS D4(a)'s, applied to a source: an IN-PLACE BIND of the loose
+component, emitted by the render that already grants it. It costs one mount
+in each of those two renders and grants nothing — in place is read-write
+over a path the run-dir grant has already made read-write — and it makes the
+component a mount destination, which is what refuses the rename (P4/P4b). It
+is CONDITIONAL on the grant: where no grant covers the source, as in every
+seat render, the same line would hand out a write nobody asked for. A seat's
+own sources need none of it, because they lie under the wall dir and inside
+no grant at all.
 
 **D3. PREP STAYS IN THE LAUNCHER, unchanged in shape.** Its source-side paths
 now have no component a walled seat can write. Its destination-side paths are
@@ -227,6 +250,16 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   included.
 - P4c a bind source can be renamed in-namespace.
 - The Tmp link renders and mounts its target rw.
+- (2026-11-15, ranger-base-ltmyh) the landed-check judge's and the wall
+  venue's private temp sources were NOT pinned in their own renders, which
+  D2(b)'s first text asserted they were. Read off the two rendered argvs by
+  the shipped predicate; the amendment under D2(b) has the shape and the
+  fix.
+- (2026-11-15, ranger-base-ltmyh) with the store under the wall dir, a
+  walled seat can neither write nor rename the store's host path, its wall
+  dir, or any component of either, and reaches the contents only at
+  `<common>/objects`. Read inside a real bwrap from the shipped render
+  (TestLiveBwrapSeatStoreHostPathIsUnreachableInTheWall).
 - A namespace without the mount renames a live private destination
   mid-session, the victim's name resolves to the planted dir, and a namespace
   with the mount gets EBUSY.
@@ -243,5 +276,5 @@ ASSUMED:
 
 ## Not closed here
 
-- ranger-base-ltmyh
 - ranger-base-gn050
+- ranger-base-tbg3h

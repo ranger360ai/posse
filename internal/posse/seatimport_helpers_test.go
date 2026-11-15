@@ -35,8 +35,15 @@ func siTree(t *testing.T) (a *App, repo string, tr *SessionTree, store string) {
 	return a, repo, tr, store
 }
 
-// siStoreFor makes a seat store for tr — its own (at the name the import
-// reads) when at is "", or a store somewhere the import never looks.
+// siStoreFor makes a seat store for tr — its own (at the name the render
+// binds and the importers read, `<SeatWallDir>/seat-objects` since ADR 0100
+// D1) when at is "", or a store somewhere the import never looks.
+//
+// THE PATH COMES FROM THE SHIPPED LAYOUT and is not composed here, so that
+// a slice that moves the store again moves these fixtures with it rather
+// than leaving them measuring a directory nothing binds. siLegacyStoreFor
+// is the other arm, spelled out, for the pins whose subject IS the old
+// placement.
 func siStoreFor(t *testing.T, tr *SessionTree, at string) string {
 	t.Helper()
 	dirs := LinkedGitDirs(tr.Path)
@@ -45,12 +52,28 @@ func siStoreFor(t *testing.T, tr *SessionTree, at string) string {
 	}
 	store := at
 	if store == "" {
-		store = filepath.Join(dirs[0], seatStoreName)
+		l, ok := seatStoreFor(tr.Path)
+		if !ok || l.Store == "" {
+			t.Fatalf("no seat store layout for %s (ok=%v)", tr.Path, ok)
+		}
+		store = l.Store
 	}
 	write(t, filepath.Join(store, "info", "alternates"), filepath.Join(dirs[1], "objects")+"\n")
 	mustGit(t, tr.Path, "config", "user.email", "p@example.com")
 	mustGit(t, tr.Path, "config", "user.name", "p")
 	return store
+}
+
+// siLegacyStoreFor makes a store at the ADR 0099 placement — inside the
+// per-worktree git dir — which is what every seat on this box wrote into
+// before ADR 0100 D1 moved it, and what the importers' legacy arm is for.
+func siLegacyStoreFor(t *testing.T, tr *SessionTree) string {
+	t.Helper()
+	l, ok := seatStoreFor(tr.Path)
+	if !ok {
+		t.Fatalf("not a linked worktree: %s", tr.Path)
+	}
+	return siStoreFor(t, tr, l.Legacy)
 }
 
 // siSeatGit is git as the walled seat runs it: every object it writes goes

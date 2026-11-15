@@ -557,6 +557,34 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, "--bind", p, p)
 	}
 
+	// 2a-bis. THE PRIVATE /tmp SOURCE, PINNED WHERE IT LIES INSIDE A GRANT
+	// (ADR 0100 D2(b)). A seat's source is under the wall dir and inside no
+	// grant, so this renders nothing for it. The LANDED-CHECK judge and the
+	// WALL VENUE are the shape it exists for: their private /tmp is `tmp`
+	// inside the run dir, and the run dir is the one thing they grant — so
+	// the component `<run>/tmp` is strictly inside a write grant and is no
+	// mount of theirs, which is the predicate's definition of loose. ADR
+	// 0100 asserted those two renders passed D2(b) as they stood; MEASURED
+	// here while building it, they did not, and the ADR's own remedy for a
+	// miss is this one: an in-place bind, never an exemption.
+	//
+	// IT WIDENS NOTHING, which is why it is conditional on the grant rather
+	// than emitted always: a read-write bind in place makes the path
+	// writable, and the only paths this fires for are ones a grant already
+	// made writable. Where no grant covers the source (every seat render)
+	// the same line would be handing out a write the render never meant.
+	//
+	// IT IS NOT WATCHED. A `posse wall-watch` entry exists to kill a seat
+	// whose wall came off; this mount is no wall over the seat's reach —
+	// the directory is writable either way — and its one job is to refuse a
+	// RENAME of the name from inside the namespace, which affects the NEXT
+	// render and not this run. The host can still rename it (a holder gets
+	// EBUSY, a non-holder does not — ADR 0100's Context, MEASURED), and
+	// killing the victim would not undo that.
+	if carve.Tmp != "" && bwrapStrictlyInsideGrant(carve.Tmp, grants) {
+		argv = append(argv, "--bind", carve.Tmp, carve.Tmp)
+	}
+
 	// 2b. The keep files, inside the grants above and bound by nothing (D20,
 	// ranger-base-gi1gi). Emitted HERE and not with carve.Keep below, because
 	// the order of this list is a promise to the launcher (PrepStep): a keep
@@ -1137,6 +1165,16 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, "--ro-bind", "/dev/null", f)
 		watch(WallWatchReadMask, f)
 	}
+	// 6. EVERY SOURCE THAT DIFFERS FROM ITS DESTINATION IS PINNED IN THIS
+	// RENDER (ADR 0100 D2(b)). Last, because it is asked of the finished
+	// argv — the mounts are what pin a component, and a step above could
+	// still have added one. Here and not in each producer, for the reason
+	// step 2a is here: this is where bwrapRender, the landed-check judge
+	// and the wall venue meet, so a render that grows a fourth caller is
+	// covered by writing nothing.
+	if err := bwrapRefuseUnpinnedSource(argv, grants); err != nil {
+		return nil, nil, err
+	}
 	return argv, prep, nil
 }
 
@@ -1245,7 +1283,14 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 		case sexists && !sfi.IsDir():
 			return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a directory (a link or a file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-5632o, ranger-base-wsgus)", pb.Src, pb.Dst)
 		case !sexists:
-			prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
+			// The reason is the ARM's and not one member's: this branch
+			// makes the source dir of every private dir copy, and since ADR
+			// 0100 D1 that set is claude's shared members — which claude
+			// runs ahead of each Bash command — and the seat's own object
+			// store. A sentence naming only the first was read, in a prep
+			// list, over the second (`posse gates <persona> --cage
+			// seatbelt`, 2026-11-15).
+			prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's own private copy of a directory it would otherwise share, under the per-seat wall dir: claude's state members, which it runs ahead of each Bash command, and this seat's object store"})
 		}
 		out = []string{bind, pb.Src, pb.Dst}
 	}
@@ -1448,6 +1493,188 @@ func bwrapWallRoot() string {
 		return ""
 	}
 	return SeatWallRoot(home)
+}
+
+// ─── ADR 0100 D2(b): A PATH IS PINNED IN A RENDER ───────────────────────────
+
+// bwrapPinned is D2(b)'s predicate, and it is ONE function on purpose: ADR
+// 0100 D4(a) asks the same question of every DESTINATION that differs from
+// its source, and two implementations of "pinned" is two answers about one
+// wall.
+//
+//	A path P is PINNED in a render R when every component of P that lies
+//	STRICTLY INSIDE a write grant of R is itself a mount destination of R.
+//
+// It returns the shallowest component that is not, or ("", true).
+//
+// WHAT IT MEANS, in one sentence: nothing inside R's namespace can change
+// what P names. To create, rename or unlink a component C you need write on
+// C's PARENT, which is what "strictly inside a write grant" says — a
+// component equal to a grant is not strictly inside it, because its own
+// parent is outside. And a component that is a mount destination cannot be
+// renamed by the namespace that holds that mount: MEASURED, ADR 0100's P4
+// and P4b, EBUSY, alias included.
+//
+// WHY A SOURCE NEEDS IT. bwrap resolves a bind source at mount time and
+// follows links; this render's own walk (bwrapSrcWalk) judged it an instant
+// earlier. A seat — or any leftover of one — that can swap a component
+// between the two instants redirects the bind, and it needs no timing: it
+// toggles the component in a loop. D1 answers the class by moving every
+// source under the wall dir, where NO component is inside any grant; this
+// predicate is what says so of each render rather than of the design, and
+// what catches a source put back.
+//
+// THE GRANT SIDE IS COMPARED BOTH AS WRITTEN AND RESOLVED, and the union is
+// deliberate: either spelling reaching the component is a seat that can
+// write it, and a predicate whose job is to refuse must not be narrowed by a
+// host whose home is behind a symlink. The component side stays COMPOSED —
+// resolving it would follow a link a seat planted and judge the link's
+// target, which is D2(a)'s insideDir/underDir distinction one level down.
+//
+// RESIDUAL, stated and not closed: "write grant" here is R's grant list,
+// the paths R binds read-write IN PLACE. A read-write bind whose source
+// DIFFERS from its destination also exposes its source host-side — so a
+// component of P lying inside another bind's rw source is seat-writable and
+// this predicate does not say so. No render in this package has that shape
+// today (the only aliased rw sources are the wall members themselves, and
+// nothing binds their parents), and a bead that adds one widens this
+// function rather than exempting itself.
+func bwrapPinned(p string, grants, dsts []string) (string, bool) {
+	for _, c := range bwrapPathComponents(p) {
+		if !bwrapStrictlyInsideGrant(c, grants) || bwrapIsMountDst(c, dsts) {
+			continue
+		}
+		return c, false
+	}
+	return "", true
+}
+
+// bwrapPathComponents is p's components, shallowest first and p itself last:
+// `/a/b/c` is `/`, `/a`, `/a/b`, `/a/b/c`. Shallowest first so a refusal
+// names the OUTERMOST loose component, which is the one whose fix pins
+// everything below it.
+func bwrapPathComponents(p string) []string {
+	p = filepath.Clean(p)
+	var up []string
+	for {
+		up = append(up, p)
+		parent := filepath.Dir(p)
+		if parent == p {
+			break
+		}
+		p = parent
+	}
+	out := make([]string, 0, len(up))
+	for i := len(up) - 1; i >= 0; i-- {
+		out = append(out, up[i])
+	}
+	return out
+}
+
+// bwrapStrictlyInsideGrant is "c's parent is writable in this render".
+func bwrapStrictlyInsideGrant(c string, grants []string) bool {
+	for _, g := range grants {
+		for _, gs := range []string{g, absResolve(g)} {
+			if gs != c && insideDir(gs, c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// bwrapIsMountDst is "this render mounts something at exactly c".
+func bwrapIsMountDst(c string, dsts []string) bool {
+	for _, d := range dsts {
+		if d == c || absResolve(d) == absResolve(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// bwrapMount is one mount the rendered argv makes. Src is "" for a --tmpfs,
+// which has no source at all.
+type bwrapMount struct{ Src, Dst string }
+
+// bwrapMounts reads them off the argv rather than off the lists that
+// produced it, for bwrapMountedAt's reason one function up: a list entry
+// says what the design asked for and the argv says what the wall is.
+func bwrapMounts(argv []string) []bwrapMount {
+	var out []bwrapMount
+	for i, a := range argv {
+		switch a {
+		case "--tmpfs":
+			if i+1 < len(argv) {
+				out = append(out, bwrapMount{Dst: argv[i+1]})
+			}
+		case "--bind", "--ro-bind", "--dev-bind":
+			if i+2 < len(argv) {
+				out = append(out, bwrapMount{Src: argv[i+1], Dst: argv[i+2]})
+			}
+		}
+	}
+	return out
+}
+
+// bwrapMountDsts is just the destinations of those, which is the set
+// bwrapPinned asks about.
+func bwrapMountDsts(ms []bwrapMount) []string {
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, m.Dst)
+	}
+	return out
+}
+
+// bwrapRefuseUnpinnedSource is D2(b) over a rendered argv: EVERY source that
+// differs from its destination must be PINNED in the render that binds it,
+// else the render is refused. Called at the end of BwrapArgs, where all
+// three of this package's renders meet, and again by the venue over the
+// mounts it adds after that (boxLandedCage).
+//
+// A REFUSAL AND NOT A WARNING, in the tier's own direction: a source whose
+// components a seat can swap is a mount of the seat's choosing, read-write,
+// inside somebody's namespace — and the two shapes it has caught are the
+// shared object store (ADR 0099's whole subject) and claude's shell
+// snapshots (code the victim runs ahead of every Bash command).
+//
+// WHAT PASSES, because it is worth knowing which legitimate shapes this
+// rule had to let through:
+//
+//   - every source under the seat's wall dir, trivially: no component of it
+//     lies inside any grant at all (D1, and D2(a) keeps that true);
+//   - the seat store's SIDE bind, whose source `<common>/objects` is inside
+//     a `<common>` grant whenever a store of record in the same repo grants
+//     that dir whole — it passes because that exact path is the store's own
+//     mount destination, which is to say the thing that makes it unswappable
+//     is the mount the render already makes (ADR 0100 D2(b));
+//   - `/dev/null` over a masked file: `/dev` is a mount destination and
+//     nothing grants it.
+//
+// IT STANDS DOWN WHERE THE WALL ROOT DOES (bwrapWallRoot): on a box whose
+// home is itself under the shared /tmp there is no ungranted place for a
+// source to live, so every private source would be unpinned and every
+// render refused. No production launch is that shape — homes and worktrees
+// live under the home — and every fixture in this package is, which is why
+// the pins for this rule put their home under wallUngrantedDir.
+func bwrapRefuseUnpinnedSource(argv, grants []string) error {
+	if bwrapWallRoot() == "" {
+		return nil
+	}
+	ms := bwrapMounts(argv)
+	dsts := bwrapMountDsts(ms)
+	for _, m := range ms {
+		if m.Src == "" || m.Src == m.Dst {
+			continue
+		}
+		loose, ok := bwrapPinned(m.Src, grants, dsts)
+		if ok {
+			continue
+		}
+		return Die("bwrap cannot bind %s over %s: %s lies inside a write grant of this render and is no mount of it, so a walled seat — or anything this seat leaves behind — renames it and bwrap binds what it points at instead, at the next launch and with no race to win (ADR 0100 D1/D2(b)). Put the source under the per-seat wall dir %s, or bind %s in place so the mount pins it", m.Src, m.Dst, loose, bwrapWallRoot(), loose)
+	}
+	return nil
 }
 
 // grantInside says whether any write grant lies at or under d — the other
@@ -2607,7 +2834,18 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// bind — and in this step because it lands after every write grant, so
 	// it is the deepest mount over that name even when a store of record in
 	// the same repo grants `<common>` whole.
-	r.Carve.Private = append(r.Carve.Private, seatStoreBinds(ag, cwd)...)
+	//
+	// The same `home` the private state and the private /tmp were composed
+	// from, because the store's source is the third member of that one wall
+	// dir (ADR 0100 D1) and a second reading of the home would be a second
+	// directory. It is the one private producer that REFUSES rather than
+	// rendering nothing when the home is unknown: rendering nothing here
+	// leaves the seat the shared object store read-write.
+	storeBinds, err := seatStoreBinds(ag, home, cwd)
+	if err != nil {
+		return bwrapRendered{}, err
+	}
+	r.Carve.Private = append(r.Carve.Private, storeBinds...)
 	// ...which is what SeatbeltCarveOut's Narrow says in SBPL; the binds
 	// above are this mechanism's spelling of it (ranger-base-r2uxm).
 	r.Carve.Narrow = nil
