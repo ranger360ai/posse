@@ -535,18 +535,29 @@ func TestUpgradeBuildHandsCleanBuildTheRealSourceCheckout(t *testing.T) {
 // box under this run's load, rather than inferred from a gap statistic, and
 // a probe coarsened by a later edit is caught the moment it is coarsened.
 //
-// A maximum-inter-observation-gap bound was the other candidate for that
-// job and was MEASURED and dropped (ranger-base-6sbng): over 74 rename(2)
-// trials at a loadavg of 7-17 the widest hole in a trial ran 23 us-2.67 ms,
-// at the high end a GC pause, against an install(1) window at 8 MiB of
-// 2.6-4.2 ms. The largest honest bound is therefore ~2.5 ms against a
-// window of 2.6 ms — a few percent of margin, a constant to re-measure on
-// every box, and it certifies less than the control measures directly. The
-// gap statistics are reported in every message below and asserted nowhere.
+// THE CONTROL IS NOT ENOUGH ON ITS OWN, so the coverage witness beside it
+// is a budget on the MEAN observation. MEASURED 2026-11-14 with the probe
+// mutated back to the 8 MiB os.ReadFile, the control still saw its own gap
+// in 2 runs of 3: INSIDE a gap a coarse probe's reads get cheap — an ENOENT
+// open, a short file — and its count catches up, so "the control saw it" is
+// a coin flip about the subject's own 40 ms rather than a guarantee. What a
+// coarse probe cannot fake is the cost of an observation OUTSIDE the gap.
+// So the pin budgets the mean observation at a tenth of the window it must
+// resolve (swapProbeMaxMeanGap), where the separation is 350x and not
+// marginal: 4.9-5.8 us over ~100 trials at a loadavg of 3-17, against
+// 1.7-2.1 ms for the reader this replaced.
 //
-// Unmet, either witness SKIPS rather than reds; the foot of the pin says
-// why that is honest here. docs/notes.d/ranger-base-6sbng.md has the trial
-// tables.
+// A maximum-HOLE bound was the other candidate for that job and was
+// MEASURED and dropped (ranger-base-6sbng): over 74 rename(2) trials at a
+// loadavg of 7-17 the widest hole in a trial ran 23 us-2.67 ms, at the high
+// end a GC pause, against an install(1) window at 8 MiB of 2.6-4.2 ms. The
+// largest honest bound is therefore ~2.5 ms against a window of 2.6 ms — a
+// few percent of margin, and a constant to re-measure on every box. The max
+// hole is reported in every message below and asserted nowhere.
+//
+// Unmet, any of the three witnesses SKIPS rather than reds; the foot of the
+// pin says why that is honest here. docs/notes.d/ranger-base-6sbng.md has
+// the trial tables.
 func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	t.Parallel()
 	old := bytes.Repeat([]byte("O"), swapProbeSize)
@@ -571,7 +582,7 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	// reader saw a state the target is never allowed to be in, and no
 	// amount of "the box was busy" makes that observation go away.
 	if got.absent != 0 || got.partial != 0 {
-		t.Errorf("over %d observations (%s apart on average, widest hole %s) the target was absent %d times and short %d times — the swap is not atomic, and a launch inside that window execs a missing or short binary (ADR 0092 D3.5)",
+		t.Errorf("over %d observations (%s apart on average, widest hole %s) the target was absent %d times and neither complete binary %d times — short, or a blend of the two — so the swap is not atomic, and a launch inside that window execs a missing or half-written binary (ADR 0092 D3.5)",
 			got.reads, got.meanGap, got.maxGap, got.absent, got.partial)
 	}
 	if body, _ := os.ReadFile(target); !bytes.Equal(body, fresh) {
@@ -614,6 +625,9 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	case !got.sawOldBeforeSwap || !got.sawNewAfterSwap:
 		t.Skipf("the reader saw the old binary %d times and the new one %d times over %d observations, after sampling %s and then waiting %s a side — it never completed a read on one whole side of the rename, so the absence checked above measures nothing and this run is not a reading (ranger-base-51ttd)",
 			got.sawOld, got.sawNew, got.reads, swapProbeSample, swapWitnessBudget)
+	case got.meanGap > swapProbeMaxMeanGap || control.meanGap > swapProbeMaxMeanGap:
+		t.Skipf("the probe averaged one observation every %s over the swap and every %s over the control, against a budget of %s — a tenth of the %s window it exists to resolve. A probe that coarse cannot tell a swap that left no gap from a gap it could not see (ranger-base-6sbng); widest holes %s and %s over %d and %d observations",
+			got.meanGap, control.meanGap, swapProbeMaxMeanGap, swapProbeWindow, got.maxGap, control.maxGap, got.reads, control.reads)
 	case control.absent == 0 && control.partial == 0:
 		t.Skipf("the control left the target absent and then short for milliseconds and this probe saw neither, over %d observations %s apart with a widest hole of %s — so the green above is not evidence that the real swap left no gap, only that this run could not have seen one (ranger-base-6sbng)",
 			control.reads, control.meanGap, control.maxGap)
@@ -767,6 +781,23 @@ const (
 	// It is the window the absence check is measured over, so it is
 	// unconditional; the witness's wait is the part that can stretch.
 	swapProbeSample = 20 * time.Millisecond
+	// swapProbeWindow is the NARROWEST install(1)-shaped window measured at
+	// swapProbeSize on this box — 2.6 ms of the 2.6-4.2 ms seen over 50
+	// trials, MEASURED 2026-11-14 at a loadavg of 7.5. It is the width this
+	// pin exists to resolve. Nothing is asserted against it directly; it is
+	// here to derive the budget below.
+	swapProbeWindow = 2600 * time.Microsecond
+	// swapProbeMaxMeanGap is that window over the number of observations a
+	// probe must get into it to be a probe at all. Ten is the figure and
+	// the derivation is the point: the one thing a coarse probe cannot fake
+	// is the cost of an observation OUTSIDE the gap, because inside the gap
+	// its reads get cheap — an ENOENT open, a short file — and its count
+	// catches up. MEASURED 2026-11-14 over ~100 trials at a loadavg of
+	// 3-17, the mean observation was 4.9-5.8 us, so this budget sits ~45x
+	// above every reading taken; the 8 MiB os.ReadFile it replaced was
+	// 1.7-2.1 ms, 7x over it. That is the separation a max-hole bound did
+	// not have.
+	swapProbeMaxMeanGap = swapProbeWindow / 10
 )
 
 // swapWitnessBudget is how long the pin above waits for its reader
