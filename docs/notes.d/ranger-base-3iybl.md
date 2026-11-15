@@ -13,6 +13,19 @@ beads, 1 of them this reason** (and none the neighbouring "unreferenced and a
 retire would lose it"). The other 112 are real conflicts and other causes. So
 this is a one-off, not a class, and it has not earned a line on AGENTS.md.
 
+CORRECTION 2026-11-14 (the verify at ranger-base-pxprm): the DENOMINATOR is
+108, not 113. Re-counted over the same `$BEADS_DIR/issues.jsonl` with
+`json.loads` per line and a title prefix test: **108** beads whose title starts
+with `merge-back blocked`, 108 DISTINCT ids, no id appearing twice; the other
+107 are real conflicts and other causes. The phrase itself appears on 309 lines
+of that store once descriptions and comments are counted, which is the number a
+`grep -c` answers and the likeliest shape of the original reading. The
+load-bearing half is unchanged and confirmed: ONE of them is this reason, none
+is the neighbouring "unreferenced and a retire would lose it", so it is a
+one-off and still earns no AGENTS.md line. The count is left here rather than
+overwritten because a bead count read off a store that flattens duplicate lines
+is a method worth keeping visible.
+
 ## What did it
 
 The cq3vi seat ended an unrelated scan loop with a trailing `git checkout -q
