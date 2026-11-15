@@ -65,9 +65,28 @@ import (
 // atShell arms the pane's foreground as its own shell — the stale reading.
 // The pids are the measured ones (ADR 0061 Claims fact 2), and the file is the
 // same lever a live pane leaves absent.
+//
+// THE NAME IS ASKED OF THE PREDICATE'S OWN RESOLVER (ranger-base-m5rdy, which
+// is ranger-base-1l1en's fixture lesson on the Rex side): a fixture spelling
+// the shell as the literal `zsh` or `bash` would be describing the box the
+// shape was first measured on, and would arm a pane that is NOT at a prompt
+// everywhere else. Asking paneShellBase says "the shell this box resolves",
+// which is the thing the reading is about.
 func atShell(t *testing.T, fake string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(fake, "pane-foreground"), []byte("34661|34661"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fake, "pane-foreground"), []byte("34661|34661:"+paneShellBase()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// execdRuntime arms the shape ranger-base-m5rdy is about: a launch line that
+// `exec`'d, so the runtime holds the pane's own shell pid and the only thing
+// that tells it from a bare prompt is the executable's name. `sleep` is the
+// name the measurement was taken with (reportedagent.go's AtShellPrompt) and
+// it names no runtime on purpose — what this arms is the SHAPE.
+func execdRuntime(t *testing.T, fake string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(fake, "pane-foreground"), []byte("34661|34661:sleep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -205,7 +224,7 @@ func TestQAAProcessReadingThatCannotBeTakenIsNotEvidenceOfAShell(t *testing.T) {
 	if p := (PaneProcesses{ShellPID: 34661}); p.AtShellPrompt() {
 		t.Error("a process_info with no foreground processes is UNKNOWN, not a pane at a shell")
 	}
-	if p := (PaneProcesses{Foreground: []int{34661}}); p.AtShellPrompt() {
+	if p := (PaneProcesses{Foreground: []PaneProcess{{PID: 34661, Name: paneShellBase()}}}); p.AtShellPrompt() {
 		t.Error("a process_info with no shell_pid has nothing to compare against")
 	}
 	// And the shape that moved output really produces, which is the one the
@@ -213,14 +232,44 @@ func TestQAAProcessReadingThatCannotBeTakenIsNotEvidenceOfAShell(t *testing.T) {
 	// a shell_pid that lost its own. Every foreground pid then "equals" the
 	// shell and every reported pane reads promptable — so a pid of 0 is a pid
 	// NOBODY reported, whatever shell_pid says (ranger-base-sjjf4 finding 7).
-	if p := (PaneProcesses{Foreground: []int{0}}); p.AtShellPrompt() {
+	if p := (PaneProcesses{Foreground: []PaneProcess{{Name: paneShellBase()}}}); p.AtShellPrompt() {
 		t.Error("a foreground pid of 0 was read as the pane's own shell — herdr cannot report a foreground pid of 0, so this is an answer whose shape moved, and UNKNOWN is never a yes")
 	}
-	if p := (PaneProcesses{ShellPID: 34661, Foreground: []int{34661, 0}}); p.AtShellPrompt() {
+	if p := (PaneProcesses{ShellPID: 34661, Foreground: []PaneProcess{
+		{PID: 34661, Name: paneShellBase()}, {Name: paneShellBase()},
+	}}); p.AtShellPrompt() {
 		t.Error("one unreported pid beside the shell was read as a bare prompt")
 	}
-	if p := (PaneProcesses{ShellPID: 34661, Foreground: []int{34661, 82630}}); p.AtShellPrompt() {
+	if p := (PaneProcesses{ShellPID: 34661, Foreground: []PaneProcess{
+		{PID: 34661, Name: paneShellBase()}, {PID: 82630, Name: "sleep"},
+	}}); p.AtShellPrompt() {
 		t.Error("one non-shell process in the foreground is a CLI holding the tty")
+	}
+	// And the row that is NEW with ranger-base-m5rdy: an exec'd launch line
+	// holds the shell's own pid, so every pid test above passes over a LIVE
+	// runtime and the executable's name is the whole of the answer. A pane
+	// whose foreground row is unnamed is the same UNKNOWN as an unreported
+	// pid — herdr's schema marks `name` required, so a row without one is an
+	// answer whose shape moved.
+	if p := (PaneProcesses{ShellPID: 34661, Foreground: []PaneProcess{{PID: 34661, Name: "sleep"}}}); p.AtShellPrompt() {
+		t.Error("a runtime that exec'd over the pane's shell was read as a bare prompt — it holds the shell's pid, and only its executable says so (ranger-base-m5rdy)")
+	}
+	if p := (PaneProcesses{ShellPID: 34661, Foreground: []PaneProcess{{PID: 34661}}}); p.AtShellPrompt() {
+		t.Error("a foreground row with no name was read as the pane's own shell")
+	}
+	// The resolver itself, because every fixture here asks it (atShell's own
+	// note) and so none of them can see it answer wrongly. An EMPTY answer is
+	// the one failure that would turn this guard off on every box at once —
+	// the pane's shell would be nameless, no row could match it, and nothing
+	// would ever read stale again. realShell's own last resort is `/bin/sh`,
+	// so the basename is never empty and never a path.
+	if base := paneShellBase(); base == "" || strings.ContainsRune(base, '/') {
+		t.Errorf("paneShellBase answered %q — a nameless or path-spelled shell is a guard that cannot fire (ranger-base-m5rdy)", base)
+	}
+	// The positive case, so none of the above is passing because the
+	// predicate stopped answering yes at all.
+	if p := (PaneProcesses{ShellPID: 34661, Foreground: []PaneProcess{{PID: 34661, Name: paneShellBase()}}}); !p.AtShellPrompt() {
+		t.Error("the pane's own shell, named as the shell this box resolves, must still read as a bare prompt")
 	}
 }
 
@@ -387,13 +436,17 @@ var reportedReadingFiles = []string{"herdr.go", "reportedagent.go"}
 // refuseAtShellPrompt is in the list (ranger-base-j687x) and the screen
 // refusal beside it is not, and that is the difference between them stated as
 // a pin: the liveness refusal is this reading applied in the delivery verb — a
-// pid compared to a pid — so it may no more name a runtime than the reading
+// pid compared to a pid, and since ranger-base-m5rdy an executable name
+// compared to the SHELL this box resolves (paneShellBase, in the list for that
+// reason — the one name the reading may compare against is the shell's, never
+// a runtime's) — so it may no more name a runtime than the reading
 // itself. refuseWithoutComposerPane legitimately names claude's detected
 // label, because the box it locates is claude's idiom (ADR 0076 Amendment 8
 // D3), which is exactly why it cannot be held to this rule.
 var reportedReadingFuncs = []string{
 	"AgentExplain", "reportedDetection", "reportedStateIsWatched",
 	"PaneProcessInfo", "paneShellForeground", "AtShellPrompt",
+	"paneShellBase",
 	"Seen", "ReportedNotSeen", "ReportedAgent", "AgentInfo",
 	"refuseAtShellPrompt",
 }

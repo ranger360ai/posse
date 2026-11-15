@@ -279,8 +279,10 @@ func (h Herdr) sendTextPrompt(ag HerdrAgent, text string, wait bool, timeoutMS i
 // NO SCOPE CLAUSE, which is the one way this differs from the composer refusal
 // beside it. That one asks `agent explain` whose chrome the screen is drawn
 // with, because the box it locates is claude's idiom and nothing else's. This
-// reading is herdr's own process table — a pid compared to a pid, no argv
-// matched, no shell list kept and no runtime named (ADR 0017 §3) — so it is as
+// reading is herdr's own process table — a pid compared to a pid and an
+// executable name compared to the one shell this box resolves, no argv0
+// matched, no shell list kept and no runtime named (ADR 0017 §3, and
+// ranger-base-m5rdy for why the name had to join the pid) — so it is as
 // true of a Bob under a plugin as of a claude, and on the designed case of
 // this route a LIVE Bob has its own pid in the foreground and is never
 // refused. The pane this refusal reaches is the one shape that has no CLI on
@@ -288,9 +290,10 @@ func (h Herdr) sendTextPrompt(ag HerdrAgent, text string, wait bool, timeoutMS i
 //
 // AND NO SECOND LOOK, which is the other difference. promptComposerRecheck
 // exists because a screen can be caught mid-redraw; a foreground process group
-// cannot be caught mid-anything. The reading is "every foreground pid IS the
-// pane's own shell pid", which goes false the instant anything is launched
-// there, so one sample is the whole of it — at the same one `process-info` per
+// cannot be caught mid-anything. The reading is "every foreground process IS
+// the pane's own shell" — its pid and its executable, since ranger-base-m5rdy
+// — which goes false the instant anything is launched there or execs over it,
+// so one sample is the whole of it — at the same one `process-info` per
 // prompt the gate already pays per read (MEASURED 0.00s, ADR 0061 Claims).
 
 // refuseAtShellPrompt refuses a typed prompt into a reported pane whose every
@@ -569,18 +572,31 @@ func (h Herdr) reportedDetection(target string, explainErr error) (AgentDetectio
 }
 
 // PaneProcesses is the part of `herdr pane process-info` the liveness half
-// reads: the pane's own shell, and the pids herdr says are in its foreground.
+// reads: the pane's own shell, and the foreground processes herdr says the
+// pane is holding — each as the pid and the name of the EXECUTABLE behind it.
 //
-// Two fields out of a rich answer, deliberately. `foreground_process_group_id`
-// sits right beside them and argv0/name are in the same rows
-// (ranger-base-mx5x9 #1, #5) — and reading the argv would be a second
-// detection keyed on a name, which is the shape ADR 0061 rejected ("liveness
-// by matching argv against the label": it fails on interpreter-launched CLIs
-// like `node …/bob`, and the label's own source IS argv0, so argv is not
-// independent evidence about it). A pid compared to a pid needs no name.
+// Three fields out of a rich answer, deliberately, and the third is
+// ranger-base-m5rdy's (see AtShellPrompt). `foreground_process_group_id` sits
+// right beside them and `argv`, `argv0`, `cmdline`, `cwd` and `tty` are in the
+// same read — and `argv0` is the one field here that may NOT be read, which is
+// the shape ADR 0061 rejected ("liveness by matching argv against the label":
+// the label's own source IS argv0, so argv is not independent evidence about
+// it, and it fails on interpreter-launched CLIs like `node …/bob`). `name` is
+// the executable the kernel has, which no reporter writes and no label is
+// derived from: MEASURED 2026-09-28 (ranger-base-mx5x9 #1), `(exec -a codex
+// sleep 25)` reads `argv0 "codex"` beside `name "sleep"`, and it is argv0 that
+// herdr detected `codex` from.
 type PaneProcesses struct {
 	ShellPID   int
-	Foreground []int
+	Foreground []PaneProcess
+}
+
+// PaneProcess is one `foreground_processes` row, in the two fields herdr's own
+// schema marks required: `pid` and `name`. A row missing either is a row
+// nobody reported — read as UNKNOWN inside AtShellPrompt, never as a yes.
+type PaneProcess struct {
+	PID  int
+	Name string
 }
 
 // AtShellPrompt reports whether every foreground process in the pane IS the
@@ -590,7 +606,45 @@ type PaneProcesses struct {
 // MEASURED 2026-09-28 (herdr 0.9.1, ADR 0061 Claims fact 2): at a bare prompt
 // `foreground_processes` is exactly `[{pid 34661, argv0 zsh}]` beside
 // `shell_pid 34661`; during `sleep 5` in the same pane it is `[{pid 82630,
-// argv0 sleep}]`. So the comparison is the whole reading.
+// argv0 sleep}]`.
+//
+// AND THAT COMPARISON IS NO LONGER THE WHOLE READING (ranger-base-m5rdy, out
+// of ranger-base-1l1en). Every launch line posse types is `exec`'d now, so the
+// runtime REPLACES the pane's shell and INHERITS ITS PID — pid == shell_pid is
+// then the live runtime, not a bare prompt. MEASURED 2026-11-15 on this box
+// (Linux 7.2.15-1-omarchy, herdr 0.9.1, a scratch herdr server on its own
+// session socket, three scratch workspaces closed afterwards), the two fields
+// posse used to parse beside the one it did not:
+//
+//	before anything typed   shell_pid 1619869, fg [{1619869, name bash}]
+//	exec'd                  shell_pid 1619869, fg [{1619869, name sleep}]
+//	not exec'd              shell_pid 1619876, fg [{1620906, name sleep}]
+//
+// The exec'd row and the bare-prompt row are byte-identical in pid and
+// shell_pid, so the pid comparison alone answered TRUE over a live runtime:
+// every typed prompt into a `detection: reported` seat refused
+// `agent_not_ready`, dispatch correctly handing the claim back, forever. The
+// Rex half of the same class was fixed under ranger-base-1l1en, where the
+// answer is "is that process the shell posse STARTS a block with"
+// (rexProcIsBlockShell) — and the same question is asked here, of the one
+// field that can answer it.
+//
+// THE SHELL IS posse's OWN RESOLVER AND NOT A LIST OF SHELL NAMES
+// (paneShellBase). posse does not choose herdr's pane shell, so there is no
+// "the shell I started" to compare against, and what a mismatch costs is
+// written on that function: it refuses NOTHING, which is this file's own rule
+// and never a stop.
+//
+// THE ONE SHAPE THAT COULD STILL READ TRUE OVER A LIVE RUNTIME is a launch
+// line whose command word execs into a process the box also resolves as its
+// shell, and the nearest thing posse renders is the `exec /bin/sh -c '<line>'`
+// compound fallback (launchexec.go). MEASURED in the same window and it does
+// not reach here: `exec /bin/sh -c 'sleep 300; true'` reports BOTH rows in the
+// foreground — `[{2268653 == shell_pid, name sh}, {2269534, name sleep}]`,
+// because sh is not interactive and forks the list into its own group — so the
+// loop below answers false on the second row. `exec /bin/bash -c 'sleep 300'`
+// does not reach it either: bash execs a lone simple command, so the pane's
+// one foreground row reads `name sleep`.
 //
 // AN EMPTY ANSWER IS NOT A YES, and neither is a missing shell_pid. "Every"
 // over an empty set is vacuously true, which would turn a herdr whose output
@@ -615,12 +669,44 @@ func (p PaneProcesses) AtShellPrompt() bool {
 	if len(p.Foreground) == 0 {
 		return false
 	}
-	for _, pid := range p.Foreground {
-		if pid == 0 || pid != p.ShellPID {
+	shell := paneShellBase()
+	for _, f := range p.Foreground {
+		if f.PID == 0 || f.PID != p.ShellPID || f.Name == "" || f.Name != shell {
 			return false
 		}
 	}
 	return true
+}
+
+// paneShellBase is the basename of the interactive shell this box resolves —
+// realShell's own answer, which is also what rexShell hands `rex new` and what
+// the gate wrapper is installed under. The BASENAME and not the path, because
+// the two spellings of one shell are what herdr and posse actually disagree
+// about: herdr started this pane's shell as `/bin/bash` in the measurement
+// above and realShell answers `/usr/bin/bash` on the same box, and both are
+// `bash`.
+//
+// IT IS A GUESS, WHICH IS WHY IT MAY ONLY TAKE THE GUARD OFF. posse chooses
+// the Rex block's shell and can compare against it; it does not choose
+// herdr's, and herdr exposes no shell of its own to ask (`pane process-info`
+// carries `shell_pid` and no shell name, `pane get` carries none, and there is
+// no `herdr config get` — MEASURED 2026-11-15, herdr 0.9.1). So on a box whose
+// herdr panes run a shell this resolver does not name — a third shell, or a
+// `$SHELL` the herdr server has and this process does not — a bare prompt
+// reads as "something else is in the foreground", the guard stays quiet, and
+// the label stands on its own exactly as it did before ranger-base-j687x. That
+// is the direction every reading in this file fails in: UNKNOWN refuses
+// nothing. The other direction would be a live seat refused forever, which is
+// the bug ranger-base-m5rdy is.
+//
+// NOT A CLOSED VOCABULARY OF SHELL NAMES, for rexProcIsBlockShell's reason:
+// such a list rots on the first box that resolves a third one. realShell is
+// not that list — it is one resolver, already shipped, that answers ONE path
+// for this box, and it is the same answer the seat's own gate shell is
+// rendered from.
+func paneShellBase() string {
+	_, base := realShell("")
+	return base
 }
 
 // PaneProcessInfo is `herdr pane process-info --pane <pane>` — liveness from
@@ -639,7 +725,8 @@ func (h Herdr) PaneProcessInfo(pane string) (PaneProcesses, error) {
 		Info struct {
 			ShellPID   int `json:"shell_pid"`
 			Foreground []struct {
-				PID int `json:"pid"`
+				PID  int    `json:"pid"`
+				Name string `json:"name"`
 			} `json:"foreground_processes"`
 		} `json:"process_info"`
 	}
@@ -648,7 +735,7 @@ func (h Herdr) PaneProcessInfo(pane string) (PaneProcesses, error) {
 	}
 	p := PaneProcesses{ShellPID: payload.Info.ShellPID}
 	for _, f := range payload.Info.Foreground {
-		p.Foreground = append(p.Foreground, f.PID)
+		p.Foreground = append(p.Foreground, PaneProcess{PID: f.PID, Name: f.Name})
 	}
 	return p, nil
 }

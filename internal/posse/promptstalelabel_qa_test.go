@@ -34,8 +34,13 @@ package posse
 // prompt means to zsh.
 //
 // NO RUNTIME IS NAMED in any of it, and the labels here are deliberately of
-// no significance: the reading is a pid compared to a pid, so what these arms
-// are about is the REPORT and the pane, never the CLI behind them.
+// no significance: the reading is a pid compared to a pid, and since
+// ranger-base-m5rdy an executable name compared to the SHELL this box resolves
+// — so what these arms are about is the REPORT and the pane, never the CLI
+// behind them. That amendment has an arm of its own below
+// (…ConcedesARuntimeThatExecdOverThePanesShell): with every launch line
+// `exec`'d, the runtime holds the pane's own shell pid, and the pid comparison
+// alone refused a live seat forever.
 
 import (
 	"os"
@@ -202,6 +207,34 @@ func TestQAStaleLabelRefusalConcedesAPaneWithACLIInItsForeground(t *testing.T) {
 	log := calls(t, fake)
 	if !strings.Contains(log, "pane send-text w1:p1 do the thing") || !strings.Contains(log, "pane send-keys w1:p1 enter") {
 		t.Errorf("the route must still deliver:\n%s", log)
+	}
+}
+
+func TestQAStaleLabelRefusalConcedesARuntimeThatExecdOverThePanesShell(t *testing.T) {
+	t.Parallel()
+	// ranger-base-m5rdy, and the shape every seat on a herdr instance has
+	// since ranger-base-1l1en: the launch line is `exec`'d, so the runtime
+	// REPLACED the pane's shell and holds its pid. MEASURED 2026-11-15 on a
+	// scratch herdr server (reportedagent.go's AtShellPrompt carries the three
+	// rows) — `shell_pid 1619869, foreground [{1619869, name sleep}]`, which
+	// is byte-identical to a bare prompt in the two fields this reading used
+	// to parse.
+	//
+	// WHAT IT COST: this refusal fires over a LIVE runtime, nothing is ever
+	// typed, dispatch correctly hands the claim back, and the seat is
+	// unpromptable for as long as it lives — with a sentence that blames a
+	// stale label. The arm beside this one (a CLI at its own pid) could never
+	// catch it, because the exec'd pid is the shell's.
+	b, fake := newTestBackend(t)
+	reportedPane(t, fake, "plugged", "idle", "claude", "codex", "grok")
+	execdRuntime(t, fake)
+
+	if _, err := b.H.AgentPrompt("w1:p1", "do the thing", false, 0); err != nil {
+		t.Fatalf("a runtime holding the pane's shell pid was read as a bare prompt and refused: %v", err)
+	}
+	log := calls(t, fake)
+	if !strings.Contains(log, "pane send-text w1:p1 do the thing") || !strings.Contains(log, "pane send-keys w1:p1 enter") {
+		t.Errorf("the route must still deliver to an exec'd runtime:\n%s", log)
 	}
 }
 

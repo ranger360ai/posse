@@ -2788,13 +2788,24 @@ func fakeHerdr(args []string) int {
 		return fakeOK(`{"type":"pane_send_keys"}`)
 	case "pane process-info":
 		// The LIVENESS half of the reported reading (ADR 0061 D3.2,
-		// ranger-base-nm5i6). Two fields of a rich answer: the pane's own
-		// shell, and the pids herdr says are in its foreground.
+		// ranger-base-nm5i6). Three fields of a rich answer: the pane's own
+		// shell, and the pid and executable NAME of each process herdr says
+		// is in its foreground (the name is ranger-base-m5rdy's — an exec'd
+		// launch line gives the runtime the shell's own pid, so the pid alone
+		// stopped telling a live seat from a bare prompt).
 		//
-		//	pane-foreground     "<shell_pid>|<pid>[,<pid>…]" — what herdr
-		//	                    reports for this pane. A foreground pid equal
-		//	                    to the shell's is a pane sitting at a bare
-		//	                    prompt; anything else is a CLI holding the tty.
+		//	pane-foreground     "<shell_pid>|<pid>[:<name>][,<pid>[:<name>]…]"
+		//	                    — what herdr reports for this pane. A
+		//	                    foreground pid equal to the shell's AND named
+		//	                    as this box's own shell is a pane sitting at a
+		//	                    bare prompt; anything else is something holding
+		//	                    the tty. `<name>` defaults to `sh`, so every
+		//	                    fixture written before ranger-base-m5rdy still
+		//	                    describes a pane that is NOT at a prompt —
+		//	                    which is the direction a stale fixture must
+		//	                    fail in (atShell is the lever that arms the
+		//	                    other one, and it asks the predicate's own
+		//	                    resolver for the name).
 		//	process-info-error  "code|message" — the read fails, which is the
 		//	                    concession arm: not evidence that the pane is
 		//	                    at a shell, so a label stands on its own.
@@ -2820,9 +2831,13 @@ func fakeHerdr(args []string) int {
 			}
 		}
 		var procs []string
-		for _, pid := range strings.Split(fg, ",") {
-			if pid = strings.TrimSpace(pid); pid != "" {
-				procs = append(procs, fmt.Sprintf(`{"pid":%s,"argv0":"sh","name":"sh"}`, pid))
+		for _, row := range strings.Split(fg, ",") {
+			pid, name, ok := strings.Cut(strings.TrimSpace(row), ":")
+			if !ok {
+				name = "sh"
+			}
+			if pid != "" {
+				procs = append(procs, fmt.Sprintf(`{"pid":%s,"argv0":%q,"name":%q}`, pid, name, name))
 			}
 		}
 		return fakeOK(fmt.Sprintf(`{"type":"pane_process_info","process_info":{"shell_pid":%s,"foreground_process_group_id":%s,"foreground_processes":[%s]}}`,

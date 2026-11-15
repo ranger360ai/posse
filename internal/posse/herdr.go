@@ -904,7 +904,10 @@ type AgentDetection struct {
 	// ShellForeground is posse's own field too, and it is the LIVENESS half
 	// of the reading above (ADR 0061 D3.2, ranger-base-nm5i6): herdr's
 	// process reading said every foreground process in this pane IS the
-	// pane's own shell. A reported label outlives its process — herdr ties
+	// pane's own shell — its pid AND its executable, which is
+	// ranger-base-m5rdy's amendment and the whole of AtShellPrompt's second
+	// half (an exec'd launch line gives the runtime the shell's own pid, so
+	// the pid alone stopped answering). A reported label outlives its process — herdr ties
 	// it to the pane, and only the reporter or the pane's close ever clears
 	// it — so `Reported` alone is identity, and this is the one field that
 	// says the identity is still somebody's. Never set on a detected
