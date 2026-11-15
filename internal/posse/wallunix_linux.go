@@ -14,15 +14,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// landlockAccessFSResolveUnix is LANDLOCK_ACCESS_FS_RESOLVE_UNIX
-// (linux/landlock.h, ABI 9+): "Look up pathname UNIX domain sockets ... this
-// restricts both calls to connect(2) as well as calls to sendmsg(2) with an
-// explicit recipient address", and it "applies only to connections to UNIX
-// server sockets which were created outside of the newly created Landlock
-// domain". Spelled here because golang.org/x/sys v0.47.0 carries the ruleset
-// structs and the syscall numbers but not this constant.
-const landlockAccessFSResolveUnix = 1 << 16
-
 // liveWallUnixABI asks the kernel for the highest Landlock ABI it supports,
 // which is what `landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION)`
 // returns. A negative number means the syscall itself is absent — no
@@ -42,10 +33,18 @@ func liveWallUnixABI() int {
 	return int(n)
 }
 
-// restrictResolveUnix applies the domain to the calling thread group: one
-// layer handling RESOLVE_UNIX and no other right, with NO rule added, so
+// restrictWallUnix applies the domain to the calling thread group: one layer
+// handling RESOLVE_UNIX and no other filesystem right, with NO rule added, so
 // every host pathname socket in this seat's view is refused and a socket the
-// seat makes for itself is not.
+// seat makes for itself is not — and scoping SIGNAL, so the seat can signal
+// only what it forked (wallUnixRuleset says which of the two this ABI gets).
+//
+// THE ATTR IS A CONVERSION OF wallUnixRuleset'S, never a second spelling of
+// its fields: the two structs are identical by name and type, so there is no
+// line here that could drop `Scoped` while the plan the pins read still
+// carries it, and a change to x/sys's layout is a compile error rather than a
+// ruleset that silently handles less. The size passed is the full v6+ struct
+// (24 bytes), which every kernel this step is typed for knows.
 //
 // PR_SET_NO_NEW_PRIVS FIRST, because landlock_restrict_self requires it of an
 // unprivileged caller and answers EPERM without it. It is also the right
@@ -56,8 +55,8 @@ func liveWallUnixABI() int {
 // would hand the seat a handle to its own ruleset for no purpose. `unsafe` is
 // here for the one thing it is for: the attr struct's address, as the syscall
 // ABI defines the argument.
-func restrictResolveUnix() error {
-	attr := unix.LandlockRulesetAttr{Access_fs: landlockAccessFSResolveUnix}
+func restrictWallUnix(abi int) error {
+	attr := unix.LandlockRulesetAttr(wallUnixRuleset(abi))
 	fd, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET,
 		uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0)
 	if errno != 0 {

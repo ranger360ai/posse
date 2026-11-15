@@ -246,6 +246,11 @@ stall that day, and every one of them a typing habit.
   fork at all, and a caged run prints what an uncaged one prints. If it ever
   answers **exit 2** anyway, that is "leak status unknown" and never
   "clean": fall back to `kill -0 <the pid the launcher printed>`,
+  **reading its errno and not its exit status** — from a bwrap seat a pid
+  you did not start is outside your Landlock signal scope
+  (ranger-base-e5un1), so the shell exits 1 for it alive or dead:
+  `Operation not permitted` (EPERM) is alive, `No such process` (ESRCH) is
+  gone. A pid your own seat forked answers as it always did. Then
   `pgrep -fl <your worktree path>` and
   `scripts/suite-lock.sh --status`, and say on the bead that you did —
   because that substitute is weakest in exactly the case the tool exists

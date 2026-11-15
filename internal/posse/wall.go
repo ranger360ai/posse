@@ -564,9 +564,11 @@ func (a *App) renderWallInto(mech string, w wallWrite, ag *AgentFile, rt *Runtim
 		// is an abstention and not a pass. The report says the layer is up in
 		// its own words (BwrapReport), which is where a reader reads it.
 		//
-		// Empty on a kernel below ABI 9, and loudly: `WallUnixDegraded`
+		// Empty on a kernel below ABI 6, and loudly: `WallUnixDegraded`
 		// carries that sentence into the wall report rather than letting an
-		// absent layer read as an applied one.
+		// absent layer read as an applied one. At ABI 6-8 the step IS typed
+		// and applies the signal scope alone (ranger-base-e5un1), and the
+		// same sentence says the socket half is missing.
 		inner := ""
 		if wallUnixAvailableFor(mech) {
 			inner = WallUnixPrefix(self)

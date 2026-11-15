@@ -39,6 +39,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -243,4 +244,212 @@ func posseBinForTest(t *testing.T) string {
 		t.Skipf("cannot build this tree's posse for the seat (%v): %s", err, out)
 	}
 	return bin
+}
+
+// ---------------------------------------------------------------------------
+// ranger-base-e5un1: the SAME domain scopes signals.
+//
+// The seat shares the host's pid namespace (ADR 0080 D17), so this pin can
+// name a host pid from inside it. Four readings from one seat, each against a
+// control seat that differs by the step alone:
+//
+//   - kill(<a live host process outside the seat>, 0) is EPERM — and `ok` in
+//     the control, so the EPERM is the scope and not a permission the uid
+//     never had;
+//   - kill(<a pid that names nobody>, 0) is ESRCH in both, so the errno still
+//     reads liveness;
+//   - the runtime still SIGTERMs a child it fork+exec'd itself, in both;
+//   - and the seat still dies with its parent (--die-with-parent is a
+//     pdeathsig, a kernel delivery that does not pass the Landlock hook).
+//
+// ONLY SIGNAL 0 IS AIMED OUTSIDE. The outside process is one this test
+// started for the purpose; nothing here can reach a process it did not.
+const (
+	wuEnvSigOutside = "RHQ_QA_WALLUNIX_SIG_OUTSIDE"
+	wuEnvSigAbsent  = "RHQ_QA_WALLUNIX_SIG_ABSENT"
+	wuEnvSigPidFile = "RHQ_QA_WALLUNIX_SIG_PIDFILE"
+)
+
+// wuSigLiveSkip is wuLiveSkip at the signal half's floor.
+func wuSigLiveSkip(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("Landlock is a Linux LSM and bwrap is the Linux mechanism of the seatbelt tier (ADR 0080 D16)")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("bwrap is not on PATH: " + err.Error())
+	}
+	if n := wallUnixABI(); n < WallUnixSignalABIMin {
+		t.Skipf("this kernel's Landlock ABI is %d and SCOPE_SIGNAL needs %d, so there is no signal scope to measure here — `posse gates` reports that as DEGRADED", n, WallUnixSignalABIMin)
+	}
+}
+
+// wuOutsideAndAbsent starts a host process outside every seat and finds a pid
+// that names nobody: one this test started and reaped, re-checked as ESRCH
+// from here (pid reuse inside the run would make it name a stranger).
+func wuOutsideAndAbsent(t *testing.T) (outside, absent int) {
+	t.Helper()
+	o := exec.Command("sleep", "120")
+	if err := o.Start(); err != nil {
+		t.Fatalf("cannot start the outside process: %v", err)
+	}
+	t.Cleanup(func() { _ = o.Process.Kill(); _ = o.Wait() })
+	g := exec.Command("true")
+	if err := g.Run(); err != nil {
+		t.Fatalf("cannot start the process whose pid is to be absent: %v", err)
+	}
+	absent = g.ProcessState.Pid()
+	if err := syscall.Kill(absent, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Skipf("NOTHING MEASURED: pid %d was reaped and is not ESRCH from the host (%v) — reused already", absent, err)
+	}
+	return o.Process.Pid, absent
+}
+
+func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
+	wuSigLiveSkip(t)
+	self := posseBinForTest(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside, absent := wuOutsideAndAbsent(t)
+
+	for _, c := range []struct {
+		name    string
+		step    []string
+		outside string
+	}{
+		// The control: if this ever stops saying `ok`, the arm below is not
+		// measuring the scope and must not be read as a pass.
+		{"control: no Landlock layer on the line", nil, "ok"},
+		{"the signal scope", WallUnixStepArgv(self), "EPERM"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			argv := append([]string{
+				"--die-with-parent",
+				"--ro-bind", "/", "/",
+				"--dev-bind", "/dev", "/dev",
+				"--unshare-user",
+			}, c.step...)
+			argv = append(argv, exe, "-test.run=^TestWallUnixSignalSeatChild$", "-test.v")
+			cmd := exec.Command("bwrap", argv...)
+			cmd.Env = wuSeatEnv(
+				wuEnvSigOutside+"="+strconv.Itoa(outside),
+				wuEnvSigAbsent+"="+strconv.Itoa(absent))
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s", err, out, strings.Join(argv, " "))
+			}
+			for _, want := range []string{
+				"SEAT-OUTSIDE " + c.outside,
+				"SEAT-ABSENT ESRCH",
+				"SEAT-OWN-CHILD terminated",
+			} {
+				if !strings.Contains(string(out), want) {
+					t.Errorf("seat %q did not report %q.\nSeat output:\n%s\nargv: bwrap %s", c.name, want, out, strings.Join(argv, " "))
+				}
+			}
+		})
+	}
+
+	// And it still dies with its parent. A shell stands between this test and
+	// bwrap — the trailing `:` keeps it from exec'ing bwrap in place — and is
+	// SIGKILLed; bwrap's pdeathsig, and the one it sets on its own child, must
+	// take the seat down with it. The seat is the step-wrapped test binary,
+	// which writes its own (host) pid and sleeps.
+	t.Run("the seat still dies with its parent", func(t *testing.T) {
+		pidFile := filepath.Join(t.TempDir(), "seat.pid")
+		args := []string{"--die-with-parent", "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev",
+			"--unshare-user", "--bind", filepath.Dir(pidFile), filepath.Dir(pidFile)}
+		args = append(args, WallUnixStepArgv(self)...)
+		args = append(args, exe, "-test.run=^TestWallUnixSignalSeatChild$")
+		sh := exec.Command("sh", append([]string{"-c", `bwrap "$@"; :`, "sh"}, args...)...)
+		sh.Env = wuSeatEnv(wuEnvSigPidFile + "=" + pidFile)
+		if err := sh.Start(); err != nil {
+			t.Fatal(err)
+		}
+		var seat int
+		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			if b, err := os.ReadFile(pidFile); err == nil && strings.HasSuffix(string(b), "\n") {
+				seat, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+				break
+			}
+		}
+		if seat <= 0 {
+			_ = sh.Process.Kill()
+			_ = sh.Wait()
+			t.Fatal("NOTHING MEASURED: the seat never wrote its pid")
+		}
+		_ = sh.Process.Kill() // the one pid this test launched
+		_ = sh.Wait()
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			if wuPidGone(seat) {
+				return
+			}
+		}
+		_ = syscall.Kill(seat, syscall.SIGKILL)
+		t.Errorf("the seat (pid %d) outlived its parent by 10s with the Landlock layer on the line — --die-with-parent no longer reaches it", seat)
+	})
+}
+
+// wuPidGone: ESRCH, or a zombie nobody has reaped yet, which is dead.
+func wuPidGone(pid int) bool {
+	if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		return true
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return true
+	}
+	s := string(b)
+	if i := strings.LastIndexByte(s, ')'); i >= 0 && len(s) > i+2 {
+		return s[i+2] == 'Z'
+	}
+	return false
+}
+
+// TestWallUnixSignalSeatChild is the seat for the pin above.
+func TestWallUnixSignalSeatChild(t *testing.T) {
+	if pf := os.Getenv(wuEnvSigPidFile); pf != "" {
+		if err := os.WriteFile(pf, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(60 * time.Second)
+		return
+	}
+	o, err1 := strconv.Atoi(os.Getenv(wuEnvSigOutside))
+	a, err2 := strconv.Atoi(os.Getenv(wuEnvSigAbsent))
+	if err1 != nil || err2 != nil {
+		t.Skip("child of TestLiveWallUnixScopesSignalsToTheSeat")
+	}
+	t.Logf("SEAT-OUTSIDE %s", wuSigErrName(syscall.Kill(o, 0)))
+	t.Logf("SEAT-ABSENT %s", wuSigErrName(syscall.Kill(a, 0)))
+	own := exec.Command("sleep", "120")
+	if err := own.Start(); err != nil {
+		t.Fatalf("cannot fork+exec a child inside the seat: %v", err)
+	}
+	if err := own.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Logf("SEAT-OWN-CHILD %s (%v)", wuSigErrName(err), err)
+		_ = own.Process.Kill()
+		_ = own.Wait()
+		return
+	}
+	_ = own.Wait()
+	if ws, ok := own.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGTERM {
+		t.Logf("SEAT-OWN-CHILD terminated")
+		return
+	}
+	t.Logf("SEAT-OWN-CHILD exited without SIGTERM: %v", own.ProcessState)
+}
+
+func wuSigErrName(err error) string {
+	switch {
+	case err == nil:
+		return "ok"
+	case errors.Is(err, syscall.EPERM):
+		return "EPERM"
+	case errors.Is(err, syscall.ESRCH):
+		return "ESRCH"
+	}
+	return "other"
 }

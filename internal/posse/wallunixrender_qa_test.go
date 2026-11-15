@@ -94,20 +94,23 @@ func TestQAWallUnixStepIsRenderedForBwrapAndNotForSeatbelt(t *testing.T) {
 	t.Cleanup(func() { wallUnixABI = restore })
 
 	for _, c := range []struct {
-		name string
-		mech string
-		abi  int
-		want bool
+		name   string
+		mech   string
+		abi    int
+		step   bool // the step is typed (signal scope, ABI 6+)
+		socket bool // and carries the socket wall (ABI 9+)
 	}{
-		{"bwrap, ABI 10 — the D1 host", WallBwrap, 10, true},
-		{"bwrap, ABI exactly 9 — the version that added RESOLVE_UNIX", WallBwrap, WallUnixABIMin, true},
-		{"bwrap, ABI 8 — handled_access_fs would be refused outright", WallBwrap, 8, false},
-		{"bwrap, no Landlock syscall at all", WallBwrap, -38, false},
-		{"sandbox-exec, whatever the ABI says", WallSandboxExec, 10, false},
+		{"bwrap, ABI 10 — the D1 host", WallBwrap, 10, true, true},
+		{"bwrap, ABI exactly 9 — the version that added RESOLVE_UNIX", WallBwrap, WallUnixABIMin, true, true},
+		{"bwrap, ABI 8 — RESOLVE_UNIX refused, SCOPE_SIGNAL still there", WallBwrap, 8, true, false},
+		{"bwrap, ABI exactly 6 — the version that added SCOPE_SIGNAL", WallBwrap, WallUnixSignalABIMin, true, false},
+		{"bwrap, ABI 5 — neither", WallBwrap, WallUnixSignalABIMin - 1, false, false},
+		{"bwrap, no Landlock syscall at all", WallBwrap, -38, false, false},
+		{"sandbox-exec, whatever the ABI says", WallSandboxExec, 10, false, false},
 	} {
 		wallUnixABI = func() int { return c.abi }
-		if got := wallUnixAvailableFor(c.mech); got != c.want {
-			t.Errorf("%s: wallUnixAvailableFor(%q) = %v, want %v", c.name, c.mech, got, c.want)
+		if got := wallUnixAvailableFor(c.mech); got != c.step {
+			t.Errorf("%s: wallUnixAvailableFor(%q) = %v, want %v — the step carries the signal scope from ABI %d, so a kernel that has it and not RESOLVE_UNIX must still get the step (ranger-base-e5un1)", c.name, c.mech, got, c.step, WallUnixSignalABIMin)
 		}
 		// And the report says which, in both directions: the degraded arm is
 		// the one that must never be silence (bead ranger-base-6rndn: "make
@@ -116,12 +119,53 @@ func TestQAWallUnixStepIsRenderedForBwrapAndNotForSeatbelt(t *testing.T) {
 		switch {
 		case c.mech != WallBwrap && d != "":
 			t.Errorf("%s: the wall report calls a seatbelt line degraded (%q) — there is nothing degraded about a mechanism this layer was never part of", c.name, d)
-		case c.mech == WallBwrap && c.want && d != "":
+		case c.mech == WallBwrap && c.socket && d != "":
 			t.Errorf("%s: the layer is up and the report still says %q", c.name, d)
-		case c.mech == WallBwrap && !c.want && d == "":
+		case c.mech == WallBwrap && !c.socket && d == "":
 			t.Errorf("%s: no socket wall on a bwrap line and the report says NOTHING. A seat whose socket wall is absent can connect(2) to any host pathname socket in its view (ranger-base-l2gk9), and silence is how that reads as walled", c.name)
-		case c.mech == WallBwrap && !c.want && !strings.Contains(d, "DEGRADED"):
+		case c.mech == WallBwrap && !c.socket && !strings.Contains(d, "DEGRADED"):
 			t.Errorf("%s: the report's sentence does not carry the word DEGRADED, which is what an operator scans for: %q", c.name, d)
+		}
+		// The degraded sentence also says which way the SIGNAL half went —
+		// up on 6-8, absent below — so neither reads as the other.
+		if c.mech == WallBwrap && !c.socket {
+			up := strings.Contains(d, "signal scope IS up")
+			if up != c.step {
+				t.Errorf("%s: the degraded sentence says the signal scope is up = %v, and the step that applies it is typed = %v:\n  %q", c.name, up, c.step, d)
+			}
+		}
+	}
+}
+
+// TestQAWallUnixRulesetScopesSignalAtEveryABITheStepIsTypedFor is
+// ranger-base-e5un1's ruleset pin: the domain the step applies carries
+// LANDLOCK_SCOPE_SIGNAL on every arm, and RESOLVE_UNIX only from ABI 9. The
+// Linux file converts this struct into the syscall's argument rather than
+// copying its fields, so dropping `Scoped` from the plan is dropping it from
+// the kernel's ruleset, and reds here; the live pin
+// (TestLiveWallUnixScopesSignalsToTheSeat) reads the kernel's side.
+func TestQAWallUnixRulesetScopesSignalAtEveryABITheStepIsTypedFor(t *testing.T) {
+	t.Parallel()
+	if landlockScopeSignal != 0x2 {
+		t.Fatalf("landlockScopeSignal = %#x, and linux/landlock.h's LANDLOCK_SCOPE_SIGNAL is 0x2 (x/sys v0.47.0 agrees)", landlockScopeSignal)
+	}
+	for abi := WallUnixSignalABIMin; abi <= 12; abi++ {
+		r := wallUnixRuleset(abi)
+		if r.Scoped&landlockScopeSignal == 0 {
+			t.Errorf("ABI %d: the wall-unix ruleset's Scoped is %#x, without LANDLOCK_SCOPE_SIGNAL — a seat on the host's pid namespace (ADR 0080 D17) can then signal the launcher and every other seat (ranger-base-e5un1)", abi, r.Scoped)
+		}
+		if r.Scoped != landlockScopeSignal {
+			t.Errorf("ABI %d: Scoped = %#x, and the decision (ranger-base-zqtoi) scopes SIGNAL and nothing else — LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET is an open question for the ADR, not a default", abi, r.Scoped)
+		}
+		if r.Access_net != 0 {
+			t.Errorf("ABI %d: Access_net = %#x, and this layer handles no network right", abi, r.Access_net)
+		}
+		want := uint64(0)
+		if abi >= WallUnixABIMin {
+			want = landlockAccessFSResolveUnix
+		}
+		if r.Access_fs != want {
+			t.Errorf("ABI %d: Access_fs = %#x, want %#x — RESOLVE_UNIX from ABI %d and nothing below it, where the kernel refuses the ruleset outright and the seat would not open", abi, r.Access_fs, want, WallUnixABIMin)
 		}
 	}
 }

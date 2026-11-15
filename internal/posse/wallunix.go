@@ -75,6 +75,15 @@ package posse
 // rule is also the only way to allow a socket that is ABSENT at launch,
 // since an O_PATH open of it would be ENOENT and there would be no rule to
 // add.
+//
+// THE SAME DOMAIN SCOPES SIGNALS (ranger-base-e5un1; decided on
+// ranger-base-zqtoi). The seat keeps the host's
+// pid namespace (ADR 0080 D17), and LANDLOCK_SCOPE_SIGNAL is what stops that
+// from meaning "may signal every same-uid process on the host": one field of
+// the ruleset this step already applies, no new floor (ABI 6, below the 9 the
+// socket half needs), and on an ABI 6-8 kernel the step is typed for it
+// alone. The errno still reads liveness — EPERM is a live process outside,
+// ESRCH an absent one — but a shell's `kill -0` exits 1 for both.
 
 import (
 	"os"
@@ -99,6 +108,62 @@ func IsWallUnix(argv []string) bool { return len(argv) > 1 && argv[1] == WallUni
 // a version number appears in posse at all instead of a capability probe.
 const WallUnixABIMin = 9
 
+// WallUnixSignalABIMin is the Landlock ABI that added LANDLOCK_SCOPE_SIGNAL
+// (Linux 6.12). The step is typed from this ABI up, because the signal scope
+// is the half of this layer a seat on an ABI 6-8 kernel can still have — the
+// socket half waits for WallUnixABIMin (ranger-base-e5un1).
+const WallUnixSignalABIMin = 6
+
+// landlockAccessFSResolveUnix is LANDLOCK_ACCESS_FS_RESOLVE_UNIX
+// (linux/landlock.h, ABI 9+): "Look up pathname UNIX domain sockets ... this
+// restricts both calls to connect(2) as well as calls to sendmsg(2) with an
+// explicit recipient address", and it "applies only to connections to UNIX
+// server sockets which were created outside of the newly created Landlock
+// domain". Spelled here because golang.org/x/sys v0.47.0 carries the ruleset
+// structs and the syscall numbers but not this constant — and here rather
+// than in the Linux file so the ruleset pin reads it from darwin too.
+const landlockAccessFSResolveUnix = 1 << 16
+
+// landlockScopeSignal is LANDLOCK_SCOPE_SIGNAL (linux/landlock.h, ABI 6+):
+// a process in the domain may signal only processes in the same domain or a
+// nested one. x/sys has it (unix.LANDLOCK_SCOPE_SIGNAL, 0x2) but only on
+// Linux, and the pin that reads this plan runs on every GOOS.
+const landlockScopeSignal = 1 << 1
+
+// wallUnixRulesetAttr is struct landlock_ruleset_attr as of ABI 6, field for
+// field by name and type with x/sys's unix.LandlockRulesetAttr — which is
+// what lets the Linux file CONVERT this into the syscall's argument rather
+// than copy fields across, so the struct the pins read is the struct the
+// kernel is handed.
+type wallUnixRulesetAttr struct {
+	Access_fs  uint64
+	Access_net uint64
+	Scoped     uint64
+}
+
+// wallUnixRuleset is the one ruleset this step applies at a given ABI.
+//
+// SCOPE_SIGNAL ON EVERY ARM, and that is ranger-base-e5un1's fix (decided
+// on ranger-base-zqtoi): the seat shares the
+// host's pid namespace (ADR 0080 D17), so without the scope it can deliver
+// any signal to any same-uid host process — the launcher and every other
+// seat among them (ranger-base-e5un1). With it, kill(2) from inside the
+// domain to a process outside it is EPERM, signal 0 included, while the
+// runtime still signals everything it forks (they inherit the domain), and
+// the launcher still signals the seat (it is outside every domain).
+// pdeathsig and SIGCHLD are kernel deliveries and do not pass the hook.
+//
+// RESOLVE_UNIX ONLY FROM WallUnixABIMin. Below it the kernel refuses a
+// ruleset naming that right outright, so an ABI 6-8 seat gets the signal
+// scope alone, and WallUnixDegraded says the socket half is missing.
+func wallUnixRuleset(abi int) wallUnixRulesetAttr {
+	r := wallUnixRulesetAttr{Scoped: landlockScopeSignal}
+	if abi >= WallUnixABIMin {
+		r.Access_fs = landlockAccessFSResolveUnix
+	}
+	return r
+}
+
 // wallUnixABI is the host's Landlock ABI, or a negative number when the
 // syscall is not there at all. A var for the reason bwrapResolves,
 // bwrapApplyRefusal and wallMechanismHost are vars (bwrap.go, wall.go): the
@@ -106,7 +171,8 @@ const WallUnixABIMin = 9
 // it to drive the Linux render from darwin.
 var wallUnixABI = liveWallUnixABI
 
-// WallUnixAvailable reports whether this host can realize the socket wall.
+// WallUnixAvailable reports whether this host types the step at all — the
+// signal scope from ABI 6, and the socket wall with it from ABI 9.
 func WallUnixAvailable() bool { return wallUnixAvailableFor(WallMechanism()) }
 
 // wallUnixAvailableFor is that answer for an arbitrary MECHANISM, which is
@@ -121,7 +187,19 @@ func WallUnixAvailable() bool { return wallUnixAvailableFor(WallMechanism()) }
 // where the wall is a seatbelt profile. The darwin half is its own bead and
 // its own mechanism. Short-circuited left to right, so the ABI is not asked
 // where no line could carry the answer.
+//
+// FROM WallUnixSignalABIMin, NOT WallUnixABIMin (ranger-base-e5un1): the step
+// is what applies the signal scope as well as the socket wall, and a kernel
+// that has the first and not the second still gets the first. Whether the
+// SOCKET half is up is wallUnixSocketFor's question, and it is the one
+// WallUnixDegraded asks.
 func wallUnixAvailableFor(mech string) bool {
+	return mech == WallBwrap && wallUnixABI() >= WallUnixSignalABIMin
+}
+
+// wallUnixSocketFor is whether the step, where it is typed, also carries the
+// socket wall: RESOLVE_UNIX is ABI 9.
+func wallUnixSocketFor(mech string) bool {
 	return mech == WallBwrap && wallUnixABI() >= WallUnixABIMin
 }
 
@@ -167,15 +245,26 @@ func WallUnixStepArgv(self string) []string {
 // Empty when the layer is up, or when the mechanism is not bwrap at all (on
 // darwin there is nothing degraded about a seatbelt profile; q9bqu is its
 // own bead).
+//
+// TWO HALVES, AND THE SENTENCE NAMES BOTH (ranger-base-e5un1): at ABI 6-8 the
+// step is on the line carrying the signal scope alone, and the sentence says
+// so after the socket half's alarm; below 6 neither is up, and it says that.
 func WallUnixDegraded(mech string) string {
-	if mech != WallBwrap || wallUnixAvailableFor(mech) {
+	if mech != WallBwrap || wallUnixSocketFor(mech) {
 		return ""
 	}
-	return "DEGRADED: no socket wall on this line — this kernel's Landlock ABI is " +
+	s := "DEGRADED: no socket wall on this line — this kernel's Landlock ABI is " +
 		wallUnixABIText() + " and RESOLVE_UNIX needs " + strconv.Itoa(WallUnixABIMin) +
 		", so a process in this seat can connect(2) to any host pathname socket in its view, " +
 		"including one an uncaged process binds after launch (ranger-base-l2gk9). " +
 		"The file wall is unaffected."
+	if wallUnixAvailableFor(mech) {
+		return s + " The signal scope IS up: `" + WallUnixVerb + "` is on the line applying " +
+			"LANDLOCK_SCOPE_SIGNAL alone, so this seat can signal only what it forked (ranger-base-e5un1)."
+	}
+	return s + " And no signal scope either: LANDLOCK_SCOPE_SIGNAL needs ABI " +
+		strconv.Itoa(WallUnixSignalABIMin) + ", so a process in this seat can signal any same-uid " +
+		"process on the host, the launcher and every other seat included (ranger-base-e5un1)."
 }
 
 // wallUnixABIText is that number as a reader wants it: the version, or the
@@ -231,8 +320,16 @@ func RunWallUnix(args []string) error {
 	if err != nil {
 		return Die("%s: cannot resolve the runtime %q on this seat's PATH (%v) — so this is a seat that will not open, rather than one that opened unwalled", WallUnixVerb, cmd[0], err)
 	}
-	if err := restrictResolveUnix(); err != nil {
-		return Die("%s: this seat's socket wall could not be applied (%v), and posse does not open a seat behind a wall it reported and does not have (ADR 0080 D4). The render typed this step because this kernel's Landlock ABI read as %s; if that has changed under it, `posse gates` says what a launch would render now", WallUnixVerb, err, wallUnixABIText())
+	// The ABI is read HERE, by the process that applies it, and not carried
+	// on the line: the render typed this step because its own read of the
+	// same kernel said at least WallUnixSignalABIMin, and a read below that
+	// now is a host that changed under the render — refused, for D4's reason.
+	abi := wallUnixABI()
+	if abi < WallUnixSignalABIMin {
+		return Die("%s: this kernel's Landlock ABI reads as %s and the step's floor is %d (LANDLOCK_SCOPE_SIGNAL), so neither this seat's signal scope nor its socket wall can be applied — and posse does not open a seat behind a wall it reported and does not have (ADR 0080 D4). `posse gates` says what a launch would render now", WallUnixVerb, wallUnixABIText(), WallUnixSignalABIMin)
+	}
+	if err := restrictWallUnix(abi); err != nil {
+		return Die("%s: this seat's Landlock layer (signal scope, and the socket wall from ABI %d) could not be applied (%v), and posse does not open a seat behind a wall it reported and does not have (ADR 0080 D4). The render typed this step because this kernel's Landlock ABI read as %s; if that has changed under it, `posse gates` says what a launch would render now", WallUnixVerb, WallUnixABIMin, err, wallUnixABIText())
 	}
 	return syscall.Exec(bin, cmd, os.Environ())
 }

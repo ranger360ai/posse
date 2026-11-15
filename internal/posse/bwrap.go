@@ -2753,7 +2753,7 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 	if d := WallUnixDegraded(WallBwrap); d != "" {
 		fmt.Fprintf(out, "    %s\n", d)
 	} else {
-		fmt.Fprintf(out, "    socket wall: `%s` on the line inside the cage — a Landlock domain handling RESOLVE_UNIX and no other right, so connect(2) and sendmsg(2) to every host pathname socket in this seat's view are EACCES, including one an uncaged process binds after launch (ADR 0080 D27). No allow rule: MEASURED, a seat needs none. The mounts above are unchanged by it.\n", WallUnixVerb)
+		fmt.Fprintf(out, "    socket wall: `%s` on the line inside the cage — a Landlock domain handling RESOLVE_UNIX and no other right, so connect(2) and sendmsg(2) to every host pathname socket in this seat's view are EACCES, including one an uncaged process binds after launch (ADR 0080 D27). No allow rule: MEASURED, a seat needs none. The same domain scopes SIGNAL (LANDLOCK_SCOPE_SIGNAL): a process in this seat can signal only what it forked, so kill(2) to the launcher, another seat or any host process is EPERM, signal 0 included, and the launcher's signals to the seat are unaffected (ranger-base-e5un1). The mounts above are unchanged by it.\n", WallUnixVerb)
 	}
 	// No siblings: a mount cannot name the scratch namespace beside a file,
 	// and D19 makes it moot by granting claude's config DIRECTORY.

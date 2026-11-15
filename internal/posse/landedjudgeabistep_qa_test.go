@@ -63,14 +63,18 @@ func TestQALandedCheckJudgeTypesNoSocketWallStepBelowTheABIItNeeds(t *testing.T)
 	t.Cleanup(func() { wallUnixABI = restore })
 
 	for _, c := range []struct {
-		name string
-		abi  int
-		step bool // the judge's argv must carry the step
+		name   string
+		abi    int
+		step   bool // the judge's argv must carry the step
+		socket bool // and the step carries the socket wall, so no DEGRADED note
 	}{
-		{"ABI 10, the D1 host", 10, true},
-		{"ABI exactly 9, the version that added RESOLVE_UNIX", WallUnixABIMin, true},
-		{"ABI 8, where handled_access_fs would be refused outright", WallUnixABIMin - 1, false},
-		{"no landlock_create_ruleset on this kernel at all", -38, false},
+		{"ABI 10, the D1 host", 10, true, true},
+		{"ABI exactly 9, the version that added RESOLVE_UNIX", WallUnixABIMin, true, true},
+		// ranger-base-e5un1: the step is typed from ABI 6 for the signal
+		// scope alone, and RunWallUnix applies only that below 9.
+		{"ABI 8, RESOLVE_UNIX refused, SCOPE_SIGNAL still there", WallUnixABIMin - 1, true, false},
+		{"ABI 5, below SCOPE_SIGNAL too", WallUnixSignalABIMin - 1, false, false},
+		{"no landlock_create_ruleset on this kernel at all", -38, false, false},
 	} {
 		t.Run(fmt.Sprintf("%s (ABI %d)", c.name, c.abi), func(t *testing.T) {
 			wallUnixABI = func() int { return c.abi }
@@ -93,8 +97,8 @@ func TestQALandedCheckJudgeTypesNoSocketWallStepBelowTheABIItNeeds(t *testing.T)
 				t.Errorf("the socket wall is available at Landlock ABI %d and the judge's cage carries no %q anywhere — a bwrap seat's launch line carries that step and ADR 0088 D3.1 says the judge is never stronger than a seat (ranger-base-i92tj):\n  %s",
 					c.abi, WallUnixVerb, line)
 			case !c.step && i >= 0:
-				t.Errorf("the judge's cage carries the socket-wall step at argv[%d] on a host whose Landlock ABI is %d, below the %d RESOLVE_UNIX needs. The step REFUSES rather than execs when the domain will not apply (ADR 0080 D4/D30), so this renders a judge that never runs and a landing that answers nothing, at every landing, while the verdict line says DEGRADED (ADR 0080 D31, ranger-base-i92tj):\n  %s",
-					i, c.abi, WallUnixABIMin, line)
+				t.Errorf("the judge's cage carries the socket-wall step at argv[%d] on a host whose Landlock ABI is %d, below the %d SCOPE_SIGNAL needs. The step REFUSES rather than execs when the domain will not apply (ADR 0080 D4/D30), so this renders a judge that never runs and a landing that answers nothing, at every landing, while the verdict line says DEGRADED (ADR 0080 D31, ranger-base-i92tj):\n  %s",
+					i, c.abi, WallUnixSignalABIMin, line)
 			}
 			// AND THE SENTENCE IS THE RENDER'S COMPLEMENT, in the same run
 			// and over the same stub: the two halves of D31 are one claim,
@@ -102,9 +106,9 @@ func TestQALandedCheckJudgeTypesNoSocketWallStepBelowTheABIItNeeds(t *testing.T)
 			// over the runner's output by
 			// TestQALandedCheckVerdictSaysWhenThereIsNoSocketWall; read here
 			// so neither half can move without the other.
-			if said := landedJudgeSocketWallNote(); (said == "") != c.step {
-				t.Errorf("at Landlock ABI %d the judge's cage %s the step and its verdict note is %q — the render and the report disagree about the same layer (ADR 0080 D31)",
-					c.abi, map[bool]string{true: "carries", false: "does not carry"}[c.step], said)
+			if said := landedJudgeSocketWallNote(); (said == "") != c.socket {
+				t.Errorf("at Landlock ABI %d the judge's step %s the socket wall and its verdict note is %q — the render and the report disagree about the same layer (ADR 0080 D31)",
+					c.abi, map[bool]string{true: "carries", false: "does not carry"}[c.socket], said)
 			}
 		})
 	}
