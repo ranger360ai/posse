@@ -4805,7 +4805,7 @@ func (r visGuardRefusal) keptModeNote(ind string) string {
 	}
 	v := "$" + r.keptModeVar
 	return ind + `if [ -n "` + v + `" ]; then
-` + ind + `  echo "git's cleanup mode here is \"` + v + `\" (config commit.cleanup), and it decided this read:"
+` + ind + `  echo "git's cleanup mode here is \"` + v + `\" (` + v + `_from), and it decided this read:"
 ` + ind + `  if [ "` + v + `" = scissors ]; then
 ` + ind + `    echo ` + shQuote(MessageScissorsNote) + `
 ` + ind + `  else
@@ -5362,13 +5362,44 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // the repo config AND `git -c commit.cleanup=... commit` (git exports that
 // one in GIT_CONFIG_PARAMETERS, and `git config` reads it back). It does not
 // answer for `git commit --cleanup=...`: rc 1, empty, nothing in the
-// environment carries it. RESIDUAL, stated: the flag form is invisible here
-// and the arm reads the path the way "default" would. The config form needs
-// no intent — the flag has to be typed — and git's own template says which
-// mode is live ("Lines starting with '#' will be kept" against "will be
-// ignored"), so a later layer that wants the flag can read git's sentence;
-// this one does not, because a localized sentence is the same kind of copy
-// as the literal '#' rejected below and it drifts the same way.
+// environment carries it.
+//
+// SO FOR THE FLAG, THE MODE COMES FROM GIT'S OWN SENTENCE (ranger-base-cufvv,
+// found by the verify under ranger-base-dgfax). Read as "default", the flag
+// form was fail-OPEN on the editor path: `--cleanup=whitespace|verbatim` with
+// an editor makes git KEEP its whole template while the arm stripped it, and
+// a class carried by the branch name landed with no wall speaking
+// (TestQACeilingMessageArmUnderACleanupFlagThatKeepsGitsTemplate). git says
+// which mode is live in the template it writes before this hook runs:
+// MEASURED 2026-11-15, git 2.56.0, LC_ALL=C, commit.cleanup unset, an editor
+// open — no flag, `default` and `strip` write "... will be ignored, and an
+// empty message aborts the commit."; `whitespace` and `verbatim` write
+// "... will be kept; you may remove them yourself if you want to." and the
+// object carried the whole template; `scissors` writes its cut line at the
+// top with the whole template below it, and the object carried none of it.
+// So when the arm would strip on the editor path and that "will be kept"
+// line is in the file, the read is WHOLE.
+//
+// It was refused here once before, as "a localized sentence is the same kind
+// of copy as the literal '#' rejected below and it drifts the same way". It
+// does not drift the same way, and that is why it is taken now: the '#'
+// literal decided what came OFF the scan, so its drift was a leak; this line
+// only ever puts lines BACK. A writer who forges it reads their own commit
+// whole (over-refusal, theirs alone); a git that rewords it, or a locale that
+// translates it, reads the way this arm read before the line existed — no
+// worse. It never moves a read toward strip, so `--cleanup=strip` under a
+// configured keep mode stays the over-refusal it was.
+//
+// RESIDUALS of the flag, stated, both fail-OPEN and both the pre-fix read,
+// not a new one: a non-English locale (the sentence is gettext'd; ASSUMED,
+// no translated locale is installed on the measuring box), and
+// `--cleanup=scissors` as a flag — git's own template is below its cut line
+// and truncated (measured above), so it is not this hole, but a '#' line
+// ABOVE that cut which git put there before the editor ran (a
+// commit.template body, a -F file under -e) is kept by git and stripped
+// here. The scissors cut is not licensed without the config for the
+// ranger-base-d94zl reason below, and nothing else in the file says the
+// mode: ranger-base-0wb2u.
 //
 // AN INVALID VALUE IS NOT THIS ARM'S PROBLEM: git rejects one outright
 // ("fatal: Invalid cleanup mode nonsense", and the value is case-sensitive —
@@ -5654,17 +5685,23 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // lines while the arm stripped them unscanned — a merge's own `# Conflicts:`
 // block, quoting the conflicted PATH, landed in the object with
 // refusals.log empty. That was the leak direction
-// (TestQAMessageArmReadsWholeEveryNoEditorCommitForm). The one way
-// GIT_EDITOR and git's cleanup disagree is a caller who exports GIT_EDITOR=:
-// themselves and passes `-e`: git edits with a no-op editor and strips, the
-// hook sees ":" and reads whole — over-refusal, the fail-closed side.
+// (TestQAMessageArmReadsWholeEveryNoEditorCommitForm). GIT_EDITOR is the
+// right fact for DEFAULT cleanup only, so it disagrees with git in two ways.
+// A caller who exports GIT_EDITOR=: themselves and passes `-e`: git edits
+// with a no-op editor and strips, the hook sees ":" and reads whole —
+// over-refusal, the fail-closed side. And a mode passed as a FLAG, which
+// config cannot see: `--cleanup=whitespace|verbatim|scissors` with an editor
+// keeps lines this arm would strip, and `--cleanup=strip` with no editor
+// strips lines it reads whole (ranger-base-cufvv's table). The keep half is
+// read from git's own template sentence above; the strip half is
+// over-refusal and stays.
 //
 // RESIDUALS, stated. Fail-CLOSED: `-v` as a FLAG on `-F`/`-m` — git
 // truncates at a marker the writer typed (measured) and appends no diff,
 // so the arm reads what git throws away; a core.commentChar of '-' or '+'
 // hides git's cut line from the match (neither is one of commit.c's ten
-// `auto` candidates); `--cleanup=scissors` as a flag is invisible like every
-// other; a marker forged ABOVE git's own under `-v` — git truncates at the
+// `auto` candidates); `--cleanup=strip` as a flag with no editor, which git
+// strips and this reads whole; a marker forged ABOVE git's own under `-v` — git truncates at the
 // first (measured, wt_status_locate_end takes the first) and the lines
 // between the two are read here, because none of them is a line of the
 // staged diff; and the drift cases above. Fail-OPEN, and bounded: a line
@@ -5672,7 +5709,9 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // even where git keeps it — a context or removed line carrying a class,
 // which is content already in a tree object of this repo, the same bound
 // `--amend --no-edit` states above; an ADDED line there is the sibling
-// arm's subject and is refused by it.
+// arm's subject and is refused by it. Also fail-OPEN: the two flag residuals
+// stated under "FOR THE FLAG" above — a translated keep sentence, and a '#'
+// line above git's cut under `--cleanup=scissors` as a flag.
 func messageArm(ind, head string, sources []visScanSource) string {
 	i1, i2, i3 := ind+"  ", ind+"    ", ind+"      "
 	var body strings.Builder
@@ -5692,6 +5731,7 @@ func messageArm(ind, head string, sources []visScanSource) string {
 	return head + ind + `if [ -f "${1:-}" ]; then
 ` + i1 + `posse_clean=$(git config --get commit.cleanup 2>/dev/null) || posse_clean=''
 ` + i1 + `posse_kept=''
+` + i1 + `posse_kept_from='config commit.cleanup'
 ` + i1 + `posse_cut=$(grep -nE '^[^ +@\-][^ ]* ------------------------ >8 ------------------------$' "$1" 2>/dev/null | sed -n '1p' | cut -d: -f1)
 ` + i1 + `posse_rest=''
 ` + i1 + `if [ -n "$posse_cut" ] && [ "$posse_clean" != scissors ]; then
@@ -5718,6 +5758,12 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i2 + `posse_msg=$(head -n "$((posse_cut - 1))" "$1" 2>/dev/null; printf '%s\n' "$posse_rest")
 ` + i1 + `else
 ` + i2 + `posse_msg=$(cat "$1" 2>/dev/null)
+` + i1 + `fi
+` + i1 + `if [ "$posse_clean" = strip ] && [ -z "$posse_typed" ] &&
+` + i1 + `  printf '%s\n' "$posse_msg" | grep -aqE ' will be kept; you may remove them yourself if you want to\.$'; then
+` + i2 + `posse_clean=whole
+` + i2 + `posse_kept='whitespace or verbatim'
+` + i2 + `posse_kept_from='a --cleanup flag, read from the template git wrote; dropping the flag is its default'
 ` + i1 + `fi
 ` + i1 + `if [ "$posse_clean" = whole ]; then
 ` + i2 + `posse_cc=whole
