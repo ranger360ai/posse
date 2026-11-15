@@ -84,11 +84,12 @@ func TestQATheGitConfigGlobalPinIsGitsOwnFile(t *testing.T) {
 			if c.wantHomeOrXDG == "xdg" {
 				want = xdgCfg
 			}
+			// The row is a read-only snapshot OF that file (ranger-base-161t2).
 			got, ok := pinRow("GIT_CONFIG_GLOBAL")
-			if !ok || got != want {
-				t.Fatalf("inletPin()[GIT_CONFIG_GLOBAL] = %q (present %v), want %q", got, ok, want)
+			if snap := gitGlobalPinOf(t, want); !ok || got != snap {
+				t.Fatalf("inletPin()[GIT_CONFIG_GLOBAL] = %q (present %v), want %q, the snapshot of %s", got, ok, snap, want)
 			}
-			if indep, ok := gitGlobalScopePath(t); ok && indep != got {
+			if indep, ok := gitGlobalScopePath(t); ok && gitGlobalPinOf(t, indep) != got {
 				t.Errorf("the row says %q but git's own listing says %q", got, indep)
 			}
 			if d := GitGlobalScopeDegraded(); d != "" {
@@ -109,8 +110,8 @@ func TestQATheGitConfigGlobalPinIsGitsOwnFile(t *testing.T) {
 		if err := os.WriteFile(want, []byte("[user]\n\temail = x@example.invalid\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != want {
-			t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q, want %q", got, want)
+		if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != gitGlobalPinOf(t, want) {
+			t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q, want the snapshot of %q", got, want)
 		}
 	})
 }

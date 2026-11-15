@@ -462,9 +462,12 @@ func inletPin() []EnvVar {
 	}
 	// GIT_CONFIG_GLOBAL only when git's global scope is ONE file (or none):
 	// with two there is no neutral value, and the fallback is no row — never
-	// /dev/null, which empties the identity (ranger-base-obdnk).
+	// /dev/null, which empties the identity (ranger-base-obdnk). Its value
+	// is a read-only snapshot of that file, so a seat's `git config
+	// --global` cannot rewrite the operator's (ranger-base-161t2).
 	if p, err := gitGlobalScope(); err == nil {
-		pin = append(pin, EnvVar{Key: "GIT_CONFIG_GLOBAL", Value: p})
+		v, _ := gitGlobalPinValue(p) // a failed snapshot is said by GitGlobalScopeDegraded
+		pin = append(pin, EnvVar{Key: "GIT_CONFIG_GLOBAL", Value: v})
 	}
 	return append(pin, []EnvVar{
 		{Key: "GIT_CONFIG_PARAMETERS", Value: ""},

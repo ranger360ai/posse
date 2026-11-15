@@ -21,6 +21,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-9lsg2](ranger-base-9lsg2.md) — release-artifacts.sh fetches its build source, as clean-build.sh does (ranger-base-9lsg2) — 2026-11-15
 - [ranger-base-21i98](ranger-base-21i98.md) — A walled seat's objects live in its own store (ranger-base-21i98) — 2026-11-15
 - [ranger-base-1l1en](ranger-base-1l1en.md) — A seat's launch line is exec'd, so no shell outlives its runtime (ranger-base-1l1en) — 2026-11-15
+- [ranger-base-161t2](ranger-base-161t2.md) — A seat's `git config --global` cannot reach the operator's global file (ranger-base-161t2) — 2026-11-15
 - [ranger-base-05aa1](ranger-base-05aa1.md) — ranger-base-05aa1 — four git verbs commit without saying `commit`, and the L1 wall now reads them — 2026-11-15
 - [ranger-base-zpx1k](ranger-base-zpx1k.md) — A door on ADR 0097 D3's three exits, and why the parser stayed in the shell (ranger-base-zpx1k) — 2026-11-14
 - [ranger-base-zkuwa](ranger-base-zkuwa.md) — A reflection over FIELDS cannot hold an arm a zero value selects (ranger-base-zkuwa) — 2026-11-14

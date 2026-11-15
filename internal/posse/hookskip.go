@@ -973,7 +973,7 @@ func resolveHookSkipGlobalRef(real string, env []string) hookSkipGlobalRef {
 		_, err := os.Stat(p)
 		return err == nil
 	}); err == nil {
-		r.Pin = p
+		r.Pin, _ = gitGlobalPinValue(p) // the snapshot the settings pin names (ranger-base-161t2)
 	}
 	return r
 }

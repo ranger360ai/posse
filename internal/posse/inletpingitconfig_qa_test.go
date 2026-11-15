@@ -110,7 +110,12 @@ func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 	if got, ok := pinned["GIT_CONFIG_GLOBAL"]; ok && (got == os.DevNull || got == "") {
 		t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q. That empties global scope — every seat commit under a gecos ident at rc 0 and no e-mail in the identity wall. The row carries git's own file or is absent", got)
 	}
-	if want, ok := gitGlobalScopePath(t); ok && pinned["GIT_CONFIG_GLOBAL"] != want {
+	if want, ok := gitGlobalScopePath(t); ok && want != "" {
+		want = gitGlobalPinOf(t, want) // a read-only snapshot of it (ranger-base-161t2)
+		if pinned["GIT_CONFIG_GLOBAL"] != want {
+			t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q, but the read-only snapshot of git's own global scope with the variable unset is %q (ranger-base-obdnk, ranger-base-161t2)", pinned["GIT_CONFIG_GLOBAL"], want)
+		}
+	} else if ok && pinned["GIT_CONFIG_GLOBAL"] != want {
 		t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q, but git's own global scope with the variable unset says %q (\"\" = two files, so no row) (ranger-base-obdnk)", pinned["GIT_CONFIG_GLOBAL"], want)
 	}
 	// The other direction, and it is not symmetry for its own sake: pinning

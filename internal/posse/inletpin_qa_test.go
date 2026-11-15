@@ -124,7 +124,15 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 // what an absent key reads as in the comparison below.
 var launchResolvedInletRows = map[string]func(*testing.T) (string, bool){
 	"GIT_CONFIG_SYSTEM": gitSystemScopePath,
-	"GIT_CONFIG_GLOBAL": gitGlobalScopePath,
+	// The row names a read-only snapshot of git's file, not the file
+	// (ranger-base-161t2); "" (two files) stays "".
+	"GIT_CONFIG_GLOBAL": func(t *testing.T) (string, bool) {
+		p, ok := gitGlobalScopePath(t)
+		if !ok || p == "" {
+			return p, ok
+		}
+		return gitGlobalPinOf(t, p), true
+	},
 }
 
 // The two halves compose, in an order that does not move. The credential
