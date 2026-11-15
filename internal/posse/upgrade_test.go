@@ -633,15 +633,25 @@ type swapProbe struct {
 // purpose: a control that measures a different probe measures nothing about
 // this one.
 //
-// One observation is open + Fstat + one byte — ~5 us MEASURED 2026-11-14 on
-// this box, against ~1.7 ms for the 8 MiB os.ReadFile this replaced — and
-// it resolves every state the pin switches on: a failed open is absent, a
-// size other than the binary's is short, and the first byte says which
-// version. Not reading the other 8 MiB is the whole of ranger-base-6sbng.
+// One observation is open + Fstat + the file's two end bytes — ~6 us
+// MEASURED 2026-11-14 on this box, against ~1.7 ms for the 8 MiB
+// os.ReadFile this replaced — and it resolves every state the pin switches
+// on: a failed open is absent, a size other than the binary's is short, two
+// ends that disagree is a target being rewritten in place, and otherwise
+// the byte says which version. Not reading the other 8 MiB is the whole of
+// ranger-base-6sbng; reading BOTH ends rather than one is what keeps the
+// in-place-rewrite shape visible, which the full-content compare saw and a
+// first-byte probe does not (the mutation run is in the notes fragment).
 func probeSwapWindow(t *testing.T, target string, old, fresh []byte, swap func() error) swapProbe {
 	t.Helper()
-	if len(old) != len(fresh) || old[0] == fresh[0] {
-		t.Fatalf("the fixture must give the two versions equal lengths and different first bytes, or one observation cannot tell them apart: %d and %d bytes, first bytes %q and %q", len(old), len(fresh), old[0], fresh[0])
+	// The observation below reads two bytes and infers the other 8 MiB from
+	// them, which it may do only because each version is one byte repeated.
+	// Say so here rather than in a comment: a fixture that stopped being
+	// uniform would make every classification below a guess.
+	if len(old) != len(fresh) || old[0] == fresh[0] ||
+		old[0] != old[len(old)-1] || fresh[0] != fresh[len(fresh)-1] {
+		t.Fatalf("the fixture must give the two versions equal lengths, one repeated byte each, and different bytes: %d and %d bytes, ends %q/%q and %q/%q",
+			len(old), len(fresh), old[0], old[len(old)-1], fresh[0], fresh[len(fresh)-1])
 	}
 
 	var stop atomic.Bool
@@ -653,7 +663,7 @@ func probeSwapWindow(t *testing.T, target string, old, fresh []byte, swap func()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		var buf [1]byte
+		var buf [2]byte
 		first := time.Now()
 		last := first
 		for !stop.Load() {
@@ -669,12 +679,23 @@ func probeSwapWindow(t *testing.T, target string, old, fresh []byte, swap func()
 				continue
 			}
 			st, serr := f.Stat()
-			n, rerr := f.Read(buf[:])
+			nh, errh := f.Read(buf[:1])
+			nt, errt := 0, error(nil)
+			if serr == nil && st.Size() > 0 {
+				nt, errt = f.ReadAt(buf[1:2], st.Size()-1)
+			}
 			f.Close()
 			switch {
-			case serr != nil || rerr != nil || n != 1:
+			case serr != nil || errh != nil || errt != nil || nh != 1 || nt != 1:
 				partial.Add(1)
 			case st.Size() != int64(len(old)):
+				partial.Add(1)
+			case buf[0] != buf[1]:
+				// Full length, but its two ends disagree: a writer is
+				// rewriting the target in place and this is a blend of the
+				// two binaries. The full-content compare this probe
+				// replaced saw that shape, so reading both ends is what
+				// keeps it seen (ranger-base-6sbng).
 				partial.Add(1)
 			case buf[0] == old[0]:
 				sawOld.Add(1)
