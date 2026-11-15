@@ -390,6 +390,12 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// claude's own messaging socket could never be created under the
 	// read-only base anyway; on the tmpfs it can, privately).
 	//
+	// THE LIST IS MORE THAN THE RUNTIME DIR (ranger-base-s7tkc): the host's
+	// crash stores ride it too — systemd-coredump's directory and the
+	// journals, where a same-uid peer's core and environment sit readable to
+	// every seat. Same loop, same rule: absent is skipped, a directory gets
+	// an empty tmpfs (liveBwrapRuntimeDirs, bwrapCrashStoreDirs).
+	//
 	// The three variables go with it, because an address can name an
 	// endpoint OUTSIDE the hidden dir (an abstract socket, an agent socket
 	// under /tmp), and a seat has no use for any of them.
@@ -1413,11 +1419,52 @@ func bwrapRuntimeDirs(xdg string, uid int, home string) ([]string, error) {
 	return dedupeStrings(out), nil
 }
 
-// liveBwrapRuntimeDirs is bwrapRuntimeDirs with this process's answers — the
-// launcher's, which is the seat's: one OS account (ADR 0080 D1).
+// liveBwrapRuntimeDirs is the whole of the carve-out's Hide list with this
+// process's answers — the launcher's, which is the seat's: one OS account
+// (ADR 0080 D1). It is bwrapRuntimeDirs plus bwrapCrashStoreDirs as they are
+// on this host (ranger-base-s7tkc).
 func liveBwrapRuntimeDirs() ([]string, error) {
 	home, _ := os.UserHomeDir()
-	return bwrapRuntimeDirs(os.Getenv("XDG_RUNTIME_DIR"), os.Getuid(), home)
+	out, err := bwrapRuntimeDirs(os.Getenv("XDG_RUNTIME_DIR"), os.Getuid(), home)
+	if err != nil {
+		return nil, err
+	}
+	return dedupeStrings(append(out, bwrapPresentDirs(bwrapCrashStoreDirs)...)), nil
+}
+
+// bwrapCrashStoreDirs is where a host keeps what a crash wrote out
+// (ranger-base-s7tkc, fix (a) for ranger-base-al0d0): systemd-coredump's
+// store, whose cores carry an ACL granting the crashed process's own uid
+// read, and the persistent and volatile journals, which carry each crash's
+// COREDUMP_ENVIRON and which coredumpctl and journalctl read as FILES. Every
+// seat and every host process share one uid, so without this a seat reads a
+// same-uid peer's memory and environment off a crash that already happened.
+//
+// HIDDEN, NOT DENIED: an empty tmpfs over each, by the 1b loop, like the
+// runtime dir. Logging FROM a seat is untouched: journald's input socket is
+// /run/systemd/journal/socket, under none of these.
+var bwrapCrashStoreDirs = []string{
+	"/var/lib/systemd/coredump",
+	"/var/log/journal",
+	"/run/log/journal",
+}
+
+// bwrapPresentDirs is cands resolved, keeping only what is a directory on
+// this host. SKIPPED, NOT REFUSED, on every other answer — unlike the
+// runtime dir, nothing a seat runs needs these, so there is no wrong guess
+// to refuse: a host without systemd-coredump, or with a volatile-only
+// journal, has nothing there to read; a name that is a file is not a store
+// this list knows; and a stat this uid is refused is a directory the seat,
+// at the same uid, cannot reach either.
+func bwrapPresentDirs(cands []string) []string {
+	var out []string
+	for _, c := range cands {
+		r := absResolve(c)
+		if exists, dir, err := bwrapStat(r); err == nil && exists && dir {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // bwrapStatRefusal is that refusal, naming the shape as well as the path: a
@@ -2269,8 +2316,9 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	}
 	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
 	r := bwrapRendered{Carve: a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)}
-	// The runtime dir's control endpoints (ranger-base-ludpp). Here and not
-	// in SeatbeltCarveOut, because seatbelt has no spelling for it.
+	// The runtime dir's control endpoints (ranger-base-ludpp), and the
+	// host's crash stores (ranger-base-s7tkc). Here and not in
+	// SeatbeltCarveOut, because seatbelt has no spelling for it.
 	if r.Carve.Hide, err = liveBwrapRuntimeDirs(); err != nil {
 		return bwrapRendered{}, err
 	}
