@@ -262,9 +262,11 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 
 // bwrapArgsWatched is BwrapArgs with its third output: every mount it put
 // over a name that is a WALL — Hide (the runtime dir's tmpfs and the seat's
-// /tmp), Private, Masked, Deny and ReadMask (step 5's ssh dir tmpfs and its
-// /dev/null credential binds) — in render order (ranger-base-0qpsw D1, the
-// read masks added by ranger-base-w6ip0's decision as ranger-base-y4cm6).
+// /tmp), Private, Masked, Deny and ReadMask (step 5's ssh dir tmpfs, its
+// credential-store tmpfs and what is left of its /dev/null credential
+// binds) — in render order (ranger-base-0qpsw D1, the read masks added by
+// ranger-base-w6ip0's decision as ranger-base-y4cm6, the store tmpfs by
+// ranger-base-a8qfg).
 // `posse wall-watch` holds the seat to that list: a host rename or unlink
 // over any of those names detaches the mount in every namespace, and the
 // seat would then read and write the host's object at that name.
@@ -274,10 +276,12 @@ func BwrapArgs(cwd string, writable []string, carve SeatbeltCarveOut, refKeep ..
 // every live seat that masks that credential is killed at each refresh.
 // MEASURED 2026-11-13 by stat only: claude's credentials file has birth and
 // mtime 1 ms apart after a refresh, so the refresher does write a new
-// inode. The cost is zero on this box today — every bwrap seat is claude
-// and no sibling runtime's credential store exists — and ranger-base-a8qfg
-// is the shape that removes it before a non-claude runtime goes bwrap. The
-// ssh tmpfs and the keys under it have no rename refresher.
+// inode.
+//
+// SINCE ranger-base-a8qfg the three sibling stores are masked as
+// DIRECTORIES (step 5c), and a refresh inside a masked directory is no
+// mount event at all. Residual: ranger-base-1c0r6. The ssh tmpfs is a
+// directory too, and the keys under it render no mask of their own.
 //
 // THE OPENINGS ARE NOT IN IT. A write grant, a Keep file, an ssh allow bind
 // re-OPEN something, so a detached one leaves the seat with less than it
@@ -393,6 +397,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, "--unsetenv", k)
 	}
 	hidden := shallowestFirst(carve.Hide)
+	var hideMounted []string // the Hide entries 1b actually mounted (5c's skip)
 	for _, h := range hidden {
 		exists, dir, err := bwrapStat(h)
 		if err != nil {
@@ -406,6 +411,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		}
 		argv = append(argv, "--tmpfs", h)
 		watch(WallWatchHide, h)
+		hideMounted = append(hideMounted, h)
 	}
 
 	// 1c. The seat's own /tmp (ranger-base-7wdb7). The host's /tmp is the
@@ -446,6 +452,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, "--bind", carve.Tmp, bwrapTmpMount)
 		watch(WallWatchHide, bwrapTmpMount)
 		hidden = append(hidden, bwrapTmpMount)
+		hideMounted = append(hideMounted, bwrapTmpMount)
 		kept := writable[:0:0]
 		for _, w := range writable {
 			if absResolve(w) != bwrapTmpMount {
@@ -884,11 +891,13 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// 5. Shape 5: the credential read masks. /dev/null over the file, so a
 	// read gets EOF instead of bytes.
 	//
-	// A MISSING ONE RENDERS NOTHING, and the residual is stated rather than
-	// closed (Consequences): a credential mask is a snapshot at launch, so
-	// another runtime's credential file created AFTER the seat started is
-	// readable by it. Parity names each missing file. The seat still cannot
-	// write there, because nothing grants that runtime's state dir.
+	// A MISSING ONE RENDERS NOTHING, which was ADR 0080's snapshot-at-launch
+	// residual: another runtime's credential file created AFTER the seat
+	// started was readable by it, with no mount for `posse wall-watch` to
+	// see. 5c CLOSES THAT for every sibling credential STORE by masking the
+	// directory instead (ranger-base-a8qfg). Residual: ranger-base-1c0r6.
+	// The report names a mask that renders nothing. The seat still cannot write at
+	// any of them, because nothing grants that runtime's state dir.
 	//
 	// B5 measured that no byte of the credential reached the seat, and
 	// measured it by an error rather than by the clean EOF this shape is
@@ -958,8 +967,83 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		watch(WallWatchReadMask, d)
 		readHidden = append(readHidden, d)
 	}
+	// 5c. Another runtime's credential STORE, as a DIRECTORY
+	// (ranger-base-a8qfg): an empty tmpfs over it with
+	// credentialStoreAllowlist bound back read-only. 5a's shape at the same
+	// wall, for the two ways a /dev/null over the credential FILE fails open
+	// — a file that is not there at launch gets no mount, and a refresh by
+	// atomic rename detaches one that is. SeatbeltCarveOut.ReadMaskDir has
+	// both, and says why claude's own credential keeps the file mask.
+	//
+	// THE STORE IS MADE WHEN IT IS ABSENT, which the file half refuses to do
+	// and for a reason that does not reach here: creating another runtime's
+	// credential FILE would be posse writing into a store that is not its
+	// business, while an empty DIRECTORY is the mount point this wall needs
+	// and holds no byte of anybody's. It is also inert to every reader posse
+	// has: each of them joins a name under the home and stats it, so an
+	// empty store answers ENOENT exactly as an absent one does.
+	//
+	// A WRITE GRANT THAT REACHES THE STORE RENDERS NO MASK, and the file
+	// mask one loop down is what is left. An empty tmpfs over a grant is a
+	// seat writing where nothing survives the seat — B8's lost-write
+	// failure with the grant in place, which is worse than the wall it
+	// would be putting up — and a read wall inside a write grant is theatre
+	// anyway: the breach is the grant, which is what
+	// credentialReadDenyLiterals already says about a declared state dir
+	// wide enough to contain a sibling's store. So this is the `reopens`
+	// skip with a second reason, not a refusal: skipping leaves the status
+	// quo (a /dev/null over the credential file, with ADR 0080's two holes),
+	// where refusing would stop every launch on that box. The report names
+	// a store that got no mount, in those words.
+	//
+	// BOTH DIRECTIONS, because either one is that mistake: a grant AT or
+	// ABOVE the store would be buried by the tmpfs, and a grant INSIDE the
+	// store would be buried too — the tmpfs mounts after it.
+	//
+	// THE HIDE SKIP ASKS WHAT 1b MOUNTED, not what it was handed
+	// (ranger-base-miyv2). `hidden` holds every Hide entry, an absent one
+	// too, and since ranger-base-8ukiy the landed-check judge hides each
+	// runtime's state root — which for grok and bob IS the store. An absent
+	// root renders no tmpfs, so `reopens` alone would skip this mask over
+	// the one store it exists for: a login after launch, at a name nothing
+	// covered.
+	var storeMasked []string
+	for _, d := range shallowestFirst(carve.ReadMaskDir) {
+		if (writeGranted(hideMounted, d) && !writeGranted(grants, d)) || writeGranted(grants, d) || grantInside(grants, d) {
+			continue
+		}
+		exists, dir, err := bwrapStat(d)
+		if err != nil {
+			return nil, nil, bwrapStatRefusal("credential store", d, err)
+		}
+		switch {
+		case exists && !dir:
+			return nil, nil, Die("bwrap cannot mask the credential store %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-a8qfg)", d)
+		case !exists:
+			prep = append(prep, PrepStep{PrepMkdirAll, d, "another runtime's credential store that is not there yet; made empty so the mask has a directory to cover and a first login during this seat's life lands inside it"})
+		}
+		argv = append(argv, "--tmpfs", d)
+		watch(WallWatchReadMask, d)
+		storeMasked = append(storeMasked, d)
+		// The allow arm stats and does not Lstat, which is 5a's choice and
+		// not a different one: a link at one of these names would be bound
+		// through to its target, and the only writer at these names is the
+		// operator whose home it is — the seat has no grant there and is
+		// behind this very tmpfs. The Masked arm Lstats because the name it
+		// covers IS inside a seat's grant (ranger-base-l751c).
+		for _, m := range carve.readMaskDirAllowed(d) {
+			exists, dir, err := bwrapStat(m.path)
+			if err != nil {
+				return nil, nil, bwrapStatRefusal("credential store allow", m.path, err)
+			}
+			if !exists || dir != m.dir {
+				continue // not there, or not the shape posse reads at that name (5a's rule)
+			}
+			argv = append(argv, "--ro-bind", m.path, m.path)
+		}
+	}
 	for _, f := range shallowestFirst(carve.DenyRead) {
-		if writeGranted(readHidden, f) {
+		if writeGranted(readHidden, f) || writeGranted(storeMasked, f) {
 			continue // under the tmpfs already, and a /dev/null mount would only make its name
 		}
 		exists, _, err := bwrapStat(f)
@@ -1077,7 +1161,8 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 }
 
 // grantInside says whether any write grant lies at or under d — the other
-// direction of writeGranted, for a mount over d that would cover it.
+// direction of writeGranted, for a mount over d that would cover it: a tmpfs
+// at d buries a grant under d as surely as a grant above d buries the tmpfs.
 func grantInside(grants []string, d string) bool {
 	for _, g := range grants {
 		if underDir(d, g) {
@@ -1115,6 +1200,53 @@ func bwrapGitConfigRepo(d string) string {
 		return ""
 	}
 	return filepath.Dir(gitDir)
+}
+
+// bwrapDirMaskOver answers which of step 5's DIRECTORY masks covers p — the
+// ssh dir allowlist, a read-deny dir or a credential store — with the bead
+// that shape is from, or "" when none does. A mask whose own mount the
+// render SKIPPED covers nothing, so the argv decides and not the list: that
+// is the same test the render makes before it skips a /dev/null over p, read
+// back from the wall rather than from the design, so the two cannot say
+// different things about one path.
+func bwrapDirMaskOver(argv []string, carve SeatbeltCarveOut, p string) (string, string) {
+	for _, d := range carve.SSHDir {
+		if underDir(d, p) && bwrapMountedAt(argv, d) {
+			return d, "ranger-base-12ggv"
+		}
+	}
+	for _, d := range carve.DenyReadDir {
+		if underDir(d, p) && bwrapMountedAt(argv, d) {
+			return d, "ranger-base-k06gw"
+		}
+	}
+	for _, d := range carve.ReadMaskDir {
+		if underDir(d, p) && bwrapMountedAt(argv, d) {
+			return d, "ranger-base-a8qfg"
+		}
+	}
+	return "", ""
+}
+
+// bwrapMountedAt reports whether the RENDERED argv puts a mount at p. The
+// report asks the argv and not the lists, for BwrapReport's reason: a list
+// entry says what the design asked for and the argv says what the wall is.
+// Destinations only — a bind's SOURCE is not a mount point — so the one-arg
+// forms take argv[i+1] and the two-path forms argv[i+2].
+func bwrapMountedAt(argv []string, p string) bool {
+	for i, a := range argv {
+		switch a {
+		case "--tmpfs":
+			if i+1 < len(argv) && argv[i+1] == p {
+				return true
+			}
+		case "--bind", "--ro-bind", "--dev-bind":
+			if i+2 < len(argv) && argv[i+2] == p {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // bwrapStat is the one filesystem question the shapes above ask, with "could
@@ -2059,6 +2191,14 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 		return bwrapRendered{}, err
 	}
 	withRexNodeReadDeny(&r.Carve)
+	// The sibling runtimes' credential STORES, masked as directories
+	// (ranger-base-a8qfg). Here and not in SeatbeltCarveOut for Hide's
+	// reason: seatbelt has no need of the list, because an SBPL literal deny
+	// covers a path that is not there and a /dev/null bind cannot — the whole
+	// of why this field exists. Same stateDirs the credential FILE denies
+	// were computed from one call above, so the two walls cannot disagree
+	// about which store this seat owns.
+	r.Carve.ReadMaskDir = credentialStoreReadMaskDirs(stateDirs)
 	r.Set, r.Keep = BwrapWritable(ag, writable, cwd)
 	// The seat's own /tmp (ranger-base-7wdb7): the host dir BwrapArgs binds
 	// over /tmp, and the grants it replaces out of the set, so the report
@@ -2349,12 +2489,14 @@ func bwrapReadable(persona, args string, argv []string, prep []PrepStep, absent 
 // mechanism has and seatbelt does not: the keep file, which the launcher
 // creates and no mount names.
 //
-// `·` CARRIES TWO STATEMENTS, and both of them are "this entry is in a list
-// and renders no mount": the rename seal, which needs none (a mount is a
-// statement about a mount POINT), and D23's declared-but-not-granted, which
-// has no source to bind. One marker, because an operator scanning the block
-// for what IS mounted wants one thing to skip and the parenthetical says
-// which of the two it is.
+// `·` CARRIES THREE STATEMENTS, and every one of them is "this entry is in a
+// list and renders no mount": the rename seal, which needs none (a mount is a
+// statement about a mount POINT); D23's declared-but-not-granted, which has
+// no source to bind; and a credential read mask whose file is not there,
+// which has no name to cover (ranger-base-a8qfg). One marker, because an
+// operator scanning the block for what IS mounted wants one thing to skip and
+// the parenthetical says which of the three it is. The third one is the only
+// one of the three that is a HOLE, and its parenthetical says so.
 //
 // IT READS THE RENDERED ARGV AND THE PREP, not the lists, which is the
 // difference that matters for a report whose whole job is to be checkable.
@@ -2418,14 +2560,36 @@ func (a *App) BwrapReport(ag *AgentFile, rt *Runtime, cwd string, out io.Writer)
 	for _, p := range shallowestFirst(carve.Keep) {
 		fmt.Fprintf(out, "    w %s (re-allowed after the deny: the session's own audit trail, bound back as a FILE — an append to a bound file is in place)\n", AbbrevHome(p))
 	}
+	// A READ MASK IS REPORTED AS THE ARGV RENDERED IT, which for this list is
+	// three different statements and used to be one (ranger-base-a8qfg). A
+	// /dev/null mask needs a file to cover, so a literal whose file is not
+	// there renders NOTHING — and this line said "/dev/null bound over it"
+	// about it anyway, which is the one sentence an operator reads to check
+	// ADR 0080's "parity names each missing file". A literal under a
+	// directory mask renders nothing either, and is covered all the same.
 	for _, p := range shallowestFirst(carve.DenyRead) {
-		fmt.Fprintf(out, "    r %s (/dev/null bound over it — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
+		d, bead := bwrapDirMaskOver(r.Argv, carve, p)
+		switch {
+		case d != "":
+			fmt.Fprintf(out, "    r %s (NO mount of its own — the empty tmpfs over %s/ covers the name whether or not anything is at it; %s)\n", AbbrevHome(p), AbbrevHome(d), bead)
+		case !bwrapMountedAt(r.Argv, p):
+			fmt.Fprintf(out, "    · %s (NO MOUNT; ranger-base-1c0r6)\n", AbbrevHome(p))
+		default:
+			fmt.Fprintf(out, "    r %s (/dev/null bound over it — credential-store literal; ranger-base-hw18, ADR 0019 D2)\n", AbbrevHome(p))
+		}
 	}
 	for _, d := range shallowestFirst(carve.SSHDir) {
 		fmt.Fprintf(out, "    r %s/ (empty tmpfs over it with %s bound back read-only — this seat is not the pusher; ranger-base-12ggv)\n", AbbrevHome(d), strings.Join(sshDirAllowlist, " and "))
 	}
 	for _, d := range shallowestFirst(carve.DenyReadDir) {
 		fmt.Fprintf(out, "    r %s/ (empty tmpfs over it, nothing bound back — the rex tsnet node's state, a tailnet credential no seat reads; ranger-base-k06gw)\n", AbbrevHome(d))
+	}
+	for _, d := range shallowestFirst(carve.ReadMaskDir) {
+		if !bwrapMountedAt(r.Argv, d) {
+			fmt.Fprintf(out, "    · %s/ (NO mount: this credential store sits inside a directory the seat already sees empty, or inside a write grant — and an empty tmpfs over a grant is a seat writing where nothing survives the seat. The credential FILE above keeps its own mask, so what is left is ADR 0080's snapshot-at-launch residual; ranger-base-a8qfg)\n", AbbrevHome(d))
+			continue
+		}
+		fmt.Fprintf(out, "    r %s/ (empty tmpfs over it with %s bound back read-only where they exist — another runtime's credential store, masked as a DIRECTORY so a credential created after this seat launched is covered too; ranger-base-a8qfg, ADR 0019 D2)\n", AbbrevHome(d), strings.Join(credentialStoreAllowlistNames(), ", "))
 	}
 	// The prep, which an operator can read nowhere else: these are writes
 	// posse makes on the HOST, outside the namespace, in the seat's name —

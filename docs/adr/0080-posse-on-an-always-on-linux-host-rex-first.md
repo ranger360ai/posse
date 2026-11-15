@@ -1268,9 +1268,24 @@ as-measured note above.
   `posse/*` ref (probe T3d). It still cannot move `main` or any top-level
   branch, or touch the shared hooks or config. That is narrower than codex
   and grok on darwin, which get `refs/heads` whole through `--add-dir`.
-- **A credential mask is a snapshot at launch.** Another runtime's
-  credential file created after the seat started is readable by it. Parity
-  names each missing file. The seat still cannot WRITE there.
+- **A credential mask was a snapshot at launch**, and for the three SIBLING
+  runtimes it is not one any more (2026-11-13). A /dev/null bind is a mount
+  over a NAME, so a credential file created after the seat started got no
+  mount at all and was readable by it, with nothing for `posse wall-watch`
+  to see detach; a refresh by atomic rename detached one that HAD been
+  rendered. Step 5c masks each sibling credential store as a DIRECTORY
+  instead — an empty tmpfs, made if absent, with the three members posse's
+  own in-seat readers ask for bound back read-only
+  (`credentialStoreAllowlist`) — so a later login writes inside the mask and
+  a refresh inside it is not a mount event. A store a write grant
+  reaches is not masked at all, because an empty tmpfs over a grant loses
+  the seat's writes — the breach there is the grant. The report names every
+  one of these states, the ones that render no mount with the `·` marker.
+  The seat still cannot WRITE at any of them. The bead that landed this, and
+  its open residual, are:
+
+  - ranger-base-a8qfg
+  - ranger-base-1c0r6
 - The packed-refs residual of the container tier now applies to bwrap seats.
 - **`git fsck` is no longer clean in a repo that has hosted a bwrap seat**
   (MEASURED, ranger-base-gi1gi): the keep file is an invalid refname holding

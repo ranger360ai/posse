@@ -304,19 +304,42 @@ func TestTheRunbookOnlyNamesMakeTargetsThatExist(t *testing.T) {
 // revert of the deny, or a runbook that reverts to the old wording, trips
 // it either way.
 // crSiblingCalls derives the walled credential siblings from seatbelt.go
-// itself: every `sibling("<state dir>", "<file>", …)` call in the
-// read-deny's own renderer, as "<state dir>/<file>". The set is DISCOVERED
+// itself: every row of the `credentialSiblingStores` table the read-deny's
+// own renderer loops over, as "<state dir>/<file>". The set is DISCOVERED
 // and not listed here on purpose — a hand list in this file would go stale
 // on the same day the page does, which is the whole defect below.
+//
+// It read a `sibling("<state dir>", "<file>", …)` CALL until
+// ranger-base-a8qfg, which made those three calls a table because a SECOND
+// wall reads the same set (the directory mask over the store, bwrap step
+// 5b). A row is the same two strings in the same order, so the claim this
+// pin makes is unchanged — only where the renderer spells it.
 func crSiblingCalls(src string) []string {
 	var out []string
-	for _, m := range crSibling.FindAllStringSubmatch(src, -1) {
+	for _, m := range crSibling.FindAllStringSubmatch(crSiblingTable(src), -1) {
 		out = append(out, m[1]+"/"+m[2])
 	}
 	return out
 }
 
-var crSibling = regexp.MustCompile(`\bsibling\(\s*"([^"]+)"\s*,\s*"([^"]+)"`)
+// crSiblingTable is that table's literal body and nothing else, so a
+// two-string composite literal elsewhere in the file cannot read as a
+// credential store. A source with no table at all answers "", which the
+// positive witness in the arm below is what turns into a failure.
+func crSiblingTable(src string) string {
+	const head = "credentialSiblingStores = []credentialSiblingStore{"
+	i := strings.Index(src, head)
+	if i < 0 {
+		return ""
+	}
+	body := src[i+len(head):]
+	if j := strings.Index(body, "\n}"); j >= 0 {
+		return body[:j]
+	}
+	return body
+}
+
+var crSibling = regexp.MustCompile(`\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,`)
 
 // crSiblingsMissingFrom reports the derived siblings the page does not name.
 // Taking the page as an argument is what lets the control below drive the
@@ -379,17 +402,25 @@ func TestTheRunbookNamesEveryCredentialSiblingTheWallDenies(t *testing.T) {
 func TestTheRunbookSiblingCheckCanStillSayNo(t *testing.T) {
 	t.Parallel()
 	page := crRunbook(t)
-	// A fifth runtime, spelled the way the renderer spells one. Nothing in
-	// the tree carries this name, so the page cannot accidentally name it.
-	planted := "\tsibling(\"~/.notarealruntime\", \"auth.json\", notARealRuntimeHomeIn)\n"
+	// A fifth runtime, spelled the way the renderer spells one — a row of
+	// the table it loops over. Nothing in the tree carries this name, so the
+	// page cannot accidentally name it.
+	planted := "var credentialSiblingStores = []credentialSiblingStore{\n" +
+		"\t{\"~/.notarealruntime\", \"auth.json\", notARealRuntimeHomeIn},\n}\n"
 	missing := crSiblingsMissingFrom(planted, page)
 	if len(missing) != 1 || missing[0] != "~/.notarealruntime/auth.json" {
-		t.Errorf("crSiblingsMissingFrom over a planted sibling call = %v, want exactly the planted path — the matcher cannot report a drift it does not see", missing)
+		t.Errorf("crSiblingsMissingFrom over a planted sibling row = %v, want exactly the planted path — the matcher cannot report a drift it does not see", missing)
 	}
-	// And the other direction: a call shape the renderer does not use must
-	// not be read as a sibling, or every refactor of seatbelt.go reds this.
-	if n := len(crSiblingCalls("\tsiblingOf(x, y)\n\t// sibling(\"~/.quoted\", \"auth.json\", h)\n")); n != 1 {
-		t.Errorf("crSiblingCalls read %d siblings out of a non-call and a commented call, want 1 (the commented one is still a spelling of the call and is counted on purpose; the renamed function is not)", n)
+	// And the other direction, twice. A row OUTSIDE that table is some other
+	// two-string literal and must not be read as a credential store, or
+	// every struct added to seatbelt.go reds this; a commented row INSIDE it
+	// is still a spelling of the set and is counted on purpose, the same
+	// call the old call-shaped matcher made.
+	if n := len(crSiblingCalls("var other = []thing{\n\t{\"~/.quoted\", \"auth.json\", h},\n}\n")); n != 0 {
+		t.Errorf("crSiblingCalls read %d siblings out of a table that is not the credential one, want 0", n)
+	}
+	if n := len(crSiblingCalls("var credentialSiblingStores = []credentialSiblingStore{\n\t// {\"~/.quoted\", \"auth.json\", h},\n}\n")); n != 1 {
+		t.Errorf("crSiblingCalls read %d siblings out of a commented row inside the table, want 1", n)
 	}
 }
 

@@ -274,6 +274,15 @@ func boxLandedCage(a *App, kind landedCageKind, judge, tree string, writable, en
 	for _, p := range credentialReadDenyLiterals(runtime.GOOS, nil) {
 		carve.DenyRead = append(carve.DenyRead, absResolve(p))
 	}
+	// And the sibling stores as DIRECTORIES, which is the same mask one
+	// shape wider (ranger-base-a8qfg): a /dev/null needs a name that exists,
+	// so the list above alone leaves the judge reading a credential that was
+	// not there when the cage was rendered. The judge is a short-lived
+	// child, so the window is small — and the list above is non-empty for
+	// ranger-base-6b46n's reason, which does not get smaller when the hole
+	// is a timing one. nil state dirs: no runtime owns this child, so none
+	// of the three is spared, exactly as for the file half.
+	carve.ReadMaskDir = credentialStoreReadMaskDirs(nil)
 	if _, err := withSSHKeyReadDeny(nil, tree, &carve); err != nil {
 		return landedCage{}, err
 	}

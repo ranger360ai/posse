@@ -738,15 +738,21 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 	t.Parallel()
 	root, bwAt := bwTree(t,
 		[]string{"proj/.beads", "proj/agents", "state"},
-		[]string{"codex/auth.json"})
+		[]string{"codex/auth.json", "grok/auth.json", "grok/config.toml"})
 	cwd := bwAt("proj")
 
 	writable := []string{bwAt("proj"), bwAt("proj", ".beads"), bwAt("state"), bwAt("fresh")}
 	carve := SeatbeltCarveOut{
-		Deny:     []string{bwAt("proj", "agents"), bwAt("state", "gates"), bwAt("elsewhere", "promoted")},
-		Seal:     []string{bwAt("proj")},
-		Keep:     []string{bwAt("state", "gates", "refusals.log")},
-		DenyRead: []string{bwAt("codex", "auth.json"), bwAt("grok", "auth.json")},
+		Deny: []string{bwAt("proj", "agents"), bwAt("state", "gates"), bwAt("elsewhere", "promoted")},
+		Seal: []string{bwAt("proj")},
+		Keep: []string{bwAt("state", "gates", "refusals.log")},
+		// Three credential literals and two stores masked as directories
+		// (ranger-base-a8qfg): codex's is masked as a FILE because no store
+		// of its covers it, grok's is covered by the tmpfs over its store,
+		// and bob's store is not there at all — which is the shape this
+		// whole arm of the wall exists for.
+		DenyRead:    []string{bwAt("codex", "auth.json"), bwAt("grok", "auth.json"), bwAt("bob", "settings", "auth-secrets.json")},
+		ReadMaskDir: []string{bwAt("grok"), bwAt("bob")},
 	}
 
 	argv, prep, err := BwrapArgs(cwd, writable, carve)
@@ -773,7 +779,14 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 		"--ro-bind", bwAt("state", "gates"), bwAt("state", "gates"),
 		// Keep, back over the deny above it
 		"--bind", bwAt("state", "gates", "refusals.log"), bwAt("state", "gates", "refusals.log"),
-		// shape 5 — grok's credential is not on this box, so no mask
+		// shape 5c, the stores as directories, shallowest first; grok's
+		// config.toml comes back read-only under its own tmpfs
+		"--tmpfs", bwAt("bob"),
+		"--tmpfs", bwAt("grok"),
+		"--ro-bind", bwAt("grok", "config.toml"), bwAt("grok", "config.toml"),
+		// shape 5, the file masks — and only the literal that no store's
+		// tmpfs covers, because a /dev/null inside one would only make its
+		// name on the seat's own empty directory
 		"--ro-bind", "/dev/null", bwAt("codex", "auth.json"),
 	}
 	if bwJoin(argv) != bwJoin(want) {
@@ -783,6 +796,10 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 		"mkdir -p " + bwAt("fresh"),
 		"mkdir -p " + bwAt("state", "gates"),
 		"touch " + bwAt("state", "gates", "refusals.log"),
+		// bob's store, which a tmpfs needs as a directory and which nothing
+		// on this fixture box has created — an empty mount point and never
+		// the credential file itself (ranger-base-a8qfg)
+		"mkdir -p " + bwAt("bob"),
 	}
 	if got := bwPrep(prep); strings.Join(got, "\n") != strings.Join(wantPrep, "\n") {
 		t.Fatalf("prep =\n  %v\nwant\n  %v", got, wantPrep)
@@ -790,7 +807,7 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 	// Nothing was written: the prep list is a REQUEST to the launcher, and a
 	// renderer that acted on it could not be called twice or printed by
 	// `posse gates` without changing the box.
-	for _, p := range []string{bwAt("fresh"), bwAt("state", "gates"), bwAt("elsewhere")} {
+	for _, p := range []string{bwAt("fresh"), bwAt("state", "gates"), bwAt("elsewhere"), bwAt("bob")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("the render created %s (%v)", p, err)
 		}

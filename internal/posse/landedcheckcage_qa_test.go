@@ -80,12 +80,26 @@ func TestQALandedCheckCageRendersTheSecretMasks(t *testing.T) {
 		// A key under ~/.ssh is covered by the tmpfs over the directory
 		// (ranger-base-12ggv); everything else by its own /dev/null bind.
 		sshDir := absResolve(filepath.Join(f.ssh.home, ".ssh"))
-		hidden := bwIndex(cage.Argv, "--tmpfs", sshDir) >= 0
-		if !hidden {
+		hidden := []string{}
+		if bwIndex(cage.Argv, "--tmpfs", sshDir) >= 0 {
+			hidden = append(hidden, sshDir)
+		} else {
 			t.Errorf("the landed-check cage mounts no tmpfs over %s, so a key no config names is readable to the judge (ranger-base-12ggv):\n  %s", sshDir, line)
 		}
+		// And a sibling runtime's credential STORE, masked as a directory so
+		// that a login during the judge's life is covered too
+		// (ranger-base-a8qfg). Its credential file renders no /dev/null of
+		// its own, so the loop below must read it as covered rather than as
+		// missing.
+		for _, d := range credentialStoreReadMaskDirs(nil) {
+			if bwIndex(cage.Argv, "--tmpfs", d) < 0 {
+				t.Errorf("the landed-check cage mounts no tmpfs over the credential store %s (ranger-base-a8qfg):\n  %s", d, line)
+				continue
+			}
+			hidden = append(hidden, d)
+		}
 		for _, s := range f.secrets {
-			if hidden && underDir(sshDir, absResolve(s)) {
+			if writeGranted(hidden, absResolve(s)) {
 				continue
 			}
 			if bwIndex(cage.Argv, "--ro-bind", "/dev/null", absResolve(s)) < 0 {

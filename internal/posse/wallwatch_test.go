@@ -128,6 +128,15 @@ func wwOpenings(c wwRender) map[string]string {
 			o[f] = "an ssh allow bind: a hole deliberately left in the " + d + " tmpfs, which is the wall"
 		}
 	}
+	// The same shape at step 5c's wall (ranger-base-a8qfg): the credential
+	// store's tmpfs is the wall, and credentialStoreAllowlist's members are
+	// bound back through holes in it. Derived from the allowlist and not
+	// listed here, so a member added to it arrives classified.
+	for _, d := range c.carve.ReadMaskDir {
+		for _, m := range c.carve.readMaskDirAllowed(d) {
+			o[m.path] = "a credential-store allow bind: a hole deliberately left in the " + d + " tmpfs, which is the wall"
+		}
+	}
 	return o
 }
 
@@ -185,7 +194,14 @@ func wwEveryShape(t *testing.T) wwRender {
 	// launcher writes it empty and the mount goes over it), and the ref keep
 	// that renders no mount at all.
 	seeded := filepath.Join(grant, "settings-seeded.json")
-	for _, d := range []string{grant, priv, src, inPlace, hide, sshDir, tsnet, gates, filepath.Dir(cred)} {
+	// ranger-base-a8qfg: another runtime's credential STORE, masked as a
+	// DIRECTORY. The tmpfs is the wall; the credential literal under it
+	// renders no mount of its own, so it must not be watched either, and the
+	// allowlist members below are bound back through holes in that same wall
+	// — all three present, so the allow arm really renders here.
+	store := filepath.Join(root, "store")
+	storeCred := filepath.Join(store, "auth.json")
+	for _, d := range []string{grant, priv, src, inPlace, hide, sshDir, tsnet, gates, store, filepath.Join(store, "sessions"), filepath.Dir(cred)} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -194,6 +210,7 @@ func wwEveryShape(t *testing.T) wwRender {
 		deny, mask, cred, hist, histSrc,
 		filepath.Join(sshDir, "config"), filepath.Join(sshDir, "known_hosts"), filepath.Join(sshDir, "id_ed25519"),
 		filepath.Join(gates, "refusals.log"),
+		storeCred, filepath.Join(store, "config.toml"), filepath.Join(store, "version.json"),
 	} {
 		if err := os.WriteFile(f, []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
@@ -226,7 +243,8 @@ func wwEveryShape(t *testing.T) wwRender {
 			},
 			SSHDir:      []string{sshDir},
 			DenyReadDir: []string{tsnet},
-			DenyRead:    []string{cred, filepath.Join(sshDir, "id_ed25519")},
+			ReadMaskDir: []string{store},
+			DenyRead:    []string{cred, filepath.Join(sshDir, "id_ed25519"), storeCred},
 			// Seatbelt-only, like Narrow and DenyAll above, and unlike
 			// either it renders no mount AT ALL on this mechanism — it is
 			// about connect(2) on a socket and not about a path's contents
@@ -456,6 +474,7 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 	grant := c.writable[0]
 	root := filepath.Dir(grant)
 	sshDir := c.carve.SSHDir[0]
+	store := c.carve.ReadMaskDir[0]
 	_, _, watch, err := bwrapArgsWatched(c.cwd, c.writable, c.carve, c.refKeep...)
 	if err != nil {
 		t.Fatal(err)
@@ -477,6 +496,9 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 		{WallWatchDeny, filepath.Join(grant, "settings.json")},
 		{WallWatchReadMask, sshDir},
 		{WallWatchReadMask, filepath.Join(root, "state", "rex", "tsnet")},
+		// 5c's directory mask renders between 5b's read-deny dir and the
+		// file masks, and the credential literal under it renders none of its own.
+		{WallWatchReadMask, store},
 		{WallWatchReadMask, filepath.Join(root, "sibling", "credentials.json")},
 	}
 	if !reflect.DeepEqual(watch, want) {
@@ -489,6 +511,12 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 		if wallWatchListed(watch, filepath.Join(sshDir, p)) {
 			t.Errorf("%s is watched: it is an opening under the %s tmpfs, not a wall of its own", p, sshDir)
 		}
+	}
+	// Same for the credential literal under a masked store: the directory is
+	// the wall, and a watch on a name that has no mount would fire the first
+	// time the host wrote there (ranger-base-a8qfg).
+	if storeCred := filepath.Join(store, "auth.json"); wallWatchListed(watch, storeCred) {
+		t.Errorf("%s is watched: the %s tmpfs is the wall and this name has no mount of its own", storeCred, store)
 	}
 	// And the D20 ref keep, which renders no mount: watching it would be the
 	// other direction of the same silence.

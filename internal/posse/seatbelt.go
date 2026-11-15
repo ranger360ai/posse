@@ -398,6 +398,118 @@ type SeatbeltCarveOut struct {
 	// it reads NOTHING MEASURED and on a darwin one it reds if the
 	// assumption is wrong.
 	DenyConnect []string
+	// ReadMaskDir is another runtime's credential STORE, masked as a
+	// DIRECTORY: a seat whose runtime does not own that store sees it EMPTY
+	// but for credentialStoreAllowlist, bound back read-only
+	// (ranger-base-a8qfg). SSHDir's shape (ranger-base-12ggv) at the same
+	// wall, and it exists because a /dev/null over the credential FILE
+	// fails open in two ways a mount cannot cover:
+	//
+	//   - A FILE THAT IS NOT THERE AT LAUNCH gets no mount at all — bwrap
+	//     can only bind over a name that exists — so a first `codex login`
+	//     during a live seat's life lands at a readable path, and no mount
+	//     ever existed for `posse wall-watch` to see detach. Masking the
+	//     DIRECTORY covers the name before it is a name: a login writes
+	//     INSIDE the empty tmpfs, where the host's object never appears.
+	//   - A REFRESH BY ATOMIC RENAME detaches a mount over a file in every
+	//     namespace (MEASURED under ranger-base-y4cm6: claude's credential
+	//     file has birth and mtime 1ms apart after a refresh, so its
+	//     refresher does write a new inode), which under that bead's watch
+	//     is a kill per refresh for every seat masking it. A rename INSIDE a
+	//     masked directory is not a mount event at all.
+	//
+	// Filled by bwrapRender and bwrap-only, like Hide and Private: seatbelt
+	// needs no such list, because `(deny file-read* (literal …))` covers a
+	// path that is not there — which is the whole of the difference between
+	// the two mechanisms here.
+	//
+	// CLAUDE'S OWN CREDENTIAL IS DELIBERATELY NOT IN IT, and the file mask
+	// keeps it: on linux that file sits in the config DIRECTORY, which is a
+	// tree posse reads and binds member by member in the same render
+	// (claudeProjectsBinds, claudeManagedCache, claudePrivateSessionState) —
+	// an empty tmpfs over it would hide all of that to cover one file.
+	// Residual: ranger-base-1c0r6.
+	ReadMaskDir []string
+}
+
+// credentialStoreMember is one member of credentialStoreAllowlist: the name
+// under the store, its shape, and (once joined by readMaskDirAllowed) the
+// path. The SHAPE is checked and not assumed, for the reason the ssh allow
+// arm gives: a directory at a name posse reads as a file is not that file,
+// and binding it would reopen a tree nobody asked to reopen.
+type credentialStoreMember struct {
+	name string
+	dir  bool
+	path string
+}
+
+// credentialStoreAllowlist is what a seat still reads under a masked
+// credential store (ReadMaskDir): every member POSSE'S OWN readers ask for
+// under a sibling runtime's home, and not one of them a credential. The
+// store's credential file is at the root (`auth.json`) or under `settings/`
+// (bob), so no entry here can name one.
+//
+// It is an allowlist of three because the mask is a DIRECTORY and posse runs
+// in-seat. The fix shape on ranger-base-a8qfg ASSUMED the other way — "no
+// in-seat posse verb reads a sibling state dir, the cost adapters run in the
+// dispatcher" — and that is false as an invariant: an adapter runs wherever
+// the verb is TYPED, and three of these readers are reachable from a seat.
+// MEASURED 2026-11-13 by reading every join on codexHomeIn / grokHomeIn /
+// bobHomeIn in this package:
+//
+//   - `config.toml` — the danger-silence probes (grokPrivacyProbe,
+//     grokAutoUpdateProbe, codexUpdateProbe, interstitial.go) and grok's
+//     rex config (grokrex.go). `posse runtime check` reports those probes
+//     as a BLOCKING gap (DangerUnsilenced), and it is a verb a seat types:
+//     under an un-allowlisted tmpfs the probe reads ENOENT, which
+//     probeAbsent reads as a READING and not as an inability — so the wall
+//     would be reported as a fact about the operator's box, the exact
+//     reading probeAbsent exists to refuse.
+//   - `version.json` — codexUpdateProbe's installed-version tap, same verb.
+//   - `sessions` — the cost adapters (cost_codex.go, cost_grok.go), the
+//     codex plan hint (planhint_codex.go) and grok's turn-outcome reader.
+//     `posse cost` is typable in a seat, and ADR 0018 §3 reads an absent
+//     root as "never ran the CLI": $0 spent, no error, no uncounted line.
+//     That is ranger-base-z65xu's silent-zero failure, reached through a
+//     wall instead of through a moved $GROK_HOME.
+//
+// Each is READABLE from a seat today, so binding it back widens nothing: the
+// mask's whole subject is the credential file, and what this list keeps is
+// the status quo for everything that is not one.
+var credentialStoreAllowlist = []credentialStoreMember{
+	{name: "config.toml"},
+	{name: "sessions", dir: true},
+	{name: "version.json"},
+}
+
+// credentialStoreAllowlistNames is the allowlist as the report prints it, in
+// the list's own order. A directory member is printed with its slash, because
+// the difference is what the render checks.
+func credentialStoreAllowlistNames() []string {
+	out := make([]string, 0, len(credentialStoreAllowlist))
+	for _, m := range credentialStoreAllowlist {
+		if m.dir {
+			out = append(out, m.name+"/")
+			continue
+		}
+		out = append(out, m.name)
+	}
+	return out
+}
+
+// readMaskDirAllowed is the allowlist's members under dir, less any the
+// carve-out read-denies by name: a literal deny is never outvoted by this
+// allow, in either mechanism (sshDirAllowed's rule, ADR 0001 — deny wins).
+func (c SeatbeltCarveOut) readMaskDirAllowed(dir string) []credentialStoreMember {
+	var out []credentialStoreMember
+	for _, m := range credentialStoreAllowlist {
+		m.path = filepath.Join(dir, m.name)
+		if containsString(c.DenyRead, m.path) {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // sshDirAllowlist is what a masked seat still reads under an SSHDir: ssh's
@@ -2020,27 +2132,12 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 	// dir WRITE (its stateDirs loop), so a read deny inside one is theatre
 	// anyway, and the breach is the grant. `posse runtime check` is where an
 	// overlay that wide gets caught.
-	own := func(paths ...string) bool {
-		for _, d := range stateDirs {
-			dir := ExpandTilde(d)
-			if !filepath.IsAbs(dir) {
-				continue
-			}
-			for _, p := range paths {
-				// credentialDenyable on the candidate for the same reason
-				// filepath.IsAbs guards the declared dir: a relative
-				// candidate resolves against the session's cwd, and this
-				// test is all-or-nothing per store, so one of those reading
-				// as owned would spare the ABSOLUTE spelling beside it. add
-				// refuses the relative one anyway; this keeps it from
-				// deciding for its sibling.
-				if credentialDenyable(p) && underDir(dir, p) {
-					return true
-				}
-			}
-		}
-		return false
-	}
+	// The rule itself is a package function since ranger-base-a8qfg, because
+	// a SECOND wall asks it: the directory mask over a sibling store
+	// (credentialStoreReadMaskDirs) spares exactly the store this one spares,
+	// and two spellings of "is this seat's" would be two walls that can come
+	// to disagree about whose credential it is.
+	own := func(paths ...string) bool { return credentialStoreOwned(stateDirs, paths...) }
 	var out []string
 	add := func(p string) {
 		if !credentialDenyable(p) {
@@ -2092,7 +2189,7 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 		}
 	}
 	home, _ := os.UserHomeDir()
-	sibling := func(stateDir, file string, homeIn func(string) string) {
+	for _, s := range credentialSiblingStores {
 		// Both spellings, then one ownership question over the pair: the
 		// declared spelling and the one the CLI's own home variable moves
 		// the write to. No second guard on homeIn's answer: Join("", file)
@@ -2100,17 +2197,122 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 		// "mycodex/auth.json", and add refuses both for the one reason it
 		// refuses either — neither is absolute (ranger-base-o05yg). own()
 		// skips a non-absolute candidate for the same reason.
-		files := []string{ExpandTilde(stateDir + "/" + file), filepath.Join(homeIn(home), file)}
+		files := s.files(home)
 		if own(files...) {
-			return
+			continue
 		}
 		for _, p := range files {
 			add(p)
 		}
 	}
-	sibling("~/.codex", "auth.json", codexHomeIn)
-	sibling("~/.grok", "auth.json", grokHomeIn)
-	sibling("~/.bob", "settings/auth-secrets.json", bobHomeIn)
+	return out
+}
+
+// credentialSiblingStore is one sibling runtime's credential store: the
+// built-in `state_dir` spelling, the credential file inside it, and the CLI's
+// own home resolver — which is the ONE rule per CLI for where that home is
+// (interstitial.go, ranger-base-x5cbz).
+type credentialSiblingStore struct {
+	stateDir string
+	file     string
+	homeIn   func(string) string
+}
+
+// credentialSiblingStores is the table, and it is a table because TWO walls
+// read it since ranger-base-a8qfg: credentialReadDenyLiterals names the
+// credential FILE (both spellings) and credentialStoreReadMaskDirs names the
+// DIRECTORY it sits in (both spellings), for the bwrap mask that covers a
+// credential which is not there at launch. A second `~/.codex` spelled beside
+// this one would be the unregistered-acquisition-site class ranger-base-x5cbz
+// paid for one runtime over, so the dir mask derives its paths from here.
+//
+// THE ORDER IS THE APPEND ORDER the credential-deny table pins compare with
+// reflect.DeepEqual (crdWant, seatbeltcredentialread_qa_test.go: claude,
+// then codex, grok, bob), so it is not a set and must not be sorted.
+//
+// bob's file is NESTED and its resolver takes no environment override
+// (bobHomeIn's own measurement); the two spellings per store are the same
+// path whenever the CLI's home variable is unset, which is why both consumers
+// dedupe their own output.
+var credentialSiblingStores = []credentialSiblingStore{
+	{"~/.codex", "auth.json", codexHomeIn},
+	{"~/.grok", "auth.json", grokHomeIn},
+	{"~/.bob", "settings/auth-secrets.json", bobHomeIn},
+}
+
+// files is the store's credential file, in both spellings: the declared
+// state_dir's and the one this CLI's home variable moves the write to.
+func (s credentialSiblingStore) files(home string) []string {
+	return []string{ExpandTilde(s.stateDir + "/" + s.file), filepath.Join(s.homeIn(home), s.file)}
+}
+
+// dirs is the same pair as DIRECTORIES — the store itself, which is what the
+// bwrap mask covers.
+func (s credentialSiblingStore) dirs(home string) []string {
+	return []string{ExpandTilde(s.stateDir), s.homeIn(home)}
+}
+
+// credentialStoreOwned reports whether THIS seat's runtime owns a credential
+// store, and it asks the question both walls are about: does any file of that
+// store lie under a directory this launch DECLARED. credentialReadDenyLiterals'
+// own() carries the reasoning in full — why containment and not spelling
+// (ranger-base-ppnds), why ExpandTilde before IsAbs, why whole-store and not
+// per-file, and which hole a declared state dir wide enough to contain a
+// sibling's store leaves open for `posse runtime check` rather than for this
+// function.
+func credentialStoreOwned(stateDirs []string, paths ...string) bool {
+	for _, d := range stateDirs {
+		dir := ExpandTilde(d)
+		if !filepath.IsAbs(dir) {
+			continue
+		}
+		for _, p := range paths {
+			// credentialDenyable on the candidate for the same reason
+			// filepath.IsAbs guards the declared dir: a relative
+			// candidate resolves against the session's cwd, and this
+			// test is all-or-nothing per store, so one of those reading
+			// as owned would spare the ABSOLUTE spelling beside it. add
+			// refuses the relative one anyway; this keeps it from
+			// deciding for its sibling.
+			if credentialDenyable(p) && underDir(dir, p) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// credentialStoreReadMaskDirs is SeatbeltCarveOut.ReadMaskDir's content: the
+// sibling credential STORES this seat's runtime does not own, as directories,
+// in both spellings and deduped. The field's own comment says what the mask
+// is for and why claude's credential is not in this list.
+//
+// The ownership question is asked over the store's FILES and not over its
+// directories, so it is the same question credentialReadDenyLiterals asks:
+// whatever spares a seat the file spares it the directory around the file,
+// and a seat cannot end up masked off a store it is trusted to read.
+//
+// A spelling that is not absolute is SKIPPED and never resolved against the
+// session's cwd — grokHomeIn("") is "" and a relative CODEX_HOME names no
+// home — which is credentialDenyable's rule for the file half. Absent is
+// fine: the dir mask is the one wall here that does not care, because the
+// render MAKES the directory it is about to cover (bwrap step 5b).
+func credentialStoreReadMaskDirs(stateDirs []string) []string {
+	home, _ := os.UserHomeDir()
+	var out []string
+	for _, s := range credentialSiblingStores {
+		if credentialStoreOwned(stateDirs, s.files(home)...) {
+			continue
+		}
+		for _, d := range s.dirs(home) {
+			if !filepath.IsAbs(d) {
+				continue
+			}
+			if d = absResolve(d); !containsString(out, d) {
+				out = append(out, d)
+			}
+		}
+	}
 	return out
 }
 
