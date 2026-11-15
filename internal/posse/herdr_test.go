@@ -69,6 +69,21 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, RunCageLaunch(os.Args)) // returns only on failure
 		os.Exit(1)
 	}
+	// And as `posse wall-unix`, for the same reason one line up and for one
+	// of its own (ranger-base-i92tj). The landed-check judge's cage carries
+	// the socket-wall step now (ADR 0080 D27 at ADR 0088 D3.1's rule), and
+	// the binary it names is whatever `wallWatchBin` resolves — which in this
+	// package is THIS test binary. Without this arm the step reached the
+	// RHQ_FAKE_HERDR arm below instead and answered `fake bd: unhandled
+	// wall-unix -- …` (MEASURED 2026-11-14, TestLiveLandedCheckCageReadsNoSecret),
+	// so a pin whose subject is the judge's READ surface died on an argv the
+	// test binary did not know it now receives. Keyed on argv like the two
+	// above, so it cannot depend on an environment the cage's own allowlist
+	// strips.
+	if IsWallUnix(os.Args) {
+		fmt.Fprintln(os.Stderr, RunWallUnix(os.Args)) // returns only on failure
+		os.Exit(1)
+	}
 	if out := os.Getenv("RHQ_CAGE_ARGV_OUT"); out != "" {
 		os.WriteFile(out, []byte(strings.Join(os.Args, "\n")), 0o644)
 		os.Exit(0)

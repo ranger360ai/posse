@@ -84,7 +84,7 @@ func TestLiveWallUnixRefusesAHostSocketBoundAfterTheSeatLaunched(t *testing.T) {
 		// stops saying `connected`, the arm below it has stopped measuring
 		// anything and must not be read as a pass.
 		{"control: no socket wall on the line", nil, "connected"},
-		{"the socket wall", []string{self, WallUnixVerb, "--"}, "EACCES"},
+		{"the socket wall", WallUnixStepArgv(self), "EACCES"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			// A dir per arm: the second arm must not meet the first arm's

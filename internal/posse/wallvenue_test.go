@@ -57,10 +57,25 @@ var (
 // `--proc` out, so inside a seat `/proc` is the host's procfs under the
 // read-only base, a nested user namespace cannot write its own `uid_map`, and
 // every nested bwrap fails before it reaches a mount (ADR 0096's table, arm
-// A). Once the Landlock layer of ranger-base-6rndn lands the kernel refuses
-// the mount instead, and the two questions answer differently for good. A pin
-// printing the availability sentence would then tell its reader this box has
-// no bwrap, which is false.
+// A). A pin printing the availability sentence would tell its reader this box
+// has no bwrap, which is false.
+//
+// AND ranger-base-6rndn's LANDLOCK LAYER DOES NOT CHANGE THAT SENTENCE, which
+// is the one thing this comment used to get wrong: it said the kernel would
+// refuse the mount instead, "and the two questions answer differently for
+// good". The layer DOES forbid mount(2) — a Landlock filesystem domain does —
+// but bwrap never reaches a mount from inside D17's base, because `--proc` is
+// absent and the uid_map write fails first. MEASURED 2026-11-14 on D1, same
+// box and tools, four arms: D17's base with the step and without it both
+// answer `setting up uid map: Read-only file system`, byte for byte; the
+// venue's shape (that base plus `--unshare-pid --proc /proc`) NESTS; and the
+// venue's shape WITH the step answers `bwrap: Failed to make / slave:
+// Operation not permitted`. So the Landlock wording appears only in a cage
+// carrying both, which is the one combination ADR 0097 D1 forbids
+// (ranger-base-i92tj amends D1 to say so, and the landed-check judge takes
+// the step while the venue must not). Either way the gate answers the same,
+// because bwrapNestDecision is a function of WHETHER a bwrap started and
+// never of why not. docs/notes.d/ranger-base-i92tj.md has the four readings.
 //
 // ITS OWN sync.Once and not that function's, for the re-arming reason
 // liveBwrapApplyRefusal states: by the time any pin asks, whatever called

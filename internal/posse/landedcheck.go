@@ -211,7 +211,9 @@ const (
 	landedCageJudge landedCageKind = iota
 	// landedCageVenue is ADR 0097 D1's venue: that cage plus
 	// `--unshare-pid --proc /proc`, a private /var/tmp, and
-	// POSSE_WALL_VENUE=1. It is where the wall's 32 live pins can nest a
+	// POSSE_WALL_VENUE=1, and MINUS the socket-wall step (D1 as amended by
+	// ranger-base-i92tj — a Landlock FS domain forbids mount(2)). It is where
+	// the wall's 32 live pins can nest a
 	// bwrap of their own, which is the capability it exists for and the one
 	// axis on which it is weaker than a seat (D1's third bullet).
 	landedCageVenue
@@ -243,7 +245,8 @@ func (k landedCageKind) String() string {
 // empty prefix is a run with no wall and nothing said, which is the one
 // outcome D3 names by hand.
 //
-// THE VENUE IS THIS CAGE PLUS EXACTLY THREE THINGS (ADR 0097 D1), and the
+// THE VENUE IS THIS CAGE PLUS EXACTLY THREE THINGS AND MINUS ONE (ADR 0097
+// D1, amended by ranger-base-i92tj), and the
 // `kind` flag is where they are added. They are added at the END of the bwrap
 // argv and after the carve-out, so this render's own masks and the base mount
 // are untouched by them: `--unshare-pid --proc /proc` (a pid namespace of the
@@ -251,7 +254,9 @@ func (k landedCageKind) String() string {
 // its own uid_map and nest a bwrap — ADR 0096 arm C), a private /var/tmp (the
 // ADR's own fourth row: without it 18 pins go dark under `--ro-bind / /`), and
 // POSSE_WALL_VENUE=1 (the only signal that tells a test process it is the
-// venue and not a seat — D1, wallvenue_test.go's wallVenueActive).
+// venue and not a seat — D1, wallvenue_test.go's wallVenueActive). The MINUS
+// is the socket-wall step, which the judge takes and the venue must not: the
+// reasoning is at the return below, where the step is typed.
 //
 // ON SANDBOX-EXEC THE VENUE REFUSES. The step does not exist on darwin (ADR
 // 0096: no darwin change), and a render that quietly handed back the judge's
@@ -361,7 +366,58 @@ func boxLandedCage(a *App, kind landedCageKind, judge, tree string, writable, en
 				argv = append(argv, "--setenv", k, v)
 			}
 		}
-		return landedCage{Argv: append(append([]string{bin}, argv...), "--", judge), Env: env}, nil
+		// THE SOCKET WALL, ON THE JUDGE AND EXPLICITLY NOT ON THE VENUE
+		// (ADR 0080 D27, ranger-base-i92tj). ADR 0088 D3.1 says the judge is
+		// never stronger than a seat, and since ranger-base-6rndn a bwrap
+		// seat's launch line carries this step — so without these lines the
+		// judge was the one bwrap on this box behind a wall whose socket
+		// layer was missing, and `--unshare-net` does not cover a pathname
+		// socket (it resolves through the mount namespace, which is why
+		// landedJudgeHides exists at all). It is typed in the SAME position
+		// the seat's launch line types it (renderWallInto): after bwrap's own
+		// `--`, so the domain covers the judge and every `make`, `go` and
+		// `git` under it.
+		//
+		// THE BINARY IS THE LAUNCHER'S, resolved the way the wall-watch
+		// sidecar's is (wallWatchBin) and never looked up on a PATH or found
+		// in the tree under judgement. The judge runs LANDED code, reviewed by
+		// nothing, and a step resolved from that tree would let the code under
+		// judgement pick its own wall — which is the one way this layer can be
+		// worse than not having it.
+		//
+		// AND THE VENUE DOES NOT TAKE IT, which is a decision and not an
+		// omission (ADR 0097 D1, amended here). A Landlock domain handling any
+		// filesystem right forbids mount(2) (MEASURED U9/U10,
+		// docs/adr/0080-resolve-unix.probe.sh), and the venue exists to nest a
+		// bwrap: under POSSE_WALL_VENUE=1 every member of the wall check would
+		// read that refusal as a FAIL (ADR 0097 D4), so the baseline would
+		// refuse and the run would answer exit 3 on every landing. The venue's
+		// own answer to this class is landedJudgeHides' tmpfs, which it
+		// inherits and which is the only layer there is for a cage that must
+		// nest (ranger-base-8ukiy's header says the same from its side).
+		//
+		// AND THE STEP'S BINARY IS BOUND BACK READ-ONLY, which is not
+		// belt-and-braces: this render's own masks can hide it. MEASURED
+		// 2026-11-14 — `TestLiveLandedCheckCageReadsNoSecret` execs the cage
+		// it renders, the test binary that stands in for the launcher lives
+		// under /tmp, and `--bind <run>/tmp /tmp` put it out of reach:
+		// `bwrap: execvp …/posse.test: No such file or directory`, exit 1, a
+		// judge that never ran. The same is true of a launcher under /run or
+		// under a runtime's state root (landedJudgeHides). It adds no read
+		// surface — `--ro-bind / /` already makes every byte of the host
+		// readable and this binary sits in a persona's gates dir, which the
+		// judge could exec anyway — it only puts back the one file the wall
+		// itself needs, AFTER every mask, so nothing above can take it away.
+		inner := []string{judge}
+		if kind == landedCageJudge && wallUnixAvailableFor(m) {
+			self, err := wallWatchBin()
+			if err != nil {
+				return landedCage{}, Die("the landed check cannot run: this host renders the socket wall (ADR 0080 D27) and the launcher's own binary cannot be located to type its step (%v) — so this is a judge that does not run, rather than one running behind a wall posse reports and does not have (D30)", err)
+			}
+			argv = append(argv, "--ro-bind", self, self)
+			inner = append(WallUnixStepArgv(self), judge)
+		}
+		return landedCage{Argv: append(append(append([]string{bin}, argv...), "--"), inner...), Env: env}, nil
 	case WallSandboxExec:
 		if kind == landedCageVenue {
 			// ADR 0097 D1/D2: the step does not exist here. A profile has no
@@ -610,6 +666,30 @@ func landedJudgeHideRefusal(p, home string) error {
 		return Die("the landed check will not hide the runtime state root %s: it holds the home %s, and an empty tmpfs over it leaves the judge with no home, no module cache and no tree. Point the runtime's home variable at a directory of its own (ranger-base-8ukiy)", p, home)
 	}
 	return nil
+}
+
+// landedJudgeSocketWallNote is ADR 0080 D31 at this runner's verdict line
+// (ranger-base-i92tj): on a host whose Landlock ABI is below 9 the judge's
+// cage carries no socket-wall step, and the verdict SAYS SO rather than
+// saying nothing.
+//
+// WHY ON THE VERDICT LINE AND NOT ONLY IN `posse gates`. The judge's cage is
+// rendered by the launcher, per landing, and no operator ever types
+// `posse gates` for it — there is no persona to name. This line is the only
+// place a reader meets the judge's wall at all, so an absent layer that is
+// silent here is an absent layer nobody learns about. It is the same rule
+// BwrapReport follows for a seat ("both arms print"), with the up arm left
+// out: on a host where the layer is up every landing would carry a sentence
+// that never changes, and D6.2's verdict line is read by a filer.
+//
+// EMPTY ON SEATBELT, because WallUnixDegraded is: there is nothing degraded
+// about a mechanism this layer was never part of, and the darwin half is its
+// own bead (ranger-base-q9bqu).
+func landedJudgeSocketWallNote() string {
+	if d := WallUnixDegraded(WallMechanism()); d != "" {
+		return " — " + d
+	}
+	return ""
 }
 
 // landedJudgeEnvKeys is THE allowlist: the only names of the launcher's
@@ -928,6 +1008,13 @@ func (c *landedChecker) once(repo, base string) {
 	// the cage and the check — and not the two git config reads above it or
 	// the worktree removal the defer does below.
 	//
+	// D6.2 AGAIN, one layer over: all three arms below also carry
+	// landedJudgeSocketWallNote, which is empty on every host that renders
+	// the socket-wall step and is ADR 0080 D31's DEGRADED sentence on one
+	// that cannot. The judge has no persona and so no `posse gates` line of
+	// its own, which makes these three the only place its wall is ever
+	// reported (ranger-base-i92tj).
+	//
 	// `took` is kept rather than formatted on the spot because D6.3 reads it
 	// (landedhealth.go): an answered run over landedCheckCeiling, and a
 	// second consecutive unanswered one, each file one architecture bead,
@@ -937,7 +1024,7 @@ func (c *landedChecker) once(repo, base string) {
 	took := time.Since(start)
 	switch v {
 	case landUnanswered:
-		c.warn("%s landed at %s and was NOT judged after %s — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said)
+		c.warn("%s landed at %s and was NOT judged after %s — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said, landedJudgeSocketWallNote())
 		// D6.3, and this is the arm it exists for: silence records nothing
 		// and files nothing under D5, so the watchdog on the detector is
 		// the only thing that can say the judge has stopped answering.
@@ -950,12 +1037,12 @@ func (c *landedChecker) once(repo, base string) {
 		c.wall(repo, base, tip, tree, run, v)
 		return
 	case landGreen:
-		c.say("✓ %s green at %s in %s (%s, ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript)
+		c.say("✓ %s green at %s in %s (%s, ADR 0088 D1)%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, landedJudgeSocketWallNote())
 	default:
 		// The verdict and the cause, which is the sentence ranger-base-ddgfr
 		// turns into a bead. It is printed here whole rather than summarized,
 		// because until that bead lands this line IS the record a human reads.
-		c.warn("%s is RED at %s in %s — %s — %s (ADR 0088 D1)", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, said)
+		c.warn("%s is RED at %s in %s — %s — %s (ADR 0088 D1)%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, said, landedJudgeSocketWallNote())
 	}
 	recorded := true
 	if err := recordLandedCheck(landedJudgeRule, repo, tree, v); err != nil {

@@ -13,11 +13,18 @@ package posse
 //     venue is a capability nobody priced — D1's third bullet is a careful
 //     argument that ONE axis (root in a user namespace of its own) is weaker
 //     than a seat, and an addition the ADR does not name voids it.
-//   - REMOVED: nothing. "It is never weaker than the judge" (D1, first
+//   - REMOVED: the socket-wall step, and nothing else (D1 as amended by
+//     ranger-base-i92tj; it read "nothing" when nothing was yet subtracted).
+//     "It is never weaker than the judge" (D1, first
 //     bullet) is the sentence that lets landed code into this cage at all. A
 //     venue that dropped `--unshare-net`, a hide or a credential mask would
 //     be a wall nobody reviewed, and the removal is the direction no reader
-//     would think to check.
+//     would think to check. The step is the one exception and it is a
+//     DECISION: a Landlock FS domain forbids mount(2) and this cage exists to
+//     nest a bwrap, so the venue's line must carry no `wall-unix` verb at
+//     all. That last sentence gets a row of its own, redundant with the delta
+//     against every mutant of the render and kept anyway — the row's own
+//     comment says why, and says that it is redundant.
 //
 // WHY A MULTISET AND NOT A PREFIX. The additions do not all land at the end:
 // the two mounts go in before the network flag and the `--setenv` pair comes
@@ -140,9 +147,67 @@ func TestQAWallVenueArgvIsTheJudgesPlusADR0097sThree(t *testing.T) {
 		t.Errorf("the venue's argv minus the judge's is\n  %v\nand ADR 0097 D1 says it is exactly\n  %v\nThe venue is the judge's cage plus three things: `%s %s %s`, a private %s bound from the run dir, and %s=1. An addition the ADR does not name is a capability nobody priced (D1's third bullet is an argument about ONE axis), and a missing one is a venue the pins cannot measure in.\n  judge: %s\n  venue: %s",
 			added, want, wallVenuePidNS, wallVenueProc, wallVenueProcMount, wallVenueVarTmpMount, wallVenueEnvVar, bwJoin(judge.Argv), bwJoin(venue.Argv))
 	}
-	if len(removed) != 0 {
-		t.Errorf("the venue's argv DROPS %v from the judge's — ADR 0097 D1's first bullet is \"it is never weaker than the judge\", and that sentence is what lets landed code into this cage at all:\n  judge: %s\n  venue: %s",
-			removed, bwJoin(judge.Argv), bwJoin(venue.Argv))
+	// THE ONE THING IT MAY DROP IS THE SOCKET-WALL STEP, and it must drop
+	// exactly that (ADR 0097 D1 as amended by ranger-base-i92tj). D1 read
+	// "plus those additions and nothing else" when nothing was ever
+	// subtracted; since ranger-base-6rndn the judge's cage carries
+	// `posse wall-unix --` after bwrap's `--` (ADR 0080 D27), and a
+	// Landlock FS domain forbids mount(2) — MEASURED U9/U10,
+	// docs/adr/0080-resolve-unix.probe.sh, and MEASURED again through the
+	// step itself on 2026-11-14: `bwrap: Failed to make / slave: Operation
+	// not permitted`. The venue exists to nest a bwrap, so under
+	// POSSE_WALL_VENUE=1 that refusal is a FAIL on every member (D4), the
+	// baseline refuses, and the run answers exit 3 at every landing. The
+	// venue's own answer to this class is landedJudgeHides' tmpfs, which it
+	// inherits.
+	//
+	// SO THE SUBTRACTION IS A PIN AND NOT A BLANKET `len(removed) != 0`:
+	// "it is never weaker than the judge" still holds for everything else,
+	// and dropping that assertion to make room for this one would be the
+	// venue losing `--unshare-net`, a hide or a credential mask with no test
+	// red. The want list is built from the SAME step function the render
+	// types, and from wallWatchBin, which is the same resolution.
+	//
+	// IT IS THE STEP PLUS THE ONE MOUNT THE STEP NEEDS: the judge binds its
+	// own binary back read-only after every mask, because this render's
+	// private /tmp and its hides can otherwise cover the file the wall is
+	// typed from (MEASURED — `bwrap: execvp …: No such file or directory`).
+	// A read-only bind of the launcher's own binary is not a capability the
+	// venue is missing: `--ro-bind / /` already gives both cages every byte
+	// of the host that no mask hid, and the venue hides nothing over it.
+	var wantRemoved []string
+	if wallUnixAvailableFor(WallBwrap) {
+		self, err := wallWatchBin()
+		if err != nil {
+			t.Fatalf("wallWatchBin, which is how the judge's step resolves its binary, refused: %v", err)
+		}
+		wantRemoved = append(wantRemoved, "--ro-bind", self, self)
+		wantRemoved = append(wantRemoved, WallUnixStepArgv(self)...)
+		sort.Strings(wantRemoved)
+	}
+	if strings.Join(removed, "\x00") != strings.Join(wantRemoved, "\x00") {
+		t.Errorf("the venue's argv DROPS\n  %v\nfrom the judge's and ADR 0097 D1 says it drops exactly\n  %v\nADR 0097 D1's first bullet is \"it is never weaker than the judge\", and that sentence is what lets landed code into this cage at all — the socket-wall step is the ONE exception, because a Landlock FS domain forbids mount(2) and this cage exists to nest a bwrap (ranger-base-i92tj):\n  judge: %s\n  venue: %s",
+			removed, wantRemoved, bwJoin(judge.Argv), bwJoin(venue.Argv))
+	}
+
+	// AND THE VERB APPEARS NOWHERE IN THE VENUE'S ARGV. Against every mutant
+	// of the render this row is REDUNDANT with the delta above, and it is
+	// written anyway and said to be redundant rather than quietly kept: the
+	// delta reds on a venue that takes the step because `wantRemoved` is
+	// built from the step and not from the venue (MEASURED by mutation
+	// 2026-11-14 — the step with the `kind` guard dropped, and the step typed
+	// in FRONT of bwrap: both rows red, both times). What this row adds is
+	// that it states D1's new clause as a sentence a reader can check without
+	// computing a multiset, and it is the row that still holds if the delta
+	// helper is ever narrowed or its expectation made conditional. It also
+	// names the POSITION, which the delta is deliberately blind to.
+	// The venue's line therefore ends at its child.
+	if i := bwIndex(venue.Argv, WallUnixVerb); i >= 0 {
+		t.Errorf("the venue's argv carries the socket-wall verb %q at argv[%d] — ADR 0097 D1's venue must NOT take it: a Landlock FS domain forbids mount(2), so every nested bwrap in it is refused, which D4 reads as a FAIL on every member and the baseline reads as exit 3 at every landing (ranger-base-i92tj):\n  %s",
+			WallUnixVerb, i, bwJoin(venue.Argv))
+	}
+	if n := len(venue.Argv); n < 2 || venue.Argv[n-1] != child || venue.Argv[n-2] != "--" {
+		t.Errorf("the venue's argv does not end `-- %s`, so the row above cannot say the child is what bwrap execs directly:\n  %s", child, bwJoin(venue.Argv))
 	}
 
 	// The three as RUNS, because bwrap applies mounts in argv order and

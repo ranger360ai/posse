@@ -101,7 +101,14 @@ func wallVenueDanglingLines(body string, r wallVenueRename) []int {
 func TestQAWallVenueGateRuleIsADR0097D4s(t *testing.T) {
 	t.Parallel()
 
+	// The two refusals this fleet can produce, both MEASURED on the D1 host
+	// (Linux 7.2.15-1-omarchy, bubblewrap 0.13.1): the first is D17's render
+	// with `--proc` deliberately absent, so a nested user namespace dies
+	// writing its own uid_map under `--ro-bind / /`; the second is a Landlock
+	// filesystem domain forbidding mount(2), which is what the socket-wall
+	// step puts in front of the landed-check judge (ranger-base-i92tj).
 	const refusal = "bwrap: setting up uid map: Read-only file system"
+	const landlockRefusal = "bwrap: Failed to make / slave: Operation not permitted"
 	for _, c := range []struct {
 		why     string
 		name    string
@@ -125,6 +132,21 @@ func TestQAWallVenueGateRuleIsADR0097D4s(t *testing.T) {
 		// baseline has already proved the venue nests, so it is a red.
 		{"a member on a caged seat", "TestLiveBwrapGitRefsCommitsOnTheSessionBranch", refusal, false, nestAbstain, bwrapNestSkipPrefix + refusal},
 		{"a member inside the venue", "TestLiveBwrapGitRefsCommitsOnTheSessionBranch", refusal, true, nestFail, bwrapNestSkipPrefix + refusal},
+
+		// THE SAME TWO ROWS OVER THE LANDLOCK REFUSAL (ranger-base-i92tj).
+		// Since the landed-check judge took ADR 0080 D27's socket-wall step,
+		// a bwrap started from inside a Landlock filesystem domain is refused
+		// for a second reason, with different words: the domain forbids
+		// mount(2) (MEASURED 2026-11-14, D1 host, Linux 7.2.15-1-omarchy,
+		// bubblewrap 0.13.1, Landlock ABI 10, `posse wall-unix -- bwrap
+		// --ro-bind / / /bin/true`). The rule is a function of whether a
+		// bwrap started and never of why not, so both rows answer exactly as
+		// the uid-map rows above — and that is the property, not an accident
+		// of these strings: a gate that read the KERNEL's wording would turn
+		// a new refusal into a nestFail on every caged seat the day a layer
+		// changed, which ADR 0096's "Alternatives rejected" forbids.
+		{"a member on a seat whose wall is a Landlock domain", "TestLiveBwrapGitRefsCommitsOnTheSessionBranch", landlockRefusal, false, nestAbstain, bwrapNestSkipPrefix + landlockRefusal},
+		{"the same refusal inside the venue", "TestLiveBwrapGitRefsCommitsOnTheSessionBranch", landlockRefusal, true, nestFail, bwrapNestSkipPrefix + landlockRefusal},
 
 		// The name. A caller outside D3's filter is a defect in the tree and
 		// is refused whatever the wall answers — including on a caged seat,

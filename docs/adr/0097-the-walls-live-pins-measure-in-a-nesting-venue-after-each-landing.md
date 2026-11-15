@@ -48,7 +48,8 @@ and a fresh `GOCACHE` (so every reading is a cold build, as the judge's are),
 
 ## Decision
 
-**D1. The venue is the judge's cage plus exactly three things.** These are
+**D1. The venue is the judge's cage plus exactly three things** *(and minus
+exactly one — see the amendment below)*. These are
 `--unshare-pid --proc /proc` (arm C), a private `/var/tmp` bound from the
 run dir, and `POSSE_WALL_VENUE=1` added to that run's environment
 allowlist. It is rendered by the same function as the judge
@@ -181,3 +182,56 @@ Delete the step, the script and the two config keys. The pins go back to
 measuring only when an operator runs them uncaged, which is today's state.
 The venue is one flag on `boxLandedCage`. Nothing holds state beyond the
 two keys.
+
+## Amendment: D1 is the judge's cage plus three and MINUS the socket-wall step (ranger-base-i92tj, from ranger-base-1xyso, 2026-11-14)
+
+*This amendment's bead and the finding behind it are `vuln-private`. They are
+named by bare id below and nowhere else (AGENTS.md, "Landing the plane").*
+
+D1 was written when nothing had ever been subtracted from the judge's cage,
+so "plus exactly three things" and "minus nothing" were the same sentence.
+[ADR 0088](0088-the-landed-tree-is-read-after-every-landing-outside-the-lock-and-a-red-is-filed-not-blocked.md)
+D3.5 puts [ADR 0080](0080-linux-cage.md) D27's socket-wall step on the judge
+— `… -- <posse> wall-unix -- <judge>`, a Landlock domain handling
+`RESOLVE_UNIX` — because D3.1 says the judge is never stronger than a seat and
+every bwrap seat has carried that step since D27.
+
+**A Landlock filesystem domain forbids `mount(2)`** (MEASURED, ADR 0080's
+probe U9/U10), and this venue exists so that the wall's live pins can nest a
+bwrap of their own. So:
+
+- **D1 is amended to read "the judge's cage plus exactly three things and
+  minus the socket-wall step."** The venue's argv carries no `wall-unix` verb
+  at any position.
+- **D1's QA pin is amended to "the venue's argv is the judge's MINUS THE STEP,
+  plus the three, and nothing else."** The removal half of that pin stands
+  otherwise unchanged — "it is never weaker than the judge" is still what lets
+  landed code into this cage — with the step as its one priced exception, and
+  a second row asserting the verb appears nowhere in the venue's line.
+- The venue's own answer to the socket class is the hide it inherits from
+  `landedJudgeHides` (ranger-base-8ukiy). For a cage that must nest, that is
+  the only layer there is.
+
+**Why the pin had to be amended rather than left to notice it, and it is two
+different facts.** MEASURED 2026-11-14 on the D1 host (Linux 7.2.15-1-omarchy,
+bubblewrap 0.13.1, Landlock ABI 10): inside the venue's shape with the step on
+the line, the baseline `bwrap --ro-bind / / /bin/true` answers `bwrap: Failed
+to make / slave: Operation not permitted`, so under D4 that is a FAIL on every
+one of the 32 members and D3's baseline arm answers exit 3 at every landing.
+The same shape without the step nests (exit 0), which is the row that makes
+the other three readable.
+
+- Had the step ridden in the SHARED argv, the pin as written would have
+  stayed **green** through all of that: the step would appear in both argvs,
+  so the multiset difference is empty in both directions, and the pin reads
+  the two argvs and never what runs in them. That is the trap, and it is why
+  the verb row exists.
+- On the step typed CORRECTLY — on the judge alone — the pin as written went
+  **red**, because its removal half read "nothing removed". That is why the
+  amendment is to D1's words and not only to the code: a pin that reds on
+  the right change is a pin somebody will delete.
+
+**Beads.**
+
+- ranger-base-i92tj
+- ranger-base-1xyso

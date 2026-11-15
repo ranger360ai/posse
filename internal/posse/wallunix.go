@@ -80,6 +80,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -136,7 +137,26 @@ func wallUnixAvailableFor(mech string) bool {
 // sidecar is typed with (wallWatchBin), because it is the same binary and one
 // resolution cannot disagree with itself.
 func WallUnixPrefix(self string) string {
-	return shellQuote(self) + " " + WallUnixVerb + " -- "
+	a := WallUnixStepArgv(self)
+	return shellQuote(a[0]) + " " + strings.Join(a[1:], " ") + " "
+}
+
+// WallUnixStepArgv is that same step as ARGV TOKENS, for a launch that is an
+// argv and not a shell line — the landed-check judge (ranger-base-i92tj), and
+// the live pin that re-execs this test binary as a seat.
+//
+// ONE SPELLING FOR BOTH FORMS, which is the whole reason this is a function
+// and not three literals: `WallUnixPrefix` renders from it, so the shell line
+// and the argv cannot come apart in the words that matter. Only the binary is
+// quoted up there, because the verb and the `--` are fixed words of ours and
+// a quoted `--` would read as a literal argument rather than as the end of
+// this step's own options.
+//
+// WHAT FOLLOWS IT IS THE COMMAND, and the trailing `--` is what makes that
+// safe: without it a runtime whose first argument began with a dash would be
+// read as a flag of the step's.
+func WallUnixStepArgv(self string) []string {
+	return []string{self, WallUnixVerb, "--"}
 }
 
 // WallUnixDegraded is the sentence `posse gates` and the wall-watch print

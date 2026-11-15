@@ -17,6 +17,13 @@ package posse
 // Landlock step instead (a Landlock FS domain forbids mount and the venue
 // exists to nest), so for the venue a hide is the only layer there is.
 //
+// THE JUDGE, UNLIKE THE VENUE, NOW TAKES THAT STEP AS WELL (ADR 0088 D3.5,
+// ranger-base-i92tj): a seat has carried it since ADR 0080 D27 and D3.1 says
+// the judge is never stronger than a seat. The rows below are unchanged by
+// that and are not made redundant by it — they are what the venue has, and
+// they are also the judge's answer on a host whose Landlock ABI is below 9,
+// where the step is not rendered at all (D31).
+//
 // Delete these rows and the judge goes back to the host's dbus, the host's
 // docker.sock and the operator's own CLI control sockets, with no test red.
 

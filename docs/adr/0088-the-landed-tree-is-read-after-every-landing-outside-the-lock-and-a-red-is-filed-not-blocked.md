@@ -381,3 +381,123 @@ deadline when it is one.
   files the silence and none is judged. Loud and blind together.
 - *Record "unanswered" in D4's own key.* That would overwrite the last green
   tree, which D5 needs as the far edge of a red window.
+
+## Amendment: the judge takes the seat's socket wall, and the ADR 0097 venue explicitly does not (ranger-base-i92tj, from ranger-base-1xyso, 2026-11-14)
+
+*This amendment's bead and the finding behind it are `vuln-private`. They are
+named by bare id in the Beads block below and nowhere else (AGENTS.md,
+"Landing the plane"). What is described here is what this change SHUTS, which
+that ruling allows.*
+
+**Context.** D3.1 is one sentence — *the judge is never stronger than a seat*
+— and it is checked against whatever a seat has at the time. Since
+[ADR 0080](0080-linux-cage.md)'s amendment "the seat gets a socket wall" (D27)
+a bwrap seat's launch line carries `posse wall-unix --` after bwrap's own
+`--`: a Landlock domain handling `LANDLOCK_ACCESS_FS_RESOLVE_UNIX` and no
+other right, so `connect(2)` and `sendmsg(2)` to a host pathname socket are
+EACCES, **including to one an uncaged process binds after launch**. The judge
+did not go through `renderWallInto`, so that step did not reach it, and D3.1
+became false the moment D27 landed.
+
+`--unshare-net` does not cover this. A pathname socket resolves through the
+filesystem, not the net namespace — which is already why
+`landedJudgeHides` exists (ranger-base-8ukiy) — and a hide cannot reach a
+socket inside a **write grant**, because an empty tmpfs over a grant empties
+the grant.
+
+**D3.5. The judge's cage carries ADR 0080 D27's step, in D27's own position.**
+`boxLandedCage`'s bwrap arm renders
+`bwrap <args> --unshare-net … --ro-bind <self> <self> -- <self> wall-unix --
+<judge>` whenever
+`wallUnixAvailableFor(WallBwrap)`. `self` is the LAUNCHER's installed binary,
+resolved through `wallWatchBin` exactly as the wall-watch sidecar's is, and
+never a path out of the tree being judged: landing reviews nothing (D3), so a
+step resolved from that tree would let the code under judgement choose its own
+wall, which is worse than having no step.
+
+The step's binary is **bound back read-only after every mask**
+(`--ro-bind <self> <self>`). That is not belt-and-braces: this render's own
+private `/tmp` and its hides can cover the file the wall is typed from.
+MEASURED 2026-11-14 — with the bind absent and the launcher standing in from
+`/tmp`, the cage answered `bwrap: execvp …: No such file or directory`, exit
+1, a judge that never ran. The bind adds no read surface, because
+`--ro-bind / /` already gives the judge every byte of the host no mask hid.
+
+**D3.6. Below ABI 9 every verdict line carries the DEGRADED sentence.** The
+step is not rendered there (ADR 0080 D31), and the judge has no persona and so
+no `posse gates` line of its own — these three lines are the only place its
+wall is ever reported. All three say it: green, red, and the one that says
+there is no verdict. `WallUnixDegraded`'s own words, never a bare alarm.
+
+**D3.7. The ADR 0097 venue must NOT take the step, and that is a decision.**
+A Landlock filesystem domain forbids `mount(2)` — ADR 0080's probe measured it
+(U9, U10) — and the venue exists so that the wall's live pins can nest a bwrap
+of their own. Under `POSSE_WALL_VENUE=1` a refusal to nest is a FAIL on every
+member (ADR 0097 D4), so a step riding in the shared argv would red all 32
+pins and answer exit 3 at every landing. [ADR 0097](0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md)
+D1 is amended to say so, and its subtraction pin reads "the judge's argv minus
+the step, plus the three" rather than "plus the three and nothing removed".
+
+The venue's own answer to this class is the hide it inherits, and it is the
+only layer a cage that must nest can have.
+
+**Measurements.** MEASURED 2026-11-14, D1 host, Linux 7.2.15-1-omarchy,
+bubblewrap 0.13.1, Landlock ABI 10. Four cages, one nested
+`bwrap --ro-bind / / /bin/true` in each:
+
+| cage | socket-wall step | nested bwrap |
+|---|---|---|
+| D17 base (`--ro-bind / /`, no `--proc`) — a seat, and the judge | no | `bwrap: setting up uid map: Read-only file system` |
+| the same | **yes** | the same, byte for byte |
+| that base + `--unshare-pid --proc /proc` — the venue | no | **it nests (exit 0)** |
+| the venue's shape | **yes** | `bwrap: Failed to make / slave: Operation not permitted` |
+
+- **Rows 1 and 2 answer ranger-base-1xyso's question (5).** The nest helper
+  (ADR 0096 D3) abstains in the judge exactly as before, and the refusal's
+  WORDS do not change either: bwrap dies writing its own `uid_map` under the
+  read-only base long before it reaches a mount, because D17 leaves `--proc`
+  out. The Landlock wording exists only in a cage carrying both the step and
+  a writable `/proc`, which is the one combination D3.7 forbids. The helper
+  is a function of WHETHER a bwrap started and never of why not, so either
+  refusal abstains outside the venue and reds inside it.
+- **Row 4 is the trap, priced.** It is what the venue would have done had the
+  step ridden in the shared argv, and D1's subtraction pin would have stayed
+  green through all of it, because it compares two argvs and not what runs.
+- MEASURED, this tree: the step on the judge's argv in that one position, both
+  arms of D3.6 driven over a stubbed ABI, and the venue's argv carrying no
+  `wall-unix` verb. Each was mutation-red one change at a time;
+  `docs/notes.d/ranger-base-i92tj.md` lists the five mutants and what each
+  printed.
+- MEASURED, this tree: the judge, run in the cage this render builds and
+  behind the real Landlock domain, still reads no byte of any planted
+  credential and still runs
+  (`TestLiveLandedCheckCageReadsNoSecret`, and `exit 7` passing through the
+  step unchanged).
+
+**ASSUMED, not measured.** That the host census ADR 0080 D28 rests on still
+holds for the judge's own run dir: the venue has no socket wall and cannot
+have one, so a pathname socket bound inside its write grant would be
+reachable from it. Nothing binds one — the run dir is created per run by the
+launcher under a name nobody else knows — and the hide answers every socket
+directory the census found. A daemon that grew one would be visible as a
+`--bind` in the verdict line's argv.
+
+**Alternatives rejected.**
+- **Leave the judge at parity with a seat by taking the step off the seat.**
+  That is the l2gk9 class back on every seat on the box, to spare one judge.
+- **Give the venue the step and let the pins abstain.** An abstention is never
+  a pass (ADR 0097 D5), so this is 32 pins measuring nothing and a watchdog
+  filing silence at every landing — the state ADR 0097 exists to leave.
+- **Resolve `self` on the judge's PATH.** `exec.LookPath` is right inside the
+  step, where the thing being resolved is the runtime (D29); here the thing
+  being resolved is posse's own wall, and the PATH it would read belongs to
+  the tree under judgement.
+- **Guard the bind-back's absence with a refusal instead of binding.** A
+  refusal costs the judgement; the bind costs one read-only mount of a file
+  the cage could already execute.
+
+**Beads.**
+
+- ranger-base-i92tj
+- ranger-base-1xyso
+- ranger-base-q9bqu

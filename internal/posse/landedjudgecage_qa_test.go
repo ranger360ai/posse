@@ -16,6 +16,7 @@ package posse
 // no test red.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -118,6 +119,63 @@ func TestQALandedCheckJudgeIsNoStrongerThanASeat(t *testing.T) {
 				t.Errorf("the judge's cage binds %s writable, which covers the box's shared build cache %s (ranger-base-4nzpo)", argv[i+2], shared)
 			}
 		}
+		// ranger-base-i92tj — THE SOCKET WALL, IN THE SAME POSITION THE
+		// SEAT'S LAUNCH LINE PUTS IT. Since ranger-base-6rndn a bwrap seat
+		// runs behind `posse wall-unix --` typed after bwrap's own `--` (ADR
+		// 0080 D27, renderWallInto). D3.1's rule is that the judge is never
+		// stronger than a seat, so the judge's own argv has to carry it in
+		// that one position: a step in FRONT of bwrap would apply a
+		// filesystem Landlock domain to the process that then calls mount(2),
+		// which is refused (probe U9/U10), and a step after the judge is an
+		// argument to the judge.
+		//
+		// THE POSITION IS ASSERTED AS A WHOLE TAIL rather than as a
+		// membership, because that is the only form that says the step wraps
+		// the JUDGE and nothing else: what follows the step's own `--` must be
+		// the child and must be the end of the line.
+		//
+		// BOTH ARMS ARE WRITTEN, driven by this host's real availability. On
+		// this fleet the first is taken (ABI 10); the second is the one that
+		// must never be silence, and it is a host decision and not a defect
+		// (ADR 0080 D31).
+		judgePath := filepath.Join(run, landedJudgeRule.Extract)
+		if argv[len(argv)-1] != judgePath {
+			t.Fatalf("the judge's cage does not end with the child %s, so the tail rows below are reading something else:\n  %s", judgePath, line)
+		}
+		if wallUnixAvailableFor(WallBwrap) {
+			self, err := wallWatchBin()
+			if err != nil {
+				t.Fatalf("wallWatchBin, which is how the step's binary is resolved, refused: %v", err)
+			}
+			// The bind-back comes FIRST and immediately in front of BWRAP's
+			// own `--`, because it has to outvote every mask above it (this
+			// render's private /tmp covers a launcher under /tmp, and
+			// landedJudgeHides' tmpfs covers one under /run) and because the
+			// file it puts back is the one the step then names. So the tail
+			// is: the mount, bwrap's `--`, the step's three words, the child,
+			// end of line.
+			tail := append([]string{"--ro-bind", self, self, "--"}, WallUnixStepArgv(self)...)
+			tail = append(tail, judgePath)
+			if i := bwIndex(argv, tail...); i < 0 || i+len(tail) != len(argv) {
+				t.Errorf("this host renders the socket wall and the judge's cage does not END with `%s` — a seat's launch line carries that step and ADR 0088 D3.1 says the judge is never stronger than a seat, so landed code here could connect(2) to any host pathname socket in the judge's view, including one an uncaged process binds after the run started (ranger-base-l2gk9). `--unshare-net` does not reach a pathname socket (ranger-base-i92tj):\n  %s",
+					strings.Join(tail, " "), line)
+			}
+			// AND THE BINARY IS THE LAUNCHER'S, not one out of the tree
+			// under judgement. The judge runs landed code that nothing
+			// reviewed; a step resolved from that tree would let the code
+			// being judged choose its own wall, which is worse than having
+			// no step at all.
+			if tree := filepath.Join(run, landedTreeName); underDir(tree, self) {
+				t.Errorf("the socket-wall step names %s, which is inside the tree being judged (%s) — the code under judgement would be choosing its own wall (ranger-base-i92tj)", self, tree)
+			}
+		} else {
+			if i := bwIndex(argv, WallUnixVerb); i >= 0 {
+				t.Errorf("the judge's cage carries the socket-wall step at argv[%d] on a host that cannot realize it — the step refuses rather than execs when the domain will not apply (ADR 0080 D30), so this is a judge that never runs:\n  %s", i, line)
+			}
+			if landedJudgeSocketWallNote() == "" {
+				t.Errorf("no socket wall renders on this host and the judge's verdict line would say NOTHING about it — ADR 0080 D31 is DEGRADED and never silence, and the judge has no persona and so no `posse gates` line of its own (ranger-base-i92tj)")
+			}
+		}
 	case WallSandboxExec:
 		b, err := os.ReadFile(filepath.Join(run, "landed-check.sb"))
 		if err != nil {
@@ -134,6 +192,93 @@ func TestQALandedCheckJudgeIsNoStrongerThanASeat(t *testing.T) {
 		}
 	default:
 		t.Fatalf("boxLandedCage rendered a cage on mechanism %q, which this pin does not know how to read", WallMechanism())
+	}
+}
+
+// ranger-base-i92tj — ADR 0080 D31 AT THE JUDGE'S VERDICT LINE: on a host
+// whose Landlock ABI is below 9 the judge's cage carries no socket-wall step,
+// and every verdict SAYS SO. Never silence.
+//
+// WHY THIS IS A SEPARATE PIN, AND WHY IT DRIVES `once` AND NOT THE HELPER.
+// The arm above reads the real render on the real host, so on this fleet
+// (ABI 10) it only ever takes the branch where the step IS there, and its
+// degraded row is unreachable here. MEASURED 2026-11-14 by mutation:
+// replacing landedJudgeSocketWallNote's body with `return ""` — the sentence
+// DECIDED and never EMITTED, which is ranger-base-ig79v's finding 2(b) one
+// mechanism over — left every pin in this file and both venue argv pins
+// green. `wallUnixABI` is a var for exactly this (wallunixrender_qa_test.go
+// drives the render from darwin the same way), so the host answer is a
+// parameter here.
+//
+// AND IT READS THE RUNNER'S OUTPUT, not the helper's return. The helper
+// returning the right sentence is worth nothing if no verdict line carries
+// it, and all THREE arms are read — green, red, and the one that says there
+// is no verdict — because "never say nothing" is a claim about the line a
+// reader actually gets, whichever one that is, and the unanswered arm is the
+// one whose own sentence is longest and most likely to be thought complete.
+//
+// SERIAL, no t.Parallel: wallUnixABI is a package-level var.
+func TestQALandedCheckVerdictSaysWhenThereIsNoSocketWall(t *testing.T) {
+	restore := wallUnixABI
+	t.Cleanup(func() { wallUnixABI = restore })
+
+	for _, v := range []struct {
+		verdict string
+		body    string // the judge's own exit, or "" for a cage that refuses
+	}{
+		{"green", "exit 0\n"},
+		{"red", "echo 'a door said no' >&2\nexit 1\n"},
+		{"no answer", ""},
+	} {
+		for _, abi := range []struct {
+			n    int
+			want bool // the verdict must carry the DEGRADED sentence
+		}{
+			{10, false}, // the D1 host: the layer is up and the line stays quiet
+			{WallUnixABIMin, false},
+			{WallUnixABIMin - 1, true}, // handled_access_fs would be refused outright
+			{-38, true},                // no landlock_create_ruleset at all
+		} {
+			t.Run(fmt.Sprintf("%s at ABI %d", v.verdict, abi.n), func(t *testing.T) {
+				wallUnixABI = func() int { return abi.n }
+				a := wtApp(t)
+				repo := wtRepo(t)
+				// ONLY the judge's script, so ADR 0097 D2's wall check does
+				// not opt in and the output below is one verdict line.
+				write(t, filepath.Join(repo, landedCheckScript), "#!/bin/sh\n"+orElse(v.body, "exit 0\n"))
+				mustGit(t, repo, "add", "--", landedCheckScript)
+				mustGit(t, repo, "commit", "-q", "-m", "ship the judge", "--", landedCheckScript)
+
+				out := &strings.Builder{}
+				c := newLandedChecker(a, out)
+				c.cage = func(_ *App, _ landedCageKind, child, _ string, _ []string, env []string) (landedCage, error) {
+					if v.body == "" {
+						// D3's one hard rule: a cage that will not render
+						// ends the run, and that line is a verdict too.
+						return landedCage{}, Die("pin: no cage renders here")
+					}
+					return landedCage{Argv: []string{child}, Env: env}, nil
+				}
+				c.once(repo, "main")
+
+				said := out.String()
+				if said == "" {
+					t.Fatalf("the runner said nothing about %s, so there is no verdict line to read", AbbrevHome(repo))
+				}
+				got := strings.Contains(said, "DEGRADED")
+				switch {
+				case abi.want && !got:
+					t.Errorf("this host renders no socket wall (Landlock ABI %d, RESOLVE_UNIX needs %d) and the %s verdict says NOTHING about it. The judge has no persona and so no `posse gates` line of its own, so this is the ONLY place its wall is ever reported — and a layer that is absent and silent reads as one that is applied (ADR 0080 D31, ranger-base-l2gk9):\n  %s",
+						abi.n, WallUnixABIMin, v.verdict, strings.TrimSpace(said))
+				case !abi.want && got:
+					t.Errorf("the socket wall is up at Landlock ABI %d and the %s verdict calls it DEGRADED anyway — every landing would carry a sentence that is false, in the line D6.2's filer reads:\n  %s",
+						abi.n, v.verdict, strings.TrimSpace(said))
+				}
+				if abi.want && !strings.Contains(said, WallUnixDegraded(WallBwrap)) {
+					t.Errorf("the %s verdict carries the word DEGRADED but not WallUnixDegraded's own sentence, so an operator gets the alarm without the fact (ranger-base-i92tj):\n  %s", v.verdict, strings.TrimSpace(said))
+				}
+			})
+		}
 	}
 }
 
