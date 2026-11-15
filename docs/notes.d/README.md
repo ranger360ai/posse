@@ -31,6 +31,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-h5iae](ranger-base-h5iae.md) — ranger-base-h5iae — the wall-check self-test says which exit each arm asserted — 2026-11-14
 - [ranger-base-gyz7a](ranger-base-gyz7a.md) — ranger-base-gyz7a — the hand exemption register retires for internal/treepins — 2026-11-14
 - [ranger-base-gi6ge](ranger-base-gi6ge.md) — The bullet and the diff marker are the same byte (ranger-base-gi6ge) — 2026-11-14
+- [ranger-base-g1jqt](ranger-base-g1jqt.md) — A commit-guard refusal now names the posse that judged it (ranger-base-g1jqt) — 2026-11-14
 - [ranger-base-enhtx](ranger-base-enhtx.md) — A corpus keyed on the extension, over a directory that holds three entry points without one (ranger-base-enhtx) — 2026-11-14
 - [ranger-base-ed07e](ranger-base-ed07e.md) — A fix could not describe the hole it closed, and its bead could not close first (ranger-base-ed07e) — 2026-11-14
 - [ranger-base-cgr1h](ranger-base-cgr1h.md) — The pulse waiter: what the ADR settled, and the four things it did not (ranger-base-cgr1h) — 2026-11-14

@@ -2386,6 +2386,97 @@ posse_stamp() {
 }
 `
 
+// hookJudgeFunc is `posse_judged_by`, the provenance line every refusal in
+// the COMMIT guard ends with: which posse judged it (ranger-base-g1jqt).
+//
+// THE GAP. A refusal names the rule, the way through, the visibility stamp
+// and the override. It named no binary — and a commit-guard refusal is a
+// claim made by TWO of them, neither necessarily a descendant of the rule it
+// cites: the words are this FILE's, rendered by whichever posse last ran
+// `posse gates install-hooks` here, and check 4's verdict is taken live by
+// the posse on PATH. ranger-base-li3up is what that costs. A hook rendered
+// by a binary 59 commits behind main refused a commit whose subject named
+// the branch's OWN bead; AGENTS.md "Landing the plane" says that one id is
+// exempt; the exemption had landed and the installed binary predated it, and
+// nothing on screen could break the tie. A P2 filed against correct code,
+// and a seat dispatched to rediscover an install skew ranger-base-v81vo had
+// already measured.
+//
+// A READING, NEVER A CONTROL — wallrenderer.go's own stance for the same
+// question one surface over. It prints, it decides nothing, and it is paid
+// only on a refusal, which is already the expensive path, so it costs no
+// committer anything they were not already paying. The control was priced
+// and refused: ranger-base-v81vo §4 on a freshness door that compares the
+// installed binary to the tree — red for every seat for the whole gap
+// between a landing and an install, over a condition no seat can fix.
+//
+// WHY THE VERSION IS READ LIVE AND NEVER RENDERED IN. renderstamp.go
+// excludes the L3 hook bodies from RenderedByPosse() for a reason that still
+// holds: hook identity is byte-for-byte against this binary's own render
+// (ADR 0023), so a version LITERAL in these bytes would read every hook on
+// the box as degraded after any `make install`, including installs that
+// change nothing a hook renders — a stamp that cries wolf on every release
+// is a stamp nobody reads. This is the other half of that sentence and not
+// an exception to it: nothing is baked in, these bytes are identical under
+// every version, and the one version named is the one that answered.
+//
+// ONE FUNCTION FOR THE WHOLE BODY, not a line per check. The commit guard is
+// four walls in one slot and it refuses from four sites — visGuardRefusal
+// (the data ceiling's three arms, the beads db, the docs genre, staged
+// markdown, check 3's three arms and check 4), the NOTES.md arm, the
+// shared-index form arm and the constitution arm. Checks 0-3 are frozen
+// renders judged by whoever wrote this file, so they need the first half of
+// this line exactly as much as check 4 needs the second.
+//
+// THE LAG READING IS NOT HERE, deliberately, and this is the bead's own open
+// question answered: this line NAMES a binary and POINTS at the reading,
+// rather than taking it. `posse gates <persona>` is where that reading
+// lives, it is a `git log` in another repo plus a launcher search, and the
+// refusal path is inside git's own hook — the worst place on the box to
+// block. The pointer also keeps this line correct as that surface improves:
+// ranger-base-m1obc landed the third lagCategory row on main (c156eb73)
+// while this was being written, so what it points at now names the
+// commit-time class in its own sentence instead of reporting a commit-time
+// decision under "rendering a wall" beside a cost sentence about seatbelts
+// and cage mounts — which is the mis-read ranger-base-v81vo §3 measured, and
+// what printing the lag HERE would have frozen into these bytes. That is
+// also why m1obc does not own this bead: a category row is read at `posse
+// gates` by someone who already suspects an install skew, and the committer
+// being refused has not formed that suspicion yet. The two are complements
+// and this line is the join.
+//
+// The call sits inside a `command -v posse` body, which is HOOK_DEPS' premise
+// for leaving `posse` off the clean-room probe (scripts/cleanroom.sh) and is
+// MEASURED by TestHookDepsNamesEveryCommandTheRenderedHooksCall —
+// containment, not a call shape, so a second call site is covered by the pin
+// that was written for the first. An unreadable answer is SAID and never
+// dropped: no posse on PATH, or a session whose own gate refuses the verb,
+// is a box where every arm that asks the binary was skipped and not passed,
+// and that is the one thing a reader of a clean scan must not have to guess.
+const hookJudgeFunc = `# Every refusal below ends with posse_judged_by: which posse judged it. A
+# refusal is only as new as the two binaries behind it — this file's render
+# and the posse on PATH — and neither is necessarily a descendant of the rule
+# it cites (ranger-base-g1jqt, from ranger-base-li3up). A READING, NEVER A
+# CONTROL: it decides nothing, it is paid only on a refusal, and no version
+# is baked into these bytes (renderstamp.go — a literal here would read every
+# hook on the box as degraded after any install).
+posse_judged_by() {
+  posse_jb=''
+  if command -v posse >/dev/null 2>&1; then
+    posse_jb=$(posse version 2>/dev/null)
+  fi
+  if [ -n "$posse_jb" ]; then
+    printf '%s\n' "  judged by: $posse_jb"
+  else
+    echo "  judged by: no posse answered on PATH — absent here, or refused by this"
+    echo "  session's own gate — so any arm that asks the binary was SKIPPED, not passed"
+  fi
+  echo "  worded by whichever posse last ran 'posse gates install-hooks' here, which"
+  echo "  may be an older one: a refusal is only as new as those two. 'posse gates"
+  echo "  ${RHQ_PERSONA:-<persona>}' counts the landed commits the judging binary is missing."
+}
+`
+
 // PrePushHook is the L3 wall for the one verb that is a hard risk line:
 // a pre-push hook that refuses when RHQ_TOOLS_DENY (newline-separated,
 // exported into every persona session by CreateSession) carries a rule
@@ -3630,6 +3721,7 @@ if [ "$posse_notes_hit" = 1 ]; then
     echo "  or edit NOTES.md from a session worktree, where same-file"
     echo "  divergence surfaces at land time as a reported conflict, never a"
     echo "  silent sweep."
+    posse_judged_by
   } >&2
   if [ -n "$RHQ_GATES_DIR" ]; then
     echo "$(posse_stamp) NOTES.md commit in the shared checkout [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
@@ -3759,6 +3851,7 @@ fi
     echo "That commit ends the revert on its own — no 'git revert --continue' after"
     echo "it, and REVERT_HEAD, MERGE_MSG and AUTO_MERGE go with it (measured)."
   fi
+  posse_judged_by
 } >&2
 if [ -n "$RHQ_GATES_DIR" ]; then
   echo "$(posse_stamp) $posse_form [prepare-commit-msg hook] (shared index)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
@@ -4322,6 +4415,11 @@ var visPublicFooter = [2]string{
 // render is the refusal at base indentation ind — the indent of its own
 // `if`. Check 3 renders inside the visibility gate (ind is four spaces);
 // the data ceiling renders above it (two).
+//
+// posse_judged_by goes after the stamp lines and BEFORE the override, with
+// the rest of the provenance it belongs to and never last: the override is
+// the only line here anyone can act on, and a reader who stops at the bottom
+// of a refusal should land on it (hookJudgeFunc, ranger-base-g1jqt).
 func (r visGuardRefusal) render(ind string) string {
 	footer := r.footer
 	if footer == [2]string{} {
@@ -4347,6 +4445,7 @@ func (r visGuardRefusal) render(ind string) string {
 ` + i3 + `echo ` + shQuote(r.wayThrough) + `
 ` + r.keptModeNote(i3) + i3 + `echo "  ` + footer[0] + `"
 ` + i3 + `echo "  ` + footer[1] + `"
+` + i3 + `posse_judged_by
 ` + i3 + `echo "  override, operator-typed, never passed by dispatch:"
 ` + i3 + `echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
 ` + i2 + `} >&2
@@ -6144,6 +6243,7 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
       echo "  which is the step that makes prose law (ADR 0015 §3)."
       echo "Nothing here has been reset, unstaged or cleaned up: this hook does not"
       echo "touch your tree, and what you staged is still exactly where you put it."
+      posse_judged_by
     } >&2
     if [ -n "$RHQ_GATES_DIR" ]; then
       echo "$(posse_stamp) constitution path in a persona commit [prepare-commit-msg hook] (${` + EnvPersona + `})" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
@@ -6398,7 +6498,13 @@ func commitGuardHomeOf(body string) string {
 // (commitGuardHomeStamp), which is D3 case 4's migration body and is what
 // every byte-exact fixture in the tests is.
 func (a *App) CommitGuardHook(visibility string, set OpsPatternSet, identity ...IdentityLiteral) string {
-	return commitGuardHead + commitGuardHomeStamp(a.Home) + hookStampFunc +
+	// hookJudgeFunc sits beside hookStampFunc and ABOVE all four walls, which
+	// is the whole of "rendered once for the body and not per check": every
+	// refusal site below calls the one function (ranger-base-g1jqt). It is
+	// the commit guard's alone — the pre-push wall's verdict comes from
+	// RHQ_TOOLS_DENY, a launch input, so there is no judging binary there for
+	// a reader to compare to anything.
+	return commitGuardHead + commitGuardHomeStamp(a.Home) + hookStampFunc + hookJudgeFunc +
 		visibilityGuardBody(visibility, set, identity) +
 		constitutionGuardBody() + sharedIndexBody
 }

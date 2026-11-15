@@ -33,6 +33,17 @@ package posse
 // changed nothing a hook renders. A stamp that cries wolf on every release
 // is a stamp nobody reads. The hooks get item 3's sentence in the docs and
 // wallrenderer.go's count instead.
+//
+// AND, SINCE ranger-base-g1jqt, A LIVE READING AT ONE OF THEM. The commit
+// guard's refusals name the posse that judged them — read at refusal time
+// from the binary on PATH (hookJudgeFunc), never rendered in. That is the
+// other half of the paragraph above and not an exception to it: these bytes
+// stay identical under every version, so the byte-for-byte identity above is
+// untouched and no install degrades a hook that did not change. The
+// exclusion is about a LITERAL in the body; the question a refused committer
+// has — "is this refusal newer than the rule it cites?" — is answered by the
+// only surface they are reading, at the only moment it is expensive, and
+// ranger-base-li3up is the P2 filed against correct code because it was not.
 
 // RenderedByPosse is the clause a rendered wall's header carries: which
 // posse wrote these bytes. One writer, so every header spells it the same

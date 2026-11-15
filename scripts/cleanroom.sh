@@ -273,15 +273,19 @@ cmd_status() {
 #
 # The list names what the hooks resolve THROUGH PATH, and nothing else.
 #  - `git` is absent on purpose: git is what runs the hooks.
-#  - `posse` is absent on purpose too (ranger-base-zby5f). ADR 0024 D2
-#    check 4's judge is `posse gates vuln-private-scan` — this repo's OWN
-#    binary, which no distro ships — so naming it here would report every
-#    distro MISSING it forever: a finding nobody can act on, in the one
-#    list whose whole job is to produce findings. The hook guards every
-#    call with `command -v posse` and skips the arm when that lookup
-#    fails, so a distro without posse is not a distro the hooks break on.
+#  - `posse` is absent on purpose too (ranger-base-zby5f). The commit guard
+#    calls it twice — ADR 0024 D2 check 4's judge, `posse gates
+#    vuln-private-scan`, and `posse version` in posse_judged_by, the
+#    provenance line every refusal ends with (ranger-base-g1jqt) — and it is
+#    this repo's OWN binary, which no distro ships, so naming it here would
+#    report every distro MISSING it forever: a finding nobody can act on, in
+#    the one list whose whole job is to produce findings. The hook guards
+#    every call with `command -v posse` and skips the arm when that lookup
+#    fails, so a distro without posse is not a distro the hooks break on —
+#    the refusal says the lookup failed rather than printing a blank version.
 #    The exemption and the guard that earns it are pinned together in
-#    TestHookDepsNamesEveryCommandTheRenderedHooksCall.
+#    TestHookDepsNamesEveryCommandTheRenderedHooksCall, by CONTAINMENT and
+#    not by call shape, which is why the second call site needed no new pin.
 #  - Shell builtins are absent too, `printf` and `echo` included. `command -v`
 #    is still the probe, and it answers a builtin as present — which is the
 #    point: a builtin can never come back MISSING, so naming one here is an

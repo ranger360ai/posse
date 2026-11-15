@@ -857,7 +857,11 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 		// posse is THIS REPO'S OWN binary, and it is deliberately absent
 		// from HOOK_DEPS too (ranger-base-zby5f, over check 4's judge:
 		// gates.go's vulnPrivateChecks pipes the staged markdown or the
-		// commit message through `posse gates vuln-private-scan`). HOOK_DEPS
+		// commit message through `posse gates vuln-private-scan`). Two call
+		// sites since ranger-base-g1jqt — the judge, and `posse version` in
+		// posse_judged_by, the provenance line every refusal in the commit
+		// guard ends with — and the containment premise below covers both
+		// without a second row, which is what it was written for. HOOK_DEPS
 		// is the list the clean-room probe looks for in a DISTRO IMAGE, and
 		// no distro ships posse — so naming it there would report every
 		// distro MISSING it forever: a finding nobody can act on, in the
