@@ -118,7 +118,7 @@ Each mutant was applied to a committed tree and restored with
 | M4 the probe is coarsened back to the 8 MiB read | SKIP x3, on the density witness | skip |
 | M5 the control is made atomic (write + rename) | SKIP x3, in 3 attempts | skip |
 | M6 the size arm never fires AND M2's swap | FAIL x3 | — |
-| M7 the blend arm never fires AND M3's swap | PASS x3 | — |
+| M7 the blend arm never fires AND M3's swap | PASS x3 — SKIP x3 since ranger-base-0eysw, see the correction below | — |
 | M8 the density witness never fires AND the probe is coarsened | PASS SKIP PASS | — |
 
 M6 and M7 are the two arms' own readings and neither is a clean kill, which is
@@ -131,6 +131,30 @@ keeps the shape the full-content compare used to see. **M8** is what the density
 witness buys: without it, a coarsened probe reaches a green in 2 runs of 3 on
 the control's luck alone, where M4 shows the witness catching the same mutant
 3 of 3.
+
+CORRECTION 2026-11-14 (laurie, ranger-base-0eysw). M7's reading stands and the
+conclusion drawn from it was half the available one. Both mutants above combine
+a dead arm with the defect that arm reads, which says the arm is NECESSARY; run
+UN-COMBINED — the arm dead, `upgradeSwap` untouched — the two part company.
+MEASURED on this box, three runs each, at the tree 5f865bdb landed:
+
+| un-combined mutant | verdict | what it says |
+|---|---|---|
+| the ABSENT arm never fires, real swap | PASS x3 | and M1's shape still reds through the size arm — the detection survives, only its attribution moves |
+| the SIZE arm never fires, real swap | PASS, SKIP, PASS | the control notices: with the size arm dead it has only the ENOENT window left, and a run that misses it skips |
+| the BLEND arm never fires, real swap | PASS x3 | nothing notices, in any configuration |
+
+So the blend arm was the one arm of the three whose death was invisible to this
+pin: `installShapedSwap` unlinks the target and writes a new one, so every
+observation it leaves is ABSENT or SHORT and the two-ends comparison is never
+the arm that fires. The absent and short arms each had a control in the pin;
+the arm this bead deliberately went past its own brief to add had a mutant
+nobody runs. Closed under ranger-base-0eysw by a SECOND control
+(`blendShapedSwap`, an in-place rewrite that never unlinks and never
+truncates) and a `blend` sub-count the control requires by name, so one
+shape's detections cannot vouch for another shape's arm — M7 and the
+un-combined blend mutant both read SKIP x3 now, and M3 still reds FAIL x3.
+docs/notes.d/ranger-base-0eysw.md has the readings.
 
 ### 6. Verified
 

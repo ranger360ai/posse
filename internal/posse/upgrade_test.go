@@ -604,22 +604,26 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	// 3.7 ms, the whole window, against 0 in 60 runs on sixteen Ps — and
 	// one attempt would turn that into a non-reading rather than retrying
 	// something that costs 55 ms.
-	var control swapProbe
-	controlAttempts := 0
-	for controlAttempts < swapControlAttempts {
-		controlAttempts++
-		ctl := filepath.Join(t.TempDir(), "posse")
-		if err := WriteExecutable(ctl, old, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		control = probeSwapWindow(t, ctl, old, fresh, func() error { return installShapedSwap(ctl, fresh) })
-		if control.swapErr != nil {
-			t.Fatalf("the control's install(1)-shaped write: %v", control.swapErr)
-		}
-		if control.absent != 0 || control.partial != 0 {
-			break
-		}
-	}
+	control, controlAttempts := swapControl(t, old, fresh, "install(1)-shaped",
+		installShapedSwap, func(p swapProbe) bool { return p.absent != 0 || p.partial != 0 })
+
+	// THE SECOND CONTROL, for the one arm the first cannot witness
+	// (ranger-base-0eysw). installShapedSwap unlinks the target and writes a
+	// new one, so every observation it leaves behind is ABSENT or SHORT —
+	// the two-ends comparison is never the arm that fires, and a control
+	// graded on the union of the three lets those two vouch for it.
+	//
+	// MEASURED 2026-11-14 on this box, three runs each, with
+	// `case buf[0] != buf[1]` made unreachable and nothing else changed:
+	// this pin passed 3 of 3 against the real rename(2) AND 3 of 3 against
+	// a swap that rewrites the target in place, which is the shape that arm
+	// is the only reader of. So the claim that reading both ends keeps that
+	// shape seen stood on a mutant nothing runs, where the absent and short
+	// arms each had a control in the pin itself. This is that control: the
+	// same reader, this box, this run, against a write that leaves the
+	// target full length with its two ends disagreeing.
+	blend, blendAttempts := swapControl(t, old, fresh, "in-place rewrite",
+		blendShapedSwap, func(p swapProbe) bool { return p.blend != 0 })
 
 	// THE WITNESSES, and this pin needs them more than most: a reader
 	// descheduled for the whole swap window reports zero absent and zero
@@ -646,15 +650,79 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	case control.absent == 0 && control.partial == 0:
 		t.Skipf("the control left the target absent and then short for milliseconds and this probe saw neither, in %d attempts, the last of %d observations %s apart with a widest hole of %s — so the green above is not evidence that the real swap left no gap, only that this run could not have seen one (ranger-base-6sbng)",
 			controlAttempts, control.reads, control.meanGap, control.maxGap)
+	case blend.blend == 0:
+		t.Skipf("the in-place-rewrite control left the target full length with its two ends disagreeing for milliseconds and the two-ends arm never fired, in %d attempts, the last of %d observations %s apart (partial %d, widest hole %s) — so the probe is not shown able to see the one shape that arm is the only reader of, and a swap that rewrote the binary in place would read as green (ranger-base-0eysw)",
+			blendAttempts, blend.reads, blend.meanGap, blend.partial, blend.maxGap)
 	}
 }
 
+// swapControl runs ONE control shape until its probe sees the gap that shape
+// leaves, up to swapControlAttempts, and reports the last attempt and how
+// many it took. saw is the shape's OWN arm and not the union of the probe's
+// three: a control is evidence about the arm that would have to fire, so one
+// shape's detections must not be able to vouch for another shape's arm
+// (ranger-base-0eysw).
+//
+// The retry is the pin's own, for its own reason: a reader starved across a
+// whole control window is a fact about the box and not about the probe.
+func swapControl(t *testing.T, old, fresh []byte, shape string,
+	swap func(target string, fresh []byte) error, saw func(swapProbe) bool,
+) (swapProbe, int) {
+	t.Helper()
+	var p swapProbe
+	attempts := 0
+	for attempts < swapControlAttempts {
+		attempts++
+		ctl := filepath.Join(t.TempDir(), "posse")
+		if err := WriteExecutable(ctl, old, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		p = probeSwapWindow(t, ctl, old, fresh, func() error { return swap(ctl, fresh) })
+		if p.swapErr != nil {
+			t.Fatalf("the %s control's write: %v", shape, p.swapErr)
+		}
+		if saw(p) {
+			break
+		}
+	}
+	return p, attempts
+}
+
+// blendShapedSwap is the OTHER non-atomic shape, and the one installShapedSwap
+// cannot stand in for: it opens the live target and overwrites it in place in
+// install(1)'s chunks, never unlinking it and never truncating it. The target
+// is therefore full length throughout and only its CONTENTS are inconsistent
+// — head already the new binary while the tail is still the old one — which
+// is the state a probe reading one end cannot see, the full-content compare
+// this pin's probe replaced could, and the two-ends comparison exists for.
+//
+// Nothing in this tree swaps a binary this way; like installShapedSwap it is
+// here to be caught (ranger-base-0eysw).
+func blendShapedSwap(target string, fresh []byte) error {
+	f, err := os.OpenFile(target, os.O_WRONLY, 0o755)
+	if err != nil {
+		return err
+	}
+	for off := 0; off < len(fresh); off += swapProbeChunk {
+		if _, err := f.Write(fresh[off:min(off+swapProbeChunk, len(fresh))]); err != nil {
+			f.Close()
+			return err
+		}
+	}
+	return f.Close()
+}
+
 // swapProbe is what one run of the reader below saw.
+//
+// blend is the subset of partial that the TWO-ENDS comparison caught — full
+// length, ends disagreeing — and it is counted apart from partial only so a
+// control can require that one arm rather than the union of three
+// (ranger-base-0eysw). Nothing asserts on partial any differently for it.
 type swapProbe struct {
-	reads, absent, partial, sawOld, sawNew int64
-	meanGap, maxGap                        time.Duration
-	sawOldBeforeSwap, sawNewAfterSwap      bool
-	swapErr                                error
+	reads, absent, partial, blend, sawOld, sawNew int64
+	meanGap, maxGap                               time.Duration
+	sawOldBeforeSwap, sawNewAfterSwap             bool
+	swapErr                                       error
 }
 
 // probeSwapWindow runs the dense reader across swap and reports what it
@@ -684,7 +752,7 @@ func probeSwapWindow(t *testing.T, target string, old, fresh []byte, swap func()
 	}
 
 	var stop atomic.Bool
-	var reads, absent, partial, sawOld, sawNew atomic.Int64
+	var reads, absent, partial, blend, sawOld, sawNew atomic.Int64
 	// Written by the reader goroutine and read after <-done, which is what
 	// orders them. They are reported and never asserted on — see the pin's
 	// comment on why a max-gap bound was dropped.
@@ -724,8 +792,11 @@ func probeSwapWindow(t *testing.T, target string, old, fresh []byte, swap func()
 				// rewriting the target in place and this is a blend of the
 				// two binaries. The full-content compare this probe
 				// replaced saw that shape, so reading both ends is what
-				// keeps it seen (ranger-base-6sbng).
+				// keeps it seen (ranger-base-6sbng) — and the second
+				// control below is what shows this arm still sees it
+				// (ranger-base-0eysw).
 				partial.Add(1)
+				blend.Add(1)
 			case buf[0] == old[0]:
 				sawOld.Add(1)
 			case buf[0] == fresh[0]:
@@ -752,7 +823,7 @@ func probeSwapWindow(t *testing.T, target string, old, fresh []byte, swap func()
 	stop.Store(true)
 	<-done
 
-	p.reads, p.absent, p.partial = reads.Load(), absent.Load(), partial.Load()
+	p.reads, p.absent, p.partial, p.blend = reads.Load(), absent.Load(), partial.Load(), blend.Load()
 	p.sawOld, p.sawNew = sawOld.Load(), sawNew.Load()
 	p.meanGap, p.maxGap = meanGap, maxGap
 	return p

@@ -51,6 +51,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-41l0r](ranger-base-41l0r.md) — The fence that fences every seat was refreshed by hand, and nothing noticed when it was not (ranger-base-41l0r) — 2026-11-14
 - [ranger-base-3cpcg](ranger-base-3cpcg.md) — ranger-base-3cpcg — the treepins door is the package minus a priced table — 2026-11-14
 - [ranger-base-1fsc9](ranger-base-1fsc9.md) — A safety filter put where nothing could read it (ranger-base-1fsc9) — 2026-11-14
+- [ranger-base-0eysw](ranger-base-0eysw.md) — Four closes verified, and the mutant nobody runs (ranger-base-0eysw) — 2026-11-14
 - [ranger-base-05ooy](ranger-base-05ooy.md) — The coordinator's arming text: the draft, and the four hazards it is written against (ranger-base-05ooy) — 2026-11-14
 - [ranger-base-zhw0h](ranger-base-zhw0h.md) — install(1) leaves the target absent for part of every install (ranger-base-zhw0h) — 2026-11-13
 - [ranger-base-wzo36](ranger-base-wzo36.md) — A trap reads what the shell that owns it assigned, and nothing else (ranger-base-wzo36) — 2026-11-13
