@@ -113,6 +113,9 @@ func TestQATheWrapperStillProvesItReusesTheBinary(t *testing.T) {
 	for _, want := range []string{
 		"reuse: unchanged package keeps one inode",
 		"reuse: no second binary was written",
+		"control: the plant runs when exec'd",
+		"poison: a planted file under the cached name is not exec'd",
+		"poison: the plant is replaced by the fresh build",
 		"control: a changed test file rebuilds",
 		"control: the new test actually ran",
 		"exit status: a red test reds the wrapper",
@@ -165,5 +168,76 @@ func TestQATheWrapperSelfTestCanFail(t *testing.T) {
 	if !strings.Contains(string(out), "FAIL  reuse: unchanged package keeps one inode") {
 		t.Errorf("the self-test failed, but not on the arm that was broken — "+
 			"it is refusing for some other reason and is not measuring reuse\n%s", out)
+	}
+}
+
+// Arm 4 (ranger-base-g66m3): the wrapper's DEFAULT cache is outside every
+// home dir a walled seat is granted write on. The cache holds files the
+// wrapper execs, so a writer of it picks what the next run executes — the
+// operator's uncaged run included. The self-test's poison arm proves a
+// planted file is not exec'd; this arm keeps the default where no seat can
+// plant in the first place, which also closes the window between the
+// wrapper's byte comparison and its exec.
+//
+// Both sides are READ, not restated: the default from the script's own
+// `CACHE=` line, the grants from homeCacheGrants' string literals in
+// internal/posse/seatbelt.go, every GOOS arm of it. Blindness control: the
+// default this arm replaced, `.cache/posse/testbin`, must be caught by the
+// same predicate over the same grant list.
+func TestQATheWrapperCacheDefaultIsOutsideEverySeatWriteGrant(t *testing.T) {
+	src, err := os.ReadFile(testBinWrapper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const prefix = "CACHE=${POSSE_TESTBIN_CACHE:-$HOME/"
+	var def string
+	for _, l := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(l, prefix) && strings.HasSuffix(l, "}") {
+			def = strings.TrimSuffix(strings.TrimPrefix(l, prefix), "}")
+			break
+		}
+	}
+	if def == "" {
+		t.Fatalf("%s has no `%s...}` line — this arm cannot read the default cache", testBinWrapper, prefix)
+	}
+
+	sb, err := os.ReadFile("internal/posse/seatbelt.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(sb)
+	i := strings.Index(body, "\nfunc homeCacheGrants(")
+	if i < 0 {
+		t.Fatal("internal/posse/seatbelt.go has no homeCacheGrants — this arm cannot read the grant list")
+	}
+	body = body[i:]
+	if j := strings.Index(body, "\n}\n"); j >= 0 {
+		body = body[:j]
+	}
+	// Split on quotes: every odd piece is a string literal.
+	var lits []string
+	for k, part := range strings.Split(body, "\"") {
+		if k%2 == 1 {
+			lits = append(lits, part)
+		}
+	}
+	if len(lits) == 0 {
+		t.Fatal("read no string literals out of homeCacheGrants — the reader is blind")
+	}
+
+	overlaps := func(p string) (string, bool) {
+		for _, g := range lits {
+			if p == g || strings.HasPrefix(p, g+"/") || strings.HasPrefix(g, p+"/") {
+				return g, true
+			}
+		}
+		return "", false
+	}
+	if _, ok := overlaps(".cache/posse/testbin"); !ok {
+		t.Fatalf("the old default .cache/posse/testbin is not caught against %q — the predicate cannot fail", lits)
+	}
+	if g, ok := overlaps(def); ok {
+		t.Errorf("%s's default cache $HOME/%s overlaps the seat write grant %q (homeCacheGrants): "+
+			"a walled seat can plant the binary the next run execs", testBinWrapper, def, g)
 	}
 }

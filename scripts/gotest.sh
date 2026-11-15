@@ -11,7 +11,7 @@
 #                                                 binary per package
 #
 # Environment:
-#   POSSE_TESTBIN_CACHE   where the binaries live (default ~/.cache/posse/testbin)
+#   POSSE_TESTBIN_CACHE   where the binaries live (default ~/.cache/posse-testbin)
 #   POSSE_TESTBIN_KEEP    binaries kept per package by --prune (default 3)
 #
 # ─── WHY ─────────────────────────────────────────────────────────────────────
@@ -127,7 +127,21 @@ else
 	suite_lock_release() { :; }
 fi
 
-CACHE=${POSSE_TESTBIN_CACHE:-$HOME/.cache/posse/testbin}
+# THE DEFAULT CACHE IS OUTSIDE EVERY WALL GRANT (ranger-base-g66m3). This
+# directory holds files this wrapper EXECS, so whoever can write it chooses
+# what the next run executes — the operator's uncaged run included. It used to
+# be `~/.cache/posse/testbin`, and `~/.cache/posse` is the one home cache dir
+# every walled seat is granted write on (homeCacheGrants in
+# internal/posse/seatbelt.go: the box's lock dir, shared on purpose). A seat
+# could overwrite the cached binary for an unchanged package, and the next
+# run anywhere built the same bytes, hashed them to the same name and exec'd
+# the seat's file. `~/.cache` itself left the grant (ranger-base-olr0g), so a
+# sibling of `posse` under it is read-only to every seat.
+# internal/treepins/gotestreuse_qa_test.go holds this default against that
+# grant list. A seat that cannot write here is told so and stops; pointing
+# POSSE_TESTBIN_CACHE at a dir only that seat writes is its own business,
+# never at one another principal also execs from.
+CACHE=${POSSE_TESTBIN_CACHE:-$HOME/.cache/posse-testbin}
 KEEP=${POSSE_TESTBIN_KEEP:-3}
 
 die() { printf 'gotest.sh: %s\n' "$*" >&2; exit 2; }
@@ -231,7 +245,18 @@ reuse() {
 	sha=${sha:0:16}
 	target="$CACHE/$sl-$sha.test"
 	if [ -f "$target" ]; then
-		rm -f "$tmp"
+		# The NAME is a hash of the fresh build, but nothing ties the
+		# FILE under that name to it: anything that can write the cache
+		# can put other bytes there (ranger-base-g66m3). Reuse only on
+		# byte equality; on any difference — or a `cmp` that cannot
+		# answer — the fresh build replaces it. The good path is still
+		# one inode, so the Gatekeeper saving holds.
+		if cmp -s -- "$tmp" "$target"; then
+			rm -f "$tmp"
+		else
+			printf 'gotest.sh: cached %s does not match the build that names it — replacing it (ranger-base-g66m3)\n' "$target" >&2
+			mv -f "$tmp" "$target"
+		fi
 	else
 		# Same directory, so this is a rename and not a copy: the file
 		# that lands is the one that was just built, one inode, no
@@ -286,7 +311,8 @@ run() {
 		esac
 	done
 
-	mkdir -p "$CACHE"
+	mkdir -p "$CACHE" 2>/dev/null && [ -w "$CACHE" ] ||
+		die "cannot write the test binary cache $CACHE — a walled seat is not granted it, by design (ranger-base-g66m3); set POSSE_TESTBIN_CACHE to a dir only you write, or use \`make test\`"
 
 	# Resolve the packages BEFORE the loop: a go list that fails inside a
 	# process substitution feeds the loop nothing and the wrapper exits 0,
@@ -435,6 +461,47 @@ self_test() {
 		say "reuse: no second binary was written"
 	else
 		fail "reuse: no second binary was written" "cache grew"
+	fi
+
+	# ARM 1b: a different FILE planted under the cached name is never
+	# exec'd (ranger-base-g66m3). The name is the hash of the fresh build;
+	# the file is whatever whoever can write the cache left there. Written
+	# IN PLACE over the cached inode, which is what a writer of the dir can
+	# do. Control first: the plant, exec'd, really does leave its marker —
+	# otherwise "no marker" proves nothing.
+	local cached p plant mark
+	cached=""
+	while IFS= read -r p; do cached=$p; break; done \
+		< <(find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null)
+	mark="$tmp/planted-ran"
+	plant="$tmp/plant"
+	printf '#!/bin/sh\n: >"%s"\nexit 0\n' "$mark" >"$plant"
+	chmod +x "$plant"
+	if [ -z "$cached" ]; then
+		fail "poison: a planted file under the cached name is not exec'd" "nothing cached to plant over"
+	else
+		"$plant"
+		if [ -e "$mark" ]; then
+			say "control: the plant runs when exec'd"
+		else
+			fail "control: the plant runs when exec'd" "no marker"
+		fi
+		rm -f "$mark"
+		cat "$plant" >"$cached"
+		out=$( cd "$pkg" && "$SELF" . -run TestAlpha -v 2>&1 ) || { echo "$out"; fail "arm1b run" "run failed"; }
+		if [ -e "$mark" ]; then
+			fail "poison: a planted file under the cached name is not exec'd" "the plant ran"
+		else
+			case $out in
+			*TestAlpha*) say "poison: a planted file under the cached name is not exec'd" ;;
+			*) fail "poison: a planted file under the cached name is not exec'd" "TestAlpha not in output" ;;
+			esac
+		fi
+		if cmp -s -- "$plant" "$cached" || [ "$(cachedcount)" != 1 ]; then
+			fail "poison: the plant is replaced by the fresh build" "plant still cached or cache grew"
+		else
+			say "poison: the plant is replaced by the fresh build"
+		fi
 	fi
 
 	# ARM 2, the control for arm 1: a changed test file MUST produce a

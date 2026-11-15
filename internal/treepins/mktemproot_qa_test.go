@@ -297,7 +297,7 @@ var mfExempt = []struct{ Script, Template, Reason string }{
 	},
 	{
 		"scripts/gotest.sh", "$CACHE/.build.$sl.XXXXXX",
-		"not in a root the reaper sweeps: $CACHE is $HOME/.cache/posse/testbin, the binary cache this script owns and prunes itself (--prune, KEEP). It is a temp file for an ATOMIC rename into that cache, so it has to be created on the cache's own filesystem, and a dir would be the wrong shape for a `mv` of one file.",
+		"not in a root the reaper sweeps: $CACHE is $HOME/.cache/posse-testbin (outside every seat write grant, ranger-base-g66m3), the binary cache this script owns and prunes itself (--prune, KEEP). It is a temp file for an ATOMIC rename into that cache, so it has to be created on the cache's own filesystem, and a dir would be the wrong shape for a `mv` of one file.",
 	},
 }
 

@@ -13,6 +13,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-ql7xy](ranger-base-ql7xy.md) — A test fixture that spelled a live open vuln-private id (ranger-base-ql7xy) — 2026-11-15
 - [ranger-base-pe5g5](ranger-base-pe5g5.md) — Every walled seat commits on a detached HEAD (ranger-base-pe5g5) — 2026-11-15
 - [ranger-base-hegka](ranger-base-hegka.md) — ranger-base-hegka — three findings of the ranger-base-eclrz verify — 2026-11-15
+- [ranger-base-g66m3](ranger-base-g66m3.md) — The test-binary cache was writable by every walled seat, and nothing compared what it exec'd (ranger-base-g66m3) — 2026-11-15
 - [ranger-base-9lsg2](ranger-base-9lsg2.md) — release-artifacts.sh fetches its build source, as clean-build.sh does (ranger-base-9lsg2) — 2026-11-15
 - [ranger-base-21i98](ranger-base-21i98.md) — A walled seat's objects live in its own store (ranger-base-21i98) — 2026-11-15
 - [ranger-base-1l1en](ranger-base-1l1en.md) — A seat's launch line is exec'd, so no shell outlives its runtime (ranger-base-1l1en) — 2026-11-15
