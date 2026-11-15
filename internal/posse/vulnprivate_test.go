@@ -8,13 +8,31 @@ import (
 	"testing"
 )
 
+// EVERY BEAD ID IN THIS FILE'S TABLES IS CLOSED OR SPELLS NO BEAD AT ALL,
+// and that is a constraint and not a style (ranger-base-ql7xy). Since
+// ranger-base-cq3vi widened check 4's content arm from the markdown
+// pathspecs to every staged path, `.go` is in scope — so a fixture that
+// spells a LIVE open `vuln-private` id beside descriptive text is the exact
+// shape the gate refuses, and whoever next edits one of these lines has
+// their own commit refused over a hole that is not theirs. The commit-time
+// own-bead exemption cannot help: it drops the one id the branch is
+// recorded for (`branch.<branch>.posseBead`), never a fixture's.
+//
+// `ranger-base-fixt3` is the synthetic id, shared with
+// TestVulnPrivateHitsAcceptsTheResidualLabel below: no bead has it, so the
+// judge's open set never contains it and the row reads the same forever.
+// `ranger-base-l751c` is a real bead and stays because it is CLOSED, which
+// is what vulnPrivateHits' caller filters on (Bd.OpenIssues drops closed
+// rows on both store classes) — but a closed bead is only closed once, so
+// prefer the synthetic id for anything added here.
+
 // TestVulnPrivateHitsBareIDIsClean is the compliant shape AGENTS.md
 // "Landing the plane" prescribes, every form the rule's own prose and
 // ranger-base-lcuec.md's own "Not closed here" use: a bullet, backticks,
 // bold, numbering, a trailing colon, two bare ids sharing one bullet.
 func TestVulnPrivateHitsBareIDIsClean(t *testing.T) {
 	t.Parallel()
-	ids := []string{"ranger-base-l751c", "ranger-base-gzl2w"}
+	ids := []string{"ranger-base-l751c", "ranger-base-fixt3"}
 	for _, line := range []string{
 		"ranger-base-l751c",
 		"- ranger-base-l751c",
@@ -23,7 +41,7 @@ func TestVulnPrivateHitsBareIDIsClean(t *testing.T) {
 		"- `ranger-base-l751c`",
 		"- **ranger-base-l751c**",
 		"- ranger-base-l751c:",
-		"- ranger-base-l751c, ranger-base-gzl2w",
+		"- ranger-base-l751c, ranger-base-fixt3",
 		"(ranger-base-l751c)",
 		"  ranger-base-l751c  ",
 	} {
@@ -73,10 +91,10 @@ func TestVulnPrivateHitsIgnoresUnknownIDs(t *testing.T) {
 // of something else entirely must not be swept up with it.
 func TestVulnPrivateHitsMultilineOnlyFlagsTheBadLine(t *testing.T) {
 	t.Parallel()
-	text := "wire the reaper\n\n## Not closed here\n- ranger-base-l751c\n- ranger-base-gzl2w: the remote-settings cache\n"
-	got := vulnPrivateHits(text, []string{"ranger-base-l751c", "ranger-base-gzl2w"})
-	if len(got) != 1 || got[0] != "ranger-base-gzl2w" {
-		t.Errorf("vulnPrivateHits = %v, want [ranger-base-gzl2w] — the bare line above it must not be flagged", got)
+	text := "wire the reaper\n\n## Not closed here\n- ranger-base-l751c\n- ranger-base-fixt3: the remote-settings cache\n"
+	got := vulnPrivateHits(text, []string{"ranger-base-l751c", "ranger-base-fixt3"})
+	if len(got) != 1 || got[0] != "ranger-base-fixt3" {
+		t.Errorf("vulnPrivateHits = %v, want [ranger-base-fixt3] — the bare line above it must not be flagged", got)
 	}
 }
 
