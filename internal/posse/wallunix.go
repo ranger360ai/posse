@@ -171,6 +171,27 @@ func wallUnixRuleset(abi int) wallUnixRulesetAttr {
 // it to drive the Linux render from darwin.
 var wallUnixABI = liveWallUnixABI
 
+// restrictWallUnix is the apply, and a var for wallUnixABI's reason plus one
+// that is only true of this seam: stubbing the ABI alone cannot pin the floor
+// refusal above it.
+//
+// WHY. RunWallUnix's order is LookPath, floor check, apply, exec. A pin of the
+// floor check stubs the ABI below WallUnixSignalABIMin — but the kernel the pin
+// RUNS on is whatever this box has, and on an ABI 6+ box liveRestrictWallUnix(5)
+// builds {Scoped: SCOPE_SIGNAL}, which that kernel ACCEPTS. So with the floor
+// check deleted the next statement is `syscall.Exec`, and the mutant does not
+// red: it applies a signal-scoped Landlock domain to the test binary and then
+// replaces it with the runtime. MEASURED 2026-11-15, D1 (Linux
+// 7.2.15-1-omarchy, Landlock ABI 10): that is exactly how the refusal survived
+// six mutants of ranger-base-e5un1's work with the whole wall-unix pin set
+// green (ranger-base-i95x2's finding 1, this bead).
+//
+// So the pin stubs this too, and the floor refusal is then the only thing that
+// can return before the apply is ever called — which is the assertion
+// TestQAWallUnixStepRefusesBelowTheSignalABIFloor makes. Production has one
+// caller and it is the live function.
+var restrictWallUnix = liveRestrictWallUnix
+
 // WallUnixAvailable reports whether this host types the step at all — the
 // signal scope from ABI 6, and the socket wall with it from ABI 9.
 func WallUnixAvailable() bool { return wallUnixAvailableFor(WallMechanism()) }

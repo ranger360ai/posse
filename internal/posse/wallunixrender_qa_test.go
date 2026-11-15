@@ -13,6 +13,8 @@ package posse
 // wallUnixAvailableFor takes a mechanism).
 
 import (
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -187,5 +189,83 @@ func TestQAWallUnixStepRefusesALineWithNoRuntime(t *testing.T) {
 		if !strings.Contains(err.Error(), "nothing to exec") {
 			t.Errorf("RunWallUnix(%q) = %v, and the refusal should say the line carried no command", argv, err)
 		}
+	}
+}
+
+// TestQAWallUnixStepRefusesBelowTheSignalABIFloor is the pin ranger-base-i95x2
+// found missing (its finding 1, filed as ranger-base-c7fwc): the step re-reads
+// the ABI ITSELF and refuses below WallUnixSignalABIMin, rather than applying a
+// domain this kernel cannot carry and exec'ing the runtime anyway.
+//
+// WHY IT IS A SEPARATE PIN from the render's ABI pin
+// (TestQALandedCheckJudgeTypesNoSocketWallStepBelowTheABIItNeeds). That one
+// asserts the render does not TYPE the step below the floor. This asserts the
+// step refuses when it is typed anyway — the host-changed-under-the-render
+// case, which is the only reason the read is repeated inside the step instead
+// of being carried on the line. MEASURED 2026-11-15 on D1 (Linux
+// 7.2.15-1-omarchy, Landlock ABI 10): before this pin, changing the guard to
+// `if false && abi < WallUnixSignalABIMin` left the whole wall-unix pin set
+// green — the one survivor of six mutants aimed at ranger-base-e5un1's work.
+//
+// WHY THE APPLY IS STUBBED AS WELL AS THE ABI: restrictWallUnix's own comment
+// has it. Short version — without that stub a guard-deleting mutant does not
+// red, it EXECS, because an ABI 6+ kernel accepts the sub-floor plan and the
+// test binary becomes the runtime.
+//
+// WHY THE COMMAND IS `true`: it resolves on every PATH, so the LookPath arm
+// ABOVE the floor check cannot be what refuses and the refusal read here is
+// the floor's.
+//
+// WHAT IS BEING DEFENDED, precisely. Not a security boundary: on a REAL
+// sub-floor kernel the ruleset is rejected and the apply refuses one line
+// later, so the seat does not open unwalled either way (DERIVED from the
+// kernel's trailing-non-zero-field behaviour, not measured — this box is ABI
+// 10). What has no other holder is the guard's WORDING and its D4 claim, so
+// this pin reads the sentence.
+//
+// SERIAL, no t.Parallel: wallUnixABI and restrictWallUnix are package-level
+// vars.
+func TestQAWallUnixStepRefusesBelowTheSignalABIFloor(t *testing.T) {
+	restoreABI, restoreApply := wallUnixABI, restrictWallUnix
+	t.Cleanup(func() { wallUnixABI, restrictWallUnix = restoreABI, restoreApply })
+
+	applied := 0
+	restrictWallUnix = func(int) error {
+		applied++
+		return errors.New("the apply stub: every row of this pin is below the floor, so the step must refuse before it reaches the apply")
+	}
+
+	for _, c := range []struct {
+		name string
+		abi  int
+	}{
+		{"one below the floor", WallUnixSignalABIMin - 1},
+		{"ABI 1, Landlock's first version", 1},
+		{"the syscall absent (-ENOSYS)", -38},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			applied = 0
+			wallUnixABI = func() int { return c.abi }
+			err := RunWallUnix([]string{"posse", WallUnixVerb, "--", "true"})
+			if err == nil {
+				t.Fatalf("ABI %d: RunWallUnix returned nil — on success this call does not return at all (it becomes the runtime), so a nil here is a seat that opened below the floor (ADR 0080 D4)", c.abi)
+			}
+			if applied != 0 {
+				t.Errorf("ABI %d: the apply was called %d time(s), so the floor check did not refuse — the step read an ABI below %d and went on to build a ruleset for it: %v",
+					c.abi, applied, WallUnixSignalABIMin, err)
+			}
+			said := err.Error()
+			for _, want := range []string{
+				WallUnixVerb,
+				"the step's floor is " + strconv.Itoa(WallUnixSignalABIMin),
+				"LANDLOCK_SCOPE_SIGNAL",
+				"ADR 0080 D4",
+				wallUnixABIText(),
+			} {
+				if !strings.Contains(said, want) {
+					t.Errorf("ABI %d: the refusal does not name %q, and the wording is the whole of what this guard delivers (see the pin's comment): %s", c.abi, want, said)
+				}
+			}
+		})
 	}
 }

@@ -14,11 +14,11 @@ package posse
 // claiming a version nobody read.
 func liveWallUnixABI() int { return -1 }
 
-// restrictWallUnix cannot be reached: RunWallUnix runs inside a bwrap
+// liveRestrictWallUnix cannot be reached: RunWallUnix runs inside a bwrap
 // cage, and nothing off Linux has one. It refuses rather than returning nil,
 // for the reason RunWallUnix itself refuses — a nil here would be a wall
 // reported and not applied, which is the one failure direction ADR 0080 D4
 // forbids.
-func restrictWallUnix(int) error {
+func liveRestrictWallUnix(int) error {
 	return Die("%s: there is no Landlock on this operating system, so this seat's socket wall cannot be applied — and this step should never have been typed, because the wall mechanism here is not %s (ADR 0080 D16)", WallUnixVerb, WallBwrap)
 }

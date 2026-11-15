@@ -33,7 +33,7 @@ func liveWallUnixABI() int {
 	return int(n)
 }
 
-// restrictWallUnix applies the domain to the calling thread group: one layer
+// liveRestrictWallUnix applies the domain to the calling thread group: one layer
 // handling RESOLVE_UNIX and no other filesystem right, with NO rule added, so
 // every host pathname socket in this seat's view is refused and a socket the
 // seat makes for itself is not — and scoping SIGNAL, so the seat can signal
@@ -55,7 +55,7 @@ func liveWallUnixABI() int {
 // would hand the seat a handle to its own ruleset for no purpose. `unsafe` is
 // here for the one thing it is for: the attr struct's address, as the syscall
 // ABI defines the argument.
-func restrictWallUnix(abi int) error {
+func liveRestrictWallUnix(abi int) error {
 	attr := unix.LandlockRulesetAttr(wallUnixRuleset(abi))
 	fd, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET,
 		uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0)
