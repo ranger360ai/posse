@@ -238,20 +238,24 @@ func TestQAWallRootGrantComparesTheComposedSpellingNotTheResolved(t *testing.T) 
 	}
 }
 
-// Pin (b) at the SEAT render: a PID `writable:` extra naming `~/.cache` is
-// the shape an operator would actually type, and the render refuses it with
-// the same sentence. The control is the identical render without the extra.
+// Pin (b) at the SEAT render: a PID `writable:` extra is the shape an
+// operator would actually type, and the render refuses it with the same
+// sentence — named outright, and spelled as a LINK to the wall root, which
+// is the spelling only the resolved grant gives away. The control is the
+// identical render with no extra at all.
 func TestQAWallRootGrantIsRefusedByTheSeatRender(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
 	f := weFixtureIn(t, wallUngrantedDir(t))
-	cache, wallRoot, _ := wrgHome(t, f.home)
+	cache, wallRoot, link := wrgHome(t, f.home)
 	if _, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates); err != nil {
-		t.Fatalf("control: this seat's render is already refused without any extra (%v), so the arm below measures nothing", err)
+		t.Fatalf("control: this seat's render is already refused without any extra (%v), so the arms below measure nothing", err)
 	}
-	f.ag.Writable = []string{cache}
-	_, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
-	if err == nil || !strings.Contains(err.Error(), wallRoot) {
-		t.Fatalf("a `writable:` extra of %s rendered (err %v) — the seat would hold a component of every seat's bind sources (ADR 0100 D2(a))", cache, err)
+	for _, extra := range []string{cache, link} {
+		f.ag.Writable = []string{extra}
+		_, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+		if err == nil || !strings.Contains(err.Error(), wallRoot) {
+			t.Errorf("a `writable:` extra of %s rendered (err %v) — the seat would hold a component of every seat's bind sources (ADR 0100 D2(a))", extra, err)
+		}
 	}
 }
 
