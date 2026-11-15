@@ -362,11 +362,16 @@ func (d *Dispatcher) judge(g gathered, personaFilter, dirFilter string, max int,
 	// operator's --persona, the busy map still refuses a seat with a bead on
 	// it, and each seat is re-read live (seatMap), so this fires no seat a
 	// fresh pass would not have fired.
-	more, attempts, err := d.refire(seat, g.is.ID, personaFilter, dirFilter, max, busy, sessFail)
+	more, spend, err := d.refire(seat, g.is.ID, personaFilter, dirFilter, max, busy, sessFail)
 	if err != nil {
 		d.printf("✗ refill %s: %v\n", g.persona, err)
 	} else if !d.DryRun {
-		d.epochAttempts += attempts
+		// ADR 0011 §5: the same booking the fire pass makes, through the one
+		// site that moves the total and the two class counts together
+		// (launchshare.go, bookSpend) — a refill that charged `-n` and not
+		// the classes would leave the share unbounded in exactly the reading
+		// that spent it.
+		d.bookSpend(spend)
 	}
 	d.enqueue(more)
 	return judged, working

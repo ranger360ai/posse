@@ -359,7 +359,7 @@ func TestQAConstitutionRefusalCostsNoLaunchRation(t *testing.T) {
 		{BdIssue: BdIssue{ID: "c-1", Title: "t", Labels: []string{"rust"}}, Dir: repo},
 		{BdIssue: BdIssue{ID: "c-2", Title: "t", Labels: []string{"rust"}}, Dir: repo},
 	}
-	dispatched, pending, attempts, err := d.fireLoop(beads, "", 0, map[string]string{}, map[string]int{})
+	dispatched, pending, attempts, err := d.fireLoop(beads, "", 0, LaunchShare{}, map[string]string{}, map[string]int{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,8 +372,12 @@ func TestQAConstitutionRefusalCostsNoLaunchRation(t *testing.T) {
 	if !strings.Contains(out, "ADR 0015 §3") {
 		t.Fatalf("the fixture never reached the launch verify:\n%s", out)
 	}
-	if attempts != 0 {
-		t.Errorf("attempts = %d, want 0 — a refusal that created no session, claimed no bead and sent no prompt attempted nothing (ADR 0028 §2)\n%s", attempts, out)
+	// .total(), because an attempt is charged to an ADR 0011 §5 class now
+	// and the refusal hands it back to the same class — so the number ADR
+	// 0028 §2 is about is the sum, and a refund that landed in the wrong
+	// bucket would leave it nonzero here.
+	if attempts.total() != 0 {
+		t.Errorf("attempts = %d, want 0 — a refusal that created no session, claimed no bead and sent no prompt attempted nothing (ADR 0028 §2)\n%s", attempts.total(), out)
 	}
 	if n := strings.Count(out, "dispatch refuses to launch"); n != 1 {
 		t.Errorf("the refusal printed %d times — the home is one reading, so the pass stops rather than repeating it per seat:\n%s", n, out)

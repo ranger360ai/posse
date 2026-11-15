@@ -118,6 +118,12 @@ func (d *Dispatcher) rollEpoch(now time.Time) bool {
 	}
 	d.epochStart = start
 	d.epochAttempts = 0
+	// ADR 0011 §5: the per-class counts have the SAME lifetime as the count
+	// they split, so they roll here and nowhere else. Reset beside it rather
+	// than derived from it, because the three numbers are one fact in three
+	// parts and a class count that outlived the total would hold the next
+	// epoch's share to the last one's spending (launchshare.go, bookSpend).
+	d.epochClass = shareSpend{}
 	return true
 }
 
@@ -133,11 +139,20 @@ func (d *Dispatcher) rollEpoch(now time.Time) bool {
 // three seats never got far enough to read. So the loop names the
 // denomination out loud where an operator reading the log meets it first: a
 // stale flag is then a number they can see is wrong, not a silence.
-func LaunchCapLine(max int, epoch time.Duration) string {
+//
+// ADR 0011 §5 rides on the same line, for the same reason and with the same
+// rule: `-n` is now split between two budget CLASSES when a share is
+// configured, and the split looks identical to no split unless the line says
+// otherwise. Armed, it names both allotments; dormant, it names the key that
+// made it dormant (rangerhq-v83: never silently obey a typo). An instance
+// that configured no share gets a share clause of "" — see LaunchShare's
+// Configured — so this line is byte-identical to what it printed before the
+// share existed.
+func LaunchCapLine(max int, epoch time.Duration, share LaunchShare) string {
 	if max <= 0 {
-		return fmt.Sprintf("◷ launch cap: -n 0 — no cap on launch attempts (set one with autostart_max_beads:; the accounting epoch is %s)", epoch)
+		return fmt.Sprintf("◷ launch cap: -n 0 — no cap on launch attempts (set one with autostart_max_beads:; the accounting epoch is %s)%s", epoch, share.Line())
 	}
-	return fmt.Sprintf("◷ launch cap: -n %d = %d launch attempt(s) per %s EPOCH, not per pass (ADR 0028 §2; autostart_max_beads:/dispatch_epoch:)", max, max, epoch)
+	return fmt.Sprintf("◷ launch cap: -n %d = %d launch attempt(s) per %s EPOCH, not per pass (ADR 0028 §2; autostart_max_beads:/dispatch_epoch:)%s", max, max, epoch, share.Line())
 }
 
 // epochRoom is how many launch attempts `-n` leaves in this epoch, and
@@ -148,7 +163,11 @@ func LaunchCapLine(max int, epoch time.Duration) string {
 // was filed about, and "the cap you set is spent until :00" is a fact the
 // operator can act on — by raising `autostart_max_beads:`, by widening
 // `dispatch_epoch:`, or by leaving it alone, which is the cap working.
-func (d *Dispatcher) epochRoom(max int) (int, bool) {
+// sh is the epoch's §5 split, so the line can name WHICH class spent the
+// ration (exhaustionSplit) — the question an operator who configured a share
+// asks first, and the one a bare total cannot answer. Dormant, it adds
+// nothing and this line reads as it always did.
+func (d *Dispatcher) epochRoom(max int, sh LaunchShare) (int, bool) {
 	if max <= 0 {
 		return max, true
 	}
@@ -157,8 +176,8 @@ func (d *Dispatcher) epochRoom(max int) (int, bool) {
 		return room, true
 	}
 	end := d.epochEnd()
-	d.printf("◷ launch cap: %d of %d attempt(s) spent this epoch — nothing launched until it turns at %s (ADR 0028 §2; raise autostart_max_beads:/-n or dispatch_epoch:)\n",
-		d.epochAttempts, max, end.Local().Format("15:04:05"))
+	d.printf("◷ launch cap: %d of %d attempt(s) spent this epoch%s — nothing launched until it turns at %s (ADR 0028 §2; raise autostart_max_beads:/-n or dispatch_epoch:)\n",
+		d.epochAttempts, max, d.exhaustionSplit(sh), end.Local().Format("15:04:05"))
 	// And the same fact in the form the SCHEDULE needs it
 	// (ranger-base-5tkz9, backoffhold.go): this pass launched nothing
 	// because of the cap and not because the queue was empty, and the cap

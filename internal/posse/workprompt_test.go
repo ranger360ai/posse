@@ -236,7 +236,7 @@ func TestDispatchQuestionSkipLineOmitsADatelessPark(t *testing.T) {
 		{BdIssue: BdIssue{ID: "q-park", Title: "parked, date dropped by the store", Status: "deferred", Labels: []string{"question"}}, Dir: dir},
 		{BdIssue: BdIssue{ID: "q-live", Title: "nobody parked this", Labels: []string{"question"}}, Dir: dir},
 	}
-	if _, _, _, err := d.fireLoop(beads, "", 0, map[string]string{}, map[string]int{}); err != nil {
+	if _, _, _, err := d.fireLoop(beads, "", 0, LaunchShare{}, map[string]string{}, map[string]int{}); err != nil {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d)

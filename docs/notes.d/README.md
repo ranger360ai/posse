@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-y0qvh](ranger-base-y0qvh.md) — A fence that forbade the page from naming the fence (ranger-base-y0qvh) — 2026-11-14
 - [ranger-base-xim7t](ranger-base-xim7t.md) — ranger-base-xim7t — a fixture that cannot separate the two rules — 2026-11-14
 - [ranger-base-wsgus](ranger-base-wsgus.md) — A private bind's source was checked at its last component, and the seat owned every component above it (ranger-base-wsgus) — 2026-11-14
+- [ranger-base-wq19a](ranger-base-wq19a.md) — ranger-base-wq19a — the launch share, built: charge per class, owner first per reading, lend the rest — 2026-11-14
 - [ranger-base-wplhv](ranger-base-wplhv.md) — The wall venue on boxLandedCage, the step behind the judge, and three fixture reds that were not the tree's (ranger-base-wplhv) — 2026-11-14
 - [ranger-base-wg4z1](ranger-base-wg4z1.md) — The replay cannot run over a detached HEAD, and the remedy that handed it one (ranger-base-wg4z1) — 2026-11-14
 - [ranger-base-v84cn](ranger-base-v84cn.md) — An empty deny directory gets an anchor file, so a host rmdir cannot take its mount off (ranger-base-v84cn) — 2026-11-14

@@ -2094,6 +2094,13 @@ var seedDocumentedNumberOutsideTheCensus = map[string]string{
 		"(TestAutostartShellFallbacksAreTheSeedsDocumentedValues in autostart_test.go). This row is why " +
 		"that pin exists, so a reader who finds the line here goes there rather than concluding nothing " +
 		"holds it",
+	"launch_share": "unset IS the share dormant (ADR 0011 §5): LaunchShareFor reads the key with no " +
+		"fallback at all, because a reserved slice of `-n` is something an operator asks for and never " +
+		"something posse assumes, and it answers a LaunchShare rather than a number — neither derived " +
+		"shape reaches it and there is no constant for the documented 2 to drift from. The seed's own " +
+		"paragraph calls it `A SUGGESTED SHAPE and not a default`. What IS held about the line is the " +
+		"other half of the claim, by the pins in launchshare_test.go: the value has to be below `-n` or " +
+		"the share dormants and says so",
 	"budget_day": "budgetDollars is `(key string, errw io.Writer) float64` — the call-site shape with no " +
 		"DEFAULT argument, because unset is no cap at all — so neither derived shape reaches it, and the " +
 		"seed's own line reads `suggested:`",

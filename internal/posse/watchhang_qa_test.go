@@ -887,7 +887,7 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 		{"watch.go", `"warning: cannot hold the watch lock at %s`, "before any clock; the lock refusal precedes the loop"},
 		{"watch.go", `"pulse: %v — disarmed for this loop`, "config error, before the pulse clock starts"},
 		{"watch.go", `"backup: %v — the backup clock is disarmed for this loop`, "config error, before the backup clock starts"},
-		{"watch.go", "LaunchCapLine(max, d.App.DispatchEpoch(d.errw()))", "launch ration header, said once at the top of the log"},
+		{"watch.go", "LaunchCapLine(max, d.App.DispatchEpoch(d.errw()), d.App.LaunchShareFor(max))", "launch ration header and its ADR 0011 §5 split, said once at the top of the log"},
 		{"watch.go", "ReportPosseBinary(d.Out)", "which binary this loop is, said once"},
 		{"watch.go", "fmt.Fprintln(d.Out, lag.Line())", "the launcher-lag ABSTENTION, said once in the header; the number itself goes through d.println in the pass"},
 		{"watch.go", `d.App.ReportHookWall(d.Out, "watch")`, "L3 hook wall, swept once"},

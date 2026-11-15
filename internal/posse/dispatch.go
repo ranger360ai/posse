@@ -325,6 +325,13 @@ type Dispatcher struct {
 	epochStart    time.Time
 	epochAttempts int
 	epochWarned   bool
+	// epochClass is the SAME count, split by ADR 0011 §5's two budget
+	// classes (launchshare.go): one label's class and the remainder. Its
+	// total is epochAttempts — bookSpend is the one site that moves either,
+	// so the two cannot disagree — and it rolls with the epoch for the
+	// reason the paragraph above gives about epochAttempts itself: this is
+	// the brake that bounds blast radius, and it is bounded per process.
+	epochClass shareSpend
 
 	planUsage PlanUsage // this pass's plan reading, when the guard took one
 
@@ -2815,6 +2822,23 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// this pass therefore only points itself at. Reset the sticky stop
 	// anyway: a new pass gets a fresh reading, epoch or no epoch.
 	d.rollEpoch(time.Now())
+	// ADR 0011 §5's split of that same ration, resolved once for the pass:
+	// the allotments are a property of the CONFIG, not of the room left, so
+	// one reading serves the exhaustion line, the fire loop and every refill
+	// this Run makes (launchshare.go).
+	//
+	// A --dry-run pass prints it here, at the top, where `--watch` prints the
+	// same line for the whole life of its log: the dry run is the surface an
+	// operator promotes the two keys through, so it has to say what they
+	// resolved to — including a dormant arm's reason — BEFORE the early
+	// returns below (an empty queue, a pause, a saturated box) can make the
+	// pass say nothing at all. Gated on Configured, so a dry run on an
+	// instance that never asked for a share prints exactly what it always
+	// printed.
+	share := d.App.LaunchShareFor(max)
+	if d.DryRun && share.Configured {
+		d.println(LaunchCapLine(max, d.App.DispatchEpoch(d.errw()), share))
+	}
 	d.budgetStopped, d.budgetWarned, d.budgetUnread = nil, false, false
 	// ADR 0010: the guard's verdict is one pass's reading — a new pass takes
 	// it fresh or not at all.
@@ -3181,14 +3205,14 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	busy, sessFail := d.seatState()
 	var dispatched int
 	var pending []*pendingBead
-	if room, ok := d.epochRoom(max); ok {
-		fired, p, attempts, err := d.fireLoop(beads, personaFilter, room, busy, sessFail)
+	if room, ok := d.epochRoom(max, share); ok {
+		fired, p, spend, err := d.fireLoop(beads, personaFilter, room, share, busy, sessFail)
 		if err != nil {
 			return 0, err
 		}
 		dispatched, pending = fired, p
 		if !d.DryRun {
-			d.epochAttempts += attempts
+			d.bookSpend(spend)
 		}
 	}
 
@@ -3271,7 +3295,16 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 // concurrently (see Run's doc on the gather fan-in).
 // sessFail is its companion under ADR 0013 §2's ceiling — session failures
 // per slot, same instance, same lifetime, same lock.
-func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, busy map[string]string, sessFail map[string]int) (int, []*pendingBead, int, error) {
+//
+// sh is ADR 0011 §5's launch share, and this loop is where it is realized
+// because this loop is the one choke point both the fire pass and every
+// refill run (launchshare.go). Two things ride on it: every attempt is
+// CHARGED to the class of the bead it was made for — which is what the
+// returned shareSpend carries back for the caller to book against the epoch —
+// and the queue is read TWICE, owner first and then lending. Dormant, the
+// second reading is empty, every charge lands in one bucket nothing reads,
+// and this loop behaves exactly as it did before the share existed.
+func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, sh LaunchShare, busy map[string]string, sessFail map[string]int) (int, []*pendingBead, shareSpend, error) {
 	// The lock this loop fires under, handed to every launch it makes: a
 	// create nested inside this critical section has to be told which lock
 	// it is in, not left to infer it from the process (ranger-base-deaz).
@@ -3281,7 +3314,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		var err error
 		lock, err = lockLaunches(d.App, d.Out)
 		if err != nil {
-			return 0, nil, 0, err
+			return 0, nil, shareSpend{}, err
 		}
 		defer lock.Release()
 	}
@@ -3295,509 +3328,615 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 
 	// The Run's occupancy, plus this fire pass's own readings (seatMap).
 	seats := newSeatMap(busy)
-	dispatched, attempts := 0, 0
+	dispatched := 0
+	var spend shareSpend    // this call's attempts, by §5 class
 	outside := 0            // beads whose lane does not contain --persona X
 	unratifiedHome := false // ADR 0015 §3 refused a launch: the whole pass is over
 	var pending []*pendingBead
-	for _, is := range beads {
-		if max > 0 && attempts >= max {
-			break
-		}
-		if unratifiedHome {
-			break
-		}
-		if !beadIDRe.MatchString(is.ID) {
-			d.skipf(skipBadID, "– %-14q refused: bead id is not a plain token\n", is.ID)
-			continue
-		}
-		// A question is the operator's to answer, never dispatched — and it
-		// is not this persona's business either: under --persona, only a
-		// question addressed to that persona is worth a line, and the line
-		// costs no attempt in any case (rangerhq-1r2).
-		//
-		// A PARKED question is not waiting on anybody, so it gets no line:
-		// the operator already answered it with a date or with "not now"
-		// (deferredNow, beads.go), and this line's whole job is to name what
-		// is waiting on them. `bd ready` excludes a parked bead on both
-		// store classes — MEASURED 2026-10-03, bd 0.50.3 — so the queue
-		// should not hand one over; that exclusion is bd's promise and not
-		// this loop's, which is the same reason OpenLabeledAny filters
-		// closed rows itself, and the shape ranger-base-nkjjg was filed on
-		// is a store class that silently drops the date bd was given.
-		if hasLabel(is.Labels, "question") {
-			if (personaFilter == "" || is.Assignee == personaFilter) && !deferredNow(is.BdIssue, d.now()) {
-				d.skipf(skipQuestion, "– %-14s for the operator (question) — not dispatched\n", is.ID)
+
+	// ADR 0011 §5's "owner first, then lent", as TWO READINGS OF ONE QUEUE
+	// rather than two loops over two queues.
+	//
+	// Round 0 is each class's own pick: the queue in its own order, and a
+	// bead whose class is already at its allotment is DEFERRED — not
+	// skipped, and nothing is printed, because the lending reading below
+	// will very likely take it the moment the other class has had its pick.
+	// Round 1 is that lending reading, and it walks exactly the beads round
+	// 0 deferred, bounded by nothing but the epoch's total room. So an idle
+	// class's allotment goes to whatever is still launchable and is never
+	// stranded, and a class that becomes ready after the lend has spent the
+	// epoch waits for the turn — §5's guarantee is that no class waits more
+	// than one epoch on the other, not that none waits at all.
+	//
+	// The deferral sits below the two filters that answer "this is not a
+	// launchable bead at all" (a malformed id, a question for the operator)
+	// so those keep reporting in queue order, and ABOVE every guard that
+	// prints or holds a seat — a deferred bead must be judged once, in the
+	// reading that can actually launch it, or one bead's skip line would be
+	// written twice.
+	//
+	// Dormant, `rounds` stays one entry long and this is the single walk it
+	// has always been.
+	rounds := [][]RepoIssue{beads}
+	var deferred []RepoIssue
+	var held, lentOut shareSpend // deferred by class, and launched while lending
+	lending := false
+fire:
+	for round := 0; round < len(rounds); round++ {
+		lending = round > 0
+		for _, is := range rounds[round] {
+			if max > 0 && spend.total() >= max {
+				break fire
 			}
-			continue
-		}
-		// ADR 0020 §2: routing is two questions, and this loop is the only
-		// place that may answer the second. WHICH LANE is a pure function
-		// of the roster and the bead's labels; WHICH SEAT is availability,
-		// read under the launcher lock, right here.
-		lane := d.laneFor(is)
-		if lane.deny != "" {
-			d.skipf(skipUnroutable, "– %-14s unroutable (%s)\n", is.ID, lane.deny)
-			continue
-		}
-		// One bead per persona per repo per pass (§4): the seat walk skips
-		// a persona already made busy, so a wide lane fans across SEATS and
-		// never fans one persona N-wide. The busy key is the persona's repo
-		// slot; the session is the bead's own (Dial F).
-		seat, why, full := d.seatFor(lane, is, personaFilter, seats)
-		if seat < 0 {
-			if full == "" {
-				// --persona X, and X is not in this bead's lane: not this
-				// pass's business, and one line per filtered-out bead would
-				// bury the ones that are.
-				outside++
+			if unratifiedHome {
+				break fire
+			}
+			if !beadIDRe.MatchString(is.ID) {
+				d.skipf(skipBadID, "– %-14q refused: bead id is not a plain token\n", is.ID)
 				continue
 			}
-			d.skipf(skipLaneBusy, "– %-14s %s\n", is.ID, full)
-			continue
-		}
-		persona := lane.seats[seat].name
-		slot := SessionFor(persona, is.Dir)
-		session := SessionForBead(persona, is.Dir, is.ID)
-		// The run record (ADR 0011 §3), read ONCE and used by all three
-		// questions below — is this session the operator's, is it somebody
-		// else's, is it the holder. `bead:` is a fact about the run where a
-		// name is a guess that a session which exists would be called this,
-		// so it heads every name list here exactly as it heads LaunchBead's.
-		//
-		// Reading it above the crew check rather than only at the holder
-		// join is the ranger-base-adb7 fix: a session the operator made by
-		// hand carries neither Dial F name, so the shield below asked about
-		// two names that did not exist and answered "nobody holds this" —
-		// crew marking protected the SESSION and left the BEAD open, and the
-		// next --resume pass built a twin on it and ran it to close.
-		var runHolder *HerdrSession
-		if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok {
-			runHolder = s
-		}
-		// THE SHAPE OF THE THREE `is.Status == "in_progress" && is.Assignee
-		// == persona` CONJUNCTIONS BELOW, before anybody mutates one
-		// (ranger-base-9c5bh, found by ranger-base-bknod). In a store-driven
-		// pass both halves are now guaranteed upstream: `bd ready` carries no
-		// in_progress row on any store class, and the claimed half reaches
-		// here only through interruptedRuns, which offers only a claim whose
-		// assignee is a lane of ONE at its own holder with the canon name
-		// equal to the assignee as written (heldLane, interrupted.go) — and
-		// this loop's persona is that lane's seat. They are kept because
-		// nothing here may assume its caller: a bead handed in by a store
-		// class that answers `ready` differently, or by a scan rewritten
-		// without heldLane's rule, would reach the holder join on somebody
-		// else's claim. What they are NOT any more is killable from a
-		// dispatch pass: a mutant that drops any of the three leaves every
-		// pin in this package green.
-		//
-		// The cockpit's `d` is the copy that still is load-bearing, and the
-		// one to mutate when you want this conjunction tested: LaunchBead
-		// takes the row the IN PROGRESS section displays — Bd.InProgressAll,
-		// which is `bd list --status in_progress` whole, unassigned rows
-		// included — so its own copies below (the slot name in the join, and
-		// ADR 0030's tiebreak) are reached with no upstream filter in front
-		// of them (TestQAOrphanedClaimDoesNotParkAClaimThisPersonaDoesNotHold).
-		//
-		// ADR 0008: a bead whose own session is the operator's — the session
-		// the run record names, this bead's Dial F name, or, when this bead
-		// would resume into it, the pre-Dial-F slot — is left alone. No
-		// fleet twin is made for it and --resume does not override; the
-		// operator finishes it or releases the session (cockpit `o`,
-		// `posse crew <name> --off`). Reported before the --dry-run branch
-		// so a dry pass says the same thing a real one would do.
-		var crewNames []string
-		if runHolder != nil {
-			crewNames = append(crewNames, runHolder.Name)
-		}
-		crewNames = append(crewNames, session)
-		if is.Status == "in_progress" && is.Assignee == persona {
-			crewNames = append(crewNames, slot)
-		}
-		crewNames = dedupeStrings(crewNames)
-		// The holder join (ADR 0004 §2): a bead this persona already holds is
-		// joined to its live session. Walked once — the skip below and the
-		// resume that overrides it are two answers about the SAME session,
-		// and deciding them from different names is what left `--resume`
-		// launching a twin beside an idle slot holder (rangerhq-v330).
-		//
-		// Walked HERE, above the two ownership guards, only so they can be
-		// asked about the session this pass will act on; nothing branches on
-		// it until below.
-		holder, holderStatus := "", ""
-		if is.Status == "in_progress" && is.Assignee == persona {
-			holder, holderStatus = d.heldSession(runHolder, session, slot)
-		}
-		// ADR 0030 §1: the exact recovery moment — an in_progress bead
-		// assigned to this persona that no live session holds under any
-		// name (the record, the Dial F name, the slot: heldSession just
-		// answered "nobody" for all three) — is genuinely ambiguous: a
-		// crashed fleet run recovery should relaunch, or the operator's
-		// own hand-work typed straight into a pane, which stamps no
-		// record and carries no naming-convention name for heldSession to
-		// have found. Asked only here, only once every record has already
-		// answered "nobody" — never in place of them, never against one
-		// that named a holder — so the crew-session walk below is
-		// presence consulted at ambiguity, never against a fact.
-		if holder == "" && is.Status == "in_progress" && is.Assignee == persona {
-			if cs, ok := d.HB.CrewHolder(is.Dir, persona); ok {
-				d.skipf(skipOrphaned, "– %-14s %s\n", is.ID, orphanedClaimLine(persona, cs.Name))
-				continue
-			}
-		}
-		guard := namesThrough(crewNames, holder)
-		if h := d.crewHeld(guard...); h != "" {
-			d.skipf(skipCrewHeld, "– %-14s held by crew session %s (operator's) — skipped\n", is.ID, h)
-			continue
-		}
-		// Same names, same question, one rung lower: a workspace posse holds
-		// no meta for is not this persona's session and this pass does not
-		// launch into it or prompt it — including under --resume, which
-		// overrides the holder's idleness, never somebody else's ownership
-		// (rangerhq-ynx8). A foreign row the join DID pick as holder is
-		// caught here, so it is never the session this pass fires into.
-		if h := d.foreignHeld(guard...); h != "" {
-			d.skipf(skipForeign, "– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(h), foreignFreeLine(h))
-			continue
-		}
-		// An in_progress bead whose own session (or the pre-Dial-F persona
-		// session) is alive with an agent that has settled: the persona
-		// stopped on it — blocked and said so, or waiting on a human — and
-		// re-prompting every pass is a token-burning loop under --watch.
-		// Only an interrupted run resumes by itself (no session, or its
-		// agent gone → the launch creates/relaunches and the claim-held path
-		// resumes); otherwise the operator asks with --resume (rangerhq-zom).
-		//
-		// The STATUS is what this skip turns on, not the holder: a session
-		// herdr sees no agent in did not stop on purpose, it crashed, and
-		// that is the "agent gone" arm above. Asking one name both questions
-		// — so a holder had to have an agent to be a holder at all — is what
-		// left the retarget below blind to a bare slot shell and the pass
-		// creating a Dial F twin beside it (ranger-base-6bu).
-		//
-		// AND IT HAS NO STORE-DRIVEN CALLER LEFT, which is why it says
-		// nothing (ranger-base-9c5bh, found by ranger-base-bknod).
-		// `holder` is non-empty only for an in_progress bead assigned to
-		// this persona, `bd ready` carries no in_progress row on any store
-		// class (MEASURED 2026-10-03, bd 0.50.3, both classes:
-		// interrupted.go), and since ranger-base-eh1kr such a bead reaches
-		// this loop only through interruptedRuns — which declines a settled
-		// holder itself unless --resume asked for it (interruptedRun), and
-		// under --resume this branch's own `!d.Resume` is false. So the one
-		// path left is a holder that SETTLES BETWEEN the scan's heldSession
-		// walk and this one, or a bare shell the scan offered that has an
-		// agent in it by now.
-		//
-		// It stays, because that race is the shape the skip was written for:
-		// fall through and an unattended pass re-prompts a persona that
-		// stopped, which is rangerhq-zom's own token loop one pass later.
-		// It prints nothing, because a per-pass report would describe a race
-		// as routine — four pins asserted the line and every one of them
-		// could only reach it through a fixture's impossible ready queue
-		// (docs/notes.d/ranger-base-bknod.md) — and the surface that reports
-		// a holder which stopped without closing is the governance surface's
-		// G2 row (`settled:<bead>`, govern.go), once per finding rather than
-		// once per pass. Pinned by TestQASettledHolderRacingTheScanIsSkipped
-		// (settledrace_qa_test.go), which is the only caller that can reach
-		// it; `skipSettled` is gone from the counted-reason table with the
-		// line, because a reason no site reports cannot be tallied.
-		if holder != "" && holderStatus != "" && !d.Resume {
-			continue
-		}
-		// ranger-base-htafy. --resume overrides a persona that STOPPED, and
-		// a holder herdr calls idle is not always one: an agent waiting on
-		// its own suite run behind a Monitor reads idle in every store this
-		// pass has consulted, and so does an agent whose last prompt never
-		// left the composer. Re-prompting the first is the token loop
-		// rangerhq-zom's default was protecting against; re-prompting the
-		// second types a second prompt on top of the first, which is one
-		// garbled message rather than two (measured three times, 2026-09-02).
-		//
-		// Under --resume only, and only for a holder already reported
-		// settled: the skip above answers every pass that is not resuming
-		// without typing anything, so an ordinary pass pays nothing for
-		// this. What it costs a resuming pass is one `agent explain` per
-		// settled holder, which is the grain the skip above it already
-		// works at.
-		if d.Resume && holder != "" && settledStatus(holderStatus) {
-			hold := d.HB.sessionHolding(holder)
-			switch {
-			case hold.Waiting():
-				d.logReading(holder, Reading{
-					Decision:    DecisionComposerHold,
-					Verdict:     hold.Why(),
-					Consequence: ConsequenceHold,
-					Rule:        RuleComposerHold,
-					Bead:        is.ID,
-					Herdr:       hold.Read,
-				})
-				d.skipf(skipWaiting, "– %-14s held by %s, %s idle with %s — waiting, not re-prompted\n",
-					is.ID, persona, holder, hold.Why())
-				continue
-			case hold.Ghost != "":
-				// ranger-base-6o7wm, AND THE ONE PLACE ITS READING DOES NOT
-				// DECIDE. A box drawn wholly faint is claude's own suggestion
-				// by every reading posse has (ghostbox.go: 60 dim
-				// suggestions, 17 empty boxes carrying no dim run at all),
-				// and the row that reports it drops its -unsent subtype
-				// everywhere else on that evidence — because everywhere else
-				// only REPORTS. This line types. The other half of that
-				// measurement does not exist yet: that a line somebody TYPED
-				// is not drawn dim too is measured zero times, and if it were
-				// dim this would re-prompt on top of a prompt the operator is
-				// still writing. So the skip stands, unchanged from before
-				// the reading existed, and says what retires it —
-				// `scripts/verify-ghost-composer.sh` from an UNCAGED shell,
-				// whose arm A types a marker into a scratch claude and never
-				// submits it.
-				d.logReading(holder, Reading{
-					Decision:    DecisionComposerHold,
-					Verdict:     "ghost: " + ellipsis(hold.Ghost, 60),
-					Consequence: ConsequenceGhostRetired,
-					Rule:        RuleComposerGhost,
-					Bead:        is.ID,
-					Herdr:       hold.Read,
-				})
-				d.skipf(skipGhostBox, "– %-14s held by %s, %s idle, box previewing claude's own suggestion (%s) — not re-prompted: a TYPED line has not been measured undimmed (ranger-base-6o7wm)\n",
-					is.ID, persona, holder, ellipsis(hold.Ghost, 60))
-				continue
-			}
-		}
-		// --resume is "re-prompt the holder, or launch it if gone" (ADR 0004
-		// §3) — the semantics the cockpit's `d` key realizes through
-		// LaunchBead. Re-prompt means THIS session, not a fresh Dial F one
-		// beside it; with no live holder the Dial F name stands and the
-		// launch creates it.
-		//
-		// The retarget asks only whether a holder is LIVE, never whether an
-		// agent is in it — the same walk LaunchBead does, so ADR 0004 §2's
-		// holder join is one answer on both paths. It is not gated on
-		// --resume either: a holder with an agent that has settled was skipped
-		// above unless the operator asked, so what reaches this line
-		// without --resume is a holder whose agent is GONE, and the zom
-		// contract's "the launch creates/relaunches" is a relaunch in the
-		// session that holds the bead — never a second session beside it
-		// (ranger-base-6bu).
-		if holder != "" {
-			session = holder
-		}
-		// PromptGrace, from the run record (ADR 0011 §3). Every guard above
-		// this line reads a store that a launcher which fired seconds ago has
-		// not yet moved: `busy` is this pass's own map, `personaActive` sees a
-		// just-created agent as idle rather than working, and the in_progress
-		// check reads the bead row a claim from the same instant has not
-		// reached. `Run` gathers its ready list BEFORE fireLoop takes the
-		// launcher lock (ADR 0011 §1), so the pass that waits fires from a
-		// list the holder already consumed and every one of those guards
-		// abstains — two prompts and two claims on one bead, which is the
-		// half of rangerhq-tzdf's criterion the lock alone did not close.
-		//
-		// `prompted:` is the store that HAS moved: the holder wrote it before
-		// dropping the lock. So the same refusal the cockpit's `d` has always
-		// made now belongs to the pass, and it is a skip rather than an
-		// error — the bead is being worked, and the next pass reads a row
-		// that says so.
-		//
-		// Exemptions, each naming a launcher that is NOT abstaining.
-		// `holder != ""` is the holder join having found the session and the
-		// skip above having answered for it — a decision made with
-		// knowledge, not a guard that missed. A row naming somebody else is
-		// answered by the claim, which is the one guard here that reads a
-		// store nobody can be stale about, and it must be allowed to fail.
-		// The last two are LaunchBead's own, for its reason: the grace
-		// distrusts one specific reading, an agent herdr can SEE and calls
-		// settled, so a session herdr reports "done" in has caught up, and
-		// one it detects no agent in at all is not lagging — it is crashed,
-		// and the relaunch below is the answer to that.
-		//
-		// The record is asked first because it is a file read; only a session
-		// that IS inside the grace costs the herdr listing the last two
-		// exemptions need, so a pass over beads nobody just prompted — every
-		// ordinary pass — makes no extra call at all.
-		mine := is.Assignee == "" || is.Assignee == persona
-		if age, recent := d.promptedRecently(session); recent && holder == "" && mine {
-			if live, err := d.HB.Resolve(session); err == nil && live.Status != "" && live.Status != "done" {
-				d.skipf(skipGrace, "– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
-				seats.note(slot)
-				continue
-			}
-		}
-		ag, _ := d.App.LoadAgent(persona)
-		tier, tierWhy := d.App.BeadTier(d.Tier, is.BdIssue, ag)
-		// ADR 0003 Dial E, before the launch and before the claim: the
-		// window is spent → this bead and every one after it gets a line
-		// saying so and nothing else (the loop runs on so the report is
-		// complete; the reading is sticky, so it costs one scan, not N).
-		// Nearly spent → the bead may run a tier down.
-		st := d.passBudget()
-		if st.Stop() {
-			d.skipf(skipBudget, "– %-14s %s\n", is.ID, budgetSkipLine(st))
-			continue
-		}
-		// ADR 0010 §1/§5 and ADR 0013 §3, before the tier is stepped and
-		// before anything is claimed: the plan guard applies at the grain of
-		// this bead, now that its runtime is known. Off-meter work launches
-		// through a trip or a blind read; on-meter work parks on either,
-		// with the guard's own reason as its line. A trip and a blind read
-		// differ in what they say, never in what they do — §1 removed the
-		// automatic move to a second pool that used to fork them.
-		launchRT := d.sessionRuntime(ag)
-		if d.planTrip != "" || d.planBlind != "" {
-			// A session that already EXISTS keeps the runtime it was created
-			// with, so that is the runtime this launch would spend — read it
-			// back rather than assume the PID's, or the meter question gets
-			// asked about a pool this bead is not going to.
-			if s, err := d.HB.Resolve(session); err == nil && s.Runtime != "" {
-				launchRT = s.Runtime
-			}
-			if OnGuardedMeter(launchRT) {
-				why := d.planBlind
-				if why == "" {
-					why = d.planTrip
+			// A question is the operator's to answer, never dispatched — and it
+			// is not this persona's business either: under --persona, only a
+			// question addressed to that persona is worth a line, and the line
+			// costs no attempt in any case (rangerhq-1r2).
+			//
+			// A PARKED question is not waiting on anybody, so it gets no line:
+			// the operator already answered it with a date or with "not now"
+			// (deferredNow, beads.go), and this line's whole job is to name what
+			// is waiting on them. `bd ready` excludes a parked bead on both
+			// store classes — MEASURED 2026-10-03, bd 0.50.3 — so the queue
+			// should not hand one over; that exclusion is bd's promise and not
+			// this loop's, which is the same reason OpenLabeledAny filters
+			// closed rows itself, and the shape ranger-base-nkjjg was filed on
+			// is a store class that silently drops the date bd was given.
+			if hasLabel(is.Labels, "question") {
+				if (personaFilter == "" || is.Assignee == personaFilter) && !deferredNow(is.BdIssue, d.now()) {
+					d.skipf(skipQuestion, "– %-14s for the operator (question) — not dispatched\n", is.ID)
 				}
-				d.skipf(skipPlanGuard, "– %-14s %s — skipped\n", is.ID, why)
 				continue
 			}
-		}
-		// ADR 0013 §5, once the runtime this launch is actually going to is
-		// settled. A runtime no cost adapter reads has no meter to judge
-		// against, so the count of beads posse itself sent there stands in
-		// for one; with no cap set this never skips anything and the pass's
-		// account line is the whole obligation.
-		//
-		// The pool meter comes first (rangerhq-myso): where a runtime has a
-		// reading, the reading is what the operator wants named, and the
-		// bead cap below is the stand-in for the ABSENCE of one. Both skip;
-		// only one of them says how much of the pool is left.
-		if skip := d.grokPoolSkip(launchRT); skip != "" {
-			d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
-			continue
-		}
-		if skip, kind := d.uncountedSkip(launchRT); skip != "" {
-			d.skipf(kind, "– %-14s %s\n", is.ID, skip)
-			continue
-		}
-		if st.StepDown() {
-			// Judged against the pool the bead is actually going to, which
-			// is not always the persona's own (ADR 0002's `--runtime`, and a
-			// session that already exists).
-			tier, tierWhy = d.stepDown(ag, launchRT, tier, tierWhy, st)
-		}
-		// ADR 0003 §3 before anything is claimed or launched: a tier below
-		// the PID's floor, or fast where the wall leaves a gate to
-		// politeness, is refused for *this bead* — the persona's next bead
-		// may resolve to a tier it can run, so the slot stays free.
-		if err := d.tierRefusal(ag, launchRT, tier); err != nil {
-			d.printf("✗ %-14s %v\n", is.ID, err)
-			continue
-		}
-		if d.DryRun {
-			d.printf("· %-14s → %s (%s) in session %s [%s via %s]\n", is.ID, persona, why, session, tier, tierWhy)
-			// Booked in memory only (noteUncounted writes no ledger under
-			// --dry-run): a dry pass over a reached cap then shows the same
-			// skips the real one would, and its account line says "would".
-			d.noteUncounted(is, persona, launchRT)
-			dispatched++
-			attempts++
-			seats.hold(slot, is.ID)
-			continue
-		}
-		// ADR 0020 §2.3, on the real path and not only under --dry-run: the
-		// audit ranger-base-2yj5 asked for is about beads that were actually
-		// dispatched, and until now `why` reached the operator's eye in a
-		// dry pass alone. Printed here, after every guard that could still
-		// skip the bead, so the line means a seat was really taken — and
-		// only for a lane wider than one seat, because a lane of one has no
-		// seat to explain and every single-seat pass report stays as it was.
-		if len(lane.seats) > 1 {
-			d.printf("· %-14s %s\n", is.ID, why)
-		}
-		attempts++
-		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, lock)
-		if err != nil {
-			d.printf("✗ %-14s %v\n", is.ID, err)
-			// Three outcomes, not two (ADR 0013 §2 — the busy-key split).
+			// ADR 0011 §5, the one decision this loop makes that is about a
+			// BUDGET CLASS and not about a seat: which class this bead's attempt
+			// would be charged to, and whether that class may still take it out
+			// of its own allotment. A class at its allotment defers to the
+			// lending reading; see the two-reading comment at the head of the
+			// loop for why that is a deferral and not a skip.
 			//
-			// A lost claim race is about the BEAD: someone else holds it and
-			// the persona can still take its next one.
+			// The class is the bead's LABELS and nothing else — not its lane,
+			// not its assignee — so this costs a label walk and no store read,
+			// which is why it can sit this early.
+			inShare := sh.In(is.Labels)
+			if sh.Armed() && !lending && d.classRoom(sh, spend, inShare) <= 0 {
+				deferred = append(deferred, is)
+				held.charge(inShare, 1)
+				continue
+			}
+			// ADR 0020 §2: routing is two questions, and this loop is the only
+			// place that may answer the second. WHICH LANE is a pure function
+			// of the roster and the bead's labels; WHICH SEAT is availability,
+			// read under the launcher lock, right here.
+			lane := d.laneFor(is)
+			if lane.deny != "" {
+				d.skipf(skipUnroutable, "– %-14s unroutable (%s)\n", is.ID, lane.deny)
+				continue
+			}
+			// One bead per persona per repo per pass (§4): the seat walk skips
+			// a persona already made busy, so a wide lane fans across SEATS and
+			// never fans one persona N-wide. The busy key is the persona's repo
+			// slot; the session is the bead's own (Dial F).
+			seat, why, full := d.seatFor(lane, is, personaFilter, seats)
+			if seat < 0 {
+				if full == "" {
+					// --persona X, and X is not in this bead's lane: not this
+					// pass's business, and one line per filtered-out bead would
+					// bury the ones that are.
+					outside++
+					continue
+				}
+				d.skipf(skipLaneBusy, "– %-14s %s\n", is.ID, full)
+				continue
+			}
+			persona := lane.seats[seat].name
+			slot := SessionFor(persona, is.Dir)
+			session := SessionForBead(persona, is.Dir, is.ID)
+			// The run record (ADR 0011 §3), read ONCE and used by all three
+			// questions below — is this session the operator's, is it somebody
+			// else's, is it the holder. `bead:` is a fact about the run where a
+			// name is a guess that a session which exists would be called this,
+			// so it heads every name list here exactly as it heads LaunchBead's.
 			//
-			// A session failure is about THIS PANE: the CLI never appeared,
-			// never became promptable, or sat behind a screen posse does not
-			// know. Dial F gives the next bead its own session, so the slot
-			// stays free — one grok cold start no longer sterilises the
-			// persona's whole queue (ranger-base-3j8) — but only once: the
-			// ceiling below benches the slot on the pass's SECOND such
-			// failure. The pane is remembered either way so the
-			// working/blocked guard does not read a session this pass just
-			// abandoned as the persona being busy.
+			// Reading it above the crew check rather than only at the holder
+			// join is the ranger-base-adb7 fix: a session the operator made by
+			// hand carries neither Dial F name, so the shield below asked about
+			// two names that did not exist and answered "nobody holds this" —
+			// crew marking protected the SESSION and left the BEAD open, and the
+			// next --resume pass built a twin on it and ran it to close.
+			var runHolder *HerdrSession
+			if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok {
+				runHolder = s
+			}
+			// THE SHAPE OF THE THREE `is.Status == "in_progress" && is.Assignee
+			// == persona` CONJUNCTIONS BELOW, before anybody mutates one
+			// (ranger-base-9c5bh, found by ranger-base-bknod). In a store-driven
+			// pass both halves are now guaranteed upstream: `bd ready` carries no
+			// in_progress row on any store class, and the claimed half reaches
+			// here only through interruptedRuns, which offers only a claim whose
+			// assignee is a lane of ONE at its own holder with the canon name
+			// equal to the assignee as written (heldLane, interrupted.go) — and
+			// this loop's persona is that lane's seat. They are kept because
+			// nothing here may assume its caller: a bead handed in by a store
+			// class that answers `ready` differently, or by a scan rewritten
+			// without heldLane's rule, would reach the holder join on somebody
+			// else's claim. What they are NOT any more is killable from a
+			// dispatch pass: a mutant that drops any of the three leaves every
+			// pin in this package green.
 			//
-			// Everything else is about the PERSONA on this runtime — a
-			// runtime that will not load, a missing exe, a credential the
-			// cage refuses, gates the wall cannot realize — and every bead
-			// routed here would fail the same way, so the slot is benched
-			// for the pass rather than claiming and stranding all of them
-			// (rangerhq-81d).
-			var lost claimLostError
-			var failed sessionFailure
-			var unratified constitutionRefusal
-			switch {
-			case errors.As(err, &lost):
-			case errors.As(err, &unratified):
-				// Nothing was attempted (constitutionRefusal's own doc): no
-				// session, no claim, no prompt. ADR 0028 §2's ration counts
-				// what was SENT, so this one is handed back — the epoch must
-				// still have its launches when the operator's `posse
-				// promote` lands.
-				attempts--
-				// And the fact is the box's, so there is nothing left for
-				// this pass to try: every remaining bead reads the same home
-				// against the same manifest with the same binary. Stop,
-				// rather than printing the identical refusal once per seat.
-				unratifiedHome = true
-				d.printf("◷ pass over: every launch on this home reads the same manifest, and this attempt cost no launch ration (ADR 0028 §2)\n")
-			case errors.As(err, &failed):
-				d.strand(session)
-				// ADR 0013 §2 "Ceiling" (ranger-base-8h5p): the pane-local
-				// explanation gets exactly ONE retry. A slot's session
-				// failures in a pass are consecutive attempts on fresh Dial
-				// F panes that share everything but the pane, so the second
-				// one makes the shared cause — the persona on this runtime —
-				// the better explanation, and the slot wears the persona
-				// arm's consequence for the rest of the pass. The pane is
-				// stranded either way, so the working/blocked guard ignores
-				// both. claimLost and a launch that was DELIVERED but not
-				// seen never reach this arm and never touch the count.
-				//
-				// The bench is this fire pass's (seatMap.note) while the
-				// COUNT is the Run's: a refill offers the slot one more
-				// launch — the same one more a later pass always gave it —
-				// and a slot still broken benches again on that attempt's
-				// own failure. A bench held for the life of a rolling Run
-				// would retire a seat over one bad CLI start
-				// (ranger-base-t8tq).
-				sessFail[slot]++
-				if sessFail[slot] >= 2 {
+			// The cockpit's `d` is the copy that still is load-bearing, and the
+			// one to mutate when you want this conjunction tested: LaunchBead
+			// takes the row the IN PROGRESS section displays — Bd.InProgressAll,
+			// which is `bd list --status in_progress` whole, unassigned rows
+			// included — so its own copies below (the slot name in the join, and
+			// ADR 0030's tiebreak) are reached with no upstream filter in front
+			// of them (TestQAOrphanedClaimDoesNotParkAClaimThisPersonaDoesNotHold).
+			//
+			// ADR 0008: a bead whose own session is the operator's — the session
+			// the run record names, this bead's Dial F name, or, when this bead
+			// would resume into it, the pre-Dial-F slot — is left alone. No
+			// fleet twin is made for it and --resume does not override; the
+			// operator finishes it or releases the session (cockpit `o`,
+			// `posse crew <name> --off`). Reported before the --dry-run branch
+			// so a dry pass says the same thing a real one would do.
+			var crewNames []string
+			if runHolder != nil {
+				crewNames = append(crewNames, runHolder.Name)
+			}
+			crewNames = append(crewNames, session)
+			if is.Status == "in_progress" && is.Assignee == persona {
+				crewNames = append(crewNames, slot)
+			}
+			crewNames = dedupeStrings(crewNames)
+			// The holder join (ADR 0004 §2): a bead this persona already holds is
+			// joined to its live session. Walked once — the skip below and the
+			// resume that overrides it are two answers about the SAME session,
+			// and deciding them from different names is what left `--resume`
+			// launching a twin beside an idle slot holder (rangerhq-v330).
+			//
+			// Walked HERE, above the two ownership guards, only so they can be
+			// asked about the session this pass will act on; nothing branches on
+			// it until below.
+			holder, holderStatus := "", ""
+			if is.Status == "in_progress" && is.Assignee == persona {
+				holder, holderStatus = d.heldSession(runHolder, session, slot)
+			}
+			// ADR 0030 §1: the exact recovery moment — an in_progress bead
+			// assigned to this persona that no live session holds under any
+			// name (the record, the Dial F name, the slot: heldSession just
+			// answered "nobody" for all three) — is genuinely ambiguous: a
+			// crashed fleet run recovery should relaunch, or the operator's
+			// own hand-work typed straight into a pane, which stamps no
+			// record and carries no naming-convention name for heldSession to
+			// have found. Asked only here, only once every record has already
+			// answered "nobody" — never in place of them, never against one
+			// that named a holder — so the crew-session walk below is
+			// presence consulted at ambiguity, never against a fact.
+			if holder == "" && is.Status == "in_progress" && is.Assignee == persona {
+				if cs, ok := d.HB.CrewHolder(is.Dir, persona); ok {
+					d.skipf(skipOrphaned, "– %-14s %s\n", is.ID, orphanedClaimLine(persona, cs.Name))
+					continue
+				}
+			}
+			guard := namesThrough(crewNames, holder)
+			if h := d.crewHeld(guard...); h != "" {
+				d.skipf(skipCrewHeld, "– %-14s held by crew session %s (operator's) — skipped\n", is.ID, h)
+				continue
+			}
+			// Same names, same question, one rung lower: a workspace posse holds
+			// no meta for is not this persona's session and this pass does not
+			// launch into it or prompt it — including under --resume, which
+			// overrides the holder's idleness, never somebody else's ownership
+			// (rangerhq-ynx8). A foreign row the join DID pick as holder is
+			// caught here, so it is never the session this pass fires into.
+			if h := d.foreignHeld(guard...); h != "" {
+				d.skipf(skipForeign, "– %-14s %s — skipped; %s\n", is.ID, foreignHoldLine(h), foreignFreeLine(h))
+				continue
+			}
+			// An in_progress bead whose own session (or the pre-Dial-F persona
+			// session) is alive with an agent that has settled: the persona
+			// stopped on it — blocked and said so, or waiting on a human — and
+			// re-prompting every pass is a token-burning loop under --watch.
+			// Only an interrupted run resumes by itself (no session, or its
+			// agent gone → the launch creates/relaunches and the claim-held path
+			// resumes); otherwise the operator asks with --resume (rangerhq-zom).
+			//
+			// The STATUS is what this skip turns on, not the holder: a session
+			// herdr sees no agent in did not stop on purpose, it crashed, and
+			// that is the "agent gone" arm above. Asking one name both questions
+			// — so a holder had to have an agent to be a holder at all — is what
+			// left the retarget below blind to a bare slot shell and the pass
+			// creating a Dial F twin beside it (ranger-base-6bu).
+			//
+			// AND IT HAS NO STORE-DRIVEN CALLER LEFT, which is why it says
+			// nothing (ranger-base-9c5bh, found by ranger-base-bknod).
+			// `holder` is non-empty only for an in_progress bead assigned to
+			// this persona, `bd ready` carries no in_progress row on any store
+			// class (MEASURED 2026-10-03, bd 0.50.3, both classes:
+			// interrupted.go), and since ranger-base-eh1kr such a bead reaches
+			// this loop only through interruptedRuns — which declines a settled
+			// holder itself unless --resume asked for it (interruptedRun), and
+			// under --resume this branch's own `!d.Resume` is false. So the one
+			// path left is a holder that SETTLES BETWEEN the scan's heldSession
+			// walk and this one, or a bare shell the scan offered that has an
+			// agent in it by now.
+			//
+			// It stays, because that race is the shape the skip was written for:
+			// fall through and an unattended pass re-prompts a persona that
+			// stopped, which is rangerhq-zom's own token loop one pass later.
+			// It prints nothing, because a per-pass report would describe a race
+			// as routine — four pins asserted the line and every one of them
+			// could only reach it through a fixture's impossible ready queue
+			// (docs/notes.d/ranger-base-bknod.md) — and the surface that reports
+			// a holder which stopped without closing is the governance surface's
+			// G2 row (`settled:<bead>`, govern.go), once per finding rather than
+			// once per pass. Pinned by TestQASettledHolderRacingTheScanIsSkipped
+			// (settledrace_qa_test.go), which is the only caller that can reach
+			// it; `skipSettled` is gone from the counted-reason table with the
+			// line, because a reason no site reports cannot be tallied.
+			if holder != "" && holderStatus != "" && !d.Resume {
+				continue
+			}
+			// ranger-base-htafy. --resume overrides a persona that STOPPED, and
+			// a holder herdr calls idle is not always one: an agent waiting on
+			// its own suite run behind a Monitor reads idle in every store this
+			// pass has consulted, and so does an agent whose last prompt never
+			// left the composer. Re-prompting the first is the token loop
+			// rangerhq-zom's default was protecting against; re-prompting the
+			// second types a second prompt on top of the first, which is one
+			// garbled message rather than two (measured three times, 2026-09-02).
+			//
+			// Under --resume only, and only for a holder already reported
+			// settled: the skip above answers every pass that is not resuming
+			// without typing anything, so an ordinary pass pays nothing for
+			// this. What it costs a resuming pass is one `agent explain` per
+			// settled holder, which is the grain the skip above it already
+			// works at.
+			if d.Resume && holder != "" && settledStatus(holderStatus) {
+				hold := d.HB.sessionHolding(holder)
+				switch {
+				case hold.Waiting():
+					d.logReading(holder, Reading{
+						Decision:    DecisionComposerHold,
+						Verdict:     hold.Why(),
+						Consequence: ConsequenceHold,
+						Rule:        RuleComposerHold,
+						Bead:        is.ID,
+						Herdr:       hold.Read,
+					})
+					d.skipf(skipWaiting, "– %-14s held by %s, %s idle with %s — waiting, not re-prompted\n",
+						is.ID, persona, holder, hold.Why())
+					continue
+				case hold.Ghost != "":
+					// ranger-base-6o7wm, AND THE ONE PLACE ITS READING DOES NOT
+					// DECIDE. A box drawn wholly faint is claude's own suggestion
+					// by every reading posse has (ghostbox.go: 60 dim
+					// suggestions, 17 empty boxes carrying no dim run at all),
+					// and the row that reports it drops its -unsent subtype
+					// everywhere else on that evidence — because everywhere else
+					// only REPORTS. This line types. The other half of that
+					// measurement does not exist yet: that a line somebody TYPED
+					// is not drawn dim too is measured zero times, and if it were
+					// dim this would re-prompt on top of a prompt the operator is
+					// still writing. So the skip stands, unchanged from before
+					// the reading existed, and says what retires it —
+					// `scripts/verify-ghost-composer.sh` from an UNCAGED shell,
+					// whose arm A types a marker into a scratch claude and never
+					// submits it.
+					d.logReading(holder, Reading{
+						Decision:    DecisionComposerHold,
+						Verdict:     "ghost: " + ellipsis(hold.Ghost, 60),
+						Consequence: ConsequenceGhostRetired,
+						Rule:        RuleComposerGhost,
+						Bead:        is.ID,
+						Herdr:       hold.Read,
+					})
+					d.skipf(skipGhostBox, "– %-14s held by %s, %s idle, box previewing claude's own suggestion (%s) — not re-prompted: a TYPED line has not been measured undimmed (ranger-base-6o7wm)\n",
+						is.ID, persona, holder, ellipsis(hold.Ghost, 60))
+					continue
+				}
+			}
+			// --resume is "re-prompt the holder, or launch it if gone" (ADR 0004
+			// §3) — the semantics the cockpit's `d` key realizes through
+			// LaunchBead. Re-prompt means THIS session, not a fresh Dial F one
+			// beside it; with no live holder the Dial F name stands and the
+			// launch creates it.
+			//
+			// The retarget asks only whether a holder is LIVE, never whether an
+			// agent is in it — the same walk LaunchBead does, so ADR 0004 §2's
+			// holder join is one answer on both paths. It is not gated on
+			// --resume either: a holder with an agent that has settled was skipped
+			// above unless the operator asked, so what reaches this line
+			// without --resume is a holder whose agent is GONE, and the zom
+			// contract's "the launch creates/relaunches" is a relaunch in the
+			// session that holds the bead — never a second session beside it
+			// (ranger-base-6bu).
+			if holder != "" {
+				session = holder
+			}
+			// PromptGrace, from the run record (ADR 0011 §3). Every guard above
+			// this line reads a store that a launcher which fired seconds ago has
+			// not yet moved: `busy` is this pass's own map, `personaActive` sees a
+			// just-created agent as idle rather than working, and the in_progress
+			// check reads the bead row a claim from the same instant has not
+			// reached. `Run` gathers its ready list BEFORE fireLoop takes the
+			// launcher lock (ADR 0011 §1), so the pass that waits fires from a
+			// list the holder already consumed and every one of those guards
+			// abstains — two prompts and two claims on one bead, which is the
+			// half of rangerhq-tzdf's criterion the lock alone did not close.
+			//
+			// `prompted:` is the store that HAS moved: the holder wrote it before
+			// dropping the lock. So the same refusal the cockpit's `d` has always
+			// made now belongs to the pass, and it is a skip rather than an
+			// error — the bead is being worked, and the next pass reads a row
+			// that says so.
+			//
+			// Exemptions, each naming a launcher that is NOT abstaining.
+			// `holder != ""` is the holder join having found the session and the
+			// skip above having answered for it — a decision made with
+			// knowledge, not a guard that missed. A row naming somebody else is
+			// answered by the claim, which is the one guard here that reads a
+			// store nobody can be stale about, and it must be allowed to fail.
+			// The last two are LaunchBead's own, for its reason: the grace
+			// distrusts one specific reading, an agent herdr can SEE and calls
+			// settled, so a session herdr reports "done" in has caught up, and
+			// one it detects no agent in at all is not lagging — it is crashed,
+			// and the relaunch below is the answer to that.
+			//
+			// The record is asked first because it is a file read; only a session
+			// that IS inside the grace costs the herdr listing the last two
+			// exemptions need, so a pass over beads nobody just prompted — every
+			// ordinary pass — makes no extra call at all.
+			mine := is.Assignee == "" || is.Assignee == persona
+			if age, recent := d.promptedRecently(session); recent && holder == "" && mine {
+				if live, err := d.HB.Resolve(session); err == nil && live.Status != "" && live.Status != "done" {
+					d.skipf(skipGrace, "– %-14s %s was prompted %ds ago and herdr has not seen it settle yet — skipped\n", is.ID, session, int(age.Seconds()))
 					seats.note(slot)
-					d.skipf(skipBenched, "– %-14s %s did not take the launch either — second session failure this pass; %s benched (ADR 0013 §2 ceiling)\n", is.ID, session, slot)
-				} else {
-					d.skipf(skipSessFail, "– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
+					continue
 				}
-			default:
-				seats.note(slot)
-				d.skipf(skipBenched, "– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
 			}
-			continue
+			ag, _ := d.App.LoadAgent(persona)
+			tier, tierWhy := d.App.BeadTier(d.Tier, is.BdIssue, ag)
+			// ADR 0003 Dial E, before the launch and before the claim: the
+			// window is spent → this bead and every one after it gets a line
+			// saying so and nothing else (the loop runs on so the report is
+			// complete; the reading is sticky, so it costs one scan, not N).
+			// Nearly spent → the bead may run a tier down.
+			st := d.passBudget()
+			if st.Stop() {
+				d.skipf(skipBudget, "– %-14s %s\n", is.ID, budgetSkipLine(st))
+				continue
+			}
+			// ADR 0010 §1/§5 and ADR 0013 §3, before the tier is stepped and
+			// before anything is claimed: the plan guard applies at the grain of
+			// this bead, now that its runtime is known. Off-meter work launches
+			// through a trip or a blind read; on-meter work parks on either,
+			// with the guard's own reason as its line. A trip and a blind read
+			// differ in what they say, never in what they do — §1 removed the
+			// automatic move to a second pool that used to fork them.
+			launchRT := d.sessionRuntime(ag)
+			if d.planTrip != "" || d.planBlind != "" {
+				// A session that already EXISTS keeps the runtime it was created
+				// with, so that is the runtime this launch would spend — read it
+				// back rather than assume the PID's, or the meter question gets
+				// asked about a pool this bead is not going to.
+				if s, err := d.HB.Resolve(session); err == nil && s.Runtime != "" {
+					launchRT = s.Runtime
+				}
+				if OnGuardedMeter(launchRT) {
+					why := d.planBlind
+					if why == "" {
+						why = d.planTrip
+					}
+					d.skipf(skipPlanGuard, "– %-14s %s — skipped\n", is.ID, why)
+					continue
+				}
+			}
+			// ADR 0013 §5, once the runtime this launch is actually going to is
+			// settled. A runtime no cost adapter reads has no meter to judge
+			// against, so the count of beads posse itself sent there stands in
+			// for one; with no cap set this never skips anything and the pass's
+			// account line is the whole obligation.
+			//
+			// The pool meter comes first (rangerhq-myso): where a runtime has a
+			// reading, the reading is what the operator wants named, and the
+			// bead cap below is the stand-in for the ABSENCE of one. Both skip;
+			// only one of them says how much of the pool is left.
+			if skip := d.grokPoolSkip(launchRT); skip != "" {
+				d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
+				continue
+			}
+			if skip, kind := d.uncountedSkip(launchRT); skip != "" {
+				d.skipf(kind, "– %-14s %s\n", is.ID, skip)
+				continue
+			}
+			if st.StepDown() {
+				// Judged against the pool the bead is actually going to, which
+				// is not always the persona's own (ADR 0002's `--runtime`, and a
+				// session that already exists).
+				tier, tierWhy = d.stepDown(ag, launchRT, tier, tierWhy, st)
+			}
+			// ADR 0003 §3 before anything is claimed or launched: a tier below
+			// the PID's floor, or fast where the wall leaves a gate to
+			// politeness, is refused for *this bead* — the persona's next bead
+			// may resolve to a tier it can run, so the slot stays free.
+			if err := d.tierRefusal(ag, launchRT, tier); err != nil {
+				d.printf("✗ %-14s %v\n", is.ID, err)
+				continue
+			}
+			if d.DryRun {
+				d.printf("· %-14s → %s (%s) in session %s [%s via %s]%s\n", is.ID, persona, why, session, tier, tierWhy, shareMark(sh, inShare, lending))
+				// Booked in memory only (noteUncounted writes no ledger under
+				// --dry-run): a dry pass over a reached cap then shows the same
+				// skips the real one would, and its account line says "would".
+				d.noteUncounted(is, persona, launchRT)
+				dispatched++
+				spend.charge(inShare, 1)
+				if lending {
+					lentOut.charge(inShare, 1)
+				}
+				seats.hold(slot, is.ID)
+				continue
+			}
+			// ADR 0020 §2.3, on the real path and not only under --dry-run: the
+			// audit ranger-base-2yj5 asked for is about beads that were actually
+			// dispatched, and until now `why` reached the operator's eye in a
+			// dry pass alone. Printed here, after every guard that could still
+			// skip the bead, so the line means a seat was really taken — and
+			// only for a lane wider than one seat, because a lane of one has no
+			// seat to explain and every single-seat pass report stays as it was.
+			if len(lane.seats) > 1 {
+				d.printf("· %-14s %s\n", is.ID, why)
+			}
+			spend.charge(inShare, 1)
+			if lending {
+				lentOut.charge(inShare, 1)
+			}
+			p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, shareMark(sh, inShare, lending), lock)
+			if err != nil {
+				d.printf("✗ %-14s %v\n", is.ID, err)
+				// Three outcomes, not two (ADR 0013 §2 — the busy-key split).
+				//
+				// A lost claim race is about the BEAD: someone else holds it and
+				// the persona can still take its next one.
+				//
+				// A session failure is about THIS PANE: the CLI never appeared,
+				// never became promptable, or sat behind a screen posse does not
+				// know. Dial F gives the next bead its own session, so the slot
+				// stays free — one grok cold start no longer sterilises the
+				// persona's whole queue (ranger-base-3j8) — but only once: the
+				// ceiling below benches the slot on the pass's SECOND such
+				// failure. The pane is remembered either way so the
+				// working/blocked guard does not read a session this pass just
+				// abandoned as the persona being busy.
+				//
+				// Everything else is about the PERSONA on this runtime — a
+				// runtime that will not load, a missing exe, a credential the
+				// cage refuses, gates the wall cannot realize — and every bead
+				// routed here would fail the same way, so the slot is benched
+				// for the pass rather than claiming and stranding all of them
+				// (rangerhq-81d).
+				var lost claimLostError
+				var failed sessionFailure
+				var unratified constitutionRefusal
+				switch {
+				case errors.As(err, &lost):
+				case errors.As(err, &unratified):
+					// Nothing was attempted (constitutionRefusal's own doc): no
+					// session, no claim, no prompt. ADR 0028 §2's ration counts
+					// what was SENT, so this one is handed back — the epoch must
+					// still have its launches when the operator's `posse
+					// promote` lands.
+					//
+					// Handed back to the CLASS it was charged to, so ADR 0011
+					// §5's allotments are handed the same launch back that
+					// `-n` is.
+					spend.charge(inShare, -1)
+					if lending {
+						lentOut.charge(inShare, -1)
+					}
+					// And the fact is the box's, so there is nothing left for
+					// this pass to try: every remaining bead reads the same home
+					// against the same manifest with the same binary. Stop,
+					// rather than printing the identical refusal once per seat.
+					unratifiedHome = true
+					d.printf("◷ pass over: every launch on this home reads the same manifest, and this attempt cost no launch ration (ADR 0028 §2)\n")
+				case errors.As(err, &failed):
+					d.strand(session)
+					// ADR 0013 §2 "Ceiling" (ranger-base-8h5p): the pane-local
+					// explanation gets exactly ONE retry. A slot's session
+					// failures in a pass are consecutive attempts on fresh Dial
+					// F panes that share everything but the pane, so the second
+					// one makes the shared cause — the persona on this runtime —
+					// the better explanation, and the slot wears the persona
+					// arm's consequence for the rest of the pass. The pane is
+					// stranded either way, so the working/blocked guard ignores
+					// both. claimLost and a launch that was DELIVERED but not
+					// seen never reach this arm and never touch the count.
+					//
+					// The bench is this fire pass's (seatMap.note) while the
+					// COUNT is the Run's: a refill offers the slot one more
+					// launch — the same one more a later pass always gave it —
+					// and a slot still broken benches again on that attempt's
+					// own failure. A bench held for the life of a rolling Run
+					// would retire a seat over one bad CLI start
+					// (ranger-base-t8tq).
+					sessFail[slot]++
+					if sessFail[slot] >= 2 {
+						seats.note(slot)
+						d.skipf(skipBenched, "– %-14s %s did not take the launch either — second session failure this pass; %s benched (ADR 0013 §2 ceiling)\n", is.ID, session, slot)
+					} else {
+						d.skipf(skipSessFail, "– %-14s %s did not take the launch — %s keeps its slot; the next bead gets a fresh session\n", is.ID, session, persona)
+					}
+				default:
+					seats.note(slot)
+					d.skipf(skipBenched, "– %-14s %s skipped for the rest of this pass\n", is.ID, slot)
+				}
+				continue
+			}
+			// The account ledger is written after the launch, not after the
+			// decision: a bead that never reached its agent spent nothing, and
+			// the cap is a count of what was actually sent (ADR 0013 §5).
+			d.noteUncounted(is, persona, launchRT)
+			// ADR 0028 §5 observable 1, on the same rule as both ledgers above:
+			// written after the launch, never after the decision. The instant
+			// is the prompt's, not this line's — a seat stops being idle when
+			// its agent has the work, not when dispatch finishes bookkeeping.
+			d.noteSeatLaunch(is, slot, launchRT, p.prompted)
+			seats.hold(slot, is.ID)
+			pending = append(pending, p)
 		}
-		// The account ledger is written after the launch, not after the
-		// decision: a bead that never reached its agent spent nothing, and
-		// the cap is a count of what was actually sent (ADR 0013 §5).
-		d.noteUncounted(is, persona, launchRT)
-		// ADR 0028 §5 observable 1, on the same rule as both ledgers above:
-		// written after the launch, never after the decision. The instant
-		// is the prompt's, not this line's — a seat stops being idle when
-		// its agent has the work, not when dispatch finishes bookkeeping.
-		d.noteSeatLaunch(is, slot, launchRT, p.prompted)
-		seats.hold(slot, is.ID)
-		pending = append(pending, p)
+		// The lending reading, queued only after the owner's one has walked
+		// the whole queue: appending to `rounds` is what runs it, and the
+		// loop condition re-reads `len(rounds)` so there is no second loop
+		// to keep in step with this one. A reading that broke out on the
+		// epoch's room never gets here, which is correct — there is nothing
+		// left to lend.
+		if !lending && len(deferred) > 0 {
+			rounds = append(rounds, deferred)
+		}
+	}
+	// ADR 0011 §5's per-class exhaustion line: which class spent its OWN
+	// allotment in this reading, and what the lending reading then did with
+	// its work. Said here and not at the deferral, because at the deferral
+	// it is not yet a fact — one line per class that hit its ceiling,
+	// instead of one per bead held back behind it, which on a deep queue is
+	// a dozen lines saying the same thing.
+	//
+	// WHAT THE HELD COUNT IS, exactly: beads in that class the owner's
+	// reading did not judge. The class bound is read ABOVE routing, so a
+	// held bead may well have been unroutable or on a busy seat — the count
+	// is "how much of this class's queue went unexamined", not "how much
+	// work is ready and waiting". It is the honest number for the question
+	// the line answers, which is whether the allotment is the thing
+	// standing in the way; the per-bead reasons are in the next reading's
+	// report, or the next pass's.
+	//
+	// `held, N of them launched` is the shape to read: equal numbers are the
+	// lend working as designed, and a shortfall is the epoch's own ration
+	// having run out behind it — which epochRoom's exhaustion line then
+	// names, with the split, at the next pass that tries.
+	if sh.Armed() {
+		for _, c := range []struct {
+			name                      string
+			held, launched, allotment int
+		}{
+			{sh.Label, held.share, lentOut.share, sh.Share},
+			{"remainder", held.remainder, lentOut.remainder, sh.Remainder},
+		} {
+			if c.held == 0 {
+				continue
+			}
+			d.printf("◷ launch share: the %s class spent its %d attempt(s) this epoch — %d more bead(s) in it were held for the lending reading, which launched %d of them on room the other class left (ADR 0011 §5)\n",
+				c.name, c.allotment, c.held, c.launched)
+		}
 	}
 	// §2.4's other half. A pass filtered to one persona skips every bead
 	// outside that persona's lane without a line — one per bead would bury
@@ -3808,7 +3947,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 	if personaFilter != "" && outside > 0 {
 		d.skipNf(outsideLaneSkip(personaFilter), outside, "– %d ready bead(s) outside %s's lane — skipped by --persona\n", outside, personaFilter)
 	}
-	return dispatched, pending, attempts, nil
+	return dispatched, pending, spend, nil
 }
 
 // refire is ADR 0028 §1's refill (as amended, ranger-base-t8tq):
@@ -3837,21 +3976,28 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 // Run's own head last set them to, refreshed on the next full pass, exactly
 // as ADR 0028 §2's "only four things are pass-denominated" says the rest of
 // this file already may.
-func (d *Dispatcher) refire(seat, settled, personaFilter, dirFilter string, max int, busy map[string]string, sessFail map[string]int) ([]*pendingBead, int, error) {
+func (d *Dispatcher) refire(seat, settled, personaFilter, dirFilter string, max int, busy map[string]string, sessFail map[string]int) ([]*pendingBead, shareSpend, error) {
 	if why := d.App.LoadHigh(d.errw()); why != "" {
 		d.printf("◷ refill for settled seat %s skipped: %s%s\n", seat, why, d.App.LoadCulpritLine())
-		return nil, 0, nil
+		return nil, shareSpend{}, nil
 	}
 	d.rollEpoch(d.now())
-	room, ok := d.epochRoom(max)
+	// ADR 0011 §5: a refill is a reading of the queue like any other, so it
+	// is charged per class like any other and it owner-firsts and lends
+	// inside its own reading. Resolved here rather than carried down from
+	// the owning Run because the config is the operator's and a `--watch`
+	// loop lives for hours — the same reason every other brake in this
+	// function re-reads rather than remembers.
+	share := d.App.LaunchShareFor(max)
+	room, ok := d.epochRoom(max, share)
 	if !ok {
-		return nil, 0, nil
+		return nil, shareSpend{}, nil
 	}
 	var beads []RepoIssue
 	if dirFilter != "" {
 		single, err := d.Bd.Ready(dirFilter, "")
 		if err != nil {
-			return nil, 0, err
+			return nil, shareSpend{}, err
 		}
 		for _, is := range single {
 			beads = append(beads, RepoIssue{BdIssue: is, Dir: dirFilter})
@@ -3869,7 +4015,7 @@ func (d *Dispatcher) refire(seat, settled, personaFilter, dirFilter string, max 
 	// rolling Run under --watch may never return to the fire pass above.
 	beads = append(beads, d.interruptedRuns(dirFilter, beads)...)
 	if len(beads) == 0 {
-		return nil, 0, nil
+		return nil, shareSpend{}, nil
 	}
 	OrderBeads(beads, d.Resume)
 	// The enumeration below is a refill's, and says so — header, then one
@@ -3878,15 +4024,15 @@ func (d *Dispatcher) refire(seat, settled, personaFilter, dirFilter string, max 
 	// with beginRefill on the error path too: the field must not outlive
 	// this call or the next ordinary fire pass would report as a refill.
 	d.beginRefill(seat, settled, len(beads))
-	_, pending, attempts, err := d.fireLoop(beads, personaFilter, room, busy, sessFail)
+	_, pending, spend, err := d.fireLoop(beads, personaFilter, room, share, busy, sessFail)
 	// len(pending) and not fireLoop's count: on the real path that count is
 	// made at the gather, not at the fire, and only --dry-run increments it
 	// here. What this refill launched is what it left in flight.
 	d.endRefill(len(pending))
 	if err != nil {
-		return nil, 0, err
+		return nil, shareSpend{}, err
 	}
-	return pending, attempts, nil
+	return pending, spend, nil
 }
 
 // pendingBead is a prompted bead whose settle is still being awaited.
@@ -4035,7 +4181,13 @@ type promptResult struct {
 //
 // held is fireLoop's launcher lock, carried down to the create (ADR 0011 §1,
 // ranger-base-deaz).
-func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, held *LaunchLock) (*pendingBead, error) {
+//
+// mark is ADR 0011 §5's class marker for the launch line — the share's class
+// or the remainder, and whether this launch was lent. It is a rendered string
+// and not a LaunchShare because that is the whole of what this function does
+// with it: the class decision is fireLoop's, which is where the charge is
+// made, and an empty mark is a dormant share leaving this line as it was.
+func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy, mark string, held *LaunchLock) (*pendingBead, error) {
 	ag, _ := d.App.LoadAgent(persona)
 	// Stamped before the launch, not after it: see pendingBead.launched.
 	launched := time.Now()
@@ -4078,7 +4230,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	if l.delivered {
 		how = "prompt on the launch line"
 	}
-	d.printf("· %-14s → %s  (%s, %s via %s)\n", is.ID, session, how, tier, tierWhy)
+	d.printf("· %-14s → %s  (%s, %s via %s)%s\n", is.ID, session, how, tier, tierWhy, mark)
 	now := time.Now()
 	p := &pendingBead{is: is, persona: persona, session: session, target: l.target, runtime: runtime,
 		resumed: l.resumed, delivered: l.delivered, unseen: l.unseen,

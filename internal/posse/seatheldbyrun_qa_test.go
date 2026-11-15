@@ -70,7 +70,7 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 	first := []RepoIssue{{BdIssue: BdIssue{ID: "b-1", Title: "first", Labels: []string{"rust"}}, Dir: repo}}
 	second := []RepoIssue{{BdIssue: BdIssue{ID: "b-2", Title: "second", Labels: []string{"rust"}}, Dir: repo}}
 
-	if _, p, _, err := d.fireLoop(first, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(first, "", 0, LaunchShare{}, busy, sessFail); err != nil {
 		t.Fatal(err)
 	} else {
 		inFlight = append(inFlight, p...)
@@ -93,7 +93,7 @@ func TestQASeatThisRunFiredIntoStaysHeldAcrossFirePasses(t *testing.T) {
 	// The seat is NOT free: b-1 has not settled. Only the Run map knows.
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
 
-	if _, p, _, err := d.fireLoop(second, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(second, "", 0, LaunchShare{}, busy, sessFail); err != nil {
 		t.Fatal(err)
 	} else {
 		inFlight = append(inFlight, p...)

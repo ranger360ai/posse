@@ -307,7 +307,7 @@ func TestLaunchCapLineNamesWhenTheEpochTurns(t *testing.T) {
 	d.rollEpoch(time.Now())
 	d.epochAttempts = 3
 
-	room, ok := d.epochRoom(3)
+	room, ok := d.epochRoom(3, LaunchShare{})
 	if ok || room != 0 {
 		t.Fatalf("a spent cap has no room: room=%d ok=%v", room, ok)
 	}
@@ -330,7 +330,7 @@ func TestEpochRoomIsQuietWhileItHasRoom(t *testing.T) {
 	d.epochAttempts = 1
 
 	for _, tc := range []struct{ max, want int }{{3, 2}, {0, 0}, {-1, -1}} {
-		room, ok := d.epochRoom(tc.max)
+		room, ok := d.epochRoom(tc.max, LaunchShare{})
 		if !ok || room != tc.want {
 			t.Errorf("epochRoom(%d) = %d,%v — want %d,true", tc.max, room, ok, tc.want)
 		}

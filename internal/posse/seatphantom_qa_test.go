@@ -35,7 +35,7 @@ import (
 func seatFire(t *testing.T, d *Dispatcher, repo, id string, busy map[string]string, sessFail map[string]int) []*pendingBead {
 	t.Helper()
 	beads := []RepoIssue{{BdIssue: BdIssue{ID: id, Title: "t", Labels: []string{"go"}}, Dir: repo}}
-	_, pending, _, err := d.fireLoop(beads, "", 0, busy, sessFail)
+	_, pending, _, err := d.fireLoop(beads, "", 0, LaunchShare{}, busy, sessFail)
 	if err != nil {
 		t.Fatal(err)
 	}

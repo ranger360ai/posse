@@ -1196,6 +1196,58 @@ default_emoji: ⚙️
 # autostart_session: dispatch  # herdr session name (default: dispatch)
 # autostart_dir: ~             # session cwd (default: $HOME)
 
+# ─── launch share ────────────────────────────────────────────────────────────
+# ADR 0011 §5. One label's class gets a RESERVED, LENDABLE slice of the
+# `autostart_max_beads:`/`-n` ration above. Both keys off by default, and the
+# split is dormant until both are set.
+#
+# The problem it solves: an instance can run two kinds of work on one crew —
+# the harness's own hardening and the operator's project work — and both draw
+# on ONE launch-attempt ration, so whichever queue is deeper spends the epoch.
+# MEASURED on the instance this was decided in, over four days of a live
+# `--watch` log at `-n 6`: 66 of 101 epochs with a pass ran out of launch
+# attempts, and the dollar brake refused 0 launches. The ATTEMPT count is what
+# the two kinds of work contend for, so the attempt count is what this splits;
+# `budget_pass:`/`budget_day:` above are not split.
+#
+# A bead carrying `launch_share_label:` is in the share's class. Every other
+# bead is in the remainder, which is `-n` minus `launch_share:`. In each
+# reading of the queue a class under its own allotment launches first, and the
+# room left after both classes have had their pick goes to whatever is still
+# launchable, whichever class it is in — so an IDLE class's allotment is lent
+# to the other and never stranded. Lending is decided per reading and never
+# repaid, so the guarantee is "work that is ready and seatable at a reading
+# gets its class's allotment in that epoch, and no class waits more than one
+# epoch on the other". It rules out starving, not waiting.
+#
+# THE LABEL IS A BUDGET CLASS, NOT A LANE (§4). Routing is unchanged: a share
+# bead is routed by its other labels or by its assignee exactly as before. No
+# PID may carry the share label — a PID that did would make it a lane and be
+# seated on every share bead — and posse refuses that configuration by
+# DORMANTING the share and naming the PID, rather than re-routing your work.
+#
+# It is loud about every reason it is not armed: `-n 0`, either key unset, a
+# `launch_share:` that is not a count, a share that is not BELOW `-n` (which
+# would leave the remainder zero and starve every other bead by
+# configuration), or a PID carrying the label. The launch-cap line that
+# `posse dispatch --dry-run` and every `--watch` log print says which key did
+# it — a typo is named, never silently obeyed. Armed, that same line names
+# both allotments, each launch line names the class it was charged to, and the
+# exhaustion line names which class spent the ration.
+#
+# Same lifetime as the count it splits: per EPOCH, and per PROCESS — a loop
+# restarted mid-epoch gets the whole split back, exactly as it gets the whole
+# `-n` back.
+#
+# Promote it the way you promote `-n`: set both keys, read the line
+# `posse dispatch --dry-run` prints back, and only then arm the loop.
+# launch_share_label: project  # beads carrying this label are the share's class
+# launch_share: 2              # attempts per EPOCH reserved for that class, out of
+#                              # autostart_max_beads:/-n. A SUGGESTED SHAPE and not a
+#                              # default: unset is no share at all, and the right value
+#                              # is how many of the hour's launches that class should be
+#                              # able to count on. It must be below `-n`
+
 # ─── metrics ─────────────────────────────────────────────────────────────────
 # The scorecard vocabulary is derived, not declared: the union of every PID's
 # `metrics:` (a persona naming how it is judged is the source of truth) plus

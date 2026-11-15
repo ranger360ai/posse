@@ -629,7 +629,7 @@ func TestQAFireHoldsNoGateReadingOnTheLaunchLine(t *testing.T) {
 			write(t, filepath.Join(fake, "pane-text", "w1_p1"), fiTypedScreen)
 
 			session := SessionForBead("ranger", is.Dir, is.ID)
-			p, err := d.fire(is, "ranger", session, tc.runtime, "fast", "qa", nil)
+			p, err := d.fire(is, "ranger", session, tc.runtime, "fast", "qa", "", nil)
 			if err != nil {
 				t.Fatalf("fire on %s: %v\n%s", tc.runtime, err, dispatcherOut(d))
 			}

@@ -126,7 +126,7 @@ func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
 	sessFail := map[string]int{}
 	bead := SessionForBead("hopper", repo, "b-1")
 
-	if _, p, _, err := d.fireLoop(beads, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(beads, "", 0, LaunchShare{}, busy, sessFail); err != nil {
 		t.Fatal(err)
 	} else {
 		inFlight = append(inFlight, p...)
@@ -145,7 +145,7 @@ func TestQASeatBusyInOneFirePassIsReReadInTheNext(t *testing.T) {
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
 	agentPerLaunch(t, fake)
 
-	if _, p, _, err := d.fireLoop(beads, "", 0, busy, sessFail); err != nil {
+	if _, p, _, err := d.fireLoop(beads, "", 0, LaunchShare{}, busy, sessFail); err != nil {
 		t.Fatal(err)
 	} else {
 		inFlight = append(inFlight, p...)
@@ -248,11 +248,16 @@ func TestQARefillOffersTheQueueToASeatThisRunNeverFired(t *testing.T) {
 // MUTATION: drop the LaunchCapLine call from Watch → red.
 func TestQAWatchNamesTheLaunchCapsDenomination(t *testing.T) {
 	t.Parallel()
-	if got := LaunchCapLine(6, time.Hour); !strings.Contains(got, "-n 6") ||
+	// LaunchShare{} is an instance that configured no launch share (ADR 0011
+	// §5), which is what this claim has always been about: the DENOMINATION
+	// of `-n`. The share's own clause has its own pins
+	// (launchshare_test.go), and that it adds nothing here when unconfigured
+	// is one of them.
+	if got := LaunchCapLine(6, time.Hour, LaunchShare{}); !strings.Contains(got, "-n 6") ||
 		!strings.Contains(got, "per 1h0m0s EPOCH") || !strings.Contains(got, "not per pass") {
 		t.Errorf("the cap line must name the number AND the unit it is spent in, got:\n%s", got)
 	}
-	if got := LaunchCapLine(0, 30*time.Minute); !strings.Contains(got, "no cap") || !strings.Contains(got, "30m0s") {
+	if got := LaunchCapLine(0, 30*time.Minute, LaunchShare{}); !strings.Contains(got, "no cap") || !strings.Contains(got, "30m0s") {
 		t.Errorf("-n 0 is no cap, and the epoch is still worth naming, got:\n%s", got)
 	}
 
@@ -267,7 +272,7 @@ func TestQAWatchNamesTheLaunchCapsDenomination(t *testing.T) {
 	if _, err := d.Watch(ctx, "", "", 6, 10*time.Millisecond, 10*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(dispatcherOut(d), LaunchCapLine(6, time.Hour)) {
+	if !strings.Contains(dispatcherOut(d), LaunchCapLine(6, time.Hour, LaunchShare{})) {
 		t.Errorf("--watch must name the launch cap's denomination at the top of its log:\n%s", dispatcherOut(d))
 	}
 }

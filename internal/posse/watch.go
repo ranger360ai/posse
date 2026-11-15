@@ -229,7 +229,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// for the rest of its life (ranger-base-t8tq, fix ask (b)). See
 	// LaunchCapLine: the number is the operator's, the UNIT is ADR 0028 §2's
 	// and changed under a flag that did not.
-	fmt.Fprintln(d.Out, LaunchCapLine(max, d.App.DispatchEpoch(d.errw())))
+	fmt.Fprintln(d.Out, LaunchCapLine(max, d.App.DispatchEpoch(d.errw()), d.App.LaunchShareFor(max)))
 	// WHICH posse this loop IS, said once at the top of the log it writes
 	// for the rest of its life (ranger-base-39jnl) — the same rule the
 	// launch ration above and the hook wall below keep, and for the same
