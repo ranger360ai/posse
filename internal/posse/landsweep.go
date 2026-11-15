@@ -130,6 +130,16 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 	if !d.DryRun {
 		for _, repo := range mainCheckoutsOf(dirs) {
 			prunePinnedBlocks(d.Bd, repo, d.eprintf)
+			// Every seat's own object store, once per pass, live or not
+			// (ranger-base-xcucy, design ranger-base-dvw0w D4). Before the
+			// tree walk, so every reader of a tip below runs after an import
+			// in this same pass; and every pass, because a staged blob in a
+			// seat's index that the shared store lacks fails an operator's
+			// `gc` until it is imported. Additive and ref-free, so it takes
+			// no lock; a store that will not import is said and kept.
+			if err := importAllSeatStores(repo); err != nil {
+				d.eprintf("posse: a seat's object store in %s was not imported this pass: %v\n", AbbrevHome(repo), err)
+			}
 		}
 	}
 	trees, err := SessionTreesIn(dirs)

@@ -963,6 +963,47 @@ func mergeBlockedCases() []mergeBlockedCase {
 				}, nil)
 			},
 		},
+		// The seat-store import and the landing gate (ranger-base-xcucy).
+		{
+			// MergeSessionWork's first act: a store that will not import
+			// refuses the landing before anything reads the tip.
+			name: "the seat's own object store will not import",
+			arm:  "own object store could not be imported",
+			reason: func(t *testing.T) string {
+				a, _, tr, store := siTree(t)
+				siSeatCommit(t, tr, store, "fix.txt", "the work\n", "s-1: the fix")
+				siBadObject(t, store, "ab")
+				return mergeBlockedReason(t, a, tr)
+			},
+		},
+		{
+			// landingGateReason: the branch names an object the shared
+			// store lacks, in a commit the fast-forward would not read.
+			name: "the branch names an object the shared store lacks",
+			arm:  "object(s)",
+			reason: func(t *testing.T) string {
+				a, _, tr, _ := siGateFixture(t)
+				return mergeBlockedReason(t, a, tr)
+			},
+		},
+		{
+			// landingGateReason's error return. Called directly, for the
+			// "git could not read the diff" case's reason: every way to make
+			// that rev-list fail also fails the count above it, which
+			// errors and files no bead. The sentence is the same sentence.
+			name: "the landing gate could not read the branch",
+			arm:  "names only objects",
+			reason: func(t *testing.T) string {
+				_, _, tr := wtTreeWithWork(t)
+				broken := *tr
+				broken.Base = "no-such-base"
+				why := landingGateReason(&broken)
+				if why == "" {
+					t.Fatal("fixture: the gate answered, so this arm was not reached")
+				}
+				return why
+			},
+		},
 	}
 }
 

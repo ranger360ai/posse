@@ -668,6 +668,15 @@ func spliceDetachedWork(t *SessionTree) error {
 	if !ok {
 		return nil
 	}
+	// THE IMPORT FIRST (ranger-base-xcucy). A seat with its own object store
+	// holds commits the shared store lacks, and over those both questions
+	// below are unanswerable: `merge-base --is-ancestor` and `branch -f` exit
+	// 128 on a commit git cannot read (MEASURED, design ranger-base-dvw0w
+	// D3). A store that will not import refuses the splice, and the work
+	// stays in the tree.
+	if err := importSeatObjects(t); err != nil {
+		return Die("%s's work was not spliced onto %s: %v", AbbrevHome(t.Path), t.Branch, err)
+	}
 	if tip := refSHA(t.Repo, "refs/heads/"+t.Branch); tip != "" {
 		if tip == head {
 			return nil
@@ -1007,7 +1016,7 @@ func (a *App) EnsureSessionTree(dir, session string, warn io.Writer) (*SessionTr
 	// A worktree dir removed by hand leaves a registration behind, and git
 	// then refuses to re-add the path. Pruning first is what makes this
 	// idempotent across an operator's `rm -rf`.
-	_, _ = git(t.Repo, "worktree", "prune")
+	_ = pruneWorktrees(t.Repo)
 	add := []string{"worktree", "add", t.Path, t.Branch}
 	cut := !branchExists(t.Repo, t.Branch)
 	if cut {
@@ -1764,6 +1773,16 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 	// the tree's HEAD does not reach, which is exactly the disagreement
 	// landed() already names in words that send the operator to read it. A
 	// second sentence would be the same finding twice.
+	//
+	// The seat's own store is imported first (ranger-base-xcucy): every read
+	// below is a read of the tip's objects. The splice imports for itself;
+	// this is the import for a tree the launcher did not detach. A store that
+	// will not import is a refusal and not an error, so the sweep files it
+	// like any other block — somebody has to read why.
+	if err := importSeatObjects(t); err != nil {
+		o.Reason = fmt.Sprintf("%s's own object store could not be imported (%v), so nothing in it is landed and the tree is kept", AbbrevHome(t.Path), err)
+		return o, nil
+	}
 	if launchedDetached(t.Repo, t.Branch) {
 		_ = spliceDetachedWork(t)
 	}
@@ -1794,6 +1813,17 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 		// as "nothing to merge" and reported a successful close over work no
 		// ref would ever reach (ranger-base-dybv).
 		return landed(o, t), nil
+	}
+	// THE LANDING GATE (ranger-base-xcucy, design ranger-base-dvw0w D1/D5).
+	// After the import, every object the branch reaches beyond the base is
+	// in the shared store, or nothing lands: a fast-forward onto a commit
+	// whose tree or blobs nobody can read is history every reader of the
+	// base then fails on. Asked of the BRANCH, which is what every landing
+	// arm below moves the base to — the splice above has already put a
+	// detached tree's work there.
+	if why := landingGateReason(t); why != "" {
+		o.Reason = why
+		return o, nil
 	}
 	// `git merge` moves the branch the repo has CHECKED OUT, which is not
 	// necessarily the one this session was cut from: the operator's checkout
@@ -3357,6 +3387,35 @@ func gitPathsZ(repo string, args ...string) ([]string, error) {
 // still recognised by it.
 const dirtyBlockMark = "which git will not rebase over"
 
+// landingGateReason is the gate as MergeSessionWork words it: "" lands
+// (ranger-base-xcucy; missingObjects, seatimport.go, is the reading). Here
+// and not beside that reading because every merge refusal is written in this
+// file, where TestQAEveryMergeRefusalSentenceHasACase can count it.
+func landingGateReason(t *SessionTree) string {
+	missing, err := missingObjects(t.Repo, "refs/heads/"+t.Branch, t.Base)
+	if err != nil {
+		return fmt.Sprintf("whether %s names only objects %s holds cannot be read (%s), so nothing is landed",
+			t.Branch, AbbrevHome(t.Repo), gitSaid(err))
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	shown := missing
+	if len(shown) > 5 {
+		shown = shown[:5]
+	}
+	names := make([]string, len(shown))
+	for i, m := range shown {
+		names[i] = abbrevSHA(m)
+	}
+	more := ""
+	if len(missing) > len(shown) {
+		more = fmt.Sprintf(" and %d more", len(missing)-len(shown))
+	}
+	return fmt.Sprintf("%s names %d object(s) %s does not hold (%s%s) — the seat's store did not import them, and a landing would put history on %s that nobody can read, so nothing is landed",
+		t.Branch, len(missing), AbbrevHome(t.Repo), strings.Join(names, " "), more, orDetached(t.Base))
+}
+
 // reaches is the fast-forward precondition, asked of git rather than assumed
 // from an exit status somewhere else: does ref already contain sha?
 func reaches(repo, ref, sha string) bool {
@@ -3594,6 +3653,16 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 	// The branch is provably redundant: its every commit's work is on the
 	// base under another sha, measured. Nothing here is the last copy.
 	redundant := false
+	// THE STORE GOES WITH THE TREE (ranger-base-xcucy, design
+	// ranger-base-dvw0w D4). `worktree remove` and `worktree prune` delete the
+	// per-worktree git dir, and a seat's own object store is inside it, so
+	// its objects are imported before anything below can take them — and
+	// FORCE DOES NOT SKIP IT: force is the operator's word about uncommitted
+	// paths and unlanded commits, which the import is neither of. A store
+	// that will not import keeps the tree.
+	if err := importSeatObjects(t); err != nil {
+		return Die("%s is kept: its own object store could not be imported (%v), and removing the tree would delete the only copy of what is in it", AbbrevHome(t.Path), err)
+	}
 	if !force {
 		if d := dirtyPaths(t.Path); len(d) > 0 {
 			return Die("%s has uncommitted changes (%s) — not removed", AbbrevHome(t.Path), strings.Join(d, " "))
@@ -3635,7 +3704,7 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 	if seatCache != "" {
 		_ = os.RemoveAll(seatCache)
 	}
-	_, _ = git(t.Repo, "worktree", "prune")
+	_ = pruneWorktrees(t.Repo)
 	if branchExists(t.Repo, t.Branch) {
 		del := "-d"
 		// `branch -d` asks reachability, which is the same by-sha question
@@ -4278,9 +4347,21 @@ func splicedTip(t *SessionTree) (string, bool) {
 func treeState(t *SessionTree) string {
 	var parts []string
 	head, hasWork := workHead(t)
+	n, countErr := "", error(nil)
+	if t.Base != "" && hasWork {
+		n, countErr = git(t.Repo, "rev-list", "--count", t.Base+".."+head)
+	}
 	if t.Base == "" {
 		parts = append(parts, "repo HEAD is detached — cannot say what is unmerged")
-	} else if n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+head); hasWork && err == nil && n != "0" {
+	} else if countErr != nil {
+		// A count git would not give is not zero (ranger-base-xcucy): a
+		// seat's own object store holds commits the shared one lacks until
+		// it is imported, and over those `rev-list` exits 128. This line used
+		// to fall through to "nothing unlanded", the listing's phrase for a
+		// tree safe to retire, over exactly that work (design
+		// ranger-base-dvw0w D3: unknown fails toward keeping work).
+		parts = append(parts, fmt.Sprintf("what %s holds beyond %s cannot be counted (%s)", abbrevSHA(head), t.Base, gitSaid(countErr)))
+	} else if hasWork && n != "0" {
 		// Ahead by sha is not ahead by work (ranger-base-hk02): the count
 		// alone reads the same for a strand and for a branch RemoveSessionTree
 		// is about to delete on the next pass. equivalentOnBase is the same
