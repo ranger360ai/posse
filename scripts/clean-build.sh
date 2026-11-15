@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build ./cmd/posse from a pristine worktree of HEAD — never from the working tree.
+# Build ./cmd/posse from a pristine, re-hashed copy of HEAD — never from the working tree.
 #
 # Personas share this checkout, so at any moment someone else's half-finished
 # edits may be sitting in it. A build of the working tree is neither
@@ -16,8 +16,8 @@ if [ $# -ne 1 ]; then
 	exit 2
 fi
 
-# go build is run from inside the temp worktree, so the output path must be
-# absolute or it lands in the worktree and vanishes with it.
+# go build is run from inside the temp checkout, so the output path must be
+# absolute or it lands in the checkout and vanishes with it.
 out=$1
 case $out in
 /*) ;;
@@ -44,8 +44,9 @@ if [ -n "$dirty" ]; then
 	echo "  commit them first if they belong in the installed binary." >&2
 fi
 
-# `git worktree add` below fires the repo's bd post-checkout hook, and that is
-# precisely how the 08-26 lock storm broke `make install`: a bd write that hung
+# The `git worktree add` this script used to run fired the repo's bd
+# post-checkout hook (the fetch below runs none of the repo's hooks), and that
+# is precisely how the 08-26 lock storm broke `make install`: a bd write that hung
 # on a lock held by an orphaned daemon, reported as an unexplained stall in the
 # middle of a build. Say the cause out loud BEFORE the hook runs. Advisory
 # only — the pin's state does not make the build wrong, and a failed check must
@@ -64,7 +65,7 @@ if [ -x "$pincheck" ]; then
 		if [ "$rc" = 2 ]; then
 			echo "clean-build: bd pin not checkable on this machine (verify-bd-pin exit 2)" >&2
 		else
-			echo "clean-build: BD PIN CHECK FAILED — the post-checkout hook below talks to bd:" >&2
+			echo "clean-build: BD PIN CHECK FAILED — this repo's bd hooks talk to bd:" >&2
 			printf '%s\n' "$pinreport" | sed 's/^/    /' >&2
 			echo "  building anyway; this is advisory. If the build stalls, that is why." >&2
 		fi
@@ -75,16 +76,15 @@ fi
 # rejects it, which would break `make release`/`make install` for any Linux
 # reader following INSTALL.md. Same form as scripts/verify-prune-guard.sh.
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-clean-build.XXXXXX")
-src=$tmp/src # git worktree add refuses an existing directory
+src=$tmp/src
 cleanup() {
-	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :
 	rm -rf "$tmp"
 }
 # EXIT keeps the bare handler; INT, TERM and HUP get one that EXITS
 # (ranger-base-kkp5g). A handler that RETURNS is right on EXIT and wrong on a
 # signal: bash runs it and then RESUMES this script at the statement after the
 # one the signal interrupted, with everything the handler just gave back
-# already gone. Here that is $src, the temp worktree the build reads — and a
+# already gone. Here that is $src, the temp checkout the build reads — and a
 # `kill -TERM` of this pid does NOT reach the `go build` child, so the build
 # completes, cleanup removes its source under it, and the run carries on to
 # `echo "clean-build: built $out"` and exits 0. An interrupted `make install`
@@ -98,7 +98,7 @@ cleanup() {
 # HUP's arm buys the LINE and not the cleanup (ranger-base-5owgm). MEASURED
 # 2026-11-13 (linux 7.2.15, bash 5.3.20): an UNTRAPPED terminating signal
 # still runs bash's EXIT trap, exits 128+signo and does not resume — so a
-# hung-up run already removed $tmp and the temp worktree, in silence, and
+# hung-up run already removed $tmp and the temp checkout, in silence, and
 # what was missing was only the reason. An operator whose terminal went away
 # reads 129 and now reads why.
 trap cleanup EXIT
@@ -106,9 +106,44 @@ trap 'echo "clean-build: interrupted (SIGINT) — this run did not finish" >&2; 
 trap 'echo "clean-build: interrupted (SIGTERM) — this run did not finish" >&2; exit 143' TERM
 trap 'echo "clean-build: interrupted (SIGHUP) — this run did not finish" >&2; exit 129' HUP
 
-git -C "$repo" worktree add --detach --quiet "$src" HEAD
+# The source is FETCHED into a fresh repo, not checked out of the shared one
+# with `git worktree add` (ranger-base-la61c). git trusts an object's bytes by
+# the name it is filed under and never re-hashes them on a local read, so a
+# worktree add, a checkout or a cat-file of HEAD serves whatever bytes sit in
+# the shared object store under each SHA — and the binary this builds is what
+# the whole fleet then runs. A fetch goes through the pack protocol instead,
+# and the receiving side (index-pack, or unpack-objects for a small pack)
+# hashes every object it is sent: bytes that do not hash to the name they were
+# asked for under arrive under a different name, the commit's tree is then
+# incomplete, and the fetch fails "did not send all necessary objects" before
+# anything is checked out. MEASURED 2026-11-14 (git 2.56.0, linux): a
+# substituted loose blob and a same-length substitution inside a pack were
+# both served by `cat-file` under the original SHA and both refused here; the
+# fresh repo has no refs, so nothing is negotiated away as "already had".
+# Cost on this repo: 1.1s for every object reachable from HEAD.
+#
+# The fresh repo also carries none of $repo's hooks, so the bd post-checkout
+# hook the pin pre-flight above warns about no longer fires from this step.
+#
+# The fetched commit must be the HEAD read above, in full: `HEAD` on the
+# fetch names the remote's HEAD, which for a linked worktree is that
+# worktree's own HEAD — the same one rev-parse read.
+full=$(git -C "$repo" rev-parse HEAD)
+git init --quiet "$src"
+if ! git -C "$src" fetch --quiet --no-tags "$repo" HEAD; then
+	echo "clean-build: fetching HEAD ($sha) from $repo did not verify — refusing to build" >&2
+	echo "  every object is re-hashed on the way in; a refusal here means the repo's" >&2
+	echo "  object store does not hold the bytes its names promise. Run: git -C $repo fsck" >&2
+	exit 1
+fi
+got=$(git -C "$src" rev-parse FETCH_HEAD)
+if [ "$got" != "$full" ]; then
+	echo "clean-build: fetched $got, expected HEAD $full — refusing to build" >&2
+	exit 1
+fi
+git -C "$src" checkout --quiet --detach "$full"
 
-# Stamp WHERE this was built, and $repo rather than $src: the temp worktree
+# Stamp WHERE this was built, and $repo rather than $src: the temp checkout
 # above is removed on the way out, while $repo is the checkout an operator
 # still has after `make install` (ranger-base-eiwhk). Without it the installed
 # binary's freshness reading looks only in `beads:` and the cwd, and on an

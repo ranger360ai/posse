@@ -393,8 +393,11 @@ func TestQABdPinDeclarationAndWiring(t *testing.T) {
 	if strings.Contains(cbs, `out=$("$pincheck"`) {
 		t.Error("clean-build.sh captures the pin report into `out`, which is its output path")
 	}
-	if i, j := strings.Index(cbs, "verify-bd-pin.sh"), strings.Index(cbs, `worktree add --detach`); i < 0 || j < 0 || i > j {
-		t.Error("the pin pre-flight must run BEFORE `git worktree add` fires the bd hook")
+	// The step that checks the source out is a fetch into a fresh repo since
+	// ranger-base-la61c, which runs none of the repo's hooks; the pre-flight
+	// stays ahead of it so the advisory still reads before any git work.
+	if i, j := strings.Index(cbs, "verify-bd-pin.sh"), strings.Index(cbs, `fetch --quiet --no-tags "$repo" HEAD`); i < 0 || j < 0 || i > j {
+		t.Error("the pin pre-flight must run BEFORE clean-build.sh fetches the source")
 	}
 }
 
