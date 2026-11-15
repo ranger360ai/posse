@@ -84,8 +84,15 @@ func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prep) != 0 {
-		t.Fatalf("fixture needs prep %v", prep)
+	// The launcher's own half, run as the launcher runs it. It used to
+	// assert the render needed NO prep, which held only while the fixture
+	// happened to have made everything the render wanted: ranger-base-ua625
+	// gave the private bind's empty mount point an anchor seed and the
+	// tripwire fired on a step a real launch makes without comment. A
+	// fixture that refuses the launcher's prep is a fixture measuring a
+	// wall no launch puts up.
+	if err := runBwrapPrep(prep); err != nil {
+		t.Fatalf("prep: %v", err)
 	}
 	if err := os.WriteFile(s.args, bwrapArgsBytes(argv), 0o644); err != nil {
 		t.Fatal(err)
@@ -179,6 +186,20 @@ func renameOver(t *testing.T, dst string, dir bool) {
 	t.Helper()
 	tmp := dst + ".new"
 	if dir {
+		// THE ANCHOR COMES OFF FIRST. A private bind's empty mount point
+		// carries one since ranger-base-ua625, and rename(2) over a
+		// directory needs the target EMPTY — so with the anchor in place
+		// this rename is ENOTEMPTY, exactly as a host rmdir is. That is the
+		// anchor working, and it is a wall this pin is not about: the
+		// subject here is what wall-watch does once a wall IS off. So the
+		// detach is made the way the one remover the anchor does not stop
+		// would make it — empty the directory, then take the name — which
+		// is the residual SeatbeltCarveOut.Anchored states in as many
+		// words. TestQAWallAnchorKeepsClaudesSweptConfigDirsFromAHostRmdir
+		// is where the refusal itself is held.
+		if err := os.Remove(filepath.Join(dst, wallAnchorName)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
 		if err := os.Mkdir(tmp, 0o755); err != nil {
 			t.Fatal(err)
 		}

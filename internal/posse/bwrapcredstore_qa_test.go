@@ -56,12 +56,15 @@ func TestBwrapArgsMasksACredentialStoreThatIsNotThereYet(t *testing.T) {
 		t.Fatalf("a mount was rendered over %s — the store's tmpfs covers that name, and a /dev/null there would only make it:\n%s", cred, line)
 	}
 	// The launcher makes the mount point, because a tmpfs needs a directory
-	// to cover and the whole point is that this one is absent.
-	if got := bwPrep(prep); len(got) != 1 || got[0] != "mkdir -p "+store {
-		t.Fatalf("prep = %v, want one mkdir -p of %s", got, store)
+	// to cover and the whole point is that this one is absent — and then
+	// anchors it, because a mount point this launcher leaves EMPTY is one
+	// host rmdir from detaching (ranger-base-ua625).
+	want := []string{"mkdir -p " + store, "seed " + filepath.Join(store, wallAnchorName)}
+	if got := bwPrep(prep); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("prep = %v, want %v", got, want)
 	}
-	if prep[0].Kind != PrepMkdirAll || prep[0].Why == "" {
-		t.Fatalf("step = %+v", prep[0])
+	if prep[0].Kind != PrepMkdirAll || prep[0].Why == "" || prep[1].Kind != PrepSeed || prep[1].Why == "" {
+		t.Fatalf("steps = %+v", prep)
 	}
 	// NO credential file is created: an empty directory is a mount point and
 	// holds nobody's bytes, a file at that name would be posse writing into

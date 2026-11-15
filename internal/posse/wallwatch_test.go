@@ -422,16 +422,26 @@ func TestWallWatchFixturesRenderEveryPrivateArm(t *testing.T) {
 	if fn == nil {
 		t.Fatal("bwrap.go has no bwrapPrivateArgs. If the private loop's arms went back inline, they took one watch(WallWatchPrivate, pb.Dst) call per arm with them — the line ranger-base-6ob20's tmpfs arm was written without, and which no pin could see (ranger-base-4tsa7)")
 	}
-	// One `return <argv>, <prep>, true, nil` per arm: an arm that renders a
-	// mount is exactly a return that says it rendered one.
+	// One `[]string{…}` per arm: an arm that renders a mount is exactly a
+	// place where this function spells an argv, and the argv IS the mount
+	// shape.
+	//
+	// It counted `return <argv>, <prep>, true, nil` until ranger-base-ua625
+	// gave the dir arms a single tail — they share one anchor step now, for
+	// the reason they already shared one watch call — and three arms then
+	// read as one return. The return was always a proxy for the argv; this
+	// counts the argv. Both spellings red on a fifth arm, because a fifth
+	// arm has to say what it mounts.
 	arms := 0
 	ast.Inspect(fn, func(n ast.Node) bool {
-		r, ok := n.(*ast.ReturnStmt)
-		if !ok || len(r.Results) != 4 {
+		cl, ok := n.(*ast.CompositeLit)
+		if !ok {
 			return true
 		}
-		if id, ok := r.Results[2].(*ast.Ident); ok && id.Name == "true" {
-			arms++
+		if at, ok := cl.Type.(*ast.ArrayType); ok && at.Len == nil {
+			if id, ok := at.Elt.(*ast.Ident); ok && id.Name == "string" {
+				arms++
+			}
 		}
 		return true
 	})

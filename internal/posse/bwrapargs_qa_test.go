@@ -800,6 +800,14 @@ func TestBwrapArgsRendersTheFiveShapesInD17Order(t *testing.T) {
 		// on this fixture box has created — an empty mount point and never
 		// the credential file itself (ranger-base-a8qfg)
 		"mkdir -p " + bwAt("bob"),
+		// ...and the anchor inside each masked store, which is what keeps a
+		// host rmdir of the empty directory from taking the tmpfs off a
+		// live seat (ranger-base-ua625). grok's store is already there on
+		// this fixture, so it needs no mkdir and is anchored all the same:
+		// the anchor is about the directory being EMPTY, not about who made
+		// it.
+		"seed " + bwAt("bob", wallAnchorName),
+		"seed " + bwAt("grok", wallAnchorName),
 	}
 	if got := bwPrep(prep); strings.Join(got, "\n") != strings.Join(wantPrep, "\n") {
 		t.Fatalf("prep =\n  %v\nwant\n  %v", got, wantPrep)

@@ -80,6 +80,72 @@ import (
 // key, which puts the verb back in the operator's hands alone.
 const UpgradeDelegateKey = "install_delegate"
 
+// upgradePrivateRootName is the ONE directory name this verb stages its
+// private copy under, and the reason it is a constant rather than a
+// `mktemp -d` straight into the temp root (ranger-base-ua625 finding 2, from
+// the verify at ranger-base-pxprm).
+//
+// WHAT WAS WRONG. upgradePrivateCopy's own comment used to say "the new
+// repository's store is under this run's mktemp -d, which no seat is
+// granted". At the bwrap mechanism that is true and stated where it is true
+// (bwrap.go step 1c: the seat's /tmp is a private bind, "so no seat writes
+// where uncaged builds stage what they execute"). At the SEATBELT mechanism
+// it was false both ways round: seatbeltTempGrants puts $TMPDIR, /private/tmp
+// and /tmp in the writable set of EVERY rendered profile — "the same three,
+// whatever its PID, its cwd or its persona says" — and os.MkdirTemp("", …)
+// resolves to $TMPDIR else /tmp, so the copy is inside grant 1 or grant 3
+// and there is no setting of TMPDIR that puts it outside the three. Seats
+// and the uncaged install_delegate run as one uid, so 0700 separates
+// nothing. MEASURED 2026-11-14 through the production functions:
+//
+//	seatbeltTempGrants("darwin", "/var/folders/ab/cd1234/T")
+//	  = [/var/folders/ab/cd1234/T  /private/tmp  /tmp]
+//	os.MkdirTemp("", "posse-upgrade.") with TMPDIR unset
+//	  -> /tmp/posse-upgrade.453727933, mode 0700, inside the grant /tmp
+//
+// A seat could therefore write the private copy's working tree and its
+// object store for the whole of the `make test` window — more than twenty
+// minutes — and that suite runs from the copy, UNCAGED, as this verb's
+// caller. What ranger-base-la61c already closed is the install: clean-build
+// re-fetches from the copy and index-pack re-hashes. What was open is the
+// execution.
+//
+// WHY A STABLE NAME AND NOT A DIFFERENT ROOT. The bead's own suggestion was
+// a copy under posse's state dir, "a root no seat is granted". That moves
+// the copy out of TMPDIR, and this tree's suite MOVES WITH TMPDIR in three
+// ways that all read as "the commit is red" (MEASURED 2026-11-13 at 983ae5d,
+// ranger-base-6ca29; upgradeRunPlan quotes the matrix) — one of them is
+// exactly "under $HOME", where AbbrevHome renders the path as `~/…` and
+// every test asserting its own absolute temp path reds. So the copy stays
+// where the suite was measured green and the GRANT is narrowed instead: one
+// fixed child of the temp root, denied in every rendered profile by name
+// (SeatbeltCarveOut, upgradePrivateDenied), whether or not an upgrade is
+// running. A per-run random name could not be denied at all — a seat's
+// profile is rendered at ITS launch, which is before this verb picks a name.
+const upgradePrivateRootName = "posse-upgrade"
+
+// upgradePrivateRoot is the directory this run's private copy is made
+// inside: the same root os.MkdirTemp("", …) would have used, one fixed
+// level down. os.TempDir is $TMPDIR else /tmp, which is MkdirTemp's own
+// rule, so the two cannot disagree about which temp root this is.
+func upgradePrivateRoot() string {
+	return filepath.Join(os.TempDir(), upgradePrivateRootName)
+}
+
+// upgradePrivateDenied names the staging roots a rendered profile must deny,
+// for a GOOS and a TMPDIR: one under each of the blanket temp grants, because
+// the grant is what has to be narrowed and a launch's TMPDIR need not be the
+// upgrade run's. Parameterized for seatbeltTempGrants' reason — a darwin pin
+// must be able to read the darwin answer on this box — and nil when that var
+// is stubbed empty, which is correct: no temp grant, nothing to narrow.
+func upgradePrivateDenied(goos, tmpdir string) []string {
+	var out []string
+	for _, d := range seatbeltTempGrants(goos, tmpdir) {
+		out = append(out, filepath.Join(d, upgradePrivateRootName))
+	}
+	return out
+}
+
 // upgradeDefaultRef is the target when the operator names no sha. A
 // remote-tracking ref and never a local branch: `main` in the source
 // checkout carries crew landings the coordinator has not pushed, and
@@ -404,10 +470,13 @@ var upgradeEpilogue = func(w io.Writer, wt string, plan upgradePlan) string {
 // side hashes every object it is sent: bytes that do not hash to the name
 // they were asked for leave the commit's tree incomplete and the fetch
 // fails "did not send all necessary objects" before anything is checked out.
-// The new repository's store is under this run's mktemp -d, which no seat is
-// granted, so a swap after the fetch has nothing to swap. make test, the
-// build (clean-build.sh's own fetch then reads THIS store) and the epilogue
-// all run from it.
+// The new repository's store is under this run's mktemp -d, inside
+// upgradePrivateRoot, which no seat is granted at either mechanism — a
+// private /tmp at bwrap, a named deny at seatbelt, and that constant's
+// comment has what the sentence used to claim and why it was false
+// (ranger-base-ua625). So a swap after the fetch has nothing to swap. make
+// test, the build (clean-build.sh's own fetch then reads THIS store) and the
+// epilogue all run from it.
 //
 // WHAT IS FETCHED IS THE TIP, and D3.1's two ancestry answers are taken
 // again here. upgradeResolve read them out of the shared store, where a
@@ -436,7 +505,32 @@ func upgradePrivateCopy(plan upgradePlan) (dir string, done func(), err error) {
 	if plan.Tip == "" || plan.To == "" || plan.From == "" {
 		return "", nil, Die("posse upgrade: the plan names no %s, so there is nothing to fetch and check — this is a bug in the verb, not in the repo", upgradeDefaultRef)
 	}
-	tmp, err := os.MkdirTemp("", "posse-upgrade.")
+	// THE ROOT IS LSTAT'D BEFORE IT IS USED (ranger-base-ua625). It is a
+	// fixed name under a world-of-one-uid temp root, so a link planted at
+	// it would send this run's copy — and the uncaged `make test` that runs
+	// out of it — wherever the planter chose, which is the whole hole the
+	// deny closes. A link or a file at the name is refused rather than
+	// removed: this verb does not delete things it did not make, and the
+	// operator who is told the name can look at it.
+	root := upgradePrivateRoot()
+	switch fi, err := os.Lstat(root); {
+	case err == nil && !fi.IsDir():
+		return "", nil, Die("posse upgrade: %s is a %s and not a directory — this verb stages its private copy there and every rendered profile denies that name, so something outside the wall put it there. Look at it, remove it, and run this again (ranger-base-ua625)", AbbrevHome(root), fi.Mode().Type())
+	case err != nil && !os.IsNotExist(err):
+		return "", nil, Die("posse upgrade: cannot read %s, where the private copy is staged: %v", AbbrevHome(root), err)
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", nil, Die("posse upgrade: %v", err)
+	}
+	// `posse-` heads the per-run name as well as the root, because the
+	// tree-wide census reads the PREFIX literal at the call site and scores
+	// an ambiguous parent in (internal/treepins/temproot_qa_test.go): a root
+	// outside posse's temp namespace is collected by no class of
+	// scripts/reap-test-tmp.sh at any age, and the remover here is a
+	// `defer`, which runs on no SIGKILL. Redundant under a parent already
+	// named `posse-upgrade`, and the redundancy is the point — the run dir
+	// is reapable on its own if it ever outlives its root.
+	tmp, err := os.MkdirTemp(root, "posse-upgrade-run.")
 	if err != nil {
 		return "", nil, Die("posse upgrade: %v", err)
 	}

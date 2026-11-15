@@ -30,6 +30,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-wg4z1](ranger-base-wg4z1.md) — The replay cannot run over a detached HEAD, and the remedy that handed it one (ranger-base-wg4z1) — 2026-11-14
 - [ranger-base-v84cn](ranger-base-v84cn.md) — An empty deny directory gets an anchor file, so a host rmdir cannot take its mount off (ranger-base-v84cn) — 2026-11-14
 - [ranger-base-v81vo](ranger-base-v81vo.md) — A commit-time gate is install-gated exactly like a wall, and the lag reading has no category for it (ranger-base-v81vo) — 2026-11-14
+- [ranger-base-ua625](ranger-base-ua625.md) — The anchor's class, and where `posse upgrade` stages its copy (ranger-base-ua625) — 2026-11-14
 - [ranger-base-s7tkc](ranger-base-s7tkc.md) — The bwrap wall hides the host's crash stores (ranger-base-s7tkc) — 2026-11-14
 - [ranger-base-rs6qo](ranger-base-rs6qo.md) — Three arms that were load-bearing and unheld (ranger-base-rs6qo) — 2026-11-14
 - [ranger-base-r3qz6](ranger-base-r3qz6.md) — The pulse's channel switch: what D3 and D4 landed, and the three places the code reads the page narrowly (ranger-base-r3qz6) — 2026-11-14

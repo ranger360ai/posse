@@ -177,25 +177,17 @@ func bgLiveFixtureShaped(t *testing.T, deny []string, detach bool) bgLive {
 		t.Fatalf("BwrapArgs refused the worktree grant for deny %v: %v", deny, err)
 	}
 	f.argv = argv
-	// The launcher's half, which runs OUTSIDE the wall: D18 is what makes
-	// this production code (RenderBwrap), and until then the test plays
-	// launcher exactly as the probe's shell does — in the order the list
-	// gives, which is the list's whole promise.
-	for _, s := range prep {
-		switch s.Kind {
-		case PrepMkdirAll:
-			if err := os.MkdirAll(s.Path, 0o755); err != nil {
-				t.Fatalf("prep %s: %v", s, err)
-			}
-		case PrepTouch:
-			fh, err := os.OpenFile(s.Path, os.O_CREATE|os.O_WRONLY, 0o644)
-			if err != nil {
-				t.Fatalf("prep %s: %v", s, err)
-			}
-			fh.Close()
-		default:
-			t.Fatalf("the render asked for a prep step this test cannot run: %s", s)
-		}
+	// The launcher's half, which runs OUTSIDE the wall, in the order the
+	// list gives — which is the list's whole promise.
+	// runBwrapPrep and not a copy of its switch (ranger-base-ua625). This
+	// loop was written before D18 made the launcher's half production code,
+	// and it knew two step kinds of the four: the render grew a PrepSeed
+	// here — the anchor inside an empty private-bind mount point — and both
+	// copies fell into their own `default` and refused a step the launcher
+	// runs without comment. A reduced launcher measures a wall the launcher
+	// does not put up, so the test plays launcher by CALLING it.
+	if err := runBwrapPrep(prep); err != nil {
+		t.Fatalf("prep: %v", err)
 	}
 	if f.keep != "" {
 		if _, err := os.Stat(f.keep); err != nil {

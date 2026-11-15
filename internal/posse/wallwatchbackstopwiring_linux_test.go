@@ -97,8 +97,15 @@ func TestLiveWallWatchKillsASeatWhoseBackstopRecordCannotBeWritten(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prep) != 0 {
-		t.Fatalf("fixture needs prep %v", prep)
+	// The launcher's own half, run as the launcher runs it. It used to
+	// assert the render needed NO prep, which held only while the fixture
+	// happened to have made everything the render wanted: ranger-base-ua625
+	// gave the private bind's empty mount point an anchor seed and the
+	// tripwire fired on a step a real launch makes without comment. A
+	// fixture that refuses the launcher's prep is a fixture measuring a
+	// wall no launch puts up.
+	if err := runBwrapPrep(prep); err != nil {
+		t.Fatalf("prep: %v", err)
 	}
 	if err := os.WriteFile(s.args, bwrapArgsBytes(argv), 0o644); err != nil {
 		t.Fatal(err)

@@ -734,6 +734,32 @@ func (c SeatbeltCarveOut) Masked(p string) bool {
 // the directory first. That remover still detaches the wall, and wall-watch
 // still kills the seat (ranger-base-0qpsw D2).
 //
+// THE CLASS IS NOT "A DIRECTORY CLAUDE SWEEPS" — IT IS "A MOUNT POINT THIS
+// RENDER LEAVES EMPTY ON THE HOST" (ranger-base-ua625 finding 1, from the
+// verify at ranger-base-pxprm). The property that makes a mount point
+// removable is emptiness and nothing about who made it or what is normally
+// kept there, so every empty host directory the render mounts over is one
+// host rmdir from detaching, whatever mounts over it. This field is the DENY
+// half of that class and is not the whole of it: the credential-store tmpfs
+// (bwrap.go step 5c) and the private binds over claude's shared state
+// (bwrap.go step 2) mount over host directories the launcher itself leaves
+// empty, and they are anchored at their own arms rather than through Deny,
+// because neither is a Deny entry. MEASURED 2026-11-14, same box and bwrap:
+// the --tmpfs arm detaches on a host removal exactly as the --ro-bind arm
+// does, mountinfo 1 -> 0, and the seat then READS a file the host wrote at
+// that name after launch. `~/.bob` was in that shape on this box when the
+// finding was filed — present, zero entries, returned by
+// credentialStoreReadMaskDirs for every claude seat.
+//
+// WHAT IS DELIBERATELY NOT ANCHORED, and the reason it is a list and not a
+// rule: claudeExecConfigDirNames' other members. Fourteen of them are empty
+// directories on this box and in the same STRUCTURAL shape, and MEASURED
+// 2026-11-14 across a sweep that took all seven swept dirs, the remover took
+// none of them. They are directories claude LOADS CODE from, where an empty
+// dotfile is not measured inert, so they get no anchor on a guess. That is
+// the one exclusion, and it is a judgement about the directory's reader and
+// never about the shape.
+//
 // A subset of Deny, and of the non-file-shaped part of it. An entry here that
 // is not in Deny anchors nothing.
 func (c SeatbeltCarveOut) Anchored(p string) bool {
@@ -2034,6 +2060,20 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 		add(&c.Deny, f)
 		add(&c.DenyFile, f)
 		add(&c.Mask, f)
+	}
+	// `posse upgrade`'s staging root, denied in EVERY profile and under
+	// every blanket temp grant (ranger-base-ua625 finding 2;
+	// upgradePrivateRootName has the measurement and says why the copy is
+	// not simply moved somewhere else). The verb fetches a fresh checkout
+	// there and then runs `make test` out of it, UNCAGED, as its caller —
+	// so a seat able to write that tree for the twenty minutes the suite
+	// takes is a seat choosing what the operator's box executes. The temp
+	// grants are blanket, so the deny is too: it is rendered whether or not
+	// an upgrade is running, because a seat's profile is fixed at its own
+	// launch and the verb starts later. bwrap renders nothing for it and
+	// needs to — the seat's /tmp is already a private bind (bwrap.go 1c).
+	for _, d := range upgradePrivateDenied(runtime.GOOS, os.Getenv("TMPDIR")) {
+		add(&c.Deny, d)
 	}
 	// posse's plan-usage snapshot, read-only over the `.cache/posse` lock-dir
 	// grant (ranger-base-olr0g): the dispatcher's usage guard trusts it, and

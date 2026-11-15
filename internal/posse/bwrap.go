@@ -679,7 +679,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			watch(WallWatchMasked, d)
 			continue
 		}
-		exists, dir, err := bwrapStat(d)
+		exists, _, err := bwrapStat(d)
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("deny", d, err)
 		}
@@ -874,8 +874,18 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		// already there. It is O_EXCL, so an anchor that is already there is
 		// left alone. A name that is not a directory gets no anchor: the
 		// seed could not land, and nothing rmdirs a file.
-		if carve.Anchored(d) && (!exists || dir) {
-			prep = append(prep, PrepStep{PrepSeed, filepath.Join(d, wallAnchorName), "an empty file inside a read-only deny directory that a host process removes when it finds it empty; a host rmdir of the dir would take the mount off the seat"})
+		//
+		// The `!exists || dir` guard this used to carry read its answer out
+		// of bwrapStat, which follows a link; bwrapAnchorStep lstats
+		// (ranger-base-ua625).
+		if carve.Anchored(d) {
+			step, ok, err := bwrapAnchorStep(d, "an empty file inside a read-only deny directory that a host process removes when it finds it empty; a host rmdir of the dir would take the mount off the seat")
+			if err != nil {
+				return nil, nil, err
+			}
+			if ok {
+				prep = append(prep, step)
+			}
 		}
 		argv = append(argv, "--ro-bind", d, d)
 		watch(WallWatchDeny, d)
@@ -970,6 +980,18 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		case !dir:
 			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-12ggv)", d)
 		}
+		// NO ANCHOR HERE, and it is the line that draws the class's edge
+		// (ranger-base-ua625 finding 1). This arm and 5b mount over a
+		// directory the HOST made and the host fills; they skip an absent
+		// one outright, on the stated ground that "a seat cannot create it
+		// either — nothing grants its parent". The class is a mount point
+		// THIS LAUNCHER leaves empty, and these are not in it: posse
+		// neither creates nor empties them, and a seed here would be posse
+		// writing a file into the operator's ~/.ssh. The residual is
+		// therefore real and priced: on a box where ~/.ssh is EMPTY the
+		// tmpfs is one host rmdir from detaching, and a key written after
+		// launch would be readable. An empty ~/.ssh is a box with no keys
+		// to hide, which is why that is a residual and not this fix.
 		argv = append(argv, "--tmpfs", d)
 		watch(WallWatchReadMask, d)
 		readHidden = append(readHidden, d)
@@ -1001,6 +1023,8 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		case !dir:
 			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-k06gw)", d)
 		}
+		// 5a's rule, same reason: the host's directory, not this
+		// launcher's (ranger-base-ua625).
 		argv = append(argv, "--tmpfs", d)
 		watch(WallWatchReadMask, d)
 		readHidden = append(readHidden, d)
@@ -1059,6 +1083,25 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			return nil, nil, Die("bwrap cannot mask the credential store %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-a8qfg)", d)
 		case !exists:
 			prep = append(prep, PrepStep{PrepMkdirAll, d, "another runtime's credential store that is not there yet; made empty so the mask has a directory to cover and a first login during this seat's life lands inside it"})
+		}
+		// AND THE MASK IS ANCHORED, for step 3's reason and on step 3's
+		// measurement (ranger-base-ua625 finding 1). Unlike 5a and 5b this
+		// arm leaves its host directory EMPTY — the `!exists` case above
+		// makes it so deliberately, so that a first login during the seat's
+		// life lands inside the mask — which puts it in the class exactly:
+		// a mount point this launcher leaves empty is one host rmdir from
+		// detaching. MEASURED 2026-11-14: the tmpfs detaches as the ro-bind
+		// does, mountinfo 1 -> 0, and the seat then READS a file the host
+		// wrote at that name after launch, which here is that login.
+		// `~/.bob` was in this shape on this box when the finding was filed
+		// — present, zero entries, masked for every claude seat. The anchor
+		// sits under the tmpfs, so no seat ever sees it.
+		astep, aok, aerr := bwrapAnchorStep(d, "an empty file inside another runtime's credential store, which this render leaves empty under a tmpfs; a host rmdir of the empty store would take that mask off the seat and show it a login made after launch")
+		if aerr != nil {
+			return nil, nil, aerr
+		}
+		if aok {
+			prep = append(prep, astep)
 		}
 		argv = append(argv, "--tmpfs", d)
 		watch(WallWatchReadMask, d)
@@ -1168,39 +1211,83 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 	if !writeGranted(grants, pb.Dst) {
 		return nil, nil, false, nil
 	}
-	if pb.Src == pb.Dst {
+	var out []string
+	switch {
+	case pb.Src == pb.Dst:
 		// In place (ranger-base-ajkqx): the lstat above is the source's
 		// too, and an absent one is made once, here.
 		if err != nil {
 			prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "a dir of the shared config that is re-bound in place to narrow or reopen the grant over it; a mount needs a directory to cover"})
 		}
-		return []string{bind, pb.Dst, pb.Dst}, prep, true, nil
+		out = []string{bind, pb.Dst, pb.Dst}
+	default:
+		if err != nil {
+			prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "the shared member a private copy is mounted over; a mount needs a directory to cover"})
+		}
+		if pb.Src == "" {
+			// An empty tmpfs: nothing on the host to stat or make, and
+			// nothing a host process wrote at Dst is visible under it
+			// (ranger-base-6ob20).
+			out = []string{"--tmpfs", pb.Dst}
+			break
+		}
+		// THE SOURCE IS LSTAT'D AT EVERY COMPONENT, NOT STAT'D AT THE LAST
+		// (ranger-base-wsgus). It sat under a bwrapStat — os.Stat, which
+		// follows — so a seat that replaced its own <seat
+		// wall>/claude/<member> with a link had the next launch bind that
+		// link's target read-write at <cfg>/<member>, after the grants and
+		// past the deny and read-mask steps, which name the target's own
+		// path and not this alias.
+		sexists, sfi, serr := bwrapPrivateSrcStat(pb)
+		switch {
+		case serr != nil:
+			return nil, nil, false, serr
+		case sexists && !sfi.IsDir():
+			return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a directory (a link or a file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-5632o, ranger-base-wsgus)", pb.Src, pb.Dst)
+		case !sexists:
+			prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
+		}
+		out = []string{bind, pb.Src, pb.Dst}
 	}
-	if err != nil {
-		prep = append(prep, PrepStep{PrepMkdirAll, pb.Dst, "the shared member a private copy is mounted over; a mount needs a directory to cover"})
+	// THE TWO ARMS THAT MOUNT SOMETHING ELSE OVER pb.Dst ARE ANCHORED
+	// (ranger-base-ua625 finding 1). A private copy and an empty tmpfs both
+	// send the seat's writes somewhere that is not this name, so the
+	// launcher leaves the host directory EMPTY for the seat's whole life —
+	// and the `err != nil` mkdir above makes an absent one from nothing.
+	// MEASURED 2026-11-15 (the evidence on ranger-base-dtzgt): the six host
+	// dirs this render binds private copies over were all ABSENT before a
+	// launch and recreated empty by the prep in the same millisecond as the
+	// anchored deny dirs, and the same host rmdir that takes an empty
+	// mcp-skill-archives off would take one of these off. After that detach
+	// the seat's session, history and file-history writes land in the shared
+	// host dir every other seat and the operator's own claude read, and its
+	// reads see theirs.
+	//
+	// THE IN-PLACE ARM IS NOT IN THE CLASS and that is the whole of the
+	// `Src != Dst`. A dir bound over ITSELF is the host's own live
+	// directory, re-bound to narrow or reopen the grant over it: the seat
+	// writes through to that name, so the launcher neither empties it nor
+	// keeps it empty, and an anchor there is posse's file in a directory
+	// the operator's own claude enumerates (claude's `projects/`, the live
+	// member of this arm). It is 5a's rule at the private loop, and
+	// ranger-base-ua625's own first draft anchored it — which a live pin
+	// caught as "the real claude changed projects/", the change being
+	// posse's.
+	//
+	// One call for the two arms that are, and not one per arm, for the
+	// reason the single watch call is the caller's: a per-arm anchor is a
+	// line the fifth arm forgets. The File arm returns above and gets none —
+	// nothing rmdirs a file.
+	if pb.Src != pb.Dst {
+		step, ok, aerr := bwrapAnchorStep(pb.Dst, "an empty file inside a host directory this render mounts a private copy or an empty tmpfs over, and leaves empty; a host rmdir of it would take that mount off the seat and put the seat's writes in the shared dir")
+		if aerr != nil {
+			return nil, nil, false, aerr
+		}
+		if ok {
+			prep = append(prep, step)
+		}
 	}
-	if pb.Src == "" {
-		// An empty tmpfs: nothing on the host to stat or make, and
-		// nothing a host process wrote at Dst is visible under it
-		// (ranger-base-6ob20).
-		return []string{"--tmpfs", pb.Dst}, prep, true, nil
-	}
-	// THE SOURCE IS LSTAT'D AT EVERY COMPONENT, NOT STAT'D AT THE LAST
-	// (ranger-base-wsgus). It sat under a bwrapStat — os.Stat, which follows
-	// — so a seat that replaced its own <seat wall>/claude/<member> with a
-	// link had the next launch bind that link's target read-write at
-	// <cfg>/<member>, after the grants and past the deny and read-mask steps,
-	// which name the target's own path and not this alias.
-	exists, sfi, err := bwrapPrivateSrcStat(pb)
-	switch {
-	case err != nil:
-		return nil, nil, false, err
-	case exists && !sfi.IsDir():
-		return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a directory (a link or a file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-5632o, ranger-base-wsgus)", pb.Src, pb.Dst)
-	case !exists:
-		prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
-	}
-	return []string{bind, pb.Src, pb.Dst}, prep, true, nil
+	return out, prep, true, nil
 }
 
 // bwrapPrivateSrcStat is the one filesystem question asked of a private
@@ -1465,6 +1552,59 @@ func bwrapStat(p string) (exists, dir bool, err error) {
 		return false, false, nil
 	}
 	return false, false, err
+}
+
+// bwrapAnchorStep is the anchor this render keeps inside a host directory it
+// is about to mount over: an empty file, so a host `rmdir` of that directory
+// is refused with ENOTEMPTY and cannot take the mount off a live seat.
+//
+// ONE FUNCTION FOR THE WHOLE CLASS (ranger-base-ua625 finding 1). The class
+// is "a mount point THIS LAUNCHER leaves EMPTY on the host", and it has three
+// members with nothing in common but that shape: an Anchored deny directory
+// (step 3), a sibling runtime's credential store under the read-mask tmpfs
+// (step 5c), and a private bind over a dir of claude's shared state (step 2).
+// The first was anchored by a list of seven names under ranger-base-v84cn and
+// the other two were not, because the list was the thing that generalized and
+// the shape was never written down. Each of the three calls this, so a fourth
+// member is anchored by calling it and not by joining a table — the lesson
+// the watch list already learned in bwrapArgsWatched's head comment, and
+// TestQAWallAnchorCoversEveryWatchedDirectoryMountOrPricesIt is what reds
+// when a new arm joins neither.
+//
+// "THIS LAUNCHER" IS THE WHOLE OF THE EDGE. Steps 5a (~/.ssh) and 5b
+// (DenyReadDir) also tmpfs over a host directory and call this function
+// never: both skip an absent one, so posse neither creates nor empties them,
+// and a seed there would be posse writing into the operator's own area.
+// Step 5a's comment prices the residual that leaves.
+//
+// LSTAT AND NOT STAT, which is the other half of the same finding. The deny
+// arm reached here through bwrapStat — os.Stat, which FOLLOWS — so a link
+// standing at an Anchored deny name answered `dir` for its target and the
+// seed wrote <target>/.posse-wall-anchor, a stray name at a path posse did
+// not choose. The anchored names are inside a seat's write grant by the same
+// test the Masked arm lstats for (ranger-base-l751c), and a seat cannot plant
+// the link while the mount is up — a rename cannot cross a mount point — so
+// the window is after a detach, which is also a kill. A link or a file at the
+// name therefore gets no anchor and no refusal: nothing rmdirs either of
+// them, so there is no mount to lose, and the arms that care what the name is
+// have already said so in their own words.
+//
+// THE COST IS A STRAY EMPTY DOTFILE in a directory posse did not create, and
+// it is paid in a sibling runtime's config dir and in claude's own state
+// dirs. It is the cost ranger-base-v84cn already accepted for claude's swept
+// dirs, and it buys at the credential store what it bought there: the member
+// that is NOT inert to its reader — a directory something loads code from —
+// is excluded by its producer and never reaches this function
+// (SeatbeltCarveOut.Anchored's last paragraph).
+func bwrapAnchorStep(d, why string) (PrepStep, bool, error) {
+	fi, err := os.Lstat(d)
+	switch {
+	case err != nil && !os.IsNotExist(err):
+		return PrepStep{}, false, bwrapStatRefusal("anchor", d, err)
+	case err == nil && !fi.IsDir():
+		return PrepStep{}, false, nil
+	}
+	return PrepStep{PrepSeed, filepath.Join(d, wallAnchorName), why}, true, nil
 }
 
 // bwrapUnsetEnv is what the render takes out of a seat's environment
