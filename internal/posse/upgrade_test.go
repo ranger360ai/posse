@@ -596,14 +596,29 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 	// swap that really does leave the gap. It measures the one thing the
 	// absence check above cannot establish about itself — that a gap of the
 	// width this pin exists to catch would have been seen.
-	ctlDir := t.TempDir()
-	ctl := filepath.Join(ctlDir, "posse")
-	if err := WriteExecutable(ctl, old, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	control := probeSwapWindow(t, ctl, old, fresh, func() error { return installShapedSwap(ctl, fresh) })
-	if control.swapErr != nil {
-		t.Fatalf("the control's install(1)-shaped write: %v", control.swapErr)
+	//
+	// It gets up to swapControlAttempts of them, and stops at the first one
+	// that sees the gap. A reader starved across a whole control window is
+	// a fact about the box and not about the probe — MEASURED 2026-11-14 at
+	// GOMAXPROCS=1 it happened in 2 runs of 10, each with a widest hole of
+	// 3.7 ms, the whole window, against 0 in 60 runs on sixteen Ps — and
+	// one attempt would turn that into a non-reading rather than retrying
+	// something that costs 55 ms.
+	var control swapProbe
+	controlAttempts := 0
+	for controlAttempts < swapControlAttempts {
+		controlAttempts++
+		ctl := filepath.Join(t.TempDir(), "posse")
+		if err := WriteExecutable(ctl, old, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		control = probeSwapWindow(t, ctl, old, fresh, func() error { return installShapedSwap(ctl, fresh) })
+		if control.swapErr != nil {
+			t.Fatalf("the control's install(1)-shaped write: %v", control.swapErr)
+		}
+		if control.absent != 0 || control.partial != 0 {
+			break
+		}
 	}
 
 	// THE WITNESSES, and this pin needs them more than most: a reader
@@ -629,8 +644,8 @@ func TestUpgradeSwapNeverLeavesTheTargetAbsentOrShort(t *testing.T) {
 		t.Skipf("the probe averaged one observation every %s over the swap and every %s over the control, against a budget of %s — a tenth of the %s window it exists to resolve. A probe that coarse cannot tell a swap that left no gap from a gap it could not see (ranger-base-6sbng); widest holes %s and %s over %d and %d observations",
 			got.meanGap, control.meanGap, swapProbeMaxMeanGap, swapProbeWindow, got.maxGap, control.maxGap, got.reads, control.reads)
 	case control.absent == 0 && control.partial == 0:
-		t.Skipf("the control left the target absent and then short for milliseconds and this probe saw neither, over %d observations %s apart with a widest hole of %s — so the green above is not evidence that the real swap left no gap, only that this run could not have seen one (ranger-base-6sbng)",
-			control.reads, control.meanGap, control.maxGap)
+		t.Skipf("the control left the target absent and then short for milliseconds and this probe saw neither, in %d attempts, the last of %d observations %s apart with a widest hole of %s — so the green above is not evidence that the real swap left no gap, only that this run could not have seen one (ranger-base-6sbng)",
+			controlAttempts, control.reads, control.meanGap, control.maxGap)
 	}
 }
 
@@ -798,6 +813,12 @@ const (
 	// 1.7-2.1 ms, 7x over it. That is the separation a max-hole bound did
 	// not have.
 	swapProbeMaxMeanGap = swapProbeWindow / 10
+	// swapControlAttempts is how many times the pin will run its positive
+	// control before calling the run a non-reading. Three, because the
+	// thing being retried is a scheduling accident with a measured rate of
+	// 2 in 10 at GOMAXPROCS=1 and 0 in 60 on this box's sixteen, and each
+	// attempt costs ~55 ms only on the runs that need it.
+	swapControlAttempts = 3
 )
 
 // swapWitnessBudget is how long the pin above waits for its reader
