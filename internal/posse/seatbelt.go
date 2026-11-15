@@ -498,18 +498,59 @@ func credentialStoreAllowlistNames() []string {
 }
 
 // readMaskDirAllowed is the allowlist's members under dir, less any the
-// carve-out read-denies by name: a literal deny is never outvoted by this
-// allow, in either mechanism (sshDirAllowed's rule, ADR 0001 — deny wins).
+// carve-out read-denies AT OR INSIDE one: a literal deny is never outvoted
+// by this allow, in either mechanism (sshDirAllowed's rule, ADR 0001 — deny
+// wins).
+//
+// CONTAINMENT AND NOT AN EXACT NAME, because one member is a DIRECTORY
+// (ranger-base-jgipg). The exact-name drop this function was born with came
+// over from sshDirAllowed, whose allowlist is `config` and `known_hosts` —
+// both files, for which equality and containment are the same question.
+// `sessions` with dir:true is the first directory member either allowlist
+// has had, and over it the two questions part: a DenyRead literal at
+// <store>/sessions/<file> equals no member NAME, so `sessions/` was bound
+// back read-only over it — and bwrapCarveArgs' DenyRead loop one level down
+// then skipped that same literal too, because `writeGranted(storeMasked, f)`
+// is true for anything under a masked store, so no /dev/null was rendered
+// for it either. The deny was outvoted twice over, with this comment and
+// the pin's own name saying it could not be.
+//
+// DROPPING THE WHOLE MEMBER is the conservative arm, and it is what makes
+// that DenyRead skip honest: with the member gone the store's own tmpfs
+// covers the denied path, so the skip is "already behind the mask" in fact
+// and not only in its comment. Binding a holed directory member back
+// child-by-child instead would widen what the allow reaches on exactly the
+// render that has a deny in it.
+//
+// Nothing reached it: credentialSiblingStores spells every store's
+// credential at the store root (`auth.json`) or under `settings/`, never
+// under `sessions/`, so the hole was one table row away rather than live
+// (ranger-base-ujp0c finding 1). underDir is the containment every other arm
+// of this render already asks by (`own()`/credentialStoreOwned carry the
+// same reasoning for the store itself), asked in the direction a directory
+// member needs: is the DENY inside the MEMBER.
 func (c SeatbeltCarveOut) readMaskDirAllowed(dir string) []credentialStoreMember {
 	var out []credentialStoreMember
 	for _, m := range credentialStoreAllowlist {
 		m.path = filepath.Join(dir, m.name)
-		if containsString(c.DenyRead, m.path) {
+		if c.deniesReadAtOrUnder(m.path) {
 			continue
 		}
 		out = append(out, m)
 	}
 	return out
+}
+
+// deniesReadAtOrUnder reports whether the carve-out read-denies p itself or
+// anything inside it. readMaskDirAllowed, its only caller, says why that is
+// the question a directory allowlist member has to ask.
+func (c SeatbeltCarveOut) deniesReadAtOrUnder(p string) bool {
+	for _, d := range c.DenyRead {
+		if underDir(p, d) {
+			return true
+		}
+	}
+	return false
 }
 
 // sshDirAllowlist is what a masked seat still reads under an SSHDir: ssh's

@@ -138,21 +138,85 @@ func TestBwrapArgsSkipsACredentialStoreAllowOfTheWrongShape(t *testing.T) {
 	}
 }
 
-// A literal the carve-out read-denies by NAME is not bound back, whatever
-// the allowlist says: deny wins (ADR 0001), the rule sshDirAllowed follows
-// one shape over.
+// A literal the carve-out read-denies is not bound back, whatever the
+// allowlist says: deny wins (ADR 0001), the rule sshDirAllowed follows one
+// shape over.
+//
+// THE DENY NEED NOT BE THE MEMBER'S OWN NAME, and that is the half of this
+// pin's own claim its first body did not measure (ranger-base-jgipg). It
+// planted <store>/config.toml, a FILE member, and asserted the count drops
+// by one — so it was green over an exact-name drop while a literal INSIDE
+// the directory member `sessions` was bound back under it and skipped by
+// the render's DenyRead loop as well. The exact-name arms are kept here as
+// the control, which is what says a red inside-arm is a hole and not a
+// broken rig.
 func TestACredentialStoreAllowDoesNotOutvoteAReadDeny(t *testing.T) {
 	t.Parallel()
-	store := filepath.Join(t.TempDir(), "codex")
-	cfg := filepath.Join(store, "config.toml")
-	carve := SeatbeltCarveOut{DenyRead: []string{cfg}}
-	for _, m := range carve.readMaskDirAllowed(store) {
-		if m.path == cfg {
-			t.Fatalf("%s is allowed back under the mask although the carve-out read-denies it", cfg)
-		}
+	for _, tc := range []struct {
+		name, deny, drop string // deny and drop are spelled under the store
+	}{
+		// The control: the deny IS the member's name, both shapes.
+		{"the member's own name, a file member", "config.toml", "config.toml"},
+		{"the member's own name, the directory member", "sessions", "sessions"},
+		// The arm that was missing, and the live finding.
+		{"a literal inside the directory member", "sessions/auth.json", "sessions"},
+		{"deeper inside the directory member", "sessions/2026/11/auth.json", "sessions"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store := filepath.Join(t.TempDir(), "codex")
+			deny := filepath.Join(store, tc.deny)
+			carve := SeatbeltCarveOut{DenyRead: []string{deny}}
+			allowed := carve.readMaskDirAllowed(store)
+			for _, m := range allowed {
+				if m.name == tc.drop {
+					t.Errorf("%s is allowed back under the mask although the carve-out read-denies %s", m.path, deny)
+				}
+			}
+			if got, want := len(allowed), len(credentialStoreAllowlist)-1; got != want {
+				t.Fatalf("%d members allowed, want %d — the deny should drop exactly one", got, want)
+			}
+		})
 	}
-	if got := len(carve.readMaskDirAllowed(store)); got != len(credentialStoreAllowlist)-1 {
-		t.Fatalf("%d members allowed, want %d — the deny should drop exactly one", got, len(credentialStoreAllowlist)-1)
+}
+
+// THE SAME CLAIM IN THE RENDERED ARGV, which is where the finding was
+// reachable (ranger-base-jgipg). Both halves are asserted, because the deny
+// was outvoted twice over: the directory member is not bound back across
+// the read-denied path, and no /dev/null is needed over that path either —
+// dropping the member leaves the store's own tmpfs covering it, which is
+// what makes bwrapCarveArgs' `writeGranted(storeMasked, f)` skip honest
+// rather than merely quiet.
+func TestBwrapArgsDoesNotBindBackACredentialStoreDirMemberHoldingAReadDeny(t *testing.T) {
+	t.Parallel()
+	_, bwAt := bwTree(t,
+		[]string{"proj", "codex/sessions"},
+		[]string{"codex/config.toml", "codex/version.json", "codex/sessions/auth.json"})
+	store, sessions, cred := bwAt("codex"), bwAt("codex", "sessions"), bwAt("codex", "sessions", "auth.json")
+
+	argv, _, err := BwrapArgs(bwAt("proj"), []string{bwAt("proj")},
+		SeatbeltCarveOut{DenyRead: []string{cred}, ReadMaskDir: []string{store}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := bwJoin(argv)
+	if !strings.Contains(line, "--tmpfs "+store) {
+		t.Fatalf("no tmpfs over the store %s:\n%s", store, line)
+	}
+	if strings.Contains(line, "--ro-bind "+sessions+" "+sessions) {
+		t.Errorf("%s is bound back read-only over the read-denied %s:\n%s", sessions, cred, line)
+	}
+	if strings.Contains(line, cred) {
+		t.Errorf("%s is named in the render at all — with the member dropped the store's tmpfs covers it, and a mount there would only make its name:\n%s", cred, line)
+	}
+	// The drop is the ONE member that holds the deny: the other two are
+	// still bound back, or this pin would pass over a mask that allowed
+	// nothing back at all.
+	for _, m := range []string{"config.toml", "version.json"} {
+		p := bwAt("codex", m)
+		if !strings.Contains(line, "--ro-bind "+p+" "+p) {
+			t.Errorf("%s is not bound back under the mask, and no deny names it:\n%s", p, line)
+		}
 	}
 }
 
