@@ -360,10 +360,13 @@ test-arm3:
 
 # THE `-race` ARM, and it is THREE COMMANDS (ranger-base-nhc23). On demand
 # only: type it when a change touches dispatch/passcarry/watch or a race is
-# suspected. ~11.4 minutes, and the cost is WAIT, not CPU — 13-14% of one box
-# over the three binaries, because what `-race` stretches in these tests is
-# fixed intervals, backstops and barrier timeouts, not per-access
-# instrumentation (MEASURED 2026-09-10, docs/notes.d/ranger-base-d0xvw.md).
+# suspected. ~17 minutes over 227 tests in 23 files (MEASURED 2026-11-14,
+# 1011s on this box; it was ~11.4 min over 108 tests in 8 until
+# ranger-base-87p6i put the other fifteen launcher files in), and the cost is
+# WAIT, not CPU — 13-14% of one box over the three binaries, because what
+# `-race` stretches in these tests is fixed intervals, backstops and barrier
+# timeouts, not per-access instrumentation
+# (docs/notes.d/ranger-base-d0xvw.md, docs/notes.d/ranger-base-87p6i.md).
 #
 # It is a target rather than a recipe in a notes file because the arm straddles
 # all three build-tag partitions, and the version that lived in prose ran 19%
@@ -373,8 +376,10 @@ test-arm3:
 # deleted file reds in seconds instead of going quiet.
 #
 # Not a prerequisite of anything, and not in CI: the arm is not gate-clean
-# today (ranger-base-0dt50), and a detector that costs eleven minutes of wall
-# belongs where a person is waiting for its answer.
+# today (ranger-base-1hnqc — four tests whose budgets are spelled in wall
+# seconds; ranger-base-0dt50's three are fixed and that bead is closed), and a
+# detector that costs seventeen minutes of wall belongs where a person is
+# waiting for its answer.
 test-race:
 	GOBIN='$(GOBIN)' scripts/test-race.sh
 

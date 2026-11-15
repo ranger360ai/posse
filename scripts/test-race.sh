@@ -42,25 +42,46 @@
 #
 # ─── WHAT IT COSTS, AND WHY IT IS NOT IN `make test` ─────────────────────────
 #
-# MEASURED 2026-09-10, darwin/arm64, go1.26.5, `-count=1`, over the whole
-# candidate set: 51.4s without `-race`, 670.9s with it — ~13x, ~11.4 minutes
-# in three commands. The cost is NOT the detector's per-access instrumentation:
-# the same run sits at 13-14% CPU. It is wall clock — fixed intervals,
-# backstops and barrier timeouts inside these tests stretching under the
-# `-race` build. So this arm buys its signal with WAIT, and it is typed by hand
-# when a change touches dispatch/passcarry/watch or a race is suspected. It is
-# not wired into `make test`, `test-arm{1,2,3}` or CI.
+# MEASURED 2026-11-14, D1 host (Linux 7.2.15, go1.27.3, 16 cores), warm build
+# cache, over the whole 23-file candidate set: **1011s — 16.9 minutes in three
+# commands**, arm 1 317s, arm 2 348s, arm 3 345s, at a one-minute load average
+# of 13.45 falling to 9.15 with two sibling seats' suites on the box for part
+# of it. The eight-file set that preceded it read 707s on the same box an hour
+# earlier (315 / 319 / 53, load 4.9-7.4), and the fifteen files
+# ranger-base-87p6i added read 301s on their own (120 / 74 / 106, load
+# 4.5-19.9) — so nearly doubling the set cost about 40% more wall, because what
+# the old set spent was concentrated in a few long-backstop tests.
+#
+# Before that: MEASURED 2026-09-10, darwin/arm64, go1.26.5, over the EIGHT-file
+# set: 51.4s without `-race`, 670.9s with it — ~13x, ~11.4 minutes. That ~13x
+# is the number to reason with, and the cost is NOT the detector's per-access
+# instrumentation: the same run sits at 13-14% CPU. It is wall clock — fixed
+# intervals, backstops and barrier timeouts inside these tests stretching under
+# the `-race` build. So this arm buys its signal with WAIT, and it is typed by
+# hand when a change touches dispatch/passcarry/watch or a race is suspected.
+# It is not wired into `make test`, `test-arm{1,2,3}` or CI.
 #
 # It takes no suite slot: a `-run` filter is not a full suite and is not queued
 # (AGENTS.md, ranger-base-uvzjk). At 13% CPU over three binaries it is not what
 # saturates this box.
 #
-# THE ARM IS NOT GREEN TODAY, and this script does not hide that. Three arm-2
-# dispatch tests fail under `-race` and pass without it, with `DATA RACE` count
-# 0 — filed as ranger-base-0dt50. Arms 1 and 3 are `ok` since
-# ranger-base-khhnd took the watch-loop backstop off its 30s constant and onto
-# the binary's own deadline. A red here is a result, not a broken script; read
-# the logs it names.
+# THE ARM IS NOT GREEN TODAY, and this script does not hide that. MEASURED
+# 2026-11-14 over the 23-file set: arm 1 `ok`, arm 2 one red, arm 3 three reds,
+# `DATA RACE` 0 in all three — filed as ranger-base-1hnqc. Every one of the
+# four passes without `-race` and fails with it, deterministically and at the
+# same timings run alone, because each is a budget spelled in wall seconds
+# against an apparatus `-race` stretches. Three of the four are in
+# launchlock_test.go, which was outside this arm until ranger-base-87p6i, so
+# nobody had seen them.
+#
+# ranger-base-0dt50's three arm-2 dispatch tests, which this paragraph used to
+# name, are fixed and that bead is closed: its close recorded that this line
+# and the Makefile's "not gate-clean today" had gone false and asked whoever
+# owns the target to strike them. Struck. ranger-base-khhnd is still why arm 1
+# is `ok`: it took the watch-loop backstop off its 30s constant and onto the
+# binary's own deadline, which is also the fix shape ranger-base-1hnqc inherits.
+#
+# A red here is a result, not a broken script; read the logs it names.
 
 set -euo pipefail
 
@@ -73,10 +94,55 @@ GOBIN=${GOBIN:-go}
 # channel, watch.go's pulse/backup/guard/watchdog goroutines — so it is a list
 # a person maintains, not something to infer from a test's name. The tests
 # inside these files are read fresh on every run.
+#
+# A list a person maintains, and NOT a list nobody checks (ranger-base-87p6i).
+# That judgement has a mechanical floor: a test file that runs one of those
+# four loops, or `Watch` (which starts all four), on a goroutine of its own is
+# carrying that concurrency whatever the file is called and whatever it
+# asserts. internal/treepins/racearm_qa_test.go's arm 4 derives that floor from
+# the test sources and reds when a file it proposes is in neither this list nor
+# its priced `raceArmExcluded` table. It had to be written: for two months this
+# list was eight files while FOURTEEN others launched one of those four loops
+# on a goroutine, and a fifteenth the pass itself. The race ranger-base-np54s
+# fixed was in one of the fourteen — suspend_qa_test.go, where
+# `go d.watchdogLoop(...)` sits four lines above the poll that raced it — so
+# the instrument built for that class was green over the file that had the
+# race, and `make test` found it by luck under load instead.
+#
+# The derivation is a FLOOR and not the list, which is what keeps the judgement
+# a person's: dispatch_qa_test.go and dispatchparity_qa_test.go launch nothing
+# on a goroutine and are in the arm for dispatch.go's gather fan-in, and no
+# reading of the test sources proposes them. The floor reaches the pass itself
+# as `d.Run` on a goroutine — which is how launchlock_test.go got here, a
+# fifteenth file the bead's own census did not name — but only for the three
+# dispatcher spellings the package uses, because `Run` is also `t.Run` and
+# `exec.Cmd.Run`. A dispatcher spelled some other way is a file somebody has
+# to put in this list by hand, as ever.
+#
+# A row in `raceArmExcluded` is priced in the seconds it would add, like an
+# ADR 0098 D2 treepins row, and nothing is priced out today. Note what an
+# exclusion costs HERE, before writing one: a treepins exclusion moves a test
+# to another route that still runs it, and this arm is the only route that runs
+# anything under `-race`, so a row is a coverage hole and not a schedule.
 CANDIDATE_FILES=${POSSE_RACE_FILES:-"
+internal/posse/backoffhold_qa_test.go
+internal/posse/backupjoin_qa_test.go
+internal/posse/backuploop_test.go
 internal/posse/dispatch_qa_test.go
 internal/posse/dispatchparity_qa_test.go
+internal/posse/drain_qa_test.go
+internal/posse/guardclock_qa_test.go
+internal/posse/hookwallsweep_qa_test.go
+internal/posse/launcherlag_qa_test.go
+internal/posse/launchlock_qa_test.go
+internal/posse/launchlock_test.go
 internal/posse/passcarry_qa_test.go
+internal/posse/planstale_qa_test.go
+internal/posse/pulse_test.go
+internal/posse/pulse_verify_test.go
+internal/posse/readyscan_test.go
+internal/posse/secondstore_qa_test.go
+internal/posse/suspend_qa_test.go
 internal/posse/watch_test.go
 internal/posse/watchhang_qa_test.go
 internal/posse/watchlock_test.go

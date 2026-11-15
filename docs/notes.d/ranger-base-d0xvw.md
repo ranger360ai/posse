@@ -305,3 +305,16 @@ to date is `DATA RACE` 0 (y3x6n, d0xvw, 7npp8's three arms).
 - Running the three `test-race` arms concurrently (13-14% CPU each; wall would
   fall from the sum ~11.4 min toward the longest arm, ~6.3 min). Unmeasured
   under contention, and no one has asked for the six minutes back.
+
+## THE EIGHT-FILE LIST ABOVE IS THE 2026-09-07 RECORD (ranger-base-87p6i, 2026-11-14)
+
+"The candidate set" section names eight files. That was the set as priced, and
+it stayed the set for two months while fourteen OTHER `internal/posse` test
+files ran one of watch.go's four loops on a goroutine of their own, and a
+fifteenth the dispatcher pass itself —
+`suspend_qa_test.go` among them, which is where the data race
+ranger-base-np54s fixed landed. The arm is 22 files and 215 tests now, with
+the mechanical floor under the list held by `racearm_qa_test.go`'s arm 4 and
+the per-file reasoning in `docs/notes.d/ranger-base-87p6i.md`. The prices in
+this fragment are prices of the eight-file set, on darwin, and remain readable
+as that.

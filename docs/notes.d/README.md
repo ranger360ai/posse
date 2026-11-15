@@ -39,6 +39,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-bskno](ranger-base-bskno.md) — The second route to a cross-cutting lane, and this one no order reaches (ranger-base-bskno) — 2026-11-14
 - [ranger-base-b3w9x](ranger-base-b3w9x.md) — A method, and then a helper: two places the exec census was not asking (ranger-base-b3w9x) — 2026-11-14
 - [ranger-base-99mvt](ranger-base-99mvt.md) — A mount SHAPE the fixture reflection could not see, one level down (ranger-base-99mvt) — 2026-11-14
+- [ranger-base-87p6i](ranger-base-87p6i.md) — ranger-base-87p6i — the `-race` arm covered eight files, and the race landed in one of the fifteen it did not — 2026-11-14
 - [ranger-base-85xxm](ranger-base-85xxm.md) — ranger-base-85xxm — the sweep's own death, and a gate pinned by the abort below it — 2026-11-14
 - [ranger-base-7fjmv](ranger-base-7fjmv.md) — A WRITE-time gate is install-gated exactly like a commit-time one, and it is the fourth row (ranger-base-7fjmv) — 2026-11-14
 - [ranger-base-6sbng](ranger-base-6sbng.md) — A probe three orders of magnitude coarser than the window it was looking for (ranger-base-6sbng) — 2026-11-14
