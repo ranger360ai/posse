@@ -369,3 +369,179 @@ func TestLiveBwrapFollowsATmpSourceLinkAndTheRenderRefusesIt(t *testing.T) {
 		t.Errorf("the render emitted %q for a source link that bwrap was just measured following into %s (ADR 0100 D1)\n prep: %v", got, victim, prep)
 	}
 }
+
+// ─── two arms that were load-bearing and unpinned (ranger-base-lng6p) ────────
+
+// THE WALL ROOT IS COMPOSED FROM THE **RESOLVED** HOME, and until this pin
+// nothing measured the absResolve in SeatWallRoot. Every D2(a) arm above
+// sets HOME to a real directory under wallUngrantedDir, where absResolve is
+// the identity, so all four hold with the resolution dropped — MEASURED
+// 2026-11-15 by mutation (`filepath.Join(absResolve(home), seatWallRootRel)`
+// -> `filepath.Join(home, seatWallRootRel)`): every pin in this file, and
+// every test naming SeatWallDir or BwrapArgs, stayed green.
+//
+// A HOME REACHED THROUGH A SYMLINK is the case that separates them, and it
+// separates them in the direction that matters. bwrapRefuseWallRootGrant
+// resolves the GRANT side on purpose, because only the resolved spelling
+// says where a bind would land; with the root composed from the unresolved
+// home the two sides are then spelled in different trees, insideDir answers
+// false for every grant, and D2(a) refuses NOTHING on such a box — silently,
+// and box-wide, since the root holds every seat's wall dir. The grant and
+// the root have to be resolved together or not at all.
+//
+// Not reachable from this instance's own home today (`/home/posse` resolves
+// to itself, MEASURED 2026-11-15); reachable wherever a home is reached
+// through a link, which is every darwin box whose home sits under a
+// symlinked volume and any operator who moved one.
+func TestQAWallRootGrantRefusesAHomeSpelledThroughASymlink(t *testing.T) {
+	// No t.Parallel: this sets HOME, which the wall root is composed from.
+	root := wallUngrantedDir(t)
+	realHome, proj := filepath.Join(root, "real-home"), filepath.Join(root, "proj")
+	link := filepath.Join(root, "home-link")
+	for _, d := range []string{filepath.Join(realHome, ".cache"), proj} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(realHome, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", link)
+	if bwrapWallRoot() == "" {
+		t.Skip("NOTHING MEASURED: this render's wall-root refusal stands down for a home under " + bwrapTmpMount)
+	}
+	// The fixture is only worth anything while the two spellings differ.
+	wallRoot := SeatWallRoot(link)
+	if wallRoot == filepath.Join(link, ".cache", "posse-wall") {
+		t.Fatalf("NOTHING MEASURED: SeatWallRoot(%s) = %s, the unresolved spelling, so this fixture cannot separate the two sides", link, wallRoot)
+	}
+	// The control: this render is clean with no extra at all, so the arms
+	// below are about the grant and not about the fixture.
+	if _, _, err := BwrapArgs(proj, nil, SeatbeltCarveOut{}); err != nil {
+		t.Fatalf("control: the render is already refused with no grant at all (%v)", err)
+	}
+	for _, c := range []struct{ name, grant string }{
+		{"the home as HOME spells it, through the link", link},
+		{"~/.cache through the link", filepath.Join(link, ".cache")},
+		{"the home resolved", realHome},
+	} {
+		argv, prep, err := BwrapArgs(proj, []string{c.grant}, SeatbeltCarveOut{})
+		switch {
+		case err == nil:
+			t.Errorf("a grant of %s (%s) rendered: it contains the wall root %s, where every walled seat's bind sources lie (ADR 0100 D2(a))\n argv: %q", c.name, c.grant, wallRoot, argv)
+		case !strings.Contains(err.Error(), wallRoot):
+			t.Errorf("a grant of %s was refused with %q, which does not name the wall root — the refusal is the operator's only instruction for what to narrow", c.name, err)
+		}
+		if len(prep) != 0 {
+			t.Errorf("a grant of %s came back with prep %v for the uncaged launcher to run", c.name, prep)
+		}
+	}
+}
+
+// THE WALL DIR GOES WITH THE RETIRED TREE (ADR 0100 D1's retire order), and
+// until this pin nothing measured that it goes at all — nor that the seat
+// CACHE dir does, which has been unpinned since ranger-base-olr0g put it
+// there. MEASURED 2026-11-15 by mutation (RemoveSessionTree's
+// `os.RemoveAll(seatWall)` replaced by `_ = seatWall`): nothing in this
+// package reds.
+//
+// WHY IT WAS UNREACHABLE BEFORE: RemoveSessionTree composes both dirs from
+// os.UserHomeDir(), so a fixture that leaves HOME alone names a path under
+// the OPERATOR's real `~/.cache` keyed by a hash of a temp dir — a path that
+// never existed, whose RemoveAll is a no-op either way. Setting HOME is the
+// whole of what makes the observable visible, and it is why none of the
+// eleven existing RemoveSessionTree fixtures sees it.
+//
+// WHAT THIS PIN DOES NOT COVER, said rather than implied: the ORDER D1 asks
+// for — import the seat's objects, then `worktree remove`, then this. A
+// mutant that removes the wall dir EARLY as well as late survives this pin
+// and every other in the package. The order is inert until the seat's own
+// object store moves into the wall dir (ranger-base-ltmyh), which is when a
+// pin on it can observe something; writing it now is what the close that
+// landed this asked for.
+func TestQAWallSeatWallDirGoesWithTheRetiredTree(t *testing.T) {
+	// No t.Parallel: this sets HOME, which RemoveSessionTree composes both
+	// per-seat directories from.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wall, cache := SeatWallDir(home, tr.Path), SeatCacheDir(home, tr.Path)
+	if wall == "" || cache == "" {
+		t.Fatalf("the fixture names no per-seat dirs (wall %q, cache %q), so this measures nothing", wall, cache)
+	}
+	// What a live seat leaves behind: its private /tmp, with the one file
+	// the bind exists to keep on the host, and its build cache.
+	signal := filepath.Join(wall, "tmp", "posse-test-signal.log")
+	if err := os.MkdirAll(filepath.Dir(signal), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(signal, []byte("the seat wrote this\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cache, "go-build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The control: both are on disk before the retire, so an absence after
+	// it is the removal and not the fixture.
+	for _, d := range []string{wall, cache} {
+		if _, err := os.Stat(d); err != nil {
+			t.Fatalf("control: %s is not there before the retire (%v)", d, err)
+		}
+	}
+	if err := RemoveSessionTree(tr, false); err != nil {
+		t.Fatalf("the fixture tree must retire cleanly, or nothing below ran: %v", err)
+	}
+	for _, c := range []struct{ name, dir string }{
+		{"the seat's wall dir", wall},
+		{"the seat's cache dir", cache},
+	} {
+		if _, err := os.Stat(c.dir); !os.IsNotExist(err) {
+			t.Errorf("%s %s survived the retire (stat err %v): the tree it belongs to is gone, nothing names it any more, and its private /tmp still holds whatever the seat wrote there (ADR 0100 D1, ranger-base-olr0g)", c.name, c.dir, err)
+		}
+	}
+}
+
+// THE STAND-DOWN IS THE ONE THING NO D2(a) PIN COULD FAIL ON, and that is
+// what this pin is for. Every arm above reads the rule through a guard that
+// SKIPS when `bwrapWallRoot()` answers "" — correctly, because on a box whose
+// home is under the shared /tmp the refusal is inert by design (ADR 0100
+// Consequences, "RESIDUAL, a home under the shared /tmp"). The cost is that
+// the guard cannot tell "inert by design" from "inert because the rule is
+// gone": MEASURED 2026-11-15 by mutation (`bwrapWallRoot`'s
+// `return SeatWallRoot(home)` -> `return ""`), D2(a) is disabled box-wide and
+// NOT ONE test in this package reds — all four arms, and both arms added
+// under ranger-base-lng6p, skip quietly and `go test` exits 0 over a seat
+// wall that refuses nothing at all.
+//
+// So this arm asserts the PREMISE the others skip on, and it is the only one
+// here that must not skip on it: for a home nothing grants, the stand-down is
+// not in force, and `bwrapWallRoot` names the same root `SeatWallRoot` does.
+// wallUngrantedDir has already skipped if THIS host's /var/tmp is itself
+// inside a blanket temp grant, which is the one honest reason for an
+// ungranted home to stand the rule down — so past that helper, an empty
+// answer is the rule being gone and nothing else.
+//
+// WHAT IT DOES NOT COVER, said rather than implied: it pins that the rule is
+// LIVE for such a home, not which grants it then refuses — that is what the
+// four arms above are, and they are reached through the same guard. This pin
+// is what makes their skip a measurement instead of a silence.
+func TestQAWallRootStandDownIsNotInForceForAnUngrantedHome(t *testing.T) {
+	// No t.Parallel: this sets HOME, which the wall root is composed from.
+	home := filepath.Join(wallUngrantedDir(t), "home")
+	if err := os.MkdirAll(filepath.Join(home, ".cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	got := bwrapWallRoot()
+	if got == "" {
+		t.Fatalf("bwrapWallRoot() is empty for the home %s, which lies under no blanket temp grant: ADR 0100 D2(a) then refuses NO grant on this box, every other arm in this file skips rather than reds, and every walled seat's bind sources sit under a root any write grant may contain", home)
+	}
+	if want := SeatWallRoot(home); got != want {
+		t.Errorf("bwrapWallRoot() = %s, want %s — the root a grant is judged against and the root the sources are composed under must be one directory, or D2(a) compares two trees and refuses nothing (ADR 0100 D2(a))", got, want)
+	}
+}
