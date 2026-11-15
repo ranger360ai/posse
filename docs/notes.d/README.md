@@ -39,6 +39,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-b3w9x](ranger-base-b3w9x.md) — A method, and then a helper: two places the exec census was not asking (ranger-base-b3w9x) — 2026-11-14
 - [ranger-base-99mvt](ranger-base-99mvt.md) — A mount SHAPE the fixture reflection could not see, one level down (ranger-base-99mvt) — 2026-11-14
 - [ranger-base-85xxm](ranger-base-85xxm.md) — ranger-base-85xxm — the sweep's own death, and a gate pinned by the abort below it — 2026-11-14
+- [ranger-base-6sbng](ranger-base-6sbng.md) — A probe three orders of magnitude coarser than the window it was looking for (ranger-base-6sbng) — 2026-11-14
 - [ranger-base-5owgm](ranger-base-5owgm.md) — An untrapped terminating signal runs bash's EXIT trap, so one clause of the bd-argv-gate exemption was false in three places — and HUP now speaks in the five splits — 2026-11-14
 - [ranger-base-5ex01](ranger-base-5ex01.md) — A candidate heads only on an anchor, and the lane's label stopped being the head seat's own (ranger-base-5ex01) — 2026-11-14
 - [ranger-base-51ttd](ranger-base-51ttd.md) — A positive witness bounded by a clock, and what it turned out not to witness (ranger-base-51ttd) — 2026-11-14

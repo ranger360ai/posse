@@ -543,9 +543,9 @@ func TestUpgradeBuildHandsCleanBuildTheRealSourceCheckout(t *testing.T) {
 // a coin flip about the subject's own 40 ms rather than a guarantee. What a
 // coarse probe cannot fake is the cost of an observation OUTSIDE the gap.
 // So the pin budgets the mean observation at a tenth of the window it must
-// resolve (swapProbeMaxMeanGap), where the separation is 350x and not
-// marginal: 4.9-5.8 us over ~100 trials at a loadavg of 3-17, against
-// 1.7-2.1 ms for the reader this replaced.
+// resolve (swapProbeMaxMeanGap), where the separation is ~300x and not
+// marginal: 5.5-6.2 us as this pin prints it, over every run taken at a
+// loadavg of 2-17, against 1.7-2.1 ms for the reader this replaced.
 //
 // A maximum-HOLE bound was the other candidate for that job and was
 // MEASURED and dropped (ranger-base-6sbng): over 74 rename(2) trials at a
@@ -807,11 +807,18 @@ const (
 	// the derivation is the point: the one thing a coarse probe cannot fake
 	// is the cost of an observation OUTSIDE the gap, because inside the gap
 	// its reads get cheap — an ENOENT open, a short file — and its count
-	// catches up. MEASURED 2026-11-14 over ~100 trials at a loadavg of
-	// 3-17, the mean observation was 4.9-5.8 us, so this budget sits ~45x
-	// above every reading taken; the 8 MiB os.ReadFile it replaced was
+	// catches up. MEASURED 2026-11-14 at a loadavg of 2-17, the mean
+	// observation was 5.5-6.2 us as the pin prints it, so this budget sits
+	// ~42x above every reading taken; the 8 MiB os.ReadFile it replaced was
 	// 1.7-2.1 ms, 7x over it. That is the separation a max-hole bound did
 	// not have.
+	//
+	// The SUBJECT's mean is the load-bearing half of the witness that reads
+	// it: a control spends a slice of its window inside the gap it made, so
+	// it reads cheaper than it is — MEASURED 158 us with the probe
+	// coarsened to the 8 MiB read, where the same run's subject read
+	// 1.95 ms. Both are checked because an OR of the two can only be
+	// stricter, never looser.
 	swapProbeMaxMeanGap = swapProbeWindow / 10
 	// swapControlAttempts is how many times the pin will run its positive
 	// control before calling the run a non-reading. Three, because the
