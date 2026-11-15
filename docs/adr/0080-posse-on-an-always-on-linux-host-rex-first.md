@@ -1782,14 +1782,23 @@ bubblewrap 0.13.1, Landlock ABI 10, linux-api-headers 7.3-1) by
 
 **Decision.**
 - **D27. A bwrap seat runs behind a Landlock domain that handles
-  RESOLVE_UNIX and no other right, applied inside the cage.** The file wall
-  stays the bwrap wall, byte for byte. The layer is one word on the launch
+  RESOLVE_UNIX and no other right, applied inside the cage.** *(Amended
+  2026-11-15, ranger-base-p5i2c: it handles REFER as well and grants it on
+  `/`, which is the only spelling Landlock has for leaving rename(2) and
+  link(2) alone. "No other right" was not achievable as written — see the
+  amendment "the socket wall's domain must hand REFER back" below.)* The file
+  wall stays the bwrap wall, byte for byte. The layer is one word on the launch
   line — `posse wall-unix --` — typed after bwrap's own `--`, so it wraps
   exactly the runtime command bwrap would otherwise have exec'd, and the
   domain therefore covers the runtime and everything the seat forks from it.
 - **D28. No allow rule, on the census above.** If one is ever needed it names
   a DIRECTORY, on U12/U13. A per-socket allow is forbidden rather than
   discouraged: it is defeated by the very move this class of bug is about.
+  *(Amended 2026-11-15, ranger-base-p5i2c: no allow rule for RESOLVE_UNIX,
+  which is what this decision is about and what still stands. There is one
+  rule, and it grants REFER on `/` — a directory, as this decision requires,
+  and the root because the grant has to reach everywhere the seat can already
+  write. It confers no access: see the amendment below.)*
 - **D29. The step applies the domain and then BECOMES the runtime**
   (`syscall.Exec`), so the seat's pid, its controlling terminal and its exit
   status are the runtime's own, exactly as they are when bwrap execs the
@@ -2218,3 +2227,88 @@ session), so retiring them is a later, measurable call and not this bead's.
 - ranger-base-pfcci
 - ranger-base-ybrk6
 - ranger-base-m5rdy
+
+## Amendment: the socket wall's domain must hand REFER back (ranger-base-p5i2c, 2026-11-15)
+
+**The finding.** A Landlock domain that handles ANY filesystem access right
+and does not handle `LANDLOCK_ACCESS_FS_REFER` denies every `rename(2)` and
+`link(2)` whose source and destination directories differ, with `EXDEV`, for
+every process in the domain, everywhere in its view, whatever the mounts say.
+D27's domain handles exactly one filesystem right, so it inherited that
+default-deny — and D27's own words, and the sentence `posse gates` prints from
+them ("The mounts above are unchanged by it"), said the opposite.
+
+**What it cost.** `git branch -m` fails inside the step: `unable to move
+logfile logs/refs/heads/main to logs/refs/.tmp-renamed-log: Invalid
+cross-device link`, exit 128. ranger-base-i92tj put the step on the
+landed-check judge's line, so behind it four `internal/treepins`
+`bdargvgate_qa_test.go` pins reddened on their fixture's `git branch -M`,
+`make treepins-check` reddened, and ADR 0088's judge reported main RED on
+every tree — including the tree last RECORDED green, which is the control
+that proved no landing had caused it (ranger-base-ufd7z).
+
+**Why U11 read green over it.** The 2026-11-13 probe's U11 row renamed
+`W/d -> W/d2`: one directory, which this domain never touched. The class is
+cross-directory refer and nothing else. `mv` reads green over it too, because
+coreutils falls back to copy+unlink on `EXDEV`, so a shell probe cannot see
+the class at all — it takes `python3`/`os.rename`, `ln`, or git.
+
+**Decision.**
+- **D33. The domain handles `LANDLOCK_ACCESS_FS_REFER` and adds one rule
+  granting REFER on `/`.** Handled-and-granted is a no-op, and it is the only
+  spelling Landlock has for "leave refer alone": the right has to be handled,
+  or the kernel's refer default-deny applies, and it has to be granted, or
+  Landlock's allow-only rule denies it everywhere. The grant confers no access
+  a process did not have — `rename(2)` and `link(2)` still need a writable
+  mount and a permitted uid — so it restores exactly the status quo this layer
+  was never meant to change, and nothing else.
+- **D34. `/` and not a list of the seat's grants.** The grant has to reach
+  everywhere the seat can already write, which is what the bwrap mounts
+  decide and not this layer; a narrower rule would make the same bug arrive
+  again at whatever path the next PID grants. It is also the one path in a
+  seat's view that cannot be unlinked and re-bound under the rule, which D28
+  requires of any rule for U12/U13's reason.
+- **D35. REFER rides on the RESOLVE_UNIX arm and only on it.** The ABI 6-8
+  arm handles no filesystem right at all, so there is no refer default-deny
+  there and nothing to give back. The grant is derived from the ruleset's own
+  REFER bit (`wallUnixReferGrant`), never from a second list, so an arm cannot
+  handle the right and forget to grant it.
+- **D36. The step still refuses rather than execs when the rule cannot be
+  added** (D30, unchanged). A ruleset created, not granted REFER, and enforced
+  anyway is a seat whose `rename(2)` is silently `EXDEV` — this bug arriving
+  as a mystery instead of a refusal.
+
+**Measured versus assumed.**
+- MEASURED 2026-11-15, D1 host (Linux 7.2.15-1-omarchy, Landlock ABI 10, git
+  2.56.0), `docs/adr/0080-resolve-unix.probe.sh` rows U14-U16, every row as
+  its EXPECT, 17 rows and 0 mismatched: under RESOLVE_UNIX alone, rename
+  within one directory is ok while rename across directories, link across
+  directories and rename of a DIRECTORY across directories are all `EXDEV`;
+  under RESOLVE_UNIX|REFER with a REFER rule on `/`, all four are ok; and the
+  socket wall still answers `EACCES` under that grant, because a rule grants
+  only the rights it names and nothing anywhere grants RESOLVE_UNIX.
+- MEASURED 2026-11-15, same box, by `posse wall-unix -- <cmd>` against an
+  unwalled control: before the fix, `git branch -m` exit 128 inside and 0
+  outside; after it, 0 both sides, with `connect(2)` to a host pathname
+  socket still `EACCES` and `kill(2)` to a host process outside the seat still
+  `EPERM` inside while both are ok outside. The step alone reproduces and
+  resolves it; no bwrap is needed.
+- MEASURED, this tree: the ruleset pin reads REFER on exactly the arms that
+  handle RESOLVE_UNIX and reads the grant as REFER alone, from every GOOS
+  (`internal/posse/wallunixrender_qa_test.go`); the live pin renames and links
+  ACROSS directories inside a real bwrap seat behind the step, against a
+  control seat that differs by the step alone
+  (`internal/posse/wallunixlive_test.go`); and the Linux file carries a
+  compile-time assertion that the hand-spelled REFER bit is x/sys's.
+- ASSUMED, not measured: that no other right this domain might handle later
+  carries a default-deny of its own. REFER is the only `LANDLOCK_ACCESS_FS_*`
+  bit documented to work this way, but the lesson generalizes — a right added
+  to `handled_access_fs` restricts everything it covers, and the probe is
+  where that is read before it ships.
+- Out of scope: the darwin half, which is unmeasured and unrendered, and
+  whether `LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET` belongs here (still open).
+
+**Beads.**
+
+- ranger-base-p5i2c
+- ranger-base-ufd7z

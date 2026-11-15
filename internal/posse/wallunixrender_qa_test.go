@@ -164,10 +164,53 @@ func TestQAWallUnixRulesetScopesSignalAtEveryABITheStepIsTypedFor(t *testing.T) 
 		}
 		want := uint64(0)
 		if abi >= WallUnixABIMin {
-			want = landlockAccessFSResolveUnix
+			want = landlockAccessFSResolveUnix | landlockAccessFSRefer
 		}
 		if r.Access_fs != want {
-			t.Errorf("ABI %d: Access_fs = %#x, want %#x — RESOLVE_UNIX from ABI %d and nothing below it, where the kernel refuses the ruleset outright and the seat would not open", abi, r.Access_fs, want, WallUnixABIMin)
+			t.Errorf("ABI %d: Access_fs = %#x, want %#x — RESOLVE_UNIX from ABI %d and nothing below it, where the kernel refuses the ruleset outright and the seat would not open; REFER on exactly those arms, because a domain handling any filesystem right without it denies every cross-directory rename and link with EXDEV (ranger-base-p5i2c)", abi, r.Access_fs, want, WallUnixABIMin)
+		}
+	}
+}
+
+// TestQAWallUnixRulesetHandsReferBackWhereItHandlesAnyFSRight is
+// ranger-base-p5i2c's ruleset pin, and it is the half a reader is most likely
+// to half-do: handling REFER without granting it back is the same EXDEV with
+// an extra syscall, because Landlock is allow-only and a handled right with
+// no rule is denied everywhere.
+//
+// SO IT PINS BOTH DIRECTIONS AT EVERY ABI THE STEP IS TYPED FOR: the arm that
+// handles a filesystem right grants REFER and only REFER, and the arm that
+// handles none grants nothing — the ABI 6-8 arm has no refer default-deny to
+// undo, and an `/` rule there would be a rule on a ruleset handling no
+// filesystem right at all, which the kernel refuses.
+//
+// AND IT PINS THE GRANT'S MASK, which is what keeps the socket wall a wall:
+// the whole of that wall is RESOLVE_UNIX being handled and granted NOWHERE,
+// so a grant that carried it would be this layer granting back the one thing
+// it exists to take. The live pin (TestLiveWallUnixLeavesCrossDirectoryRename)
+// reads the kernel's side of both.
+func TestQAWallUnixRulesetHandsReferBackWhereItHandlesAnyFSRight(t *testing.T) {
+	t.Parallel()
+	if landlockAccessFSRefer != 0x2000 {
+		t.Fatalf("landlockAccessFSRefer = %#x, and linux/landlock.h's LANDLOCK_ACCESS_FS_REFER is 0x2000 (x/sys v0.47.0 agrees, and wallunix_linux.go asserts it at compile time on the GOOS that can)", landlockAccessFSRefer)
+	}
+	if wallUnixReferPath != "/" {
+		t.Errorf("the REFER grant names %q, and the decision (ADR 0080 D34) names `/`: the grant has to reach everywhere the seat can already write, which the bwrap mounts decide and this layer does not — a narrower rule brings the same EXDEV back at whatever path the next PID grants", wallUnixReferPath)
+	}
+	for abi := WallUnixSignalABIMin; abi <= 12; abi++ {
+		fs, grant := wallUnixRuleset(abi).Access_fs, wallUnixReferGrant(abi)
+		switch {
+		case fs == 0:
+			if grant != 0 {
+				t.Errorf("ABI %d: the ruleset handles no filesystem right (Access_fs = 0) and the step would still add a rule granting %#x on %s — there is no refer default-deny to undo on this arm, and the kernel refuses a path rule whose right the ruleset does not handle", abi, grant, wallUnixReferPath)
+			}
+		default:
+			if grant != landlockAccessFSRefer {
+				t.Errorf("ABI %d: the ruleset handles Access_fs = %#x and the step grants %#x on %s, want exactly REFER (%#x) — handled with no rule is DENIED, so a domain that handles a filesystem right and does not grant REFER back makes every cross-directory rename(2) and link(2) EXDEV for everything in this seat (ranger-base-p5i2c, ADR 0080 D33)", abi, fs, grant, wallUnixReferPath, uint64(landlockAccessFSRefer))
+			}
+			if grant&landlockAccessFSResolveUnix != 0 {
+				t.Errorf("ABI %d: the grant is %#x and carries RESOLVE_UNIX — the socket wall IS that right handled and granted nowhere, so granting it on %s would undo the whole layer (ADR 0080 D28)", abi, grant, wallUnixReferPath)
+			}
 		}
 	}
 }

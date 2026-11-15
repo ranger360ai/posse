@@ -14,6 +14,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-ql7xy](ranger-base-ql7xy.md) — A test fixture that spelled a live open vuln-private id (ranger-base-ql7xy) — 2026-11-15
 - [ranger-base-pfcci](ranger-base-pfcci.md) — wall-watch's verdict is a file now, not only a pane line (ranger-base-pfcci) — 2026-11-15
 - [ranger-base-pe5g5](ranger-base-pe5g5.md) — Every walled seat commits on a detached HEAD (ranger-base-pe5g5) — 2026-11-15
+- [ranger-base-p5i2c](ranger-base-p5i2c.md) — The socket wall took cross-directory rename with it (ranger-base-p5i2c) — 2026-11-15
 - [ranger-base-ltmyh](ranger-base-ltmyh.md) — The seat store moves under the wall dir, and "pinned" becomes a predicate the renders are judged by (ranger-base-ltmyh) — 2026-11-15
 - [ranger-base-lng6p](ranger-base-lng6p.md) — Three pin gaps from the ranger-base-lng6p verify, and the one that made a whole invariant unfalsifiable — 2026-11-15
 - [ranger-base-hegka](ranger-base-hegka.md) — ranger-base-hegka — three findings of the ranger-base-eclrz verify — 2026-11-15

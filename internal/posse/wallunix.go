@@ -35,6 +35,18 @@ package posse
 // mkdir and rename are untouched (U11), which is what "the bwrap wall stays
 // the file wall" means operationally.
 //
+// U11 WAS TRUE OF THE WRONG RENAME, and that is ranger-base-p5i2c. It renamed
+// within ONE directory, which this domain never touched; a rename or link
+// whose source and destination directories DIFFER was EXDEV for every process
+// in the domain, everywhere in its view, because a Landlock domain that
+// handles any filesystem right and not LANDLOCK_ACCESS_FS_REFER denies
+// cross-directory refer by default. So "the bwrap wall stays the file wall"
+// was false in one syscall, and git was the first thing to say so. The ruleset
+// handles REFER and grants it straight back on `/` now (wallUnixRuleset,
+// wallUnixReferGrant), which is the only spelling Landlock has for "leave
+// refer alone", and the live pin renames ACROSS directories inside a real
+// seat rather than within one.
+//
 // WHAT IT COSTS, AND WHY THAT COST IS ALREADY PAID. A domain handling any
 // filesystem right — this one included — forbids mount(2), so a nested user
 // plus mount namespace cannot start inside it (U9, U10). That is ADR 0080
@@ -51,7 +63,11 @@ package posse
 // nothing here depends on how it is decided, because this layer adds no
 // refusal that the shipped wall does not already impose.
 //
-// NO ALLOW RULE, BECAUSE THE SEAT NEEDS NO HOST SOCKET. MEASURED 2026-11-13
+// NO ALLOW RULE FOR RESOLVE_UNIX, BECAUSE THE SEAT NEEDS NO HOST SOCKET.
+// (There IS one rule, and it grants REFER on `/` — a right this layer handles
+// only in order to give it straight back, for the reason wallUnixRuleset
+// gives. Nothing anywhere grants RESOLVE_UNIX, and that is what the rest of
+// this section is about.) MEASURED 2026-11-13
 // on D1: of the host's pathname listeners, every one a seat could otherwise
 // resolve is either inside the runtime dir the render already hides as a
 // tmpfs (the session bus, the gpg and ssh agents, the keyring, p11-kit,
@@ -66,7 +82,9 @@ package posse
 // container tier's opt-in `sockets:` (CageSocketMounts) which no shipped PID
 // declares.
 //
-// IF AN ALLOW RULE IS EVER NEEDED IT NAMES A DIRECTORY, NEVER A SOCKET.
+// IF AN ALLOW RULE IS EVER NEEDED IT NAMES A DIRECTORY, NEVER A SOCKET —
+// which the REFER rule above obeys, naming the one directory in a seat's view
+// that cannot be unlinked and re-bound under it.
 // MEASURED (U12, U13): a rule on the socket FILE is defeated by exactly the
 // move that defeated the mount hide — the host unlinks and re-binds, and the
 // rule, which is keyed on the inode it was added for, no longer covers the
@@ -124,6 +142,39 @@ const WallUnixSignalABIMin = 6
 // than in the Linux file so the ruleset pin reads it from darwin too.
 const landlockAccessFSResolveUnix = 1 << 16
 
+// landlockAccessFSRefer is LANDLOCK_ACCESS_FS_REFER (linux/landlock.h, ABI
+// 2+): the right to "link or rename a file from or to a different directory".
+// It is handled here for the one reason a right posse does not want to
+// restrict is ever handled — a domain that handles NO refer right denies
+// every cross-directory rename(2) and link(2) outright, so the only way to
+// leave them alone is to handle the right and then grant it (see
+// wallUnixReferGrant).
+//
+// Spelled here for landlockAccessFSResolveUnix's reason and not because x/sys
+// lacks it: x/sys has it (unix.LANDLOCK_ACCESS_FS_REFER, 0x2000) but only on
+// Linux, and the ruleset pin that reads this plan runs on every GOOS. The
+// Linux file carries a compile-time assertion that the two agree, so this
+// line cannot drift from the kernel's header behind a green darwin build.
+const landlockAccessFSRefer = 1 << 13
+
+// wallUnixReferPath is the one directory the REFER grant names, and it is the
+// root because the grant has to be everywhere the seat can already write.
+//
+// WHY `/` IS NOT A HOLE. A Landlock rule grants only the rights it names, so
+// this one grants REFER and nothing else: RESOLVE_UNIX stays handled with no
+// rule anywhere, which is what denies it, and no other filesystem right is
+// handled at all. REFER on its own confers no access a process did not have —
+// rename(2) and link(2) still need the mount to be writable and the uid to be
+// permitted — so granting it on `/` restores exactly the status quo this layer
+// was never meant to change, and nothing else.
+//
+// AND IT IS A DIRECTORY, which the header's "if an allow rule is ever needed
+// it names a directory, never a socket" already requires for the reason
+// measured there (a rule is keyed on the inode it was added for). `/` is the
+// one path in a seat's view that cannot be unlinked and re-bound under the
+// rule.
+const wallUnixReferPath = "/"
+
 // landlockScopeSignal is LANDLOCK_SCOPE_SIGNAL (linux/landlock.h, ABI 6+):
 // a process in the domain may signal only processes in the same domain or a
 // nested one. x/sys has it (unix.LANDLOCK_SCOPE_SIGNAL, 0x2) but only on
@@ -156,12 +207,52 @@ type wallUnixRulesetAttr struct {
 // RESOLVE_UNIX ONLY FROM WallUnixABIMin. Below it the kernel refuses a
 // ruleset naming that right outright, so an ABI 6-8 seat gets the signal
 // scope alone, and WallUnixDegraded says the socket half is missing.
+//
+// REFER RIDES WITH IT, AND ONLY WITH IT (ranger-base-p5i2c). A Landlock
+// domain that handles any filesystem right and does NOT handle
+// LANDLOCK_ACCESS_FS_REFER denies every rename(2) and link(2) whose source
+// and destination directories differ, with EXDEV — for every process in the
+// domain, everywhere in its view, whatever the mounts say. So the arm that
+// handles RESOLVE_UNIX is exactly the arm that has to handle REFER as well
+// and grant it back (wallUnixReferGrant); the ABI 6-8 arm handles no
+// filesystem right at all, so there is nothing there to give back.
+//
+// MEASURED 2026-11-15, D1 (Linux 7.2.15-1-omarchy, Landlock ABI 10), by
+// syscall inside the step and outside it, before the REFER arm existed:
+// rename and link within one directory OK both sides; rename across
+// directories, link across directories and rename of a DIRECTORY across
+// directories all EXDEV inside and OK outside. `git branch -m` is the shape
+// that found it — `unable to move logfile …: Invalid cross-device link`,
+// exit 128 — which reddened four pins and, through them, every tree the
+// landed-check judge looked at (ranger-base-ufd7z). `mv` reads GREEN over
+// this, because coreutils falls back to copy+unlink on EXDEV, which is why a
+// shell probe missed it and the header's old U11 row said rename was
+// untouched: U11 renamed within one directory.
 func wallUnixRuleset(abi int) wallUnixRulesetAttr {
 	r := wallUnixRulesetAttr{Scoped: landlockScopeSignal}
 	if abi >= WallUnixABIMin {
-		r.Access_fs = landlockAccessFSResolveUnix
+		r.Access_fs = landlockAccessFSResolveUnix | landlockAccessFSRefer
 	}
 	return r
+}
+
+// wallUnixReferGrant is the allowed_access of the one rule the step adds, on
+// wallUnixReferPath: REFER wherever REFER is handled, and zero — no rule at
+// all — where it is not.
+//
+// WHY A RULE IS NOT OPTIONAL. Landlock is allow-only: a handled right with no
+// rule covering a path is DENIED on that path, so handling REFER without
+// granting it back is the same EXDEV with an extra syscall. The grant is what
+// makes the handling a no-op, and the handling is what stops the kernel's
+// default-deny for refer from applying.
+//
+// DERIVED FROM THE RULESET, never a second list: it is the REFER bit of the
+// plan this ABI gets, so an arm that stops handling REFER stops granting it in
+// the same breath, and an arm that starts handling it cannot forget to. The
+// mask is what keeps RESOLVE_UNIX out of the grant — the whole of the socket
+// wall is that right being handled and granted nowhere.
+func wallUnixReferGrant(abi int) uint64 {
+	return wallUnixRuleset(abi).Access_fs & landlockAccessFSRefer
 }
 
 // wallUnixABI is the host's Landlock ABI, or a negative number when the

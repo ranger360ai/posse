@@ -453,3 +453,183 @@ func wuSigErrName(err error) string {
 	}
 	return "other"
 }
+
+// ---------------------------------------------------------------------------
+// ranger-base-p5i2c: the same domain leaves rename(2) and link(2) ALONE.
+//
+// THE PIN THE BEAD ASKS FOR BY NAME, and the one the 2026-11-13 probe's U11
+// row should have been: a Landlock domain that handles any filesystem right
+// and not LANDLOCK_ACCESS_FS_REFER denies every rename and link whose source
+// and destination directories DIFFER, with EXDEV. U11 renamed within ONE
+// directory and read green, so the class shipped — `git branch -m` inside the
+// step is exit 128, and through the landed-check judge that reddened every
+// tree (ranger-base-ufd7z).
+//
+// FOUR OPERATIONS AND NOT ONE. Same-directory rename is the row that was
+// already green and must stay green; cross-directory rename, cross-directory
+// link and the rename of a DIRECTORY across directories are the three the
+// class took, and they are listed separately because a partial fix would show
+// up as one of them.
+//
+// AND IT READS THE SOCKET WALL IN THE SAME BREATH, which is what stops the
+// cheap false fix: deleting the step, or dropping Access_fs, makes every refer
+// row green. So the step arm must ALSO report EACCES on a host socket while
+// the control arm connects — the grant is REFER on `/` and nothing anywhere
+// grants RESOLVE_UNIX, so restoring rename must not have restored connect.
+//
+// THE SOCKET IS BOUND BEFORE THE SEAT STARTS, deliberately unlike
+// TestLiveWallUnixRefusesAHostSocketBoundAfterTheSeatLaunched: that pin's
+// subject is the bind-after case no mount can cover and it pays a handshake
+// for it. Here the socket is only the wall's liveness check (U1's case), so
+// the cheaper shape is the right one and the handshake would be a second
+// thing that can hang.
+const (
+	wuEnvRefDir  = "RHQ_QA_WALLUNIX_REFER_DIR"
+	wuEnvRefSock = "RHQ_QA_WALLUNIX_REFER_SOCK"
+)
+
+func TestLiveWallUnixLeavesCrossDirectoryRename(t *testing.T) {
+	wuLiveSkip(t)
+	self := posseBinForTest(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const wantRefer = "same=ok cross=ok link=ok dir=ok"
+	for _, c := range []struct {
+		name string
+		step []string
+		sock string
+	}{
+		// The control measures the FIXTURE: a bwrap seat with no Landlock
+		// layer at all renames across directories inside its write grant and
+		// connects to the socket. If this arm ever stops saying so, the arm
+		// below it is measuring the mounts and not the step.
+		{"control: no socket wall on the line", nil, "connected"},
+		{"the socket wall", WallUnixStepArgv(self), "EACCES"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			sock := filepath.Join(dir, "wall.sock")
+			// Bound HERE, by this uncaged process, before the seat exists.
+			l, err := net.Listen("unix", sock)
+			if err != nil {
+				t.Fatalf("the host could not bind the socket the seat will dial: %v", err)
+			}
+			defer l.Close()
+			go func() {
+				for {
+					conn, err := l.Accept()
+					if err != nil {
+						return
+					}
+					conn.Close()
+				}
+			}()
+
+			argv := append([]string{
+				"--die-with-parent",
+				"--ro-bind", "/", "/",
+				"--dev-bind", "/dev", "/dev",
+				"--unshare-user",
+				// The write grant the renames happen inside. A seat's
+				// cross-directory rename is only ever interesting where the
+				// seat can write, and that is a bind and not the ro-bind.
+				"--bind", dir, dir,
+			}, c.step...)
+			argv = append(argv, exe, "-test.run=^TestWallUnixReferSeatChild$", "-test.v")
+
+			var buf bytes.Buffer
+			cmd := exec.Command("bwrap", argv...)
+			cmd.Env = wuSeatEnv(wuEnvRefDir+"="+dir, wuEnvRefSock+"="+sock)
+			cmd.Stdout, cmd.Stderr = &buf, &buf
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s",
+					err, buf.String(), strings.Join(argv, " "))
+			}
+			got := buf.String()
+			if want := "SEAT-REFER " + wantRefer; !strings.Contains(got, want) {
+				t.Errorf("seat %q did not report %q — a cross-directory rename or link was denied behind this seat's wall. A Landlock domain handling any filesystem right without LANDLOCK_ACCESS_FS_REFER answers EXDEV for all three cross-directory rows, and `git branch -m` then fails with `Invalid cross-device link` (ranger-base-p5i2c, ADR 0080 D33).\nSeat output:\n%s\nargv: bwrap %s",
+					c.name, want, got, strings.Join(argv, " "))
+			}
+			if want := "SEAT-REFER-SOCK " + c.sock; !strings.Contains(got, want) {
+				t.Errorf("seat %q did not report %q — the refer rows above are only worth reading while the socket wall is still the wall, and this arm says it is not. REFER is granted on %s; RESOLVE_UNIX is granted nowhere (ADR 0080 D28).\nSeat output:\n%s\nargv: bwrap %s",
+					c.name, want, wallUnixReferPath, got, strings.Join(argv, " "))
+			}
+		})
+	}
+}
+
+// TestWallUnixReferSeatChild is the seat. It renames and links inside its own
+// write grant and prints two lines the parent greps for.
+//
+// IT REPORTS THE ERRNO BY NAME, for wuErrName's reason: EXDEV is this layer,
+// EPERM or EACCES would be the mount or the uid, and ENOENT would be a
+// fixture that never came up. A pin that could not tell them apart would go
+// green on the wrong wall.
+//
+// `mv` IS NOT USED ANYWHERE HERE, and that is the reason this class shipped:
+// coreutils falls back to copy+unlink on EXDEV, so every shell probe of this
+// reads green. The syscalls are called directly.
+func TestWallUnixReferSeatChild(t *testing.T) {
+	dir, sock := os.Getenv(wuEnvRefDir), os.Getenv(wuEnvRefSock)
+	if dir == "" {
+		t.Skip("child of TestLiveWallUnixLeavesCrossDirectoryRename")
+	}
+	base := filepath.Join(dir, "ref")
+	sub := filepath.Join(base, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("the seat cannot make its own fixture under its write grant: %v", err)
+	}
+	for _, n := range []string{"f1", "g1"} {
+		if err := os.WriteFile(filepath.Join(sub, n), []byte("x"), 0o600); err != nil {
+			t.Fatalf("the seat cannot write under its write grant: %v", err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(sub, "dd"), 0o755); err != nil {
+		t.Fatalf("the seat cannot mkdir under its write grant: %v", err)
+	}
+	var out []string
+	for _, r := range []struct {
+		name string
+		do   func() error
+	}{
+		{"same", func() error { return os.Rename(filepath.Join(sub, "f1"), filepath.Join(sub, "f2")) }},
+		{"cross", func() error { return os.Rename(filepath.Join(sub, "f2"), filepath.Join(base, "f3")) }},
+		{"link", func() error { return os.Link(filepath.Join(sub, "g1"), filepath.Join(base, "g2")) }},
+		{"dir", func() error { return os.Rename(filepath.Join(sub, "dd"), filepath.Join(base, "dd2")) }},
+	} {
+		if err := r.do(); err != nil {
+			out = append(out, r.name+"="+wuReferErrName(err))
+			continue
+		}
+		out = append(out, r.name+"=ok")
+	}
+	t.Logf("SEAT-REFER %s", strings.Join(out, " "))
+
+	conn, err := net.Dial("unix", sock)
+	if err == nil {
+		conn.Close()
+		t.Logf("SEAT-REFER-SOCK connected")
+		return
+	}
+	t.Logf("SEAT-REFER-SOCK %s (%v)", wuErrName(err), err)
+}
+
+// wuReferErrName is wuErrName for the refer rows: the errnos a rename or link
+// can fail with here, each of which means something different about where the
+// denial came from.
+func wuReferErrName(err error) string {
+	switch {
+	case errors.Is(err, syscall.EXDEV):
+		return "EXDEV"
+	case errors.Is(err, syscall.EACCES):
+		return "EACCES"
+	case errors.Is(err, syscall.EPERM):
+		return "EPERM"
+	case errors.Is(err, syscall.ENOENT):
+		return "ENOENT"
+	}
+	return "other"
+}

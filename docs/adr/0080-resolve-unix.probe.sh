@@ -57,7 +57,9 @@ import ctypes, os, socket, subprocess, sys, time
 libc = ctypes.CDLL(None, use_errno=True)
 CREATE, ADD, RESTRICT = 444, 445, 446
 RESOLVE_UNIX = 1 << 16
-ERRNAME = {1: "EPERM", 2: "ENOENT", 13: "EACCES", 111: "ECONNREFUSED"}
+REFER = 1 << 13
+ERRNAME = {1: "EPERM", 2: "ENOENT", 13: "EACCES", 18: "EXDEV",
+           111: "ECONNREFUSED"}
 W = sys.argv[1]
 
 
@@ -76,9 +78,15 @@ def abi():
     return v if v > 0 else "unavailable errno=%d" % ctypes.get_errno()
 
 
-def restrict(allows=()):
-    """One layer handling RESOLVE_UNIX only; allows = [(path, rights)]."""
-    fd = libc.syscall(CREATE, ctypes.byref(Attr(RESOLVE_UNIX, 0, 0)),
+def restrict(allows=(), fs=None):
+    """One layer handling `fs` (RESOLVE_UNIX by default); allows = [(path, rights)].
+
+    `fs` is a parameter because of ranger-base-p5i2c: what this domain does to
+    rename(2) and link(2) depends on whether REFER is in the handled set, so
+    the rows that measure it have to be able to name both sets.
+    """
+    fd = libc.syscall(CREATE,
+                      ctypes.byref(Attr(RESOLVE_UNIX if fs is None else fs, 0, 0)),
                       ctypes.sizeof(Attr), 0)
     if fd < 0:
         raise OSError(ctypes.get_errno(), "create_ruleset")
@@ -240,10 +248,10 @@ dg = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 dg.bind(os.path.join(W, "dgram.sock"))
 
 print("== RESOLVE_UNIX handled, no allow rule ==")
-def restricted_connect(target, allows=()):
+def restricted_connect(target, allows=(), fs=None):
     """The ordinary shape of a row: domain first, then one connect."""
     def fn():
-        restrict(allows)
+        restrict(allows, fs=fs)
         return connect(target)
     return child(fn)
 
@@ -359,6 +367,63 @@ def u11():
 
 
 row("U11 ordinary file read/write/mkdir/rename in it", "allowed", child(u11))
+
+# ranger-base-p5i2c: U11's rename is `W/d -> W/d2`, which is WITHIN ONE
+# DIRECTORY, and that is the only rename this file measured. A Landlock domain
+# that handles any filesystem right and does NOT handle
+# LANDLOCK_ACCESS_FS_REFER denies every rename(2) and link(2) whose source and
+# destination directories DIFFER, with EXDEV — so U11 read `allowed` over a
+# layer that had already taken cross-directory rename away from every process
+# in the domain. `git branch -m` is what found it, months later, through the
+# landed-check judge (ranger-base-ufd7z).
+#
+# Do not probe this with `mv`: coreutils falls back to copy+unlink on EXDEV, so
+# a shell probe reads GREEN over the whole class.
+def refer(fs, allows=()):
+    """rename/link across directories, and within one, under `fs`."""
+    def go():
+        restrict(allows=allows, fs=fs)
+        d = os.path.join(W, "ref")
+        sub = os.path.join(d, "sub")
+        os.makedirs(sub, exist_ok=True)
+        out = []
+        for name, fn in (
+            ("same", lambda: os.rename(os.path.join(sub, "f1"),
+                                              os.path.join(sub, "f2"))),
+            ("cross", lambda: os.rename(os.path.join(sub, "f2"),
+                                               os.path.join(d, "f3"))),
+            ("link", lambda: os.link(os.path.join(sub, "g1"),
+                                           os.path.join(d, "g2"))),
+            ("dir", lambda: os.rename(os.path.join(sub, "dd"),
+                                                  os.path.join(d, "dd2"))),
+        ):
+            for p in (os.path.join(sub, "f1"), os.path.join(sub, "g1")):
+                if not os.path.exists(p):
+                    open(p, "w").close()
+            if not os.path.exists(os.path.join(sub, "dd")):
+                os.mkdir(os.path.join(sub, "dd"))
+            try:
+                fn()
+            except OSError as e:
+                out.append("%s=%s" % (name, ERRNAME.get(e.errno, e.errno)))
+            else:
+                out.append("%s=ok" % name)
+        return " ".join(out)
+    return child(go)
+
+
+WANT_DENIED = "same=ok cross=EXDEV link=EXDEV dir=EXDEV"
+WANT_OK = "same=ok cross=ok link=ok dir=ok"
+row("U14 refer under RESOLVE_UNIX alone (the bug)", WANT_DENIED,
+    refer(RESOLVE_UNIX))
+row("U15 refer under RESOLVE_UNIX|REFER, rule REFER on / (the fix)", WANT_OK,
+    refer(RESOLVE_UNIX | REFER, allows=[("/", REFER)]))
+# And the fix must not have opened the wall it exists to be: the same domain
+# that grants REFER on `/` still refuses a host socket, because a rule grants
+# only the rights it names and nothing anywhere grants RESOLVE_UNIX.
+row("U16 socket wall still holds under the REFER grant", "EACCES",
+    restricted_connect(pre.getsockname(), allows=[("/", REFER)],
+                       fs=RESOLVE_UNIX | REFER))
 
 print()
 print("== what an allow rule is worth after the host re-binds ==")
