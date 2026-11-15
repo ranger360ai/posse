@@ -123,9 +123,9 @@ Each mutant was applied to a committed tree and restored with
 
 M6 and M7 are the two arms' own readings and neither is a clean kill, which is
 the honest result. **M6**: with the size arm dead, M2's truncate shape still
-reds, because a zero-length file fails the read of its last byte — 128
-detections against 522 with the arm live, so the size arm is 76% of them and not
-the only one. **M7**: with the blend arm dead, M3's shape is invisible and the
+reds, because a zero-length file fails the read of its last byte — 121-134
+detections against 483-599 with the arm live, over three battery runs, so the
+size arm is roughly three quarters of them and not the only one. **M7**: with the blend arm dead, M3's shape is invisible and the
 pin is green, so reading the *last* byte as well as the first is exactly what
 keeps the shape the full-content compare used to see. **M8** is what the density
 witness buys: without it, a coarsened probe reaches a green in 2 runs of 3 on
