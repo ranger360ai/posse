@@ -1881,3 +1881,130 @@ this will write them again:
 - ranger-base-l2gk9
 - ranger-base-q9bqu
 - ranger-base-rwet4
+
+## Amendment: the socket wall's domain also scopes signals (2026-11-15)
+
+*Same convention as the amendment above: this amendment's bead, and the
+finding it answers, are `vuln-private` and are named by bare id in the Beads
+block below and nowhere else. What is described here is what the landed
+change SHUTS.*
+
+**Context.** D17 keeps the host pid namespace on purpose, and its
+Alternatives say why: a seat must `kill` its own pids and `checkorphans` must
+read the box's `/proc`. What that left unwritten is that sharing the pid
+namespace also shared signal REACH. Without a pid namespace, a process in a
+seat could send any signal, signal 0 included, to any same-uid process on the
+host: the launcher, every other seat, and every operator process. The only
+cover was the PID-level `pkill`/`killall` deny, a shim on two verbs that a
+plain `kill <pid>`, or any runtime calling `kill(2)` itself, never meets.
+D13's Alternatives had already named the remedy ("bwrap plus a Landlock
+layer ... the scoping would make a cross-seat kill impossible rather than
+merely denied by the PID") and parked it on "a filesystem domain blocks the
+nested bwrap". D27 then put a Landlock domain on every seat, and ADR 0096 D1
+ruled that nesting is not a property of the seat wall. So the reason for
+parking it is gone, and the layer to carry it already exists.
+
+**Findings.** MEASURED 2026-11-14 from inside a live bwrap seat on D1
+(Linux 7.2.15-1-omarchy, Landlock ABI 10), Python ctypes, a domain with
+`handled_access_fs = 0` and `scoped = SIGNAL`, signal 0 only, to pids the
+probe did not start:
+- Before `restrict_self`: `kill -0` of the parent shell and of a child
+  forked before the restriction both succeed.
+- After it: both are EPERM, and SIGTERM to the pre-restriction child is
+  EPERM. `kill -0` of itself succeeds.
+- Inside the domain: a child can SIGTERM its own grandchild and `kill -0`
+  its restricted parent. An exec'd `sh` can `kill -TERM $!` its own
+  background job and `kill -0 $PPID`. The domain survives fork and execve.
+- The errno still says whether the pid exists: a live pid outside the domain
+  gives EPERM, an absent pid gives ESRCH. A shell's `kill -0` exits 1 for
+  both, so only the errno carries liveness.
+- `/proc` inside the seat is `ro,nosuid,nodev,noexec`, and `W_OK` on
+  `/proc/self/coredump_filter` is false. The knobs ADR 0096 D2 keeps closed
+  are still closed from a live seat. This amendment opens none of them.
+
+MEASURED 2026-11-15, this tree, on D1:
+`TestLiveWallUnixScopesSignalsToTheSeat` ran (it did not skip) and passed
+all three arms. Behind the rendered step, a host pid is EPERM while the
+control seat without the step reaches it, an absent pid is ESRCH, the seat
+can SIGTERM its own fork+exec'd child, and the seat still dies with its
+parent. `TestQAWallUnixRulesetScopesSignalAtEveryABITheStepIsTypedFor`
+passed. The landing commit records that dropping `Scoped` from the plan
+reds both pins, and dropping it from the syscall attr reds the live pin.
+
+**Decision.**
+- **D34. The wall-unix domain sets `Scoped = LANDLOCK_SCOPE_SIGNAL`.** It
+  goes in the same ruleset D27 applies, in the same step and at the same
+  moment, before `syscall.Exec` into the runtime (D29). A seat's processes
+  can signal only processes in their own domain: the runtime and everything
+  it forks. The launcher, the other seats and every host process are EPERM,
+  signal 0 included. Signals from the launcher to the seat are unaffected,
+  because the launcher is outside every domain. `--die-with-parent`
+  (pdeathsig) and SIGCHLD are kernel deliveries that do not pass the
+  `task_kill` hook, and the live pin shows the seat still dies with its
+  parent. The one plan is `wallUnixRuleset(abi)` in
+  `internal/posse/wallunix.go`, and the Linux file converts it into the attr
+  the kernel gets. There is no second spelling to drift.
+- **D35. This amends D17's rationale, not its render.** The host pid
+  namespace stays, for VISIBILITY: a seat still sees host pids, `checkorphans`
+  still reads the whole box's table, and the `/proc/<pid>/root` premise
+  (ranger-base-di8da) is untouched. It no longer means REACH. D17's
+  `--unshare-pid` rejection stands for every reason it gives. ADR 0096 D2 is
+  unchanged, but one sentence of 0096's reasoning is now out of date:
+  "weaker than `kill(2)`, which the seat already has against the same set".
+  The seat no longer has it. That only strengthens 0096's rejection of
+  `--bind /proc /proc`, because the knobs it would open are no longer
+  dominated by a reach the seat holds anyway.
+- **D36. The step is typed from ABI 6, not 9.** SCOPE_SIGNAL is ABI 6
+  (Linux 6.12) and RESOLVE_UNIX is ABI 9, so this adds no new kernel floor.
+  On an ABI 6-8 host the step applies the signal scope alone, and
+  `WallUnixDegraded` says the socket half is missing and the signal half is
+  up. Below ABI 6 it says neither is up, and the PID-level `pkill`/`killall`
+  deny is the only cover left. This replaces D31's "below ABI 9 the step is
+  not rendered", which was written when the step carried one right. D30
+  still holds for each half: the render types only what the ABI it read
+  supports, and `RunWallUnix` re-reads the ABI and refuses below 6 rather
+  than exec without the domain.
+- **D37. What it costs, and who pays.** A shell `kill -0` from a seat now
+  exits 1 for a LIVE host pid. So AGENTS.md's `checkorphans` fallback reads
+  the errno instead (EPERM means alive, ESRCH means gone), and that fallback
+  landed with the code. posse's own signal call sites were censused when it
+  landed: `pidAlive` and `procAlive` already read EPERM as alive, the load
+  guard's kill arm and wall-watch run on the host, and `beads.go` and
+  `githang.go` signal only their own children. ASSUMED: no runtime posse
+  launches needs to signal a process it did not start. A runtime that does
+  fails visibly, with EPERM at `kill(2)`.
+
+**Alternatives rejected.**
+- **`--unshare-pid` (b1).** It cuts reach by cutting visibility, so it costs
+  every reason D17 gives, plus ADR 0096 arm C as measured: a seat no longer
+  sees or signals its host-side pids, and `checkorphans` reads only the
+  seat's namespace.
+- **Accept it, on the PID-level deny (b2).** That deny covers two verbs, and
+  the fix here is one struct field in a ruleset already applied. A cheap cut
+  exists, so accepting the reach buys nothing.
+- **seccomp on `kill`, `tgkill` and `rt_sigqueueinfo`.** A filter sees the
+  argument values, not the pid's ancestry, so it cannot tell "my child" from
+  "the launcher". The best it can do is refuse every signal, and that breaks
+  job control and every test harness that ends its own children.
+- **A separate Landlock step for the scope.** A second domain is a second
+  thing to render, report and pin. The scope belongs in the ruleset that is
+  already there.
+
+**Open, and not decided here: `LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET`.** It
+is the same field and the same ABI. ranger-base-x9f3s found no reachable
+host abstract listener. MEASURED 2026-11-15 from a seat on D1 (`ss -xl`,
+which the seat sees whole because it shares the host's net namespace): no
+abstract STREAM listener at all, and one unconnected abstract datagram
+socket. Scoping it would turn that observation into a property. A desktop
+host can grow such a listener on demand, Xwayland's `@/tmp/.X11-unix/X0`
+being the common one, which is the D28 lesson in a different namespace. The
+unread half is what a seat's runtime and its test suites connect to. Its
+bead in the block below carries that measurement as its gate.
+
+**Beads.**
+
+- ranger-base-al0d0
+- ranger-base-e5un1
+- ranger-base-sv89t
+- ranger-base-uxubn
+- ranger-base-zqtoi
