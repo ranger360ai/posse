@@ -11,6 +11,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-ze7xz](ranger-base-ze7xz.md) — Three pin gaps from the ranger-base-bfbx8 verify, and one seam that had to move for the third — 2026-11-15
 - [ranger-base-xcucy](ranger-base-xcucy.md) — A seat's own object store is imported by re-hashing, and a landing refuses a tip with missing objects (ranger-base-xcucy) — 2026-11-15
 - [ranger-base-pe5g5](ranger-base-pe5g5.md) — Every walled seat commits on a detached HEAD (ranger-base-pe5g5) — 2026-11-15
+- [ranger-base-hegka](ranger-base-hegka.md) — ranger-base-hegka — three findings of the ranger-base-eclrz verify — 2026-11-15
 - [ranger-base-9lsg2](ranger-base-9lsg2.md) — release-artifacts.sh fetches its build source, as clean-build.sh does (ranger-base-9lsg2) — 2026-11-15
 - [ranger-base-1l1en](ranger-base-1l1en.md) — A seat's launch line is exec'd, so no shell outlives its runtime (ranger-base-1l1en) — 2026-11-15
 - [ranger-base-zpx1k](ranger-base-zpx1k.md) — A door on ADR 0097 D3's three exits, and why the parser stayed in the shell (ranger-base-zpx1k) — 2026-11-14

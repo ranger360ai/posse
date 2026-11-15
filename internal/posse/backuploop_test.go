@@ -508,7 +508,7 @@ func TestWatchBackupClockWritesAnArchive(t *testing.T) {
 	for len(archives(t, b.App)) == 0 {
 		select {
 		case <-deadline:
-			t.Fatalf("the watch loop never wrote an archive:\n%s", dispatcherOut(d))
+			t.Fatalf("the watch loop never wrote an archive:\n%s", dispatcherOutLive(d))
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -626,7 +626,7 @@ func TestBackupLoopRunsWhileThePassIsPaused(t *testing.T) {
 	for len(archives(t, b.App)) == 0 {
 		select {
 		case <-deadline:
-			t.Fatalf("a paused shop must still back up; the loop wrote nothing:\n%s", dispatcherOut(d))
+			t.Fatalf("a paused shop must still back up; the loop wrote nothing:\n%s", dispatcherOutLive(d))
 		case <-time.After(10 * time.Millisecond):
 		}
 	}

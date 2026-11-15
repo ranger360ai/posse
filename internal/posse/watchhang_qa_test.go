@@ -880,18 +880,33 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 	// Each entry: the file it lives in, the substring of the source line
 	// that identifies it, and why it may take the stream bare.
 	allowed := []struct{ file, site, why string }{
-		// watch.go's header block: everything above `passes := 0` runs
+		// watch.go's header block. THE REASON THAT USED TO STAND HERE WAS
+		// FALSE, and five of this block's entries are gone with it
+		// (ranger-base-hegka). It read: "everything above `passes := 0` runs
 		// before the first clock goroutine and the first gather exist, so
 		// there is nothing to interleave with and nothing yet to be a sign
-		// of life for. Deliberate, and documented at each site.
+		// of life for." The second half is true and is why these lines are
+		// QUIET. The first half is not: the backup clock's goroutine is
+		// started ABOVE this block and its ticks write the same stream under
+		// outMu, and at the 26 test sites that launch d.Watch on a goroutine
+		// of their own the whole preamble runs CONCURRENTLY with the
+		// launching goroutine's reads of it. MEASURED 2026-11-15: a read
+		// taken 1ms into such a loop THROUGH outMu reported WARNING: DATA
+		// RACE against four of this block's bare Fprintln sites, which is
+		// what a lock cannot do anything about from one side. Those five Out
+		// writes go through d.quietf and d.quietOutWriter() now.
+		//
+		// What is left in this block is the one stream the loop writes
+		// before the tee owns it — d.errw(), still the operator's raw stderr
+		// here — at a config diagnostic or an error path that precedes the
+		// loop. Every surviving entry below is one of those, the
+		// LaunchCapLine row included: its LINE goes through d.quietf now and
+		// what keeps the row is the d.errw() handed to the epoch reader
+		// inside it. Each is documented at its site.
 		{"watch.go", `"warning: cannot hold the watch lock at %s`, "before any clock; the lock refusal precedes the loop"},
 		{"watch.go", `"pulse: %v — disarmed for this loop`, "config error, before the pulse clock starts"},
 		{"watch.go", `"backup: %v — the backup clock is disarmed for this loop`, "config error, before the backup clock starts"},
-		{"watch.go", "LaunchCapLine(max, d.App.DispatchEpoch(d.errw()), d.App.LaunchShareFor(max))", "launch ration header and its ADR 0011 §5 split, said once at the top of the log"},
-		{"watch.go", "ReportPosseBinary(d.Out)", "which binary this loop is, said once"},
-		{"watch.go", "fmt.Fprintln(d.Out, lag.Line())", "the launcher-lag ABSTENTION, said once in the header; the number itself goes through d.println in the pass"},
-		{"watch.go", `d.App.ReportHookWall(d.Out, "watch")`, "L3 hook wall, swept once"},
-		{"watch.go", "d.App.ReportAnchorState(d.Out)", "the promote-anchor state, read once in the header"},
+		{"watch.go", "LaunchCapLine(max, d.App.DispatchEpoch(d.errw()), d.App.LaunchShareFor(max))", "the line goes through d.quietf; the d.errw() inside it is the epoch reader's own diagnostic writer, raw stderr before the tee"},
 		{"watch.go", "d.App.PlanUsageStaleAfter(d.errw())", "the stale-after TYPO line, said once"},
 		{"watch.go", `"warning: cannot record the watch loop at %s`, "stampWatchPid, called from the header at Watch's head"},
 		{"watch.go", `"warning: cannot open the watch log %s`, "teeWatchLog, called from the header at Watch's head"},

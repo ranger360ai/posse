@@ -634,8 +634,8 @@ func (d *Dispatcher) errWriter() io.Writer { return dispatcherStampErrw{d} }
 // like every other write the pass makes, and it stamps for the same reason
 // the sweep's own d.printf lines do.
 //
-// There is no quiet Out twin because nothing takes one: the clocks that
-// write Out print their own lines through quietf and hand no writer out.
+// Its quiet twin is quietOutWriter below — this doc said there was none
+// while that was true, which it stopped being under ranger-base-hegka.
 //
 // Named to match dispatcherStampErrw, and because dispatcherOut is already
 // a test helper in this package (herdr_test.go).
@@ -647,6 +647,37 @@ func (w dispatcherStampOut) Write(p []byte) (int, error) {
 }
 
 func (d *Dispatcher) outWriter() io.Writer { return dispatcherStampOut{d} }
+
+// quietOutWriter is outWriter's QUIET twin — the fourth cell of the family
+// above, filled in by ranger-base-hegka: Out rather than errw(), and
+// stamping nothing. Its callers are Watch's header block, the three readings
+// it prints through a callee that takes an io.Writer (ReportPosseBinary,
+// App.ReportHookWall, App.ReportAnchorState — watch.go).
+//
+// WHY THOSE SITES NEEDED IT, which is the half the allowlist that used to
+// excuse them had wrong (TestQAWatchStreamWritesGoThroughTheDispatcher): the
+// header block is not "before any other writer exists". The backup clock's
+// goroutine is started ABOVE it and its ticks write this stream under outMu,
+// and at the 26 test sites that launch d.Watch on a goroutine of their own
+// the whole preamble runs CONCURRENTLY with the launching goroutine's reads.
+// MEASURED 2026-11-15 (ranger-base-hegka): a locked read of a test's
+// *strings.Builder taken 1ms into such a loop reported WARNING: DATA RACE
+// against watch.go's bare Fprintln at four of these sites, with the tee swap
+// already locked — a read under outMu cannot be ordered against a write that
+// takes none.
+//
+// QUIET and not stamping, because these lines are the loop's header and not
+// the loop writing: Watch seeds the watchdog with d.noteWrite() AFTER them
+// on purpose, so the first silence reading measures from the loop's start
+// (see LastWrite, and watch.go's own comment at that seed).
+type dispatcherQuietOut struct{ d *Dispatcher }
+
+func (w dispatcherQuietOut) Write(p []byte) (int, error) {
+	w.d.quietf("%s", p)
+	return len(p), nil
+}
+
+func (d *Dispatcher) quietOutWriter() io.Writer { return dispatcherQuietOut{d} }
 
 // landedChecks is this pass's landed-check scheduler, made on first use so
 // that a Dispatcher built by hand (every test that does not go through

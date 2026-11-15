@@ -2477,6 +2477,94 @@ posse_judged_by() {
 }
 `
 
+// hookMatchedBlockFunc is `posse_matched_block`, the one thing every refusal
+// in this hook prints its MATCHED LINES through (ranger-base-hegka, escaped
+// from ranger-base-g1jqt).
+//
+// THE DEFECT IT CLOSES. visGuardRefusal.render emitted the block with
+// `printf '%s' "$posse_bad"` and no trailing newline, on the premise that the
+// variable carries its own: the arms that build their badVar line by line do
+// terminate every line with one (the data ceiling's, the constitution
+// class's). The arms whose badVar comes out of a COMMAND SUBSTITUTION do not,
+// and cannot — `$(...)` strips every trailing newline by definition, which no
+// amount of \n on the Go side survives (vulnprivate.go terminates each hit
+// line correctly, and check 4's two arms read the result through `$( )`). So
+// the last matched line and the way-through sentence rendered as ONE line, at
+// the refusal this whole chain exists to make readable:
+//
+//	ranger-base-xxxxx: … the text is withheld (AGENTS.md "Landing the
+//	plane")the way through: rewrite the commit message so the open …
+//
+// ONE TRAILING NEWLINE, WHATEVER IT IS HANDED, is the property, and the
+// command substitution inside is how it is had: `$( )` strips every trailing
+// newline off whatever it is given and `printf '%s\n'` puts exactly one back.
+// That is what lets this be the SHARED template's line rather than one arm's
+// fix — an arm that embeds its own newlines renders byte-identically through
+// it, with no blank line added, which the pin holds both ways
+// (TestQAEveryRefusalMatchedBlockEndsItsOwnLine).
+//
+// Never called with an empty block: every call site is inside
+// `if [ -n "$<the var>" ]`.
+const hookMatchedBlockFunc = `# The matched lines of a refusal print through posse_matched_block, which
+# ends them with exactly one newline however they were built
+# (ranger-base-hegka). The arms that build their block line by line embed
+# one; the arms that read it out of a $(command substitution) cannot, since
+# that strips every trailing newline — and a block with none ran its last
+# line into the way-through sentence that follows it.
+posse_matched_block() {
+  printf '%s\n' "$(printf '%s' "$1")"
+}
+`
+
+// hookVulnPrivateSkipFunc is `posse_vp_skipped`, ADR 0024 D2 check 4's one
+// answer to "the scan could not look" (ranger-base-hegka, pre-existing in
+// ranger-base-ihp7y's check 4).
+//
+// THE DEFECT IT CLOSES. The judge's call discarded stderr and never consulted
+// the exit code, so an empty stdout from a FAILURE — no posse on PATH, a
+// session gate refusing the verb, a bd store error, a panic, a timeout — was
+// byte-identical to an empty stdout from a clean scan: exit 0, no output,
+// nothing said. That is the shape "a check whose only signal is output passes
+// by producing none", and the direction it fails is toward letting a
+// disclosure land.
+//
+// WHAT IT DOES NOT CHANGE: check 4 still FAILS OPEN. A scan that could not
+// run is not a finding and must not refuse a commit — the committer has no
+// remedy for a missing binary or an unreachable store, which is ADR 0068's
+// lockout lesson and the reason vulnprivate.go returns no hit for every one
+// of those cases. What changes is that it is SAID, which is g1jqt's own
+// principle (hookJudgeFunc: an unreadable answer is said and never dropped)
+// and what posse_judged_by already does for the refusals it is paid on. This
+// is that sentence for the arm that passes.
+//
+// HOW IT TELLS THE THREE APART, which is the whole mechanism and rests on
+// `posse gates vuln-private-scan`'s exit code (cmd/posse/main.go): a HIT is
+// nonzero with lines on stdout, a CLEAN scan is zero with nothing, and a
+// failure to look is nonzero with nothing. Only the last is this function's
+// case, so a clean scan stays silent and an exit code the shell now reads is
+// a contract the pin holds (TestQACheckFourSaysWhenItCouldNotLook).
+// bd being unreachable is deliberately NOT this case: the judge answers 0 and
+// says no hit, because that fail-open is ADR 0068's and is decided in Go
+// where it can be reasoned about, not inferred from a status here.
+//
+// Said ONCE per commit though check 4 renders two arms, because the two run
+// in one shell and the second line would add nothing a reader does not have.
+const hookVulnPrivateSkipFunc = `# ADR 0024 D2 check 4's scan can fail to RUN — no posse on PATH, a session
+# gate refusing the verb, a store error, a panic. An empty stdout then means
+# "could not look" and not "clean", and this is where the difference is said
+# (ranger-base-hegka). It never refuses: a scan that could not run is not a
+# finding (ADR 0068). Said once per commit, for both of check 4's arms.
+posse_vp_skipped() {
+  [ -z "${posse_vp_said:-}" ] || return 0
+  posse_vp_said=1
+  echo "posse gate: the vuln-private residual scan was SKIPPED, not passed — $1" >&2
+  echo "  Nothing here read whether this commit names an OPEN vuln-private residual with" >&2
+  echo "  more than its bead id (AGENTS.md \"Landing the plane\"). The commit is not refused;" >&2
+  echo "  it was not judged either, and this arm fails in the direction that lets a" >&2
+  echo "  disclosure land. Check the id by hand, or commit again with the scan working." >&2
+}
+`
+
 // PrePushHook is the L3 wall for the one verb that is a hard risk line:
 // a pre-push hook that refuses when RHQ_TOOLS_DENY (newline-separated,
 // exported into every persona session by CreateSession) carries a rule
@@ -4244,9 +4332,23 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 // orphan-free way to reproduce). Resolved fresh at COMMIT time, unlike the
 // identity literals above: there is nothing here to freeze at install time
 // — an id's open/closed status is exactly the live fact a render-time stamp
-// cannot hold. Absent `posse` on PATH, the arm is silently skipped — the
-// same fail-open answer as an unreachable bd, because the committer has no
-// more of a remedy for a missing binary than for an unreachable store.
+// cannot hold.
+//
+// IT STILL FAILS OPEN AND IT NO LONGER DOES SO SILENTLY (ranger-base-hegka,
+// pre-existing since ranger-base-ihp7y introduced check 4). Absent `posse` on
+// PATH, or with a posse that answers nonzero and prints nothing, the arm is
+// skipped — the same fail-open answer as an unreachable bd, because the
+// committer has no more of a remedy for a missing binary than for an
+// unreachable store — but it SAYS it was skipped (posse_vp_skipped). Before
+// that it did not: stderr was discarded and the exit code was never read, so
+// an empty stdout from a failure and an empty stdout from a clean scan were
+// the same zero bytes and the same exit 0. "Found nothing" and "could not
+// look" are different facts, this arm fails toward letting a disclosure land,
+// and g1jqt's principle for the refusals — an unreadable answer is said and
+// never dropped — is the same principle here. The three cases are told apart
+// by the judge's exit code, which this is the first shell to read: a hit is
+// nonzero WITH stdout, a clean scan is zero with none, a failure to look is
+// nonzero with none (posse_vp_skipped's doc, cmd/posse/main.go).
 //
 // THE ONE THING THAT DIFFERS BETWEEN THE TWO ARMS IS `arm` (ranger-base-gi6ge,
 // escaped from ranger-base-ckcly finding 1). The content arm's $posse_added is
@@ -4262,7 +4364,14 @@ func vulnPrivateChecks(arm string) func(indent string) string {
 	return func(indent string) string {
 		return indent + `if command -v posse >/dev/null 2>&1; then
 ` + indent + `  posse_vp_hit=$(printf '%s' "$posse_added" | posse gates vuln-private-scan` + arm + ` 2>/dev/null)
-` + indent + `  [ -z "$posse_vp_hit" ] || posse_bad="$posse_bad$posse_vp_hit"
+` + indent + `  posse_vp_rc=$?
+` + indent + `  if [ -n "$posse_vp_hit" ]; then
+` + indent + `    posse_bad="$posse_bad$posse_vp_hit"
+` + indent + `  elif [ "$posse_vp_rc" -ne 0 ]; then
+` + indent + `    posse_vp_skipped "posse gates vuln-private-scan exited $posse_vp_rc and printed nothing"
+` + indent + `  fi
+` + indent + `else
+` + indent + `  posse_vp_skipped "no posse on PATH"
 ` + indent + `fi
 `
 	}
@@ -4449,7 +4558,7 @@ func (r visGuardRefusal) render(ind string) string {
 ` + i3 + `echo "refused by posse gate: ` + r.header + ` — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
 ` + i3 + `echo ` + shQuote(r.rule) + `
 ` + r.preMatchedLine(i3) + i3 + `echo "` + r.matched + `"
-` + i3 + `printf '%s' "$` + r.badVar + `"
+` + i3 + `posse_matched_block "$` + r.badVar + `"
 ` + i3 + `echo ` + shQuote(r.wayThrough) + `
 ` + r.keptModeNote(i3) + i3 + `echo "  ` + footer[0] + `"
 ` + i3 + `echo "  ` + footer[1] + `"
@@ -4819,7 +4928,7 @@ if [ -n "$posse_added" ]; then
       echo "posse gate: ` + dataCeilingScanLabel + ` REPORTED: ` + dataCeilingReportHeader + ` — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
       echo ` + shQuote(DataCeilingRule) + `
       echo "` + ceilingReportMatched + `"
-      printf '%s' "$posse_bad"
+      posse_matched_block "$posse_bad"
       if [ -n "$posse_dcids" ]; then
         echo "  record id(s) — the sanctioned citation, and what every step below takes:"
         printf '%s\n' "$posse_dcids" | sed 's/^/    /'
@@ -6266,7 +6375,7 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
       echo "on main when this bead closes, and every later seat of that runtime"
       echo "in this repo reads them before its first turn."
       echo "staged now, and in the class:"
-      printf '%s' "$posse_cls_hit"
+      posse_matched_block "$posse_cls_hit"
       echo "the way through — stage the intended diff, the operator applies it:"
       echo "  write what you MEAN under a path OUTSIDE the class (az93's went to"
       echo "  docs/notes.d/az93-settings.json — an allowlisted genre, ADR 0024 D2"
@@ -6537,7 +6646,13 @@ func (a *App) CommitGuardHook(visibility string, set OpsPatternSet, identity ...
 	// the commit guard's alone — the pre-push wall's verdict comes from
 	// RHQ_TOOLS_DENY, a launch input, so there is no judging binary there for
 	// a reader to compare to anything.
+	// posse_matched_block and posse_vp_skipped sit beside them for the same
+	// reason, and both are the commit guard's alone: the first is the one
+	// line every refusal in this body prints its matched block through
+	// (ranger-base-hegka), and the second is check 4's could-not-look
+	// sentence, rendered once for the two arms that share this shell.
 	return commitGuardHead + commitGuardHomeStamp(a.Home) + hookStampFunc + hookJudgeFunc +
+		hookMatchedBlockFunc + hookVulnPrivateSkipFunc +
 		visibilityGuardBody(visibility, set, identity) +
 		constitutionGuardBody() + sharedIndexBody
 }

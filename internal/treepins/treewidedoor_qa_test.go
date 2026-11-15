@@ -969,6 +969,31 @@ package treepins
 // and so has no discovered file set for any rule here to see. It runs in the
 // ordinary arm-1 suite.
 //
+// and SINCE 2026-11-15 it has a sibling of its own in that second class —
+// the same door, the same reading, a different never-question
+// (ranger-base-hegka):
+//
+//	TestQANoUnlockedWatchStreamReadBeforeItsJoin  make pkgcensus-check
+//	                                              (ReadDir's `.` and reads
+//	                                              every *_test.go in
+//	                                              internal/posse as TEXT —
+//	                                              no test may read the
+//	                                              dispatcher's Out through
+//	                                              the UNLOCKED helper while
+//	                                              a goroutine it launched
+//	                                              is still writing it,
+//	                                              because a torn
+//	                                              strings.Builder read
+//	                                              PANICS and a panic takes
+//	                                              the whole arm's binary
+//	                                              down and names no test)
+//	                                              (ranger-base-hegka, from
+//	                                              ranger-base-np54s)
+//
+// NO NEW DOOR, for the sentence above verbatim: it is the same variable, the
+// same discovered file set, and the same arm-1-holds-all-three-arms property.
+// 0.04s measured alone, over 716 files and 6,820 top-level funcs.
+//
 // and one more, folded into corpus-check's door rather than given a new one
 // — its subject is a reading of this repo's own Go sources, which is that
 // door's subject already:
@@ -1439,7 +1464,7 @@ package treepins
 // eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
-// and `make tree-check` is all of them — one hundred and fifty-seven pins
+// and `make tree-check` is all of them — one hundred and fifty-eight pins
 // and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

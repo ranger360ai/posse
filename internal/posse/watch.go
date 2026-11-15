@@ -229,7 +229,15 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// for the rest of its life (ranger-base-t8tq, fix ask (b)). See
 	// LaunchCapLine: the number is the operator's, the UNIT is ADR 0028 §2's
 	// and changed under a flag that did not.
-	fmt.Fprintln(d.Out, LaunchCapLine(max, d.App.DispatchEpoch(d.errw()), d.App.LaunchShareFor(max)))
+	//
+	// Through d.quietf and not a bare Fprintln, like every other Out write
+	// in this header block (ranger-base-hegka): a bare write takes no outMu,
+	// and this preamble is NOT alone on the stream — the backup clock's
+	// goroutine is already running above, and at the 26 test sites that
+	// launch this function on a goroutine the whole block runs beside the
+	// launching goroutine's reads. QUIET because the header is not the loop
+	// writing; see the d.noteWrite() seed below.
+	d.quietf("%s\n", LaunchCapLine(max, d.App.DispatchEpoch(d.errw()), d.App.LaunchShareFor(max)))
 	// WHICH posse this loop IS, said once at the top of the log it writes
 	// for the rest of its life (ranger-base-39jnl) — the same rule the
 	// launch ration above and the hook wall below keep, and for the same
@@ -238,7 +246,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// binary because it led ~/.local/bin on PATH. Nothing downstream reads
 	// this; the whole value is that a log an operator reads back over ten
 	// hours names the binary that wrote it.
-	ReportPosseBinary(d.Out)
+	ReportPosseBinary(d.quietOutWriter())
 	// …and how far behind its own repo that binary is, resolved once here
 	// and COUNTED every pass below (ranger-base-z3hx6, launcherlag.go). The
 	// resolution belongs up here with the other once-per-loop readings for
@@ -256,7 +264,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	lag := readLag()
 	lagWhySaid := lag.Why
 	if !lag.Known() {
-		fmt.Fprintln(d.Out, lag.Line())
+		d.quietf("%s\n", lag.Line())
 	}
 	var lagSaid lagDrumbeat
 	// What the second-store sweep last said, so a standing finding is said
@@ -270,7 +278,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// every configured repo forever to re-derive an answer that cannot have
 	// moved. Read-only, like the launch probe it reuses; findings name the
 	// repo and the command, and this loop dispatches either way.
-	d.App.ReportHookWall(d.Out, "watch")
+	d.App.ReportHookWall(d.quietOutWriter(), "watch")
 	// The home's anchor state, read once, right here (ADR 0015 §3,
 	// ranger-base-xevp7). Same reasoning as the hook wall above — once per
 	// loop, operator-facing, read-only — and the same shape: this loop
@@ -280,7 +288,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// why it needs a line: before this, a deleted anchor was invisible on
 	// every surface forever. anchorstate.go's doc says what it does not
 	// buy — nothing against a session that re-stamps.
-	d.App.ReportAnchorState(d.Out)
+	d.App.ReportAnchorState(d.quietOutWriter())
 	// `plan_usage_stale_after:`, read once for its TYPO line and nothing
 	// else (ranger-base-lpoui). The per-pass read below discards that
 	// writer: a malformed threshold must be visible, and a loop that
@@ -550,8 +558,29 @@ func (d *Dispatcher) teeWatchLog() *watchLog {
 		return nil
 	}
 	fmt.Fprintf(lg, "\n== dispatch --watch armed %s · pid %d ==\n", d.now().Format("2006-01-02 15:04:05"), os.Getpid())
+	// UNDER outMu, because this swap is not only a write to three fields —
+	// it is a write to the fields every reader of this stream resolves
+	// through (baseOut, errw), and Watch does not always run on the
+	// goroutine that owns the Dispatcher. 26 test sites launch d.Watch on a
+	// goroutine of their own (MEASURED 2026-11-15 over
+	// internal/posse/*_test.go: 18 one-line `go func() { … }()` and 8 in
+	// block form), so at those sites this preamble runs
+	// CONCURRENTLY with the launching goroutine, and a read of d.Out or
+	// d.rawOut there — which is what every dispatcherOut/dispatcherOutLive
+	// read is (herdr_test.go) — raced this. MEASURED 2026-11-15
+	// (ranger-base-hegka, escaped from ranger-base-np54s): two WARNING: DATA
+	// RACEs per run, teeWatchLog's d.rawOut and d.Out writes against
+	// baseOut's reads of the same two words. outMu rather than a lock of
+	// their own, because it is already the lock every WRITE of this stream
+	// holds (printf/quietf and the rest — dispatch.go), so it is the one a
+	// reader can take to be ordered against both the fields and the bytes.
+	// The lock is taken for three assignments and nothing else: d.errw() is
+	// a field read, openWatchLog is already done, and no writer of this
+	// stream can be waiting on anything this holds.
+	d.outMu.Lock()
 	d.rawOut = d.Out
 	d.Out = io.MultiWriter(d.Out, lg)
 	d.Err = io.MultiWriter(d.errw(), lg)
+	d.outMu.Unlock()
 	return lg
 }

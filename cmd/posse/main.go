@@ -1797,11 +1797,23 @@ func main() {
 			// ADR 0024 D2 check 4 (ranger-base-ihp7y) — called by the
 			// commit-guard hook's own shell arm, never typed by hand:
 			// stdin is the staged markdown additions or the cleaned
-			// commit message, and the only answer that matters is
-			// whether anything was printed (RunGatesVulnPrivateScan's
-			// own doc comment: "empty output is a clean scan"). The exit
-			// code is set to match for a human running this by hand, but
-			// the shell side never reads it.
+			// commit message, and what was PRINTED is the finding
+			// (RunGatesVulnPrivateScan's own doc comment: "empty output is
+			// a clean scan").
+			//
+			// THE EXIT CODE IS PART OF THE CONTRACT SINCE
+			// ranger-base-hegka, and this comment said the shell never read
+			// it while that was true. It does now, and only to tell "found
+			// nothing" from "could not look": a hit is nonzero WITH lines on
+			// stdout, a clean scan is zero with none, and anything that
+			// could not look at all — this binary absent, a session gate
+			// refusing the verb, a panic — is nonzero with none, which the
+			// hook says out loud instead of reading as clean
+			// (posse_vp_skipped, gates.go). So the three pairs must stay
+			// distinct: never exit nonzero on a clean scan, and never exit
+			// zero on a hit. A bd that cannot be reached is deliberately
+			// NOT in the third class — that fail-open is decided in Go,
+			// where it can be reasoned about, and answers 0 with no hit.
 			//
 			// `--message` says the text is the commit MESSAGE and not the
 			// staged diff's added lines (ranger-base-gi6ge): a `+` is a

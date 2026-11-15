@@ -4258,13 +4258,31 @@ func dispatcherOut(d *Dispatcher) string { return d.baseOut().(*strings.Builder)
 // that join. Widening the common helper would put a lock acquisition on all
 // of them to describe a hazard they do not have, and would leave the next
 // reader unable to tell the two cases apart. Use this one where there is a
-// goroutine you have not joined yet; a census of polling reads
-// (ranger-base-np54s, grep over internal/posse/*_test.go) found exactly one,
-// in suspend_qa_test.go.
+// goroutine you have not joined yet.
 //
-// It guards the Builder and not the Out FIELD. Watch's swap of Out and rawOut
-// (teeWatchLog, watch.go) takes no lock, and needs none: it runs in Watch's
-// preamble, before any writer goroutine exists.
+// THE CENSUS THAT FOUND ONE SITE WAS KEYED WRONG, and its key is the part
+// worth copying (ranger-base-hegka, escaped from ranger-base-np54s). np54s
+// censused "a `for` loop POLLING dispatcherOut" and found exactly one, in
+// suspend_qa_test.go — correctly, because exactly one loop polls it. But the
+// hazard is not polling: it is A READ TAKEN WHILE A GOROUTINE THAT WRITES
+// d.Out HAS NOT BEEN JOINED, and the two sites that escaped poll the
+// FILESYSTEM and read this stream only in their deadline arm
+// (backuploop_test.go). Keyed that way the same package held two more.
+// TestQANoUnlockedWatchStreamReadBeforeItsJoin (watchoutlive_qa_test.go) is
+// that key as a pin, so the next one is caught by a test and not by a verify.
+//
+// It guards the FIELDS as well as the Builder, and that took a fix on the
+// writing side. teeWatchLog's swap of Out and rawOut, and the header lines
+// Watch prints after it, took no lock on the theory that Watch's preamble
+// runs before any other writer exists. At the 26 test sites that launch
+// d.Watch on a goroutine of their own it does not: the preamble runs on the
+// WATCH goroutine, concurrently with the launching goroutine's reads — and it
+// also follows the backup clock's own goroutine, started above it. Both are
+// under outMu now (ranger-base-hegka, dispatch.go's quietOutWriter), which is
+// what makes this helper's lock mean anything at those sites. MEASURED
+// 2026-11-15: with the Builder half fixed and the field half not, a read here
+// 1ms into such a loop still reported WARNING: DATA RACE against watch.go's
+// bare Fprintln; with both, 120 iterations across six deadlines report none.
 func dispatcherOutLive(d *Dispatcher) string {
 	d.outMu.Lock()
 	defer d.outMu.Unlock()
