@@ -3874,7 +3874,7 @@ const commitGuardHead = `#!/bin/sh
 # for this box's own identity literals and this instance's config patterns
 # over every staged file, every added path and the commit message, and a
 # scan (through the posse binary) for an open vuln-private bead id named
-# with more than itself in staged markdown or the commit message), the
+# with more than itself in any staged file or the commit message), the
 # constitution-path guard (ranger-base-ak3e) and the shared-index commit
 # guard (rangerhq-lmq9). No ADR citation wall: ADR 0051's check is the
 # on-demand "posse gates adr-census", never a commit-time refusal
@@ -4234,7 +4234,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 
 // vulnPrivateChecks is check 4's judge, rendered once for its content arm
 // and its message arm (vulnPrivateSource) alike: it pipes whichever text the
-// caller already scanned into $posse_added — the staged markdown additions,
+// caller already scanned into $posse_added — the staged additions,
 // or the cleaned commit message messageArm already computed — through the
 // posse binary and folds any hit into $posse_bad,
 // posse_check's own idiom (empty output is a clean scan). See
@@ -4276,8 +4276,8 @@ func vulnPrivateChecks(arm string) func(indent string) string {
 // identityGuardCheck as an extraMessage source, so it shares check 3's
 // reader rather than opening a second one (checkThreeMessageHead's own
 // comment says why); it carries no content or path refusal of its own —
-// vulnPrivateContentCheck renders the content arm by hand, over a narrower
-// staged set than check 3's (markdown only, no path arm at all).
+// vulnPrivateContentCheck renders the content arm by hand, over every staged
+// path but the beads jsonl and with no path arm at all.
 func vulnPrivateSource() visScanSource {
 	return visScanSource{
 		// --message: this arm's text is the commit message, whose lines carry
@@ -4297,14 +4297,20 @@ func vulnPrivateSource() visScanSource {
 	}
 }
 
-// vulnPrivateContentCheck renders check 4's content arm: the SHIPPED
-// markdown pathspecs — the same staged set as check 2, every path, not
-// only docs/notes.d/*.md — for the reason check 2 is not narrower than
-// that either: the rule's own wording is "a public commit message or
-// notes fragment", and NOTES.md, a README or an ADR is exactly as public
-// as a fragment under docs/notes.d/. No path arm (unlike check 3): a
-// vuln-private id in a FILENAME names nothing about the shape this check
-// judges, and bd stages no new path that could carry one.
+// vulnPrivateContentCheck renders check 4's content arm: EVERY staged path
+// except the beads jsonl (vulnPrivateContentPathspec). No path arm (unlike
+// check 3): a vuln-private id in a FILENAME names nothing about the shape
+// this check judges, and bd stages no new path that could carry one.
+//
+// IT USED TO BE THE MARKDOWN PATHSPECS ALONE (check 2's set), and that was
+// ranger-base-cq3vi finding F2: an open vuln-private id described in a `.go`
+// comment, or in a string the binary PRINTS, was outside everything this
+// arm could see — which is how ranger-base-a8qfg's residual sites cleared
+// this gate twice and were held only at the push gate. A public repo's
+// source is exactly as public as its markdown, and check 2's reason for
+// staying narrow (the detector's own source is byte-identical to its
+// hits) does not apply here: what this check matches is a LIVE open id,
+// which no test fixture or detector source spells.
 func vulnPrivateContentCheck() string {
 	refusal := visGuardRefusal{
 		badVar:       "posse_bad",
@@ -4323,11 +4329,13 @@ func vulnPrivateContentCheck() string {
   # ─── check 4: vuln-private residuals named with more than a bead id ────
   # AGENTS.md "Landing the plane" (operator ruling 2026-11-11,
   # ranger-base-lcuec): a residual still open under a vuln-private bead is
-  # named by bead id and nothing else. Same staged set as check 2 — the
-  # SHIPPED markdown pathspecs, every path. The message half of this same
+  # named by bead id and nothing else. Every staged path but the beads
+  # jsonl — source and printed strings included (ranger-base-cq3vi); the
+  # jsonl IS the bead's own record, flushed into every commit by bd.
+  # The message half of this same
   # check runs above, inside check 3's message arm (identityGuardCheck's
   # extraMessage) — one reader for every source that scans the message.
-  posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- ` + markdownPathspecArgs() + ` 2>/dev/null |
+  posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- ` + vulnPrivateContentPathspec + ` 2>/dev/null |
     grep -a '^+' | grep -av '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
@@ -4714,6 +4722,15 @@ const (
 	// named something else entirely (ADR 0068 Context), so a refusal here
 	// refuses commits nobody is typing at and removes nothing.
 	ceilingReportPathspec = `':(top).beads/*.jsonl'`
+	// vulnPrivateContentPathspec is check 4's content arm (ranger-base-cq3vi):
+	// every staged path but the beads jsonl, `:(top)` for the subdirectory
+	// reason above. The jsonl is excluded because it IS the vuln-private
+	// bead's own record — description and all — and bd flushes it into
+	// every commit, so a refusal there removes nothing (ADR 0068 D1's
+	// lesson, which check 4's fail-open already follows). Spelled
+	// separately from ceilingRefusePathspec, which it equals today,
+	// because the two are separate decisions.
+	vulnPrivateContentPathspec = `':(top)' ':(top,exclude).beads/*.jsonl'`
 )
 
 // contentPathspecArgs is twoArmScan's content-arm pathspec rendered as the

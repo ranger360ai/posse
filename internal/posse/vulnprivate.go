@@ -6,7 +6,8 @@ package posse
 // no description, path, mechanism or reproduction — until that residual's
 // own fix lands and the bead closes. That was prose with no wall. This file
 // is the wall's judge: a filter the commit-guard hook pipes its already-
-// computed scan text through (the staged markdown additions, or the
+// computed scan text through (the staged additions of every file but the
+// beads jsonl — source included since ranger-base-cq3vi — or the
 // cleaned commit message — gates.go's existing $posse_added, the same text
 // checks 0-3 already read) and that answers which of this repo's currently
 // OPEN `vuln-private` beads is named beside more than its own id.
@@ -148,13 +149,46 @@ const VulnPrivateMessageWayThrough = "the way through: rewrite the commit messag
 // line that refuses an English one, which no byte whitelist of this shape
 // was ever going to do. Digits stay allowed, as they were (`1.` numbering,
 // and a date beside an id discloses nothing a bd id does not).
+//
+// ONE EXCEPTION, AND IT IS AN EXACT-MATCH WORD LIST (vulnPrivateLabels,
+// ranger-base-cq3vi). Since check 4's content arm reads source and not only
+// markdown, this tree's established way of naming a residual in a Go comment
+// — `// Residual: <id>.` — is in scope, and a letter test alone reads the
+// LABEL as a description: MEASURED 2026-11-14 on ranger-base-cq3vi,
+// five of the eight `Residual:` sites in internal/posse red the moment the
+// pathspec widens, every one a line a reader would call correct. Dropping the
+// label from every site leaves a naked id that says nothing about what it
+// is; allowing "any short prefix" reopens a sentence-shaped escape. So each
+// maximal run of letters left in the unit must be one of the listed words,
+// whole — `residual` passes, `residual mask` does not, and neither does
+// `residualmask`. The text is already ASCII-lowercased by vulnPrivateHits, so
+// the list is lowercase.
 func vulnPrivateBare(rest string) bool {
+	word := strings.Builder{}
+	flush := func() bool {
+		ok := word.Len() == 0 || vulnPrivateLabels[word.String()]
+		word.Reset()
+		return ok
+	}
 	for _, r := range rest {
 		if unicode.IsLetter(r) {
+			word.WriteRune(r)
+			continue
+		}
+		if !flush() {
 			return false
 		}
 	}
-	return true
+	return flush()
+}
+
+// vulnPrivateLabels is the whole of what may stand beside an open
+// vuln-private id: words that say the id IS a residual and nothing about
+// what the residual is. It is a decision, widened only by a reviewed edit —
+// the same posture as MarkdownPathspecs and PublicDocsGenres.
+var vulnPrivateLabels = map[string]bool{
+	"residual":  true,
+	"residuals": true,
 }
 
 // VulnPrivateArm says which of check 4's two arms a scan is reading. It is
@@ -567,7 +601,7 @@ func vulnPrivateOwnBead(dir string) string {
 }
 
 // RunGatesVulnPrivateScan is check 4's judge: stdin is the text a
-// commit-guard arm already computed (the staged markdown additions, or the
+// commit-guard arm already computed (the staged additions, or the
 // cleaned commit message — gates.go's $posse_added either way), arm says
 // WHICH of those two it is, dir is the repo whose beads store answers, and
 // the return says whether anything was printed — which is also the whole of

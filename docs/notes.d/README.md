@@ -40,6 +40,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-g1jqt](ranger-base-g1jqt.md) — A commit-guard refusal now names the posse that judged it (ranger-base-g1jqt) — 2026-11-14
 - [ranger-base-enhtx](ranger-base-enhtx.md) — A corpus keyed on the extension, over a directory that holds three entry points without one (ranger-base-enhtx) — 2026-11-14
 - [ranger-base-ed07e](ranger-base-ed07e.md) — A fix could not describe the hole it closed, and its bead could not close first (ranger-base-ed07e) — 2026-11-14
+- [ranger-base-cq3vi](ranger-base-cq3vi.md) — Check 4 reads source, and the word "Residual" is not a description (ranger-base-cq3vi) — 2026-11-14
 - [ranger-base-cgr1h](ranger-base-cgr1h.md) — The pulse waiter: what the ADR settled, and the four things it did not (ranger-base-cgr1h) — 2026-11-14
 - [ranger-base-bskno](ranger-base-bskno.md) — The second route to a cross-cutting lane, and this one no order reaches (ranger-base-bskno) — 2026-11-14
 - [ranger-base-b3w9x](ranger-base-b3w9x.md) — A method, and then a helper: two places the exec census was not asking (ranger-base-b3w9x) — 2026-11-14

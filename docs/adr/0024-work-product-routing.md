@@ -39,7 +39,11 @@ amended 2026-11-14 (D2 check 4: the scan drops ONE open id before it
 reads — the bead the committing tree's own branch is recorded for — which
 is AGENTS.md's own "may describe the hole its fix CLOSES", unrealizable
 under a live-status judge because a dispatched fix must commit BEFORE its
-bead closes; ranger-base-ed07e, from ranger-base-g8fmb)*
+bead closes; ranger-base-ed07e, from ranger-base-g8fmb) · amended
+2026-11-14 (D2 check 4: the content arm reads every staged file but the
+beads jsonl, source and printed strings included, and the words
+`residual`/`residuals` may stand beside an open id; ranger-base-cq3vi,
+from ranger-base-g2a6d)*
 
 ## Context
 
@@ -321,10 +325,19 @@ install and at every persona launch).
    until that residual's own fix lands and the bead closes. This check
    is the wall for it.
 
-   Same staged set as check 2 (the SHIPPED markdown pathspecs, every
-   path, not only `docs/notes.d/*.md` — the rule's own wording is "a
-   commit message or notes fragment", and NOTES.md, a README or an ADR
-   is exactly as public as a fragment), and the same commit MESSAGE
+   Every staged file but the beads jsonl (*Amended 2026-11-14,
+   ranger-base-cq3vi*: it was check 2's staged set, the SHIPPED markdown
+   pathspecs, so a residual described in a `.go` comment or in a string
+   the binary PRINTS was invisible to it — which is how
+   ranger-base-a8qfg's residual sites cleared this check twice and were
+   held only at the push gate. A public repo's source is as public as its
+   markdown, and check 2's reason for staying narrow — the detector's own
+   source is byte-identical to its hits — does not hold for a LIVE open
+   id. The jsonl is excluded because it is the bead's own record, flushed
+   by bd into every commit, where a refusal removes nothing. With source
+   in scope the tree's established `// Residual: <id>.` shape had to
+   pass, so the bareness test admits the whole words `residual` and
+   `residuals` from a closed list and no other letter), and the same commit MESSAGE
    reader as check 3's third arm — one reader, shared, rather than a
    second copy of it (a second `messageArm` call renders a second
    reference-diff reader with no source that wants it, the defect

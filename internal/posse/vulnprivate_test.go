@@ -2,6 +2,7 @@ package posse
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -811,5 +812,98 @@ func TestVulnPrivateOwnBeadIsNotAParseOfTheWorktreeName(t *testing.T) {
 	// Not a repo at all, which is every existing end-to-end test's dir.
 	if got := vulnPrivateOwnBead(t.TempDir()); got != "" {
 		t.Errorf("vulnPrivateOwnBead outside a repo = %q, want \"\"", got)
+	}
+}
+
+// TestVulnPrivateHitsAcceptsTheResidualLabel is ranger-base-cq3vi's label
+// allowance: since check 4 reads source, this tree's `// Residual: <id>.`
+// shape is in scope, and the label says the id IS a residual and nothing
+// about what it is. The allowance is whole words from a closed list, so the
+// second table — the label with anything else beside it — must still red,
+// the printed-string shape of finding F1 among them.
+func TestVulnPrivateHitsAcceptsTheResidualLabel(t *testing.T) {
+	t.Parallel()
+	ids := []string{"ranger-base-l751c", "ranger-base-fixt3"}
+	for _, text := range []string{
+		"// Residual: ranger-base-l751c.",
+		"\t// Residual: ranger-base-l751c.",
+		"// Residuals: ranger-base-l751c, ranger-base-fixt3.",
+		"- Residual: ranger-base-l751c",
+		"# Residual: ranger-base-l751c",
+		"//\n// Residual: ranger-base-l751c.",
+	} {
+		if got := vulnPrivateHits(text, ids); got != nil {
+			t.Errorf("vulnPrivateHits(%q) = %v, want no hit — a residual label beside a bare id describes nothing", text, got)
+		}
+	}
+	for _, text := range []string{
+		"// Residual: ranger-base-l751c. The ssh tmpfs is a mask",
+		"// Residual mask: ranger-base-l751c.",
+		"// residualmask ranger-base-l751c",
+		"// Residual (credential): ranger-base-l751c",
+		`fmt.Fprintf(out, "    · %s (NO MOUNT; ranger-base-l751c)\n", AbbrevHome(p))`,
+	} {
+		if got := vulnPrivateHits(text, ids); len(got) != 1 || got[0] != ids[0] {
+			t.Errorf("vulnPrivateHits(%q) = %v, want [%s] — only the exact label words may stand beside an open id", text, got, ids[0])
+		}
+	}
+}
+
+// TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl is finding
+// F2 of ranger-base-cq3vi, measured through real git rather than read off the
+// render: check 4's content arm used to diff the markdown pathspecs alone, so
+// a residual described in a .go comment or a printed string never reached the
+// judge. The rendered arm must carry vulnPrivateContentPathspec, and that
+// pathspec, run through the arm's own diff shape from a SUBDIRECTORY (the
+// `:(top)` reason, ceilingRefusePathspec's comment), must yield the .go and
+// .md additions and not the beads jsonl's.
+func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T) {
+	t.Parallel()
+	arm := vulnPrivateContentCheck()
+	if !strings.Contains(arm, "-- "+vulnPrivateContentPathspec+" ") {
+		t.Fatalf("check 4's content arm no longer diffs vulnPrivateContentPathspec:\n%s", arm)
+	}
+	if strings.Contains(arm, markdownPathspecArgs()) {
+		t.Fatalf("check 4's content arm is back to the markdown pathspecs — a .go comment or printed string is invisible to it again:\n%s", arm)
+	}
+
+	repo := gitTempDir(t)
+	qblGit(t, repo, "init", "-q")
+	qblGit(t, repo, "config", "user.email", "t@example.com")
+	qblGit(t, repo, "config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(repo, "seed"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	qblGit(t, repo, "add", "--", "seed")
+	qblGit(t, repo, "commit", "-q", "-m", "seed")
+	files := map[string]string{
+		"internal/x.go":       "// GO-LINE\n",
+		"docs/x.md":           "MD-LINE\n",
+		".beads/issues.jsonl": "JSONL-LINE\n",
+	}
+	for p, body := range files {
+		full := filepath.Join(repo, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		qblGit(t, repo, "add", "--", p)
+	}
+	cmd := exec.Command("sh", "-c", `git diff --cached -U0 `+diffReaderShape+` HEAD -- `+vulnPrivateContentPathspec+` | grep -a '^+' | grep -av '^+++'`)
+	cmd.Dir = filepath.Join(repo, "internal")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("diff: %v\n%s", err, out)
+	}
+	got := string(out)
+	for _, want := range []string{"+// GO-LINE", "+MD-LINE"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("check 4's staged set is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "JSONL-LINE") {
+		t.Errorf("check 4's staged set reads the beads jsonl, which is the bead's own record and bd stages into every commit:\n%s", got)
 	}
 }
