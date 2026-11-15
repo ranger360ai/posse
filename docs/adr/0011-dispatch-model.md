@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · amended 2026-11-13 (§4 a PID's label order is the second routing key: its first label is its lane — ranger-base-svoux) · amended 2026-11-14 (§4 a head must be anchored on its own lane or a single-lane label; a one-label cross-cutting match does not head — ranger-base-d7lsc) · amended 2026-11-14 (§5 a launch share: one label's class gets a reserved, lendable slice of `-n` — ranger-base-j11mf; built 2026-11-15, ranger-base-wq19a — internal/posse/launchshare.go, docs/notes.d/ranger-base-wq19a.md) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · amended 2026-11-13 (§4 a PID's label order is the second routing key: its first label is its lane — ranger-base-svoux) · amended 2026-11-14 (§4 a head must be anchored on its own lane or a single-lane label; a one-label cross-cutting match does not head — ranger-base-d7lsc) · amended 2026-11-14 (§5 a launch share: one label's class gets a reserved, lendable slice of `-n` — ranger-base-j11mf; built 2026-11-15, ranger-base-wq19a — internal/posse/launchshare.go, docs/notes.d/ranger-base-wq19a.md; §5 the work prompt names the class on a share bead, against label drift — ranger-base-7qtci) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -298,7 +298,15 @@ launch_share: 2               # attempts per epoch reserved for that class, out 
   bead is in the remainder, which is `-n` minus `launch_share`. A launch attempt
   is charged to the class of the bead it was made for. This includes a
   `--resume` relaunch of an interrupted run, and it uses the same "an attempt
-  reached a runtime" rule as above.
+  reached a runtime" rule as above. The dispatched seat is told which class
+  its bead is in: a work prompt for a bead in the share carries one line
+  naming the label and saying that beads filed for the work carry it too
+  (ranger-base-7qtci). Label drift is the share's failure mode and it is done
+  by hand — a handoff files the receiving lane's label (0006 §1) and a budget
+  class is not a lane, so a bead filed off a share bead without the label is
+  charged to the remainder, and over enough epochs the share shrinks to the
+  beads the operator labelled personally. No line is rendered for a remainder
+  bead or while the share is dormant.
 - **The label is a budget class, not a §4 lane.** Routing is unchanged. A
   share bead is routed by its other labels, or by its assignee, exactly as
   before. No PID may carry the share label. A PID that carries it would make

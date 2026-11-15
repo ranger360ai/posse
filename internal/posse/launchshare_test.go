@@ -672,3 +672,131 @@ func TestAFirePassBooksTheTotalAndTheSplitTogether(t *testing.T) {
 		t.Errorf("the split and the total disagree: %d vs %d", d.epochClass.total(), d.epochAttempts)
 	}
 }
+
+// ─── the label on the beads the seat files ───────────────────────────────────
+
+// §5's failure mode is label DRIFT, and the drift is done by hand: the class
+// is the bead's labels, a handoff files the receiving LANE's label and a
+// budget class is not a lane, so a bead filed off a share bead without the
+// label lands in the remainder — and the share shrinks, epoch by epoch, to
+// the beads the operator labelled personally. The one reader who can prevent
+// that is the seat holding the share bead, so the work prompt tells it
+// (ranger-base-7qtci).
+//
+// Five arms, and the four ABSENCES are the point: a remainder bead has no
+// label to carry on, and a dormant or unconfigured share must not instruct
+// anyone to label work against a split that is not in force.
+func TestTheWorkPromptNamesTheShareLabelOnAShareBead(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		cfg    string
+		max    int
+		labels []string
+		want   bool
+	}{
+		{
+			name: "armed, and the bead is in the class",
+			cfg:  "launch_share_label: project\nlaunch_share: 2\n",
+			max:  6, labels: []string{"go", "project"}, want: true,
+		},
+		{
+			name: "armed, but the bead is in the remainder",
+			cfg:  "launch_share_label: project\nlaunch_share: 2\n",
+			max:  6, labels: []string{"go"},
+		},
+		{
+			name: "dormant: this pass's -n is no ration to split",
+			cfg:  "launch_share_label: project\nlaunch_share: 2\n",
+			max:  0, labels: []string{"go", "project"},
+		},
+		{
+			name: "dormant: the count is not a count",
+			cfg:  "launch_share_label: project\nlaunch_share: two\n",
+			max:  6, labels: []string{"go", "project"},
+		},
+		{
+			name: "no share was ever configured",
+			cfg:  "",
+			max:  6, labels: []string{"go", "project"},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, _ := newTestBackend(t)
+			repo := shareHome(t, b.App, "[]", "", tc.cfg)
+			is := RepoIssue{BdIssue: BdIssue{ID: "p-1", Title: "t", Labels: tc.labels}, Dir: repo}
+			// Off the real config and the real `-n`, so the dormant arms are
+			// the ones production would resolve and not a hand-built struct.
+			sh := b.App.LaunchShareFor(tc.max)
+			ctx := b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, is, "claude", "standard", "", nil, sh)
+			p := workPrompt(is, ctx)
+			got := strings.Contains(p, "- launch share: this bead is in the `project` class (ADR 0011 §5)")
+			if got != tc.want {
+				t.Errorf("share filing line present=%v, want %v:\n%s", got, tc.want, p)
+			}
+			if tc.want {
+				if ctx.ShareLabel != "project" {
+					t.Errorf("ShareLabel = %q, want project", ctx.ShareLabel)
+				}
+				// The line has to carry both halves to be worth a line at
+				// all: which label to file, and what filing without it costs.
+				for _, want := range []string{"`-l <their label>,project`", "lands in the remainder"} {
+					if !strings.Contains(p, want) {
+						t.Errorf("missing %q in:\n%s", want, p)
+					}
+				}
+			} else if ctx.ShareLabel != "" {
+				t.Errorf("ShareLabel must be empty on this arm, got %q", ctx.ShareLabel)
+			}
+			// Whatever the arm, the share neither displaces nor duplicates
+			// the one Context line that always renders.
+			if n := strings.Count(p, pushPrecedence); n != 1 {
+				t.Errorf("push precedence rendered %d time(s):\n%s", n, p)
+			}
+		})
+	}
+}
+
+// And the line reaches the SEAT, not only the renderer.
+//
+// The prompt is assembled inside `fire`, which is handed the class decision
+// fireLoop charged the attempt to — so this is the test that reds if that
+// wiring is dropped, where the render table above would stay green. One real
+// pass, two beads, one class each: the share bead's delivered prompt carries
+// the line and the remainder bead's does not.
+func TestTheDeliveredPromptCarriesTheShareLabel(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	shareSeats(t, b.App, 2)
+	shareHome(t, b.App,
+		"["+beadRow("p-1", 0, shareLabels)+","+beadRow("a-1", 1, remLabels)+"]",
+		`[{"id":"p-1","status":"closed"},{"id":"a-1","status":"closed"}]`,
+		"launch_share_label: project\nlaunch_share: 2\n")
+	agentPerLaunch(t, fake)
+
+	if _, err := d.Run("", "", 6); err != nil {
+		t.Fatal(err)
+	}
+	// What the personas were really asked, whichever channel carried it.
+	out := delivered(t, b.App, fake)
+	seg := func(bead string) string {
+		i := strings.Index(out, "Work beads issue "+bead)
+		if i < 0 {
+			t.Fatalf("%s was never prompted:\n%s", bead, out)
+		}
+		rest := out[i+1:]
+		if j := strings.Index(rest, "Work beads issue "); j >= 0 {
+			return rest[:j]
+		}
+		return rest
+	}
+	if p := seg("p-1"); !strings.Contains(p, "launch share: this bead is in the `project` class") {
+		t.Errorf("the share bead's own prompt must name the label it files with:\n%s", p)
+	}
+	if a := seg("a-1"); strings.Contains(a, "launch share:") {
+		t.Errorf("a remainder bead has no share label to carry on:\n%s", a)
+	}
+}

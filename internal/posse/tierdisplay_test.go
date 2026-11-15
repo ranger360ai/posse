@@ -145,14 +145,14 @@ func TestWorkPromptHeaderShowsTheDisplayTier(t *testing.T) {
 	os.MkdirAll(b.App.RuntimesDir(), 0o755)
 	os.WriteFile(filepath.Join(b.App.RuntimesDir(), "blankcli.yaml"),
 		[]byte("command: blankcli {model} --sys {file}\n"), 0o644)
-	ctx := b.App.promptContext(bd, is, "blankcli", TierStandard, "", nil)
+	ctx := b.App.promptContext(bd, is, "blankcli", TierStandard, "", nil, LaunchShare{})
 	if ctx.TierShown != TierUnmapped {
 		t.Errorf("blankcli standard → TierShown = %q, want %q", ctx.TierShown, TierUnmapped)
 	}
 	if p := workPrompt(is, ctx); !strings.Contains(p, "runtime/tier: blankcli/default") {
 		t.Errorf("header must read blankcli/default:\n%s", p)
 	}
-	ctx = b.App.promptContext(bd, is, "claude", TierStrong, "", nil)
+	ctx = b.App.promptContext(bd, is, "claude", TierStrong, "", nil, LaunchShare{})
 	if p := workPrompt(is, ctx); !strings.Contains(p, "runtime/tier: claude/strong") {
 		t.Errorf("a mapped tier keeps its name in the header:\n%s", p)
 	}

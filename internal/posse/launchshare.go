@@ -242,6 +242,31 @@ func shareMark(sh LaunchShare, inShare, lending bool) string {
 	return " [class: " + class + "]"
 }
 
+// shareFilingLine is the Context line a work prompt carries for a bead in
+// the share's class — the share's one appearance anywhere but the
+// operator's own surfaces.
+//
+// LABEL DRIFT IS THE SHARE'S FAILURE MODE, and the drift is done by hand.
+// §5's class is the bead's LABELS and nothing else, so a handoff filed off a
+// share bead without the label is in the remainder: it queues against every
+// other bead in the shop instead of against the slice reserved for this
+// work, and the share shrinks, epoch by epoch, to the beads the operator
+// labelled personally. Nothing downstream can repair that by inference. A
+// handoff files `-l <their label>` — the receiving LANE's label (ADR 0006 §1
+// as amended 2026-09-01) — and a budget class is not a lane (§5), so the
+// only reader who can put the share label on the next bead is the seat
+// holding this one. This is how that seat is told.
+//
+// Rendered only for a bead IN the class, and only while the share is ARMED:
+// a remainder bead has no label to carry on, and a dormant share would make
+// this an instruction to label work against a split that is not in force
+// (the whole of rangerhq-v83's rule is that a share which changes nothing
+// says so rather than acting). `LaunchShare.In` asks both halves at once,
+// which is why nothing here re-reads the config.
+func shareFilingLine(label string) string {
+	return fmt.Sprintf("launch share: this bead is in the `%s` class (ADR 0011 §5) — every bead you file for this work carries that label too (`-l <their label>,%s`), or it lands in the remainder and queues against every other bead instead of the launches reserved for this work.", label, label)
+}
+
 // exhaustionSplit is the clause the epoch's exhaustion line carries when the
 // share is armed: which class spent the ration.
 //

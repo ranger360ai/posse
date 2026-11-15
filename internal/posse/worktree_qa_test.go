@@ -726,7 +726,7 @@ func TestWorkPromptNamesTheSessionTree(t *testing.T) {
 	repo := wtRepo(t)
 	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}
 
-	ctx := b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, is, "claude", "standard", "ranger-x-a-1", nil)
+	ctx := b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, is, "claude", "standard", "ranger-x-a-1", nil, LaunchShare{})
 	if ctx.Tree == nil {
 		t.Fatal("the prompt context did not resolve the session's tree")
 	}
@@ -743,7 +743,7 @@ func TestWorkPromptNamesTheSessionTree(t *testing.T) {
 	// A dir with no worktree says nothing about one, rather than promising a
 	// tree the launch will not make.
 	plain := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: t.TempDir()}
-	if strings.Contains(workPrompt(plain, b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, plain, "claude", "standard", "s", nil)), "your own worktree") {
+	if strings.Contains(workPrompt(plain, b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, plain, "claude", "standard", "s", nil, LaunchShare{})), "your own worktree") {
 		t.Error("a session with no tree was told it had one")
 	}
 }
@@ -1070,7 +1070,7 @@ func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
 
 	is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}
-	p := workPrompt(is, b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, is, "claude", "standard", session, nil))
+	p := workPrompt(is, b.App.promptContext(Bd{Bin: fakeBinFor(t, "bd")}, is, "claude", "standard", session, nil, LaunchShare{}))
 	i := strings.Index(p, "your own worktree")
 	if i < 0 {
 		t.Fatal("the session was not told about the tree it is working in")

@@ -2509,8 +2509,19 @@ type PromptContext struct {
 	Designs     []string // docs/adr paths found in the bead's and parents' text
 	Orientation []string // repo-root orientation files that exist
 	HasComments bool
-	Operator    string // config operator: — assignee for ASK beads ("" = unassigned)
-	Hook        string // the PID's ## Work prompt, verbatim
+	// ShareLabel is ADR 0011 §5's launch share label when the share is ARMED
+	// and this bead is in its class, and "" for a remainder bead, a dormant
+	// share and an instance that configured none — in which case no line
+	// renders at all and the prompt is byte-identical to what it was.
+	//
+	// A PASS fact, not a bead fact, which is why it is handed in beside the
+	// runtime and the tier rather than assembled here: the split is one
+	// reading of the `-n` THIS pass was given (launchshare.go), and an
+	// instance whose `-n` leaves the share dormant must not be told by its
+	// own work prompts that a share is in force.
+	ShareLabel string
+	Operator   string // config operator: — assignee for ASK beads ("" = unassigned)
+	Hook       string // the PID's ## Work prompt, verbatim
 	// Tree is the session's own worktree when it has one (rangerhq-09o2).
 	// The persona has to be told, or it reads a branch it did not choose and
 	// a checkout that is not the path in `repo:` as something gone wrong —
@@ -2530,10 +2541,16 @@ var adrPathRe = regexp.MustCompile(`docs/adr/[A-Za-z0-9._-]+\.md`)
 
 // promptContext builds the Context from bd (dep list with relation types,
 // comment count), the repo (orientation files), and the launch (runtime,
-// tier). Every bd call is best effort: a missing piece is an absent line,
-// never a failed launch.
-func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, ag *AgentFile) PromptContext {
+// tier, and the pass's own ADR 0011 §5 launch share). Every bd call is best
+// effort: a missing piece is an absent line, never a failed launch.
+func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, ag *AgentFile, sh LaunchShare) PromptContext {
 	ctx := PromptContext{Dir: is.Dir, Runtime: runtime, TierShown: a.DisplayTier(runtime, tier), Labels: is.Labels, Operator: a.CfgGet("operator", "")}
+	// ADR 0011 §5: armed, and carrying the label — `In` asks both, so a
+	// dormant share and a remainder bead leave this empty and the prompt
+	// says nothing about a share (launchshare.go, shareFilingLine).
+	if sh.In(is.Labels) {
+		ctx.ShareLabel = sh.Label
+	}
 	// The same predicate the launch runs, asked without side effects, so the
 	// prompt cannot promise a tree the launch then declines to make
 	// (worktree.go). A config error here is not the prompt's to raise — the
@@ -2822,6 +2839,13 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 	}
 	if ctx.HasComments {
 		lines = append(lines, "comments carry decisions — read them (`bd comments "+is.ID+"`)")
+	}
+	// ADR 0011 §5, last of the ASSEMBLED lines — ahead only of the fixed
+	// push-precedence line, so it is the last thing read before the ladder
+	// whose rungs do the filing it governs (launchshare.go,
+	// shareFilingLine).
+	if ctx.ShareLabel != "" {
+		lines = append(lines, shareFilingLine(ctx.ShareLabel))
 	}
 	// Always non-empty from here: pushPrecedence renders when nothing else does.
 	lines = append(lines, pushPrecedence)
@@ -3839,7 +3863,7 @@ fire:
 			if lending {
 				lentOut.charge(inShare, 1)
 			}
-			p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, shareMark(sh, inShare, lending), lock)
+			p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, sh, inShare, lending, lock)
 			if err != nil {
 				d.printf("✗ %-14s %v\n", is.ID, err)
 				// Three outcomes, not two (ADR 0013 §2 — the busy-key split).
@@ -4222,12 +4246,19 @@ type promptResult struct {
 // held is fireLoop's launcher lock, carried down to the create (ADR 0011 §1,
 // ranger-base-deaz).
 //
-// mark is ADR 0011 §5's class marker for the launch line — the share's class
-// or the remainder, and whether this launch was lent. It is a rendered string
-// and not a LaunchShare because that is the whole of what this function does
-// with it: the class decision is fireLoop's, which is where the charge is
-// made, and an empty mark is a dormant share leaving this line as it was.
-func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy, mark string, held *LaunchLock) (*pendingBead, error) {
+// sh, inShare and lending are ADR 0011 §5's reading of this launch: the
+// pass's resolved share, which class this bead's attempt was charged to, and
+// whether the charge was made in the lending reading. Two surfaces need
+// them and they must agree — the launch line's class marker below, and the
+// work prompt's filing line, which names the label for the beads this seat
+// will FILE (shareFilingLine). `inShare` is carried rather than re-derived
+// from `sh.In(is.Labels)` for the reason the whole of launchshare.go is
+// built around: the class decision is fireLoop's, because fireLoop is where
+// the attempt is charged, and a second derivation here is a second place for
+// the report to disagree with the books. A dormant share leaves both
+// surfaces exactly as they were before §5 existed.
+func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, sh LaunchShare, inShare, lending bool, held *LaunchLock) (*pendingBead, error) {
+	mark := shareMark(sh, inShare, lending)
 	ag, _ := d.App.LoadAgent(persona)
 	// Stamped before the launch, not after it: see pendingBead.launched.
 	launched := time.Now()
@@ -4249,7 +4280,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	// it matters more than it did, because effectiveTier now answers for ANY
 	// pair difference, not only for a meta wearing a fallback mark.
 	prompt := func() string {
-		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, session, ag))
+		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, session, ag, sh))
 	}
 	// A pass decides this launch on its own, so the load guard is the
 	// fleet's own ceiling here and refuses (ranger-base-jfe5z).
@@ -6225,8 +6256,19 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	// prompt on its launch line (ADR 0013 §2), and `d` on a live holder is
 	// the resume case, which stays a typed prompt.
 	launchRuntime := d.sessionRuntime(ag)
+	// ADR 0011 §5 names no share here, and the empty LaunchShare is the
+	// honest reading rather than a gap: the share is a split of one `-n`,
+	// `-n` is the PASS's ration, and this path has no pass — the comment
+	// above says `budget_day:` is the only cap that can bite a `d`, and the
+	// launch cap is one of the ones that cannot. Resolving the two keys
+	// against a cap this process was never given would print a share the
+	// running `--watch` loop may not have armed, and a work prompt that
+	// names a split which is not in force is the one thing §5's dormant arms
+	// exist to prevent. An operator pressing `d` on a share bead is at the
+	// keyboard, which is also the case where naming the label is least
+	// needed.
 	prompt := func() string {
-		return workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, session, ag))
+		return workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, session, ag, LaunchShare{}))
 	}
 	// The operator picked this row and pressed `d`: the load guard warns
 	// rather than refuses, exactly as it does for `posse new`

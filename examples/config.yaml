@@ -1235,6 +1235,12 @@ default_emoji: ⚙️
 # both allotments, each launch line names the class it was charged to, and the
 # exhaustion line names which class spent the ration.
 #
+# The dispatched SEAT is told too: a session working a bead in the class gets
+# one line in its work prompt naming the label, because the beads it goes on to
+# FILE carry that label only if someone puts it there. A handoff filed without
+# it is in the remainder, queueing against every other bead, and over enough
+# epochs the share shrinks to the beads you labelled by hand.
+#
 # Same lifetime as the count it splits: per EPOCH, and per PROCESS — a loop
 # restarted mid-epoch gets the whole split back, exactly as it gets the whole
 # `-n` back.
