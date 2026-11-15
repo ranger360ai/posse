@@ -24,19 +24,27 @@ import (
 // this file's — the RAW typed bytes, because the whole question here is how
 // long the line is.
 
+// The limit is measured against the line as it will be TYPED, which since
+// ranger-base-1l1en carries `exec ` at its command word — so the longest
+// command that still fits is five bytes shorter than it was, and those five
+// bytes come out of the budget rather than off the cliff. execLaunchHead is
+// what a case here spends to say so.
+const execLaunchHead = "exec "
+
 func TestPaneLineTypesWhatFitsVerbatim(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
-	cmd := "echo " + strings.Repeat("x", PaneLineMax-len("echo "))
-	if len(cmd) != PaneLineMax {
-		t.Fatalf("test setup: %d", len(cmd))
+	cmd := "echo " + strings.Repeat("x", PaneLineMax-len("echo ")-len(execLaunchHead))
+	want := execLaunchHead + cmd
+	if len(want) != PaneLineMax {
+		t.Fatalf("test setup: %d", len(want))
 	}
 	line, err := b.App.PaneLine("s", cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if line != cmd {
-		t.Errorf("a line that fits must be typed as it reads, not sourced from a file:\n%s", line)
+	if line != want {
+		t.Errorf("a line that fits must be typed as it reads, exec'd and not sourced from a file:\n%s", line)
 	}
 	if _, err := os.Stat(b.App.LaunchScript("s")); !os.IsNotExist(err) {
 		t.Errorf("nothing to spill, so nothing may be written: %v", err)
@@ -44,11 +52,16 @@ func TestPaneLineTypesWhatFitsVerbatim(t *testing.T) {
 }
 
 // One byte past the cliff is the whole bug: 1023 ran 3/3 live and 1024 ran
-// 0/3, so the boundary is where the behaviour changes, not near it.
+// 0/3, so the boundary is where the behaviour changes, not near it. The
+// cliff is a property of the TYPED line, so the `exec ` the launch now
+// carries is inside the length this case puts over it.
 func TestPaneLineSpillsTheFirstLineThatWouldBeLost(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
-	cmd := "echo " + strings.Repeat("x", PaneLineMax+1-len("echo "))
+	cmd := "echo " + strings.Repeat("x", PaneLineMax+1-len("echo ")-len(execLaunchHead))
+	if len(execLaunchHead+cmd) != PaneLineMax+1 {
+		t.Fatalf("test setup: %d", len(execLaunchHead+cmd))
+	}
 	line, err := b.App.PaneLine("s", cmd)
 	if err != nil {
 		t.Fatal(err)
@@ -64,8 +77,8 @@ func TestPaneLineSpillsTheFirstLineThatWouldBeLost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "\n"+cmd+"\n") {
-		t.Errorf("the spilled script must carry the command whole, on its own line:\n%s", body)
+	if !strings.Contains(string(body), "\n"+execLaunchHead+cmd+"\n") {
+		t.Errorf("the spilled script must carry the exec'd command whole, on its own line:\n%s", body)
 	}
 	if !strings.Contains(string(body), "rangerhq-ybec") {
 		t.Errorf("a rendered file an operator will find while debugging must say why it exists:\n%s", body)
@@ -93,7 +106,7 @@ func TestPaneLineRemovesASupersededScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if line != "echo short" {
+	if line != execLaunchHead+"echo short" {
 		t.Errorf("got %q", line)
 	}
 	if _, err := os.Stat(b.App.LaunchScript("s")); !os.IsNotExist(err) {

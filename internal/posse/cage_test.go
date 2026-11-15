@@ -400,8 +400,11 @@ func TestCagedLaunchTypesTheEngineLine(t *testing.T) {
 	// still starting (rangerhq-ybec).
 	launcher := a.CageLauncher("caged", "claude")
 	plan := a.CageArgvFile("caged", "cg")
-	if typed != "pane run w1:p1 '"+launcher+"' --posse-cage '"+plan+"'" {
-		t.Fatalf("the typed line must be the launcher and its plan:\n%s", log)
+	// exec'd, as every launch line is since ranger-base-1l1en: the launcher
+	// replaces the pane's shell, becomes the engine (RunCageLaunch execs it
+	// too), and leaves nothing reading the pane tty when the container ends.
+	if typed != "pane run w1:p1 exec '"+launcher+"' --posse-cage '"+plan+"'" {
+		t.Fatalf("the typed line must be the launcher and its plan, exec'd:\n%s", log)
 	}
 	// A binary or a symlink to one — a #!/bin/sh wrapper would hand herdr
 	// argv0=sh — and in its own directory, never the gates bin, whose

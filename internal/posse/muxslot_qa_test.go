@@ -304,7 +304,7 @@ func TestQARexFirstReportWaitIsNotSatisfiedByTheBlocksOwnShell(t *testing.T) {
 	// "owner must not be the pane's shell", which is the one way a seat can
 	// hold a record and still have nothing to say about a runtime.
 	rexSeedProcess(t, rexTestBlock, rexShellProc())
-	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: &RexOwner{PID: 10, Name: "zsh"}}})
+	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: rexTestShellOwner(10)}})
 	read, reported, err := m.AwaitFirstReport(rexTestSeat(), 20*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
@@ -322,7 +322,7 @@ func TestQARexLaunchRefusesATypedRuntimeThatNeverReportedAndTypesNothing(t *test
 	// A seat whose only record is its own shell's: the runtime's line was
 	// typed and nothing of the runtime ever answered.
 	b, seat := rexFirstReportBackend(t, rexShellProc(),
-		[]RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: &RexOwner{PID: 10, Name: "zsh"}}})
+		[]RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: rexTestShellOwner(10)}})
 	rt := builtinRuntime(t, "claude")
 	if rt.PromptMode() != PromptTyped {
 		t.Fatalf("this pin is the TYPED arm and claude reads %q — re-aim it", rt.PromptMode())
@@ -342,7 +342,7 @@ func TestQARexLaunchRefusesATypedRuntimeThatNeverReportedAndTypesNothing(t *test
 func TestQARexLaunchHoldsAnArgvRuntimeInsteadOfRefusingIt(t *testing.T) {
 	t.Parallel()
 	b, seat := rexFirstReportBackend(t, rexShellProc(),
-		[]RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: &RexOwner{PID: 10, Name: "zsh"}}})
+		[]RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: rexTestShellOwner(10)}})
 	// The arm D2 writes for the runtimes D1 does not admit today: the work
 	// prompt rode the launch line, so the claim is KEPT and nothing is
 	// judged. Refusing here would judge a turn that may well be running.
@@ -363,7 +363,7 @@ func TestQARexLaunchHoldsAnArgvRuntimeInsteadOfRefusingIt(t *testing.T) {
 func TestQAInteractiveRexLaunchWarnsWhereADispatchedOneRefuses(t *testing.T) {
 	t.Parallel()
 	b, seat := rexFirstReportBackend(t, rexShellProc(),
-		[]RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: &RexOwner{PID: 10, Name: "zsh"}}})
+		[]RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: rexTestShellOwner(10)}})
 	warn := warnBuf(t, b)
 	// No Bead and no Recreate: `posse new`. ADR 0013 §1 rule 5 — the
 	// operator is at the keyboard, and looking at the screen is how a

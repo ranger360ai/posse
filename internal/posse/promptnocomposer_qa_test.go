@@ -262,9 +262,9 @@ func TestQARexPromptConcedesABlockHeldBySomethingOtherThanClaude(t *testing.T) {
 	rexSeedSessions(t, fakeRexSession{SessionID: rexTestSession, Label: "box:dev",
 		Blocks: []fakeRexBlock{{BlockID: rexTestBlock, Label: "shell", Flavor: RexTerminalFlavor}}})
 	rexSeedProcess(t, rexTestBlock, RexProcess{
-		Child:      &RexProc{PID: 10, Name: "zsh"},
+		Child:      rexTestBlockShell(10),
 		Foreground: &RexProc{PID: 20, Name: "codex"},
-		Ancestors:  []RexProc{{PID: 10, Name: "zsh"}},
+		Ancestors:  []RexProc{*rexTestBlockShell(10)},
 	})
 	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "idle", App: "codex", UpdatedAt: "2026-11-10T04:12:42-04:00",
 		Owner: &RexOwner{PID: 20, Name: "codex"}}})

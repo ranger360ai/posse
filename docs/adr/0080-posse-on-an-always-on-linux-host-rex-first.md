@@ -2008,3 +2008,213 @@ bead in the block below carries that measurement as its gate.
 - ranger-base-sv89t
 - ranger-base-uxubn
 - ranger-base-zqtoi
+
+## Amendment: a seat's launch line is exec'd, so no shell outlives its runtime (ranger-base-1l1en, 2026-11-15)
+
+*This amendment's design bead is `vuln-private` and is named by bare id in
+the Beads block below and nowhere else. What is described here is what this
+change SHUTS, which AGENTS.md "Landing the plane" allows and which is why
+the code looks the way it does.*
+
+**Context.** D9's measured table has the row *runtime exits, shell stays →
+seat stays listed (block open) — no husk*. That row is a STATE, and it is
+the state a seat's exposure lived in. A pane whose shell has come back to
+its prompt is a command interpreter reading the seat's tty, and it is
+outside every wall and outside the gate PATH — `GatePrefix` rides the typed
+LINE, not the shell, and on Rex the block's shell is `rexShell`'s real-shell
+answer. What posse types at a seat is prompt text carrying bead titles and
+comments, which are inputs.
+
+Two readers reach a seat in that state. One is a prompt racing a wall
+watcher's own exit: the owner check reads the watcher live, the text is
+sent, and the watcher has returned by the time it lands. The other is wider
+and is why the scope here is EVERY seat and not only a caged one — on Rex a
+runtime that exits normally CLEARS its `program_status` record, so
+`runtimeOwner` answers unknown, `refuseAtDeadOwner` has nothing to refuse,
+and `Prompt` types. Dispatch relaunches before it prompts; `posse prompt`,
+the cockpit and any other caller that prompts between a seat's exit and the
+next dispatch pass do not.
+
+**Decision.** Every launch line posse types is exec'd, so the pane's shell
+is REPLACED by the launch and nothing that reads that tty as a command
+interpreter is left behind when the runtime (or, on a bwrap seat, the
+watcher) ends. It is applied in one place — `App.PaneLine`
+(internal/posse/paneline.go), which all three launch sites pass through —
+and to both of that function's forms, because `exec` inside a SOURCED file
+replaces the sourcing shell exactly as the typed word does.
+
+**A trailing `; exit` is not enough, and that is the whole reason this is
+exec.** MEASURED 2026-11-14 (the design bead) and again 2026-11-15 as a
+repeatable pin (`internal/posse/launchexeclive_linux_test.go`), GNU bash
+5.3.20 on a pty, the line typed as a seat's is:
+
+| line | the shell afterwards |
+|---|---|
+| `sh -c '…; exit 3'; exit` | gone |
+| `sh -c '…; kill -INT $$'; exit` | **SURVIVED**, and ran the next line typed |
+| `exec sh -c '…; kill -INT $$'` | gone |
+
+An interactive bash abandons the rest of a command list when its foreground
+job dies of SIGINT — so a trailing `exit` is skipped in exactly the case the
+seat was killed by a key or a signal, and the watcher's drain runs with ISIG
+still on. The middle row is kept as a live pin's negative case rather than
+deleted: a renderer that swapped exec for `; exit` would pass every static
+pin in the tree and red that one.
+
+**Where the word goes.** Every launch line this tree renders is a simple
+command behind a run of `NAME=VALUE` assignments — the gate prefix's
+PATH/SHELL/GROK_SHELL, D1's runtime-home pin, the transcript ceiling,
+CLAUDE_CONFIG_DIR. MEASURED 2026-11-15, bash 5.3.20 and sh on this box:
+`FOO=bar exec /usr/bin/env` prints `FOO=bar` and runs in the shell's own pid
+(replaced, and carrying the assignment), while `exec FOO=bar /usr/bin/env`
+is `exec: FOO=bar: not found`. So `exec` lands ON the command word, after
+the assignments — which is also where it reads correctly in a pane's
+scrollback. A line that is NOT one simple command cannot be exec'd in place
+at all; nothing posse renders today is one, and such a line is exec'd as
+`exec /bin/sh -c '<line>'` and always spilled to the launch script. That
+fallback costs the pane's foreground process being a shell rather than the
+runtime — the property `. <script>` was chosen to keep (rangerhq-ybec) and
+the one herdr's argv0 detection and every kill path read — so it is a
+fallback with a pin of its own, and not the rule.
+
+**The D9 row changes.** The 2026-11-06 table stays as measured; this is what
+it reads now:
+
+| probe | result |
+|---|---|
+| runtime exits, or is killed | the block CLOSES; the seat drops out of `List()`; after `PruneGrace` the record is pruned and the Rex session destroyed (D10) |
+
+There is one way a seat ends now, where there were two. **D10 is therefore
+no longer the rare row — it is the only one**, and that is the load-bearing
+consequence of this change: without the destroy, every seat that ever ran
+would leave a session holding one of the server's `--max-sessions` slots,
+shared by every home (D2).
+
+**MEASURED 2026-11-15, this box** (linux/amd64, rex 0.0.1794069975-g6c6689,
+herdr installed, posse built from this tree). A SCRATCH Rex server on a
+private socket (`--restore=false --max-sessions 6`) and a scratch herdr
+server on its own session socket; no fleet seat was touched and no model ran:
+
+| probe | result |
+|---|---|
+| rex, exec'd line, program ended | `block ls` → `{"blocks": []}`, `window ls` → `"windows": []`, the session still listed: a husk |
+| rex, the same line NOT exec'd | the block stays open and its shell is at a prompt |
+| `rex capture` of that closed block | `block target "<id>" not found` — the scrollback went with it |
+| server session count across it | `sessions: 3` with the husk |
+| D10, end to end | a scratch home, `posse new husk --cmd …` whose command ended, the meta backdated past `PruneGrace`, ONE `posse list` → the seat left the listing, `rex ls` lost the label, `sessions: 3` → `2`, and the meta was unlinked |
+| a fresh create on the same name after that prune | create path ran clean, a new session, no orphan and no name refusal; the pane read `exec /bin/sh -c 'sleep 60'` |
+| herdr, exec'd line, program ended | the pane is GONE (`pane_not_found`) and the one-pane workspace is gone from `workspace list` |
+| herdr, the same line NOT exec'd | the workspace is still listed, its shell at a prompt |
+
+So herdr needs nothing for the HUSK, for the reason D10's first line already
+gives: a dead herdr workspace is gone, there is no husk, and posse's prune
+reads it through the same empty-listing arm it always did.
+
+**One thing had to change with the exec, and it is the part of this that
+could have taken the fleet down.** A seat's runtime now REPLACES the block's
+shell, which means it inherits the shell's pid and is itself the block's
+`child`. MEASURED above:
+
+|  | child | foreground | ancestors |
+|---|---|---|---|
+| shell at its prompt | `{P,"bash"}` | `{P,"bash"}` | — |
+| exec'd runtime | `{P,"sleep"}` | `{P,"sleep"}` | — |
+| runtime the shell started | `{P,"bash"}` | `{Q,"sleep"}` | `[{P,"bash"}]` |
+
+The first two rows are the same SHAPE. ADR 0076 §3's "owner must not be the
+pane's shell" guard was `owner == process.child` and nothing else, so with
+the exec in place every reporting runtime would have read as *its owner is
+the block's own shell* → `MuxUnknown`: no launch would confirm (§3), every
+seat would list as unreadable, and dispatch could never prompt one. The
+guard asks a second question now — is that child the shell posse STARTS a
+block with (`rexShell`, the path it handed `rex new`) — and `RexProc` reads
+`path` for exactly that. The pins are
+`TestQARexStateReadsARuntimeThatReplacedTheBlocksShell` beside the one it is
+the other side of, and the fixtures stopped spelling the block's shell as the
+literal `zsh`, which was only ever true of the box the shape was first
+measured on.
+
+**The same class is open on the herdr route and is NOT fixed here**:
+`PaneProcesses.AtShellPrompt` reads "every foreground pid IS the pane's own
+shell pid", and MEASURED above the exec'd row is byte-identical to the
+shell-at-its-prompt row in the two fields posse parses (`shell_pid` and the
+foreground pids). It is reached only by the reported-detection prompt route
+(ADR 0061 / §4) and no built-in runtime declares `detection: reported`, so
+what it costs is a declared runtime on a herdr instance refusing every typed
+prompt. It is ranger-base-m5rdy, with the three rows and the candidates on
+it: posse does not choose herdr's pane shell, so the Rex answer does not
+transfer and that one needs its own call.
+
+**What is lost, said out loud.** `posse peek` of a seat that died. Before
+this change the D9 row left the block open, so an operator could read the
+scrollback of a seat whose runtime had exited — including, on a caged seat,
+`posse wall-watch`'s own `KILLED seat …` line. That block closes now and the
+scrollback is gone with it, measured above. On the happy path nothing is
+lost: the watcher FILES a bead and the bead is the record. What is lost is
+the double-failure path the watcher's third line exists for — the wall came
+off AND bd could not be written, where `⚠ the record is incomplete … this
+line is the record` was the only remaining copy. That is ranger-base-pfcci,
+filed with this change and not fixed in it.
+
+**And one diagnosis moves, which is worth naming beside the loss above.**
+§3's launch confirmation (`confirmReports`) has three arms: reported; a READ
+ERROR, which warns and keeps the launch ("unknown is not no"); and no record
+inside `rt.Wait()`, which is the arm that refuses or declares DEGRADED. A
+runtime that died at once used to leave its shell, so the block stayed open
+and the poll answered *no record* — the third arm. It closes with the runtime
+now, so the read errors with rex's `block target "<id>" not found` and the
+SECOND arm fires. MEASURED above, on the scratch server, in both directions:
+a `--cmd` that ended printed *could not be confirmed — rex would not answer
+the program_status read*, and one that stayed up printed the proper
+*DEGRADED — no program_status record … within 45s*. The GATE's property
+survives by another route — nothing is prompted, because `awaitAgent` then
+fails and benches the slot — but the sentence now blames a server that
+answered correctly. That is ranger-base-ybrk6: a predicate for a block that
+is gone (the sibling of `MuxCloseGone`, which covers a session and not a
+block) and a third reason that names the seat. Filed with this change and
+not fixed in it, because it wants rex's error surface measured per verb
+before anything matches on one message.
+
+**The relaunch arm, re-read.** `dispatch.go`'s `s.Status == ""` arm and
+`RelaunchAgent` were written for this exact row: a persona's CLI exited and
+left a bare shell still carrying the launch env, so re-typing the line there
+is a full restart without a new workspace (rangerhq-vk2). After this change
+that premise is gone on both occupants — the pane closes, the seat drops out
+of `List()`, `Resolve` fails, and the bead takes the CREATE path. Both are
+kept, and neither is now reached for the reason it was written: what can
+still reach them is a seat launched by a posse from before this change, or
+an occupant that keeps a dead pane open. They are correct there and they
+refuse everywhere else (`AgentTarget` finds an agent, or `Resolve` finds no
+session), so retiring them is a later, measurable call and not this bead's.
+
+**Measured versus assumed.**
+- MEASURED, this box, above: the bash/pty rows, the exec placement rows, the
+  rex block and husk behaviour, `rex capture` of a closed block, D10's
+  destroy end to end, the create path after it, and herdr's pane.
+- MEASURED, this tree: every built-in runtime's create line, the re-typed
+  line and the spilled script's command line are exec'd
+  (`internal/posse/launchexec_qa_test.go`); the roster of every
+  `Start(seat, line)` in the tree, and that a launch's line comes from
+  `PaneLine` while the probe's `command -v` lookup does not
+  (`internal/treepins/launchexec_qa_test.go`); the live pty rows, the
+  sourced form, and that the assignment prefix still reaches the runtime
+  across the exec (`internal/posse/launchexeclive_linux_test.go`); and §3's
+  reading over a runtime that is the block's own child
+  (`internal/posse/muxrex_qa_test.go`).
+- ASSUMED, not measured: **zsh**. `rexShell` prefers zsh and zsh is not
+  installed on this box, so the SIGINT row above is a bash reading. `exec`
+  itself is POSIX and the placement rule is too; what is unmeasured is only
+  the negative row, which is the row posse does not render.
+- ASSUMED, not measured: darwin. The pty pin is Linux-only (the ioctls), and
+  herdr's pane behaviour was read on the Linux build here.
+- Out of scope: making the watcher's verdict durable (ranger-base-pfcci),
+  `posse peek` saying where a gone seat's reason went, the confirmation's
+  third reason (ranger-base-ybrk6), and the herdr half of the shell-pid
+  class (ranger-base-m5rdy).
+
+**Beads.**
+
+- ranger-base-ie4mx
+- ranger-base-pfcci
+- ranger-base-ybrk6
+- ranger-base-m5rdy

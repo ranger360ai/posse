@@ -348,9 +348,15 @@ type RexStatusRecord struct {
 }
 
 // RexProc is one process in a block's `process` answer.
+//
+// Path is read for ONE question and is not part of process identity: whether
+// the block's child is still the interactive shell posse started it with, or
+// the runtime that exec'd over it (rexProcIsBlockShell, ranger-base-1l1en).
+// Identity stays pid AND name, which is Rex's own rule (rexSameProc).
 type RexProc struct {
 	PID  int    `json:"pid"`
 	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // RexProcess is `block.method process`: what is running in the terminal.
@@ -370,6 +376,22 @@ type RexProc struct {
 //     and blocked at exit) with its dead pid, while Foreground falls back to
 //     the shell. Nothing live matches the owner, which is the case that must
 //     read `unknown` and never the record's last state (ranger-base-ch2rb).
+//
+// A FOURTH SHAPE SINCE ranger-base-1l1en, and it is the one every posse seat
+// is in: the launch line is EXEC'd, so the runtime replaces the block's shell
+// and is itself Child — Child and Foreground are one process, with no
+// Ancestors, exactly as a shell at its prompt is. MEASURED 2026-11-15 on this
+// box (rex 0.0.1794069975-g6c6689, scratch server), one block sent
+// `exec /bin/sh -c 'sleep 300'` and one sent the same line without `exec`:
+//
+//	exec'd      child == foreground == {2938494,"sleep","/usr/bin/sleep"}, no ancestors
+//	not exec'd  child {2938568,"bash"}, foreground {2939221,"sleep"}, ancestors [the bash]
+//
+// So `owner == Child` stopped meaning "the shell wrote this" the day the
+// launch line was exec'd, and the first bullet's comparison is no longer
+// sufficient by itself — rexOwnerIsShell asks Path as well, and
+// rexProcIsBlockShell is the half that knows which binary posse starts a
+// block with.
 type RexProcess struct {
 	Child      *RexProc  `json:"child"`
 	Foreground *RexProc  `json:"foreground"`

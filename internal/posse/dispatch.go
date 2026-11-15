@@ -5775,6 +5775,15 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 		// CLI exited (crash, /exit, closed by hand) and left a bare shell.
 		// Waiting StartupWait for an agent that will never appear was a
 		// 45s×N sink per pass (rangerhq-vk2) — restart the persona there.
+		//
+		// A LIVE SESSION WITH NO AGENT IS NO LONGER WHAT A DEAD RUNTIME
+		// LEAVES (ranger-base-1l1en): the launch line is exec'd, so the
+		// pane closes with the runtime and the seat is not in `s` at all —
+		// resolveErr fires and the arm above creates. This arm is reached by
+		// what RelaunchAgent's doc names: a seat from before that change, or
+		// an occupant that keeps a dead pane open. Kept for them, and
+		// correct for them, because RelaunchAgent re-reads the session
+		// itself and refuses whatever brought us here.
 		relaunched, err := d.HB.RelaunchAgent(session, d.RelaunchGrace)
 		if err != nil {
 			return launched{}, err

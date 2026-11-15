@@ -432,7 +432,7 @@ func TestQAAEveryFailureOfTheJoinLeavesTheComposerAHold(t *testing.T) {
 		{
 			name:  "a record the block's own shell wrote",
 			arm:   func(t *testing.T, b *HerdrBackend, pid int) { armClaudeSessionRow(t, b, pid, nil) },
-			owner: &RexOwner{PID: 10, Name: "zsh"},
+			owner: rexTestShellOwner(10),
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {

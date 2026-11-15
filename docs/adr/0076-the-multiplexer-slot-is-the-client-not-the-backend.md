@@ -117,7 +117,12 @@ pane's shell. That is the Rex form of herdr's `Seen()`: positive evidence
 that the runtime has the keyboard. *(Amended by ranger-base-zkeik, below: which
 runtimes may launch on Rex is a declared, measured fact read before the
 claim, and the wait for the first record is its confirmation, keyed on
-the runtime's `prompt:` column.)*
+the runtime's `prompt:` column.)* *(And by ranger-base-1l1en — ADR 0080's
+amendment of 2026-11-15, which carries the measurement: a seat's launch line
+is exec'd now, so the runtime inherits the block's shell pid and IS the
+block's `child`. "Not the pane's shell" therefore cannot be decided by
+`owner == child`, which would read every reporting runtime as the plumbing;
+the child must also BE the shell posse starts a block with.)*
 
 **4. Verbs only herdr has stay herdr's.** They are reached by type
 assertion on the herdr `Mux`: the `EvaluatedRules` diagnostics, the

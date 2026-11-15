@@ -3711,6 +3711,21 @@ func (b *HerdrBackend) createSession(o NewSessionOpts, held *LaunchLock) error {
 // the last launch is younger than grace: a CLI that is still starting up is
 // invisible to detection for a few seconds, and typing a second command
 // into it would land inside its input box.
+//
+// THAT PREMISE IS GONE ON BOTH OCCUPANTS SINCE ranger-base-1l1en, and this
+// path is kept rather than retired. A launch line is exec'd now, so the
+// runtime IS the pane's process: when it ends the pane closes, the seat drops
+// out of List(), Resolve finds no session and the bead takes the CREATE path
+// instead of reaching here (MEASURED 2026-11-15 on both — rex drops the block
+// and leaves a husk D10 destroys; herdr's pane answers `pane_not_found` and a
+// one-pane workspace leaves `workspace list`. ADR 0080's amendment of that
+// date has the tables). What can still reach this is a seat launched by a
+// posse from before that change, or an occupant that keeps a dead pane open —
+// and it is correct for both, because every guard below reads the session as
+// it is NOW rather than trusting why it was called. Retiring it is a later,
+// measurable call; it would take these refusals with it, and three of them
+// (the detection re-type, the PID-channel and the writable-root ones) exist
+// only on this path.
 func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, error) {
 	m, ok := b.readMeta(name)
 	if !ok || m.Agent == "" || m.Pane == "" {

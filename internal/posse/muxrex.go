@@ -30,6 +30,7 @@ package posse
 // liveness check reads that dead seat as idle and settles a bead on it.
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -1151,8 +1152,48 @@ func rexSameProc(o RexOwner, p *RexProc) bool {
 // A block whose child cannot be read answers false, so the liveness check
 // below is what judges the record. That is the unknown direction again: "we
 // could not see the shell" must not become "this was the shell".
+//
+// AND IT IS TWO QUESTIONS SINCE ranger-base-1l1en, because `owner == child`
+// stopped being evidence on its own. The launch line is exec'd now, so the
+// runtime REPLACES the shell and is the block's child: child and foreground
+// are one process with no ancestors, which is the exact shape a shell at its
+// prompt has (MEASURED — RexProcess's fourth bullet). Comparing against child
+// alone would read every reporting runtime posse launches as "its owner is
+// the block's own shell", every seat would read MuxUnknown, no launch would
+// ever confirm (ADR 0076 §3) and dispatch could never prompt. So the process
+// also has to BE a shell, which is rexProcIsBlockShell.
 func rexOwnerIsShell(o RexOwner, proc RexProcess) bool {
-	return rexSameProc(o, proc.Child)
+	return rexSameProc(o, proc.Child) && rexProcIsBlockShell(proc.Child)
+}
+
+// rexProcIsBlockShell is whether p is the interactive shell posse starts a
+// Rex block with — the one rexShellCommand puts in the block's argv.
+//
+// PATH FIRST, because that is the exact answer: rexShell() is the path posse
+// handed `rex new`, and `process` reports the binary's own path back
+// (`"path":"/usr/bin/bash"`, MEASURED). The NAME is the second spelling of
+// the same shell, for a block whose shell this process did not choose — the
+// operator's own `rex new`, where rex runs the login shell, and a $SHELL that
+// resolves to one path here and another there. Both are asked of the CHILD
+// and never of the owner, because the owner is a pid and a name off a record
+// that may be older than the process table it is read against.
+//
+// It is deliberately NOT a list of shell names. A closed vocabulary of
+// "things that are shells" rots the first time a box resolves a third one.
+// What posse knows for certain is which shell IT starts a block with, and
+// that is the only shell whose report is the seat's own plumbing rather than
+// a runtime's. The one thing this cannot tell apart is a runtime whose own
+// binary has the shell's basename, which would have to be the command word
+// of a launch line — and the nearest thing to that, the `/bin/sh -c`
+// compound fallback (launchexec.go), does not reach here: `sh -c '<list>'`
+// forks the list, so the foreground is the runtime and the owner is not the
+// child at all.
+func rexProcIsBlockShell(p *RexProc) bool {
+	if p == nil {
+		return false
+	}
+	sh := rexShell()
+	return p.Path == sh || p.Name == filepath.Base(sh)
 }
 
 // rexOwnerLive is whether the owner is still one of the processes this block

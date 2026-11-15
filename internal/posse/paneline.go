@@ -33,7 +33,12 @@ package posse
 // `sh <path>`, so the tty's foreground process is the runtime itself and
 // not a shell holding it: `. ` reproduces typing the line, which is what
 // every other part of posse (herdr's argv0 detection, RelaunchAgent typing
-// into the surviving shell, a kill) already rests on. Verified live: a
+// into the surviving shell, a kill) already rests on. (That parenthetical
+// is why the choice was MADE and is read historically now: since
+// ranger-base-1l1en the sourced line is exec'd, so there is no surviving
+// shell for RelaunchAgent to type into. The reason the choice still holds
+// is the other two, and the exec makes the foreground process the runtime
+// more directly than `. ` ever did.) Verified live: a
 // 20000-byte line spilled this way runs 3/3 on a pane one instant old, and
 // `pane process-info` shows the launched process directly under the pane's
 // shell, exactly as when the line is typed whole.
@@ -68,6 +73,22 @@ func (a *App) LaunchScript(session string) string {
 // session was launched with — so the typed line is the one worth keeping,
 // and the spill is what the limit costs.
 //
+// EITHER WAY IT IS EXEC'D (ranger-base-1l1en, launchexec.go): a seat's pane
+// must not outlive its runtime as an interactive shell, so the line replaces
+// the shell that runs it rather than being its child. `exec` inside a
+// SOURCED file replaces the shell too, which is why the spill needs no
+// second spelling — `. <script>` whose body is an exec leaves nothing behind
+// any more than the typed form does. The limit is measured against the line
+// as it will be TYPED, exec and all, so the five bytes come out of the
+// budget and not out of the cliff.
+//
+// This is the one place the exec is applied, because it is the one place all
+// three launch sites pass through (startPlanned and RelaunchAgent in
+// herdrback.go, the runtime probe in runtimeprobe.go) — and because the
+// fourth `mux.Start` in the tree is probeSessionExe's `command -v …; mv …`
+// lookup, which is NOT a launch, must keep its shell, and does not come
+// here. launchexec_qa_test.go pins both halves of that sentence.
+//
 // Typing is the exceptional path now, not the usual one. The headroom a
 // crew line once had is spent: measured 2026-09-01, every persona's line
 // rendered to 1867-2058 bytes against the 1023 limit, so all seven spilled.
@@ -83,11 +104,15 @@ func (a *App) LaunchScript(session string) string {
 // its superseded launch.sh).
 func (a *App) PaneLine(session, cmd string) (string, error) {
 	script := a.LaunchScript(session)
-	if len(cmd) <= PaneLineMax {
+	run, wrapped := ExecLaunchLine(cmd)
+	// wrapped: the line was not one simple command, so the exec had to go
+	// through `/bin/sh -c '<line>'`. Spilled whatever its length, so the
+	// typed line's budget is not spent on the quoting (ranger-base-1l1en).
+	if !wrapped && len(run) <= PaneLineMax {
 		if err := os.Remove(script); err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
-		return cmd, nil
+		return run, nil
 	}
 	if err := os.MkdirAll(a.LaunchDir(), 0o755); err != nil {
 		return "", err
@@ -99,7 +124,10 @@ func (a *App) PaneLine(session, cmd string) (string, error) {
 	body := "# posse launch line for session " + oneLine(session) + " — " + RenderedByPosse() + " at launch, do not edit.\n" +
 		"# The pane sources this instead of typing it: a line this long is lost in a\n" +
 		"# freshly created pane, whose tty is still in canonical mode (rangerhq-ybec).\n" +
-		cmd + "\n"
+		"# It is exec'd, here as in the typed form: no interactive shell outlives a\n" +
+		"# seat's runtime, and `exec` in a sourced file replaces the sourcing shell\n" +
+		"# (ranger-base-1l1en).\n" +
+		run + "\n"
 	// Written to a fresh name and RENAMED into place, never opened by name
 	// (ranger-base-6akzw). The pane sources this file outside every wall, so
 	// it is code the launcher runs on a seat's behalf, and an open by name

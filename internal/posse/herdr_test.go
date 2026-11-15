@@ -3517,14 +3517,33 @@ func warnBuf(t *testing.T, b *HerdrBackend) *syncBuf {
 // read the RAW line (rawCalls/spilled, or WrapWithGates directly) and are not
 // collapsed by this.
 //
+// AND THE `exec ` IS FOLDED IN FOR THE SAME REASON, with one thing extra to
+// say about it (ranger-base-1l1en). A launch line replaces the shell that
+// runs it, and the shell's word for that goes ON the command word — after
+// the assignment prefix, because `exec FOO=bar cmd` is "exec: FOO=bar: not
+// found" (MEASURED, launchexec.go). So it does not land in front of this
+// prefix, it lands INSIDE it: before whichever `/usr/bin/env -u` arm the
+// pins above chose, or, when neither chose one, immediately before the CLI.
+// Three positions, all of them the same fact about the launcher and none of
+// them a fact about the shape being asserted — which is this expression's
+// whole rule. Spelled at each assertion instead, `GATES claude` would have
+// become `GATES exec /usr/bin/env -u CLAUDE_CODE_SKIP_PROMPT_HISTORY claude`
+// in fifteen pins whose subject is the claude line.
+//
+// What that costs is that no assertion collapsed by this can see the exec,
+// so the exec's OWN pins read the raw line like the two above:
+// launchexec_qa_test.go (both Start sites, both PaneLine forms, every
+// built-in runtime) and internal/treepins' tree-wide census.
+//
 // The variable names come from the built-ins' own declarations, so a fourth
 // runtime-home pin, or a second runtime that learns a transcript surface,
 // cannot leave this expression behind.
 var gatePrefixRe = regexp.MustCompile(
 	`PATH='[^']*':"\$PATH" (SHELL='[^']*' GROK_SHELL='[^']*' )?` +
-		`((` + declaredHomeVars() + `)='[^']*' |/usr/bin/env -u (` + declaredHomeVars() + `) )?` +
+		`((` + declaredHomeVars() + `)='[^']*' |(exec )?/usr/bin/env -u (` + declaredHomeVars() + `) )?` +
 		`((` + declaredLineEnvVars() + `)='[^']*' )*` +
-		`((` + declaredTranscriptVars() + `)='[^']*' |/usr/bin/env -u (` + declaredTranscriptVars() + `) )?`)
+		`((` + declaredTranscriptVars() + `)='[^']*' |(exec )?/usr/bin/env -u (` + declaredTranscriptVars() + `) )?` +
+		`(exec )?`)
 
 // declaredHomeVars is the alternation of every built-in's HomeVar, sorted so
 // the expression is stable. Read off the declarations and not listed here,
@@ -3885,7 +3904,10 @@ func TestHerdrCreateSession(t *testing.T) {
 		// included) — it is the origin record init compares against,
 		// not an address, so it carries the same value here.
 		"--env RHQ_LAUNCH_HOME=" + b.App.Home,
-		"pane run w1:p1 npm run dev",
+		// A plain session's own --cmd is exec'd like every other launch
+		// line (ranger-base-1l1en): the pane must not come back to a shell
+		// prompt when what it was started with ends.
+		"pane run w1:p1 exec npm run dev",
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("calls.log missing %q:\n%s", want, log)

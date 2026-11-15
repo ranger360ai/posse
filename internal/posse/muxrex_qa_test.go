@@ -54,14 +54,50 @@ func rexSeedTestSeat(t *testing.T) {
 		Blocks: []fakeRexBlock{{BlockID: rexTestBlock, Flavor: RexTerminalFlavor}}})
 }
 
-// rexRuntimeProc is the measured shape of a block running a runtime: the
-// shell is `child`, the runtime is `foreground`, and `ancestors` holds the
-// shell between them (RexProcess's doc carries the measurement).
+// rexTestBlockShell and rexTestShellOwner are the block's own shell, as the
+// occupant's own predicate reads it: the shell posse starts a Rex block with
+// (rexShellCommand → rexShell), not a shell NAMED here.
+//
+// It was the literal "zsh" until ranger-base-1l1en — the shell of the box the
+// shape was measured on — and that stopped working the day a launch line was
+// exec'd. The runtime then REPLACES the shell and is itself `child`, so
+// `owner == child` is no longer evidence that the plumbing wrote the record,
+// and rexProcIsBlockShell asks whether the child is the shell posse would
+// have started. A fixture naming one shell can only agree with that on one
+// box; this one agrees on every box, and it is the same question the
+// production predicate asks rather than a second spelling of it.
+func rexTestBlockShell(pid int) *RexProc {
+	return &RexProc{PID: pid, Name: filepath.Base(rexShell()), Path: rexShell()}
+}
+
+func rexTestShellOwner(pid int) *RexOwner {
+	return &RexOwner{PID: pid, Name: filepath.Base(rexShell())}
+}
+
+// rexRuntimeProc is the measured shape of a block running a runtime the SHELL
+// STARTED: the shell is `child`, the runtime is `foreground`, and `ancestors`
+// holds the shell between them (RexProcess's doc carries the measurement).
+// Since ranger-base-1l1en this is no longer the shape a posse seat is in —
+// rexExecdRuntimeProc is — but it is still the shape of a block somebody
+// typed into by hand, and of a seat launched before that change.
 func rexRuntimeProc() RexProcess {
 	return RexProcess{
-		Child:      &RexProc{PID: 10, Name: "zsh"},
+		Child:      rexTestBlockShell(10),
 		Foreground: &RexProc{PID: 20, Name: "claude"},
-		Ancestors:  []RexProc{{PID: 10, Name: "zsh"}},
+		Ancestors:  []RexProc{*rexTestBlockShell(10)},
+	}
+}
+
+// rexExecdRuntimeProc is the shape EVERY posse seat is in since
+// ranger-base-1l1en: the launch line is exec'd, so the runtime replaced the
+// block's shell and is both `child` and `foreground`, with no ancestors —
+// which is, process-table-shaped, indistinguishable from a shell at its own
+// prompt. MEASURED 2026-11-15 on this box against a scratch Rex server
+// (RexProcess's fourth bullet).
+func rexExecdRuntimeProc() RexProcess {
+	return RexProcess{
+		Child:      &RexProc{PID: 20, Name: "claude", Path: "/usr/bin/claude"},
+		Foreground: &RexProc{PID: 20, Name: "claude", Path: "/usr/bin/claude"},
 	}
 }
 
@@ -69,8 +105,8 @@ func rexRuntimeProc() RexProcess {
 // and `ancestors` is left out entirely (MEASURED).
 func rexShellProc() RexProcess {
 	return RexProcess{
-		Child:      &RexProc{PID: 10, Name: "zsh"},
-		Foreground: &RexProc{PID: 10, Name: "zsh"},
+		Child:      rexTestBlockShell(10),
+		Foreground: rexTestBlockShell(10),
 	}
 }
 
@@ -395,7 +431,7 @@ func TestQARexStateIsUnknownForTheShellsOwnRecord(t *testing.T) {
 	// MEASURED: a report written from the shell's prompt carries the shell
 	// as its owner. ADR 0076 §3's "owner must not be the pane's shell".
 	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "idle", App: "shellwriter",
-		Owner: &RexOwner{PID: 10, Name: "zsh"}}})
+		Owner: rexTestShellOwner(10)}})
 	rexSeedProcess(t, rexTestBlock, rexShellProc())
 	read, err := m.State(rexTestSeat())
 	if err != nil {
@@ -406,6 +442,35 @@ func TestQARexStateIsUnknownForTheShellsOwnRecord(t *testing.T) {
 	}
 	if !strings.Contains(read.Evidence, "own shell") {
 		t.Errorf("Evidence does not say why: %q", read.Evidence)
+	}
+}
+
+// The other side of that check, and the one the exec'd launch line made
+// reachable (ranger-base-1l1en). A seat whose runtime replaced the block's
+// shell has owner == child == foreground, with no ancestors — the same
+// process-table shape the pin above refuses. If the "owner must not be the
+// pane's shell" guard compared against `child` alone, EVERY reporting runtime
+// posse launches would read unknown: no launch would confirm (ADR 0076 §3),
+// `posse list` would show every seat as unreadable and dispatch could never
+// prompt one. So the record of a runtime that IS the block's child must read
+// as its own state.
+func TestQARexStateReadsARuntimeThatReplacedTheBlocksShell(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestRexMux(t)
+	rexSeedSessions(t, fakeRexSession{SessionID: rexTestSession, Label: "box:dev",
+		Blocks: []fakeRexBlock{{BlockID: rexTestBlock, Flavor: RexTerminalFlavor}}})
+	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "working", App: "claude-code",
+		Owner: &RexOwner{PID: 20, Name: "claude"}}})
+	rexSeedProcess(t, rexTestBlock, rexExecdRuntimeProc())
+	read, err := m.State(rexTestSeat())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !read.Seen || read.State != MuxWorking {
+		t.Errorf("an exec'd runtime's own record read as %+v, want seen and %s — the launch line replaces the block's shell, so owner == child is what a REPORTING runtime looks like now", read, MuxWorking)
+	}
+	if strings.Contains(read.Evidence, "own shell") {
+		t.Errorf("the runtime was mistaken for the block's shell: %q", read.Evidence)
 	}
 }
 
@@ -488,7 +553,7 @@ func TestQARexListJoinsTheStatusOfEveryTerminalBlock(t *testing.T) {
 	rexSeedStatus(t, "block:a1", []RexStatusRecord{rexRuntimeRec("working")})
 	// b1 holds nothing but a shell, and its only record is the shell's.
 	rexSeedProcess(t, "block:b1", rexShellProc())
-	rexSeedStatus(t, "block:b1", []RexStatusRecord{{State: "idle", Owner: &RexOwner{PID: 10, Name: "zsh"}}})
+	rexSeedStatus(t, "block:b1", []RexStatusRecord{{State: "idle", Owner: rexTestShellOwner(10)}})
 
 	rows, err := m.List()
 	if err != nil {

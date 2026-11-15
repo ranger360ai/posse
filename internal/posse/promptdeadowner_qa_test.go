@@ -48,7 +48,7 @@ func TestQARexOwnerVerdictNamesWhichOfSection3sGuardsRefused(t *testing.T) {
 		{"the owner's name no longer matches that pid", []RexStatusRecord{{State: "idle", App: "claude-code",
 			Owner: &RexOwner{PID: 20, Name: "python3"}}}, claudeProcTable(20), rexOwnerDead, true},
 		{"the block's own shell wrote it", []RexStatusRecord{{State: "idle", App: "claude-code",
-			Owner: &RexOwner{PID: 10, Name: "zsh"}}}, claudeProcTable(20), rexOwnerShell, true},
+			Owner: rexTestShellOwner(10)}}, claudeProcTable(20), rexOwnerShell, true},
 		{"no record at all (the /exit and SIGTERM rows)", nil, rexShellProc(), rexOwnerUnknown, true},
 		{"a record naming no owner", []RexStatusRecord{{State: "idle", App: "claude-code"}},
 			rexShellProc(), rexOwnerUnknown, true},
@@ -150,7 +150,7 @@ func TestQARexPromptRefusesABlockWhoseOwnShellWroteTheRecord(t *testing.T) {
 	rexSeedTestSeat(t)
 	rexSeedProcess(t, rexTestBlock, rexShellProc())
 	rexSeedStatus(t, rexTestBlock, []RexStatusRecord{{State: "idle", App: "claude-code",
-		Owner: &RexOwner{PID: 10, Name: "zsh"}}})
+		Owner: rexTestShellOwner(10)}})
 	rexSeedCaptureQueue(t, rexTestBlock, rexIdleScreen)
 	_, err := m.Prompt(rexTestSeat(), "do the thing", false, 0)
 	if err == nil {

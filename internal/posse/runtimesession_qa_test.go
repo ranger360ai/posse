@@ -249,9 +249,9 @@ func rexSeedOwnedBy(t *testing.T, owner *RexOwner, proc RexProcess) RexMux {
 // (RexProcess's measured shape).
 func claudeProcTable(pid int) RexProcess {
 	return RexProcess{
-		Child:      &RexProc{PID: 10, Name: "zsh"},
+		Child:      rexTestBlockShell(10),
 		Foreground: &RexProc{PID: pid, Name: claudeRuntimeProcName},
-		Ancestors:  []RexProc{{PID: 10, Name: "zsh"}},
+		Ancestors:  []RexProc{*rexTestBlockShell(10)},
 	}
 }
 
@@ -270,7 +270,7 @@ func TestQAARuntimeOwnerAnswersExactlyWhenTheReadingIsSeen(t *testing.T) {
 		proc  RexProcess
 	}{
 		{"a live runtime owns the record", &RexOwner{PID: 20, Name: claudeRuntimeProcName}, claudeProcTable(20)},
-		{"the block's own shell wrote it", &RexOwner{PID: 10, Name: "zsh"}, claudeProcTable(20)},
+		{"the block's own shell wrote it", rexTestShellOwner(10), claudeProcTable(20)},
 		{"its owner is gone", &RexOwner{PID: 999, Name: claudeRuntimeProcName}, claudeProcTable(20)},
 		{"the owner's name no longer matches that pid", &RexOwner{PID: 20, Name: "python3"}, claudeProcTable(20)},
 		// THE THIRD CAUSE THE DOC COMMENT ENUMERATES, which had no row
@@ -339,8 +339,8 @@ func TestQAARexAgentSessionRefusesARuntimeThatIsNotClaude(t *testing.T) {
 	pid := os.Getpid()
 	b, _ := newTestBackend(t)
 	b.Slot = rexSeedOwnedBy(t, &RexOwner{PID: pid, Name: "codex"},
-		RexProcess{Child: &RexProc{PID: 10, Name: "zsh"}, Foreground: &RexProc{PID: pid, Name: "codex"},
-			Ancestors: []RexProc{{PID: 10, Name: "zsh"}}})
+		RexProcess{Child: rexTestBlockShell(10), Foreground: &RexProc{PID: pid, Name: "codex"},
+			Ancestors: []RexProc{*rexTestBlockShell(10)}})
 	armClaudeSessionRow(t, b, pid, map[string]any{"pid": pid, "sessionId": qzujzSession, "procStart": start})
 
 	if got, err := b.paneAgentSession(rexTestSeat()); err == nil {
