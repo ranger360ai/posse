@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · amended 2026-11-13 (§4 a PID's label order is the second routing key: its first label is its lane — ranger-base-svoux) · amended 2026-11-14 (§4 a head must be anchored on its own lane or a single-lane label; a one-label cross-cutting match does not head — ranger-base-d7lsc) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · amended 2026-11-09 (§5 an indeterminate prompt call releases no claim — ADR 0084, ranger-base-20cef) · amended 2026-11-13 (§4 a lane is the preferred candidate's one label, not the union of every persona overlapping the bead's labels — ranger-base-equhp, ranger-base-acrdl) · amended 2026-11-13 (§4 a PID's label order is the second routing key: its first label is its lane — ranger-base-svoux) · amended 2026-11-14 (§4 a head must be anchored on its own lane or a single-lane label; a one-label cross-cutting match does not head — ranger-base-d7lsc) · amended 2026-11-14 (§5 a launch share: one label's class gets a reserved, lendable slice of `-n` — ranger-base-j11mf; accepted, not yet built) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -283,6 +283,62 @@ uncounted-work and spending brakes retain their existing per-bead/launch
 boundaries. All automatic refills originate in the watch process: ending
 it stops new automatic invitations. Agents do not acquire a self-launch path.
 
+**A launch share: one label's class gets a reserved slice of `-n`, lent
+when it cannot use it** (ranger-base-j11mf, 2026-11-14). An instance can run
+two kinds of work on one crew, for example the harness's own hardening and the
+operator's project work. Both draw on one launch-attempt ration, so whichever
+queue is deeper spends the epoch. Two flat keys split it:
+
+```yaml
+launch_share_label: project   # a bead carrying this label is the share's class
+launch_share: 2               # attempts per epoch reserved for that class, out of -n
+```
+
+- **Class.** A bead carrying `launch_share_label` is in the share. Every other
+  bead is in the remainder, which is `-n` minus `launch_share`. A launch attempt
+  is charged to the class of the bead it was made for. This includes a
+  `--resume` relaunch of an interrupted run, and it uses the same "an attempt
+  reached a runtime" rule as above.
+- **The label is a budget class, not a §4 lane.** Routing is unchanged. A
+  share bead is routed by its other labels, or by its assignee, exactly as
+  before. No PID may carry the share label. A PID that carries it would make
+  it a lane under §4 and seat that PID on every share bead. The dry run names
+  such a PID and dormants the share, so the share never re-routes work.
+- **Owner first, then lent.** The choke point is `fireLoop`, which both the
+  fire pass and every refill run. In each reading of the queue, a class that
+  is under its own allotment launches first. Room left over after both
+  classes have had their pick goes to whatever is still launchable, whichever
+  class it is in. So an idle class's allotment is lent to the other class,
+  never stranded. Lending is decided per reading and never repaid. A class
+  that becomes ready after lending has spent the epoch waits for the turn.
+  The guarantee is therefore: **work that is ready and seatable at a reading
+  gets its class's allotment in that epoch, and no class waits more than one
+  epoch on the other.** "Starve" is ruled out, not "delay".
+- **Dormant, and loud about it.** If `-n` is 0, `launch_share_label` is unset,
+  or `launch_share` is not a count, nothing is split and nothing changes. The
+  same is true if the share is not below `-n`: it would leave the remainder
+  zero and starve the other class by configuration. In every one of these
+  cases, `LaunchCapLine`, which the dry run and every `--watch` log print,
+  says which key made the share dormant. It never silently obeys a typo
+  (rangerhq-v83's rule). When the share is armed, the same line names both
+  allotments, and an exhaustion line names the class that ran out.
+- **Same lifetime as the count it splits.** The per-class counts live on the
+  Dispatcher beside `epochAttempts`, roll with the epoch, and are restored in
+  full by a supervised restart. That is the same per-process brake as above,
+  for the same reason. Dollars (`budget_pass:`/`budget_day:`) are not split.
+  MEASURED 2026-11-10 18:53 to 11-14 22:00 on the instance this was decided in
+  (`dispatch-watch.log`, 30,965 lines, `-n 6`, both dollar caps set; ranger-base-j11mf): 66 of 101
+  epochs with a pass ran out of launch attempts (434 exhaustion lines), and the
+  dollar brake refused 0 launches. The attempt count is the contended
+  resource. A dollar share is this rule's exit hatch, using the same class and
+  the same owner-first rule, and should be built on the day a budget line
+  first refuses.
+
+The pattern is a guaranteed rate with borrowing, as in a hierarchical token
+bucket. That name is from recall; no source was verified for this
+amendment. Here it is cut to the one level and two classes the ruling asked
+for.
+
 MEASURED in 0028's dated evidence: the gather barrier held seats behind a
 75-minute worker; narrowed refill starved other seats for seven hours;
 an unbounded pass delayed periodic duties for over two hours. Retaining
@@ -448,6 +504,36 @@ Sequencing and future tense below describe the original build; current lifecycle
   the alias `bug`, and go to the findings-only security PID. An alias and a
   cross-cutting label are both "not first". What separates them is whether
   their carriers share one lane.
+- **A hard partition: an idle class's allotment is lost** (§5,
+  ranger-base-j11mf). It is the literal reading of "a fixed share", and it
+  makes the arithmetic obvious. It is rejected because the live queue made it
+  a cut, not a split. In 66 of 101 epochs the remainder class wanted more than
+  `-n`. Every epoch the project class had nothing ready, a partition would
+  strand its allotment, a third of the shop's launches at `2/6`, and buy the
+  project class nothing. Lending keeps the property that was asked for (no
+  class waits more than an epoch) and gives up only the idle allotment.
+- **Hold the allotment until mid-epoch, then lend.** The clever one, and I
+  wanted it. Late-arriving project work would usually still find its slice.
+  It adds a second clock inside the epoch, and a threshold that nobody has
+  measured. It also only moves the starvation edge: work that arrives after
+  the threshold waits for the turn, exactly as it does under lend-now. The
+  bound is one epoch either way. Rejected until a route report shows project
+  work repeatedly waiting out an epoch that the remainder borrowed.
+- **A real lane: a project persona set, or a second watch loop with its own
+  `-n`.** This is ruled out by the ruling itself ("same crew"). Two loops are
+  also two launchers on one seat pool. §1's lock serializes them, but each one
+  counts only its own attempts, so their `-n` values add and nothing caps the
+  total.
+- **Split by repo, not label.** Repo is the cheapest class key, because it is
+  already on every `RepoIssue`. It is rejected because on the instance this
+  was decided in, the project work and the harness work share one store and
+  one dispatch dir. MEASURED: every bead in that store is stamped with the same
+  `Dir`, so a repo key cannot tell the two classes apart.
+- **A map of N shares (`launch_shares: {label: n}`).** It generalizes for
+  free on paper. In practice it brings an ordering rule for a bead carrying two
+  share labels, and a flat-YAML reader that keeps map order, for a need of
+  one. Kept as the exit hatch. The two flat keys become one entry of that map
+  unchanged.
 
 ## Appendix A — historical prior-art review (2026-08-21; implementation snapshots are not current status)
 

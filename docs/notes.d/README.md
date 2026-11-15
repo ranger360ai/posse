@@ -28,6 +28,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-li3up](ranger-base-li3up.md) — The gate that refused the branch's own bead was a binary that predates the exemption (ranger-base-li3up) — 2026-11-14
 - [ranger-base-lagas](ranger-base-lagas.md) — The wall check's body, its three exits, and the arm that crashed on the one case it exists for (ranger-base-lagas) — 2026-11-14
 - [ranger-base-jgipg](ranger-base-jgipg.md) — An allowlist drop that was an exact name, over a list that had grown a directory (ranger-base-jgipg) — 2026-11-14
+- [ranger-base-j11mf](ranger-base-j11mf.md) — A launch share for one label's class of work (ranger-base-j11mf) — 2026-11-14
 - [ranger-base-ig79v](ranger-base-ig79v.md) — Two pin gaps from the ranger-base-66v31 verify, and why one of them is a pin and not a deletion — 2026-11-14
 - [ranger-base-ietka](ranger-base-ietka.md) — A closed-set pin whose failure message crashed on the one direction it exists for (ranger-base-ietka) — 2026-11-14
 - [ranger-base-i92tj](ranger-base-i92tj.md) — The judge takes the seat's socket wall; the ADR 0097 venue explicitly does not (ranger-base-i92tj) — 2026-11-14
