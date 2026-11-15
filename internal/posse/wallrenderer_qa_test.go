@@ -103,7 +103,7 @@ func TestWallRendererAtTheTipSaysTheWallsAreCurrent(t *testing.T) {
 		t.Fatalf("behind = %d known = %v (%s)", w.Lag.Behind, w.Lag.Known(), w.Lag.Why)
 	}
 	got := strings.Join(w.Lines("gates"), "\n")
-	if !strings.Contains(got, "is the tip of main") || !strings.Contains(got, "walls it renders, the launch-time checks it decides at every launch and the commit-time gates it judges at every commit are current") {
+	if !strings.Contains(got, "is the tip of main") || !strings.Contains(got, "walls it renders, the launch-time checks it decides at every launch, the commit-time gates it judges at every commit and the write-time gate it judges at every bd write are current") {
 		t.Fatalf("line = %s", got)
 	}
 	// No git log was needed, so none may be printed: a command that lists
@@ -239,16 +239,18 @@ func TestPromoteReadsTheRendererItRecords(t *testing.T) {
 // project-config detector that was measurably guarding no seat. The operator
 // read the 2 and nothing named the category the detector was in.
 
-// allCatsRig is wallRig plus a launch-check source and a commit-gate source
-// already in history, so a later commit to any of the three is a CHANGE
-// rather than an addition. It seeds every category the reading has, so a row
-// added later is one line here and no new rig (ranger-base-m1obc).
+// allCatsRig is wallRig plus a launch-check source, a commit-gate source and
+// a bd-write source already in history, so a later commit to any of the four
+// is a CHANGE rather than an addition. It seeds every category the reading
+// has, so a row added later is one line here and no new rig
+// (ranger-base-m1obc, and ranger-base-7fjmv's row was exactly one line).
 func allCatsRig(t *testing.T) (repo, stamp string) {
 	t.Helper()
 	repo, _ = posseRig(t, posseModule)
 	commitIn(t, repo, WallRenderSources[0], "package posse // v1\n", "a wall render, before")
 	commitIn(t, repo, LaunchCheckSources[0], "package posse // v1\n", "a launch check, before")
 	commitIn(t, repo, CommitGateSources[0], "package posse // v1\n", "a commit-time gate judge, before")
+	commitIn(t, repo, BdWriteSources[0], "package posse // v1\n", "a write-time gate judge, before")
 	return repo, mustGit(t, repo, "rev-parse", "--short=7", "HEAD")
 }
 
@@ -302,33 +304,39 @@ func TestWallRendererNamesTheLaggingLaunchCheckCommits(t *testing.T) {
 	}
 }
 
-// One lag, THREE categories, counted separately and never collapsed: the
-// whole shape ranger-base-vso72's bead asked for ("29 behind: 0 wall, 2
+// One lag, EVERY category, counted separately and never collapsed: the whole
+// shape ranger-base-vso72's bead asked for ("29 behind: 0 wall, 2
 // launch-check"), with each category's own commits under its own
-// consequence, and since ranger-base-m1obc with the commit-time gate beside
-// them. The counts do NOT sum — one commit can be in two categories — and
-// the headline is the whole lag either way.
+// consequence, since ranger-base-m1obc with the commit-time gate beside them
+// and since ranger-base-7fjmv with the write-time one. The counts do NOT sum
+// — one commit can be in two categories — and the headline is the whole lag
+// either way.
+//
+// Named for the shape and not for a count, because a row added later must
+// not leave this test's own name claiming three (the "all N lists" clause's
+// reason, applied to the thing that asserts it).
 //
 // Both surfaces, because that is what ranger-base-m1obc's done-when 3 asks:
 // `posse gates` and the promote epilogue print the same Lines(), so a
 // category readable at one is readable at the other, and the `where` is the
 // only thing that differs.
-func TestWallRendererCountsTheThreeCategoriesSeparately(t *testing.T) {
+func TestWallRendererCountsEveryCategorySeparately(t *testing.T) {
 	t.Parallel()
 	repo, stamp := allCatsRig(t)
 	commitIn(t, repo, WallRenderSources[0], "package posse // v2\n", "ranger-base-prjck: a fourth credential read-deny")
 	commitIn(t, repo, LaunchCheckSources[0], "package posse // v2\n", "ranger-base-2zkcy: grok declares .grok/lsp.json")
 	commitIn(t, repo, CommitGateSources[0], "package posse // v2\n", "ranger-base-ed07e: check 4 drops the branch's own bead")
+	commitIn(t, repo, BdWriteSources[0], "package posse // v2\n", "ranger-base-g8lmt: the per-store bd write flock")
 
 	w := ReadWallRenderer(FindLauncher("0.5.0+"+stamp, []string{repo}))
-	if len(w.Commits) != 1 || len(w.CheckCommits) != 1 || len(w.GateCommits) != 1 {
-		t.Fatalf("wall = %v, check = %v, gate = %v; want one each", w.Commits, w.CheckCommits, w.GateCommits)
+	if len(w.Commits) != 1 || len(w.CheckCommits) != 1 || len(w.GateCommits) != 1 || len(w.WriteCommits) != 1 {
+		t.Fatalf("wall = %v, check = %v, gate = %v, write = %v; want one each", w.Commits, w.CheckCommits, w.GateCommits, w.WriteCommits)
 	}
 	for _, where := range []string{"promote", "gates"} {
 		got := strings.Join(w.Lines(where), "\n")
 		for _, want := range []string{
-			"3 commit(s) behind main",
-			"1 of them rendering a wall, 1 of them deciding a launch-time check, 1 of them judging a commit-time gate",
+			"4 commit(s) behind main",
+			"1 of them rendering a wall, 1 of them deciding a launch-time check, 1 of them judging a commit-time gate, 1 of them judging a write-time gate",
 			"renders the OLD seatbelt",
 			"ranger-base-prjck",
 			"OLD parity matrix and the OLD runtime declarations",
@@ -342,6 +350,12 @@ func TestWallRendererCountsTheThreeCategoriesSeparately(t *testing.T) {
 			"no remedy to type",
 			"ranger-base-v81vo",
 			"ranger-base-ed07e",
+			// And the write-time gate's own consequence, in the words that
+			// distinguish it from all three: nobody is refused anything,
+			// and the cost lands on whoever reads the graph next.
+			"every bd WRITE any persona on this box types",
+			"prints `Created issue: <id>` and exits 0 like any other",
+			"ranger-base-g8lmt",
 			"make install",
 		} {
 			if !strings.Contains(got, want) {
@@ -363,10 +377,11 @@ func TestWallRendererCountsTheThreeCategoriesSeparately(t *testing.T) {
 			offsetOf("renders the OLD seatbelt"), offsetOf("ranger-base-prjck"),
 			offsetOf("OLD parity matrix"), offsetOf("ranger-base-2zkcy"),
 			offsetOf("judged by the OLD judge"), offsetOf("ranger-base-ed07e"),
+			offsetOf("every bd WRITE any persona"), offsetOf("ranger-base-g8lmt"),
 		}
 		for i := 1; i < len(order); i++ {
 			if order[i-1] >= order[i] {
-				t.Fatalf("the three categories' blocks are interleaved at %q (offsets %v):\n%s", where, order, got)
+				t.Fatalf("the categories' blocks are interleaved at %q (offsets %v):\n%s", where, order, got)
 			}
 		}
 	}
@@ -375,20 +390,23 @@ func TestWallRendererCountsTheThreeCategoriesSeparately(t *testing.T) {
 // No count is an all-clear, and the line says so naming EVERY list. Each is
 // a floor — the wall list by the render-header class it derives from, the
 // launch-check list by its two clauses, the commit-gate list by its
-// render-and-dispatch intersection — so "no commit in any of them" may never
-// render as "nothing to install". The "all N lists" clause counts the rows
-// rather than spelling a number, so a fourth row cannot leave this sentence
-// claiming three.
+// render-and-dispatch intersection, the bd-write list by that intersection
+// plus its judge's own call closure — so "no commit in any of them" may
+// never render as "nothing to install". The "all N lists" clause counts the
+// rows rather than spelling a number, so a fourth row cannot leave this
+// sentence claiming three; ranger-base-7fjmv's row is the case that proves
+// it, and this arm now asserts 4 where it asserted 3 without a line of
+// rendering changing.
 func TestWallRendererWithNoCategoryTouchedIsStillNotAnAllClear(t *testing.T) {
 	t.Parallel()
 	repo, stamp := allCatsRig(t)
 	landCommits(t, repo, 6)
 
 	w := ReadWallRenderer(FindLauncher("0.5.0+"+stamp, []string{repo}))
-	if len(w.Commits) != 0 || len(w.CheckCommits) != 0 || len(w.GateCommits) != 0 ||
-		w.Why != "" || w.CheckWhy != "" || w.GateWhy != "" {
-		t.Fatalf("wall = %v/%q check = %v/%q gate = %v/%q; want three empty, read answers",
-			w.Commits, w.Why, w.CheckCommits, w.CheckWhy, w.GateCommits, w.GateWhy)
+	if len(w.Commits) != 0 || len(w.CheckCommits) != 0 || len(w.GateCommits) != 0 || len(w.WriteCommits) != 0 ||
+		w.Why != "" || w.CheckWhy != "" || w.GateWhy != "" || w.WriteWhy != "" {
+		t.Fatalf("wall = %v/%q check = %v/%q gate = %v/%q write = %v/%q; want four empty, read answers",
+			w.Commits, w.Why, w.CheckCommits, w.CheckWhy, w.GateCommits, w.GateWhy, w.WriteCommits, w.WriteWhy)
 	}
 	got := strings.Join(w.Lines("gates"), "\n")
 	for _, want := range []string{
@@ -396,11 +414,13 @@ func TestWallRendererWithNoCategoryTouchedIsStillNotAnAllClear(t *testing.T) {
 		"0 of them rendering a wall",
 		"0 of them deciding a launch-time check",
 		"0 of them judging a commit-time gate",
-		"all 3 lists",
+		"0 of them judging a write-time gate",
+		"all 4 lists",
 		"are a FLOOR",
 		"WallRenderSources",
 		"LaunchCheckSources",
 		"CommitGateSources",
+		"BdWriteSources",
 		"make install",
 	} {
 		if !strings.Contains(got, want) {
@@ -448,16 +468,17 @@ func TestWallRendererSaysUNKNOWNPerCategoryWhenASubsetCannotBeRead(t *testing.T)
 	if !w.Lag.Known() || w.Lag.Behind != 7 {
 		t.Fatalf("the lag itself must still be counted: behind = %d, why = %q", w.Lag.Behind, w.Lag.Why)
 	}
-	if w.Why == "" || w.CheckWhy == "" || w.GateWhy == "" {
-		t.Fatalf("a subset that could not be read reported no reason: why = %q, checkWhy = %q, gateWhy = %q", w.Why, w.CheckWhy, w.GateWhy)
+	if w.Why == "" || w.CheckWhy == "" || w.GateWhy == "" || w.WriteWhy == "" {
+		t.Fatalf("a subset that could not be read reported no reason: why = %q, checkWhy = %q, gateWhy = %q, writeWhy = %q", w.Why, w.CheckWhy, w.GateWhy, w.WriteWhy)
 	}
-	if len(w.Commits) != 0 || len(w.CheckCommits) != 0 || len(w.GateCommits) != 0 {
-		t.Fatalf("an unreadable subset invented commits: %v / %v / %v", w.Commits, w.CheckCommits, w.GateCommits)
+	if len(w.Commits) != 0 || len(w.CheckCommits) != 0 || len(w.GateCommits) != 0 || len(w.WriteCommits) != 0 {
+		t.Fatalf("an unreadable subset invented commits: %v / %v / %v / %v", w.Commits, w.CheckCommits, w.GateCommits, w.WriteCommits)
 	}
 	// Each abstention names its OWN category, so a reader can tell which
 	// question went unanswered rather than mistrusting all of them.
-	if !strings.Contains(w.Why, "wall-rendering") || !strings.Contains(w.CheckWhy, "launch-check") || !strings.Contains(w.GateWhy, "commit-gate") {
-		t.Fatalf("the three abstentions do not name their categories: %q / %q / %q", w.Why, w.CheckWhy, w.GateWhy)
+	if !strings.Contains(w.Why, "wall-rendering") || !strings.Contains(w.CheckWhy, "launch-check") ||
+		!strings.Contains(w.GateWhy, "commit-gate") || !strings.Contains(w.WriteWhy, "bd-write") {
+		t.Fatalf("the four abstentions do not name their categories: %q / %q / %q / %q", w.Why, w.CheckWhy, w.GateWhy, w.WriteWhy)
 	}
 	got := strings.Join(w.Lines("gates"), "\n")
 	for _, want := range []string{
@@ -465,6 +486,7 @@ func TestWallRendererSaysUNKNOWNPerCategoryWhenASubsetCannotBeRead(t *testing.T)
 		"UNKNOWN how many of them render a wall",
 		"UNKNOWN how many of them decide a launch-time check",
 		"UNKNOWN how many of them judge a commit-time gate",
+		"UNKNOWN how many of them judge a write-time gate",
 		"make install",
 	} {
 		if !strings.Contains(got, want) {
@@ -477,6 +499,7 @@ func TestWallRendererSaysUNKNOWNPerCategoryWhenASubsetCannotBeRead(t *testing.T)
 		"0 of them rendering a wall",
 		"0 of them deciding a launch-time check",
 		"0 of them judging a commit-time gate",
+		"0 of them judging a write-time gate",
 		"are current",
 	} {
 		if strings.Contains(got, never) {
@@ -557,7 +580,7 @@ func TestWallRendererNamesTheLaggingCommitGateCommits(t *testing.T) {
 	// The empty halves have nothing to list, so they print no block and no
 	// command: an operator who runs one for an empty answer stops trusting
 	// the surface (the tip arm's own rule, applied per category).
-	for _, never := range []string{WallRenderSources[0], LaunchCheckSources[0]} {
+	for _, never := range []string{WallRenderSources[0], LaunchCheckSources[0], BdWriteSources[0]} {
 		if strings.Contains(got, never) {
 			t.Fatalf("an empty category printed its pathspecs (%s):\n%s", never, got)
 		}
@@ -637,6 +660,111 @@ func TestCommitGateSourcesAreRelativeRepoPaths(t *testing.T) {
 		t.Fatal("no commit gate sources")
 	}
 	for _, p := range CommitGateSources {
+		if filepath.IsAbs(p) || strings.HasPrefix(p, "./") || strings.Contains(p, "\\") {
+			t.Errorf("%q is not a repo-relative slash path", p)
+		}
+		if !strings.HasSuffix(p, ".go") {
+			t.Errorf("%q is not a Go source file", p)
+		}
+	}
+}
+
+// ─── the write-time gate half (ranger-base-7fjmv) ────────────────────────────
+//
+// A WRITE-time gate is install-gated for exactly the reason the other three
+// are — the installed binary judges it — and for the reason the commit-time
+// row has that is its own, one surface over: the bd SHIM is a render, already
+// counted under WallRenderSources through gates.go, while the judge its
+// write-verb tail execs is a subprocess of whatever `posse` is on PATH,
+// resolved fresh on purpose (ADR 0073 D2 — the lock must be held by the
+// process that becomes bd). So a current shim can route every write to a
+// stale judge, and what that costs is the one consequence no refusal names:
+// a write that loses the race prints `Created issue: <id>` and exits 0.
+//
+// MEASURED 2026-11-14 on this box, installed 0.5.3+7d0f8c31 against main at
+// 35e8cf41, 75 commits: 12 rendering a wall, 9 deciding a launch-time check,
+// 4 judging a commit-time gate, 0 judging a write-time gate. Three commits
+// in main's 2,756 have ever touched these paths; 2a9f4e06 changed the bd
+// write lock ALONE and so touched no path in any list that existed, sitting
+// inside the headline named by no category, and 21508a1a was counted as a
+// wall because it also touched gates.go — the mis-attribution
+// ranger-base-m1obc measured, one row over. BdWriteSources' own comment and
+// docs/notes.d/ranger-base-7fjmv.md hold the whole reading.
+
+// The reading this bead is about: a lag whose commits judge a WRITE-time
+// gate and render no wall, decide no launch-time check and judge no
+// commit-time gate. The three other counts are honestly 0 and the line must
+// still name what is stale — before this row, 2a9f4e06's exposure window
+// read as "none of them touching a path posse renders a wall from, decides a
+// launch-time check in or judges a commit-time gate in".
+func TestWallRendererNamesTheLaggingBdWriteCommits(t *testing.T) {
+	t.Parallel()
+	repo, stamp := allCatsRig(t)
+	landCommits(t, repo, 3)
+	commitIn(t, repo, BdWriteSources[0], "package posse // v2\n", "ranger-base-g8lmt: the per-store bd write flock")
+
+	w := ReadWallRenderer(FindLauncher("0.5.0+"+stamp, []string{repo}))
+	if !w.Lag.Known() || w.Lag.Behind != 4 {
+		t.Fatalf("behind = %d known = %v (%s)", w.Lag.Behind, w.Lag.Known(), w.Lag.Why)
+	}
+	if len(w.Commits) != 0 || w.Why != "" || len(w.CheckCommits) != 0 || w.CheckWhy != "" || len(w.GateCommits) != 0 || w.GateWhy != "" {
+		t.Fatalf("wall = %v/%q check = %v/%q gate = %v/%q; want three empty, read answers",
+			w.Commits, w.Why, w.CheckCommits, w.CheckWhy, w.GateCommits, w.GateWhy)
+	}
+	if w.WriteWhy != "" {
+		t.Fatalf("the bd-write half abstained: %s", w.WriteWhy)
+	}
+	if len(w.WriteCommits) != 1 || !strings.Contains(w.WriteCommits[0], "ranger-base-g8lmt") {
+		t.Fatalf("bd-write commits = %v, want the one g8lmt commit", w.WriteCommits)
+	}
+	got := strings.Join(w.Lines("gates"), "\n")
+	for _, want := range []string{
+		"4 commit(s) behind main",
+		// EVERY count, always — a category said only when it is nonzero is
+		// a category whose zero cannot be told from a reading that never ran.
+		"0 of them rendering a wall",
+		"0 of them deciding a launch-time check",
+		"0 of them judging a commit-time gate",
+		"1 of them judging a write-time gate",
+		// The consequence, in the words that distinguish it from the other
+		// three: the shim is current, the judge is not, and NOBODY IS
+		// REFUSED — which is why the cost lands on a later reader.
+		"every bd WRITE any persona on this box types",
+		"prints `Created issue: <id>` and exits 0 like any other",
+		"ADR 0073",
+		"make install",
+		"ranger-base-g8lmt",
+		"log --oneline " + stamp + "..main -- " + BdWriteSources[0],
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("line missing %q:\n%s", want, got)
+		}
+	}
+	// The empty halves print no block and no command, and in particular not
+	// the two cost sentences a stale write-time judge is NOT about: the
+	// mis-attribution this row was filed for is a lost bead write read as a
+	// superseded seatbelt or a refused commit.
+	for _, never := range []string{
+		WallRenderSources[0], LaunchCheckSources[0], CommitGateSources[0],
+		"renders the OLD seatbelt", "judged by the OLD judge",
+	} {
+		if strings.Contains(got, never) {
+			t.Fatalf("a lag with only a bd-write commit printed another category's block (%q):\n%s", never, got)
+		}
+	}
+}
+
+// BdWriteSources must be paths in THIS repo, spelled slash-first and
+// relative — they are handed to `git log -- <pathspec>` in whatever checkout
+// the stamp resolved to, and an absolute or ./-prefixed spelling silently
+// matches nothing there. The fourth sibling of the same arm, because the
+// failure is silent in exactly the same way against a fourth list.
+func TestBdWriteSourcesAreRelativeRepoPaths(t *testing.T) {
+	t.Parallel()
+	if len(BdWriteSources) == 0 {
+		t.Fatal("no bd write sources")
+	}
+	for _, p := range BdWriteSources {
 		if filepath.IsAbs(p) || strings.HasPrefix(p, "./") || strings.Contains(p, "\\") {
 			t.Errorf("%q is not a repo-relative slash path", p)
 		}

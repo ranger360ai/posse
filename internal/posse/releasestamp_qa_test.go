@@ -60,10 +60,11 @@ func TestAReleaseInstallWithNoCheckoutReadsTheReleaseAndNotUnknown(t *testing.T)
 		"is release v0.5.3",
 		// Every category the reading has, named in one sentence: a release
 		// install carries its tag's walls, its tag's launch-time checks AND
-		// its tag's commit-time gates, and a category left out of this
-		// sentence is a category whose staleness a release user would read
-		// as unclaimed (ranger-base-m1obc added the third).
-		"the walls it renders, the launch-time checks it decides and the commit-time gates it judges are the ones tagged v0.5.3",
+		// its tag's commit-time and write-time gates, and a category left
+		// out of this sentence is a category whose staleness a release user
+		// would read as unclaimed (ranger-base-m1obc added the third,
+		// ranger-base-7fjmv the fourth).
+		"the walls it renders, the launch-time checks it decides and the commit-time and write-time gates it judges are the ones tagged v0.5.3",
 		// What a release user can actually do, and what they cannot: the
 		// line has to carry the remedy, and has to say out loud that it is
 		// not claiming to be the newest release.
