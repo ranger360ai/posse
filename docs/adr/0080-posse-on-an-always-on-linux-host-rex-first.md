@@ -1754,9 +1754,13 @@ bubblewrap 0.13.1, Landlock ABI 10, linux-api-headers 7.3-1) by
   The same reading has a consequence nobody had written down: inside a real
   caged seat `TestLiveBwrapGitRefsCommitsOnTheSessionBranch` FAILS, and
   `TestLiveWallClaudeProjectsRefusesPeerPlants` and
-  `TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall` go to
-  `SKIP: NOTHING MEASURED` — so three of the wall's own live pins cannot
-  measure the wall from inside it, and one of them reds `make test` there.
+  `TestLiveWallStrictMCPStartsOnlyTheLineServers` (which was
+  `TestLiveStrictMCPStartsOnlyTheLineServersUnderTheRenderedWall` when this
+  amendment was written — ranger-base-q749c renamed it into
+  [ADR 0097](0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md)
+  D4's filter) go to `SKIP: NOTHING MEASURED` — so three of the wall's own
+  live pins cannot measure the wall from inside it, and one of them reds
+  `make test` there.
   That is ranger-base-rwet4, for richard, and not this amendment's to decide:
   nothing below depends on how it goes, because this layer adds no refusal
   the shipped wall does not already impose.
