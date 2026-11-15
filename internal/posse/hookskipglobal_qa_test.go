@@ -215,8 +215,9 @@ func TestQAHookSkipGlobalGateExecsNothingAsRendered(t *testing.T) {
 		env = append(env, kv)
 	}
 	env = append(env, "HOME="+home)
+	want := gitGlobalPinOf(t, filepath.Join(home, ".gitconfig")) // prepared, as a launch does
 	ref := resolveHookSkipGlobalRef(stub, env)
-	if want := gitGlobalPinOf(t, filepath.Join(home, ".gitconfig")); ref.Pin != want {
+	if ref.Pin != want {
 		t.Fatalf("the reference must carry obdnk's pin %q, got %+v", want, ref)
 	}
 	shim := filepath.Join(dir, "shim")

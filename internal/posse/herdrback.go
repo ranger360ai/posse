@@ -3027,6 +3027,15 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// own git dirs (rangerhq-09o2) — and it is the SAME function ADR
 		// 0013 §4's reachability row judges this line with, so the row and
 		// the launch cannot disagree about what "writable" meant.
+		// The settings pin's GIT_CONFIG_GLOBAL row names a read-only snapshot
+		// of the operator's global git file, and the render only NAMES one
+		// already on disk; the launch is what writes it (ranger-base-161t2,
+		// and qd9ei's rule that only a launch makes a host path). A failure
+		// leaves the row on the operator's own file, said here and again by
+		// GitGlobalScopeDegraded below.
+		if err := PrepareGitGlobalSnapshot(); err != nil {
+			warn("posse: DEGRADED: no read-only snapshot of the global git config: %v — a `git config --global` in this session writes the operator's file (ranger-base-161t2)\n", err)
+		}
 		cmd = ag.RenderCommandForModel(rt, own, tier, o.Model, launchWritableRoots(dir)...)
 		// The PID channel is a launch guarantee too, and this is the one
 		// place it can be checked: the line exists now, and nothing after
@@ -3868,6 +3877,11 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// back on its tier's model would be a launch the operator never asked
 	// for wearing a record that says otherwise (ADR 0053 D4). "" on every
 	// ordinary session renders what it always did.
+	// A relaunch renders its own line, so it prepares the GIT_CONFIG_GLOBAL
+	// snapshot as planLaunch does (ranger-base-161t2).
+	if err := PrepareGitGlobalSnapshot(); err != nil {
+		b.warn("posse: DEGRADED: no read-only snapshot of the global git config for %s: %v — its `git config --global` writes the operator's file (ranger-base-161t2)\n", name, err)
+	}
 	inner := ag.RenderCommandForModel(rt, b.App.ResolveRuntime("", ag), tier, m.Model, launchWritableRoots(m.Dir)...)
 	// The launch's root refusal on the one other path that renders a
 	// persona line (ranger-base-k62e). Reachable for the reason PIDVoided is

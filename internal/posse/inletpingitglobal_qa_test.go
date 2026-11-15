@@ -84,13 +84,14 @@ func TestQATheGitConfigGlobalPinIsGitsOwnFile(t *testing.T) {
 			if c.wantHomeOrXDG == "xdg" {
 				want = xdgCfg
 			}
-			// The row is a read-only snapshot OF that file (ranger-base-161t2).
-			got, ok := pinRow("GIT_CONFIG_GLOBAL")
-			if snap := gitGlobalPinOf(t, want); !ok || got != snap {
+			// The row is a read-only snapshot OF that file, once a launch has
+			// prepared it (ranger-base-161t2).
+			snap := gitGlobalPinOf(t, want)
+			if got, ok := pinRow("GIT_CONFIG_GLOBAL"); !ok || got != snap {
 				t.Fatalf("inletPin()[GIT_CONFIG_GLOBAL] = %q (present %v), want %q, the snapshot of %s", got, ok, snap, want)
 			}
-			if indep, ok := gitGlobalScopePath(t); ok && gitGlobalPinOf(t, indep) != got {
-				t.Errorf("the row says %q but git's own listing says %q", got, indep)
+			if indep, ok := gitGlobalScopePath(t); ok && gitGlobalPinOf(t, indep) != snap {
+				t.Errorf("the row says %q but git's own listing says %q", snap, indep)
 			}
 			if d := GitGlobalScopeDegraded(); d != "" {
 				t.Errorf("a resolved global scope printed a degraded line: %s", d)
@@ -110,7 +111,8 @@ func TestQATheGitConfigGlobalPinIsGitsOwnFile(t *testing.T) {
 		if err := os.WriteFile(want, []byte("[user]\n\temail = x@example.invalid\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != gitGlobalPinOf(t, want) {
+		snap := gitGlobalPinOf(t, want)
+		if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != snap {
 			t.Errorf("inletPin()[GIT_CONFIG_GLOBAL] = %q, want the snapshot of %q", got, want)
 		}
 	})
@@ -120,7 +122,8 @@ func TestQATheGitConfigGlobalPinIsGitsOwnFile(t *testing.T) {
 // each attacker arm FIRES with the row taken out of the pin (so it measures
 // something) and is QUIET with the whole pin applied.
 func TestQATheGitConfigGlobalPinShutsAllThreeGlobalInlets(t *testing.T) {
-	globalScopeFixture(t, true, false)
+	_, homeCfg, _ := globalScopeFixture(t, true, false)
+	gitGlobalPinOf(t, homeCfg) // the row graded is the snapshot a launch names (ranger-base-161t2)
 	repo := gitConfigProbeRepo(t)
 	hooks := gitConfigProbeHooks(t)
 	evil := "[core]\n\thooksPath = " + hooks + "\n"
@@ -205,7 +208,8 @@ func TestQATheGitConfigGlobalPinDegradesNeverDevNullWithTwoFiles(t *testing.T) {
 // returns the same set unset and pinned. The /dev/null arm is the failing
 // wrong arm — it is what ranger-base-37y0z refused, and it still empties it.
 func TestQATheGitConfigGlobalPinKeepsTheIdentityWall(t *testing.T) {
-	globalScopeFixture(t, true, false)
+	_, homeCfg, _ := globalScopeFixture(t, true, false)
+	gitGlobalPinOf(t, homeCfg) // the row graded is the snapshot a launch names (ranger-base-161t2)
 	repo := gitConfigProbeRepo(t)
 	pinned, ok := pinRow("GIT_CONFIG_GLOBAL")
 	if !ok {

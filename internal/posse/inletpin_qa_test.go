@@ -34,6 +34,11 @@ import (
 // already was.
 func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 	t.Parallel() // one row asks git; the rest are constants
+	// As a launch does, so the GIT_CONFIG_GLOBAL row names its snapshot
+	// (ranger-base-161t2).
+	if err := PrepareGitGlobalSnapshot(); err != nil {
+		t.Fatal(err)
+	}
 	want := map[string]string{
 		// Exec: a shell, the dynamic linker, node.
 		"BASH_ENV":              "/dev/null",

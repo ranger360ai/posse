@@ -31,7 +31,19 @@ GIT_AUTHOR_IDENT` and the identity wall see the same bytes. MEASURED
 reference (ADR 0079 D1) both take the value from `gitGlobalPinValue`, so they
 still agree.
 
-Two choices in it worth knowing:
+Three choices in it worth knowing:
+
+- **The render only NAMES a snapshot; the launch writes it.** Every reader
+  renders the settings pin (`posse gates`, the parity report), and the
+  first draft wrote the snapshot from inside that render. The full suite
+  caught it: `TestQAGatesReportMakesNoPathInTheHomeItWasTypedFrom`
+  (ranger-base-qd9ei: only a LAUNCH makes a host path). So
+  `gitGlobalPinValue` is pure: it names the snapshot when one verifies on
+  disk, else the operator's file. The two launch render sites in
+  herdrback.go (`planLaunch`, `RelaunchAgent`) call
+  `PrepareGitGlobalSnapshot()` first. The fallback is the file and never a
+  missing path, because git reads a missing GIT_CONFIG_GLOBAL as no global
+  scope and commits under a gecos ident.
 
 - **A lock directory, not a 0555 parent.** Both refuse the write; a 0555
   directory is one `os.RemoveAll` cannot empty, and every test HOME in this
@@ -75,6 +87,7 @@ that each write refuses at the config lock, and that the author ident
 doesn't move. A control proves the old row (the operator's file) is
 rewritten by the same line. Also pinned: no global file snapshots as an
 empty file and creates nothing, includes degrade and say so, and a
-tampered snapshot is rewritten on the next resolve. Five mutants (row back
+tampered snapshot is rewritten on the next resolve, and an unprepared render
+writes nothing and names the file. Five mutants (row back
 to the file, no lock dir, includes ignored, no rewrite on tamper, snapshot
 root back to `.cache/posse`) each turn a pin red.

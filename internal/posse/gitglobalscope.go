@@ -287,12 +287,66 @@ var errGitGlobalIncludes = errors.New("it carries an [include]/[includeIf] secti
 // reopened between seats. The wall root is the directory no render grants
 // (ADR 0100 D2(a) refuses one at or above it), and it reads through the
 // seat's read-only `/`.
+//
+// PURE: it names a snapshot that is already on disk and verifies, and never
+// makes one. Every reader renders the settings pin — `posse gates`, the
+// parity report, a status line — and a reader that wrote a host path in the
+// HOME it was typed from would break ranger-base-qd9ei's rule that only a
+// LAUNCH makes host paths. PrepareGitGlobalSnapshot is the launch's half.
+// An unprepared snapshot falls back to the file itself: the row stays
+// closed, and the launch, which prepares first, never sees that arm.
 func gitGlobalPinValue(file string) (string, error) {
-	snap, err := gitGlobalSnapshot(file, SeatWallRoot(os.Getenv("HOME")))
+	want, snap, err := gitGlobalSnapshotPath(file, SeatWallRoot(os.Getenv("HOME")))
 	if err != nil {
 		return file, err
 	}
+	if err := gitGlobalSnapshotVerify(snap, want); err != nil {
+		return file, fmt.Errorf("no launch has prepared its read-only snapshot (%v)", err)
+	}
 	return snap, nil
+}
+
+// PrepareGitGlobalSnapshot writes (or re-verifies) the read-only snapshot
+// of this launch's resolved global file, so the settings pin rendered after
+// it names the snapshot. Called by a LAUNCH, before it renders the line, and
+// by nothing that only reads (ranger-base-qd9ei). Nothing to do — nil — when
+// the box has no single global file: there is no row to snapshot.
+func PrepareGitGlobalSnapshot() error {
+	p, err := gitGlobalScope()
+	if err != nil {
+		return nil
+	}
+	_, err = gitGlobalSnapshot(p, SeatWallRoot(os.Getenv("HOME")))
+	return err
+}
+
+// gitGlobalSnapshotPath is the snapshot's path for file under root, and the
+// bytes it must hold. A missing file is empty bytes.
+func gitGlobalSnapshotPath(file, root string) (want []byte, snap string, err error) {
+	if root == "" {
+		return nil, "", errors.New("there is no HOME to hold the snapshot under")
+	}
+	want, err = os.ReadFile(file)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, "", err
+	}
+	if gitIncludesSection(want) {
+		return nil, "", errGitGlobalIncludes
+	}
+	sum := sha256.Sum256(want)
+	return want, filepath.Join(root, "git-global", hex.EncodeToString(sum[:])[:20], gitGlobalSnapshotName), nil
+}
+
+// gitGlobalSnapshotVerify: the lock is a directory and the bytes are want.
+func gitGlobalSnapshotVerify(snap string, want []byte) error {
+	lock := snap + ".lock"
+	if fi, err := os.Lstat(lock); err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory, so git can take its lock", lock)
+	}
+	if got, err := os.ReadFile(snap); err != nil || !bytes.Equal(got, want) {
+		return fmt.Errorf("%s does not read back as a copy of the global file", snap)
+	}
+	return nil
 }
 
 // gitIncludesSection reports whether a git config text has an include or
@@ -308,25 +362,18 @@ func gitIncludesSection(b []byte) bool {
 }
 
 // gitGlobalSnapshot writes (or re-verifies) the read-only snapshot of file
-// under cacheDir and returns its path. A missing file snapshots as empty:
+// under root and returns its path. Only PrepareGitGlobalSnapshot calls it
+// outside a test: it is the one host write here (ranger-base-qd9ei). A missing file snapshots as empty:
 // that is the none-exists shape, where git would have CREATED the
 // operator's ~/.gitconfig on the first --global write. Content-addressed,
 // so concurrent launches over the same bytes agree on one path, and a
 // snapshot someone edited is rewritten by the next launch over it.
-func gitGlobalSnapshot(file, cacheDir string) (string, error) {
-	if cacheDir == "" {
-		return "", errors.New("there is no HOME to hold the snapshot under")
-	}
-	want, err := os.ReadFile(file)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+func gitGlobalSnapshot(file, root string) (string, error) {
+	want, snap, err := gitGlobalSnapshotPath(file, root)
+	if err != nil {
 		return "", err
 	}
-	if gitIncludesSection(want) {
-		return "", errGitGlobalIncludes
-	}
-	sum := sha256.Sum256(want)
-	dir := filepath.Join(cacheDir, "git-global", hex.EncodeToString(sum[:])[:20])
-	snap := filepath.Join(dir, gitGlobalSnapshotName)
+	dir := filepath.Dir(snap)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -358,13 +405,9 @@ func gitGlobalSnapshot(file, cacheDir string) (string, error) {
 	if err := os.Mkdir(lock, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return "", err
 	}
-	// Read back, never trust the writes: the lock must be a directory and the
-	// bytes must be the original's.
-	if fi, err := os.Lstat(lock); err != nil || !fi.IsDir() {
-		return "", fmt.Errorf("%s is not a directory, so git can take its lock", lock)
-	}
-	if got, err := os.ReadFile(snap); err != nil || !bytes.Equal(got, want) {
-		return "", fmt.Errorf("%s does not read back as a copy of %s", snap, file)
+	// Read back, never trust the writes.
+	if err := gitGlobalSnapshotVerify(snap, want); err != nil {
+		return "", err
 	}
 	return snap, nil
 }

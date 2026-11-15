@@ -84,6 +84,11 @@ var gitConfigGlobalDisclosed = []string{
 
 func TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot(t *testing.T) {
 	t.Parallel()
+	// As a launch does, so the GIT_CONFIG_GLOBAL row names its snapshot
+	// (ranger-base-161t2).
+	if err := PrepareGitGlobalSnapshot(); err != nil {
+		t.Fatal(err)
+	}
 
 	pinned := map[string]string{}
 	for _, v := range inletPin() {

@@ -67,9 +67,12 @@ func TestQAASeatCannotRewriteTheOperatorsGlobalGitIdentity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if err := PrepareGitGlobalSnapshot(); err != nil { // as a launch does
+				t.Fatal(err)
+			}
 			row, ok := pinRow("GIT_CONFIG_GLOBAL")
-			if !ok {
-				t.Fatal("CONTROL FAILED: a one-file fixture produced no GIT_CONFIG_GLOBAL row")
+			if !ok || row == op {
+				t.Fatalf("CONTROL FAILED: a prepared one-file fixture's row is %q (present %v), not a snapshot", row, ok)
 			}
 			identBefore, _ := seatGit(t, row, nil, "var", "GIT_AUTHOR_IDENT")
 
@@ -127,6 +130,9 @@ func identStrip(ident string) string {
 // operator's file. The snapshot is empty and the write refuses.
 func TestQAGitGlobalNoFileSnapshotsEmptyAndCreatesNothing(t *testing.T) {
 	_, homeCfg, xdgCfg := globalScopeFixture(t, false, false)
+	if err := PrepareGitGlobalSnapshot(); err != nil {
+		t.Fatal(err)
+	}
 	row, ok := pinRow("GIT_CONFIG_GLOBAL")
 	if !ok {
 		t.Fatal("no GIT_CONFIG_GLOBAL row with no global file")
@@ -190,5 +196,35 @@ func TestQAGitGlobalSnapshotIsRewrittenWhenTampered(t *testing.T) {
 	}
 	if fi, err := os.Lstat(row + ".lock"); err != nil || !fi.IsDir() {
 		t.Errorf("the lock directory was not restored: %v", err)
+	}
+}
+
+// TestQAGitGlobalRenderWritesNothingAndFallsBackUnprepared: rendering the
+// pin is something every reader does (`posse gates`, the parity report), and
+// only a LAUNCH may make a host path (ranger-base-qd9ei). So an unprepared
+// render makes nothing under the wall root and names the operator's file —
+// never a snapshot path that is not there, which git would read as no global
+// scope at all and commit under a gecos ident. Prepared, the same render
+// names the snapshot.
+func TestQAGitGlobalRenderWritesNothingAndFallsBackUnprepared(t *testing.T) {
+	home, homeCfg, _ := globalScopeFixture(t, true, false)
+	if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != homeCfg {
+		t.Errorf("unprepared, the row is %q, want the operator's own %s", got, homeCfg)
+	}
+	_ = GitGlobalScopeDegraded()
+	if _, err := os.Lstat(SeatWallRoot(home)); err == nil {
+		t.Errorf("rendering the pin made %s — a reader wrote a host path (ranger-base-qd9ei)", SeatWallRoot(home))
+	}
+	if d := GitGlobalScopeDegraded(); !strings.Contains(d, "DEGRADED") || !strings.Contains(d, "ranger-base-161t2") {
+		t.Errorf("an unprepared snapshot printed no degraded line: %q", d)
+	}
+	if err := PrepareGitGlobalSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got == homeCfg || !insideDir(SeatWallRoot(home), got) {
+		t.Errorf("prepared, the row is %q, want a snapshot under %s", got, SeatWallRoot(home))
+	}
+	if d := GitGlobalScopeDegraded(); d != "" {
+		t.Errorf("a prepared snapshot printed a degraded line: %s", d)
 	}
 }
