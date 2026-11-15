@@ -214,6 +214,24 @@ func renameOver(t *testing.T, dst string, dir bool) {
 	}
 }
 
+// wwVerdict is the one durable verdict file this fixture's watchers have
+// written (ranger-base-pfcci). Every seat below runs runWallWatch IN this
+// process, so they all carry the same watcher pid and append to one file
+// — in production that pid is one seat's watcher and the file is one
+// seat's.
+func wwVerdict(t *testing.T, s wwLiveSeat) string {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(wallWatchRecordDir(s.mounts), "*.verdict"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("want one verdict file beside %s, got %v (%v)", s.mounts, paths, err)
+	}
+	b, rerr := os.ReadFile(paths[0])
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	return string(b)
+}
+
 func TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead(t *testing.T) {
 	t.Parallel()
 	s := wwLiveFixture(t)
@@ -231,6 +249,14 @@ func TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead(t *testing.T) {
 	}
 	if d := st.issues[0].Description; !strings.Contains(d, wallWatchMarker(s.deny)) || !strings.Contains(d, "seat: seat-a") {
 		t.Errorf("deny: the bead does not name the seat and the path:\n%s", d)
+	}
+	// And the verdict is on disk, not only in the pane this watcher just
+	// closed behind it (ranger-base-pfcci).
+	v := wwVerdict(t, s)
+	for _, want := range []string{"seat seat-a", "KILLED seat seat-a", s.deny, "filed " + st.issues[0].ID} {
+		if !strings.Contains(v, want) {
+			t.Errorf("deny: the durable verdict lacks %q:\n%s", want, v)
+		}
 	}
 
 	// 2. A Private bind over a DIRECTORY, replaced on the host by rename.
@@ -256,6 +282,15 @@ func TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead(t *testing.T) {
 	}
 	if c := st.comments[st.issues[0].ID]; len(c) != 1 || !strings.Contains(c[0], "seat-c") {
 		t.Errorf("deny again: comments on %s = %q, want one naming seat-c", st.issues[0].ID, c)
+	}
+	// Three detections, three blocks in the one file, and the third says
+	// what it did instead of filing.
+	v = wwVerdict(t, s)
+	if n := strings.Count(v, "posse wall-watch verdict ·"); n != 3 {
+		t.Errorf("the verdict file holds %d blocks, want 3:\n%s", n, v)
+	}
+	if !strings.Contains(v, "KILLED seat seat-c") || !strings.Contains(v, "recorded on "+st.issues[0].ID) {
+		t.Errorf("the third detection is not in the file as a comment on the first bead:\n%s", v)
 	}
 }
 
@@ -285,6 +320,9 @@ func TestLiveWallWatchPassesTheSeatsOwnExitCode(t *testing.T) {
 	}
 	if len(st.issues) != 0 {
 		t.Errorf("a seat that kept its walls filed %d beads", len(st.issues))
+	}
+	if vs, _ := filepath.Glob(filepath.Join(wallWatchRecordDir(s.mounts), "*.verdict")); len(vs) != 0 {
+		t.Errorf("a seat that kept its walls left a verdict behind: %v", vs)
 	}
 }
 
@@ -319,5 +357,14 @@ func TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch(t *testing.T) {
 	}
 	if len(st.issues) != 1 || !strings.Contains(st.issues[0].Description, "at launch") {
 		t.Errorf("want one bead saying the wall was missing at launch, got %+v", st.issues)
+	}
+	// The response here happens BEFORE the backstop record is ever
+	// written, which is why the verdict path is settled ahead of the
+	// baseline (ranger-base-pfcci).
+	if rs, _ := filepath.Glob(filepath.Join(wallWatchRecordDir(s.mounts), "*.json")); len(rs) != 0 {
+		t.Errorf("a seat that was never released left a backstop record: %v", rs)
+	}
+	if v := wwVerdict(t, s); !strings.Contains(v, "KILLED seat x") || !strings.Contains(v, s.deny) {
+		t.Errorf("a wall missing at launch left no durable verdict:\n%s", v)
 	}
 }

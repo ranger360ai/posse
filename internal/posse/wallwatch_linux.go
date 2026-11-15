@@ -145,25 +145,42 @@ func runWallWatch(r wallWatchRun) int {
 	}
 	d := wallWatchDetach{Seat: r.Opts.Seat, Dir: r.Opts.Dir, BwrapPid: cmd.Process.Pid, SeatPid: info.ChildPid}
 
+	// The two files this watcher keeps beside its mounts file: the
+	// backstop's record (written at the release, below) and the durable
+	// verdict (ranger-base-pfcci). Settled here, before the baseline, so a
+	// wall that is already off AT LAUNCH has somewhere to say so — that
+	// response happens before the record is ever written.
+	self := os.Getpid()
+	record := filepath.Join(wallWatchRecordDir(r.Opts.Mounts), strconv.Itoa(self)+".json")
+	verdict := wallWatchVerdictPath(record)
+
 	respond := func(missing []WallWatchMount, atLaunch bool) int {
 		d.At, d.Missing, d.AtLaunch = now(), missing, atLaunch
 		d.Killed, d.KillErr = wallWatchKill(cmd.Process.Pid, info.MntNamespace)
 		blockW.Close()
 		<-done
-		say("KILLED seat %s: the wall over %s came off at %s (ranger-base-0qpsw D2)", d.Seat, wallWatchPaths(missing), d.At.Format(time.RFC3339Nano))
+		// EVERY LINE TO THE FILE FIRST, then to the pane: this process IS
+		// the pane since ranger-base-1l1en, so the pane closes the moment
+		// this function returns and takes its scrollback with it. The
+		// third line below is the one that exists for the case where bd
+		// could not be written, and the pane was the only other copy.
+		v := &wallWatchSaid{Path: verdict, Pane: func(s string) { say("%s", s) }}
+		v.note(wallWatchVerdictHeader(d))
+		v.say("KILLED seat %s: the wall over %s came off at %s (ranger-base-0qpsw D2)", d.Seat, wallWatchPaths(missing), d.At.Format(time.RFC3339Nano))
 		if r.OnDetach != nil {
 			r.OnDetach(d)
 		}
 		filed, commented, ferr := fileWallWatchDetach(r.Store, d, now(), r.Lock)
 		if filed != "" {
-			say("filed %s", filed)
+			v.say("filed %s", filed)
 		}
 		for _, id := range commented {
-			say("recorded on %s (the same path, inside ten minutes)", id)
+			v.say("recorded on %s (the same path, inside ten minutes)", id)
 		}
 		if ferr != nil {
-			say("⚠ the record is incomplete: %v — this line is the record", ferr)
+			v.say("⚠ the record is incomplete: %v — this line is the record", ferr)
 		}
+		v.close()
 		return 1
 	}
 
@@ -203,9 +220,7 @@ func runWallWatch(r wallWatchRun) int {
 	// The backstop's copy of this reading (ranger-base-zd4d4, 0qpsw D3),
 	// written BEFORE the release: a seat whose command runs is a seat the
 	// dispatch tick can find, or it does not run.
-	self := os.Getpid()
 	start, serr := procStartTime(self)
-	record := filepath.Join(wallWatchRecordDir(r.Opts.Mounts), strconv.Itoa(self)+".json")
 	if serr == nil {
 		serr = writeWallWatchRecord(record, wallWatchRecord{
 			Seat: r.Opts.Seat, Dir: r.Opts.Dir,

@@ -701,11 +701,12 @@ func TestWallWatchStackedWallIsWatchedByItsId(t *testing.T) {
 
 // fakeWallWatchStore is an in-memory bead store for D2's dedupe.
 type fakeWallWatchStore struct {
-	issues   []BdIssue
-	comments map[string][]string
-	readErr  error
-	n        int
-	now      func() time.Time
+	issues    []BdIssue
+	comments  map[string][]string
+	readErr   error
+	createErr error
+	n         int
+	now       func() time.Time
 }
 
 func (s *fakeWallWatchStore) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
@@ -716,6 +717,9 @@ func (s *fakeWallWatchStore) OpenLabeledAny(dir string, labels ...string) ([]BdI
 }
 
 func (s *fakeWallWatchStore) Create(dir string, n BdNew) (string, error) {
+	if s.createErr != nil {
+		return "", s.createErr
+	}
 	s.n++
 	id := "t-" + string(rune('a'+s.n-1))
 	created := time.Now()
@@ -947,5 +951,181 @@ func TestWallWatchBackstopSaysWhenARecordCannotBeRead(t *testing.T) {
 	lines := wallWatchBackstop(state, &fakeWallWatchStore{}, "", time.Now, &fakeWallWatchProbe{})
 	if len(lines) != 1 || !strings.Contains(lines[0], "NOT checked") {
 		t.Errorf("an unreadable record must be said, not skipped: %q", lines)
+	}
+}
+
+// ─── the verdict file (ranger-base-pfcci) ──────────────────────────────────
+//
+// The watcher's three say() lines were the only copy of the reason on the
+// double-failure path — the wall came off AND bd could not be written —
+// and since ranger-base-1l1en the pane they were said to closes with the
+// watcher. These pin the durable copy: that it is written, that nothing
+// that cleans up after a seat removes it, that the readers find it, and
+// that a watcher which could not write it says so rather than going quiet.
+
+// wwSay drives one detection's lines through the same wallWatchSaid the
+// watcher's respond path and the backstop's kill arm both use, and hands
+// back what reached the pane.
+func wwSay(t *testing.T, path string, d wallWatchDetach, lines ...string) []string {
+	t.Helper()
+	var pane []string
+	v := &wallWatchSaid{Path: path, Pane: func(s string) { pane = append(pane, s) }}
+	v.note(wallWatchVerdictHeader(d))
+	for _, ln := range lines {
+		v.say("%s", ln)
+	}
+	v.close()
+	return pane
+}
+
+func TestWallWatchVerdictOutlivesTheSeatsRecordAndIsReadBack(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	mounts := filepath.Join(state, "gates", "developer", "bwrap.mounts")
+	record := filepath.Join(wallWatchRecordDir(mounts), "100.json")
+	if err := writeWallWatchRecord(record, wallWatchRecord{Seat: "developer", Dir: "/w/d", WatcherPid: 100, MntNS: 7}); err != nil {
+		t.Fatal(err)
+	}
+	d := wallWatchDetach{Seat: "developer", Dir: "/w/d", BwrapPid: 10, SeatPid: 11,
+		At: time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC), Missing: []WallWatchMount{{WallWatchDeny, "/h/.claude/settings.json"}}}
+	pane := wwSay(t, wallWatchVerdictPath(record), d,
+		"KILLED seat developer: the wall over /h/.claude/settings.json came off",
+		"⚠ the record is incomplete: create: bd timed out — this line is the record")
+	if len(pane) != 2 {
+		t.Fatalf("the pane got %d lines, want the two that were said (and no warning): %q", len(pane), pane)
+	}
+
+	// The watcher's own clean-up and the backstop's both take the RECORD;
+	// the verdict is a different name on purpose and must survive each.
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{wallWatchRecordGlob(state), wallWatchVerdictGlob(state)} {
+		got, err := filepath.Glob(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 0
+		if strings.HasSuffix(p, "*.verdict") {
+			want = 1
+		}
+		if len(got) != want {
+			t.Errorf("glob %s matched %v, want %d", p, got, want)
+		}
+	}
+
+	vs := readWallWatchVerdicts(state, "")
+	if len(vs) != 1 || vs[0].Seat != "developer" {
+		t.Fatalf("read back %+v, want one verdict of seat developer", vs)
+	}
+	for _, want := range []string{
+		"── posse wall-watch verdict · 2026-11-15T09:00:00Z · seat developer · dir /w/d · bwrap pid 10 · seat pid 11",
+		"KILLED seat developer: the wall over /h/.claude/settings.json came off",
+		"this line is the record",
+	} {
+		if !strings.Contains(vs[0].Text, want) {
+			t.Errorf("the verdict does not carry %q:\n%s", want, vs[0].Text)
+		}
+	}
+	if n := readWallWatchVerdicts(state, "someone-else"); len(n) != 0 {
+		t.Errorf("narrowing by persona returned another persona's verdict: %+v", n)
+	}
+	if n := readWallWatchVerdicts(state, "developer"); len(n) != 1 {
+		t.Errorf("narrowing by the owning persona returned %d, want 1", len(n))
+	}
+}
+
+// A verdict that cannot be written is the one case where the pane is the
+// record again, and the reader has to be told so.
+func TestWallWatchSaysWhenTheDurableVerdictCannotBeWritten(t *testing.T) {
+	t.Parallel()
+	// A plain file where the verdict's directory must be: MkdirAll fails.
+	root := t.TempDir()
+	blocked := filepath.Join(root, "wall-watch")
+	if err := os.WriteFile(blocked, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pane := wwSay(t, filepath.Join(blocked, "100.verdict"), wallWatchDetach{Seat: "a"}, "KILLED seat a")
+	if len(pane) != 2 || !strings.Contains(pane[1], "could not be written") || !strings.Contains(pane[1], "only copy") {
+		t.Fatalf("pane = %q, want the said line and then a warning that it is the only copy", pane)
+	}
+}
+
+func TestWallWatchBackstopLeavesTheKilledSeatsVerdictBehind(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the record of a killed seat whose watcher is gone was kept (%v)", err)
+	}
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 1 {
+		t.Fatalf("%d verdicts on disk, want 1 (tick said %q)", len(vs), lines)
+	}
+	for _, want := range []string{"seat developer", "KILLED seat developer", wallWatchPaths([]WallWatchMount{{WallWatchDeny, "/h/.claude/settings.json"}}), "filed " + st.issues[0].ID} {
+		if !strings.Contains(vs[0].Text, want) {
+			t.Errorf("the verdict does not carry %q:\n%s", want, vs[0].Text)
+		}
+	}
+	// The header is the file's alone — the tick's reader has it already.
+	if strings.Contains(strings.Join(lines, "\n"), "posse wall-watch verdict ·") {
+		t.Errorf("the header leaked into the tick's output:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// The dead-watcher arm runs on every tick for as long as the store is
+// down. Its durable copy is a record, not a log: one per seat.
+func TestWallWatchBackstopWritesTheDeadWatcherVerdictOncePerSeat(t *testing.T) {
+	t.Parallel()
+	state, _, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{createErr: errors.New("bd timed out")}
+	p := &fakeWallWatchProbe{pids: []int{103}, table: wwIntact()}
+	for i := 0; i < 3; i++ {
+		lines := wallWatchBackstop(state, st, "", time.Now, p)
+		if len(lines) != 1 || !strings.Contains(lines[0], "could not be filed") {
+			t.Fatalf("tick %d said %q, want the one line that is the record", i, lines)
+		}
+	}
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 1 {
+		t.Fatalf("%d verdicts after three ticks, want 1", len(vs))
+	}
+	if n := strings.Count(vs[0].Text, "could not be filed"); n != 1 {
+		t.Errorf("the verdict carries the line %d times, want 1:\n%s", n, vs[0].Text)
+	}
+	if !strings.Contains(vs[0].Text, "watcher pid 100 (gone)") {
+		t.Errorf("the verdict does not name the dead watcher:\n%s", vs[0].Text)
+	}
+}
+
+// What `posse peek` adds when the pane it was asked for is not there.
+func TestWallWatchVerdictNoticeNamesWhereTheReasonWent(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	a := &App{StateDir: state}
+	if n := a.WallWatchVerdictNotice(""); n != "" {
+		t.Fatalf("with no verdict on disk the notice must be empty, got %q", n)
+	}
+	record := filepath.Join(wallWatchRecordDir(filepath.Join(state, "gates", "developer", "bwrap.mounts")), "100.json")
+	wwSay(t, wallWatchVerdictPath(record), wallWatchDetach{Seat: "developer", Dir: "/w/d"}, "KILLED seat developer: the wall over /x came off")
+
+	// With no persona — a name that resolved to nothing — the count and
+	// the path and no more, so a mistyped session name is not buried.
+	n := a.WallWatchVerdictNotice("")
+	if !strings.Contains(n, "1 verdict(s)") || !strings.Contains(n, "100.verdict") {
+		t.Errorf("notice = %q, want the count and the newest path", n)
+	}
+	if strings.Contains(n, "the wall over /x came off") {
+		t.Errorf("the unnarrowed notice printed a verdict's text:\n%s", n)
+	}
+	// With the persona, the newest verdict in full.
+	n = a.WallWatchVerdictNotice("developer")
+	if !strings.Contains(n, "KILLED seat developer: the wall over /x came off") {
+		t.Errorf("notice for the persona = %q, want the verdict in full", n)
+	}
+	if a.WallWatchVerdictNotice("someone-else") != "" {
+		t.Error("another persona's peek was handed this persona's verdict")
 	}
 }

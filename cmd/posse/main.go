@@ -79,6 +79,24 @@ func validCount(s string) bool {
 	return err == nil && n >= 0
 }
 
+// peekLost adds WHERE a killed seat's reason went to a peek that could not
+// read the pane it was asked for (ranger-base-pfcci).
+//
+// A wall-watch kill ends the seat, and since ranger-base-1l1en the pane is
+// the watcher's own process — so the block closes and its scrollback goes
+// with it. `posse peek` is then the command an operator reaches for and
+// "no such session" / "block target not found" is all it said, over a
+// verdict sitting on disk. It does not change the error or the exit code,
+// only what is printed under it; with no verdict on disk it changes
+// nothing at all.
+func peekLost(a *posse.App, err error, seat string) error {
+	n := a.WallWatchVerdictNotice(seat)
+	if n == "" {
+		return err
+	}
+	return fmt.Errorf("%v\n%s", err, n)
+}
+
 // argLead is need's reading of the first argument, without the exits.
 func argLead(args []string) (rest []string, help bool) {
 	if len(args) == 0 {
@@ -715,7 +733,9 @@ func main() {
 		}
 		s, err := hb.Resolve(args[0])
 		if err != nil {
-			die(err)
+			// No persona to narrow by, so the notice is the count and the
+			// path alone (ranger-base-pfcci).
+			die(peekLost(a, err, ""))
 		}
 		if s.PaneID == "" {
 			die(posse.Die("session %s has no recorded pane (created outside posse)", args[0]))
@@ -725,7 +745,7 @@ func main() {
 		// (ranger-base-nfc2b, RexMux.hold).
 		text, err := hb.Mux().Read(s.Seat(), lines, false)
 		if err != nil {
-			die(err)
+			die(peekLost(a, err, s.Agent))
 		}
 		fmt.Fprintln(out, text)
 
@@ -2303,6 +2323,29 @@ func main() {
 			}
 		} else {
 			fmt.Fprintln(out, "  refusals.log: empty")
+		}
+		// ranger-base-pfcci: what this persona's wall-watch sidecars said
+		// when they killed a seat. They say it on the PANE, and since
+		// ranger-base-1l1en the pane closes when the watcher returns — so
+		// for a seat that was killed this is where the reason is, and in
+		// the double-failure case (the wall came off AND bd could not be
+		// written) it is the only place.
+		//
+		// NOT part of the exit verdict below, and not capped the way
+		// refusals.log is: a refusal is routine and a detach is a P1
+		// security event, so every one of them is printed whole — but one
+		// that HAPPENED is history, and this command's exit says whether
+		// the persona is cleared to dispatch now.
+		if vs := a.WallWatchVerdicts(ag.Name); len(vs) > 0 {
+			fmt.Fprintf(out, "  wall-watch: %d verdict(s) — a seat of this persona was KILLED for a wall that came off (ranger-base-0qpsw D2), and the pane that printed this is gone:\n", len(vs))
+			for _, v := range vs {
+				fmt.Fprintf(out, "    %s\n", posse.AbbrevHome(v.Path))
+				for _, ln := range strings.Split(v.Text, "\n") {
+					fmt.Fprintf(out, "      %s\n", ln)
+				}
+			}
+		} else {
+			fmt.Fprintln(out, "  wall-watch: no verdict on disk — no wall a seat of this persona was held to has come off here")
 		}
 		// INSTALL.md §7 sells this command as the thing you read before your
 		// first dispatch, so its exit status is a verdict and not a

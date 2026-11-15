@@ -691,17 +691,25 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 				d.Backstop = fmt.Sprintf("its watcher (pid %d) was alive and had not acted", r.WatcherPid)
 			}
 			d.Killed, d.KillErr = p.Kill(r)
-			out = append(out, fmt.Sprintf("⛨ wall-watch backstop: KILLED seat %s — the wall over %s came off; %s (ranger-base-0qpsw D3)", r.Seat, wallWatchPaths(gone), d.Backstop))
+			// Every line below goes to the seat's verdict file as well as
+			// to this tick's output, and to the file first
+			// (ranger-base-pfcci). The tick's output is the dispatch
+			// session's scrollback, which the seat this is about has no
+			// part of: a reader who comes to the seat finds it here.
+			v := &wallWatchSaid{Path: wallWatchVerdictPath(path), Pane: func(s string) { out = append(out, s) }}
+			v.note(wallWatchVerdictHeader(d))
+			v.say("⛨ wall-watch backstop: KILLED seat %s — the wall over %s came off; %s (ranger-base-0qpsw D3)", r.Seat, wallWatchPaths(gone), d.Backstop)
 			filed, commented, ferr := fileWallWatchDetach(st, d, now(), lock)
 			if filed != "" {
-				out = append(out, "  filed "+filed)
+				v.say("  filed %s", filed)
 			}
 			for _, id := range commented {
-				out = append(out, "  recorded on "+id+" (the same path, inside ten minutes)")
+				v.say("  recorded on %s (the same path, inside ten minutes)", id)
 			}
 			if ferr != nil {
-				out = append(out, fmt.Sprintf("  ⚠ the record is incomplete: %v — this line is the record", ferr))
+				v.say("  ⚠ the record is incomplete: %v — this line is the record", ferr)
 			}
+			v.close()
 			if !alive {
 				_ = os.Remove(path)
 			}
@@ -720,7 +728,16 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 			Actor:       VerifyActor,
 		})
 		if cerr != nil || id == "" {
-			out = append(out, fmt.Sprintf("⛨ wall-watch backstop: seat %s runs with its watcher (pid %d) gone, and the bead could not be filed (%v) — this line is the record; the tick keeps diffing the seat", r.Seat, r.WatcherPid, cerr))
+			line := fmt.Sprintf("⛨ wall-watch backstop: seat %s runs with its watcher (pid %d) gone, and the bead could not be filed (%v) — this line is the record; the tick keeps diffing the seat", r.Seat, r.WatcherPid, cerr)
+			// The same double failure the verdict file exists for, so it
+			// gets a durable copy too — ONCE per seat, because this arm
+			// repeats every tick for as long as the store is down
+			// (ranger-base-pfcci).
+			vp := wallWatchOrphanVerdictPath(path)
+			if werr := writeWallWatchVerdictOnce(vp, wallWatchOrphanVerdictHeader(r, now())+"\n"+line+"\n"); werr != nil {
+				line += fmt.Sprintf(" (⚠ and it could not be written to %s either: %v — this line really is all there is)", AbbrevHome(vp), werr)
+			}
+			out = append(out, line)
 			continue
 		}
 		r.OrphanFiled = id
@@ -731,4 +748,220 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 		out = append(out, line)
 	}
 	return out
+}
+
+// ── The verdict file (ranger-base-pfcci) ──────────────────────────────────
+//
+// The watcher SAYS its verdict — three lines on the respond path above —
+// and says it to the pane. Since ranger-base-1l1en exec'd every launch
+// line the watcher IS the pane's process, so when it returns the block
+// closes and the scrollback goes with it, that instant: MEASURED
+// 2026-11-15 on this box (rex 0.0.1794069975-g6c6689, scratch server), a
+// `rex capture` of a returned watcher's block answers `block target "<id>"
+// not found`.
+//
+// On the happy path nothing is lost — the filed bead is the record and it
+// is durable. What this file exists for is the double failure the third
+// line was WRITTEN for: the wall came off AND bd could not be written, so
+// the only remaining copy of the reason was the pane. Before
+// ranger-base-1l1en an operator could read it there; now there is nothing
+// to read.
+//
+// WHERE: beside the seat's backstop record, under a name the backstop's
+// `*.json` glob does not match — so neither the watcher's own clean return
+// nor a backstop tick removes it. NOTHING removes it. A detach is a P1
+// security event and the operator who reads it is the one who takes it.
+// `posse gates <persona>` prints a persona's; `posse peek` names them when
+// the pane it was asked for is not there.
+//
+// A render that is not a live launch writes its mounts file somewhere
+// other than the gates dir (renderBwrapWall's `dest`), so a verdict from
+// such a watcher lands beside THAT file and the readers below never glob
+// it. That is the right answer: they report what this instance's seats
+// did, and a probe's temp dir is not a seat.
+
+// wallWatchVerdictPath is the verdict beside one seat's record.
+func wallWatchVerdictPath(record string) string {
+	return strings.TrimSuffix(record, ".json") + ".verdict"
+}
+
+// wallWatchOrphanVerdictPath is the dead-watcher arm's own file, separate
+// because that arm repeats (see writeWallWatchVerdictOnce).
+func wallWatchOrphanVerdictPath(record string) string {
+	return strings.TrimSuffix(record, ".json") + ".orphan.verdict"
+}
+
+// wallWatchVerdictGlob is every verdict under one state dir: the gates dir
+// of every persona, which is wallWatchRecordGlob's own reach.
+func wallWatchVerdictGlob(stateDir string) string {
+	return filepath.Join(stateDir, "gates", "*", "wall-watch", "*.verdict")
+}
+
+// wallWatchVerdictHeader opens one detection's block with what the lines
+// under it do not carry: the session dir and the pids. File-only — the
+// reader at the pane has all of it in front of them already, and the point
+// of this change is that the file must stand alone when they do not.
+func wallWatchVerdictHeader(d wallWatchDetach) string {
+	return fmt.Sprintf("── posse wall-watch verdict · %s · seat %s · dir %s · bwrap pid %d · seat pid %d",
+		d.At.UTC().Format(time.RFC3339Nano), d.Seat, d.Dir, d.BwrapPid, d.SeatPid)
+}
+
+func wallWatchOrphanVerdictHeader(r wallWatchRecord, at time.Time) string {
+	return fmt.Sprintf("── posse wall-watch verdict · %s · seat %s · dir %s · watcher pid %d (gone) · seat pid %d",
+		at.UTC().Format(time.RFC3339Nano), r.Seat, r.Dir, r.WatcherPid, r.SeatPid)
+}
+
+// appendWallWatchVerdict adds one line. The caller says on the pane that it
+// failed (wallWatchSaid.close), which is the honest degraded answer and all
+// that is left.
+func appendWallWatchVerdict(path, line string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// writeWallWatchVerdictOnce writes a verdict that must not repeat. The
+// backstop's dead-watcher arm runs on EVERY tick for as long as the store
+// is down, and this is a record and not a log: a file already there is an
+// earlier tick's copy of the same fact and is left alone.
+func writeWallWatchVerdictOnce(path, text string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, os.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(text); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// wallWatchSaid is one detection's lines, written to the durable file and
+// said on the pane — THE FILE FIRST, because the pane may not outlive the
+// next line.
+type wallWatchSaid struct {
+	Path string
+	Pane func(string)
+	// Err is the first write that failed. Said once, by close.
+	Err error
+}
+
+// note writes one line to the durable file alone.
+func (v *wallWatchSaid) note(line string) {
+	if v.Err == nil && v.Path != "" {
+		v.Err = appendWallWatchVerdict(v.Path, line)
+	}
+}
+
+// say writes one line to the durable file and then to the pane.
+func (v *wallWatchSaid) say(format string, a ...any) {
+	line := fmt.Sprintf(format, a...)
+	v.note(line)
+	v.Pane(line)
+}
+
+// close says on the pane that the durable copy was not written — the one
+// case where the pane is the record again, and the reader has to be told
+// that it is.
+func (v *wallWatchSaid) close() {
+	if v.Err != nil {
+		v.Pane(fmt.Sprintf("⚠ this verdict could not be written to %s (%v) — the line above is the only copy, and it goes with this pane (ranger-base-pfcci)", AbbrevHome(v.Path), v.Err))
+	}
+}
+
+// WallWatchVerdict is one verdict file as a reader finds it.
+type WallWatchVerdict struct {
+	Path string
+	Seat string // the persona whose gates dir it sits under
+	At   time.Time
+	Text string
+}
+
+// WallWatchVerdicts is every verdict this state dir holds, oldest first.
+// seat != "" narrows it to one persona.
+func (a *App) WallWatchVerdicts(seat string) []WallWatchVerdict {
+	return readWallWatchVerdicts(a.StateDir, seat)
+}
+
+func readWallWatchVerdicts(stateDir, seat string) []WallWatchVerdict {
+	paths, err := filepath.Glob(wallWatchVerdictGlob(stateDir))
+	if err != nil {
+		return nil
+	}
+	var out []WallWatchVerdict
+	for _, p := range paths {
+		// <state>/gates/<persona>/wall-watch/<pid>.verdict
+		s := filepath.Base(filepath.Dir(filepath.Dir(p)))
+		if seat != "" && s != seat {
+			continue
+		}
+		v := WallWatchVerdict{Path: p, Seat: s}
+		if fi, serr := os.Stat(p); serr == nil {
+			v.At = fi.ModTime()
+		}
+		b, rerr := os.ReadFile(p)
+		// SAID AND NOT SKIPPED: a verdict that is on disk and cannot be
+		// read is the one thing a reader of this surface must not be told
+		// is absent.
+		if rerr != nil {
+			v.Text = "⚠ this verdict is on disk and could not be read: " + rerr.Error()
+		} else {
+			v.Text = strings.TrimRight(string(b), "\n")
+		}
+		out = append(out, v)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].At.Equal(out[j].At) {
+			return out[i].Path < out[j].Path
+		}
+		return out[i].At.Before(out[j].At)
+	})
+	return out
+}
+
+// WallWatchVerdictNotice is what `posse peek` adds when the pane it was
+// asked to read is not there. A seat whose wall came off was KILLED, and
+// its pane closed with the watcher — so "no such session" and "block
+// target not found" are both what an operator sees when the reason is on
+// disk and nowhere else. "" when there is no verdict.
+//
+// With a persona it prints the newest verdict in full; with none it prints
+// the count and the path and nothing more, because peek is also what an
+// operator types at a session name they mistyped, and a stranger persona's
+// month-old detach must not bury that error.
+func (a *App) WallWatchVerdictNotice(seat string) string {
+	vs := a.WallWatchVerdicts(seat)
+	if len(vs) == 0 {
+		return ""
+	}
+	last := vs[len(vs)-1]
+	if seat == "" {
+		return fmt.Sprintf("posse wall-watch has %d verdict(s) on disk. A seat whose wall came off is KILLED and its pane closes with it, so the reason is in those files and in no scrollback (ranger-base-pfcci) — newest %s; `posse gates <persona>` prints a persona's in full.",
+			len(vs), AbbrevHome(last.Path))
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "posse wall-watch has %d verdict(s) on disk for %s. A seat whose wall came off is KILLED and its pane closes with it, so this is the reason and there is no scrollback left to read (ranger-base-pfcci). The most recent, %s:",
+		len(vs), seat, AbbrevHome(last.Path))
+	for _, ln := range strings.Split(last.Text, "\n") {
+		b.WriteString("\n  " + ln)
+	}
+	if len(vs) > 1 {
+		fmt.Fprintf(&b, "\n`posse gates %s` prints all %d.", seat, len(vs))
+	}
+	return b.String()
 }
