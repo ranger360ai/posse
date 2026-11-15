@@ -799,11 +799,30 @@ func attachForReplay(t *SessionTree) string {
 // session is still alive in that tree — a session this pass is about to kill,
 // whose commits the splice keeps either way. Not free, and small enough to
 // state rather than restructure the launch around.
-func PrepareSessionHead(t *SessionTree, caged bool, warn io.Writer) error {
+//
+// EVERY TIER POSSE WALLS, NOT ONLY THE CAGE (ranger-base-pe5g5, design
+// ranger-base-dvw0w D2). `walled` is the launch going
+// behind an OS wall posse renders — L2 seatbelt, L3 bwrap, L4 container —
+// and every one of those now commits on a detached HEAD, so none of their
+// git grants names a branch ref: the producers already answer nothing over a
+// detached tree (sessionGitGrants, sessionRefDirs, bwrapGitSwap), and the
+// launcher calls this BEFORE the parity probe and the wall render read the
+// tree (herdrback.go), so what they read is the detached shape. A launch with
+// no OS wall keeps the re-attach arm above, as before.
+//
+// `caged` is the narrower L4 fact and buys only the cage's own furniture
+// (prepareCageFurniture): `logs/` and an empty `config.worktree`, which
+// exist because a container bind's source must exist. L2 and L3 handle an
+// absent `config.worktree` in their own render, so making one there would
+// change a wall this slice does not mean to touch. caged implies walled.
+func PrepareSessionHead(t *SessionTree, walled, caged bool, warn io.Writer) error {
 	if t == nil || t.Path == "" || t.Branch == "" {
 		return nil
 	}
-	if !caged {
+	if caged {
+		walled = true
+	}
+	if !walled {
 		if !launchedDetached(t.Repo, t.Branch) {
 			return nil
 		}
@@ -822,6 +841,17 @@ func PrepareSessionHead(t *SessionTree, caged bool, warn io.Writer) error {
 		}
 		return nil
 	}
+	if caged {
+		if err := prepareCageFurniture(t); err != nil {
+			return err
+		}
+	}
+	return detachForWall(t, warn)
+}
+
+// prepareCageFurniture makes the two sources the container tier's binds need
+// and posse never otherwise writes. L4 only (PrepareSessionHead's `caged`).
+func prepareCageFurniture(t *SessionTree) error {
 	// `logs/` is one of the three overlays and a read-write bind of a source
 	// that does not exist is DROPPED by cageOverlay's Stat guard, which would
 	// leave `<common>/logs` `:ro` inside the cage. NOT because the session's
@@ -867,16 +897,23 @@ func PrepareSessionHead(t *SessionTree, caged bool, warn io.Writer) error {
 			return Die("session worktree: %s was made but not closed (%v)", AbbrevHome(cw), err)
 		}
 	}
+	return nil
+}
+
+// detachForWall is PrepareSessionHead's walled arm: the tree goes (or stays)
+// on a detached HEAD and the record says posse put it there. Every walled
+// tier, L2 through L4.
+func detachForWall(t *SessionTree, warn io.Writer) error {
 	if _, ok := treeDetachedHead(t.Path); ok {
 		// A relaunch into a tree this launcher already detached. Move the
-		// branch up to the work FIRST — a kill between two caged sessions
+		// branch up to the work FIRST — a kill between two walled sessions
 		// would otherwise leave the commits of the first on no ref — and
 		// leave HEAD where it is.
 		if err := spliceDetachedWork(t); err != nil {
 			fmt.Fprintf(warnw(warn), "posse: %s\n", err)
 		}
 	} else if _, err := git(t.Path, "checkout", "--detach"); err != nil {
-		return Die("session worktree: %s could not be detached (%v) — a caged session commits on a detached HEAD and nothing else in this tier's git grant can write a ref", AbbrevHome(t.Path), err)
+		return Die("session worktree: %s could not be detached (%v) — a walled session commits on a detached HEAD and nothing in this tier's git grant can write a ref", AbbrevHome(t.Path), err)
 	}
 	if err := recordDetached(t.Repo, t.Branch, true); err != nil {
 		return Die("session worktree: %s was detached but the record did not stick (%v) — the close would read the tree's HEAD as an accidental detach and refuse to land it", AbbrevHome(t.Path), err)

@@ -223,7 +223,11 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	// sbRun, because its rows have to create the socket while the sandboxed
 	// child is already running — and it is in this corpus for exactly the
 	// reason the others are.
-	if len(scanned) != 14 {
-		t.Errorf("expected the fourteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	//
+	// Fifteen since ranger-base-pe5g5: walleddetach_qa_test.go borrows wgRun
+	// to commit, under the shipped profile, on a tree the walled prepare
+	// detached, and expects the kernel to refuse every refs/heads write.
+	if len(scanned) != 15 {
+		t.Errorf("expected the fifteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }

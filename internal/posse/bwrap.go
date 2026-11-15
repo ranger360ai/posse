@@ -1841,8 +1841,9 @@ func bwrapRefGrantDifference(ag *AgentFile, mech, cage string, available bool, d
 		return "" // a main checkout: cwd's own grant covers .git whole
 	}
 	// A detached HEAD is not a difference: seatbelt grants no ref there
-	// either (sessionGitGrants), and a caged worktree session is detached by
-	// the launcher on purpose (PrepareSessionHead). Nothing to say.
+	// either (sessionGitGrants), and every walled worktree session — this
+	// tier included since ranger-base-pe5g5 — is detached by the launcher on
+	// purpose, before this row is asked (PrepareSessionHead). Nothing to say.
 	branch := repoBranch(dir)
 	if branch == "" {
 		return ""

@@ -2760,11 +2760,20 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 		// (baseOf falls back to the repo's branch, and there isn't one).
 		// orDetached says so; interpolating "" put an empty branch name in
 		// the middle of two sentences instead (ranger-base-nfgh).
+		//
+		// The prompt is written before the tier is resolved, so it says both
+		// shapes: at every tier posse walls the HEAD is detached on purpose
+		// and the BRANCH moves only when the launcher moves it
+		// (ranger-base-pe5g5). Telling a walled seat its commits are "on"
+		// the branch while it runs invites a `git checkout <branch>`, and the
+		// next commit after that is one its wall refuses (no ref grant).
 		base := orDetached(t.Base)
 		lines = append(lines,
 			"your own worktree: "+AbbrevHome(t.Path)+"  ·  branch "+t.Branch+"\n"+
 				"  Nobody else has this tree, this index or this HEAD — commit normally, and\n"+
-				"  commit everything you want kept: posse fast-forwards "+t.Branch+" onto\n"+
+				"  commit everything you want kept. Behind a wall the HEAD is DETACHED on\n"+
+				"  purpose — commit on it and never check the branch out. posse moves the\n"+
+				"  branch to your commits, then fast-forwards "+t.Branch+" onto\n"+
 				"  "+base+" in "+AbbrevHome(t.Repo)+" when the bead closes, and only commits move.\n"+
 				"  Still never push, and never merge to "+base+" yourself — that is the launcher's.")
 	}

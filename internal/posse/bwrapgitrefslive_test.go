@@ -51,6 +51,7 @@ package posse
 // whole-tree-deny PID through this render at all.
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,6 +107,20 @@ func bgLiveFixture(t *testing.T) bgLive {
 // input ADR 0086 D3 reads. `nil` is every arm written before it.
 func bgLiveFixtureFor(t *testing.T, deny []string) bgLive {
 	t.Helper()
+	return bgLiveFixtureShaped(t, deny, false)
+}
+
+// bgLiveFixtureDetached is the shape every WALLED session worktree has since
+// ranger-base-pe5g5: the launcher detaches the tree (PrepareSessionHead's
+// walled arm, the same call the launch makes) BEFORE the wall is rendered,
+// so the render below is over a detached HEAD and grants no ref.
+func bgLiveFixtureDetached(t *testing.T) bgLive {
+	t.Helper()
+	return bgLiveFixtureShaped(t, nil, true)
+}
+
+func bgLiveFixtureShaped(t *testing.T, deny []string, detach bool) bgLive {
+	t.Helper()
 	// gitTempDir and not t.TempDir(): a `git init` under a bare root leaves
 	// TempDir's own RemoveAll racing a concurrent write in the repo it made
 	// (gittempdirroot_qa_test.go pins every init in this package to this).
@@ -125,6 +140,15 @@ func bgLiveFixtureFor(t *testing.T, deny []string) bgLive {
 	// ones made since: `posse/s1` and `posse/s2` stay loose because
 	// `worktree add` and `branch` wrote them after this.
 	mustGit(t, repo, "pack-refs", "--all")
+	if detach {
+		st := &SessionTree{Repo: repo, Path: tree, Branch: "posse/s1", Base: "main"}
+		if err := PrepareSessionHead(st, true, false, io.Discard); err != nil {
+			t.Fatalf("the walled prepare refused the fixture's tree: %v", err)
+		}
+		if _, ok := treeDetachedHead(tree); !ok {
+			t.Fatal("CONTROL: the walled prepare left the fixture's tree on its branch, so this render is not the detached shape")
+		}
+	}
 
 	dirs := LinkedGitDirs(tree)
 	if len(dirs) != 2 {
@@ -139,8 +163,8 @@ func bgLiveFixtureFor(t *testing.T, deny []string) bgLive {
 	// what keeps this fixture from quietly measuring the wrong wall (ADR
 	// 0086 D3; D20 for the grant it is the keep file of).
 	wantKeep := 1
-	if deniesFileWrite(f.ag.Deny) {
-		wantKeep = 0
+	if deniesFileWrite(f.ag.Deny) || detach {
+		wantKeep = 0 // no ref granted, so no ref directory to keep (ranger-base-pe5g5)
 	}
 	if len(keep) != wantKeep {
 		t.Fatalf("the render named %d keep files for posse/s1 under deny %v, want %d: %v", len(keep), deny, wantKeep, keep)
@@ -369,6 +393,72 @@ func TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession(t *testing.T) {
 	// claim, comment and close.
 	if ok, out := f.walled(t, "sh", "-c", ": > "+filepath.Join(f.tree, ".beads", "witness")); !ok {
 		t.Errorf("the bead store is not writable, so a findings-only seat cannot claim or close its own bead:\n%s", out)
+	}
+}
+
+// ─── ranger-base-pe5g5: a walled seat commits on a detached HEAD ─────────────
+
+// The L3 row of ranger-base-pe5g5 (design ranger-base-dvw0w D2):
+// rendered over the tree the launcher has DETACHED, the wall lets the seat
+// commit and refuses it every write under refs/heads — its own branch, a
+// peer's, main, and a new one. Every refusal is read back from the OPERATOR's
+// checkout as well, for this file's reason: a ref write that lands somewhere
+// nothing reads exits 0. Then the close half: the launcher's splice, run
+// outside the wall, puts the work on the branch exactly as at L4.
+func TestLiveBwrapWalledSeatCommitsDetachedAndCannotWriteARef(t *testing.T) {
+	t.Parallel()
+	bgLiveSkip(t)
+	f := bgLiveFixtureDetached(t)
+	refs := map[string]string{}
+	for _, b := range []string{"posse/s1", "posse/s2", "main"} {
+		refs[b] = f.branchSha(t, b)
+		if refs[b] == "" {
+			t.Fatalf("CONTROL: the fixture has no %s to watch", b)
+		}
+	}
+
+	ok, out := f.walled(t, f.gitIn("commit", "-q", "--allow-empty", "-m", "pe5g5")...)
+	if !ok {
+		t.Fatalf("a walled seat cannot commit on its detached HEAD under the rendered wall:\n%s", out)
+	}
+	head := mustGit(t, f.tree, "rev-parse", "HEAD")
+	if head == refs["posse/s1"] {
+		t.Fatal("the commit exited 0 and the tree's HEAD did not move")
+	}
+
+	for _, c := range []struct {
+		name string
+		arg  []string
+	}{
+		{"move its own branch", f.gitIn("update-ref", "refs/heads/posse/s1", "HEAD")},
+		{"move a peer session's branch", f.gitIn("update-ref", "refs/heads/posse/s2", "HEAD")},
+		{"move main", f.gitIn("update-ref", "refs/heads/main", "HEAD")},
+		{"cut a new session branch", f.gitIn("update-ref", "refs/heads/posse/s3", "HEAD")},
+		{"cut a top-level branch", f.gitIn("branch", "pwned")},
+		{"write its own ref file by hand", []string{"sh", "-c", "echo " + head + " > " + filepath.Join(f.common, "refs", "heads", "posse", "s1")}},
+	} {
+		if ok, out := f.walled(t, c.arg...); ok {
+			t.Errorf("a walled seat could %s:\n%s", c.name, out)
+		}
+	}
+	for b, was := range refs {
+		if got := f.branchSha(t, b); got != was {
+			t.Errorf("%s moved from %s to %s under a wall that grants no ref", b, was, got)
+		}
+	}
+	for _, b := range []string{"posse/s3", "pwned"} {
+		if got := f.branchSha(t, b); got != "" {
+			t.Errorf("%s exists after the walled seat ran (at %s)", b, got)
+		}
+	}
+
+	// The close: the launcher's splice, outside the wall.
+	st := &SessionTree{Repo: f.repo, Path: f.tree, Branch: "posse/s1", Base: "main"}
+	if err := spliceDetachedWork(st); err != nil {
+		t.Fatalf("the launcher could not put the walled seat's work on its branch: %v", err)
+	}
+	if got := f.branchSha(t, "posse/s1"); got != head {
+		t.Errorf("after the splice posse/s1 is at %s, want the seat's HEAD %s", got, head)
 	}
 }
 

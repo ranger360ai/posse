@@ -2467,6 +2467,8 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	var ag *AgentFile
 	var rt *Runtime
 	caged := false // the session really runs inside the L4 cage (ADR 0002 §3)
+	// PrepareSessionHead ran where the tier was resolved (ranger-base-pe5g5).
+	headPrepared := false
 	// ADR 0052 D2: the session hooks dir a managed repo's L3 was rendered
 	// into, "" when this launch has none. Declared here because the render
 	// happens with the other L3 work and the env that aims git at it is
@@ -2773,6 +2775,27 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// any other: refused, or launched on the host and marked. What it
 		// never is, is a launch that pretends to be caged.
 		caged = cage == CageContainer && a.ContainerAvailable()
+		// Which HEAD this session's tree works on, decided from the tier and
+		// nowhere else (ranger-base-t4f1), and at EVERY tier posse walls
+		// (ranger-base-pe5g5): a walled session commits on a DETACHED head,
+		// which is what lets its git grant name no branch ref — the L4 mount
+		// writes none, and the L2/L3 producers (sessionGitGrants,
+		// sessionRefDirs, bwrapGitSwap) answer none over a detached tree —
+		// and the launcher splices the work back onto the branch at close.
+		//
+		// HERE, the first line where the tier is final, and not beside the
+		// cage wrap far below: the parity probe (applyBwrapRefGrant) and the
+		// wall render (WallPrefix) both read the tree's HEAD to decide the
+		// ref grant, so the detach has to be done before either looks or
+		// the first launch into a tree renders the grant this slice drops.
+		// `wallRendered` is the render's own predicate, so the HEAD and the
+		// wall cannot disagree about whether this launch is walled.
+		if tree != nil {
+			if err := PrepareSessionHead(tree, caged || wallRendered(cage, rt), caged, warnw); err != nil {
+				return nil, err
+			}
+			headPrepared = true
+		}
 		// L3 is reconciled before the directory-aware parity check so parity
 		// can execute the slots and report what they do. Install errors stay
 		// best-effort — a legitimate foreign chain is expected to make install
@@ -3428,16 +3451,11 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		}
 	}
 
-	// Which HEAD this session's tree works on, decided from the tier and
-	// nowhere else (ranger-base-t4f1). A caged worktree session commits on a
-	// DETACHED head — that is what lets the container tier's common-dir mount
-	// grant no ref write at all — and the launcher splices the work back onto
-	// the branch at close. An uncaged launch into a tree posse detached puts
-	// it back on its branch here. Asked after `caged` is resolved, because
-	// the PID's demand and what this host can actually provide are different
-	// answers and only the second decides what the session gets.
-	if tree != nil {
-		if err := PrepareSessionHead(tree, caged, warnw); err != nil {
+	// A launch with no PID resolves no tier and renders no wall, so its head
+	// is decided here instead of where the tier is (above): the unwalled arm,
+	// which puts a tree posse detached back on its branch.
+	if tree != nil && !headPrepared {
+		if err := PrepareSessionHead(tree, false, false, warnw); err != nil {
 			return nil, err
 		}
 	}

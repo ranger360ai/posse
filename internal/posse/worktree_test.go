@@ -538,7 +538,7 @@ func TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath(t *testing.T) {
 	// outside the container tier. PrepareSessionHead is still called, since
 	// that is what a launch does, and the uncaged arm is a no-op over a tree
 	// that was never detached.
-	if err := PrepareSessionHead(tr, false, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, false, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); strings.TrimSpace(out) != "" {
@@ -551,7 +551,7 @@ func TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath(t *testing.T) {
 	// PATH 2 — the container tier's detached HEAD, where the launcher makes
 	// `<common>/logs` and `<gitdir>/config.worktree` and moves HEAD off the
 	// branch (PrepareSessionHead, ranger-base-t4f1).
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := treeDetachedHead(tr.Path); !ok {
@@ -600,7 +600,7 @@ func TestPreparedSessionTreeIsPorcelainCleanOnEveryPreparePath(t *testing.T) {
 		if _, err := a.EnsureSessionTree(repo, "s-1", nil); err != nil {
 			t.Fatal(err)
 		}
-		if err := PrepareSessionHead(tr, caged, io.Discard); err != nil {
+		if err := PrepareSessionHead(tr, caged, caged, io.Discard); err != nil {
 			t.Fatalf("relaunch (caged=%v): %v", caged, err)
 		}
 		if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); strings.TrimSpace(out) != "" {
@@ -2724,7 +2724,7 @@ func TestCagedWorktreeSessionCommitsDetachedAndTheCloseSplicesItBack(t *testing.
 		t.Fatal(err)
 	}
 
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if b, err := git(tr.Path, "symbolic-ref", "--quiet", "HEAD"); err == nil && b != "" {
@@ -2799,7 +2799,7 @@ func TestACagedLaunchMakesTheWorktreeConfigItsBindNeeds(t *testing.T) {
 		t.Fatalf("`git worktree add` already wrote %s, so the create this pins measures nothing", cw)
 	}
 
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	st, err := os.Stat(cw)
@@ -2831,7 +2831,7 @@ func TestACagedLaunchMakesTheWorktreeConfigItsBindNeeds(t *testing.T) {
 	if err := os.WriteFile(cw, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(cw); err != nil || string(got) != body {
@@ -2893,13 +2893,13 @@ func TestAnUncagedLaunchPutsADetachedTreeBackOnItsBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
 	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
 
-	if err := PrepareSessionHead(tr, false, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, false, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := git(tr.Path, "symbolic-ref", "--short", "--quiet", "HEAD"); b != tr.Branch {
@@ -2935,13 +2935,13 @@ func TestARelaunchIntoADetachedTreeSplicesBeforeItRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
 	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
 
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != head {
@@ -2976,7 +2976,7 @@ func TestEnsureSessionTreeAcceptsTheDetachPosseItselfRecorded(t *testing.T) {
 	if err != nil || tr == nil {
 		t.Fatalf("EnsureSessionTree = (%v, %v)", tr, err)
 	}
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
@@ -3004,7 +3004,7 @@ func TestEnsureSessionTreeAcceptsTheDetachPosseItselfRecorded(t *testing.T) {
 	// And the launch this is the first step of completes: the second prepare
 	// splices the first session's commit onto the branch, as the test above
 	// pins it doing.
-	if err := PrepareSessionHead(again, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(again, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != head {
@@ -3019,7 +3019,7 @@ func TestEnsureSessionTreeAcceptsTheDetachPosseItselfRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an uncaged relaunch died at its first step: %v", err)
 	}
-	if err := PrepareSessionHead(third, false, io.Discard); err != nil {
+	if err := PrepareSessionHead(third, false, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := git(tr.Path, "symbolic-ref", "--short", "--quiet", "HEAD"); b != tr.Branch {
@@ -3071,7 +3071,7 @@ func TestEnsureSessionTreeRefusesAStaleRecordOverATreeOnAnotherBranch(t *testing
 		t.Fatalf("EnsureSessionTree = (%v, %v)", tr, err)
 	}
 	// The record posse writes for its own detach...
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if !launchedDetached(tr.Repo, tr.Branch) {
@@ -3110,7 +3110,7 @@ func TestTheSpliceRefusesToRewindABranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "s-1: the fix")
@@ -3147,7 +3147,7 @@ func TestTheSweepSeesADetachedSessionTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+	if err := PrepareSessionHead(tr, true, true, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
