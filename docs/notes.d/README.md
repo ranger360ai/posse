@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-ze7xz](ranger-base-ze7xz.md) — Three pin gaps from the ranger-base-bfbx8 verify, and one seam that had to move for the third — 2026-11-15
+- [ranger-base-ybrk6](ranger-base-ybrk6.md) — A runtime that dies before it reports reads as "that seat ENDED" (ranger-base-ybrk6) — 2026-11-15
 - [ranger-base-xcucy](ranger-base-xcucy.md) — A seat's own object store is imported by re-hashing, and a landing refuses a tip with missing objects (ranger-base-xcucy) — 2026-11-15
 - [ranger-base-ql7xy](ranger-base-ql7xy.md) — A test fixture that spelled a live open vuln-private id (ranger-base-ql7xy) — 2026-11-15
 - [ranger-base-pfcci](ranger-base-pfcci.md) — wall-watch's verdict is a file now, not only a pane line (ranger-base-pfcci) — 2026-11-15

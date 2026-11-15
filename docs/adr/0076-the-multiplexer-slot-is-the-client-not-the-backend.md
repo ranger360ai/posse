@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below · amended 2026-11-11 (ranger-base-xdaw9): the same refusal on herdr's typed route, measured — `pane report-agent` overrides the label without blinding the detection, so that route types into a live claude, and the tell is the screen and not herdr's composer region, see "Amendment 8" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below · amended 2026-11-11 (ranger-base-xdaw9): the same refusal on herdr's typed route, measured — `pane report-agent` overrides the label without blinding the detection, so that route types into a live claude, and the tell is the screen and not herdr's composer region, see "Amendment 8" below · amended 2026-11-15 (ranger-base-ybrk6, ADR 0080's exec amendment): a launch confirmation's FAILED read can be positive evidence — rex's own `not found` for this seat's target says the runtime ENDED, which the dispatched arm refuses instead of keeping, see "Amendment 10" below*
 
 ## Context
 
@@ -2207,3 +2207,149 @@ half costs nothing on top of what Amendment 7 already pays.
   `paneShellForeground`/`AtShellPrompt` (ADR 0061 D3.2), not a
   `program_status` record, so D2's split has to be made again in that
   vocabulary rather than carried over.
+
+## Amendment 10: a launch confirmation's FAILED read can be positive evidence — the runtime ended (ranger-base-ybrk6, 2026-11-15)
+
+§3's launch confirmation has three outcomes and D2 is a ladder over
+only one of them. `RexMux.AwaitFirstReport` answers *reported*, or *the
+bound ran out with nothing to read* — which is D2's ladder, keyed on
+`prompt:` — or *the read FAILED*, which `confirmReports` read as
+ignorance in every case and kept the launch on, ADR 0013 §1's
+unknown-is-not-no.
+
+That third outcome stopped being all ignorance on 2026-11-15. ADR
+0080's amendment of that date (ranger-base-1l1en) exec's every launch
+line posse types, so a seat's runtime IS its block's program and takes
+the block with it when it ends. A read of a seat whose runtime died at
+its first instant therefore FAILS now, where before the exec it
+answered an absence: the pane's shell used to come back to its prompt,
+the block stayed open, and `program_status` answered `{"records":[]}`.
+
+### What broke
+
+The DIAGNOSIS, not the gate. MEASURED 2026-11-15 on this box, against a
+scratch Rex server on a private socket (rex 0.0.1794069975-g6c6689):
+
+| the launch | what posse said |
+| --- | --- |
+| `posse new husk --cmd '/bin/sh -c printf-then-sleep-3'` (the command ends) | `claude launch in husk could not be confirmed — rex would not answer the program_status read (… block target "…" not found); the session is kept and its state reads unknown until a record arrives` |
+| the same launch with a command that stays up | `DEGRADED — no program_status record from claude in husk within 45s` |
+
+The first line names a server that is unreachable. The server answered
+immediately and said the block is gone — which is a fact about the
+SEAT, and the only one of the two readings that is certain. An operator
+reading it goes looking at rex.
+
+The gate's own property held by another route, which is why this is a
+P2 and not a P1: nothing was prompted, because dispatch's `awaitAgent`
+then fails and benches the slot.
+
+### What was measured
+
+2026-11-15, this box (linux/amd64), rex 0.0.1794069975-g6c6689, against
+a SCRATCH server on a private socket (`--restore=false --max-sessions
+6`), every call passing `-S <that socket> --autostart=false`; the
+fleet's own server was never addressed and no model ran. The gone block
+is the one `rex new deadseat -- /bin/sh -c 'exit 0'` leaves: its program
+ended, so the block closed and the session stayed as a husk (ADR 0080 D9
+as amended). Every verb posse calls with a block id, on stderr with
+exit 3 and nothing on stdout:
+
+| verb | rex's refusal |
+| --- | --- |
+| `block call … program_status` | `block target "<id>" not found` |
+| `block call … process` | `block target "<id>" not found` |
+| `capture` | `block target "<id>" not found` |
+| `send` | `block target "<id>" not found` |
+| `send-key` | `block target "<id>" not found` |
+| `focus` | `block **or window** target "<id>" not found` |
+
+The same sentence answers for a block that never existed, for an id
+that is no id at all, and — with a reason clause appended, which a
+prefix match carries unchanged — for a block whose session has since
+been destroyed: `block target "<id>" not found: session scope: session
+"<sid>" not found`. A SESSION-addressed verb says something else
+(`block ls -s <destroyed>` → `session target "<sid>" not found`), which
+is the sentence `rexSessionGone` already read.
+docs/notes.d/ranger-base-ybrk6.md has the transcript and the mutation
+table.
+
+### Decision
+
+**D1. A failed read that is rex's own `not found` for this seat's
+target is positive evidence, and is read BEFORE the ignorance arm.**
+`confirmReports` asks it first, because the arm below it reads every
+failure as ignorance and this one is knowledge. Everything else a
+failed read can be — a server that refused, a binary that is not there,
+an answer that would not parse, a blown deadline — is ignorance still,
+and still keeps the launch (ADR 0013 §1).
+
+**D2. The predicate is derived from every verb posse calls, not from
+the one call site that needed it.** `rex focus` takes a block or a
+window in one positional and names both in its refusal, so a predicate
+matched on `block target "` alone answers false for it and true for
+the five verbs beside it. Two constants, two sentences, and the fake
+rex spells all three forms (`fakeRexScoped`) so a one-message
+predicate reds in the suite rather than in an operator's week.
+
+**D3. It is the OCCUPANT's question and not one of the ten verbs.**
+`RexMux.SeatSaysGone` is `CloseSaysGone`'s sibling and is deliberately
+not on the `Mux` interface: on herdr the same question has another
+answer — a dead pane is `pane_not_found` and a one-pane workspace
+leaves the listing (ADR 0080's 2026-11-15 amendment, MEASURED) — and
+herdr reaches none of this. `CloseSaysGone` stays the narrower
+question it was, over a destroyed SESSION, because ADR 0080 D10's
+destroy unlinks a record on that answer and a seat whose block closed
+still holds a session on the server.
+
+**D4. The verdict ladder is D2's, written once for both reasons.**
+What is KNOWN differs; what a miss COSTS does not. The cost is keyed on
+`prompt:` and on whether anybody is watching, both of which are facts
+about the launch and not about why it failed — so
+`HerdrBackend.launchVerdict` takes a reason's three sentences and
+applies one ladder. Two copies of that ladder would be two places for
+D2's key to drift.
+
+**D5. The dispatched arm REFUSES; it does not keep the launch.** This
+is the question the bead was filed with. A seat whose block has closed
+is gone and the prune will destroy it (ADR 0080 D10), so "the session
+is kept" was never true of it. Under D4's ladder: `typed` + dispatched
+refuses with nothing typed and the bead untouched; `typed` +
+interactive is told and proceeds, because the commonest thing on that
+arm is an operator's own `--cmd` of a command that was always going to
+finish and refusing it would be posse disagreeing with the keyboard;
+`argv` HOLDS, for D2's reason and one this reason adds — a CLI that
+took the prompt off its launch line, did the work and exited leaves
+exactly this state, and `AwaitFirstReport` polls, so a turn shorter
+than one interval is invisible either way.
+
+**D6. The sentences drop the advice the absence arms give.** No `posse
+peek` and no "the session is left running as the only evidence of why
+no record came": a capture of a closed block is rex's same refusal, the
+scrollback went with the block, and the session is a husk holding no
+evidence. They name the session's log and, on a caged seat,
+`posse wall-watch`'s filed bead instead, and they quote rex's own
+sentence — because the claim that the SERVER is fine and the SEAT is
+gone rests on which refusal it was.
+
+### Consequences
+
+- The confirmation's cost is unchanged: the new arm is a string test
+  over an error posse already had.
+- A `posse new --cmd` of a command that finishes inside the wait now
+  prints `ENDED` rather than a line about rex. The husk it leaves is
+  D10's to destroy, and the line says so, with `posse kill` offered as
+  the way to free the server's session slot before the grace runs out.
+- **The herdr side of this is not decided here and needs no decision
+  yet.** `confirmReports` returns at `b.rexMux()`, so herdr never
+  reaches the arm; if that changes, D3's vocabulary is the one to
+  translate — `pane_not_found` and an empty workspace listing, not a
+  block target.
+- **The hazard, said out loud.** If rex ever answered `block target
+  "<id>" not found` for a block it still held — a scoping bug, a
+  session-id mismatch on posse's side — a dispatched launch would be
+  refused over a live seat, where before this it was kept. That is the
+  direction ADR 0013 §1 spends care to avoid, and what pays for it here
+  is that the sentence is rex's own answer about the id posse named: the
+  predicate reads nothing about exit codes, and a hang, a refused
+  connection and a missing binary all stay on the ignorance arm.

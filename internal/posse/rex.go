@@ -507,6 +507,86 @@ func rexSessionGone(err error) bool {
 	return strings.Contains(s, rexTargetGonePrefix) && strings.Contains(s, rexTargetGoneSuffix)
 }
 
+// rexBlockTargetGone is rex's refusal for a BLOCK its server does not hold,
+// in the two spellings the CLI has for it. The id is interpolated between
+// the halves, so each is matched as a substring the way rexTargetGone is.
+//
+// MEASURED 2026-11-15, this box (linux/amd64, rex 0.0.1794069975-g6c6689),
+// against a SCRATCH server on a private socket (`server run --listen
+// unix:///run/user/1001/ybrk6/rex.sock --restore=false --max-sessions 6`,
+// with HOME pointed at a scratch dir; the fleet's own server was never
+// addressed — every call passed `-S <that socket> --autostart=false`). The
+// gone block is the one `new deadseat -- /bin/sh -c 'exit 0'` left behind:
+// its program ended, so the block closed and the session stayed as a husk
+// (ADR 0080 D9 as amended 2026-11-15). Every verb posse calls with a block
+// id, on stderr with exit 3 and nothing on stdout:
+//
+//	block call -s <its session> -b <it> program_status   block target "<id>" not found
+//	block call -s <its session> -b <it> process          block target "<id>" not found
+//	capture -s <its session> -b <it> --format text       block target "<id>" not found
+//	send -s <its session> -b <it> hello                  block target "<id>" not found
+//	send-key -s <its session> -b <it> enter              block target "<id>" not found
+//	focus -s <its session> <it>                          block OR WINDOW target "<id>" not found
+//
+// THE `focus` ROW IS WHY THIS IS TWO CONSTANTS. `rex focus` takes a block or
+// a window in one positional, so its refusal names both — and a predicate
+// matched on `block target "` alone answers `false` for it while answering
+// `true` for the five verbs beside it. That is the "do not match on one
+// message" this bead was filed with, found by probing every verb rather than
+// the one confirmReports happens to call.
+//
+// THE SAME SENTENCE ANSWERS FOR A BLOCK THAT NEVER EXISTED, an id that is no
+// id at all (`-b notablock`), and a block whose SESSION has since been
+// destroyed — that last one with a reason clause appended, which the prefix
+// match carries unchanged:
+//
+//	block target "<id>" not found: session scope: session "<sid>" not found
+//
+// Note what that one is NOT: `session target "`, so rexSessionGone does not
+// read it (MEASURED — that spelling comes from a SESSION-addressed verb,
+// `block ls -s <destroyed>`). The two predicates read the two sentences rex
+// actually prints, and RexMux.SeatSaysGone is where a caller that wants
+// either asks for both.
+const (
+	rexBlockTargetGonePrefix         = `block target "`
+	rexBlockOrWindowTargetGonePrefix = `block or window target "`
+)
+
+// rexBlockGone reports whether a failed rex call failed BECAUSE the server
+// does not hold that block — rex's own `not found` for the target posse
+// named, which is positive evidence about that block and not silence about
+// the server.
+//
+// A HANG IS NOT GONE, for rexSessionGone's reason and with its guard: a
+// blown deadline travels unwrapped and read as "the seat is gone" it would
+// refuse a launch on the one answer that proves nothing about the seat. The
+// guard is BELT and is said to be, like the one next door: a hang's text is
+// posse's argv and its wait, which carries the block id but not rex's
+// sentence, so the substring test refuses it unaided — MEASURED by removing
+// the guard, which reds nothing (docs/notes.d/ranger-base-ybrk6.md's
+// mutation table). Everything else that is not these sentences — a server
+// that refused, a binary that is not there, an answer that would not parse —
+// is not this either, and every caller's arm for "rex could not be asked" is
+// the one that keeps what it has (ADR 0013 §1, unknown is not no).
+//
+// IT DOES NOT READ RexMux.hold's OWN REFUSAL, and that is deliberate. hold
+// answers "this block is in none of this server's N sessions" from a LISTING
+// it walked, and its own doc refuses to call that gone: the liveness
+// judgement over a listing is List()'s and ADR 0076 §5's, which is reached
+// with a session record in hand and a prune behind it. What this predicate
+// reads is narrower and stronger — the server, asked about one id, saying it
+// does not have it.
+func rexBlockGone(err error) bool {
+	if err == nil || IsHerdrHang(err) {
+		return false
+	}
+	s := err.Error()
+	if !strings.Contains(s, rexTargetGoneSuffix) {
+		return false
+	}
+	return strings.Contains(s, rexBlockTargetGonePrefix) || strings.Contains(s, rexBlockOrWindowTargetGonePrefix)
+}
+
 // Sessions is `rex ls --json` (session.list). `--short=false` because the
 // short ids this prints by default are a display convenience and the ids
 // posse records are the full ones.

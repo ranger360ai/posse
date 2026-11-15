@@ -3616,6 +3616,15 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 // every launch whose runtime cannot be read; reaching this with an
 // unloadable one would mean asking for a report with no `prompt:` column to
 // decide what a miss costs, and guessing that is the one thing D2 is about.
+//
+// TWO REASONS, ONE LADDER (ranger-base-ybrk6). A launch fails to confirm
+// either because nothing reported inside the bound or because the runtime
+// ENDED before it reported — a distinction that did not exist until every
+// launch line was exec'd (ranger-base-1l1en) and a dead runtime started
+// closing its block. Each reason has its own three sentences, and both hand
+// them to launchVerdict, which is D2's keyed-on-`prompt:` ladder written
+// once. A read that failed for any OTHER reason is ignorance and keeps the
+// launch, which is the arm that has always been here.
 func (b *HerdrBackend) confirmReports(o NewSessionOpts, p *launchPlan, seat Seat) error {
 	rm, ok := b.rexMux()
 	if !ok {
@@ -3630,6 +3639,21 @@ func (b *HerdrBackend) confirmReports(o NewSessionOpts, p *launchPlan, seat Seat
 		return nil
 	}
 	if err != nil {
+		// THE RUNTIME ENDED BEFORE IT REPORTED (ranger-base-ybrk6), which is
+		// a read that FAILED and still positive evidence about the seat: a
+		// Rex block closes with its exec'd program, so the server answering
+		// `block target "<id>" not found` is the server answering, not a
+		// server that would not. Asked FIRST, because the arm below reads
+		// every failure as ignorance and this one is knowledge — the
+		// distinction is the whole bead, and before it an operator reading
+		// `rex would not answer` went looking at rex.
+		if rm.SeatSaysGone(err) {
+			return b.launchVerdict(o, rt, rexLaunchVerdict{
+				hold:     RexRuntimeEndedHold(rt, o.Name, err),
+				refusal:  RexRuntimeEndedRefusal(rt, o.Name, err),
+				degraded: RexRuntimeEndedDegraded(rt, o.Name, err),
+			})
+		}
 		// Rex could not be asked. Unknown is never no (ADR 0013 §1): a seat
 		// is not refused over a server that did not answer, and the launch
 		// keeps whatever it already has. Said out loud, because a silent
@@ -3637,30 +3661,58 @@ func (b *HerdrBackend) confirmReports(o NewSessionOpts, p *launchPlan, seat Seat
 		fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s launch in %s could not be confirmed — rex would not answer the program_status read (%v); the session is kept and its state reads unknown until a record arrives (ADR 0076 §3; unknown is not no)\n", rt.Name, o.Name, err)
 		return nil
 	}
-	// The argv arm first, because it refuses nothing: the prompt rode the
-	// launch line, so this pass knows less than it did and judges no less
-	// carefully (ADR 0076 D2, ADR 0066 D1).
-	//
-	// REACHABLE SINCE ranger-base-8gh58: codex is `prompt: argv` and D9
-	// admitted it, so this is the arm a codex seat with no record lands on.
-	// What reaches it is a reporter codex did not run or a record that did
-	// not arrive inside rt.Wait() — the declaration, the trust and the
-	// version pin are all refused on the far side of the launch, before a
-	// turn (D6, D7, D9) — and the HOLD is correct for it: the work prompt was
-	// on the line codex already read.
+	return b.launchVerdict(o, rt, rexLaunchVerdict{
+		hold:     RexNoReportHold(rt, o.Name, rt.Wait(), read),
+		refusal:  RexNoReportRefusal(rt, o.Name, rt.Wait(), read),
+		degraded: RexNoReportDegraded(rt, o.Name, rt.Wait(), read),
+	})
+}
+
+// rexLaunchVerdict is one REASON a launch did not confirm, in the three
+// sentences the ladder below needs. All three are built before the ladder
+// chooses, which costs three formatted strings on a path that has already
+// spent a bounded wait, and buys the property that matters: the reason
+// cannot pick its own verdict.
+type rexLaunchVerdict struct {
+	hold     string
+	refusal  error
+	degraded string
+}
+
+// launchVerdict is ADR 0076 D2's verdict ladder, written ONCE for every
+// reason a launch confirmation can fail. There are two reasons now — no
+// record inside the bound, and a runtime that ended before it reported
+// (ranger-base-ybrk6) — and they differ in what is KNOWN, never in what a
+// miss costs. That is D2's whole content: the cost is keyed on `prompt:` and
+// on whether anybody is watching, both of which are facts about the launch
+// and not about why it failed. Two copies of this ladder would be two places
+// for that key to drift.
+//
+// The argv arm first, because it refuses nothing: the prompt rode the launch
+// line, so this pass knows less than it did and judges no less carefully
+// (ADR 0076 D2, ADR 0066 D1).
+//
+// REACHABLE SINCE ranger-base-8gh58: codex is `prompt: argv` and D9 admitted
+// it, so this is the arm a codex seat with no record lands on. What reaches
+// it is a reporter codex did not run or a record that did not arrive inside
+// rt.Wait() — the declaration, the trust and the version pin are all refused
+// on the far side of the launch, before a turn (D6, D7, D9) — and the HOLD is
+// correct for it: the work prompt was on the line codex already read.
+//
+// Then the typed arm. The dispatched/interactive asymmetry is the one the
+// danger and detection readings already use (ADR 0013 §1 rule 5): a launch
+// nobody is watching refuses, and the operator's own is told what it has and
+// left to decide — which on the no-record reason is also the only way a
+// runtime's report gets looked at on this box.
+func (b *HerdrBackend) launchVerdict(o NewSessionOpts, rt *Runtime, v rexLaunchVerdict) error {
 	if rt.PromptMode() == PromptArgv {
-		fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s\n", RexNoReportHold(rt, o.Name, rt.Wait(), read))
+		fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s\n", v.hold)
 		return nil
 	}
-	// The typed arm. The dispatched/interactive asymmetry is the one the
-	// danger and detection readings above already use (ADR 0013 §1 rule 5):
-	// a launch nobody is watching refuses, and the operator's own is told
-	// what it has and left to decide — which here is also the only way a
-	// runtime's report gets looked at on this box.
 	if o.Bead != "" || o.Recreate {
-		return RexNoReportRefusal(rt, o.Name, rt.Wait(), read)
+		return v.refusal
 	}
-	fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s\n", RexNoReportDegraded(rt, o.Name, rt.Wait(), read))
+	fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s\n", v.degraded)
 	return nil
 }
 

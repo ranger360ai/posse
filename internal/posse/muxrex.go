@@ -243,6 +243,39 @@ func (m RexMux) Close(s Seat) error { return m.R.KillSession(s.Session) }
 // second question, asked only where the absence has already been proven.
 func (m RexMux) CloseSaysGone(err error) bool { return rexSessionGone(err) }
 
+// SeatSaysGone is CloseSaysGone's SIBLING over this seat's block
+// (ranger-base-ybrk6): whether an error from any verb of this occupant failed
+// because the server does not hold this seat any more — rex's `block target
+// "<id>" not found`, its `block or window target` spelling, and the
+// `session target "<id>" not found` CloseSaysGone already reads, because a
+// seat whose session the server has lost is gone as surely as one whose block
+// it has.
+//
+// IT IS NOT ONE OF §2'S TEN VERBS and it is not on the Mux interface, for
+// AwaitFirstReport's reason: on herdr the same question has another answer
+// (a dead pane is `pane_not_found` and a one-pane workspace leaves the
+// listing — MEASURED 2026-11-15, ADR 0080's amendment of that date), and
+// herdr reaches none of this.
+//
+// WHY IT EXISTS AT ALL, which is a fact about this occupant and not about
+// this verb. Since every launch line is exec'd (ranger-base-1l1en) a
+// runtime IS the block's program, so when it ends the block closes and every
+// read of that seat stops being silence and becomes a refusal. Before that,
+// a runtime that died left its shell behind and the same seat answered "no
+// record". So a reading that used to arrive as an absence now arrives as an
+// error, and a caller that cannot tell this error from "rex would not answer"
+// blames the server for a server that answered perfectly.
+//
+// ONE CALLER TODAY — confirmReports, §3's launch confirmation, which is the
+// one place posse holds a seat it has just typed into and no listing of its
+// own. The paths that read a seat LATER do not need it: dispatch judges
+// liveness from List(), where a closed block drops the session out of the
+// listing (§5), and the delivery verbs ask refuseAtDeadOwner about the record
+// rather than about the block.
+func (m RexMux) SeatSaysGone(err error) bool {
+	return rexBlockGone(err) || rexSessionGone(err)
+}
+
 // Focus is `rex focus` (session.focus_block), which also makes the block's
 // window the active one.
 func (m RexMux) Focus(s Seat) error {
@@ -852,11 +885,20 @@ func (m RexMux) readComposerSight(s Seat) (string, composerSight) {
 //
 // THREE OUTCOMES, NOT TWO, and the third is why this does not return Wait's
 // timeout error. `reported` false with a nil error is "the bound ran out with
-// nothing to read", which is the launch refusal. A non-nil error is "rex
-// could not be asked", which is ignorance and never a refusal — ADR 0013
-// §1's unknown-is-not-no rule, and the direction that costs a kept session
-// rather than a seat refused over a server hiccup. Wait's caller branches on
-// an API code and so cannot tell those apart; this one must.
+// nothing to read", which is the launch refusal. A non-nil error is "the read
+// FAILED", which this verb does not interpret any further — ADR 0013 §1's
+// unknown-is-not-no rule lives in the caller, which is the only one that can
+// spend the answer. Wait's caller branches on an API code and so cannot tell
+// those apart; this one must.
+//
+// THAT THIRD OUTCOME IS NOT ALL IGNORANCE, and this doc said it was until
+// ranger-base-ybrk6. Since every launch line is exec'd the runtime takes the
+// block with it when it ends, so one of the failures here is rex refusing a
+// block it no longer holds — positive evidence that the SEAT is gone, told
+// apart from a server that would not answer by RexMux.SeatSaysGone. The
+// error rides back unwrapped for exactly that: a verb that had folded it
+// into "rex could not be asked" would have made the distinction
+// unrecoverable downstream.
 //
 // The last reading rides back either way, so the caller's line can say what
 // WAS there — "no program_status record" is a different sentence from a

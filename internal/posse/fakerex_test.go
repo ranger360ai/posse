@@ -148,7 +148,7 @@ func fakeRex(args []string) int {
 		if verb == "focus" && bid == "" && len(words) > 0 {
 			bid = words[0]
 		}
-		if !fakeRexScoped(flags["-s"], bid) {
+		if !fakeRexScoped(verb, flags["-s"], bid) {
 			return 3
 		}
 		return 0
@@ -299,26 +299,46 @@ func fakeRexKill(words []string) int {
 // same server — so an unscoped verb lands for whichever seat happens to be
 // default and refuses every other one. posse must not depend on which seat
 // that is, so there is nothing here for it to depend on.
-func fakeRexScoped(sid, bid string) bool {
+//
+// THREE SPELLINGS, BECAUSE REX HAS THREE (MEASURED 2026-11-15 on this box,
+// rex 0.0.1794069975-g6c6689, against a scratch server on a private socket —
+// rexBlockTargetGone has the per-verb table and ranger-base-ybrk6's fragment
+// the transcript). `focus` takes a block or a window in one positional and
+// names both in its refusal; every other block verb names the block; and when
+// the `-s` session is gone too, the same sentence carries a reason clause
+// after it. A fake with one spelling is a fake that cannot red a predicate
+// matched on one message, which is the defect ranger-base-ybrk6 was filed to
+// avoid repeating.
+func fakeRexScoped(verb, sid, bid string) bool {
 	if bid == "" {
 		return true // no block target: not this check's business
 	}
+	held := false
 	for _, s := range fakeRexLoadSessions() {
 		if s.SessionID != sid && s.Label != sid {
 			continue
 		}
+		held = true
 		for _, b := range s.Blocks {
 			if b.BlockID == bid {
 				return true
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "Error: block target %q not found\n", bid)
+	target := "block target"
+	if verb == "focus" {
+		target = "block or window target"
+	}
+	scope := ""
+	if !held {
+		scope = fmt.Sprintf(": session scope: session %q not found", sid)
+	}
+	fmt.Fprintf(os.Stderr, "Error: %s %q not found%s\n", target, bid, scope)
 	return false
 }
 
 func fakeRexCapture(flags map[string]string) int {
-	if !fakeRexScoped(flags["-s"], flags["-b"]) {
+	if !fakeRexScoped("capture", flags["-s"], flags["-b"]) {
 		return 3
 	}
 	// A QUEUED screen wins over both of the keys below, for the reason the
@@ -389,16 +409,31 @@ func fakeRexBlockCmd(flags map[string]string, words []string) int {
 			return 2
 		}
 		rows := []map[string]string{}
+		held := false
 		for _, s := range fakeRexLoadSessions() {
 			if s.SessionID != sid {
 				continue
 			}
+			held = true
 			for _, b := range s.Blocks {
 				rows = append(rows, map[string]string{
 					"block_id": b.BlockID, "label": b.Label, "flavor": b.Flavor,
 					"window_id": "window:fake", "placement": "placed",
 				})
 			}
+		}
+		if !held {
+			// A SESSION-addressed verb names the session, where a
+			// block-addressed one names the block (fakeRexScoped's table).
+			// MEASURED 2026-11-15: `block ls -s <destroyed session>`
+			// answered `Error: session target "<id>" not found`, exit 3 —
+			// NOT the `{"blocks": []}` this answered until that reading,
+			// which is also what a live session holding no block answers
+			// (the husk, ADR 0080 D9). A fake that spells a gone session
+			// the same way it spells a husk cannot tell the two readings
+			// that turn on the difference apart.
+			fmt.Fprintf(os.Stderr, "Error: session target %q not found\n", sid)
+			return 3
 		}
 		out, _ := json.Marshal(map[string]any{"blocks": rows})
 		fmt.Println(string(out))
@@ -408,7 +443,7 @@ func fakeRexBlockCmd(flags map[string]string, words []string) int {
 			fmt.Fprintln(os.Stderr, "Error: call needs a method")
 			return 2
 		}
-		if !fakeRexScoped(flags["-s"], flags["-b"]) {
+		if !fakeRexScoped("block call", flags["-s"], flags["-b"]) {
 			return 3
 		}
 		switch words[1] {

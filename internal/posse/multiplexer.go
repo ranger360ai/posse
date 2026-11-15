@@ -480,3 +480,98 @@ func RexNoReportDegraded(rt *Runtime, session string, within time.Duration, read
 		within.String() + " (saw: " + rexNoReportSaw(read) +
 		"). On Rex that is the whole of posse's reading, so this session's state will show as unknown everywhere and dispatch could not prompt it; an interactive launch proceeds because you are at the keyboard (ADR 0013 §1 rule 5). posse peek " + session
 }
+
+// ─── the confirmation's THIRD reason: the runtime ENDED (ranger-base-ybrk6) ──
+//
+// The three sentences above are all about an ABSENCE — the bound ran out and
+// no record came — and until ranger-base-1l1en that was the only way a seat
+// could fail to confirm. A runtime that died at its first instant left the
+// pane's shell behind, so the block stayed open and the poll read "no
+// record".
+//
+// Every launch line is exec'd now, so the runtime IS the block's program: it
+// takes the block with it when it ends. The read then FAILS, with rex's own
+// `block target "<id>" not found`, and that landed on the arm for a server
+// that could not be asked — a line reading *rex would not answer the
+// program_status read*, over a server that answered immediately and
+// correctly. MEASURED 2026-11-15 on a scratch server, both ways round (ADR
+// 0080's amendment of that date; rexBlockTargetGone has the per-verb table).
+//
+// So this is a reason and not a verdict: what is known is different, and the
+// VERDICT ladder is the same one, keyed on `prompt:` exactly as D2 keys the
+// absence (HerdrBackend.launchVerdict applies one ladder to both). What
+// changes with the reason is the sentence — and every one of these three
+// drops two pieces of advice the absence arms give, because neither is true
+// of a closed block: there is no screen to `posse peek`, the scrollback went
+// with the block, and the session that is "left running as the only evidence
+// of why no record came" is a HUSK holding no evidence at all.
+
+// rexRuntimeEndedSaw is what posse actually has: rex's own refusal, quoted,
+// because the sentence's whole claim rests on which refusal it was. An
+// operator who has just been told the SERVER is fine and the SEAT is gone
+// should be able to read the server's words for it.
+func rexRuntimeEndedSaw(err error) string {
+	if err == nil {
+		return "rex named no reason"
+	}
+	return err.Error()
+}
+
+// rexRuntimeEndedKnown is the reason, which all three verdicts carry
+// unchanged: what rex said, what it means, and what state the seat is in now.
+func rexRuntimeEndedKnown(rt *Runtime, session string) string {
+	return rt.Name + " in " + session + " ENDED before it reported: the block posse typed its launch line into is gone, and rex ANSWERED — what it said is about the seat. " +
+		"A seat's launch line is exec'd, so the runtime is the block's own program and the block closes when it ends (ranger-base-1l1en; ADR 0080 D9 as amended 2026-11-15). " +
+		"Nothing of it is left to read: no record, no screen, no scrollback — a capture of a closed block is rex's same refusal. The session is a husk now, and ADR 0080 D10's prune destroys it once its meta is older than the " + PruneGrace.String() + " grace."
+}
+
+// RexRuntimeEndedRefusal is the typed arm's refusal, where the no-record
+// refusal's own arm would have been before the exec: the work prompt was
+// still posse's to deliver, the runtime that was going to take it is gone,
+// and nothing was typed.
+//
+// IT DOES NOT SEND THE OPERATOR TO THE SESSION, which is the one place it
+// departs from RexNoReportRefusal. That line keeps the seat deliberately —
+// "it is the only copy of why no record arrived" — and after the exec there
+// is no such copy: what the runtime printed before it died went with the
+// block. So this one names where the record IS instead (the session's own log
+// and, for a caged seat, wall-watch's filed bead — ranger-base-pfcci is the
+// bead for the double failure where neither exists), and offers the kill as
+// what frees the server's session slot before the prune gets to it.
+func RexRuntimeEndedRefusal(rt *Runtime, session string, err error) error {
+	return Die("%s launch refused in %s: %s\n"+
+		"  rex said: %s\n"+
+		"  NOTHING WAS TYPED into it: this runtime is `%s`, so the work prompt was still posse's to deliver and the bead is untouched (ADR 0076 D2)\n"+
+		"  why it ended is NOT in the block any more — the session's log and, on a caged seat, `posse wall-watch`'s filed bead are the record (ranger-base-pfcci)\n"+
+		"  posse kill %s frees the server's session slot now; the prune does it otherwise\n"+
+		"  %s\n",
+		rt.Name, session, rexRuntimeEndedKnown(rt, session), rexRuntimeEndedSaw(err), rt.PromptMode(), session, rexHerdrDoor(rt))
+}
+
+// RexRuntimeEndedHold is the argv arm, and it HOLDS for the reason D2 holds
+// over an absence and for one this reason adds. The work prompt rode the
+// launch line, so refusing would judge a turn posse cannot see — and here
+// that turn may have RUN: a CLI that took the prompt, did the work and
+// exited leaves exactly this state, because its records closed with its
+// block. AwaitFirstReport polls, so a turn shorter than one poll interval is
+// invisible to it either way (RexMux.Wait's own note). That is a narrow
+// window and a hold is what fits inside it: the claim is kept, nothing is
+// judged, and the next pass finds no seat and takes the create path.
+func RexRuntimeEndedHold(rt *Runtime, session string, err error) string {
+	return "HOLD — " + rexRuntimeEndedKnown(rt, session) + " rex said: " + rexRuntimeEndedSaw(err) +
+		". This runtime is `" + PromptArgv + "`, so the work prompt rode the launch line and was already with the CLI: the claim is KEPT and this pass judges nothing (ADR 0076 D2, ADR 0066 D1). A turn that ran to completion inside one poll leaves this same state, which is the one thing this arm must not judge."
+}
+
+// RexRuntimeEndedDegraded is the INTERACTIVE arm — `posse new` — and it
+// proceeds for ADR 0013 §1 rule 5's reason: the operator is at the keyboard.
+// What it cannot borrow is the other half of RexNoReportDegraded's reason
+// ("looking at it is how a runtime nobody has measured gets measured"), since
+// there is nothing left to look at. It is still not a refusal, because the
+// commonest thing on this arm is an operator's own `posse new --cmd` of a
+// command that was always going to finish — the MEASURED case on
+// ranger-base-ybrk6 — and refusing a session for doing what it was asked to
+// do would be posse disagreeing with the keyboard.
+func RexRuntimeEndedDegraded(rt *Runtime, session string, err error) string {
+	return "ENDED — " + rexRuntimeEndedKnown(rt, session) + " rex said: " + rexRuntimeEndedSaw(err) +
+		". An interactive launch proceeds because you are at the keyboard (ADR 0013 §1 rule 5): if the command was meant to finish, this is that, and nothing further is owed. If it was not, the seat is unreadable and unpromptable from here — posse kill " + session + " and launch it again."
+}
