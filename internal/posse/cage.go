@@ -510,14 +510,20 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 	// its parent in both directions, and the engine sorts by destination
 	// depth rather than list order.
 	//
-	// Residual, stated not hidden: `objects` (content injection — inert
-	// until a ref names it, and naming goes through the splice and the
-	// launcher's ff), `logs` (the reflog), and the session's own worktree
-	// dir. Same class L2 accepts.
+	// `objects` is NOT the shared store (ranger-base-21i98, ADR 0099 D1).
+	// The residual this comment used to accept here — "content injection,
+	// inert until a ref names it" — was wrong for an object that ALREADY
+	// exists: `main` names it, git never re-hashes on read, and an overwrite
+	// of its file rewrote history for every uncaged reader. So the
+	// read-write mount at `<common>/objects` is the seat's own store
+	// (seatStoreCageMounts), the shared one is `:ro` at a side path its
+	// alternates name, and what the seat writes reaches the shared store only
+	// by the re-hashing import (seatimport.go). Residual, stated not hidden:
+	// `logs` (the reflog) and the session's own worktree dir.
 	//
-	// **ADR 0086 D8 reads that residual back for ONE PID class.** "Inert
-	// until a ref names it, and naming goes through the splice" is the
-	// sentence: `spliceDetachedWork` names it, before every guard, and a
+	// **ADR 0086 D8 reads the three overlays back for ONE PID class.** What
+	// a detached commit writes is what the splice lands: `spliceDetachedWork`
+	// names it, before every guard, and a
 	// seat whose Edit/Write deny exists to make its output FINDINGS is a
 	// seat that must not land a commit by any route. So for
 	// `deniesFileWrite` none of the three is overlaid and the common dir is
@@ -540,6 +546,13 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 			for _, p := range sessionCommonDirWrites(dir, common) {
 				ms = cageOverlay(ms, p, false,
 					"read-write over the :ro common dir — one of the three regions a DETACHED-HEAD commit in this worktree writes (sessionGitGrants at L2, ranger-base-m2wf; ranger-base-t4f1 at L4)")
+			}
+			// ...and `objects` is this seat's OWN store, never the shared
+			// one (ranger-base-21i98, ADR 0099 D1): the overlay just made at
+			// `<common>/objects` is replaced in place by the store's bind,
+			// and the shared store is read-only at the side path beside it.
+			if own := LinkedGitDirs(dir); len(own) == 2 {
+				ms = seatStoreCageMounts(ms, own[0], common)
 			}
 		}
 	}

@@ -2355,6 +2355,13 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// read-only everywhere (ranger-base-ajkqx). After the session state, in
 	// the same step, for the same reason: a seatbelt profile cannot bind.
 	r.Carve.Private = append(r.Carve.Private, claudeProjectsBinds(home, runtimeStateGrants(stateDirs), a.claudeOwnSessionTree(cwd))...)
+	// The seat's own object store over `<common>/objects`, and the shared
+	// store read-only at a side path (ranger-base-21i98, ADR 0099 D1). A
+	// private bind for the same reason as the two above — seatbelt cannot
+	// bind — and in this step because it lands after every write grant, so
+	// it is the deepest mount over that name even when a store of record in
+	// the same repo grants `<common>` whole.
+	r.Carve.Private = append(r.Carve.Private, seatStoreBinds(ag, cwd)...)
 	// ...which is what SeatbeltCarveOut's Narrow says in SBPL; the binds
 	// above are this mechanism's spelling of it (ranger-base-r2uxm).
 	r.Carve.Narrow = nil

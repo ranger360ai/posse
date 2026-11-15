@@ -582,8 +582,8 @@ func main() {
 		// measurement itself is an out-of-process `flock -n` on $HOME, which
 		// is read-only and answers the same for every reader.
 		"TestTheCreatorHoldsAFlockOnItsTempHome": "reads testHomeLock and testHomeOwned",
-		// bwrapNestOnce and bwrapNestWhy (20): ADR 0096 D3's gate, reached
-		// through bgLiveSkip, bhLiveFixture, btLive and wwLiveFixture. Every
+		// bwrapNestOnce and bwrapNestWhy (23): ADR 0096 D3's gate, reached
+		// through bgLiveSkip (bsLiveFixture too), bhLiveFixture, btLive and wwLiveFixture. Every
 		// one of these arms execs a real bwrap, so each asks the gate whether
 		// THIS process can nest one; the answer is memoized because the only
 		// thing that could change it is this box gaining or losing a wall,
@@ -596,6 +596,9 @@ func main() {
 		"TestLiveBwrapGitRefsWithoutTheKeepFileNeverCommitsIntoAPrunedDir": "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession":             "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWalledSeatCommitsDetachedAndCannotWriteARef":         "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapSeatStoreRefusesRewritingASharedObject":              "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapSeatStoreLandsHonestWorkAndNeverATamperedObject":     "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapSeatStoreOperatorGcAfterTheWatchPassImport":          "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapHideIsNotWalkedAroundThroughProcRoot":                "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapHidesTheRuntimeDirsControlEndpoints":                 "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWithoutHideReachesTheRuntimeDir":                     "reads bwrapNestOnce and bwrapNestWhy",
