@@ -42,15 +42,29 @@
 #
 # ─── WHAT IT COSTS, AND WHY IT IS NOT IN `make test` ─────────────────────────
 #
-# MEASURED 2026-11-14, D1 host (Linux 7.2.15, go1.27.3, 16 cores), warm build
-# cache, over the whole 23-file candidate set: **1011s — 16.9 minutes in three
-# commands**, arm 1 317s, arm 2 348s, arm 3 345s, at a one-minute load average
-# of 13.45 falling to 9.15 with two sibling seats' suites on the box for part
-# of it. The eight-file set that preceded it read 707s on the same box an hour
-# earlier (315 / 319 / 53, load 4.9-7.4), and the fifteen files
-# ranger-base-87p6i added read 301s on their own (120 / 74 / 106, load
-# 4.5-19.9) — so nearly doubling the set cost about 40% more wall, because what
-# the old set spent was concentrated in a few long-backstop tests.
+# MEASURED 2026-11-15, D1 host (Linux 7.2.15, go1.27.3, 16 cores), warm build
+# cache, over the whole 23-file candidate set, GREEN: **1106s — 18.4 minutes in
+# three commands**, arm 1 366s, arm 2 302s, arm 3 438s, at a one-minute load
+# average swinging 4.5-22 with BOTH suite slots held by two sibling seats
+# throughout. `DATA RACE` 0 in all three.
+#
+# That is ~95s over the 2026-11-14 reading below, and the four tests
+# ranger-base-1hnqc fixed are most of it: a budget that fires ends its test
+# early, so the red arm was CHEAPER than the green one. Those four cost 152s
+# more run to completion than they did dying on their deadlines (MEASURED
+# 2026-11-15 filtered: 200.5s for arm 3's three against 108.3s, 59.2s for arm
+# 2's one against 43.7s). Read the two totals as the same arm, not as a
+# regression — and read neither against the other's load.
+#
+# Before that: MEASURED 2026-11-14, same host and cache, over the same 23-file
+# set while it was RED: 1011s — 16.9 minutes, arm 1 317s, arm 2 348s, arm 3
+# 345s, at a one-minute load average of 13.45 falling to 9.15 with two sibling
+# seats' suites on the box for part of it. The eight-file set that preceded it
+# read 707s on the same box an hour earlier (315 / 319 / 53, load 4.9-7.4), and
+# the fifteen files ranger-base-87p6i added read 301s on their own
+# (120 / 74 / 106, load 4.5-19.9) — so nearly doubling the set cost about 40%
+# more wall, because what the old set spent was concentrated in a few
+# long-backstop tests.
 #
 # Before that: MEASURED 2026-09-10, darwin/arm64, go1.26.5, over the EIGHT-file
 # set: 51.4s without `-race`, 670.9s with it — ~13x, ~11.4 minutes. That ~13x
@@ -65,21 +79,31 @@
 # (AGENTS.md, ranger-base-uvzjk). At 13% CPU over three binaries it is not what
 # saturates this box.
 #
-# THE ARM IS NOT GREEN TODAY, and this script does not hide that. MEASURED
-# 2026-11-14 over the 23-file set: arm 1 `ok`, arm 2 one red, arm 3 three reds,
-# `DATA RACE` 0 in all three — filed as ranger-base-1hnqc. Every one of the
-# four passes without `-race` and fails with it, deterministically and at the
-# same timings run alone, because each is a budget spelled in wall seconds
-# against an apparatus `-race` stretches. Three of the four are in
-# launchlock_test.go, which was outside this arm until ranger-base-87p6i, so
-# nobody had seen them.
+# THE ARM IS GREEN, in all three arms, as of 2026-11-15 (ranger-base-1hnqc).
+# It had never been green over the full 23-file set before that: the day the
+# set grew, arm 2 had one red and arm 3 three, with `DATA RACE` 0 in all three
+# — four tests that passed without `-race` and failed with it, at the same
+# timings run alone as under load, because each was a budget spelled in WALL
+# SECONDS against an apparatus `-race` stretches. Three of the four were in
+# launchlock_test.go, outside this arm until ranger-base-87p6i, so nobody had
+# seen them.
+#
+# If this arm reds again, that history is the first thing to rule out, and it
+# is ruled out by the two readings the script gives you free: `DATA RACE` 0 in
+# the summary, and the same `-run` filter green without `-race`. The fix is
+# never a bigger constant. It is one of two mechanisms, chosen by asking
+# whether the deadline is the test's OBSERVABLE or a backstop:
+# `backstop(t)` in internal/posse/backstop_test.go, derived from the binary's
+# own -timeout (ranger-base-khhnd, generalized by ranger-base-1hnqc — it is
+# also why arm 1 was already `ok`), or `fakeCallCost`, a budget counted in
+# fake-herdr CALLS (ranger-base-0dt50). That file's head comment states the
+# class and what is NOT in it: a deadline bounded by something else in the
+# fixture is an observable and stays a constant.
 #
 # ranger-base-0dt50's three arm-2 dispatch tests, which this paragraph used to
 # name, are fixed and that bead is closed: its close recorded that this line
 # and the Makefile's "not gate-clean today" had gone false and asked whoever
-# owns the target to strike them. Struck. ranger-base-khhnd is still why arm 1
-# is `ok`: it took the watch-loop backstop off its 30s constant and onto the
-# binary's own deadline, which is also the fix shape ranger-base-1hnqc inherits.
+# owns the target to strike them. Struck, and this bead's line with it.
 #
 # A red here is a result, not a broken script; read the logs it names.
 

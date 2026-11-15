@@ -74,3 +74,43 @@ assertions.
 | `scripts/test-race.sh`, `Makefile` | the arm's status and price |
 
 Not one assertion moved. Every test pins what it pinned before.
+
+## MEASURED 2026-11-15, D1 host (Linux 7.2.15-1-omarchy, go1.27.3, 16 cores)
+
+Warm build cache, `-count=1`. Load and slots are given with every reading
+because this arm's wall moves with them and nothing else about it does.
+
+The four, filtered, each the command the bead recorded — at a one-minute load
+of 7.74 with no suite slot held:
+
+| test(s) | before | after |
+| --- | --- | --- |
+| arm 3's three launchlock tests | FAIL 108.259s | **ok 200.513s** |
+| `TestDispatchRewaitServerGoneKeepsTheClaim` | FAIL 43.732s | **ok 59.187s** |
+
+Then the whole arm, end to end through `make test-race`, at a load swinging
+4.5-22 with BOTH suite slots held by two sibling seats throughout:
+
+| arm | tests | result | wall |
+| --- | --- | --- | --- |
+| 1 (default build) | 64 | `ok` | 366s |
+| 2 (`-tags posse_arm2`) | 106 | `ok` | 302s |
+| 3 (`-tags posse_arm3`) | 112 | `ok` | 438s |
+| **total** | **226** | **`ok`, `DATA RACE` 0 in all three** | **1106s — 18.4 min** |
+
+**THE GREEN ARM COSTS MORE THAN THE RED ONE DID**, and that is the shape of
+the defect rather than a regression: 1106s against 1011s on 2026-11-14. A
+budget that fires ends its test early, so every one of these four was *cheaper*
+while it was broken — 152s of the 95s difference is the four tests now running
+to completion, and the rest is the box. Read the two totals as the same arm,
+and neither against the other's load.
+
+The candidate set reads 226 tests where 2026-11-14 read 227: moving the
+backstop's arithmetic pin out of `watch_test.go` (a candidate file) and into
+`backstop_test.go` (not one) took it out of this arm. It is a table of
+`backstopBefore` inputs with no concurrency in it, and `raceArmFloor` is 90, so
+nothing was lost and nothing reds.
+
+Also run: `make fmt-check`, `make notes-check`, `go vet` in all three arms,
+`make tree-check`, `make test`, and `go run ./cmd/checkorphans` after the
+backgrounded arm (clean).
