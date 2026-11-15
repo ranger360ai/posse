@@ -1423,3 +1423,96 @@ func TestBwrapArgsGitConfigRefusalIsNotANestedRepositorysConfig(t *testing.T) {
 		})
 	}
 }
+
+// AND THE RESOLVE IN THAT KEY, which is the term the two pins above and the
+// row below them all leave alone (ranger-base-ze7xz, finding 6 of the
+// ranger-base-bfbx8 verify).
+//
+// D1's key is `bwrapGitConfigRepo(d) == absResolve(cwd)`, and the two sides
+// are resolved DIFFERENTLY on purpose: `bwrapGitConfigRepo` resolves nothing
+// — it is `filepath.Dir(filepath.Dir(d))` over a deny path the carve-out has
+// already absResolve'd (seatbelt.go's deny loop) — while the cwd arrives
+// unresolved, because BwrapArgs is handed the session dir as the caller
+// spells it. So the `absResolve` on the right is what makes the comparison a
+// question about the DIRECTORY rather than about its spelling.
+//
+// MEASURED 2026-11-14: dropping it — `bwrapGitConfigRepo(d) == cwd` — left
+// `go test -count=1 ./internal/posse` ok 204.335s and `./cmd/posse` ok
+// 131.092s, both packages green WHOLE. Every existing arm spells its cwd the
+// same way the fixture tree spells it, so the resolve decides nothing in any
+// of them: bwTree hands back an already-resolved root (its own comment says
+// why), and a resolved path resolves to itself.
+//
+// WHAT THE MISS COSTS, and it is the expensive direction. With the resolve
+// gone, a cwd reached through a symlink makes the two sides unequal, the
+// refusal does NOT fire, the render puts a `--ro-bind` wall over a
+// `.git/config` the seat can write through its own cwd grant, and the first
+// host `git config` in that repo replaces the file by rename, takes the wall
+// off and wall-watch kills the seat (ranger-base-0qpsw D2). That is a seat
+// killed mid-run rather than a launch refused — the more expensive of the two
+// directions ranger-base-hi2lt priced.
+//
+// WHY A SYMLINK AND NOT A `..`: filepath.Abs already cleans a lexical path,
+// so an uncleaned spelling is caught by the `Abs` half and says nothing about
+// the `EvalSymlinks` half. A link is the one shape only the second half
+// closes, and t.TempDir() carries none on this box — which is the whole
+// reason no existing arm reaches it, and why this one plants its own.
+func TestBwrapArgsGitConfigRefusalResolvesTheSessionDirsSpelling(t *testing.T) {
+	t.Parallel()
+	_, bwAt := bwTree(t,
+		[]string{"repo/.git", "repo/vendor/dep/.git"},
+		[]string{"repo/.git/config", "repo/vendor/dep/.git/config"})
+	if err := os.Symlink(bwAt("repo"), bwAt("link")); err != nil {
+		t.Fatal(err)
+	}
+	// The cwd as the caller spells it: through the link, unresolved, exactly
+	// as a seat launched from a symlinked path would carry it.
+	cwd := bwAt("link")
+	config := bwAt("repo", ".git", "config")
+
+	// The fixture's own claims, said before the row leans on them. Without
+	// both of these this arm is TestBwrapArgsGitConfigRefusalIsKeyedNarrowly's
+	// control row spelled differently.
+	if cwd == bwAt("repo") {
+		t.Fatalf("the fixture's cwd is not reached through a link, so nothing here reads the resolve: %s", cwd)
+	}
+	if got := absResolve(cwd); got != bwAt("repo") {
+		t.Fatalf("absResolve(%s) = %s, want %s — the planted link is not the one the key has to see through", cwd, got, bwAt("repo"))
+	}
+	// And the other side of the comparison really is unresolved, which is the
+	// asymmetry that makes the resolve load-bearing rather than redundant.
+	if got := bwrapGitConfigRepo(config); got != bwAt("repo") {
+		t.Fatalf("bwrapGitConfigRepo(%s) = %s, want %s", config, got, bwAt("repo"))
+	}
+
+	// THE ROW. One grant, the cwd, spelled through the link as well — so
+	// `own` and `writeGranted` both say yes (underDir resolves BOTH of its
+	// arguments, so neither of them can be what this row reads) and the
+	// session-dir conjunct is the only term left to decide it.
+	if _, _, err := BwrapArgs(cwd, []string{cwd},
+		SeatbeltCarveOut{Deny: []string{config}, DenyFile: []string{config}}); err == nil {
+		t.Fatalf("a main checkout reached through a symlink rendered its %s inside a writable %s. The refusal is keyed on the cwd's SPELLING rather than on the directory, so a seat launched from a linked path gets the wall wall-watch kills it for (ADR 0095 D1, ranger-base-0qpsw D2)", config, bwAt("repo", ".git"))
+	} else if !strings.Contains(err.Error(), config) {
+		t.Errorf("the refusal does not name the file:\n%v", err)
+	}
+
+	// THE CONTROL, so the row cannot pass by a symlinked cwd refusing
+	// everything: the same link, the same grant, a NESTED repository's config
+	// denied. The key's other two conjuncts hold and the session-dir one says
+	// no, which is
+	// TestBwrapArgsGitConfigRefusalIsNotANestedRepositorysConfig's row with
+	// the cwd spelled through the link — and it must stay unrefused both
+	// before and after the resolve.
+	nested := bwAt("repo", "vendor", "dep", ".git", "config")
+	argv, _, watched, err := bwrapArgsWatched(cwd, []string{cwd},
+		SeatbeltCarveOut{Deny: []string{nested}, DenyFile: []string{nested}})
+	if err != nil {
+		t.Fatalf("a NESTED repository's config refused the render under a symlinked cwd, which costs a seat its launch for a rename no host writer in ADR 0095's table makes: %v", err)
+	}
+	if !strings.Contains(bwJoin(argv), "--ro-bind "+nested+" "+nested) {
+		t.Errorf("the nested repo's config rendered no mount, so a granted directory holds it with no wall:\n%s", bwJoin(argv))
+	}
+	if !wallWatchListed(watched, nested) {
+		t.Errorf("the mount is rendered and not watched: %v", watched)
+	}
+}

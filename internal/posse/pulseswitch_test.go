@@ -31,7 +31,9 @@ package posse
 // process taking it twice contends exactly as two processes do.
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -248,6 +250,118 @@ func TestPulseReminderCursorIsTheFeedsNewestEntryNotZero(t *testing.T) {
 	// other half of why the cursor means "this delivery's own line": the
 	// feed gained an entry past the one the reminder names.
 	wantFeed(t, b, "+"+key+" standing: 1", "+pulse-unarmed standing: 2")
+}
+
+// AND THE CURSOR IS THE FEED'S MAX SEQ AND NOT ITS ENTRY COUNT, which the
+// arm above cannot say either (ranger-base-ze7xz, finding 4 of the
+// ranger-base-bfbx8 verify). Both arms that type a reminder sit on a feed
+// where the two numbers are EQUAL: the free-lock arm's feed is empty when the
+// text is composed (count 0, max seq 0) and the arm above drives exactly one
+// tick into it (count 1, max seq 1). Nothing else in the tree types a
+// reminder over a feed whose count and max seq differ.
+//
+// MEASURED 2026-11-14, one literal replacement of pulse.go's
+// `PulseWaitCommand(pulseFeedCursor(PulseFeedPath(d.App)))` over an otherwise
+// unmodified tree:
+//
+//	PulseWaitCommand(len(pulseFeedEntries(PulseFeedPath(d.App))))
+//	    ok 133.129s — the whole arm-3 package green over the feed's entry
+//	    COUNT where its MAX SEQ belongs.
+//
+// THE REAL FEED DIFFERS BY CONSTRUCTION, so this is not a shape only a
+// fixture can have: PulseFeedLines is 500 and an append keeps the newest 500
+// entries and drops the rest (pulse.go), so a long-lived feed holds 501..1000
+// — count 500, max seq 1000. The count reading then pastes `--after 500` where
+// the oldest kept entry is 501, and pulse.go's own note says what that gets:
+// "a `--after` older than the oldest kept entry gets `gap`". The coordinator's
+// first wake is handed every kept entry, up to 500, instead of this delivery's
+// line alone — which is the consequence `--after 0` had and the whole of
+// ranger-base-wjnfr, arriving by the other reading of the same file.
+//
+// HOW THE TWO NUMBERS ARE PRISED APART: the feed is SEEDED before tick one
+// with one entry at a sequence the count cannot reach, so after the tick it
+// holds two entries whose max seq is 8. A seeded line and not seven ticks,
+// because seven ticks would put the count at 7 and the max at 7 again. The
+// seed is also why wantFeed is not used below — it asserts seq == i+1 over
+// the whole feed, which is true of a feed that starts at 1 and is exactly
+// what this fixture must not do.
+//
+// No t.Parallel and an entry in cmd/testparallel: tick one takes the waiter's
+// flock, the same ranger-base-9l77f shape as its sibling.
+func TestPulseReminderCursorIsTheFeedsMaxSeqNotItsEntryCount(t *testing.T) {
+	b, fake, d, clock, key := psCoordinator(t)
+	cfg := psCfg()
+
+	// The seed: ONE entry at seq 7, written the way pulseFeedWrite writes
+	// one (`<seq> <RFC3339> <body>`), so PulseFeedSeq reads it and the next
+	// append is 8. Seq 7 over 1 entry is what makes the count and the max
+	// seq different numbers for the rest of this arm.
+	const seedSeq = 7
+	feed := PulseFeedPath(b.App)
+	if err := os.MkdirAll(filepath.Dir(feed), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := fmt.Sprintf("%d %s +seeded standing: 1\n", seedSeq, clock.UTC().Format(time.RFC3339))
+	if err := os.WriteFile(feed, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Tick one: a listening waiter, so the feed IS the delivery and nothing
+	// is typed. Its append is seq 8, because pulseFeedWrite hands out the
+	// MAXIMUM parseable sequence plus one.
+	lock := psArmWaiter(t, b, *clock)
+	d.pulseOnce(cfg)
+	if log := calls(t, fake); strings.Contains(log, "agent prompt") {
+		t.Fatalf("the fixture tick typed instead of feeding, so the reminder below is composed over the wrong feed:\n%s", log)
+	}
+
+	// The fixture's own claims, said before anything leans on them. Each one
+	// is a way this arm could silently become the arm above it.
+	entries := pulseFeedEntries(feed)
+	if len(entries) != 2 {
+		t.Fatalf("the feed holds %d entries, want the seed plus tick one's:\n%s", len(entries), strings.Join(entries, "\n"))
+	}
+	cursor := pulseFeedCursor(feed)
+	if cursor != seedSeq+1 {
+		t.Fatalf("the feed's max seq is %d, want %d — the seed was not read as an entry, so the append did not continue its sequence:\n%s", cursor, seedSeq+1, strings.Join(entries, "\n"))
+	}
+	if cursor == len(entries) {
+		t.Fatalf("the feed's max seq and its entry count are both %d, so this arm cannot tell the cursor from the count and pins nothing", cursor)
+	}
+	// ...and tick one's own entry is really there and really the delta, so
+	// the tick that armed this feed is the tick the reminder is about.
+	if _, body := feedEntry(t, entries[1]); body != "+"+key+" standing: 1" {
+		t.Fatalf("tick one appended %q, not the standing condition's delta", body)
+	}
+
+	// The waiter goes, and the lock going free is what it is to go.
+	lock.Release()
+
+	// Tick two: nobody listening, so the typed fallback runs and composes
+	// the reminder over the two-entry feed.
+	d.pulseOnce(cfg)
+
+	if out := dispatcherOut(d); !strings.Contains(out, "→ prompted coordinator-work") {
+		t.Fatalf("no typed fallback over the now-free lock:\n%s", out)
+	}
+	log := calls(t, fake)
+	if want := "arm the feed: " + PulseWaitCommand(cursor); !strings.Contains(log, want) {
+		t.Errorf("the reminder is not %q, so the coordinator is told to arm at the wrong place:\n%s", want, log)
+	}
+	// Said separately and by name, because it is the mutant: the ENTRY COUNT
+	// is a cursor that is not merely off. On a capped feed it names a
+	// sequence older than the oldest kept entry, which pulse.go answers with
+	// `gap` and a replay of every kept line.
+	if count := len(entries); strings.Contains(log, PulseWaitCommand(count)) {
+		t.Errorf("the reminder arms at %d, which is the feed's ENTRY COUNT and not its newest entry (%d):\n%s", count, cursor, log)
+	}
+	// And the two readings the sibling arm already catches, kept here so one
+	// feed shape rules out all three: the constant and the off-by-one.
+	for _, bad := range []int{0, cursor + 1} {
+		if strings.Contains(log, PulseWaitCommand(bad)) {
+			t.Errorf("the reminder arms at %d over a feed whose newest entry is %d:\n%s", bad, cursor, log)
+		}
+	}
 }
 
 // A waiter that holds the lock past its own maximum life is WEDGED, not

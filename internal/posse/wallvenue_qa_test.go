@@ -631,3 +631,80 @@ func TestQAWallVenueGateEmitsTheMarkerItDecides(t *testing.T) {
 		t.Errorf("a member the gate lets proceed emitted %q, and the venue counts members by the line %q and by nothing else (ADR 0097 D3) — a run that decides the marker and never prints it is green, silent and uncountable", rec.logged, wallVenueMarker)
 	}
 }
+
+// ARM 8 — the WIRING between the two halves, which is the one line of the
+// gate that arms 1 and 7 between them could not read (ranger-base-ze7xz,
+// finding 5 of the ranger-base-bfbx8 verify).
+//
+// Arm 1 reads bwrapNestDecision with no sink, arm 7 reads bwrapNestAct with
+// no rule, and arm 7's closing paragraph composes the two BY HAND — so a
+// mutation of the line that composes them in production survived all of it.
+// MEASURED 2026-11-14, each one literal replacement inside bwrapNestSkip over
+// an otherwise unmodified tree, `go test -count=1 ./internal/posse` green
+// WHOLE both times:
+//
+//	bwrapNestAct(t, act, "")            ok 193.036s — the marker DECIDED,
+//	                                    never SAID
+//	bwrapNestAct(t, nestAbstain, msg)   ok 137.750s — every member SKIPS
+//	                                    whatever the rule decided
+//
+// Either is ADR 0097 finding 2(b) one level up: 32 members, zero marker
+// lines, a venue run green, silent and uncountable, which
+// `scripts/posse-wall-check` answers exit 3 for and D5's watchdog files as
+// "wall check silent" rather than as the wall regression the run existed to
+// find.
+//
+// SO THE ROWS ARE THE RULE's, NOT THE ACTION's: each one names the three
+// facts bwrapNestSkip reads and asserts the sink AND the words that come out
+// the other end, computed from bwrapNestDecision rather than written out. A
+// want written out by hand would be a third copy of the sentence and would
+// pass over a composition that swapped the two arguments.
+//
+// THE NAME IS DELIBERATELY NOT A MEMBER's. It stays outside
+// wallVenueMemberPattern, like the four existing arms, so a venue run does
+// not count this pin a member of the class it is pinning.
+func TestQAWallVenueGateWiresTheRuleToTheAction(t *testing.T) {
+	t.Parallel()
+
+	const member = "TestLiveWallWatchPassesTheSeatsOwnExitCode"
+	const refusal = "bwrap: setting up uid map: Read-only file system"
+	for _, c := range []struct {
+		why             string
+		name            string
+		refusal         string
+		venue           bool
+		log, skip, fail int
+	}{
+		// The three rows a real seat takes, and the fourth the tree can
+		// take: measure on a box whose wall nests, abstain on a caged seat,
+		// red inside the venue, red for a caller outside D3's filter.
+		{"a member on a box whose wall nests: the marker is EMITTED", member, "", false, 1, 0, 0},
+		{"a member on a caged seat: D3's sentence, as a skip", member, refusal, false, 0, 1, 0},
+		{"the same refusal inside the venue: a red", member, refusal, true, 0, 0, 1},
+		{"a caller outside D3's filter: a red whatever the wall says", "TestSomethingUnfiltered", "", false, 0, 0, 1},
+	} {
+		rec := &nestRecorder{}
+		bwrapNestSkipTo(rec, c.name, c.refusal, c.venue)
+		log, skip, fail := rec.calls()
+		if log != c.log || skip != c.skip || fail != c.fail {
+			t.Errorf("%s: the gate called Log/Skip/Fatal %d/%d/%d times, want %d/%d/%d",
+				c.why, log, skip, fail, c.log, c.skip, c.fail)
+			continue
+		}
+		// The WORDS, from the rule itself: this is the half the `""` mutant
+		// takes away, and the half a hand-written want would have hidden.
+		_, want := bwrapNestDecision(c.name, c.refusal, c.venue)
+		got := append(append(append([]string{}, rec.logged...), rec.skipped...), rec.failed...)
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("%s: the gate said %q, and the rule decided %q — the composition drops or rewrites the words on the way to the sink", c.why, got, want)
+		}
+		// TWO Helper calls and not one: bwrapNestSkipTo marks itself and
+		// bwrapNestAct marks itself, and bwrapNestSkip marks the third. All
+		// three have to, or the marker line `go test -json` carries names a
+		// line of wallvenue_test.go where the MEMBER's own file and line
+		// belong — which is what the venue's readers grep back to.
+		if rec.helpers != 2 {
+			t.Errorf("%s: Helper called %d times, want 2 (bwrapNestSkipTo's and bwrapNestAct's)", c.why, rec.helpers)
+		}
+	}
+}

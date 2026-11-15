@@ -344,10 +344,43 @@ func bwrapNestDecision(name, refusal string, venue bool) (nestAction, string) {
 // them takes the same row in any one process, and none of them asserts that
 // the gate logged anything. So the switch moved to bwrapNestAct, which takes
 // its sink as an interface a pin can hand a recorder.
+// AND THE WIRING BETWEEN THE RULE AND THE ACTION IS NOW PINNED TOO, which it
+// was not when the two halves first split (ranger-base-ze7xz, finding 5 of the
+// ranger-base-bfbx8 verify). The split gave the RULE a pin and the ACTION a
+// pin, and left the line that joins them reachable by no test: two mutants
+// INSIDE this function, neither touching bwrapNestDecision or bwrapNestAct,
+// each left `go test -count=1 ./internal/posse` green WHOLE (MEASURED
+// 2026-11-14, ok 193.036s and ok 137.750s):
+//
+//	bwrapNestAct(t, act, "")            the marker DECIDED and never SAID
+//	bwrapNestAct(t, nestAbstain, msg)   every member SKIPS whatever was decided
+//
+// Either one is ADR 0097 finding 2(b) verbatim one level up — 32 members,
+// zero marker lines, a venue run green, silent and uncountable, which
+// `scripts/posse-wall-check` answers exit 3 for and D5's watchdog files as
+// "wall check silent" rather than as the wall regression the run existed to
+// find. So the composition moved into bwrapNestSkipTo, which takes the sink
+// and the three facts as arguments and can therefore be handed a recorder.
+//
+// WHAT IS STILL UNPINNED is exactly the three argument READS below — t.Name(),
+// liveBwrapNestRefusal() and wallVenueActive(t) — and that residual cannot be
+// shrunk from inside this package: a pin that called bwrapNestSkip would be
+// either outside D3's member pattern (and get t.Fatal) or counted a venue
+// member itself, and a *testing.T's log is not readable in process. That is
+// the residual ranger-base-ig79v's close declared; it is now the whole of it.
 func bwrapNestSkip(t *testing.T) {
 	t.Helper()
-	act, msg := bwrapNestDecision(t.Name(), liveBwrapNestRefusal(), wallVenueActive(t))
-	bwrapNestAct(t, act, msg)
+	bwrapNestSkipTo(t, t.Name(), liveBwrapNestRefusal(), wallVenueActive(t))
+}
+
+// bwrapNestSkipTo is the gate's composition and nothing else: the rule's
+// answer goes to the action half, with the words the rule decided. Every
+// argument is a fact bwrapNestSkip reads off its *testing.T and the process,
+// so this is the whole of the gate a pin can drive.
+func bwrapNestSkipTo(s nestSink, name, refusal string, venue bool) {
+	s.Helper()
+	act, msg := bwrapNestDecision(name, refusal, venue)
+	bwrapNestAct(s, act, msg)
 }
 
 // nestSink is the gate's caller as the gate uses it: the three sinks ADR 0097

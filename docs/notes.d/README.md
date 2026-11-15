@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-ze7xz](ranger-base-ze7xz.md) — Three pin gaps from the ranger-base-bfbx8 verify, and one seam that had to move for the third — 2026-11-15
 - [ranger-base-9lsg2](ranger-base-9lsg2.md) — release-artifacts.sh fetches its build source, as clean-build.sh does (ranger-base-9lsg2) — 2026-11-15
 - [ranger-base-zpx1k](ranger-base-zpx1k.md) — A door on ADR 0097 D3's three exits, and why the parser stayed in the shell (ranger-base-zpx1k) — 2026-11-14
 - [ranger-base-zkuwa](ranger-base-zkuwa.md) — A reflection over FIELDS cannot hold an arm a zero value selects (ranger-base-zkuwa) — 2026-11-14
