@@ -239,19 +239,27 @@ func claudePrivateSessionState(home, cwd string, stateGrants []string) []Private
 		return nil
 	}
 	var out []PrivateBind
+	// SrcRoot IS THE SEAT CACHE DIR, in the spelling Src is composed from
+	// (ranger-base-wsgus). Everything below it — <seat>/claude and each
+	// member under it — is in the seat's own write set, so the render lstats
+	// every one of those components and refuses a link at any of them; the
+	// seat cache dir itself is the launcher's path, and nothing grants its
+	// parent.
 	for _, n := range claudeSessionStateDirNames {
 		out = append(out, PrivateBind{
-			Src: filepath.Join(seat, claudePrivateSessionStateRel, n),
-			Dst: filepath.Join(cfg, n),
+			Src:     filepath.Join(seat, claudePrivateSessionStateRel, n),
+			SrcRoot: seat,
+			Dst:     filepath.Join(cfg, n),
 		})
 	}
 	// history.jsonl is a FILE, so its private copy is a file bind; why it is
 	// private at all is above claudeSessionStateDirNames. The source is the
 	// path lastSubmittedOfPID reads, from the one helper.
 	out = append(out, PrivateBind{
-		Src:  claudePrivateHistoryPath(home, cwd),
-		Dst:  filepath.Join(cfg, claudeHistoryFile),
-		File: true,
+		Src:     claudePrivateHistoryPath(home, cwd),
+		SrcRoot: seat,
+		Dst:     filepath.Join(cfg, claudeHistoryFile),
+		File:    true,
 	})
 	return out
 }

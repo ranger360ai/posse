@@ -556,8 +556,29 @@ type SeatbeltNarrow struct {
 // following it (claude's history.jsonl, ranger-base-a544g). An absent one is
 // created empty at 0600 by the launcher, since a mount needs a name to cover.
 // File binds take a Src of their own; in place and tmpfs are dir shapes.
+//
+// SrcRoot IS THE DEEPEST COMPONENT OF Src THIS RENDER TRUSTS, and an entry
+// with a Src of its own is refused without one (ranger-base-wsgus). A private
+// source lives under the seat's OWN cache dir, which that seat can write — so
+// every component of Src BELOW this root is lstat'd and must be a real
+// directory, and a link anywhere along it refuses the render. The last
+// component takes the arm's own rule: a regular file for File, a directory
+// for the dir copy. Checking only the last one was not enough: the seat can
+// write <SeatCacheDir>/claude itself, so a link planted at that PARENT made
+// <seat>/claude/history.jsonl lstat as the target's own regular file, which
+// a544g's final-component check passed, and bound a file of the seat's
+// choosing read-write into the next launch's namespace.
+//
+// IT IS THE EXACT PREFIX Src WAS COMPOSED FROM, spelled as the producer
+// spelled it (claudePrivateSessionState passes SeatCacheDir's answer
+// unresolved), because the containment test below it is lexical. Nothing AT
+// or ABOVE the root is inspected: the root is the launcher's own path, a seat
+// cannot replace it (nothing grants its parent), and demanding its ancestors
+// be link-free would refuse every launch on a host whose home or cache dir is
+// reached through one.
 type PrivateBind struct {
 	Src, Dst string
+	SrcRoot  string
 	ReadOnly bool
 	File     bool
 }

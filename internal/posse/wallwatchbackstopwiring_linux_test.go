@@ -91,7 +91,7 @@ func TestLiveWallWatchKillsASeatWhoseBackstopRecordCannotBeWritten(t *testing.T)
 	carve := SeatbeltCarveOut{
 		Deny:     []string{s.deny},
 		DenyFile: []string{s.deny},
-		Private:  []PrivateBind{{Src: s.privSrc, Dst: s.priv}},
+		Private:  []PrivateBind{{Src: s.privSrc, SrcRoot: filepath.Dir(s.privSrc), Dst: s.priv}},
 	}
 	argv, prep, watch, err := bwrapArgsWatched(s.grant, []string{s.grant}, carve)
 	if err != nil {

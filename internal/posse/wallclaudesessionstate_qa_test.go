@@ -125,7 +125,7 @@ func TestQAWallClaudeSessionStateRefusesALinkAtTheMember(t *testing.T) {
 	if err := os.Symlink(elsewhere, dst); err != nil {
 		t.Fatal(err)
 	}
-	carve := SeatbeltCarveOut{Private: []PrivateBind{{Src: filepath.Join(d, "seat"), Dst: dst}}}
+	carve := SeatbeltCarveOut{Private: []PrivateBind{{Src: filepath.Join(d, "seat"), SrcRoot: d, Dst: dst}}}
 	if _, _, err := BwrapArgs(d, []string{grant}, carve); err == nil || !strings.Contains(err.Error(), "not a directory") {
 		t.Errorf("a link at the member rendered (err %v), so bwrap would mount where another seat pointed it", err)
 	}
@@ -610,6 +610,105 @@ func TestQAWallClaudeSessionStateRefusesALinkAtHistory(t *testing.T) {
 		}
 		if _, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 			t.Errorf("%s rendered (err %v), so bwrap would mount where a seat pointed it", c.name, err)
+		}
+	}
+}
+
+// EVERY COMPONENT of a private bind's source is lstat'd, not only the last
+// one (ranger-base-wsgus). The pin above is the final-component half, and it
+// held while two ways past it were open: the DIR arm asked os.Stat, which
+// follows a link at the member's own name, and BOTH arms looked at the last
+// component alone — so a link at <seat>/claude, which the seat can write
+// (SeatCacheDir is in its write set), left <seat>/claude/history.jsonl
+// lstat'ing as the TARGET's own regular file and passing. Either way bwrap
+// bound a path the seat chose read-write at <cfg>, after the grants and past
+// the deny and read-mask steps, which name the target's real path and not
+// this alias.
+//
+// AND NO PREP, which is the other half: PrepMkdirAll and PrepMaskPoint run
+// in the UNCAGED launcher, so a render that followed the link would also
+// point the launcher's own 0755 mkdir and 0600 create at the seat's chosen
+// directory.
+//
+// Protects: the next launch's write wall from being widened by the seat the
+// last launch ran. Mutating bwrapPrivateSrcStat back to a bwrapStat or to an
+// lstat of the last component only must red this.
+func TestQAWallClaudeSessionStateRefusesALinkAtAnyComponentOfThePrivateSource(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f, _, _ := cssFixture(t)
+	seat := SeatCacheDir(f.home, f.dir)
+	own := filepath.Join(seat, claudePrivateSessionStateRel)
+	// What a seat would aim a component at: a directory it can write,
+	// holding a REAL directory at every private member's name and a REAL
+	// regular file at history.jsonl — so nothing but the walk itself can
+	// refuse these plants, and the final-component checks all pass.
+	victim := filepath.Join(wallUngrantedDir(t), "uid-writable")
+	for _, n := range claudeSessionStateDirNames {
+		if err := os.MkdirAll(filepath.Join(victim, n), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(victim, claudeHistoryFile), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ name, at string }{
+		{"a link at a DIR member's own source", filepath.Join(own, "session-env")},
+		{"a link at <seat>/claude, the members' parent, with a real history.jsonl in the target", own},
+		{"a link at the seat cache dir itself", seat},
+	} {
+		if err := os.RemoveAll(seat); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(c.at), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(victim, c.at); err != nil {
+			t.Fatal(err)
+		}
+		r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+		switch {
+		case err == nil:
+			t.Errorf("%s rendered, so bwrap mounts %s read-write inside the next seat's namespace\n argv: %q", c.name, victim, r.Argv)
+		case !strings.Contains(err.Error(), c.at):
+			t.Errorf("%s refused with %q, which does not name the planted component %s — the refusal is the operator's only instruction for what to remove", c.name, err, c.at)
+		}
+		if len(r.Prep) != 0 {
+			t.Errorf("%s came back with prep %v, which the UNCAGED launcher runs: a refused render hands it no step", c.name, r.Prep)
+		}
+	}
+}
+
+// A private bind whose source is composed under no declared root renders
+// nothing: SrcRoot is what says which components the walk above may trust, so
+// an entry without one is refused rather than checked at its last component
+// (ranger-base-wsgus). This is what a future producer of a Src outside the
+// seat cache meets.
+func TestQAWallPrivateBindWithNoSrcRootRefuses(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	grant := filepath.Join(d, "cfg")
+	src := filepath.Join(d, "seat", "shell-snapshots")
+	for _, p := range []string{grant, src} {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dst := filepath.Join(grant, "shell-snapshots")
+	for _, c := range []struct {
+		name string
+		pb   PrivateBind
+	}{
+		{"a dir copy", PrivateBind{Src: src, Dst: dst}},
+		{"a file bind", PrivateBind{Src: filepath.Join(src, "h.jsonl"), Dst: filepath.Join(grant, "h.jsonl"), File: true}},
+		{"a source outside the root it declares", PrivateBind{Src: src, SrcRoot: filepath.Join(d, "elsewhere"), Dst: dst}},
+	} {
+		carve := SeatbeltCarveOut{Private: []PrivateBind{c.pb}}
+		argv, prep, err := BwrapArgs(d, []string{grant}, carve)
+		if err == nil {
+			t.Errorf("%s rendered with no trusted root for its source: %q", c.name, argv)
+		}
+		if len(prep) != 0 {
+			t.Errorf("%s came back with prep %v for the uncaged launcher to run", c.name, prep)
 		}
 	}
 }

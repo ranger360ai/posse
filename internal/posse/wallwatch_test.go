@@ -174,9 +174,10 @@ func wwEveryShape(t *testing.T) wwRender {
 	root := t.TempDir()
 	grant := filepath.Join(root, "cfg")
 	priv := filepath.Join(grant, "shell-snapshots")
-	src := filepath.Join(root, "seat", "shell-snapshots")
+	seatRoot := filepath.Join(root, "seat")
+	src := filepath.Join(seatRoot, "shell-snapshots")
 	hist := filepath.Join(grant, "history.jsonl")
-	histSrc := filepath.Join(root, "seat", "history.jsonl")
+	histSrc := filepath.Join(seatRoot, "history.jsonl")
 	inPlace := filepath.Join(grant, "projects")
 	// The tmpfs arm's destination is deliberately NOT created: a
 	// runtimeEphemeralDirs member need not exist on the host, and the arm
@@ -231,9 +232,12 @@ func wwEveryShape(t *testing.T) wwRender {
 			Narrow:   []SeatbeltNarrow{{Path: priv, Allow: false}},
 			DenyAll:  []string{priv},
 			Private: []PrivateBind{
-				{Src: src, Dst: priv},
+				// SrcRoot is the seat cache dir both sources are composed
+				// from: the render walks every component below it and
+				// refuses a link at any (ranger-base-wsgus).
+				{Src: src, SrcRoot: seatRoot, Dst: priv},
 				// ranger-base-a544g's shape: a regular file at both ends.
-				{Src: histSrc, Dst: hist, File: true},
+				{Src: histSrc, SrcRoot: seatRoot, Dst: hist, File: true},
 				// ranger-base-ajkqx's: bound in place to narrow the grant.
 				{Src: inPlace, Dst: inPlace, ReadOnly: true},
 				// ranger-base-6ob20's: an empty tmpfs, selected by an empty

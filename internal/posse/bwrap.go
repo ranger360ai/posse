@@ -1107,13 +1107,13 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 		if err != nil {
 			prep = append(prep, PrepStep{PrepMaskPoint, pb.Dst, "the shared file a private copy is mounted over; created empty at 0600 because a mount needs a name to cover"})
 		}
-		sfi, serr := os.Lstat(pb.Src)
+		sexists, sfi, serr := bwrapPrivateSrcStat(pb)
 		switch {
-		case serr == nil && !sfi.Mode().IsRegular():
-			return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a regular file (a link, a dir or a special file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-a544g)", pb.Src, pb.Dst)
-		case serr != nil && !os.IsNotExist(serr):
-			return nil, nil, false, bwrapStatRefusal("private source", pb.Src, serr)
 		case serr != nil:
+			return nil, nil, false, serr
+		case sexists && !sfi.Mode().IsRegular():
+			return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a regular file (a link, a dir or a special file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-a544g)", pb.Src, pb.Dst)
+		case !sexists:
 			prep = append(prep,
 				PrepStep{PrepMkdirAll, filepath.Dir(pb.Src), "the seat's private copy of shared claude state lives here"},
 				PrepStep{PrepMaskPoint, pb.Src, "the seat's private copy of a file every claude seat shares, created empty at 0600 as claude creates it"})
@@ -1147,17 +1147,98 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 		// (ranger-base-6ob20).
 		return []string{"--tmpfs", pb.Dst}, prep, true, nil
 	}
-	exists, dir, err := bwrapStat(pb.Src)
-	if err != nil {
-		return nil, nil, false, bwrapStatRefusal("private source", pb.Src, err)
-	}
+	// THE SOURCE IS LSTAT'D AT EVERY COMPONENT, NOT STAT'D AT THE LAST
+	// (ranger-base-wsgus). It sat under a bwrapStat — os.Stat, which follows
+	// — so a seat that replaced its own <seat cache>/claude/<member> with a
+	// link had the next launch bind that link's target read-write at
+	// <cfg>/<member>, after the grants and past the deny and read-mask steps,
+	// which name the target's own path and not this alias.
+	exists, sfi, err := bwrapPrivateSrcStat(pb)
 	switch {
-	case exists && !dir:
-		return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a directory (ranger-base-5632o)", pb.Src, pb.Dst)
+	case err != nil:
+		return nil, nil, false, err
+	case exists && !sfi.IsDir():
+		return nil, nil, false, Die("bwrap cannot bind %s over %s: it is not a directory (a link or a file is there, and the seat can write its own cache dir) — remove it and relaunch (ranger-base-5632o, ranger-base-wsgus)", pb.Src, pb.Dst)
 	case !exists:
 		prep = append(prep, PrepStep{PrepMkdirAll, pb.Src, "the seat's private copy of a member every claude seat shares, which claude runs ahead of each Bash command"})
 	}
 	return []string{bind, pb.Src, pb.Dst}, prep, true, nil
+}
+
+// bwrapPrivateSrcStat is the one filesystem question asked of a private
+// bind's SOURCE, and it asks it of EVERY component rather than of the name
+// (ranger-base-wsgus): it answers whether pb.Src is there and what it is,
+// having lstat'd each component from pb.SrcRoot down and refused a link
+// anywhere along the way. The LAST component is handed back unjudged, because
+// the arms want different things of it — a regular file for the File bind, a
+// directory for the dir copy — and each already has the message that says so.
+//
+// A SOURCE UNDER THE SEAT'S OWN CACHE DIR IS A PATH THE SEAT CAN WRITE, which
+// is the whole reason the question is this shape. <SeatCacheDir>/claude is in
+// the seat's write set (seatbelt.go's add(SeatCacheDir)), so the seat can
+// remove that directory and plant a link to anything its uid can write.
+// Checking the last component alone let it through twice over: the dir arm's
+// os.Stat followed a link at the member itself, and a link at the PARENT
+// made <seat>/claude/history.jsonl lstat as the target's own regular file, so
+// the File arm's own lstat passed and bwrap bound a file of the seat's
+// choosing read-write inside the next launch's namespace.
+//
+// ABSENT IS NOT A REFUSAL, and it stops the walk: nothing can exist under a
+// component that is not there, so the first ENOENT answers for the whole
+// path, and the arms turn that into the PrepStep that makes it. Those steps
+// run in the UNCAGED launcher (PrepMkdirAll, PrepMaskPoint), which is why
+// they are emitted only on this walk's verdict and never on os.Stat's: a
+// link here aimed the launcher's own 0755 mkdir and 0600 create at a path
+// the seat picked.
+//
+// NOTHING AT OR ABOVE SrcRoot IS INSPECTED — PrivateBind's doc says why that
+// is the trust line, and why the containment test is lexical.
+//
+// WHAT THE WALK ANSWERS FOR IS THE INSTANT IT RAN IN. bwrap resolves the
+// source itself, at mount, and the launcher's prep steps resolve it again
+// when they run. Residual: ranger-base-p47q6.
+func bwrapPrivateSrcStat(pb PrivateBind) (exists bool, fi os.FileInfo, err error) {
+	if pb.Src == "" {
+		// Reachable only from the FILE arm: an empty Src is the dir shapes'
+		// tmpfs, and that arm returns before this call.
+		return false, nil, Die("bwrap cannot bind a private file over %s: the render named no source for it (ranger-base-wsgus)", pb.Dst)
+	}
+	if pb.SrcRoot == "" {
+		return false, nil, Die("bwrap cannot bind %s over %s: the render names no SrcRoot for it, so there is no component of the source this render may trust, and a seat that can write its own cache dir plants a link at any of them (ranger-base-wsgus)", pb.Src, pb.Dst)
+	}
+	root, src := filepath.Clean(pb.SrcRoot), filepath.Clean(pb.Src)
+	rel, rerr := filepath.Rel(root, src)
+	if rerr != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false, nil, Die("bwrap cannot bind %s over %s: its source is not under the %s this render trusts, so no walk of its components says anything about it (ranger-base-wsgus)", pb.Src, pb.Dst, pb.SrcRoot)
+	}
+	comps := strings.Split(rel, string(filepath.Separator))
+	// i == -1 is the root itself: lstat'd, because a link AT it is a link in
+	// the path too, and its own parents are the launcher's to spell.
+	p := root
+	for i := -1; i < len(comps); i++ {
+		if i >= 0 {
+			p = filepath.Join(p, comps[i])
+		}
+		cfi, cerr := os.Lstat(p)
+		switch {
+		case os.IsNotExist(cerr):
+			return false, nil, nil
+		case cerr != nil:
+			return false, nil, bwrapStatRefusal("private source", p, cerr)
+		}
+		if i == len(comps)-1 {
+			return true, cfi, nil
+		}
+		if cfi.Mode()&os.ModeSymlink != 0 {
+			return false, nil, Die("bwrap cannot bind %s over %s: %s is a symlink, and the seat can write under %s — following it would bind a path the seat chose read-write inside its own namespace. Remove it and relaunch (ranger-base-wsgus)", pb.Src, pb.Dst, p, pb.SrcRoot)
+		}
+		if !cfi.IsDir() {
+			return false, nil, Die("bwrap cannot bind %s over %s: %s is not a directory, so the source is not the path it is spelled as. Remove it and relaunch (ranger-base-wsgus)", pb.Src, pb.Dst, p)
+		}
+	}
+	// Unreachable: the loop returns at i == len(comps)-1, and comps is never
+	// empty (an empty rel is the "." the containment test above refused).
+	return false, nil, Die("bwrap cannot bind %s over %s: its source has no component under %s (ranger-base-wsgus)", pb.Src, pb.Dst, pb.SrcRoot)
 }
 
 // grantInside says whether any write grant lies at or under d — the other
