@@ -14,8 +14,9 @@
 #   GOBIN=<go> which go to build with (default: go)
 #
 # Blast radius: writes only inside <out>, and removes only an <out> that holds
-# nothing it did not write; $PWD/.git is opened read-only (one temp worktree,
-# removed on exit) and no network is touched. It does not tag, does not
+# nothing it did not write; $PWD/.git is opened read-only (the source is
+# fetched from it into one temp repo, removed on exit) and no network is
+# touched. It does not tag, does not
 # publish, and does not talk to GitHub.
 #
 # Why not goreleaser: it would be a fifth pinned substrate to keep honest (see
@@ -213,8 +214,9 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 # <<< out-guard (ranger-base-9hyc)
 
-# Same discipline as scripts/clean-build.sh, and for the same reason: personas
-# share this checkout, so the working tree is never what ships.
+# Same discipline as scripts/clean-build.sh, and for the same reasons: personas
+# share this checkout, so the working tree is never what ships, and the shared
+# object store is not trusted either — the source is fetched, re-hashed, below.
 # Explicit template, not `mktemp -t <prefix>`: the -t form is BSD, and GNU
 # coreutils rejects a template with no X's ("too few X's in template"). This
 # script runs on ubuntu-latest in .github/workflows/release.yml, so the BSD
@@ -223,7 +225,6 @@ mkdir -p "$OUT"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-release.XXXXXX")
 src=$tmp/src
 cleanup() {
-	git -C "$repo" worktree remove --force "$src" 2>/dev/null || :
 	rm -rf "$tmp"
 }
 # EXIT keeps the bare handler; INT, TERM and HUP get one that EXITS
@@ -254,7 +255,38 @@ trap cleanup EXIT
 trap 'echo "release-artifacts: interrupted (SIGINT) — $OUT is incomplete" >&2; exit 130' INT
 trap 'echo "release-artifacts: interrupted (SIGTERM) — $OUT is incomplete" >&2; exit 143' TERM
 trap 'echo "release-artifacts: interrupted (SIGHUP) — $OUT is incomplete" >&2; exit 129' HUP
-git -C "$repo" worktree add --detach --quiet "$src" "$REV"
+
+# The source is FETCHED into a fresh repo, not checked out of $repo with
+# `git worktree add` (ranger-base-9lsg2; scripts/clean-build.sh has done the
+# same since ranger-base-la61c). git trusts an object's bytes by the name they
+# are filed under and never re-hashes them on a local read, so a worktree add
+# serves whatever bytes sit in the object store under each SHA — and this
+# script mints the tarballs, the bottles, checksums.txt and the formula from
+# them, so the checksums would certify bytes nothing verified. A fetch goes
+# through the pack protocol, whose receiving side hashes every object it is
+# sent; bytes that do not hash to their name leave the commit's tree
+# incomplete and the fetch fails "did not send all necessary objects". The
+# fresh repo has no refs, so nothing is negotiated away as "already had".
+#
+# The want is the FULL commit id, not $REV: $REV may be a tag or a relative
+# name that only $repo can resolve. MEASURED 2026-11-15 (git 2.56.0, linux,
+# scratch repos): a fresh repo fetching a raw commit id over the local
+# transport succeeds for a non-tip commit and for an unreachable one, and the
+# same fetch over a substituted loose blob exits 1.
+full=$(git -C "$repo" rev-parse "$REV^{commit}")
+git init --quiet "$src"
+if ! git -C "$src" fetch --quiet --no-tags "$repo" "$full"; then
+	echo "release-artifacts: fetching $REV ($sha) from $repo did not verify — refusing to build" >&2
+	echo "  every object is re-hashed on the way in; a refusal here means the repo's" >&2
+	echo "  object store does not hold the bytes its names promise. Run: git -C $repo fsck" >&2
+	exit 1
+fi
+got=$(git -C "$src" rev-parse FETCH_HEAD)
+if [ "$got" != "$full" ]; then
+	echo "release-artifacts: fetched $got, expected $REV $full — refusing to build" >&2
+	exit 1
+fi
+git -C "$src" checkout --quiet --detach "$full"
 
 echo "release-artifacts: $VERSION from $sha"
 
