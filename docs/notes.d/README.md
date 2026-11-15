@@ -61,6 +61,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-cgr1h](ranger-base-cgr1h.md) — The pulse waiter: what the ADR settled, and the four things it did not (ranger-base-cgr1h) — 2026-11-14
 - [ranger-base-bskno](ranger-base-bskno.md) — The second route to a cross-cutting lane, and this one no order reaches (ranger-base-bskno) — 2026-11-14
 - [ranger-base-b3w9x](ranger-base-b3w9x.md) — A method, and then a helper: two places the exec census was not asking (ranger-base-b3w9x) — 2026-11-14
+- [ranger-base-a9gbq](ranger-base-a9gbq.md) — A platform filename suffix is a declaration, and three lines that were load-bearing and unpinned (ranger-base-a9gbq) — 2026-11-14
 - [ranger-base-99mvt](ranger-base-99mvt.md) — A mount SHAPE the fixture reflection could not see, one level down (ranger-base-99mvt) — 2026-11-14
 - [ranger-base-87p6i](ranger-base-87p6i.md) — ranger-base-87p6i — the `-race` arm covered eight files, and the race landed in one of the fifteen it did not — 2026-11-14
 - [ranger-base-85xxm](ranger-base-85xxm.md) — ranger-base-85xxm — the sweep's own death, and a gate pinned by the abort below it — 2026-11-14
