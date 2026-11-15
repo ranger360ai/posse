@@ -280,7 +280,7 @@ func TestSweepRetiresADeadLandedTreeAndNamesEveryFactThatKeepsOne(t *testing.T) 
 		// referenced — but the sweep no longer reaches the retire with
 		// nothing said: since ranger-base-vavx2 the landing half asks both
 		// tips too (nothingToLand), so MergeSessionWork is called, reports
-		// the strand and prescribes the `branch -f` that rescues it, and
+		// the strand and prescribes the `checkout -B` that rescues it, and
 		// `said` swallows the keep line behind it (ranger-base-edsiu, where
 		// the two changes met).
 		name: "a detached tree's work keeps it, and the commit stays referenced",
@@ -289,7 +289,7 @@ func TestSweepRetiresADeadLandedTreeAndNamesEveryFactThatKeepsOne(t *testing.T) 
 			commitOldIn(t, tr.Path, "adr.md", "status: accepted\n", "a-1: off its own branch")
 		},
 		says:     []string{"holds 1 commit(s)"},
-		landSays: []string{"did NOT reach", "branch -f "},
+		landSays: []string{"did NOT reach", "checkout -B "},
 	}, {
 		// Fact 3: herdr holds the workspace right now.
 		name: "a session herdr still lists keeps the tree",

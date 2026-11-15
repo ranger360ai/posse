@@ -67,7 +67,11 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 		},
 		detached: true,
 		kept:     true,
-		says:     []string{"commit(s) not on main", "branch -f " + SessionBranch("s-1")},
+		// The accidental detach's cure re-attaches; the caged arm below
+		// keeps the ref move alone, because its HEAD must stay off the
+		// branch to commit inside the cage (offBranchCure,
+		// ranger-base-wg4z1).
+		says: []string{"commit(s) not on main", "checkout -B " + SessionBranch("s-1")},
 	}, {
 		// The same, with the record a caged launch leaves. The stamp is what
 		// MergeSessionWork reads to splice — and these guards must hold

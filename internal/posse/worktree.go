@@ -681,6 +681,81 @@ func spliceDetachedWork(t *SessionTree) error {
 	return err
 }
 
+// attachForReplay puts a session tree's HEAD back ON its own branch before
+// MergeSessionWork replays it, and refuses the replay when it cannot.
+//
+// WHY THE REPLAY CANNOT RUN DETACHED (ranger-base-wg4z1). `git rebase <base>`
+// moves whatever HEAD names, and over a detached tree that is HEAD and not the
+// branch — git says so itself, "Successfully rebased and updated detached
+// HEAD". So the replay's output is on no ref at all, while the fast-forward
+// under it takes the BRANCH, which the rebase never moved and whose parent is
+// no longer the base. The pass then reports "<base> still would not
+// fast-forward after the rebase" about work it had just replayed onto the base,
+// and the next pass does the same again: one unreferenced commit per pass, no
+// landing ever, and the merge-back block re-filing against each new sha.
+//
+// MEASURED 2026-11-14 on this box, git 2.56.0, one fixture both ways: detached,
+// the base moved, `rebase` leaves the branch at the pre-rebase commit and
+// `merge --ff-only` answers "Not possible to fast-forward"; with HEAD attached
+// to the same commit the rebase updates `refs/heads/posse/s1` and the
+// fast-forward lands. In the field it is what stranded ranger-base-cq3vi's
+// work pass after pass while recovering ranger-base-3iybl.
+//
+// IT REACHED BOTH KINDS OF DETACH. The accidental one gets here the moment the
+// off-branch refusal's own cure is run (offBranchCure, which is why that cure
+// now re-attaches); the DESIGNED one gets here on every container-tier session
+// whose base moved, because spliceDetachedWork puts the branch on the work and
+// deliberately leaves HEAD where it was — which is exactly the state above.
+// The arm that landed such a session before this was the plain fast-forward,
+// and only when its base had not moved.
+//
+// THE ATTACH IS NOT A SPLICE AND LOSES NOTHING. It runs only when the branch
+// ALREADY names the exact commit the tree's HEAD names: no ref moves, no
+// commit changes hands, nothing reachable stops being reachable. It is the
+// tree's HEAD agreeing with a ref that is already on it. That is what keeps
+// ranger-base-oou58's invariant intact — putting work back on a branch the
+// work is NOT on is the splice, gated on `launchedDetached` on purpose so an
+// accidental detach stays loud, and this function never does it. When the two
+// tips differ they hold different work and only a human can say which is the
+// session's, so the replay is refused and the sentence names the command that
+// settles it.
+//
+// RE-ATTACHING A TREE POSSE DETACHED ON PURPOSE COSTS NOTHING HERE, which is a
+// fact about where this runs and not an opinion: every caller holds the
+// launcher lock, the sweep merges only a tree whose bead is already closed
+// (landsweep.go), the next launch into that tree detaches it again from the
+// record (PrepareSessionHead), and a session that could still commit in its
+// cage would have had its HEAD rewritten by the replay regardless. What the
+// attach buys downstream is the rest of the merge path working as written: the
+// landcheck's undo moves the branch (resetReplay refuses over a detached tree
+// and lands unjudged instead), and so does baseLandCheck's own detach.
+//
+// "" is "the replay may run" — an attached tree, which is the ordinary answer
+// and costs two reads, or one this attached.
+func attachForReplay(t *SessionTree) string {
+	head, detached := treeDetachedHead(t.Path)
+	if !detached {
+		return ""
+	}
+	// The branch EXISTS by the time anything reaches here — MergeSessionWork
+	// returns through landed() when it does not — so a tip that does not
+	// resolve is not one of the answers this has to word.
+	cause := ""
+	if tip := refSHA(t.Repo, "refs/heads/"+t.Branch); tip != head {
+		cause = fmt.Sprintf("its HEAD is at %s where %s is at %s, so the two hold different work and only you can say which is the session's",
+			abbrevSHA(head), t.Branch, abbrevSHA(tip))
+	} else if _, err := git(t.Path, "checkout", t.Branch); err != nil {
+		cause = fmt.Sprintf("git would not check %s out there (%s)", t.Branch, gitSaid(err))
+	} else if _, off := treeDetachedHead(t.Path); off {
+		cause = fmt.Sprintf("git reported no error checking %s out there and the HEAD is detached afterwards all the same", t.Branch)
+	}
+	if cause == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s moved on and %s has a DETACHED HEAD, which `git rebase` moves instead of %s — so the replay's output would be on no branch while the fast-forward took a %s the replay never touched (%s); `%s`, then `posse worktrees --land`",
+		t.Base, AbbrevHome(t.Path), t.Branch, t.Branch, cause, offBranchCure(t))
+}
+
 // PrepareSessionHead decides, at every launch into a session worktree,
 // whether HEAD sits ON the session branch or off it — because at the
 // container tier the answer is what the git grant is made of
@@ -1776,6 +1851,15 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 		o.Reason = fmt.Sprintf("%s moved on and %s has uncommitted changes (%s), %s", t.Base, AbbrevHome(t.Path), strings.Join(o.Dirty, " "), dirtyBlockMark)
 		return o, nil
 	}
+	// THE REPLAY MOVES WHATEVER HEAD NAMES, so the tree has to be ON its own
+	// branch before it runs (ranger-base-wg4z1). Asked here, after the dirt —
+	// which is the one obstacle a persona clears without committing — and
+	// before the first `pre` is read, because an attach is not an attempt: it
+	// is a fact about the tree and the same for every one of them.
+	if why := attachForReplay(t); why != "" {
+		o.Reason = why
+		return o, nil
+	}
 	// THE TIP THE SEAT LEFT, read before the first replay rewrites the branch
 	// — ADR 0087 D5's operand. A landing the repo's own check refuses has to
 	// put the branch back where it was, and after a SUCCESSFUL rebase there is
@@ -2310,13 +2394,44 @@ func landed(o MergeOutcome, t *SessionTree) MergeOutcome {
 		return o
 	}
 	if branchExists(t.Repo, t.Branch) && !reaches(t.Repo, t.Branch, head) {
-		o.Reason = fmt.Sprintf("%s in %s is on neither %s nor %s — the tree's HEAD is off its own branch, so no merge here can reach it; `git -C %s branch -f %s HEAD` puts the work back on the branch and the next pass lands it",
-			abbrevSHA(head), AbbrevHome(t.Path), t.Base, t.Branch, AbbrevHome(t.Path), t.Branch)
+		o.Reason = fmt.Sprintf("%s in %s is on neither %s nor %s — the tree's HEAD is off its own branch, so no merge here can reach it; `%s` puts the work back on the branch and the next pass lands it",
+			abbrevSHA(head), AbbrevHome(t.Path), t.Base, t.Branch, offBranchCure(t))
 		return o
 	}
-	o.Reason = fmt.Sprintf("%s in %s is not on %s and no branch here reaches it — the work is unreferenced and a retire would lose it; `git -C %s branch -f %s HEAD` names it again",
-		abbrevSHA(head), AbbrevHome(t.Path), t.Base, AbbrevHome(t.Path), t.Branch)
+	o.Reason = fmt.Sprintf("%s in %s is not on %s and no branch here reaches it — the work is unreferenced and a retire would lose it; `%s` names it again",
+		abbrevSHA(head), AbbrevHome(t.Path), t.Base, offBranchCure(t))
 	return o
+}
+
+// offBranchCure is the one command the four surfaces here prescribe for a
+// session tree whose own HEAD is off its branch — landed()'s two refusals,
+// RemoveSessionTree's and the listing's — written once so they cannot drift
+// apart, and so that what is prescribed is what actually works.
+//
+// IT RE-ATTACHES, AND THAT IS THE WHOLE OF ranger-base-wg4z1. Every one of
+// those surfaces used to say `git branch -f <branch> HEAD`, which moves the
+// BRANCH and leaves HEAD detached — so it satisfies the off-branch test for
+// exactly one pass and then the next pass's replay strands its own output
+// (attachForReplay has the mechanism and the measurement). `checkout -B` does
+// both halves: the ref move `branch -f` did, and the attach that lets the
+// replay behind it carry the branch. MEASURED 2026-11-14 on this box, git
+// 2.56.0, the same fixture both ways: after `branch -f` the rebase says
+// "Successfully rebased and updated detached HEAD", the branch is still at the
+// pre-rebase commit and the fast-forward refuses; after `checkout -B` it says
+// "updated refs/heads/posse/s1" and the fast-forward lands.
+//
+// EXCEPT WHERE POSSE DETACHED THE TREE ON PURPOSE. A container-tier session
+// works detached because that is what lets its git grant name no ref at all
+// (PrepareSessionHead, ranger-base-t4f1), and prescribing an attach to the
+// operator of a tree whose session may still be inside that cage would take
+// its ability to commit. There the ref move IS the whole cure — it is the one
+// posse runs itself (spliceDetachedWork) — and the attach the replay needs is
+// the launcher's own, taken under the launcher lock after the bead is closed.
+func offBranchCure(t *SessionTree) string {
+	if launchedDetached(t.Repo, t.Branch) {
+		return fmt.Sprintf("git -C %s branch -f %s HEAD", AbbrevHome(t.Path), t.Branch)
+	}
+	return fmt.Sprintf("git -C %s checkout -B %s HEAD", AbbrevHome(t.Path), t.Branch)
 }
 
 // priorLanding answers PriorLanding's question for an outcome that merged
@@ -3552,12 +3667,13 @@ func removalTips(t *SessionTree) []removalTip {
 		tips = append(tips, removalTip{
 			subject: fmt.Sprintf("%s in %s", abbrevSHA(head), AbbrevHome(t.Path)),
 			ref:     head,
-			// landed()'s cure, in landed()'s words: this work is off the
-			// session branch, so landing the branch would not carry it and
-			// a retire afterwards takes it. Naming the branch at it is what
-			// puts it back where the next pass can land it.
-			tail: fmt.Sprintf("the tree's HEAD is off %s, so landing the branch would not carry it — `git -C %s branch -f %s HEAD` names it first",
-				t.Branch, AbbrevHome(t.Path), t.Branch),
+			// landed()'s cure, in landed()'s words (offBranchCure): this
+			// work is off the session branch, so landing the branch would
+			// not carry it and a retire afterwards takes it. Putting the
+			// tree back on its branch is what puts the work where the next
+			// pass can land it.
+			tail: fmt.Sprintf("the tree's HEAD is off %s, so landing the branch would not carry it — `%s` names it first",
+				t.Branch, offBranchCure(t)),
 		})
 	}
 	return tips
@@ -3992,8 +4108,8 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 // The head arm is asked of a tree posse detached ON PURPOSE and no other,
 // which is the whole of what this gate can lose. An ACCIDENTAL detach gets no
 // splice, so a land takes nothing from it and there is nothing here to refuse;
-// landed() answers that tree in a sentence carrying the `git branch -f` cure,
-// and a refusal here would only displace it with a worse one.
+// landed() answers that tree in a sentence carrying the `git checkout -B` cure
+// (offBranchCure), and a refusal here would only displace it with a worse one.
 //
 // The SENTENCE names the tip as well, or it sends the operator to read a log
 // that is empty (ranger-base-3nn9c: the gate and the sentence are two
@@ -4116,9 +4232,9 @@ func splicedTip(t *SessionTree) (string, bool) {
 // (PrepareSessionHead, ranger-base-t4f1). So the listing printed "nothing
 // unlanded" — its one phrase for a tree that is safe to retire — over the
 // whole of such a session's work, while MergeSessionWork on the same tree
-// answered that the work "is on neither" and named the `branch -f` that
-// rescues it. Two answers from one binary about one tree, the operator-facing
-// one wrong, which is this bead's other half (ranger-base-dybv is the same
+// answered that the work "is on neither" and named the cure that rescues it
+// (offBranchCure, a `branch -f` then). Two answers from one binary about one
+// tree, the operator-facing one wrong, which is this bead's other half (ranger-base-dybv is the same
 // blindness fixed at the merge, and this is the listing beside it). Asking
 // workHead changes nothing for a tree whose HEAD is on its branch — the two
 // tips are the same commit — so the fix is the detached case and only it.
@@ -4197,8 +4313,8 @@ func treeState(t *SessionTree) string {
 // BRANCH — over a detached tree that lands nothing and says so, and a retire
 // afterwards takes the commits with it.
 //
-// It is landed()'s sentence compressed to a listing's width, keeping the
-// `branch -f` it prescribes: the two surfaces are reporting the same fact
+// It is landed()'s sentence compressed to a listing's width, keeping the cure
+// it prescribes (offBranchCure): the two surfaces are reporting the same fact
 // and the cure is the same one, and a listing that names the problem without
 // it is a line the operator has to take to a second tool.
 //
@@ -4217,6 +4333,6 @@ func appendOffBranch(parts []string, t *SessionTree, head string) []string {
 	if reaches(t.Repo, t.Branch, head) {
 		return parts
 	}
-	return append(parts, fmt.Sprintf("on the tree's detached HEAD (%s) and not on %s, so landing the branch would not carry it — `git -C %s branch -f %s HEAD` first",
-		abbrevSHA(head), t.Branch, AbbrevHome(t.Path), t.Branch))
+	return append(parts, fmt.Sprintf("on the tree's detached HEAD (%s) and not on %s, so landing the branch would not carry it — `%s` first",
+		abbrevSHA(head), t.Branch, offBranchCure(t)))
 }

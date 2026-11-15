@@ -15,6 +15,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-xim7t](ranger-base-xim7t.md) — ranger-base-xim7t — a fixture that cannot separate the two rules — 2026-11-14
 - [ranger-base-wsgus](ranger-base-wsgus.md) — A private bind's source was checked at its last component, and the seat owned every component above it (ranger-base-wsgus) — 2026-11-14
 - [ranger-base-wplhv](ranger-base-wplhv.md) — The wall venue on boxLandedCage, the step behind the judge, and three fixture reds that were not the tree's (ranger-base-wplhv) — 2026-11-14
+- [ranger-base-wg4z1](ranger-base-wg4z1.md) — The replay cannot run over a detached HEAD, and the remedy that handed it one (ranger-base-wg4z1) — 2026-11-14
 - [ranger-base-v84cn](ranger-base-v84cn.md) — An empty deny directory gets an anchor file, so a host rmdir cannot take its mount off (ranger-base-v84cn) — 2026-11-14
 - [ranger-base-v81vo](ranger-base-v81vo.md) — A commit-time gate is install-gated exactly like a wall, and the lag reading has no category for it (ranger-base-v81vo) — 2026-11-14
 - [ranger-base-s7tkc](ranger-base-s7tkc.md) — The bwrap wall hides the host's crash stores (ranger-base-s7tkc) — 2026-11-14

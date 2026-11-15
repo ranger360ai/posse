@@ -859,6 +859,23 @@ func mergeBlockedCases() []mergeBlockedCase {
 			},
 		},
 		{
+			// ranger-base-wg4z1: the replay moves whatever HEAD names, so it
+			// cannot run over a tree whose HEAD is DETACHED off a branch
+			// holding other work — the output would be on no ref at all while
+			// the fast-forward took the branch the rebase never moved. The
+			// fixture is that shape and nothing more: the branch has its own
+			// commit, the tree's HEAD has another, and the base moved so the
+			// landing has to go through the replay.
+			name: "the replay would run over a detached HEAD",
+			arm:  "DETACHED HEAD, which `git rebase` moves instead of",
+			reason: func(t *testing.T) string {
+				a, repo, tr := wtTreeWithWork(t)
+				detachTreeHead(t, tr)
+				commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
+				return mergeBlockedReason(t, a, tr)
+			},
+		},
+		{
 			// The replay worked and the fast-forward still would not: the
 			// base is where the rebase left it, so this is about the branch
 			// and not a lost race (worktree.go).

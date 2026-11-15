@@ -106,14 +106,16 @@ func TestSweepLandsADetachedTreesClosedWork(t *testing.T) {
 		// The same tree with no stamp: nothing will splice it, so nothing
 		// lands — and THAT is the half this bead is named for. A strand the
 		// pass cannot fix is still a strand the pass has to say out loud,
-		// and it prescribes the `branch -f` that makes the next pass land it.
+		// and it prescribes the `checkout -B` that makes the next pass land
+		// it — `branch -f` until ranger-base-wg4z1 measured the replay
+		// behind it stranding its own output over a HEAD still detached.
 		name: "an unstamped detached tree is said out loud",
 		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			mustGit(t, tr.Path, "checkout", "-q", "--detach")
 			commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: off its own branch")
 		},
 		detached: true,
-		says:     []string{"a-1", "did NOT reach", "branch -f "},
+		says:     []string{"a-1", "did NOT reach", "checkout -B "},
 	}, {
 		// The on-branch control for the landing arms: the shape that was
 		// never blind. It passes before the fix and after it.

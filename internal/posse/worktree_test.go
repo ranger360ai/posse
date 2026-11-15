@@ -1147,7 +1147,10 @@ func TestMergeSessionWorkRefusesWorkTheBranchDoesNotReach(t *testing.T) {
 			if !strings.Contains(o.Reason, head[:12]) {
 				t.Errorf("the reason does not name the stranded commit %s: %q", head[:12], o.Reason)
 			}
-			if !strings.Contains(o.Reason, "branch -f "+tr.Branch+" HEAD") {
+			// `checkout -B` and not `branch -f`: no stamp, so this is an
+			// ACCIDENTAL detach, and the cure has to re-attach or the next
+			// pass's replay strands its own output (ranger-base-wg4z1).
+			if !strings.Contains(o.Reason, "checkout -B "+tr.Branch+" HEAD") {
 				t.Errorf("the reason does not say how to get the work back: %q", o.Reason)
 			}
 			if !strings.Contains(o.Reason, c.want) {
@@ -2238,8 +2241,8 @@ func TestListSessionTreesWillNotCallAHalfLandedOrSquashedBranchLanded(t *testing
 // never did passes the strand and fails the duplicate; and the two detached
 // arms are what the sha count cannot see at all — with the launch stamp (the
 // caged session, where the sweep splices the work back and lands it) and
-// without it (where the sweep refuses and names the `branch -f` that rescues
-// it, which the listing now names too).
+// without it (where the sweep refuses and names the cure that rescues it,
+// which the listing now names too).
 func TestListingAndSweepAgreeOnWhatOneTreeHolds(t *testing.T) {
 	t.Parallel()
 	// THE VERDICT, read the way an operator reads it: off the sentence each
@@ -2380,7 +2383,12 @@ func TestListingAndSweepAgreeOnWhatOneTreeHolds(t *testing.T) {
 			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: off its own branch")
 		},
 		want: "unlanded work",
-		says: []string{"detached HEAD", "branch -f " + SessionBranch("s-1")},
+		// `checkout -B` here and `branch -f` on the caged arm above, from
+		// the one cure both surfaces print (offBranchCure): an ACCIDENTAL
+		// detach has to be re-attached or the next pass's replay strands
+		// its own output, and a DESIGNED one must stay detached to commit
+		// inside its cage (ranger-base-wg4z1).
+		says: []string{"detached HEAD", "checkout -B " + SessionBranch("s-1")},
 	}}
 
 	for _, c := range cases {
@@ -2504,6 +2512,182 @@ func TestTheOffBranchPrescriptionIsRunnableAndRescuesTheWork(t *testing.T) {
 	}
 	if !strings.Contains(after.String(), "1 commit(s) not on main") {
 		t.Errorf("the work is on the branch and unlanded, and the listing owes that count:\n%s", after.String())
+	}
+}
+
+// ranger-base-wg4z1: THE PASS AFTER THE RESCUE, which is where the whole
+// remedy used to come apart. The arm above runs the cure and stops at the
+// listing; this one lets the base move afterwards and runs the pass the cure
+// promises ("the next pass lands it").
+//
+// `git rebase <base>` moves whatever HEAD names. Over a tree whose HEAD is
+// still DETACHED it moves HEAD and does not touch the branch, so the replay's
+// output is on no ref at all while the fast-forward under it takes a branch
+// the rebase never moved and whose parent is no longer the base. The pass then
+// reports "main still would not fast-forward after the rebase" about work it
+// had just replayed onto main, and the next pass does it again: one
+// unreferenced commit per pass and no landing, ever. MEASURED in the field on
+// ranger-base-cq3vi, where `posse worktrees` printed the off-branch sentence
+// again after every pass, each time naming a new sha.
+//
+// FIVE ARMS, and each is a control on the others.
+//
+//   - the CURE AS PRINTED, run the way an operator runs it. This is the arm
+//     the bead is named for, and it is red on the old wording for a reason no
+//     string match could see: `branch -f` satisfies the off-branch test and
+//     then strands the replay behind it.
+//   - the REF MOVE ALONE, which is what that wording used to print and is
+//     also what posse itself runs for a designed detach. It lands too, and it
+//     has to: the replay attaches for itself (attachForReplay), so the fix
+//     does not rest on a human having typed the better command.
+//   - the DESIGNED detach, nothing typed by hand at all: the container tier's
+//     own shape, spliced by the merge and then replayed. Its landing used to
+//     depend entirely on its base not having moved.
+//   - the ON-BRANCH control, which every arm above must not be able to pass
+//     by accident — a "fix" that replayed nothing would still land this one.
+//   - the REFUSAL, the one shape no attach may paper over: the tree's HEAD and
+//     its branch hold DIFFERENT work, so only a human can say which is the
+//     session's. Nothing is replayed, nothing moves, and the sentence says so.
+func TestTheReplayCarriesTheBranchOverADetachedSessionTree(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		// detach puts the tree's HEAD off its branch before the work commit.
+		detach bool
+		// stamp is the record a caged launch leaves, which is what makes the
+		// merge splice rather than refuse (detachedKey, ranger-base-t4f1).
+		stamp bool
+		// cure is run between the first pass and the base moving, as an
+		// operator runs it: "printed" takes the command out of the refusal's
+		// own sentence, "ref" types the ref move the wording used to print.
+		cure string
+		// strand puts a SECOND commit on the branch, so the branch and the
+		// tree's HEAD hold different work.
+		strand bool
+		lands  bool
+		says   string
+	}{{
+		name:   "the cure as printed lands on the next pass",
+		detach: true, cure: "printed", lands: true,
+	}, {
+		name:   "the ref move alone lands too, because the replay attaches for itself",
+		detach: true, cure: "ref", lands: true,
+	}, {
+		name:   "a designed detach lands over a base that moved",
+		detach: true, stamp: true, lands: true,
+	}, {
+		name:  "the on-branch control lands",
+		lands: true,
+	}, {
+		name:   "a branch holding other work than the tree's HEAD is refused",
+		detach: true, strand: true,
+		says: "DETACHED HEAD, which `git rebase` moves instead of",
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			a := wtApp(t)
+			repo := wtRepo(t)
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.strand {
+				commitIn(t, tr.Path, "onbranch.txt", "the branch's own\n", "s-1: on the branch")
+			}
+			if c.stamp {
+				if err := recordDetached(tr.Repo, tr.Branch, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if c.detach {
+				mustGit(t, tr.Path, "checkout", "-q", "--detach")
+			}
+			commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+			work := mustGit(t, tr.Path, "rev-parse", "HEAD")
+
+			// The first pass, which is what prints the cure. It is also the
+			// fixture premise for the detached arms: a merge that landed here
+			// would mean the base had not moved and the rest proves nothing.
+			if c.cure != "" {
+				o, err := MergeSessionWork(a, tr)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !o.Blocked() {
+					t.Fatalf("the first pass landed, so there is no cure to run: %+v", o)
+				}
+				line := ""
+				switch c.cure {
+				case "printed":
+					m := regexp.MustCompile("`(git -C [^`]+)`").FindStringSubmatch(o.Reason)
+					if m == nil {
+						t.Fatalf("the refusal prescribes no command to run:\n%s", o.Reason)
+					}
+					line = m[1]
+				case "ref":
+					line = fmt.Sprintf("git -C %s branch -f %s HEAD", tr.Path, tr.Branch)
+				}
+				// Through a SHELL, for the reason the arm above this one
+				// gives: the printed path is AbbrevHome'd and only a shell
+				// turns that `~` back into a directory (ranger-base-tiidc).
+				if b, err := exec.Command("sh", "-c", line).CombinedOutput(); err != nil {
+					t.Fatalf("the cure does not run: %v\n%s\nline: %s", err, b, line)
+				}
+				if got := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); got != work {
+					t.Fatalf("after the cure %s is at %s, want the work at %s", tr.Branch, got, work)
+				}
+			}
+
+			// THE BASE MOVES, which is the whole premise: with the base where
+			// the branch was cut the landing is a plain fast-forward and the
+			// replay — the half that strands — never runs at all.
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			was := mustGit(t, repo, "rev-parse", "main")
+
+			o, err := MergeSessionWork(a, tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			if !c.lands {
+				if o.Merged {
+					t.Fatalf("the refusal arm landed: %+v", o)
+				}
+				if !strings.Contains(o.Reason, c.says) {
+					t.Errorf("the refusal does not say which obstacle this is (want %q):\n%s", c.says, o.Reason)
+				}
+				if now := mustGit(t, repo, "rev-parse", "main"); now != was {
+					t.Errorf("main moved %s → %s under a refusal", was[:12], now[:12])
+				}
+				// AND NOTHING WAS REPLAYED. The defect this test exists for is
+				// a replay whose output no ref reaches, so a refusal that ran
+				// one anyway is the same bug with a better sentence.
+				if head != work {
+					t.Errorf("the tree's HEAD moved %s → %s under a refusal — the replay ran and its output is on no branch", work[:12], head[:12])
+				}
+				return
+			}
+			if !o.Merged || o.Commits < 1 {
+				t.Fatalf("the work did not land: %+v\nreason: %s", o, o.Reason)
+			}
+			if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the work\n" {
+				t.Fatalf("the work is not in the main checkout: %q (%v)", body, err)
+			}
+			// THE ORPHAN ASSERTION, which is the one the old code fails. A
+			// landing that reported Merged while the replay's own output sat
+			// on no ref is exactly what this bead measured, so the question is
+			// asked of the TREE's HEAD and not of the branch: main must reach
+			// the commit the tree is actually on.
+			if !reaches(repo, "main", head) {
+				t.Errorf("main does not reach %s, the commit %s is on — the replay's output is unreferenced:\n%s",
+					head[:12], AbbrevHome(tr.Path), o.Reason)
+			}
+			if tip := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); tip != head {
+				t.Errorf("%s is at %s and the tree's HEAD at %s — the replay moved one and not the other", tr.Branch, tip[:12], head[:12])
+			}
+		})
 	}
 }
 

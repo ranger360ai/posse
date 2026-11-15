@@ -31,8 +31,10 @@ import (
 // designed detach is refused, the on-branch tree is refused in the sentence it
 // always had, a RECORDED detach still lands, `--force` still lands the refused
 // one (which is what its own refusal promises), and an ACCIDENTAL detach is
-// left to landed()'s sentence, which carries the `git branch -f` cure this one
-// cannot honestly offer.
+// left to landed()'s sentence, which carries the `git checkout -B` cure this
+// one cannot honestly offer (offBranchCure, ranger-base-wg4z1 — it read
+// `branch -f` until that bead measured the replay behind it stranding its own
+// output over a HEAD the ref move left detached).
 func TestLandGateAsksTheTipADetachedTreesWorkIsOn(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -68,9 +70,9 @@ func TestLandGateAsksTheTipADetachedTreesWorkIsOn(t *testing.T) {
 		want:     []string{"no record says which bead", "equivalent patch on main", "nothing here is unlanded", "detached HEAD"},
 		unwanted: []string{"NOT landed", "--force"},
 	}, {
-		name:     "an accidental detach keeps landed()'s sentence and its branch -f cure",
+		name:     "an accidental detach keeps landed()'s sentence and its checkout -B cure",
 		detach:   true,
-		want:     []string{"the tree's HEAD is off its own branch", "branch -f"},
+		want:     []string{"the tree's HEAD is off its own branch", "checkout -B"},
 		unwanted: []string{"no record says which bead"},
 	}}
 
