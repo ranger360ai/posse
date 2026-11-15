@@ -253,8 +253,8 @@ func TestQAABlockDoesNotOutliveItsPass(t *testing.T) {
 // asserts is the SCHEDULE the loop prints, not when a later pass actually
 // arrives. A wall-clock arrival is a reading about the box: under -race on a
 // loaded box a single pass of this package has been measured tens of seconds
-// behind its tick (watchBackstop's own doc), and the number this bead is
-// about is the one the loop chose.
+// behind its tick (backstop's own doc, backstop_test.go), and the number
+// this bead is about is the one the loop chose.
 func TestQAWatchSchedulesTheNextPassAtTheLaunchCapTurn(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -295,7 +295,7 @@ func TestQAWatchSchedulesTheNextPassAtTheLaunchCapTurn(t *testing.T) {
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(watchBackstop(t)):
+	case <-time.After(backstop(t)):
 		t.Fatal("the loop never returned")
 	}
 

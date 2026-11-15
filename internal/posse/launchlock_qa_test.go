@@ -167,7 +167,7 @@ func TestLaunchLockHoldsAcrossProcesses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(backstop(t)):
 		t.Fatal("the lock was not released when the holding process died")
 	}
 }
@@ -233,6 +233,11 @@ func TestWatchReleasesLockBetweenPasses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	// A constant on purpose, and not backstop(t) (ranger-base-1hnqc): this
+	// one is the observation, bounded by the fixture's own 30s backoff
+	// above. Past that the loop starts its next pass and takes the lock
+	// legitimately, so a derived deadline would watch a lock the watch
+	// loop was entitled to hold and read it as a pass.
 	case <-time.After(10 * time.Second):
 		t.Error("--watch holds the launcher lock across its backoff")
 	}
@@ -276,7 +281,7 @@ func TestTwoPassesDoNotDoubleClaimOneBead(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		select {
 		case <-done:
-		case <-time.After(90 * time.Second):
+		case <-time.After(backstop(t)):
 			t.Fatalf("a pass never finished:\n0:\n%s\n1:\n%s", outs[0], outs[1])
 		}
 	}
@@ -383,7 +388,7 @@ func TestLaunchBeadLocksBeforeItsGuardsRead(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(backstop(t)):
 		t.Fatal("the cockpit launch never resumed after the lock was released")
 	}
 }

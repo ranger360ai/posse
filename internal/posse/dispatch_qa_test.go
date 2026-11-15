@@ -1993,10 +1993,27 @@ func TestDispatchRewaitServerGoneKeepsTheClaim(t *testing.T) {
 	// The loop is now correct and therefore ENDLESS in this fixture: every
 	// leg fails instantly and the seat reads working forever, so the pass
 	// ends where a working seat always ends — the ceiling. LegFloor paces
-	// the legs so the 2s is spent in a handful of them rather than in the
-	// hundreds ranger-base-74tkp measured; both knobs are the production
-	// ones, only smaller.
-	d.WaitCeiling = 2 * time.Second
+	// the legs so the ceiling is spent in a handful of them rather than in
+	// the hundreds ranger-base-74tkp measured; both knobs are the
+	// production ones, only smaller.
+	//
+	// THE CEILING IS COUNTED IN CALLS AND NOT IN SECONDS (ranger-base-1hnqc,
+	// ranger-base-0dt50's unit). It is this test's OBSERVABLE, not a
+	// backstop: what the assertion below needs is that the first leg ran out
+	// and was RE-waited, so the ceiling has to be reached AND to leave room
+	// for more than one leg. A leg here is two fake-herdr calls — the `agent
+	// wait` that errors and the status probe behind it — and that is what
+	// `-race` stretches (~8ms a call to ~1.02s, fakecallcost_test.go). As a
+	// flat 2s this test was red under `-race` and green without it, with
+	// `DATA RACE` 0: the ceiling was reached inside the FIRST leg, the pass
+	// ended on the right arm for the wall it had, and "still working after"
+	// never printed. Eight call-costs is the same 2s in the ordinary build
+	// and about four legs in either.
+	d.WaitCeiling = 8 * fakeCallCost
+	// Not scaled: a floor under the INTERVAL between leg starts, and it only
+	// binds the build where a leg is cheaper than it. Under `-race` a leg
+	// already costs more than this and the floor goes inert, which is the
+	// field's own semantics (Dispatcher.LegFloor) and not a hole here.
 	d.LegFloor = 200 * time.Millisecond
 	writePersona(t, b.App, "ranger", "[go]")
 	// No fake-show.json — see TestDispatchStderrAgentNotReadyStillUnclaims'

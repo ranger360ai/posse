@@ -20,6 +20,17 @@ package posse
 // releasing it on cue, so contention is arranged rather than raced for: the
 // launcher under test is provably blocked before anything is released, and
 // nothing depends on which goroutine the scheduler runs first.
+//
+// WHICH DEADLINES ARE BACKSTOPS HERE (ranger-base-1hnqc). Every "it resumed
+// once the lock was free" wait below is `backstop(t)`, derived from the
+// binary's own -timeout (backstop_test.go): nothing any of them asserts
+// depends on the resume being FAST, and as wall-second constants three of
+// them were red under `-race` — which stretches wall and not CPU — with
+// `DATA RACE` 0 and at the same timings on a quiet box as under load. The
+// deadlines that stay constants are the ones that are the OBSERVATION: the
+// 150ms and 100ms arms assert that a blocked launcher has NOT run yet, and
+// the 2s in TestDispatchGatherRunsUnlocked is bounded by the fake's 5s
+// prompt delay — past that there is no gather left to take the lock during.
 
 import (
 	"io"
@@ -70,7 +81,7 @@ func TestLaunchLockSecondLauncherWaits(t *testing.T) {
 		if want := "pid " + strconv.Itoa(os.Getpid()); !strings.Contains(g.out, want) {
 			t.Errorf("waiting line does not name the holder (%s):\n%s", want, g.out)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(backstop(t)):
 		t.Fatal("second launcher never took the released lock")
 	}
 }
@@ -188,7 +199,7 @@ func TestDispatchFireLoopWaitsForTheLock(t *testing.T) {
 		if n != 1 {
 			t.Errorf("dispatched %d, want 1 once the lock was free:\n%s", n, out.String())
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(backstop(t)):
 		t.Fatal("the pass never resumed after the lock was released")
 	}
 	if log := rawCalls(t, fake); !strings.Contains(log, "workspace create") {
@@ -236,6 +247,10 @@ func TestDispatchGatherRunsUnlocked(t *testing.T) {
 		l.Release()
 	case <-done:
 		t.Fatal("the pass finished before the lock could be tested — it was never observed unlocked mid-gather")
+	// A constant on purpose, and not backstop(t): this one is the
+	// observation. It has to expire while the gather is still in flight —
+	// inside the 5s prompt delay above — or there is nothing left to have
+	// been unlocked, and the take would succeed against a finished pass.
 	case <-time.After(2 * time.Second):
 		t.Fatal("the gather held the launcher lock")
 	}
@@ -272,7 +287,7 @@ func TestDispatchDryRunDoesNotTakeTheLock(t *testing.T) {
 		if n != 1 {
 			t.Errorf("routable %d, want 1:\n%s", n, out.String())
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(backstop(t)):
 		t.Fatal("--dry-run blocked on the launcher lock")
 	}
 	if strings.Contains(out.String(), "waiting") {
@@ -314,7 +329,7 @@ func TestLaunchBeadWaitsForTheLock(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(backstop(t)):
 		t.Fatal("the cockpit launch never resumed after the lock was released")
 	}
 	if want := "workspace create --label " + SessionForBead("ranger", repo, "a-1"); !strings.Contains(rawCalls(t, fake), want) {
@@ -360,7 +375,7 @@ func TestLaunchBeadReportsTheLockWaitToProgress(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(backstop(t)):
 		t.Fatal("the cockpit launch never resumed after the lock was released")
 	}
 }
@@ -407,7 +422,7 @@ func TestTwoPassesDoNotInterleaveLaunches(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		select {
 		case <-done:
-		case <-time.After(60 * time.Second):
+		case <-time.After(backstop(t)):
 			t.Fatalf("a pass never finished:\nalpha:\n%s\nbeta:\n%s", outs["alpha"], outs["beta"])
 		}
 	}
