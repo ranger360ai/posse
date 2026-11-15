@@ -1600,6 +1600,9 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 		b.WriteString(renderAliasDeny(len(verbs) > 0))
 		b.WriteString(renderHookSkipEnvCall())
 	}
+	// Before the sequencer audit, which runs these same verbs as a CHILD: a
+	// command this arm refuses must not reach git for its own effect.
+	b.WriteString(renderContinueWall(cmd, real, dateBin, rules))
 	b.WriteString(renderSequencerAudit(cmd, real, dateBin))
 	b.WriteString(renderDataCeilingArgvGuard(cmd, ceiling, dateBin))
 	if cmd == "bd" {
@@ -1614,6 +1617,183 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 		// Not on PATH at render time: search at run time, skipping our own dir.
 		fmt.Fprintf(&b, "self=$(cd \"$(dirname \"$0\")\" && pwd)\nIFS=:\nfor d in $PATH; do\n  [ \"$d\" = \"$self\" ] && continue\n  if [ -x \"$d/%s\" ]; then unset IFS; exec \"$d/%s\" \"$@\"; fi\ndone\necho \"posse gate: %s: real binary not found\" >&2\nexit 127\n", cmd, cmd, cmd)
 	}
+	return b.String()
+}
+
+// ─── The continue-wall arm (ranger-base-05aa1) ───────────────────────────────
+
+// continueWallVerb is one of the four git subcommands whose `--continue`
+// writes a COMMIT with the word `commit` nowhere in its argv.
+//
+// THE HOLE, MEASURED 2026-11-15 (git 2.56.0, linux 7.2.15, this box;
+// scripts under the bead, the table in docs/notes.d/ranger-base-05aa1.md).
+// Each verb was conflicted, resolved, and then ANOTHER actor's unrelated
+// file staged during the conflict window before `--continue`:
+//
+//	verb                        no hook        L3 hook installed
+//	git merge --continue        SWEPT it       SWEPT it
+//	git cherry-pick --continue  SWEPT it       SWEPT it
+//	git revert --continue       SWEPT it       refused (exit 1)
+//	git rebase --continue       SWEPT it       SWEPT it
+//	git commit -m <msg>         refused by L1  refused by L1
+//
+// So the bead's open question is answered and the answer is not "L1-only":
+// the L3 prepare-commit-msg hook backstops ONE of the four. It exempts
+// MERGE_HEAD, CHERRY_PICK_HEAD and rebase-merge/rebase-apply on their own
+// stated merits (sharedIndexBody: "is there a safe form to point at?" —
+// git refuses a pathspec mid-merge and mid-cherry-pick, and a rebase has
+// commits left to replay), and those exemptions cover `--continue` exactly
+// as they cover a typed `git commit`.
+//
+// WHY THE L1 HALF HAS TO READ THESE VERBS. `Bash(git commit unless --)`
+// matches the verb `commit` and nothing else, and none of these four can be
+// path-limited at all — `fatal: cannot do a partial commit during a merge`
+// — so there is no qualifier to demand and no refusal if you skip it.
+// ADR 0001 seeded that deny because "L3 is a repo hook that exists only
+// where something installed it, while a typed-line deny reaches every repo
+// and runtime"; in a hook-less shared repo (ranger-core) L1 was the whole
+// wall for these four and was not there at all.
+//
+// WHAT IT REFUSES AND WHAT IT DOES NOT. Only `--continue`, and only in a
+// checkout whose index is shared. The clean forms need no wall: MEASURED
+// the same day, `git merge --no-ff`, `git cherry-pick <sha>` and
+// `git revert <sha>` all REFUSE TO START with anything staged ("your local
+// changes would be overwritten by merge/cherry-pick/revert"), so there is
+// no window for them to sweep — the conflict window is the whole hole. A
+// LINKED WORKTREE stands down, on the same discriminator the L3 hook uses
+// (`--git-dir` against `--git-common-dir`, both asked for absolute): the
+// index there is the seat's own, nothing of anyone else's can be in it, and
+// a dispatched seat finishing a merge-back in its own worktree is the
+// ordinary case this must not break (ranger-base-4d15g did exactly that, in
+// `~/src/ranger-core-<id>`, which is a linked worktree — verified).
+//
+// In the SHARED checkout all four are already out of bounds for a persona
+// by prose — AGENTS.md "Landing the plane" says the launcher merges, says
+// never rebase there, and prescribes the two-step revert — so this arm
+// realizes a rule that already existed rather than inventing one, and the
+// refusal names that prose as the way through.
+//
+// RESIDUALS, stated rather than discovered. (1) An alias reaches the verb
+// without spelling it, the same inherited hole renderSequencerAudit and
+// this file's preamble name for `push`. (2) A CLEAN merge in a shared
+// checkout still makes an unwalled commit; it cannot sweep, because git
+// would have refused to start, but a persona who stages between git's
+// index check and its commit loses that race. (3) Cooperative (ADR 0025):
+// an absolute /usr/bin/git or an emptied PATH is past this by class.
+// (4) A refused command reaches the real git for two read-only
+// `rev-parse` calls — the adjudication, not the command's own effect, the
+// same trade renderHookSkipEnvCall's alias lookup already makes
+// (TestQAPIDDenyAliasLookupIsTheOnlyExec pins both).
+type continueWallVerb struct {
+	// Verb is the subcommand as git spells it.
+	Verb string
+	// Min is the SHORTEST prefix of `--continue` this verb's own
+	// parse-options resolves, measured one prefix at a time against the
+	// real git (TestQAContinueWallMinimaAreGitsBoundary asks git itself).
+	// git 2.56.0: `merge` and `rebase` resolve `--con` (`--co` is ambiguous
+	// with `--commit` and `--committer-date-is-author-date`), while
+	// `cherry-pick` and `revert` resolve NOTHING shorter than the full
+	// `--continue` — their sequencer options are not abbreviated at all,
+	// every shorter prefix answering with the usage line. An over-short
+	// minimum would render arms git refuses itself; a too-long one is a
+	// hole, so the direction of error is the same as a spoiler's LongMin
+	// (ranger-base-90y3c) and the pin is asked the same way.
+	Min string
+	// Way completes the refusal's second line: the route that is not
+	// refused, named out of AGENTS.md rather than invented here.
+	Way string
+}
+
+// continueWallVerbs is that table. Order is the rendered order.
+var continueWallVerbs = []continueWallVerb{
+	{"merge", "--con",
+		"the launcher merges and the operator pushes (AGENTS.md, \"Landing the plane\"): do the merge in your own session worktree, where the index is yours and this wall stands down — or end it here with `git merge --abort`."},
+	{"cherry-pick", "--continue",
+		"do the cherry-pick in your own session worktree, where the index is yours and this wall stands down — or end it here with `git cherry-pick --abort`."},
+	{"revert", "--continue",
+		"in the shared checkout a revert is two steps (AGENTS.md, \"Landing the plane\"): `git revert --no-commit <sha>`, then `git commit -F - -- <the paths it touched>`. A path-limited commit finishes a CONFLICTED revert outright, so `--abort` is not needed first."},
+	{"rebase", "--con",
+		"the shared checkout never rebases (AGENTS.md, \"Landing the plane\": never `--amend`, `rebase` or `reset` there): `git rebase --abort` here and do it in your own session worktree."},
+}
+
+// renderContinueWall writes the arm, or "" when it does not apply.
+//
+// Three conditions, each for its own reason. `git` because the verbs are
+// git's. A resolved real binary because the wall has to ask git which git
+// dir it is in, and the no-real-binary shim is a best-effort PATH search
+// with no name to run (the same condition renderSequencerAudit carries).
+// And the PID's own negative `git commit` rule, because this IS that wall's
+// other half: a PID that does not carry the commit wall is not given one
+// here by the back door, and ADR 0001's seeded rule is what makes the arm
+// reach every crew seat.
+func renderContinueWall(cmd, real, dateBin string, rules []shimRule) string {
+	if cmd != "git" || real == "" || !rulesDenyUnqualifiedCommit(rules) {
+		return ""
+	}
+	q := shQuote(real)
+	var b strings.Builder
+	b.WriteString("# ranger-base-05aa1: the verbs that COMMIT without saying `commit`.\n")
+	b.WriteString("# merge/cherry-pick/revert/rebase --continue take the WHOLE index and git\n")
+	b.WriteString("# refuses them a pathspec, so the PID's `git commit` rule never sees the\n")
+	b.WriteString("# commit they make and there is no safe form to demand. Measured: all four\n")
+	b.WriteString("# swept another actor's staged file, and the L3 hook catches only revert.\n")
+	b.WriteString("# A linked worktree's index is the seat's own, so this stands down there.\n")
+	b.WriteString("posse_cw_refuse() {\n")
+	b.WriteString("  echo \"refused by posse gate: git $* — git $posse_cw_verb --continue COMMITS the whole index and cannot be path-limited ('fatal: cannot do a partial commit during a $posse_cw_verb'), so the commit wall never sees it; this checkout's index is shared by every persona (rule: commitwall:sequencer-continue, ranger-base-05aa1)\" >&2\n")
+	b.WriteString("  echo \"  $posse_cw_way\" >&2\n")
+	fmt.Fprintf(&b, "  echo \"%s git $* (commitwall: sequencer-continue)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n  exit 1\n}\n", refusalTimestamp(dateBin))
+
+	// The verb scan: the same walk posse_verb_match and posse_seq_scan do,
+	// keeping the count of words in front of the verb so the rev-parse below
+	// can be asked about the SAME repo the verb ran against (`git -C <repo>
+	// merge --continue`). posse_cw_skip counts the globals and NOT the verb.
+	b.WriteString("posse_cw_hit() {\n  posse_cw_verb=; posse_cw_skip=0\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
+	if pairs := globalValueOpts[cmd]; len(pairs) > 0 {
+		quoted := make([]string, 0, len(pairs))
+		for _, o := range pairs {
+			quoted = append(quoted, shQuote(o))
+		}
+		fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || return 1\n        posse_cw_skip=$((posse_cw_skip+2)); shift 2 ;;\n", strings.Join(quoted, "|"))
+	}
+	b.WriteString("      -*) posse_cw_skip=$((posse_cw_skip+1)); shift ;;\n      *) break ;;\n    esac\n  done\n")
+	b.WriteString("  posse_cw_verb=${1:-}\n  case \"$posse_cw_verb\" in\n")
+	for _, v := range continueWallVerbs {
+		fmt.Fprintf(&b, "    %s) posse_cw_way=%s ;;\n", shQuote(v.Verb), shQuote(v.Way))
+	}
+	b.WriteString("    *) return 1 ;;\n  esac\n  shift\n")
+	// Past `--` every word is an operand, and a file named `--continue` is a
+	// file — the same reading renderSpoiled's `--) return 1` arm has.
+	b.WriteString("  while [ $# -gt 0 ]; do\n    case \"$posse_cw_verb/$1\" in\n      */--) return 1 ;;\n")
+	for _, v := range continueWallVerbs {
+		arms := longArms("--continue", v.Min)
+		for i, a := range arms {
+			arms[i] = v.Verb + "/" + a
+		}
+		fmt.Fprintf(&b, "      %s) return 0 ;;\n", strings.Join(arms, "|"))
+	}
+	b.WriteString("    esac\n    shift\n  done\n  return 1\n}\n")
+
+	// The git dir, asked of the same repo the verb names. The global prefix
+	// is recovered the way posse_seq_gitdir recovers it — rotate the first
+	// posse_cw_skip words to the end, drop everything that stood in front of
+	// them — because POSIX sh can slice positional parameters no other way
+	// and an eval of a re-quoted argv is not a thing to put in a wall.
+	//
+	// Two calls rather than one `rev-parse --git-dir --git-common-dir`: that
+	// form answers in two lines, and splitting it in sh costs either an
+	// external (`sed`, which on this PATH is the persona's own shim first —
+	// the ranger-base-hr5x lesson) or a quoted-newline parameter expansion
+	// nobody reading the shim would want to verify. `--path-format=absolute`
+	// is what makes the two comparable: `--git-dir` answers the relative
+	// `.git` in a main checkout and an absolute path in a linked worktree.
+	fmt.Fprintf(&b, "posse_cw_rp() {\n  posse_cw_flag=$1; shift\n  posse_cw_drop=$(( $# - posse_cw_skip ))\n  posse_cw_i=0\n  while [ $posse_cw_i -lt $posse_cw_skip ]; do set -- \"$@\" \"$1\"; shift; posse_cw_i=$((posse_cw_i+1)); done\n  posse_cw_i=0\n  while [ $posse_cw_i -lt $posse_cw_drop ]; do shift; posse_cw_i=$((posse_cw_i+1)); done\n  %s \"$@\" rev-parse --path-format=absolute \"$posse_cw_flag\" 2>/dev/null\n}\n", q)
+	// Fails OPEN when git cannot answer, exactly as the L3 hook's own
+	// `posse_gitdir=$(...) || exit 0` does: no git dir means no shared index
+	// to protect, and a `--continue` git itself cannot run needs no wall.
+	b.WriteString("if posse_cw_hit \"$@\"; then\n")
+	b.WriteString("  posse_cw_own=$(posse_cw_rp --git-dir \"$@\")\n")
+	b.WriteString("  posse_cw_common=$(posse_cw_rp --git-common-dir \"$@\")\n")
+	b.WriteString("  if [ -n \"$posse_cw_own\" ] && [ \"$posse_cw_own\" = \"$posse_cw_common\" ]; then\n    posse_cw_refuse \"$@\"\n  fi\nfi\n")
 	return b.String()
 }
 
@@ -3601,6 +3781,20 @@ const sharedIndexMarker = "# posse-gate shared-index"
 // is no safe form to name, and both carry git's completion even when the
 // persona types the message ($2=message mid-merge), which is why the MARKER
 // and not `case "$2"` is what holds them.
+//
+// THOSE THREE EXEMPTIONS ARE WHY L1 GREW AN ARM OF ITS OWN (ranger-base-05aa1).
+// They cover `git merge --continue`, `git cherry-pick --continue` and `git
+// rebase --continue` exactly as they cover a typed `git commit`, so three of
+// the four verbs that commit without saying `commit` are waved through here —
+// MEASURED 2026-11-15, with another actor's file staged mid-conflict, all
+// three swept it under this hook. Nothing above changes: the exemptions are
+// still right on their own terms, there is still no safe form to point at,
+// and this slot still cannot tell a legitimate finish from a swept one. What
+// answers them is renderContinueWall, which refuses the four at L1 where the
+// index is SHARED and stands down in a linked worktree — the same
+// discriminator this body uses a few lines down. REVERT_HEAD stays refused
+// here on its own merits and is refused there too, so the halves agree on all
+// four.
 //
 // REVERT_HEAD and the `case "$2" in merge|squash)` arm are gone. Both waved
 // an UNQUALIFIED commit through a state where a pathspec works — measured,
@@ -7903,7 +8097,13 @@ func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask
 // is not keyed on it (the shared tree, not the PID, is what makes the
 // commit unsafe); parity reads this to name the second layer.
 func deniesUnqualifiedCommit(deny []string) bool {
-	for _, r := range ParseShimRules(deny)["git"] {
+	return rulesDenyUnqualifiedCommit(ParseShimRules(deny)["git"])
+}
+
+// rulesDenyUnqualifiedCommit is the same question asked of already-parsed
+// rules, which is the form renderShim and renderContinueWall hold.
+func rulesDenyUnqualifiedCommit(rules []shimRule) bool {
+	for _, r := range rules {
 		if r.Unless != "" && len(r.Words) > 0 && r.Words[0] == "commit" {
 			return true
 		}

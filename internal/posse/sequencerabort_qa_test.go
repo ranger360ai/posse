@@ -96,7 +96,20 @@ if [ "$1" = rev-parse ]; then
   # A linked worktree's own git dir is <common>/worktrees/<name>, so these two
   # answers differ there and nowhere else, which is the whole of what the
   # common-dir arm varies. A fake that answered both the same could not refuse.
-  case "$2" in
+  #
+  # The WHICH-DIR flag is looked for past rev-parse's own options rather than
+  # read off $2 (ranger-base-05aa1): the continue wall asks
+  # 'rev-parse --path-format=absolute --git-dir', so a fake reading $2 answers
+  # the common-dir question with the git dir and reports every tree as shared.
+  shift
+  posse_f=
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --git-common-dir|--absolute-git-dir|--git-dir) posse_f=$1; break ;;
+      *) shift ;;
+    esac
+  done
+  case "$posse_f" in
     --git-common-dir) case "$gd" in */worktrees/*) echo "${gd%/worktrees/*}" ;; *) echo "$gd" ;; esac ;;
     *) echo "$gd" ;;
   esac
@@ -160,23 +173,37 @@ func runSequencerShim(t *testing.T, shim, gitDir, leak, rc string, args ...strin
 func TestQASequencerVerbExitingZeroWithoutEndingIsRefused(t *testing.T) {
 	shim, gatesDir, gitDir := sequencerShim(t)
 
+	// The two `--continue` rows run in a WORKTREE-shaped git dir, which is
+	// where the defect this arm audits actually lives (AGENTS.md: "in a
+	// session worktree, a cherry-pick/revert/rebase that exits 0 has not
+	// necessarily ended"). In a SHARED checkout those two forms never reach
+	// the audit at all now — the continue wall refuses them in front of it,
+	// which is the right precedence and is pinned on its own in
+	// TestQAContinueWallShadowsTheSequencerAuditInASharedCheckout
+	// (ranger-base-05aa1).
+	wtDir := filepath.Join(gitDir, "worktrees", "w")
 	for _, c := range []struct {
 		args     []string
 		leak     string
 		blockers string
+		worktree bool
 	}{
-		{[]string{"cherry-pick", "--abort"}, "CHERRY_PICK_HEAD AUTO_MERGE", "CHERRY_PICK_HEAD"},
-		{[]string{"cherry-pick", "--quit"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD"},
-		{[]string{"cherry-pick", "--continue"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD"},
+		{[]string{"cherry-pick", "--abort"}, "CHERRY_PICK_HEAD AUTO_MERGE", "CHERRY_PICK_HEAD", false},
+		{[]string{"cherry-pick", "--quit"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD", false},
+		{[]string{"cherry-pick", "--continue"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD", true},
 		// The case the bead did not name: a CLEAN cherry-pick leaks too, so
 		// the arm must key on the verb and not on --abort.
-		{[]string{"cherry-pick", "deadbeef"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD"},
-		{[]string{"revert", "--abort"}, "REVERT_HEAD", "REVERT_HEAD"},
-		{[]string{"rebase", "--abort"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD"},
-		{[]string{"rebase", "--continue"}, "CHERRY_PICK_HEAD MERGE_HEAD", "CHERRY_PICK_HEAD MERGE_HEAD"},
+		{[]string{"cherry-pick", "deadbeef"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD", false},
+		{[]string{"revert", "--abort"}, "REVERT_HEAD", "REVERT_HEAD", false},
+		{[]string{"rebase", "--abort"}, "CHERRY_PICK_HEAD", "CHERRY_PICK_HEAD", false},
+		{[]string{"rebase", "--continue"}, "CHERRY_PICK_HEAD MERGE_HEAD", "CHERRY_PICK_HEAD MERGE_HEAD", true},
 	} {
+		dir := gitDir
+		if c.worktree {
+			dir = wtDir
+		}
 		os.RemoveAll(gitDir)
-		out, errs, code := runSequencerShim(t, shim, gitDir, c.leak, "0", c.args...)
+		out, errs, code := runSequencerShim(t, shim, dir, c.leak, "0", c.args...)
 		line := "git " + strings.Join(c.args, " ")
 		if code != 1 {
 			t.Errorf("%s: code=%d, want 1 (err=%q)", line, code, errs)
@@ -195,7 +222,7 @@ func TestQASequencerVerbExitingZeroWithoutEndingIsRefused(t *testing.T) {
 			"cannot do a partial commit during a cherry-pick",
 			"that is THIS, not your PID",
 			"rm -rf --",
-			filepath.Join(gitDir, strings.Fields(c.blockers)[0]),
+			filepath.Join(dir, strings.Fields(c.blockers)[0]),
 		} {
 			if !strings.Contains(errs, want) {
 				t.Errorf("%s: refusal must carry %q: %q", line, want, errs)

@@ -92,6 +92,22 @@ stall that day, and every one of them a typing habit.
   already staged it (rangerhq-lrnp); undo that path-limited with
   `git restore --source=HEAD --staged --worktree -- <those paths>`, never
   `git reset --hard`.
+- **In the shared checkout, `merge`/`cherry-pick`/`revert`/`rebase
+  --continue` are refused, and that is the gate and not a typo**
+  (ranger-base-05aa1). Those four write a commit with the word `commit`
+  nowhere in the line, take the whole index, and cannot be path-limited at
+  all — git answers `fatal: cannot do a partial commit during a merge` — so
+  the commit wall's `git commit` rule never saw them. MEASURED 2026-11-15
+  (git 2.56.0): with another persona's file staged during the conflict
+  window, all four committed it, and the `prepare-commit-msg` hook caught
+  only `revert`. The L1 shim reads the four verbs now, in any prefix git
+  resolves (`git merge --con` is `--continue`). **A linked worktree is NOT
+  refused** — its index is yours alone — so the way through is almost always
+  "do it in your own session worktree"; otherwise `--abort` here, and for a
+  revert the two-step form the bullet above prescribes, whose path-limited
+  commit finishes a conflicted revert outright. The clean verbs are
+  untouched: git already refuses to start a merge, cherry-pick or revert
+  over a dirty index.
 - **In a session worktree, a `cherry-pick`/`revert`/`rebase` that exits 0 has
   not necessarily ended** (ranger-base-71g2f). Ending one deletes a pseudo-ref
   (`CHERRY_PICK_HEAD`), and that delete needs the SHARED repo's

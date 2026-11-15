@@ -7,7 +7,9 @@ the transcribed worked example are struck for pointers at
 `internal/posse/agents.go` and `examples/agents/architect.md` — they
 named 8 of the parser's 19 keys; the shipped Consequences bullets are
 struck; `## Intents` mode is recorded as governing nothing since ADR 0006
-§4 — ranger-base-mppjc) · owner: architect*
+§4 — ranger-base-mppjc) · amended 2026-11-15 (the seeded rule's own
+Consequences bullet: it matches the verb `commit`, and four verbs commit
+without saying it — ranger-base-05aa1) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -257,6 +259,23 @@ part still live as consequence rather than history.)*
   no commit wall at all in a repo with no hook. This is the only rule
   the scaffold seeds — anything narrower than a crew-wide invariant
   still belongs to the authored PID, not the scaffold.
+  **Amended 2026-11-15 (ranger-base-05aa1): the rule matches the verb
+  `commit`, and four verbs commit without saying it.** `git merge`,
+  `cherry-pick`, `revert` and `rebase` all write a commit from `--continue`,
+  take the whole index, and cannot be path-limited at all (`fatal: cannot
+  do a partial commit during a merge`), so for those four there was no
+  qualifier to demand and no refusal if you skipped it. MEASURED 2026-11-15
+  (git 2.56.0): with another actor's file staged during the conflict window,
+  all four committed it, and the L3 `prepare-commit-msg` gate caught exactly
+  one — it exempts `MERGE_HEAD`, `CHERRY_PICK_HEAD` and `rebase-*` on their
+  own merits, so "L3 backstops this" was never true for three of them. The
+  rationale above is unchanged and is why the fix is at L1: `renderContinueWall`
+  is this rule's other half, rendered when and only when the PID carries it,
+  refusing those four `--continue` forms where the index is SHARED and
+  standing down in a linked worktree, where a seat's index is its own. The
+  clean forms need no rule: git refuses to start a merge, cherry-pick or
+  revert over a dirty index (measured), so the conflict window was the whole
+  hole. `docs/notes.d/ranger-base-05aa1.md` has both tables.
 - **Guardrails become partly enforceable** at zero policy-engine cost:
   the CLI already does deny-wins. What cannot be a tool rule (e.g. "no
   publishing under the operator's name" — the model can still draft)

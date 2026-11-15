@@ -1035,6 +1035,14 @@ func TestQAPIDDenyAliasNoVerbRulesIsANoop(t *testing.T) {
 // alias.<verb>` that produced the expansion, and never for its own verb. A
 // deny on the typed argv still reaches git zero times. A stub git records
 // every exec, the way TestRefusalNamesWhereTheCommandDoesRun's canary does.
+//
+// AMENDED ranger-base-05aa1: the continue wall makes the same trade one
+// more time. A `<verb> --continue` it refuses has reached git for two
+// read-only `rev-parse --path-format=absolute` calls — the adjudication
+// (is this checkout's index shared?), never the command's own effect — and
+// nothing else was added to what a denied command may run. The last two
+// cases below are that claim, and the stub answers rev-parse with one
+// shared path so the wall reaches its refusal.
 func TestQAPIDDenyAliasLookupIsTheOnlyExec(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("sh"); err != nil {
@@ -1044,7 +1052,8 @@ func TestQAPIDDenyAliasLookupIsTheOnlyExec(t *testing.T) {
 	execs := filepath.Join(dir, "execs")
 	stub := filepath.Join(dir, "git")
 	script := "#!/bin/sh\necho \"$*\" >> " + shQuote(execs) + "\ncase \"$*\" in\n" +
-		"  'config --get alias.c') echo commit ;;\n  'config --get alias.pp') echo push ;;\n  config\\ --get\\ *) exit 1 ;;\nesac\n"
+		"  'config --get alias.c') echo commit ;;\n  'config --get alias.pp') echo push ;;\n  config\\ --get\\ *) exit 1 ;;\n" +
+		"  rev-parse\\ --path-format=absolute\\ *) echo /stub/.git ;;\nesac\n"
 	if err := WriteExecutable(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1086,6 +1095,13 @@ func TestQAPIDDenyAliasLookupIsTheOnlyExec(t *testing.T) {
 		// Allowed: the lookup, then git itself with the argv as typed.
 		{[]string{"c", "-m", "x", "--", "f"}, 0, []string{"config --get alias.c", "c -m x -- f"}},
 		{[]string{"nope"}, 0, []string{"config --get alias.nope", "nope"}},
+		// ranger-base-05aa1: a continue-wall refusal reaches git for its two
+		// read-only adjudication reads and for nothing else.
+		{[]string{"merge", "--continue"}, 1, []string{
+			"rev-parse --path-format=absolute --git-dir",
+			"rev-parse --path-format=absolute --git-common-dir"}},
+		// A verb the wall does not match costs no read at all.
+		{[]string{"merge", "side"}, 0, []string{"merge side"}},
 	} {
 		code, got := run(c.args...)
 		if code != c.code || strings.Join(got, "|") != strings.Join(c.execs, "|") {
