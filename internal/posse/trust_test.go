@@ -748,10 +748,46 @@ func TestEveryLaunchPathSeedsDirectoryTrust(t *testing.T) {
 	os.WriteFile(filepath.Join(a.AgentsDir, "developer.md"),
 		[]byte("---\nname: developer\ndeny: [Bash(git push:*)]\n---\nYou are developer.\n"), 0o644)
 
+	// THE SESSION DIR CARRIES ITS OWN `.git`, and that is what keeps this
+	// test off a 10ms window in the box's /tmp (ranger-base-za5wp). The key
+	// is the NEAREST ancestor holding a `.git` (ClaudeTrustKey), so a bare
+	// temp dir keys on itself only while nothing ABOVE it is a repo — and
+	// above it is /tmp, which anything on this box can make one.
+	//
+	// MEASURED 2026-11-15, this box (Linux 7.2.15-1-omarchy, 16 cores),
+	// caught twice in two arm2 runs by a 10ms poller: an EMPTY `/tmp/.git`,
+	// created and removed inside ~11ms, beside `/tmp/.aws`, `/tmp/.codex`
+	// and `/tmp/.agents` and a touch of
+	// `/tmp/codex-bwrap-synthetic-mount-targets-$UID` — a codex sandbox's
+	// mount-target prep, nothing this suite can call off. While it is there
+	// EVERY key under /tmp is "/tmp", so the seed writes one key and an
+	// assertion a moment later reads another: that is the red this bead is,
+	// and it reads exactly like a launch that landed in the trust dialog.
+	// A 90s probe watched the key for one fixed dir move to "/tmp" after
+	// 57,514 stable reads.
+	//
+	// An empty `.git` HERE is nearer than anything the box can plant above,
+	// so the key cannot move. It is not a repo to git, and the launch
+	// writes nothing into it — MEASURED: no wall, no hooks, the dir holds
+	// the planted `.git` and nothing else after a launch, against the
+	// prepare-commit-msg and pre-push a REAL `git init` here collects — so
+	// the subject below is the one this test had.
+	//
+	// docs/notes.d/ranger-base-za5wp.md has every reading, and the flicker
+	// that reproduces the window in an isolated GOTMPDIR: 15 of 30 runs red
+	// without the plant below, 0 of 30 with it. The ~20 OTHER assertions
+	// that read a trust key over a /tmp temp dir are ranger-base-tw0mn —
+	// including the arms whose subject is "a dir in no repo keys on
+	// itself", which cannot take this fix because the plant is the thing
+	// they measure the absence of.
 	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	mustCreate(t, b, NewSessionOpts{Name: "d1", Agent: "developer", Dir: dir})
 	if !ClaudeTrusted(readConfig(t, cfg), dir) {
-		t.Fatalf("posse new launched into an unanswered trust dialog: %v", readConfig(t, cfg))
+		t.Fatalf("posse new launched into an unanswered trust dialog: the key for %s is %s (nearest .git: %q), and the config holds %v",
+			dir, ClaudeTrustKey(dir), gitRootOf(dir), readConfig(t, cfg))
 	}
 
 	// A relaunch re-types the whole line, so it re-asserts the same fact —
@@ -766,7 +802,8 @@ func TestEveryLaunchPathSeedsDirectoryTrust(t *testing.T) {
 		t.Fatalf("relaunch: %v %v", ok, err)
 	}
 	if !ClaudeTrusted(readConfig(t, cfg), dir) {
-		t.Error("a re-typed line lands in the dialog: relaunch did not re-seed")
+		t.Errorf("a re-typed line lands in the dialog: relaunch did not re-seed — the key for %s is %s (nearest .git: %q), and the config holds %v",
+			dir, ClaudeTrustKey(dir), gitRootOf(dir), readConfig(t, cfg))
 	}
 }
 

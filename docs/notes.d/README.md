@@ -18,6 +18,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-zpx1k](ranger-base-zpx1k.md) — A door on ADR 0097 D3's three exits, and why the parser stayed in the shell (ranger-base-zpx1k) — 2026-11-14
 - [ranger-base-zkuwa](ranger-base-zkuwa.md) — A reflection over FIELDS cannot hold an arm a zero value selects (ranger-base-zkuwa) — 2026-11-14
 - [ranger-base-zb476](ranger-base-zb476.md) — A launch-line assertion reads both places the line lands in (ranger-base-zb476) — 2026-11-14
+- [ranger-base-za5wp](ranger-base-za5wp.md) — ranger-base-za5wp — /tmp becomes a git repo for 10ms, and a trust key moves under a test — 2026-11-14
 - [ranger-base-y0qvh](ranger-base-y0qvh.md) — A fence that forbade the page from naming the fence (ranger-base-y0qvh) — 2026-11-14
 - [ranger-base-xim7t](ranger-base-xim7t.md) — ranger-base-xim7t — a fixture that cannot separate the two rules — 2026-11-14
 - [ranger-base-wsgus](ranger-base-wsgus.md) — A private bind's source was checked at its last component, and the seat owned every component above it (ranger-base-wsgus) — 2026-11-14
