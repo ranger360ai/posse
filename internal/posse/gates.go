@@ -5003,14 +5003,16 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 //	                            below). Read WHOLE.
 //	default, unset, absent      "default" is not a mode, it is "strip if the
 //	                            message is edited, whitespace if not", and
-//	                            "$2" = "message" beside GIT_EDITOR=: is the
-//	                            handle on edited-ness ($posse_typed,
-//	                            ranger-base-mfryj): that is -m and -F with no
-//	                            -e, where git appends NO template and KEEPS a
-//	                            '#'-leading line, so a pasted markdown heading
-//	                            commits and the read is whole; anything else —
-//	                            `-m -e`, a conflicted `rebase --continue` — is the editor
-//	                            path, a commit.template, a merge, a squash, an
+//	                            GIT_EDITOR=: is the handle on edited-ness
+//	                            ($posse_typed, ranger-base-mfryj, narrowed to
+//	                            that one fact by ranger-base-r5j00): -m and -F
+//	                            with no -e, `--amend --no-edit`, `-C`, and a
+//	                            conflicted merge committed `--no-edit`, where
+//	                            git KEEPS every '#'-leading line, so a pasted
+//	                            markdown heading commits and the read is
+//	                            whole; anything else — `-m -e`, a conflicted
+//	                            `rebase --continue` — is the editor path, a
+//	                            commit.template, a merge, a squash, an
 //	                            --amend, where git has already written the
 //	                            "On branch <name>" line, the status block
 //	                            listing staged, unstaged and UNTRACKED paths
@@ -5077,9 +5079,11 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // by ranger-base-xfgcn). It is
 // keptModeNote below, driven by $posse_kept, which messageArm sets only when
 // the config named one of the three AND the message is not a typed one
-// ($posse_typed: "$2" is "message" AND git says it opens no editor): on
-// -m/-F git appends no template and every line is the writer's own, so the
-// old remedy is doable exactly as written and the note stays quiet. The
+// ($posse_typed: git says it opens no editor): on -m/-F, `--amend
+// --no-edit` and `-C` git appends no template and every line is one git
+// commits as it stands, so the old remedy is doable exactly as written and
+// the note stays quiet (ranger-base-r5j00: before it, `--amend --no-edit`
+// under a configured mode fired a note about a template git never wrote). The
 // `git commit -m ... -e` residual that used to be stated here (MEASURED, git
 // 2.50.1: source "message", the Please-enter block in the file, and the
 // whole block landed in the object under verbatim) is closed by the same
@@ -5317,11 +5321,23 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // `--amend --no-edit` and a clean sequencer pick saw ":" and kept a '#'
 // line; `-m -e`, `--amend`, a commit.template editor commit and a
 // conflicted `rebase --continue` saw "true" and git stripped every '#' line.
-// So "$2" = "message" reads whole only beside GIT_EDITOR=: ($posse_typed),
-// which closes the `-m -e` residual stated above too. The one way the two
-// disagree is a caller who exports GIT_EDITOR=: themselves and passes `-e`:
-// git edits with a no-op editor and strips, the hook sees ":" and reads
-// whole — over-refusal, which is where the arm stood before this.
+// So the read is whole exactly when GIT_EDITOR is ":" ($posse_typed), which
+// closes the `-m -e` residual stated above too.
+//
+// AND "$2" IS NO PART OF IT (ranger-base-r5j00). mfryj keyed $posse_typed on
+// "$2" = "message" AND GIT_EDITOR=:, and the conjunct made it narrower than
+// the fact it stands for: git's rule is `use_editor ? CLEANUP_ALL :
+// CLEANUP_SPACE`, which does not read the message source at all. MEASURED
+// 2026-11-14, git 2.56.0, commit.cleanup unset: `--amend --no-edit` and
+// `-C <sha>` hand the hook "commit" and ":", a conflicted merge committed
+// `--no-edit` hands it "merge" and ":", and in all three git KEPT the '#'
+// lines while the arm stripped them unscanned — a merge's own `# Conflicts:`
+// block, quoting the conflicted PATH, landed in the object with
+// refusals.log empty. That was the leak direction
+// (TestQAMessageArmReadsWholeEveryNoEditorCommitForm). The one way
+// GIT_EDITOR and git's cleanup disagree is a caller who exports GIT_EDITOR=:
+// themselves and passes `-e`: git edits with a no-op editor and strips, the
+// hook sees ":" and reads whole — over-refusal, the fail-closed side.
 //
 // RESIDUALS, stated. Fail-CLOSED: `-v` as a FLAG on `-F`/`-m` — git
 // truncates at a marker the writer typed (measured) and appends no diff,
@@ -5370,7 +5386,7 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i3 + `done)
 ` + i1 + `fi
 ` + i1 + `posse_typed=''
-` + i1 + `if [ "${2:-}" = "message" ] && [ "${GIT_EDITOR-}" = : ]; then posse_typed=1; fi
+` + i1 + `if [ "${GIT_EDITOR-}" = : ]; then posse_typed=1; fi
 ` + i1 + `case "$posse_clean" in
 ` + i1 + `  strip) posse_clean=strip ;;
 ` + i1 + `  verbatim|whitespace|scissors)

@@ -2,46 +2,35 @@
 
 package posse
 
-// THE TYPED TEST IS NARROWER THAN THE FACT IT STANDS FOR, so the message arm
-// STRIPS comment lines that git KEEPS (ranger-base-4wmiz, from the verify of
-// ranger-base-mfryj).
+// THE TYPED TEST IS THE FACT IT STANDS FOR, so the message arm reads WHOLE
+// every message whose comment lines git KEEPS (ranger-base-r5j00, found by the
+// verify of ranger-base-mfryj under ranger-base-4wmiz).
 //
 // messageArm decides whether to read the commit message file WHOLE or through
 // `stripspace --strip-comments`, and under default cleanup it keys that on
 //
-//	posse_typed = [ "$2" = "message" ] && [ "${GIT_EDITOR-}" = : ]
+//	posse_typed = [ "${GIT_EDITOR-}" = : ]
 //
 // The FACT it needs is "git will keep '#' lines in the object", and git's own
 // rule for that is `use_editor ? CLEANUP_ALL : CLEANUP_SPACE` — cleanup is
 // "whitespace", which keeps '#' lines, exactly when no editor opens. git tells
 // the hook which it is by exporting GIT_EDITOR=: when it opens no editor
-// (commit.c run_commit_hook), so the fact is `GIT_EDITOR = :` ALONE. "$2" is
-// not part of it, and "$2" is "commit" for `--amend`/`-c`/`-C` and "merge" for
-// a conflicted merge's commit — three no-editor forms where git keeps the
-// lines and the arm strips them before any check scans them.
+// (commit.c run_commit_hook), so the fact is `GIT_EDITOR = :` ALONE.
 //
-// This is the LEAK direction, so it is the opposite of the bead that re-keyed
-// the predicate: ranger-base-mfryj was filed over the arm refusing text git
-// throws away, and it fixed that. The defect here PREDATES it — the old
-// `"$2" = "message"` row stripped these same forms — but mfryj's own measured
-// table has `--amend --no-edit` in it as a row that "saw ':' and kept a '#'
-// line", so the evidence was on the table when the predicate was written.
-// gates.go also still says "the one way the two disagree is a caller who
-// exports GIT_EDITOR=: themselves and passes -e", and these three forms are a
-// second way, in the direction that matters more.
+// Until ranger-base-r5j00 the test also demanded "$2" = "message", and "$2"
+// is "commit" for `--amend`/`-c`/`-C` and "merge" for a conflicted merge's
+// commit — three no-editor forms where git kept the lines and the arm
+// stripped them before any check scanned them. That was the LEAK direction:
+// a merge's own `# Conflicts:` block quoting a ceiling-class PATH landed in a
+// commit object with refusals.log empty. The defect predated
+// ranger-base-mfryj (the older `"$2" = "message"` row stripped the same
+// forms); mfryj re-derived the predicate with `--amend --no-edit` already on
+// its measured table.
 //
-// A LIVE-DEFECT PIN: it ships GREEN, asserting the hole, so the escape is
-// visible from a suite run instead of only from a bead. Every row's want is
-// `landed`, which is the WRONG behaviour.
-//
-// IF YOU ARE HERE BECAUSE THIS WENT RED, the fix has landed: drop the
-// `[ "${2:-}" = "message" ] &&` conjunct from messageArm's $posse_typed, flip
-// every `landed: true` below to false, and rewrite this comment to say what is
-// now true. MEASURED 2026-11-14 (ranger-base-4wmiz) with that one conjunct
-// dropped: all three rows below refuse, and every behavioural pin over this
-// arm in arms 1, 2 and 3 stays green — the one other red is
-// TestQAMessageArmReadsTwoWaysKeyedOnTheCleanupMode, which names the literal
-// and has to be retyped with it.
+// This pin shipped GREEN asserting the hole (ranger-base-4wmiz) and was
+// flipped by the fix: every row's want is now REFUSED. It goes red if the
+// conjunct comes back — MEASURED 2026-11-14 under a go test -overlay of
+// gates.go restoring it: all three rows land the class.
 //
 // WHY THE EXISTING PINS DO NOT SEE THIS. Each of the two closest ones drives
 // the editor arm of its own shape, where git strips and the arm is right to
@@ -76,7 +65,12 @@ func qaTypedFactHookRecorder(t *testing.T, repo string) string {
 	return log
 }
 
-func TestQAMessageArmsTypedTestIsNarrowerThanTheFactItStandsFor(t *testing.T) {
+// qaTypedFactLabel is the commit-message arm's own refusals.log label. The log
+// never carries the class itself (qaNoCeilingVocabulary), so the label is how a
+// row tells this arm's refusal from any other.
+const qaTypedFactLabel = "(stamp: " + VisibilityPrivate + ", commit message)"
+
+func TestQAMessageArmReadsWholeEveryNoEditorCommitForm(t *testing.T) {
 	// FIXTURE PREMISE for every row: default cleanup. With commit.cleanup set
 	// to one of the three named modes the arm reads whole on every path and
 	// none of this arises, so a row that silently ran under a configured mode
@@ -84,14 +78,13 @@ func TestQAMessageArmsTypedTestIsNarrowerThanTheFactItStandsFor(t *testing.T) {
 	for _, row := range []struct {
 		name string
 		// arg2 is what git must hand the hook, and the whole point of the
-		// row: GIT_EDITOR is ":" in all three, so the pair is what separates
-		// them from the forms the arm does read whole.
-		arg2   string
-		landed bool
+		// row: GIT_EDITOR is ":" in all three while "$2" is NOT "message",
+		// so the pair is what separates them from -m/-F.
+		arg2 string
 	}{
-		{"amend --no-edit", "commit", true},
-		{"-C <sha>", "commit", true},
-		{"merge --no-edit", "merge", true},
+		{"amend --no-edit", "commit"},
+		{"-C <sha>", "commit"},
+		{"merge --no-edit", "merge"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			w := qaCeilingWall(t, "")
@@ -101,6 +94,12 @@ func TestQAMessageArmsTypedTestIsNarrowerThanTheFactItStandsFor(t *testing.T) {
 			rel := "assets/" + qaExportStem + "42.csv"
 			flagged := "# cite " + qaExportStem + "42\n"
 			log := ""
+			// The commit under test: its error is the verdict, read after the
+			// recorder premise below so a refusal for any OTHER reason cannot
+			// pass for this one.
+			var out string
+			var cerr error
+			before := 0
 
 			switch row.name {
 			case "amend --no-edit", "-C <sha>":
@@ -128,23 +127,18 @@ func TestQAMessageArmsTypedTestIsNarrowerThanTheFactItStandsFor(t *testing.T) {
 				w.unstage(t, w.priv, "internal/posse/b.go")
 
 				log = qaTypedFactHookRecorder(t, w.priv)
+				before = strings.Count(w.log(t), qaTypedFactLabel)
 				env := append(append([]string(nil), w.persona...), "QA_SOURCE_LOG="+log)
 				if row.name == "amend --no-edit" {
 					w.stage(t, w.priv, "internal/posse/a.go", "package posse // touched\n")
-					if out, err := w.git(w.priv, env, "commit", "-q", "--amend", "--no-edit", "--", "internal/posse/a.go"); err != nil {
-						qaTypedFactRefused(t, row.landed, out)
-						return
-					}
+					out, cerr = w.git(w.priv, env, "commit", "-q", "--amend", "--no-edit", "--", "internal/posse/a.go")
 				} else {
 					sha, err := w.git(w.priv, nil, "rev-parse", "HEAD")
 					if err != nil {
 						t.Fatalf("git rev-parse: %v %s", err, sha)
 					}
 					w.stage(t, w.priv, "internal/posse/c.go", "package posse\n")
-					if out, err := w.git(w.priv, env, "commit", "-q", "-C", strings.TrimSpace(sha), "--", "internal/posse/c.go"); err != nil {
-						qaTypedFactRefused(t, row.landed, out)
-						return
-					}
+					out, cerr = w.git(w.priv, env, "commit", "-q", "-C", strings.TrimSpace(sha), "--", "internal/posse/c.go")
 				}
 
 			case "merge --no-edit":
@@ -169,50 +163,38 @@ func TestQAMessageArmsTypedTestIsNarrowerThanTheFactItStandsFor(t *testing.T) {
 					t.Fatalf("git add %s: %v %s", rel, err, out)
 				}
 				log = qaTypedFactHookRecorder(t, w.priv)
+				before = strings.Count(w.log(t), qaTypedFactLabel)
 				env := append(append([]string(nil), w.persona...), "QA_SOURCE_LOG="+log)
 				// No pathspec: git refuses a partial commit during a merge,
 				// which is why this form carries no `--`.
-				if out, err := w.git(w.priv, env, "commit", "-q", "--no-edit"); err != nil {
-					qaTypedFactRefused(t, row.landed, out)
-					return
-				}
+				out, cerr = w.git(w.priv, env, "commit", "-q", "--no-edit")
 			}
 
 			// PREMISE, asserted rather than assumed: the pair that makes this
 			// row a row. GIT_EDITOR=":" is git saying it opened no editor, so
 			// git's cleanup is "whitespace" and the '#' lines are kept; "$2"
-			// is not "message", so $posse_typed is empty and the arm strips.
+			// is not "message", which is what the old conjunct keyed on.
 			saw, _ := os.ReadFile(log)
 			want := row.arg2 + "|:"
 			if !strings.Contains(string(saw), want) {
 				t.Fatalf("fixture premise: git must hand the hook %q for this form — got:\n%s", want, saw)
 			}
 
-			landed, err := w.git(w.priv, nil, "log", "-1", "--format=%B")
-			if err != nil {
-				t.Fatalf("git log: %v %s", err, landed)
-			}
-			if got := strings.Contains(landed, qaExportStem); got != row.landed {
-				if row.landed {
-					t.Errorf("the class did NOT reach the commit object — the hole is closed and this pin is now backwards:\n%s", landed)
-					return
-				}
-				t.Errorf("THE HOLE: a ceiling class on a '#' line reached the commit object through `%s`.\n"+
-					"git kept the line and messageArm stripped it before scanning, because \"$2\" is %q\n"+
-					"and $posse_typed demands \"message\". committed message:\n%s\nrefusals.log:\n%s",
+			if cerr == nil {
+				landed, _ := w.git(w.priv, nil, "log", "-1", "--format=%B")
+				t.Errorf("THE HOLE (ranger-base-r5j00): a ceiling class on a '#' line reached the commit object through `%s`.\n"+
+					"git kept the line, so messageArm must read it whole on GIT_EDITOR=: alone; \"$2\" is %q here.\n"+
+					"committed message:\n%s\nrefusals.log:\n%s",
 					row.name, row.arg2, landed, w.log(t))
+				return
+			}
+			// The refusal is THIS arm's: one more commit-message line in
+			// refusals.log than before the commit under test (the -F control
+			// above already wrote one, so a bare Contains would read it).
+			if rl := w.log(t); strings.Count(rl, qaTypedFactLabel) != before+1 {
+				t.Errorf("the commit was refused, but not by the commit-message arm — refused for some other reason?\n"+
+					"git said:\n%s\nrefusals.log:\n%s", out, rl)
 			}
 		})
-	}
-}
-
-// qaTypedFactRefused is the one arm that means the fix landed: the commit was
-// refused, so the class never reached an object. It is an error only while this
-// pin still asserts the hole.
-func qaTypedFactRefused(t *testing.T, expectedToLand bool, out string) {
-	t.Helper()
-	if expectedToLand {
-		t.Errorf("the commit was REFUSED, so the hole is closed and this pin is now backwards — "+
-			"flip this row's `landed` to false and retype the head comment:\n%s", out)
 	}
 }

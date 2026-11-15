@@ -378,19 +378,22 @@ func TestQAMessageArmReadsTwoWaysKeyedOnTheCleanupMode(t *testing.T) {
 		// The remedy's handle on WHICH of the three is live, captured in
 		// the same arm rather than by reading the mode list a second time:
 		// a second copy of that list is the drift this file argues against
-		// everywhere else (ranger-base-b21e0). It is empty where "$2" is
-		// "message", because git appends no template on that path and the
+		// everywhere else (ranger-base-b21e0). It is empty where git opens
+		// no editor, because git appends no template on that path and the
 		// unqualified "rewrite the commit message" is doable as written.
 		{`if [ -z "$posse_typed" ]; then posse_kept=$posse_clean; fi`, 2},
 		{`posse_kept=''`, 2},
 		// "strip" strips on EVERY path, -m/-F included: that is the
 		// over-refusal half of ranger-base-6y3z2.
 		{`strip) posse_clean=strip ;;`, 2},
-		// "Typed" is "$2" = "message" AND git's own GIT_EDITOR=: — the
-		// export git makes to this hook exactly when it opens no editor.
-		// "$2" alone read `-m -e` and a conflicted `rebase --continue`
-		// whole, template and all (ranger-base-mfryj).
-		{`if [ "${2:-}" = "message" ] && [ "${GIT_EDITOR-}" = : ]; then posse_typed=1; fi`, 2},
+		// "Typed" is git's own GIT_EDITOR=: and nothing else — the export
+		// git makes to this hook exactly when it opens no editor, which is
+		// exactly when default cleanup keeps '#' lines. "$2" alone read
+		// `-m -e` and a conflicted `rebase --continue` whole, template and
+		// all (ranger-base-mfryj); "$2" = "message" beside it stripped
+		// `--amend --no-edit`, `-C` and a `--no-edit` merge, whose '#' lines
+		// git keeps (ranger-base-r5j00).
+		{`if [ "${GIT_EDITOR-}" = : ]; then posse_typed=1; fi`, 2},
 		// The typed message survives as the fallback for "default"/unset
 		// and nothing else — and there it still reads -m/-F whole.
 		{`*) if [ -n "$posse_typed" ]; then posse_clean=whole; else posse_clean=strip; fi ;;`, 2},
