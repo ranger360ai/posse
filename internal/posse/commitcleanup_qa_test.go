@@ -56,6 +56,19 @@ func qaVerbatimRepo(t *testing.T, w *visWall, repo, mode string) []string {
 	if out, err := w.git(repo, nil, "config", "commit.cleanup", mode); err != nil {
 		t.Fatalf("git config commit.cleanup %s: %v %s", mode, err, out)
 	}
+	return qaWiringEditor(t, w)
+}
+
+// qaWiringEditor is the editor half of qaVerbatimRepo on its own: it prepends
+// a line and keeps the rest of git's template, so GIT_EDITOR is something
+// other than ":" and git's cleanup is whatever the MODE says rather than
+// "whitespace" (ranger-base-r5j00). Split out for
+// cleanupflagarm_qa_test.go, whose whole subject is the mode arriving as a
+// command-line FLAG — writing it to config there would remove the one thing
+// under test, so it needs this half without the config write
+// (ranger-base-dgfax).
+func qaWiringEditor(t *testing.T, w *visWall) []string {
+	t.Helper()
 	ed := filepath.Join(t.TempDir(), "editor.sh")
 	write(t, ed, "#!/bin/sh\n"+
 		"{ printf '%s\\n' 'wire it'; cat \"$1\"; } > \"$1.new\" && mv \"$1.new\" \"$1\"\n")
