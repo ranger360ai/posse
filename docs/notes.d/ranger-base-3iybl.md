@@ -3,8 +3,10 @@
 Recovery bead over `ranger-base-cq3vi`, whose single commit `517e116e` was on
 no branch at all. This is the `landed()` arm that says "the tree's HEAD is off
 its own branch, so no merge here can reach it" — **the first time that arm has
-fired in this repo's history**, and the only part of the incident worth
-keeping, because the guard and the remedy both worked exactly as written.
+fired in this repo's history**. The guard behaved. Its printed remedy did not:
+running it verbatim rescued the work for one pass and the pass after that
+stranded it again, which is ranger-base-wg4z1 and the half of this worth
+reading.
 
 MEASURED 2026-11-14 over `$BEADS_DIR/issues.jsonl`: **113 `merge-back blocked`
 beads, 1 of them this reason** (and none the neighbouring "unreferenced and a
@@ -56,23 +58,57 @@ it instead. That asymmetry is deliberate and documented at
 session, which is the one thing it must not do" — and this is the first
 field case to exercise it. It behaved.
 
-## The recovery, and why no replay
+## The recovery, and the remedy that was not enough
 
-`git branch -f posse/jian-yang-posse-ranger-base-cq3vi HEAD` in that worktree,
-which is what the block itself named. It is fast-forward only here: the branch
-sat at `b5a6f5c3`, the work's own parent, so nothing was over-written. No
-replay, rebase or cherry-pick was needed or wanted — the block's replay recipe
-is for a *conflicting* merge, and this merge is clean:
-`git merge-tree --write-tree --merge-base=517e116e^ main 517e116e` exits 0 at
-tree `db147ea8`.
+No replay, rebase or cherry-pick was needed or wanted — the block's replay
+recipe is for a *conflicting* merge, and this merge is clean:
+`git merge-tree --write-tree --merge-base=517e116e^ main 517e116e` exits 0.
+
+So the first step was `git branch -f posse/jian-yang-posse-ranger-base-cq3vi
+HEAD`, which is what the block itself named, and it is fast-forward only here
+— the branch sat at `b5a6f5c3`, the work's own parent. `posse worktrees` then
+read the tree as landable with no refusal.
+
+**That held for exactly one pass.** `branch -f … HEAD` moves the BRANCH to the
+detached HEAD and leaves HEAD detached, and the next launcher pass ran its
+replay — `git rebase <base>` in the tree (worktree.go:1834) — which on a
+detached HEAD moves HEAD and does not touch the branch. The fast-forward under
+it takes the BRANCH (`merge --ff-only t.Branch`, worktree.go:~1936), which the
+rebase never moved, so the pass rebased successfully, left its output
+`04487ef1` on no branch, and refused the landing. The block regenerated,
+naming the new sha:
+
+```
+517e116e -> d99b51fc  rebase (start): checkout main
+d99b51fc -> 04487ef1  rebase (pick): ranger-base-cq3vi: check 4 reads …
+```
+
+What actually held is `git checkout -B <branch> 04487ef1` — the branch moved
+AND HEAD re-attached, so a later rebase carries the branch with it. The
+rebased commit is the right one to land: its tree is byte-identical to the
+merge tree verified below, its parent is main, and it keeps the author email,
+author date and subject that `equivalentOnBase` pairs on.
+
+Filed as **ranger-base-wg4z1**: the remedy sentence should be `checkout -B`,
+and whether posse should itself re-attach an *accidental* detach is a design
+call, because `spliceDetachedWork` is gated on `launchedDetached` deliberately
+— splicing without a record "would silence the guard for every session, which
+is the one thing it must not do".
 
 Verified before re-pointing the branch, because main had moved five commits
 deep into `internal/posse` since that work was cut and a red landing there
 costs every seat on the box: the merged tree materialized into this worktree
-and `make test` green over all three arms (242.6s / 79.3s / 104.3s, `tree-check`
-and `posse-land-check` included). The only file both sides touched is the
-generated `docs/notes.d/README.md`, and git's merge put the cq3vi row in the
-slot `notes-index.py` wants, so it needed no regeneration.
+and `make test` green over all three arms (242.6s / 79.3s / 104.3s,
+`tree-check` and `posse-land-check` included).
+
+Said exactly: that run was over the merge onto main at `312f823c`, tree
+`db147ea8`. What lands is the rebase onto `d99b51fc`, tree `e5124714`, and the
+two differ by `docs/adr/0011`, one notes fragment and one index row — a
+docs-only delta from a commit already green on main, with **no Go file
+different between them**. So the suite result covers every source file that
+lands, and the one generated file that combines rows from two landings was
+checked on the landing tree itself: `notes-index.py --check` over
+`e5124714`'s `docs/notes.d` is generator-exact.
 
 ## What not to conclude
 
