@@ -582,7 +582,7 @@ func main() {
 		// measurement itself is an out-of-process `flock -n` on $HOME, which
 		// is read-only and answers the same for every reader.
 		"TestTheCreatorHoldsAFlockOnItsTempHome": "reads testHomeLock and testHomeOwned",
-		// bwrapNestOnce and bwrapNestWhy (23): ADR 0096 D3's gate, reached
+		// bwrapNestOnce and bwrapNestWhy (24): ADR 0096 D3's gate, reached
 		// through bgLiveSkip (bsLiveFixture too), bhLiveFixture, btLive and wwLiveFixture. Every
 		// one of these arms execs a real bwrap, so each asks the gate whether
 		// THIS process can nest one; the answer is memoized because the only
@@ -602,6 +602,7 @@ func main() {
 		"TestLiveBwrapHideIsNotWalkedAroundThroughProcRoot":                "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapHidesTheRuntimeDirsControlEndpoints":                 "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWithoutHideReachesTheRuntimeDir":                     "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapFollowsATmpSourceLinkAndTheRenderRefusesIt":          "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapSeatTmpKeepsTheSeatOutOfTheHostsTmp":                 "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWithoutSeatTmpReachesTheHostsTmp":                    "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchBackstopFilesAWatcherThatDiedUnderARunningSeat":  "reads bwrapNestOnce and bwrapNestWhy",

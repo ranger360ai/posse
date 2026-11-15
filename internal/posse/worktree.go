@@ -3694,12 +3694,13 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 			}
 		}
 	}
-	// The session's own build cache (ranger-base-olr0g) goes with its tree.
-	// Named before the remove, because the name hashes the RESOLVED path and
-	// a path that is gone resolves to its spelling. Best-effort: a cache left
-	// behind costs disk and nothing else, and no other seat is granted it.
+	// The session's own build cache (ranger-base-olr0g) and its wall dir
+	// (ADR 0100 D1) go with its tree. Named before the remove, because both
+	// names hash the RESOLVED path and a path that is gone resolves to its
+	// spelling. Best-effort: a directory left behind costs disk and nothing
+	// else, and no other seat is granted either one.
 	home, _ := os.UserHomeDir()
-	seatCache := SeatCacheDir(home, t.Path)
+	seatCache, seatWall := SeatCacheDir(home, t.Path), SeatWallDir(home, t.Path)
 	if _, err := os.Stat(t.Path); err == nil {
 		args := []string{"worktree", "remove", t.Path}
 		if force {
@@ -3711,6 +3712,18 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 	}
 	if seatCache != "" {
 		_ = os.RemoveAll(seatCache)
+	}
+	// AFTER the import at the top of this function and after `worktree
+	// remove`, never before (ADR 0100 D1's retire order: import both arms,
+	// then the worktree removal, then this). Today the wall dir holds the
+	// seat's private /tmp and its private claude state, and removing it
+	// early would cost nothing but a confusing error. When D1's last member
+	// lands here — the seat's own object store, which holds committed work
+	// that only the import rescues — this order is what keeps the removal
+	// from taking it. Written that way now, so the slice that adds the
+	// source adds a source and not a reordering.
+	if seatWall != "" {
+		_ = os.RemoveAll(seatWall)
 	}
 	_ = pruneWorktrees(t.Repo)
 	if branchExists(t.Repo, t.Branch) {

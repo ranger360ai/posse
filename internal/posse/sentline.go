@@ -224,15 +224,22 @@ func lastSubmitted(path, session string) (string, bool) {
 }
 
 // claudePrivateHistoryPath is the submit log a caged claude seat writes
-// instead of the shared one (ranger-base-a544g): <SeatCacheDir>/claude/
-// history.jsonl, the source the bwrap render binds over <cfg>/history.jsonl
-// (claudePrivateSessionState). "" with no seat dir to hang it off.
+// instead of the shared one (ranger-base-a544g): `history.jsonl` under the
+// seat's private claude dir, the source the bwrap render binds over
+// <cfg>/history.jsonl (claudePrivateSessionState). "" with no seat dir to
+// hang it off.
+//
+// Composed from claudePrivateStateDir and not spelled here (ADR 0100 D1):
+// that directory moved out of the seat's own cache dir, which the seat is
+// granted, and into its wall dir, which nothing grants — and a reader
+// carrying its own copy of the path would be the one still reading through
+// components a seat can replace.
 func claudePrivateHistoryPath(home, cwd string) string {
-	seat := SeatCacheDir(home, cwd)
-	if seat == "" {
+	own := claudePrivateStateDir(home, cwd)
+	if own == "" {
 		return ""
 	}
-	return filepath.Join(seat, claudePrivateSessionStateRel, claudeHistoryFile)
+	return filepath.Join(own, claudeHistoryFile)
 }
 
 // lastSubmittedOfPID is lastSubmitted over the seat's PRIVATE log first and

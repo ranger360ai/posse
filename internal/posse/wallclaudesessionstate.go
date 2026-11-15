@@ -32,8 +32,8 @@ import "path/filepath"
 // only ever reads its own session's entry, so nothing it needs is behind the
 // mount.
 //
-// The source is under the seat's cache dir (SeatCacheDir), so the worktree
-// removal that takes the cache takes these too.
+// The source is under the seat's wall dir (SeatWallDir, ADR 0100 D1), so the
+// worktree removal that takes the wall dir takes these too.
 //
 // bwrap only. A seatbelt profile cannot bind, and "deny write except the
 // session's own name" cannot be written ahead of a random session id; the
@@ -41,7 +41,7 @@ import "path/filepath"
 //
 // Two more members join for ranger-base-fswhs: backups/ and file-history/,
 // which are also one file or one dir per session at one uid. Nothing posse
-// runs reads either one, and a seat's own copies go with its seat cache.
+// runs reads either one, and a seat's own copies go with its wall dir.
 //
 // debug/ joins for ranger-base-ntt1w, and the direction of that one is the
 // other way round: the seat is the PLANTER and an uncaged claude the writer.
@@ -218,16 +218,36 @@ func claudePromptHistory(home string, stateGrants []string) []string {
 }
 
 // claudePrivateSessionStateRel is where those members live under the seat's
-// cache dir.
+// wall dir.
 const claudePrivateSessionStateRel = "claude"
+
+// claudePrivateStateDir is that directory for one seat: `<SeatWallDir>/claude`,
+// the parent of every private source this file renders and of the two an
+// uncaged posse READS back (claudePrivateHistoryPath in sentline.go,
+// claudePrivateSessionRowPath in runtimesession.go). "" wherever SeatWallDir
+// is "".
+//
+// ONE HELPER AND FOUR READERS, which is ADR 0100 D1's "recompose every
+// reader from the one helper". It used to hang off SeatCacheDir, a directory
+// the seat is granted by name — so every one of those readers walked
+// components the seat could replace, and the render's own walk had nothing
+// above the member it could trust (ranger-base-p47q6). Under the wall dir
+// the seat can write none of them.
+func claudePrivateStateDir(home, cwd string) string {
+	wall := SeatWallDir(home, cwd)
+	if wall == "" {
+		return ""
+	}
+	return filepath.Join(wall, claudePrivateSessionStateRel)
+}
 
 // claudePrivateSessionState names the binds for the config dir a seat on this
 // box would use (ClaudeConfigDirIn, the claudeExecConfig answer), and only
 // when the launching runtime's state grant reaches that dir. A seat on another
-// runtime gets nothing, and so does a launch with no seat cache dir.
+// runtime gets nothing, and so does a launch with no seat wall dir.
 func claudePrivateSessionState(home, cwd string, stateGrants []string) []PrivateBind {
-	seat := SeatCacheDir(home, cwd)
-	if seat == "" {
+	wall, own := SeatWallDir(home, cwd), claudePrivateStateDir(home, cwd)
+	if wall == "" {
 		return nil
 	}
 	cfg := ClaudeConfigDirIn(home)
@@ -239,16 +259,19 @@ func claudePrivateSessionState(home, cwd string, stateGrants []string) []Private
 		return nil
 	}
 	var out []PrivateBind
-	// SrcRoot IS THE SEAT CACHE DIR, in the spelling Src is composed from
-	// (ranger-base-wsgus). Everything below it — <seat>/claude and each
-	// member under it — is in the seat's own write set, so the render lstats
-	// every one of those components and refuses a link at any of them; the
-	// seat cache dir itself is the launcher's path, and nothing grants its
-	// parent.
+	// SrcRoot IS THE SEAT WALL DIR, in the spelling Src is composed from
+	// (ranger-base-wsgus, ADR 0100 D1). Everything below it — <wall>/claude
+	// and each member under it — is walked: the render lstats every one of
+	// those components and refuses a link at any of them. The walk is what
+	// it always was; what changed is that the components are no longer in
+	// the seat's write set at all, so there is no longer a writer who can
+	// swap one between this walk and bwrap's own resolution at mount time.
+	// The wall dir itself is the launcher's path, and no render grants its
+	// parent (D2(a), bwrapRefuseWallRootGrant).
 	for _, n := range claudeSessionStateDirNames {
 		out = append(out, PrivateBind{
-			Src:     filepath.Join(seat, claudePrivateSessionStateRel, n),
-			SrcRoot: seat,
+			Src:     filepath.Join(own, n),
+			SrcRoot: wall,
 			Dst:     filepath.Join(cfg, n),
 		})
 	}
@@ -257,7 +280,7 @@ func claudePrivateSessionState(home, cwd string, stateGrants []string) []Private
 	// path lastSubmittedOfPID reads, from the one helper.
 	out = append(out, PrivateBind{
 		Src:     claudePrivateHistoryPath(home, cwd),
-		SrcRoot: seat,
+		SrcRoot: wall,
 		Dst:     filepath.Join(cfg, claudeHistoryFile),
 		File:    true,
 	})

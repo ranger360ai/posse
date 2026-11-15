@@ -180,15 +180,20 @@ func claudeSessionIn(path string, pid int, start string) (string, error) {
 
 // claudePrivateSessionRowPath is the row for one pid in the seat-private
 // sessions/ a caged claude seat registers into (ranger-base-lx5jk): the
-// SeatCacheDir of the directory the KERNEL says that pid runs in, under the
-// home the private bind was rendered against. "" when there is no home — every
-// test backend, by the same discipline as ClaudeHistory — or no cwd reading.
+// private claude dir of the directory the KERNEL says that pid runs in,
+// under the home the private bind was rendered against. "" when there is no
+// home — every test backend, by the same discipline as ClaudeHistory — or no
+// cwd reading.
+//
+// Composed from claudePrivateStateDir, the one helper every reader of these
+// paths recomposes from since ADR 0100 D1 moved them under the seat's wall
+// dir.
 func claudePrivateSessionRowPath(home, cwd string, pid int) string {
-	seat := SeatCacheDir(home, cwd)
-	if seat == "" || pid <= 0 {
+	own := claudePrivateStateDir(home, cwd)
+	if own == "" || pid <= 0 {
 		return ""
 	}
-	return filepath.Join(seat, claudePrivateSessionStateRel, claudeSessionsDir, strconv.Itoa(pid)+".json")
+	return filepath.Join(own, claudeSessionsDir, strconv.Itoa(pid)+".json")
 }
 
 // claudeSessionOfPID is claudeSessionIn with the fence taken, over the

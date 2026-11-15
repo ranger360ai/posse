@@ -62,9 +62,62 @@ func SeatCacheDir(home, cwd string) string {
 	if home == "" || cwd == "" {
 		return ""
 	}
+	return filepath.Join(home, seatCacheRootRel, seatDirKey(cwd))
+}
+
+// seatDirKey is the per-session-dir name both of this box's per-seat
+// directories are built from — the seat CACHE above and the seat WALL below.
+// One function, so the two cannot drift: the wall dir's key is the cache
+// dir's key, which is what lets a reader pair them by eye and what
+// RemoveSessionTree relies on when it names both from one session tree.
+func seatDirKey(cwd string) string {
 	real := absResolve(cwd)
 	sum := sha256.Sum256([]byte(real))
-	return filepath.Join(home, seatCacheRootRel, filepath.Base(real)+"-"+hex.EncodeToString(sum[:])[:12])
+	return filepath.Base(real) + "-" + hex.EncodeToString(sum[:])[:12]
+}
+
+// ─── THE SEAT'S WALL DIR (ADR 0100 D1) ──────────────────────────────────────
+
+// seatWallRootRel is the per-seat WALL dirs' parent under the home, and
+// NOTHING GRANTS IT — that is the whole of what the directory is for, and
+// ADR 0100 D2(a) is the refusal that keeps it true.
+//
+// A SIBLING of `.cache/posse-seat` and `.cache/posse`, not a child of
+// either, for the reason seatCacheRootRel gives one line up and then one
+// turn further: the seat cache is granted to the seat that owns it, so a
+// bind SOURCE under it is a path that seat can unlink and replace with a
+// link between this render's component walk and bwrap's own resolution at
+// mount time (ADR 0100 Context). A source under the wall root has no such
+// component: every one of them lies under the read-only `/` of the seat's
+// namespace, and the seat reaches the CONTENTS through the mount at Dst
+// instead.
+const seatWallRootRel = ".cache/posse-wall"
+
+// SeatWallRoot is that parent for one home, composed from the RESOLVED home
+// (ADR 0100 D2(a)): the grant a render is judged against is resolved too, so
+// comparing the two spellings is comparing what the bind would expose. ""
+// with no home, which names nothing and refuses nothing.
+func SeatWallRoot(home string) string {
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(absResolve(home), seatWallRootRel)
+}
+
+// SeatWallDir is the one directory every bwrap bind SOURCE that differs from
+// its destination lies under (ADR 0100 D1): `<SeatWallRoot>/<the SeatCacheDir
+// key>`, one per session dir. Its members are the seat's private /tmp
+// (SeatTmpDir) and claude's private session state (claudePrivateStateDir);
+// ADR 0100 D1's remaining member, the seat's own object store, joins them
+// in a later slice.
+//
+// "" with no home or no session dir, the same answer and for the same reason
+// as SeatCacheDir: a render that cannot name the dir binds nothing from it.
+func SeatWallDir(home, cwd string) string {
+	if home == "" || cwd == "" {
+		return ""
+	}
+	return filepath.Join(SeatWallRoot(home), seatDirKey(cwd))
 }
 
 // bwrapTmpMount is the directory the bwrap wall replaces with the seat's own
@@ -72,14 +125,41 @@ func SeatCacheDir(home, cwd string) string {
 const bwrapTmpMount = "/tmp"
 
 // SeatTmpDir is the host directory a walled session sees as /tmp: `tmp` under
-// its SeatCacheDir, so it is granted to that session alone, and removed with
-// the cache when the worktree goes. "" wherever SeatCacheDir is "".
+// its SeatWallDir, so no seat can write any component of it, and removed with
+// the wall dir when the worktree goes. "" wherever SeatWallDir is "".
+//
+// IT LIVED UNDER THE SEAT CACHE DIR until ADR 0100 D1, and that was the
+// non-race half of this class: the render checked the source with os.Stat,
+// which FOLLOWS, so a seat that replaced its own `<cache>/tmp` with a link
+// had the next launch bind the link's target read-write over /tmp — no
+// window to hit, because the seat is granted its cache dir by name
+// (MEASURED, ranger-base-p47q6). The walk the private binds already got
+// (bwrapPrivateSrcStat) is this one's too now, and the source it walks has
+// no seat-writable component left to walk over.
 func SeatTmpDir(home, cwd string) string {
-	d := SeatCacheDir(home, cwd)
+	d := SeatWallDir(home, cwd)
 	if d == "" {
 		return ""
 	}
-	return filepath.Join(d, "tmp")
+	return filepath.Join(d, seatWallTmpRel)
+}
+
+// seatWallTmpRel is that member's name under the wall dir. A constant
+// because the render walks the source from its PARENT (bwrapSeatTmpRoot),
+// and the two readings of "the tmp member" have to be one string.
+const seatWallTmpRel = "tmp"
+
+// bwrapSeatTmpRoot is the directory bwrap's render trusts every component of
+// a private /tmp source ABOVE: the seat's wall dir, which is the parent
+// SeatTmpDir composed it from. Derived from the source rather than carried
+// beside it, because the two producers of a private /tmp — SeatTmpDir and
+// landedCheckTmpDir — both join one `tmp` onto a directory the LAUNCHER
+// owns, and a second field would be a second place for them to disagree.
+func bwrapSeatTmpRoot(tmp string) string {
+	if tmp == "" {
+		return ""
+	}
+	return filepath.Dir(tmp)
 }
 
 // bwrapSeatTmp is SeatTmpDir as the bwrap render uses it: "" — the host's

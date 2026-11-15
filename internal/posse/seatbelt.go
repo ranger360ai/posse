@@ -603,19 +603,27 @@ type SeatbeltNarrow struct {
 // File binds take a Src of their own; in place and tmpfs are dir shapes.
 //
 // SrcRoot IS THE DEEPEST COMPONENT OF Src THIS RENDER TRUSTS, and an entry
-// with a Src of its own is refused without one (ranger-base-wsgus). A private
-// source lives under the seat's OWN cache dir, which that seat can write — so
+// with a Src of its own is refused without one (ranger-base-wsgus) — so
 // every component of Src BELOW this root is lstat'd and must be a real
 // directory, and a link anywhere along it refuses the render. The last
 // component takes the arm's own rule: a regular file for File, a directory
-// for the dir copy. Checking only the last one was not enough: the seat can
-// write <SeatCacheDir>/claude itself, so a link planted at that PARENT made
+// for the dir copy. Checking only the last one was not enough while the
+// source lived under the seat's own cache dir: the seat could write
+// <SeatCacheDir>/claude itself, so a link planted at that PARENT made
 // <seat>/claude/history.jsonl lstat as the target's own regular file, which
 // a544g's final-component check passed, and bound a file of the seat's
 // choosing read-write into the next launch's namespace.
 //
+// THE WALK IS NOT WHAT MAKES THE SOURCE SAFE, and ADR 0100 D1 is where that
+// was settled: a walk judges the components an instant before bwrap resolves
+// them again, so a seat that can write one of them toggles it in a loop and
+// needs no timing at all. The sources live under the seat's WALL dir now
+// (SeatWallDir), which no render grants, and the walk stays as the refusal a
+// link planted by anything else — a stale cache dir, the operator's own hand
+// — still meets.
+//
 // IT IS THE EXACT PREFIX Src WAS COMPOSED FROM, spelled as the producer
-// spelled it (claudePrivateSessionState passes SeatCacheDir's answer
+// spelled it (claudePrivateSessionState passes SeatWallDir's answer
 // unresolved), because the containment test below it is lexical. Nothing AT
 // or ABOVE the root is inspected: the root is the launcher's own path, a seat
 // cannot replace it (nothing grants its parent), and demanding its ancestors

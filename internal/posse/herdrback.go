@@ -77,7 +77,7 @@ type HerdrBackend struct {
 	// ClaudeSeatHome is the home claudeHistoryPath hangs that log off, and
 	// the one the bwrap render's private sessions/ bind is spelled against:
 	// the rex join reads a caged seat's private session row under
-	// SeatCacheDir(ClaudeSeatHome, …) before the shared one
+	// claudePrivateStateDir(ClaudeSeatHome, …) before the shared one
 	// (runtimesession.go, ranger-base-lx5jk). Same discipline as
 	// ClaudeHistory: NewHerdrBackend fills it, every test backend leaves it
 	// empty, and empty reads no private row at all.

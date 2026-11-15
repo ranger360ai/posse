@@ -70,14 +70,15 @@ func TestBwrapArgsRefusesASeatTmpThatIsAFile(t *testing.T) {
 	}
 }
 
-// The producer: one dir per session dir, under its seat cache (so the
-// worktree remove that takes the cache takes it), and nothing for a home or
-// session dir that is itself under /tmp.
+// The producer: one dir per session dir, under its seat WALL dir (ADR 0100
+// D1 — so no walled seat can write a component of the source, and the
+// worktree remove that takes the wall dir takes it), and nothing for a home
+// or session dir that is itself under /tmp.
 func TestBwrapSeatTmpIsTheSeatsOwnAndStandsDownUnderTmp(t *testing.T) {
 	t.Parallel()
 	home, cwd := "/home/someone", "/home/someone/src/repo"
 	got := bwrapSeatTmp(home, cwd)
-	if want := filepath.Join(SeatCacheDir(home, cwd), "tmp"); got != want {
+	if want := filepath.Join(SeatWallDir(home, cwd), "tmp"); got != want {
 		t.Fatalf("bwrapSeatTmp = %q, want %q", got, want)
 	}
 	if other := bwrapSeatTmp(home, "/home/someone/src/other"); other == got {

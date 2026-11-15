@@ -444,14 +444,27 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// A source that itself lies under the host's /tmp (a test home) is still
 	// private: bwrap opens the source before it mounts, so the seat sees
 	// that one directory and nothing beside it.
+	//
+	// THE SOURCE GOES THROUGH THE COMPONENT WALK, not through bwrapStat
+	// (ADR 0100 D1, the non-race half of ranger-base-p47q6). bwrapStat is
+	// os.Stat and os.Stat FOLLOWS: while this source lived under the seat's
+	// own cache dir — a path the seat is granted by name — a seat that
+	// replaced it with a link had the next launch bind the link's target
+	// read-write over /tmp, with no window to hit and no mkdir of its own to
+	// give it away (MEASURED, ranger-base-p47q6). The source is under the
+	// seat's WALL dir now, which no render grants, and the walk is the same
+	// one every private bind's source gets: a link at the source refuses the
+	// render and emits NO prep step, because the prep runs in the uncaged
+	// launcher and a link here would aim its 0755 mkdir.
 	if carve.Tmp != "" {
-		exists, dir, err := bwrapStat(carve.Tmp)
+		exists, fi, err := bwrapSrcWalk(carve.Tmp, bwrapSeatTmpRoot(carve.Tmp), bwrapTmpMount)
 		if err != nil {
-			return nil, nil, bwrapStatRefusal("private tmp", carve.Tmp, err)
+			return nil, nil, err
 		}
+		dir := exists && fi.IsDir()
 		switch {
 		case exists && !dir:
-			return nil, nil, Die("bwrap cannot bind %s over %s: it is not a directory (ranger-base-7wdb7)", carve.Tmp, bwrapTmpMount)
+			return nil, nil, Die("bwrap cannot bind %s over %s: it is not a directory (a link, a file or a special file is there) — remove it and relaunch (ranger-base-7wdb7, ADR 0100 D1)", carve.Tmp, bwrapTmpMount)
 		case !exists:
 			prep = append(prep, PrepStep{PrepMkdirAll, carve.Tmp, "the seat's private /tmp, bound over the host's so no seat writes where uncaged builds stage what they execute"})
 		}
@@ -466,6 +479,15 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			}
 		}
 		writable = kept
+	}
+
+	// 2a. NO WRITE GRANT LIES AT OR ABOVE THE WALL ROOT (ADR 0100 D2(a)).
+	// Asked of the set this render is about to BIND — after 1c took the
+	// grants the private /tmp replaces — and asked by every render in this
+	// package, because every one of them comes through here: bwrapRender,
+	// the landed-check judge and the wall venue.
+	if err := bwrapRefuseWallRootGrant(writable); err != nil {
+		return nil, nil, err
 	}
 
 	// 2. Shape 1: the write grants, shallowest first so a nested grant's
@@ -1165,7 +1187,7 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 	}
 	// THE SOURCE IS LSTAT'D AT EVERY COMPONENT, NOT STAT'D AT THE LAST
 	// (ranger-base-wsgus). It sat under a bwrapStat — os.Stat, which follows
-	// — so a seat that replaced its own <seat cache>/claude/<member> with a
+	// — so a seat that replaced its own <seat wall>/claude/<member> with a
 	// link had the next launch bind that link's target read-write at
 	// <cfg>/<member>, after the grants and past the deny and read-mask steps,
 	// which name the target's own path and not this alias.
@@ -1190,9 +1212,12 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 // directory for the dir copy — and each already has the message that says so.
 //
 // A SOURCE UNDER THE SEAT'S OWN CACHE DIR IS A PATH THE SEAT CAN WRITE, which
-// is the whole reason the question is this shape. <SeatCacheDir>/claude is in
-// the seat's write set (seatbelt.go's add(SeatCacheDir)), so the seat can
-// remove that directory and plant a link to anything its uid can write.
+// is the whole reason the question is this shape. <SeatCacheDir>/claude was
+// in the seat's write set (seatbelt.go's add(SeatCacheDir)), so the seat
+// could remove that directory and plant a link to anything its uid can
+// write. ADR 0100 D1 moved every such source to the seat's wall dir, which
+// no render grants; this walk is what still refuses a link planted there by
+// anything that is not a walled seat.
 // Checking the last component alone let it through twice over: the dir arm's
 // os.Stat followed a link at the member itself, and a link at the PARENT
 // made <seat>/claude/history.jsonl lstat as the target's own regular file, so
@@ -1212,25 +1237,44 @@ func bwrapPrivateArgs(pb PrivateBind, grants []string) ([]string, []PrepStep, bo
 //
 // WHAT THE WALK ANSWERS FOR IS THE INSTANT IT RAN IN. bwrap resolves the
 // source itself, at mount, and the launcher's prep steps resolve it again
-// when they run. Residual: ranger-base-p47q6.
+// when they run. That is why the walk is not the guarantee: ADR 0100 D1 is,
+// and it is the one that holds the source where no walled seat can write a
+// component of it between this instant and bwrap's.
 func bwrapPrivateSrcStat(pb PrivateBind) (exists bool, fi os.FileInfo, err error) {
 	if pb.Src == "" {
 		// Reachable only from the FILE arm: an empty Src is the dir shapes'
 		// tmpfs, and that arm returns before this call.
 		return false, nil, Die("bwrap cannot bind a private file over %s: the render named no source for it (ranger-base-wsgus)", pb.Dst)
 	}
-	if pb.SrcRoot == "" {
-		return false, nil, Die("bwrap cannot bind %s over %s: the render names no SrcRoot for it, so there is no component of the source this render may trust, and a seat that can write its own cache dir plants a link at any of them (ranger-base-wsgus)", pb.Src, pb.Dst)
+	return bwrapSrcWalk(pb.Src, pb.SrcRoot, pb.Dst)
+}
+
+// bwrapSrcWalk is that walk over any one source, so that the private binds
+// and the private /tmp ask the SAME question of their sources (ADR 0100 D1).
+// src is the path about to be bound, root the deepest directory this render
+// trusts above it, dst the destination a refusal has to name.
+//
+// THE /tmp SOURCE CAME THROUGH bwrapStat UNTIL ADR 0100, and that was this
+// class's one member needing no race at all: os.Stat FOLLOWS, so a seat that
+// replaced its own `<cache>/tmp` with a link had the next launch bind the
+// link's target read-write over /tmp, past every grant and every deny, which
+// name the target's own path and not this alias (MEASURED, ranger-base-p47q6).
+// One function and not two readings of "is the source there", for the reason
+// bwrapPrivateArgs is one function: an arm that asks its own question is an
+// arm that can be written without this one.
+func bwrapSrcWalk(src, root, dst string) (exists bool, fi os.FileInfo, err error) {
+	if root == "" {
+		return false, nil, Die("bwrap cannot bind %s over %s: the render names no trusted root for it, so there is no component of the source this render may trust, and anything that can write a component plants a link at it (ranger-base-wsgus, ADR 0100 D1)", src, dst)
 	}
-	root, src := filepath.Clean(pb.SrcRoot), filepath.Clean(pb.Src)
-	rel, rerr := filepath.Rel(root, src)
+	rootClean, srcClean := filepath.Clean(root), filepath.Clean(src)
+	rel, rerr := filepath.Rel(rootClean, srcClean)
 	if rerr != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return false, nil, Die("bwrap cannot bind %s over %s: its source is not under the %s this render trusts, so no walk of its components says anything about it (ranger-base-wsgus)", pb.Src, pb.Dst, pb.SrcRoot)
+		return false, nil, Die("bwrap cannot bind %s over %s: its source is not under the %s this render trusts, so no walk of its components says anything about it (ranger-base-wsgus)", src, dst, root)
 	}
 	comps := strings.Split(rel, string(filepath.Separator))
 	// i == -1 is the root itself: lstat'd, because a link AT it is a link in
 	// the path too, and its own parents are the launcher's to spell.
-	p := root
+	p := rootClean
 	for i := -1; i < len(comps); i++ {
 		if i >= 0 {
 			p = filepath.Join(p, comps[i])
@@ -1246,15 +1290,77 @@ func bwrapPrivateSrcStat(pb PrivateBind) (exists bool, fi os.FileInfo, err error
 			return true, cfi, nil
 		}
 		if cfi.Mode()&os.ModeSymlink != 0 {
-			return false, nil, Die("bwrap cannot bind %s over %s: %s is a symlink, and the seat can write under %s — following it would bind a path the seat chose read-write inside its own namespace. Remove it and relaunch (ranger-base-wsgus)", pb.Src, pb.Dst, p, pb.SrcRoot)
+			return false, nil, Die("bwrap cannot bind %s over %s: %s is a symlink, so following it would bind a path this render never judged read-write inside the seat's namespace. Remove it and relaunch (ranger-base-wsgus)", src, dst, p)
 		}
 		if !cfi.IsDir() {
-			return false, nil, Die("bwrap cannot bind %s over %s: %s is not a directory, so the source is not the path it is spelled as. Remove it and relaunch (ranger-base-wsgus)", pb.Src, pb.Dst, p)
+			return false, nil, Die("bwrap cannot bind %s over %s: %s is not a directory, so the source is not the path it is spelled as. Remove it and relaunch (ranger-base-wsgus)", src, dst, p)
 		}
 	}
 	// Unreachable: the loop returns at i == len(comps)-1, and comps is never
 	// empty (an empty rel is the "." the containment test above refused).
-	return false, nil, Die("bwrap cannot bind %s over %s: its source has no component under %s (ranger-base-wsgus)", pb.Src, pb.Dst, pb.SrcRoot)
+	return false, nil, Die("bwrap cannot bind %s over %s: its source has no component under %s (ranger-base-wsgus)", src, dst, root)
+}
+
+// bwrapRefuseWallRootGrant is ADR 0100 D2(a): a render is refused outright
+// when any write grant lies AT or ABOVE the wall root. It is the invariant
+// that makes the wall dir a wall — every bind source that differs from its
+// destination lives under that root (D1), and a grant above it hands a seat
+// a COMPONENT of those sources, which is this whole class of hole
+// (ranger-base-p47q6). The ones it would hand over are not only this seat's:
+// the root holds every seat's wall dir, so the refusal is box-wide and not a
+// statement about the render it refuses.
+//
+// A REFUSAL AND NOT A NARROWING, for the reason the ADR 0095 arm above gives
+// in the same words: a seat launched behind a wall that silently dropped a
+// grant it was promised fails later and somewhere else. The remedy is the
+// PID's own list — a `writable:` extra naming the home or `~/.cache` — and
+// the refusal names it.
+//
+// THE GRANT SIDE IS RESOLVED HERE, which is the one re-resolution BwrapArgs
+// makes, and it is deliberate (ADR 0100 D2(a)). Every producer in this
+// package already absResolves what it emits, so for them this is idempotent;
+// what it buys is the entry that arrives as a LINK from somewhere else — a
+// `writable:` extra a seat planted at a path of its own for its next launch
+// — because only the resolved spelling says where the bind would land. The
+// wall root is composed, from the one resolved home, and the comparison is
+// insideDir and never underDir: underDir would resolve the root too, and a
+// resolution of the root follows whatever is planted at the END of it, which
+// is to say it judges the plant's target instead of the plant.
+//
+// IT STANDS DOWN WHERE THE HOME IS ITSELF UNDER /tmp, which is bwrapSeatTmp's
+// own stand-down and the same box shape: /tmp is granted unconditionally
+// (SeatbeltWritable) and a home inside it is in the shared directory
+// already, so there is no seat on such a box for the wall root to protect
+// and no grant this refusal could usefully take away. No production launch
+// is that shape — homes and worktrees live under the home — and every
+// fixture in this package is, which is why the pins for this rule put their
+// home under wallUngrantedDir (the same reading ranger-base-hi2lt wrote into
+// the ADR 0095 arm above).
+func bwrapRefuseWallRootGrant(writable []string) error {
+	root := bwrapWallRoot()
+	if root == "" {
+		return nil
+	}
+	for _, g := range writable {
+		gr := absResolve(g)
+		if !insideDir(gr, root) {
+			continue
+		}
+		return Die("bwrap cannot grant write on %s: it contains the per-seat wall root %s, where every bind source of every walled seat on this box lies — a seat with that grant renames a component of another seat's source and bwrap mounts what it points at, read-write, inside that seat's namespace (ADR 0100 D1/D2(a)). Narrow the grant: name the directory the seat needs, not a parent of the wall root", g, root)
+	}
+	return nil
+}
+
+// bwrapWallRoot is SeatWallRoot for the box this render runs on, or "" where
+// the rule above stands down. The home is read the same way bwrapRender
+// reads it for the sources themselves, so the root a grant is judged against
+// and the root the sources are composed under cannot be two directories.
+func bwrapWallRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || underDir(bwrapTmpMount, home) {
+		return ""
+	}
+	return SeatWallRoot(home)
 }
 
 // grantInside says whether any write grant lies at or under d — the other

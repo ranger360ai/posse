@@ -70,7 +70,7 @@ func TestQAWallClaudeSessionStateRendersPrivateBindsOverTheGrant(t *testing.T) {
 	if grant < 0 {
 		t.Fatalf("the fixture's config dir is not granted, so nothing here is measured: %q", r.Argv)
 	}
-	own := SeatCacheDir(f.home, f.dir)
+	own := SeatWallDir(f.home, f.dir)
 	for _, n := range claudeSessionStateDirNames {
 		src, dst := filepath.Join(own, claudePrivateSessionStateRel, n), filepath.Join(cfg, n)
 		i := bindIndex(r.Argv, src, dst)
@@ -283,7 +283,7 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	// sourced an absent file in 6/40, 2/20 and 3/27 runs, and reddened arm 1
 	// four times (ranger-base-l1d9i). The plant loops above are maps because
 	// each of their steps is independent.
-	own := filepath.Join(SeatCacheDir(f.home, f.dir), claudePrivateSessionStateRel)
+	own := claudePrivateStateDir(f.home, f.dir)
 	mine := filepath.Join(snaps, "snapshot-bash-2-mine.sh")
 	for _, step := range []struct{ name, script string }{
 		{"own snapshot write", "echo 'MARK=sourced' > " + q(mine)},
@@ -474,7 +474,7 @@ func TestLiveWallClaudeSessionStateKeepsThePeerRegistryPrivate(t *testing.T) {
 	// The seat's own registration: a process under the wall writes its row
 	// as claude does — its own pid (the host's: no --unshare-pid) and the
 	// kernel's start time — and stays alive so the fence can be taken.
-	own := filepath.Join(SeatCacheDir(f.home, f.dir), claudePrivateSessionStateRel, claudeSessionsDir)
+	own := filepath.Join(claudePrivateStateDir(f.home, f.dir), claudeSessionsDir)
 	const ownSession = "22222222-2222-4222-8222-222222222222"
 	reg := `st=$(cut -d' ' -f22 /proc/$$/stat) && printf '{"pid":%s,"sessionId":"` + ownSession + `","procStart":"%s"}' "$$" "$st" > ` + q(sess) + `/$$.json && exec sleep 60`
 	cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", reg)...)
@@ -618,8 +618,9 @@ func TestQAWallClaudeSessionStateRefusesALinkAtHistory(t *testing.T) {
 // one (ranger-base-wsgus). The pin above is the final-component half, and it
 // held while two ways past it were open: the DIR arm asked os.Stat, which
 // follows a link at the member's own name, and BOTH arms looked at the last
-// component alone — so a link at <seat>/claude, which the seat can write
-// (SeatCacheDir is in its write set), left <seat>/claude/history.jsonl
+// component alone — so a link at <seat>/claude, which the seat could write
+// while that dir lived under its granted cache (ADR 0100 D1 moved it to the
+// wall dir), left <seat>/claude/history.jsonl
 // lstat'ing as the TARGET's own regular file and passing. Either way bwrap
 // bound a path the seat chose read-write at <cfg>, after the grants and past
 // the deny and read-mask steps, which name the target's real path and not
@@ -636,8 +637,8 @@ func TestQAWallClaudeSessionStateRefusesALinkAtHistory(t *testing.T) {
 func TestQAWallClaudeSessionStateRefusesALinkAtAnyComponentOfThePrivateSource(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
 	f, _, _ := cssFixture(t)
-	seat := SeatCacheDir(f.home, f.dir)
-	own := filepath.Join(seat, claudePrivateSessionStateRel)
+	seat := SeatWallDir(f.home, f.dir)
+	own := claudePrivateStateDir(f.home, f.dir)
 	// What a seat would aim a component at: a directory it can write,
 	// holding a REAL directory at every private member's name and a REAL
 	// regular file at history.jsonl — so nothing but the walk itself can
@@ -653,8 +654,8 @@ func TestQAWallClaudeSessionStateRefusesALinkAtAnyComponentOfThePrivateSource(t 
 	}
 	for _, c := range []struct{ name, at string }{
 		{"a link at a DIR member's own source", filepath.Join(own, "session-env")},
-		{"a link at <seat>/claude, the members' parent, with a real history.jsonl in the target", own},
-		{"a link at the seat cache dir itself", seat},
+		{"a link at <wall>/claude, the members' parent, with a real history.jsonl in the target", own},
+		{"a link at the seat wall dir itself", seat},
 	} {
 		if err := os.RemoveAll(seat); err != nil {
 			t.Fatal(err)

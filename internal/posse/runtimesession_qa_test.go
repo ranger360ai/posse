@@ -373,7 +373,8 @@ func TestQAAnOccupantWithNeitherRouteStillAnswersSection4(t *testing.T) {
 // ─── the seat-private row (ranger-base-lx5jk) ────────────────────────────────
 
 // A caged claude seat's sessions/ is a private bind, so its row lives under
-// SeatCacheDir(home, its cwd) and not in the shared dir. The join reads that
+// claudePrivateStateDir(home, its cwd) — the seat's WALL dir since ADR 0100
+// D1 — and not in the shared dir. The join reads that
 // row FIRST, fenced like the shared one, and falls through to the shared row
 // when the private one is absent or refused. The protected reading is
 // sentline's echo verdict: without the private read every caged seat's echo
@@ -392,7 +393,7 @@ func TestQAARexJoinReadsTheSeatsPrivateRowBeforeTheSharedOne(t *testing.T) {
 	history := armClaudeSessionRow(t, nil, pid, map[string]any{"pid": pid, "sessionId": sharedSession, "procStart": start})
 	home := t.TempDir()
 	priv := claudePrivateSessionRowPath(home, cwd, pid)
-	if want := filepath.Join(SeatCacheDir(home, cwd), claudePrivateSessionStateRel, claudeSessionsDir, strconv.Itoa(pid)+".json"); priv != want {
+	if want := filepath.Join(SeatWallDir(home, cwd), claudePrivateSessionStateRel, claudeSessionsDir, strconv.Itoa(pid)+".json"); priv != want {
 		t.Fatalf("private row path = %q, want %q — the dir the bwrap render binds over <cfg>/sessions", priv, want)
 	}
 	if err := os.MkdirAll(filepath.Dir(priv), 0o700); err != nil {
@@ -468,7 +469,8 @@ func historyRow(t *testing.T, session, display string) string {
 }
 
 // A caged claude seat's history.jsonl is a private file bind, so its submits
-// land under SeatCacheDir(home, its cwd) and never in the shared log. The
+// land under claudePrivateStateDir(home, its cwd) — the seat's WALL dir since
+// ADR 0100 D1 — and never in the shared log. The
 // echo read takes that log FIRST and falls through to the shared one; a
 // session in neither answers "no echo". The protected reading is sentline's
 // echo verdict (panework.go, capturedcomposer.go): read only the shared log
@@ -489,7 +491,7 @@ func TestQAEchoReadsTheSeatsPrivateSubmitLogBeforeTheSharedOne(t *testing.T) {
 	}
 	home := t.TempDir()
 	priv := claudePrivateHistoryPath(home, cwd)
-	if want := filepath.Join(SeatCacheDir(home, cwd), claudePrivateSessionStateRel, claudeHistoryFile); priv != want {
+	if want := filepath.Join(SeatWallDir(home, cwd), claudePrivateSessionStateRel, claudeHistoryFile); priv != want {
 		t.Fatalf("private log path = %q, want %q — the file the bwrap render binds over <cfg>/history.jsonl", priv, want)
 	}
 	if err := os.MkdirAll(filepath.Dir(priv), 0o700); err != nil {
