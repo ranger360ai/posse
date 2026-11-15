@@ -371,21 +371,32 @@ func TestUpgradeGreenPathSwapsAndEndsWithTheRecordLine(t *testing.T) {
 	stubUpgradeProbe(t)
 	built := fakePosse{Stamp: f.c}
 	var order []string
+	var testDir string
 	stubUpgradeSteps(t,
 		func(w io.Writer, dir string) error {
 			order = append(order, "test")
-			// The worktree it is handed is a real detached checkout of the
-			// commit being installed — not the source repo, and not main.
+			// The checkout it is handed is a real detached checkout of the
+			// commit being installed — and in a repository of its OWN, whose
+			// object store is not the source repo's (ranger-base-p8ymi): a
+			// worktree of the source reads the shared store, which every
+			// walled seat may write.
 			if got := strings.TrimSpace(mustGit(t, dir, "rev-parse", "HEAD")); got != f.c {
 				t.Errorf("`make test` ran at %s, want the target commit %s", got, f.c)
 			}
-			if sameDir, _ := MainCheckout(dir); sameDir == dir {
-				t.Errorf("`make test` ran in %s, which is a main checkout — D3.2 asks for a throwaway worktree", dir)
+			if got, want := upgradeObjectsDir(t, dir), upgradeObjectsDir(t, f.repo); got == want {
+				t.Errorf("`make test` ran in %s, whose object store is the source repo's %s — D3.2 asks for a private, re-hashed copy (ranger-base-p8ymi)", dir, want)
 			}
+			if got := mustGit(t, dir, "rev-parse", upgradeDefaultRef); got != f.c {
+				t.Errorf("the private copy's %s is %q, want the tip the plan read, %s", upgradeDefaultRef, got, f.c)
+			}
+			testDir = dir
 			return nil
 		},
 		func(w io.Writer, dir, repo, out string) error {
 			order = append(order, "build")
+			if dir != testDir {
+				t.Errorf("the build ran in %s, want the copy the suite passed in, %s", dir, testDir)
+			}
 			if repo != f.repo {
 				t.Errorf("the build was handed %q as the source checkout to stamp, want %q — a stamp naming the throwaway worktree is dead by the time anything reads it (ranger-base-eiwhk)", repo, f.repo)
 			}
@@ -393,6 +404,9 @@ func TestUpgradeGreenPathSwapsAndEndsWithTheRecordLine(t *testing.T) {
 		},
 		func(w io.Writer, wt string, plan upgradePlan) string {
 			order = append(order, "epilogue")
+			if wt != testDir {
+				t.Errorf("the epilogue ran from %s, want the copy the suite passed in, %s", wt, testDir)
+			}
 			if plan.Target != f.target {
 				t.Errorf("the epilogue was handed %q as POSSE, want the just-installed %q", plan.Target, f.target)
 			}

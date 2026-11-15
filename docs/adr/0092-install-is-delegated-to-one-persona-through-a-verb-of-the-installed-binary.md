@@ -504,3 +504,19 @@ printed one is for a human typing it after this process has exited. For the
 arm that runs while a fleet may be launching, the `install(1)` measurement
 above applies with its full force. `<target>.prev` is left in place
 afterwards, so the printed command stays true for whoever reads the report.
+
+**D3.2-D3.6 amendment (ranger-base-p8ymi): the checkout is a private,
+re-hashed copy, never a worktree of the source.** Found by ranger-base-8wi4p.
+A `git worktree add` of `<sha>` reads the source checkout's object store, git
+does not re-hash a local object on read, and every walled worktree seat is
+granted `<common>/objects` — so a seat could swap one blob origin/main reaches
+and this verb's caller, uncaged, would run it as `make test` under an
+unchanged sha. The verb now `git init`s a new repository in the fresh
+`mktemp -d`, fetches the origin/main tip D3.1 read into it by full sha (the
+receiving side hashes every object, and a substituted one fails the fetch),
+takes D3.1's two ancestry answers again in that store, and checks `<sha>` out
+there. Steps 2, 3 and 6 all run from that copy, which no seat can reach;
+clean-build.sh's own fetch (ranger-base-la61c) then reads it. Every git call
+of the copy carries `--no-replace-objects`. MEASURED 2026-11-14: about 1.1s
+for this repo's full history. docs/notes.d/ranger-base-p8ymi.md has the
+probe, the cost and the pins.

@@ -24,14 +24,16 @@ package posse
 //	            evidence that `posse-land-check` and the vuln-private scan
 //	            ran. Nothing here can see those; being on origin/main is the
 //	            record that the coordinator says they did.
-//	2. test     `make test` in a fresh detached worktree of that sha — all
-//	            three arms, suite slots and all. Red, or no answer, refuses.
-//	3. build    scripts/clean-build.sh in that same worktree, so the binary
+//	2. test     `make test` in a private, re-hashed copy of that sha (a fetch
+//	            into a new repo, never a worktree of the shared store — see
+//	            upgradePrivateCopy) — all three arms, suite slots and all.
+//	            Red, or no answer, refuses.
+//	3. build    scripts/clean-build.sh in that same copy, so the binary
 //	            is built from the tree the tests passed on.
 //	4. keep     the live binary is copied to <target>.prev. One level of
 //	            rollback, as the operator asked.
 //	5. swap     rename(2) over the target, never install(1) — see below.
-//	6. epilogue `make install`'s own two checks, from the worktree.
+//	6. epilogue `make install`'s own two checks, from that copy.
 //
 // WHY rename(2) AND NOT install(1) (D3.5). install(1) unlinks the target and
 // then writes it, so a launch that execs the binary inside that window gets
@@ -187,6 +189,7 @@ type upgradePlan struct {
 	Target string // the binary this run replaces
 	From   string // the installed binary's stamped commit, as git resolved it
 	To     string // the commit to install
+	Tip    string // refs/remotes/origin/main as it resolved, the ancestor test's other end
 	Count  int    // commits in From..To
 	// Personas is the roster D4 snapshots `posse gates <p>` for. It is a
 	// field of the plan rather than a read inside the run because the run is
@@ -287,7 +290,7 @@ func upgradeResolve(repo, target, from, want string) (upgradePlan, error) {
 	if err != nil {
 		return p, err
 	}
-	return upgradePlan{Repo: repo, Target: target, From: fromFull, To: to, Count: n}, nil
+	return upgradePlan{Repo: repo, Target: target, From: fromFull, To: to, Tip: tip, Count: n}, nil
 }
 
 // upgradePrevPath is the one level of rollback the operator asked for
@@ -345,7 +348,7 @@ var upgradeTest = func(w io.Writer, dir string) error {
 // POSSE_BUILD_SOURCE is why this is not just the script's own default. The
 // script stamps the checkout it was run in as the binary's build source
 // (ranger-base-eiwhk), and the checkout it is run in HERE is a throwaway
-// worktree this verb deletes minutes later — a stamp guaranteed dead by the
+// copy this verb deletes minutes later — a stamp guaranteed dead by the
 // time anything reads it, which is exactly the `$src` case that script's own
 // pin refuses. The real source checkout is handed in instead.
 var upgradeBuild = func(w io.Writer, dir, repo, out string) error {
@@ -360,7 +363,7 @@ var upgradeBuild = func(w io.Writer, dir, repo, out string) error {
 }
 
 // upgradeEpilogue is D3.6 and D5 — the gate copy arm, then `make install`'s
-// own hook-freshness check, both run from the worktree, and it answers D6's
+// own hook-freshness check, both run from the private copy, and it answers D6's
 // gate word. Advisory both: a stale hook, or a gate copy that could not be
 // refreshed, is not a reason to fail an install that already happened (the
 // Makefile's own words).
@@ -386,27 +389,91 @@ var upgradeEpilogue = func(w io.Writer, wt string, plan upgradePlan) string {
 	return gate
 }
 
-// upgradeWorktree is D3.2's fresh detached worktree, and the function that
-// removes it. A fresh mktemp -d every time: a directory that is new needs no
-// rm of a previous one, which is the shape that never prompts and never
-// deletes the wrong tree (AGENTS.md).
-func upgradeWorktree(repo, sha string) (dir string, done func(), err error) {
+// upgradePrivateCopy is D3.2's fresh checkout of the commit, and the function
+// that removes it. It is a FETCH into a new repository, never a `git worktree
+// add` of the source checkout (ranger-base-p8ymi).
+//
+// WHY. git trusts an object's bytes by the name it is filed under and does
+// not re-hash a loose or packed object on a local read, and every walled
+// worktree seat is granted the shared <common>/objects whole. A worktree add
+// of a sha therefore checks out whatever bytes sit under that sha's names —
+// so a seat that rewrites one blob origin/main reaches gets ITS code run by
+// `make test` here, uncaged, as this verb's caller, and (before
+// ranger-base-la61c) built and installed as the fleet's binary under an
+// unchanged stamp. A fetch goes through the pack protocol, and the receiving
+// side hashes every object it is sent: bytes that do not hash to the name
+// they were asked for leave the commit's tree incomplete and the fetch
+// fails "did not send all necessary objects" before anything is checked out.
+// The new repository's store is under this run's mktemp -d, which no seat is
+// granted, so a swap after the fetch has nothing to swap. make test, the
+// build (clean-build.sh's own fetch then reads THIS store) and the epilogue
+// all run from it.
+//
+// WHAT IS FETCHED IS THE TIP, and D3.1's two ancestry answers are taken
+// again here. upgradeResolve read them out of the shared store, where a
+// rewritten commit object can claim any parent it likes; in this store every
+// commit reachable from the tip has been re-hashed, so "to is on origin/main"
+// and "from is behind to" are answers about the commits those names really
+// are. A `to` the true history does not reach is simply absent here, and the
+// rev-list that looks for it refuses.
+//
+// --no-replace-objects on every call: refs/replace is not seat-writable
+// today, and a replace ref is the one way git will serve DIFFERENT bytes
+// under a name on purpose. The flag sets GIT_NO_REPLACE_OBJECTS in the
+// environment, so the upload-pack the fetch spawns inherits it. A belt.
+//
+// MEASURED 2026-11-14, git 2.56.0, linux: a fetch by sha from a local path
+// into an empty repository succeeds with no uploadpack.allow* setting; a
+// substituted loose blob and a commit object rewritten to claim another
+// parent were both refused by it. A `checkout` after the refused fetch
+// exits 0 with an incomplete tree, so the fetch's own exit is what refuses.
+// Cost on this repo, the tip's full history: docs/notes.d/ranger-base-p8ymi.md.
+//
+// A fresh mktemp -d every time: a directory that is new needs no rm of a
+// previous one (AGENTS.md). The repository is a child of it, as in
+// clean-build.sh.
+func upgradePrivateCopy(plan upgradePlan) (dir string, done func(), err error) {
+	if plan.Tip == "" || plan.To == "" || plan.From == "" {
+		return "", nil, Die("posse upgrade: the plan names no %s, so there is nothing to fetch and check — this is a bug in the verb, not in the repo", upgradeDefaultRef)
+	}
 	tmp, err := os.MkdirTemp("", "posse-upgrade.")
 	if err != nil {
 		return "", nil, Die("posse upgrade: %v", err)
 	}
-	// git worktree add refuses a directory that already exists, so the
-	// worktree is a child of the temp dir rather than the temp dir itself —
-	// clean-build.sh's own arrangement, for the same reason.
-	wt := filepath.Join(tmp, "src")
-	if _, err := git(repo, "worktree", "add", "--detach", "--quiet", wt, sha); err != nil {
-		os.RemoveAll(tmp)
+	src := filepath.Join(tmp, "src")
+	cleanup := func() { os.RemoveAll(tmp) }
+	refuse := func(why string, err error) (string, func(), error) {
+		cleanup()
+		return "", nil, Die("posse upgrade: %s — refusing before the suite runs (ranger-base-p8ymi). Every object is re-hashed on the way in, so this means %s's object store does not hold the bytes its names promise; `git -C %s fsck` says which. Nothing was written. (%v)",
+			why, AbbrevHome(plan.Repo), AbbrevHome(plan.Repo), err)
+	}
+	if _, err := git(tmp, "--no-replace-objects", "init", "--quiet", src); err != nil {
+		cleanup()
 		return "", nil, err
 	}
-	return wt, func() {
-		_, _ = git(repo, "worktree", "remove", "--force", wt)
-		os.RemoveAll(tmp)
-	}, nil
+	if _, err := git(src, "--no-replace-objects", "fetch", "--quiet", "--no-tags", plan.Repo, plan.Tip); err != nil {
+		return refuse(fmt.Sprintf("fetching %s (%s) did not verify", upgradeDefaultRef, shortSha(plan.Tip)), err)
+	}
+	if got, err := git(src, "--no-replace-objects", "rev-parse", "FETCH_HEAD"); err != nil || got != plan.Tip {
+		return refuse(fmt.Sprintf("the fetch answered %q, not %s", got, plan.Tip), err)
+	}
+	if ok, err := gitAncestorOrEqual(src, plan.To, plan.Tip); err != nil || !ok {
+		return refuse(fmt.Sprintf("%s is not an ancestor of %s once its history is re-hashed (ADR 0092 D3.1)", shortSha(plan.To), shortSha(plan.Tip)), err)
+	}
+	if ok, err := gitAncestorOrEqual(src, plan.From, plan.To); err != nil || !ok {
+		return refuse(fmt.Sprintf("%s is not a descendant of the installed stamp %s once its history is re-hashed (ADR 0092 D3.1)", shortSha(plan.To), shortSha(plan.From)), err)
+	}
+	// The suite ran in a checkout that could see refs/remotes/origin/main,
+	// and the fetch writes no ref, so give it the one the plan read.
+	if _, err := git(src, "--no-replace-objects", "update-ref", upgradeDefaultRef, plan.Tip); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if _, err := git(src, "--no-replace-objects", "checkout", "--quiet", "--detach", plan.To); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return src, cleanup, nil
 }
 
 // upgradeSwap is D3.4 and D3.5: keep, then swap.
@@ -629,13 +696,13 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 		os.Remove(staged)
 	}
 
-	wt, done, err := upgradeWorktree(plan.Repo, plan.To)
+	wt, done, err := upgradePrivateCopy(plan)
 	if err != nil {
 		return err
 	}
 	defer done()
 
-	// The worktree path is PRINTED, because it is the one thing about this
+	// The copy's path is PRINTED, because it is the one thing about this
 	// run that the environment decides and the reader of a red suite needs.
 	// It is `mktemp -d`, so it is TMPDIR, and this tree's suite moves with
 	// TMPDIR in three ways that all read as "the commit is red" (MEASURED
@@ -652,7 +719,7 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 	//
 	// None of it is anything about the commit. A reader who can see the
 	// path can see that in one line; one who cannot goes looking for a bug.
-	fmt.Fprintf(w, "\n── make test at %s (ADR 0092 D3.2) ──\n  worktree: %s\n", shortSha(plan.To), wt)
+	fmt.Fprintf(w, "\n── make test at %s (ADR 0092 D3.2) ──\n  private copy: %s\n", shortSha(plan.To), wt)
 	if err := upgradeTest(w, wt); err != nil {
 		return Die("posse upgrade: `make test` at %s did not pass (%v) — nothing was written, and nothing will be. The binary in place is the one that was there before this command ran.", shortSha(plan.To), err)
 	}

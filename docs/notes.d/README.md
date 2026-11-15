@@ -21,6 +21,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-r3qz6](ranger-base-r3qz6.md) — The pulse's channel switch: what D3 and D4 landed, and the three places the code reads the page narrowly (ranger-base-r3qz6) — 2026-11-14
 - [ranger-base-q749c](ranger-base-q749c.md) — The nest helper's venue contract, and the two literals a shipped script reads (ranger-base-q749c) — 2026-11-14
 - [ranger-base-pvkhn](ranger-base-pvkhn.md) — Nine live pins nested a bwrap, and two of them said the box had no bwrap (ranger-base-pvkhn) — 2026-11-14
+- [ranger-base-p8ymi](ranger-base-p8ymi.md) — posse upgrade tests and builds from a private, re-hashed copy (ranger-base-p8ymi) — 2026-11-14
 - [ranger-base-np54s](ranger-base-np54s.md) — ranger-base-np54s — a test helper 638 sites read after the writer stopped, and one that reads it live — 2026-11-14
 - [ranger-base-n7hsa](ranger-base-n7hsa.md) — ranger-base-n7hsa — the orientation page's own pin had no door — 2026-11-14
 - [ranger-base-n2veh](ranger-base-n2veh.md) — The exemption moved to the other side of the call (ranger-base-n2veh) — 2026-11-14
