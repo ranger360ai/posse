@@ -19,11 +19,20 @@ package posse
 // ssh mask because a push needs the key, and nothing a push does needs a
 // tailnet identity.
 //
-// Where rex keeps it: $XDG_STATE_HOME/rex/tsnet, else ~/.local/state/rex/tsnet
-// (MEASURED 2026-11-13, linux: the node dir is there with XDG_STATE_HOME
-// unset, and the rex binary carries the XDG_STATE_HOME name). Both are
-// masked whenever both resolve, for both homes — wider than rex's own
-// resolution, which is the safe direction for a mask.
+// Where rex keeps it: $XDG_STATE_HOME/rex/tsnet, else the XDG state default
+// for the OS — ~/.local/state/rex/tsnet on linux (MEASURED 2026-11-13, linux:
+// the node dir is there with XDG_STATE_HOME unset, and the rex binary carries
+// the XDG_STATE_HOME name) and ~/Library/Application Support/rex/tsnet on
+// darwin (ASSUMED: /usr/bin/rex links github.com/adrg/xdg v0.5.3, whose
+// paths_darwin.go defaults stateHome there, and whose paths_unix.go default
+// is the linux path the linux reading confirms — so the library is the one
+// that picks both, but the darwin path itself is unmeasured; the measurement
+// ask is the bead under "Not closed here" below). ALL of them are masked
+// whenever they resolve, for both homes and on every GOOS — wider than rex's
+// own resolution, which is the safe direction for a mask, and what keeps this
+// a pure function the pin can run anywhere. An absent dir costs nothing:
+// bwrap's step 5b skips one and a seatbelt subpath deny on an absent path is
+// inert.
 //
 // Not closed here:
 // - ranger-base-1mxhx
@@ -33,16 +42,20 @@ import (
 	"path/filepath"
 )
 
-// rexNodeStateDirs is the list for one account's answers: the default under
-// each home, and XDG_STATE_HOME's when it is an absolute path (the XDG spec
-// calls a relative value invalid, and a mask does not guess what it meant).
+// rexNodeStateDirs is the list for one account's answers: both OSes' XDG state
+// defaults under each home, and XDG_STATE_HOME's when it is an absolute path
+// (the XDG spec calls a relative value invalid, and a mask does not guess what
+// it meant). Both defaults unconditionally, not behind runtime.GOOS, so this
+// stays a pure function and the pin runs on either OS.
 func rexNodeStateDirs(homes []string, xdgState string) []string {
 	var out []string
 	for _, h := range homes {
 		if h == "" {
 			continue
 		}
-		out = append(out, absResolve(filepath.Join(h, ".local", "state", "rex", "tsnet")))
+		out = append(out,
+			absResolve(filepath.Join(h, ".local", "state", "rex", "tsnet")),
+			absResolve(filepath.Join(h, "Library", "Application Support", "rex", "tsnet")))
 	}
 	if filepath.IsAbs(xdgState) {
 		out = append(out, absResolve(filepath.Join(xdgState, "rex", "tsnet")))

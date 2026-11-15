@@ -11,6 +11,9 @@ import (
 
 // ranger-base-k06gw: the rex tsnet node's state dir is resolved for both
 // homes and for an absolute XDG_STATE_HOME, and nothing for a relative one.
+// ranger-base-nfazj: BOTH OSes' XDG state defaults under each home — the
+// darwin one is in the list on linux too, which is what keeps this a pure
+// function and lets the pin run on either OS.
 func TestQARexNodeStateDirsResolvesEveryHomeAndXDGState(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -18,7 +21,9 @@ func TestQARexNodeStateDirsResolvesEveryHomeAndXDGState(t *testing.T) {
 	got := rexNodeStateDirs([]string{a, "", b, a}, x)
 	want := []string{
 		absResolve(filepath.Join(a, ".local", "state", "rex", "tsnet")),
+		absResolve(filepath.Join(a, "Library", "Application Support", "rex", "tsnet")),
 		absResolve(filepath.Join(b, ".local", "state", "rex", "tsnet")),
+		absResolve(filepath.Join(b, "Library", "Application Support", "rex", "tsnet")),
 		absResolve(filepath.Join(x, "rex", "tsnet")),
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -82,13 +87,16 @@ func TestQAEverySeatsWallHidesTheRexNodeState(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME, and this sets XDG_STATE_HOME.
 	f := wrcFixtureIn(t, wallUngrantedDir(t))
 	home := filepath.Join(f.home, ".local", "state", "rex", "tsnet")
+	mac := filepath.Join(f.home, "Library", "Application Support", "rex", "tsnet")
 	xdg := filepath.Join(filepath.Dir(f.home), "xdg-state")
 	t.Setenv("XDG_STATE_HOME", xdg)
 	xdgDir := filepath.Join(xdg, "rex", "tsnet")
-	for _, d := range []string{home, xdgDir} {
+	for _, d := range []string{home, mac, xdgDir} {
 		writeFile(t, filepath.Join(d, "node", "tailscaled.state"), "{}", 0o600)
 	}
-	dirs := []string{absResolve(home), absResolve(xdgDir)}
+	// ranger-base-nfazj: the darwin default is masked by both renders too, on
+	// whatever GOOS the pin runs — a dir that exists is masked, OS or not.
+	dirs := []string{absResolve(home), absResolve(mac), absResolve(xdgDir)}
 
 	for _, c := range []struct {
 		name        string
