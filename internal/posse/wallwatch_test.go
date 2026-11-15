@@ -195,6 +195,10 @@ func wwEveryShape(t *testing.T) wwRender {
 	// launcher writes it empty and the mount goes over it), and the ref keep
 	// that renders no mount at all.
 	seeded := filepath.Join(grant, "settings-seeded.json")
+	// ranger-base-v84cn: an ANCHORED deny dir, absent, so the launcher makes
+	// it and seeds the anchor inside it before the bind. The mount is the
+	// plain deny's, and is watched as one.
+	anchored := filepath.Join(grant, "swept")
 	// ranger-base-a8qfg: another runtime's credential STORE, masked as a
 	// DIRECTORY. The tmpfs is the wall; the credential literal under it
 	// renders no mount of its own, so it must not be watched either, and the
@@ -223,10 +227,11 @@ func wwEveryShape(t *testing.T) wwRender {
 		refKeep:  []string{filepath.Join(grant, "refs-keep")},
 		carve: SeatbeltCarveOut{
 			Hide:     []string{hide},
-			Deny:     []string{deny, mask, gates, seeded},
+			Deny:     []string{deny, mask, gates, seeded, anchored},
 			DenyFile: []string{deny, mask, seeded},
 			Mask:     []string{mask},
 			Seed:     []string{seeded},
+			Anchor:   []string{anchored},
 			Seal:     []string{grant},
 			Keep:     []string{filepath.Join(gates, "refusals.log")},
 			Narrow:   []SeatbeltNarrow{{Path: priv, Allow: false}},
@@ -498,6 +503,8 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 		{WallWatchMasked, filepath.Join(grant, "policy-cache.json")},
 		{WallWatchDeny, filepath.Join(grant, "settings-seeded.json")},
 		{WallWatchDeny, filepath.Join(grant, "settings.json")},
+		// ranger-base-v84cn: the anchor changes the prep, not the wall.
+		{WallWatchDeny, filepath.Join(grant, "swept")},
 		{WallWatchReadMask, sshDir},
 		{WallWatchReadMask, filepath.Join(root, "state", "rex", "tsnet")},
 		// 5c's directory mask renders between 5b's read-deny dir and the

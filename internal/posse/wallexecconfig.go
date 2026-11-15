@@ -132,6 +132,48 @@ var (
 	claudeExecConfigFileNames = []string{"CLAUDE.md", "daemon.json", "launch.json", "loop.md", "scheduled_tasks.json", "settings.json", "settings.local.json"}
 )
 
+// claudeSweptConfigDirNames are the members of claudeExecConfigDirNames that
+// something on the host keeps REMOVING while they are empty
+// (ranger-base-v84cn). The launcher makes them as empty directories when they
+// are absent, and the read-only bind goes over that empty dir. MEASURED
+// 2026-11-14 on the D1 host: these seven, and only these seven of the config
+// dir's members, were deleted together and recreated together by the next
+// bwrap launch's prep (same birth time to the millisecond, alphabetical
+// order). Each delete took the bind off a live bwrap seat, and wall-watch
+// killed that seat. Five kills between 00:52Z and 02:25Z, under
+// ranger-base-v84cn and its duplicates ranger-base-1kavg and
+// ranger-base-5xwad. The list is claude 2.1.325's own: it is the
+// `["mcp-skill-archives","mcp-discovery-cache","shares"]` loop plus the
+// `mPo` four (todos, statsig, logs, access-audit) in its sandbox deny
+// builder. claude's bwrap cleanup rmdirs a mount point it finds empty, and
+// its scrub rmdirs a "planted empty dir" at a deny path (read from the
+// binary). Both use rmdirSync, which an anchor file inside the dir refuses.
+// Which process did the removing is NOT measured.
+//
+// The anchor is an empty dotfile. No reader of these seven is measured to
+// ignore it; they are the caches and logs ka66w carved on claude's word
+// (above). The directories that load code (skills, commands, agents, hooks,
+// daemon, jobs, ...) are not on the list and get no anchor. None of them was
+// removed.
+var claudeSweptConfigDirNames = []string{
+	"access-audit", "logs", "mcp-discovery-cache", "mcp-skill-archives", "shares", "statsig", "todos",
+}
+
+// wallAnchorName is the empty file the launcher keeps inside an Anchored
+// deny directory, so the directory is never empty on the host.
+const wallAnchorName = ".posse-wall-anchor"
+
+// claudeSweptConfigDir reports whether d, one of claudeExecConfig's dirs, is
+// on claudeSweptConfigDirNames.
+func claudeSweptConfigDir(d string) bool {
+	for _, n := range claudeSweptConfigDirNames {
+		if filepath.Base(d) == n {
+			return true
+		}
+	}
+	return false
+}
+
 // claudeExecConfig names those members for the config directory a seat on
 // this box would use — CLAUDE_CONFIG_DIR when it is in force, `<home>/.claude`
 // otherwise, the same answer BwrapStateDirs grants — and only when the

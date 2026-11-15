@@ -651,7 +651,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			watch(WallWatchMasked, d)
 			continue
 		}
-		exists, _, err := bwrapStat(d)
+		exists, dir, err := bwrapStat(d)
 		if err != nil {
 			return nil, nil, bwrapStatRefusal("deny", d, err)
 		}
@@ -838,6 +838,16 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			default:
 				prep = append(prep, PrepStep{PrepMkdirAll, d, "a deny that is not there yet and sits inside a write grant, so the session could create it"})
 			}
+		}
+		// AN ANCHORED DENY IS NEVER EMPTY ON THE HOST (ranger-base-v84cn).
+		// A host rmdir of the empty directory under this bind takes the
+		// bind off the seat, and wall-watch then kills it. The seed refuses
+		// that rmdir (ENOTEMPTY), whether the dir was made above or was
+		// already there. It is O_EXCL, so an anchor that is already there is
+		// left alone. A name that is not a directory gets no anchor: the
+		// seed could not land, and nothing rmdirs a file.
+		if carve.Anchored(d) && (!exists || dir) {
+			prep = append(prep, PrepStep{PrepSeed, filepath.Join(d, wallAnchorName), "an empty file inside a read-only deny directory that a host process removes when it finds it empty; a host rmdir of the dir would take the mount off the seat"})
 		}
 		argv = append(argv, "--ro-bind", d, d)
 		watch(WallWatchDeny, d)

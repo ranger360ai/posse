@@ -326,6 +326,10 @@ type SeatbeltCarveOut struct {
 	// with themselves, present or absent, and never seeds (see Masked).
 	// Seatbelt renders them as the plain Deny they also are.
 	Mask []string
+	// Anchor is the Deny DIRECTORIES bwrap keeps non-empty: before the
+	// mount, the launcher seeds an empty wallAnchorName file inside each one
+	// (see Anchored). Seatbelt renders them as the plain Deny they also are.
+	Anchor []string
 	// Hide is the directories a seat sees EMPTY, whatever is in them on the
 	// host: the user runtime dir and nothing else today (bwrapRuntimeDirs,
 	// ranger-base-ludpp). Like Seed, the bwrap mechanism needs it and
@@ -703,6 +707,33 @@ func (c SeatbeltCarveOut) Masked(p string) bool {
 	}
 	for _, f := range c.Mask {
 		if f == p {
+			return true
+		}
+	}
+	return false
+}
+
+// Anchored reports whether a directory Deny entry is one bwrap keeps
+// non-empty (ranger-base-v84cn, claudeSweptConfigDirNames). A read-only bind
+// over an EMPTY directory is a mount over a name that any host process can
+// rmdir, and on Linux an rmdir on the host detaches the mount in every other
+// namespace: the seat then writes into whatever the host recreates at that
+// name. MEASURED 2026-11-14 (bwrap 0.13.1, Linux 7.2.15): with the bind over
+// an empty dir, a host rmdir succeeds, the mount leaves the seat's
+// mountinfo, and the seat's write lands in the host's new dir. With one
+// empty file inside, the rmdir fails with ENOTEMPTY, the mount stays, and the
+// seat's write is refused. The anchor does not stop a remover that empties
+// the directory first. That remover still detaches the wall, and wall-watch
+// still kills the seat (ranger-base-0qpsw D2).
+//
+// A subset of Deny, and of the non-file-shaped part of it. An entry here that
+// is not in Deny anchors nothing.
+func (c SeatbeltCarveOut) Anchored(p string) bool {
+	if c.FileShaped(p) {
+		return false
+	}
+	for _, d := range c.Anchor {
+		if d == p {
 			return true
 		}
 	}
@@ -1944,6 +1975,9 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	cdirs, cfiles := claudeExecConfig(wallHome(), rtGrants)
 	for _, d := range cdirs {
 		add(&c.Deny, d)
+		if claudeSweptConfigDir(d) {
+			add(&c.Anchor, d) // kept non-empty at bwrap (ranger-base-v84cn)
+		}
 	}
 	// codex's and grok's config.toml, read-only the same way (ADR 0090 D3;
 	// runtimeConfigFiles has the measurement).
@@ -2005,6 +2039,7 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	c.DenyFile = dedupeStrings(c.DenyFile)
 	c.Seed = dedupeStrings(c.Seed)
 	c.Mask = dedupeStrings(c.Mask)
+	c.Anchor = dedupeStrings(c.Anchor)
 	// The session's own audit trail, by literal so no new file joins it.
 	// Both are already inside a grant (the gates dir), so this re-allows
 	// rather than widens.
