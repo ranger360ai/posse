@@ -101,6 +101,18 @@ Reading left for the next CI run: whether ubuntu-latest's `/usr/bin/tee` really
 is a `#!` stub. That is ASSUMED for that runner and MEASURED for the mechanism
 — and it no longer gates the fix, because the rig does not use tee on any box.
 
+**SETTLED, and FALSIFIED, on ranger-base-x0ses** (2026-11-21, the first
+ubuntu-latest arm-1 job carrying this fix: run 44923103475, job 136903195755,
+both arms green and no postmortem). That runner's `/usr/bin/tee` is a
+**symlink**, not a `#!` stub: ubuntu-latest is Ubuntu 26.04.1 LTS now, where
+`coreutils` is an Architecture:all metapackage over
+`coreutils-from-uutils | coreutils-from-gnu` and every utility on PATH is a
+symlink into one multi-call binary. `exec -a` was a no-op because uutils'
+dispatcher takes the utility from the kernel's exec path and ignores `argv[0]`
+when the basenames disagree — deliberately, to stop that exact spoofing. The
+conclusion above is unchanged and so is the fix; only the mechanism was wrong.
+docs/notes.d/ranger-base-x0ses.md has every reading.
+
 ## Findings 3 and 4 — two unpinned narrowings in landedarm.go (nits, code)
 
 `scheduleInheritedTips` derives its repos as `BeadsDirs()` → `dirFilter`
