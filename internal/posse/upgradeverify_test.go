@@ -62,6 +62,20 @@ type fakePosse struct {
 	// refuse". That collision is why the reading is a mark on stdout and
 	// not an exit code, and this flag is how the pins exercise it.
 	NoRenderProbe bool
+
+	// Classes OVERLAYS what `posse upgrade --classes` answers (ADR 0092 D4
+	// rules 4-6): the fake prints THIS binary's own table with these rows
+	// replaced, plus any row here that the table does not name. So the zero
+	// value is "the same partition the judge compiled in", which is every
+	// ordinary install, and a fixture asks for a crossing or a new row by
+	// naming only that row.
+	Classes map[string]string
+	// NoClassesFlag is a binary from BEFORE rule 4. MEASURED 2026-11-21 at
+	// eb3f34fc (UpgradeClassMark's header): nothing on stdout, `unknown
+	// flag: --classes` on stderr, exit 1 — the same 1 a refusal of anything
+	// else gives, which is why "asked" is the mark and this flag is how the
+	// pins exercise the reading rule 5 trips on.
+	NoClassesFlag bool
 }
 
 type fakeGates struct{ Exit, Red int }
@@ -93,7 +107,41 @@ func (f fakePosse) bytes() []byte {
 		b.WriteString("NO-RENDER-PROBE\n")
 	}
 	fmt.Fprintf(&b, "RENDER %d\n", f.Render)
+	// Sorted for the GATES rows' reason, which is the whole of this
+	// marshaller's header: every rollback pin compares bytes from one call
+	// to bytes from another.
+	for _, row := range slices.Sorted(maps.Keys(f.Classes)) {
+		fmt.Fprintf(&b, "CLASS %s %s\n", row, f.Classes[row])
+	}
+	if f.NoClassesFlag {
+		b.WriteString("NO-CLASSES-FLAG\n")
+	}
 	return []byte(b.String())
+}
+
+// classLines is what this fake's `posse upgrade --classes` prints: the REAL
+// renderer's answer for every row this binary's table names, with the
+// fixture's overlay applied and its unknown rows appended.
+//
+// Through UpgradeClassLines rather than a format this file invents, so a pin
+// that excuses a row excuses it over the bytes upgradeParseClasses really has
+// to read — a landing that changed the line's shape would red here instead of
+// silently emptying every class the reader sees.
+func (f fakePosse) classLines() []string {
+	out := make([]string, 0, len(upgradeConditionSource)+len(f.Classes))
+	for _, ln := range UpgradeClassLines() {
+		row := strings.Fields(ln)[1]
+		if word, ok := f.Classes[row]; ok {
+			ln = UpgradeClassMark + " " + row + " " + word
+		}
+		out = append(out, ln)
+	}
+	for _, row := range slices.Sorted(maps.Keys(f.Classes)) {
+		if _, named := upgradeConditionSource[row]; !named {
+			out = append(out, UpgradeClassMark+" "+row+" "+f.Classes[row])
+		}
+	}
+	return out
 }
 
 // readFakePosse is the other half, and it is deliberately tolerant of lines
@@ -126,6 +174,16 @@ func readFakePosse(path string) (fakePosse, error) {
 			}
 		case ln == "NO-RENDER-PROBE":
 			f.NoRenderProbe = true
+		case strings.HasPrefix(ln, "CLASS "):
+			p := strings.Fields(strings.TrimPrefix(ln, "CLASS "))
+			if len(p) == 2 {
+				if f.Classes == nil {
+					f.Classes = map[string]string{}
+				}
+				f.Classes[p[0]] = p[1]
+			}
+		case ln == "NO-CLASSES-FLAG":
+			f.NoClassesFlag = true
 		case strings.HasPrefix(ln, "RENDER "):
 			f.Render, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "RENDER ")))
 		}
@@ -214,6 +272,18 @@ func stubUpgradeProbe(t *testing.T) *upgradeProbeLog {
 				return 2, RenderProbeMark + " could not ask — fake\n"
 			}
 			return f.Render, fmt.Sprintf("%s ~/fake · pre-push %s · prepare-commit-msg %s\n", RenderProbeMark, slot, slot)
+		// ADR 0092 D4 rule 4's answer, read by rule 5. A binary from before
+		// the flag refuses it in cmd/posse's flag ladder, above everything
+		// — no stdout, no lock, exit 1 (MEASURED, see NoClassesFlag).
+		case len(argv) == 2 && argv[0] == "upgrade" && argv[1] == "--classes":
+			if f.NoClassesFlag {
+				return 1, "posse: unknown flag: --classes — usage: posse upgrade [<sha>]\n"
+			}
+			var b strings.Builder
+			for _, ln := range f.classLines() {
+				fmt.Fprintln(&b, ln)
+			}
+			return 0, b.String()
 		case len(argv) == 2 && argv[0] == "gates":
 			g := f.Gates[argv[1]]
 			var b strings.Builder
@@ -636,10 +706,11 @@ func TestUpgradeGatesReadingsRunInTheSourceRepoWhateverTheCallersCwd(t *testing.
 	if got := f.probe.Dir["gates dev"]; got != f.repo {
 		t.Errorf("`posse gates dev` ran in %q, want the source repo %q — the cwd of this reading is the verb's, not the delegate's (ADR 0092 D4 amendment 2)", got, f.repo)
 	}
-	// version and status are left on the inherited cwd deliberately:
-	// neither reads the cwd's hooks, and pinning it says so rather than
+	// version, status and rule 4's `upgrade --classes` are left on the
+	// inherited cwd deliberately: none of them reads the cwd's hooks — the
+	// third reads no file at all — and pinning it says so rather than
 	// leaving the next reader to wonder whether it was an oversight.
-	for _, verb := range []string{"version", "status"} {
+	for _, verb := range []string{"version", "status", "upgrade --classes"} {
 		if got, ok := f.probe.Dir[verb]; !ok || got != "" {
 			t.Errorf("`posse %s` ran with cwd %q (recorded=%v), want the inherited one — only the gates readings are placed", verb, got, ok)
 		}
@@ -870,7 +941,380 @@ func TestUpgradeRenderAskedReadsTheMarkAndNotTheExitCode(t *testing.T) {
 	}
 }
 
+// ─── D4 rules 5-6 · a row the judge cannot name is classed by the target ─────
+//
+// The old-reader/new-writer case, and the defect it answers is MEASURED
+// (ranger-base-i9fq8, 2026-11-21): the judge is the table compiled into the
+// binary RUNNING the verb, which is the old one, so a G-row added inside the
+// range is a row the judge cannot name — and the unknown-code rule classes
+// it binary-rendered. 0e1cb6c0..65d90a5e rolled back on one LANE G18 row
+// that ranger-base-rrgnc had added in that range and classed
+// install-subject. The fix for such a crossing cannot be installed either,
+// because every target that holds it is judged by the table that predates
+// it, which is what makes this a wall rather than one bad install.
+//
+// So the writer describes its own data (rule 4's `--classes`) and the reader
+// consults that description for exactly the rows it cannot name itself:
+//
+//	unknown + shop or install   not a trigger, and a note names the row
+//	unknown + binary            trips, as today
+//	unknown + no class named    trips, as today
+//	unknown + did not answer    trips, as today
+//	known                       the judge's class rules and the target's
+//	                            answer is read for rule 6's WORDING alone
+//
+// WHY THIS IS NOT A CANDIDATE VOTING ON ITS OWN INSTALL: the target can only
+// excuse a row whose existence is its own speech alone — a row it could have
+// escaped by not printing at all — so its class there gives it no power it
+// did not have. Every row the judge can name is still the judge's.
+
+// upgradeNewRow is a condition row nothing in this tree prints and this
+// binary's table therefore cannot name: the shape of a G-row a LATER build
+// adds, which is the whole subject of rules 5 and 6. Safe to spell here
+// because the census that requires every row to carry a class reads shipped
+// sources only (TestQAEveryStatusConditionCodeHasAnUpgradeClass), so naming
+// one in a test is not a claim that this package can print it.
+func upgradeNewRow() GovCondition {
+	return GovCondition{ID: "G19", Class: GovLane, Key: "a-later-builds-row", Detail: "a condition this binary has no class for"}
+}
+
+// Rule 5 whole, over the four readings it distinguishes. The pair is the
+// claim, exactly as D4's third bullet's pair is: the same mechanism must
+// stand on a row the target excuses and roll back on every other answer,
+// including the two that are silences.
+func TestUpgradeClassesAnUnknownRowByTheTargetsOwnAnswer(t *testing.T) {
+	row := upgradeNewRow()
+	for _, c := range []struct {
+		name    string
+		classes map[string]string
+		noFlag  bool
+		stands  bool
+		says    []string
+	}{
+		// The row ranger-base-i9fq8 measured, in the shape that defect had:
+		// the target knows it is the install's own footprint, and the judge
+		// has never heard of it.
+		{"the target classes it install", map[string]string{"G19": "install"}, false, true,
+			[]string{"gained 1 LANE G19 row(s)", "the target classes G19 install", "this binary had no class for it"}},
+		// Same rule, the other excusing word: a shop-state row added in the
+		// range would otherwise roll back every upgrade from the day it
+		// first appears.
+		{"the target classes it shop", map[string]string{"G19": "shop"}, false, true,
+			[]string{"gained 1 LANE G19 row(s)", "the target classes G19 shop", "this binary had no class for it"}},
+		// The target says the row is its own rendering, which is the answer
+		// that trips — and the one answer a binary wanting to escape the row
+		// would never give.
+		{"the target classes it binary", map[string]string{"G19": "binary"}, false, false,
+			[]string{"no class for at all", "the target classes G19 binary itself"}},
+		// It answered, and its partition does not carry the row it just
+		// printed. Positive evidence only: an answer that names no class is
+		// not an answer that says `shop`.
+		{"the target answered and named no class for it", nil, false, false,
+			[]string{"no class for at all", "does not name exactly one class for G19"}},
+		// And the silence. A binary with no `--classes` flag at all cannot
+		// describe anything, and rule 5 reads that as not asked — never off
+		// the exit code, which is the same 1 for a refused flag and for a
+		// render that does not refuse.
+		{"the target has no --classes flag", nil, true, false,
+			[]string{"no class for at all", "NOT ASKED"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newD4Fixture(t,
+				fakePosse{Stamp: "aaaaaaa"},
+				fakePosse{Conds: GovSet{row}, Classes: c.classes, NoClassesFlag: c.noFlag})
+			out, err := f.run(t)
+			if c.stands {
+				if err != nil {
+					t.Fatalf("a row this binary cannot name, which the TARGET excuses, rolled the install back — and the fix for such a crossing can then never be installed (ADR 0092 D4 rule 5):\n%v\n%s", err, out)
+				}
+				if body, _ := os.ReadFile(f.target); !bytes.Equal(body, f.next.bytes()) {
+					t.Errorf("the new binary is not in place after a clean verify: %q", body)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("an unknown row the target does not excuse was left installed:\n%s", out)
+				}
+				f.rolledBack(t)
+			}
+			for _, say := range c.says {
+				if !strings.Contains(out, say) {
+					t.Errorf("the report does not say %q — rule 5's four readings are four different things to go and look at:\n%s", say, out)
+				}
+			}
+		})
+	}
+}
+
+// The note is not standing furniture either: an install that gained no such
+// row says nothing about anybody's partition.
+func TestUpgradeSaysNothingAboutTheTargetsClassesWithoutAnUnknownRow(t *testing.T) {
+	standing := upgradeNewRow()
+	f := newD4Fixture(t,
+		fakePosse{Stamp: "aaaaaaa", Conds: GovSet{standing}, Classes: map[string]string{"G19": "install"}},
+		fakePosse{Conds: GovSet{standing}, Classes: map[string]string{"G19": "install"}})
+	out, err := f.run(t)
+	if err != nil {
+		t.Fatalf("a row that was there before the swap rolled the install back: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "had no class for it") {
+		t.Errorf("the report carries rule 5's note over a row this install did not gain:\n%s", out)
+	}
+}
+
+// Rule 5's other half and rule 6. For a row the judge CAN name, the judge's
+// class rules — in both directions — and the only thing the target's answer
+// buys is the line that says a reclassification takes effect one install
+// late.
+func TestUpgradeJudgesAKnownRowItselfAndSaysSoWhenTheTargetDisagrees(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		cond    GovCondition
+		classes map[string]string
+		back    bool
+		says    []string
+		silent  []string
+	}{
+		// G7 is binary-rendered here and `install` in the target: it trips
+		// under this binary's class, and the line names both so that nobody
+		// has to recover the disagreement from two trees.
+		{
+			name:    "a binary row the target calls install",
+			cond:    GovCondition{ID: "G7", Class: GovUrgent, Key: "arm-broken", Detail: "autostart_interval: \"5m\" is not an interval"},
+			classes: map[string]string{"G7": "install"},
+			back:    true,
+			says: []string{
+				"gained 1 URGENT G7 row(s)",
+				"the target classes G7 install",
+				"this binary classes it binary",
+				"this binary's class is the one that judges",
+				"the crossing is the operator's `make install`",
+			},
+		},
+		// The same row with the two tables AGREEING: it still trips, and
+		// the crossing sentence is not printed. A line reading "the target
+		// classes G7 binary; this binary classes it binary" on every
+		// ordinary rollback is a line the delegate learns to skip, and rule
+		// 6's whole subject is a DISAGREEMENT.
+		{
+			name:    "a binary row the target also calls binary",
+			cond:    GovCondition{ID: "G7", Class: GovUrgent, Key: "arm-broken", Detail: "autostart_via: \"cron\" is not a via"},
+			classes: map[string]string{"G7": "binary"},
+			back:    true,
+			says:    []string{"gained 1 URGENT G7 row(s)"},
+			silent:  []string{"the target classes G7", "the one that judges"},
+		},
+		// And the direction that must NOT make the target's answer matter:
+		// a row this binary excludes stays excluded however the target
+		// classes it. A reading that consulted `--classes` here would let a
+		// new binary turn one of the judge's own exclusions into a rollback.
+		{
+			name:    "a shop row the target calls binary",
+			cond:    GovCondition{ID: "G1", Class: GovLane, Key: "blocked:sess", Detail: "sess (claude) is blocked on an approval"},
+			classes: map[string]string{"G1": "binary"},
+			back:    false,
+			silent:  []string{"the target classes G1", "G1 row(s)"},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newD4Fixture(t,
+				fakePosse{Stamp: "aaaaaaa"},
+				fakePosse{Conds: GovSet{c.cond}, Classes: c.classes})
+			out, err := f.run(t)
+			if c.back {
+				if err == nil {
+					t.Fatalf("a row this binary classes binary-rendered was excused by the target's own answer — rule 5 reads that answer for rows the judge CANNOT name, and reading it here is the candidate voting on its own install:\n%s", out)
+				}
+				f.rolledBack(t)
+			} else if err != nil {
+				t.Fatalf("a row this binary excludes rolled the install back because the TARGET calls it binary-rendered: %v\n%s", err, out)
+			}
+			for _, say := range c.says {
+				if !strings.Contains(out, say) {
+					t.Errorf("the report does not say %q (ADR 0092 D4 rule 6):\n%s", say, out)
+				}
+			}
+			for _, quiet := range c.silent {
+				if strings.Contains(out, quiet) {
+					t.Errorf("the report says %q over a row the judge excluded, so something read the target's answer for a row this binary names:\n%s", quiet, out)
+				}
+			}
+		})
+	}
+}
+
+// THE CROSSING PIN — ADR 0092 D4's promised companion, and the one this work
+// exists for: for EVERY row this binary classifies, judge it with a table
+// that predates the row, the after-reading gaining it, and the real table as
+// the target's answer. The install must stand exactly when the row's real
+// class is one of the two that excuse.
+//
+// WHAT IT PROTECTS, in process terms: the first delegated install after any
+// bead that adds a G-row. Without it that install rolls back, the report
+// blames a binary that did nothing, and the fix is uninstallable because
+// every target that carries it is judged by the table that predates it
+// (ranger-base-i9fq8, 2026-11-21).
+//
+// NO t.Parallel, and it mutates the package table: a judge whose table
+// predates one row is exactly this binary's table minus that entry, and
+// there is no other way to be that binary. Restored per row.
+func TestUpgradeEveryRowCrossingIsClassedByTheTargetsAnswer(t *testing.T) {
+	real := maps.Clone(upgradeConditionSource)
+	if len(real) < 12 {
+		t.Fatalf("upgradeConditionSource has %d row(s) — too few for this pin to be crossing anything", len(real))
+	}
+	// What a binary CARRYING the row prints: rule 4's answer over the real
+	// table. Taken before the deletions below, because that is the table
+	// the target compiled in.
+	answer := map[string]string{}
+	for row, class := range real {
+		answer[row] = upgradeClassWord(class)
+	}
+
+	const stamp, to = "abcdef12", "abcdef1234567890"
+	reading := func(status map[string]int, classes map[string]string, asked bool) upgradeReading {
+		return upgradeReading{
+			Ran: true, Stamp: stamp, StatusRan: true,
+			Status:       status,
+			Gates:        map[string]upgradeGatesReading{},
+			Classes:      classes,
+			ClassesAsked: asked,
+			RenderAsked:  true,
+		}
+	}
+
+	for _, row := range slices.Sorted(maps.Keys(real)) {
+		t.Run(row, func(t *testing.T) {
+			// The judge: this binary's table with the row deleted — the
+			// binary that was installed before the bead that added it.
+			delete(upgradeConditionSource, row)
+			t.Cleanup(func() { upgradeConditionSource[row] = real[row] })
+
+			before := reading(map[string]int{}, answer, true)
+			after := reading(map[string]int{GovLane + " " + row: 1}, answer, true)
+
+			why := upgradeVerdict(to, before, after)
+			stands := len(why) == 0
+			want := real[row] != upgradeBinaryRendered
+			if stands != want {
+				t.Fatalf("a crossing of %s (real class %s) %s, want it to %s:\n  %s",
+					row, upgradeClassWord(real[row]),
+					map[bool]string{true: "stood", false: "rolled the install back"}[stands],
+					map[bool]string{true: "stand", false: "roll back"}[want],
+					strings.Join(why, "\n  "))
+			}
+			if stands {
+				note := upgradeClassNote(before, after)
+				for _, say := range []string{row, answer[row], "this binary had no class for it"} {
+					if !strings.Contains(note, say) {
+						t.Errorf("the note over a stood crossing of %s does not say %q:\n%s", row, say, note)
+					}
+				}
+			} else {
+				if n := len(why); n != 1 {
+					t.Fatalf("a crossing of %s produced %d reason(s), want the one row's: %v", row, n, why)
+				}
+				if !strings.Contains(why[0], "no class for at all") {
+					t.Errorf("the reason does not say the judge cannot name %s:\n%s", row, why[0])
+				}
+				// Rule 6's line is for a row the judge CAN name, and
+				// printing it here would name a class this binary does not
+				// have.
+				if strings.Contains(why[0], "the one that judges") {
+					t.Errorf("the reason carries rule 6's crossing sentence over a row this binary has no class for:\n%s", why[0])
+				}
+			}
+
+			// THE CONTROL, and it is what makes the arm above a measurement
+			// of the ANSWER rather than of the row's absence: the same
+			// reading with nothing asked trips for every row, including the
+			// ones that just stood.
+			if why := upgradeVerdict(to, before, reading(map[string]int{GovLane + " " + row: 1}, nil, false)); len(why) == 0 {
+				t.Errorf("a crossing of %s stood with no `--classes` answer at all — then the class is not what judged it, and this pin measures nothing", row)
+			}
+		})
+	}
+}
+
 // ─── the readers ─────────────────────────────────────────────────────────────
+
+// upgradeParseClasses is the far side of a wire format, so what it must do
+// with a line it cannot open is the behaviour — and both silences rule 5
+// trips on are readings this function produces.
+func TestUpgradeParseClassesReadsTheMarkedLinesAlone(t *testing.T) {
+	t.Parallel()
+	mark := UpgradeClassMark + " "
+	for _, tc := range []struct {
+		name  string
+		out   string
+		want  map[string]string
+		asked bool
+	}{
+		{"the verb's own answer", strings.Join(UpgradeClassLines(), "\n") + "\n", nil, true},
+		{"a binary without the flag", "posse: unknown flag: --classes — usage: posse upgrade [<sha>]\n", map[string]string{}, false},
+		{"silence", "", map[string]string{}, false},
+		{"one row", mark + "G19 install\n", map[string]string{"G19": "install"}, true},
+		// Asked is the MARK and not the map: a build that answered and
+		// named nothing this reader could use still answered, and a reader
+		// that said "not asked" there would report the wrong one of rule
+		// 5's four readings.
+		{"a marked line with no class", mark + "G19\n", map[string]string{}, true},
+		{"a marked line with a fourth field", mark + "G19 install (promoted)\n", map[string]string{}, true},
+		// A row answered twice is dropped rather than resolved by order:
+		// either order is right for one spelling and wrong for the other,
+		// and the direction that costs something is excusing a row on an
+		// answer that contradicts itself.
+		{"a row answered twice", mark + "G19 shop\n" + mark + "G19 binary\n", map[string]string{}, true},
+		{"a row answered twice, the other way", mark + "G19 binary\n" + mark + "G19 shop\n", map[string]string{}, true},
+		{"a row answered three times", mark + "G19 shop\n" + mark + "G19 shop\n" + mark + "G19 shop\n", map[string]string{}, true},
+		// The mark opens a LINE. A sentence that mentions it is prose from
+		// a build whose header this reader was never taught.
+		{"the mark inside a sentence", "nothing here opens with upgrade-class: at all\n", map[string]string{}, false},
+		{"a leading blank line and one row", "\n" + mark + "G19 shop\n", map[string]string{"G19": "shop"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, asked := upgradeParseClasses(tc.out)
+			if asked != tc.asked {
+				t.Errorf("upgradeParseClasses(%q) asked=%v, want %v", tc.out, asked, tc.asked)
+			}
+			if tc.want == nil {
+				// The verb's own answer: every row of this binary's table,
+				// with this binary's word for it.
+				if len(got) != len(upgradeConditionSource) {
+					t.Fatalf("the reader found %d row(s) in the printer's own answer, want the table's %d: %v", len(got), len(upgradeConditionSource), got)
+				}
+				for row, class := range upgradeConditionSource {
+					if got[row] != upgradeClassWord(class) {
+						t.Errorf("the reader read %s as %q, want %q", row, got[row], upgradeClassWord(class))
+					}
+				}
+				return
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("upgradeParseClasses(%q) = %v, want %v", tc.out, got, tc.want)
+			}
+		})
+	}
+}
+
+// And the word test rule 5 turns on, over the three published words and a
+// fourth nobody published: only `shop` and `install` excuse a row, which is
+// upgradeClassWord's fail-closed default read from the far side.
+func TestUpgradeClassExcusesOnlyTheTwoExcludingWords(t *testing.T) {
+	t.Parallel()
+	for word, want := range map[string]bool{
+		"shop":    true,
+		"install": true,
+		"binary":  false,
+		"":        false,
+		"SHOP":    false,
+		"later":   false,
+	} {
+		if got := upgradeClassExcuses(word); got != want {
+			t.Errorf("upgradeClassExcuses(%q) = %v, want %v — a word this binary does not publish must trip, or a later build excuses a row on a token nobody agreed on", word, got, want)
+		}
+	}
+}
 
 // upgradeGatesRed counts ADR 0017 §2's three presentation words and not a
 // fourth. RATIFIED DEGRADATION is the one that matters: it is standing state

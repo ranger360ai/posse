@@ -353,6 +353,101 @@ func upgradeWriteClasses(w io.Writer) error {
 	return nil
 }
 
+// upgradeParseClasses is the READER of the answer above, and it is the other
+// half of a wire format between two builds (ADR 0092 D4 rule 5): the rows the
+// target named, and whether it answered at all.
+//
+// A LINE IT CANNOT OPEN IS SKIPPED, which is rule 4's own instruction to the
+// printer read from this side ("every line it cannot parse is a line it has
+// to be taught to skip"). The shape is exact — the mark, a row, a word — so
+// that a header a future build adds cannot become a row, and a two-field
+// line cannot become a row with an empty class, which rule 5 would then read
+// as a class this target does not publish.
+//
+// A ROW ANSWERED TWICE IS DROPPED, not resolved first-wins or last-wins.
+// Either order is right for one of `shop binary` and `binary shop` and wrong
+// for the other, and the direction that costs something is excusing a row on
+// an answer that contradicts itself: a dropped row reads as one the target
+// did not name, which trips exactly as a silence does. The printer ranges
+// one map, so a well-formed build cannot produce it.
+//
+// "ASKED" IS THE MARK ON ANY LINE and never the map's emptiness: a build
+// whose table were empty would print no lines at all, and a reader that
+// inferred "not asked" from an empty map would be right by accident there
+// and wrong about every row it has no class for.
+func upgradeParseClasses(out string) (map[string]string, bool) {
+	classes, dup, asked := map[string]string{}, map[string]bool{}, false
+	for _, ln := range strings.Split(out, "\n") {
+		f := strings.Fields(ln)
+		if len(f) == 0 || f[0] != UpgradeClassMark {
+			continue
+		}
+		asked = true
+		if len(f) != 3 {
+			continue
+		}
+		if _, seen := classes[f[1]]; seen || dup[f[1]] {
+			delete(classes, f[1])
+			dup[f[1]] = true
+			continue
+		}
+		classes[f[1]] = f[2]
+	}
+	return classes, asked
+}
+
+// upgradeClassExcuses is rule 5's test over the WORD the target published:
+// `shop` and `install` are the two that make a row this binary cannot name
+// something other than a trigger. Every other word — `binary`, and anything
+// a later build invents — trips, which is upgradeClassWord's fail-closed
+// default read from the far side.
+func upgradeClassExcuses(word string) bool {
+	return word == upgradeClassWord(upgradeShopState) || word == upgradeClassWord(upgradeInstallSubject)
+}
+
+// upgradeTargetClassExcuses answers rule 5 over ONE gained row this binary's
+// table cannot name: does the target's own partition excuse it, and — when it
+// does not — which of the three readings rule 5 lists was it ("if the new
+// binary classes it `binary`, does not name it, or did not answer, it trips
+// exactly as today"). The phrase goes into the rollback reason, because those
+// three are a different thing to go and look at.
+//
+// It is never called for a row upgradeConditionSource names: for such a row
+// the judge's class rules and the target's answer is not consulted at all.
+func upgradeTargetClassExcuses(after upgradeReading, row string) (bool, string) {
+	if !after.ClassesAsked {
+		return false, fmt.Sprintf("and `posse upgrade --classes` did not answer through the new binary either (no %q line), which rule 5 reads as NOT ASKED", UpgradeClassMark)
+	}
+	word, named := after.Classes[row]
+	if !named {
+		return false, fmt.Sprintf("and the target's own `posse upgrade --classes` answer does not name exactly one class for %s either (rule 5: NOT NAMED)", row)
+	}
+	if upgradeClassExcuses(word) {
+		return true, ""
+	}
+	return false, fmt.Sprintf("and the target classes %s %s itself (rule 5)", row, word)
+}
+
+// upgradeClassCrossing is rule 6: when the row that tripped is one the TARGET
+// classes differently, the rollback line says so, "so nobody has to recover
+// it from two trees".
+//
+// This is the ONE place after.Classes is read for a row this binary's table
+// names, and it is read for WORDING ALONE — the verdict has already been
+// reached above and no answer the target gives can change it (rule 5: "for a
+// row the old table DOES name, the old class rules and the new answer is not
+// consulted"). The sentence says that in as many words, because a line that
+// printed two classes without saying which one judged would read as a verb
+// that could not make up its mind.
+func upgradeClassCrossing(after upgradeReading, row string, mine upgradeCondClass) string {
+	theirs, named := after.Classes[row]
+	if !named || theirs == upgradeClassWord(mine) {
+		return ""
+	}
+	return fmt.Sprintf(" — the target classes %s %s; this binary classes it %s, and this binary's class is the one that judges — the crossing is the operator's `make install`",
+		row, theirs, upgradeClassWord(mine))
+}
+
 // upgradeStatusRow matches the row name GovReport prints in its second
 // column — a G-number, or the em dash a carry-over renders as. It is what
 // keeps a condition's DETAIL from being read as another condition: the
@@ -507,6 +602,24 @@ type upgradeReading struct {
 	// on stdout is what does.
 	Render      int
 	RenderAsked bool
+
+	// Classes is `<bin> upgrade --classes` — the upgrade partition the
+	// binary at this path compiled in, keyed by row name with one of rule
+	// 4's three words (ADR 0092 D4 rules 4-6, ranger-base-v2xj9).
+	// ClassesAsked says whether that answer came from the flag at all, and
+	// the two fields are inseparable for RenderAsked's reason one verb
+	// over: a binary from before rule 4 prints nothing on stdout and exits
+	// 1 (MEASURED — see UpgradeClassMark), so "did not answer" is read off
+	// the mark and never off an exit code or an empty map.
+	//
+	// ONLY THE AFTER-READING IS CONSULTED, and the before-reading is taken
+	// anyway because one function reads both sides and a reading taken on
+	// one side alone is one nobody can compare later. The asymmetry is the
+	// design and not an omission: the judge is the table compiled into THIS
+	// binary, and the only thing the target is allowed to describe is a row
+	// this binary cannot name (rule 5).
+	Classes      map[string]string
+	ClassesAsked bool
 }
 
 // upgradeGatesReading is one persona's `posse gates <p>`: the exit code D4
@@ -578,7 +691,7 @@ var upgradeProbe = func(dir, bin string, argv ...string) (int, string) {
 // instance's HOME, not the `HOME=/elsewhere` spelling that left a running
 // seat's git refused by its own gate (ranger-base-atq78).
 func upgradeRead(bin, repo string, personas []string) upgradeReading {
-	r := upgradeReading{Status: map[string]int{}, Gates: map[string]upgradeGatesReading{}}
+	r := upgradeReading{Status: map[string]int{}, Gates: map[string]upgradeGatesReading{}, Classes: map[string]string{}}
 	if code, out := upgradeProbe("", bin, "version"); code == 0 {
 		r.Ran, r.Stamp = true, upgradeStampOf(out)
 	}
@@ -595,6 +708,27 @@ func upgradeRead(bin, repo string, personas []string) upgradeReading {
 			r.Unread++
 		}
 	}
+	// ADR 0092 D4 rules 4-6: the row partition the binary at this path
+	// compiled in, which is what lets rule 5 class a row that this binary's
+	// own table cannot name. Taken on both sides by this one function and
+	// consulted on one (see upgradeReading.Classes). It sits beside the
+	// status reading because what it describes is that reading's ROWS.
+	//
+	// NO CWD, for `version` and `status`'s reason: the answer is a
+	// compiled-in table and reads no config, no git and no lock. That is
+	// not a hope about the target — it is rule 4's own position, pinned by
+	// TestUpgradeClassesAnswersBeforeTheFenceAndReadsNothing — and it has
+	// to hold, because this process is holding the box lock while it asks.
+	//
+	// THE VERB IS `upgrade`, WHICH INSTALLS, and this call installs nothing:
+	// cmd/posse's flag ladder sets Classes and no Sha, and `--classes` with
+	// a sha is refused rather than ignored. An OLD binary does not install
+	// either — MEASURED 2026-11-21 at eb3f34fc, the commit before the flag
+	// existed: nothing on stdout, `unknown flag: --classes` on stderr, exit
+	// 1, no lock, no git, no config (UpgradeClassMark's header). The exit
+	// code is deliberately dropped here: the mark is the reading.
+	_, cout := upgradeProbe("", bin, "upgrade", "--classes")
+	r.Classes, r.ClassesAsked = upgradeParseClasses(cout)
 	// repo and not the inherited cwd — the probe's header says why, and it
 	// is the one argument in this function that is about WHERE rather than
 	// what.
@@ -697,16 +831,32 @@ func upgradeVerdict(to string, before, after upgradeReading) []string {
 			continue
 		}
 		name := strings.Fields(row)
-		class := upgradeCondSource(name[len(name)-1])
+		code := name[len(name)-1]
+		class := upgradeCondSource(code)
 		if class == upgradeShopState || class == upgradeInstallSubject {
+			// A row the judge CAN name and does not trip on. The target's
+			// answer is not read, even when it disagrees — rule 5's other
+			// half — so a reclassification takes effect one install late,
+			// which is what rule 6's line exists to say out loud.
 			continue
 		}
-		known := ""
-		if _, ok := upgradeConditionSource[name[len(name)-1]]; !ok {
-			known = ", a row this binary has no class for at all — the new binary is reporting a condition this one cannot name"
+		if _, named := upgradeConditionSource[code]; named {
+			why = append(why, fmt.Sprintf("`posse status` gained %d %s row(s) (%d → %d)%s",
+				gained, row, before.Status[row], after.Status[row], upgradeClassCrossing(after, code, class)))
+			continue
 		}
-		why = append(why, fmt.Sprintf("`posse status` gained %d %s row(s) (%d → %d)%s",
-			gained, row, before.Status[row], after.Status[row], known))
+		// ADR 0092 D4 rule 5: a row the judge cannot name at all is classed
+		// by the binary that PRINTED it — the old-reader/new-writer case of
+		// a mixed-version system, where the writer's data describes itself.
+		// The judge keeps its independence where it has any: the target can
+		// only excuse a row whose existence is its own speech alone, which
+		// it could have escaped by not printing the row at all.
+		excused, because := upgradeTargetClassExcuses(after, code)
+		if excused {
+			continue
+		}
+		why = append(why, fmt.Sprintf("`posse status` gained %d %s row(s) (%d → %d), a row this binary has no class for at all — the new binary is reporting a condition this one cannot name, %s",
+			gained, row, before.Status[row], after.Status[row], because))
 	}
 
 	// D4's second bullet, per persona and in roster order.
@@ -787,6 +937,43 @@ func upgradeRenderNote(before, after upgradeReading) string {
 		what = "a code the verb does not define"
 	}
 	return fmt.Sprintf("  note: `posse gates render-probe` exits %d through BOTH binaries, so it is a property of this box and not of the install (ADR 0092 D4 amendment 3): %s. The hook wall's behaviour half was in this state before this command ran, and is worth fixing before the next upgrade.\n", after.Render, what)
+}
+
+// upgradeClassNote is rule 5's report half: one line per gained row this
+// binary has no class for that the TARGET's own partition excused.
+//
+// IT IS PRINTED ON THE STAND PATH ONLY, which is upgradeRenderNote's
+// placement and upgradeHookWallLine's, for their reason: a note on a run
+// that is about to be undone describes a binary that will not be there. And
+// it is printed rather than kept silent because such a row is the one line
+// of the block whose verdict did NOT come from the judge — the install stood
+// on the installed binary's own description of a row this one cannot name,
+// and the next reader of the install bead is the person who would otherwise
+// have to diff two trees to learn that.
+//
+// The walk is the verdict's own, deliberately: both read the gained rows out
+// of after.Status by upgradeSortedKeys and both ask one predicate
+// (upgradeTargetClassExcuses), so "excused" cannot mean one thing in the
+// decision and another in the report.
+func upgradeClassNote(before, after upgradeReading) string {
+	var b strings.Builder
+	for _, row := range upgradeSortedKeys(after.Status) {
+		gained := after.Status[row] - before.Status[row]
+		if gained <= 0 {
+			continue
+		}
+		name := strings.Fields(row)
+		code := name[len(name)-1]
+		if _, named := upgradeConditionSource[code]; named {
+			continue
+		}
+		if excused, _ := upgradeTargetClassExcuses(after, code); !excused {
+			continue
+		}
+		fmt.Fprintf(&b, "  note: `posse status` gained %d %s row(s) and the target classes %s %s — this binary had no class for it, so the binary that printed the row is what classed it (ADR 0092 D4 rule 5). Not a trigger, and nothing is owed: a row the judge cannot name is one the target could have escaped by not printing it.\n",
+			gained, row, code, after.Classes[code])
+	}
+	return b.String()
 }
 
 // upgradeG12 is the one row name this verb's own install is expected to
@@ -928,6 +1115,10 @@ func upgradeVerify(w io.Writer, plan upgradePlan, before upgradeReading) error {
 		if line := upgradeHookWallLine(plan, before, after); line != "" {
 			fmt.Fprint(w, line)
 		}
+		// Rule 5's report half, beside D7's and for the same reason: a row
+		// that stood on the TARGET's class is the one verdict in this block
+		// that the judge did not reach (ADR 0092 D4 rule 5).
+		fmt.Fprint(w, upgradeClassNote(before, after))
 		// Amendment 3's report half, printed beside D7's for the same
 		// reason: an install that stood on a box where the behaviour probe
 		// cannot be taken is a fact about the next upgrade too.
