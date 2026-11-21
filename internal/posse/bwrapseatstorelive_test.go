@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -215,12 +216,16 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	// directory strictly between a grant and the grant above it, which is
 	// the fix that ADR prescribes for this shape and never an exemption, so
 	// the set the production producer would hand BwrapArgs is the one this
-	// arm renders. bsWideGrantPinsTheLooseComponent below reads that pin off
-	// the argv and asserts it is load-bearing, which is what keeps a later
-	// reader from taking it for decoration.
-	wt := filepath.Join(f.common, "worktrees")
+	// arm renders.
+	//
+	// THAT PIN IS READ BY A TEST OF ITS OWN and no longer from here
+	// (ranger-base-bx9wj): bsWideGrantPinsTheLooseComponent needs a home
+	// outside every blanket temp grant to measure anything at all, which is
+	// a HOME this test cannot set — it is `t.Parallel`, and the home is the
+	// whole binary's. Called from here it returned at ADR 0100's stand-down
+	// under every uncaged run and measured only in ADR 0097 D1's venue.
+	// TestLiveBwrapSeatStoreWideGrantPinsTheLooseComponent is that test.
 	wide := append(append([]string{}, f.set...), f.common)
-	bsWideGrantPinsTheLooseComponent(t, f, wide, wt)
 
 	for _, shape := range []struct {
 		name string
@@ -316,18 +321,26 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 // would be measuring neither. What reds this pin as it stands is dropping
 // shape 1's pin arm from bwrapGrantMounts.
 //
-// IT IS SKIPPED WHERE THE RULE STANDS DOWN, which is most of the time and is
-// the whole reason 4gyib's red reached main (the window's own finding,
-// docs/notes.d/ranger-base-4gyib.md): both arms stand down when this uid's
-// home is under /tmp (bwrapWallRoot), this binary's HOME is under TMPDIR, and
-// so they are dormant for every fixture here under an operator's uncaged `make
-// test` and LIVE in ADR 0097 D1's venue, whose TMPDIR is under the posse
-// state dir. The uncaged control cannot see this arm; the venue is where it
-// measures.
+// ITS CALLER OWNS THE HOME IT RUNS UNDER, and that is ranger-base-bx9wj
+// (from ranger-base-4gyib, whose whole red this arm was). Both of ADR 0100's
+// refusals stand down when this uid's home lies under /tmp (bwrapWallRoot) —
+// right for a box where /tmp is granted unconditionally, and true of the
+// binary's own temp HOME, which is a `MkdirTemp("", ...)` under TMPDIR. So
+// under an operator's uncaged `go test` this arm used to RETURN at that
+// stand-down and measure nothing, while in ADR 0097 D1's venue — TMPDIR under
+// the posse state dir, so a home that is not under /tmp — it measured and
+// reds. A green control over a rule that was not running is what let 4gyib's
+// red sit on main for four landings.
+//
+// So the stand-down is a CONTROL FAILURE here now and never a quiet return:
+// the one caller sets HOME to a fixture home under wallUngrantedDir first
+// (bsUngrantedHome), where the two refusals are live in both venues, and an
+// empty wall root under such a home means the arm is about to measure
+// nothing again.
 func bsWideGrantPinsTheLooseComponent(t *testing.T, f bsLive, wide []string, wt string) {
 	t.Helper()
 	if bwrapWallRoot() == "" {
-		return // ADR 0100's rules stand down for a home under /tmp (bwrapWallRoot)
+		t.Fatalf("CONTROL: the wall root is empty for the home %s, so both of ADR 0100's refusals stand down and the arms below measure nothing — which is exactly how ranger-base-4gyib's red reached main. The caller owes this arm a home outside every blanket temp grant (bsUngrantedHome)", bsLiveHome(t))
 	}
 	argv, _, err := BwrapArgs(f.tr.Path, wide, SeatbeltCarveOut{Private: f.binds(t)}, f.keep...)
 	if err != nil {
@@ -381,6 +394,184 @@ func bsArgvWithoutInPlaceBind(argv []string, p string) []string {
 		out = append(out, argv[i])
 	}
 	return out
+}
+
+// bsUngrantedHome points $HOME at a fixture home outside every blanket temp
+// grant and answers it — the whole of ranger-base-bx9wj, and the reason the
+// pin below is not simply an arm of the test above.
+//
+// WHAT IT BUYS. ADR 0100's two refusals — bwrapRefuseUnpinnedSource (D2(b))
+// and bwrapRefuseUnpinnedDst (D4(a)) — stand down when bwrapWallRoot() is
+// empty, and it is empty when this uid's home lies under /tmp: that box
+// grants /tmp unconditionally (seatbeltTempGrants), every private source is
+// in the shared directory already, and there is no seat for the wall root to
+// protect. Right for production, and true of this binary's own HOME, which
+// TestMain makes with `MkdirTemp("", …)` — so the home follows TMPDIR, and
+// the two refusals are keyed on it:
+//
+//   - uncaged, TMPDIR unset: HOME is under /tmp and both refusals are DORMANT
+//     for every fixture in this package.
+//   - in ADR 0097 D1's venue: TMPDIR is `<state>/landed-check/run-<n>/tmp`,
+//     HOME is not under /tmp, and both are LIVE.
+//
+// A green uncaged control therefore said nothing about this family of rules,
+// and a venue red could not be reproduced by the command the red's own advice
+// names first (ADR 0097 D6). MEASURED 2026-11-21, same tree and same
+// command: TMPDIR unset read `ok 0.13s` where the venue's shape read D2(b)'s
+// refusal — ranger-base-4gyib's whole red, which sat on main for four
+// landings behind that green (docs/notes.d/ranger-base-4gyib.md).
+//
+// wallUngrantedDir IS THE EXISTING SPELLING and the pins written FOR these
+// rules already use it (wallseatwall_qa_test.go's header,
+// wallpinnedsource_qa_test.go's, wallpinneddst_qa_test.go's): a root under
+// /var/tmp, which no blanket temp grant covers, and which ADR 0097 D1 binds
+// privately into the venue for exactly these 18 pins. So a home under it
+// stands the rules UP in both venues, which is what makes the control and the
+// venue agree.
+//
+// PER-TEST AND NOT THE BINARY'S, which is the cost this helper accepts
+// rather than hides. Moving the binary's own home is not one line: it is the
+// whole process's (herdr_test.go's TestMain, FenceCLIHomes), roughly a
+// thousand tests read it, and every fixture keyed on "a t.TempDir() is inside
+// a blanket grant" would flip with it (sbRoot's stand-down, 123 tests). A
+// t.Setenv is the narrow lever, and its price is the one t.Setenv always
+// charges: the caller cannot be a parallel test.
+func bsUngrantedHome(t *testing.T) string {
+	t.Helper()
+	home := filepath.Join(wallUngrantedDir(t), "home")
+	// `.cache`, because the wall root is `<home>/.cache/posse-wall` and the
+	// render's prep makes the wall dir under a `.cache` that is there.
+	if err := os.MkdirAll(filepath.Join(home, ".cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	return home
+}
+
+// THE ASYMMETRY ITSELF, as a pin, because until ranger-base-bx9wj it was only
+// a paragraph: the binary's own HOME decides whether ADR 0100's refusals run
+// at all, and it decides it differently in the two places this tree's wall
+// pins are read.
+//
+// TWO CLAIMS, and the second is the one the live pin above rests on:
+//
+//  1. the binary's home answers bwrapWallRoot by the documented rule and
+//     nothing else — empty exactly when the home lies under /tmp — so the
+//     dormancy is read off the rule rather than asserted of a box. Uncaged
+//     with TMPDIR unset that is TRUE (TestMain's `MkdirTemp("", …)` home is
+//     under /tmp, the refusals are dormant); in ADR 0097 D1's venue TMPDIR is
+//     under the posse state dir and the same expression is FALSE (they are
+//     live). One pin, both venues, no skip.
+//  2. bsUngrantedHome's home answers a NON-EMPTY root under either venue's
+//     TMPDIR, and lies in none of the write grants every seat gets whatever
+//     its PID says (seatbeltTempGrants). That is what makes the control and
+//     the venue measure the same rule, which is ADR 0097 D6's own premise for
+//     this family.
+//
+// TMPDIR IS SET HERE THOUGH bwrapWallRoot READS ONLY $HOME, deliberately: the
+// defect was that the rule's real input was TMPDIR-shaped, through the home
+// derived from it. A later bead that makes the wall root read a temp root
+// directly reds this row instead of going dormant in silence.
+func TestQABwrapSeatStoreFixtureHomeStandsADR0100sRulesUpInBothVenues(t *testing.T) {
+	// No t.Parallel: bsUngrantedHome sets HOME, and this sets TMPDIR.
+	binHome, err := os.UserHomeDir()
+	if err != nil || binHome == "" {
+		t.Fatalf("no home for this binary, so neither claim below is measured: %v", err)
+	}
+	dormant := underDir(bwrapTmpMount, binHome)
+	if (bwrapWallRoot() == "") != dormant {
+		t.Errorf("bwrapWallRoot() = %q for this binary's home %s, which is%s under %s — ADR 0100's two refusals stand down exactly when the home is, and a third answer means the dormancy this bead is about is keyed on something else now", bwrapWallRoot(), binHome, map[bool]string{true: "", false: " not"}[dormant], bwrapTmpMount)
+	}
+
+	home := bsUngrantedHome(t)
+	for _, tmpdir := range []string{"", filepath.Join(home, "tv")} {
+		t.Setenv("TMPDIR", tmpdir)
+		if tmpdir == "" {
+			os.Unsetenv("TMPDIR")
+		}
+		if root := bwrapWallRoot(); root == "" {
+			t.Errorf("TMPDIR=%q: the wall root is empty for the fixture home %s, so ADR 0100's refusals are dormant under this venue's shape and a pin written over them measures nothing here", tmpdir, home)
+		}
+		for _, g := range seatbeltTempGrants(runtime.GOOS, os.Getenv("TMPDIR")) {
+			if underDir(g, home) {
+				t.Errorf("TMPDIR=%q: the fixture home %s lies under %s, which every seat is granted whatever its PID says — then every component of every private source is inside a grant and nothing can be pinned", tmpdir, home, g)
+			}
+		}
+	}
+}
+
+// ADR 0100 D2(b)/D4(a), live and in BOTH venues: the wide shape's loose
+// component is pinned by the render, that pin is load-bearing, and the mount
+// is what refuses the rename from inside the seat.
+//
+// THE POINT OF THIS TEST EXISTING AT ALL is the home, and it is
+// ranger-base-bx9wj's deliverable: bsUngrantedHome says why. The arm this
+// test wraps used to run inside TestLiveBwrapSeatStoreRefusesRewritingAShared
+// Object, which is `t.Parallel` and so cannot set HOME — so it returned at
+// ADR 0100's stand-down under every uncaged run and measured only in the
+// venue. Here the home is under wallUngrantedDir, both refusals are live
+// whatever TMPDIR says, and the arm's own stand-down guard is a CONTROL
+// failure rather than a quiet return.
+//
+// THE LIVE HALF IS THE MECHANISM BEHIND THE REFUSAL, and nothing measured it
+// before: ADR 0100's answer to a loose component is that a mount on it cannot
+// be renamed by a namespace holding that mount (its P4, EBUSY). So the seat
+// rendered from the wide set is handed `mv <common>/worktrees …` and must be
+// refused, and the CONTROL is the same argv with that one in-place bind cut —
+// the render BwrapArgs declines to produce — handed to bwrap directly, where
+// the rename lands. Without the control the refusal above could be the grant,
+// the kernel or the fixture rather than the mount.
+func TestLiveBwrapSeatStoreWideGrantPinsTheLooseComponent(t *testing.T) {
+	// No t.Parallel: bsUngrantedHome sets HOME, which the wall root, the
+	// seat's wall dir and so this seat's whole store are composed from.
+	bgLiveSkip(t) // ADR 0096 D3 first, so this is a counted venue member
+	home := bsUngrantedHome(t)
+	root := bwrapWallRoot()
+	if root == "" {
+		t.Fatalf("CONTROL: the wall root is empty for the fixture home %s, so ADR 0100's two refusals stand down here too and this test measures what the uncaged control always measured, which is nothing. bsUngrantedHome owes this test a home outside every blanket temp grant — under /tmp or $TMPDIR it is the dormancy ranger-base-bx9wj was filed for", home)
+	}
+	if want := SeatWallRoot(home); root != want {
+		t.Fatalf("CONTROL: bwrapWallRoot() = %s for the fixture home %s, whose wall root is %s — the root a grant is judged against and the root the sources are composed under must be one directory (ADR 0100 D2(a))", root, home, want)
+	}
+	f := bsLiveFixture(t)
+	if !insideDir(root, f.store) {
+		t.Fatalf("CONTROL: the fixture's store %s is not under the wall root %s this home composes, so the shape below is some other seat's", f.store, root)
+	}
+
+	wt := filepath.Join(f.common, "worktrees")
+	wide := append(append([]string{}, f.set...), f.common)
+	bsWideGrantPinsTheLooseComponent(t, f, wide, wt)
+
+	// The live half: the pin the arm above read off the argv, as the kernel
+	// enforces it.
+	argv := f.render(t, wide, f.binds(t))
+	moved := wt + ".stolen"
+	switch ok, out := f.in(t, argv, "", "mv", "-f", wt, moved); {
+	case ok:
+		t.Errorf("a seat granted %s whole renamed %s, which this render binds in place — then the next launch binds whatever a leftover of this seat plants at that name, read-write and with no race to win (ADR 0100 D2(b))\n%s", f.common, wt, out)
+	case !strings.Contains(out, "busy"):
+		t.Errorf("the rename of %s was refused by something other than the mount: %s", wt, out)
+	}
+
+	// THE CONTROL, and it is the cut argv handed to bwrap rather than to the
+	// render: BwrapArgs refuses to produce this one (the arm above is what
+	// says so), and bwrap has no such scruple. The rename lands, so the
+	// refusal above is the in-place mount's and not the grant's.
+	cut := bsArgvWithoutInPlaceBind(argv, wt)
+	if len(cut) == len(argv) {
+		t.Fatalf("CONTROL: %s is a mount destination of this render by some option other than an in-place --bind, so the row below measures nothing\n argv: %q", wt, argv)
+	}
+	if ok, out := f.in(t, cut, "", "mv", "-f", wt, moved); !ok {
+		t.Fatalf("NOTHING MEASURED: a namespace with no mount over %s could not rename it either, so the refusal above is not the mount's:\n%s", wt, out)
+	}
+	if _, err := os.Lstat(moved); err != nil {
+		t.Errorf("the control's rename reported success and %s is not there: %v", moved, err)
+	}
+	// Put it back: the fixture's own cleanup prunes this worktree through
+	// git, which reads `<common>/worktrees` by name.
+	if err := os.Rename(moved, wt); err != nil {
+		t.Errorf("the control left %s renamed, which the fixture's cleanup reads: %v", wt, err)
+	}
 }
 
 // ADR 0100 D1, live: the seat reaches its store's CONTENTS through the mount
