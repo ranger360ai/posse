@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,13 +82,23 @@ import (
 // directory no seat tier grants a write to (gitGlobalPinValue says why not
 // `.cache/posse`) — with
 // a DIRECTORY standing at `<file>.lock`. git takes a config write's lock
-// with O_CREAT|O_EXCL on exactly that name, so every write — `--global`,
-// `--file "$GIT_CONFIG_GLOBAL"`, `--unset` — refuses at rc 255 with
+// with O_CREAT|O_EXCL on exactly that name, so every LOCK-TAKING write —
+// `--global`, `--file "$GIT_CONFIG_GLOBAL"`, `--unset`, and the five other
+// spellings gitglobalsnapshotmode_qa_test.go lists — refuses at rc 255 with
 // `could not lock config file …: File exists`, and reads, `git var
 // GIT_AUTHOR_IDENT` and DeriveIdentityLiterals see the same bytes they
 // would see in the original (MEASURED 2026-11-15, git 2.56.0, linux). A
 // lock directory rather than a 0555 parent, because a 0555 dir is one
 // os.RemoveAll cannot empty, and every test HOME is a t.TempDir.
+//
+// `git config --global --edit` is the one write that does NOT go through that
+// lock: it hands the path to $GIT_EDITOR and the editor writes in place, so
+// the snapshot's 0444 MODE is the whole of what refuses it (MEASURED
+// 2026-11-15, ranger-base-k2cbh — a snapshot with its lock directory in place
+// at mode 0644 is rewritten by `--edit` at rc 0). "Every write refuses at rc
+// 255" was this block's own sentence until ranger-base-r9slg, and it was not
+// true of `--edit`; the mode is held by gitGlobalSnapshotVerify and healed by
+// gitGlobalSnapshot, both of which say so where they do it.
 //
 //   - A file carrying an [include] or [includeIf] section is NOT snapshotted:
 //     a relative include path resolves against the including file's own
@@ -337,11 +348,44 @@ func gitGlobalSnapshotPath(file, root string) (want []byte, snap string, err err
 	return want, filepath.Join(root, "git-global", hex.EncodeToString(sum[:])[:20], gitGlobalSnapshotName), nil
 }
 
-// gitGlobalSnapshotVerify: the lock is a directory and the bytes are want.
+// gitGlobalSnapshotMode is the snapshot's mode, and the second half of its
+// wall: the lock directory refuses every LOCK-taking config write, and the
+// mode is the whole of what refuses `git config --global --edit`, which takes
+// no lock at all (ranger-base-k2cbh, pinned in
+// gitglobalsnapshotmode_qa_test.go). One constant because the writer that
+// sets it and the verify that reads it must not be able to disagree.
+const gitGlobalSnapshotMode fs.FileMode = 0o444
+
+// gitGlobalSnapshotVerify: the lock is a directory, the snapshot is a regular
+// file at gitGlobalSnapshotMode, and the bytes are want.
+//
+// THE MODE IS ASKED HERE, and not only written at the rewrite
+// (ranger-base-r9slg). A mode-only tamper — the bytes left alone, 0444 turned
+// to 0644 — was the one tamper nothing saw and nothing healed: the rewrite
+// arm in gitGlobalSnapshot is skipped by a content-identical snapshot, so the
+// chmod that lived only there never ran, and this verify read the lock and the
+// bytes and passed. MEASURED 2026-11-20: the next launch returned nil over a
+// 0644 snapshot, every reader kept naming it, and `git config --global --edit`
+// under the rendered row rewrote it at rc 0 (`git var GIT_AUTHOR_IDENT` then
+// answering "Author identity unknown"). Asked here it degrades for every
+// READER — the row falls back to the operator's own file, which is writable
+// but is at least the file the operator can see — and it is what makes the
+// launch's heal below reachable.
+//
+// Lstat, not Stat, and IsRegular: a symlink planted at the snapshot's name
+// carries mode 0777 and would resolve to whatever it points at, which is the
+// same tamper wearing a different hat.
 func gitGlobalSnapshotVerify(snap string, want []byte) error {
 	lock := snap + ".lock"
 	if fi, err := os.Lstat(lock); err != nil || !fi.IsDir() {
 		return fmt.Errorf("%s is not a directory, so git can take its lock", lock)
+	}
+	fi, err := os.Lstat(snap)
+	if err != nil || !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file (%v)", snap, err)
+	}
+	if perm := fi.Mode().Perm(); perm != gitGlobalSnapshotMode {
+		return fmt.Errorf("%s is mode %#o, not %#o, so `git config --global --edit` can rewrite it under the rendered row", snap, perm, gitGlobalSnapshotMode)
 	}
 	if got, err := os.ReadFile(snap); err != nil || !bytes.Equal(got, want) {
 		return fmt.Errorf("%s does not read back as a copy of the global file", snap)
@@ -388,7 +432,7 @@ func gitGlobalSnapshot(file, root string) (string, error) {
 			werr = cerr
 		}
 		if werr == nil {
-			werr = os.Chmod(tmp.Name(), 0o444)
+			werr = os.Chmod(tmp.Name(), gitGlobalSnapshotMode)
 		}
 		if werr == nil {
 			werr = os.Rename(tmp.Name(), snap)
@@ -396,6 +440,23 @@ func gitGlobalSnapshot(file, root string) (string, error) {
 		if werr != nil {
 			_ = os.Remove(tmp.Name())
 			return "", werr
+		}
+	} else if fi, serr := os.Lstat(snap); serr == nil && fi.Mode().IsRegular() && fi.Mode().Perm() != gitGlobalSnapshotMode {
+		// THE MODE-ONLY TAMPER'S HEAL (ranger-base-r9slg). The rewrite above
+		// is skipped by a snapshot whose BYTES are already right, and the
+		// chmod lived only inside it — so a snapshot someone had turned 0644
+		// stayed 0644 through every later launch, with `--edit` the one write
+		// route still open through it. Content and mode are healed the same
+		// way now: by the next launch over the same bytes.
+		//
+		// A chmod and not a rewrite, because the bytes are already the ones
+		// this launch wants and a rename would hand every concurrent launch
+		// over the same path a new inode for nothing. The error is returned
+		// rather than swallowed: PrepareGitGlobalSnapshot's caller prints the
+		// DEGRADED line, which is the honest answer when posse can neither
+		// trust the snapshot nor repair it.
+		if err := os.Chmod(snap, gitGlobalSnapshotMode); err != nil {
+			return "", err
 		}
 	}
 	// The lock directory is the wall: git's config lock is O_EXCL on this

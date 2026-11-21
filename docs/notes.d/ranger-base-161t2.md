@@ -23,13 +23,22 @@ The row now names a read-only SNAPSHOT of that file
 (`gitglobalscope.go`, `gitGlobalSnapshot`/`gitGlobalPinValue`): a byte copy,
 content-addressed under `~/.cache/posse-wall/git-global/<hash>/`, with a
 directory standing at `<snapshot>.lock`. git takes a config write's lock with
-`O_CREAT|O_EXCL` on that exact name, so every write — `--global`,
+`O_CREAT|O_EXCL` on that exact name, so every LOCK-TAKING write — `--global`,
 `--file "$GIT_CONFIG_GLOBAL"`, `--unset` — refuses with
 `could not lock config file …: File exists`, rc 255. Reads, `git var
 GIT_AUTHOR_IDENT` and the identity wall see the same bytes. MEASURED
 2026-11-15, git 2.56.0, linux. The settings pin and the git shim's hook-skip
 reference (ADR 0079 D1) both take the value from `gitGlobalPinValue`, so they
 still agree.
+
+`git config --global --edit` is the one write that is NOT in that set, and
+"every write" said here was wrong about it until ranger-base-r9slg: `--edit`
+takes no lock — it hands the path to `$GIT_EDITOR`, which writes in place — so
+the snapshot's `0444` mode is the whole of what refuses it (MEASURED
+2026-11-15, ranger-base-k2cbh). That mode is now read by
+`gitGlobalSnapshotVerify` and healed by `gitGlobalSnapshot`, so a mode-only
+tamper degrades for every reader and is repaired by the next launch, like a
+content tamper (ranger-base-r9slg).
 
 Three choices in it worth knowing:
 

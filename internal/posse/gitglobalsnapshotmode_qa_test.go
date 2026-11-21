@@ -30,6 +30,7 @@ package posse
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +90,86 @@ func TestQAGitGlobalSnapshotIsReadOnlyAgainstTheEditorRoute(t *testing.T) {
 	}
 	if opAfter, _ := os.ReadFile(homeCfg); bytes.Equal(opAfter, opBefore) {
 		t.Fatal("CONTROL FAILED: the editor line did not change the operator's own file, so the arm above measured nothing")
+	}
+}
+
+// TestQAAGitGlobalModeOnlyTamperDegradesAndTheNextLaunchHealsIt is the other
+// half of the mode (ranger-base-r9slg, from the verify of ranger-base-2zgr3).
+//
+// The pin above holds that the mode IS 0444 as written. What nothing held is
+// what happens when it is not: a mode-only tamper — bytes untouched, lock
+// directory in place, 0444 turned to 0644 — was the one tamper posse neither
+// saw nor repaired. gitGlobalSnapshotVerify read the lock and the bytes and
+// passed; the chmod lived only on gitGlobalSnapshot's rewrite path, which a
+// content-identical snapshot skips. MEASURED 2026-11-20 at 9193d3b1: launch 2
+// returned nil over a 0644 snapshot, every reader kept naming it, and `git
+// config --global --edit` under the rendered row rewrote it at rc 0.
+//
+// The content tamper is the control for both halves and it is one file over
+// (TestQAGitGlobalSnapshotIsRewrittenWhenTampered): it was healed all along,
+// which is what made this one's silence hard to see.
+//
+// MUTATIONS RUN (each reds this test): dropping the mode arm from
+// gitGlobalSnapshotVerify; dropping gitGlobalSnapshot's heal arm.
+func TestQAAGitGlobalModeOnlyTamperDegradesAndTheNextLaunchHealsIt(t *testing.T) {
+	_, homeCfg, _ := globalScopeFixture(t, true, false)
+	row := gitGlobalPinOf(t, homeCfg) // prepares, as a launch does
+	want, err := os.ReadFile(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := row + ".lock"
+
+	// The tamper: the mode and nothing else.
+	if err := os.Chmod(row, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// EVERY READER degrades. The row falls back to the operator's own file —
+	// writable, but the file the operator can see and the one GitGlobalScopeDegraded
+	// is about — rather than a snapshot posse can no longer vouch for.
+	if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != homeCfg {
+		t.Errorf("over a snapshot at mode 0644 the row is %q, want the fallback %s: a reader is still pointed at a snapshot `git config --global --edit` can rewrite (ranger-base-r9slg)", got, homeCfg)
+	}
+	if d := GitGlobalScopeDegraded(); !strings.Contains(d, "DEGRADED") || !strings.Contains(d, "ranger-base-161t2") {
+		t.Errorf("a mode-only tamper printed no degraded line: %q", d)
+	}
+
+	// THE NEXT LAUNCH HEALS IT, the way a content tamper has always been
+	// healed — and heals the mode without touching the bytes or the lock.
+	if err := PrepareGitGlobalSnapshot(); err != nil {
+		t.Fatalf("the launch over a mode-tampered snapshot refused instead of healing it: %v", err)
+	}
+	fi, err := os.Lstat(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o444 {
+		t.Errorf("after a launch the snapshot is still mode %#o, want 0444 — the mode-only tamper is not self-healing (ranger-base-r9slg)", perm)
+	}
+	if got, _ := os.ReadFile(row); !bytes.Equal(got, want) {
+		t.Errorf("the heal rewrote the snapshot's bytes: %q, want %q", got, want)
+	}
+	if fi, err := os.Lstat(lock); err != nil || !fi.IsDir() {
+		t.Errorf("the heal lost the lock directory: %v", err)
+	}
+	if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != row {
+		t.Errorf("after the heal the row is %q, want the snapshot %s again", got, row)
+	}
+	if d := GitGlobalScopeDegraded(); d != "" {
+		t.Errorf("a healed snapshot still prints a degraded line: %s", d)
+	}
+
+	// CONTROL, and the reason any of this matters: at 0644 the editor route
+	// really is open, so the arms above are about a live hole and not about a
+	// mode nobody can use. Measured last because it leaves the snapshot's
+	// bytes rewritten, which is a CONTENT tamper and another test's subject.
+	if err := os.Chmod(row, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, rc := seatGit(t, row, []string{"GIT_EDITOR=" + gitEditorThatWrites},
+		"config", "--global", "--edit")
+	if got, _ := os.ReadFile(row); rc != 0 || bytes.Equal(got, want) {
+		t.Fatalf("CONTROL FAILED: `git config --global --edit` over a 0644 snapshot exited %d and left the bytes %q — the mode is not what refuses that write here, so the arms above measured nothing:\n%s", rc, got, out)
 	}
 }
