@@ -23,6 +23,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-is1qp](ranger-base-is1qp.md) — The dispatch loops on this binary (ranger-base-is1qp) — 2026-11-21
 - [ranger-base-gi22r](ranger-base-gi22r.md) — ranger-base-gi22r — shape 1's grants and pins walk their components instead of stat'ing them — 2026-11-21
 - [ranger-base-fol4d](ranger-base-fol4d.md) — The donor dispatched on argv[0], and the darwin half was the make line (ranger-base-fol4d) — 2026-11-21
+- [ranger-base-f177g](ranger-base-f177g.md) — The stand-in loop's donor is bash, and a donor picked for its NAME is the bug this family keeps rewriting (ranger-base-f177g) — 2026-11-21
 - [ranger-base-dw2du](ranger-base-dw2du.md) — ranger-base-dw2du — D2 pins every bind, and D2(a) reads the wall root in both directions — 2026-11-21
 - [ranger-base-dot6w](ranger-base-dot6w.md) — ranger-base-dot6w — shape 1 pins the directories between nested write grants — 2026-11-21
 - [ranger-base-bx9wj](ranger-base-bx9wj.md) — ranger-base-bx9wj — the live pins' home was under TMPDIR, so ADR 0100's refusals measured only in the venue — 2026-11-21
