@@ -895,8 +895,13 @@ func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T)
 	qblGit(t, repo, "add", "--", "seed")
 	qblGit(t, repo, "commit", "-q", "-m", "seed")
 	files := map[string]string{
-		"internal/x.go":       "// GO-LINE\n",
-		"docs/x.md":           "MD-LINE\n",
+		"internal/x.go": "// GO-LINE\n",
+		"docs/x.md":     "MD-LINE\n",
+		// ranger-base-pdcf6's rows, end to end: a bare id, then content
+		// that LOOKS like a file header, then the description. The file is
+		// named to sort after docs/x.md so the id is not the last thing in
+		// the staged stream either.
+		"docs/y.md":           "- ranger-base-l751c\n++ a content line\n\tthe heap overflow\n+++ b/bin/bob-watch\n",
 		".beads/issues.jsonl": "JSONL-LINE\n",
 	}
 	for p, body := range files {
@@ -909,7 +914,15 @@ func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T)
 		}
 		qblGit(t, repo, "add", "--", p)
 	}
-	cmd := exec.Command("sh", "-c", `git diff --cached -U0 `+diffReaderShape+` HEAD -- `+vulnPrivateContentPathspec+` | grep -a '^+'`)
+	// THE PIPELINE IS THE ARM'S OWN, not a second spelling of it: the grep
+	// is built from the same constant the render uses and the render is
+	// asserted to carry it, so a change to one of them cannot leave this
+	// test measuring the other (ranger-base-pdcf6).
+	grep := `grep -a -e '^+' -e '^` + vulnPrivateDiffHeader + `'`
+	if !strings.Contains(arm, grep) {
+		t.Fatalf("check 4's content arm no longer greps %s, so the stream below is not the one the judge reads:\n%s", grep, arm)
+	}
+	cmd := exec.Command("sh", "-c", `git diff --cached -U0 `+diffReaderShape+` HEAD -- `+vulnPrivateContentPathspec+` | `+grep)
 	cmd.Dir = filepath.Join(repo, "internal")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -930,6 +943,18 @@ func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T)
 			t.Errorf("check 4's reader lost the %q file boundary:\n%s", want, got)
 		}
 	}
+	// And the line that says WHICH header is a header (ranger-base-pdcf6):
+	// `+++ …` is also what an added line beginning `++` looks like here, so
+	// the judge reads the boundary as a `diff --git ` line plus the `+++`
+	// line after it. Without these in the stream nothing is blanked at all.
+	for _, want := range []string{
+		vulnPrivateDiffHeader + "a/internal/x.go b/internal/x.go",
+		vulnPrivateDiffHeader + "a/docs/x.md b/docs/x.md",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("check 4's reader lost the %q line, which is the only boundary an added line cannot imitate:\n%s", want, got)
+		}
+	}
 	for _, want := range []string{"+// GO-LINE", "+MD-LINE"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("check 4's staged set is missing %q:\n%s", want, got)
@@ -938,6 +963,35 @@ func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T)
 	if strings.Contains(got, "JSONL-LINE") {
 		t.Errorf("check 4's staged set reads the beads jsonl, which is the bead's own record and bd stages into every commit:\n%s", got)
 	}
+
+	// END TO END, which is the whole point of running real git here: the
+	// stream above, judged. docs/y.md holds a bare open id, a content line
+	// beginning `++` and a tab-indented description — the shape
+	// ranger-base-pdcf6 measured passing, because the `++` line arrived as
+	// `+++` and was blanked, closing the id's unit. It is a HIT again.
+	writeFakeOpenIssues(t, repo, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+	var judged strings.Builder
+	if !RunGatesVulnPrivateScan(qaFakeBd(t), repo, VulnPrivateContentArm, strings.NewReader(got), &judged) {
+		t.Errorf("the real pipeline's own stream reads clean over a described open residual (%q):\n%s", judged.String(), got)
+	}
+}
+
+// vpFile renders what the content arm's pipeline actually feeds the judge
+// for one file: the `diff --git` line, the `+++` header that follows it in
+// the FILTERED stream — `index`, `--- a/…` and `@@` are all dropped by the
+// grep, so the two are adjacent for every file git emits — and then the
+// file's added lines, each carrying the `+` that makes it an added line.
+//
+// Spelling it once is what keeps these fixtures honest about the one fact
+// ranger-base-pdcf6 turned on: a header is known by its POSITION, because
+// `+++ …` is also what an added line beginning `++` looks like here. A
+// fixture that writes a bare `+++ b/<path>` is writing content.
+func vpFile(path string, added ...string) string {
+	s := vulnPrivateDiffHeader + "a/" + path + " b/" + path + "\n+++ b/" + path + "\n"
+	for _, l := range added {
+		s += "+" + l + "\n"
+	}
+	return s
 }
 
 // TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary is
@@ -953,9 +1007,10 @@ func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T)
 // shipped subcommand before the fix: `- <open id>` then a later file's
 // `\t// …` line, rc 1.
 //
-// The boundary is the diff's own `+++ b/<path>` header, which the arm's
-// pipeline used to discard with a second grep and now lets through for
-// vulnPrivateUndiff to blank.
+// The boundary is the diff's own header, which the arm's pipeline used to
+// discard with a second grep and now lets through for vulnPrivateUndiff to
+// blank. Since ranger-base-pdcf6 that is BOTH header lines and the reading is
+// positional — see vpFile, and the collision rows at the end of this table.
 func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -963,26 +1018,59 @@ func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
 		text string
 		want bool
 	}{{
-		// The bead's own stdin (i), with the header restored.
+		// The bead's own stdin (i), with the headers restored.
 		name: "a bare id last in its file, continued by the next file",
-		text: "+- ranger-base-l751c\n+++ b/internal/posse/x.go\n+\tcarveOut.heapOverflowInTheParser = true\n",
+		text: vpFile("docs/x.md", "- ranger-base-l751c") +
+			vpFile("internal/posse/x.go", "\tcarveOut.heapOverflowInTheParser = true"),
 	}, {
 		name: "a whole second file under the id's section",
-		text: "+## Not closed here\n+- ranger-base-l751c\n+++ b/docs/x.md\n+the heap overflow in the parser\n",
+		text: vpFile("docs/w.md", "## Not closed here", "- ranger-base-l751c") +
+			vpFile("docs/x.md", "the heap overflow in the parser"),
 	}, {
 		// The header's PATH goes with it. Blanked and not merely
 		// `+`-stripped, so a path that happens to carry the id and a word
 		// is not a unit of its own — which `+++ b/<id>-notes.md` would be.
 		name: "the header's own path is discarded with it",
-		text: "+++ b/docs/notes.d/ranger-base-l751c.md\n+- ranger-base-l751c\n",
+		text: vpFile("docs/notes.d/ranger-base-l751c.md", "- ranger-base-l751c"),
+	}, {
+		// A file with no `+++` line at all — a pure rename, a mode change,
+		// an empty new file — is why the second blanking is conditional:
+		// the next thing in the stream is another `diff --git`, and the
+		// file after it must still be read.
+		name: "a file whose header has no `+++` line does not eat the next file",
+		text: "diff --git a/docs/renamed.md b/docs/moved.md\n" +
+			vpFile("docs/x.md", "- ranger-base-l751c", "  the heap overflow in the parser"),
+		want: true,
 	}, {
 		// The controls: a boundary must not blank the judge.
 		name: "a description in the SAME file still reds",
-		text: "+++ b/docs/x.md\n+- ranger-base-l751c\n+  the heap overflow in the parser\n",
+		text: vpFile("docs/x.md", "- ranger-base-l751c", "  the heap overflow in the parser"),
 		want: true,
 	}, {
 		name: "a description on the id's own line still reds",
-		text: "+++ b/docs/x.md\n+- ranger-base-l751c the heap overflow\n+++ b/docs/y.md\n+ordinary prose\n",
+		text: vpFile("docs/x.md", "- ranger-base-l751c the heap overflow") +
+			vpFile("docs/y.md", "ordinary prose"),
+		want: true,
+	}, {
+		// ranger-base-pdcf6's rows 1 and 3: an ADDED LINE whose own text
+		// begins with two plus signs arrives here as `+++…` and used to be
+		// blanked, which CLOSED the unit and bought a pass for the shape
+		// below. A prefix test cannot tell these from a header; position
+		// can, and content `+++ b/<path>` (row 3) is a shape a tracked file
+		// already holds — etc/herdr/herdr-bob/darwin-portability.patch.
+		name: "a `++` content line between a bare id and its description",
+		text: vpFile("docs/x.md", "- ranger-base-l751c", "++ a content line", "\tthe heap overflow"),
+		want: true,
+	}, {
+		name: "a `+++ b/` content line between a bare id and its description",
+		text: vpFile("docs/x.md", "- ranger-base-l751c", "+++ b/bin/bob-watch", "\tthe heap overflow"),
+		want: true,
+	}, {
+		// The row-2 control pdcf6 asks for: the plain shape still reds, so
+		// the two rows above are not passing because the judge is wired to
+		// nothing. "No hit" is also what that says.
+		name: "control: the same two lines with no `++` line at all",
+		text: vpFile("docs/x.md", "- ranger-base-l751c", "\tthe heap overflow"),
 		want: true,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1017,14 +1105,14 @@ func TestRunGatesVulnPrivateScanPaysNoBdQueryForFileBoundariesAlone(t *testing.T
 	bd := qaFakeBd(t)
 	log := filepath.Join(fakeDirOf(t), "bd-calls.log")
 	var out strings.Builder
-	if RunGatesVulnPrivateScan(bd, dir, VulnPrivateContentArm, strings.NewReader("+++ b/docs/x.md\n+++ b/internal/posse/y.go\n"), &out) {
+	if RunGatesVulnPrivateScan(bd, dir, VulnPrivateContentArm, strings.NewReader(vpFile("docs/x.md")+vpFile("internal/posse/y.go")), &out) {
 		t.Errorf("a text of nothing but file boundaries = %q, want no hit", out.String())
 	}
 	if b, err := os.ReadFile(log); err == nil && len(b) > 0 {
 		t.Errorf("a text of nothing but file boundaries queried bd:\n%s", b)
 	}
 	// The control, so the early answer cannot pass by never querying at all.
-	if !RunGatesVulnPrivateScan(bd, dir, VulnPrivateContentArm, strings.NewReader("+++ b/docs/x.md\n+- ranger-base-l751c the heap overflow\n"), &out) {
+	if !RunGatesVulnPrivateScan(bd, dir, VulnPrivateContentArm, strings.NewReader(vpFile("docs/x.md", "- ranger-base-l751c the heap overflow")), &out) {
 		t.Fatalf("the control must still be judged: %q", out.String())
 	}
 	b, err := os.ReadFile(log)

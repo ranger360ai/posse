@@ -4641,17 +4641,23 @@ func vulnPrivateContentCheck() string {
   # The message half of this same
   # check runs above, inside check 3's message arm (identityGuardCheck's
   # extraMessage) — one reader for every source that scans the message.
-  # The '+++ b/<path>' headers are KEPT here, alone among this hook's
-  # readers (ranger-base-4og5l): they are the only file boundary left in a
-  # -U0 stream of added lines, and this arm's judge groups a line with the
-  # lines that CONTINUE it, so without them a bare id at the end of one
-  # file's "Not closed here" list was continued by the next file's added
-  # line. vulnprivate.go's vulnPrivateUndiff blanks the header — path and
-  # all — and a blank line is what closes every open unit. Every other
-  # reader below greps line by line and has nothing to group, so each keeps
-  # its own 'grep -av' and this arm does not borrow its shape.
+  # The FILE HEADERS are KEPT here, alone among this hook's readers
+  # (ranger-base-4og5l): they are the only file boundary left in a -U0
+  # stream of added lines, and this arm's judge groups a line with the lines
+  # that CONTINUE it, so without them a bare id at the end of one file's
+  # "Not closed here" list was continued by the next file's added line.
+  # vulnprivate.go's vulnPrivateUndiff blanks them — path and all — and a
+  # blank line is what closes every open unit. Every other reader below
+  # greps line by line and has nothing to group, so each keeps its own
+  # 'grep -av' and this arm does not borrow its shape.
+  # BOTH header lines, and the 'diff --git ' one is why this is not a
+  # prefix test (ranger-base-pdcf6): an added line whose own text begins
+  # '++' arrives here as '+++' and is indistinguishable from a '+++ b/'
+  # header, so the judge reads a header by POSITION — a 'diff --git ' line,
+  # which no added line can begin with because every added line carries the
+  # '+', and the '+++ ' line immediately after it.
   posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- ` + vulnPrivateContentPathspec + ` 2>/dev/null |
-    grep -a '^+')
+    grep -a -e '^+' -e '^` + vulnPrivateDiffHeader + `')
   if [ -n "$posse_added" ]; then
     posse_bad=''
 ` + checks("    ") + refusal.render("    ") + `  fi

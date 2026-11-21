@@ -223,6 +223,14 @@ const (
 	VulnPrivateMessageArm VulnPrivateArm = true
 )
 
+// vulnPrivateDiffHeader is the token that opens a file in the content arm's
+// stream, and the one line of a diff header that no ADDED line can imitate:
+// an added line carries the arm's `+`. The shell keeps it (gates.go,
+// vulnPrivateContentCheck) and vulnPrivateUndiff below blanks it, so the
+// grep and the reader cannot drift into two spellings of one boundary
+// (ranger-base-pdcf6).
+const vulnPrivateDiffHeader = "diff --git "
+
 // vulnPrivateUndiff discounts ONE leading unified-diff `+` from every line of
 // the CONTENT arm's text, so that everything below it reads plain markdown
 // and nothing in the markdown reader knows what a diff is. Without it
@@ -278,21 +286,42 @@ const (
 // of the diff format at the arm boundary with nothing below it knowing what
 // a diff is.
 //
-// Which lines are blanked is byte-identical to which lines the second grep
-// dropped: `^+++`, and not the `+++ b/` the pinned diffReaderShape actually
-// renders. So the one collision — an added line whose own text begins `++`,
-// which arrives here as `+++` — is read exactly as it was read before, and
-// is no part of this fix.
+// A HEADER IS KNOWN BY ITS POSITION, NOT BY ITS PREFIX (ranger-base-pdcf6,
+// escaped from ranger-base-4og5l; named as finding 2 of ranger-base-x78s5).
+// No prefix test can do this job. In a `-U0` stream of added lines an added
+// line whose own text begins `++` ARRIVES as `+++`, and one that begins
+// `+++ b/` arrives as `++++ b/` — so `^+++` blanks content, and `^+++ b/`
+// blanks it too, over a shape a tracked file already holds
+// (etc/herdr/herdr-bob/darwin-portability.patch carries three content lines
+// beginning `+++ b/`). ranger-base-4og5l's own comment named that collision
+// and reasoned it away as "read exactly as it was read before": it was not.
+// The grep it replaced DROPPED such a line, leaving the lines around it
+// ADJACENT so a continuation still continued its id; blanking CLOSED the
+// unit instead. That is a fail-open in the control that keeps an open
+// residual's detail off this public tree, and it is this bead's.
+//
+// What distinguishes a header is that it is NOT AN ADDED LINE — every added
+// line carries the arm's `+` — and that it sits where git puts it. So the
+// pipeline keeps the `diff --git ` line as well (gates.go,
+// vulnPrivateContentCheck), which no added line can begin with for the same
+// reason, and the two blanked shapes here are: a line beginning
+// `diff --git `, and a `+++ ` line IMMEDIATELY AFTER one. In the filtered
+// stream those are adjacent for every file git emits — `index`, `--- a/…`
+// and `@@` are all dropped by the grep — and a file with no `+++` line at
+// all (a pure rename, a mode change) is why the second blanking is
+// conditional rather than positional alone. Every other line, `+++` ones
+// included, takes the one-`+` discount and reads as content.
 //
 // SKEW GOES THE SAFE WAY ROUND, the same question VulnPrivateArm answers for
 // `--message`: an installed hook OLDER than the posse on PATH still greps the
-// headers away, so the blanking below is inert and that window behaves
-// exactly as this tree behaved before — the bug stays open until the hook is
-// re-rendered and nothing that worked stops working. The other order (a hook
-// newer than the binary) can only be reached by downgrading posse after an
-// install, since the only two things that render a hook — `posse gates
-// install-hooks` and a session create, hookfresh.go — render it from the
-// binary that is running.
+// headers away — both of them, since ranger-base-pdcf6 — so the blanking
+// below is inert and that window behaves exactly as this tree behaved before:
+// fail-closed for the collision row above, fail-open across file boundaries,
+// the bug stays open until the hook is re-rendered and nothing that worked
+// stops working. The other order (a hook newer than the binary) can only be
+// reached by downgrading posse after an install, since the only two things
+// that render a hook — `posse gates install-hooks` and a session create,
+// hookfresh.go — render it from the binary that is running.
 //
 // AND THE BOUNDARY IS EXACT, MEASURED 2026-11-21 over the whole tracked tree
 // (2,115 files, 688,033 added lines, every bd id in them read as an open
@@ -304,12 +333,19 @@ const (
 // method.
 func vulnPrivateUndiff(text string) string {
 	lines := strings.Split(text, "\n")
+	atFile := false // the line before this one opened a file
 	for i, line := range lines {
-		if strings.HasPrefix(line, "+++") {
+		switch {
+		case strings.HasPrefix(line, vulnPrivateDiffHeader):
 			lines[i] = ""
-			continue
+			atFile = true
+		case atFile && strings.HasPrefix(line, "+++ "):
+			lines[i] = ""
+			atFile = false
+		default:
+			lines[i] = strings.TrimPrefix(line, "+")
+			atFile = false
 		}
-		lines[i] = strings.TrimPrefix(line, "+")
 	}
 	return strings.Join(lines, "\n")
 }
