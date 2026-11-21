@@ -242,6 +242,26 @@ stall that day, and every one of them a typing habit.
   this repo's `pre-push` gate refuses it, so a push is a refused turn, not a
   landing. Work is complete when it is committed locally and the bead is
   closed; `posse worktrees` shows anything that has not landed.
+- **A branch ready for the remote goes to monica, never `-a` the operator**
+  (ranger-base-qpcbo). The sentence above says the operator pushes, and in
+  this instance the operator pushes through one delegate, monica, for EVERY
+  crew repo — this one and each other store the crew works in — and hers
+  is the one PID that does not deny `Bash(git push:*)`. So when
+  your work has to reach the remote — a branch for a PR, a fix another repo
+  is waiting on — assign it to her (`bd update <id> -a monica`, or file the
+  handoff `-a monica`). That is ADR 0006 §1's own exception, the one PID
+  with the grant, and not a reading of it as "only the operator pushes",
+  which is the error this bullet corrects.
+  **Read the remote before you file anything:**
+  `git ls-remote --heads origin <branch>` and
+  `gh pr list --head <branch> --state all`. A branch already there with its
+  PR open, green or merged needs no handoff — say so on your own bead and
+  file nothing. The operator gets ONE decision and only for a repo that
+  deploys: whether to MERGE, as a `-l question` bead with the options and
+  what each costs, filed once monica has the branch up and never instead of
+  that. MEASURED 2026-11-21: four misroutes in one day, three personas, each
+  assigned to the operator because "only the operator pushes" — one PR
+  already merged, two already open (one of them green), one not yet up.
 - **Checking that a background process actually died: not `jobs -l`, not a
   %CPU threshold** (ranger-base-6mhxw). Both look like a clean check and
   both can read empty over a real leak. `jobs -l` only sees the CURRENT
