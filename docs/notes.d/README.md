@@ -24,6 +24,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-m5rdy](ranger-base-m5rdy.md) — An exec'd runtime holds the pane's shell pid, so the herdr liveness reading asks for its executable too (ranger-base-m5rdy) — 2026-11-15
 - [ranger-base-ltmyh](ranger-base-ltmyh.md) — The seat store moves under the wall dir, and "pinned" becomes a predicate the renders are judged by (ranger-base-ltmyh) — 2026-11-15
 - [ranger-base-lng6p](ranger-base-lng6p.md) — Three pin gaps from the ranger-base-lng6p verify, and the one that made a whole invariant unfalsifiable — 2026-11-15
+- [ranger-base-kfrpv](ranger-base-kfrpv.md) — ranger-base-kfrpv — the store repo's `.git` is read-only to every seat — 2026-11-15
 - [ranger-base-hegka](ranger-base-hegka.md) — ranger-base-hegka — three findings of the ranger-base-eclrz verify — 2026-11-15
 - [ranger-base-g66m3](ranger-base-g66m3.md) — The test-binary cache was writable by every walled seat, and nothing compared what it exec'd (ranger-base-g66m3) — 2026-11-15
 - [ranger-base-c7fwc](ranger-base-c7fwc.md) — ranger-base-c7fwc: the RunWallUnix ABI-floor refusal, pinned — 2026-11-15

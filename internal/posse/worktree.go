@@ -369,15 +369,19 @@ func LinkedGitDirs(dir string) []string {
 //     `bd comments add` is denied and the session goes silent
 //     (ranger-base-0fb, five of them before anyone read the silence as a
 //     cage rather than an agent skipping its bookkeeping).
-//   - that store repo's git dirs, when the redirect leaves the session dir.
-//     `bd sync` COMMITS the JSONL there, so it takes index.lock in the
-//     per-worktree git dir and reads hooks and refs in the common one; with
-//     the .beads granted and its git dirs not, `bd sync` and `bd export`
-//     die on the lock exactly as they did under the pre-23c4e54 seatbelt
-//     (measured, ranger-base-rhw; this call site, ranger-base-xqwr). Same
-//     resolver and same two dirs SeatbeltWritable already grants at L2,
-//     under the same condition — a store already inside the workspace needs
-//     no grant, and <dir>/.git in a linked worktree is a FILE, not a root.
+//   - NOT that store repo's git dirs, and they were here until
+//     ranger-base-kfrpv. `beadsGitDirs(home)` stood below, on the reason
+//     "`bd sync` COMMITS the JSONL there" (measured, ranger-base-rhw,
+//     2026-08-26; this call site, ranger-base-xqwr) — and --add-dir is
+//     directory-granular, so it handed a second repo's whole history,
+//     refs, hooks and config to a runtime that cages itself. MEASURED
+//     2026-11-20: bd 0.50.3 does not stage or commit (`bd sync --help`),
+//     the committing spelling `bd sync --full` is denied by every crew
+//     PID, and since ADR 0015 §4 the JSONL's committer is the LAUNCHER
+//     (App.CommitQueueJSONL), uncaged. SeatbeltWritable's block on the
+//     same grant carries the rest of the measurement, and the two sites
+//     stay one sentence: the store DIRECTORY is granted, its repo's git is
+//     not, at every tier.
 //   - in a session worktree, this tree's own git dirs, which hold its index
 //     and the repo's objects and sit outside the tree (rangerhq-09o2).
 //   - in a tree that carries the box-wide suite queue, its slot dir. The
@@ -389,11 +393,12 @@ func LinkedGitDirs(dir string) []string {
 //     box (ranger-base-r3czg, measured; suitelock.go carries it).
 //
 // THE TRADE, stated rather than closed: --add-dir is directory-granular, so
-// naming the store repo's git dirs grants its refs, hooks and config whole.
+// naming THIS tree's own git dirs grants its refs, hooks and config whole.
 // ADR 0013 §4 and sessionGitGrants already accept that gap for the session's
-// own repo and say so; this extends the same accepted trade to the store's,
-// and nothing narrower is available at this wall — the flag cannot name a
-// ref (ranger-base-xqwr).
+// own repo and say so, and nothing narrower is available at this wall — the
+// flag cannot name a ref (ranger-base-xqwr). It is no longer extended to
+// the STORE repo's: that trade bought a commit nothing makes
+// (ranger-base-kfrpv).
 //
 // One function because three callers must agree: planLaunch renders the line
 // the session runs, renderedLaunchLine renders the line ADR 0013 §4's
@@ -405,9 +410,6 @@ func LinkedGitDirs(dir string) []string {
 func launchWritableRoots(dir string) []string {
 	home := beadsHome(dir)
 	roots := append([]string{home}, LinkedGitDirs(dir)...)
-	if home != "" && !underDir(dir, home) {
-		roots = append(roots, beadsGitDirs(home)...)
-	}
 	// suiteLockRoot resolves the slot dir exactly as the script does and
 	// answers "" in a tree with no queue, so no other repo's session buys a
 	// cache grant it has no use for.

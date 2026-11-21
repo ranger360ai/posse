@@ -130,10 +130,18 @@ func TestQARecordTargetsStillProbeTheGitDirAMainCheckoutGrants(t *testing.T) {
 }
 
 // 3. The store of record in ANOTHER repository — the shape every store on
-// this instance has. Its git dirs are granted WHOLE for every PID, because bd
-// commits there, so they stay targets whole and the agreement is the other
-// way round: the gate must not go narrower than the wall here either.
-func TestQARecordTargetsKeepTheStoreRepoGitDirsBothPidsAreGranted(t *testing.T) {
+// this instance has. NEITHER PID IS GRANTED THAT REPO'S GIT DIRS, and
+// neither is probed for them (ranger-base-kfrpv). They were granted whole,
+// to every PID, "because bd commits there" — and nothing in a seat does:
+// `bd sync` neither stages nor commits on the pinned bd, its committing
+// spelling is PID-denied crew-wide, and since ADR 0015 §4 the launcher
+// commits the JSONL uncaged. So the agreement here is at zero on the git
+// half, and the store DIRECTORY is what both sides still name.
+//
+// The non-vacuity arm is `beadsGitDirs` itself: it still answers with the
+// store repo's `.git` for this fixture, so what the arm measures is that
+// nothing hangs a grant or a probe off that answer any more.
+func TestQARecordTargetsRefuseTheStoreRepoGitDirsForBothPids(t *testing.T) {
 	f := wgDenyFixture(t)
 	store := sbMkdir(t, filepath.Join(filepath.Dir(f.repo), "store"))
 	sbGitInit(t, store)
@@ -145,18 +153,66 @@ func TestQARecordTargetsKeepTheStoreRepoGitDirsBothPidsAreGranted(t *testing.T) 
 		t.Fatalf("the redirect does not resolve, so this arm measures nothing: beadsHome = %s", home)
 	}
 
+	// Non-vacuity first: the producer the grant used to come from still
+	// names this repo's git dirs, so an arm that finds no grant and no
+	// probe is reading the cross-repo shape and not an empty answer.
+	if wide := beadsGitDirs(home); !bgHas(wide, filepath.Join(store, ".git")) {
+		t.Fatalf("beadsGitDirs no longer names the store repo's git dir in this shape, so the arms below are not over ranger-base-kfrpv's defect:\n  %s",
+			strings.Join(wgKinds(wide), "\n  "))
+	}
+
 	for _, ag := range []*AgentFile{f.ag, wgDeny(f)} {
 		got := recordTargets(ag, f.tree, home)
-		for _, want := range []string{home, filepath.Join(store, ".git")} {
-			if !bgHas(got, want) {
-				t.Errorf("%s lost %s as a target — the store of record in another repo keeps its git dirs granted for every PID, so the gate keeps probing them:\n  %s",
-					ag.Name, want, strings.Join(wgKinds(got), "\n  "))
+		if !bgHas(got, home) {
+			t.Errorf("%s lost the store DIRECTORY as a target — that is the one thing the record stage really writes in another repo:\n  %s",
+				ag.Name, strings.Join(wgKinds(got), "\n  "))
+		}
+		// Narrowed to the STORE's repo by location, for the reason
+		// wgRepoGrants narrows to the session's: this fixture sits under
+		// /tmp, whose blanket grant would otherwise answer for every path
+		// in it and mask the refusal these arms are about.
+		grants := wgRepoGrants(f.a.SeatbeltWritable(ag, f.tree, f.gates), store, store)
+		if len(grants) == 0 {
+			t.Fatalf("the writable set for %s reaches nothing in the store's repo, so the arms below are vacuous", ag.Name)
+		}
+		if !anyUnderDir(grants, home) {
+			t.Errorf("%s is not granted the store DIRECTORY, which is the one grant that must survive:\n  %s",
+				ag.Name, strings.Join(wgKinds(grants), "\n  "))
+		}
+		for _, deny := range []string{
+			filepath.Join(store, ".git"),
+			filepath.Join(store, ".git", "objects"),
+		} {
+			if anyUnderDir(grants, deny) {
+				t.Errorf("%s is granted %s — the store repo's git is read-only at every tier (ranger-base-kfrpv):\n  %s",
+					ag.Name, AbbrevHome(deny), strings.Join(wgKinds(grants), "\n  "))
+			}
+			if bgHas(got, deny) {
+				t.Errorf("%s is PROBED for %s, which no wall grants — a gate nothing can satisfy (ranger-base-kfrpv):\n  %s",
+					ag.Name, AbbrevHome(deny), strings.Join(wgKinds(got), "\n  "))
 			}
 		}
-		if !anyUnderDir(f.a.SeatbeltWritable(ag, f.tree, f.gates), filepath.Join(store, ".git")) {
-			t.Fatalf("the store repo's git dir is not granted to %s, so the arm above asserts a probe of an ungranted path", ag.Name)
+		if bad := rrgStoreUngranted(t, grants, got, store); len(bad) != 0 {
+			t.Errorf("%s: the gate probes what the wall does not grant in the store repo:\n  %s",
+				ag.Name, strings.Join(wgKinds(bad), "\n  "))
 		}
 	}
+}
+
+// rrgStoreUngranted is rrgUngranted's question narrowed to the STORE repo
+// rather than the session's: every target inside that repo the writable set
+// does not reach. A separate helper because rrgUngranted narrows both sides
+// to the session repo by construction (wgRepoGrants), which is the one place
+// this shape's targets never are.
+func rrgStoreUngranted(t *testing.T, grants, targets []string, store string) []string {
+	t.Helper()
+	var out []string
+	for _, p := range targets {
+		if underDir(store, p) && !anyUnderDir(grants, p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // 4. Both PID classes, both checkout shapes, one loop: the agreement is a

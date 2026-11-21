@@ -1080,9 +1080,12 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 		// (ranger-base-rhw): `bd sync` and `bd export` fail on the db file
 		// ("operation not permitted"), and a commit of anything in that
 		// repo — the persona's own ORDERS.md included — fails on
-		// .git/index.lock. Grant the resolved directory and that repo's
-		// git dirs, and nothing else: the instance tree stays unwritable,
-		// which is the point of the tier.
+		// .git/index.lock. Grant the resolved DIRECTORY and nothing else:
+		// the instance tree stays unwritable, which is the point of the
+		// tier, and so does that repo's `.git` (ranger-base-kfrpv, the
+		// block below — the git half of this grant is gone, and the half
+		// of ranger-base-rhw's measurement it answered went with ADR 0015
+		// §4).
 		//
 		// realizeCodex names the same directory for the runtimes that cage
 		// themselves (runtime.go, ranger-base-0fb); this is that grant at
@@ -1097,57 +1100,69 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 		// boundary already granted for this persona is cwd/.beads in that
 		// branch and cwd whole in the other; test against that, not cwd.
 		//
-		// THE GIT DIRS ASK A SECOND QUESTION, AND IT IS "IS IT ANOTHER
-		// REPO" (ADR 0086 D3's SIXTH DOOR, ranger-base-o8us6, found by the
-		// QA lane's verify of ranger-base-8t6j1). The directory grant above
-		// and the git-dir grant below were one condition, and they are not
-		// one question: the store is granted when nothing already grants
-		// it, and its git dirs are granted because BD COMMITS THERE AND IT
-		// IS ANOTHER REPO. For the cwd/inner/.beads shape those two part
-		// company — the store needs the grant above, and `beadsGitDirs`
-		// then answers with the SESSION's own git dirs, because
-		// `git -C cwd/inner rev-parse` is this very worktree. MEASURED
-		// 2026-11-11 on the D1 host through this producer, whole-tree-deny
-		// PID, real linked worktree: the set carried
-		// <repo>/.git/worktrees/<session> and <repo>/.git WHOLE — the
-		// common dir unnarrowed, so `objects` and `refs/heads` both, which
-		// is W14/W15 by plumbing (`hash-object -w`, `commit-tree`, a ref
-		// move the launcher fast-forwards onto main) and reaches
-		// refs/heads/main in a main checkout. D3's headline is that such a
-		// PID gets NO write grant into any git dir of its session, and this
-		// door handed back the two widest.
+		// THE STORE REPO'S GIT DIRS ARE NOT GRANTED, AND THE SECOND
+		// QUESTION THEY USED TO ASK IS GONE WITH THEM (ranger-base-kfrpv,
+		// from the security lane's verify on ranger-base-julaf).
+		// `beadsGitDirs(home)`
+		// stood here, and for a store in ANOTHER repo it granted that
+		// repo's `--git-dir` and `--git-common-dir` WHOLE — so `objects`,
+		// `objects/info`, `info/`, `packed-refs`, `refs/heads`,
+		// `refs/replace`, `index` and `logs` were all writable from inside
+		// the wall with no seat store over any of them. VERIFIED on a live
+		// bwrap seat 2026-11-15 (the security lane, main 955667e8): rw bind on
+		// `<store repo>/.git` whole, ro binds only on its `config` and
+		// `hooks`, no deeper mount anywhere, access(W_OK) true on `.git`,
+		// `objects` and `refs/heads`. That is ADR 0099's D1 hole for the
+		// store repo — a seat that is already compromised rewrites the
+		// object files uncaged readers trust, moves `refs/heads/main` for
+		// the operator's next push, or plants `objects/info/alternates`.
 		//
-		// So ask the question the reason states, in the spelling the rest
-		// of the tree already uses for it (launchWritableRoots,
-		// sessionHooksDirs, sessionGitConfigFiles, CageMounts): is the
-		// store OUTSIDE the session's own tree. Inside it, the git dirs it
-		// names are the session's own and the arm above has already said
-		// what this PID gets of them — nothing. The store DIRECTORY stays
-		// granted on the line above, so bd still claims, comments and
-		// closes; what it loses is the JSONL commit, which is the write
-		// this PID's own rule forbids anywhere in its repo, and the
-		// record-reach gate stops demanding it on the same condition
-		// (recordTargets, reachability.go).
+		// IT WAS GRANTED BECAUSE `bd sync` COMMITTED THERE, AND IT DOES
+		// NOT. The reason was written for ranger-base-rhw on 2026-08-26,
+		// when the store lived in the CONSTITUTION repo and a persona
+		// committed its own ORDERS.md beside it; ADR 0015 §4 then moved
+		// the store into a repo of its own and gave the JSONL commit to the
+		// LAUNCHER, uncaged and under the launcher lock
+		// (Dispatcher.commitQueue → App.CommitQueueJSONL). MEASURED
+		// 2026-11-20, bd 0.50.3: `bd sync --help` says "Does NOT stage or
+		// commit - that's the user's job", the committing spelling is `bd
+		// sync --full`, and every crew PID denies it. MEASURED the same
+		// day over every session transcript on this box, by
+		// `scripts/store-git-write-census.py` — 631 files, 190 seat-session
+		// commands naming the store repo, every git verb among them a read
+		// (status, log, rev-parse, remote, rev-list, branch, show,
+		// ls-files) and the WRITE set EMPTY. All ten writes are the
+		// operator's own uncaged session. Re-run it; the corpus grows.
+		// MEASURED by construction: with `<store repo>/.git` bound
+		// read-only (control arm: a create there answers `Read-only file
+		// system`), `bd show`, `bd list`, `bd ready`, `bd sync --status`
+		// and `bd comments add` all exit 0.
 		//
-		// Broad in one shape and deliberately: a store inside cwd that is
-		// its own NESTED repository is another repo by git and not by path,
-		// and this test denies its git dirs too. That is launchWritableRoots'
-		// answer at the self-sandboxing tier already (`!underDir(dir, home)`,
-		// one hop up this file's own reasoning), so the two mechanisms agree
-		// rather than disagree; no store on this box or in ADR 0012 D3-C's
-		// layout has that shape, and a bd that cannot commit in it is a
-		// bead write that still lands.
+		// L4 ALREADY GRANTED THE DIRECTORY AND NOT ITS GIT (CageMounts:
+		// "The target alone, not its `.git` … the grant L2 needs for a sync
+		// buys nothing here and would mount a second repo's history
+		// read-write"). This is that ruling at the tiers that never
+		// followed it, so the three mechanisms agree.
+		//
+		// WHAT GOES WITH IT, because each existed only for this grant: the
+		// store repo's arm of `sessionHooksDirs` and of
+		// `sessionGitConfigFiles` (a deny over a path no grant covers buys
+		// nothing, and at L3 an existing deny is a ro bind wall-watch
+		// kills the seat over — so an operator `git config` in the store
+		// repo no longer ends every live seat), and the git half of
+		// `recordGitTargets`, which asks for exactly what this grants.
+		//
+		// WHAT IT COSTS: a seat can no longer commit in the store repo at
+		// all. Nothing asks it to — the launcher commits the projection —
+		// and an instance with `queue_repo:` unset whose store is in
+		// another repo now has no committer for its JSONL, which is a
+		// configuration to fix and not a write to hand a walled seat.
 		grantedBeadsBase := cwd
 		if deniesFiles {
 			grantedBeadsBase = filepath.Join(cwd, ".beads")
 		}
 		if home := beadsHome(cwd); !underDir(grantedBeadsBase, home) {
 			add(home)
-			if !deniesFiles || !underDir(cwd, home) {
-				for _, g := range beadsGitDirs(home) {
-					add(g)
-				}
-			}
 		}
 	}
 	// §5's named exception: memory is not law. `home/personas` is a symlink
@@ -2507,9 +2522,19 @@ func credentialStoreReadMaskDirs(stateDirs []string) []string {
 func credentialDenyable(p string) bool { return filepath.IsAbs(p) }
 
 // sessionHooksDirs names where git dispatches hooks for the repos a session
-// can write: cwd's, and the store of record's when a redirect puts it in
-// another repo. Asked of git (hooksDir), because a derived path is a
-// statement about a file and not about git's behavior.
+// can write: cwd's, and only cwd's. Asked of git (hooksDir), because a
+// derived path is a statement about a file and not about git's behavior.
+//
+// THE STORE OF RECORD'S REPO IS NOT ONE OF THEM SINCE ranger-base-kfrpv,
+// because it is not a repo a session can write any more: that grant was
+// `beadsGitDirs` in SeatbeltWritable, and it is gone. A deny over a path no
+// grant covers buys nothing, and at L3 it costs — an EXISTING deny renders
+// a read-only bind whatever the grants say (bwrapPrivateArgs' loop only
+// skips an ABSENT one), wall-watch lists that bind, and a host rename of
+// the path under it kills the seat. So an operator `git config` or
+// `branch -D` in the store repo used to end EVERY live bwrap seat on the
+// box, which is the adjacent cost ranger-base-kfrpv names and this line
+// ends.
 func sessionHooksDirs(cwd string) []string {
 	if cwd == "" {
 		return nil
@@ -2517,11 +2542,6 @@ func sessionHooksDirs(cwd string) []string {
 	var out []string
 	if h, err := hooksDir(cwd); err == nil {
 		out = append(out, h)
-	}
-	if home := beadsHome(cwd); home != "" && !underDir(cwd, home) {
-		if h, err := hooksDir(filepath.Dir(home)); err == nil {
-			out = append(out, h)
-		}
 	}
 	return dedupeStrings(out)
 }
@@ -2539,11 +2559,11 @@ func sessionHooksDirs(cwd string) []string {
 // verb, so no PID denies that spelling: where `.git` is writable today, any
 // session can plant the persistent redirect.
 //
-// So: the same two repos sessionHooksDirs walks — cwd's, and the store of
-// record's when a redirect puts it in another repo whose `.git` is granted
-// too — and the same doctrine, asked of git (`gitPath`) rather than joined
-// onto a git dir, because in a linked worktree the config git reads is the
-// COMMON one and a derived path would have said otherwise.
+// So: the same repo sessionHooksDirs walks — cwd's, and since
+// ranger-base-kfrpv cwd's alone, for the reason that function's own note
+// gives — and the same doctrine, asked of git (`gitPath`) rather than
+// joined onto a git dir, because in a linked worktree the config git reads
+// is the COMMON one and a derived path would have said otherwise.
 //
 // `config.lock` joins it as the SIBLING of the answered path, not as
 // another question put to git: the lock git takes is the lockfile beside
@@ -2583,9 +2603,6 @@ func sessionGitConfigFiles(cwd string) []string {
 		out = append(out, c, c+".lock")
 	}
 	add(cwd)
-	if home := beadsHome(cwd); home != "" && !underDir(cwd, home) {
-		add(filepath.Dir(home))
-	}
 	return dedupeStrings(out)
 }
 
@@ -2874,14 +2891,28 @@ func insideDir(dir, p string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// beadsGitDirs names the git directories a session writes when the store of
-// record lives in another repo: bd's own `bd sync` commit takes
-// index.lock in the per-worktree git dir, hooks and refs live in the
-// common one, and outside a worktree those are one path. `git rev-parse`
-// is the only thing that can tell them apart — a worktree's .git is a
-// file, and beadsHome follows a redirect into one. <repo>/.git leads
-// regardless, so a target git cannot answer for still gets the grant it
-// needs.
+// beadsGitDirs names the git directories of the repo the store of record
+// lives in: `<root>/.git`, and whatever `--git-dir` and `--git-common-dir`
+// answer for it. `git rev-parse` is the only thing that can tell those two
+// apart — a worktree's .git is a file, and beadsHome follows a redirect
+// into one. <repo>/.git leads regardless, so a target git cannot answer
+// for is still named.
+//
+// IT GRANTS NOTHING ANY MORE, and that is the whole of ranger-base-kfrpv.
+// It was SeatbeltWritable's and launchWritableRoots' answer to "what does
+// a session write when the store is in another repo", on the reason that bd
+// committed there — and for a store in another repo the set it returns is
+// that repo's git dirs UNNARROWED, so objects, objects/info, info/,
+// packed-refs, refs/heads, refs/replace, index and logs were all writable
+// from inside the wall. Both grants are gone; nothing commits in the store
+// repo but the launcher, uncaged.
+//
+// ONE CALLER IS LEFT, and the store it answers for is the SESSION's own:
+// recordGitTargets' main-checkout arm, where `sessionGitGrants` answers
+// nothing on purpose because cwd's own grant already covers `.git`, and
+// this names exactly that `<cwd>/.git`. A second caller that wants another
+// repo's git dirs is a grant, and the measurement above is why there is not
+// one.
 func beadsGitDirs(home string) []string {
 	root := filepath.Dir(home)
 	out := []string{filepath.Join(root, ".git")}

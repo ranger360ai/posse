@@ -426,8 +426,12 @@ func TestQAWholeTreeDenyRecordTargetsSkipOnlyItsOwnGitDir(t *testing.T) {
 		t.Fatalf("the control PID is not asked for the git dirs in this shape either, so the arm above measures nothing: %d target(s)", n)
 	}
 
-	// A REDIRECT INTO ANOTHER REPO: D3 keeps its git dirs — bd commits
-	// there — and they stay targets for both PIDs.
+	// A REDIRECT INTO ANOTHER REPO: the store DIRECTORY is a target for
+	// both PIDs and that repo's git dirs are a target for NEITHER
+	// (ranger-base-kfrpv). D3's stated exception kept them — "bd commits
+	// there" — and nothing in a seat does: the launcher commits the JSONL,
+	// uncaged. So in this shape too the gate asks for exactly what
+	// SeatbeltWritable grants, which is one directory.
 	store := sbMkdir(t, filepath.Join(filepath.Dir(f.repo), "store"))
 	sbGitInit(t, store)
 	sbMkdir(t, filepath.Join(store, beadsDirName))
@@ -437,11 +441,23 @@ func TestQAWholeTreeDenyRecordTargetsSkipOnlyItsOwnGitDir(t *testing.T) {
 	if redirected != absResolve(filepath.Join(store, beadsDirName)) {
 		t.Fatalf("the redirect does not resolve, so this half measures nothing: beadsHome = %s", redirected)
 	}
-	for _, p := range []string{redirected, filepath.Join(store, ".git")} {
-		if !bgHas(recordTargets(deny, f.tree, redirected), p) {
-			t.Errorf("the store of record in another repo lost %s as a target — D3 keeps that grant because bd commits there:\n  %s",
-				p, strings.Join(wgKinds(recordTargets(deny, f.tree, redirected)), "\n  "))
+	for _, ag := range []*AgentFile{deny, open} {
+		got := recordTargets(ag, f.tree, redirected)
+		if !bgHas(got, redirected) {
+			t.Errorf("%s lost the store of record itself as a target — that is the one write the record stage makes in another repo:\n  %s",
+				ag.Name, strings.Join(wgKinds(got), "\n  "))
 		}
+		for _, gd := range beadsGitDirs(redirected) {
+			if bgHas(got, gd) {
+				t.Errorf("%s is asked to write %s, which no wall grants any more (ranger-base-kfrpv):\n  %s",
+					ag.Name, gd, strings.Join(wgKinds(got), "\n  "))
+			}
+		}
+	}
+	// Non-vacuity: the producer the old targets came from still answers for
+	// this store, so the loop above read a real list and not an empty one.
+	if gd := beadsGitDirs(redirected); !bgHas(gd, filepath.Join(store, ".git")) {
+		t.Fatalf("beadsGitDirs no longer names %s, so the arm above is not over ranger-base-kfrpv's defect: %v", filepath.Join(store, ".git"), gd)
 	}
 }
 

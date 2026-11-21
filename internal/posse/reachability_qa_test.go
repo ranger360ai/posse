@@ -10,8 +10,10 @@ package posse
 // The three tests the amendment asks for are the first three below:
 //
 //  1. the live rendered profile passes;
-//  2. the oyta control — the same profile with the two store-of-record
-//     grants deleted — fails, with a row naming the unreachable target;
+//  2. the oyta control — the same profile with the store-of-record grant
+//     deleted — fails, with a row naming the unreachable target. It was
+//     the TWO grants until ranger-base-kfrpv; the store repo's `.git` is
+//     the second and no tier grants it any more;
 //  3. the h15 pin — a trailing `(deny file-write* (subpath <store>))`
 //     appended to a PASSING profile makes the check fail. This is the
 //     regression the whole amendment exists for: ranger-base-h15's
@@ -68,8 +70,15 @@ func (f rchFixture) targets(t *testing.T) []string {
 	t.Helper()
 	got := recordTargets(f.ag, f.work, beadsHome(f.work))
 	// The fixture is the experiment: if it stopped naming the store's own
-	// .beads and .git, every probe below would measure nothing and pass.
-	for _, want := range []string{filepath.Join(f.store, beadsDirName), filepath.Join(f.store, ".git")} {
+	// .beads, every probe below would measure nothing and pass.
+	//
+	// `<store>/.git` WAS IN THIS LIST and is not a target any more
+	// (ranger-base-kfrpv): a store in another repo is granted its
+	// directory and nothing of that repo's git, so a probe of it would be
+	// a gate nothing can satisfy. The store directory is the one thing the
+	// record stage really writes there, and it is enough for every probe
+	// below — they are about the CLASSIFIER, not about which target.
+	for _, want := range []string{filepath.Join(f.store, beadsDirName)} {
 		found := false
 		for _, g := range got {
 			if g == want {
@@ -131,21 +140,28 @@ func TestQARecordReachPassesOnTheProfileAsItLaunches(t *testing.T) {
 	}
 }
 
-// 2. The oyta control: the same profile with the two store-of-record grants
-// deleted — the pre-23c4e54 shape, where `bd sync`, `bd export` and the
-// path-limited commit were all denied and nothing observed it.
+// 2. The oyta control: the same profile with the store-of-record grant
+// deleted — the pre-23c4e54 shape, where `bd sync`, `bd export` and every
+// claim, comment and close were denied and nothing observed it.
+//
+// ONE GRANT, AND IT WAS TWO (ranger-base-kfrpv). The second was the store
+// repo's `.git`, granted on the strength of a commit nothing in a seat
+// makes — the launcher commits the projection, uncaged — so the profile
+// does not carry it and the control cannot delete it. The count below is
+// what keeps this honest either way: it is the number of lines the edit
+// really removed, so a grant that comes back fails this test rather than
+// passing it quietly.
 func TestQARecordReachFailsOnTheOytaControl(t *testing.T) {
 	rchSkip(t)
 	f := rchNew(t)
 	pass := f.profile(t)
 	dropped := 0
-	// The two grants ranger-base-rhw added and nothing else: the store's
-	// own .beads and its .git, by exact line. Anything broader would take
-	// the carve-out's trailing deny on that repo's hook slots with it, and
-	// a control that WIDENS the profile is not this control.
+	// The grant ranger-base-rhw added that survives, and nothing else: the
+	// store's own .beads, by exact line. Anything broader would take the
+	// carve-out's trailing deny on that repo's hook slots with it, and a
+	// control that WIDENS the profile is not this control.
 	grants := map[string]bool{
 		"  (subpath " + sbQuote(absResolve(filepath.Join(f.store, beadsDirName))) + ")": true,
-		"  (subpath " + sbQuote(absResolve(filepath.Join(f.store, ".git"))) + ")":       true,
 	}
 	control := rchEdit(t, pass, func(body string) string {
 		var keep []string
@@ -161,8 +177,14 @@ func TestQARecordReachFailsOnTheOytaControl(t *testing.T) {
 	// The control is only a control if it really removed the grants: an
 	// edit that matched nothing would leave the passing profile in place
 	// and the assertion below would be measuring the wrong file.
-	if dropped != 2 {
-		t.Fatalf("control must delete exactly the two store-of-record grants, dropped %d", dropped)
+	if dropped != 1 {
+		t.Fatalf("control must delete exactly the one store-of-record grant, dropped %d", dropped)
+	}
+	// …and the grant it cannot delete must not be in the profile at all:
+	// the store repo's `.git` (ranger-base-kfrpv). Asserted here because
+	// this is the one test that reads the rendered profile line by line.
+	if gd := sbQuote(absResolve(filepath.Join(f.store, ".git"))); strings.Contains(mustRead(t, pass), gd) {
+		t.Errorf("the rendered profile names the store repo's git dir %s, which no tier grants (ranger-base-kfrpv)", gd)
 	}
 	why, unmeasured := seatbeltReachRow(control, f.targets(t))
 	if unmeasured != "" {
@@ -207,9 +229,12 @@ func TestQARecordReachFailsOnATrailingDenyNamingTheStore(t *testing.T) {
 	if !strings.Contains(why, AbbrevHome(filepath.Join(f.store, beadsDirName))) {
 		t.Errorf("the row must name the unreachable target: %s", why)
 	}
-	// The git dir the deny did NOT name stays reachable — the row is about
-	// a target, not about the profile in general.
-	if got, un := seatbeltReachRow(narrowed, []string{filepath.Join(f.store, ".git")}); got != "" || un != "" {
+	// A granted target the deny did NOT name stays reachable — the row is
+	// about a target, not about the profile in general. It was the store
+	// repo's `.git` until ranger-base-kfrpv, which no tier grants now;
+	// `<work>/.beads` is the other grant of the same class (the redirect
+	// file's own directory, granted to this PID by ADR 0086 D3's arm).
+	if got, un := seatbeltReachRow(narrowed, []string{filepath.Join(f.work, beadsDirName)}); got != "" || un != "" {
 		t.Errorf("only the denied target may fail: %s%s", got, un)
 	}
 }
@@ -558,36 +583,42 @@ func TestRecordReachOnASelfSandboxingRuntime(t *testing.T) {
 	}
 
 	// The redirect shape — the fleet's own, and the arm this test was
-	// written waiting for. The line used to name beadsHome(dir) and the
-	// SESSION's git dirs, never the STORE's, so `bd sync`'s commit of the
-	// JSONL was denied at index.lock exactly as it was under the pre-fix
-	// seatbelt; launchWritableRoots names all three now (ranger-base-xqwr)
-	// and this is the pass.
+	// written waiting for. The line used to name neither beadsHome(dir) nor
+	// anything of the store's, so every claim, comment and close was denied
+	// and the session went silent (ranger-base-0fb); launchWritableRoots
+	// names the store directory now and this is the pass.
 	if row := reachRow(f.a.CheckParityIn(open, codex, CageShims, TierStrong, f.work)); row != "" {
 		t.Errorf("the redirect shape must be reachable: %s", row)
 	}
-	// The pass is not vacuous. Strip the store's git dir back off the
-	// rendered line — the exact pre-fix line — and the row must come back
-	// naming it. The strip is asserted to have changed the line, so an arm
-	// that measures nothing fails rather than passes (ranger-base-fm4p).
-	gitDir := filepath.Join(f.store, ".git")
+	// The pass is not vacuous. Strip the store directory back off the
+	// rendered line — the exact pre-ranger-base-0fb line — and the row must
+	// come back naming it. The strip is asserted to have changed the line,
+	// so an arm that measures nothing fails rather than passes
+	// (ranger-base-fm4p).
+	//
+	// THE CONTROL USED TO STRIP `<store>/.git`, which the line named until
+	// ranger-base-kfrpv and no tier grants any more: nothing in a seat
+	// commits in the store repo, so neither the line nor the gate names
+	// that repo's git. The store DIRECTORY is what both still name, and it
+	// is the one whose absence really silences a session.
+	storeDir := filepath.Join(f.store, beadsDirName)
 	line := f.a.renderedLaunchLine(open, codex, TierStrong, f.work)
 	// The line names the RESOLVED root since ranger-base-c02a (codex refuses
 	// a root with a symlink component, and t.TempDir() is behind /var ->
 	// /private/var here); the row below still judges the literal target,
 	// because underDir resolves both sides.
-	pre := strings.ReplaceAll(line, " --add-dir "+shellQuote(codexWritableRoot(gitDir)), "")
+	pre := strings.ReplaceAll(line, " --add-dir "+shellQuote(codexWritableRoot(storeDir)), "")
 	if pre == line {
-		t.Fatalf("the rendered line never named %s, so the control below measures nothing:\n%s", gitDir, line)
+		t.Fatalf("the rendered line never named %s, so the control below measures nothing:\n%s", storeDir, line)
 	}
 	row := codexReachRow(pre, f.work, recordTargets(f.ag, f.work, beadsHome(f.work)))
-	if !strings.Contains(row, AbbrevHome(gitDir)) {
-		t.Errorf("without the store's git dir the row must name it: %q", row)
+	if !strings.Contains(row, AbbrevHome(storeDir)) {
+		t.Errorf("without the store directory the row must name it: %q", row)
 	}
-	// …and beadsHome itself is named on both lines, which is what
-	// ranger-base-0fb fixed: this row is about the git dir, not the store dir.
-	if strings.Contains(row, AbbrevHome(filepath.Join(f.store, beadsDirName))+" is in no") {
-		t.Errorf("the .beads grant is on the line; the row must not claim otherwise: %q", row)
+	// …and the store repo's `.git` is on NEITHER line and in no target, so
+	// no row may ever name it (ranger-base-kfrpv).
+	if gd := AbbrevHome(filepath.Join(f.store, ".git")); strings.Contains(row, gd) {
+		t.Errorf("the row names the store repo's git dir, which no tier grants: %q", row)
 	}
 }
 

@@ -1037,6 +1037,19 @@ func TestAbsentGitConfigIsNotBound(t *testing.T) {
 // a path the cage cannot see at all is a stronger wall than one it can see
 // read-only. Binding it `:ro` to look thorough would hand over read access
 // the boundary had refused.
+//
+// WHAT THIS ARM NOW GUARDS, AND WHY ITS PREMISE CHANGED (ranger-base-kfrpv).
+// It used to assert that `sessionGitConfigFiles` and `sessionHooksDirs` DO
+// name the store's files, so that the empty mount list below was the
+// render's choice and not the reader's silence. Those producers answer for
+// the session's own repo alone now: the store repo's `.git` is granted by no
+// tier, so a deny over it narrows nothing and costs a wall-watch entry a
+// host write kills the seat over. The silence is therefore both sides'
+// answer, and this arm is what holds L4 to its own if the reader's store arm
+// is ever written back — the premise it asserts instead is the one that
+// cannot go vacuous: the producers really do answer for the SESSION's repo,
+// so this render has identity files to bind and chose to bind none of the
+// store's.
 func TestRedirectStoreGitIdentityIsUnmountedNotReadOnly(t *testing.T) {
 	t.Parallel()
 	a := cageApp(t)
@@ -1047,16 +1060,21 @@ func TestRedirectStoreGitIdentityIsUnmountedNotReadOnly(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".beads", "redirect"), []byte(target+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The reader really does name the store's files — otherwise this pins
-	// the reader's silence rather than the mount list's.
-	named := false
+	// The readers really do answer for this launch — otherwise the empty
+	// mount list below is a reader that said nothing at all.
+	named := 0
 	for _, p := range append(sessionGitConfigFiles(dir), sessionHooksDirs(dir)...) {
 		if underDir(store, p) {
-			named = true
+			t.Errorf("an L2 reader names %s, in the store repo whose git no tier grants (ranger-base-kfrpv): %v / %v",
+				p, sessionGitConfigFiles(dir), sessionHooksDirs(dir))
+		}
+		if underDir(dir, p) {
+			named++
 		}
 	}
-	if !named {
-		t.Fatalf("the L2 readers name nothing in the store: %v / %v", sessionGitConfigFiles(dir), sessionHooksDirs(dir))
+	if named == 0 {
+		t.Fatalf("the L2 readers name nothing in the session's own repo either, so the mount list below pins their silence: %v / %v",
+			sessionGitConfigFiles(dir), sessionHooksDirs(dir))
 	}
 	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
 		ms := a.CageMounts(cageAgent(t, a, front), e, dir, "s1")

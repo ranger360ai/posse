@@ -324,9 +324,17 @@ func TestDispatchPassSaysNothingAboutTheQueueBeforeTheCutover(t *testing.T) {
 // set rather than auditing a deny-list: once the store lives in its own
 // repo, a session working anywhere else holds no write grant into the
 // CONSTITUTION repo at all. The redirect grant is what used to carry one —
-// it grants the store's directory and that repo's git dirs to every caged
-// session (ranger-base-rhw) — so the property is not that the grant went
-// away, it is that the grant now lands somewhere else.
+// it granted the store's directory, and that repo's git dirs with it, to
+// every caged session (ranger-base-rhw) — so the property is not that the
+// grant went away, it is that the grant now lands somewhere else.
+//
+// AND THAT IT IS THE DIRECTORY ALONE (ranger-base-kfrpv). The git half of
+// it is gone: `bd sync` neither stages nor commits on the pinned bd, its
+// committing spelling is PID-denied crew-wide, and since this very ADR
+// moved the store into its own repo the projection's committer is the
+// LAUNCHER — `App.CommitQueueJSONL`, uncaged, under the launcher lock, in
+// no sandbox at all. So a seat's writable set has no bearing on whether
+// the projection can be committed, and the arm below used to say it did.
 func TestSeatbeltGrantFollowsTheStoreOutOfTheConstitutionRepo(t *testing.T) {
 	t.Setenv("TMPDIR", "") // the blanket temp grant would cover the fixtures
 
@@ -350,16 +358,29 @@ func TestSeatbeltGrantFollowsTheStoreOutOfTheConstitutionRepo(t *testing.T) {
 	if !sawStore {
 		t.Errorf("bd cannot reach its own store: the writable set is\n  %s", strings.Join(got, "\n  "))
 	}
-	// And the store's git dirs with it, or the launcher's jsonl commit and
-	// bd's own writes fail on .git/index.lock rather than on the file.
-	var sawGit bool
-	for _, w := range got {
-		if underDir(filepath.Join(queue, ".git"), w) {
-			sawGit = true
+	// And NOT the store's git dirs. This arm asserted the opposite —
+	// "or the launcher's jsonl commit and bd's own writes fail on
+	// .git/index.lock" — which was true of nothing in a seat: the launcher
+	// is uncaged and bd does not commit. What the grant bought was a
+	// prompt-injected seat's write over the object files, the refs and the
+	// alternates of a repository whose history is the bead graph's
+	// provenance (ranger-base-kfrpv, VERIFIED on a live seat on
+	// ranger-base-julaf).
+	queueGit := filepath.Join(queue, ".git")
+	named := false
+	for _, gd := range beadsGitDirs(store) {
+		if absResolve(gd) == absResolve(queueGit) {
+			named = true
 		}
 	}
-	if !sawGit {
-		t.Errorf("the queue repo's git dir is not writable, so nothing can commit the projection:\n  %s", strings.Join(got, "\n  "))
+	if !named {
+		t.Fatalf("beadsGitDirs no longer names %s for this store, so the arm below is not over that defect: %v", queueGit, beadsGitDirs(store))
+	}
+	for _, w := range got {
+		if underDir(queueGit, w) {
+			t.Errorf("the queue repo's git dir is writable to a seat — nothing in a seat commits there, the launcher does (ranger-base-kfrpv): %s\n  %s",
+				w, strings.Join(got, "\n  "))
+		}
 	}
 }
 

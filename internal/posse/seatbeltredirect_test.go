@@ -25,11 +25,21 @@ func sbHas(w []string, p string) bool {
 
 // L2's writable set has to follow .beads/redirect for the same reason
 // codex's --add-dir does (ranger-base-0fb, and rhw for this tier): under ADR
-// 0012 D3-C the session dir's .beads holds a path, and the database, its
-// jsonl and the git dir that lands them are in another repo. Granting
-// cwd/.beads there grants a directory bd never writes, and every mutation —
-// `bd sync`, `bd export`, the commit of the jsonl — is denied by the
-// profile.
+// 0012 D3-C the session dir's .beads holds a path, and the database and its
+// jsonl are in another repo. Granting cwd/.beads there grants a directory bd
+// never writes, and every mutation — `bd sync`, `bd export`, a claim, a
+// comment, a close — is denied by the profile.
+//
+// THE STORE DIRECTORY, AND NOTHING OF THAT REPO'S `.git` (ranger-base-kfrpv).
+// `<store>/.git` was in the want list below, "index.lock for `bd sync`'s
+// commit", and for a store in another repo `beadsGitDirs` named that repo's
+// git dirs UNNARROWED — objects, objects/info, info/, packed-refs,
+// refs/heads, refs/replace, index and logs, all writable from inside the
+// wall with no seat store over them (VERIFIED on a live bwrap seat,
+// ranger-base-julaf). `bd sync` does not commit on the pinned bd, the
+// committing spelling is PID-denied crew-wide, and since ADR 0015 §4 the
+// launcher commits the JSONL uncaged — so the grant bought nothing and is
+// gone at every tier.
 func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	t.Parallel()
 	store := blRepo(t)
@@ -41,22 +51,26 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	w := sbApp(t).SeatbeltWritable(denied, work, gates)
 	for _, want := range []string{
 		filepath.Join(store, beadsDirName), // the database, jsonl, socket, lock
-		filepath.Join(store, ".git"),       // index.lock for `bd sync`'s commit
 		filepath.Join(work, beadsDirName),  // the redirect file's own dir
 	} {
 		if !sbHas(w, want) {
 			t.Errorf("writable set missing %q:\n%s", want, strings.Join(w, "\n"))
 		}
 	}
-	// `<cwd>/.git` WAS in that list until ADR 0086 D3, and the two halves
-	// of this pin now pull in opposite directions on purpose: the STORE OF
-	// RECORD's git dir stays granted because bd commits there, and the
-	// SESSION's own is gone because a seat that cannot edit a file has no
-	// business writing a commit object (W14/W15). A redirect is what makes
-	// them two different repos, which is why this is the pin that holds the
-	// distinction.
-	if sbHas(w, filepath.Join(work, ".git")) {
-		t.Errorf("a PID that denies the whole tree is granted its own session's git dir (ADR 0086 D3):\n%s", strings.Join(w, "\n"))
+	// NEITHER REPO'S GIT DIR, and the two entries have different reasons:
+	// the SESSION's own is gone because a seat that cannot edit a file has
+	// no business writing a commit object (ADR 0086 D3, W14/W15), and the
+	// STORE repo's is gone because nothing in a seat commits there
+	// (ranger-base-kfrpv). A redirect is what makes them two different
+	// repos, which is why this is the pin that holds both.
+	for _, deny := range []string{
+		filepath.Join(work, ".git"),
+		filepath.Join(store, ".git"),
+		filepath.Join(store, ".git", "objects"),
+	} {
+		if sbHas(w, deny) {
+			t.Errorf("no PID may be granted %q (ADR 0086 D3; ranger-base-kfrpv):\n%s", deny, strings.Join(w, "\n"))
+		}
 	}
 	// The grant is the store of record, not the instance repo: everything
 	// else in that tree stays as unwritable as the tier promises.
@@ -71,10 +85,16 @@ func TestSeatbeltFollowsTheBeadsRedirect(t *testing.T) {
 	// whole and the store of record is still in another tree.
 	open := &AgentFile{Name: "dev", MemoryDir: t.TempDir()}
 	wo := sbApp(t).SeatbeltWritable(open, work, gates)
-	for _, want := range []string{work, filepath.Join(store, beadsDirName), filepath.Join(store, ".git")} {
+	for _, want := range []string{work, filepath.Join(store, beadsDirName)} {
 		if !sbHas(wo, want) {
 			t.Errorf("writable set missing %q:\n%s", want, strings.Join(wo, "\n"))
 		}
+	}
+	// An OPEN PID is the control on ranger-base-kfrpv: the narrowing is not
+	// a PID rule, so the widest PID in the shop gets no write into the
+	// store repo's git either.
+	if sbHas(wo, filepath.Join(store, ".git")) {
+		t.Errorf("an open PID is granted the store repo's git dir (ranger-base-kfrpv):\n%s", strings.Join(wo, "\n"))
 	}
 }
 
@@ -118,6 +138,13 @@ func TestSeatbeltIgnoresADanglingRedirect(t *testing.T) {
 // live in are two paths, and only `git rev-parse` can name them. `bd
 // worktree create` writes exactly this shape, so the redirect can land in
 // one.
+//
+// NO GRANT HANGS OFF THIS ANSWER ANY MORE (ranger-base-kfrpv): the one
+// caller left is recordGitTargets' main-checkout arm, where the store is
+// the SESSION's own tree. The resolution is still pinned because the
+// function is still the thing that tells the two dirs apart, and a second
+// caller that wanted another repo's git dirs would be the grant this bead
+// removed.
 func TestBeadsGitDirsNamesBothWorktreeGitDirs(t *testing.T) {
 	t.Parallel()
 	store := blRepo(t)

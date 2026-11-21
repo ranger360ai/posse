@@ -13,10 +13,13 @@ package posse
 // that cannot be watched for.
 //
 // So reachability is a LAUNCH observable. Before dispatch, the cage about to
-// be used must reach beadsHome(cwd) and its git dirs (beadsGitDirs — the
-// resolver SeatbeltWritable and the codex launch line already share), and a
-// miss is an ordinary unrealized row: --allow-degraded waives it exactly as
-// it waives every other gate, and `posse gates` prints it.
+// be used must reach beadsHome(cwd) and whatever git dirs this launch's wall
+// actually grants for it (recordGitTargets — which asks the WALL's own
+// producers, so the gate and the wall cannot disagree), and a miss is an
+// ordinary unrealized row: --allow-degraded waives it exactly as it waives
+// every other gate, and `posse gates` prints it. For a store in ANOTHER
+// repo that is now no git dirs at all (ranger-base-kfrpv): nothing in a
+// seat commits there, the launcher does.
 //
 // The row has three answers, not two (ranger-base-heur). A probe that runs
 // and is refused is a finding; a probe that runs and is granted is a pass;
@@ -293,11 +296,12 @@ func recordReachNoStoreClause(mech, cage string, available bool) string {
 }
 
 // recordTargets is what the record stage writes: the .beads bd actually
-// opens for this launch dir, and the git dirs a `bd sync` commit of the
-// JSONL locks (index.lock in the per-worktree dir, hooks and refs in the
-// common one). Only directories that EXIST are probed — a target that is
-// not there yet is not a target the cage denied, and refusing a launch in a
-// tree with no bead store would be a check about absence, not about a wall.
+// opens for this launch dir, and the git dirs this launch's wall grants for
+// a commit of the JSONL in the session's OWN repo (recordGitTargets — for a
+// store in another repo there are none, ranger-base-kfrpv). Only directories
+// that EXIST are probed — a target that is not there yet is not a target the
+// cage denied, and refusing a launch in a tree with no bead store would be a
+// check about absence, not about a wall.
 //
 // A PID THAT DENIES THE WHOLE TREE IS NOT ASKED FOR A COMMIT IN ITS OWN REPO
 // (ADR 0086 D3, ranger-base-8t6j1). D3 takes every git dir of the SESSION's
@@ -319,9 +323,11 @@ func recordReachNoStoreClause(mech, cage string, available bool) string {
 // THE SAME ANSWER THE CONTAINER ARM ALREADY GIVES one tier down
 // (applyRecordReach's own list: "Only `home` is judged, not its git dirs"),
 // and for the same reason — a `bd` that cannot commit does not take
-// index.lock. What is NOT narrowed is the store of record in ANOTHER repo:
-// D3 keeps those git dirs granted because bd commits there, so they stay
-// targets and a wall that lost them is still a finding.
+// index.lock. THE STORE OF RECORD IN ANOTHER REPO reads the same way since
+// ranger-base-kfrpv, and used to be the one exception ("D3 keeps those git
+// dirs granted because bd commits there"). It does not commit there, so
+// the grant is gone and so is the probe; every tier now judges the store
+// DIRECTORY and nothing of that repo's git.
 //
 // THE TEST IS "IS THE STORE IN THIS SESSION'S OWN TREE", AND IT USED TO BE
 // "IS IT UNDER `<dir>/.beads`" (ranger-base-o8us6, ADR 0086 D3's sixth
@@ -389,8 +395,16 @@ func recordTargets(ag *AgentFile, dir, home string) []string {
 // grant itself is built (SeatbeltWritable):
 //
 //   - the store of record is OUTSIDE the session's own tree — another repo.
-//     Its git dirs are granted whole, to every PID, because bd commits there
-//     (ADR 0086 D3's stated exception), so they are targets whole.
+//     NO git target at all since ranger-base-kfrpv. Its git dirs used to be
+//     granted whole, to every PID, "because bd commits there" (ADR 0086
+//     D3's stated exception) — and bd does not: `bd sync` neither stages
+//     nor commits on the pinned bd, the committing spelling is PID-denied
+//     crew-wide, and since ADR 0015 §4 the launcher commits the JSONL
+//     uncaged. SeatbeltWritable took the grant away, so probing those dirs
+//     would be a gate nothing can satisfy, which is the same defect this
+//     function's other two arms were narrowed for. The store DIRECTORY is
+//     still a target — recordTargets names it unconditionally — so a wall
+//     that loses the store itself is still a finding.
 //   - the store is inside the tree and the PID denies the whole tree. No git
 //     grant at all (D3's headline), so no git target: the deny arm of
 //     SeatbeltWritable grants `<cwd>/.beads` and nothing else of this repo.
@@ -406,7 +420,7 @@ func recordTargets(ag *AgentFile, dir, home string) []string {
 // worktree may write if only one of them computes it.
 func recordGitTargets(ag *AgentFile, dir, home string) []string {
 	if !underDir(dir, home) {
-		return beadsGitDirs(home)
+		return nil
 	}
 	if ag != nil && deniesFileWrite(ag.Deny) {
 		return nil

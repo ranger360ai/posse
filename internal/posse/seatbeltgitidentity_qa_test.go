@@ -96,9 +96,13 @@ func giShapes() []giShape {
 		// rendered profile grants a blanket `/tmp`, so the premise check
 		// below was satisfied by a literal it is not about.
 		{name: "deniesFiles", cwd: func(f giFixture) string { return f.repo }, ag: func(f giFixture) *AgentFile { return f.denied }, wallIsOmission: true},
-		// cwd's `.beads` redirects into another repo, whose `.git` is
-		// granted whole by beadsGitDirs. That repo's config is the second
-		// file sessionGitConfigFiles names.
+		// cwd's `.beads` redirects into another repo. That repo's config
+		// WAS the second file sessionGitConfigFiles named, because
+		// `beadsGitDirs` granted its `.git` whole; since ranger-base-kfrpv
+		// no tier grants it and no producer names it, so this shape grades
+		// cwd's OWN config exactly like the main-checkout shape, and what
+		// is distinct about it is the arm below that holds the store repo
+		// out of both lists.
 		{name: "redirect", cwd: func(f giFixture) string { return f.work }, ag: func(f giFixture) *AgentFile { return f.ag }},
 	}
 }
@@ -323,13 +327,30 @@ func TestQACarveOutDeniesTheGitConfigAndItsLock(t *testing.T) {
 				}
 			}
 			if s.name == "redirect" {
-				// The store of record's config is the second file: its
-				// `.git` is granted whole (beadsGitDirs), and a
-				// core.hooksPath planted there redirects the slot that
-				// stamps the beads visibility guard.
-				for _, p := range []string{f.configOf(t, f.store), f.configOf(t, f.store) + ".lock"} {
-					if !sbDenied(c, p) {
-						t.Errorf("the store of record's %s is not denied: %v", p, c.Deny)
+				// THE STORE OF RECORD'S CONFIG WAS THE SECOND FILE, and is
+				// in NEITHER list since ranger-base-kfrpv. It was denied
+				// because `beadsGitDirs` granted that repo's `.git` whole
+				// and a `core.hooksPath` planted there would redirect the
+				// slot that stamps the beads visibility guard. Nothing in a
+				// seat commits in the store repo — the launcher does,
+				// uncaged — so the grant is gone, the deny has nothing to
+				// narrow, and keeping it would cost what a deny costs at
+				// L3: an existing deny renders a read-only bind wall-watch
+				// lists, and a host write at the path under it detaches the
+				// mount and kills every live seat. MEASURED 2026-11-20 on
+				// this box, the live render for a real persona: the
+				// pre-fix wall-watch list carried
+				// `<store>/.git/config` and `<store>/.git/hooks` and the
+				// fixed one carries neither.
+				//
+				// Asserted as neither granted nor denied, because "not
+				// denied" alone would also be true of the hole.
+				for _, p := range []string{f.configOf(t, f.store), f.configOf(t, f.store) + ".lock", filepath.Join(f.store, ".git", "hooks")} {
+					if sbCovers(f.writable(t, s), p) {
+						t.Errorf("the store repo's %s is granted — its git is read-only to every seat (ranger-base-kfrpv)", p)
+					}
+					if sbDenied(c, p) {
+						t.Errorf("the store repo's %s is denied over a grant nothing makes — at L3 that deny is a wall-watch entry a host write kills the seat over (ranger-base-kfrpv): %v", p, c.Deny)
 					}
 				}
 			}
@@ -751,16 +772,43 @@ func TestQASessionLifeStaysGreenUnderTheConfigDeny(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	//
+	// WHAT THE RECORD STAGE IS, SINCE ranger-base-kfrpv: the database and
+	// the JSONL, both under the store's `.beads`. The `git add` and `git
+	// commit` in the store repo stood here too, and no seat makes them —
+	// `bd sync` on the pinned bd neither stages nor commits, its committing
+	// spelling is PID-denied crew-wide, and since ADR 0015 §4 the launcher
+	// commits the projection, uncaged. So the commit is asserted the other
+	// way round below: REFUSED, which is that bead's wall.
 	jsonl := filepath.Join(wf.store, beadsDirName, "issues.jsonl")
 	rec := "touch " + filepath.Join(wf.store, beadsDirName, "beads.db") +
-		" && echo '{\"id\":\"x\"}' >> " + jsonl +
-		" && git -C " + wf.store + " add -A " + filepath.Join(wf.store, beadsDirName) +
-		" && git -C " + wf.store + " commit -q -m 'bd sync' -- " + filepath.Join(wf.store, beadsDirName)
+		" && echo '{\"id\":\"x\"}' >> " + jsonl
 	if ok, out := wgRun(t, wprof, rec); !ok {
 		t.Fatalf("the record stage is refused under the config deny — a session that cannot close its bead goes silent:\n%s", out)
 	}
-	if got := mustGit(t, wf.store, "log", "-1", "--format=%s"); got != "bd sync" {
-		t.Errorf("the store commit did not land: last subject %q", got)
+	if b, err := os.ReadFile(jsonl); err != nil || !strings.Contains(string(b), "\"x\"") {
+		t.Fatalf("the caged append did not reach the store's jsonl: %q %v", string(b), err)
+	}
+
+	// And the commit the grant used to be for is refused, with the store
+	// repo's HEAD read back from outside. The control is the same command
+	// UNSANDBOXED in the same fixture: an omission wall cannot be shown by
+	// subtracting a deny (giFixture.control), so what shows the command is
+	// well-formed and the repo commitable is that it lands when no profile
+	// is applied at all.
+	headBefore := mustGit(t, wf.store, "rev-parse", "HEAD")
+	commit := "git -C " + wf.store + " add -A " + filepath.Join(wf.store, beadsDirName) +
+		" && git -C " + wf.store + " commit -q -m 'a seat commit' -- " + filepath.Join(wf.store, beadsDirName)
+	if ok, out := wgRun(t, wprof, commit); ok {
+		t.Errorf("a seat committed in the store repo — nothing in a seat commits there and no tier grants that repo's git (ranger-base-kfrpv):\n%s", out)
+	}
+	if got := mustGit(t, wf.store, "rev-parse", "HEAD"); got != headBefore {
+		t.Errorf("the store repo's HEAD moved under the wall: %s -> %s", headBefore, got)
+	}
+	mustGit(t, wf.store, "add", "-A", filepath.Join(wf.store, beadsDirName))
+	mustGit(t, wf.store, "commit", "-q", "-m", "the launcher's own commit", "--", filepath.Join(wf.store, beadsDirName))
+	if got := mustGit(t, wf.store, "rev-parse", "HEAD"); got == headBefore {
+		t.Error("CONTROL: the same commit does not land unsandboxed either, so the refusal above is the fixture and not the wall")
 	}
 }
 
@@ -964,10 +1012,12 @@ func TestQANoLegitimateWriterTouchesTheConfigOrTheIdentityChain(t *testing.T) {
 	}
 
 	// A whole session's life, in the order a session lives it: work, stage,
-	// commit, check out, ask git where it is. Then the record stage a bead
-	// close makes in the store of record — `bd` is not in this fixture, but
-	// what it does to the filesystem is, and that is the part a path deny
-	// can be wrong about. Then the launcher's own land-time git, which runs
+	// commit, check out, ask git where it is. Then what a bead close writes
+	// in the store of record — the seat's own `bd` writes under `.beads`,
+	// and the LAUNCHER's commit of the projection, which is uncaged and is
+	// the only commit anything makes there (ranger-base-kfrpv). `bd` is not
+	// in this fixture, but what it does to the filesystem is, and that is
+	// the part a path deny can be wrong about. Then the launcher's own land-time git, which runs
 	// UNSANDBOXED inside this same tree (worktree.go) and is the reason the
 	// identity chain is denied in the first place.
 	before := giSnap(t, watched...)

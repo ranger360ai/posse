@@ -250,23 +250,27 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 		t.Fatalf("the seeded worktree redirect does not reach the store: beadsHome = %q, want %q", h, target)
 	}
 
-	// The STORE's git dirs are the third grant, and the one this bead is
-	// about: `bd sync` COMMITS the JSONL in that repo, so it takes
-	// index.lock there and reads hooks and refs beside it. With .beads
-	// granted and these not, the session records nothing for the same
-	// reason the pre-23c4e54 seatbelt recorded nothing (ranger-base-rhw).
+	// THE STORE'S GIT DIRS WERE THE THIRD GRANT AND ARE NOT NAMED ANY MORE
+	// (ranger-base-kfrpv). They rode this line because "`bd sync` COMMITS
+	// the JSONL in that repo" (ranger-base-rhw, ranger-base-xqwr) — and
+	// --add-dir is directory-granular, so naming them handed a
+	// self-caging runtime a second repo's whole history, refs, hooks and
+	// config. bd does not commit there: the launcher does, uncaged (ADR
+	// 0015 §4). The negative arm below is what pins it, and
+	// `beadsGitDirs(target)` is still asked so an arm over an empty answer
+	// fails rather than passes.
 	storeGits := beadsGitDirs(target)
 	if len(storeGits) == 0 {
-		t.Fatalf("no git dirs resolved for the store at %s — the assertion below would be empty", target)
+		t.Fatalf("no git dirs resolved for the store at %s — the negative assertion below would be empty", target)
 	}
 
 	// A line this long spills to the launch script, so the typed line is
 	// the call log and that script together (paneline.go).
 	body, _ := os.ReadFile(b.App.LaunchScript("crew"))
 	log := calls(t, fake) + "\n" + string(body)
-	// The store of record, the git dirs that repo's `bd sync` commit locks,
-	// and the git dirs that hold this tree's index and the repo's objects:
-	// all outside the workspace, all denied unless named.
+	// The store of record, and the git dirs that hold this tree's index and
+	// the repo's objects: outside the workspace, denied unless named. The
+	// STORE repo's git dirs are the one thing that must NOT be named.
 	// Through codexWritableRoot, because that is what the line carries since
 	// ranger-base-c02a: on macOS every one of these fixtures sits under
 	// t.TempDir(), i.e. behind the /var -> /private/var symlink, and codex
@@ -274,9 +278,14 @@ func TestCodexLaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	// resolution itself is pinned by TestCodexResolvesASymlinkedWritableRoot
 	// and the launch-line pin below it — on a box where t.TempDir() has no
 	// symlink component this wrapper is the identity.
-	for _, want := range append(append([]string{target}, storeGits...), gits...) {
+	for _, want := range append([]string{target}, gits...) {
 		if !strings.Contains(log, "--add-dir "+shellQuote(codexWritableRoot(want))) {
 			t.Errorf("codex launch does not name %s writable:\n%s", want, log)
+		}
+	}
+	for _, deny := range storeGits {
+		if strings.Contains(log, "--add-dir "+shellQuote(codexWritableRoot(deny))) {
+			t.Errorf("codex launch names the STORE repo's git dir %s writable — nothing in a seat commits there, and --add-dir cannot name less than the directory (ranger-base-kfrpv):\n%s", deny, log)
 		}
 	}
 }
@@ -334,7 +343,7 @@ func TestCodexRelaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	}
 	storeGits := beadsGitDirs(target)
 	if len(storeGits) == 0 {
-		t.Fatalf("no git dirs resolved for the store at %s — the assertion below would be empty", target)
+		t.Fatalf("no git dirs resolved for the store at %s — the negative assertion below would be empty", target)
 	}
 
 	// The state RelaunchAgent needs: the launch is old enough to be past the
@@ -366,26 +375,39 @@ func TestCodexRelaunchLineNamesTheStoreOfRecord(t *testing.T) {
 	if !strings.Contains(line, "-s workspace-write") {
 		t.Fatalf("the relaunch line is not a codex sandbox line:\n%s", line)
 	}
-	for _, want := range append(append([]string{target}, storeGits...), gits...) {
+	for _, want := range append([]string{target}, gits...) {
 		if !strings.Contains(line, "--add-dir "+shellQuote(codexWritableRoot(want))) {
 			t.Errorf("the relaunch line does not name %s writable:\n%s", want, line)
 		}
 	}
+	// And the STORE repo's git dirs on neither line (ranger-base-kfrpv):
+	// the relaunch renders its own roots, so it is its own chance to put
+	// back a grant the launch no longer makes.
+	for _, deny := range storeGits {
+		if strings.Contains(line, "--add-dir "+shellQuote(codexWritableRoot(deny))) {
+			t.Errorf("the relaunch line names the STORE repo's git dir %s writable (ranger-base-kfrpv):\n%s", deny, line)
+		}
+	}
 }
 
-// launchWritableRoots grants the STORE repo's git dirs, and it grants them
-// ONLY when the redirect moves the store out of the session dir. That
-// condition is not decoration. With no redirect, beadsGitDirs' first entry is
-// <dir>/.git, which in a linked worktree is a FILE, not a directory — and
-// --add-dir is directory-granular, so putting it on the line widens the codex
-// cage past the trade ADR 0013 §4 states, over a path that is not even a root.
+// launchWritableRoots NEVER grants a git dir of the store's repo — with a
+// redirect or without one (ranger-base-kfrpv). It granted them when the
+// redirect moved the store out of the session dir, on the reason that `bd
+// sync` committed the JSONL there; nothing in a seat commits there and the
+// launcher does, uncaged (ADR 0015 §4), so the grant is gone and this is
+// the arm that keeps it gone. --add-dir is directory-granular, so what it
+// handed over was a second repo's whole history, refs, hooks and config.
 //
-// MEASURED while verifying ranger-base-xqwr's close (ranger-base-ecdp):
-// deleting `!underDir(dir, home)` from launchWritableRoots left the whole
-// internal/rhq package green. Both of the bead's own pins judge the redirect
-// shape, so both keep passing over the over-grant — an inverted arm nothing
-// held. This is that arm.
-func TestLaunchWritableRootsGrantsTheStoreGitDirsOnlyWhenTheStoreMovedOut(t *testing.T) {
+// THE NO-REDIRECT HALF IS THE OLDER PIN AND IT STAYS. With the store inside
+// the tree, beadsGitDirs' first entry is <dir>/.git, which in a linked
+// worktree is a FILE, not a directory, so the line used to carry a root
+// that is not even a root. MEASURED while verifying ranger-base-xqwr's
+// close (ranger-base-ecdp): deleting `!underDir(dir, home)` from
+// launchWritableRoots left the whole internal/rhq package green, because
+// both of that bead's own pins judged the redirect shape. The condition is
+// gone now — the whole call is — and both halves of this arm are the
+// regression guard over the day someone writes it back.
+func TestLaunchWritableRootsNeverGrantsTheStoreRepoGitDirs(t *testing.T) {
 	t.Parallel()
 	repo := wtRepo(t)
 	tree := filepath.Join(t.TempDir(), "wt")
@@ -419,9 +441,10 @@ func TestLaunchWritableRootsGrantsTheStoreGitDirsOnlyWhenTheStoreMovedOut(t *tes
 		t.Errorf("the store of record is granted in every shape (ranger-base-0fb): %v", plain)
 	}
 
-	// REDIRECT: the store moves to another repo, and now its git dirs ride
-	// the line — the grant this test's negative arm must not be read as
-	// denying (ranger-base-xqwr).
+	// REDIRECT: the store moves to another repo, and its git dirs still do
+	// not ride the line (ranger-base-kfrpv). The store DIRECTORY does, in
+	// every shape, which is ranger-base-0fb's own property and the thing a
+	// seat really writes.
 	store := blRepo(t)
 	blRedirect(t, tree, filepath.Join(store, beadsDirName))
 	if h := beadsHome(tree); h != filepath.Join(store, beadsDirName) {
@@ -433,9 +456,12 @@ func TestLaunchWritableRootsGrantsTheStoreGitDirsOnlyWhenTheStoreMovedOut(t *tes
 		t.Fatal("no git dirs resolved for the moved store — the assertion below would be empty")
 	}
 	for _, g := range sg {
-		if !containsString(moved, g) {
-			t.Errorf("a store outside the session dir must carry its git dirs (bd sync commits the JSONL there): %s missing from %v", g, moved)
+		if containsString(moved, g) {
+			t.Errorf("a store outside the session dir must carry NONE of its repo's git dirs — nothing in a seat commits there, and --add-dir cannot name less than the directory (ranger-base-kfrpv): %s in %v", g, moved)
 		}
+	}
+	if !containsString(moved, beadsHome(tree)) {
+		t.Errorf("the store of record is granted in every shape (ranger-base-0fb): %v", moved)
 	}
 	if containsString(moved, own) {
 		t.Errorf("the worktree's own .git FILE is never a root, redirect or not: %v", moved)
@@ -628,13 +654,24 @@ func TestOnlyASelfSandboxingRuntimeRefusesASymlinkedRoot(t *testing.T) {
 // The reachable shape, and it is not the memory dir: EnsureMemoryDir runs
 // first and MkdirAll REFUSES a dangling component (measured 2026-09-05 —
 // `mkdir …: file exists`, both for a dangling parent and a dangling final
-// component), so that route is already loud, if obscurely. The store's git
-// dirs are not materialized by anything: beadsGitDirs names <store>/.git
-// unconditionally and LinkedGitDirs passes git's own answers through, so a
-// link that dangles there rides onto the line untouched — which is what this
-// fixture is.
+// component), so that route is already loud, if obscurely.
+//
+// THE FIXTURE IS THE SUITE SLOT DIR, and it used to be the STORE repo's
+// `.git` (ranger-base-kfrpv). That root is not on the line any more — no
+// tier grants the store repo's git — and of what launchWritableRoots still
+// names, the store directory and this tree's git dirs must all Stat as
+// directories before they are named at all, so the slot dir is the one root
+// that legitimately NEED NOT EXIST: `suiteLockRoot` answers
+// `POSSE_SUITE_LOCK_DIR` (else `~/.cache/posse`) for any tree carrying
+// scripts/suite-lock.sh, materialized by nothing, so a dangling component
+// there rides onto the line untouched. An absent root is rendered on
+// purpose (dropping one is ranger-base-0fb's silent cage); a root whose
+// first missing component is a LINK is the one codex refuses.
+//
+// The slot dir's own row never degrades a launch (suitelock.go's header),
+// so what refuses below is the writable-root check and the record-reach
+// row, which is this test's subject and not the queue's.
 func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
-	t.Parallel()
 	b, fake := newTestBackend(t)
 	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -649,27 +686,50 @@ func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitDir := filepath.Join(store, ".git")
-	if err := os.Symlink(filepath.Join(store, "moved-away"), gitDir); err != nil {
+	// The slot dir, behind a link to nothing. POSSE_SUITE_LOCK_DIR is
+	// suiteLockRoot's own override, so this is the production resolver
+	// answering a path the box really could be pointed at.
+	slotHome := t.TempDir()
+	dangling := filepath.Join(slotHome, "dangle")
+	if err := os.Symlink(filepath.Join(slotHome, "moved-away"), dangling); err != nil {
 		t.Fatal(err)
 	}
+	slots := filepath.Join(dangling, "slots")
+	t.Setenv("POSSE_SUITE_LOCK_DIR", slots)
+
 	work := wtRepo(t)
+	// suiteLockRoot answers only for a tree that carries the queue script,
+	// and the session runs in a WORKTREE of this repo — so the script has
+	// to be committed, not just written.
+	write(t, filepath.Join(work, suiteLockScriptRel), "#!/bin/sh\nexit 0\n")
+	mustGit(t, work, "add", suiteLockScriptRel)
+	mustGit(t, work, "commit", "-q", "-m", "queue script")
 	if err := os.MkdirAll(filepath.Join(work, beadsDirName), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	blRedirect(t, work, target)
 
 	// The fixture really puts a dangling link on the line: the redirect
-	// reaches the store, and the store's git dir — which `bd sync`'s commit
-	// locks, so launchWritableRoots names it — is a symlink to nothing.
+	// reaches the store, and the slot dir launchWritableRoots names has a
+	// component that resolves to nothing.
 	if h := beadsHome(work); h != target {
 		t.Fatalf("the redirect does not reach the store: beadsHome = %q, want %q", h, target)
 	}
-	if !containsString(launchWritableRoots(work), gitDir) {
-		t.Fatalf("%s is not among the launch's writable roots %v — the arms below would measure nothing", gitDir, launchWritableRoots(work))
+	if !containsString(launchWritableRoots(work), slots) {
+		t.Fatalf("%s is not among the launch's writable roots %v — the arms below would measure nothing", slots, launchWritableRoots(work))
 	}
-	if st, err := os.Lstat(gitDir); err != nil || st.Mode()&os.ModeSymlink == 0 {
-		t.Fatalf("fixture: %s must be a symlink: %v", gitDir, err)
+	if st, err := os.Lstat(dangling); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("fixture: %s must be a symlink: %v", dangling, err)
+	}
+	// …and it must be the component codexWritableRoot cannot resolve, so
+	// the root really arrives at the line with a link in it.
+	if got := codexWritableRoot(slots); got != slots {
+		t.Fatalf("fixture: %s resolves to %s, so no symlink component reaches the line", slots, got)
+	}
+	// The store repo's git dir is on NO line any more, which is why it is
+	// not this fixture's dangling root (ranger-base-kfrpv).
+	if containsString(launchWritableRoots(work), filepath.Join(store, ".git")) {
+		t.Fatalf("the store repo's git dir is back on the launch line (ranger-base-kfrpv): %v", launchWritableRoots(work))
 	}
 
 	// Arm 1: the ordinary launch. It never opens — and the message names
@@ -680,7 +740,7 @@ func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
 	if err == nil {
 		t.Fatal("a codex launch whose line names a root codex refuses must not happen: every command in that session fails")
 	}
-	if !strings.Contains(err.Error(), AbbrevHome(gitDir)) {
+	if !strings.Contains(err.Error(), AbbrevHome(slots)) {
 		t.Errorf("the refusal must name the root: %v", err)
 	}
 	if !strings.Contains(err.Error(), "unreachable along with everything else") {
@@ -700,11 +760,10 @@ func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
 	}
 
 	// The control, same fixture with the link repaired: the root resolves,
-	// the launch happens, and the line names the REAL git dir. Without it
+	// the launch happens, and the line names the REAL slot dir. Without it
 	// both arms above pass just as well over a check that refuses every
 	// codex launch there is.
-	realGit := filepath.Join(store, "moved-away")
-	if err := os.MkdirAll(realGit, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(slotHome, "moved-away"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	mustCreate(t, b, NewSessionOpts{Name: "crew3", Agent: "ranger", Dir: work, Worktree: true})
@@ -713,7 +772,7 @@ func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
 	if !strings.Contains(log, "-s workspace-write") {
 		t.Fatalf("not a codex sandbox line, so the assertion below means nothing:\n%s", log)
 	}
-	if !strings.Contains(log, "--add-dir "+shellQuote(codexWritableRoot(gitDir))) {
-		t.Errorf("the repaired root must ride resolved (%s):\n%s", codexWritableRoot(gitDir), log)
+	if !strings.Contains(log, "--add-dir "+shellQuote(codexWritableRoot(slots))) {
+		t.Errorf("the repaired root must ride resolved (%s):\n%s", codexWritableRoot(slots), log)
 	}
 }

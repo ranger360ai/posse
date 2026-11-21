@@ -141,10 +141,29 @@ func TestQACarveOutNamesTheConstitutionTheGatesAndTheHooks(t *testing.T) {
 		filepath.Join(f.a.StateDir, "gates"),
 		filepath.Join(f.a.StateDir, "gates", "devops", "bin", "security"),
 		filepath.Join(f.repo, ".git", "hooks"),
-		filepath.Join(f.store, ".git", "hooks"), // the store of record's slot: its .git is granted too
 	) {
 		if !sbDenied(c, p) {
 			t.Errorf("%s is not in the carve-out: %v", p, c.Deny)
+		}
+	}
+	// THE STORE OF RECORD'S OWN HOOKS SLOT WAS IN THAT LIST — "its .git is
+	// granted too" — and is in NEITHER list since ranger-base-kfrpv. The
+	// grant is gone (nothing in a seat commits in the store repo), so the
+	// deny has nothing to narrow, and a deny that exists is a cost of its
+	// own at the bwrap mechanism: it renders a read-only bind wall-watch
+	// lists, and a host write at the path under it kills every live seat.
+	// Asserted as neither granted nor denied, because "not denied" alone
+	// would also be true of the hole.
+	for _, p := range []string{
+		filepath.Join(f.store, ".git"),
+		filepath.Join(f.store, ".git", "hooks"),
+		filepath.Join(f.store, ".git", "objects"),
+	} {
+		if writeGranted(f.writable(t), p) {
+			t.Errorf("%s is granted — the store repo's git is read-only to every seat (ranger-base-kfrpv)", p)
+		}
+		if sbDenied(c, p) {
+			t.Errorf("%s is denied, over a grant nothing makes — at L3 that deny is a wall-watch entry a host write kills the seat over (ranger-base-kfrpv): %v", p, c.Deny)
 		}
 	}
 	// §5's exception and the session's own runtime data are NOT in it.
@@ -167,15 +186,20 @@ func TestQACarveOutNamesTheConstitutionTheGatesAndTheHooks(t *testing.T) {
 // developer's constraint (measured on security's live profile, 2026-08-26): the
 // trailing deny beats the redirect grant too, so a deny list that ever
 // names the instance repo kills the record stage — `bd sync`, `bd export`,
-// the commit of the jsonl — with no observable, since parity grades denies
-// and a cage that denies too much still reports every gate realized.
+// a claim, a comment, a close — with no observable, since parity grades
+// denies and a cage that denies too much still reports every gate realized.
+// "the commit of the jsonl" stood in that list and is not a seat's write:
+// the launcher makes it, uncaged (ranger-base-kfrpv).
 func TestQACarveOutLeavesTheStoreOfRecordWritable(t *testing.T) {
 	f := sbNewFixture(t)
 	w, c := f.writable(t), f.carve(t)
+	// `<store>/.git/index.lock` was in this list, for a commit of the jsonl
+	// the seat does not make: the launcher commits it, uncaged
+	// (ranger-base-kfrpv). What the record stage writes in another repo is
+	// the store DIRECTORY, and that is what must survive every deny.
 	for _, p := range []string{
 		filepath.Join(f.store, beadsDirName),
 		filepath.Join(f.store, beadsDirName, "beads.db"),
-		filepath.Join(f.store, ".git", "index.lock"),
 		filepath.Join(f.repo, beadsDirName),
 	} {
 		if !writeGranted(w, p) {
