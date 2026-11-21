@@ -1043,12 +1043,45 @@ func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
 		text: vpFile("docs/notes.d/ranger-base-l751c.md", "- ranger-base-l751c"),
 	}, {
 		// A file with no `+++` line at all — a pure rename, a mode change,
-		// an empty new file — is why the second blanking is conditional:
-		// the next thing in the stream is another `diff --git`, and the
-		// file after it must still be read.
+		// an empty new file — and the file after it must still be read.
+		//
+		// THIS ROW DOES NOT PIN THE `+++ ` GUARD, and this comment said it
+		// did until ranger-base-tcho6: the next thing in that stream is the
+		// NEXT file's `diff --git ` line, which the switch's FIRST case
+		// blanks whatever `atFile` says, so a positional-alone reading
+		// (`case atFile:`) reads this row identically and it passes under
+		// the mutant. Nor can any stream git writes tell the two apart —
+		// MEASURED 2026-11-21, `root..HEAD` as one staged diff gives 2,176
+		// file headers, 2,176 of them followed by a `+++ ` line, 0
+		// exceptions. The row below is the one that disagrees, over a text
+		// git never writes and a caller can still hand the subcommand.
 		name: "a file whose header has no `+++` line does not eat the next file",
 		text: "diff --git a/docs/renamed.md b/docs/moved.md\n" +
 			vpFile("docs/x.md", "- ranger-base-l751c", "  the heap overflow in the parser"),
+		want: true,
+	}, {
+		// ranger-base-tcho6: what the `+++ ` guard IS load-bearing against.
+		// RunGatesVulnPrivateScan judges arbitrary text, so a `diff --git `
+		// line may be followed IMMEDIATELY by a content line. Positional
+		// alone blanks that line — here the bare id, leaving the
+		// description below it with no id to continue, so the hit is gone.
+		// MEASURED 2026-11-21: real code HIT, `case atFile:` CLEAN —
+		// through two binaries built from this tree (ranger-base-yusee),
+		// and again through this row with the mutant planted, where it is
+		// the only row of this table that moves. Written out rather than
+		// through vpFile, because the shape is a header with NO `+++` line
+		// after it, which is what vpFile always writes.
+		name: "a content line immediately after a `diff --git` line is content",
+		text: vulnPrivateDiffHeader + "a/docs/x.md b/docs/x.md\n" +
+			"+- ranger-base-l751c\n+\tthe heap overflow\n",
+		want: true,
+	}, {
+		// Its control, paired as the other rows' are: the same two added
+		// lines with no header above them HIT under both readings, so the
+		// row above reds a positional-alone judge because of the guard and
+		// not because such a judge is broken outright.
+		name: "control: the same two added lines with no header above them",
+		text: "+- ranger-base-l751c\n+\tthe heap overflow\n",
 		want: true,
 	}, {
 		// The controls: a boundary must not blank the judge.

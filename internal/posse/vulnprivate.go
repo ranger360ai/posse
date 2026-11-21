@@ -307,10 +307,33 @@ const vulnPrivateDiffHeader = "diff --git "
 // reason, and the two blanked shapes here are: a line beginning
 // `diff --git `, and a `+++ ` line IMMEDIATELY AFTER one. In the filtered
 // stream those are adjacent for every file git emits — `index`, `--- a/…`
-// and `@@` are all dropped by the grep — and a file with no `+++` line at
-// all (a pure rename, a mode change) is why the second blanking is
-// conditional rather than positional alone. Every other line, `+++` ones
+// and `@@` are all dropped by the grep. Every other line, `+++` ones
 // included, takes the one-`+` discount and reads as content.
+//
+// WHY THE SECOND BLANKING IS CONDITIONAL AND NOT POSITIONAL ALONE
+// (ranger-base-tcho6, correcting what this comment used to say). It is NOT
+// because of a file with no `+++` line at all — a pure rename, a mode
+// change, an empty new file. That premise is right and the inference from it
+// was wrong: the next thing in such a file's stream is the NEXT file's
+// `diff --git ` line, which the first case blanks whatever `atFile` says, so
+// a positional-alone reading (`case atFile:`) handles those files
+// identically. The two readings can only disagree on a line after a
+// `diff --git ` that is neither a `+++ ` header nor another `diff --git `,
+// and git emits no such line: MEASURED 2026-11-21 over the content arm's
+// real filtered stream, `root..HEAD` as one staged diff gives 2,176 file
+// headers, 2,176 of them followed by a `+++ ` line, 0 exceptions, and a
+// fixture carrying both real no-`+++` shapes has each such header followed
+// by the next file's `diff --git `.
+//
+// The guard is load-bearing against the READER's input instead, because
+// RunGatesVulnPrivateScan judges ARBITRARY text while git does not: the arm
+// pipes a filtered diff in, but the subcommand reads whatever its stdin
+// holds, so a `diff --git ` line followed IMMEDIATELY by a content line is a
+// text a caller can hand it — and positional alone blanks that content line.
+// The pin is vulnprivate_test.go, "a content line immediately after a
+// `diff --git` line is content", with its control beside it; before it,
+// `case atFile:` survived internal/posse arms 1, 2 and 3 whole and the
+// treepins commit-gate pins.
 //
 // SKEW GOES THE SAFE WAY ROUND, the same question VulnPrivateArm answers for
 // `--message`: an installed hook OLDER than the posse on PATH still greps the

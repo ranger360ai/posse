@@ -178,7 +178,13 @@ Everything else, `+++` lines included, takes the one-`+` discount and reads as
 content. In the filtered stream those two are adjacent for every file git
 emits — `index`, `--- a/…` and `@@` are all dropped by the grep — and a file
 with no `+++` line at all (a pure rename, a mode change, an empty new file) is
-why the second blanking is conditional.
+why the second blanking is conditional. **That last clause is wrong, and
+ranger-base-tcho6 corrects it where it was also written in the code:** the
+premise holds, but the next thing in such a file's stream is the next file's
+own `diff --git `, which the first case blanks whatever `atFile` says, so
+positional alone reads it identically. The guard earns its keep against the
+READER's input, not against git's output — see
+docs/notes.d/ranger-base-tcho6.md.
 
 MEASURED through `RunGatesVulnPrivateScan`, content arm, one open id:
 
