@@ -589,18 +589,35 @@ var codexEphemeralDirNames = []string{"shell_snapshots", "tmp"}
 // codexEphemeralDirs names those dirs for the codex home a seat's state grant
 // reaches, following CODEX_HOME, or nothing.
 func codexEphemeralDirs(home string, stateGrants []string) (dirs []string) {
+	return cliEphemeralDirs(cliEphemeralHome(home, codexHomeIn, stateGrants), codexEphemeralDirNames)
+}
+
+// cliEphemeralHome is the CLI home a seat's state grant reaches, resolved,
+// or "" — the filter both producers in this file carried a copy of, and the
+// one runtimeEphemeralDirParents needs on its own (it answers in RELATIVE
+// member names, so it cannot read the home back off a composed path).
+func cliEphemeralHome(home string, homeIn func(string) string, stateGrants []string) string {
 	if home == "" {
-		return nil
+		return ""
 	}
-	h := codexHomeIn(home)
+	h := homeIn(home)
 	if !filepath.IsAbs(h) {
-		return nil
+		return ""
 	}
 	h = absResolve(h)
 	if !writeGranted(stateGrants, h) {
+		return ""
+	}
+	return h
+}
+
+// cliEphemeralDirs composes the member names under that home, or nothing
+// where there is no granted home.
+func cliEphemeralDirs(h string, names []string) (dirs []string) {
+	if h == "" {
 		return nil
 	}
-	for _, n := range codexEphemeralDirNames {
+	for _, n := range names {
 		dirs = append(dirs, filepath.Join(h, n))
 	}
 	return dirs
@@ -623,21 +640,7 @@ var grokEphemeralDirNames = []string{filepath.Join("daemon", "run")}
 // grokEphemeralDirs names those dirs for the grok home a seat's state grant
 // reaches, following GROK_HOME, or nothing.
 func grokEphemeralDirs(home string, stateGrants []string) (dirs []string) {
-	if home == "" {
-		return nil
-	}
-	h := grokHomeIn(home)
-	if !filepath.IsAbs(h) {
-		return nil
-	}
-	h = absResolve(h)
-	if !writeGranted(stateGrants, h) {
-		return nil
-	}
-	for _, n := range grokEphemeralDirNames {
-		dirs = append(dirs, filepath.Join(h, n))
-	}
-	return dirs
+	return cliEphemeralDirs(cliEphemeralHome(home, grokHomeIn, stateGrants), grokEphemeralDirNames)
 }
 
 // grokLeaderSockName is grok's leader socket at the root of its home (grok
@@ -688,10 +691,75 @@ func grokSocketPaths(home string) (paths []string) {
 	return paths
 }
 
+// cliEphemeralCLIs IS THE CLASS, as a table: each CLI's home resolver beside
+// its own ephemeral member names, in the order the renders have always
+// emitted them. The two functions below both read it, so a third CLI joining
+// the class is one row here and not two loops to keep in step — and the
+// per-CLI entry points above stay for the pins that name one CLI.
+var cliEphemeralCLIs = []struct {
+	homeIn func(string) string
+	names  []string
+}{
+	{codexHomeIn, codexEphemeralDirNames},
+	{grokHomeIn, grokEphemeralDirNames},
+}
+
 // runtimeEphemeralDirs is every CLI's per-process dirs the seat's state
 // grant reaches: codex's and grok's. Both mechanisms read this one list.
 func runtimeEphemeralDirs(home string, stateGrants []string) []string {
-	return append(codexEphemeralDirs(home, stateGrants), grokEphemeralDirs(home, stateGrants)...)
+	var out []string
+	for _, cli := range cliEphemeralCLIs {
+		out = append(out, cliEphemeralDirs(cliEphemeralHome(home, cli.homeIn, stateGrants), cli.names)...)
+	}
+	return out
+}
+
+// runtimeEphemeralDirParents is every directory STRICTLY BETWEEN a granted
+// CLI home and one of the members above — today exactly one path, because
+// exactly one member name in the table above has a parent in it at all.
+//
+// IT EXISTS FOR ADR 0100 D4(a), and it is the bwrap mechanism's only reader.
+// A tmpfs over a member makes THAT name a mount, so nothing can rename it
+// from inside a namespace that holds it (MEASURED, P4/P4b: EBUSY). A parent
+// BETWEEN the granted home and the member was a mount of nothing while lying
+// strictly inside that grant, which is D4(a)'s loose component exactly: a
+// leftover of the seat itself renames the parent away and plants its own
+// directory at that name, the tmpfs rides the renamed dentry, and the name
+// the seat opens resolves to the plant (ADR 0100's Context, MEASURED
+// 2026-11-15 for the same shape over `<cfg>/<member>`). The one path in that
+// state when D4(a)'s census ran has a bead of its own, named in ADR 0100's
+// D4(a) amendment and only there, by bead id and nothing else, because its
+// surface is an open residual (operator ruling 2026-11-11).
+// bwrapRender binds each of these IN PLACE, read-write, which is what
+// refuses that rename — the fix D4(a) prescribes for a miss, never an
+// exemption.
+//
+// IT WIDENS NOTHING. Every path it names lies inside a grant that already
+// made it read-write, and bwrapPrivateArgs renders an in-place bind only
+// where the render's own grants cover it — the same condition step 2a-bis
+// carries for the source arm, and for the same reason: where no grant covers
+// the path the identical line would hand out a write nobody asked for.
+//
+// SHALLOWEST FIRST, because the caller appends them as mounts in list order
+// and a nested one must land on top of the one that contains it. They are
+// all emitted BEFORE the tmpfs members themselves, for the sharper version
+// of the same rule: an in-place bind of a parent rendered AFTER the tmpfs
+// over its own child would cover that tmpfs with the host's directory, which
+// is exactly what the tmpfs exists to keep out.
+func runtimeEphemeralDirParents(home string, stateGrants []string) []string {
+	var out []string
+	for _, cli := range cliEphemeralCLIs {
+		h := cliEphemeralHome(home, cli.homeIn, stateGrants)
+		if h == "" {
+			continue
+		}
+		for _, n := range cli.names {
+			for d := filepath.Dir(n); d != "." && d != string(filepath.Separator); d = filepath.Dir(d) {
+				out = append(out, filepath.Join(h, d))
+			}
+		}
+	}
+	return shallowestFirst(dedupeStrings(out))
 }
 
 // runtimeExecMembers names those members for each CLI home the launching

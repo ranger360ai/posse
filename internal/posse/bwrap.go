@@ -1261,13 +1261,23 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		watch(WallWatchReadMask, f)
 	}
 	// 6. EVERY SOURCE THAT DIFFERS FROM ITS DESTINATION IS PINNED IN THIS
-	// RENDER (ADR 0100 D2(b)). Last, because it is asked of the finished
-	// argv — the mounts are what pin a component, and a step above could
-	// still have added one. Here and not in each producer, for the reason
-	// step 2a is here: this is where bwrapRender, the landed-check judge
-	// and the wall venue meet, so a render that grows a fourth caller is
-	// covered by writing nothing.
+	// RENDER (ADR 0100 D2(b)), AND SO IS EVERY SUCH DESTINATION (D4(a)).
+	// Last, because both are asked of the finished argv — the mounts are
+	// what pin a component, and a step above could still have added one.
+	// Here and not in each producer, for the reason step 2a is here: this is
+	// where bwrapRender, the landed-check judge and the wall venue meet, so
+	// a render that grows a fourth caller is covered by writing nothing.
+	//
+	// TWO CALLS AND ONE PREDICATE. The two arms are different attacks — a
+	// source is redirected before this render's own mount happens, a
+	// destination is swapped at any moment of the victim's session — so each
+	// gets the refusal that names its own mechanism and its own fix. What
+	// they must not get is two readings of "pinned" (bwrapPinned's head
+	// comment).
 	if err := bwrapRefuseUnpinnedSource(argv, grants); err != nil {
+		return nil, nil, err
+	}
+	if err := bwrapRefuseUnpinnedDst(argv, grants); err != nil {
 		return nil, nil, err
 	}
 	return argv, prep, nil
@@ -1782,6 +1792,92 @@ func grantInside(grants []string, d string) bool {
 		}
 	}
 	return false
+}
+
+// bwrapRefuseUnpinnedDst is ADR 0100 D4(a) over a rendered argv: EVERY
+// DESTINATION that differs from its source must be PINNED in the render that
+// mounts over it, else the render is refused. Same predicate as the source
+// arm one function up — D2(b)'s, and one function on purpose, because two
+// implementations of "pinned" is two answers about one wall.
+//
+// IT IS A DIFFERENT ATTACK FROM THE SOURCE ARM AND NOT A RACE (ADR 0100's
+// Context, MEASURED 2026-11-15 by the dst-rename-probe on this box, bwrap
+// 0.13.1). A namespace that holds NO mount on `<cfg>/<member>` renames it
+// away mid-session and creates a new one; both steps succeed, the victim's
+// mount stays alive on the renamed dentry, and the victim's next open of
+// `<cfg>/<member>/…` reads the PLANTED file. A namespace that holds the same
+// bind gets EBUSY for the same mv. So the swap is a standing rename at any
+// moment of the victim's session, not a window at launch — which is why a
+// launch-time or post-mount verify cannot close it (A3, rejected on that
+// measurement) and why the answer is that every namespace which can write
+// the parent holds the child as a mount.
+//
+// WHAT THAT BUYS, in the one case that matters most: for claude's
+// shell-snapshots and session-env the victim runs sibling-written code ahead
+// of every Bash command, so an unpinned private destination is a
+// walled-to-walled lateral move. The box-wide half of the same decision is
+// D4(b) — the private set follows the GRANT and not the runtime
+// (claudePrivateSessionState's gate), so a sibling that can write `<cfg>`
+// holds every member as a mount whatever runtime it runs.
+//
+// WHAT PASSES, MEASURED 2026-11-15 by running this predicate over all five
+// rendered argvs this package makes (the census ADR 0100 D4(a) asked for;
+// the numbers and the one miss are in the ADR's own D4(a) amendment):
+//
+//   - `<cfg>/<member>` and `<cfg>/history.jsonl`: the member IS the mount,
+//     and `<cfg>` itself is the grant rather than something strictly inside
+//     one, so nothing above it is loose either;
+//   - `<cfg>/projects/<key>` and its `memory/`: in-place binds, so they are
+//     not in scope at all, and `projects` is itself a mount of the render;
+//   - `/tmp`: `/` is no grant of anyone;
+//   - `<common>/objects` and `<own>/seat-objects-base`: their components
+//     inside a grant are mounts, and the rest sit under the read-only `/`;
+//   - codex's `tmp/` and `shell_snapshots/`: direct children of the granted
+//     codex home, each its own tmpfs, so each is the mount that pins it. ADR
+//     0100 listed these as needing a census; the census says they pass.
+//   - every `/dev/null` read mask and every credential-store tmpfs: the
+//     masked name is the mount, and the stores a seat is not granted lie
+//     strictly inside no grant.
+//
+// THE ONE MISS has a bead of its own, and it is named in ONE place — ADR
+// 0100's own D4(a) amendment, by bead id and nothing else, no path and no
+// mechanism, because the surface it lies on is an open residual (operator
+// ruling 2026-11-11). Not here as well: a public record that names an open
+// hole in two places has two places to correct, and the id reads the same in
+// either, so the ADR keeps it. Its SHAPE was this rule's own, which is why
+// the census found it and why no more than the rule is needed to describe it
+// — a private
+// destination whose parent lay strictly inside a write grant and was a mount
+// of nothing, so a leftover of that very seat could rename the parent away
+// and plant its own directory at that name. Fixed the way this ADR
+// prescribes and the source arm was fixed (step 2a-bis): an IN-PLACE bind of
+// the loose parent, emitted by the render that already grants it
+// (runtimeEphemeralDirParents), never an exemption here.
+//
+// IT STANDS DOWN WHERE THE SOURCE ARM DOES, for the same reason and read off
+// the same helper: on a box whose home is under the shared `/tmp` there is
+// no ungranted place for anything to live.
+func bwrapRefuseUnpinnedDst(argv, grants []string) error {
+	if bwrapWallRoot() == "" {
+		return nil
+	}
+	ms := bwrapMounts(argv)
+	dsts := bwrapMountDsts(ms)
+	for _, m := range ms {
+		if m.Src == m.Dst {
+			continue
+		}
+		loose, ok := bwrapPinned(m.Dst, grants, dsts)
+		if ok {
+			continue
+		}
+		src := m.Src
+		if src == "" {
+			src = "an empty tmpfs"
+		}
+		return Die("bwrap cannot mount %s over %s: %s lies inside a write grant of this render and is no mount of it, so a walled seat — or anything this seat leaves behind — renames it mid-session, plants its own directory at that name, and this seat reads and runs what is in it while its own mount rides the renamed one (ADR 0100 D4(a), MEASURED). Bind %s in place so the mount refuses that rename, never exempt it", src, m.Dst, loose, loose)
+	}
+	return nil
 }
 
 // bwrapGitConfigRepo answers the repository whose `<repo>/.git/config` a deny
@@ -2949,7 +3045,34 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 	// claude's shell snapshots and session-env, one private copy per seat
 	// (ranger-base-5632o). Here and not in SeatbeltCarveOut for the reason
 	// Tmp is: a seatbelt profile cannot bind.
-	r.Carve.Private = claudePrivateSessionState(home, cwd, runtimeStateGrants(stateDirs))
+	//
+	// THE WRITE SET AND NOT THE RUNTIME'S STATE GRANTS (ADR 0100 D4(b), THE
+	// PRIVATE SET FOLLOWS THE GRANT). The question this gate answers is
+	// "can a seat behind THIS render write `<cfg>`", because that is who can
+	// rename a member of it out from under a live sibling (D4's Context,
+	// MEASURED). The launching runtime's state grants are a different
+	// question and a narrower one: a codex or grok PID carrying a
+	// `writable:` extra over claude's config dir reaches every member of
+	// that table, and under the old gate rendered not one of the binds — so
+	// it could swap a claude seat's shell-snapshots directory, which is code
+	// the victim sources ahead of every Bash command, and got EBUSY nowhere.
+	//
+	// r.Set HERE IS THE SAME ANSWER AS THE FINAL SET, and the difference is
+	// worth naming rather than leaving to be re-derived. What comes between
+	// this line and the render is D23's bwrapBindExisting, which only
+	// REMOVES a no-create grant this host does not have. So r.Set is a
+	// superset of what BwrapArgs will bind — and for a member whose grant
+	// was removed, BwrapArgs step 2c renders nothing at all (its
+	// `writeGranted(grants, pb.Dst)` arm, which emits no mount and no prep).
+	// Gating on the superset and rendering on the final set cannot disagree;
+	// gating LATER would mean composing this table after D23 and prepending
+	// it, for an identical argv.
+	//
+	// claudePrivateStateGate is the one condition on that: where this
+	// mechanism's wall stands down the gate reads what it read before D4(b),
+	// and its own head comment says why a grant-keyed table on such a box
+	// would be a mount with no EBUSY behind it.
+	r.Carve.Private = claudePrivateSessionState(home, cwd, claudePrivateStateGate(r.Set, runtimeStateGrants(stateDirs)))
 	// projects/ read-only but for the seat's own key dir, and memory/
 	// read-only everywhere (ranger-base-ajkqx). After the session state, in
 	// the same step, for the same reason: a seatbelt profile cannot bind.
@@ -3002,6 +3125,22 @@ func (a *App) bwrapRender(ag *AgentFile, rt *Runtime, cwd, gatesDir string) (bwr
 			}
 		}
 		r.Carve.Deny = kept
+		// THE LOOSE PARENTS FIRST, BOUND IN PLACE (ADR 0100 D4(a), the one
+		// miss its census found; bwrapRefuseUnpinnedDst' head comment names
+		// that miss's bead by id and nothing else, which is where it is
+		// named).
+		// Where a member name has a parent in it, that parent lies strictly
+		// inside the granted CLI home and was a mount of nothing, so a
+		// leftover of this seat renames it and plants its own directory
+		// under the name this seat's CLI opens. An in-place read-write bind
+		// makes it a mount, which is what refuses that rename;
+		// runtimeEphemeralDirParents' head comment has why this list is
+		// empty for a CLI whose members are direct children, why it grants
+		// nothing, and why it must come BEFORE the tmpfs members below
+		// rather than after them.
+		for _, p := range runtimeEphemeralDirParents(wallHome(), runtimeStateGrants(stateDirs)) {
+			r.Carve.Private = append(r.Carve.Private, PrivateBind{Src: p, Dst: p})
+		}
 		for _, d := range eph {
 			r.Carve.Private = append(r.Carve.Private, PrivateBind{Dst: d})
 		}

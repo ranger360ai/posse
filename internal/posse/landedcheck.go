@@ -343,11 +343,15 @@ func boxLandedCage(a *App, kind landedCageKind, judge, tree string, writable, en
 			argv, mkdir = wallVenueArgv(argv, run, carve.Tmp != "", writable)
 			prep = append(prep, mkdir...)
 			// The venue's additions come AFTER BwrapArgs, so BwrapArgs'
-			// own D2(b) step never saw them: the one source among them is
-			// asked here instead, against the same write set the render
-			// was given (ADR 0100 D2(b), and the ADR's "checked over EVERY
-			// bwrap argv the package renders").
+			// own D2(b) and D4(a) steps never saw them: the one source
+			// among them, and its destination, are asked here instead,
+			// against the same write set the render was given (ADR 0100
+			// D2(b)/D4(a), and the ADR's "checked over EVERY bwrap argv the
+			// package renders").
 			if err := bwrapRefuseUnpinnedSource(argv, writable); err != nil {
+				return landedCage{}, err
+			}
+			if err := bwrapRefuseUnpinnedDst(argv, writable); err != nil {
 				return landedCage{}, err
 			}
 			env = append(append([]string{}, env...), wallVenueEnvVar+"=1")

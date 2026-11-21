@@ -299,9 +299,40 @@ func claudePrivateStateDir(home, cwd string) string {
 
 // claudePrivateSessionState names the binds for the config dir a seat on this
 // box would use (ClaudeConfigDirIn, the claudeExecConfig answer), and only
-// when the launching runtime's state grant reaches that dir. A seat on another
-// runtime gets nothing, and so does a launch with no seat wall dir.
-func claudePrivateSessionState(home, cwd string, stateGrants []string) []PrivateBind {
+// when THE RENDER'S OWN WRITE SET reaches that dir — claudePrivateStateGate
+// is which list the caller hands it and the one place that is not the write
+// set. A launch with no seat wall dir gets nothing, and so does a render that
+// cannot write `<cfg>`.
+//
+// THE GATE IS THE GRANT AND NOT THE RUNTIME (ADR 0100 D4(b)). It read the
+// launching runtime's state grants until 2026-11-20, which made the table a
+// property of WHICH CLI the seat runs; the attack it defends against is a
+// property of who can WRITE the directory. A namespace that can write
+// `<cfg>` and holds no mount on `<cfg>/<member>` renames that member away
+// mid-session and plants its own, and the victim's claude then reads the
+// planted directory while its own bind rides the renamed one (MEASURED
+// 2026-11-15, ADR 0100's Context probe). For shell-snapshots and session-env
+// that is code the victim sources ahead of every Bash command. So any bwrap
+// render whose write set reaches `<cfg>` binds every member of the table,
+// whichever runtime it launches, and gets EBUSY for the rename — the
+// box-wide half of D4, where D4(a)'s per-render PINNED predicate is the
+// other.
+//
+// WHAT THAT COSTS A NON-CLAUDE SEAT: nothing it was using. A codex or grok
+// seat reaches `<cfg>` only through a PID's `writable:` extra, and the
+// members here are claude's own per-session scratch — snapshots, session-env,
+// debug logs, its peer registry, its prompt history. A seat granted the dir
+// for some other file in it keeps that file; what it loses is the ability to
+// read or write another seat's copy of these.
+//
+// Its SEATBELT siblings in this file (claudeDebugDir, claudeSessionsRegistry,
+// claudePromptHistory) still read the runtime's state grants, and that is
+// not an oversight to tidy later: D4's whole subject is the mount that gives
+// EBUSY, SCOPE says the guarantee is for walled seats, and those three are
+// the darwin mechanism's spelling, where there is no mount and no EBUSY to
+// be had. claudeProjectsBinds keeps the same gate for the same reason — its
+// binds are in place, so no destination of its own can be swapped.
+func claudePrivateSessionState(home, cwd string, grants []string) []PrivateBind {
 	wall, own := SeatWallDir(home, cwd), claudePrivateStateDir(home, cwd)
 	if wall == "" {
 		return nil
@@ -311,7 +342,7 @@ func claudePrivateSessionState(home, cwd string, stateGrants []string) []Private
 		return nil
 	}
 	cfg = absResolve(cfg)
-	if !writeGranted(stateGrants, cfg) {
+	if !writeGranted(grants, cfg) {
 		return nil
 	}
 	var out []PrivateBind
@@ -365,4 +396,30 @@ func runtimeStateGrants(stateDirs []string) []string {
 		}
 	}
 	return out
+}
+
+// claudePrivateStateGate is which list D4(b)'s gate reads — the render's own
+// write set, or, where this mechanism's wall stands down, the launching
+// runtime's state grants.
+//
+// IT STANDS DOWN WHERE EVERY OTHER ADR 0100 RULE DOES, off the same helper
+// and for the same reason (bwrapRefuseUnpinnedSource's last paragraph): on a
+// box whose home is itself under the shared `/tmp` there is no ungranted
+// place for a bind source to live, so nothing is pinned by anything and both
+// of the ADR's refusals are disabled. There, EVERY render's write set
+// reaches `<cfg>` through the blanket `/tmp` grant — so the grant-keyed gate
+// would hand every seat a private table whose sources that seat can swap,
+// which is a mount with no EBUSY behind it and no wall in it. The runtime's
+// state grants are what the gate read before D4(b), so where the wall is not
+// real the behaviour is exactly what it was.
+//
+// No production launch is that shape — homes and worktrees live under the
+// home, and SeatWallRoot is composed from it — and every fixture in this
+// package is, which is why the pins for the grant-keyed half put their home
+// under wallUngrantedDir.
+func claudePrivateStateGate(set, stateGrants []string) []string {
+	if bwrapWallRoot() == "" {
+		return stateGrants
+	}
+	return set
 }

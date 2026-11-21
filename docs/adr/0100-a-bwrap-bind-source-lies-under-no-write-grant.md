@@ -144,6 +144,40 @@ exemption. A miss is fixed by an in-place bind of the parent, never by an
 exemption: grok's `daemon/run` is ASSUMED to miss, and codex's tmp and
 shell_snapshots need a census.
 
+AMENDED 2026-11-20 (ranger-base-gn050, the slice that built the destination
+arm). THE CENSUS IS RUN, and it is a pin rather than a paragraph:
+`TestQAWallPinnedDstEveryRenderPinsEveryDestination` runs this predicate over
+every destination of all FIVE argvs this package renders — the seat render for
+each runtime in the catalog, the landed-check judge and the wall venue — so a
+bead that adds a private destination is censused by writing nothing.
+
+MEASURED 2026-11-20 on this box (Linux 7.2.15, the shipped producers): ONE
+miss. Its bead is named here by id and nothing else — no path, no mechanism
+— because the surface it lies on is an open residual and that is how a
+public record names an open one (operator ruling 2026-11-11):
+
+- ranger-base-qyq59
+
+Its SHAPE needs no more than this rule to state, which is why the census
+found it: a private destination whose parent lay strictly inside a write
+grant and was a mount of nothing. Fixed as this decision prescribes — an
+in-place read-write bind of the loose parent, emitted by the render that
+already grants it (`runtimeEphemeralDirParents`), ordered BEFORE the tmpfs
+so it cannot cover it, and conditional on the grant so it widens nothing.
+
+codex's `tmp/` and `shell_snapshots/`, which this ADR left to the census,
+PASS: each is a direct child of the granted codex home and is its own tmpfs,
+so each is the mount that pins it. Everything else passes as written —
+`<cfg>/<member>`, `<cfg>/history.jsonl`, `<cfg>/projects/<key>` (in place, so
+not in scope), `/tmp`, `<common>/objects`, `<own>/seat-objects-base`, and
+every `/dev/null` read mask and credential-store tmpfs, whose masked name is
+itself the mount.
+
+ONE WORDING FIX from the re-read (ranger-base-hfocr), adopted: (b) says each
+member is PINNED and not merely bound, because a grant of an ANCESTOR of
+`<cfg>` renames `<cfg>` itself. That is what the predicate asks, so (a) and
+(b) are one question over one function, and the census reads it that way.
+
 (b) Box-wide: THE PRIVATE SET FOLLOWS THE GRANT, NOT THE RUNTIME. Any bwrap
 render whose final write set reaches a runtime config dir that has a private
 table binds that table, whichever runtime the seat runs. Today the only such
@@ -151,6 +185,26 @@ table is claude's: claudeSessionStateDirNames plus history.jsonl.
 claudePrivateSessionState's gate moves from the runtime's state grants to the
 render's final write set. A sibling that can write `<cfg>` therefore holds
 every member as a mount, and gets EBUSY.
+
+AMENDED 2026-11-20 (ranger-base-gn050): the gate STANDS DOWN where this
+mechanism's wall does, off the same helper and for the same reason D2(b)'s
+refusal does (`bwrapWallRoot`). On a box whose home is itself under the
+shared `/tmp` there is no ungranted place for a bind source to live, so
+nothing is pinned by anything and both refusals above are disabled — and
+there EVERY render's write set reaches `<cfg>` through the blanket `/tmp`
+grant, so a grant-keyed table would hand every seat a private table whose
+sources that seat can swap itself: a mount with no EBUSY behind it. Where the
+wall is not real the gate reads what it read before this decision, which
+changes no behaviour there at all. No production launch is that shape and
+every fixture in internal/posse is, which is why the pins for the
+grant-keyed half put their home outside every blanket temp grant.
+
+The three SEATBELT readings of the same members (claudeDebugDir,
+claudeSessionsRegistry, claudePromptHistory) keep the runtime gate, and that
+is not an oversight to tidy: this decision's whole subject is the mount that
+gives EBUSY, SCOPE scopes the guarantee to walled seats, and a profile has
+neither. claudeProjectsBinds keeps it too — its binds are in place, so it has
+no destination of its own to swap.
 
 (c) For the seat-store destination `<common>/objects`, the writers of
 `<common>` are of two kinds. Linked seats of the repo hold it as their own
@@ -180,6 +234,24 @@ this record, and this record neither closes nor widens it.
   its SeatCacheDir. The residual closes when every walled seat whose launch
   predates the landing has relaunched. Those seats can be listed from the
   launch times in the instance's session records against the landing commit.
+
+  LISTED 2026-11-20 for D4's landing (ranger-base-gn050), from this
+  instance's session records: ONE walled seat live — `cage: seatbelt`, which
+  on Linux is this mechanism — against six at `cage: shims`, four of those
+  degraded from seatbelt. Its launch predates the landing, so by the rule
+  above it is stale; its wall is nonetheless BYTE-IDENTICAL to what this
+  landing renders, because it is a claude seat, and the two mounts D4 adds
+  are another runtime's in-place parent bind (the remedy the census miss
+  above took) and claude's table for a NON-claude render whose grant reaches
+  `<cfg>`. Read off its live `bwrap.args`: the private table is there, and
+  the other runtimes' homes are masks rather than grants. No live PID on
+  this instance declares a `writable:`
+  extra at all, so D4(b)'s widening changes no render here today — it is the
+  wall standing ready for the first PID that declares one. So the stale-wall
+  residual for THIS landing is empty, which is a reading of this instance's
+  roster and not a property of the decision: a seat of another runtime, or
+  an extra-carrying seat, launched before the next landing is stale in the
+  way the bullet describes.
 - RESIDUAL, a home under the shared `/tmp`. D2(a) stands down there
   (`bwrapWallRoot`), for the reason the private /tmp already stands down
   (`bwrapSeatTmp`): `/tmp` is granted unconditionally, a home inside it is in
@@ -265,16 +337,27 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   with the mount gets EBUSY.
 - The seat-store bind shape, the live seat tiers (5 shims, 3 degraded, 2
   walled), and that the gates dir is read-only in-seat.
+- (2026-11-20, ranger-base-gn050) THE D4(a) CENSUS over all five rendered
+  argvs: one miss, whose bead the amendment under D4(a) names by id and
+  nothing else; codex's `tmp/` and `shell_snapshots/` pass; everything else
+  passes as D4(a) said it would. That amendment has the readings and the
+  remedy.
+- (2026-11-20, ranger-base-gn050) a namespace holding `<cfg>/shell-snapshots`
+  as a mount from the SHIPPED render cannot rename it (EBUSY), and the same
+  render with the private binds taken out — what a non-claude seat granted
+  `<cfg>` got before D4(b) — renames it and plants its own directory at that
+  name. Against a real bwrap
+  (TestLiveWallPinnedDstAHolderCannotRenameAPrivateMember).
 
 ASSUMED:
 
 - the seat-store toggle win rate;
-- that grok's daemon/run and codex's members miss D4(a) (a later slice runs
-  the census);
 - that losing private history/debug/tmp once is acceptable;
 - A6's premise about claude's top-level `<cfg>` writes.
 
 ## Not closed here
 
-- ranger-base-gn050
 - ranger-base-tbg3h
+- ranger-base-qyq59
+- ranger-base-dw2du
+- ranger-base-k45vt
