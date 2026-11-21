@@ -22,6 +22,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-r1zdr](ranger-base-r1zdr.md) — The upgrade report's two loop lines, held by a report pin (ranger-base-r1zdr) — 2026-11-21
 - [ranger-base-nycra](ranger-base-nycra.md) — The launch-line tests red on the git-global snapshot, not on the line (ranger-base-nycra) — 2026-11-21
 - [ranger-base-nt5xd](ranger-base-nt5xd.md) — A row the judge cannot name is classed by the binary that printed it (ranger-base-nt5xd) — 2026-11-21
+- [ranger-base-nqw8v](ranger-base-nqw8v.md) — A fix into a helper leaves the call unwitnessed (ranger-base-nqw8v) — 2026-11-21
 - [ranger-base-nqaa1](ranger-base-nqaa1.md) — A box-wide rename reported by a per-instance reader, and a class token nothing read (ranger-base-nqaa1) — 2026-11-21
 - [ranger-base-mbcbv](ranger-base-mbcbv.md) — claude's cache/ and .last-cleanup, read- and write-denied in a caged seat's seatbelt profile (ranger-base-mbcbv) — 2026-11-21
 - [ranger-base-m8msi](ranger-base-m8msi.md) — ADR 0059 D2's thirteen arms are green on darwin in their post-5blmt spelling (ranger-base-m8msi) — 2026-11-21
