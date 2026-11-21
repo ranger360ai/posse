@@ -11,6 +11,35 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**Six more config keys are on the surface, including the reaper's three
+graces and the load guard's kill arm — and a census now holds the rest.**
+
+*Documentation, no behaviour change: every default is what it already was, and
+there is nothing to set unless you want to.*
+
+`examples/config.yaml` is the file `posse init` copies into a fresh instance,
+so it is the spec an operator reads. Six keys the harness reads were named
+nowhere in it. `auto_reap:` switches the sweep that ENDS a finished session
+(on by default); `reap_crew_after:` (4h), `reap_unpointed_after:` (1h) and
+`retire_tree_after:` (1h) are that sweep's three graces, and each is the only
+thing standing between a conversation you walked away from and a closed
+workspace — all three take `off`/`never` to disarm that arm entirely.
+`load_guard_kill:` is the load guard's kill arm, shipped off, and the paragraph
+above it in the seed has always said the guard kills nothing, which was the
+shipped default and not a law. All five have blocks now, with the graces'
+ordering argument and the kill arm's `POSSE_KEEP=` exception. The sixth,
+`backup_max_age:`, stays described in prose where the backup block already
+discusses it: its default is a rule rather than a number, and a documented
+line for it would be a claim nothing can hold.
+
+What stops the next one arriving the same way is a census rather than a
+reviewer: the config keys the harness reads are derived from the flat-YAML
+readers' own signatures, the paths that name the instance config, and a
+fixpoint over the shared readers that take a key as a parameter — so a key
+read through `attnAge`, through a string constant, through a `[]string` the
+code loops over, or through a closure is in the census — and each one must be
+documented in the seed or carry a register row saying why it is not.
+
 **The pulse's four config keys are on the config surface at last — including
 the one that switches its channel off.**
 

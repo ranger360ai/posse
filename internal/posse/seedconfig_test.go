@@ -1491,13 +1491,16 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 	// census reaches and the old rule reached four of them. Ten was the
 	// measured population (ranger-base-2vynj finding 1, "THE POPULATION");
 	// ELEVEN since ranger-base-1qi7c documented the pulse family and gave
-	// `pulse_renag:` a body-form reader so this census compares it.
+	// `pulse_renag:` a body-form reader so this census compares it; FOURTEEN
+	// since ranger-base-w9t63's census over every key the harness reads found
+	// the reap/retire graces undocumented and documented all three, each at
+	// its own constant through the graceAfter call site this already reached.
 	// It is kept beside the set check above and not replaced by it, because
 	// the two fail in opposite directions: this one catches a documented line
-	// that LEFT (deleting one reds at `compared 10`), and the set catches one
+	// that LEFT (deleting one reds at `compared 13`), and the set catches one
 	// that ARRIVED, which no count can see.
-	if compared < 11 {
-		t.Errorf("compared %d documented duration defaults, want at least 11 — the seed documents attn_guard_stuck, attn_parked_age, attn_question_age, dispatch_epoch, model_probe_ttl, plan_guard_blind_max, plan_usage_stale_after, plan_usage_ttl, pulse_renag, verify_batch_age and verify_box_max_age with a value, so a census that found fewer stopped reading the file", compared)
+	if compared < 14 {
+		t.Errorf("compared %d documented duration defaults, want at least 14 — the seed documents attn_guard_stuck, attn_parked_age, attn_question_age, dispatch_epoch, model_probe_ttl, plan_guard_blind_max, plan_usage_stale_after, plan_usage_ttl, pulse_renag, reap_crew_after, reap_unpointed_after, retire_tree_after, verify_batch_age and verify_box_max_age with a value, so a census that found fewer stopped reading the file", compared)
 	}
 }
 

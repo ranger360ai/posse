@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-zcj0z](ranger-base-zcj0z.md) — Arm 1 ran no Go test on either platform for nine days, and both reasons were loud (ranger-base-zcj0z) — 2026-11-21
+- [ranger-base-w9t63](ranger-base-w9t63.md) — Every config key the harness reads, censused against the seed (ranger-base-w9t63) — 2026-11-21
 - [ranger-base-nycra](ranger-base-nycra.md) — The launch-line tests red on the git-global snapshot, not on the line (ranger-base-nycra) — 2026-11-21
 - [ranger-base-nqaa1](ranger-base-nqaa1.md) — A box-wide rename reported by a per-instance reader, and a class token nothing read (ranger-base-nqaa1) — 2026-11-21
 - [ranger-base-mbcbv](ranger-base-mbcbv.md) — claude's cache/ and .last-cleanup, read- and write-denied in a caged seat's seatbelt profile (ranger-base-mbcbv) — 2026-11-21

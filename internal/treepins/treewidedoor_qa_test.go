@@ -98,6 +98,21 @@ package treepins
 //	                                              make seed-check
 //	                                              (both ranger-base-p9qve)
 //
+// and THREE more into that same door, the same census asked in the other
+// direction: the two pairs above hold a documented line's VALUE, and these
+// hold whether the line exists at all. Every config key the harness reads
+// — derived from yamlflat.go's own readers, the `.ConfigPath` scope rule and
+// a fixpoint over the shared readers that take a key as a parameter — is
+// documented in examples/config.yaml or in a register row carrying its
+// reason. Their subject is that file, which is this door's:
+//
+//	TestEveryConfigKeyTheHarnessReadsIsDocumentedOrRegistered
+//	                                              make seed-check
+//	TestEveryDynamicConfigKeySiteIsAccountedFor   make seed-check
+//	TestConfigKeyUndocumentedRegisterIsNotStale   make seed-check
+//	                                              (all three
+//	                                              ranger-base-w9t63)
+//
 // and one more, folded into doc-check's own door for the same reason — it
 // is a prose pin over two shipped documents, which is that door's subject:
 //
@@ -1484,7 +1499,7 @@ package treepins
 // eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
-// and `make tree-check` is all of them — one hundred and fifty-nine pins
+// and `make tree-check` is all of them — one hundred and sixty-two pins
 // and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

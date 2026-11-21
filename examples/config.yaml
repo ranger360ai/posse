@@ -54,6 +54,43 @@ default_emoji: ⚙️
 #   - plugin/bin
 #   - .claude/settings.local.json
 
+# ─── reaping finished sessions, retiring their trees (ADR 0058) ──────────────
+# `posse dispatch` sweeps twice a pass — once before routing, once as its own
+# epilogue — and ends a session whose BEAD IS CLOSED. Only on evidence it can
+# read from the stores: the `bead:` pointer dispatch itself wrote, that bead's
+# status in bd, and (for the two widened arms) a tree that is holding nothing.
+# `pulse_persona:`'s live session is never taken — a sweep that reaped it would
+# turn every later tick into "undeliverable" (ADR 0027) — and neither is a
+# session some bead in this pass could still claim by name.
+#
+# ON BY DEFAULT. `false` is the behaviour from before the sweep existed:
+# nothing ends a finished session but you or `--watch`'s own judgment.
+# auto_reap: true
+#
+# The two graces are POLICY DIALS and not measurements — no number here was
+# read off a fleet — and `off`, `never` or `0` on either turns that arm back
+# into the permanent skip it was. A grace of literally zero on a destructive
+# sweep is nobody's intent, which is why the disarm is spelled rather than
+# numeric. An unreadable value is named on stderr and the default stands.
+#
+# They are ordered, and the order is the argument. The crew grace has to
+# outlast a conversation's own gaps: you step away from a session you are
+# talking to and come back, and nothing posse records says how long that takes
+# (typing in a pane leaves no stamp — ADR 0008 §1 accepted that blindness).
+# The unpointed grace protects much less — nobody is in there, no bead exists
+# to be unfinished, and the tree is provably holding nothing — so all it buys
+# is not racing a session somebody is about to use.
+# reap_crew_after: 4h        # a closed bead's session you stepped into
+# reap_unpointed_after: 1h   # a per-bead-named session carrying no pointer
+#
+# And the TREE, one surface over (ADR 0058): a session worktree whose bead is
+# closed, whose work is on the base, and whose session herdr can no longer
+# see. Same dial and the same `off`/`never`, and the same hour on the same
+# argument as the grace above — what it guards against is not a conversation's
+# gaps (a tree whose session herdr can still see is kept whatever this says)
+# but a process posse never knew about.
+# retire_tree_after: 1h
+
 # ─── who ─────────────────────────────────────────────────────────────────────
 # The human. Assignee for the ASK question beads a persona files when only
 # you can answer (ADR 0005); unset files them unassigned.
@@ -929,6 +966,19 @@ default_emoji: ⚙️
 # exactly the same from here, so ending one is the operator's call and needs
 # an explicit exception, not a threshold that looked convincing.
 # load_guard: 25             # 1-min loadavg ceiling for FLEET launches; 0 = off
+#
+# THE KILL ARM, and the sentence above is the shipped default rather than a
+# law: absent and `false` both mean the guard only NAMES the leaked
+# gate-shell children it finds, and `load_guard_kill: true` lets it END them.
+# It is destructive, so it is an operator flip and nothing else arms it, and
+# the ruling's own first bar is field data from the naming arm that only you
+# can read. Exactly `true` and `false` spell it — anything else is named and
+# the arm stays OFF, because a typo here would otherwise read as a
+# declaration nobody made. The explicit exception the paragraph above asks
+# for is the one the arm reads off the argv: `POSSE_KEEP=<reason>` at the
+# head of the line that starts a long-lived process on purpose. What the arm
+# ends is an orphaned, CPU-burning gate-shell child carrying no such marker.
+# load_guard_kill: false
 
 # ─── governance: what needs a human (`posse status`) ─────────────────────────
 # `posse status` computes the condition set — the things that need a human —
