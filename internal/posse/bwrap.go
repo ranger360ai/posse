@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -596,6 +597,41 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, "--bind", p, p)
 	}
 
+	// 2d. WHERE THE CARVE-OUT'S OWN PINS GO, and that is the whole of what
+	// this mark is: the pins themselves are composed at step 5d, when every
+	// mount is known, and spliced back in HERE (bwrapCarvePins,
+	// ranger-base-a59w7). Two indices and not a third list, because what
+	// matters about them is their POSITION and a reader who finds them at
+	// the end would have to reconstruct it.
+	//
+	// AFTER THE GRANTS AND BEFORE EVERY OTHER MOUNT OF THIS RENDER. That is
+	// the ordering argument, and it has three halves:
+	//
+	//   - a pin cannot shadow the statement it exists for. A deny is a
+	//     `--ro-bind` and a mask is a `/dev/null` MOUNTED INSIDE the
+	//     directory the pin binds, so a pin emitted after one would cover
+	//     the name again with the host's own directory and take the wall
+	//     off. Everything from 2a-bis down lands on top of these.
+	//   - nor any OTHER wall it happens to contain. 2c's private members are
+	//     mounts over paths inside the same grants, and a pin above one of
+	//     them emitted after it would bury a wall the seat's siblings are
+	//     held out by. Here it lands first and the private mount lands on
+	//     top, as every narrower statement in this render does.
+	//   - and it cannot widen anything, wherever it lands. Every path in the
+	//     list lies STRICTLY INSIDE a write grant, and that grant was bound
+	//     in place one loop up — so the host's directory at that path is
+	//     already read-write in this render and the pin adds no byte of
+	//     reach. The only mounts BEFORE it are step 1's base and the 1b/1c
+	//     hides, and a hide inside a write grant is already shadowed by that
+	//     grant's own in-place bind at step 2, so a pin under one shows the
+	//     seat nothing the grant did not.
+	//
+	// The prep mark is the same decision at the launcher: a pin whose
+	// directory is not there yet needs its `mkdir -p` to run before the
+	// mask point or keep file the launcher creates INSIDE it, and
+	// PrepMaskPoint and PrepTouch make no parents of their own.
+	carveAt, carvePrepAt := len(argv), len(prep)
+
 	// 2a-bis. THE PRIVATE /tmp SOURCE, PINNED WHERE IT LIES INSIDE A GRANT
 	// (ADR 0100 D2(b)). A seat's source is under the wall dir and inside no
 	// grant, so this renders nothing for it. The LANDED-CHECK judge and the
@@ -699,6 +735,26 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, add...)
 		watch(WallWatchPrivate, pb.Dst)
 	}
+
+	// 2e. AND WHERE THE MOUNTS THOSE PINS ARE FOR BEGIN (ranger-base-a59w7).
+	// Step 5d reads its candidates out of the argv from here down, which is
+	// the deny, keep and mask producers and nothing above them.
+	//
+	// WHY NOT SIMPLY EVERY MOUNT AFTER THE GRANTS. The two producers between
+	// 2d's mark and this one each pin their own loose component already and
+	// are named for doing it — 2a-bis for the private /tmp source, and
+	// runtimeEphemeralDirParents, which bwrapRender hands in as an in-place
+	// Private entry, for the CLI homes' ephemeral dirs. A general list that
+	// swallowed them would leave two decisions realized in a place neither
+	// one's own pin can see, and the pin that says the ephemeral parent is
+	// bound in place works by taking that entry OUT of the carve-out and
+	// asking for the refusal (TestQAWallPinnedDstTheCensusMissParentIsBound
+	// InPlace): a list that re-emitted it would answer that pin green with
+	// the producer gone. Retiring either one in favour of this list is a
+	// bead of its own, not a side effect of the one that needed the denies
+	// pinned. The SPLICE stays at 2d all the same, because where these
+	// mounts land is a different question from which of them is loose.
+	denyAt := len(argv)
 
 	// 3. Shape 2: the carve-out's denies, read-only over the grants above
 	// them. This is last-match-wins at the other mechanism: SBPL puts the
@@ -1279,6 +1335,77 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, "--ro-bind", "/dev/null", f)
 		watch(WallWatchReadMask, f)
 	}
+	// 5d. THE CARVE-OUT'S PINS: every directory between a write grant and a
+	// deny, mask, keep or re-allow this render mounts below it, bound in
+	// place so the mount pins the name (bwrapCarvePins, ranger-base-a59w7).
+	// Composed here, where every mount of the render is known and a
+	// component another step already mounts over costs nothing; spliced in
+	// at 2d's mark, where its ordering argument is written.
+	//
+	// IT IS SHAPE 1's REMEDY AT THE OTHER PRODUCER. Step 2 binds the
+	// directories between nested write GRANTS (bwrapGrantMounts,
+	// ranger-base-dot6w); these are the same directories above the
+	// carve-out's own mounts, which that list cannot reach because the
+	// directory above a deny holds no grant of its own. A deny renders an
+	// in-place `--ro-bind` and a mask renders `/dev/null` over the name, so
+	// both arms of step 6 ask about those ancestors — and five of this
+	// package's own pins were refusing a render for one, which is a seat
+	// that does not launch.
+	//
+	// NOT WATCHED, for the reason the grant pins and step 2a-bis are not: a
+	// `posse wall-watch` entry exists to kill a seat whose WALL came off,
+	// and this mount is no wall over the seat's reach — the directory is
+	// writable through the grant either way. Its one job is to refuse a
+	// RENAME of the name from inside the namespace, which is about the next
+	// render and not this run. No fixture renders one today (the census is 0,
+	// TestQAWallCarvePinsCensusOverEveryRender), so the first render that
+	// grows a pin reds TestWallWatchEveryRenderedMountIsAWallOrANamedOpening
+	// with an unclassified destination — and the answer is an entry in
+	// wwOpenings, beside the write grants, for the reason in this paragraph.
+	pins := bwrapCarvePins(argv[:denyAt], argv[denyAt:], grants)
+	if len(pins) > 0 {
+		var pinArgv []string
+		var pinPrep []PrepStep
+		for _, p := range pins {
+			// LSTAT'D, NOT STAT'D, which is 2c's rule for 2c's reason and
+			// the one thing this arm cannot inherit from shape 1's. A pin's
+			// path is by construction a directory the seat may write — that
+			// is the whole of why it needs pinning — so a LINK at that name
+			// is one a seat or its leftover planted, and bwrap follows a
+			// link at a bind's source and at its destination alike. Binding
+			// it in place would resolve BOTH ends to the link's target and
+			// mount that target read-write at its own name, which for a
+			// target outside the grant is a write this render never meant:
+			// the very attack D2(b) refuses, let through by the mount that
+			// was supposed to refuse it. So a link here refuses the render,
+			// in the tier's fail-closed direction, and the refusal is the
+			// answer the operator can act on (remove the plant). The same
+			// question at shape 1's grant pins is open; ADR 0100's D2(b)
+			// amendment is where its bead id is kept.
+			fi, err := os.Lstat(p)
+			exists, dir := err == nil, err == nil && fi.IsDir()
+			switch {
+			case err != nil && !os.IsNotExist(err):
+				return nil, nil, bwrapStatRefusal("carve-out pin", p, err)
+			case exists && !dir:
+				// A file, a link or a special file at that name means the
+				// thing this render mounts below it can neither be there nor
+				// be made as itself — the launcher's own mkdir would fail,
+				// or bwrap would resolve the name elsewhere, after the
+				// render said yes.
+				// fileTypeName and not Mode().Type(), whose String() reads
+				// `L---------` and tells an operator holding a seat that
+				// will not launch nothing at all.
+				return nil, nil, Die("bwrap cannot pin %s for the deny or mask %s this render mounts below it: it is %s and not a directory, so there is nothing under it to mount over, and a link there would make this pin bind whatever it points at, read-write, at its own name (ADR 0100 D1/D2(b)/D4(a)). Remove it on the host, or narrow the write grant that contains it — never exempt it", p, bwrapCarvePinFor(argv[denyAt:], p), fileTypeName(fi.Mode()))
+			case !exists:
+				pinPrep = append(pinPrep, PrepStep{PrepMkdirAll, p, "a directory between a write grant and a deny or mask this render mounts below it; bwrap binds it in place so the mount pins the name (ADR 0100 D2(b)/D4(a))"})
+			}
+			pinArgv = append(pinArgv, "--bind", p, p)
+		}
+		argv = slices.Insert(argv, carveAt, pinArgv...)
+		prep = slices.Insert(prep, carvePrepAt, pinPrep...)
+	}
+
 	// 6. EVERY BIND SOURCE IS PINNED IN THIS RENDER (ADR 0100 D2(b)) — the
 	// in-place binds of shape 1's own write grants included, because bwrap
 	// resolves a grant's path at mount(2) as surely as it resolves a private
@@ -1830,6 +1957,91 @@ func bwrapGrantMounts(grants []string) []bwrapGrantMount {
 	return out
 }
 
+// bwrapCarvePins is shape 1's remedy at the CARVE-OUT's producers: the
+// directories a render must bind IN PLACE so that the denies, masks, keep
+// files and re-allows it mounts below them are pinned. `head` is the render
+// as far as the deny producer (step 2e's mark), `tail` the denies, keeps and
+// masks from there down, and the answer is the ancestors — shallowest first,
+// each named once — of every path `tail` mounts that lie strictly inside a
+// write grant and are a mount destination of neither half.
+//
+// THE SPLIT IS WHICH MOUNTS ARE ASKED ABOUT, not where the answer goes:
+// step 2e says why the two producers above that mark keep their own pins,
+// and step 2d why these land before every one of them.
+//
+// WHY THE CARVE-OUT NEEDS ITS OWN LIST. bwrapGrantMounts pins the
+// directories between nested write GRANTS, which is every loose component a
+// grant's own in-place bind can have (ranger-base-dot6w). A deny is an
+// in-place `--ro-bind` and a mask is a `/dev/null` over a name, and both
+// have ancestors too: where one lies TWO or more components inside a write
+// grant with no mount between — `<repo>` granted and the deny
+// `<repo>/.git/config.lock`, so `<repo>/.git` is loose; a CLI home grant
+// above a masked `<home>/codex/auth.json`, so `<home>/codex` is loose —
+// nothing in the grant set names that directory and the grant list cannot
+// reach it. Step 6 then refuses the whole render. MEASURED 2026-11-21: five
+// of this package's own pins, under a home outside the shared `/tmp`, and it
+// fails CLOSED — a seat on a box in that configuration does not launch,
+// which is this rule costing a launch and never a hole in it
+// (ranger-base-a59w7).
+//
+// IT WIDENS NOTHING, which is why it is conditional on the grant and not
+// emitted always: a read-write bind in place makes its path writable, and
+// every path here lies STRICTLY INSIDE a grant that has already made it
+// read-write. A deny or mask inside no grant produces no entry at all —
+// which is most of them, since the masks a seat is not granted lie under the
+// read-only base.
+//
+// ANCESTORS ONLY, never the mounted path itself. A path this render mounts
+// over is a mount destination of that very mount, so it is never loose; what
+// the predicate asks of it is only about the directories ABOVE it. The one
+// path that can be loose on its own account is a bind SOURCE that differs
+// from its destination, and that one is NOT pinned here — D1's remedy for it
+// is to put the source under the per-seat wall dir, where no component lies
+// inside any grant, and step 6 still refuses it by name.
+//
+// KEYED TO THE GRANT SET for bwrapGrantMounts' reason, and asked of the
+// WHOLE argv for what counts as already pinned: a component another step
+// mounts over — the private member binds of 2c, a credential store's tmpfs,
+// an ssh dir's — needs nothing from this list, and reading those off both
+// halves is what keeps the list to the directories no other statement
+// covers. The two cases are not symmetric because the question is not: a
+// mount that lands LATER still pins a name against a rename, which is all
+// this list is for.
+func bwrapCarvePins(head, tail, grants []string) []string {
+	ms := bwrapMounts(tail)
+	dsts := append(bwrapMountDsts(bwrapMounts(head)), bwrapMountDsts(ms)...)
+	var pins []string
+	for _, m := range ms {
+		for _, p := range []string{m.Src, m.Dst} {
+			if p == "" {
+				continue // a --tmpfs has no source at all
+			}
+			for _, c := range bwrapPathComponents(p) {
+				if c == p || bwrapIsMountDst(c, dsts) || !bwrapStrictlyInsideGrant(c, grants) {
+					continue
+				}
+				pins = append(pins, c)
+			}
+		}
+	}
+	// shallowestFirst dedupes, which is what makes two denies under one
+	// loose directory render one pin.
+	return shallowestFirst(pins)
+}
+
+// bwrapCarvePinFor names the first path `tail` mounts below the pin `p`, so
+// that a refusal about `p` can say what asked for it. For the message only:
+// a pin is emitted for every such path at once, and which one the sentence
+// names changes nothing about the fix.
+func bwrapCarvePinFor(tail []string, p string) string {
+	for _, m := range bwrapMounts(tail) {
+		if m.Dst != "" && insideDir(p, m.Dst) {
+			return m.Dst
+		}
+	}
+	return "(nothing — a pin with no mount below it is a bug in bwrapCarvePins)"
+}
+
 // bwrapIsMountDst is "this render mounts something at exactly c".
 func bwrapIsMountDst(c string, dsts []string) bool {
 	for _, d := range dsts {
@@ -2000,7 +2212,10 @@ func bwrapMountDsts(ms []bwrapMount) []string {
 //     itself. What reds is a nest TWO or more components deep with no mount
 //     between, and no render here HAS one loose: where a grant is nested
 //     that deep, shape 1 binds the directories between in place and the
-//     mount is what pins them (bwrapGrantMounts, ranger-base-dot6w).
+//     mount is what pins them (bwrapGrantMounts, ranger-base-dot6w), and
+//     where a DENY or a mask is, step 5d does the same for the directories
+//     above it (bwrapCarvePins, ranger-base-a59w7) — five of this package's
+//     pins were refused renders for one of those before it existed.
 //
 // IT STANDS DOWN WHERE THE WALL ROOT DOES (bwrapWallRoot): on a box whose
 // home is itself under the shared /tmp there is no ungranted place for a
@@ -2085,7 +2300,12 @@ func grantInside(grants []string, d string) bool {
 //     0100 listed these as needing a census; the census says they pass.
 //   - every `/dev/null` read mask and every credential-store tmpfs: the
 //     masked name is the mount, and the stores a seat is not granted lie
-//     strictly inside no grant.
+//     strictly inside no grant. A store a grant DOES reach renders no tmpfs
+//     (5c skips it) and keeps the file mask, which leaves the store
+//     directory itself between the grant and that mask — step 5d binds it in
+//     place (bwrapCarvePins, ranger-base-a59w7). It is the same remedy as
+//     the miss below and arrived the same way: by a pin of this package
+//     being a refused render.
 //
 // THE ONE MISS has a bead of its own, and it is named in ONE place — ADR
 // 0100's own D4(a) amendment, by bead id and nothing else, no path and no

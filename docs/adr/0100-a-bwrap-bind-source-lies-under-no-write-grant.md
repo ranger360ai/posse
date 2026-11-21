@@ -181,14 +181,49 @@ argvs (claude 55, codex 31, grok 50, judge 7, venue 7), so no shipped render
 carries a nest for it to pin and the list is inert until one does; the venue
 reads 46 of 46 green.
 
-RESIDUAL, with a bead of its own (ranger-base-a59w7): this generalizes the
-GRANT producer only. A DENY or a read MASK bound in place has ancestors too,
-and where the directory above it holds no grant of its own nothing pins it —
-MEASURED 2026-11-21, five of internal/posse's own pins refuse a render for a
-loose component above a deny or a credential-store mask, under a home outside
-the shared `/tmp`. None of them is a live wall pin, which is why the venue
-reads green over them. Same remedy, a different producer at a different step
-of the render, and its own census, so it is not folded in here.
+AMENDED 2026-11-21 (ranger-base-a59w7): AND THE SAME AT THE CARVE-OUT'S
+PRODUCERS, which the paragraph above generalized the GRANT producer only for.
+A DENY is an in-place `--ro-bind` and a read MASK is a `/dev/null` over a
+name, and both have ancestors: where one lies two or more components inside a
+write grant with no mount between — `<repo>` granted with the deny
+`<repo>/.git/config.lock`, so `<repo>/.git` is a mount of nothing; a grant
+above a CLI home with that home's credential store masked, so the store
+directory is — the grant set names that directory nowhere and
+`bwrapGrantMounts` cannot reach it. MEASURED 2026-11-21: five of
+internal/posse's own pins refused a render for exactly that, under a home
+outside the shared `/tmp`, and none of them is a live wall pin, which is why
+ADR 0097 D1's venue read green over all five. Same remedy once more, at the
+step where those mounts are made: `bwrapCarvePins` (BwrapArgs step 5d) binds
+in place every directory between a write grant and a deny, keep or mask the
+render mounts below it, and the list is SPLICED IN at step 2d's mark — after
+the grants, before every other mount — because a pin emitted after the
+`/dev/null` or the read-only bind it exists for would cover that name with
+the host's own directory again, and a pin above one of 2c's private members
+would bury a wall. It asks only about the mounts from the deny producer down:
+step 2a-bis and `runtimeEphemeralDirParents` each pin their own loose
+component and are pinned for doing so, and a list that re-emitted theirs
+would answer those pins green with their producers gone. CENSUS, MEASURED
+2026-11-21 after it landed: 0 carve-out pins over all five argvs (claude,
+codex, grok, judge, venue), so the list is inert until a shipped render has
+such a nest — the shapes that have one are a main-checkout seat with a
+`.git/config*` deny, which ADR 0095 D1 refuses one line earlier for a reason
+of its own, and a grant above a CLI home.
+
+AND A LINK AT A PIN'S OWN NAME REFUSES THE RENDER, which is this remedy's own
+edge and is decided here rather than left to the producer. A pin's path is by
+construction a directory the seat may write — that is the whole reason it
+needs pinning — so a link at that name is one a seat or its leftover planted,
+and bwrap follows a link at a bind's source and at its destination alike.
+Binding it in place resolves BOTH ends to the target and mounts that target
+read-write at its own name: the attack (b) refuses, let through by the mount
+meant to refuse it, with the component now a mount destination so that this
+rule says nothing. Following the link and judging its target is not the other
+answer — the seat repoints it between the render and `mount(2)`, which is the
+check-then-use this record rejects A2 for. So the pin loop `os.Lstat`s and
+refuses, in the tier's fail-closed direction. The same question at the grant
+pins of D2(b)'s first remedy is open, and this record names it where it names
+every open residual — by bead id alone, in "Not closed here" below, with the
+detail on the bead where the audience is already the right one.
 
 The landed-check and venue sources lie under `StateDir/landed-check/run-*`,
 which no walled seat writes. They pass D2(a) and the pin says so.
@@ -490,8 +525,17 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   venue at 46 of 46. Measured by mutation four ways: dropping the pin arm,
   restoring the `Src == Dst` skip, emitting the pins after the grants instead
   of shallowest-first, and dropping the condition that the pin lie inside a
-  grant, each reds a named pin. The same shape over a DENY or a read MASK is
-  NOT closed (ranger-base-a59w7).
+  grant, each reds a named pin.
+- (2026-11-21, ranger-base-a59w7) THE SAME SHAPE OVER A DENY OR A READ MASK,
+  which the grant-keyed list cannot reach because the directory above a deny
+  holds no grant of its own. MEASURED under a home outside the shared `/tmp`:
+  five of internal/posse's own pins refused a render for a loose component
+  above a deny or a credential-store mask, and none of the five is a live
+  wall pin, so the venue read green over all of them — a filtered run with a
+  moved TMPDIR is what says it. `bwrapCarvePins` (BwrapArgs step 5d) binds
+  those directories in place, spliced in at step 2d's mark so that no pin
+  lands on top of the wall it exists for, and the CENSUS of what it emits
+  over the five argvs is 0: no shipped render carries such a nest.
 - (2026-11-21, ranger-base-dw2du) D2(a)'s second direction over the same
   five: 0 of 32 grants lie INSIDE the wall root, while every render has bind
   sources that do. Measured by mutation too: dropping the new arm reds the
@@ -510,4 +554,4 @@ ASSUMED:
 - ranger-base-tbg3h
 - ranger-base-qyq59
 - ranger-base-k45vt
-- ranger-base-a59w7
+- ranger-base-pg251
