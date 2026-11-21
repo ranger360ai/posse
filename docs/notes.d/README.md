@@ -39,6 +39,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-4og5l](ranger-base-4og5l.md) — The vuln-private judge's units stop at a file boundary and read a Go comment's markdown (ranger-base-4og5l) — 2026-11-21
 - [ranger-base-4gyib](ranger-base-4gyib.md) — ranger-base-4gyib — the seat store pin's wide-grant shape is unrenderable under ADR 0100, and the venue is the only place that says so — 2026-11-21
 - [ranger-base-49rxe](ranger-base-49rxe.md) — ranger-base-49rxe — the seat store pin's wide-grant arm asserted a refusal the render had just stopped making — 2026-11-21
+- [ranger-base-3weac](ranger-base-3weac.md) — The flat-reader derivation was keyed on a parameter's NAME (ranger-base-3weac) — 2026-11-21
 - [ranger-base-3cjzs](ranger-base-3cjzs.md) — The mask read XDG_STATE_HOME raw and rex's library expands it first (ranger-base-3cjzs) — 2026-11-21
 - [ranger-base-18brx](ranger-base-18brx.md) — `posse upgrade` stages where the deny was rendered, not where its own TMPDIR points (ranger-base-18brx) — 2026-11-21
 - [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20

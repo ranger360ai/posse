@@ -30,10 +30,21 @@ package posse
 // THE DERIVATION, in four parts, because each one is a place a key could
 // otherwise hide:
 //
-//  1. THE FLAT READERS are yamlflat.go's own `(path, key)` functions, read
-//     out of that file rather than listed — `YamlGet`, `YamlList`,
-//     `YamlMapPairs`, `YamlMapPairsRaw`, `yamlHasKey`, `YamlKeysWithPrefix`.
-//     A seventh added tomorrow is in the census the day it is written.
+//  1. THE FLAT READERS are the functions in yamlflat.go that OPEN their own
+//     first parameter and take the key second, read out of that file rather
+//     than listed — `YamlGet`, `YamlList`, `YamlMapPairs`,
+//     `YamlMapPairsRaw`, `yamlHasKey`, `YamlKeysWithPrefix`. Opening is
+//     transitive and seeded with `os.ReadFile`: `readLines` passes its
+//     parameter to that, the exported readers pass theirs to `readLines`,
+//     and `YamlMapPairs` passes its to `YamlMapPairsRaw`. The two `(lines
+//     []string, key string)` helpers beside them never reach the file, and
+//     neither does `flatFieldRefusal(key, v string)` — which is the whole
+//     discriminator. A seventh added tomorrow is in the census the day it is
+//     written, whatever its parameters are called: the rule was keyed on the
+//     first parameter being NAMED `path` until ranger-base-3weac, a name no
+//     rule in this tree requires, and a reader spelled `(file, key string)`
+//     escaped it in silence (MEASURED 2026-11-21; the arm that pins it is in
+//     TestConfigKeyCensusCanStillSayNo).
 //  2. A READ OF THE INSTANCE CONFIG is one of those calls whose PATH
 //     argument is a `.ConfigPath` selector. That is the whole scope rule, and
 //     it is load-bearing: these same six functions read runtime adapter
@@ -115,6 +126,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -268,12 +280,44 @@ func skcConfigKeyCensus(t *testing.T, root string) skcCensus {
 		readers: map[string]int{},
 	}
 
-	// Part 1: the flat readers, out of yamlflat.go's own signatures. A
-	// reader there takes the FILE first and the key second, and the two
-	// `(lines []string, key string)` helpers beside them do not — which is
-	// the whole discriminator, and the reason this is derived rather than
-	// typed: a seventh reader added to that file is in the census without
-	// anybody remembering this test exists.
+	// Part 1: the flat readers, out of yamlflat.go's own BODIES. A reader
+	// there is a function that turns its FIRST parameter into the file's
+	// bytes and takes the key second: `readLines` hands that parameter to
+	// `os.ReadFile`, the exported readers hand it to `readLines`, and
+	// `YamlMapPairs` hands it to `YamlMapPairsRaw` — so the set is the
+	// transitive closure of "hands its first parameter to something in this
+	// file that opens it", seeded with the stdlib call and naming no local
+	// identifier of its own. The `(lines []string, key string)` helpers
+	// beside them never touch the file, and neither does
+	// `flatFieldRefusal(key, v string)`, which is two strings — that is the
+	// whole discriminator, and the reason this is derived rather than typed:
+	// a seventh reader added to that file is in the census without anybody
+	// remembering this test exists.
+	//
+	// It was keyed on the parameter NAME until ranger-base-3weac — `names[0]
+	// == "path"` — and nothing in this tree ever required that name.
+	// MEASURED there, 2026-11-21: the same reader spelled `(file, key
+	// string)` with a non-test `.ConfigPath` caller was derived by nothing
+	// and its key named nowhere, `make seed-check` green and silent, while
+	// the `path` spelling of it reds. The name test was also what did the
+	// EXCLUDING, which is why deleting it alone was not the fix: without it
+	// `flatFieldRefusal(key, v string)` reads as a reader with `v` in the
+	// key slot. MEASURED the same day with that one conjunct removed and
+	// nothing else changed: 7 flat readers instead of 6, and 112 sites over
+	// 79 distinct keys — UNCHANGED, because part 2's scope rule already
+	// filters that function's call sites, which pass a key string where a
+	// `.ConfigPath` selector would have to be. So the exclusion held the
+	// derived SET honest and added no key here; the next `(string, string)`
+	// non-reader in that file may not be so harmless. The body rule
+	// excludes it for the reason the head comment always gave — it does not
+	// read the file.
+	//
+	// The key index is 1, which is a SHAPE and not a derivation: a
+	// `(path, section, key string)` reader would be censused at `section`.
+	// That reds loudly rather than going quiet — `section`'s literal is
+	// reported as a config key the seed does not document — so it is left as
+	// a shape rather than guessed at.
+	var flatDecls []*ast.FuncDecl
 	for _, x := range files {
 		if x.base != "yamlflat.go" {
 			continue
@@ -283,10 +327,39 @@ func skcConfigKeyCensus(t *testing.T, root string) skcCensus {
 			if !ok || fd.Recv != nil || fd.Body == nil {
 				continue
 			}
-			names, types := skcParams(fd.Type)
-			if len(names) >= 2 && names[0] == "path" && skcIsString(types[0]) && skcIsString(types[1]) {
-				c.flat[fd.Name.Name] = 1
+			flatDecls = append(flatDecls, fd)
+		}
+	}
+	opensFile := map[string]bool{}
+	for round := 0; ; round++ {
+		added := 0
+		for _, fd := range flatDecls {
+			if opensFile[fd.Name.Name] {
+				continue
 			}
+			names, _ := skcParams(fd.Type)
+			if len(names) == 0 || names[0] == "" {
+				continue
+			}
+			if skcHandsToFileOpen(fd.Body, names[0], opensFile) {
+				opensFile[fd.Name.Name] = true
+				added++
+			}
+		}
+		if added == 0 {
+			break
+		}
+		if round > len(flatDecls) {
+			t.Fatal("the flat-reader derivation did not settle — a derivation that cannot terminate holds nothing")
+		}
+	}
+	for _, fd := range flatDecls {
+		if !opensFile[fd.Name.Name] {
+			continue
+		}
+		names, types := skcParams(fd.Type)
+		if len(names) >= 2 && skcIsString(types[0]) && skcIsString(types[1]) {
+			c.flat[fd.Name.Name] = 1
 		}
 	}
 
@@ -576,6 +649,43 @@ func skcParams(ft *ast.FuncType) (names []string, types []ast.Expr) {
 func skcIsString(e ast.Expr) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && id.Name == "string"
+}
+
+// skcHandsToFileOpen is part 1's rule for one yamlflat.go body: does it hand
+// the named parameter to something that OPENS it — `os.ReadFile` itself, or
+// another function in that file already derived as doing so — at that
+// callee's own first argument, which is where a path goes in every one of
+// them. It is what makes part 1 a derivation over behaviour rather than over
+// a parameter's spelling (ranger-base-3weac).
+func skcHandsToFileOpen(body *ast.BlockStmt, param string, opensFile map[string]bool) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		if !skcIsOsReadFile(call.Fun) && !opensFile[skcCallee(call.Fun)] {
+			return true
+		}
+		if id, ok := call.Args[0].(*ast.Ident); ok && id.Name == param {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// skcIsOsReadFile is the one call part 1's fixpoint is seeded with, and it is
+// stdlib on purpose: a seed spelled as a local identifier would be the same
+// convention-by-name the body rule replaced. The package qualifier is
+// checked, so a `ReadFile` method on some other receiver is not it.
+func skcIsOsReadFile(e ast.Expr) bool {
+	sel, ok := e.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "ReadFile" {
+		return false
+	}
+	id, ok := sel.X.(*ast.Ident)
+	return ok && id.Name == "os"
 }
 
 // skcIsConfigPath is part 2's scope rule, and the one place it is said: the
@@ -895,19 +1005,64 @@ func TestConfigKeyCensusCanStillSayNo(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// yamlflat.go's shape, so part 1 derives the readers from it. Two
-	// non-readers beside them: the `(lines, key)` helper every real reader
-	// delegates to, and a one-argument function.
+	// yamlflat.go's shape, so part 1 derives the readers from it — BODIES
+	// and not signatures, so these carry the real file's hops: `readLines`
+	// to `os.ReadFile`, each reader to `readLines`, and `YamlMapPairs` one
+	// further out through `YamlMapPairsRaw`, which is the member the
+	// transitive half of the rule exists for.
+	//
+	// Four non-readers beside them, one for each way part 1 must say no: the
+	// `(lines, key)` helpers every real reader delegates to, a one-argument
+	// function, a `(string, string)` function that never touches the file
+	// (`flatFieldRefusal`'s shape — this is what the deleted name test used
+	// to exclude, and what the body rule must exclude on its own), and
+	// `YamlGetAlt`, a reader whose first parameter is named anything but
+	// `path`, which the name-keyed rule derived as nothing at all
+	// (ranger-base-3weac).
 	plant("yamlflat.go", `package p
 
-func YamlGet(path, key string) string              { return "" }
-func YamlList(path, key string) []string           { return nil }
-func YamlMapPairs(path, mapkey string) [][2]string { return nil }
-func YamlMapPairsRaw(path, mapkey string) [][3]string { return nil }
-func YamlKeysWithPrefix(path, prefix string) []string { return nil }
-func yamlHasKey(path, key string) bool             { return false }
-func yamlGetLines(lines []string, key string) string { return "" }
-func readLines(path string) []string               { return nil }
+import "os"
+
+func readLines(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return []string{string(b)}
+}
+
+func YamlGet(path, key string) string    { return yamlGetLines(readLines(path), key) }
+func YamlGetAlt(file, key string) string { return yamlGetLines(readLines(file), key) }
+func YamlList(path, key string) []string { return yamlListLines(readLines(path), key) }
+
+func YamlMapPairsRaw(path, mapkey string) [][3]string {
+	for _, ln := range readLines(path) {
+		_ = ln
+		_ = mapkey
+	}
+	return nil
+}
+
+func YamlMapPairs(path, mapkey string) [][2]string {
+	_ = YamlMapPairsRaw(path, mapkey)
+	return nil
+}
+
+func YamlKeysWithPrefix(path, prefix string) []string {
+	_ = readLines(path)
+	_ = prefix
+	return nil
+}
+
+func yamlHasKey(path, key string) bool {
+	_ = readLines(path)
+	_ = key
+	return false
+}
+
+func yamlGetLines(lines []string, key string) string    { return "" }
+func yamlListLines(lines []string, key string) []string { return nil }
+func flatFieldRefusal(key, v string) string             { return key + v }
 `)
 	// Padding, so the 20-file floor in skcWitness is met by a planted tree
 	// too: a fence that can only be exercised against the real repo is a
@@ -936,6 +1091,11 @@ func (a *App) plantedAge(key string, def int) int {
 	_ = YamlGet(a.ConfigPath, key)
 	return def
 }
+
+// Read through a flat reader whose first parameter is named "file" and not
+// "path": the escape ranger-base-3weac measured, now a key the census owes
+// an answer about.
+func (a *App) PlantedAlt() string { return YamlGetAlt(a.ConfigPath, "planted_alt_named") }
 
 func (a *App) PlantedLiteral() string  { return a.CfgGet("planted_literal", "") }
 func (a *App) PlantedHop() int         { return a.plantedAge("planted_hopped", 1) }
@@ -984,8 +1144,19 @@ func (a *App) PlantedDynamic(n string) string { return a.CfgGet("planted_cap_"+n
 
 	c := skcConfigKeyCensus(t, dir)
 
-	if len(c.flat) != 6 {
-		t.Errorf("part 1 derived %d flat readers from the planted yamlflat.go (%v), want exactly 6 — the `(path, key)` rule either missed a reader or read a `(lines, key)` helper as one", len(c.flat), c.flat)
+	// The exact set, and not a count: each name is a different way part 1
+	// can go wrong, and each absence from it is a different way it can go
+	// wide. `YamlMapPairs` is the transitive hop, `YamlGetAlt` is the
+	// parameter-name escape, and the four omitted are the four shapes that
+	// must stay out — `readLines` (one parameter, so no key slot),
+	// `flatFieldRefusal` (two strings, never opens the file), and the two
+	// `(lines, key)` helpers.
+	wantFlat := []string{
+		"YamlGet", "YamlGetAlt", "YamlKeysWithPrefix", "YamlList",
+		"YamlMapPairs", "YamlMapPairsRaw", "yamlHasKey",
+	}
+	if got := seedSortedKeys(c.flat); !reflect.DeepEqual(got, wantFlat) {
+		t.Errorf("part 1 derived %v from the planted yamlflat.go, want exactly %v — the body rule either missed a reader (`YamlMapPairs` is only reachable through `YamlMapPairsRaw`; `YamlGetAlt` is only reachable if the rule is not keyed on the parameter being named `path`) or read a non-reader as one (`flatFieldRefusal` is two strings and opens nothing)", got, wantFlat)
 	}
 	for _, want := range []string{"CfgGet", "plantedAge"} {
 		if _, ok := c.readers[want]; !ok {
@@ -1002,6 +1173,7 @@ func (a *App) PlantedDynamic(n string) string { return a.CfgGet("planted_cap_"+n
 	}
 	for _, want := range []struct{ key, why string }{
 		{"planted_literal", "a literal handed to CfgGet"},
+		{"planted_alt_named", "a literal handed to a flat reader whose first parameter is named `file` — the escape ranger-base-3weac measured, which the parameter-name rule could not see at all"},
 		{"planted_hopped", "a literal handed to a derived reader one hop out"},
 		{"planted_const", "a package-level string constant"},
 		{"planted_prefix_", "a prefix read"},

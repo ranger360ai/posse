@@ -34,7 +34,7 @@ line for it would be a claim nothing can hold.
 
 What stops the next one arriving the same way is a census rather than a
 reviewer: the config keys the harness reads are derived from the flat-YAML
-readers' own signatures, the paths that name the instance config, and a
+readers' own bodies, the paths that name the instance config, and a
 fixpoint over the shared readers that take a key as a parameter — so a key
 read through `attnAge`, through a string constant, through a `[]string` the
 code loops over, or through a closure is in the census — and each one must be

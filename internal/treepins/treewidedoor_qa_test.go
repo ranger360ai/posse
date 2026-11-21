@@ -104,7 +104,14 @@ package treepins
 // — derived from yamlflat.go's own readers, the `.ConfigPath` scope rule and
 // a fixpoint over the shared readers that take a key as a parameter — is
 // documented in examples/config.yaml or in a register row carrying its
-// reason. Their subject is that file, which is this door's:
+// reason. This is a SUMMARY: the derivation's four parts are stated in one
+// place, that census's own head comment
+// (internal/posse/seedkeycensus_test.go), which is the record whenever the
+// two disagree. Said here because ranger-base-3weac found part 1's own
+// comment wrong about part 1 and had four copies of the wording to correct;
+// a reader who needs the rule reads the record, and a copy that cannot
+// disagree with it is a copy that claims less. Their subject is that file,
+// which is this door's:
 //
 //	TestEveryConfigKeyTheHarnessReadsIsDocumentedOrRegistered
 //	                                              make seed-check
