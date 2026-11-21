@@ -300,8 +300,33 @@ func posseBinForTest(t *testing.T) string {
 //   - kill(<a pid that names nobody>, 0) is ESRCH in both, so the errno still
 //     reads liveness;
 //   - the runtime still SIGTERMs a child it fork+exec'd itself, in both;
-//   - and the seat still dies with its parent (--die-with-parent is a
-//     pdeathsig, a kernel delivery that does not pass the Landlock hook).
+//   - and the seat still dies with its parent, with a control arm that has
+//     no Landlock layer on the line at all.
+//
+// WHY THE DEATH ARM IS EXPECTED TO PASS, written correctly this time. The
+// first draft said `--die-with-parent` is "a kernel delivery that does not
+// pass the Landlock hook", and that is false: a pdeathsig goes through
+// security_task_kill like any other signal (do_exit ->
+// forget_original_parent -> group_send_sig_info -> check_kill_permission ->
+// security_task_kill). What makes Landlock allow it is WHOSE signal it is.
+// SCOPE_SIGNAL restricts signals sent FROM a domain, and the sender here is
+// the DYING PARENT — the outer bwrap, which is outside the step and carries
+// no Landlock domain — so the seat's own domain is never consulted. The seat
+// is the TARGET, and a Landlock domain does not protect its holder from the
+// outside.
+//
+// WHICH IS WHY THE DEATH ARM NEEDS A CONTROL AND A SELF-REPORT
+// (ranger-base-8m9d0). The arm reds every ubuntu-26.04 arm-1 job
+// (ranger-base-z56s9), and a one-shape arm that reds can only say "the seat
+// outlived its parent" — it cannot say whether the pdeathsig was CLEARED
+// before the seat ran or SET and never DELIVERED, nor whether a plain
+// `bwrap --die-with-parent --unshare-user` seat on that runner dies either.
+// So the arm runs twice over one body, the control differing by the step
+// alone, and the seat writes what it can read about itself beside its pid:
+// its PR_GET_PDEATHSIG, its ppid, its NoNewPrivs/Seccomp rows and its
+// AppArmor label. The parent prints that for BOTH arms, pass or fail,
+// because nobody has a shell on that runner and the CI log is the only
+// instrument. wuSeatSelfReport names how to read the four outcomes.
 //
 // ONLY SIGNAL 0 IS AIMED OUTSIDE. The outside process is one this test
 // started for the purpose; nothing here can reach a process it did not.
@@ -393,44 +418,92 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 		})
 	}
 
-	// And it still dies with its parent. A shell stands between this test and
-	// bwrap — the trailing `:` keeps it from exec'ing bwrap in place — and is
-	// SIGKILLed; bwrap's pdeathsig, and the one it sets on its own child, must
-	// take the seat down with it. The seat is the step-wrapped test binary,
-	// which writes its own (host) pid and sleeps.
-	t.Run("the seat still dies with its parent", func(t *testing.T) {
-		pidFile := filepath.Join(t.TempDir(), "seat.pid")
-		args := []string{"--die-with-parent", "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev",
-			"--unshare-user", "--bind", filepath.Dir(pidFile), filepath.Dir(pidFile)}
-		args = append(args, WallUnixStepArgv(self)...)
-		args = append(args, exe, "-test.run=^TestWallUnixSignalSeatChild$")
-		sh := exec.Command("sh", append([]string{"-c", `bwrap "$@"; :`, "sh"}, args...)...)
-		sh.Env = wuSeatEnv(wuEnvSigPidFile + "=" + pidFile)
-		if err := sh.Start(); err != nil {
-			t.Fatal(err)
-		}
-		var seat int
-		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-			if b, err := os.ReadFile(pidFile); err == nil && strings.HasSuffix(string(b), "\n") {
-				seat, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+	// And it still dies with its parent — in TWO arms over one body, the
+	// control differing by the step alone, each failing on its own and naming
+	// itself. A shell stands between this test and bwrap — the trailing `:`
+	// keeps it from exec'ing bwrap in place — and is SIGKILLed; bwrap's
+	// pdeathsig, and the one it sets on its own child, must take the seat down
+	// with it. The seat is the test binary, which writes its pid and its
+	// self-report and sleeps.
+	//
+	// BOTH ARMS' REPORTS ARE COLLECTED HERE AND DUMPED BY WHICHEVER ARM REDS,
+	// which is not belt-and-braces over the t.Logf below: ci.yml runs `make
+	// test-arm1` and `make test-arm1` passes no `-v`, so a PASSING arm's
+	// t.Logf never reaches the CI log. Three of the four readings in
+	// wuSeatSelfReport's table are about how the two arms DIFFER, so a log
+	// carrying only the failing arm's report cannot reach them. The control
+	// runs first, the arms are independent subtests, and the dump after the
+	// loop fires once either of them has failed.
+	var (
+		deaths    []string
+		anyArmRed bool
+	)
+	for _, c := range []struct {
+		name string
+		step []string
+	}{
+		// The control: a red here is not the Landlock layer, because this arm
+		// has no Landlock layer. It is the runner — bwrap, the AppArmor exec
+		// transition, or the credentials — and the residual goes back to
+		// ranger-base-z56s9 as "die-with-parent is a no-op on that platform".
+		{"control: no Landlock layer on the line, and it still dies with its parent", nil},
+		{"the seat still dies with its parent", WallUnixStepArgv(self)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pidFile := filepath.Join(t.TempDir(), "seat.pid")
+			args := []string{"--die-with-parent", "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev",
+				"--unshare-user", "--bind", filepath.Dir(pidFile), filepath.Dir(pidFile)}
+			args = append(args, c.step...)
+			args = append(args, exe, "-test.run=^TestWallUnixSignalSeatChild$")
+			sh := exec.Command("sh", append([]string{"-c", `bwrap "$@"; :`, "sh"}, args...)...)
+			sh.Env = wuSeatEnv(wuEnvSigPidFile + "=" + pidFile)
+			if err := sh.Start(); err != nil {
+				t.Fatal(err)
+			}
+			var (
+				seat   int
+				report string
+			)
+			for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+				b, err := os.ReadFile(pidFile)
+				if err != nil || !strings.HasSuffix(string(b), wuSeatReportEnd) {
+					continue
+				}
+				report = string(b)
+				seat = wuSeatReportPid(report)
 				break
 			}
-		}
-		if seat <= 0 {
-			_ = sh.Process.Kill()
-			_ = sh.Wait()
-			t.Fatal("NOTHING MEASURED: the seat never wrote its pid")
-		}
-		_ = sh.Process.Kill() // the one pid this test launched
-		_ = sh.Wait()
-		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-			if wuPidGone(seat) {
-				return
+			if seat <= 0 {
+				_ = sh.Process.Kill()
+				_ = sh.Wait()
+				// Before the Fatalf, which Goexits: an arm that measured
+				// nothing is still an arm whose SIBLING's report is wanted.
+				anyArmRed = true
+				t.Fatalf("NOTHING MEASURED in %q: the seat never wrote a complete self-report (%d bytes so far):\n%s\nargv: bwrap %s",
+					c.name, len(report), report, strings.Join(args, " "))
 			}
-		}
-		_ = syscall.Kill(seat, syscall.SIGKILL)
-		t.Errorf("the seat (pid %d) outlived its parent by 10s with the Landlock layer on the line — --die-with-parent no longer reaches it", seat)
-	})
+			// Unconditionally, pass or fail: this is the instrument the CI log
+			// is read with, and a `-v` run on a box with a shell is how its
+			// rows are learnt.
+			t.Logf("seat self-report (%s):\n%s", c.name, report)
+			deaths = append(deaths, c.name+":\n"+report)
+			_ = sh.Process.Kill() // the one pid this test launched
+			_ = sh.Wait()
+			for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+				if wuPidGone(seat) {
+					return
+				}
+			}
+			_ = syscall.Kill(seat, syscall.SIGKILL)
+			anyArmRed = true
+			t.Errorf("%s: the seat (pid %d) outlived its SIGKILLed parent by 10s — --die-with-parent no longer reaches it. Read the seat's own report before blaming a layer:\n%s\nargv: bwrap %s",
+				c.name, seat, report, strings.Join(args, " "))
+		})
+	}
+	if anyArmRed {
+		t.Errorf("a death arm failed, so here is EVERY arm's self-report, the passing ones included — `make test-arm1` passes no -v, and three of the four readings are about how the arms differ (wuSeatSelfReport):\n%s",
+			strings.Join(deaths, "\n"))
+	}
 }
 
 // wuPidGone: ESRCH, or a zombie nobody has reaped yet, which is dead.
@@ -449,10 +522,114 @@ func wuPidGone(pid int) bool {
 	return false
 }
 
+// wuSeatReportEnd terminates the seat's self-report, and it is what the
+// parent waits for. The report is more than one line now, so a trailing
+// newline no longer says "complete" — the seat writes the whole buffer in one
+// os.WriteFile and the parent reads nothing until this sentinel is there, so a
+// torn read is a retry and never a parse of half a report.
+const wuSeatReportEnd = "END\n"
+
+// wuSeatSelfReport is what the seat can read about ITSELF, and it exists
+// because a death arm that reds on a runner nobody has a shell on has to say
+// WHICH of the two readings it is (ranger-base-8m9d0). How to read it, in the
+// next ubuntu arm-1 log:
+//
+//   - pdeathsig=0 in BOTH arms: the runner clears it before the seat runs —
+//     bwrap, an AppArmor exec transition, or the credentials. The Landlock
+//     premise above stands and the residual is "die-with-parent is a no-op on
+//     that platform", which goes back to ranger-base-z56s9.
+//   - pdeathsig=0 in the step arm ONLY: the step clears it, and the step is
+//     this repo's code to fix.
+//   - pdeathsig=9 and the seat survives anyway: a DELIVERY problem, not a
+//     clearing one, and ADR ranger-base-sv89t's premise needs amending.
+//   - both arms pass: the original red came from the environment.
+//
+// THE ROWS BESIDE THE PDEATHSIG ARE THE SUSPECTS. ppid says whether the seat
+// is still parented to the bwrap that set the pdeathsig or was reparented
+// already; NoNewPrivs and Seccomp say whether this is the step's own
+// PR_SET_NO_NEW_PRIVS or something the runner did; and the AppArmor label is
+// the one difference between that runner and this box that could clear a
+// pdeathsig through an exec transition (a kernel with no AppArmor answers
+// ENOENT or EINVAL here, and that IS the answer, not a failure).
+//
+// MEASURED 2026-11-21 on this box (Linux 7.2.15-1-omarchy, go1.27.3,
+// bubblewrap 0.13.1, LSMs lockdown,capability,landlock,yama,bpf,ima,evm with
+// no AppArmor), both death arms PASS and both report:
+//
+//	pdeathsig 9 · NoNewPrivs: 1 · Seccomp: 0 · Seccomp_filters: 0
+//	apparmor <read /proc/self/attr/current: invalid argument>
+//
+// which is the baseline an ubuntu log is read against, and it carries one
+// reading worth having before the log arrives: **NoNewPrivs is 1 in the
+// CONTROL arm too**, so that row is bwrap's `--unshare-user` and not the
+// step's PR_SET_NO_NEW_PRIVS, and it cannot tell the two arms apart. The
+// EINVAL on the AppArmor label is this kernel having no LSM that answers that
+// file — the valid answer the paragraph above promises, and the row most
+// likely to differ on ubuntu-26.04.
+//
+// EVERY ROW IS BEST-EFFORT AND NONE OF THEM CAN FAIL THE SEAT. An
+// unreadable row prints its error and the report still ends with its
+// sentinel: the pin's subject is whether the seat dies, and a diagnostic that
+// can turn a death arm into a fixture red would be worse than no diagnostic.
+func wuSeatSelfReport() string {
+	var b strings.Builder
+	// pid FIRST and on its own line: it is the one row the parent parses, and
+	// everything after it is for a human reading a log.
+	b.WriteString("pid " + strconv.Itoa(os.Getpid()) + "\n")
+	b.WriteString("pdeathsig " + wuSeatPdeathsig() + "\n")
+	b.WriteString("ppid " + strconv.Itoa(os.Getppid()) + "\n")
+	if s, err := os.ReadFile("/proc/self/status"); err != nil {
+		b.WriteString("status <unreadable: " + err.Error() + ">\n")
+	} else {
+		for _, want := range []string{"NoNewPrivs:", "Seccomp:", "Seccomp_filters:"} {
+			b.WriteString(want + " " + wuStatusField(string(s), want) + "\n")
+		}
+	}
+	// The AppArmor label. ENOENT (no securityfs row) and EINVAL (a kernel
+	// with no LSM that answers this file) are both valid answers and are
+	// printed as such.
+	if s, err := os.ReadFile("/proc/self/attr/current"); err != nil {
+		b.WriteString("apparmor <" + err.Error() + ">\n")
+	} else {
+		b.WriteString("apparmor " + strings.TrimRight(string(s), "\x00\n") + "\n")
+	}
+	b.WriteString(wuSeatReportEnd)
+	return b.String()
+}
+
+// wuStatusField pulls one `Name:\tvalue` row out of /proc/self/status, and
+// says `<absent>` rather than empty when the kernel does not have it:
+// Seccomp_filters: is a 4.17+ row and Seccomp: needs CONFIG_SECCOMP, so an
+// empty string here would read as "0" to someone skimming the log.
+func wuStatusField(status, key string) string {
+	for _, line := range strings.Split(status, "\n") {
+		if strings.HasPrefix(line, key) {
+			return strings.TrimSpace(strings.TrimPrefix(line, key))
+		}
+	}
+	return "<absent>"
+}
+
+// wuSeatReportPid reads back the one row the parent needs. It takes the
+// report and not the raw file so that a report whose sentinel arrived is
+// parsed exactly once.
+func wuSeatReportPid(report string) int {
+	for _, line := range strings.Split(report, "\n") {
+		if rest, ok := strings.CutPrefix(line, "pid "); ok {
+			n, err := strconv.Atoi(strings.TrimSpace(rest))
+			if err != nil {
+				return 0
+			}
+			return n
+		}
+	}
+	return 0
+}
+
 // TestWallUnixSignalSeatChild is the seat for the pin above.
 func TestWallUnixSignalSeatChild(t *testing.T) {
 	if pf := os.Getenv(wuEnvSigPidFile); pf != "" {
-		if err := os.WriteFile(pf, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+		if err := os.WriteFile(pf, []byte(wuSeatSelfReport()), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		time.Sleep(60 * time.Second)
