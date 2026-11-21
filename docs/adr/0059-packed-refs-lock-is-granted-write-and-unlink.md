@@ -313,10 +313,23 @@ beside this record; every arm on a fresh fixture, shipped profile as control):
 | lock held per `cherry-pick --abort` | n/a | 64–242 ms, 3 transactions |
 | stray lock from anyone, then `--abort` | rc 0 after 3 × 1 s retries, blocker survives | same; the 71g2f arm fires in both |
 
+ALSO MEASURED, and on the runners rather than this box (2026-11-21,
+ranger-base-m8msi): D2.1, D2.3 and D2.4 are green on darwin in the spelling
+ranger-base-5blmt gave them — every probe under the seat-store env prefix
+(`GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`) that a
+dispatched seat really gets. Thirteen arms, both macos legs that reach the
+file (`ci` arms 2 and 3), three consecutive runs: 44921131540, 44926213762,
+44927635225, on image `macos-26-arm64` 20261117.0516.1, Darwin 25.6.0 arm64,
+**git 2.56.1**. That retires the ASSUMED this section used to carry about
+the runners' git keeping the tempfile shape for `packed-refs.new`: D2.3
+asserts the refusal lands at that name, and it does, one minor version past
+the one guessed about. docs/notes.d/ranger-base-m8msi.md has the method —
+`ci` runs `go test` without `-v`, so a pass and a skip print alike, and what
+separates them is the `sync.Once` behind `sandboxApplyRefusal` plus one
+test in the same binary that is in the FAIL list.
+
 ASSUMED: the rate of SIGKILLs landing inside a ~70 ms window (the launcher's
 kill path is SIGTERM then SIGKILL to the runtime's pid — loadguardkill.go —
 and what reaches a git grandchild is unmeasured; measured only that killing
 the `git cherry-pick` FRONTEND leaves the worker to finish and remove the
-lock); that no operator-side pair of git writers races on this repo; that
-git 2.55 (the runners) keeps the tempfile shape for `packed-refs.new` (the
-msex test notes 2.55 only moved gc's exit code).
+lock); that no operator-side pair of git writers races on this repo.
