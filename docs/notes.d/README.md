@@ -20,6 +20,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-dot6w](ranger-base-dot6w.md) — ranger-base-dot6w — shape 1 pins the directories between nested write grants — 2026-11-21
 - [ranger-base-bx9wj](ranger-base-bx9wj.md) — ranger-base-bx9wj — the live pins' home was under TMPDIR, so ADR 0100's refusals measured only in the venue — 2026-11-21
 - [ranger-base-bncbk](ranger-base-bncbk.md) — Shape 5's directory masks cover the name before the credential exists (ranger-base-bncbk) — 2026-11-21
+- [ranger-base-blkse](ranger-base-blkse.md) — git will not pack a ref it cannot resolve, and a seat's commit is in the seat's store (ranger-base-blkse) — 2026-11-21
 - [ranger-base-a59w7](ranger-base-a59w7.md) — ranger-base-a59w7 — the carve-out's denies and masks get their loose parents bound in place — 2026-11-21
 - [ranger-base-7or9p](ranger-base-7or9p.md) — The judge's wall comes from the launcher, so a verdict can move with no landing (ranger-base-7or9p) — 2026-11-21
 - [ranger-base-7c2py](ranger-base-7c2py.md) — Two instruments that said yes without measuring: arm 6's coin flip and the census's empty denominator (ranger-base-7c2py) — 2026-11-21

@@ -107,6 +107,19 @@ func wgFixtureIn(t *testing.T, root string) wgFixture {
 	return f
 }
 
+// wgFixtureAnyBox is that fixture under a root EVERY box can use: a fixture
+// home, and a root this file chooses rather than sbRoot's — which skips
+// wherever TMPDIR resolves under /tmp, true on every Linux box. For an arm
+// that runs no command under a wall, and whose subject is therefore not the
+// profile: wgDenyFixture (the ADR 0086 parity arms, which narrow the set by
+// spelling instead) and wgPack's own pin (ranger-base-blkse, whose subject is
+// the seat's object store and not the sandbox).
+func wgFixtureAnyBox(t *testing.T) wgFixture {
+	t.Helper()
+	wtqaHome(t) // the home caches, and the seat's wall dir, name a fixture home
+	return wgFixtureIn(t, gitTempDir(t))
+}
+
 func (f wgFixture) writable(t *testing.T) []string {
 	t.Helper()
 	return f.a.SeatbeltWritable(f.ag, f.tree, f.gates)
@@ -304,13 +317,21 @@ func wgExists(t *testing.T, p string) bool {
 // box the reader cannot log in to (ranger-base-zcj0z). The ONE arm in this
 // file that reads a directory's existence as a verdict is wgPack's vacuity
 // guard, and when it red on darwin — ranger-base-8z410 finding 2 — its
-// message named the directory and not its contents, so the two causes it has
-// could not be told apart from the only log that prints it. A `<branch>.lock`
-// in there is a lock a seat created and could not unlink, which is a defect
-// in the wall; nothing in there is git's pack-refs declining to prune an
-// empty directory, which is this guard's problem. An unreadable directory is
-// said out loud rather than rendered as "empty", because "empty" is one of
-// the two answers.
+// message named the directory and not its contents, so the causes it has
+// could not be told apart from the only log that prints it. An unreadable
+// directory is said out loud rather than rendered as "empty", because
+// "empty" is one of the answers.
+//
+// IT WORKED, and the answer was the one the refusal did not offer
+// (ranger-base-blkse): the macos legs printed `developer-2-probe`, the
+// session's own LOOSE REF — not a `<branch>.lock`, which would have been a
+// lock a seat created and could not unlink and a real defect in the wall,
+// and not an empty directory, which would have been git's pack-refs
+// declining to prune one. git does not pack a ref that does not resolve to
+// an object, and since ranger-base-5blmt the seat's commit is in the seat's
+// OWN store until it is imported — so the ref was broken from the repo and
+// the loose file and its directory both survived the pack. wgPack imports
+// first now, and the three readings are spelled out in its refusal.
 func wgListing(t *testing.T, dir string) string {
 	t.Helper()
 	ents, err := os.ReadDir(dir)
@@ -493,21 +514,99 @@ func mustRead(t *testing.T, p string) string {
 
 func wgPack(t *testing.T, f wgFixture) {
 	t.Helper()
+	// THE IMPORT FIRST, as every fleet caller that reads a session tip does
+	// (ranger-base-xcucy: spliceDetachedWork, the landing sweep and
+	// RemoveSessionTree all import before they look). Since ranger-base-5blmt
+	// a seat's commit object lands in the seat's OWN store, so until that
+	// store is drained the shared repo reads the session's ref as BROKEN —
+	// and git does not pack a ref that does not resolve to an object, so the
+	// loose ref and the directory this rig needs pruned both survive the
+	// pack (MEASURED 2026-11-21, git 2.56.0, linux: pack-refs exits 0, prints
+	// `error: refs/heads/posse/developer-2-probe does not point to a valid
+	// object!`, and prunes the SIBLING session's loose ref out of the same
+	// directory). That is what red macos arms 2 and 3 from 9193d3b1 —
+	// ranger-base-blkse; arm 1 dies in tree-check there and never reaches
+	// this file — and it is not the fixture being darwin: it is this
+	// file's arms skipping without sandbox-exec, so linux never reached the
+	// state. TestQAWgPackPrunesTheRefDirectoryAfterASeatStoreCommit measures
+	// both halves on any box.
+	if err := importSeatObjects(&SessionTree{Path: f.tree, Repo: f.repo}); err != nil {
+		t.Fatalf("the seat's own object store would not import, so the repo cannot resolve the session's ref and nothing below is measured: %v", err)
+	}
 	mustGit(t, f.repo, "pack-refs", "--all")
 	dir := filepath.Dir(f.ref(f.branch))
 	if wgExists(t, dir) {
 		t.Fatalf("pack-refs left %s in place — the arm this test needs was not built, so nothing below it is measured.\n"+
 			"IN THAT DIRECTORY: %s\n"+
-			"Read that line before anything else (ranger-base-zcj0z). A `%s.lock` is a lock a sandboxed git created "+
-			"and could not unlink, and that is a real defect in the wall this file pins. An EMPTY directory is git's "+
-			"pack-refs declining to prune it, which is this guard's problem and not its caller's — git 2.56.0 on "+
-			"linux prunes it in both the plain and the linked-worktree arm (MEASURED 2026-11-21, ranger-base-8z410), "+
-			"and the macos runner moved to 2.56.1 in the same window this went red. This arm skips on every box "+
-			"without sandbox-exec, so a CI macos leg is the only reader there is.",
+			"Read that line before anything else (ranger-base-zcj0z), because it names which of three this is. "+
+			"A `%[3]s.lock` is a lock a sandboxed git created and could not unlink, and that is a real defect in "+
+			"the wall this file pins. A loose `%[3]s` is a ref git would not pack because the repo cannot resolve "+
+			"it: the seat's commit is still only in the seat's own store, so the import above did not drain it "+
+			"(ranger-base-blkse, which is what this read on macos before that import existed). An EMPTY directory "+
+			"is git's pack-refs declining to prune it, which is this guard's problem and not its caller's — git "+
+			"2.56.0 on linux prunes it in both the plain and the linked-worktree arm (MEASURED 2026-11-21, "+
+			"ranger-base-8z410). This arm skips on every box without sandbox-exec, so a CI macos leg is the only "+
+			"reader there is.",
 			dir, wgListing(t, dir), filepath.Base(f.ref(f.branch)))
 	}
 	if got, head := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch), mustGit(t, f.tree, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("the packed ref no longer names the session's commit (%s != %s)", got, head)
+	}
+}
+
+// ─── the guard's own venue (ranger-base-blkse) ───────────────────────────────
+//
+// wgPack is a t.Fatalf inside a file whose every arm skips without
+// sandbox-exec, so until this pin its vacuity guard had one reader on earth:
+// a macos CI leg. It red there from 9193d3b1 over a state no linux run could
+// reach — and the state has nothing to do with the sandbox. It is the seat's
+// own object store, which this package builds on any box (siSeatCommit), so
+// the guard is measured here, with the un-imported state as the CONTROL.
+//
+// The control is also the bead's discriminator, and it is why the macos log
+// alone excluded its own stated confound (the runner's git moved 2.56.0 to
+// 2.56.1 in the same window): the SIBLING session's loose ref sits in the
+// very same directory and the very same pack-refs prunes it. pack-refs
+// prunes fine. What it will not do is pack a ref it cannot resolve.
+func TestQAWgPackPrunesTheRefDirectoryAfterASeatStoreCommit(t *testing.T) {
+	// One commit, into a store of the seat's own at the name the render binds
+	// and the importers read, and the witness that it really went there.
+	seat := func(f wgFixture) string {
+		tr := &SessionTree{Path: f.tree, Repo: f.repo}
+		tip := siSeatCommit(t, tr, siStoreFor(t, tr, ""), "seat.txt", "seat work\n", "a seat's commit")
+		if siHas(t, f.repo, tip) {
+			t.Fatal("CONTROL: the shared store already holds the seat's commit — this is not the state that red on darwin")
+		}
+		return tip
+	}
+
+	// THE CONTROL: the same seat commit, the same pack, no import. git exits
+	// 0, says `does not point to a valid object!` on stderr, prunes the
+	// sibling's loose ref and leaves the session's own — so the directory
+	// survives, which is the darwin reading reproduced on this box.
+	c := wgFixtureAnyBox(t)
+	seat(c)
+	dir := filepath.Dir(c.ref(c.branch))
+	mustGit(t, c.repo, "pack-refs", "--all")
+	if !wgExists(t, dir) {
+		t.Fatal("CONTROL: the directory was pruned with the seat's commit still only in its own store — then the arm below is not measuring the import")
+	}
+	if got, want := wgListing(t, dir), filepath.Base(c.ref(c.branch)); got != want {
+		t.Errorf("CONTROL: the directory holds %q, want exactly %q — the session's ref unpacked and the SIBLING's pruned by the same pack is what says pack-refs prunes fine here", got, want)
+	}
+
+	// THE ARM: wgPack, which imports first. Same fixture shape, same commit.
+	f := wgFixtureAnyBox(t)
+	tip := seat(f)
+	wgPack(t, f) // fatals, with the listing, if the directory survives
+	if !siHas(t, f.repo, tip) {
+		t.Errorf("the ref packed without the seat's commit reaching the shared store (%s) — the pack is reading a tip nothing holds", tip)
+	}
+	if got := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch); got != tip {
+		t.Errorf("the packed ref names %s, want the seat's commit %s", got, tip)
+	}
+	if packed := mustRead(t, filepath.Join(f.common, "packed-refs")); !strings.Contains(packed, tip+" refs/heads/"+f.branch) {
+		t.Errorf("packed-refs does not carry the session's ref at the seat's commit:\n%s", packed)
 	}
 }
 

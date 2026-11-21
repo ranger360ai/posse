@@ -52,17 +52,18 @@ func wgDeny(f wgFixture) *AgentFile {
 	return &ag
 }
 
-// wgDenyFixture is wgNewFixture's repo, worktree and sibling under a root
-// this file chooses. wgNewFixture takes sbRoot's, which SKIPS wherever
-// TMPDIR resolves under /tmp — true on every Linux box, which is the host
-// R0 was measured on and the one these arms most need to run on. Nothing
+// wgDenyFixture is wgFixtureAnyBox under this file's own name: wgNewFixture's
+// repo, worktree and sibling under a root that is not sbRoot's, which SKIPS
+// wherever TMPDIR resolves under /tmp — true on every Linux box, which is the
+// host R0 was measured on and the one these arms most need to run on. Nothing
 // here runs a command under a wall, so the blanket temp grant that makes
 // sbRoot skip is handled where it belongs instead: wgRepoGrants takes it out
-// of the set by its own spelling.
+// of the set by its own spelling. (It was this body, until ranger-base-blkse
+// gave wgPack's own pin the same need and the helper a home beside the
+// fixture it wraps.)
 func wgDenyFixture(t *testing.T) wgFixture {
 	t.Helper()
-	wtqaHome(t) // the home cache grants then name a fixture home, not the operator's
-	return wgFixtureIn(t, gitTempDir(t))
+	return wgFixtureAnyBox(t)
 }
 
 // wgRepoGrants narrows a writable set to the SESSION'S OWN REPOSITORY: its
