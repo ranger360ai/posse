@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -106,14 +107,14 @@ func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { af.Close() })
-	var stderr strings.Builder
+	said := new(wwSaid)
 	code = make(chan int, 1)
 	pid := new(int)
 	go func() {
 		code <- runWallWatch(wallWatchRun{
 			Opts: wallWatchOpts{Mounts: s.mounts, Seat: seat, Dir: s.grant,
 				Bwrap: []string{"bwrap", "--args", "3", "--", "sh", "-c", "sleep 300 & echo $! > " + shellQuote(s.bgpid) + "; wait"}},
-			Args: af, Stdin: stdin, Stdout: &stderr, Stderr: &stderr,
+			Args: af, Stdin: stdin, Stdout: said, Stderr: said,
 			Store: st, Lock: lock, PollInterval: 50 * time.Millisecond,
 			OnDetach: func(d wallWatchDetach) { *pid = d.BwrapPid },
 		})
@@ -125,15 +126,99 @@ func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock 
 		}
 		select {
 		case c := <-code:
-			t.Fatalf("the seat ended before it ran (exit %d):\n%s", c, stderr.String())
+			t.Fatalf("the seat ended before it ran (exit %d); watcher and bwrap said %s", c, wwOneLine(said.String()))
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the seat never ran:\n%s", stderr.String())
+			t.Fatalf("the seat never ran within 10s; watcher and bwrap said %s", wwOneLine(said.String()))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	return code, pid
+}
+
+// wwSaid is everything the watcher and its bwrap wrote, and it is a locked
+// buffer rather than a strings.Builder because ONE of the two readers above
+// reads it while the watcher is still writing: the deadline branch fires
+// with the watcher's goroutine live, so a plain Builder shared across the
+// two is a race whose value is whatever -race was not asked to look at.
+// The other branch reads after a receive on `code` and would be safe alone.
+type wwSaid struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (w *wwSaid) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.Write(p)
+}
+
+func (w *wwSaid) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.String()
+}
+
+// wwOneLine folds what the watcher said onto the FIRST line of the fatal
+// that carries it, and that is ranger-base-a688i (ADR 0097 D3).
+// scripts/posse-wall-check reports a failed member by its first
+// `file.go:NN:` line and nothing after it (its evidence(), 300 chars), so a
+// fatal reading `the seat ended before it ran (exit 1):` with the reason on
+// line 2 reaches the bead as a symptom whose cause was dropped in transit —
+// which is what that P1 was: one line, four possible causes, and no way to
+// tell which fired. The words alone discriminate all four. A launch-time
+// detach says `KILLED seat … the wall over … came off`; the watcher's own
+// refusals say `refusing to start the seat unwatched` or `killing the seat
+// rather than running it unwatched`; and a bwrap that died before it
+// reported a child says whatever bwrap says, because cmd.Stdout and
+// cmd.Stderr are this same buffer.
+func wwOneLine(s string) string {
+	f := strings.Fields(s)
+	if len(f) == 0 {
+		return "NOTHING — so no refusal of its own: bwrap ended before it reported a child, and without a word"
+	}
+	return strconv.Quote(strings.Join(f, " "))
+}
+
+// The fold is the behaviour, so it is pinned rather than only used: the two
+// fatals above are reached by a live bwrap that this pin needs none of, and
+// a fold that quietly started emitting a newline again would put the cause
+// back out of the wall check's reach with every live arm still green.
+// Not a member of the wall-check set and deliberately not named like one
+// (`^Test(QA)?Live(Bwrap|Wall)`): it measures no wall.
+func TestQAWallWatchFixtureFoldsWhatTheWatcherSaidOntoOneLine(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, in, want string
+	}{
+		{"a refusal's two lines become one", "posse wall-watch: cannot read the walls\nto hold this seat to\n",
+			`"posse wall-watch: cannot read the walls to hold this seat to"`},
+		{"bwrap's word and the watcher's are both carried", "bwrap: Can't find source path /x\nposse wall-watch: killing the seat\n",
+			`"bwrap: Can't find source path /x posse wall-watch: killing the seat"`},
+		{"one line is left alone but quoted, so a reader sees where it ends", "already one line",
+			`"already one line"`},
+	} {
+		// One line, for the reason the function under test exists.
+		if got := wwOneLine(c.in); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
+		}
+	}
+	// Said NOTHING is its own answer and never an empty pair of quotes: a
+	// bwrap that ended before it reported a child is the one cause that
+	// leaves no words, so the absence has to read as a finding.
+	for _, in := range []string{"", "\n", "  \n\t\n"} {
+		got := wwOneLine(in)
+		if strings.Contains(got, "\n") || !strings.HasPrefix(got, "NOTHING") {
+			t.Errorf("wwOneLine(%q) = %q, want a one-line NOTHING finding", in, got)
+		}
+	}
+	// And whatever it returns is ONE line, which is the whole contract.
+	for _, in := range []string{"", "a\nb\nc", "a\r\nb", "\n\n\n"} {
+		if got := wwOneLine(in); strings.ContainsAny(got, "\n\r") {
+			t.Errorf("wwOneLine(%q) = %q — it carries a newline, so the wall check drops what is after it", in, got)
+		}
+	}
 }
 
 func (s wwLiveSeat) bg(t *testing.T) int {

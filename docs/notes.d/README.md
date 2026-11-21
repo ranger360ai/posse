@@ -33,6 +33,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-bncbk](ranger-base-bncbk.md) — Shape 5's directory masks cover the name before the credential exists (ranger-base-bncbk) — 2026-11-21
 - [ranger-base-blkse](ranger-base-blkse.md) — git will not pack a ref it cannot resolve, and a seat's commit is in the seat's store (ranger-base-blkse) — 2026-11-21
 - [ranger-base-bekle](ranger-base-bekle.md) — G18 trusted a recorded pid for the length of its own reading (ranger-base-bekle) — 2026-11-21
+- [ranger-base-a688i](ranger-base-a688i.md) — ranger-base-a688i — a wall-pin member's fatal has ONE line to say why, and this one spent it on the symptom — 2026-11-21
 - [ranger-base-a59w7](ranger-base-a59w7.md) — ranger-base-a59w7 — the carve-out's denies and masks get their loose parents bound in place — 2026-11-21
 - [ranger-base-7or9p](ranger-base-7or9p.md) — The judge's wall comes from the launcher, so a verdict can move with no landing (ranger-base-7or9p) — 2026-11-21
 - [ranger-base-7c2py](ranger-base-7c2py.md) — Two instruments that said yes without measuring: arm 6's coin flip and the census's empty denominator (ranger-base-7c2py) — 2026-11-21
