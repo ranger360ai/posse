@@ -149,6 +149,26 @@ type PrepKind string
 const (
 	// PrepMkdirAll makes the path, and every missing parent, as a directory.
 	PrepMkdirAll PrepKind = "mkdir -p"
+	// PrepMkdirPrivate is PrepMkdirAll at mode 0700: the two mount points
+	// whose OWNER would have made them private, and which this launcher now
+	// makes first so that the mask covers the name before anything writes a
+	// credential at it (ranger-base-bncbk — ~/.ssh at step 5a, rex's tsnet
+	// state dir at step 5b).
+	//
+	// A SECOND KIND AND NOT A MODE FIELD, for PrepKind's own stated reason:
+	// these print, and `mkdir -p -m 700 ~/.ssh` is a line an operator can
+	// type and compare. A mode on PrepStep would be a number in a struct
+	// that the readable copy would have to learn to render.
+	//
+	// 0700 IS NOT A HARDENING CHOICE, it is the mode the directory would
+	// have had. ssh-keygen mkdirs ~/.ssh 0700, and rex's tsnet node does
+	// `os.MkdirAll(rootPath, 0700)` (tailscale.com v1.104.4,
+	// tsnet/tsnet.go:863 — the version /usr/bin/rex links, read 2026-11-21),
+	// which is also how its missing parents are made. So a posse-made
+	// directory at either name is indistinguishable from the one it
+	// preempts, parents included — which is the whole of why creating it is
+	// a cost the security lane could accept.
+	PrepMkdirPrivate PrepKind = "mkdir -p -m 700"
 	// PrepTouch creates the path as an empty FILE.
 	PrepTouch PrepKind = "touch"
 	// PrepSeed creates the path as a FILE holding its format's empty value
@@ -975,6 +995,15 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// The report names a mask that renders nothing. The seat still cannot write at
 	// any of them, because nothing grants that runtime's state dir.
 	//
+	// 5a AND 5b CLOSE IT FOR THE OTHER TWO DIRECTORY MASKS
+	// (ranger-base-bncbk): ~/.ssh and a read-masked state dir are made when
+	// they are absent, so the whole of shape 5 is now "the mask covers the
+	// name before anything writes a credential at it", with the single
+	// exception the 5c loop states for a store inside a write grant. The
+	// snapshot residual survives only at the FILE masks one loop down, where
+	// a mount needs a name that exists and posse will not invent another
+	// runtime's credential file.
+	//
 	// B5 measured that no byte of the credential reached the seat, and
 	// measured it by an error rather than by the clean EOF this shape is
 	// stated in terms of; ranger-base-yca4g is the re-run that reads which
@@ -992,7 +1021,9 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// and a mask that silently renders nothing is the failure this tier
 	// refuses). One inside a directory the seat already sees empty (1b/1c)
 	// renders nothing: the hide is the stronger statement, and a mount there
-	// would make its mount point on the host.
+	// would make its mount point on the host. An ABSENT one is MADE — the
+	// `!exists` arm below says why, and it is the larger half of
+	// ranger-base-bncbk.
 	var readHidden []string
 	for _, d := range shallowestFirst(carve.SSHDir) {
 		if reopens(d) {
@@ -1003,23 +1034,60 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			return nil, nil, bwrapStatRefusal("ssh dir", d, err)
 		}
 		switch {
-		case !exists:
-			continue // nothing there to read
-		case !dir:
+		case exists && !dir:
 			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-12ggv)", d)
+		case !exists:
+			// MADE WHEN IT IS ABSENT, and until ranger-base-bncbk this arm
+			// skipped instead — the hole, and the larger half of that bead.
+			// The old reason was "a seat cannot create it either — nothing
+			// grants its parent", which is true and beside the point: the
+			// HOST creates it. Fresh box, no ~/.ssh, seats running, the
+			// operator runs ssh-keygen to set up a push key; ssh-keygen
+			// mkdirs ~/.ssh and writes id_ed25519, and every live bwrap seat
+			// then reads the private key through `--ro-bind / /`. No mount
+			// came off, so `posse wall-watch` says nothing, and the exposure
+			// lasts until each seat ends. It is ADR 0080's
+			// snapshot-at-launch residual at this arm, and it is closed the
+			// way 5c closed it for the credential stores: make the mount
+			// point, so a key written during the seat's life lands INSIDE
+			// the tmpfs where no seat sees it.
+			//
+			// MEASURED 2026-11-21 in the wall venue (linux 7.2.15, bwrap
+			// 0.13.1), both directions, by
+			// TestLiveBwrapAbsentSSHDirMasksAKeyTheHostWritesAfterLaunch: a
+			// seat launched with no ~/.ssh, the host writing the key only
+			// after the seat said its namespace was up. With this arm
+			// skipping, the seat reads the key in full; with it making the
+			// directory, no bytes — and the pin's unmasked control arm reads
+			// the key, so the green is this wall and not a probe that could
+			// never read.
+			//
+			// 0700 because that is the mode ssh-keygen gives a ~/.ssh it
+			// makes itself, so this is not a directory the operator can tell
+			// from the one it preempts (PrepMkdirPrivate). ssh ignores the
+			// anchor beside it: it reads the names it resolves, and
+			// StrictModes checks modes and not extra names.
+			prep = append(prep, PrepStep{PrepMkdirPrivate, d, "the ssh directory this seat reads nothing in, which is not there yet; made empty 0700 — ssh-keygen's own mode — so the mask covers the name before a key exists at it and a key written during this seat's life lands inside the tmpfs"})
 		}
-		// NO ANCHOR HERE, and it is the line that draws the class's edge
-		// (ranger-base-ua625 finding 1). This arm and 5b mount over a
-		// directory the HOST made and the host fills; they skip an absent
-		// one outright, on the stated ground that "a seat cannot create it
-		// either — nothing grants its parent". The class is a mount point
-		// THIS LAUNCHER leaves empty, and these are not in it: posse
-		// neither creates nor empties them, and a seed here would be posse
-		// writing a file into the operator's ~/.ssh. The residual is
-		// therefore real and priced: on a box where ~/.ssh is EMPTY the
-		// tmpfs is one host rmdir from detaching, and a key written after
-		// launch would be readable. An empty ~/.ssh is a box with no keys
-		// to hide, which is why that is a residual and not this fix.
+		// AND IT IS ANCHORED, which is 5c's call and step 3's measurement
+		// (ranger-base-bncbk, deciding ranger-base-lin9y). This arm leaves
+		// its host directory empty now — the case above makes it so, and an
+		// already-EMPTY ~/.ssh was always in the shape — so it is in the
+		// class exactly: a mount point this launcher leaves empty is one
+		// host rmdir from detaching. The detach was already loud here
+		// (watch(WallWatchReadMask) below is a wall-watch kill plus a P1
+		// ROTATE bead); the anchor turns detect-and-kill into prevent, for
+		// the price of one empty dotfile in the operator's ~/.ssh, and the
+		// security lane accepted that price on lin9y. A host `rm -rf ~/.ssh`
+		// of a NON-empty directory is outside the anchor class and wall-watch
+		// remains the control for it, as it does for every other arm.
+		astep, aok, aerr := bwrapAnchorStep(d, "an empty file inside the ssh directory this render covers with a tmpfs and leaves empty on the host; a host rmdir of an empty ~/.ssh would take that mask off the seat and show it a key written after launch")
+		if aerr != nil {
+			return nil, nil, aerr
+		}
+		if aok {
+			prep = append(prep, astep)
+		}
 		argv = append(argv, "--tmpfs", d)
 		watch(WallWatchReadMask, d)
 		readHidden = append(readHidden, d)
@@ -1035,8 +1103,22 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		}
 	}
 	// 5b. DenyReadDir (ranger-base-k06gw): 5a's tmpfs with nothing bound
-	// back, refused on the same terms. An absent directory renders nothing,
-	// and a seat cannot create it either — nothing grants its parent.
+	// back, refused on the same terms.
+	//
+	// AN ABSENT ONE IS MADE ONLY WHERE ITS PRODUCER SAYS SO
+	// (carve.MakesDenyReadDir, ranger-base-bncbk) — which is 5a's new rule
+	// with the one difference this list forces. The mask covers every path
+	// that resolves, on every GOOS, because a mask wider than its runtime's
+	// own resolution is the safe direction; rexNodeStateDirs therefore lists
+	// both OSes' XDG defaults under both homes, and posse must not mkdir
+	// ~/Library/Application Support/rex/tsnet on linux. So the native path
+	// is created and anchored, and the rest skip when absent: nothing on
+	// this OS writes there.
+	//
+	// The hole this closes is 5a's, one runtime along: rex's tsnet node
+	// writes the tailnet identity on its FIRST start, and a rex that first
+	// started during a seat's life wrote it at a name no mount covered and
+	// no watch had ever seen.
 	for _, d := range shallowestFirst(carve.DenyReadDir) {
 		if reopens(d) || writeGranted(readHidden, d) {
 			continue
@@ -1046,13 +1128,26 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			return nil, nil, bwrapStatRefusal("read-deny dir", d, err)
 		}
 		switch {
-		case !exists:
-			continue
-		case !dir:
+		case exists && !dir:
 			return nil, nil, Die("bwrap cannot hide %s: it is not a directory, and an empty tmpfs can only be mounted over one (ranger-base-k06gw)", d)
+		case !exists && !carve.MakesDenyReadDir(d):
+			continue // another OS's default, or another home's: nothing here writes it
+		case !exists:
+			// 0700 and its parents with it, which is what rex's own tsnet
+			// node does to this very path (PrepMkdirPrivate names the line).
+			// An empty 0700 directory is what tsnet expects to find: it
+			// MkdirAll's the dir and then Stats it for IsDir, and reads no
+			// directory listing of it at all, so a pre-existing empty one
+			// plus the anchor beside it is inert to the node that fills it.
+			prep = append(prep, PrepStep{PrepMkdirPrivate, d, "the state dir this runtime writes a credential into on its first start, which is not there yet; made empty 0700 — the runtime's own mode — so the mask covers the name before the credential exists at it"})
 		}
-		// 5a's rule, same reason: the host's directory, not this
-		// launcher's (ranger-base-ua625).
+		astep, aok, aerr := bwrapAnchorStep(d, "an empty file inside a read-masked state dir this render covers with a tmpfs and leaves empty on the host; a host rmdir of the empty dir would take that mask off the seat and show it a credential written after launch")
+		if aerr != nil {
+			return nil, nil, aerr
+		}
+		if aok {
+			prep = append(prep, astep)
+		}
 		argv = append(argv, "--tmpfs", d)
 		watch(WallWatchReadMask, d)
 		readHidden = append(readHidden, d)
@@ -1786,23 +1881,44 @@ func bwrapStat(p string) (exists, dir bool, err error) {
 // is refused with ENOTEMPTY and cannot take the mount off a live seat.
 //
 // ONE FUNCTION FOR THE WHOLE CLASS (ranger-base-ua625 finding 1). The class
-// is "a mount point THIS LAUNCHER leaves EMPTY on the host", and it has three
+// is "a mount point THIS LAUNCHER leaves EMPTY on the host", and it has five
 // members with nothing in common but that shape: an Anchored deny directory
 // (step 3), a sibling runtime's credential store under the read-mask tmpfs
-// (step 5c), and a private bind over a dir of claude's shared state (step 2).
+// (step 5c), a private bind over a dir of claude's shared state (step 2), and
+// — since ranger-base-bncbk — ~/.ssh (step 5a) and a read-masked state dir
+// (step 5b).
 // The first was anchored by a list of seven names under ranger-base-v84cn and
-// the other two were not, because the list was the thing that generalized and
-// the shape was never written down. Each of the three calls this, so a fourth
+// the rest were not, because the list was the thing that generalized and the
+// shape was never written down. Every one of the five calls this, so a SIXTH
 // member is anchored by calling it and not by joining a table — the lesson
 // the watch list already learned in bwrapArgsWatched's head comment, and
 // TestQAWallAnchorCoversEveryWatchedDirectoryMountOrPricesIt is what reds
 // when a new arm joins neither.
 //
-// "THIS LAUNCHER" IS THE WHOLE OF THE EDGE. Steps 5a (~/.ssh) and 5b
-// (DenyReadDir) also tmpfs over a host directory and call this function
-// never: both skip an absent one, so posse neither creates nor empties them,
-// and a seed there would be posse writing into the operator's own area.
-// Step 5a's comment prices the residual that leaves.
+// THERE IS NO EDGE LEFT: THE CLASS IS EVERY TMPFS OVER A HOST DIRECTORY
+// (ranger-base-bncbk). It used to be drawn at "a mount point THIS LAUNCHER
+// leaves empty", which excluded steps 5a and 5b — they mounted over a
+// directory the host made and the host filled, and they skipped an absent
+// one, so posse neither created nor emptied them and a seed there would have
+// been posse writing into the operator's own area. That edge did not survive
+// its own residual: an ~/.ssh or state dir ABSENT at launch got no mount and
+// no watch, so a credential the host wrote during the seat's life was
+// readable, silently, until the seat ended. Both arms make their directory
+// now, which puts them in the class on the old definition — and leaves the
+// definition with nothing to exclude. Every arm that mounts a tmpfs or a bind
+// over a host DIRECTORY calls this function; the only paths that get no
+// anchor are the ones nothing can rmdir (a file) and the ones the seat writes
+// through (a dir bound over itself, and the Hide mounts), both priced in
+// TestQAWallAnchorCoversEveryWatchedDirectoryMountOrPricesIt.
+//
+// AN ANCHOR THAT IS ALREADY THERE EMITS NO STEP. PrepStep's rule is that a
+// step names a path that is NOT there — prepRequire reads the list's
+// emptiness as "this host already has the whole wall" — and until
+// ranger-base-bncbk this function broke that rule for a directory whose
+// anchor had survived an earlier launch. Nothing measured it, because the one
+// pin that would (TestQAEveryBwrapPrepStepNamesAPathThatIsNotThere) runs over
+// a fixture whose every credential store sits inside a blanket /tmp grant and
+// so renders no anchor at all. 5a put a real one in that render's way.
 //
 // LSTAT AND NOT STAT, which is the other half of the same finding. The deny
 // arm reached here through bwrapStat — os.Stat, which FOLLOWS — so a link
@@ -1817,12 +1933,16 @@ func bwrapStat(p string) (exists, dir bool, err error) {
 // have already said so in their own words.
 //
 // THE COST IS A STRAY EMPTY DOTFILE in a directory posse did not create, and
-// it is paid in a sibling runtime's config dir and in claude's own state
-// dirs. It is the cost ranger-base-v84cn already accepted for claude's swept
-// dirs, and it buys at the credential store what it bought there: the member
-// that is NOT inert to its reader — a directory something loads code from —
-// is excluded by its producer and never reaches this function
-// (SeatbeltCarveOut.Anchored's last paragraph).
+// it is paid in a sibling runtime's config dir, in claude's own state dirs,
+// and — since ranger-base-bncbk — in the operator's ~/.ssh and in rex's tsnet
+// state dir. It is the cost ranger-base-v84cn already accepted for claude's
+// swept dirs, the security lane accepted the last two on ranger-base-lin9y,
+// and it buys at each of them what it bought there: the member that is NOT
+// inert to its reader — a directory something loads code from — is excluded
+// by its producer and never reaches this function
+// (SeatbeltCarveOut.Anchored's last paragraph). ssh is inert to it by the
+// same test: it opens the names it resolves, and StrictModes checks modes
+// rather than extra names.
 func bwrapAnchorStep(d, why string) (PrepStep, bool, error) {
 	fi, err := os.Lstat(d)
 	switch {
@@ -1831,7 +1951,13 @@ func bwrapAnchorStep(d, why string) (PrepStep, bool, error) {
 	case err == nil && !fi.IsDir():
 		return PrepStep{}, false, nil
 	}
-	return PrepStep{PrepSeed, filepath.Join(d, wallAnchorName), why}, true, nil
+	anchor := filepath.Join(d, wallAnchorName)
+	if _, err := os.Lstat(anchor); err == nil {
+		return PrepStep{}, false, nil // already anchored by an earlier launch
+	} else if !os.IsNotExist(err) {
+		return PrepStep{}, false, bwrapStatRefusal("anchor", anchor, err)
+	}
+	return PrepStep{PrepSeed, anchor, why}, true, nil
 }
 
 // bwrapUnsetEnv is what the render takes out of a seat's environment
@@ -2962,9 +3088,27 @@ func bwrapArgsBytes(argv []string) []byte {
 // it — so the refusal is here, where the reason is.
 func runBwrapPrep(prep []PrepStep) error {
 	for _, s := range prep {
+		// A TEST BINARY'S OWN FENCE, and nothing in a launcher
+		// (prephostfence.go, ranger-base-bncbk): steps 5a and 5b now mkdir
+		// and anchor, and two of the render's host inputs do not move when a
+		// fixture sets $HOME — so a test that renders a whole wall is one
+		// unfenced input away from planting a file in the operator's ~/.ssh.
+		if why := prepHostFenceRefusal(s); why != "" {
+			return Die("cage %s (%s) refuses to prepare %s (%s): %s",
+				CageSeatbelt, WallBwrap, s.Path, s.Why, why)
+		}
 		switch s.Kind {
 		case PrepMkdirAll:
 			if err := os.MkdirAll(s.Path, 0o755); err != nil {
+				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
+					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
+			}
+		case PrepMkdirPrivate:
+			// 0700, and the parents too: see PrepMkdirPrivate. MkdirAll is
+			// a no-op over a directory that is already there and leaves its
+			// mode alone, which is the right answer for a name whose owner
+			// got there first.
+			if err := os.MkdirAll(s.Path, 0o700); err != nil {
 				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
 					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
 			}

@@ -274,7 +274,13 @@ func TestBwrapRenderMasksTheConfiguredSSHKeys(t *testing.T) {
 
 // ranger-base-12ggv: a file at ~/.ssh refuses the render — an empty tmpfs
 // covers only a directory, and a hide that renders nothing is the silence the
-// tier refuses. A ~/.ssh that is not there renders nothing and is no error.
+// tier refuses.
+//
+// A ~/.ssh THAT IS NOT THERE IS MADE, 0700, and then masked, anchored and
+// watched like any other (ranger-base-bncbk). It used to render nothing,
+// which was the hole: ssh-keygen on a fresh box mkdirs ~/.ssh and writes the
+// private key while seats are running, no mount ever existed at that name, so
+// every live seat read the key and nothing detached for wall-watch to see.
 func TestBwrapArgsRefusesAnSSHDirThatIsNotADirectory(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -284,12 +290,15 @@ func TestBwrapArgsRefusesAnSSHDirThatIsNotADirectory(t *testing.T) {
 		t.Errorf("a FILE at %s rendered a wall (err=%v): the keys beside it would stay readable", f, err)
 	}
 	absent := filepath.Join(root, "nohome", ".ssh")
-	argv, _, err := BwrapArgs("", nil, SeatbeltCarveOut{SSHDir: []string{absent}})
+	argv, prep, err := BwrapArgs("", nil, SeatbeltCarveOut{SSHDir: []string{absent}})
 	if err != nil {
 		t.Errorf("an absent ~/.ssh refused: %v", err)
 	}
-	if bwIndex(argv, "--tmpfs", absent) >= 0 {
-		t.Errorf("an absent ~/.ssh got a tmpfs, which bwrap would have to create: %v", argv)
+	if bwIndex(argv, "--tmpfs", absent) < 0 {
+		t.Errorf("an absent ~/.ssh got no tmpfs, so a key ssh-keygen writes there during this seat's life is readable and no mount detaches to say so (ranger-base-bncbk): %v", argv)
+	}
+	if got, want := strings.Join(bwPrep(prep), "\n"), "mkdir -p -m 700 "+absent+"\nseed "+filepath.Join(absent, wallAnchorName); got != want {
+		t.Errorf("the prep for an absent ~/.ssh is\n  %s\nwant\n  %s\n(0700 is ssh-keygen's own mode, and the anchor is what refuses the host rmdir that would detach the mask)", got, want)
 	}
 	// A config the carve-out read-denies by name is not bound back.
 	dir := filepath.Join(root, "home", ".ssh")

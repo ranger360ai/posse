@@ -27,12 +27,29 @@ package posse
 // paths_darwin.go defaults stateHome there, and whose paths_unix.go default
 // is the linux path the linux reading confirms — so the library is the one
 // that picks both, but the darwin path itself is unmeasured; the measurement
-// ask is the bead under "Not closed here" below). ALL of them are masked
-// whenever they resolve, for both homes and on every GOOS — wider than rex's
-// own resolution, which is the safe direction for a mask, and what keeps this
-// a pure function the pin can run anywhere. An absent dir costs nothing:
-// bwrap's step 5b skips one and a seatbelt subpath deny on an absent path is
-// inert.
+// ask is the bead under "Not closed here" below. The library reading was
+// CONFIRMED against the module source on 2026-11-21, ranger-base-bncbk:
+// paths_darwin.go:32 is `baseDirs.stateHome = EnvPath(envStateHome,
+// filepath.Join(home, "Library", "Application Support"))`, paths_unix.go:25
+// the `.local/state` twin, and `home` is pathutil.UserHomeDir — $HOME else
+// "/", never passwd. That is still a reading of the library and not of a
+// darwin box, so the label stays ASSUMED). ALL of them are masked whenever
+// they resolve, for both homes and on every GOOS — wider than rex's own
+// resolution, which is the safe direction for a mask, and what keeps this a
+// pure function the pin can run anywhere.
+//
+// AN ABSENT DIR USED TO COST NOTHING AND THAT WAS THE HOLE
+// (ranger-base-bncbk). A seatbelt subpath deny on an absent path is inert, so
+// that half is unchanged; bwrap's step 5b, though, SKIPPED an absent dir —
+// no tmpfs, no watch — so the first `rex` start during a live seat's life
+// wrote the tailnet identity at a name nothing covered, readable by every
+// bwrap seat until it ended, with no mount for `posse wall-watch` to see
+// detach. 5b now anchors every dir it masks and CREATES the absent one, 0700
+// — but only at rexNodeStateDirNative, the one path rex resolves on this
+// GOOS. The other entries keep skipping when absent: nothing on this OS
+// writes there, and a posse-made ~/Library/Application Support/rex/tsnet on
+// linux would be a directory invented by the launcher and then masked
+// forever.
 //
 // Not closed here:
 // - ranger-base-1mxhx
@@ -40,6 +57,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // rexNodeStateDirs is the list for one account's answers: both OSes' XDG state
@@ -63,9 +81,42 @@ func rexNodeStateDirs(homes []string, xdgState string) []string {
 	return dedupeStrings(out)
 }
 
+// rexNodeStateDirNative is the ONE member of rexNodeStateDirs that rex
+// resolves on this GOOS, and so the only one posse may create when it is
+// absent (SeatbeltCarveOut.MakesDenyReadDir, ranger-base-bncbk). "" when
+// there is no home to resolve against and no absolute XDG_STATE_HOME — then
+// nothing is created, which is the fail-closed direction for a mkdir.
+//
+// goos and home are PARAMETERS and not readings, so the pin drives both OSes
+// from either, exactly as rexNodeStateDirs takes its homes.
+//
+// $HOME AND NOT THE PASSWD HOME, which is the one place this function differs
+// from the mask's two-home list: the xdg library rex links resolves its base
+// dirs from `os.Getenv("HOME")` else "/" and reads the passwd database not at
+// all (github.com/adrg/xdg v0.5.3, internal/pathutil/pathutil_unix.go:14,
+// read 2026-11-21). The mask is deliberately wider than that; a create has to
+// be exactly it.
+func rexNodeStateDirNative(goos, home, xdgState string) string {
+	if filepath.IsAbs(xdgState) {
+		return absResolve(filepath.Join(xdgState, "rex", "tsnet"))
+	}
+	if home == "" {
+		return ""
+	}
+	if goos == "darwin" {
+		return absResolve(filepath.Join(home, "Library", "Application Support", "rex", "tsnet"))
+	}
+	return absResolve(filepath.Join(home, ".local", "state", "rex", "tsnet"))
+}
+
 // withRexNodeReadDeny adds this process's rexNodeStateDirs to
-// carve.DenyReadDir. Called beside withSSHKeyReadDeny at every render — both
-// seat walls, both reports, and the landed-check judge's cage.
+// carve.DenyReadDir, and its native path to carve.DenyReadDirMake. Called
+// beside withSSHKeyReadDeny at every render — both seat walls, both reports,
+// and the landed-check judge's cage.
 func withRexNodeReadDeny(carve *SeatbeltCarveOut) {
-	carve.DenyReadDir = dedupeStrings(append(carve.DenyReadDir, rexNodeStateDirs(liveSSHHomes(), os.Getenv("XDG_STATE_HOME"))...))
+	xdg := os.Getenv("XDG_STATE_HOME")
+	carve.DenyReadDir = dedupeStrings(append(carve.DenyReadDir, rexNodeStateDirs(liveSSHHomes(), xdg)...))
+	if native := rexNodeStateDirNative(runtime.GOOS, os.Getenv("HOME"), xdg); native != "" {
+		carve.DenyReadDirMake = dedupeStrings(append(carve.DenyReadDirMake, native))
+	}
 }

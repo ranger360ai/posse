@@ -130,9 +130,19 @@ func TestQAWallAnchorKeepsClaudesSweptConfigDirsFromAHostRmdir(t *testing.T) {
 // Pins for ranger-base-ua625 finding 1, from the verify at
 // ranger-base-pxprm. The anchor was filed as seven names and the property
 // that made those names dangerous is a SHAPE — a mount point this render
-// leaves empty on the host — which two other arms are in and neither was
+// leaves empty on the host — which two other arms were in and neither was
 // anchored: the credential-store tmpfs (step 5c) and the private binds over
 // claude's shared state (step 2).
+//
+// SINCE ranger-base-bncbk THE SHAPE HAS NO EXCEPTION. ua625 drew the class's
+// edge at "this launcher", which excluded steps 5a (~/.ssh) and 5b (a
+// read-masked state dir) because both SKIPPED an absent directory. That skip
+// was itself the hole bncbk closed — an absent one got no mount and no watch,
+// so a credential the host wrote during the seat's life was readable and
+// nothing detached — and both arms make their directory now. So the switch
+// below has one read-mask arm where it used to have two, and the floors at
+// its foot are per producer, because one total was how the pin passed while
+// grading neither of them.
 
 // An anchored deny whose name is a LINK gets no anchor, and the one it does
 // not get is the one that used to land in the link's TARGET
@@ -216,7 +226,7 @@ func TestBwrapArgsAnchorsTheCredentialStoreMaskAndEveryPrivateDirBind(t *testing
 // THE CLASS, DERIVED FROM THE RENDER AND NOT FROM A TABLE. Every mount this
 // render records as a WALL over a host DIRECTORY carries an anchor, and the
 // two kinds that do not are priced here by kind rather than by name — so a
-// fifth arm that mounts a directory and watches it reds this pin instead of
+// NEW arm that mounts a directory and watches it reds this pin instead of
 // joining the class silently, which is what finding 1 is about.
 //
 // It is the anchor half of what TestWallWatchEveryRenderedMountIsAWallOrA
@@ -242,7 +252,8 @@ func TestQAWallAnchorCoversEveryWatchedDirectoryMountOrPricesIt(t *testing.T) {
 	// for graded nothing while reading green. The `graded` floor at the foot
 	// is what caught it. The carve-out already says what every path is, which
 	// is the half this pin holds that the render cannot.
-	graded, masks := 0, 0 // mounts this pin REQUIRED an anchor of
+	graded := 0               // private mounts this pin REQUIRED an anchor of
+	masks := map[string]int{} // read-mask tmpfs mounts it required, BY PRODUCER
 	seen := map[string]bool{}
 	for _, w := range r.Watch {
 		seen[w.Kind] = true
@@ -274,24 +285,32 @@ func TestQAWallAnchorCoversEveryWatchedDirectoryMountOrPricesIt(t *testing.T) {
 				}
 			}
 		case WallWatchReadMask:
-			// THREE PRODUCERS SHARE THIS KIND and they are not in one
-			// class, which is the edge the finding draws. 5c MAKES its
-			// directory empty so a login after launch lands inside the
-			// mask, so it is anchored. 5a (~/.ssh) and 5b (DenyReadDir)
-			// mount over a directory the HOST made and skip an absent one:
-			// posse neither creates nor empties them, and a seed there
-			// would be posse writing into the operator's ~/.ssh. Their
-			// residual — an EMPTY ~/.ssh is one rmdir from detaching — is
-			// priced in step 5a's comment.
+			// THREE PRODUCERS SHARE THIS KIND AND THEY ARE NOW ONE CLASS,
+			// which is ranger-base-bncbk undrawing the edge this switch used
+			// to carry. It used to read: 5c MAKES its directory empty so a
+			// login after launch lands inside the mask, so it is anchored;
+			// 5a (~/.ssh) and 5b (DenyReadDir) mount over a directory the
+			// HOST made and SKIP an absent one, so posse neither creates nor
+			// empties them and a seed there would be posse writing into the
+			// operator's ~/.ssh. The skip was the hole — an absent ~/.ssh or
+			// state dir got no mount and no watch, so a credential written
+			// during the seat's life was readable with nothing to detach —
+			// and all three arms make their directory now. So all three are
+			// REQUIRED to anchor, and the only question left is whether the
+			// directory mount has a tmpfs over it at all.
+			//
+			// COUNTED BY PRODUCER and not in one total, because that is the
+			// shape of the mistake the floor at the foot is for: with one
+			// number, a fixture whose three credential stores all render
+			// satisfies the floor while 5a and 5b grade nothing, which is
+			// exactly the state this bead found the pin in.
 			switch {
-			case wallMember(r.Carve.ReadMaskDir, w.Path):
-				masks++
+			case wallMember(r.Carve.ReadMaskDir, w.Path),
+				wallMember(r.Carve.SSHDir, w.Path),
+				wallMember(r.Carve.DenyReadDir, w.Path):
+				masks[wallReadMaskProducer(r.Carve, w.Path)]++
 				if !anchored[w.Path] {
-					t.Errorf("the credential-store mask over %s carries no anchor — this launcher leaves that directory empty on purpose (ranger-base-ua625)", w.Path)
-				}
-			case wallMember(r.Carve.SSHDir, w.Path), wallMember(r.Carve.DenyReadDir, w.Path):
-				if anchored[w.Path] {
-					t.Errorf("%s got an anchor; posse neither makes nor empties that directory, and a seed in it is a file in the operator's own area", w.Path)
+					t.Errorf("the read-mask tmpfs over %s (%s) carries no anchor — this launcher leaves that directory empty on purpose, and one host rmdir then detaches the mask and shows the seat whatever the host writes at that name after launch (ranger-base-ua625, ranger-base-bncbk)", w.Path, wallReadMaskProducer(r.Carve, w.Path))
 				}
 			case wallMember(r.Carve.DenyRead, w.Path):
 				if anchored[w.Path] {
@@ -337,14 +356,42 @@ func TestQAWallAnchorCoversEveryWatchedDirectoryMountOrPricesIt(t *testing.T) {
 		}
 	}
 	// And floors on what was REQUIRED to carry an anchor, not merely priced
-	// out: a fixture whose every private bind were in place, or whose every
-	// read-mask were ~/.ssh, satisfies the loop above and grades nothing.
-	// Seven private copies and three credential stores here, MEASURED
-	// 2026-11-15; the floors are under that so an ordinary landing does not
-	// move them.
-	if graded < 4 || masks < 2 {
-		t.Errorf("the pin required an anchor of %d private copy/tmpfs mount(s) and %d credential store(s), want at least 4 and 2 — a reader that stopped recognising either arm passes every row above", graded, masks)
+	// out: a fixture whose every private bind were in place satisfies the
+	// loop above and grades nothing. Eight private copies here, MEASURED
+	// 2026-11-21 (seven before ranger-base-bncbk); the floor is under that
+	// so an ordinary landing does not move it.
+	if graded < 4 {
+		t.Errorf("the pin required an anchor of %d private copy/tmpfs mount(s), want at least 4 — a reader that stopped recognising that arm passes every row above", graded)
 	}
+	// EVERY READ-MASK PRODUCER, one floor each and not one total
+	// (ranger-base-bncbk). Three stores, one ~/.ssh and one native rex state
+	// dir in this fixture, MEASURED 2026-11-21 — five mounts, and under the
+	// single floor of 2 this pin used to carry, a reader that stopped
+	// recognising 5a and 5b passed on the stores alone. Which is not
+	// hypothetical: that is the state the pin was in, pricing 5a and 5b OUT
+	// of the class, while an absent ~/.ssh went unmasked and unwatched for a
+	// seat's whole life.
+	for _, p := range []string{"5a ~/.ssh", "5b read-masked state dir", "5c credential store"} {
+		if masks[p] == 0 {
+			t.Errorf("the pin required an anchor of no %s mount (the five it graded: %v) — a fixture that renders none of one producer's masks says nothing about that producer, and an unanchored tmpfs is one host rmdir from showing the seat a credential written after launch", p, masks)
+		}
+	}
+}
+
+// wallReadMaskProducer names which of step 5's three directory masks put this
+// path in the carve-out, so a row can say what it graded. All three are one
+// class since ranger-base-bncbk — made when absent, anchored, watched — and
+// the name is for the floors at the foot and for the failure text.
+func wallReadMaskProducer(c SeatbeltCarveOut, p string) string {
+	switch {
+	case wallMember(c.SSHDir, p):
+		return "5a ~/.ssh"
+	case wallMember(c.DenyReadDir, p):
+		return "5b read-masked state dir"
+	case wallMember(c.ReadMaskDir, p):
+		return "5c credential store"
+	}
+	return ""
 }
 
 // wallMember reports whether a carve-out list names this exact path. The

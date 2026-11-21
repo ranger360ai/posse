@@ -26,6 +26,13 @@ package posse
 //     variable no list knows about, or a resolver that picks up a new input,
 //     shows up as an answer outside the fence — the code answers, not a
 //     hand-kept list.
+//
+// FenceCLIHomes CARRIES A THIRD HALF that is not about a CLI home at all:
+// the two host inputs the BWRAP WALL's prep writes through, neither of which
+// is an environment variable the list above could hold (ranger-base-bncbk).
+// It rides along here, rather than in a fence of its own, for reason 1's
+// reason — three binaries, one call each, and a second call is a call one of
+// them will not make. prephostfence.go says what it fences and why.
 
 import (
 	"fmt"
@@ -94,6 +101,24 @@ func CLIHomeFenceEscapes(root string) []string {
 // NAMES in force — never their values — and the caller is expected to stop
 // the binary on it.
 func FenceCLIHomes(root string, rows map[string]string) error {
+	// THE WALL-PREP HALF, which no variable in the list below reaches
+	// (ranger-base-bncbk, and prephostfence.go has the measurement). The
+	// bwrap render's prep writes on the HOST at paths the render chose, and
+	// two of its inputs ignore $HOME: the passwd home liveSSHHomes reads
+	// (seamed, pointed here at $HOME so a fixture moves it) and
+	// XDG_STATE_HOME, which rexNodeStateDirs reads raw — UNSET and not
+	// pointed into root, because this box and CI both leave it unset and a
+	// temp value would move mise's install tree in the two binaries whose
+	// TestMain does not pin MISE_STATE_DIR first.
+	//
+	// Here rather than in each binary for this function's own stated reason:
+	// a fence each of the three has to remember is a fence one of them will
+	// not have.
+	sshPasswdHome = func() string { return os.Getenv("HOME") }
+	if err := os.Unsetenv("XDG_STATE_HOME"); err != nil {
+		return fmt.Errorf("CLI-home fence: unset XDG_STATE_HOME: %v", err)
+	}
+	FencePrepHost(root)
 	for _, name := range CLIHomeOverrideVars() {
 		if err := os.Unsetenv(name); err != nil {
 			return fmt.Errorf("CLI-home fence: unset %s: %v", name, err)

@@ -414,8 +414,28 @@ func liveSSHIdentityFiles(cwd string) ([]string, error) {
 // and once each: the list liveSSHIdentityFiles walks and the dirs SSHDir hides.
 func liveSSHHomes() []string {
 	homes := []string{os.Getenv("HOME")}
-	if u, err := user.Current(); err == nil {
-		homes = append([]string{u.HomeDir}, homes...)
+	if h := sshPasswdHome(); h != "" {
+		homes = append([]string{h}, homes...)
 	}
 	return dedupeStrings(homes)
+}
+
+// sshPasswdHome is the passwd entry's home — the one ssh expands `~` and
+// finds its config by, which is not $HOME and does not move with it.
+//
+// A PACKAGE VAR BECAUSE A TEST BINARY HAS TO FENCE IT (ranger-base-bncbk).
+// SSHDir reaches BwrapArgs step 5a, which since that bead mkdirs and anchors
+// the directory it masks, so a test rendering a whole wall under a fixture
+// $HOME would plant a file in the OPERATOR's ~/.ssh — ranger-base-lin9y
+// measured that and the files were removed by hand. FenceCLIHomes points
+// this at $HOME so a fixture that moves $HOME moves it too; prephostfence.go
+// is the census pin over the result, and says why the fence is not an
+// environment variable (a seat could set one of those and shed its own mask).
+//
+// Production never replaces it, and nothing outside this package can.
+var sshPasswdHome = func() string {
+	if u, err := user.Current(); err == nil {
+		return u.HomeDir
+	}
+	return ""
 }

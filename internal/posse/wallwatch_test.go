@@ -190,6 +190,12 @@ func wwEveryShape(t *testing.T) wwRender {
 	hide := filepath.Join(root, "run")
 	sshDir := filepath.Join(root, ".ssh")
 	tsnet := filepath.Join(root, "state", "rex", "tsnet")
+	// ranger-base-bncbk: the DenyReadDir entry this launcher MAY make, ABSENT
+	// on purpose — so step 5b's mkdir-and-anchor arm renders in this fixture
+	// instead of only its mask-what-is-there arm. `tsnet` beside it stays out
+	// of DenyReadDirMake and is present, which is how the OTHER OS's default
+	// behaves: masked when it resolves, never created.
+	tsnetMake := filepath.Join(root, "state-native", "rex", "tsnet")
 	cred := filepath.Join(root, "sibling", "credentials.json")
 	// Absent on purpose: a Seeded file-shaped deny inside a grant (the
 	// launcher writes it empty and the mount goes over it), and the ref keep
@@ -250,10 +256,11 @@ func wwEveryShape(t *testing.T) wwRender {
 				// daemon/run/ (runtimeEphemeralDirs) are this shape.
 				{Dst: eph},
 			},
-			SSHDir:      []string{sshDir},
-			DenyReadDir: []string{tsnet},
-			ReadMaskDir: []string{store},
-			DenyRead:    []string{cred, filepath.Join(sshDir, "id_ed25519"), storeCred},
+			SSHDir:          []string{sshDir},
+			DenyReadDir:     []string{tsnet, tsnetMake},
+			DenyReadDirMake: []string{tsnetMake},
+			ReadMaskDir:     []string{store},
+			DenyRead:        []string{cred, filepath.Join(sshDir, "id_ed25519"), storeCred},
 			// Seatbelt-only, like Narrow and DenyAll above, and unlike
 			// either it renders no mount AT ALL on this mechanism — it is
 			// about connect(2) on a socket and not about a path's contents
@@ -516,6 +523,10 @@ func TestWallWatchRenderRecordsEveryWallAndNoOpening(t *testing.T) {
 		// ranger-base-v84cn: the anchor changes the prep, not the wall.
 		{WallWatchDeny, filepath.Join(grant, "swept")},
 		{WallWatchReadMask, sshDir},
+		// 5b's two, shallowestFirst over DenyReadDir: the one this launcher
+		// MAY make (absent, so the prep makes and anchors it —
+		// ranger-base-bncbk) sorts before the one it may not.
+		{WallWatchReadMask, filepath.Join(root, "state-native", "rex", "tsnet")},
 		{WallWatchReadMask, filepath.Join(root, "state", "rex", "tsnet")},
 		// 5c's directory mask renders between 5b's read-deny dir and the
 		// file masks, and the credential literal under it renders none of its own.

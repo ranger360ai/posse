@@ -380,6 +380,12 @@ type SeatbeltCarveOut struct {
 	// render it: bwrap as an empty tmpfs, seatbelt as a subpath read deny
 	// after every read allow.
 	DenyReadDir []string
+	// DenyReadDirMake is the DenyReadDir entries bwrap CREATES when they are
+	// absent, 0700, so the tmpfs has a directory to cover and a credential
+	// written during the seat's life lands inside the mask instead of at a
+	// readable name (see MakesDenyReadDir, ranger-base-bncbk). Seatbelt needs
+	// no such list: a subpath read deny covers a path that is not there.
+	DenyReadDirMake []string
 	// DenyConnect is paths no seat may connect(2) to a unix socket at:
 	// grok's leader and daemon sockets today (grokSocketPaths). It is the
 	// ONE field about an operation that is not a file operation at all —
@@ -767,6 +773,31 @@ func (c SeatbeltCarveOut) Anchored(p string) bool {
 		return false
 	}
 	for _, d := range c.Anchor {
+		if d == p {
+			return true
+		}
+	}
+	return false
+}
+
+// MakesDenyReadDir reports whether bwrap may CREATE this DenyReadDir entry
+// when the host has nothing at the name (ranger-base-bncbk). Step 5b masks
+// every entry that resolves, on every GOOS — wider than any one runtime's
+// own resolution, which is the safe direction for a mask and keeps
+// rexNodeStateDirs a pure function. CREATING one is the opposite kind of
+// decision: a directory posse makes is a directory posse has to be right
+// about, and `mkdir -p ~/Library/Application\ Support/rex/tsnet` on linux is
+// a name nothing on this box will ever write, at a path that would then be
+// masked and anchored forever.
+//
+// So the PRODUCER says, which is DenyReadDir's own rule one field up and step
+// 3's rule for Seed and Anchor: it is the only one that knows which of the
+// paths it listed is the one its runtime resolves on THIS GOOS
+// (rexNodeStateDirNative). A subset of DenyReadDir; an entry here that is not
+// in DenyReadDir creates nothing, because the create is emitted from inside
+// that list's own loop.
+func (c SeatbeltCarveOut) MakesDenyReadDir(p string) bool {
+	for _, d := range c.DenyReadDirMake {
 		if d == p {
 			return true
 		}

@@ -1286,6 +1286,23 @@ as-measured note above.
 
   - ranger-base-a8qfg
   - ranger-base-1c0r6
+
+  **And the snapshot is gone from the other two DIRECTORY masks too**
+  (2026-11-21, ranger-base-bncbk). Steps 5a (`~/.ssh`) and 5b (a read-masked
+  state dir, which today is rex's tsnet node identity) used to skip a
+  directory the host did not have yet, on the ground that nothing grants
+  their parent to a seat — true, and beside the point, because the HOST
+  creates them. MEASURED in the wall venue: a seat launched on a box with no
+  `~/.ssh` reads, in full, a key `ssh-keygen` writes there afterwards, with
+  no mount at that name for `posse wall-watch` to see. Both arms now make
+  the directory 0700 — the mode `ssh-keygen` and rex's own tsnet node give
+  it, so the launcher's is indistinguishable from the one it preempts — and
+  anchor it, as 5c does. 5b creates only the path its runtime resolves on
+  this GOOS; the mask stays wider than that on purpose, and the producer
+  says which is which. So shape 5's whole directory half is now "the mask
+  covers the name before anything writes a credential at it", and the
+  snapshot survives only at the FILE masks, where a mount needs a name that
+  exists and posse will not invent another runtime's credential file.
 - The packed-refs residual of the container tier now applies to bwrap seats.
 - **`git fsck` is no longer clean in a repo that has hosted a bwrap seat**
   (MEASURED, ranger-base-gi1gi): the keep file is an invalid refname holding
