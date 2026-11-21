@@ -93,6 +93,26 @@ func TestQAWallPinnedPredicateAnswersTheADRsRows(t *testing.T) {
 			p:    "/dev/null", grants: []string{"/h/wt"},
 			dsts: []string{"/dev"},
 		},
+		// The in-place rows (ranger-base-dw2du). A grant is bound `--bind p
+		// p`, so its own name is always a mount of the render and the only
+		// question left is about its ANCESTORS — which is why a nest has to
+		// be two deep before anything is loose.
+		{
+			name: "a grant ONE component inside another: its own mount is what pins it",
+			p:    "/g/a", grants: []string{"/g", "/g/a"},
+			dsts: []string{"/g", "/g/a"},
+		},
+		{
+			name: "a grant TWO components inside another, nothing mounted between",
+			p:    "/g/a/b", grants: []string{"/g", "/g/a/b"},
+			dsts: []string{"/g", "/g/a/b"},
+			want: "/g/a",
+		},
+		{
+			name: "the same nest with the component between bound in place — the prescribed fix",
+			p:    "/g/a/b", grants: []string{"/g", "/g/a/b"},
+			dsts: []string{"/g", "/g/a", "/g/a/b"},
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -308,5 +328,138 @@ func TestQAWallPinnedJudgeAndVenueSourcesArePinnedToo(t *testing.T) {
 		if differing == 0 {
 			t.Errorf("CONTROL: the %s render has no source that differs from its destination, so this arm measured nothing:\n %s", kind, bwJoin(cage.Argv))
 		}
+	}
+}
+
+// ─── D2(b) over the IN-PLACE binds too (ranger-base-dw2du) ──────────────────
+
+// Pin AND CENSUS: every IN-PLACE bind source is pinned as well, in every
+// render this package makes. The first text of D2(b) asked this only of the
+// sources that DIFFER from their destination, which left shape 1's `--bind p
+// p` for each write grant — and every in-place `--ro-bind` — judged by
+// neither arm, since the destination arm skips the same equality. They are
+// not safe for being in place: bwrap resolves the same string again at
+// mount(2), so a component of a grant path a walled seat can rename is
+// togglable between a directory and a link to the wall root, and the next
+// launch mounts that root read-write at the grant's own name. The attacker
+// is the seat's own leftover, so it needs no sibling and no timing.
+//
+// IT IS THE ANSWER TO THE ONE THING THE RE-READ LEFT ASSUMED: whether any
+// render today has a grant nested two or more components inside another with
+// a non-mount component between them. MEASURED 2026-11-21 by running this:
+// no — 150 in-place binds over the five argvs (claude 55, codex 31, grok 50,
+// judge 7, venue 7), every one pinned, read at da79a784. The COUNT moves with
+// every landing that adds or removes a mount, and did while this bead was in
+// flight (it was 160 three landings earlier, over the same five renders); what
+// does not move is that none of them is loose, which is why this is a pin and
+// not a paragraph about today's renders.
+//
+// MUTATION RUN 2026-11-21: putting the `m.Src == m.Dst` skip back into
+// bwrapRefuseUnpinnedSource reds the refusal arm below and nothing else —
+// this census passes either way, which is exactly what it is for.
+func TestQAWallPinnedSourceEveryRenderPinsItsInPlaceBindsToo(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	f := wpsSeatTree(t)
+	if err := os.MkdirAll(ClaudeConfigDirIn(f.home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"claude", "codex", "grok"} {
+		r, err := f.a.bwrapRender(f.ag, wrcRuntime(name), f.dir, f.gates)
+		if err != nil {
+			t.Fatalf("%s: the render is refused (%v) — if that is this rule's refusal, the render needs an in-place bind of the loose component and not an exemption", name, err)
+		}
+		if n := wpsCountPinnedInPlace(t, name, r.Argv, shallowestFirst(r.Set)); n < 2 {
+			t.Errorf("CONTROL: the %s render makes %d in-place binds, so this arm measured nothing:\n %s", name, n, bwJoin(r.Argv))
+		}
+	}
+	g := newLandedCageFixture(t)
+	if WallMechanism() != WallBwrap {
+		t.Skip("the judge and venue arms want this host's bwrap render; its mechanism is " + WallMechanism())
+	}
+	writable := []string{g.run}
+	for _, kind := range []landedCageKind{landedCageJudge, landedCageVenue} {
+		cage, err := boxLandedCage(&App{}, kind, filepath.Join(g.run, "judge"), g.tree, writable, landedRunEnv(g.run))
+		if err != nil {
+			t.Fatalf("%s: the render is refused (%v) — same reading as the seat arms above", kind, err)
+		}
+		if n := wpsCountPinnedInPlace(t, kind.String(), cage.Argv, writable); n == 0 {
+			t.Errorf("CONTROL: the %s render makes no in-place bind at all:\n %s", kind, bwJoin(cage.Argv))
+		}
+	}
+}
+
+// wpsCountPinnedInPlace is the census over one argv: it reds every in-place
+// bind whose path has a loose component and answers how many it judged, so a
+// caller can say its arm measured something.
+func wpsCountPinnedInPlace(t *testing.T, who string, argv, grants []string) int {
+	t.Helper()
+	ms := bwrapMounts(argv)
+	dsts := bwrapMountDsts(ms)
+	var n int
+	for _, m := range ms {
+		if m.Src == "" || m.Src != m.Dst {
+			continue
+		}
+		n++
+		if loose, ok := bwrapPinned(m.Src, grants, dsts); !ok {
+			t.Errorf("the %s render binds %s in place and %s lies strictly inside a write grant with no mount on it — a leftover of this seat renames it and bwrap resolves this grant's own path to what it points at, read-write, at the next launch (ADR 0100 D2(b))\n argv: %s", who, m.Src, loose, bwJoin(argv))
+		}
+	}
+	return n
+}
+
+// Pin: a render carrying a TWO-DEEP unpinned grant is REFUSED, by the name
+// of the loose component, and the one-deep nest beside it still renders.
+// This is the shape a PID would arrive in — a `writable:` extra two or more
+// components inside a grant the seat already has — and it is the arm the
+// widening above exists for. The refusal's instruction is the one ADR 0100
+// prescribes everywhere else: bind the loose component in place, or narrow
+// the grant above it; never exempt it.
+//
+// MUTATION RUN 2026-11-21: restoring the `m.Src == m.Dst` skip in
+// bwrapRefuseUnpinnedSource reds this test alone.
+func TestQAWallPinnedSourceRefusesATwoDeepUnpinnedGrant(t *testing.T) {
+	// No t.Parallel: this sets HOME, which the wall root is composed from.
+	root := wallUngrantedDir(t)
+	home, proj := filepath.Join(root, "home"), filepath.Join(root, "proj")
+	outer := filepath.Join(proj, "g")
+	mid, inner := filepath.Join(outer, "a"), filepath.Join(outer, "a", "b")
+	for _, d := range []string{home, proj, inner} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	if bwrapWallRoot() == "" {
+		t.Skip("NOTHING MEASURED: ADR 0100's rules stand down for a home under " + bwrapTmpMount + " (bwrapWallRoot)")
+	}
+
+	// CONTROL, and it is two controls in one: the outer grant alone, and the
+	// nest one component deep whose inner grant is its own mount. Both must
+	// render, or the refusal below is a refusal of everything.
+	for _, c := range []struct {
+		name   string
+		grants []string
+	}{
+		{"the outer grant alone", []string{outer}},
+		{"a grant one component inside it", []string{outer, mid}},
+		{"the two-deep nest with the component between granted too", []string{outer, mid, inner}},
+	} {
+		if _, _, err := BwrapArgs(proj, c.grants, SeatbeltCarveOut{}); err != nil {
+			t.Errorf("CONTROL: %s is refused (%v) — every component of every grant there is either a mount of this render or outside every grant, so nothing is loose", c.name, err)
+		}
+	}
+
+	argv, prep, err := BwrapArgs(proj, []string{outer, inner}, SeatbeltCarveOut{})
+	switch {
+	case err == nil:
+		t.Fatalf("a render granting %s inside %s rendered: %s lies strictly inside the outer grant and is a mount of nothing, so a leftover of this seat renames it and bwrap resolves %s to whatever the plant points at — the wall root, read-write, at the next launch (ADR 0100 D2(b))\n argv: %q", inner, outer, mid, inner, argv)
+	case !strings.Contains(err.Error(), mid):
+		t.Errorf("the refusal does not name the loose component %s, which is the only thing the operator can act on: %v", mid, err)
+	case !strings.Contains(err.Error(), "in place"):
+		t.Errorf("the refusal does not name the fix (bind the loose component in place): %v", err)
+	}
+	if len(prep) != 0 {
+		t.Errorf("the refused render came back with prep %v for the uncaged launcher to run", prep)
 	}
 }

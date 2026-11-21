@@ -4,7 +4,10 @@
 architect · extends ADR 0080 D17's render and ADR 0099 D1's seat store; their
 other lines stand · fix: ranger-base-5f5kb (D1's claude state and private
 /tmp, D2(a), D3), ranger-base-ltmyh (D1's seat store and its two-arm import,
-D2(b), which amended D2(b)'s own last paragraph on a measurement)*
+D2(b), which amended D2(b)'s own last paragraph on a measurement),
+ranger-base-gn050 (D4, which amended D4(a) with its census and D4(b) with a
+stand-down), ranger-base-dw2du (D2(a)'s second direction, D2(b) over the
+in-place binds, and D4(b)/(c)'s wording, from the re-read of D2 and D4)*
 
 ## Context
 
@@ -86,20 +89,70 @@ THE SEAT STORE IS THE EXCEPTION, because it holds committed work:
 **D2. TWO INVARIANTS, checked over EVERY bwrap argv the package renders:**
 bwrapRender, the landed-check judge and the wall venue.
 
-(a) Box-wide: refuse any write grant at or above the wall ROOT. The grant
-side is compared RESOLVED (absResolve), because that is what the bind will
-expose. A seat could plant a link at a grant path of its own for its next
-launch, and only the resolved grant shows where it points. The wall root and
-every source are compared as COMPOSED, from the one resolved home. Compare
-with insideDir, never underDir: underDir resolves both sides, so it would
-follow a planted source link and judge its target.
+(a) Box-wide: refuse any write grant that OVERLAPS the wall ROOT — at or
+above it, or inside it. The grant side is compared RESOLVED (absResolve),
+because that is what the bind will expose. A seat could plant a link at a
+grant path of its own for its next launch, and only the resolved grant shows
+where it points. The wall root and every source are compared as COMPOSED,
+from the one resolved home. Compare with insideDir, never underDir: underDir
+resolves both sides, so it would follow a planted source link and judge its
+target.
+
+AMENDED 2026-11-21 (ranger-base-dw2du, from the re-read of this decision).
+BOTH DIRECTIONS, and the second is new: "at or above" was the whole rule
+while the attack in view was a grant that holds a COMPONENT of a source. A
+grant INSIDE the root is neither at nor above it and is the same hole
+arrived at from below — a grant on another seat's wall dir, or on a
+directory within one, is a write grant on that seat's private bind SOURCE,
+and for a member a seat reads before every command it runs that is code
+execution in the victim with no rename and no race in it. Refuse when
+`insideDir(wallRoot, G)` OR `insideDir(G, wallRoot)`, G resolved and the
+root composed, which is the same two sides the first direction already
+compares.
+
+IT REDS NOTHING LEGITIMATE, and the negative case is why: a seat's own
+private DESTINATIONS are grants, but its own private SOURCES are granted by
+no render — they are bound, which is the whole of D1 — so no render has a
+grant under this root to lose. MEASURED 2026-11-21 over all five argvs this
+package renders: 0 of 32 grants lie inside the root, while every render has
+sources that do. Both halves are pinned together, because either alone is
+vacuous.
 
 (b) Per render: a path P is PINNED in render R when every component of P that
 lies strictly inside a write grant of R is itself a mount destination of R.
-Every source that differs from its destination must be pinned. The old Tmp,
-claude and seat-store sources all fail this, which is the pin. The seat
-store's side bind passes legitimately: its source `<common>/objects` is
-inside a `<common>` grant but is the store's own mount.
+EVERY BIND SOURCE must be pinned, the in-place binds of R's own write grants
+included. The old Tmp, claude and seat-store sources all fail this, which is
+the pin. The seat store's side bind passes legitimately: its source
+`<common>/objects` is inside a `<common>` grant but is the store's own mount.
+
+AMENDED 2026-11-21 (ranger-base-dw2du, the same re-read). The first text of
+this rule said "every source that DIFFERS from its destination", which left
+the IN-PLACE binds — a write grant's own `--bind p p`, and every in-place
+`--ro-bind` — judged by neither arm of this decision, since D4(a) skips the
+same equality. They are not safe for being in place: bwrap resolves the same
+string again at mount(2), so a component of a grant path that a walled seat
+can rename is togglable between a directory and a link to anywhere, and the
+render's own absResolve an instant earlier is the check-then-use this record
+rejects A2 for. A grant whose loose component is pointed at the wall root is
+a read-write mount of every seat's private sources at the grant's own name,
+at the NEXT launch and with no race to win; the attacker is the seat's own
+leftover, so it needs no sibling. The leftover holds the old render's mounts,
+so every pinned component answers EBUSY.
+
+NO MODE DISTINCTION, which is one notch wider than the re-read asked for
+("every rw bind"): an in-place `--ro-bind` redirected the same way hands out
+the same tree read-only, which for private history, shell snapshots and the
+seat store is a confidentiality break, and a rule with a mode exemption is a
+rule with an exemption to maintain. MEASURED 2026-11-21 over all five argvs:
+150 in-place binds, every one pinned, so the wider reading costs nothing
+today. That measurement also answers the one thing the re-read left ASSUMED
+— whether any render has a grant nested two or more components inside
+another with a non-mount component between them — with no. What this rule
+asks of an in-place bind is only about its ANCESTORS: the path itself is the
+destination of the mount that binds it, and a grant one component inside
+another has that outer grant for its parent, so the shape that reds is a nest
+two deep with nothing bound between; the pin is a render carrying one. A miss is fixed the way D4(a) prescribes: bind the loose
+component in place, or narrow the grant above it, never exempt it.
 
 The landed-check and venue sources lie under `StateDir/landed-check/run-*`,
 which no walled seat writes. They pass D2(a) and the pin says so.
@@ -109,7 +162,7 @@ they did NOT pass D2(b), and this ADR's first text said they did. MEASURED
 by running the predicate over the two rendered argvs: the judge's private
 /tmp is `tmp` INSIDE the run dir, the run dir is the one thing either render
 grants, so that component lies strictly inside a write grant and is a mount
-of neither render — loose, by the definition two paragraphs up. The venue's
+of neither render — loose, by (b)'s own definition above. The venue's
 private /var/tmp is the same shape (`var-tmp` in the same run dir). "No
 walled seat writes the run dir" is an argument about WHO can write it, which
 is true and is not what the predicate asks; a rule that holds for everything
@@ -180,11 +233,21 @@ member is PINNED and not merely bound, because a grant of an ANCESTOR of
 
 (b) Box-wide: THE PRIVATE SET FOLLOWS THE GRANT, NOT THE RUNTIME. Any bwrap
 render whose final write set reaches a runtime config dir that has a private
-table binds that table, whichever runtime the seat runs. Today the only such
-table is claude's: claudeSessionStateDirNames plus history.jsonl.
+table makes every member of that table PINNED in that render, whichever
+runtime the seat runs. Today the only such table is claude's:
+claudeSessionStateDirNames plus history.jsonl.
 claudePrivateSessionState's gate moves from the runtime's state grants to the
 render's final write set. A sibling that can write `<cfg>` therefore holds
 every member as a mount, and gets EBUSY.
+
+PINNED AND NOT MERELY BOUND (ranger-base-dw2du, the re-read's wording fix,
+adopted). The two readings part when the grant is an ANCESTOR of `<cfg>`
+rather than `<cfg>` itself: a mount on each member does not stop a rename of
+`<cfg>`. For the default home D2(a) already refuses the two ancestors that
+matter, `~` and `~/.cache`; a `CLAUDE_CONFIG_DIR` pointed somewhere else has
+no such cover, and there the predicate is what says so. It is D2(b)'s
+predicate and the same function, so (a) and (b) are one question asked of two
+lists.
 
 AMENDED 2026-11-20 (ranger-base-gn050): the gate STANDS DOWN where this
 mechanism's wall does, off the same helper and for the same reason D2(b)'s
@@ -211,6 +274,19 @@ no destination of its own to swap.
 mount, (a). The other kind already writes the shared store by grant: an
 unlinked seat in the main checkout, or a shims seat. A swap gives them
 nothing they lack (ADR 0099's own scope).
+
+READ 2026-11-21 (ranger-base-dw2du), and the list stays at two. The re-read
+of this decision named a THIRD kind — a seat linked in another repository
+whose store of record is this one, which was granted this repository's git
+dirs whole and so held no mount of its own over `<common>/objects`. That was
+true when the re-read was written and it is not true now: the grant itself
+was removed (ranger-base-kfrpv), and ADR 0099 carries a dated note saying
+D1's session-repo scope is complete and is not to be reopened for the store
+repo (ranger-base-gdgbb). So the class has no members, and adding it here
+would have reintroduced as a premise of this record exactly the sentence
+that landing struck from five others. If a seat is ever granted write into
+another repository's git again, this is the paragraph that gains its third
+kind.
 
 (d) bwrap's final-link refusal (MEASURED P3) is check-then-use: 0.13.1 has no
 move_mount, and path mount(2) follows a final link. It is kept as the refusal
@@ -310,6 +386,17 @@ substance as D4(b), but keyed on a static per-config-dir table, not on "any
 current render". A render cannot read its siblings' renders, and a stale one
 would make the rule undecidable at render time.
 
+**A8. An in-cage read of the mount's own root instead of pinning the grants**
+(`/proc/self/mountinfo` field 4, refusing any mount rooted at or under the
+wall root). Offered by the re-read as the FALLBACK if pinning every grant
+redded legitimate shapes, and worth recording for the reason it was offered:
+after the mount, a bind's root no longer changes, so on the SOURCE arm this
+is not check-then-use the way A3 is on the destination arm. Not adopted and
+not priced, because the measurement that would have called for it came back
+empty (D2(b)'s 2026-11-21 amendment: 150 in-place binds, none loose). It is
+where to go if a future PID's grants cannot be pinned without refusing a
+shape the shop needs.
+
 ## MEASURED vs ASSUMED
 
 MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
@@ -349,6 +436,21 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   name. Against a real bwrap
   (TestLiveWallPinnedDstAHolderCannotRenameAPrivateMember).
 
+- (2026-11-21, ranger-base-dw2du) D2(b) RUN OVER THE IN-PLACE BINDS of all
+  five rendered argvs: 150 of them (claude 55, codex 31, grok 50, the judge
+  7, the venue 7), read at da79a784, and every one PINNED, so widening the
+  rule to them refuses
+  no shape this box renders — and no render has the nest the re-read left
+  ASSUMED, a grant two or more components inside another with nothing bound
+  between. A render carrying one is refused by name, measured by mutation
+  (restoring the `Src == Dst` skip reds that pin alone).
+- (2026-11-21, ranger-base-dw2du) D2(a)'s second direction over the same
+  five: 0 of 32 grants lie INSIDE the wall root, while every render has bind
+  sources that do. Measured by mutation too: dropping the new arm reds the
+  three grant spellings written for it — another seat's wall dir, a
+  directory within one, and a path of this seat's own that links into the
+  root — and nothing else.
+
 ASSUMED:
 
 - the seat-store toggle win rate;
@@ -359,5 +461,4 @@ ASSUMED:
 
 - ranger-base-tbg3h
 - ranger-base-qyq59
-- ranger-base-dw2du
 - ranger-base-k45vt

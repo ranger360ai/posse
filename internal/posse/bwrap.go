@@ -1260,8 +1260,11 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		argv = append(argv, "--ro-bind", "/dev/null", f)
 		watch(WallWatchReadMask, f)
 	}
-	// 6. EVERY SOURCE THAT DIFFERS FROM ITS DESTINATION IS PINNED IN THIS
-	// RENDER (ADR 0100 D2(b)), AND SO IS EVERY SUCH DESTINATION (D4(a)).
+	// 6. EVERY BIND SOURCE IS PINNED IN THIS RENDER (ADR 0100 D2(b)) — the
+	// in-place binds of shape 1's own write grants included, because bwrap
+	// resolves a grant's path at mount(2) as surely as it resolves a private
+	// source's (ranger-base-dw2du) — AND SO IS EVERY DESTINATION THAT
+	// DIFFERS FROM ITS SOURCE (D4(a)).
 	// Last, because both are asked of the finished argv — the mounts are
 	// what pin a component, and a step above could still have added one.
 	// Here and not in each producer, for the reason step 2a is here: this is
@@ -1539,13 +1542,29 @@ func bwrapSrcWalk(src, root, dst string) (exists bool, fi os.FileInfo, err error
 }
 
 // bwrapRefuseWallRootGrant is ADR 0100 D2(a): a render is refused outright
-// when any write grant lies AT or ABOVE the wall root. It is the invariant
-// that makes the wall dir a wall — every bind source that differs from its
-// destination lives under that root (D1), and a grant above it hands a seat
-// a COMPONENT of those sources, which is this whole class of hole
-// (ranger-base-p47q6). The ones it would hand over are not only this seat's:
-// the root holds every seat's wall dir, so the refusal is box-wide and not a
-// statement about the render it refuses.
+// when any write grant OVERLAPS the wall root in either direction — at or
+// above it, or inside it. It is the invariant that makes the wall dir a wall
+// — every bind source that differs from its destination lives under that
+// root (D1), and a grant that reaches it hands a seat a COMPONENT of those
+// sources, which is this whole class of hole (ranger-base-p47q6). The ones
+// it would hand over are not only this seat's: the root holds every seat's
+// wall dir, so the refusal is box-wide and not a statement about the render
+// it refuses.
+//
+// BOTH DIRECTIONS, and the second one is ranger-base-dw2du's (the review's
+// re-read of this decision). "At or above" was the whole rule while the
+// attack in view was a grant that holds a COMPONENT of a source. A grant
+// INSIDE the root is neither at nor above it and is the same hole arrived at
+// from below: a `writable:` extra naming
+// `<wall root>/<another seat's key>/claude/shell-snapshots` is a grant on
+// that seat's private bind SOURCE, and what the seat sources from there runs
+// ahead of every Bash command it makes — a walled-to-walled lateral move
+// with no rename and no race in it at all. The negative case is why this
+// reds nothing legitimate: a seat's own private destinations are grants
+// (`<cfg>/…`), but its own private SOURCES are not granted by any render —
+// they are bound, which is the whole of D1 — so no shipped render has a
+// grant under this root to lose (MEASURED 2026-11-21, over all five argvs
+// this package renders: 0 of 32 grants lie inside the root).
 //
 // A REFUSAL AND NOT A NARROWING, for the reason the ADR 0095 arm above gives
 // in the same words: a seat launched behind a wall that silently dropped a
@@ -1562,7 +1581,10 @@ func bwrapSrcWalk(src, root, dst string) (exists bool, fi os.FileInfo, err error
 // wall root is composed, from the one resolved home, and the comparison is
 // insideDir and never underDir: underDir would resolve the root too, and a
 // resolution of the root follows whatever is planted at the END of it, which
-// is to say it judges the plant's target instead of the plant.
+// is to say it judges the plant's target instead of the plant. The inside
+// arm reads the same two sides the same two ways — the root composed, the
+// grant resolved — so an extra spelled as a link INTO the root is caught by
+// the one re-resolution the outside arm already makes.
 //
 // IT STANDS DOWN WHERE THE HOME IS ITSELF UNDER /tmp, which is bwrapSeatTmp's
 // own stand-down and the same box shape: /tmp is granted unconditionally
@@ -1580,10 +1602,12 @@ func bwrapRefuseWallRootGrant(writable []string) error {
 	}
 	for _, g := range writable {
 		gr := absResolve(g)
-		if !insideDir(gr, root) {
-			continue
+		switch {
+		case insideDir(gr, root):
+			return Die("bwrap cannot grant write on %s: it contains the per-seat wall root %s, where every bind source of every walled seat on this box lies — a seat with that grant renames a component of another seat's source and bwrap mounts what it points at, read-write, inside that seat's namespace (ADR 0100 D1/D2(a)). Narrow the grant: name the directory the seat needs, not a parent of the wall root", g, root)
+		case insideDir(root, gr):
+			return Die("bwrap cannot grant write on %s: it lies inside the per-seat wall root %s, which holds the bind SOURCES of every walled seat on this box — a seat with that grant writes another seat's private source directly, and for claude's shell snapshots and session env what is written there runs ahead of every command that seat makes (ADR 0100 D1/D2(a)). Narrow the grant: no seat's own sources are granted to it either, which is what makes them a wall", g, root)
 		}
-		return Die("bwrap cannot grant write on %s: it contains the per-seat wall root %s, where every bind source of every walled seat on this box lies — a seat with that grant renames a component of another seat's source and bwrap mounts what it points at, read-write, inside that seat's namespace (ADR 0100 D1/D2(a)). Narrow the grant: name the directory the seat needs, not a parent of the wall root", g, root)
 	}
 	return nil
 }
@@ -1627,7 +1651,10 @@ func bwrapWallRoot() string {
 // toggles the component in a loop. D1 answers the class by moving every
 // source under the wall dir, where NO component is inside any grant; this
 // predicate is what says so of each render rather than of the design, and
-// what catches a source put back.
+// what catches a source put back. It is asked of every bind source and not
+// only of those that differ from their destination: an in-place bind's path
+// is re-resolved at mount(2) too, so a loose ANCESTOR of a write grant
+// redirects that grant (ranger-base-dw2du).
 //
 // THE GRANT SIDE IS COMPARED BOTH AS WRITTEN AND RESOLVED, and the union is
 // deliberate: either spelling reaching the component is a seat that can
@@ -1732,11 +1759,37 @@ func bwrapMountDsts(ms []bwrapMount) []string {
 	return out
 }
 
-// bwrapRefuseUnpinnedSource is D2(b) over a rendered argv: EVERY source that
-// differs from its destination must be PINNED in the render that binds it,
-// else the render is refused. Called at the end of BwrapArgs, where all
-// three of this package's renders meet, and again by the venue over the
-// mounts it adds after that (boxLandedCage).
+// bwrapRefuseUnpinnedSource is D2(b) over a rendered argv: EVERY bind
+// source must be PINNED in the render that binds it, else the render is
+// refused. Called at the end of BwrapArgs, where all three of this package's
+// renders meet, and again by the venue over the mounts it adds after that
+// (boxLandedCage).
+//
+// EVERY SOURCE, IN-PLACE GRANTS INCLUDED, and that second half is
+// ranger-base-dw2du's (the review's re-read of this decision). The first
+// text of this rule read "every source that DIFFERS from its destination",
+// which left the in-place binds — shape 1's `--bind p p` for each write
+// grant, and every in-place `--ro-bind` — judged by neither arm: the
+// destination arm (bwrapRefuseUnpinnedDst) skips them for the same
+// equality. They are not safe by being in place. bwrap resolves the SAME
+// STRING again at mount(2), so a component of a grant path that a walled
+// seat can rename is togglable between a directory and a link to anywhere —
+// and the render's own absResolve, made an instant earlier, is exactly the
+// check-then-use this ADR rejects A2 for. A grant whose loose component gets
+// pointed at the wall root is a read-write mount of every seat's private
+// sources at the grant's name, at the NEXT launch, with no race to win; the
+// attacker is the seat's own leftover, so it needs no sibling.
+//
+// NO MODE DISTINCTION, which is one notch wider than the re-read asked for
+// ("every rw bind"): an in-place `--ro-bind` redirected the same way hands
+// out the same tree read-only, which for private history, shell snapshots
+// and the seat store is a confidentiality break, and a rule with a mode
+// exemption is a rule with an exemption to maintain. MEASURED 2026-11-21
+// over all five argvs this package renders: 150 in-place binds, every one
+// pinned, so the wider reading costs nothing today (zero misses, and the
+// question the re-read left ASSUMED — whether any render has a grant nested
+// two or more components inside another with a non-mount component between
+// them — is answered no, by the pin rather than by a paragraph).
 //
 // A REFUSAL AND NOT A WARNING, in the tier's own direction: a source whose
 // components a seat can swap is a mount of the seat's choosing, read-write,
@@ -1755,7 +1808,14 @@ func bwrapMountDsts(ms []bwrapMount) []string {
 //     mount destination, which is to say the thing that makes it unswappable
 //     is the mount the render already makes (ADR 0100 D2(b));
 //   - `/dev/null` over a masked file: `/dev` is a mount destination and
-//     nothing grants it.
+//     nothing grants it;
+//   - every IN-PLACE bind, including each write grant's own `--bind p p`: a
+//     path is always a mount destination of the mount it is the destination
+//     of, so what this arm asks of them is only about their ANCESTORS — a
+//     grant equal to a grant is not strictly inside it, and a grant nested
+//     one component inside another has its parent for the outer grant
+//     itself. What reds is a nest TWO or more components deep with no mount
+//     between, which no render here has (MEASURED above).
 //
 // IT STANDS DOWN WHERE THE WALL ROOT DOES (bwrapWallRoot): on a box whose
 // home is itself under the shared /tmp there is no ungranted place for a
@@ -1770,12 +1830,15 @@ func bwrapRefuseUnpinnedSource(argv, grants []string) error {
 	ms := bwrapMounts(argv)
 	dsts := bwrapMountDsts(ms)
 	for _, m := range ms {
-		if m.Src == "" || m.Src == m.Dst {
+		if m.Src == "" {
 			continue
 		}
 		loose, ok := bwrapPinned(m.Src, grants, dsts)
 		if ok {
 			continue
+		}
+		if m.Src == m.Dst {
+			return Die("bwrap cannot bind %s in place: %s lies inside a write grant of this render and is no mount of it, so a walled seat — or anything this seat leaves behind — renames it and bwrap resolves this very path to what it points at instead, read-write, at the next launch and with no race to win (ADR 0100 D1/D2(b)). Bind %s in place too, so the mount pins it, or narrow the grant that contains it — never exempt it", m.Src, loose, loose)
 		}
 		return Die("bwrap cannot bind %s over %s: %s lies inside a write grant of this render and is no mount of it, so a walled seat — or anything this seat leaves behind — renames it and bwrap binds what it points at instead, at the next launch and with no race to win (ADR 0100 D1/D2(b)). Put the source under the per-seat wall dir %s, or bind %s in place so the mount pins it", m.Src, m.Dst, loose, bwrapWallRoot(), loose)
 	}

@@ -259,6 +259,102 @@ func TestQAWallRootGrantIsRefusedByTheSeatRender(t *testing.T) {
 	}
 }
 
+// Pin: D2(a) BOTH DIRECTIONS (ranger-base-dw2du). "At or above the wall
+// root" was the whole rule while the attack in view was a grant that holds a
+// COMPONENT of a source. A grant INSIDE the root is neither at nor above it,
+// and it is the same hole from below: a `writable:` extra naming another
+// seat's wall dir, or one directory inside it, is a write grant on that
+// seat's private bind SOURCE — and for the private members a seat sources
+// before every command it runs, a sibling that can write there runs code in
+// it. No rename, no race, no leftover needed.
+//
+// Spelled three ways, because an operator and an attacker spell it
+// differently: another seat's wall dir, a directory two levels inside one,
+// and a path of the seat's own that is a LINK into the root — the last
+// caught only because the grant side is compared RESOLVED, which is the one
+// re-resolution BwrapArgs makes.
+//
+// MUTATION RUN 2026-11-21: dropping the `insideDir(root, gr)` arm of
+// bwrapRefuseWallRootGrant reds all three rows and nothing else; the arms
+// above it (at or above the root) stay green, which is what says the two
+// directions are two rules and not one.
+func TestQAWallRootGrantIsRefusedInsideTheWallRootToo(t *testing.T) {
+	// No t.Parallel: this sets HOME, which the wall root is composed from.
+	root := wallUngrantedDir(t)
+	home, proj := filepath.Join(root, "home"), filepath.Join(root, "proj")
+	for _, d := range []string{home, proj} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	_, wallRoot, _ := wrgHome(t, home)
+
+	// A sibling seat's wall dir, keyed for a session dir that is not this
+	// render's — which is the whole point: the root holds every seat's.
+	sibling := SeatWallDir(home, filepath.Join(root, "another-seat"))
+	inside := filepath.Join(sibling, "claude", "shell-snapshots")
+	linkIn := filepath.Join(proj, "scratch-link")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(inside, linkIn); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ name, grant string }{
+		{"another seat's wall dir", sibling},
+		{"a private source directory inside one", inside},
+		{"a path of this seat's own that LINKS into the root", linkIn},
+	} {
+		argv, prep, err := BwrapArgs(proj, []string{c.grant}, SeatbeltCarveOut{})
+		switch {
+		case err == nil:
+			t.Errorf("a grant of %s (%s) rendered: it lies inside the wall root %s, where the bind SOURCES of every walled seat on this box live, so this seat writes another seat's private source directly (ADR 0100 D2(a))\n argv: %q", c.name, c.grant, wallRoot, argv)
+		case !strings.Contains(err.Error(), wallRoot):
+			t.Errorf("a grant of %s was refused with %q, which does not name the wall root — the refusal is the operator's only instruction for what to narrow", c.name, err)
+		}
+		if len(prep) != 0 {
+			t.Errorf("a grant of %s came back with prep %v for the uncaged launcher to run", c.name, prep)
+		}
+	}
+}
+
+// Pin, the NEGATIVE case of the arm above, and it is what says the widening
+// reds nothing legitimate: a seat's own private DESTINATIONS are grants —
+// `<cfg>` and the rest — but its own private SOURCES are not granted by any
+// render, which is the whole of D1. So no shipped render has a grant under
+// the wall root to lose, and the sources that ARE under it are reached
+// through mounts and not through the write set.
+//
+// Both halves are measured over one render, because either alone is vacuous:
+// a render with no grant inside the root and no source under the wall dir
+// would pass the first assertion while measuring nothing.
+func TestQAWallRootGrantTheSeatsOwnSourcesAreUnderItAndItsGrantsAreNot(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	f := wpsSeatTree(t)
+	wallRoot := bwrapWallRoot()
+	for _, name := range []string{"claude", "codex", "grok"} {
+		r, err := f.a.bwrapRender(f.ag, wrcRuntime(name), f.dir, f.gates)
+		if err != nil {
+			t.Fatalf("%s: the render is refused (%v) — if that is D2(a)'s own refusal, this instance has a grant inside the wall root and the arm below cannot measure it", name, err)
+		}
+		for _, g := range r.Set {
+			if insideDir(wallRoot, absResolve(g)) {
+				t.Errorf("the %s render grants %s, which lies inside the wall root %s: that is a grant on some seat's private bind source, and D2(a) refuses it — narrow the producer, do not exempt the render (ADR 0100 D2(a))", name, g, wallRoot)
+			}
+		}
+		var under int
+		for _, m := range bwrapMounts(r.Argv) {
+			if m.Src != "" && m.Src != m.Dst && insideDir(wallRoot, absResolve(m.Src)) {
+				under++
+			}
+		}
+		if under == 0 {
+			t.Errorf("CONTROL: the %s render has no bind source under the wall root at all, so the rows above measured a render with nothing to protect:\n %s", name, bwJoin(r.Argv))
+		}
+	}
+}
+
 // Pin (b) at the other two renders: the landed-check judge and the wall
 // venue. Both compose their own writable set and both come through
 // BwrapArgs, which is what this measures — a render that grew a second argv
