@@ -72,7 +72,10 @@ var prepHostFenceKeepOut string
 // own temp home, plus the two temp roots this package's fixtures are cut
 // from — os.TempDir(), which is what t.TempDir() uses, and /var/tmp, which
 // wallUngrantedDir uses deliberately because a t.TempDir() is under a blanket
-// temp grant and ADR 0097 D1's wall venue puts its private mounts there.
+// temp grant and ADR 0097 D1's wall venue puts its private mounts there. Make
+// that THREE where this seat declared an ungranted root of its own
+// (envUngrantedFixtureRoot, at the foot of this file): prepHostFenceRootList
+// is the whole list and says why it is in there.
 //
 // Called from FenceCLIHomes so that every binary with a fence gets this one
 // too: cmd/posse and internal/treepins both render walls through the same
@@ -108,15 +111,43 @@ var prepHostFenceKeepOut string
 // either way; what moved is only which of two nested declarations decides a
 // path they both cover.
 func FencePrepHost(root string) {
-	roots := []string{os.TempDir(), "/var/tmp"}
-	if root != "" {
-		roots = append([]string{root}, roots...)
+	// Only a VALID declaration widens the fence: an unusable one is
+	// wallUngrantedDir's own hard failure, and a fence widened to a path
+	// nothing can cut a fixture under is a fence widened for nothing.
+	declared, _, refusal := ungrantedFixtureRoot()
+	if refusal != "" {
+		declared = ""
 	}
-	prepHostFenceRoots = roots
+	prepHostFenceRoots = prepHostFenceRootList(root, declared)
 	prepHostFenceKeepOut = ""
 	if u, err := user.Current(); err == nil {
 		prepHostFenceKeepOut = u.HomeDir
 	}
+}
+
+// prepHostFenceRootList is that root list, PURE, so a pin can read the rule
+// without writing the package globals every parallel wall pin is reading
+// (prepHostFenceWhy says why nothing in a test may set those).
+//
+// THE THIRD ENTRY IS THE DECLARED UNGRANTED ROOT (ranger-base-ydw7p). It is a
+// fixture root exactly as `/var/tmp` is — `wallUngrantedDir` cuts its fixture
+// home under it, and the render then names that home's `.ssh` — so a seat
+// that moved the root and not the fence would watch every wall pin red at a
+// refusal naming the FENCE instead of the wall it came to measure. "" when
+// this seat declared nothing, which is every seat on a box whose /var/tmp is
+// writable.
+//
+// ORDER IS COSMETIC AND THE DECISION DOES NOT READ IT: prepHostFenceWhy
+// unions the roots' coverage and unions the keep-out question over them, so
+// what the order decides is only how the refusal sentence reads.
+func prepHostFenceRootList(root, declared string) []string {
+	var roots []string
+	for _, r := range []string{root, declared} {
+		if r != "" {
+			roots = append(roots, r)
+		}
+	}
+	return append(roots, os.TempDir(), "/var/tmp")
 }
 
 // PrepHostFenceRoots is the fence as it stands, so a pin can read it back and
@@ -177,4 +208,107 @@ func prepHostFenceWhy(roots []string, keepOut, path string) string {
 func prepHostFenceInsideKeepOut(keepOut, root string) bool {
 	k, r := absResolve(keepOut), absResolve(root)
 	return r != k && insideDir(k, r)
+}
+
+// ─── the fixture root itself, and the seat whose wall has no /var/tmp ────────
+
+// envUngrantedFixtureRoot is the variable a seat points at a directory it can
+// write and no RENDERED wall grants, to be used instead of `/var/tmp` as the
+// root every wall pin's fixture is cut from (`wallUngrantedDir`,
+// wall_helpers_test.go).
+//
+// WHY A VARIABLE AT ALL (ranger-base-ydw7p, found verifying ranger-base-xab99
+// from a security seat). `/var/tmp` is the one directory on both hosts that no
+// blanket temp grant covers, which is what the helper needs — and it is
+// read-only inside a seat's own bwrap wall, which `--ro-bind / /` makes of
+// everything it does not bind back. So on the box where these pins matter
+// most, a seat running them got `mkdir: read-only file system`, the helper
+// skipped, and the package said `ok` over 4 of ranger-base-xab99's 5 pins
+// having measured NOTHING. 77 call sites are in that position from such a
+// seat, and they are the ADR 0100 wall pins the security lane is asked to
+// re-run when it verifies a fix. The out-of-tree answer — unpack the tree
+// somewhere else and sed the const — is not available to a seat whose PID
+// denies Write.
+//
+// THE OTHER SHAPE, said here because it is still open and this is not it: the
+// LAUNCH could grant every verifying seat such a directory and have `posse
+// gates` print it, which costs a launch-line change and is the operator's
+// (guardrail 5). This variable needs no launch and no install, so it is what
+// a seat behind today's wall can use today.
+//
+// IT IS NOT A WAY ROUND THE RULE, and ungrantedFixtureRoot holds it to the
+// same one the `/var/tmp` arm applies to itself: a root inside `/tmp`,
+// `/private/tmp` or `$TMPDIR` is granted by every rendered profile
+// unconditionally (seatbeltTempGrants), so a fixture there measures the
+// grant and not the PID — ADR 0086's own cautionary measurement. A value
+// that breaks the rule is REFUSED and never quietly skipped: a seat that
+// declared a root asked to measure these pins.
+const envUngrantedFixtureRoot = "POSSE_TEST_UNGRANTED_ROOT"
+
+// ungrantedRootDark is the one value of that variable that is not a path: the
+// seat SAYING it has no such directory here. The pins still abstain, and the
+// run is allowed to read green — which is what the undeclared abstention is
+// not (wallUngrantedVerdict). It is spelled as a word no path can be, so a
+// relative path typed by mistake cannot land on it.
+const ungrantedRootDark = "none"
+
+// ungrantedBlanketGrants is the write grants a rendered profile carries
+// whatever its PID, its persona or its cwd says, as the fixture rule needs to
+// read them: `/tmp`, darwin's `/private/tmp` spelling of it, and `$TMPDIR`.
+//
+// A LITERAL LIST AND NOT seatbeltTempGrants, which is the production spelling
+// of the same three. That one is a `var` this package's own fixtures stub to
+// nil on a box whose TMPDIR is under /tmp (sbRoot, seatbelt.go) — so a rule
+// that read it would be a rule a stub could switch off, and the one thing
+// this check may not do is pass a root because something made the grant list
+// empty.
+func ungrantedBlanketGrants() []string {
+	return []string{"/tmp", "/private/tmp", os.Getenv("TMPDIR")}
+}
+
+// ungrantedGrantRefusal is "" when p lies outside every blanket temp grant,
+// and otherwise the sentence naming the grant that covers it. Both arms of
+// the helper go through it, so the declared root and `/var/tmp` are held to
+// one rule and cannot drift apart.
+func ungrantedGrantRefusal(p string) string {
+	for _, g := range ungrantedBlanketGrants() {
+		if g != "" && underDir(g, p) {
+			return "the fixture root " + p + " lies under " + g +
+				", which every rendered profile grants write unconditionally (seatbeltTempGrants), so a fixture inside it is writable under the wall for a reason that has nothing to do with the PID under test"
+		}
+	}
+	return ""
+}
+
+// ungrantedFixtureRoot reads envUngrantedFixtureRoot: the declared root,
+// whether a dark run was declared, and the refusal when the value cannot be
+// used. Exactly one of the three is ever non-zero.
+//
+// PURE OF THE TESTING PACKAGE, so FencePrepHost above can call it from a
+// binary's startup and a pin can drive the rule as a table without a fixture.
+// What it validates is what a parent of os.MkdirTemp has to be — absolute (a
+// relative root would be read against whatever cwd the caller happens to
+// have, and these tests chdir), present, and a directory — plus the grant
+// rule above.
+func ungrantedFixtureRoot() (root string, dark bool, refusal string) {
+	v := os.Getenv(envUngrantedFixtureRoot)
+	switch {
+	case v == "":
+		return "", false, ""
+	case v == ungrantedRootDark:
+		return "", true, ""
+	case !strings.HasPrefix(v, "/"):
+		return "", false, v + " is not an absolute path, and a fixture root is read from a binary that chdirs: name the directory in full"
+	}
+	st, err := os.Stat(v)
+	switch {
+	case err != nil:
+		return "", false, "cannot read " + v + ": " + err.Error() + " — make the directory first (`mkdir -p`), or set " + envUngrantedFixtureRoot + "=" + ungrantedRootDark + " to declare that this seat measures none of the wall pins"
+	case !st.IsDir():
+		return "", false, v + " is not a directory"
+	}
+	if why := ungrantedGrantRefusal(absResolve(v)); why != "" {
+		return "", false, why
+	}
+	return v, false, ""
 }

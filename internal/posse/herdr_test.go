@@ -490,7 +490,23 @@ func TestMain(m *testing.M) {
 	coldExec := coldExecInstall()
 	code := m.Run()
 	coldExec.report()
+	// THE WALL FIXTURES' ABSTENTIONS, counted during the run and answered
+	// here (ranger-base-ydw7p, wall_helpers_test.go). A test that could not
+	// cut a fixture root outside every blanket temp grant measured NOTHING,
+	// and until this arm a run full of them exited 0 and printed `ok` — the
+	// state ranger-base-oejcn verified a wall fix in. The status is what
+	// carries it, because a passing package's stderr is discarded by `go
+	// test` without -v (MEASURED; the helper's comment has the reading).
+	//
+	// THE CREATOR'S, like the removal below: a re-exec child of this binary
+	// runs one named test and is killed by the parent that needed it
+	// (ranger-base-32bdv), so an exit status this arm moved there would be
+	// read as that child's own answer by the test waiting on it.
 	if ownHome {
+		if next, line := wallUngrantedReport(code); line != "" {
+			fmt.Fprintln(os.Stderr, line)
+			code = next
+		}
 		removeTestHome(home)
 	}
 	os.Exit(code)

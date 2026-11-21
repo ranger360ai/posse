@@ -248,7 +248,28 @@ func main() {
 	// type's whole job, and every test calls hermetic — left in, it taints
 	// 722 of the 1606 this bead just freed, which is the exact shape the
 	// fakeDirs note above warns about (ranger-base-pj87l).
-	exempt := map[string]bool{"fakeDirs": true, "operatorHome": true, "hermeticRun": true}
+	// wallUngranted is the fourth (ranger-base-ydw7p): the wall fixtures'
+	// abstention counter, a struct whose every field is written and read
+	// under its own embedded sync.Mutex — by wallUngrantedAbstain, which is
+	// the one site that increments, and by two readers that take the same
+	// lock. No test's decision reads it: the total is answered after m.Run,
+	// in TestMain, where the run's exit status is decided, and the two pins
+	// that read a delta are serial. So the write really does happen during a
+	// parallel test and what makes it safe is the lock, which is the
+	// "bwrapNestOnce" clearance's argument one synchronisation primitive
+	// over — and it is exempted rather than cleared per test because the
+	// reaching tests are the 77 wallUngrantedDir callers, a set that grows,
+	// and a per-test line would make every future parallel caller a red
+	// about a counter rather than about its own state.
+	// MEASURED 2026-11-21: it taints 5 tests, 2 of them carrying t.Parallel
+	// today (TestLaunchSiteWiringPlanLaunchRefusesAnMCPConfigInsideTheWriteSet
+	// and TestLiveSeatbeltUnixConnectDenyHoldsAtConnectTime, which `extra`
+	// reported as pkgvar(wallUngrantedAbstain:wallUngranted) UNCLEARED), and
+	// exempting it leaves `check` clean while demanding t.Parallel of NOBODY
+	// new — 3495 eligible against 3493 before that bead, the two being its
+	// own new parallel pins. That is the number the fakeDirs note asks for,
+	// in the direction it warns about.
+	exempt := map[string]bool{"fakeDirs": true, "operatorHome": true, "hermeticRun": true, "wallUngranted": true}
 	// Named serial, for reasons no static filter can see. Kept here rather
 	// than as a comment on each test so that `eligible` is the whole answer
 	// and a later pass cannot re-add t.Parallel by running this tool.

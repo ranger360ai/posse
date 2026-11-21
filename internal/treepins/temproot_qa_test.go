@@ -209,8 +209,19 @@ const trRequired = "posse-"
 // moving; 17 with wwTempRoot's `/tmp` root, which is the number below. So
 // RE-READ THE LOGGED COUNT WHEN YOU ADD A TEMP ROOT and set this to it: the
 // floor cannot ask you to.
+//
+// MEASURED 2026-11-21 (linux, this box, ranger-base-ydw7p): 19 Go roots and 8
+// Python over 1164 .go files, and 18 Go over 1163 at the commit before that
+// bead — so one of the two the Go line moved by is ranger-base-ydw7p's own
+// (`wallUngrantedDir`'s declared-root arm, whose parent name is ambiguous and
+// so scored IN by the sxez7 rule) and one was already live and above a
+// trGoRoots of 17, which is exactly the silence the paragraph above predicts.
+// The Python line is left at 7 against a live 8 deliberately: that root is
+// nobody's in this bead, the floor is one-directional so it reds nothing, and
+// moving a number this bead did not measure the before-reading of would be
+// the drift this file is about in the other direction.
 const (
-	trGoRoots  = 17
+	trGoRoots  = 19
 	trPyRootsN = 7
 )
 

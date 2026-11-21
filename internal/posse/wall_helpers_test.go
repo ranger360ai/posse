@@ -18,8 +18,11 @@ package posse
 // elsewhere. Neither spelling is a grep for a binary name.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -237,19 +240,153 @@ func wallUngrantedDir(t *testing.T) string {
 	// (ranger-base-qbg7c). One token, and it is the difference between the
 	// census reading this line and not reading it.
 	const varTmpRoot = "/var/tmp"
+	// THE DECLARED ROOT FIRST, when this seat declared one
+	// (ranger-base-ydw7p, and prephostfence.go's envUngrantedFixtureRoot
+	// carries the argument). Inside a seat's own bwrap wall `/var/tmp` is
+	// read-only, so every arm below abstains and a verify reads `ok` over
+	// pins that measured nothing; a seat that can write somewhere outside
+	// every blanket temp grant says so there and measures them here.
+	//
+	// ITS FAILURES ARE FAILURES AND NOT ABSTENTIONS, both of them: a seat
+	// that declared a root asked to measure these pins, so a value that
+	// cannot be used, or a root that cannot be written, is a red naming the
+	// variable rather than one more silent skip. That is the whole defect
+	// this arm exists for, and re-introducing it here would be the joke.
+	declared, dark, refusal := ungrantedFixtureRoot()
+	switch {
+	case refusal != "":
+		t.Fatalf("%s=%q: %s", envUngrantedFixtureRoot, os.Getenv(envUngrantedFixtureRoot), refusal)
+	case dark:
+		// The one declared abstention: this seat has said it has no such
+		// directory, so the skip is counted and the run may still read
+		// green (wallUngrantedVerdict).
+		wallUngrantedAbstain(t, "a dark run is declared by "+envUngrantedFixtureRoot+"="+ungrantedRootDark+", so no wall pin measures from this seat")
+	case declared != "":
+		d, err := os.MkdirTemp(declared, "posse-ungranted-")
+		if err != nil {
+			t.Fatalf("%s=%s: cannot make a fixture root under it: %v — point it at a directory this seat can write, or set it to %s to declare a dark run",
+				envUngrantedFixtureRoot, declared, err, ungrantedRootDark)
+		}
+		t.Cleanup(func() { removeAllTolerant(t, d) })
+		// Resolved and re-checked, exactly as the /var/tmp arm is: the
+		// grant list is read against the ANSWER and not against the
+		// declaration, because a box that symlinked the declared root into
+		// `/tmp` would hand every caller a granted root and every refusal
+		// below would be measuring the other fixture.
+		d = absResolve(d)
+		if why := ungrantedGrantRefusal(d); why != "" {
+			t.Fatalf("%s=%s: %s", envUngrantedFixtureRoot, declared, why)
+		}
+		return d
+	}
 	if st, err := os.Stat(varTmpRoot); err != nil || !st.IsDir() {
-		t.Skip("NOTHING MEASURED: no " + varTmpRoot + " on this host, so there is no fixture root outside every blanket temp grant")
+		wallUngrantedAbstain(t, "no "+varTmpRoot+" on this host, so there is no fixture root outside every blanket temp grant")
 	}
 	d, err := os.MkdirTemp(varTmpRoot, "posse-ungranted-")
 	if err != nil {
-		t.Skip("NOTHING MEASURED: cannot make a fixture root under " + varTmpRoot + ": " + err.Error())
+		wallUngrantedAbstain(t, "cannot make a fixture root under "+varTmpRoot+": "+err.Error())
 	}
 	t.Cleanup(func() { removeAllTolerant(t, d) })
 	d = absResolve(d)
-	for _, g := range []string{"/tmp", "/private/tmp", os.Getenv("TMPDIR")} {
-		if g != "" && underDir(g, d) {
-			t.Skip("NOTHING MEASURED: the fixture root " + d + " lies under " + g + ", which the writable set grants unconditionally")
-		}
+	if why := ungrantedGrantRefusal(d); why != "" {
+		wallUngrantedAbstain(t, why)
 	}
 	return d
+}
+
+// ─── an abstention here is counted, and an undeclared one is not a pass ─────
+//
+// ADR 0097 D5's rule — "an abstention is never a pass" — one layer in from
+// where that record states it. `scripts/posse-wall-check` keeps it for the
+// VENUE, by reading `go test -json` and answering exit 3 over a member that
+// went dark; it is the ADR's own `/var/tmp` row, where this very helper took
+// 18 pins dark over a green exit code. Nothing kept it for the run a PERSON
+// types: `go test -run <the pins> ./internal/posse` from a seat whose wall
+// makes /var/tmp read-only printed `ok` over five pins of which one had run
+// (ranger-base-oejcn, which closed on that reading plus a code read).
+//
+// IT HAS TO BE THE EXIT STATUS, and that is MEASURED and not a preference
+// (2026-11-21, go1.27.3, linux): `go test` without `-v` DISCARDS everything
+// a passing package's binary writes to stdout and stderr, TestMain's own
+// writes included — so a summary line printed after m.Run is seen by nobody
+// in the one run shape this defect appears in. The same line is relayed in
+// full the moment the binary exits nonzero. So the count decides the status,
+// and the sentence rides out with it.
+//
+// A FILTERED RUN IS THE CASE THAT MATTERS, which is why this is not a pin of
+// its own. A dedicated test that reds when no root is usable is unselected by
+// `-run 'TestQAKeepLeaf…'` and the verify reads `ok` again; a TestMain arm is
+// read by every run shape there is.
+//
+// THE TWO COUNTS ARE SEPARATE AND THAT IS LOAD-BEARING, not bookkeeping. A
+// single count plus a "was it declared" flag reads whatever the LAST
+// abstention of the run happened to be — and this bead's own pin
+// (wallungrantedroot_qa_test.go) declares a dark run for one subtest, so one
+// probe would have set that flag for every real abstention after it and the
+// mechanism would have reported "declared" forever while failing nothing.
+var wallUngranted struct {
+	mu       sync.Mutex
+	silent   int    // nobody declared these: the defect
+	declared int    // the seat said it has no such root here
+	why      string // the first reason, which is every reason in practice
+}
+
+// wallUngrantedAbstain counts this caller's abstention and skips it. Every
+// `NOTHING MEASURED` wallUngrantedDir can answer with goes through here, so
+// the count cannot be short by a reason somebody added later.
+func wallUngrantedAbstain(t *testing.T, why string) {
+	t.Helper()
+	_, dark, _ := ungrantedFixtureRoot()
+	wallUngranted.mu.Lock()
+	if dark {
+		wallUngranted.declared++
+	} else {
+		wallUngranted.silent++
+	}
+	if wallUngranted.why == "" {
+		wallUngranted.why = why
+	}
+	wallUngranted.mu.Unlock()
+	t.Skip("NOTHING MEASURED: " + why)
+}
+
+// wallUngrantedVerdict is what TestMain does with that count: the exit status
+// the run should carry, and the line that says why. PURE, so the rule is read
+// by a pin rather than by an exit code somebody has to reproduce.
+//
+// A DECLARED DARK RUN KEEPS THE STATUS IT EARNED and still prints the count.
+// The seat has said it cannot measure these pins here, which is a different
+// thing from a seat that believes it did: the reader of such a run already
+// knows, and a red it cannot clear would only teach it to stop reading the
+// line.
+func wallUngrantedVerdict(code, silent, declared int, why string) (int, string) {
+	if silent+declared == 0 {
+		return code, ""
+	}
+	line := fmt.Sprintf("posse wall fixtures: %d test(s) that need a fixture root outside every blanket temp grant ABSTAINED and measured NOTHING (%s)",
+		silent+declared, why)
+	if silent == 0 {
+		return code, line + " — all " + strconv.Itoa(declared) + " declared, by " + envUngrantedFixtureRoot + "=" + ungrantedRootDark + " (ranger-base-ydw7p)"
+	}
+	if code == 0 {
+		code = 1
+	}
+	return code, line + ", " + strconv.Itoa(silent) + " of them undeclared. That is exit " + strconv.Itoa(code) + " and not `ok`: an abstention is never a pass (ADR 0097 D5). Point " +
+		envUngrantedFixtureRoot + " at an existing directory this seat can write that lies outside /tmp, /private/tmp and $TMPDIR — inside a seat's wall `/var/tmp` is read-only, so the place to look is that wall's own write grants, of which `~/.cache/posse` is one on both hosts (homeCacheGrants) — or set it to " +
+		ungrantedRootDark + " to declare that this seat measures none of them (ranger-base-ydw7p)"
+}
+
+// wallUngrantedReport is the two things TestMain needs: call it after m.Run.
+func wallUngrantedReport(code int) (int, string) {
+	wallUngranted.mu.Lock()
+	defer wallUngranted.mu.Unlock()
+	return wallUngrantedVerdict(code, wallUngranted.silent, wallUngranted.declared, wallUngranted.why)
+}
+
+// wallUngrantedCounts is the pair as it stands, for the pin that drives an
+// abstention and reads the delta.
+func wallUngrantedCounts() (silent, declared int) {
+	wallUngranted.mu.Lock()
+	defer wallUngranted.mu.Unlock()
+	return wallUngranted.silent, wallUngranted.declared
 }
