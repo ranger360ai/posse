@@ -1010,7 +1010,16 @@ func vpFile(path string, added ...string) string {
 // The boundary is the diff's own header, which the arm's pipeline used to
 // discard with a second grep and now lets through for vulnPrivateUndiff to
 // blank. Since ranger-base-pdcf6 that is BOTH header lines and the reading is
-// positional — see vpFile, and the collision rows at the end of this table.
+// positional — see vpFile, and the collision rows in the middle of this table.
+//
+// THE TABLE HAS A SECOND HALF SINCE ranger-base-cso5z, which re-reported this
+// bug against an installed hook older than this tree and asked for the one
+// direction 4og5l's rows do not cover: the id as the FIRST added line of its
+// file rather than the last (the grouping charges a bare id to the text above
+// it too), and whether the same joining could SUPPRESS a hit rather than
+// invent one. The last three rows are that false-negative arm and their
+// comment carries the measurement; the answer is no, structurally, because
+// blanking a boundary only ever closes a unit.
 func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -1071,6 +1080,68 @@ func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
 		// nothing. "No hit" is also what that says.
 		name: "control: the same two lines with no `++` line at all",
 		text: vpFile("docs/x.md", "- ranger-base-l751c", "\tthe heap overflow"),
+		want: true,
+	}, {
+		// ranger-base-cso5z: the SAME joining read the other way up. The
+		// grouping charges a bare id to the text ABOVE it as well as below
+		// (vulnPrivateUnits, "in BOTH directions"), so the boundary has to
+		// hold for a file that OPENS with the id too — the shape that bead
+		// described, a bare id as the first added line of its file. Nothing
+		// pinned this direction: the rows above all put the id in the EARLIER
+		// file.
+		name: "the upwards escape does not cross a boundary either",
+		text: vpFile("docs/w.md", "- the heap overflow in the parser") +
+			vpFile("docs/x.md", "  ranger-base-l751c"),
+	}, {
+		// Its control, paired as the downwards one is: the same two lines in
+		// ONE file still reds, so the row above is clean because of the
+		// boundary and not because nothing is read.
+		name: "the upwards escape in the SAME file still reds",
+		text: vpFile("docs/x.md", "- the heap overflow in the parser", "  ranger-base-l751c"),
+		want: true,
+	}, {
+		// ranger-base-cso5z's FALSE-NEGATIVE arm, which that bead raised as
+		// arguable and unmeasured: two files' lines joined for the
+		// continuation rule are joined for every other paragraph-shaped rule
+		// this judge applies, so a hit could in principle be SUPPRESSED
+		// across a boundary rather than invented. It is not, and the reason
+		// is structural — the boundary only ever CLOSES units, so joining can
+		// widen a unit and never narrow one, and a narrower unit is the only
+		// thing that can hide a letter. The one narrowing shape is a header
+		// landing MID-file, which is ranger-base-pdcf6's collision and the
+		// three rows above this block.
+		//
+		// MEASURED 2026-11-21 (Linux 7.2.15-1-omarchy, this tree at 32bce0e4)
+		// through RunGatesVulnPrivateScan over 8 candidate shapes, each fed
+		// twice — once as a header-less stream of added lines, which is
+		// exactly the pre-fix text, and once with the boundaries: NO shape
+		// read clean without the boundary and red with it, which is what a
+		// suppressed hit would look like. Three read the other way round
+		// (hit without the boundary, clean with it) and those are the false
+		// positives ranger-base-4og5l's fix removes — this bead's own repro
+		// among them. The three rows below are the arm's own pins.
+		name: "a described id in the file AFTER a boundary still reds",
+		text: vpFile("docs/w.md", "## Not closed here", "- ranger-base-l751c") +
+			vpFile("docs/x.md", "- ranger-base-l751c", "  the heap overflow in the parser"),
+		want: true,
+	}, {
+		// The workaround shape a56098a9 landed with: one blank added line at
+		// the end of the previous file, which is what a writer who has not
+		// read the hook arrives at. The boundary makes it redundant and must
+		// not make it blinding.
+		name: "a blank added line before the boundary does not blind the next file",
+		text: vpFile("docs/w.md", "- ranger-base-l751c", "") +
+			vpFile("docs/x.md", "- ranger-base-l751c", "  the heap overflow in the parser"),
+		want: true,
+	}, {
+		// Every id in a unit is stripped from it before the bareness test
+		// (vulnPrivateHits), so a joined unit stripped the id from the
+		// PREVIOUS file's lines as well. Blanking the boundary leaves each
+		// file's own unit to be judged on its own: w's is bare, x's is not,
+		// and the hit is named from x.
+		name: "the id stripping does not cross a boundary",
+		text: vpFile("docs/w.md", "- ranger-base-l751c") +
+			vpFile("docs/x.md", "ranger-base-l751c is a heap overflow"),
 		want: true,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
