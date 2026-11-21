@@ -167,7 +167,10 @@ func (f bsLive) sharedObject(t *testing.T, body string) (string, string) {
 // an EXISTING shared object's file — unlink, chmod, rename over it, rewrite
 // it in place — is refused, by its real name and by the side path. The same
 // holds when another grant covers `<common>` WHOLE (a store of record inside
-// the same repo), which is what says the store's bind is the deepest mount.
+// the same repo), which is what says the store's bind is the deepest mount —
+// and that shape carries `<common>/worktrees` as well, because ADR 0100
+// refuses the set without it (bsWideGrantRefusedUnpinned, which is the arm
+// that says so rather than a comment claiming it).
 //
 // The control is the render this bead replaced, against a second object: the
 // same unlink succeeds there, so the arms measure the binds and not the file
@@ -201,12 +204,28 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	}
 	side := filepath.Join(f.base, sha[:2], sha[2:])
 
+	// THE WIDE SHAPE'S GRANTS, with the one in-place bind that makes them
+	// renderable at all (ranger-base-4gyib). A grant covering `<common>`
+	// whole puts `<common>/worktrees` strictly inside it with no mount
+	// between, and the seat's own per-worktree git dir
+	// `<common>/worktrees/<name>` is a grant under THAT, with the store's
+	// side bind one component deeper again — so under ADR 0100 this set
+	// renders only with the component between bound in place as well, which
+	// is the fix that ADR prescribes and never an exemption. Granting
+	// it is how a test spells "bound in place": shape 1 binds every write
+	// grant `--bind p p`, so the grant IS the mount that pins what is under
+	// it. bsWideGrantRefusedUnpinned below is this same set WITHOUT it, and
+	// it is what keeps a later reader from dropping this entry as decoration.
+	wt := filepath.Join(f.common, "worktrees")
+	wide := append(append([]string{}, f.set...), f.common, wt)
+	bsWideGrantRefusedUnpinned(t, f, wt)
+
 	for _, shape := range []struct {
 		name string
 		argv []string
 	}{
 		{"as rendered", f.argv},
-		{"with <common> granted whole", f.render(t, append(append([]string{}, f.set...), f.common), f.binds(t))},
+		{"with <common> granted whole", f.render(t, wide, f.binds(t))},
 	} {
 		for _, p := range []string{file, side} {
 			for _, c := range []struct {
@@ -253,6 +272,58 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	}
 	if got := mustGit(t, f.repo, "cat-file", "-p", sha); got+"\n" != honest {
 		t.Errorf("the operator's cat-file serves %q for %s", got, sha[:12])
+	}
+}
+
+// bsWideGrantRefusedUnpinned is why the wide shape above carries
+// `<common>/worktrees` (ranger-base-4gyib): the same grant set WITHOUT it is
+// REFUSED by the render, naming that component, so the entry is the ADR's
+// prescribed pin and not a widening somebody added to make a test pass.
+//
+// THE ATTACK IT REFUSES IS THIS FIXTURE'S OWN SHAPE. A seat granted
+// `<common>` whole may rename `<common>/worktrees`; its per-worktree git dir
+// is bound at `<common>/worktrees/<name>` IN PLACE, read-write, the store's
+// side bind lands at `<common>/worktrees/<name>/seat-objects-base`, and bwrap
+// re-resolves both strings at mount(2) — so a leftover of this seat plants a
+// link at the renamed name and the next launch mounts whatever it points at,
+// with no race to win.
+//
+// IT ASSERTS THE REFUSAL AND NOT ONE ARM OF IT, which is what the readings
+// forced. Both of ADR 0100's arms name this same component: D4(a)'s
+// destination arm (bwrapRefuseUnpinnedDst, ranger-base-gn050) over the side
+// bind's destination, and D2(b)'s source arm (bwrapRefuseUnpinnedSource,
+// ranger-base-dw2du) over the in-place grant. MEASURED 2026-11-21: putting
+// dw2du's `m.Src == m.Dst` skip back leaves the set refused by D4(a) with
+// the same loose component, so an arm that named one decision would be
+// measuring neither. What reds this pin as it was filed is dropping
+// `<common>/worktrees` from the shape's grants.
+//
+// IT IS SKIPPED WHERE THE RULE STANDS DOWN, which is most of the time and is
+// the whole reason this red reached main (the window's own finding,
+// docs/notes.d/ranger-base-4gyib.md): both arms stand down when this uid's
+// home is under /tmp (bwrapWallRoot), this binary's HOME is under TMPDIR, and
+// so they are dormant for every fixture here under an operator's uncaged `make
+// test` and LIVE in ADR 0097 D1's venue, whose TMPDIR is under the posse
+// state dir. The uncaged control cannot see this arm; the venue is where it
+// measures.
+func bsWideGrantRefusedUnpinned(t *testing.T, f bsLive, wt string) {
+	t.Helper()
+	if bwrapWallRoot() == "" {
+		return // ADR 0100's rules stand down for a home under /tmp (bwrapWallRoot)
+	}
+	unpinned := append(append([]string{}, f.set...), f.common)
+	argv, _, err := BwrapArgs(f.tr.Path, unpinned, SeatbeltCarveOut{Private: f.binds(t)}, f.keep...)
+	switch {
+	case err == nil:
+		t.Errorf("the render bound the seat's own git dir in place under a whole-<common> grant with %s loose — anything this seat leaves behind renames that component and the next launch binds what it points at, read-write (ADR 0100 D4(a)/D2(b))\n argv: %q", wt, argv)
+	// The loose component by name AND by its clause, never a bare substring
+	// of the message: `<common>/worktrees` is a prefix of both paths the
+	// refusal names — the bind source and the destination under it — so a
+	// Contains of the path alone reads true for any refusal about this git
+	// dir at all, and it did under the mutation above while this arm was
+	// being written.
+	case !strings.Contains(err.Error(), wt+" lies inside a write grant"):
+		t.Errorf("the refusal does not name %s as the loose component, which is the only instruction it carries: %v", wt, err)
 	}
 }
 
