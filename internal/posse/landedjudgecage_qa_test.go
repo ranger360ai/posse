@@ -427,7 +427,7 @@ func TestQALandedCheckJudgeEnvIsTheAllowlist(t *testing.T) {
 	c.cage = func(_ *App, _ landedCageKind, judge, _ string, _ []string, env []string) (landedCage, error) {
 		return landedCage{Argv: []string{judge}, Env: env}, nil
 	}
-	if v, said := c.judge(repo, run, tip, revTreeID(repo, tip)); v != landGreen {
+	if v, said, _ := c.judge(repo, run, tip, revTreeID(repo, tip)); v != landGreen {
 		t.Fatalf("the env-dumping judge did not run green: %v — %s", v, said)
 	}
 	b, err := os.ReadFile(filepath.Join(run, "tmp", "judge.env"))

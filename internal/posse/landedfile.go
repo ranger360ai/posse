@@ -156,10 +156,14 @@ type landedLanding struct {
 // be a second table reading as one.
 func (c *landedChecker) file(r landedRule, repo, base, tip, tree, had string, prev, v landVerdict, said string, recorded bool) {
 	switch {
-	case v == landUnanswered:
+	case !landAnswered(v):
 		// D5's bottom row, and it is never reached from once() — which
-		// returns on silence before it gets here. Spelled anyway, because
-		// the one thing this file may not do is turn "no answer" into a P1.
+		// returns on silence before it gets here, and on ADR 0088 D6.5's
+		// INTERRUPTED before that. Spelled anyway, and over landAnswered
+		// rather than over one value, because the one thing this file may
+		// not do is turn a non-verdict into a P1 — and the newest
+		// non-verdict would otherwise fall past this row into the red ones
+		// below.
 		return
 	case v == landGreen && prev != landRed:
 		return // green -> green, and the first ever green: the record is the whole of it

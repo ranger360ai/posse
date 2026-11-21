@@ -126,6 +126,17 @@ func (c *landedChecker) health(r landedRule, repo, tree string, v landVerdict, t
 	if repo == "" || tree == "" {
 		return
 	}
+	if v == landInterrupted {
+		// ADR 0088 D6.5: this launcher's own stop ended the run, so there is
+		// nothing here for the watchdog to count in either direction — the
+		// detector was not asked and did not fail. Never reached (once() and
+		// wall() both return before this), and spelled because the fallback
+		// is the dangerous one: `health` reads everything that is not
+		// landUnanswered as ANSWERED, which over an interrupted run would
+		// reset a real silent stretch's counter and could file a ceiling
+		// bead about a wall nobody measured.
+		return
+	}
 	_, n := landedQuietRecorded(r, repo)
 	if v == landUnanswered {
 		c.healthSilent(r, repo, tree, n, said)

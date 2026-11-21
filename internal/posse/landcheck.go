@@ -132,20 +132,46 @@ const (
 	landUnanswered landVerdict = iota
 	landGreen
 	landRed
+	// landInterrupted is ADR 0088 D6.5's third non-verdict: a run its own
+	// launcher's stop ended. It is NOT silence — silence is a statement
+	// about the check, and this is a statement about the launcher — so it
+	// records nothing, counts nothing in D6.3's quiet counter and files
+	// nothing (landedinterrupt.go has the incident and the two cases).
+	//
+	// IT IS PRODUCED BY THE LANDED CHECKER'S CLASSIFIER AND NEVER BY
+	// landChildVerdict, which is why it sits at the end of this list rather
+	// than beside landUnanswered: the three answers a CHILD can give are the
+	// three above, read off its exit status, and the fourth is read off who
+	// stopped it. ADR 0087's land check (this file) has no stop context to
+	// read and so never sees this value.
+	landInterrupted
 )
 
 // String is the word the record holds, and the one a human reads back out of
 // `git config --get posse.landCheck`.
+//
+// "interrupted" has no spelling in any record — recordLandCheck and
+// recordLandedCheck write only an ANSWER — so this one is for a line a human
+// reads (the wall check's "not run (judge interrupted)" is the one site).
 func (v landVerdict) String() string {
 	switch v {
 	case landGreen:
 		return "green"
 	case landRed:
 		return "red"
+	case landInterrupted:
+		return "interrupted"
 	default:
 		return "unanswered"
 	}
 }
+
+// landAnswered reports that a verdict is a verdict: green or red, the two
+// values a record may hold. The two non-verdicts — D3's silence and D6.5's
+// INTERRUPTED — are everything else, and both record functions are written
+// over this rather than over a `== landUnanswered` that a third non-verdict
+// silently falls through.
+func landAnswered(v landVerdict) bool { return v == landGreen || v == landRed }
 
 // landCheckShipped reports whether the base's checkout opts in at all — a
 // REGULAR file at the contract's path. Absent is today's behaviour exactly,
@@ -272,6 +298,19 @@ func landChildVerdict(ctx context.Context, cmd *exec.Cmd, limit time.Duration) (
 	err := cmd.Run()
 	said := landCheckSaid(string(out.b))
 	switch {
+	case errors.Is(ctx.Err(), context.Canceled):
+		// THE CALLER ENDED THIS RUN, which is a different sentence from the
+		// deadline below and has to be (ADR 0088 D6.5): the landed check
+		// hangs its deadline off the watch loop's stop context, so a stop
+		// cancels the judge — and the line a human reads after a restart
+		// would otherwise quote a 10m bound over a run that lasted 50s,
+		// which is a number the reader has to un-learn. The limit is not
+		// what ended it, so the limit is not in the sentence.
+		//
+		// REACHED FROM THE LANDED CHECK ALONE. ADR 0087's land check builds
+		// its context from Background with a timeout and cancels it only on
+		// the way out, after this read.
+		return landUnanswered, fmt.Sprintf("it was cancelled and signalled (%s)", orElse(said, "no output"))
 	case ctx.Err() != nil:
 		return landUnanswered, fmt.Sprintf("no answer in %s, signalled (%s)", limit, orElse(said, "no output"))
 	case errors.Is(err, exec.ErrWaitDelay):
@@ -328,7 +367,7 @@ func revTreeID(repo, rev string) string {
 // replay probing the base for real, which is the behaviour before any record
 // existed — the old cost is the failure mode, so it owes nobody a sentence.
 func recordLandCheck(repo, tree string, v landVerdict) error {
-	if tree == "" || v == landUnanswered {
+	if tree == "" || !landAnswered(v) {
 		return nil
 	}
 	_, err := git(repo, "config", landCheckKey, tree+" "+v.String())

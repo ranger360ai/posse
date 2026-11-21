@@ -866,8 +866,24 @@ type landedChecker struct {
 	// Cleared at the top of every once(); a nil memo reads fresh, which is
 	// what keeps a zero-value checker honest (launcher, landedlauncher.go).
 	launcherAt *landedLauncher
+	// interruptGrace overrides D6.5's grace, and zero means
+	// landedInterruptGrace (graceOf, landedinterrupt.go). The same kind of
+	// seam, for the arm where the grace EXPIRES: a judge signalled by
+	// somebody who is not this launcher's stop is D3's silence, and pinning
+	// that costs 5s of suite wall per run without it.
+	interruptGrace time.Duration
 
 	mu sync.Mutex
+	// stop is the watch loop's stop context — the one SIGTERM and SIGINT end
+	// (Dispatcher.stopCtx, refreshed on every landedChecks() call). nil means
+	// "no loop to stop", never "stopped": a one-shot `posse dispatch` and
+	// `posse worktrees --land` leave it nil and are byte-identical to what
+	// they were (ADR 0088 D6.5).
+	//
+	// UNDER THE SAME MUTEX AS `pending`, because the two readers are
+	// different goroutines — the pass sets it, and the run loop reads it at
+	// every cycle and inside a run's classification.
+	stop context.Context
 	// pending is the coalescing set: repo path → the branch that moved.
 	// A map, so N landings into one repo are one entry however many passes
 	// made them, and the run reads the TIP for itself rather than taking a
@@ -963,20 +979,55 @@ func (c *landedChecker) Wait() {
 func (c *landedChecker) loop() {
 	for {
 		c.mu.Lock()
+		// ADR 0088 D6.5: the launcher is stopping, so the set is DROPPED
+		// rather than worked through — a judge started here would be
+		// cancelled by the same stop a moment later, and D6.6's arm-time
+		// sweep is what reads these tips instead.
+		dropped := c.dropOnStopLocked()
 		var repo, base string
 		for r, b := range c.pending {
 			repo, base = r, b
 			break
 		}
-		if repo == "" {
-			c.running = false
-			close(c.done)
-			c.mu.Unlock()
-			return
+		if repo != "" {
+			delete(c.pending, repo)
 		}
-		delete(c.pending, repo)
 		c.mu.Unlock()
-		c.once(repo, base)
+		// SAID OUTSIDE THE LOCK, which is this file's rule for every other
+		// line it prints: `out` is a writer the caller owns — a Dispatcher
+		// hands a serialized one that takes a lock of its own — and holding
+		// the pending set's mutex across somebody else's lock is how two
+		// locks become an order to get wrong. A landing dropped in silence
+		// is the shape this whole amendment answers, so it is said at all.
+		for _, r := range dropped {
+			c.say("◷ %s landed and was not judged: this launcher is stopping, so the check was never started — the next launcher reads the tip (ADR 0088 D6.5/D6.6)", AbbrevHome(r))
+		}
+		if repo != "" {
+			c.once(repo, base)
+			continue
+		}
+		// AND THE LOOP ENDS ONLY AFTER EVERY LINE IT OWES HAS BEEN WRITTEN,
+		// which is why finishing is its own critical section rather than
+		// part of the one above (MEASURED 2026-11-21, ranger-base-soqa1: in
+		// the arm-2 suite under load, `close(c.done)` before the dropped
+		// lines let a Wait() return and a reader read the record while the
+		// lines were still coming — green in isolation, red in the arm).
+		// `Wait` is the join ADR 0088 D2 makes this pass take, so what it
+		// returns over has to be the whole record.
+		//
+		// The re-read of `pending` is not belt-and-braces: a landing that
+		// arrived while those lines were printing found `running` true and
+		// only added itself, so a loop that exited here would orphan it —
+		// the one thing Schedule's fast path relies on this goroutine for.
+		c.mu.Lock()
+		if len(c.pending) > 0 {
+			c.mu.Unlock()
+			continue
+		}
+		c.running = false
+		close(c.done)
+		c.mu.Unlock()
+		return
 	}
 }
 
@@ -1055,9 +1106,25 @@ func (c *landedChecker) once(repo, base string) {
 	// second consecutive unanswered one, each file one architecture bead,
 	// and both of those decisions are made with the Duration in hand.
 	start := time.Now()
-	v, said := c.judge(repo, run, tip, tree)
+	v, said, signalled := c.judge(repo, run, tip, tree)
 	took := time.Since(start)
+	// D6.5, BEFORE the switch and before anything is recorded, counted or
+	// filed: a run this launcher's own stop ended answered nothing and was
+	// not silent either (landedinterrupt.go).
+	v = c.classifyStop(v, signalled)
 	switch v {
+	case landInterrupted:
+		// One ◷ line, and the wall on it because D6.2 asks every verdict
+		// line for its price — including, as the silence arm below shows,
+		// the ones that are not verdicts. Nothing else: no record (no answer
+		// was given), no D6.3 count (the judge was not the one that failed),
+		// no D5 bead.
+		c.say("◷ %s landed at %s and was not judged: this launcher is stopping (%s) — the next launcher reads the tip (after %s, ADR 0088 D6.5)", AbbrevHome(repo), abbrevSHA(tip), said, landedCheckWall(took))
+		// ADR 0097's check goes through the same path and says the same
+		// thing: it is not run, and the reason is the stop and not a
+		// verdict about this tree (wall()).
+		c.wall(repo, base, tip, tree, run, v)
+		return
 	case landUnanswered:
 		c.warn("%s landed at %s and was NOT judged after %s — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)%s%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said, c.launcherNote(), landedJudgeSocketWallNote())
 		// D6.3, and this is the arm it exists for: silence records nothing
@@ -1111,27 +1178,37 @@ func (c *landedChecker) once(repo, base string) {
 }
 
 // judge creates the detached worktree, extracts the judge, and runs it
-// caged. The three returns of landChildVerdict are its returns: green, red,
-// or a sentence saying why there is no answer.
+// caged. The three returns of landChildVerdict are its first two returns:
+// green, red, or a sentence saying why there is no answer.
+//
+// THE THIRD RETURN IS D6.5's INPUT (landedinterrupt.go): did the child come
+// back with no exit status of its own — killed by a signal, by this
+// deadline, or by the stop that cancelled the context under it. It is a
+// return and not a field, because the classification happens on this
+// goroutine a line after the call and a field would be state two goroutines
+// share for nothing. Every arm that never got as far as a child answers
+// false: a worktree that could not be made and a cage that would not render
+// are silence whoever is stopping, which is the fail-closed direction — D6.3
+// counts them, as it did before this rule existed.
 //
 // THE LAUNCHER RUNS ONLY GIT HERE (D3). `worktree add` and `cat-file` are
 // the whole of what this process executes outside the cage; the judge's own
 // first instruction runs behind the wall.
-func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string) {
+func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string, bool) {
 	path := filepath.Join(run, landedTreeName)
 	// `--no-checkout` is deliberately NOT passed: the check's subject is the
 	// tree's bytes. Detached, so this creates no branch and the repo's own
 	// refs are untouched.
 	if _, err := git(repo, "worktree", "add", "--detach", path, tip); err != nil {
-		return landUnanswered, fmt.Sprintf("a detached worktree of %s could not be created (%s)", abbrevSHA(tip), gitSaid(err))
+		return landUnanswered, fmt.Sprintf("a detached worktree of %s could not be created (%s)", abbrevSHA(tip), gitSaid(err)), false
 	}
 	judge, from, err := c.extract(landedJudgeRule, repo, run, tree)
 	if err != nil {
-		return landUnanswered, err.Error()
+		return landUnanswered, err.Error(), false
 	}
 	tmp := landedCheckTmpDir(run)
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
-		return landUnanswered, fmt.Sprintf("the landed check's own temp dir could not be made (%v)", err)
+		return landUnanswered, fmt.Sprintf("the landed check's own temp dir could not be made (%v)", err), false
 	}
 	// TMPDIR inside the run dir rather than the host's /tmp, because the run
 	// dir is the grant: the check's children stage and link there, and under
@@ -1140,7 +1217,7 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	// own, gone when the run is.
 	gocache := landedCheckGoCache(run)
 	if err := os.MkdirAll(gocache, 0o755); err != nil {
-		return landUnanswered, fmt.Sprintf("the landed check's own build cache could not be made (%v)", err)
+		return landUnanswered, fmt.Sprintf("the landed check's own build cache could not be made (%v)", err), false
 	}
 	env := landedRunEnv(run)
 	cage, err := c.cageFn()(c.a, landedCageJudge, judge, path, landedCheckWritable(run, path), env)
@@ -1148,10 +1225,15 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 		// D3's one hard rule, and the reason the argv comes out of a
 		// renderer instead of being built here: a cage that will not render
 		// is the end of the run. There is no uncaged arm to fall through to.
-		return landUnanswered, oneLine(err.Error())
+		return landUnanswered, oneLine(err.Error()), false
 	}
 	c.sayOwnCopy(landedJudgeRule, repo, from, tree)
-	ctx, cancel := context.WithTimeout(context.Background(), landedCheckLimit)
+	// D6.5's first case, and the whole of how the launcher CANCELS a judge:
+	// the deadline hangs off the watch loop's stop context, so a stop kills
+	// this child instead of being waited out for up to landedCheckLimit.
+	// `landedStopRoot` is context.Background() when there is no loop to stop
+	// (landedinterrupt.go), which is what keeps a one-shot run unchanged.
+	ctx, cancel := context.WithTimeout(c.stopRoot(), landedCheckLimit)
 	defer cancel()
 	// protocolCmd around the construction and protocolEnv around the
 	// environment, which are two halves of ONE rule (ADR 0077 D3): a posse
@@ -1173,8 +1255,11 @@ func (c *landedChecker) judge(repo, run, tip, tree string) (landVerdict, string)
 	// landChildVerdict is the binder: it sets the reaping grace beside this
 	// deadline, because a deadline alone bounds the CHILD and not this call
 	// — and this child has grandchildren by construction (`make`, and `go`
-	// under it).
-	return landChildVerdict(ctx, cmd, landedCheckLimit)
+	// under it). That same grace is what bounds a STOP (D6.5): the context
+	// above kills the child, and WaitDelay bounds the wait on whatever it
+	// leaked holding the pipe.
+	v, said := landChildVerdict(ctx, cmd, landedCheckLimit)
+	return v, said, landedSignalled(cmd)
 }
 
 // sayOwnCopy is ADR 0088 D1's "said once", per RULE: the first run with no
@@ -1280,11 +1365,13 @@ func landedCheckShipped(r landedRule, repo, tree string) bool {
 }
 
 // recordLandedCheck writes the verdict for one tree. Best effort by
-// contract, and silence is never written: landUnanswered has no spelling in
-// the record because the next run must read "nothing on record" and ask
-// again, not "unanswered" and wonder.
+// contract, and a NON-VERDICT is never written: neither landUnanswered nor
+// D6.5's landInterrupted has a spelling in the record, because the next run
+// must read "nothing on record" and ask again rather than read a word and
+// wonder. Written over landAnswered and not over one value, so the third
+// non-verdict could not fall through it (landcheck.go).
 func recordLandedCheck(r landedRule, repo, tree string, v landVerdict) error {
-	if tree == "" || v == landUnanswered {
+	if tree == "" || !landAnswered(v) {
 		return nil
 	}
 	_, err := git(repo, "config", r.Key, tree+" "+v.String())

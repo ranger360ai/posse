@@ -692,12 +692,21 @@ func (d *Dispatcher) quietOutWriter() io.Writer { return dispatcherQuietOut{d} }
 // dispatcherStampOut goes through printf's outMu like every other line this
 // pass prints. A writer that did not would interleave a verdict into the
 // middle of a launch line.
+// IT IS HANDED THIS LOOP'S STOP, on every access and not only at
+// construction (ADR 0088 D6.5): a judge its own launcher's stop ended is
+// INTERRUPTED and not silence, and the only thing that can tell those apart
+// is the context SIGTERM and SIGINT cancel. Refreshed each time because the
+// checker is made on first use — which can be a pass earlier than the one
+// Watch assigns `stopCtx` in — and a nil capture would outlive the loop's
+// whole life. setStop leaves a nil alone, so a one-shot Run stays a Run with
+// no loop to stop.
 func (d *Dispatcher) landedChecks() *landedChecker {
 	d.landedMu.Lock()
 	defer d.landedMu.Unlock()
 	if d.landed == nil {
 		d.landed = newLandedChecker(d.App, d.outWriter())
 	}
+	d.landed.setStop(d.stopCtx)
 	return d.landed
 }
 

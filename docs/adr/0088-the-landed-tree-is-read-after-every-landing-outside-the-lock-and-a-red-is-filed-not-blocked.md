@@ -608,6 +608,7 @@ already schedule their own checks.
 **Beads.**
 
 - ranger-base-gihmm
+- ranger-base-soqa1 (D6.5, built: `internal/posse/landedinterrupt.go`)
 
 ## Amendment: the launcher that judged is named, and a window is not attributed to a wall that moved (ranger-base-7or9p, from ranger-base-q8j8x, 2026-11-21)
 

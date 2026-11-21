@@ -272,6 +272,15 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 		c.say("· %s: wall check not run — this host realizes cage %s with %s, and ADR 0097 D1's venue is a bwrap (ADR 0096: no darwin change), so the step does not exist here", AbbrevHome(repo), CageSeatbelt, m)
 		return
 	}
+	if judged == landInterrupted {
+		// ADR 0088 D6.5: not a verdict about this tree and not a silence of
+		// this check either, so it counts nothing and records nothing — the
+		// same reading the judge's own run got one frame up. Said rather
+		// than skipped, because "not run (judge interrupted)" and "not run"
+		// are different facts to whoever reads this log after a restart.
+		c.say("· %s: wall check not run (launcher stopping) — the judge's run was ended by this launcher's own stop, so no tree was answered GREEN to measure (ADR 0088 D6.5, ADR 0097 D2)", AbbrevHome(repo))
+		return
+	}
 	if judged != landGreen {
 		c.say("· %s: wall check not run (judge %s) — it runs on a tree the judge answered GREEN on, and this one is not recorded either way (ADR 0097 D2)", AbbrevHome(repo), judged)
 		return
@@ -281,8 +290,12 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 	// and — when it is green — the far edge of the window a filed bead names.
 	had, prev := landedRecorded(r, repo)
 	start := time.Now()
-	v, said, argv := c.measure(repo, run, tree)
+	v, said, argv, signalled := c.measure(repo, run, tree)
 	took := time.Since(start)
+	// ADR 0088 D6.5, read over this check's own run: "Both D3 rules go
+	// through the same checker, so this covers both." A venue run this
+	// launcher's stop ended measured nothing and was not silent either.
+	v = c.classifyStop(v, signalled)
 	// D2's verdict line carries the venue's argv, the wall and — ADR 0088
 	// D7, which this rule reads through the same checker — the LAUNCHER
 	// that rendered that venue, on every one of the three answers. The
@@ -296,6 +309,12 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 	// and the line says that rather than printing an empty field.
 	argv = orElse(argv, "none rendered")
 	switch v {
+	case landInterrupted:
+		// One ◷ line and nothing else: no record, no D5 bead, no D6.3 count
+		// (ADR 0088 D6.5). The wall is on it for D6.2's reason, which ADR
+		// 0097's own price paragraph inherits.
+		c.say("◷ %s wall pins were not measured at %s: this launcher is stopping (%s) — the next launcher reads the tip (after %s, ADR 0088 D6.5)\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), said, landedCheckWall(took), argv)
+		return
 	case landUnanswered:
 		c.warn("%s wall pins NOT MEASURED at %s after %s — %s — nothing recorded (ADR 0097 D5: an abstention is never a pass)%s\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said, c.launcherNote(), argv)
 	case landGreen:
@@ -328,18 +347,20 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 }
 
 // measure extracts D3's body and runs it in D1's venue over the judge's own
-// worktree. The three returns are the verdict, the cause, and the venue argv
-// the verdict line prints.
+// worktree. The four returns are the verdict, the cause, the venue argv the
+// verdict line prints, and ADR 0088 D6.5's input — whether the child came
+// back with no exit status of its own (judge()'s third return, and for its
+// reason: every arm that never reached a child answers false).
 //
 // THE LAUNCHER RUNS ONLY GIT HERE, as the judge's does (ADR 0088 D3): the
 // `cat-file` that reads the body out is the whole of what this process
 // executes outside the cage.
-func (c *landedChecker) measure(repo, run, tree string) (landVerdict, string, string) {
+func (c *landedChecker) measure(repo, run, tree string) (landVerdict, string, string, bool) {
 	r := wallCheckRule
 	path := filepath.Join(run, landedTreeName)
 	check, from, err := c.extract(r, repo, run, tree)
 	if err != nil {
-		return landUnanswered, oneLine(err.Error()), ""
+		return landUnanswered, oneLine(err.Error()), "", false
 	}
 	// The judge made the worktree, the TMPDIR and the build cache before this
 	// ran (ADR 0097 D2: after a green judgement), and this run gets the same
@@ -352,10 +373,13 @@ func (c *landedChecker) measure(repo, run, tree string) (landVerdict, string, st
 		// cage that will not render is (ADR 0088 D3) — and D5 says so in as
 		// many words: "a venue that will not render" counts as unanswered.
 		// There is no uncaged arm to fall through to.
-		return landUnanswered, oneLine(err.Error()), ""
+		return landUnanswered, oneLine(err.Error()), "", false
 	}
 	c.sayOwnCopy(r, repo, from, tree)
-	ctx, cancel := context.WithTimeout(context.Background(), landedCheckLimit)
+	// Off the stop context, exactly as the judge's deadline is (ADR 0088
+	// D6.5): this venue run costs about 100s, and a stop that had to wait it
+	// out is the half of the incident the cancel arm answers.
+	ctx, cancel := context.WithTimeout(c.stopRoot(), landedCheckLimit)
 	defer cancel()
 	cmd := protocolCmd(exec.CommandContext(ctx, cage.Argv[0], cage.Argv[1:]...))
 	cmd.Dir = path
@@ -376,7 +400,7 @@ func (c *landedChecker) measure(repo, run, tree string) (landVerdict, string, st
 		exit = cmd.ProcessState.ExitCode()
 	}
 	v, said = wallThirdExit(v, said, exit)
-	return v, said, strings.Join(cage.Argv, " ")
+	return v, said, strings.Join(cage.Argv, " "), landedSignalled(cmd)
 }
 
 // wallThirdExit is ADR 0097 D3's third exit, read over landChildVerdict's
