@@ -1642,10 +1642,14 @@ $ cat >> AGENTS.md <<'EOF'
 ## Landing the plane
 
 - **Know which tree you are in.** A dispatched session works in its OWN git
-  worktree of this repo (under `~/.posse/worktrees/`), on a branch
-  `posse/<session>` — its own index, its own HEAD, nobody else's. The work
-  prompt names it. An operator session, and any session in the checkout
-  itself, shares that checkout with everyone.
+  worktree of this repo (under `~/.posse/worktrees/`), cut for a branch
+  `posse/<session>` — its own index, its own HEAD, nobody else's. Behind a
+  wall that HEAD is DETACHED on purpose, and the work prompt says so: it is
+  what lets a walled seat's git grant name no branch ref at all, so commit on
+  the detached HEAD and never `git checkout <branch>` — the next commit after
+  that checkout is one your wall refuses, and the launcher moves the branch
+  onto your commits at the close either way. An operator session, and any
+  session in the checkout itself, shares that checkout with everyone.
 - Close the bead, and commit **naming your own paths** (`git commit -F - --
   <paths>`). That form is unconditional: every crew PID carries
   `deny: Bash(git commit unless --)`, a PID-level deny realized as a PATH

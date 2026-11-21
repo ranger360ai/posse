@@ -45,8 +45,16 @@ func readRepoFile(t *testing.T, path string) string {
 // reworded claim is.
 var sharedLandingClaims = []string{
 	"**Know which tree you are in.**",
-	"worktree of this repo (under `~/.posse/worktrees/`), on a branch `posse/<session>`",
+	"worktree of this repo (under `~/.posse/worktrees/`), cut for a branch `posse/<session>`",
 	"its own index, its own HEAD, nobody else's",
+	// ranger-base-r9slg: "on a branch `posse/<session>`" was true until
+	// ranger-base-pe5g5 detached every walled seat, and the pinned literal is
+	// what kept the stale sentence mandatory in both copies while the work
+	// prompt (dispatch.go) said the opposite. A seat told its commits are ON
+	// the branch is a seat invited to `git checkout <branch>`, and the next
+	// commit after that is one its wall refuses.
+	"Behind a wall that HEAD is DETACHED on purpose",
+	"commit on the detached HEAD and never `git checkout <branch>`",
 	"commit **naming your own paths** (`git commit -F - -- <paths>`)",
 	"That form is unconditional: every crew PID carries `deny: Bash(git commit unless --)`",
 	"a PID-level deny realized as a PATH shim that reads argv and never the tree, so it refuses an unqualified commit in your own worktree too",

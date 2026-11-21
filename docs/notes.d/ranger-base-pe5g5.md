@@ -65,3 +65,14 @@ still pass and still cover the producers' attached arm. That arm now only
 serves a walled launch into a linked worktree that is not a posse session
 tree. Retiring D20's ref-directory machinery belongs to a later slice, not
 this one.
+
+That last sentence was short by one case for as long as this slice reached
+only `planLaunch` (ranger-base-r9slg): the attached arm also served a walled
+RELAUNCH of a posse session tree, because `RelaunchAgent` rendered the wall —
+`wallRendered` then `WallPrefix` — and never asked `PrepareSessionHead`. Two
+states arrived there attached, a seat launched by a posse from before this
+slice and a seat that had run `git checkout <branch>` in its own tree, and
+both got a grant naming a `refs/heads` entry for the rest of the session.
+That launch site asks `PrepareSessionHead` now, pinned by
+`TestQAAWalledRelaunchRendersNoBranchRef`, so the sentence holds as written
+again.
