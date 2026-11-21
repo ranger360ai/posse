@@ -1140,3 +1140,142 @@ func TestWallWatchVerdictNoticeNamesWhereTheReasonWent(t *testing.T) {
 		t.Error("another persona's peek was handed this persona's verdict")
 	}
 }
+
+// TestWallWatchVerdictLineReachesTheFileBeforeThePane is the ORDER inside
+// say() (ranger-base-r9slg, escaped from ranger-base-pfcci). MEASURED
+// 2026-11-15 at 4b3013cd: moving `v.Pane(line)` above `v.note(line)` left
+// `go test ./internal/posse` green (4054 ran, 0 FAIL) and `./cmd/posse` green
+// (391 ran) — every pin here reads the file AFTER the call and cannot tell
+// which write went first, and wwSay's own Pane appends to a slice and reads
+// nothing.
+//
+// Reversed, a watcher that dies between the two writes leaves the line in the
+// scrollback that is about to close and nowhere else, which is the whole
+// failure ranger-base-pfcci exists to close: since ranger-base-1l1en the
+// watcher IS the pane, so the pane goes when this process does
+// (wallwatch_linux.go's own sentence, "EVERY LINE TO THE FILE FIRST").
+//
+// ONE PIN FOR BOTH CALL SITES, because the order is in `say` and both sites
+// reach it the same way: the respond path (wallwatch_linux.go) and the
+// backstop's kill arm (wallwatch.go) each build this struct, call note once
+// for the header and say for every line. A per-site pin would be two copies
+// of one assertion about a method neither of them has its own copy of.
+func TestWallWatchVerdictLineReachesTheFileBeforeThePane(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "gates", "developer", "wall-watch", "100.verdict")
+	const header = "── posse wall-watch verdict · header"
+	var pane []string
+	v := &wallWatchSaid{Path: path, Pane: func(s string) {
+		b, err := os.ReadFile(path)
+		if err != nil || !strings.Contains(string(b), s) {
+			t.Errorf("%q reached the pane before the durable file held it (read: %v) — a watcher that dies between the two writes leaves the line in a scrollback that is about to close and nowhere else (ranger-base-pfcci, ranger-base-r9slg)", s, err)
+		}
+		pane = append(pane, s)
+	}}
+
+	// The header is file-only: a line through note() must reach the pane not
+	// at all, so the arm above cannot be satisfied by saying everything twice.
+	v.note(header)
+	if len(pane) != 0 {
+		t.Errorf("note() said %q on the pane; the header is the file's alone", pane)
+	}
+	v.say("KILLED seat developer: the wall over /h/.claude/settings.json came off")
+	v.say("  filed %s", "ranger-base-0000")
+	v.say("⚠ the record is incomplete: create: bd timed out — this line is the record")
+	v.close()
+	if v.Err != nil {
+		t.Fatalf("FIXTURE: the durable write failed (%v), so the Pane above was never asked the question", v.Err)
+	}
+	if len(pane) != 3 {
+		t.Fatalf("the pane got %d lines, want the three that were said: %q", len(pane), pane)
+	}
+	// CONTROL: the file really is what was read — an empty or missing file
+	// would make the arm above green by never containing anything to compare.
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range append([]string{header}, pane...) {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("the durable file does not carry %q:\n%s", want, b)
+		}
+	}
+}
+
+// TestWallWatchAnUnreadableVerdictFileIsSaidAndNotSkipped is
+// readWallWatchVerdicts' "SAID AND NOT SKIPPED" arm (ranger-base-r9slg,
+// escaped from ranger-base-pfcci): a verdict that is ON DISK and cannot be
+// READ is reported as a ⚠ row rather than omitted, which is the comment two
+// lines above it — "the one thing a reader of this surface must not be told
+// is absent".
+//
+// Nothing drove it. MEASURED 2026-11-15 at 4b3013cd: replacing that arm with
+// a `continue` left `go test ./internal/posse` green (4054 ran) and
+// `./cmd/posse` green (391 ran). The two readers' pins
+// (cmd/posse/wallwatchverdict_qa_test.go, and this file above) all plant a
+// READABLE file; TestWallWatchBackstopSaysWhenARecordCannotBeRead is the
+// `.json` RECORD, a different arm, and
+// TestWallWatchSaysWhenTheDurableVerdictCannotBeWritten is the WRITE failure.
+//
+// A seat whose wall came off is KILLED and its pane closes with it, so a row
+// silently dropped here is the reason gone from the one surface that still
+// has it.
+func TestWallWatchAnUnreadableVerdictFileIsSaidAndNotSkipped(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	dir := filepath.Join(state, "gates", "developer", "wall-watch")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A readable verdict beside it, so the count below separates "the row is
+	// a ⚠" from "the glob found nothing".
+	good := filepath.Join(dir, "1.verdict")
+	write(t, good, "KILLED seat developer: the wall came off\n")
+
+	// A DIRECTORY at a verdict's name: os.ReadFile fails for every uid,
+	// including root, which `chmod 0000` does not — and the suite is run as
+	// root in some containers.
+	asDir := filepath.Join(dir, "2.verdict")
+	if err := os.Mkdir(asDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unreadable := []string{asDir}
+	if os.Geteuid() != 0 {
+		// And the shape an operator actually produces: a file this process
+		// may not open.
+		noPerm := filepath.Join(dir, "3.verdict")
+		write(t, noPerm, "KILLED seat developer: unreadable\n")
+		if err := os.Chmod(noPerm, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(noPerm, 0o644) })
+		unreadable = append(unreadable, noPerm)
+	}
+
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 1+len(unreadable) {
+		t.Fatalf("read back %d verdict(s), want all %d on disk — an unreadable verdict must be SAID and not skipped (ranger-base-pfcci):\n%+v", len(vs), 1+len(unreadable), vs)
+	}
+	byPath := map[string]WallWatchVerdict{}
+	for _, v := range vs {
+		byPath[v.Path] = v
+	}
+	for _, p := range unreadable {
+		v, ok := byPath[p]
+		if !ok {
+			t.Errorf("%s is on disk and is not in the listing at all", p)
+			continue
+		}
+		if !strings.Contains(v.Text, "⚠") || !strings.Contains(v.Text, "could not be read") {
+			t.Errorf("the row for the unreadable %s does not say so: %q", p, v.Text)
+		}
+		if v.Seat != "developer" {
+			t.Errorf("the row for %s names seat %q", p, v.Seat)
+		}
+	}
+	// CONTROL: the readable one still reads back as its own text, so the arm
+	// above is about the unreadable files and not about every row.
+	if v := byPath[good]; !strings.Contains(v.Text, "the wall came off") || strings.Contains(v.Text, "could not be read") {
+		t.Errorf("the readable verdict reads back as %q", v.Text)
+	}
+}
