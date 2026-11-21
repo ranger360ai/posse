@@ -601,7 +601,7 @@ func TestQABoxCensusDoesNotCountRefusalsThatCouldNotBeALoopOnThisBinary(t *testi
 	}
 }
 
-// --- the second review finding: the home it lifts is another process's text ---
+// --- ranger-base-cwboz: the home it lifts is another process's text ---
 
 // TestQABoxHomeIsWellFormedRefusesWhatAPeerCouldHaveExported. The value is
 // whatever a same-uid process exported, and the census both RENDERS it (into
@@ -700,7 +700,7 @@ func TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang(t *testing.T) {
 			t.Error("a FIFO was read as an instance's loop record")
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("boxRecordedLoopPid blocked on a FIFO — this is the hang that would stop `posse upgrade` after its swap (the security review's second item)")
+		t.Fatal("boxRecordedLoopPid blocked on a FIFO — this is the hang that would stop `posse upgrade` after its swap (ranger-base-cwboz)")
 	}
 
 	// And a real record is still read, so the fence is not a refusal of

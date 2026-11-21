@@ -254,7 +254,7 @@ func liveBoxProbe() boxProbe {
 // reader asks of another instance's state dir.
 func boxRecordedLoopPid(home string) (int, bool) {
 	path := WatchPidPath(&App{StateDir: filepath.Join(home, "state")})
-	// LSTAT FOR A REGULAR FILE BEFORE READING (the security review's second item). The
+	// LSTAT FOR A REGULAR FILE BEFORE READING (ranger-base-cwboz (b)). The
 	// directory this reaches into is named by another process, so the file at
 	// the end of it is not ours: `ReadWatchPid` stats and then reads, and an
 	// open(2) of a FIFO there blocks forever with no timeout — in `posse
@@ -272,7 +272,7 @@ func boxRecordedLoopPid(home string) (int, bool) {
 }
 
 // boxHomeIsWellFormed is the fence on a value this census lifts out of
-// ANOTHER process's environment (the security review's first item).
+// ANOTHER process's environment (ranger-base-cwboz).
 //
 // WHY A VALUE FROM THERE NEEDS ONE. `RHQ_HOME` is whatever a same-uid process
 // exported, and the census then trusts it twice: it RENDERS it, into a line
@@ -381,7 +381,7 @@ func readBoxLoops(path string, p boxProbe) BoxReading {
 		// resolvable is not reusing its names for a local.
 		declaredHome, ok := p.HomeOf(pid)
 		// VALIDATED AGAIN HERE, and boxHomeOf already refused a malformed
-		// value before returning one (the security review's first item). Two checks on
+		// value before returning one (ranger-base-cwboz). Two checks on
 		// purpose: the platform read refuses early so nothing malformed ever
 		// leaves the environ, and this is the portable chokepoint that every
 		// probe and every future platform reader goes through — so the fence

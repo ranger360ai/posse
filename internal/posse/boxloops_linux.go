@@ -157,7 +157,7 @@ func boxHomeOf(pid int) (string, bool) {
 		// Converted HERE and nowhere earlier: a `string(kv)` in the loop
 		// condition copied every variable of the peer's environment,
 		// credentials included, into Go strings for the sake of one prefix
-		// test that bytes can answer (the security review's third item).
+		// test that bytes can answer (ranger-base-cwboz (c)).
 		v := string(kv[len(key):])
 		if !boxHomeIsWellFormed(v) {
 			return "", false

@@ -254,7 +254,7 @@ carry them. The alternative keys were worse on this axis, not better: argv is
 forbidden for a different reason and is equally sensitive, and there is no
 other way for a process to tell a reader which instance it belongs to. Filed
 for hoover's read on its own bead rather than asserted here — and that read
-came back with two P2 defects (ranger-base-rph5z above, and a second one
+came back with two P2 defects (ranger-base-rph5z above, and ranger-base-cwboz,
 which is why the value is now validated before it is rendered or opened and
 why the fence is a census rather than a comment). What survives as a residual:
 a same-uid process can still plant a well-formed home holding a regular record

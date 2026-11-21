@@ -1,7 +1,7 @@
 package treepins
 
 // The fence on reading ANOTHER process's environment, held mechanically
-// (the security review's fourth item, from its review of ranger-base-is1qp's
+// (ranger-base-cwboz item (d), from the security review of ranger-base-is1qp's
 // box-wide loop census under ranger-base-gvrv7).
 //
 // WHAT IS BEING FENCED. `internal/posse/boxloops_linux.go`'s `boxHomeOf`
@@ -81,7 +81,7 @@ func TestQAReadingAPeersEnvironmentHappensInExactlyOneFunction(t *testing.T) {
 			where = append(where, r.file+":"+r.fn)
 		}
 		sort.Strings(where)
-		t.Fatalf("%d functions in the shipped tree read %q, want exactly 1 (%s's %s):\n  %s\n\nA peer's environment carries credentials. One reader is what makes \"one variable, and it is a path\" a checkable claim; a second reader is a second fence nobody wrote (the security review's first item).",
+		t.Fatalf("%d functions in the shipped tree read %q, want exactly 1 (%s's %s):\n  %s\n\nA peer's environment carries credentials. One reader is what makes \"one variable, and it is a path\" a checkable claim; a second reader is a second fence nobody wrote (ranger-base-cwboz).",
 			len(found), erProcEnvironLiteral, erTheOneFile, erTheOneReader, strings.Join(where, "\n  "))
 	}
 	r := found[0]
@@ -100,7 +100,7 @@ func TestQAThePeerEnvironmentReaderReturnsOneStringAndNothingElse(t *testing.T) 
 	got := found[0].results
 	want := []string{"string", "bool"}
 	if len(got) != len(want) {
-		t.Fatalf("%s returns %v, want %v — the return type IS the fence: a map, a slice or a struct would carry a peer's other variables out of the one function that is allowed to see them (the security review's first item)",
+		t.Fatalf("%s returns %v, want %v — the return type IS the fence: a map, a slice or a struct would carry a peer's other variables out of the one function that is allowed to see them (ranger-base-cwboz)",
 			erTheOneReader, got, want)
 	}
 	for i := range want {

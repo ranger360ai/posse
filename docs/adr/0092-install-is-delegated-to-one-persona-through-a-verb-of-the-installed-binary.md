@@ -539,8 +539,8 @@ per-instance line is the whole of that report's coverage and carries this
 bead's id, so a darwin reader is told the residual stands rather than handed a
 silence that looks like a clean box.
 
-*The home it lifts from a peer is untrusted text, amended by the second
-finding of the same review.* `RHQ_HOME` comes out of another
+*The home it lifts from a peer is untrusted text, amended by
+ranger-base-cwboz from the same review.* `RHQ_HOME` comes out of another
 process's environment, and the census trusted it twice: it RENDERED it, into
 the line the install delegate pastes onto an install bead — so arbitrary text,
 newlines included, would arrive in that persona's context under its own
@@ -564,7 +564,7 @@ exactly `(string, bool)`, and the only environment key it matches is
 regular record that names its own pid, and so present itself as a loop or as a
 stale loop. Read-only effects, and it is the uid boundary doing the work
 rather than this reading; the operator restarts loops from this report, so it
-is stated rather than fenced. Named on the security review's second finding.
+is stated rather than fenced. Named on ranger-base-cwboz.
 
 
 ## Consequences
