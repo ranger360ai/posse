@@ -30,8 +30,12 @@ package posse
 import (
 	"bytes"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // gitEditorThatWrites is a $GIT_EDITOR that truncates the file it is handed.
@@ -171,5 +175,126 @@ func TestQAAGitGlobalModeOnlyTamperDegradesAndTheNextLaunchHealsIt(t *testing.T)
 		"config", "--global", "--edit")
 	if got, _ := os.ReadFile(row); rc != 0 || bytes.Equal(got, want) {
 		t.Fatalf("CONTROL FAILED: `git config --global --edit` over a 0644 snapshot exited %d and left the bytes %q — the mode is not what refuses that write here, so the arms above measured nothing:\n%s", rc, got, out)
+	}
+}
+
+// ggsAnswered runs f and reports whether it answered inside d, which is the
+// one thing a probe over a FIFO cannot take for granted: a reader that opens
+// one O_RDONLY with no writer blocks in the kernel, not in Go, so an
+// unbounded call here would hang the whole arm-3 binary until its 25m
+// timeout and print no test name. Bounded, the same mutant FAILS by name
+// (ranger-base-suozl).
+func ggsAnswered(d time.Duration, f func() error) (error, bool) {
+	done := make(chan error, 1)
+	go func() { done <- f() }()
+	select {
+	case err := <-done:
+		return err, true
+	case <-time.After(d):
+		return nil, false
+	}
+}
+
+// TestQAAGitGlobalSnapshotVerifyRefusesWhatIsNotAFileAtThatName is the door
+// on gitGlobalSnapshotVerify's REGULAR-FILE arm — the `!fi.Mode().IsRegular()`
+// half of the shape check ranger-base-r9slg added beside the mode. Nothing
+// drove it: MEASURED 2026-11-21 at 52ce199f (ranger-base-suozl, verifying
+// ranger-base-r9slg), deleting that arm from the condition leaves
+// TestQAAGitGlobalModeOnlyTamperDegradesAndTheNextLaunchHealsIt and the rest
+// of this file GREEN. The close's own sentence for it — "Lstat, not Stat, and
+// IsRegular: a symlink planted at the snapshot's name carries mode 0777 and
+// would resolve to whatever it points at" — was a claim no run tested.
+//
+// THE FIFO IS THE ISOLATING SHAPE, and that is the whole reason this arm
+// exists rather than another symlink row. A fifo can be made at mode 0444, so
+// `fi.Mode().Perm() != gitGlobalSnapshotMode` is FALSE for it and the mode arm
+// below cannot answer — the regular-file arm is the only thing left. The
+// symlink row is the opposite case and is here as the close's own example:
+// on linux a link's own mode is 0777 whatever chmod is typed (chmod follows),
+// so there the MODE arm refuses it and this arm is redundant; on darwin,
+// where lchmod can set a link to 0444, this arm is again the only one. Both
+// rows assert the refusal; only the fifo row asserts WHICH arm made it.
+//
+// MEASURED the same day, and why the shape check cannot simply be deleted as
+// redundant: with a 0444 fifo at that name, `PrepareGitGlobalSnapshot` — the
+// launch path — does not answer at all. gitGlobalSnapshot compares the
+// snapshot's bytes with `os.ReadFile(snap)` before any shape check, and that
+// read blocks. The verify's arm is what keeps every READER (gitGlobalPinValue,
+// GitGlobalScopeDegraded) answering over such a plant, which is the only
+// reason this test can assert anything after the plant at all.
+func TestQAAGitGlobalSnapshotVerifyRefusesWhatIsNotAFileAtThatName(t *testing.T) {
+	_, homeCfg, _ := globalScopeFixture(t, true, false)
+	row := gitGlobalPinOf(t, homeCfg) // prepares, as a launch does
+	want, err := os.ReadFile(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// POSITIVE CONTROL: the rig can pass. Without it an arm below could be
+	// green over a verify that refuses everything, including the snapshot a
+	// launch just wrote.
+	if err, answered := ggsAnswered(10*time.Second, func() error { return gitGlobalSnapshotVerify(row, want) }); !answered || err != nil {
+		t.Fatalf("CONTROL FAILED: the snapshot this launch just wrote does not verify (answered=%v, %v)", answered, err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		// plant leaves something that is not a regular file at row.
+		plant func(t *testing.T)
+		// modeArmCanAnswer: whether `perm != 0444` is true of the plant, i.e.
+		// whether the arm BELOW this one could have made the refusal.
+		modeArmCanAnswer bool
+	}{
+		{"a fifo at the snapshot's own mode", func(t *testing.T) {
+			if err := syscall.Mkfifo(row, 0o444); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"a symlink to a file with the same bytes", func(t *testing.T) {
+			decoy := filepath.Join(t.TempDir(), "decoy")
+			if err := os.WriteFile(decoy, want, 0o444); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(decoy, row); err != nil {
+				t.Fatal(err)
+			}
+		}, runtime.GOOS != "darwin"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Tolerant, because the row is the one the row BEFORE this one
+			// planted and removed: what each row needs is that nothing is
+			// there when it plants, and its own Lstat below is what says the
+			// plant landed.
+			if err := os.Remove(row); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			defer func() { _ = os.Remove(row) }()
+			tc.plant(t)
+			fi, err := os.Lstat(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fi.Mode().IsRegular() {
+				t.Fatalf("CONTROL FAILED: the plant left a regular file at %s, so this row measures nothing", row)
+			}
+			if got := fi.Mode().Perm() != gitGlobalSnapshotMode; got != tc.modeArmCanAnswer {
+				t.Fatalf("CONTROL FAILED: the plant is mode %#o, so the mode arm can answer = %v, want %v — this row no longer isolates the arm it is about", fi.Mode().Perm(), got, tc.modeArmCanAnswer)
+			}
+			err, answered := ggsAnswered(10*time.Second, func() error { return gitGlobalSnapshotVerify(row, want) })
+			if !answered {
+				t.Fatalf("gitGlobalSnapshotVerify did not answer over %s at the snapshot's name: it read the plant instead of refusing its shape, and a reader of the global scope now blocks (ranger-base-suozl)", tc.name)
+			}
+			if err == nil {
+				t.Errorf("gitGlobalSnapshotVerify accepted %s at %s — a snapshot posse cannot vouch for is named to every seat as its global scope (ranger-base-r9slg)", tc.name, row)
+			}
+			// AND THE READERS SAY SO, which is what the arm is for: the row
+			// falls back to the operator's own file and the degraded line
+			// names the reason.
+			if got, _ := pinRow("GIT_CONFIG_GLOBAL"); got != homeCfg {
+				t.Errorf("over %s the row is %q, want the fallback %s", tc.name, got, homeCfg)
+			}
+			if d := GitGlobalScopeDegraded(); !strings.Contains(d, "DEGRADED") {
+				t.Errorf("over %s no degraded line was printed: %q", tc.name, d)
+			}
+		})
 	}
 }
