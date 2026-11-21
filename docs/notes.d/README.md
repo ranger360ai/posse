@@ -21,6 +21,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-mbcbv](ranger-base-mbcbv.md) — claude's cache/ and .last-cleanup, read- and write-denied in a caged seat's seatbelt profile (ranger-base-mbcbv) — 2026-11-21
 - [ranger-base-m8msi](ranger-base-m8msi.md) — ADR 0059 D2's thirteen arms are green on darwin in their post-5blmt spelling (ranger-base-m8msi) — 2026-11-21
 - [ranger-base-is1qp](ranger-base-is1qp.md) — The dispatch loops on this binary (ranger-base-is1qp) — 2026-11-21
+- [ranger-base-i36bf](ranger-base-i36bf.md) — A rendered shim is a shell script nothing ever asked to parse (ranger-base-i36bf) — 2026-11-21
 - [ranger-base-gi22r](ranger-base-gi22r.md) — ranger-base-gi22r — shape 1's grants and pins walk their components instead of stat'ing them — 2026-11-21
 - [ranger-base-fol4d](ranger-base-fol4d.md) — The donor dispatched on argv[0], and the darwin half was the make line (ranger-base-fol4d) — 2026-11-21
 - [ranger-base-f177g](ranger-base-f177g.md) — The stand-in loop's donor is bash, and a donor picked for its NAME is the bug this family keeps rewriting (ranger-base-f177g) — 2026-11-21

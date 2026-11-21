@@ -77,6 +77,21 @@
 # one. A .sh with no shebang is a finding rather than a skip — nothing can say
 # which parser applies to it, so nothing can say it parses.
 #
+# AND A RENDERED SCRIPT IS IN NO CORPUS THIS SWEEP CAN HAVE
+# (ranger-base-i36bf). The L1 gate shims are written by Go at launch and are
+# tracked nowhere, so this sweep cannot see them — and the same class bit
+# there on 2026-11-21, in the other shape it takes: a `case` arm's `)` inside
+# a command substitution, which ends the substitution under bash 3.2 and
+# leaves the `;;` outside any case. The whole shim then did not parse, so
+# every git through a darwin seat's gates PATH exited 2 for six days, read by
+# nobody but a macos CI leg. Their door is
+# internal/posse/shimparse_qa_test.go, which renders the shims and asks both
+# halves: that each parses under this box's /bin/sh, and — the half that
+# answers on a linux box — that no `case` arm inside a command substitution
+# lacks the leading paren. The two doors share the hazard and not the corpus:
+# this one's subject is a file in the tree, that one's is a string a function
+# returns.
+#
 # Tracked, not found: git ls-files is how every other tree-wide pin here
 # defines the tree, and it is what ships. It also lists the staged half of a
 # work in progress, so `git add` then `make test` covers a script the same
