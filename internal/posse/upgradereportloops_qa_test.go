@@ -14,7 +14,10 @@ package posse
 // it over ranger-base-is1qp's close (ranger-base-msir3, filed as this bead);
 // re-measured here on 2026-11-21, linux 7.2.15-1-omarchy, over the 98 tests
 // `^Test(QA)?(Live)?Box(Loop|Census|Proc)|^TestQATheVerbsBoxLine|^TestLiveBoxCensus|^TestUpgrade`
-// selects, with upgrade.go restored byte-identical after each arm:
+// selects, with upgrade.go restored byte-identical after each arm. That
+// filter is the BEFORE one and selects nothing in this file — every name here
+// begins `TestQA`, so it could not; the filter the reds below were confirmed
+// under is at the end of this header:
 //
 //	B1   delete `plan.Box  = func() BoxReading { … }`        → rc=0, 3.174s
 //	B1L  delete `plan.Loop = func() (WatchImage, bool) { … }` → rc=0, 3.248s
@@ -41,8 +44,48 @@ package posse
 // sentence SAYS beyond the clause that is each line's own reach. The subject
 // is that a run prints both, in that order, each through its own reader, and
 // that a plan carrying no reader prints neither.
+//
+// AND THE CALL, which is where the gap moved before it closed
+// (ranger-base-xtg6z). Three of the four pins below take `upgradeLoopReaders`
+// as their subject, directly or through a d4Fixture plan — so the one line in
+// `cmdUpgrade` that CALLS it was held by none of them, and deleting that line
+// left the whole of arm 1 green while `posse upgrade` printed neither loop
+// line. The verify lane measured it over this file's own close:
+//
+//	M1  delete `upgradeLoopReaders(&plan, a)` from cmdUpgrade → the whole
+//	    arm-1 package, `go test -count=1 ./internal/posse`, ok 250.912s,
+//	    rc=0, zero FAIL lines (the verify lane, 2026-11-21, tree at
+//	    32bce0e4) — and re-measured here over the filter below at rc=0,
+//	    3.519s. It reds the last pin in this file now, and nothing else in
+//	    arm 1.
+//
+// That residual is the last pin in this file, and it is reachable for a
+// reason r1zdr's close got wrong rather than for a new one: the three
+// readings a plan is built behind are PARAMETERS (upgrade.go's `upgradeReads`
+// header), so the verb can be entered with a real stamp, a real checkout and
+// a lock that locks nothing, and `TestUpgradeTargetsTheRunningBinaryAndThe-
+// LagsCheckout` already does exactly that as far as the report's FIRST line.
+// What stopped it there was its own red-`make test` stub. d4Fixture's stubs
+// are green, so the same entry reaches the report's LAST lines. Nothing was
+// added to upgrade.go for it.
+//
+// THE FILTER THESE ARMS WERE RUN UNDER, because the one this header and
+// docs/notes.d/ranger-base-r1zdr.md first recorded selects none of the pins
+// in this file — every name here begins `TestQA`, and neither `^TestUpgrade`
+// nor `^TestQAUpgrade` reaches `TestQATheUpgradeReport…`:
+//
+//	^Test(QA)?(Live)?Box(Loop|Census|Proc)|^TestQATheVerbsBoxLine|^TestLiveBoxCensus|^TestUpgrade|^TestQA(The)?Upgrade
+//
+// 102 top-level tests, 3.4s clean. M1 and all six arms in the table above
+// were re-run under it on 2026-11-21 with the two new pins in place: every
+// one rc=1, each on the pin that owns its line, and the file restored to the
+// same sha256 after every arm. docs/notes.d/ranger-base-xtg6z.md carries the
+// re-run and the two arms of it that are still green — the two call sites one
+// and two lines ABOVE M1's, which this bead measured and did not fix
+// (ranger-base-6e5jm).
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -188,9 +231,16 @@ func TestQATheUpgradeReportPrintsNeitherLoopLineWithoutAReader(t *testing.T) {
 	}
 }
 
-// TestQACmdUpgradeInstallsBothLoopReadersOnItsPlan is the other end of the
-// wiring: the function cmdUpgrade reaches the plan through, which is where
-// B1 and B1L now live.
+// TestQAUpgradeLoopReadersPutsBothReadersOnThePlanItIsGiven is the other end
+// of the wiring: the function cmdUpgrade reaches the plan through, which is
+// where B1 and B1L live.
+//
+// THE TITLE NAMES THE FUNCTION AND NOT THE VERB, which it did not until
+// ranger-base-xtg6z: it was `TestQACmdUpgradeInstallsBothLoopReadersOnItsPlan`
+// and it calls `upgradeLoopReaders` directly, so a reader who grepped for
+// cmdUpgrade found a green pin that did not reach cmdUpgrade at all — and the
+// one line that does was unheld underneath it. The verb's own call is the pin
+// below this one.
 //
 // THE SUBJECTS ARE ASSERTED ON THE READERS AND NOT ON THE PRINTED LINES, on
 // purpose. The box line names its path only when the census answered, and off
@@ -199,7 +249,7 @@ func TestQATheUpgradeReportPrintsNeitherLoopLineWithoutAReader(t *testing.T) {
 // correct readings and neither names a path. `BoxReading.Path` is the subject
 // the reading was ABOUT in every branch including those two, so it is the
 // assertion that holds on every box this suite runs on.
-func TestQACmdUpgradeInstallsBothLoopReadersOnItsPlan(t *testing.T) {
+func TestQAUpgradeLoopReadersPutsBothReadersOnThePlanItIsGiven(t *testing.T) {
 	f := newD4Fixture(t, fakePosse{Stamp: "aaaaaaa"}, fakePosse{})
 	a := wtApp(t)
 
@@ -229,10 +279,10 @@ func TestQACmdUpgradeInstallsBothLoopReadersOnItsPlan(t *testing.T) {
 	}
 	watch, box, watchAt, boxAt, _ := r1zdrLoopLines(t, out)
 	if watchAt < 0 {
-		t.Fatalf("the per-instance `dispatch:` line is absent from a report whose plan carries the Loop reader cmdUpgrade installs:\n%s", out)
+		t.Fatalf("the per-instance `dispatch:` line is absent from a report whose plan carries the Loop reader upgradeLoopReaders installs:\n%s", out)
 	}
 	if boxAt < 0 {
-		t.Fatalf("the `dispatch (box):` line is absent from a report whose plan carries the Box reader cmdUpgrade installs:\n%s", out)
+		t.Fatalf("the `dispatch (box):` line is absent from a report whose plan carries the Box reader upgradeLoopReaders installs:\n%s", out)
 	}
 	// The per-instance line names the instance it read in every branch,
 	// abstention included, so this holds wherever the suite runs.
@@ -244,5 +294,119 @@ func TestQACmdUpgradeInstallsBothLoopReadersOnItsPlan(t *testing.T) {
 	}
 	if strings.Contains(box, "one instance's loop") {
 		t.Errorf("the box line carries the per-instance reading's scope clause, so the same reading was printed twice:\n%s", box)
+	}
+}
+
+// r1zdrVerbRun drives `posse upgrade` ITSELF — a.cmdUpgrade, the function
+// CmdUpgrade binds the three real readings to — all the way to the report, so
+// that the one line in it which installs the report's loop readers has a pin
+// over it (ranger-base-xtg6z).
+//
+// EVERY PART OF THIS ALREADY EXISTED; this helper only puts the two halves on
+// one line. upgrade_test.go's `upgradeSeams` supplies the build stamp, the
+// source checkout and a box lock that locks nothing, which is the whole of
+// what `upgradeReads` is a seam for — and d4Fixture supplies the fake binary
+// at the target, the fake binary the build produces, the probe, and the three
+// green step stubs. `TestUpgradeTargetsTheRunningBinaryAndTheLagsCheckout`
+// enters the verb the first way and reads the report's FIRST line; the pins
+// above enter the report the second way and read its last. A run that is both
+// reaches the loop lines, which are the last two before D6's record.
+//
+// NO RHQ_PERSONA, so the D2 fence lets the operator through (upgradeFence):
+// the fence is pinned in upgrade_test.go and is not what this file is about.
+// t.Setenv is also why no pin that reaches this helper may be parallel — as
+// none in this file may be anyway, stubUpgradeSteps being package vars.
+//
+// THE READING ORDER IS ASSERTED HERE and not in the pin, because it is this
+// helper's claim rather than the loop lines': a run that reached the report
+// without taking the box lock resolved and swapped behind another upgrade's
+// back (ADR 0092 D3), and a report is not evidence about the wiring if the
+// verb got to it down some other path.
+func r1zdrVerbRun(t *testing.T, f d4Fixture, a *App) (string, error) {
+	t.Helper()
+	t.Setenv(EnvPersona, "")
+	s := &upgradeSeams{
+		bin: PosseBinary{Exe: f.target, Version: "0.4.0+" + shortSha(f.a)},
+		lag: LauncherLag{Version: "0.4.0+" + shortSha(f.a), Rev: f.a, Repo: f.repo, Base: "main"},
+	}
+	var out bytes.Buffer
+	err := a.cmdUpgrade(&out, UpgradeOpts{}, s.reads())
+	if s.order() != "bin,lag,lock" {
+		t.Errorf("the verb read %s, want bin,lag,lock — this run is not `posse upgrade`'s own path to the report (ADR 0092 D1, D3)", s.order())
+	}
+	return out.String(), err
+}
+
+// TestQATheUpgradeVerbPutsTheReportsLoopReadersOnThePlanItRuns is the CALL:
+// `upgradeLoopReaders(&plan, a)`, the one line in cmdUpgrade that gives the
+// plan its two loop readers, over a run of the verb that reaches the report.
+//
+// WHY A WHOLE-VERB RUN RATHER THAN A CENSUS OF THE CALL. The claim ADR 0092
+// D8 makes is about what `posse upgrade` PRINTS, and a census keyed on the
+// symbol would hold that cmdUpgrade names `upgradeLoopReaders` somewhere —
+// not that the plan it runs carries the readers, which is a different
+// sentence the moment anything between the call and `upgradeRunPlan` rebuilds
+// or copies the plan. The verb is reachable (r1zdrVerbRun), so the subject
+// does not have to be weakened to be held.
+//
+// WHAT IS ASSERTED AND WHAT IS LEFT TO THE PIN ABOVE. The readings here are
+// the PRODUCTION ones, whatever this box answers, so the subject assertions
+// stay where they hold on every box the suite runs on: the per-instance line
+// names the instance it read in every branch, abstention included, and the
+// box line names its path only when the census answered (boxloops_other.go
+// abstains off linux; ranger-base-rph5z refuses every same-uid peer from a
+// child user namespace). `BoxReading.Path` against `plan.Target` is the pin
+// above's, over the function, where a fixture can make the census answer.
+//
+// MUTATION-CHECKED 2026-11-21 (M1, this file's header): deleting
+// `upgradeLoopReaders(&plan, a)` from cmdUpgrade reds this test on both
+// missing lines, and nothing else in arm 1.
+func TestQATheUpgradeVerbPutsTheReportsLoopReadersOnThePlanItRuns(t *testing.T) {
+	f := newD4Fixture(t, fakePosse{Stamp: "aaaaaaa"}, fakePosse{})
+	a := wtApp(t)
+
+	out, err := r1zdrVerbRun(t, f, a)
+	if err != nil {
+		t.Fatalf("the verb refused or rolled itself back over a fixture whose every step is green, so this run never reached the report's loop lines at all: %v\n%s", err, out)
+	}
+	watch, box, watchAt, boxAt, recordAt := r1zdrLoopLines(t, out)
+	// D6's record line is what says the run got to the END of the report. A
+	// report that stopped earlier proves nothing about lines that print after
+	// the point it stopped at.
+	if recordAt < 0 {
+		t.Fatalf("the verb's report carries no `upgraded ` record line, so it did not reach the end and the two assertions below would pass for a run that never got there:\n%s", out)
+	}
+	if watchAt < 0 {
+		t.Fatalf("`posse upgrade` printed no per-instance `dispatch:` line — the plan the VERB ran carries no Loop reader, so a reader is told nothing about the loop the rename left on the old inode (ranger-base-rrgnc). The function that installs it is pinned above; this is the line in cmdUpgrade that calls it:\n%s", out)
+	}
+	if boxAt < 0 {
+		t.Fatalf("`posse upgrade` printed no `dispatch (box):` line — the plan the VERB ran carries no Box reader, so the per-instance line above it is the only loop reading in the report and reads as an all-clear for the box (ranger-base-is1qp, ADR 0092 D8):\n%s", out)
+	}
+
+	// Each line is the reading its OWN reader took, through the App and the
+	// target this run was given.
+	if !strings.Contains(watch, AbbrevHome(a.Home)) {
+		t.Errorf("the per-instance line does not name the instance the verb ran in (%s), so it is not a reading of this App:\n%s", AbbrevHome(a.Home), watch)
+	}
+	// The box reading's subject is the path THIS RUN replaces, and it names
+	// it in every branch that answered — the abstention is the one that does
+	// not, and it is a correct reading on a box with no /proc to read.
+	if !strings.Contains(box, "not read") && !strings.Contains(box, AbbrevHome(f.target)) {
+		t.Errorf("the box line is a reading that answered and does not name %s, the file this run renamed and the one every instance's loop execs (ADR 0092 D8):\n%s", AbbrevHome(f.target), box)
+	}
+
+	// The order, and that neither line carries the other's reach. Both hold
+	// in every branch of both renderers, abstentions included.
+	if watchAt > boxAt {
+		t.Errorf("the box line (line %d) printed BEFORE the per-instance one (line %d) — the delegate's own loop is the reading they act on first (ADR 0092 D8):\n%s", boxAt, watchAt, out)
+	}
+	if recordAt < boxAt {
+		t.Errorf("D6's record line is at %d and the box line at %d — the record is the LAST line of this report, because it is the line the delegate posts on the install bead:\n%s", recordAt, boxAt, out)
+	}
+	if strings.Contains(watch, "every process on this box") {
+		t.Errorf("the per-instance line claims the box-wide reading's reach:\n%s", watch)
+	}
+	if strings.Contains(box, "one instance's loop") {
+		t.Errorf("the box line carries the per-instance reading's scope clause, so the same reading was printed twice under two headings:\n%s", box)
 	}
 }

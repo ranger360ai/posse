@@ -805,11 +805,19 @@ func TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang(t *testing.T) {
 // report — or of the assignment that gives the plan a reader at all — would
 // leave every pin in THIS file green. That gap was the per-instance line's
 // too (nothing asserted "dispatch:" appeared in a d4Fixture report either),
-// so it was one gap over two lines; it is closed in
-// upgradereportloops_qa_test.go (ranger-base-r1zdr), where a d4Fixture report
-// carries a Loop and a Box and the wiring goes in through
-// `upgradeLoopReaders`. Four mutants that were green over 98 tests before
-// those pins existed are in that file's header.
+// so it was one gap over two lines; it is held in
+// upgradereportloops_qa_test.go, where a d4Fixture report carries a Loop and
+// a Box and the wiring goes in through `upgradeLoopReaders`.
+//
+// IN TWO STEPS, said because this comment claimed the whole of it after the
+// first. ranger-base-r1zdr NARROWED the gap from four mutants to one: it
+// reddened all four of them, and left the line that CALLS
+// `upgradeLoopReaders` from `cmdUpgrade` held by nothing, which is one more
+// way for the same sentence to become false silently and was green over the
+// whole arm-1 package (the verify lane, verifying that close).
+// ranger-base-xtg6z holds that call, by driving the verb itself to the
+// report. All seven mutants and the filter they were run under are in that
+// file's header.
 func TestQATheVerbsBoxLineIsAbsentWithoutAReaderAndCarriesItWithOne(t *testing.T) {
 	t.Parallel()
 	if got := upgradeBoxLine(upgradePlan{}); got != "" {

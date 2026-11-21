@@ -47,12 +47,18 @@ B1 and B2 are laurie's two; B1L and B2L are the same two mutants over the
 per-instance line, which the bead predicted were open as well and which this
 run confirms. Four ways for D8's sentence to become false with a green suite.
 
-AFTER, with the same filter plus the new pins — every arm rc=1, each on the
-pin that owns its line:
+AFTER, with the new pins — every arm rc=1, each on the pin that owns its
+line. NOT the same filter, although this page said so until
+ranger-base-xtg6z: every test name in `upgradereportloops_qa_test.go` begins
+`TestQA`, and neither `^TestUpgrade` nor `^TestQAUpgrade` reaches
+`TestQATheUpgradeReport…`, so the filter recorded above selects none of the
+pins whose reds are in this table. The spelling that does is
+`…|^TestQA(The)?Upgrade`, 102 top-level tests with those pins in place;
+ranger-base-xtg6z re-ran every arm below under it and confirms each row.
 
 | arm | reds |
 |---|---|
-| B1 | `TestQACmdUpgradeInstallsBothLoopReadersOnItsPlan` — "no Box reader on the plan" |
+| B1 | `TestQAUpgradeLoopReadersPutsBothReadersOnThePlanItIsGiven` (named `TestQACmdUpgradeInstallsBothLoopReadersOnItsPlan` when this table was written) — "no Box reader on the plan" |
 | B1L | the same pin — "no Loop reader on the plan" |
 | B2 | `TestQATheUpgradeReportPrintsBothLoopLines…` and the wiring pin — "no `dispatch (box):` line" |
 | B2L | both — "no per-instance `dispatch:` line" |
@@ -90,3 +96,19 @@ and two correct readings name none — off linux it abstains
 same-uid peer is refused (ranger-base-rph5z). `BoxReading.Path` is the subject
 the reading was about in every branch including those two, so it is the
 assertion that holds on every box this suite runs on.
+
+## What this close left open (ranger-base-xtg6z)
+
+Three of the four pins take `upgradeLoopReaders` as their subject, and the one
+line in `cmdUpgrade` that CALLS it took none of them — so the gap did not
+close here, it moved one line up. Deleting that call left the whole arm-1
+package green (laurie, 250.912s, rc=0, zero FAIL lines), with `posse upgrade`
+printing neither loop line. The conclusion in this bead's close that the verb
+"is reachable from no test in either direction" is the reason it was missed,
+and it is wrong: the three readings a plan is built behind are PARAMETERS
+(`upgradeReads`), `TestUpgradeTargetsTheRunningBinaryAndTheLagsCheckout`
+already drives the verb as far as the report's first line, and what stopped it
+there was its own red-`make test` stub rather than anything structural.
+ranger-base-xtg6z adds `r1zdrVerbRun`, which enters the verb that way over
+d4Fixture's green stubs and reaches the report's last lines, and the pin over
+that call. docs/notes.d/ranger-base-xtg6z.md carries it.
