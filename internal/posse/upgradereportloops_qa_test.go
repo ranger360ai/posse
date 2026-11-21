@@ -80,9 +80,11 @@ package posse
 // were re-run under it on 2026-11-21 with the two new pins in place: every
 // one rc=1, each on the pin that owns its line, and the file restored to the
 // same sha256 after every arm. docs/notes.d/ranger-base-xtg6z.md carries the
-// re-run and the two arms of it that are still green — the two call sites one
-// and two lines ABOVE M1's, which this bead measured and did not fix
-// (ranger-base-6e5jm).
+// re-run and the two arms of it that were still green then — the two call
+// sites one and two lines ABOVE M1's, which that bead measured and did not
+// fix. They are held now, one pin each, in upgradeverbplan_qa_test.go
+// (ranger-base-6e5jm): D4's persona roster and D4 amendment 1's repo list,
+// both witnessed through this file's own `r1zdrVerbRun`.
 
 import (
 	"bytes"

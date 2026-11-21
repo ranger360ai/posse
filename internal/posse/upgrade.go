@@ -939,11 +939,17 @@ func (a *App) cmdUpgrade(w io.Writer, o UpgradeOpts, reads upgradeReads) error {
 	// swap and read again after it. ListAgents and not the live sessions —
 	// `posse gates <p>` describes the wall a persona WOULD launch behind, so
 	// a persona with no seat open is exactly as much evidence as one with.
+	//
+	// THIS LINE IS ITS OWN GUARDRAIL and is pinned as one
+	// (ranger-base-6e5jm): without it the verify block judges D4's second
+	// bullet over an empty roster, so a new binary whose wall is red for
+	// every persona in the home installs and stands.
 	plan.Personas = a.ListAgents()
 	// D4 amendment 1's repos. Read here rather than at verify time so that
 	// the plan carries everything the run prints, as Personas does; the
 	// filter itself is upgradeHookWallRepos, which is where a pin can read
-	// it.
+	// it — and this CALL, which is the filter's output reaching the report,
+	// is pinned beside the roster above (ranger-base-6e5jm).
 	plan.Repos = append(plan.Repos, upgradeHookWallRepos(a.SweepHookWallIdentity())...)
 	// The report's last two loop lines, installed through one function so
 	// that a pin can witness both of them being installed at all
