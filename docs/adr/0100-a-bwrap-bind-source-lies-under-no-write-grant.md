@@ -221,9 +221,53 @@ rule says nothing. Following the link and judging its target is not the other
 answer — the seat repoints it between the render and `mount(2)`, which is the
 check-then-use this record rejects A2 for. So the pin loop `os.Lstat`s and
 refuses, in the tier's fail-closed direction. The same question at the grant
-pins of D2(b)'s first remedy is open, and this record names it where it names
-every open residual — by bead id alone, in "Not closed here" below, with the
-detail on the bead where the audience is already the right one.
+pins of D2(b)'s first remedy was open for a day, and the amendment below is
+its answer.
+
+AMENDED 2026-11-21 (ranger-base-gi22r): AND AT SHAPE 1's OWN GRANTS AND PINS,
+WHICH IS THE SAME EDGE AT THE PRODUCER THE PARAGRAPH ABOVE LEFT OUT. Step 2
+decided BOTH its arms — a write grant and a grant pin — with `bwrapStat`,
+which is `os.Stat` and FOLLOWS, and then emitted `--bind p p`. So a link at
+`p` mounted the link's target read-write at `p`'s own name, which is the hole
+the paragraph above describes, at the one producer that still had it: a
+directory of the planter's choosing inside a write wall that granted it
+nowhere, and D2(a) does not catch it because it resolves a grant only against
+the wall root. The pin arm arrived with ranger-base-dot6w; the GRANT arm
+predates it, and nothing downstream says anything about either, because the
+(b) predicate asks only whether each ANCESTOR of a bind source is a mount
+destination and `p` is always its own destination.
+
+MEASURED 2026-11-21 (linux 7.2.15, at d24988c3, a scratch test outside the
+tree, `HOME` set off `/tmp` so these rules are live): with `<proj>/g/a` a link
+to a directory inside no grant, `BwrapArgs(<proj>, [g, g/a/b])` RENDERED with
+`--bind g/a g/a` — the pin arm — and `BwrapArgs(<proj>, [g, g/a])` RENDERED
+too, which is the grant arm. Neither was refused. The bwrap half, where the
+mount lands, was NOT re-measured: a nested bwrap is refused from a walled seat
+("setting up uid map: Read-only file system"), and it is ASSUMED from
+ranger-base-p47q6's measurement of the same `os.Stat`-plus-in-place-bind
+shape. WHO PLANTS IT: any namespace that can write `p`'s PARENT and holds no
+mount on `p` — a render granting the directory ABOVE `p` and nothing below it
+leaves `p` loose and writable, which is what dot6w's own control renders, and
+a sibling namespace can plant it too, since a mount refuses a rename only in
+the namespace that holds it (P4/P4b).
+
+THE FIX IS THE WALK D1 ALREADY OWNS, applied where this producer decides:
+where `p` lies strictly inside ANOTHER grant of the render, step 2 walks
+`p`'s components with `os.Lstat` from the OUTERMOST grant that contains it —
+`bwrapSrcWalk`, the same function the private binds and the private `/tmp`
+use — and refuses a symlink or a non-directory at any component, `p` included
+(`bwrapGrantSrcStat`). Where `p` lies inside no other grant it still goes
+through `bwrapStat`, and that is a scope and not an exemption: such a path's
+own parent is outside every grant, so no namespace this wall describes can
+plant at its name, and what is left is the race D1 already prices. A
+`PrepMkdirAll` is emitted on the WALK's absent verdict and never on
+`os.Stat`'s, which is the row with nothing to do with the mount: `os.Stat`
+reads a dangling link as "not there", so the unfixed render asked its launcher
+to `mkdir -p` that name — in the UNCAGED launcher, where `MkdirAll` follows
+the link and makes the target. Three rows red under a mutant that swaps the
+walk back (`TestQAWallPinnedSourceRefuseALinkAtAGrantOrItsPinsOwnName`, both
+arms): the plant renders, the dangling plant renders, and the dangling plant's
+`mkdir -p` is asked for.
 
 The landed-check and venue sources lie under `StateDir/landed-check/run-*`,
 which no walled seat writes. They pass D2(a) and the pin says so.
@@ -536,6 +580,23 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   those directories in place, spliced in at step 2d's mark so that no pin
   lands on top of the wall it exists for, and the CENSUS of what it emits
   over the five argvs is 0: no shipped render carries such a nest.
+- (2026-11-21, ranger-base-gi22r) SHAPE 1's OWN TWO ARMS DECIDED BY A
+  FOLLOWING STAT, which is the pin edge above at the one producer that still
+  had it, plus the grant arm beside it. MEASURED at d24988c3 with a scratch
+  test outside the tree and a home off `/tmp`: with a link at `<proj>/g/a` to
+  a directory inside no grant, the pin render `[g, g/a/b]` and the grant
+  render `[g, g/a]` both went through, the first emitting `--bind g/a g/a`.
+  The mount half is ASSUMED from ranger-base-p47q6, which measured the same
+  shape — a nested bwrap is refused from a walled seat. Step 2 walks a path
+  that lies strictly inside another grant with `os.Lstat` from the outermost
+  grant above it now (`bwrapGrantSrcStat`, over `bwrapSrcWalk`), and emits a
+  `mkdir -p` only on that walk's absent verdict. Measured by mutation:
+  swapping that walk back to the stat reds three rows in each of the two arms
+  of `TestQAWallPinnedSourceRefuseALinkAtAGrantOrItsPinsOwnName` — the plant
+  renders, the dangling plant renders, and the dangling plant's `mkdir -p` is
+  asked for — and reds NOTHING ELSE in a `-run 'Wall|Bwrap'` run of 145.8s.
+  CENSUS unchanged: the walk refuses no shape this box renders, which the
+  same run says.
 - (2026-11-21, ranger-base-dw2du) D2(a)'s second direction over the same
   five: 0 of 32 grants lie INSIDE the wall root, while every render has bind
   sources that do. Measured by mutation too: dropping the new arm reds the
@@ -554,4 +615,3 @@ ASSUMED:
 - ranger-base-tbg3h
 - ranger-base-qyq59
 - ranger-base-k45vt
-- ranger-base-pg251

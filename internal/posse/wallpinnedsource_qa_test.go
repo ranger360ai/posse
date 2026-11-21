@@ -510,6 +510,244 @@ func TestQAWallPinnedSourceBindsATwoDeepNestsLooseComponentInPlace(t *testing.T)
 	}
 }
 
+// Pin: A LINK AT A GRANT'S OR A PIN'S OWN NAME REFUSES THE RENDER, in both
+// of step 2's arms, and a DANGLING one asks the launcher for nothing
+// (bwrapGrantSrcStat, ADR 0100 D2(b) as amended by ranger-base-gi22r).
+//
+// WHY THE IN-PLACE BIND ABOVE WAS NOT THE WHOLE REMEDY. Step 2 decided both
+// arms with bwrapStat — os.Stat, which FOLLOWS — and then emitted
+// `--bind p p`. bwrap resolves p at mount(2) and follows a link at a bind's
+// source and at its destination alike, so a link at that name mounts the
+// link's TARGET read-write at p's own name: a directory of the planter's
+// choosing, inside a write wall that granted it nowhere. Nothing downstream
+// said so. The predicate at step 6 asks only whether each ANCESTOR of a
+// bind source is a mount destination, and p is always its own destination,
+// so a link AT p passes; D2(a) resolves a grant, but only against the wall
+// root.
+//
+// WHO PLANTS IT: any namespace that can write p's PARENT and holds no mount
+// on p. A render granting only the directory above p leaves p itself loose
+// and writable — the first CONTROL of the test above renders exactly that —
+// so the same seat relaunched with a nested grant gets the plant's target,
+// and a sibling namespace can plant it too, because a mount refuses a
+// rename only in the namespace that holds it (P4/P4b).
+//
+// BOTH ARMS, because the grant arm is not the pin arm's corollary: a pin is
+// a path no operator declared and a nested grant is one that an operator
+// did, and this fleet had long stat'd a declared grant. Both are bound in
+// place by the same loop and both resolve at mount(2), so both walk.
+//
+// AND BOTH DIRECTIONS, because a refusal that fires on everything is not a
+// refusal: each arm renders over a REAL directory first and must bind it in
+// place, or what follows is a refusal of the shape and not of the link.
+//
+// THE DANGLING ROW IS NOT ABOUT THE MOUNT AT ALL. os.Stat answers "not
+// there" for a dangling link, which is the `!exists` arm, so the unfixed
+// render asked the launcher for a PrepMkdirAll at that name — and the prep
+// runs in the UNCAGED launcher, where MkdirAll follows the link and makes
+// its target. The walk lstats, so a dangling link is a link and never an
+// absence.
+//
+// MUTATION RUN 2026-11-21: swapping bwrapGrantSrcStat's walk back to a
+// bwrapStat reds all three rows of both arms, and nothing else in
+// `-run 'Wall|Bwrap'` moves.
+func TestQAWallPinnedSourceRefuseALinkAtAGrantOrItsPinsOwnName(t *testing.T) {
+	// No t.Parallel: this sets HOME, which the wall root is composed from.
+	root := wallUngrantedDir(t)
+	home, proj := filepath.Join(root, "home"), filepath.Join(root, "proj")
+	outside := filepath.Join(root, "outside")
+	outer := filepath.Join(proj, "g")
+	mid, inner := filepath.Join(outer, "a"), filepath.Join(outer, "a", "b")
+	for _, d := range []string{home, proj, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	if bwrapWallRoot() == "" {
+		t.Skip("NOTHING MEASURED: ADR 0100's rules stand down for a home under " + bwrapTmpMount + " (bwrapWallRoot)")
+	}
+
+	// `mid` is the name under attack in both arms — the PIN arm's loose
+	// component between two grants, and the GRANT arm's own declared path —
+	// so one plant drives both and the only thing that changes is the grant
+	// set that makes step 2 bind it.
+	plant := func(t *testing.T, link string) {
+		t.Helper()
+		if err := os.RemoveAll(mid); err != nil {
+			t.Fatal(err)
+		}
+		if link == "" {
+			if err := os.MkdirAll(inner, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		if err := os.Symlink(link, mid); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, c := range []struct {
+		name   string
+		grants []string
+	}{
+		{"the PIN arm: the component between two nested grants", []string{outer, inner}},
+		{"the GRANT arm: a grant one component inside another", []string{outer, mid}},
+	} {
+		// CONTROL: a real directory at that name renders, and step 2 binds
+		// it in place. Without this the arms below measure nothing.
+		plant(t, "")
+		argv, _, err := BwrapArgs(proj, c.grants, SeatbeltCarveOut{})
+		if err != nil {
+			t.Fatalf("CONTROL: %s, over a real directory at %s, is refused: %v", c.name, mid, err)
+		}
+		if wcpMountAt(argv, "--bind", mid, mid) < 0 {
+			t.Fatalf("CONTROL: %s binds nothing in place over %s, so the plant below is at a name this render never resolves\n %s", c.name, mid, bwJoin(argv))
+		}
+
+		// THE PLANT: the same name, a link to a directory inside NO grant of
+		// this render, so every stat that FOLLOWS answers "a directory" and
+		// the render goes through. Where it points is not the question — a
+		// seat repoints it between the render and mount(2), the
+		// check-then-use this ADR rejects A2 for — but a target outside
+		// every grant is what the hole BUYS, and naming one is how this test
+		// says what was at stake.
+		plant(t, outside)
+		argv, prep, err := BwrapArgs(proj, c.grants, SeatbeltCarveOut{})
+		switch {
+		case err == nil:
+			t.Errorf("%s: a link at %s was bound in place, so bwrap resolves both ends of that bind to %s and mounts it read-write at a name this wall granted nowhere (ADR 0100 D2(b))\n %s", c.name, mid, outside, bwJoin(argv))
+		case !strings.Contains(err.Error(), mid):
+			t.Errorf("%s: the refusal does not name %s, which is the plant the operator has to remove: %v", c.name, mid, err)
+		case !strings.Contains(err.Error(), "symlink"):
+			t.Errorf("%s: the refusal does not say what is at that name in words, so a reader cannot tell it from a missing directory: %v", c.name, err)
+		case !strings.Contains(err.Error(), "relaunch"):
+			t.Errorf("%s: the refusal does not say to remove it and relaunch, which is the whole of what the operator can do about it: %v", c.name, err)
+		default:
+			if argv != nil || prep != nil {
+				t.Errorf("%s: a refused render returned argv %v and prep %v", c.name, argv, bwPrep(prep))
+			}
+		}
+
+		// THE DANGLING ROW: refused for the same reason, and asking the
+		// launcher for nothing at that name.
+		plant(t, filepath.Join(outside, "not-there"))
+		argv, prep, err = BwrapArgs(proj, c.grants, SeatbeltCarveOut{})
+		if err == nil {
+			t.Errorf("%s: a DANGLING link at %s renders, so os.Stat's \"not there\" is still what decides this arm\n %s", c.name, mid, bwJoin(argv))
+		}
+		for _, s := range bwPrep(prep) {
+			if strings.Contains(s, mid) {
+				t.Errorf("%s: the render asks the launcher for %q over a dangling link at %s — that prep runs UNCAGED, and MkdirAll follows the link and makes its target (PrepStep's head comment)", c.name, s, mid)
+			}
+		}
+	}
+}
+
+// Pin: WHICH GRANT THE WALK IS ROOTED AT — the shallowest one that STRICTLY
+// contains the path, and nothing when no grant but its own does
+// (bwrapOutermostContainingGrant, ranger-base-gi22r). As rows, because no
+// render arm can see this choice: by the time two containing grants differ,
+// the mount of the deeper one has already been judged by the walk from the
+// shallower, so a wrong root here would show up as a refusal that is missing
+// and never as one that is wrong.
+//
+// SHALLOWEST AND NOT DEEPEST, which is the row this exists for. A walk from
+// the deepest containing grant would start BELOW the directories between
+// that grant and the one above it — and a directory between two grants is
+// exactly what this class is about (bwrapGrantMounts). The deeper grant's own
+// mount does not help: it is emitted by this same loop, after this question
+// is asked of it, and a link at its name is the thing being looked for.
+//
+// NOTHING WHERE THE PATH IS INSIDE NO OTHER GRANT, which is the condition
+// bwrapGrantMounts carries and not an exemption: such a path's own PARENT
+// lies outside every grant, so no namespace this wall describes can plant at
+// its name, and what is left is the race ADR 0100 D1 prices. That arm keeps
+// bwrapStat, which is what every grant in this fleet has always had.
+func TestQAWallPinnedOutermostContainingGrantIsTheWalksRoot(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name   string
+		p      string
+		grants []string
+		want   string // "" for "inside no grant but its own"
+	}{
+		{
+			name: "inside no grant at all",
+			p:    "/r/proj/g/a", grants: []string{"/r/other"},
+		},
+		{
+			name: "the path IS the grant — strictly inside wants a parent that is granted",
+			p:    "/r/proj/g", grants: []string{"/r/proj/g"},
+		},
+		{
+			name: "one grant above it",
+			p:    "/r/proj/g/a", grants: []string{"/r/proj/g"},
+			want: "/r/proj/g",
+		},
+		{
+			name: "TWO grants above it: the shallower one, so the walk judges the components between them",
+			p:    "/r/proj/g/a/b/c", grants: []string{"/r/proj/g", "/r/proj/g/a"},
+			want: "/r/proj/g",
+		},
+		{
+			name: "the grants in the other order: the answer is the set's and not the slice's",
+			p:    "/r/proj/g/a/b/c", grants: []string{"/r/proj/g/a", "/r/proj/g"},
+			want: "/r/proj/g",
+		},
+		{
+			name: "a SIBLING grant reaches nothing",
+			p:    "/r/proj/g/a", grants: []string{"/r/proj/h", "/r/proj/g"},
+			want: "/r/proj/g",
+		},
+		{
+			name: "the root is a grant: every path is strictly inside it",
+			p:    "/r", grants: []string{"/"},
+			want: "/",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := bwrapOutermostContainingGrant(c.p, c.grants)
+			if c.want == "" {
+				if ok {
+					t.Errorf("%s lies inside no grant of %v but its own, and the walk was rooted at %s — a root the render does not trust is a walk that judges components it has no business judging", c.p, c.grants, got)
+				}
+				return
+			}
+			if !ok || got != c.want {
+				t.Errorf("the walk over %s is rooted at %q (ok %v), want %q", c.p, got, ok, c.want)
+			}
+		})
+	}
+}
+
+// Pin: and the grant's RESOLVED spelling is a candidate root too, which the
+// composed rows above cannot show because absResolve asks this filesystem.
+// bwrapStrictlyInsideGrant compares both spellings and its head comment says
+// why — either spelling reaching the component is a seat that can write it,
+// and a predicate whose job is to refuse must not be narrowed by a host whose
+// home sits behind a symlink. The ROOT has to come from the same union, or a
+// grant declared through the link reaches the path and the walk is rooted
+// nowhere.
+func TestQAWallPinnedOutermostContainingGrantReadsAGrantsResolvedSpelling(t *testing.T) {
+	t.Parallel()
+	root := absResolve(t.TempDir())
+	real, link := filepath.Join(root, "real"), filepath.Join(root, "link")
+	p := filepath.Join(real, "a", "b")
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	// CONTROL: the link's own spelling does not reach p as written.
+	if got, ok := bwrapOutermostContainingGrant(p, []string{link}); !ok || got != real {
+		t.Errorf("the grant %s resolves to %s, which contains %s — the walk was rooted at %q (ok %v), so a grant declared through a symlinked home roots the walk nowhere and every component of it is trusted", link, real, p, got, ok)
+	}
+}
+
 // Pin: what shape 1's mount list IS — every write grant, plus every
 // directory strictly between a grant and the grant that contains it,
 // shallowest first — as rows, one per shape the predicate argues about.

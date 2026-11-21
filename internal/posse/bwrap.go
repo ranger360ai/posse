@@ -478,7 +478,7 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// render and emits NO prep step, because the prep runs in the uncaged
 	// launcher and a link here would aim its 0755 mkdir.
 	if carve.Tmp != "" {
-		exists, fi, err := bwrapSrcWalk(carve.Tmp, bwrapSeatTmpRoot(carve.Tmp), bwrapTmpMount)
+		exists, fi, err := bwrapSrcWalk("private source", carve.Tmp, bwrapSeatTmpRoot(carve.Tmp), bwrapTmpMount)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -524,9 +524,18 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	reopens := func(p string) bool { return writeGranted(hidden, p) && !writeGranted(grants, p) }
 	for _, m := range bwrapGrantMounts(grants) {
 		p := m.Path
-		exists, dir, err := bwrapStat(p)
+		// A PATH INSIDE ANOTHER GRANT GOES THROUGH THE COMPONENT WALK, not
+		// through bwrapStat, and that is both arms (bwrapGrantSrcStat, ADR
+		// 0100 D2(b) as amended by ranger-base-gi22r). os.Stat FOLLOWS, and
+		// an in-place bind of a link mounts the link's TARGET read-write at
+		// that name — so a seat that can write the parent of a pin or of a
+		// nested grant picks the directory this wall hands out. The walk
+		// lstats from the outermost grant above it, which is also what makes
+		// the `!exists` arms below safe to emit a mkdir on: os.Stat reads a
+		// dangling link as "not there" and that mkdir runs uncaged.
+		exists, dir, err := bwrapGrantSrcStat(m, grants)
 		if err != nil {
-			return nil, nil, bwrapStatRefusal(m.what(), p, err)
+			return nil, nil, err
 		}
 		if m.Pin {
 			// A PIN is a directory of its grant's own, so the two arms
@@ -1379,9 +1388,13 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 			// the very attack D2(b) refuses, let through by the mount that
 			// was supposed to refuse it. So a link here refuses the render,
 			// in the tier's fail-closed direction, and the refusal is the
-			// answer the operator can act on (remove the plant). The same
-			// question at shape 1's grant pins is open; ADR 0100's D2(b)
-			// amendment is where its bead id is kept.
+			// answer the operator can act on (remove the plant). SHAPE 1's
+			// GRANT PINS ASK IT TOO NOW, and its nested grants with them
+			// (bwrapGrantSrcStat, ranger-base-gi22r): this arm was the
+			// fixed one for a day, and what differs is only the walk — a
+			// carve-out pin lies inside a grant by construction and gets a
+			// single lstat, a grant's own path may be the OUTERMOST one and
+			// is walked from the grant above it when there is one.
 			fi, err := os.Lstat(p)
 			exists, dir := err == nil, err == nil && fi.IsDir()
 			switch {
@@ -1632,13 +1645,23 @@ func bwrapPrivateSrcStat(pb PrivateBind) (exists bool, fi os.FileInfo, err error
 		// tmpfs, and that arm returns before this call.
 		return false, nil, Die("bwrap cannot bind a private file over %s: the render named no source for it (ranger-base-wsgus)", pb.Dst)
 	}
-	return bwrapSrcWalk(pb.Src, pb.SrcRoot, pb.Dst)
+	return bwrapSrcWalk("private source", pb.Src, pb.SrcRoot, pb.Dst)
 }
 
 // bwrapSrcWalk is that walk over any one source, so that the private binds
 // and the private /tmp ask the SAME question of their sources (ADR 0100 D1).
 // src is the path about to be bound, root the deepest directory this render
-// trusts above it, dst the destination a refusal has to name.
+// trusts above it, dst the destination a refusal has to name, and shape the
+// kind of mount a "could not ask" refusal names — bwrapStatRefusal's first
+// argument, for its own reason: a path with no shape beside it is a refusal
+// an operator cannot check against the design. Shape 1's grants and pins
+// walk here too since ranger-base-gi22r, and they are not private sources.
+//
+// THE LAST COMPONENT IS NOT JUDGED HERE, only lstat'd and returned: what a
+// non-directory at the source's own name means differs per caller — a file
+// there is a prep step for one and a refusal for another — so each arm says
+// it in its own words. Every component ABOVE it is judged, and that is this
+// function's whole subject.
 //
 // THE /tmp SOURCE CAME THROUGH bwrapStat UNTIL ADR 0100, and that was this
 // class's one member needing no race at all: os.Stat FOLLOWS, so a seat that
@@ -1648,7 +1671,7 @@ func bwrapPrivateSrcStat(pb PrivateBind) (exists bool, fi os.FileInfo, err error
 // One function and not two readings of "is the source there", for the reason
 // bwrapPrivateArgs is one function: an arm that asks its own question is an
 // arm that can be written without this one.
-func bwrapSrcWalk(src, root, dst string) (exists bool, fi os.FileInfo, err error) {
+func bwrapSrcWalk(shape, src, root, dst string) (exists bool, fi os.FileInfo, err error) {
 	if root == "" {
 		return false, nil, Die("bwrap cannot bind %s over %s: the render names no trusted root for it, so there is no component of the source this render may trust, and anything that can write a component plants a link at it (ranger-base-wsgus, ADR 0100 D1)", src, dst)
 	}
@@ -1670,7 +1693,7 @@ func bwrapSrcWalk(src, root, dst string) (exists bool, fi os.FileInfo, err error
 		case os.IsNotExist(cerr):
 			return false, nil, nil
 		case cerr != nil:
-			return false, nil, bwrapStatRefusal("private source", p, cerr)
+			return false, nil, bwrapStatRefusal(shape, p, cerr)
 		}
 		if i == len(comps)-1 {
 			return true, cfi, nil
@@ -1955,6 +1978,103 @@ func bwrapGrantMounts(grants []string) []bwrapGrantMount {
 		out = append(out, bwrapGrantMount{Path: p, Pin: pin, For: g})
 	}
 	return out
+}
+
+// bwrapOutermostContainingGrant is the SHALLOWEST write grant of this render
+// that strictly contains p, in the spelling that contains it — so that a walk
+// rooted there has p under it and filepath.Rel can say which components lie
+// between. ("", false) where p lies inside no grant but its own.
+//
+// BOTH SPELLINGS ARE CANDIDATES AND THE WINNER IS THE ONE THAT CONTAINS p,
+// which is bwrapStrictlyInsideGrant's union read for a root rather than for a
+// yes/no (that function's head comment carries the argument). A grant written
+// through a symlinked home reaches p under one spelling and not the other,
+// and the walk needs the reaching one or Rel answers `..`.
+//
+// SHALLOWEST because a walk from the OUTERMOST grant judges every component
+// between, including the ones a deeper grant would have started below. A
+// walk from the deepest containing grant would trust whatever lies between
+// that grant and the one above it, which is exactly the directory this class
+// is about.
+func bwrapOutermostContainingGrant(p string, grants []string) (string, bool) {
+	var out string
+	for _, g := range grants {
+		for _, gs := range []string{g, absResolve(g)} {
+			if gs == p || !insideDir(gs, p) {
+				continue
+			}
+			if out == "" || len(bwrapPathComponents(gs)) < len(bwrapPathComponents(out)) {
+				out = gs
+			}
+		}
+	}
+	return out, out != ""
+}
+
+// bwrapGrantSrcStat is the one filesystem question step 2 asks of a write
+// grant or a grant PIN before it binds that path IN PLACE, and it is two
+// questions with one thing deciding between them: whether the path lies
+// strictly inside ANOTHER grant of the same render.
+//
+// WHY IT IS NOT bwrapStat (ranger-base-gi22r, ADR 0100 D2(b) as amended; the
+// hole it closes is MEASURED there). Step 2 decided both arms with
+// bwrapStat — os.Stat, which FOLLOWS — and then emitted `--bind p p`. bwrap
+// resolves p at mount(2) and follows a link at a bind's source and at its
+// destination alike, so a link at that name binds the link's TARGET
+// read-write at p's own name: a directory of the planter's choosing inside a
+// write wall that granted it nowhere. That is the attack D2(b) refuses, let
+// through by the mount meant to refuse it, and nothing downstream says so —
+// step 6 asks only whether each ANCESTOR of a bind source is a mount
+// destination, and p is always its own destination; D2(a) resolves a grant,
+// but only against the wall root.
+//
+// WHO CAN PLANT ONE: any namespace that writes p's PARENT and holds no mount
+// on p. A render granting only the directory ABOVE p leaves p itself loose
+// and writable — that is the control of
+// TestQAWallPinnedSourceBindsATwoDeepNestsLooseComponentInPlace — so the same
+// seat relaunched with a nested grant gets the plant's target, and a sibling
+// namespace can plant it too, because a mount refuses a rename only in the
+// namespace that holds it (ADR 0100's P4/P4b).
+//
+// FOLLOWING THE LINK AND JUDGING THE TARGET IS NOT THE OTHER ANSWER, here
+// for the reason it is not one at the carve-out's pins: the seat repoints it
+// between this render and mount(2), which is the check-then-use ADR 0100
+// rejects A2 for. A link at the name refuses the render.
+//
+// THE CONDITION IS THE SAME ONE bwrapGrantMounts CARRIES, and it is what
+// keeps this from being a statement about paths the render has no business
+// judging: a grant that lies inside no other grant has a PARENT outside
+// every grant, so no namespace this wall describes can plant anything at its
+// name, and what is left is the race ADR 0100 D1 already prices. Every pin
+// meets the condition by construction (bwrapGrantMounts emits none that
+// does not), so in practice it selects the nested grants.
+//
+// IT RETURNS bwrapStat's SHAPE and not the walk's, because the two arms of
+// step 2 read `exists` and `dir` and nothing else — what a FILE at that name
+// means is step 2's to say, in the two messages it already has, and a link
+// is the one verdict this function adds. A `!exists` from here is an absence
+// the WALK found, which is what makes the prep step safe to emit: os.Stat
+// reads a dangling link as "not there", and the prep runs in the uncaged
+// launcher where MkdirAll would follow that link and make its target.
+func bwrapGrantSrcStat(m bwrapGrantMount, grants []string) (exists, dir bool, err error) {
+	root, inside := bwrapOutermostContainingGrant(m.Path, grants)
+	if !inside {
+		exists, dir, err = bwrapStat(m.Path)
+		if err != nil {
+			return false, false, bwrapStatRefusal(m.what(), m.Path, err)
+		}
+		return exists, dir, nil
+	}
+	exists, fi, err := bwrapSrcWalk(m.what(), m.Path, root, m.Path)
+	switch {
+	case err != nil:
+		return false, false, err
+	case !exists:
+		return false, false, nil
+	case fi.Mode()&os.ModeSymlink != 0:
+		return false, false, Die("bwrap cannot bind %s in place as a %s: it is a symlink, and bwrap resolves both ends of an in-place bind at mount(2), so this would mount whatever it points at read-write at this name — inside the write grant %s that contains it, and at a path this render never judged. Remove it on the host and relaunch, or narrow the grant that contains it, and never exempt it (ADR 0100 D1/D2(b), ranger-base-gi22r)", m.Path, m.what(), root)
+	}
+	return true, fi.IsDir(), nil
 }
 
 // bwrapCarvePins is shape 1's remedy at the CARVE-OUT's producers: the
