@@ -439,3 +439,109 @@ func TestTheInterruptGraceSeamDefaultsToTheShippedGrace(t *testing.T) {
 		t.Errorf("landedInterruptGrace is %s and generatorKillGrace is %s — a grace over the reaping grace makes the classification the slowest part of a stop (ADR 0088 D6.5)", landedInterruptGrace, generatorKillGrace)
 	}
 }
+
+// ldiGateOut is ldiSlowOut with a door on it: it closes `entered` as the
+// FIRST write BEGINS and only then holds that write open for `d`. The gate is
+// what makes the arm below deterministic rather than a wide-window bet — a
+// test that has received from `entered` knows the loop goroutine is inside
+// c.say and therefore provably outside c.mu, which is the one instant the
+// claim is about. `d` is the margin after that, not the mechanism.
+//
+// Mutex-guarded for ldiSlowOut's reason: a reader and the loop goroutine
+// touch the buffer at the same instant, and a bare bytes.Buffer there is a
+// data race the -race arm would report in place of a failure anyone can read.
+type ldiGateOut struct {
+	d       time.Duration
+	entered chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	b       bytes.Buffer
+}
+
+func (w *ldiGateOut) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.entered) })
+	time.Sleep(w.d)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.Write(p)
+}
+
+func (w *ldiGateOut) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.String()
+}
+
+// AND THE RE-READ OF THE PENDING SET IS THE OTHER HALF OF THAT FINISHING
+// BLOCK (loop(), landedcheck.go). TestAStopDropsThePendingSetAndSaysSo above
+// pins the ORDERING claim — a line this runner owes is written before Wait
+// returns — and this arm pins the one the same block makes about the set
+// itself: the dropped lines are said with c.mu RELEASED, so a landing can
+// arrive while they print, and it finds `running` true and only adds itself.
+// `Schedule`'s fast path is entitled to do that — "a run is in flight, it
+// re-drains this map when it finishes" is its own comment — so a loop that
+// exited here would orphan the landing: an entry in `pending` with no
+// goroutine coming for it, no ◷ line, and nothing in the record or the quiet
+// count to say a tree landed and was never looked at.
+//
+// FILED FROM ranger-base-rh8y0 (ranger-base-vcfc1 F4): the re-read is named
+// load-bearing by its own comment and `if len(c.pending) > 0` → `if false`
+// survived every Land*/Wall*/Judge* test in both arms — 264 of them — before
+// this arm existed.
+//
+// THE STOP IS FIRED BEFORE ANYTHING IS SCHEDULED, which is what makes the
+// window reachable at all: `dropped` is non-empty only when this launcher is
+// stopping, so the stopping path is the one place the loop provably prints
+// with the lock down. What the re-read buys behind a fired stop is the second
+// landing's ◷ LINE and an empty set, not a judgement — D6.6's arm-time sweep
+// still owns that tip, and the two assertions below are written to say so.
+func TestAStopDropsALandingThatArrivesWhileItIsSayingSo(t *testing.T) {
+	t.Parallel()
+	c, _, first, firstLog := ldiFixture(t, func(log string) string {
+		return landedCheckBody("v1", log, filepath.Join(t.TempDir(), "nohold"), 0)
+	})
+	out := &ldiGateOut{d: 250 * time.Millisecond, entered: make(chan struct{})}
+	c.out = out
+	cancel := ldiStop(t, c)
+	cancel()
+
+	// A second repo, landed into while the loop is mid-sentence about the
+	// first — the landing that has nobody coming for it if the loop exits.
+	second := wtRepo(t)
+	secondLog := filepath.Join(t.TempDir(), "runs-2")
+	shipLandedCheck(t, second, landedCheckBody("v2", secondLog, filepath.Join(t.TempDir(), "nohold"), 0), "ranger-base-rh8y0: ship the landed check")
+
+	c.Schedule(first, "main")
+	<-out.entered // the loop is inside the first ◷ line, so c.mu is down
+	c.Schedule(second, "main")
+	c.Wait()
+
+	// THE INVARIANT ITSELF: a loop that has exited leaves nothing behind it.
+	c.mu.Lock()
+	orphans, running := len(c.pending), c.running
+	c.mu.Unlock()
+	if orphans != 0 || running {
+		t.Errorf("the loop returned with %d landing(s) still pending (running=%v) — a landing that arrived while the drop lines printed was orphaned, and nothing is coming for it (ADR 0088 D6.5)", orphans, running)
+	}
+	// AND ITS OBSERVABLE HALF: the orphan's symptom is a tree that landed in
+	// silence, so the ◷ line naming it is what a reader of the log has.
+	s := out.String()
+	if l := ldiLine(s, AbbrevHome(second)); !strings.Contains(l, ldiStopping) {
+		t.Errorf("the landing that arrived mid-sentence got no %q line (its line: %q) — it landed and no reader can tell:\n%s", ldiStopping, l, s)
+	}
+	if l := ldiLine(s, AbbrevHome(first)); !strings.Contains(l, ldiStopping) {
+		t.Errorf("the first dropped landing lost its own line (%q), so this arm is not measuring two rounds of the loop:\n%s", l, s)
+	}
+	// What the re-read does NOT do: judge it. Behind a fired stop both tips
+	// are D6.6's to read, and an arm that let one through here would be
+	// pinning the opposite of D6.5.
+	if n := len(landedRuns(t, secondLog)); n != 0 {
+		t.Errorf("the landing picked up by the re-read was JUDGED %d time(s) — the set is dropped behind a stop, not worked through (ADR 0088 D6.5)", n)
+	}
+	if n := len(landedRuns(t, firstLog)); n != 0 {
+		t.Errorf("the first landing was judged %d time(s) by a launcher that was already stopping", n)
+	}
+	if tree, v := landedRecorded(landedJudgeRule, second); v != landUnanswered {
+		t.Errorf("the re-read's landing recorded %s %s — nothing judged it", tree, v)
+	}
+}
