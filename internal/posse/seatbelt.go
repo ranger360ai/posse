@@ -2929,8 +2929,8 @@ func (a *App) renderSeatbeltInto(w wallWrite, ag *AgentFile, cwd string, stateDi
 		}
 	}
 	p := filepath.Join(dest, "seatbelt.sb")
-	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
+	// With the seat store's wall applied (ranger-base-5blmt, seatbeltseatstore.go).
+	writable, carve := a.seatbeltSets(ag, cwd, gatesDir, stateDirs...)
 	// The ssh keys a seat that is not the pusher must not read
 	// (ranger-base-7m3up; ighvi closed the bwrap arm of the same list).
 	if _, err := withSSHKeyReadDeny(ag, cwd, &carve); err != nil {
@@ -2965,8 +2965,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 		return err
 	}
 	gatesDir := a.GatesDir(ag.Name)
-	writable := a.SeatbeltWritable(ag, cwd, gatesDir, stateDirs...)
-	carve := a.SeatbeltCarveOut(ag, cwd, gatesDir, writable, stateDirs...)
+	writable, carve := a.seatbeltSets(ag, cwd, gatesDir, stateDirs...)
 	sshKeys, err := withSSHKeyReadDeny(ag, cwd, &carve)
 	if err != nil {
 		return err

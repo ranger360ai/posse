@@ -856,10 +856,11 @@ func PrepareSessionHead(t *SessionTree, walled, caged bool, warn io.Writer) erro
 		}
 	}
 	// The seat's own object store, which the L3 and L4 walls bind over
-	// `<common>/objects` (ranger-base-21i98, ADR 0099 D1). Not on darwin's
-	// seatbelt tier, which cannot bind (D7).
+	// `<common>/objects` (ranger-base-21i98, ADR 0099 D1) and darwin's
+	// seatbelt tier grants in place of that dir, which it denies
+	// (ranger-base-5blmt).
 	if seatStoreMechanism(caged) {
-		if err := prepareSeatStore(t); err != nil {
+		if err := prepareSeatStoreAt(t, seatStoreSideless(caged)); err != nil {
 			return err
 		}
 	}

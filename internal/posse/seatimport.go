@@ -28,8 +28,9 @@ package posse
 //     `pack-objects` carries a loose object whose bytes do not match its name
 //     without complaint, and index-pack files it under the hash of its bytes.
 //
-// No store, no work: every seat before the per-seat store lands, and darwin
-// after it, gets a no-op here.
+// No store, no work: a seat with no store gets a no-op here. darwin's
+// seatbelt seats have one since ranger-base-5blmt (seatbeltseatstore.go), so
+// this is no longer a no-op there.
 //
 // THE CALLERS, in the order the design names them: the splice, before
 // `branch -f` (spliceDetachedWork — git refuses a `branch -f` onto a commit

@@ -90,6 +90,9 @@ var WallRenderSources = []string{
 	"internal/posse/wall.go",
 	"internal/posse/gates.go",
 	"internal/posse/hookskip.go",
+	// The git shim's seat-object-env arm, and the seatbelt profile's seat
+	// store swap (ranger-base-5blmt).
+	"internal/posse/seatbeltseatstore.go",
 	"internal/posse/cage.go",
 	"internal/posse/cagelauncher.go",
 	"internal/posse/cageinner.go",

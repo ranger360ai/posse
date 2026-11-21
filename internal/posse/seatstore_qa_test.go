@@ -198,15 +198,22 @@ func TestQASeatStorePrepareFollowsNoLinkOutOfTheStore(t *testing.T) {
 	}
 }
 
-// darwin's tier cannot bind, so its walled prepare makes no store (ADR 0099
-// D7) — and the container tier always does.
+// Every walled tier gets a store since ranger-base-5blmt: bwrap and the
+// container bind it, darwin's sandbox-exec grants it beside a deny. Only the
+// sandbox-exec tier's store is sideless.
 func TestQASeatStoreMechanism(t *testing.T) {
 	t.Parallel()
 	if !seatStoreMechanism(true) {
 		t.Error("the container tier must always get a seat store")
 	}
-	if got := seatStoreMechanism(false); got != (WallMechanism() == WallBwrap) {
+	if got := seatStoreMechanism(false); got != (WallMechanism() != "") {
 		t.Errorf("seatStoreMechanism(false) = %v on a host whose mechanism is %q", got, WallMechanism())
+	}
+	if seatStoreSideless(true) {
+		t.Error("the container tier mounts the shared store at a side path; it is never sideless")
+	}
+	if got := seatStoreSideless(false); got != (WallMechanism() == WallSandboxExec) {
+		t.Errorf("seatStoreSideless(false) = %v on a host whose mechanism is %q", got, WallMechanism())
 	}
 }
 

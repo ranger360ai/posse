@@ -59,9 +59,20 @@ unknown and fails toward keeping work: never "landed", "empty" or "safe to
 remove".
 
 **D7 darwin.** D1 is the L3 and L4 wall. D2, D3 (a no-op without a store) and
-D5 apply on every tier. Not closed here:
+D5 apply on every tier.
 
-- ranger-base-hxens
+*Amended by ranger-base-5blmt (design ranger-base-hxens).* darwin's
+sandbox-exec cannot bind, so it gets the same store by a grant and a deny
+instead of a mount. The seatbelt writable set drops `<common>/objects` and
+grants `<SeatWallDir>/seat-objects`, whose `info/alternates` names the real
+`<common>/objects` (no side path). `<common>/objects` is in the carve-out's
+Deny explicitly, so a PID `writable:` extra over an ancestor cannot reopen it
+and the rename seal covers that ancestor. The L1 git shim exports
+`GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` only when the
+git it runs resolves to the seat's own common dir. The deny is what holds: a
+git that skips the shim gets no env, and its object write is refused rather
+than landing in the shared store. D3's import finds the store on this tier
+too. `internal/posse/seatbeltseatstore.go` has the measurement.
 
 ## As built (ranger-base-21i98)
 

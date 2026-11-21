@@ -241,10 +241,9 @@ func TestQASeatbeltWalledSeatCommitsDetachedAndCannotWriteARef(t *testing.T) {
 	if err := PrepareSessionHead(st, true, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// The seat's git commits into its own store, as the L1 shim points it
+	// (ranger-base-5blmt): the shipped profile denies `<common>/objects`.
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree)
 	if strings.Contains(mustRead(t, prof), filepath.Join("refs", "heads")) {
 		t.Errorf("the profile rendered over a detached walled seat names refs/heads:\n%s", wdLinesWith(mustRead(t, prof), filepath.Join("refs", "heads")))
 	}
@@ -252,12 +251,16 @@ func TestQASeatbeltWalledSeatCommitsDetachedAndCannotWriteARef(t *testing.T) {
 	sh := "echo walled >> " + filepath.Join(f.tree, "work.txt") +
 		" && git -C " + f.tree + " add work.txt" +
 		" && git -C " + f.tree + " commit -q -m 'walled commit' -- work.txt"
-	if ok, out := wgRun(t, prof, sh); !ok {
+	if ok, out := wgRun(t, prof, pre+sh); !ok {
 		t.Fatalf("a walled seat cannot commit on its detached HEAD under the profile:\n%s", out)
 	}
 	head := mustGit(t, f.tree, "rev-parse", "HEAD")
 	if head == cut {
 		t.Fatal("the commit exited 0 and HEAD did not move")
+	}
+	// The commit is the seat's alone until the landing imports it.
+	if siHas(t, f.repo, head) {
+		t.Errorf("the walled seat's commit %s is already in the shared store — it was written past the seat store", head)
 	}
 	for _, c := range []string{
 		"git -C " + f.tree + " update-ref refs/heads/" + f.branch + " " + head,
@@ -265,7 +268,7 @@ func TestQASeatbeltWalledSeatCommitsDetachedAndCannotWriteARef(t *testing.T) {
 		"git -C " + f.tree + " update-ref refs/heads/posse/new-probe " + head,
 		"git -C " + f.tree + " update-ref refs/heads/main " + head,
 	} {
-		if ok, out := wgRun(t, prof, c); ok {
+		if ok, out := wgRun(t, prof, pre+c); ok {
 			t.Errorf("a walled seat's profile allowed `%s`:\n%s", c, out)
 		}
 	}
@@ -277,6 +280,9 @@ func TestQASeatbeltWalledSeatCommitsDetachedAndCannotWriteARef(t *testing.T) {
 	}
 	if now := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch); now != head {
 		t.Errorf("the splice did not land the walled seat's work: %s vs %s", now, head)
+	}
+	if !siHas(t, f.repo, head) {
+		t.Errorf("the splice moved the branch to %s and the shared store does not hold it — the import was a no-op on this tier", head)
 	}
 }
 

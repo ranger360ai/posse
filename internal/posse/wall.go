@@ -530,8 +530,12 @@ func (a *App) renderWallInto(mech string, w wallWrite, ag *AgentFile, rt *Runtim
 		// olr0g) rides in front of sandbox-exec as `/usr/bin/env K=V …`: an
 		// executable, so it reads the same after an `exec` or an assignment
 		// list as sandbox-exec itself did. bwrap's arm sets it in the argv.
+		// The seat store's two variables ride the same prefix: the L1 git
+		// shim reads them to point this seat's own repo, and only it, at the
+		// store the profile grants (ranger-base-5blmt, seatbeltseatstore.go).
 		home, _ := os.UserHomeDir()
-		return WallRender{Mechanism: m, Artifact: prof, Prefix: seatCacheEnvPrefix(seatCacheEnv(SeatCacheDir(home, cwd))) + SeatbeltPrefix(prof)}, nil
+		env := append(seatCacheEnv(SeatCacheDir(home, cwd)), seatStoreEnv(ag, home, cwd)...)
+		return WallRender{Mechanism: m, Artifact: prof, Prefix: seatCacheEnvPrefix(env) + SeatbeltPrefix(prof)}, nil
 	case WallBwrap:
 		args, _, err := a.renderBwrapWall(ag, rt, cwd, w)
 		if err != nil {

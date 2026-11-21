@@ -227,7 +227,12 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	// Fifteen since ranger-base-pe5g5: walleddetach_qa_test.go borrows wgRun
 	// to commit, under the shipped profile, on a tree the walled prepare
 	// detached, and expects the kernel to refuse every refs/heads write.
-	if len(scanned) != 15 {
-		t.Errorf("expected the fifteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	//
+	// Sixteen since ranger-base-5blmt: seatbeltseatstore_qa_test.go runs
+	// every mutation of the shared object store under the rendered profile
+	// and expects the kernel to refuse it, and a seat's commit to land in its
+	// own store.
+	if len(scanned) != 16 {
+		t.Errorf("expected the sixteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }

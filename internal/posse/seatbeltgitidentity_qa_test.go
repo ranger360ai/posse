@@ -729,12 +729,10 @@ func TestQAConfigLockDenyMovesTheRefusalToLockCreation(t *testing.T) {
 func TestQASessionLifeStaysGreenUnderTheConfigDeny(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	f := giNewFixture(t)
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// As a seat commits: into its own store (ranger-base-5blmt).
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree)
 	before := mustGit(t, f.tree, "rev-parse", "HEAD")
-	sh := "echo caged >> " + filepath.Join(f.tree, "work.txt") +
+	sh := pre + "echo caged >> " + filepath.Join(f.tree, "work.txt") +
 		" && git -C " + f.tree + " add work.txt" +
 		" && git -C " + f.tree + " commit -q -m 'caged commit' -- work.txt" +
 		" && git -C " + f.tree + " checkout -q -- work.txt" +
@@ -863,13 +861,16 @@ func TestQAWorktreeIdentityChainRefusedButTheLauncherIsUnaffected(t *testing.T) 
 	// UNSANDBOXED git the launcher runs at land time still works. This is
 	// the measurement ADR 0038 item 2 asked for in place of the assumption.
 	f := giNewFixture(t)
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok, out := wgRun(t, prof, "echo caged >> "+filepath.Join(f.tree, "work.txt")+
+	// As a seat commits: into its own store (ranger-base-5blmt).
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree)
+	if ok, out := wgRun(t, prof, pre+"echo caged >> "+filepath.Join(f.tree, "work.txt")+
 		" && git -C "+f.tree+" add work.txt && git -C "+f.tree+" commit -q -m caged -- work.txt"); !ok {
 		t.Fatalf("the session could not commit under the identity-chain deny:\n%s", out)
+	}
+	// The launcher reads the seat's commit only once it is imported, as every
+	// landing does before it touches the tree (seatimport.go).
+	if err := importSeatObjects(&SessionTree{Path: f.tree, Repo: f.repo}); err != nil {
+		t.Fatal(err)
 	}
 	commitIn(t, f.repo, "base.txt", "moved on\n", "operator work")
 	mustGit(t, f.tree, "rev-parse", "--git-dir")

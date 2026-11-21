@@ -32,8 +32,10 @@ package posse
 //
 // What the seat writes reaches the shared store only through the re-hashing
 // import (seatimport.go), at the splice, at retire/prune and on every watch
-// pass. darwin's seatbelt cannot remap a path, so there is no store there and
-// the import is a no-op (ADR 0099 D7).
+// pass. darwin's seatbelt cannot remap a path, so there the store is GRANTED
+// beside a deny on `<common>/objects` and the L1 git shim points the seat's
+// own repo at it (ranger-base-5blmt, seatbeltseatstore.go); the import is the
+// same import.
 //
 // THE SIDE PATH'S MOUNT MUST NOT READ ITS SOURCE THROUGH THE STORE'S BIND.
 // Both mechanisms resolve a bind's SOURCE in the host's view — bwrap through
@@ -169,11 +171,21 @@ func readSeatWallOrigin(wall string) (tree, common string, ok bool) {
 }
 
 // seatStoreMechanism answers whether this launch's wall can put the store up:
-// the container tier always, the seatbelt tier only where it is rendered by
-// bwrap. darwin's sandbox-exec cannot bind, so the walled-but-not-caged tier
-// there keeps the shared `objects` grant (ADR 0099 D7).
+// the container tier always, and the seatbelt tier at both of its
+// mechanisms. bwrap binds the store over `<common>/objects`; darwin's
+// sandbox-exec cannot bind, and since ranger-base-5blmt it denies
+// `<common>/objects` instead and grants the store, which the L1 git shim
+// points the seat's own repo at (seatbeltseatstore.go). Before that bead the
+// darwin tier kept the shared `objects` grant (ADR 0099 D7's residual).
 func seatStoreMechanism(caged bool) bool {
-	return caged || WallMechanism() == WallBwrap
+	return caged || WallMechanism() != ""
+}
+
+// seatStoreSideless is whether this launch's store has NO side path: the
+// seatbelt tier at sandbox-exec, where nothing is mounted, the shared store
+// is read at its own name, and the store's alternates name that name.
+func seatStoreSideless(caged bool) bool {
+	return !caged && WallMechanism() == WallSandboxExec
 }
 
 // prepareSeatStore makes the wall dir, its origin file, the store and the
@@ -197,7 +209,13 @@ func seatStoreMechanism(caged bool) bool {
 // `info/alternates` must never hand this launcher a write outside the store.
 // The file is removed and created exclusively rather than truncated, so a
 // hard link the seat made there is replaced and not written through.
-func prepareSeatStore(t *SessionTree) error {
+func prepareSeatStore(t *SessionTree) error { return prepareSeatStoreAt(t, false) }
+
+// prepareSeatStoreAt is that, with `sideless` choosing what the alternates
+// name (seatStoreSideless): the side path where a mount puts the shared store
+// there, and the shared store's own name at darwin's seatbelt, which mounts
+// nothing — there the side path is neither made nor named.
+func prepareSeatStoreAt(t *SessionTree, sideless bool) error {
 	if t == nil || t.Path == "" {
 		return nil
 	}
@@ -217,7 +235,11 @@ func prepareSeatStore(t *SessionTree) error {
 	if err := writeSeatWallOrigin(l.Wall, t.Path, filepath.Dir(l.Objects)); err != nil {
 		return err
 	}
-	for _, d := range []string{l.Store, l.Base} {
+	dirs, alternate := []string{l.Store, l.Base}, l.Base
+	if sideless {
+		dirs, alternate = []string{l.Store}, l.Objects
+	}
+	for _, d := range dirs {
 		fi, err := os.Lstat(d)
 		switch {
 		case err == nil && !fi.IsDir():
@@ -252,7 +274,7 @@ func prepareSeatStore(t *SessionTree) error {
 	if err != nil {
 		return Die("seat store: %s/%s could not be written (%v)", AbbrevHome(l.Store), alt, err)
 	}
-	if _, err := f.WriteString(l.Base + "\n"); err != nil {
+	if _, err := f.WriteString(alternate + "\n"); err != nil {
 		f.Close()
 		return Die("seat store: %s/%s could not be written (%v)", AbbrevHome(l.Store), alt, err)
 	}

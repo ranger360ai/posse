@@ -409,15 +409,12 @@ func TestQAWorktreeGrantRefusesSharedGitStateUnderSandboxExec(t *testing.T) {
 func TestQAWorktreeCommitStaysGreenUnderTheNarrowedProfile(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	f := wgNewFixture(t)
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree) // as a seat commits (ranger-base-5blmt)
 	before := mustGit(t, f.tree, "rev-parse", "HEAD")
 	sh := "echo caged >> " + filepath.Join(f.tree, "work.txt") +
 		" && git -C " + f.tree + " add work.txt" +
 		" && git -C " + f.tree + " commit -q -m 'caged commit' -- work.txt"
-	if ok, out := wgRun(t, prof, sh); !ok {
+	if ok, out := wgRun(t, prof, pre+sh); !ok {
 		t.Fatalf("a plain worktree commit is refused under the narrowed profile:\n%s\n\nprofile:\n%s", out, mustRead(t, prof))
 	}
 	after := mustGit(t, f.tree, "rev-parse", "HEAD")
@@ -433,7 +430,7 @@ func TestQAWorktreeCommitStaysGreenUnderTheNarrowedProfile(t *testing.T) {
 	// The same profile, same session, one command later: main is out of
 	// reach. The commit above is what makes this a narrowing and not a
 	// wall — both halves have to be true at once.
-	if ok, _ := wgRun(t, prof, "git -C "+f.tree+" update-ref refs/heads/main "+after); ok {
+	if ok, _ := wgRun(t, prof, pre+"git -C "+f.tree+" update-ref refs/heads/main "+after); ok {
 		t.Errorf("the profile that let the commit through also let main move")
 	}
 }
@@ -563,11 +560,8 @@ func TestQAWorktreeCommitStaysGreenAfterPackRefs(t *testing.T) {
 
 	f := wgNewFixture(t)
 	wgPack(t, f)
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok, out := wgRun(t, prof, commit(f)); !ok {
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree) // as a seat commits (ranger-base-5blmt)
+	if ok, out := wgRun(t, prof, pre+commit(f)); !ok {
 		t.Fatalf("a worktree commit is refused after a pack-refs:\n%s\n\nprofile:\n%s", out, mustRead(t, prof))
 	}
 	after := mustGit(t, f.tree, "rev-parse", "HEAD")
@@ -601,7 +595,7 @@ func TestQAWorktreeCommitStaysGreenAfterPackRefs(t *testing.T) {
 			return "echo 'exit 0' > " + filepath.Join(f.common, "hooks", "pre-push")
 		}},
 	} {
-		if ok, out := wgRun(t, prof, p.sh(f)); ok {
+		if ok, out := wgRun(t, prof, pre+p.sh(f)); ok {
 			t.Errorf("the create grant bought back %s:\n%s", p.what, out)
 		}
 	}
@@ -688,13 +682,10 @@ func TestQAWorktreeCommitNeedsTheRefsParentDirectory(t *testing.T) {
 func TestQAWorktreeCommitLeavesNoStrayPackedRefsLock(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	f := wgNewFixture(t)
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree) // as a seat commits (ranger-base-5blmt)
 	lock := filepath.Join(f.common, "packed-refs.lock")
 	commit := func(name string) (bool, string) {
-		return wgRun(t, prof, "echo "+name+" >> "+filepath.Join(f.tree, "work.txt")+
+		return wgRun(t, prof, pre+"echo "+name+" >> "+filepath.Join(f.tree, "work.txt")+
 			" && git -C "+f.tree+" add work.txt"+
 			" && git -C "+f.tree+" commit -q -m "+name+" -- work.txt")
 	}
@@ -835,13 +826,10 @@ func wgRunSeqArm(t *testing.T, arm wgSeqArm) {
 
 	f := wgNewFixture(t)
 	clean, conflict := wgSequencer(t, f)
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree) // as a seat commits (ranger-base-5blmt)
 	if arm.prep != nil {
 		for _, sh := range arm.prep(f, clean, conflict) {
-			wgRun(t, prof, sh) // may fail: the conflict IS the setup
+			wgRun(t, prof, pre+sh) // may fail: the conflict IS the setup
 		}
 		// Prep's exit codes are ignored, so this is what says it worked. An
 		// arm that ends a sequencer git never started measures the grant
@@ -851,7 +839,7 @@ func wgRunSeqArm(t *testing.T, arm wgSeqArm) {
 		}
 	}
 	for _, sh := range arm.steps(f, clean, conflict) {
-		ok, out := wgRun(t, prof, sh)
+		ok, out := wgRun(t, prof, pre+sh)
 		if !ok {
 			t.Errorf("refused under the ADR 0059 grant, which is what the grant exists to allow:\n  %s\n%s", sh, out)
 		}
@@ -916,16 +904,13 @@ func wgRunSeqArm(t *testing.T, arm wgSeqArm) {
 func wgRunPackedRefRewrite(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	f := wgNewFixture(t)
-	wgPack(t, f) // the session's ref now lives ONLY in packed-refs
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
+	wgPack(t, f)                                             // the session's ref now lives ONLY in packed-refs
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree) // as a seat commits (ranger-base-5blmt)
 	packed := filepath.Join(f.common, "packed-refs")
 	before := mustRead(t, packed)
 	del := "git -C " + f.repo + " update-ref -d refs/heads/" + f.branch
 
-	ok, out := wgRun(t, prof, del)
+	ok, out := wgRun(t, prof, pre+del)
 	if ok {
 		t.Errorf("the grant let a session delete a PACKED ref — packed-refs is rewritable through the lock after all:\n%s", out)
 	}
@@ -1016,20 +1001,17 @@ func wgRunAliasArm(t *testing.T, arm wgAliasArm) {
 	t.Helper()
 	sbSkipUnlessSandboxable(t)
 	f := wgNewFixture(t)
-	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
-	if err != nil {
-		t.Fatal(err)
-	}
+	prof, pre := wgSeatProfile(t, f.a, f.ag, f.repo, f.tree) // as a seat commits (ranger-base-5blmt)
 	packed := filepath.Join(f.common, "packed-refs")
 	before := mustRead(t, packed)
 	mainRef := mustGit(t, f.repo, "rev-parse", "refs/heads/main")
 
 	if arm.pre != nil {
-		if ok, out := wgRun(t, prof, arm.pre(f)); !ok {
+		if ok, out := wgRun(t, prof, pre+arm.pre(f)); !ok {
 			t.Fatalf("the setup for %q was refused, so the refusal below would be that refusal and not the one this arm is about:\n%s", arm.what, out)
 		}
 	}
-	if ok, out := wgRun(t, prof, arm.sh(f)); ok != arm.want {
+	if ok, out := wgRun(t, prof, pre+arm.sh(f)); ok != arm.want {
 		t.Errorf("%s: got %v, want %v — the lock name is a grant on ONE file and this is the list of ways it could stop being one:\n%s",
 			arm.what, ok, arm.want, out)
 	}
@@ -1260,4 +1242,37 @@ func TestQASequencerNeedsThePackedRefsLock(t *testing.T) {
 	if err != nil {
 		t.Errorf("arm 2: the path-limited commit after a clean cherry-pick was refused: %v", err)
 	}
+}
+
+// wgSeatProfile renders the profile a dispatched seat in tree runs under —
+// RenderSeatbelt, the shipped path — after preparing its store the way the
+// darwin launch does, and returns beside it the shell prelude that exports
+// what the L1 git shim exports for that tree's repo. Pins that commit with a
+// plain `git` under the SHIPPED profile prefix their commands with it, so
+// they commit as a seat does; without it every object write is refused by
+// `<common>/objects`'s deny, which is the wall and not what those pins are
+// about. TestQASeatObjectEnvScopesToTheSeatsOwnRepo is what says the shim
+// really exports this, and only for this repo.
+func wgSeatProfile(t *testing.T, a *App, ag *AgentFile, repo, tree string, stateDirs ...string) (prof, pre string) {
+	t.Helper()
+	if err := prepareSeatStoreAt(&SessionTree{Path: tree, Repo: repo}, true); err != nil {
+		t.Fatal(err)
+	}
+	prof, err := a.RenderSeatbelt(ag, tree, stateDirs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir() // the home the render and the prepare both read
+	for _, e := range seatStoreEnv(ag, home, tree) {
+		switch e.Key {
+		case seatObjectsEnvVar:
+			pre += "GIT_OBJECT_DIRECTORY=" + shellQuote(e.Value) + "; "
+		case seatCommonEnvVar:
+			pre += "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + shellQuote(filepath.Join(e.Value, "objects")) + "; "
+		}
+	}
+	if pre == "" {
+		t.Fatalf("no seat store env for %s — the fixture is not a seat this wall applies to", tree)
+	}
+	return prof, pre + "export GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES; "
 }

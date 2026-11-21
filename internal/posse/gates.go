@@ -1599,6 +1599,9 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 	if cmd == "git" {
 		b.WriteString(renderAliasDeny(len(verbs) > 0))
 		b.WriteString(renderHookSkipEnvCall())
+		// darwin's seat store env (ranger-base-5blmt): after every refusal
+		// above, before anything below runs git for the command's effect.
+		b.WriteString(renderSeatObjectEnv(real))
 	}
 	// Before the sequencer audit, which runs these same verbs as a CHILD: a
 	// command this arm refuses must not reach git for its own effect.

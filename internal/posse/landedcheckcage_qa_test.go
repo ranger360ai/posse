@@ -270,12 +270,28 @@ func TestQAEveryCageRenderCarriesTheSecretMasks(t *testing.T) {
 			if !before("withRexNodeReadDeny") {
 				t.Errorf("%s renders a cage at line %d without calling withRexNodeReadDeny first — the child reads the rex tsnet node's tailnet credential (ranger-base-k06gw)", who, render)
 			}
-			if !before("SeatbeltCarveOut") && !before("credentialReadDenyLiterals") {
+			// seatbeltSets is the seatbelt mechanism's writable set and
+			// carve-out with the seat store's wall applied (ranger-base-5blmt),
+			// and it is a carrier only because its body calls SeatbeltCarveOut
+			// — which the check after this loop holds it to.
+			if !before("SeatbeltCarveOut") && !before("seatbeltSets") && !before("credentialReadDenyLiterals") {
 				t.Errorf("%s renders a cage at line %d without reaching the credential denies first (SeatbeltCarveOut or credentialReadDenyLiterals) — the child reads every runtime's credential file (ranger-base-6b46n, ranger-base-hw18)", who, render)
 			}
 		}
 	}
 	if paths < 3 {
 		t.Fatalf("%d function(s) in this module render a cage (%v); there are three — bwrapRender, RenderSeatbelt, boxLandedCage — so the sweep is reading less than the tree (ranger-base-6b46n)", paths, renders)
+	}
+	// The carrier above is honest only while seatbeltSets reaches the
+	// credential denies itself.
+	src, err := os.ReadFile("seatbeltseatstore.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	if i := strings.Index(body, "func (a *App) seatbeltSets("); i < 0 {
+		t.Error("seatbeltSets is gone from seatbeltseatstore.go; drop it from the carriers above")
+	} else if j := strings.Index(body[i:], "\n}\n"); j < 0 || !strings.Contains(body[i:i+j], "a.SeatbeltCarveOut(") {
+		t.Error("seatbeltSets no longer calls SeatbeltCarveOut, so a render reaching it no longer carries the credential denies (ranger-base-6b46n)")
 	}
 }
