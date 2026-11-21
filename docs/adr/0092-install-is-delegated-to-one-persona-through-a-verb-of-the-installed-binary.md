@@ -271,7 +271,12 @@ that whole read before a seat is allowed to run it.
   suite slots were held at launch and 146s of the 1148s wall was the verb
   queueing behind sibling seats, so the envelope is confirmed under
   contention and its quiet-box floor is still ranger-base-zhw0h's 11m57s for
-  `make test` alone. See "Measured versus assumed" below.
+  `make test` alone. The second install read **16m57s**
+  (ranger-base-76esp, 2026-11-20, 3c0e3c5e..0e1cb6c0) with only 10s of queue
+  in it — wall minus queue is 1007s against jnf2z's 1002s, so at a loadavg
+  near 11 the verb's own work prices at ~1000s on this box and the queue is
+  what moves the wall. A quiet-box reading is still unmeasured after both.
+  See "Measured versus assumed" below.
 - The delegate can change the walls that fence the delegate. Every persona
   could already do that through a landing; what stops it is guardrail 1. Code
   reaches the binary only after the coordinator's push. That is the same
