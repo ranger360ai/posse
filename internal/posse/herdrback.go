@@ -3904,12 +3904,19 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	if _, err := b.App.RenderPersonaModeFor(ag, rt, m.Dir); err != nil {
 		return false, err
 	}
+	// Does this relaunch really run inside the L4 cage? One local, read by
+	// the trust seed below, by PrepareSessionHead and by the cage wrap at
+	// the foot of this function (ranger-base-r9slg). planLaunch keeps one
+	// `caged` for the same reason: the detach decision and the wrap have to
+	// describe one session, and two spellings of it is a seat detached for a
+	// wall it is not behind, or behind one it was not detached for.
+	caged := m.Cage == CageContainer && b.App.ContainerAvailable()
 	// Same reason as the launch, and the same reason RelaunchAgent renders
 	// everything else again rather than trusting the meta: this re-types a
 	// full persona command into a live pane, so it has to arrive at a
 	// promptable screen (rangerhq-w4uf). Idempotent — a dir seeded at
 	// launch costs this path one read.
-	if m.Cage != CageContainer || !b.App.ContainerAvailable() {
+	if !caged {
 		if _, err := SeedClaudeTrust(b.ClaudeConfig, rt, m.Dir); err != nil {
 			return false, err
 		}
@@ -3998,6 +4005,33 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// from the predicate e241b14 extracted for exactly these two sites: the
 	// copy had no `rt != nil` arm, and — worse — nothing tied it to the
 	// refusal the answer is FOR, twenty lines below.
+	// Which HEAD this session's tree works on, on the one other path that
+	// renders a persona line (ranger-base-pe5g5, ranger-base-r9slg). The
+	// create asks this where the tier is resolved and this asks it here, for
+	// the identical reason: WallPrefix two lines below and WrapInCage at the
+	// foot of the function both read the tree's HEAD to decide the git grant,
+	// so a render that runs before the detach writes the refs/heads grant
+	// that slice exists to take out — and the file it writes is what the
+	// seat then runs behind for its whole life.
+	//
+	// Reachable although the create detaches: the two states that arrive here
+	// attached are a seat launched by a posse from before pe5g5 and a seat
+	// that ran `git checkout <branch>` in its own tree, which is the move the
+	// work prompt warns against in words (dispatch.go). Both are relaunched
+	// by THIS binary, so this is the line that decides what their wall says.
+	//
+	// The tree is rebuilt from the meta because the meta is the only record
+	// of it this path has — Repo and Branch are what the create wrote there
+	// for exactly the readers that cannot call EnsureSessionTree again. Both
+	// empty is a session in the shared checkout, where there is no session
+	// head to prepare and PrepareSessionHead would answer nil anyway; asking
+	// here keeps the shared checkout out of a function that detaches.
+	if m.Repo != "" && m.Branch != "" {
+		tree := &SessionTree{Repo: m.Repo, Path: m.Dir, Branch: m.Branch}
+		if err := PrepareSessionHead(tree, caged || wallRendered(m.Cage, rt), caged, b.warnWriter()); err != nil {
+			return false, err
+		}
+	}
 	if wallRendered(m.Cage, rt) {
 		if err := b.App.MCPConfigWallRefusal(ag, rt, m.Dir, inner); err != nil {
 			return false, err
@@ -4046,7 +4080,7 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 		return false, err
 	}
 	cmd := inner
-	if m.Cage == CageContainer && b.App.ContainerAvailable() {
+	if caged {
 		// No prompt file: a relaunch restarts a persona whose CLI died, it
 		// does not re-dispatch the bead (ADR 0013 §2 — resume is a typed
 		// prompt into a live session, never a second argv delivery).

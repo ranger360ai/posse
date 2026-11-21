@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The walled arm, without the cage. Detached, recorded, nothing under
@@ -197,6 +198,103 @@ func TestQAFirstWalledLaunchRendersNoBranchRef(t *testing.T) {
 	}
 	if strings.Contains(wall, filepath.Join("refs", "heads")) {
 		t.Errorf("the first walled launch rendered a refs/heads grant — the detach ran after the render (ranger-base-pe5g5):\n%s", wdLinesWith(wall, filepath.Join("refs", "heads")))
+	}
+}
+
+// The ORDER on the OTHER path that renders a persona line (ranger-base-r9slg).
+// RelaunchAgent re-types a full line into a pane that already exists, renders
+// its own wall to do it, and until this landed never asked PrepareSessionHead
+// — so a walled seat whose tree was ATTACHED when the relaunch ran got a wall
+// naming a refs/heads entry, and ran behind that file for the rest of its
+// life. Two states arrive here attached and both are relaunched by this
+// binary: a seat launched by a posse from before ranger-base-pe5g5, and a seat
+// that ran `git checkout <branch>` in its own tree, which is the move the work
+// prompt warns against in words (dispatch.go).
+//
+// The arm above drives the create and this one drives the re-type, because the
+// render is per path: TestQAWalledRelaunchSplicesAndAnUnwalledOneReattaches
+// drives PrepareSessionHead DIRECTLY and so can see neither.
+//
+// MUTATION RUN (reds this test): removing RelaunchAgent's PrepareSessionHead
+// call, which is the state this tree was in when the bead was filed.
+func TestQAAWalledRelaunchRendersNoBranchRef(t *testing.T) {
+	// No t.Parallel, and the skip: the package-level cage table is read, as
+	// in every walled-render pin of this tier.
+	if !AvailableCages[CageSeatbelt] {
+		t.Skipf("NOTHING MEASURED: this host realizes no seatbelt tier (%s unavailable)", WallMechanism())
+	}
+	b, fake := newTestBackend(t)
+	a := b.App
+	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(a.RuntimesDir(), "mycli.yaml"), "command: mycli {file}\nstate_dir: ~/.mycli-wd\n")
+	write(t, filepath.Join(a.AgentsDir, "ranger.md"),
+		"---\nname: ranger\ndescription: t\nruntime: mycli\ncage: seatbelt\n---\nwork\n")
+	// A runtime herdr can NAME, or the re-type refuses before it renders
+	// anything (ADR 0013 §1 property 3, relaunchdetection_qa_test.go).
+	herdrNames(t, fake, "claude", "mycli")
+	repo := wtRepo(t)
+	mustCreate(t, b, NewSessionOpts{Name: "wdr-1", Dir: repo, Agent: "ranger", Worktree: true})
+	tree, err := a.SessionTreePath(repo, "wdr-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := SessionBranch("wdr-1")
+	// The state the relaunch meets: a seat back on its branch, with the
+	// launcher's record cleared, which is what a pre-pe5g5 launch left and
+	// what a `git checkout <branch>` in the seat's own tree makes today.
+	if _, err := git(tree, "checkout", branch); err != nil {
+		t.Fatalf("fixture: the session tree could not be put back on %s: %v", branch, err)
+	}
+	if err := recordDetached(repo, branch, false); err != nil {
+		t.Fatal(err)
+	}
+	// CONTROL: an attached tree really is granted the ref, or an absent ref
+	// below would hold for a reason that is not the detach.
+	if !wdNamesARef(sessionGitGrants(tree)) {
+		t.Fatalf("CONTROL: an attached session tree's L2 grant names no refs/heads entry, so this test cannot see the detach take it away: %v", sessionGitGrants(tree))
+	}
+
+	// The fixture that reaches the re-type path: herdr stops reporting an
+	// agent, and the launch is pushed past the relaunch grace.
+	os.Remove(filepath.Join(fake, "agents.json"))
+	m, _ := b.readMeta("wdr-1")
+	m.Launched = m.Launched.Add(-time.Hour)
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Repo == "" || m.Branch == "" {
+		t.Fatalf("fixture: the meta records no session tree (repo %q, branch %q), so the relaunch has nothing to prepare", m.Repo, m.Branch)
+	}
+	if ok, err := b.RelaunchAgent("wdr-1", time.Second); err != nil || !ok {
+		t.Fatalf("relaunch: %v %v", ok, err)
+	}
+
+	if _, ok := treeDetachedHead(tree); !ok {
+		t.Error("a walled relaunch left its session tree on the branch — the next commit in it writes a ref the wall is meant to deny")
+	}
+	if !launchedDetached(repo, branch) {
+		t.Error("the walled relaunch's detach was not recorded, so the close would read it as the accidental (dybv) case and refuse to land the work")
+	}
+	file := "seatbelt.sb"
+	if WallMechanism() == WallBwrap {
+		file = bwrapArgsName
+	}
+	body, err := os.ReadFile(filepath.Join(a.GatesDir("ranger"), file))
+	if err != nil {
+		t.Fatalf("the relaunch wrote no %s to read the wall off: %v", file, err)
+	}
+	// NUL-separated on bwrap; a readable line either way.
+	wall := strings.ReplaceAll(string(body), "\x00", "\n")
+	// CONTROL: the wall really reaches this session's git dirs, or an absent
+	// ref proves nothing.
+	common := LinkedGitDirs(tree)
+	if len(common) != 2 || !strings.Contains(wall, absResolve(filepath.Join(common[1], "objects"))) {
+		t.Fatalf("CONTROL: the rendered %s does not grant this session's objects dir, so it is not the wall over this tree:\n%s", file, wall)
+	}
+	if strings.Contains(wall, filepath.Join("refs", "heads")) {
+		t.Errorf("the walled RELAUNCH rendered a refs/heads grant — the re-type path renders without asking PrepareSessionHead (ranger-base-r9slg):\n%s", wdLinesWith(wall, filepath.Join("refs", "heads")))
 	}
 }
 
