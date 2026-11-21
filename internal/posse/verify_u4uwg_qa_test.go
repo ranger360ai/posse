@@ -64,7 +64,7 @@ func TestQAU4uwgPolicyTierRowIsAddedForASettingsPinRuntime(t *testing.T) {
 		rt   *Runtime
 	}{
 		{"SettingsPin", &Runtime{Name: "claude", SettingsPin: func() string { return "{}" }}},
-		{"FleetSettings", &Runtime{Name: "claude", FleetSettings: func([]string) string { return "{}" }}},
+		{"FleetSettings", &Runtime{Name: "claude", FleetSettings: func([]string, ...string) string { return "{}" }}},
 	} {
 		p := Parity{Realized: map[string]RealizedGate{}}
 		applyPolicyPin(&p, c.rt)

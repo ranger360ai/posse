@@ -63,7 +63,10 @@ func TestQAFleetLaunchLineDisablesAutoMemory(t *testing.T) {
 	t.Parallel()
 	def := loadTestAgent(t, "---\nname: p\n---\nYou are p.\n")
 	got := def.RenderCommand()
-	if !strings.Contains(got, "--settings "+shellQuote(ClaudeFleetSettingsJSON(nil))) {
+	// The agent's own memory dir, because the payload grants it
+	// (ranger-base-hgcmw) and a want computed without it is a want no
+	// rendered line ever carries.
+	if !strings.Contains(got, "--settings "+shellQuote(ClaudeFleetSettingsJSON(nil, def.MemoryDir))) {
 		t.Fatalf("default claude command does not carry the fleet settings payload:\n%s", got)
 	}
 	if !strings.Contains(got, `"autoMemoryEnabled":false`) {

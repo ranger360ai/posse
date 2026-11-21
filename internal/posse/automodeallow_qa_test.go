@@ -113,7 +113,7 @@ func TestQAClaudeFleetAutoModeAllowLeavesEveryOtherPIDAlone(t *testing.T) {
 	if n := strings.Count(line, "--settings"); n != 1 {
 		t.Fatalf("rendered line carries %d --settings flags, want 1:\n%s", n, line)
 	}
-	if !strings.Contains(line, "--settings "+shellQuote(ClaudeFleetSettingsJSON(ag.Allow))) {
+	if !strings.Contains(line, "--settings "+shellQuote(ClaudeFleetSettingsJSON(ag.Allow, ag.MemoryDir))) {
 		t.Errorf("the carve-out did not reach the launch line:\n%s", line)
 	}
 	// The hand-written-command: payload is the security guarantee alone

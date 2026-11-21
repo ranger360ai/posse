@@ -135,7 +135,9 @@ const ClaudeFleetSettings = `{"autoMemoryEnabled":false,"permissions":{"defaultM
 
 // DefaultAgentCommand is the claude runtime's template — what a PID with
 // neither runtime: nor command: launches with.
-const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` ` + ClaudeStrictMCPFlag + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`
+// It names no `--add-dir` for the persona memory dir: that grant travels in
+// the {settings} payload instead (applyMemoryGrant, ranger-base-hgcmw).
+const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` ` + ClaudeStrictMCPFlag + ` --append-system-prompt "$(cat {file})" {settings} {skills} {allow} {deny}`
 
 // ClaudeAutoModeDefaults is the sentinel that keeps claude's own
 // `autoMode.allow` list alive when the launch adds an entry of its own.
@@ -353,35 +355,120 @@ func claudeAutoModeAllowJSON(allow []string) json.RawMessage {
 // the right order of loss: the carve-out removes friction, the pins are
 // the security guarantee, and the pin's absence is the condition the
 // credential-dir pin already refuses. Nothing silently half-renders.
-func ClaudeFleetSettingsJSON(allow []string) string {
+// memoryDir is the persona's own memory dir, and it is in this payload
+// rather than on the line as `--add-dir` because claude GATES that flag
+// behind a trust dialog and does not gate this key (ranger-base-hgcmw).
+// MEASURED 2026-11-20 on claude 2.1.330, linux, this box, three arms that
+// differ in how one directory inside an untrusted git repo is granted:
+// `--add-dir` raises "Adding a new directory: … Trusting it trusts that
+// whole repository" and waits; this key raises nothing; and the same flag
+// pointed at a directory inside the cwd's OWN (trusted) repo raises
+// nothing either — so what the dialog is about is the TARGET's trust, not
+// the flag. Both spellings grant the same reach: with
+// permissions.blockWritesOutsideWorkingDirectories on, an Edit inside the
+// granted dir is taken through either one and refused through neither.
+// docs/notes.d/ranger-base-hgcmw.md has the arms and the captures.
+//
+// A grant with no pin is the one new shape here: a box with no home
+// directory names no credential dirs and still names a memory dir, and the
+// persona's ORDERS.md is the write that must not start asking. So the
+// const-plus-grant is a RETURN now and not a fallthrough, and the
+// carve-out stays on the pinned side of that branch — the order of loss
+// the paragraph above fixed, unchanged.
+func ClaudeFleetSettingsJSON(allow []string, memoryDir ...string) string {
 	pin := settingsPin()
-	if len(pin) == 0 {
+	grants := claudeGrantableDirs(memoryDir)
+	if len(pin) == 0 && len(grants) == 0 {
 		return ClaudeFleetSettings
 	}
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(ClaudeFleetSettings), &m); err != nil {
 		return ClaudeFleetSettings
 	}
-	env := make(map[string]string, len(pin))
-	for _, v := range pin {
-		env[v.Key] = v.Value
-	}
-	b, err := json.Marshal(env)
-	if err != nil {
+	if !applyMemoryGrant(m, grants) {
 		return ClaudeFleetSettings
 	}
-	m["env"] = b
-	if !applyFieldPin(m) {
-		return ClaudeFleetSettings
-	}
-	if am := claudeAutoModeAllowJSON(allow); am != nil {
-		m["autoMode"] = am
+	if len(pin) > 0 {
+		env := make(map[string]string, len(pin))
+		for _, v := range pin {
+			env[v.Key] = v.Value
+		}
+		b, err := json.Marshal(env)
+		if err != nil {
+			return ClaudeFleetSettings
+		}
+		m["env"] = b
+		if !applyFieldPin(m) {
+			return ClaudeFleetSettings
+		}
+		if am := claudeAutoModeAllowJSON(allow); am != nil {
+			m["autoMode"] = am
+		}
 	}
 	out, err := json.Marshal(m)
 	if err != nil {
 		return ClaudeFleetSettings
 	}
 	return string(out)
+}
+
+// claudeGrantableDirs is which of the dirs handed to the payload claude can
+// actually be granted: absolute, non-empty, each once, in the order given.
+//
+// Relative entries are dropped rather than passed through, because claude
+// drops them itself — "a relative entry does not count", its own words for
+// permissions.additionalDirectories — and a payload that names one reads
+// like a grant that was made. The path is otherwise passed through
+// BYTE-FOR-BYTE, links and all: claude takes a working directory "exactly
+// as it is passed" and follows no link at it, so resolving one here would
+// change which paths the file tools reach, and this payload is replacing a
+// `--add-dir` that passed the same unresolved string.
+func claudeGrantableDirs(dirs []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, d := range dirs {
+		if d == "" || !filepath.IsAbs(d) || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	return out
+}
+
+// applyMemoryGrant adds dirs to the payload's
+// permissions.additionalDirectories, keeping whatever that key already
+// holds and appending only what it does not. False means the payload's own
+// permissions block did not parse — the caller's cue to render the const
+// alone rather than a half-merged object.
+func applyMemoryGrant(m map[string]json.RawMessage, dirs []string) bool {
+	if len(dirs) == 0 {
+		return true
+	}
+	perms := map[string]json.RawMessage{}
+	if raw, ok := m["permissions"]; ok {
+		if err := json.Unmarshal(raw, &perms); err != nil {
+			return false
+		}
+	}
+	var have []string
+	if raw, ok := perms["additionalDirectories"]; ok {
+		if err := json.Unmarshal(raw, &have); err != nil {
+			return false
+		}
+	}
+	merged := claudeGrantableDirs(append(append([]string{}, have...), dirs...))
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return false
+	}
+	perms["additionalDirectories"] = b
+	out, err := json.Marshal(perms)
+	if err != nil {
+		return false
+	}
+	m["permissions"] = out
+	return true
 }
 
 type AgentFile struct {
@@ -620,7 +707,7 @@ func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model 
 		r = rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir, writable...)
 	}
 	skills, _ := rt.SkillsText(ag.SkillsStateDir, ag.Skills)
-	out = renderPlaceholder(out, "{settings}", rt.FleetSettingsText(ag.Allow))
+	out = renderPlaceholder(out, "{settings}", rt.FleetSettingsText(ag.Allow, ag.MemoryDir))
 	out = renderPlaceholder(out, "{skills}", skills)
 	// {mode} is the PID channel for a CLI with no launch-time system flag:
 	// it selects the custom mode the launch rendered into the session tree

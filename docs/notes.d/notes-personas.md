@@ -72,7 +72,7 @@ would refuse the qualified `git commit -- <path>` the PID allows. See
 *Grok specifics*. Templates:
 
 ```
-claude: claude {model} --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}
+claude: claude {model} --append-system-prompt "$(cat {file})" {settings} {skills} {allow} {deny}
 codex:  codex {model} {skills} {deny} -a never --disable hooks -c allow_login_shell=false -c "projects={\"$PWD\"={trust_level=\"trusted\"}}" -c developer_instructions="$(cat {file})"
 grok:   grok {model} {skills} --permission-mode auto --no-leader --rules="$(cat {file})" {allow} {deny}
 ```
@@ -1683,8 +1683,23 @@ memory dir — the one memory kind posse owns (project memory belongs to
 beads: `bd remember` / `bd prime`; runtime memory belongs to the agent
 CLI). It is materialized at launch, seeded with `ORDERS.md` and a
 `.gitignore`, exposed to the process as `RHQ_PERSONA_DIR` and to the command
-template as `{memory}` (e.g. `--add-dir {memory}` for claude).
+template as `{memory}`.
 `posse memory <persona>` opens the standing orders in $EDITOR.
+
+How the SEAT is granted that dir is per-runtime and not a template detail.
+Codex names it as `--add-dir`, inside its sandbox grant, in the one mode
+where that flag is legal. Claude does NOT: it grants the dir in the
+`{settings}` payload, as `permissions.additionalDirectories`, because claude
+2.1.328 began gating `--add-dir` behind a trust dialog whenever the added
+dir sits inside a git repository nobody has trusted — which is every
+instance whose `personas/` is inside the repo the memory landing commits to
+— and a dispatched seat has nobody to answer a dialog. Both spellings grant
+the same reach; only one of them asks (MEASURED 2026-11-20 on claude
+2.1.330, ranger-base-hgcmw; the arms are in
+`docs/notes.d/ranger-base-hgcmw.md`). A hand-written `command:` that spells
+`--add-dir {memory}` itself still asks: posse's launch guarantees append and
+never remove an explicit spelling, so that flag is the PID author's to
+delete.
 
 The `.gitignore` is there because the landing below sweeps the WHOLE dir and
 that dir is also where a persona works: five `myai-suite*.out` captures of

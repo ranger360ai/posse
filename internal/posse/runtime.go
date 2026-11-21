@@ -465,7 +465,15 @@ type Runtime struct {
 	// carve-out a PID holding posse's or herdr's session verbs earns
 	// (ADR 0070 D2, ClaudeAutoModeCarveOut). Every other PID renders what
 	// it rendered before the parameter existed.
-	FleetSettings func(allow []string) string
+	//
+	// And the persona's memory dir, which this payload GRANTS rather than
+	// the template naming it as `--add-dir` (ranger-base-hgcmw): on claude
+	// the flag is gated by a trust dialog and this key is not. Trailing and
+	// variadic so every caller that has no memory dir to name — the pin
+	// readers, the probes — renders what it rendered before, and so that
+	// "no dir named" is spelled as "no grant" rather than as an empty
+	// entry claude would ignore anyway.
+	FleetSettings func(allow []string, memoryDir ...string) string
 	// TranscriptOffVar is the env var that makes this CLI write NO session
 	// transcript — the surface the per-repo transcript ceiling needs
 	// (TranscriptPin, transcript.go; ADR 0050's third channel, operator
@@ -1066,11 +1074,11 @@ func (rt *Runtime) EnsureUnattended(cmd string) string {
 // literal quotes in the template, because the payload now carries PATHS —
 // a home directory with an apostrophe in it would otherwise end the
 // literal and hand the shell the rest of the JSON as words.
-func (rt *Runtime) FleetSettingsText(allow []string) string {
+func (rt *Runtime) FleetSettingsText(allow []string, memoryDir ...string) string {
 	if rt.FleetSettings == nil {
 		return ""
 	}
-	return "--settings " + shellQuote(rt.FleetSettings(allow))
+	return "--settings " + shellQuote(rt.FleetSettings(allow, memoryDir...))
 }
 
 // EnsureSettingsPin guarantees the rendered line carries the credential-dir
@@ -2525,7 +2533,7 @@ var builtinRuntimes = []Runtime{
 		// surface for a version bump to move under the admission (D9's pin is
 		// for a ROUTED yes, and codex's is the one).
 		ReportsOnRex: true,
-		Command:      `claude {model} ` + ClaudeFleetFlags + ` ` + ClaudeStrictMCPFlag + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
+		Command:      `claude {model} ` + ClaudeFleetFlags + ` ` + ClaudeStrictMCPFlag + ` --append-system-prompt "$(cat {file})" {settings} {skills} {allow} {deny}`},
 	// SkillsVerified: re-measured 2026-10-12 (ranger-base-bdias) against the
 	// installed 0.153.4 — still reads <cwd>/.agents/skills only, still
 	// follows a symlink out of the cwd (TestQALiveSkillDiscoveryPerRuntime,

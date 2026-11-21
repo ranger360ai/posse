@@ -101,8 +101,15 @@ You are p.
 	if strings.HasSuffix(cmd, " ") {
 		t.Errorf("trailing space left by empty placeholders: %q", cmd)
 	}
-	if !strings.Contains(cmd, "--add-dir '"+ag.MemoryDir+"'") {
+	// The memory dir is still on the line, in the {settings} payload rather
+	// than as --add-dir (ranger-base-hgcmw): the flag is what claude gates
+	// behind a trust dialog, and losing the GRANT is the regression this
+	// line was written to catch.
+	if !strings.Contains(cmd, ag.MemoryDir) {
 		t.Errorf("default command lost {memory}: %q", cmd)
+	}
+	if strings.Contains(cmd, "--add-dir") {
+		t.Errorf("the claude line names --add-dir again; that is the trust dialog back (ranger-base-hgcmw): %q", cmd)
 	}
 }
 
@@ -146,15 +153,20 @@ func TestFleetSettingsSurviveRendering(t *testing.T) {
 	// ({settings}, ranger-base-rq83c): it carries the credential-dir pin,
 	// whose values are a property of the box. What this pin is about is
 	// unchanged — whatever that payload is, it reaches the line whole.
-	want := "--settings " + shellQuote(ClaudeFleetSettingsJSON(nil))
+	// The memory dir is in the payload too now (ranger-base-hgcmw), so the
+	// want is per-AGENT — each test agent has its own home and so its own
+	// memory dir — rather than one blob computed before either is loaded.
+	want := func(ag *AgentFile) string {
+		return "--settings " + shellQuote(ClaudeFleetSettingsJSON(nil, ag.MemoryDir))
+	}
 	def := loadTestAgent(t, "---\nname: p\n---\nYou are p.\n")
-	if got := def.RenderCommand(); !strings.Contains(got, want) {
-		t.Errorf("default command lost fleet settings:\n got %q\nwant substring %q", got, want)
+	if got := def.RenderCommand(); !strings.Contains(got, want(def)) {
+		t.Errorf("default command lost fleet settings:\n got %q\nwant substring %q", got, want(def))
 	}
 	explicit := loadTestAgent(t, "---\nname: p\ncommand: "+DefaultAgentCommand+"\ndeny: [Bash(git push:*)]\n---\nYou are p.\n")
 	got := explicit.RenderCommand()
-	if !strings.Contains(got, want) {
-		t.Errorf("explicit command lost fleet settings:\n got %q\nwant substring %q", got, want)
+	if !strings.Contains(got, want(explicit)) {
+		t.Errorf("explicit command lost fleet settings:\n got %q\nwant substring %q", got, want(explicit))
 	}
 	if !strings.Contains(got, "--disallowedTools 'Bash(git push:*)'") {
 		t.Errorf("deny list not rendered after settings flag: %q", got)
