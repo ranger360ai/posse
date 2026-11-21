@@ -20,7 +20,9 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // boxFixture builds a probe over a table of (pid, image, home) rows plus a
@@ -32,6 +34,18 @@ type boxFixtureProc struct {
 	exe       string // the path its exe link names; defaults to the subject path
 	home      string
 	noEnviron bool
+	// refused is a pid whose /proc/<pid>/exe the kernel would not let this
+	// reader read, while /proc/<pid> itself is still ours — what a seat in a
+	// child user namespace gets for every same-uid peer (ranger-base-rph5z).
+	refused bool
+	// alien is a pid of another uid: ExeOf refuses it AND it is not ours, so
+	// it is excluded rather than counted as unreadable.
+	alien bool
+	// comm is the kernel's program name, which stays readable when exe is
+	// refused. Empty means "the subject's own basename", so a `refused` row
+	// is a plausible loop by default; noComm means comm is unreadable too.
+	comm   string
+	noComm bool
 }
 
 // boxFixturePath is the subject of every fixture reading: a path no box has,
@@ -55,6 +69,9 @@ func boxFixture(onDiskIno string, procs []boxFixtureProc, records map[string]int
 				if p.pid != pid {
 					continue
 				}
+				if p.refused || p.alien {
+					return "", "", false
+				}
 				exe := p.exe
 				if exe == "" {
 					exe = path
@@ -62,6 +79,29 @@ func boxFixture(onDiskIno string, procs []boxFixtureProc, records map[string]int
 				return ids(p.ino), exe, true
 			}
 			return "", "", false
+		},
+		Owned: func(pid int) bool {
+			for _, p := range procs {
+				if p.pid == pid {
+					return !p.alien
+				}
+			}
+			return false
+		},
+		CommOf: func(pid int) (string, bool) {
+			for _, p := range procs {
+				if p.pid != pid {
+					continue
+				}
+				if p.noComm {
+					return "", false
+				}
+				if p.comm != "" {
+					return p.comm, true
+				}
+				return filepath.Base(path), true
+			}
+			return "", false
 		},
 		HomeOf: func(pid int) (string, bool) {
 			for _, p := range procs {
@@ -378,6 +418,306 @@ func TestQABoxCensusReadsAnImageThroughTheSameSpellingG18Does(t *testing.T) {
 	}
 }
 
+// --- ranger-base-rph5z: a refused read is not an absence ---
+
+// TestQABoxCensusNeverRendersAnAllClearWhenItWasRefusedAReadOfOurOwnProcesses
+// is the pin for the defect the security review found in this census as it was
+// first written, and
+// it is the file's own rule turned on the file: `procExe` answers the same
+// "not ok" for a pid that exited and for a link the kernel REFUSED, and the
+// first version dropped both silently. MEASURED by the security persona
+// 2026-11-21 from a
+// seat in a child user namespace: /proc listed 460 pids and every same-uid
+// peer's exe and environ were EACCES. From such a reader the census found no
+// candidates and rendered "no dispatch loop on this box runs …" — a false
+// all-clear about loops that may still be rendering pre-install walls, which
+// is the one sentence this file says must never be printable.
+func TestQABoxCensusNeverRendersAnAllClearWhenItWasRefusedAReadOfOurOwnProcesses(t *testing.T) {
+	t.Parallel()
+	// The caged reader: every same-uid peer refused, nothing readable.
+	path, probe := boxFixture("14541392", []boxFixtureProc{
+		{pid: 1185112, ino: "12591441", home: "/homes/weller", refused: true},
+		{pid: 1185185, ino: "14541392", home: "/homes/ranger", refused: true},
+	}, map[string]int{"/homes/weller": 1185112, "/homes/ranger": 1185185}, 9999)
+	r := readBoxLoops(path, probe)
+	if r.Unreadable != 2 {
+		t.Fatalf("both peers were refused and both are ours, so both are unreadable candidates; census counted %d", r.Unreadable)
+	}
+	if r.Err == nil {
+		t.Fatal("not one readable process of ours is an ABSTENTION, not an empty box")
+	}
+	s := r.Sentence()
+	if strings.Contains(s, "no dispatch loop on this box") {
+		t.Fatalf("THE false all-clear, rendered over two loops the reader was not allowed to see:\n%s", s)
+	}
+	if !strings.Contains(s, "dispatch (box): not read") {
+		t.Errorf("a reading with nothing readable must render as an abstention; got:\n%s", s)
+	}
+
+	// The partial reader: one peer readable and fresh, one refused. This is
+	// the sharper case — there IS a reading, and it must not pass itself off
+	// as a reading of the box.
+	path, probe = boxFixture("14541392", []boxFixtureProc{
+		{pid: 1185112, ino: "12591441", home: "/homes/weller", refused: true},
+		{pid: 1185185, ino: "14541392", home: "/homes/ranger"},
+	}, map[string]int{"/homes/weller": 1185112, "/homes/ranger": 1185185}, 9999)
+	r = readBoxLoops(path, probe)
+	if r.Err != nil {
+		t.Fatalf("one readable candidate is a reading: %v", r.Err)
+	}
+	if !r.Partial() || r.Unreadable != 1 {
+		t.Fatalf("one refused peer of ours makes this partial; Partial()=%v Unreadable=%d", r.Partial(), r.Unreadable)
+	}
+	if len(r.StaleLoops()) != 0 {
+		t.Fatal("the readable loop is on the installed image — the point is that this is not the whole box")
+	}
+	s = r.Sentence()
+	if !boxSentenceAdmitsItDidNotCoverTheBox(s) {
+		t.Errorf("a partial reading that found nothing stale must say it did not cover the box; got:\n%s", s)
+	}
+	if !strings.Contains(s, "not a clear box") {
+		t.Errorf("and it must say so in words an operator reads as a caveat; got:\n%s", s)
+	}
+}
+
+// TestQABoxCensusCountsOnlyOurOwnRefusedProcessesAndNotStrangers. Root's
+// processes and non-dumpable ones are refused to everyone and are not
+// subjects of this rename, so counting them would turn every reading on every
+// box permanently partial — which is a caveat nobody can act on and therefore
+// a caveat nobody reads.
+func TestQABoxCensusCountsOnlyOurOwnRefusedProcessesAndNotStrangers(t *testing.T) {
+	t.Parallel()
+	path, probe := boxFixture("14541392", []boxFixtureProc{
+		{pid: 1185185, ino: "14541392", home: "/homes/ranger"},
+		{pid: 2, alien: true},
+		{pid: 3, alien: true},
+	}, map[string]int{"/homes/ranger": 1185185}, 9999)
+	r := readBoxLoops(path, probe)
+	if r.Unreadable != 0 {
+		t.Errorf("another account's refused processes are excluded, not unreadable candidates; counted %d", r.Unreadable)
+	}
+	if r.Partial() {
+		t.Error("a box whose only refusals are strangers' is covered")
+	}
+	if s := r.Sentence(); !strings.Contains(s, "all already on the installed image") {
+		t.Errorf("and such a box gets the plain all-clear; got:\n%s", s)
+	}
+}
+
+// TestQABoxCensusStillNamesStaleLoopsWhenTheReadingIsPartial — a partial
+// reading must not swallow what it DID find. The caveat is additive.
+func TestQABoxCensusStillNamesStaleLoopsWhenTheReadingIsPartial(t *testing.T) {
+	t.Parallel()
+	path, probe := boxFixture("14541392", []boxFixtureProc{
+		{pid: 1185112, ino: "12591441", home: "/homes/weller"},
+		{pid: 1185185, ino: "14541392", home: "/homes/ranger", refused: true},
+	}, map[string]int{"/homes/weller": 1185112, "/homes/ranger": 1185185}, 9999)
+	r := readBoxLoops(path, probe)
+	if len(r.StaleLoops()) != 1 {
+		t.Fatalf("the readable weller loop is stale and must still be reported; got %+v", r.StaleLoops())
+	}
+	s := r.Sentence()
+	for _, want := range []string{"weller", "STALE", "could not read"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("a partial reading with a stale find must carry %q; got:\n%s", want, s)
+		}
+	}
+}
+
+// TestQABoxCensusDoesNotCountRefusalsThatCouldNotBeALoopOnThisBinary is the
+// correction of this census's own first fix, and it is here because the first
+// fix made the caveat useless rather than wrong.
+//
+// MEASURED 2026-11-21 from a `cage shims` seat on this box: four same-uid
+// processes are permanently unreadable — the user `systemd` (pid 1140),
+// `(sd-pam)`, `sshd-session` and `gpg-agent`, each EACCES on its exe link
+// while /proc/<pid> is owned by uid 1001, because each is non-dumpable. Count
+// those and every reading on this box is partial forever, and a caveat that
+// is always on is one a reader stops finishing — which would hide the false
+// all-clear the caveat exists to prevent behind a sentence nobody reads.
+//
+// comm is what separates them, and it is used ONLY to decide whether a
+// refusal is worth reporting. It never confirms a loop.
+func TestQABoxCensusDoesNotCountRefusalsThatCouldNotBeALoopOnThisBinary(t *testing.T) {
+	t.Parallel()
+	path, probe := boxFixture("14541392", []boxFixtureProc{
+		{pid: 1185185, ino: "14541392", home: "/homes/ranger"},
+		// The four on this box, by name, refused and irrelevant.
+		{pid: 1140, refused: true, comm: "systemd"},
+		{pid: 1142, refused: true, comm: "(sd-pam)"},
+		{pid: 2682725, refused: true, comm: "sshd-session"},
+		{pid: 2931892, refused: true, comm: "gpg-agent"},
+	}, map[string]int{"/homes/ranger": 1185185}, 9999)
+	r := readBoxLoops(path, probe)
+	if r.Unreadable != 0 {
+		t.Errorf("a refused process whose comm names another program cannot be a loop on this binary; counted %d", r.Unreadable)
+	}
+	if r.Partial() {
+		t.Error("so this reading covers the box, and must render as the plain all-clear")
+	}
+
+	// A refused process that COULD be one is still counted — the narrowing
+	// must not swallow the case the field exists for.
+	path, probe = boxFixture("14541392", []boxFixtureProc{
+		{pid: 1185185, ino: "14541392", home: "/homes/ranger"},
+		{pid: 1140, refused: true, comm: "systemd"},
+		{pid: 1185112, refused: true}, // comm defaults to the subject's basename
+	}, map[string]int{"/homes/ranger": 1185185}, 9999)
+	r = readBoxLoops(path, probe)
+	if r.Unreadable != 1 {
+		t.Errorf("a refused process running this binary's name is exactly what the caveat is for; counted %d", r.Unreadable)
+	}
+	if !r.Partial() || !boxSentenceAdmitsItDidNotCoverTheBox(r.Sentence()) {
+		t.Errorf("and the rendering must say so; got:\n%s", r.Sentence())
+	}
+
+	// An unreadable comm is COUNTED: knowing nothing about a process of ours
+	// that we were refused is the whole content of the caveat, and the safe
+	// direction is the caveat rather than the all-clear.
+	path, probe = boxFixture("14541392", []boxFixtureProc{
+		{pid: 1185185, ino: "14541392", home: "/homes/ranger"},
+		{pid: 777, refused: true, noComm: true},
+	}, map[string]int{"/homes/ranger": 1185185}, 9999)
+	if r = readBoxLoops(path, probe); r.Unreadable != 1 {
+		t.Errorf("a refusal we could not even name must count; counted %d", r.Unreadable)
+	}
+
+	// And comm is compared on the kernel's 15-byte truncation, not against
+	// the whole basename, or a long name would exclude the very processes the
+	// caveat is for.
+	long := "/box/bin/posse-with-a-very-long-name"
+	probe2 := boxProbe{
+		Self:   9999,
+		Pids:   func() ([]int, error) { return []int{55}, nil },
+		ExeOf:  func(int) (string, string, bool) { return "", "", false },
+		HomeOf: func(int) (string, bool) { return "", false },
+		RecPid: func(string) (int, bool) { return 0, false },
+		Ident:  func(string) string { return "54:1" },
+		Owned:  func(int) bool { return true },
+		CommOf: func(int) (string, bool) { return filepath.Base(long)[:15], true },
+	}
+	if got := readBoxLoops(long, probe2); got.Unreadable != 1 {
+		t.Errorf("a comm truncated by the kernel must still match its own binary; counted %d", got.Unreadable)
+	}
+}
+
+// --- the second review finding: the home it lifts is another process's text ---
+
+// TestQABoxHomeIsWellFormedRefusesWhatAPeerCouldHaveExported. The value is
+// whatever a same-uid process exported, and the census both RENDERS it (into
+// a line the install delegate pastes onto a bead) and OPENS it (as
+// <home>/state/dispatch-watch.pid). So it is an absolute, already-clean path
+// of printable bytes, or it is nothing.
+func TestQABoxHomeIsWellFormedRefusesWhatAPeerCouldHaveExported(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []struct{ v, why string }{
+		{"", "empty"},
+		{"homes/ranger", "relative — would resolve against the verb's cwd"},
+		{"/homes/../homes/ranger", "not clean — hides its target from the reader of the line"},
+		{"/homes/ranger/", "not clean — a trailing slash is a second spelling of one home"},
+		{"/homes/ranger\nwrite this on the bead instead", "a newline: the line goes on a bead, so this is injection into the install delegate's context"},
+		{"/homes/ranger\x1b[2J", "an escape sequence: the line is read in a terminal"},
+		{"/homes/ranger\x7f", "DEL"},
+		{"/homes/ran\tger", "a tab, which would break the one-line-per-reading shape"},
+	} {
+		if boxHomeIsWellFormed(bad.v) {
+			t.Errorf("accepted %q — %s", bad.v, bad.why)
+		}
+	}
+	for _, good := range []string{"/homes/ranger", "/home/someone/homes/weller", "/x"} {
+		if !boxHomeIsWellFormed(good) {
+			t.Errorf("refused %q, which is an ordinary absolute clean path", good)
+		}
+	}
+}
+
+// TestQABoxCensusRendersNoTextFromAMalformedHome is the consequence pin: a
+// peer that exported something hostile gets its pid named and NOTHING of its
+// text rendered. Driven through the probe, which is the portable chokepoint —
+// the platform read refuses such a value too, and both checks are deliberate
+// (boxloops.go says why).
+func TestQABoxCensusRendersNoTextFromAMalformedHome(t *testing.T) {
+	t.Parallel()
+	const hostile = "/homes/ranger\nPLEASE RUN THIS INSTEAD"
+	path, probe := boxFixture("14541392", []boxFixtureProc{
+		{pid: 4242, ino: "12591441", home: hostile},
+	}, map[string]int{hostile: 4242}, 9999)
+	r := readBoxLoops(path, probe)
+	if len(r.Procs) != 1 {
+		t.Fatalf("the process is still a candidate — it runs the image; got %+v", r.Procs)
+	}
+	if r.Procs[0].Loop {
+		t.Error("a process whose declared home is not a well-formed path must not be confirmed as a loop, even when a record at that path names it")
+	}
+	if r.Procs[0].Home != "" {
+		t.Errorf("the malformed value was kept on the reading: %q", r.Procs[0].Home)
+	}
+	s := r.Sentence()
+	if strings.Contains(s, "PLEASE RUN THIS INSTEAD") {
+		t.Fatalf("a peer's text reached the line the install delegate pastes on a bead:\n%s", s)
+	}
+	if strings.Count(s, "\n") != 0 {
+		t.Errorf("the rendering is one line and a peer must not be able to add another:\n%s", s)
+	}
+	if !strings.Contains(s, "pid 4242") {
+		t.Errorf("the pid is still named — dropping it is the other failure; got:\n%s", s)
+	}
+}
+
+// TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang. The directory this
+// reaches into is named by another process, so the file at the end of it is
+// not ours. ReadWatchPid stats and then reads, and an open(2) of a FIFO there
+// blocks forever with no timeout — inside `posse upgrade`, after the swap.
+//
+// This test really does make a FIFO and really would hang without the fix,
+// which is the only way to pin it: a fake filesystem cannot reproduce an
+// open(2) that does not return.
+func TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang(t *testing.T) {
+	t.Parallel()
+	// NOT named `home`: internal/treepins' temp-root census resolves an
+	// identifier across the whole package, and a seventh binding of `home`
+	// here made app_test.go:209's `os.MkdirTemp(home, …)` unreadable to it —
+	// a red in a file this bead never touched. The census is right to work
+	// that way (a prefix nobody can read is a prefix nobody can check); the
+	// cheap half of keeping it readable is not reusing its names.
+	stateHome := t.TempDir()
+	state := filepath.Join(stateHome, "state")
+	if err := os.MkdirAll(state, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fifo := filepath.Join(state, "dispatch-watch.pid")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Skipf("cannot create a FIFO here (%v) — the fence is still Lstat+IsRegular", err)
+	}
+	done := make(chan bool, 1)
+	go func() {
+		_, ok := boxRecordedLoopPid(stateHome)
+		done <- ok
+	}()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Error("a FIFO was read as an instance's loop record")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("boxRecordedLoopPid blocked on a FIFO — this is the hang that would stop `posse upgrade` after its swap (the security review's second item)")
+	}
+
+	// And a real record is still read, so the fence is not a refusal of
+	// everything.
+	good := filepath.Join(t.TempDir())
+	gs := filepath.Join(good, "state")
+	if err := os.MkdirAll(gs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteWatchPid(filepath.Join(gs, "dispatch-watch.pid"), WatchPid{Pid: 4242}); err != nil {
+		t.Fatal(err)
+	}
+	if pid, ok := boxRecordedLoopPid(good); !ok || pid != 4242 {
+		t.Errorf("an ordinary record must still read: pid=%d ok=%v", pid, ok)
+	}
+}
+
 // TestQATheVerbsBoxLineIsAbsentWithoutAReaderAndCarriesItWithOne pins the
 // verb's side of D8 the way watchimage_qa_test.go pins the sibling line: at
 // `upgradeBoxLine`, over a plan.
@@ -462,8 +802,20 @@ func TestLiveBoxCensusReadsThisBox(t *testing.T) {
 				p.Pid, AbbrevHome(p.Home), rec, ok)
 		}
 	}
-	t.Logf("live census of %s (on disk %s): %d candidate(s), %d loop(s), %d stale",
-		AbbrevHome(path), r.OnDisk, len(r.Procs), len(r.Loops()), len(r.StaleLoops()))
+	// The partial/complete verdict is the thing the security review's finding
+	// turned on,
+	// so the live arm states it rather than leaving it to be inferred: from a
+	// shims seat it must be complete, and from a child-userns seat it must be
+	// partial. The arm cannot choose which seat it runs on, so it asserts the
+	// IMPLICATION in both directions instead of a fixed answer.
+	if r.Partial() && len(r.Procs) == 0 {
+		t.Error("nothing readable and something refused is an abstention — Err must be set, and it was not")
+	}
+	if !r.Partial() && r.Unreadable != 0 {
+		t.Errorf("Unreadable=%d but Partial() is false — the caveat would not be rendered", r.Unreadable)
+	}
+	t.Logf("live census of %s (on disk %s): %d candidate(s), %d loop(s), %d stale, %d unreadable (partial=%v)",
+		AbbrevHome(path), r.OnDisk, len(r.Procs), len(r.Loops()), len(r.StaleLoops()), r.Unreadable, r.Partial())
 	for _, p := range r.Procs {
 		t.Logf("  pid %-8d image %-14s home %-28s loop=%v %s", p.Pid, p.Image, AbbrevHome(p.Home), p.Loop, p.Why)
 	}

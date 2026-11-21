@@ -457,10 +457,58 @@ coordinator's (D6, guardrail 3). Liveness is "`/proc/<pid>` is there", never
 `kill -0`: under `LANDLOCK_SCOPE_SIGNAL` a caged seat's signal 0 to a process
 it did not fork is EPERM whether that process is alive or dead (AGENTS.md,
 ranger-base-e5un1), so a signal-based liveness check would read wrong from
-exactly the seats that most need it. The census itself survives a cage by
-ruling rather than by luck: `--unshare-pid` is deliberately absent from the
-bwrap argv so a seat can read the box's process table, and `/proc` stays the
-host's procfs under `--ro-bind / /` (bwrap.go).
+exactly the seats that most need it.
+
+*What a caged reader gets, amended by ranger-base-rph5z after hoover's review
+under ranger-base-gvrv7, and the one claim this section first made wrongly.*
+As first written D8 said the census "survives a cage by ruling rather than by
+luck", on the grounds that `--unshare-pid` is deliberately absent from the
+bwrap argv and `/proc` stays the host's procfs under `--ro-bind / /`
+(bwrap.go). That is true and it is not enough: **it opens the pid LIST, not
+the links.** A seat in a child user namespace is REFUSED a same-uid peer's
+`exe` and `environ`, because `cap_ptrace_access_check` compares user
+namespaces and not just uids (the ranger-base-rfyth mechanism). MEASURED
+2026-11-21 by hoover from such a seat (`/proc/self/uid_map` = `1001 1001 1`):
+`/proc` listed 460 pids, `readlink /proc/1185185/exe` and `cat
+/proc/1185185/environ` were both EACCES, and a child that seat had started
+itself was readable. D8's own MEASURED block was taken from a `cage shims`
+seat, which is not in a child userns — so the reader class this census most
+needs to work from is the class that first reading did not cover.
+
+`procExe` answers the same "not ok" for a pid that exited and for a link the
+kernel refused, so the census as first built dropped both silently and
+rendered "no dispatch loop on this box runs …": a false all-clear over loops
+it was not allowed to see, which is the one sentence this reading must never
+be able to print. The remedy is `BoxReading.Unreadable` — a COUNT of
+still-present processes of this account whose exe was refused, told from a
+dead pid by `boxPidOwned`, which stats `/proc/<pid>` itself because the
+directory's owner stays readable from the cage. If that count is not zero the
+reading is PARTIAL: every branch that would otherwise read as an all-clear
+says instead that N processes could not be read and that loops among them are
+unknown, and when nothing of ours was readable at all the reading is an
+abstention with no verdict in it. A refused process of ANOTHER account stays
+excluded: root's are refused to everyone and are not subjects of this rename.
+
+*And the count has to be narrower than "ours and refused", which the first fix
+was not.* MEASURED 2026-11-21 from a `cage shims` seat on this box: FOUR
+same-uid processes are permanently in that set and none could ever be a
+dispatch loop — the user `systemd` (pid 1140), `(sd-pam)`, `sshd-session` and
+`gpg-agent`, each EACCES (errno 13) on its exe link while `/proc/<pid>` is
+owned by uid 1001, because each is non-dumpable. Counted, they made every
+reading on this box partial forever — and a caveat that is always on is one a
+reader stops finishing, which would have hidden the false all-clear behind a
+sentence nobody reads. `/proc/<pid>/comm` separates them: it is world-readable
+with no ptrace check, so it answers where `exe` does not. A refusal is counted
+when comm names this binary, or when comm could not be read either (knowing
+nothing about a process of ours is the whole content of the caveat); it is
+excluded when comm names another program.
+
+That value is used for ONE decision — whether a refusal is worth reporting —
+and never to confirm a loop, which is why it is not the argv matching AGENTS.md
+forbids: that rule is about choosing a TARGET by a pattern every seat shares. A
+hostile `prctl(PR_SET_NAME)` can inflate the count and make a complete reading
+say it is partial. That is a denial of clarity rather than a false all-clear,
+which is the direction this reading is built to fall in.
 
 *A path that holds nothing is STALE,* which is `WatchImage.Stale`'s
 predicate exactly and is aligned deliberately rather than inherited. An empty
@@ -491,11 +539,32 @@ per-instance line is the whole of that report's coverage and carries this
 bead's id, so a darwin reader is told the residual stands rather than handed a
 silence that looks like a clean box.
 
-*Residual.* A process of another uid running the same path is invisible:
-`readlink(/proc/<pid>/exe)` is EACCES across uids, so it is not even a
-candidate. ASSUMED harmless on this box, where every instance's loop runs as
-the one account (MEASURED above: all three candidates uid 1001). Stated
-because it is a limit of the reading and not of the subject.
+*The home it lifts from a peer is untrusted text, amended by the second
+finding of the same review.* `RHQ_HOME` comes out of another
+process's environment, and the census trusted it twice: it RENDERED it, into
+the line the install delegate pastes onto an install bead — so arbitrary text,
+newlines included, would arrive in that persona's context under its own
+authorship, which is injection into the one persona holding the install verb
+— and it OPENED it, as `<home>/state/dispatch-watch.pid`, where a FIFO would
+block the verb forever with no timeout, after the swap. Neither needs a
+planted attacker: a caged seat's own child qualifies, and D8's first live
+reading found exactly such a child. So the value is now accepted only as an
+absolute, already-clean path of printable bytes (`boxHomeIsWellFormed`),
+checked both in the platform read and again at the portable chokepoint every
+future reader goes through; a value that fails is never rendered in any form,
+and its pid is named with no text. The record is `Lstat`ed for a regular file
+before it is read, so a FIFO or a symlink to one is refused rather than
+opened. And the fence on the environ read itself is a census rather than a
+comment (`internal/treepins/environread_qa_test.go`): the proc-environ path
+appears in exactly one function in the shipped tree, that function returns
+exactly `(string, bool)`, and the only environment key it matches is
+`RHQ_HOME=`.
+
+*Residual.* A same-uid process can still plant a well-formed home holding a
+regular record that names its own pid, and so present itself as a loop or as a
+stale loop. Read-only effects, and it is the uid boundary doing the work
+rather than this reading; the operator restarts loops from this report, so it
+is stated rather than fenced. Named on the security review's second finding.
 
 
 ## Consequences

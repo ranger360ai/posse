@@ -23,6 +23,82 @@ import (
 
 // rrgncCopy writes src's bytes to dst, executable, through a temp file and a
 // rename — the swap ADR 0092 D3.5 does.
+// rrgncLoopLife is how long the stand-in loop sleeps, and it is this long for
+// a reason that cost a red suite (ranger-base-rph5z's run, 2026-11-21).
+//
+// It was "60". These tests start `sleep <n>` as a stand-in dispatch loop,
+// record its pid, and then read that pid back — and `WatchLoopRunning` plus
+// `ReadWatchPid` answer LIVENESS and not identity, which watchpid.go's own
+// `pidAlive` comment says in so many words: "a recycled pid is alive and is a
+// stranger". internal/posse is one parallel test binary that ran 262.7s on
+// the failing pass, and a parallel test can be descheduled for longer than a
+// minute on a loaded box. So the sleep EXITED mid-test, its pid was reused by
+// another test's re-exec of the test binary, and the reading came back
+// pointing at `posse.test` in the go-build cache with `Image == OnDisk` —
+// rendering as "this loop is not stale" and failing an assertion about a
+// rename that had worked perfectly.
+//
+// 1500 is the per-package `-timeout` the Makefile passes, so the child cannot
+// outlive the budget that would kill the suite anyway, and cannot exit inside
+// it. `sleep` burns no CPU, so a leaked one is not what the load guard's kill
+// arm is for (AGENTS.md, "Something you MEANT to leave running"); each test
+// kills its own child in a t.Cleanup regardless.
+const rrgncLoopLife = "1500"
+
+// rrgncStartLoop starts a stand-in dispatch loop from bin and does not return
+// until /proc says that pid really runs it.
+//
+// THE WAIT IS THE POINT, and it is the second half of what cost a red suite.
+// `exec.Cmd.Start` returns once the child's exec has been reported, but
+// `/proc/<pid>/exe` is not reliably the new image by the time the PARENT is
+// next scheduled: MEASURED 2026-11-21, 2 failures in 20 runs of this file's
+// own fixtures, each reading the forked-but-not-yet-settled child as the TEST
+// BINARY (`/tmp/go-build…/posse.test`) a fifth of a second into the test. The
+// same window is why `cmd/checkorphans` refuses to judge a process that is
+// not "old enough not to be a fork/exec teardown window" (AGENTS.md) — this
+// package had simply never waited for it.
+//
+// A fixture may re-establish its own precondition, and that is all this does:
+// the product code under test is unchanged and is not being accommodated.
+// What it must never do is proceed on an unsettled reading, because then the
+// assertion below it is about a stranger's image and the failure arrives as a
+// verdict about staleness.
+func rrgncStartLoop(t *testing.T, bin string) *exec.Cmd {
+	t.Helper()
+	loop := exec.Command(bin, rrgncLoopLife)
+	if err := loop.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { loop.Process.Kill(); loop.Wait() })
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, path, ok := procExe(loop.Process.Pid); ok && path == bin {
+			return loop
+		}
+		if time.Now().After(deadline) {
+			_, path, ok := procExe(loop.Process.Pid)
+			t.Fatalf("pid %d never settled onto %s (last reading: %q ok=%v) — a fixture that proceeds here asserts against a stranger's image", loop.Process.Pid, bin, path, ok)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// rrgncChildStillOurs fails loudly when the pid a test recorded is no longer
+// the child it started. It is the READ-TIME half: rrgncStartLoop settles the
+// child before it is recorded, and this says so again before each reading, so
+// a child that dies mid-test (or a pid reused after it) arrives as "your
+// fixture died" and never as a verdict about staleness.
+func rrgncChildStillOurs(t *testing.T, pid int, bin string) {
+	t.Helper()
+	_, path, ok := procExe(pid)
+	if !ok {
+		t.Fatalf("pid %d: this fixture's stand-in loop is gone before the reading — the assertions below would be about a stranger", pid)
+	}
+	if path != bin {
+		t.Fatalf("pid %d now runs %s, not this fixture's %s — so every reading below is a stranger's (see rrgncStartLoop and rrgncLoopLife)", pid, path, bin)
+	}
+}
+
 func rrgncCopy(t *testing.T, src, dst string) {
 	t.Helper()
 	body, err := os.ReadFile(src)
@@ -56,11 +132,7 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 	// The loop: a process running the installed file. It stamps nothing —
 	// like every loop alive on the day this lands, started by a binary that
 	// predates the record fields — so /proc is all G18 has.
-	loop := exec.Command(bin, "60")
-	if err := loop.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { loop.Process.Kill(); loop.Wait() })
+	loop := rrgncStartLoop(t, bin)
 
 	a := &App{StateDir: filepath.Join(root, "state")}
 	lock, held, err := lockWatch(a)
@@ -72,6 +144,7 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	rrgncChildStillOurs(t, loop.Process.Pid, bin)
 	img, ok := ReadWatchImage(a)
 	if !ok || img.Via != "proc" || img.Path != bin {
 		t.Fatalf("before the swap the reading must come from /proc and name %s: ok=%v %+v", bin, ok, img)
@@ -83,6 +156,7 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 	// The install.
 	rrgncCopy(t, sleep, bin)
 
+	rrgncChildStillOurs(t, loop.Process.Pid, bin)
 	img, ok = ReadWatchImage(a)
 	if !ok || !img.Stale() {
 		t.Fatalf("after a rename over the loop's path G18 must fire: ok=%v %+v", ok, img)
@@ -119,14 +193,11 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 
 	// The negative control on the same loop: a restart onto the new file
 	// clears it. (Here: the record names a pid whose image IS the new file.)
-	fresh := exec.Command(bin, "60")
-	if err := fresh.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { fresh.Process.Kill(); fresh.Wait() })
+	fresh := rrgncStartLoop(t, bin)
 	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: fresh.Process.Pid}); err != nil {
 		t.Fatal(err)
 	}
+	rrgncChildStillOurs(t, fresh.Process.Pid, bin)
 	if img, ok := ReadWatchImage(a); !ok || img.Stale() {
 		t.Errorf("a loop restarted onto the installed file must clear G18: ok=%v %+v", ok, img)
 	}
@@ -297,11 +368,7 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 	var insts []instance
 	for _, name := range []string{"ranger", "weller"} {
 		home := filepath.Join(root, "homes", name)
-		loop := exec.Command(bin, "60")
-		if err := loop.Start(); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { loop.Process.Kill(); loop.Wait() })
+		loop := rrgncStartLoop(t, bin)
 
 		a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 		lock, held, err := lockWatch(a)
@@ -320,6 +387,7 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 
 	for i, in := range insts {
 		other := insts[(i+1)%len(insts)]
+		rrgncChildStillOurs(t, in.pid, bin)
 		img, ok := ReadWatchImage(in.app)
 		if !ok || !img.Stale() {
 			t.Fatalf("%s: after the rename this instance's loop is stale: ok=%v %+v", in.home, ok, img)

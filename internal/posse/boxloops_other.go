@@ -36,3 +36,14 @@ func boxPids() ([]int, error) {
 // boxPids refuses first — and it answers "not available" rather than a guess
 // so that stays true if that order ever changes.
 func boxHomeOf(pid int) (string, bool) { return "", false }
+
+// boxPidOwned has no /proc/<pid> to stat. False, which on this platform means
+// "not an unreadable candidate either": with no census at all there is
+// nothing to be unsure about, and boxPids' refusal is what the reader is
+// handed (ranger-base-rph5z).
+func boxPidOwned(pid int) bool { return false }
+
+// boxCommOf has no /proc/<pid>/comm. Nothing reaches it off linux (boxPids
+// refuses first) and "not available" is the honest answer rather than a
+// guess, same as the two above.
+func boxCommOf(pid int) (string, bool) { return "", false }

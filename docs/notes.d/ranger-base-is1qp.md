@@ -63,6 +63,56 @@ child of a seat under the ranger instance (pids 3285561 and 594507). So the
 filter is exercised on this box on essentially every reading, which is the
 best thing that can be said about a filter.
 
+## The measurement that was MISSING, and what it cost
+
+The reading above was taken from a `cage shims` seat. A shims seat is not in a
+child user namespace, and that turned out to be the whole of what the
+measurement did not cover.
+
+MEASURED 2026-11-21 by hoover, from a live seat on this box whose Bash runs in
+a child user namespace (`/proc/self/uid_map` = `1001 1001 1`), uid 1001,
+against the ranger dispatch loop (pid 1185185, uid 1001, recorded in its own
+home's `dispatch-watch.pid`):
+
+```
+ls /proc                      -> 460 pids        (so boxPids succeeds)
+readlink /proc/1185185/exe    -> EACCES
+stat -L  /proc/1185185/exe    -> EACCES
+cat      /proc/1185185/environ-> EACCES
+a child the seat started itself -> readable
+```
+
+Same-uid but cross-userns is refused by `cap_ptrace_access_check`, which
+compares user namespaces and not just uids (the ranger-base-rfyth mechanism).
+
+**So two claims in the first version of this work were wrong**, and both in
+the direction that costs a reader:
+
+1. *"The census survives a cage by ruling rather than by luck"* — citing
+   bwrap's deliberately-absent `--unshare-pid` and the host procfs under
+   `--ro-bind / /`. True, and not enough: that opens the pid **list**, not the
+   **links**.
+2. *"A process of another uid is invisible here … ASSUMED harmless on this
+   box, where every instance's loop runs as the one account."* The uid was the
+   wrong fence to be reassured by. On a caged reader the "harmless" case was
+   every sibling loop on the box.
+
+And the consequence was the defect this census exists to prevent, one level
+in: `procExe` answers the same `ok=false` for a pid that exited and for a link
+the kernel refused, so the first version dropped both silently, found no
+candidates, and rendered **"no dispatch loop on this box runs
+~/.local/bin/posse — nothing a rename of it left behind"**. A false all-clear
+about loops that may still be rendering pre-install walls — the one sentence
+the file says must never be printable. It is filed as ranger-base-rph5z and
+fixed before any of this landed on main.
+
+I could not reproduce it myself: `unshare -U -r` to read a sibling's `/proc`
+from a child userns was refused by this seat's permission coordinator as
+unauthorized access, and that is not worth working around. So the EACCES
+reading stays hoover's, attributed, and what is verified here is the consumer
+behaviour through the `ExeOf` seam — which is what the seam is for — plus
+three mutants, below.
+
 ## The one finding that shaped the mechanism
 
 **The third row is a live false positive, not a hypothetical one.** A seat's
@@ -126,6 +176,73 @@ derivation, not merely an absent one.
   against a pid record a process names itself by — and it is the loop the
   delegate's next seat comes through. Both print, each stating its own reach.
 
+## The second round: the fix that made the caveat useless
+
+The first fix for ranger-base-rph5z counted every same-uid process whose exe
+was refused. Run against this box, the live arm then read **5 unreadable
+(partial=true)** from an ordinary `cage shims` seat — so the caveat was on
+permanently, which is the failure the code comment next to it warns about in so
+many words: a caveat nobody can act on is a caveat nobody reads, and an
+always-on caveat would have hidden the false all-clear it exists to prevent.
+
+MEASURED 2026-11-21, this box, from that seat (`uid_map` = `0 0 4294967295`,
+userns `user:[4026531837]`), what those refusals actually were:
+
+```
+pid 1140     dir_uid=1001  comm=systemd        exe=EACCES (errno 13)
+pid 1142     dir_uid=1001  comm=(sd-pam)       exe=EACCES (errno 13)
+pid 2682725  dir_uid=1001  comm=sshd-session   exe=EACCES (errno 13)
+pid 2931892  dir_uid=1001  comm=gpg-agent      exe=EACCES (errno 13)
+pid 1185185  dir_uid=1001  comm=posse          exe=/home/posse/.local/bin/posse
+```
+
+Four non-dumpable system processes of the same account, none of which could
+ever be a dispatch loop — and note `dir_uid=1001`, so `/proc/<pid>` ownership
+does NOT separate them, which is what the first fix keyed on.
+
+`/proc/<pid>/comm` does, at no cost: world-readable, no ptrace check, so it
+answers where `exe` does not. A refusal counts when comm names this binary, or
+when comm could not be read either; it is excluded when comm names another
+program. With that in, the same live arm reads **0 unreadable (partial=false)**
+and the all-clear on this box is honest again.
+
+**Why this is not the argv matching AGENTS.md forbids.** That rule is about
+choosing a TARGET by a pattern every seat's process shares, and the cost is
+killing someone else's work. comm here decides one thing — whether a process
+we were REFUSED is worth saying we could not read — and a loop is still
+confirmed by nothing but its own instance's record. A hostile
+`prctl(PR_SET_NAME)` can inflate the count and make a complete reading claim it
+is partial; that is a denial of clarity, not a false all-clear, which is the
+direction everything here is built to fall in.
+
+## The five mutants
+
+Each new fence was removed and its own pin watched go red, because a fence
+whose pin has never failed is a fence nobody has tested.
+
+| mutant | what was removed | result |
+|---|---|---|
+| 1 | the `Lstat`/`IsRegular` check on another instance's record | `TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang` blocked on the FIFO and failed on its 10s deadline |
+| 2 | the unreadable-candidate count | `…NeverRendersAnAllClearWhenItWasRefusedAReadOfOurOwnProcesses` red: "census counted 0" |
+| 3 | the home validation at the portable chokepoint | `…RendersNoTextFromAMalformedHome` red, and it printed the injection verbatim: the peer's text on its own line in the middle of the sentence the install delegate pastes onto a bead |
+| 4 | the refusal predicate, forced to false | three pins red, including "census counted 0" over two refused loops |
+| 5 | the comm narrowing removed | `…DoesNotCountRefusalsThatCouldNotBeALoopOnThisBinary` red both ways: "counted 4" where 0 is right, and "counted 2" where 1 is |
+
+Mutant 3 is the one worth keeping in mind. The rendered line was:
+
+```
+dispatch (box): 1 dispatch loop on this box, 1 still on the image the rename replaced — /homes/ranger
+PLEASE RUN THIS INSTEAD pid 4242 STALE, runs inode 54:12591441; launches those render …
+```
+
+The environ-fence census (`internal/treepins/environread_qa_test.go`) was
+mutated three ways too — a second reader, a widened return, a second lifted
+key. The second reader and the second key each red their arm against the real
+tree; the widened return does not **compile** against the real callers, so
+that arm is proved hermetically instead, by a self-test that runs the
+predicates over source it writes itself. A census only ever fed a green tree
+is a census nobody has seen say no.
+
 ## What this reader touches that a security reader should know about
 
 `boxHomeOf` reads `/proc/<pid>/environ` — another process's whole
@@ -136,9 +253,15 @@ a `BoxProc`, and the census line an operator pastes on an install bead cannot
 carry them. The alternative keys were worse on this axis, not better: argv is
 forbidden for a different reason and is equally sensitive, and there is no
 other way for a process to tell a reader which instance it belongs to. Filed
-for hoover's read on its own bead rather than asserted here.
+for hoover's read on its own bead rather than asserted here — and that read
+came back with two P2 defects (ranger-base-rph5z above, and a second one
+which is why the value is now validated before it is rendered or opened and
+why the fence is a census rather than a comment). What survives as a residual:
+a same-uid process can still plant a well-formed home holding a regular record
+that names its own pid, and so present itself as a loop. Read-only effects,
+and it is the uid boundary doing the work rather than this reading.
 
-## Two things that bit during the build, both worth keeping
+## Five things that bit during the build, all worth keeping
 
 **The reader is a subject of its own census.** `posse upgrade` runs FROM the
 path it replaces, so the verb's own process is a candidate by the census's own
@@ -160,6 +283,62 @@ Mid-swap and the `install(1)` unlink/write window (ADR 0092 Context) are the
 states that reach it. Both predicates are now the same shape, a pin asserts
 the census's answer and `WatchImage.Stale`'s answer over the same facts, and
 the rendering says the path is empty.
+
+**A fixture that reads `/proc` right after `exec.Cmd.Start` reads the wrong
+process.** This one turned `make test` red, and the failing test was
+`watchimage_qa_test.go`'s two-instance fixture — written under
+ranger-base-nqaa1, this bead's parent, so a defect of the same lineage rather
+than of this change.
+
+`Start` returns once the child's exec has been reported, but `/proc/<pid>/exe`
+is not reliably the new image by the time the parent is next scheduled.
+MEASURED 2026-11-21: 2 failures in 20 runs of these fixtures, each reading the
+forked-but-not-yet-settled child as the TEST BINARY
+(`/tmp/go-build…/posse.test`) a fifth of a second into the test — and then
+failing an assertion about a rename that had worked perfectly, which is the
+worst shape a flake can take. It is the same window `cmd/checkorphans` refuses
+to judge a process inside of (AGENTS.md, "old enough not to be a fork/exec
+teardown window"); this package had simply never waited for it.
+
+Underneath it, a second unsound assumption in the same fixtures: the stand-in
+loop slept 60 seconds inside a package that ran 262.7s on the failing pass, so
+on a loaded box it could exit mid-test and leave the reading pointing at
+whatever took its pid. `watchpid.go`'s own `pidAlive` comment says why that is
+never safe to build on — "a recycled pid is alive and is a stranger" — and the
+fixtures were keying identity on liveness.
+
+The remedy is one `rrgncStartLoop` that does not return until `/proc` says the
+child really runs the fixture's binary, a stand-in that outlives the package
+timeout rather than a minute of it, and an identity check before every
+reading, so a child that dies mid-test arrives as "your fixture died" and
+never as a verdict about staleness. 40 consecutive runs clean, against 2 in 20
+before. The product code under test is unchanged: a fixture may re-establish
+its own precondition, and that is the whole of what this does.
+
+A smaller note on my own diagnosis, kept because the wrong guess is instructive:
+the first guard I wrote blamed pid REUSE and said so in its failure message.
+The reproduction said otherwise — the child was 0.19s old, far too young for
+that — and the message was corrected rather than left to mislead the next
+reader with a plausible-sounding cause.
+
+**Naming a local `home` in internal/posse reddened a file this work never
+touched — twice.** `internal/treepins`' temp-root census resolves an
+identifier across the WHOLE package, so every literal assigned to `home`
+anywhere in internal/posse joins the set of parent directories that
+`os.MkdirTemp(home, "abbrev-probe-")` in `app_test.go` could be writing under.
+Two of my own lines widened that set: a `home := t.TempDir()` in the FIFO pin,
+and an `ok, home = false, ""` in the census loop — the second put `""` in
+there and the error read "home, which this package binds to 7 different
+literals — "" among them", pointing at `app_test.go:209`.
+
+It took a bisect to believe it, because the failing file is one this bead
+never opened: green with round 1 of this work in the tree, red with round 2,
+and the round-2 diff touches neither `app_test.go` nor the census. The census
+is right to work that way — a prefix nobody can resolve is a prefix nobody can
+check, and that is the whole point of a temp-root census on a box whose /tmp
+hit 100% of its inodes. The cheap half of keeping it resolvable is not reusing
+its names for a local: `stateHome` and `declaredHome` here, with a comment at
+each saying why, because "rename this variable" looks like style and is not.
 
 **`os.UserHomeDir()` in a live arm of internal/posse skips silently.** This
 package's `TestMain` replaces `HOME` with a per-tree temp home

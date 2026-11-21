@@ -73,10 +73,34 @@ package posse
 // caged seat's signal 0 to a process it did not fork is EPERM whether that
 // process is alive or dead (AGENTS.md, ranger-base-e5un1), so a
 // signal-based liveness check would read wrong from exactly the seats that
-// most need it. The reading itself survives a cage by ruling rather than by
-// luck: `--unshare-pid` is deliberately absent from the bwrap argv so a seat
-// can read the box's process table (bwrap.go, ADR 0092-era D17), and /proc
-// stays the host's procfs under `--ro-bind / /`.
+// most need it.
+//
+// WHAT A CAGED READER GETS, AND THE CLAIM THIS FILE FIRST MADE WRONGLY
+// (ranger-base-rph5z, the security review). The first version of this header
+// said the
+// reading "survives a cage by ruling rather than by luck", on the grounds
+// that `--unshare-pid` is deliberately absent from the bwrap argv and /proc
+// stays the host's procfs under `--ro-bind / /` (bwrap.go). That is true and
+// it is not enough: **it opens the pid LIST, not the links.** A seat in a
+// child user namespace is REFUSED a same-uid peer's `exe` and `environ`,
+// because `cap_ptrace_access_check` compares user namespaces and not just
+// uids (the ranger-base-rfyth mechanism). MEASURED 2026-11-21 by the security
+// persona from
+// such a seat: `/proc` listed 460 pids, and `readlink /proc/1185185/exe` and
+// `cat /proc/1185185/environ` were both EACCES while a child that seat had
+// started itself was readable. The reading in the MEASURED block above was
+// taken from a `cage shims` seat, which is not in a child userns — so the
+// reader class this census most needs to work from is the class that first
+// reading did not cover.
+//
+// The consequence is the whole reason `BoxReading.Unreadable` exists.
+// `procExe` answers the same "not ok" for a pid that exited and for a link
+// the kernel refused, so the first version dropped both silently and rendered
+// "no dispatch loop on this box runs …" — a false all-clear over loops it was
+// simply not allowed to see, which is the one sentence this file says must
+// never be printable. A refused read of a process that is still there and
+// still OURS is counted, and every rendering that would otherwise read as an
+// all-clear says so instead.
 //
 // WHOSE READING IT IS: the upgrade verb's alone. G18 stays per-instance and
 // unchanged. A box-wide row inside a per-instance report is a new category
@@ -129,10 +153,27 @@ type BoxReading struct {
 	Path   string    // the binary the reading is about
 	OnDisk string    // dev:ino of Path now; "" when nothing is there
 	Procs  []BoxProc // every candidate found, pid order, loops and not
-	// Err is why there is no reading at all — not linux, no readable /proc.
-	// An ABSTENTION, never an all-clear: the renderings say so.
+	// Unreadable is how many processes of THIS uid the reader could not read
+	// at all — their /proc/<pid>/exe is refused, so they never became
+	// candidates and nothing here can say whether a dispatch loop is among
+	// them (ranger-base-rph5z). It is a count and not a list because from a
+	// child-userns seat it is every same-uid process on the box, which is
+	// hundreds; what the reader needs is that the number is not zero.
+	//
+	// IT IS THE DIFFERENCE BETWEEN "no stale loop" AND "no stale loop I
+	// could see", and before it existed the census printed the first while
+	// meaning the second.
+	Unreadable int
+	// Err is why there is no reading at all — not linux, no readable /proc,
+	// or not one readable process among the ones this uid owns. An
+	// ABSTENTION, never an all-clear: the renderings say so.
 	Err error
 }
+
+// Partial is "there is a reading, but it does not cover the box": something
+// of ours was refused. Every rendering that would otherwise read as an
+// all-clear has to say this.
+func (r BoxReading) Partial() bool { return r.Unreadable > 0 }
 
 // Loops are the confirmed dispatch loops, which is the subject.
 func (r BoxReading) Loops() []BoxProc {
@@ -182,6 +223,15 @@ type boxProbe struct {
 	HomeOf func(pid int) (string, bool)
 	RecPid func(home string) (int, bool)
 	Ident  func(path string) string
+	// Owned says whether a pid ExeOf could not read is nonetheless a process
+	// of this uid — the difference between "refused" and "gone", which
+	// ExeOf's single bool cannot carry (ranger-base-rph5z).
+	Owned func(pid int) bool
+	// CommOf is the kernel's program name for a pid, readable where the exe
+	// link is refused. It narrows which refusals are worth reporting and it
+	// never confirms a loop (boxloops_linux.go says why that distinction is
+	// not the argv matching AGENTS.md forbids).
+	CommOf func(pid int) (string, bool)
 	Self   int // the reading process, which is skipped — see readBoxLoops
 }
 
@@ -193,6 +243,8 @@ func liveBoxProbe() boxProbe {
 		HomeOf: boxHomeOf,
 		RecPid: boxRecordedLoopPid,
 		Ident:  fileIdentity,
+		Owned:  boxPidOwned,
+		CommOf: boxCommOf,
 		Self:   os.Getpid(),
 	}
 }
@@ -201,11 +253,53 @@ func liveBoxProbe() boxProbe {
 // dispatch loop. The filter's right-hand side, and the only thing this
 // reader asks of another instance's state dir.
 func boxRecordedLoopPid(home string) (int, bool) {
-	rec, ok := ReadWatchPid(WatchPidPath(&App{StateDir: filepath.Join(home, "state")}))
+	path := WatchPidPath(&App{StateDir: filepath.Join(home, "state")})
+	// LSTAT FOR A REGULAR FILE BEFORE READING (the security review's second item). The
+	// directory this reaches into is named by another process, so the file at
+	// the end of it is not ours: `ReadWatchPid` stats and then reads, and an
+	// open(2) of a FIFO there blocks forever with no timeout — in `posse
+	// upgrade`, after the swap, which is the worst place on this box to hang.
+	// Lstat and not Stat so a symlink to a FIFO is refused as well.
+	st, err := os.Lstat(path)
+	if err != nil || !st.Mode().IsRegular() {
+		return 0, false
+	}
+	rec, ok := ReadWatchPid(path)
 	if !ok {
 		return 0, false
 	}
 	return rec.Pid, true
+}
+
+// boxHomeIsWellFormed is the fence on a value this census lifts out of
+// ANOTHER process's environment (the security review's first item).
+//
+// WHY A VALUE FROM THERE NEEDS ONE. `RHQ_HOME` is whatever a same-uid process
+// exported, and the census then trusts it twice: it RENDERS it, into a line
+// the install delegate pastes onto an install bead — so arbitrary text,
+// newlines included, would arrive in that persona's context under its own
+// authorship, which is prompt injection into the one persona holding the
+// install verb — and it OPENS it, as `<home>/state/dispatch-watch.pid`. It is
+// not a planted-attacker story: a caged seat's own child qualifies, and this
+// census's first live reading found exactly such a child (a `posse pulse
+// wait` under the ranger home).
+//
+// So: an absolute, already-clean path of printable bytes, or nothing. A value
+// that fails is NOT rendered in any form — the reader falls through to the
+// abstention path, which names the pid and no text. The check is deliberately
+// about SHAPE and not about existence: a home that is well-formed and absent
+// is a different answer (the record read says so), and a reader that stat'ed
+// here would do the untrusted open this function exists to gate.
+func boxHomeIsWellFormed(v string) bool {
+	if v == "" || !filepath.IsAbs(v) || filepath.Clean(v) != v {
+		return false
+	}
+	for i := 0; i < len(v); i++ {
+		if v[i] < 0x20 || v[i] == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // ReadBoxLoops reads every process on this box running the image at path.
@@ -228,12 +322,19 @@ func ReadBoxLoops(path string) BoxReading {
 // says it is not a loop, because a reader that silently drops processes it
 // thinks it recognises is the shape this whole file is a correction of.
 //
-// A process of ANOTHER uid running the same path is INVISIBLE here:
-// readlink(/proc/<pid>/exe) is EACCES across uids, so such a process is not
-// even a candidate. ASSUMED harmless on this box, where every instance's
-// loop runs as the one account (MEASURED 2026-11-21: all three candidates
-// uid 1001) — stated because it is a limit of the reading and not of the
-// subject.
+// A process whose exe link this reader cannot read is NOT silently absent,
+// and the boundary is the USER NAMESPACE and not the uid — which is what the
+// first version of this comment got wrong (ranger-base-rph5z). It said "a
+// process of ANOTHER uid is invisible here … ASSUMED harmless on this box,
+// where every instance's loop runs as the one account", and the uid was the
+// wrong fence to be reassured by: same-uid-but-cross-userns is refused too,
+// so on a caged reader the "harmless" case was every sibling loop on the box.
+// Now: a refused pid that `Owned` says is ours is counted in Unreadable and
+// the renderings cannot claim a clear box; a refused pid of another account
+// stays excluded, because root's processes and non-dumpable ones are refused
+// to everyone and are not subjects of this rename — counting them would make
+// every reading on every box permanently partial, which is a caveat nobody
+// can act on and therefore a caveat nobody reads.
 func readBoxLoops(path string, p boxProbe) BoxReading {
 	r := BoxReading{Path: path}
 	if path == "" {
@@ -251,17 +352,51 @@ func readBoxLoops(path string, p boxProbe) BoxReading {
 			continue
 		}
 		id, exe, ok := p.ExeOf(pid)
-		if !ok || exe != path {
+		if !ok {
+			// A FAILED READ IS NOT AN ABSENCE (ranger-base-rph5z). `procExe`
+			// answers the same "not ok" for a pid that exited and for a link
+			// the kernel refused, and from a seat in a child user namespace
+			// EVERY same-uid peer is refused — so dropping both silently is
+			// what let this census render "no dispatch loop on this box"
+			// over loops it was simply not allowed to see. If the process is
+			// still there and is OURS, the honest answer is that we do not
+			// know what it runs.
+			if boxRefusalWorthReporting(p, pid, path) {
+				r.Unreadable++
+			}
+			continue
+		}
+		if exe != path {
 			continue
 		}
 		proc := BoxProc{Pid: pid, Image: id}
-		home, ok := p.HomeOf(pid)
+		// `declaredHome` and NOT `home`, which is not style: internal/treepins'
+		// temp-root census resolves an identifier across the whole package,
+		// so a literal assigned to `home` anywhere in internal/posse joins
+		// the set of parents that `os.MkdirTemp(home, …)` in app_test.go
+		// could be writing under. An `ok, home = false, ""` here put `""`
+		// into that set and reddened a file this bead never touched. The
+		// census is right to work that way — a prefix nobody can resolve is a
+		// prefix nobody can check — and the cheap half of keeping it
+		// resolvable is not reusing its names for a local.
+		declaredHome, ok := p.HomeOf(pid)
+		// VALIDATED AGAIN HERE, and boxHomeOf already refused a malformed
+		// value before returning one (the security review's first item). Two checks on
+		// purpose: the platform read refuses early so nothing malformed ever
+		// leaves the environ, and this is the portable chokepoint that every
+		// probe and every future platform reader goes through — so the fence
+		// holds for a reader written after this file, which is the one a
+		// comment cannot reach.
+		if ok && !boxHomeIsWellFormed(declaredHome) {
+			ok = false
+			declaredHome = ""
+		}
 		switch {
-		case !ok || home == "":
-			proc.Why = "the reader could not name this process's instance (no readable RHQ_HOME in its environ)"
+		case !ok || declaredHome == "":
+			proc.Why = "the reader could not name this process's instance (no readable, well-formed RHQ_HOME in its environ)"
 		default:
-			proc.Home = home
-			recPid, ok := p.RecPid(home)
+			proc.Home = declaredHome
+			recPid, ok := p.RecPid(declaredHome)
 			switch {
 			case !ok:
 				proc.Why = "that instance has no readable state/dispatch-watch.pid, so nothing says it is the loop"
@@ -274,8 +409,63 @@ func readBoxLoops(path string, p boxProbe) BoxReading {
 		r.Procs = append(r.Procs, proc)
 	}
 	sort.Slice(r.Procs, func(i, j int) bool { return r.Procs[i].Pid < r.Procs[j].Pid })
+	// NOT ONE READABLE PROCESS OF OURS, AND SOME REFUSED: there is no
+	// reading here, only a permission boundary, so this is an abstention and
+	// not an empty box. That is the caged-reader case exactly, and it is the
+	// one the renderings must not be allowed to dress up (ranger-base-rph5z).
+	if len(r.Procs) == 0 && r.Unreadable > 0 {
+		r.Err = Die("none of the %d process(es) of this account on this box could be read from this reader — /proc/<pid>/exe is refused, which is what a seat in a child user namespace gets for a same-uid peer — so whether any dispatch loop is still on the replaced image is UNKNOWN, not no", r.Unreadable)
+	}
 	return r
 }
+
+// boxRefusalWorthReporting decides whether a pid we were refused counts
+// against the reading's completeness.
+//
+// IT HAS TO BE NARROWER THAN "ours and refused", which is what the first fix
+// for ranger-base-rph5z used and what this corrects. MEASURED 2026-11-21 from
+// a `cage shims` seat on this box: four processes are permanently in that set
+// and none could ever be a dispatch loop — the user `systemd`, `(sd-pam)`,
+// `sshd-session` and `gpg-agent`, all non-dumpable, all EACCES on `exe`. So
+// the caveat fired on every reading forever, and a caveat that is always
+// there is one a reader learns to skip, which would have left the false
+// all-clear this field exists to prevent hiding behind a sentence nobody
+// finishes.
+//
+// The three answers, in the order they are asked:
+//
+//   - not ours: EXCLUDED. Another account's process is refused to everyone
+//     and is not a subject of this rename.
+//   - ours, and its comm names a different program: EXCLUDED. It is not
+//     running the binary this reading is about, so it cannot be a loop on it.
+//   - ours, and its comm matches, or its comm could not be read either:
+//     COUNTED. Both are "we do not know what this process of ours is
+//     running", which is the whole content of the caveat.
+//
+// comm is truncated by the kernel to 15 bytes, so a longer basename is
+// compared on that prefix: the truncation is the kernel's and reading it as a
+// mismatch would exclude exactly the processes the caveat is for.
+func boxRefusalWorthReporting(p boxProbe, pid int, path string) bool {
+	if p.Owned == nil || !p.Owned(pid) {
+		return false
+	}
+	if p.CommOf == nil {
+		return true
+	}
+	comm, ok := p.CommOf(pid)
+	if !ok {
+		return true
+	}
+	want := filepath.Base(path)
+	if len(want) > boxCommLen {
+		want = want[:boxCommLen]
+	}
+	return comm == want
+}
+
+// boxCommLen is TASK_COMM_LEN-1: what the kernel keeps of a program name in
+// /proc/<pid>/comm.
+const boxCommLen = 15
 
 // boxScopeSentence is what this reading says about its own reach — the
 // counterpart of watchScopeSentence, which says what the per-instance one
@@ -296,9 +486,19 @@ func (r BoxReading) Sentence() string {
 	var b strings.Builder
 	b.WriteString("dispatch (box): ")
 	switch {
+	case len(loops) == 0 && r.Partial():
+		// NOT "no dispatch loop on this box". The reader saw some of the box
+		// and was refused the rest, and the two sentences differ by exactly
+		// the thing an operator would act on (ranger-base-rph5z).
+		b.WriteString(fmt.Sprintf("no dispatch loop runs %s among the processes this reader COULD read, and %s of this account it could NOT read may hold one — so this is UNKNOWN and not a clear box",
+			AbbrevHome(r.Path), boxCount(r.Unreadable, "process", "processes")))
 	case len(loops) == 0:
 		b.WriteString("no dispatch loop on this box runs " + AbbrevHome(r.Path) +
 			" — nothing a rename of it left behind, and nothing it renders either")
+	case len(stale) == 0 && r.Partial():
+		b.WriteString(fmt.Sprintf("%s this reader could read on this box, all already on the installed image — %s; but %s of this account it could NOT read may hold a loop that is not, so this is not a clear box",
+			boxCount(len(loops), "dispatch loop", "dispatch loops"), boxProcList(loops, r.OnDisk, false),
+			boxCount(r.Unreadable, "process", "processes")))
 	case len(stale) == 0:
 		b.WriteString(fmt.Sprintf("%s on this box, all already on the installed image — %s",
 			boxCount(len(loops), "dispatch loop", "dispatch loops"), boxProcList(loops, r.OnDisk, false)))
@@ -307,6 +507,10 @@ func (r BoxReading) Sentence() string {
 			boxCount(len(loops), "dispatch loop", "dispatch loops"), len(stale), boxProcList(loops, r.OnDisk, true)))
 		if r.OnDisk == "" {
 			b.WriteString(" — and " + AbbrevHome(r.Path) + " holds NOTHING right now, so every one of them is stale against an absent file: read this as a swap in flight or a missing install before reading it as loops to restart")
+		}
+		if r.Partial() {
+			b.WriteString(fmt.Sprintf(" — and these are only the loops this reader could read: %s of this account it could not read may hold more",
+				boxCount(r.Unreadable, "process", "processes")))
 		}
 	}
 	if other := r.Unattributed(); len(other) > 0 {
@@ -317,6 +521,17 @@ func (r BoxReading) Sentence() string {
 	}
 	b.WriteString(". " + boxScopeSentence(r.Path))
 	return b.String()
+}
+
+// boxRefusedNote is the one phrase that must appear whenever a reading did
+// not cover the box, in whichever branch rendered it. Kept as a predicate
+// over the finished sentence rather than as a string the branches share,
+// because what a pin needs to hold is that the SENTENCE says it — three
+// branches assemble it three ways and a shared constant would let one of
+// them drop the clause while still owning the constant.
+func boxSentenceAdmitsItDidNotCoverTheBox(s string) bool {
+	return strings.Contains(s, "could NOT read") || strings.Contains(s, "could not read") ||
+		strings.Contains(s, "UNKNOWN, not no")
 }
 
 // boxProcList names each loop by its instance and pid. perProcState is off
