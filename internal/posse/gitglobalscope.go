@@ -7,12 +7,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -375,6 +377,16 @@ const gitGlobalSnapshotMode fs.FileMode = 0o444
 // Lstat, not Stat, and IsRegular: a symlink planted at the snapshot's name
 // carries mode 0777 and would resolve to whatever it points at, which is the
 // same tamper wearing a different hat.
+//
+// THE BYTES COME THROUGH gitGlobalSnapshotRead (ranger-base-40vo2). The Lstat
+// above is what refuses a PLANTED fifo, and the writer's hang was the whole of
+// that bead; this reader never hung on one. What it shares with the writer is
+// the window between that Lstat and the read, and the helper's non-blocking
+// open is what closes it here too — one line, in the function the fix is
+// already in, rather than a residual of the same shape left two lines below
+// the thing that fixed it. It changes no answer: the helper's shape check is
+// a subset of the two arms above, and an error from it reaches the same
+// "does not read back as a copy" refusal a short read always did.
 func gitGlobalSnapshotVerify(snap string, want []byte) error {
 	lock := snap + ".lock"
 	if fi, err := os.Lstat(lock); err != nil || !fi.IsDir() {
@@ -387,7 +399,7 @@ func gitGlobalSnapshotVerify(snap string, want []byte) error {
 	if perm := fi.Mode().Perm(); perm != gitGlobalSnapshotMode {
 		return fmt.Errorf("%s is mode %#o, not %#o, so `git config --global --edit` can rewrite it under the rendered row", snap, perm, gitGlobalSnapshotMode)
 	}
-	if got, err := os.ReadFile(snap); err != nil || !bytes.Equal(got, want) {
+	if got, err := gitGlobalSnapshotRead(snap); err != nil || !bytes.Equal(got, want) {
 		return fmt.Errorf("%s does not read back as a copy of the global file", snap)
 	}
 	return nil
@@ -405,6 +417,53 @@ func gitIncludesSection(b []byte) bool {
 	return false
 }
 
+// gitGlobalSnapshotRead is gitGlobalSnapshot's content comparison read, and
+// the whole of its contract is that it ANSWERS over whatever is at that name.
+//
+// os.ReadFile does not (ranger-base-40vo2, escaped ranger-base-161t2). A fifo
+// planted at the snapshot's path opens O_RDONLY only once a writer arrives, so
+// the read sat in the kernel forever: PrepareGitGlobalSnapshot — the launch —
+// never answered, and GitGlobalScopeDegraded()'s line, which exists for
+// exactly this plant, was never reached because nothing returned to print it.
+// ranger-base-r9slg's shape check went into gitGlobalSnapshotVerify only, so
+// every READER of the row already refuses such a plant in microseconds and the
+// WRITER was the one caller that hung. MEASURED 2026-11-21 (ranger-base-suozl)
+// at a 0444 fifo under <SeatWallRoot(HOME)>/git-global/<hash>/: verify answers,
+// Prepare does not answer in 5s.
+//
+// An error here is "not the bytes this launch wants", which puts the caller on
+// the rewrite arm: the rename replaces a fifo, a symlink or a device the way it
+// replaces tampered bytes, so the launch HEALS the plant rather than refusing
+// it — and when it cannot (a directory at that name), the rename's error is
+// returned and the degraded line is printed, which is the same answer any other
+// unusable snapshot gets.
+//
+// TWO checks and not one, because they answer different questions. The Lstat
+// is the shape, and it is also what refuses a symlink — whose target would
+// otherwise be read and could match want, exactly the hat ranger-base-r9slg
+// took off the verify. O_NONBLOCK plus the fstat is what makes that safe
+// against a plant that arrives BETWEEN the Lstat and the open: at the shims
+// tier the whole home is writable and this path is under no caged write grant
+// (TestQAGitGlobalSnapshotIsUnderNoCagedWriteGrant), so whoever can plant once
+// can plant in a window, and a window that still hangs the launch is this
+// defect with a smaller mouth. O_NONBLOCK is inert on a regular file; on a
+// fifo it is what lets the open return at all, and the fstat is what refuses
+// what it opened.
+func gitGlobalSnapshotRead(snap string) ([]byte, error) {
+	if fi, err := os.Lstat(snap); err != nil || !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file (%v)", snap, err)
+	}
+	f, err := os.OpenFile(snap, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file (%v)", snap, err)
+	}
+	return io.ReadAll(f)
+}
+
 // gitGlobalSnapshot writes (or re-verifies) the read-only snapshot of file
 // under root and returns its path. Only PrepareGitGlobalSnapshot calls it
 // outside a test: it is the one host write here (ranger-base-qd9ei). A missing file snapshots as empty:
@@ -412,6 +471,11 @@ func gitIncludesSection(b []byte) bool {
 // operator's ~/.gitconfig on the first --global write. Content-addressed,
 // so concurrent launches over the same bytes agree on one path, and a
 // snapshot someone edited is rewritten by the next launch over it.
+//
+// THE SNAPSHOT'S CONTENT COMPARISON GOES THROUGH gitGlobalSnapshotRead, and
+// never os.ReadFile (ranger-base-40vo2): a FIFO at the snapshot's name made
+// this function — the LAUNCH path — block in the kernel instead of taking the
+// rewrite arm below.
 func gitGlobalSnapshot(file, root string) (string, error) {
 	want, snap, err := gitGlobalSnapshotPath(file, root)
 	if err != nil {
@@ -421,7 +485,7 @@ func gitGlobalSnapshot(file, root string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	if got, rerr := os.ReadFile(snap); rerr != nil || !bytes.Equal(got, want) {
+	if got, rerr := gitGlobalSnapshotRead(snap); rerr != nil || !bytes.Equal(got, want) {
 		tmp, err := os.CreateTemp(dir, ".snap-*")
 		if err != nil {
 			return "", err
