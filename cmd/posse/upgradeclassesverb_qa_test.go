@@ -108,6 +108,22 @@ func TestQAUpgradeClassesFlagIsInTheBinary(t *testing.T) {
 		t.Errorf("`posse upgrade --classes` created %s — rule 4's answer takes no lock", lock)
 	}
 
+	// A <sha> beside the flag is REFUSED, not ignored: `--classes` is an
+	// alternative to the install and prints a static map, so a target named
+	// with it is a target nothing would ever read, and the one spelling
+	// where ignoring it is expensive is an operator who meant to install
+	// that sha. The refusal carries no mark, so a reader of this verb's
+	// answer reads the arm as "did not answer" rather than as a partition.
+	both := exec.Command(bin, "upgrade", "--classes", "deadbeef")
+	both.Env = append(os.Environ(), "HOME="+home, "XDG_CACHE_HOME="+cache, "RHQ_PERSONA=")
+	bout, berr := both.CombinedOutput()
+	if berr == nil {
+		t.Errorf("`posse upgrade --classes <sha>` exited 0 — the sha it names is a target this flag never reads:\n%s", bout)
+	}
+	if strings.Contains(string(bout), posse.UpgradeClassMark) {
+		t.Errorf("the refusal of `--classes <sha>` carries the %q mark, so a reader would take it for an answer:\n%s", posse.UpgradeClassMark, bout)
+	}
+
 	// And the flag is named where someone would look for it: the verb's own
 	// usage line, and the catalog `posse help` prints.
 	for _, probe := range []struct {
