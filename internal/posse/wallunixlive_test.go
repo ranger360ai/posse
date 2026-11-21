@@ -68,6 +68,46 @@ const (
 	wuEnvReady = "RHQ_QA_WALLUNIX_READY"
 )
 
+// wuSunPath is AF_UNIX's cap, NUL included, so the longest pathname a bind
+// takes is one byte less. wallchecklive_test.go's wallLiveSunPath is the same
+// number for arm 2's two gnupg-socket members; it is written twice because
+// the two files are in different build arms and neither compiles with the
+// other.
+const wuSunPath = 108
+
+// wuSockDir is the scratch directory these two pins bind a unix socket
+// inside, and it is shortTempDir and NOT t.TempDir() for one measured reason:
+// a t.TempDir() name carries the TEST's own name — 73 bytes for the pin below
+// — so the path is over wuSunPath as soon as TMPDIR is not a 4-byte /tmp, and
+// it is the HOST's own net.Listen that fails:
+//
+//	listen unix <TMPDIR>/TestLiveWallUnixRefuses…cont<10 digits>/001/leader.sock: bind: invalid argument
+//
+// MEASURED 2026-11-21 (ranger-base-vbp5a), Linux 7.2.15-1-omarchy, go1.27.3:
+// green with TMPDIR unset, and BOTH ARMS of both pins failed at that listen
+// inside ADR 0097 D1's venue, whose TMPDIR is
+// `<state>/landed-check/run-<10 digits>/tmp` (62 bytes on this box). That is
+// worse than a red: the control arm dies with the step arm, so the pin cannot
+// even read as a false pass — which is the one shape this file's header says
+// the control arm exists to prevent. ADR 0096 D3 makes that venue where these
+// live pins measure, and there they measured nothing.
+//
+// THE LENGTH IS ASSERTED RATHER THAN SKIPPED OVER, which is the one
+// difference from wallchecklive_test.go's budget: that one guards a root an
+// operator may pass in, while shortTempDir's root is a literal `/tmp`, so no
+// environment can push this path over the cap and the only thing left that
+// can is a rename inside this file. A skip would go dark for a tree bug.
+func wuSockDir(t *testing.T, name string) (dir, sock string) {
+	t.Helper()
+	dir = shortTempDir(t)
+	sock = filepath.Join(dir, name)
+	if len(sock) >= wuSunPath {
+		t.Fatalf("NOTHING MEASURED: the socket path %s is %d bytes and sun_path is %d, so the host's own listen would answer `bind: invalid argument` and BOTH arms of this pin would die with it — a red that is this fixture's path and not the wall (ranger-base-vbp5a)",
+			sock, len(sock), wuSunPath)
+	}
+	return dir, sock
+}
+
 func TestLiveWallUnixRefusesAHostSocketBoundAfterTheSeatLaunched(t *testing.T) {
 	wuLiveSkip(t)
 	self := posseBinForTest(t)
@@ -90,9 +130,10 @@ func TestLiveWallUnixRefusesAHostSocketBoundAfterTheSeatLaunched(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// A dir per arm: the second arm must not meet the first arm's
 			// socket, and a fresh mktemp per iteration is cheaper than
-			// reasoning about removing one (AGENTS.md).
-			dir := t.TempDir()
-			sock := filepath.Join(dir, "leader.sock")
+			// reasoning about removing one (AGENTS.md). It is wuSockDir's
+			// short root because the socket below has to fit in sun_path
+			// before anything else here can be true.
+			dir, sock := wuSockDir(t, "leader.sock")
 			ready := filepath.Join(dir, "ready")
 
 			argv := append([]string{
@@ -510,8 +551,7 @@ func TestLiveWallUnixLeavesCrossDirectoryRename(t *testing.T) {
 		{"the socket wall", WallUnixStepArgv(self), "EACCES"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			dir := t.TempDir()
-			sock := filepath.Join(dir, "wall.sock")
+			dir, sock := wuSockDir(t, "wall.sock")
 			// Bound HERE, by this uncaged process, before the seat exists.
 			l, err := net.Listen("unix", sock)
 			if err != nil {
