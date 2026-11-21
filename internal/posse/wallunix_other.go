@@ -8,11 +8,27 @@ package posse
 // because the darwin box is where internal/posse's suite runs and where the
 // Linux render is read from (wall.go's wallMechanismHost).
 
+import "os"
+
 // liveWallUnixABI: there is no Landlock here, and the answer is the same one
 // a Linux kernel without CONFIG_SECURITY_LANDLOCK gives — the syscall is
 // absent. Negative and not 0, so `posse gates` prints "absent" rather than
 // claiming a version nobody read.
 func liveWallUnixABI() int { return -1 }
+
+// liveWallUnixTask: `gettid` is a Linux call and the thread group leader is a
+// Linux idea, so the answer here is the pair that says "nothing to refuse",
+// and it is the honest one rather than a fail-open: the step is unreachable
+// off Linux, because liveRestrictWallUnix below refuses unconditionally one
+// statement later, and no seat here is ever opened by this file.
+//
+// IT HAS TO ANSWER "LEADER" AND NOT "NOT LEADER", for the reason the whole
+// seam exists: RunWallUnix's leader refusal is read from darwin by stubbing
+// wallUnixTask, so the arms BELOW it — the apply refusal and the no-runtime
+// refusal — must be reachable here with the var unstubbed. A twin that
+// answered "not leader" would make every darwin pin of this function read one
+// sentence, the wrong one.
+func liveWallUnixTask() (tid, pid int) { p := os.Getpid(); return p, p }
 
 // liveRestrictWallUnix cannot be reached: RunWallUnix runs inside a bwrap
 // cage, and nothing off Linux has one. It refuses rather than returning nil,

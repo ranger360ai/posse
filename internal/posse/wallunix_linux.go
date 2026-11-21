@@ -41,13 +41,45 @@ func liveWallUnixABI() int {
 // RunWallUnix turns into a seat that will not open).
 var _ [0]struct{} = [landlockAccessFSRefer - unix.LANDLOCK_ACCESS_FS_REFER]struct{}{}
 
-// liveRestrictWallUnix applies the domain to the calling thread group: one layer
+// liveWallUnixTask is the calling thread's id and this process's id. They are
+// equal on, and only on, the thread group leader: the kernel gives the leader
+// a tid equal to the tgid, and `gettid` is the one way a thread can read which
+// one it is.
+//
+// TWO SYSCALLS AND NOT os.Getpid()'S CACHE, deliberately: `getpid` here is the
+// same number either way, and reading both through x/sys keeps the pair one
+// kernel reading rather than one kernel reading compared against a Go runtime
+// value. unix.Gettid is Linux-only in x/sys, which is why this seam is split
+// by GOOS at all.
+func liveWallUnixTask() (tid, pid int) { return unix.Gettid(), unix.Getpid() }
+
+// liveRestrictWallUnix applies the domain to the CALLING THREAD: one layer
 // handling RESOLVE_UNIX and REFER and no other filesystem right, with one rule
 // added — REFER on `/` — so every host pathname socket in this seat's view is
 // refused, a socket the seat makes for itself is not, and rename(2) and link(2)
 // are left exactly as the mounts leave them. It also scopes SIGNAL, so the seat
 // can signal only what it forked (wallUnixRuleset says which of these this ABI
 // gets).
+//
+// THE CALLING THREAD, AND NOT THE THREAD GROUP, and that correction is
+// ranger-base-vxz74: this comment used to say "thread group", which is false
+// of `landlock_restrict_self(fd, 0)` — the domain reaches the siblings only
+// with LANDLOCK_RESTRICT_SELF_TSYNC. What makes a per-thread apply sound is
+// RunWallUnix's lock and leader check, which hold this goroutine on the
+// leader from before the restrict until the exec, and `execve` then keeps the
+// one thread that is in the domain (de_thread). cmd/coldexec's runChild is the
+// same shape for the same reason, one layer down, with seccomp in place of
+// Landlock.
+//
+// NO TSYNC FLAG, and that is a decision and not an omission (ADR 0080 D39).
+// It would be belt-and-braces over a window the lock has already closed, it
+// cannot carry the pdeathsig — which is per-task and set on one task only, so
+// no flag of any syscall can propagate it — and it is gated: the flag is
+// (1U << 3) of `landlock_restrict_self`'s flags in this box's
+// linux/landlock.h, this tree has never measured which Landlock ABI
+// introduced it, and an unknown flag is EINVAL. Passed ungated, it would turn
+// every seat on a kernel that does not have it into a seat that does not open
+// — a refusal where today there is a working wall.
 //
 // THE RULE IS ADDED BEFORE restrict_self AND AFTER create_ruleset, which is the
 // only window the syscall has: a rule is added to a ruleset FD, and the FD stops

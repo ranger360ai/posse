@@ -106,6 +106,7 @@ package posse
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -283,6 +284,19 @@ var wallUnixABI = liveWallUnixABI
 // caller and it is the live function.
 var restrictWallUnix = liveRestrictWallUnix
 
+// wallUnixTask is the CALLING THREAD's id and this process's id, in that
+// order. Equal means this goroutine is on the thread group leader — the
+// original thread, the one whose task the kernel's pdeathsig was set on and
+// the one `execve` leaves standing by name rather than by accident.
+//
+// A var for restrictWallUnix's reason and read as a PAIR rather than as a
+// bool for one reason of its own: the refusal prints both numbers, and a
+// bool would make the one diagnostic a reader of that sentence wants — WHICH
+// thread, of which process — unrecoverable. The live answer is two Linux
+// syscalls, so the arm above it is readable from darwin only through this
+// seam (see liveWallUnixTask in both GOOS files).
+var wallUnixTask = liveWallUnixTask
+
 // WallUnixAvailable reports whether this host types the step at all — the
 // signal scope from ABI 6, and the socket wall with it from ABI 9.
 func WallUnixAvailable() bool { return wallUnixAvailableFor(WallMechanism()) }
@@ -408,7 +422,45 @@ func wallUnixABIText() string {
 // take the shell-verb denies off the one process they most have to cover.
 // This step is a wrapper, not a launcher, so it resolves what bwrap's own
 // execvp would have resolved.
+//
+// IT ALL HAPPENS ON ONE LOCKED OS THREAD, AND THAT THREAD IS THE THREAD GROUP
+// LEADER (ranger-base-vxz74; the finding is ranger-base-z56s9's). Three of the
+// four things this step delivers are per-TASK and not per-process:
+//
+//   - `prctl(PR_SET_NO_NEW_PRIVS)` sets the calling thread's bit;
+//   - `landlock_restrict_self(fd, 0)` puts the calling THREAD in the domain —
+//     the whole thread group only with LANDLOCK_RESTRICT_SELF_TSYNC, which
+//     this call does not pass (liveRestrictWallUnix says why not);
+//   - and `pdeath_signal`, which bwrap's `--die-with-parent` set on the task
+//     it cloned, is zero on every thread the Go runtime clones afterwards.
+//
+// `syscall.Exec` runs on whichever M the goroutine is on, and `execve` from a
+// non-leader thread keeps THAT thread's task (de_thread) — so a goroutine the
+// scheduler moved between the restrict and the exec would hand the seat a
+// runtime with no socket wall, no signal scope and no `--die-with-parent`,
+// while the render and `posse gates` both still said the layer was up. That is
+// ADR 0080 D4's case exactly, arriving as the one thing D4 forbids: a fail
+// OPEN. `runtime.LockOSThread` closes the window — nothing can move this
+// goroutine once it is held — and the leader check below is what makes the
+// thread it is held on the one the pdeathsig is on, since no Go program can
+// ask to be moved TO a particular thread.
+//
+// MEASURED 2026-11-21, D1 host (Linux 7.2.15-1-omarchy, go1.27.3): the hazard
+// is latent and was never reproduced — 600 of 600 `posse wall-unix` execs read
+// PR_GET_PDEATHSIG as 9 before this fix, so every one of them had run on the
+// leader already — and 600 of 600 read 9 after it, with no refusal from the
+// check in any of the runs (docs/notes.d/ranger-base-vxz74.md). An attacker
+// cannot steer the Go scheduler, which is why the finding is a P2; a layer
+// that depends on the scheduler for its correctness is still a layer posse
+// does not ship.
 func RunWallUnix(args []string) error {
+	// FIRST, before the argv is even read: everything below this line can
+	// park the goroutine (LookPath opens files, the ABI read is a syscall),
+	// and the lock has to be held across all of it for the thread that is
+	// checked to be the thread that execs. It is never unlocked — this
+	// function returns only on a refusal, and on success the process is
+	// replaced.
+	runtime.LockOSThread()
 	// ONLY WHAT FOLLOWS `--`, and nothing when there is no `--`. Written
 	// first as "default to args", which on a line with no `--` made the
 	// step's own argv its command: it restricted this process and then
@@ -439,6 +491,16 @@ func RunWallUnix(args []string) error {
 	abi := wallUnixABI()
 	if abi < WallUnixSignalABIMin {
 		return Die("%s: this kernel's Landlock ABI reads as %s and the step's floor is %d (LANDLOCK_SCOPE_SIGNAL), so neither this seat's signal scope nor its socket wall can be applied — and posse does not open a seat behind a wall it reported and does not have (ADR 0080 D4). `posse gates` says what a launch would render now", WallUnixVerb, wallUnixABIText(), WallUnixSignalABIMin)
+	}
+	// THE LOCK SAYS "THIS THREAD", AND THIS SAYS WHICH THREAD IT IS. Held
+	// across the restrict and the exec, the lock makes the three per-task
+	// things land together; it cannot choose WHICH thread they land on, and
+	// only the leader's task carries the pdeathsig. So a goroutine that was
+	// already off the leader when this step began refuses, for the same D4
+	// reason every other failure here refuses: one seat that does not open
+	// costs less than a seat that opens unwalled and reports otherwise.
+	if tid, pid := wallUnixTask(); tid != pid {
+		return Die("%s: this step is running on thread %d of process %d, which is not the thread group leader (%d) — PR_SET_NO_NEW_PRIVS, landlock_restrict_self and bwrap's `--die-with-parent` pdeathsig are all per-task, and an execve from a non-leader thread keeps THAT task, so this seat would come up with no socket wall, no signal scope and no die-with-parent while the render and `posse gates` still said the layer was up. posse does not open a seat behind a wall it reported and does not have (ADR 0080 D4). runtime.LockOSThread is held from this step's first statement, so what this says is that the Go runtime had already moved the goroutine off the leader before the step ran: relaunching the seat is the answer, and nothing about this host's Landlock has changed", WallUnixVerb, tid, pid, pid)
 	}
 	if err := restrictWallUnix(abi); err != nil {
 		return Die("%s: this seat's Landlock layer (signal scope, and the socket wall from ABI %d) could not be applied (%v), and posse does not open a seat behind a wall it reported and does not have (ADR 0080 D4). The render typed this step because this kernel's Landlock ABI read as %s; if that has changed under it, `posse gates` says what a launch would render now", WallUnixVerb, WallUnixABIMin, err, wallUnixABIText())

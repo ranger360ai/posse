@@ -539,7 +539,16 @@ const wuSeatReportEnd = "END\n"
 //     premise above stands and the residual is "die-with-parent is a no-op on
 //     that platform", which goes back to ranger-base-z56s9.
 //   - pdeathsig=0 in the step arm ONLY: the step clears it, and the step is
-//     this repo's code to fix.
+//     this repo's code to fix. ONE CAUSE OF THIS ROW HAS SINCE BEEN FOUND AND
+//     FIXED (ranger-base-vxz74, ADR 0080 D37/D38): the step applied its layers
+//     to whatever thread the goroutine was on, and a pdeathsig is per-task and
+//     zero on every thread the Go runtime clones, so an exec from a non-leader
+//     thread read 0 here. It locks its OS thread and refuses off the thread
+//     group leader now. On this box the row read 9 both before and after (600
+//     execs each), so that fix does not predict what an ubuntu log says — but
+//     if this row is still 0 in the step arm there, the cause is a second one,
+//     and if the step arm instead fails to START, read its stderr: a seat that
+//     refuses now says which thread it was on.
 //   - pdeathsig=9 and the seat survives anyway: a DELIVERY problem, not a
 //     clearing one, and ADR ranger-base-sv89t's premise needs amending.
 //   - both arms pass: the original red came from the environment.

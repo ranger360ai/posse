@@ -2329,3 +2329,85 @@ the class at all — it takes `python3`/`os.rename`, `ln`, or git.
 
 - ranger-base-p5i2c
 - ranger-base-ufd7z
+
+## Amendment: the wall step runs on one locked thread, and that thread is the leader (ranger-base-vxz74, 2026-11-21)
+
+**The finding.** Three of the four things `posse wall-unix` delivers are
+per-TASK, not per-process:
+
+- `prctl(PR_SET_NO_NEW_PRIVS)` sets the calling thread's bit;
+- `landlock_restrict_self(fd, 0)` puts the calling THREAD in the domain — the
+  thread group only with `LANDLOCK_RESTRICT_SELF_TSYNC`, which the call does
+  not pass;
+- `pdeath_signal`, which bwrap's `--die-with-parent` set on the task it
+  cloned, is zero on every thread the Go runtime clones afterwards.
+
+`syscall.Exec` runs on whichever M the goroutine is on, `execve` from a
+non-leader thread keeps THAT thread's task (`de_thread`), and nothing in the
+step called `runtime.LockOSThread`. So a goroutine the scheduler moved between
+the restrict and the exec would have handed the seat a runtime with no socket
+wall, no signal scope and no `--die-with-parent`, with the render and `posse
+gates` both still reporting the layer as up — D4's case arriving as the one
+direction D4 forbids. The comment on `liveRestrictWallUnix` said the apply
+reached "the calling thread group", which was false of this call.
+
+**Severity, and why it is not higher.** An attacker cannot steer the Go
+scheduler: the hazard depends on a scheduling decision and was never
+reproduced, which is why the finding is a P2 rather than the P0 a fail-open
+usually is. It fails OPEN, which is why it was fixed at all.
+
+**Decision.**
+- **D37. `RunWallUnix` calls `runtime.LockOSThread()` as its first statement
+  and never unlocks.** Everything after that line can park the goroutine
+  (`exec.LookPath` opens files, the ABI read is a syscall), so the lock has to
+  precede all of it for the thread that is checked to be the thread that
+  execs. There is no unlock because there is nothing after the exec: on
+  success the process is replaced, and on failure the step returns a refusal.
+- **D38. Before the restrict, the step refuses unless it is on the thread
+  group leader** (`gettid() == getpid()`). The lock holds a thread; it cannot
+  choose WHICH thread, and no Go program can ask to be moved to one. Only the
+  leader's task carries the pdeathsig, so a step that began life off the
+  leader refuses, for D4's reason — one seat that does not open costs less
+  than a seat that opens unwalled and reports otherwise. The refusal names the
+  thread, the process and the fact that a relaunch and not a kernel is the
+  answer.
+- **D39. No `LANDLOCK_RESTRICT_SELF_TSYNC`, and that is a decision.** It would
+  be belt-and-braces over a window D37 has already closed; it cannot carry the
+  pdeathsig, which is per-task and set on one task only, so no flag of any
+  syscall can propagate it; and it is gated — the flag is `(1U << 3)` of
+  `landlock_restrict_self`'s flags in this box's `linux/landlock.h`, this tree
+  has never measured which Landlock ABI introduced it, and an unknown flag is
+  `EINVAL`. Passed ungated it would turn every seat on a kernel without it
+  into a seat that does not open, which is a refusal where today there is a
+  working wall. `cmd/coldexec`'s `runChild` is the same shape one layer down,
+  with seccomp in place of Landlock, and reaches the same conclusion about
+  TSYNC for the same reason.
+
+**Measured versus assumed.**
+- MEASURED 2026-11-21, D1 host (Linux 7.2.15-1-omarchy, go1.27.3), BEFORE the
+  fix, by hoover on ranger-base-vxz74: 600 of 600 runs of `setpriv --pdeathsig
+  KILL -- posse wall-unix -- python3 <PR_GET_PDEATHSIG>` read 9 — across all
+  CPUs, under `taskset -c 0` with `GOMAXPROCS=1`, and on two CPUs with
+  `GOMAXPROCS=2`. Every one of those execs ran on the original thread, so the
+  hazard is latent and unreproduced.
+- MEASURED 2026-11-21, same box and the same three cells, AFTER the fix: 600
+  of 600 read 9 and the leader check refused 0 times (400 + 100 + 100, 11.0s
+  wall at a one-minute load average of 9.65). The check costs no seat on this
+  host and the pdeathsig is where it was.
+- MEASURED, this tree: the live bwrap pins all pass behind the fix, both death
+  arms included (`internal/posse/wallunixlive_test.go`); and four mutants of
+  the fix each red a pin — the leader check neutered, the lock replaced by a
+  no-op, the lock moved off the first statement, and `liveWallUnixTask`
+  reading `getpid` twice, which is the mutant the live pin cross-checks
+  against `/proc/thread-self/status` so that it reds rather than abstaining.
+- ASSUMED, not measured: that the Go runtime keeps `main`'s goroutine on the
+  leader thread at the point `RunWallUnix` is reached. The 1,200 execs above
+  are consistent with it and nothing in the runtime's contract promises it,
+  which is why D38 refuses rather than assuming.
+- Out of scope: the darwin half (D16), and whether the signal scope should
+  also be re-read after the exec, which no mechanism posse has can do.
+
+**Beads.**
+
+- ranger-base-vxz74
+- ranger-base-z56s9 (the finding)

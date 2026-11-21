@@ -13,7 +13,14 @@ package posse
 // wallUnixAvailableFor takes a mechanism).
 
 import (
+	"bytes"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -310,5 +317,270 @@ func TestQAWallUnixStepRefusesBelowTheSignalABIFloor(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// wuStubApplyMarker is the sentence the apply stub returns in the two pins
+// below, so an arm that was MEANT to reach the apply can prove it did by the
+// error it got back rather than by a counter alone.
+const wuStubApplyMarker = "the apply stub: this pin never applies a real Landlock domain to the test binary"
+
+// TestQAWallUnixStepRefusesOffTheThreadGroupLeader is ranger-base-vxz74's pin:
+// the step refuses, BEFORE the apply, when the goroutine it runs on is not on
+// the thread group leader.
+//
+// WHAT IS BEING DEFENDED. Three of the four things this step delivers are
+// per-task — PR_SET_NO_NEW_PRIVS, the Landlock domain
+// (`landlock_restrict_self(fd, 0)`, no TSYNC) and bwrap's `--die-with-parent`
+// pdeathsig, which is zero on every thread the Go runtime clones — and
+// `execve` from a non-leader thread keeps THAT task. So a step that restricted
+// one thread and exec'd from another would open a seat with no socket wall, no
+// signal scope and no die-with-parent, with the render and `posse gates` both
+// still reporting the layer as up: the fail-OPEN direction ADR 0080 D4
+// forbids. RunWallUnix holds runtime.LockOSThread from its first statement,
+// which closes the window, and this check is what makes the locked thread the
+// one the pdeathsig is on.
+//
+// THE CONTROL ARM IS THE POINT, as everywhere else in this file's family: a
+// refusal proves nothing unless the same body with equal ids reaches the
+// apply. Without that arm, a check written `if true` reads green.
+//
+// BOTH ARMS STUB THE APPLY, and that is not a convenience: the real apply
+// would put a signal-scoped Landlock domain and NO_NEW_PRIVS on the test
+// binary's own thread for the rest of the run, which every later pin that
+// signals a host process would then read as its own failure.
+//
+// SERIAL, no t.Parallel: wallUnixABI, restrictWallUnix and wallUnixTask are
+// package-level vars.
+func TestQAWallUnixStepRefusesOffTheThreadGroupLeader(t *testing.T) {
+	restoreABI, restoreApply, restoreTask := wallUnixABI, restrictWallUnix, wallUnixTask
+	t.Cleanup(func() {
+		wallUnixABI, restrictWallUnix, wallUnixTask = restoreABI, restoreApply, restoreTask
+	})
+	wallUnixABI = func() int { return WallUnixABIMin }
+
+	applied := 0
+	restrictWallUnix = func(int) error {
+		applied++
+		return errors.New(wuStubApplyMarker)
+	}
+
+	for _, c := range []struct {
+		name     string
+		tid, pid int
+		refuses  bool
+	}{
+		// The control: the same body on the leader must reach the apply. If
+		// this arm ever stops doing so, the arm below it is not reading the
+		// leader check and must not be read as a pass.
+		{"control: on the leader, where tid == pid", 4242, 4242, false},
+		{"a thread the runtime cloned", 4243, 4242, true},
+		{"and one of another process's threads, which is the same class", 1, 4242, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			applied = 0
+			wallUnixTask = func() (int, int) { return c.tid, c.pid }
+			err := RunWallUnix([]string{"posse", WallUnixVerb, "--", "true"})
+			if err == nil {
+				t.Fatalf("tid %d, pid %d: RunWallUnix returned nil — on success this call does not return at all (it becomes the runtime), so a nil here is a seat that opened", c.tid, c.pid)
+			}
+			if !c.refuses {
+				if applied != 1 {
+					t.Fatalf("tid %d == pid %d is the LEADER and the apply was called %d time(s), want 1 — the leader check is refusing the one thread the step is allowed to run on, so every seat on this host would fail to open: %v", c.tid, c.pid, applied, err)
+				}
+				if !strings.Contains(err.Error(), wuStubApplyMarker) {
+					t.Errorf("tid %d == pid %d: the error came from somewhere other than the apply (%v) — this arm must get PAST the leader check", c.tid, c.pid, err)
+				}
+				return
+			}
+			if applied != 0 {
+				t.Errorf("tid %d of pid %d: the apply was called %d time(s), so the step restricted a thread it is not about to exec from — NNP, the domain and the pdeathsig are per-task and the exec would keep another one (ADR 0080 D4): %v",
+					c.tid, c.pid, applied, err)
+			}
+			said := err.Error()
+			for _, want := range []string{
+				WallUnixVerb,
+				"thread group leader",
+				"per-task",
+				"die-with-parent",
+				"ADR 0080 D4",
+				"runtime.LockOSThread",
+				strconv.Itoa(c.tid),
+				strconv.Itoa(c.pid),
+			} {
+				if !strings.Contains(said, want) {
+					t.Errorf("tid %d of pid %d: the refusal does not name %q — this sentence is the whole of what an operator reading a seat that would not open has to go on, and it has to name the thread, the process and why a relaunch rather than a kernel is the answer: %s",
+						c.tid, c.pid, want, said)
+				}
+			}
+		})
+	}
+}
+
+// TestQAWallUnixStepRefusesFromARealNonLeaderThread is the same refusal read
+// through the LIVE probe on a real cloned thread, which is the pin
+// ranger-base-vxz74 asks for by name. The pin above stubs wallUnixTask, so it
+// cannot see a liveWallUnixTask that answered the wrong pair — `getpid` twice,
+// say, which would read "always the leader" and restore the fail-open with
+// every stubbed arm still green.
+//
+// THE THREAD IS LOCKED AND THEN READ, never assumed: a fresh goroutine is
+// overwhelmingly on a cloned M, but nothing guarantees it, so the pin asks the
+// production probe which thread it got and says NOTHING MEASURED rather than
+// passing on an arm it could not set up.
+//
+// WHICH THREAD IT IS ON COMES FROM THE KERNEL AND NOT FROM THE PROBE, through
+// /proc/thread-self, and the two readings are compared. Without that, the one
+// mutant this pin exists for would not red but SKIP: a liveWallUnixTask that
+// answered `getpid` twice reads "always the leader" everywhere, the stubbed pin
+// above stays green because it stubs the probe, and this pin would decide it
+// had no non-leader thread and abstain. A skip is green. So the kernel's tid
+// decides whether the arm is set up, and a probe that disagrees with it is a
+// failure in its own right.
+//
+// OFF LINUX IT SKIPS, at the procfs read: gettid and the thread group leader
+// are Linux ideas, liveWallUnixTask's non-Linux twin answers "leader" by
+// construction (wallunix_other.go says why it must), and the darwin reading of
+// this refusal is the pin above.
+//
+// THE APPLY IS STUBBED for the pin above's reason, and here it is load-bearing
+// twice over: if the leader check ever stopped refusing, this arm would
+// otherwise apply a real domain from a thread the test framework will reuse.
+//
+// SERIAL, no t.Parallel.
+func TestQAWallUnixStepRefusesFromARealNonLeaderThread(t *testing.T) {
+	restoreABI, restoreApply := wallUnixABI, restrictWallUnix
+	t.Cleanup(func() { wallUnixABI, restrictWallUnix = restoreABI, restoreApply })
+	wallUnixABI = func() int { return WallUnixABIMin }
+
+	applied := 0
+	restrictWallUnix = func(int) error {
+		applied++
+		return errors.New(wuStubApplyMarker)
+	}
+
+	type reading struct {
+		ktid, tid, pid int
+		kerr           error
+		err            error
+	}
+	got := make(chan reading, 1)
+	go func() {
+		// Locked FIRST, so the ids read below are the ids RunWallUnix will
+		// read: an unlocked goroutine could answer one thread here and run
+		// the step on another, which is the very hazard this pin is about.
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		r := reading{pid: os.Getpid()}
+		r.tid, _ = wallUnixTask()
+		r.ktid, r.kerr = wuKernelTID()
+		if r.kerr == nil && r.ktid != r.pid {
+			r.err = RunWallUnix([]string{"posse", WallUnixVerb, "--", "true"})
+		}
+		got <- r
+	}()
+	r := <-got
+
+	if r.kerr != nil {
+		t.Skipf("the kernel's own answer for this thread is unreadable (%v) — on Linux that is /proc/thread-self/status, and the stubbed reading of this refusal is TestQAWallUnixStepRefusesOffTheThreadGroupLeader", r.kerr)
+	}
+	if r.tid != r.ktid {
+		t.Errorf("liveWallUnixTask answered thread %d and the kernel says this thread is %d (/proc/thread-self/status, process %d) — the probe the step's leader check reads is not reading the calling thread, so that check would answer about some other task and the pins that stub the probe cannot see it (ranger-base-vxz74)", r.tid, r.ktid, r.pid)
+	}
+	if r.ktid == r.pid {
+		t.Skipf("NOTHING MEASURED: the goroutine locked onto thread %d, which IS the leader of process %d, so there was no non-leader thread to run the step on. Nothing guarantees a new goroutine gets a cloned M; re-run before reading this as a finding", r.ktid, r.pid)
+	}
+	if r.err == nil {
+		t.Fatalf("thread %d of process %d: RunWallUnix returned nil from a real non-leader thread — on success this call does not return at all, so this is a seat that would have exec'd with NNP, the Landlock domain and the pdeathsig on a task execve does not keep (ADR 0080 D4, ranger-base-vxz74)", r.ktid, r.pid)
+	}
+	if applied != 0 {
+		t.Errorf("thread %d of process %d: the apply was called %d time(s) from a real non-leader thread: %v", r.ktid, r.pid, applied, r.err)
+	}
+	if !strings.Contains(r.err.Error(), "thread group leader") {
+		t.Errorf("thread %d of process %d: the refusal is not the leader check's (%v) — this pin reads the live probe, so an arm refused for any other reason has measured nothing", r.ktid, r.pid, r.err)
+	}
+}
+
+// wuKernelTID is the calling THREAD's id as the kernel reports it, read
+// through /proc/thread-self — the magic link that resolves to the reading
+// thread's own directory, so no tid has to be known in order to ask which tid
+// this is. The `Pid:` row of a THREAD's status file is that thread's id;
+// `Tgid:` is the process's.
+//
+// A FILE READ AND NOT unix.Gettid(), for one reason: this file is read from
+// darwin (the package's suite runs there), x/sys has Gettid on Linux only, and
+// a second reading of the tid is worthless if it comes from the same place as
+// the first. Off Linux the open fails and the pin above skips on the error,
+// which is the honest answer rather than a fallback.
+func wuKernelTID() (int, error) {
+	b, err := os.ReadFile("/proc/thread-self/status")
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(wuStatusField(string(b), "Pid:"))
+}
+
+// TestQAWallUnixStepLocksItsOSThreadFirstAndNeverUnlocks is the OTHER half of
+// ranger-base-vxz74's fix, and it is a source pin because the half it covers
+// has no observable a test can read.
+//
+// WHY THERE IS NOTHING TO MEASURE. The lock does not change what any syscall
+// answers; it removes the scheduler's freedom to move this goroutine between
+// the restrict and the exec. A run without it passes every other pin in this
+// file and every live pin in wallunixlive_test.go, and it passed 600 of 600
+// live execs on this box before the fix (the MEASURED paragraph on
+// RunWallUnix) — the hazard is latent and an attacker cannot steer it, which
+// is the whole reason the finding is a P2 and the whole reason a pin has to
+// read the SOURCE: the first thing to notice a lost lock would otherwise be a
+// seat that came up unwalled, saying so nowhere.
+//
+// IT ALSO READS "FIRST", and that is not style. Everything after it can park
+// the goroutine — exec.LookPath opens files, the ABI read is a syscall — so a
+// lock taken after any of them is a lock on whatever thread the goroutine
+// landed on, and the leader check below it would then refuse a seat that was
+// perfectly fine when it started. First statement, or the refusal rate becomes
+// the scheduler's business.
+//
+// AND NO UNLOCK ANYWHERE IN THE FILE: the lock has to outlive this function in
+// the one direction that matters (on success there is no "after" — the process
+// is replaced), so a `defer runtime.UnlockOSThread()` would undo it at exactly
+// the moment a refusal path returns and leave nothing pinned at all.
+//
+// THE FILE SET IS SPELLED HERE and nothing is enumerated, so this pin is
+// outside internal/treepins' one-package-census class and needs no Makefile
+// door of its own (treewidedoor_qa_test.go's derived key: discovered file sets
+// need a door, named ones do not).
+func TestQAWallUnixStepLocksItsOSThreadFirstAndNeverUnlocks(t *testing.T) {
+	t.Parallel()
+	const file = "wallunix.go"
+	src, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(src, []byte("UnlockOSThread")) {
+		t.Errorf("%s calls runtime.UnlockOSThread. The step locks its thread so that PR_SET_NO_NEW_PRIVS, landlock_restrict_self and the exec all land on the one task bwrap set a pdeathsig on; an unlock on the way out gives that freedom back on every path that can still reach the exec (ranger-base-vxz74)", file)
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, file, src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fn *ast.FuncDecl
+	for _, d := range f.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv == nil && fd.Name.Name == "RunWallUnix" {
+			fn = fd
+			break
+		}
+	}
+	if fn == nil || fn.Body == nil || len(fn.Body.List) == 0 {
+		t.Fatalf("RunWallUnix is not in %s with a body — this pin reads that function's first statement, so a rename has to bring it along", file)
+	}
+	first, ok := fn.Body.List[0].(*ast.ExprStmt)
+	if !ok {
+		t.Fatalf("RunWallUnix's first statement is a %T and not a call — it must be runtime.LockOSThread(), because every statement that could come before it can park the goroutine onto another thread (ranger-base-vxz74)", fn.Body.List[0])
+	}
+	got := types.ExprString(first.X)
+	if got != "runtime.LockOSThread()" {
+		t.Errorf("RunWallUnix's first statement is %s, want runtime.LockOSThread(). The three things this step applies are per-task and the exec keeps one task, so a goroutine the scheduler is still free to move would exec a seat with no socket wall, no signal scope and no die-with-parent while `posse gates` said the layer was up (ADR 0080 D4, ranger-base-vxz74)", got)
 	}
 }
