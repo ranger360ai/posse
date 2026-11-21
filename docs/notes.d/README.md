@@ -14,6 +14,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-a59w7](ranger-base-a59w7.md) — ranger-base-a59w7 — the carve-out's denies and masks get their loose parents bound in place — 2026-11-21
 - [ranger-base-7or9p](ranger-base-7or9p.md) — The judge's wall comes from the launcher, so a verdict can move with no landing (ranger-base-7or9p) — 2026-11-21
 - [ranger-base-4gyib](ranger-base-4gyib.md) — ranger-base-4gyib — the seat store pin's wide-grant shape is unrenderable under ADR 0100, and the venue is the only place that says so — 2026-11-21
+- [ranger-base-49rxe](ranger-base-49rxe.md) — ranger-base-49rxe — the seat store pin's wide-grant arm asserted a refusal the render had just stopped making — 2026-11-21
 - [ranger-base-18brx](ranger-base-18brx.md) — `posse upgrade` stages where the deny was rendered, not where its own TMPDIR points (ranger-base-18brx) — 2026-11-21
 - [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20
 - [ranger-base-rrgnc](ranger-base-rrgnc.md) — An install does not reach a running dispatch loop: G18 (ranger-base-rrgnc) — 2026-11-20

@@ -168,9 +168,10 @@ func (f bsLive) sharedObject(t *testing.T, body string) (string, string) {
 // it in place — is refused, by its real name and by the side path. The same
 // holds when another grant covers `<common>` WHOLE (a store of record inside
 // the same repo), which is what says the store's bind is the deepest mount —
-// and that shape carries `<common>/worktrees` as well, because ADR 0100
-// refuses the set without it (bsWideGrantRefusedUnpinned, which is the arm
-// that says so rather than a comment claiming it).
+// and that shape needs no grant on `<common>/worktrees`, because the render
+// binds that component in place itself (bwrapGrantMounts, ranger-base-dot6w).
+// bsWideGrantPinsTheLooseComponent is the arm that says the pin is there and
+// is load-bearing, rather than a comment claiming it.
 //
 // The control is the render this bead replaced, against a second object: the
 // same unlink succeeds there, so the arms measure the binds and not the file
@@ -204,21 +205,22 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	}
 	side := filepath.Join(f.base, sha[:2], sha[2:])
 
-	// THE WIDE SHAPE'S GRANTS, with the one in-place bind that makes them
-	// renderable at all (ranger-base-4gyib). A grant covering `<common>`
-	// whole puts `<common>/worktrees` strictly inside it with no mount
-	// between, and the seat's own per-worktree git dir
-	// `<common>/worktrees/<name>` is a grant under THAT, with the store's
-	// side bind one component deeper again — so under ADR 0100 this set
-	// renders only with the component between bound in place as well, which
-	// is the fix that ADR prescribes and never an exemption. Granting
-	// it is how a test spells "bound in place": shape 1 binds every write
-	// grant `--bind p p`, so the grant IS the mount that pins what is under
-	// it. bsWideGrantRefusedUnpinned below is this same set WITHOUT it, and
-	// it is what keeps a later reader from dropping this entry as decoration.
+	// THE WIDE SHAPE'S GRANTS: the writable set plus `<common>`, and nothing
+	// else (ranger-base-49rxe). A grant covering `<common>` whole puts
+	// `<common>/worktrees` strictly inside it with no mount between, and the
+	// seat's own per-worktree git dir `<common>/worktrees/<name>` is a grant
+	// under THAT, with the store's side bind one component deeper again — so
+	// under ADR 0100 this set renders only with the component between bound
+	// in place as well. The RENDER does that: bwrapGrantMounts binds every
+	// directory strictly between a grant and the grant above it, which is
+	// the fix that ADR prescribes for this shape and never an exemption, so
+	// the set the production producer would hand BwrapArgs is the one this
+	// arm renders. bsWideGrantPinsTheLooseComponent below reads that pin off
+	// the argv and asserts it is load-bearing, which is what keeps a later
+	// reader from taking it for decoration.
 	wt := filepath.Join(f.common, "worktrees")
-	wide := append(append([]string{}, f.set...), f.common, wt)
-	bsWideGrantRefusedUnpinned(t, f, wt)
+	wide := append(append([]string{}, f.set...), f.common)
+	bsWideGrantPinsTheLooseComponent(t, f, wide, wt)
 
 	for _, shape := range []struct {
 		name string
@@ -275,56 +277,110 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	}
 }
 
-// bsWideGrantRefusedUnpinned is why the wide shape above carries
-// `<common>/worktrees` (ranger-base-4gyib): the same grant set WITHOUT it is
-// REFUSED by the render, naming that component, so the entry is the ADR's
-// prescribed pin and not a widening somebody added to make a test pass.
+// bsWideGrantPinsTheLooseComponent is why the wide shape above renders at
+// all: the component between — `<common>/worktrees` — is bound IN PLACE by
+// the render itself, and that bind is load-bearing. Cut it out of the
+// finished argv and ADR 0100's refusal names that component, so the mount is
+// the ADR's prescribed pin and not a line a later reader may drop.
 //
-// THE ATTACK IT REFUSES IS THIS FIXTURE'S OWN SHAPE. A seat granted
+// IT ASSERTS THE PIN AND NOT THE GRANT, which is what the readings forced
+// (ranger-base-49rxe). As ranger-base-4gyib filed it, this arm rendered the
+// same set WITHOUT a `<common>/worktrees` grant and asserted the render
+// REFUSED it — true when it landed, and false one landing later:
+// ranger-base-dot6w generalized D2(b)'s remedy to every directory strictly
+// between a grant and the grant above it (bwrapGrantMounts), and this
+// fixture's shape is exactly that — `<common>` granted, the seat's own git
+// dir granted two components inside it — so the component is pinned by the
+// render and the set 4gyib expected to be refused is renderable BY DESIGN.
+// Two halves each green on its own base: 4gyib's arm never saw dot6w's list
+// and dot6w's branch was cut one landing before 4gyib's. The claim worth
+// holding survives the merge, one step further in: the pin exists, and
+// without it the render is refused.
+//
+// THE ATTACK IT MEASURES IS THIS FIXTURE'S OWN SHAPE. A seat granted
 // `<common>` whole may rename `<common>/worktrees`; its per-worktree git dir
 // is bound at `<common>/worktrees/<name>` IN PLACE, read-write, the store's
 // side bind lands at `<common>/worktrees/<name>/seat-objects-base`, and bwrap
 // re-resolves both strings at mount(2) — so a leftover of this seat plants a
 // link at the renamed name and the next launch mounts whatever it points at,
-// with no race to win.
+// with no race to win. The in-place mount at the component is what refuses
+// that rename from inside the namespace (EBUSY).
 //
-// IT ASSERTS THE REFUSAL AND NOT ONE ARM OF IT, which is what the readings
-// forced. Both of ADR 0100's arms name this same component: D4(a)'s
-// destination arm (bwrapRefuseUnpinnedDst, ranger-base-gn050) over the side
-// bind's destination, and D2(b)'s source arm (bwrapRefuseUnpinnedSource,
-// ranger-base-dw2du) over the in-place grant. MEASURED 2026-11-21: putting
-// dw2du's `m.Src == m.Dst` skip back leaves the set refused by D4(a) with
-// the same loose component, so an arm that named one decision would be
-// measuring neither. What reds this pin as it was filed is dropping
-// `<common>/worktrees` from the shape's grants.
+// IT READS THE REFUSAL AND NOT ONE ARM OF IT, which is 4gyib's reading and
+// still holds. Both of ADR 0100's arms name this same component: D2(b)'s
+// source arm (bwrapRefuseUnpinnedSource, ranger-base-dw2du) over the
+// in-place grant, and D4(a)'s destination arm (bwrapRefuseUnpinnedDst,
+// ranger-base-gn050) over the side bind's destination. MEASURED 2026-11-21:
+// putting dw2du's `m.Src == m.Dst` skip back leaves the cut argv refused by
+// D4(a) with the same loose component, so an arm that named one decision
+// would be measuring neither. What reds this pin as it stands is dropping
+// shape 1's pin arm from bwrapGrantMounts.
 //
 // IT IS SKIPPED WHERE THE RULE STANDS DOWN, which is most of the time and is
-// the whole reason this red reached main (the window's own finding,
+// the whole reason 4gyib's red reached main (the window's own finding,
 // docs/notes.d/ranger-base-4gyib.md): both arms stand down when this uid's
 // home is under /tmp (bwrapWallRoot), this binary's HOME is under TMPDIR, and
 // so they are dormant for every fixture here under an operator's uncaged `make
 // test` and LIVE in ADR 0097 D1's venue, whose TMPDIR is under the posse
 // state dir. The uncaged control cannot see this arm; the venue is where it
 // measures.
-func bsWideGrantRefusedUnpinned(t *testing.T, f bsLive, wt string) {
+func bsWideGrantPinsTheLooseComponent(t *testing.T, f bsLive, wide []string, wt string) {
 	t.Helper()
 	if bwrapWallRoot() == "" {
 		return // ADR 0100's rules stand down for a home under /tmp (bwrapWallRoot)
 	}
-	unpinned := append(append([]string{}, f.set...), f.common)
-	argv, _, err := BwrapArgs(f.tr.Path, unpinned, SeatbeltCarveOut{Private: f.binds(t)}, f.keep...)
+	argv, _, err := BwrapArgs(f.tr.Path, wide, SeatbeltCarveOut{Private: f.binds(t)}, f.keep...)
+	if err != nil {
+		t.Fatalf("a render granting <common> whole is refused (%v) — that is a seat in a linked worktree that does not launch at all, and the fix ADR 0100 prescribes is the in-place bind the render makes for itself and never an exemption (ranger-base-dot6w)", err)
+	}
+	if !containsString(bwrapMountDsts(bwrapMounts(argv)), wt) {
+		t.Fatalf("the render makes no mount at %s, which lies strictly inside the <common> grant and holds the seat's own git dir: a leftover of this seat renames it and the next launch binds what the name points at, read-write (ADR 0100 D2(b))\n argv: %q", wt, argv)
+	}
+	cut := bsArgvWithoutInPlaceBind(argv, wt)
+	if len(cut) == len(argv) {
+		t.Fatalf("CONTROL: %s is a mount destination of this render by some option other than an in-place --bind, so cutting that bind measures nothing this arm was written for\n argv: %q", wt, argv)
+	}
+	grants := shallowestFirst(wide)
+	cutErr := bwrapRefuseUnpinnedSource(cut, grants)
+	if cutErr == nil {
+		cutErr = bwrapRefuseUnpinnedDst(cut, grants)
+	}
 	switch {
-	case err == nil:
-		t.Errorf("the render bound the seat's own git dir in place under a whole-<common> grant with %s loose — anything this seat leaves behind renames that component and the next launch binds what it points at, read-write (ADR 0100 D4(a)/D2(b))\n argv: %q", wt, argv)
+	case cutErr == nil:
+		t.Errorf("with the in-place bind of %s cut from the argv, neither of ADR 0100's arms refuses the render — so that mount is decoration, and a producer that stops emitting it leaves the seat's own git dir under a renameable component with every pin green (ADR 0100 D4(a)/D2(b))\n argv: %q", wt, cut)
 	// The loose component by name AND by its clause, never a bare substring
 	// of the message: `<common>/worktrees` is a prefix of both paths the
 	// refusal names — the bind source and the destination under it — so a
 	// Contains of the path alone reads true for any refusal about this git
-	// dir at all, and it did under the mutation above while this arm was
+	// dir at all, and it did under the mutation above while 4gyib's arm was
 	// being written.
-	case !strings.Contains(err.Error(), wt+" lies inside a write grant"):
-		t.Errorf("the refusal does not name %s as the loose component, which is the only instruction it carries: %v", wt, err)
+	case !strings.Contains(cutErr.Error(), wt+" lies inside a write grant"):
+		t.Errorf("the refusal does not name %s as the loose component, which is the only instruction it carries: %v", wt, cutErr)
 	}
+}
+
+// bsArgvWithoutInPlaceBind is argv with every `--bind p p` triple for this
+// one path removed, and nothing else touched — the cut that turns the
+// render's own pin back into a loose component so the arm above can read
+// what ADR 0100 says about it.
+//
+// IT CUTS THE IN-PLACE FORM ONLY, by both operands and not by the
+// destination alone: `p` is also the destination of nothing else in this
+// render, but a cut keyed on one operand would silently take a `--ro-bind
+// src p` or a `--tmpfs p` a later step adds, and then the arm above would be
+// measuring a render that lost a wall rather than a render that lost a pin.
+// Its caller asserts the cut removed something, so a spelling this misses is
+// a CONTROL failure and never a green.
+func bsArgvWithoutInPlaceBind(argv []string, p string) []string {
+	out := make([]string, 0, len(argv))
+	for i := 0; i < len(argv); i++ {
+		if argv[i] == "--bind" && i+2 < len(argv) && argv[i+1] == p && argv[i+2] == p {
+			i += 2
+			continue
+		}
+		out = append(out, argv[i])
+	}
+	return out
 }
 
 // ADR 0100 D1, live: the seat reaches its store's CONTENTS through the mount
