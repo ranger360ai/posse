@@ -9,7 +9,11 @@ named 8 of the parser's 19 keys; the shipped Consequences bullets are
 struck; `## Intents` mode is recorded as governing nothing since ADR 0006
 §4 — ranger-base-mppjc) · amended 2026-11-15 (the seeded rule's own
 Consequences bullet: it matches the verb `commit`, and four verbs commit
-without saying it — ranger-base-05aa1) · owner: architect*
+without saying it — ranger-base-05aa1) · amended 2026-11-21 (the same
+bullet: DESTRUCTION of another persona's uncommitted work in the shared
+checkout stays prose at an accepted cost, and the prescribed exit from a
+conflicted sequencer becomes `--quit`, not `--abort` —
+ranger-base-hkp3s) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -276,6 +280,40 @@ part still live as consequence rather than history.)*
   clean forms need no rule: git refuses to start a merge, cherry-pick or
   revert over a dirty index (measured), so the conflict window was the whole
   hole. `docs/notes.d/ranger-base-05aa1.md` has both tables.
+  **Decided 2026-11-21 (ranger-base-hkp3s): the rule is about a COMMIT,
+  and L1 does not grow a second wall for DESTRUCTION; it stops
+  recommending it instead.** In the shared checkout, `reset --hard`,
+  `checkout -f`, `switch --discard-changes`, `restore` over `.`, `stash`
+  and the sequencer `--abort` all wipe another persona's staged work, and
+  most of them wipe its unstaged work too; `clean -fd` takes only
+  untracked files. Every `--quit` destroys nothing (MEASURED, 25 shapes,
+  git 2.56.0; the table is in `docs/notes.d/ranger-base-hkp3s.md`). The
+  class stays prose, at an accepted cost, for four reasons. (1) It has no
+  PID rule behind it. This arm renders only where a PID carries the commit
+  rule, and a typed deny on `--abort` cannot stand down in a linked
+  worktree, where `--abort` is the right tool. (2) An argv wall cannot draw
+  the line that matters. `restore -- <path>` is the house's own safe form,
+  and it destroys a victim inside `<path>`: that is ADR 0022's same-file
+  case, which only one-writer-per-file covers. So the wall would be a list
+  of whole-tree spellings, and aliases, pathspec magic, `read-tree -u
+  --reset` and plumbing are all outside that list. (3) Nobody walks that
+  route. Over 743 transcripts and 84,375 Bash calls, a crew seat typed none
+  of these verbs in a shared checkout. The only real uses were the
+  operator's own landing surgery, and that session runs no crew PID
+  (MEASURED). (4) The half a wall could reach is recoverable. Staged
+  content is already a blob, and `git fsck --lost-found` returns it until
+  gc prunes it (MEASURED). Unstaged edits cannot be recovered, but an
+  editor, `cp` or `rm` destroys them just as well, and no git wall reaches
+  those. **What does change** is the one place the house PRESCRIBED
+  destruction. The continue wall's own refusal, and AGENTS.md, send a seat
+  whose `--continue` was refused to `--abort`, in exactly the window where
+  another persona's work is staged. The prescribed exit in the shared
+  checkout becomes `git <verb> --quit`, then `git restore --source=HEAD
+  --staged --worktree -- <the paths the operation touched>`, plus a
+  non-forced `git switch <branch>` after a rebase. MEASURED for merge,
+  cherry-pick and rebase: the sequencer state cleared, HEAD and branch
+  were restored, and the victim's staged, new and unstaged work all
+  survived.
 - **Guardrails become partly enforceable** at zero policy-engine cost:
   the CLI already does deny-wins. What cannot be a tool rule (e.g. "no
   publishing under the operator's name" — the model can still draft)
