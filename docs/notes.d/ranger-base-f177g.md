@@ -122,6 +122,25 @@ G is the arm worth keeping: it is the next donor surprise, whatever it turns
 out to be, and it arrives as `unknown program` in one read rather than as a
 verdict about staleness.
 
+## The cold-exec door, because this fixture is exactly its class
+
+These tests plant an executable and then exec it under a deadline, which is
+ADR 0085's class, and the new shape execs TWICE as often as a reader might
+assume (a loop, then the negative control's restart). So the door was typed:
+
+```
+make coldexec-check RUN='TestQAG18|TestQAALoopReading'
+```
+
+MEASURED 2026-11-21, green on all five arms with no `--warm` pre-flight
+anywhere. Arm 1: `TestQAG18FiresWhenTheInstallRenamesOverALiveLoop` 5.06s and
+`TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings` 2.50s, from 4 cold
+first execs held 2.5s each. The settle deadline is 10s and the door's hold is
+2.5s against the worst 2.17s ADR 0085 measured on macOS, so the deadline has
+headroom over the real cost rather than merely over this box's 1.07ms. The
+other four arms compile and run nothing under this filter, as expected: these
+fixtures are arm 1's.
+
 ## Where the class stands
 
 ranger-base-x0ses's census is still the census, and it had already named this
