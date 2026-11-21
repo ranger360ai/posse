@@ -10,6 +10,7 @@ package posse
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -21,18 +22,16 @@ import (
 	"time"
 )
 
-// rrgncCopy writes src's bytes to dst, executable, through a temp file and a
-// rename — the swap ADR 0092 D3.5 does.
-// rrgncLoopLife is how long the stand-in loop sleeps, and it is this long for
+// rrgncLoopLife is how long the stand-in loop lives, and it is this long for
 // a reason that cost a red suite (ranger-base-rph5z's run, 2026-11-21).
 //
-// It was "60". These tests start `sleep <n>` as a stand-in dispatch loop,
-// record its pid, and then read that pid back — and `WatchLoopRunning` plus
-// `ReadWatchPid` answer LIVENESS and not identity, which watchpid.go's own
-// `pidAlive` comment says in so many words: "a recycled pid is alive and is a
+// It was "60". These tests start a stand-in dispatch loop, record its pid,
+// and then read that pid back — and `WatchLoopRunning` plus `ReadWatchPid`
+// answer LIVENESS and not identity, which watchpid.go's own `pidAlive`
+// comment says in so many words: "a recycled pid is alive and is a
 // stranger". internal/posse is one parallel test binary that ran 262.7s on
 // the failing pass, and a parallel test can be descheduled for longer than a
-// minute on a loaded box. So the sleep EXITED mid-test, its pid was reused by
+// minute on a loaded box. So the loop EXITED mid-test, its pid was reused by
 // another test's re-exec of the test binary, and the reading came back
 // pointing at `posse.test` in the go-build cache with `Image == OnDisk` —
 // rendering as "this loop is not stale" and failing an assertion about a
@@ -40,10 +39,90 @@ import (
 //
 // 1500 is the per-package `-timeout` the Makefile passes, so the child cannot
 // outlive the budget that would kill the suite anyway, and cannot exit inside
-// it. `sleep` burns no CPU, so a leaked one is not what the load guard's kill
-// arm is for (AGENTS.md, "Something you MEANT to leave running"); each test
-// kills its own child in a t.Cleanup regardless.
+// it. The loop blocks in a read that never completes, so it burns no CPU and
+// a leaked one is not what the load guard's kill arm is for (AGENTS.md,
+// "Something you MEANT to leave running"); each test kills its own child in a
+// t.Cleanup regardless, and rrgncStartLoop's pipe bounds an orphan at the
+// death of this process rather than at this timer.
 const rrgncLoopLife = "1500"
+
+// rrgncDonor is the binary a stand-in loop runs, and it is bash for one
+// reason: it is the only candidate whose SHAPE this fixture cannot be wrong
+// about.
+//
+// It was `sleep`, and on 2026-11-21 that reddened every ubuntu arm-1 CI job
+// (ranger-base-f177g). ubuntu-latest is Ubuntu 26.04 now, whose `coreutils`
+// is a 2.7 kB Architecture:all metapackage over `coreutils-from-uutils`:
+// /usr/bin/sleep is a SYMLINK into one multi-call binary, and that binary
+// decides which utility to BE from the path the kernel exec'd it through,
+// taking that path's file STEM and ignoring argv[0] on purpose (uutils
+// src/common/validation.rs: "prevent `env -a` from bypassing AppArmor,
+// SELinux policies"). The subject of these tests is an install renaming over
+// the file a loop runs, so the donor's bytes live at `<root>/posse` by
+// construction — which asked that donor to be a utility called `posse`. It
+// answered `coreutils: unknown program 'posse'` and exited 1 inside the test,
+// a few milliseconds in, and both reds landed on the read-time guard after
+// the install rather than before it. ranger-base-x78s5 hit the same class in
+// scripts/reap-test-tmp.sh with /usr/bin/tee, where no argv[0] spelling could
+// fix it either; docs/notes.d/ranger-base-x0ses.md carries the .deb readings
+// and docs/notes.d/ranger-base-f177g.md this fixture's.
+//
+// So the rule the donor is chosen by: it must run the same whatever its
+// basename is, and it must not be picked for its NAME. Picking a system
+// utility for its name is how this bug was written twice, and the next
+// distro's build of the next utility is the next nine days. bash dispatches
+// on nothing, it is the shell this suite already runs under, and with `-c` it
+// HONORS its argv, which is where rrgncLoopLife goes. There is no fallback to
+// another utility on purpose: a box with no bash skips, and says so.
+//
+// A `#!` wrapper is REFUSED and not worked around. A shebang exec rebuilds
+// argv and leaves /proc/<pid>/exe reading the INTERPRETER, and that link is
+// the one fact every assertion in this file is taken from.
+func rrgncDonor(t *testing.T) string {
+	t.Helper()
+	donor, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skipf("no bash(1) to stand in for a loop's image, and this fixture takes no other donor (see rrgncDonor): %v", err)
+	}
+	magic, err := rrgncMagic(donor)
+	if err != nil {
+		t.Skipf("cannot read the donor %s to tell a binary from a stub: %v", donor, err)
+	}
+	if magic == "#!" {
+		t.Skipf("the donor %s is a %q stub and not a binary: a shebang exec leaves /proc/<pid>/exe reading the interpreter, which is the fact every reading here is taken from (ranger-base-x78s5)", donor, magic)
+	}
+	return donor
+}
+
+// rrgncMagic is a file's first two bytes, which is what tells a binary from a
+// `#!` stub — in the refusal above and in the postmortem below.
+func rrgncMagic(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	var head [2]byte
+	if _, err := io.ReadFull(f, head[:]); err != nil {
+		return "", err
+	}
+	return string(head[:]), nil
+}
+
+// rrgncLoop is a started stand-in loop, the donor it came from, and the file
+// its own output lands in. The output is here because the one line that
+// settles a donor surprise is the donor's OWN complaint, and the guard that
+// reports these failures would otherwise have no handle on it: the two CI
+// reds this shape was written for arrived in rrgncChildStillOurs, and the
+// line that explained them was printed by nothing (ranger-base-f177g).
+type rrgncLoop struct {
+	cmd   *exec.Cmd
+	donor string
+	say   string // the file holding the loop's own stdout and stderr
+}
+
+// Pid is the loop's pid — the thing every reading in this file is about.
+func (l *rrgncLoop) Pid() int { return l.cmd.Process.Pid }
 
 // rrgncStartLoop starts a stand-in dispatch loop from bin and does not return
 // until /proc says that pid really runs it.
@@ -63,21 +142,51 @@ const rrgncLoopLife = "1500"
 // What it must never do is proceed on an unsettled reading, because then the
 // assertion below it is about a stranger's image and the failure arrives as a
 // verdict about staleness.
-func rrgncStartLoop(t *testing.T, bin string) *exec.Cmd {
+func rrgncStartLoop(t *testing.T, bin string) *rrgncLoop {
 	t.Helper()
-	loop := exec.Command(bin, rrgncLoopLife)
-	if err := loop.Start(); err != nil {
+	// The LIFE is argv and the BLOCK is a pipe. `read -t <n>` with nothing to
+	// read waits in the kernel, burning no CPU, and returns either when the
+	// timer fires or the moment the write end below goes away — so an orphan
+	// is bounded by THIS PROCESS's death and not only by rrgncLoopLife, which
+	// is strictly tighter than the `sleep <n>` this replaced. MEASURED
+	// 2026-11-21, and in both directions: docs/notes.d/ranger-base-f177g.md.
+	r, w, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { loop.Process.Kill(); loop.Wait() })
+	loop := exec.Command(bin, "-c", "read -t "+rrgncLoopLife+" -r _")
+	loop.Stdin = r
+	// Set and not inherited: BASH_ENV would make this child a shell that
+	// sources a file, and nothing about this fixture wants that.
+	loop.Env = []string{}
+	say, err := os.CreateTemp(t.TempDir(), "loop-*.out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop.Stdout, loop.Stderr = say, say
+	l := &rrgncLoop{cmd: loop, donor: bin, say: say.Name()}
+	if err := loop.Start(); err != nil {
+		t.Fatalf("the donor at %s would not start: %v", bin, err)
+	}
+	r.Close()
+	// The Cleanup is also what keeps `w` REACHABLE. An *os.File that nothing
+	// references can be closed by its finalizer, and closing this one hands
+	// the child EOF — a stand-in loop that exits mid-test, which is the exact
+	// failure rrgncChildStillOurs exists to report.
+	t.Cleanup(func() {
+		loop.Process.Kill()
+		loop.Wait()
+		w.Close()
+		say.Close()
+	})
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if _, path, ok := procExe(loop.Process.Pid); ok && path == bin {
-			return loop
+		if _, path, ok := procExe(l.Pid()); ok && path == bin {
+			return l
 		}
 		if time.Now().After(deadline) {
-			_, path, ok := procExe(loop.Process.Pid)
-			t.Fatalf("pid %d never settled onto %s (last reading: %q ok=%v) — a fixture that proceeds here asserts against a stranger's image", loop.Process.Pid, bin, path, ok)
+			_, path, ok := procExe(l.Pid())
+			t.Fatalf("pid %d never settled onto %s (last reading: %q ok=%v) — a fixture that proceeds here asserts against a stranger's image%s", l.Pid(), bin, path, ok, rrgncPostmortem(l, bin))
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -88,17 +197,59 @@ func rrgncStartLoop(t *testing.T, bin string) *exec.Cmd {
 // child before it is recorded, and this says so again before each reading, so
 // a child that dies mid-test (or a pid reused after it) arrives as "your
 // fixture died" and never as a verdict about staleness.
-func rrgncChildStillOurs(t *testing.T, pid int, bin string) {
+func rrgncChildStillOurs(t *testing.T, l *rrgncLoop, bin string) {
 	t.Helper()
-	_, path, ok := procExe(pid)
+	_, path, ok := procExe(l.Pid())
 	if !ok {
-		t.Fatalf("pid %d: this fixture's stand-in loop is gone before the reading — the assertions below would be about a stranger", pid)
+		t.Fatalf("pid %d: this fixture's stand-in loop is gone before the reading — the assertions below would be about a stranger%s", l.Pid(), rrgncPostmortem(l, bin))
 	}
 	if path != bin {
-		t.Fatalf("pid %d now runs %s, not this fixture's %s — so every reading below is a stranger's (see rrgncStartLoop and rrgncLoopLife)", pid, path, bin)
+		t.Fatalf("pid %d now runs %s, not this fixture's %s — so every reading below is a stranger's (see rrgncStartLoop and rrgncLoopLife)%s", l.Pid(), path, bin, rrgncPostmortem(l, bin))
 	}
 }
 
+// rrgncPostmortem prints OBSERVATIONS about a loop that did not behave, and
+// never the fixture's intentions about it. That is the whole lesson of the
+// family this fixture's donor came from: two CI runs could not say whether an
+// exec had even taken, because the rig reprinted the variable it MEANT to
+// pass (ranger-base-x0ses). The donor's own stderr is the line that names the
+// mechanism — `coreutils: unknown program 'posse'` is what nine days of this
+// family were spent not reading.
+func rrgncPostmortem(l *rrgncLoop, bin string) string {
+	var b strings.Builder
+	b.WriteString("\n    postmortem, as observed:")
+	magic, err := rrgncMagic(l.donor)
+	switch {
+	case err != nil:
+		fmt.Fprintf(&b, "\n      donor   %s (first two bytes unreadable: %v)", l.donor, err)
+	case magic == "#!":
+		fmt.Fprintf(&b, "\n      donor   %s (first two bytes %q, so a '#!' stub — rrgncDonor must refuse it)", l.donor, magic)
+	default:
+		fmt.Fprintf(&b, "\n      donor   %s (first two bytes %q, so a binary)", l.donor, magic)
+	}
+	fmt.Fprintf(&b, "\n      argv    %q", l.cmd.Args)
+	if id, path, ok := procExe(l.Pid()); ok {
+		fmt.Fprintf(&b, "\n      /proc/%d/exe -> %s (%s)", l.Pid(), path, id)
+	} else {
+		fmt.Fprintf(&b, "\n      /proc/%d/exe unreadable — the loop is gone or is not ours", l.Pid())
+	}
+	if st, err := os.Stat(bin); err == nil {
+		fmt.Fprintf(&b, "\n      the copy at %s: %d bytes, mode %v, %s", bin, st.Size(), st.Mode(), fileIdentity(bin))
+	} else {
+		fmt.Fprintf(&b, "\n      the copy at %s: %v", bin, err)
+	}
+	out, err := os.ReadFile(l.say)
+	if err != nil {
+		fmt.Fprintf(&b, "\n      its own output: unreadable: %v", err)
+	} else {
+		fmt.Fprintf(&b, "\n      its own output: %q", strings.TrimSpace(string(out)))
+	}
+	b.WriteString("\n      a donor that answers \"unknown program\" there dispatches on its own path's stem and cannot be this fixture's loop — see rrgncDonor")
+	return b.String()
+}
+
+// rrgncCopy writes src's bytes to dst, executable, through a temp file and a
+// rename — the swap ADR 0092 D3.5 does.
 func rrgncCopy(t *testing.T, src, dst string) {
 	t.Helper()
 	body, err := os.ReadFile(src)
@@ -121,13 +272,10 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 		t.Skip("the /proc road; the record road is pinned below on every OS")
 	}
 	t.Parallel()
-	sleep, err := exec.LookPath("sleep")
-	if err != nil {
-		t.Skip("no sleep(1) to stand in for the loop's image")
-	}
+	donor := rrgncDonor(t)
 	root := t.TempDir()
 	bin := filepath.Join(root, "posse")
-	rrgncCopy(t, sleep, bin)
+	rrgncCopy(t, donor, bin)
 
 	// The loop: a process running the installed file. It stamps nothing —
 	// like every loop alive on the day this lands, started by a binary that
@@ -140,11 +288,11 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 		t.Fatalf("lock: held=%v err=%v", held, err)
 	}
 	defer lock.Release()
-	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: loop.Process.Pid, Started: time.Now()}); err != nil {
+	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: loop.Pid(), Started: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
-	rrgncChildStillOurs(t, loop.Process.Pid, bin)
+	rrgncChildStillOurs(t, loop, bin)
 	img, ok := ReadWatchImage(a)
 	if !ok || img.Via != "proc" || img.Path != bin {
 		t.Fatalf("before the swap the reading must come from /proc and name %s: ok=%v %+v", bin, ok, img)
@@ -154,9 +302,9 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 	}
 
 	// The install.
-	rrgncCopy(t, sleep, bin)
+	rrgncCopy(t, donor, bin)
 
-	rrgncChildStillOurs(t, loop.Process.Pid, bin)
+	rrgncChildStillOurs(t, loop, bin)
 	img, ok = ReadWatchImage(a)
 	if !ok || !img.Stale() {
 		t.Fatalf("after a rename over the loop's path G18 must fire: ok=%v %+v", ok, img)
@@ -194,10 +342,10 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 	// The negative control on the same loop: a restart onto the new file
 	// clears it. (Here: the record names a pid whose image IS the new file.)
 	fresh := rrgncStartLoop(t, bin)
-	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: fresh.Process.Pid}); err != nil {
+	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: fresh.Pid()}); err != nil {
 		t.Fatal(err)
 	}
-	rrgncChildStillOurs(t, fresh.Process.Pid, bin)
+	rrgncChildStillOurs(t, fresh, bin)
 	if img, ok := ReadWatchImage(a); !ok || img.Stale() {
 		t.Errorf("a loop restarted onto the installed file must clear G18: ok=%v %+v", ok, img)
 	}
@@ -431,10 +579,7 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the /proc road; the record road is pinned above on every OS")
 	}
-	sleep, err := exec.LookPath("sleep")
-	if err != nil {
-		t.Skip("no sleep(1) to stand in for a loop's image")
-	}
+	donor := rrgncDonor(t)
 	root := t.TempDir()
 	// ONE binary, as the box has one: both loops exec this file and the
 	// rename below replaces it under both of them.
@@ -442,10 +587,11 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rrgncCopy(t, sleep, bin)
+	rrgncCopy(t, donor, bin)
 
 	type instance struct {
 		app  *App
+		loop *rrgncLoop
 		pid  int
 		home string
 	}
@@ -460,18 +606,18 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 			t.Fatalf("%s: lock held=%v err=%v — each instance holds its OWN watch lock", name, held, err)
 		}
 		defer lock.Release()
-		if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: loop.Process.Pid, Started: time.Now()}); err != nil {
+		if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: loop.Pid(), Started: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
-		insts = append(insts, instance{app: a, pid: loop.Process.Pid, home: home})
+		insts = append(insts, instance{app: a, loop: loop, pid: loop.Pid(), home: home})
 	}
 
 	// The install: one rename, both loops left on the old inode.
-	rrgncCopy(t, sleep, bin)
+	rrgncCopy(t, donor, bin)
 
 	for i, in := range insts {
 		other := insts[(i+1)%len(insts)]
-		rrgncChildStillOurs(t, in.pid, bin)
+		rrgncChildStillOurs(t, in.loop, bin)
 		img, ok := ReadWatchImage(in.app)
 		if !ok || !img.Stale() {
 			t.Fatalf("%s: after the rename this instance's loop is stale: ok=%v %+v", in.home, ok, img)
