@@ -269,6 +269,90 @@ func upgradeCondSource(row string) upgradeCondClass {
 	return upgradeBinaryRendered
 }
 
+// UpgradeClassMark opens every line `posse upgrade --classes` prints — ADR
+// 0092 D4 rule 4 (ranger-base-v2xj9), and it is load-bearing for exactly
+// RenderProbeMark's reason one verb over: the answer is read ACROSS TWO
+// BINARIES, so the reading has to be able to say it was taken at all.
+//
+// MEASURED 2026-11-21, this box (linux), posse built from eb3f34fc — the
+// commit before this flag existed — with `go build` and no ldflags:
+// `posse upgrade --classes` prints NOTHING on stdout, prints
+// `posse: unknown flag: --classes — usage: posse upgrade [<sha>]` on
+// stderr, and exits **1**. Identical with RHQ_PERSONA unset (the operator)
+// and set to a persona no `install_delegate:` names: the flag ladder in
+// cmd/posse refuses an unknown flag before D2's fence reads anything, so
+// asking an old binary this question costs no lock, no git and no config.
+//
+// So "was it asked" is carried by this mark on stdout and never by the exit
+// code. The old binary's 1 happens to differ from this verb's 0 today, but
+// that is a coincidence of one commit and not an interface: the exit code of
+// a refusal is whatever cmd/posse's die() does, and amendment 3 was written
+// because exactly that kind of coincidence was assumed and was wrong.
+const UpgradeClassMark = "upgrade-class:"
+
+// upgradeClassWord is the vocabulary rule 4 publishes: one word per
+// upgradeCondClass, and the three the ADR spells — `shop`, `binary`,
+// `install`. The constants themselves are iota values and could not be read
+// across two binaries even in principle, so this is the interface and the
+// constants are an implementation detail behind it.
+//
+// A class with no word of its own answers `binary`, which is the answer that
+// TRIPS (rule 5: a row the new binary classes `binary`, does not name, or
+// did not answer trips exactly as today). A class added without a word is a
+// partition nobody taught this printer about, and a reader excusing a row on
+// that silence is the expensive direction. TestUpgradeClassWordIsTotal keeps
+// the silence from ever shipping.
+func upgradeClassWord(c upgradeCondClass) string {
+	switch c {
+	case upgradeShopState:
+		return "shop"
+	case upgradeBinaryRendered:
+		return "binary"
+	case upgradeInstallSubject:
+		return "install"
+	}
+	return "binary"
+}
+
+// UpgradeClassLines is `posse upgrade --classes`'s whole answer: one line
+// per key of upgradeConditionSource, `upgrade-class: <row> <class>`, sorted.
+//
+// ONE RENDERER, TWO CALLERS. The flag prints these lines and the pin in
+// cmd/posse compares the built binary's stdout against them, so a pin cannot
+// grade a table the verb does not print.
+//
+// SORTED BY sort.Strings, which is the tree's one spelling of "sorted"
+// (upgradeSortedKeys) and puts G1 beside G10 rather than beside G2. The
+// reader rule 5 describes is a lookup by row and not a diff, so collation
+// buys it nothing; what sorting buys is an answer that is byte-stable across
+// two runs of one binary, which is what makes two binaries' answers
+// comparable by eye.
+func UpgradeClassLines() []string {
+	rows := make([]string, 0, len(upgradeConditionSource))
+	for row := range upgradeConditionSource {
+		rows = append(rows, row)
+	}
+	sort.Strings(rows)
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, fmt.Sprintf("%s %s %s", UpgradeClassMark, row, upgradeClassWord(upgradeConditionSource[row])))
+	}
+	return out
+}
+
+// upgradeWriteClasses is the flag's whole body — the lines and nothing else.
+// No header, no count, no trailing summary: a reader of this output is the
+// NEXT binary's `posse upgrade`, and every line it cannot parse is a line it
+// has to be taught to skip.
+func upgradeWriteClasses(w io.Writer) error {
+	for _, ln := range UpgradeClassLines() {
+		if _, err := fmt.Fprintln(w, ln); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // upgradeStatusRow matches the row name GovReport prints in its second
 // column — a G-number, or the em dash a carry-over renders as. It is what
 // keeps a condition's DETAIL from being read as another condition: the

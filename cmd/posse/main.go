@@ -2768,7 +2768,7 @@ func main() {
 		// config `install_delegate:` and not a PID line (D2), so no other
 		// PID needs a new deny; `make install` stays denied for everyone.
 		args, help := argLead(args)
-		usage := "posse upgrade [<sha>]"
+		usage := "posse upgrade [<sha>] | posse upgrade --classes"
 		if help {
 			fmt.Fprintf(out, "usage: %s\n", usage)
 			os.Exit(0)
@@ -2776,6 +2776,15 @@ func main() {
 		var uo posse.UpgradeOpts
 		for _, v := range args {
 			switch {
+			// ADR 0092 D4 rule 4 (ranger-base-v2xj9) — print the partition
+			// this binary compiled in and install nothing. It must stay in
+			// every later binary for the same reason `posse gates
+			// render-probe` must: the process that asks it is the OLD
+			// binary mid-install, and a binary that cannot answer is read
+			// as "not asked", which rolls the install back. The pin is
+			// TestQAUpgradeClassesFlagIsInTheBinary.
+			case v == "--classes":
+				uo.Classes = true
 			case strings.HasPrefix(v, "-"):
 				die(posse.Die("unknown flag: %s — usage: %s", v, usage))
 			case uo.Sha == "":
@@ -2783,6 +2792,13 @@ func main() {
 			default:
 				die(posse.Die("usage: %s", usage))
 			}
+		}
+		// An alternative to the install and not a mode of it, so a <sha>
+		// beside it names a target nothing would read. Refused rather than
+		// ignored: the one spelling where ignoring it is expensive is an
+		// operator who meant to install that sha.
+		if uo.Classes && uo.Sha != "" {
+			die(posse.Die("posse upgrade --classes prints this binary's own upgrade partition and installs nothing, so %s names a target it would never read — usage: %s", uo.Sha, usage))
 		}
 		if err := a.CmdUpgrade(out, uo); err != nil {
 			die(err)
@@ -3601,6 +3617,17 @@ catalog:
                                  WHO: config install_delegate: names the one persona
                                  that may run it. No key refuses every persona; the
                                  operator (no RHQ_PERSONA) may always run it.
+  posse upgrade --classes        ADR 0092 D4 rule 4 — print this binary's own upgrade
+                                 partition and install nothing: one marked line per
+                                 posse status condition row, upgrade-class: <row>
+                                 <shop|binary|install>, sorted. Read-only — no flock, no
+                                 install_delegate: fence, no git and no worktree, so any
+                                 binary may be asked it at any time. An installing posse
+                                 upgrade asks the NEW binary this after the swap and
+                                 classes by its answer the rows its own table cannot
+                                 name (D4 rules 5-6). Asked is the upgrade-class: mark
+                                 and never the exit code: a binary without the flag
+                                 prints nothing here and exits non-zero (MEASURED).
 
 governance:
   posse status                   the condition set: what needs a human right now,

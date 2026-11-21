@@ -845,11 +845,43 @@ personas, 36 not-held rows, 0 non-zero exits, render-probe 0. The row was
 true when it fired: both live loops were on the old inode. D4 amendment
 (ranger-base-v2xj9) rules 4-6 are the answer.
 
-ASSUMED, for the build to MEASURE:
-- An old binary answers `posse upgrade --classes` without the mark. This is
-  read from cmd/posse's flag loop at this commit, which refuses any leading
-  `-` before acting.
-- The extra after-reading costs under a second. It prints a static map.
+**Rule 4 is built, and both of its ASSUMED lines are MEASURED — 2026-11-21
+by the build bead (ranger-base-e6yct) on this host (linux).** The flag is
+`posse upgrade --classes`: one `upgrade-class: <row> <class>` line per key of
+`upgradeConditionSource`, sorted, exit 0, and nothing else on either stream.
+Nineteen rows today — G1-G18 and the one row name the three pulse-era
+carry-overs share.
+
+- **An old binary answers without the mark, and what it answers is exit 1 on
+  stderr.** At eb3f34fc, the commit before the flag existed, `posse upgrade
+  --classes` printed NOTHING on stdout, printed `posse: unknown flag:
+  --classes — usage: posse upgrade [<sha>]` on stderr, and exited 1. Read
+  twice, with `RHQ_PERSONA` unset and with it set to a persona no
+  `install_delegate:` names: byte-identical, because cmd/posse's flag loop
+  refuses an unknown flag before D2's fence reads anything. So asking an old
+  binary this question costs no lock, no git and no config, and amendment
+  3's stdout-mark rule carries the reading unchanged. The exit code is not
+  the interface and must not be read as one — the 1 is whatever `die()`
+  happens to do at one commit, which is the same coincidence amendment 3 was
+  written over after assuming the opposite about `render-probe`.
+- **The extra after-reading costs 6-8 ms, not "under a second"**: five whole
+  execs of the new binary at 0.006, 0.006, 0.006, 0.007 and 0.008 s wall, at
+  a one-minute load average of 8.70-9.20. The same runs created no
+  `upgrade.lock` and no cache directory at all under a redirected
+  `XDG_CACHE_HOME`, which is the positive half of "takes no lock" — D4's
+  asker already holds that flock, and flock(2) is per open file description,
+  so a nested claim would be a deadlock and not a queue.
+
+The flag's presence in every later binary is pinned by
+`TestQAUpgradeClassesFlagIsInTheBinary` (cmd/posse), which is load-bearing
+for rule 4's own reason: the OLD binary's code is what calls it, so a release
+that dropped the flag would read as "not asked" and roll every later crossing
+install back. Its answer, its three words and its position above D2's fence
+are pinned in internal/posse/upgradeclasses_test.go — the position with the
+seam the neighbouring D2 pins use, so a reading taken on this path reds.
+
+Still ASSUMED: rules 5 and 6 READ this answer and are not built here
+(ranger-base-nt5xd).
 
 **D5's class is live on this box, MEASURED 2026-11-14 by the build bead
 (ranger-base-41l0r): `make verify-gate-freshness` read

@@ -249,6 +249,12 @@ const upgradeDefaultRef = "refs/remotes/origin/main"
 type UpgradeOpts struct {
 	// Sha is the commit to install, "" for the tip of upgradeDefaultRef.
 	Sha string
+
+	// Classes is `--classes`: print this binary's own upgrade partition and
+	// install nothing (ADR 0092 D4 rule 4). Not a mode of the install but
+	// an alternative to it — see cmdUpgrade, which answers it before the
+	// verb's first reading.
+	Classes bool
 }
 
 // UpgradeDelegate is config `install_delegate:`, trimmed, "" when unset.
@@ -834,6 +840,24 @@ func (a *App) CmdUpgrade(w io.Writer, o UpgradeOpts) error {
 // stamp refusal, D3's lock and the plan, each refusing before the next one
 // reads anything.
 func (a *App) cmdUpgrade(w io.Writer, o UpgradeOpts, reads upgradeReads) error {
+	// ADR 0092 D4 rule 4 — the partition this binary compiled in, printed
+	// for the OLD binary that is deciding whether to keep it.
+	//
+	// FIRST, ABOVE EVERYTHING, and that position is the feature. The ADR
+	// gives it in as many words: read-only, no lock, no `install_delegate:`.
+	// The process asking it is another binary's `posse upgrade` mid-install,
+	// which already holds the box-wide flock (nesting it would deadlock —
+	// flock is per open file description, lockUpgrade's own header) and
+	// which cannot know whether the NEW binary's config names the same
+	// delegate. A refusal here would be read as "did not answer", and rule
+	// 5 trips on that: the fence would roll back the install that installed
+	// it. It also reads nothing from `reads`, which is what lets a pin hand
+	// this path a zero upgradeReads and have a nil func panic if the flag
+	// ever starts taking a reading.
+	if o.Classes {
+		return upgradeWriteClasses(w)
+	}
+
 	if err := upgradeFence(os.Getenv(EnvPersona), a.UpgradeDelegate()); err != nil {
 		return err
 	}
