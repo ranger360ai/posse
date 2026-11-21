@@ -70,10 +70,14 @@ const RexBinKey = "rex_bin"
 const rexDefaultBinRel = "Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex"
 
 // rexPackageBin is where Rex's Linux package installs it: one binary that is
-// both the server and the CLI (ADR 0080 Context, "Rex's binary"). REPORTED
-// from Rex's own docs 2026-11-06 and not yet MEASURED here — the always-on
-// host is not up (ranger-base-yyq64) and the shakedown (ranger-base-offid)
-// is what reads this path on a real install.
+// both the server and the CLI (ADR 0080 Context, "Rex's binary"). MEASURED
+// 2026-11-21 on the always-on Linux host: the Arch package
+// `rex 0.0.1794069975_g6c6689-1` owns /usr/bin/rex, `rex version` answers
+// there, and this instance's config says `multiplexer: rex` with no
+// RexBinKey override — so every posse Rex call on this box already resolves
+// through this constant. The tarball route Rex's public install page types
+// puts the same binary in /usr/local/bin and no native package, which is
+// one of the installs RexBinKey is for (INSTALL.md, "Rex is in beta").
 //
 // IT IS ABSOLUTE, AND THAT IS THE DECISION. There is deliberately no
 // `exec.LookPath("rex")` behind it, which is the obvious fallback and the
