@@ -58,13 +58,71 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
+// rexNodeExpandHome is github.com/adrg/xdg v0.5.3's
+// internal/pathutil.ExpandHome, transcribed (pathutil_unix.go:28-40, read
+// 2026-11-21) — the one function rex's resolution of XDG_STATE_HOME runs
+// BEFORE it asks whether the value is absolute, and the one this mask used to
+// skip (ranger-base-3cjzs).
+//
+// TRANSCRIBED AND NOT TIDIED, because every "tidier" rule is a hole. The test
+// is `path[0] == '~'`, so `~st` is $HOME/st and NOT some user st's home; the
+// other is `strings.HasPrefix(path, "$HOME")`, so `$HOMEx` is $HOME/x. A
+// '~/'-and-'$HOME/'-only rule would leave both of those unmasked at names rex
+// writes to. `~` and `$HOME` alone both Join to the home itself.
+//
+// home is a PARAMETER and not a reading: the mask cannot know which home rex
+// ran under, so it asks for every candidate (see rexNodeStateDirs), and the
+// create asks for exactly rex's own. An empty home expands nothing, which is
+// also what the library does with one.
+func rexNodeExpandHome(home, path string) string {
+	if path == "" || home == "" {
+		return path
+	}
+	if path[0] == '~' {
+		return filepath.Join(home, path[1:])
+	}
+	if strings.HasPrefix(path, "$HOME") {
+		return filepath.Join(home, path[5:])
+	}
+	return path
+}
+
+// rexNodeXDGStateDir is rex's node dir under XDG_STATE_HOME as resolved
+// against ONE home, or "" when that value is not one rex would take: expand,
+// then IsAbs, which is pathutil.EnvPath's own order (pathutil.go:93-100). A
+// value still relative after expansion is invalid by the XDG spec and the
+// library ignores it too, so a mask does not guess what it meant.
+func rexNodeXDGStateDir(home, xdgState string) string {
+	v := rexNodeExpandHome(home, xdgState)
+	if !filepath.IsAbs(v) {
+		return ""
+	}
+	return absResolve(filepath.Join(v, "rex", "tsnet"))
+}
+
 // rexNodeStateDirs is the list for one account's answers: both OSes' XDG state
-// defaults under each home, and XDG_STATE_HOME's when it is an absolute path
-// (the XDG spec calls a relative value invalid, and a mask does not guess what
-// it meant). Both defaults unconditionally, not behind runtime.GOOS, so this
-// stays a pure function and the pin runs on either OS.
+// defaults under each home, and XDG_STATE_HOME's wherever it resolves to an
+// absolute path the way the xdg library rex links resolves it. Both defaults
+// unconditionally, not behind runtime.GOOS, so this stays a pure function and
+// the pin runs on either OS.
+//
+// THE XDG VALUE IS PER-HOME, which is why it is a loop and not one entry
+// (ranger-base-3cjzs). `XDG_STATE_HOME=~/st` is a value rex expands against
+// its OWN $HOME before testing it, so there is no single answer to mask — and
+// reading the raw value through filepath.IsAbs, as this did, masked neither
+// the expansion rex uses nor anything else: the arm contributed nothing and
+// the GOOS defaults it fell back to are not where rex wrote. Every candidate
+// home gets a row instead, "/" among them because that is the library's own
+// fallback when $HOME is empty (pathutil_unix.go:14). An already-absolute
+// value expands to itself under every home and dedupes back to one row, in
+// the position it has always had.
+//
+// AND THE GOOS DEFAULTS STAY whatever XDG_STATE_HOME says, which they did
+// before and which is still right: wider is the safe direction for a mask,
+// and an entry rex does not use costs one inert tmpfs.
 func rexNodeStateDirs(homes []string, xdgState string) []string {
 	var out []string
 	for _, h := range homes {
@@ -75,8 +133,10 @@ func rexNodeStateDirs(homes []string, xdgState string) []string {
 			absResolve(filepath.Join(h, ".local", "state", "rex", "tsnet")),
 			absResolve(filepath.Join(h, "Library", "Application Support", "rex", "tsnet")))
 	}
-	if filepath.IsAbs(xdgState) {
-		out = append(out, absResolve(filepath.Join(xdgState, "rex", "tsnet")))
+	for _, h := range append([]string{"/"}, homes...) {
+		if d := rexNodeXDGStateDir(h, xdgState); d != "" {
+			out = append(out, d)
+		}
 	}
 	return dedupeStrings(out)
 }
@@ -96,9 +156,21 @@ func rexNodeStateDirs(homes []string, xdgState string) []string {
 // all (github.com/adrg/xdg v0.5.3, internal/pathutil/pathutil_unix.go:14,
 // read 2026-11-21). The mask is deliberately wider than that; a create has to
 // be exactly it.
+//
+// ONE RESOLUTION, SHARED WITH THE MASK (ranger-base-3cjzs). The XDG arm is
+// rexNodeXDGStateDir against this function's own home, so a `~`- or
+// `$HOME`-prefixed XDG_STATE_HOME creates and anchors the directory rex will
+// actually write to rather than the GOOS default it would then not use. The
+// two arms cannot drift because there is one expansion.
+//
+// WITH NO $HOME an expandable value creates NOTHING, which is where this
+// stops short of the library: there it would expand against "/". Same rule as
+// the no-home default above and for the same reason — the fail-closed
+// direction for a mkdir is to make no directory at all — and the mask carries
+// the "/" row either way, so nothing goes uncovered.
 func rexNodeStateDirNative(goos, home, xdgState string) string {
-	if filepath.IsAbs(xdgState) {
-		return absResolve(filepath.Join(xdgState, "rex", "tsnet"))
+	if d := rexNodeXDGStateDir(home, xdgState); d != "" {
+		return d
 	}
 	if home == "" {
 		return ""

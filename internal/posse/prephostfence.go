@@ -16,7 +16,10 @@ package posse
 //     of readerprobeprep_qa_test.go's own fixture: both are there, and the
 //     real one is the one the watch list names.
 //   - XDG_STATE_HOME, which rexNodeStateDirs reads straight out of the
-//     environment and no test fence unset.
+//     environment and no test fence unset. (Since ranger-base-3cjzs a
+//     `~`- or `$HOME`-prefixed value is expanded against every candidate
+//     home, so that half DOES move with a fixture's $HOME — but the fence
+//     unsets the variable, so the arm contributes nothing either way.)
 //
 // Until ranger-base-bncbk neither mattered, because steps 5a and 5b skipped
 // an absent directory and emitted no prep at all for a present one. Both now

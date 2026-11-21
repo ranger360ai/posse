@@ -106,7 +106,11 @@ func FenceCLIHomes(root string, rows map[string]string) error {
 	// bwrap render's prep writes on the HOST at paths the render chose, and
 	// two of its inputs ignore $HOME: the passwd home liveSSHHomes reads
 	// (seamed, pointed here at $HOME so a fixture moves it) and
-	// XDG_STATE_HOME, which rexNodeStateDirs reads raw — UNSET and not
+	// XDG_STATE_HOME, which rexNodeStateDirs reads out of the environment
+	// (ranger-base-3cjzs expands a `~`/`$HOME` prefix in it against every
+	// candidate home, so that half does follow a fixture's $HOME now; the
+	// variable is unset here, so the arm contributes nothing either way) —
+	// UNSET and not
 	// pointed into root, because this box and CI both leave it unset and a
 	// temp value would move mise's install tree in the two binaries whose
 	// TestMain does not pin MISE_STATE_DIR first.
