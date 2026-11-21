@@ -770,15 +770,94 @@ self_test() {
 			else
 				say "control: a write over a live executable is refused"
 			fi
-			# Removing the marker is what lets the holder exit, so
-			# plant_over's wait ends by the holder's exit and the
-			# kernel's release of it, with nothing timed.
+			# THE ORDER IS THE ARM (ranger-base-7c2py). This used to
+			# remove the marker and THEN call plant_over, which left
+			# it to the scheduler whether the plant's FIRST attempt
+			# was refused — i.e. whether the retry this arm exists
+			# to keep alive was exercised at all. MEASURED
+			# 2026-11-21 on this box (linux, 16 cores, loadavg
+			# 13.6-16.0) over a COPY of this script: PLANT_TRIES at
+			# success read 9, 1, 9, 1, 9 over five runs, and the
+			# pre-fix mutant — plant_over giving up after ONE
+			# attempt — was killed 2 of 5 runs. A green self-test
+			# licensed the removal of the retry on a majority of
+			# runs, which is not what "the arm that can fail" means.
+			#
+			# So the plant goes first, in the BACKGROUND, while the
+			# holder still holds its text image, and the marker comes
+			# off only once the plant has said it is waiting. The
+			# first attempt is then refused by construction and
+			# nothing is timed: PLANT_TRIES >= 2 is asserted, and it
+			# is what the one-attempt mutant cannot produce.
+			# MEASURED after the reorder, three batteries of five
+			# runs each at loadavg 5.5-21.8: 15/15 green with
+			# PLANT_TRIES 9 or 10 every run, and the same mutant
+			# 15/15 KILLED, every one of them "after 1 tries".
+			local pnote ptriesf pdetail ppid prc ptries pdetailmsg pwait
+			pnote="$tmp/plant-note"
+			ptriesf="$tmp/plant-tries"
+			pdetail="$tmp/plant-detail"
+			rm -f "$pnote" "$ptriesf" "$pdetail"
+			# plant_over's answer comes back through FILES: a
+			# background subshell cannot set PLANT_TRIES in this
+			# shell, and the try count is the measurement.
+			(
+				prc=0
+				plant_over "$holdsrc" "$holder" || prc=$?
+				printf '%s\n' "$PLANT_TRIES" >"$ptriesf"
+				printf '%s\n' "$PLANT_ERR" >"$pdetail"
+				exit "$prc"
+			) 2>"$pnote" &
+			ppid=$!
+			# Bounded, and it watches for the plant's EXIT as well as
+			# for its notice. The one-attempt mutant returns before
+			# printing anything, so a wait on the notice alone would
+			# sit here for the whole budget on the one run that
+			# matters. Watching the pid is not enough on its own
+			# either: a reaped-but-unwaited child still answers
+			# `kill -0`, so the plant's own last write is the signal.
+			pwait=0
+			while [ ! -s "$pnote" ] && [ ! -e "$pdetail" ] && [ "$pwait" -lt "$hold_cap" ]; do
+				pwait=$((pwait + 1))
+				nap
+			done
+			# Only now: removing the marker is what lets the holder
+			# exit, so the plant's wait ends by the holder's exit and
+			# the kernel's release of it.
 			rm -f "$hmark"
-			if plant_over "$holdsrc" "$holder"; then
-				say "plant: the in-place plant waits out a live executable"
-			else
+			prc=0
+			wait "$ppid" || prc=$?
+			# The notice went to a file instead of this script's
+			# stderr, so hand it to the reader the way it used to
+			# arrive.
+			if [ -s "$pnote" ]; then
+				cat "$pnote" >&2
+			fi
+			ptries=0
+			pdetailmsg="the plant wrote no answer"
+			if [ -e "$ptriesf" ]; then
+				IFS= read -r ptries <"$ptriesf" || :
+			fi
+			if [ -e "$pdetail" ]; then
+				IFS= read -r pdetailmsg <"$pdetail" || :
+			fi
+			# NUMERIC, for the same reason arm 1 reads its inodes
+			# numerically: `-lt` on a non-number is a bash error, and
+			# under `set -e` that takes the whole self-test down
+			# instead of reddening this arm.
+			case $ptries in ''|*[!0-9]*) ptries=0 ;; esac
+			if [ "$prc" != 0 ]; then
 				fail "plant: the in-place plant waits out a live executable" \
-					"$PLANT_ERR after $PLANT_TRIES tries"
+					"$pdetailmsg after $ptries tries"
+			elif [ "$ptries" -lt 2 ]; then
+				# A plant that landed on its first attempt was
+				# never refused, so the retry was not exercised
+				# and this arm measured nothing. Saying so is the
+				# whole point of the reorder above.
+				fail "plant: the in-place plant waits out a live executable" \
+					"the first write landed while the holder still held it ($ptries try) — the retry was not exercised"
+			else
+				say "plant: the in-place plant waits out a live executable"
 			fi
 		fi
 		# The holder's own exit status is not an arm: it is killed by

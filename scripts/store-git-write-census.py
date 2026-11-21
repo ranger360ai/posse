@@ -46,7 +46,21 @@ each of which changed the answer:
 
   4. READ VERBS ARE THE DENOMINATOR. The answer "no seat writes it" is worth
      nothing without "167 seat commands name it and every git verb among them
-     is a read". Both are printed.
+     is a read". Both are printed, and since ranger-base-7c2py the rule is
+     ENFORCED rather than stated: an empty read denominator REFUSES the
+     all-clear and exits 2. It was stated and not enforced for one release,
+     and that is exactly the hole finding 2 of ranger-base-7c2py came through
+     — `--store /home/<user>/src/<name>` matched no path component, so every
+     git verb fell out of the classification, reads and writes alike, and the
+     script printed "no seat session has ever typed a git write" over an
+     empty corpus at exit 0. MEASURED 2026-11-21 against the live store: at
+     645 transcripts the path spelling read 111 seat commands and NO git verbs
+     at all, where the NAME spelling read 200 commands and 53 read verbs; the
+     name spelling re-read the same hour at 689 transcripts read 220 commands,
+     the same eight read verbs and the same empty write set. The NAME readings
+     are the reading. A census that cannot tell its own silence from an
+     all-clear is worse than no census, because the next reader re-runs it to
+     re-validate a wall.
 
 WHAT COUNTS AS A WRITE. Any git verb that can write under `.git`: the porcelain
 that commits or moves a ref, the plumbing that writes an object, and the
@@ -63,14 +77,28 @@ USAGE
 store repo's directory name and not a full path: transcripts spell it
 `~/src/<name>`, `/home/<user>/src/<name>` and `$HOME/src/<name>`, and a full
 path would match one of the three. Required rather than defaulted, because a
-default would name one instance's repo in a public tree (ADR 0024 D2).
+default would name one instance's repo in a public tree (ADR 0024 D2). A
+`--store` carrying a path separator is REFUSED at exit 2 rather than matched
+and missed: a path is the spelling everything else in this shop uses, so the
+wrong one has to be loud (ranger-base-7c2py).
+
+EXIT STATUS
+    0   the all-clear, over a non-empty read denominator: seats name the store
+        repo, every git verb among those commands is a read, and none writes.
+    1   at least one seat git write — read the examples before trusting a wall
+        that rests on this census.
+    2   the census did not answer: a bad --store, no transcripts, or an empty
+        read denominator under rule 4 above. NOT an all-clear.
 """
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
 import sys
+import tempfile
 from collections import Counter, defaultdict
 
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
@@ -243,11 +271,27 @@ def report(root, store, out):
             for d, line in examples[kind + "/" + verb]:
                 print(f"      [{verb}] [{d}] {line}", file=out)
         print("", file=out)
-    if not writes["seat"]:
-        print(f"ANSWER: no seat session has ever typed a git write aimed at {store}.", file=out)
-    else:
+    if writes["seat"]:
         print(f"ANSWER: {sum(writes['seat'].values())} seat git write(s) — read the examples before trusting the wall.", file=out)
-    return 0 if not writes["seat"] else 1
+        return 1
+    # RULE 4, ENFORCED (ranger-base-7c2py). An empty write set over an empty
+    # read set is the instrument saying nothing, and it is indistinguishable
+    # from the all-clear by every signal a reader has: same report, same
+    # exit 0. The denominator is the READ verbs and not `seen`, because a
+    # --store that matches no path component still matches as a substring of
+    # the command and keeps `seen` looking healthy — 111 commands and no verbs
+    # is how finding 2 presented.
+    if not reads["seat"]:
+        print(
+            f"ANSWER: NOT PROVEN — no seat session names {store} with a git verb aimed at it, "
+            "so the empty write set is this census's silence and not a reading "
+            "(rule 4: read verbs are the denominator). Check the --store spelling: "
+            "it is the store repo's directory NAME, matched as a path component.",
+            file=out,
+        )
+        return 2
+    print(f"ANSWER: no seat session has ever typed a git write aimed at {store}.", file=out)
+    return 0
 
 
 def self_test(out):
@@ -276,8 +320,113 @@ def self_test(out):
         if got != want:
             bad += 1
             print(f"MISCLASSIFIED: {cmd}\n  got  {got}\n  want {want}", file=out)
-    print(f"self-test: {len(cases) - bad}/{len(cases)} arm(s) pass", file=out)
-    return 1 if bad else 0
+    print(f"self-test: {len(cases) - bad}/{len(cases)} classifier arm(s) pass", file=out)
+    ibad, itotal = instrument_arms(out)
+    print(f"self-test: {itotal - ibad}/{itotal} instrument arm(s) pass", file=out)
+    return 1 if (bad or ibad) else 0
+
+
+# Any name but the operator's, which is DERIVED from $HOME — a corpus planted
+# in the operator's half would be scored as the operator's, and every seat arm
+# below would then read zero for the wrong reason. The arms assert the
+# difference rather than assuming it.
+PLANTED_SEAT_DIR = "-seat-session"
+
+
+def plant_corpus(root, cmds):
+    """One seat session's transcript under a fresh root, carrying `cmds`."""
+    pdir = os.path.join(root, PLANTED_SEAT_DIR)
+    os.makedirs(pdir, exist_ok=True)
+    with open(os.path.join(pdir, "a.jsonl"), "w") as f:
+        for c in cmds:
+            rec = {"message": {"content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": c}},
+            ]}}
+            f.write(json.dumps(rec) + "\n")
+    return root
+
+
+def instrument_arms(out):
+    """The ARGUMENT and the ANSWER, end to end — not the classifier.
+
+    Every arm in self_test feeds git_segments directly, which is why all nine
+    of them were green over a --store that matched no path component and over
+    an all-clear printed with an empty read denominator (ranger-base-7c2py
+    finding 2): the one thing the self-test never ran was the script. These
+    arms run report() and main() whole over a planted corpus, and the last
+    one is the blindness control — the same corpus, spelled as a NAME, has to
+    answer all-clear, or the refusals above are refusing everything.
+    """
+    store = "beadqueue"
+    reader = "cd ~/src/beadqueue && git status -sb | head -1"
+    writer = "cd ~/src/beadqueue && git commit -m x -- f"
+    # NAMES the store and aims no git verb at it. This is the shape that kept
+    # `seen` looking healthy while both verb sets were empty, so it is the
+    # shape the denominator rule has to catch.
+    namer = 'cd ~/src/beadqueue && bd comments add x "... git add . ..."'
+    arms = []
+    # The prefix is posse's temp namespace and not a convenience: a root
+    # outside `posse-*` is collected by no class in scripts/reap-test-tmp.sh
+    # at any age, and this box's /tmp has hit 100% of its inodes
+    # (internal/treepins/temproot_qa_test.go).
+    with tempfile.TemporaryDirectory(prefix="posse-store-git-write-census.") as tmp:
+        roots = {}
+        for name, cmds in (("read", [reader]), ("write", [reader, writer]), ("quiet", [namer])):
+            roots[name] = plant_corpus(os.path.join(tmp, name), cmds)
+
+        if PLANTED_SEAT_DIR == operator_dir():
+            print("ARM DID NOT RUN: the planted session dir is this box's operator dir", file=out)
+            return 1, 1
+
+        def answer(root, arg_store):
+            buf = io.StringIO()
+            rc = report(root, arg_store, buf)
+            return rc, buf.getvalue()
+
+        def run_main(argv):
+            buf = io.StringIO()
+            err = io.StringIO()
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+                rc = main(argv)
+            return rc, buf.getvalue(), err.getvalue()
+
+        rc, said = answer(roots["read"], store)
+        arms.append(("a corpus of seat reads answers all-clear", (rc, "has ever typed a git write" in said), (0, True)))
+
+        rc, said = answer(roots["write"], store)
+        arms.append(("a corpus with one seat write exits 1", (rc, "1 seat git write(s)" in said), (1, True)))
+
+        # The finding itself: an empty read denominator must not answer.
+        rc, said = answer(roots["quiet"], store)
+        arms.append((
+            "an empty read denominator refuses the all-clear",
+            (rc, "NOT PROVEN" in said, "has ever typed a git write" in said),
+            (2, True, False),
+        ))
+
+        # The argument. A path matches no component, so it reads the quiet
+        # corpus out of ANY corpus — this one has a read in it.
+        rc, said, cried = run_main(["--store", "/home/u/src/" + store, "--root", roots["read"]])
+        arms.append((
+            "--store as a path is refused before it reads anything",
+            (rc, "ANSWER" in said, "not a path" in cried),
+            (2, False, True),
+        ))
+
+        # Blindness control for the two refusals above.
+        rc, said, _ = run_main(["--store", store, "--root", roots["read"]])
+        arms.append((
+            "control: the same corpus, --store as a NAME, answers all-clear",
+            (rc, "has ever typed a git write" in said),
+            (0, True),
+        ))
+
+    bad = 0
+    for label, got, want in arms:
+        if got != want:
+            bad += 1
+            print(f"ARM FAILED: {label}\n  got  {got}\n  want {want}", file=out)
+    return bad, len(arms)
 
 
 def main(argv=None):
@@ -293,6 +442,19 @@ def main(argv=None):
     # one instance's repo in a public tree (ADR 0024 D2).
     if not args.store:
         print("--store <dir name> is required: the store repo's directory name, not a path", file=sys.stderr)
+        return 2
+    # A PATH IS REFUSED, NOT MATCHED AND MISSED (ranger-base-7c2py). The store
+    # is matched as a path COMPONENT, so a path matches no component, drops
+    # every git verb out of the classification and used to answer all-clear
+    # over nothing. The message names the spelling that works rather than
+    # only the one that does not.
+    if "/" in args.store or os.sep in args.store:
+        name = os.path.basename(args.store.rstrip("/" + os.sep)) or args.store
+        print(
+            f"--store takes the store repo's directory NAME, not a path: {args.store}\n"
+            f"    it is matched as a path COMPONENT, so a path matches nothing — try: --store {name}",
+            file=sys.stderr,
+        )
         return 2
     if not os.path.isdir(args.root):
         print(f"no transcripts under {args.root}", file=sys.stderr)
