@@ -346,7 +346,10 @@ and the one `"homes"` literal under `internal/` and `cmd/` is the two-instance
 test fixture this amendment's pin is built from — and
 coining one is its own design bead (ranger-base-is1qp, which carries the
 measurements and the shape of the decision). Restarting any of those loops
-stays the operator's or the coordinator's either way.
+stays the operator's or the coordinator's either way. **That bead decided
+D8**, which widened the verb's reading and left this one exactly as this
+amendment wrote it — so the scope clause below is still the whole of what G18
+and `posse status` say about their reach, and it is still true of them.
 
 **D7 — Guardrail 5 is the edge of the delegation.** Out of scope:
 `posse promote`, `posse refresh`, config and `install_delegate:` itself,
@@ -361,6 +364,139 @@ At acceptance one more gate was added before the promote: the security
 persona's review of the verb as built, which reads it as a whole rather than
 close by close. The verb replaces the binary that fences every seat, so it gets
 that whole read before a seat is allowed to run it.
+
+**D8 — The verb reads the loops ON THIS BINARY, box-wide; G18 stays
+per-instance** (ranger-base-is1qp, deciding the bead D6's nqaa1 amendment
+filed). The amendment above made the narrow reading say its own reach. This is
+the widening, and the first thing it does is refuse the notion the bead asked
+for.
+
+*What is refused: "the instances on this box".* It is the wrong derivation,
+not merely an absent one. `RHQ_HOME` is an environment variable and nothing
+constrains it to live under one root, so an enumeration of declared instances
+OVER-reports — an instance running no loop has nothing a rename could leave
+behind — and UNDER-reports, because a loop whose home is outside the root is
+exactly the hole. It would also need a homes root in config, which is a key
+the operator would have to maintain for a reading to stay correct.
+
+*What is coined instead, derived from the file D3.5 renames:*
+
+> **the dispatch loops on this binary** = every process on this box whose
+> image came from the path being replaced, and whose own `RHQ_HOME`'s
+> `state/dispatch-watch.pid` names that process.
+
+No config, no homes root, no new key anywhere. It sees loops nobody declared,
+and it cannot see an instance that is not running one — which is the right
+blindness, because the subject of the hazard is a rename and a loop that does
+not exist renders nothing.
+
+*The key is the exe link, and never argv.* Candidacy is `/proc/<pid>/exe`
+resolving to the target path: the kernel's own statement about which image a
+process runs, which survives the rename and says so (readlink appends
+" (deleted)"). An argv match is forbidden here for the reason AGENTS.md
+("Ending anything") forbids it as a target key — every seat on this box runs
+byte-identical argv from a different instance — and it is also why
+`sysProcTable` (loadguard.go), which already walks the box, cannot be the
+reader: two bounded `ps` reads give comm and argv, and `ps` cannot report the
+(dev, inode) of a process's image at all. The image identity comes through
+`procExe`, the same spelling G18 reads it through, so the two readings cannot
+disagree about what one pid runs.
+
+*The per-home record is a FILTER, not an enumerator, and that is the whole
+trick.* Each candidate names its own instance (its `RHQ_HOME`, from its
+environ), and a candidate is a loop only when THAT instance's
+`dispatch-watch.pid` names THAT pid — the invariant watchpid.go already keeps,
+read in the one direction that needs no homes root. Enumerating records needs
+one; filtering pids `/proc` already produced does not.
+
+MEASURED 2026-11-21, this box, linux 7.2.15-1-omarchy, uid 1001 at cage
+shims, `~/.local/bin/posse` at dev:ino 54:14541392 — three processes ran that
+image:
+
+```
+1185112  ppid 1140     54:14541392  RHQ_HOME=~/homes/weller  record 1185112  LOOP
+1185185  ppid 1140     54:14541392  RHQ_HOME=~/homes/ranger  record 1185185  LOOP
+3285561  ppid 3285542  54:14541392  RHQ_HOME=~/homes/ranger  record 1185185  NOT a loop
+```
+
+The third row is why the filter is load-bearing, and it is a live false
+positive rather than a hypothetical one: a seat's own `posse pulse wait
+--after 494` child runs the same image, from the same path, under the same
+`RHQ_HOME` as the ranger loop. On the exe link alone it is indistinguishable
+from a loop; its instance's record does not name it, so the filter rejects it.
+Sibling `exe` readlinks, their stats, their `environ` and the sibling
+instance's record were all readable from that seat. Note what moved since the
+bead was filed: the install inode and both pids (54:12591441, 2066610 and
+1991667), because an install landed and both loops restarted at 12:11:54Z
+onto it. So neither loop was stale when the box was read, and what is measured
+here is READABILITY — which is what the mechanism needs. A live stale sibling
+is still unmeasured, and the fixture pin holds the arrangement instead.
+
+*Whose reading it is: this verb's alone.* G18 is unchanged. A box-wide row
+inside a per-instance report is a new category and an incoherent one: it would
+be raised once per instance that happens to have pulse state and silent in
+every instance that has none — the weller instance has no pulse state at all,
+so no tick there evaluates G18 — so one box-wide condition would be both
+duplicated and missed depending on which instances tick. `posse upgrade` is
+the one command whose subject is box-wide, because it is the one that does the
+rename.
+
+*Both lines print, and neither claims the other's reach.* The per-instance
+`dispatch:` line stays first: it reads this delegate's own instance through
+its watch LOCK and its own pid record, which is a stronger reading of that one
+loop than a `/proc` census is — a lock the kernel holds, against a pid record
+a process names itself by — and it is the loop the delegate's next seat comes
+through. The `dispatch (box):` line is weaker per loop and wider, and it is
+the only thing in the report that can say a sibling instance was left behind.
+Each carries its own scope sentence (`watchScopeSentence`,
+`boxScopeSentence`).
+
+*A reader, and nothing else.* Nothing restarts, signals or touches any process
+it finds; restarting a live dispatcher stays the operator's or the
+coordinator's (D6, guardrail 3). Liveness is "`/proc/<pid>` is there", never
+`kill -0`: under `LANDLOCK_SCOPE_SIGNAL` a caged seat's signal 0 to a process
+it did not fork is EPERM whether that process is alive or dead (AGENTS.md,
+ranger-base-e5un1), so a signal-based liveness check would read wrong from
+exactly the seats that most need it. The census itself survives a cage by
+ruling rather than by luck: `--unshare-pid` is deliberately absent from the
+bwrap argv so a seat can read the box's process table, and `/proc` stays the
+host's procfs under `--ro-bind / /` (bwrap.go).
+
+*A path that holds nothing is STALE,* which is `WatchImage.Stale`'s
+predicate exactly and is aligned deliberately rather than inherited. An empty
+on-disk identity means nothing is at that path at all — a swap in flight, or
+`install(1)` between its unlink and its write (Context) — and a loop whose
+image is not the one at its path is in this condition whether the replacement
+has arrived yet or not. The comfortable-looking alternative ("nothing to
+compare against, so not stale") renders as "all already on the installed
+image" over a path with no installed image on it, which is the one sentence
+this reading must never be able to print. The rendering says the path holds
+nothing and tells its reader to read that before reading it as loops to
+restart.
+
+*Three things it must never do, each pinned.* (1) **The reading process is
+skipped.** The verb runs FROM the path it replaces, so it is a candidate by
+its own key, and after its own swap its own image is the old inode — unskipped
+it would report itself as a stale process on this binary on every run. A
+transient CHILD of the verb is NOT skipped: it is named among the
+unattributed. (2) **A candidate it cannot attribute is named, never dropped.**
+Silent under-reporting is the failure this whole reading is a correction of.
+(3) **An abstention is never rendered as an all-clear.** Off linux there is no
+census — `boxloops_other.go` refuses and says why, on `procstart_other.go`'s
+rule, because the darwin process table (`sysctl kern.proc.all`) carries comm
+and argv and neither an image inode nor an environment, and a census compared
+against an unmeasured spelling passes for the wrong reason. An unreadable
+`/proc` is an error and not an empty list. The abstention's rendering says the
+per-instance line is the whole of that report's coverage and carries this
+bead's id, so a darwin reader is told the residual stands rather than handed a
+silence that looks like a clean box.
+
+*Residual.* A process of another uid running the same path is invisible:
+`readlink(/proc/<pid>/exe)` is EACCES across uids, so it is not even a
+candidate. ASSUMED harmless on this box, where every instance's loop runs as
+the one account (MEASURED above: all three candidates uid 1001). Stated
+because it is a limit of the reading and not of the subject.
+
 
 ## Consequences
 

@@ -364,6 +364,12 @@ type upgradePlan struct {
 	// (ranger-base-rrgnc); nil prints nothing, which is every pin that does
 	// not ask. A field for Personas' reason.
 	Loop func() (WatchImage, bool)
+	// Box reads EVERY dispatch loop on this box running the binary this run
+	// replaced (ranger-base-is1qp, ADR 0092 D8) — the box-wide half of
+	// Loop's subject, because D3.5 renames one file and every instance's
+	// loop execs it. This verb is the only reader of it: G18 stays
+	// per-instance (boxloops.go says why). nil prints nothing, same as Loop.
+	Box func() BoxReading
 }
 
 // upgradeWatchLine is the line before D6's (ranger-base-rrgnc): the live
@@ -392,6 +398,27 @@ func upgradeWatchLine(plan upgradePlan) string {
 		return fmt.Sprintf("dispatch: loop pid %d already runs %s — relaunched seats render the new walls. %s", img.Pid, AbbrevHome(img.Path), watchScopeSentence(img.Home))
 	}
 	return "dispatch: " + img.Sentence()
+}
+
+// upgradeBoxLine is the box-wide companion to upgradeWatchLine
+// (ranger-base-is1qp, ADR 0092 D8): every dispatch loop on this box still
+// running the image the rename replaced, not just this instance's.
+//
+// IT DOES NOT REPLACE THE LINE ABOVE IT and neither line claims the other's
+// reach. upgradeWatchLine reads one instance — this delegate's — through its
+// watch lock and its own pid record, which is a stronger reading of that one
+// loop than a /proc census is (a lock the kernel holds, against a record a
+// pid names itself by), and it is the loop whose restart the delegate's own
+// next seat comes through. This one is weaker per loop and wider: it is the
+// only thing in this report that can say a SIBLING instance was left behind.
+// So both print, each carrying its own scope sentence, and an abstention here
+// says the per-instance line is the whole of the coverage rather than
+// printing nothing — which is how the hole this closes was invisible.
+func upgradeBoxLine(plan upgradePlan) string {
+	if plan.Box == nil {
+		return ""
+	}
+	return plan.Box().Sentence()
 }
 
 // gitCount is `git rev-list --count <range>` as a number.
@@ -856,6 +883,9 @@ func (a *App) cmdUpgrade(w io.Writer, o UpgradeOpts, reads upgradeReads) error {
 	// it.
 	plan.Repos = append(plan.Repos, upgradeHookWallRepos(a.SweepHookWallIdentity())...)
 	plan.Loop = func() (WatchImage, bool) { return ReadWatchImage(a) }
+	// The subject is the path this run replaces, which is the binary every
+	// instance's loop execs — not this home's anything (ADR 0092 D8).
+	plan.Box = func() BoxReading { return ReadBoxLoops(plan.Target) }
 	return upgradeRunPlan(w, plan)
 }
 
@@ -998,6 +1028,14 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 	// (ranger-base-rrgnc). Restarting it is not this verb's (guardrail 3).
 	if line := upgradeWatchLine(plan); line != "" {
 		fmt.Fprintf(w, "\n%s\n", line)
+	}
+	// And the box-wide one, because the file just renamed is box-wide and
+	// the line above reads one instance (ranger-base-is1qp, ADR 0092 D8).
+	// AFTER it, not instead of it: the per-instance line names the loop this
+	// delegate's own seats come through, which is the one its reader will act
+	// on first, and each line states its own reach.
+	if line := upgradeBoxLine(plan); line != "" {
+		fmt.Fprintf(w, "%s\n", line)
 	}
 
 	// D6 — the LAST stdout line, and the one the delegate posts on the
