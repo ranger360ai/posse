@@ -33,7 +33,13 @@ measured table*
 Where a session can reach `.git/config` today: a main-checkout session
 is granted cwd whole; a PID that denies Edit/Write is granted `cwd/.git`
 whole (seatbelt.go, SeatbeltWritable); and when `.beads/redirect` points
-at another repo, `beadsGitDirs` grants that repo's `.git` whole. A
+at another repo, `beadsGitDirs` grants that repo's `.git` whole.
+*(Amended 2026-11-20, ranger-base-kfrpv, ranger-base-gdgbb: that third
+grant is gone, so decision 1's store-repo arm in `sessionGitConfigFiles`
+and `sessionHooksDirs` went with it. An L3 deny over a path that no grant
+covers still renders a read-only bind that wall-watch lists. While that arm
+existed, an operator `git config` or `branch -D` in the store repo detached
+that bind and ended every live bwrap seat.)* A
 worktree session's narrowed grant (ranger-base-m2wf) already excludes
 `<common>/config`, but only by omission — no deny stands there if a
 grant ever widens.

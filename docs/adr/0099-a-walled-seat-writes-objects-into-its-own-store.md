@@ -28,6 +28,20 @@ is used, because GIT_OBJECT_DIRECTORY would leak into bd's commits in another
 repo. The bind must be the deepest mount over `<common>/objects` even when
 another grant (for example a store of record inside the same repo) covers
 `<common>` whole.
+*Scope, confirmed 2026-11-20 (ranger-base-kfrpv, ranger-base-gdgbb):* D1
+covers the SESSION's repo only, and that scope is complete. It does not
+leave out the store of record's repo. Since ranger-base-kfrpv, no seat is
+granted any git dir there, so nothing writes objects there and there is no
+store to put over them. The launcher commits the queue (ADR 0015 §4). Do
+not reopen this as "D1 needs a store-repo arm". If a seat ever needs write
+access into that repo's git, that grant is what to question first. The
+store-repo half of the rejection of GIT_OBJECT_DIRECTORY above ("bd's
+commits in another repo") has the same false premise. The rejection still
+stands, on the same leak without the commit: git honours the variable for
+every repository it is run in (git(1), ENVIRONMENT VARIABLES). A seat's
+read-only `git -C <store repo> log` would resolve objects in the seat store
+and fail. The darwin arm (As built, below) scopes it per invocation for
+exactly this reason.
 
 **D2 Detached HEAD at every walled tier** (pe5g5). A seat never writes a
 shared ref, so the branch ref pair and the create-only `refs/heads` ancestor

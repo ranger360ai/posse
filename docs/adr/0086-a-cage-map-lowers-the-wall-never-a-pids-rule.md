@@ -129,8 +129,21 @@ D7 then refused such a PID. D2 gives it the tier it asked for.
 **D3. A PID that denies the whole tree gets no write grant into any git
 dir of its session.** `SeatbeltWritable`'s `deniesFiles` arm drops
 `<cwd>/.git` and the `sessionGitGrants` set (objects, logs, the ref
-directory, the worktree's gitdir). The store of record's own git dirs stay
-granted, because bd commits there. This holds on both mechanisms.
+directory, the worktree's gitdir). This holds on both mechanisms.
+*Amended 2026-11-20 (ranger-base-kfrpv, ranger-base-gdgbb):* this decision
+used to state one exception: "the store of record's own git dirs stay
+granted, because bd commits there". There is no exception now, and the rule
+covers every PID, not only this one: no PID is granted any git dir of the
+store of record's repository. The store DIRECTORY is still granted. The
+exception's premise was false. bd 0.50.3's `bd sync` does not stage or
+commit (`bd sync --help`, ADR 0015 §4's table). The spelling that commits,
+`bd sync --full`, is denied by every crew PID. And since ADR 0015 §4 the
+committer is the launcher, uncaged, under the launcher lock
+(`App.CommitQueueJSONL`). L4's `CageMounts` had already granted the store
+directory alone. L2, L3, the self-caging runtimes' `--add-dir` line and the
+§4 Reachability gate now agree with it.
+`docs/notes.d/ranger-base-kfrpv.md` has the measurements, and
+`storerepogitwall_qa_test.go` reds if the grant comes back.
 - It fixes R0. In a linked worktree `<cwd>/.git` is a FILE. That grant was
   dead on darwin, because the carve-out denies the same path and the last
   match wins. On bwrap it refuses the whole render, so hoover cannot launch
@@ -165,8 +178,9 @@ granted, because bd commits there. This holds on both mechanisms.
   PID at all — see the bullet below.**
 - **As built, the sixth door (ranger-base-o8us6, found by the QA lane's
   verify in `docs/notes.d/ranger-base-md7ag.md`, closed in
-  `docs/notes.d/ranger-base-o8us6.md`).** The exception this decision states
-  is "the store of record's own git dirs stay granted, because bd commits
+  `docs/notes.d/ranger-base-o8us6.md`).** The exception this decision stated
+  until ranger-base-kfrpv removed it (see the D3 amendment above) was "the
+  store of record's own git dirs stay granted, because bd commits
   there", and the reason is that the store is ANOTHER REPO. The code tested
   something else: whether the store was already covered by what this PID was
   granted (`!underDir(grantedBeadsBase, home)`, where that base is
@@ -227,16 +241,18 @@ granted, because bd commits there. This holds on both mechanisms.
     `<cwd>/inner/.beads`. Producer-level, because the fixture is under `/tmp`
     and the blanket temp grant would mask the refusal under a live wall.
   - Not exposed on this instance, for the reason the bullet above gives: all
-    three stores here redirect into another repository, where `beadsGitDirs`
-    grants that repo's `.git` whole and the probe passes against its own
-    grant. The exposed shape is an instance whose store of record is its own
+    three stores here redirect into another repository. At the time,
+    `beadsGitDirs` granted that repo's `.git` whole and the probe passed
+    against its own grant. Since ranger-base-kfrpv that arm grants and
+    probes nothing. The exposed shape is an instance whose store of record is its own
     repo AND whose sessions are linked worktrees.
   - The fix is NOT this decision's condition widened to every PID. In a MAIN
     CHECKOUT `cwd` is granted whole, so the `<cwd>/.git` probe there measures
     a real grant and is ranger-base-8t6j1's own control; a gate narrowed by
     "is the store inside my tree" alone would have dropped it silently. So
     the gate asks the WALL's producer instead of bd's: another repo ->
-    `beadsGitDirs` whole, as this decision's exception says; the session's
+    nothing, since ranger-base-kfrpv removed the exception (it answered
+    `beadsGitDirs` whole while D3 still stated that exception); the session's
     own tree and a whole-tree-deny PID -> nothing, as D3 says; the session's
     own tree and any other PID -> `sessionGitGrants`, which is what the wall
     grants there and answers nothing in a main checkout on purpose, where

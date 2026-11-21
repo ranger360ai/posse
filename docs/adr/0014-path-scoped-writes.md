@@ -148,7 +148,10 @@ at L2. Through the launcher's splice, the carve-out let such a seat land a
 commit in both tree shapes. "Match L2" now means `.beads/` alone. The
 redirect-target extra (store of record outside the session dir) is
 ranger-base-rhw at L2; the L4 bead applies the same path as a read-write
-submount when it is outside the repo. `.git/hooks` as a further `:ro`
+submount when it is outside the repo. That path is the store DIRECTORY,
+not its repo's git dirs. L4 never granted those, and since
+ranger-base-kfrpv (2026-11-20) L2 and L3 do not either: the launcher
+commits the queue, so no seat commits there. `.git/hooks` as a further `:ro`
 overlay is not this ADR: it was deferred here to ranger-base-3c3 / h15,
 and [ADR 0038](0038-git-identity-write-deny.md) decided it — the hook
 slots are part of the repo's persistent git identity, denied at L2 and

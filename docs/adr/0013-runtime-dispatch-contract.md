@@ -1184,6 +1184,11 @@ rule-to-flag compilers, and an inference client inside dispatch.
   granted whole — the same gap `sessionGitGrants` already accepts and
   states for the session's own repo, extended to the store's. Nothing
   narrower exists at that wall; narrowing it needs a different wall.
+  *Superseded 2026-11-20 (ranger-base-kfrpv):* the trade's premise, "`bd
+  sync` commits the JSONL", is false on the pinned bd. `bd sync` does not
+  commit, the committing `--full` is denied to every crew PID, and the
+  launcher commits the queue (ADR 0015 §4). `launchWritableRoots` names the
+  store directory and none of its repo's git dirs, so nothing is traded.
 - §4 Reachability, "its git dirs" is the WALL's answer and not bd's
   (2026-11-11, ranger-base-6hjm5, from ranger-base-o8us6's reading;
   `docs/notes.d/ranger-base-6hjm5.md`). The clause above says the grants must
@@ -1199,7 +1204,9 @@ rule-to-flag compilers, and an inference client inside dispatch.
   (MEASURED 2026-11-11, D1 host, through both shipped producers; not exposed
   on this instance, whose three stores all redirect into another repository).
   The gate now asks the producer the WALL asks: the store in another repo
-  keeps `beadsGitDirs` whole (bd commits there, ADR 0086 D3's exception), and
+  takes nothing, because the wall grants none of that repo's git dirs (it
+  took `beadsGitDirs` whole until ranger-base-kfrpv removed ADR 0086 D3's
+  exception, whose "bd commits there" was false on the pinned bd), and
   a store inside the session's own tree takes `sessionGitGrants` — nothing
   for a whole-tree-deny PID, the narrowed set in a worktree, and
   `beadsGitDirs`' single `<cwd>/.git` in a main checkout, where `cwd` whole

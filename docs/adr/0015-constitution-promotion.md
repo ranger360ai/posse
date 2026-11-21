@@ -80,9 +80,11 @@ The instance tree also mixes three write policies in one repo:
 2. **Runtime state** — `.beads` (the queue, store of record for every
    repo the crew touches, reached by `.beads/redirect`) and
    `posse/state` (was `rhq/state`). The write-hottest paths in the system; deniable to
-   no one. The seatbelt grant for the redirect target also grants the
+   no one. The seatbelt grant for the redirect target also granted the
    instance repo's *git dirs* to every session (**MEASURED**,
-   `seatbelt.go` redirect grant, ranger-base-rhw).
+   `seatbelt.go` redirect grant, ranger-base-rhw). That half was removed
+   2026-11-20 (ranger-base-kfrpv). The launcher commits the queue, so no
+   seat needs it. The redirect target's directory is still granted.
 3. **Tooling and docs** — `scripts/`, `docs/`. Ordinary project work.
 
 You cannot make one tree read-only while (2) lives inside it; a
@@ -947,7 +949,8 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | binary promotion gate exists and is persona-denied | **MEASURED** (Makefile, install target + comment) |
 | `~/.config/posse` preferred by the binary when present | **MEASURED** (`app.go` home resolution) |
 | seatbelt: cwd-elsewhere session cannot write the instance tree | **MEASURED** (ranger-base-h15 probe, 2026-08-24) |
-| redirect grant adds store-of-record dir **and its git dirs** to every seatbelt session | **MEASURED** (`seatbelt.go`, ranger-base-rhw) |
+| redirect grant adds store-of-record dir to every seatbelt session | **MEASURED** (`seatbelt.go`, ranger-base-rhw) |
+| ~~…and its git dirs~~: no longer granted, at any layer, for any PID: nothing committed there from a seat, and the launcher is the committer | **MEASURED** 2026-11-20 (ranger-base-kfrpv; `storerepogitwall_qa_test.go`) |
 | legacy hardcoded `.config/rhq/state` grant exists and must move to derived home state | **MEASURED** (`seatbelt.go` grant list) |
 | `bd sync` does not commit; `--full` commits and pushes | **MEASURED** (`bd sync --help`) |
 | store relocation via redirect rewrite + daemon restart is clean | **ASSUMED** — implementation bead rehearses on a copy first |
