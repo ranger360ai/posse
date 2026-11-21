@@ -480,15 +480,25 @@ verify-silent-reverts:
 # worth nothing on the sweep that follows it. ~1.8s for both halves on darwin
 # (39 scripts, MEASURED 2026-09-11), no go build, no suite.
 #
-# THE DEFECT. scripts/verify-box.sh keeps its ROSTER, EXCLUDED and UNTARGETED
-# tables as quoted heredocs inside a `$(cat <<'EOF' ... )`, and bash tracks
-# quote state while scanning for that closing paren — so one apostrophe in a
-# reason field swallows the rest of the file and reports a syntax error
-# hundreds of lines away, in a case statement nobody touched. Those tables are
-# prose, boxcheck_qa_test.go fails until a new verify-* target is written into
-# one of them, and the natural English for a reason is possessive. Nothing
-# warned: the file parsed or it did not, and nothing in this tree had ever run
-# a parser over a shell script.
+# THE DEFECT. scripts/verify-box.sh USED TO KEEP its ROSTER, EXCLUDED and
+# UNTARGETED tables as quoted heredocs inside a command substitution, and bash
+# 3.2 tracks quote state while scanning for that closing paren — so one
+# apostrophe in a reason field swallows the rest of the file and reports a
+# syntax error hundreds of lines away, in a case statement nobody touched.
+# Those tables are prose, boxcheck_qa_test.go fails until a new verify-* target
+# is written into one of them, and the natural English for a reason is
+# possessive. Nothing warned: the file parsed or it did not, and nothing in
+# this tree had ever run a parser over a shell script.
+#
+# IT HAPPENED AGAIN AND THIS SWEEP CAUGHT IT, which is both halves of the
+# lesson (ranger-base-zcj0z). ranger-base-lydqn put a third apostrophe in one
+# exclusion row on 2026-11-12, every macos arm-1 CI job has died here since,
+# and nobody read the leg that said so for nine days because arm 1 was already
+# red for other reasons. The three tables are `read -r -d ''` now, so the
+# hazard has no `$( )` left to live in — see the comment above ROSTER in that
+# file. What this target still owns is the CLASS: scripts/reap-timer-unit.sh
+# and docs/adr/0096-proc-spellings.probe.sh carry the same shape with an even
+# apostrophe count today, and only a parser knows when that stops being true.
 verify-shell-syntax:
 	@scripts/shell-syntax.sh --self-test
 	@scripts/shell-syntax.sh

@@ -300,6 +300,37 @@ func wgExists(t *testing.T, p string) bool {
 	return err == nil
 }
 
+// wgListing <dir> — what is in a directory, for a refusal that is read on a
+// box the reader cannot log in to (ranger-base-zcj0z). The ONE arm in this
+// file that reads a directory's existence as a verdict is wgPack's vacuity
+// guard, and when it red on darwin — ranger-base-8z410 finding 2 — its
+// message named the directory and not its contents, so the two causes it has
+// could not be told apart from the only log that prints it. A `<branch>.lock`
+// in there is a lock a seat created and could not unlink, which is a defect
+// in the wall; nothing in there is git's pack-refs declining to prune an
+// empty directory, which is this guard's problem. An unreadable directory is
+// said out loud rather than rendered as "empty", because "empty" is one of
+// the two answers.
+func wgListing(t *testing.T, dir string) string {
+	t.Helper()
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return "could not be read: " + err.Error()
+	}
+	if len(ents) == 0 {
+		return "nothing — it is an EMPTY directory"
+	}
+	var names []string
+	for _, e := range ents {
+		if e.IsDir() {
+			names = append(names, e.Name()+"/")
+			continue
+		}
+		names = append(names, e.Name())
+	}
+	return strings.Join(names, ", ")
+}
+
 func TestQAWorktreeGrantRefusesSharedGitStateUnderSandboxExec(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	probes := []wgProbe{
@@ -465,7 +496,15 @@ func wgPack(t *testing.T, f wgFixture) {
 	mustGit(t, f.repo, "pack-refs", "--all")
 	dir := filepath.Dir(f.ref(f.branch))
 	if wgExists(t, dir) {
-		t.Fatalf("pack-refs left %s in place — the arm this test needs was not built, so nothing below it is measured", dir)
+		t.Fatalf("pack-refs left %s in place — the arm this test needs was not built, so nothing below it is measured.\n"+
+			"IN THAT DIRECTORY: %s\n"+
+			"Read that line before anything else (ranger-base-zcj0z). A `%s.lock` is a lock a sandboxed git created "+
+			"and could not unlink, and that is a real defect in the wall this file pins. An EMPTY directory is git's "+
+			"pack-refs declining to prune it, which is this guard's problem and not its caller's — git 2.56.0 on "+
+			"linux prunes it in both the plain and the linked-worktree arm (MEASURED 2026-11-21, ranger-base-8z410), "+
+			"and the macos runner moved to 2.56.1 in the same window this went red. This arm skips on every box "+
+			"without sandbox-exec, so a CI macos leg is the only reader there is.",
+			dir, wgListing(t, dir), filepath.Base(f.ref(f.branch)))
 	}
 	if got, head := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch), mustGit(t, f.tree, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("the packed ref no longer names the session's commit (%s != %s)", got, head)

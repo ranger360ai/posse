@@ -256,7 +256,37 @@ esac
 # of exactly the kind this script exists for: dropping a roster row and leaving
 # its name in the map would have had --census claim a check was rostered while
 # the runner never ran it. One list, and the census reads it.
-ROSTER=$(cat <<'ROSTER_EOF'
+#
+# ALL THREE TABLES BELOW ARE BUILT WITH `read -r -d ''` AND NOT WITH A
+# HEREDOC INSIDE A COMMAND SUBSTITUTION (ranger-base-zcj0z). bash 3.2 scans a
+# command substitution for its closing paren while tracking quote state, and
+# quoting the heredoc delimiter does not stop that -- so one apostrophe in a
+# reason field opens a quote that never closes, swallows the rest of this file,
+# and reports a syntax error on a `case` arm hundreds of lines below that
+# nobody has touched. `read` takes the heredoc as a heredoc: there is no
+# substitution to scan, so an apostrophe is a character. The `${VAR%$'\n'}`
+# line after each table is the one thing the substitution did for free --
+# strip the body's trailing newline -- and the --census output is
+# byte-identical with it (MEASURED 2026-11-21, diff over all 36 rows).
+#
+# WHY IT MATTERED. The hazard landed here on 2026-11-12 in 24bfa8d9
+# (ranger-base-lydqn), which added `scripts/reap-test-tmp.sh's` -- a third
+# apostrophe, so an odd one -- to the exclusion table. From that commit on,
+# EVERY macos arm-1 CI job died at verify-shell-syntax before a single Go test
+# compiled: MEASURED on runs 43731869157 (2026-11-15) and 44865299103
+# (2026-11-21), both reporting this file at `line 422: syntax error near
+# unexpected token ;;`. arm 1 was already red on both platforms from
+# 2026-11-11 for other reasons, which is why nine days passed with nobody
+# reading it (ranger-base-8z410 finding 1). The sweep was right and loud the
+# whole time; the leg that prints it is one nobody reads.
+#
+# Four phrases in the rows below were de-possessified by hand by whoever met
+# this hazard once and worked around it -- "this repo own seed PIDs", "the
+# scripts own --self-test", "herdr-bob own rules.json", "upstream shipped
+# file" -- and this landing puts their grammar back. That is what makes it the
+# regression test rather than a tidy-up: a table with an odd number of
+# apostrophes in it that still parses is the whole of the fix.
+IFS= read -r -d '' ROSTER <<'ROSTER_EOF' || true
 verify-grok-pin	scripts/verify-grok-pin.sh
 verify-codex-pin	scripts/verify-codex-pin.sh
 verify-bd-pin	scripts/verify-bd-pin.sh
@@ -268,7 +298,7 @@ verify-bd-no-relate-pairs	scripts/verify-bd-dep-safety.sh --gate
 verify-nodb-defer-capability	scripts/verify-nodb-defer.py --arm-a-only
 verify-skills-drift	posse runtime drift
 ROSTER_EOF
-)
+ROSTER=${ROSTER%$'\n'}
 
 # -------------------------------------------------------------- the excluded
 #
@@ -277,7 +307,7 @@ ROSTER_EOF
 # so this table cannot fall behind the Makefile in silence.
 #
 # target<TAB>reason
-EXCLUDED=$(cat <<'EXCLUDED_EOF'
+IFS= read -r -d '' EXCLUDED <<'EXCLUDED_EOF' || true
 verify-parallel	tree check; already a prerequisite of make test, so CI runs it
 verify-test-times	tree check (--self-test); already a prerequisite of make test
 verify-suite-lock	tree check (--self-test); already a prerequisite of make test
@@ -285,25 +315,25 @@ verify-silent-reverts	tree check (--self-test); already a prerequisite of make t
 verify-pattern-kill-census	tree check (--self-test) of the matcher in scripts/pattern-kill-census.py, on planted fixtures in a mktemp root; reads no transcripts and measures no box state; already a prerequisite of make test
 verify-gotest	tree check (--self-test) of the reusing wrapper; measures no box state
 verify-reap-test-tmp	tree check (--self-test) of scripts/reap-test-tmp.sh's claude-scratch gating arms, against a fresh mktemp -d root every run; already a prerequisite of make test, so CI runs it. Measures no box state -- the subject is the script's own gating logic and the `claude -p` exclusion (ranger-base-2smyx findings 2 and 4), not this machine's live /tmp or its real session registry
-verify-shell-syntax	tree check: parses every tracked shell script in THIS CHECKOUT with the shell its shebang names, and its own --self-test beside it. Measures no box state; already a prerequisite of make test, so CI runs it. It is also what keeps an apostrophe in the tables above from swallowing this file (ranger-base-g4z8m)
+verify-shell-syntax	tree check: parses every tracked shell script in THIS CHECKOUT with the shell its shebang names, and its own --self-test beside it. Measures no box state; already a prerequisite of make test, so CI runs it. It is also what caught an apostrophe in the tables above swallowing this file, twice -- the second time on every macos arm-1 CI job for nine days, unread (ranger-base-g4z8m, ranger-base-zcj0z); those tables are `read -r -d ''` now and the hazard has no command substitution left to live in
 verify-python-syntax	tree check: compiles every tracked python file in THIS CHECKOUT with the python its shebang names, under warnings.simplefilter("always"), and its own --self-test beside it. Measures no box state; already a prerequisite of make test, so CI runs it. The sibling of verify-shell-syntax above, asking the question that language fails differently: an invalid escape sequence compiles, warns on stderr and keeps exit 0, so until this landed nothing here could say no to one (ranger-base-66xfe)
 verify-wall-check	tree check (--self-test) of the verdict parser in scripts/posse-wall-check, driven over ten planted test2json streams; already a prerequisite of make test, so CI runs it. Measures no box state and asks the box for nothing -- it runs no suite, starts no bwrap, makes no temp file and needs no venue. The subject is ADR 0097 D3 mapping from a run to its three exits, which nothing in the suite read until ranger-base-zpx1k: the draft abstention arm raised TypeError and answered 1 where the contract says 3. The live judge half is off any clock by construction, since it judges the cwd and a clock would have to choose a tree
 verify-detection	promote-time probe: replays fixtures against THIS CHECKOUT in a throwaway XDG_CONFIG_HOME. install-detection already runs its --check-install half
 verify-herdr-bob	the darwin portability patch for the herdr-bob watcher (setsid, date -Is, stat -c %Y, declare -A on bash 3.2). The subject is etc/herdr/herdr-bob/darwin-portability.patch in THIS CHECKOUT, proved against COPIES of the installed checkout under a fake herdr with a control arm on the pristine tree -- and the copies are staged from the pinned COMMIT rather than from the installed working tree, so the live install is apparatus and not subject. It SKIPS with exit 0 when the plugin is absent or off that SHA, so on a clock it would print green over a box it did not measure, and it starts and kills real bob-watch processes -- the same two reasons verify-herdr-bob-rules is excluded below. The live half is scripts/herdr-bob-install.sh --check, read-only, which reports the pin, the patch state, the resolved roots and whether a watcher is running
-verify-herdr-bob-rules	the sibling arm of verify-detection for herdr-bob own rules.json format, which verify-detection cannot see because it globs etc/herdr/agent-detection/*.toml at one level: it replays the six captures in etc/herdr/agent-detection/upstream/bob against the override in THIS CHECKOUT, with a control arm over upstream shipped file. The only live read is the installed herdr-bob checkout, read-only, for match_rules itself -- the apparatus and not the subject -- and the script SKIPS with exit 0 when that is absent or off its pinned SHA, so on a clock it would print green over a box it did not measure. It also starts two real bob-watch processes and kills them, which is why verify-self-close and verify-govern-honesty are excluded above
+verify-herdr-bob-rules	the sibling arm of verify-detection for herdr-bob's own rules.json format, which verify-detection cannot see because it globs etc/herdr/agent-detection/*.toml at one level: it replays the six captures in etc/herdr/agent-detection/upstream/bob against the override in THIS CHECKOUT, with a control arm over upstream's shipped file. The only live read is the installed herdr-bob checkout, read-only, for match_rules itself -- the apparatus and not the subject -- and the script SKIPS with exit 0 when that is absent or off its pinned SHA, so on a clock it would print green over a box it did not measure. It also starts two real bob-watch processes and kills them, which is why verify-self-close and verify-govern-honesty are excluded above
 verify-prune-guard	promote-time probe of a BINARY against scratch state; POSSE= names the candidate, so it belongs to a promote and not to a clock
 verify-id-recycle	promote-time probe; scratch --session herdr server
 verify-self-close	promote-time probe; scratch HOME and scratch --session, and it ends processes it started
 verify-govern-honesty	promote-time probe; kills its own scratch watch loop with -9 by design
 verify-bd-argv-gate	tree check of the gate SOURCE in this checkout; ~23s and it measures no box state. verify-gate-freshness is the box half and is on the roster
-verify-pid-deny-set	the TARGET reads HOME_DIR=examples, i.e. this repo own seed PIDs -- a tree check. Its live readers --live and --settings are off the target on purpose (Makefile): --live answers 2 on an idle box and 1 whenever a session is mid-bead behind a PID edit, both correct, so on a clock it is a nuisance generator rather than a control. Whether this box wants an advisory tier for checks like that is asked on ranger-base-51z8j
+verify-pid-deny-set	the TARGET reads HOME_DIR=examples, i.e. this repo's own seed PIDs -- a tree check. Its live readers --live and --settings are off the target on purpose (Makefile): --live answers 2 on an idle box and 1 whenever a session is mid-bead behind a PID edit, both correct, so on a clock it is a nuisance generator rather than a control. Whether this box wants an advisory tier for checks like that is asked on ranger-base-51z8j
 verify-bd-dep-safety	the reporting half of the same script; verify-bd-no-relate-pairs is its --gate and is on the roster as no-relate-pairs
-verify-nodb-defer	the two-arm door a person types, and the two arms are classified apart (ranger-base-d1hax). Arm A asserts this box and is rostered above as verify-nodb-defer-capability, whose recipe is exactly the invocation the roster runs. This TARGET is not that invocation: it prepends the scripts own --self-test, and its second recipe line is `$(if $(POSSE_NODB_STORES),,--arm-a-only)`, a make function that the eval in run_roster would read as command substitution. Arm B is off the clock by design -- it reads only the stores named on argv or in POSSE_NODB_STORES, nothing public can name a private store, and with none named it exits 2 saying that a verdict over zero stores is not a pass. Today this box has no known no-db store at all (ranger-base-bwp7h section 6: the one that had the symptom was taken off no-db mode), so on a clock arm B would be not-measured every run forever. Name a store and type the door
+verify-nodb-defer	the two-arm door a person types, and the two arms are classified apart (ranger-base-d1hax). Arm A asserts this box and is rostered above as verify-nodb-defer-capability, whose recipe is exactly the invocation the roster runs. This TARGET is not that invocation: it prepends the script's own --self-test, and its second recipe line is `$(if $(POSSE_NODB_STORES),,--arm-a-only)`, a make function that the eval in run_roster would read as command substitution. Arm B is off the clock by design -- it reads only the stores named on argv or in POSSE_NODB_STORES, nothing public can name a private store, and with none named it exits 2 saying that a verdict over zero stores is not a pass. Today this box has no known no-db store at all (ranger-base-bwp7h section 6: the one that had the symptom was taken off no-db mode), so on a clock arm B would be not-measured every run forever. Name a store and type the door
 verify-runtime-walk	SPENDS A REAL TURN on the runtime under test. Event-triggered by design -- before switching a lane back onto a runtime, and after a version bump. A schedule would spend money on a clock, which crosses crew guardrail 1
 verify-box	this script -- the aggregate itself
 verify-box-self-test	the arms of the aggregate itself; a tree check, and putting it on the roster would have verify-box run itself
 EXCLUDED_EOF
-)
+EXCLUDED=${EXCLUDED%$'\n'}
 
 # ------------------------------------------------------- the untargeted scripts
 #
@@ -318,11 +348,11 @@ EXCLUDED_EOF
 # `make` for gets a target instead.
 #
 # script<TAB>reason
-UNTARGETED=$(cat <<'UNTARGETED_EOF'
+IFS= read -r -d '' UNTARGETED <<'UNTARGETED_EOF' || true
 verify-ghost-composer.sh	needs an UNCAGED shell: it drives a real claude in a scratch herdr pane, and from a `cage: seatbelt` seat claude never reaches a composer at all -- the header of that script says so and keeps the negative as the finding. Event-triggered, and the bead it was written for (ranger-base-2hvtv) was answered another way in the end (internal/posse/sentline.go). A target here would offer a `make` line that cannot work from the seat most likely to type it. Its `--self-test` arm is hermetic and DOES run under `make test` -- internal/posse/ghostrig_qa_test.go drives the Enter-screen dismissal over captured screens (ranger-base-trb9z); the rig itself still has no target
 verify-orphan-report.sh	runs in a throwaway CPU-limited container and MUST NOT run on this box: it plants busy loops on purpose, and the standing operator rule -- after sixteen leaked ones froze the fleet for 2.5 hours -- is that a persona generates no load here (ranger-base-teau). It also waits out the real orphan age floor, so it takes minutes. A make target for it would be a target whose only correct use is somewhere this Makefile does not run
 UNTARGETED_EOF
-)
+UNTARGETED=${UNTARGETED%$'\n'}
 
 # `--census` prints the three lists in one machine-readable form so the QA test
 # reads what the script actually holds rather than re-parsing it. All three are

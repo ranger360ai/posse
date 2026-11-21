@@ -665,11 +665,12 @@ self_test() {
   # and the reason this arm's verdict is a membership test and not a delta —
   # a delta over an absent process and a delta over an excluded one are the
   # same number.
-  local teebin fakeclaude fifo pkeep pfake cen cn cpids
+  local teebin fakeclaude fifo fakeerr pkeep pfake cen cn cpids
   local -a cparr=()
   teebin=$(command -v tee) || { echo "  FAIL no tee(1) on PATH to copy for the fake claude binary"; fails=$((fails + 1)); teebin=""; }
   fakeclaude="$tmp/claude"
   fifo="$tmp/keepopen"
+  fakeerr="$tmp/claude.err"
 
   # claude_census runs the production counter ONCE and hands back both facts
   # it reports about that population — the count and the pids — as
@@ -704,11 +705,59 @@ self_test() {
   # keeper that expires first ends the fake, and the arm would then report a
   # broken rig over nothing but a loaded box — which is the class of defect
   # this rewrite exists to remove, one apparatus down.
+  #
+  # THE FIXTURE'S STDERR IS A FILE AND NOT /dev/null (ranger-base-zcj0z). Both
+  # arms below have reported "the rig is what is broken" on EVERY
+  # ubuntu-latest arm-1 CI job since this rig landed — MEASURED on runs
+  # 43731869157 (2026-11-15) and 44865299103 (2026-11-21), both arms, both
+  # with the fixture gone within the census's second — and the rig reproduces
+  # clean on this box (8 of 8, header above; re-read 2026-11-21, both arms
+  # LIVE). So the cause is something about that runner, and the one place it
+  # could have been read was discarded: an exec that fails (noexec mount, a
+  # donor that dispatches on argv[0], a loader error) says so on stderr and
+  # exits 126, a donor that rejected its argv exits 1 or 2, and a fixture that
+  # read EOF on the fifo exits 0 — three different defects that looked
+  # identical in the log. fake_postmortem below prints the status and that
+  # stderr, so ONE further CI reading names which of them it is instead of
+  # another seat re-deriving the possibilities from a linux box.
   start_fake() {
+    : > "$fakeerr"
     sleep 300 > "$fifo" 2>/dev/null & pkeep=$!
-    "$fakeclaude" "$@" < "$fifo" >/dev/null 2>&1 & pfake=$!
+    "$fakeclaude" "$@" < "$fifo" >/dev/null 2>"$fakeerr" & pfake=$!
     SELFTEST_PIDS=("$pkeep" "$pfake")
     sleep 1
+  }
+  # fake_postmortem — why the fixture is not there any more, for a box the
+  # reader cannot log in to. `wait` on an already-exited background child
+  # returns its real status out of bash's own job table, so this must run
+  # BEFORE stop_fake's wait claims it.
+  #
+  # IT SIGNALS NOTHING, not even a `kill -0` of the keeper, and that is a
+  # constraint and not a preference: ambientcensus_qa_test.go finds the fixture
+  # arms by reading the first function in this region that both says `kill` and
+  # names a planted pid, and takes it for the arm's END. A `kill -0 "$pkeep"`
+  # here made this function that end, cut both spans short of their `case`, and
+  # red TestQAEachFindingFourFixtureArmGradesMembershipOfItsOwnPlantedPid over
+  # a diagnostic. The exit status already carries what the keeper would have
+  # said: a fixture that read EOF on the fifo exits 0.
+  # Every status here is taken with `|| true` or in a condition, because this
+  # script is `set -e`: a bare `wait` on an exited child, or a `cat` of a file
+  # a mutant never created, would otherwise end the self-test silently at
+  # rc 1 — which is what the first draft of this function did, and it looked
+  # exactly like the rig failing one arm earlier.
+  fake_postmortem() {
+    local frc=0 err=""
+    wait "$pfake" 2>/dev/null || frc=$?
+    err=$(cat "$fakeerr" 2>/dev/null) || true
+    printf '       postmortem: it exited %s (126 could not exec, 127 not found, 0 stdin EOF, else it rejected its argv); donor %s; the copy at %s is %s; the fifo is %s\n' \
+      "$frc" "$teebin" "$fakeclaude" \
+      "$([ -x "$fakeclaude" ] && echo executable || echo "NOT executable")" \
+      "$([ -p "$fifo" ] && echo "a fifo" || echo "NOT a fifo")"
+    if [ -n "$err" ]; then
+      printf '       its stderr: %s\n' "$err"
+    else
+      printf '       it wrote nothing to stderr\n'
+    fi
   }
   stop_fake() {
     kill "$pfake" "$pkeep" 2>/dev/null || true
@@ -749,6 +798,7 @@ self_test() {
     cpids=${cen#*|}
     if ! kill -0 "$pfake" 2>/dev/null; then
       echo "  FAIL the '-p' fixture (pid $pfake) was already gone when the census ran — this arm proves nothing about the exclusion, and the rig is what is broken"
+      fake_postmortem
       fails=$((fails + 1))
     elif [ "$cn" = ABSENT ]; then
       echo "  FAIL could not read the counted pids back from the script's own output after the -p run"
@@ -772,6 +822,7 @@ self_test() {
     cpids=${cen#*|}
     if ! kill -0 "$pfake" 2>/dev/null; then
       echo "  FAIL control: the non-print fixture (pid $pfake) was already gone when the census ran — the rig is what is broken"
+      fake_postmortem
       fails=$((fails + 1))
     elif [ "$cn" = ABSENT ]; then
       echo "  FAIL could not read the counted pids back from the script's own output after the non-print run"

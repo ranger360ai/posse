@@ -8,8 +8,10 @@
 #   scripts/shell-syntax.sh --root DIR   sweep DIR instead (--self-test uses it)
 #
 # WHY THIS EXISTS. scripts/verify-box.sh carries three tables of PROSE —
-# ROSTER, EXCLUDED, UNTARGETED — and each one is a quoted heredoc inside a
-# command substitution:
+# ROSTER, EXCLUDED, UNTARGETED — and each one USED TO BE a quoted heredoc
+# inside a command substitution (they are `read -r -d ''` since
+# ranger-base-zcj0z; the last paragraph of this block says why that does not
+# retire this sweep):
 #
 #     EXCLUDED=$(cat <<'EXCLUDED_EOF'
 #     verify-gotest	tree check of the wrapper
@@ -23,9 +25,21 @@
 # swallows the rest of the file. MEASURED 2026-09-11, darwin arm64, under
 # bash 3.2.57: the parser reports a syntax error at line 318, hundreds of
 # lines below the table, on a case-statement token nobody touched.
-# Row 203 of that table reads "this repo own seed PIDs", ungrammatical, which
+# Row 203 of that table read "this repo own seed PIDs", ungrammatical, which
 # is what meeting this hazard once and working around it without writing it
 # down looks like.
+#
+# AND IT HAPPENED AGAIN, which is the measurement this sweep was written to
+# take (ranger-base-zcj0z). ranger-base-lydqn added a third apostrophe to one
+# exclusion row on 2026-11-12; this sweep reported it on every macos arm-1 CI
+# job from that commit on, and nobody read the leg that said so for nine days
+# because arm 1 was already red on both platforms for other reasons
+# (ranger-base-8z410 finding 1). verify-box.sh's tables are `read -r -d ''`
+# now — the shape this sweep's own closing NOTE prescribes — and the
+# ungrammatical rows above have their possessives back, which is the
+# regression test. Two tracked files still carry the shape with an even
+# apostrophe count (scripts/reap-timer-unit.sh,
+# docs/adr/0096-proc-spellings.probe.sh), so the CLASS is still this sweep's.
 #
 # AND NOT EVERY PARSER HAS THAT HAZARD, which is a property of the shell and
 # not of this repo. RE-MEASURED 2026-09-11 (ranger-base-ftr3e): bash 5.2.21 on
