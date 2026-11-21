@@ -159,6 +159,28 @@ func seatStoreEnv(ag *AgentFile, home, cwd string) []EnvVar {
 // common dir, resolved, and compared with the seat's. Anything git cannot
 // answer is "not ours": no env, and the deny decides.
 //
+// THE WALK IS A FUNCTION AND THE SUBSHELL ONLY CALLS IT (ranger-base-i36bf).
+// It was written inline, `posse_so_c=$(… case "$1" in -C) … esac …)`, and
+// that is a SYNTAX ERROR under darwin's /bin/sh: bash 3.2 scans `$( )` for
+// its closing paren while tracking quote state, so the first case pattern's
+// `)` ends the substitution and the `;;` after it is left outside any case.
+// MEASURED macos-latest, Darwin 25.6.0 arm64, bash 3.2.57, CI run
+// 44927635225: `syntax error near unexpected token ';;'` at the `-C)` line of
+// the rendered shim, so NOTHING in the shim parsed and every git through a
+// darwin seat's gates PATH exited 2. Green at edfe7a79, red at 9193d3b1
+// (ranger-base-5blmt) and every macos arm-3 leg between.
+//
+// The function is the fix rather than the POSIX-optional leading paren
+// (`(-C)`, which renderHookSkipGlobalScope uses and which parses — the same
+// shim carried it green on darwin through edfe7a79): a function body is
+// parsed at the top level, where this hazard does not exist, so an arm added
+// later cannot reintroduce it, and it is what the other five argv walks in
+// this shim already do (posse_verb_match, posse_hs_readverb, posse_hs_am,
+// posse_cw_hit, posse_seq_scan). This arm was the one that inlined it.
+// `exit` becomes `return`: the function still runs inside the substitution's
+// subshell, so a refusal still yields empty output and no env — and the cd
+// still reaches nothing but that subshell.
+//
 // `clone` and `init` are never ours, whatever the cwd: their target is the
 // repository they create, and GIT_OBJECT_DIRECTORY would put that new repo's
 // objects in this seat's store.
@@ -173,25 +195,31 @@ func renderSeatObjectEnv(real string) string {
 	}
 	return "# The seat's own object store (ranger-base-5blmt): set only for this seat's repo.\n" +
 		"if [ -n \"${" + seatObjectsEnvVar + ":-}\" ] && [ -n \"${" + seatCommonEnvVar + ":-}\" ]; then\n" +
-		"  posse_so_c=$(\n" +
-		"    unset CDPATH # a CDPATH hit makes cd print, and this subshell's output is the answer\n" +
+		// The walk is a function, not the body of the substitution below:
+		// darwin's bash 3.2 would end the substitution at the first case
+		// pattern's `)` (ranger-base-i36bf, the block above).
+		"  posse_so_target() {\n" +
+		"    unset CDPATH # a CDPATH hit makes cd print, and this call's output is the answer\n" +
 		"    posse_so_gd=${GIT_DIR:-}\n" +
 		"    while [ $# -gt 0 ]; do\n" +
 		"      case \"$1\" in\n" +
-		"        -C) [ $# -ge 2 ] || exit 1; if [ -n \"$2\" ]; then cd \"$2\" 2>/dev/null || exit 1; fi; shift 2 ;;\n" +
-		"        --git-dir) [ $# -ge 2 ] || exit 1; posse_so_gd=$2; shift 2 ;;\n" +
+		"        -C) [ $# -ge 2 ] || return 1; if [ -n \"$2\" ]; then cd \"$2\" 2>/dev/null || return 1; fi; shift 2 ;;\n" +
+		"        --git-dir) [ $# -ge 2 ] || return 1; posse_so_gd=$2; shift 2 ;;\n" +
 		"        --git-dir=*) posse_so_gd=${1#--git-dir=}; shift ;;\n" +
 		"        --bare) posse_so_gd=$(pwd); shift ;;\n" +
-		"        -c|--work-tree|--namespace|--super-prefix|--config-env|--attr-source) [ $# -ge 2 ] || exit 1; shift 2 ;;\n" +
+		"        -c|--work-tree|--namespace|--super-prefix|--config-env|--attr-source) [ $# -ge 2 ] || return 1; shift 2 ;;\n" +
 		"        -*) shift ;;\n" +
-		"        clone|init) exit 1 ;;\n" +
+		"        clone|init) return 1 ;;\n" +
 		"        *) break ;;\n" +
 		"      esac\n" +
 		"    done\n" +
 		"    if [ -n \"$posse_so_gd\" ]; then GIT_DIR=$posse_so_gd; export GIT_DIR; fi\n" +
-		"    posse_so_r=$(" + shQuote(real) + " rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 1\n" +
+		"    posse_so_r=$(" + shQuote(real) + " rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1\n" +
 		"    [ -n \"$posse_so_r\" ] && cd \"$posse_so_r\" 2>/dev/null && pwd -P\n" +
-		"  )\n" +
+		"  }\n" +
+		// The subshell is still what contains the cd and the GIT_DIR export:
+		// the function is called inside it and nowhere else.
+		"  posse_so_c=$(posse_so_target \"$@\")\n" +
 		"  if [ -n \"$posse_so_c\" ] && [ \"$posse_so_c\" = \"$" + seatCommonEnvVar + "\" ]; then\n" +
 		"    GIT_OBJECT_DIRECTORY=$" + seatObjectsEnvVar + "\n" +
 		"    GIT_ALTERNATE_OBJECT_DIRECTORIES=$" + seatCommonEnvVar + "/objects\n" +
