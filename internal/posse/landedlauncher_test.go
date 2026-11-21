@@ -57,24 +57,61 @@ func ldlJudgeWith(c *landedChecker, l landedLauncher) {
 // here for the same reason D6.2's wall pin keeps it: a cage that would not
 // render is a question about the launcher, so a silence that does not name one
 // is the reading a reader can do least with.
+//
+// BOTH RULES, SIX LINES, because "every verdict line" is six and not three:
+// landedcheck.go's three and wallcheck.go's three (ADR 0097 D2's own verdict
+// lines, which go through this same checker, this same note and this same
+// launcher record). Until ranger-base-di4bs this table was built from
+// landedCheckFixture alone, so all three WALL lines could lose
+// c.launcherNote() with the suite green — MEASURED over the whole arm, not a
+// filter. ADR 0097 D5's abstention line is the one a reader can do least with,
+// which is this comment's own argument for keeping it in.
+//
+// The wall check's FOURTH branch is deliberately not here: landInterrupted is
+// "one ◷ line and nothing else" under ADR 0088 D6.5, and it carries no note
+// by design — a launcher stopping is not a judgement about any launcher.
 func TestEveryVerdictLineNamesTheLauncherThatRanTheCheck(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, want string
 		arm        func(*testing.T) (*landedChecker, *strings.Builder, string)
 	}{
-		{"green", "green at", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
+		{"landed green", "green at", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
 			c, _, repo, _, _ := landedCheckFixture(t, 0)
 			return c, ldlOut(c), repo
 		}},
-		{"red", "is RED at", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
+		{"landed red", "is RED at", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
 			c, _, repo, _, _ := landedCheckFixture(t, 1)
 			return c, ldlOut(c), repo
 		}},
-		{"no answer", "NOT judged", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
+		{"landed no answer", "NOT judged", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
 			c, _, repo, _, _ := landedCheckFixture(t, 0)
 			c.cage = refusedCage
 			return c, ldlOut(c), repo
+		}},
+		// The wall rule's three. Each reaches its verdict the way
+		// wallcheck_test.go's own arms do — through the runner, over a tree
+		// whose content decides the answer — and leaves the FINAL judgement
+		// to the common body below.
+		{"wall green", "wall pins green at", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
+			c, _, repo, _ := wckFixture(t)
+			return c, ldlOut(c), repo
+		}},
+		{"wall red", "wall pins are RED at", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
+			c, _, repo, _ := wckFixture(t)
+			out := ldlOut(c)
+			ldlJudgeWith(c, ldlFirst)
+			wckGreen(t, c, repo)
+			commitIn(t, repo, wckRedFile, "red\n", ldfNewerBead+": the half that reds the pins")
+			return c, out, repo
+		}},
+		{"wall not measured", "wall pins NOT MEASURED at", func(t *testing.T) (*landedChecker, *strings.Builder, string) {
+			c, _, repo, _ := wckFixture(t)
+			out := ldlOut(c)
+			ldlJudgeWith(c, ldlFirst)
+			wckGreen(t, c, repo)
+			commitIn(t, repo, wckQuietFile, "dark\n", ldfNewerBead+": a helper change unrelated to the wall")
+			return c, out, repo
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,6 +139,65 @@ func TestEveryVerdictLineNamesTheLauncherThatRanTheCheck(t *testing.T) {
 			if !strings.Contains(line, ldlFirst.String()) {
 				t.Errorf("the %s verdict line does not name the launcher that ran the check, so a reader cannot tell a tree red from a judge red (ADR 0088 D7) — want %q in:\n%s\nwhole output:\n%s",
 					tc.name, ldlFirst.String(), line, s)
+			}
+		})
+	}
+}
+
+// THE TOKEN'S FIELD SET, one field at a time. This is the shape ldlLauncher
+// above already promises — "so two arms can differ by exactly one field" —
+// and which nothing was built out of until ranger-base-di4bs: ldlFirst and
+// ldlSecond differ in BOTH the version and the mtime, and the drift table in
+// TestTheLauncherReadingNamesThisBinaryAndComparesWithTheRecord compares
+// whole tokens only. So the field SET was asserted by nothing.
+//
+// FOUND BY MUTATION: deleting the mtime from token() left the suite green,
+// and the mtime is the one field this rule's own reasoning turns on — "Version
+// AND mtime because they fail differently ... a reinstall under a running
+// launcher moves the second only" (landedlauncher.go's header), VersionString()
+// being compiled into the running process and unable to move under it. With
+// the mtime gone, a reinstall that left the size unchanged reads `same`, D5
+// keeps its attribution, and the filer assigns a P1 to the persona of the
+// newest landing: the exact ranger-base-ufd7z cost this rule exists to stop.
+func TestOneFieldMovingUnderTheLauncherReadsAsMoved(t *testing.T) {
+	t.Parallel()
+	base := landedLauncher{Version: "0.5.3+aaaaaaa", Path: "/opt/posse", Mod: time.Unix(1_700_000_000, 0).UTC(), Size: 4096}
+	if base.token() == "" {
+		t.Fatalf("the base launcher names no token, so no arm below compares anything: %+v", base)
+	}
+	for _, tc := range []struct {
+		field, why string
+		move       func(landedLauncher) landedLauncher
+	}{
+		{"Version", "the RUNNING code, which renders the cage and the seatbelt profile",
+			func(l landedLauncher) landedLauncher { l.Version = "0.5.3+bbbbbbb"; return l }},
+		{"Mod", "the mtime of the file the socket-wall step execs, which a reinstall under a running launcher moves on its own",
+			func(l landedLauncher) landedLauncher { l.Mod = l.Mod.Add(time.Second); return l }},
+		{"Size", "what an install that preserved the mtime still moves",
+			func(l landedLauncher) landedLauncher { l.Size++; return l }},
+		{"Path", "the file the step execs at all — a launcher at another path is another launcher",
+			func(l landedLauncher) landedLauncher { l.Path = "/usr/local/bin/posse"; return l }},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			t.Parallel()
+			moved := tc.move(base)
+			if moved.token() == base.token() {
+				t.Fatalf("a launcher whose %s moved tokenizes identically, so the record cannot see it and D8 reads `same` over a wall that moved — %s is %s\n  base:  %s\n  moved: %s",
+					tc.field, tc.field, tc.why, base.token(), moved.token())
+			}
+			if got := landedLauncherDriftOf(moved, base.token()); got != landedLauncherMoved {
+				t.Errorf("%s moved and the drift against the record reads %d, want moved (%d)", tc.field, got, landedLauncherMoved)
+			}
+			// The other way round, because an install can go backwards — a
+			// rollback is a launcher that moved too, and a comparison that
+			// only notices upgrades withholds nothing on the way down.
+			if got := landedLauncherDriftOf(base, moved.token()); got != landedLauncherMoved {
+				t.Errorf("%s moved back and the drift reads %d, want moved (%d)", tc.field, got, landedLauncherMoved)
+			}
+			// And the arm is comparing something: a launcher that tokenized
+			// to nothing would satisfy both lines above as `unknown`.
+			if got := landedLauncherDriftOf(moved, moved.token()); got != landedLauncherSame {
+				t.Errorf("the %s arm's launcher does not compare equal with itself (%d, want same %d) — it names no token, so this arm measured an abstention", tc.field, got, landedLauncherSame)
 			}
 		})
 	}

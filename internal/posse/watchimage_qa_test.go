@@ -329,6 +329,90 @@ func TestQAEveryLoopReadingSaysWhichInstanceItRead(t *testing.T) {
 	}
 }
 
+// THE READER'S OWN ABSTENTIONS, which is the half the pin above cannot see:
+// every arm of it hand-builds the WatchImage it hands upgradeWatchLine, so
+// none of them observes what ReadWatchImage puts there. ReadWatchImage's own
+// comment says Home is "set on every return and not only on the readings",
+// and until this pin nothing held it: the whole tree carried exactly one
+// img.Home assertion and it was on the ok=true path.
+//
+// FOUND BY MUTATION (ranger-base-di4bs, finding 6 of ranger-base-zzhen's
+// verify pass): `return WatchImage{Home: home}, false` → `return
+// WatchImage{}, false` at EITHER of watchimage.go's two abstention returns
+// left the suite green. What a reader is handed then is `posse upgrade`
+// saying "scope: one instance's loop — this instance's" over a box with two
+// of them — the line watchimage.go calls "the one place where saying WHICH
+// home matters most", and the line an operator finishes believing the box was
+// covered.
+//
+// ONE ARM PER RETURN, because they are two statements and a mutant can drop
+// either. NOT the two-home /proc fixture below, which the fix shape on the
+// bead named: killing a loop there leaves the watch lock held by the test and
+// the pid record readable, so the reader reaches `readWatchImage` and answers
+// ok=TRUE — neither abstention is on that road. These two arms are the road,
+// and they need no /proc, so they run on every OS.
+func TestQAAnAbstainingLoopReadingStillNamesTheInstanceItRead(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, tc := range []struct {
+		name  string
+		dir   string
+		setUp func(*testing.T, *App)
+	}{
+		{
+			// Nothing holds this home's watch lock: the reading every
+			// `posse upgrade` on a box that is not dispatching takes.
+			name:  "no loop is running",
+			dir:   "quiet",
+			setUp: func(*testing.T, *App) {},
+		},
+		{
+			// A loop IS running and the record cannot name its pid — the
+			// second return, and a different sentence to whoever reads it.
+			name: "a running loop whose record names no pid",
+			dir:  "unrecorded",
+			setUp: func(t *testing.T, a *App) {
+				lock, held, err := lockWatch(a)
+				if err != nil || held {
+					t.Fatalf("this home's watch lock could not be taken: held=%v err=%v", held, err)
+				}
+				t.Cleanup(lock.Release)
+				if running, err := WatchLoopRunning(a); err != nil || !running {
+					t.Fatalf("the fixture reads no running loop (running=%v err=%v), so this arm would measure the OTHER abstention", running, err)
+				}
+				if _, ok := ReadWatchPid(WatchPidPath(a)); ok {
+					t.Fatalf("%s already names a pid, so this arm would not abstain at all", WatchPidPath(a))
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			home := filepath.Join(root, tc.dir)
+			a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+			tc.setUp(t, a)
+
+			img, ok := ReadWatchImage(a)
+
+			if ok {
+				t.Fatalf("the reading answered ok with %s, so this arm measured a reading and not an abstention: %+v", tc.name, img)
+			}
+			if img.Home != home {
+				t.Errorf("the abstention names its instance as %q, want %q — this field is the scope of what was NOT read, and a blank one reads as the box (ranger-base-nqaa1)", img.Home, home)
+			}
+			// And the sentence the caller prints, because that is where the
+			// field is spent rather than where it is set.
+			// AbbrevHome because that is the spelling the sentence carries;
+			// a temp home under $HOME would otherwise read as `~/...` here
+			// and nowhere else.
+			line := upgradeWatchLine(upgradePlan{Loop: func() (WatchImage, bool) { return img, ok }})
+			if !strings.Contains(line, "scope: one instance's loop — "+AbbrevHome(home)) {
+				t.Errorf("the verb's abstention line does not name the home the reading came from:\n  %s", line)
+			}
+		})
+	}
+}
+
 // TWO INSTANCES, TWO LOOPS, ONE BINARY — the box this finding was measured
 // on, as a fixture. MEASURED 2026-11-21: pid 2066610 under ~/homes/ranger and
 // pid 1991667 under ~/homes/weller, both exec'ing ~/.local/bin/posse at
