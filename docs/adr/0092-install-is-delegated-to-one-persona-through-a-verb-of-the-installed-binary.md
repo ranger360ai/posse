@@ -320,6 +320,34 @@ elsewhere (darwin) it reads the image identity the loop stamps into
 abstention. G18 is an install subject in D4's partition — the rename creates
 it by construction — so it never rolls an install back.
 
+*The reading is ONE instance's and says so (amended by ranger-base-nqaa1).*
+"Restart the dispatch loops" is plural and the reading behind it is singular:
+both renderings take one `*App`, ask THAT home's watch lock whether a loop is
+running and read THAT home's `dispatch-watch.pid` for its pid, while the file
+D3.5 renames is box-wide and every instance's loop execs it. MEASURED
+2026-11-21 on linux: two loops on this box, pid 2066610 under `~/homes/ranger`
+and pid 1991667 under `~/homes/weller`, both exec'ing `~/.local/bin/posse` at
+dev:ino 54:12591441, each with its own `dispatch-watch.pid` naming its own pid
+— so both are legitimate, the per-home lock invariant holds, and one rename
+leaves both behind. Neither was stale when it was read, so G18 was correctly
+silent for both: this is coverage and was not a live exposure. **Nothing else
+would have said it**, which is what makes it a residual rather than a note:
+ShopCheck's G18 arm is per-instance (the watch tick, `posse status`, the
+cockpit), the weller instance has no pulse state at all so no tick there ever
+evaluates G18, and this verb runs in the delegate's instance only. So the
+remedy is: both renderings carry a SCOPE clause naming the instance they read
+and saying the subject is box-wide (`watchScopeSentence`, watchimage.go), on
+every branch — the two that are not a stale verdict especially, because
+"already runs" and "could not be read" are the lines an operator would
+otherwise finish believing the box was covered. **Widening the reading to
+every instance is NOT done here**: it needs a notion of "the instances on this
+box", which no shipped code in this tree has — nothing enumerates RHQ_HOMEs,
+and the one `"homes"` literal under `internal/` and `cmd/` is the two-instance
+test fixture this amendment's pin is built from — and
+coining one is its own design bead (ranger-base-is1qp, which carries the
+measurements and the shape of the decision). Restarting any of those loops
+stays the operator's or the coordinator's either way.
+
 **D7 — Guardrail 5 is the edge of the delegation.** Out of scope:
 `posse promote`, `posse refresh`, config and `install_delegate:` itself,
 `.claude/**` and the operator's settings, cage maps, `posse gates

@@ -107,6 +107,51 @@ type WatchImage struct {
 	Now string
 	// Via is where Image came from: "proc" or "record".
 	Via string
+	// Home is WHOSE loop this is: the RHQ_HOME whose watch lock and
+	// dispatch-watch.pid the reading came from (ranger-base-nqaa1). It is
+	// here because the reading's scope is narrower than its subject's — see
+	// watchScopeSentence — and every rendering has to say so. "" when the
+	// reader could not name the instance, which reads as "this instance".
+	Home string
+}
+
+// watchScopeSentence is the one thing every rendering of a loop reading has
+// to say about its own reach (ranger-base-nqaa1, finding 1).
+//
+// THE ASYMMETRY. `posse upgrade` renames ONE file, ~/.local/bin/posse, and
+// that file is box-wide: every RHQ_HOME's `dispatch --watch` loop on this box
+// execs it. A reading here is the opposite shape — it takes one `*App`, asks
+// THAT home's watch lock whether a loop is running and reads THAT home's
+// dispatch-watch.pid for its pid. So a box with two instances has one binary
+// and two loops, and this reads one of them.
+//
+// MEASURED 2026-11-21, this box, linux 7.2.15-1-omarchy: two loops, pid
+// 2066610 under ~/homes/ranger and pid 1991667 under ~/homes/weller, both
+// exec'ing /home/posse/.local/bin/posse at dev:ino 54:12591441 — each with
+// its own dispatch-watch.pid naming its own pid, so both are legitimate and
+// the per-home lock invariant holds. Neither was stale at the time, so G18
+// was correctly silent for both: this is COVERAGE and was not a live
+// exposure. What made it worth a sentence is that nothing else would have
+// said it — ShopCheck's G18 arm is per-instance (pulse.go, `posse status`,
+// the cockpit), the weller instance has no pulse state at all so no tick
+// there ever evaluates G18, and `posse upgrade` runs in the delegate's
+// instance only. After an install, no reader on this box says a sibling
+// loop is on the old inode.
+//
+// WHAT THIS IS NOT. It is not the fix for that coverage hole; widening the
+// reading means coining a notion of "the instances on this box", which exists
+// nowhere in this tree (nothing enumerates RHQ_HOMEs), and that is a design
+// call with its own bead (ranger-base-is1qp). It is the fix for the READING
+// OF THE REMEDY: ADR
+// 0092 D6 says "restart the dispatch loops" in the plural, the verb's line
+// and the G18 row name one, and without this clause a reader finishes either
+// one believing the plural was satisfied by the singular.
+func watchScopeSentence(home string) string {
+	where := "this instance"
+	if home != "" {
+		where = AbbrevHome(home)
+	}
+	return "scope: one instance's loop — " + where + "'s, the pid its own state/dispatch-watch.pid names — while the binary an install renames is box-wide, so ADR 0092 D6's \"restart the dispatch loops\" reaches sibling instances this reading did not look at (ranger-base-nqaa1)"
 }
 
 // Stale is the condition: the path no longer names the image the loop runs.
@@ -129,8 +174,8 @@ func (w WatchImage) Sentence() string {
 	} else if w.Now != "" {
 		now = "is posse " + w.Now
 	}
-	return fmt.Sprintf("dispatcher pid %d runs %s; %s %s; launches render the old walls until this loop restarts — restart the dispatch loop, then relaunch seats (ADR 0092 D6; restarting a live dispatcher is the operator's or the coordinator's, guardrail 3)",
-		w.Pid, w.Old(), AbbrevHome(w.Path), now)
+	return fmt.Sprintf("dispatcher pid %d runs %s; %s %s; launches render the old walls until this loop restarts — restart the dispatch loop, then relaunch seats (ADR 0092 D6; restarting a live dispatcher is the operator's or the coordinator's, guardrail 3). %s",
+		w.Pid, w.Old(), AbbrevHome(w.Path), now, watchScopeSentence(w.Home))
 }
 
 // GovRows is G18, the governance rendering of this reading.
@@ -146,19 +191,42 @@ func (w WatchImage) GovRows() []GovCondition {
 	}}
 }
 
-// ReadWatchImage reads this home's loop. ok=false when no loop is running,
-// its record names no pid, or neither /proc nor the record can say what the
-// loop runs — every one an abstention, never an all-clear claimed.
+// ReadWatchImage reads this home's loop — ONE instance's, which is what
+// WatchImage.Home carries and watchScopeSentence says out loud
+// (ranger-base-nqaa1). ok=false when no loop is running, its record names no
+// pid, or neither /proc nor the record can say what the loop runs — every one
+// an abstention, never an all-clear claimed.
+//
+// An abstention still names its instance: the caller that prints "no loop of
+// this home could be read" is the one place where saying WHICH home matters
+// most, so Home is set on every return and not only on the readings.
 func ReadWatchImage(a *App) (WatchImage, bool) {
+	home := watchInstance(a)
 	running, err := WatchLoopRunning(a)
 	if err != nil || !running {
-		return WatchImage{}, false
+		return WatchImage{Home: home}, false
 	}
 	rec, ok := ReadWatchPid(WatchPidPath(a))
 	if !ok {
-		return WatchImage{}, false
+		return WatchImage{Home: home}, false
 	}
-	return readWatchImage(rec, procExe), true
+	w := readWatchImage(rec, procExe)
+	w.Home = home
+	return w, true
+}
+
+// watchInstance names the instance a reading came from. The RHQ_HOME, which
+// is what an operator reading the line knows the instance by; the state dir
+// when there is no home — a fixture, and the dir the pid record it wrote
+// actually lives in.
+func watchInstance(a *App) string {
+	if a == nil {
+		return ""
+	}
+	if a.Home != "" {
+		return a.Home
+	}
+	return a.StateDir
 }
 
 func readWatchImage(rec *WatchPid, procExe func(int) (string, string, bool)) WatchImage {

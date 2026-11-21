@@ -370,16 +370,26 @@ type upgradePlan struct {
 // dispatch loop the rename left on the old inode, if there is one. Without
 // it, "relaunch seats" reads as sufficient and is not — the loop is what
 // renders a relaunch, so a relaunch through it renders the old walls.
+//
+// ALL THREE BRANCHES CARRY THE SCOPE CLAUSE (ranger-base-nqaa1, finding 1),
+// and the two that are not the stale one are why it had to be said at all:
+// this verb runs in the delegate's instance, reads that instance's loop, and
+// the renamed binary is every instance's. "already runs" and "could not be
+// read" are the two spellings an operator would otherwise finish believing
+// the box was covered — the first because it sounds like an all-clear, the
+// second because it sounds like there is nothing to restart. The stale branch
+// gets the same clause from WatchImage.Sentence, so the row and the line
+// cannot disagree about their reach any more than about their verdict.
 func upgradeWatchLine(plan upgradePlan) string {
 	if plan.Loop == nil {
 		return ""
 	}
 	img, ok := plan.Loop()
 	if !ok {
-		return "dispatch: no running dispatch --watch loop of this home could be read — seats launched after this line render the new walls only if whatever launches them was started after the swap"
+		return "dispatch: no running dispatch --watch loop of this home could be read — seats launched after this line render the new walls only if whatever launches them was started after the swap. " + watchScopeSentence(img.Home)
 	}
 	if !img.Stale() {
-		return fmt.Sprintf("dispatch: loop pid %d already runs %s — relaunched seats render the new walls", img.Pid, AbbrevHome(img.Path))
+		return fmt.Sprintf("dispatch: loop pid %d already runs %s — relaunched seats render the new walls. %s", img.Pid, AbbrevHome(img.Path), watchScopeSentence(img.Home))
 	}
 	return "dispatch: " + img.Sentence()
 }

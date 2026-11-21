@@ -999,26 +999,130 @@ func TestUpgradeStampOfReadsTheCommitOutOfTheVersionLine(t *testing.T) {
 	}
 }
 
-// Every row name the partition knows is a class, and an unknown one is
-// BINARY-rendered rather than shop-state. The direction is the whole point:
-// this table is complete for this binary (the QA pin says so), so a row the
-// NEW binary printed and this one cannot name is a condition it invented.
+// An unknown row name is BINARY-rendered rather than shop-state, which is
+// the half upgradeCondSource adds over the table it reads. The direction is
+// the whole point: that table is complete for this binary (the QA census pin
+// says so), so a row the NEW binary printed and this one cannot name is a
+// condition it invented.
+//
+// The four reasoned spot checks this test used to carry — G1, G7, G11, G12 —
+// moved into upgradeClassValuePin below, where the same assertion is made
+// over EVERY row instead of the four somebody thought of. Two hand-kept
+// lists of classes is the folklore this file's header warns about.
 func TestUpgradeUnknownConditionCodeIsTreatedAsBinaryRendered(t *testing.T) {
 	t.Parallel()
-	if got := upgradeCondSource("G12"); got != upgradeInstallSubject {
-		t.Errorf("G12 reads as %v, want install-subject — a repo's git hook is a COPY of this binary's render, and D7 leaves the re-render to the operator (ADR 0092 D4 amendment 1)", got)
-	}
-	if got := upgradeCondSource("G7"); got != upgradeBinaryRendered {
-		t.Errorf("G7 reads as %v, want binary-rendered", got)
-	}
-	if got := upgradeCondSource("G1"); got != upgradeShopState {
-		t.Errorf("G1 reads as %v, want shop-state", got)
-	}
-	if got := upgradeCondSource("G11"); got != upgradeInstallSubject {
-		t.Errorf("G11 reads as %v, want install-subject", got)
-	}
 	if got := upgradeCondSource("G404"); got != upgradeBinaryRendered {
 		t.Errorf("a code with no class reads as %v, want binary-rendered — the safe answer is the one that rolls back", got)
+	}
+}
+
+// upgradeClassValuePin is every row `posse status` can print with the class
+// upgradeConditionSource must give it, spelled a second time HERE
+// (ranger-base-nqaa1, finding 2).
+//
+// WHY A SECOND COPY IS THE MECHANISM AND NOT THE DEFECT. The census pin
+// (TestQAEveryStatusConditionCodeHasAnUpgradeClass) asserts that every row
+// HAS a class and no class names a dead row. It says nothing about WHICH,
+// and the values are what the rollback is computed over — so until this
+// table existed, changing one entry of upgradeConditionSource was a change no
+// test could see. MEASURED 2026-11-21 at tree 3c16c00c by the verify of
+// ranger-base-rrgnc: `"G18": upgradeInstallSubject` edited to
+// `upgradeBinaryRendered` exercised 125 tests under
+// `-run '(Upgrade|upgradeCond|Install|Condition|G18)'` and red NONE. G18
+// appears after EVERY install with a live dispatch loop, by construction — so
+// that one token, which nothing asserted, rolls back every good install on
+// this box, every time, and the next reader's first hypothesis is that the
+// new binary is broken.
+//
+// The copy cannot drift, because the test below is bidirectional: a row in
+// the source table with no row here fails, and a row here the source table
+// does not name fails. So a G-row added tomorrow arrives with a class that
+// something asserts, instead of a class somebody has to remember to assert.
+// What it cannot force is the THINKING — a red here can be answered by
+// copying the new value across — which is why `why` exists and why a row
+// whose wrong value has a named cost carries it.
+var upgradeClassValuePin = []struct {
+	row  string
+	want upgradeCondClass
+	why  string
+}{
+	{"G1", upgradeShopState, "herdr agent status: seats block and unblock while the suite runs"},
+	{"G2", upgradeShopState, ""},
+	{"G3", upgradeShopState, ""},
+	{"G4", upgradeShopState, ""},
+	{"G5", upgradeShopState, ""},
+	{"G6", upgradeShopState, ""},
+	{"G7", upgradeBinaryRendered, "the arm-broken keys refuse `autostart_interval:`/`autostart_via:` through THIS binary's grammar, so a narrowed grammar would disarm the fleet's only instrument silently — a code is as binary-rendered as its most binary predicate (ADR 0092 D4, the code the ADR did not name)"},
+	{"G8", upgradeShopState, ""},
+	{"G9", upgradeShopState, ""},
+	{"G10", upgradeShopState, ""},
+	{"G11", upgradeInstallSubject, "it counts commits from the installed stamp to the source tip, and this verb moves that stamp: as binary-rendered it would roll back on its own footprint"},
+	{"G12", upgradeInstallSubject, "a repo's git hook is a COPY of this binary's render and D7 leaves the re-render to the operator, so a G12 row after the swap is the designed state: as binary-rendered the verb refused exactly the landings that change the wall (ADR 0092 D4 amendment 1, ranger-base-qfhph)"},
+	{"G13", upgradeShopState, ""},
+	{"G14", upgradeShopState, ""},
+	{"G15", upgradeShopState, ""},
+	{"G16", upgradeShopState, ""},
+	{"G17", upgradeBinaryRendered, "a static map judged by this binary's own cage resolver: nothing but the swap can have changed the answer"},
+	{"G18", upgradeInstallSubject, "the rename CREATES this row by construction — rename(2) leaves the live dispatch loop on the old inode — so as binary-rendered it rolls back every good install on a box with a loop running (ranger-base-rrgnc, watchimage.go)"},
+	{GovCondition{}.Row(), upgradeShopState, "the three pulse-era carry-overs: git, herdr and the clock, all three moving on their own"},
+}
+
+// The value pin itself, and the two completeness arms that keep the table
+// above from drifting from the one it reads.
+func TestUpgradeEveryConditionClassIsPinnedByValue(t *testing.T) {
+	t.Parallel()
+	name := func(c upgradeCondClass) string {
+		switch c {
+		case upgradeShopState:
+			return "shop-state (excluded: its store moves on its own)"
+		case upgradeBinaryRendered:
+			return "binary-rendered (ROLLS BACK)"
+		case upgradeInstallSubject:
+			return "install-subject (excluded: this verb moves the row itself)"
+		}
+		return fmt.Sprintf("upgradeCondClass(%d), which is not a class this pin knows — add it here", int(c))
+	}
+
+	pinned := map[string]bool{}
+	for _, p := range upgradeClassValuePin {
+		if pinned[p.row] {
+			t.Errorf("%s is pinned twice in upgradeClassValuePin", p.row)
+			continue
+		}
+		pinned[p.row] = true
+		got, ok := upgradeConditionSource[p.row]
+		if !ok {
+			t.Errorf("upgradeConditionSource has no class for %s, which this pin says is %s — either the row was deleted (drop its row here and the measurement table's) or the entry was lost", p.row, name(p.want))
+			continue
+		}
+		if got == p.want {
+			continue
+		}
+		msg := fmt.Sprintf("upgradeConditionSource[%q] = %s, want %s", p.row, name(got), name(p.want))
+		if p.why != "" {
+			msg += "\n  why: " + p.why
+		}
+		t.Errorf("%s\n  The class decides whether this row APPEARING between the two readings undoes the install (ADR 0092 D4). Do not answer this red by copying the new value across: read upgradeverify.go's measurement table, and if the row's store of record really changed, change the table's row and this one together and say so on a bead.", msg)
+	}
+
+	// The other direction: a row with a class and no value pin is the hole
+	// this table exists to close, so it has to fail HERE rather than wait to
+	// be noticed by a mutant somebody happened to run.
+	var unpinned []string
+	for row := range upgradeConditionSource {
+		if !pinned[row] {
+			unpinned = append(unpinned, row)
+		}
+	}
+	slices.Sort(unpinned)
+	if len(unpinned) > 0 {
+		t.Errorf(`%d row(s) carry a class that nothing asserts the VALUE of: %s
+
+Add each to upgradeClassValuePin above, with the class the measurement table in
+upgradeverify.go gives it and — if the wrong value has a named cost — what that cost
+is. The census pin next door only requires that a row HAS a class; a row whose value
+no test reads is a token that can be edited green (ranger-base-nqaa1, finding 2).`,
+			len(unpinned), strings.Join(unpinned, ", "))
 	}
 }
 

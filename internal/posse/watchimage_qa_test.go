@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -204,5 +205,155 @@ func TestQAUpgradeNamesTheLoopTheRenameLeftBehind(t *testing.T) {
 	cur := WatchImage{Pid: 77, Path: "/x/posse", Image: "1:3", OnDisk: "1:3"}
 	if got := upgradeWatchLine(upgradePlan{Loop: func() (WatchImage, bool) { return cur, true }}); !strings.Contains(got, "already runs") {
 		t.Errorf("a current loop must say so: %s", got)
+	}
+}
+
+// ─── the reading's scope (ranger-base-nqaa1, finding 1) ──────────────────────
+
+// EVERY rendering of a loop reading says it read one instance's loop, and
+// names which. The verdict branches are not the interesting ones: a stale
+// loop is already being told to restart, so the clause only sharpens it.
+// What this pin is for is the other two — "already runs" and "could not be
+// read" — because those are the lines an operator finishes believing the BOX
+// is covered, and the binary the rename replaced is the box's.
+func TestQAEveryLoopReadingSaysWhichInstanceItRead(t *testing.T) {
+	t.Parallel()
+	const home = "/home/posse/homes/ranger"
+	// The clause has to name the instance and has to say the subject is
+	// wider than the reading. "loops" plural is ADR 0092 D6's own word for
+	// the remedy, and the whole finding is that the plural was being read as
+	// satisfied by a singular reading.
+	says := func(t *testing.T, what, line string) {
+		t.Helper()
+		for _, want := range []string{"scope: one instance's loop", home, "box-wide", "restart the dispatch loops", "sibling instances this reading did not look at"} {
+			if !strings.Contains(line, want) {
+				t.Errorf("%s does not say %q:\n  %s", what, want, line)
+			}
+		}
+	}
+
+	stale := WatchImage{Pid: 77, Path: "/x/posse", Image: "1:2", OnDisk: "1:3", Version: "0.5.3+old", Home: home}
+	says(t, "the G18 sentence", stale.Sentence())
+	rows := stale.GovRows()
+	if len(rows) != 1 {
+		t.Fatalf("want one G18 row, got %+v", rows)
+	}
+	says(t, "the G18 row's detail", rows[0].Detail)
+	says(t, "the verb's line over a stale loop", upgradeWatchLine(upgradePlan{Loop: func() (WatchImage, bool) { return stale, true }}))
+
+	cur := stale
+	cur.OnDisk = cur.Image
+	says(t, `the verb's "already runs" line`, upgradeWatchLine(upgradePlan{Loop: func() (WatchImage, bool) { return cur, true }}))
+
+	// The abstention: ok=false, and the reading still names its instance —
+	// which is the one line where "this home" was all the reader had.
+	abstain := WatchImage{Home: home}
+	says(t, "the verb's abstention line", upgradeWatchLine(upgradePlan{Loop: func() (WatchImage, bool) { return abstain, false }}))
+
+	// A reader that could not name the instance says so instead of naming
+	// nothing: the clause is never silently absent.
+	anon := upgradeWatchLine(upgradePlan{Loop: func() (WatchImage, bool) { return WatchImage{}, false }})
+	if !strings.Contains(anon, "scope: one instance's loop — this instance's") {
+		t.Errorf("a reading with no instance name still has to carry the clause:\n  %s", anon)
+	}
+}
+
+// TWO INSTANCES, TWO LOOPS, ONE BINARY — the box this finding was measured
+// on, as a fixture. MEASURED 2026-11-21: pid 2066610 under ~/homes/ranger and
+// pid 1991667 under ~/homes/weller, both exec'ing ~/.local/bin/posse at
+// dev:ino 54:12591441.
+//
+// What it pins is the SHAPE and not a widening: each instance's reading names
+// its own loop and nothing of the other's, so an install's report and that
+// instance's G18 row cover one of the two loops the rename left behind. The
+// clause above is what carries that to the reader. Widening the reading needs
+// a notion of "the instances on this box", which exists nowhere in this tree.
+func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
+	// FIRST, before the GOOS skip, which is the order `make verify-parallel`
+	// reads: it takes the body's first statement and nothing else, and this
+	// test is env-clean and writes no package var, so it is eligible.
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("the /proc road; the record road is pinned above on every OS")
+	}
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("no sleep(1) to stand in for a loop's image")
+	}
+	root := t.TempDir()
+	// ONE binary, as the box has one: both loops exec this file and the
+	// rename below replaces it under both of them.
+	bin := filepath.Join(root, "bin", "posse")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rrgncCopy(t, sleep, bin)
+
+	type instance struct {
+		app  *App
+		pid  int
+		home string
+	}
+	var insts []instance
+	for _, name := range []string{"ranger", "weller"} {
+		home := filepath.Join(root, "homes", name)
+		loop := exec.Command(bin, "60")
+		if err := loop.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { loop.Process.Kill(); loop.Wait() })
+
+		a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+		lock, held, err := lockWatch(a)
+		if err != nil || held {
+			t.Fatalf("%s: lock held=%v err=%v — each instance holds its OWN watch lock", name, held, err)
+		}
+		defer lock.Release()
+		if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: loop.Process.Pid, Started: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		insts = append(insts, instance{app: a, pid: loop.Process.Pid, home: home})
+	}
+
+	// The install: one rename, both loops left on the old inode.
+	rrgncCopy(t, sleep, bin)
+
+	for i, in := range insts {
+		other := insts[(i+1)%len(insts)]
+		img, ok := ReadWatchImage(in.app)
+		if !ok || !img.Stale() {
+			t.Fatalf("%s: after the rename this instance's loop is stale: ok=%v %+v", in.home, ok, img)
+		}
+		if img.Pid != in.pid {
+			t.Errorf("%s: the reading names pid %d, want this instance's %d", in.home, img.Pid, in.pid)
+		}
+		if img.Home != in.home {
+			t.Errorf("%s: the reading says its instance is %q", in.home, img.Home)
+		}
+		rows := img.GovRows()
+		if len(rows) != 1 || rows[0].ID != "G18" {
+			t.Fatalf("%s: want one G18 row, got %+v", in.home, rows)
+		}
+		// The claim, both halves: the row is about THIS loop, and it says
+		// so rather than leaving the reader to assume the box.
+		if strings.Contains(rows[0].Detail, strconv.Itoa(other.pid)) || strings.Contains(rows[0].Detail, other.home) {
+			t.Errorf("%s: this instance's G18 row names the sibling's loop — the reading is per-instance and the row must not claim otherwise:\n  %s", in.home, rows[0].Detail)
+		}
+		if !strings.Contains(rows[0].Detail, "scope: one instance's loop — "+in.home) {
+			t.Errorf("%s: the row does not say whose loop it read:\n  %s", in.home, rows[0].Detail)
+		}
+	}
+
+	// And the sibling's staleness is real, not an artifact of reading it
+	// through the first instance's App: the box genuinely has two stale
+	// loops after one rename, which is the whole finding.
+	a, b := insts[0], insts[1]
+	ia, _ := ReadWatchImage(a.app)
+	ib, _ := ReadWatchImage(b.app)
+	if ia.Pid == ib.Pid {
+		t.Fatalf("the fixture read the same loop twice: %d", ia.Pid)
+	}
+	if !ia.Stale() || !ib.Stale() {
+		t.Errorf("one rename left both loops stale; got %+v and %+v", ia, ib)
 	}
 }
