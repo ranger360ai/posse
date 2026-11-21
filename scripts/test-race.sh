@@ -157,6 +157,7 @@ internal/posse/dispatchparity_qa_test.go
 internal/posse/drain_qa_test.go
 internal/posse/guardclock_qa_test.go
 internal/posse/hookwallsweep_qa_test.go
+internal/posse/landedarm_qa_test.go
 internal/posse/launcherlag_qa_test.go
 internal/posse/launchlock_qa_test.go
 internal/posse/launchlock_test.go
