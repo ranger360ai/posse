@@ -264,9 +264,14 @@ that whole read before a seat is allowed to run it.
 ## Consequences
 
 - An install no longer waits on the operator being at the keyboard. It waits
-  on a push and one `make test` (ASSUMED 15–25 min on a quiet box, from
-  ranger-base-kiwvn's 280s over the three arms uninjected plus arm 1's
-  `./...`; to be measured on the first real run).
+  on a push and one `make test` — **MEASURED 19m08s on the first real run**
+  (ranger-base-jnf2z, 2026-11-20, edfe7a79..3c0e3c5e), inside the 15–25 min
+  envelope this bullet ASSUMED from ranger-base-kiwvn's 280s over the three
+  arms uninjected plus arm 1's `./...`. That run was NOT on a quiet box: both
+  suite slots were held at launch and 146s of the 1148s wall was the verb
+  queueing behind sibling seats, so the envelope is confirmed under
+  contention and its quiet-box floor is still ranger-base-zhw0h's 11m57s for
+  `make test` alone. See "Measured versus assumed" below.
 - The delegate can change the walls that fence the delegate. Every persona
   could already do that through a landing; what stops it is guardrail 1. Code
   reaches the binary only after the coordinator's push. That is the same
@@ -321,6 +326,30 @@ under normal suite-slot contention — a FLOOR for the verb, which adds a
 `git worktree add` and may compile against a colder cache. The Consequences
 section's ASSUMED 15-25 min stands as the envelope to plan against.
 docs/notes.d/ranger-base-zhw0h.md has both readings.
+
+**The whole verb's wall is MEASURED now, and no trigger has yet fired —
+2026-11-20 by the first delegated install (ranger-base-jnf2z), 19m08s for
+edfe7a79..3c0e3c5e, exit 0, no rollback.** It ran at a loadavg of 11.98 with
+both suite slots held by sibling seats, so **146s of the 1148s wall was the
+queue** and the figure is the verb under contention rather than on the quiet
+box Consequences hypothesized; the rest went to ~83s of tree-wide doors, the
+three arms (arm 1's five packages 214.0/154.5/119.1/2.0/0.2s, arm 2 81.5s,
+arm 3 119.1s), the ~1s private copy and the clean-build. D4's three readings
+came back identical across the two binaries — 8 conditions, 36 not-held gates
+rows, 0 non-zero gates exits, `render-probe` 0 on both sides with its mark
+present — so the triggers are still exercised only by their pins, and this
+ADR has no live reading of a rollback. The D5 arm reported `unchanged`
+(nothing written; all three behaviour arms green), and the range touched
+neither the gate pair nor the hook render, so D7's G12 re-render sequence is
+also unexercised.
+
+**G11's exclusion is no longer only a census finding: it fired.** While that
+install's suite ran, origin/main moved 3c0e3c5e to 783cdeb9, so the install
+finished one commit behind and opened a G11 row by succeeding — the exact
+case the G11 paragraph below reasons about. Under the assumed set that named
+only G12 and G17, the first delegated install would have rolled itself back
+for working. docs/notes.d/ranger-base-jnf2z.md has the phase table, the
+quoted before/after lines and the D6 line verbatim.
 
 `install(1)` IS non-atomic — MEASURED 2026-11-13 by the build bead
 (ranger-base-zhw0h), GNU coreutils 9.12 on this host, 64 MiB over 64 MiB on

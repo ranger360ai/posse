@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20
+- [ranger-base-jnf2z](ranger-base-jnf2z.md) — The first delegated `posse upgrade`: 19m08s, no rollback (ranger-base-jnf2z) — 2026-11-20
 - [ranger-base-hgcmw](ranger-base-hgcmw.md) — The persona memory dir is granted in the settings payload, not as `--add-dir` (ranger-base-hgcmw) — 2026-11-20
 - [ranger-base-5blmt](ranger-base-5blmt.md) — A darwin seat's objects live in its own store too (ranger-base-5blmt) — 2026-11-20
 - [ranger-base-ze7xz](ranger-base-ze7xz.md) — Three pin gaps from the ranger-base-bfbx8 verify, and one seam that had to move for the third — 2026-11-15
