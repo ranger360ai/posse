@@ -378,3 +378,92 @@ func TestQATheVenueRefusesOnTheOtherHostsWallMechanism(t *testing.T) {
 		t.Errorf("the JUDGE refused on %s for a reason that is not the mechanism (%v), so the venue's refusal above may be that same reason and not D1's", WallSandboxExec, jerr)
 	}
 }
+
+// THE VENUE'S OWN ADR 0100 D2(b)/D4(a) CHECKS, driven (ranger-base-r9slg,
+// escaped from ranger-base-ltmyh).
+//
+// The venue's three additions go on AFTER BwrapArgs, so BwrapArgs' own source
+// and destination steps never saw them, and boxLandedCage asks both of them
+// again over the completed argv. MEASURED 2026-11-15 at 4b3013cd: deleting
+// those three lines leaves `go test ./internal/posse` green (4054 ran, 0 FAIL)
+// and `-tags posse_arm2` green (2714 ran) — nothing drove either check at this
+// call site, because the shipped render cannot make them fire:
+// wallVenueArgv emits the /var/tmp source's in-place pin under exactly
+// `bwrapStrictlyInsideGrant(src, grants)`, and that is the only condition
+// under which the check could refuse it, so the two guards cannot disagree.
+// (One shape could, in principle — a source nested TWO components inside a
+// grant with no mount between — and the render cannot produce it either: the
+// venue's source is a SIBLING of the judge's private /tmp source under the
+// same run dir, so any grant that leaves one of them two deep leaves the
+// other two deep as well, and BwrapArgs' own step refuses first. A deeper
+// child dir moves both together, for the same reason.)
+//
+// KEEPING THE CHECK IS RIGHT — it is there for the NEXT venue addition, and
+// ADR 0100 says this rule is "checked over EVERY bwrap argv the package
+// renders" — so what it lacked is the fixture that makes it fire. This is
+// that fixture: the shipped venue argv as the control, then the same argv
+// with one post-BwrapArgs mount whose source (and, in the last arm, whose
+// destination) is loose, asserted refused.
+func TestQAWallVenuesOwnPinnedSourceCheckRefusesALooseAddition(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME.
+	f := newLandedCageFixture(t)
+	child := filepath.Join(f.run, "judge")
+	writable := []string{f.run}
+	venue, err := boxLandedCage(&App{}, landedCageVenue, child, f.tree, writable, landedRunEnv(f.run))
+	if err != nil {
+		t.Skip("NOTHING MEASURED: no landed-check venue renders on this host: " + err.Error())
+	}
+	// CONTROL 1: the rule is not standing down here. On a box whose home is
+	// under the shared /tmp there is no ungranted place for a source to live
+	// and bwrapRefuseUnpinnedSource answers nil to everything, which would
+	// make every arm below green for a reason that is not the property.
+	if bwrapWallRoot() == "" {
+		t.Skip("NOTHING MEASURED: this box's wall root is under " + bwrapTmpMount + ", so ADR 0100 D2(b) stands down whatever the argv says")
+	}
+	// CONTROL 2: the SHIPPED venue render passes both checks. It has to —
+	// boxLandedCage returned it, and it asks them itself — and saying so here
+	// is what separates "the rule is satisfied" from "the rule says yes to
+	// everything" in the two arms below.
+	if err := bwrapRefuseUnpinnedSource(venue.Argv, writable); err != nil {
+		t.Fatalf("CONTROL: the shipped venue render does not pass its own D2(b) check: %v", err)
+	}
+	if err := bwrapRefuseUnpinnedDst(venue.Argv, writable); err != nil {
+		t.Fatalf("CONTROL: the shipped venue render does not pass its own D4(a) check: %v", err)
+	}
+
+	// A post-BwrapArgs addition of the shape the venue's additions have: a
+	// source inside the venue's one write grant, two components deep, with
+	// no mount of this render between it and the grant. A walled process in
+	// this namespace — or anything the run leaves behind — renames the
+	// intermediate component, and bwrap resolves this very path to what it
+	// points at instead, read-write, at the next render and with no race.
+	loose := filepath.Join(f.run, "anaddition", "src")
+	for _, c := range []struct {
+		name     string
+		add      []string
+		over     string
+		check    func(argv, grants []string) error
+		wantPath string
+	}{
+		{"a source bound over another path", []string{"--bind", loose, "/mnt/addition"},
+			"/mnt/addition", bwrapRefuseUnpinnedSource, filepath.Dir(loose)},
+		{"a source bound in place", []string{"--bind", loose, loose},
+			loose, bwrapRefuseUnpinnedSource, filepath.Dir(loose)},
+		{"a destination the render does not pin", []string{"--bind", f.run, filepath.Join(f.run, "anaddition", "dst")},
+			"", bwrapRefuseUnpinnedDst, filepath.Join(f.run, "anaddition")},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			argv := append(append([]string{}, venue.Argv...), c.add...)
+			err := c.check(argv, writable)
+			if err == nil {
+				t.Fatalf("the venue's check passed a mount whose %s is loose (`%s`) — a venue addition posse never reviewed is one a seat's leftover redirects, read-write, inside the namespace landed code runs in (ADR 0100 D2(b)/D4(a))", c.name, strings.Join(c.add, " "))
+			}
+			if !strings.Contains(err.Error(), c.wantPath) {
+				t.Errorf("the refusal does not name the loose component %s, which is the one whose fix pins everything below it: %v", c.wantPath, err)
+			}
+			if !strings.Contains(err.Error(), "ADR 0100") {
+				t.Errorf("the refusal cites no decision, so a reader cannot tell a rule from a bug: %v", err)
+			}
+		})
+	}
+}
