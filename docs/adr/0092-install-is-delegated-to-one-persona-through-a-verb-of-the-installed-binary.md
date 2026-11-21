@@ -169,6 +169,61 @@ property of the binary alone, the same in every repo. So:
    agent` from the verb's own "a render does not refuse". The trigger and
    the three exit codes are otherwise exactly as written above.*
 
+*Amended by the architect (ranger-base-v2xj9, 2026-11-21): a row the OLD
+binary cannot name is classed by the binary that printed it.* As built, the
+third bullet's classes are read from the table compiled into the binary
+running the verb, which is the OLD one. A row added inside the range is not
+in that table, so the unknown-code rule classes it binary-rendered. The
+first install that crosses a new G-row then rolls back whenever the row is
+present, however the target classifies it. MEASURED 2026-11-21
+(ranger-base-i9fq8): 0e1cb6c0..65d90a5e rolled back on one LANE G18 row,
+which ranger-base-rrgnc added in that range and classed install-subject. The
+fix for such a crossing cannot be installed either, because every target
+holding it is judged by the table that predates it.
+
+This is the old-reader, new-writer case of mixed-version systems. The field's
+standard answer is that the writer's data describes itself, so a reader never
+has to guess what a field it has never seen means. The new binary writes the
+row, so the new binary describes it:
+
+4. **The after-reading asks the new binary for its partition.**
+   `posse upgrade --classes` prints one line per row in
+   `upgradeConditionSource`, as `upgrade-class: <row> <shop|binary|install>`,
+   and does nothing else. It is read-only, takes no lock, and needs no
+   `install_delegate:`. "Asked" is read off the `upgrade-class:` mark, never
+   off an exit code, for amendment 3's reason: an old binary answers
+   `unknown flag: --classes` and exits non-zero. A pin keeps the flag in
+   every later binary, because the OLD binary's code is what calls it.
+5. **The new binary's class is read only for rows the old table cannot
+   name.** For a gained row the judge does not know: if the new binary
+   classes it `shop` or `install`, it is not a trigger, and the report prints
+   one line naming the row, the target's class, and that this binary had no
+   class for it. If the new binary classes it `binary`, does not name it, or
+   did not answer, it trips exactly as today. For a row the old table DOES
+   name, the old class rules and the new answer is not consulted.
+6. **When the two tables disagree on a row that tripped, the rollback line
+   says so.** For example: `the target classes G7 install; this binary
+   classes it binary, and this binary's class is the one that judges`. A
+   reclassification takes effect one install late. When it exists because
+   the install itself creates the row, as G18's does, that one crossing is
+   the operator's `make install`. The report names it in one line, so nobody
+   has to recover it from two trees.
+
+**Why this is not a candidate voting on its own install,** which is the
+objection D4 was written around. Rule 5 lets the new binary excuse only rows
+whose existence is its own speech alone. A binary that wanted to escape a
+row it alone can print could simply not print it. So its class for such a
+row gives it no power it did not already have. For every row the judge can
+name, the judge's class still rules, and the new binary's answer is not read.
+That is where the judge's independence earns anything: it is where a
+reclassification could excuse a row the old code would have tripped on.
+
+**The bootstrap is not closed here.** A box whose binary predates rule 4
+judges every crossing by the old rule. Installing G18 from 0e1cb6c0, or this
+amendment's own build from any binary before it, needs one operator
+`make install`. That is ranger-base-i9fq8's question, and it does not wait
+on this.
+
 **D5 — The bd argv gate copy is in scope (2tnbv's class), as a second arm of
 the same verb, under the same guardrails.** The copy under
 `~/.config/posse/gate/` is mechanism source from this repo, not a permission
@@ -330,6 +385,26 @@ that whole read before a seat is allowed to run it.
   because the gates arm carries the same probe. The third widens the
   delegate's writes into four shared checkouts so that one trigger reads
   cleanly.
+- *For a row the judge cannot name (ranger-base-v2xj9):*
+  - *Waive every unknown row.* This ends the false rollback and loses a real
+    one. A new binary-rendered row, a G7-shaped check whose grammar narrowed
+    in the same range, would land unjudged on exactly the install that
+    introduced it.
+  - *Expand, then contract: the class ships one install before the row.*
+    This is the field's other answer, and it needs no code. But installs
+    here are ranges (16+ commits in the measured case), so both halves
+    land in one range and the crossing still happens. A discipline that
+    fails on the common shape is a disclaimer.
+  - *Baseline the new row by running `posse.new status` before the swap.*
+    This is the clever one, and the one I wanted: it gives a new row a real
+    before-count instead of a class. It does not fix the measured case,
+    because G18 is CREATED by the rename, so its pre-swap reading is zero.
+    It also adds a third status reading to every install.
+  - *An override flag that accepts a named row.* The delegate would type it,
+    which is the judged party's agent waiving the judge. The operator
+    already has an override, `make install`, and rule 6 points to it.
+  - *Let the new table judge every row.* This is the vote D4 refuses (see
+    "Why this is not a candidate voting" above).
 - *Gate copy out of scope.* That would leave 2tnbv's class as an operator
   ask forever, though its source, review path and blast class are the
   binary's. The line that matters, the settings file that names the hook,
@@ -523,6 +598,25 @@ An UNKNOWN code is treated as binary-rendered, which is the correct answer
 rather than a fallback: the table is complete for the binary doing the
 judging (the pin says so), so a row the NEW binary printed and the old one
 cannot name is a condition the new binary invented.
+
+**That sentence is true of the TABLE and false of the CROSSING — MEASURED
+2026-11-21 by ranger-base-i9fq8, diagnosed on ranger-base-v2xj9.** The table
+was complete for the binary judging, and the pin held. ranger-base-rrgnc
+classed G18 at the same time as it added the row. The install still rolled
+back, because a class ships in the binary being installed, one install after
+the judge needs it. Read from both trees: 0e1cb6c0's
+`upgradeConditionSource` names G1-G17 and no G18. d24988c3's names G1-G18.
+G18 is the only row whose class differs between them. Every other D4 arm
+read the same on both sides: 15 conditions apart from the gained row, 11
+personas, 36 not-held rows, 0 non-zero exits, render-probe 0. The row was
+true when it fired: both live loops were on the old inode. D4 amendment
+(ranger-base-v2xj9) rules 4-6 are the answer.
+
+ASSUMED, for the build to MEASURE:
+- An old binary answers `posse upgrade --classes` without the mark. This is
+  read from cmd/posse's flag loop at this commit, which refuses any leading
+  `-` before acting.
+- The extra after-reading costs under a second. It prints a static map.
 
 **D5's class is live on this box, MEASURED 2026-11-14 by the build bead
 (ranger-base-41l0r): `make verify-gate-freshness` read
