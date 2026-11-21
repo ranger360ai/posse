@@ -128,6 +128,71 @@ func TestQAEveryBuiltinRuntimeIsLaunchedWithAnExecdLine(t *testing.T) {
 	}
 }
 
+// Arm 1b: the WALLED create line (ranger-base-r9slg, escaped from
+// ranger-base-1l1en, whose PINS asked for "a render pin that every launch
+// line is exec'd").
+//
+// Arm 1's lines carry no wall: its PID names no cage, so none of them has
+// `bwrap` in it and none has a `3<`. That `3<` is the one shape in this
+// file's subject where `exec` must land on a word that is not the program —
+// and arm 4's row for it is a HAND-SPELLED copy of that shape which nothing
+// compares to what the wall actually renders. So a wall prefix that grew an
+// unquoted `;`, `|` or `(` would make shCommandWord answer not-simple, route
+// the whole line through `exec /bin/sh -c '<line>'`, and make the pane's
+// foreground process a shell instead of the runtime — which herdr's argv0
+// detection and every kill path read — with no pin saying so.
+//
+// WHICHEVER PREFIX THIS HOST RENDERS, which is the point of reading the
+// LINE: it is WallWatchPrefix where the watcher runs, BwrapPrefix where it
+// does not, and SeatbeltPrefix on darwin, and each of them is the head of the
+// line `exec` has to get past. MEASURED today: an unquoted `;` in
+// WallWatchPrefix reds this and leaves arm 1 green.
+//
+// It is the shape EVERY seat on this host gets, which is what makes arm 1
+// alone the exception rather than the rule. The real line is correct today
+// (MEASURED 2026-11-15: LaunchLineIsExecd=true, `/bin/sh -c` fallback=false),
+// so this is a pin over a gap and not over a defect.
+func TestQATheWalledLaunchLineIsExecdToo(t *testing.T) {
+	// No t.Parallel, and the skip: the package-level cage table is read, as
+	// in every walled-render pin of this tier.
+	if !AvailableCages[CageSeatbelt] {
+		t.Skipf("NOTHING MEASURED: this host realizes no seatbelt tier (%s unavailable)", WallMechanism())
+	}
+	b, fake := newTestBackend(t)
+	a := b.App
+	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(a.RuntimesDir(), "mycli.yaml"), "command: mycli {file}\nstate_dir: ~/.mycli-lx\n")
+	write(t, filepath.Join(a.AgentsDir, "walled.md"),
+		"---\nname: walled\ndescription: t\nruntime: mycli\ncage: seatbelt\ndeny: [Bash(git push:*)]\n---\nYou are walled.\n")
+	// AllowDegraded, because `mycli` is template-only and its Bash(...) deny
+	// is ASSUMED rather than probed — a parity refusal this pin is not about.
+	// The deny stays on the PID so the gates prefix in front of the wall is
+	// the real one, which is the head of the line `exec` has to get past.
+	mustCreate(t, b, NewSessionOpts{Name: "lxw-1", Agent: "walled", Dir: t.TempDir(), AllowDegraded: true})
+
+	lines := lxCommandLines(t, fake)
+	if len(lines) != 1 {
+		t.Fatalf("want one launch, got %d: %q", len(lines), lines)
+	}
+	// CONTROL: this really is the walled line. Without it the assertion below
+	// would hold for a line with no wall in it at all, which is arm 1.
+	var want string
+	switch m := WallMechanism(); m {
+	case WallBwrap:
+		want = "--args 3 -- "
+	case WallSandboxExec:
+		want = "sandbox-exec"
+	default:
+		t.Fatalf("this host realizes the seatbelt tier with mechanism %q, which this pin does not know how to read", m)
+	}
+	if !strings.Contains(lines[0], want) {
+		t.Fatalf("CONTROL: the rendered line carries no %q, so it is not the walled shape this pin is about:\n%s", want, lines[0])
+	}
+	lxAssertExecd(t, "the walled create line", lines[0])
+}
+
 // Arm 2: the re-type path (RelaunchAgent). It renders its own line, so it
 // can lose the exec on its own — and it is the path that types into a pane
 // that already exists, which is the state this bead exists to end.
