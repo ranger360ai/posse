@@ -102,11 +102,67 @@ import "path/filepath"
 // MEASURED, design ranger-base-tgc4b: claude 2.1.323 interactive, private
 // file and dir binds, every turn answered and recall worked from the private
 // copy. Not closed here: ranger-base-0qpsw.
-var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history", "debug", claudeSessionsDir, claudePasteCacheDir}
+//
+// cache/ joins for ranger-base-7x3bj, beside a FILE bind over .last-cleanup
+// (claudePrivateSessionState, below). They are the two members of the shared
+// config dir that the four above left behind — named in no carve and on
+// claude's own protected list nowhere (census ranger-base-drimd). MEASURED
+// 2026-11-15 from a bwrap seat, claude 2.1.325: no bind covered either name,
+// so both resolved to the shared host dir, a file created under cache/ landed
+// there, and .last-cleanup passed W_OK. What a peer's write reaches, read out
+// of the 2.1.325 binary's own JS and not exercised:
+//
+//   - cache/model-catalog/<account>-<hash>-cc.json is the SERVED catalog
+//     cache: models, provider alias targets, per-model thinking and effort
+//     defaults, state.model, min_claude_code_version. On read claude checks
+//     the schema and the surface and nothing else — the file carries no
+//     signature field, the signing covers the separate published catalog — so
+//     a planted copy is what the next claude on the box believes about
+//     models. cache/model-catalog/masked-ids.json is persisted masked model
+//     ids, hydrated at every later start.
+//   - .last-cleanup is read for its MTIME as a 24h throttle: within the
+//     window, the background housekeeping and retention sweep is SKIPPED, and
+//     the marker is only rewritten after a sweep runs. So one peer's future
+//     mtime switches off box-wide transcript retention indefinitely. (A
+//     symlink at the marker is not a redirect: claude treats ELOOP/EISDIR as
+//     not-regular, deletes it and rewrites.)
+//   - cache/my-closed-issues.json and cache/changelog.md are UI display only.
+//     Low on their own, and the same carve covers them.
+//
+// A posse seat's --model is an exact id, so the alias route does not move a
+// seat; the effort defaults, the masks and the operator's own alias use are
+// UNMEASURED, and no code execution or credential exposure is known. P2
+// hardening, and the same answer as the members above: a private copy per
+// seat. Nothing posse reads either name back, so this one has no reader-side
+// half.
+//
+// COSTS, both of them the carve working: the seat refetches the served
+// catalog and the changelog instead of reading the box's copy, and it runs
+// its own sweep against its own binds — which, with a private marker created
+// empty at launch, means a fresh mtime and no sweep for the seat's life. That
+// is the conservative direction: a seat's housekeeping is the suspected
+// remover in ranger-base-jkpxq. The one place the carve writes the SHARED
+// dir is the mount point: an absent .last-cleanup is created there as an
+// empty 0600 file, whose mtime then throttles the box's next sweep by up to
+// 24h, once, on a box where claude has never swept.
+//
+// Not closed here:
+//
+//	ranger-base-mbcbv
+var claudeSessionStateDirNames = []string{"session-env", "shell-snapshots", "backups", "file-history", "debug", claudeSessionsDir, claudePasteCacheDir, claudeCacheDir}
 
 // claudePasteCacheDir is claude's long-paste store, a member of the list
 // above (ranger-base-a544g).
 const claudePasteCacheDir = "paste-cache"
+
+// claudeCacheDir is claude's cache of server-fetched display and catalog
+// state, a member of the list above, and claudeLastCleanupFile is the
+// housekeeping throttle whose private copy is a file bind beside
+// history.jsonl's (ranger-base-7x3bj).
+const (
+	claudeCacheDir        = "cache"
+	claudeLastCleanupFile = ".last-cleanup"
+)
 
 // claudeDebugDirName is the member above whose carve the two mechanisms spell
 // differently: bwrap gives the seat a private copy (it is in the list above),
@@ -282,6 +338,17 @@ func claudePrivateSessionState(home, cwd string, stateGrants []string) []Private
 		Src:     claudePrivateHistoryPath(home, cwd),
 		SrcRoot: wall,
 		Dst:     filepath.Join(cfg, claudeHistoryFile),
+		File:    true,
+	})
+	// .last-cleanup is a FILE too, and the same file bind; why it is private
+	// is above claudeSessionStateDirNames. Its source is composed HERE and
+	// not behind a helper of its own, which is the difference from
+	// history.jsonl: nothing outside this file reads the marker back, so
+	// there is no second reader to recompose from one helper (ADR 0100 D1).
+	out = append(out, PrivateBind{
+		Src:     filepath.Join(own, claudeLastCleanupFile),
+		SrcRoot: wall,
+		Dst:     filepath.Join(cfg, claudeLastCleanupFile),
 		File:    true,
 	})
 	return out

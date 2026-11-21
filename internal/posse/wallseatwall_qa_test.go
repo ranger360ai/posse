@@ -88,8 +88,8 @@ func TestQAWallSeatWallHoldsEveryPrivateSourceAndEveryReader(t *testing.T) {
 	}
 	grants := runtimeStateGrants(f.rt.StateDirs)
 	binds := claudePrivateSessionState(f.home, f.dir, grants)
-	if len(binds) != len(claudeSessionStateDirNames)+1 {
-		t.Fatalf("claudePrivateSessionState rendered %d binds, want one per member plus history.jsonl — the loop below would measure a subset", len(binds))
+	if len(binds) != len(claudeSessionStateDirNames)+2 {
+		t.Fatalf("claudePrivateSessionState rendered %d binds, want one per member plus the two file binds, history.jsonl and .last-cleanup — the loop below would measure a subset", len(binds))
 	}
 	for _, pb := range binds {
 		if !insideDir(wall, pb.Src) {

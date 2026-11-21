@@ -649,8 +649,10 @@ func TestQAWallClaudeSessionStateRefusesALinkAtAnyComponentOfThePrivateSource(t 
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(victim, claudeHistoryFile), []byte("{}\n"), 0o600); err != nil {
-		t.Fatal(err)
+	for _, n := range []string{claudeHistoryFile, claudeLastCleanupFile} {
+		if err := os.WriteFile(filepath.Join(victim, n), []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, c := range []struct{ name, at string }{
 		{"a link at a DIR member's own source", filepath.Join(own, "session-env")},
@@ -873,5 +875,272 @@ func TestLiveWallClaudeSessionStateKeepsTheSubmitLogPrivate(t *testing.T) {
 	}
 	if got, ok := lastSubmittedOfPID(hist, f.home, pid, ownSession); !ok || got != ownLine {
 		t.Errorf("the echo read answered %q, %v for the caged seat's pid %d, want its own %q from the private log — sentline's echo verdict is this line", got, ok, pid, ownLine)
+	}
+}
+
+// ─── cache/ and .last-cleanup (ranger-base-7x3bj) ────────────────────────────
+
+// The render: cache/ is a private DIR member — the loop in
+// TestQAWallClaudeSessionStateRendersPrivateBindsOverTheGrant walks it with
+// the rest — and .last-cleanup is a private FILE bind after the config-dir
+// grant, with both ends made as empty 0600 files when they are absent. The
+// membership is asked by LITERAL here, so renaming the constant alone cannot
+// satisfy it.
+func TestQAWallClaudeSessionStateRendersTheCacheAndCleanupBinds(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f, _, _ := cssFixture(t)
+	if !containsString(claudeSessionStateDirNames, "cache") {
+		t.Errorf("cache is not a private member %v — every seat can plant the served model catalog and the masked ids every later claude reads back (ranger-base-7x3bj)", claudeSessionStateDirNames)
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := absResolve(f.cfg)
+	grant := bindIndex(r.Argv, cfg, cfg)
+	if grant < 0 {
+		t.Fatalf("the fixture's config dir is not granted, so nothing here is measured: %q", r.Argv)
+	}
+	src, dst := filepath.Join(claudePrivateStateDir(f.home, f.dir), claudeLastCleanupFile), filepath.Join(cfg, claudeLastCleanupFile)
+	switch i := bindIndex(r.Argv, src, dst); {
+	case i < 0:
+		t.Fatalf("no private file bind of %s over %s — one seat's future mtime there switches off the housekeeping sweep for every claude on the box (ranger-base-7x3bj)\n argv: %q", src, dst, r.Argv)
+	case i < grant:
+		t.Errorf("the .last-cleanup bind comes before the config-dir grant at %d, so the grant covers it again", grant)
+	}
+	var points []string
+	for _, s := range r.Prep {
+		if s.Kind == PrepMaskPoint {
+			points = append(points, s.Path)
+		}
+	}
+	if !containsString(points, dst) || !containsString(points, src) {
+		t.Fatalf("prep %v does not make both the absent shared marker and the private one as empty files", points)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{dst, src} {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.Mode().IsRegular() || fi.Size() != 0 || fi.Mode().Perm() != 0o600 {
+			t.Errorf("after prep %s is %v (%v), want an empty regular 0600 file — a mount needs a name to cover", p, fi, err)
+		}
+	}
+	// AND THE ONE HOST WRITE THIS CARVE MAKES IS BOUNDED TO THE ABSENT CASE.
+	// The shared marker's mtime IS the box's 24h throttle, so a prep step
+	// that rewrote an existing one would suppress the next sweep for every
+	// claude on the box — the very thing this bead carves against, done by
+	// the launcher. PrepMaskPoint leaves what is there alone (its doc says
+	// so); this is that promise read at this member, where it is load-bearing.
+	old := time.Now().Add(-72 * time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(dst, old, old); err != nil {
+		t.Fatal(err)
+	}
+	r2, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep(r2.Prep); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(dst); err != nil || !fi.ModTime().Equal(old) {
+		t.Errorf("the launcher's prep moved the SHARED marker's mtime to %v (%v), want it left at %v — a seat's launch would throttle the box's own retention sweep for 24h (ranger-base-7x3bj)", fi.ModTime(), err, old)
+	}
+}
+
+// A link, a dir or a fifo at <cfg>/.last-cleanup refuses the render, and so
+// does a link at the seat's own private marker. Every seat can write the
+// config dir; bwrap would mount on wherever a link points, and the launcher's
+// own prep would create a file there. Protects: the mount and the uncaged
+// prep from landing on a target a seat chose.
+func TestQAWallClaudeSessionStateRefusesALinkAtTheCleanupMarker(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	f, _, _ := cssFixture(t)
+	shared := filepath.Join(f.cfg, claudeLastCleanupFile)
+	priv := filepath.Join(claudePrivateStateDir(f.home, f.dir), claudeLastCleanupFile)
+	target := filepath.Join(wallUngrantedDir(t), "victim")
+	if err := os.WriteFile(target, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(priv), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name  string
+		at    string
+		plant func(string) error
+	}{
+		{"a link at the shared marker", shared, func(p string) error { return os.Symlink(target, p) }},
+		{"a dir at the shared marker", shared, func(p string) error { return os.Mkdir(p, 0o700) }},
+		{"a fifo at the shared marker", shared, func(p string) error { return syscall.Mkfifo(p, 0o600) }},
+		{"a link at the seat's private marker", priv, func(p string) error { return os.Symlink(target, p) }},
+	} {
+		_ = os.RemoveAll(shared)
+		_ = os.RemoveAll(priv)
+		if err := os.WriteFile(shared, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Remove(c.at)
+		if err := c.plant(c.at); err != nil {
+			t.Fatal(err)
+		}
+		r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+		if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("%s rendered (err %v), so bwrap would mount where a seat pointed it", c.name, err)
+		}
+		if len(r.Prep) != 0 {
+			t.Errorf("%s came back with prep %v, which the UNCAGED launcher runs: a refused render hands it no step", c.name, r.Prep)
+		}
+	}
+	// A link at the cache/ member's name is the DIR arm's refusal, and its
+	// wording is the other one: same hazard, same instruction to remove it.
+	_ = os.Remove(shared)
+	if err := os.WriteFile(shared, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.RemoveAll(priv)
+	cacheAt := filepath.Join(f.cfg, claudeCacheDir)
+	if err := os.Symlink(wallUngrantedDir(t), cacheAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("a link at %s rendered (err %v), so bwrap would mount where a seat pointed it", cacheAt, err)
+	}
+}
+
+// The live join: the rendered wall, the real bwrap, a peer's served-catalog
+// cache and masked ids planted in the shared dir, and a stale cleanup marker
+// the box's next sweep depends on.
+func TestLiveWallClaudeSessionStateKeepsTheCatalogCacheAndCleanupMarkerPrivate(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and CLAUDE_CONFIG_DIR.
+	if runtime.GOOS != "linux" {
+		t.Skip("bwrap is the Linux mechanism of the seatbelt tier (ADR 0080 D16)")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("bwrap is not on PATH: " + err.Error())
+	}
+	bwrapNestSkip(t)
+	f, _, _ := cssFixture(t)
+	catalogs := filepath.Join(f.cfg, claudeCacheDir, "model-catalog")
+	served := filepath.Join(catalogs, "acct-0123456789abcdef-cc.json")
+	masked := filepath.Join(catalogs, "masked-ids.json")
+	marker := filepath.Join(f.cfg, claudeLastCleanupFile)
+	elsewhere := wallUngrantedDir(t)
+	if err := os.MkdirAll(catalogs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for p, body := range map[string]string{
+		served: `{"models":[{"id":"the-box-own-model"}],"provider_alias_targets":{"opus":"the-box-own-model"}}` + "\n",
+		masked: `{"version":1,"ids":["the-box-own-mask"]}` + "\n",
+		marker: "",
+	} {
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The marker as the box has it when a sweep is DUE: older than the 24h
+	// throttle claude reads it for. A seat that can push it forward is a seat
+	// that switches the sweep off for every claude on the box.
+	stale := time.Now().Add(-72 * time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(marker, stale, stale); err != nil {
+		t.Fatal(err)
+	}
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatal(err)
+	}
+	try := func(script string) (bool, string) {
+		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		return err == nil, strings.TrimSpace(string(out))
+	}
+	q := shellQuote
+	before := map[string][]byte{}
+	for _, p := range []string{served, masked} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[p] = b
+	}
+	names := func() string {
+		ents, _ := os.ReadDir(catalogs)
+		var out []string
+		for _, e := range ents {
+			out = append(out, e.Name())
+		}
+		return strings.Join(out, ",")
+	}
+	sharedNames := names()
+	const protects = "a later claude on the box reads the served catalog's alias targets and effort defaults and hydrates the masked ids from these files, and the marker's mtime is the 24h throttle on every claude's retention sweep (ranger-base-7x3bj)"
+
+	// Nothing of the box's own is visible. Asked FIRST: the plants below
+	// write the same names in this seat's own private copies.
+	if ok, out := try("grep -q 'the-box-own-model' " + q(served)); ok {
+		t.Errorf("the box's served catalog is readable by the seat — %s\n out: %s", protects, out)
+	}
+	if ok, out := try("test -e " + q(masked)); ok {
+		t.Errorf("the box's masked-ids.json is visible to the seat — %s\n out: %s", protects, out)
+	}
+
+	forged := `{"models":[{"id":"forged"}],"provider_alias_targets":{"opus":"forged"}}`
+	for name, script := range map[string]string{
+		"served catalog rewritten": "echo " + q(forged) + " > " + q(served),
+		"served catalog appended":  "echo " + q(forged) + " >> " + q(served),
+		"masked ids rewritten":     "echo " + q(`{"version":1,"ids":["forged"]}`) + " > " + q(masked),
+		"a catalog added":          "mkdir -p " + q(catalogs) + " && echo " + q(forged) + " > " + q(filepath.Join(catalogs, "acct-fedcba9876543210-cc.json")),
+		"catalog dir relinked":     "rm -rf " + q(catalogs) + " && ln -s " + q(elsewhere) + " " + q(catalogs),
+		"cache dir relinked":       "rm -rf " + q(filepath.Join(f.cfg, claudeCacheDir)) + " && ln -s " + q(elsewhere) + " " + q(filepath.Join(f.cfg, claudeCacheDir)),
+		"cache dir moved":          "mv " + q(filepath.Join(f.cfg, claudeCacheDir)) + " " + q(filepath.Join(f.cfg, claudeCacheDir+".old")) + " && mkdir " + q(filepath.Join(f.cfg, claudeCacheDir)),
+		"cache via a dir link":     "ln -s " + q(f.cfg) + " " + q(filepath.Join(f.dir, "c")) + " && echo " + q(forged) + " > " + q(filepath.Join(f.dir, "c", claudeCacheDir, "model-catalog", "acct-0123456789abcdef-cc.json")),
+		"marker pushed forward":    "touch -d " + q(time.Now().Add(48*time.Hour).Format(time.RFC3339)) + " " + q(marker),
+		"marker truncated":         ": > " + q(marker),
+		"marker relinked":          "rm -f " + q(marker) + " && ln -s " + q(elsewhere+"/m") + " " + q(marker),
+		"marker via a dir link":    "ln -s " + q(f.cfg) + " " + q(filepath.Join(f.dir, "d")) + " && touch " + q(filepath.Join(f.dir, "d", claudeLastCleanupFile)),
+	} {
+		_, out := try(script)
+		for p, b := range before {
+			if got, err := os.ReadFile(p); err != nil || string(got) != string(b) {
+				t.Errorf("%s: the shared %s changed on the host (%q, %v) — %s\n script: %s\n out: %s", name, filepath.Base(p), got, err, protects, script, out)
+				_ = os.WriteFile(p, b, 0o600)
+			}
+		}
+		if fi, err := os.Lstat(marker); err != nil || !fi.Mode().IsRegular() || !fi.ModTime().Equal(stale) {
+			t.Errorf("%s: the shared marker is now %v, mtime %v (%v), want a regular file still at %v — %s\n script: %s\n out: %s", name, fi, fi.ModTime(), err, stale, protects, script, out)
+			_ = os.WriteFile(marker, nil, 0o600)
+			_ = os.Chtimes(marker, stale, stale)
+		}
+		if got := names(); got != sharedNames {
+			t.Errorf("%s: the shared model-catalog holds %s, was %s — %s\n script: %s\n out: %s", name, got, sharedNames, protects, script, out)
+		}
+		_ = os.RemoveAll(filepath.Join(f.cfg, claudeCacheDir+".old"))
+		_ = os.Remove(filepath.Join(f.dir, "c"))
+		_ = os.Remove(filepath.Join(f.dir, "d"))
+	}
+
+	// And the seat's own writes land in its own copies, which is the half
+	// that says the carve is a private copy and not a refusal: claude on this
+	// seat caches its catalog and keeps its own throttle.
+	privCache := filepath.Join(claudePrivateStateDir(f.home, f.dir), claudeCacheDir, "own-cc.json")
+	privMarker := filepath.Join(claudePrivateStateDir(f.home, f.dir), claudeLastCleanupFile)
+	own := "the seat's own catalog"
+	// At the TOP of the bind, not under model-catalog/: the plants above
+	// landed in the seat's own copy, as a private copy means they must, and
+	// one of them left a link at model-catalog/ there. A write through that
+	// link is refused for the right reason — it points outside every grant —
+	// and it would be measuring the seat's own vandalism, not this carve.
+	if ok, out := try("echo " + q(own) + " > " + q(filepath.Join(f.cfg, claudeCacheDir, "own-cc.json")) + " && echo swept > " + q(marker)); !ok {
+		t.Fatalf("the seat cannot write its own cache or marker: %s", out)
+	}
+	if b, err := os.ReadFile(privCache); err != nil || !strings.Contains(string(b), own) {
+		t.Errorf("the seat's own catalog cache is not in its private copy %s (%q, %v) — the carve has to leave the seat a cache of its own", privCache, b, err)
+	}
+	if b, err := os.ReadFile(privMarker); err != nil || !strings.Contains(string(b), "swept") {
+		t.Errorf("the seat's own marker write is not in its private copy %s (%q, %v)", privMarker, b, err)
+	}
+	if got := names(); got != sharedNames {
+		t.Errorf("the seat's own catalog write reached the shared model-catalog (%s, was %s) — %s", got, sharedNames, protects)
 	}
 }
