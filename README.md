@@ -12,18 +12,22 @@ posse        the harness (bespoke, this repo)
   ├─ beads   work substrate — dependency-aware task graph, agent mail,
   │          project memory        github.com/gastownhall/beads (bd)
   │
-  ├─ herdr   presentation & oversight — workspaces, live agent state
-  │          (working/blocked/idle)         herdr.dev
+  ├─ herdr   presentation & oversight — seats, live agent state
+  │  or Rex  (working/blocked/idle). One per instance (ADR 0076):
+  │          herdr.dev · superlogical.com/rex
   │
   └─ agent runtimes — claude code, codex, grok, bob, … (interchangeable labor)
 ```
 
-Sessions are herdr workspaces (`posse new/attach/kill`), work is submitted
-through the session's detected agent (`posse prompt --wait`), and ready work
-comes from the repo's beads database (`posse ready`). The cockpit
-(`posse cockpit`) is a herdr plugin pane: sessions sorted blocked-first, with
-the ready queue beneath. See [DIRECTION.md](DIRECTION.md) for the
-architecture and [NOTES.md](NOTES.md) for how it works.
+Sessions are seats in whichever multiplexer the instance runs — herdr
+workspaces, or Rex sessions on a `multiplexer: rex` home (`posse
+new/attach/kill`). Work is submitted through the session's agent (`posse
+prompt --wait`), and ready work comes from the repo's beads database (`posse
+ready`). The cockpit (`posse cockpit`) is a herdr plugin pane: sessions sorted
+blocked-first, with the ready queue beneath. It stays herdr's, so a Rex
+instance reads the fleet through `posse list` and `posse status` (ADR 0080).
+See [DIRECTION.md](DIRECTION.md) for the architecture and
+[NOTES.md](NOTES.md) for how it works.
 
 Persona design credits the [DISCOVER framework](https://discover-framework.ai/): the Persona Intent Document ([ADR 0001](docs/adr/0001-persona-intent-documents.md)) takes its name and its persona · intent · tools · guardrails · metrics binding from that framework's Specify artifact.
 
@@ -38,16 +42,28 @@ Persona design credits the [DISCOVER framework](https://discover-framework.ai/):
 
 ## Requirements
 
-- [herdr](https://herdr.dev) ≥ 0.8 with its server running
+- **a multiplexer, with its server running — herdr or Rex, one per
+  instance** (ADR 0076): [herdr](https://herdr.dev) ≥ 0.8, the default, or
+  [Rex](https://superlogical.com/rex), which is in beta. The choice is the
+  `multiplexer:` key in the instance config, and the one thing it changes is
+  where agent state comes from — herdr watches the screen; on Rex the
+  *runtime* reports its own through Rex's `program_status` protocol, which
+  narrows what may launch there (claude, codex and grok report; bob is
+  herdr-only). `posse gates <persona>` prints this instance's lists.
 - [beads](https://github.com/gastownhall/beads) (`bd`) for the work graph —
   **0.50.3 exactly**; anything from 0.51 up — brew's `beads` included —
   does not read `.beads/beads.db` at all
 - Go ≥ 1.26 to build (`make build`); two Go dependencies
   (`golang.org/x/sys`, `golang.org/x/term`)
 
-Neither substrate ships with posse and neither is optional — `posse new`
-dies on its first call without herdr. [INSTALL.md §1](INSTALL.md) is where to
-get both, pins and reasons included.
+Neither substrate ships with posse and neither is optional — `posse new` dies
+on its first call if the multiplexer this instance names is not installed.
+[INSTALL.md §1](INSTALL.md) is where to get both, pins and reasons included.
+
+`(herdr-native)` in the title and in `posse version` is the implementation
+lineage — the herdr-native rewrite that replaced the tmux-era one, see
+[DIRECTION.md](DIRECTION.md) — and not a statement about which multiplexer
+you have to run.
 
 ## Quick start
 

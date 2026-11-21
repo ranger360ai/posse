@@ -36,7 +36,7 @@ Install these first. Versions matter; two of them are pinned on purpose.
 | tool | version | why pinned | get it |
 |---|---|---|---|
 | **Go** | ≥ 1.26 | builds `posse` | `brew install go` / your distro |
-| **herdr** | ≥ 0.8 | the presentation layer; posse talks to its CLI/socket | typed below |
+| **a multiplexer** | **herdr** ≥ 0.8, or **Rex** (beta) | where the seats live; posse talks to its CLI/socket. One per instance, your choice (ADR 0076) — this runbook types herdr, the default, and *If this instance's multiplexer is Rex* below types the other | typed below |
 | **bd** (beads) | **0.50.3 exactly** | v0.51.0 replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — anything ≥ 0.51 silently forks your queue. See NOTES.md, *beads (bd) substrate*. | typed below |
 | **git** | any current | bd stores the queue in a git repo | — |
 | an **agent CLI** | at least one | the labor. `claude`, `codex`, `grok`, or `bob` — bob launches by hand today and dispatches only once step 8's detection authority is installed. | vendor |
@@ -127,6 +127,76 @@ machine this step is yours, not optional.
 $ herdr status server
 ```
 **Verify:** a running server. posse cannot create a session without one.
+
+### If this instance's multiplexer is Rex
+
+`multiplexer: rex` in the instance config (§5) runs this home's seats as Rex
+sessions instead of herdr workspaces (ADR 0076). It is one key, per instance
+and not per persona, and the one thing it changes is **where agent state comes
+from**: herdr watches the screen and tells posse what it sees, while on Rex the
+*runtime* reports its own state through Rex's OSC 7501 `program_status`
+protocol — no screen rules, no posse-written hooks.
+
+So the choice narrows which runtimes may launch at all, and posse reads that
+off the runtime table before the bead is claimed:
+
+| runtime | on Rex | what the yes or no rests on |
+|---|---|---|
+| **claude** | launches | writes its own record, no version pin |
+| **codex** | launches | through a reporter posse types onto its launch line, pinned to the release it was measured on (**0.153.4**) |
+| **grok** | launches | its own record, but only while the operator's grok config carries `program_status = "on"` under `[ui.notifications]` — posse reads that file and never writes it — and pinned to **1.0.52** |
+| **bob** | refused | no argv prompt and no record before a typed one, so it is herdr-only (ADR 0076 Amendment 4) |
+
+`posse gates <persona>` prints this instance's own lists, with the reason and
+the remedy per refusal. A dispatched launch of a refused runtime is refused
+**before** the bead is claimed and before any session exists; an interactive
+`posse new` warns and opens it anyway, because you are at the keyboard.
+
+Rex is in **beta**, and its install commands are behind a tester login
+(superlogical.com/rex → Installation; REPORTED 2026-11-21). The one route typed
+on the public page installs the single server-and-CLI binary into
+`/usr/local/bin` and no services:
+
+```sh
+$ curl -fsSL https://pkgs.superlogical.com/rex/install.sh | sh -s -- --tarball
+```
+
+Native packages — `.deb`, `.rpm`, Arch `.pkg.tar.zst`, `.apk`, Nix — are
+offered on the same page once you are logged in, and `--dry-run` previews what
+the script would do. MEASURED 2026-11-21 on the always-on Linux host: the Arch
+package (`rex 0.0.1794069975_g6c6689-1`) owns `/usr/bin/rex`, which is the path
+posse looks at off macOS.
+
+**posse does not look for `rex` on `PATH`, and it will not** — on
+Debian-family hosts `rex` is an unrelated Perl tool, so a `PATH` lookup on a
+box without Rex would not fail, it would find a *different program* and get
+driven with rex argv. posse uses the platform's install path instead:
+`/usr/bin/rex` off macOS, and the Rex server's own app bundle under `$HOME` on
+macOS. Anywhere else — the tarball route's `/usr/local/bin/rex` included — say
+so with `rex_bin:` in the instance config (`RHQ_REX_BIN` overrides both, the
+way `RHQ_HERDR_BIN` does for herdr).
+
+Start the server if it is not running — `rex server start` runs it
+persistently — and then:
+
+```sh
+$ rex version && rex server status --autostart=false
+```
+**Verify:** a version line, then a server with its endpoint, pid and session
+count. `rex version` is the spelling: `rex --version` answers `unknown flag`
+and `rex -v` is the verbosity counter, which prints the usage screen and exits
+0 (MEASURED 2026-11-21 on rex 0.0.1794069975-g6c6689 — the vendor's Debian
+section says `rex -v` prints the version, and on this build it does not).
+`--autostart=false` because `rex`'s default starts a missing local server and a
+fresh server holds no sessions: an autostarted read answers "no such session"
+for every seat this instance has recorded. Every read posse makes passes it.
+
+The rest of this runbook is herdr's wherever it names herdr. A Rex home skips
+§3's cockpit registration — the cockpit is a herdr plugin pane and stays one,
+so on Rex the fleet view is `posse list` and `posse status` (ADR 0080) — and it
+arms the dispatch loop from a systemd user unit rather than herdr's
+`[[startup]]` hook (§12, *On a host with no herdr*). Sessions, meta files,
+worktrees, gates, the bd queue and kill-and-land are the same on both.
 
 ---
 

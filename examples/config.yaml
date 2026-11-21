@@ -118,13 +118,32 @@ default_emoji: ⚙️
 # screen rules on Rex and no posse-written hooks.
 #
 # So a runtime that does not write that record cannot be read there at all,
-# and posse refuses to launch one: MEASURED 2026-10-31 on Rex Beta 0.1.0,
-# claude 2.1.314 reports (idle at launch, working then done across a prompt)
-# and grok 1.0.52, codex 0.153.4 and bob do not. A dispatched launch of one of
-# those is refused before the bead is claimed and before any session exists,
-# with a line that says to run it on herdr; an interactive `posse new` warns
-# and opens it anyway, because you are at the keyboard. `posse gates <persona>`
-# prints both lists for this instance.
+# and posse refuses to launch one. Three of the four built-ins report today,
+# and what a yes rests on differs per runtime (ADR 0076 §3 and its amendments):
+#
+#   claude  the NATIVE yes, MEASURED 2026-10-31 on Rex Beta 0.1.0 with claude
+#           2.1.314 — idle at launch, working then done across a prompt. Its
+#           own output, so no version pin.
+#   codex   ADMITTED THROUGH A ROUTE (Amendment 2): posse's reporter rides the
+#           launch line as session-flag hooks, with the trust codex reported
+#           typed beside it. The route rests on an `[experimental]` RPC, so it
+#           carries the release it was measured on — codex-cli 0.153.4 — and a
+#           codex reporting another one is refused before the claim.
+#   grok    ADMITTED BY ITS OWN REPORT, conditionally (Amendment 3): grok
+#           writes the record, but only while the operator's grok config
+#           carries `program_status = "on"` under `[ui.notifications]`. posse
+#           READS that file and never writes it; `auto` (the shipped default)
+#           and `off` are both MEASURED silent, and unreadable refuses too.
+#           Pinned to grok 1.0.52, because grok's own validator disowns the key.
+#   bob     HERDR-ONLY (Amendment 4): `chat` takes no argv prompt, so no record
+#           exists before a typed one. No route admits it.
+#
+# A dispatched launch of a refused runtime is refused before the bead is
+# claimed and before any session exists, with a line that says what to do —
+# run it on a herdr instance, re-measure a moved version, or add the grok line.
+# An interactive `posse new` warns and opens it anyway, because you are at the
+# keyboard. `posse gates <persona>` prints this instance's lists, one per
+# reason.
 #
 # Everything else is unchanged: session names, meta files, worktrees, gates,
 # the bd queue, kill-and-land. `posse list` says which one you are on.
