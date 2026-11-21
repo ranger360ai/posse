@@ -329,3 +329,95 @@ func TestLiveWallWatchDiscardsAPromptLargerThanTheTerminalQueue(t *testing.T) {
 	}
 	wwNothingReachesTheShell(t, done, slave)
 }
+
+// ─── a REFUSED seat's durable verdict (ranger-base-r9slg) ──────────────────
+//
+// The watcher's pre-release refusals — "refusing to start the seat
+// unwatched", "killing the seat rather than running it unwatched" — printed
+// to the PANE alone, and since ranger-base-1l1en that pane closes with the
+// watcher: a seat refused on one of those lines left the operator a seat that
+// vanished with the reason nowhere. The same loss ranger-base-pfcci exists to
+// close, one branch over; pfcci scoped itself to the respond path's three
+// say() lines and the backstop's equivalent, and that is what landed, so this
+// was residual rather than an escape.
+//
+// These three arms need no bwrap, which is why they are here and not in the
+// live file: the refusals they drive all happen before bwrap has a seat.
+// TestWallWatchDiscardsTypedInputWhenTheSeatNeverStarts is the model.
+// The kill arms (the mount table, the backstop record, the poll) take a real
+// seat and ride the live family's fixture; what they share with these is the
+// one `refuse` closure, so a line that stopped reaching the file would stop
+// reaching it here too.
+func TestWallWatchARefusedSeatLeavesItsReasonOnDisk(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name   string
+		mounts func(t *testing.T, dir, path string)
+		bwrap  []string
+		want   string
+	}{
+		{"the mounts file cannot be read", func(t *testing.T, dir, path string) {
+			// Nothing at the path at all: the read fails before anything else.
+		}, []string{"/bin/false"}, "refusing to start the seat unwatched"},
+		{"the mounts file cannot be parsed", func(t *testing.T, dir, path string) {
+			if err := os.WriteFile(path, []byte("not a wall list\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, []string{"/bin/false"}, "refusing to start the seat unwatched"},
+		{"bwrap cannot be started", func(t *testing.T, dir, path string) {
+			if err := os.WriteFile(path, wallWatchMountsBytes([]WallWatchMount{{Kind: WallWatchDeny, Path: filepath.Join(dir, "x")}}), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, []string{filepath.Join(string(filepath.Separator), "nonexistent-bwrap-ranger-base-r9slg")}, "cannot start bwrap"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			mounts := filepath.Join(dir, "bwrap.mounts")
+			c.mounts(t, dir, mounts)
+			af, err := os.Open(dir) // fd 3 is only read by bwrap, which never runs here
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer af.Close()
+			var out strings.Builder
+			got := runWallWatch(wallWatchRun{
+				Opts:   wallWatchOpts{Mounts: mounts, Seat: "seat-r9slg", Dir: dir, Bwrap: c.bwrap},
+				Args:   af,
+				Stdout: &out, Stderr: &out,
+				Store: &fakeWallWatchStore{},
+			})
+			if got == 0 {
+				t.Fatalf("exit = 0 for a seat that was refused:\n%s", out.String())
+			}
+			// CONTROL: the pane still says it. The durable copy is a second
+			// reader, never a replacement for the one in front of an
+			// operator who is watching.
+			if !strings.Contains(out.String(), c.want) {
+				t.Fatalf("the pane does not carry %q, so this arm did not drive the refusal it is about:\n%s", c.want, out.String())
+			}
+			paths, err := filepath.Glob(filepath.Join(wallWatchRecordDir(mounts), "*.verdict"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(paths) != 1 {
+				t.Fatalf("want one verdict file beside %s, got %v — the reason went to the pane alone, and that pane closes with this process (ranger-base-r9slg)", mounts, paths)
+			}
+			v := mustRead(t, paths[0])
+			if !strings.Contains(v, c.want) {
+				t.Errorf("the durable verdict does not carry the refusal:\n%s", v)
+			}
+			// The header is what makes the file stand alone for a reader who
+			// comes to it after the pane is gone.
+			for _, want := range []string{"posse wall-watch verdict ·", "seat seat-r9slg", "dir " + dir, "watcher pid " + strconv.Itoa(os.Getpid())} {
+				if !strings.Contains(v, want) {
+					t.Errorf("the verdict's header does not carry %q:\n%s", want, v)
+				}
+			}
+			// And no backstop record: the seat was never released.
+			if rs, _ := filepath.Glob(filepath.Join(wallWatchRecordDir(mounts), "*.json")); len(rs) != 0 {
+				t.Errorf("a seat that was never released left a backstop record: %v", rs)
+			}
+		})
+	}
+}

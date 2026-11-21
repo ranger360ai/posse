@@ -806,6 +806,25 @@ func wallWatchVerdictHeader(d wallWatchDetach) string {
 		d.At.UTC().Format(time.RFC3339Nano), d.Seat, d.Dir, d.BwrapPid, d.SeatPid)
 }
 
+// wallWatchRefusedVerdictHeader opens the block of a REFUSAL — a watcher that
+// would not release the seat, or killed it before its command ran, or could
+// not see it any more (ranger-base-r9slg). Its own header because the detach
+// one's pids are the thing it cannot always carry: at the first of those
+// refusals there is no bwrap and no seat, and a header printing 0 for either
+// is a number a reader would try to look up. They are named as they become
+// known and left out until then.
+func wallWatchRefusedVerdictHeader(seat, dir string, watcher, bwrapPid, seatPid int, at time.Time) string {
+	s := fmt.Sprintf("── posse wall-watch verdict · %s · seat %s · dir %s · watcher pid %d",
+		at.UTC().Format(time.RFC3339Nano), seat, dir, watcher)
+	if bwrapPid > 0 {
+		s += fmt.Sprintf(" · bwrap pid %d", bwrapPid)
+	}
+	if seatPid > 0 {
+		s += fmt.Sprintf(" · seat pid %d", seatPid)
+	}
+	return s
+}
+
 func wallWatchOrphanVerdictHeader(r wallWatchRecord, at time.Time) string {
 	return fmt.Sprintf("── posse wall-watch verdict · %s · seat %s · dir %s · watcher pid %d (gone) · seat pid %d",
 		at.UTC().Format(time.RFC3339Nano), r.Seat, r.Dir, r.WatcherPid, r.SeatPid)

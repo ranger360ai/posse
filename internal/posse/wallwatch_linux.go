@@ -56,25 +56,61 @@ func runWallWatch(r wallWatchRun) int {
 	if r.PollInterval == 0 {
 		r.PollInterval = wallWatchInterval
 	}
+	// The two files this watcher keeps beside its mounts file: the backstop's
+	// record (written at the release, far below) and the durable verdict
+	// (ranger-base-pfcci). Both paths are composed from the mounts file and
+	// this pid, which are known at entry — nothing below decides them — so
+	// they are settled HERE, ahead of every refusal.
+	//
+	// AHEAD OF EVERY REFUSAL, and that is ranger-base-r9slg. The nine lines
+	// below that end the seat — or run it where nobody can see it — printed
+	// to the PANE alone, and since ranger-base-1l1en that pane closes with
+	// this process: a seat refused on one of them left the operator a seat
+	// that vanished with the reason nowhere, which is the same loss
+	// ranger-base-pfcci exists to close, one branch over. pfcci scoped itself
+	// to the respond path's say() lines and the backstop's equivalent, so
+	// these were residual rather than an escape.
+	self := os.Getpid()
+	record := filepath.Join(wallWatchRecordDir(r.Opts.Mounts), strconv.Itoa(self)+".json")
+	verdict := wallWatchVerdictPath(record)
+	// The pids are named in the header as they become known: at the first
+	// refusal there is no bwrap and no seat, and a header printing 0 for
+	// either is a number a reader would try to look up.
+	bwrapPid, seatPid := 0, 0
+	// refuse says one line to the durable verdict and then to the pane, in
+	// that order and for respond()'s reason: the pane may not outlive the
+	// next line. One line per refusal, each its own block — the header
+	// carries the seat, the dir and the when, so the file stands alone for a
+	// reader who comes to it after the pane is gone.
+	refuse := func(format string, a ...any) {
+		v := &wallWatchSaid{Path: verdict, Pane: func(s string) { say("%s", s) }}
+		v.note(wallWatchRefusedVerdictHeader(r.Opts.Seat, r.Opts.Dir, self, bwrapPid, seatPid, now()))
+		v.say(format, a...)
+		v.close()
+	}
 	b, err := os.ReadFile(r.Opts.Mounts)
 	if err != nil {
-		say("cannot read the walls to hold this seat to (%v) — refusing to start the seat unwatched (ranger-base-0qpsw D1)", err)
+		refuse("cannot read the walls to hold this seat to (%v) — refusing to start the seat unwatched (ranger-base-0qpsw D1)", err)
 		return 2
 	}
 	watch, err := parseWallWatchMounts(b)
 	if err != nil {
-		say("%v — refusing to start the seat unwatched", err)
+		refuse("%v — refusing to start the seat unwatched", err)
 		return 2
 	}
 
+	// The two pipe failures are refusals like every other one here: no seat
+	// starts, and the bead ranger-base-r9slg listed nine lines rather than
+	// eleven only because these two say less. A reader who finds a pane that
+	// closed with nothing needs the same file either way.
 	infoR, infoW, err := os.Pipe()
 	if err != nil {
-		say("pipe: %v", err)
+		refuse("pipe: %v — refusing to start the seat unwatched", err)
 		return 2
 	}
 	blockR, blockW, err := os.Pipe()
 	if err != nil {
-		say("pipe: %v", err)
+		refuse("pipe: %v — refusing to start the seat unwatched", err)
 		return 2
 	}
 	bw := wallWatchBwrapArgv(r.Opts.Bwrap)
@@ -96,9 +132,10 @@ func runWallWatch(r wallWatchRun) int {
 		defer signal.Stop(sigs)
 	}
 	if err := cmd.Start(); err != nil {
-		say("cannot start bwrap: %v", err)
+		refuse("cannot start bwrap: %v", err)
 		return 2
 	}
+	bwrapPid = cmd.Process.Pid
 	// From here on every return hands the terminal back to the pane's shell,
 	// which is OUTSIDE the cage, so whatever was typed at the seat and not
 	// read by it goes with nobody (ranger-base-heypq).
@@ -144,15 +181,7 @@ func runWallWatch(r wallWatchRun) int {
 		return <-done
 	}
 	d := wallWatchDetach{Seat: r.Opts.Seat, Dir: r.Opts.Dir, BwrapPid: cmd.Process.Pid, SeatPid: info.ChildPid}
-
-	// The two files this watcher keeps beside its mounts file: the
-	// backstop's record (written at the release, below) and the durable
-	// verdict (ranger-base-pfcci). Settled here, before the baseline, so a
-	// wall that is already off AT LAUNCH has somewhere to say so — that
-	// response happens before the record is ever written.
-	self := os.Getpid()
-	record := filepath.Join(wallWatchRecordDir(r.Opts.Mounts), strconv.Itoa(self)+".json")
-	verdict := wallWatchVerdictPath(record)
+	seatPid = info.ChildPid // every refusal below this line can name it
 
 	respond := func(missing []WallWatchMount, atLaunch bool) int {
 		d.At, d.Missing, d.AtLaunch = now(), missing, atLaunch
@@ -190,7 +219,7 @@ func runWallWatch(r wallWatchRun) int {
 	// earlier, it would render paths against the root the child had before
 	// its pivot, and its first read would be the host's table.
 	if err := wallWatchSeatReady(info.ChildPid, 5); err != nil {
-		say("%v — killing the seat rather than running it unwatched", err)
+		refuse("%v — killing the seat rather than running it unwatched", err)
 		_, _ = wallWatchKill(cmd.Process.Pid, info.MntNamespace)
 		blockW.Close()
 		<-done
@@ -198,7 +227,7 @@ func runWallWatch(r wallWatchRun) int {
 	}
 	mi, err := os.Open("/proc/" + strconv.Itoa(info.ChildPid) + "/mountinfo")
 	if err != nil {
-		say("cannot open the seat's mount table (%v) — killing the seat rather than running it unwatched", err)
+		refuse("cannot open the seat's mount table (%v) — killing the seat rather than running it unwatched", err)
 		_, _ = wallWatchKill(cmd.Process.Pid, info.MntNamespace)
 		blockW.Close()
 		<-done
@@ -207,7 +236,7 @@ func runWallWatch(r wallWatchRun) int {
 	defer mi.Close()
 	live, err := readMountinfo(mi)
 	if err != nil {
-		say("cannot read the seat's mount table (%v) — killing the seat rather than running it unwatched", err)
+		refuse("cannot read the seat's mount table (%v) — killing the seat rather than running it unwatched", err)
 		_, _ = wallWatchKill(cmd.Process.Pid, info.MntNamespace)
 		blockW.Close()
 		<-done
@@ -230,7 +259,7 @@ func runWallWatch(r wallWatchRun) int {
 		})
 	}
 	if serr != nil {
-		say("cannot write this seat's record for the dispatch backstop (%v) — killing the seat rather than running it where only this process can see it (ranger-base-0qpsw D3)", serr)
+		refuse("cannot write this seat's record for the dispatch backstop (%v) — killing the seat rather than running it where only this process can see it (ranger-base-0qpsw D3)", serr)
 		_, _ = wallWatchKill(cmd.Process.Pid, info.MntNamespace)
 		blockW.Close()
 		<-done
@@ -239,7 +268,7 @@ func runWallWatch(r wallWatchRun) int {
 	defer os.Remove(record)
 	// Every wall is up: let the seat's command run.
 	if _, err := blockW.Write([]byte{1}); err != nil {
-		say("cannot release the seat (%v)", err)
+		refuse("cannot release the seat (%v)", err)
 	}
 	blockW.Close()
 
@@ -266,7 +295,7 @@ func runWallWatch(r wallWatchRun) int {
 		fds[0].Revents = 0
 		_, perr := unix.Poll(fds, int(r.PollInterval/time.Millisecond))
 		if perr != nil && !errors.Is(perr, unix.EINTR) {
-			say("poll on the seat's mount table failed (%v) — killing the seat rather than running it unwatched", perr)
+			refuse("poll on the seat's mount table failed (%v) — killing the seat rather than running it unwatched", perr)
 			_, _ = wallWatchKill(cmd.Process.Pid, info.MntNamespace)
 			return <-done
 		}
