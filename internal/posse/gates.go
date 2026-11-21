@@ -1625,8 +1625,9 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 
 // ─── The continue-wall arm (ranger-base-05aa1) ───────────────────────────────
 
-// continueWallVerb is one of the four git subcommands whose `--continue`
-// writes a COMMIT with the word `commit` nowhere in its argv.
+// continueWallVerb is one of the four git subcommands that ADVANCE an
+// operation already in progress, writing a COMMIT with the word `commit`
+// nowhere in its argv.
 //
 // THE HOLE, MEASURED 2026-11-15 (git 2.56.0, linux 7.2.15, this box;
 // scripts under the bead, the table in docs/notes.d/ranger-base-05aa1.md).
@@ -1648,6 +1649,36 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 // commits left to replay), and those exemptions cover `--continue` exactly
 // as they cover a typed `git commit`.
 //
+// AMENDED 2026-11-21 (ranger-base-6zw05): `--continue` IS NOT THE ONLY
+// OPTION THAT ADVANCES ONE. The table was keyed on the VERB with one
+// hand-spelled option, so `git cherry-pick --skip` and `git rebase --skip`
+// went through this wall unrefused at every armed seat — reproduced through
+// a rendered shim before the fix, which is why this is a live defect and
+// not test polish. MEASURED 2026-11-21 (git 2.56.0, linux 7.2.15-1-omarchy,
+// this box; one fresh repo per row, scripts and every reading in
+// docs/notes.d/ranger-base-6zw05.md), the same conflict window with another
+// actor's unrelated file staged and a SECOND operation left in the sequence
+// so the skip has something to replay:
+//
+//	typed                     commit made   the other actor's staged file
+//	git cherry-pick --skip    YES           DESTROYED (index and disk)
+//	git revert --skip         YES           DESTROYED (index and disk)
+//	git rebase --skip         YES           DESTROYED (index and disk)
+//	git merge --skip          — merge has no --skip (`unknown option`)
+//
+// `--skip` is a `reset --hard` followed by the rest of the sequence, so it
+// cannot sweep that file INTO its commit the way `--continue` does: it
+// deletes the file first and then commits what is left to replay. The
+// COMMIT is this wall's business — it is a commit the PID's `git commit`
+// rule never sees, which is the rule this arm realizes. The DESTRUCTION is
+// not, and `--abort` shares it (residual 5 below).
+//
+// So the table is keyed on the OPTION as well as the verb, and the option
+// set is asked of git the way the verb set is
+// (TestQAContinueWallOptionSetIsGitsInProgressClass): every option git
+// treats as meaningful ONLY mid-operation is either walled in Advance or
+// named in Stood with the measured reason it commits nothing.
+//
 // WHY THE L1 HALF HAS TO READ THESE VERBS. `Bash(git commit unless --)`
 // matches the verb `commit` and nothing else, and none of these four can be
 // path-limited at all — `fatal: cannot do a partial commit during a merge`
@@ -1657,8 +1688,10 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 // and runtime"; in a hook-less shared repo (ranger-core) L1 was the whole
 // wall for these four and was not there at all.
 //
-// WHAT IT REFUSES AND WHAT IT DOES NOT. Only `--continue`, and only in a
-// checkout whose index is shared. The clean forms need no wall: MEASURED
+// WHAT IT REFUSES AND WHAT IT DOES NOT. Only the options that ADVANCE an
+// operation already in progress — `--continue` for all four and `--skip`
+// for the three that have one — and only in a checkout whose index is
+// shared. The clean forms need no wall: MEASURED
 // the same day, `git merge --no-ff`, `git cherry-pick <sha>` and
 // `git revert <sha>` all REFUSE TO START with anything staged ("your local
 // changes would be overwritten by merge/cherry-pick/revert"), so there is
@@ -1687,36 +1720,99 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 // `rev-parse` calls — the adjudication, not the command's own effect, the
 // same trade renderHookSkipEnvCall's alias lookup already makes
 // (TestQAPIDDenyAliasLookupIsTheOnlyExec pins both).
+// (5) An in-progress-only option that makes NO commit but DESTROYS another
+// persona's uncommitted work is past this wall by class, because the rule
+// it realizes is about a commit. MEASURED 2026-11-21 in the same window:
+// `--abort` clears the other actor's staged entry and restores their file
+// on disk for all four verbs, and `--skip` does the same before its own
+// commit. `--abort` is also the way out AGENTS.md prescribes, so a wall
+// here would refuse the route the refusal itself names. Whether the shared
+// checkout gets a wall for destruction at all — `reset --hard`,
+// `checkout -f`, `restore`, `clean -fd` and this `--abort` are one class,
+// and none of them is walled today — is the architecture lane's
+// (ranger-base-hkp3s).
 type continueWallVerb struct {
 	// Verb is the subcommand as git spells it.
 	Verb string
-	// Min is the SHORTEST prefix of `--continue` this verb's own
-	// parse-options resolves, measured one prefix at a time against the
-	// real git (TestQAContinueWallMinimaAreGitsBoundary asks git itself).
-	// git 2.56.0: `merge` and `rebase` resolve `--con` (`--co` is ambiguous
-	// with `--commit` and `--committer-date-is-author-date`), while
-	// `cherry-pick` and `revert` resolve NOTHING shorter than the full
-	// `--continue` — their sequencer options are not abbreviated at all,
-	// every shorter prefix answering with the usage line. An over-short
-	// minimum would render arms git refuses itself; a too-long one is a
-	// hole, so the direction of error is the same as a spoiler's LongMin
-	// (ranger-base-90y3c) and the pin is asked the same way.
-	Min string
+	// Advance are the options that carry an in-progress operation forward,
+	// and so are the ones that commit. Order is the rendered order.
+	Advance []continueWallOpt
+	// Stood is the rest of git's in-progress-only class for this verb.
+	Stood []continueWallStood
 	// Way completes the refusal's second line: the route that is not
 	// refused, named out of AGENTS.md rather than invented here.
 	Way string
 }
 
+// continueWallOpt is one option this wall refuses for one verb.
+type continueWallOpt struct {
+	// Long is the option as git spells it.
+	Long string
+	// Min is the SHORTEST prefix of Long this verb's own parse-options
+	// resolves, measured one prefix at a time against the real git
+	// (TestQAContinueWallMinimaAreGitsBoundary asks git itself).
+	// git 2.56.0: `merge` and `rebase` resolve `--con` (`--co` is ambiguous
+	// with `--commit` and `--committer-date-is-author-date`), while
+	// `cherry-pick` and `revert` resolve NOTHING shorter than the full
+	// `--continue` — their sequencer options are not abbreviated at all,
+	// every shorter prefix answering with the usage line. `--skip` reads
+	// the same way: `--sk` for `rebase` (`--s` is ambiguous with
+	// `--strategy` and `--strategy-option`) and the full `--skip` for
+	// `cherry-pick` and `revert`. An over-short minimum would render arms
+	// git refuses itself; a too-long one is a hole, so the direction of
+	// error is the same as a spoiler's LongMin (ranger-base-90y3c) and the
+	// pin is asked the same way.
+	Min string
+}
+
+// continueWallStood is an in-progress-only option this wall deliberately
+// does NOT refuse. It is here rather than left out so the option set stays
+// a TOTAL partition of what git says is meaningful only mid-operation: an
+// option git grows reds the derivation pin instead of being silently out.
+type continueWallStood struct {
+	// Long is the option as git spells it.
+	Long string
+	// Why is the measured reason it makes no commit, which is the only
+	// reason that excuses an option from this wall.
+	Why string
+}
+
 // continueWallVerbs is that table. Order is the rendered order.
+//
+// Every Why below is MEASURED 2026-11-21 (git 2.56.0, this box) in the
+// conflict window with another actor's unrelated file staged:
+// docs/notes.d/ranger-base-6zw05.md has the readings.
 var continueWallVerbs = []continueWallVerb{
-	{"merge", "--con",
-		"the launcher merges and the operator pushes (AGENTS.md, \"Landing the plane\"): do the merge in your own session worktree, where the index is yours and this wall stands down — or end it here with `git merge --abort`."},
-	{"cherry-pick", "--continue",
-		"do the cherry-pick in your own session worktree, where the index is yours and this wall stands down — or end it here with `git cherry-pick --abort`."},
-	{"revert", "--continue",
-		"in the shared checkout a revert is two steps (AGENTS.md, \"Landing the plane\"): `git revert --no-commit <sha>`, then `git commit -F - -- <the paths it touched>`. A path-limited commit finishes a CONFLICTED revert outright, so `--abort` is not needed first."},
-	{"rebase", "--con",
-		"the shared checkout never rebases (AGENTS.md, \"Landing the plane\": never `--amend`, `rebase` or `reset` there): `git rebase --abort` here and do it in your own session worktree."},
+	{Verb: "merge",
+		Advance: []continueWallOpt{{"--continue", "--con"}},
+		Stood: []continueWallStood{
+			{"--abort", "resets to the pre-merge HEAD and makes no commit; it is the way out AGENTS.md prescribes, and the refusal above names it"},
+			{"--quit", "drops MERGE_HEAD and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
+		},
+		Way: "the launcher merges and the operator pushes (AGENTS.md, \"Landing the plane\"): do the merge in your own session worktree, where the index is yours and this wall stands down — or end it here with `git merge --abort`."},
+	{Verb: "cherry-pick",
+		Advance: []continueWallOpt{{"--continue", "--continue"}, {"--skip", "--skip"}},
+		Stood: []continueWallStood{
+			{"--abort", "cancels the sequence and makes no commit; the way out AGENTS.md prescribes"},
+			{"--quit", "ends the sequence and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
+		},
+		Way: "do the cherry-pick in your own session worktree, where the index is yours and this wall stands down — or end it here with `git cherry-pick --abort`."},
+	{Verb: "revert",
+		Advance: []continueWallOpt{{"--continue", "--continue"}, {"--skip", "--skip"}},
+		Stood: []continueWallStood{
+			{"--abort", "cancels the sequence and makes no commit; the way out AGENTS.md prescribes"},
+			{"--quit", "ends the sequence and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
+		},
+		Way: "in the shared checkout a revert is two steps (AGENTS.md, \"Landing the plane\"): `git revert --no-commit <sha>`, then `git commit -F - -- <the paths it touched>`. A path-limited commit finishes a CONFLICTED revert outright, so `--abort` is not needed first."},
+	{Verb: "rebase",
+		Advance: []continueWallOpt{{"--continue", "--con"}, {"--skip", "--sk"}},
+		Stood: []continueWallStood{
+			{"--abort", "checks the original branch back out and makes no commit; the way out AGENTS.md prescribes"},
+			{"--quit", "drops the rebase state and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
+			{"--edit-todo", "rewrites the todo list and exits; no commit, and the index is untouched"},
+			{"--show-current-patch", "prints the patch being applied; read-only"},
+		},
+		Way: "the shared checkout never rebases (AGENTS.md, \"Landing the plane\": never `--amend`, `rebase` or `reset` there): `git rebase --abort` here and do it in your own session worktree."},
 }
 
 // renderContinueWall writes the arm, or "" when it does not apply.
@@ -1735,14 +1831,17 @@ func renderContinueWall(cmd, real, dateBin string, rules []shimRule) string {
 	}
 	q := shQuote(real)
 	var b strings.Builder
-	b.WriteString("# ranger-base-05aa1: the verbs that COMMIT without saying `commit`.\n")
-	b.WriteString("# merge/cherry-pick/revert/rebase --continue take the WHOLE index and git\n")
-	b.WriteString("# refuses them a pathspec, so the PID's `git commit` rule never sees the\n")
-	b.WriteString("# commit they make and there is no safe form to demand. Measured: all four\n")
-	b.WriteString("# swept another actor's staged file, and the L3 hook catches only revert.\n")
+	b.WriteString("# ranger-base-05aa1, ranger-base-6zw05: the verbs that COMMIT without\n")
+	b.WriteString("# saying `commit`. merge/cherry-pick/revert/rebase --continue, and the\n")
+	b.WriteString("# --skip of the three that have one, ADVANCE an operation already in\n")
+	b.WriteString("# progress: they take the WHOLE index and git refuses them a pathspec, so\n")
+	b.WriteString("# the PID's `git commit` rule never sees the commit they make and there is\n")
+	b.WriteString("# no safe form to demand. Measured: every --continue swept another actor's\n")
+	b.WriteString("# staged file, every --skip destroyed it and committed what was left, and\n")
+	b.WriteString("# the L3 hook catches only revert.\n")
 	b.WriteString("# A linked worktree's index is the seat's own, so this stands down there.\n")
 	b.WriteString("posse_cw_refuse() {\n")
-	b.WriteString("  echo \"refused by posse gate: git $* — git $posse_cw_verb --continue COMMITS the whole index and cannot be path-limited ('fatal: cannot do a partial commit during a $posse_cw_verb'), so the commit wall never sees it; this checkout's index is shared by every persona (rule: commitwall:sequencer-continue, ranger-base-05aa1)\" >&2\n")
+	b.WriteString("  echo \"refused by posse gate: git $* — git $posse_cw_verb $posse_cw_opt ADVANCES an in-progress $posse_cw_verb: it COMMITS, taking the whole index (--continue) or resetting it hard first (--skip), and cannot be path-limited either way ('fatal: cannot do a partial commit during a $posse_cw_verb'), so the commit wall never sees it; this checkout's index is shared by every persona (rule: commitwall:sequencer-continue, ranger-base-05aa1 ranger-base-6zw05)\" >&2\n")
 	b.WriteString("  echo \"  $posse_cw_way\" >&2\n")
 	fmt.Fprintf(&b, "  echo \"%s git $* (commitwall: sequencer-continue)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n  exit 1\n}\n", refusalTimestamp(dateBin))
 
@@ -1750,7 +1849,7 @@ func renderContinueWall(cmd, real, dateBin string, rules []shimRule) string {
 	// keeping the count of words in front of the verb so the rev-parse below
 	// can be asked about the SAME repo the verb ran against (`git -C <repo>
 	// merge --continue`). posse_cw_skip counts the globals and NOT the verb.
-	b.WriteString("posse_cw_hit() {\n  posse_cw_verb=; posse_cw_skip=0\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
+	b.WriteString("posse_cw_hit() {\n  posse_cw_verb=; posse_cw_opt=; posse_cw_skip=0\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
 	if pairs := globalValueOpts[cmd]; len(pairs) > 0 {
 		quoted := make([]string, 0, len(pairs))
 		for _, o := range pairs {
@@ -1766,13 +1865,20 @@ func renderContinueWall(cmd, real, dateBin string, rules []shimRule) string {
 	b.WriteString("    *) return 1 ;;\n  esac\n  shift\n")
 	// Past `--` every word is an operand, and a file named `--continue` is a
 	// file — the same reading renderSpoiled's `--) return 1` arm has.
+	//
+	// The matched option is recorded as git SPELLS it, not as it was typed:
+	// the refusal's first words already echo the line (`git $*`), so what
+	// the second clause owes the reader is which option of git's that
+	// abbreviation resolved to.
 	b.WriteString("  while [ $# -gt 0 ]; do\n    case \"$posse_cw_verb/$1\" in\n      */--) return 1 ;;\n")
 	for _, v := range continueWallVerbs {
-		arms := longArms("--continue", v.Min)
-		for i, a := range arms {
-			arms[i] = v.Verb + "/" + a
+		for _, o := range v.Advance {
+			arms := longArms(o.Long, o.Min)
+			for i, a := range arms {
+				arms[i] = v.Verb + "/" + a
+			}
+			fmt.Fprintf(&b, "      %s) posse_cw_opt=%s; return 0 ;;\n", strings.Join(arms, "|"), shQuote(o.Long))
 		}
-		fmt.Fprintf(&b, "      %s) return 0 ;;\n", strings.Join(arms, "|"))
 	}
 	b.WriteString("    esac\n    shift\n  done\n  return 1\n}\n")
 

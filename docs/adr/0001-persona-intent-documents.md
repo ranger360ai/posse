@@ -10,9 +10,11 @@ struck; `## Intents` mode is recorded as governing nothing since ADR 0006
 §4 — ranger-base-mppjc) · amended 2026-11-15 (the seeded rule's own
 Consequences bullet: it matches the verb `commit`, and four verbs commit
 without saying it — ranger-base-05aa1) · amended 2026-11-21 (the same
-bullet: DESTRUCTION of another persona's uncommitted work in the shared
-checkout stays prose at an accepted cost, and the prescribed exit from a
-conflicted sequencer becomes `--quit`, not `--abort` —
+bullet: `--skip` advances an operation too, so the wall's option set is
+asked of git rather than typed — ranger-base-6zw05) · amended 2026-11-21
+(the same bullet again: DESTRUCTION of another persona's uncommitted work
+in the shared checkout stays prose at an accepted cost, and the prescribed
+exit from a conflicted sequencer becomes `--quit`, not `--abort` —
 ranger-base-hkp3s) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
@@ -280,6 +282,23 @@ part still live as consequence rather than history.)*
   clean forms need no rule: git refuses to start a merge, cherry-pick or
   revert over a dirty index (measured), so the conflict window was the whole
   hole. `docs/notes.d/ranger-base-05aa1.md` has both tables.
+  **Amended again 2026-11-21 (ranger-base-6zw05): `--continue` was not the
+  whole of it, and the realization said four verbs where it meant four verbs
+  and one option.** `--skip` advances an operation too: it resets hard and
+  then commits whatever is left to replay, so `git cherry-pick --skip`,
+  `git revert --skip` and `git rebase --skip` made a commit this rule never
+  saw, at every seat where the wall was armed (MEASURED 2026-11-21, git
+  2.56.0, reproduced through a rendered shim; `merge` has no `--skip`). The
+  defect was the KEY, not the entry: the table derived its VERB set from git
+  and hand-spelled the one option. So the option set is asked of git the same
+  way — every option git treats as meaningful only mid-operation is either
+  refused or carries the measured reason it commits nothing — and the pin
+  reds on an option git grows rather than on the day somebody's work is
+  swept by it. What this rule still does NOT reach is destruction without a
+  commit: `--abort` wipes another persona's staged entry exactly as `--skip`
+  does, and is the way out this gate's refusal names. That is
+  ranger-base-hkp3s, not this bullet, because the rule being realized here
+  is about a commit. `docs/notes.d/ranger-base-6zw05.md` has the readings.
   **Decided 2026-11-21 (ranger-base-hkp3s): the rule is about a COMMIT,
   and L1 does not grow a second wall for DESTRUCTION; it stops
   recommending it instead.** In the shared checkout, `reset --hard`,

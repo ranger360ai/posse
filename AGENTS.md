@@ -97,22 +97,39 @@ stall that day, and every one of them a typing habit.
   already staged it (rangerhq-lrnp); undo that path-limited with
   `git restore --source=HEAD --staged --worktree -- <those paths>`, never
   `git reset --hard`.
-- **In the shared checkout, `merge`/`cherry-pick`/`revert`/`rebase
-  --continue` are refused, and that is the gate and not a typo**
-  (ranger-base-05aa1). Those four write a commit with the word `commit`
-  nowhere in the line, take the whole index, and cannot be path-limited at
-  all — git answers `fatal: cannot do a partial commit during a merge` — so
-  the commit wall's `git commit` rule never saw them. MEASURED 2026-11-15
-  (git 2.56.0): with another persona's file staged during the conflict
-  window, all four committed it, and the `prepare-commit-msg` hook caught
-  only `revert`. The L1 shim reads the four verbs now, in any prefix git
-  resolves (`git merge --con` is `--continue`). **A linked worktree is NOT
-  refused** — its index is yours alone — so the way through is almost always
-  "do it in your own session worktree"; otherwise `--abort` here, and for a
-  revert the two-step form the bullet above prescribes, whose path-limited
-  commit finishes a conflicted revert outright. The clean verbs are
-  untouched: git already refuses to start a merge, cherry-pick or revert
-  over a dirty index.
+- **In the shared checkout, `merge`/`cherry-pick`/`revert`/`rebase`
+  `--continue` AND `--skip` are refused, and that is the gate and not a
+  typo** (ranger-base-05aa1, ranger-base-6zw05). Those verbs write a commit
+  with the word `commit` nowhere in the line, take the whole index, and
+  cannot be path-limited at all — git answers `fatal: cannot do a partial
+  commit during a merge` — so the commit wall's `git commit` rule never saw
+  them. MEASURED 2026-11-15 (git 2.56.0): with another persona's file staged
+  during the conflict window, all four `--continue` forms committed it, and
+  the `prepare-commit-msg` hook caught only `revert`. **`--skip` is the same
+  hole and stayed open six days longer** (MEASURED 2026-11-21, same box and
+  git): it resets hard — destroying that persona's staged entry and their
+  edit on disk — and then commits whatever is left to replay, so
+  `git cherry-pick --skip`, `git revert --skip` and `git rebase --skip` went
+  through the armed wall unrefused. The L1 shim reads the verb AND the
+  option now, in any prefix git resolves (`git merge --con` is
+  `--continue`, `git rebase --sk` is `--skip`), and the option set is asked
+  of git rather than typed: anything git treats as meaningful only
+  mid-operation is either refused or carries a measured reason it commits
+  nothing. **A linked worktree is NOT refused** — its index is yours alone
+  — so the way through is almost always "do it in your own session
+  worktree"; otherwise end it here, and for a revert use the two-step form
+  the bullet above prescribes, whose path-limited commit finishes a
+  conflicted revert outright. The clean verbs are untouched: git already
+  refuses to start a merge, cherry-pick or revert over a dirty index.
+  **Ending it here: `--abort` and `--quit` both run, and they are not the
+  same thing.** `--quit` drops the operation's state and leaves the index
+  and working tree alone (measured: another persona's staged entry survives
+  it). `--abort` makes no commit either, which is why this wall is past it,
+  but it destroys that entry and their on-disk edit exactly as `--skip`
+  does — and it is still the route this gate's own refusal names.
+  ranger-base-hkp3s has the decision about destruction, which is a class L1
+  does not wall anywhere (`reset --hard`, `checkout -f`, `restore`,
+  `clean -fd` are the rest of it).
 - **In a session worktree, a `cherry-pick`/`revert`/`rebase` that exits 0 has
   not necessarily ended** (ranger-base-71g2f). Ending one deletes a pseudo-ref
   (`CHERRY_PICK_HEAD`), and that delete needs the SHARED repo's
