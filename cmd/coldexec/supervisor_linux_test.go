@@ -194,6 +194,16 @@ var (
 	// ppid, and the ppid an orphaned descendant lands on.
 	reSupervisor = regexp.MustCompile(`SUPERVISOR (\d+)`)
 	reOrphanPPID = regexp.MustCompile(`ORPHAN PPID (\d+)`)
+	// reVerbose is one -verbose adjudication line: verdict, the TASK it
+	// names, and the target. `door.record` is the only thing under this door
+	// that prints `coldexec: … pid <n> …`, so this cannot pick up a line of
+	// the end-of-run report — those are prose and name no pid.
+	//
+	// It exists so a pin can say "of OUR tasks" rather than "of the run"
+	// (ranger-base-otoi4): a supervised run adjudicates every process under
+	// it, including the ones a test did not start, so a substring of the
+	// whole output is a claim about the box and not about the fixture.
+	reVerbose = regexp.MustCompile(`(?m)^coldexec: (\S+) +pid (\d+) (.*)$`)
 )
 
 // runDoor runs the supervisor over `/bin/sh -c <script>` in a fresh
@@ -1240,11 +1250,49 @@ wait
 	if n := strings.Count(r.out, "THE PLANT RAN"); n != 2 {
 		t.Errorf("the plant ran %d times, want 2 — both concurrent execs must have gone through:\n%s", n, r.out)
 	}
-	// Neither exec was withdrawn or restarted: this is plain concurrency, not
-	// a signal cutting a charge short (that is ARMs 16/17's subject).
-	if strings.Contains(r.out, "truncated") || strings.Contains(r.out, "withdrawn") {
-		t.Errorf("a charge read as truncated or withdrawn — this run signalled nothing, so there was "+
-			"nothing to cut short or hand on:\n%s", r.out)
+	// Neither of OUR OWN execs was withdrawn or restarted: this is plain
+	// concurrency, not a signal cutting a charge short (that is ARMs 16/17's
+	// subject), and that is still worth asserting beside the counts above —
+	// a withdrawal of one of these two tasks would reach `1 delayed, 1 warm`
+	// through the restart path (ranger-base-91fu2) instead of through the
+	// race this pin is about.
+	//
+	// SCOPED TO THE TWO TASKS, and that scope is the whole of
+	// ranger-base-otoi4. This guard used to read `strings.Contains(r.out,
+	// "withdrawn")` over the whole run, which asserts "no withdrawal was
+	// adjudicated at all" — a claim about every process under the supervisor,
+	// including every one this test did not start and does not control. The
+	// supervised shell is one of those: its own execs are withdrawn and
+	// restarted by signals nothing here sends, and the busier the box the
+	// wider the window (the note above `holes` in door_linux.go — the rate
+	// tracks the run queue). MEASURED 2026-11-21, this box, inside a full
+	// `make test` at a loadavg of 5-9: this arm FAILED on 6 withdrawals of a
+	// /bin/sh older than the door, one task, repeatedly — while its own two
+	// charges read 2ms warm and 602ms delayed, which is exactly what the pin
+	// exists to assert. A red here therefore cost every seat on the box a
+	// `make test`, and the measurement under it was right.
+	ours := map[string]bool{}
+	for _, m := range reVerbose.FindAllStringSubmatch(r.out, -1) {
+		if strings.HasSuffix(m[3], "/plant") {
+			ours[m[2]] = true
+		}
+	}
+	// Two DIFFERENT tasks on the one inode is the premise of everything
+	// above: `1 delayed, 1 warm` off one task would be ARM 1's claim and not
+	// this one's, and nothing else here would say so.
+	if len(ours) != 2 {
+		t.Fatalf("the report names %d tasks exec'ing the plant, want 2 — this pin is about two "+
+			"DIFFERENT tasks on one fresh inode, and a count other than 2 means the run never set "+
+			"that up:\n%s", len(ours), r.out)
+	}
+	for _, m := range reVerbose.FindAllStringSubmatch(r.out, -1) {
+		if (m[1] != verdictNames[vWithdrawn] && m[1] != verdictNames[vTruncated]) || !ours[m[2]] {
+			continue
+		}
+		t.Errorf("a charge of task %s — one of the two this run execs the plant from — read %s. "+
+			"Nothing here signals those two tasks, so a charge of theirs that was cut short or "+
+			"handed on means this run reached `1 delayed, 1 warm` through the restart path and not "+
+			"through the race:\n%s", m[2], m[1], r.out)
 	}
 }
 

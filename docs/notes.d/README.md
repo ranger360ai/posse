@@ -22,6 +22,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-tcho6](ranger-base-tcho6.md) — Check 4's positional guard is pinned against the reader, not against git (ranger-base-tcho6) — 2026-11-21
 - [ranger-base-rh8y0](ranger-base-rh8y0.md) — ranger-base-rh8y0 — the landed loop's pending re-read, and four findings that are not this repo's — 2026-11-21
 - [ranger-base-r1zdr](ranger-base-r1zdr.md) — The upgrade report's two loop lines, held by a report pin (ranger-base-r1zdr) — 2026-11-21
+- [ranger-base-otoi4](ranger-base-otoi4.md) — ranger-base-otoi4 — ARM 21's guard asserted something about the box — 2026-11-21
 - [ranger-base-nycra](ranger-base-nycra.md) — The launch-line tests red on the git-global snapshot, not on the line (ranger-base-nycra) — 2026-11-21
 - [ranger-base-nt5xd](ranger-base-nt5xd.md) — A row the judge cannot name is classed by the binary that printed it (ranger-base-nt5xd) — 2026-11-21
 - [ranger-base-nqw8v](ranger-base-nqw8v.md) — A fix into a helper leaves the call unwitnessed (ranger-base-nqw8v) — 2026-11-21
