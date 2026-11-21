@@ -80,7 +80,30 @@ var prepHostFenceKeepOut string
 // the fence cannot quietly become a no-op. Their one blind spot is a box whose
 // real home is itself under a temp root, where "under a fixture root" would be
 // true of the thing the fence exists to refuse — so the second arm is a KEEP
-// OUT at the passwd home, which refuses whatever the roots say.
+// OUT at the passwd home.
+//
+// AND THE TWO ARE ORDERED BY CONTAINMENT, THE MORE SPECIFIC WINNING
+// (ranger-base-cmedf). The keep-out used to refuse whatever the roots said,
+// and that is the wrong answer in the one venue where these pins measure at
+// all: ADR 0097 D1 runs them inside the landed-check judge's cage, whose
+// TMPDIR is `<state>/landed-check/run-<n>/tmp` — under the posse state dir,
+// which on this box is under the passwd home (landedCheckWorkDir says why it
+// is not under /tmp). So `os.TempDir()` there, and every `t.TempDir()` cut
+// from it, is INSIDE the keep-out, and the fence refused the fixtures it was
+// widened for: MEASURED 2026-11-21, the wall check red at tree fa8245fcf640
+// with `TestQATheBwrapPrepHostFenceIsUpAndRefusesAStepOutsideIt` itself
+// reporting "the fence refused a step under t.TempDir()". Reproduced outside
+// the venue by `TMPDIR=$HOME/<dir> go test -run <that pin> ./internal/posse`,
+// which is the venue's shape and the cheap way back to it.
+//
+// A root therefore beats the keep-out exactly when it lies STRICTLY inside
+// it — a run-scoped scratch directory somebody cut under the home — and the
+// keep-out beats every root that contains it or equals it. Both blind spots
+// stay closed by the same rule: a real home under /tmp is strictly inside
+// that root, so the keep-out still wins there, and a root spelled AS the
+// passwd home buys nothing. Nothing outside a declared root is reachable
+// either way; what moved is only which of two nested declarations decides a
+// path they both cover.
 func FencePrepHost(root string) {
 	roots := []string{os.TempDir(), "/var/tmp"}
 	if root != "" {
@@ -103,19 +126,52 @@ func PrepHostFenceRoots() []string {
 // or "" when it may. A declared fence that no root covers is the refusal; no
 // fence at all is "".
 func prepHostFenceRefusal(s PrepStep) string {
-	if len(prepHostFenceRoots) == 0 {
+	return prepHostFenceWhy(prepHostFenceRoots, prepHostFenceKeepOut, s.Path)
+}
+
+// prepHostFenceWhy is that decision with the fence passed in rather than read
+// off the package. PURE, because the rule is what needs pinning and the
+// globals are what a test cannot move: every wall pin in this package calls
+// runBwrapPrep and most of them are `t.Parallel`, so a table test that set
+// prepHostFenceRoots would be racing the fence it was measuring. The pin over
+// this function drives ADR 0097 D1's venue shape — a TMPDIR under the passwd
+// home — which is the case ranger-base-cmedf was.
+//
+// THE MORE SPECIFIC OF TWO NESTED DECLARATIONS DECIDES, which is the head
+// comment's ordering rule: a root strictly inside the keep-out is a scratch
+// directory somebody cut under the home and admits what is under it; a root
+// that contains the keep-out, or is spelled as it, does not.
+func prepHostFenceWhy(roots []string, keepOut, path string) string {
+	if len(roots) == 0 {
 		return ""
 	}
-	if prepHostFenceKeepOut != "" && underDir(prepHostFenceKeepOut, s.Path) {
-		return "the bwrap prep host fence is up (this is a test binary) and " + s.Path +
-			" is inside the passwd home, which is the operator's own area whatever root allows it: a prep step is a write on the HOST in the seat's name, and ranger-base-lin9y measured a test planting .posse-wall-anchor in the operator's real ~/.ssh this way. The fixture's $HOME does not reach the producer that named this path — prephostfence.go names the two host inputs that do not move with it"
-	}
-	for _, r := range prepHostFenceRoots {
-		if underDir(r, s.Path) {
-			return ""
+	covered, beatsKeepOut := false, false
+	for _, r := range roots {
+		if !underDir(r, path) {
+			continue
+		}
+		covered = true
+		if keepOut != "" && prepHostFenceInsideKeepOut(keepOut, r) {
+			beatsKeepOut = true
 		}
 	}
-	return "the bwrap prep host fence is up (this is a test binary) and " + s.Path +
-		" is under none of " + strings.Join(prepHostFenceRoots, " ") +
-		": a prep step is a write on the HOST in the seat's name, at a path the render chose, so a step outside every fixture root is this test about to write into somebody's live area — the operator's own ~/.ssh and rex's tsnet state dir are what ranger-base-bncbk measured. Either the fixture's $HOME does not reach the producer that named this path (see prephostfence.go for the two host inputs that do not move with it), or a new producer reads a host input no fence covers"
+	if keepOut != "" && underDir(keepOut, path) && !beatsKeepOut {
+		return "the bwrap prep host fence is up (this is a test binary) and " + path +
+			" is inside the passwd home " + keepOut +
+			", which is the operator's own area and which no root containing it can open: a prep step is a write on the HOST in the seat's name, and ranger-base-lin9y measured a test planting .posse-wall-anchor in the operator's real ~/.ssh this way. Only a root STRICTLY inside that home — a run-scoped scratch dir, which is what ADR 0097 D1's venue TMPDIR is — admits a path under it. The fixture's $HOME does not reach the producer that named this path — prephostfence.go names the two host inputs that do not move with it"
+	}
+	if !covered {
+		return "the bwrap prep host fence is up (this is a test binary) and " + path +
+			" is under none of " + strings.Join(roots, " ") +
+			": a prep step is a write on the HOST in the seat's name, at a path the render chose, so a step outside every fixture root is this test about to write into somebody's live area — the operator's own ~/.ssh and rex's tsnet state dir are what ranger-base-bncbk measured. Either the fixture's $HOME does not reach the producer that named this path (see prephostfence.go for the two host inputs that do not move with it), or a new producer reads a host input no fence covers"
+	}
+	return ""
+}
+
+// prepHostFenceInsideKeepOut is "root lies strictly inside keepOut". STRICTLY:
+// a root spelled as the passwd home itself would otherwise open the whole home,
+// which is the one thing this fence exists to refuse.
+func prepHostFenceInsideKeepOut(keepOut, root string) bool {
+	k, r := absResolve(keepOut), absResolve(root)
+	return r != k && insideDir(k, r)
 }

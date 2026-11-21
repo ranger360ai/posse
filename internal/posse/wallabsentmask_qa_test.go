@@ -407,3 +407,66 @@ func TestQAARenderUnderAFixtureHomeNamesNoOtherHomesSSHDir(t *testing.T) {
 		t.Errorf("the render names no ssh dir (%v) or no read-masked state dir (%v), so the rows above are vacuous", r.Carve.SSHDir, r.Carve.DenyReadDir)
 	}
 }
+
+// AND THE ORDERING OF THE FENCE'S TWO ARMS, which is the whole of
+// ranger-base-cmedf: the keep-out used to refuse whatever the roots said, and
+// ADR 0097 D1's venue — the one place these pins measure — hands the binary a
+// TMPDIR of `<state>/landed-check/run-<n>/tmp`, which on this box is INSIDE
+// the passwd home. Every t.TempDir() cut from it was then refused, so the pin
+// above red first and the wall check read red at tree fa8245fcf640.
+//
+// DRIVEN THROUGH THE PURE FUNCTION, not the globals: the pin above is the arm
+// that says the fence is UP in this binary, and the globals cannot be moved
+// from a test while every wall pin beside it is calling runBwrapPrep in
+// parallel (prepHostFenceWhy's head comment). These rows are the rule — which
+// of two NESTED declarations decides a path they both cover — and the two
+// blind spots that must stay closed.
+func TestQAThePrepHostFenceLetsTheVenuesTmpdirUnderTheHomeThroughAndStillKeepsTheHomeOut(t *testing.T) {
+	t.Parallel()
+	const home = "/home/op"
+	// The venue: TMPDIR under the state dir under the home, exactly
+	// landedCheckTmpDir's shape, plus the roots FencePrepHost always adds.
+	venueTmp := home + "/homes/ranger/state/landed-check/run-2831927159/tmp"
+	venue := []string{venueTmp + "/binary-home", venueTmp, "/var/tmp"}
+	for _, c := range []struct {
+		name    string
+		roots   []string
+		keepOut string
+		path    string
+		refuse  bool
+		says    string
+	}{
+		{"a venue fixture dir under the home is admitted",
+			venue, home, venueTmp + "/TestFoo123/001/cfg/shell-snapshots/" + wallAnchorName, false, ""},
+		{"and so is one under the binary's own home inside it",
+			venue, home, venueTmp + "/binary-home/.ssh/" + wallAnchorName, false, ""},
+		{"the operator's own ~/.ssh is still refused in that venue",
+			venue, home, home + "/.ssh/" + wallAnchorName, true, "passwd home"},
+		{"and so is any other path under the home no root covers",
+			venue, home, home + "/.local/state/rex/tsnet/" + wallAnchorName, true, "passwd home"},
+		{"a root spelled AS the home opens nothing under it",
+			[]string{home, "/var/tmp"}, home, home + "/.ssh/" + wallAnchorName, true, "passwd home"},
+		{"a real home under a temp root: the keep-out still wins (the roots' blind spot)",
+			[]string{"/tmp", "/var/tmp"}, "/tmp/op", "/tmp/op/.ssh/" + wallAnchorName, true, "passwd home"},
+		{"but a sibling of that home under the same temp root is a fixture",
+			[]string{"/tmp", "/var/tmp"}, "/tmp/op", "/tmp/TestFoo123/001/.ssh/" + wallAnchorName, false, ""},
+		{"outside every root is refused by the roots arm, home or no home",
+			venue, home, "/etc/posse-fence-probe/.ssh", true, "under none of"},
+		{"and a binary that declared no fence refuses nothing (a real launcher)",
+			nil, home, home + "/.ssh/" + wallAnchorName, false, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			why := prepHostFenceWhy(c.roots, c.keepOut, c.path)
+			if c.refuse && why == "" {
+				t.Fatalf("the fence admits %s with roots %v and the keep-out at %s — a prep step is a write on the HOST in the seat's name", c.path, c.roots, c.keepOut)
+			}
+			if !c.refuse && why != "" {
+				t.Fatalf("the fence refuses %s with roots %v and the keep-out at %s, so a test under that root measures the fence instead of a wall: %s", c.path, c.roots, c.keepOut, why)
+			}
+			if c.says != "" && !strings.Contains(why, c.says) {
+				t.Errorf("the refusal does not name the arm that made it (%q): %s", c.says, why)
+			}
+		})
+	}
+}
