@@ -90,6 +90,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-41l0r](ranger-base-41l0r.md) — The fence that fences every seat was refreshed by hand, and nothing noticed when it was not (ranger-base-41l0r) — 2026-11-14
 - [ranger-base-3iybl](ranger-base-3iybl.md) — The first accidental detach, and the one command that caused it (ranger-base-3iybl) — 2026-11-14
 - [ranger-base-3cpcg](ranger-base-3cpcg.md) — ranger-base-3cpcg — the treepins door is the package minus a priced table — 2026-11-14
+- [ranger-base-1qi7c](ranger-base-1qi7c.md) — The pulse family reaches the config surface, and `pulse_renag:` gets a reader so its documented 30m is held (ranger-base-1qi7c) — 2026-11-14
 - [ranger-base-1hnqc](ranger-base-1hnqc.md) — ranger-base-1hnqc — four `-race` reds with `DATA RACE` 0: a budget in wall seconds is a budget on a wall the build stretches — 2026-11-14
 - [ranger-base-1fsc9](ranger-base-1fsc9.md) — A safety filter put where nothing could read it (ranger-base-1fsc9) — 2026-11-14
 - [ranger-base-0eysw](ranger-base-0eysw.md) — Four closes verified, and the mutant nobody runs (ranger-base-0eysw) — 2026-11-14

@@ -32,6 +32,7 @@ package posse
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -561,14 +562,14 @@ func TestLoadPulseConfigReadsTheFeedKey(t *testing.T) {
 	if err := os.WriteFile(b.App.ConfigPath, []byte("pulse_interval: 2m\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := LoadPulseConfig(b.App)
+	cfg, err := LoadPulseConfig(b.App, io.Discard)
 	if err != nil || !cfg.Feed {
 		t.Fatalf("the feed is ON by default: cfg=%+v err=%v", cfg, err)
 	}
 	if err := os.WriteFile(b.App.ConfigPath, []byte("pulse_interval: 2m\npulse_feed: off\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err = LoadPulseConfig(b.App)
+	cfg, err = LoadPulseConfig(b.App, io.Discard)
 	if err != nil || cfg.Feed {
 		t.Fatalf("pulse_feed: off did not reach the config: cfg=%+v err=%v", cfg, err)
 	}

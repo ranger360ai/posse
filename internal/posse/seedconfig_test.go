@@ -90,6 +90,14 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 		// about what "not told" means. autostart_multiplexer_unit: names a
 		// unit that exists on exactly one host.
 		"autostart_via", "autostart_multiplexer_unit",
+		// The pulse family (ADR 0027, ADR 0093; ranger-base-1qi7c documented
+		// it). `pulse_persona:` set in the seed would name a crew member a
+		// fresh instance does not have; `pulse_renag:` would restate the
+		// default; and `pulse_feed:` set either way is a channel decision
+		// nobody made — ON is the default and `off` is an exit hatch an
+		// operator reaches for, so a seed that shipped it would be shipping
+		// the hatch's position as a fact.
+		"pulse_persona", "pulse_renag", "pulse_feed",
 	} {
 		if v := YamlGet(cfg, key); v != "" {
 			t.Errorf("seed config sets %s: %q — the seed must ship it commented out", key, v)
@@ -112,6 +120,17 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 	// startup hook fails, not one that is disarmed.
 	if yamlHasKey(cfg, "autostart_interval") {
 		t.Error("seed config declares autostart_interval: — presence is the arm switch; a fresh instance must ship disarmed")
+	}
+
+	// `pulse_interval:` is the same shape one family over (LoadPulseConfig
+	// reads it through yamlHasKey, pulse.go), so it gets the same stronger
+	// check: not merely empty, ABSENT. A present-but-empty key here is worse
+	// than a bare autostart_interval: — it arms the pulse and then fails
+	// ParseInterval, which disarms it again with a line in the watch log, so
+	// a seed that declared it bare would ship a fresh instance whose every
+	// watch loop says the pulse is misconfigured.
+	if yamlHasKey(cfg, "pulse_interval") {
+		t.Error("seed config declares pulse_interval: — presence is the pulse's arm switch; a fresh instance must ship disarmed")
 	}
 }
 
@@ -396,6 +415,7 @@ var seedDurationBodyReaders = map[string]func(*App, io.Writer) time.Duration{
 	"PlanGuardBlindMax":   (*App).PlanGuardBlindMax,
 	"PlanUsageStaleAfter": (*App).PlanUsageStaleAfter,
 	"PlanUsageTTL":        (*App).PlanUsageTTL,
+	"PulseRenag":          (*App).PulseRenag,
 	"verifyBatchAge":      (*App).verifyBatchAge,
 }
 
@@ -414,6 +434,7 @@ var seedDurationDefaults = map[string]time.Duration{
 	"DefaultRetireTreeAfter":     DefaultRetireTreeAfter,
 	"DefaultVerifyBatchAge":      DefaultVerifyBatchAge,
 	"DefaultDispatchEpoch":       DefaultDispatchEpoch,
+	"DefaultPulseRenag":          DefaultPulseRenag,
 	"ModelProbeTTLDefault":       ModelProbeTTLDefault,
 	"PlanGuardBlindMaxDefault":   PlanGuardBlindMaxDefault,
 	"PlanUsageTTLDefault":        PlanUsageTTLDefault,
@@ -472,6 +493,13 @@ var seedDocumentedDurationOutsideTheCensus = map[string]string{
 		"BackupConfig and an error rather than a duration, so neither derived shape reaches it; the one " +
 		"backup duration with a default is backup_max_age:, whose default is a rule and which is " +
 		"therefore in seedDurationDefaultNotAConstant and must stay undocumented (ranger-base-s1dmh)",
+	"pulse_interval": "its presence IS the pulse ticker's arm switch — LoadPulseConfig (pulse.go) asks " +
+		"yamlHasKey before it asks for a value, and an absent key answers a zero PulseConfig with no error — " +
+		"so the documented 2m is the shape ADR 0027 names (\"typically 2m\") and not a statement about a " +
+		"default. The key IS read through CfgGet, but inside a reader that answers a PulseConfig and an " +
+		"error rather than a duration, so neither derived shape reaches it; the one pulse duration with a " +
+		"default is pulse_renag:, which has a constant (DefaultPulseRenag) and a body-form reader " +
+		"(PulseRenag) and is therefore COMPARED above (ranger-base-1qi7c)",
 }
 
 // seedDocumentedLine is one commented `key: <value>` line in
@@ -1459,15 +1487,17 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 	}
 
 	// The floor, and the one assertion that failed at HEAD before
-	// ranger-base-khqvr's widening: the seed documents TEN duration keys the
-	// census reaches and the old rule reached four of them. Ten is the
-	// measured population (ranger-base-2vynj finding 1, "THE POPULATION").
+	// ranger-base-khqvr's widening: the seed documented TEN duration keys the
+	// census reaches and the old rule reached four of them. Ten was the
+	// measured population (ranger-base-2vynj finding 1, "THE POPULATION");
+	// ELEVEN since ranger-base-1qi7c documented the pulse family and gave
+	// `pulse_renag:` a body-form reader so this census compares it.
 	// It is kept beside the set check above and not replaced by it, because
 	// the two fail in opposite directions: this one catches a documented line
-	// that LEFT (deleting one reds at `compared 9`), and the set catches one
+	// that LEFT (deleting one reds at `compared 10`), and the set catches one
 	// that ARRIVED, which no count can see.
-	if compared < 10 {
-		t.Errorf("compared %d documented duration defaults, want at least 10 — the seed documents attn_guard_stuck, attn_parked_age, attn_question_age, dispatch_epoch, model_probe_ttl, plan_guard_blind_max, plan_usage_stale_after, plan_usage_ttl, verify_batch_age and verify_box_max_age with a value, so a census that found fewer stopped reading the file", compared)
+	if compared < 11 {
+		t.Errorf("compared %d documented duration defaults, want at least 11 — the seed documents attn_guard_stuck, attn_parked_age, attn_question_age, dispatch_epoch, model_probe_ttl, plan_guard_blind_max, plan_usage_stale_after, plan_usage_ttl, pulse_renag, verify_batch_age and verify_box_max_age with a value, so a census that found fewer stopped reading the file", compared)
 	}
 }
 

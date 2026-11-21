@@ -1613,7 +1613,7 @@ func StatusInputs(a *App, hb *HerdrBackend, errw io.Writer) GovInputs {
 	// pulse is armed to deliver to it. A config error disarms the reading
 	// rather than failing the whole view: LoadPulseConfig's own error is the
 	// watch loop's to report.
-	if cfg, err := LoadPulseConfig(a); err == nil && cfg.Armed {
+	if cfg, err := LoadPulseConfig(a, errw); err == nil && cfg.Armed {
 		in.PulsePersona, in.Pulsing = cfg.Persona, true
 		// ADR 0093 D3's switch is read live here too, which is the point of
 		// it being an flock: `posse status` is a separate process with no

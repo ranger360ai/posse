@@ -50,6 +50,7 @@ package posse
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -128,10 +129,51 @@ func pulseFeedOff(v string) bool {
 	return false
 }
 
+// PulseRenag is delivery's one repeat interval: config `pulse_renag:`, else
+// DefaultPulseRenag.
+//
+// A READER OF ITS OWN, in the body form the seed's documented-default census
+// derives — one key literal, one Default-shaped constant returned,
+// `(errw io.Writer) time.Duration` (seedconfig_test.go's seedReaderDecl).
+// Since ranger-base-1qi7c examples/config.yaml documents this number, and a
+// key/constant pairing nothing compares goes stale for free: change the
+// constant, keep the suite green, and the operator-facing spec still names
+// 30m (ranger-base-vofbl). Inline in LoadPulseConfig the pairing was outside
+// every shape that census can see, so the documented line could only have
+// been admitted to a register as a number nothing holds.
+//
+// A VALUE THAT DOES NOT PARSE IS NAMED, and the default stands. That is this
+// shop's rule for every other tunable with a default (`attn_*`,
+// `autostart_max_*`, `dispatch_epoch:`) and it was the one thing this key did
+// differently: the read was `if d, err := ParseInterval(v); err == nil`, so a
+// typo'd interval ran at 30m with nothing said anywhere. The arm switch
+// stays the one key in the family that is an ERROR rather than a diagnostic
+// (LoadPulseConfig disarms the loop on it), because a pulse whose interval
+// does not parse has no behaviour to fall back on.
+func (a *App) PulseRenag(errw io.Writer) time.Duration {
+	raw := strings.TrimSpace(a.CfgGet("pulse_renag", ""))
+	if raw == "" {
+		return DefaultPulseRenag
+	}
+	d, err := ParseInterval(raw)
+	if err != nil {
+		fmt.Fprintf(errw, "pulse: config pulse_renag: %q is not a positive interval (30m, 2h, or seconds) — using %s\n",
+			raw, DefaultPulseRenag)
+		return DefaultPulseRenag
+	}
+	return d
+}
+
 // LoadPulseConfig reads config.yaml's pulse_* keys. Disarmed (pulse_interval
 // absent) returns a zero PulseConfig and no error — an unset family is not
 // a misconfiguration, it is the default.
-func LoadPulseConfig(a *App) (PulseConfig, error) {
+//
+// errw takes the config-typo line, the way StatusInputs' does: one key here
+// has a default to fall back to (`pulse_renag:`, PulseRenag) and the other
+// two cannot be typo'd into something quieter — the arm switch is an error
+// and `pulse_feed:` reads anything but the hatch vocabulary as ON, on
+// purpose (pulseFeedOff).
+func LoadPulseConfig(a *App, errw io.Writer) (PulseConfig, error) {
 	if !yamlHasKey(a.ConfigPath, "pulse_interval") {
 		return PulseConfig{}, nil
 	}
@@ -143,13 +185,8 @@ func LoadPulseConfig(a *App) (PulseConfig, error) {
 		Armed:    true,
 		Interval: interval,
 		Persona:  pulsePersona(a),
-		Renag:    DefaultPulseRenag,
+		Renag:    a.PulseRenag(errw),
 		Feed:     !pulseFeedOff(a.CfgGet("pulse_feed", "")),
-	}
-	if v := a.CfgGet("pulse_renag", ""); v != "" {
-		if d, err := ParseInterval(v); err == nil {
-			cfg.Renag = d
-		}
 	}
 	// pulse_renag_max: is gone with the ladder it capped (ADR 0027,
 	// 2026-09-05). A config that still carries the key is not an error —

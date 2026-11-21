@@ -1035,6 +1035,68 @@ default_emoji: ⚙️
 # purpose. Unset, as it ships, nothing changes.
 # posse_repo: ~/src/posse
 
+# ─── the pulse: the condition set, delivered (ADR 0027, ADR 0093) ────────────
+# The governance set above has three renderings. `posse status` computes it
+# when you ask; the cockpit draws it while you watch; the PULSE is the one
+# nobody has to be in front of. It is a ticker inside the `posse dispatch
+# --watch` loop: every interval it computes the same set, and on a non-empty
+# one it reaches the coordinator — once when the set changes, then once per
+# repeat interval for as long as it stands.
+#
+# It starts with that loop and dies with it, and never opens a loop of its
+# own, so a hand-typed pass never pulses: only a timer with no human witness
+# needs a shop check running behind it. The prompt carries no authority and
+# no crew mark — its recipient rechecks live state and applies its own
+# standing orders — and the pulse never spawns a session. A target that is
+# working, blocked or absent is a skip, retried on the next tick.
+#
+# DISARMED BY DEFAULT, AND THE DISARM IS A COMMENT, the way
+# `autostart_interval:` below is: the PRESENCE of `pulse_interval:` is the arm
+# switch and not its value, so disarming is commenting it out again and there
+# is no off-value. A value that is not an interval is not a disarm either — it
+# disarms the pulse for that whole watch loop with a line in the log, which is
+# the one key in this family that is an ERROR rather than a diagnostic,
+# because a ticker whose interval does not parse has no behaviour to fall
+# back on.
+# pulse_interval: 2m         # tick interval (30s, 2m, bare seconds) — THE ARM SWITCH
+#
+# WHO IT TELLS: this key when set, else `coordinator:` at the top of the file.
+# With NEITHER set the set is still sensed and still drawn, and delivered
+# nowhere — on purpose, because the engine ships carrying no crew name: an
+# instance that names neither gets a pulse with no target rather than a
+# permanent condition about a persona who never worked here.
+# pulse_persona: <persona name>
+#
+# HOW OFTEN AN UNCHANGED SET REPEATS, and the default here is a number this
+# harness measured rather than chose. A set that is NEW is delivered at once;
+# the same set again waits out this interval and is then said again, for as
+# long as it stands. It used to double per repeat up to a `pulse_renag_max:`
+# of 4h, and the ladder came out on 2026-09-05 because 117.3h of watch log
+# never climbed it: 397 deliveries fell into 386 episodes of one identical set
+# each, 11 of them repeated once, and NOT ONE reached a second repeat. The set
+# churns faster than any ladder over it. A config that still carries
+# `pulse_renag_max:` is not an error — nothing reads it — and a value here
+# that is not an interval is named on stderr with the default standing.
+# pulse_renag: 30m           # repeat interval for an UNCHANGED condition set
+#
+# THE EXIT HATCH (ADR 0093 D2), and the only key in this block whose default
+# is ON. The pulse's primary channel is a delta FEED: a due tick probes the
+# coordinator's waiter lock, and a waiter that is listening gets the delta on
+# state/pulse.feed with nothing typed into any pane at all — which is what
+# ends spliced prompts by construction rather than by care. The keyboard is
+# the fallback for a coordinator that is not armed, and `posse status` carries
+# the same fact as `pulse-unarmed`.
+#
+# `off`, `never`, `0` and `false` all read as off: no feed, no probe, no typed
+# reminder, no condition, and ADR 0027's typed path exactly as it was. ANY
+# OTHER VALUE READS AS ON, a typo included, and that asymmetry is deliberate —
+# a mistyped hatch leaving the new channel running costs less than one
+# mistyped character silently taking the feed, the waiter and the condition
+# out. What the hatch does NOT switch off is the composer hold (D4): that is a
+# guard on the keyboard, not part of the feed, and it matters most in exactly
+# the state the hatch puts you in.
+# pulse_feed: on             # off | never | 0 | false = the hatch; anything else is on
+
 # ─── backups of the store of record (ADR 0036) ───────────────────────────────
 # `posse backup` writes ONE on-box archive: the queue repo's git history as a
 # bundle, its beads database staged through sqlite's online backup API, the

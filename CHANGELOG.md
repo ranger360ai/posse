@@ -11,6 +11,34 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**The pulse's four config keys are on the config surface at last — including
+the one that switches its channel off.**
+
+*Documentation, plus one behaviour change: a `pulse_renag:` that is not an
+interval is now named on stderr instead of being ignored. Nothing to do if you
+never set it; the defaults are unchanged.*
+
+`examples/config.yaml` is what `posse init` copies into a fresh instance, and
+it named no `pulse_*` key at all: not `pulse_interval:`, whose mere presence
+arms the shop-check ticker inside `posse dispatch --watch`; not
+`pulse_persona:`; not `pulse_renag:`; and not `pulse_feed:`, the exit hatch
+that turns off the delta feed, the waiter probe, the typed reminder and the
+`pulse-unarmed` condition together. If you have been running a pulse, you
+configured it from an ADR or from the source. There is a block for it now, in
+the governance neighbourhood, with the arm-switch rule, the measured default
+behind the 30m repeat interval, and what the hatch does and does not switch
+off.
+
+Documenting a default here means pinning it, so `pulse_renag:` gained a reader
+of its own and the seed's documented-default census compares that 30m against
+the constant. One consequence an operator can see: a `pulse_renag:` the
+grammar refuses used to be swallowed in silence and the shop ran at the
+default; it now says so once, with the default standing — the same treatment
+`attn_*`, `dispatch_epoch:` and the `autostart_max_*` keys already got. The
+arm switch is still the one key in the family that is an error rather than a
+diagnostic: a ticker whose interval does not parse disarms the pulse for that
+watch loop and says which key did it.
+
 **A relaunch into a container-tier session worktree no longer dies before it
 starts.**
 

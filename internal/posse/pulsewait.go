@@ -466,7 +466,11 @@ func pulseWaitLife(a *App, opt PulseWaitOptions) time.Duration {
 	if opt.Renag > 0 {
 		return opt.Renag
 	}
-	if cfg, err := LoadPulseConfig(a); err == nil && cfg.Renag > 0 {
+	// io.Discard, the way EpochEnd reads DispatchEpoch (epoch.go): this is a
+	// LIFE being computed inside the waiter, and a config typo is the watch
+	// loop's line to print — said once by the loop that owns the pulse,
+	// never once per waiter arming.
+	if cfg, err := LoadPulseConfig(a, io.Discard); err == nil && cfg.Renag > 0 {
 		return cfg.Renag
 	}
 	return DefaultPulseRenag

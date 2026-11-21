@@ -9,6 +9,7 @@ package posse
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +49,7 @@ func TestLoadPulseConfigUnarmedByDefault(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("default_persona: coordinator\n"), 0o644)
-	cfg, err := LoadPulseConfig(a)
+	cfg, err := LoadPulseConfig(a, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestLoadPulseConfigArmed(t *testing.T) {
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte(
 		"pulse_interval: 2m\npulse_persona: developer\npulse_renag: 45m\n"), 0o644)
-	cfg, err := LoadPulseConfig(a)
+	cfg, err := LoadPulseConfig(a, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +84,7 @@ func TestLoadPulseConfigIgnoresTheRetiredRenagMax(t *testing.T) {
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte(
 		"pulse_interval: 2m\npulse_persona: coordinator\npulse_renag: 20m\npulse_renag_max: 4h\n"), 0o644)
-	cfg, err := LoadPulseConfig(a)
+	cfg, err := LoadPulseConfig(a, io.Discard)
 	if err != nil {
 		t.Fatalf("a config still carrying pulse_renag_max: must load: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestLoadPulseConfigDefaultPersonaIsTheCoordinator(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\ncoordinator: product\n"), 0o644)
-	cfg, err := LoadPulseConfig(a)
+	cfg, err := LoadPulseConfig(a, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +125,7 @@ func TestLoadPulseConfigDefaultPersonaEmptyWithoutCoordinator(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\n"), 0o644)
-	cfg, err := LoadPulseConfig(a)
+	cfg, err := LoadPulseConfig(a, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +143,7 @@ func TestLoadPulseConfigPersonaBeatsCoordinator(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: 30s\ncoordinator: product\npulse_persona: qa\n"), 0o644)
-	cfg, err := LoadPulseConfig(a)
+	cfg, err := LoadPulseConfig(a, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestLoadPulseConfigBadInterval(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte("pulse_interval: not-a-duration\n"), 0o644)
-	if _, err := LoadPulseConfig(a); err == nil {
+	if _, err := LoadPulseConfig(a, io.Discard); err == nil {
 		t.Error("bad pulse_interval: must error, not silently disarm or default")
 	}
 }

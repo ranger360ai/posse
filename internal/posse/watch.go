@@ -183,7 +183,13 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// (LIFO): the tick's final write lands before the pid record and the
 	// lock say the loop is gone. pulseCancel is what makes it safe on any
 	// exit, including one that does not end ctx.
-	if cfg, err := LoadPulseConfig(d.App); err != nil {
+	// d.quietErrWriter(), not a bare d.errw(): LoadPulseConfig's one
+	// diagnostic is a `pulse_renag:` typo (PulseRenag), which is a CLOCK's
+	// config line — serialized by outMu like every other write on this
+	// stream, and quiet, because a config line the pulse read on its way up
+	// is not a sign of life from the pass (LastWrite). The `disarmed for
+	// this loop` line below it is the raw stream on purpose and says so.
+	if cfg, err := LoadPulseConfig(d.App, d.quietErrWriter()); err != nil {
 		fmt.Fprintf(d.errw(), "pulse: %v — disarmed for this loop\n", err)
 	} else if cfg.Armed {
 		pulseCtx, pulseCancel := context.WithCancel(ctx)

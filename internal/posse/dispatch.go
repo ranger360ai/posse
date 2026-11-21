@@ -591,10 +591,14 @@ func (d *Dispatcher) equietf(format string, a ...any) {
 
 // quietErrWriter is errw() as an io.Writer, serialized by outMu like the
 // writers above and QUIET like equietf: it is for the callee that takes a
-// writer instead of printing — App.LoadHigh — whose reading the guard clock
+// writer instead of printing, when the caller is a CLOCK rather than the
+// pass. Two of them. App.LoadHigh, whose reading the guard clock
 // (guardclock.go) takes on its own goroutine while a gather is writing this
 // same stream, and a reading a clock could not take is a line but not a
-// sign of life (see LastWrite). Its stamping twin, for the callees the PASS
+// sign of life (see LastWrite). And LoadPulseConfig, whose one diagnostic is
+// a `pulse_renag:` the grammar refuses (PulseRenag, pulse.go), read in
+// Watch's header for the pulse clock it is about to start
+// (ranger-base-1qi7c). Its stamping twin, for the callees the PASS
 // hands a writer to, is errWriter below — this doc said there was none
 // while that was true, which it stopped being under ranger-base-hpppv.
 type dispatcherErrw struct{ d *Dispatcher }
