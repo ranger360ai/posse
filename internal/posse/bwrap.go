@@ -1840,26 +1840,83 @@ func bwrapIsMountDst(c string, dsts []string) bool {
 	return false
 }
 
-// bwrapMount is one mount the rendered argv makes. Src is "" for a --tmpfs,
-// which has no source at all.
+// bwrapMount is one mount the rendered argv makes. Src is "" for a mount
+// with no host source — a `--tmpfs`, a `--proc` — and for the FD forms,
+// whose first operand is a file descriptor and not a path.
 type bwrapMount struct{ Src, Dst string }
 
+// bwrapMountVerb is one mount-making bwrap option as a READER of a rendered
+// argv has to know it: how many operands it takes, which of them is a
+// filesystem SOURCE, and which is the mount DESTINATION.
+type bwrapMountVerb struct {
+	Args int // operands the option takes
+	Src  int // operand index of the source, -1 for an option that has none
+	Dst  int // operand index of the destination
+}
+
+// bwrapMountVerbs is THE ONE READING of bwrap's mount-making argv grammar in
+// this package (ranger-base-r9slg, escaped from ranger-base-ltmyh). It was a
+// hand-copied four-verb switch in each of two readers — bwrapMounts and
+// bwrapMountedAt — with nothing holding the two equal to each other, and
+// nothing holding either equal to what the renders emit or to bwrap's own
+// grammar. `--proc` was in neither, although the wall venue types one, so
+// `/proc` was a mount destination the D2(b)/D4(a) predicate could not see;
+// and a producer typing `--bind-try` would have gone unjudged by that
+// predicate and invisible to the report, with every pin green.
+//
+// TOTAL OVER WHAT THIS PACKAGE MAY TYPE, held there by a census rather than
+// by a reviewer: TestQAEveryBwrapMountVerbThisPackageTypesIsRead reds on a
+// mount-making option that appears in these sources and not in this table.
+// So a bead that wants a new spelling adds it HERE, where both readers get
+// it at once.
+//
+// THE FD FORMS carry Src -1 deliberately: their first operand is a file
+// descriptor, so there is no path for ADR 0100 D2(b) to judge, while their
+// destination is a mount like any other and D4(a) must still see it.
+//
+// THE OVERLAY FAMILY IS DELIBERATELY ABSENT — `--overlay`, `--overlay-src`,
+// `--ro-overlay`, `--tmp-overlay`. An overlay's sources are a LIST built up
+// by preceding `--overlay-src` options, so "the source of this mount" is not
+// one operand and ADR 0100's predicate has no reading of it yet. Nothing in
+// this package emits one, and the census above is what makes that a decision
+// somebody takes rather than a gap: type an overlay and it reds, naming this
+// paragraph.
+var bwrapMountVerbs = map[string]bwrapMountVerb{
+	"--bind":         {Args: 2, Src: 0, Dst: 1},
+	"--bind-try":     {Args: 2, Src: 0, Dst: 1},
+	"--ro-bind":      {Args: 2, Src: 0, Dst: 1},
+	"--ro-bind-try":  {Args: 2, Src: 0, Dst: 1},
+	"--dev-bind":     {Args: 2, Src: 0, Dst: 1},
+	"--dev-bind-try": {Args: 2, Src: 0, Dst: 1},
+	"--bind-fd":      {Args: 2, Src: -1, Dst: 1},
+	"--ro-bind-fd":   {Args: 2, Src: -1, Dst: 1},
+	"--bind-data":    {Args: 2, Src: -1, Dst: 1},
+	"--ro-bind-data": {Args: 2, Src: -1, Dst: 1},
+	"--proc":         {Args: 1, Src: -1, Dst: 0},
+	"--dev":          {Args: 1, Src: -1, Dst: 0},
+	"--tmpfs":        {Args: 1, Src: -1, Dst: 0},
+	"--mqueue":       {Args: 1, Src: -1, Dst: 0},
+}
+
 // bwrapMounts reads them off the argv rather than off the lists that
-// produced it, for bwrapMountedAt's reason one function up: a list entry
-// says what the design asked for and the argv says what the wall is.
+// produced it, for bwrapMountedAt's reason below: a list entry says what the
+// design asked for and the argv says what the wall is.
+//
+// An option whose operands do not all fit in the argv is NOT a mount: bwrap
+// would refuse the line itself, and inventing a mount out of the tail would
+// make a reader of a truncated argv answer about a path that is not there.
 func bwrapMounts(argv []string) []bwrapMount {
 	var out []bwrapMount
 	for i, a := range argv {
-		switch a {
-		case "--tmpfs":
-			if i+1 < len(argv) {
-				out = append(out, bwrapMount{Dst: argv[i+1]})
-			}
-		case "--bind", "--ro-bind", "--dev-bind":
-			if i+2 < len(argv) {
-				out = append(out, bwrapMount{Src: argv[i+1], Dst: argv[i+2]})
-			}
+		v, ok := bwrapMountVerbs[a]
+		if !ok || i+v.Args >= len(argv) {
+			continue
 		}
+		m := bwrapMount{Dst: argv[i+1+v.Dst]}
+		if v.Src >= 0 {
+			m.Src = argv[i+1+v.Src]
+		}
+		out = append(out, m)
 	}
 	return out
 }
@@ -2130,19 +2187,18 @@ func bwrapDirMaskOver(argv []string, carve SeatbeltCarveOut, p string) (string, 
 // bwrapMountedAt reports whether the RENDERED argv puts a mount at p. The
 // report asks the argv and not the lists, for BwrapReport's reason: a list
 // entry says what the design asked for and the argv says what the wall is.
-// Destinations only — a bind's SOURCE is not a mount point — so the one-arg
-// forms take argv[i+1] and the two-path forms argv[i+2].
+// Destinations only — a bind's SOURCE is not a mount point — which is what
+// bwrapMountVerbs' Dst index says per option.
+//
+// THROUGH bwrapMounts AND NOT A SWITCH OF ITS OWN (ranger-base-r9slg): this
+// was the second hand-copy of that grammar, and the two could disagree about
+// which options make a mount in the direction nothing would notice — a verb
+// one reader knows and the other does not is a path the wall report calls
+// unmounted while the D2(b) predicate calls it pinned, or the reverse.
 func bwrapMountedAt(argv []string, p string) bool {
-	for i, a := range argv {
-		switch a {
-		case "--tmpfs":
-			if i+1 < len(argv) && argv[i+1] == p {
-				return true
-			}
-		case "--bind", "--ro-bind", "--dev-bind":
-			if i+2 < len(argv) && argv[i+2] == p {
-				return true
-			}
+	for _, m := range bwrapMounts(argv) {
+		if m.Dst == p {
+			return true
 		}
 	}
 	return false

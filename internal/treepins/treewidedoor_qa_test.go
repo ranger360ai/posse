@@ -1104,6 +1104,26 @@ package treepins
 // just as silent. 0.33s between the four (MEASURED 2026-11-11, 0.08s, 0.09s,
 // 0.09s and 0.07s on one warm run of the door).
 //
+// and ONE more into pkgcensus-check's door, same class and same sentence — a
+// census over internal/posse's own sources, read as source, over a file set
+// the sweep discovers rather than spells:
+//
+//	TestQAEveryBwrapMountVerbThisPackageTypesIsRead
+//	                                              make pkgcensus-check
+//	                                              (ranger-base-r9slg)
+//
+// NO NEW DOOR. What it adds is the TOTALITY of one table: bwrap's
+// mount-making argv grammar was a hand-copied four-verb switch in each of two
+// readers, with nothing holding the two equal to each other and nothing
+// holding either equal to what the renders type. `--proc` was in neither,
+// although the wall venue types one, and a producer that typed `--bind-try`
+// would have had its source go unjudged by ADR 0100 D2(b) and its destination
+// by D4(a), with every pin green — because every pin reads paths it already
+// knows about. The readers share one table now; this is what holds the table
+// total over the verbs these sources actually spell, which is a question
+// about the sources and no fixture can ask it: a verb no producer emits yet
+// is exactly the case that gets missed. 0.02s on one warm run.
+//
 // and TWO more into corpus-check's door, for the sentence every other
 // corpus-check row gives — a census over this repo's own .go sources, with a
 // file set the walk discovers (ranger-base-s64a5). What they derive is `make
@@ -1464,7 +1484,7 @@ package treepins
 // eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
-// and `make tree-check` is all of them — one hundred and fifty-eight pins
+// and `make tree-check` is all of them — one hundred and fifty-nine pins
 // and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

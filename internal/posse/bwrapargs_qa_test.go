@@ -1524,3 +1524,123 @@ func TestBwrapArgsGitConfigRefusalResolvesTheSessionDirsSpelling(t *testing.T) {
 		t.Errorf("the mount is rendered and not watched: %v", watched)
 	}
 }
+
+// bwrapAllMountVerbs is bwrap 0.13.1's complete mount-making option set —
+// every option that puts a filesystem at a destination inside the namespace.
+// The list is bwrap's, not posse's: that is the whole point of a census over
+// it. `--overlay-src` is in it because it is part of the overlay grammar and
+// a producer that types one has typed an overlay.
+//
+// It is spelled here, in the test, and the production table it is compared
+// against is spelled there, because two copies of the SAME list in one place
+// would be a pin reading itself.
+var bwrapAllMountVerbs = []string{
+	"--bind", "--bind-try", "--bind-fd", "--bind-data",
+	"--ro-bind", "--ro-bind-try", "--ro-bind-fd", "--ro-bind-data",
+	"--dev-bind", "--dev-bind-try",
+	"--proc", "--dev", "--tmpfs", "--mqueue",
+	"--overlay", "--overlay-src", "--ro-overlay", "--tmp-overlay",
+}
+
+// TestQAEveryBwrapMountVerbThisPackageTypesIsRead is the census that makes
+// bwrapMountVerbs TOTAL over what this package can emit (ranger-base-r9slg,
+// escaped from ranger-base-ltmyh).
+//
+// THE DEFECT IT CLOSES. The mount grammar was a hand-copied four-verb switch
+// in each of two readers (bwrapMounts and bwrapMountedAt) with nothing
+// holding the two equal, and nothing holding either equal to what the renders
+// type. `--proc` was in neither, although the wall venue types one. REPRO, as
+// the bead filed it: add `argv = append(argv, "--bind-try", <a loose source>,
+// <dst>)` to any producer and BwrapArgs returns no error — the source goes
+// unjudged by ADR 0100 D2(b) and the destination by D4(a), and
+// bwrapMountedAt, which the wall report reads, cannot see it either. Every
+// pin green, because every pin reads paths it already knows about.
+//
+// WHY A CENSUS AND NOT A FOURTH COPY of the grammar: the readers share one
+// table now, so what is left to hold is that the table covers the options
+// this tree actually types — a question about the SOURCES and not about any
+// one render, and one no fixture can ask, because a verb no producer emits
+// yet is exactly the case that gets missed.
+//
+// It is a reading of this package's own .go files, so it carries a door in
+// the register (QA_PKGCENSUS_PINS, `make pkgcensus-check`).
+func TestQAEveryBwrapMountVerbThisPackageTypesIsRead(t *testing.T) {
+	t.Parallel()
+	// CONTROL: the list this census is taken against is not empty and names
+	// the three verbs the render is built on, or an empty sweep would pass.
+	for _, want := range []string{"--bind", "--ro-bind", "--tmpfs"} {
+		if !containsString(bwrapAllMountVerbs, want) {
+			t.Fatalf("CONTROL: %s is not in bwrapAllMountVerbs, so this census is not over bwrap's grammar", want)
+		}
+	}
+	typed := map[string][]string{}
+	for _, src := range cdmPackageSources(t) {
+		b, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range bwrapAllMountVerbs {
+			// The literal as a Go string, which is how an argv token is
+			// typed: a flag assembled by concatenation is not a spelling this
+			// census can read, and no producer here writes one.
+			if strings.Contains(string(b), `"`+v+`"`) {
+				typed[v] = append(typed[v], src)
+			}
+		}
+	}
+	if len(typed) == 0 {
+		t.Fatal("no bwrap mount verb appears in this package's sources — the render has moved or is spelled another way, so this census is measuring an absence that means nothing")
+	}
+	for v, where := range typed {
+		if _, ok := bwrapMountVerbs[v]; !ok {
+			t.Errorf("%s is typed in %v and bwrapMountVerbs does not read it: its source goes unjudged by ADR 0100 D2(b), its destination by D4(a), and the wall report calls that destination unmounted (ranger-base-r9slg). Add it to bwrapMountVerbs with its operand shape — and for the overlay family read that table's last paragraph first, because an overlay's sources are a list and the predicate has no reading of one", v, where)
+		}
+	}
+	// And the other direction, as a sanity row rather than a rule: a verb in
+	// the table that bwrap does not have is a reader waiting for an argv
+	// nobody can type.
+	for v := range bwrapMountVerbs {
+		if !containsString(bwrapAllMountVerbs, v) {
+			t.Errorf("bwrapMountVerbs reads %s, which is not one of bwrap's mount-making options — either the spelling is wrong or this test's list is out of date", v)
+		}
+	}
+}
+
+// The two readers answer one grammar (ranger-base-r9slg): every mount
+// bwrapMounts finds is mounted-at its destination, and the verbs the render
+// types are all read. A real argv, so the shape is the one the wall runs
+// behind and not a hand-written list.
+func TestQABwrapMountReadersShareOneGrammar(t *testing.T) {
+	t.Parallel()
+	for _, v := range []string{"--bind", "--ro-bind", "--dev-bind", "--tmpfs", "--proc", "--bind-try", "--ro-bind-fd"} {
+		argv := []string{"bwrap"}
+		switch bwrapMountVerbs[v].Args {
+		case 1:
+			argv = append(argv, v, "/dst")
+		default:
+			argv = append(argv, v, "/src", "/dst")
+		}
+		ms := bwrapMounts(argv)
+		if len(ms) != 1 || ms[0].Dst != "/dst" {
+			t.Errorf("bwrapMounts over `%s` = %+v, want one mount at /dst", strings.Join(argv, " "), ms)
+			continue
+		}
+		if !bwrapMountedAt(argv, "/dst") {
+			t.Errorf("bwrapMounts reads `%s` as a mount at /dst and bwrapMountedAt does not", strings.Join(argv, " "))
+		}
+		if bwrapMountedAt(argv, "/src") {
+			t.Errorf("`%s`: a bind's SOURCE is not a mount point", strings.Join(argv, " "))
+		}
+		wantSrc := bwrapMountVerbs[v].Src >= 0
+		if (ms[0].Src != "") != wantSrc {
+			t.Errorf("`%s`: source read as %q, want present=%v — an FD operand is not a path for D2(b) to judge", strings.Join(argv, " "), ms[0].Src, wantSrc)
+		}
+	}
+	// A truncated argv is no mount at all: bwrap would refuse the line, and a
+	// reader that invented one would answer about a path that is not there.
+	for _, argv := range [][]string{{"bwrap", "--tmpfs"}, {"bwrap", "--bind", "/src"}, {"bwrap", "--proc"}} {
+		if ms := bwrapMounts(argv); len(ms) != 0 {
+			t.Errorf("bwrapMounts over the truncated `%s` = %+v, want none", strings.Join(argv, " "), ms)
+		}
+	}
+}
