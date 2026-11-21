@@ -117,7 +117,8 @@ func rrgncMagic(path string) (string, error) {
 // line that explained them was printed by nothing (ranger-base-f177g).
 type rrgncLoop struct {
 	cmd   *exec.Cmd
-	donor string
+	donor string // the file on PATH the bytes came from, per rrgncDonor
+	bin   string // the copy of them this loop was exec'd from
 	say   string // the file holding the loop's own stdout and stderr
 }
 
@@ -142,7 +143,7 @@ func (l *rrgncLoop) Pid() int { return l.cmd.Process.Pid }
 // What it must never do is proceed on an unsettled reading, because then the
 // assertion below it is about a stranger's image and the failure arrives as a
 // verdict about staleness.
-func rrgncStartLoop(t *testing.T, bin string) *rrgncLoop {
+func rrgncStartLoop(t *testing.T, donor, bin string) *rrgncLoop {
 	t.Helper()
 	// The LIFE is argv and the BLOCK is a pipe. `read -t <n>` with nothing to
 	// read waits in the kernel, burning no CPU, and returns either when the
@@ -164,7 +165,7 @@ func rrgncStartLoop(t *testing.T, bin string) *rrgncLoop {
 		t.Fatal(err)
 	}
 	loop.Stdout, loop.Stderr = say, say
-	l := &rrgncLoop{cmd: loop, donor: bin, say: say.Name()}
+	l := &rrgncLoop{cmd: loop, donor: donor, bin: bin, say: say.Name()}
 	if err := loop.Start(); err != nil {
 		t.Fatalf("the donor at %s would not start: %v", bin, err)
 	}
@@ -186,7 +187,7 @@ func rrgncStartLoop(t *testing.T, bin string) *rrgncLoop {
 		}
 		if time.Now().After(deadline) {
 			_, path, ok := procExe(l.Pid())
-			t.Fatalf("pid %d never settled onto %s (last reading: %q ok=%v) — a fixture that proceeds here asserts against a stranger's image%s", l.Pid(), bin, path, ok, rrgncPostmortem(l, bin))
+			t.Fatalf("pid %d never settled onto %s (last reading: %q ok=%v) — a fixture that proceeds here asserts against a stranger's image%s", l.Pid(), bin, path, ok, rrgncPostmortem(l))
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -197,14 +198,14 @@ func rrgncStartLoop(t *testing.T, bin string) *rrgncLoop {
 // child before it is recorded, and this says so again before each reading, so
 // a child that dies mid-test (or a pid reused after it) arrives as "your
 // fixture died" and never as a verdict about staleness.
-func rrgncChildStillOurs(t *testing.T, l *rrgncLoop, bin string) {
+func rrgncChildStillOurs(t *testing.T, l *rrgncLoop) {
 	t.Helper()
 	_, path, ok := procExe(l.Pid())
 	if !ok {
-		t.Fatalf("pid %d: this fixture's stand-in loop is gone before the reading — the assertions below would be about a stranger%s", l.Pid(), rrgncPostmortem(l, bin))
+		t.Fatalf("pid %d: this fixture's stand-in loop is gone before the reading — the assertions below would be about a stranger%s", l.Pid(), rrgncPostmortem(l))
 	}
-	if path != bin {
-		t.Fatalf("pid %d now runs %s, not this fixture's %s — so every reading below is a stranger's (see rrgncStartLoop and rrgncLoopLife)%s", l.Pid(), path, bin, rrgncPostmortem(l, bin))
+	if path != l.bin {
+		t.Fatalf("pid %d now runs %s, not this fixture's %s — so every reading below is a stranger's (see rrgncStartLoop and rrgncLoopLife)%s", l.Pid(), path, l.bin, rrgncPostmortem(l))
 	}
 }
 
@@ -215,28 +216,20 @@ func rrgncChildStillOurs(t *testing.T, l *rrgncLoop, bin string) {
 // pass (ranger-base-x0ses). The donor's own stderr is the line that names the
 // mechanism — `coreutils: unknown program 'posse'` is what nine days of this
 // family were spent not reading.
-func rrgncPostmortem(l *rrgncLoop, bin string) string {
+func rrgncPostmortem(l *rrgncLoop) string {
 	var b strings.Builder
 	b.WriteString("\n    postmortem, as observed:")
-	magic, err := rrgncMagic(l.donor)
-	switch {
-	case err != nil:
-		fmt.Fprintf(&b, "\n      donor   %s (first two bytes unreadable: %v)", l.donor, err)
-	case magic == "#!":
-		fmt.Fprintf(&b, "\n      donor   %s (first two bytes %q, so a '#!' stub — rrgncDonor must refuse it)", l.donor, magic)
-	default:
-		fmt.Fprintf(&b, "\n      donor   %s (first two bytes %q, so a binary)", l.donor, magic)
-	}
+	fmt.Fprintf(&b, "\n      donor   %s%s (chosen by rrgncDonor)", l.donor, rrgncShape(l.donor))
 	fmt.Fprintf(&b, "\n      argv    %q", l.cmd.Args)
 	if id, path, ok := procExe(l.Pid()); ok {
 		fmt.Fprintf(&b, "\n      /proc/%d/exe -> %s (%s)", l.Pid(), path, id)
 	} else {
 		fmt.Fprintf(&b, "\n      /proc/%d/exe unreadable — the loop is gone or is not ours", l.Pid())
 	}
-	if st, err := os.Stat(bin); err == nil {
-		fmt.Fprintf(&b, "\n      the copy at %s: %d bytes, mode %v, %s", bin, st.Size(), st.Mode(), fileIdentity(bin))
+	if st, err := os.Stat(l.bin); err == nil {
+		fmt.Fprintf(&b, "\n      the copy it ran, %s%s: %d bytes, mode %v, %s", l.bin, rrgncShape(l.bin), st.Size(), st.Mode(), fileIdentity(l.bin))
 	} else {
-		fmt.Fprintf(&b, "\n      the copy at %s: %v", bin, err)
+		fmt.Fprintf(&b, "\n      the copy it ran, %s: %v", l.bin, err)
 	}
 	out, err := os.ReadFile(l.say)
 	if err != nil {
@@ -246,6 +239,21 @@ func rrgncPostmortem(l *rrgncLoop, bin string) string {
 	}
 	b.WriteString("\n      a donor that answers \"unknown program\" there dispatches on its own path's stem and cannot be this fixture's loop — see rrgncDonor")
 	return b.String()
+}
+
+// rrgncShape says whether a file is a binary or a `#!` stub, for the
+// postmortem's two file lines. It is a reading and not a claim: a path that
+// cannot be read says so rather than reading as either one.
+func rrgncShape(path string) string {
+	magic, err := rrgncMagic(path)
+	switch {
+	case err != nil:
+		return fmt.Sprintf(" (first two bytes unreadable: %v)", err)
+	case magic == "#!":
+		return fmt.Sprintf(" (first two bytes %q, so a '#!' stub — rrgncDonor must refuse one)", magic)
+	default:
+		return fmt.Sprintf(" (first two bytes %q, so a binary)", magic)
+	}
 }
 
 // rrgncCopy writes src's bytes to dst, executable, through a temp file and a
@@ -280,7 +288,7 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 	// The loop: a process running the installed file. It stamps nothing —
 	// like every loop alive on the day this lands, started by a binary that
 	// predates the record fields — so /proc is all G18 has.
-	loop := rrgncStartLoop(t, bin)
+	loop := rrgncStartLoop(t, donor, bin)
 
 	a := &App{StateDir: filepath.Join(root, "state")}
 	lock, held, err := lockWatch(a)
@@ -292,7 +300,7 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rrgncChildStillOurs(t, loop, bin)
+	rrgncChildStillOurs(t, loop)
 	img, ok := ReadWatchImage(a)
 	if !ok || img.Via != "proc" || img.Path != bin {
 		t.Fatalf("before the swap the reading must come from /proc and name %s: ok=%v %+v", bin, ok, img)
@@ -304,7 +312,7 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 	// The install.
 	rrgncCopy(t, donor, bin)
 
-	rrgncChildStillOurs(t, loop, bin)
+	rrgncChildStillOurs(t, loop)
 	img, ok = ReadWatchImage(a)
 	if !ok || !img.Stale() {
 		t.Fatalf("after a rename over the loop's path G18 must fire: ok=%v %+v", ok, img)
@@ -341,11 +349,11 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 
 	// The negative control on the same loop: a restart onto the new file
 	// clears it. (Here: the record names a pid whose image IS the new file.)
-	fresh := rrgncStartLoop(t, bin)
+	fresh := rrgncStartLoop(t, donor, bin)
 	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: fresh.Pid()}); err != nil {
 		t.Fatal(err)
 	}
-	rrgncChildStillOurs(t, fresh, bin)
+	rrgncChildStillOurs(t, fresh)
 	if img, ok := ReadWatchImage(a); !ok || img.Stale() {
 		t.Errorf("a loop restarted onto the installed file must clear G18: ok=%v %+v", ok, img)
 	}
@@ -598,7 +606,7 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 	var insts []instance
 	for _, name := range []string{"ranger", "weller"} {
 		home := filepath.Join(root, "homes", name)
-		loop := rrgncStartLoop(t, bin)
+		loop := rrgncStartLoop(t, donor, bin)
 
 		a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 		lock, held, err := lockWatch(a)
@@ -617,7 +625,7 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 
 	for i, in := range insts {
 		other := insts[(i+1)%len(insts)]
-		rrgncChildStillOurs(t, in.loop, bin)
+		rrgncChildStillOurs(t, in.loop)
 		img, ok := ReadWatchImage(in.app)
 		if !ok || !img.Stale() {
 			t.Fatalf("%s: after the rename this instance's loop is stale: ok=%v %+v", in.home, ok, img)
