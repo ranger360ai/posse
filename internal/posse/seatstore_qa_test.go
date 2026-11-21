@@ -217,6 +217,126 @@ func TestQASeatStoreMechanism(t *testing.T) {
 	}
 }
 
+// THE NO-WALL ARMS of all three producers (ranger-base-r9slg, escaped from
+// ranger-base-ltmyh). A launch that can name no per-seat wall dir — no HOME —
+// is the one state in which the seat store cannot be placed where ADR 0100 D1
+// requires, and each producer answers it in the only way its layer allows:
+// L3 and the prepare REFUSE, L4 cannot (it renders a mount list and returns
+// no error) so it fails CLOSED, mounting the shared store read-only over its
+// own name.
+//
+// Nothing drove any of them. MEASURED 2026-11-15 at 4b3013cd, each mutant
+// applied alone with the package run unfiltered (4054 tests, 0 FAIL):
+// `put(l.Objects, l.Objects, true,` -> `false` — the shared object store
+// read-write inside a caged seat, ADR 0099 D1's whole subject — and
+// seatStoreBinds' refusal replaced by `return nil, nil`, which renders
+// nothing and leaves the seat the shared store read-write from the plain
+// grant. The reason both lived: `seatStoreNoWall` appears in no test file in
+// this tree, and both shipped mount pins compose `wall` from a real
+// os.UserHomeDir()/SeatWallDir, so `l.Store` was never "" in a test.
+//
+// Every arm carries its populated row as the control, because an absent
+// store and a refusing producer look identical when the fixture never had
+// one.
+func TestQASeatStoreWithNoWallDirFailsClosedAtEveryProducer(t *testing.T) {
+	t.Run("L4 mounts the shared store read-only over its own name", func(t *testing.T) {
+		t.Parallel()
+		wt := gitWorktreeFixture(t)
+		dirs := LinkedGitDirs(wt)
+		if len(dirs) != 2 {
+			t.Fatalf("a linked worktree has two git dirs, got %v", dirs)
+		}
+		own, common := absResolve(dirs[0]), absResolve(dirs[1])
+		in := []CageMount{{Src: common, Dst: common, Why: "a grant of the common dir whole"}}
+		l := seatStoreFrom(own, common, "")
+		if l.Store != "" {
+			t.Fatalf("FIXTURE: a layout with no wall dir still names a store %q, so this arm is not the no-wall case", l.Store)
+		}
+
+		ms := seatStoreCageMounts(in, own, common, "")
+		m, ok := mountAt(ms, l.Objects)
+		if !ok {
+			t.Fatalf("nothing is mounted at <common>/objects:\n%s", showMounts(ms))
+		}
+		if !m.RO {
+			t.Errorf("with no wall dir to hold a store, <common>/objects is mounted READ-WRITE: that is the SHARED object store, writable inside a caged seat, which is what ADR 0099 D1 exists to stop (%+v)", m)
+		}
+		if absResolve(m.Src) != l.Objects {
+			t.Errorf("the fail-closed mount is bound from %s, want the shared store over its own name %s", m.Src, l.Objects)
+		}
+		wantNoMount(t, ms, l.Base, "with no store there is no side path for its alternates to name")
+		if len(ms) != len(in)+1 {
+			t.Errorf("want exactly one mount added, got %d from %d:\n%s", len(ms), len(in), showMounts(ms))
+		}
+
+		// CONTROL: the same call WITH a wall dir gives the seat its own store
+		// read-write, so the read-only row above is about the missing wall dir
+		// and not about this fixture.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		wall := SeatWallDir(home, wt)
+		if wall == "" {
+			t.Fatal("CONTROL: this binary's HOME names no wall dir, so there is nothing to compare the arm above against")
+		}
+		cs := seatStoreCageMounts(in, own, common, wall)
+		c, ok := mountAt(cs, l.Objects)
+		if !ok || c.RO || absResolve(c.Src) != seatStoreFrom(own, common, wall).Store {
+			t.Fatalf("CONTROL: with a wall dir <common>/objects is %+v (ok=%v), want the seat's own store read-write — the arm above measured nothing", c, ok)
+		}
+	})
+
+	t.Run("L3 refuses rather than rendering nothing", func(t *testing.T) {
+		t.Parallel()
+		wt := gitWorktreeFixture(t)
+		b, err := seatStoreBinds(nil, "", wt)
+		if err == nil {
+			t.Errorf("seatStoreBinds with no home rendered %d bind(s) and no error: a render that says nothing leaves the seat the SHARED object store read-write from the plain grant (ADR 0100 D1)", len(b))
+		} else if !strings.Contains(err.Error(), "ADR 0100 D1") {
+			t.Errorf("the no-home refusal does not name the decision it enforces: %v", err)
+		}
+		if len(b) != 0 {
+			t.Errorf("the refusal came with %d bind(s): %+v", len(b), b)
+		}
+
+		// CONTROL: with a home the same call renders the two binds, so the
+		// refusal above is the no-home arm and not a broken fixture.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := seatStoreBinds(nil, home, wt)
+		if err != nil || len(got) != 2 {
+			t.Fatalf("CONTROL: seatStoreBinds(home) = %d bind(s), %v; want 2 and no error — the arm above measured nothing", len(got), err)
+		}
+	})
+
+	t.Run("the prepare refuses", func(t *testing.T) {
+		// No t.Parallel: the no-home state is HOME, which is per process.
+		a, repo := wtApp(t), wtRepo(t)
+		tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// CONTROL first, while the home is still real: the prepare does make
+		// a store here, so the refusal below is about the home.
+		if err := prepareSeatStore(tr); err != nil {
+			t.Fatalf("CONTROL: the prepare refused with a real home (%v), so the arm below measures nothing", err)
+		}
+		t.Setenv("HOME", "")
+		if l, ok := seatStoreFor(tr.Path); !ok || l.Store != "" {
+			t.Fatalf("FIXTURE: HOME=\"\" still names the store %q (ok=%v), so this is not the no-wall case", l.Store, ok)
+		}
+		err = prepareSeatStore(tr)
+		if err == nil {
+			t.Error("the prepare with no home returned nil: the launch then goes on to render a wall over a store that was never made (ADR 0100 D1)")
+		} else if !strings.Contains(err.Error(), "ADR 0100 D1") {
+			t.Errorf("the no-home refusal does not name the decision it enforces: %v", err)
+		}
+	})
+}
+
 // The L3 wiring: posse's OWN render (bwrapRender) carries the store's bind
 // over `<common>/objects` and the shared store read-only at the side path,
 // AFTER every write grant, so the store is the deepest mount there. The live
