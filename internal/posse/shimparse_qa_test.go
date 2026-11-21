@@ -508,3 +508,136 @@ func TestQAEveryRenderedShimParsesAndCarriesNoBash32SubstitutionHazard(t *testin
 		t.Fatalf("only %d shims were read across %d deny sets and two PATHs — the matrix measured less than one shim per render", scanned, len(spDenyMatrix))
 	}
 }
+
+// ─── the rendered shell that is NOT a shim ──────────────────────────────────
+
+// TestQAEveryRenderedHookAndGateShellCarriesNoBash32SubstitutionHazard widens
+// the rule above to the rest of the shell this package WRITES.
+//
+// WHY, AND WHAT MEASURED IT (ranger-base-0qhkn, verifying ranger-base-i36bf's
+// close). The door above reads one directory — a persona's gates `bin/` — so
+// its corpus is shims, and the close that built it said in so many words that
+// rendered hooks and the gate shell "are their own corpus and this door does
+// not reach them", having READ them for this class rather than measured them.
+// Measured, through the production renderers, 2026-11-21 on this box (linux
+// 7.2.15-1-omarchy, go1.27.3):
+//
+//	prepare-commit-msg (App.CommitGuardHook)   85,614 B   11 case   110 $(
+//	the gate shell (renderGateShell)            2,893 B    5 case     2 $(
+//	pre-push (const PrePushHook)                2,016 B    2 case     1 $(
+//
+// The read was right: all three are clean today, which is why this pin lands
+// green — and is the whole reason to land it. A `case` arm added inside one of
+// those 113 substitutions tomorrow is exactly as invisible as the one
+// ranger-base-i36bf was filed for, and that one cost six days of every darwin
+// seat's git and was found by a macos CI leg.
+//
+// WHAT ALREADY COVERS WHAT, so this is not a second copy of somebody's pin.
+// `sh -n` over the INSTALLED prepare-commit-msg is
+// TestQAInstalledCommitHookParses (cleanupremedy_qa_test.go) — on darwin that
+// shell IS bash 3.2, so there it catches this class for that one body. The
+// gate shell has a tracked reference copy of its shape
+// (docs/adr/0009-gate-shell.probe.sh) that `make verify-shell-syntax` parses
+// with its own shebang's shell, and nothing pins that copy against the
+// renderer, so it answers for the copy. Neither reaches the STRUCTURAL half,
+// and the structural half is the one that answers on linux, where every one of
+// these renderers is edited.
+//
+// ONE THING THIS CORPUS HAS THAT A SHIM DOES NOT, said because the next editor
+// of a hook body will meet it. The scanner knows no heredoc and gives up on a
+// backquote — true of every shim, and the reason its doc comment says so — and
+// the prepare-commit-msg body carries SIXTEEN backquotes (MEASURED
+// 2026-11-21; heredocs in all four bodies: none). Every one of them is inside
+// a single-quoted string, which the scanner skips whole, so it reads this
+// corpus clean today. An UNQUOTED backquote added to one of these bodies
+// therefore comes back as the scanner's THIRD state, and this pin fails on
+// that — "could not be read, so it is NOT measured" — which is the loud answer
+// and never a pass.
+func TestQAEveryRenderedHookAndGateShellCarriesNoBash32SubstitutionHazard(t *testing.T) {
+	// Parallel where the door above cannot be: that one calls t.Setenv to put
+	// two PATHs under the shim renderers, and nothing here reads the
+	// environment (ranger-base-2ggb's rule, enforced by
+	// TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared, which caught
+	// this file's first draft).
+	t.Parallel()
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh on this box")
+	}
+	// The scanner, with "could not read it" failing rather than passing — the
+	// same rule the door above applies, over a corpus it does not reach.
+	scan := func(name, body string) []string {
+		found, unreadable := b32CaseArmsInSubstitution(body)
+		if unreadable != "" {
+			t.Errorf("the rendered %s could not be read for the bash 3.2 substitution rule, so it is NOT measured: %s", name, unreadable)
+			return nil
+		}
+		return found
+	}
+
+	// The ceiling is config, so one is written here for the same reason the
+	// door above writes one: without it the visibility guard's argv arm is in
+	// no body this pin reads.
+	home := t.TempDir()
+	cfg := filepath.Join(home, "config.yaml")
+	if err := os.WriteFile(cfg, []byte(qaCeilingCfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{Home: home, StateDir: filepath.Join(home, "state"), ConfigPath: cfg}
+	if set := a.OpsPatternSet(); len(set.Ceiling) == 0 {
+		t.Fatal("fixture premise: the ceiling is empty, so no body here carries its argv guard")
+	}
+	_, _, shellPath, err := a.RenderGates("developer", []string{"Bash(git push:*)"})
+	if err != nil {
+		t.Fatalf("RenderGates: %v", err)
+	}
+	gateShell, err := os.ReadFile(shellPath)
+	if err != nil {
+		t.Fatalf("the gate shell the launcher renders is unreadable, so this pin reads one body fewer than it claims: %v", err)
+	}
+	corpus := []struct{ name, body string }{
+		// Both visibilities, because visibilityGuardBody differs between them
+		// and the refusal blocks are where this tree's `case` statements live.
+		{"prepare-commit-msg hook (App.CommitGuardHook, public)", a.CommitGuardHook("public", a.OpsPatternSet())},
+		{"prepare-commit-msg hook (App.CommitGuardHook, private)", a.CommitGuardHook("private", a.OpsPatternSet())},
+		{"gate shell (renderGateShell)", string(gateShell)},
+		{"pre-push hook (const PrePushHook)", PrePushHook},
+	}
+	if len(corpus) != 4 {
+		t.Fatalf("the corpus is %d bodies, want 4 — a row that stops being rendered must red here, not shrink the pin", len(corpus))
+	}
+	for _, c := range corpus {
+		// THE PREMISE PER ROW, because a rule about `case` inside `$( )` is
+		// green over a body that has neither, and a renderer that started
+		// returning "" would pass every assertion below.
+		if n := strings.Count(c.body, "$("); n == 0 || strings.Count(c.body, "case ") == 0 {
+			t.Errorf("fixture premise: the rendered %s carries %d command substitutions and %d `case` statements — this rule reaches nothing in it",
+				c.name, n, strings.Count(c.body, "case "))
+			continue
+		}
+		// Half 1: it parses. These bodies are `#!/bin/sh` and the gate shell
+		// is too (gateShellScript), so this box's sh is the right parser; on
+		// darwin it is bash 3.2 and catches this class outright.
+		p := filepath.Join(t.TempDir(), "body.sh")
+		if err := os.WriteFile(p, []byte(c.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command(sh, "-n", p).CombinedOutput(); err != nil {
+			t.Errorf("the rendered %s does not parse under %s: %v\n%s", c.name, sh, err, out)
+		}
+		// Half 2: and it carries no shape darwin's /bin/sh refuses.
+		for _, f := range scan(c.name, c.body) {
+			t.Errorf("the rendered %s carries a shape darwin's /bin/sh refuses — %s\n"+
+				"  put the walk in a function the substitution CALLS (renderSeatObjectEnv, ranger-base-i36bf), or give every arm the POSIX leading paren `(pattern)` (renderHookSkipGlobalScope)", c.name, f)
+		}
+	}
+
+	// AND THE JUDGE IS THE REAL ONE. Every row above asserts an ABSENCE, so a
+	// scan that answered "nothing" over everything would make this test green
+	// forever. One synthetic body, shaped like the renderer this bead was
+	// filed for, through the same call: it has to come back as a finding.
+	hazard := "x=$(\n  case \"$1\" in\n    -C) shift 2 ;;\n  esac\n)\n"
+	if got := scan("synthetic control body", hazard); len(got) != 1 {
+		t.Errorf("the judge every row above used found %d findings in a body that is this hazard, want 1 — so those rows were measured by nothing: %v", len(got), got)
+	}
+}

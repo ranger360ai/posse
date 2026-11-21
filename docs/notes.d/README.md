@@ -44,6 +44,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-3weac](ranger-base-3weac.md) — The flat-reader derivation was keyed on a parameter's NAME (ranger-base-3weac) — 2026-11-21
 - [ranger-base-3cjzs](ranger-base-3cjzs.md) — The mask read XDG_STATE_HOME raw and rex's library expands it first (ranger-base-3cjzs) — 2026-11-21
 - [ranger-base-18brx](ranger-base-18brx.md) — `posse upgrade` stages where the deny was rendered, not where its own TMPDIR points (ranger-base-18brx) — 2026-11-21
+- [ranger-base-0qhkn](ranger-base-0qhkn.md) — ranger-base-0qhkn — four closes verified, and the rendered shell that is not a shim — 2026-11-21
 - [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20
 - [ranger-base-rrgnc](ranger-base-rrgnc.md) — An install does not reach a running dispatch loop: G18 (ranger-base-rrgnc) — 2026-11-20
 - [ranger-base-r9slg](ranger-base-r9slg.md) — ranger-base-r9slg — twelve findings the release triage dropped — 2026-11-20
