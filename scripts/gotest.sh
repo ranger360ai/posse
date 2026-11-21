@@ -437,6 +437,98 @@ self_test() {
 	say() { printf 'ok    %s\n' "$1"; }
 	fail() { printf 'FAIL  %s: %s\n' "$1" "$2"; rc=1; }
 
+	# A PLANT OVER A FILE THIS SCRIPT JUST EXEC'D IS ETXTBSY UNDER LOAD, AND
+	# NO FD OF OURS IS THE REASON (ranger-base-nywsk). Arm 1b below writes
+	# the poison IN PLACE over the cached binary arm 1 ran twice, and on
+	# 2026-11-15 at a one-minute load average of 14 that write failed —
+	# `cache/gotestselftest-<sha>.test: Text file busy`, under `set -e`, so
+	# the whole self-test died after three oks and reddened
+	# `make treepins-check` and every `make tree-check` behind it.
+	#
+	# ETXTBSY on an OPEN FOR WRITE means some process still holds that inode
+	# as its executable text. The obvious reading — a writer's fd this
+	# script left open, which is the shape ADR 0085 is about from the other
+	# side — is the wrong one: the arm's own child was exec'd, waited for and
+	# reaped before the write, and this script holds no fd on the cached file
+	# at all. It is the kernel's: the final `fput` of an exec'd file, which
+	# is what releases the write deny, is deferred past the exit of the
+	# process that held it, so a write that follows a reaped exec can lose
+	# the race. MEASURED 2026-11-20 on this box (linux 7.2.15, bash 5,
+	# one-minute load average 3.7-5.2, scripts/gotest.sh's own temp dir), a
+	# tiny Go ELF exec'd and reaped and then written over immediately:
+	#
+	#   exec-then-write, 300 iterations   7 ETXTBSY   (2.3%)
+	#   exec-then-write, 400 iterations   6 ETXTBSY   (1.5%)
+	#   the same write while it really is running     ETXTBSY every time
+	#
+	# and the window is SHORT: retried flat out it cleared after 8-22
+	# attempts, 13.9-38.4ms, worst 38.4ms, every time, 6/6. So the fix is a
+	# bounded retry — there is nothing to close — and the budget below is
+	# two orders of magnitude over the worst drain measured. The arm is then
+	# evidence and not a coin toss: a plant that cannot land says so and
+	# reds ONE arm, instead of taking the script down from under the arms
+	# that have not run yet.
+	#
+	# The production path never writes over a cached binary — reuse() moves
+	# a freshly built file into place, and a rename over a busy inode is not
+	# refused — so this is the self-test's own hazard and is fixed here.
+	#
+	# `sleep` is not one program either: BSD sleep has rejected a fractional
+	# argument, so the nap is PROBED like `stat` and the sha are, and a box
+	# that will only sleep in whole seconds gets fewer, longer attempts
+	# rather than a tighter spin.
+	# PLANT_ERR and PLANT_TRIES are plant_over's answer to its caller, and
+	# they are declared HERE so bash's dynamic scope keeps them inside this
+	# function: plant_over sees them, and nothing outside the self-test
+	# inherits them.
+	local plant_cap hold_cap PLANT_ERR PLANT_TRIES
+	if sleep 0.05 2>/dev/null; then
+		nap() { sleep 0.05; }
+		plant_cap=200
+		hold_cap=200
+	else
+		nap() { sleep 1; }
+		plant_cap=15
+		hold_cap=20
+	fi
+	# plant_over <src> <dst> — write src's bytes over dst IN PLACE, waiting
+	# out a dst the kernel still holds as executable text. Sets PLANT_ERR
+	# and PLANT_TRIES for the caller to name. Retries on ANY failure and
+	# reads no strerror text: the message is localized and the right
+	# response to a dst that is genuinely unwritable is the same bounded
+	# wait followed by the same named failure.
+	plant_over() {
+		local src=$1 dst=$2 a=0 said=no
+		PLANT_ERR=
+		PLANT_TRIES=0
+		while :; do
+			a=$((a + 1))
+			PLANT_TRIES=$a
+			if PLANT_ERR=$( { cat "$src" >"$dst"; } 2>&1 ); then
+				# The write is not believed on its exit
+				# status: a plant that reported success and
+				# landed nothing turns arm 1b's whole poison
+				# measurement green over a file that was never
+				# poisoned. That was the one mutant of this
+				# helper that survived its first pass, so the
+				# bytes are read back.
+				cmp -s -- "$src" "$dst" && return 0
+				PLANT_ERR="the write reported success but $dst does not hold the planted bytes"
+				return 1
+			fi
+			[ "$a" -ge "$plant_cap" ] && return 1
+			if [ "$said" = no ]; then
+				printf 'gotest.sh: %s: %s — waiting for the kernel to release it (ranger-base-nywsk)\n' \
+					"$dst" "$PLANT_ERR" >&2
+				said=yes
+			fi
+			# The first few attempts pay no nap: each one is a fork,
+			# which is ~1.7ms on this box, and the whole drain
+			# measured 13.9-38.4ms.
+			[ "$a" -ge 8 ] && nap
+		done
+	}
+
 	# ARM 1: two runs of an unchanged package reuse ONE inode. This is the
 	# property the whole script exists for.
 	local i1 i2 out
@@ -487,7 +579,22 @@ self_test() {
 			fail "control: the plant runs when exec'd" "no marker"
 		fi
 		rm -f "$mark"
-		cat "$plant" >"$cached"
+		# NOT a bare `cat "$plant" >"$cached"`: arm 1 exec'd this very
+		# inode twice, and the kernel can still be holding it
+		# (ranger-base-nywsk — the measurement is above plant_over).
+		if ! plant_over "$plant" "$cached"; then
+			# Both of this arm's conclusions rest on the plant being
+			# THERE, so neither is reported when it is not: a
+			# `cmp` that cannot find the plant would otherwise read
+			# as "the plant was replaced by the fresh build".
+			fail "poison: a planted file under the cached name is not exec'd" \
+				"could not plant over $cached after $PLANT_TRIES tries: $PLANT_ERR"
+			fail "poison: the plant is replaced by the fresh build" \
+				"nothing was planted"
+			plant=""
+		fi
+	fi
+	if [ -n "$cached" ] && [ -n "$plant" ]; then
 		out=$( cd "$pkg" && "$SELF" . -run TestAlpha -v 2>&1 ) || { echo "$out"; fail "arm1b run" "run failed"; }
 		if [ -e "$mark" ]; then
 			fail "poison: a planted file under the cached name is not exec'd" "the plant ran"
@@ -566,6 +673,120 @@ self_test() {
 	else
 		fail "prune: keeps POSSE_TESTBIN_KEEP per package" "$(cachedcount) left"
 	fi
+
+	# ARM 6 (ranger-base-nywsk): the retrying plant above is NEEDED, and it
+	# WORKS. The bug it fixes showed up once on a loaded box and a re-run in
+	# isolation was green, so a fix of it must not be believed on the
+	# strength of the flake not coming back — this arm is the deterministic
+	# half of the same refusal, and it is the arm that can fail.
+	#
+	# The holder is a real ELF (ETXTBSY is about an executable TEXT image; a
+	# `#!` script's own file is never held, so the plant above cannot stand
+	# in for it) that holds its own inode for as long as the arm needs and
+	# not one fixed interval longer — it exits when this arm removes the
+	# marker it wrote. A sleep of n seconds here would make the arm a race
+	# about timing, which is the defect, not the test for it.
+	local holder holdsrc hmark hpid hwait
+	cat >"$pkg/hold_test.go" <<-'EOF'
+		package a
+
+		import (
+			"os"
+			"testing"
+			"time"
+		)
+
+		// Run as a BACKGROUND holder of its own executable text by
+		// gotest.sh --self-test's arm 6: mark that the exec has
+		// landed, then stay alive until that arm removes the marker.
+		func TestTextHolder(t *testing.T) {
+			p := os.Getenv("GOTEST_SELFTEST_HOLD")
+			if p == "" {
+				t.Skip("no holder marker requested")
+			}
+			if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.Now().Add(30 * time.Second)
+			for time.Now().Before(deadline) {
+				if _, err := os.Stat(p); os.IsNotExist(err) {
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			t.Fatal("holder: the marker was never removed")
+		}
+	EOF
+	holder="$tmp/holder"
+	holdsrc="$tmp/holder.src"
+	hmark="$tmp/holder-running"
+	# Built directly rather than through "$SELF": arm 5 has already
+	# measured the cache's contents, and a holder that went through the
+	# wrapper would add a binary to it under every later arm's feet.
+	# `-timeout 15m` is INERT here — `-c` links a binary and runs no test, so
+	# there is nothing for a deadline to cut — and it is written anyway
+	# because internal/treepins/suitetimeout_qa_test.go reads every `go test`
+	# in scripts/ and requires each to name its own timeout above a 15m floor
+	# (ranger-base-2ggb). The alternative was to spell `go` somewhere that
+	# pin cannot see it, which is how the build at the top of run() is green:
+	# `buildout=$(go test -c ...` hides the word inside `$(go`. Satisfying a
+	# tree-wide pin with a harmless flag beats teaching the next reader to
+	# route around it.
+	if ! out=$( cd "$pkg" && go test -c -timeout 15m -o "$holder" . 2>&1 ); then
+		echo "$out"
+		fail "control: a write over a live executable is refused" "the holder would not build"
+		fail "plant: the in-place plant waits out a live executable" "the holder would not build"
+	else
+		# DIFFERENT BYTES from the holder, so plant_over's read-back
+		# has something to read: a source byte-identical to its
+		# destination makes a plant that writes nothing indistinguishable
+		# from one that works.
+		cp "$holder" "$holdsrc"
+		printf '\n# ranger-base-nywsk\n' >>"$holdsrc"
+		rm -f "$hmark"
+		( cd "$pkg" && GOTEST_SELFTEST_HOLD="$hmark" "$holder" -test.run TestTextHolder >/dev/null 2>&1 ) &
+		hpid=$!
+		# hold_cap is ten seconds of naps, not one or two, because the
+		# holder's FIRST exec is the cold one ADR 0085 prices: macOS
+		# charges 156-714ms for assessing a freshly written executable
+		# and has been measured at 2.17s. Nothing here is on a deadline
+		# — the arm waits — so the budget is set to make a slow box
+		# green and a holder that never starts say so.
+		hwait=0
+		while [ ! -e "$hmark" ] && [ "$hwait" -lt "$hold_cap" ]; do
+			hwait=$((hwait + 1))
+			nap
+		done
+		if [ ! -e "$hmark" ]; then
+			fail "control: a write over a live executable is refused" "the holder never marked itself"
+			fail "plant: the in-place plant waits out a live executable" "the holder never marked itself"
+		else
+			# The naive write — what this script used to do at the
+			# plant above. It must be refused while the holder runs,
+			# or ETXTBSY is not enforced here and the arm below
+			# proves nothing.
+			if ( cat "$holdsrc" >"$holder" ) 2>/dev/null; then
+				fail "control: a write over a live executable is refused" "the write landed while it was running"
+			else
+				say "control: a write over a live executable is refused"
+			fi
+			# Removing the marker is what lets the holder exit, so
+			# plant_over's wait ends by the holder's exit and the
+			# kernel's release of it, with nothing timed.
+			rm -f "$hmark"
+			if plant_over "$holdsrc" "$holder"; then
+				say "plant: the in-place plant waits out a live executable"
+			else
+				fail "plant: the in-place plant waits out a live executable" \
+					"$PLANT_ERR after $PLANT_TRIES tries"
+			fi
+		fi
+		# The holder's own exit status is not an arm: it is killed by
+		# nothing, but a `go test` binary whose stdout went away reports
+		# that, and this arm's evidence is the two writes above.
+		wait "$hpid" 2>/dev/null || :
+	fi
+	rm -f "$pkg/hold_test.go"
 
 	if [ "$rc" = 0 ]; then
 		echo "gotest.sh --self-test: all arms ok"

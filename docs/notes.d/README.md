@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20
+- [ranger-base-nywsk](ranger-base-nywsk.md) — A write over a file you just exec'd is ETXTBSY under load, and no fd of yours is why (ranger-base-nywsk) — 2026-11-20
 - [ranger-base-jnf2z](ranger-base-jnf2z.md) — The first delegated `posse upgrade`: 19m08s, no rollback (ranger-base-jnf2z) — 2026-11-20
 - [ranger-base-hgcmw](ranger-base-hgcmw.md) — The persona memory dir is granted in the settings payload, not as `--add-dir` (ranger-base-hgcmw) — 2026-11-20
 - [ranger-base-7x3bj](ranger-base-7x3bj.md) — claude's cache/ and .last-cleanup, private per seat at bwrap (ranger-base-7x3bj) — 2026-11-20

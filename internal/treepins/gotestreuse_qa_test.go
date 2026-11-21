@@ -122,6 +122,20 @@ func TestQATheWrapperStillProvesItReusesTheBinary(t *testing.T) {
 		"exit status: a green test greens the wrapper",
 		"build failure: a package that will not compile reds",
 		"prune: keeps POSSE_TESTBIN_KEEP per package",
+		// ranger-base-nywsk. The poison arm plants IN PLACE over a
+		// binary the self-test has just exec'd twice, and the kernel
+		// releases an exec'd file's write deny after the process that
+		// held it is gone — so that write is ETXTBSY under load, which
+		// took the whole self-test down with `set -e` and reddened
+		// `make tree-check` for every seat on the box. These two are
+		// the deterministic half of the same refusal: the write really
+		// is refused while a process executes the file, and the
+		// wrapper's retrying plant waits it out. Required here because
+		// the bug itself showed once at a load average of 14 and a
+		// re-run in isolation was green, so nothing else would notice
+		// the fix being removed.
+		"control: a write over a live executable is refused",
+		"plant: the in-place plant waits out a live executable",
 	} {
 		if !strings.Contains(got, "ok    "+want) {
 			t.Errorf("%s --self-test no longer proves %q — the arm is gone, failing, or renamed\n%s",
