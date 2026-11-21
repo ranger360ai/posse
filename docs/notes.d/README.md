@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-18brx](ranger-base-18brx.md) — `posse upgrade` stages where the deny was rendered, not where its own TMPDIR points (ranger-base-18brx) — 2026-11-21
 - [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20
 - [ranger-base-rrgnc](ranger-base-rrgnc.md) — An install does not reach a running dispatch loop: G18 (ranger-base-rrgnc) — 2026-11-20
+- [ranger-base-r9slg](ranger-base-r9slg.md) — ranger-base-r9slg — twelve findings the release triage dropped — 2026-11-20
 - [ranger-base-nywsk](ranger-base-nywsk.md) — A write over a file you just exec'd is ETXTBSY under load, and no fd of yours is why (ranger-base-nywsk) — 2026-11-20
 - [ranger-base-jnf2z](ranger-base-jnf2z.md) — The first delegated `posse upgrade`: 19m08s, no rollback (ranger-base-jnf2z) — 2026-11-20
 - [ranger-base-hgcmw](ranger-base-hgcmw.md) — The persona memory dir is granted in the settings payload, not as `--add-dir` (ranger-base-hgcmw) — 2026-11-20
