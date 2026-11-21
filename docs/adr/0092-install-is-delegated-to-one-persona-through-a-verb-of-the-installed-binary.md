@@ -351,6 +351,36 @@ D8**, which widened the verb's reading and left this one exactly as this
 amendment wrote it — so the scope clause below is still the whole of what G18
 and `posse status` say about their reach, and it is still true of them.
 
+*The reading is of a PID, and a pid is not an identity (amended by
+ranger-base-bekle).* "G18 reads `/proc/<pid>/exe` where it can" above left out
+which pid: the one THAT home's `dispatch-watch.pid` names, a record whose
+truth decays, while liveness comes from the watch lock — and the lock says a
+loop of this home is running, never that the loop this record describes is.
+`pidAlive`'s own comment has said the difference since rangerhq-gir5 ("a
+recycled pid is alive and is a stranger — so no caller may use it alone as
+proof that the process it recorded is the one there") and this reader was such
+a caller: it built the image, the path and therefore the verdict out of
+`/proc/<that pid>`, and when the recorded loop was gone and its pid reused it
+rendered a stranger's image as `dispatcher pid N runs an image no longer at
+that path — restart the dispatch loop`. MEASURED 2026-11-21: that reading came
+back from a suite run as `ok=true Via:proc Image==OnDisk
+Path:/tmp/go-build…/posse.test`, internally consistent and about a fork of the
+test binary (ranger-base-bekle; the fixture half of the same shape was
+ranger-base-rph5z's). The remedy is the field's standard one — verify a
+property of the PROCESS, never the pid number: the reading is taken only once
+the record can be matched to the process holding that pid, by the image
+identity it stamped and by the process's own start time, which cannot be
+earlier than the record that describes it (`watchPidStranger`,
+internal/posse/watchimage.go, which reads /proc/<pid>'s own mtime for the
+latter). A pid that cannot be matched is an ABSTENTION carrying why
+(`WatchImage.Why`), never a verdict, and the verb's line then says the loop
+could not be identified rather than that none could be read — it is running,
+and an operator sent looking for a missing loop looks for nothing. Both
+comparisons are one-sided, because only one direction is evidence: a loop's
+start precedes its own stamp by however long its preamble took, and on the
+record road (darwin, another pid namespace) the record is its own witness, so
+a pid no /proc can time is not held against it.
+
 **D7 — Guardrail 5 is the edge of the delegation.** Out of scope:
 `posse promote`, `posse refresh`, config and `install_delegate:` itself,
 `.claude/**` and the operator's settings, cage maps, `posse gates

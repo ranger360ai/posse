@@ -398,7 +398,15 @@ func upgradeWatchLine(plan upgradePlan) string {
 	}
 	img, ok := plan.Loop()
 	if !ok {
-		return "dispatch: no running dispatch --watch loop of this home could be read — seats launched after this line render the new walls only if whatever launches them was started after the swap. " + watchScopeSentence(img.Home)
+		// Why is set only where the reader can explain the abstention, and
+		// this is the line it exists for: "no loop could be read" over a
+		// loop whose LOCK is held sends the reader looking for a process
+		// that is running (ranger-base-bekle).
+		what := "no running dispatch --watch loop of this home could be read"
+		if img.Why != "" {
+			what = "this home's dispatch --watch loop could not be identified — " + img.Why
+		}
+		return "dispatch: " + what + " — seats launched after this line render the new walls only if whatever launches them was started after the swap. " + watchScopeSentence(img.Home)
 	}
 	if !img.Stale() {
 		return fmt.Sprintf("dispatch: loop pid %d already runs %s — relaunched seats render the new walls. %s", img.Pid, AbbrevHome(img.Path), watchScopeSentence(img.Home))

@@ -350,7 +350,11 @@ func TestQAG18FiresWhenTheInstallRenamesOverALiveLoop(t *testing.T) {
 	// The negative control on the same loop: a restart onto the new file
 	// clears it. (Here: the record names a pid whose image IS the new file.)
 	fresh := rrgncStartLoop(t, donor, bin)
-	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: fresh.Pid()}); err != nil {
+	// Started, like every record a real loop writes (stampWatchPid) and like
+	// the one above: it is what the reader matches the pid against, so a
+	// record without it is one this fixture's own product code abstains on
+	// rather than reads (ranger-base-bekle).
+	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: fresh.Pid(), Started: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	rrgncChildStillOurs(t, fresh)
@@ -369,12 +373,16 @@ func TestQAG18ReadsTheLoopsOwnStampWhereProcCannotAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	noProc := func(int) (string, string, bool) { return "", "", false }
+	// And no /proc for the start time either, which is the same reader: a
+	// pid an unreadable /proc cannot time is not held against a record that
+	// is its own witness (watchPidStranger's second comparison).
+	noStart := func(int) (time.Time, bool) { return time.Time{}, false }
 	rec := &WatchPid{Pid: 4242, Exe: bin, Image: fileIdentity(bin), Version: "0.5.3+aaaaaaaa"}
 	if rec.Image == "" {
 		t.Skip("this platform's stat carries no inode")
 	}
 
-	if img := readWatchImage(rec, noProc); img.Via != "record" || img.Stale() {
+	if img := readWatchImage(rec, noProc, noStart); img.Via != "record" || img.Stale() {
 		t.Fatalf("the stamped image is still installed: %+v", img)
 	}
 	tmp := bin + ".new"
@@ -384,13 +392,13 @@ func TestQAG18ReadsTheLoopsOwnStampWhereProcCannotAnswer(t *testing.T) {
 	if err := os.Rename(tmp, bin); err != nil {
 		t.Fatal(err)
 	}
-	img := readWatchImage(rec, noProc)
+	img := readWatchImage(rec, noProc, noStart)
 	if !img.Stale() || !strings.Contains(img.Sentence(), "posse 0.5.3+aaaaaaaa") {
 		t.Fatalf("after the rename the stamp must read stale and name its version: %+v / %s", img, img.Sentence())
 	}
 
 	old := &WatchPid{Pid: 4242}
-	if img := readWatchImage(old, noProc); img.Stale() || len(img.GovRows()) != 0 {
+	if img := readWatchImage(old, noProc, noStart); img.Stale() || len(img.GovRows()) != 0 {
 		t.Errorf("an unstamped loop with no /proc is an abstention, not a row: %+v", img)
 	}
 }
@@ -661,5 +669,230 @@ func TestQAALoopReadingCoversItsOwnInstanceAndNotItsSiblings(t *testing.T) {
 	}
 	if !ia.Stale() || !ib.Stale() {
 		t.Errorf("one rename left both loops stale; got %+v and %+v", ia, ib)
+	}
+}
+
+// ─── the pid the record names (ranger-base-bekle) ────────────────────────────
+
+// THE READING IS ABOUT A PID, AND A PID IS NOT AN IDENTITY. G18's verdict is
+// built entirely from /proc/<the pid dispatch-watch.pid names>: the image,
+// the path, and therefore whether an install replaced it. Liveness comes from
+// the watch lock, which the kernel holds and releases at death — but the lock
+// says "a loop of this home is running", never "the loop this record
+// describes is", and `pidAlive`'s own comment in watchpid.go spells out the
+// difference ("a recycled pid is alive and is a stranger — so no caller may
+// use it alone as proof that the process it recorded is the one there").
+// This reader was such a caller.
+//
+// WHAT IT COST. ranger-base-bekle, a red arm 1 that took arms 2 and 3 with it
+// (`make test` aborts the recipe on the first non-zero exit): the reading
+// came back ok=true, Via=proc, Image==OnDisk, naming `/tmp/go-build…/posse.test`
+// — internally consistent, and about a fork of the test binary that had taken
+// the dead stand-in's pid. The fixture half of that is fixed above
+// (rrgncStartLoop, rrgncChildStillOurs, ranger-base-rph5z's commit); this is
+// the PRODUCTION half, where the same two shapes render as "dispatcher pid N
+// runs an image no longer at that path — restart the dispatch loop".
+//
+// Hermetic, through both seams, because the shapes are a dead process and a
+// reused pid number and neither is producible to order.
+func TestQAG18AbstainsRatherThanJudgeAProcessTheRecordCannotBeMatchedTo(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	bin := filepath.Join(root, "posse")
+	if err := os.WriteFile(bin, []byte("installed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	onDisk := fileIdentity(bin)
+	if onDisk == "" {
+		t.Skip("this platform's stat carries no inode")
+	}
+
+	// The stamp a loop wrote, at the second resolution WriteWatchPid writes.
+	stamp := time.Date(2026, 11, 21, 14, 36, 9, 0, time.UTC)
+	// What the loop's own pid answers: it runs the installed file.
+	ours := func(int) (string, string, bool) { return onDisk, bin, true }
+	// What the failing run read instead: a stranger, internally consistent.
+	stranger := func(int) (string, string, bool) { return "9:99", "/tmp/go-build2655127489/b252/posse.test", true }
+	refused := func(int) (string, string, bool) { return "", "", false }
+	// bekleStartedAt and not a local `at`: cmd/testparallel resolves a helper
+	// by NAME across the package, and epoch_test.go's `at` reads the package
+	// var blindT — so a local of that name makes `make verify-parallel`
+	// attribute that read to this test and refuse its t.Parallel.
+	bekleStartedAt := func(d time.Duration) func(int) (time.Time, bool) {
+		return func(int) (time.Time, bool) { return stamp.Add(d), true }
+	}
+	noStart := func(int) (time.Time, bool) { return time.Time{}, false }
+
+	for _, c := range []struct {
+		name  string
+		rec   *WatchPid
+		exe   func(int) (string, string, bool)
+		start func(int) (time.Time, bool)
+		// want is a substring of Why; "" means this one must be a READING,
+		// and via names which road it must have come down.
+		want string
+		via  string
+	}{{
+		name:  "a pid reused after the recorded loop died",
+		rec:   &WatchPid{Pid: 4242, Started: stamp},
+		exe:   stranger,
+		start: bekleStartedAt(time.Minute),
+		want:  "has been recycled",
+	}, {
+		// The control for it, on the same unstamped record — which is every
+		// loop started by a binary predating the stamp fields, the reader
+		// class this file exists to cover.
+		name:  "the recorded loop itself, which started before its own stamp",
+		rec:   &WatchPid{Pid: 4242, Started: stamp},
+		exe:   ours,
+		start: bekleStartedAt(-3 * time.Second),
+		via:   "proc",
+	}, {
+		// THE SECOND BOUNDARY, and the reason the comparison truncates:
+		// `started:` is RFC3339 and carries no sub-second part, so an honest
+		// loop's start time reads up to a second after the stamp it wrote.
+		// Comparing untruncated reds this one about half the time it runs,
+		// which is a flake of exactly the kind this bead is.
+		name:  "a start time later in the same second as the stamp",
+		rec:   &WatchPid{Pid: 4242, Started: stamp},
+		exe:   ours,
+		start: bekleStartedAt(999 * time.Millisecond),
+		via:   "proc",
+	}, {
+		name:  "a start time one second past the stamp",
+		rec:   &WatchPid{Pid: 4242, Started: stamp},
+		exe:   ours,
+		start: bekleStartedAt(time.Second),
+		want:  "has been recycled",
+	}, {
+		// The other comparison, and the one the old code drew from and then
+		// acted on only by dropping a word: it knew the stamped image was
+		// not the image /proc named, dropped the record's VERSION, and kept
+		// that stranger's path and inode — which is a FALSE G18, since the
+		// stranger's image is not what the installed path holds.
+		name:  "a stamped image that is not the image /proc names",
+		rec:   &WatchPid{Pid: 4242, Started: stamp, Exe: bin, Image: onDisk},
+		exe:   stranger,
+		start: bekleStartedAt(-3 * time.Second),
+		want:  "is gone and its pid is somebody else's now",
+	}, {
+		name:  "nothing in the record to match the process against",
+		rec:   &WatchPid{Pid: 4242},
+		exe:   ours,
+		start: noStart,
+		want:  "neither a start time nor an image stamp",
+	}, {
+		// The record road: the record is its own witness, so a pid no /proc
+		// can time is not held against it. This is darwin and another pid
+		// namespace, and it is the road that reads loops on every OS.
+		name:  "a self-describing record where /proc cannot answer at all",
+		rec:   &WatchPid{Pid: 4242, Started: stamp, Exe: bin, Image: onDisk},
+		exe:   refused,
+		start: noStart,
+		via:   "record",
+	}, {
+		// And where only the exe LINK was refused — ranger-base-rph5z's
+		// caged reader, whose /proc/<pid> still stats — the recycled pid is
+		// evidence on that road too.
+		name:  "a refused exe link over a pid that started after the record",
+		rec:   &WatchPid{Pid: 4242, Started: stamp, Exe: bin, Image: onDisk},
+		exe:   refused,
+		start: bekleStartedAt(time.Minute),
+		want:  "has been recycled",
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			img := readWatchImage(c.rec, c.exe, c.start)
+			if c.want == "" {
+				if img.Why != "" || img.Via != c.via {
+					t.Fatalf("this must be a reading down the %s road: %+v", c.via, img)
+				}
+				return
+			}
+			if img.Via != "" || img.Image != "" || img.Stale() || len(img.GovRows()) != 0 {
+				t.Fatalf("a pid this reader cannot attribute must yield no reading, no staleness and no G18 row: %+v / rows %+v", img, img.GovRows())
+			}
+			if !strings.Contains(img.Why, c.want) {
+				t.Errorf("the abstention must say why; want %q in: %q", c.want, img.Why)
+			}
+			if !strings.Contains(img.Why, strconv.Itoa(c.rec.Pid)) {
+				t.Errorf("the abstention must name the pid it is about: %q", img.Why)
+			}
+		})
+	}
+}
+
+// The same claim end to end, with a real process, a real /proc and no seam at
+// all: one live child, one rename, and the only thing that changes between
+// the verdict and the abstention is whether the record could have been
+// written by that process.
+//
+// It is the pin that would have caught the failing run, and it pins the
+// kernel reading the fix rests on — /proc/<pid>'s own mtime as the task's
+// start time (MEASURED in watchimage.go's `procStarted`) — which a seam
+// cannot.
+func TestQAG18ReadsNoVerdictFromARecordWrittenBeforeTheProcessItNames(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("the /proc road; the seams above pin the same claim on every OS")
+	}
+	donor := rrgncDonor(t)
+	root := t.TempDir()
+	bin := filepath.Join(root, "posse")
+	rrgncCopy(t, donor, bin)
+	loop := rrgncStartLoop(t, donor, bin)
+
+	a := &App{StateDir: filepath.Join(root, "state")}
+	lock, held, err := lockWatch(a)
+	if err != nil || held {
+		t.Fatalf("lock: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	pid := loop.Pid()
+
+	// THE CONTROL, in two halves, so that the abstention below is about
+	// identity and not about a reader that has stopped reading: the record
+	// this loop would write about itself reads, and after the install that
+	// reading is a G18 verdict.
+	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: pid, Started: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	rrgncChildStillOurs(t, loop)
+	if img, ok := ReadWatchImage(a); !ok || img.Via != "proc" || img.Why != "" {
+		t.Fatalf("the record a loop writes about itself must read: ok=%v %+v", ok, img)
+	}
+	rrgncCopy(t, donor, bin)
+	rrgncChildStillOurs(t, loop)
+	if img, ok := ReadWatchImage(a); !ok || !img.Stale() || len(img.GovRows()) != 1 {
+		t.Fatalf("after the rename this loop is stale and raises G18: ok=%v %+v / rows %+v", ok, img, img.GovRows())
+	}
+
+	// THE BEAD: the same live process, the same rename, and a record that
+	// cannot be its — written an hour before this pid existed, which is what
+	// a record left behind by a dead loop over a reused pid number looks like
+	// from here. /proc can time the pid; the record cannot be about it.
+	if err := WriteWatchPid(WatchPidPath(a), WatchPid{Pid: pid, Started: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	rrgncChildStillOurs(t, loop)
+	img, ok := ReadWatchImage(a)
+	if ok || img.Stale() || len(img.GovRows()) != 0 {
+		t.Fatalf("a pid the record cannot be matched to must yield no reading and no G18 row: ok=%v %+v / rows %+v", ok, img, img.GovRows())
+	}
+	for _, want := range []string{strconv.Itoa(pid), "has been recycled", "dispatch-watch.pid"} {
+		if !strings.Contains(img.Why, want) {
+			t.Errorf("the abstention is missing %q: %q", want, img.Why)
+		}
+	}
+	// The abstention still names its instance (ranger-base-nqaa1's rule
+	// holds for this one too).
+	if img.Home != a.StateDir {
+		t.Errorf("an abstention names whose loop it could not identify: %q", img.Home)
+	}
+	// And the install report says the loop could not be IDENTIFIED, rather
+	// than that none could be read — the loop IS running, its lock says so,
+	// and an operator sent looking for a missing loop looks for nothing.
+	line := upgradeWatchLine(upgradePlan{Loop: func() (WatchImage, bool) { return ReadWatchImage(a) }})
+	if !strings.Contains(line, "could not be identified") || strings.Contains(line, "no running dispatch --watch loop") {
+		t.Errorf("the verb's line over an unidentifiable loop:\n  %s", line)
 	}
 }
