@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-zcj0z](ranger-base-zcj0z.md) — Arm 1 ran no Go test on either platform for nine days, and both reasons were loud (ranger-base-zcj0z) — 2026-11-21
+- [ranger-base-x78s5](ranger-base-x78s5.md) — The ubuntu donor was never dispatching on argv[0], and two green mutants in the arm-time sweep (ranger-base-x78s5) — 2026-11-21
 - [ranger-base-w9t63](ranger-base-w9t63.md) — Every config key the harness reads, censused against the seed (ranger-base-w9t63) — 2026-11-21
 - [ranger-base-vbp5a](ranger-base-vbp5a.md) — ranger-base-vbp5a — two socket-wall live pins spent sun_path on their own test names — 2026-11-21
 - [ranger-base-rh8y0](ranger-base-rh8y0.md) — ranger-base-rh8y0 — the landed loop's pending re-read, and four findings that are not this repo's — 2026-11-21

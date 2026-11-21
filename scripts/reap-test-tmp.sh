@@ -650,52 +650,92 @@ self_test() {
   # plain copy of a system binary is a distinct inode at a path that ends the
   # way the production `case "$(readlink exe)" in */claude)` wants it to.
   #
-  # THE FIXTURE IS A COPY OF tee(1), NOT OF sleep(1) (ranger-base-0wvu6),
-  # because `-p` has to be an argument the fixture SURVIVES. MEASURED
-  # 2026-11-12 on this box (linux, coreutils 9.x): `sleep -p 30` is `invalid
-  # option -- 'p'`, exit 1, gone before the rig's `sleep 1` is over — so the
-  # `-p` arm was reading "the process I started is not counted" over a
-  # process that had already exited, and would have read exactly the same
-  # with claude_could_register deleted. `tee -p` is a real option
-  # (--output-error=warn-nopipe) and tee with no file operand idles on stdin,
-  # so this fixture is alive, countable, and carries the `-p` the production
-  # filter has to see. Both arms assert that liveness AT THE MOMENT OF THE
-  # CENSUS: a fixture that died is reported as a broken rig and never as a
-  # passing exclusion. That is the vacuity the old spelling could not detect,
-  # and the reason this arm's verdict is a membership test and not a delta —
-  # a delta over an absent process and a delta over an excluded one are the
-  # same number.
+  # THE DONOR IDLES ON STDIN AND SURVIVES `-p`, AND IS NOT sleep(1)
+  # (ranger-base-0wvu6), because `-p` has to be an argument the fixture
+  # SURVIVES. MEASURED 2026-11-12 on this box (linux, coreutils 9.x):
+  # `sleep -p 30` is `invalid option -- 'p'`, exit 1, gone before the rig's
+  # `sleep 1` is over — so the `-p` arm was reading "the process I started is
+  # not counted" over a process that had already exited, and would have read
+  # exactly the same with claude_could_register deleted. Both arms assert
+  # that liveness AT THE MOMENT OF THE CENSUS: a fixture that died is
+  # reported as a broken rig and never as a passing exclusion. That is the
+  # vacuity the old spelling could not detect, and the reason this arm's
+  # verdict is a membership test and not a delta — a delta over an absent
+  # process and a delta over an excluded one are the same number.
   #
   # AND IT IS EXEC'D UNDER THE DONOR'S OWN NAME, NOT UNDER THE COPY'S PATH
   # (ranger-base-fol4d). The exe link and argv[0] are independent facts, and
   # the production counter above reads only the first: identity is
   # `case "$exetarget" in */claude)` over /proc/<pid>/exe, and the `-p`
   # exclusion is claude_could_register scanning the cmdline's TOKENS. So the
-  # file has to be at `.../claude` and argv[0] does not — which is the whole
-  # of this fix, because on ubuntu-latest the donor dispatches on argv[0].
-  # MEASURED 2026-11-21 on run 44901378525, the first CI job to carry
-  # ranger-base-zcj0z's postmortem: both arms `exited 1`, the copy
-  # executable, the fifo a fifo, and `its stderr: coreutils: unknown program
-  # 'claude'` — that runner's coreutils is built --enable-single-binary, so
-  # /usr/bin/tee IS the multi-call binary and a copy of it invoked as
-  # `.../claude` looks up last_component(argv[0]) in its program table,
-  # misses, and exits 1 (src/coreutils.c). Not a noexec mount, not a loader
-  # error, not an argv the donor rejected: the three other readings the
-  # postmortem was written to tell apart. `exec -a "$teename"` hands it the
-  # name it dispatches on while leaving the exe link alone, and a standalone
-  # tee — this box, and darwin — ignores argv[0] either way, so the one
-  # spelling covers both donors. MEASURED here the same day against a
-  # faithful mutant of that donor (a binary that exits 1 with that exact
-  # stderr unless basename(argv[0]) is `tee`): the old spelling GONE exit 1
-  # on both arms, the new one LIVE on both, with `/proc/<pid>/exe` still
-  # reading `.../claude` and the cmdline still `tee -p` / `tee`.
-  local teebin teename fakeclaude fifo fakeerr pkeep pfake cen cn cpids
+  # file has to be at `.../claude` and argv[0] need not be, and `exec -a`
+  # hands a MULTI-CALL donor the name it dispatches on while leaving the exe
+  # link alone. A standalone donor ignores argv[0] either way, so the one
+  # spelling covers both.
+  #
+  # THE DONOR IS THE SHELL THIS SCRIPT IS ALREADY RUNNING UNDER, AND WAS
+  # tee(1) UNTIL ranger-base-x78s5 (finding 1, from ranger-base-fol4d's
+  # close). `bash -p` is privileged mode and a bash with no script operand
+  # reads its commands from stdin, so a copy of it holding the fifo is alive,
+  # countable, and carries the `-p` the production filter has to see — the
+  # same four facts `tee -p` gave, MEASURED 2026-11-21 on this box with the
+  # two donors side by side: alive at +1s, /proc/<pid>/exe the copy, cmdline
+  # `<argv[0]> -p` / `<argv[0]>`, comm `claude`.
+  #
+  # WHY IT MOVED, AND IT IS NOT A BLIND SWAP. `exec -a` did NOT fix the
+  # ubuntu-latest half of ranger-base-fol4d: runs 44903910882 (that close's
+  # own landing) and 44908392250, ubuntu-latest arm 1, both finding-4 arms,
+  # print the pre-fix line verbatim — `it exited 1 (…); run with argv[0] tee`
+  # and `its stderr: coreutils: unknown program 'claude'`, with the copy
+  # executable and the fifo a fifo. An ELF multi-call donor cannot produce
+  # that reading under `exec -a tee`: it would have dispatched to tee and the
+  # fixture would be alive. What can is a donor the kernel execs through a
+  # `#!` LINE — the shape a coreutils built --enable-single-binary-shebangs
+  # installs each utility as — because a shebang exec REBUILDS argv from the
+  # interpreter and the script path, discarding `exec -a` entirely, and the
+  # multi-call interpreter then takes its program name from the copy's own
+  # basename. MEASURED here 2026-11-21 against a faithful mutant of that
+  # shape (a Go ELF that answers `coreutils: unknown program '<basename of
+  # the script path>'` for anything but `tee`, reached through a `#!` stub
+  # named `tee` first on PATH): this script with that stub as its donor fails
+  # BOTH arms with the CI stderr byte for byte, which is the first local
+  # reproduction of that job. A `#!` donor also breaks the identity fact
+  # outright and no argv[0] spelling can mend it — a shebang-script donor
+  # copied to `.../claude` and exec'd `-a tee` reads /proc/<pid>/exe as
+  # `/usr/bin/bash` and cmdline as `/usr/bin/bash .../claude -p` (MEASURED
+  # here the same day) — so the donor must be a REAL BINARY, and `$BASH` is
+  # the one candidate whose shape this script cannot be wrong about: it is
+  # already running it, so a `#!` stub is not among the things it can be.
+  #
+  # IT IS STILL READ AND NOT ASSUMED, and a stub is REFUSED rather than
+  # worked around. The reachable case is the fallback — a box where `$BASH` is
+  # empty and PATH's `bash` is a wrapper SCRIPT, which some are — and there
+  # the honest answer is this rig saying what it cannot plant, in the house
+  # style of its own "no /proc" refusal (ADR 0089 D2). Falling back to another
+  # system utility is how this bug was written: the donor would be chosen for
+  # its name again and the next distro's build of it is the next nine days.
+  local donorbin donorname donormagic fakeclaude fifo fakeerr
+  local fakeexe fakecmd carg pkeep pfake cen cn cpids
   local -a cparr=()
-  teebin=$(command -v tee) || { echo "  FAIL no tee(1) on PATH to copy for the fake claude binary"; fails=$((fails + 1)); teebin=""; }
-  teename=${teebin##*/}
+  donorbin=${BASH:-$(command -v bash || true)}
+  donorname=${donorbin##*/}
+  donormagic=""
+  if [ -z "$donorbin" ] || [ ! -x "$donorbin" ]; then
+    echo "  FAIL no bash(1) to copy for the fake claude binary (\$BASH is '${BASH:-}', PATH has no bash) — this script is itself running under one, so what the rig cannot reach here is a PATH or a cage and not a missing shell"
+    fails=$((fails + 1))
+    donorbin=""
+  else
+    IFS= read -r -N 2 donormagic < "$donorbin" 2>/dev/null || true
+    if [ "$donormagic" = '#!' ]; then
+      echo "  FAIL the donor $donorbin is a '#!' stub and not a binary, so this rig will not plant a fixture from it: a shebang exec rebuilds argv — discarding the exec -a below — and leaves /proc/<pid>/exe reading the INTERPRETER, which is both of the facts the production counter reads (ranger-base-x78s5)"
+      fails=$((fails + 1))
+      donorbin=""
+    fi
+  fi
   fakeclaude="$tmp/claude"
   fifo="$tmp/keepopen"
   fakeerr="$tmp/claude.err"
+  fakeexe="" fakecmd=""
 
   # claude_census runs the production counter ONCE and hands back both facts
   # it reports about that population — the count and the pids — as
@@ -719,9 +759,22 @@ self_test() {
   }
 
   # start_fake <argv...> — one live claude-exe process with that argv, its pid
-  # in $pfake. The keeper holds the fifo's write end open so tee never reads
-  # EOF; its pid is known too, so neither process is left to a grace period,
-  # and both go in SELFTEST_PIDS so a signalled self-test takes them with it.
+  # in $pfake. The keeper holds the fifo's write end open so the donor never
+  # reads EOF; its pid is known too, so neither process is left to a grace
+  # period, and both go in SELFTEST_PIDS so a signalled self-test takes them
+  # with it.
+  #
+  # IT READS THE TWO FACTS THE PRODUCTION COUNTER READS, OFF THE LIVE PROCESS
+  # (ranger-base-x78s5 finding 1). The postmortem used to print the argv[0]
+  # the rig INTENDED — a reprint of `$donorname`, which says `tee` whether the
+  # exec took or not — and that is why two CI readings after the `exec -a` fix
+  # could not say whether it had any effect. These two are observations:
+  # /proc/<pid>/exe is the identity the counter matches `*/claude` against,
+  # and the cmdline is the token list claude_could_register scans for `-p`.
+  # They are empty for a fixture that was already a zombie at +1s, which is
+  # itself the reading, and the `case` below reports a LIVE fixture whose exe
+  # link is not the copy — the one state in which the arms below would grade
+  # an exclusion over a process the counter cannot see, and pass.
   #
   # THE KEEPER'S BOUND IS NOT A DEADLINE FOR THE ARM. Both processes are
   # killed by stop_fake the moment the census is read, so the only thing the
@@ -750,9 +803,26 @@ self_test() {
   start_fake() {
     : > "$fakeerr"
     sleep 300 > "$fifo" 2>/dev/null & pkeep=$!
-    ( exec -a "$teename" "$fakeclaude" "$@" ) < "$fifo" >/dev/null 2>"$fakeerr" & pfake=$!
+    ( exec -a "$donorname" "$fakeclaude" "$@" ) < "$fifo" >/dev/null 2>"$fakeerr" & pfake=$!
     SELFTEST_PIDS=("$pkeep" "$pfake")
     sleep 1
+    fakeexe=$(readlink "/proc/$pfake/exe" 2>/dev/null) || fakeexe=""
+    # The cmdline is read with `read -d ''` and joined by hand, not by a
+    # `tr '\0' ' '`: an arm here decides through $fakeexe and prints
+    # $fakecmd, and a forked matcher that is signalled or cannot be exec'd
+    # under load reads back empty and makes the arm report the property
+    # false when the apparatus is what failed (ranger-base-t07yx, pinned by
+    # selftestforkarm_qa_test.go). `read` is a builtin and claude_could_register
+    # above reads the same file the same way.
+    fakecmd=""
+    while IFS= read -r -d '' carg; do fakecmd="$fakecmd$carg "; done < "/proc/$pfake/cmdline" 2>/dev/null || true
+    case $fakeexe in
+      ""|*/claude) ;;
+      *)
+        echo "  FAIL the fixture (pid $pfake) is live, but /proc/$pfake/exe reads $fakeexe and not the copy at $fakeclaude — the production counter identifies a claude process by that link alone, so the arms below would be grading an exclusion over a process it cannot see (donor $donorbin)"
+        fails=$((fails + 1))
+        ;;
+    esac
   }
   # fake_postmortem — why the fixture is not there any more, for a box the
   # reader cannot log in to. `wait` on an already-exited background child
@@ -776,10 +846,16 @@ self_test() {
     local frc=0 err=""
     wait "$pfake" 2>/dev/null || frc=$?
     err=$(cat "$fakeerr" 2>/dev/null) || true
-    printf '       postmortem: it exited %s (126 could not exec, 127 not found, 0 stdin EOF, else it rejected its argv or dispatched on argv[0]); donor %s, run with argv[0] %s; the copy at %s is %s; the fifo is %s\n' \
-      "$frc" "$teebin" "$teename" "$fakeclaude" \
+    printf '       postmortem: it exited %s (126 could not exec, 127 not found, 0 stdin EOF, else it rejected its argv or dispatched on argv[0]); donor %s (first two bytes %q, so %s), asked for argv[0] %s; the copy at %s is %s; the fifo is %s\n' \
+      "$frc" "$donorbin" "$donormagic" \
+      "$([ "$donormagic" = '#!' ] && echo "a '#!' stub" || echo "a binary")" \
+      "$donorname" "$fakeclaude" \
       "$([ -x "$fakeclaude" ] && echo executable || echo "NOT executable")" \
       "$([ -p "$fifo" ] && echo "a fifo" || echo "NOT a fifo")"
+    # The OBSERVATION, beside the intention above: read off the live process
+    # at +1s by start_fake, empty when it was already gone by then.
+    printf '       as the kernel saw it at +1s: /proc/%s/exe -> %s; its cmdline -> [%s]\n' \
+      "$pfake" "${fakeexe:-(nothing — the process was already gone)}" "$fakecmd"
     if [ -n "$err" ]; then
       printf '       its stderr: %s\n' "$err"
     else
@@ -793,8 +869,8 @@ self_test() {
     SELFTEST_PIDS=()
   }
 
-  if [ -n "$teebin" ]; then
-    cp "$teebin" "$fakeclaude"
+  if [ -n "$donorbin" ]; then
+    cp "$donorbin" "$fakeclaude"
     chmod +x "$fakeclaude"
     mkfifo "$fifo"
 

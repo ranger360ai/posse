@@ -100,16 +100,30 @@ case "$runs$interval$cap" in *[!0-9]*) die "--runs, --interval and --cap take no
 [ "$runs" -gt 0 ] || die "--runs must be at least 1"
 [ "$cap" -gt 0 ] || die "--cap must be at least 1"
 
-teebin=$(command -v tee) || die "no tee(1) on PATH to copy for the fake claude binary"
-
 # A REAL ELF NAMED "claude", not a symlink: /proc/<pid>/exe resolves through a
 # symlink to its target, so a link named claude reads back as whatever it
-# points at and the counter never sees it (reap-test-tmp.sh's own note). tee
-# and not sleep because the fake has to SURVIVE idling: `tee` with no file
-# operand blocks on stdin, and `sleep -p` is an invalid option (the vacuity
-# ranger-base-bttuj found in the rig this harness perturbs).
+# points at and the counter never sees it (reap-test-tmp.sh's own note). The
+# donor is the shell this script is already running under, and not sleep,
+# because the fake has to SURVIVE idling: a bash with no script operand reads
+# its commands from stdin and blocks, and `sleep -p` is an invalid option (the
+# vacuity ranger-base-bttuj found in the rig this harness perturbs).
+#
+# AND NOT tee(1), FOR THE REASON THE RIG ITSELF STOPPED USING IT
+# (ranger-base-x78s5 finding 1, from ranger-base-fol4d): a coreutils built
+# --enable-single-binary installs each utility as a multi-call binary or as a
+# `#!` stub of one, and a copy of either at `.../claude` either dispatches on
+# the name it was given or is exec'd through its interpreter — the first exits
+# 1 before the census, and the second leaves /proc/<pid>/exe reading the
+# interpreter, so the arrival is not counted. HERE THAT WOULD BE SILENT: this
+# harness exists to perturb the rig with arrivals, and arrivals the counter
+# cannot see are a detector that reads GREEN over the defect it was written to
+# find. The stub is refused rather than worked around for that reason.
+donorbin=${BASH:-$(command -v bash || true)}
+[ -n "$donorbin" ] && [ -x "$donorbin" ] || die "no bash(1) to copy for the fake claude binary (\$BASH is '${BASH:-}', PATH has none)"
+IFS= read -r -N 2 donormagic < "$donorbin" 2>/dev/null || donormagic=""
+[ "$donormagic" = '#!' ] && die "the donor $donorbin is a '#!' stub and not a binary: a shebang exec leaves /proc/<pid>/exe reading the interpreter, so every arrival this harness plants would be invisible to the counter it is perturbing (ranger-base-x78s5)"
 root=$(mktemp -d "${TMPDIR:-/tmp}/posse-reap-ambient.XXXXXX") || die "mktemp failed"
-cp -- "$teebin" "$root/claude" || die "could not copy $teebin"
+cp -- "$donorbin" "$root/claude" || die "could not copy $donorbin"
 chmod +x "$root/claude"
 mkfifo "$root/hold" || die "could not make the holding fifo"
 # Read-write, so neither open blocks and nothing is ever written: fd 9 is the
@@ -130,7 +144,7 @@ trap 'cleanup; exit 130' INT TERM
 trap cleanup EXIT
 
 echo "$self: $runs run(s) of $script --self-test, one ambient claude-exe arrival every ${interval}s (cap $cap)"
-echo "$self: fake binary $root/claude (a copy of $teebin)"
+echo "$self: fake binary $root/claude (a copy of $donorbin)"
 
 red=0
 for r in $(seq 1 "$runs"); do

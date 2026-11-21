@@ -25,7 +25,12 @@ package posse
 //     enumeration every landing path in this package already makes
 //     (landClosedTrees' own first two lines) — so a repo this sweep names is
 //     exactly a repo a landing could name, and the dirFilter narrows both
-//     the same way.
+//     the same way. BOTH HALVES OF THAT SENTENCE ARE PINNED at the site that
+//     reads them — landedarm_qa_test.go's last two arms — because until
+//     ranger-base-x78s5 neither was: deleting the dirFilter narrowing, and
+//     replacing `mainCheckoutsOf` with a bare `range dirs`, were each green
+//     over every other arm in that file, which configures one repo by its
+//     own root and drives `Watch(ctx, "", …)`.
 //   - THE BASE is `repoBranch(repo)`, the branch the main checkout has
 //     checked out. That is where PlanSessionTree cuts a tree from and where
 //     MergeSessionWork fast-forwards it back to, so it is "the base it lands
