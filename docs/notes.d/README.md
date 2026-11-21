@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-zm03j](ranger-base-zm03j.md) — Verifying four closes, and the platform half nothing read (ranger-base-zm03j) — 2026-11-21
 - [ranger-base-zcj0z](ranger-base-zcj0z.md) — Arm 1 ran no Go test on either platform for nine days, and both reasons were loud (ranger-base-zcj0z) — 2026-11-21
 - [ranger-base-x78s5](ranger-base-x78s5.md) — The ubuntu donor was never dispatching on argv[0], and two green mutants in the arm-time sweep (ranger-base-x78s5) — 2026-11-21
 - [ranger-base-w9t63](ranger-base-w9t63.md) — Every config key the harness reads, censused against the seed (ranger-base-w9t63) — 2026-11-21

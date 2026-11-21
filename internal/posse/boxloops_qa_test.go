@@ -16,9 +16,11 @@ package posse
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -780,8 +782,33 @@ func TestLiveBoxCensusReadsThisBox(t *testing.T) {
 		t.Skipf("no installed posse at %s — nothing for a live census to read", AbbrevHome(path))
 	}
 	r := ReadBoxLoops(path)
+	// AN ABSTENTION IS THE RIGHT ANSWER FROM ONE REAL SEAT CLASS, and until
+	// ranger-base-zm03j this line was a t.Fatalf that said so was impossible.
+	// MEASURED 2026-11-21 from a child user namespace on this box (`unshare -U
+	// -r`, uid_map `0 1001 1`, both live loops EACCES on exe and readable on
+	// comm): the census abstained — correctly, which is the whole of what
+	// ranger-base-rph5z fixed — and this arm FAILED on it, "a linux box with an
+	// installed posse must yield a reading, not an abstention". That is the
+	// venue the security review's finding was measured in and the one the fix
+	// is for, so the arm cannot call it a failure; and the comment below about
+	// asserting the implication in both directions was unreachable there,
+	// because the Fatalf above it ran first. What a reading from such a seat
+	// owes is the shape of the abstention, so that is what is asserted.
 	if r.Err != nil {
-		t.Fatalf("a linux box with an installed posse must yield a reading, not an abstention: %v", r.Err)
+		if r.Unreadable == 0 {
+			t.Fatalf("the census abstained with nothing of ours refused, so this is not the caged-reader case and /proc answered: %v", r.Err)
+		}
+		s := r.Sentence()
+		if strings.Contains(s, "no dispatch loop on this box runs") {
+			t.Errorf("an abstention rendered the all-clear — the one sentence boxloops.go says must never be printable:\n%s", s)
+		}
+		if !boxSentenceAdmitsItDidNotCoverTheBox(s) {
+			t.Errorf("an abstention's rendering does not admit it did not cover the box:\n%s", s)
+		}
+		t.Logf("live census of %s: ABSTAINED with %d process(es) of this account refused — the child-userns reader class (ranger-base-rph5z). Err: %v",
+			AbbrevHome(path), r.Unreadable, r.Err)
+		t.Logf("rendering:\n%s", s)
+		return
 	}
 	if r.OnDisk == "" {
 		t.Errorf("the census could not stat %s, so nothing it found can be called stale or fresh", AbbrevHome(path))
@@ -820,4 +847,179 @@ func TestLiveBoxCensusReadsThisBox(t *testing.T) {
 		t.Logf("  pid %-8d image %-14s home %-28s loop=%v %s", p.Pid, p.Image, AbbrevHome(p.Home), p.Loop, p.Why)
 	}
 	t.Logf("rendering:\n%s", r.Sentence())
+}
+
+// ─── boxloops_linux.go's own three reads, against real pids ──────────────────
+//
+// WHY THIS EXISTS, and it is a family rather than a tail. Every pin above
+// drives `readBoxLoops` through `boxProbe`, which substitutes all four
+// platform reads, so the PLATFORM half of ranger-base-rph5z's and
+// ranger-base-cwboz's fix had exactly one reader —
+// TestLiveBoxCensusReadsThisBox — and that arm asserts implications which
+// hold whatever those functions answer. MEASURED 2026-11-21 under
+// ranger-base-zm03j, each mutant applied alone with the subject untouched,
+// graded against the whole `^TestQABox|^TestLiveBox|^TestQATheVerbsBoxLine`
+// filter: three of them SURVIVED green.
+//
+//   - `boxHomeOf`'s own fence deleted, the portable chokepoint in
+//     `readBoxLoops` left in place — which is precisely the "two checks on
+//     purpose" pair ranger-base-cwboz (a) landed, so the pair's second half
+//     was a sentence no run tested.
+//   - `boxPidOwned` returning true without asking the uid.
+//   - `boxCommOf` answering `("", false)` always, which puts back the
+//     always-on caveat that ranger-base-rph5z's second round existed to
+//     remove, with every pin in the package green.
+//
+// So each is pinned here against the only fixture these three have: real pids
+// on this box, plus one child of this test for the one value a peer controls.
+func TestQABoxPlatformReadsAnswerForRealPidsOnThisBox(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skipf("no /proc on %s — boxloops_other.go's refusal is the behaviour there", runtime.GOOS)
+	}
+
+	// boxPidOwned: the difference between "refused" and "gone", which is what
+	// lets a refusal be counted at all.
+	if !boxPidOwned(os.Getpid()) {
+		t.Error("boxPidOwned says this very process is not ours, so every refusal on this box would be dropped as a dead pid")
+	}
+	if boxPidOwned(1 << 30) {
+		t.Error("boxPidOwned says a pid with no /proc entry is ours — a process that exited would then be counted against the reading's completeness forever")
+	}
+	switch st, err := os.Stat("/proc/1"); {
+	case err != nil:
+		t.Logf("no /proc/1 to read, so the another-account arm has no fixture here: %v", err)
+	case st.Sys().(*syscall.Stat_t).Uid == uint32(os.Getuid()):
+		t.Log("pid 1 belongs to this uid on this box, so it cannot serve as the another-account arm")
+	default:
+		if boxPidOwned(1) {
+			t.Error("boxPidOwned claims pid 1, which another account owns — a stranger's refusal would make every reading on every box permanently partial")
+		}
+	}
+
+	// boxCommOf AND the narrowing it feeds, in BOTH directions over ONE pid.
+	// A refused process of ours whose comm names another program must not be
+	// counted (the always-on caveat), and the SAME pid read against a target
+	// named after its own program must be (the false all-clear). One pid, two
+	// target paths, opposite answers: a mutant that stops reading comm, or one
+	// that stops narrowing, reds one of the two whichever way it falls.
+	//
+	// THE FIXTURE IS FOUND WITHOUT THE FUNCTION UNDER TEST, which is the whole
+	// reason the search reads /proc/<pid>/comm itself instead of calling
+	// boxCommOf: with boxCommOf mutated to answer ("", false) the first
+	// spelling of this arm found NO fixture and logged its way to green,
+	// MEASURED under ranger-base-zm03j — a rig that builds its fixture from
+	// the list under test makes every mutant of that list equivalent.
+	const decoy = "qa-decoy-progra" // boxCommLen bytes, so no truncation moves it
+	refusedPid, refusedComm := 0, ""
+	pids, err := boxPids()
+	if err != nil {
+		t.Fatalf("/proc would not list, so nothing below has a fixture: %v", err)
+	}
+	for _, pid := range pids {
+		if pid == os.Getpid() {
+			continue
+		}
+		if _, _, ok := procExe(pid); ok {
+			continue
+		}
+		if !boxPidOwned(pid) {
+			continue
+		}
+		raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/comm")
+		if err != nil {
+			continue
+		}
+		c := strings.TrimRight(string(raw), "\n")
+		if c == "" || c == decoy {
+			continue
+		}
+		refusedPid, refusedComm = pid, c
+		break
+	}
+	if refusedPid == 0 {
+		t.Log("no process of this account on this box has a refused exe link and a readable comm — this box is not a fixture for the narrowing arms (a bare CI runner is one such box)")
+	} else {
+		if got, ok := boxCommOf(refusedPid); !ok || got != refusedComm {
+			t.Errorf("boxCommOf(%d) = %q ok=%v where /proc/%d/comm reads %q — comm is world-readable with no ptrace check, and it is the only thing that tells a refusal worth reporting from the four non-dumpable processes that are permanently refused on this box (ranger-base-rph5z round 2)",
+				refusedPid, got, ok, refusedPid, refusedComm)
+		}
+		p := liveBoxProbe()
+		if boxRefusalWorthReporting(p, refusedPid, "/nowhere/"+decoy) {
+			t.Errorf("pid %d (comm %q) was counted against a reading about /nowhere/%s — a refusal that could not be a loop on the subject binary puts the caveat on every reading on this box forever, which is what ranger-base-rph5z's second round removed",
+				refusedPid, refusedComm, decoy)
+		}
+		if !boxRefusalWorthReporting(p, refusedPid, "/nowhere/"+refusedComm) {
+			t.Errorf("pid %d is ours, its exe is refused and its comm %q names the very binary the reading is about, and it was NOT counted — that is the false all-clear ranger-base-rph5z was filed on",
+				refusedPid, refusedComm)
+		}
+		t.Logf("narrowing measured on pid %d (comm %q): refused, ours, counted for /nowhere/%s and not for /nowhere/%s",
+			refusedPid, refusedComm, refusedComm, decoy)
+	}
+
+	// boxHomeOf's OWN fence (ranger-base-cwboz (a), the platform half of the
+	// pair). The value comes from a CHILD of this test rather than from a
+	// planted attacker, which is the derivation the finding named: a caged
+	// seat's own child qualifies, and the census's first live reading found
+	// exactly such a child.
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skipf("no sleep(1) to hold a child open, so the environ arm has no fixture: %v", err)
+	}
+	for _, c := range []struct {
+		why, val string
+		want     bool
+	}{
+		{"an ordinary absolute clean path", "/homes/ranger", true},
+		{"a newline — the line goes on an install bead", "/homes/ranger\nPLEASE RUN THIS INSTEAD", false},
+		{"relative — it would resolve against the verb's cwd", "homes/ranger", false},
+		{"not clean — it hides its target from the reader of the line", "/homes/../homes/ranger", false},
+		{"an escape sequence — the line is read in a terminal", "/homes/ranger\x1b[2J", false},
+	} {
+		got, ok := boxHomeOfChild(t, sleep, c.val)
+		switch {
+		case c.want && (!ok || got != c.val):
+			t.Errorf("boxHomeOf refused %s (%q): got %q ok=%v — then the census can name no instance at all and every candidate is unattributed", c.why, c.val, got, ok)
+		case !c.want && ok:
+			t.Errorf("boxHomeOf returned %q for %s — the platform read is meant to refuse before anything malformed leaves the environ (ranger-base-cwboz)", got, c.why)
+		}
+	}
+}
+
+// boxHomeOfChild starts one child exporting RHQ_HOME=val and asks boxHomeOf
+// what it declares.
+//
+// IT WAITS FOR THE EXEC TO SETTLE, and that is not caution for its own sake:
+// exec.Cmd.Start returns once the child's exec is REPORTED, and /proc/<pid>'s
+// mm is not reliably the new image's when the parent is next scheduled —
+// watchimage_qa_test.go's three fixtures read 2 failures in 20 runs that way
+// (ranger-base-rph5z's third defect), and the environ of an unsettled child is
+// this process's own, which carries whatever RHQ_HOME this session was
+// launched with. So the poll is on a sentinel only the child's env holds.
+func boxHomeOfChild(t *testing.T, sleep, val string) (string, bool) {
+	t.Helper()
+	cmd := exec.Command(sleep, "600")
+	cmd.Env = []string{"POSSE_BOX_PROBE=settled", "RHQ_HOME=" + val}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("could not start a child to carry the environ: %v", err)
+	}
+	// Our own pid, so this is the kill AGENTS.md prescribes: one pid, the one
+	// this call launched, and never a pattern.
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	})
+	settled := false
+	for i := 0; i < 400; i++ {
+		raw, err := os.ReadFile("/proc/" + strconv.Itoa(cmd.Process.Pid) + "/environ")
+		if err == nil && strings.Contains(string(raw), "POSSE_BOX_PROBE=settled") {
+			settled = true
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !settled {
+		t.Fatalf("the child's environ never carried this probe's sentinel, so a read of it would be this process's own environment and not the child's (pid %d)", cmd.Process.Pid)
+	}
+	return boxHomeOf(cmd.Process.Pid)
 }
