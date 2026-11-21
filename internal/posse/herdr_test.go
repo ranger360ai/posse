@@ -165,12 +165,16 @@ func TestMain(m *testing.M) {
 	// (docs/notes.d/ranger-base-i7fa.md §2). Three of them were the same
 	// value at all 728 call sites, so they belong here, once:
 	//
-	//   - HOME: one temp home for the whole binary. Nothing under it is
-	//     shared state a test can see — what IS shared, ~/.posse/worktrees,
-	//     is given back per test by hermetic's WorktreeRootDefault. The
-	//     point of the temp home is unchanged from ranger-base-gvrh: a test
-	//     reaching EnsureSessionTree must not cut a git worktree in the
-	//     operator's live ~/.posse.
+	//   - HOME: one temp home for the whole binary. What is shared under it
+	//     is shared on purpose and planted ONCE below — the codex
+	//     credential, the git-global snapshot — and what would otherwise
+	//     be, ~/.posse/worktrees, is given back per test by hermetic's
+	//     WorktreeRootDefault. Anything else a test leaves under this home
+	//     IS state its siblings can read: the GIT_CONFIG_GLOBAL row was
+	//     one file on this disk away from a parallel test for a day
+	//     (ranger-base-nycra). The point of the temp home is unchanged from
+	//     ranger-base-gvrh: a test reaching EnsureSessionTree must not cut a
+	//     git worktree in the operator's live ~/.posse.
 	//   - RHQ_FAKE_HERDR: the switch the CHILD reads at startup, above.
 	//     Never read by the parent, so per-test was always a constant.
 	//   - EnvPersona: hermetic against the operator fence (ADR 0031 §2) —
@@ -411,6 +415,50 @@ func TestMain(m *testing.M) {
 			fmt.Fprintf(os.Stderr, "posse test: codex auth fixture: %v\n", err)
 			removeTestHome(home)
 			os.Exit(1)
+		}
+		// AND THE GIT-GLOBAL SNAPSHOT, once, for the reason the codex
+		// credential gives and for one of its own (ranger-base-nycra).
+		//
+		// The GIT_CONFIG_GLOBAL row obdnk pins is not a constant: it is the
+		// read-only snapshot of this HOME's global file when one is on disk
+		// and verifies, and the operator's own file when none is
+		// (gitGlobalPinValue, ranger-base-161t2). A LAUNCH prepares that
+		// snapshot before it renders the line, and a reader never writes one
+		// — so the row every pin reader in this binary sees is a fact about
+		// the temp HOME's disk, and the paragraph above claiming "nothing
+		// under it is shared state a test can see" was wrong about exactly
+		// this file.
+		//
+		// MEASURED 2026-11-20/21 (ranger-base-hgcmw, then this bead): two
+		// PARALLEL tests call PrepareGitGlobalSnapshot() under this HOME
+		// (TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot,
+		// TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue), so the
+		// row flipped from `<temphome>/.gitconfig` to the snapshot path
+		// mid-batch, and the three tests that compare a RENDERED launch line
+		// against a payload from a SECOND pin read straddled the flip:
+		// TestQAFleetLaunchLineDisablesAutoMemory, TestLegacyAgentUnchanged
+		// and TestFleetSettingsSurviveRendering, 2/20 runs red over the four
+		// of them on this box, 0/20 with the two prepares left out. The red
+		// names the launch line and the whole payload with one token
+		// different, so it reads as a launch-line defect and sends the next
+		// reader to the template; it cost two full arm-3 runs on hgcmw.
+		//
+		// So the binary starts in the state a launch leaves behind, before
+		// any test runs: prepared once here, the two parallel prepares are
+		// byte-identical no-ops and move nothing. Fixtures that mean to grade
+		// the UNPREPARED row cut their own HOME (globalScopeFixture) and are
+		// untouched. The CREATOR's, like the credential above — a re-exec
+		// child adopts the prepared snapshot with the home, and a child that
+		// re-derived it would pay a `git var` exec to learn what is already
+		// on disk.
+		//
+		// Not fatal, and that is deliberate: a box that cannot snapshot (a
+		// global file with an [include] section, two global files) renders
+		// the fallback for EVERY read, which is stable too, and is a state
+		// the degraded-path pins already grade. The line says so where a
+		// reader of a degraded row would look for it.
+		if err := PrepareGitGlobalSnapshot(); err != nil {
+			fmt.Fprintf(os.Stderr, "posse test: no git-global snapshot under %s (%v): every GIT_CONFIG_GLOBAL row this binary renders is the fallback (ranger-base-nycra)\n", home, err)
 		}
 	}
 	// GIT_EXTERNAL_DIFF, UNSET and not emptied — emptying it is the defect.

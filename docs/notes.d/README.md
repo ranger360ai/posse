@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-nycra](ranger-base-nycra.md) — The launch-line tests red on the git-global snapshot, not on the line (ranger-base-nycra) — 2026-11-21
 - [ranger-base-dw2du](ranger-base-dw2du.md) — ranger-base-dw2du — D2 pins every bind, and D2(a) reads the wall root in both directions — 2026-11-21
 - [ranger-base-dot6w](ranger-base-dot6w.md) — ranger-base-dot6w — shape 1 pins the directories between nested write grants — 2026-11-21
 - [ranger-base-bncbk](ranger-base-bncbk.md) — Shape 5's directory masks cover the name before the credential exists (ranger-base-bncbk) — 2026-11-21

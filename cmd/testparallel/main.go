@@ -429,6 +429,17 @@ func main() {
 		// (ranger-base-d4u28, see the comment above the test itself in
 		// verify_nx85_qa_test.go).
 		"TestQAL3ProbeMustNotBlockOnANonRegularFileAtTheDispatchPath": "shares internal/posse's clock, dropped t.Parallel() on purpose",
+		// Its subject is what TestMain left on the temp HOME's disk, and the
+		// SERIAL PHASE is the whole of what makes it readable: Go releases a
+		// package's parallel tests only once every serial test has run, so
+		// here the only thing that can have prepared this HOME's git-global
+		// snapshot is TestMain. Two PARALLEL tests prepare the same snapshot
+		// (TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot,
+		// TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue), which is
+		// the flip this pin exists to prove harmless — pause it into their
+		// phase and it is racing them for the answer, which is the flake
+		// ranger-base-nycra fixed rather than a pin of it.
+		"TestTheTempHomesGitGlobalRowDoesNotMoveUnderAParallelLaunch": "reads what TestMain left on disk, before the parallel prepares it grades",
 	}
 	// Named parallel, and the counterpart of serial above: a test the three
 	// filters call ineligible, that a human has READ and cleared. These are

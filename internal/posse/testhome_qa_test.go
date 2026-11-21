@@ -497,3 +497,75 @@ func qrtRead(path string) string {
 	}
 	return string(b)
 }
+
+// ─── The git-global snapshot is TestMain's fixture too (ranger-base-nycra) ───
+
+// TestTheTempHomesGitGlobalRowDoesNotMoveUnderAParallelLaunch: every reader of
+// the settings pin — `posse gates`, the parity report, every launch-line test
+// in this package — renders a GIT_CONFIG_GLOBAL row whose value is a FACT
+// ABOUT THE TEMP HOME'S DISK: the read-only snapshot of this HOME's global
+// file when one is there and verifies, the operator's own file when none is
+// (gitGlobalPinValue, ranger-base-161t2). A launch prepares that snapshot and a
+// reader never writes one, so a test that prepares is a test that moves the row
+// for every sibling still running.
+//
+// MEASURED 2026-11-20/21: two PARALLEL tests prepare under this HOME, and the
+// three launch-line tests that compare a rendered line against a payload from a
+// SECOND pin read straddled the flip — 2/20 runs red over the four of them,
+// 0/20 with the two prepares left out, the ONLY differing token being
+// GIT_CONFIG_GLOBAL and its direction swapping between tests in one run.
+// TestMain prepares once before any test runs, which makes those two prepares
+// byte-identical no-ops; this is the pin that says so.
+//
+// THE SUBJECT IS STABILITY, NOT PREPAREDNESS, and that is what makes this pin
+// portable: a box that cannot snapshot at all renders the fallback for every
+// read, which is just as stable, and its degraded row is other pins' subject
+// (TestQAGitGlobalRenderWritesNothingAndFallsBackUnprepared). What may never
+// hold is a row that a sibling's launch can MOVE.
+func TestTheTempHomesGitGlobalRowDoesNotMoveUnderAParallelLaunch(t *testing.T) {
+	// NO t.Parallel, and it is the whole of what makes this deterministic
+	// rather than a second flake: Go releases a package's parallel tests only
+	// once every serial test has run, so in a serial test the only thing that
+	// can have prepared this HOME's snapshot is TestMain. Parallel, this test
+	// would be racing the two prepares it exists to render harmless.
+	home := os.Getenv("HOME")
+	if home == "" {
+		t.Fatal("TestMain's temp HOME is not set, so there is no disk this row is a fact about")
+	}
+	row := func() string {
+		t.Helper()
+		for _, v := range settingsPin() {
+			if v.Key == "GIT_CONFIG_GLOBAL" {
+				return v.Value
+			}
+		}
+		return "" // no row: this box has two global files, or no HOME
+	}
+	before := row()
+
+	// What a parallel sibling does, and after it the row must read the same.
+	// A prepare TestMain already made is a no-op; one it did not is the flip.
+	if err := PrepareGitGlobalSnapshot(); err != nil {
+		t.Skipf("NOTHING MEASURED: this HOME cannot hold a snapshot (%v), so every read is the fallback and no launch can move the row", err)
+	}
+	if after := row(); after != before {
+		t.Errorf("a launch moved this binary's GIT_CONFIG_GLOBAL row from\n  %q\nto\n  %q\n— so TestMain did not leave the temp HOME in the state a launch leaves behind, and every test that renders a launch line beside a second pin read can straddle the flip. Red here is ranger-base-nycra back: prepare the snapshot in TestMain, before any test runs.", before, after)
+	}
+
+	// And the whole payload with it, because the row is only the token that
+	// moved LAST time. This is the invariant the three victims need — two
+	// reads of the pin agree — asserted where the mechanism is, so the next
+	// unstable row reds here and not inside a launch-line pin whose message
+	// names the template.
+	if a, b := ClaudeFleetSettingsJSON(nil), ClaudeFleetSettingsJSON(nil); a != b {
+		t.Errorf("two reads of the settings payload disagree:\n %s\n %s", a, b)
+	}
+
+	// On a box that CAN snapshot, say which value the agreed row is: the
+	// snapshot under the wall root, never the global file a seat could write
+	// (ranger-base-161t2). Guarded, not asserted, for the reason the head
+	// comment gives.
+	if before != "" && !insideDir(SeatWallRoot(home), before) {
+		t.Logf("NOT MEASURED HERE: the row is %q, outside the wall root %s — stable, but the degraded value; TestMain printed why", before, SeatWallRoot(home))
+	}
+}
