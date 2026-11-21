@@ -155,6 +155,19 @@ a child open with `sleep` at its own path, and `reap-test-tmp.sh`'s
 would also survive uutils and is still wrong here, for the reason the subject
 gives: an install renaming over the file the loop runs.
 
+The residual is the same class one donor along: nothing in the fixture
+MEASURES that its donor runs under a foreign basename — it reads two magic
+bytes and reasons about bash. A box whose `bash` is itself an applet of a
+multi-call binary would land in exactly this bead again, and the only thing
+standing in front of it is that the postmortem now names the mechanism in one
+read instead of nine days. The cheap closure, if that box ever shows up, is to
+turn the reasoning into a reading: copy the donor to a name no utility owns,
+run it `-c 'exit 7'`, and require 7 before any product assertion — one exec,
+and it covers both facts the loop needs (a foreign basename, and an honored
+`-c`). Not done here because it is insurance against a donor nobody has
+measured, and the diagnosis it would print is the diagnosis the postmortem
+already prints.
+
 Not closed here:
 
 - ranger-base-bekle — the same file and another lane's. Until this donor fix
