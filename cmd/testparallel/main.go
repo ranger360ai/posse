@@ -626,6 +626,31 @@ func main() {
 		"TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead":      "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchPassesTheSeatsOwnExitCode":                       "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch":       "reads bwrapNestOnce and bwrapNestWhy",
+		// upgradeConditionSource (5): ADR 0092 D4's row partition, the table
+		// `posse upgrade`'s rollback is computed over. It is a shipped map
+		// written at compile time, and these five tests all RANGE it —
+		// the census that asks whether every row has a class, the two over
+		// rule 4's printed answer, the value pin, and rule 5's reader.
+		//
+		// Its one writer is TestUpgradeEveryRowCrossingIsClassedByTheTargets-
+		// Answer (upgradeverify_test.go, ranger-base-nt5xd), which deletes
+		// ONE row at a time and restores it in t.Cleanup, because "a judge
+		// whose table predates the row" is this binary's table minus that
+		// entry and there is no other way to be that binary. That test is
+		// SERIAL, deliberately and with this line as the reason: Go resumes
+		// paused parallel tests only once the whole sequential pass is done,
+		// so a serial writer never overlaps a parallel reader — the same
+		// argument as `calls sandboxApplyRefusal` above, and the same shape.
+		//
+		// WHAT WOULD BREAK IT: a test that writes this table and carries
+		// t.Parallel. That is not caught by these lines — a clearance says
+		// what the state was when it was read — so a bead adding one must
+		// take the write serial or take these five clearances away with it.
+		"TestQAEveryStatusConditionCodeHasAnUpgradeClass": "reads upgradeConditionSource",
+		"TestUpgradeClassWordIsTotal":                     "reads upgradeConditionSource",
+		"TestUpgradeClassesIsTheWholeTableAndNothingElse": "reads upgradeConditionSource",
+		"TestUpgradeEveryConditionClassIsPinnedByValue":   "reads upgradeConditionSource",
+		"TestUpgradeParseClassesReadsTheMarkedLinesAlone": "reads upgradeConditionSource",
 	}
 	// ── filter 2: written package-level vars named anywhere reachable ────
 	varTainted := propagateIn(funcs, func(g *fn) bool {

@@ -944,8 +944,46 @@ install back. Its answer, its three words and its position above D2's fence
 are pinned in internal/posse/upgradeclasses_test.go — the position with the
 seam the neighbouring D2 pins use, so a reading taken on this path reds.
 
-Still ASSUMED: rules 5 and 6 READ this answer and are not built here
-(ranger-base-nt5xd).
+**Rules 5 and 6 READ that answer, built under ranger-base-nt5xd.** The
+after-reading carries the target's partition and a `ClassesAsked` bool taken
+off the mark; a gained row this binary's table cannot name is excused when
+the target classes it `shop` or `install`, with a note on the stand path
+naming the row and that class, and trips otherwise with the reason saying
+which of rule 5's three readings it was — `binary`, not named, or not asked.
+A row the table DOES name is judged by this binary's class in both
+directions, and the target's answer is read for rule 6's line alone.
+
+- **The crossing is pinned by ROW and not by class**, which is what makes it
+  a process protection rather than a spot check:
+  `TestUpgradeEveryRowCrossingIsClassedByTheTargetsAnswer` takes every row of
+  `upgradeConditionSource`, deletes that one entry to BE the binary whose
+  table predates it, gains the row in the after-reading with the real table
+  as the target's answer, and asserts the install stands exactly when the
+  row's real class is one of the two that exclude. So a G-row added tomorrow
+  arrives inside the pin, and its crossing install is judged before anyone
+  installs it. Each row also carries a not-asked control, because an arm that
+  stood for want of an answer would measure nothing.
+- **MEASURED 2026-11-21 by mutation**, eleven one-change mutants of
+  upgradeverify.go, every one red at the pin whose name is the behaviour:
+  excusing nothing and excusing everything (the word test and the crossing
+  pin), reading "not asked" as a lookup, the crossing line never printed and
+  printed when the two tables agree, the target excusing a row the judge
+  names (which is the candidate voting on its own install), the reading never
+  taken, the note computed and not printed, a duplicate row resolved
+  first-wins, and "asked" read off a well-formed line instead of the mark.
+- **One cost outside the verb**, recorded because the next reader meets it as
+  a red: the crossing pin is the tree's only writer of
+  `upgradeConditionSource`, so `cmd/testparallel`'s gate flags the five
+  PARALLEL tests that range that table. They are cleared in `parallelOK` with
+  that pin's serialness as the argument — Go resumes paused parallel tests
+  only after the sequential pass completes — which makes the absence of
+  `t.Parallel` on that one test load-bearing for five others.
+
+**The bootstrap is still not closed**, exactly as this section's own
+paragraph below says and for the same reason: the code that reads the
+target's answer is in the JUDGE, so a box whose installed binary predates
+this build judges every crossing by the old rule and needs one operator
+`make install` to get past it.
 
 **D5's class is live on this box, MEASURED 2026-11-14 by the build bead
 (ranger-base-41l0r): `make verify-gate-freshness` read

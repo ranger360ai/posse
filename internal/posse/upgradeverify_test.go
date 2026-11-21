@@ -1157,6 +1157,15 @@ func TestUpgradeJudgesAKnownRowItselfAndSaysSoWhenTheTargetDisagrees(t *testing.
 // NO t.Parallel, and it mutates the package table: a judge whose table
 // predates one row is exactly this binary's table minus that entry, and
 // there is no other way to be that binary. Restored per row.
+//
+// THAT WRITE IS WHY FIVE OTHER TESTS CARRY A CLEARANCE. This is the one
+// writer of upgradeConditionSource in the tree, so `go run ./cmd/testparallel
+// ./internal/posse check` flags every PARALLEL test that ranges the table —
+// the census, rule 4's two, the value pin and rule 5's reader — and each is
+// cleared in parallelOK with this test's serialness as the argument (Go
+// resumes paused parallel tests only after the sequential pass completes).
+// Keeping t.Parallel off this test is therefore load-bearing for five others:
+// add it and they all become real races.
 func TestUpgradeEveryRowCrossingIsClassedByTheTargetsAnswer(t *testing.T) {
 	real := maps.Clone(upgradeConditionSource)
 	if len(real) < 12 {
