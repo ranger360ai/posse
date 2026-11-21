@@ -44,6 +44,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-a7y67](ranger-base-a7y67.md) — A derivation swap trades one escape class for two (ranger-base-a7y67) — 2026-11-21
 - [ranger-base-a688i](ranger-base-a688i.md) — ranger-base-a688i — a wall-pin member's fatal has ONE line to say why, and this one spent it on the symptom — 2026-11-21
 - [ranger-base-a59w7](ranger-base-a59w7.md) — ranger-base-a59w7 — the carve-out's denies and masks get their loose parents bound in place — 2026-11-21
+- [ranger-base-84vdv](ranger-base-84vdv.md) — A wall pin that trusted an exit code at a path the wall had already moved (ranger-base-84vdv) — 2026-11-21
 - [ranger-base-7or9p](ranger-base-7or9p.md) — The judge's wall comes from the launcher, so a verdict can move with no landing (ranger-base-7or9p) — 2026-11-21
 - [ranger-base-7c2py](ranger-base-7c2py.md) — Two instruments that said yes without measuring: arm 6's coin flip and the census's empty denominator (ranger-base-7c2py) — 2026-11-21
 - [ranger-base-78k0w](ranger-base-78k0w.md) — The third delegated `posse upgrade` lands 12 of 33 commits: the D4 trip is the crossing, not the range (ranger-base-78k0w) — 2026-11-21

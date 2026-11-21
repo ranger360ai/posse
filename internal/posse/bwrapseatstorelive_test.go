@@ -20,6 +20,8 @@ package posse
 // operator's `cat-file` serves are what the hole was about.
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -163,6 +165,76 @@ func (f bsLive) sharedObject(t *testing.T, body string) (string, string) {
 	return sha, p
 }
 
+// bsShared is the shared object as the OPERATOR sees it, read from outside
+// the wall: its file's bytes, its file's mode, and what `cat-file` serves for
+// its name. Those three are the whole of what the hole was about, and this
+// file's header says they are where every refusal is read.
+//
+// COMPARABLE, AND THE ERRORS ARE FIELDS OF IT rather than fatals of their
+// own: a destroyed object is the loudest finding this pin can make, so a
+// failed read has to come back as a VALUE that compares unequal and prints,
+// and not as a t.Fatal that ends the run without naming the arm that
+// destroyed it. That is also why it is `git` here and not mustGit.
+//
+// THE BYTES ARE A DIGEST AND NOT THE BYTES: a loose object's file is a zlib
+// stream, so printing it raw puts binary in a failure line nobody can read,
+// while a digest compares exactly the same way and names what changed. Bare
+// hex, because the per-shape control below hands the same digest to a
+// `sha256sum` inside the seat.
+type bsShared struct {
+	Sum    string
+	Size   int64
+	Mode   string
+	Served string
+	Err    string
+}
+
+// shared reads that state. One spelling, called before the arms and again
+// after each of them.
+func (f bsLive) shared(t *testing.T, file, sha string) bsShared {
+	t.Helper()
+	var s bsShared
+	if b, err := os.ReadFile(file); err != nil {
+		s.Err += "read: " + err.Error() + "; "
+	} else {
+		s.Sum = fmt.Sprintf("%x", sha256.Sum256(b))
+	}
+	if fi, err := os.Lstat(file); err != nil {
+		s.Err += "lstat: " + err.Error() + "; "
+	} else {
+		s.Mode, s.Size = fi.Mode().String(), fi.Size()
+	}
+	if out, err := git(f.repo, "cat-file", "-p", sha); err != nil {
+		s.Err += "cat-file: " + err.Error()
+	} else {
+		s.Served = out
+	}
+	return s
+}
+
+// clearSeatCopy removes whatever an arm left in the SEAT's own store under
+// the shared object's name — the file and the `.new` a half-done rename
+// leaves beside it — and keeps the planted `<xx>` directory, which is the
+// fixture's.
+//
+// WHY THE FIXTURE HAS TO CLEAN UP AFTER ITS OWN ARMS: a write at the shared
+// object's real name lands in the seat's store under that sha, and a file
+// there SHADOWS the alternates for that name — so left in place it reds the
+// read-through arm below on the test's own plant, with git's inflate error
+// standing where a wall regression would be. Two of the seven rows the red at
+// tree 66e7fbf9a255 reproduces to were exactly that (ranger-base-84vdv).
+func (f bsLive) clearSeatCopy(t *testing.T, sha string) {
+	t.Helper()
+	for _, p := range []string{
+		filepath.Join(f.store, sha[:2], sha[2:]),
+		filepath.Join(f.store, sha[:2], sha[2:]+".new"),
+	} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("the fixture cannot restore its own seat store at %s: %v", p, err)
+		}
+	}
+}
+
 // Pin (1), the design's live row and the sign-off's (1): under the shipped render a
 // committing seat creates new objects and commits, and every way of changing
 // an EXISTING shared object's file — unlink, chmod, rename over it, rewrite
@@ -179,14 +251,80 @@ func (f bsLive) sharedObject(t *testing.T, body string) (string, string) {
 // mode (a loose object is 0444, which stops an in-place write and nothing
 // else).
 //
+// "REFUSED" IS TWO DIFFERENT CLAIMS HERE, and reading them as one is what
+// made this pin flaky (ranger-base-84vdv). At the SIDE path the shared store
+// is bound read-only, so the path names the shared object inside the seat and
+// the exit code is a verdict. At the object's REAL name it is not: the store
+// bind covers `<common>/objects`, so inside the seat that path is the SEAT's
+// OWN store, and whether a write there succeeds depends on nothing but
+// whether the store happens to hold a directory named for the sha's first two
+// characters — which shape 1's own `git commit` creates one of, at random,
+// every run. This file's header already carries the rule that settles it:
+// EVERY REFUSAL IS READ BACK FROM OUTSIDE. So the shared object's bytes, mode
+// and what the operator's `cat-file` serves are read back after EVERY arm and
+// name the command that moved them (bsShared), the exit code is a verdict only
+// where it names the shared file, and the `<xx>` directory the flake waited on
+// is planted deliberately so the arms on the real name take their success path
+// on every run instead of one in 256.
+//
 // MUTATION RUN: dropping the store bind from seatStoreBinds reds every arm
 // (the seat writes the shared store again); dropping the side bind reds the
 // read-through arm and the commit (the alternates name an empty dir).
+//
+// MUTATION RUN 2026-11-21 (ranger-base-84vdv), five arms, each planted alone
+// with the tree asserted clean between them:
+//
+//   - the `<xx>` plant removed: the positive row reds in both shapes ("could
+//     not write ... even into its own store"), so the plant is load-bearing
+//     and not decoration.
+//   - `refused: true` back on the real name — the pre-84vdv verdict, with the
+//     plant: reds in both shapes with the venue's own words, "a committing
+//     seat could rename over". That IS the red at tree 66e7fbf9a255, made
+//     deterministic.
+//   - clearSeatCopy made a no-op: the read-through row reds in both shapes on
+//     the pin's own plant, with git's inflate error standing where a wall
+//     regression would be.
+//   - seatStoreBinds' store bind replaced by an in-place READ-WRITE bind of
+//     `<common>/objects` (the wall regressed, and the one mutant this pin
+//     exists for): the per-shape control reds and every read-back reds,
+//     naming its own command and printing the object's state either side.
+//   - the same mutant, with the per-shape control written as a `cat` of the
+//     file compared against the honest TEXT: GREEN. That is why the control
+//     digests the file instead — a loose object's file is a zlib stream, so
+//     the first draft of that row could not red under the only render it was
+//     written to catch.
 func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	t.Parallel()
 	f := bsLiveFixture(t)
 	honest := "the honest history\n"
 	sha, file := f.sharedObject(t, honest)
+
+	// THE SEAT STORE'S `<xx>` DIRECTORY, PLANTED ON PURPOSE (ranger-base-84vdv).
+	// The arms below type the shared object's real name, which inside the seat
+	// is the seat's OWN store — so `printf evil > <that name>.new` succeeds
+	// there exactly when the store already holds a directory named for the
+	// sha's first two characters, and nothing of the wall decides whether it
+	// does: shape 1's `git commit` below writes a commit object whose sha is
+	// timestamp-derived, so about one run in 256 creates `<store>/c7` and the
+	// real-name arms start exiting 0 for the rest of the run.
+	//
+	// MEASURED 2026-11-21 (linux 7.2.15, bwrap 0.13.1, 16 cores), five
+	// consecutive runs of this fixture: the store's two-character directories
+	// after shape 1 read [55 94], [94 c0], [02 94], [94 c6], [94 c2] — `94`
+	// the deterministic `hash-object` arm, the other the commit's, uniform.
+	// That is the whole of the red at tree 66e7fbf9a255, where the commit's
+	// was `c7`: with `<store>/c7` planted here the pre-84vdv pin reds SEVEN
+	// rows across the two shapes — rename-over and rewrite-in-place in both, a
+	// shape-2 unlink of the file shape 1's rename left behind, and the
+	// read-through row in both — and the shared object's bytes, mode and
+	// `cat-file` are untouched in every one of them.
+	//
+	// So the condition is MADE rather than waited for, and the verdict moves
+	// to the read-back this file's header always said it was.
+	if err := os.MkdirAll(filepath.Join(f.store, sha[:2]), 0o755); err != nil {
+		t.Fatalf("the fixture cannot plant %s in the seat's own store: %v", sha[:2], err)
+	}
+
 	ctlSha, ctlFile := f.sharedObject(t, "the control's object\n")
 
 	if ok, out := f.in(t, f.argvBefore, "", "rm", "-f", ctlFile); !ok {
@@ -196,13 +334,19 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		t.Fatal("CONTROL: the pre-store render's unlink exited 0 and the shared object is still there")
 	}
 
-	before, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatal(err)
+	// The shared object as the operator sees it, before any arm runs. Every
+	// arm below reads it back and reds naming its own command.
+	want := f.shared(t, file, sha)
+	if want.Err != "" || want.Sum == "" || want.Served+"\n" != honest {
+		t.Fatalf("CONTROL: the shared object %s does not read back cleanly before any arm has run: %+v", sha[:12], want)
 	}
-	fi0, err := os.Stat(file)
-	if err != nil {
-		t.Fatal(err)
+	// THE PROBE THE PER-SHAPE CONTROL BELOW IS BUILT ON, taken in the render
+	// this bead replaced, where `<common>/objects` IS the shared store: a seat
+	// there can digest the shared object's own file, and the digest is the one
+	// read from outside. Without this row, a seat whose image has no
+	// `sha256sum` would turn that control into a line that can never red.
+	if ok, out := f.in(t, f.argvBefore, "", "sh", "-c", "sha256sum -- "+file); !ok || !strings.HasPrefix(out, want.Sum) {
+		t.Fatalf("CONTROL: the pre-store render cannot digest the shared object's own file at %s (ok=%v, %q, want %s) — then the per-shape control below could never red", file, ok, out, want.Sum)
 	}
 	side := filepath.Join(f.base, sha[:2], sha[2:])
 
@@ -234,21 +378,67 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		{"as rendered", f.argv},
 		{"with <common> granted whole", f.render(t, wide, f.binds(t))},
 	} {
-		for _, p := range []string{file, side} {
+		// THE CONTROL FOR EVERY REAL-NAME ARM BELOW: the shipped render has
+		// already taken that path away from the seat, so a command the seat
+		// succeeds at there is a command against its own store. If the seat
+		// can read the honest BYTES at that name, `<common>/objects` is not
+		// covered and the rows below are reading the shared file after all —
+		// which is the one shape in which an exit code there would have been
+		// a verdict.
+		//
+		// A DIGEST OF THE FILE AND NOT A COMPARISON WITH THE HONEST TEXT: a
+		// loose object's file is a zlib stream, so `cat` there serves
+		// compressed bytes and a row comparing them to `the honest history`
+		// is decoration. MEASURED 2026-11-21 — as a `cat` of the plaintext
+		// this row stayed GREEN under the mutant that binds
+		// `<common>/objects` in place read-write, the one render it exists to
+		// catch, while every read-back below red.
+		if ok, out := f.in(t, shape.argv, "", "sh", "-c", "sha256sum -- "+file); ok && strings.HasPrefix(out, want.Sum) {
+			t.Errorf("%s: the seat digests the shared object's OWN file at %s (%q), so its store does not cover `<common>/objects` and the real-name rows below measure history rather than the seat's store", shape.name, file, out)
+		}
+		for _, p := range []struct {
+			where string
+			path  string
+			// Whether the exit code is a verdict: true only where the path
+			// names the SHARED object inside the seat.
+			refused bool
+		}{
+			{"its real name", file, false},
+			{"the side path", side, true},
+		} {
 			for _, c := range []struct {
 				name string
 				arg  []string
 			}{
-				{"unlink", []string{"rm", "--", p}},
-				{"chmod", []string{"chmod", "0644", p}},
-				{"rename over", []string{"sh", "-c", "printf evil > " + p + ".new && mv -f " + p + ".new " + p}},
-				{"rewrite in place", []string{"sh", "-c", "chmod u+w " + p + " && printf evil > " + p}},
+				{"unlink", []string{"rm", "--", p.path}},
+				{"chmod", []string{"chmod", "0644", p.path}},
+				{"rename over", []string{"sh", "-c", "printf evil > " + p.path + ".new && mv -f " + p.path + ".new " + p.path}},
+				{"rewrite in place", []string{"sh", "-c", "chmod u+w " + p.path + " && printf evil > " + p.path}},
 			} {
-				if ok, out := f.in(t, shape.argv, "", c.arg...); ok {
-					t.Errorf("%s: a committing seat could %s %s:\n%s", shape.name, c.name, p, out)
+				ok, out := f.in(t, shape.argv, "", c.arg...)
+				if p.refused && ok {
+					t.Errorf("%s: a committing seat could %s the shared object by %s %s:\n%s", shape.name, c.name, p.where, p.path, out)
 				}
+				if got := f.shared(t, file, sha); got != want {
+					t.Errorf("%s: %s by %s (%s) changed the shared object %s\n want %+v\n  got %+v", shape.name, c.name, p.where, p.path, sha[:12], want, got)
+				}
+				f.clearSeatCopy(t, sha)
 			}
 		}
+		// THE POSITIVE HALF, which is what the real-name arms' exit code used
+		// to be read as: at that name the write is REDIRECTED into the seat's
+		// own store, not refused. This row is also what says the plant above
+		// is load-bearing — without it the write fails for want of a
+		// directory and the rows above are refusals of the fixture.
+		if ok, out := f.in(t, shape.argv, "", "sh", "-c", "printf evil > "+file+".new && mv -f "+file+".new "+file); !ok {
+			t.Errorf("%s: the seat could not write at %s even into its own store, where this fixture planted a %s directory — then every real-name row above is a refusal of the fixture and not a reading of the wall:\n%s", shape.name, file, sha[:2], out)
+		} else if b, err := os.ReadFile(filepath.Join(f.store, sha[:2], sha[2:])); err != nil || string(b) != "evil" {
+			t.Errorf("%s: the seat's write at %s exited 0 and its own store does not hold what it wrote (%q, %v) — so that write landed somewhere neither this row nor the read-back is looking", shape.name, file, b, err)
+		}
+		if got := f.shared(t, file, sha); got != want {
+			t.Errorf("%s: a write at %s reached the shared object %s\n want %+v\n  got %+v", shape.name, file, sha[:12], want, got)
+		}
+		f.clearSeatCopy(t, sha)
 		if ok, out := f.in(t, shape.argv, "", f.git("cat-file", "-p", sha)...); !ok || out+"\n" != honest {
 			t.Errorf("%s: the seat cannot read history through its store's alternates (ok=%v): %q", shape.name, ok, out)
 		}
@@ -267,18 +457,8 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		}
 	}
 
-	after, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("the shared object %s is gone: %v", sha[:12], err)
-	}
-	if string(after) != string(before) {
-		t.Errorf("the shared object %s's file changed under the wall", sha[:12])
-	}
-	if fi, err := os.Stat(file); err != nil || fi.Mode() != fi0.Mode() {
-		t.Errorf("the shared object %s's mode changed under the wall: %v -> %v (%v)", sha[:12], fi0.Mode(), fi.Mode(), err)
-	}
-	if got := mustGit(t, f.repo, "cat-file", "-p", sha); got+"\n" != honest {
-		t.Errorf("the operator's cat-file serves %q for %s", got, sha[:12])
+	if got := f.shared(t, file, sha); got != want {
+		t.Errorf("the shared object %s changed under the wall, after every arm above read it back clean\n want %+v\n  got %+v", sha[:12], want, got)
 	}
 }
 
