@@ -184,11 +184,23 @@ func TestUpgradeRefusesAnAncestryTheReHashedHistoryDoesNotBack(t *testing.T) {
 // `make test` window a seat could write the tree that `make test` then runs
 // UNCAGED, as this verb's caller.
 //
-// The fix is a fixed name under the same temp root, denied by name in every
-// profile (upgradePrivateRootName says why the root moved no further than
-// that). So the pin has three parts and they have to agree: the verb stages
-// where the carve-out denies, the carve-out denies under every blanket grant,
-// and a link planted at that name is refused rather than followed.
+// The fix is a fixed name under a temp root the deny names unconditionally,
+// denied by name in every profile (upgradePrivateRootName says why the root
+// moved no further than a temp root at all). So the pin has six rows and they
+// have to agree: the root is the same whatever TMPDIR the verb reads (1a) and
+// is denied for whatever TMPDIR a launch read (1b), the carve-out denies under
+// every blanket grant (2) and the rendered profile carries it (3), the verb
+// stages where the carve-out denies (4), a link planted at that name is
+// refused rather than followed (5), and a root nothing denies is refused
+// before anything is fetched (6).
+//
+// ROWS 1 AND 6 ARE ranger-base-18brx, finding 1 of the verify at ranger-base-m5izv.
+// This pin used to set ONE TMPDIR and use it for both halves, so the one
+// thing its five rows could not see was the two halves DISAGREEING — and
+// they are read by different processes, the launch that rendered the profile
+// and the run that stages the copy. Where the verb's TMPDIR resolved
+// strictly inside one of the launch's blanket grants, the copy was in a
+// seat's write grant under a name no deny covered.
 func TestQAUpgradeStagesThePrivateCopyWhereEveryProfileDeniesWrites(t *testing.T) {
 	// No t.Parallel: TMPDIR and HOME.
 	root := wallUngrantedDir(t)
@@ -198,27 +210,70 @@ func TestQAUpgradeStagesThePrivateCopyWhereEveryProfileDeniesWrites(t *testing.T
 	}
 	t.Setenv("TMPDIR", tmpdir)
 
-	// 1. The staging root is a child of the temp root MkdirTemp("") uses,
-	// and not the temp root itself — which is the whole of the fix.
-	if got, want := upgradePrivateRoot(), filepath.Join(tmpdir, upgradePrivateRootName); got != want {
-		t.Fatalf("upgradePrivateRoot() = %s, want %s", got, want)
+	grants := seatbeltTempGrants(runtime.GOOS, tmpdir)
+	if len(grants) == 0 {
+		t.Skip("NOTHING MEASURED: seatbeltTempGrants is stubbed empty on this box, so there is no blanket grant to narrow")
 	}
-	probe, err := os.MkdirTemp("", "posse-upgrade-probe.")
-	if err != nil {
-		t.Fatal(err)
+
+	// 1a. THE ROOT DOES NOT MOVE WITH THE VERB'S TMPDIR. Every value below
+	// is one an operator or an installer could be running under, and the
+	// third and fifth are the shape of the hole: a path strictly inside a
+	// blanket grant, which a deny over the grant's ROOT does not cover.
+	// WHICH member of the deny set it is does not matter and is not graded:
+	// every member is denied in every profile, so `denied[0]` in place of
+	// the last entry is green on purpose (mutation m2,
+	// docs/notes.d/ranger-base-18brx.md). What is graded is that it does not
+	// MOVE.
+	fixed := upgradePrivateRoot()
+	for _, verb := range []string{"", "/tmp", "/tmp/op", tmpdir, filepath.Join(tmpdir, "deeper"), "/var/folders/ab/cd1234/T"} {
+		t.Setenv("TMPDIR", verb)
+		if got := upgradePrivateRoot(); got != fixed {
+			t.Errorf("upgradePrivateRoot() moved to %s under TMPDIR=%q (it was %s under TMPDIR=%q) — the deny is rendered at a SEAT'S launch and this is read when the VERB runs, so a root that moves with this reading is a root the deny can miss (ranger-base-18brx)", got, verb, fixed, tmpdir)
+		}
 	}
-	defer os.RemoveAll(probe)
-	if filepath.Dir(probe) != tmpdir {
-		t.Fatalf("MkdirTemp(\"\") landed in %s, not %s — upgradePrivateRoot and MkdirTemp no longer agree on which temp root this is", filepath.Dir(probe), tmpdir)
+	t.Setenv("TMPDIR", tmpdir)
+
+	// 1b. AND IT IS DENIED FOR EVERY LAUNCH TMPDIR, which is the other half
+	// of the same question: whatever a seat's own launch read, the profile
+	// it rendered denies the name this verb stages under. Both GOOS values,
+	// for seatbeltTempGrants' reason — the darwin answer has to be readable
+	// on this box, and darwin's default TMPDIR (/var/folders/…) is the row
+	// that was fail-safe for a reason no deny provided.
+	for _, goos := range []string{"linux", "darwin"} {
+		r := upgradePrivateRootFor(goos)
+		if r == "" {
+			t.Errorf("upgradePrivateRootFor(%s) = \"\" over grants %v", goos, seatbeltTempGrants(goos, ""))
+			continue
+		}
+		for _, launch := range []string{"", "/tmp", "/tmp/seat", tmpdir, filepath.Join(tmpdir, "deeper"), "/var/folders/ab/cd1234/T"} {
+			d := upgradePrivateDenied(goos, launch)
+			if !writeGranted(d, absResolve(r)) {
+				t.Errorf("the %s staging root %s is covered by no deny rendered for a launch whose TMPDIR was %q (%v) — a seat launched that way writes the tree `make test` then runs out of, uncaged, as the verb's caller (ranger-base-18brx)", goos, r, launch, d)
+			}
+		}
+		// Said once in the production spelling too, so the refusal the verb
+		// makes at run time is graded and not only the list it reads.
+		if !upgradePrivateRootDenied(goos, r) {
+			t.Errorf("upgradePrivateRootDenied(%s, %s) = false, so upgradePrivateCopy would refuse to stage at its own root", goos, r)
+		}
+	}
+	// And the predicate's FALSE side, which is the hole's own shape: a root
+	// one level down inside a blanket grant, and a root under a TMPDIR no
+	// grant names. A predicate that says yes to these refuses nothing.
+	for _, bad := range []string{
+		"",
+		filepath.Join("/tmp/op", upgradePrivateRootName),
+		filepath.Join(tmpdir, "deeper", upgradePrivateRootName),
+		filepath.Join("/var/folders/ab/cd1234/T", upgradePrivateRootName),
+	} {
+		if upgradePrivateRootDenied("linux", bad) {
+			t.Errorf("upgradePrivateRootDenied(linux, %q) = true, and no profile rendered on this box denies that name (%v)", bad, upgradePrivateDenied("linux", ""))
+		}
 	}
 
 	// 2. EVERY blanket temp grant has that name denied, not just this run's.
 	// A seat's profile is rendered at the seat's launch, which is before the
 	// verb picks anything, so the deny cannot depend on the verb's TMPDIR.
-	grants := seatbeltTempGrants(runtime.GOOS, tmpdir)
-	if len(grants) == 0 {
-		t.Skip("NOTHING MEASURED: seatbeltTempGrants is stubbed empty on this box, so there is no blanket grant to narrow")
-	}
 	denied := upgradePrivateDenied(runtime.GOOS, tmpdir)
 	if len(denied) != len(grants) {
 		t.Fatalf("upgradePrivateDenied = %v over grants %v — one deny per blanket grant, or a grant is left wide open", denied, grants)
@@ -234,8 +289,14 @@ func TestQAUpgradeStagesThePrivateCopyWhereEveryProfileDeniesWrites(t *testing.T
 	f := weFixtureIn(t, root)
 	w := f.a.SeatbeltWritable(f.ag, f.dir, f.gates, f.rt.StateDirs...)
 	c := f.a.SeatbeltCarveOut(f.ag, f.dir, f.gates, w, f.rt.StateDirs...)
-	if !writeGranted(w, absResolve(tmpdir)) {
-		t.Fatalf("the writable set does not reach %s, so this pin is grading a grant that is not there: %v", tmpdir, w)
+	// The grant this deny narrows is the one the root hangs off — the temp
+	// root itself — and not merely this launch's TMPDIR. Both are asked:
+	// without the first the deny below is true and vacuous, and the second
+	// is the per-launch grant the deny's other members narrow.
+	for _, g := range []string{filepath.Dir(absResolve(upgradePrivateRoot())), absResolve(tmpdir)} {
+		if !writeGranted(w, g) {
+			t.Fatalf("the writable set does not reach %s, so this pin is grading a grant that is not there: %v", g, w)
+		}
 	}
 	if !writeGranted(c.Deny, absResolve(upgradePrivateRoot())) {
 		t.Errorf("no deny covers %s, which every seat's blanket temp grant reaches and `posse upgrade` runs `make test` out of (ranger-base-ua625)\n deny: %v", upgradePrivateRoot(), c.Deny)
@@ -263,6 +324,21 @@ func TestQAUpgradeStagesThePrivateCopyWhereEveryProfileDeniesWrites(t *testing.T
 	// above are a deny over a name nothing uses: MEASURED by putting
 	// upgradePrivateCopy back on os.MkdirTemp("", …), which left rows 1-3
 	// green.
+	//
+	// THE GRANTS MOVE INTO THE FIXTURE FIRST, and the root moves with them
+	// because it is derived from them — which is the ranger-base-18brx fix
+	// stated as a test seam. Rows 4 and 5 write at the root and row 5 plants
+	// a LINK at it, and the production root is the box's own `/tmp`: shared
+	// with every other seat, with the other two suite arms, and with a real
+	// `posse upgrade`. Before the root was TMPDIR-independent this isolation
+	// came from the t.Setenv above; it comes from the stub now, and the
+	// agreement rows 1-3 grade are the production function's.
+	hadGrants := seatbeltTempGrants
+	seatbeltTempGrants = func(string, string) []string { return []string{tmpdir} }
+	t.Cleanup(func() { seatbeltTempGrants = hadGrants })
+	if got, wantRoot := upgradePrivateRoot(), filepath.Join(tmpdir, upgradePrivateRootName); got != wantRoot {
+		t.Fatalf("upgradePrivateRoot() = %s under a grant set of %v, want %s — the root no longer follows the deny set, so rows 4 and 5 would write the box's shared temp root", got, []string{tmpdir}, wantRoot)
+	}
 	uf := newUpgradeFixture(t)
 	copied, done, err := upgradePrivateCopy(upgradePlan{Repo: uf.repo, Tip: uf.c, To: uf.c, From: uf.a})
 	if err != nil {
@@ -297,5 +373,24 @@ func TestQAUpgradeStagesThePrivateCopyWhereEveryProfileDeniesWrites(t *testing.T
 	}
 	if ents, derr := os.ReadDir(elsewhere); derr != nil || len(ents) != 0 {
 		t.Errorf("the refused run wrote into the link's target %s: %v %v", elsewhere, ents, derr)
+	}
+
+	// 6. AND THE VERB ASKS, rather than trusting that its root is denied
+	// because it derived it from the deny set (ranger-base-18brx). That
+	// refusal cannot be reached by any TMPDIR now the root reads no TMPDIR —
+	// which is the fix — so it is reached the one way left: with the grant
+	// set empty there is no name to stage under that any profile denies, and
+	// the verb says so and fetches nothing. Fail-closed, and a row, because
+	// a belt no test reaches is a belt the next edit deletes green.
+	seatbeltTempGrants = func(string, string) []string { return nil }
+	if got := upgradePrivateRoot(); got != "" {
+		t.Fatalf("upgradePrivateRoot() = %q over an empty grant set, want \"\" — there is no denied name to stage under", got)
+	}
+	_, _, err = upgradePrivateCopy(upgradePlan{Repo: root, Tip: "a", To: "a", From: "a"})
+	if err == nil {
+		t.Fatal("upgradePrivateCopy staged a private copy at a name no rendered profile denies — `make test` runs out of that tree, uncaged, as the verb's caller (ranger-base-18brx)")
+	}
+	if !strings.Contains(err.Error(), "denies") {
+		t.Errorf("the refusal does not say the root is undenied:\n%v", err)
 	}
 }

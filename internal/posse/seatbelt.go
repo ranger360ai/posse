@@ -2118,6 +2118,17 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// an upgrade is running, because a seat's profile is fixed at its own
 	// launch and the verb starts later. bwrap renders nothing for it and
 	// needs to — the seat's /tmp is already a private bind (bwrap.go 1c).
+	//
+	// THE VERB STAGES UNDER ONE OF THESE AND NEVER UNDER os.TempDir()
+	// (ranger-base-18brx): a deny over the grant ROOTS is not a deny over
+	// the grants, because a TMPDIR can name a path strictly under one of
+	// them, and the staging root used to be read from the TMPDIR of
+	// whoever RAN the verb rather than from whoever rendered this profile.
+	// upgradePrivateRoot takes the one member of this list that no launch
+	// can vary, so a profile rendered here denies it whatever TMPDIR this
+	// process read. The per-TMPDIR member stays all the same, and costs a
+	// line: it is the root an OLDER installed binary stages under, which is
+	// exactly the binary running during an upgrade that installs this one.
 	for _, d := range upgradePrivateDenied(runtime.GOOS, os.Getenv("TMPDIR")) {
 		add(&c.Deny, d)
 	}

@@ -68,6 +68,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -122,14 +123,105 @@ const UpgradeDelegateKey = "install_delegate"
 // (SeatbeltCarveOut, upgradePrivateDenied), whether or not an upgrade is
 // running. A per-run random name could not be denied at all — a seat's
 // profile is rendered at ITS launch, which is before this verb picks a name.
+//
+// WHICH TEMP ROOT, exactly, is upgradePrivateRoot's question and no longer
+// os.TempDir()'s answer: the deny is rendered for the LAUNCH's TMPDIR and
+// the root was read from the VERB's, and ranger-base-18brx measured the
+// copy landing inside a blanket grant under a name no deny covered when
+// those two disagreed.
 const upgradePrivateRootName = "posse-upgrade"
 
 // upgradePrivateRoot is the directory this run's private copy is made
-// inside: the same root os.MkdirTemp("", …) would have used, one fixed
-// level down. os.TempDir is $TMPDIR else /tmp, which is MkdirTemp's own
-// rule, so the two cannot disagree about which temp root this is.
+// inside: one fixed name under the temp root EVERY rendered profile denies,
+// and not under the one this process happens to read out of its own
+// environment (ranger-base-18brx, finding 1 of the verify at
+// ranger-base-m5izv).
+//
+// WHAT WAS WRONG. This used to be `filepath.Join(os.TempDir(), …)` — "the
+// same root os.MkdirTemp("", …) would have used" — and said that os.TempDir
+// is MkdirTemp's own rule, "so the two cannot disagree about which temp root
+// this is". The two that have to agree are not those two. os.TempDir() is
+// read in the process that RUNS this verb; upgradePrivateDenied is rendered
+// in the process that LAUNCHED a seat, minutes or days earlier, and it names
+// one child per blanket grant ROOT rather than that name wherever it appears
+// under a grant. So where the two TMPDIRs disagree and the verb's resolves
+// STRICTLY INSIDE one of the launch's blanket grants, the copy sits in a
+// seat's write grant under a name no deny covers — ranger-base-ua625
+// finding 2 again, reopened by a variable. MEASURED 2026-11-21 on this box
+// (linux 7.2.15-1-omarchy), through these functions:
+//
+//	launch TMPDIR  verb TMPDIR           verb's staging root           reached  denied
+//	""             ""                    /tmp/posse-upgrade            yes      yes
+//	""             /tmp/op               /tmp/op/posse-upgrade         yes      NO    ← hole
+//	/tmp/seat      /tmp/op               /tmp/op/posse-upgrade         yes      NO    ← hole
+//	""             /var/folders/ab/cd/T  /var/folders/…/posse-upgrade  no       no
+//
+// The last row is the fail-safe direction and is why the hole was narrow: a
+// verb TMPDIR outside every blanket grant is outside every seat's reach as
+// well, so only a verb TMPDIR strictly INSIDE one of them is in the shape.
+// docs/notes.d/ranger-base-18brx.md has the reading and the mutation.
+//
+// SO THE ROOT READS THE DENY SET ITSELF, and the two cannot disagree because
+// they are one expression. The member it takes is the last of
+// upgradePrivateDenied for an EMPTY tmpdir — which is the deny over the
+// grants seatbeltTempGrants names whatever its arguments, and whose last
+// entry is the `/tmp` that function appends unconditionally, for every GOOS.
+// Three things follow, and all three are why this is the arm taken:
+//
+//   - every rendered profile denies this name, whatever TMPDIR the process
+//     that rendered it read, because the grant it hangs off is in every set
+//     that function returns. A reorder there moves this root to another
+//     member of the same set, which is still denied in every profile;
+//   - at bwrap the seat's /tmp is a private bind (bwrap.go 1c), so on Linux
+//     the staging root is not in a seat's view at all — where a root under
+//     some other TMPDIR need not have been;
+//   - `/tmp` is the one temp root this tree's suite was MEASURED green in
+//     (upgradeRunPlan's matrix, ranger-base-6ca29). "Under $HOME" and a
+//     quota'd tmpfs both read as "the commit is red", and a verb run with
+//     either as its TMPDIR used to stage the copy — and so run the suite —
+//     there.
+//
+// WHAT IT DOES NOT CLOSE, said here because the close it amends said it too:
+// a seat launched BEFORE a deny existed carries no deny for it, because a
+// profile is fixed at its own launch. That is every deny's property, it
+// cannot be closed from the render, and the remedy is the one it always was
+// — a seat launched after the swap carries the new profile.
 func upgradePrivateRoot() string {
-	return filepath.Join(os.TempDir(), upgradePrivateRootName)
+	return upgradePrivateRootFor(runtime.GOOS)
+}
+
+// upgradePrivateRootFor is that root for a GOOS, parameterized for
+// seatbeltTempGrants' own reason — a darwin pin must be able to read the
+// darwin answer on this box. "" when the grants are stubbed empty, which
+// upgradePrivateCopy refuses rather than guessing a root nothing denies.
+func upgradePrivateRootFor(goos string) string {
+	denied := upgradePrivateDenied(goos, "")
+	if len(denied) == 0 {
+		return ""
+	}
+	return denied[len(denied)-1]
+}
+
+// upgradePrivateRootDenied reports whether root is a name every rendered
+// profile denies whatever TMPDIR its renderer read: a member of the deny set
+// for an EMPTY tmpdir, which is the part of that set no launch can vary.
+//
+// Asked at run time by upgradePrivateCopy although upgradePrivateRoot
+// derives from this same call, because the cost of asking is one string
+// compare and the cost of it not holding is an uncaged `make test` over a
+// tree a seat may write for the twenty minutes it runs. The shape that did
+// not hold was `filepath.Join(os.TempDir(), …)`, which reads like the right
+// answer and refuses nothing (ranger-base-18brx).
+func upgradePrivateRootDenied(goos, root string) bool {
+	if root == "" {
+		return false
+	}
+	for _, d := range upgradePrivateDenied(goos, "") {
+		if absResolve(d) == absResolve(root) {
+			return true
+		}
+	}
+	return false
 }
 
 // upgradePrivateDenied names the staging roots a rendered profile must deny,
@@ -535,6 +627,15 @@ func upgradePrivateCopy(plan upgradePlan) (dir string, done func(), err error) {
 	// removed: this verb does not delete things it did not make, and the
 	// operator who is told the name can look at it.
 	root := upgradePrivateRoot()
+	// AND THE ROOT IS DENIED, asked and not assumed (ranger-base-18brx).
+	// upgradePrivateRootDenied's comment says why this is checked when the
+	// root is derived from the same deny set it is checked against: the
+	// answer is free and the shape it refuses — a root read out of this
+	// process's own environment — reads like the right one and leaves the
+	// copy inside a seat's write grant.
+	if !upgradePrivateRootDenied(runtime.GOOS, root) {
+		return "", nil, Die("posse upgrade: the private copy would be staged at %q, which is not one of the names every rendered seat profile denies (%v) — a seat could then write the tree this verb runs `make test` out of, UNCAGED, as its caller. Refusing before anything is fetched (ranger-base-18brx)", root, upgradePrivateDenied(runtime.GOOS, ""))
+	}
 	switch fi, err := os.Lstat(root); {
 	case err == nil && !fi.IsDir():
 		return "", nil, Die("posse upgrade: %s is a %s and not a directory — this verb stages its private copy there and every rendered profile denies that name, so something outside the wall put it there. Look at it, remove it, and run this again (ranger-base-ua625)", AbbrevHome(root), fi.Mode().Type())
@@ -819,12 +920,15 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 	}
 	defer done()
 
-	// The copy's path is PRINTED, because it is the one thing about this
-	// run that the environment decides and the reader of a red suite needs.
-	// It is `mktemp -d`, so it is TMPDIR, and this tree's suite moves with
-	// TMPDIR in three ways that all read as "the commit is red" (MEASURED
-	// 2026-11-13 at 983ae5d, one -run filter per test; ranger-base-6ca29
-	// carries the matrix and owns whatever is done about it):
+	// The copy's path is PRINTED, because the reader of a red suite needs
+	// to know which tree it ran in. It is a run dir under
+	// upgradePrivateRoot, which since ranger-base-18brx is `/tmp` and NOT
+	// this process's TMPDIR — so the copy itself is no longer one of the
+	// variables below. The suite it runs still inherits that TMPDIR for its
+	// own temp dirs, and this tree's suite moves with TMPDIR in three ways
+	// that all read as "the commit is red" (MEASURED 2026-11-13 at 983ae5d,
+	// one -run filter per test; ranger-base-6ca29 carries the matrix and
+	// owns whatever is done about it):
 	//
 	//	a quota'd tmpfs    every one of ~30 failures was "disk quota
 	//	                   exceeded", from git, the linker and the tests.
