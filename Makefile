@@ -496,9 +496,15 @@ verify-silent-reverts:
 # and nobody read the leg that said so for nine days because arm 1 was already
 # red for other reasons. The three tables are `read -r -d ''` now, so the
 # hazard has no `$( )` left to live in — see the comment above ROSTER in that
-# file. What this target still owns is the CLASS: scripts/reap-timer-unit.sh
-# and docs/adr/0096-proc-spellings.probe.sh carry the same shape with an even
-# apostrophe count today, and only a parser knows when that stops being true.
+# file. THE LAST TWO SITES WENT THE SAME WAY (ranger-base-fol4d):
+# scripts/reap-timer-unit.sh's two unit bodies and
+# docs/adr/0096-proc-spellings.probe.sh's `$inner` were the shape with an even
+# apostrophe count, which is to say they parsed by arithmetic rather than by
+# construction, and they are `read -r -d ''` now too — the renders proved
+# byte-identical, the probe body identical but for one trailing newline that
+# `sh -c` cannot see. No tracked file carries the shape as of 2026-11-21. What
+# this target still owns is the CLASS: nothing stops the next one being
+# written, and only a parser knows.
 verify-shell-syntax:
 	@scripts/shell-syntax.sh --self-test
 	@scripts/shell-syntax.sh
@@ -572,8 +578,26 @@ verify-python-syntax:
 # membership of the pid the rig planted, and the rule's positive control is
 # the 7725ba75^ delta spelling itself, embedded in the pin. It reads one file
 # in milliseconds, which is why the harness is still nobody's prerequisite.
+#
+# IT IS LINUX-ONLY AND THIS LINE IS WHERE THAT IS SAID (ranger-base-fol4d).
+# scripts/reap-test-tmp.sh reads /proc and needs flock(1), and it REFUSES
+# rather than guessing when either is missing -- `no /proc -- this reads
+# process state and will not guess without it`, exit 2, which is the right
+# answer for the script and the wrong one for a prerequisite of `make test`
+# on a platform that has no /proc at all. MEASURED 2026-11-21 on run
+# 44901378525 job 136837807737: every macos-latest arm-1 job died HERE, at
+# this ninth prerequisite, before a single Go test compiled -- the same bead's
+# ubuntu half was the fixture defect inside the script, and this is the darwin
+# half, which had been masked until ranger-base-zcj0z fixed the apostrophe in
+# verify-shell-syntax two prerequisites earlier. So the SKIP is on the
+# platform and not on the script's own precondition: a linux box whose cage
+# hides /proc, or whose PATH has no flock, still gets exit 2 and still reds,
+# because there the refusal is news. A loud line, never silence -- the
+# herdr-bob targets skip the same way and scripts/verify-box.sh's row for this
+# target says so.
 verify-reap-test-tmp:
-	@scripts/reap-test-tmp.sh --self-test
+	@if [ "$$(uname -s)" = Linux ]; then scripts/reap-test-tmp.sh --self-test; \
+	else echo "verify-reap-test-tmp: SKIPPED on $$(uname -s) -- scripts/reap-test-tmp.sh reads /proc and needs flock(1), so its subject does not exist here (ranger-base-fol4d)"; fi
 
 # ADR 0097 D3's three exits, read by something at last (ranger-base-zpx1k).
 # 0.23s over three runs, ten arms, no go test and no bwrap.

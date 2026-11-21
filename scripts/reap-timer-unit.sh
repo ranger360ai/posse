@@ -146,7 +146,25 @@ esac
 [ -n "$notes" ] && echo "$self: $notes" >&2
 [ -n "$notes" ] && [ "$write" -eq 1 ] && die2 "refusing --write from a session worktree — re-render from the shared checkout"
 
-service_body=$(cat <<EOF
+# BOTH BODIES ARE READ WITH `read -r -d ''` AND NOT `$(cat <<EOF)`
+# (ranger-base-fol4d). Prose inside a heredoc inside a COMMAND SUBSTITUTION is
+# the shape that took every macos arm-1 CI job twice — ranger-base-g4z8m and
+# then ranger-base-zcj0z, nine days unread the second time — because bash 3.2
+# scans a command substitution for quotes before it knows a heredoc body is
+# not code: one odd apostrophe in the prose and the rest of the FILE is a
+# quoted string, so the script that reds is the one that parses. These two
+# bodies carried ten apostrophes between them, an even count, which is the
+# whole of why they parsed. `read` is a builtin and takes no substitution, so
+# the hazard has nowhere left to live; the delimiter stays UNQUOTED because
+# every path, root and interval below is expanded here on purpose.
+#
+# `|| true` because `-d ''` reads to a NUL that never comes, so read reports
+# failure having set the variable, and this script is `set -euo pipefail`.
+# `IFS=` so no leading whitespace is eaten, and the one trailing newline is
+# stripped at the assignment rather than at the four `printf '%s\n'` sites
+# below: `$(cat …)` stripped it, and the rendered units are byte-identical
+# with it gone.
+IFS= read -r -d '' service_body <<EOF || true
 # posse: reap the scratch dirs a killed run leaves behind in a shared /tmp.
 #
 # RENDERED BY \`scripts/reap-timer-unit.sh\` (ranger-base-y9t65) — do not
@@ -185,9 +203,9 @@ IOSchedulingClass=idle
 # run becomes a bad hour. The journal is the record — the script prints its
 # before/after df and every class's count on every run.
 EOF
-)
+service_body=${service_body%$'\n'}
 
-timer_body=$(cat <<EOF
+IFS= read -r -d '' timer_body <<EOF || true
 # posse: the timer for ${name}.service (ranger-base-y9t65).
 #
 # RENDERED BY \`scripts/reap-timer-unit.sh\` — re-render, do not hand-edit.
@@ -219,7 +237,7 @@ AccuracySec=30s
 [Install]
 WantedBy=timers.target
 EOF
-)
+timer_body=${timer_body%$'\n'}
 
 if [ "$write" -eq 0 ]; then
   echo "# ===== $unitdir/${name}.service"

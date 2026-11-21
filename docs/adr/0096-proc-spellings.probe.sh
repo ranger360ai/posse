@@ -19,7 +19,19 @@ trap 'kill "$HP" 2>/dev/null; rm -rf -- "${T:?}"' EXIT
 BASE=(--die-with-parent --ro-bind / / --dev-bind /dev /dev --unshare-user
   --bind "$T/w" "$T/w" --ro-bind "$T/w/deny" "$T/w/deny")
 
-inner=$(cat <<EOF
+# READ WITH `read -r -d ''`, NOT `$(cat <<EOF)` (ranger-base-fol4d). A heredoc
+# body inside a COMMAND SUBSTITUTION is the shape that took every macos arm-1
+# CI job twice (ranger-base-g4z8m, then ranger-base-zcj0z, nine days unread):
+# bash 3.2 scans the substitution for quotes before it knows the body is not
+# code, so one odd apostrophe makes the rest of the FILE a quoted string —
+# and this file's shebang is `#!/bin/bash`, which on darwin IS bash 3.2. The
+# body below holds eight single quotes, all of them paired shell code rather
+# than prose, and that even count is the whole of why it has parsed so far.
+# `read` is a builtin and takes no substitution. The delimiter stays UNQUOTED
+# because $HP and $T are expanded here on purpose; `|| true` because `-d ''`
+# reads to a NUL that never comes; a trailing newline is nothing to the `sh
+# -c "$inner"` below, so none is stripped.
+IFS= read -r -d '' inner <<EOF || true
 r() { label=\$1; shift; out=\$("\$@" 2>&1); rc=\$?; printf '  %-30s rc=%s %s\n' "\$label" "\$rc" "\$(echo "\$out" | head -1 | cut -c1-80)"; }
 r nested-bwrap bwrap --ro-bind / / /bin/true
 r nested-bwrap-pidns-proc bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc /bin/true
@@ -31,7 +43,6 @@ r B6-umount-deny-nested unshare -rm umount $T/w/deny
 r B6-remount-rw-nested unshare -rm mount -o remount,bind,rw $T/w/deny
 r proc-mount sh -c "grep ' /proc ' /proc/self/mountinfo | tail -1 | cut -d' ' -f3,5,6"
 EOF
-)
 arm() { echo "ARM $1"; shift; bwrap "${BASE[@]}" "$@" sh -c "$inner" 2>&1; }
 arm "A shipped (no /proc flag)"
 arm "B --proc /proc" --proc /proc

@@ -665,9 +665,34 @@ self_test() {
   # and the reason this arm's verdict is a membership test and not a delta —
   # a delta over an absent process and a delta over an excluded one are the
   # same number.
-  local teebin fakeclaude fifo fakeerr pkeep pfake cen cn cpids
+  #
+  # AND IT IS EXEC'D UNDER THE DONOR'S OWN NAME, NOT UNDER THE COPY'S PATH
+  # (ranger-base-fol4d). The exe link and argv[0] are independent facts, and
+  # the production counter above reads only the first: identity is
+  # `case "$exetarget" in */claude)` over /proc/<pid>/exe, and the `-p`
+  # exclusion is claude_could_register scanning the cmdline's TOKENS. So the
+  # file has to be at `.../claude` and argv[0] does not — which is the whole
+  # of this fix, because on ubuntu-latest the donor dispatches on argv[0].
+  # MEASURED 2026-11-21 on run 44901378525, the first CI job to carry
+  # ranger-base-zcj0z's postmortem: both arms `exited 1`, the copy
+  # executable, the fifo a fifo, and `its stderr: coreutils: unknown program
+  # 'claude'` — that runner's coreutils is built --enable-single-binary, so
+  # /usr/bin/tee IS the multi-call binary and a copy of it invoked as
+  # `.../claude` looks up last_component(argv[0]) in its program table,
+  # misses, and exits 1 (src/coreutils.c). Not a noexec mount, not a loader
+  # error, not an argv the donor rejected: the three other readings the
+  # postmortem was written to tell apart. `exec -a "$teename"` hands it the
+  # name it dispatches on while leaving the exe link alone, and a standalone
+  # tee — this box, and darwin — ignores argv[0] either way, so the one
+  # spelling covers both donors. MEASURED here the same day against a
+  # faithful mutant of that donor (a binary that exits 1 with that exact
+  # stderr unless basename(argv[0]) is `tee`): the old spelling GONE exit 1
+  # on both arms, the new one LIVE on both, with `/proc/<pid>/exe` still
+  # reading `.../claude` and the cmdline still `tee -p` / `tee`.
+  local teebin teename fakeclaude fifo fakeerr pkeep pfake cen cn cpids
   local -a cparr=()
   teebin=$(command -v tee) || { echo "  FAIL no tee(1) on PATH to copy for the fake claude binary"; fails=$((fails + 1)); teebin=""; }
+  teename=${teebin##*/}
   fakeclaude="$tmp/claude"
   fifo="$tmp/keepopen"
   fakeerr="$tmp/claude.err"
@@ -706,24 +731,26 @@ self_test() {
   # broken rig over nothing but a loaded box — which is the class of defect
   # this rewrite exists to remove, one apparatus down.
   #
-  # THE FIXTURE'S STDERR IS A FILE AND NOT /dev/null (ranger-base-zcj0z). Both
-  # arms below have reported "the rig is what is broken" on EVERY
-  # ubuntu-latest arm-1 CI job since this rig landed — MEASURED on runs
-  # 43731869157 (2026-11-15) and 44865299103 (2026-11-21), both arms, both
-  # with the fixture gone within the census's second — and the rig reproduces
-  # clean on this box (8 of 8, header above; re-read 2026-11-21, both arms
-  # LIVE). So the cause is something about that runner, and the one place it
-  # could have been read was discarded: an exec that fails (noexec mount, a
-  # donor that dispatches on argv[0], a loader error) says so on stderr and
-  # exits 126, a donor that rejected its argv exits 1 or 2, and a fixture that
-  # read EOF on the fifo exits 0 — three different defects that looked
-  # identical in the log. fake_postmortem below prints the status and that
-  # stderr, so ONE further CI reading names which of them it is instead of
-  # another seat re-deriving the possibilities from a linux box.
+  # THE FIXTURE'S STDERR IS A FILE AND NOT /dev/null (ranger-base-zcj0z), AND
+  # THAT IS WHAT NAMED THE DEFECT ABOVE. Both arms below reported "the rig is
+  # what is broken" on EVERY ubuntu-latest arm-1 CI job for the six days this
+  # rig ran unfixed — MEASURED on runs 43731869157 (2026-11-15) and
+  # 44865299103 (2026-11-21), both arms, both with the fixture gone within the
+  # census's second — while the rig reproduced clean on this box (8 of 8,
+  # header above; re-read 2026-11-21, both arms LIVE). The cause was something
+  # about that runner, and the one place it could have been read was being
+  # discarded: an exec that fails (a noexec mount, a loader error) says so on
+  # stderr and exits 126, a donor that rejected its argv exits 1 or 2, a donor
+  # that dispatches on argv[0] exits 1 with a message naming the program it
+  # could not find, and a fixture that read EOF on the fifo exits 0 — four
+  # different defects that were identical in the log. One CI reading with this
+  # file in place (44901378525, above) was enough, where nine days of reading
+  # the log line were not. KEEP IT A FILE: the next donor this rig outgrows is
+  # read the same way, by whoever has no login on the box that reds.
   start_fake() {
     : > "$fakeerr"
     sleep 300 > "$fifo" 2>/dev/null & pkeep=$!
-    "$fakeclaude" "$@" < "$fifo" >/dev/null 2>"$fakeerr" & pfake=$!
+    ( exec -a "$teename" "$fakeclaude" "$@" ) < "$fifo" >/dev/null 2>"$fakeerr" & pfake=$!
     SELFTEST_PIDS=("$pkeep" "$pfake")
     sleep 1
   }
@@ -749,8 +776,8 @@ self_test() {
     local frc=0 err=""
     wait "$pfake" 2>/dev/null || frc=$?
     err=$(cat "$fakeerr" 2>/dev/null) || true
-    printf '       postmortem: it exited %s (126 could not exec, 127 not found, 0 stdin EOF, else it rejected its argv); donor %s; the copy at %s is %s; the fifo is %s\n' \
-      "$frc" "$teebin" "$fakeclaude" \
+    printf '       postmortem: it exited %s (126 could not exec, 127 not found, 0 stdin EOF, else it rejected its argv or dispatched on argv[0]); donor %s, run with argv[0] %s; the copy at %s is %s; the fifo is %s\n' \
+      "$frc" "$teebin" "$teename" "$fakeclaude" \
       "$([ -x "$fakeclaude" ] && echo executable || echo "NOT executable")" \
       "$([ -p "$fifo" ] && echo "a fifo" || echo "NOT a fifo")"
     if [ -n "$err" ]; then

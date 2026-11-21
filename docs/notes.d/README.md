@@ -11,6 +11,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-zcj0z](ranger-base-zcj0z.md) — Arm 1 ran no Go test on either platform for nine days, and both reasons were loud (ranger-base-zcj0z) — 2026-11-21
 - [ranger-base-nycra](ranger-base-nycra.md) — The launch-line tests red on the git-global snapshot, not on the line (ranger-base-nycra) — 2026-11-21
 - [ranger-base-mbcbv](ranger-base-mbcbv.md) — claude's cache/ and .last-cleanup, read- and write-denied in a caged seat's seatbelt profile (ranger-base-mbcbv) — 2026-11-21
+- [ranger-base-fol4d](ranger-base-fol4d.md) — The donor dispatched on argv[0], and the darwin half was the make line (ranger-base-fol4d) — 2026-11-21
 - [ranger-base-dw2du](ranger-base-dw2du.md) — ranger-base-dw2du — D2 pins every bind, and D2(a) reads the wall root in both directions — 2026-11-21
 - [ranger-base-dot6w](ranger-base-dot6w.md) — ranger-base-dot6w — shape 1 pins the directories between nested write grants — 2026-11-21
 - [ranger-base-bncbk](ranger-base-bncbk.md) — Shape 5's directory masks cover the name before the credential exists (ranger-base-bncbk) — 2026-11-21

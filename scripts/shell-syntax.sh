@@ -37,9 +37,15 @@
 # (ranger-base-8z410 finding 1). verify-box.sh's tables are `read -r -d ''`
 # now — the shape this sweep's own closing NOTE prescribes — and the
 # ungrammatical rows above have their possessives back, which is the
-# regression test. Two tracked files still carry the shape with an even
-# apostrophe count (scripts/reap-timer-unit.sh,
-# docs/adr/0096-proc-spellings.probe.sh), so the CLASS is still this sweep's.
+# regression test. The last two tracked files carrying the shape went the same
+# way on 2026-11-21 (ranger-base-fol4d): scripts/reap-timer-unit.sh's two unit
+# bodies, whose render is byte-identical after the conversion, and
+# docs/adr/0096-proc-spellings.probe.sh's `$inner`, identical but for one
+# trailing newline the `sh -c` that consumes it cannot see. Both had an EVEN
+# apostrophe count, which is to say they parsed by arithmetic and not by
+# construction. No tracked file carries the shape as of that date -- and the
+# CLASS is still this sweep's, because nothing stops the next one being
+# written and only a parser knows.
 #
 # AND NOT EVERY PARSER HAS THAT HAZARD, which is a property of the shell and
 # not of this repo. RE-MEASURED 2026-09-11 (ranger-base-ftr3e): bash 5.2.21 on
