@@ -232,7 +232,14 @@ func TestQAEverySandboxProbeFileIsGated(t *testing.T) {
 	// every mutation of the shared object store under the rendered profile
 	// and expects the kernel to refuse it, and a seat's commit to land in its
 	// own store.
-	if len(scanned) != 16 {
-		t.Errorf("expected the sixteen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
+	//
+	// Seventeen since ranger-base-mbcbv:
+	// wallclaudecacheseatbelt_qa_test.go borrows sbRun to try every way of
+	// planting what another claude reads back from <cfg>/cache and of moving
+	// <cfg>/.last-cleanup's mtime, under a caged claude seat's rendered
+	// profile, and expects the kernel to refuse each one — the darwin half of
+	// ranger-base-7x3bj, beside wj93u's file above.
+	if len(scanned) != 17 {
+		t.Errorf("expected the seventeen sandbox-probing test files, scanned %d: %v", len(scanned), scanned)
 	}
 }

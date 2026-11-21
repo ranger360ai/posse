@@ -360,8 +360,10 @@ type SeatbeltCarveOut struct {
 	Narrow []SeatbeltNarrow
 	// DenyAll is subpaths denied READ AND WRITE, rendered after everything
 	// else so no grant or reopen outvotes them: claude's sessions/ peer
-	// registry (claudeSessionsRegistry, ranger-base-yaha3), and its prompt
-	// history and paste cache (claudePromptHistory, ranger-base-wj93u).
+	// registry (claudeSessionsRegistry, ranger-base-yaha3), its prompt
+	// history and paste cache (claudePromptHistory, ranger-base-wj93u), and
+	// its served-catalog cache beside the box's retention throttle
+	// (claudeCacheAndCleanupMarker, ranger-base-mbcbv).
 	// Seatbelt-only
 	// like Narrow: bwrap gives the same member a private bind, and
 	// bwrapRender clears this.
@@ -2162,6 +2164,9 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// claude's prompt history and paste cache: no read, no write
 	// (ranger-base-wj93u).
 	c.DenyAll = append(c.DenyAll, claudePromptHistory(wallHome(), rtGrants)...)
+	// claude's served-catalog cache and the box's retention throttle: no
+	// read, no write (ranger-base-mbcbv).
+	c.DenyAll = append(c.DenyAll, claudeCacheAndCleanupMarker(wallHome(), rtGrants)...)
 	c.Seal = renameSeal(c.Deny, writable)
 	for _, p := range credentialReadDenyLiterals(runtime.GOOS, stateDirs) {
 		add(&c.DenyRead, p)
@@ -3101,7 +3106,7 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 		fmt.Fprintf(out, "    x %s (projects/ deny, in order with the line before; ranger-base-r2uxm)\n", AbbrevHome(n.Path))
 	}
 	for _, p := range carve.DenyAll {
-		fmt.Fprintf(out, "    x %s (read and write deny: claude's shared session state; ranger-base-yaha3, ranger-base-wj93u)\n", AbbrevHome(p))
+		fmt.Fprintf(out, "    x %s (read and write deny: claude's shared session state; ranger-base-yaha3, ranger-base-wj93u, ranger-base-mbcbv)\n", AbbrevHome(p))
 	}
 	for _, p := range carve.Seal {
 		fmt.Fprintf(out, "    x %s (rename seal only — writes inside it are unaffected)\n", AbbrevHome(p))

@@ -333,10 +333,10 @@ changes no behaviour there at all. No production launch is that shape and
 every fixture in internal/posse is, which is why the pins for the
 grant-keyed half put their home outside every blanket temp grant.
 
-The three SEATBELT readings of the same members (claudeDebugDir,
-claudeSessionsRegistry, claudePromptHistory) keep the runtime gate, and that
-is not an oversight to tidy: this decision's whole subject is the mount that
-gives EBUSY, SCOPE scopes the guarantee to walled seats, and a profile has
+The SEATBELT readings of the same members (claudeDebugDir,
+claudeSessionsRegistry, claudePromptHistory, and claudeCacheAndCleanupMarker
+since ranger-base-mbcbv) keep the runtime gate, and that is not an oversight
+to tidy: this decision's whole subject is the mount that gives EBUSY, SCOPE scopes the guarantee to walled seats, and a profile has
 neither. claudeProjectsBinds keeps it too — its binds are in place, so it has
 no destination of its own to swap.
 

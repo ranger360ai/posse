@@ -273,6 +273,70 @@ func claudePromptHistory(home string, stateGrants []string) []string {
 	return out
 }
 
+// claudeCacheAndCleanupMarker is the seatbelt reading of the two members
+// above (ranger-base-mbcbv, the darwin half of ranger-base-7x3bj):
+// <cfg>/cache and <cfg>/.last-cleanup, each plus its resolved spelling when
+// a link makes the two differ, under claudeDebugDir's guard.
+// SeatbeltCarveOut appends these to DenyAll. Two processes it protects, one
+// per member, and neither of them is this seat:
+//
+//   - an UNCAGED claude's served-catalog read. <cfg>/cache/model-catalog's
+//     served catalog and masked-ids carry no signature and are checked for
+//     their schema and surface only, so a planted copy is what the next
+//     claude on the box believes about models.
+//   - the box's retention sweep. <cfg>/.last-cleanup is read for its MTIME
+//     as a 24h throttle, and only rewritten after a sweep runs, so one
+//     future mtime switches box-wide transcript retention off indefinitely.
+//
+// A `(subpath …)` naming a file matches that name and nothing beside it, so
+// the marker rides the same subpath block as cache/ — claudePromptHistory's
+// shape for history.jsonl. Denying file-write* at the NAME refuses unlink,
+// create and a rename onto it as well as the write, which is what a
+// `touch -d <future>` of the marker needs: claude deletes a non-regular file
+// at that name and rewrites, so the deny has to cover the name and not only
+// its contents.
+//
+// READ IS DENIED TOO, the way it is for sessions/ and history.jsonl, and the
+// COST of that is the one thing here that was measured rather than reasoned.
+// MEASURED 2026-11-21 on this Linux host, claude 2.1.330, a scratch config
+// dir with <cfg>/cache and <cfg>/.last-cleanup at mode 0000 (EACCES, the
+// refusal SBPL gives), one unbilled `claude -p --dangerously-skip-permissions`
+// turn against a local fake Messages endpoint: the turn exits 0 with its
+// answer, and the one refused read the debug log names —
+// `[servedCatalog] mask file read failed: EACCES` — is logged and dropped.
+// A write-only deny was the fallback and is not needed.
+//
+// COST at seatbelt otherwise: the seat refetches the served catalog and the
+// changelog every start and caches neither, and it reads the marker as
+// absent, so it runs its own sweep against names it cannot write. Both are
+// what the bwrap half costs with an empty private copy (ranger-base-7x3bj),
+// minus the seat's own cache.
+//
+// ASSUMED, no darwin box: that SBPL's refusal is handled the same way as the
+// EACCES above, on the same ground ranger-base-wj93u assumes it for
+// history.jsonl — the code path is the one claude takes for any errno at
+// these names — and that a subpath deny behaves as it does for projects/
+// (ranger-base-r2uxm).
+//
+// bwrapRender clears DenyAll; its spelling of these two is the private dir
+// bind and the private file bind claudeSessionStateDirNames and
+// claudePrivateSessionState already give them.
+func claudeCacheAndCleanupMarker(home string, stateGrants []string) []string {
+	dbg := claudeDebugDir(home, stateGrants)
+	if dbg == "" {
+		return nil
+	}
+	var out []string
+	for _, n := range []string{claudeCacheDir, claudeLastCleanupFile} {
+		p := filepath.Join(filepath.Dir(dbg), n)
+		out = append(out, p)
+		if real := absResolve(p); real != p {
+			out = append(out, real)
+		}
+	}
+	return out
+}
+
 // claudePrivateSessionStateRel is where those members live under the seat's
 // wall dir.
 const claudePrivateSessionStateRel = "claude"
@@ -326,11 +390,11 @@ func claudePrivateStateDir(home, cwd string) string {
 // read or write another seat's copy of these.
 //
 // Its SEATBELT siblings in this file (claudeDebugDir, claudeSessionsRegistry,
-// claudePromptHistory) still read the runtime's state grants, and that is
-// not an oversight to tidy later: D4's whole subject is the mount that gives
-// EBUSY, SCOPE says the guarantee is for walled seats, and those three are
-// the darwin mechanism's spelling, where there is no mount and no EBUSY to
-// be had. claudeProjectsBinds keeps the same gate for the same reason — its
+// claudePromptHistory, claudeCacheAndCleanupMarker) still read the runtime's
+// state grants, and that is not an oversight to tidy later: D4's whole
+// subject is the mount that gives EBUSY, SCOPE says the guarantee is for
+// walled seats, and every one of them is the darwin mechanism's spelling,
+// where there is no mount and no EBUSY to be had. claudeProjectsBinds keeps the same gate for the same reason — its
 // binds are in place, so no destination of its own can be swapped.
 func claudePrivateSessionState(home, cwd string, grants []string) []PrivateBind {
 	wall, own := SeatWallDir(home, cwd), claudePrivateStateDir(home, cwd)
