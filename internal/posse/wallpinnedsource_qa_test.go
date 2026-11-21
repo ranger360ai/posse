@@ -26,6 +26,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -368,7 +369,12 @@ func TestQAWallPinnedSourceEveryRenderPinsItsInPlaceBindsToo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: the render is refused (%v) — if that is this rule's refusal, the render needs an in-place bind of the loose component and not an exemption", name, err)
 		}
-		if n := wpsCountPinnedInPlace(t, name, r.Argv, shallowestFirst(r.Set)); n < 2 {
+		n := wpsCountPinnedInPlace(t, name, r.Argv, shallowestFirst(r.Set))
+		// Logged and not only counted, so `-v` re-derives the number the
+		// head comment carries rather than leaving it to be retyped from a
+		// run nobody can repeat (ranger-base-dot6w).
+		t.Logf("CENSUS: the %s render makes %d in-place binds", name, n)
+		if n < 2 {
 			t.Errorf("CONTROL: the %s render makes %d in-place binds, so this arm measured nothing:\n %s", name, n, bwJoin(r.Argv))
 		}
 	}
@@ -382,7 +388,9 @@ func TestQAWallPinnedSourceEveryRenderPinsItsInPlaceBindsToo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: the render is refused (%v) — same reading as the seat arms above", kind, err)
 		}
-		if n := wpsCountPinnedInPlace(t, kind.String(), cage.Argv, writable); n == 0 {
+		n := wpsCountPinnedInPlace(t, kind.String(), cage.Argv, writable)
+		t.Logf("CENSUS: the %s render makes %d in-place binds", kind, n)
+		if n == 0 {
 			t.Errorf("CONTROL: the %s render makes no in-place bind at all:\n %s", kind, bwJoin(cage.Argv))
 		}
 	}
@@ -408,17 +416,30 @@ func wpsCountPinnedInPlace(t *testing.T, who string, argv, grants []string) int 
 	return n
 }
 
-// Pin: a render carrying a TWO-DEEP unpinned grant is REFUSED, by the name
-// of the loose component, and the one-deep nest beside it still renders.
-// This is the shape a PID would arrive in — a `writable:` extra two or more
-// components inside a grant the seat already has — and it is the arm the
-// widening above exists for. The refusal's instruction is the one ADR 0100
-// prescribes everywhere else: bind the loose component in place, or narrow
-// the grant above it; never exempt it.
+// Pin: a render carrying a TWO-DEEP nest BINDS THE COMPONENT BETWEEN IN
+// PLACE, so the nest renders and is pinned — and the refusal is still what a
+// render without that bind gets, named by the loose component.
 //
-// MUTATION RUN 2026-11-21: restoring the `m.Src == m.Dst` skip in
-// bwrapRefuseUnpinnedSource reds this test alone.
-func TestQAWallPinnedSourceRefusesATwoDeepUnpinnedGrant(t *testing.T) {
+// THIS TEST READ THE OTHER WAY ROUND UNTIL ranger-base-dot6w. The widening
+// above (ranger-base-dw2du) judged the in-place binds and nothing emitted
+// the pin, so a two-deep nest was refused outright and this pin asserted the
+// refusal. The shape then arrived: a store of record inside the same repo
+// grants `<common>` whole, which puts `<common>/worktrees/<seat>` two
+// components inside that grant with `worktrees` loose between them, and the
+// live seat-store pin's second arm builds exactly it
+// (TestLiveBwrapSeatStoreRefusesRewritingASharedObject, red in ADR 0097 D1's
+// venue). A render refused is a seat that does not launch, and the fix ADR
+// 0100 prescribes for a miss is not an exemption but the bind: shape 1 now
+// emits an in-place bind of every directory between a grant and the grant
+// above it (bwrapGrantMounts). The refusal it replaces is unreachable from
+// this render and is NOT dead — the judge and the venue add mounts after
+// BwrapArgs and are judged again there (boxLandedCage), so the second arm
+// below is the shipped predicate over a render with the pin taken out.
+//
+// MUTATION RUN 2026-11-21: dropping the `m.Pin` arm of BwrapArgs' step 2 reds
+// the first arm; restoring the `m.Src == m.Dst` skip in
+// bwrapRefuseUnpinnedSource reds the second.
+func TestQAWallPinnedSourceBindsATwoDeepNestsLooseComponentInPlace(t *testing.T) {
 	// No t.Parallel: this sets HOME, which the wall root is composed from.
 	root := wallUngrantedDir(t)
 	home, proj := filepath.Join(root, "home"), filepath.Join(root, "proj")
@@ -450,16 +471,164 @@ func TestQAWallPinnedSourceRefusesATwoDeepUnpinnedGrant(t *testing.T) {
 		}
 	}
 
-	argv, prep, err := BwrapArgs(proj, []string{outer, inner}, SeatbeltCarveOut{})
+	// The shipped render: the component between is bound IN PLACE, after the
+	// grant that contains it and before the grant it pins, so each mount
+	// lands on top of the one that contains it.
+	argv, _, err := BwrapArgs(proj, []string{outer, inner}, SeatbeltCarveOut{})
+	if err != nil {
+		t.Fatalf("a render granting %s inside %s is refused (%v) — the fix ADR 0100 prescribes for a loose component is an in-place bind of it, emitted by the render that already grants it, and never an exemption", inner, outer, err)
+	}
+	line := bwJoin(argv)
+	if !strings.Contains(line, "--bind "+mid+" "+mid+" ") {
+		t.Fatalf("the render grants %s two components inside %s and binds nothing over %s, so a leftover of this seat renames %s and bwrap resolves the grant's own path to whatever the plant points at — the wall root, read-write, at the next launch (ADR 0100 D2(b))\n %s", inner, outer, mid, mid, line)
+	}
+	if i, j, k := strings.Index(line, "--bind "+outer+" "), strings.Index(line, "--bind "+mid+" "), strings.Index(line, "--bind "+inner+" "); !(i < j && j < k) {
+		t.Errorf("shape 1's mounts are not shallowest-first (%d, %d, %d), so a mount lands under one that contains it (ADR 0080 D17)\n %s", i, j, k, line)
+	}
+
+	// The same render with that one bind taken out: refused, by the name of
+	// the loose component and with the fix in the message.
+	var without []string
+	for i := 0; i < len(argv); i++ {
+		if argv[i] == "--bind" && i+2 < len(argv) && argv[i+1] == mid && argv[i+2] == mid {
+			i += 2
+			continue
+		}
+		without = append(without, argv[i])
+	}
+	if len(without) == len(argv) {
+		t.Fatalf("CONTROL: there was no in-place bind of %s to drop, so the arm below measures nothing", mid)
+	}
+	err = bwrapRefuseUnpinnedSource(without, []string{outer, inner})
 	switch {
 	case err == nil:
-		t.Fatalf("a render granting %s inside %s rendered: %s lies strictly inside the outer grant and is a mount of nothing, so a leftover of this seat renames it and bwrap resolves %s to whatever the plant points at — the wall root, read-write, at the next launch (ADR 0100 D2(b))\n argv: %q", inner, outer, mid, inner, argv)
+		t.Errorf("a render granting %s inside %s with nothing bound over %s is not refused — that is the whole of what the in-place bind above buys (ADR 0100 D2(b))", inner, outer, mid)
 	case !strings.Contains(err.Error(), mid):
 		t.Errorf("the refusal does not name the loose component %s, which is the only thing the operator can act on: %v", mid, err)
 	case !strings.Contains(err.Error(), "in place"):
 		t.Errorf("the refusal does not name the fix (bind the loose component in place): %v", err)
 	}
-	if len(prep) != 0 {
-		t.Errorf("the refused render came back with prep %v for the uncaged launcher to run", prep)
+}
+
+// Pin: what shape 1's mount list IS — every write grant, plus every
+// directory strictly between a grant and the grant that contains it,
+// shallowest first — as rows, one per shape the predicate argues about.
+// The render arms above and below drive the same function through BwrapArgs;
+// this is the function's own answer, where a row costs nothing to add.
+func TestQAWallPinnedGrantMountsNamesTheDirectoriesBetweenNestedGrants(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name   string
+		grants []string
+		want   []string // the list in order, a pin marked with a leading +
+	}{
+		{
+			name:   "two grants neither of which contains the other",
+			grants: []string{"/a", "/b"},
+			want:   []string{"/a", "/b"},
+		},
+		{
+			name:   "a grant ONE component inside another: its own mount pins it",
+			grants: []string{"/g", "/g/a"},
+			want:   []string{"/g", "/g/a"},
+		},
+		{
+			name:   "TWO components inside: the one between is pinned",
+			grants: []string{"/g", "/g/a/b"},
+			want:   []string{"/g", "+/g/a", "/g/a/b"},
+		},
+		{
+			name:   "THREE components inside: both between, shallowest first",
+			grants: []string{"/g", "/g/a/b/c"},
+			want:   []string{"/g", "+/g/a", "+/g/a/b", "/g/a/b/c"},
+		},
+		{
+			name:   "two nested grants sharing one loose component: one pin",
+			grants: []string{"/g", "/g/a/b", "/g/a/c"},
+			want:   []string{"/g", "+/g/a", "/g/a/b", "/g/a/c"},
+		},
+		{
+			name:   "the component between is granted as well: it is a grant and not a pin",
+			grants: []string{"/g", "/g/a", "/g/a/b"},
+			want:   []string{"/g", "/g/a", "/g/a/b"},
+		},
+		{
+			name:   "no grant above it at all: a deep grant on its own pins nothing",
+			grants: []string{"/g/a/b"},
+			want:   []string{"/g/a/b"},
+		},
+		{
+			// The shape this list was written for (ranger-base-dot6w): a
+			// store of record inside the same repo grants <common> whole.
+			name:   "a store of record in the same repo: <common> whole, and the seat's own git dir two deep",
+			grants: []string{"/r/.git", "/r/.git/objects", "/r/.git/logs", "/r/.git/worktrees/s-1"},
+			want:   []string{"/r/.git", "/r/.git/logs", "/r/.git/objects", "+/r/.git/worktrees", "/r/.git/worktrees/s-1"},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			for _, m := range bwrapGrantMounts(c.grants) {
+				if m.Pin {
+					if !writeGranted(c.grants, m.For) || !insideDir(m.Path, m.For) {
+						t.Errorf("the pin %s names %s as the grant it pins, which is not a grant strictly below it", m.Path, m.For)
+					}
+					got = append(got, "+"+m.Path)
+					continue
+				}
+				got = append(got, m.Path)
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("shape 1's mounts over %v are\n %v\nwant\n %v", c.grants, got, c.want)
+			}
+		})
+	}
+}
+
+// Pin: the SEAT render in the shape this bead is from — a store of record
+// inside the same repo, which grants `<common>` whole — renders, and the
+// seat's own git dir is pinned by an in-place bind of `<common>/worktrees`
+// between them. Same shape as the live seat-store pin's second arm, read off
+// the argv instead of through bwrap, so it reds on any box.
+//
+// THE CONTROL IS THE SAME RENDER WITHOUT THAT GRANT: no `<common>` grant, no
+// nest, no pin — which is what "it widens nothing" means here.
+func TestQAWallPinnedSourceWholeCommonGrantPinsTheSeatsOwnGitDir(t *testing.T) {
+	// No t.Parallel: the fixture sets HOME and the CLI home variables.
+	f := wpsSeatTree(t)
+	r, err := f.a.bwrapRender(f.ag, wrcRuntime("claude"), f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !writeGranted(r.Set, f.l.Own) {
+		t.Skipf("NOTHING MEASURED: this seat is not granted its per-worktree git dir %s, so no grant is nested in the <common> grant below", f.l.Own)
+	}
+	common := filepath.Dir(f.l.Objects)
+	between := filepath.Dir(f.l.Own)
+	if !insideDir(common, between) || !insideDir(between, f.l.Own) {
+		t.Fatalf("CONTROL: %s does not lie between the <common> dir %s and the seat's own git dir %s, so this fixture is not the shape under test", between, common, f.l.Own)
+	}
+	if containsString(bwrapMountDsts(bwrapMounts(r.Argv)), between) {
+		t.Errorf("the shipped render, which does not grant %s whole, still binds %s: a pin inside no grant hands out a write nobody asked for\n %s", common, between, bwJoin(r.Argv))
+	}
+
+	wide := append(append([]string{}, r.Set...), common)
+	argv, _, err := BwrapArgs(f.dir, wide, r.Carve, r.Keep...)
+	if err != nil {
+		t.Fatalf("a render granting <common> whole is refused (%v) — that is a seat in a linked worktree that does not launch at all, and the fix ADR 0100 prescribes is the in-place bind and not an exemption (ranger-base-dot6w)", err)
+	}
+	ms := bwrapMounts(argv)
+	dsts := bwrapMountDsts(ms)
+	if !containsString(dsts, between) {
+		t.Errorf("nothing is bound over %s, which lies strictly inside the <common> grant and holds the seat's own git dir: a leftover of this seat renames it and the next launch binds what the name points at, read-write (ADR 0100 D2(b))\n %s", between, bwJoin(argv))
+	}
+	grants := shallowestFirst(wide)
+	for _, m := range ms {
+		if m.Src == "" {
+			continue
+		}
+		if loose, ok := bwrapPinned(m.Src, grants, dsts); !ok {
+			t.Errorf("the render binds %s over %s and %s is loose\n %s", m.Src, m.Dst, loose, bwJoin(argv))
+		}
 	}
 }

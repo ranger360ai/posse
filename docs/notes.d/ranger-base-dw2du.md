@@ -118,6 +118,11 @@ session scratchpad).
 | D2(a)'s inside-the-root arm disabled | `TestQAWallRootGrantIsRefusedInsideTheWallRootToo` alone | none |
 | the `Src == Dst` skip restored in the source arm | `TestQAWallPinnedSourceRefusesATwoDeepUnpinnedGrant` alone | none |
 
+(That pin is `TestQAWallPinnedSourceBindsATwoDeepNestsLooseComponentInPlace`
+since ranger-base-dot6w, which found the nest in a real render and made the
+two-deep shape PIN rather than refuse. Restoring the skip still reds it, in
+the arm that drives the refusal over a render with the pin taken out.)
+
 The second is the one worth reading: the in-place CENSUS stays green under
 it, which is exactly what a census is for — it measures today's renders and
 cannot red a rule that is not being asked. The refusal pin is what holds the

@@ -154,6 +154,42 @@ another has that outer grant for its parent, so the shape that reds is a nest
 two deep with nothing bound between; the pin is a render carrying one. A miss is fixed the way D4(a) prescribes: bind the loose
 component in place, or narrow the grant above it, never exempt it.
 
+AMENDED 2026-11-21 (ranger-base-dot6w): THE NEST EXISTS, AND THE RENDER PINS
+IT RATHER THAN BEING REFUSED. The "with no" above is a reading of the five
+argvs that census builds and not a property of the shape, and a sixth shape
+was already in this tree: a store of record inside the same repository grants
+`<common>` whole, which puts the seat's own `<common>/worktrees/<seat>` two
+components inside that grant with `worktrees` loose between them, while
+`<common>/objects` and `<common>/logs` are one component inside it and so
+pinned by their own mounts. MEASURED 2026-11-21 in ADR 0097 D1's venue (Linux
+7.2.15, bwrap 0.13.1): the live seat-store pin's second arm renders that shape
+and BwrapArgs refused the whole render — 1 of 46 wall-pin members red, a
+committing seat in a linked worktree that does not launch at all on a box in
+that configuration. It fails CLOSED, so it is this rule costing a launch and
+never a hole in it.
+
+THE FIX IS THIS DECISION'S OWN REMEDY, GENERALIZED, and it lands where shape 1
+already was: for every write grant, bind IN PLACE every directory strictly
+between it and the grant that contains it, shallowest first so the deeper
+mount lands last (`bwrapGrantMounts`, BwrapArgs step 2). It widens nothing —
+every such directory lies strictly inside a grant that has already made it
+read-write — and it is emitted by the render that grants it, which is step
+2a-bis's rule for the private /tmp source and `runtimeEphemeralDirParents`'
+for the CLI homes, said once more for the grants themselves. MEASURED
+2026-11-21 after it landed: the same 150 in-place binds over the same five
+argvs (claude 55, codex 31, grok 50, judge 7, venue 7), so no shipped render
+carries a nest for it to pin and the list is inert until one does; the venue
+reads 46 of 46 green.
+
+RESIDUAL, with a bead of its own (ranger-base-a59w7): this generalizes the
+GRANT producer only. A DENY or a read MASK bound in place has ancestors too,
+and where the directory above it holds no grant of its own nothing pins it —
+MEASURED 2026-11-21, five of internal/posse's own pins refuse a render for a
+loose component above a deny or a credential-store mask, under a home outside
+the shared `/tmp`. None of them is a live wall pin, which is why the venue
+reads green over them. Same remedy, a different producer at a different step
+of the render, and its own census, so it is not folded in here.
+
 The landed-check and venue sources lie under `StateDir/landed-check/run-*`,
 which no walled seat writes. They pass D2(a) and the pin says so.
 
@@ -444,6 +480,18 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   ASSUMED, a grant two or more components inside another with nothing bound
   between. A render carrying one is refused by name, measured by mutation
   (restoring the `Src == Dst` skip reds that pin alone).
+- (2026-11-21, ranger-base-dot6w) THAT NEST DOES EXIST, in a shape the census
+  above does not build: a store of record inside the same repository, which
+  grants `<common>` whole. MEASURED in ADR 0097 D1's venue: the render
+  refused, 1 of 46 wall-pin members red. Shape 1 binds the directories
+  between a nested grant and the grant above it in place now
+  (`bwrapGrantMounts`), and the census reads the SAME 150 in-place binds over
+  the same five argvs — the list pins nothing in a shipped render — with the
+  venue at 46 of 46. Measured by mutation four ways: dropping the pin arm,
+  restoring the `Src == Dst` skip, emitting the pins after the grants instead
+  of shallowest-first, and dropping the condition that the pin lie inside a
+  grant, each reds a named pin. The same shape over a DENY or a read MASK is
+  NOT closed (ranger-base-a59w7).
 - (2026-11-21, ranger-base-dw2du) D2(a)'s second direction over the same
   five: 0 of 32 grants lie INSIDE the wall root, while every render has bind
   sources that do. Measured by mutation too: dropping the new arm reds the
@@ -462,3 +510,4 @@ ASSUMED:
 - ranger-base-tbg3h
 - ranger-base-qyq59
 - ranger-base-k45vt
+- ranger-base-a59w7

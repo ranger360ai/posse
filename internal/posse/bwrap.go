@@ -511,7 +511,9 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	}
 
 	// 2. Shape 1: the write grants, shallowest first so a nested grant's
-	// mount lands on top of the one that contains it.
+	// mount lands on top of the one that contains it — plus the directories
+	// between a nested grant and the grant above it, bound in place so the
+	// mount pins them (bwrapGrantMounts, ADR 0100 D2(b)).
 	grants := shallowestFirst(writable)
 	// reopens answers whether a later mount of p would bind a HOST path back
 	// into a hidden directory that no write grant re-opened. A deny or a mask
@@ -519,10 +521,27 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// still a socket a seat can connect to — so inside a hidden directory
 	// the tmpfs is already the stronger statement and the mount is skipped.
 	reopens := func(p string) bool { return writeGranted(hidden, p) && !writeGranted(grants, p) }
-	for _, p := range grants {
+	for _, m := range bwrapGrantMounts(grants) {
+		p := m.Path
 		exists, dir, err := bwrapStat(p)
 		if err != nil {
-			return nil, nil, bwrapStatRefusal("write grant", p, err)
+			return nil, nil, bwrapStatRefusal(m.what(), p, err)
+		}
+		if m.Pin {
+			// A PIN is a directory of its grant's own, so the two arms
+			// below are not its arms. A file at that name means the grant
+			// under it cannot exist and cannot be made — the mkdir in the
+			// grant's own arm would fail at the launcher, after the render
+			// said yes — so it is refused here, where the message can say
+			// which grant asked for it.
+			switch {
+			case exists && !dir:
+				return nil, nil, Die("bwrap cannot pin %s for the write grant %s below it: it is not a directory, so there is no grant under it to pin and no mkdir that could make one (ADR 0100 D2(b)). Narrow the grant rather than widening the wall", p, m.For)
+			case !exists:
+				prep = append(prep, PrepStep{PrepMkdirAll, p, "a directory between a write grant and the grant that contains it; bwrap binds it in place so the mount pins the grant below it (ADR 0100 D2(b))"})
+			}
+			argv = append(argv, "--bind", p, p)
+			continue
 		}
 		switch {
 		case exists && !dir:
@@ -1715,6 +1734,102 @@ func bwrapStrictlyInsideGrant(c string, grants []string) bool {
 	return false
 }
 
+// bwrapGrantMount is one entry of shape 1's mount list: a write grant, or a
+// directory bound in place only to PIN a grant nested below it (Pin, with
+// For naming that grant for the refusal's message).
+type bwrapGrantMount struct {
+	Path string
+	Pin  bool
+	For  string
+}
+
+// what names the kind in a stat refusal, so a pin's failure does not read as
+// a grant the operator never declared.
+func (m bwrapGrantMount) what() string {
+	if m.Pin {
+		return "write grant pin"
+	}
+	return "write grant"
+}
+
+// bwrapGrantMounts is shape 1's mount list: every write grant, plus every
+// directory STRICTLY BETWEEN a grant and the grant that contains it —
+// shallowest first, so each mount lands on top of the one that contains it
+// and the deepest lands last.
+//
+// IT IS D2(b)'s OWN REMEDY, GENERALIZED (ADR 0100 D2(b) as amended by
+// ranger-base-dw2du, and D4(a) step 2a-bis's shape). Every write grant is
+// bound IN PLACE, so a grant's own name is always a mount of the render and
+// what the predicate asks of it is only about its ANCESTORS: a grant one
+// component inside another has that outer grant for its parent and is
+// pinned. What reds is a nest TWO or more components deep with nothing bound
+// between — the loose component is a mount of nothing inside a directory the
+// seat may write, so a leftover of that very seat renames it, and bwrap
+// resolves the grant's own string to what the name points at instead,
+// read-write, at the next launch and with no race to win. dw2du's census
+// found no render in that state and its head comment said so; the shape
+// EXISTS — a store of record inside the same repo grants `<common>` whole,
+// which puts `<common>/worktrees/<seat>` two components inside the
+// `<common>` grant with `worktrees` loose between them — and a render that
+// builds it was refused outright (ranger-base-dot6w). This is the fix that
+// decision prescribes for a miss and the only one it allows: bind the loose
+// component in place, never exempt it.
+//
+// EMITTED BY THE RENDER THAT ALREADY GRANTS IT, so it widens nothing: every
+// path it names lies strictly inside a write grant, which has already made
+// it read-write, and a path inside no grant produces no entry at all. That
+// is the same condition step 2a-bis carries for the private /tmp source and
+// runtimeEphemeralDirParents for the CLI homes — the two instances this
+// generalizes, and they stay where they are because neither is a grant: one
+// is a bind SOURCE and the other a tmpfs DESTINATION, and this list is read
+// only for the grants.
+//
+// KEYED TO THE GRANT SET AND NOT TO THE WHOLE RENDER'S MOUNTS, which is one
+// notch wider than bwrapPinned asks. A later mount over a loose component
+// would pin it just as well, and the predicate at step 6 reads it that way —
+// but this list is rendered FIRST, before any of those mounts is composed,
+// and a pin computed from mounts that land after it would be a pin whose
+// correctness depends on which step appends what. Where a later tmpfs or
+// private bind does cover one of these paths it simply lands on top, as
+// every narrower statement in this render does; the in-place bind under it
+// changes nothing, because in place is the host's own directory read-write
+// and the grant above it already said so.
+//
+// IT IS NOT WATCHED, for step 2a-bis's reason: this mount is no wall over
+// the seat's reach — the directory is writable either way — and its one job
+// is to refuse a RENAME from inside the namespace, which is about the NEXT
+// render and not this run.
+func bwrapGrantMounts(grants []string) []bwrapGrantMount {
+	isGrant := func(c string) bool {
+		for _, g := range grants {
+			if g == c || absResolve(g) == absResolve(c) {
+				return true
+			}
+		}
+		return false
+	}
+	pinFor := map[string]string{}
+	var pins []string
+	for _, g := range grants {
+		for _, c := range bwrapPathComponents(g) {
+			if isGrant(c) || !bwrapStrictlyInsideGrant(c, grants) {
+				continue
+			}
+			if _, seen := pinFor[c]; seen {
+				continue
+			}
+			pinFor[c] = g
+			pins = append(pins, c)
+		}
+	}
+	out := make([]bwrapGrantMount, 0, len(grants)+len(pins))
+	for _, p := range shallowestFirst(append(append([]string{}, grants...), pins...)) {
+		g, pin := pinFor[p]
+		out = append(out, bwrapGrantMount{Path: p, Pin: pin, For: g})
+	}
+	return out
+}
+
 // bwrapIsMountDst is "this render mounts something at exactly c".
 func bwrapIsMountDst(c string, dsts []string) bool {
 	for _, d := range dsts {
@@ -1786,10 +1901,21 @@ func bwrapMountDsts(ms []bwrapMount) []string {
 // and the seat store is a confidentiality break, and a rule with a mode
 // exemption is a rule with an exemption to maintain. MEASURED 2026-11-21
 // over all five argvs this package renders: 150 in-place binds, every one
-// pinned, so the wider reading costs nothing today (zero misses, and the
-// question the re-read left ASSUMED — whether any render has a grant nested
-// two or more components inside another with a non-mount component between
-// them — is answered no, by the pin rather than by a paragraph).
+// pinned, so the wider reading costs nothing today.
+//
+// THE QUESTION THE RE-READ LEFT ASSUMED — whether any render has a grant
+// nested two or more components inside another with a non-mount component
+// between them — was answered "no" by that census, and the answer was about
+// the five argvs it censused and not about the shape (ranger-base-dot6w). A
+// SIXTH exists: a store of record inside the same repo grants `<common>`
+// whole, which puts `<common>/worktrees/<seat>` two components inside that
+// grant with `worktrees` loose between them, and the render of a committing
+// seat in a linked worktree was refused outright — a seat that does not
+// launch at all, which is how this rule fails and not a hole. Shape 1 emits
+// the in-place bind of such a component now (bwrapGrantMounts), so what the
+// census reads is a render that PINS the nest rather than one that has
+// none: the 150 above are unchanged by that list, because no shipped render
+// carries a nest for it to pin.
 //
 // A REFUSAL AND NOT A WARNING, in the tier's own direction: a source whose
 // components a seat can swap is a mount of the seat's choosing, read-write,
@@ -1815,7 +1941,9 @@ func bwrapMountDsts(ms []bwrapMount) []string {
 //     grant equal to a grant is not strictly inside it, and a grant nested
 //     one component inside another has its parent for the outer grant
 //     itself. What reds is a nest TWO or more components deep with no mount
-//     between, which no render here has (MEASURED above).
+//     between, and no render here HAS one loose: where a grant is nested
+//     that deep, shape 1 binds the directories between in place and the
+//     mount is what pins them (bwrapGrantMounts, ranger-base-dot6w).
 //
 // IT STANDS DOWN WHERE THE WALL ROOT DOES (bwrapWallRoot): on a box whose
 // home is itself under the shared /tmp there is no ungranted place for a
