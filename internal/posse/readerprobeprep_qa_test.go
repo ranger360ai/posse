@@ -155,6 +155,145 @@ func TestQAEveryBwrapPrepStepNamesAPathThatIsNotThere(t *testing.T) {
 	}
 }
 
+// ─── 1b. the same invariant, over a render that carries the whole class ──────
+
+// THE ARM ABOVE OVER A FIXTURE THAT RENDERS THE ANCHORS (ranger-base-k45vt).
+// The invariant is one and the fixture is two, because rppFixture cannot
+// reach the mounts that carry most of this render's prep: it runs a CODEX
+// runtime whose state dir is a scratch path, so it renders no private copy
+// of claude's shared state and no anchored deny directory, and its HOME is a
+// t.TempDir() under the blanket /tmp write grant, so step 5c's credential
+// masks skip outright. What arm 1 graded of the anchor class was ~/.ssh and
+// rex's tsnet dir and nothing else — and both of those only since
+// ranger-base-bncbk put them there.
+//
+// WHAT THAT GAP COST: bwrapAnchorStep emitted its PrepSeed for ANY directory,
+// an already-anchored one included, so every render after a box's first
+// launch asked for ~19 steps whose paths were all PRESENT, prepRequire
+// refused, and applyRecordReach/applyWallWitness abstained on every box whose
+// wall had been up once — which is every box with a live claude seat. It
+// landed under ranger-base-bncbk, found by 5a reddening arm 1; nothing in the
+// suite had measured it for the claude private copies, the seat store's two,
+// the seven anchored deny dirs or the three credential stores, because no
+// fixture reaching arm 1 rendered one.
+//
+// MUTATION-CHECKED, which is also the measurement: with the anchor's own
+// lstat taken back out of bwrapAnchorStep, this arm reds naming 20 re-emitted
+// steps — 8 private copies, the 7 swept deny dirs, ~/.ssh, rex's tsnet dir
+// and the 3 credential stores — and the reader's-probe row beneath it reds
+// too, which is the consequence the bead is about. MEASURED 2026-11-21, this
+// box, linux 7.2.15-1-omarchy. The bead's own reading was 19 over a fixture
+// of its own, which rendered the seat store's two copies and neither ~/.ssh
+// nor rex's tsnet dir; this fixture renders those two and not the seat
+// store's, and the counts are therefore not comparable — which is why the
+// floors below are by CLASS.
+//
+// weFixtureIn UNDER wallUngrantedDir, which is what buys all four: a claude
+// runtime with a real config dir, and a root under /var/tmp that no blanket
+// temp grant reaches. It is the same pair TestQAWallAnchorCoversEveryWatched
+// DirectoryMountOrPricesIt renders, so the two pins grade one render — that
+// one asks whether every watched directory mount is anchored, this one asks
+// whether an anchor that is ALREADY THERE is asked for again.
+//
+// Not merged into arm 1: that arm is host-neutral and cheap, and this one
+// SKIPS wherever /var/tmp is not a root outside the temp grants. A skip of
+// the pair would take the invariant with it.
+func TestQAEveryBwrapPrepStepOverAnchoredMountsNamesAPathThatIsNotThere(t *testing.T) {
+	// No t.Parallel: weFixtureIn sets HOME and CLAUDE_CONFIG_DIR.
+	f := weFixtureIn(t, wallUngrantedDir(t))
+
+	r, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fixture must carry each arm of the class, or the rows below say
+	// nothing about it — which is the whole of why this arm exists. Floors of
+	// one, by CLASS and not by count: the counts move with every landing that
+	// adds a private copy or a swept dir, and the fact this pin holds does
+	// not.
+	had := rppAnchorsByClass(r)
+	for _, c := range []string{rppAnchorPrivate, rppAnchorDenyDir, "5c credential store"} {
+		if had[c] == 0 {
+			t.Errorf("this render carries no %s anchor (the ones it does: %v), so the rows below grade that arm not at all — and an arm nothing grades is how this defect survived its own pin (ranger-base-k45vt)", c, had)
+		}
+	}
+	if n := had[rppAnchorUnclassified]; n != 0 {
+		t.Errorf("%d anchor step(s) belong to no class this arm knows: %v — name the producer here, so a NEW anchored mount is graded by this pin rather than joining the render silently", n, had)
+	}
+
+	// Direction one, as arm 1: of each step, that its path is not there.
+	for _, s := range r.Prep {
+		if _, err := os.Lstat(s.Path); err == nil {
+			t.Errorf("the render asked for %s (%s) over a path that is ALREADY there", s.Path, s.Kind)
+		}
+	}
+
+	// Direction two: the host now HAS the wall, so the render asks for
+	// nothing — over a fixture where most of what it asked for was anchors.
+	if err := runBwrapPrep(r.Prep); err != nil {
+		t.Fatalf("runBwrapPrep: %v", err)
+	}
+	again, err := f.a.bwrapRender(f.ag, f.rt, f.dir, f.gates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Prep) != 0 {
+		var left []string
+		for _, s := range again.Prep {
+			left = append(left, s.String())
+		}
+		t.Errorf("the same render still asks for %d step(s) after the prep ran:\n  %s\nThen `no prep asked` is not `this host has the wall` (wallPrep, wall.go), and the anchors are the half of this render that is there for the SECOND launch (ranger-base-k45vt)", len(again.Prep), strings.Join(left, "\n  "))
+	}
+
+	// AND THE CONSEQUENCE, measured rather than inferred: a reader's probe
+	// over this host does not refuse. It is what the two parity doors read,
+	// and the defect's whole cost was that both of them abstained here.
+	w, err := f.a.wallWriteToRead(f.ag.Name, prepRequire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.a.renderBwrapWall(f.ag, f.rt, f.dir, w); err != nil {
+		t.Errorf("a reader's probe refused a wall whose every source this host already has: %v\nSo applyRecordReach and applyWallWitness abstain on every box whose wall has been put up once (ranger-base-qd9ei, ranger-base-k45vt)", err)
+	}
+}
+
+// The classes of the anchor, as the CARVE-OUT names them: the one pin input
+// that says what a path is without asking a disk the prep has not touched
+// (TestQAWallAnchorCoversEveryWatchedDirectoryMountOrPricesIt's own note on
+// why that matters — a private copy's source is a path the prep MAKES).
+const (
+	rppAnchorPrivate      = "step 2 private copy or empty tmpfs"
+	rppAnchorDenyDir      = "step 3 anchored deny dir"
+	rppAnchorUnclassified = "UNCLASSIFIED"
+)
+
+// rppAnchorsByClass counts this render's anchor seeds by which producer put
+// their directory in the carve-out. A step in no class is counted as such
+// rather than dropped: the pin above reds on it, so a sixth anchored arm is
+// graded here the day it is added.
+func rppAnchorsByClass(r bwrapRendered) map[string]int {
+	out := map[string]int{}
+	for _, s := range r.Prep {
+		if s.Kind != PrepSeed || filepath.Base(s.Path) != wallAnchorName {
+			continue
+		}
+		d := filepath.Dir(s.Path)
+		_, private := wallPrivateAt(r.Carve.Private, d)
+		mask := wallReadMaskProducer(r.Carve, d)
+		switch {
+		case private:
+			out[rppAnchorPrivate]++
+		case mask != "":
+			out[mask]++
+		case r.Carve.Anchored(d):
+			out[rppAnchorDenyDir]++
+		default:
+			out[rppAnchorUnclassified]++
+		}
+	}
+	return out
+}
+
 // ─── 2. the render: a reader refuses rather than writes ──────────────────────
 
 // prepRequire makes nothing and refuses, naming the first path and the count

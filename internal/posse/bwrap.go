@@ -2478,10 +2478,18 @@ func bwrapStat(p string) (exists, dir bool, err error) {
 // step names a path that is NOT there — prepRequire reads the list's
 // emptiness as "this host already has the whole wall" — and until
 // ranger-base-bncbk this function broke that rule for a directory whose
-// anchor had survived an earlier launch. Nothing measured it, because the one
-// pin that would (TestQAEveryBwrapPrepStepNamesAPathThatIsNotThere) runs over
-// a fixture whose every credential store sits inside a blanket /tmp grant and
-// so renders no anchor at all. 5a put a real one in that render's way.
+// anchor had survived an earlier launch, and the cost was that
+// applyRecordReach and applyWallWitness abstained on every box whose wall had
+// been up once. Nothing measured it, because the one pin that holds the rule
+// (TestQAEveryBwrapPrepStepNamesAPathThatIsNotThere) runs over a fixture
+// whose every credential store sits inside a blanket /tmp grant and so
+// renders no anchor at all; 5a put a real one in that render's way, which is
+// how it was found. THE PIN HAS A SECOND ARM NOW
+// (TestQAEveryBwrapPrepStepOverAnchoredMountsNamesAPathThatIsNotThere,
+// ranger-base-k45vt): the same invariant over a claude render under a root no
+// temp grant reaches, so the private copies, the anchored deny dirs and the
+// credential stores are graded too, with a floor per class — the fix and the
+// arm that would have caught it landed a bead apart.
 //
 // LSTAT AND NOT STAT, which is the other half of the same finding. The deny
 // arm reached here through bwrapStat — os.Stat, which FOLLOWS — so a link
