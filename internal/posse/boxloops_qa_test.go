@@ -1023,3 +1023,54 @@ func boxHomeOfChild(t *testing.T, sleep, val string) (string, bool) {
 	}
 	return boxHomeOf(cmd.Process.Pid)
 }
+
+// TestQABoxCensusSaysUnknownWhenItSawNoLoopAndWasRefusedOne is `Sentence`'s
+// first partial arm, and until ranger-base-zm03j no pin in this file reached
+// it — the one arm standing directly in front of the false all-clear.
+//
+// THE SHAPE IT NEEDS, which is why no other fixture here produces it: a
+// reader that CAN read one candidate, that candidate is NOT a loop, and the
+// loops themselves are REFUSED. Then `len(loops) == 0` with a reading in hand
+// and `Sentence` must say UNKNOWN rather than "no dispatch loop on this box".
+// Every other refusal fixture above either has no readable candidate at all,
+// so the abstention arm answers, or has a confirmed loop among the readable
+// ones, so a later partial arm does. It is not a contrived arrangement: the
+// unattributed candidate is the measured box's own third row — a seat's
+// `posse pulse wait` child running the same image under the ranger home — and
+// the refusals are what a child-userns seat gets for the loops beside it.
+//
+// MEASURED under ranger-base-zm03j by deleting the arm: the whole
+// `^TestQABox|^TestLiveBox` filter stayed GREEN and the next arm rendered the
+// plain all-clear over two loops the reader had been refused.
+func TestQABoxCensusSaysUnknownWhenItSawNoLoopAndWasRefusedOne(t *testing.T) {
+	t.Parallel()
+	path, probe := boxFixture("14541392", []boxFixtureProc{
+		// Readable, runs the image, and its own instance's record names
+		// another pid — a candidate, never a loop.
+		{pid: 3285561, ino: "14541392", home: "/homes/ranger"},
+		// The two loops, refused. comm defaults to the subject's basename,
+		// so both are refusals worth reporting.
+		{pid: 1185112, refused: true},
+		{pid: 1185185, refused: true},
+	}, map[string]int{"/homes/ranger": 1185185, "/homes/weller": 1185112}, 9999)
+	r := readBoxLoops(path, probe)
+	if r.Err != nil {
+		t.Fatalf("one readable candidate is a reading, not an abstention: %v", r.Err)
+	}
+	if len(r.Loops()) != 0 || !r.Partial() || r.Unreadable != 2 {
+		t.Fatalf("CONTROL: this fixture must give no loop, a partial reading and two refusals, or it is not this arm: loops=%d partial=%v unreadable=%d",
+			len(r.Loops()), r.Partial(), r.Unreadable)
+	}
+	s := r.Sentence()
+	if strings.Contains(s, "no dispatch loop on this box runs") {
+		t.Fatalf("THE false all-clear, over two loops this reader was refused — the one sentence boxloops.go says must never be printable:\n%s", s)
+	}
+	if !boxSentenceAdmitsItDidNotCoverTheBox(s) {
+		t.Errorf("the reading does not admit it did not cover the box:\n%s", s)
+	}
+	for _, want := range []string{"COULD read", "not a clear box", "3285561"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the rendering does not carry %q — it owes its reader what it DID see as well as what it could not:\n%s", want, s)
+		}
+	}
+}

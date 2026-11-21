@@ -57,7 +57,7 @@ reading from that seat owes — that the all-clear sentence is absent and that
 `boxSentenceAdmitsItDidNotCoverTheBox` holds. Green in both venues, with the
 rendering logged in each.
 
-## The mutation table: three arms were unwitnessed, all in the platform half
+## The mutation table: four arms were unwitnessed, three in the platform half
 
 Each mutant applied ALONE with the subject untouched, graded against the whole
 `^TestQABox|^TestLiveBox|^TestQATheVerbsBoxLine` filter (and the treepins
@@ -74,6 +74,10 @@ that dropped an import were re-spelled and re-run.
 | M9 | `boxPidOwned` stops asking the uid | **SURVIVED** | KILLED |
 | M10 | `boxCommOf` answers `("", false)` always | **SURVIVED** | KILLED |
 | M11 | `boxHomeOf` lifts a SECOND variable | KILLED | KILLED |
+| M12 | delete `Sentence`'s `len(loops)==0 && Partial()` arm | **SURVIVED** | KILLED |
+| M13 | delete the "not a clear box" clause of the fresh-loops-partial arm | KILLED | KILLED |
+| M14 | delete the partial append on the stale-loops arm | KILLED | KILLED |
+| M15 | revert the bytes-not-string lift in `boxHomeOf` | **SURVIVED** | SURVIVED |
 
 M4-M7 and M11 are the fix authors' own list, re-run and confirmed. M8-M10 are
 a family and not a tail: every pin in the package drives `readBoxLoops` through
@@ -85,6 +89,33 @@ M10 is the one worth naming. `boxCommOf` IS the second round of
 ranger-base-rph5z's fix: counting every same-uid refusal made the caveat fire
 on every reading on this box forever, and `comm` is what narrows it. A mutant
 that stops reading `comm` restores that defect with every pin green.
+
+M12-M14 grade `Sentence`'s THREE partial arms one at a time, which is the
+question "is this arm witnessed" rather than "is it necessary". Two are. The
+first — the one that renders "no dispatch loop runs X among the processes this
+reader COULD read … UNKNOWN and not a clear box" — was not, and it is the arm
+standing directly in front of the false all-clear: with it deleted, the next
+arm renders
+
+```
+dispatch (box): no dispatch loop on this box runs /box/bin/posse — nothing a
+rename of it left behind, and nothing it renders either. 1 other process on
+this binary is not a dispatch loop: pid 3285561 (...)
+```
+
+over two loops the reader was refused, with every pin in the package green.
+Nothing reached it because every other refusal fixture in the file either has
+no readable candidate at all, so the abstention arm answers, or has a
+CONFIRMED loop among the readable ones, so a later partial arm does. The
+shape it needs is a readable candidate that is NOT a loop beside refused ones
+— which is the measured box's own third row beside what a child-userns seat
+gets — and that is
+`TestQABoxCensusSaysUnknownWhenItSawNoLoopAndWasRefusedOne`.
+
+M15 is the one that stays surviving, and deliberately: item (c) of
+ranger-base-cwboz is a memory-hygiene change with no observable, so no
+ordinary pin can reach it. It is one line on this verify's findings bundle,
+for the lane that owns the census that CAN reach it.
 
 `TestQABoxPlatformReadsAnswerForRealPidsOnThisBox` pins the three against the
 only fixture they have — real pids on this box, plus one child of the test for
