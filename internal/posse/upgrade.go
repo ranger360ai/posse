@@ -435,6 +435,37 @@ func upgradeBoxLine(plan upgradePlan) string {
 	return plan.Box().Sentence()
 }
 
+// upgradeLoopReaders installs the two readers the report's last two loop
+// lines come through: this instance's `dispatch --watch` loop
+// (ranger-base-rrgnc) and every dispatch loop on this box running the file
+// the swap renames (ranger-base-is1qp, ADR 0092 D8).
+//
+// ONE FUNCTION BECAUSE THE WIRING WAS THE PART NOTHING HELD. Both
+// assignments used to sit inline in cmdUpgrade, which no pin in the tree
+// reaches in either direction: the verb's reads go in through upgradeReads,
+// but a plan is built behind a real build stamp, a real checkout and a box
+// lock, and d4Fixture.run — the one fixture that drives a plan — assigns the
+// plan's fields outright rather than deriving them. So the renderers were
+// each witnessed by eight mutants over boxloops.go and the wiring by nothing.
+// MEASURED 2026-11-21 (ranger-base-r1zdr, over the verify lane's finding in
+// ranger-base-msir3): deleting the Box assignment, deleting the Loop one, and
+// making either line's print unreachable each left 98 tests green in 3.2s, so
+// ADR 0092 D8's "Both lines print, and neither claims the other's reach"
+// could become false with nothing in the suite to say so. Same shape and the
+// same answer as upgradeHookWallRepos one derivation over
+// (ranger-base-1fsc9): a package function the pins can call is the whole of
+// the fix, and nothing was added to move it — cmdUpgrade calls this instead.
+//
+// THE TWO SUBJECTS DIFFER ON PURPOSE, which is the half a reader assumes and
+// so the half worth saying. Loop reads the APP — one instance's watch lock
+// and that instance's own dispatch-watch.pid. Box reads plan.TARGET, the path
+// this run replaces, because that file is box-wide and every instance's loop
+// execs it, so it is not this home's anything (ADR 0092 D8).
+func upgradeLoopReaders(plan *upgradePlan, a *App) {
+	plan.Loop = func() (WatchImage, bool) { return ReadWatchImage(a) }
+	plan.Box = func() BoxReading { return ReadBoxLoops(plan.Target) }
+}
+
 // gitCount is `git rev-list --count <range>` as a number.
 func gitCount(repo, rng string) (int, error) {
 	out, err := git(repo, "rev-list", "--count", rng)
@@ -914,10 +945,10 @@ func (a *App) cmdUpgrade(w io.Writer, o UpgradeOpts, reads upgradeReads) error {
 	// filter itself is upgradeHookWallRepos, which is where a pin can read
 	// it.
 	plan.Repos = append(plan.Repos, upgradeHookWallRepos(a.SweepHookWallIdentity())...)
-	plan.Loop = func() (WatchImage, bool) { return ReadWatchImage(a) }
-	// The subject is the path this run replaces, which is the binary every
-	// instance's loop execs — not this home's anything (ADR 0092 D8).
-	plan.Box = func() BoxReading { return ReadBoxLoops(plan.Target) }
+	// The report's last two loop lines, installed through one function so
+	// that a pin can witness both of them being installed at all
+	// (ranger-base-r1zdr). Inline here, they were held by nothing.
+	upgradeLoopReaders(&plan, a)
 	return upgradeRunPlan(w, plan)
 }
 

@@ -238,6 +238,14 @@ type d4Fixture struct {
 	// carries into the verify block's re-render line. Empty unless a pin
 	// asks for it: the fixture declares no repos of its own.
 	repos []string
+	// readers, when set, installs the plan's two loop readers — the seam
+	// ranger-base-r1zdr's report pins need. The report's last two loop lines
+	// print only for a plan that carries a reader and upgradeResolve sets
+	// neither, so without this hook a run through this fixture prints
+	// neither line and the wiring that installs them is unwitnessed. Nil for
+	// every pin that does not ask, which is the state they were all written
+	// in: a nil reader prints nothing (upgradeWatchLine, upgradeBoxLine).
+	readers func(*upgradePlan)
 }
 
 func newD4Fixture(t *testing.T, now, next fakePosse) d4Fixture {
@@ -279,6 +287,9 @@ func (f d4Fixture) run(t *testing.T, personas ...string) (string, error) {
 	}
 	plan.Personas = personas
 	plan.Repos = f.repos
+	if f.readers != nil {
+		f.readers(&plan)
+	}
 	var out bytes.Buffer
 	err = upgradeRunPlan(&out, plan)
 	return out.String(), err

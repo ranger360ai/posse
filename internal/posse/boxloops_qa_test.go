@@ -724,14 +724,16 @@ func TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang(t *testing.T) {
 // verb's side of D8 the way watchimage_qa_test.go pins the sibling line: at
 // `upgradeBoxLine`, over a plan.
 //
-// WHAT THIS DOES NOT REACH, said here because the next reader should not have
-// to find it out: neither loop line is pinned THROUGH `upgradeRunPlan`, so a
-// deletion of the `upgradeBoxLine(plan)` call from the report would leave
-// every pin in this file green. That gap is the per-instance line's too
-// (nothing asserts "dispatch:" appears in a d4Fixture report either), so it
-// is one gap over two lines and not a new one — closing it means a report
-// fixture that can carry a Loop and a Box, which belongs with the D4 pins
-// rather than here.
+// WHAT THIS DOES NOT REACH, AND WHERE THAT NOW IS. This pin stops at
+// `upgradeBoxLine`, so a deletion of the `upgradeBoxLine(plan)` call from the
+// report — or of the assignment that gives the plan a reader at all — would
+// leave every pin in THIS file green. That gap was the per-instance line's
+// too (nothing asserted "dispatch:" appeared in a d4Fixture report either),
+// so it was one gap over two lines; it is closed in
+// upgradereportloops_qa_test.go (ranger-base-r1zdr), where a d4Fixture report
+// carries a Loop and a Box and the wiring goes in through
+// `upgradeLoopReaders`. Four mutants that were green over 98 tests before
+// those pins existed are in that file's header.
 func TestQATheVerbsBoxLineIsAbsentWithoutAReaderAndCarriesItWithOne(t *testing.T) {
 	t.Parallel()
 	if got := upgradeBoxLine(upgradePlan{}); got != "" {

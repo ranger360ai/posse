@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-w9t63](ranger-base-w9t63.md) — Every config key the harness reads, censused against the seed (ranger-base-w9t63) — 2026-11-21
 - [ranger-base-vbp5a](ranger-base-vbp5a.md) — ranger-base-vbp5a — two socket-wall live pins spent sun_path on their own test names — 2026-11-21
 - [ranger-base-rh8y0](ranger-base-rh8y0.md) — ranger-base-rh8y0 — the landed loop's pending re-read, and four findings that are not this repo's — 2026-11-21
+- [ranger-base-r1zdr](ranger-base-r1zdr.md) — The upgrade report's two loop lines, held by a report pin (ranger-base-r1zdr) — 2026-11-21
 - [ranger-base-nycra](ranger-base-nycra.md) — The launch-line tests red on the git-global snapshot, not on the line (ranger-base-nycra) — 2026-11-21
 - [ranger-base-nqaa1](ranger-base-nqaa1.md) — A box-wide rename reported by a per-instance reader, and a class token nothing read (ranger-base-nqaa1) — 2026-11-21
 - [ranger-base-mbcbv](ranger-base-mbcbv.md) — claude's cache/ and .last-cleanup, read- and write-denied in a caged seat's seatbelt profile (ranger-base-mbcbv) — 2026-11-21
