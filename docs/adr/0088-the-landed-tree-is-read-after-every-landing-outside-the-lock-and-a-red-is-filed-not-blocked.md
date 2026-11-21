@@ -501,3 +501,110 @@ directory the census found. A daemon that grew one would be visible as a
 - ranger-base-i92tj
 - ranger-base-1xyso
 - ranger-base-q9bqu
+
+## Amendment: a judge its own launcher's stop ended has not been silent, and a new launcher reads the tip it inherits (ranger-base-gihmm, 2026-11-21)
+
+D6.3 filed "landed check silent at ~/src/posse" (ranger-base-gihmm) on two
+runs that said `it was signalled (signal: terminated)`, after 82.9s and
+50.0s. Those are far under the 10m bound, so neither was a hang. The judge
+was not sick. MEASURED 2026-11-21 by richard (linux, 16 cores, uncaged, warm
+shared cache, load 9.9): `scripts/posse-landed-check` over the same tree
+`2722c3fb` is **green in 146s**, inside D6.2's 240s. The two answered runs
+between the silences were green at 176.2s and 190.3s.
+
+**What sent the signal.** Read off the unit journal and the watch log, both
+runs ended in the same second as `systemd: Stopping posse dispatch --watch
+(ranger)` (23:36:44 and 00:07:32 EST). Those were operator restarts of
+`posse-dispatch-ranger.service`, issued after each delegated `posse upgrade`
+so the loops would pick up the new binary (ranger-base-rrgnc). The unit
+renders systemd's default `KillMode=control-group`, so a stop sends SIGTERM
+to every process in the cgroup, and the judge's bwrap is in that cgroup. The
+launcher never cancelled anything. It was waiting on the judge
+(`defer d.landedChecks().Wait()`), but the judge was already dead. A terminal
+does the same thing: ctrl-c sends SIGINT to the foreground process group,
+judge included. So **every supervisor this loop runs under delivers its stop
+to the judge as well**.
+
+What that cost:
+1. A false P1 in architecture's lane, filed by the watchdog whose job is to
+   be believed.
+2. An unjudged tip that nothing comes back for. `once()` runs only when a
+   landing schedules it, so the new loop does not read main until the next
+   landing. When this was written, main's tip `16c844cb` had been unjudged
+   for about four minutes and would stay that way until something landed.
+   rrgnc's remedy makes a loop restart part of every install, and installs
+   follow landings, so this shape recurs by design rather than by bad luck.
+
+**D6.5: a run ended by its own launcher's stop is INTERRUPTED. It is not
+silence, not counted and not filed.** This is a third non-verdict next to
+D3's silence. It records nothing in D4 (no answer was given) and nothing in
+D6.3's `posse.landedCheckQuiet` (the judge was not the one that failed). It
+prints one `◷` line: `~/src/posse landed at <tip> and was not judged: this
+launcher is stopping (<said>) — the next launcher reads the tip`. A run is
+INTERRUPTED in either of two cases:
+- **The launcher stopped it.** When the watch loop's stop context fires, the
+  checker cancels its in-flight run and drops its pending set. Today `Wait()`
+  holds a stop for up to 10m, and under systemd that ends in TimeoutStopSec's
+  SIGKILL anyway. After this change a stop is bounded by
+  `generatorKillGrace`.
+- **The stop's own signal reached it first.** The cgroup or process group
+  delivers SIGTERM or SIGINT to the judge and to the launcher together, so
+  the judge's `Wait` can return before `signal.NotifyContext` has cancelled.
+  A run that comes back signalled therefore waits up to
+  `landedInterruptGrace` (5s) for the stop context before it is classified.
+  If the stop arrives, the run is INTERRUPTED. If not, it is D3's silence,
+  as today. ASSUMED, not measured: the two deliveries land within
+  milliseconds of each other, so 5s is a grace and not a guess at the gap.
+  The only cost is up to 5s of latency on a real silence's ⚠ line.
+
+Both D3 rules (the judge and ADR 0097's wall check) go through the same
+checker, so this covers both. A signal from anyone OTHER than this
+launcher's stop (an OOM kill, the load guard, an operator's `kill <judge
+pid>`) still counts as silence. Those are exactly what D6.3 exists to see.
+
+**D6.6: a launcher that arms reads the tip it inherits.** When a watch loop
+arms, it schedules one landed check per repo it lands into, at that repo's
+base. The cost is D4's cache: a tip that is already recorded costs one
+`git config` read and returns. A tip that is not recorded (the restart case
+above, or any landing made while no loop was running) gets judged about
+2.5 minutes after the loop arms instead of at the next landing. A one-shot
+`posse dispatch` does not do this. It has no loop to arm, and its landings
+already schedule their own checks.
+
+**Consequences.**
+- Restarting the loops after an install no longer files architecture a P1,
+  and no longer leaves main unjudged until the next landing.
+- A stop no longer waits up to 10m for a judge. It cancels the judge and
+  says so.
+- D6.3's counter means what its title says again: consecutive runs in which
+  the JUDGE could not answer.
+- Exit hatch: one more verdict value, one grace constant and one arm-time
+  sweep. Deleting the arm-time sweep restores today's behaviour (judged at
+  the next landing). Nothing new is persisted.
+
+**Alternatives rejected.**
+- **Render `KillMode=mixed` in the unit so that only the main process gets
+  SIGTERM.** That is the clever one, and it fixes only systemd. A terminal's
+  ctrl-c still signals the whole process group, and so would any future
+  supervisor. It also needs the launcher to cancel the judge on stop anyway
+  (otherwise TimeoutStopSec SIGKILLs it after 90s, and that is still a signal
+  the counter would count). The launcher-side rule covers every supervisor,
+  so the unit stays as it is.
+- **Let the judge outlive the stop (`setsid`, or a `systemd-run --scope` of
+  its own).** The verdict would have no reader. D3 keeps the record with the
+  launcher, and moving it into the judge would hand the record to the tree
+  under judgement. A detached cage would also be a process ADR 0009's
+  orphan rules then have to treat as wanted.
+- **Make the restart wait for the judge (a drain in `ExecStop`).** That
+  holds an install's follow-through for up to 10m to finish a judgement D6.6
+  can redo in about 2.5m.
+- **Raise D6.3's threshold to three.** That hides this case only until three
+  restarts in a row, and it also hides real silences for one more landing.
+  The counter was counting the wrong thing, not too few things.
+- **Treat every SIGTERM as interrupted.** The load guard's kill arm also
+  sends SIGTERM (loadguardkill.go), and a judge killed by the guard is a real
+  silence. What matters is who stopped the judge, not which signal it got.
+
+**Beads.**
+
+- ranger-base-gihmm
