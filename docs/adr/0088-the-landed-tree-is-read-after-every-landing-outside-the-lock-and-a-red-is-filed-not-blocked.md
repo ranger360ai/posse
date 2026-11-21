@@ -609,6 +609,13 @@ already schedule their own checks.
 
 - ranger-base-gihmm
 - ranger-base-soqa1 (D6.5, built: `internal/posse/landedinterrupt.go`)
+- ranger-base-d9xby (D6.6, built: `internal/posse/landedarm.go`). The sweep
+  derives its (repo, base) pairs and persists nothing: the repos are
+  `BeadsDirs` through `mainCheckoutsOf`, which is the enumeration every
+  landing path already makes, and the base is `repoBranch(repo)` — where a
+  tree is cut from and where it lands back to. A `--dry-run` loop schedules
+  nothing, on the rule the pass's own filing sweeps keep: a judge writes D4's
+  record, may file D5's bead and spends minutes of box.
 
 ## Amendment: the launcher that judged is named, and a window is not attributed to a wall that moved (ranger-base-7or9p, from ranger-base-q8j8x, 2026-11-21)
 

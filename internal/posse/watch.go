@@ -368,6 +368,35 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		// fired on a healthy pass (ranger-base-nzzuz finding 1).
 		d.watchdogLoop(dogCtx, base, watchdogBudget(maxInterval, d.PromptWaitMS), watchdogPassBudget(maxInterval, d.GatherWindow))
 	}()
+	// The tip this loop INHERITED (ADR 0088 D6.6, landedarm.go): one landed
+	// check per repo this loop lands into, at the base it lands to, because
+	// `once()` otherwise runs only when a landing schedules it and a tip
+	// that moved while no loop was running is never read at all. D4's cache
+	// is what makes it cheap — a tip already on record costs one `git
+	// config` read and returns.
+	//
+	// HERE, at the foot of the preamble, for two reasons. It must be below
+	// `d.stopCtx = ctx` above, or the judge it starts would not know who
+	// stopped it and a restart inside the run would be filed as a silence
+	// (D6.5, landedinterrupt.go). And it starts a goroutine that writes
+	// verdict lines through outWriter() — under outMu — while the header
+	// block above takes this stream BARE and is allowed to
+	// (dispatcherQuietOut's doc), which is the same reason the guard clock
+	// is started after those lines rather than beside them.
+	//
+	// AND IT IS JOINED HERE, not merely by the first pass: `Run` defers the
+	// same `Wait` at its top, so in practice pass 1 already joins this, but
+	// the scheduler that starts a caged `make` is the one that owes the
+	// join. A judge that outlives the process that started it is an orphan
+	// carrying no POSSE_KEEP marker, which the fleet load guard's kill arm
+	// ends on any tick. Registered after every clock's defer so it RUNS
+	// FIRST (LIFO), like them: the verdict lines land in the log this loop
+	// is still holding open, and the pid record and the lock say the loop
+	// is gone only once its last child has. The wait is bounded by the stop
+	// itself — Watch returns only on a done context, which cancels the
+	// in-flight judge (D6.5) — and not by landedCheckLimit.
+	defer d.landedChecks().Wait()
+	d.scheduleInheritedTips(dirFilter)
 	passes := 0
 	wait := base
 	// From here down the loop writes through d.printf/d.println like the
