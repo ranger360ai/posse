@@ -103,7 +103,7 @@ const (
 	// upgradeShopState's — whose store moves on its own while nobody is
 	// installing anything — which is why it is not that constant.
 	//
-	// Two members, and the second is why this class is "the install's
+	// Three members, and the second is why this class is "the install's
 	// follow-through" and not "the build stamp" (ADR 0092 D4 as amended by
 	// ranger-base-qfhph):
 	//
@@ -120,6 +120,12 @@ const (
 	//	     not happened yet, not that the new binary is broken. The report
 	//	     prints the re-render for them (upgradeHookWallLine) and this
 	//	     verb never runs it.
+	//	G18  THE OTHER HALF THIS VERB DOES NOT DO (ranger-base-rrgnc). The
+	//	     rename leaves every live dispatch loop on the old inode, and
+	//	     the loop is what renders launches, so the row appears after
+	//	     every install with a loop running. Restarting it is the
+	//	     operator's or coordinator's; the report names the pid
+	//	     (upgradeWatchLine) and this verb never restarts it.
 	upgradeInstallSubject
 )
 
@@ -153,6 +159,9 @@ const (
 //	G16  the bd census               shop     the store grows
 //	G17  config + the promoted map   BINARY   a static map, judged by this
 //	                                          binary's own cage resolver
+//	G18  /proc + the watch pid       INSTALL  this verb's rename CREATES it:
+//	                                          the live loop stays on the old
+//	                                          inode (ranger-base-rrgnc)
 //	—    unpushed / no-live / backup shop     git, herdr and the clock
 //
 // G7 IS THE ONE THE ADR DID NOT NAME, and it is the reason this bead was
@@ -239,6 +248,11 @@ var upgradeConditionSource = map[string]upgradeCondClass{
 	"G15": upgradeShopState,
 	"G16": upgradeShopState,
 	"G17": upgradeBinaryRendered,
+	// G18 appears after EVERY install with a live dispatch loop, by
+	// construction: rename(2) leaves the loop on its old inode. Classed
+	// binary-rendered it would roll back every good install; it is the
+	// install's follow-through, which the report names (upgradeWatchLine).
+	"G18": upgradeInstallSubject,
 	// The three pulse-era carry-overs, which GovReport prints as one row
 	// name because none of them has a G-number: unpushed commits on a beads
 	// repo, no live session for the pulse persona, and a stale or absent

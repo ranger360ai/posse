@@ -227,6 +227,11 @@ type GovInputs struct {
 	// would otherwise see the same "+dev" abstention.
 	Lag func() LauncherLag
 
+	// Image is the dispatch loop's image reading behind G18
+	// (watchimage.go); nil = ReadWatchImage over this instance. A seam so a
+	// pin can hand in a loop that is not this home's.
+	Image func() (WatchImage, bool)
+
 	// Caller is the name a plan-endpoint request lands under in
 	// the login's plan-usage read log ("status", "pulse", "cockpit"); "" reads as
 	// "govern". The log is only evidence if it says who asked — that is
@@ -450,6 +455,7 @@ func ReadPause(path string) Pause {
 //	G15 a live session is running degraded        the session meta   LANE
 //	G16 a census line is near/over bd's 64 KB limit  the census         LANE/URGENT
 //	G17 this OS's cage map lowers a tier          config + promoted  LANE
+//	G18 the dispatch loop runs a replaced image   /proc + watch pid  LANE
 //
 // plus the two conditions the pulse's own first cut shipped and this
 // widening deliberately does not drop — unpushed commits on a beads repo,
@@ -734,6 +740,28 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// the watch preamble says it once).
 	if rows := in.lag().GovRows(in.App.LauncherBehindMax(in.errw())); len(rows) > 0 {
 		for _, c := range rows {
+			add(c.ID, c.Class, c.Key, c.Detail)
+		}
+	}
+
+	// ── G18 · the dispatch loop runs an image the install replaced ───────
+	//
+	// G11's other half (ranger-base-rrgnc, watchimage.go). G11 reads the
+	// binary ON DISK against its repo, so it clears the moment an install
+	// lands — and that is the moment the loop, still on its old inode, starts
+	// rendering every launch's walls from a binary that is no longer
+	// installed. The remedy is restarting a live dispatcher, which is the
+	// operator's or coordinator's (guardrail 3): the row says so and does
+	// nothing. An unreadable loop is an abstention, on G11's rule.
+	var img WatchImage
+	var imgOK bool
+	if in.Image != nil {
+		img, imgOK = in.Image()
+	} else {
+		img, imgOK = ReadWatchImage(in.App)
+	}
+	if imgOK {
+		for _, c := range img.GovRows() {
 			add(c.ID, c.Class, c.Key, c.Detail)
 		}
 	}

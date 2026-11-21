@@ -268,6 +268,28 @@ type upgradePlan struct {
 	// them (ADR 0092 D4 amendment 1) and this verb never runs it. A field
 	// of the plan for Personas' reason.
 	Repos []string
+	// Loop reads this home's dispatch --watch loop after the swap
+	// (ranger-base-rrgnc); nil prints nothing, which is every pin that does
+	// not ask. A field for Personas' reason.
+	Loop func() (WatchImage, bool)
+}
+
+// upgradeWatchLine is the line before D6's (ranger-base-rrgnc): the live
+// dispatch loop the rename left on the old inode, if there is one. Without
+// it, "relaunch seats" reads as sufficient and is not — the loop is what
+// renders a relaunch, so a relaunch through it renders the old walls.
+func upgradeWatchLine(plan upgradePlan) string {
+	if plan.Loop == nil {
+		return ""
+	}
+	img, ok := plan.Loop()
+	if !ok {
+		return "dispatch: no running dispatch --watch loop of this home could be read — seats launched after this line render the new walls only if whatever launches them was started after the swap"
+	}
+	if !img.Stale() {
+		return fmt.Sprintf("dispatch: loop pid %d already runs %s — relaunched seats render the new walls", img.Pid, AbbrevHome(img.Path))
+	}
+	return "dispatch: " + img.Sentence()
 }
 
 // gitCount is `git rev-list --count <range>` as a number.
@@ -722,6 +744,7 @@ func (a *App) cmdUpgrade(w io.Writer, o UpgradeOpts, reads upgradeReads) error {
 	// filter itself is upgradeHookWallRepos, which is where a pin can read
 	// it.
 	plan.Repos = append(plan.Repos, upgradeHookWallRepos(a.SweepHookWallIdentity())...)
+	plan.Loop = func() (WatchImage, bool) { return ReadWatchImage(a) }
 	return upgradeRunPlan(w, plan)
 }
 
@@ -856,6 +879,12 @@ func upgradeRunPlan(w io.Writer, plan upgradePlan) error {
 
 	fmt.Fprintf(w, "\n── epilogue: the gate copy arm (ADR 0092 D5) and the hook wall reading (D3.6) ──\n")
 	gate := upgradeEpilogue(w, wt, plan)
+
+	// The line before D6's: which live loop still renders the old walls
+	// (ranger-base-rrgnc). Restarting it is not this verb's (guardrail 3).
+	if line := upgradeWatchLine(plan); line != "" {
+		fmt.Fprintf(w, "\n%s\n", line)
+	}
 
 	// D6 — the LAST stdout line, and the one the delegate posts on the
 	// install bead. Everything above may be long; this is the record.

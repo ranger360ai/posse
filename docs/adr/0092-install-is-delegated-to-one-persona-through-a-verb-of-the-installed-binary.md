@@ -247,6 +247,24 @@ every bead id in it that carries `security` or `vuln-private`, by id only
 (AGENTS.md, "Landing the plane"). Relaunching seats so they pick up the new
 walls stays the coordinator's.
 
+*The remedy is two steps, not one (amended by ranger-base-rrgnc).* A seat is
+relaunched BY the `dispatch --watch` loop, and D3.5's rename leaves that loop
+on the old inode, so a relaunch through a loop started before the swap
+renders the OLD walls. MEASURED twice on linux: a launch six minutes after
+the edfe7a79..3c0e3c5e install read `rendered by posse 0.5.3+edfe7a79`, and
+after 3c0e3c5e..0e1cb6c0 a fresh seat still carried ranger-base-hgcmw's
+pre-fix launch line while the binary on disk had the fix. The remedy is
+therefore **restart the dispatch loops, then relaunch seats**. Restarting a
+live dispatcher stays the operator's or the coordinator's (guardrail 3); the
+verb only SAYS it: the line before D6's names the live loop's pid and the
+image it still runs (`dispatch: dispatcher pid N runs …`), and `posse status`
+carries the same sentence as **G18** until the loop restarts. G18 reads
+`/proc/<pid>/exe` where it can, so it sees loops started before it existed;
+elsewhere (darwin) it reads the image identity the loop stamps into
+`dispatch-watch.pid` at start, and a loop too old to have stamped one is an
+abstention. G18 is an install subject in D4's partition — the rename creates
+it by construction — so it never rolls an install back.
+
 **D7 — Guardrail 5 is the edge of the delegation.** Out of scope:
 `posse promote`, `posse refresh`, config and `install_delegate:` itself,
 `.claude/**` and the operator's settings, cage maps, `posse gates

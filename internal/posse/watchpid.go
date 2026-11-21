@@ -41,6 +41,12 @@ type WatchPid struct {
 	Pid     int
 	Started time.Time
 	Cmd     string
+	// The image the loop runs, stamped at start (ranger-base-rrgnc,
+	// watchimage.go): the path it came from, that image's dev:ino, and its
+	// build stamp. G18 reads them where /proc cannot answer.
+	Exe     string
+	Image   string
+	Version string
 }
 
 // WatchPidPath is the one pidfile of an RHQ_HOME, beside dispatch-watch.log.
@@ -60,6 +66,15 @@ func WriteWatchPid(path string, w WatchPid) error {
 	if w.Cmd != "" {
 		fmt.Fprintf(&s, "cmd: %s\n", w.Cmd)
 	}
+	if w.Exe != "" {
+		fmt.Fprintf(&s, "exe: %s\n", w.Exe)
+	}
+	if w.Image != "" {
+		fmt.Fprintf(&s, "image: %s\n", w.Image)
+	}
+	if w.Version != "" {
+		fmt.Fprintf(&s, "version: %s\n", w.Version)
+	}
 	return os.WriteFile(path, []byte(s.String()), 0o644)
 }
 
@@ -73,7 +88,8 @@ func ReadWatchPid(path string) (*WatchPid, bool) {
 		return nil, false
 	}
 	started, _ := time.Parse(time.RFC3339, YamlGet(path, "started"))
-	return &WatchPid{Pid: pid, Started: started, Cmd: YamlGet(path, "cmd")}, true
+	return &WatchPid{Pid: pid, Started: started, Cmd: YamlGet(path, "cmd"),
+		Exe: YamlGet(path, "exe"), Image: YamlGet(path, "image"), Version: YamlGet(path, "version")}, true
 }
 
 // pidAlive asks whether a pid names a live process. Signal 0 is the

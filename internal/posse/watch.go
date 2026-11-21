@@ -531,7 +531,9 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 // never reaches here, because it refused above.
 func (d *Dispatcher) stampWatchPid() {
 	path := WatchPidPath(d.App)
-	rec := WatchPid{Pid: os.Getpid(), Started: d.now(), Cmd: strings.Join(os.Args, " ")}
+	rec := WatchPid{Pid: os.Getpid(), Started: d.now(), Cmd: strings.Join(os.Args, " "), Version: VersionString()}
+	// Which image this loop runs, for G18 (ranger-base-rrgnc, watchimage.go).
+	rec.Image, rec.Exe = selfImage()
 	if err := WriteWatchPid(path, rec); err != nil {
 		fmt.Fprintf(d.errw(), "warning: cannot record the watch loop at %s: %v\n", path, err)
 	}
