@@ -332,8 +332,16 @@ func (a *App) launchRow(rt *Runtime, h ManifestReader) stageRow {
 	if rt.Unattended == "" {
 		un = "NO unattended flag known — a tool call may sit unapproved with nobody watching"
 	}
+	// The two per-CLI door clauses, each asked of this profile's own template
+	// and each silent about a line that does not run its CLI. Both or
+	// neither: the row's job is to name the case its door cannot repair, and
+	// one door reported while the other is silent is the shape
+	// ranger-base-r9slg was filed on.
 	if mcp := strictMCPClause(rt.Command); mcp != "" {
 		un += "; " + mcp
+	}
+	if nl := noLeaderClause(rt.Command); nl != "" {
+		un += "; " + nl
 	}
 	// WHO declared what this row says, and since ADR 0061 that can be the
 	// yaml. The row's value carries `detection: reported` when the profile
@@ -853,6 +861,32 @@ func strictMCPClause(template string) string {
 	}
 	if lineRunsClaude(line) {
 		return "NO " + ClaudeStrictMCPFlag + " — claude runs behind a first word posse cannot see past, so it starts every MCP server a seat can write into .claude.json or a repo .mcp.json (ADR 0090 D1)"
+	}
+	return ""
+}
+
+// noLeaderClause is strictMCPClause's twin for grok's --no-leader door
+// (ranger-base-76mcd), and it is here for ranger-base-r9slg: the launch row
+// reported the strict-MCP door's unrepairable case and said NOTHING about the
+// identical case one door over, so a grok line behind a word posse cannot see
+// past carried no --no-leader, read the operator's config.toml, and with
+// `[cli] use_leader = true` handed its tool calls to a leader this seat's cage
+// does not hold — with every pin green, because EnsureNoLeaderLine leaving
+// such a line alone is INTENDED (grokleader_qa_test.go pins `env FOO=1 grok`
+// -> unchanged). The door's refusal to guess is right; the silence was the
+// defect, and a row is the fix for a silence.
+//
+// "" for a line that runs no grok at all: the flag is that CLI's, exactly as
+// the strict-MCP clause is claude's.
+func noLeaderClause(template string) string {
+	line := EnsureNoLeaderLine(template)
+	for _, w := range strings.Fields(line) {
+		if w == GrokNoLeaderFlag {
+			return GrokNoLeaderFlag + " on the line — the TUI starts its own agent, so no tool call is handed to a leader outside this seat's cage (ranger-base-76mcd)"
+		}
+	}
+	if lineRunsGrok(line) {
+		return "NO " + GrokNoLeaderFlag + " — grok runs behind a first word posse cannot see past, so with `[cli] use_leader = true` in the operator's config.toml this line hands its tool calls to a leader posse's cage does not hold (ranger-base-76mcd)"
 	}
 	return ""
 }

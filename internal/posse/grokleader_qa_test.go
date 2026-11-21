@@ -75,6 +75,39 @@ func TestQAGrokLeaderEveryGrokLineCarriesNoLeaderOnce(t *testing.T) {
 	}
 }
 
+// The door refuses to guess past a first word it cannot see — which is
+// right — and `posse runtime check` NAMES that case instead of passing it
+// (ranger-base-r9slg). The strict-MCP twin is
+// TestQAStrictMCPDoorLeavesAWrapperAloneAndTheCheckSaysSo, and this is its
+// mirror: until it landed, the launch row reported claude's unrepairable case
+// and was silent about this identical one, so a seat handing its tool calls
+// to a leader outside its cage read as a clean row.
+func TestQAGrokLeaderDoorLeavesAWrapperAloneAndTheCheckSaysSo(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{"env FOO=1 grok", "run {file}", ""} {
+		if got := EnsureNoLeaderLine(in); got != in {
+			t.Errorf("EnsureNoLeaderLine(%q) = %q, want unchanged", in, got)
+		}
+	}
+	if c := noLeaderClause(builtinRuntime(t, "grok").Command); !strings.HasPrefix(c, GrokNoLeaderFlag+" on the line") {
+		t.Errorf("grok template clause: %q", c)
+	}
+	if c := noLeaderClause("grok {file}"); !strings.HasPrefix(c, GrokNoLeaderFlag+" on the line") {
+		t.Errorf("a grok template without the flag is repaired by the door, so the clause reads on the line: %q", c)
+	}
+	if c := noLeaderClause("env FOO=1 grok {file}"); !strings.HasPrefix(c, "NO "+GrokNoLeaderFlag) {
+		t.Errorf("wrapped grok must be reported missing, like a missing unattended flag: %q", c)
+	}
+	if c := noLeaderClause("/opt/wrap/run grok --rules x"); !strings.HasPrefix(c, "NO "+GrokNoLeaderFlag) {
+		t.Errorf("grok behind an absolute wrapper must be reported missing: %q", c)
+	}
+	for _, in := range []string{"claude --strict-mcp-config", "codex -a never", "env FOO=1 claude", ""} {
+		if c := noLeaderClause(in); c != "" {
+			t.Errorf("a line that runs no grok (%q) got a no-leader clause: %q", in, c)
+		}
+	}
+}
+
 // grok's daemon/run/: a private empty tmpfs after the home grant on bwrap,
 // covered by no bind from the host; a directory deny on seatbelt. Never for a
 // codex seat, and GROK_HOME moves it.

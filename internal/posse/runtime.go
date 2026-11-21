@@ -1748,9 +1748,23 @@ func EnsureNoLeaderLine(cmd string) string {
 // lineRunsClaude reports whether any word of the line names the claude
 // executable — the case EnsureStrictMCPLine cannot repair because claude is
 // not the line's first word.
-func lineRunsClaude(cmd string) bool {
+func lineRunsClaude(cmd string) bool { return lineRunsExe(cmd, claudeExe) }
+
+// lineRunsGrok is the same reading for grok's no-leader door: the case
+// EnsureNoLeaderLine cannot repair, because grok is on the line and is not
+// its first word (ranger-base-76mcd, ranger-base-r9slg). It exists so
+// `posse runtime check` can REPORT that case, which is the only thing anyone
+// can do about it — the door's refusal to guess past a word it cannot see is
+// right, and the silence was the defect.
+func lineRunsGrok(cmd string) bool { return lineRunsExe(cmd, grokExe) }
+
+// lineRunsExe is the one reading both doors' unrepairable case is asked by,
+// rather than a loop per executable: what counts as "this line names that
+// program" — basename, quotes stripped — is one question, and two spellings
+// of it is a change that lands on one door and not the other.
+func lineRunsExe(cmd, exe string) bool {
 	for _, w := range strings.Fields(cmd) {
-		if filepath.Base(strings.Trim(w, `"'`)) == claudeExe {
+		if filepath.Base(strings.Trim(w, `"'`)) == exe {
 			return true
 		}
 	}

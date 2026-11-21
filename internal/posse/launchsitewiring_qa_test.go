@@ -177,6 +177,49 @@ func TestLaunchSiteWiringLaunchRowCarriesTheStrictMCPClause(t *testing.T) {
 	}
 }
 
+// 3b. runtimecheck.go launchRow's use of noLeaderClause — the strict-MCP
+// clause's twin one door over (ranger-base-r9slg, escaped from
+// ranger-base-76mcd). The launch row reported the claude door's unrepairable
+// case and said nothing about grok's, so a grok line behind a word posse
+// cannot see past carried no --no-leader and the grid was silent about it,
+// with every pin green: EnsureNoLeaderLine leaving such a line alone is
+// INTENDED (grokleader_qa_test.go pins `env FOO=1 grok` -> unchanged), so the
+// door's own pins cannot see the hole. REPRO: delete the
+// `if nl := noLeaderClause(rt.Command); nl != "" { un += "; " + nl }` block
+// and both arms below are the only reds.
+func TestLaunchSiteWiringLaunchRowCarriesTheNoLeaderClause(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+
+	// A grok line wrapped behind a first word EnsureNoLeaderLine cannot
+	// repair (lineRunsGrok true, filepath.Base(f[0]) != "grok") — the
+	// "NO --no-leader" arm of noLeaderClause.
+	missing := writeRuntime(t, a, "wrappedgrok", "command: env FOO=1 grok {file}\n")
+	var b1 strings.Builder
+	a.RuntimeCheck(missing, Herdr{Bin: "no-such-herdr-binary"}, &b1)
+	flat1 := strings.Join(strings.Fields(b1.String()), " ")
+	if !strings.Contains(flat1, "NO "+GrokNoLeaderFlag) {
+		t.Errorf("the launch row does not carry the missing-%s clause, so a seat whose tool calls go to a leader outside its cage reads as a clean row (ranger-base-r9slg):\n%s", GrokNoLeaderFlag, flat1)
+	}
+
+	// The present arm, so a reader of this pin cannot mistake "the grid
+	// always says NO" for the fix.
+	present := writeRuntime(t, a, "straightgrok", "command: grok --no-leader {file}\n")
+	var b2 strings.Builder
+	a.RuntimeCheck(present, Herdr{Bin: "no-such-herdr-binary"}, &b2)
+	flat2 := strings.Join(strings.Fields(b2.String()), " ")
+	if !strings.Contains(flat2, GrokNoLeaderFlag+" on the line") {
+		t.Errorf("the launch row does not carry the present-%s clause:\n%s", GrokNoLeaderFlag, flat2)
+	}
+	// And neither clause is typed at the other CLI's line.
+	claude := writeRuntime(t, a, "plainclaude", "command: claude --strict-mcp-config {file}\n")
+	var b3 strings.Builder
+	a.RuntimeCheck(claude, Herdr{Bin: "no-such-herdr-binary"}, &b3)
+	if flat3 := strings.Join(strings.Fields(b3.String()), " "); strings.Contains(flat3, GrokNoLeaderFlag) {
+		t.Errorf("a claude profile's launch row carries grok's flag:\n%s", flat3)
+	}
+}
+
 // 4a. wall.go WallReport's own call to SeatbeltStateDirs(rt), separate from
 // the launch's (renderWallOn, already pinned by seatbeltclaudeconfigdir_qa_
 // test.go through sbcdProfile). Driven at the sandbox-exec mechanism from
