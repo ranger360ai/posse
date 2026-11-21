@@ -70,6 +70,8 @@ type erReader struct {
 	fn      string
 	results []string // the result types, as written
 	keys    []string // every string literal in it that looks like an env key
+	pkgs    []string // every qualified call in it, as "pkg.Name"
+	convs   []string // every string(...) conversion in it, by argument shape
 }
 
 func TestQAReadingAPeersEnvironmentHappensInExactlyOneFunction(t *testing.T) {
@@ -123,6 +125,145 @@ func TestQAThePeerEnvironmentReaderLiftsOnlyTheInstanceHome(t *testing.T) {
 	}
 }
 
+// TestQAThePeerEnvironmentReaderSearchesInBytesAndLiftsOnlyTheMatchedValue is
+// the fourth row of this census, and the claim it adds is about the SEARCH
+// rather than about what leaves the function (ranger-base-fugew F2, from the
+// verify of ranger-base-cwboz's close under ranger-base-zm03j).
+//
+// WHAT IT HOLDS. The file this reader opens is another process's WHOLE
+// environment, credentials included, and it wants one variable out of it. So
+// the loop that finds that variable runs in the byte domain — `bytes.Split`
+// and `bytes.HasPrefix` over the raw buffer — and the ONE `string(...)` in
+// the function applies to the matched entry with the key already dropped. A
+// `string(kv)` in the loop condition instead, which is what the reader looked
+// like before ranger-base-cwboz item (c), copies every variable of the peer's
+// environment into a Go string for the sake of one prefix test that bytes can
+// answer: a heap copy of each secret, outliving the loop by whatever the
+// garbage collector decides, for no behaviour at all.
+//
+// WHY A PIN AND NOT THE COMMENT THAT IS ALREADY THERE. MEASURED 2026-11-21
+// (ranger-base-fugew F2): reverting that loop to a per-entry string
+// conversion left the internal/posse box filter AND all three rows of this
+// census GREEN. Nothing observable differs — that is why the fix was one line
+// and not its own bead, and it is also why no ordinary pin can reach it. The
+// three rows above hold the KEY the reader matches and the RESULT TYPE it
+// returns; they say nothing about where in the body the conversion happens.
+// An ast row can, and this census is already that shape.
+//
+// IF THE READER LEGITIMATELY CHANGES SHAPE — needs a `strings` call on the
+// matched value, say, or two conversions — move this pin with it and say so
+// on the bead. What must not move silently is the domain of the SEARCH.
+func TestQAThePeerEnvironmentReaderSearchesInBytesAndLiftsOnlyTheMatchedValue(t *testing.T) {
+	t.Parallel()
+	found := erFindEnvironReaders(t)
+	if len(found) != 1 {
+		t.Skip("the one-reader pin above owns that failure")
+	}
+	r := found[0]
+
+	var inStrings, inBytes []string
+	for _, c := range r.pkgs {
+		switch {
+		case strings.HasPrefix(c, "strings."):
+			inStrings = append(inStrings, c)
+		case strings.HasPrefix(c, "bytes."):
+			inBytes = append(inBytes, c)
+		}
+	}
+	if len(inStrings) != 0 {
+		t.Errorf("%s calls %v — the search through a peer's environment runs in the BYTE domain, and a `strings` call in this function means some part of that buffer became a Go string to be searched. Every variable it copies is one it did not want (ranger-base-cwboz (c), ranger-base-fugew F2).",
+			erTheOneReader, inStrings)
+	}
+	if len(inBytes) == 0 {
+		t.Errorf("%s makes no `bytes` call at all, so nothing here says the entry scan is over bytes; it reads %v", erTheOneReader, r.pkgs)
+	}
+
+	switch {
+	case len(r.convs) != 1:
+		t.Errorf("%s holds %d string conversion(s) %v, want exactly 1. One is the lift of the matched value; a second is a second thing copied out of a buffer that holds the peer's credentials.",
+			erTheOneReader, len(r.convs), r.convs)
+	case r.convs[0] != erConvMatchedValue:
+		t.Errorf("%s's one string conversion is %q, want %q.\n\nThe conversion must apply to the matched entry PAST the key — `string(kv[len(key):])` — and not to a whole entry. `string(kv)` in the loop turns every variable of the peer's environment into a Go string for one prefix test that bytes answer; `string(kv[:])` is the same copy spelled as a slice.",
+			erTheOneReader, r.convs[0], erConvMatchedValue)
+	}
+}
+
+// erConv* are the argument shapes erStringConversions distinguishes. Only the
+// first is a lift of the matched value; the other two are a whole entry.
+const (
+	erConvMatchedValue = "slice-past-a-low-bound" // string(kv[len(key):])
+	erConvWholeSlice   = "slice-from-the-start"   // string(kv[:]), string(kv[:n])
+	erConvWholeValue   = "the-whole-entry"        // string(kv)
+)
+
+// erQualifiedCalls is every `pkg.Name(...)` call in the body, as "pkg.Name".
+// The package half is what says which DOMAIN the body works in, which is this
+// row's subject: a `bytes.` call searches the buffer, a `strings.` call
+// searches a copy of it.
+func erQualifiedCalls(body *ast.BlockStmt) []string {
+	var out []string
+	seen := map[string]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		name := pkg.Name + "." + sel.Sel.Name
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+		return true
+	})
+	sort.Strings(out)
+	return out
+}
+
+// erStringConversions is every `string(x)` in the body, described by the
+// SHAPE of its argument rather than by its text — the question is whether the
+// conversion copies a whole environment entry or only the part past the key,
+// and that is the difference between a SliceExpr with a low bound and
+// anything else.
+//
+// A conversion whose argument is some other expression is reported as
+// "other": the pin wants the one shape it names, so an unrecognised one is a
+// red with its own text rather than a silent pass.
+func erStringConversions(body *ast.BlockStmt) []string {
+	var out []string
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		fn, ok := call.Fun.(*ast.Ident)
+		if !ok || fn.Name != "string" {
+			return true
+		}
+		switch arg := call.Args[0].(type) {
+		case *ast.SliceExpr:
+			if arg.Low != nil {
+				out = append(out, erConvMatchedValue)
+			} else {
+				out = append(out, erConvWholeSlice)
+			}
+		case *ast.Ident:
+			out = append(out, erConvWholeValue)
+		default:
+			out = append(out, "other")
+		}
+		return true
+	})
+	return out
+}
+
 // erFindEnvironReaders walks the shipped Go trees and returns every function
 // whose body holds a string literal containing the proc-environ path.
 func erFindEnvironReaders(t *testing.T) []erReader {
@@ -170,6 +311,8 @@ func erReadersIn(name string, f *ast.File) []erReader {
 			fn:      fn.Name.Name,
 			results: erResultTypes(fn),
 			keys:    erEnvKeys(fn.Body),
+			pkgs:    erQualifiedCalls(fn.Body),
+			convs:   erStringConversions(fn.Body),
 		})
 	}
 	return out
@@ -257,6 +400,82 @@ func r(pid int) (string, bool) {
 	if len(got) != 1 || len(got[0].keys) != 1 || got[0].keys[0] != erTheOnlyKey {
 		t.Errorf("ordinary literals were read as lifted variables: %+v", got)
 	}
+
+	// (6) A STRING-DOMAIN SEARCH is rejected (ranger-base-fugew F2). This is
+	// the reader as it looked before ranger-base-cwboz item (c): every
+	// variable of the peer's environment converted for one prefix test. It
+	// compiles, it behaves identically, and the three rows above are green
+	// over it — so this arm is the only thing that says no.
+	str := `package p
+func r(pid int) (string, bool) {
+	raw, _ := read("/proc/" + itoa(pid) + "/environ")
+	for _, kv := range bytes.Split(raw, []byte{0}) {
+		s := string(kv)
+		if !strings.HasPrefix(s, "RHQ_HOME=") { continue }
+		return s[len("RHQ_HOME="):], true
+	}
+	return "", false
+}`
+	got = erReadersIn("fake.go", parse(str))
+	if len(got) != 1 {
+		t.Fatalf("fixture should be one reader: %+v", got)
+	}
+	if !erHas(got[0].pkgs, "strings.HasPrefix") {
+		t.Errorf("the census did not see the string-domain prefix test, so a search over a copy of the peer's environment would pass: %v", got[0].pkgs)
+	}
+	if len(got[0].convs) != 1 || got[0].convs[0] != erConvWholeValue {
+		t.Errorf("the census read %v for `string(kv)` — it cannot tell a whole-entry copy from the lift of a matched value, so the revert would pass", got[0].convs)
+	}
+
+	// (7) and the SAME copy spelled as a slice, which is what a fix applied
+	// to the spelling rather than to the shape would look like.
+	whole := `package p
+func r(pid int) (string, bool) {
+	raw, _ := read("/proc/" + itoa(pid) + "/environ")
+	for _, kv := range bytes.Split(raw, []byte{0}) {
+		if v := string(kv[:]); bytes.HasPrefix(kv, []byte("RHQ_HOME=")) { return v, true }
+	}
+	return "", false
+}`
+	got = erReadersIn("fake.go", parse(whole))
+	if len(got) != 1 {
+		t.Fatalf("fixture should be one reader: %+v", got)
+	}
+	if len(got[0].convs) != 1 || got[0].convs[0] != erConvWholeSlice {
+		t.Errorf("the census read %v for `string(kv[:])` — a slice with no low bound is the whole entry, and reading it as the matched value would let the copy back in", got[0].convs)
+	}
+
+	// (8) and the shape the reader really has is read as the lift it is, or
+	// the three arms above would be a prohibition with no live positive case.
+	ok := `package p
+func r(pid int) (string, bool) {
+	raw, _ := read("/proc/" + itoa(pid) + "/environ")
+	key := []byte("RHQ_HOME=")
+	for _, kv := range bytes.Split(raw, []byte{0}) {
+		if !bytes.HasPrefix(kv, key) { continue }
+		return string(kv[len(key):]), true
+	}
+	return "", false
+}`
+	got = erReadersIn("fake.go", parse(ok))
+	if len(got) != 1 {
+		t.Fatalf("fixture should be one reader: %+v", got)
+	}
+	if len(got[0].convs) != 1 || got[0].convs[0] != erConvMatchedValue {
+		t.Errorf("the census read the real shape as %v, so the row would red on the reader it was written for", got[0].convs)
+	}
+	if erHas(got[0].pkgs, "strings.HasPrefix") || !erHas(got[0].pkgs, "bytes.HasPrefix") {
+		t.Errorf("the census read the real shape's calls as %v", got[0].pkgs)
+	}
+}
+
+func erHas(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }
 
 func erBodyReadsEnviron(body *ast.BlockStmt) bool {
