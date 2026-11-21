@@ -10,6 +10,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 - [ranger-base-dw2du](ranger-base-dw2du.md) — ranger-base-dw2du — D2 pins every bind, and D2(a) reads the wall root in both directions — 2026-11-21
 - [ranger-base-bncbk](ranger-base-bncbk.md) — Shape 5's directory masks cover the name before the credential exists (ranger-base-bncbk) — 2026-11-21
+- [ranger-base-7or9p](ranger-base-7or9p.md) — The judge's wall comes from the launcher, so a verdict can move with no landing (ranger-base-7or9p) — 2026-11-21
 - [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20
 - [ranger-base-nywsk](ranger-base-nywsk.md) — A write over a file you just exec'd is ETXTBSY under load, and no fd of yours is why (ranger-base-nywsk) — 2026-11-20
 - [ranger-base-jnf2z](ranger-base-jnf2z.md) — The first delegated `posse upgrade`: 19m08s, no rollback (ranger-base-jnf2z) — 2026-11-20

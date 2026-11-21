@@ -93,6 +93,14 @@ const (
 	wallCheckKey      = "posse.wallCheck"
 	wallCheckQuietKey = "posse.wallCheckQuiet"
 
+	// wallCheckLauncherKey is ADR 0088 D8's third record, read by this rule
+	// over its own key: the launcher that rendered the VENUE the pins on
+	// record green were measured in. The same class as the judge's and for
+	// the same reason — the venue comes out of boxLandedCage, which is the
+	// running launcher's code and not the tree's, so a landing that changes
+	// it changes nothing until somebody reinstalls.
+	wallCheckLauncherKey = "posse.wallCheckBy"
+
 	// wallCheckFileMarkerPrefix and wallCheckHealthMarkerPrefix are the two
 	// dedupe lines, and D5's one hard requirement about them is that they
 	// differ from the judge's (landedrule.go's header says what a collision
@@ -173,6 +181,7 @@ var wallCheckRule = landedRule{
 	Extract:            "wall-check",
 	Key:                wallCheckKey,
 	QuietKey:           wallCheckQuietKey,
+	LauncherKey:        wallCheckLauncherKey,
 	FileMarkerPrefix:   wallCheckFileMarkerPrefix,
 	HealthMarkerPrefix: wallCheckHealthMarkerPrefix,
 	// The subject is the PINS and not the branch: a wall regression is not
@@ -274,17 +283,21 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 	start := time.Now()
 	v, said, argv := c.measure(repo, run, tree)
 	took := time.Since(start)
-	// D2's verdict line carries the venue's argv and the wall, on every one
-	// of the three answers: the argv because a venue that rendered the wrong
-	// wall is the first thing to suspect when 32 pins abstain, and the wall
-	// because ADR 0097's price is read off these lines (its Consequences
-	// accept about 100s a judgement). An unanswered run may have no argv at
-	// all — a cage that would not render is one of the ways to be unanswered
-	// — and the line says that rather than printing an empty field.
+	// D2's verdict line carries the venue's argv, the wall and — ADR 0088
+	// D7, which this rule reads through the same checker — the LAUNCHER
+	// that rendered that venue, on every one of the three answers. The
+	// argv because a venue that rendered the wrong wall is the first thing
+	// to suspect when 32 pins abstain; the wall because ADR 0097's price
+	// is read off these lines (its Consequences accept about 100s a
+	// judgement); and the launcher because the venue is ITS render and not
+	// the tree's, so a landing that changes the venue changes nothing here
+	// until somebody reinstalls. An unanswered run may have no argv at all
+	// — a cage that would not render is one of the ways to be unanswered —
+	// and the line says that rather than printing an empty field.
 	argv = orElse(argv, "none rendered")
 	switch v {
 	case landUnanswered:
-		c.warn("%s wall pins NOT MEASURED at %s after %s — %s — nothing recorded (ADR 0097 D5: an abstention is never a pass)\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said, argv)
+		c.warn("%s wall pins NOT MEASURED at %s after %s — %s — nothing recorded (ADR 0097 D5: an abstention is never a pass)%s\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said, c.launcherNote(), argv)
 	case landGreen:
 		// THE GREEN LINE CARRIES THE BODY'S LAST LINE, which the judge's does
 		// not, and the difference is D3's third exit: that line is `wall
@@ -293,9 +306,9 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 		// zero measured pins is the hole the third exit closes (D5, "an
 		// abstention is never a pass"), so the count belongs where a human
 		// reads the verdict rather than only in the exit code.
-		c.say("✓ %s wall pins green at %s in %s (%s, ADR 0097 D2) — %s\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), r.Script, orElse(oneLine(said), "it said nothing"), argv)
+		c.say("✓ %s wall pins green at %s in %s (%s, ADR 0097 D2) — %s%s\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), r.Script, orElse(oneLine(said), "it said nothing"), c.launcherNote(), argv)
 	default:
-		c.warn("%s wall pins are RED at %s in %s — %s — %s (ADR 0097 D2)\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), r.Script, said, argv)
+		c.warn("%s wall pins are RED at %s in %s — %s — %s (ADR 0097 D2)%s\n  venue: %s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), r.Script, said, c.launcherNote(), argv)
 	}
 	if v == landUnanswered {
 		// Silence records nothing and files nothing under the ratchet, so the
@@ -306,7 +319,7 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 		return
 	}
 	recorded := true
-	if err := recordLandedCheck(r, repo, tree, v); err != nil {
+	if err := c.record(r, repo, tree, v); err != nil {
 		recorded = false
 		c.warn("%s: the wall check judged %s %s and the verdict could not be recorded (%v)", AbbrevHome(repo), abbrevSHA(tree), v, err)
 	}

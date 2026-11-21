@@ -317,8 +317,13 @@ func (c *landedChecker) fileRed(r landedRule, repo, base, tip, tree, had string,
 	}
 	window, note := landedWindow(repo, tip, green)
 	note = joinNotes(note, c.attribute(repo, window))
+	// D8's comparison, and it is read HERE rather than in the description for
+	// the reason this function's header gives about `had`: the answer has to
+	// be taken before anything writes this rule's launcher record, and this
+	// is the one site that knows a red is being filed.
+	by := c.judgedBy(r, repo)
 	title := r.redTitle(base, tree)
-	desc := c.redDescription(r, repo, base, tip, tree, green, said, why, note, window)
+	desc := c.redDescription(r, repo, base, tip, tree, green, said, why, note, window, by)
 	// The cheap half of the visibility guard, as verify-after does it
 	// (rangerhq-hrz): this description is built out of a check's output and
 	// a repo's commit subjects, so it carries whatever those carried. Warn,
@@ -326,7 +331,7 @@ func (c *landedChecker) fileRed(r landedRule, repo, base, tip, tree, had string,
 	// path is worse than one filed and flagged.
 	c.a.WarnOpsContent(c.out, repo, "the "+r.Name+" bead for "+abbrevSHA(tree), title+"\n"+desc)
 	assignee := ""
-	if len(window) > 0 {
+	if len(window) > 0 && by.Drift != landedLauncherMoved {
 		assignee = window[0].Persona
 	}
 	id, err := c.bd.Create(repo, BdNew{
@@ -348,21 +353,28 @@ func (c *landedChecker) fileRed(r landedRule, repo, base, tip, tree, had string,
 	case err != nil:
 		c.warn("%s: the red at %s could NOT be filed (%v) — this log is the only record of it", AbbrevHome(repo), abbrevSHA(tree), err)
 	default:
-		c.say("· %s: filed %s P%d %q%s", AbbrevHome(repo), id, landedFilePriority, title, landedAssignedTo(assignee))
+		c.say("· %s: filed %s P%d %q%s", AbbrevHome(repo), id, landedFilePriority, title, landedAssignedTo(assignee, by.Drift))
 	}
 }
 
-func landedAssignedTo(assignee string) string {
-	if assignee == "" {
-		return ", unassigned"
+// landedAssignedTo closes the line that says a bead was filed. The two ways
+// to be unassigned are DIFFERENT facts and the log says which: a window that
+// names no persona this store knows, and a window D8 would not attribute at
+// all. Without the second clause the pass's own log reads as the first.
+func landedAssignedTo(assignee string, drift landedLauncherDrift) string {
+	switch {
+	case assignee != "":
+		return " for " + assignee
+	case drift == landedLauncherMoved:
+		return ", unassigned: the launcher is not the one that judged the tree on record green (ADR 0088 D8)"
 	}
-	return " for " + assignee
+	return ", unassigned"
 }
 
 // redDescription is what the fixer reads first: the verdict, the cause, and
 // the window — in that order, because the first question is "what is broken"
 // and the second is "which two landings met".
-func (c *landedChecker) redDescription(r landedRule, repo, base, tip, tree, green, said, why, note string, window []landedLanding) string {
+func (c *landedChecker) redDescription(r landedRule, repo, base, tip, tree, green, said, why, note string, window []landedLanding, by landedJudgedBy) string {
 	var b strings.Builder
 	// The marker, first line, on its own (see the header): this is the
 	// dedupe of record and the next red reads it back.
@@ -370,10 +382,16 @@ func (c *landedChecker) redDescription(r landedRule, repo, base, tip, tree, gree
 	fmt.Fprintf(&b, "%s is RED at %s (tree %s) in %s, judged by `%s` %s.\n\n",
 		r.subject(base), abbrevSHA(tip), abbrevSHA(tree), AbbrevHome(repo), r.Script, r.RedWhen)
 	fmt.Fprintf(&b, "The check's last lines:\n\n    %s\n\n", orElse(oneLine(said), "it said nothing"))
+	// D7, and the one sentence this bead was missing. Which binary judged is
+	// not a detail: the wall the check runs behind is rendered by the
+	// LAUNCHER and not by the tree (landedlauncher.go), so without this line
+	// a reader cannot tell a tree red from a judge red — and the paragraph
+	// below would be the only thing they had, saying the window is the cause.
+	fmt.Fprintf(&b, "The launcher that ran it: %s (ADR 0088 D7).\n\n", by.Now)
 	if why != "" {
 		fmt.Fprintf(&b, "Filed although this is not a green→red transition: %s (%s's red→red row).\n\n", why, r.FileADR)
 	}
-	b.WriteString(landedWindowSection(green, note, window))
+	b.WriteString(landedWindowSection(green, note, window, by))
 	b.WriteString("\n")
 	// The rule's own paragraph, and the one place this description is not
 	// the same sentence for both checks: how a reader REPRODUCES the red.
@@ -390,7 +408,15 @@ func (c *landedChecker) redDescription(r landedRule, repo, base, tip, tree, gree
 // the assignment means. It is prose on purpose: the assignee did not break
 // anything by itself, and a bead that only names a persona gets read as a
 // bead that says they did.
-func landedWindowSection(green, note string, window []landedLanding) string {
+//
+// AND IT IS THE ONE PARAGRAPH D8 CAN MAKE FALSE (ranger-base-7or9p). "The
+// newest landing is simply the one whose tree first held them all" is a claim
+// that every input to this verdict came from the trees in the window, and one
+// input does not: the launcher renders the wall. So the claim is made on the
+// `same` reading, withheld on `moved`, and qualified on `unknown` — and the
+// three arms are spelled here, beside the sentence they are about, rather
+// than being a flag the caller passes.
+func landedWindowSection(green, note string, window []landedLanding, by landedJudgedBy) string {
 	var b strings.Builder
 	if green != "" {
 		fmt.Fprintf(&b, "LANDINGS in this window — every commit between %s, the tree last recorded green, and this one, newest first:\n\n", abbrevSHA(green))
@@ -409,6 +435,14 @@ func landedWindowSection(green, note string, window []landedLanding) string {
 	if len(window) == 0 {
 		return b.String()
 	}
+	if by.Drift == landedLauncherMoved {
+		b.WriteString("\nNOT ASSIGNED, and the window above is not an attribution (ADR 0088 D8). ")
+		fmt.Fprintf(&b, "This verdict was reached by %s; the tree last recorded green was judged by `%s`, which is a different launcher. ", by.Now, by.Was)
+		b.WriteString("The wall this check runs behind is rendered by the LAUNCHER and not by the tree it judges — the socket-wall step's binary is the running launcher's, so is the seatbelt profile, and so is ADR 0097's venue — so a verdict that moved when the launcher did is not answerable by any landing above. ")
+		b.WriteString("Read the cause as a finding about this pair, launcher and tree, and settle which it is before anybody is assigned: re-judge this tree with the launcher the green tree was judged by, or accept the new wall and fix the tree. ")
+		b.WriteString("The landings are listed because they are what moved, not because one of them is the cause (ADR 0006 §1 for a hand-off once it is known).\n")
+		return b.String()
+	}
 	newest := window[0]
 	fmt.Fprintf(&b, "\nAssigned to %s, the persona of the NEWEST landing above (%s). ",
 		orElse(newest.Persona, "nobody — that landing names no persona this store knows"), abbrevSHA(newest.SHA))
@@ -416,6 +450,19 @@ func landedWindowSection(green, note string, window []landedLanding) string {
 	b.WriteString("every seat in the window ran the doors on ITS OWN base, which held only its own half, and was green there. ")
 	b.WriteString("The newest landing is simply the one whose tree first held them all. ")
 	b.WriteString("Read the window as the list of halves that met, and if the fix belongs to another lane, hand it off (ADR 0006 §1).\n")
+	if by.Drift == landedLauncherUnknown {
+		// The sentence above is true only if the launcher that judged this
+		// tree is the one that judged the green one, and here that could not
+		// be checked. Both ways of not knowing are named, because the
+		// remedies differ: no token on record (a green judged before D8, or
+		// a write that lost the lock) is answered by the next green, and a
+		// launcher that could not stat its own binary is a box to look at.
+		// Said rather than assumed — the reader is holding a
+		// dispatched P1, and this is the one line that tells them the cheap
+		// thing to rule out first.
+		b.WriteString("\nWhether the LAUNCHER moved under this window could not be checked, so the sentence above is the rule and not a reading (ADR 0088 D8): either no launcher is on record for the tree last recorded green, or this one could not name its own binary — the launcher line above says which. ")
+		b.WriteString("The wall this check runs behind is the launcher's and not the tree's, so if the two are not the same binary, this red is the wall moving and no landing here is answerable for it.\n")
+	}
 	return b.String()
 }
 

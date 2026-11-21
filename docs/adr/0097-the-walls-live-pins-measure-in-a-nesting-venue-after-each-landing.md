@@ -235,3 +235,26 @@ the other three readable.
 
 - ranger-base-i92tj
 - ranger-base-1xyso
+
+## Amendment: D5's rule has three records, not two (ranger-base-7or9p, 2026-11-21)
+
+ADR 0088 D8 adds one record to the ratchet both rules read: the launcher that
+judged the tree the rule has on record GREEN. D5's "its own two records" is
+therefore three — `posse.wallCheck`, `posse.wallCheckQuiet` and
+`posse.wallCheckBy` — and D5's one requirement about them is unchanged: they
+are this rule's own keys and they may not collide with the judge's, which
+`TestQATheTwoLandedRulesShareNoRecordOrMarker` holds for all three.
+
+The class is the same one layer over. D1's venue is rendered by
+`boxLandedCage`, which is the RUNNING launcher's code and not the tree's, so a
+landing that changes the venue changes nothing until somebody reinstalls — and
+on that install the pins' verdict can move with no landing. So the wall
+check's three verdict lines carry D7's launcher beside the venue argv they
+already print, and its ratchet withholds an attribution on D8's `moved`
+reading exactly as the judge's does. Parameterised, not copied: the key is a
+field on `landedRule` and the three arms are spelled once, in the one
+description renderer both rules use.
+
+**Beads.**
+
+- ranger-base-7or9p

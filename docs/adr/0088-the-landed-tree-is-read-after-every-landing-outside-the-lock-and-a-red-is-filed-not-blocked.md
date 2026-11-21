@@ -608,3 +608,120 @@ already schedule their own checks.
 **Beads.**
 
 - ranger-base-gihmm
+
+## Amendment: the launcher that judged is named, and a window is not attributed to a wall that moved (ranger-base-7or9p, from ranger-base-q8j8x, 2026-11-21)
+
+D1 is careful about where the judge's BYTES come from: the copy that runs is
+the last tree recorded green's, never the tree under judgement, so a landing
+that weakens the script does not change what judges it. D5's bead is written
+as though that were the whole of it — "The newest landing is simply the one
+whose tree first held them all" — and it is not. The judge's WALL comes from
+the running launcher: the socket-wall step's binary is `wallWatchBin()`'s
+answer (the 2026-11-14 amendment says so, and says why it must not come out of
+the tree), the seatbelt profile is rendered by this process's code, and ADR
+0097's venue is rendered by the same function. So a landing that changes the
+wall is judged by the OLD wall until somebody reinstalls the launcher, and on
+that install one tree's verdict flips with no landing at all.
+
+MEASURED 2026-11-20 (ranger-base-ufd7z, re-read under ranger-base-q8j8x; this
+box, 16 cores), with the TREE held constant at main's `edfe7a79` and only the
+step's binary changed:
+
+- a posse built at `b29c95b5` judged it **exit 2 in 139s**, with
+  `FAIL github.com/ranger360ai/posse/internal/treepins 79.775s` and four
+  bdargvgate pins failing on `branch -M` with `Invalid cross-device link`;
+- the installed `0.5.3+edfe7a79` judged the same tree **exit 0 in 132s**, zero
+  `--- SKIP`.
+
+Production said it from its side: the judge commented `still red at
+853242ca2dc2 (f1509bcfb970)` over a tree that already held the fix. What that
+cost: one P1 filed and dispatched against a window of **eleven innocent
+landings** and the persona of the newest one, a seat's session to establish
+that no tree in the window could clear it, and a close whose stated timeline
+is wrong in the record. Neither the verdict line nor the filed bead named the
+binary that judged, so no reader could tell a tree red from a judge red.
+
+**D7 — Every verdict line, and the bead D5 files, names the launcher that ran
+the check.** Version, path and mtime, on the green, the red and the ⚠ that
+says there is no verdict — D6.2's rule about the wall, over the other thing a
+reader of those lines cannot otherwise get. Version AND mtime because they
+fail differently: the version is the RUNNING code, which renders the cage and
+the profile; the mtime is the FILE at the step's path, which is what the
+socket-wall step execs, and a reinstall under a running launcher moves the
+second and not the first. One reading per judgement, memoized, so a
+judgement's line, record and bead cannot name three launchers.
+
+**D8 — A green→red window is not attributed when the launcher is not the one
+that judged the green tree.** The record is this rule's own `git config` line,
+`posse.landedCheckBy` (ADR 0097 D5's rule reads `posse.wallCheckBy`), holding
+one opaque token: version, mtime, size, path. It is written beside a GREEN
+verdict and only there, and AFTER it — so what it holds is "the launcher that
+judged the tree currently on record green", which is exactly the far edge of
+every window D5 attributes, and it is still readable from inside the red run
+that needs it. Three answers, not a bool, for `landedStretchState`'s reason:
+
+| the record says | the bead |
+| --- | --- |
+| this launcher | D5's attribution, unchanged: assigned to the newest landing's persona |
+| another launcher | **filed UNASSIGNED**, and the window is listed as what moved rather than as the cause. It names both launchers and says the wall is the launcher's and not the tree's |
+| nothing, or a launcher that cannot name itself | D5's attribution, plus one sentence: whether the launcher moved could not be checked |
+
+Withholding on `unknown` was rejected: the token is absent on every repo until
+the first green lands under D8, so that reading would withhold every
+attribution for one stretch and teach nobody anything. Saying so is what the
+third answer is for.
+
+**A third field on D4's record was rejected outright.** `landedRecorded` reads
+a record in any other shape as NO record, which is deliberate — a half-parsed
+verdict must never read green — and a record read as absent makes every red a
+green→red transition again, which is one P1 per landing and the
+ranger-base-4v4r6 incident D5 exists to end. A separate key is also the house
+pattern for exactly this: D6.3's counter is its own key for the same reason.
+
+**Consequences.**
+- A reader of a red main's bead can tell a tree red from a judge red, in the
+  bead, without rerunning anything.
+- The ufd7z shape files the same bead and dispatches nobody: no persona is
+  assigned over a wall that moved, and the bead says which two launchers
+  disagree so that the cheap thing gets ruled out first.
+- One more `git config` read per filed red and one more write per green. No
+  new record shape, no change to D4's, D5's dedupe or D6.3's counter.
+- ADR 0097 D5's rule inherits both rules through the shared parameter
+  (`landedRule.LauncherKey`) rather than a copy, as D5 requires there.
+- Exit hatch: one record key per rule and one drift reading. Deleting the key
+  leaves every red reading `unknown`, which is today's attribution plus a
+  sentence; deleting D7's note returns today's verdict lines.
+- Not changed: what judges (D1's copy from the last green tree), the cage
+  (D3), the coalescing and the cache (D4), the transition table (D5), the
+  derivation and the two numbers (D6).
+- Residual: D6.3's health beads name no launcher. Their subject is two or
+  three RUNS, and a launcher restart can split those between two binaries
+  (`docs/notes.d/ranger-base-4jroi.md` is that case as it was filed), so the
+  reading this run took would be a claim about runs it did not take. Naming
+  the launcher per REMEMBERED run is the shape that would answer it, and the
+  sentences those beads carry are already held in memory rather than in the
+  record, so that is a change to what is remembered and not to a record.
+
+**Alternatives rejected.**
+- **Judge with the launcher the green tree shipped** (build posse out of the
+  tree under judgement, or out of the last green one). That hands the wall to
+  the code under judgement, which the 2026-11-14 amendment refuses by name —
+  "a step resolved from that tree would let the code under judgement pick its
+  own wall" — and it would put a `go build` inside every landing's judgement.
+- **Re-judge the last green tree when the launcher changes, and move the
+  record forward.** It answers the attribution honestly and costs a full
+  judgement per install, on a path D2 built to cost nothing and hold nothing.
+  D8's reading is free and says the same thing to the one reader who needs it.
+- **File the red into another lane, or not at all, when the launcher moved.**
+  The red is real on this pair of launcher and tree: a seat that reinstalls
+  will see it. Withholding the ATTRIBUTION is the narrow correction; moving
+  the bead would hide a reading somebody has to make.
+- **Name only the version.** A reinstall under a running launcher leaves the
+  version alone and replaces the file the step execs, which is the half of
+  this that flips a verdict with no landing.
+
+**Beads.**
+
+- ranger-base-7or9p
+- ranger-base-q8j8x
+- ranger-base-ufd7z

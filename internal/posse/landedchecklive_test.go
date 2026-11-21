@@ -95,6 +95,18 @@ func TestLiveLandedCheck(t *testing.T) {
 		}
 		_, _ = git(top, "config", landedCheckKey, had+" "+hadV.String())
 	})
+	// And ADR 0088 D8's token beside it, for a sharper reason than the
+	// cached verdict above: a green measured here writes this TEST BINARY's
+	// identity over the launcher's, and the next real red would read `moved`
+	// and withhold an attribution that was owed (landedlauncher.go).
+	hadBy := landedLauncherRecorded(landedJudgeRule, top)
+	t.Cleanup(func() {
+		if hadBy == "" {
+			_, _ = git(top, "config", "--unset", landedLauncherKey)
+			return
+		}
+		_, _ = git(top, "config", landedLauncherKey, hadBy)
+	})
 
 	start := time.Now()
 	c.Schedule(top, branch)

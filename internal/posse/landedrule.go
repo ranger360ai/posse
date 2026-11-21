@@ -58,10 +58,17 @@ type landedRule struct {
 	// run dir and beside the worktree — never inside it (extract's header).
 	// Distinct per rule because one run extracts both.
 	Extract string
-	// Key and QuietKey are the two records: `<tree> <green|red>` and
-	// `<tree> <n>`. Separate keys and not one with a third field, which is
-	// the alternative ADR 0088 D6.3 rejects by name.
+	// Key and QuietKey are two of the three records: `<tree> <green|red>`
+	// and `<tree> <n>`. Separate keys and not one with a third field, which
+	// is the alternative ADR 0088 D6.3 rejects by name.
 	Key, QuietKey string
+	// LauncherKey is the third (ADR 0088 D8): the launcher that judged the
+	// tree this rule has on record GREEN, as one opaque token
+	// (landedlauncher.go). Its own key for Key's reason and one more —
+	// `landedRecorded` reads a record of any other shape as NO record, so a
+	// third field there would make every red a green→red transition and file
+	// one P1 per landing.
+	LauncherKey string
 	// FileMarkerPrefix and HealthMarkerPrefix open the one line of a filed
 	// bead's description that says which rule filed it. See the header: these
 	// are the dedupe of record and they may not collide.
@@ -159,6 +166,7 @@ var landedJudgeRule = landedRule{
 	Extract:            "judge",
 	Key:                landedCheckKey,
 	QuietKey:           landedQuietKey,
+	LauncherKey:        landedLauncherKey,
 	FileMarkerPrefix:   landedFileMarkerPrefix,
 	HealthMarkerPrefix: landedHealthMarkerPrefix,
 	RedSubject:         "", // main itself

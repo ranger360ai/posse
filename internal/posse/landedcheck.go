@@ -100,6 +100,13 @@ const landedCheckScript = "scripts/posse-landed-check"
 // would be a store nothing ever prunes.
 const landedCheckKey = "posse.landedCheck"
 
+// landedLauncherKey is D8's record, and the one input to a verdict that does
+// not come from the tree: the launcher that judged the tree THIS key has on
+// record green. Its own line of git config beside D4's, for the reason
+// landedlauncher.go's header gives — a third field in D4's record would be
+// read as no record at all, and that is one P1 per landing.
+const landedLauncherKey = "posse.landedCheckBy"
+
 // landedCheckLimit bounds one run, and what it bounds is a HANG and not a
 // price (ADR 0088 D6.1, amended by ranger-base-7idk4). Its own constant at
 // ten minutes, deliberately NOT generatorTimeout any more: that was one
@@ -849,6 +856,16 @@ type landedChecker struct {
 	// without it the arm where an answered run is OVER the price — the arm
 	// D6.3 exists to file — would have no spelling here either.
 	ceiling time.Duration
+	// launcherFn is D7's reading, and nil means the real one
+	// (landedLauncherNow). A seam beside `cage` and for its reason: the
+	// thing D8 is about is a launcher that is NOT the one on record, and no
+	// test can reinstall the binary it is running from.
+	launcherFn func() landedLauncher
+	// launcherAt is this run's reading, memoized so that one judgement's
+	// verdict line, record and bead cannot name three different launchers.
+	// Cleared at the top of every once(); a nil memo reads fresh, which is
+	// what keeps a zero-value checker honest (launcher, landedlauncher.go).
+	launcherAt *landedLauncher
 
 	mu sync.Mutex
 	// pending is the coalescing set: repo path → the branch that moved.
@@ -972,6 +989,12 @@ func (c *landedChecker) loop() {
 // not ask, and nothing here records a verdict it did not get — a cache entry
 // written over silence would be read by the next run as a judgement.
 func (c *landedChecker) once(repo, base string) {
+	// D7's reading is taken once per run and this is where the run starts:
+	// the launcher is read lazily by whoever asks first, and every later
+	// reader in this judgement gets that same reading (launcher,
+	// landedlauncher.go). Cleared rather than read here so a run that
+	// returns on D4's cache below spends no `os.Stat` at all.
+	c.launcherAt = nil
 	tip := refSHA(repo, base)
 	if tip == "" {
 		return // the branch is gone; the next landing into this repo re-asks
@@ -1036,7 +1059,7 @@ func (c *landedChecker) once(repo, base string) {
 	took := time.Since(start)
 	switch v {
 	case landUnanswered:
-		c.warn("%s landed at %s and was NOT judged after %s — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said, landedJudgeSocketWallNote())
+		c.warn("%s landed at %s and was NOT judged after %s — %s — nothing recorded (ADR 0088 D3: a check that cannot answer never answers red)%s%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), said, c.launcherNote(), landedJudgeSocketWallNote())
 		// D6.3, and this is the arm it exists for: silence records nothing
 		// and files nothing under D5, so the watchdog on the detector is
 		// the only thing that can say the judge has stopped answering.
@@ -1049,15 +1072,15 @@ func (c *landedChecker) once(repo, base string) {
 		c.wall(repo, base, tip, tree, run, v)
 		return
 	case landGreen:
-		c.say("✓ %s green at %s in %s (%s, ADR 0088 D1)%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, landedJudgeSocketWallNote())
+		c.say("✓ %s green at %s in %s (%s, ADR 0088 D1)%s%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, c.launcherNote(), landedJudgeSocketWallNote())
 	default:
 		// The verdict and the cause, which is the sentence ranger-base-ddgfr
 		// turns into a bead. It is printed here whole rather than summarized,
 		// because until that bead lands this line IS the record a human reads.
-		c.warn("%s is RED at %s in %s — %s — %s (ADR 0088 D1)%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, said, landedJudgeSocketWallNote())
+		c.warn("%s is RED at %s in %s — %s — %s (ADR 0088 D1)%s%s", AbbrevHome(repo), abbrevSHA(tip), landedCheckWall(took), landedCheckScript, said, c.launcherNote(), landedJudgeSocketWallNote())
 	}
 	recorded := true
-	if err := recordLandedCheck(landedJudgeRule, repo, tree, v); err != nil {
+	if err := c.record(landedJudgeRule, repo, tree, v); err != nil {
 		// Best effort by contract, for recordLandCheck's reason: a config
 		// write that fails leaves the next landing judging this tree again,
 		// which is the behaviour before any record existed.
@@ -1266,6 +1289,35 @@ func recordLandedCheck(r landedRule, repo, tree string, v landVerdict) error {
 	}
 	_, err := git(repo, "config", r.Key, tree+" "+v.String())
 	return err
+}
+
+// record is the two writes one answered verdict makes: D4's record, then —
+// on a GREEN and only there — D8's token for the launcher that judged it
+// (landedlauncher.go). ONE method, called by both runners, because the two
+// records have to be written in this order by both of them.
+//
+// THE VERDICT FIRST, which is the order whose failure is the cheap one. A
+// green verdict written over a token that could not be written leaves the
+// token naming an older launcher, which the next red reads as `moved` and
+// answers by withholding an attribution — safe, and said out loud. The other
+// order would leave this launcher's token over another launcher's green tree,
+// which the next red reads as `same`: a window attributed to a landing when
+// the wall had in fact moved, which is the whole defect D8 is for.
+//
+// A TOKEN WRITE THAT FAILS IS NOT A VERDICT THAT FAILED, so it does not
+// reach `recorded`: the verdict IS on record, and a filer told otherwise
+// would skip D5's bead for a red main (file's header on `recorded`).
+func (c *landedChecker) record(r landedRule, repo, tree string, v landVerdict) error {
+	if err := recordLandedCheck(r, repo, tree, v); err != nil {
+		return err
+	}
+	if v != landGreen {
+		return nil
+	}
+	if err := recordLandedLauncher(r, repo, c.launcher()); err != nil {
+		c.warn("%s: %s was recorded green and %s could not be written (%v) — the next red cannot be told from a wall that moved, so its bead will say the comparison could not be made (ADR 0088 D8)", AbbrevHome(repo), abbrevSHA(tree), r.LauncherKey, err)
+	}
+	return nil
 }
 
 // landedRecorded reads it back. A record in any other shape is no

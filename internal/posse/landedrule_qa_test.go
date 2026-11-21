@@ -59,6 +59,7 @@ func TestQATheTwoLandedRulesShareNoRecordOrMarker(t *testing.T) {
 				{"the ratchet's rendered marker", a.fileMarker(repo, base), b.fileMarker(repo, base), "the marker is matched as a WHOLE LINE, so this is the string the dedupe actually compares"},
 				{"the watchdog's rendered marker", a.healthMarker(repo), b.healthMarker(repo), "likewise, per repo rather than per base"},
 				{"the extracted copy's name", a.Extract, b.Extract, "one run extracts both copies into one run dir, so a shared name has the venue exec the judge"},
+				{"the launcher record", a.LauncherKey, b.LauncherKey, "ADR 0088 D8's token says which launcher judged the tree THIS rule has on record green, so a shared key has one check withholding an attribution over the other check's launcher"},
 			} {
 				if c.x == c.y {
 					t.Errorf("%s and %s share %s (%q) — %s", a.Name, b.Name, c.what, c.x, c.why)
@@ -96,6 +97,7 @@ func TestQAEveryLandedRuleFieldIsFilled(t *testing.T) {
 			"Extract":            r.Extract,
 			"Key":                r.Key,
 			"QuietKey":           r.QuietKey,
+			"LauncherKey":        r.LauncherKey,
 			"FileMarkerPrefix":   r.FileMarkerPrefix,
 			"HealthMarkerPrefix": r.HealthMarkerPrefix,
 			"RedWhen":            r.RedWhen,
@@ -128,12 +130,24 @@ func TestQABothLandedRulesRenderTheirBeadsWithNoFormatVerbLeftOver(t *testing.T)
 	const repo, base, tip, tree, green = "/src/posse", "main", "deadbeefdeadbeef", "feedfacefeedface", "0123456789abcdef"
 	c := &landedChecker{}
 	window := []landedLanding{{SHA: tip, Tree: tree, Subject: "ranger-base-aaaa1: a landing", Bead: "ranger-base-aaaa1", Persona: "reviewer"}}
+	// ADR 0088 D7/D8's three readings, each built through the real
+	// comparison rather than by naming a drift: the arm a description takes
+	// is what `landedLauncherDriftOf` says, so a row here that stopped
+	// matching the production reading would stop rendering the paragraph it
+	// is named for.
+	ran := landedLauncher{Version: "0.0.0+aaaaaaa", Path: "/opt/posse", Mod: time.Unix(1_700_000_000, 0).UTC(), Size: 4096}
+	other := landedLauncher{Version: "0.0.0+bbbbbbb", Path: "/opt/posse", Mod: time.Unix(1_600_000_000, 0).UTC(), Size: 2048}
+	judged := func(was string) landedJudgedBy {
+		return landedJudgedBy{Now: ran, Was: was, Drift: landedLauncherDriftOf(ran, was)}
+	}
 	for _, r := range landedRules() {
 		for what, desc := range map[string]string{
-			"the ratchet's green→red bead": c.redDescription(r, repo, base, tip, tree, green, "the tail", "", "", window),
-			"the ratchet's red→red bead":   c.redDescription(r, repo, base, tip, tree, "", "the tail", "the bead for this red stretch is not open any more", "a note", nil),
-			"the watchdog's silent bead":   c.silentDescription(r, repo, tree, 2, "run one said this", "run two said this", false),
-			"the watchdog's ceiling bead":  c.ceilingDescription(r, repo, tree, 321*time.Second),
+			"the ratchet's green→red bead":                  c.redDescription(r, repo, base, tip, tree, green, "the tail", "", "", window, judged(ran.token())),
+			"the ratchet's red→red bead":                    c.redDescription(r, repo, base, tip, tree, "", "the tail", "the bead for this red stretch is not open any more", "a note", nil, judged(ran.token())),
+			"the ratchet's bead over a launcher that moved": c.redDescription(r, repo, base, tip, tree, green, "the tail", "", "", window, judged(other.token())),
+			"the ratchet's bead over an unknown launcher":   c.redDescription(r, repo, base, tip, tree, green, "the tail", "", "", window, judged("")),
+			"the watchdog's silent bead":                    c.silentDescription(r, repo, tree, 2, "run one said this", "run two said this", false),
+			"the watchdog's ceiling bead":                   c.ceilingDescription(r, repo, tree, 321*time.Second),
 		} {
 			if i := strings.Index(desc, "%!"); i >= 0 {
 				t.Errorf("%s: %s carries a format error at byte %d — the verbs each field takes are named in its comment (landedrule.go):\n%s", r.Name, what, i, desc)

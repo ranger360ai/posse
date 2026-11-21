@@ -92,6 +92,12 @@ func TestLiveTheWallCheckMeasuresInTheRealVenue(t *testing.T) {
 	for _, r := range landedRules() {
 		wallLiveRestoreRecord(t, r.Key, top)
 		wallLiveRestoreRecord(t, r.QuietKey, top)
+		// ADR 0088 D8's token too, and it is the one of the three whose
+		// residue is read as a FINDING: a green measured here writes this
+		// test binary's own identity over the launcher's, and the next real
+		// red would then read `moved` and withhold an attribution that was
+		// owed (landedlauncher.go).
+		wallLiveRestoreRecord(t, r.LauncherKey, top)
 	}
 
 	start := time.Now()
