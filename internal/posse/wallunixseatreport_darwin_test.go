@@ -16,6 +16,12 @@ package posse
 // file no arm `make test` runs. The GOOS lives in the NAME here, which that
 // census represents for exactly the two platforms the matrix runs, and
 // `make land-check`'s cross-GOOS vet covers the same two.
+var wuSeatLeaderPdeathsig = "<no prctl on darwin: PR_GET_PDEATHSIG is a Linux option and this seat is a Linux bwrap seat>"
+
+func wuSeatATSecure() string {
+	return "<no auxv AT_SECURE row is read on darwin: this seat is a Linux bwrap seat>"
+}
+
 func wuSeatPdeathsig() string {
 	return "<no prctl on darwin: PR_GET_PDEATHSIG is a Linux option and this seat is a Linux bwrap seat>"
 }

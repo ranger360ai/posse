@@ -494,10 +494,31 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 					return
 				}
 			}
+			// WHICH LINK BROKE (ranger-base-z56s9). There are two pdeathsigs
+			// on this line and the seat can only report one: the sh's death
+			// must take the outer bwrap (its own --die-with-parent, set after
+			// raw_clone with no exec after it), and the outer bwrap's death
+			// must take the seat. The seat's ppid when it reported IS that
+			// outer bwrap, so read it now, before the cleanup kill below.
+			outer := wuSeatReportInt(report, "ppid ")
+			outerState := "<no ppid row>"
+			if outer > 0 {
+				outerState = "GONE: the sh's death took the outer bwrap, so the link that broke is the outer bwrap's death not taking the seat"
+				if !wuPidGone(outer) {
+					outerState = "STILL ALIVE: the outer bwrap outlived the SIGKILLed sh, so the link that broke is ONE LAYER UP, bwrap's own --die-with-parent, and the seat's rows are not where the fault is"
+				}
+			}
+			seatPpidNow := wuProcPpid(seat)
 			_ = syscall.Kill(seat, syscall.SIGKILL)
+			if outer > 0 && !wuPidGone(outer) {
+				// Ours: the sh this test launched forked it, and a seat-less
+				// bwrap left behind would hold the box. Kill the pid, never a
+				// pattern.
+				_ = syscall.Kill(outer, syscall.SIGKILL)
+			}
 			anyArmRed = true
-			t.Errorf("%s: the seat (pid %d) outlived its SIGKILLed parent by 10s — --die-with-parent no longer reaches it. Read the seat's own report before blaming a layer:\n%s\nargv: bwrap %s",
-				c.name, seat, report, strings.Join(args, " "))
+			t.Errorf("%s: the seat (pid %d) outlived its SIGKILLed parent by 10s — --die-with-parent no longer reaches it.\nouter bwrap (pid %d, the seat's ppid when it reported): %s\nthe seat's ppid after the 10s: %s\nRead the seat's own report before blaming a layer:\n%s\nargv: bwrap %s",
+				c.name, seat, outer, outerState, seatPpidNow, report, strings.Join(args, " "))
 		})
 	}
 	if anyArmRed {
@@ -522,6 +543,25 @@ func wuPidGone(pid int) bool {
 	return false
 }
 
+// wuProcPpid is field 4 of /proc/<pid>/stat, read past the last ')' so a comm
+// with spaces or parentheses cannot shift it, or a bracketed reason.
+func wuProcPpid(pid int) string {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return "<" + err.Error() + ">"
+	}
+	s := string(b)
+	i := strings.LastIndexByte(s, ')')
+	if i < 0 {
+		return "<unparsed stat>"
+	}
+	f := strings.Fields(s[i+1:])
+	if len(f) < 2 {
+		return "<unparsed stat>"
+	}
+	return f[1]
+}
+
 // wuSeatReportEnd terminates the seat's self-report, and it is what the
 // parent waits for. The report is more than one line now, so a trailing
 // newline no longer says "complete" — the seat writes the whole buffer in one
@@ -533,6 +573,22 @@ const wuSeatReportEnd = "END\n"
 // because a death arm that reds on a runner nobody has a shell on has to say
 // WHICH of the two readings it is (ranger-base-8m9d0). How to read it, in the
 // next ubuntu arm-1 log:
+//
+// FIRST, WHICH THREAD (ranger-base-z56s9). pdeath_signal is per-task, and
+// until ranger-base-z56s9 the `pdeathsig` row was read on whatever OS thread
+// the test goroutine happened to be on — any non-leader thread reads 0 there
+// while the leader holds 9 (MEASURED on D1, see wuSeatPdeathsig). The first
+// two ubuntu-26.04 logs read `pdeathsig 0` in both arms through that row, so
+// they did NOT establish the "cleared in BOTH arms" reading below; they are
+// equally what a leader holding 9 looks like from another thread. The
+// `pdeathsig` row is now the LEADER's, read at init and self-certified; the
+// calling thread's value is `pdeathsig-this-thread`, tid beside it. Two more
+// rows decide the rest without a shell on the runner: `AT_SECURE` (1 is the
+// only exec-time clear — begin_new_exec zeroes pdeath_signal on a secure
+// exec, and AppArmor's transition is the only thing on ubuntu that could make
+// this one secure), and the parent's `outer bwrap` line on a red, which says
+// whether the sh's death even took the outer bwrap or the break is one layer
+// up from the seat.
 //
 //   - pdeathsig=0 in BOTH arms: the runner clears it before the seat runs —
 //     bwrap, an AppArmor exec transition, or the credentials. The Landlock
@@ -585,7 +641,9 @@ func wuSeatSelfReport() string {
 	// pid FIRST and on its own line: it is the one row the parent parses, and
 	// everything after it is for a human reading a log.
 	b.WriteString("pid " + strconv.Itoa(os.Getpid()) + "\n")
-	b.WriteString("pdeathsig " + wuSeatPdeathsig() + "\n")
+	b.WriteString("pdeathsig " + wuSeatLeaderPdeathsig + "\n")
+	b.WriteString("pdeathsig-this-thread " + wuSeatPdeathsig() + "\n")
+	b.WriteString("AT_SECURE " + wuSeatATSecure() + "\n")
 	b.WriteString("ppid " + strconv.Itoa(os.Getppid()) + "\n")
 	if s, err := os.ReadFile("/proc/self/status"); err != nil {
 		b.WriteString("status <unreadable: " + err.Error() + ">\n")
@@ -623,8 +681,14 @@ func wuStatusField(status, key string) string {
 // report and not the raw file so that a report whose sentinel arrived is
 // parsed exactly once.
 func wuSeatReportPid(report string) int {
+	return wuSeatReportInt(report, "pid ")
+}
+
+// wuSeatReportInt reads one integer row of the report by its prefix, 0 when
+// the row is missing or not a number.
+func wuSeatReportInt(report, prefix string) int {
 	for _, line := range strings.Split(report, "\n") {
-		if rest, ok := strings.CutPrefix(line, "pid "); ok {
+		if rest, ok := strings.CutPrefix(line, prefix); ok {
 			n, err := strconv.Atoi(strings.TrimSpace(rest))
 			if err != nil {
 				return 0
