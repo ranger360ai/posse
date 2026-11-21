@@ -2150,9 +2150,19 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// The session's own audit trail, by literal so no new file joins it.
 	// Both are already inside a grant (the gates dir), so this re-allows
 	// rather than widens.
+	//
+	// THE DIRECTORY IS RESOLVED AND THE LEAF IS NOT (ranger-base-xab99). Every
+	// other entry here goes through absResolve, which follows a link at the
+	// LAST component too — so a link planted at <gates>/refusals.log put its
+	// target on this list, re-allowed for write at L2 and bound read-write at
+	// its own spelling by bwrap. The gates dir is resolved like every grant
+	// (the profile matches real paths); the leaf keeps its declared name, and
+	// both renders refuse when that name is not a plain file (keepLeafRefusal,
+	// bwrapLeafStat).
 	if gatesDir != "" {
+		gd := absResolve(gatesDir)
 		for _, f := range []string{"refusals.log", "shell.log"} {
-			add(&c.Keep, filepath.Join(gatesDir, f))
+			c.Keep = append(c.Keep, filepath.Join(gd, f))
 		}
 	}
 	// claude's projects/: read-only but for the seat's own key, whose memory/
@@ -3015,8 +3025,38 @@ func (a *App) renderSeatbeltInto(w wallWrite, ag *AgentFile, cwd string, stateDi
 		return "", err
 	}
 	withRexNodeReadDeny(&carve)
+	if err := keepLeafRefusal(carve.Keep); err != nil {
+		return "", err
+	}
 	prof := SeatbeltProfile(ag.Name, writable, SeatbeltSiblings(stateDirs, carve), carve, sessionRefDirsFor(ag, cwd)...)
 	return p, os.WriteFile(p, []byte(prof), 0o644)
+}
+
+// keepLeafRefusal is the L2 half of ranger-base-xab99: a Keep literal is
+// `(allow file-write* (literal <p>))` after the carve-out's deny, and it is
+// only the session's own audit log while <p> is a plain regular file with one
+// name, or nothing yet (sandbox-exec creates it on first append). A link at
+// <p> is refused rather than followed: following it and judging the target is
+// the check-then-use ADR 0100 rejects A2 for, and at L2 the literal itself
+// grants unlink and create at that name, so a seat could plant the link
+// during one session for its next. A hard link is refused for the same
+// reason — another file's inode under the log's name (storeSingleEntry's
+// rule, which fails closed when the count cannot be read).
+func keepLeafRefusal(keep []string) error {
+	for _, p := range keep {
+		fi, err := os.Lstat(p)
+		switch {
+		case os.IsNotExist(err):
+			continue
+		case err != nil:
+			return Die("posse cannot re-allow %s for write: lstat: %v — a Keep leaf that cannot be asked about is not certified to be the session's audit log (ranger-base-xab99)", p, err)
+		case fi.Mode()&os.ModeSymlink != 0:
+			return Die("posse cannot re-allow %s for write: it is a symlink, and the audit log's write allow would reach whatever it points at. Remove it and relaunch, and never exempt it (ranger-base-xab99)", p)
+		case !fi.Mode().IsRegular() || !storeSingleEntry(fi):
+			return Die("posse cannot re-allow %s for write: it is not a regular file with one name, so the audit log's write allow would reach another file's inode. Remove it and relaunch (ranger-base-xab99)", p)
+		}
+	}
+	return nil
 }
 
 // SeatbeltReport renders the profile for a launch in cwd and prints the

@@ -682,13 +682,20 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 	// would be none the wiser — the same shape of silence as a deny that
 	// renders no mount.
 	for _, f := range shallowestFirst(refKeep) {
-		exists, dir, err := bwrapStat(f)
+		// THE LEAF IS LSTAT'D, not bwrapStat'd (ranger-base-xab99): its
+		// directory is the seat's own rw ref grant, so a live seat can leave
+		// a DANGLING link at this name, which os.Stat reads as "not there" —
+		// and the touch below then runs uncaged. Asked BEFORE writeGranted,
+		// which resolves the leaf too and so would name a link to outside
+		// every grant as a keep file in the wrong place.
+		exists, fi, err := bwrapLeafStat("ref keep", f, grants)
 		if err != nil {
-			return nil, nil, bwrapStatRefusal("ref keep", f, err)
+			return nil, nil, err
 		}
 		if !writeGranted(grants, f) {
 			return nil, nil, Die("bwrap cannot keep %s: it is inside no write grant, so this render binds no directory for it to hold open (ADR 0080 D20)", f)
 		}
+		dir := exists && fi.IsDir()
 		if exists && dir {
 			// A directory at that name is not a keep file: `pack-refs
 			// --prune` removes an EMPTY directory, so a directory here is
@@ -1044,11 +1051,23 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		if reopens(f) {
 			continue // its deny was skipped above, and a re-allow would bind the host file back in
 		}
-		exists, dir, err := bwrapStat(f)
+		// LSTAT'D THROUGH THE WALK, never bwrapStat'd (ranger-base-xab99).
+		// os.Stat FOLLOWS, and `--bind f f` resolves both ends at mount(2),
+		// so a link planted at an audit log's name bound its target
+		// read-write, and a dangling one had the uncaged launcher create it.
+		exists, fi, err := bwrapLeafStat("keep", f, grants)
 		if err != nil {
-			return nil, nil, bwrapStatRefusal("keep", f, err)
+			return nil, nil, err
 		}
+		dir := exists && fi.IsDir()
 		switch {
+		case exists && !dir && (!fi.Mode().IsRegular() || !storeSingleEntry(fi)):
+			// A FILE that is not a plain one-name regular file is not an
+			// audit log this launcher made: a device or a FIFO is nothing to
+			// append to, and a hard link is another file's inode wearing the
+			// log's name, which the bind would hand over read-write exactly
+			// as a symlink's target was.
+			return nil, nil, Die("bwrap cannot re-allow %s inside the deny above it: it is not a regular file with one name, so binding it read-write would hand the session whatever else that inode is. Remove it on the host and relaunch (ranger-base-xab99)", f)
 		case exists && dir:
 			// A Keep entry is a literal re-allow inside a deny, and at L2 a
 			// literal names one file. A DIRECTORY at that name would bind a
@@ -2075,6 +2094,40 @@ func bwrapGrantSrcStat(m bwrapGrantMount, grants []string) (exists, dir bool, er
 		return false, false, Die("bwrap cannot bind %s in place as a %s: it is a symlink, and bwrap resolves both ends of an in-place bind at mount(2), so this would mount whatever it points at read-write at this name — inside the write grant %s that contains it, and at a path this render never judged. Remove it on the host and relaunch, or narrow the grant that contains it, and never exempt it (ADR 0100 D1/D2(b), ranger-base-gi22r)", m.Path, m.what(), root)
 	}
 	return true, fi.IsDir(), nil
+}
+
+// bwrapLeafStat is the question steps 2b and 4 ask of a FILE leaf this render
+// either binds in place (a Keep audit log) or has the launcher touch (a ref
+// keep file): the same component walk, from the outermost grant containing
+// the leaf, with the leaf itself lstat'd and a symlink there refused.
+//
+// WHY (ranger-base-xab99). Both arms asked bwrapStat, which FOLLOWS. At step
+// 4 a link at the leaf's name bound its target read-write inside the seat
+// (and before this bead the carve-out had already resolved the leaf, so the
+// mount sat at the target's own spelling); at either step a DANGLING link
+// read as absent, so the uncaged launcher's PrepTouch created the target.
+// Following the link and judging the target is not the other answer, for
+// bwrapGrantSrcStat's reason: the target is repointed between this render
+// and mount(2).
+//
+// A leaf inside no grant walks from its own parent: the parent then lies
+// outside every grant, which is the race ADR 0100 D1 prices, and the leaf is
+// still lstat'd rather than followed.
+func bwrapLeafStat(shape, p string, grants []string) (exists bool, fi os.FileInfo, err error) {
+	root, inside := bwrapOutermostContainingGrant(p, grants)
+	if !inside {
+		root = filepath.Dir(p)
+	}
+	exists, fi, err = bwrapSrcWalk(shape, p, root, p)
+	switch {
+	case err != nil:
+		return false, nil, err
+	case !exists:
+		return false, nil, nil
+	case fi.Mode()&os.ModeSymlink != 0:
+		return false, nil, Die("bwrap cannot use %s as a %s: it is a symlink, and the render would either bind whatever it points at read-write or have the launcher create its target outside the wall. Remove it on the host and relaunch, and never exempt it (ranger-base-xab99)", p, shape)
+	}
+	return true, fi, nil
 }
 
 // bwrapCarvePins is shape 1's remedy at the CARVE-OUT's producers: the
@@ -3847,7 +3900,24 @@ func runBwrapPrep(prep []PrepStep) error {
 					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
 			}
 		case PrepTouch:
-			f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_WRONLY, 0o644)
+			// O_EXCL, and never a bare O_CREATE (ranger-base-xab99). This
+			// runs UNCAGED, and O_CREATE alone over a DANGLING link creates
+			// the link's TARGET and leaves the link a link — a file at a
+			// path of the planter's choosing, made by the launcher. O_EXCL
+			// refuses every name that is already there, a link of either
+			// kind included, and opens nothing that exists, so a FIFO
+			// planted at the name cannot hang the launch either (the reason
+			// worktree.go gives for not reaching for O_NOFOLLOW). A name
+			// that appeared since the render is accepted only as a regular
+			// file, read without following.
+			f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+			if os.IsExist(err) {
+				if fi, lerr := os.Lstat(s.Path); lerr == nil && fi.Mode().IsRegular() {
+					continue
+				}
+				return Die("cage %s (%s) cannot prepare %s (%s): something that is not a regular file appeared at that name since the render, and the launcher creates through nothing it did not judge. Remove it and relaunch (ranger-base-xab99)",
+					CageSeatbelt, WallBwrap, s.Path, s.Why)
+			}
 			if err != nil {
 				return Die("cage %s (%s) cannot prepare %s (%s): %v — the launcher makes this outside the namespace because bwrap binds only a source that exists (ADR 0080 D17/D18)",
 					CageSeatbelt, WallBwrap, s.Path, s.Why, err)
