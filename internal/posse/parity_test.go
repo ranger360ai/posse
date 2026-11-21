@@ -378,7 +378,7 @@ func TestSeatbeltProfileAndLaunch(t *testing.T) {
 	// for than any of them. ranger-base-90y3c is the other earlier landing.
 	// launchLog reads both places and already carried the warning.
 	log := launchLog(t, b.App, fake)
-	wrap, wallPath := wallLaunchWrapForTest(t, gates, "security", repo)
+	wrap, wallPath := wallLaunchWrapForTest(t, gates, security, repo)
 	if !strings.Contains(log, "GATES "+wrap+"grok") || !strings.Contains(log, "--env RHQ_CAGE=seatbelt") {
 		t.Errorf("%s wrap missing:\n%s", WallMechanism(), log)
 	}

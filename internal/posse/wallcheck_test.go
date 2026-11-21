@@ -105,6 +105,18 @@ func wckJudgeBody() string {
 // wckFixture is a repo on main shipping BOTH checks — the tree-reading judge
 // and the tree-reading wall check above — with a checker wired to the plain
 // cage and the fake bd, and the wall check's own run log.
+//
+// AND TO A HOST WHOSE WALL IS A BWRAP, which is ADR 0097 D2's second
+// question and not a property of the box running the suite. Every arm that
+// takes this fixture — here and in landedlauncher_test.go and
+// landedinterrupt_test.go — is about what the step DOES, and at
+// sandbox-exec the step does not exist
+// (D2, ADR 0096: no darwin change) — so without this line the whole table
+// measures the one line that declines it, which is what it did on every
+// macos leg of ci.yml from the day the step landed (ranger-base-jyqk4).
+// Here and not in each arm, so an arm written tomorrow cannot forget it;
+// `wallMechFn` and not `wallMechanismForTest`, so these arms stay parallel
+// (landedcheck.go states the trade at the field).
 func wckFixture(t *testing.T) (*landedChecker, *bytes.Buffer, string, string) {
 	t.Helper()
 	a := wtApp(t)
@@ -116,6 +128,7 @@ func wckFixture(t *testing.T) (*landedChecker, *bytes.Buffer, string, string) {
 	out := &bytes.Buffer{}
 	c := newLandedChecker(a, out)
 	c.cage, c.bd = plainCage, testBd(t)
+	c.wallMechFn = func() string { return WallBwrap }
 	return c, out, repo, log
 }
 
@@ -543,9 +556,18 @@ func TestATreeThatShipsNoWallCheckIsLeftAloneEntirely(t *testing.T) {
 // which only a darwin host takes. `wallMechanismForTest` is what makes the
 // first readable from here, which is what it exists for (ranger-base-temhf).
 //
+// AND IT IS THE ONE ARM THAT DRIVES THE REAL WallMechanism(), which is why
+// it clears wckFixture's `wallMechFn` rather than setting it the other way:
+// every other arm in this file pins the mechanism at the checker's seam, so
+// without this one a mis-wired seam — a `wall` that read a constant, or a
+// field the constructor filled in — would leave the whole table green on a
+// host where the step cannot run. Clearing it to nil also makes this the pin
+// on "nil means the real one" (wallMechOf, wallcheck.go).
+//
 // SERIAL, no t.Parallel: wallMechanismForTest writes a package-level var.
 func TestAHostWhoseWallIsNotABwrapRunsNoVenueAndCountsNoSilence(t *testing.T) {
 	c, out, repo, log := wckFixture(t)
+	c.wallMechFn = nil
 	wallMechanismForTest(t, "darwin")
 	if m := WallMechanism(); m != WallSandboxExec {
 		t.Fatalf("WallMechanism() reads %q behind wallMechanismForTest(darwin), so this arm cannot put the step on a host that is not a bwrap and measures nothing", m)

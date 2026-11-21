@@ -309,8 +309,45 @@ func TestQAGatesPrintsTheCarveOutUnderTheSet(t *testing.T) {
 type sbProbe struct {
 	what string
 	sh   func(f sbFixture) string // /bin/sh -c, built against a fresh fixture
-	want bool                     // true: must still be allowed WITH the carve-out
+	want sbWant
 }
+
+// sbWant is what the kernel must do with a probe's write, and there are
+// THREE answers here rather than two.
+//
+// The third one is ranger-base-kfrpv's: the store repo's `.git` left every
+// tier's write set when that bead landed, so a write under it is refused
+// with the carve-out and without it — the grant is absent, not denied, and
+// a deny of its own would be a cost at the bwrap mechanism (a read-only
+// bind wall-watch lists, which a host write under it kills the seat over).
+// `TestQACarveOutNamesTheConstitutionTheGatesAndTheHooks` asserts that pair
+// over the SET; these two rows are the same claim at the kernel, which is
+// this file's whole reason for existing.
+//
+// IT IS NOT "REFUSED, DON'T ASK WHY", and the control is what keeps it from
+// becoming that: an sbUngranted row runs a THIRD profile with the grant
+// ranger-base-kfrpv removed put back, and must be ALLOWED there. Without
+// that arm a malformed command, or a fixture an earlier probe destroyed,
+// would read exactly like an absent grant — the same hole the sbCarveDeny
+// control closes one answer over, and the same idiom
+// storerepogitwalllive_test.go's rows use at the other mechanism ("THE
+// CONTROL IS THE PRE-FIX RENDER").
+type sbWant int
+
+const (
+	sbAllow     sbWant = iota // granted, and the carve-out must not take it back
+	sbCarveDeny               // refused WITH the carve-out, allowed without it
+	sbUngranted               // refused either way: in no tier's grant at all
+)
+
+// sbMode is which of three profiles sbTry renders for a probe.
+type sbMode int
+
+const (
+	sbWalled          sbMode = iota // the shipped render: the allow set and the carve-out
+	sbControl                       // the same set with the carve-out removed
+	sbStoreGitGranted               // the control plus ranger-base-kfrpv's removed grant
+)
 
 func sbRun(t *testing.T, profile, sh string) bool {
 	t.Helper()
@@ -334,16 +371,31 @@ func sbRenderProfile(t *testing.T, name, body string) string {
 	return p
 }
 
-// sbTry renders a profile for a fresh fixture — with the carve-out or
-// without — and reports whether the write was allowed.
-func sbTry(t *testing.T, p sbProbe, withCarve bool) bool {
+// sbTry renders one of sbMode's three profiles for a FRESH fixture and
+// reports whether the write was allowed.
+func sbTry(t *testing.T, p sbProbe, m sbMode) bool {
 	t.Helper()
 	f := sbNewFixture(t)
 	w := f.writable(t)
 	carve := SeatbeltCarveOut{}
 	name := "control.sb"
-	if withCarve {
+	switch m {
+	case sbWalled:
 		carve, name = f.carve(t), "walled.sb"
+	case sbStoreGitGranted:
+		// The pre-ranger-base-kfrpv set: the shipped one plus the store
+		// repo's git dirs, from the producer the grant used to come from.
+		// The carve-out stays OFF, because what this arm has to show is
+		// that the command and the fixture work when the path is granted —
+		// and before that bead the deny named `<store>/.git/hooks` too, so
+		// the walled spelling would refuse one of the two rows for the
+		// deny's sake and prove nothing about the grant.
+		name = "storegit.sb"
+		g := beadsGitDirs(filepath.Join(f.store, beadsDirName))
+		if !writeGranted(g, filepath.Join(f.store, ".git")) {
+			t.Fatalf("beadsGitDirs no longer names this store's git dir, so this control is not over ranger-base-kfrpv's grant: %v", g)
+		}
+		w = append(append([]string{}, w...), g...)
 	}
 	return sbRun(t, sbRenderProfile(t, name, SeatbeltProfile("developer", w, nil, carve)), p.sh(f))
 }
@@ -360,10 +412,10 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 		return filepath.Join(append([]string{f.a.Home}, parts...)...)
 	}
 	probes := []sbProbe{
-		{"write a PID into the constitution", func(f sbFixture) string { return "touch " + home(f, "agents", "PWNED.md") }, false},
-		{"rewrite an existing PID in place", func(f sbFixture) string { return "sed -i '' s/x/y/ " + home(f, "agents", "developer.md") }, false},
-		{"append to config.yaml", func(f sbFixture) string { return "echo x >> " + home(f, "config.yaml") }, false},
-		{"truncate the promote manifest", func(f sbFixture) string { return ": > " + home(f, PromoteManifestFile) }, false},
+		{"write a PID into the constitution", func(f sbFixture) string { return "touch " + home(f, "agents", "PWNED.md") }, sbCarveDeny},
+		{"rewrite an existing PID in place", func(f sbFixture) string { return "sed -i '' s/x/y/ " + home(f, "agents", "developer.md") }, sbCarveDeny},
+		{"append to config.yaml", func(f sbFixture) string { return "echo x >> " + home(f, "config.yaml") }, sbCarveDeny},
+		{"truncate the promote manifest", func(f sbFixture) string { return ": > " + home(f, PromoteManifestFile) }, sbCarveDeny},
 		// ranger-base-bejb / ranger-base-zio33: the truncate above is the
 		// MODIFY half. ADR 0015 §3's amended anchor bullet claims the other
 		// half too — at seatbelt a caged session can neither modify the
@@ -373,66 +425,97 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 		// silences the detector with no output on any surface. Both spellings
 		// an operator would reach for, executed, because a deny read off
 		// profile text is a deny nobody has watched refuse anything.
-		{"delete the promote manifest", func(f sbFixture) string { return "rm " + home(f, PromoteManifestFile) }, false},
+		{"delete the promote manifest", func(f sbFixture) string { return "rm " + home(f, PromoteManifestFile) }, sbCarveDeny},
 		{"move the promote manifest aside", func(f sbFixture) string {
 			return "mv " + home(f, PromoteManifestFile) + " " + home(f, PromoteManifestFile+".bak")
-		}, false},
-		{"write an env secret", func(f sbFixture) string { return "echo K=v >> " + home(f, "envs", "default.env") }, false},
-		{"delete a promoted directory", func(f sbFixture) string { return "rm -rf " + home(f, "recipes") }, false},
+		}, sbCarveDeny},
+		{"write an env secret", func(f sbFixture) string { return "echo K=v >> " + home(f, "envs", "default.env") }, sbCarveDeny},
+		{"delete a promoted directory", func(f sbFixture) string { return "rm -rf " + home(f, "recipes") }, sbCarveDeny},
 		{"rewrite ANOTHER persona's L1 shim", func(f sbFixture) string {
 			return "echo pwn > " + filepath.Join(f.a.StateDir, "gates", "devops", "bin", "security")
-		}, false},
-		{"rewrite this session's own L1 shim", func(f sbFixture) string { return "echo pwn > " + filepath.Join(f.gates, "bin", "git") }, false},
-		{"rewrite the rendered seatbelt profile", func(f sbFixture) string { return "echo pwn > " + filepath.Join(f.gates, "seatbelt.sb") }, false},
+		}, sbCarveDeny},
+		{"rewrite this session's own L1 shim", func(f sbFixture) string { return "echo pwn > " + filepath.Join(f.gates, "bin", "git") }, sbCarveDeny},
+		{"rewrite the rendered seatbelt profile", func(f sbFixture) string { return "echo pwn > " + filepath.Join(f.gates, "seatbelt.sb") }, sbCarveDeny},
 		{"plant an L3 hook", func(f sbFixture) string {
 			return "echo 'exit 0' > " + filepath.Join(f.repo, ".git", "hooks", "pre-push")
-		}, false},
+		}, sbCarveDeny},
+		// AND THE STORE OF RECORD'S OWN HOOKS SLOT IS THE OTHER ANSWER
+		// (ranger-base-kfrpv): it was a carve-out deny over a grant, and
+		// since that bead the grant is gone, so the deny is gone with it and
+		// the refusal is the absent grant's. It stayed a sbCarveDeny row
+		// here for a day because this test is the one pin in the file that
+		// only a darwin host runs, so its control read `the CONTROL refused
+		// it too` on every macos leg and nowhere else (ranger-base-jyqk4).
 		{"plant an L3 hook in the store of record", func(f sbFixture) string {
 			return "echo 'exit 0' > " + filepath.Join(f.store, ".git", "hooks", "prepare-commit-msg")
-		}, false},
+		}, sbUngranted},
 		// The home is reached through a symlink; what a rename would carry
 		// away is the REAL directory, which is what the seal names.
 		{"rename the home out from under the deny", func(f sbFixture) string {
 			return "mv " + filepath.Join(f.repo, ConstitutionSourceDir) + " " + filepath.Join(f.repo, ConstitutionSourceDir+"2")
-		}, false},
+		}, sbCarveDeny},
 		{"rename state/ out from under the gates deny", func(f sbFixture) string {
 			return "mv " + filepath.Join(f.repo, ConstitutionSourceDir, "state") + " " + filepath.Join(f.repo, ConstitutionSourceDir, "state2")
-		}, false},
+		}, sbCarveDeny},
 		{"hardlink a PID out and write through it", func(f sbFixture) string {
 			return "ln " + home(f, "agents", "developer.md") + " " + filepath.Join(f.repo, "hard.md") + " && echo pwn >> " + filepath.Join(f.repo, "hard.md")
-		}, false},
+		}, sbCarveDeny},
 		{"reach the constitution through the other spelling", func(f sbFixture) string {
 			return "touch " + filepath.Join(f.repo, ConstitutionSourceDir, "agents", "PWNED2.md")
-		}, false},
+		}, sbCarveDeny},
 
 		// And what a session must keep. These are ALLOW under the carve-out
 		// too, so they are not controls — they are the cost check.
 		{"project work next to the constitution", func(f sbFixture) string {
 			return "touch " + filepath.Join(f.repo, ConstitutionSourceDir, "NOTES-not-promoted.md")
-		}, true},
-		{"the repo the session was dispatched into", func(f sbFixture) string { return "echo x >> " + filepath.Join(f.repo, "README") }, true},
-		{"its own memory (§5)", func(f sbFixture) string { return "echo x >> " + filepath.Join(f.ag.MemoryDir, "ORDERS.md") }, true},
+		}, sbAllow},
+		{"the repo the session was dispatched into", func(f sbFixture) string { return "echo x >> " + filepath.Join(f.repo, "README") }, sbAllow},
+		{"its own memory (§5)", func(f sbFixture) string { return "echo x >> " + filepath.Join(f.ag.MemoryDir, "ORDERS.md") }, sbAllow},
 		{"L1's audit trail, created on first append", func(f sbFixture) string {
 			return "echo refusal >> " + filepath.Join(f.gates, "refusals.log")
-		}, true},
-		{"the gate shell's log", func(f sbFixture) string { return "echo line >> " + filepath.Join(f.gates, "shell.log") }, true},
+		}, sbAllow},
+		{"the gate shell's log", func(f sbFixture) string { return "echo line >> " + filepath.Join(f.gates, "shell.log") }, sbAllow},
 		{"the record stage: the store of record", func(f sbFixture) string {
 			return "touch " + filepath.Join(f.store, beadsDirName, "beads.db")
-		}, true},
-		{"the record stage: the store's git", func(f sbFixture) string { return "touch " + filepath.Join(f.store, ".git", "index.lock") }, true},
-		{"posse's own state beside the gates", func(f sbFixture) string { return "touch " + filepath.Join(f.a.StateDir, "probe") }, true},
+		}, sbAllow},
+		{"posse's own state beside the gates", func(f sbFixture) string { return "touch " + filepath.Join(f.a.StateDir, "probe") }, sbAllow},
+
+		// AND WHAT THE RECORD STAGE DOES NOT WRITE. `<store>/.git/index.lock`
+		// was in the list above, for a commit of the JSONL that no seat
+		// makes — the launcher makes it, uncaged (ranger-base-kfrpv,
+		// App.CommitQueueJSONL). It is here rather than deleted because the
+		// cost check and the deny are the same question from two sides, and
+		// a path this test used to call a cost is the one a reader of
+		// `TestQACarveOutLeavesTheStoreOfRecordWritable`'s own history will
+		// come looking for.
+		{"the record stage does not commit: the store's git", func(f sbFixture) string {
+			return "touch " + filepath.Join(f.store, ".git", "index.lock")
+		}, sbUngranted},
 	}
 	verb := map[bool]string{true: "ALLOWED", false: "REFUSED"}
 	for _, p := range probes {
 		t.Run(p.what, func(t *testing.T) {
-			if got := sbTry(t, p, true); got != p.want {
-				t.Errorf("%s under the carve-out, want %s", verb[got], verb[p.want])
+			if got := sbTry(t, p, sbWalled); got != (p.want == sbAllow) {
+				t.Errorf("%s under the carve-out, want %s", verb[got], verb[p.want == sbAllow])
 			}
-			if p.want {
+			if p.want == sbAllow {
 				return
 			}
-			if !sbTry(t, p, false) {
-				t.Errorf("the CONTROL refused it too — the probe proves nothing about the deny")
+			ctrl := sbTry(t, p, sbControl)
+			if p.want == sbCarveDeny {
+				if !ctrl {
+					t.Errorf("the CONTROL refused it too — the probe proves nothing about the deny")
+				}
+				return
+			}
+			// sbUngranted: the refusal must be the absent grant and not the
+			// deny, so the control refuses it too — and the arm below is
+			// what stops that from being vacuous.
+			if ctrl {
+				t.Errorf("the control ALLOWED it, so the carve-out's deny is what refuses this path: the row is an sbCarveDeny and not an absent grant")
+			}
+			if !sbTry(t, p, sbStoreGitGranted) {
+				t.Errorf("refused even with ranger-base-kfrpv's grant put back — the command or the fixture is what the two refusals above measured, not the wall")
 			}
 		})
 	}

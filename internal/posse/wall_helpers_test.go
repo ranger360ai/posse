@@ -89,16 +89,38 @@ func wallUnixWrapForTest(t *testing.T) string {
 	return WallUnixPrefix(self)
 }
 
-// wallLaunchWrapForTest is what a LAUNCH types for that wall: the same as
-// wallWrapForTest at sandbox-exec, and at bwrap the `posse wall-watch`
-// sidecar in front of the binary (ranger-base-ihnnl) — built from
-// WallWatchPrefix, the one spelling the render types.
-func wallLaunchWrapForTest(t *testing.T, gatesDir, seat, dir string) (wrap, artifact string) {
+// wallLaunchWrapForTest is what a LAUNCH types for that wall: at bwrap the
+// `posse wall-watch` sidecar in front of the binary (ranger-base-ihnnl),
+// and at sandbox-exec the seat's env prefix in front of it — both built
+// from the one spelling the render types.
+//
+// THE SANDBOX-EXEC ARM IS A PREFIX IN FRONT OF A PREFIX, and that is the
+// whole of what this arm is for. SBPL has no env of its own, so every
+// variable the launcher hands a darwin seat rides in front of
+// `sandbox-exec` as `/usr/bin/env K=V …` — the seat's own build and package
+// cache (ranger-base-olr0g) and, for a seat the seat-store wall applies to,
+// its two object-store variables (ranger-base-5blmt). wall.go's
+// WallSandboxExec arm puts both on `WallRender.Prefix` itself, so a pin
+// that expected SeatbeltPrefix alone was comparing the line to a prefix the
+// launcher stopped typing bare: `GATES <wrap>grok` is `GATES /usr/bin/env
+// 'GOCACHE=…' … sandbox-exec -f '…' grok` on a real line, so an assertion
+// anchored at GATES was red on every macos leg from olr0g's landing and
+// green on every ubuntu one, where those variables go in bwrap's argv
+// instead (ranger-base-jyqk4, MEASURED on macos-latest arm 3).
+//
+// `ag` AND NOT A SEAT NAME, because seatStoreEnv is nil for a PID that
+// denies file writes (seatbeltSeatStore reads ag.Deny): the two arms differ
+// by exactly those two variables, and a helper handed a name alone would
+// have to guess which seat it was.
+func wallLaunchWrapForTest(t *testing.T, gatesDir string, ag *AgentFile, dir string) (wrap, artifact string) {
 	t.Helper()
 	wrap, artifact = wallWrapForTest(t, gatesDir)
 	if WallMechanism() != WallBwrap {
-		return wrap, artifact
+		home, _ := os.UserHomeDir()
+		env := append(seatCacheEnv(SeatCacheDir(home, dir)), seatStoreEnv(ag, home, dir)...)
+		return seatCacheEnvPrefix(env) + wrap, artifact
 	}
+	seat := ag.Name
 	bin, err := bwrapBin()
 	if err != nil {
 		t.Fatal(err)

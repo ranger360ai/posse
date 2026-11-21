@@ -872,6 +872,25 @@ type landedChecker struct {
 	// somebody who is not this launcher's stop is D3's silence, and pinning
 	// that costs 5s of suite wall per run without it.
 	interruptGrace time.Duration
+	// wallMechFn is ADR 0097 D2's SECOND question — is this host's wall a
+	// bwrap — and nil means the real one (wallMechOf, wallcheck.go). A seam
+	// beside `cage` and for its reason, with the one thing its package-var
+	// twin cannot give: `wallMechanismForTest` writes wallMechanismHost,
+	// which every launch path in this package reads, so an arm that drove
+	// the mechanism that way had to be SERIAL — and ADR 0097 D5's table is
+	// parallel arms that each land real commits on a real main.
+	//
+	// WITHOUT IT THOSE ARMS READ THE HOST AND NOTHING ELSE, which is how
+	// every one of them was red on every macos leg from the day the step
+	// landed and green on every ubuntu one: the step does not exist at
+	// sandbox-exec, so the fixture's whole table measured the one line that
+	// declines it (ranger-base-jyqk4, MEASURED on macos-latest arm 2 at
+	// edfe7a79 through acdaf81f). The arm that drives the real
+	// WallMechanism() through the real var is still here and is still
+	// serial — TestAHostWhoseWallIsNotABwrapRunsNoVenueAndCountsNoSilence,
+	// which sets this field to nil on purpose, and is therefore also the
+	// pin on "nil means the real one".
+	wallMechFn func() string
 
 	mu sync.Mutex
 	// stop is the watch loop's stop context — the one SIGTERM and SIGINT end

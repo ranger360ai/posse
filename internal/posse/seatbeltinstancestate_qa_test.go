@@ -12,12 +12,29 @@ package posse
 // the right path and a profile the kernel matches it in are different
 // claims, and only the second is the wall.
 //
-// The control is the pre-fix shape rendered deliberately — the same session,
-// the same carve-out, the one grant swapped for the other home's state.
-// Both state dirs are real and writable outside any sandbox, so a refusal
-// that showed up under BOTH profiles would be a missing fixture rather than
-// a wall; the control is what tells those apart, and its two flipped
-// verdicts are the witness that the probes above measured the grant.
+// AND SINCE ranger-base-6akzw THERE IS NO STATE GRANT AT EITHER HOME. That
+// bead took `<home>/state` out of the caged write set outright — it holds
+// what the LAUNCHER and the dispatcher write and later run or trust outside
+// every wall, and no member of it ever had a measured seat writer
+// (seatbelt.go states the census). So this file's two probes are now the
+// same answer on both sides: a session under home2 writes neither
+// instance's state dir. What it DOES write there is its own gates dir, and
+// that row is here because without it both refusals would be true for the
+// wrong reason — a home the profile does not reach at all.
+//
+// THE CONTROLS ARE THE TWO PRE-FIX GRANTS, rendered deliberately and one
+// per claim: 6akzw's own grant put back for the first, and qfzr's
+// wrong-home grant for the second. Both state dirs are real and writable
+// outside any sandbox, so a refusal that showed up under the control too
+// would be a missing fixture rather than a wall; the controls are what
+// tells those apart, and their flipped verdicts are the witness that the
+// probes above measured a grant and not a typo.
+//
+// IT WAS RED ON EVERY MACOS LEG FROM 6akzw's LANDING, and on no other
+// reader (ranger-base-jyqk4): sbSkipUnlessSandboxable means a darwin host
+// is this file's only venue, so the stale `want ALLOWED` on the own-state
+// probe — and a control that could no longer be BUILT, `is in no grant to
+// swap` — were invisible to every seat and to both ubuntu arms of ci.yml.
 
 import (
 	"path/filepath"
@@ -33,7 +50,7 @@ func TestQAKernelGrantsOwnInstanceStateAndRefusesTheOthers(t *testing.T) {
 		homeWithConstitution(t, a, "")
 	}
 	cwd := sbMkdir(t, filepath.Join(root, "work"))
-	gates := two.GatesDir("developer")
+	gates := sbMkdir(t, two.GatesDir("developer"))
 	ag := &AgentFile{Name: "developer", MemoryDir: filepath.Join(two.PersonasDir(), "developer")}
 
 	// The profile a session under RHQ_HOME=<home2> actually launches under:
@@ -42,31 +59,54 @@ func TestQAKernelGrantsOwnInstanceStateAndRefusesTheOthers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sbRun(t, prof, "touch "+filepath.Join(two.StateDir, "probe-own")) {
-		t.Errorf("a session under %s cannot write its own state dir %s", two.Home, two.StateDir)
+	// The cost check first, because the two refusals below are worthless
+	// without it: what a seat writes under its own state dir is its two
+	// audit logs, re-allowed over the gates deny by the carve-out's Keep
+	// (seatbelt.go), and the profile reaches those. NOT an arbitrary file
+	// in the gates dir — that dir is granted and then denied, so a seat
+	// cannot write even its own L1 shim (seatbeltcarveout_qa_test.go's
+	// `rewrite this session's own L1 shim` row), and a cost check there
+	// would fail over the deny rather than over the home.
+	if !sbRun(t, prof, "echo refusal >> "+filepath.Join(gates, "refusals.log")) {
+		t.Fatalf("a session under %s cannot append to its own audit trail under %s — the profile reaches nothing of this home, so neither refusal below is about a grant", two.Home, gates)
+	}
+	if sbRun(t, prof, "touch "+filepath.Join(two.StateDir, "probe-own")) {
+		t.Errorf("a session under %s wrote its own state dir %s — it holds what the launcher writes and later runs outside every wall (ranger-base-6akzw)", two.Home, two.StateDir)
 	}
 	if sbRun(t, prof, "touch "+filepath.Join(one.StateDir, "probe-cross")) {
 		t.Errorf("a session under %s wrote the other instance's state dir %s (rangerhq-qfzr)", two.Home, one.StateDir)
 	}
 
-	// The control: the pre-fix grant, which named a home this session is not
-	// running against.
-	swapped := false
-	var pre []string
-	for _, g := range two.SeatbeltWritable(ag, cwd, gates) {
-		if g == absResolve(two.StateDir) {
-			g, swapped = absResolve(one.StateDir), true
-		}
-		pre = append(pre, g)
+	// Control 1, ranger-base-6akzw's grant put back: this session's OWN
+	// state dir appended to the set it shipped before that bead.
+	own := sbInstanceStateProfile(t, two, ag, cwd, gates, "pre6akzw.sb", absResolve(two.StateDir))
+	if !sbRun(t, own, "touch "+filepath.Join(two.StateDir, "probe-own-control")) {
+		t.Errorf("control: %s is refused even when granted — the fixture, not the wall, is what the own-state probe above measured", two.StateDir)
 	}
-	if !swapped {
-		t.Fatalf("control built nothing: %s is in no grant to swap:\n  %v", two.StateDir, pre)
+
+	// Control 2, rangerhq-qfzr's shape: the grant pointed at a home this
+	// session is not running against. The cross probe above is only about
+	// the DERIVATION while this one flips.
+	cross := sbInstanceStateProfile(t, two, ag, cwd, gates, "preqfzr.sb", absResolve(one.StateDir))
+	if !sbRun(t, cross, "touch "+filepath.Join(one.StateDir, "probe-cross-control")) {
+		t.Errorf("control: %s is refused even when granted — the fixture, not the wall, is what the cross-instance probe above measured", one.StateDir)
 	}
-	ctrl := sbRenderProfile(t, "prefix.sb", SeatbeltProfile(ag.Name, pre, nil, two.SeatbeltCarveOut(ag, cwd, gates, pre)))
-	if sbRun(t, ctrl, "touch "+filepath.Join(two.StateDir, "probe-own-control")) {
-		t.Errorf("control: the state grant is not what makes %s writable — it is writable with the grant pointed elsewhere", two.StateDir)
+	if sbRun(t, cross, "touch "+filepath.Join(two.StateDir, "probe-own-under-cross")) {
+		t.Errorf("control: granting %s made %s writable too, so neither control isolates the grant it names", one.StateDir, two.StateDir)
 	}
-	if !sbRun(t, ctrl, "touch "+filepath.Join(one.StateDir, "probe-cross-control")) {
-		t.Errorf("control: %s is refused even when granted — the fixture, not the wall, is what the probes above measured", one.StateDir)
+}
+
+// sbInstanceStateProfile renders this session's shipped profile with ONE
+// extra grant — a state dir no shipped producer names any more — and
+// returns its path. The carve-out is recomputed over the widened set, not
+// over the shipped one: the deny is what a trailing-deny wall is, and a
+// control that kept the narrow carve-out would be measuring two changes.
+func sbInstanceStateProfile(t *testing.T, a *App, ag *AgentFile, cwd, gates, name, extra string) string {
+	t.Helper()
+	w := a.SeatbeltWritable(ag, cwd, gates)
+	if writeGranted(w, extra) {
+		t.Fatalf("%s is already in the shipped grant, so this control changes nothing:\n  %v", extra, w)
 	}
+	w = append(append([]string{}, w...), extra)
+	return sbRenderProfile(t, name, SeatbeltProfile(ag.Name, w, nil, a.SeatbeltCarveOut(ag, cwd, gates, w)))
 }

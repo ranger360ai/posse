@@ -247,6 +247,17 @@ func wallVenueArgv(argv []string, run string, tmp bool, grants []string) ([]stri
 // find one spelling of it.
 const wallVenueProcMount = "/proc"
 
+// wallMechOf is this host's wall mechanism as the check reads it, with the
+// test seam `wallMechFn` in front of it — graceOf's shape and for its reason,
+// which landedcheck.go states at the field: the alternative is a package var
+// every launch path reads, and D5's table is parallel.
+func (c *landedChecker) wallMechOf() string {
+	if c.wallMechFn == nil {
+		return WallMechanism()
+	}
+	return c.wallMechFn()
+}
+
 // wall is ADR 0097 D2: the step after a judgement.
 //
 // IT IS CALLED ON EVERY JUDGED RUN, with the judge's verdict, and the first
@@ -268,7 +279,7 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 	if !landedCheckShipped(r, repo, tree) {
 		return
 	}
-	if m := WallMechanism(); m != WallBwrap {
+	if m := c.wallMechOf(); m != WallBwrap {
 		c.say("· %s: wall check not run — this host realizes cage %s with %s, and ADR 0097 D1's venue is a bwrap (ADR 0096: no darwin change), so the step does not exist here", AbbrevHome(repo), CageSeatbelt, m)
 		return
 	}
