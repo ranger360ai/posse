@@ -19,6 +19,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-a59w7](ranger-base-a59w7.md) — ranger-base-a59w7 — the carve-out's denies and masks get their loose parents bound in place — 2026-11-21
 - [ranger-base-7or9p](ranger-base-7or9p.md) — The judge's wall comes from the launcher, so a verdict can move with no landing (ranger-base-7or9p) — 2026-11-21
 - [ranger-base-78k0w](ranger-base-78k0w.md) — The third delegated `posse upgrade` lands 12 of 33 commits: the D4 trip is the crossing, not the range (ranger-base-78k0w) — 2026-11-21
+- [ranger-base-4og5l](ranger-base-4og5l.md) — The vuln-private judge's units stop at a file boundary and read a Go comment's markdown (ranger-base-4og5l) — 2026-11-21
 - [ranger-base-4gyib](ranger-base-4gyib.md) — ranger-base-4gyib — the seat store pin's wide-grant shape is unrenderable under ADR 0100, and the venue is the only place that says so — 2026-11-21
 - [ranger-base-49rxe](ranger-base-49rxe.md) — ranger-base-49rxe — the seat store pin's wide-grant arm asserted a refusal the render had just stopped making — 2026-11-21
 - [ranger-base-18brx](ranger-base-18brx.md) — `posse upgrade` stages where the deny was rendered, not where its own TMPDIR points (ranger-base-18brx) — 2026-11-21

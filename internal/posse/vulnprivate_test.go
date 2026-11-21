@@ -909,13 +909,27 @@ func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T)
 		}
 		qblGit(t, repo, "add", "--", p)
 	}
-	cmd := exec.Command("sh", "-c", `git diff --cached -U0 `+diffReaderShape+` HEAD -- `+vulnPrivateContentPathspec+` | grep -a '^+' | grep -av '^+++'`)
+	cmd := exec.Command("sh", "-c", `git diff --cached -U0 `+diffReaderShape+` HEAD -- `+vulnPrivateContentPathspec+` | grep -a '^+'`)
 	cmd.Dir = filepath.Join(repo, "internal")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("diff: %v\n%s", err, out)
 	}
 	got := string(out)
+	// And the FILE BOUNDARY comes through the same pipeline
+	// (ranger-base-4og5l): the `+++ b/<path>` header is the only thing left
+	// in a -U0 stream that says where one file's added lines end, and this
+	// arm's judge groups a line with the lines that CONTINUE it. The second
+	// grep that used to drop it is gone from this arm and must not come
+	// back; vulnPrivateUndiff blanks the header, path and all.
+	if strings.Contains(arm, `grep -av '^+++'`) {
+		t.Errorf("check 4's content arm drops the '+++' file boundaries again — a bare id last in its file is continued by the next file's added line:\n%s", arm)
+	}
+	for _, want := range []string{"+++ b/internal/x.go", "+++ b/docs/x.md"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("check 4's reader lost the %q file boundary:\n%s", want, got)
+		}
+	}
 	for _, want := range []string{"+// GO-LINE", "+MD-LINE"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("check 4's staged set is missing %q:\n%s", want, got)
@@ -923,5 +937,182 @@ func TestVulnPrivateContentArmReadsEveryStagedFileButTheBeadsJsonl(t *testing.T)
 	}
 	if strings.Contains(got, "JSONL-LINE") {
 		t.Errorf("check 4's staged set reads the beads jsonl, which is the bead's own record and bd stages into every commit:\n%s", got)
+	}
+}
+
+// TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary is
+// ranger-base-4og5l's first arm. The content arm's text was one stream of
+// every staged file's added lines with no file boundary left in it, so the
+// unit grouping ran ACROSS files: a list item opened in an early file (by
+// path order) kept its unit open over every later file's added lines until a
+// blank added line turned up. The shape AGENTS.md's own ruling prescribes is
+// a "Not closed here" section of bare ids, and such a section is usually the
+// last thing in its file — so the last bare id in it was continued by
+// whatever the NEXT file added, and the remedy the refusal printed had
+// already been performed (ADR 0068's class). MEASURED 2026-11-21 through the
+// shipped subcommand before the fix: `- <open id>` then a later file's
+// `\t// …` line, rc 1.
+//
+// The boundary is the diff's own `+++ b/<path>` header, which the arm's
+// pipeline used to discard with a second grep and now lets through for
+// vulnPrivateUndiff to blank.
+func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		text string
+		want bool
+	}{{
+		// The bead's own stdin (i), with the header restored.
+		name: "a bare id last in its file, continued by the next file",
+		text: "+- ranger-base-l751c\n+++ b/internal/posse/x.go\n+\tcarveOut.heapOverflowInTheParser = true\n",
+	}, {
+		name: "a whole second file under the id's section",
+		text: "+## Not closed here\n+- ranger-base-l751c\n+++ b/docs/x.md\n+the heap overflow in the parser\n",
+	}, {
+		// The header's PATH goes with it. Blanked and not merely
+		// `+`-stripped, so a path that happens to carry the id and a word
+		// is not a unit of its own — which `+++ b/<id>-notes.md` would be.
+		name: "the header's own path is discarded with it",
+		text: "+++ b/docs/notes.d/ranger-base-l751c.md\n+- ranger-base-l751c\n",
+	}, {
+		// The controls: a boundary must not blank the judge.
+		name: "a description in the SAME file still reds",
+		text: "+++ b/docs/x.md\n+- ranger-base-l751c\n+  the heap overflow in the parser\n",
+		want: true,
+	}, {
+		name: "a description on the id's own line still reds",
+		text: "+++ b/docs/x.md\n+- ranger-base-l751c the heap overflow\n+++ b/docs/y.md\n+ordinary prose\n",
+		want: true,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+			var out strings.Builder
+			got := RunGatesVulnPrivateScan(qaFakeBd(t), dir, VulnPrivateContentArm, strings.NewReader(tc.text), &out)
+			if got != tc.want {
+				t.Errorf("scan(%q) = %v (%q), want %v", tc.text, got, out.String(), tc.want)
+			}
+		})
+	}
+}
+
+// TestRunGatesVulnPrivateScanPaysNoBdQueryForFileBoundariesAlone: keeping the
+// `+++` headers makes $posse_added non-empty for a commit that stages only
+// DELETIONS — every line of it a header — where the shell's own
+// `[ -n "$posse_added" ]` used to skip the arm outright. The judge answers
+// that text before it queries bd, so such a commit pays no subprocess at
+// all: the same "found nothing costs nothing" property the arm had before
+// ranger-base-4og5l, asserted on the bd call log rather than on the verdict,
+// because a header-only text answers "no hit" either way.
+func TestRunGatesVulnPrivateScanPaysNoBdQueryForFileBoundariesAlone(t *testing.T) {
+	// Parallel-safe although it reads the fake bd's call log: fakeBinFor
+	// symlinks the fake into fakeDirOf(t), which is keyed on this test, and
+	// the fake resolves that log off its own argv[0] — so the log is this
+	// test's alone.
+	t.Parallel()
+	dir := t.TempDir()
+	writeFakeOpenIssues(t, dir, `[{"id":"ranger-base-l751c","status":"in_progress","labels":["vuln-private"]}]`)
+	bd := qaFakeBd(t)
+	log := filepath.Join(fakeDirOf(t), "bd-calls.log")
+	var out strings.Builder
+	if RunGatesVulnPrivateScan(bd, dir, VulnPrivateContentArm, strings.NewReader("+++ b/docs/x.md\n+++ b/internal/posse/y.go\n"), &out) {
+		t.Errorf("a text of nothing but file boundaries = %q, want no hit", out.String())
+	}
+	if b, err := os.ReadFile(log); err == nil && len(b) > 0 {
+		t.Errorf("a text of nothing but file boundaries queried bd:\n%s", b)
+	}
+	// The control, so the early answer cannot pass by never querying at all.
+	if !RunGatesVulnPrivateScan(bd, dir, VulnPrivateContentArm, strings.NewReader("+++ b/docs/x.md\n+- ranger-base-l751c the heap overflow\n"), &out) {
+		t.Fatalf("the control must still be judged: %q", out.String())
+	}
+	b, err := os.ReadFile(log)
+	if err != nil || !strings.Contains(string(b), "list") {
+		t.Errorf("an added line past the boundary must still reach bd's open-issue query: %q %v", b, err)
+	}
+}
+
+// TestVulnPrivateHitsReadsAGoCommentsOwnMarkdown is ranger-base-4og5l's
+// second arm. vulnPrivateListItem reads a bullet after leading whitespace,
+// and a comment-marker line starts with a slash — so no line of a Go comment
+// opened a block: it could not POP an earlier list item, and the tidy
+// spelling `//   - <id>` was a CONTINUATION rather than a list item of its
+// own. Since ranger-base-cq3vi widened this arm from markdown to every
+// staged path, that left a description under a bare id in a `.go` comment
+// passing SILENT — the one escape the unit grouping exists to close
+// (ranger-base-68631 finding 1) — and made the only reliable way to name an
+// open residual's id in Go source not naming it there.
+//
+// THE EDGE OF THE BLOCK IS A BOUNDARY, which is the half that cost
+// (MEASURED 2026-11-21, census over the tracked tree): without it the
+// compliant `// Not closed here:\n// - <id>` ends a comment on a list item
+// and the `func` line below it reads as that bullet's lazy continuation, so
+// the reading that fixes a false positive buys one — at 10 sites, this
+// file's neighbour bwraphide_qa_test.go among them. A `//` block is a
+// document of its own and the code around it is no part of it.
+func TestVulnPrivateHitsReadsAGoCommentsOwnMarkdown(t *testing.T) {
+	t.Parallel()
+	ids := []string{"ranger-base-l751c"}
+	for _, tc := range []struct {
+		name string
+		text string
+		want bool
+	}{{
+		name: "a description continuing a bulleted id in a comment",
+		text: "//   - ranger-base-l751c\n//     the heap overflow in the parser\n",
+		want: true,
+	}, {
+		name: "a bulleted id in a comment, written above a description",
+		text: "// the heap overflow in the parser:\n//\n//   - ranger-base-l751c\n//     in the parser\n",
+		want: true,
+	}, {
+		name: "the compliant section, at the end of a comment block",
+		text: "// Not closed here:\n// - ranger-base-l751c\nfunc TestLiveBwrapHideIsNotWalkedAround(t *testing.T) {\n",
+	}, {
+		name: "the compliant section, numbered",
+		text: "//\n// Not closed here:\n//  1. ranger-base-l751c\n//  2. ranger-base-fixt3\nvar heapOverflowInTheParser = true\n",
+	}, {
+		// The shape this tree already writes, inside a struct body: the
+		// labelled residual (vulnPrivateLabels) on its own comment line,
+		// with field names above and below it and no blank line anywhere —
+		// red before this reading, because the struct's own opening line
+		// took every tab-indented line under it (MEASURED 2026-11-21: three
+		// LIVE open vuln-private ids were in exactly this shape, their
+		// sites on the bead rather than here — a still-open residual is
+		// named by its id and nothing else).
+		name: "a labelled residual inside a struct body",
+		text: "type carveOut struct {\n\tDeny []string\n\t// an empty tmpfs over it would hide all of that to cover one file.\n\t// Residual: ranger-base-l751c.\n\tReadMaskDir []string\n}\n",
+	}, {
+		name: "a bare id on its own comment line",
+		text: "// wire the reaper\n// ranger-base-l751c\n",
+	}, {
+		// THE GUTTER SPACE, and the one shape whose verdict turns on it:
+		// vulnPrivateUncomment strips the marker and ONE space — the
+		// reading go/doc/comment itself gives a doc comment, where `// `
+		// is the gutter and `//\t` opens a code block. So a tab-indented
+		// comment line sits DEEPER than the prose above it and is charged
+		// to it, which is ranger-base-68631 finding 1's escape read
+		// upwards ("the text above an indented bare id is the same escape
+		// upside down") finally reaching Go comments. Strip the space and
+		// nothing else, and prose and tab land in the same column, each
+		// its own unit, and the escape is open again.
+		name: "a bare id tab-indented under a comment's prose",
+		text: "// the heap overflow in the parser\n//\tranger-base-l751c\n",
+		want: true,
+	}, {
+		// The control for the whole reading: a marker counts at the head of
+		// the line and nowhere else, so a quoted one is not a comment.
+		name: "a marker inside a string is not a comment",
+		text: "\tfmt.Fprintln(out, \"//   - ranger-base-l751c the heap overflow\")\n",
+		want: true,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := vulnPrivateHits(tc.text, append(ids, "ranger-base-fixt3"))
+			if (got != nil) != tc.want {
+				t.Errorf("vulnPrivateHits(%q) = %v, want hit=%v", tc.text, got, tc.want)
+			}
+		})
 	}
 }

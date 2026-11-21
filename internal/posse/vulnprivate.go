@@ -253,12 +253,135 @@ const (
 // plain bullet everywhere else: the content arm still reads `++ <id>` as a
 // bulleted id (one `+` survives the strip), and the message arm reads
 // `+ <id>` as one.
+//
+// AND A `+++` HEADER IS A FILE BOUNDARY, NOT A DROPPED LINE
+// (ranger-base-4og5l). The content arm's text used to be
+// `… | grep -a '^+' | grep -av '^+++'` — one stream of every staged file's
+// added lines with no file boundary left in it — so the unit grouping ran
+// ACROSS files: a markdown list item opened in an early file (by path order)
+// kept its unit open over every later file's added lines until a blank added
+// line appeared. The shape AGENTS.md's own ruling prescribes is a "Not closed
+// here" section of bare ids, and such a section is usually the last thing in
+// its file, so the last bare id's unit was continued by whatever the next
+// file added. MEASURED 2026-11-21 through the shipped subcommand, two stdins
+// of added lines:
+//
+//	(i)  `- <open id>` then `\t// a later file's added line`   HIT, rc 1
+//	(ii) `## Not closed here`, a blank line, `- <open id>`     clean, rc 0
+//
+// The remedy the refusal prints — "write the bare id alone" — had already
+// been performed, which is ADR 0068's class, so the `+++` line the second
+// grep discarded comes through to here instead and lands as a BLANK line:
+// the one token this grouping already reads as "close every open unit".
+// The header's path is discarded with it — this judge prints no text and has
+// no business carrying one — and the discount stays what it was, ONE reader
+// of the diff format at the arm boundary with nothing below it knowing what
+// a diff is.
+//
+// Which lines are blanked is byte-identical to which lines the second grep
+// dropped: `^+++`, and not the `+++ b/` the pinned diffReaderShape actually
+// renders. So the one collision — an added line whose own text begins `++`,
+// which arrives here as `+++` — is read exactly as it was read before, and
+// is no part of this fix.
+//
+// SKEW GOES THE SAFE WAY ROUND, the same question VulnPrivateArm answers for
+// `--message`: an installed hook OLDER than the posse on PATH still greps the
+// headers away, so the blanking below is inert and that window behaves
+// exactly as this tree behaved before — the bug stays open until the hook is
+// re-rendered and nothing that worked stops working. The other order (a hook
+// newer than the binary) can only be reached by downgrading posse after an
+// install, since the only two things that render a hook — `posse gates
+// install-hooks` and a session create, hookfresh.go — render it from the
+// binary that is running.
+//
+// AND THE BOUNDARY IS EXACT, MEASURED 2026-11-21 over the whole tracked tree
+// (2,115 files, 688,033 added lines, every bd id in them read as an open
+// vuln-private id): with the headers, judging the tree as ONE staged diff
+// flags the same (file, id) pairs as judging each file on its own — 0 pairs
+// of difference either way. Without them the same corpus mis-attributes 3
+// pairs across a file boundary, which is this bug caught in the live tree
+// and not only on a fixture. docs/notes.d/ranger-base-4og5l.md has the
+// method.
 func vulnPrivateUndiff(text string) string {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
+		if strings.HasPrefix(line, "+++") {
+			lines[i] = ""
+			continue
+		}
 		lines[i] = strings.TrimPrefix(line, "+")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// vulnPrivateUncomment cuts a leading `//` comment marker and ONE following
+// space, so the markdown the readers below judge is the markdown a Go
+// comment's writer sees.
+//
+// THE MARKER AND ONE SPACE is go/doc/comment's own reading of a doc comment
+// — `// ` is the gutter and `//\t` opens a code block — and it is load-
+// bearing twice over. Cut LESS (the marker alone) and a tab-indented comment
+// line lands in the same column as the prose above it, each its own unit, so
+// a bare id written under a sentence in a comment is not charged to it:
+// ranger-base-68631 finding 1's escape read upwards, "the text above an
+// indented bare id is the same escape upside down", open again in `.go`.
+// Cut MORE (every leading space) and a bulleted comment's own continuation
+// lines land in the bullet's column and stop continuing it. Replacing the
+// marker with SPACES rather than cutting it is a third answer and a worse
+// one: comment content then sits two columns DEEPER than the code around it,
+// so a struct's or a func's line absorbs the whole comment block below it
+// (MEASURED 2026-11-21, census over the tracked tree: that variant red 16
+// sites where this one reds 9).
+//
+// WHY ONLY `//` (ranger-base-4og5l). A comment-marker line used to open no
+// block at all: vulnPrivateListItem reads a bullet after leading whitespace
+// and a `/` is not one, so no line of a Go comment could POP an earlier list
+// item, and the tidy spelling `//   - <id>` read as a CONTINUATION of
+// whatever was above rather than as a list item of its own. MEASURED
+// 2026-11-21 through the shipped subcommand, three added lines in one stdin:
+//
+//	`- an earlier bullet`, `// a go comment line`, `//   - <open id>`   HIT, rc 1
+//
+// So the only reliable way to name an open residual's id in Go source was to
+// not name it there — ranger-base-dw2du's commit did exactly that, forced by
+// the tool rather than chosen. `//` is the whole of what needs cutting
+// because it is the only comment marker in this tree's languages that this
+// reader does not already see through: `#` opens a heading, `*` and `-` are
+// bullet markers (`* <id>` is already a list item), and a `/*` block comment
+// appears in no tracked `.go` file of this tree (MEASURED 2026-11-21:
+// `git grep -n '^\s*/\*'` over the tracked tree finds none). A marker only
+// counts at the head of the line, so `fmt.Println("// - <id>")` is unchanged.
+//
+// WHAT IT COSTS, MEASURED 2026-11-21 over the whole tracked tree (2,115
+// files, every bd id in them read as an open vuln-private id, each file as
+// if wholly added): 30 (file, id) pairs stop being flagged and 9 start.
+// The 30 are the comment reading's own point — THREE of them live open
+// vuln-private ids, each a `// Residual: <id>.` line inside a struct body
+// whose opening line used to take every tab-indented line under it, so the
+// refusal was over a remedy the writer had performed. (Their sites stay on
+// the bead: AGENTS.md's ruling says a still-open residual is named by id and
+// nothing else, and a census row is a path.) The 9 are all one shape: an id
+// on its own line inside a tab-aligned table in a doc comment, under the
+// text of the row above it, which is the indented-bare-id rule above doing
+// in `.go` what it has always done in markdown — eight of them one file's
+// door tables
+// (internal/treepins/treewidedoor_qa_test.go), none of them a currently open
+// vuln-private id, and all of them remediable with a blank comment line.
+// docs/notes.d/ranger-base-4og5l.md has the method and the full lists.
+func vulnPrivateUncomment(line string) string {
+	ind := vulnPrivateIndent(line)
+	rest := line[ind:]
+	if !strings.HasPrefix(rest, "//") {
+		return line
+	}
+	n := 2
+	for n < len(rest) && rest[n] == '/' {
+		n++
+	}
+	if n < len(rest) && rest[n] == ' ' {
+		n++ // the gutter space, and never a TAB — see above
+	}
+	return line[:ind] + rest[n:]
 }
 
 // vulnPrivateIndent is the column a line's content starts at.
@@ -387,14 +510,43 @@ func vulnPrivateOpensUnit(line string) bool {
 // only, so a continuation already in the file is not in $posse_added at all
 // — the same bound checks 0-3 share, and not this grouping's to fix.
 func vulnPrivateUnits(lines []string) []int {
+	// Every rule below asks a markdown question about a line, so a comment
+	// marker is cut once, here, and nothing downstream knows what a
+	// comment is (vulnPrivateUncomment, ranger-base-4og5l). It is the
+	// grouping's own reading and not the unit's TEXT: vulnPrivateBare asks
+	// about letters, and a `/` is not one, so the bareness test never cared.
+	uncommented := make([]string, len(lines))
+	commented := make([]bool, len(lines))
+	for i, line := range lines {
+		uncommented[i] = vulnPrivateUncomment(line)
+		commented[i] = uncommented[i] != line
+	}
+	lines = uncommented
 	unitOf := make([]int, len(lines))
 	var openers []int // stack of opener line indices, by ascending indent
+	prev := -1        // the last line that was neither blank nor closed out
 	for i, line := range lines {
 		unitOf[i] = i
 		if strings.TrimSpace(line) == "" {
 			openers = openers[:0] // a blank line closes every open unit
+			prev = -1
 			continue
 		}
+		// AND SO DOES A COMMENT BLOCK'S EDGE (ranger-base-4og5l). A `//`
+		// block is a document of its own and the code around it is no part
+		// of it, so the transition either way closes every open unit —
+		// exactly as the file boundary does one level up (vulnPrivateUndiff).
+		// Without it the comment reading above buys a NEW false positive in
+		// place of the one it fixes: the compliant shape
+		// `// Not closed here:\n// - <open id>` ends a comment block on a
+		// list item, so the `func` line below it read as that bullet's lazy
+		// continuation and red the one spelling AGENTS.md prescribes
+		// (MEASURED 2026-11-21: bwraphide_qa_test.go's own section, one of
+		// 10 sites the comment reading red before this line went in).
+		if prev >= 0 && commented[i] != commented[prev] {
+			openers = openers[:0]
+		}
+		prev = i
 		ind := vulnPrivateIndent(line)
 		opens := vulnPrivateOpensUnit(line)
 		for len(openers) > 0 {
@@ -640,6 +792,23 @@ func RunGatesVulnPrivateScan(bd Bd, dir string, arm VulnPrivateArm, stdin io.Rea
 	if err != nil || len(content) == 0 {
 		return false
 	}
+	text := string(content)
+	if arm == VulnPrivateContentArm {
+		text = vulnPrivateUndiff(text)
+	}
+	// NOTHING BUT FILE BOUNDARIES IS NOTHING TO JUDGE, and that is what keeps
+	// this arm's cost where it was (ranger-base-4og5l). Since the `+++`
+	// headers come through instead of being grepped away, a commit that
+	// stages only DELETIONS has a non-empty $posse_added — every one of its
+	// lines a header — where before it had none and the shell's own
+	// `[ -n "$posse_added" ]` skipped the arm. Asked here rather than in the
+	// shell for the same reason every other fact about the text is: the
+	// boundary is this file's own notion, and a second emptiness test in sh
+	// would be a copy of it to keep in sync. Before the bd query, so such a
+	// commit pays no subprocess at all.
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
 	if !bd.Available() {
 		return false
 	}
@@ -655,10 +824,6 @@ func RunGatesVulnPrivateScan(bd Bd, dir string, arm VulnPrivateArm, stdin io.Rea
 	}
 	if len(ids) == 0 {
 		return false
-	}
-	text := string(content)
-	if arm == VulnPrivateContentArm {
-		text = vulnPrivateUndiff(text)
 	}
 	// EVERY open id goes INTO the scan, and the exemption comes off what
 	// comes OUT (ranger-base-n2veh, escaped from ranger-base-ed07e).
