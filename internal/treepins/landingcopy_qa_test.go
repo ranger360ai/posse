@@ -313,6 +313,10 @@ var landingDropRegister = []landingDrop{
 		why:   "`make fmt-check` is a target in this repo's Makefile and the five pins the bullet censuses are tests in this repo's internal/posse — a fresh work repo has no Makefile to hang the door off and none of the tests to name (ranger-base-rulbl)",
 	},
 	{
+		match: "A live probe against Rex",
+		why:   "`scripts/scratch-rex.sh` lives only in this repo, and so does the posse source the bullet's measurements are about (`NewRexMux`'s empty `Server`) — a fresh work repo has no harness to be sent to and no fleet of posse seats on a shared Rex server to protect, which is the whole of what the bullet is for (ranger-base-uq81v)",
+	},
+	{
 		match: "bead before you file your own",
 		why:   "the landed check is opt-in per repo by shipping `scripts/posse-landed-check` (ADR 0088 D1, residual (3)), so a fresh work repo's landings are judged by nothing and no `main red at` bead is ever filed for it — and the bullet's subject is a red `make test`, which a fresh work repo has no more than it has the suite queue two rows up (ranger-base-ddgfr)",
 	},

@@ -326,6 +326,28 @@ stall that day, and every one of them a typing habit.
   its pattern — the session-unique spellings above included, `-P $$` among
   them. Keep the pid the launcher printed and `kill` that, or `kill -- -$$`
   for your own process group; `kill`, `kill -0` and `pgrep` still run.
+- **A live probe against Rex: `scripts/scratch-rex.sh -- <your probe>`, never
+  a scratch server you address by environment** (ranger-base-uq81v). `rex
+  kill` over `rex ls` is "Ending anything" one layer up, and on 2026-11-15 it
+  ended EIGHT live seats across five personas in three seconds — including the
+  seat that typed it, which is what stopped the loop. The script that did it
+  started a scratch server, exported `XDG_RUNTIME_DIR` to its directory, and
+  believed it was alone. It was not: MEASURED 2026-11-20, rex reads
+  `XDG_RUNTIME_DIR` for its endpoint NOT AT ALL (it takes `REX_RUNTIME_DIR`
+  else a `/run/user/<uid>` path it builds from `getuid()`), and `REX_SERVER`
+  is a variable rex EXPORTS into a pane rather than one the CLI reads — a
+  bogus value there, a bogus host label included, changes nothing and raises
+  nothing. **posse is worse: it has no endpoint door at all**, so `posse new`
+  from such a script reaches the fleet server whatever you set. A scratch rex
+  is reached by `-S` and by nothing else, and posse only through
+  `RHQ_REX_BIN`. The harness does both for you — it aborts, exit 70, unless
+  `whoami` answers byte-equal with the socket it just started and holds no
+  sessions, puts a shim in `PATH` and `RHQ_REX_BIN` that pins `-S` onto every
+  call and refuses one of your own, and refuses a `kill` of any session id the
+  run did not create, so the cleanup loop above kills what you made and
+  nothing else. `--self-test` is the hermetic half.
+  docs/notes.d/ranger-base-uq81v.md has the measurements, the live readings
+  and the three mutants that found real holes in the pins.
 - **A red `make test` on a fresh `main`: look for the open "main red at"
   bead before you file your own** (ADR 0088 D5, ranger-base-ddgfr) — the
   launcher judges main's tree after every landing and files ONE P1 per

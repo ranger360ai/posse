@@ -269,6 +269,10 @@ var mtExempt = []struct{ Script, Template, Reason string }{
 		"darwin-only, and the PATH is the exemption now rather than the whole template (ranger-base-qbg7c renamed the prefix into posse's namespace). /private/tmp is what darwin's /tmp resolves to, so the reaper's default root already looks there and `posse-*` reaches this root; what it cannot have is ${TMPDIR:-/tmp}, because darwin's TMPDIR is a per-user /var/folders/… path and a unix socket under it would blow the 104-byte sun_path cap this line exists to stay inside.",
 	},
 	{
+		"scripts/scratch-rex.sh", "$RUNROOT/posse-scratch-rex.XXXXXX",
+		"length-bound like the two rows below it and on EVERY host rather than on darwin, which is why the path is a variable and not a literal: $RUNROOT is ${XDG_RUNTIME_DIR:-/run/user/$(id -u)}, and the root holds the unix socket a scratch Rex server listens on. A dispatched seat's TMPDIR is its session scratchpad — ~130 characters before the socket's own name — so ${TMPDIR:-/tmp} would blow linux's 108-byte sun_path cap for exactly the seats this harness is written for, while /tmp alone would ignore the TMPDIR a caged seat is given. The prefix is inside posse's namespace, so `reap-test-tmp.sh --root <that dir>` reaches a root a SIGKILLed run left behind; the script's EXIT trap collects it in the ordinary case, and the dir is a tmpfs the login session clears. ranger-base-uq81v wrote the harness after a probe that resolved its endpoint from the environment instead destroyed eight live fleet seats.",
+	},
+	{
 		"scripts/verify-self-close.sh", "/private/tmp/posse-selfclose.XXXXXX",
 		"darwin-only and length-bound the same way, with the same half-fix: the prefix is inside posse's namespace (ranger-base-qbg7c) and the hardcoded /private/tmp is what stays. It is ALSO pinned by name in internal/posse/selfclose_qa_test.go, so the rename was a two-file change across the arm boundary — which is why ranger-base-tbukc left it alone and why this row is the place that says the path is deliberate.",
 	},

@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-uq81v](ranger-base-uq81v.md) — A scratch Rex server is reached by `-S` and by nothing else (ranger-base-uq81v) — 2026-11-20
 - [ranger-base-5blmt](ranger-base-5blmt.md) — A darwin seat's objects live in its own store too (ranger-base-5blmt) — 2026-11-20
 - [ranger-base-ze7xz](ranger-base-ze7xz.md) — Three pin gaps from the ranger-base-bfbx8 verify, and one seam that had to move for the third — 2026-11-15
 - [ranger-base-ybrk6](ranger-base-ybrk6.md) — A runtime that dies before it reports reads as "that seat ENDED" (ranger-base-ybrk6) — 2026-11-15

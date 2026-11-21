@@ -4339,6 +4339,14 @@ var twdExecDispositions = map[string]string{
 	"scripts/gotest.sh":              "`find`s only $CACHE and its own scratch tree, never a tracked path",
 	"scripts/macos-install-probe.sh": "probes a scratch install root under $D; the only tracked file it reads is the formula it is handed",
 	"scripts/path-warning.sh":        "reads the PATH string it is given",
+	// ranger-base-uq81v. In --self-test, one of the two modes the pins here
+	// run, it opens nothing at all: the table is in the script and the only
+	// child is its own `mktemp`. In the LIVE mode they run it under a fake rex
+	// of their own, it starts that binary, makes a scratch root under
+	// $XDG_RUNTIME_DIR and runs the one command it was handed after `--`.
+	// Every path it touches is a path it was given or made; a bead that adds a
+	// file anywhere in the tree cannot change what it reads.
+	"scripts/scratch-rex.sh": "starts the rex binary it is handed on a socket it makes under the runtime dir, then runs the body command named after `--`; in --self-test it reads nothing at all, and in neither mode does it enumerate a tracked path",
 	// ranger-base-zpx1k. The mode the pins here run is `--self-test`, which
 	// drives the body's own verdict parser over planted `go test -json`
 	// streams held in the script: it opens no file, makes no temp file and
