@@ -258,3 +258,82 @@ description renderer both rules use.
 **Beads.**
 
 - ranger-base-7or9p
+
+## Amendment: D3 has a fourth no-answer row — the floor on n (ranger-base-c75wa, 2026-11-22)
+
+D3's green row ends `wall check: green, <n> pins measured`, and until this
+amendment that sentence was the only reader of n. The count was printed and
+compared to nothing, so a member that stopped printing D4's marker stopped
+existing as far as the body was concerned: the run stayed green with a smaller
+n and nothing in the tree could say so. That is D5's own `/var/tmp` row one
+mechanism over. There a pin printed the marker and THEN skipped, which D3's
+abstention arm counts; here it never printed the marker at all, which nothing
+counted — so pins going dark one at a time read as green.
+
+**The row.** A run in which more of the tests the filter selected printed no
+marker than do so ON PURPOSE is exit 3, and the tail names every one of them
+with its verdict. It is a no-answer and not a red for the reason the baseline
+and the cwd guard are: the body cannot tell a pin whose gate was deleted from
+a pin that skipped before the gate for a reason the venue owns, so D5's
+watchdog is the right reader and a false red here would file a P1 against
+whoever landed last.
+
+**The floor is derived from the run, not typed.** A typed n goes stale on
+every landing that adds or retires a pin, and a stale floor in a shipped
+script is a red on a tree nobody changed. So the body subtracts instead:
+
+    n >= <tests the filter selected> - nonmember_ceiling
+
+The one number typed is `nonmember_ceiling=3`, the size of the deliberate set
+— and that number does not move when a member is added or retired, because
+both sides of the subtraction move with it. Its staleness is one shape and
+only one: a NEW deliberate non-member reds a tree that is fine, once, printing
+every dark name, and the fix is to raise the ceiling in the commit that adds
+the non-member. A deliberate non-member RETIRED leaves the ceiling slack by
+one, which loses a pin's worth of floor rather than reddening anything, so it
+is lowered in the commit that retires one.
+`TestQATheWallCheckNonMemberCeilingIsTheRecords` holds the body's number and
+this paragraph together, which is the route D4's three literals get from
+`TestQAWallVenueContractLiteralsAreADR0097s` and which this number cannot get
+from there: it has no other side in internal/posse.
+
+**The three, named here because the body may not name them.** Membership is
+read off the marker and never off a name (D3/D4), so `scripts/posse-wall-check`
+carries no test names at all and the record carries the roster instead:
+
+- `TestLiveWallWitnessProbeDoesNotWriteTheLiveWall` and
+  `TestLiveWallWitnessHoldsUnderTheRenderedWall` — they ask the availability
+  probe through shipped code and render a wall rather than exec one;
+- `TestLiveWallUnixStepReArmsAClearedDieWithParent` — its launcher is a plain
+  `sh -c` and its subject is a pdeathsig (ranger-base-mklu0 put it outside the
+  set and said why).
+
+None of the three execs a bwrap, so none reaches D4's gate and none can print
+the marker. A fourth test in that position is a ceiling bump; a test that
+execs a bwrap and prints no marker is a bug, and reading THAT off the source is
+ranger-base-dudu4's half of this class, beside the censuses
+`internal/treepins/wallmemberaccount_qa_test.go` already runs over the same
+file set.
+
+**MEASURED 2026-11-22**, D1's venue on bd7891ac (linux 7.2.15-1-omarchy, bwrap
+0.13.1, go1.27.3, 16 cores, cold GOCACHE, `--unshare-user --unshare-pid --proc
+/proc`, private /tmp and /var/tmp, `POSSE_WALL_VENUE=1`): 118s, `go test`
+exit 0, **57 tests selected, 54 members, 3 dark**, all 57 passing. The three
+dark are the three above. 57/54 is the same pair ranger-base-dudu4's source
+census reads from the other side, which is the one cross-check this number
+has.
+
+**What was weighed and not taken.** Deriving the member count inside the venue
+means a step that compiles against internal/posse, which D4's three literals
+exist to avoid — and what it would derive is the SOURCE count, which
+internal/treepins already reads and which cannot see a pin that reaches the
+gate in source and skips before it at runtime. Ratcheting on the last green
+run's n needs a record this rule does not have (`posse.wallCheckQuiet`'s <n>
+is D5's consecutive-silence counter), so a new key, a runner that reads and
+writes it, and a further D5 amendment — to buy drift detection one landing
+later than this subtraction gives it on the first run of a fresh clone.
+
+**Beads.**
+
+- ranger-base-c75wa
+- ranger-base-dudu4 (the source half of the same class; this is its judgement 3)

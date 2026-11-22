@@ -335,8 +335,9 @@ func embeddedProgramQuote(line string) rune {
 
 // afterEmbeddedProgram returns what is left of a line after the quote that
 // closes an embedded program, and whether that quote was on it. The
-// remainder is shell again — `' "$2" "$member_marker" "$member_pattern"` is
-// the live one — so it is handed back to be read rather than dropped.
+// remainder is shell again — `' "$2" "$member_marker" "$member_pattern"
+// "$nonmember_ceiling"` is the live one — so it is handed back to be read
+// rather than dropped.
 func afterEmbeddedProgram(line string, q rune) (string, bool) {
 	if i := strings.IndexRune(line, q); i >= 0 {
 		return line[i+len(string(q)):], true

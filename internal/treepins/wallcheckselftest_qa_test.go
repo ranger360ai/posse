@@ -23,7 +23,7 @@ package treepins
 // streams did. Same class as ranger-base-ietka — a closed-set pin whose
 // failure message crashed on the one direction it existed for.
 //
-// FIVE ARMS. The first three are gotestreuse_qa_test.go's three, for the same
+// SIX ARMS. The first three are gotestreuse_qa_test.go's three, for the same
 // reasons — the door can be lost three ways:
 //
 //  1. the arms survive and nothing runs them. `make verify-wall-check` does,
@@ -47,6 +47,11 @@ package treepins
 // the floor and the self-test itself all to stay GREEN over it while arm 2's
 // exit check reds. Without that arm the bracket is a decoration that looks
 // like a contract, which is what arm 2 was until this bead.
+//
+// And arm 6, which is about the one number in that body the suite could not
+// otherwise read: `nonmember_ceiling`, the size of the deliberate non-member
+// set and therefore the whole of the floor on n (ranger-base-c75wa). It has
+// no other side in internal/posse, so it is held to the ADR instead.
 //
 // And arm 4, which is not about the door at all: six more exits are decided
 // ABOVE the parser — the no-argument contract's 2, `--plan`'s 0, the cwd
@@ -80,6 +85,11 @@ import (
 // script carrying one specific contract.
 const wcsScript = "scripts/posse-wall-check"
 
+// And the record that contract is written in, for arm 6. If it moves, move
+// this with it — a pin over a document it cannot find is a pin that measures
+// nothing.
+const wcsADR = "docs/adr/0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md"
+
 // Every arm the self-test must still run, by the label it prints. The LABELS
 // and not the script's own message strings: an arm that quietly stopped
 // driving the parser would otherwise satisfy a scan of the file.
@@ -95,6 +105,7 @@ var wcsArms = []string{
 	"green: every member passed",
 	"green: a NON-member failed and every member passed",
 	"green: the mandated sentence is the LAST line",
+	"green: the deliberate non-members printed no marker and n is the members alone",
 	// Exit 1.
 	"red: a member FAILed",
 	"red: the tree did not build",
@@ -105,6 +116,13 @@ var wcsArms = []string{
 	"abstention: tests ran and none printed the marker",
 	"abstention: the filter selected no test at all",
 	"abstention: a member printed the marker and reported no verdict",
+	// And the floor on n (ranger-base-c75wa): a selected test that printed no
+	// marker was counted by nothing, so a pin going dark left the run green
+	// with a smaller n. The pair is both sides of one arithmetic — the
+	// deliberate non-members are tolerated to the ceiling and the first one
+	// past it is exit 3 — so a mutant that drops the floor has to lose a
+	// `green:` label as well as an `abstention:` one.
+	"abstention: a selected pin went dark, putting n under the derived floor",
 }
 
 // The three label families, and the exit each one claims. A label is prose
@@ -310,8 +328,8 @@ func TestQATheWallCheckSelfTestStillReadsTheThreeExits(t *testing.T) {
 	}
 
 	// A floor as well as the list, so an arm cannot be dropped at the same
-	// time as its row here: ten is what this file names, and the count only
-	// ever goes up. Over the PARSED lines rather than a substring count, so
+	// time as its row here: twelve is what this file names, and the count
+	// only ever goes up. Over the PARSED lines rather than a substring count, so
 	// an arm whose `ok` line lost its exit field counts for nothing here
 	// instead of counting as proof.
 	if n := len(pairs); n < len(wcsArms) {
@@ -540,12 +558,14 @@ func TestQATheWallCheckSelfTestExitFieldIsLoadBearing(t *testing.T) {
 	}
 	mutant := string(src)
 
-	// Half one: the parser stops answering 3 at all. Two sites — zero or no
-	// members, and a member that abstained — and if either is gone the mutant
-	// is not the mutant this arm is named for, so say so rather than passing.
+	// Half one: the parser stops answering 3 at all. Three sites — zero or no
+	// members, a member that abstained, and (since ranger-base-c75wa) more
+	// selected tests dark than the ceiling allows — and if any is gone the
+	// mutant is not the mutant this arm is named for, so say so rather than
+	// passing.
 	const parserExit3 = "\n    sys.exit(3)"
-	if n := strings.Count(mutant, parserExit3); n != 2 {
-		t.Fatalf("%s has %d `sys.exit(3)` site(s) in its parser and this arm's mutant is written for 2 — "+
+	if n := strings.Count(mutant, parserExit3); n != 3 {
+		t.Fatalf("%s has %d `sys.exit(3)` site(s) in its parser and this arm's mutant is written for 3 — "+
 			"re-read the mutation below against the script before trusting it", wcsScript, n)
 	}
 	mutant = strings.ReplaceAll(mutant, parserExit3, "\n    sys.exit(0)")
@@ -555,8 +575,8 @@ func TestQATheWallCheckSelfTestExitFieldIsLoadBearing(t *testing.T) {
 	// shape and not by the four stream variables' names: `st_arm <label>
 	// <go test status> <want exit> <stream>`, and only the arms that want 3.
 	want3 := regexp.MustCompile(`(?m)^(\s*st_arm .* [0-9]+) 3 ("\$[a-z_]+")`)
-	if n := len(want3.FindAllString(mutant, -1)); n != 4 {
-		t.Fatalf("%s has %d st_arm call(s) asserting exit 3 and this arm's mutant is written for 4 — "+
+	if n := len(want3.FindAllString(mutant, -1)); n != 5 {
+		t.Fatalf("%s has %d st_arm call(s) asserting exit 3 and this arm's mutant is written for 5 — "+
 			"re-read the mutation below against the script before trusting it", wcsScript, n)
 	}
 	mutant = want3.ReplaceAllString(mutant, "${1} 0 ${2}")
@@ -623,5 +643,56 @@ func TestQATheWallCheckSelfTestExitFieldIsLoadBearing(t *testing.T) {
 	if want := "exits " + wcsRange(pairs) + ","; !strings.Contains(got, want) {
 		t.Errorf("the mutant's summary line does not say %q, so the range is a literal again rather than "+
 			"the exits the arms drove — the second half of ranger-base-h5iae's finding\n%s", want, got)
+	}
+}
+
+// Arm 6: the floor on n is a number, and the record says which number
+// (ranger-base-c75wa).
+//
+// WHY A PIN AND NOT A COMMENT. `nonmember_ceiling` is the one number in that
+// body with no other side in internal/posse — D4's three literals are a
+// handshake with wallvenue_test.go and are held to the ADR by
+// TestQAWallVenueContractLiteralsAreADR0097s, and this one is held to nothing
+// by that route because the code it would handshake with does not exist. What
+// it IS is the size of a set somebody has to maintain by hand: the selected
+// tests that print no marker on purpose, three on 2026-11-22 (MEASURED in the
+// venue: 57 selected, 54 members). Raised without the record it is a floor
+// quietly lowered — the script still says `green, <n> pins measured` and
+// nothing says n may now be two pins short of the tree.
+//
+// The direction that matters is RAISED, because that is the one that loses
+// coverage while every signal stays green. So: read the number out of the
+// body and require the record to state it, which reds whichever side moved
+// alone.
+func TestQATheWallCheckNonMemberCeilingIsTheRecords(t *testing.T) {
+	t.Parallel()
+	src, err := os.ReadFile(wcsScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^nonmember_ceiling=([0-9]+)$`).FindSubmatch(src)
+	if m == nil {
+		t.Fatalf("%s no longer carries a `nonmember_ceiling=<n>` line, so n has no floor again and a pin "+
+			"going dark reads as `wall check: green, <n> pins measured` with a smaller n (ranger-base-c75wa). "+
+			"If the floor was deliberately retired, say so in %s and delete this arm rather than leaving a "+
+			"green one.", wcsScript, wcsADR)
+	}
+	ceiling := string(m[1])
+
+	adr, err := os.ReadFile(wcsADR)
+	if err != nil {
+		t.Fatalf("read %s: %v — this arm holds the body's floor to that record and cannot do it from a tree "+
+			"that does not have it. If the record moved, move wcsADR with it.", wcsADR, err)
+	}
+	if want := "`nonmember_ceiling=" + ceiling + "`"; !strings.Contains(string(adr), want) {
+		t.Errorf("%s says %s and %s does not carry %s. The number is the size of the deliberate non-member "+
+			"set and it is what gives the member count a floor at all: raised on one side only, the floor "+
+			"drops by the difference and every reader of the run stays green. Fix whichever side is wrong "+
+			"— and if it is the body, the commit that raises it is the commit that adds the non-member.",
+			wcsScript, want, wcsADR, want)
+	}
+	// The premise. A pin over a document is satisfied by reading an empty one.
+	if len(adr) < 2000 {
+		t.Fatalf("%s is %d bytes — that is not the record this arm reads", wcsADR, len(adr))
 	}
 }

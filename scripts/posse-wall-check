@@ -38,8 +38,9 @@
 #
 #   0  green — every member passed. Last line: `wall check: green, <n> pins measured`
 #   1  red   — a member FAILed, or the tree did not build
-#   3  no answer — the baseline did not nest, no member ran, or a member
-#      abstained
+#   3  no answer — the baseline did not nest, no member ran, a member
+#      abstained, or more of the selected tests printed no marker than do so
+#      on purpose (the floor on n, below)
 #
 # The third exit is the whole point of this file over `go test; echo $?`. ADR
 # 0097 D5: **an abstention is never a pass**, and the venue has two ways to
@@ -78,6 +79,51 @@
 # tests inside D3's filter that are not members (they ask the availability
 # probe through shipped code and never nest), and would have counted all 18
 # dark pins as present.
+#
+# AND n HAS A FLOOR, DERIVED FROM THE RUN AND NEVER TYPED (ranger-base-c75wa,
+# ADR 0097's amendment for it). `wall check: green, <n> pins measured` used to
+# be the only reader of n: the number was printed and compared to nothing, so
+# a member that stopped printing the marker stopped existing as far as this
+# body was concerned and the run stayed green with a smaller n. That is D5's
+# `/var/tmp` row one mechanism over — there a pin printed the marker and THEN
+# skipped, which the abstention arm counts; here it never printed the marker
+# at all, which nothing counted. Pins going dark one at a time read as green.
+#
+# The floor is not a typed member count, which is what makes it worth having.
+# A typed n goes stale on every landing that adds or retires a pin, and a
+# stale floor in a shipped script is a red on a tree nobody changed. What the
+# run already knows is how many tests the filter SELECTED, and the only
+# selected tests that print no marker on purpose are the few that render a
+# wall or exec no bwrap at all — so the floor is
+#
+#     n >= <tests the filter selected> - $nonmember_ceiling
+#
+# and the single number typed is the size of that deliberate set, which does
+# not move when a member is added or retired. MEASURED 2026-11-22 in ADR 0097
+# D1's venue on bd7891ac (linux 7.2.15-1-omarchy, bwrap 0.13.1, go1.27.3, 16
+# cores, cold GOCACHE, 118s): 57 selected, 54 members, 3 dark, all 57 passing
+# — the same 57/54 ranger-base-dudu4 measured off the SOURCE, from the other
+# side.
+#
+# ITS STALENESS IS ONE SHAPE AND ONLY ONE: a NEW deliberate non-member reds a
+# tree that is fine, once, printing every dark name, and the fix is to raise
+# $nonmember_ceiling in the commit that adds it. A member added, a member
+# retired, or a pin renamed moves both sides of the subtraction together and
+# reds nothing. A deliberate non-member RETIRED leaves the ceiling slack by
+# one, which loses a pin's worth of floor rather than reddening anything — so
+# lower it in the commit that retires one.
+#
+# WHY NOT EITHER OF THE OTHER TWO FLOORS THE BEAD PRICED. Deriving the member
+# count inside the venue means compiling against internal/posse, which is the
+# handshake paragraph below's whole subject and D4's reason for the three
+# literals — and what it would derive is the SOURCE count, which the censuses
+# in internal/treepins already read off the tree and which cannot see a pin
+# that reaches the gate in source and skips before it at RUNTIME. Ratcheting
+# on the last green run's n needs a record this rule does not have
+# (`posse.wallCheckQuiet`'s <n> is D5's consecutive-silence counter, not a
+# member count), so: a new git-config key, a runner that reads and writes it,
+# and a D5 amendment — to buy drift detection one landing later than this
+# subtraction gives it on the first run of a fresh clone.
 #
 # THE BASELINE GOES FIRST, for the reason ADR 0086 D5 gives: without proof
 # that a bwrap STARTS from this process, a pin that expects a refusal passes
@@ -205,6 +251,19 @@ member_pattern='^Test(QA)?Live(Bwrap|Wall)'
 member_marker='wall venue: measuring (ADR 0097)'
 venue_env=POSSE_WALL_VENUE
 
+# AND THE ONE NUMBER, which is NOT a fourth literal of D4's contract and has
+# no other side in internal/posse: how many of the tests the filter selects
+# print no marker ON PURPOSE. It is the complement of the member count, and it
+# is the whole of what gives n a floor — see the header's "AND n HAS A FLOOR"
+# for why the floor is this and not a typed n. Three on 2026-11-22, MEASURED
+# in the venue (57 selected, 54 members, 3 dark): two tests that render a wall
+# and ask the availability probe through shipped code, and one whose launcher
+# is a plain `sh -c` and whose subject is a pdeathsig. None of the three execs
+# a bwrap, so none of them reaches D4's gate and none of them can print the
+# marker. ADR 0097's amendment under ranger-base-c75wa names them; this file
+# deliberately does not, because nothing here may read membership off a name.
+nonmember_ceiling=3
+
 # THE VERDICT, and it is python because this is a JSON stream with per-test
 # output accumulation in it, which is the one shape awk makes unreadable, and
 # `python3 -I` as the sibling scripts spell it: no site packages, no
@@ -243,12 +302,19 @@ import sys
 go_rc = int(sys.argv[1])
 marker = sys.argv[2]
 pattern = sys.argv[3]
+ceiling = int(sys.argv[4])
 
 FRAMES = ("=== ", "--- ", "PASS", "FAIL", "ok  ", "SKIP")
 
 status = {}
 outputs = {}
 members = set()
+# Every top-level test the filter SELECTED, member or not. The floor on the
+# member count is read off this set and never off a typed number
+# (ranger-base-c75wa): a selected test that printed no marker is either one of
+# the few that do so on purpose or a pin that has gone dark, and this body
+# cannot tell which — so it counts them and compares the count to `ceiling`.
+selected = set()
 raw = []
 tests_seen = False
 
@@ -277,6 +343,7 @@ for line in sys.stdin:
     # Membership and verdicts are both the TOP-LEVEL test, because that is
     # the name the -run filter selects and the name go test reports under.
     top = name.split("/", 1)[0]
+    selected.add(top)
     if action == "output":
         if marker in text:
             members.add(top)
@@ -314,6 +381,9 @@ def out(text):
 failed = sorted(t for t in members if status.get(t) == "fail")
 skipped = sorted(t for t in members if status.get(t) == "skip")
 quiet = sorted(t for t in members if t not in status)
+# The complement, which is the floor: a selected test with no marker is a pin
+# the venue never knew it had. `ceiling` of them are deliberate.
+dark = sorted(selected - members)
 
 # Step 4: go test never reached a test. A tree that does not build is this
 # check red, and the tail is the compilers.
@@ -359,13 +429,35 @@ if skipped or quiet:
         out("  NO VERDICT %s: %s" % (name, evidence(name)))
     sys.exit(3)
 
+# AND THE FLOOR ON n (ranger-base-c75wa). Everything above counts MEMBERS; a
+# pin that stopped printing the marker is not a member and was counted by
+# nothing, so the run was green with a smaller n and no reader. The floor is
+# arithmetic this run does for itself — n must be at least what the filter
+# selected, less the number of selected tests that print no marker on purpose
+# — so adding or retiring a pin moves both sides and reds nothing.
+#
+# AFTER the member arms and not before them: a member that FAILed is a red for
+# this check whatever else the run did, and a member that abstained is the
+# diagnosis a reader can act on. This arm is what is left — the pins the venue
+# never knew it had — and it names every one of them, because the count alone
+# cannot say which.
+#
+# NO APOSTROPHE ANYWHERE IN THIS PROGRAM, comments included: the whole body is
+# one single-quoted shell word, so an apostrophe here ends it and bash reads the
+# rest of the parser as shell (`syntax error near unexpected token`).
+if len(dark) > ceiling:
+    out("wall pins WENT DARK: %d of the %d test(s) %s selected printed no marker, and at most %d do so on purpose (ADR 0097 D3 as amended under ranger-base-c75wa). That puts the member count under the floor this run derives for itself — %d measured, want at least %d — and a pin the venue never knew it had is never a pass (D5), so this is exit 3 and not green. Each one with its verdict and its first line:" % (len(dark), len(selected), pattern, ceiling, len(members), len(selected) - ceiling))
+    for name in dark:
+        out("  %s %s: %s" % (status.get(name, "no verdict").upper(), name, evidence(name)))
+    sys.exit(3)
+
 if go_rc != 0:
     others = sorted(name for name, action in status.items() if action == "fail")
     out("note: every member passed and go test still exited %d — %d test(s) inside %s printed no marker and failed. That is a red for `make test` and not for this check, whose subject is the members (ADR 0097 D3):" % (go_rc, len(others), pattern))
     for name in others:
         out("  note: FAIL %s: %s" % (name, evidence(name)))
 out("wall check: green, %d pins measured" % len(members))
-' "$2" "$member_marker" "$member_pattern"
+' "$2" "$member_marker" "$member_pattern" "$nonmember_ceiling"
 }
 
 # ---------------------------------------------------------------------------
@@ -477,6 +569,7 @@ st_arm() {
 
 run_self_test() {
   local green red abstain nomember nofilter build note noverdict subtest
+  local declared dark
   local last_out last_line last_rc d rest st_range
 
   # Exit 0. Two members, both passed, nothing else in the run.
@@ -612,6 +705,48 @@ run_self_test() {
   st_arm 'red: the marker and the failure come from a subtest' 1 1 "$subtest" \
     'wall pins RED: 1 of 1 member(s) FAILed' \
     'FAIL TestLiveBwrapGitRefs: wallvenue_test.go:200: planted subtest red'
+
+  # Exit 0, and THE SLACK SIDE OF THE FLOOR (ranger-base-c75wa). Exactly
+  # $nonmember_ceiling of the selected tests printed no marker, which is the
+  # venue's real shape: the three deliberate non-members pass and measure
+  # nothing, and n is the members alone. Green, and the arm below is what
+  # happens when a fourth joins them.
+  declared=$(
+    st_marker TestLiveWallVenueA
+    st_act pass TestLiveWallVenueA
+    st_out TestLiveWallWitnessProbeDoesNotWriteTheLiveWall '    wallwitness_test.go:61: nothing was written'
+    st_act pass TestLiveWallWitnessProbeDoesNotWriteTheLiveWall
+    st_out TestLiveWallWitnessHoldsUnderTheRenderedWall '    wallwitness_test.go:30: the availability probe answers through shipped code'
+    st_act pass TestLiveWallWitnessHoldsUnderTheRenderedWall
+    st_out TestLiveWallUnixStepReArmsAClearedDieWithParent '    wallunixlive_test.go:412: the step re-armed a cleared die-with-parent'
+    st_act pass TestLiveWallUnixStepReArmsAClearedDieWithParent
+  )
+  st_arm 'green: the deliberate non-members printed no marker and n is the members alone' 0 0 "$declared" \
+    'wall check: green, 1 pins measured'
+
+  # Exit 3, and THE FLOOR ITSELF. A fourth selected test printed no marker, so
+  # the member count is under what this run can account for: a pin skipped
+  # before the gate, or its gate was deleted, and either way the venue never
+  # knew it had it. That is the shape `wall check: green, <n> pins measured`
+  # read as green for as long as n was compared to nothing — pins going dark
+  # one at a time, which is ranger-base-c75wa exactly. The floor is the run's
+  # own arithmetic and the message says both halves of it.
+  dark=$(
+    st_marker TestLiveWallVenueA
+    st_act pass TestLiveWallVenueA
+    st_out TestLiveWallWitnessProbeDoesNotWriteTheLiveWall '    wallwitness_test.go:61: nothing was written'
+    st_act pass TestLiveWallWitnessProbeDoesNotWriteTheLiveWall
+    st_out TestLiveWallWitnessHoldsUnderTheRenderedWall '    wallwitness_test.go:30: the availability probe answers through shipped code'
+    st_act pass TestLiveWallWitnessHoldsUnderTheRenderedWall
+    st_out TestLiveWallUnixStepReArmsAClearedDieWithParent '    wallunixlive_test.go:412: the step re-armed a cleared die-with-parent'
+    st_act pass TestLiveWallUnixStepReArmsAClearedDieWithParent
+    st_out TestLiveWallUnixScopesSignalsToTheSeat '    wallunixlive_test.go:210: planted dark: this pin skipped before the gate, so it printed no marker'
+    st_act skip TestLiveWallUnixScopesSignalsToTheSeat
+  )
+  st_arm 'abstention: a selected pin went dark, putting n under the derived floor' 0 3 "$dark" \
+    'wall pins WENT DARK: 4 of the 5 test(s)' \
+    'want at least 2' \
+    'SKIP TestLiveWallUnixScopesSignalsToTheSeat: wallunixlive_test.go:210: planted dark'
 
   # And the LAST line, which ADR 0088 D1 makes load-bearing: the runner keeps
   # the last few non-empty lines of combined output and flattens them into a

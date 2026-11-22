@@ -36,6 +36,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-fuwuv](ranger-base-fuwuv.md) — The land check's cross product: every arm under both platforms, and what the two new steps cost (ranger-base-fuwuv) — 2026-11-22
 - [ranger-base-dv1ln](ranger-base-dv1ln.md) — The carve pins' prep splice position gets its witness (ranger-base-dv1ln) — 2026-11-22
 - [ranger-base-ddn56](ranger-base-ddn56.md) — ranger-base-ddn56 — two controls that shipped without a positive control — 2026-11-22
+- [ranger-base-c75wa](ranger-base-c75wa.md) — ranger-base-c75wa — the floor on n is the run subtracting from itself — 2026-11-22
 - [ranger-base-c3zb8](ranger-base-c3zb8.md) — ranger-base-c3zb8 — the arm-list venues are held to the partition, not to three — 2026-11-22
 - [ranger-base-b8igm](ranger-base-b8igm.md) — Two arms nothing ran, and a census one frame short (ranger-base-b8igm) — 2026-11-22
 - [ranger-base-ayubz](ranger-base-ayubz.md) — The caged BEADS_DIR is a translation, not a resolve (ranger-base-ayubz) — 2026-11-22
