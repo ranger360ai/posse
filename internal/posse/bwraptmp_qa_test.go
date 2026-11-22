@@ -124,6 +124,61 @@ func TestBwrapDropTmpGrantsTakesATmpdirOutsideTmp(t *testing.T) {
 	}
 }
 
+// ranger-base-aurb8: the mount's grant goes under the spelling the SET
+// carries, which is the resolved one — so the drop key has to be resolved
+// too, and on darwin that is the whole of the rule.
+//
+// THE PLANT IS WHAT MAKES THIS READABLE HERE. `/tmp` and `/private/tmp` are
+// one directory on darwin and two on this box, so the bug — a raw `"/tmp"`
+// key against a set of `absResolve`d paths — is green on every linux leg and
+// red on every macos one. ranger-base-al4n9's pin took the same route one
+// mechanism over: plant the symlink, name it as the producer's spelling, and
+// the darwin answer is readable from a box that is not darwin. Without the
+// plant this pin would be green over the bug.
+//
+// The second arm is the FAILURE as CI read it (run 44974829306, job
+// 137062263947): with the mount's grant left in, the staging-root deny
+// (upgradePrivateDenied) sits inside a write grant, so bwrap's deny arm
+// renders a `mkdir -p` for it on the HOST — which is the prep host fence's
+// refusal and the 13 red rows.
+func TestQABwrapDropTmpGrantsReadsTheMountsResolvedSpelling(t *testing.T) {
+	t.Parallel()
+	root := absResolve(t.TempDir())
+	// darwin's own shape: the directory itself under `private`, and the
+	// mount's name a link to it, so `absResolve` of the one is the other.
+	resolved := filepath.Join(root, "private", "tmp")
+	if err := os.MkdirAll(resolved, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mount := filepath.Join(root, "tmp")
+	if err := os.Symlink(resolved, mount); err != nil {
+		t.Fatal(err)
+	}
+	// The set as `SeatbeltWritable` hands it over: every entry through its
+	// own `add`, which is `absResolve`. Both of seatbeltTempGrants' spellings
+	// of the mount are in it, because a direct BwrapArgs caller carries what
+	// it was given.
+	proj, extra := filepath.Join(root, "proj"), filepath.Join(resolved, "named-extra")
+	set := []string{proj, absResolve(mount), resolved, extra}
+	got := bwrapDropTmpGrantsOver(set, mount, "")
+	if want := strings.Join([]string{proj, extra}, " "); strings.Join(got, " ") != want {
+		t.Fatalf("bwrapDropTmpGrantsOver kept %q, want %q — the mount is %s, which resolves to %s, and a set of resolved paths spells it the second way: an unresolved drop key matches neither, so the blanket temp grant survives a render that has just bound a private /tmp over it (ranger-base-aurb8)",
+			strings.Join(got, " "), want, mount, resolved)
+	}
+	// AND WHAT THAT GRANT REACHED. `posse upgrade`'s staging root is denied
+	// under every blanket temp grant, and bwrap's deny arm preps an absent
+	// deny that a write grant can bring into being — so a surviving grant
+	// here is a `mkdir -p` on the host at launch, and in a test binary it is
+	// the prep host fence's refusal (prephostfence.go) rather than a wall.
+	staging := filepath.Join(resolved, upgradePrivateRootName)
+	if writeGranted(got, staging) {
+		t.Errorf("the dropped set still reaches %s: %v — the staging-root deny is then inside a write grant, which is what made bwrap's deny arm render a host mkdir for it on the macos leg", staging, got)
+	}
+	if !writeGranted(set, staging) {
+		t.Fatal("CONTROL: the undropped set does not reach the staging root either, so the arm above is not grading the drop")
+	}
+}
+
 // The same at the render: a launcher TMPDIR under a fixture home, a session
 // outside /tmp, and the rendered write set and argv carry no grant of it —
 // while the seat's /tmp and TMPDIR=/tmp are what it gets instead.

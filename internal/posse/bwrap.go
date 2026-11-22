@@ -493,13 +493,14 @@ func bwrapArgsInto(watchp *[]WallWatchMount, cwd string, writable []string, carv
 		watch(WallWatchHide, bwrapTmpMount)
 		hidden = append(hidden, bwrapTmpMount)
 		hideMounted = append(hideMounted, bwrapTmpMount)
-		kept := writable[:0:0]
-		for _, w := range writable {
-			if absResolve(w) != bwrapTmpMount {
-				kept = append(kept, w)
-			}
-		}
-		writable = kept
+		// THROUGH bwrapDropTmpGrants AND NOT A SECOND COMPARISON HERE
+		// (ranger-base-aurb8). This arm spelled the rule itself — `absResolve(w)
+		// != bwrapTmpMount` — which is the resolved set against the producer's
+		// RAW literal, and on darwin that matched neither spelling of the one
+		// directory it is about. The drop is one function now and the
+		// resolution is in it; the empty TMPDIR is what says this arm drops
+		// the mount's own grant and nothing else, which is all it ever did.
+		writable = bwrapDropTmpGrants(writable, "")
 	}
 
 	// 2a. NO WRITE GRANT LIES AT OR ABOVE THE WALL ROOT (ADR 0100 D2(a)).

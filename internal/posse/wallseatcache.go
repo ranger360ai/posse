@@ -186,7 +186,42 @@ func bwrapSeatTmp(home, cwd string) string {
 // at any more (ranger-base-1c91x). A grant under /tmp that is NOT the
 // TMPDIR is a named directory (a PID's `writable:` extra) and stays.
 func bwrapDropTmpGrants(set []string, tmpdir string) []string {
-	drop := map[string]bool{bwrapTmpMount: true}
+	return bwrapDropTmpGrantsOver(set, bwrapTmpMount, tmpdir)
+}
+
+// bwrapDropTmpGrantsOver is that drop with the MOUNT passed in, and the one
+// thing it does differently from the four lines it replaced is RESOLVE that
+// mount before comparing (ranger-base-aurb8).
+//
+// WHY IT MATTERS, and why no linux leg could say so. Every entry of the set
+// is `SeatbeltWritable`'s, and that producer's own `add` is `absResolve` —
+// "the path the sandbox will match on" (ranger-base-al4n9's sentence, the
+// same class one mechanism over). So the set spells the host's temp root the
+// way the kernel does, and the drop key was the producer's raw `"/tmp"`. On
+// linux those are one string and the rule worked. On darwin `/tmp` IS
+// `/private/tmp`: `seatbeltTempGrants` names both, `add` resolves both to
+// `/private/tmp`, and the raw key matched NEITHER — so the blanket temp
+// grant survived a render that had just bound a private /tmp over it, and
+// every deny inside it was then a deny the render thought the seat could
+// create. MEASURED by reading CI run 44974829306, job 137062263947 (macos
+// arm 1, b2509fba): 13 bwrap-render pins red, all on one refusal, the prep
+// host fence stopping a `mkdir -p /private/tmp/posse-upgrade` on the host —
+// the staging-root deny (upgradePrivateDenied), reached through exactly that
+// surviving grant. The fence was right; the grant should not have been there.
+//
+// THE MOUNT IS A PARAMETER FOR seatbeltTempGrants' REASON — a pin has to be
+// able to read the darwin answer on a box that is not darwin. "One directory
+// under two spellings" needs a symlink, and this box's `/tmp` is not one, so
+// the pin plants its own and names it here
+// (TestQABwrapDropTmpGrantsReadsTheMountsResolvedSpelling). Nothing in
+// production passes anything but `bwrapTmpMount`.
+//
+// It is also the ONE spelling of this rule now: BwrapArgs' step 1c took the
+// grant the private /tmp replaces out of its own set with a second copy of
+// the comparison, carrying the same raw literal and the same blind spot, and
+// calls this with no TMPDIR instead.
+func bwrapDropTmpGrantsOver(set []string, mount, tmpdir string) []string {
+	drop := map[string]bool{absResolve(mount): true}
 	if tmpdir != "" {
 		drop[absResolve(tmpdir)] = true
 	}
