@@ -716,8 +716,10 @@ type fakeWallWatchStore struct {
 	comments  map[string][]string
 	readErr   error
 	createErr error
-	n         int
-	now       func() time.Time
+	// commentErr fails every Comment (ranger-base-kzk3u).
+	commentErr error
+	n          int
+	now        func() time.Time
 }
 
 func (s *fakeWallWatchStore) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
@@ -746,6 +748,9 @@ func (s *fakeWallWatchStore) Create(dir string, n BdNew) (string, error) {
 }
 
 func (s *fakeWallWatchStore) Comment(dir, id, text, actor string) error {
+	if s.commentErr != nil {
+		return s.commentErr
+	}
 	if s.comments == nil {
 		s.comments = map[string][]string{}
 	}
@@ -836,6 +841,10 @@ type fakeWallWatchProbe struct {
 	// leader with the watcher and only its backgrounded child survives.
 	leaderPpid int
 	leaderRead bool
+	// killErr is a kill that did not confirm: the census still names the
+	// seat's processes, so they are left in pids (ranger-base-kzk3u; the
+	// same shape as ranger-base-6r6ox's field of the same name).
+	killErr string
 }
 
 func (p *fakeWallWatchProbe) WatcherAlive(wallWatchRecord) bool { return p.alive }
@@ -847,6 +856,9 @@ func (p *fakeWallWatchProbe) LeaderParent(wallWatchRecord) (int, bool) {
 func (p *fakeWallWatchProbe) Kill(wallWatchRecord) ([]int, string) {
 	p.killed++
 	k := p.pids
+	if p.killErr != "" {
+		return k, p.killErr
+	}
 	p.pids = nil
 	return k, ""
 }
@@ -1097,6 +1109,144 @@ func TestWallWatchBackstopKillsAnAlreadyFiledOrphanAndCommentsOnItsBead(t *testi
 	}
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the record of a seat the tick killed was kept (%v)", err)
+	}
+}
+
+// ── a kill that did not confirm is retried, not forgotten (ranger-base-kzk3u)
+//
+// Both kill arms dropped the record of a seat they had killed once its
+// watcher was gone, so a kill that did NOT confirm left a running seat that
+// no later tick read again. These hold the record, the retry, the single
+// filing and the comment that closes it out.
+
+const wwKzkKillErr = "processes in the seat's mount namespace were still alive after 20 rounds of SIGKILL: [102 103]"
+
+func wwKzkRecord(t *testing.T, path string) wallWatchRecord {
+	t.Helper()
+	r, err := readWallWatchRecord(path)
+	if err != nil {
+		t.Fatalf("the record of a seat whose kill did not confirm is gone (%v) — no later tick retries it", err)
+	}
+	return r
+}
+
+func TestWallWatchBackstopKeepsAndRetriesADetachWhoseKillDidNotConfirm(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killErr: wwKzkKillErr}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 || len(st.issues) != 1 {
+		t.Fatalf("killed=%d beads=%+v (lines %q)", p.killed, st.issues, lines)
+	}
+	id := st.issues[0].ID
+	r := wwKzkRecord(t, path)
+	if r.KillPending != wwKzkKillErr || !reflect.DeepEqual(r.KillBeads, []string{id}) {
+		t.Fatalf("record not marked for a retry: pending=%q beads=%v", r.KillPending, r.KillBeads)
+	}
+	if cs := st.comments[id]; len(cs) != 1 || !strings.Contains(cs[0], "retries the kill every tick") {
+		t.Errorf("the bead does not say the tick is retrying: %q", cs)
+	}
+
+	// A retry that fails again: killed again, nothing filed or commented,
+	// the record still held.
+	lines = wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 2 || len(st.issues) != 1 || len(st.comments[id]) != 1 {
+		t.Fatalf("second tick: killed=%d beads=%d comments=%q (lines %q)", p.killed, len(st.issues), st.comments[id], lines)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "still running after a kill that did not confirm") {
+		t.Errorf("the failed retry is not said: %q", lines)
+	}
+	wwKzkRecord(t, path)
+
+	// The retry that confirms: one comment, the record dropped.
+	p.killErr = ""
+	lines = wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 3 || len(st.issues) != 1 {
+		t.Fatalf("third tick: killed=%d beads=%d (lines %q)", p.killed, len(st.issues), lines)
+	}
+	if cs := st.comments[id]; len(cs) != 2 || !strings.Contains(cs[1], "this one did: killed pids 102 103") {
+		t.Errorf("the bead is not told the retry confirmed: %q", cs)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record of a seat now killed under a dead watcher was kept (%v)", err)
+	}
+	if vs := readWallWatchVerdicts(state, "developer"); len(vs) != 1 || !strings.Contains(vs[0].Text, "the kill did not confirm, so the seat's record is kept") || !strings.Contains(vs[0].Text, "this one did") {
+		t.Errorf("the verdict file does not carry both the failure and the retry: %+v", vs)
+	}
+}
+
+func TestWallWatchBackstopKeepsAnOrphanWhoseKillDidNotConfirmUntilItEnds(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: 1, leaderRead: true, killErr: wwKzkKillErr}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 || len(st.issues) != 1 {
+		t.Fatalf("killed=%d beads=%+v (lines %q)", p.killed, st.issues, lines)
+	}
+	id := st.issues[0].ID
+	if r := wwKzkRecord(t, path); !reflect.DeepEqual(r.KillBeads, []string{id}) {
+		t.Fatalf("record not marked with its bead: %+v", r)
+	}
+	// The seat ends on its own between ticks: no kill, one comment, gone.
+	p.pids = nil
+	lines = wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 || len(st.issues) != 1 {
+		t.Fatalf("second tick: killed=%d beads=%d (lines %q)", p.killed, len(st.issues), lines)
+	}
+	if cs := st.comments[id]; len(cs) != 2 || !strings.Contains(cs[1], "seat developer is over") {
+		t.Errorf("the bead is not told the seat ended: %q", cs)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record outlived the seat it named (%v)", err)
+	}
+}
+
+// The record is dropped only once its beads are told: a store that cannot
+// take the closing comment keeps it, and the next tick says it again.
+func TestWallWatchBackstopKeepsTheRetryRecordUntilItsBeadIsTold(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102}, table: wwIntact(), leaderPpid: 1, leaderRead: true, killErr: wwKzkKillErr}
+	wallWatchBackstop(state, st, "", time.Now, p)
+	id := st.issues[0].ID
+	p.killErr = ""
+	st.commentErr = errors.New("bd is down")
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if r := wwKzkRecord(t, path); r.KillPending == "" || !reflect.DeepEqual(r.KillBeads, []string{id}) {
+		t.Fatalf("the record dropped its retry mark with the bead untold: %+v (lines %q)", r, lines)
+	}
+	st.commentErr = nil
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 2 {
+		t.Errorf("a seat already over was killed again: killed=%d", p.killed)
+	}
+	if cs := st.comments[id]; len(cs) != 2 || !strings.Contains(cs[1], "is over") {
+		t.Errorf("the bead was not told on the next tick: %q", cs)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record was kept after its bead was told (%v)", err)
+	}
+}
+
+// A live watcher owns its record: the confirmed retry clears the mark and
+// leaves the record for the watcher to remove.
+func TestWallWatchBackstopClearsTheRetryMarkUnderALiveWatcher(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{alive: true, pids: []int{102}, table: mountTable{}, killErr: wwKzkKillErr}
+	wallWatchBackstop(state, st, "", time.Now, p)
+	p.killErr = ""
+	wallWatchBackstop(state, st, "", time.Now, p)
+	r := wwKzkRecord(t, path)
+	if r.KillPending != "" || r.KillBeads != nil {
+		t.Errorf("the retry mark survived a confirmed kill: %+v", r)
+	}
+	if p.killed != 2 || len(st.issues) != 1 {
+		t.Errorf("killed=%d beads=%d, want 2 and 1", p.killed, len(st.issues))
 	}
 }
 

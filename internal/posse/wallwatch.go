@@ -523,6 +523,10 @@ func wallWatchComment(d wallWatchDetach, ms []WallWatchMount) string {
 //     seat's only lifetime bound, so a watcher that is SIGKILLed leaves the
 //     seat running with nothing left to end it. This arm is that kill, one
 //     tick late.
+//   - either kill above did not confirm → the record is kept and marked,
+//     and every later tick retries the kill instead of re-diffing or
+//     re-filing, until the seat is over and its beads are told
+//     (ranger-base-kzk3u, wallWatchRetryKill).
 
 // wallWatchRecordDir is where a watcher started with this mounts file keeps
 // its record: beside the mounts file, so the launch's own dir decides it and
@@ -556,6 +560,13 @@ type wallWatchRecord struct {
 	// OrphanFiled is the bead the backstop filed when it found this seat
 	// running with its watcher gone, so it is filed once per seat.
 	OrphanFiled string `json:"orphan_filed,omitempty"`
+	// KillPending is the failure of a kill the tick made and could not
+	// confirm, and KillBeads the beads that kill was filed or recorded on
+	// (ranger-base-kzk3u). A seat whose kill did not confirm is NOT over,
+	// so its record is kept and every later tick retries the kill — and
+	// comments on these beads, never files again — until the seat ends.
+	KillPending string   `json:"kill_pending,omitempty"`
+	KillBeads   []string `json:"kill_beads,omitempty"`
 }
 
 // writeWallWatchRecord writes a record whole or not at all: a reader
@@ -749,6 +760,13 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 		}
 		alive := p.WatcherAlive(r)
 		pids := p.SeatPids(r)
+		if r.KillPending != "" {
+			// An earlier tick condemned this seat and its kill did not
+			// confirm (ranger-base-kzk3u). Nothing is re-diffed or re-filed:
+			// the seat is killed again, or found over, and its beads told.
+			out = append(out, wallWatchRetryKill(path, r, alive, pids, st, now, p)...)
+			continue
+		}
 		if len(pids) == 0 {
 			// The seat is over. A watcher still alive owns its record and
 			// removes it on its way out; a dead one cannot.
@@ -790,10 +808,16 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 			if ferr != nil {
 				v.say("  ⚠ the record is incomplete: %v — this line is the record", ferr)
 			}
-			v.close()
-			if !alive {
+			if d.KillErr != "" {
+				beads := commented
+				if filed != "" {
+					beads = append([]string{filed}, commented...)
+				}
+				wallWatchKeepUnconfirmed(v, path, r, d, beads, st)
+			} else if !alive {
 				_ = os.Remove(path)
 			}
+			v.close()
 			continue
 		}
 		if alive {
@@ -823,12 +847,16 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 			v.note(wallWatchOrphanVerdictHeader(r, d.At))
 			v.say("⛨ wall-watch backstop: KILLED seat %s — its watcher (pid %d) is gone and its leader (pid %d) outlived its bwrap (pid %d; its parent is now pid %d), so nothing bounded it (ranger-base-5k7vf); killed %s",
 				r.Seat, r.WatcherPid, r.SeatPid, r.BwrapPid, ppid, wallWatchKilled(d))
+			var beads []string
 			if r.OrphanFiled != "" {
 				if cerr := st.Comment(r.Dir, r.OrphanFiled, wallWatchOrphanKillComment(r, d, ppid), VerifyActor); cerr != nil {
 					v.say("  ⚠ %s still says nothing was killed (%v) — this line is the record", r.OrphanFiled, cerr)
 				} else {
 					v.say("  recorded on %s, which this seat's dead watcher already has", r.OrphanFiled)
 				}
+				// Its bead either way: it names this seat, and a later
+				// tick's word on the kill belongs there.
+				beads = []string{r.OrphanFiled}
 			} else if id, cerr := st.Create(r.Dir, BdNew{
 				Title:       wallWatchOrphanKillTitle(r),
 				Description: wallWatchOrphanKillDescription(r, d, ppid),
@@ -840,11 +868,16 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 				v.say("  ⚠ the kill could not be filed (%v) — this line is the record", cerr)
 			} else {
 				v.say("  filed %s", id)
+				beads = []string{id}
+			}
+			if d.KillErr != "" {
+				wallWatchKeepUnconfirmed(v, path, r, d, beads, st)
+			} else {
+				// The watcher that owns this record is gone and the seat
+				// it named is over, so nothing will come back to it.
+				_ = os.Remove(path)
 			}
 			v.close()
-			// The watcher that owns this record is gone and the seat it
-			// named is over, so nothing will come back to it.
-			_ = os.Remove(path)
 			continue
 		}
 		if r.OrphanFiled != "" {
@@ -879,6 +912,98 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 			line += fmt.Sprintf(" (⚠ could not mark the record filed, %v — the next tick files again)", werr)
 		}
 		out = append(out, line)
+	}
+	return out
+}
+
+// ── A kill that did not confirm (ranger-base-kzk3u) ────────────────────────
+//
+// Both of the backstop's kill arms used to drop the seat's record once they
+// had acted — the detach arm when the watcher was dead, the orphan arm
+// always — on the reading that a killed seat is over. A kill that did NOT
+// confirm leaves a seat that is not over, and with its record gone no later
+// tick read its mount table or tried again: the P1 was the only trace left,
+// and nothing ever came back to say whether the seat ended. So the record
+// is kept, marked, and every tick after retries the kill and tells the
+// beads it already has — one comment when the seat is finally over, none
+// for each failed retry, which would be a comment per tick.
+
+// wallWatchKeepUnconfirmed marks the record of a seat whose kill did not
+// confirm, so the next tick retries it, and says so on its beads.
+func wallWatchKeepUnconfirmed(v *wallWatchSaid, path string, r wallWatchRecord, d wallWatchDetach, beads []string, st wallWatchStore) {
+	r.KillPending = d.KillErr
+	r.KillBeads = beads
+	if err := writeWallWatchRecord(path, r); err != nil {
+		v.say("  ⚠ the kill did not confirm and the seat's record could not be marked for a retry (%v) — no later tick is sure to try again; end seat %s by hand", err, r.Seat)
+		return
+	}
+	v.say("  the kill did not confirm, so the seat's record is kept and every tick retries the kill until the seat is over (ranger-base-kzk3u)")
+	for _, id := range beads {
+		if err := st.Comment(r.Dir, id, wallWatchRetryNote(r), VerifyActor); err != nil {
+			v.say("  ⚠ %s does not say the tick is retrying (%v)", id, err)
+		}
+	}
+}
+
+func wallWatchRetryNote(r wallWatchRecord) string {
+	return fmt.Sprintf("wall-watch: the kill of seat %s (%s) did not confirm, so the watch tick keeps the seat's record and retries the kill every tick (ranger-base-kzk3u). A later comment here says when the seat is over; until one does, treat it as running.", r.Seat, AbbrevHome(r.Dir))
+}
+
+// wallWatchRetryKill is one tick over a seat an earlier tick condemned and
+// could not confirm ended: kill it again, or find it over, and drop the
+// record only once its beads have been told.
+func wallWatchRetryKill(path string, r wallWatchRecord, alive bool, pids []int, st wallWatchStore, now func() time.Time, p wallWatchProbe) []string {
+	var out []string
+	var what string
+	if len(pids) == 0 {
+		what = fmt.Sprintf("seat %s is over — the kill an earlier tick could not confirm (%s) is confirmed by its mount namespace being empty", r.Seat, r.KillPending)
+	} else {
+		d := wallWatchDetach{Seat: r.Seat, Dir: r.Dir, BwrapPid: r.BwrapPid, SeatPid: r.SeatPid, At: now()}
+		d.Killed, d.KillErr = p.Kill(r)
+		if d.KillErr != "" {
+			// Pane only: this repeats every tick for as long as the seat
+			// survives, and the verdict file and the beads already carry
+			// the first failure.
+			line := fmt.Sprintf("⛨ wall-watch backstop: seat %s is still running after a kill that did not confirm — retried, killed: %s; the next tick retries again (ranger-base-kzk3u)", r.Seat, wallWatchKilled(d))
+			r.KillPending = d.KillErr
+			if werr := writeWallWatchRecord(path, r); werr != nil {
+				line += fmt.Sprintf(" (⚠ could not update the record, %v)", werr)
+			}
+			return append(out, line)
+		}
+		what = fmt.Sprintf("seat %s is over — the tick retried a kill that had not confirmed (%s), and this one did: killed %s", r.Seat, r.KillPending, wallWatchKilled(d))
+	}
+	v := &wallWatchSaid{Path: wallWatchVerdictPath(path), Pane: func(s string) { out = append(out, s) }}
+	v.say("⛨ wall-watch backstop: %s (ranger-base-kzk3u)", what)
+	var unsaid []string
+	for _, id := range r.KillBeads {
+		if err := st.Comment(r.Dir, id, "wall-watch: "+what+". The tick has stopped retrying it.", VerifyActor); err != nil {
+			v.say("  ⚠ %s still says the kill did not confirm (%v) — the record is kept and the next tick tells it again", id, err)
+			unsaid = append(unsaid, id)
+			continue
+		}
+		v.say("  recorded on %s", id)
+	}
+	if len(r.KillBeads) == 0 {
+		v.say("  no bead holds the kill that did not confirm — this line is the record")
+	}
+	v.close()
+	if len(unsaid) > 0 {
+		r.KillBeads = unsaid
+		if werr := writeWallWatchRecord(path, r); werr != nil {
+			out = append(out, fmt.Sprintf("  ⚠ could not update the record (%v)", werr))
+		}
+		return out
+	}
+	if !alive {
+		_ = os.Remove(path)
+		return out
+	}
+	// A live watcher owns its record and removes it on its way out; it
+	// only stops being one the tick retries.
+	r.KillPending, r.KillBeads = "", nil
+	if werr := writeWallWatchRecord(path, r); werr != nil {
+		out = append(out, fmt.Sprintf("  ⚠ could not clear the record's retry mark (%v) — the next tick says this again", werr))
 	}
 	return out
 }
