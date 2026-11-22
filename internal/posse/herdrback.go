@@ -259,10 +259,10 @@ func (b *HerdrBackend) warnWriterFor(w io.Writer) io.Writer {
 type NewSessionOpts struct {
 	Name    string
 	Dir     string   // "" → config default_dir → $HOME
-	Cmd     string   // typed into the root pane's shell, not wrapped
+	Cmd     string   // typed into the root pane's shell, not wrapped; refused beside Agent (CheckCmdAgent)
 	Emoji   string   // "" → emoji map
 	Envs    []string // "" list → config default_env if that file exists
-	Agent   string   // persona name; its command wins over Cmd
+	Agent   string   // persona name; its RENDERED line replaces Cmd, which is why the pair is refused at the flag boundary
 	Runtime string   // launch profile override (CLI --runtime / recipe runtime:) — over the PID's own
 	Tier    string   // model tier override (CLI --tier / dispatch) — over the PID's tier: (ADR 0003)
 	// Model is an EXACT model id typed on `posse new --model` (ADR 0053).
@@ -2463,6 +2463,10 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		emoji = a.EmojiFor(o.Name)
 	}
 
+	// The persona-less session's own line. On a persona launch the o.Agent
+	// branch below overwrites it with the render, and that overwrite is why
+	// the flag boundary refuses the pair rather than arriving here with two
+	// launches named and one openable (CheckCmdAgent, ranger-base-k2olp).
 	cmd := o.Cmd
 	var ag *AgentFile
 	var rt *Runtime

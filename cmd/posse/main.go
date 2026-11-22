@@ -2971,6 +2971,14 @@ func parseNewFlags(args []string) posse.NewSessionOpts {
 	if err := posse.CheckExactModel(o); err != nil {
 		die(err)
 	}
+	// And the pair that names two launches when posse can open only one
+	// (ranger-base-k2olp). Only here, and CheckCmdAgent's own comment says
+	// why: no other launch path can carry the pair meaning it, and the one
+	// that can carry it by accident is a recipe, whose keys this message
+	// does not name.
+	if err := posse.CheckCmdAgent(o); err != nil {
+		die(err)
+	}
 	return o
 }
 
@@ -3183,7 +3191,12 @@ does every sub-verb this catalog names (posse backup status --help). A literal
 sessions (herdr workspaces):
   posse list                     sessions with live agent state (working/blocked/idle)
   posse new <name> [opts]        create a background session
-      --dir <path>  --env-file <name> (repeatable)  --cmd "..."  --agent <name>  --emoji <e>
+      --dir <path>  --env-file <name> (repeatable)  --emoji <e>
+      --cmd "..."                             the pane's own line — for a session with NO persona, and
+                                              refused beside --agent: a persona's line is rendered from its
+                                              PID and its runtime's template, so a typed one would be
+                                              discarded in silence (ADR 0002 §1)
+      --agent <name>                          launch this persona (PID, gates, skills, cage, rendered line)
       --runtime <claude|codex|grok|bob|name>  launch profile for the persona (over its PID runtime:)
       --tier <strong|standard|fast>           model tier for the persona (over its PID tier:)
       --model <id>                            EXACT model for this session only (ADR 0053) — needs --agent,
