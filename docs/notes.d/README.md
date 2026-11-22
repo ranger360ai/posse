@@ -19,6 +19,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-w9t63](ranger-base-w9t63.md) — Every config key the harness reads, censused against the seed (ranger-base-w9t63) — 2026-11-21
 - [ranger-base-w37g2](ranger-base-w37g2.md) — Four closes verified, and a second check of one rule leaves the inner one dead (ranger-base-w37g2) — 2026-11-21
 - [ranger-base-vxz74](ranger-base-vxz74.md) — The wall step's three layers are per-task, and it did not hold a thread (ranger-base-vxz74) — 2026-11-21
+- [ranger-base-vi3vn](ranger-base-vi3vn.md) — Four closes verified, and a wall probe's execution count is two pins over (ranger-base-vi3vn) — 2026-11-21
 - [ranger-base-vbp5a](ranger-base-vbp5a.md) — ranger-base-vbp5a — two socket-wall live pins spent sun_path on their own test names — 2026-11-21
 - [ranger-base-tcho6](ranger-base-tcho6.md) — Check 4's positional guard is pinned against the reader, not against git (ranger-base-tcho6) — 2026-11-21
 - [ranger-base-rh8y0](ranger-base-rh8y0.md) — ranger-base-rh8y0 — the landed loop's pending re-read, and four findings that are not this repo's — 2026-11-21
