@@ -756,6 +756,13 @@ var wsaVariableCommandRegister = []struct {
 		why:    "the same runner and the same fatal as the arm above, in the other D3 arm.",
 	},
 	{
+		file: "wallwatchbackstoplive_linux_test.go", test: "TestLiveWallWatchBackstopKillsASeatOrphanedWithItsWatcherGone",
+		routed: true,
+		why: "the same runner and the same fatal again, in ranger-base-5k7vf's arm — the seat whose " +
+			"watcher AND bwrap are both gone. This one SIGKILLs the watcher itself, as the two above " +
+			"do, so the status read at the fatal is read BEFORE that kill and non-blocking.",
+	},
+	{
 		file: "wallunixlive_test.go", test: "TestLiveWallUnixScopesSignalsToTheSeat",
 		routed: true,
 		why: "THE WRAPPER ROUTE: the second loop's arms start `sh -c 'bwrap \"$@\"; :'`, so the seat's " +

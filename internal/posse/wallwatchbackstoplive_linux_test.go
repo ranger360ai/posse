@@ -160,6 +160,158 @@ func TestLiveWallWatchBackstopKillsASeatWhoseWatcherIsGone(t *testing.T) {
 	}
 }
 
+// ranger-base-5k7vf, live: a seat whose WATCHER and whose BWRAP are both gone
+// and whose leader is still running. That seat has no bound on its lifetime at
+// all — not its own pdeathsig (an AppArmor exec transition zeroed it,
+// ranger-base-6ec6n), not bwrap, and not the watcher whose kill on bwrap's
+// exit was the whole of the bound on a seat line with no `posse wall-unix`
+// step. The tick must kill it and say KILLED.
+//
+// THE FIXTURE IS TestLiveWallWatchKillsASeatItsBwrapLeftRunning'S, one step
+// further on. D1 has no AppArmor, so the cleared pdeathsig is modelled the
+// only honest way it can be: `--die-with-parent` comes off the bwrap line,
+// which is exactly what the transition leaves behind. Then the watcher is
+// SIGKILLed — and because that flag is off, bwrap outlives it too, which is
+// not the production shape — and then bwrap, which reparents the leader. What
+// the tick is handed at the end is the production shape: a record whose
+// watcher is gone, whose bwrap is gone, and whose leader is alive in the
+// seat's own mount namespace under some other parent.
+func TestLiveWallWatchBackstopKillsASeatOrphanedWithItsWatcherGone(t *testing.T) {
+	t.Parallel()
+	s := wwLiveFixture(t)
+	state := filepath.Dir(s.grant)
+	gates := filepath.Join(state, "gates", "seat-f")
+	if err := os.MkdirAll(gates, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.mounts = filepath.Join(gates, "bwrap.mounts")
+	argv, _, watch, err := bwrapArgsWatched(s.grant, []string{s.grant}, SeatbeltCarveOut{Deny: []string{s.deny}, DenyFile: []string{s.deny}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cut []string
+	for _, a := range argv {
+		if a != "--die-with-parent" {
+			cut = append(cut, a)
+		}
+	}
+	if len(cut) != len(argv)-1 {
+		t.Fatalf("the render carries --die-with-parent %d time(s), want 1 — this fixture takes it off to model the AppArmor clear", len(argv)-len(cut))
+	}
+	if err := os.WriteFile(s.args, bwrapArgsBytes(cut), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.mounts, wallWatchMountsBytes(watch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	af, err := os.Open(s.args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer af.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A FILE and not a Builder, for the arm above's reason: the seat's
+	// background child inherits the watcher's stdout and outlives it.
+	out, err := os.Create(filepath.Join(t.TempDir(), "watcher.out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	said := func() string { b, _ := os.ReadFile(out.Name()); return string(b) }
+	cmd := exec.Command(exe, WallWatchVerb, "--mounts", s.mounts, "--seat", "seat-f", "--dir", s.grant, "--",
+		"bwrap", "--args", "3", "--", "sh", "-c", "sleep 300 & echo $! > "+shellQuote(s.bgpid)+"; wait")
+	cmd.ExtraFiles = []*os.File{af}
+	cmd.Stdout, cmd.Stderr = out, out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	// ONE WAITER and a non-blocking read of its status, for the reason the
+	// two arms above give (ranger-base-k2quj): the fatal below reads "no
+	// bgpid file" as the seat never running, so a watcher the box SIGKILLs
+	// silently would arrive as that finding instead of as an abstention.
+	var werr error
+	waited := make(chan struct{})
+	go func() { werr = cmd.Wait(); close(waited) }()
+	t.Cleanup(func() { cmd.Process.Kill(); <-waited })
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if b, rerr := os.ReadFile(s.bgpid); rerr == nil && strings.TrimSpace(string(b)) != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			status := "the watcher is still running, and said " + wwOneLine(said())
+			select {
+			case <-waited:
+				bgSeatAbstainIfOutside(t, "the wall-watch supervisor over seat-f", werr, said())
+				status = "the watcher is gone: " + bgSeatAccount(werr, said())
+			default:
+			}
+			t.Fatalf("the seat never ran — %s", status)
+		}
+	}
+	bg := s.bg(t)
+	t.Cleanup(func() { syscall.Kill(bg, syscall.SIGKILL) })
+	recs, _ := filepath.Glob(wallWatchRecordGlob(state))
+	if len(recs) != 1 {
+		t.Fatalf("the watcher wrote %d records under %s, want 1", len(recs), state)
+	}
+	r, err := readWallWatchRecord(recs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { syscall.Kill(r.SeatPid, syscall.SIGKILL); syscall.Kill(r.BwrapPid, syscall.SIGKILL) })
+
+	// The watcher. With --die-with-parent off the line, bwrap and the seat
+	// both outlive it — so this is also the one check that says the fixture
+	// is still modelling the host class the bead is about.
+	cmd.Process.Kill()
+	<-waited
+	if !wallWatchLeaderLive(r.SeatPid, r.MntNS) {
+		t.Fatalf("NOTHING MEASURED: the seat's leader (pid %d) died with its watcher, so this fixture is not an AppArmor host with a cleared pdeathsig — check that --die-with-parent came off the rendered line", r.SeatPid)
+	}
+	// Then bwrap, which is what reparents the leader.
+	if kerr := syscall.Kill(r.BwrapPid, syscall.SIGKILL); kerr != nil {
+		t.Fatalf("cannot kill the seat's bwrap (pid %d): %v", r.BwrapPid, kerr)
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		ppid, ok := wallWatchProcProbe{}.LeaderParent(r)
+		if ok && ppid != r.BwrapPid {
+			t.Logf("MEASURED: leader pid %d reparented from bwrap (pid %d) to pid %d, with watcher pid %d gone", r.SeatPid, r.BwrapPid, ppid, r.WatcherPid)
+			break
+		}
+		if time.Now().After(deadline) {
+			if !ok {
+				t.Fatalf("NOTHING MEASURED: 10s after its bwrap (pid %d) was killed the seat's leader (pid %d) cannot be read in the seat's mount namespace — it died with its bwrap, so there is no orphaned seat to test", r.BwrapPid, r.SeatPid)
+			}
+			t.Fatalf("10s after its bwrap (pid %d) was SIGKILLed, the leader (pid %d) still reads that pid as its parent", r.BwrapPid, r.SeatPid)
+		}
+	}
+
+	st := &fakeWallWatchStore{}
+	lock := filepath.Join(t.TempDir(), "wall-watch.lock")
+	lines := wallWatchBackstop(state, st, lock, time.Now, wallWatchProcProbe{})
+	wwGone(t, r.SeatPid, "the orphaned seat's leader")
+	wwGone(t, bg, "the orphaned seat's backgrounded job")
+	if len(st.issues) != 1 {
+		t.Fatalf("%d beads, want 1 (lines %q)", len(st.issues), lines)
+	}
+	d := st.issues[0].Description
+	for _, want := range []string{wallWatchOrphanKillMarker(r), "seat: seat-f", strconv.Itoa(r.SeatPid), "KILLED"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("the bead does not say %q:\n%s", want, d)
+		}
+	}
+	if recs, _ := filepath.Glob(wallWatchRecordGlob(state)); len(recs) != 0 {
+		t.Errorf("the killed seat's record survived: %v", recs)
+	}
+	vs := readWallWatchVerdicts(state, "seat-f")
+	if len(vs) != 1 || !strings.Contains(vs[0].Text, "KILLED seat seat-f") {
+		t.Fatalf("the durable verdict of a killed seat (%d on disk): %+v", len(vs), vs)
+	}
+}
+
 // The other D3 arm, live: the watcher is gone and every wall is still up —
 // one bead, no kill, and nothing more on the next tick.
 func TestLiveWallWatchBackstopFilesAWatcherThatDiedUnderARunningSeat(t *testing.T) {
@@ -224,14 +376,56 @@ func TestLiveWallWatchBackstopFilesAWatcherThatDiedUnderARunningSeat(t *testing.
 	}
 	bg := s.bg(t)
 	t.Cleanup(func() { syscall.Kill(bg, syscall.SIGKILL) })
+	recs, _ := filepath.Glob(wallWatchRecordGlob(state))
+	if len(recs) != 1 {
+		t.Fatalf("the watcher wrote %d records under %s, want 1", len(recs), state)
+	}
+	r, rerr := readWallWatchRecord(recs[0])
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
 	cmd.Process.Kill()
 	<-waited
-	time.Sleep(100 * time.Millisecond)
+
+	// WHICH SEAT THIS NOW IS DEPENDS ON THE HOST (ranger-base-5k7vf), so it
+	// is read and not assumed. Where bwrap's --die-with-parent held, the
+	// leader went with the watcher and only the backgrounded child is left:
+	// this arm's seat, filed and not killed. Where an AppArmor exec
+	// transition cleared that pdeathsig, the leader is alive under a new
+	// parent — and the tick is then the only bound that seat has left, so it
+	// KILLS it. Both outcomes are this arm; the reading below says which.
+	//
+	// IT HAS TO BE A SETTLED READING, and the first draft of this was not:
+	// a pdeathsig that was never cleared fires at bwrap's EXIT, and for the
+	// moment between that exit and the leader's own the leader is alive and
+	// already reparented — which is the orphaned shape exactly. MEASURED
+	// 2026-11-22 on D1 (Linux 7.2.15-1-omarchy, bubblewrap 0.13.1, no
+	// AppArmor): a loop that broke on the first orphaned reading took it,
+	// and by the time the tick looked the leader was gone and the tick
+	// filed D3's bead — the branch under test and the branch taken
+	// disagreed. So the wait is for the leader to GO, and only a leader
+	// still there, still reparented, when that wait is over is this host
+	// leaving a seat behind. It costs the 2s on a host that does.
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if !wallWatchLeaderLive(r.SeatPid, r.MntNS) {
+			break
+		}
+	}
+	_, orphaned := wallWatchSeatOrphaned(r, wallWatchProcProbe{})
 
 	st := &fakeWallWatchStore{}
 	lock := filepath.Join(t.TempDir(), "wall-watch.lock")
 	wallWatchBackstop(state, st, lock, time.Now, wallWatchProcProbe{})
 	wallWatchBackstop(state, st, lock, time.Now, wallWatchProcProbe{})
+	if orphaned {
+		t.Logf("MEASURED: this host left the seat's leader (pid %d) running past both its watcher (pid %d) and its bwrap (pid %d), so the arm under test is ranger-base-5k7vf's kill and not D3's bead", r.SeatPid, r.WatcherPid, r.BwrapPid)
+		wwGone(t, r.SeatPid, "the orphaned seat's leader")
+		wwGone(t, bg, "the orphaned seat's backgrounded job")
+		if len(st.issues) != 1 || !strings.Contains(st.issues[0].Title, "outlived its wall-watch and its bwrap") {
+			t.Fatalf("want one bead saying the seat was killed, got %+v", st.issues)
+		}
+		return
+	}
 	if syscall.Kill(bg, 0) != nil {
 		t.Error("a seat whose walls were all up was killed")
 	}
@@ -390,6 +584,93 @@ func TestWallWatchLeaderLiveNeedsPositiveEvidenceOnBothCounts(t *testing.T) {
 		if got := wallWatchLeaderLive(c.pid, c.mntns); got != c.want {
 			t.Errorf("%s: wallWatchLeaderLive(%d, %d) = %v, want %v — this is the whole gate on the kill ranger-base-6ec6n added to the bwrap-exit path, so a true here is a kill and a false here is a seat left running (ranger-base-xxtmo)",
 				c.name, c.pid, c.mntns, got, c.want)
+		}
+	}
+}
+
+// TestWallWatchProcProbeLeaderParentReadsTheRecordsLeaderAndNoOtherProcess is
+// ranger-base-5k7vf's reading, over the real /proc and not a fake table. The
+// backstop's new arm turns on ONE comparison — the leader's parent against the
+// record's bwrap pid — and this is the reading that comparison is made of.
+//
+// It is hermetic and needs no bwrap: the subject is which process the probe
+// answers ABOUT, and a child of this test binary is enough to say. The live
+// arm above is the one that measures the AppArmor-shaped seat.
+func TestWallWatchProcProbeLeaderParentReadsTheRecordsLeaderAndNoOtherProcess(t *testing.T) {
+	t.Parallel()
+	var self unix.Stat_t
+	if err := unix.Stat("/proc/self/ns/mnt", &self); err != nil {
+		t.Skipf("this kernel does not answer /proc/self/ns/mnt (%v), so there is no namespace to compare against", err)
+	}
+	me := os.Getpid()
+
+	// A LIVE CHILD of this process: its parent is a pid this test knows, so
+	// the control row is a reading and not a tautology.
+	child := exec.Command("/bin/sh", "-c", "sleep 300")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	cpid := child.Process.Pid
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+
+	// A zombie: exited, not yet waited for. Reaped in the cleanup.
+	zombie := exec.Command("/bin/sh", "-c", "exit 0")
+	if err := zombie.Start(); err != nil {
+		t.Fatal(err)
+	}
+	zpid := zombie.Process.Pid
+	t.Cleanup(func() { _ = zombie.Wait() })
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		b, err := os.ReadFile("/proc/" + strconv.Itoa(zpid) + "/stat")
+		if err != nil {
+			break
+		}
+		if st, _, ok := procStatStateParent(string(b)); ok && st == 'Z' {
+			break
+		}
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(zpid) + "/stat")
+	if err != nil {
+		t.Fatalf("NOTHING MEASURED: the zombie child (pid %d) left /proc before it could be read (%v), so the zombie row below is not a zombie", zpid, err)
+	}
+	if st, _, ok := procStatStateParent(string(b)); !ok || st != 'Z' {
+		t.Fatalf("NOTHING MEASURED: pid %d reads state %q, want 'Z' — the zombie row below would be measuring a live process", zpid, string(st))
+	}
+
+	for _, c := range []struct {
+		name     string
+		r        wallWatchRecord
+		wantPpid int
+		wantOK   bool
+	}{
+		{"control: a live child, read in its own mount namespace", wallWatchRecord{SeatPid: cpid, MntNS: self.Ino}, me, true},
+		{"the same live pid against ANOTHER namespace — the recycled leader", wallWatchRecord{SeatPid: cpid, MntNS: self.Ino + 1}, 0, false},
+		{"a zombie is no leader", wallWatchRecord{SeatPid: zpid, MntNS: self.Ino}, 0, false},
+		{"a pid that is not there", wallWatchRecord{SeatPid: 1 << 30, MntNS: self.Ino}, 0, false},
+		{"no pid on the record", wallWatchRecord{MntNS: self.Ino}, 0, false},
+		{"no namespace on the record", wallWatchRecord{SeatPid: cpid}, 0, false},
+	} {
+		ppid, ok := wallWatchProcProbe{}.LeaderParent(c.r)
+		if ok != c.wantOK || (ok && ppid != c.wantPpid) {
+			t.Errorf("%s: LeaderParent(%+v) = (%d, %v), want (%d, %v)", c.name, c.r, ppid, ok, c.wantPpid, c.wantOK)
+		}
+	}
+
+	// And the decision the backstop makes out of that reading, over the same
+	// live process: this test binary IS the leader's parent, so a record
+	// naming it as the bwrap reads bounded, and one naming any other pid
+	// reads orphaned.
+	for _, c := range []struct {
+		name     string
+		bwrapPid int
+		want     bool
+	}{
+		{"its recorded bwrap is still its parent", me, false},
+		{"its recorded bwrap is not its parent any more", cpid, true},
+	} {
+		r := wallWatchRecord{Seat: "probe", SeatPid: cpid, MntNS: self.Ino, BwrapPid: c.bwrapPid}
+		if _, got := wallWatchSeatOrphaned(r, wallWatchProcProbe{}); got != c.want {
+			t.Errorf("%s: wallWatchSeatOrphaned = %v, want %v — a true here is a kill (ranger-base-5k7vf)", c.name, got, c.want)
 		}
 	}
 }

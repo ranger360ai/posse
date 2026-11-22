@@ -828,11 +828,22 @@ type fakeWallWatchProbe struct {
 	pids   []int
 	table  mountTable
 	killed int
+	// leaderPpid and leaderRead are what LeaderParent answers
+	// (ranger-base-5k7vf). The ZERO VALUE is "the record's leader is not
+	// there to be read" — reaped, recycled, or in another namespace —
+	// which is what every arm written before that bead means by a seat
+	// whose watcher is gone: on this box bwrap's die-with-parent takes the
+	// leader with the watcher and only its backgrounded child survives.
+	leaderPpid int
+	leaderRead bool
 }
 
 func (p *fakeWallWatchProbe) WatcherAlive(wallWatchRecord) bool { return p.alive }
 func (p *fakeWallWatchProbe) SeatPids(wallWatchRecord) []int    { return p.pids }
 func (p *fakeWallWatchProbe) Table([]int) (mountTable, error)   { return p.table, nil }
+func (p *fakeWallWatchProbe) LeaderParent(wallWatchRecord) (int, bool) {
+	return p.leaderPpid, p.leaderRead
+}
 func (p *fakeWallWatchProbe) Kill(wallWatchRecord) ([]int, string) {
 	p.killed++
 	k := p.pids
@@ -926,6 +937,138 @@ func TestWallWatchBackstopFilesADeadWatcherOnceAndKeepsDiffing(t *testing.T) {
 	wallWatchBackstop(state, st, "", time.Now, p)
 	if p.killed != 1 || len(st.issues) != 2 {
 		t.Errorf("after the detach: killed=%d beads=%d, want 1 and 2", p.killed, len(st.issues))
+	}
+}
+
+// ── the dead watcher's kill (ranger-base-5k7vf) ────────────────────────────
+
+// The decision, which is the whole gate on a kill the watcher never made:
+// the leader has to be READABLE as the record's leader, and its parent has
+// to be something other than the record's bwrap.
+func TestWallWatchSeatOrphanedNeedsAParentThatIsNotTheRecordsBwrap(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name     string
+		bwrapPid int
+		ppid     int
+		read     bool
+		want     bool
+	}{
+		{"reparented to init: the seat nothing bounds", 101, 1, true, true},
+		{"reparented to some other subreaper", 101, 4242, true, true},
+		{"its bwrap is still its parent, so bwrap still ends it", 101, 101, true, false},
+		{"the leader cannot be read as itself — reaped or recycled", 101, 1, false, false},
+		{"a record naming no bwrap buys no kill", 0, 1, true, false},
+		{"a record naming a negative bwrap buys no kill", -1, 1, true, false},
+	} {
+		p := &fakeWallWatchProbe{leaderPpid: c.ppid, leaderRead: c.read}
+		r := wallWatchRecord{Seat: "developer", BwrapPid: c.bwrapPid, SeatPid: 102, MntNS: 7}
+		if _, got := wallWatchSeatOrphaned(r, p); got != c.want {
+			t.Errorf("%s: wallWatchSeatOrphaned = %v, want %v — a true here is a kill and a false here is a seat left running (ranger-base-5k7vf)", c.name, got, c.want)
+		}
+	}
+}
+
+func TestWallWatchBackstopKillsASeatOrphanedUnderADeadWatcher(t *testing.T) {
+	t.Parallel()
+	state, path, r := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	// Every wall up, the watcher gone, and the leader reparented to init:
+	// the shape an AppArmor host with no wall-unix step leaves behind.
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: 1, leaderRead: true}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 {
+		t.Fatalf("killed %d times, want 1 — a seat with no watcher, no bwrap and no pdeathsig was left running: %q", p.killed, lines)
+	}
+	if len(st.issues) != 1 || st.issues[0].Priority != 1 {
+		t.Fatalf("want one P1, got %+v (lines %q)", st.issues, lines)
+	}
+	if ti := st.issues[0].Title; !strings.Contains(ti, "outlived its wall-watch and its bwrap") {
+		t.Errorf("the title does not say what happened: %q", ti)
+	}
+	d := st.issues[0].Description
+	for _, want := range []string{wallWatchOrphanKillMarker(r), "seat: developer", "KILLED", "killed: pids 102 103", "it is now pid 1", "watcher pid: 100 (gone)"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("the bead does not say %q:\n%s", want, d)
+		}
+	}
+	if strings.Contains(d, "nothing has been killed") {
+		t.Errorf("the bead of a KILLED seat carries the dead-watcher arm's text:\n%s", d)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record of a seat the tick killed was kept (%v)", err)
+	}
+	// The durable copy, for the detach arm's reason: this seat's pane went
+	// with its watcher (ranger-base-pfcci).
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 1 {
+		t.Fatalf("%d verdicts on disk, want 1 (tick said %q)", len(vs), lines)
+	}
+	for _, want := range []string{"KILLED seat developer", "ranger-base-5k7vf", "watcher pid 100 (gone)", "filed " + st.issues[0].ID} {
+		if !strings.Contains(vs[0].Text, want) {
+			t.Errorf("the verdict does not carry %q:\n%s", want, vs[0].Text)
+		}
+	}
+	// The next tick has nothing to say: the seat is over and its record is
+	// gone, so the kill is not re-filed.
+	if more := wallWatchBackstop(state, st, "", time.Now, p); len(more) != 0 || len(st.issues) != 1 {
+		t.Errorf("the tick after the kill said %q and filed %d beads", more, len(st.issues))
+	}
+}
+
+// The control that keeps the kill narrow: a watcher that is gone with the
+// leader still a child of its bwrap is the arm that was there before — one
+// bead, no kill — because that bwrap still ends the seat.
+func TestWallWatchBackstopLeavesASeatWhoseBwrapIsStillItsLeadersParent(t *testing.T) {
+	t.Parallel()
+	state, path, r := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: r.BwrapPid, leaderRead: true}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 0 {
+		t.Fatalf("a seat still under its bwrap was killed: %q", lines)
+	}
+	if len(st.issues) != 1 || !strings.Contains(st.issues[0].Description, wallWatchOrphanMarker(r)) {
+		t.Fatalf("want the dead-watcher bead and no kill, got %+v", st.issues)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the record of a seat that is still running was removed (%v)", err)
+	}
+}
+
+// A seat found in the bounded shape first and the unbounded one later: the
+// kill is not held back by the bead that already exists, and that bead is
+// told, because what it says — nothing has been killed — stops being true.
+func TestWallWatchBackstopKillsAnAlreadyFiledOrphanAndCommentsOnItsBead(t *testing.T) {
+	t.Parallel()
+	state, path, r := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: r.BwrapPid, leaderRead: true}
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if len(st.issues) != 1 || p.killed != 0 {
+		t.Fatalf("the first tick: beads=%+v killed=%d", st.issues, p.killed)
+	}
+	id := st.issues[0].ID
+	// Now its bwrap goes too.
+	p.leaderPpid = 1
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 {
+		t.Fatalf("the seat was left running because its dead watcher was already filed: %q", lines)
+	}
+	if len(st.issues) != 1 {
+		t.Errorf("%d beads, want the one that was already filed", len(st.issues))
+	}
+	cs := st.comments[id]
+	if len(cs) != 1 {
+		t.Fatalf("%d comments on %s, want 1 saying the seat was killed: %v", len(cs), id, cs)
+	}
+	for _, want := range []string{"KILLED this seat", wallWatchOrphanKillMarker(r), "killed: pids 102 103"} {
+		if !strings.Contains(cs[0], want) {
+			t.Errorf("the comment does not say %q:\n%s", want, cs[0])
+		}
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record of a seat the tick killed was kept (%v)", err)
 	}
 }
 

@@ -63,3 +63,8 @@ reds on the ubuntu leg if it is wrong (leader pdeathsig not 9).
   follows it, and the seat is orphaned with no watcher left to kill it. The
   dispatch backstop's dead-watcher arm (ranger-base-0qpsw D3) still files its
   P1 for that seat and keeps diffing its walls, but it does not kill it.
+  CLOSED by ranger-base-5k7vf: that arm kills such a seat now — when the
+  record's leader is alive in the record's mount namespace and its parent is
+  no longer the record's bwrap — and says KILLED in the bead it files. See
+  docs/notes.d/ranger-base-5k7vf.md. The window is the watch tick's interval
+  rather than the watcher's 250 ms, which is D3's own residual.

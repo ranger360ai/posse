@@ -516,7 +516,13 @@ func wallWatchComment(d wallWatchDetach, ms []WallWatchMount) string {
 //     would have filed it;
 //   - walls intact but the watcher gone → ONE bead for that seat, because a
 //     detector that dies says nothing (ranger-base-7idk4's lesson), and the
-//     tick keeps diffing the seat for as long as it lives.
+//     tick keeps diffing the seat for as long as it lives;
+//   - walls intact, the watcher gone, AND that seat's leader has outlived
+//     its bwrap → the tick kills it (ranger-base-5k7vf, wallWatchSeatOrphaned).
+//     On a seat line with no wall-unix step the watcher's own kill was the
+//     seat's only lifetime bound, so a watcher that is SIGKILLed leaves the
+//     seat running with nothing left to end it. This arm is that kill, one
+//     tick late.
 
 // wallWatchRecordDir is where a watcher started with this mounts file keeps
 // its record: beside the mounts file, so the launch's own dir decides it and
@@ -600,10 +606,60 @@ func wallWatchOrphanDescription(r wallWatchRecord, live []int, at time.Time) str
 		r.Seat, r.Dir, r.WatcherPid, r.BwrapPid, r.SeatPid,
 		r.Released.UTC().Format(time.RFC3339Nano), at.UTC().Format(time.RFC3339Nano), wallWatchPidList(live))
 	b.WriteString("\nWHAT THIS MEANS: from the moment the watcher ended, a host rename over one of this seat's walls is caught by the watch tick and not within 250 ms — the seat's window is the tick interval. The tick keeps diffing this seat and kills it on a detach as the watcher would have.\n")
+	b.WriteString("The seat's leader is still a child of the bwrap above, so the seat ends when that bwrap does; a leader that has outlived its bwrap is killed by the tick instead (ranger-base-5k7vf).\n")
 	b.WriteString("REVIEW: find what ended the watcher (it does not exit while its seat runs), and end the seat if it should not be running.\n\n")
 	b.WriteString(wallWatchOrphanMarker(r))
 	b.WriteByte('\n')
 	return b.String()
+}
+
+// ── The dead watcher's kill (ranger-base-5k7vf) ────────────────────────────
+//
+// A seat whose watcher is gone AND whose leader has outlived its bwrap has
+// no lifetime bound left at all. Where that is real: a host whose AppArmor
+// moves bwrap's exec into another label clears the pdeathsig bwrap set
+// (ranger-base-6ec6n), and a seat line with no `posse wall-unix` step —
+// Landlock ABI below the signal scope — has nothing that re-arms it. The
+// watcher's kill on bwrap's exit was the whole of the bound; a SIGKILLed
+// watcher never makes it. So the tick does, and says KILLED where the
+// dead-watcher arm says "nothing has been killed".
+
+// wallWatchOrphanKillMarker is the line this kill's bead carries, so every
+// seat the tick had to end is one search away.
+func wallWatchOrphanKillMarker(r wallWatchRecord) string {
+	return fmt.Sprintf("wall-watch gone and seat KILLED: watcher %d of seat %s (ranger-base-5k7vf)", r.WatcherPid, r.Seat)
+}
+
+func wallWatchOrphanKillTitle(r wallWatchRecord) string {
+	return fmt.Sprintf("security: seat %s outlived its wall-watch and its bwrap, and the watch tick killed it", r.Seat)
+}
+
+// wallWatchOrphanKillLines is what the bead says about one such kill,
+// whether it is the bead's own description or a comment on the bead the
+// dead-watcher arm filed an earlier tick.
+func wallWatchOrphanKillLines(r wallWatchRecord, d wallWatchDetach, ppid int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "seat: %s\nsession dir: %s\nwatcher pid: %d (gone) · bwrap pid: %d (no longer the leader's parent; it is now pid %d) · seat pid: %d\nreleased at: %s\nkilled at: %s\nkilled: %s\n",
+		r.Seat, r.Dir, r.WatcherPid, r.BwrapPid, ppid, r.SeatPid,
+		r.Released.UTC().Format(time.RFC3339Nano), d.At.UTC().Format(time.RFC3339Nano), wallWatchKilled(d))
+	b.WriteString("\nWHAT THIS MEANS: the seat's leader was alive in the seat's own mount namespace with its bwrap gone, so bwrap's --die-with-parent had been cleared under it (an AppArmor exec transition does that, ranger-base-6ec6n) and this seat line has no `posse wall-unix` step to re-arm it. Its walls were all up, so nothing says they came off — what was lost is the bound on how long it could run, and the watcher that was that bound is gone.\n")
+	b.WriteString("REVIEW: find what ended the watcher (it does not exit while its seat runs). If this host renders no wall-unix step, that is the Landlock ABI it reports, and every seat on it depends on the watcher staying alive.\n\n")
+	b.WriteString(wallWatchOrphanKillMarker(r))
+	b.WriteByte('\n')
+	return b.String()
+}
+
+func wallWatchOrphanKillDescription(r wallWatchRecord, d wallWatchDetach, ppid int) string {
+	return "Filed by the dispatch watch tick (ranger-base-5k7vf, over ranger-base-0qpsw D3). This bwrap seat's `posse wall-watch` sidecar is gone, its bwrap is gone, and its leader was still running — so nothing was left to end it and the tick KILLED it.\n\n" +
+		wallWatchOrphanKillLines(r, d, ppid)
+}
+
+// wallWatchOrphanKillComment is the same reading on the bead an earlier
+// tick already filed for this seat's dead watcher — the one that says
+// nothing has been killed, which is no longer true.
+func wallWatchOrphanKillComment(r wallWatchRecord, d wallWatchDetach, ppid int) string {
+	return "The watch tick has now KILLED this seat (ranger-base-5k7vf): its leader outlived its bwrap as well, so nothing was left to end it. The bead above says nothing had been killed, which was true when it was filed.\n\n" +
+		wallWatchOrphanKillLines(r, d, ppid)
 }
 
 func wallWatchPidList(ps []int) string {
@@ -646,6 +702,31 @@ type wallWatchProbe interface {
 	Table(pids []int) (mountTable, error)
 	// Kill: end the seat as the watcher's D2 does.
 	Kill(r wallWatchRecord) (killed []int, errText string)
+	// LeaderParent is the record's seat leader as the process table has it:
+	// its parent pid, and whether it could be read as that leader at all —
+	// running, and in the record's mount namespace (wallWatchLeaderLive's
+	// two checks, so a reaped and recycled pid reads false). It READS and
+	// decides nothing; wallWatchSeatOrphaned is the decision.
+	LeaderParent(r wallWatchRecord) (ppid int, ok bool)
+}
+
+// wallWatchSeatOrphaned: has this seat outlived its bwrap? Its leader is
+// alive in the seat's own mount namespace and its parent is NOT the bwrap
+// the watcher started, so it has been reparented and bwrap cannot end it.
+// With the watcher gone too, that is a seat nothing bounds (ranger-base-5k7vf).
+//
+// POSITIVE EVIDENCE ON BOTH COUNTS, as the watcher's own gate is
+// (wallWatchLeaderLive, ranger-base-xxtmo): a record naming no bwrap buys no
+// kill, because the comparison that would say "reparented" cannot be made
+// against it. The error direction is the safe one either way — a parent that
+// still reads as the record's bwrap leaves the seat alone, which is what
+// every tick before this did.
+func wallWatchSeatOrphaned(r wallWatchRecord, p wallWatchProbe) (ppid int, orphaned bool) {
+	ppid, ok := p.LeaderParent(r)
+	if !ok || r.BwrapPid <= 0 {
+		return ppid, false
+	}
+	return ppid, ppid != r.BwrapPid
 }
 
 // wallWatchBackstop is one tick of D3 over every record under stateDir. It
@@ -715,10 +796,62 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 			}
 			continue
 		}
-		if alive || r.OrphanFiled != "" {
+		if alive {
 			continue
 		}
-		// Walls intact, watcher gone: say so once for this seat.
+		// THE WATCHER IS GONE AND EVERY WALL IS UP. Two seats look like
+		// this and only one of them is still bounded: one whose leader is
+		// still a child of its bwrap, which ends when that bwrap does, and
+		// one whose leader has been reparented — its pdeathsig cleared by
+		// an AppArmor exec transition, no wall-unix step to re-arm it, its
+		// bwrap gone and the watcher that would have killed it the very
+		// thing this arm has just found missing. Nothing bounds that seat,
+		// so the tick does (ranger-base-5k7vf).
+		//
+		// BEFORE the OrphanFiled check, deliberately: a seat can be found
+		// in the bounded shape on one tick and the unbounded one on a
+		// later tick, and that is the tick that must kill it. The bead this
+		// seat already has is commented rather than filed twice.
+		if ppid, orphaned := wallWatchSeatOrphaned(r, p); orphaned {
+			d := wallWatchDetach{Seat: r.Seat, Dir: r.Dir, BwrapPid: r.BwrapPid, SeatPid: r.SeatPid, At: now()}
+			d.Killed, d.KillErr = p.Kill(r)
+			// The verdict file first, for the detach arm's reason
+			// (ranger-base-pfcci): this seat's pane went with its watcher,
+			// and the tick's output is a dispatch session's scrollback the
+			// seat has no part of.
+			v := &wallWatchSaid{Path: wallWatchVerdictPath(path), Pane: func(s string) { out = append(out, s) }}
+			v.note(wallWatchOrphanVerdictHeader(r, d.At))
+			v.say("⛨ wall-watch backstop: KILLED seat %s — its watcher (pid %d) is gone and its leader (pid %d) outlived its bwrap (pid %d; its parent is now pid %d), so nothing bounded it (ranger-base-5k7vf); killed %s",
+				r.Seat, r.WatcherPid, r.SeatPid, r.BwrapPid, ppid, wallWatchKilled(d))
+			if r.OrphanFiled != "" {
+				if cerr := st.Comment(r.Dir, r.OrphanFiled, wallWatchOrphanKillComment(r, d, ppid), VerifyActor); cerr != nil {
+					v.say("  ⚠ %s still says nothing was killed (%v) — this line is the record", r.OrphanFiled, cerr)
+				} else {
+					v.say("  recorded on %s, which this seat's dead watcher already has", r.OrphanFiled)
+				}
+			} else if id, cerr := st.Create(r.Dir, BdNew{
+				Title:       wallWatchOrphanKillTitle(r),
+				Description: wallWatchOrphanKillDescription(r, d, ppid),
+				Labels:      []string{"security"},
+				Priority:    "1",
+				Type:        "bug",
+				Actor:       VerifyActor,
+			}); cerr != nil || id == "" {
+				v.say("  ⚠ the kill could not be filed (%v) — this line is the record", cerr)
+			} else {
+				v.say("  filed %s", id)
+			}
+			v.close()
+			// The watcher that owns this record is gone and the seat it
+			// named is over, so nothing will come back to it.
+			_ = os.Remove(path)
+			continue
+		}
+		if r.OrphanFiled != "" {
+			continue
+		}
+		// Walls intact, watcher gone, the leader still its bwrap's child:
+		// say so once for this seat.
 		id, cerr := st.Create(r.Dir, BdNew{
 			Title:       wallWatchOrphanTitle(r),
 			Description: wallWatchOrphanDescription(r, pids, now()),

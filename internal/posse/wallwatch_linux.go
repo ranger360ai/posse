@@ -665,6 +665,29 @@ func (wallWatchProcProbe) Kill(r wallWatchRecord) ([]int, string) {
 	return wallWatchKillWith(0, func() []int { return wallWatchSeatPids(0, r.MntNS) })
 }
 
+// LeaderParent reads the record's leader out of /proc, and only as the
+// leader: wallWatchLeaderLive first, so a pid that was reaped and recycled
+// by some unrelated process answers ok=false instead of handing the
+// backstop that process's parent (ranger-base-5k7vf). The two reads are
+// not one atom — the pid could be recycled between them — and the second
+// one's ENOENT is the same false; what the pair cannot do is read a live
+// stranger as this seat's leader, because the namespace check is positive
+// evidence about THIS pid and a recycled one is in another namespace.
+func (wallWatchProcProbe) LeaderParent(r wallWatchRecord) (int, bool) {
+	if !wallWatchLeaderLive(r.SeatPid, r.MntNS) {
+		return 0, false
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(r.SeatPid) + "/stat")
+	if err != nil {
+		return 0, false
+	}
+	_, ppid, ok := procStatStateParent(string(b))
+	if !ok || ppid <= 0 {
+		return 0, false
+	}
+	return ppid, true
+}
+
 // WallWatchBackstop is one dispatch-tick pass of ranger-base-0qpsw D3 over
 // every bwrap seat this state dir launched (wallWatchBackstop).
 func (a *App) WallWatchBackstop(st wallWatchStore) []string {
