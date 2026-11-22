@@ -7,12 +7,23 @@ package posse
 // WHY IT EXISTS. ADR 0096 D3 makes every live pin that nests a bwrap abstain
 // inside a wall that forbids nesting. Every seat is such a wall, the judge is
 // one too, and the judge does not run the suite arms anyway (ADR 0088 D6). So
-// 32 of this tree's live wall pins measured only when an operator ran `make
-// test` uncaged, and nothing schedules that. A pin that runs nowhere protects
+// this tree's live wall pins measured only when an operator ran `make test`
+// uncaged, and nothing schedules that. A pin that runs nowhere protects
 // nothing — and worse than nothing on one of them:
 // `TestLiveBwrapGitRefsRefusesTheSharedGitState` PASSED on a seat because its
 // bwrap never started, so the refusal it asserts read true (ADR 0086 D5's
 // false pass).
+//
+// HOW MANY PINS THERE ARE IS IN NO UNDATED PROSE, here or anywhere
+// (ranger-base-wbf8i: sentences in three shipped files said "32 members"
+// with no date on them, long after the set had grown past it). It is read
+// off the RUN — `wall check: green, <n> pins measured`, D3's own green line,
+// which exists because a green exit over zero measured pins is the hole exit
+// 3 closes. It cannot be grepped either: membership is the MARKER and never
+// the name (D4), so the one honest count is the one the venue just took, and
+// a number typed into a comment goes stale on the next landing that gates a
+// pin. Dated readings live in docs/notes.d/, each carrying the day it was
+// taken.
 //
 // THE THREE PIECES, and only the middle one is new code:
 //
@@ -129,7 +140,7 @@ const (
 	// here (it was the other way round until this bead: D1's render is what
 	// writes the variable, so a test-only const was the one copy nothing
 	// could render against). A second literal is the drift that makes a venue
-	// run abstain on all 32 members while reporting exit 3, which D5's
+	// run abstain on every member while reporting exit 3, which D5's
 	// watchdog reports as silence and not as a wall regression.
 	wallVenueEnvVar = "POSSE_WALL_VENUE"
 
@@ -155,11 +166,12 @@ const (
 	//
 	// WHY /var/tmp AT ALL, and it is the ADR's own fourth row rather than a
 	// precaution: `wallUngrantedDir` makes its fixture root under /var/tmp,
-	// which `--ro-bind / /` makes read-only, so without this bind 18 of the
-	// 32 pins SKIP — "16 pass, 18 skip" in 18.8s, against 34 pass in ~100s
-	// with it. A helper change unrelated to the wall took 18 pins dark, and
-	// that is the measurement behind D5's "count the abstentions, never the
-	// exit code".
+	// which `--ro-bind / /` makes read-only, so without this bind the pins
+	// that write under it SKIP — "16 pass, 18 skip" in 18.8s, against 34
+	// pass in ~100s with it, which is ADR 0097's own table and MEASURED
+	// 2026-11-14 when the set was smaller. A helper change unrelated to the
+	// wall took 18 pins dark, and that is the measurement behind D5's "count
+	// the abstentions, never the exit code".
 	//
 	// A BIND FROM THE RUN DIR AND NOT A TMPFS, which is the judge's private
 	// /tmp one line over (ranger-base-7wdb7): the directory goes with the run
@@ -311,7 +323,7 @@ func (c *landedChecker) wall(repo, base, tip, tree, run string, judged landVerdi
 	// D7, which this rule reads through the same checker — the LAUNCHER
 	// that rendered that venue, on every one of the three answers. The
 	// argv because a venue that rendered the wrong wall is the first thing
-	// to suspect when 32 pins abstain; the wall because ADR 0097's price
+	// to suspect when the members abstain; the wall because ADR 0097's price
 	// is read off these lines (its Consequences accept about 100s a
 	// judgement); and the launcher because the venue is ITS render and not
 	// the tree's, so a landing that changes the venue changes nothing here

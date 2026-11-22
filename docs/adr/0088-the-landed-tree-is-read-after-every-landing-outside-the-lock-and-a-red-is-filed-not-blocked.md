@@ -433,8 +433,8 @@ there is no verdict. `WallUnixDegraded`'s own words, never a bare alarm.
 A Landlock filesystem domain forbids `mount(2)` — ADR 0080's probe measured it
 (U9, U10) — and the venue exists so that the wall's live pins can nest a bwrap
 of their own. Under `POSSE_WALL_VENUE=1` a refusal to nest is a FAIL on every
-member (ADR 0097 D4), so a step riding in the shared argv would red all 32
-pins and answer exit 3 at every landing. [ADR 0097](0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md)
+member (ADR 0097 D4), so a step riding in the shared argv would red every
+member and answer exit 3 at every landing. [ADR 0097](0097-the-walls-live-pins-measure-in-a-nesting-venue-after-each-landing.md)
 D1 is amended to say so, and its subtraction pin reads "the judge's argv minus
 the step, plus the three" rather than "plus the three and nothing removed".
 
@@ -486,7 +486,7 @@ directory the census found. A daemon that grew one would be visible as a
 - **Leave the judge at parity with a seat by taking the step off the seat.**
   That is the l2gk9 class back on every seat on the box, to spare one judge.
 - **Give the venue the step and let the pins abstain.** An abstention is never
-  a pass (ADR 0097 D5), so this is 32 pins measuring nothing and a watchdog
+  a pass (ADR 0097 D5), so this is every pin measuring nothing and a watchdog
   filing silence at every landing — the state ADR 0097 exists to leave.
 - **Resolve `self` on the judge's PATH.** `exec.LookPath` is right inside the
   step, where the thing being resolved is the runtime (D29); here the thing

@@ -11,7 +11,7 @@ package posse
 // being a member of the class it gates: a test that called it with a name
 // outside D3's filter would FAIL, which is not an assertion, and a test that
 // called it inside the venue would need a venue to be in. So the rule is
-// split out as bwrapNestDecision and read here. The tree's 32 members then
+// split out as bwrapNestDecision and read here. The tree's members then
 // exercise one row of it each, which is coverage of the wiring and of nothing
 // else — in any one process every one of them takes the SAME row, because
 // the wall answer is memoized once per binary.
@@ -479,7 +479,7 @@ func TestQAWallVenueEnvParseIsADR0097D1s(t *testing.T) {
 		{"the venue, exactly as landedcheck.go renders it", "1", true, false},
 
 		// Everything else is a refusal and not a quiet no, because reading
-		// it as "not the venue" abstains all 32 members, answers exit 3 and
+		// it as "not the venue" abstains every member, answers exit 3 and
 		// reaches a reader as D5's "wall check silent".
 		{"a hand-typed off", "0", false, true},
 		{"a hand-typed yes", "yes", false, true},
@@ -648,8 +648,8 @@ func TestQAWallVenueGateEmitsTheMarkerItDecides(t *testing.T) {
 //	bwrapNestAct(t, nestAbstain, msg)   ok 137.750s — every member SKIPS
 //	                                    whatever the rule decided
 //
-// Either is ADR 0097 finding 2(b) one level up: 32 members, zero marker
-// lines, a venue run green, silent and uncountable, which
+// Either is ADR 0097 finding 2(b) one level up: the whole member set, zero
+// marker lines, a venue run green, silent and uncountable, which
 // `scripts/posse-wall-check` answers exit 3 for and D5's watchdog files as
 // "wall check silent" rather than as the wall regression the run existed to
 // find.

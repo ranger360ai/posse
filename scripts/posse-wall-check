@@ -9,7 +9,7 @@
 # WHY THIS EXISTS. ADR 0096 D3 makes every live pin that nests a bwrap abstain
 # inside a wall that forbids nesting, and every seat is such a wall. The
 # landed-check judge is one too, and it does not run the suite arms anyway
-# (ADR 0088 D6). So 32 pins measured only when an operator ran `make test`
+# (ADR 0088 D6). So such a pin measured only when an operator ran `make test`
 # uncaged, and nothing schedules that: a pin that runs nowhere protects
 # nothing. ADR 0097 gives them a venue — the judge's cage plus
 # `--unshare-pid --proc /proc`, a private `/var/tmp`, and `POSSE_WALL_VENUE=1`
@@ -124,7 +124,7 @@
 #
 # A FAILURE THAT IS NOT A MEMBER'S IS REPORTED AND IS NOT THIS CHECK'S RED.
 # Two tests inside D3's filter print no marker. If one of them fails while
-# every member passes, this still exits 0 — the subject of ADR 0097 is the 32
+# every member passes, this still exits 0 — the subject of ADR 0097 is the
 # pins that measure nowhere else — and says so in a `note:` line above the
 # green sentence, because a `go test` that exited nonzero under a green
 # verdict is the one shape a reader of this output would otherwise have to

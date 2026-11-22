@@ -18,7 +18,7 @@ package posse
 // answered green — the production wall check behind ADR 0097 D1's venue,
 // rendered by `boxLandedCage`'s flag and nothing else. What it measures is the
 // question the stubbed arms cannot ask: do D1's three additions actually buy
-// the nesting the 32 live pins need, on this kernel, through this bwrap, with
+// the nesting the live pins need, on this kernel, through this bwrap, with
 // the judge's masks over them.
 //
 // SO THIS IS A MEASUREMENT AND NOT A GATE, exactly as landedchecklive_test.go
@@ -26,7 +26,7 @@ package posse
 // it. Every reading it has produced is in docs/notes.d/ranger-base-wplhv.md,
 // which is the one place they are said.
 //
-// IT IS IN ARM 2 ON PURPOSE, and that is not where its subject lives. The 32
+// IT IS IN ARM 2 ON PURPOSE, and that is not where its subject lives. The
 // members are arm 1 files (ADR 0097 D4), and this test's NAME would be
 // selected by D3's own `-run` filter — so in arm 1 it would be a test that a
 // venue run starts inside the venue it is measuring. A tag the venue's
@@ -37,11 +37,12 @@ package posse
 // fixture does differently from its sibling's: the two private mounts stand
 // down when the run dir is under /tmp (landedCheckTmp, and ADR 0097 D1's
 // /var/tmp bind with it), and `wtApp`'s home is a `t.TempDir()`. Under that
-// home the venue would render with the host's /var/tmp read-only, 18 of the
-// 32 members would go dark, and the body would answer D3's exit 3 — a
-// correct answer to a question nobody asked, and 100s to find out. Production
-// puts its run dir under the state dir (`~/.posse/landed-check`), so this
-// fixture does the same kind of thing one directory over.
+// home the venue would render with the host's /var/tmp read-only, the members
+// that write under it would go dark (ADR 0097's own `/var/tmp` row), and the
+// body would answer D3's exit 3 — a correct answer to a question nobody
+// asked, and 100s to find out. Production puts its run dir under the state
+// dir (`~/.posse/landed-check`), so this fixture does the same kind of thing
+// one directory over.
 //
 // IT WRITES TO THE SHARED STORE for landedchecklive_test.go's reason — `git
 // worktree add` registers under the repo's COMMON `.git/worktrees/` — and it
@@ -139,8 +140,8 @@ func TestLiveTheWallCheckMeasuresInTheRealVenue(t *testing.T) {
 
 // wallLiveApp is an App whose home — and so whose landed-check run dir — is
 // NOT under /tmp or /var/tmp. See the file header: a run dir under either
-// stands ADR 0097 D1's private mounts down, and the venue then measures 16 of
-// 32 pins and answers D3's exit 3.
+// stands ADR 0097 D1's private mounts down, and the venue then measures only
+// the pins that need no private /var/tmp and answers D3's exit 3.
 //
 // AND IT RUNS UNDER THE BOX'S OWN HOME, which is the other half of the same
 // problem and was MEASURED the hard way (docs/notes.d/ranger-base-wplhv.md,

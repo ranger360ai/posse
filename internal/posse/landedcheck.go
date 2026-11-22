@@ -220,9 +220,9 @@ const (
 	// `--unshare-pid --proc /proc`, a private /var/tmp, and
 	// POSSE_WALL_VENUE=1, and MINUS the socket-wall step (D1 as amended by
 	// ranger-base-i92tj — a Landlock FS domain forbids mount(2)). It is where
-	// the wall's 32 live pins can nest a
-	// bwrap of their own, which is the capability it exists for and the one
-	// axis on which it is weaker than a seat (D1's third bullet).
+	// the wall's live pins can nest a bwrap of their own, which is the
+	// capability it exists for and the one axis on which it is weaker than a
+	// seat (D1's third bullet).
 	landedCageVenue
 )
 

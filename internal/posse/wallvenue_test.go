@@ -138,7 +138,7 @@ func bwrapNestProbe() string {
 // test naming a WRITTEN package-level var, and a `var x = regexp.MustCompile`
 // is written by its own initializer. The regexp is therefore a func
 // (wallVenueMemberRe), the way instancePathSpellings is one for the same
-// reason. It is compiled once per gated pin and there are 32 of them.
+// reason. It is compiled once per gated pin.
 const wallVenueMarker = "wall venue: measuring (ADR 0097)"
 
 // THE VENUE'S ENVIRONMENT VARIABLE is the second of the three literals this
@@ -152,7 +152,7 @@ const wallVenueMarker = "wall venue: measuring (ADR 0097)"
 // was declared here until that render landed, because nothing in the tree
 // wrote the variable yet — which made a test file the one copy nothing could
 // be rendered against. A second literal is the drift that makes a venue run
-// abstain on all 32 members while reporting exit 3, which D5's watchdog
+// abstain on every member while reporting exit 3, which D5's watchdog
 // reports as silence and not as a wall regression.
 
 // wallVenueMemberPattern is ADR 0097 D3's `-run` filter, which is also D4's
@@ -189,7 +189,7 @@ func wallVenueTopLevel(name string) string {
 // EXACTLY `1`, and ANY OTHER SET VALUE IS A REFUSAL rather than a quiet no.
 // D1 writes `POSSE_WALL_VENUE=1` and nothing else, so a value this function
 // does not recognise can only be a hand-typed or mis-rendered venue — and the
-// cost of reading it as "not the venue" is that all 32 members abstain, the
+// cost of reading it as "not the venue" is that every member abstains, the
 // body answers exit 3, and D5's watchdog files "wall check silent at <repo>"
 // instead of the wall regression the run was there to find. An abstention is
 // never a pass (D5), and a venue that cannot be recognised is the one place
@@ -340,7 +340,7 @@ func bwrapNestDecision(name, refusal string, venue bool) (nestAction, string) {
 // `scripts/posse-wall-check` answers exit 3 for and D5's watchdog files as
 // "wall check silent" rather than as the wall regression the run existed to
 // find (ADR 0097's own `/var/tmp` row, one mechanism over). Nothing could
-// have caught it: the gate's only callers are the 32 members, every one of
+// have caught it: the gate's only callers are the members, every one of
 // them takes the same row in any one process, and none of them asserts that
 // the gate logged anything. So the switch moved to bwrapNestAct, which takes
 // its sink as an interface a pin can hand a recorder.
@@ -355,11 +355,11 @@ func bwrapNestDecision(name, refusal string, venue bool) (nestAction, string) {
 //	bwrapNestAct(t, act, "")            the marker DECIDED and never SAID
 //	bwrapNestAct(t, nestAbstain, msg)   every member SKIPS whatever was decided
 //
-// Either one is ADR 0097 finding 2(b) verbatim one level up — 32 members,
-// zero marker lines, a venue run green, silent and uncountable, which
-// `scripts/posse-wall-check` answers exit 3 for and D5's watchdog files as
-// "wall check silent" rather than as the wall regression the run existed to
-// find. So the composition moved into bwrapNestSkipTo, which takes the sink
+// Either one is ADR 0097 finding 2(b) verbatim one level up — the whole
+// member set, zero marker lines, a venue run green, silent and uncountable,
+// which `scripts/posse-wall-check` answers exit 3 for and D5's watchdog files
+// as "wall check silent" rather than as the wall regression the run existed
+// to find. So the composition moved into bwrapNestSkipTo, which takes the sink
 // and the three facts as arguments and can therefore be handed a recorder.
 //
 // WHAT IS STILL UNPINNED is exactly the three argument READS below — t.Name(),

@@ -133,7 +133,7 @@ Outside the venue, its behaviour is exactly ADR 0096 D3's.
 
 ## Consequences
 
-- The 32 pins have a scheduled place to measure. A wall regression is found
+- The pins have a scheduled place to measure. A wall regression is found
   about 100s after the judge answers green, and it arrives as one
   attributed P1.
 - Cost: one cold venue run of about 100s per coalesced green judgement
@@ -217,7 +217,7 @@ different facts.** MEASURED 2026-11-14 on the D1 host (Linux 7.2.15-1-omarchy,
 bubblewrap 0.13.1, Landlock ABI 10): inside the venue's shape with the step on
 the line, the baseline `bwrap --ro-bind / / /bin/true` answers `bwrap: Failed
 to make / slave: Operation not permitted`, so under D4 that is a FAIL on every
-one of the 32 members and D3's baseline arm answers exit 3 at every landing.
+one of the members and D3's baseline arm answers exit 3 at every landing.
 The same shape without the step nests (exit 0), which is the row that makes
 the other three readable.
 
