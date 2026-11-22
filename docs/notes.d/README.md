@@ -22,6 +22,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-fuwuv](ranger-base-fuwuv.md) — The land check's cross product: every arm under both platforms, and what the two new steps cost (ranger-base-fuwuv) — 2026-11-22
 - [ranger-base-b8igm](ranger-base-b8igm.md) — Two arms nothing ran, and a census one frame short (ranger-base-b8igm) — 2026-11-22
 - [ranger-base-ayubz](ranger-base-ayubz.md) — The caged BEADS_DIR is a translation, not a resolve (ranger-base-ayubz) — 2026-11-22
+- [ranger-base-9uvsx](ranger-base-9uvsx.md) — One notification, one verdict (ranger-base-9uvsx) — 2026-11-22
 - [ranger-base-2unmh](ranger-base-2unmh.md) — Four closes verified, and four arms nothing witnessed (ranger-base-2unmh) — 2026-11-22
 - [ranger-base-1aayx](ranger-base-1aayx.md) — The fourteen macos arm-1 reds were twelve landings and one fixture root (ranger-base-1aayx) — 2026-11-22
 - [ranger-base-zm03j](ranger-base-zm03j.md) — Verifying four closes, and the platform half nothing read (ranger-base-zm03j) — 2026-11-21

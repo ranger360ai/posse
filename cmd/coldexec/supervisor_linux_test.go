@@ -352,15 +352,26 @@ func (r doorRun) wantNoHoles(t *testing.T) {
 // closed exactly (MEASURED 2026-11-11, D = 2.5s). Nothing read those two
 // numbers against each other, and a seat reconciling the report cannot.
 //
-// WHAT IT CANNOT SEE, stated rather than left silent: no run in this file
-// reds for that defect, because none of them can produce a withdrawal that
-// lands on one of those three verdicts. Those are the verdicts the door
-// answers in microseconds — there is no D for a nudge to arrive inside, and
-// a poll-guarded nudger needs one (the same reason ARM 19 is not a
-// supervised run; MEASURED there, 900 nudged callers produced none of the
-// equivalent window). ARM 22 reads that off handle() instead. What this
-// holds is the number a seat actually reconciles, against every future way
-// of spending a verdict twice or spending none.
+// IT REDS FOR THAT DEFECT ABOUT A QUARTER OF THE TIME, which is a real
+// signal and not a pin — and the distinction is the whole reason ARM 22
+// exists beside it. MEASURED 2026-11-22 (this box, linux 7.2.15 x86_64,
+// go1.27.3, D = 600ms, one-minute loadavg 2.3-6.8, no suite slot held):
+// 16 `go test ./cmd/coldexec` runs against the PRE-FIX door, and 4 of them
+// redded this assertion — TestAHookGitExecsPaysD at 19 notifications
+// against 24 verdicts, TestACopiedBinaryPaysD at 9 against 10, and
+// TestATruncatedChargeLeavesItsPlantWarm at 16 against 17 twice. The other
+// 12 closed exactly. The withdrawals land on `old` /bin/sh and `old`
+// /usr/bin/git: git is a Go binary, so its own preemption SIGURG takes the
+// notification back, which is the wild shape the note above `holes` in
+// door_linux.go describes.
+//
+// A quarter is ranger-base-j0riv's symptom exactly — a red that tracks the
+// box and not the code, in whichever test drew the signal that run — so it
+// is what a defect looks like when nothing pins it, not what pinning it
+// looks like. ARM 22 reads the same invariant off handle(), where it is
+// deterministic. What this assertion is FOR is the number a seat actually
+// reconciles, held on every supervised run against every future way of
+// spending a verdict twice or spending none.
 //
 // It stands down on one line of output, and only that one: when drain gives
 // up with handlers still sleeping the report is printed over verdicts that
@@ -1723,17 +1734,23 @@ echo "CALLER EXIT $?"
 // and not ranger-base-4kars': a withdrawn `old` really was old, and nothing
 // escaped the door. What was wrong is a report that cannot be reconciled.
 //
-// WHY THIS IS NOT A SUPERVISED RUN, which every pin above but ARM 19 is,
-// and it is ARM 19's reason reached from the other side. The live shape
-// needs the kernel to withdraw a notification whose verdict is one of those
-// three — and those are exactly the verdicts the door answers in
-// microseconds: there is no D to arrive inside, and withdrawalFixture's
-// nudger is a 10ms poll. MEASURED on ARM 19's bead, 900 nudged callers
-// produced zero of the equivalent window. So a fixture here would cost
-// seconds a run to assert nothing, and the pins' own report arithmetic is
-// held instead by doorRun.wantReportAccountsForEveryNotification, which
-// runs on every supervised run in this file and would catch any FUTURE way
-// of spending a verdict twice that a fixture can reach.
+// WHY THIS IS NOT A SUPERVISED RUN, which every pin above but ARM 19 is —
+// and it is NOT that a supervised run cannot see the defect. It can, a
+// quarter of the time: doorRun.wantReportAccountsForEveryNotification, the
+// assertion runDoor makes on every run in this file, redded 4 of 16 package
+// runs against the pre-fix door, in three different tests (MEASURED
+// 2026-11-22; the numbers are on that method). The withdrawal arrives while
+// the door is inside its /proc reads for an `old` exec of /bin/sh or of
+// /usr/bin/git, which is microseconds wide and needs no D at all — but it
+// needs git's own preemption signals and the box's run queue to land there,
+// so WHICH test reds is whichever one drew it. That is the defect's symptom
+// and not a pin: it is ranger-base-j0riv's red, which was a red that
+// tracked the loadavg and sent three beads looking at the wrong thing. A
+// pin for an invariant has to red on the code.
+//
+// So this reads it off handle(), where every one of the three verdicts is
+// reachable on demand, and the arithmetic a seat actually reconciles stays
+// held by that method on every supervised run.
 //
 // THE LISTENER IS A CLOSED FD, as in ARM 19 and for the same reason:
 // answer() branches on ID_VALID returning an error and on nothing else, so
@@ -1759,8 +1776,21 @@ func TestANotificationSpendsExactlyOneVerdict(t *testing.T) {
 	started := time.Now().Add(-time.Second)
 	dir := t.TempDir()
 	plant := filepath.Join(dir, "plant")
-	if err := os.WriteFile(plant, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("planting the file this pin execs: %v", err)
+	// NO EXEC BIT, and that is deliberate twice over. Nothing here execs
+	// this file: the pin hands handle() a notification for it and
+	// adjudicate stats the inode, which is all the door does with a target
+	// — the kernel checks the mode after the door has answered, so a
+	// notification for a file with no exec bit is an ordinary one. And an
+	// executable write in a .go file has to go through a fork-locked writer
+	// (`make execwrite-check`, golang/go#22315), which cmd/coldexec has no
+	// access to: it imports nothing from internal/posse on purpose
+	// (doc.go's exit hatch), and a package-local copy would make this the
+	// FOURTH planting package and red
+	// TestQAEveryPlantingPackageHasAColdexecArm until coldexec-check grew
+	// an arm for its own tests. 0o644 is the honest answer to both: do not
+	// "fix" it to 0o755.
+	if err := os.WriteFile(plant, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+		t.Fatalf("writing the file this pin adjudicates: %v", err)
 	}
 	newDoor := func() *door {
 		return &door{
