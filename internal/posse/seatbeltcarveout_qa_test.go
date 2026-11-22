@@ -18,6 +18,7 @@ package posse
 // refuse anything.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -351,6 +352,19 @@ const (
 
 func sbRun(t *testing.T, profile, sh string) bool {
 	t.Helper()
+	ok, _ := sbRunOut(t, profile, sh)
+	return ok
+}
+
+// sbRunOut is that run with the kernel's own words kept. Nothing is printed
+// by default, because in this file a refusal is usually the ANSWER — most
+// rows want one. The callers that grade a refusal as a FAILURE print what
+// came back, and that is ranger-base-al4n9's other half: `sandbox-exec`
+// names the path it refused, the sbUngranted row's message named none, and
+// both macos legs carried the same unreadable red for a day while the
+// answer was in a string nobody kept.
+func sbRunOut(t *testing.T, profile, sh string) (bool, string) {
+	t.Helper()
 	// Backstop: a probe added later that forgets the top-level gate skips
 	// here rather than reporting a refusal the kernel never gave it.
 	sbSkipUnlessSandboxable(t)
@@ -361,7 +375,7 @@ func sbRun(t *testing.T, profile, sh string) bool {
 		// profile, a missing binary — must not be read as one.
 		t.Fatalf("probe %q failed for a reason that is not the sandbox: %v %s", sh, err, out)
 	}
-	return err == nil
+	return err == nil, strings.TrimSpace(string(out))
 }
 
 func sbRenderProfile(t *testing.T, name, body string) string {
@@ -371,12 +385,15 @@ func sbRenderProfile(t *testing.T, name, body string) string {
 	return p
 }
 
-// sbTry renders one of sbMode's three profiles for a FRESH fixture and
-// reports whether the write was allowed.
-func sbTry(t *testing.T, p sbProbe, m sbMode) bool {
+// sbWritableFor is the writable set, the carve-out and the profile name one
+// of sbMode's three profiles is rendered from. Split out of sbTry because
+// the SPELLING of this set is gradable with no sandbox kernel at all, and
+// the box that runs this suite every day has none — the whole of why
+// ranger-base-al4n9 was two red macos legs and nothing readable here
+// (TestQAProbeProfilesGrantInTheKernelsSpelling is that reading).
+func sbWritableFor(t *testing.T, f sbFixture, m sbMode) ([]string, SeatbeltCarveOut, string) {
 	t.Helper()
-	f := sbNewFixture(t)
-	w := f.writable(t)
+	w := append([]string{}, f.writable(t)...)
 	carve := SeatbeltCarveOut{}
 	name := "control.sb"
 	switch m {
@@ -395,9 +412,89 @@ func sbTry(t *testing.T, p sbProbe, m sbMode) bool {
 		if !writeGranted(g, filepath.Join(f.store, ".git")) {
 			t.Fatalf("beadsGitDirs no longer names this store's git dir, so this control is not over ranger-base-kfrpv's grant: %v", g)
 		}
-		w = append(append([]string{}, w...), g...)
+		// RESOLVED, and that one call is ranger-base-al4n9. `beadsGitDirs`
+		// returns what its CALLER spelled; every production grant reaches
+		// the profile through `SeatbeltWritable`'s own `add`, which is
+		// `absResolve` — "the path the sandbox will match on". This arm
+		// appended the producer's raw output, so on darwin, where the
+		// fixture root is behind /var -> /private/var, the third profile
+		// granted `/var/folders/…/store/.git` and the kernel matched
+		// `/private/var/folders/…/store/.git`: no match, write refused,
+		// and line 518 read as "the command or the fixture is broken".
+		// The guard above cannot see it and must not try — `writeGranted`
+		// resolves BOTH sides on purpose (underDir's own comment), so the
+		// set-level question answered yes while the kernel answered no.
+		// The two rows were red on both macos legs from ranger-base-jyqk4
+		// landing until this line, and green on every linux leg, where
+		// t.TempDir() is behind no symlink and the raw spelling happened
+		// to be the resolved one.
+		for _, p := range g {
+			w = append(w, absResolve(p))
+		}
 	}
-	return sbRun(t, sbRenderProfile(t, name, SeatbeltProfile("developer", w, nil, carve)), p.sh(f))
+	// Whatever the arm: what reaches SeatbeltProfile is in the spelling the
+	// kernel matches. A set built from a producer nobody resolved is this
+	// bead, and the next arm that appends one lands here instead of on a
+	// macos leg a week later.
+	for _, p := range w {
+		if r := absResolve(p); r != p {
+			t.Fatalf("the %s set grants %q, which the kernel will match as %q — a grant has to be spelled resolved or it grants nothing (ranger-base-al4n9)", name, p, r)
+		}
+	}
+	return w, carve, name
+}
+
+// sbTry renders one of sbMode's three profiles for a FRESH fixture and
+// reports whether the write was allowed, with what the kernel said about it
+// for a caller that grades the answer a failure.
+//
+// The diagnostic carries the profile BODY and not its path: the path is
+// under a t.TempDir that is gone by the time anyone reads the log, and the
+// body is the one thing that answers the question this bead had to be filed
+// to ask — which paths the arm granted, in which spelling.
+func sbTry(t *testing.T, p sbProbe, m sbMode) (bool, string) {
+	t.Helper()
+	f := sbNewFixture(t)
+	w, carve, name := sbWritableFor(t, f, m)
+	body := SeatbeltProfile("developer", w, nil, carve)
+	sh := p.sh(f)
+	ok, out := sbRunOut(t, sbRenderProfile(t, name, body), sh)
+	return ok, fmt.Sprintf("  arm:     %s\n  command: %s\n  kernel:  %s\n  profile:\n%s", name, sh, out, body)
+}
+
+// ranger-base-al4n9, read from a box with no seatbelt kernel: the third
+// profile's grant graded by its SPELLING. The execution rows above can only
+// be read on a macos leg — sbSkipUnlessSandboxable gates the whole file off
+// every linux leg — so the arm that was wrong was wrong where nobody could
+// see it, for a reason that needs no kernel to state.
+func TestQAProbeProfilesGrantInTheKernelsSpelling(t *testing.T) {
+	f := sbNewFixture(t)
+	// The discriminating premise is PLANTED, not waited for. On darwin the
+	// fixture root is already behind a symlink (t.TempDir() is under /var,
+	// the tree is at /private/var), which is why this was a macos-only red;
+	// on linux it is not, so without a link of our own this pin would be
+	// green over the bug — the shape this file calls "a green suite over no
+	// wall at all".
+	link := filepath.Join(filepath.Dir(f.store), "store-link")
+	if err := os.Symlink(f.store, link); err != nil {
+		t.Fatal(err)
+	}
+	through := f // the same fixture, its store named the other way
+	through.store = link
+	// sbWritableFor fatals on an unresolved entry; this is the POSITIVE
+	// half, because a set that simply dropped the grant would satisfy that
+	// guard and leave the third profile proving nothing.
+	w, _, name := sbWritableFor(t, through, sbStoreGitGranted)
+	want := absResolve(filepath.Join(f.store, ".git"))
+	if !sbHas(w, want) {
+		t.Errorf("the %s set does not grant %s — ranger-base-kfrpv's grant has to be in it, spelled the way the kernel matches:\n  %s", name, want, strings.Join(w, "\n  "))
+	}
+	// And the control for the plant: the link really is a second spelling,
+	// so the row above discriminates. If the fixture ever stops putting the
+	// store where a link can reach it, this says so rather than passing.
+	if raw := filepath.Join(link, ".git"); raw == want {
+		t.Fatalf("the plant resolves to itself (%s), so this test measures nothing about spelling", raw)
+	}
 }
 
 // The bead's own test shape, executed: render for a PID with cwd = the
@@ -495,16 +592,17 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 	verb := map[bool]string{true: "ALLOWED", false: "REFUSED"}
 	for _, p := range probes {
 		t.Run(p.what, func(t *testing.T) {
-			if got := sbTry(t, p, sbWalled); got != (p.want == sbAllow) {
-				t.Errorf("%s under the carve-out, want %s", verb[got], verb[p.want == sbAllow])
+			got, diag := sbTry(t, p, sbWalled)
+			if got != (p.want == sbAllow) {
+				t.Errorf("%s under the carve-out, want %s\n%s", verb[got], verb[p.want == sbAllow], diag)
 			}
 			if p.want == sbAllow {
 				return
 			}
-			ctrl := sbTry(t, p, sbControl)
+			ctrl, cdiag := sbTry(t, p, sbControl)
 			if p.want == sbCarveDeny {
 				if !ctrl {
-					t.Errorf("the CONTROL refused it too — the probe proves nothing about the deny")
+					t.Errorf("the CONTROL refused it too — the probe proves nothing about the deny\n%s", cdiag)
 				}
 				return
 			}
@@ -512,10 +610,10 @@ func TestQACarveOutRefusesUnderSandboxExecAndTheControlDoesNot(t *testing.T) {
 			// deny, so the control refuses it too — and the arm below is
 			// what stops that from being vacuous.
 			if ctrl {
-				t.Errorf("the control ALLOWED it, so the carve-out's deny is what refuses this path: the row is an sbCarveDeny and not an absent grant")
+				t.Errorf("the control ALLOWED it, so the carve-out's deny is what refuses this path: the row is an sbCarveDeny and not an absent grant\n%s", cdiag)
 			}
-			if !sbTry(t, p, sbStoreGitGranted) {
-				t.Errorf("refused even with ranger-base-kfrpv's grant put back — the command or the fixture is what the two refusals above measured, not the wall")
+			if ok, gdiag := sbTry(t, p, sbStoreGitGranted); !ok {
+				t.Errorf("refused even with ranger-base-kfrpv's grant put back — the command or the fixture is what the two refusals above measured, not the wall\n%s", gdiag)
 			}
 		})
 	}
