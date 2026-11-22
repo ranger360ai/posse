@@ -603,6 +603,28 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   three grant spellings written for it — another seat's wall dir, a
   directory within one, and a path of this seat's own that links into the
   root — and nothing else.
+- (2026-11-22, ranger-base-dv1ln) THE PREP HALF OF ranger-base-a59w7's
+  SPLICE, which that bullet realized and no pin read. Step 2d marks two
+  positions and argues the ordering for each. The ARGV half is held three
+  ways over — two render arms assert grant < pin < deny and pin < mask,
+  pin < private, and both "append at the end" and "splice at 5d's own
+  position" red one of them. The PREP half — a pin's `mkdir -p` running
+  before the mask point or keep file the launcher creates INSIDE it — was
+  asserted in prose and in code and measured by nothing. MEASURED 2026-11-22
+  at a7621641: replacing
+  `prep = slices.Insert(prep, carvePrepAt, pinPrep...)` with an append reds
+  one name, the arm this bead added, and nothing else in the set
+  ranger-base-zrq1x read 0 newly red over. The remedy is a witness and not a
+  code change — the splice is already in the right place. One arm beside the
+  two render arms: a grant with a masked deny two components inside it and a
+  ref keep file one component inside, the first of those components absent,
+  asserting the pin mkdirs precede both steps and then RUNNING `runBwrapPrep`
+  over the list, with the appended-mkdir list over a fresh fixture as the
+  refusing control. The constraint is one-sided and the second mutant says
+  so: splicing at index 0 instead is green everywhere, because `mkdir -p`
+  makes parents, so a pin mkdir can be too late and cannot be too early.
+  CENSUS unchanged at 0 over the five argvs, so the class stays inert until a
+  shipped render grows such a nest, fail-closed when it does.
 
 ASSUMED:
 
