@@ -121,13 +121,17 @@ func TestLiveWallWatchKillsASeatWhoseBackstopRecordCannotBeWritten(t *testing.T)
 	devnull, _ := os.Open(os.DevNull)
 	defer devnull.Close()
 	ran := filepath.Join(s.grant, "ran")
-	var stderr strings.Builder
+	// THE PANE IS A wwSaid AND NOT A strings.Builder, for the reason that
+	// type carries (ranger-base-a688i): the deadline branch below reads it
+	// with the watcher's goroutine still writing, so a Builder shared across
+	// the two readers is a race nothing in this suite runs -race over.
+	said := new(wwSaid)
 	code := make(chan int, 1)
 	go func() {
 		code <- runWallWatch(wallWatchRun{
 			Opts: wallWatchOpts{Mounts: s.mounts, Seat: "seat-norecord", Dir: s.grant,
 				Bwrap: []string{"bwrap", "--args", "3", "--", "sh", "-c", "echo ran > " + shellQuote(ran)}},
-			Args: af, Stdin: devnull, Stdout: &stderr, Stderr: &stderr,
+			Args: af, Stdin: devnull, Stdout: said, Stderr: said,
 			Store: &fakeWallWatchStore{}, Lock: filepath.Join(t.TempDir(), "wall-watch.lock"),
 			PollInterval: 50 * time.Millisecond,
 		})
@@ -136,21 +140,28 @@ func TestLiveWallWatchKillsASeatWhoseBackstopRecordCannotBeWritten(t *testing.T)
 	select {
 	case c = <-code:
 	case <-time.After(10 * time.Second):
-		t.Fatalf("the watcher has not returned 10s after a record write that cannot succeed:\n%s", stderr.String())
+		// The words say how far it got — whether it refused, whether it
+		// reached the record write at all — and a `:\n%s` here reaches the
+		// bead as the symptom alone (ADR 0097 D3, ranger-base-w6kke).
+		t.Fatalf("the watcher has not returned 10s after a record write that cannot succeed; watcher and bwrap said %s", wwOneLine(said.String()))
 	}
 	// A seat the box ends is silent and exits 128+9, and this `want 1` is
 	// the watcher's own refusal code — so an unrouted read turns that death
 	// into a wall regression ADR 0088 D5's ratchet charges to whoever landed
 	// last (ranger-base-jqdm2).
-	wwAbstainIfOutside(t, "the seat whose backstop record cannot be written", c, stderr.String())
+	wwAbstainIfOutside(t, "the seat whose backstop record cannot be written", c, said.String())
 	if c != 1 {
-		t.Errorf("watcher exit = %d, want 1 (it killed the seat): %s", c, wwOneLine(stderr.String()))
+		t.Errorf("watcher exit = %d, want 1 (it killed the seat): %s", c, wwOneLine(said.String()))
 	}
+	// This one keeps its line 2 on purpose: its first line is already the
+	// whole claim, and the pane is supporting output rather than the only
+	// account of WHY — ranger-base-a688i's class carves that case out.
 	if _, err := os.Stat(ran); err == nil {
-		t.Errorf("the seat's command RAN although its backstop record was never written — the watcher released a seat only it can see:\n%s", stderr.String())
+		t.Errorf("the seat's command RAN although its backstop record was never written — the watcher released a seat only it can see:\n%s", said.String())
 	}
-	if !strings.Contains(stderr.String(), "cannot write this seat's record for the dispatch backstop") {
-		t.Errorf("the watcher did not say why it killed the seat:\n%s", stderr.String())
+	const why = "cannot write this seat's record for the dispatch backstop"
+	if !strings.Contains(said.String(), why) {
+		t.Errorf("the watcher did not say %q, so what killed this seat is unaccounted for; watcher and bwrap said %s", why, wwOneLine(said.String()))
 	}
 }
 
