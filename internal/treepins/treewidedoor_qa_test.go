@@ -1461,6 +1461,36 @@ package treepins
 // file is the scanner's own control and needs no door of its own, like every
 // control arm above, and is inside the complement too.
 //
+// and ONE more into pkgcensus-check's door, for the sentence every other
+// pkgcensus row gives — a reading of this repo's own Go sources whose file
+// set is discovered, this one over internal/posse's own *_test.go
+// (ranger-base-k2quj). Every bwrap seat run in ADR 0097 D3's wall-check
+// member set must route the abstention a silent outside kill answers with;
+// the criterion landed under ranger-base-evx07 routed in ONE of the 24
+// member files, so 47 of 55 members still read a seat the box SIGKILLed as a
+// verdict about the wall — a false pass in a refusal arm and, in a success
+// arm, the red ADR 0088 D5's ratchet files as a P1 against whoever landed
+// last:
+//
+//	TestQAEveryWallMemberSeatRunRoutesTheAbstention
+//	                                              make pkgcensus-check
+//	                                              (ReadDir's `.`, derives the
+//	                                              member files from
+//	                                              wallVenueMemberPattern and
+//	                                              reads each bwrap seat run's
+//	                                              owning function)
+//	                                              (ranger-base-k2quj)
+//
+// NO NEW DOOR, by the sentence the g31e0, pruuq and rviq5 rows are all in
+// on, and it is rviq5's half of that variable specifically: a census over
+// this package's own TEST files, read as source, so no build tag can hide a
+// member from it and one pin in arm 1 holds all three arms. A bead that adds
+// a member test or a seat runner to internal/posse reds it. 0.22s over 572
+// files on one warm run (MEASURED 2026-11-22). Its control arm,
+// TestQAWallMemberAbstentionRuleMatchesWhatItClaims, drives the same rule
+// over planted source and enumerates nothing, so it is not in this class and
+// needs no door — like every control arm above.
+//
 // and one door that stands in front of no pin at all (ranger-base-ujyjd,
 // finding 4 of the ranger-base-hbjma verify):
 //

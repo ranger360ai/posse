@@ -127,13 +127,25 @@ func TestLiveWallStrictMCPStartsOnlyTheLineServers(t *testing.T) {
 	// Control 1: the plant succeeds under the wall — both files.
 	plant := "printf '%s' " + q(string(userJSON)) + " > " + q(filepath.Join(f.cfg, ".claude.json")) +
 		" && printf '%s' " + q(string(repoJSON)) + " > " + q(filepath.Join(f.dir, ".mcp.json"))
+	// THE ABSTENTION IS ROUTED AT THE READING SITES AND NOT IN `walled`
+	// (ranger-base-k2quj), because `walled` is a BUILDER: it returns the
+	// *exec.Cmd and runs nothing, so it has no status to read. These three
+	// reads are the ones that take `err` as the wall's verdict, and both
+	// polarities are here — the control fatals on `err != nil` and the two
+	// refusal arms on `err == nil` — so a seat the box SIGKILLs is a false
+	// red in one and a FALSE PASS in the others. ADR 0097 D3's exit 3
+	// instead. `run` below needs none: it cancels through its own context,
+	// and a kill this process sent is not a kill from outside it.
 	if out, err := walled(context.Background(), plant).CombinedOutput(); err != nil {
+		bgSeatAbstainIfOutside(t, "the control seat planting the mcp config files under the wall", err, string(out))
 		t.Fatalf("CONTROL: the plant was refused under the wall, so the strict arm below would pass for the wrong reason — the seat's .claude.json must stay writable (ADR 0080 D19): %v\n%s", err, out)
 	}
 	// And the legitimate file is outside the write set, by the wall and by
 	// the launch's own check.
 	if out, err := walled(context.Background(), "echo x >> "+q(legit)).CombinedOutput(); err == nil {
 		t.Fatalf("the legitimate --mcp-config file is writable under the wall, so it is no control: %s", out)
+	} else {
+		bgSeatAbstainIfOutside(t, "the seat appending to the legitimate --mcp-config file under the wall", err, string(out))
 	}
 	if err := f.a.mcpConfigWallRefusalOn(WallBwrap, f.ag, f.rt, f.dir, "claude --mcp-config "+legit); err != nil {
 		t.Fatalf("the launch refuses a --mcp-config the wall does not let the seat write: %v", err)
@@ -145,6 +157,8 @@ func TestLiveWallStrictMCPStartsOnlyTheLineServers(t *testing.T) {
 	// reach the operator's own unset-variable claude through it.
 	if out, err := walled(context.Background(), "echo '{}' > "+q(filepath.Join(f.home, ".claude.json"))).CombinedOutput(); err == nil {
 		t.Errorf("$HOME/.claude.json is writable under the wall — a bare claude on the box reads that file (ADR 0090 D2): %s", out)
+	} else {
+		bgSeatAbstainIfOutside(t, "the seat writing $HOME/.claude.json under the wall", err, string(out))
 	}
 
 	var crt *Runtime

@@ -177,6 +177,12 @@ func TestLiveWallClaudeProjectsRefusesTheWriteVerbsThePinDoesNotTry(t *testing.T
 	try := func(script string) (bool, string) {
 		cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...)
 		out, err := cmd.CombinedOutput()
+		// The abstention (ranger-base-k2quj). Both polarities are here: the
+		// writable-own-key control fatals on `!ok` and every narrowing arm
+		// reds on `ok`, so a seat the box SIGKILLs — silent, 128+9 — is a
+		// false red in one and a FALSE PASS in the other. ADR 0097 D3's
+		// exit 3 instead.
+		bgSeatAbstainIfOutside(t, "an attack-probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote
@@ -297,6 +303,14 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 		go func() { out, runErr = cmd.CombinedOutput(); close(done) }()
 		select {
 		case <-done:
+			// The abstention (ranger-base-k2quj), on THIS arm only: the
+			// timeout below kills the seat from this process, which the
+			// criterion cannot tell from the box doing it, and a 90s
+			// deadline that really elapsed is the finding D3's assumption
+			// rules out. A seat the box ended writes no transcript, and the
+			// tree reading below then reds as a narrowing failure this run
+			// never measured.
+			bgSeatAbstainIfOutside(t, "the real claude seat under the rendered wall for cwd "+cwd, runErr, string(out))
 		case <-time.After(90 * time.Second):
 			_ = cmd.Process.Kill()
 			<-done

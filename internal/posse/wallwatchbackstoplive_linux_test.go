@@ -82,7 +82,14 @@ func TestLiveWallWatchBackstopKillsASeatWhoseWatcherIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	waited := make(chan struct{})
-	go func() { cmd.Wait(); close(waited) }()
+	// werr, where this used to discard Wait's error (ranger-base-k2quj).
+	// The watcher is this file's seat runner, and the fatal below reads "no
+	// bgpid file" as the seat never running — so a watcher the box SIGKILLs
+	// silently arrives as ADR 0097 D3's exit 1, which D5's ratchet files as
+	// a P1 against whoever landed last. Written once, read after `waited`
+	// closes and never before, so nothing races the goroutine.
+	var werr error
+	go func() { werr = cmd.Wait(); close(waited) }()
 	t.Cleanup(func() { cmd.Process.Kill(); <-waited })
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -91,7 +98,23 @@ func TestLiveWallWatchBackstopKillsASeatWhoseWatcherIsGone(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the seat never ran:\n%s", said())
+			// ONE LINE WITH THE WATCHER'S STATUS IN IT, which this fatal
+			// did not have (ranger-base-k2quj): `scripts/posse-wall-check`
+			// carries a failed member's FIRST `file.go:NN:` line and
+			// nothing after it, so a `:\n%s` spent the whole budget on the
+			// output and said nothing about whether the watcher was even
+			// alive — the row that discriminates (ADR 0097 D3,
+			// ranger-base-a688i/-axt1f). `werr` is only an answer once the
+			// waiter has closed, so a watcher that is merely slow is named
+			// as that and not as `exit 0`.
+			status := "the watcher is still running, and said " + wwOneLine(said())
+			select {
+			case <-waited:
+				bgSeatAbstainIfOutside(t, "the wall-watch supervisor over seat-d", werr, said())
+				status = "the watcher is gone: " + bgSeatAccount(werr, said())
+			default:
+			}
+			t.Fatalf("the seat never ran — %s", status)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -161,22 +184,48 @@ func TestLiveWallWatchBackstopFilesAWatcherThatDiedUnderARunningSeat(t *testing.
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	// ONE WAITER, for the reason the arm above gives (ranger-base-k2quj):
+	// the fatal below reads "no bgpid file" as the seat never running, and
+	// a watcher the box SIGKILLs silently would arrive as that finding —
+	// ADR 0097 D3's exit 1, which D5's ratchet files as a P1 against
+	// whoever landed last. The read is non-blocking, because a watcher that
+	// is merely slow must still reach that fatal; `Process.Signal(0)` would
+	// not do, since a child that has exited but is not yet reaped still
+	// takes signal 0 without error.
+	var werr error
+	waited := make(chan struct{})
+	go func() { werr = cmd.Wait(); close(waited) }()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if b, err := os.ReadFile(s.bgpid); err == nil && strings.TrimSpace(string(b)) != "" {
 			break
 		}
 		if time.Now().After(deadline) {
+			// BEFORE the Kill, and non-blocking: a watcher this process
+			// killed answers `signal: killed` too, so reading the status
+			// after the Kill would abstain on every real "the seat never
+			// ran". What is asked is whether it was ALREADY gone.
+			// The status on the line, for the arm above's reason
+			// (ranger-base-k2quj): this fatal carried no account at all,
+			// and the one line the wall check puts on a P1 bead could not
+			// say whether the watcher was alive.
+			status := "the watcher is still running"
+			select {
+			case <-waited:
+				bgSeatAbstainIfOutside(t, "the wall-watch supervisor over seat-e", werr, "")
+				status = "the watcher is gone: " + bgSeatAccount(werr, "")
+			default:
+			}
 			cmd.Process.Kill()
-			cmd.Wait()
-			t.Fatal("the seat never ran")
+			<-waited
+			t.Fatalf("the seat never ran — %s", status)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	bg := s.bg(t)
 	t.Cleanup(func() { syscall.Kill(bg, syscall.SIGKILL) })
 	cmd.Process.Kill()
-	cmd.Wait()
+	<-waited
 	time.Sleep(100 * time.Millisecond)
 
 	st := &fakeWallWatchStore{}

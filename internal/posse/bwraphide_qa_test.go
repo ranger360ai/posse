@@ -296,6 +296,11 @@ echo "SSH=${SSH_AUTH_SOCK-unset}"`
 		"DBUS_SESSION_BUS_ADDRESS=unix:path="+f.sockets[0],
 		"SSH_AUTH_SOCK="+f.sockets[3])
 	out, err := cmd.CombinedOutput()
+	// The abstention before the fatal (ranger-base-k2quj): a probe seat the
+	// box SIGKILLs says nothing and exits 128+9, and the fatal below would
+	// report that as a wall finding — ADR 0097 D3's exit 1, which D5's
+	// ratchet files as a P1 against whoever landed last. Exit 3 instead.
+	bgSeatAbstainIfOutside(t, "the endpoint probe seat inside the rendered wall", err, string(out))
 	if err != nil {
 		t.Fatalf("bwrap %v: %v\n%s", argv, err, out)
 	}
@@ -398,6 +403,14 @@ echo "USERNS=$(readlink /proc/self/ns/user)"`
 		t.Helper()
 		args := append(append([]string{}, prefix...), "sh", "-c", script, "sh", viaRoot, viaCwd)
 		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		// The abstention before the fatal (ranger-base-k2quj). argv[0] here
+		// is a VARIABLE — the rendered bwrap argv for the walled arm, and
+		// `sh` for the control — so this site is invisible to
+		// TestQAEveryWallMemberSeatRunRoutesTheAbstention's bwrap literal
+		// and is carried by its register instead. The fatal is the same
+		// false red either way: a seat the box SIGKILLs says nothing and
+		// exits 128+9.
+		bgSeatAbstainIfOutside(t, "the /proc road probe seat ("+wwOneLine(strings.Join(prefix, " "))+")", err, string(out))
 		if err != nil {
 			t.Fatalf("%v: %v\n%s", prefix, err, out)
 		}

@@ -214,6 +214,11 @@ func TestLiveWallRuntimeConfigRefusesTheWriteUnderTheRenderedWall(t *testing.T) 
 		cfg, tmp := filepath.Join(h, "config.toml"), filepath.Join(h, ".config.toml.tmp")
 		try := func(script string) (bool, string) {
 			out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+			// The abstention (ranger-base-k2quj). This runner answers `err
+			// == nil` and every arm reads that as the wall's verdict, so a
+			// seat the box SIGKILLs — silent, 128+9 — passes a refusal arm
+			// and reds a success arm. ADR 0097 D3's exit 3 instead.
+			bgSeatAbstainIfOutside(t, "a runtime-config probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 			return err == nil, strings.TrimSpace(string(out))
 		}
 		refused := map[string]string{
@@ -307,6 +312,11 @@ func TestLiveWallRuntimeConfigEachCLIRunsWithItsConfigReadOnly(t *testing.T) {
 		cmd.Dir = f.dir
 		cmd.Env = append(os.Environ(), "FAKE_KEY=sk-dummy")
 		out, err := cmd.CombinedOutput()
+		// The abstention before the arm (ranger-base-k2quj): this arm reads
+		// `err != nil` as "the runtime could not complete a turn with
+		// config.toml read-only", so a seat the box SIGKILLs — silent,
+		// 128+9 — is reported as that finding. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "the real "+name+" seat completing a turn under the rendered wall", err, string(out))
 		t.Logf("%s (%s) under the rendered wall: err=%v, reply seen=%v", name, bin, err, strings.Contains(string(out), wrcReply))
 		if err != nil || !strings.Contains(string(out), wrcReply) {
 			t.Errorf("%s did not complete a turn with config.toml read-only under the rendered wall: %v\n%s", name, err, out)
@@ -545,6 +555,12 @@ func TestLiveWallRuntimeConfigCodexEphemeralDirsArePrivate(t *testing.T) {
 	}
 	try := func(script string) (bool, string) {
 		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and BOTH polarities read it below — a visibility arm reds on
+		// `ok` and a private-tmpfs arm reds on `!ok` — so a seat the box
+		// SIGKILLs is a false pass in one and a false red in the other.
+		// ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "a runtime-config probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote
@@ -639,6 +655,11 @@ func TestLiveWallRuntimeConfigCodexRunsWithEphemeralDirsReadOnly(t *testing.T) {
 	cmd.Dir = f.dir
 	cmd.Env = append(os.Environ(), "FAKE_KEY=sk-dummy")
 	out, err := cmd.CombinedOutput()
+	// The abstention before the arm (ranger-base-k2quj): this arm reads
+	// `err != nil` as codex failing to complete a turn with those two dirs
+	// read-only, so a seat the box SIGKILLs — silent, 128+9 — is reported as
+	// that finding. ADR 0097 D3's exit 3 instead.
+	bgSeatAbstainIfOutside(t, "the real codex seat completing a turn with tmp/ and shell_snapshots/ read-only", err, string(out))
 	t.Logf("codex with tmp/ and shell_snapshots/ read-only: err=%v, reply seen=%v, aliases refused=%v", err, strings.Contains(string(out), wrcReply), strings.Contains(string(out), "PATH aliases"))
 	if err != nil || !strings.Contains(string(out), wrcReply) {
 		t.Errorf("codex did not complete a turn with tmp/ and shell_snapshots/ read-only (the seatbelt reading): %v\n%s", err, out)

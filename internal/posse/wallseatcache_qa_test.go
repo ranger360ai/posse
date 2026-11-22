@@ -156,6 +156,11 @@ func TestLiveWallSeatCacheRefusesSharedCachePlants(t *testing.T) {
 	try := func(script string) (bool, string) {
 		cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...)
 		out, err := cmd.CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every caller reads that as the wall's verdict, so a seat
+		// the box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "a cache-probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote

@@ -363,6 +363,48 @@ func bgSeatAbstain(t *testing.T, what string, err error, out string) {
 		what, bgSeatAccount(err, out))
 }
 
+// bgSeatAbstainIfOutside is THE ROUTING DOOR, and it is one line of code
+// because the reason for it is not in the code (ranger-base-k2quj).
+//
+// WHAT WAS WRONG. The criterion above landed under ranger-base-evx07 and was
+// routed in this file alone: MEASURED 2026-11-22 against the check's own
+// definition of the set (wallVenueMemberPattern, read rather than retyped),
+// 55 members in 24 files, 8 of them here and 47 in 23 files that kept their
+// own seat runners with no abstention at all. evx07's own close said so and
+// filed nothing. So 47 members still read a silent outside kill as an answer
+// about the wall, in BOTH polarities: a refusal arm shaped `if ok { fail }`
+// reads it as the wall refusing, which is a FALSE PASS (ADR 0086 D5), and a
+// success arm reads it as the red that ADR 0097 D5's ratchet files as one P1
+// `-l code` against whoever landed last — four times already
+// (ranger-base-a688i, -w6kke, -axt1f, -s9h52), none of those landings
+// involved.
+//
+// WHY A WRAPPER RATHER THAN THE PAIR AT EVERY SITE. There are 33 bwrap seat
+// runs across the 16 member files that have any, and almost none of them
+// share a runner: most are a local closure (`try`, `read`, `mv`) or an inline
+// `CombinedOutput` in the test body. Three lines at 33 sites is 33 chances
+// for the guard and the abstention to come apart, and the house rule about
+// two spellings of one answer (bgSeatAccount/wwOneLine, two paragraphs up)
+// applies to a criterion more sharply than to a fold. So the guard and the
+// skip are spelled ONCE here, both of their callers are this function, and a
+// seat run routes the abstention in one line that a census can read by name.
+// The criterion's own pin still calls bgSeatEndedFromOutside directly,
+// because what it grades is the decision and not the routing.
+//
+// WHAT READS IT: TestQAEveryWallMemberSeatRunRoutesTheAbstention
+// (wallseatabstain_qa_test.go), which derives the member files from
+// wallVenueMemberPattern and reds a bwrap seat run whose enclosing function
+// does not call this. That is the positive control the per-runner census in
+// bwrapgitrefsaccount_qa_test.go gives this file and nothing gave the other
+// 23 — the branch is reached only by a real silent supervisor kill, which no
+// fixture manufactures inside a runner, so no live arm can grade it.
+func bgSeatAbstainIfOutside(t *testing.T, what string, err error, out string) {
+	t.Helper()
+	if bgSeatEndedFromOutside(err, out) {
+		bgSeatAbstain(t, what, err, out)
+	}
+}
+
 // walled runs one command inside the rendered wall and answers whether it was
 // allowed, with the seat's own one-line account for a failure message (see
 // bgSeatAccount: a member's budget is one line and `:\n%s` spends it on
@@ -372,9 +414,7 @@ func (f bgLive) walled(t *testing.T, arg ...string) (bool, string) {
 	t.Helper()
 	cmd := exec.Command("bwrap", append(append([]string{}, f.argv...), arg...)...)
 	out, err := cmd.CombinedOutput()
-	if bgSeatEndedFromOutside(err, string(out)) {
-		bgSeatAbstain(t, "a seat running "+wwOneLine(strings.Join(arg, " "))+" inside the rendered wall", err, string(out))
-	}
+	bgSeatAbstainIfOutside(t, "a seat running "+wwOneLine(strings.Join(arg, " "))+" inside the rendered wall", err, string(out))
 	return err == nil, bgSeatAccount(err, string(out))
 }
 
@@ -715,9 +755,7 @@ func (f bgLive) packUnderALiveSeat(t *testing.T, msg string) (bool, string) {
 	// directory and the seat's commit failed", which is a reading of D20's
 	// reasoning — so a seat the box killed would be recorded as a kernel
 	// measurement this run never took. That is worse than the red T4 files.
-	if bgSeatEndedFromOutside(err, outBuf.String()) {
-		bgSeatAbstain(t, "the seat held at its ready file for an outside pack-refs --all --prune ("+msg+")", err, outBuf.String())
-	}
+	bgSeatAbstainIfOutside(t, "the seat held at its ready file for an outside pack-refs --all --prune ("+msg+")", err, outBuf.String())
 	return err == nil, bgSeatAccount(err, outBuf.String())
 }
 

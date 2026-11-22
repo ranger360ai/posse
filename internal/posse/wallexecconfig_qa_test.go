@@ -529,6 +529,11 @@ func TestLiveWallExecConfigRefusesEveryRowUnderTheRenderedWall(t *testing.T) {
 	try := func(script string) (bool, string) {
 		cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...)
 		out, err := cmd.CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every arm reads that as the wall's verdict, so a seat the
+		// box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "an exec-config probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote
@@ -788,6 +793,11 @@ func TestLiveWallExecConfigMasksClaudesManagedCache(t *testing.T) {
 	}
 	try := func(script string) (bool, string) {
 		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every arm reads that as the wall's verdict, so a seat the
+		// box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "an exec-config probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote

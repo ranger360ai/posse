@@ -462,3 +462,56 @@ func TestQACagedBeadsDirFallsBackToBeadsHomeWhenNoBindCoversTheStore(t *testing.
 		t.Errorf("CageBeadsDir answered %q where no bind covers the store; want beadsHome's own answer %q. An empty or translated value here is forwarded by `-e BEADS_DIR` to a `--no-db` bd, which then resolves $cwd/.beads and writes the container's throwaway issues.jsonl — the silent record loss ADR 0055 D1 exists to prevent. The gate row over this same mount set is what says the store is unreachable (ranger-base-ayubz)", got, outside)
 	}
 }
+
+// 6. AND THE OTHER FALLBACK, the one arm 5 does not reach: the engine itself
+// does not load (ranger-base-k2quj, FINDING 2 of the ranger-base-2unmh
+// verify).
+//
+// WHY IT WAS UNWITNESSED. CageBeadsDir's own comment says the engine loads by
+// construction on the path this is called from — `caged` is `cage ==
+// CageContainer && a.ContainerAvailable()`, and that probe IS LoadEngine plus
+// the binary — so the branch is "for a reader, not for a launch", and every
+// fixture in this file holds an engine that loads. MEASURED 2026-11-22
+// (ranger-base-2unmh): patching that arm to return "" survived arms 1-5 of
+// this file, beadshomespelling_qa_test.go and beadsdirenv_qa_test.go's five
+// arms under `-tags posse_arm3` — every pin over the subject.
+//
+// WHY A PIN RATHER THAN DELETING THE CLAIM, which was the other honest
+// option the finding offered. The state is reachable without a container and
+// without a mount set: `default_engine:` is config, LoadEngine answers Die
+// for a name that is neither built-in nor a cages/<name>.yaml, and that is
+// what a reader CALLING this function on a misconfigured home gets. What the
+// branch must answer is the same thing arm 5's does and for the same reason
+// — beadsHome's own spelling, never "" — and "" is the one value worse than
+// an unresolved one, because `-e BEADS_DIR` forwards it and a `--no-db` bd
+// with nothing there writes the container's throwaway issues.jsonl. A
+// comment cannot hold that; this can, and it costs no container.
+//
+// The premise is asserted, not assumed: a config that still loads an engine
+// would make this arm measure the covering path above instead.
+func TestQACagedBeadsDirFallsBackToBeadsHomeWhenTheEngineDoesNotLoad(t *testing.T) {
+	t.Parallel()
+	a, ag, _ := cbdCage(t)
+	repo := cbdRepo(t, filepath.Join(absResolve(t.TempDir()), "repo"))
+	store := filepath.Join(repo, beadsDirName)
+
+	// A store the mount set DOES cover, so a green here cannot be arm 5's
+	// answer arriving by the other door: with an engine, this call resolves
+	// to the covering bind's spelling.
+	if got := a.CageBeadsDir(ag, repo, "s1", store); got == "" {
+		t.Fatalf("fixture: CageBeadsDir answered %q with a loadable engine, so this arm cannot tell the engine fallback from the no-bind one", got)
+	}
+
+	// Now take the engine away. `default_engine:` names something that is
+	// neither built-in nor a file under cages/.
+	if err := os.WriteFile(a.ConfigPath, []byte("default_engine: no-such-engine-k2quj\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.LoadEngine(a.ResolveEngine()); err == nil {
+		t.Fatal("fixture: the engine still loads, so the branch under test is not reached")
+	}
+
+	if got := a.CageBeadsDir(ag, repo, "s1", store); got != store {
+		t.Errorf("with no loadable engine CageBeadsDir answered %q, want beadsHome's own answer %q. There is no mount set to translate against, so the only honest answer is the spelling bd itself would use — and an EMPTY one is forwarded by `-e BEADS_DIR` to a `--no-db` bd, which then resolves $cwd/.beads and writes the container's own throwaway issues.jsonl, the silent record loss ADR 0055 D1 exists to prevent (ranger-base-ayubz, pinned by ranger-base-k2quj)", got, store)
+	}
+}

@@ -409,6 +409,10 @@ func TestLiveBwrapPushDeniedSeatReadsNoConfiguredSSHKey(t *testing.T) {
 		args = append(args, sf.keys...)
 		args = append(args, sf.odd, cfg, known)
 		out, err := exec.Command("bwrap", args...).CombinedOutput()
+		// The abstention before the fatal (ranger-base-k2quj): a silent
+		// 128+9 is the box ending this seat, not the wall answering, and the
+		// fatal below would report it as a wall finding (ADR 0097 D3/D5).
+		bgSeatAbstainIfOutside(t, "the key-reading seat inside the rendered wall", err, string(out))
 		if err != nil {
 			t.Fatalf("bwrap: %v\n%s", err, out)
 		}

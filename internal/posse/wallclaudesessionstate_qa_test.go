@@ -191,6 +191,11 @@ func TestLiveWallClaudeSessionStateRefusesPeerPlants(t *testing.T) {
 	try := func(script string) (bool, string) {
 		cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...)
 		out, err := cmd.CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every arm reads that as the wall's verdict, so a seat the
+		// box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "a session-state probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote
@@ -417,6 +422,11 @@ func TestLiveWallClaudeSessionStateKeepsThePeerRegistryPrivate(t *testing.T) {
 	}
 	try := func(script string) (bool, string) {
 		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every arm reads that as the wall's verdict, so a seat the
+		// box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "a session-state probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote
@@ -478,10 +488,22 @@ func TestLiveWallClaudeSessionStateKeepsThePeerRegistryPrivate(t *testing.T) {
 	const ownSession = "22222222-2222-4222-8222-222222222222"
 	reg := `st=$(cut -d' ' -f22 /proc/$$/stat) && printf '{"pid":%s,"sessionId":"` + ownSession + `","procStart":"%s"}' "$$" "$st" > ` + q(sess) + `/$$.json && exec sleep 60`
 	cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", reg)...)
+	var seatOut strings.Builder
+	cmd.Stdout, cmd.Stderr = &seatOut, &seatOut
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	// THE SEAT IS REAPED BY ONE WAITER (ranger-base-k2quj), which is what
+	// lets the fatal below tell "the wall kept the row out of the private
+	// dir" from "the box ended this seat before it wrote one". This seat
+	// prints nothing and lives on `exec sleep 60`, so an outside SIGKILL is
+	// exactly the silent 128+9 the criterion reads — and without this it
+	// arrives as ADR 0097 D3's exit 1, which D5's ratchet files as a P1
+	// against whoever landed last. The read is non-blocking: a seat still
+	// running has not died of anything and the fatal is the real finding.
+	reaped := make(chan error, 1)
+	go func() { reaped <- cmd.Wait() }()
+	defer func() { _ = cmd.Process.Kill(); <-reaped }()
 	var row string
 	for deadline := time.Now().Add(10 * time.Second); row == "" && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 		ents, _ := os.ReadDir(own)
@@ -492,6 +514,14 @@ func TestLiveWallClaudeSessionStateKeepsThePeerRegistryPrivate(t *testing.T) {
 		}
 	}
 	if row == "" {
+		select {
+		case werr := <-reaped:
+			// Put it back, so the deferred drain still has something to
+			// read and this arm cannot deadlock on its own cleanup.
+			reaped <- werr
+			bgSeatAbstainIfOutside(t, "the seat registering its own session row inside the rendered wall", werr, seatOut.String())
+		default:
+		}
 		t.Fatalf("the seat's own row never landed in its private dir %s — %s; shared dir holds %v", own, protects, names())
 	}
 	pid, err := strconv.Atoi(strings.TrimSuffix(row, ".json"))
@@ -769,6 +799,11 @@ func TestLiveWallClaudeSessionStateKeepsTheSubmitLogPrivate(t *testing.T) {
 	}
 	try := func(script string) (bool, string) {
 		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every arm reads that as the wall's verdict, so a seat the
+		// box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "a session-state probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote
@@ -846,7 +881,15 @@ func TestLiveWallClaudeSessionStateKeepsTheSubmitLogPrivate(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	// One waiter, for the reason the own-row arm above gives
+	// (ranger-base-k2quj): the fatal below cannot otherwise tell a submit
+	// the wall kept out of the shared log from a seat the box ended before
+	// it printed its pid. The seat says nothing on stderr and lives on
+	// `exec sleep 60`, so an outside SIGKILL is the silent 128+9 the
+	// criterion reads.
+	reaped := make(chan error, 1)
+	go func() { reaped <- cmd.Wait() }()
+	defer func() { _ = cmd.Process.Kill(); <-reaped }()
 	got := make(chan string, 1)
 	go func() {
 		line, _ := bufio.NewReader(stdout).ReadString('\n')
@@ -859,6 +902,12 @@ func TestLiveWallClaudeSessionStateKeepsTheSubmitLogPrivate(t *testing.T) {
 	case <-time.After(10 * time.Second):
 	}
 	if pid == 0 {
+		select {
+		case werr := <-reaped:
+			reaped <- werr
+			bgSeatAbstainIfOutside(t, "the seat appending its own submit inside the rendered wall", werr, errb.String())
+		default:
+		}
 		t.Fatalf("the seat's submit never ran under the wall: %s", errb.String())
 	}
 	if b, err := os.ReadFile(priv); err != nil || !strings.Contains(string(b), ownLine) {
@@ -1054,6 +1103,11 @@ func TestLiveWallClaudeSessionStateKeepsTheCatalogCacheAndCleanupMarkerPrivate(t
 	}
 	try := func(script string) (bool, string) {
 		out, err := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...).CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every arm reads that as the wall's verdict, so a seat the
+		// box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "a session-state probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote

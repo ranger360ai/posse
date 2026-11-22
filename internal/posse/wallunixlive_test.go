@@ -160,9 +160,17 @@ func TestLiveWallUnixRefusesAHostSocketBoundAfterTheSeatLaunched(t *testing.T) {
 			l := wuBindAfter(t, sock, ready)
 			defer l.Close()
 
-			if err := cmd.Wait(); err != nil {
+			werr := cmd.Wait()
+			// The abstention before the fatal (ranger-base-k2quj): this seat
+			// is a test binary that prints its result, so a seat the box
+			// SIGKILLs says nothing and exits 128+9 — and the fatal below
+			// would report that as the seat exiting badly, which reaches
+			// ADR 0088 D5's ratchet as a P1 against whoever landed last.
+			// ADR 0097 D3's exit 3 instead.
+			bgSeatAbstainIfOutside(t, "the Landlock seat for "+c.name+" inside the rendered wall", werr, buf.String())
+			if werr != nil {
 				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s",
-					err, buf.String(), strings.Join(argv, " "))
+					werr, buf.String(), strings.Join(argv, " "))
 			}
 			got := buf.String()
 			if !strings.Contains(got, "SEAT-RESULT "+c.want) {
@@ -403,6 +411,11 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 				wuEnvSigOutside+"="+strconv.Itoa(outside),
 				wuEnvSigAbsent+"="+strconv.Itoa(absent))
 			out, err := cmd.CombinedOutput()
+			// The abstention before the fatal (ranger-base-k2quj): a seat
+			// the box SIGKILLs prints nothing and exits 128+9, and the fatal
+			// below would report that as the seat exiting badly — ADR 0097
+			// D3's exit 1 for a run that read no wall. Exit 3 instead.
+			bgSeatAbstainIfOutside(t, "the signal-scope seat for "+c.name+" inside the rendered wall", err, string(out))
 			if err != nil {
 				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s", err, out, strings.Join(argv, " "))
 			}
@@ -993,9 +1006,15 @@ func TestLiveWallUnixLeavesCrossDirectoryRename(t *testing.T) {
 			cmd := exec.Command("bwrap", argv...)
 			cmd.Env = wuSeatEnv(wuEnvRefDir+"="+dir, wuEnvRefSock+"="+sock)
 			cmd.Stdout, cmd.Stderr = &buf, &buf
-			if err := cmd.Run(); err != nil {
+			rerr := cmd.Run()
+			// The abstention before the fatal (ranger-base-k2quj): a seat
+			// the box SIGKILLs prints nothing and exits 128+9, and the fatal
+			// below would report that as the seat exiting badly — ADR 0097
+			// D3's exit 1 for a run that read no wall. Exit 3 instead.
+			bgSeatAbstainIfOutside(t, "the REFER seat for "+c.name+" inside the rendered wall", rerr, buf.String())
+			if rerr != nil {
 				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s",
-					err, buf.String(), strings.Join(argv, " "))
+					rerr, buf.String(), strings.Join(argv, " "))
 			}
 			got := buf.String()
 			if want := "SEAT-REFER " + wantRefer; !strings.Contains(got, want) {

@@ -466,6 +466,11 @@ func TestLiveBwrapFollowsATmpSourceLinkAndTheRenderRefusesIt(t *testing.T) {
 	// to the real bwrap.
 	argv := []string{"--die-with-parent", "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--unshare-user", "--bind", link, bwrapTmpMount}
 	out, err := exec.Command("bwrap", append(argv, "sh", "-c", "echo seat-wrote > /tmp/planted")...).CombinedOutput()
+	// The abstention before the fatal (ranger-base-k2quj): this seat is the
+	// CONTROL for the refusal below, so a silent 128+9 would be reported as
+	// the control failing — a wall finding this run never measured. ADR 0097
+	// D3's exit 3 instead.
+	bgSeatAbstainIfOutside(t, "the control seat writing through the tmp source link", err, string(out))
 	if err != nil {
 		t.Fatalf("bwrap %v: %v\n%s", argv, err, out)
 	}

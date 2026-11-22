@@ -139,6 +139,11 @@ func (f srLive) in(t *testing.T, argv []string, stdin string, arg ...string) (bo
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.CombinedOutput()
+	// AND THE ABSTENTION FIRST, for bsLive.in's reason one bead later
+	// (ranger-base-k2quj): a seat the box SIGKILLs is silent and exits
+	// 128+9, which below is read as `err == nil` — a false pass in a refusal
+	// arm and a false red in a success arm. ADR 0097 D3's exit 3 instead.
+	bgSeatAbstainIfOutside(t, "a seat running "+wwOneLine(strings.Join(arg, " "))+" inside the rendered store-repo wall", err, string(out))
 	// THREE results, for bsLive.in's reason (ranger-base-s9h52): the raw
 	// output is what a caller READS, the account is what a caller SAYS, and
 	// a runner that answers only `err == nil` has destroyed the exit status

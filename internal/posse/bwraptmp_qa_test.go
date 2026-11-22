@@ -346,6 +346,10 @@ if echo x > "$2" 2>/dev/null; then echo create=ok; else echo create=refused; fi
 echo "tmpdir=${TMPDIR-unset}"`
 	args := append(append([]string{}, argv...), "sh", "-c", script, "sh", plant, fresh)
 	out, err := exec.Command("bwrap", args...).CombinedOutput()
+	// The abstention before the fatal (ranger-base-k2quj): a silent 128+9
+	// is a seat the box ended, not a wall answer, and the fatal below would
+	// put it on a P1 bead as one (ADR 0097 D3/D5).
+	bgSeatAbstainIfOutside(t, "the /tmp probe seat inside the rendered wall", err, string(out))
 	if err != nil {
 		t.Fatalf("bwrap %v: %v\n%s", argv, err, out)
 	}

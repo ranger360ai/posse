@@ -320,6 +320,12 @@ func TestLiveWallPinnedDstAHolderCannotRenameAPrivateMember(t *testing.T) {
 	}
 	mv := func(argv []string, to string) (string, error) {
 		out, err := exec.Command("bwrap", append(append([]string{}, argv...), "mv", member, to)...).CombinedOutput()
+		// The abstention (ranger-base-k2quj). BOTH of this test's arms read
+		// this return as an answer about the mount: the fix arm reds when
+		// `err == nil` and the control fatals when it does not, so a seat
+		// the box SIGKILLs — silent, 128+9 — is a false pass in one and a
+		// false red in the other. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "the renaming seat inside the rendered wall", err, string(out))
 		return string(out), err
 	}
 

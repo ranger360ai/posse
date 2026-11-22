@@ -225,11 +225,22 @@ func TestQABwrapGitRefsFailuresSpendTheirFirstLineOnTheCause(t *testing.T) {
 		// its success arms read it as the red that ADR 0097 D5's ratchet
 		// files as a P1 against whoever landed last. This is the positive
 		// control that was missing.
-		for _, want := range []string{"bgSeatEndedFromOutside", "bgSeatAbstain"} {
-			if !qcsHas(qcsCalls(fn.Body), want) {
-				t.Errorf("%s does not call %s. A seat the box SIGKILLs says nothing and exits 128+9, and without this guard that status reaches both of this runner's polarities as an answer about the wall: a refusal arm passes on it and a success arm reds on it (ranger-base-evx07, ADR 0086 D5's false pass). The abstention is ADR 0097 D3's exit 3 — never a pass, never a red.",
-					qcsName(c.recv, c.name), want)
-			}
+		//
+		// ONE NAME NOW, not the guard and the skip (ranger-base-k2quj). The
+		// pair is spelled once, in bgSeatAbstainIfOutside, because the other
+		// 23 member files have 33 seat runs between them and almost no
+		// shared runner — three lines at 33 sites is 33 chances for the
+		// guard and the abstention to come apart. This arm reads the door
+		// these two runners must go through; the whole member set is read by
+		// TestQAEveryWallMemberSeatRunRoutesTheAbstention, which covers
+		// these two runners as well and would not notice if this file's
+		// per-runner reading were deleted. Both are kept: that pin reads a
+		// bwrap call's enclosing function, and these two runners are the
+		// ones whose SHAPE (a two-value return every arm interpolates) the
+		// rest of this test is about.
+		if want := "bgSeatAbstainIfOutside"; !qcsHas(qcsCalls(fn.Body), want) {
+			t.Errorf("%s does not call %s. A seat the box SIGKILLs says nothing and exits 128+9, and without this guard that status reaches both of this runner's polarities as an answer about the wall: a refusal arm passes on it and a success arm reds on it (ranger-base-evx07, ADR 0086 D5's false pass). The abstention is ADR 0097 D3's exit 3 — never a pass, never a red.",
+				qcsName(c.recv, c.name), want)
 		}
 	}
 

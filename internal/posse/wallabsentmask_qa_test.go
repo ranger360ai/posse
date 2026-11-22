@@ -232,7 +232,15 @@ func TestLiveBwrapAbsentSSHDirMasksAKeyTheHostWritesAfterLaunch(t *testing.T) {
 		}
 		writeFile(t, key, secret+"\n", 0o600)
 		writeFile(t, goAhead, "", 0o600)
-		if werr := <-done; werr != nil {
+		werr := <-done
+		// The abstention before the fatal (ranger-base-k2quj). This runner
+		// feeds both the masked arm and its control, so a seat the box
+		// SIGKILLs — silent, 128+9 — arrives as the wall failing in one and
+		// as a control that cannot read in the other. ADR 0097 D3's exit 3
+		// instead, and the emptiness test is the same one the fatal uses:
+		// nothing printed is what makes an outside kill legible here.
+		bgSeatAbstainIfOutside(t, "the key-reading seat held at its go-ahead inside the rendered wall", werr, out.String())
+		if werr != nil {
 			t.Fatalf("the seat exited %v: %s", werr, out)
 		}
 		return out.String()

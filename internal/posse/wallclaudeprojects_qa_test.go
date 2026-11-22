@@ -250,6 +250,11 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 	try := func(script string) (bool, string) {
 		cmd := exec.Command("bwrap", append(append([]string{}, r.Argv...), "/bin/sh", "-c", script)...)
 		out, err := cmd.CombinedOutput()
+		// The abstention (ranger-base-k2quj). This runner answers `err ==
+		// nil` and every arm reads that as the wall's verdict, so a seat the
+		// box SIGKILLs — silent, 128+9 — passes a refusal arm and reds a
+		// success arm. ADR 0097 D3's exit 3 instead.
+		bgSeatAbstainIfOutside(t, "a projects-key probe seat running "+wwOneLine(script)+" inside the rendered wall", err, string(out))
 		return err == nil, strings.TrimSpace(string(out))
 	}
 	q := shellQuote
@@ -337,18 +342,35 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 	cmd.Stdin = nil
 	done := make(chan struct{})
 	var out []byte
-	go func() { out, _ = cmd.CombinedOutput(); close(done) }()
+	// THE RUN'S ERROR IS KEPT NOW, where it used to go to `_`
+	// (ranger-base-k2quj). Nothing below reads it as a verdict — the claim
+	// is which key dir the transcript landed in — but a seat the box
+	// SIGKILLs writes no transcript, and `len(afterOwn) <= len(beforeOwn)`
+	// then reds as a wall regression this run never measured.
+	var cerr error
+	go func() { out, cerr = cmd.CombinedOutput(); close(done) }()
 	select {
 	case <-done:
+		// Only on this arm. The timeout below kills the seat from THIS
+		// process, which the criterion cannot tell from the box doing it —
+		// and a 90s deadline that really elapsed is a finding, not an
+		// absence of one.
+		bgSeatAbstainIfOutside(t, "the real claude seat under the rendered wall", cerr, string(out))
 	case <-time.After(90 * time.Second):
 		_ = cmd.Process.Kill()
 		<-done
 		t.Fatalf("claude -p under the wall did not end in 90s:\n%s", out)
 	}
-	t.Logf("claude -p under the rendered wall (%s): %s", bin, strings.TrimSpace(string(out)))
+	// THE STATUS IS RENDERED, not only read (ranger-base-k2quj, the shape
+	// wallclaudeprojectsattack_qa_test.go already had): this pin does not
+	// assert on the seat's exit — its claim is which key dir the transcript
+	// landed in — but a reader of the red below needs to know whether the
+	// seat answered at all, and `scripts/posse-wall-check` carries one line
+	// to the bead (ADR 0097 D3, ranger-base-axt1f).
+	t.Logf("claude -p under the rendered wall (%s): %s", bin, bgSeatAccount(cerr, string(out)))
 	afterOwn, _ := filepath.Glob(filepath.Join(own, "*.jsonl"))
 	if len(afterOwn) <= len(beforeOwn) {
-		t.Errorf("the real claude wrote no transcript in its own key dir %s under the rendered wall\n out: %s", own, out)
+		t.Errorf("the real claude wrote no transcript in its own key dir %s under the rendered wall: %s", own, bgSeatAccount(cerr, string(out)))
 	}
 	for p, b := range before {
 		if got, err := os.ReadFile(p); err != nil || string(got) != string(b) {

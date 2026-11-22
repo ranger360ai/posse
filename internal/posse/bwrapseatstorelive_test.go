@@ -140,6 +140,14 @@ func (f bsLive) in(t *testing.T, argv []string, stdin string, arg ...string) (bo
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.CombinedOutput()
+	// AND THE ABSTENTION FIRST (ranger-base-k2quj): a seat this box SIGKILLs
+	// says nothing and exits 128+9, and below that is read as `err == nil`
+	// — so a refusal arm passes on it and a success arm reds, and that red
+	// reaches ADR 0088 D5's ratchet as a P1 against whoever landed last.
+	// bgSeatAbstainIfOutside is ADR 0097 D3's exit 3 instead: never a pass,
+	// never a red (bwrapgitrefslive_test.go has the criterion and what was
+	// measured of it).
+	bgSeatAbstainIfOutside(t, "a seat running "+wwOneLine(strings.Join(arg, " "))+" inside the rendered seat-store wall", err, string(out))
 	// THREE results, and the third is the whole of ranger-base-s9h52 here.
 	// This runner used to answer `err == nil` and the trimmed output, so the
 	// seat's exit status never existed as text: a git that exited 128 at
