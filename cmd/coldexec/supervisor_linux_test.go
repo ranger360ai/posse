@@ -50,11 +50,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -179,16 +181,32 @@ func TestTheDoorIsBuiltInsidePossesOwnTempNamespace(t *testing.T) {
 }
 
 // doorRun is one supervised run: what it printed, what it exited with, how
-// many cold execs it says it delayed, and how long each timed step took.
+// many cold execs it says it delayed, how many notifications it took, what
+// its verdict counts sum to, and how long each timed step took.
 type doorRun struct {
 	code    int
 	out     string
 	delayed int
-	elapsed map[string]time.Duration
+	notifs  int
+	// verdicts is sum(verdicts) as the REPORT prints them, which is the
+	// number a seat reconciling that report has to add up by hand. See
+	// wantReportAccountsForEveryNotification.
+	verdicts int
+	elapsed  map[string]time.Duration
 }
 
 var (
-	reDelayed = regexp.MustCompile(`(\d+) cold first execs delayed`)
+	// reReport is the report's first line, and it carries the notification
+	// count and four of the nine verdict counts. The other five print on
+	// their own conditional lines, which is what the three regexps below
+	// read; a conditional line that is absent is a count of zero.
+	reReport = regexp.MustCompile(
+		`(\d+) execve notifications, (\d+) cold first execs delayed \S+ each \((\d+) warm, (\d+) older than the door, (\d+) absent\)`)
+	reWithdrawnN = regexp.MustCompile(`(\d+) notifications were withdrawn before the door could answer`)
+	reTruncatedN = regexp.MustCompile(`(\d+) charges were TRUNCATED`)
+	// The report prints the holes as one total and then names the parts, so
+	// this is all three hole verdicts in one number.
+	reHolesN  = regexp.MustCompile(`(\d+) execs went un-adjudicated`)
 	reElapsed = regexp.MustCompile(`ELAPSED (\S+) (\d+)ms`)
 	// ARM 14's two: the supervisor's own pid, as the supervised shell's
 	// ppid, and the ppid an orphaned descendant lands on.
@@ -233,16 +251,36 @@ func runDoor(t *testing.T, script string, args ...string) doorRun {
 	default:
 		t.Fatalf("running the door: %v\n%s", err, out)
 	}
-	if m := reDelayed.FindStringSubmatch(r.out); m == nil {
+	if m := reReport.FindStringSubmatch(r.out); m == nil {
 		t.Fatalf("the run printed no report line, so it accounted for nothing:\n%s", r.out)
 	} else {
-		r.delayed, _ = strconv.Atoi(m[1])
+		n := make([]int, 5)
+		for i := range n {
+			n[i], _ = strconv.Atoi(m[i+1])
+		}
+		r.notifs, r.delayed = n[0], n[1]
+		r.verdicts = n[1] + n[2] + n[3] + n[4] +
+			reportCount(reWithdrawnN, r.out) + reportCount(reTruncatedN, r.out) + reportCount(reHolesN, r.out)
 	}
 	for _, m := range reElapsed.FindAllStringSubmatch(r.out, -1) {
 		ms, _ := strconv.Atoi(m[2])
 		r.elapsed[m[1]] = time.Duration(ms) * time.Millisecond
 	}
+	// Asserted here rather than in a pin of its own: it is a property of
+	// every supervised run and it costs a parse of output already captured.
+	r.wantReportAccountsForEveryNotification(t)
 	return r
+}
+
+// reportCount reads one of the report's conditional lines. A line the
+// report did not print is a count of zero, which is what it means.
+func reportCount(re *regexp.Regexp, out string) int {
+	m := re.FindStringSubmatch(out)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
 }
 
 func asExit(err error, out **exec.ExitError) bool {
@@ -298,6 +336,46 @@ func (r doorRun) wantNoHoles(t *testing.T) {
 	t.Helper()
 	if strings.Contains(r.out, "un-adjudicated") {
 		t.Errorf("the run left execs un-adjudicated:\n%s", r.out)
+	}
+}
+
+// wantReportAccountsForEveryNotification is the door struct's own invariant,
+// read off the artifact a seat reads it off: every notification lands on
+// exactly one verdict, so the report's verdict counts sum to the
+// notification count it prints beside them.
+//
+// ranger-base-9uvsx is why it exists. A notification the kernel withdrew
+// after adjudicate had already recorded `old`, `warm` or `absent` was
+// charged vWithdrawn as well, so one notification spent two verdicts: arm 1
+// of `make coldexec-check` printed 129555 notifications against verdicts
+// summing to 129559, its exact withdrawn count, while the other four arms
+// closed exactly (MEASURED 2026-11-11, D = 2.5s). Nothing read those two
+// numbers against each other, and a seat reconciling the report cannot.
+//
+// WHAT IT CANNOT SEE, stated rather than left silent: no run in this file
+// reds for that defect, because none of them can produce a withdrawal that
+// lands on one of those three verdicts. Those are the verdicts the door
+// answers in microseconds — there is no D for a nudge to arrive inside, and
+// a poll-guarded nudger needs one (the same reason ARM 19 is not a
+// supervised run; MEASURED there, 900 nudged callers produced none of the
+// equivalent window). ARM 22 reads that off handle() instead. What this
+// holds is the number a seat actually reconciles, against every future way
+// of spending a verdict twice or spending none.
+//
+// It stands down on one line of output, and only that one: when drain gives
+// up with handlers still sleeping the report is printed over verdicts that
+// have not been decided yet, so the sum UNDERSHOOTS — which is the leak
+// that line names and not the arithmetic.
+func (r doorRun) wantReportAccountsForEveryNotification(t *testing.T) {
+	t.Helper()
+	if strings.Contains(r.out, "the command exited with execs still held") {
+		return
+	}
+	if r.verdicts != r.notifs {
+		t.Errorf("the report prints %d execve notifications and verdict counts summing to %d. "+
+			"Every notification lands on exactly one verdict (door.verdicts), so a sum over is a "+
+			"notification charged twice and a sum under is one charged for nothing — and either way "+
+			"the report cannot be reconciled:\n%s", r.notifs, r.verdicts, r.out)
 	}
 }
 
@@ -1621,4 +1699,264 @@ echo "CALLER EXIT $?"
 	r.wantCode(t, 0)
 	r.wantDelayed(t, 1)
 	r.wantNoHoles(t)
+}
+
+// ARM 22: one notification spends exactly ONE verdict, whichever verdict
+// adjudicate worked out for it — which is ranger-base-9uvsx, and it is
+// arithmetic rather than coverage.
+//
+// The door struct says "every notification lands on exactly one verdict"
+// and the report prints the two numbers side by side. They did not match.
+// adjudicate settled three of the nine verdicts itself — `old`, `warm` and
+// `absent`, the ones it can decide with no question left for the kernel —
+// and recorded them on the way in; when the kernel then withdrew the
+// notification, answer() recorded vWithdrawn as well. One notification, two
+// verdicts. MEASURED 2026-11-11 over the five `make coldexec-check` arms at
+// D = 2.5s: four closed EXACTLY and arm 1 overshot by exactly its withdrawn
+// count, 129555 notifications against 129559 verdicts. An earlier arm 1 run
+// the same day closed exactly with 1 withdrawn, because that one
+// notification's pending verdict was a HOLE — recorded only at the answer,
+// so the withdrawal replaced it instead of adding to it, which is the shape
+// all nine have now.
+//
+// Nothing was false about coverage here, which is what makes it this bead
+// and not ranger-base-4kars': a withdrawn `old` really was old, and nothing
+// escaped the door. What was wrong is a report that cannot be reconciled.
+//
+// WHY THIS IS NOT A SUPERVISED RUN, which every pin above but ARM 19 is,
+// and it is ARM 19's reason reached from the other side. The live shape
+// needs the kernel to withdraw a notification whose verdict is one of those
+// three — and those are exactly the verdicts the door answers in
+// microseconds: there is no D to arrive inside, and withdrawalFixture's
+// nudger is a 10ms poll. MEASURED on ARM 19's bead, 900 nudged callers
+// produced zero of the equivalent window. So a fixture here would cost
+// seconds a run to assert nothing, and the pins' own report arithmetic is
+// held instead by doorRun.wantReportAccountsForEveryNotification, which
+// runs on every supervised run in this file and would catch any FUTURE way
+// of spending a verdict twice that a fixture can reach.
+//
+// THE LISTENER IS A CLOSED FD, as in ARM 19 and for the same reason:
+// answer() branches on ID_VALID returning an error and on nothing else, so
+// a door that cannot answer is a door whose every notification reads as
+// withdrawn. That is the arm the defect lived on.
+//
+// THE DELAY IS ZERO, and that is this pin's subject showing: the warm case
+// needs a cold exec of the plant ahead of it to mark the inode seen, and
+// what is asserted is how many verdicts those notifications spent, never
+// how long they took. ARM 1 owns the timing.
+func TestANotificationSpendsExactlyOneVerdict(t *testing.T) {
+	t.Parallel()
+
+	// The epoch is a second in the PAST, so the plant written below is
+	// unambiguously later than it and /bin/sh unambiguously earlier. A
+	// supervised run gets that margin for free — it takes its epoch and
+	// then runs a command that writes plants milliseconds later at the
+	// earliest — and a unit pin does not: a file's ctime comes from the
+	// kernel's COARSE clock, which can read up to a tick behind
+	// time.Now(), so a plant written straight after an epoch of time.Now()
+	// reads `old`. MEASURED here on tmpfs, 3 of 3 runs, which is what this
+	// line is for.
+	started := time.Now().Add(-time.Second)
+	dir := t.TempDir()
+	plant := filepath.Join(dir, "plant")
+	if err := os.WriteFile(plant, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("planting the file this pin execs: %v", err)
+	}
+	newDoor := func() *door {
+		return &door{
+			listener: -1, // every ioctl on it fails: see the note above
+			delay:    0,
+			started:  started,
+			seen:     map[inode]bool{},
+			inflight: map[charge]*held{},
+		}
+	}
+
+	for _, c := range []struct {
+		name string
+		path string
+		want verdict
+	}{
+		// The commonest verdict there is: the checkout and the toolchain.
+		{"old", "/bin/sh", vOld},
+		// The second commonest, and it is a shell missing a PATH entry.
+		{"absent", filepath.Join(dir, "no-such-file"), vAbsent},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			n, buf := execveNotif(1, c.path)
+
+			// THE POSITIVE CONTROL. adjudicate really does reach this
+			// verdict for this path, and really does leave it unrecorded —
+			// so what the assertion below reads is one verdict decided at
+			// the answer, and not a case that stopped reaching the verdict.
+			d := newDoor()
+			pending, taken, target := d.adjudicate(n)
+			keepAlive(buf)
+			if pending != c.want {
+				t.Fatalf("adjudicate answered %s, want %s — this case no longer reaches that "+
+					"verdict and the rest of it proves nothing", verdictName(pending), verdictNames[c.want])
+			}
+			if taken != vWithdrawn {
+				t.Errorf("the withdrawal verdict is %s, want %s: this notification was holding no "+
+					"charge, so there is nothing for the kernel to have cut short",
+					verdictNames[taken], verdictNames[vWithdrawn])
+			}
+			if target == "" {
+				t.Errorf("adjudicate named no target, so the withdrawal's -verbose line cannot say " +
+					"which file the notification was about — it used to read `(the kernel took the " +
+					"notification back before the answer)`, which was the second line of the two " +
+					"this notification spent")
+			}
+			if got := verdictTotal(d); got != 0 {
+				t.Errorf("adjudicate recorded %d verdicts itself, want 0 — every verdict is "+
+					"recorded in answer(), which is the one place that knows whether the "+
+					"notification was still there", got)
+			}
+
+			// THE ASSERTION THIS PIN EXISTS FOR.
+			d = newDoor()
+			d.handle(n)
+			keepAlive(buf)
+			if got := verdictTotal(d); got != 1 {
+				t.Errorf("one notification was charged %d verdicts, want 1 (%s). The report prints "+
+					"its verdict counts beside its notification count, and a seat reconciling the "+
+					"two cannot: arm 1 of `make coldexec-check` read 129555 notifications against "+
+					"129559 verdicts this way (MEASURED 2026-11-11)", got, verdictTally(d))
+			}
+			if got := d.verdicts[vWithdrawn].Load(); got != 1 {
+				t.Errorf("the withdrawal was recorded %d times, want 1: the kernel took this "+
+					"notification back, so `withdrawn` is the verdict it spends — INSTEAD of %s "+
+					"and not as well as it", got, verdictNames[c.want])
+			}
+			if got := d.verdicts[c.want].Load(); got != 0 {
+				t.Errorf("the run was charged %d %s as well as the withdrawal. The file really was "+
+					"%s — that is not the false claim ranger-base-4kars' delay was — but the "+
+					"notification is gone and it has one verdict to spend",
+					got, verdictNames[c.want], verdictNames[c.want])
+			}
+		})
+	}
+
+	// `warm` needs a cold exec of the same inode ahead of it, so it is the
+	// one case that cannot be a row above: the first notification is what
+	// marks the inode seen. Reaching it that way rather than by writing
+	// d.seen is deliberate — the key is built from a stat inside adjudicate,
+	// and a test that builds its own would assert the key construction
+	// (ARM 13's subject) instead of the arithmetic.
+	t.Run("warm", func(t *testing.T) {
+		n, buf := execveNotif(1, plant)
+
+		// THE POSITIVE CONTROL, on a door that has already taken the cold
+		// exec. Its delay is zero, so that first notification sleeps
+		// nothing; it reads `delayed` as the pending verdict and spends
+		// `truncated`, because a withdrawal with no restart behind it cut
+		// the charge short (ARM 17's ending, reached here by the listener
+		// and not by a signal).
+		d := newDoor()
+		d.handle(n)
+		keepAlive(buf)
+		if got := verdictTotal(d); got != 1 {
+			t.Fatalf("the cold exec ahead of the warm one spent %d verdicts, want 1 (%s) — the "+
+				"prologue is broken, so nothing below is about `warm`", got, verdictTally(d))
+		}
+		pending, _, target := d.adjudicate(n)
+		keepAlive(buf)
+		if pending != vWarm {
+			t.Fatalf("the second notification for the same inode answered %s, want warm — this "+
+				"case no longer reaches `warm` and the rest of it proves nothing", verdictName(pending))
+		}
+		if target == "" {
+			t.Errorf("adjudicate named no target for the warm exec, so its withdrawal's -verbose " +
+				"line cannot say which file it was about")
+		}
+		if got := verdictTotal(d); got != 1 {
+			t.Errorf("after the warm adjudication the run is charged %d verdicts, want the cold "+
+				"exec's 1 — adjudicate recorded the warm verdict itself, which is the second of "+
+				"the two this notification is about to spend", got)
+		}
+
+		// THE ASSERTION THIS PIN EXISTS FOR: two notifications, two
+		// verdicts. (The adjudicate call above records nothing, which is
+		// the line this reads against.)
+		d = newDoor()
+		d.handle(n)
+		d.handle(n)
+		keepAlive(buf)
+		if got := verdictTotal(d); got != 2 {
+			t.Errorf("two notifications were charged %d verdicts, want 2 (%s)", got, verdictTally(d))
+		}
+		if got := d.verdicts[vWarm].Load(); got != 0 {
+			t.Errorf("the run was charged %d warm as well as the withdrawal. The inode had been "+
+				"exec'd before, so `warm` was the right answer — but the kernel took the "+
+				"notification back and there is one verdict to spend", got)
+		}
+	})
+}
+
+// execveNotif builds the notification the kernel would raise for an execve
+// of `path` by THIS process, and answers the buffer the path argument lives
+// in. The caller keeps that buffer alive across the adjudication, because
+// the address in the notification points into it: adjudicate reads the path
+// out of /proc/<pid>/mem exactly as it does for a supervised caller, so the
+// pin exercises readPath and the resolution rather than standing in for
+// them. This process is the caller because it is the one whose memory is
+// certainly readable and whose /proc entry is certainly there — the two
+// things adjudicate needs of a live caller, and the two that a dead pid
+// denies it (ARM 19 is the other side of that).
+func execveNotif(id uint64, path string) (*seccompNotif, []byte) {
+	buf := append([]byte(path), 0)
+	return &seccompNotif{
+		ID:  id,
+		Pid: uint32(os.Getpid()),
+		Data: seccompData{
+			Nr:   int32(unix.SYS_EXECVE),
+			Args: [6]uint64{uint64(uintptr(unsafe.Pointer(&buf[0])))},
+		},
+	}, buf
+}
+
+// keepAlive holds execveNotif's buffer until the adjudication that reads
+// its address has finished. Go's collector does not move heap objects, so
+// the address stays the address; what it does do is collect a buffer whose
+// last reference was the unsafe.Pointer conversion, which the notification
+// does not count as one.
+func keepAlive(buf []byte) { runtime.KeepAlive(buf) }
+
+// verdictName is verdictNames with an out-of-range value spelled rather
+// than panicked on, and that is for the MUTANT and not for the door: every
+// verdict a door produces is in range, but a seat reverting this bead's fix
+// reintroduces adjudicate's `vNone` sentinel (-1) for exactly the verdicts
+// this pin reads, and a pin whose mutant output is an index-out-of-range
+// stack is a pin whose message nobody gets to read. MEASURED: it was, the
+// first time this one was run against the pre-fix door.
+func verdictName(v verdict) string {
+	if v < 0 || int(v) >= numVerdicts {
+		return fmt.Sprintf("not a verdict (%d)", int(v))
+	}
+	return verdictNames[v]
+}
+
+// verdictTotal is sum(verdicts) — the number the report prints beside its
+// notification count, and the one the door struct's invariant is about.
+func verdictTotal(d *door) int64 {
+	var n int64
+	for i := range d.verdicts {
+		n += d.verdicts[i].Load()
+	}
+	return n
+}
+
+// verdictTally names what a door was charged, for a failure message that
+// says which verdict was spent twice rather than only that one was.
+func verdictTally(d *door) string {
+	var parts []string
+	for i := range d.verdicts {
+		if n := d.verdicts[i].Load(); n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, verdictNames[i]))
+		}
+	}
+	if parts == nil {
+		return "nothing at all"
+	}
+	return strings.Join(parts, ", ")
 }

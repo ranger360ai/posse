@@ -81,29 +81,33 @@ type door struct {
 	// execs read `unreadable`, so a non-zero count here is the hole that
 	// is no longer there.
 	reaped atomic.Int64
-	// Almost every notification lands on exactly one verdict, and the ones
-	// that mean "this exec was not covered" are printed at the end rather
-	// than left silent: a door that has stopped being able to read its
-	// targets must not read as a suite with no members of the class. One
-	// verdict per NOTIFICATION, note, not per execve: a restarted execve
-	// raises a fresh notification and spends two (see the note above holes).
+	// EVERY notification lands on exactly one verdict, and the ones that
+	// mean "this exec was not covered" are printed at the end rather than
+	// left silent: a door that has stopped being able to read its targets
+	// must not read as a suite with no members of the class. One verdict
+	// per NOTIFICATION, note, not per execve: a restarted execve raises a
+	// fresh notification and spends two (see the note above holes).
 	//
-	// ALMOST, and here is the exception, because the honest version of this
-	// comment is the one that names it. A notification the kernel takes
-	// back after adjudicate has already recorded `old`, `warm` or `absent`
-	// records vWithdrawn too, so it spends TWO verdicts and the report's
-	// verdicts sum to more than its notification count. Holes and delays no
-	// longer do this — both ride down to answer() and are recorded there
-	// once (ranger-base-j0riv, ranger-base-4kars) — and a verdict adjudicate
-	// settles itself is not FALSIFIED by the withdrawal the way a delay is:
-	// the file really was old.
+	// EVERY, unqualified, because every verdict is recorded in ONE place —
+	// answer(), once the kernel has said whether the notification was still
+	// there. adjudicate records nothing at all: it answers the verdict it
+	// worked out and that verdict rides down, which is what the holes and
+	// the delays already did (ranger-base-j0riv, ranger-base-4kars) and
+	// what `old`, `warm` and `absent` do since ranger-base-9uvsx. So a
+	// notification the kernel takes back spends `withdrawn` INSTEAD of the
+	// pending verdict rather than as well as it, and the report's verdict
+	// counts sum to its notification count.
 	//
-	// MEASURED 2026-11-11, D = 2.5s, the five coldexec arms: four of the
-	// five summed EXACTLY to their notification count, and arm 1 overshot by
-	// exactly its 4 withdrawn — 129555 notifications against 129559 verdicts
-	// (docs/notes.d/ranger-base-4kars.md). ranger-base-9uvsx holds the
-	// decision about closing it, and the pin it would need is
-	// notifs == sum(verdicts).
+	// They did not before. MEASURED 2026-11-11, D = 2.5s, the five coldexec
+	// arms: four of the five summed EXACTLY to their notification count, and
+	// arm 1 overshot by exactly its 4 withdrawn — 129555 notifications
+	// against 129559 verdicts (docs/notes.d/ranger-base-4kars.md). That is
+	// not a false claim about coverage the way a reported-but-unpaid delay
+	// was — a withdrawn `old` really was old — it is arithmetic a seat
+	// reconciling the report cannot do. Pinned by
+	// TestANotificationSpendsExactlyOneVerdict and, at the report, by
+	// doorRun.wantReportAccountsForEveryNotification on every supervised
+	// run in the pins.
 	verdicts [numVerdicts]atomic.Int64
 
 	// verbose prints one line per notification. It is for triage — which
@@ -149,11 +153,6 @@ const (
 	vForeign
 	numVerdicts int = iota
 )
-
-// vNone is not a verdict and is never recorded. adjudicate answers it to
-// say "I have recorded this notification's verdict myself"; anything else
-// is a verdict only answer() is in a position to decide.
-const vNone verdict = -1
 
 var verdictNames = [numVerdicts]string{
 	vDelayed:     "delayed",
@@ -510,11 +509,17 @@ func (d *door) handle(n *seccompNotif) {
 // adjudicate works out what this execve is about and sleeps D if it is the
 // first exec of a file the run created.
 //
-// It records the verdicts it can settle on its own — old, warm, absent —
-// and answers vNone for those. Two kinds it never records, and both for the
-// same reason: whether this execve was let through at all, and at what
-// speed, is decided at the answer and nowhere else, so the verdict rides
-// down to answer() which records it once the kernel has spoken.
+// IT RECORDS NOTHING. The verdict it works out rides down to answer(),
+// which records either it or `withdrawn` once the kernel has said whether
+// the notification was still there — one place, one verdict per
+// notification, which is the invariant the door struct states. Three of
+// those verdicts adjudicate could settle on its own, and used to: `old`,
+// `warm` and `absent` were recorded here, so a withdrawal arriving after
+// one of them had been written spent a SECOND verdict at the answer and the
+// report summed past its own notification count (ranger-base-9uvsx). The
+// other two kinds could never be recorded here, for a stronger reason than
+// arithmetic — whether this execve was let through at all, and at what
+// speed, is not adjudicate's to know:
 //
 //	a HOLE is an execve the door let through without knowing what it was,
 //	  and every hole here is load-sensitive in the same way: the caller can
@@ -560,8 +565,7 @@ func (d *door) adjudicate(n *seccompNotif) (pending, taken verdict, pendingTarge
 		// execveat(fd, "", …, AT_EMPTY_PATH): the fd IS the file.
 		target = fmt.Sprintf("/proc/%d/fd/%d", pid, dirfd)
 	case p == "":
-		d.record(vAbsent, pid, "(empty path)")
-		return vNone, vWithdrawn, ""
+		return vAbsent, vWithdrawn, "(empty path)"
 	case filepath.IsAbs(p):
 		target = p
 	case dirfd == int(unix.AT_FDCWD):
@@ -572,18 +576,12 @@ func (d *door) adjudicate(n *seccompNotif) (pending, taken verdict, pendingTarge
 
 	var st unix.Stat_t
 	if err := unix.Stat(target, &st); err != nil {
-		v, hole := d.statVerdict(pid, err)
-		if hole {
-			return v, vWithdrawn, target
-		}
-		d.record(v, pid, target)
-		return vNone, vWithdrawn, ""
+		return d.statVerdict(pid, err), vWithdrawn, target
 	}
 	// The ctime, not the mtime: a copied binary keeps its source's mtime
 	// and a `chmod +x` moves only the ctime, and both of those are plants.
 	if !time.Unix(st.Ctim.Sec, st.Ctim.Nsec).After(d.started) {
-		d.record(vOld, pid, target)
-		return vNone, vWithdrawn, ""
+		return vOld, vWithdrawn, target
 	}
 	// The ctime again, and for a SECOND decision rather than the same one
 	// twice: this key tells a first exec of this inode-at-this-version from
@@ -645,8 +643,7 @@ func (d *door) adjudicate(n *seccompNotif) (pending, taken verdict, pendingTarge
 		time.Sleep(time.Until(h.deadline))
 		return vDelayed, vWithdrawn, target
 	}
-	d.record(vWarm, pid, target)
-	return vNone, vWithdrawn, ""
+	return vWarm, vWithdrawn, target
 }
 
 // statVerdict tells a path that is not there from a path the door cannot
@@ -665,17 +662,25 @@ func (d *door) adjudicate(n *seccompNotif) (pending, taken verdict, pendingTarge
 // is no `gone` here any more: a pid is reusable, and a caller that exec'd
 // and exited while we resolved reads exactly like one that died stopped.
 // The kernel's answer about THIS notification is ID_VALID and nothing else.
-// So an absent pid is an unstattable like any other and goes to answer() as
-// a hole — which answer() will record only if the notification was still
-// live, i.e. only if the door really did let a live execve through without
-// knowing what it was.
-func (d *door) statVerdict(pid int, err error) (v verdict, hole bool) {
+// So an absent pid is an unstattable like any other — a hole, which
+// answer() records only if the notification was still live, i.e. only if
+// the door really did let a live execve through without knowing what it
+// was.
+//
+// It used to answer that distinction as a second `hole bool` return, for
+// adjudicate to decide which of the two verdicts it recorded itself and
+// which it handed down. Since ranger-base-9uvsx adjudicate records neither
+// — both ride down like every other verdict — so there is nothing left for
+// the caller to branch on and the bool went with the branch. The
+// distinction is still the whole point of the function; it is in which
+// verdict comes back.
+func (d *door) statVerdict(pid int, err error) verdict {
 	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) {
 		if unix.Access(fmt.Sprintf("/proc/%d", pid), unix.F_OK) == nil {
-			return vAbsent, false
+			return vAbsent
 		}
 	}
-	return vUnstattable, true
+	return vUnstattable
 }
 
 // A WITHDRAWAL DURING THE DELAY TRUNCATES THE INJECTION, and this is the
@@ -775,11 +780,12 @@ func (d *door) statVerdict(pid int, err error) (v verdict, hole bool) {
 // and a `warm` for an exec that did take D), never an exec let through
 // early.
 func (d *door) recordWithdrawal(n *seccompNotif, taken verdict, pendingTarget string) {
-	if pendingTarget == "" {
-		// A verdict adjudicate settled itself, so there is no target left
-		// to name: the line is the second one this notification spends.
-		pendingTarget = "(the kernel took the notification back before the answer)"
-	}
+	// pendingTarget is never empty: adjudicate names a target on every path
+	// it returns, including the ones it cannot stat and the empty-path case.
+	// It used to be empty for the three verdicts adjudicate recorded itself,
+	// and the line then had to say "(the kernel took the notification back
+	// before the answer)" instead of naming a file — which was the
+	// double-counted verdict's second line (ranger-base-9uvsx).
 	d.record(taken, int(n.Pid), pendingTarget)
 }
 
@@ -790,12 +796,20 @@ func (d *door) recordWithdrawal(n *seccompNotif, taken verdict, pendingTarget st
 // ID_VALID first, which is the kernel's own advice: a notification whose
 // caller is gone must not be answered, and the id could by then belong to a
 // different exec. It is also the ONLY authority on whether this
-// notification still exists, which is why adjudicate's holes and its delays
-// are referred here rather than recorded up there: a hole is recorded only
-// once the kernel has said the notification was live AND the answer has
-// landed, because only then has the door really let a live execve through
-// without knowing what it was. A notification the kernel took back covered
-// nothing and had nothing left to cover (see the note above holes).
+// notification still exists, which is why EVERY verdict is referred here
+// rather than recorded in adjudicate: a hole is recorded only once the
+// kernel has said the notification was live AND the answer has landed,
+// because only then has the door really let a live execve through without
+// knowing what it was. A notification the kernel took back covered nothing
+// and had nothing left to cover (see the note above holes).
+//
+// EVERY, since ranger-base-9uvsx. The holes and the delays had to come here
+// because adjudicate cannot know whether they happened; `old`, `warm` and
+// `absent` come here for the arithmetic — recorded up there, they spent a
+// second verdict at this function's withdrawal and the report then summed
+// past its own notification count. So this records exactly one verdict for
+// every notification handle() takes: `withdrawn` (or `truncated`) when the
+// kernel took it back, and the pending verdict when the answer landed.
 //
 // THAT IS HALF OF ranger-base-j0riv'S RULE and it went three beads with no
 // pin of its own: the delays are held to it by the arms' `delayed` counts,
@@ -830,9 +844,7 @@ func (d *door) answer(n *seccompNotif, pending, taken verdict, pendingTarget str
 			"rather than hanging every exec under it\n", err)
 		os.Exit(exitRefused)
 	}
-	if pending != vNone {
-		d.record(pending, int(n.Pid), pendingTarget)
-	}
+	d.record(pending, int(n.Pid), pendingTarget)
 }
 
 // readPath reads a NUL-terminated string out of another process's memory.
