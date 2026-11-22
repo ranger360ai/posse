@@ -69,13 +69,14 @@ var prepHostFenceRoots []string
 var prepHostFenceKeepOut string
 
 // FencePrepHost declares that fence for a test binary: `root` is the binary's
-// own temp home, plus the two temp roots this package's fixtures are cut
-// from — os.TempDir(), which is what t.TempDir() uses, and /var/tmp, which
+// own temp home, plus the three temp roots this package's fixtures are cut
+// from — os.TempDir(), which is what t.TempDir() uses; /var/tmp, which
 // wallUngrantedDir uses deliberately because a t.TempDir() is under a blanket
-// temp grant and ADR 0097 D1's wall venue puts its private mounts there. Make
-// that THREE where this seat declared an ungranted root of its own
-// (envUngrantedFixtureRoot, at the foot of this file): prepHostFenceRootList
-// is the whole list and says why it is in there.
+// temp grant and ADR 0097 D1's wall venue puts its private mounts there; and
+// bwrapTmpMount, which wallStandDownDir uses just as deliberately for the
+// opposite reason. Make that FOUR where this seat declared an ungranted root
+// of its own (envUngrantedFixtureRoot, at the foot of this file):
+// prepHostFenceRootList is the whole list and says why each is in there.
 //
 // Called from FenceCLIHomes so that every binary with a fence gets this one
 // too: cmd/posse and internal/treepins both render walls through the same
@@ -137,6 +138,25 @@ func FencePrepHost(root string) {
 // this seat declared nothing, which is every seat on a box whose /var/tmp is
 // writable.
 //
+// THE STAND-DOWN ROOT IS IN HERE FOR THE SAME REASON AND NOT BY WAY OF
+// os.TempDir() (ranger-base-shf97). `wallStandDownDir` cuts its fixture home
+// under `bwrapTmpMount` — `/tmp`, the one blanket temp grant both hosts spell
+// alike — because the render those fixtures drive must SUCCEED, and that is a
+// root os.TempDir() names only while TMPDIR is unset or itself under /tmp. So
+// the entry that covered it was the same host accident this fence's own
+// fixtures were moved onto /tmp to escape: MEASURED 2026-11-22 (linux
+// 7.2.15, go1.27.3, at 648a32d6), with `TMPDIR=/var/tmp/… go test -run
+// TestQAWallSeedProjectConfig ./internal/posse` and the two arms taking a
+// stand-down root, both reds moved off the render and onto THIS fence —
+// "/tmp/posse-standdown-…/home/.cache/posse is under none of
+// /var/tmp/…/posse-testhome-… /var/tmp/… /var/tmp" — one layer down from the
+// refusal they had just been fixed out of.
+//
+// It widens the fence by no more than `/var/tmp` already does: both are
+// world-shared temp roots that no live area of this box's operator or of rex
+// lies in, and the keep-out arm still decides a passwd home STRICTLY inside
+// either of them.
+//
 // ORDER IS COSMETIC AND THE DECISION DOES NOT READ IT: prepHostFenceWhy
 // unions the roots' coverage and unions the keep-out question over them, so
 // what the order decides is only how the refusal sentence reads.
@@ -147,7 +167,7 @@ func prepHostFenceRootList(root, declared string) []string {
 			roots = append(roots, r)
 		}
 	}
-	return append(roots, os.TempDir(), "/var/tmp")
+	return append(roots, os.TempDir(), "/var/tmp", bwrapTmpMount)
 }
 
 // PrepHostFenceRoots is the fence as it stands, so a pin can read it back and

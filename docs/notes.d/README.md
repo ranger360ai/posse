@@ -10,12 +10,14 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 - [ranger-base-u5ez8](ranger-base-u5ez8.md) — A tree-wide pin over the refusals trail, and the two rules that do not work (ranger-base-u5ez8) — 2026-11-22
 - [ranger-base-t0ha1](ranger-base-t0ha1.md) — Four closes verified, and the arm a census cannot see (ranger-base-t0ha1) — 2026-11-22
+- [ranger-base-shf97](ranger-base-shf97.md) — ranger-base-shf97 — the two arms, and the rule that was not taken — 2026-11-22
 - [ranger-base-njj5z](ranger-base-njj5z.md) — A read deadline is a poller fact, and a FIFO is not pollable on darwin (ranger-base-njj5z) — 2026-11-22
 - [ranger-base-mlw6q](ranger-base-mlw6q.md) — ranger-base-mlw6q — the stand-down root is the wrong answer for a fixture that drives the PRODUCTION render — 2026-11-22
 - [ranger-base-k2quj](ranger-base-k2quj.md) — The wall abstention reaches all 55 members now (ranger-base-k2quj) — 2026-11-22
 - [ranger-base-jielm](ranger-base-jielm.md) — Two verify findings: a pin whose premise nothing witnessed, and the last unguarded read of the refusals leaf (ranger-base-jielm) — 2026-11-22
 - [ranger-base-jhmm7](ranger-base-jhmm7.md) — ranger-base-jhmm7 — the door under the bwrap fixture HOME — 2026-11-22
 - [ranger-base-hhps5](ranger-base-hhps5.md) — Two arms nothing witnessed, closed: a launch key that read one spelling, and a drop key with no fixture that could grade it (ranger-base-hhps5) — 2026-11-22
+- [ranger-base-fuwuv](ranger-base-fuwuv.md) — The land check's cross product: every arm under both platforms, and what the two new steps cost (ranger-base-fuwuv) — 2026-11-22
 - [ranger-base-ayubz](ranger-base-ayubz.md) — The caged BEADS_DIR is a translation, not a resolve (ranger-base-ayubz) — 2026-11-22
 - [ranger-base-2unmh](ranger-base-2unmh.md) — Four closes verified, and four arms nothing witnessed (ranger-base-2unmh) — 2026-11-22
 - [ranger-base-1aayx](ranger-base-1aayx.md) — The fourteen macos arm-1 reds were twelve landings and one fixture root (ranger-base-1aayx) — 2026-11-22

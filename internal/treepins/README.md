@@ -49,7 +49,7 @@ pin.
 | `make pkgcensus-arm3-check` | the same, for the pins built only under `posse_arm3` |
 | `make treepins-check` | every pin in this package, minus a priced exclusion table |
 | `make pid-check` | the shipped PIDs under `examples/agents/` |
-| `make land-check` | the launcher's own land gate, `scripts/posse-land-check`, whose fifth step vets the not-native GOOS |
+| `make land-check` | the launcher's own land gate, `scripts/posse-land-check`, whose last three steps vet the not-native GOOS — untagged, then each declared arm |
 
 The `treepins-check` row is the one door named by what it does **not** run
 ([ADR 0098](../../docs/adr/0098-the-treepins-door-is-the-package-minus-a-priced-exclusion-list.md)).

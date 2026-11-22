@@ -190,6 +190,57 @@ func TestQAADeclaredUngrantedRootIsAPrepHostFenceRoot(t *testing.T) {
 	}
 }
 
+// Pin: the STAND-DOWN root is a prep-host fence root too, and it is one in
+// its own right rather than by way of os.TempDir().
+//
+// The pin above's argument, for the other fixture root (ranger-base-shf97).
+// `wallStandDownDir` cuts its home under `bwrapTmpMount` because the renders
+// those fixtures drive must SUCCEED — and those renders' prep steps then
+// write on the HOST at paths under that home, which is what the fence judges.
+// os.TempDir() names `/tmp` only while TMPDIR is unset or itself under it, so
+// before this entry existed the coverage was the same host accident
+// wallStandDownDir exists to escape: MEASURED 2026-11-22 with
+// `TMPDIR=/var/tmp/… go test -run TestQAWallSeedProjectConfig
+// ./internal/posse`, where the two arms newly cut on a stand-down root read a
+// refusal naming the FENCE — the step at `/tmp/posse-standdown-…/home/.cache/
+// posse` under none of the declared roots — in place of the wall-root refusal
+// they had just been fixed out of.
+//
+// Over prepHostFenceRootList and never FencePrepHost, for the pin above's
+// reason: the live fence is package state every parallel wall pin reads.
+func TestQATheStandDownFixtureRootIsAPrepHostFenceRoot(t *testing.T) {
+	t.Parallel()
+	const home = "/fixtures/home"
+	roots := prepHostFenceRootList(home, "")
+	if !slices.Contains(roots, bwrapTmpMount) {
+		t.Errorf("the fence roots %v do not name %s, which is where wallStandDownDir cuts every fixture whose render must succeed — so on a box whose TMPDIR is outside %s their prep steps are refused by the fence instead", roots, bwrapTmpMount, bwrapTmpMount)
+	}
+	// And it is NAMED rather than inherited, which is the half that was
+	// missing: the os.TempDir() entry is dropped here, so what admits the
+	// step below is the stand-down entry alone. That models the seat the
+	// defect appears on — TMPDIR outside /tmp — without setting TMPDIR in a
+	// process where every parallel test's t.TempDir() reads it.
+	// ONE occurrence and not every match, because on a box whose TMPDIR is
+	// unset os.TempDir() IS bwrapTmpMount: dropping both would take the
+	// named entry away too and this arm would red over the accident it is
+	// measuring the absence of.
+	named, dropped := []string{}, false
+	for _, r := range roots {
+		if r == os.TempDir() && !dropped {
+			dropped = true
+			continue
+		}
+		named = append(named, r)
+	}
+	if !dropped {
+		t.Fatalf("the fence roots %v name no os.TempDir() entry (%s) — this arm models a box where that entry is not /tmp and there is nothing here to drop", roots, os.TempDir())
+	}
+	step := filepath.Join(bwrapTmpMount, "posse-standdown-1", "home", ".cache", "posse")
+	if why := prepHostFenceWhy(named, "", step); why != "" {
+		t.Errorf("with os.TempDir() out of the list, a prep step under a stand-down fixture home is refused: %s — so the coverage was that entry's and a seat whose TMPDIR is outside %s reads this refusal instead of the wall", why, bwrapTmpMount)
+	}
+}
+
 // Pin: the verdict. An undeclared abstention decides the exit status; a
 // declared one is reported and changes nothing; a run that was already red
 // stays red with its own status.

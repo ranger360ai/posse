@@ -1354,8 +1354,10 @@ pid-check:
 # THE LAUNCHER'S OWN LAND GATE, typed by a seat before it commits (ADR 0087
 # residual 1, ranger-base-ujyjd finding 4). scripts/posse-land-check is what
 # judges a REPLAYED landing, and `go build ./...` plus a native `go vet` are
-# only four of its five steps: the fifth cross-vets the NOT-native GOOS, and
-# that is the one question nothing else on this box asks. GOOS appeared
+# only four of its seven steps: the last three cross-vet the NOT-native GOOS —
+# the untagged build and then each declared arm, which is the cross product
+# ranger-base-fuwuv found empty — and that is the one question nothing else on
+# this box asks. GOOS appeared
 # nowhere in this file, so a file that compiles on linux and not on darwin —
 # a test file with no build constraint reaching for a helper declared only
 # under one GOOS — is a tree whose `make test`, `make tree-check` and
@@ -1373,10 +1375,15 @@ pid-check:
 # by hand — free to go narrower than the gate while both look green, which is
 # the whole reason fmt-check and notes-check re-run their TOOL instead of
 # reimplementing it. Running the gate cannot drift from the gate, it answers
-# four more questions than a bare cross-vet does, and it is cheaper than
-# either copy: 1.5s warm, 8.2s with the darwin build cache cold (MEASURED
-# 2026-11-14, this box, loadavg 3.5, five steps green; the cross-vet alone is
-# 0.3s warm, so what the other four steps cost warm is about a second).
+# six more questions than a bare cross-vet does, and it is cheaper than
+# either copy: 2.0-2.2s warm over three runs (MEASURED 2026-11-22, this box,
+# loadavg 8.5-9.0, seven steps green; the three cross-GOOS steps alone are
+# 0.65s of it warm — 0.30s untagged and 0.17s per arm — so what the four
+# native steps cost warm is still about a second and a half). It read 1.5s
+# warm and 8.2s with the darwin build cache cold at five steps (MEASURED
+# 2026-11-14, loadavg 3.5); the two arm steps ranger-base-fuwuv added are
+# +0.4-0.65s of the warm figure and +2.3-3.4s of the darwin-cold one, and
+# docs/notes.d/ranger-base-fuwuv.md is the one place every reading is said.
 #
 # `go` and not the GOBIN override, because the subject is what the GATE runs:
 # posse execs this script and chooses no toolchain for it, so a door that
