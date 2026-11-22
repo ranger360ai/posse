@@ -217,7 +217,36 @@ func TestQALandedCheckJudgeIsNoStrongerThanASeat(t *testing.T) {
 // reader actually gets, whichever one that is, and the unanswered arm is the
 // one whose own sentence is longest and most likely to be thought complete.
 //
-// SERIAL, no t.Parallel: wallUnixABI is a package-level var.
+// AND THE MECHANISM IS A PARAMETER TOO, FOR THE SAME REASON THE ABI IS
+// (ranger-base-whpxv). The ABI rows were driven and the mechanism was
+// inherited from the box, so every row asserted bwrap's answer on whatever
+// host ran it — and the DEGRADED sentence is bwrap's alone: WallUnixDegraded
+// returns "" for any mech != WallBwrap (wallunix.go), which landedcheck.go
+// says on purpose at landedJudgeSocketWallNote ("EMPTY ON SEATBELT … there is
+// nothing degraded about a mechanism this layer was never part of"). So on
+// darwin all six degraded rows red while the product was doing the
+// darwin-correct thing: MEASURED 2026-11-21 on macos-latest arm 1, run
+// 44974829306, job 137062263947, at b2509fba — "this host renders no socket
+// wall (Landlock ABI -38 …) and the <v> verdict says NOTHING about it", six
+// times, {green,red,no answer} x {ABI 8, ABI -38}, with ubuntu arms 1-3 green
+// on the same run. `wallMechanismHost` is a var for exactly this (wall.go,
+// ranger-base-temhf), so the rows that read bwrap's sentence now SAY bwrap.
+//
+// THE DARWIN ROW IS A READING AND NOT A SKIP. It takes the ABI that reds on
+// linux and asserts the verdict says NO DEGRADED there — because the darwin
+// judge's socket wall is landedCheckSeatbeltNet, which is on the profile at
+// every ABI, so silence is the honest line and a seatbelt host that STARTED
+// printing bwrap's alarm would be an operator told to go and look at a
+// Landlock version darwin has no syscall for (ranger-base-q9bqu holds the
+// darwin half of D31 itself).
+//
+// Each row controls that landedJudgeSocketWallNote agrees with what the row
+// is named for before the runner is driven, so neither the ABI nor the
+// mechanism can stop deciding and leave the output rows looking like they
+// still measure the two arms.
+//
+// SERIAL, no t.Parallel: wallUnixABI and wallMechanismHost are package-level
+// vars.
 func TestQALandedCheckVerdictSaysWhenThereIsNoSocketWall(t *testing.T) {
 	restore := wallUnixABI
 	t.Cleanup(func() { wallUnixABI = restore })
@@ -231,16 +260,30 @@ func TestQALandedCheckVerdictSaysWhenThereIsNoSocketWall(t *testing.T) {
 		{"no answer", ""},
 	} {
 		for _, abi := range []struct {
+			goos string
 			n    int
 			want bool // the verdict must carry the DEGRADED sentence
 		}{
-			{10, false}, // the D1 host: the layer is up and the line stays quiet
-			{WallUnixABIMin, false},
-			{WallUnixABIMin - 1, true}, // handled_access_fs would be refused outright
-			{-38, true},                // no landlock_create_ruleset at all
+			{"linux", 10, false}, // the D1 host: the layer is up and the line stays quiet
+			{"linux", WallUnixABIMin, false},
+			{"linux", WallUnixABIMin - 1, true}, // handled_access_fs would be refused outright
+			{"linux", -38, true},                // no landlock_create_ruleset at all
+			// THE SEATBELT HOST, at the ABI that reds on linux: this layer
+			// was never part of that mechanism, so the line is quiet and
+			// that is the reading (ranger-base-whpxv).
+			{"darwin", WallUnixABIMin - 1, false},
 		} {
-			t.Run(fmt.Sprintf("%s at ABI %d", v.verdict, abi.n), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s on %s at ABI %d", v.verdict, abi.goos, abi.n), func(t *testing.T) {
+				wallMechanismForTest(t, abi.goos)
 				wallUnixABI = func() int { return abi.n }
+				// THE ROW'S OWN CONTROL: the note the three verdict lines
+				// below carry has to be the one this row is named for
+				// BEFORE the runner runs, or the reads below are measuring
+				// a helper that stopped deciding rather than a line that
+				// stopped printing.
+				if note := landedJudgeSocketWallNote(); (note != "") != abi.want {
+					t.Fatalf("on %s at Landlock ABI %d the judge's socket-wall note is %q, want degraded = %v — this row is not the reading it is named for (ranger-base-whpxv)", abi.goos, abi.n, note, abi.want)
+				}
 				a := wtApp(t)
 				repo := wtRepo(t)
 				// ONLY the judge's script, so ADR 0097 D2's wall check does
@@ -268,13 +311,13 @@ func TestQALandedCheckVerdictSaysWhenThereIsNoSocketWall(t *testing.T) {
 				got := strings.Contains(said, "DEGRADED")
 				switch {
 				case abi.want && !got:
-					t.Errorf("this host renders no socket wall (Landlock ABI %d, RESOLVE_UNIX needs %d) and the %s verdict says NOTHING about it. The judge has no persona and so no `posse gates` line of its own, so this is the ONLY place its wall is ever reported — and a layer that is absent and silent reads as one that is applied (ADR 0080 D31, ranger-base-l2gk9):\n  %s",
-						abi.n, WallUnixABIMin, v.verdict, strings.TrimSpace(said))
+					t.Errorf("a %s host renders no socket wall (Landlock ABI %d, RESOLVE_UNIX needs %d) and the %s verdict says NOTHING about it. The judge has no persona and so no `posse gates` line of its own, so this is the ONLY place its wall is ever reported — and a layer that is absent and silent reads as one that is applied (ADR 0080 D31, ranger-base-l2gk9):\n  %s",
+						abi.goos, abi.n, WallUnixABIMin, v.verdict, strings.TrimSpace(said))
 				case !abi.want && got:
-					t.Errorf("the socket wall is up at Landlock ABI %d and the %s verdict calls it DEGRADED anyway — every landing would carry a sentence that is false, in the line D6.2's filer reads:\n  %s",
-						abi.n, v.verdict, strings.TrimSpace(said))
+					t.Errorf("a %s host's socket wall is not degraded at Landlock ABI %d (the layer is up, or the mechanism is one it was never part of) and the %s verdict calls it DEGRADED anyway — every landing would carry a sentence that is false, in the line D6.2's filer reads:\n  %s",
+						abi.goos, abi.n, v.verdict, strings.TrimSpace(said))
 				}
-				if abi.want && !strings.Contains(said, WallUnixDegraded(WallBwrap)) {
+				if abi.want && !strings.Contains(said, WallUnixDegraded(WallMechanism())) {
 					t.Errorf("the %s verdict carries the word DEGRADED but not WallUnixDegraded's own sentence, so an operator gets the alarm without the fact (ranger-base-i92tj):\n  %s", v.verdict, strings.TrimSpace(said))
 				}
 			})
@@ -284,28 +327,83 @@ func TestQALandedCheckVerdictSaysWhenThereIsNoSocketWall(t *testing.T) {
 
 // The darwin rule, read on any host: deny everything, then loopback IP and
 // the run's own unix sockets back, in that order (last match wins in SBPL).
+//
+// AND THE SOCKET GRANT IS THE RESOLVED SPELLING, WHICH IS THE WHOLE POINT OF
+// THE ROWS (ranger-base-whpxv). The pin held the subpath against the literal
+// it had passed IN, so it asserted a host where no ancestor of the run dir is
+// a symlink — and darwin is not that host: `/var` is a link to `/private/var`
+// there, so `landedCheckSeatbeltNet("/var/landed/run-1")` renders
+// `(subpath "/private/var/landed/run-1")` and the pin red. MEASURED
+// 2026-11-21 on macos-latest arm 1, run 44974829306, job 137062263947, at
+// b2509fba: both halves, local and remote, read the `/private/var` spelling.
+// The PRODUCT is right there and the expectation was wrong — a seatbelt rule
+// is matched by the kernel against real paths, so a grant written in the
+// producer's raw spelling is a grant that matches nothing, which is
+// ranger-base-al4n9's sentence one render over.
+//
+// SO THE RESOLVE IS DRIVEN HERE RATHER THAN INHERITED: the third row's run
+// dir sits under a `var` that is a link to a `private/var`, darwin's /var in
+// miniature, so absResolve moves the path on this box too and the arm that
+// says the RAW spelling must not appear has something to read on every host.
+// The first row keeps the production-shaped `/var/landed/run-1` input, whose
+// resolve is the platform's own — unmoved here, moved on a macos leg — and
+// its expectation is built from absResolve rather than typed, so both
+// readings are correct rather than one of them being asserted everywhere.
 func TestQALandedCheckSeatbeltNetRule(t *testing.T) {
 	t.Parallel()
-	r := landedCheckSeatbeltNet("/var/landed/run-1")
-	deny := strings.Index(r, "(deny network*)")
-	if deny < 0 {
-		t.Fatalf("the rule denies no network:\n%s", r)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "private", "var"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	for _, allow := range []string{
-		`(allow network* (local ip "localhost:*"))`,
-		`(allow network* (remote ip "localhost:*"))`,
-		`(allow network* (local unix-socket (subpath "/var/landed/run-1")))`,
-		`(allow network* (remote unix-socket (subpath "/var/landed/run-1")))`,
+	if err := os.Symlink(filepath.Join(root, "private", "var"), filepath.Join(root, "var")); err != nil {
+		t.Fatal(err)
+	}
+	moved := 0
+	for _, row := range []struct{ name, run string }{
+		{"the production spelling", "/var/landed/run-1"},
+		{"a run dir with no link above it", filepath.Join(root, "private", "var", "landed", "run-1")},
+		{"a run dir under a symlinked ancestor", filepath.Join(root, "var", "landed", "run-1")},
 	} {
-		i := strings.Index(r, allow)
-		if i < 0 {
-			t.Errorf("the rule lacks %s:\n%s", allow, r)
-		} else if i < deny {
-			t.Errorf("%s comes before the deny, so the deny outvotes it:\n%s", allow, r)
-		}
+		t.Run(row.name, func(t *testing.T) {
+			r := landedCheckSeatbeltNet(row.run)
+			want, raw := sbQuote(absResolve(row.run)), sbQuote(row.run)
+			if want != raw {
+				moved++
+			}
+			deny := strings.Index(r, "(deny network*)")
+			if deny < 0 {
+				t.Fatalf("the rule denies no network:\n%s", r)
+			}
+			for _, allow := range []string{
+				`(allow network* (local ip "localhost:*"))`,
+				`(allow network* (remote ip "localhost:*"))`,
+				"(allow network* (local unix-socket (subpath " + want + ")))",
+				"(allow network* (remote unix-socket (subpath " + want + ")))",
+			} {
+				i := strings.Index(r, allow)
+				if i < 0 {
+					t.Errorf("the rule lacks %s:\n%s", allow, r)
+				} else if i < deny {
+					t.Errorf("%s comes before the deny, so the deny outvotes it:\n%s", allow, r)
+				}
+			}
+			// The resolved-grant arm, and it only has a question to ask on a
+			// row whose resolve moved: a subpath written as the caller
+			// spelled it is one the kernel matches nothing against, so the
+			// judge's own sockets would be denied along with the host's.
+			if want != raw && strings.Contains(r, "(subpath "+raw+")") {
+				t.Errorf("the rule grants the producer's raw spelling %s rather than the resolved %s — the kernel matches real paths, so that grant covers nothing (ranger-base-whpxv, ranger-base-al4n9):\n%s", raw, want, r)
+			}
+			if strings.Contains(r, "(allow network* (remote ip \"*") || strings.Contains(r, "(allow network*)") {
+				t.Errorf("the rule allows non-loopback network:\n%s", r)
+			}
+		})
 	}
-	if strings.Contains(r, "(allow network* (remote ip \"*") || strings.Contains(r, "(allow network*)") {
-		t.Errorf("the rule allows non-loopback network:\n%s", r)
+	// THE TABLE'S OWN CONTROL: the third row's `var` is a symlink on every
+	// host, so one row's resolve always moves. If none did, absResolve was
+	// exercised by nothing and the arm above measured nothing on this box.
+	if moved == 0 {
+		t.Errorf("no row's path was moved by absResolve, so nothing here exercised the resolve and the raw-spelling arm is vacuous (ranger-base-whpxv)")
 	}
 }
 
