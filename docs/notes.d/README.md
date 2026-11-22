@@ -20,6 +20,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-jhmm7](ranger-base-jhmm7.md) — ranger-base-jhmm7 — the door under the bwrap fixture HOME — 2026-11-22
 - [ranger-base-hhps5](ranger-base-hhps5.md) — Two arms nothing witnessed, closed: a launch key that read one spelling, and a drop key with no fixture that could grade it (ranger-base-hhps5) — 2026-11-22
 - [ranger-base-fuwuv](ranger-base-fuwuv.md) — The land check's cross product: every arm under both platforms, and what the two new steps cost (ranger-base-fuwuv) — 2026-11-22
+- [ranger-base-ddn56](ranger-base-ddn56.md) — ranger-base-ddn56 — two controls that shipped without a positive control — 2026-11-22
 - [ranger-base-b8igm](ranger-base-b8igm.md) — Two arms nothing ran, and a census one frame short (ranger-base-b8igm) — 2026-11-22
 - [ranger-base-ayubz](ranger-base-ayubz.md) — The caged BEADS_DIR is a translation, not a resolve (ranger-base-ayubz) — 2026-11-22
 - [ranger-base-9uvsx](ranger-base-9uvsx.md) — One notification, one verdict (ranger-base-9uvsx) — 2026-11-22

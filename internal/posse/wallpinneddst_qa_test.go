@@ -241,11 +241,34 @@ func TestQAWallPinnedDstPrivateSetFollowsTheGrantNotTheRuntime(t *testing.T) {
 // arm here, and reds TestQAEveryBwrapPrepStepNamesAPathThatIsNotThere and
 // TestQAWallClaudeProjectsRendersOwnKeyInsideAReadOnlyProjects beside it —
 // both of which run under a t.TempDir() home, which is to say under `/tmp`.
+//
+// THE HOME IS wallStandDownDir's AND NOT A `t.TempDir()`, and that is what
+// keeps this pin from going dark in the one venue built to run it
+// (ranger-base-ddn56). The stand-down this arm is named for needs the home
+// under `bwrapTmpMount`; `t.TempDir()` is there only while the box's TMPDIR
+// is, so under `make tmpdir-check` — TMPDIR at a `/var/tmp` root, the whole
+// point of that door — this test SKIPPED and the package line read `ok` over
+// it. MEASURED 2026-11-22 (linux 7.2.15, go1.27.3, at 91381cab), this test
+// run under a `-run` filter beside
+// TestQAWallClaudeProjectsRendersOwnKeyInsideAReadOnlyProjects with `-v`:
+// `SKIP (0.00s)` under that venue and `PASS (0.00s)` with TMPDIR unset, `ok`
+// both times. An abstention is never a pass (ADR 0097 D5), and the fix is a
+// root that measures in BOTH shapes rather than a door that catches the skip.
+// It was dark on the VENUE OF RECORD too — ADR 0098 D5 makes that ci.yml's
+// macos legs, where `t.TempDir()` is under `/var/folders/…` — so this pin had
+// never measured there on any push.
+//
+// SO THE STAND-DOWN IS NOW A CONTROL AND NOT A SKIP. With the home taken from
+// a root this fixture chose, a non-empty bwrapWallRoot() is no longer a fact
+// about the box this pin has to live with — it is this fixture sitting
+// somewhere it did not mean to, which is a red.
+// TestQANoWallPinGoesDarkUnderTheOffTmpVenue (wallvenuedark_qa_test.go) is the
+// door that keeps the class shut.
 func TestQAWallPinnedDstPrivateSetGateStandsDownWithTheWall(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
-	f := wrcFixtureIn(t, t.TempDir())
+	f := wrcFixtureIn(t, wallStandDownDir(t))
 	if bwrapWallRoot() != "" {
-		t.Skip("NOTHING MEASURED: this box's TMPDIR is not under " + bwrapTmpMount + ", so a t.TempDir() home does not stand the wall down")
+		t.Fatalf("CONTROL: this fixture's home is %s, cut under a stand-down root, and bwrapWallRoot() still answers %s — so the stand-down this pin is named for is not in force and every row below measures the other case (ranger-base-ddn56)", f.home, bwrapWallRoot())
 	}
 	cfg := absResolve(ClaudeConfigDirIn(f.home))
 	if err := os.MkdirAll(cfg, 0o755); err != nil {

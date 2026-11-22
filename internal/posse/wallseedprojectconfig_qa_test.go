@@ -136,24 +136,37 @@ type wspFixture struct {
 // refusal: the grant refused here is the HOME ITSELF, so a real wall root
 // under it is refused whatever else moves.
 //
-// THE CHECK IS HERE AND NOT ONLY AT THE CALL SITES, because the tree-wide pin
-// cannot see this render: it reads a render a test writes as BwrapArgs or
-// bwrapArgsWatched in the test's own identifier call graph, and these arms
-// reach it through a METHOD (`f.a.bwrapRender`), which that pin deliberately
-// does not follow (internal/treepins/bwraphomestanddown_qa_test.go, "A METHOD
-// CALL IS NOT AN EDGE"). So a third arm added here would be invisible to the
-// door, and this is the one place in the source that can still say no. It says
-// it in the fixture's own words rather than the render's, which is the whole
-// complaint jhmm7 was filed over — a red on another host that names a refusal
-// instead of the fixture that caused it.
-func wspFixtureIn(t *testing.T, root string) wspFixture {
+// AND THE ROOT IS NOT THE CALLER'S TO CHOOSE, which is the layer
+// ranger-base-ddn56 ended at. The tree-wide pin cannot see this render — it
+// reads a render a test writes as BwrapArgs or bwrapArgsWatched in the test's
+// own identifier call graph, and these arms reach it through a METHOD
+// (`f.a.bwrapRender`), which that pin deliberately does not follow
+// (internal/treepins/bwraphomestanddown_qa_test.go, "A METHOD CALL IS NOT AN
+// EDGE") — so a third arm added here is invisible to the door and this file is
+// the only thing in the source that can answer for its own root.
+//
+// IT ANSWERS BY CONSTRUCTION AND NOT BY AN ASSERTION, because the assertion
+// could not speak in the shape a seat actually types. This was
+// `wspFixtureIn(t, root)` with a `!underDir(bwrapTmpMount, root)` guard over
+// the root the caller passed, and that guard is silent wherever the box's
+// temp root already is `/tmp`: MEASURED 2026-11-22 (linux 7.2.15, go1.27.3,
+// at 91381cab) with both call sites put back to a bare `t.TempDir()`, `go
+// test -run TestQAWallSeedProjectConfig ./internal/posse` is `ok 0.881s` and
+// the same run under `TMPDIR=/var/tmp/…` reds BOTH arms at the guard. So the
+// sentence that called it the one place that can still say no was true only
+// where `make tmpdir-check`'s venue is already running, and a third arm
+// written with a bare root passed everything a seat types. There is no root
+// parameter now: the fixture takes its own from wallStandDownDir, a third arm
+// cannot hand it another, and the witness for that is the compiler rather
+// than a run in one venue. wallStandDownDir checks its OWN answer against
+// bwrapTmpMount, which is the host question that remains — and that check
+// fires for every caller of it, not for this file alone.
+func wspNewFixture(t *testing.T) wspFixture {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("the seed is the bwrap mechanism's; seatbelt creates nothing (SeatbeltCarveOut.Seeded)")
 	}
-	if !underDir(bwrapTmpMount, root) {
-		t.Fatalf("this fixture's root is %s, which is outside %s: `prep` renders a wall whose session dir is the home under this root, so the render refuses that grant for containing the per-seat wall root and every arm here measures a refusal instead of the seed (ADR 0100 D1/D2(a), ranger-base-shf97). Take the root from wallStandDownDir", root, bwrapTmpMount)
-	}
+	root := wallStandDownDir(t)
 	at := func(parts ...string) string { return filepath.Join(append([]string{root}, parts...)...) }
 	f := wspFixture{home: at("home"), rts: map[string]*Runtime{}}
 	for _, d := range []string{"home/.claude", "home/.codex", "home/.grok", "home/.cache", "posse/state", "posse/personas/developer"} {
@@ -201,7 +214,7 @@ func (f wspFixture) prep(t *testing.T, dir string) map[string][]PrepStep {
 // with the classifier's finding for the thing that was made.
 func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
-	f := wspFixtureIn(t, wallStandDownDir(t))
+	f := wspNewFixture(t)
 	steps := f.prep(t, f.home)
 
 	// Control: an empty home is a clean launch for every runtime, so
@@ -336,7 +349,7 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 // The `-run 'WallSeedProjectConfig'` filter reaches it either way.
 func TestQAWallSeedProjectConfigLaunchInTheHomeItSeededIsClean(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
-	f := wspFixtureIn(t, wallStandDownDir(t))
+	f := wspNewFixture(t)
 	steps := f.prep(t, f.home)
 	for _, name := range wspRuntimes {
 		if err := runBwrapPrep(steps[name]); err != nil {

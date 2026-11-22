@@ -647,6 +647,15 @@ package treepins
 //	TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself
 //	                                              make pkgcensus-check
 //	TestQANoProductGitDiffReaderIsBare            make pkgcensus-check
+//	TestQANoWallPinGoesDarkUnderTheOffTmpVenue    make pkgcensus-check
+//	                                              (ranger-base-ddn56: which
+//	                                              way a wall pin's own
+//	                                              t.Skip guard points, read
+//	                                              over every *_test.go in
+//	                                              the package — all three
+//	                                              build-tag arms, since
+//	                                              parser.ParseFile applies
+//	                                              no constraints)
 //	TestQAOneThrottleOnlyWatchArmsTheRefill       make pkgcensus-check
 //	TestQAProcessNoticesResolveThroughTheDeclaredSeams
 //	                                              make pkgcensus-check
@@ -1561,7 +1570,7 @@ package treepins
 // eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
-// and `make tree-check` is all of them — one hundred and sixty-four pins
+// and `make tree-check` is all of them — one hundred and sixty-five pins
 // and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and

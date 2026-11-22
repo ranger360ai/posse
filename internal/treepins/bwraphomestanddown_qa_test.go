@@ -573,7 +573,11 @@ func bhsRead(fset *token.FileSet, files []*ast.File, seeds map[string]bool) []*b
 //
 // THE IDIOM THIS EXISTS FOR is `…FixtureIn(t, root)`: the fixture sets HOME
 // to a path under a root its CALLER chose, and this corpus writes that
-// eighteen ways over (wgFixtureIn, wrcFixtureIn, weFixtureIn, wspFixtureIn).
+// eighteen ways over (wgFixtureIn, wrcFixtureIn, weFixtureIn, wwFixtureIn).
+// wspFixtureIn stood here until ranger-base-ddn56 CLOSED its parameter: the
+// one fixture in the corpus whose render this scan cannot reach at all took
+// its own root, so the idiom is one example shorter and that file answers for
+// its root at compile time (wallseedprojectconfig_qa_test.go).
 // Most call sites hand it `wallUngrantedDir(t)` — declared, and the whole
 // point of the idiom — and some hand it `t.TempDir()`, which is the defect.
 // Read inside the fixture alone, both are the same untraceable `f.home`.

@@ -204,8 +204,8 @@ func wwTempRoot(t *testing.T) string {
 	}
 	t.Cleanup(func() { removeAllTolerant(t, d) })
 	d = absResolve(d)
-	// AND THE ROOT IS CHECKED AGAINST THE ANSWER, wspFixtureIn's guard
-	// (wallseedprojectconfig_qa_test.go) for this fixture's second host-prep
+	// AND THE ROOT IS CHECKED AGAINST THE ANSWER, wallStandDownDir's own check
+	// (wall_helpers_test.go) for this fixture's second host-prep
 	// step: the App home this root carries is `<root>/home`, and the fence
 	// admits it because the root is under `bwrapTmpMount`. A root that
 	// resolved somewhere else — darwin spells `/tmp` `/private/tmp` — would
