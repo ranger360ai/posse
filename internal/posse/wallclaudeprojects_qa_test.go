@@ -340,22 +340,55 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 		"ANTHROPIC_BASE_URL=http://127.0.0.1:1", "ANTHROPIC_API_KEY=sk-dead-ajkqx",
 		"DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "CLAUDE_CODE_MAX_RETRIES=0")
 	cmd.Stdin = nil
+	// START ON THIS GOROUTINE, WAIT ON THE OTHER ONE (ranger-base-mhl7h).
+	// This used to be `go func() { out, cerr = cmd.CombinedOutput() … }()`,
+	// which left `cmd.Process` written by the goroutine and read by the
+	// deadline branch below: if the deadline won that race the Kill derefed
+	// nil and took the whole test binary down with a SIGSEGV, so the wall
+	// check got NO member line at all and the run read as a tree that would
+	// not run rather than as one member's finding (ADR 0097 D3) — a worse
+	// answer than the Fatalf the branch was about to print. MEASURED
+	// 2026-11-22 by planting `0 * time.Second` for the deadline.
+	//
+	// The fix is the shape every other seat run in this package already has
+	// — bwrapgitrefslive_test.go's bgLive.packUnderALiveSeat is the closest,
+	// deadline branch and bgSeatAccount and all: Start here, so `cmd.Process`
+	// is set before anything can read it, and Wait in the goroutine.
+	// Neither of the two shapes the bead offered does that. A
+	// `cmd.Process != nil` guard answers the panic and not the race, and the
+	// `<-done` under it then blocks on a seat the goroutine is about to
+	// Start — the hang the deadline exists to break, arriving as the 25m
+	// binary timeout instead. An exec.CommandContext whose cancel the
+	// deadline calls closes `done` as it kills, so both select cases are
+	// ready and Go picks one at random: half the time a 90s deadline that
+	// really elapsed would route through bgSeatAbstainIfOutside and abstain
+	// NOTHING MEASURED over a finding, which is what the `case <-done`
+	// comment below already rules out.
+	//
+	// One builder for both streams, interface-equal, so os/exec gives the
+	// child ONE pipe and the two streams cannot interleave — CombinedOutput's
+	// own arrangement. It is complete once Wait has returned, which is what
+	// `done` says, and nothing below reads it before that.
+	var outBuf strings.Builder
+	cmd.Stdout, cmd.Stderr = &outBuf, &outBuf
 	done := make(chan struct{})
-	var out []byte
 	// THE RUN'S ERROR IS KEPT NOW, where it used to go to `_`
 	// (ranger-base-k2quj). Nothing below reads it as a verdict — the claim
 	// is which key dir the transcript landed in — but a seat the box
 	// SIGKILLs writes no transcript, and `len(afterOwn) <= len(beforeOwn)`
 	// then reds as a wall regression this run never measured.
 	var cerr error
-	go func() { out, cerr = cmd.CombinedOutput(); close(done) }()
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("could not start the real claude seat under the rendered wall: %v", err)
+	}
+	go func() { cerr = cmd.Wait(); close(done) }()
 	select {
 	case <-done:
 		// Only on this arm. The timeout below kills the seat from THIS
 		// process, which the criterion cannot tell from the box doing it —
 		// and a 90s deadline that really elapsed is a finding, not an
 		// absence of one.
-		bgSeatAbstainIfOutside(t, "the real claude seat under the rendered wall", cerr, string(out))
+		bgSeatAbstainIfOutside(t, "the real claude seat under the rendered wall", cerr, outBuf.String())
 	case <-time.After(90 * time.Second):
 		_ = cmd.Process.Kill()
 		<-done
@@ -376,8 +409,8 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 		// opposite of a seat still running at 90s. That is bgSeatAccount's own
 		// rule: each caller keeps its own account of silence and shares the
 		// fold.
-		said := wwOneLine(string(out))
-		if len(strings.Fields(string(out))) == 0 {
+		said := wwOneLine(outBuf.String())
+		if len(strings.Fields(outBuf.String())) == 0 {
 			said = "NOTHING in 90s — so it hung before its first word, and the deadline is the whole finding"
 		}
 		t.Fatalf("claude -p under the wall did not end in 90s; it said %s", said)
@@ -388,10 +421,10 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 	// landed in — but a reader of the red below needs to know whether the
 	// seat answered at all, and `scripts/posse-wall-check` carries one line
 	// to the bead (ADR 0097 D3, ranger-base-axt1f).
-	t.Logf("claude -p under the rendered wall (%s): %s", bin, bgSeatAccount(cerr, string(out)))
+	t.Logf("claude -p under the rendered wall (%s): %s", bin, bgSeatAccount(cerr, outBuf.String()))
 	afterOwn, _ := filepath.Glob(filepath.Join(own, "*.jsonl"))
 	if len(afterOwn) <= len(beforeOwn) {
-		t.Errorf("the real claude wrote no transcript in its own key dir %s under the rendered wall: %s", own, bgSeatAccount(cerr, string(out)))
+		t.Errorf("the real claude wrote no transcript in its own key dir %s under the rendered wall: %s", own, bgSeatAccount(cerr, outBuf.String()))
 	}
 	for p, b := range before {
 		if got, err := os.ReadFile(p); err != nil || string(got) != string(b) {
