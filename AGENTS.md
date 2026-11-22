@@ -749,8 +749,25 @@ stall that day, and every one of them a typing habit.
   inside a blanket temp grant or cannot be created at all, which a caged seat
   cannot do: inside a seat's own bwrap wall `/var/tmp` is read-only, so such a
   seat is not this venue and is told so. `TMPDIR_CHECK_ROOT` is the override.
-  It is nobody's prerequisite and not in CI, and where it ought to live is
-  ADR 0098's call, carried by ranger-base-o065a with the prices in hand.
+  **It is a prerequisite of nothing, by ruling (ADR 0098 D5) — so you type
+  it, and in two cases you MUST** (D5.2), both named by what your change
+  TOUCHES and not by a filter. **Unfiltered**, when the change alters where a
+  wall rule stands down or what it refuses (the predicates over
+  `bwrapTmpMount` and the wall root in `internal/posse/bwrap.go`, and anything
+  new of that shape) — which is how most of this class arrived:
+  ranger-base-5f5kb's refusal made a batch of existing fixtures
+  venue-dependent in ONE landing, with no test file changed at all.
+  **Filtered (`RUN=`)**, when the change writes or edits a test whose fixture
+  `$HOME` drives a render, unless that home comes from `wallUngrantedDir` or
+  `wallStandDownDir` (`internal/posse/wall_helpers_test.go`), which are placed
+  on purpose. After landing the venue of record is ci.yml's macos arm legs
+  (D5.3): darwin's `t.TempDir()` is under `/var/folders/…`, so those jobs ARE
+  this venue for every landing on main and every pull request, and a red there
+  is filed as one bead by ci-watch (`internal/posse/ciwatch.go`) with the
+  landings in the window. So a
+  member that falls under neither MUST case lands and comes back as a bead,
+  which was the cost of every member so far; two such within 30 days re-opens
+  the ruling toward arm 1 alone (293s) as a `make test` prerequisite (D5.4).
   The static half of the same class is
   `internal/treepins/bwraphomestanddown_qa_test.go`, inside `make
   treepins-check`; it reads the render a TEST writes and its head comment says

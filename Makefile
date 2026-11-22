@@ -1773,19 +1773,46 @@ coldexec-check: $(COLDEXEC_BIN)
 # subpackages so the two select the same arm, and only a package-tree pattern
 # is queued; the two tagged arms queue under the `-tags posse_arm*` rule.
 #
-# NOT a prerequisite of `tree-check` or `make test`, and not in CI — AND THAT
-# IS A DECISION THIS LINE DOES NOT GET TO MAKE. A second full pass of
-# internal/posse on every seat's suite is what `make test` would cost, a door
-# nobody's `-run` filter names is ranger-base-rulbl's class, and a ci.yml leg
-# costs runner time the operator approves; ADR 0098 is the record that decides
-# which doors exist and what they may cost — its own Consequences say the
-# internal/posse half "needs its own ruling" if this shape escapes there, and
-# it has. ranger-base-o065a carries that question to the architecture lane
-# with the prices below in hand. Until it answers, this is a door a seat
-# TYPES — which is what AGENTS.md names it for, beside the other run-shaped
-# doors. (And it could not be a prerequisite today whichever way that rules:
-# arm 1 reds four live members, two held by ranger-base-shf97 and two by
-# ranger-base-mlw6q, neither landed at 144605f2.)
+# A PREREQUISITE OF NOTHING, BY RULING — ADR 0098 D5.1 (ranger-base-o065a).
+# Neither `tree-check` nor `make test`: it allows 0s on both, and stays a door
+# a seat TYPES, like `make coldexec-check` (ADR 0085 D6), which is what
+# AGENTS.md names it for. Priced and rejected there: +527s on a tree-check
+# line that reads 83-92s warm is 6.7x; the same 527s on `make test` is about
+# +54% of its ~970s, and box-wide it is paid AGAIN in queue time by every seat
+# waiting on the two slots — this venue's own 70s arm runs waited 809s and
+# 694s for one (MEASURED 2026-11-22). A new ubuntu ci.yml leg buys a
+# linux-readable log of a red that is already caught and already filed, so no
+# runner-cost ASK was filed for it either.
+#
+# AND A SEAT MUST TYPE IT IN TWO CASES, both named by what the change TOUCHES
+# rather than by a filter (D5.2). UNFILTERED, when the change alters WHERE a
+# wall rule stands down or what it refuses — the predicates over
+# `bwrapTmpMount` and the wall root in `internal/posse/bwrap.go`, and anything
+# new of that shape. That is how most of the class's members arrived:
+# ranger-base-5f5kb's refusal made a batch of existing fixtures
+# venue-dependent in ONE landing, with no test file changed at all. FILTERED
+# (`RUN=`), when the change writes or edits a test whose fixture `$HOME`
+# drives a render, unless that home comes from `wallUngrantedDir` or
+# `wallStandDownDir` (`internal/posse/wall_helpers_test.go`), which are placed
+# on purpose.
+#
+# AFTER LANDING THE VENUE OF RECORD IS ci.yml's macos ARM LEGS, deliberately
+# (D5.3). darwin's `t.TempDir()` is under `/var/folders/…`, so those jobs ARE
+# this venue on every push to main, and a red there already files ONE bead
+# through ci-watch (`internal/posse/ciwatch.go`) with the landings in the
+# window. What the ruling costs, said plainly: a member falling under neither
+# case above lands, reds macos arm 1, and comes back as a bead — the cost of
+# every member so far, except that the bead is filed by a machine now and the
+# seat that caused it is told which door to type.
+#
+# THE RE-RULING TRIGGER IS TWO (D5.4). Counting starts once arm 1 is green in
+# this venue, that is once ranger-base-shf97's and ranger-base-mlw6q's fixes
+# are both on main — they are, at 4e344271 and b4c79b80, though nothing has
+# re-run arm 1 unfiltered since, so this line does not claim the reading.
+# Then count the escapes: any ci-watch bead whose fix is a fixture moved off a
+# bare temp home. TWO within 30 days re-opens the ruling toward arm 1 ALONE as
+# a `make test` prerequisite, at the 293s below — the whole live yield measured
+# so far, and the cheapest pre-land option that still finds the class.
 #
 # THE PRICE. MEASURED 2026-11-22 (linux 7.2.15 x86_64, go1.27.3, 16 cores,
 # warm build cache, at 144605f2, one-minute load 10.3-16.4 with one suite slot
