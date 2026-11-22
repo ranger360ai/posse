@@ -33,6 +33,14 @@ func liveWallUnixABI() int {
 	return int(n)
 }
 
+// liveArmWallUnixPdeathsig sets SIGKILL as the CALLING THREAD's parent-death
+// signal — the same value bwrap's --die-with-parent sets, put back after an
+// exec transition cleared it (RunWallUnix says when that is,
+// ranger-base-6ec6n). Per-task, so RunWallUnix calls it on its locked leader.
+func liveArmWallUnixPdeathsig() error {
+	return unix.Prctl(unix.PR_SET_PDEATHSIG, uintptr(unix.SIGKILL), 0, 0, 0)
+}
+
 // landlockAccessFSRefer is spelled in wallunix.go so the ruleset pin reads it
 // from darwin. This is the assertion that the hand-spelled bit is the kernel's,
 // made where x/sys has the header's own value: a drift makes the Linux build

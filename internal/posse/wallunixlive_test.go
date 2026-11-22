@@ -443,9 +443,11 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 		step []string
 	}{
 		// The control: a red here is not the Landlock layer, because this arm
-		// has no Landlock layer. It is the runner — bwrap, the AppArmor exec
-		// transition, or the credentials — and the residual goes back to
-		// ranger-base-z56s9 as "die-with-parent is a no-op on that platform".
+		// has no Landlock layer. On a host where AppArmor moves bwrap's exec
+		// into another label it cannot die with its parent at all (the
+		// transition clears the pdeathsig, ranger-base-6ec6n), so there it
+		// asserts that platform fact instead of waiting; elsewhere a red is
+		// the runner — bwrap, or the credentials.
 		{"control: no Landlock layer on the line, and it still dies with its parent", nil},
 		{"the seat still dies with its parent", WallUnixStepArgv(self)},
 	} {
@@ -487,6 +489,41 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 			// rows are learnt.
 			t.Logf("seat self-report (%s):\n%s", c.name, report)
 			deaths = append(deaths, c.name+":\n"+report)
+			// THE STEP RE-ARMS IT (ranger-base-6ec6n), so its leader reads 9
+			// whatever the exec into it cleared. On an AppArmor host this row
+			// is the measurement of that fix's ASSUMED half: that the step's
+			// own exec into the runtime stays in the label and does not
+			// clear it a second time.
+			if c.step != nil {
+				if got := wuLeaderPdeathsig(report); got != "9" {
+					anyArmRed = true
+					t.Errorf("%s: the seat's leader reads pdeathsig %q, want 9 — `posse %s` re-arms it after bwrap's exec, so a 0 here is the step's own exec into the runtime clearing it again (an AppArmor label change on that exec too) or a step that did not run (ranger-base-6ec6n)", c.name, got, WallUnixVerb)
+				}
+			}
+			// THE CONTROL ASSERTS THE PLATFORM (ranger-base-6ec6n). Where
+			// AppArmor moved bwrap's exec into another label,
+			// apparmor_bprm_committing_creds zeroed the pdeathsig bwrap had
+			// just set, and NOTHING on a bwrap-only line can put it back —
+			// so this arm cannot die with its parent there, and a 10s red
+			// would be a reading of the platform, every run. It says so and
+			// asserts what the platform does instead: pdeathsig 0. A label
+			// change that left 9 in place falls through to the death check,
+			// which is the stronger claim.
+			if c.step == nil {
+				if from, into, moved := wuAppArmorTransition(report); moved {
+					if got := wuLeaderPdeathsig(report); got == "0" {
+						t.Logf("%s: PLATFORM — AppArmor moved bwrap's exec from %q into %q, and that transition cleared the pdeathsig bwrap set (apparmor_bprm_committing_creds, ranger-base-6ec6n): the leader reads 0, so a seat with no step cannot die with its parent on this host. Asserted as 0, not waited on; the step arm is the one that must die.", c.name, from, into)
+						_ = sh.Process.Kill()
+						_ = sh.Wait()
+						_ = syscall.Kill(seat, syscall.SIGKILL) // the seat this arm started
+						if outer := wuSeatReportInt(report, "ppid "); outer > 0 && !wuPidGone(outer) {
+							_ = syscall.Kill(outer, syscall.SIGKILL)
+						}
+						return
+					}
+					t.Logf("%s: AppArmor moved bwrap's exec from %q into %q and the leader still reads pdeathsig %q — that is not the clear ranger-base-6ec6n read from source, so this arm is held to dying with its parent", c.name, from, into, wuLeaderPdeathsig(report))
+				}
+			}
 			_ = sh.Process.Kill() // the one pid this test launched
 			_ = sh.Wait()
 			for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
@@ -525,6 +562,128 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 		t.Errorf("a death arm failed, so here is EVERY arm's self-report, the passing ones included — `make test-arm1` passes no -v, and three of the four readings are about how the arms differ (wuSeatSelfReport):\n%s",
 			strings.Join(deaths, "\n"))
 	}
+}
+
+// TestLiveWallUnixStepReArmsAClearedDieWithParent is ranger-base-6ec6n's live
+// pin, and it is the one half of that fix this box CAN measure: D1 has no
+// AppArmor, so no exec here clears bwrap's pdeathsig. What AppArmor's
+// transition leaves the step is a task with pdeath_signal 0 — and that is
+// exactly what a step started by a plain fork+exec, with no bwrap in front of
+// it, gets. So the launcher here is a shell and nothing else, and the arms
+// differ by the step alone:
+//
+//   - control, no step: the agent's leader reads pdeathsig 0 and OUTLIVES its
+//     SIGKILLed shell. That is the fixture modelling the wipe; if the control
+//     ever dies, the step arm below is not measuring the re-arm.
+//   - the step: the leader reads 9 and dies with the shell.
+//
+// The ubuntu leg reads the same re-arm through bwrap and the real transition
+// (TestLiveWallUnixScopesSignalsToTheSeat's step arm).
+func TestLiveWallUnixStepReArmsAClearedDieWithParent(t *testing.T) {
+	wuSigLiveSkip(t)
+	self := posseBinForTest(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name      string
+		step      []string
+		pdeathsig string
+		dies      bool
+	}{
+		{"control: no step, so nothing set a pdeathsig and the seat outlives its launcher", nil, "0", false},
+		{"the step re-arms it, and the seat dies with its launcher", WallUnixStepArgv(self), "9", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pidFile := filepath.Join(t.TempDir(), "seat.pid")
+			args := append(append([]string{}, c.step...), exe, "-test.run=^TestWallUnixSignalSeatChild$")
+			sh := exec.Command("sh", append([]string{"-c", `"$@"; :`, "sh"}, args...)...)
+			sh.Env = wuSeatEnv(wuEnvSigPidFile + "=" + pidFile)
+			if err := sh.Start(); err != nil {
+				t.Fatal(err)
+			}
+			var report string
+			seat := 0
+			for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+				b, err := os.ReadFile(pidFile)
+				if err == nil && strings.HasSuffix(string(b), wuSeatReportEnd) {
+					report, seat = string(b), wuSeatReportPid(string(b))
+					break
+				}
+			}
+			if seat <= 0 {
+				_ = sh.Process.Kill()
+				_ = sh.Wait()
+				t.Fatalf("NOTHING MEASURED in %q: the seat never wrote a complete self-report:\n%s\nargv: sh -c ... %s", c.name, report, strings.Join(args, " "))
+			}
+			t.Cleanup(func() { _ = syscall.Kill(seat, syscall.SIGKILL) }) // the one pid this arm's seat wrote
+			if got := wuLeaderPdeathsig(report); got != c.pdeathsig {
+				t.Errorf("%s: the seat's leader reads pdeathsig %q, want %q.\n%s", c.name, got, c.pdeathsig, report)
+			}
+			_ = sh.Process.Kill()
+			_ = sh.Wait()
+			gone := false
+			for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+				if gone = wuPidGone(seat); gone {
+					break
+				}
+			}
+			switch {
+			case c.dies && !gone:
+				t.Errorf("%s: the seat (pid %d) outlived its SIGKILLed launcher by 5s — the step did not re-arm its die-with-parent (ranger-base-6ec6n).\n%s", c.name, seat, report)
+			case !c.dies && gone:
+				t.Errorf("%s: the seat (pid %d) died with its launcher although nothing set it a pdeathsig — this fixture no longer models a cleared die-with-parent, so the step arm is not measuring the re-arm.\n%s", c.name, seat, report)
+			}
+		})
+	}
+}
+
+// wuAppArmorTransition reads whether the exec from the outer bwrap into the
+// seat changed AppArmor label: the outer bwrap's label (the report's ppid,
+// read live — the caller has not killed it yet) against the seat's own
+// `apparmor` row. moved needs POSITIVE evidence on both sides — either label
+// unreadable (D1 answers EINVAL: no LSM there answers the file) is "no
+// transition", and so is a seat that landed unconfined, which
+// apparmor_bprm_committing_creds leaves alone.
+func wuAppArmorTransition(report string) (from, into string, moved bool) {
+	outer := wuSeatReportInt(report, "ppid ")
+	if outer <= 0 {
+		return "", "", false
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(outer) + "/attr/current")
+	if err != nil {
+		return "", "", false
+	}
+	from = strings.TrimRight(string(b), "\x00\n")
+	for _, line := range strings.Split(report, "\n") {
+		if rest, ok := strings.CutPrefix(line, "apparmor "); ok && !strings.HasPrefix(rest, "<") {
+			into = rest
+		}
+	}
+	if from == "" || into == "" || from == into || strings.HasPrefix(into, "unconfined") {
+		return from, into, false
+	}
+	return from, into, true
+}
+
+// wuLeaderPdeathsig is the number at the head of the report's LEADER row,
+// `pdeathsig 9 (leader, read at init)` → "9"; "" when the row is missing or
+// was not read on the leader, which no expected value matches.
+func wuLeaderPdeathsig(report string) string {
+	for _, line := range strings.Split(report, "\n") {
+		if rest, ok := strings.CutPrefix(line, "pdeathsig "); ok {
+			if !strings.Contains(rest, "(leader") {
+				return ""
+			}
+			f := strings.Fields(rest)
+			if len(f) == 0 {
+				return ""
+			}
+			return f[0]
+		}
+	}
+	return ""
 }
 
 // wuPidGone: ESRCH, or a zombie nobody has reaped yet, which is dead.

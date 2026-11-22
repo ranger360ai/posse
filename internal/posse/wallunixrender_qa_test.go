@@ -584,3 +584,85 @@ func TestQAWallUnixStepLocksItsOSThreadFirstAndNeverUnlocks(t *testing.T) {
 		t.Errorf("RunWallUnix's first statement is %s, want runtime.LockOSThread(). The three things this step applies are per-task and the exec keeps one task, so a goroutine the scheduler is still free to move would exec a seat with no socket wall, no signal scope and no die-with-parent while `posse gates` said the layer was up (ADR 0080 D4, ranger-base-vxz74)", got)
 	}
 }
+
+// TestQAWallUnixStepReArmsDieWithParent is ranger-base-6ec6n's stubbed pin:
+// after the apply, the step sets PR_SET_PDEATHSIG again and THEN re-reads its
+// ppid, and only an unchanged ppid reaches the exec.
+//
+// WHY THE ORDER IS THE ASSERTION. The ppid check is the standard race guard
+// for a pdeathsig set late: a parent that died BEFORE the prctl delivers
+// nothing, and the seat was reparented instead. Read before the prctl, the
+// check has a window after it that the kernel will not cover; so the call log
+// below must read ppid (at entry), arm, ppid, exec — and nothing else.
+//
+// THE CONTROL ARM IS THE POINT: an unchanged ppid must reach the exec stub
+// with the runtime's argv. Without it, a step that refused every seat would
+// read green on the two refusal arms.
+//
+// The live half — the re-arm actually reaching the agent's leader, from a
+// launcher that never set one — is TestLiveWallUnixStepReArmsAClearedDieWithParent.
+//
+// SERIAL, no t.Parallel: every seam here is a package-level var.
+func TestQAWallUnixStepReArmsDieWithParent(t *testing.T) {
+	restoreABI, restoreApply, restoreTask := wallUnixABI, restrictWallUnix, wallUnixTask
+	restoreArm, restorePpid, restoreExec := armWallUnixPdeathsig, wallUnixPpid, wallUnixExec
+	t.Cleanup(func() {
+		wallUnixABI, restrictWallUnix, wallUnixTask = restoreABI, restoreApply, restoreTask
+		armWallUnixPdeathsig, wallUnixPpid, wallUnixExec = restoreArm, restorePpid, restoreExec
+	})
+	wallUnixABI = func() int { return WallUnixABIMin }
+	restrictWallUnix = func(int) error { return nil }
+	wallUnixTask = func() (int, int) { return 4242, 4242 }
+	const execMarker = "the exec stub: this pin never replaces the test binary"
+
+	for _, c := range []struct {
+		name    string
+		ppids   []int // what each wallUnixPpid call answers, in order
+		armErr  error
+		wantLog string
+		want    []string // in the error; execMarker means the exec was reached
+	}{
+		{"control: the parent is still there, so the seat starts", []int{77, 77}, nil,
+			"ppid arm ppid exec", []string{execMarker}},
+		{"the parent died before the re-arm", []int{77, 1}, nil,
+			"ppid arm ppid", []string{WallUnixVerb, "parent (pid 77) died", "reparented to pid 1", "ranger-base-6ec6n"}},
+		{"the re-arm itself failed", []int{77, 77}, errors.New("EINVAL from the stub"),
+			"ppid arm", []string{WallUnixVerb, "PR_SET_PDEATHSIG", "EINVAL from the stub", "ranger-base-6ec6n"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var log []string
+			n := 0
+			wallUnixPpid = func() int {
+				log = append(log, "ppid")
+				p := c.ppids[len(c.ppids)-1]
+				if n < len(c.ppids) {
+					p = c.ppids[n]
+				}
+				n++
+				return p
+			}
+			armWallUnixPdeathsig = func() error { log = append(log, "arm"); return c.armErr }
+			var execArgv []string
+			wallUnixExec = func(_ string, argv []string, _ []string) error {
+				log = append(log, "exec")
+				execArgv = argv
+				return errors.New(execMarker)
+			}
+			err := RunWallUnix([]string{"posse", WallUnixVerb, "--", "true", "x"})
+			if err == nil {
+				t.Fatalf("RunWallUnix returned nil — only the exec stub can end this call and it returns an error")
+			}
+			if got := strings.Join(log, " "); got != c.wantLog {
+				t.Errorf("the step's calls read %q, want %q — the ppid has to be re-read AFTER the re-arm, and the exec reached only on an unchanged one (ranger-base-6ec6n): %v", got, c.wantLog, err)
+			}
+			for _, w := range c.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("the step's answer does not name %q: %v", w, err)
+				}
+			}
+			if c.want[0] == execMarker && strings.Join(execArgv, " ") != "true x" {
+				t.Errorf("the exec got argv %q, want the runtime's own %q", execArgv, "true x")
+			}
+		})
+	}
+}

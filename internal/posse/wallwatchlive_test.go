@@ -453,3 +453,154 @@ func TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch(t *testing.T) {
 		t.Errorf("a wall missing at launch left no durable verdict:\n%s", v)
 	}
 }
+
+// TestLiveWallWatchKillsASeatItsBwrapLeftRunning is ranger-base-6ec6n's
+// supervisor-side kill. On an AppArmor host the exec into the seat clears the
+// pdeathsig bwrap set, so a bwrap killed under its seat leaves the seat
+// running, reparented and unsupervised. D1 has no AppArmor, so the fixture
+// makes that seat the only honest way it can: --die-with-parent is taken off
+// the line, which is exactly what the transition leaves behind.
+//
+// TWO ARMS, and the second is the control that keeps the kill narrow:
+//   - bwrap is SIGKILLed with its seat's leader alive: the watcher must kill
+//     the leader and the job it backgrounded, and say so on disk.
+//   - the seat ends BY ITSELF, leaving a backgrounded job behind: bwrap exits
+//     after its child as it always has, there is no leader left, and the
+//     watcher kills nothing — what a seat leaves behind on its own exit is
+//     not this fix's to end.
+func TestLiveWallWatchKillsASeatItsBwrapLeftRunning(t *testing.T) {
+	t.Parallel()
+	s := wwLiveFixture(t)
+	argv, _, watch, err := bwrapArgsWatched(s.grant, []string{s.grant}, SeatbeltCarveOut{Deny: []string{s.deny}, DenyFile: []string{s.deny}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cut []string
+	for _, a := range argv {
+		if a != "--die-with-parent" {
+			cut = append(cut, a)
+		}
+	}
+	if len(cut) != len(argv)-1 {
+		t.Fatalf("the render carries --die-with-parent %d time(s), want 1 — this fixture takes it off to model the AppArmor clear", len(argv)-len(cut))
+	}
+	if err := os.WriteFile(s.args, bwrapArgsBytes(cut), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.mounts, wallWatchMountsBytes(watch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	leaderFile := filepath.Join(s.grant, "leader.pid")
+
+	// THE PANE IS A FILE, as it is in production (os.Stdout): handed a
+	// buffer, exec.Cmd copies through a pipe and its Wait then waits for
+	// every holder of that pipe — the seat's backgrounded job included — so
+	// a bwrap that is gone would not read as gone.
+	run := func(t *testing.T, script string) (chan int, wwPaneFile, int, int) {
+		os.Remove(s.bgpid)
+		os.Remove(leaderFile)
+		af, err := os.Open(s.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { af.Close() })
+		pane, err := os.Create(filepath.Join(t.TempDir(), "pane"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { pane.Close() })
+		said := wwPaneFile{pane}
+		code := make(chan int, 1)
+		go func() {
+			code <- runWallWatch(wallWatchRun{
+				Opts: wallWatchOpts{Mounts: s.mounts, Seat: "seat-o", Dir: s.grant,
+					Bwrap: []string{"bwrap", "--args", "3", "--", "sh", "-c", script}},
+				Args: af, Stdout: pane, Stderr: pane,
+				Store: &fakeWallWatchStore{}, Lock: filepath.Join(t.TempDir(), "lock"), PollInterval: 50 * time.Millisecond,
+			})
+		}()
+		read := func(p string) int {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return 0
+			}
+			n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+			return n
+		}
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			if l, b := read(leaderFile), read(s.bgpid); l > 0 && b > 0 {
+				t.Cleanup(func() { _ = syscall.Kill(b, syscall.SIGKILL); _ = syscall.Kill(l, syscall.SIGKILL) })
+				return code, said, l, b
+			}
+		}
+		t.Fatalf("the seat never ran within 10s; watcher and bwrap said %s", wwOneLine(said.String()))
+		return nil, wwPaneFile{}, 0, 0
+	}
+
+	t.Run("its bwrap is killed under a live leader", func(t *testing.T) {
+		code, said, leader, bg := run(t, "echo $$ > "+shellQuote(leaderFile)+"; sleep 300 & echo $! > "+shellQuote(s.bgpid)+"; wait")
+		b, err := os.ReadFile("/proc/" + strconv.Itoa(leader) + "/stat")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, bwrapPid, ok := procStatStateParent(string(b))
+		if !ok || bwrapPid <= 1 {
+			t.Fatalf("cannot read the seat leader's parent bwrap from %q", b)
+		}
+		_ = syscall.Kill(bwrapPid, syscall.SIGKILL) // the bwrap this test's watcher started
+		select {
+		case c := <-code:
+			if c != 128+int(syscall.SIGKILL) {
+				t.Errorf("watcher exit = %d, want %d (bwrap's own, killed)", c, 128+int(syscall.SIGKILL))
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("the watcher has not returned 10s after its bwrap was killed: %s", wwOneLine(said.String()))
+		}
+		wwGone(t, leader, "the orphaned seat's leader")
+		wwGone(t, bg, "the orphaned seat's backgrounded job")
+		v := wwVerdict(t, s)
+		for _, want := range []string{"KILLED seat seat-o", "ranger-base-6ec6n", strconv.Itoa(leader)} {
+			if !strings.Contains(v, want) {
+				t.Errorf("the durable verdict lacks %q:\n%s", want, v)
+			}
+		}
+	})
+
+	t.Run("control: the seat ends by itself and its leftover is left alone", func(t *testing.T) {
+		before, _ := filepath.Glob(filepath.Join(wallWatchRecordDir(s.mounts), "*.verdict"))
+		var was string
+		if len(before) == 1 {
+			b, _ := os.ReadFile(before[0])
+			was = string(b)
+		}
+		code, said, _, bg := run(t, "echo $$ > "+shellQuote(leaderFile)+"; sleep 300 & echo $! > "+shellQuote(s.bgpid)+"; sleep 0.3; exit 7")
+		select {
+		case c := <-code:
+			if c != 7 {
+				t.Errorf("watcher exit = %d, want 7 (the seat's own): %s", c, wwOneLine(said.String()))
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("the watcher has not returned 10s after its seat exited: %s", wwOneLine(said.String()))
+		}
+		if wuPidGone(bg) {
+			t.Errorf("the seat's backgrounded job (pid %d) was killed after the seat ended by itself — the supervisor kill is for a LIVE leader whose bwrap is gone, not for what a finished seat left behind", bg)
+		}
+		after, _ := filepath.Glob(filepath.Join(wallWatchRecordDir(s.mounts), "*.verdict"))
+		var now string
+		if len(after) == 1 {
+			b, _ := os.ReadFile(after[0])
+			now = string(b)
+		}
+		if now != was {
+			t.Errorf("a seat that ended by itself added to the verdict file:\n%s", strings.TrimPrefix(now, was))
+		}
+	})
+}
+
+// wwPaneFile is a watcher's pane as a real file, read back whole by String.
+type wwPaneFile struct{ *os.File }
+
+func (p wwPaneFile) String() string {
+	b, _ := os.ReadFile(p.Name())
+	return string(b)
+}

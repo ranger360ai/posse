@@ -432,7 +432,9 @@ func wallUnixABIText() string {
 //     the whole thread group only with LANDLOCK_RESTRICT_SELF_TSYNC, which
 //     this call does not pass (liveRestrictWallUnix says why not);
 //   - and `pdeath_signal`, which bwrap's `--die-with-parent` set on the task
-//     it cloned, is zero on every thread the Go runtime clones afterwards.
+//     it cloned, is zero on every thread the Go runtime clones afterwards —
+//     and since ranger-base-6ec6n this step sets it again itself, because an
+//     AppArmor exec transition can zero it on the leader too.
 //
 // `syscall.Exec` runs on whichever M the goroutine is on, and `execve` from a
 // non-leader thread keeps THAT thread's task (de_thread) — so a goroutine the
@@ -461,6 +463,9 @@ func RunWallUnix(args []string) error {
 	// function returns only on a refusal, and on success the process is
 	// replaced.
 	runtime.LockOSThread()
+	// The parent this step was started by, read before anything else can
+	// take time: the race guard before the exec compares against it.
+	ppid0 := wallUnixPpid()
 	// ONLY WHAT FOLLOWS `--`, and nothing when there is no `--`. Written
 	// first as "default to args", which on a line with no `--` made the
 	// step's own argv its command: it restricted this process and then
@@ -478,8 +483,9 @@ func RunWallUnix(args []string) error {
 		return Die("%s: nothing to exec — the step is `%s -- <command>`, and a launch line that typed it with no command would open a seat with no runtime", WallUnixVerb, WallUnixVerb)
 	}
 	// Resolved BEFORE the wall goes up, so that every failure this step can
-	// detect is reported by an unrestricted process, and the restrict is the
-	// last thing that happens before the exec with nothing between them.
+	// detect is reported by an unrestricted process, and nothing stands
+	// between the restrict and the exec but the die-with-parent re-arm and
+	// its race guard (ranger-base-6ec6n), neither of which can fail open.
 	bin, err := exec.LookPath(cmd[0])
 	if err != nil {
 		return Die("%s: cannot resolve the runtime %q on this seat's PATH (%v) — so this is a seat that will not open, rather than one that opened unwalled", WallUnixVerb, cmd[0], err)
@@ -505,5 +511,49 @@ func RunWallUnix(args []string) error {
 	if err := restrictWallUnix(abi); err != nil {
 		return Die("%s: this seat's Landlock layer (signal scope, and the socket wall from ABI %d) could not be applied (%v), and posse does not open a seat behind a wall it reported and does not have (ADR 0080 D4). The render typed this step because this kernel's Landlock ABI read as %s; if that has changed under it, `posse gates` says what a launch would render now", WallUnixVerb, WallUnixABIMin, err, wallUnixABIText())
 	}
-	return syscall.Exec(bin, cmd, os.Environ())
+	// RE-ARM --die-with-parent, AFTER THE EXEC THAT CLEARED IT
+	// (ranger-base-6ec6n; the finding is ranger-base-evp5k). bwrap sets
+	// PR_SET_PDEATHSIG on this task as its last step before execvp, and on
+	// a host where AppArmor moves that exec into a different label —
+	// ubuntu's bwrap-userns-restrict puts bwrap's children in
+	// `bwrap//&unpriv_bwrap` — apparmor_bprm_committing_creds zeroes
+	// pdeath_signal on the way in, secure exec or not. This step is the
+	// first code that runs under the new label, so it is the first place
+	// the bound can be put back; nothing bwrap does can survive that exec.
+	//
+	// SIGKILL, bwrap's own choice, so a log reads the same 9 whichever of
+	// the two set it. On this locked leader thread, because the value is
+	// per-task and the exec below keeps this task.
+	//
+	// THE PPID CHECK IS THE STANDARD RACE GUARD: a parent that died before
+	// the prctl delivers nothing to it, and the seat was reparented instead.
+	// ppid0 was read at this step's first statement; a different ppid now is
+	// that death, and the seat ends here rather than starting unbound. A
+	// parent that died before the FIRST statement is out of this step's
+	// reach — the ppid it reads is already the reaper's — and that is what
+	// wall-watch's kill on bwrap's exit is for.
+	//
+	// ASSUMED, NOT MEASURED (no AppArmor on D1): the exec below stays in
+	// the same label, so it does not clear this a second time. The step
+	// arm of TestLiveWallUnixScopesSignalsToTheSeat reads the agent's
+	// leader pdeathsig on the ubuntu leg and reds if it does.
+	if err := armWallUnixPdeathsig(); err != nil {
+		return Die("%s: could not re-arm this seat's die-with-parent (PR_SET_PDEATHSIG: %v) — without it a seat whose launcher dies keeps running unsupervised wherever an exec transition cleared bwrap's own (ranger-base-6ec6n), so posse does not open it", WallUnixVerb, err)
+	}
+	if now := wallUnixPpid(); now != ppid0 {
+		return Die("%s: this seat's parent (pid %d) died before its die-with-parent could be re-armed — the seat was reparented to pid %d, and a seat whose launcher is gone does not start (ranger-base-6ec6n)", WallUnixVerb, ppid0, now)
+	}
+	return wallUnixExec(bin, cmd, os.Environ())
 }
+
+// armWallUnixPdeathsig, wallUnixPpid and wallUnixExec are RunWallUnix's last
+// three seams, vars for restrictWallUnix's reason: the pins that read the
+// re-arm and its race guard (TestQAWallUnixStepReArmsDieWithParent) must get
+// PAST the apply without putting a real domain on the test binary, and an
+// arm that reaches the exec must not replace the test binary with `true`.
+// Production has one caller and it is the live function in each.
+var (
+	armWallUnixPdeathsig = liveArmWallUnixPdeathsig
+	wallUnixPpid         = os.Getppid
+	wallUnixExec         = syscall.Exec
+)

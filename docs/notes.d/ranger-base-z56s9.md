@@ -68,11 +68,22 @@ These are source readings, not measurements on the runner.
 - bubblewrap 0.11.1 (resolute's) and 0.13.1 (D1's) both call
   `PR_SET_PDEATHSIG` as the last step before `execvp`, after every
   credential change. Between the prctl and the seat there is only the
-  execve. The execve could clear it only through a secure exec or a
-  commit_creds euid/fsuid/caps change, and neither appears in that path.
+  execve. ~~The execve could clear it only through a secure exec or a
+  commit_creds euid/fsuid/caps change, and neither appears in that path.~~
+  **Corrected by ranger-base-evp5k / ranger-base-6ec6n:** there is a third
+  clear, and it is on that path. AppArmor's own exec hook,
+  `apparmor_bprm_committing_creds` (mainline `security/apparmor/lsm.c`),
+  sets `current->pdeath_signal = 0` on every exec whose new label differs
+  from the old one and is not unconfined — secure exec or not. The
+  `pix /** -> &bwrap//&unpriv_bwrap` rule is exactly such a change.
 
-So by source, nothing on that runner should clear the leader's pdeathsig.
-`AT_SECURE` is the row that checks the source against the runner.
+~~So by source, nothing on that runner should clear the leader's pdeathsig.~~
+So by source the AppArmor transition DOES clear it, and the first ubuntu log
+carrying these rows agreed: leader `pdeathsig 0`, `AT_SECURE 0`, outer bwrap
+gone, in both arms (ranger-base-evp5k). ADR ranger-base-sv89t's Landlock
+premise still stands — the control arm was red with no Landlock on the line;
+what fails is `--die-with-parent` itself under AppArmor. The fix is
+ranger-base-6ec6n's (docs/notes.d/ranger-base-6ec6n.md).
 
 ## Still open
 
