@@ -29,6 +29,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // ranger-base-zd4d4 (0qpsw D3): a seat whose watcher is KILLED, then loses a
@@ -248,6 +250,97 @@ func TestWallWatchStillRunningNamesReadsTheListAndNotItsFirstPid(t *testing.T) {
 	} {
 		if got := wwStillRunningNames(tc.desc, 166927); got != tc.want {
 			t.Errorf("%s: wwStillRunningNames = %v, want %v:\n%s", tc.name, got, tc.want, tc.desc)
+		}
+	}
+}
+
+// TestWallWatchLeaderLiveNeedsPositiveEvidenceOnBothCounts is ranger-base-xxtmo's,
+// verifying ranger-base-6ec6n. wallWatchLeaderLive is the WHOLE gate on the kill
+// that close added to the watcher's bwrap-exit path (wallwatch_linux.go), and it
+// makes two distinctions its own comment claims and nothing read:
+//
+//   - the pid is in the SEAT'S mount namespace, so a leader pid that was reaped
+//     and recycled by an unrelated process does not spend a kill — this is the
+//     load-bearing one;
+//   - the pid is not a zombie.
+//
+// MEASURED 2026-11-21 on D1 (Linux 7.2.15-1-omarchy, go1.27.3): dropping EITHER
+// arm left `go test -run 'WallWatch|WallUnix' ./internal/posse` wholly green, and
+// no test named the symbol at all. The live arms of
+// TestLiveWallWatchKillsASeatItsBwrapLeftRunning cannot reach them — its seat's
+// leader is alive in the seat's own namespace, and its control's leader has been
+// reaped by bwrap, so the /proc read answers ENOENT before either arm is asked.
+//
+// WHICH ROWS GRADE WHICH ARM, so that nobody reads more into them than they
+// hold. The namespace row is the one that grades a branch: dropping the inode
+// comparison, or the whole namespace read, reds it and nothing else does
+// (MEASURED 2026-11-21, both spellings). The other rows read the OBSERVABLE and
+// grade no branch of their own, because on this kernel two of
+// wallWatchLeaderLive's guards are belt over braces and the reads below them
+// answer the same way:
+//
+//   - a zombie: MEASURED 2026-11-21, its /proc/<pid>/ns/mnt symlink exists but
+//     does not resolve (`stat -L` answers ENOENT), so the namespace arm already
+//     says false and removing the state read changes no verdict here;
+//   - pid <= 0, a negative pid, and mntns == 0: the /proc read fails, or the
+//     inode cannot equal 0, so the early guard changes no verdict either —
+//     MEASURED, deleting it leaves this pin green.
+//
+// They are pinned anyway, because what must not change is that none of those
+// four shapes buys a kill, whichever arm is the one that says so.
+//
+// THE FIRST ROW IS THE POSITIVE CONTROL: without a row that reads true, every
+// row below is satisfied by a predicate that cannot say yes.
+func TestWallWatchLeaderLiveNeedsPositiveEvidenceOnBothCounts(t *testing.T) {
+	t.Parallel()
+	var self unix.Stat_t
+	if err := unix.Stat("/proc/self/ns/mnt", &self); err != nil {
+		t.Skipf("this kernel does not answer /proc/self/ns/mnt (%v), so there is no namespace to compare against", err)
+	}
+	me := os.Getpid()
+
+	// A zombie: a child that has exited and has not been waited for. Reaped in
+	// the cleanup, so the pin leaves nothing behind.
+	zombie := exec.Command("/bin/sh", "-c", "exit 0")
+	if err := zombie.Start(); err != nil {
+		t.Fatal(err)
+	}
+	zpid := zombie.Process.Pid
+	t.Cleanup(func() { _ = zombie.Wait() })
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		b, err := os.ReadFile("/proc/" + strconv.Itoa(zpid) + "/stat")
+		if err != nil {
+			break
+		}
+		if st, _, ok := procStatStateParent(string(b)); ok && st == 'Z' {
+			break
+		}
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(zpid) + "/stat")
+	if err != nil {
+		t.Fatalf("NOTHING MEASURED: the zombie child (pid %d) left /proc before it could be read (%v), so the zombie row below is not a zombie", zpid, err)
+	}
+	if st, _, ok := procStatStateParent(string(b)); !ok || st != 'Z' {
+		t.Fatalf("NOTHING MEASURED: pid %d reads state %q, want 'Z' — the zombie row below would be measuring a live process", zpid, string(st))
+	}
+
+	for _, c := range []struct {
+		name  string
+		pid   int
+		mntns uint64
+		want  bool
+	}{
+		{"control: this process, in its own mount namespace", me, self.Ino, true},
+		{"the same live pid against ANOTHER namespace — the recycled leader", me, self.Ino + 1, false},
+		{"a zombie buys no kill", zpid, self.Ino, false},
+		{"no pid", 0, self.Ino, false},
+		{"a negative pid", -me, self.Ino, false},
+		{"no namespace on the record", me, 0, false},
+		{"a pid that is not there", 1 << 30, self.Ino, false},
+	} {
+		if got := wallWatchLeaderLive(c.pid, c.mntns); got != c.want {
+			t.Errorf("%s: wallWatchLeaderLive(%d, %d) = %v, want %v — this is the whole gate on the kill ranger-base-6ec6n added to the bwrap-exit path, so a true here is a kill and a false here is a seat left running (ranger-base-xxtmo)",
+				c.name, c.pid, c.mntns, got, c.want)
 		}
 	}
 }
