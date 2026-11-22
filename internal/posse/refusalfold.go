@@ -70,13 +70,12 @@ func (a *App) CageSpoolPath(persona, session string) string {
 // append refusals to a path that silently eats them.
 func (a *App) EnsureCageSpool(persona, session string) (string, error) {
 	p := a.CageSpoolPath(persona, session)
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return "", err
-	}
 	// Through no link, and only a regular single-link file (openRefusalLeaf,
 	// ranger-base-legou): this runs uncaged, and CageMounts then binds
-	// whatever is at this name rw into the container.
-	f, err := openRefusalLeaf(p, os.O_APPEND|os.O_WRONLY, true)
+	// whatever is at this name rw into the container. Its parents
+	// cages/<p>/<s> are made and walked through no link from StateDir
+	// (ranger-base-byqv0), so the bind cannot be aimed by a link above it.
+	f, err := openRefusalLeaf(a.StateDir, p, os.O_APPEND|os.O_WRONLY, true)
 	if err != nil {
 		return "", err
 	}
@@ -108,8 +107,11 @@ type spoolCursor struct {
 // error and not a silent re-fold-from-zero: the same reading countLedger
 // gives a torn ledger line, because "start over" would double-count
 // whatever the canonical log already holds for this spool.
-func readSpoolCursor(path string) (spoolCursor, bool, error) {
-	b, err := os.ReadFile(path)
+//
+// Read through no link from root (ranger-base-byqv0), like every other
+// file on the trail.
+func readSpoolCursor(root, path string) (spoolCursor, bool, error) {
+	b, err := readRefusalLeaf(root, path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return spoolCursor{}, false, nil
@@ -127,11 +129,26 @@ func readSpoolCursor(path string) (spoolCursor, bool, error) {
 	return spoolCursor{Offset: off, Hash: fields[1]}, true, nil
 }
 
-func writeSpoolCursor(path string, c spoolCursor) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+// writeSpoolCursor replaces a cursor's bytes. It was MkdirAll plus
+// os.WriteFile, which follows a link at spool-cursors/ or at the leaf and
+// TRUNCATES whatever the link names (ranger-base-byqv0). Now the open is
+// openRefusalLeaf from root, and the truncate happens on the fd only
+// after that fd is judged a regular single-link file — an O_TRUNC in the
+// open itself would cut a hardlinked target before the refusal.
+func writeSpoolCursor(root, path string, c spoolCursor) error {
+	f, err := openRefusalLeaf(root, path, os.O_WRONLY, true)
+	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(fmt.Sprintf("%d %s\n", c.Offset, c.Hash)), 0o644)
+	if err := f.Truncate(0); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(fmt.Sprintf("%d %s\n", c.Offset, c.Hash)); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func sha256Hex(b []byte) string {
@@ -151,7 +168,7 @@ func (a *App) FoldRefusalsSpool(persona, session string) error {
 	// copy the link target's bytes into the canonical log
 	// (ranger-base-legou). A refused spool is an error and the cursor stays
 	// where it was.
-	content, err := readRefusalLeaf(a.CageSpoolPath(persona, session))
+	content, err := readRefusalLeaf(a.StateDir, a.CageSpoolPath(persona, session))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -161,7 +178,7 @@ func (a *App) FoldRefusalsSpool(persona, session string) error {
 	size := int64(len(content))
 
 	cursorPath := a.spoolCursorPath(persona, session)
-	cur, ok, err := readSpoolCursor(cursorPath)
+	cur, ok, err := readSpoolCursor(a.StateDir, cursorPath)
 	if err != nil {
 		return err
 	}
@@ -194,7 +211,7 @@ func (a *App) FoldRefusalsSpool(persona, session string) error {
 			return err
 		}
 	}
-	return writeSpoolCursor(cursorPath, spoolCursor{Offset: newOffset, Hash: sha256Hex(content[:newOffset])})
+	return writeSpoolCursor(a.StateDir, cursorPath, spoolCursor{Offset: newOffset, Hash: sha256Hex(content[:newOffset])})
 }
 
 // lastCompleteLine is the byte offset one past the last '\n' at or after

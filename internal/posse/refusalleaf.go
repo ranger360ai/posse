@@ -18,52 +18,118 @@ package posse
 // launch until one appears (ORDERS.md, ranger-base-xab99); with it the open
 // fails (ENXIO) or returns at once and the fstat refuses it. The flag is
 // inert on a regular file.
+//
+// THE PARENTS TOO (ranger-base-byqv0). O_NOFOLLOW guards the last component
+// only, and every leaf above sat under directories made by os.MkdirAll and
+// resolved by the kernel's ordinary walk: gates/<p>, cages/<p>/<s> and
+// gates/<p>/spool-cursors. A link at any of them aimed the guarded open —
+// and the cursor's unguarded os.WriteFile, which TRUNCATES — into a
+// directory the planter chose. So the open is now a walk: from a ROOT the
+// caller trusts (the App's StateDir, which is the operator's own and may
+// itself be a link the operator made), each component below it is opened
+// with openat(O_DIRECTORY|O_NOFOLLOW) relative to the descriptor of the one
+// before, made with mkdirat when absent and the caller asked for a create,
+// and the leaf is opened relative to the last directory's descriptor. No
+// component below the root is ever resolved by name from the top again, so
+// there is no window between judging a parent and using it either.
 
 import (
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"syscall"
+	"path/filepath"
+	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 // errRefusalLeaf is what every refusal below wraps, so a caller (and a test)
 // can tell "this leaf was not the file it should be" from an I/O error.
 var errRefusalLeaf = errors.New("not a regular single-link file")
 
+// errRefusalParent is the same for a directory between the root and the
+// leaf: it was a link, or not a directory at all.
+var errRefusalParent = errors.New("not a real directory")
+
 func refusalLeafRefused(path, what string) error {
 	return fmt.Errorf("%s: %w (%s) — the host opens the refusals trail through no link and no shared inode; remove it and retry (ranger-base-legou)", path, errRefusalLeaf, what)
 }
 
-// openRefusalLeaf opens path for flag (os.O_RDONLY, or os.O_WRONLY|
-// os.O_APPEND) without following a link at the leaf and returns it only if
-// the opened descriptor is a regular file with one link. create makes the
-// file 0644 when it is absent — with O_EXCL, so a name that is already
-// there (a dangling link included) is never created THROUGH; on EEXIST the
-// open is retried without O_CREATE and judged like any other.
-func openRefusalLeaf(path string, flag int, create bool) (*os.File, error) {
-	base := flag | syscall.O_NOFOLLOW | syscall.O_NONBLOCK
-	var f *os.File
-	var err error
+func refusalParentRefused(path string) error {
+	return fmt.Errorf("%s: %w (a symbolic link, or not a directory) — the host walks to the refusals trail through no link; remove it and retry (ranger-base-byqv0)", path, errRefusalParent)
+}
+
+// openRefusalLeaf opens path for flag (os.O_RDONLY, or os.O_WRONLY
+// with or without os.O_APPEND) and returns it only if the opened descriptor
+// is a regular file with one link. path must lie below root; root itself is
+// opened by name and trusted, and every component between root and the
+// leaf is walked through no link (see the head of this file). create makes
+// a missing directory 0755 and a missing leaf 0644 — the leaf with O_EXCL,
+// so a name that is already there (a dangling link included) is never
+// created THROUGH; on EEXIST the open is retried without O_CREAT and judged
+// like any other. Without create, a missing component answers an error
+// os.IsNotExist recognises.
+//
+// No caller may pass O_TRUNC: it would act at the open, before the fstat
+// below has judged the descriptor, and cut a hardlinked target it then
+// refuses. Truncate the returned file instead (writeSpoolCursor).
+func openRefusalLeaf(root, path string, flag int, create bool) (*os.File, error) {
+	if flag&os.O_TRUNC != 0 {
+		return nil, fmt.Errorf("%s: openRefusalLeaf refuses O_TRUNC (truncate after the fd is judged)", path)
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || !filepath.IsLocal(rel) {
+		return nil, fmt.Errorf("%s: not below %s", path, root)
+	}
 	if create {
-		f, err = os.OpenFile(path, base|os.O_CREATE|os.O_EXCL, 0o644)
-		if errors.Is(err, os.ErrExist) {
-			f, err = os.OpenFile(path, base, 0)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	dfd, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: root, Err: err}
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	walked := root
+	for _, c := range parts[:len(parts)-1] {
+		walked = filepath.Join(walked, c)
+		next, err := openRefusalDirAt(dfd, c, create)
+		unix.Close(dfd)
+		if err != nil {
+			if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
+				return nil, refusalParentRefused(walked)
+			}
+			return nil, &os.PathError{Op: "openat", Path: walked, Err: err}
+		}
+		dfd = next
+	}
+	defer unix.Close(dfd)
+
+	leaf := parts[len(parts)-1]
+	base := flag | unix.O_NOFOLLOW | unix.O_NONBLOCK | unix.O_CLOEXEC
+	var fd int
+	if create {
+		fd, err = unix.Openat(dfd, leaf, base|unix.O_CREAT|unix.O_EXCL, 0o644)
+		if err == unix.EEXIST {
+			fd, err = unix.Openat(dfd, leaf, base, 0)
 		}
 	} else {
-		f, err = os.OpenFile(path, base, 0)
+		fd, err = unix.Openat(dfd, leaf, base, 0)
 	}
 	if err != nil {
-		switch {
-		case errors.Is(err, syscall.ELOOP):
+		switch err {
+		case unix.ELOOP:
 			return nil, refusalLeafRefused(path, "a symbolic link")
-		case errors.Is(err, syscall.ENXIO):
+		case unix.ENXIO:
 			return nil, refusalLeafRefused(path, "a FIFO or device with no reader")
-		case errors.Is(err, syscall.EISDIR):
+		case unix.EISDIR:
 			return nil, refusalLeafRefused(path, "a directory")
 		}
-		return nil, err
+		return nil, &os.PathError{Op: "openat", Path: path, Err: err}
 	}
+	f := os.NewFile(uintptr(fd), path)
 	fi, err := f.Stat()
 	if err != nil {
 		f.Close()
@@ -80,11 +146,28 @@ func openRefusalLeaf(path string, flag int, create bool) (*os.File, error) {
 	return f, nil
 }
 
-// readRefusalLeaf is os.ReadFile through openRefusalLeaf: the spool's bytes
-// are copied into the canonical log, so a spool linked elsewhere would copy
-// the link target's bytes there.
-func readRefusalLeaf(path string) ([]byte, error) {
-	f, err := openRefusalLeaf(path, os.O_RDONLY, false)
+// openRefusalDirAt opens name under dfd as a directory through no link,
+// making it first when create is set and it is absent. A mkdirat that
+// loses a race to another creator (EEXIST) just opens what is there, and
+// that is judged exactly like a directory found on the first try.
+func openRefusalDirAt(dfd int, name string, create bool) (int, error) {
+	const dirFlags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	fd, err := unix.Openat(dfd, name, dirFlags, 0)
+	if err == unix.ENOENT && create {
+		if merr := unix.Mkdirat(dfd, name, 0o755); merr != nil && merr != unix.EEXIST {
+			return -1, merr
+		}
+		fd, err = unix.Openat(dfd, name, dirFlags, 0)
+	}
+	return fd, err
+}
+
+// readRefusalLeaf is os.ReadFile through openRefusalLeaf: the
+// spool's bytes are copied into the canonical log, so a spool linked
+// elsewhere — at the leaf or at any directory above it below root — would
+// copy the link target's bytes there.
+func readRefusalLeaf(root, path string) ([]byte, error) {
+	f, err := openRefusalLeaf(root, path, os.O_RDONLY, false)
 	if err != nil {
 		return nil, err
 	}

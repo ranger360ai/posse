@@ -187,14 +187,12 @@ func (a *App) RefusalsLog(persona string) (string, error) {
 }
 
 // openCanonicalRefusals creates gates/<persona>/refusals.log if absent and
-// opens it for append, judged by openRefusalLeaf.
+// opens it for append, judged by openRefusalLeaf. gates/<persona> is made
+// and walked through no link from StateDir (ranger-base-byqv0): O_NOFOLLOW
+// on the leaf alone let a linked gates dir aim the append elsewhere.
 func (a *App) openCanonicalRefusals(persona string) (*os.File, string, error) {
-	dir := a.GatesDir(persona)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, "", err
-	}
-	p := filepath.Join(dir, "refusals.log")
-	f, err := openRefusalLeaf(p, os.O_APPEND|os.O_WRONLY, true)
+	p := filepath.Join(a.GatesDir(persona), "refusals.log")
+	f, err := openRefusalLeaf(a.StateDir, p, os.O_APPEND|os.O_WRONLY, true)
 	if err != nil {
 		return nil, "", err
 	}
