@@ -48,6 +48,39 @@ import (
 
 // wuLiveSkip is the one gate, written as bgLiveSkip is: the question is
 // whether this host HAS the pieces, so the binary is the bare name.
+//
+// bwrapNestSkip IS PART OF IT, and it was not (ranger-base-mklu0, finding 1
+// of the ranger-base-2yt8s verify). Three of this file's four live pins exec
+// a bwrap and reached the nest gate through no route at all, so they were
+// counted by nothing and gated by nothing:
+//
+//   - a red at one of them printed under `wall check: green, N pins
+//     measured` at EXIT 0, as the script's own `green: a NON-member failed
+//     and every member passed` arm says it must — so ADR 0097 D3's member
+//     FAIL, which ADR 0088 D5's ratchet files as one P1 carrying that line,
+//     never fired for them;
+//   - a run in which they went DARK was counted by neither D5 arm, which is
+//     the /var/tmp shape D5 exists for and which ranger-base-vbp5a already
+//     measured once for these very pins;
+//   - and where bwrap cannot nest — the walled-seat shape, ADR 0096 D1 —
+//     they FAILED at exit 1 while every gated member SKIPped, which D3
+//     forbids outright ("IT NEVER FAILS FOR THE WALL, outside the venue").
+//     MEASURED 2026-11-22 with a `bwrap` shim that prints `setting up uid
+//     map: Permission denied`: FAIL/FAIL/FAIL before this gate, SKIP after.
+//
+// Membership is read off the marker and never off the name (ADR 0097 D4), so
+// the name they already had bought them nothing.
+//
+// AND IT GOES BEFORE THE ABI FLOOR, which is the one ordering choice here.
+// The gate logs D4's marker the moment it lets a pin proceed, so a skip
+// AFTER it is an abstention the venue counts (exit 3) and a skip before it is
+// a pin the venue never knew it had — and `scripts/posse-wall-check` carries
+// no floor on the member count, so pins going dark one at a time read as
+// `green, N pins measured` with a smaller N and nothing to compare it to.
+// GOOS and LookPath have to come first because the gate cannot probe a nest
+// without them. The ABI floor does not: a kernel whose Landlock ABI fell
+// below RESOLVE_UNIX is a venue with no socket wall left to measure, which is
+// a finding and not a quiet absence.
 func wuLiveSkip(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
@@ -56,6 +89,7 @@ func wuLiveSkip(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
+	bwrapNestSkip(t) // ADR 0096 D3: both callers exec a bwrap
 	if n := wallUnixABI(); n < WallUnixABIMin {
 		t.Skipf("this kernel's Landlock ABI is %d and RESOLVE_UNIX needs %d, so there is no socket wall to measure here — which is exactly the case `posse gates` reports as DEGRADED", n, WallUnixABIMin)
 	}
@@ -375,8 +409,39 @@ const (
 	wuEnvSigPidFile = "RHQ_QA_WALLUNIX_SIG_PIDFILE"
 )
 
-// wuSigLiveSkip is wuLiveSkip at the signal half's floor.
+// wuSigLiveSkip is wuLiveSkip at the signal half's floor, nest gate included
+// and in the same place and for the same reasons (wuLiveSkip's last two
+// paragraphs). Its one caller that execs a bwrap takes this one.
 func wuSigLiveSkip(t *testing.T) {
+	t.Helper()
+	wuSigHostSkip(t)
+	bwrapNestSkip(t) // ADR 0096 D3: both arms of its caller exec a bwrap
+	wuSigABISkip(t)
+}
+
+// wuSigStepSkip is wuSigLiveSkip WITHOUT the nest gate, and the split is the
+// whole of why it exists: TestLiveWallUnixStepReArmsAClearedDieWithParent
+// execs no bwrap at all — its launcher is `sh -c '"$@"; :'` and the thing it
+// drives is posse's own wall-unix step — so it needs no nest to run, and
+// inside a seat that forbids nesting it still measures what it claims to.
+//
+// THAT MAKES IT THE ONE DELIBERATE NON-MEMBER IN THIS FILE, and it is
+// recorded here rather than left to be rediscovered: it sits inside ADR 0097
+// D3's `-run` filter by name, prints no marker, and is therefore counted by
+// neither the member arm nor the abstention arm — exactly as the two
+// wall-witness pins are, and for the same kind of reason.
+// `scripts/posse-wall-check` names all three. A red there is a red for
+// `make test` and not for the wall check, which is the honest answer for a
+// pin whose subject is a pdeathsig and not a wall.
+func wuSigStepSkip(t *testing.T) {
+	t.Helper()
+	wuSigHostSkip(t)
+	wuSigABISkip(t)
+}
+
+// wuSigHostSkip is the half both of those share: does this host have the
+// pieces the nest gate itself needs before it can probe anything.
+func wuSigHostSkip(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("Landlock is a Linux LSM and bwrap is the Linux mechanism of the seatbelt tier (ADR 0080 D16)")
@@ -384,6 +449,12 @@ func wuSigLiveSkip(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bwrap is not on PATH: " + err.Error())
 	}
+}
+
+// wuSigABISkip is the signal half's ABI floor, after the nest gate for the
+// caller that has one (wuLiveSkip's "AND IT GOES BEFORE THE ABI FLOOR").
+func wuSigABISkip(t *testing.T) {
+	t.Helper()
 	if n := wallUnixABI(); n < WallUnixSignalABIMin {
 		t.Skipf("this kernel's Landlock ABI is %d and SCOPE_SIGNAL needs %d, so there is no signal scope to measure here — `posse gates` reports that as DEGRADED", n, WallUnixSignalABIMin)
 	}
@@ -627,8 +698,12 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 //
 // The ubuntu leg reads the same re-arm through bwrap and the real transition
 // (TestLiveWallUnixScopesSignalsToTheSeat's step arm).
+//
+// wuSigStepSkip AND NOT wuSigLiveSkip: no exec here is a bwrap, so this pin
+// needs no nest gate and is deliberately not a member of the wall check (that
+// helper's second paragraph says so in full).
 func TestLiveWallUnixStepReArmsAClearedDieWithParent(t *testing.T) {
-	wuSigLiveSkip(t)
+	wuSigStepSkip(t)
 	self := posseBinForTest(t)
 	exe, err := os.Executable()
 	if err != nil {

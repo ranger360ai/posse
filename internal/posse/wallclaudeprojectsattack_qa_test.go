@@ -344,11 +344,46 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 		case <-time.After(90 * time.Second):
 			_ = cmd.Process.Kill()
 			<-done
-			// One line, with the status: `signal: killed` says the Kill
-			// above ended it and `exit status N` says it was already gone,
-			// and the wall check carries only this first line to the bead
-			// (ADR 0097 D3).
-			t.Fatalf("claude -p under the wall for cwd %s did not end in 90s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out; the seat answered %s", cwd, bgSeatAccount(runErr, outBuf.String()))
+			// ONE LINE FOR THE BEAD (ranger-base-8ck6d, the class
+			// docs/notes.d/ranger-base-a688i.md names, ADR 0097 D3), AND THE
+			// ACCOUNT GOES FIRST — which it did not (ranger-base-mklu0,
+			// finding 2 of the ranger-base-2yt8s verify). This line was one
+			// line already, so ranger-base-w6kke's `:\n%s` census could not
+			// see it; what it spent its budget on was the ORDER.
+			// `scripts/posse-wall-check`'s evidence() carries the first
+			// `file.go:NN:` line truncated to 300 characters WITH that prefix
+			// inside the 300, and the account was last, behind the cwd and
+			// the D3 reasoning. MEASURED 2026-11-22, this file as 027430b2
+			// left it and as the fix's own tip inherited it: the Fatalf
+			// rendered 492 characters, 261 of the 300 were spent before "the
+			// seat answered", and the line that reached the bead ended `… the
+			// seat answered signal: killed, and t` — 192 characters lost and
+			// the account cut mid-word. For a HANG there is no status to read
+			// and the seat's words are the whole account, so that is the one
+			// value the fold exists to carry (docs/notes.d/ranger-base-8ck6d.md:
+			// "what the fold buys is that the cause is at the FRONT of what
+			// survives"). The cwd and the reasoning are context a reader can
+			// re-derive, and they keep line 2, where D3 already says
+			// supporting prose costs nothing.
+			//
+			// THE STATUS IS DELIBERATELY NOT CARRIED, unlike the
+			// bgSeatAccount line just below: THIS process did the killing one
+			// line up, so `runErr` reads `signal: killed` whatever happened,
+			// which is this deadline naming itself and not the seat. The
+			// sibling fold at wallclaudeprojects_qa_test.go's own 90s branch
+			// is the same caution in the same words, and the `case <-done`
+			// comment above is it one arm over.
+			//
+			// AND THE SILENCE IS SAID HERE rather than borrowed from
+			// bgSeatAccount, whose NOTHING case answers a seat that ENDED
+			// without a word — the opposite of a seat still running at 90s.
+			// That is bgSeatAccount's own rule: each caller keeps its own
+			// account of silence and shares the fold.
+			said := wwOneLine(outBuf.String())
+			if len(strings.Fields(outBuf.String())) == 0 {
+				said = "NOTHING in 90s — so it hung before its first word, and the deadline is the whole finding"
+			}
+			t.Fatalf("claude -p under the wall did not end in 90s; it said %s\ncwd %s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out", said, cwd)
 		}
 		if runErr != nil {
 			t.Logf("claude -p under the wall for cwd %s ended badly, which this pin does not assert on — it reads the projects/ tree, not the exit — but a reader of a red below needs it: %s", cwd, bgSeatAccount(runErr, outBuf.String()))

@@ -20,6 +20,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-oe884](ranger-base-oe884.md) — The one line over a set of verdicts says what they say (ranger-base-oe884) — 2026-11-22
 - [ranger-base-njj5z](ranger-base-njj5z.md) — A read deadline is a poller fact, and a FIFO is not pollable on darwin (ranger-base-njj5z) — 2026-11-22
 - [ranger-base-mlw6q](ranger-base-mlw6q.md) — ranger-base-mlw6q — the wallWitness home, and the two layers under it — 2026-11-22
+- [ranger-base-mklu0](ranger-base-mklu0.md) — ranger-base-mklu0 — a member the marker never counted, and an account the truncation ate — 2026-11-22
 - [ranger-base-mhl7h](ranger-base-mhl7h.md) — ranger-base-mhl7h — a deadline branch that kills a nil Process reports nothing at all — 2026-11-22
 - [ranger-base-m33n5](ranger-base-m33n5.md) — ranger-base-m33n5 — the door for the bwrap fixture-home class is a RUN — 2026-11-22
 - [ranger-base-m0ajs](ranger-base-m0ajs.md) — ranger-base-m0ajs — a line that enumerates, and a census that claims a reach — 2026-11-22

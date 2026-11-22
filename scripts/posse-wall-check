@@ -559,9 +559,19 @@ run_self_test() {
     'go test exited 1 before any test ran' \
     'undefined: bwrapNestSkip'
 
-  # Exit 0 with a `note:`. One of the two tests inside D3's filter that print
-  # no marker failed, every member passed, and `go test` exited nonzero. That
-  # is a red for `make test` and not for this check.
+  # Exit 0 with a `note:`. One of the THREE tests inside D3's filter that
+  # print no marker failed, every member passed, and `go test` exited nonzero.
+  # That is a red for `make test` and not for this check.
+  #
+  # The three, and each one is a deliberate non-member recorded at its own
+  # site: the two wall-witness pins
+  # (TestLiveWallWitnessProbeDoesNotWriteTheLiveWall,
+  # TestLiveWallWitnessHoldsUnderTheRenderedWall) and
+  # TestLiveWallUnixStepReArmsAClearedDieWithParent, whose launcher is a plain
+  # `sh -c` and whose subject is a pdeathsig (wuSigStepSkip's own comment).
+  # It was two until ranger-base-mklu0, which found wallunixlive_test.go's
+  # OTHER three live pins outside the set as well — they exec a bwrap, they do
+  # measure a wall, and they are members now.
   note=$(
     st_marker TestLiveWallVenueA
     st_act pass TestLiveWallVenueA
