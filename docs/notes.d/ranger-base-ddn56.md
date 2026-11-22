@@ -97,13 +97,17 @@ with.
 (`internal/posse/wallvenuedark_qa_test.go`, `make pkgcensus-check`). No test in
 the package may abstain BECAUSE the box has a wall root.
 
-The direction is the whole of the rule, and both directions live here. A skip
-guarded by `bwrapWallRoot() == ""` is dark on a `/tmp` box and MEASURES under
-the venue — that is the venue's yield, and fourteen sites are spelled that way
-on purpose. A skip guarded by `bwrapWallRoot() != ""` is dark under the venue
-and measured nowhere, and there was exactly one. A condition in any other
-shape is REPORTED, not classified: a guard whose direction cannot be read is a
-skip nobody can say which venue darkens.
+The direction is the whole of the rule, and one of the two is safe by
+construction. `bwrapWallRoot()` is non-empty exactly when `$HOME` is NOT under
+`/tmp`, and all this venue does is move temp roots OFF `/tmp` — so it can only
+turn a wall root ON, never off. A `!= ""` guard is therefore the only
+direction the venue can DARKEN; a `== ""` guard is one it can only UN-darken,
+whatever that site's fixture does. That is why the rule reads the operator and
+not the site: it does not have to know where any fixture put its home.
+
+Fourteen sites guard on `== ""` and one guarded on `!= ""`. A condition in any
+other shape is REPORTED, not classified: a guard whose direction cannot be
+read is a skip nobody can say which venue darkens.
 
 This is a scan although ADR 0098 D5 rules that the door for the fixture-home
 class is a RUN, and the two are not in tension. That class needs dataflow —
@@ -130,10 +134,42 @@ carry 688 `t.Skip` call sites, 85 of them marked `NOTHING MEASURED`.
 What the scan CAN say is that `bwrapWallRoot` is the only key spelled in the
 package today — MEASURED 2026-11-22 over 764 test files, 14 guarded skips, all
 of them `== ""`. What it cannot say is that no other key darkens a member, and
-the thing that decides that is the RUN the bead asked for: arm 1 under both
-shapes, `-v`, the SKIP sets diffed. That run is this bead's second landing (it
-queues for a suite slot twice and the box had both held), and its readings go
-here.
+the thing that decides that is the RUN the bead asked for.
+
+### The run, and it answers more than the bead expected
+
+MEASURED 2026-11-22 on the FIXED tree (linux 7.2.15 x86_64, go1.27.3, 16
+cores), arm 1 whole with `-v` in both shapes, each through
+`scripts/test-times.sh` on the queued spelling so each took a box-wide suite
+slot; `--- SKIP:` names extracted, sorted, `comm`-diffed:
+
+| shape | abstentions | package |
+|---|---|---|
+| `TMPDIR=/var/tmp/posse-ddn56-venue` | 81 | `ok 271.2s` |
+| `TMPDIR` unset | 81 | `ok 256.6s` |
+| dark under the venue only | **0** | — |
+| dark in the default shape only | **0** | — |
+
+**The two SKIP sets are identical.** So the venue moves membership in NEITHER
+direction on this tree, and the bead's own framing — "the venue moves
+membership in both directions and nothing counts it either way" — holds only
+for the one member this landing fixed. The reason is worth recording, because
+it is not what the `== ""` count suggests: none of the fourteen is dark in the
+default shape, because every one of them takes its home from a root that is
+outside `/tmp` whatever `TMPDIR` is — `wallUngrantedDir` for eleven,
+`newLandedCageFixture` for two, and a caller-passed home for the helper
+`wrgHome`. They measure in both shapes already. The one site that did not was
+the one on `t.TempDir()`.
+
+The `wallvenueargv_qa_test.go:436` site the bead names as "the inverse — skips
+in the DEFAULT shape and MEASURES under the venue" does not skip in either
+shape here; its home is `newLandedCageFixture`'s. That reading describes a box
+whose `$HOME` is under `/tmp`, which this one is not.
+
+Both arms were `ok`, which is its own small result: arm 1 in this venue red
+four live members when `make tmpdir-check` was priced (two held by
+`ranger-base-shf97`, two by `ranger-base-mlw6q`), and with both of those landed
+the venue is green.
 
 A member that goes dark under the venue by some other key is found by that run
 and by nothing in the scan — which is ADR 0098 D5's own answer for this class,

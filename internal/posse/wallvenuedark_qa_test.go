@@ -24,15 +24,19 @@ package posse
 // `/var/tmp` row is a fixture change that took 18 pins dark over a green exit
 // code. The venue moved membership and nothing counted it either way.
 //
-// THE DIRECTION IS THE WHOLE OF THE RULE, and both directions exist in this
-// package. A skip guarded by `bwrapWallRoot() == ""` is dark on a box whose
-// home IS under `/tmp` and MEASURES under the venue: that is the venue's
-// yield, and fourteen sites are spelled that way on purpose
-// (wallcarvepins, wallpinnedsource, wallseatwall, wallvenueargv, keepleaf,
-// wallpinneddst's live half). A skip guarded by `bwrapWallRoot() != ""` is
-// the inverse — dark under the venue, measured nowhere else — and that is
-// this pin's subject. There was exactly one, and its fix was a root that
-// measures in both shapes rather than a door that catches the skip
+// THE DIRECTION IS THE WHOLE OF THE RULE, AND ONE OF THE TWO IS SAFE BY
+// CONSTRUCTION. `bwrapWallRoot()` is non-empty exactly when `$HOME` is NOT
+// under `/tmp`, and all this venue does is move temp roots OFF `/tmp` — so it
+// can only turn a wall root ON, never off. A `bwrapWallRoot() != ""` guard is
+// therefore the only direction the venue can DARKEN, and a `== ""` guard is
+// one it can only UN-darken, whatever either one's fixture does. That is why
+// this rule reads the operator and not the site: it does not have to know
+// where any fixture put its home.
+//
+// Fourteen sites guard on `== ""` (keepleaf, wallcarvepins, wallpinnedsource,
+// wallseatwall, wallvenueargv, wallpinneddst's live half) and one guarded on
+// `!= ""`. That one is this pin's subject; its fix was a root that measures in
+// both shapes rather than a door that catches the skip
 // (wallpinneddst_qa_test.go).
 //
 // WHY A SCAN HERE AND A RUN FOR THE CLASS. ADR 0098 D5 rules that the door
@@ -51,10 +55,21 @@ package posse
 // is not read here. What this scan can say is that `bwrapWallRoot` is the only
 // key SPELLED in the package today: MEASURED 2026-11-22 over 764 test files,
 // 14 guarded skips and every one of them `== ""`. What it cannot say is that
-// no OTHER key darkens a member, and the thing that decides that is a RUN —
-// arm 1 under both shapes, `-v`, the SKIP sets diffed — which is ADR 0098 D5's
-// own answer for this class and is `make tmpdir-check`'s reason for existing.
-// docs/notes.d/ranger-base-ddn56.md carries that run's readings.
+// no OTHER key darkens a member — and the thing that decides that is a RUN,
+// which is ADR 0098 D5's own answer for this class and `make tmpdir-check`'s
+// reason for existing.
+//
+// THAT RUN WAS TAKEN, and it says the venue moves membership in NEITHER
+// direction. MEASURED 2026-11-22 on the fixed tree (this box, go1.27.3, 16
+// cores), arm 1 whole with `-v` in both shapes, `--- SKIP:` names sorted and
+// diffed: 81 abstentions under `TMPDIR=/var/tmp/…` and 81 with TMPDIR unset,
+// the two sets IDENTICAL, both arms `ok` (271.2s and 256.6s). So nothing in
+// arm 1 goes dark under this venue by `bwrapWallRoot` or by any other key, and
+// none of the fourteen `== ""` sites is dark in the default shape either —
+// each takes its home from a root that is outside `/tmp` whatever TMPDIR is
+// (`wallUngrantedDir` for eleven, `newLandedCageFixture` for two, a
+// caller-passed home for `wrgHome`). docs/notes.d/ranger-base-ddn56.md has
+// both sets and the method.
 //
 // It reads every `*_test.go` in the package directory, so all three build-tag
 // arms are in the corpus whichever arm runs it: `parser.ParseFile` applies no
@@ -294,8 +309,8 @@ func TestQANoWallPinGoesDarkUnderTheOffTmpVenue(t *testing.T) {
 	}
 	// The counts, all three of them, so the log cannot read green over the
 	// errors above it.
-	t.Logf("%d skip(s) guarded by %s over %d test files: %d dark on a %s box (the venue's yield), %d dark UNDER the venue, %d unreadable",
-		len(sites), wvdPredicate, len(names), onTmp, bwrapTmpMount, offTmp, unread)
+	t.Logf("%d skip(s) guarded by %s over %d test files: %d on `== \"\"` (the direction this venue can only UN-darken), %d on `!= \"\"` (dark UNDER the venue), %d unreadable",
+		len(sites), wvdPredicate, len(names), onTmp, offTmp, unread)
 }
 
 // Arm 2: the control. A census that cannot say no reports green over a tree it
