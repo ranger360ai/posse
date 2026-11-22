@@ -1490,6 +1490,25 @@ package treepins
 //	                                              owning function)
 //	                                              (ranger-base-k2quj)
 //
+// And the one next to it, whose never-question is over the same package's
+// sources: a wall-watch kill head is read in its one writer and its one
+// reader and nowhere else, and its text opens no string literal of its own.
+// ranger-base-6r6ox drove two of that arm's four render sites and left the
+// watcher's own two to "they call the same pinned helper"; the helper was
+// driven and the CALL was not, and replacing either with the pre-fix spelling
+// left the whole of arm 1 green (MEASURED 2026-11-22, ranger-base-0b6zo). A
+// fixture cannot reach it — the mutant renders byte-identically whenever the
+// kill confirms — so the source is the only venue it has:
+//
+//	TestQAEveryWallWatchKillHeadIsReadInItsTwoHomesAndNowhereElse
+//	                                              make pkgcensus-check
+//	                                              (Glob's `*.go`, every
+//	                                              non-test file in the
+//	                                              package, each head
+//	                                              constant's readers and the
+//	                                              literals its text opens)
+//	                                              (ranger-base-0b6zo)
+//
 // NO NEW DOOR, by the sentence the g31e0, pruuq and rviq5 rows are all in
 // on, and it is rviq5's half of that variable specifically: a census over
 // this package's own TEST files, read as source, so no build tag can hide a
@@ -1570,7 +1589,7 @@ package treepins
 // eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
-// and `make tree-check` is all of them — one hundred and sixty-five pins
+// and `make tree-check` is all of them — one hundred and sixty-six pins
 // and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
