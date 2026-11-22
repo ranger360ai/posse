@@ -454,6 +454,132 @@ func TestQALandedCheckTailIsTheFailedDoorsAndNotASlowGreenSiblings(t *testing.T)
 	}
 }
 
+// ldcSecondDead is what the SECOND dead door prints, and ldcLateChatter what
+// the slow GREEN door in the same fixture prints. Both are text that must not
+// be in the tail: the first is a cause but not the one D6.7 names, and the
+// second is no cause at all.
+const (
+	ldcSecondDead  = "door-b is unhappy too"
+	ldcLateChatter = "door-c is fine and chatty"
+)
+
+// ldcTwoDeadMakefile is the shape every other fixture in this file misses: TWO
+// doors die in one `-j4` batch. With no `-k` make starts no door after the
+// first red, but it does WAIT for the ones already running, so a second door
+// that dies while it waits gets its own `*** [Makefile:N: door] Error` line.
+// MEASURED 2026-11-22 over this fixture, this box, GNU Make 4.4.1: both lines
+// printed, in completion order, and the script narrates `2 door(s) died
+// (door-a door-b)`.
+//
+// door-a dies at once and door-b a second later, so the ORDER of those two
+// lines is the fixture's rather than the scheduler's; door-c and door-d are
+// slower still and green, which keeps the tail hazard the arm above is about
+// present in this one too.
+func ldcTwoDeadMakefile() string {
+	return "test: door-a door-b door-c door-d\n" +
+		"\t@touch " + ldcArmWitness + "\n" +
+		"door-a:\n\t@echo door-a is unhappy; exit 1\n" +
+		"door-b:\n\t@sleep 1; echo " + ldcSecondDead + "; exit 1\n" +
+		"door-c:\n\t@sleep 2; echo " + ldcLateChatter + "; echo more from door-c\n" +
+		"door-d:\n\t@sleep 2; echo door-d is fine\n"
+}
+
+// ldcStepsIn is ldcPlan's reader over a run that actually RAN: the payload of
+// each `step N:` line, in order. Separate from ldcPlan because that one runs
+// `--plan` and fatals on a nonzero exit, and every step line worth reading
+// here comes out of a run that is red on purpose.
+func ldcStepsIn(t *testing.T, out string) []string {
+	t.Helper()
+	var steps []string
+	for _, line := range strings.Split(out, "\n") {
+		m := ldcStepLine.FindStringSubmatch(strings.TrimRight(line, "\r"))
+		if m == nil {
+			continue
+		}
+		if n, err := strconv.Atoi(m[1]); err != nil || n != len(steps)+1 {
+			t.Errorf("step lines are numbered %q after %d steps — the numbering is not the order\n%s", m[1], len(steps), out)
+		}
+		steps = append(steps, m[2])
+	}
+	if len(steps) == 0 {
+		t.Fatalf("the run printed no step line at all\n%s", out)
+	}
+	return steps
+}
+
+// TestQALandedCheckReRunsTheFirstFailedDoorAloneWhenTwoDied grades the two
+// words of D6.7 step 2 that no other fixture in this file can reach: the
+// re-run takes the FIRST failed door, and it takes it ALONE.
+//
+// Both survived mutation until this arm existed (MEASURED 2026-11-22,
+// ranger-base-5jpdo, verifying ranger-base-25kki's close): every other
+// fixture here kills exactly ONE door, and over a one-door transcript
+// `${doors%%$'\n'*}` and `${doors##*$'\n'}` are the same string — so a check
+// that re-ran the LAST dead door read `ok` through the whole 18-arm filter.
+//
+// Why the two words are worth an arm rather than a comment. The re-run is
+// what MAKES the tail (D6.7, D1), so which door it names is which cause
+// reaches the bead; and re-running more than one door puts the second door's
+// output after the first's, which is exactly the interleaving the re-run
+// exists to remove, reintroduced from the other end.
+//
+// MUTATIONS (MEASURED 2026-11-22, `-run LandedCheck`):
+//   - `first_door=${doors##*$'\n'}` — the LAST dead door — reds this arm and
+//     nothing else. Before this arm it reddened nothing at all.
+//   - ALONE needs a TWO-line mutant, and that is worth saying because the
+//     one-line one is EQUIVALENT: `serial_rerun $doors` changes nothing,
+//     since `serial_rerun`'s body is `step make … "$1"` and drops every word
+//     after the first whatever the caller passes. Widening that to `"$@"` as
+//     well — the pair — reds this arm and nothing else. So "alone" is held
+//     here by one arm and by that helper's own `"$1"`, which is the cheaper
+//     of the two and the reason the one-line mutant reads green.
+func TestQALandedCheckReRunsTheFirstFailedDoorAloneWhenTwoDied(t *testing.T) {
+	t.Parallel()
+	out, code := ldcRun(t, ldcTree(t, ldcTwoDeadMakefile()))
+	if code == 0 {
+		t.Fatalf("a run over a fixture whose first two doors fail exited 0\n%s", out)
+	}
+	// THE FIXTURE CONTROLS. Two doors have to have died, and in this order,
+	// or "the FIRST failed door" names nothing and everything below is an
+	// assertion about a one-door run.
+	a := strings.Index(out, "door-a] Error")
+	b := strings.Index(out, "door-b] Error")
+	if a < 0 || b < 0 || a > b {
+		t.Fatalf("fixture: make's complaints about door-a (at %d) and door-b (at %d) are not both present in that order, so this run has no FIRST failed door to pick\n%s", a, b, out)
+	}
+	// And the SCRIPT saw both of them. Without this, a parser that read one
+	// door out of a transcript holding two would satisfy the step assertion
+	// below by accident — it would name door-a because door-a is all it found.
+	if !strings.Contains(out, "2 door(s) died (door-a door-b)") {
+		t.Errorf("the run does not narrate two dead doors in the order make reported them — the parser read fewer doors than the transcript holds, and `the first` is then whichever one it happened to see (ADR 0088 D6.7)\nfull output:\n%s", out)
+	}
+
+	steps := ldcStepsIn(t, out)
+	if len(steps) != 2 {
+		t.Fatalf("the run took %d step(s) (%q), want 2 — the parallel body, then the re-run that makes the tail\n%s", len(steps), steps, out)
+	}
+	if want := "make --no-print-directory door-a"; steps[1] != want {
+		t.Errorf("step 2 is %q, want exactly %q — D6.7 re-runs the FIRST failed door and re-runs it ALONE: the last one would make the tail the wrong cause, and all of them would put one door's output after another's, which is the interleaving the re-run exists to remove\nfull output:\n%s", steps[1], want, out)
+	}
+
+	tail := ldcTail(t, out)
+	if n := len(tail); n > landCheckTailLines {
+		tail = tail[n-landCheckTailLines:]
+	}
+	said := strings.Join(tail, "; ")
+	if last := tail[len(tail)-1]; !strings.Contains(last, "door-a") || !strings.Contains(last, "*** [") {
+		t.Errorf("the last non-empty line is %q — the tail the runner flattens into a bead is %q, and with two doors dead it must still END on make's own complaint about the FIRST of them (ADR 0088 D1/D6.7)\nfull output:\n%s", last, said, out)
+	}
+	if !strings.Contains(said, "door-a is unhappy") {
+		t.Errorf("the tail the runner flattens into a bead is %q — it does not carry the first dead door's OWN output, which is the cause somebody reads (ADR 0088 D1/D6.7)\nfull output:\n%s", said, out)
+	}
+	for _, displaced := range []string{ldcSecondDead, ldcLateChatter} {
+		if strings.Contains(said, displaced) {
+			t.Errorf("the tail the runner flattens into a bead is %q — it carries %q, which belongs to another door: the re-run is what displaces everything the `-j4` body printed after the first red, and a tail holding two doors' output is the shape D6.7 named (ADR 0088 D6.7)\nfull output:\n%s", said, displaced, out)
+		}
+	}
+}
+
 // TestQALandedCheckADoorGreenWhenReRunAloneIsStillRed: the one new failure
 // mode the parallel body creates. A door that dies beside its siblings and
 // passes alone is either not safe beside them or a flake, and both are
