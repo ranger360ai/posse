@@ -1979,6 +1979,21 @@ func TestWallWatchVerdictSaysTakesTheLastWordOnTheKill(t *testing.T) {
 		{"a fresh alarm after a resolution", over + "\n" + nc, wallWatchReadsNotConfirmed},
 		{"a resolution and nothing else", over, wallWatchReadsKilled},
 		{"neither head", "refusing to start the seat unwatched (ranger-base-0qpsw D1)", wallWatchReadsNoKill},
+		// THREE BLOCKS, AND THEY ARE WHY THE READER SAYS LastIndex
+		// (ranger-base-0b6zo, the verify of ranger-base-6felj). Over two
+		// blocks the FIRST occurrence of a head and its LAST agree, so both
+		// rows above read the same under `strings.Index` — measured: that
+		// mutant left the whole of arm 1 and cmd/posse green, and the
+		// sentence this function is was pinned by nothing. The file takes
+		// this shape whenever a seat is condemned, retried, found over and
+		// condemned again: appendWallWatchVerdict appends, and
+		// wallWatchRetryKill clears the record's retry mark rather than the
+		// file. Under Index the first row below reads KILLED while the
+		// file's last word is a kill that did not confirm, which is
+		// ranger-base-oe884's defect with the sign flipped back.
+		{"a fresh alarm after a resolution that answered an earlier one",
+			nc + "\n" + over + "\n" + nc, wallWatchReadsNotConfirmed},
+		{"and the retry answers that one too", nc + "\n" + over + "\n" + nc + "\n" + over, wallWatchReadsKilled},
 	} {
 		if got := wallWatchVerdictSays(c.text); got != c.want {
 			t.Errorf("%s: the reading = %d, want %d:\n%s", c.name, got, c.want, c.text)
@@ -1990,6 +2005,9 @@ func TestWallWatchVerdictSaysTakesTheLastWordOnTheKill(t *testing.T) {
 	}
 	if got := WallWatchVerdictsSay([]WallWatchVerdict{{Text: over + "\n" + nc}}); !strings.Contains(got, "may still be RUNNING") {
 		t.Errorf("the summary of an alarm raised after a resolution = %q, want the alarm", got)
+	}
+	if got := WallWatchVerdictsSay([]WallWatchVerdict{{Text: nc + "\n" + over + "\n" + nc}}); !strings.Contains(got, "may still be RUNNING") {
+		t.Errorf("the summary of a file whose last word is a fresh unconfirmed kill = %q, want the alarm: a reader of this one has a seat to go and end", got)
 	}
 }
 
@@ -2151,5 +2169,200 @@ func TestWallWatchAnUnreadableVerdictFileIsSaidAndNotSkipped(t *testing.T) {
 	// above is about the unreadable files and not about every row.
 	if v := byPath[good]; !strings.Contains(v.Text, "the wall came off") || strings.Contains(v.Text, "could not be read") {
 		t.Errorf("the readable verdict reads back as %q", v.Text)
+	}
+}
+
+// ─── the three kill heads have one writer each and one reader (ranger-base-0b6zo)
+//
+// WHY A CENSUS AND NOT A ROW. ranger-base-6r6ox's finding 2 was that the
+// "NOT CONFIRMED" arm of a wall-watch kill was driven by no fixture at any of
+// its FOUR render sites. Its close drove two of them — the backstop's detach
+// and orphan-kill lines, through wallWatchKillHead — and said plainly that the
+// watcher's own two (wallwatch_linux.go's detach respond line and
+// ranger-base-6ec6n's leader line) were not fixture-driven, because a failing
+// kill needs a seat that survives twenty rounds of SIGKILL: "they call the same
+// pinned helper". The helper IS driven. The CALL was not, and a site that stops
+// calling it is the exact shape that bead was filed on. MEASURED 2026-11-22
+// (ranger-base-0b6zo, the verify of that close): replacing either of those two
+// calls with `wallWatchKilledHead + <seat>` — the pre-6r6ox spelling, which is
+// byte-identical to the right one whenever the kill confirms, so no live seat
+// can tell them apart either — left the WHOLE of arm 1 green.
+//
+// So the arm is held by a rule over the source instead of by a fixture: each
+// head constant may be read in its own writer and in the one reader, and
+// nowhere else, and its text may be spelled nowhere but the const block. A new
+// verdict line that reports a kill therefore has to go through
+// wallWatchKillHead to say anything at all, which is what the four render sites
+// have in common and the only thing a fixture cannot check here.
+//
+// This reads this package's own sources by relative name — `go test` runs with
+// the package dir as cwd — so it climbs to no repo root and is not a tree-wide
+// pin (it needs no Makefile door).
+var wwHeadHomes = map[string][]string{
+	wallWatchKilledHead:       {"wallWatchKillHead", "wallWatchVerdictSays"},
+	wallWatchNotConfirmedHead: {"wallWatchKillHead", "wallWatchVerdictSays"},
+	wallWatchOverHead:         {"wallWatchRetryKill", "wallWatchVerdictSays"},
+}
+
+// wwHeadConstName is the identifier each head text is declared under, so a
+// report can name what the reader of this test has to go and look at.
+var wwHeadConstName = map[string]string{
+	wallWatchKilledHead:       "wallWatchKilledHead",
+	wallWatchNotConfirmedHead: "wallWatchNotConfirmedHead",
+	wallWatchOverHead:         "wallWatchOverHead",
+}
+
+// wwHeadReads is the key, driven over planted source by the control below as
+// well as over the tree: for each head, the functions that READ its constant
+// and the functions that spell its TEXT in a string literal of their own. The
+// const declaration itself is excluded by name, since that is where the text
+// belongs.
+func wwHeadReads(f *ast.File) (byConst, byText map[string]map[string]bool) {
+	byConst = map[string]map[string]bool{}
+	byText = map[string]map[string]bool{}
+	for head := range wwHeadHomes {
+		byConst[head] = map[string]bool{}
+		byText[head] = map[string]bool{}
+	}
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		where := fn.Name.Name
+		if fn.Recv != nil && len(fn.Recv.List) == 1 {
+			where = "(method) " + where
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.Ident:
+				for head, name := range wwHeadConstName {
+					if x.Name == name {
+						byConst[head][where] = true
+					}
+				}
+			case *ast.BasicLit:
+				if x.Kind != token.STRING {
+					return true
+				}
+				// A PREFIX and not a Contains, because a head OPENS the
+				// line it reports (wallWatchKillHead's own comment) and
+				// nothing else about these words is reserved. MEASURED
+				// 2026-11-22: the Contains form reads wallWatchTitle, whose
+				// "security: wall-watch could NOT confirm the kill of seat
+				// %s" carries the not-confirmed head's words mid-sentence —
+				// a second spelling of the same claim, but not of a HEAD,
+				// and no verdict file ever holds a title.
+				for head := range wwHeadHomes {
+					if strings.HasPrefix(x.Value, `"`+head) {
+						byText[head][where] = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	return byConst, byText
+}
+
+func TestWallWatchEveryKillHeadIsReadInItsTwoHomesAndNowhereElse(t *testing.T) {
+	t.Parallel()
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]map[string]bool{}
+	for head := range wwHeadHomes {
+		seen[head] = map[string]bool{}
+	}
+	files, reads := 0, 0
+	for _, p := range paths {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		f, perr := parser.ParseFile(fset, p, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", p, perr)
+		}
+		files++
+		byConst, byText := wwHeadReads(f)
+		for head, homes := range wwHeadHomes {
+			allowed := map[string]bool{}
+			for _, h := range homes {
+				allowed[h] = true
+			}
+			for where := range byConst[head] {
+				reads++
+				seen[head][where] = true
+				if !allowed[where] {
+					t.Errorf("%s:%s reads %s, and the heads have one writer each and one reader (%v). A verdict line that reports a kill takes its head from wallWatchKillHead, so that the `killed:` field, the line's head and the bead's title cannot disagree about whether the seat ended (ranger-base-6r6ox) — a head spelled here says KILLED for a kill that did not confirm, and no fixture anywhere can see it (ranger-base-0b6zo).",
+						p, where, wwHeadConstName[head], homes)
+				}
+			}
+			for where := range byText[head] {
+				if where == "" {
+					continue
+				}
+				t.Errorf("%s:%s carries the text of %s in a string literal of its own. The head is a constant because the WRITER and the READER have to match on one spelling (wallWatchVerdictSays, ranger-base-oe884); a second spelling is a line the reader will not find, and re-spelling it is how the two call sites in wallwatch_linux.go could report a kill that did not confirm as KILLED with every arm green (ranger-base-0b6zo).",
+					p, where, wwHeadConstName[head])
+			}
+		}
+	}
+
+	// THE CONTROLS, both directions, because a census that read nothing
+	// would pass having graded nothing. A floor on the files, and then each
+	// head asserted present in BOTH of its homes — a renamed writer or
+	// reader leaves this file's allow-list naming functions that no longer
+	// exist, and every arm above is then vacuous.
+	if files < 100 {
+		t.Errorf("this census parsed %d non-test file(s) in this package, want at least 100 (220 on 2026-11-22) — the glob has stopped matching and the arms above graded almost nothing", files)
+	}
+	for head, homes := range wwHeadHomes {
+		for _, h := range homes {
+			if !seen[head][h] {
+				t.Errorf("%s is not read in %s at all, so the allow-list above no longer names where it lives and this census is vacuous for it. If that home has been renamed, rename it here; if the head has lost a reader or a writer, that is the finding", wwHeadConstName[head], h)
+			}
+		}
+	}
+	t.Logf("%d non-test file(s), %d constant read(s) over %d head(s)", files, reads, len(wwHeadHomes))
+}
+
+// AND THE RULE SAYS NO, driven over planted source through the same key, so a
+// key that quietly stopped meaning "reads this head" reds here with no tree to
+// read. Both arms: the pre-ranger-base-6r6ox spelling at a verdict line, and
+// the same line spelling the head's text instead of its name.
+func TestWallWatchTheKillHeadRuleSaysNo(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, src     string
+		wantConstHome string
+		wantText      bool
+	}{
+		{"a verdict line that spells the head from the constant",
+			"package posse\nfunc wallWatchRespond(d wallWatchDetach) string {\n\treturn wallWatchKilledHead + d.Seat\n}\n",
+			"wallWatchRespond", false},
+		{"a verdict line that spells the head's text",
+			"package posse\nfunc wallWatchRespond(d wallWatchDetach) string {\n\treturn \"KILLED seat \" + d.Seat\n}\n",
+			"", true},
+		{"the control: a line that goes through the helper",
+			"package posse\nfunc wallWatchRespond(d wallWatchDetach) string {\n\treturn wallWatchKillHead(d)\n}\n",
+			"", false},
+	} {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "planted.go", c.src, 0)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		byConst, byText := wwHeadReads(f)
+		if got := byConst[wallWatchKilledHead][c.wantConstHome]; c.wantConstHome != "" && !got {
+			t.Errorf("%s: the key does not read the constant in %s, so the census above cannot see the pre-ranger-base-6r6ox spelling", c.name, c.wantConstHome)
+		}
+		if got := len(byText[wallWatchKilledHead]) > 0; got != c.wantText {
+			t.Errorf("%s: the key reads the head's TEXT = %v, want %v", c.name, got, c.wantText)
+		}
+		if c.wantConstHome == "" && !c.wantText && len(byConst[wallWatchKilledHead]) > 0 {
+			t.Errorf("%s: the key reports a read where the line goes through the helper, so every call site would red", c.name)
+		}
 	}
 }
