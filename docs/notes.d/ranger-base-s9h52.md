@@ -54,15 +54,28 @@ never reaches it.
 
 ## MEASURED 2026-11-21 (linux 7.2.15, go1.27.3, 16 cores, this tree)
 
+`before` is this bead's base, `2a32fa07`. `after` is the landed tree, which
+is that base rebased onto a main that had meanwhile landed
+`ranger-base-xxtmo` and `ranger-base-5oiz4` — the second of which touches a
+member file (`wallwatchbackstoplive_linux_test.go`) and so moves two of these
+rows on its own. Both columns are read by the same program over the tree they
+name.
+
 | reading | before | after |
 |---|---|---|
 | member files (`^Test(QA)?Live(Bwrap\|Wall)`) | 24 | 24 |
 | bwrap-launching functions in them | 30 | 30 |
 | …rendering no child error at all | **3** | 0 |
 | messages carrying a seat account after a newline | **19** | 0 |
-| testing format calls in those files | 785 | 786 |
+| testing format calls in those files | 785 | 790 |
 | …carrying a newline (the wide rule's reading) | 204 | 184 |
 | …deferring with a constant first line (the shape rule's reading) | 44 | 34 |
+
+The last three rows are not a before/after of this fix alone: 786 and 184 of
+them are this bead's own reading, and main's two landings in the window added
+four more format calls, none of which carries a newline. They are here
+because they are the numbers the rule decision rests on, not because this
+bead moved them.
 
 The three:
 
