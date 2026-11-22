@@ -733,3 +733,113 @@ pattern for exactly this: D6.3's counter is its own key for the same reason.
 - ranger-base-7or9p
 - ranger-base-q8j8x
 - ranger-base-ufd7z
+
+## Amendment: the body runs four doors at a time, because a serial runner over a derived body crosses any ceiling (ranger-base-hzh0w, 2026-11-22)
+
+D6.3 filed "landed check over its D6 ceiling at ~/src/posse": one answered run
+at `244be2b9` took 264.7s. That is the bead D6's alternative (b′) said to wait
+for.
+
+**MEASURED 2026-11-22** (linux 7.2.15, 16 cores; dispatch-watch logs, 179
+answered judgements of posse's tree):
+
+- One run of 179 was over 240s. Over the last 60 runs: p50 184.2s, p95 223.4s.
+- The walls climb. Medians per block of 25 runs: 110.9, 161.0, 170.2, 175.5,
+  171.9, 183.7, 191.6s. The step is at `61ec26f1` (ranger-base-3cpcg, the
+  treepins complement door). The first reading at that tree is 170.6s,
+  against 89.9-123.6s before it. After the step the median creeps about 20s
+  in 8 days, because every new treepins pin is doored automatically, which
+  is ADR 0098's intent.
+- **Attribution, the property the 240s was chosen for, holds at this price.**
+  For each judged tree I counted the first-parent commits since the previous
+  judged tree. That is the window D5 would name. Over the last 83 windows, 80%
+  were one commit and 94% were two or fewer. Wall does not predict the
+  window: runs at 150-200s had 73% one-commit windows, and runs under 150s
+  had 45%. Landing bunching sets the window, not the judge.
+- Per door, uncaged, judge order, one fresh `GOCACHE` (D3.2), loadavg 7-18:
+  **194.9s** in total. `treepins-check` is 90.6s (46%), `crew-check` 18.4s,
+  `land-check` 15.4s, `verify-suite-lock` 10.5s, and the other 19 doors are
+  under 10s each. The same run through the now-warm cache took **123.0s**
+  (`treepins-check` 76.1s). So the fresh cache costs about 72s, which
+  reverses holden's "not the driver" (138s fresh against 150s warm, an
+  earlier and smaller body). D3.2 stands: alternative (c) is refused on
+  planting grounds, not on price.
+- The same derived goals under `make -j4 --output-sync=target`, fresh cache:
+  **134.0s, green**, 591 cpu-s against about 565 cpu-s serial. `-j8` took
+  148.8s at 805 cpu-s, at a higher starting load (16.8 against 4.7). One
+  reading each.
+- A planted three-target Makefile under `-j4 --output-sync`, where the first
+  target fails fast, printed in this order: the cause, `*** [Makefile:3: a]
+  Error 1`, `Waiting for unfinished jobs....`, then **two green targets'
+  output, last**. So D1's tail breaks under `-j` exactly as (b′) predicted.
+
+**The reading behind the decision.** A serial runner's wall is the sum of
+its doors. D6 derives the body so that it grows with every door. So a fixed
+ceiling over a serial derived body will be crossed: that is not a risk, it
+is a consequence of the design. Narrowing the body (b) is refused because it
+gives up the derivation. Raising the ceiling only moves the date. Under
+`-j`, the wall follows the longest door plus contention, so a new door adds
+wall only by becoming the longest. 7idk4 rejected (b′) as "latency nobody
+has asked for". The latency is not what it buys. It buys a growth law that
+D6's own derivation can live with.
+
+**D6.7 — `scripts/posse-landed-check` runs the derived goals under `make
+-j4 --output-sync=target`, without `-k`. On a red, it re-runs the first
+failed door alone, last, so that the door's own complaint is the tail.**
+
+- 4 is a constant in the script, not a probe of the box. `-j4` is MEASURED
+  as the faster of the two readings. ASSUMED: it is the knee, because the
+  critical path is `treepins-check`, and more jobs only add contention to it.
+- The failed doors are read from make's own `*** [Makefile:N: <door>] Error`
+  lines. The output is captured in a shell variable, then printed, then
+  parsed. No file is used, which keeps the header's pipe-only rule.
+- If the door is red when re-run alone, the tail is that door's complaint
+  plus make's line naming it, the same as today.
+- **If the door is green when re-run alone, the run is still RED.** Its last
+  line names the door as "red under -j4 and green alone": a door that is not
+  safe beside its siblings, or a flake. Either one is a finding. Reading it
+  as green would hide the one new failure mode this amendment creates.
+- The second `make` is the same script, the same cwd and the same scrubbed
+  environment. It is not a second runner. On a green run it never happens.
+- The ceiling (D6.2, 240s), the hang bound (D6.1) and D6.3's single-run
+  trigger are unchanged. ASSUMED: in production, caged, the judge reads
+  130-150s. The verify bead checks that against the dispatch log.
+
+**Consequences.**
+- The 240s ceiling now binds on `treepins-check` cold, under contention
+  (90-106s MEASURED), not on the sum of 23 doors. The next over-ceiling bead
+  is about that package. The lever then is the package itself (a split like
+  ranger-base-qp1hm's arms), not this runner.
+- The CPU cost is the same, and it lands in a shorter burst: about 4.4 cores
+  for about 130s per landing, against about 2.9 cores for about 190s. The
+  judge holds no suite slot, as before.
+- `fmt-check` is no longer guaranteed to be the first door that can red.
+  It still reds within seconds, because it starts in the first batch of four.
+- Exit hatch: delete `-j4` and the re-run. That restores today's serial
+  runner, which holds nothing hostage.
+
+**Alternatives rejected.**
+- *Accept the price and close.* Attribution holds today (MEASURED). But
+  every new pin raises a serial sum, so this bead would come back, and so
+  would the next one.
+- *File only on two consecutive crossings.* That mirrors D6.3's two-silence
+  rule, and it would have suppressed this bead. It treats the symptom, and
+  the climbing median would make the second crossing routine within weeks.
+- *Re-key the ceiling to the window size it stands in for.* That is the
+  honest metric, and I wanted it. It needs a new record and a new trigger,
+  and while windows are 80% one commit it would buy nothing. Revisit it if a
+  D5 bead names a window wider than three landings.
+- *Order the goals longest-first so that `treepins-check` starts at t=0.*
+  That needs a price per door, which is a hand list, and refusing hand lists
+  is (b)'s whole point. The `-j8` reading, where everything starts at once,
+  was no faster.
+- *Parallel with a log file per door* (`xargs -P`). That is a hand-written
+  runner beside make, and make's own job server already dedupes the shared
+  `fmt-check`.
+- *`-j` with no number.* That puts 23 doors on the box at once, and `-j8`
+  already cost 805 cpu-s against 591.
+
+**Beads.**
+
+- ranger-base-hzh0w
+- ranger-base-25kki (D6.7, code)
