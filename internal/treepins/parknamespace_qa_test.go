@@ -122,12 +122,116 @@ func pnsJudge(text string) (bad []string, seen int) {
 	return bad, seen
 }
 
-// pnsScanGo parses the tree's Go sources and judges their string literals.
-// Literals and not bytes, for the reason the head comment gives: a comment
-// explaining the rule names the spellings the rule refuses.
+// pnsConcat renders a `+` expression as the text its string literals spell.
+// pure is true only when EVERY leaf of the expression is a string literal, so
+// a mixed expression is left to the ordinary per-literal walk rather than
+// being judged over a text that is missing its middle.
+//
+// WHY (ranger-base-5pkix F2). The walk below judges each `*ast.BasicLit`
+// alone, so a wrong spelling SPLIT across two literals is judged as neither
+// half: MEASURED 2026-11-22, `var x = "refs/posse/" + "parked/oe884"` in
+// internal/posse/landsweep.go left all three arms GREEN, where the same
+// spelling in ONE literal reds arm 1. The first literal carries no `park` and
+// the second is the accepted short form. Judged joined, the full-ref matcher
+// sees the whole ref.
+//
+// WHAT IT STILL CANNOT SEE, said out loud: a concatenation whose prefix is
+// behind an identifier or a call (`base + "parked/x"`). pure is false there,
+// the leaves are judged one by one as before, and the short form is accepted
+// — a ref whose namespace is computed at runtime is not a spelling this
+// census can read off the source at all.
+func pnsConcat(e *ast.BinaryExpr) (text string, pure bool) {
+	var b strings.Builder
+	pure = true
+	var walk func(ast.Expr)
+	walk = func(x ast.Expr) {
+		switch t := x.(type) {
+		case *ast.ParenExpr:
+			walk(t.X)
+		case *ast.BinaryExpr:
+			if t.Op == token.ADD {
+				walk(t.X)
+				walk(t.Y)
+				return
+			}
+			pure = false
+		case *ast.BasicLit:
+			if t.Kind != token.STRING {
+				pure = false
+				return
+			}
+			v, err := strconv.Unquote(t.Value)
+			if err != nil {
+				pure = false
+				return
+			}
+			b.WriteString(v)
+		default:
+			pure = false
+		}
+	}
+	walk(e)
+	return b.String(), pure
+}
+
+// pnsJudgeGoSource judges one Go source's string literals and its literal
+// concatenations. Literals and not bytes, for the reason the head comment
+// gives: a comment explaining the rule names the spellings the rule refuses.
+//
+// SEPARATE FROM THE WALK so arm 3 can drive THIS over a planted source. The
+// concatenation case is what closes ranger-base-5pkix F2, and a control over
+// pnsConcat alone would stay green if the walk stopped calling it — which is
+// how F2 escaped in the first place: the matcher was never the broken half.
+func pnsJudgeGoSource(rel string, src []byte) (hits []pnsHit, seen int, err error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, rel, src, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	judge := func(v string, pos token.Pos, why string) {
+		if !strings.Contains(v, "park") {
+			return
+		}
+		bad, n := pnsJudge(v)
+		seen += n
+		for _, b := range bad {
+			hits = append(hits, pnsHit{file: rel, line: fset.Position(pos).Line, found: b, why: why})
+		}
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch e := n.(type) {
+		case *ast.BinaryExpr:
+			// A concatenation of string literals is ONE chunk of program text
+			// and is judged as one (pnsConcat says why). Its leaves are not
+			// visited again, so nothing is counted twice; a MIXED expression
+			// falls through to the per-literal walk below.
+			if e.Op != token.ADD {
+				return true
+			}
+			v, pure := pnsConcat(e)
+			if !pure {
+				return true
+			}
+			judge(v, e.Pos(), "Go string concatenation")
+			return false
+		case *ast.BasicLit:
+			if e.Kind != token.STRING {
+				return true
+			}
+			v, err := strconv.Unquote(e.Value)
+			if err != nil {
+				return true
+			}
+			judge(v, e.Pos(), "Go string literal")
+		}
+		return true
+	})
+	return hits, seen, nil
+}
+
+// pnsScanGo parses the tree's Go sources and judges each one.
 func pnsScanGo(t *testing.T) (hits []pnsHit, parsed, seen int) {
 	t.Helper()
-	fset := token.NewFileSet()
 	for _, root := range []string{"cmd", "internal"} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -142,28 +246,17 @@ func pnsScanGo(t *testing.T) (hits []pnsHit, parsed, seen int) {
 			if !strings.HasSuffix(path, ".go") {
 				return nil
 			}
-			rel := filepath.ToSlash(path)
-			f, err := parser.ParseFile(fset, path, nil, 0)
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			h, n, err := pnsJudgeGoSource(filepath.ToSlash(path), src)
 			if err != nil {
 				return err
 			}
 			parsed++
-			ast.Inspect(f, func(n ast.Node) bool {
-				lit, ok := n.(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
-					return true
-				}
-				v, err := strconv.Unquote(lit.Value)
-				if err != nil || !strings.Contains(v, "park") {
-					return true
-				}
-				bad, n2 := pnsJudge(v)
-				seen += n2
-				for _, b := range bad {
-					hits = append(hits, pnsHit{file: rel, line: fset.Position(lit.Pos()).Line, found: b, why: "Go string literal"})
-				}
-				return true
-			})
+			seen += n
+			hits = append(hits, h...)
 			return nil
 		})
 		if err != nil {
@@ -173,9 +266,40 @@ func pnsScanGo(t *testing.T) (hits []pnsHit, parsed, seen int) {
 	return hits, parsed, seen
 }
 
+// pnsIsProgram reports whether a file under scripts/ is a program whose lines
+// this census judges: the extension OR a `#!` first line, the way the box's
+// own roster reads it (trapstatepick_qa_test.go's tsIsShell, and 13 of the 15
+// treepins pins that walk scripts/).
+//
+// WHY THE SHEBANG (ranger-base-5pkix F1). This repository keeps three
+// EXTENSIONLESS bash programs under scripts/ — the landing gate, the
+// post-landing judge and the wall check — which is exactly where a park check
+// in the landing chain would be typed. An extension-only census read 64 of
+// the 67 tracked programs there and could not see those three: MEASURED
+// 2026-11-22, one planted `refs/parked/oe884` in each left all three arms
+// GREEN, where the same line in scripts/park-carriers.sh reds arm 1.
+//
+// What is not a program stays out, for the same reason the Go half reads
+// literals rather than bytes: scripts/ also holds a `.allow` roster whose
+// lines are English, and a document must be able to NAME a wrong spelling.
+func pnsIsProgram(path string, body []byte) bool {
+	switch {
+	case strings.HasSuffix(path, ".sh"), strings.HasSuffix(path, ".bash"), strings.HasSuffix(path, ".py"):
+		return true
+	}
+	first := string(body)
+	if i := strings.IndexByte(first, '\n'); i >= 0 {
+		first = first[:i]
+	}
+	return strings.HasPrefix(first, "#!")
+}
+
 // pnsScanScripts judges the runnable half — scripts/ — by line, with whole
-// comment lines dropped for the same reason the Go half reads literals.
-func pnsScanScripts(t *testing.T) (hits []pnsHit, read, seen int) {
+// comment lines dropped for the same reason the Go half reads literals. It
+// returns the paths it judged and the paths it passed over, so arm 1 can
+// check the second list against pnsIsProgram: a walk narrowed back to an
+// extension test is then a red rather than a smaller census.
+func pnsScanScripts(t *testing.T) (hits []pnsHit, read, skipped []string, seen int) {
 	t.Helper()
 	for _, root := range []string{"scripts"} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -183,18 +307,20 @@ func pnsScanScripts(t *testing.T) (hits []pnsHit, read, seen int) {
 				return err
 			}
 			if d.IsDir() {
-				return nil
-			}
-			switch {
-			case strings.HasSuffix(path, ".sh"), strings.HasSuffix(path, ".py"):
-			default:
+				if d.Name() == ".git" {
+					return fs.SkipDir
+				}
 				return nil
 			}
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
-			read++
+			if !pnsIsProgram(path, b) {
+				skipped = append(skipped, filepath.ToSlash(path))
+				return nil
+			}
+			read = append(read, filepath.ToSlash(path))
 			rel := filepath.ToSlash(path)
 			for i, line := range strings.Split(string(b), "\n") {
 				if strings.HasPrefix(strings.TrimSpace(line), "#") {
@@ -212,7 +338,7 @@ func pnsScanScripts(t *testing.T) (hits []pnsHit, read, seen int) {
 			t.Fatalf("walk %s: %v", root, err)
 		}
 	}
-	return hits, read, seen
+	return hits, read, skipped, seen
 }
 
 // Arm 1. Every park ref spelling a tracked program carries is the one
@@ -222,13 +348,31 @@ func TestQAEveryParkRefSpellingInATrackedProgramIsTheOneNamespace(t *testing.T) 
 	t.Parallel()
 
 	goHits, parsed, goSeen := pnsScanGo(t)
-	shHits, read, shSeen := pnsScanScripts(t)
+	shHits, read, skipped, shSeen := pnsScanScripts(t)
 
 	if parsed < 200 {
 		t.Fatalf("only %d Go files parsed under cmd/ and internal/ — the walk this arm censuses found nothing", parsed)
 	}
-	if read < 20 {
-		t.Fatalf("only %d scripts read under scripts/ — the walk this arm censuses found nothing", read)
+	if len(read) < 20 {
+		t.Fatalf("only %d scripts read under scripts/ — the walk this arm censuses found nothing", len(read))
+	}
+
+	// EVERY program under scripts/ was judged, and not just the ones with an
+	// extension (ranger-base-5pkix F1). The three extensionless bash programs
+	// there are the landing gate, the post-landing judge and the wall check —
+	// where a park check in the landing chain would be typed — and a census
+	// narrowed back to `*.sh`/`*.py` reads 64 of 67 while reporting nothing.
+	// So the files the walk passed over are read again here and held to
+	// pnsIsProgram: a narrowing reds, rather than quietly shrinking the class.
+	for _, p := range skipped {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Errorf("read %s: %v", p, err)
+			continue
+		}
+		if pnsIsProgram(p, b) {
+			t.Errorf("the scripts/ walk passed over %s, and it is a program — a park spelled wrong in a program this census cannot see is invisible to the carrier census AND to the landing guard, and nothing reds (ranger-base-5pkix F1)", p)
+		}
 	}
 
 	// The positive witness. "No program spells it wrong" is also what a
@@ -253,7 +397,7 @@ func TestQAEveryParkRefSpellingInATrackedProgramIsTheOneNamespace(t *testing.T) 
 			t.Errorf("pnsRoster exempts %s (%s) and it no longer carries a refused spelling — drop the row; an exemption nobody needs is a hole held open", file, why)
 		}
 	}
-	t.Logf("parsed %d Go files and %d scripts; %d park ref spellings judged", parsed, read, goSeen+shSeen)
+	t.Logf("parsed %d Go files and %d scripts (%d file(s) under scripts/ are not programs); %d park ref spellings judged", parsed, len(read), len(skipped), goSeen+shSeen)
 }
 
 // pnsInAFencedBlock reports whether want appears inside a ``` fence in doc.
@@ -394,6 +538,60 @@ func TestQAParkNamespaceScannerCanStillSayNo(t *testing.T) {
 	// that carries a park ref at all, because they all contain the word.
 	if bad, _ := pnsJudge("refs/heads/parkedx/oe884"); len(bad) != 1 {
 		t.Errorf("a ref whose component merely STARTS with the namespace is accepted — %s/<name> is a path component and not a prefix match", pnsPrefix)
+	}
+
+	// And the two readers that decide WHAT text reaches pnsJudge at all, both
+	// ways (ranger-base-5pkix F1 and F2). Each escaped by the census seeing
+	// less than it reported, not by the matcher being wrong, so each gets its
+	// own control: a narrowing reds here instead of shrinking the class.
+	for _, c := range []struct {
+		path string
+		body string
+		want bool
+	}{
+		// The three extensionless bash programs F1 found, by shape.
+		{"scripts/posse-land-check", "#!/usr/bin/env bash\nset -euo pipefail\n", true},
+		{"scripts/posse-wall-check", "#!/usr/bin/env bash\n", true},
+		// The extensions, which were the whole of the old test.
+		{"scripts/park-carriers.sh", "set -eu\n", true},
+		{"scripts/notes-index.py", "import sys\n", true},
+		// And what is not a program: the `.allow` roster whose lines are
+		// English, and a document — both of which must be able to NAME a
+		// wrong spelling without this census scoring it.
+		{"scripts/silent-reverts.allow", "ranger-base-x a revert with no record\n", false},
+		{"scripts/README.md", "# the scripts\n\nrefs/parked/x is the wrong spelling\n", false},
+	} {
+		if got := pnsIsProgram(c.path, []byte(c.body)); got != c.want {
+			t.Errorf("pnsIsProgram(%q) = %v, want %v — the admission rule decides what the census can see at all, and an extension-only one read 64 of this tree's 67 programs", c.path, got, c.want)
+		}
+	}
+	// Over pnsJudgeGoSource and not over pnsConcat, so the rows drive the
+	// same walk the census runs: a walk that stopped joining concatenations
+	// is what F2 WAS, and a control over the helper alone would not see it.
+	for _, c := range []struct {
+		expr     string
+		wantHits int
+	}{
+		// F2's measured escape: the wrong spelling split over two literals.
+		{`"refs/posse/" + "parked/oe884"`, 1},
+		{`"refs/" + "parked/oe884"`, 1},
+		{`"refs/" + "posse/" + "parked/oe884"`, 1},
+		// And the one namespace, split the same way, which must stay silent.
+		{`"refs/heads/" + "parked/oe884"`, 0},
+		{`"refs/heads/" + "parked/" + "oe884"`, 0},
+		// A namespace computed at runtime is not a spelling in the source:
+		// pnsConcat says so out loud, and this row is the witness.
+		{`base + "parked/oe884"`, 0},
+	} {
+		src := "package p\n\nvar base = \"\"\n\nvar planted = " + c.expr + "\n"
+		hits, _, err := pnsJudgeGoSource("planted.go", []byte(src))
+		if err != nil {
+			t.Errorf("parse %q: %v", c.expr, err)
+			continue
+		}
+		if len(hits) != c.wantHits {
+			t.Errorf("the census judged `var planted = %s` as %v, want %d refusal(s) — a spelling split across two literals is judged as neither half unless the walk joins the chunk (ranger-base-5pkix F2)", c.expr, hits, c.wantHits)
+		}
 	}
 
 	// And the fence reader arm 2 leans on, both ways: it is the difference

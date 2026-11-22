@@ -569,7 +569,7 @@ st_arm() {
 
 run_self_test() {
   local green red abstain nomember nofilter build note noverdict subtest
-  local declared dark
+  local declared dark both
   local last_out last_line last_rc d rest st_range
 
   # Exit 0. Two members, both passed, nothing else in the run.
@@ -747,6 +747,28 @@ run_self_test() {
     'wall pins WENT DARK: 4 of the 5 test(s)' \
     'want at least 2' \
     'SKIP TestLiveWallUnixScopesSignalsToTheSeat: wallunixlive_test.go:210: planted dark'
+
+  # Exit 3, and THE ORDER OF THE TWO (ranger-base-5pkix F6). The floor arm
+  # above sits AFTER the member arms on purpose, and the comment at its site
+  # says why: a member that abstained is the diagnosis a reader can act on,
+  # and the dark set is what is left over. Nothing drove that placement —
+  # MEASURED 2026-11-22, the whole `if len(dark) > ceiling:` block moved above
+  # the `if skipped or quiet:` arm left --self-test clean, because no planted
+  # stream carried both shapes at once. Both orders are exit 3, so a status is
+  # not evidence here and the SENTENCE is.
+  #
+  # Built from $dark rather than planted again: that stream is the one the arm
+  # above proved is over the floor, so this arm adds the abstaining member and
+  # nothing else. A later edit that weakens the dark half reds that arm first.
+  both=$(
+    printf '%s\n' "$dark"
+    st_marker TestLiveWallVenueB
+    st_out TestLiveWallVenueB '    wallvenue_test.go:131: the seat cannot nest here, so this pin cannot measure'
+    st_act skip TestLiveWallVenueB
+  )
+  st_arm 'abstention: a member abstained AND a selected pin went dark' 0 3 "$both" \
+    'wall pins NOT MEASURED: 1 of 2 member(s) abstained' \
+    'SKIP TestLiveWallVenueB: wallvenue_test.go:131: the seat cannot nest here'
 
   # And the LAST line, which ADR 0088 D1 makes load-bearing: the runner keeps
   # the last few non-empty lines of combined output and flattens them into a

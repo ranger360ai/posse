@@ -77,6 +77,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -123,6 +125,15 @@ var wcsArms = []string{
 	// past it is exit 3 — so a mutant that drops the floor has to lose a
 	// `green:` label as well as an `abstention:` one.
 	"abstention: a selected pin went dark, putting n under the derived floor",
+	// And the ORDER of those two (ranger-base-5pkix F6). The floor arm sits
+	// after the member arms on purpose — a member that abstained is the
+	// diagnosis a reader can act on and the dark set is what is left over —
+	// and until this arm nothing drove the placement: MEASURED 2026-11-22,
+	// the floor block moved above the abstention arm left `--self-test` 12
+	// arms clean, because no planted stream carried both shapes at once.
+	// Both orders are exit 3, so the cost is a worse diagnosis and not a
+	// wrong verdict, which is why the arm asserts the SENTENCE.
+	"abstention: a member abstained AND a selected pin went dark",
 }
 
 // The three label families, and the exit each one claims. A label is prose
@@ -328,7 +339,7 @@ func TestQATheWallCheckSelfTestStillReadsTheThreeExits(t *testing.T) {
 	}
 
 	// A floor as well as the list, so an arm cannot be dropped at the same
-	// time as its row here: twelve is what this file names, and the count
+	// time as its row here: thirteen is what this file names, and the count
 	// only ever goes up. Over the PARSED lines rather than a substring count, so
 	// an arm whose `ok` line lost its exit field counts for nothing here
 	// instead of counting as proof.
@@ -534,8 +545,8 @@ func TestQATheWallCheckShellArmsDecideTheirExits(t *testing.T) {
 // ranger-base-h5iae's finding was that arm 2 read the LABEL PREFIXES an
 // author types and called that reading D3's three exits. The mutant it was
 // filed with is the one a future author narrowing D5 would write, and it is
-// deliberately not a typo: drop the parser's two `sys.exit(3)` to 0, drop the
-// four st_arm wants that assert 3 to match, and the contract has two exits.
+// deliberately not a typo: drop the parser's `sys.exit(3)` sites to 0, drop
+// every st_arm want that asserts 3 to match, and the contract has two exits.
 // MEASURED 2026-11-14 at 61ec26f1, before the bracket: `--self-test` reported
 // "10 arms clean", exit 0, and the pin PASSED in 0.25s. Nothing else in the
 // suite reads the parser's exit 3 — arm 4 above asserts 3 four times, but
@@ -575,8 +586,8 @@ func TestQATheWallCheckSelfTestExitFieldIsLoadBearing(t *testing.T) {
 	// shape and not by the four stream variables' names: `st_arm <label>
 	// <go test status> <want exit> <stream>`, and only the arms that want 3.
 	want3 := regexp.MustCompile(`(?m)^(\s*st_arm .* [0-9]+) 3 ("\$[a-z_]+")`)
-	if n := len(want3.FindAllString(mutant, -1)); n != 5 {
-		t.Fatalf("%s has %d st_arm call(s) asserting exit 3 and this arm's mutant is written for 5 — "+
+	if n := len(want3.FindAllString(mutant, -1)); n != 6 {
+		t.Fatalf("%s has %d st_arm call(s) asserting exit 3 and this arm's mutant is written for 6 — "+
 			"re-read the mutation below against the script before trusting it", wcsScript, n)
 	}
 	mutant = want3.ReplaceAllString(mutant, "${1} 0 ${2}")
@@ -691,8 +702,74 @@ func TestQATheWallCheckNonMemberCeilingIsTheRecords(t *testing.T) {
 			"— and if it is the body, the commit that raises it is the commit that adds the non-member.",
 			wcsScript, want, wcsADR, want)
 	}
+	// AND THE ROSTER THE NUMBER IS THE SIZE OF (ranger-base-5pkix F5).
+	//
+	// The check above holds the two SPELLINGS of the number together, and a
+	// bump that moves both sides at once satisfies it while naming no new
+	// non-member — which is the one move this arm exists to catch. MEASURED
+	// 2026-11-22: `nonmember_ceiling=3` -> `4` in the body AND in the ADR,
+	// the roster still naming three, and this arm was GREEN. The floor had
+	// dropped by one pin with every door in the tree green, which is
+	// ranger-base-c75wa's own finding one layer up.
+	//
+	// So count the roster: the amendment's non-member list must name at
+	// least `ceiling` tests, and a bump has to say WHICH test it is making
+	// room for. Scoped to that section and not to the document, because the
+	// ADR names a live pin in a bullet elsewhere (D2's false-pass row) and a
+	// whole-document count would read it as a fourth non-member — the
+	// 2026-11-22 bump would then have passed a four-name count as well.
+	want, err := strconv.Atoi(ceiling)
+	if err != nil {
+		t.Fatalf("%s says nonmember_ceiling=%q, which is not a number", wcsScript, ceiling)
+	}
+	section := wcsRosterSection(string(adr))
+	if section == "" {
+		t.Errorf("%s no longer carries the non-member roster paragraph (the one anchored on %q), so the %s in the body is the size of a set this record does not name. The number is held to nothing again: a bump raises it on both sides, the floor drops by one pin, and every reader of the run stays green (ranger-base-5pkix F5, from ranger-base-c75wa).",
+			wcsADR, wcsRosterAnchor, "nonmember_ceiling="+ceiling)
+	} else {
+		named := map[string]bool{}
+		for _, m := range wcsTestName.FindAllStringSubmatch(section, -1) {
+			named[m[1]] = true
+		}
+		if len(named) < want {
+			names := make([]string, 0, len(named))
+			for n := range named {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			t.Errorf("%s says nonmember_ceiling=%d and %s's roster names %d test(s) (%s). The number is the SIZE of that roster, so a ceiling past it is a floor lowered by the difference with nothing to audit it against: the commit that raises the ceiling is the commit that names the non-member it is making room for (ADR 0097's amendment, ranger-base-c75wa; the hole is ranger-base-5pkix F5).",
+				wcsScript, want, wcsADR, len(named), strings.Join(names, ", "))
+		}
+	}
+
 	// The premise. A pin over a document is satisfied by reading an empty one.
 	if len(adr) < 2000 {
 		t.Fatalf("%s is %d bytes — that is not the record this arm reads", wcsADR, len(adr))
 	}
+}
+
+// The roster paragraph's anchor, and the test names inside it.
+//
+// The anchor is the HALF of that sentence that does not carry the count: the
+// paragraph opens "**The three, named here because the body may not name
+// them.**", and a ceiling bump is expected to rewrite "three" — so anchoring
+// on the number would red on the one edit this arm is asking for.
+const wcsRosterAnchor = "named here because the body may not name them"
+
+var wcsTestName = regexp.MustCompile("`(Test[A-Za-z0-9_]+)`")
+
+// wcsRosterSection returns the ADR's non-member roster paragraph and the
+// bullet list under it: from the anchor to the next bold paragraph opener,
+// which is how that record separates its paragraphs. "" when the anchor is
+// gone, which the caller reports rather than passing over.
+func wcsRosterSection(adr string) string {
+	i := strings.Index(adr, wcsRosterAnchor)
+	if i < 0 {
+		return ""
+	}
+	section := adr[i:]
+	if j := strings.Index(section, "\n**"); j > 0 {
+		section = section[:j]
+	}
+	return section
 }
