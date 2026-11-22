@@ -215,6 +215,23 @@ stall that day, and every one of them a typing habit.
   your worktree. MEASURED 2026-11-14: before this landed, seven commits on
   `main` whose entire message was a bare bead id, and three fixes' fragments
   held on their beads unlanded.
+- **A finding in ANOTHER repository is named in this one by bead id and
+  nothing else** (ranger-base-uymh6). This repo is public; the other repos
+  the crew works in are not, and neither are their names. A notes fragment,
+  ADR or commit message here may say that a finding exists elsewhere and give
+  its bead id — `see ranger-base-xxxxx` — and stop. Everything else goes on
+  that bead: the repo's name, its identifiers and field names, file paths,
+  branch and worktree names, source comments, what the code does, and what
+  a test or mutation run showed. A finding that is about posse ITSELF, even
+  one found while reading another repo, is posse's to describe. This page
+  names no list of those repos on purpose: a list in a public file would be
+  the leak it guards against (ADR 0024 D1, identity literals), so the names
+  live in instance config, where check 3 can refuse them, and the test you
+  apply is "is this repository posse?", not "is it on a list". MEASURED
+  2026-11-21/22: four fragments in 24 hours carried another repo's internals
+  (ranger-base-zipwe, -fdihp, -8h17w, -m0ajs). The publication gate caught
+  every one, and each still cost a park, a hold bead and a rewrite. Some
+  also cost a rebase that carried the text again.
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.
