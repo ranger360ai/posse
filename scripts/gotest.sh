@@ -686,7 +686,7 @@ self_test() {
 	# not one fixed interval longer — it exits when this arm removes the
 	# marker it wrote. A sleep of n seconds here would make the arm a race
 	# about timing, which is the defect, not the test for it.
-	local holder holdsrc hmark hpid hwait
+	local holder holdsrc plantsrc hmark hpid hwait denied
 	cat >"$pkg/hold_test.go" <<-'EOF'
 		package a
 
@@ -719,6 +719,7 @@ self_test() {
 	EOF
 	holder="$tmp/holder"
 	holdsrc="$tmp/holder.src"
+	plantsrc="$tmp/plant.src"
 	hmark="$tmp/holder-running"
 	# Built directly rather than through "$SELF": arm 5 has already
 	# measured the cache's contents, and a holder that went through the
@@ -741,8 +742,23 @@ self_test() {
 		# has something to read: a source byte-identical to its
 		# destination makes a plant that writes nothing indistinguishable
 		# from one that works.
+		#
+		# AND TWO SOURCES, NOT ONE, WITH THREE DISTINCT CONTENTS BETWEEN
+		# THEM (ranger-base-5oiz4). The control below writes $holdsrc
+		# over the holder, and on a box that does not enforce the write
+		# deny that write LANDS — which left the holder byte-identical
+		# to the plant's source, and the plant's read-back with nothing
+		# to read, in exactly the condition the paragraph above says
+		# makes a plant that writes nothing look like one that works.
+		# MEASURED 2026-11-22 on macos-26-arm64 (run 44968403951, job
+		# 137042528883): the control's write landed, and the plant then
+		# reported success on its first attempt over a destination it
+		# already matched. $plantsrc is a third content, so the plant's
+		# read-back is evidence whichever way the control went.
 		cp "$holder" "$holdsrc"
 		printf '\n# ranger-base-nywsk\n' >>"$holdsrc"
+		cp "$holder" "$plantsrc"
+		printf '\n# ranger-base-nywsk (the plant, ranger-base-5oiz4)\n' >>"$plantsrc"
 		rm -f "$hmark"
 		( cd "$pkg" && GOTEST_SELFTEST_HOLD="$hmark" "$holder" -test.run TestTextHolder >/dev/null 2>&1 ) &
 		hpid=$!
@@ -762,12 +778,29 @@ self_test() {
 			fail "plant: the in-place plant waits out a live executable" "the holder never marked itself"
 		else
 			# The naive write — what this script used to do at the
-			# plant above. It must be refused while the holder runs,
-			# or ETXTBSY is not enforced here and the arm below
-			# proves nothing.
+			# plant above. On a kernel that enforces the write deny
+			# it is refused while the holder runs, and that refusal
+			# is the premise of the arm below.
+			#
+			# NOT EVERY KERNEL ENFORCES IT, SO THE ARM MEASURES
+			# WHICH ONE IT IS ON (ranger-base-5oiz4). This asserted
+			# linux's answer everywhere and red on every macos arm-1
+			# leg: MEASURED 2026-11-22 on macos-26-arm64 (run
+			# 44968403951, job 137042528883, Darwin 25.6.0 arm64) the
+			# write over the running holder LANDED, and the plant's
+			# first attempt landed too — two independent writes, both
+			# through, so the deny is not enforced there for this
+			# shape. The reading is recorded in $denied and the arm
+			# below asserts against it. It is NOT skipped and it is
+			# not silent: a box with no deny says so on its own `ok`
+			# line, because "there was nothing to refuse" and "the
+			# refusal stopped working" are different facts and only
+			# one of them is this script's problem.
 			if ( cat "$holdsrc" >"$holder" ) 2>/dev/null; then
-				fail "control: a write over a live executable is refused" "the write landed while it was running"
+				denied=no
+				say "control: a write over a live executable is refused — NOT ON THIS BOX: $(uname -s) let the write land over the running holder, so there is no refusal here for the arm below to wait out"
 			else
+				denied=yes
 				say "control: a write over a live executable is refused"
 			fi
 			# THE ORDER IS THE ARM (ranger-base-7c2py). This used to
@@ -803,7 +836,7 @@ self_test() {
 			# shell, and the try count is the measurement.
 			(
 				prc=0
-				plant_over "$holdsrc" "$holder" || prc=$?
+				plant_over "$plantsrc" "$holder" || prc=$?
 				printf '%s\n' "$PLANT_TRIES" >"$ptriesf"
 				printf '%s\n' "$PLANT_ERR" >"$pdetail"
 				exit "$prc"
@@ -847,8 +880,22 @@ self_test() {
 			# instead of reddening this arm.
 			case $ptries in ''|*[!0-9]*) ptries=0 ;; esac
 			if [ "$prc" != 0 ]; then
+				# UNCONDITIONAL, on every box: whatever the
+				# control read, a plant that cannot land is this
+				# script's own defect and not the platform's.
 				fail "plant: the in-place plant waits out a live executable" \
 					"$pdetailmsg after $ptries tries"
+			elif [ "$denied" != yes ]; then
+				# The control measured no write deny on this box,
+				# so there is no refusal for the retry to wait
+				# out and no try count to require
+				# (ranger-base-5oiz4). What this row holds HERE is
+				# that the plant still lands, read back against a
+				# third content so that is a real reading. The
+				# retry's own evidence is owed to a kernel that
+				# enforces the deny, and ci.yml's ubuntu arm-1
+				# leg supplies one on every run.
+				say "plant: the in-place plant waits out a live executable — NOTHING TO WAIT OUT on this box ($ptries try): the control above found no write deny, so this row holds that the plant lands and the retry's reading is the enforcing kernel's"
 			elif [ "$ptries" -lt 2 ]; then
 				# A plant that landed on its first attempt was
 				# never refused, so the retry was not exercised

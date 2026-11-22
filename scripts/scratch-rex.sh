@@ -252,10 +252,82 @@ if [ "$(basename -- "$0")" = rex ]; then
 	shim_main "$@"
 fi
 
+# SRX_SOCK_MAX is the shortest `sun_path` of the hosts this script runs on:
+# 104 bytes on darwin, 108 on linux. The smaller one is taken so that a root
+# this script accepts here would hold the same socket there.
+SRX_SOCK_MAX=104
+
+# SRX_SOCK_SUFFIX is what this run appends to whatever root it picks:
+# `/posse-scratch-rex.XXXXXX` is 25 bytes, `/s.sock` is 7, and the last 1 is
+# the NUL — `sun_path` is a fixed-size array and the path inside it is
+# terminated, so a path of exactly SRX_SOCK_MAX bytes does not fit in it.
+#
+# NO RUN ON A LINUX BOX CAN MEASURE THE CAP THIS GUARDS TO, which is why the
+# self-test holds the arithmetic and not a bind: `sun_path` is 108 bytes here,
+# so a socket at the 104-byte boundary binds on this box whatever the number
+# says, and a row that bound one would be green over any value of it. 104 is
+# darwin's, read off the same place the rest of this tree reads it
+# (internal/treepins/mktemproot_qa_test.go's own exemption rows name it).
+#
+# SPELLED AS A NUMBER, not measured from the template, because the template is
+# a LITERAL at the mktemp below and has to stay one: that literal is what
+# internal/treepins/mktemproot_qa_test.go's exemption row matches on. A length
+# read from a variable the pin cannot see would be the worse of the two. The
+# self-test drives the boundary from both sides, so the number is checked
+# against the cap it is named for rather than read twice.
+SRX_SOCK_SUFFIX=33
+
+# root_fits <dir> — can <dir> hold this run's socket,
+# `<dir>/posse-scratch-rex.XXXXXX/s.sock`?
+root_fits() {
+	[ $(( ${#1} + SRX_SOCK_SUFFIX )) -le "$SRX_SOCK_MAX" ]
+}
+
+# runtime_root prints the first directory that EXISTS and can hold this run's
+# socket, or nothing.
+#
+# WHY A CHAIN AND NOT `${XDG_RUNTIME_DIR:-/run/user/$(id -u)}`
+# (ranger-base-5oiz4). That was the whole of it, and `/run/user/<uid>` is a
+# LINUX path — rex builds it from getuid() and systemd-logind makes it, and no
+# darwin host has one. So on macos the script died at `no runtime directory at
+# /run/user/501` before guard 1 had run, and four pins in
+# internal/treepins/scratchrex_qa_test.go measured nothing on every macos
+# arm-1 leg while reading exit 2 (MEASURED 2026-11-22, run 44968403951, job
+# 137042528883).
+#
+# THE RULE IS LENGTH, WHICH IS WHY THE RUNTIME DIR WAS NAMED IN THE FIRST
+# PLACE, and not a GOOS: a unix socket path is capped, so the root has to be
+# short, and the reason `${TMPDIR:-/tmp}` was refused outright is that a
+# DISPATCHED seat's TMPDIR is its session scratchpad — ~130 characters before
+# the socket's own name. Asking whether each candidate FITS answers that
+# without ruling the short ones out: such a seat's TMPDIR is rejected here by
+# the same arithmetic that used to be an argument in a comment, and a macos
+# runner's /var/folders/<...>/T (49 characters) is accepted. `/tmp` is last
+# because it is the one directory every uncaged process on the box also
+# writes; it is reached only on a host with no runtime dir and no TMPDIR that
+# fits.
+#
+# Every candidate stays inside posse's namespace through the mktemp prefix
+# below, so `scripts/reap-test-tmp.sh --root <the dir this chose>` reaches a
+# root a SIGKILLed run left behind, and for TMPDIR and /tmp the reaper's own
+# default root already looks there.
+runtime_root() {
+	local c
+	for c in ${XDG_RUNTIME_DIR:+"$XDG_RUNTIME_DIR"} "/run/user/$(id -u)" ${TMPDIR:+"$TMPDIR"} /tmp; do
+		c=${c%/}
+		[ -n "$c" ] || continue
+		[ -d "$c" ] || continue
+		root_fits "$c" || continue
+		printf '%s\n' "$c"
+		return 0
+	done
+	return 1
+}
+
 # ─── self-test: the guards' predicates, over a table, opening nothing ────────
 
 selftest() {
-	local fails=0 rec recdir runroot localsock ids
+	local fails=0 rec recdir runroot localsock ids longest toolong chosen
 	check() { # check <name> <got> <want>
 		if [ "$2" = "$3" ]; then
 			echo "PASS  $1"
@@ -269,6 +341,10 @@ selftest() {
 	# Guard 1. The scratch endpoint this table is written against, and the
 	# box's DEFAULT local socket — built here rather than spelled, because a
 	# literal uid path in a tracked file is what `make identity-check` is for.
+	# Deliberately NOT runtime_root: these rows need a plausible endpoint
+	# STRING to hand endpoint_is, never a directory that exists, and the
+	# incident's own reading is the linux one. runtime_root has rows of its
+	# own at the foot of this table.
 	runroot=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 	localsock="unix://$runroot/rex/server.sock"
 	check "endpoint: the socket this run started is a match" \
@@ -329,6 +405,33 @@ selftest() {
 		"$(yn names_a_server -CmySeat ls)" no
 	check "server: a bare dash is not a flag" "$(yn names_a_server send -)" no
 
+	# The socket-length judge, at the boundary from both sides, and over the
+	# two shapes that made this chain necessary: a dispatched seat's
+	# scratchpad TMPDIR is too long and a macos runner's per-user temp dir is
+	# not. The two boundary roots are BUILT from the cap rather than spelled,
+	# so a row cannot be off by one against the number it is named for — with
+	# `printf -v` and a parameter expansion and never a `| tr`, because the
+	# matcher in an assertion arm must not fork
+	# (internal/treepins/selftestforkarm_qa_test.go, which red over the first
+	# draft of these two rows). The other three roots are shapes and not
+	# lengths: a runtime dir, a macos runner's per-user temp dir at the length
+	# its own CI log prints, and a dispatched seat's scratchpad. None is this
+	# box's — `make identity-check` is why.
+	printf -v longest '%*s' $((SRX_SOCK_MAX - SRX_SOCK_SUFFIX)) ''
+	longest=${longest// /x}
+	toolong=${longest}x
+	check "root: a root at the longest that fits" "$(yn root_fits "$longest")" yes
+	check "root: one byte longer does not" "$(yn root_fits "$toolong")" no
+	check "root: a short runtime dir fits" "$(yn root_fits /run/user/12345)" yes
+	check "root: a macos runner's per-user temp dir fits" \
+		"$(yn root_fits /var/folders/ab/cdefghijklmnopqrstuvwxyz0123/T)" yes
+	check "root: THE OTHER INCIDENT — a dispatched seat's scratchpad TMPDIR does not" \
+		"$(yn root_fits "/tmp/claude-00000/-home-user--posse-worktrees-posse-persona-posse-ranger-base-00000/00000000-0000-0000-0000-000000000000/scratchpad")" no
+	# And the resolver answers SOMETHING on this box, whatever this box is:
+	# a run that cannot name a root is the macos abort this chain replaced.
+	chosen=$(runtime_root)
+	check "root: the chain names a directory on this host" "$(yn test -d "$chosen")" yes
+
 	if [ "$fails" = 0 ]; then
 		echo "$me --self-test: all guards can still say no"
 		return 0
@@ -372,16 +475,18 @@ REXBIN=${SCRATCH_REX_BIN:-/usr/bin/rex}
 SELF=$(cd -- "$(dirname -- "$0")" && pwd)/$(basename -- "$0")
 [ -x "$SELF" ] || die "cannot find myself at $SELF"
 
-# The scratch root is in the RUNTIME dir and not under ${TMPDIR:-/tmp}, which
-# is what every other root under scripts/ names: a unix socket path is capped
-# (108 bytes on linux, 104 on darwin) and a dispatched seat's TMPDIR is its
-# session scratchpad, ~130 characters before the socket's own name. The
-# `posse-` prefix is kept so that `scripts/reap-test-tmp.sh --root <runtime
-# dir>` reaches a root a SIGKILLed run left behind; the EXIT trap below is
-# what collects it in the ordinary case. internal/treepins/mktemproot_qa_test.go
-# carries the exemption row and this reason.
-RUNROOT=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
-[ -d "$RUNROOT" ] || die "no runtime directory at $RUNROOT"
+# The scratch root is chosen by runtime_root above and not by the
+# ${TMPDIR:-/tmp} every other root under scripts/ names: a unix socket path is
+# capped (108 bytes on linux, 104 on darwin) and a dispatched seat's TMPDIR is
+# its session scratchpad, ~130 characters before the socket's own name — so
+# the runtime dir is first and a candidate that cannot hold the socket is
+# passed over rather than ruled out by its name. The `posse-` prefix is kept
+# so that `scripts/reap-test-tmp.sh --root <the dir it chose>` reaches a root a
+# SIGKILLed run left behind; the EXIT trap below is what collects it in the
+# ordinary case. internal/treepins/mktemproot_qa_test.go carries the exemption
+# row and this reason.
+RUNROOT=$(runtime_root) ||
+	die "no directory on this host can hold this run's socket: none of \$XDG_RUNTIME_DIR, /run/user/$(id -u), \$TMPDIR or /tmp both exists and leaves the $SRX_SOCK_MAX-byte sun_path cap room for posse-scratch-rex.XXXXXX/s.sock (ranger-base-5oiz4)"
 SD=$(mktemp -d "$RUNROOT/posse-scratch-rex.XXXXXX")
 SOCK="$SD/s.sock"
 ENDPOINT="unix://$SOCK"

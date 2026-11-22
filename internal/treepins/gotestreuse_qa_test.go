@@ -134,6 +134,21 @@ func TestQATheWrapperStillProvesItReusesTheBinary(t *testing.T) {
 		// the bug itself showed once at a load average of 14 and a
 		// re-run in isolation was green, so nothing else would notice
 		// the fix being removed.
+		//
+		// THESE TWO LABELS HAVE TWO GREEN READINGS, AND THE `ok` LINE
+		// SAYS WHICH (ranger-base-5oiz4). The deny is not enforced on
+		// every kernel: MEASURED 2026-11-22 on macos-26-arm64 (run
+		// 44968403951, job 137042528883) the naive write over the
+		// running holder LANDED and the plant's first attempt landed
+		// too, so both arms FAILed on every macos arm-1 leg over a
+		// premise that is linux's. The control is a probe now and the
+		// plant arm reads its verdict, so a box with no deny prints
+		// `ok` with the reading appended rather than reddening — which
+		// is why the Contains below is on the label and not on the
+		// whole line. What the row still holds there is that the plant
+		// LANDS, read back against a third content; the retry's own
+		// evidence is the enforcing kernel's, and ci.yml's ubuntu
+		// arm-1 leg supplies one on every run.
 		"control: a write over a live executable is refused",
 		"plant: the in-place plant waits out a live executable",
 	} {

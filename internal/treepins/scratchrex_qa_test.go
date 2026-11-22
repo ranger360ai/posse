@@ -114,6 +114,14 @@ func TestScratchRexGuardsCanStillSayNo(t *testing.T) {
 // The fleet-shaped path is BUILT and not spelled: a literal uid path in a
 // tracked file is what `make identity-check` is for.
 //
+// IT IS A STRING AND NEVER A SOCKET, which is what lets these arms run on a
+// host that has no /run/user at all — every darwin box, where they used to die
+// at the harness's own runtime-dir resolution before guard 1 ran
+// (ranger-base-5oiz4). What guard 1 compares is the endpoint the server
+// REPORTS against the one this run started, and `/run/user/<uid>` is the path
+// rex builds from getuid() whether or not anything there exists. The row's
+// assertion is that the refusal NAMES it.
+//
 // ADR 0085's class: this plants an executable and execs it, so the arms below
 // run under `make coldexec-check`. They need no `--warm` pre-flight — the
 // harness waits up to 10s for its socket and nothing here is on a tighter

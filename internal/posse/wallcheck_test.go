@@ -517,25 +517,75 @@ func TestAWallCheckDoesNotRunWhenTheJudgeIsRedOrSilent(t *testing.T) {
 // record, not a bead, and not a line. That is every repo until it ships one,
 // and it is why every other landed-check pin in this package is unaffected by
 // this step existing.
+//
+// "NOTHING ABOUT THE WALL" IS THIS STEP'S OWN VOICE, NOT THE WORD `wall`
+// (ranger-base-5oiz4). The assertion was a bare `!Contains(out, "wall")` over
+// the whole pass, and the pass carries one sentence about a wall that is not
+// this step's at all: `landedJudgeSocketWallNote`, ADR 0080 D31 on the
+// JUDGE's own verdict line, which names the socket wall, the file wall and
+// `wall-unix` in one breath on any host whose Landlock ABI is below
+// WallUnixABIMin (ranger-base-l2gk9, ranger-base-e5un1). So this arm red
+// wherever that is true and nowhere else — MEASURED 2026-11-22 at cbd86ca1
+// (run 44968403951): red on ubuntu arm 2, job 137042528728, where the
+// runner's ABI is 8; green on macos arm 2, job 137042528847, where the
+// mechanism is a seatbelt and the note is empty; green on this box, ABI 10.
+//
+// The note is SUBTRACTED, rather than the grep narrowed to the three phrases
+// the step actually prints ("wall check", "wall pins", wallCheckScript): a
+// list of phrases is a second copy of wallcheck.go's output to keep in step by
+// hand, and what this arm claims is the BROAD thing — a repo that never
+// opted in hears nothing about the wall from the step, whatever words the
+// step grows next. Subtracting the one sentence that is someone else's keeps
+// that claim and costs no list.
+//
+// AND IT RUNS AT BOTH ABIs, which is the whole reason the red was invisible
+// from here: the arm ran once, on whatever kernel and mechanism the suite
+// happened to be on, so no box with a current kernel could see it. Both rows
+// stub the ABI and the mechanism, so the two halves of
+// landedJudgeSocketWallNote are driven here and neither row depends on the
+// host — the degraded row is the ubuntu runner's reading, taken on any box.
+//
+// SERIAL, no t.Parallel: it writes wallUnixABI and wallMechanismHost, two
+// package-level vars.
 func TestATreeThatShipsNoWallCheckIsLeftAloneEntirely(t *testing.T) {
-	t.Parallel()
-	a := wtApp(t)
-	repo := wtRepo(t)
-	shipLandedCheck(t, repo, "#!/bin/sh\nexit 0\n", "ranger-base-ship1: ship the landed check only")
-	write(t, filepath.Join(repo, "fake-show.json"), ldfStore)
-	out := &bytes.Buffer{}
-	c := newLandedChecker(a, out)
-	c.cage, c.bd = plainCage, testBd(t)
-	ldfJudge(t, c, repo)
+	restore := wallUnixABI
+	t.Cleanup(func() { wallUnixABI = restore })
+	wallMechanismForTest(t, "linux")
+	for _, abi := range []int{WallUnixABIMin, WallUnixABIMin - 1} {
+		t.Run(fmt.Sprintf("landlock ABI %d", abi), func(t *testing.T) {
+			wallUnixABI = func() int { return abi }
+			// THE ROW'S OWN CONTROL: at WallUnixABIMin the judge says
+			// nothing about the socket wall and below it the judge says the
+			// layer is degraded, so the two rows are not one test run twice
+			// — and a note that stopped being printed could not leave the
+			// subtraction below looking like it was doing work.
+			note, degraded := landedJudgeSocketWallNote(), abi < WallUnixABIMin
+			if (note != "") != degraded {
+				t.Fatalf("at Landlock ABI %d the judge's socket-wall note is %q — this row is not the reading it is named for, so the subtraction below measures nothing", abi, note)
+			}
+			a := wtApp(t)
+			repo := wtRepo(t)
+			shipLandedCheck(t, repo, "#!/bin/sh\nexit 0\n", "ranger-base-ship1: ship the landed check only")
+			write(t, filepath.Join(repo, "fake-show.json"), ldfStore)
+			out := &bytes.Buffer{}
+			c := newLandedChecker(a, out)
+			c.cage, c.bd = plainCage, testBd(t)
+			ldfJudge(t, c, repo)
 
-	if _, v := landedRecorded(landedJudgeRule, repo); v != landGreen {
-		t.Fatalf("the judge did not reach green, so this arm measured nothing:\n%s", out)
-	}
-	if tree, v := wckRecorded(t, repo); tree != "" || v != landUnanswered {
-		t.Errorf("%s reads %q %s at a repo that never opted in", wallCheckKey, tree, v)
-	}
-	if s := out.String(); strings.Contains(s, "wall") {
-		t.Errorf("the pass says something about the wall at a repo that ships no %s:\n%s", wallCheckScript, s)
+			if _, v := landedRecorded(landedJudgeRule, repo); v != landGreen {
+				t.Fatalf("the judge did not reach green, so this arm measured nothing:\n%s", out)
+			}
+			if tree, v := wckRecorded(t, repo); tree != "" || v != landUnanswered {
+				t.Errorf("%s reads %q %s at a repo that never opted in", wallCheckKey, tree, v)
+			}
+			s := out.String()
+			if note != "" {
+				s = strings.ReplaceAll(s, note, "")
+			}
+			if strings.Contains(s, "wall") {
+				t.Errorf("the pass says something about the wall at a repo that ships no %s (the judge's own socket-wall note subtracted):\n%s", wallCheckScript, s)
+			}
+		})
 	}
 }
 

@@ -31,7 +31,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -209,11 +208,21 @@ func ggsAnswered(d time.Duration, f func() error) (error, bool) {
 // exists rather than another symlink row. A fifo can be made at mode 0444, so
 // `fi.Mode().Perm() != gitGlobalSnapshotMode` is FALSE for it and the mode arm
 // below cannot answer — the regular-file arm is the only thing left. The
-// symlink row is the opposite case and is here as the close's own example:
-// on linux a link's own mode is 0777 whatever chmod is typed (chmod follows),
-// so there the MODE arm refuses it and this arm is redundant; on darwin,
-// where lchmod can set a link to 0444, this arm is again the only one. Both
-// rows assert the refusal; only the fifo row asserts WHICH arm made it.
+// symlink row is the opposite case and is here as the close's own example of
+// a plant this arm does NOT have to make the refusal for. Both rows assert
+// the refusal; only the fifo row asserts WHICH arm made it.
+//
+// AND THE SYMLINK ROW'S MODE IS THE PLATFORM'S, NEVER 0444 (ranger-base-5oiz4).
+// `modeArmCanAnswer` read `runtime.GOOS != "darwin"` here, on the strength of
+// lchmod being a thing a darwin caller COULD do — but this row's plant calls
+// no chmod at all, so what it gets is whatever the kernel gives a fresh
+// symlink. MEASURED: 0777 on this box (Linux 7.2.15-1-omarchy, 2026-11-22) and
+// 0755 on macos-26-arm64 (run 44968403951, job 137042528870, 2026-11-22, where
+// the row's own control red: "the plant is mode 0755, so the mode arm can
+// answer = true, want false"). Neither is 0444, so the mode arm can answer on
+// both and the row is `true` with no GOOS in it. A platform that ever gives a
+// bare symlink 0444 reds this control rather than silently turning the row
+// into the fifo's — which is what a control is for.
 //
 // MEASURED the same day, and why the shape check cannot simply be deleted as
 // redundant: with a 0444 fifo at that name, `PrepareGitGlobalSnapshot` — the
@@ -257,7 +266,7 @@ func TestQAAGitGlobalSnapshotVerifyRefusesWhatIsNotAFileAtThatName(t *testing.T)
 			if err := os.Symlink(decoy, row); err != nil {
 				t.Fatal(err)
 			}
-		}, runtime.GOOS != "darwin"},
+		}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Tolerant, because the row is the one the row BEFORE this one

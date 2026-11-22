@@ -58,6 +58,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-6zw05](ranger-base-6zw05.md) — ranger-base-6zw05 — the continue wall read one option, and `--skip` advances a sequencer too — 2026-11-21
 - [ranger-base-6ec6n](ranger-base-6ec6n.md) — bwrap's --die-with-parent does not survive an AppArmor exec transition, so the step re-arms it and wall-watch kills what is left (ranger-base-6ec6n) — 2026-11-21
 - [ranger-base-6e5jm](ranger-base-6e5jm.md) — `cmdUpgrade`'s other two plan assignments, held at the call (ranger-base-6e5jm) — 2026-11-21
+- [ranger-base-5oiz4](ranger-base-5oiz4.md) — Four more red CI families, and three of them asserted one platform's answer everywhere (ranger-base-5oiz4) — 2026-11-21
 - [ranger-base-4og5l](ranger-base-4og5l.md) — The vuln-private judge's units stop at a file boundary and read a Go comment's markdown (ranger-base-4og5l) — 2026-11-21
 - [ranger-base-4gyib](ranger-base-4gyib.md) — ranger-base-4gyib — the seat store pin's wide-grant shape is unrenderable under ADR 0100, and the venue is the only place that says so — 2026-11-21
 - [ranger-base-49rxe](ranger-base-49rxe.md) — ranger-base-49rxe — the seat store pin's wide-grant arm asserted a refusal the render had just stopped making — 2026-11-21
