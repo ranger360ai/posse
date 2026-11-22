@@ -276,6 +276,24 @@ func runWallWatch(r wallWatchRun) int {
 	for {
 		select {
 		case code := <-done:
+			// BWRAP ENDED. On its own that is the seat ending: bwrap waits
+			// for its child and exits after it, so the leader is reaped and
+			// gone. A LEADER STILL RUNNING is the other case — bwrap was
+			// killed under it, and the seat's --die-with-parent did not
+			// fire. That is what an AppArmor exec transition does to the
+			// pdeathsig bwrap set (ranger-base-6ec6n): the seat is
+			// reparented and runs on, caged and unsupervised. A seat line
+			// whose step re-arms it is covered in the seat; this covers the
+			// lines with no step, and the step's own pre-start race. The
+			// kill reaches every process in the seat's mount namespace,
+			// wallWatchKill's census, and the leader check is what keeps a
+			// seat that ended by itself from having its leftovers killed —
+			// that stays what it was.
+			if wallWatchLeaderLive(info.ChildPid, info.MntNamespace) {
+				killed, kerr := wallWatchKillWith(0, func() []int { return wallWatchSeatPids(0, info.MntNamespace) })
+				refuse("KILLED seat %s: its bwrap (pid %d) ended with the seat's leader (pid %d) still running, so the seat's die-with-parent never fired and nothing else supervised it (ranger-base-6ec6n); killed %s",
+					r.Opts.Seat, bwrapPid, seatPid, wallWatchKilled(wallWatchDetach{Killed: killed, KillErr: kerr}))
+			}
 			return code
 		default:
 		}
@@ -525,6 +543,24 @@ func wallWatchSeatPids(bwrapPid int, mntns uint64) []int {
 		}
 	}
 	return out
+}
+
+// wallWatchLeaderLive reports whether pid is running and in the seat's mount
+// namespace — positive evidence on both counts, so a recycled pid that is
+// some other process reads false, and so does a zombie.
+func wallWatchLeaderLive(pid int, mntns uint64) bool {
+	if pid <= 0 || mntns == 0 {
+		return false
+	}
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return false
+	}
+	if st, _, ok := procStatStateParent(string(b)); !ok || st == 'Z' || st == 'X' {
+		return false
+	}
+	var st unix.Stat_t
+	return unix.Stat("/proc/"+strconv.Itoa(pid)+"/ns/mnt", &st) == nil && st.Ino == mntns
 }
 
 // wallWatchSeatReadyWait bounds the wait for bwrap to finish setting up.

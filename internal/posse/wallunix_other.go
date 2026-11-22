@@ -30,6 +30,13 @@ func liveWallUnixABI() int { return -1 }
 // sentence, the wrong one.
 func liveWallUnixTask() (tid, pid int) { p := os.Getpid(); return p, p }
 
+// liveArmWallUnixPdeathsig: PR_SET_PDEATHSIG is a Linux prctl. Unreachable
+// for liveRestrictWallUnix's reason below, and it refuses rather than
+// answering nil for the same one.
+func liveArmWallUnixPdeathsig() error {
+	return Die("%s: there is no PR_SET_PDEATHSIG on this operating system, and this step should never have been typed (ADR 0080 D16)", WallUnixVerb)
+}
+
 // liveRestrictWallUnix cannot be reached: RunWallUnix runs inside a bwrap
 // cage, and nothing off Linux has one. It refuses rather than returning nil,
 // for the reason RunWallUnix itself refuses — a nil here would be a wall
