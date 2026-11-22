@@ -69,7 +69,7 @@ ifeq ($(words $(BUILD_SOURCE)),1)
 LDFLAGS     += -X github.com/ranger360ai/posse/internal/posse.BuildSource=$(BUILD_SOURCE)
 endif
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check treepins-check pid-check land-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-wall-check verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins coldexec-check tmpdir-check fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check orientation-check adr-check corpus-check register-check scripts-check treepins-check pid-check land-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-reap-test-tmp verify-wall-check verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -1691,6 +1691,133 @@ coldexec-check: $(COLDEXEC_BIN)
 	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 60m -count=1 $(COLDEXEC_RUN)
 	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test ./cmd/posse/... -timeout 60m -count=1 $(COLDEXEC_RUN)
 	$(COLDEXEC_TMP) POSSE_COLD_EXEC_DELAY='$(COLDEXEC_DELAY)' ./$(COLDEXEC_BIN) $(COLDEXEC_ROOM) -- scripts/test-times.sh $(GOBIN) test ./internal/treepins/... -timeout 60m -count=1 $(COLDEXEC_RUN)
+
+# THE OFF-/tmp DOOR (ranger-base-m33n5, from ranger-base-shf97). It runs
+# internal/posse's three arms with $TMPDIR pointed at a fresh directory
+# OUTSIDE `/tmp`, which is the whole of it: the class is "a test whose verdict
+# turns on where the box puts its temp files", and that is decidable by
+# RUNNING the test with the temp root moved.
+#
+# THE CLASS, which is ranger-base-jhmm7's. BwrapArgs judges every write grant
+# against the per-seat wall root composed from $HOME and REFUSES a grant that
+# contains it (bwrapRefuseWallRootGrant, ADR 0100 D1/D2(a)); a blanket temp
+# grant contains any fixture home cut under the temp root, and the refusal
+# stands down only where the home is under `/tmp` (bwrapWallRoot). So a
+# fixture home from a bare `t.TempDir()` is green wherever `t.TempDir()`
+# happens to land under `/tmp` — this box, and ci.yml's ubuntu legs — and red
+# where it does not: darwin, where it is `/var/folders/…`, and any linux seat
+# whose TMPDIR points elsewhere. The class has had five fixes
+# (ranger-base-shf97's count) and every one of them was found by reading a
+# macos arm-1 log; the sixth, ranger-base-mlw6q, was found by this door.
+#
+# WHY A RUN AND NOT A SCAN, and this is MEASURED rather than argued
+# (ranger-base-shf97, 2026-11-22, linux 7.2.15, go1.27.3, at 648a32d6).
+# internal/treepins/bwraphomestanddown_qa_test.go states the rule over the
+# render a TEST writes, and its own head comment says what it cannot see: a
+# render reached through a METHOD, because a receiver's type cannot be
+# resolved from source alone and source is what has to be read (the package is
+# three build-tag arms). Every widening that could reach those was tried and
+# priced, and the best of them flagged 2 of arm 1's 4 live members at a cost of
+# 15 false reads. This run found 4 of 4 and cost none false, because the
+# discriminator IS the temp root: no call graph, no method-edge guess, and no
+# model of which grants reach the home. docs/notes.d/ranger-base-m33n5.md
+# carries the table and the prices.
+#
+# THE ARMS ARE internal/posse's THREE, and that is the pin's corpus and not a
+# judgement: the rule above is stated over every `internal/posse/*_test.go`,
+# the posse_arm2 and posse_arm3 files included, and one `parser.ParseFile`
+# scan reads all three where a BUILD reads one. WHAT IS NOT DERIVED, and say
+# it rather than imply it: this list. A package that starts rendering a wall
+# from a fixture home tomorrow is covered by nothing until somebody adds its
+# line here, exactly as the coldexec arm list above is not derived either.
+#
+# `-count=1`, AND THE REASON IS NOT THE ONE IT LOOKS LIKE. The failure this
+# venue has to not have is a cached PASS from the run with the other temp
+# root: green having measured nothing, which is what ADR 0097 D5 refuses ("an
+# abstention is never a pass"). go's cache already refuses it — MEASURED
+# 2026-11-22, go1.27.3, on
+# TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates: `ok` then `ok
+# (cached)` under this box's TMPDIR, and then a RE-RUN and a FAIL under a
+# `/var/tmp` root with no `-count=1` anywhere, because the test reads TMPDIR
+# through `t.TempDir` and the cache records that read. So `-count=1` is not
+# what makes the door sound; it is what keeps the door from DEPENDING on that,
+# since cache key behaviour is a property of the toolchain and not of this
+# tree.
+#
+# THE ROOT IS `/var/tmp`, for wallUngrantedDir's reason and checked the way
+# that helper checks its own: it is granted by nothing on either host, because
+# `/tmp` and `/private/tmp` are different directories and darwin's `/var/tmp`
+# resolves under `/private/var`. A box that symlinked it into `/tmp` would
+# hand this door the shape the class is invisible in, so the prelude reads the
+# RESOLVED path and REFUSES (exit 2) rather than running. The resolved path is
+# also what is exported: the raw/resolved split is part of this class, so a
+# venue that handed the arms an unresolved spelling would plant fixtures at
+# one spelling and have the render answer at the other.
+#
+# A ROOT IT CANNOT CREATE IS ALSO A REFUSAL AND NEVER A PASS. Inside a seat's
+# own bwrap wall `/var/tmp` is read-only (wallUngrantedDir's comment carries
+# that reading), so a caged seat cannot be this venue at all; it says so and
+# exits 2. TMPDIR_CHECK_ROOT is the override, for a seat that can write
+# somewhere else outside every blanket grant.
+#
+# RUN=<regex> is the form a bead types, and `-v` comes with it for
+# coldexec-check's measured reason: `go test -run` over a name that is not in
+# the build exits 0 and prints `ok`, so a filter naming an arm 2 test prints
+# `ok` over arms 1 and 3 having selected nothing. A filter takes no suite slot
+# (suite_lock_wanted returns on `-run` before it reads the package), which is
+# what makes the filtered form seconds rather than a wait.
+#
+# AND IT QUEUES WHEN UNFILTERED, like `make test`: three arms, three suite
+# slots in sequence. Arm 1 is spelled `./internal/posse/...` and not
+# `./internal/posse` for coldexec-check's reason — the package has no
+# subpackages so the two select the same arm, and only a package-tree pattern
+# is queued; the two tagged arms queue under the `-tags posse_arm*` rule.
+#
+# NOT a prerequisite of `tree-check` or `make test`, and not in CI — AND THAT
+# IS A DECISION THIS LINE DOES NOT GET TO MAKE. A second full pass of
+# internal/posse on every seat's suite is what `make test` would cost, a door
+# nobody's `-run` filter names is ranger-base-rulbl's class, and a ci.yml leg
+# costs runner time the operator approves; ADR 0098 is the record that decides
+# which doors exist and what they may cost — its own Consequences say the
+# internal/posse half "needs its own ruling" if this shape escapes there, and
+# it has. ranger-base-o065a carries that question to the architecture lane
+# with the prices below in hand. Until it answers, this is a door a seat
+# TYPES — which is what AGENTS.md names it for, beside the other run-shaped
+# doors. (And it could not be a prerequisite today whichever way that rules:
+# arm 1 reds four live members, two held by ranger-base-shf97 and two by
+# ranger-base-mlw6q, neither landed at 144605f2.)
+#
+# THE PRICE. MEASURED 2026-11-22 (linux 7.2.15 x86_64, go1.27.3, 16 cores,
+# warm build cache, at 144605f2, one-minute load 10.3-16.4 with one suite slot
+# held by a sibling seat throughout), each arm through scripts/test-times.sh
+# with TMPDIR at a fresh `/var/tmp` root:
+#
+#     arm                                  go test   wall   verdict
+#     1  ./internal/posse/...               292.0s   293s   RED: 4 members
+#     2  -tags posse_arm2 ./internal/posse   70.5s    76s   green
+#     3  -tags posse_arm3 ./internal/posse  127.0s   158s   green (25s queued)
+#                                          -------   ----
+#                                           489.5s   527s
+#
+# ARMS 2 AND 3 WERE UNMEASURED UNDER THIS VENUE BEFORE ranger-base-m33n5 and
+# are GREEN, so the whole live yield is in arm 1 and the whole cost is 527s.
+# ranger-base-shf97's 263.0s for arm 1 is this 292.0s at a lower load, which
+# is what every wall reading in this file says about which variable tracks.
+# The filtered form over the four members is 9.8s and takes no slot.
+TMPDIR_CHECK_ROOT ?= /var/tmp
+
+# The per-arm temp root: fresh each time, so no arm inherits another's
+# fixtures, and cleared however the arm ends. `${T:?}` guards the removal for
+# AGENTS.md's reason — the `:?` is what says the path cannot be empty, and it
+# is also what makes the line safe to read.
+TMPDIR_CHECK_TMP := T=$$(mktemp -d '$(TMPDIR_CHECK_ROOT)/posse-tmpdir-check.XXXXXX') || { echo 'tmpdir-check: cannot create a fixture root under $(TMPDIR_CHECK_ROOT) — inside the bwrap wall of a caged seat that directory is read-only, so this seat cannot be the venue. Point TMPDIR_CHECK_ROOT at a writable directory outside /tmp.' >&2; exit 2; }; trap 'rm -rf -- "$${T:?}"' EXIT INT TERM; R=$$(cd "$$T" && pwd -P) && case "$$R" in /tmp/* | /private/tmp/*) echo "tmpdir-check: $(TMPDIR_CHECK_ROOT) resolves to $$R, which is inside a blanket temp grant — this venue would run the exact shape the class is invisible in. Point TMPDIR_CHECK_ROOT outside /tmp and /private/tmp." >&2; exit 2;; esac && TMPDIR=$$R
+
+TMPDIR_CHECK_RUN := $(if $(RUN),-run '$(RUN)' -v,)
+
+tmpdir-check:
+	$(TMPDIR_CHECK_TMP) scripts/test-times.sh $(GOBIN) test ./internal/posse/... -timeout 25m -count=1 $(TMPDIR_CHECK_RUN)
+	$(TMPDIR_CHECK_TMP) scripts/test-times.sh $(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 25m -count=1 $(TMPDIR_CHECK_RUN)
+	$(TMPDIR_CHECK_TMP) scripts/test-times.sh $(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 25m -count=1 $(TMPDIR_CHECK_RUN)
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink
