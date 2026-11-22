@@ -15,6 +15,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-mlw6q](ranger-base-mlw6q.md) — ranger-base-mlw6q — the wallWitness home, and the two layers under it — 2026-11-22
 - [ranger-base-m33n5](ranger-base-m33n5.md) — ranger-base-m33n5 — the door for the bwrap fixture-home class is a RUN — 2026-11-22
 - [ranger-base-k2quj](ranger-base-k2quj.md) — The wall abstention reaches all 55 members now (ranger-base-k2quj) — 2026-11-22
+- [ranger-base-jqdm2](ranger-base-jqdm2.md) — The abstention reaches the members a census could not see (ranger-base-jqdm2) — 2026-11-22
 - [ranger-base-jielm](ranger-base-jielm.md) — Two verify findings: a pin whose premise nothing witnessed, and the last unguarded read of the refusals leaf (ranger-base-jielm) — 2026-11-22
 - [ranger-base-jhmm7](ranger-base-jhmm7.md) — ranger-base-jhmm7 — the door under the bwrap fixture HOME — 2026-11-22
 - [ranger-base-hhps5](ranger-base-hhps5.md) — Two arms nothing witnessed, closed: a launch key that read one spelling, and a drop key with no fixture that could grade it (ranger-base-hhps5) — 2026-11-22

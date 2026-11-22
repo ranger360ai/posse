@@ -138,8 +138,13 @@ func TestLiveWallWatchKillsASeatWhoseBackstopRecordCannotBeWritten(t *testing.T)
 	case <-time.After(10 * time.Second):
 		t.Fatalf("the watcher has not returned 10s after a record write that cannot succeed:\n%s", stderr.String())
 	}
+	// A seat the box ends is silent and exits 128+9, and this `want 1` is
+	// the watcher's own refusal code — so an unrouted read turns that death
+	// into a wall regression ADR 0088 D5's ratchet charges to whoever landed
+	// last (ranger-base-jqdm2).
+	wwAbstainIfOutside(t, "the seat whose backstop record cannot be written", c, stderr.String())
 	if c != 1 {
-		t.Errorf("watcher exit = %d, want 1 (it killed the seat):\n%s", c, stderr.String())
+		t.Errorf("watcher exit = %d, want 1 (it killed the seat): %s", c, wwOneLine(stderr.String()))
 	}
 	if _, err := os.Stat(ran); err == nil {
 		t.Errorf("the seat's command RAN although its backstop record was never written — the watcher released a seat only it can see:\n%s", stderr.String())

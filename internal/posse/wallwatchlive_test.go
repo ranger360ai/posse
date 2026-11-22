@@ -65,7 +65,13 @@ func wwLiveFixture(t *testing.T) wwLiveSeat {
 // launch renders the seat, starts it under the watcher, and returns once the
 // seat's command is running (it has written the pid of a background child
 // it leaves behind, so the kill is judged on a process bwrap did not start).
-func (s wwLiveSeat) launch(t *testing.T, st wallWatchStore, seat string, lock string) (code chan int, bwrapPid *int) {
+//
+// IT HANDS BACK THE PANE as well as the exit channel, and that is
+// ranger-base-w6kke's plumbing arriving under ranger-base-jqdm2: whoever
+// reads the code has to route the abstention over the pane's words before
+// comparing it to anything (wwAbstainIfOutside), and the same words are what
+// an exit this fixture did not expect spends its one reported line on.
+func (s wwLiveSeat) launch(t *testing.T, st wallWatchStore, seat string, lock string) (code chan int, bwrapPid *int, said *wwSaid) {
 	t.Helper()
 	devnull, _ := os.Open(os.DevNull)
 	t.Cleanup(func() { devnull.Close() })
@@ -74,7 +80,7 @@ func (s wwLiveSeat) launch(t *testing.T, st wallWatchStore, seat string, lock st
 
 // launchOn is launch with the watcher's stdin named — the pane's terminal,
 // for a pin about what is typed at it (ranger-base-heypq).
-func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock string, stdin *os.File) (code chan int, bwrapPid *int) {
+func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock string, stdin *os.File) (code chan int, bwrapPid *int, saidOut *wwSaid) {
 	t.Helper()
 	carve := SeatbeltCarveOut{
 		Deny:     []string{s.deny},
@@ -126,6 +132,10 @@ func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock 
 		}
 		select {
 		case c := <-code:
+			// BEFORE the fatal: a watcher whose bwrap the box ended is
+			// silent and exits 128+9, and this fatal is where that arrives
+			// (ranger-base-jqdm2).
+			wwAbstainIfOutside(t, "the seat under the wall-watch supervisor "+seat, c, said.String())
 			t.Fatalf("the seat ended before it ran (exit %d); watcher and bwrap said %s", c, wwOneLine(said.String()))
 		default:
 		}
@@ -134,7 +144,7 @@ func (s wwLiveSeat) launchOn(t *testing.T, st wallWatchStore, seat string, lock 
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	return code, pid
+	return code, pid, said
 }
 
 // wwSaid is everything the watcher and its bwrap wrote, and it is a locked
@@ -221,6 +231,44 @@ func TestQAWallWatchFixtureFoldsWhatTheWatcherSaidOntoOneLine(t *testing.T) {
 	}
 }
 
+// wwSeatAccount is bgSeatAccount's sentence for a seat run by runWallWatch:
+// the status is an int the watcher returned and the output is the PANE, which
+// carries the watcher's lines and its bwrap's together (ranger-base-jqdm2).
+// The fold is wwOneLine's, and the silence case is wwOneLine's too — a
+// wordless pane means something specific here, and that something is already
+// written in one place.
+func wwSeatAccount(code int, said string) string {
+	return "the watcher exited " + strconv.Itoa(code) + ", and the pane holds " + wwOneLine(said)
+}
+
+// wwAbstainIfOutside is THE ROUTING DOOR for the members whose seat is run by
+// runWallWatch rather than by an exec.Command of their own, and it is the
+// watcher-shaped line of bgSeatAbstainIfOutside (ranger-base-jqdm2).
+//
+// WHY A SECOND DOOR AND NOT THE SAME ONE. bgSeatAbstainIfOutside takes the
+// `error` an *exec.Cmd produced, and nothing here has one: the exec is inside
+// runWallWatch, which reads the WaitStatus itself and hands the test an int.
+// An *exec.ExitError cannot be synthesized to borrow that door — os.ProcessState
+// holds its status unexported — so what is shared is the thing that must not
+// have two spellings: the CRITERION (bgSeatStatusFromOutside) and the
+// NOTHING MEASURED line (bgSeatAbstainAccount). This function is the one line
+// in between, so a census can read the routing by name at every site.
+//
+// CALL IT BEFORE ANY ARM READS THE CODE. A seat the box ends is silent and
+// exits 128+9 or 128+15, and every reader of a watcher's status in these
+// three files compares it to a number it expected — 1 for a kill, 7 for a
+// seat's own exit, 137 for a bwrap this test killed — so an unrouted read
+// turns a death that measured nothing into ADR 0097 D3's exit 1, which D5's
+// ratchet files as one P1 `-l code` against whoever landed last. That is
+// ranger-base-jqdm2, and ranger-base-a688i, -w6kke, -axt1f and -s9h52 before
+// it.
+func wwAbstainIfOutside(t *testing.T, what string, code int, said string) {
+	t.Helper()
+	if bgSeatStatusFromOutside(code, false, said) {
+		bgSeatAbstainAccount(t, what, wwSeatAccount(code, said))
+	}
+}
+
 func (s wwLiveSeat) bg(t *testing.T) int {
 	b, err := os.ReadFile(s.bgpid)
 	if err != nil {
@@ -233,15 +281,26 @@ func (s wwLiveSeat) bg(t *testing.T) int {
 	return p
 }
 
-func wwWaitKilled(t *testing.T, code chan int, what string) {
+// wwWaitKilled waits for the watcher to answer that it killed the seat.
+//
+// IT TAKES THE PANE, which is ranger-base-w6kke's fix landing here because
+// ranger-base-jqdm2 needs the same words one line earlier. Two things read
+// them. The ROUTING comes first: a seat the box ended is silent and exits
+// 128+9, which this `want 1` would otherwise report as a wall regression
+// (wwAbstainIfOutside). What is left then spends its one reported line on a
+// cause — an exit of 2 is one of runWallWatch's refusals and only the pane
+// says WHICH, and an exit of 0 is a seat that ran to its own end with its
+// wall still up, which says the detach was never seen.
+func wwWaitKilled(t *testing.T, code chan int, said *wwSaid, what string) {
 	t.Helper()
 	select {
 	case c := <-code:
+		wwAbstainIfOutside(t, what+": the seat under the wall-watch supervisor", c, said.String())
 		if c != 1 {
-			t.Errorf("%s: watcher exit = %d, want 1 (it killed the seat)", what, c)
+			t.Errorf("%s: watcher exit = %d, want 1 (it killed the seat); watcher and bwrap said %s", what, c, wwOneLine(said.String()))
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatalf("%s: the seat is still running 10s after its wall came off", what)
+		t.Fatalf("%s: the seat is still running 10s after its wall came off; watcher and bwrap said %s", what, wwOneLine(said.String()))
 	}
 }
 
@@ -324,10 +383,10 @@ func TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead(t *testing.T) {
 	lock := filepath.Join(t.TempDir(), "wall-watch.lock")
 
 	// 1. A Deny bind over a FILE, replaced on the host by rename.
-	code, _ := s.launch(t, st, "seat-a", lock)
+	code, _, said := s.launch(t, st, "seat-a", lock)
 	bg := s.bg(t)
 	renameOver(t, s.deny, false)
-	wwWaitKilled(t, code, "deny")
+	wwWaitKilled(t, code, said, "deny")
 	wwGone(t, bg, "deny")
 	if len(st.issues) != 1 {
 		t.Fatalf("deny: %d beads filed, want 1: %+v", len(st.issues), st.issues)
@@ -346,10 +405,10 @@ func TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead(t *testing.T) {
 
 	// 2. A Private bind over a DIRECTORY, replaced on the host by rename.
 	// A different path, so a second bead.
-	code, _ = s.launch(t, st, "seat-b", lock)
+	code, _, said = s.launch(t, st, "seat-b", lock)
 	bg = s.bg(t)
 	renameOver(t, s.priv, true)
-	wwWaitKilled(t, code, "private")
+	wwWaitKilled(t, code, said, "private")
 	wwGone(t, bg, "private")
 	if len(st.issues) != 2 || !strings.Contains(st.issues[1].Description, wallWatchMarker(s.priv)) {
 		t.Fatalf("private: want a second bead naming %s, got %+v", s.priv, st.issues)
@@ -357,10 +416,10 @@ func TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead(t *testing.T) {
 
 	// 3. The deny path again inside ten minutes: the seat is still killed,
 	// and the detection is a comment on the first bead, not a third bead.
-	code, _ = s.launch(t, st, "seat-c", lock)
+	code, _, said = s.launch(t, st, "seat-c", lock)
 	bg = s.bg(t)
 	renameOver(t, s.deny, false)
-	wwWaitKilled(t, code, "deny again")
+	wwWaitKilled(t, code, said, "deny again")
 	wwGone(t, bg, "deny again")
 	if len(st.issues) != 2 {
 		t.Errorf("deny again: %d beads, want still 2", len(st.issues))
@@ -400,8 +459,11 @@ func TestLiveWallWatchPassesTheSeatsOwnExitCode(t *testing.T) {
 			Bwrap: []string{"bwrap", "--args", "3", "--", "sh", "-c", "echo hi > " + shellQuote(s.deny) + " 2>/dev/null && exit 9; exit 7"}},
 		Args: af, Stdout: &out, Stderr: &out, Store: st, PollInterval: 50 * time.Millisecond,
 	})
+	// A seat the box ends is silent and exits 128+9, and this arm would read
+	// that as the seat's own exit code coming back wrong (ranger-base-jqdm2).
+	wwAbstainIfOutside(t, "the seat whose walls stayed up", got, out.String())
 	if got != 7 {
-		t.Errorf("exit = %d, want 7 (the seat's own; a write to the denied file must have failed):\n%s", got, out.String())
+		t.Errorf("exit = %d, want 7 (the seat's own; a write to the denied file must have failed): %s", got, wwOneLine(out.String()))
 	}
 	if len(st.issues) != 0 {
 		t.Errorf("a seat that kept its walls filed %d beads", len(st.issues))
@@ -434,8 +496,11 @@ func TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch(t *testing.T) {
 			Bwrap: []string{"bwrap", "--args", "3", "--", "sh", "-c", ": > " + shellQuote(ran)}},
 		Args: af, Stdout: &out, Stderr: &out, Store: st, PollInterval: 50 * time.Millisecond,
 	})
+	// The same routing as the arm above: this `want 1` is the watcher's
+	// own refusal code, and a silent 137 is not a refusal (ranger-base-jqdm2).
+	wwAbstainIfOutside(t, "the seat refused a wall that was already off", got, out.String())
 	if got != 1 {
-		t.Errorf("exit = %d, want 1:\n%s", got, out.String())
+		t.Errorf("exit = %d, want 1: %s", got, wwOneLine(out.String()))
 	}
 	if _, err := os.Stat(ran); err == nil {
 		t.Error("the seat's command ran with a wall missing")
@@ -452,6 +517,112 @@ func TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch(t *testing.T) {
 	if v := wwVerdict(t, s); !strings.Contains(v, "KILLED seat x") || !strings.Contains(v, s.deny) {
 		t.Errorf("a wall missing at launch left no durable verdict:\n%s", v)
 	}
+}
+
+// TestLiveWallWatchReadsAnOutsideKillAsNothingMeasured is the live half of
+// ranger-base-jqdm2, and it measures the one premise the abstention rests on
+// that nothing else in the tree does: that a seat ended from OUTSIDE reaches
+// a watcher-run member as a SILENT 128+9 and nothing else.
+//
+// WHY IT HAS TO BE MEASURED. bgSeatStatusFromOutside is a conjunction over
+// silence and a number, and both halves are properties of code this test does
+// not own: bubblewrap's propagate_exit_status renders the status (MEASURED
+// 2026-11-21 under ranger-base-evx07, through an exec.Command), and
+// runWallWatch then decides what to hand the pane — it has nine refusal lines
+// that would make the pane non-silent and two paths that return bwrap's code
+// untouched. The abstention is dead code if the watcher ever says a word on
+// this path, and ranger-base-jqdm2's whole report was that it says none.
+//
+// IT PASSES RATHER THAN ABSTAINING, deliberately, for the reason the
+// git-refs half gives: a member that always skipped would hold the wall check
+// at exit 3 forever (ADR 0097 D3). It calls the criterion directly, so it is
+// grading the decision rather than spending it, which is also the census
+// escape (wsaWatcherCriterion).
+//
+// THE SEAT EXECS. `exec sleep 300` makes the killed process the one bwrap
+// waits on, which is the only death bwrap propagates — a shell that carries
+// on past a killed child reports its own status and masks the kill entirely
+// (MEASURED 2026-11-21, ranger-base-evx07: rc 7 for exactly that shape).
+func TestLiveWallWatchReadsAnOutsideKillAsNothingMeasured(t *testing.T) {
+	t.Parallel()
+	s := wwLiveFixture(t)
+	argv, _, watch, err := bwrapArgsWatched(s.grant, []string{s.grant}, SeatbeltCarveOut{Deny: []string{s.deny}, DenyFile: []string{s.deny}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.args, bwrapArgsBytes(argv), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.mounts, wallWatchMountsBytes(watch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	leaderFile := filepath.Join(s.grant, "leader.pid")
+	// kill says whether this test ends the seat from outside. The control
+	// arm below passes false and never signals anything: a seat that exits
+	// 128 on its own is gone within milliseconds, so a kill aimed at its
+	// leader would be a race between this test's SIGKILL and the seat's own
+	// exit — and the row the control exists to hold is the one where NOTHING
+	// killed it.
+	run := func(t *testing.T, script string, kill bool) (int, string) {
+		t.Helper()
+		os.Remove(leaderFile)
+		af, err := os.Open(s.args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer af.Close()
+		var out strings.Builder
+		code := make(chan int, 1)
+		go func() {
+			code <- runWallWatch(wallWatchRun{
+				Opts: wallWatchOpts{Mounts: s.mounts, Seat: "seat-jqdm2", Dir: s.grant,
+					Bwrap: []string{"bwrap", "--args", "3", "--", "sh", "-c", script}},
+				Args: af, Stdout: &out, Stderr: &out,
+				Store: &fakeWallWatchStore{}, Lock: filepath.Join(t.TempDir(), "lock"), PollInterval: 50 * time.Millisecond,
+			})
+		}()
+		for deadline := time.Now().Add(10 * time.Second); kill && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			b, rerr := os.ReadFile(leaderFile)
+			if rerr != nil {
+				continue
+			}
+			pid, aerr := strconv.Atoi(strings.TrimSpace(string(b)))
+			if aerr != nil || pid <= 0 {
+				continue
+			}
+			// THE OUTSIDE KILL, which is what the box does to a seat under
+			// load and what no fixture inside a runner can manufacture
+			// (ranger-base-evx07's own reason for grading the criterion by
+			// mutation). Here the test IS the outside.
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			break
+		}
+		select {
+		case c := <-code:
+			return c, out.String()
+		case <-time.After(10 * time.Second):
+			t.Fatalf("the watcher has not returned 10s after its seat was killed from outside: %s", wwOneLine(out.String()))
+		}
+		return 0, ""
+	}
+
+	got, said := run(t, "echo $$ > "+shellQuote(leaderFile)+"; exec sleep 300", true)
+	if !bgSeatStatusFromOutside(got, false, said) {
+		t.Fatalf("a seat SIGKILLed from outside a LIVE WATCHER read as: %s — so the ranger-base-jqdm2 abstention never fires and every watcher-run member still reports an outside kill as a wall regression (ADR 0097 D5's ratchet) instead of as exit 3", wwSeatAccount(got, said))
+	}
+	if got != 128+int(syscall.SIGKILL) {
+		t.Errorf("the watcher handed back %d for a seat killed from outside, want %d — the criterion still fired, but on a different row than the one this bead measured: %s", got, 128+int(syscall.SIGKILL), wwSeatAccount(got, said))
+	}
+	t.Logf("MEASURED, a seat SIGKILLed from outside a live watcher: %s", wwSeatAccount(got, said))
+	// THE CONTROL, and it is the same sentence the git-refs half makes: the
+	// same watcher, the same silence, an ordinary non-zero exit. This must
+	// still red, or the criterion has widened into swallowing the wall's own
+	// answers.
+	got, said = run(t, "exec sh -c 'exit 128'", false)
+	if bgSeatStatusFromOutside(got, false, said) {
+		t.Fatalf("a seat that exited 128 silently under the watcher read as ended-from-outside: %s. That is the widening the criterion exists to refuse; a wall regression would now abstain instead of redding", wwSeatAccount(got, said))
+	}
+	t.Logf("MEASURED, the control — a seat that exited 128 on its own: %s", wwSeatAccount(got, said))
 }
 
 // TestLiveWallWatchKillsASeatItsBwrapLeftRunning is ranger-base-6ec6n's
@@ -533,6 +704,18 @@ func TestLiveWallWatchKillsASeatItsBwrapLeftRunning(t *testing.T) {
 				return code, said, l, b
 			}
 		}
+		// NON-BLOCKING, and before the fatal: if the watcher has already
+		// returned, its status is the row that says whether the seat was
+		// ended from outside — and this fatal is where that arrives, since
+		// a seat the box kills writes no pid file (ranger-base-jqdm2).
+		// A watcher that is merely slow must still reach the fatal, so the
+		// read never waits.
+		select {
+		case c := <-code:
+			wwAbstainIfOutside(t, "the seat under the wall-watch supervisor seat-o", c, said.String())
+			t.Fatalf("the seat ended before it ran (exit %d); watcher and bwrap said %s", c, wwOneLine(said.String()))
+		default:
+		}
 		t.Fatalf("the seat never ran within 10s; watcher and bwrap said %s", wwOneLine(said.String()))
 		return nil, wwPaneFile{}, 0, 0
 	}
@@ -550,8 +733,16 @@ func TestLiveWallWatchKillsASeatItsBwrapLeftRunning(t *testing.T) {
 		_ = syscall.Kill(bwrapPid, syscall.SIGKILL) // the bwrap this test's watcher started
 		select {
 		case c := <-code:
+			// THE EXPECTED STATUS HERE IS 137, and the routing is still
+			// right (ranger-base-jqdm2): this arm's 137 comes with the
+			// watcher's own KILLED line in the pane, because the leader was
+			// alive when its bwrap died and that is what the watcher says
+			// about it. A SILENT 137 is the other thing — nobody's
+			// measurement — and SILENCE is the half of the criterion that
+			// tells them apart.
+			wwAbstainIfOutside(t, "the seat whose bwrap this arm killed under a live leader", c, said.String())
 			if c != 128+int(syscall.SIGKILL) {
-				t.Errorf("watcher exit = %d, want %d (bwrap's own, killed)", c, 128+int(syscall.SIGKILL))
+				t.Errorf("watcher exit = %d, want %d (bwrap's own, killed): %s", c, 128+int(syscall.SIGKILL), wwOneLine(said.String()))
 			}
 		case <-time.After(10 * time.Second):
 			t.Fatalf("the watcher has not returned 10s after its bwrap was killed: %s", wwOneLine(said.String()))
@@ -576,6 +767,10 @@ func TestLiveWallWatchKillsASeatItsBwrapLeftRunning(t *testing.T) {
 		code, said, _, bg := run(t, "echo $$ > "+shellQuote(leaderFile)+"; sleep 300 & echo $! > "+shellQuote(s.bgpid)+"; sleep 0.3; exit 7")
 		select {
 		case c := <-code:
+			// ranger-base-jqdm2 IS THIS LINE: it red as `watcher exit =
+			// 137, want 7 (the seat's own): NOTHING`, which is a seat the
+			// box ended and not a seat whose exit code the watcher dropped.
+			wwAbstainIfOutside(t, "the seat that ended by itself", c, said.String())
 			if c != 7 {
 				t.Errorf("watcher exit = %d, want 7 (the seat's own): %s", c, wwOneLine(said.String()))
 			}

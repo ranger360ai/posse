@@ -335,7 +335,7 @@ func bgSeatAccount(err error, out string) string {
 // green seat — it is also why packUnderALiveSeat's inner line execs, so that
 // the commit's own death is the sandbox child's death and cannot be masked.
 func bgSeatEndedFromOutside(err error, out string) bool {
-	if err == nil || len(strings.Fields(out)) != 0 {
+	if err == nil {
 		return false
 	}
 	ee, ok := err.(*exec.ExitError)
@@ -343,10 +343,52 @@ func bgSeatEndedFromOutside(err error, out string) bool {
 		return false
 	}
 	// bwrap itself signalled: ExitCode is -1 and err reads `signal: killed`.
-	if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+	ws, isWait := ee.Sys().(syscall.WaitStatus)
+	return bgSeatStatusFromOutside(ee.ExitCode(), isWait && ws.Signaled(), out)
+}
+
+// bgSeatStatusFromOutside is that SAME criterion over the two things a status
+// reduces to — the code, and whether a signal produced it — and it exists
+// because a third of the member set has no *exec.ExitError to hand the
+// function above (ranger-base-jqdm2).
+//
+// WHAT WAS WRONG. ranger-base-k2quj routed the abstention through all 33
+// bwrap seat runs in the member files that have one, by reading the literal
+// `exec.Command("bwrap", …)` in a TEST. Seven members run their seat through
+// PRODUCTION code instead — runWallWatch forks bwrap itself and hands the
+// test an int — so the census could not see them and none of them routed:
+// wallwatchlive_test.go (4), wallwatchtty_linux_test.go (2),
+// wallwatchbackstopwiring_linux_test.go (1). ranger-base-jqdm2 is that
+// escape arriving as a P1 the day after k2quj landed: the control arm of
+// TestLiveWallWatchKillsASeatItsBwrapLeftRunning read `watcher exit = 137,
+// want 7 … NOTHING`, which is this shape exactly — the seat said nothing and
+// 137 is 128+9 — and ADR 0088 D5's ratchet filed it against the newest
+// landing, which was a treepins QA test that compiles no watcher at all.
+//
+// RUN THROUGH A WATCHER, 137 ARRIVES AS A PLAIN INT. runWallWatch renders a
+// signalled bwrap as 128+WTERMSIG itself (its Wait goroutine does the
+// WaitStatus reading), and otherwise returns bwrap's own code — which for a
+// SIGKILLed sandbox child is 128+9 by bubblewrap's propagate_exit_status
+// (MEASURED 2026-11-21, ranger-base-evx07). So both of evx07's two routes to
+// 137 reach a watcher-run member as the same number, with nothing to read a
+// WaitStatus off: `signalled` is false at every one of those call sites and
+// the code carries the whole answer.
+//
+// THE CONJUNCTION IS UNCHANGED, and that is the point of sharing it rather
+// than writing a second one: silence AND a supervisor's signal number. The
+// watcher's own refusals exit 1 and 2 and every one of them writes a line to
+// the pane first (wallwatch_linux.go's refuse(), ranger-base-r9slg), so a
+// refusal is never silent and never abstains; a seat's own 7 is not in the
+// range; 128 and SIGSYS's 159 stay red here for the reasons the paragraphs
+// above this function give.
+func bgSeatStatusFromOutside(code int, signalled bool, out string) bool {
+	if len(strings.Fields(out)) != 0 {
+		return false
+	}
+	if signalled {
 		return true
 	}
-	switch ee.ExitCode() {
+	switch code {
 	case 128 + int(syscall.SIGKILL), 128 + int(syscall.SIGTERM):
 		return true
 	}
@@ -359,8 +401,19 @@ func bgSeatEndedFromOutside(err error, out string) bool {
 // reads as its evidence.
 func bgSeatAbstain(t *testing.T, what string, err error, out string) {
 	t.Helper()
+	bgSeatAbstainAccount(t, what, bgSeatAccount(err, out))
+}
+
+// bgSeatAbstainAccount is the skip ITSELF, split out for the same reason the
+// criterion was (ranger-base-jqdm2): a watcher-run member's account is built
+// from an int and a pane rather than from an error, and two spellings of the
+// NOTHING MEASURED line are two answers waiting to disagree about what ADR
+// 0097 D3's exit 3 says. The account is the caller's; the sentence is this
+// function's, and there is one of it.
+func bgSeatAbstainAccount(t *testing.T, what, account string) {
+	t.Helper()
 	t.Skipf("NOTHING MEASURED: %s — %s. Nothing in this run read the wall: the seat was ended by a signal from outside the sandbox before it could answer, so this is ADR 0097 D3's exit 3 and neither a wall red nor a pass (ranger-base-evx07)",
-		what, bgSeatAccount(err, out))
+		what, account)
 }
 
 // bgSeatAbstainIfOutside is THE ROUTING DOOR, and it is one line of code
@@ -830,6 +883,41 @@ func TestBgSeatEndedFromOutsideReadsOnlyASupervisorSignalOverSilence(t *testing.
 	} {
 		if got := bgSeatEndedFromOutside(c.err, c.out); got != c.want {
 			t.Errorf("%s: bgSeatEndedFromOutside(%v, %q) = %v, want %v", c.name, c.err, c.out, got, c.want)
+		}
+	}
+
+	// THE WATCHER-RUN SPELLING (ranger-base-jqdm2), over the shared core the
+	// function above now defers to. These rows are an int and a pane, not an
+	// error: seven members run their seat through runWallWatch, which renders
+	// a signalled bwrap as 128+WTERMSIG itself and otherwise hands back
+	// bwrap's own code, so `signalled` is false at every one of those call
+	// sites and the NUMBER is the whole status. The rows that must keep
+	// redding are the watcher's own answers — 1 is respond(), 2 is a refusal
+	// before the seat started, 7 is a seat's own exit — and all three reach a
+	// pane that has words in it anyway, which is why the silence half is
+	// asserted here against the exact codes a watcher returns.
+	for _, c := range []struct {
+		name      string
+		code      int
+		signalled bool
+		out       string
+		want      bool
+	}{
+		{"silent 137 from a watcher: bwrap propagated its killed child, or was killed itself", 128 + int(syscall.SIGKILL), false, "", true},
+		{"silent 143, the SIGTERM half", 128 + int(syscall.SIGTERM), false, "", true},
+		{"whitespace is silence here too", 128 + int(syscall.SIGKILL), false, "\n\t ", true},
+		{"a signalled flag still answers, for a caller that has one", 0, true, "", true},
+
+		{"137 with the pane carrying the watcher's KILLED verdict is not silent", 128 + int(syscall.SIGKILL), false, "posse wall-watch: KILLED seat seat-o", false},
+		{"exit 1 is respond(): the watcher killed the seat and said so", 1, false, "", false},
+		{"exit 2 is a refusal before the seat ever started", 2, false, "", false},
+		{"exit 7 is a seat's own, which TestLiveWallWatchPassesTheSeatsOwnExitCode measures", 7, false, "", false},
+		{"exit 0 is a seat that ran to its end", 0, false, "", false},
+		{"128 is one below the range here as well", 128, false, "", false},
+		{"159 is SIGSYS: the wall's own doing", 128 + 31, false, "", false},
+	} {
+		if got := bgSeatStatusFromOutside(c.code, c.signalled, c.out); got != c.want {
+			t.Errorf("%s: bgSeatStatusFromOutside(%d, %v, %q) = %v, want %v", c.name, c.code, c.signalled, c.out, got, c.want)
 		}
 	}
 }

@@ -648,6 +648,7 @@ func main() {
 		"TestLiveWallWatchKillsASeatWhoseBackstopRecordCannotBeWritten":    "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchKillsASeatWhoseWallComesOffAndFilesOneBead":      "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchPassesTheSeatsOwnExitCode":                       "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveWallWatchReadsAnOutsideKillAsNothingMeasured":             "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveWallWatchRefusesToReleaseASeatMissingAWallAtLaunch":       "reads bwrapNestOnce and bwrapNestWhy",
 		// upgradeConditionSource (5): ADR 0092 D4's row partition, the table
 		// `posse upgrade`'s rollback is computed over. It is a shipped map

@@ -69,9 +69,20 @@ import (
 // spending it (TestLiveBwrapGitRefsReadsAnOutsideKillAsNothingMeasured and
 // TestBgSeatEndedFromOutsideReadsOnlyASupervisorSignalOverSilence). Derived
 // and not a name list, so a second such pin needs no edit here.
+// The watcher-run half is the SAME rule over the other way a member runs a
+// seat (ranger-base-jqdm2): runWallWatch forks bwrap in PRODUCTION code and
+// hands the test an int, so there is no `exec.Command("bwrap", …)` in the
+// test for arm 1 to read and no *exec.ExitError for wsaRouter to take. Seven
+// members are run that way and none of them routed anything until jqdm2.
+// wsaWatcherCriterion is the same escape as wsaCriterion, for the pin whose
+// subject is the shared decision function.
 const (
 	wsaRouter    = "bgSeatAbstainIfOutside"
 	wsaCriterion = "bgSeatEndedFromOutside"
+
+	wsaWatcherRouter    = "wwAbstainIfOutside"
+	wsaWatcherCriterion = "bgSeatStatusFromOutside"
+	wsaWatcherRun       = "runWallWatch"
 )
 
 // wsaRunVerbs are the calls that make a function the one that RAN the seat,
@@ -84,10 +95,18 @@ var wsaRunVerbs = map[string]bool{
 }
 
 // wsaSite is one seat run: where it is, and which function has to route.
+//
+// `top` is the TOP-LEVEL declaration the site is in, and only the watcher
+// half sets it (ranger-base-jqdm2): the ROUTER has to be in the innermost
+// function, so that one arm of a member cannot lose it behind a sibling that
+// keeps it, while the CRITERION escape is a property of the whole test — a
+// pin whose subject is the decision grades it in its arms and may transport
+// the status through a closure to get there.
 type wsaSite struct {
 	line  int
 	owner string // the routing function's label, for the message
 	body  ast.Node
+	top   ast.Node
 }
 
 // wsaBwrapLiteral answers whether a call is `exec.Command("bwrap", …)` or
@@ -267,6 +286,251 @@ func wsaUnrouted(t *testing.T, name, src string) (unrouted []string, sites int) 
 	return unrouted, sites
 }
 
+// ─── the watcher-run half (ranger-base-jqdm2) ────────────────────────────────
+
+// wsaWatcherLiveSeat answers three things about a call: whether it is
+// runWallWatch, whether the seat it starts is a LIVE bwrap, and whether that
+// was readable at all.
+//
+// THE KEY IS THE RENDERED PROGRAM, as arm 1's is: a `Bwrap:` field whose
+// value is a []string literal whose first element is the string "bwrap". The
+// three fixtures that pass `[]string{"/bin/false"}` start no sandbox and have
+// no seat for the box to kill — their subject is what the watcher does when
+// bwrap never reports a child — so they are read and correctly found to be
+// nobody's seat, exactly as `exec.Command("git", …)` is in arm 1. A `Bwrap:`
+// whose value is a VARIABLE cannot be read this way and is carried by
+// wsaWatcherSiteRegister instead, which is the honest shape rather than a
+// rule that guesses.
+func wsaWatcherLiveSeat(c *ast.CallExpr) (isRun, live, readable bool) {
+	id, ok := c.Fun.(*ast.Ident)
+	if !ok || id.Name != wsaWatcherRun {
+		return false, false, false
+	}
+	// Bwrap sits inside wallWatchOpts inside the wallWatchRun literal, so
+	// the whole argument subtree is searched for the key rather than a fixed
+	// path through it: a field order or a nesting change must not silently
+	// stop this rule matching.
+	for _, a := range c.Args {
+		var found *ast.KeyValueExpr
+		ast.Inspect(a, func(x ast.Node) bool {
+			kv, ok := x.(*ast.KeyValueExpr)
+			if !ok {
+				return true
+			}
+			if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "Bwrap" {
+				found = kv
+			}
+			return true
+		})
+		if found == nil {
+			continue
+		}
+		cl, ok := found.Value.(*ast.CompositeLit)
+		if !ok || len(cl.Elts) == 0 {
+			return true, false, false
+		}
+		lit, ok := cl.Elts[0].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true, false, false
+		}
+		return true, lit.Value == `"bwrap"` || lit.Value == "`bwrap`", true
+	}
+	return true, false, false
+}
+
+// wsaChanIntNames is every identifier this file makes a `chan int`: the
+// watcher's exit status in transit. A watcher runs in a goroutine and sends
+// its code down one of these, so the place that READS the status is a receive
+// and not the run — and the read is what has to route, because it is the line
+// that compares the code to a number the fixture expected.
+//
+// RESOLUTION IS BY NAME, within the file, and deliberately crude: the type of
+// `code` at `c := <-code` cannot be resolved from an AST alone (it is the
+// result of a call, in a different function, in the same package). A file
+// that declares `code` as a chan int anywhere therefore makes every `<-code`
+// in it a status read. The cost is a name collision inside one test file; the
+// alternative is a rule that reads no receive at all, which is the hole
+// ranger-base-jqdm2 came through — the only member whose seat run arm 1 could
+// have seen is launchOn's, and every one of the members that actually red
+// reads its status somewhere else.
+func wsaChanIntNames(f *ast.File) map[string]bool {
+	isChanInt := func(e ast.Expr) bool {
+		ct, ok := e.(*ast.ChanType)
+		if !ok {
+			return false
+		}
+		id, ok := ct.Value.(*ast.Ident)
+		return ok && id.Name == "int"
+	}
+	out := map[string]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.AssignStmt:
+			for i, rhs := range v.Rhs {
+				call, ok := rhs.(*ast.CallExpr)
+				if !ok || len(call.Args) == 0 {
+					continue
+				}
+				if fun, ok := call.Fun.(*ast.Ident); !ok || fun.Name != "make" {
+					continue
+				}
+				if !isChanInt(call.Args[0]) || i >= len(v.Lhs) {
+					continue
+				}
+				if id, ok := v.Lhs[i].(*ast.Ident); ok {
+					out[id.Name] = true
+				}
+			}
+		case *ast.Field: // a parameter, or a struct field holding one
+			if isChanInt(v.Type) {
+				for _, n := range v.Names {
+					out[n.Name] = true
+				}
+			}
+		case *ast.ValueSpec:
+			if v.Type != nil && isChanInt(v.Type) {
+				for _, n := range v.Names {
+					out[n.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// wsaWatcherSites is every place a watcher's exit status is READ, owned by
+// the innermost function that reads it.
+//
+// WHAT IS A SITE, and it is not simply "a runWallWatch call". These fixtures
+// run the watcher in a `go func()` that sends its status down a channel and
+// read it somewhere else entirely — a `t.Run` arm, a helper taking the
+// channel, the launch loop's own non-blocking select. So a run whose value is
+// SENT to a channel is a producer and no site at all: it hands the status on,
+// the way arm 1's builders hand on an *exec.Cmd, and the receive is where an
+// arm can be wrong about it. A run whose value is used in place
+// (`got := runWallWatch(…)`) is both at once and is a site.
+//
+// THE OWNER IS THE INNERMOST FUNCTION, literals included, which is what makes
+// this rule bite inside a member that has several arms: a test whose two
+// `t.Run` closures each read a status must route in BOTH, and attributing the
+// pair to their parent would let either one lose its routing silently.
+func wsaWatcherSites(f *ast.File, fset *token.FileSet) []wsaSite {
+	chans := wsaChanIntNames(f)
+	// The runs whose value is handed to a channel: producers, not sites.
+	handedOn := map[ast.Node]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if s, ok := n.(*ast.SendStmt); ok {
+			if c, ok := s.Value.(*ast.CallExpr); ok {
+				handedOn[c] = true
+			}
+		}
+		return true
+	})
+
+	type frame struct {
+		node  ast.Node
+		label string
+	}
+	var chain []frame
+	var out []wsaSite
+	add := func(n ast.Node) {
+		f := chain[len(chain)-1]
+		label := f.label
+		if len(chain) > 1 {
+			label = chain[0].label + "'s " + label
+		}
+		out = append(out, wsaSite{line: fset.Position(n.Pos()).Line, owner: label, body: f.node, top: chain[0].node})
+	}
+	var walk func(n ast.Node)
+	walk = func(n ast.Node) {
+		ast.Inspect(n, func(x ast.Node) bool {
+			switch v := x.(type) {
+			case *ast.FuncDecl:
+				if v.Body == nil {
+					return false
+				}
+				chain = append(chain, frame{v.Body, qcsName(wsaRecv(v), v.Name.Name)})
+				walk(v.Body)
+				chain = chain[:len(chain)-1]
+				return false
+			case *ast.FuncLit:
+				chain = append(chain, frame{v.Body, "func literal"})
+				walk(v.Body)
+				chain = chain[:len(chain)-1]
+				return false
+			case *ast.CallExpr:
+				if len(chain) == 0 || handedOn[v] {
+					return true
+				}
+				if isRun, live, _ := wsaWatcherLiveSeat(v); isRun && live {
+					add(v)
+				}
+			case *ast.UnaryExpr:
+				if v.Op != token.ARROW || len(chain) == 0 {
+					return true
+				}
+				if id, ok := v.X.(*ast.Ident); ok && chans[id.Name] {
+					add(v)
+				}
+			}
+			return true
+		})
+	}
+	walk(f)
+	return out
+}
+
+// wsaWatcherUnrouted is the watcher half of the rule, over one parsed source,
+// and a function for the same reason wsaUnrouted is: the controls drive it
+// over planted source with no bwrap and no fixture.
+func wsaWatcherUnrouted(t *testing.T, name, src string) (unrouted []string, sites int) {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, name, src, 0)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	for _, s := range wsaWatcherSites(f, fset) {
+		sites++
+		if qcsHas(qcsCalls(s.body), wsaWatcherRouter) {
+			continue
+		}
+		// THE CRITERION ESCAPE IS READ ON THE WHOLE TEST, and the router on
+		// the innermost function (wsaSite.top says why). The live half of
+		// this bead's own criterion is the shape that needs it: it IS the
+		// outside killer, so routing it would abstain on every run and hold
+		// the check at exit 3 forever (the grokleader row below is the same
+		// family), and it grades the decision in its two arms while a
+		// transport closure carries the status out to them.
+		top := qcsCalls(s.top)
+		if qcsHas(top, wsaWatcherCriterion) || qcsHas(top, wsaCriterion) {
+			continue
+		}
+		unrouted = append(unrouted, name+":"+strconv.Itoa(s.line)+" ("+s.owner+")")
+	}
+	return unrouted, sites
+}
+
+// wsaWatcherSiteRegister is the priced table of watcher-run seats whose
+// program this rule cannot read: a `Bwrap:` field whose value is a variable.
+// Same job, same arm shape and same reason as wsaVariableCommandRegister one
+// table down — the hole is named rather than silently covered, and a NEW
+// invisible watcher fixture cannot arrive without a reader.
+var wsaWatcherSiteRegister = []struct {
+	file, test, why string
+	routed          bool
+}{
+	{
+		file: "wallwatchtty_linux_test.go", test: "TestWallWatchARefusedSeatLeavesItsReasonOnDisk",
+		routed: false,
+		why: "EXEMPT: the table's `Bwrap` is the case's own field, and every case is a bwrap that " +
+			"CANNOT RUN — the subject is the refusal runWallWatch writes to the verdict file before " +
+			"any seat exists (ranger-base-r9slg), so there is no sandboxed seat for the box to kill. " +
+			"It is also not a member: the ratchet reds nothing here.",
+	},
+}
+
 // wsaVariableCommandRegister is the priced table of seat runs this pin's
 // bwrap LITERAL cannot see: an `exec.Command` whose program is a variable.
 // Each row is file · the top-level test it is in · what was decided and why.
@@ -341,6 +605,12 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 	// variable-program sites found, and the register rows they match.
 	found := map[string]bool{}
 	matched := map[int]bool{}
+	// Arm 3 is the watcher-run half (ranger-base-jqdm2), collected the same
+	// way: its own unrouted sites, and its own register.
+	wSites := 0
+	var wUnrouted []string
+	wFound := map[string]bool{}
+	wMatched := map[int]bool{}
 	for _, name := range names {
 		src, rerr := os.ReadFile(name)
 		if rerr != nil {
@@ -361,6 +631,45 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 		bad, n := wsaUnrouted(t, name, string(src))
 		sites += n
 		unrouted = append(unrouted, bad...)
+
+		wBad, wn := wsaWatcherUnrouted(t, name, string(src))
+		wSites += wn
+		wUnrouted = append(wUnrouted, wBad...)
+
+		// The watcher half's register: a runWallWatch whose Bwrap is a
+		// variable, so this rule cannot tell whether it starts a seat.
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(x ast.Node) bool {
+				c, ok := x.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				isRun, _, readable := wsaWatcherLiveSeat(c)
+				if !isRun || readable {
+					return true
+				}
+				wFound[name+"\x00"+fn.Name.Name] = true
+				for i, row := range wsaWatcherSiteRegister {
+					if row.file == name && row.test == fn.Name.Name {
+						wMatched[i] = true
+						if row.routed && !qcsHas(qcsCalls(fn.Body), wsaWatcherRouter) {
+							t.Errorf("%s: %s is registered as routing the abstention for a watcher-run seat whose bwrap argv is a variable, and it does not call %s. %s", name, fn.Name.Name, wsaWatcherRouter, row.why)
+						}
+						if !row.routed && qcsHas(qcsCalls(fn.Body), wsaWatcherRouter) {
+							t.Errorf("%s: %s is registered EXEMPT and now calls %s. Read the row before you keep it: %s", name, fn.Name.Name, wsaWatcherRouter, row.why)
+						}
+						return true
+					}
+				}
+				t.Errorf("%s:%d: %s runs a seat through %s whose bwrap argv is a VARIABLE, and no row of wsaWatcherSiteRegister names it. This rule reads the literal `Bwrap: []string{\"bwrap\", …}`, so a fixture spelled this way is invisible to it. Add a row saying whether this site routes %s (ranger-base-jqdm2's reason: a seat the box SIGKILLs is silent and the watcher hands that back as 128+9, which every arm here compares to a number it expected) or why routing it would be wrong.",
+					name, fset.Position(c.Pos()).Line, fn.Name.Name, wsaWatcherRun, wsaWatcherRouter)
+				return true
+			})
+		}
 
 		// The variable-program half, in the same member file.
 		for _, d := range f.Decls {
@@ -403,6 +712,17 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 			u, wsaRouter)
 	}
 
+	for _, u := range wUnrouted {
+		t.Errorf("%s runs a seat through %s, or reads the status of one, and does not route the abstention. Call %s(t, <what ran>, code, said) with the watcher's exit code before anything compares it to a number: a seat the box ends says NOTHING and the watcher hands that back as 128+9 or 128+15, so a `want 1`, a `want 7` or a `want 137` reads a death that measured nothing as a wall regression — ADR 0097 D3's exit 1, which ADR 0088 D5's ratchet files as one P1 `-l code` against whoever landed last. ranger-base-jqdm2 was exactly that: `watcher exit = 137, want 7 (the seat's own): NOTHING`, charged to a landing that compiles no watcher. The abstention is D3's exit 3: never a pass, never a red. wallwatchlive_test.go holds the door and bwrapgitrefslive_test.go the criterion.",
+			u, wsaWatcherRun, wsaWatcherRouter)
+	}
+
+	for i, row := range wsaWatcherSiteRegister {
+		if !wMatched[i] {
+			t.Errorf("wsaWatcherSiteRegister row %d names %s in %s, and this walk found no watcher-run seat with a variable bwrap argv there. A stale row is a hole nobody is reading any more: delete it, or follow the site to its new home.", i, row.test, row.file)
+		}
+	}
+
 	for i, row := range wsaVariableCommandRegister {
 		if !matched[i] {
 			t.Errorf("wsaVariableCommandRegister row %d names %s in %s, and this walk found no seat run with a variable program there. A stale row is a hole nobody is reading any more: delete it, or follow the site to its new home.", i, row.test, row.file)
@@ -424,7 +744,18 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 	if len(found) < 3 {
 		t.Errorf("this pin found %d member tests running a command with a variable program (4 rows on 2026-11-22) — arm 2's reading has stopped matching and the register is holding nothing", len(found))
 	}
-	t.Logf("%d members in %d files, %d literal bwrap seat runs, %d variable-program member tests", members, memberFiles, sites, len(found))
+	// The watcher half's floors (ranger-base-jqdm2). MEASURED 2026-11-22: 8
+	// sites in the three member files that run a seat that way — 2 runs read
+	// in place and 6 reads of a status a producer handed to a channel (the
+	// three other live runWallWatch fixtures ARE those producers, so they are
+	// counted at their read and not twice).
+	if wSites < 6 {
+		t.Errorf("this pin found %d watcher-run status sites in the member set (8 on 2026-11-22) — the `%s` reading or the chan-int reading has stopped matching, and an unrouted watcher member would now pass", wSites, wsaWatcherRun)
+	}
+	if len(wFound) < 1 {
+		t.Errorf("this pin found %d member tests running a watcher seat with a variable bwrap argv (1 row on 2026-11-22) — arm 3's register is holding nothing", len(wFound))
+	}
+	t.Logf("%d members in %d files, %d literal bwrap seat runs, %d variable-program member tests, %d watcher-run sites, %d variable-argv watcher tests", members, memberFiles, sites, len(found), wSites, len(wFound))
 }
 
 // TestQAWallMemberAbstentionRuleMatchesWhatItClaims drives the rule above
@@ -512,6 +843,123 @@ func TestLiveWallX(t *testing.T) {
 		got, _ := wsaUnrouted(t, "planted.go", c.src)
 		if len(got) != c.want {
 			t.Errorf("%s: the rule found %d unrouted site(s) %v, want %d", c.name, len(got), got, c.want)
+		}
+	}
+
+	// THE WATCHER-RUN HALF's controls (ranger-base-jqdm2), over the same
+	// planted-source rule. Every row is a shape the three real member files
+	// have, plus the two negatives that say what this rule must NOT claim.
+	for _, c := range []struct {
+		name string
+		src  string
+		want int // unrouted sites
+	}{
+		{"a live watcher fixture that routes is clean", head + `
+func TestLiveWallX(t *testing.T) {
+	got := runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}, Stdout: &out})
+	wwAbstainIfOutside(t, "x", got, out.String())
+	if got != 7 { t.Errorf("x") }
+}`, 0},
+		{"a live watcher fixture that does not route is the finding", head + `
+func TestLiveWallX(t *testing.T) {
+	got := runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}, Stdout: &out})
+	if got != 7 { t.Errorf("x") }
+}`, 1},
+		{"the run in a goroutine and the read in a closure are ONE owner", head + `
+func TestLiveWallX(t *testing.T) {
+	code := make(chan int, 1)
+	go func() { code <- runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}}) }()
+	t.Run("arm", func(t *testing.T) {
+		c := <-code
+		wwAbstainIfOutside(t, "x", c, "")
+		if c != 1 { t.Errorf("x") }
+	})
+}`, 0},
+		{"the same shape with the routing deleted is the finding, at the READ", head + `
+func TestLiveWallX(t *testing.T) {
+	code := make(chan int, 1)
+	go func() { code <- runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}}) }()
+	t.Run("arm", func(t *testing.T) {
+		c := <-code
+		if c != 1 { t.Errorf("x") }
+	})
+}`, 1},
+		{"TWO arms, and an arm that loses its routing is found although its sibling keeps one", head + `
+func TestLiveWallX(t *testing.T) {
+	code := make(chan int, 1)
+	go func() { code <- runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}}) }()
+	t.Run("killed", func(t *testing.T) {
+		c := <-code
+		wwAbstainIfOutside(t, "x", c, "")
+		if c != 137 { t.Errorf("x") }
+	})
+	t.Run("control", func(t *testing.T) {
+		c := <-code
+		if c != 7 { t.Errorf("x") }
+	})
+}`, 1},
+		{"a transport closure in a test whose subject is the criterion is not a finding", head + `
+func TestLiveWallX(t *testing.T) {
+	run := func(script string) (int, string) {
+		code := make(chan int, 1)
+		go func() { code <- runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}}) }()
+		c := <-code
+		return c, ""
+	}
+	got, said := run("x")
+	if !bgSeatStatusFromOutside(got, false, said) { t.Fatal("x") }
+}`, 0},
+		{"the SAME closure in a test that grades nothing is still the finding", head + `
+func TestLiveWallX(t *testing.T) {
+	run := func(script string) (int, string) {
+		code := make(chan int, 1)
+		go func() { code <- runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}}) }()
+		c := <-code
+		return c, ""
+	}
+	got, said := run("x")
+	if got != 7 { t.Fatal(said) }
+}`, 1},
+		{"a run whose value is handed to a channel is a producer, not a site", head + `
+func TestLiveWallX(t *testing.T) {
+	code := make(chan int, 1)
+	go func() { code <- runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}}) }()
+	_ = code
+}`, 0},
+		{"a helper that takes the channel is read by its own parameter", head + `
+func wwWaitX(t *testing.T, code chan int, said *wwSaid) {
+	if c := <-code; c != 1 { t.Errorf("x") }
+}
+func TestLiveWallX(t *testing.T) { wwWaitX(t, nil, nil) }`, 1},
+		{"the criterion's own pin is not a finding", head + `
+func TestLiveWallX(t *testing.T) {
+	got := runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"bwrap", "--args", "3"}}})
+	if !bgSeatStatusFromOutside(got, false, "") { t.Fatal("x") }
+}`, 0},
+		{"/bin/false starts no seat, so it is nobody's", head + `
+func TestLiveWallX(t *testing.T) {
+	got := runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: []string{"/bin/false"}}})
+	if got == 0 { t.Errorf("x") }
+}`, 0},
+		{"a variable bwrap argv is invisible to this rule (the register carries it)", head + `
+func TestLiveWallX(t *testing.T) {
+	got := runWallWatch(wallWatchRun{Opts: wallWatchOpts{Bwrap: c.bwrap}})
+	if got == 0 { t.Errorf("x") }
+}`, 0},
+		{"a receive from a channel that is not a chan int is not a status", head + `
+func TestLiveWallX(t *testing.T) {
+	waited := make(chan struct{})
+	<-waited
+}`, 0},
+		{"a SEND of a status is not a read", head + `
+func TestLiveWallX(t *testing.T) {
+	code := make(chan int, 1)
+	code <- 7
+}`, 0},
+	} {
+		got, _ := wsaWatcherUnrouted(t, "planted.go", c.src)
+		if len(got) != c.want {
+			t.Errorf("%s: the watcher rule found %d unrouted site(s) %v, want %d", c.name, len(got), got, c.want)
 		}
 	}
 

@@ -101,10 +101,10 @@ func TestLiveWallWatchDiscardsWhatWasTypedIntoTheKilledSeat(t *testing.T) {
 		typed = wwPending(t, slave)
 	}
 	lock := filepath.Join(t.TempDir(), "wall-watch.lock")
-	code, _ := s.launchOn(t, st, "seat-heypq", lock, slave)
+	code, _, said := s.launchOn(t, st, "seat-heypq", lock, slave)
 	bg := s.bg(t)
 	renameOver(t, s.deny, false)
-	wwWaitKilled(t, code, "deny")
+	wwWaitKilled(t, code, said, "deny")
 	wwGone(t, bg, "deny")
 	if typed <= 0 {
 		t.Fatalf("the fixture never typed while the watcher was filing (pending=%d); the pin proves nothing", typed)
@@ -319,10 +319,10 @@ func TestLiveWallWatchDiscardsAPromptLargerThanTheTerminalQueue(t *testing.T) {
 	st := &typingStore{}
 	st.onCreate = func() { done = wwTypeInFlight(t, master, slave, wwBigPrompt()) }
 	lock := filepath.Join(t.TempDir(), "wall-watch.lock")
-	code, _ := s.launchOn(t, st, "seat-69vw5", lock, slave)
+	code, _, said := s.launchOn(t, st, "seat-69vw5", lock, slave)
 	bg := s.bg(t)
 	renameOver(t, s.deny, false)
-	wwWaitKilled(t, code, "deny")
+	wwWaitKilled(t, code, said, "deny")
 	wwGone(t, bg, "deny")
 	if done == nil {
 		t.Fatal("the fixture never typed while the watcher was filing; the pin proves nothing")
