@@ -52,8 +52,6 @@ end if the call blocks.
 `GOOS=darwin go vet` is clean for both arms the change touches; the darwin
 behaviour of the plants is not measured here.
 
-## Not touched
+## Not closed here
 
-The parent directories (`gates/<p>/`, `state/cages/<p>/<s>/`) are still
-`MkdirAll`'d and walked with links followed. Those are not leaves a wall
-binds rw, and the bead's scope is the leaf.
+- ranger-base-byqv0
