@@ -41,6 +41,13 @@ import (
 // runDoor: that helper requires the report line every run that got as far as
 // the filter prints, and a refusal prints no report at all — which is the
 // thing being pinned.
+//
+// That holds for ONE of the three arms, and the other two are supervised
+// runs like any other, so they are held to the report arithmetic too
+// (ranger-base-l9pk7: a door spending two verdicts per notification passed
+// both of them). The witness is the discriminator and not a second guess at
+// the exit code: a refused door starts nothing, so where the command ran
+// the run got past the filter and printed a report to reconcile.
 func runRoom(t *testing.T, env []string, args ...string) (code int, out string, ran bool) {
 	t.Helper()
 	dir := t.TempDir()
@@ -62,7 +69,11 @@ func runRoom(t *testing.T, env []string, args ...string) (code int, out string, 
 		t.Fatalf("running the door: %v\n%s", err, b)
 	}
 	_, statErr := os.Stat(witness)
-	return code, string(b), statErr == nil
+	out, ran = string(b), statErr == nil
+	if ran {
+		wantReportAccountsForEveryNotification(t, out)
+	}
+	return code, out, ran
 }
 
 // TestAShortRoomIsARefusalAndNothingRuns is pins 1 and 2.

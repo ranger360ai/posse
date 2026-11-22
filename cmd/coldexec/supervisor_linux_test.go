@@ -181,18 +181,19 @@ func TestTheDoorIsBuiltInsidePossesOwnTempNamespace(t *testing.T) {
 }
 
 // doorRun is one supervised run: what it printed, what it exited with, how
-// many cold execs it says it delayed, how many notifications it took, what
-// its verdict counts sum to, and how long each timed step took.
+// many cold execs it says it delayed, how many notifications it took, and
+// how long each timed step took.
+//
+// The verdict sum is not a field: it is read by reportArithmetic below, off
+// the output alone, because the assertion that uses it has to hold for the
+// supervised runs this struct is not built for either (room_linux_test.go's
+// runRoom and ARM 11 — ranger-base-l9pk7).
 type doorRun struct {
 	code    int
 	out     string
 	delayed int
 	notifs  int
-	// verdicts is sum(verdicts) as the REPORT prints them, which is the
-	// number a seat reconciling that report has to add up by hand. See
-	// wantReportAccountsForEveryNotification.
-	verdicts int
-	elapsed  map[string]time.Duration
+	elapsed map[string]time.Duration
 }
 
 var (
@@ -251,25 +252,53 @@ func runDoor(t *testing.T, script string, args ...string) doorRun {
 	default:
 		t.Fatalf("running the door: %v\n%s", err, out)
 	}
-	if m := reReport.FindStringSubmatch(r.out); m == nil {
+	a, ok := reportArithmetic(r.out)
+	if !ok {
 		t.Fatalf("the run printed no report line, so it accounted for nothing:\n%s", r.out)
-	} else {
-		n := make([]int, 5)
-		for i := range n {
-			n[i], _ = strconv.Atoi(m[i+1])
-		}
-		r.notifs, r.delayed = n[0], n[1]
-		r.verdicts = n[1] + n[2] + n[3] + n[4] +
-			reportCount(reWithdrawnN, r.out) + reportCount(reTruncatedN, r.out) + reportCount(reHolesN, r.out)
 	}
+	r.notifs, r.delayed = a.notifs, a.delayed
 	for _, m := range reElapsed.FindAllStringSubmatch(r.out, -1) {
 		ms, _ := strconv.Atoi(m[2])
 		r.elapsed[m[1]] = time.Duration(ms) * time.Millisecond
 	}
 	// Asserted here rather than in a pin of its own: it is a property of
 	// every supervised run and it costs a parse of output already captured.
-	r.wantReportAccountsForEveryNotification(t)
+	wantReportAccountsForEveryNotification(t, r.out)
 	return r
+}
+
+// reportSums is one end-of-run report read as numbers: what it printed, and
+// what a seat reconciling it has to add up by hand. verdicts is the sum of
+// all nine verdict counts.
+type reportSums struct {
+	notifs   int
+	delayed  int
+	verdicts int
+}
+
+// reportArithmetic reads them. Four of the nine verdict counts are on the
+// report's first line and five are on conditional lines a report with none
+// of them does not print at all, which is what reportCount below is for. ok
+// is false when there is no report line — what a run refused before the
+// filter prints.
+//
+// It takes the output and not a doorRun, so that a supervised run built
+// without that struct can be held to the same arithmetic.
+func reportArithmetic(out string) (reportSums, bool) {
+	m := reReport.FindStringSubmatch(out)
+	if m == nil {
+		return reportSums{}, false
+	}
+	n := make([]int, 5)
+	for i := range n {
+		n[i], _ = strconv.Atoi(m[i+1])
+	}
+	return reportSums{
+		notifs:  n[0],
+		delayed: n[1],
+		verdicts: n[1] + n[2] + n[3] + n[4] +
+			reportCount(reWithdrawnN, out) + reportCount(reTruncatedN, out) + reportCount(reHolesN, out),
+	}, true
 }
 
 // reportCount reads one of the report's conditional lines. A line the
@@ -370,23 +399,42 @@ func (r doorRun) wantNoHoles(t *testing.T) {
 // is what a defect looks like when nothing pins it, not what pinning it
 // looks like. ARM 22 reads the same invariant off handle(), where it is
 // deterministic. What this assertion is FOR is the number a seat actually
-// reconciles, held on every supervised run against every future way of
-// spending a verdict twice or spending none.
+// reconciles, held on every supervised run that printed a report against
+// every future way of spending a verdict twice or spending none.
+//
+// THAT REACH IS NOW THE CODE'S AND NOT ONLY THIS COMMENT'S
+// (ranger-base-l9pk7). It used to be a method on doorRun called from
+// runDoor, and the sentence above said "every supervised run" while three
+// runs that print a reconcilable report were outside it: ARM 11, which
+// builds its own command because it must set POSSE_COLD_EXEC_DELAY and
+// runDoor scrubs it, and runRoom's two arms where the door runs to the end.
+// A door double-spending every notification — `d.record(pending, …)` twice
+// in answer() — redded 20 tests with 19 distinct messages from this
+// assertion and passed all three of those (MEASURED 2026-11-22, this box,
+// linux 7.2.15 x86_64, go1.27.3). It is a free function over the output for
+// that reason: a supervised run assembled without doorRun is still a run
+// whose report has to close. The membership itself is held by
+// TestQAEverySupervisedRunHoldsTheReportArithmetic, because nothing held it
+// and that is how three accumulated.
 //
 // It stands down on one line of output, and only that one: when drain gives
 // up with handlers still sleeping the report is printed over verdicts that
 // have not been decided yet, so the sum UNDERSHOOTS — which is the leak
 // that line names and not the arithmetic.
-func (r doorRun) wantReportAccountsForEveryNotification(t *testing.T) {
+func wantReportAccountsForEveryNotification(t *testing.T, out string) {
 	t.Helper()
-	if strings.Contains(r.out, "the command exited with execs still held") {
+	if strings.Contains(out, "the command exited with execs still held") {
 		return
 	}
-	if r.verdicts != r.notifs {
+	a, ok := reportArithmetic(out)
+	if !ok {
+		t.Fatalf("the run printed no report line, so it accounted for nothing:\n%s", out)
+	}
+	if a.verdicts != a.notifs {
 		t.Errorf("the report prints %d execve notifications and verdict counts summing to %d. "+
 			"Every notification lands on exactly one verdict (door.verdicts), so a sum over is a "+
 			"notification charged twice and a sum under is one charged for nothing — and either way "+
-			"the report cannot be reconciled:\n%s", r.notifs, r.verdicts, r.out)
+			"the report cannot be reconciled:\n%s", a.notifs, a.verdicts, out)
 	}
 }
 
@@ -642,6 +690,10 @@ printf '#!/bin/sh\nexit 0\n' > p; chmod +x p; ./p`)
 	if !regexp.MustCompile(`1 cold first execs delayed`).MatchString(string(out)) {
 		t.Errorf("the run delayed something other than the one plant:\n%s", out)
 	}
+	// This run does not go through runDoor, so the report arithmetic is
+	// asserted by hand — it is a property of the run and not of the helper
+	// (ranger-base-l9pk7).
+	wantReportAccountsForEveryNotification(t, string(out))
 }
 
 // ARM 12: the epoch test reads the CTIME, and a plant whose MTIME predates
@@ -1736,8 +1788,8 @@ echo "CALLER EXIT $?"
 //
 // WHY THIS IS NOT A SUPERVISED RUN, which every pin above but ARM 19 is —
 // and it is NOT that a supervised run cannot see the defect. It can, a
-// quarter of the time: doorRun.wantReportAccountsForEveryNotification, the
-// assertion runDoor makes on every run in this file, redded 4 of 16 package
+// quarter of the time: wantReportAccountsForEveryNotification, the
+// assertion every supervised run in this package makes, redded 4 of 16 package
 // runs against the pre-fix door, in three different tests (MEASURED
 // 2026-11-22; the numbers are on that method). The withdrawal arrives while
 // the door is inside its /proc reads for an `old` exec of /bin/sh or of

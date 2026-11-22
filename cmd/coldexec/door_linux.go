@@ -106,8 +106,10 @@ type door struct {
 	// was — a withdrawn `old` really was old — it is arithmetic a seat
 	// reconciling the report cannot do. Pinned by
 	// TestANotificationSpendsExactlyOneVerdict and, at the report, by
-	// doorRun.wantReportAccountsForEveryNotification on every supervised
-	// run in the pins.
+	// wantReportAccountsForEveryNotification on every supervised run in the
+	// pins — a membership
+	// TestQAEverySupervisedRunHoldsTheReportArithmetic holds, because for
+	// three runs the claim was the comment's alone (ranger-base-l9pk7).
 	verdicts [numVerdicts]atomic.Int64
 
 	// verbose prints one line per notification. It is for triage — which
