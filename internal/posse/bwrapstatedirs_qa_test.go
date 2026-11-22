@@ -39,7 +39,30 @@ import (
 // arm that did not unset it would be measuring this box.
 func bwsHome(t *testing.T, cfg string) string {
 	t.Helper()
-	home := absResolve(t.TempDir())
+	// UNDER /tmp AND NOT t.TempDir(), because the render the D19 arm drives
+	// judges every grant against the per-seat wall root composed from THIS
+	// home (bwrapRefuseWallRootGrant), and that refusal stands down only
+	// where the home is itself inside the unconditional `/tmp` grant — which
+	// is the stand-down that function's own comment says every fixture in
+	// this package relies on. On linux t.TempDir() IS under /tmp and the
+	// stand-down was free; on darwin it is TMPDIR under `/var/folders/…`,
+	// granted but not /tmp, so the wall-root refusal spoke first and the
+	// control arm read it instead of the config-file refusal it was written
+	// for (ranger-base-zbmxc, MEASURED on macos arm 1 at b2509fba and
+	// reproduced here with TMPDIR=/var/tmp/…, same line and same message).
+	// Every arm in this file takes its home from here for wckFixture's
+	// reason: so an arm written tomorrow cannot forget it.
+	//
+	// The parent as the package const and a `posse-` prefix for btLive's
+	// reason (internal/treepins/temproot_qa_test.go): the t.Cleanup below
+	// runs on no SIGKILL and no -timeout panic, and `posse-*` is the only
+	// class of scripts/reap-test-tmp.sh that reaches a root in /tmp.
+	home, err := os.MkdirTemp(bwrapTmpMount, "posse-bwsd-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	home = absResolve(home)
 	t.Setenv("HOME", home)
 	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 	if cfg == "" {

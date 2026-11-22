@@ -723,8 +723,19 @@ func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
 	}
 	// …and it must be the component codexWritableRoot cannot resolve, so
 	// the root really arrives at the line with a link in it.
-	if got := codexWritableRoot(slots); got != slots {
-		t.Fatalf("fixture: %s resolves to %s, so no symlink component reaches the line", slots, got)
+	//
+	// ASKED AS symlinkComponent AND NOT AS `codexWritableRoot(slots) ==
+	// slots`, which was the same question only on a host where nothing ABOVE
+	// the dangling link is a link too. On darwin t.TempDir() is under
+	// `/var/folders/…` and `/var` is a symlink to `/private/var`, so the
+	// rendered root differs from the raw one for a reason that has nothing to
+	// do with this fixture and the precondition failed over a premise that
+	// held (ranger-base-zbmxc, MEASURED on macos arm 1 at b2509fba and
+	// reproduced here under a symlinked TMPDIR). symlinkComponent is what
+	// refusedWritableRoot itself asks, so the fixture is now checked by the
+	// production predicate whose answer the arms below depend on.
+	if got := symlinkComponent(slots); got != dangling {
+		t.Fatalf("fixture: the deepest symlink component of %s is %q, want %s — no unresolvable symlink component reaches the line", slots, got, dangling)
 	}
 	// The store repo's git dir is on NO line any more, which is why it is
 	// not this fixture's dangling root (ranger-base-kfrpv).
@@ -740,8 +751,12 @@ func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
 	if err == nil {
 		t.Fatal("a codex launch whose line names a root codex refuses must not happen: every command in that session fails")
 	}
-	if !strings.Contains(err.Error(), AbbrevHome(slots)) {
-		t.Errorf("the refusal must name the root: %v", err)
+	// The RENDERED root, which is what the line carries and so what the
+	// refusal names (codexReachRow prints `AbbrevHome(root)` off the token it
+	// read): identical to `slots` wherever nothing above the dangling link is
+	// a link, and `/private/var/…` on darwin.
+	if !strings.Contains(err.Error(), AbbrevHome(codexWritableRoot(slots))) {
+		t.Errorf("the refusal must name the root %s: %v", AbbrevHome(codexWritableRoot(slots)), err)
 	}
 	if !strings.Contains(err.Error(), "unreachable along with everything else") {
 		t.Errorf("the reachability row is what refuses an ordinary launch, and it must say the store is unreachable: %v", err)

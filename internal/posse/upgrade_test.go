@@ -469,7 +469,7 @@ func TestUpgradeBuildHandsCleanBuildTheRealSourceCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := WriteExecutable(filepath.Join(wt, "scripts", "clean-build.sh"),
-		[]byte("#!/bin/sh\necho \"source=${POSSE_BUILD_SOURCE-UNSET} out=$1 cwd=$PWD\"\n"), 0o755); err != nil {
+		[]byte("#!/bin/sh\necho \"source=${POSSE_BUILD_SOURCE-UNSET} out=$1 cwd=$(pwd -P)\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -485,8 +485,17 @@ func TestUpgradeBuildHandsCleanBuildTheRealSourceCheckout(t *testing.T) {
 	}
 	// And it runs IN the worktree, because that is what makes it build the
 	// commit the tests passed on rather than whatever the cwd holds.
-	if !strings.Contains(got, "cwd="+wt) {
-		t.Errorf("clean-build.sh ran somewhere other than the worktree: %q, want cwd=%s", got, wt)
+	//
+	// RESOLVED ON BOTH SIDES, which is the whole of what `pwd -P` above and
+	// absResolve here are for: a cwd is a path the KERNEL answers, so the
+	// shell can only ever print the real one, and on darwin t.TempDir() hands
+	// back `/var/folders/…` whose `/var` is a symlink to `/private/var` — the
+	// raw spelling matches nothing the script could say (ranger-base-zbmxc,
+	// MEASURED on macos arm 1 at b2509fba and reproduced here under a
+	// symlinked TMPDIR). On linux absResolve is the identity and this reads
+	// exactly as it did.
+	if want := absResolve(wt); !strings.Contains(got, "cwd="+want) {
+		t.Errorf("clean-build.sh ran somewhere other than the worktree: %q, want cwd=%s", got, want)
 	}
 }
 

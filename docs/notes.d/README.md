@@ -10,6 +10,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 - [ranger-base-zm03j](ranger-base-zm03j.md) — Verifying four closes, and the platform half nothing read (ranger-base-zm03j) — 2026-11-21
 - [ranger-base-zcj0z](ranger-base-zcj0z.md) — Arm 1 ran no Go test on either platform for nine days, and both reasons were loud (ranger-base-zcj0z) — 2026-11-21
+- [ranger-base-zbmxc](ranger-base-zbmxc.md) — Five macos arm-1 reds, and the three darwin path shapes a linux box can plant (ranger-base-zbmxc) — 2026-11-21
 - [ranger-base-z56s9](ranger-base-z56s9.md) — The ubuntu "pdeathsig 0" was read on the wrong thread, so it never established that the runner clears it (ranger-base-z56s9) — 2026-11-21
 - [ranger-base-yusee](ranger-base-yusee.md) — ranger-base-yusee — four closes verified, and the two things a green suite still licenses — 2026-11-21
 - [ranger-base-ydw7p](ranger-base-ydw7p.md) — The wall pins' fixture root is declarable, and an undeclared abstention is not `ok` (ranger-base-ydw7p) — 2026-11-21

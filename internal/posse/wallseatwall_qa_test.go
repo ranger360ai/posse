@@ -43,13 +43,22 @@ import (
 func TestQAWallSeatWallDirIsAPerSessionSiblingOfTheSeatCache(t *testing.T) {
 	t.Parallel()
 	const home = "/home/someone"
+	// SeatWallRoot COMPOSES FROM THE RESOLVED HOME on purpose (ADR 0100
+	// D2(a), stated at the function), so every expectation about its answer
+	// resolves the home too. The literal above is a real directory's parent
+	// on darwin: `/home` is an autofs link to `/System/Volumes/Data/home`, so
+	// the raw join named a path production would never answer and this arm
+	// was red on every macos leg while being green here, where `/home` is an
+	// ordinary directory and absResolve is the identity (ranger-base-zbmxc,
+	// MEASURED on macos arm 1 at b2509fba).
+	rhome := absResolve(home)
 	a, b := SeatWallDir(home, "/r1/wt/devops-x"), SeatWallDir(home, "/r2/wt/devops-x")
 	if a == b {
 		t.Errorf("SeatWallDir names one wall dir for two session dirs: %s", a)
 	}
 	root := SeatWallRoot(home)
-	if root != filepath.Join(home, ".cache", "posse-wall") {
-		t.Errorf("SeatWallRoot = %q, want <home>/.cache/posse-wall", root)
+	if root != filepath.Join(rhome, ".cache", "posse-wall") {
+		t.Errorf("SeatWallRoot = %q, want <resolved home>/.cache/posse-wall", root)
 	}
 	if !insideDir(root, a) || filepath.Dir(a) != root {
 		t.Errorf("SeatWallDir = %q, want a direct child of the wall root %q", a, root)
@@ -61,8 +70,13 @@ func TestQAWallSeatWallDirIsAPerSessionSiblingOfTheSeatCache(t *testing.T) {
 	}
 	// And the wall root is not inside the cache root, nor the other way
 	// round. A wall dir under the seat cache is the defect this ADR closes.
+	// The cache root as SeatCacheDir composes it — from the RAW home, which
+	// is the one place the two functions differ — and the containment asked
+	// through underDir, which resolves both sides: the subject here is the
+	// two DIRECTORIES and not either spelling of them, so a home behind a
+	// link must not be able to answer "disjoint" by spelling alone.
 	cacheRoot := filepath.Join(home, seatCacheRootRel)
-	if insideDir(cacheRoot, root) || insideDir(root, cacheRoot) {
+	if underDir(cacheRoot, root) || underDir(root, cacheRoot) {
 		t.Errorf("the wall root %q and the seat cache root %q contain one another — the seat is granted its cache, so its bind sources would sit under a grant again (ADR 0100 D1)", root, cacheRoot)
 	}
 	if SeatWallDir("", "/x") != "" || SeatWallDir("/h", "") != "" || SeatWallRoot("") != "" {

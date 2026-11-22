@@ -293,17 +293,33 @@ func TestQATheVenueCallSiteDiffersFromTheJudgesInTheKindAndTheChildOnly(t *testi
 		env      []string
 	}
 	var calls []call
-	c := newLandedChecker(a, &strings.Builder{})
+	// THE CHECKER'S OWN LOG, kept rather than discarded: every way this arm
+	// can render one cage instead of two is a step that DECLINED, and each of
+	// them says so on this writer and nowhere else. Thrown away, the failure
+	// below could only print the one call it got — which is how a host
+	// answering ADR 0097 D2's second question with `sandbox-exec` read as a
+	// write-set spelling bug for a whole bead (ranger-base-zbmxc).
+	out := &strings.Builder{}
+	c := newLandedChecker(a, out)
 	c.cage = func(_ *App, kind landedCageKind, child, tree string, writable, env []string) (landedCage, error) {
 		calls = append(calls, call{kind, child, tree, writable, env})
 		// The child as its own argv, like plainCage: the judge must answer
 		// GREEN for the wall step to be reached at all (ADR 0097 D2).
 		return landedCage{Argv: []string{child}, Env: env}, nil
 	}
+	// ADR 0097 D2's SECOND question, answered for the arm and not by the box
+	// — wckFixture's line, for wckFixture's reason, which this arm had to
+	// have too and did not: at `sandbox-exec` the wall step DOES NOT EXIST,
+	// so on every macos leg this arm measured the one line that declines it
+	// and read 1 cage where it wanted 2 (ranger-base-jyqk4's residual, found
+	// on macos arm 1 at b2509fba; MEASURED here by driving the mechanism the
+	// other way). What this pin is about is what the two production call
+	// sites PASS, which is not a property of the host running the suite.
+	c.wallMechFn = func() string { return WallBwrap }
 	c.once(repo, "main")
 
 	if len(calls) != 2 {
-		t.Fatalf("one landed check over a tree shipping both scripts rendered %d cage(s), want 2 — the judge's and the venue's (ADR 0097 D2): %+v", len(calls), calls)
+		t.Fatalf("one landed check over a tree shipping both scripts rendered %d cage(s), want 2 — the judge's and the venue's (ADR 0097 D2): %+v\n--- the checker said:\n%s", len(calls), calls, out.String())
 	}
 	j, v := calls[0], calls[1]
 	if j.kind != landedCageJudge || v.kind != landedCageVenue {
