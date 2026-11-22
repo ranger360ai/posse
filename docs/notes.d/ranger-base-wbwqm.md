@@ -118,9 +118,19 @@ so a fixture that drifts off the boundary says so instead of passing.
 ## What the suite said
 
 **The reading of record is a plain `make test`, exit 0, no skips of any kind**
-— MEASURED 2026-11-22 on this branch merged onto main at `d1c7f7f8`, zero
-FAIL lines, `cmd/posse` 121.5s, internal/posse's three arms 251.6s / 69.6s /
-154.2s, internal/treepins 149.6s. `go run ./cmd/checkorphans` clean.
+— MEASURED 2026-11-22, three times over, each on this branch merged onto a
+main that had moved again in between, zero FAIL lines in all three:
+
+| main merged in (this branch's merge) | cmd/posse | internal/posse arms 1/2/3 | internal/treepins |
+|---|---|---|---|
+| `d1c7f7f8` (`59469337`) | 121.5s | 251.6 / 69.6 / 154.2s | 149.6s |
+| `175e7c3b` (`7433c417`) | 131.1s | 283.1 / 70.5 / 109.4s | 166.8s |
+| `cd1c2333` (`182173d3`) | 116.4s | 268.2 / 60.8 / 108.9s | 160.7s |
+
+`go run ./cmd/checkorphans` clean after each. Three readings because main
+landed a sibling bead roughly every ten minutes while this one was being
+verified, and a branch is only mergeable if it contains the main it was read
+against; the four mutants below were re-graded on the first and the last.
 
 That reading was only available at the end. The rest of this section is how
 the same work was verified before it, and it is kept because the lesson in it
