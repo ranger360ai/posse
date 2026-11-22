@@ -216,3 +216,70 @@ func TestSpoolCursorRoundTripsThroughTheWalk(t *testing.T) {
 		t.Errorf("an absent cursor must read as none, not an error: %v %v", ok, err)
 	}
 }
+
+// openRefusalLeaf's two CONTRACT refusals, both of which were arms nothing
+// noticed (MEASURED 2026-11-22, ranger-base-2unmh, over the full arm-2 filter:
+// dropping the `filepath.Rel`/`IsLocal` check survived, and removing the
+// O_TRUNC guard alone survived).
+//
+// They are refusals of the CALLER rather than of a planter, which is why no
+// plant reaches them — and that is exactly why they need saying here. The
+// root walk is the whole of this bead's fix, and a path not below the root
+// never enters it: `..` components are not symlinks, so O_NOFOLLOW cannot
+// stop them and only this check does. The O_TRUNC guard is the one that keeps
+// the fix from undoing ranger-base-legou's: O_TRUNC acts AT the open, before
+// the fstat has judged the descriptor, so it would cut a hardlinked target
+// and then refuse it (the severity note on this bead).
+func TestOpenRefusalLeafRefusesItsCallersTwoMistakes(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	leaf := a.spoolCursorPath("p", "s1")
+
+	// 1. Not below the root. The walk is only a containment at all because
+	// of this, and every caller composes its path from a persona or session
+	// name.
+	// `/etc/profile` is in the list because an escape with a real target is
+	// the case that matters, and it is checked as UNCHANGED rather than as
+	// absent: the other two do not exist, this one does, and "absent" would
+	// red over a path the call correctly refused (MEASURED while writing
+	// this pin).
+	for _, p := range []string{
+		filepath.Join(a.StateDir, "..", "escaped"),
+		filepath.Join(filepath.Dir(a.StateDir), "sibling", "refusals.log"),
+		"/etc/profile",
+	} {
+		before, hadBefore := os.Lstat(p)
+		f, err := openRefusalLeaf(a.StateDir, p, os.O_APPEND|os.O_WRONLY, true)
+		if err == nil {
+			f.Close()
+			t.Errorf("openRefusalLeaf opened %s, which is not below the root %s — the parent walk only contains anything because a path outside the root is refused BEFORE it starts, and `..` is not a symlink, so O_NOFOLLOW does not stop it (ranger-base-byqv0)", p, a.StateDir)
+			continue
+		}
+		if !strings.Contains(err.Error(), "not below") {
+			t.Errorf("openRefusalLeaf(%s) refused for the wrong reason: %v", p, err)
+		}
+		after, hadAfter := os.Lstat(p)
+		switch {
+		case hadBefore != nil && hadAfter == nil:
+			t.Errorf("the refused call CREATED %s", p)
+		case hadBefore == nil && hadAfter == nil && (before.Size() != after.Size() || before.ModTime() != after.ModTime()):
+			t.Errorf("the refused call wrote through to %s (size %d -> %d)", p, before.Size(), after.Size())
+		}
+	}
+
+	// 2. O_TRUNC, from any caller. writeSpoolCursor truncates on the fd
+	// after the judgement instead, and the row that says why is
+	// TestSpoolCursorRefusesAPlantedLeaf's hardlink case.
+	if f, err := openRefusalLeaf(a.StateDir, leaf, os.O_WRONLY|os.O_TRUNC, true); err == nil {
+		f.Close()
+		t.Error("openRefusalLeaf accepted O_TRUNC. O_TRUNC acts at the open, before the fstat has judged the descriptor, so a hardlinked target is cut to zero and only then refused — which is the half of ranger-base-legou the parent walk must not undo (the severity note on ranger-base-byqv0)")
+	} else if !strings.Contains(err.Error(), "O_TRUNC") {
+		t.Errorf("the O_TRUNC refusal must name the flag so the caller knows what to drop: %v", err)
+	}
+	// And the control: the same leaf, the same caller, without that flag.
+	f, err := openRefusalLeaf(a.StateDir, leaf, os.O_WRONLY, true)
+	if err != nil {
+		t.Fatalf("the ordinary open is refused too, so neither arm above varies anything: %v", err)
+	}
+	f.Close()
+}

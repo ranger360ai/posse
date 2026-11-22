@@ -209,6 +209,28 @@ func TestQABwrapGitRefsFailuresSpendTheirFirstLineOnTheCause(t *testing.T) {
 		if returns == 0 {
 			t.Errorf("%s has no two-value return for this pin to read — it is the seat runner whose answer every arm in %s interpolates, so a reshaped signature has to bring this pin along", qcsName(c.recv, c.name), bgaSubject)
 		}
+
+		// AND EACH RUNNER ROUTES THE ABSTENTION (ranger-base-evx07, pinned
+		// here by ranger-base-2unmh). bgSeatEndedFromOutside decides whether
+		// a member REDS or ABSTAINS, and the criterion's own pin
+		// (TestBgSeatEndedFromOutsideReadsOnlyASupervisorSignalOverSilence)
+		// calls the function DIRECTLY — so it grades the criterion and says
+		// nothing about whether the two runners ask it. Neither can a live
+		// run: the branch is reached only by a real silent supervisor kill,
+		// which no fixture manufactures inside a runner. MEASURED
+		// 2026-11-22: deleting BOTH call sites and running ./internal/posse
+		// arm 1 UNFILTERED left it green (PASS, 0 FAIL), and the deletion is
+		// the pre-fix behaviour — walled's refusal arms (`if ok { fail }`)
+		// read a silent outside kill as the wall refusing, a FALSE PASS, and
+		// its success arms read it as the red that ADR 0097 D5's ratchet
+		// files as a P1 against whoever landed last. This is the positive
+		// control that was missing.
+		for _, want := range []string{"bgSeatEndedFromOutside", "bgSeatAbstain"} {
+			if !qcsHas(qcsCalls(fn.Body), want) {
+				t.Errorf("%s does not call %s. A seat the box SIGKILLs says nothing and exits 128+9, and without this guard that status reaches both of this runner's polarities as an answer about the wall: a refusal arm passes on it and a success arm reds on it (ranger-base-evx07, ADR 0086 D5's false pass). The abstention is ADR 0097 D3's exit 3 — never a pass, never a red.",
+					qcsName(c.recv, c.name), want)
+			}
+		}
 	}
 
 	// And the fold is wwOneLine's, wherever in the body it is reached:

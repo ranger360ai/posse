@@ -426,3 +426,39 @@ func cbdVars(vars []EnvVar) map[string]string {
 	}
 	return env
 }
+
+// AND THE FALLBACK, which arm 4 reaches only one layer down. cageBeadsDirIn
+// answering "" means no bind covers the store at all, and CageBeadsDir then
+// hands back beadsHome's own answer — what shipped before this function —
+// because the thing that says the store is unreachable is ADR 0013 §4's row
+// over the same mount set, waivable like every other gate, and two refusals
+// for one fact would make the gate the liar (CageBeadsDir's own comment).
+//
+// Arm 5 carries the assertion that would catch a change here — `if got == ""`
+// over the forwarded value — but its fixture's store IS covered, so that
+// branch is never reached. MEASURED 2026-11-22 (ranger-base-2unmh): returning
+// "" instead of `home` survived arms 1-5 and the arm-3 pins. An empty
+// BEADS_DIR is the one value worse than an unresolved one: `-e BEADS_DIR`
+// forwards it, and a `--no-db` bd with nothing there resolves $cwd/.beads and
+// writes the container's own throwaway issues.jsonl, which is the silent
+// record loss ADR 0055 D1 exists to prevent and this bead's whole subject.
+func TestQACagedBeadsDirFallsBackToBeadsHomeWhenNoBindCoversTheStore(t *testing.T) {
+	t.Parallel()
+	a, ag, e := cbdCage(t)
+	repo := cbdRepo(t, filepath.Join(absResolve(t.TempDir()), "repo"))
+
+	// A store under no bind's destination. The premise is asserted, not
+	// assumed: a fixture the mount set happens to cover would make the
+	// assertion below vacuous and read exactly like a pass.
+	outside := filepath.Join(absResolve(t.TempDir()), "not-mounted", beadsDirName)
+	ms := a.CageMounts(ag, e, repo, "s1")
+	if i, _ := cageCovering(ms, absResolve(outside)); i >= 0 {
+		t.Fatalf("fixture: %s IS covered by a bind, so the fallback is not the branch under test:\n%s", outside, showMounts(ms))
+	}
+	if got := cageBeadsDirIn(ms, outside); got != "" {
+		t.Fatalf("cageBeadsDirIn answered %q for a store no bind covers, want the empty string", got)
+	}
+	if got := a.CageBeadsDir(ag, repo, "s1", outside); got != outside {
+		t.Errorf("CageBeadsDir answered %q where no bind covers the store; want beadsHome's own answer %q. An empty or translated value here is forwarded by `-e BEADS_DIR` to a `--no-db` bd, which then resolves $cwd/.beads and writes the container's throwaway issues.jsonl — the silent record loss ADR 0055 D1 exists to prevent. The gate row over this same mount set is what says the store is unreachable (ranger-base-ayubz)", got, outside)
+	}
+}
