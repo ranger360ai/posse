@@ -99,6 +99,66 @@ package treepins
 // graded. The +1 over the argv-entry reading is grokleader_qa_test.go's
 // function, which this census could not see at all before.
 //
+// THE LINE RULE IS POSITIONAL, AND THE ACCOUNT KEY READS THE FOLD
+// (ranger-base-momix, from ranger-base-0b6zo's verify of ranger-base-mklu0).
+// Arm 2 used to say NO NEWLINE AT ALL in a message carrying a seat's account,
+// and its report said of a message that had one that "the account is dropped
+// in transit". Both were wrong, and the only reason the tree was green is that
+// the key read almost nothing: wmaAccountLocals recognised an account solely
+// as a local assigned from a multi-return seat-LAUNCHING FuncDecl whose last
+// result is a string, which is 3 of the 24 member files — and NOT
+// internal/posse/wallclaudeprojectsattack_qa_test.go, the file where this
+// class has now been found twice (ranger-base-eheo3's close, then
+// ranger-base-mklu0), because its runner is a closure with one result and its
+// account comes from wwOneLine and from an inline bgSeatAccount(...) argument.
+// Neither spelling is an Ident assigned from a FuncDecl, so arm 2 read
+// neither.
+//
+// What `scripts/posse-wall-check`'s evidence() carries is the FIRST
+// `file.go:NN:` line and nothing after it (ADR 0097 D3) — so a newline costs
+// the account nothing when the account is in FRONT of it, and D3 and
+// ranger-base-mklu0's own fix shape both prescribe exactly that: the account
+// first, the cwd and the reasoning on line 2, "where D3 says supporting prose
+// costs nothing" (docs/notes.d/ranger-base-mklu0.md).
+//
+// MEASURED 2026-11-22 at e5221de6, which is what decided this and not the
+// prose: with the key widened to read the fold, 8 of 24 member files carry an
+// account and 65 messages read one — against 3 files and 32 messages for the
+// old key on that same tip, so the widening roughly doubles what arm 2 grades.
+// FOUR of those 65 carry a newline, and every one of them puts the account in
+// front of it — wallclaudeprojectsattack_qa_test.go:386, the line mklu0
+// landed on purpose, and wallunixlive_test.go:237, :526 and :1130, whose
+// `the seat exited badly: %s\nargv: bwrap %s` is three more of the same shape
+// from a different lineage. NOTHING in the member set puts an account after a
+// newline. So the old rule was never a strictness the tree was paying for: it
+// was a rule that could only red the shape the house prescribes, held off by a
+// key too narrow to reach any of the four — and the three files it did reach
+// folded everything onto one line for a rule the house does not hold. The two
+// readings could not both stand, and that is why deciding was the same edit.
+//
+// AND THE BOTH-WAYS READING, nine mutants one at a time (MEASURED 2026-11-22,
+// docs/notes.d/ranger-base-momix.md carries the battery and its output): the
+// unmutated arms green; a graded account moved behind a newline reds with that
+// file and line; the rule re-tightened to "no newline at all" reds all four
+// deferred-prose messages AND the floor that witnesses them, which is the
+// decision above taken twice; the key narrowed back to the runner route alone
+// reds ten rows, the two route floors among them; the fold dropped from the
+// vocabulary, renamed, given a second result, or no longer called by
+// bgSeatAccount each reds the arm that owns it; and the four deferred messages
+// folded onto one line red the witness floor and nothing else.
+//
+// WHAT THIS ARM STILL CANNOT SEE, and it is the OTHER half of
+// ranger-base-mklu0: the 300 characters. evidence() truncates that first line
+// with the `file.go:NN: ` prefix inside the 300, so an account that is on line
+// 1 but behind a long preamble is cut anyway — mklu0's finding 2 exactly, 261
+// of the 300 spent before the account. It is not read here because it cannot
+// be read off a format string: 46 of those 261 bytes were an interpolated cwd
+// whose width is the box's and 215 were literal, so a bound on the LITERAL
+// prefix — 300 less the `file.go:NN: ` prefix, call it 270 — would have passed
+// the one message this class has cost. ORDER WITHIN THE FIRST LINE IS
+// THEREFORE UNPINNED, by measurement and not by oversight — ranger-base-uu303
+// carries the reading that would decide it.
+//
 // IT ENUMERATES A DISCOVERED FILE SET (the Glob below), so it is in this
 // package's one-package-census class and is doored by `make treepins-check` —
 // the complement door, which is this package minus the priced table in
@@ -133,6 +193,22 @@ const wmaPkgGlob = "internal/posse/*_test.go"
 // then the seat's words folded onto the same line by wwOneLine.
 const wmaAccountFunc = "bgSeatAccount"
 
+// wmaFoldFunc is the fold both accounts share, and the one a caller uses
+// alone when there is no status to carry — a seat still running at its
+// deadline, whose words are the whole account (ranger-base-mklu0).
+const wmaFoldFunc = "wwOneLine"
+
+// wmaAccountFolds is arm 2's account vocabulary, and it is two names because
+// the package says it is two: wwOneLine (wallwatchlive_test.go) is the fold,
+// bgSeatAccount (bwrapgitrefslive_test.go) is the account built on it, and
+// that file's own head comment is why there is no third — "THE FOLD IS
+// wwOneLine's AND NOT A SECOND SPELLING OF IT … two foldings of 'put this on
+// one line' are two answers waiting to disagree about what a member's line may
+// contain". A typed pair of names is the register this file refuses
+// everywhere else, so arm 5 reads the pair BACK out of the member set rather
+// than trusting this map.
+var wmaAccountFolds = map[string]bool{wmaAccountFunc: true, wmaFoldFunc: true}
+
 // wmaWaiters are the Cmd methods that produce the child's error. The error a
 // bwrap-launching function must render is the one THESE return, and not
 // merely some error somewhere in the body — a function that reports a
@@ -156,6 +232,39 @@ var wmaSayers = map[string]bool{
 var wmaFormatVerbs = map[string]bool{"Fatalf": true, "Errorf": true, "Logf": true, "Skipf": true}
 
 var wmaVerbRe = regexp.MustCompile(`%[-+# 0-9.*\[\]]*[a-zA-Z]`)
+
+// wmaUnreadableVerbRe matches the two format shapes whose argument POSITIONS
+// cannot be read off the text: an explicit argument index (`%[2]s`) reorders
+// them, and a star width (`%*d`) consumes one more argument than it looks
+// like. Neither occurs in a member message today, so arm 2 holds such a
+// message to the stricter rule and says so rather than guessing a position.
+var wmaUnreadableVerbRe = regexp.MustCompile(`%[-+# 0-9.]*(\[[0-9]+\]|\*)`)
+
+// wmaVerbs counts the argument-consuming verbs in a stretch of format string.
+// `%%` is a literal percent and consumes nothing, and it is removed first
+// because wmaVerbRe's flag class contains a space — `100%% done` would
+// otherwise read as one verb.
+func wmaVerbs(s string) int {
+	return len(wmaVerbRe.FindAllString(strings.ReplaceAll(s, "%%", ""), -1))
+}
+
+// wmaAccountBeforeNewline answers, for a format string and the 0-based index
+// of the account among the arguments that follow it, whether the account is
+// rendered BEFORE the first newline — which is the whole of what reaches a
+// bead (ADR 0097 D3, and see the head comment for why this is the rule and
+// "no newline at all" was not). `readable` is false when the text uses a verb
+// whose positions cannot be read; the caller then holds the message to the
+// stricter rule. firstLine is what evidence() would carry.
+func wmaAccountBeforeNewline(text string, argIdx int) (before, readable bool, firstLine string) {
+	i := strings.IndexAny(text, "\n\r")
+	if i < 0 {
+		return true, true, text
+	}
+	if wmaUnreadableVerbRe.MatchString(text) {
+		return false, false, text[:i]
+	}
+	return argIdx < wmaVerbs(text[:i]), true, text[:i]
+}
 
 // wmaMemberPattern reads the member pattern out of the wall check. One line,
 // one literal, and the check's own comment says it is written once there.
@@ -485,6 +594,85 @@ func wmaAccountLocals(f wmaFile) map[string]bool {
 	return locals
 }
 
+// wmaCallee names the function a call expression calls, by its last
+// identifier: a package-level func, a method, a field holding a closure.
+func wmaCallee(c *ast.CallExpr) string {
+	switch fun := c.Fun.(type) {
+	case *ast.Ident:
+		return fun.Name
+	case *ast.SelectorExpr:
+		return fun.Sel.Name
+	}
+	return ""
+}
+
+// wmaIsFoldCall reports whether x is a call of one of the account folds.
+func wmaIsFoldCall(x ast.Expr) bool {
+	c, ok := x.(*ast.CallExpr)
+	return ok && wmaAccountFolds[wmaCallee(c)]
+}
+
+// wmaFoldLocals are the locals a call site binds to a FOLDED account, which is
+// the route wmaAccountLocals cannot see and the one the twice-found file uses
+// (ranger-base-momix): the account is produced by wwOneLine or bgSeatAccount
+// rather than returned by a seat runner this census can recognise as one.
+// Reading the fold instead of the runner is what makes the key independent of
+// how the seat was launched — a closure, a one-result helper, a bare inline
+// call — and the runner route stays beside it because a runner that returns
+// its account unfolded is still an account.
+//
+// ONE HOP, the same depth as every other reading in this file. An account the
+// fold produces three assignments away is not read, and the floors in arm 2
+// are what notice a route going quiet.
+func wmaFoldLocals(f wmaFile) map[string]bool {
+	locals := map[string]bool{}
+	record := func(lhs, rhs []ast.Expr) {
+		for i, r := range rhs {
+			if i >= len(lhs) || !wmaIsFoldCall(r) {
+				continue
+			}
+			if id, ok := lhs[i].(*ast.Ident); ok && id.Name != "_" {
+				locals[id.Name] = true
+			}
+		}
+	}
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			record(s.Lhs, s.Rhs)
+		case *ast.ValueSpec:
+			var lhs []ast.Expr
+			for _, id := range s.Names {
+				lhs = append(lhs, id)
+			}
+			record(lhs, s.Values)
+		}
+		return true
+	})
+	return locals
+}
+
+// wmaAccountArg reports whether one argument of a format call IS a seat's
+// account, and by which route — which is the whole of arm 2's key. The three
+// routes are kept apart so arm 2 can floor each of them: a route that has
+// gone quiet is a route a later narrowing could delete while the census stays
+// green, which is ranger-base-hhps5's lesson one arm over.
+func wmaAccountArg(x ast.Expr, runner, folded map[string]bool) (name, route string, ok bool) {
+	if id, isID := x.(*ast.Ident); isID {
+		switch {
+		case runner[id.Name]:
+			return id.Name, "runner local", true
+		case folded[id.Name]:
+			return id.Name, "folded local", true
+		}
+		return "", "", false
+	}
+	if c, isCall := x.(*ast.CallExpr); isCall && wmaAccountFolds[wmaCallee(c)] {
+		return wmaCallee(c) + "(…)", "inline fold", true
+	}
+	return "", "", false
+}
+
 // wmaFormat reconstructs a format string from a literal or a concatenation of
 // literals, so a format spelled across a `+` is read too.
 func wmaFormat(x ast.Expr) (string, bool) {
@@ -593,21 +781,29 @@ func TestQAEveryWallMemberSeatLaunchRendersItsChildsError(t *testing.T) {
 // bead will read it. This is ranger-base-a688i's half, scoped to the one
 // value that cannot be recovered after the fact.
 //
-// NO NEWLINE AT ALL in such a message, rather than "the account is before the
-// first newline": everything after that newline is dropped in transit anyway
-// (ADR 0097 D3), so a message that needs a tail is a message whose tail the
-// bead will not get. That is the same rule ranger-base-axt1f pinned for its
-// own file, here applied to every member file that has an account to carry.
+// THE ACCOUNT IS RENDERED BEFORE THE FIRST NEWLINE, and not "the message has
+// no newline at all". `scripts/posse-wall-check`'s evidence() carries that
+// first line and nothing after it (ADR 0097 D3), so the newline is what costs
+// a reader the TAIL and never the account in front of it — and the account in
+// front with the supporting prose behind is the shape D3 and
+// ranger-base-mklu0's fix both prescribe. The head comment carries the
+// measurement that decided this against the rule that stood here before, and
+// names the one thing this rule still does not read (the 300 characters,
+// ranger-base-uu303).
 func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.T) {
 	t.Parallel()
 	files := wmaMemberFiles(t)
-	withAccounts, read := 0, 0
+	withAccounts, read, deferred := 0, 0, 0
+	routes := map[string]int{}
 	for _, f := range files {
-		locals := wmaAccountLocals(f)
-		if len(locals) == 0 {
-			continue
-		}
-		withAccounts++
+		// EVERY member file, and not only the ones that bind an account to a
+		// local: an inline fold IS an account, and a file that hands one
+		// straight to a verb binds nothing. Gating the walk on the locals was
+		// the narrowness this arm was found with one layer down — it hid
+		// wallunixlive_test.go's three deferred-prose messages, which are
+		// three quarters of what witnesses the rule (ranger-base-momix).
+		runner, folded := wmaAccountLocals(f), wmaFoldLocals(f)
+		fileRead := 0
 		ast.Inspect(f.ast, func(n ast.Node) bool {
 			c, ok := n.(*ast.CallExpr)
 			if !ok || len(c.Args) < 2 {
@@ -621,29 +817,69 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 			if !ok {
 				return true
 			}
-			for _, a := range c.Args[1:] {
-				id, ok := a.(*ast.Ident)
-				if !ok || !locals[id.Name] {
+			for i, a := range c.Args[1:] {
+				name, route, isAccount := wmaAccountArg(a, runner, folded)
+				if !isAccount {
 					continue
 				}
 				read++
-				if !strings.ContainsAny(text, "\n\r") {
-					continue
+				fileRead++
+				routes[route]++
+				// A variadic spread reorders nothing but hides how many
+				// arguments the verbs before the newline consumed, so it is
+				// the same unreadable case as an indexed verb.
+				before, readable, firstLine := wmaAccountBeforeNewline(text, i)
+				if c.Ellipsis.IsValid() {
+					readable = false
 				}
-				i := strings.IndexAny(text, "\n\r")
-				t.Errorf("%s:%d: this t.%s carries the seat's account %s in a format string that has a newline in it. `scripts/posse-wall-check` reports a failed member by its FIRST `file.go:NN:` line and nothing after it (ADR 0097 D3, 300 chars), and the launcher puts that one line on a P1 bead — so this message reaches the bead as %q and the account is dropped in transit. That is ranger-base-a688i and ranger-base-axt1f, both of which arrived as a symptom, a colon and nothing. Fold the message onto one line.",
-					f.path, f.fset.Position(c.Pos()).Line, sel.Sel.Name, id.Name, text[:i])
+				switch {
+				case !readable:
+					t.Errorf("%s:%d: this t.%s carries the seat's account %s in a format string that has a newline in it AND a verb whose argument positions cannot be read off the text (an indexed `%%[n]s`, a star width, or a variadic spread). `scripts/posse-wall-check` carries the FIRST `file.go:NN:` line and nothing after it (ADR 0097 D3), so whether the account survives depends on where it lands in %q — and this census will not guess. Spell the verbs in order, or fold the message onto one line.",
+						f.path, f.fset.Position(c.Pos()).Line, sel.Sel.Name, name, firstLine)
+				case !before:
+					t.Errorf("%s:%d: this t.%s renders the seat's account %s AFTER the first newline of its format string. `scripts/posse-wall-check` reports a failed member by its FIRST `file.go:NN:` line and nothing after it (ADR 0097 D3), and the launcher puts that one line on a P1 bead — so this message reaches the bead as %q and the account really is dropped in transit. That is ranger-base-a688i exactly: a symptom, a colon and nothing. Move the account in front of the newline; the prose behind it costs nothing.",
+						f.path, f.fset.Position(c.Pos()).Line, sel.Sel.Name, name, firstLine)
+				case strings.ContainsAny(text, "\n\r"):
+					// The shape the rule before this one refused, and the
+					// reason the floor below exists.
+					deferred++
+				}
 			}
 			return true
 		})
+		if fileRead > 0 {
+			withAccounts++
+		}
 	}
 	// The controls, again both ways.
-	if withAccounts < 3 {
-		t.Errorf("this arm found seat accounts in %d member file(s), want at least 3 (3 on 2026-11-21: bwrapgitrefslive_test.go, bwrapseatstorelive_test.go, storerepogitwalllive_test.go) — the runner shape this arm reads has changed and it is grading almost nothing", withAccounts)
+	if withAccounts < 6 {
+		t.Errorf("this arm found seat accounts in %d member file(s), want at least 6 (8 on 2026-11-22: bwrapgitrefslive_test.go, bwrapseatstorelive_test.go, storerepogitwalllive_test.go, wallclaudeprojects_qa_test.go, wallclaudeprojectsattack_qa_test.go, wallunixlive_test.go, wallwatchbackstopwiring_linux_test.go and wallwatchlive_test.go — 3 of them under the key before ranger-base-momix widened it) — the shapes this arm reads have changed and it is grading almost nothing", withAccounts)
 	}
-	if read < 15 {
-		t.Errorf("this arm read %d message(s) interpolating a seat account, want at least 15 (24 on 2026-11-21) — an account reaches a reader by some route this arm cannot see", read)
+	if read < 45 {
+		t.Errorf("this arm read %d message(s) interpolating a seat account, want at least 45 (65 on 2026-11-22, of which 32 were all the key read before ranger-base-momix) — an account reaches a reader by some route this arm cannot see", read)
 	}
+	// AND A FLOOR PER ROUTE, for the reason arm 1 floors the wrapper route
+	// (ranger-base-hhps5): a key that reads three spellings and finds two of
+	// them in the tree is a key whose third arm a later narrowing could
+	// delete with every arm here still green. An account this census cannot
+	// see does not lower the count of the ones it can.
+	for _, route := range []string{"runner local", "folded local", "inline fold"} {
+		if routes[route] == 0 {
+			t.Errorf("this arm read 0 account(s) by the %q route, want at least 1 (on 2026-11-22: 32 runner local, 8 folded local, 25 inline fold). That route is in the key because the member set used it — the folded routes are ranger-base-momix's, which is how wallclaudeprojectsattack_qa_test.go came to be graded by nothing after this class had been found in it twice. If the spelling really has gone from the tree, say so and take the route out of wmaAccountArg; do not leave an arm of the key with nothing witnessing it.", route)
+		}
+	}
+	// THE WITNESS FOR THE RULE ITSELF. The rule above is POSITIONAL, and the
+	// only thing in this tree that tells a positional rule from the "no
+	// newline at all" rule it replaced is a message that HAS a newline with
+	// its account in front of it. With none in the member set, a later
+	// re-tightening would be green here and would red four messages whose
+	// shape ADR 0097 D3 prescribes — which is the state ranger-base-momix
+	// found and the reason that re-tightening is easy to type.
+	if deferred == 0 {
+		t.Errorf("this arm read %d account message(s) that defer their prose to a second line, want at least 1 (4 on 2026-11-22: wallclaudeprojectsattack_qa_test.go:386 and wallunixlive_test.go:237, :526, :1130). Those four are what distinguish this arm's rule from `no newline at all`; with none of them in the tree, nothing here witnesses that the rule is positional and arm 3's planted rows are the whole of it.", deferred)
+	}
+	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold), %d of which defer prose to a second line with the account in front of it.",
+		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], deferred)
 }
 
 // ARM 3 — THE RULES SAY NO. Both rules driven over planted source, each with
@@ -820,6 +1056,113 @@ func TestX(t *testing.T) { ok, acct := f.in(t); _, _ = ok, acct }`, nil},
 		})
 	}
 
+	// And arm 2's OTHER two routes, which are ranger-base-momix's: an account
+	// the fold produced, bound to a local or handed to the verb inline. The
+	// rows are the two spellings
+	// internal/posse/wallclaudeprojectsattack_qa_test.go actually uses, and
+	// the negatives are the ones that make the key a key: a fold of something
+	// that is not a seat's words is still read (the fold exists to make a
+	// value fit a member's one line, so the rule is right for it too), but a
+	// local bound to anything else is not.
+	for _, c := range []struct {
+		name  string
+		src   string
+		local []string
+		arg   []bool
+	}{
+		{"an account folded into a local, from a runner this census cannot recognise", `func TestX(t *testing.T) {
+	out := run(t, nonOwn)
+	said := wwOneLine(out)
+	t.Fatalf("claude -p under the wall did not end in 90s; it said %s\ncwd %s", said, cwd)
+}`, []string{"said"}, []bool{true, false}},
+		{"an account built by the account func and bound to a local", `func TestX(t *testing.T) {
+	acct := bgSeatAccount(runErr, outBuf.String())
+	t.Logf("the seat ended badly: %s", acct)
+}`, []string{"acct"}, []bool{true}},
+		{"an account handed to the verb inline", `func TestX(t *testing.T) {
+	t.Logf("the seat ended badly, which this pin does not assert on: %s", bgSeatAccount(runErr, outBuf.String()))
+}`, nil, []bool{true}},
+		{"a fold handed to the verb inline", `func TestX(t *testing.T) {
+	t.Fatalf("the seat exited badly: %s\nargv: bwrap %s", wwOneLine(string(out)), argv)
+}`, nil, []bool{true, false}},
+		{"a local bound to something that is not a fold", `func TestX(t *testing.T) {
+	out := strings.TrimSpace(string(raw))
+	t.Fatalf("the seat said:\n%s", out)
+}`, nil, []bool{false}},
+		{"a blanked fold binds nothing", `func TestX(t *testing.T) {
+	_ = wwOneLine(out)
+	t.Logf("%s", out)
+}`, nil, []bool{false}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, f := wmaFixture(t, c.src, "")
+			got := wmaFoldLocals(f)
+			if len(got) != len(c.local) {
+				t.Fatalf("wmaFoldLocals found %v, want %v — arm 2's folded-local route no longer binds what this file says it binds:\n%s", got, c.local, c.src)
+			}
+			for _, w := range c.local {
+				if !got[w] {
+					t.Errorf("wmaFoldLocals found %v, want it to name %q:\n%s", got, w, c.src)
+				}
+			}
+			// And the per-argument reading, which is what arm 2 keys on.
+			runner := wmaAccountLocals(f)
+			var isAccount []bool
+			ast.Inspect(f.ast, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) < 2 {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || !wmaFormatVerbs[sel.Sel.Name] {
+					return true
+				}
+				for _, a := range call.Args[1:] {
+					_, _, is := wmaAccountArg(a, runner, got)
+					isAccount = append(isAccount, is)
+				}
+				return true
+			})
+			if len(isAccount) != len(c.arg) {
+				t.Fatalf("wmaAccountArg read %d format argument(s), want %d:\n%s", len(isAccount), len(c.arg), c.src)
+			}
+			for i := range c.arg {
+				if isAccount[i] != c.arg[i] {
+					t.Errorf("wmaAccountArg says argument %d is an account = %v, want %v — arm 2's key no longer means what this file says it means:\n%s", i, isAccount[i], c.arg[i], c.src)
+				}
+			}
+		})
+	}
+
+	// THE POSITIONAL RULE, driven over the text (ranger-base-momix). The row
+	// that matters most is the third: an account in FRONT of a newline is
+	// accepted, which is the shape ADR 0097 D3 prescribes and the shape the
+	// rule that stood here before refused.
+	for _, c := range []struct {
+		name, text       string
+		argIdx           int
+		before, readable bool
+		firstLine        string
+	}{
+		{"one line, one verb", "the seat refused: %s", 0, true, true, "the seat refused: %s"},
+		{"ranger-base-a688i's own shape, the account after the newline", "the seat ended before it ran (exit 1):\n%s", 0, false, true, "the seat ended before it ran (exit 1):"},
+		{"the account in front, the prose behind", "it said %s\ncwd %s — D3 assumes an unwritable transcript dir is survivable", 0, true, true, "it said %s"},
+		{"the second argument is behind the newline", "it said %s\ncwd %s", 1, false, true, "it said %s"},
+		{"a literal percent consumes no argument", "the wall took 100%% of it:\n%s", 0, false, true, "the wall took 100%% of it:"},
+		{"a carriage return is a newline too", "the seat refused:\r%s", 0, false, true, "the seat refused:"},
+		{"an indexed verb cannot be read positionally", "it said %[1]s\ncwd %[2]s", 0, false, false, "it said %[1]s"},
+		{"a star width cannot be read positionally", "it said %*s\ncwd %s", 1, false, false, "it said %*s"},
+		{"an unreadable verb in a ONE-LINE message is no finding", "it said %[1]s and %[1]s again", 0, true, true, "it said %[1]s and %[1]s again"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			before, readable, firstLine := wmaAccountBeforeNewline(c.text, c.argIdx)
+			if before != c.before || readable != c.readable || firstLine != c.firstLine {
+				t.Errorf("wmaAccountBeforeNewline(%q, %d) = %v,%v,%q want %v,%v,%q — arm 2's line rule no longer reads what this file says it reads",
+					c.text, c.argIdx, before, readable, firstLine, c.before, c.readable, c.firstLine)
+			}
+		})
+	}
+
 	// The format reader, including the shape a `+` concatenation hides a
 	// newline in: a format spelled in two literals is one message.
 	for _, c := range []struct {
@@ -893,4 +1236,69 @@ func TestQATheWallMemberCensusReadsTheChecksOwnPattern(t *testing.T) {
 			t.Errorf("the pattern read from %s matches %q, which is not a wall-check member — the set this census reads has widened past the set the check measures", wmaCheck, name)
 		}
 	}
+}
+
+// ARM 5 — THE ACCOUNT VOCABULARY IS THE TREE'S AND NOT THIS FILE'S
+// (ranger-base-momix). Arm 2's key reads a value folded by one of two names,
+// and a typed pair of names is exactly the register this file's head comment
+// refuses when it declines an exemption table: a list nobody reads back drifts
+// quietly, and a drifted list here does not red — it GRADES LESS, which is the
+// state that let this class be found twice in one file.
+//
+// So the pair is read back out of the member set. Each name is declared there
+// as a function returning exactly one string, and bgSeatAccount's body calls
+// wwOneLine — which is the sentence bwrapgitrefslive_test.go writes about
+// itself ("THE FOLD IS wwOneLine's AND NOT A SECOND SPELLING OF IT"). What it
+// cannot see is a THIRD fold nobody told it about; arm 2's per-route floors
+// are what notice a route going quiet, and this arm is what notices the two
+// names it does have coming apart.
+func TestQATheWallMemberAccountFoldsAreTheOnesThePackageDeclares(t *testing.T) {
+	t.Parallel()
+	files := wmaMemberFiles(t)
+	decls := map[string]*ast.FuncDecl{}
+	for _, f := range files {
+		for _, fn := range wmaDecls(f.ast) {
+			if fn.Recv != nil || !wmaAccountFolds[fn.Name.Name] {
+				continue
+			}
+			if prev, seen := decls[fn.Name.Name]; seen {
+				t.Errorf("%s declares a second %s (the first is at %s) — two foldings of \"put this on one line\" are two answers waiting to disagree about what a member's line may contain (bwrapgitrefslive_test.go), and arm 2 reads them as one",
+					f.path, fn.Name.Name, prev.Name.Name)
+			}
+			decls[fn.Name.Name] = fn
+		}
+	}
+	for name := range wmaAccountFolds {
+		fn, ok := decls[name]
+		if !ok {
+			t.Errorf("no member file declares %s, which arm 2's key names as a spelling of a seat's account. Either it was renamed — in which case arm 2 is now grading the messages that used it by nothing, silently, which is the shape ranger-base-momix found — or the fold has moved out of the member set and this census can no longer see it.", name)
+			continue
+		}
+		res := fn.Type.Results
+		if res == nil || len(res.List) != 1 || len(res.List[0].Names) > 1 {
+			t.Errorf("%s no longer returns exactly one value, so what arm 2 reads at its call sites is not the one-line account this file says it is", name)
+			continue
+		}
+		if id, isID := res.List[0].Type.(*ast.Ident); !isID || id.Name != "string" {
+			t.Errorf("%s no longer returns a string, so arm 2's reading of its call sites as a rendered account is wrong", name)
+		}
+	}
+	// AND THE PAIR IS ONE FOLD AND ONE ACCOUNT BUILT ON IT, which is the whole
+	// reason this list is two names long and not one or three.
+	if fn, ok := decls[wmaAccountFunc]; ok && !wmaBodyCalls(fn, wmaFoldFunc) {
+		t.Errorf("%s no longer calls %s, so this package has two independent foldings of \"put this on one line\" and arm 2 reads them as one vocabulary. bwrapgitrefslive_test.go's own head comment is the contract: the fold is %s's and not a second spelling of it.",
+			wmaAccountFunc, wmaFoldFunc, wmaFoldFunc)
+	}
+}
+
+// wmaBodyCalls reports whether fn's body calls the named function.
+func wmaBodyCalls(fn *ast.FuncDecl, name string) bool {
+	found := false
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok && wmaCallee(c) == name {
+			found = true
+		}
+		return true
+	})
+	return found
 }

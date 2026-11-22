@@ -116,6 +116,12 @@ and "no git error" would have been a false statement in a P1 about a `touch`.
    no newline in it — not "the account is before the first newline", because
    everything after that newline is dropped in transit anyway, so a message
    that needs a tail is a message whose tail the bead will not get;
+   **SUPERSEDED: that reading is the one ranger-base-momix reversed.** The
+   rule is positional now — the account before the first newline — and its
+   fragment carries the measurement that decided it: the key here read 3 of
+   24 member files, and widening it put four messages under this rule whose
+   account was in FRONT of the newline, which is the shape ADR 0097 D3
+   prescribes. There are five arms, not four;
 3. both rules driven over planted source with their own negative cases,
    through the same functions the tree arms use;
 4. the member pattern is READ out of `scripts/posse-wall-check`
