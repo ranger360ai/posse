@@ -136,6 +136,37 @@ var suiteLockArms = []string{
 	// that stamp and requires the bound to give up the QUEUE (not the slot)
 	// and the waiting line to name the squatter's real pid from /proc fdinfo.
 	"squat: a queue held past POSSE_SUITE_LOCK_WAIT runs unserialized, naming the holder by the kernel",
+	// ranger-base-x5zmk, from ranger-base-gm54k: three load-bearing branches
+	// of og2zi's close that nothing witnessed. Each had a mutant that left
+	// the self-test printing "all arms ok", and the first re-admitted the
+	// symptom og2zi was filed on. Four arms, not three, because the give-up
+	// line's NAMING and its ORDERING turned out to be different claims and
+	// the assertion that holds the first leaves the second green.
+	//
+	// The kernel reader CONFIRMS by dev+ino that the fd it found is this slot
+	// file. Without that it names every process on the box holding any flock
+	// — ten of them, a desktop audio daemon included, over one real squatter.
+	// The arm above cannot see it: it greps for the squatter's pid, the
+	// reader keeps the 8 lowest, and a fresh squatter sorts last, so what
+	// reds there is the 8-entry cap and only on a box already holding more
+	// than 8 flocks. This arm forks a decoy holding an unrelated flock, which
+	// is the one fixture a rig whose only lock is the slot's own cannot make.
+	"squat: the kernel names the holders of THIS slot and not every flock on the box",
+	// The bound got _suite_lock_slots' validator and neither of its two arms,
+	// so no run had ever printed its "not a positive integer" line. 0 is the
+	// value that costs: taken, `waited >= 0` holds on the first pass and the
+	// acquire gives up before announcing, so nothing on the box ever queues
+	// again while every other arm stays green.
+	"bound: a bad POSSE_SUITE_LOCK_WAIT runs on the default and says so",
+	"bound: a POSSE_SUITE_LOCK_WAIT of 0 does not turn the queue off",
+	// `held` is set twice in one acquire — at the announce and in the give-up
+	// branch — so deleting the second read leaves the first one's value in
+	// scope and every naming assertion over the line still passes. What the
+	// line then names is the holder one full bound ago, under a sentence
+	// telling the reader to go check whether that pid is a suite. The arm
+	// rewrites the squatter's stamp inside the poll the announce sleeps
+	// through, so the ordering is structural and not timed.
+	"bound: the give-up line names who holds the slot now, not who held it at the announce",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make

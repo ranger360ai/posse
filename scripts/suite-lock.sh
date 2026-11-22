@@ -955,6 +955,32 @@ while :; do sleep 0.05; done
 ORPHANER
 	chmod +x "$tmp/orphaner.sh"
 
+	# A process holding an flock on something that is NOT a slot file. It
+	# takes no slot, reads no stamp and knows nothing about the queue; all it
+	# has is a live flock, which is the whole of arm 19.
+	#
+	# It is the one fixture the rest of this rig physically cannot produce:
+	# every other flock below is the slot's own, so a kernel reader that
+	# dropped its dev+ino confirmation and reported every flock holder on the
+	# box would be indistinguishable from a correct one here.
+	cat >"$tmp/decoy.sh" <<'DECOY'
+#!/usr/bin/env bash
+set -u
+lib=$1; file=$2; marker=$3; hold=$4
+. "$lib"
+# fd 9, the same descriptor the sweep takes a slot on, so this process's
+# fdinfo carries the same `lock: ... FLOCK` line a real holder's does.
+exec 9>>"$file"
+if _suite_lock_flock; then
+	printf 'flock:yes\npid:%s\n' "$$" >"$marker"
+else
+	printf 'flock:no\npid:%s\n' "$$" >"$marker"
+	exit 1
+fi
+while [ -e "$hold" ]; do sleep 0.05; done
+DECOY
+	chmod +x "$tmp/decoy.sh"
+
 	# House form, the same one scripts/gotest.sh and scripts/test-times.sh
 	# print and the same one the QA pin requires by arm name.
 	ok() { printf 'ok    %s\n' "$1"; }
@@ -1036,6 +1062,33 @@ ORPHANER
 			done
 		fi
 		printf '%s\n' "$n"
+	}
+
+	# log_line <file> <literal> — the FIRST line carrying <literal>, nothing
+	# when there is none. The same no-exec rule as log_has and log_count, and
+	# for the same reason; this one exists because SOME assertions have to name
+	# the line they are about (ranger-base-x5zmk, from ranger-base-gm54k).
+	#
+	# A `log_has` over a whole acquire's stderr is satisfied by ANY of its
+	# lines, and an acquire that queued and then gave up says the same facts
+	# twice — the holders at the announce and the holders at the give-up. Arm
+	# 18's four naming assertions were all answered by the earlier WAITING
+	# line, so the give-up line's own holder read could be blanked, or moved
+	# after the say, with the arm still green and the line reading `held by:
+	# nobody this seat can name`. That is the line a reader sees when their
+	# suite went unserialized, which is what the bound is for.
+	log_line() {
+		local line
+		[ -r "$1" ] || return 1
+		while IFS= read -r line || [ -n "$line" ]; do
+			case $line in
+			*"$2"*)
+				printf '%s\n' "$line"
+				return 0
+				;;
+			esac
+		done <"$1"
+		return 1
 	}
 
 	# wait_log <file> <literal> <seconds> — wait for a literal to REACH a log,
@@ -1813,8 +1866,18 @@ STRICT
 	#   with the forged stamp printed only under its label. A box with no
 	#   /proc fdinfo cannot measure that half and says so; there the label
 	#   alone is required.
+	# THE NAMING ASSERTIONS ARE ON THE GIVE-UP LINE, not on the log
+	# (ranger-base-x5zmk). An acquire that queued and then gave up says the
+	# holders TWICE — once at the announce, once at the give-up — so a
+	# `log_has` over the whole of m26.log is answered by the waiting line
+	# alone. MEASURED 2026-11-22: with `held=$(_suite_lock_holders | ...)`
+	# in the give-up branch blanked, and again with that read moved AFTER
+	# the say, this arm stayed green over a give-up line reading `held by:
+	# nobody this seat can name`. The give-up line is the one a reader sees
+	# when their suite went unserialized, which is the half of the bead the
+	# bound is for, so it is the line that has to carry the name.
 	local sd=$tmp/squat-locks arm18='squat: a queue held past POSSE_SUITE_LOCK_WAIT runs unserialized, naming the holder by the kernel'
-	local h25 h26 squat_status kern_re
+	local h25 h26 squat_status kern_re giveup
 	mkdir -p "$sd"
 	touch "$tmp/hold25" "$tmp/hold26"
 	POSSE_SUITE_LOCK_DIR="$sd" POSSE_SUITE_SLOTS=1 \
@@ -1849,20 +1912,27 @@ STRICT
 			bad "$arm18" "the squatter no longer holds the slot, so the bound freed it: $(printf '%s' "$squat_status" | tr '\n' '|')"
 		elif ! log_has "$tmp/m26.log" "which any seat can write"; then
 			bad "$arm18" "the forged stamp was printed without its label: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
+		elif ! giveup=$(log_line "$tmp/m26.log" 'running unserialized rather than queueing forever'); then
+			bad "$arm18" "no give-up line to read, though the log carries its phrase: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
 		elif [ -d /proc/self/fdinfo ] && command -v python3 >/dev/null 2>&1; then
-			if [[ $(<"$tmp/m26.log") =~ $kern_re ]] &&
+			if ! { [[ $(<"$tmp/m26.log") =~ $kern_re ]] &&
 				log_has "$tmp/m26.log" 'says /forged/stamp (pid 1' &&
-				[[ $squat_status =~ held,\ per\ /proc\ fdinfo,\ by:\ (.*,\ )?$h25\  ]]; then
-				ok "$arm18"
-			else
+				[[ $squat_status =~ held,\ per\ /proc\ fdinfo,\ by:\ (.*,\ )?$h25\  ]]; }; then
 				bad "$arm18" "the kernel did not name the squatter (pid $h25) over its forged stamp: log: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null); status: $(printf '%s' "$squat_status" | tr '\n' '|')"
+			elif ! [[ $giveup =~ $kern_re ]] || [[ $giveup != *'says /forged/stamp (pid 1'* ]]; then
+				# The paragraph above the arm: the waiting line answers
+				# every assertion over the whole log, so this one is
+				# asked of the give-up LINE and of nothing else.
+				bad "$arm18" "the give-up line does not name the squatter (pid $h25) over its labelled stamp, so a reader whose suite went unserialized is not told who held it: $giveup"
+			else
+				ok "$arm18"
 			fi
 		else
 			printf 'note  %s: no /proc fdinfo or python3 here, so the kernel half is NOT MEASURED\n' "$arm18"
-			if log_has "$tmp/m26.log" "/forged/stamp (pid 1, since 1970-01-01T00:00:00Z) (per the slot's own stamp, which any seat can write)"; then
+			if [[ $giveup == *"/forged/stamp (pid 1, since 1970-01-01T00:00:00Z) (per the slot's own stamp, which any seat can write)"* ]]; then
 				ok "$arm18"
 			else
-				bad "$arm18" "the stamp-only fallback is not labelled: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
+				bad "$arm18" "the stamp-only fallback is not labelled on the give-up line: $giveup"
 			fi
 		fi
 		rm -f "$tmp/hold26"
@@ -1872,6 +1942,243 @@ STRICT
 	rm -f "$tmp/hold25"
 	kill "$h25" 2>/dev/null
 	wait "$h25" 2>/dev/null
+
+	# ARM 19: the kernel reader answers about THIS slot, and not about every
+	# flock on the box (ranger-base-x5zmk, from ranger-base-gm54k).
+	#
+	# _suite_lock_kernel_holders walks every /proc/<pid>/fdinfo, keeps the fds
+	# carrying a FLOCK line, and then CONFIRMS by dev+ino through
+	# /proc/<pid>/fd/<fd> that the fd is this slot file. Drop that one
+	# confirmation and it reports every process on the box holding any flock
+	# at all. MEASURED 2026-11-22 (linux 7.2.15-1-omarchy, 16 cores) against
+	# one real squatter: TEN processes named as the slot's holders, a desktop
+	# audio daemon among them. That is the bead's own symptom — a waiter that
+	# misnames the holder — with the kernel's authority attached to it, which
+	# is worse than the stamp it replaced.
+	#
+	# ARM 18 DOES NOT SEE IT, and that is an accident of this box. It greps
+	# for the squatter's real pid; the reader keeps the 8 lowest-numbered
+	# pids; a freshly forked squatter sorts last. So on a box holding more
+	# than 8 unrelated flocks the cap drops the very pid arm 18 looks for and
+	# the arm reds — and lift the cap in the same mutant and arm 18 is GREEN
+	# with the ten-process line still printed. What reds there is the cap, on
+	# a busy box only, so the confirmation had no positive control at all.
+	#
+	# Hence the decoy, and hence all three halves. A correct reader over a
+	# slot in a dir this rig just made names the holder and whatever children
+	# inherited its fd 9 — three processes at the outside:
+	#
+	#   the SQUATTER is named, or the two halves below are vacuous over an
+	#   empty list;
+	#   the DECOY is not, which is the defect on a box with few enough flocks
+	#   to fit under the cap;
+	#   and the list is not TRUNCATED, which is the same defect on a box with
+	#   more, where the cap is what hides it. "and N more" over one fresh slot
+	#   file means the reader is answering about something else. Between them
+	#   there is no flock count at which the mutant survives.
+	local kd=$tmp/confirm-locks arm19='squat: the kernel names the holders of THIS slot and not every flock on the box'
+	local h27 h28 dpid kern19 holder_re decoy_re trunc_re
+	mkdir -p "$kd"
+	touch "$tmp/hold27" "$tmp/hold28"
+	POSSE_SUITE_LOCK_DIR="$kd" POSSE_SUITE_SLOTS=1 \
+		"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m27" "$tmp/hold27" go test -timeout 25m ./... &
+	h27=$!
+	"$tmp/decoy.sh" "$SUITE_LOCK_LIB" "$tmp/decoy.flock" "$tmp/m28" "$tmp/hold28" &
+	h28=$!
+	if ! wait_file "$tmp/m27" "$fork_s" || [ "$(slot_of "$tmp/m27")" != 1 ]; then
+		bad "$arm19" "the holder never took the only slot: $(tr '\n' '|' <"$tmp/m27.log" 2>/dev/null)"
+	elif ! wait_file "$tmp/m28" "$fork_s" || [ "$(marker_field "$tmp/m28" flock)" != yes ]; then
+		bad "$arm19" "the decoy never took its own flock, so there is no unrelated lock here to confirm against: $(tr '\n' '|' <"$tmp/m28" 2>/dev/null)"
+	elif ! [ -d /proc/self/fdinfo ] || ! command -v python3 >/dev/null 2>&1; then
+		printf 'note  %s: no /proc fdinfo or python3 here, so this arm is NOT MEASURED\n' "$arm19"
+		ok "$arm19"
+	else
+		dpid=$(marker_field "$tmp/m28" pid)
+		# Read in THIS shell: the reader is a library function and the
+		# subject is what it returns, so there is no wrapper between the
+		# assertion and the answer.
+		kern19=$(_suite_lock_kernel_holders "$kd/suite-slot.1.lock") || kern19=''
+		# Whole-pid, and the list is "pid comm, pid comm" with no prefix of
+		# its own, so the first entry is anchored at the start (arm 18's
+		# regex matches the LINE, which has one).
+		holder_re="(^|, )$h27 "
+		decoy_re="(^|, )$dpid "
+		trunc_re=', and [0-9]+ more$'
+		if ! [[ $kern19 =~ $holder_re ]]; then
+			bad "$arm19" "the kernel did not name the slot's own holder (pid $h27), so the two halves below are vacuous: '$kern19'"
+		elif [[ $kern19 =~ $decoy_re ]]; then
+			bad "$arm19" "the kernel named the decoy (pid $dpid) as a holder of this slot; it holds an flock on $tmp/decoy.flock and no slot at all: '$kern19'"
+		elif [[ $kern19 =~ $trunc_re ]]; then
+			bad "$arm19" "the kernel's list over one slot file in a dir this rig just made is capped and truncated, so it is answering about other flocks on this box and the cap is hiding them: '$kern19'"
+		else
+			ok "$arm19"
+		fi
+	fi
+	rm -f "$tmp/hold27" "$tmp/hold28"
+	kill "$h27" "$h28" 2>/dev/null
+	wait "$h27" "$h28" 2>/dev/null
+
+	# ARM 20: a bad POSSE_SUITE_LOCK_WAIT runs on the default and says so
+	# (ranger-base-x5zmk, from ranger-base-gm54k). Arm 12's property, for the
+	# variable arm 12's validator was copied for.
+	#
+	# The asymmetry is the argument. POSSE_SUITE_SLOTS has TWO arms for
+	# exactly this validator — arms 12 and 13 — and the bound got the same
+	# validator and neither of them, so no arm anywhere set a bad
+	# POSSE_SUITE_LOCK_WAIT and its "is not a positive integer" line was a
+	# sentence no run on this box had ever printed. MEASURED 2026-11-22:
+	# relaxing `[ "$n" -ge 1 ]` to `-ge 0` in _suite_lock_wait_bound left
+	# every arm of this self-test green.
+	#
+	# The message is asserted WHOLE — variable name, the value, and the
+	# default it fell back to. `not a positive integer` on its own is the
+	# sibling validator's sentence too, and the file carries that same `[
+	# "$n" -ge 1 ]` line TWICE: a mutant aimed at the first occurrence grades
+	# _suite_lock_slots and reds arm 12, which reads exactly like a kill.
+	local arm20='bound: a bad POSSE_SUITE_LOCK_WAIT runs on the default and says so'
+	local bn hb rc20=0
+	for bn in two 0 -1; do
+		rm -f "$tmp/m29" "$tmp/m29.log"
+		touch "$tmp/hold29"
+		POSSE_SUITE_LOCK_DIR="$tmp/bound-locks" POSSE_SUITE_LOCK_WAIT=$bn \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m29" "$tmp/hold29" go test -timeout 25m ./... &
+		hb=$!
+		if ! wait_file "$tmp/m29" "$fork_s" || [ "$(slot_of "$tmp/m29")" = none ] ||
+			! log_has "$tmp/m29.log" "POSSE_SUITE_LOCK_WAIT='$bn' is not a positive integer — using 3600"; then
+			rc20=1
+			bad "$arm20" \
+				"POSSE_SUITE_LOCK_WAIT=$bn gave slot '$(slot_of "$tmp/m29")', log: $(tr '\n' '|' <"$tmp/m29.log" 2>/dev/null)"
+		fi
+		rm -f "$tmp/hold29"
+		# Its own pid, never a pattern, and the same reason as arm 12: a
+		# holder still inside the acquire never reaches the line that
+		# watches its hold file.
+		kill "$hb" 2>/dev/null
+		wait "$hb" 2>/dev/null
+	done
+	[ "$rc20" = 0 ] && ok "$arm20"
+
+	# ARM 21, the control for arm 20: the fallback is the DEFAULT bound and
+	# not the bad value. Arm 13 is this arm for POSSE_SUITE_SLOTS and the
+	# defect has the same shape — a value meant to BOUND the queue, taken,
+	# turns the queue off instead.
+	#
+	# 0 is the value that matters, because it is the one a reader reaches for
+	# to mean "do not wait". Taken, `waited` is 0 on the first pass of the
+	# loop, so `[ 0 -ge 0 ]` holds and the acquire gives up the queue before
+	# it has ever announced that it was queued: no run on this box queues
+	# again, and the queue the self-test is here to prove is off while every
+	# other arm stays green. Without this arm, arm 20 is equally green over a
+	# validator that accepts it.
+	local arm21='bound: a POSSE_SUITE_LOCK_WAIT of 0 does not turn the queue off'
+	local qd=$tmp/bound0-locks h30 h31
+	mkdir -p "$qd"
+	touch "$tmp/hold30" "$tmp/hold31"
+	POSSE_SUITE_LOCK_DIR="$qd" POSSE_SUITE_SLOTS=1 \
+		"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m30" "$tmp/hold30" go test -timeout 25m ./... &
+	h30=$!
+	if ! wait_file "$tmp/m30" "$fork_s" || [ "$(slot_of "$tmp/m30")" != 1 ]; then
+		bad "$arm21" "the holder never took the only slot: $(tr '\n' '|' <"$tmp/m30.log" 2>/dev/null)"
+	else
+		POSSE_SUITE_LOCK_DIR="$qd" POSSE_SUITE_SLOTS=1 POSSE_SUITE_LOCK_WAIT=0 \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m31" "$tmp/hold31" go test -timeout 25m ./... &
+		h31=$!
+		# wait_answer returns on EITHER answer, so no verdict here is spent
+		# on the clock: the queued line is this arm's property, and a
+		# MARKER against a held single slot can only be the give-up, which
+		# is the defect. The correct run is then queued for the default
+		# 3600s and is killed below, exactly as arm 13's third holder is.
+		if ! wait_answer "$tmp/m31" "$fork_s"; then
+			bad "$arm21" "the waiter: $(answer_of "$tmp/m31" "$fork_s")"
+		elif [ -e "$tmp/m31" ]; then
+			bad "$arm21" \
+				"POSSE_SUITE_LOCK_WAIT=0 was taken as the bound: the waiter left the acquire on slot '$(slot_of "$tmp/m31")' without ever queueing, log: $(tr '\n' '|' <"$tmp/m31.log" 2>/dev/null)"
+		elif ! log_has "$tmp/m31.log" "POSSE_SUITE_LOCK_WAIT='0' is not a positive integer — using 3600"; then
+			bad "$arm21" \
+				"the waiter queued, but never said the value had been refused, so a reader cannot tell the bound they set from the one in force: $(tr '\n' '|' <"$tmp/m31.log" 2>/dev/null)"
+		else
+			ok "$arm21"
+		fi
+		rm -f "$tmp/hold31"
+		kill "$h31" 2>/dev/null
+		wait "$h31" 2>/dev/null
+	fi
+	rm -f "$tmp/hold30"
+	kill "$h30" 2>/dev/null
+	wait "$h30" 2>/dev/null
+
+	# ARM 22: the give-up line names who holds the slot NOW, and not who held
+	# it when the queue was announced (ranger-base-x5zmk, from
+	# ranger-base-gm54k). The ordering the give-up branch's own comment
+	# claims — "the holders are read before the say, in this order" — and the
+	# half arm 18 cannot reach even with its assertions moved onto the right
+	# line.
+	#
+	# WHY IT IS A SEPARATE FIXTURE. `held` is set TWICE in one acquire: once
+	# in the announce block, once in the give-up branch. Delete the second
+	# read and the first one's value is still in scope, so the line is
+	# populated and every naming assertion over it passes — MEASURED
+	# 2026-11-22: moving the give-up read after the say leaves all 23 other
+	# arms green, arm 18 included. What it names is then the holder AT THE
+	# ANNOUNCE, which on a real queue is the default bound ago: an hour-stale
+	# pid, under a line that tells the reader to go check whether that pid is
+	# a suite.
+	#
+	# WHY THE STAMP AND NOT THE SLOT. Handing the slot from one squatter to
+	# another cannot be done without the waiter winning the sweep in between
+	# — there is one slot, and releasing it is the waiter's chance to take
+	# it. So the squatter stays and its STAMP changes, which is the same
+	# discriminator for this line (the stamp is the holder half a reader
+	# acts on) and races nothing.
+	#
+	# WHY THE SLOW POLL. A rig that had to rewrite the stamp before a bound
+	# expired would be timing its own assertion, which is the
+	# ranger-base-stbh0 class. At POLL=3 and WAIT=1 the loop is structural
+	# instead: pass 1 sweeps, announces (waited=0) and SLEEPS 3s; pass 2
+	# sweeps and gives up (waited=3). The rewrite goes in at the head of that
+	# sleep, a whole poll interval before the branch that reads it can run,
+	# and the arm costs the one sleep.
+	local hd=$tmp/handover-locks arm22='bound: the give-up line names who holds the slot now, not who held it at the announce'
+	local h32 h33 announce32 giveup32
+	mkdir -p "$hd"
+	touch "$tmp/hold32" "$tmp/hold33"
+	POSSE_SUITE_LOCK_DIR="$hd" POSSE_SUITE_SLOTS=1 \
+		"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m32" "$tmp/hold32" go test -timeout 25m ./... &
+	h32=$!
+	if ! wait_file "$tmp/m32" "$fork_s" || [ "$(slot_of "$tmp/m32")" != 1 ]; then
+		bad "$arm22" "the squatter never took the only slot: $(tr '\n' '|' <"$tmp/m32.log" 2>/dev/null)"
+	else
+		printf 'pid: 1\nsince: 1970-01-01T00:00:00Z\nworktree: /first/stamp\n' >"$hd/suite-slot.1.lock"
+		POSSE_SUITE_LOCK_DIR="$hd" POSSE_SUITE_SLOTS=1 POSSE_SUITE_LOCK_WAIT=1 POSSE_SUITE_LOCK_POLL=3 \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m33" "$tmp/hold33" go test -timeout 25m ./... &
+		h33=$!
+		if ! wait_log "$tmp/m33.log" 'waiting for suite lock' "$fork_s"; then
+			bad "$arm22" "the waiter never queued, so there is no announce to be stale from: $(tr '\n' '|' <"$tmp/m33.log" 2>/dev/null)"
+		else
+			# Inside the 3s sleep the announce just entered.
+			printf 'pid: 1\nsince: 1970-01-01T00:00:00Z\nworktree: /second/stamp\n' >"$hd/suite-slot.1.lock"
+			announce32=$(log_line "$tmp/m33.log" 'waiting for suite lock') || announce32=''
+			if ! wait_file "$tmp/m33" "$fork_s"; then
+				bad "$arm22" "the waiter never got through the acquire: $(tr '\n' '|' <"$tmp/m33.log" 2>/dev/null)"
+			elif [[ $announce32 != *'/first/stamp'* ]]; then
+				# The control: without it a reader that named NOTHING at
+				# the announce would satisfy the assertion below.
+				bad "$arm22" "the announce did not read the first stamp, so nothing here went stale: $announce32"
+			elif ! giveup32=$(log_line "$tmp/m33.log" 'running unserialized rather than queueing forever'); then
+				bad "$arm22" "the waiter did not say it gave up the queue: $(tr '\n' '|' <"$tmp/m33.log" 2>/dev/null)"
+			elif [[ $giveup32 == *'/first/stamp'* ]] || [[ $giveup32 != *'/second/stamp'* ]]; then
+				bad "$arm22" "the give-up line names the holder as it was at the announce, one bound ago, and not as it is now: $giveup32"
+			else
+				ok "$arm22"
+			fi
+		fi
+		rm -f "$tmp/hold33"
+		kill "$h33" 2>/dev/null
+		wait "$h33" 2>/dev/null
+	fi
+	rm -f "$tmp/hold32"
+	kill "$h32" 2>/dev/null
+	wait "$h32" 2>/dev/null
 
 	# So the EXIT trap can remove them.
 	chmod 644 "$cd/suite-slot.1.lock" "$cd/suite-slot.2.lock" 2>/dev/null

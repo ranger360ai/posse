@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-x5zmk](ranger-base-x5zmk.md) — Four unwitnessed arms of the bounded suite queue, and the one that re-admitted the symptom (ranger-base-x5zmk) — 2026-11-22
 - [ranger-base-wiklv](ranger-base-wiklv.md) — Check 4's file boundary was already fixed; what still reproduced it was the install (ranger-base-wiklv) — 2026-11-22
 - [ranger-base-wbwqm](ranger-base-wbwqm.md) — Two clauses whose stated payoff no pin read (ranger-base-wbwqm) — 2026-11-22
 - [ranger-base-w6kke](ranger-base-w6kke.md) — ranger-base-w6kke: the watcher's words on the one line the wall check carries — 2026-11-22
