@@ -179,6 +179,92 @@ func TestQABwrapDropTmpGrantsReadsTheMountsResolvedSpelling(t *testing.T) {
 	}
 }
 
+// ranger-base-hhps5: and the SECOND key the same way. The drop set is built
+// from two — the mount and the launcher's TMPDIR — and until this arm only
+// the mount's was witnessed: MEASURED 2026-11-22 at 2866fdf4 (linux
+// 7.2.15-1-omarchy, go1.27.3) by mutating `drop[absResolve(tmpdir)]` back to
+// `drop[tmpdir]`, with the arm above and the two older drop pins
+// (…TakesTmpAndATmpdirUnderIt, …TakesATmpdirOutsideTmp) and
+// TestBwrapArgsBindsTheSeatTmpOverTheHosts ALL FOUR GREEN. Nothing in the
+// tree noticed the loss, which is why this arm exists rather than a comment
+// saying the line is correct.
+//
+// It is the mount arm's route, one key over, and it has to be: the mount
+// arm's own fixture plants a symlinked MOUNT and hands it a tmpdir that
+// needs no resolution, so it physically cannot produce the shape that grades
+// this key. Here the TMPDIR is the planted link and the MOUNT is a plain
+// directory, so the only resolution under grading is the one this arm is for.
+//
+// WHAT THE MISSING WITNESS WAS WORTH, and it is ranger-base-aurb8's sentence
+// about the other key: on darwin a launcher TMPDIR of /var/folders/…/T
+// resolves to /private/var/folders/…/T, and `SeatbeltWritable`'s `add` puts
+// the RESOLVED spelling in the set. With this key raw, the drop misses, the
+// box's shared temp grant survives a render that has just bound a private
+// /tmp over it, and the seat keeps a write grant on a directory every seat on
+// the box shares — the condition ranger-base-1c91x created this drop to
+// remove.
+func TestQABwrapDropTmpGrantsReadsTheTmpdirsResolvedSpelling(t *testing.T) {
+	t.Parallel()
+	root := absResolve(t.TempDir())
+	// darwin's TMPDIR shape: the directory itself under `private`, the
+	// launcher's own spelling a link to it.
+	resolved := filepath.Join(root, "private", "var", "folders", "zz", "T")
+	if err := os.MkdirAll(resolved, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tmpdir := filepath.Join(root, "var", "folders", "zz", "T")
+	if err := os.MkdirAll(filepath.Dir(tmpdir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(resolved, tmpdir); err != nil {
+		t.Fatal(err)
+	}
+	// A mount that resolves to itself, so the mount's key cannot carry this
+	// arm: a plain directory, as this box's /tmp is.
+	mount := filepath.Join(root, "tmp")
+	if err := os.MkdirAll(mount, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The set as `SeatbeltWritable` hands it over: every entry through its
+	// own `add`, which is `absResolve`. So the launcher's TMPDIR is in it
+	// under the resolved spelling and under no other.
+	proj, sibling := filepath.Join(root, "proj"), resolved+"-named"
+	set := []string{proj, mount, absResolve(tmpdir), sibling}
+
+	// THE CONTROLS, BEFORE THE DROP, and both of them: the grant is there,
+	// and it is there under the resolved spelling ONLY. Absent the second,
+	// a raw key would match and this arm would be green over the bug — which
+	// is exactly the state the mount arm's fixture leaves this key in.
+	if !containsString(set, resolved) {
+		t.Fatalf("CONTROL: the set does not carry the TMPDIR's resolved spelling %s, so this arm grades nothing: %v", resolved, set)
+	}
+	if containsString(set, tmpdir) {
+		t.Fatalf("CONTROL: the set carries the launcher's own spelling %s, so a raw drop key would match it and this arm grades nothing: %v", tmpdir, set)
+	}
+	if !writeGranted(set, tmpdir) || !writeGranted(set, resolved) {
+		t.Fatalf("CONTROL: the undropped set does not reach the TMPDIR under both spellings (%s, %s), so the arms below are not grading the drop: %v", tmpdir, resolved, set)
+	}
+
+	got := bwrapDropTmpGrantsOver(set, mount, tmpdir)
+	if want := strings.Join([]string{proj, sibling}, " "); strings.Join(got, " ") != want {
+		t.Fatalf("bwrapDropTmpGrantsOver kept %q, want %q — the launcher's TMPDIR is %s, which resolves to %s, and a set of resolved paths spells it the second way: an unresolved drop key matches neither entry, so the launcher's shared temp grant survives a render that has just handed the seat TMPDIR=%s instead (ranger-base-1c91x, ranger-base-hhps5)",
+			strings.Join(got, " "), want, tmpdir, resolved, bwrapTmpMount)
+	}
+	// And under BOTH spellings, which is the claim and not the string compare
+	// above: a grant the seat keeps under either name is a grant it keeps.
+	for _, p := range []string{tmpdir, resolved} {
+		if writeGranted(got, p) {
+			t.Errorf("the dropped set still reaches the launcher TMPDIR as %s: %v", p, got)
+		}
+	}
+	// The sibling with the TMPDIR as a name prefix stays, as it does in
+	// TestBwrapDropTmpGrantsTakesATmpdirOutsideTmp — the drop is a path set
+	// and not a prefix match, and resolving the key must not make it one.
+	if !containsString(got, sibling) {
+		t.Errorf("the drop took %s as well, which is a sibling of the TMPDIR and not inside it: %v", sibling, got)
+	}
+}
+
 // The same at the render: a launcher TMPDIR under a fixture home, a session
 // outside /tmp, and the rendered write set and argv carry no grant of it —
 // while the seat's /tmp and TMPDIR=/tmp are what it gets instead.

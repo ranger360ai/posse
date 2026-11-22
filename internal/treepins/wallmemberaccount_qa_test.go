@@ -47,12 +47,41 @@ package treepins
 // the reader can re-read is out of scope and needs no row saying so, because
 // the rule never reaches it.
 //
+// WHAT A LAUNCH IS SPELLED LIKE, which this census got wrong once
+// (ranger-base-hhps5, found by ranger-base-t0ha1's verify). The key read the
+// functions that hand `exec.Command`/`CommandContext` a LITERAL `"bwrap"`
+// ARGUMENT, and the prose above states no such limit — so a seat launched
+// through a shell or a pty wrapper, with the word inside the command STRING,
+// was invisible, and the `launchers` floor could not say so: an invisible
+// launcher does not lower the count of the visible ones. MEASURED 2026-11-22
+// at 2866fdf4 by a planted member file and its control, the same probe twice
+// and the only difference the spelling of the argv —
+// `exec.Command("bwrap", "--dev-bind", "/", "/", "/bin/true")` RED,
+// `exec.Command("sh", "-c", "bwrap --dev-bind / / /bin/true")` GREEN. That
+// control is what made the green a reading: arm 1 did see a planted launcher.
+// The key is now the bwrap command WORD wherever it reaches the call's
+// arguments, one hop included (wmaSeatLaunches), and there were already two
+// such launches in the member set: grokleader_qa_test.go's pty arm, which
+// joins the render's argv into a line for `script -qfec`, and
+// wallunixlive_test.go's `sh -c 'bwrap "$@"; :'` arm. Both render their
+// seat's error, so the widening reds nothing — it closes the route the next
+// one would have escaped by. Arm 3 carries the planted pair and its negative
+// cases (`bwraptest`, `bwrap-wrapper`, `bwrap.sh` and a skip message that
+// says the word are none of them launches); arm 1 carries a floor on the
+// wrapper route and a ceiling on it, because widening a key is how a census
+// starts grading functions that launch nothing.
+//
 // MEASURED 2026-11-21 (linux 7.2.15, go1.27.3, this tree): 24 member files,
 // 30 bwrap-launching functions in them, 2 of which rendered no error at all —
 // `bsLive.in` (bwrapseatstorelive_test.go) and `srLive.in`
 // (storerepogitwalllive_test.go), byte-identical copies of the two runners
 // ranger-base-axt1f fixed — and 19 messages reading their accounts after a
 // newline. All of those are fixed in the landing that adds this file.
+// RE-MEASURED 2026-11-22 (same box, go1.27.3) with the widened key: 24 member
+// files, 32 launching functions, 31 of them handing a literal `bwrap` argv
+// entry and 2 taking the wrapper route (one does both), 33 child errors
+// graded. The +1 over the argv-entry reading is grokleader_qa_test.go's
+// function, which this census could not see at all before.
 //
 // IT ENUMERATES A DISCOVERED FILE SET (the Glob below), so it is in this
 // package's one-package-census class and is doored by `make treepins-check` —
@@ -181,9 +210,107 @@ func wmaDecls(f *ast.File) []*ast.FuncDecl {
 	return out
 }
 
-// wmaLaunchesSeat reports whether this function starts a bwrap seat.
-func wmaLaunchesSeat(fn *ast.FuncDecl) bool {
+// wmaSeatRe is the one spelling of a bwrap launch, read as a command WORD so
+// that a path to the binary counts and a neighbour whose name merely carries
+// the letters does not: `bwrap` and `/usr/bin/bwrap` match, `bwrap-wrapper`,
+// `bwrap.sh` and `wrcNeedBwrap` do not.
+var wmaSeatRe = regexp.MustCompile(`(?:^|[^\w.-])bwrap(?:$|[^\w.-])`)
+
+// wmaSeatWord reports whether s names the bwrap binary as a command word.
+func wmaSeatWord(s string) bool { return wmaSeatRe.MatchString(s) }
+
+// wmaStringLit unquotes a string literal expression.
+func wmaStringLit(x ast.Node) (string, bool) {
+	lit, ok := x.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	s, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// wmaExprSeatWord reports whether any string literal anywhere under x names
+// bwrap as a command word — so a line spelled across a `+` is read too.
+func wmaExprSeatWord(x ast.Expr) bool {
 	found := false
+	ast.Inspect(x, func(n ast.Node) bool {
+		if s, ok := wmaStringLit(n); ok && wmaSeatWord(s) {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// wmaExprMentions reports whether x reads any of these names.
+func wmaExprMentions(x ast.Expr, names map[string]bool) bool {
+	found := false
+	ast.Inspect(x, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && names[id.Name] {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// wmaSeatWordNames are the names this function builds a bwrap command word
+// INTO: `line := "bwrap …"`, `q = append(q, "bwrap")`, `argv := []string{"bwrap", …}`.
+// ONE HOP, the same depth arm 2's account read uses, and it is what lets a
+// seat reach the call in a variable — grokleader_qa_test.go's pty arm joins
+// its argv into a line before handing it to `script -qfec`.
+func wmaSeatWordNames(fn *ast.FuncDecl) map[string]bool {
+	names := map[string]bool{}
+	record := func(lhs, rhs []ast.Expr) {
+		carries := false
+		for _, r := range rhs {
+			if wmaExprSeatWord(r) {
+				carries = true
+			}
+		}
+		if !carries {
+			return
+		}
+		for _, l := range lhs {
+			if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
+				names[id.Name] = true
+			}
+		}
+	}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.AssignStmt:
+			record(s.Lhs, s.Rhs)
+		case *ast.ValueSpec:
+			var lhs []ast.Expr
+			for _, id := range s.Names {
+				lhs = append(lhs, id)
+			}
+			record(lhs, s.Values)
+		}
+		return true
+	})
+	return names
+}
+
+// wmaSeatLaunches reports HOW this function starts a bwrap seat, and the two
+// answers are kept apart because one of them is this census's own blind spot
+// made visible (ranger-base-hhps5):
+//
+//	direct   an exec.Command/CommandContext argument is the literal "bwrap"
+//	         — the argv entry, which is all this key read before.
+//	wrapped  the word reaches the call some OTHER way: inside a command LINE
+//	         for a shell or a pty wrapper, or one hop away in a name the
+//	         function built the line in. A launch arm 1 could not see at all.
+//
+// Either is a launch. `wrapped` is counted so the floor below can say the
+// tree still has one, because a floor on the visible launchers cannot: an
+// invisible launcher does not lower the count of the visible ones.
+func wmaSeatLaunches(fn *ast.FuncDecl) (direct, wrapped bool) {
+	names := wmaSeatWordNames(fn)
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		c, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -197,15 +324,29 @@ func wmaLaunchesSeat(fn *ast.FuncDecl) bool {
 			return true
 		}
 		for _, a := range c.Args {
-			if lit, ok := a.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-				if s, uerr := strconv.Unquote(lit.Value); uerr == nil && s == "bwrap" {
-					found = true
+			if s, ok := wmaStringLit(a); ok {
+				switch {
+				case s == "bwrap":
+					direct = true
+				case wmaSeatWord(s):
+					wrapped = true
 				}
+				continue
+			}
+			if wmaExprSeatWord(a) || wmaExprMentions(a, names) {
+				wrapped = true
 			}
 		}
 		return true
 	})
-	return found
+	return direct, wrapped
+}
+
+// wmaLaunchesSeat reports whether this function starts a bwrap seat, by
+// either route.
+func wmaLaunchesSeat(fn *ast.FuncDecl) bool {
+	direct, wrapped := wmaSeatLaunches(fn)
+	return direct || wrapped
 }
 
 // wmaChildErrs are the names this function binds the SEAT's error to: the
@@ -367,13 +508,21 @@ func wmaFormat(x ast.Expr) (string, bool) {
 func TestQAEveryWallMemberSeatLaunchRendersItsChildsError(t *testing.T) {
 	t.Parallel()
 	files := wmaMemberFiles(t)
-	launchers, graded := 0, 0
+	launchers, graded, argvEntry := 0, 0, 0
+	var wrapped []string
 	for _, f := range files {
 		for _, fn := range wmaDecls(f.ast) {
-			if !wmaLaunchesSeat(fn) {
+			direct, viaWrapper := wmaSeatLaunches(fn)
+			if !direct && !viaWrapper {
 				continue
 			}
 			launchers++
+			if direct {
+				argvEntry++
+			}
+			if viaWrapper {
+				wrapped = append(wrapped, f.path+":"+strconv.Itoa(f.fset.Position(fn.Pos()).Line)+" "+fn.Name.Name)
+			}
 			errs := wmaChildErrs(fn)
 			if len(errs) == 0 {
 				// A launch whose waiter's error is dropped at the
@@ -404,6 +553,25 @@ func TestQAEveryWallMemberSeatLaunchRendersItsChildsError(t *testing.T) {
 	}
 	if graded == 0 {
 		t.Errorf("this census graded 0 child errors over %d launching function(s) — the waiter set %v no longer names how this package waits on a seat", launchers, wmaWaiters)
+	}
+	// AND THE CONTROL FOR THE WIDENING (ranger-base-hhps5). The floor above
+	// cannot ask whether the launch KEY still reads every spelling of a
+	// launch, for the reason that finding exists: an invisible launcher does
+	// not lower the count of the visible ones, so arm 1 was green over the
+	// wrapper route for as long as it could not see it. This floor asks the
+	// one question that floor cannot — does the tree still carry a launch the
+	// old literal-argv key could not see — and arm 3's planted pair is the
+	// hermetic half of the same claim.
+	if len(wrapped) == 0 {
+		t.Errorf("this census found %d launch(es) of a seat spelled some way other than a literal `bwrap` argv entry, want at least 1 (2 on 2026-11-22: grokleader_qa_test.go's pty arm, which joins the render's argv into a line for `script -qfec`, and wallunixlive_test.go's `sh -c 'bwrap \"$@\"; :'` arm). Those two are why the key is not the argv entry alone (ranger-base-hhps5); with neither in the tree, nothing but arm 3's planted pair holds the widening, and a later narrowing of wmaSeatLaunches would be green here. If the routes really have gone, say so and take this floor out — do not lower it.", len(wrapped))
+	}
+	// The other direction, because widening a key is how a census starts
+	// grading functions that launch nothing: the wrapper route is the
+	// EXCEPTION in this package (2 of 32), and a jump here is the one-hop
+	// name read matching a message or a neighbour's name rather than a
+	// launch. Arm 3's negative cases are the precise half of this.
+	if len(wrapped) > 8 {
+		t.Errorf("this census read %d of %d launch(es) through the wrapper route, want at most 8 (2 of 32 on 2026-11-22, with %d handing exec.Command a literal `bwrap` argv entry) — that is the shape of a key that has stopped meaning `this function starts a seat`, and every function it over-reads is one arm 1 then holds to a rule written for seats. The wrapper reads were: %v", len(wrapped), launchers, argvEntry, wrapped)
 	}
 }
 
@@ -508,6 +676,53 @@ func TestQATheWallMemberAccountRulesMatchWhatTheyClaim(t *testing.T) {
 	cmd := exec.Command("git", "status")
 	out, _ := cmd.CombinedOutput()
 	t.Logf("%s", out)
+}`, false, false},
+		// ranger-base-hhps5's planted pair, which is the whole of that
+		// finding: the same probe twice, the only difference being how the
+		// seat's argv is spelled. The first was RED before the widening and
+		// the second GREEN, with nothing else between them (MEASURED
+		// 2026-11-22 at 2866fdf4 by planting both into internal/posse as a
+		// member file). Both are launches now.
+		{"a seat launched through a shell, the literal inside the command line", `func run(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "bwrap --dev-bind / / /bin/true")
+	out, _ := cmd.CombinedOutput()
+	t.Logf("%s", out)
+}`, true, false},
+		{"a seat launched through a pty wrapper, the argv joined into a line one hop away", `func run(t *testing.T) {
+	var q []string
+	q = append(q, "bwrap")
+	for _, a := range argv {
+		q = append(q, shellQuote(a))
+	}
+	cmd := exec.Command(script, "-qfec", strings.Join(q, " ")+" "+line, "/dev/null")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("the seat never started: %v", err)
+	}
+	_ = cmd.Wait()
+}`, true, true},
+		{"a seat launched by its absolute path inside a command line", `func run(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "exec /usr/bin/bwrap --dev-bind / / /bin/true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("the seat refused: %v", err)
+	}
+}`, true, true},
+		// And the negative cases the widening needs, because a key read as a
+		// SUBSTRING would put every one of these under arm 1's rule:
+		{"a shell line that is not a seat", `func run(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "git status --porcelain")
+	out, _ := cmd.CombinedOutput()
+	t.Logf("%s", out)
+}`, false, false},
+		{"a shell line naming a neighbour of bwrap", `func run(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "bwraptest && bwrap-wrapper && echo bwrap.sh")
+	out, _ := cmd.CombinedOutput()
+	t.Logf("%s", out)
+}`, false, false},
+		{"a skip message that says bwrap is absent", `func run(t *testing.T) {
+	why := "NOTHING MEASURED: no bwrap on this host"
+	cmd := exec.Command("git", "status")
+	out, _ := cmd.CombinedOutput()
+	t.Skipf("%s: %s", why, out)
 }`, false, false},
 		{"a seat started through CommandContext", `func run(t *testing.T, ctx context.Context) {
 	cmd := exec.CommandContext(ctx, "bwrap", "x")

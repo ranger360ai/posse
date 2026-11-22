@@ -216,6 +216,17 @@ func bwrapDropTmpGrants(set []string, tmpdir string) []string {
 // (TestQABwrapDropTmpGrantsReadsTheMountsResolvedSpelling). Nothing in
 // production passes anything but `bwrapTmpMount`.
 //
+// BOTH KEYS ARE RESOLVED AND BOTH ARE WITNESSED, which took two arms and not
+// one (ranger-base-hhps5). The pin above plants a symlinked MOUNT and hands
+// it a tmpdir needing no resolution, so it cannot produce the shape that
+// grades the TMPDIR's key: MEASURED 2026-11-22, with `drop[tmpdir]` raw, that
+// pin and every other drop pin in the tree were GREEN. The TMPDIR's key has
+// its own arm now, the same route one key over
+// (TestQABwrapDropTmpGrantsReadsTheTmpdirsResolvedSpelling), and the darwin
+// reading it is for is the one ranger-base-1b8yv measured: a launcher TMPDIR
+// of /var/folders/…/T resolves to /private/var/folders/…/T, and
+// `SeatbeltWritable`'s `add` puts the resolved spelling in the set.
+//
 // It is also the ONE spelling of this rule now: BwrapArgs' step 1c took the
 // grant the private /tmp replaces out of its own set with a second copy of
 // the comparison, carrying the same raw literal and the same blind spot, and
