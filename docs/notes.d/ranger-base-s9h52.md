@@ -154,6 +154,49 @@ pin: a census that found no member files, no seat launches, or no accounts
 would pass having read nothing. Both directions are the bug, so each arm
 carries a floor with its 2026-11-21 reading written beside it.
 
+## The instrument paid off inside this session, and the number is 137
+
+`ranger-base-axt1f`'s fragment says of its red: "not reproducible, and its
+cause is not recoverable from any record this shop keeps." While verifying
+THIS bead, the same member red again in the same venue — and this time the
+one line that reaches a bead carried its own cause:
+
+    FAIL TestLiveBwrapGitRefsCommitsAfterAnOutsidePackRefs:
+    bwrapgitrefslive_test.go:522: the seat's commit failed after an outside
+    pack-refs --all --prune: exit status 137, and the seat said NOTHING — so
+    that status is the whole account: no error from the command and no bwrap
+    refusal, which is the shape of a seat ended from outside rather than one
+    the wall turned away
+
+`137` is `128 + 9`: the seat was **SIGKILLed from outside**. That is the
+discrimination ranger-base-axt1f named as the whole point of the fix and
+could not demonstrate, because its own red predated the fix. Compare what the
+same failure said before: `the seat's commit failed after an outside
+pack-refs --all --prune:` and nothing. One of those sends the next reader to
+the box; the other sends them nowhere.
+
+MEASURED 2026-11-21 (linux 7.2.15, bwrap 0.13.1, go1.27.3, 16 cores):
+
+- the red: one `venue+check` run, `go test` exited 1 in 127s, 1 of 48
+  members. A sibling seat (`gwart-…-aurb8`) took a suite slot during that
+  run and the one-minute load went from 3.62 to 12.40.
+- the immediately following `venue+check`: rc=0 in 122s at load 5.68,
+  `wall check: green, 48 pins measured`.
+- `^TestLiveBwrapGitRefs` at `-count=100` — 700 executions of the seven
+  git-refs pins, T4 and its control among them: `ok` in 9.1s, 0 FAIL.
+- not memory: no OOM line in `dmesg`, 19G available.
+- not the load guard and not a reap of this session:
+  `~/homes/ranger/state/dispatch-watch.log` holds only
+  `reaped <session> (bead … closed)` rows for OTHER seats in the window, and
+  `$TMPDIR/posse-test-signal.log` is hours stale, so nothing signalled a
+  suite wrapper here.
+
+So it is still not reproducible by repetition, and this bead does not claim to
+have closed it. What is new is that the report now names which KIND of failure
+it was, and it points at the box under concurrent load rather than at this
+render. Filed as its own bead, because a seat killed from outside while the
+wall is the subject is a defect with a condition attached and not a note.
+
 ## What this census does NOT reach, and why that is not a gap to widen
 
 The key is a bwrap seat launch plus an **error value**. The wall-watch
