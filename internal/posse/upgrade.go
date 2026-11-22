@@ -72,6 +72,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // UpgradeDelegateKey is the config key naming the one persona that may run
@@ -310,11 +311,38 @@ func (l *upgradeLock) Release() {
 	l.f = nil
 }
 
+// UpgradeLockWait bounds lockUpgrade's wait (ranger-base-u66yb). The lock
+// file sits in ~/.cache/posse, which every wall and every shim grants, so
+// ANY seat can open it, flock it and stay alive; unbounded, the delegate's
+// backgrounded upgrade then waits forever behind something that is not an
+// upgrade at all. ASSUMED 2026-11-22: 60m, which is 2.4x the top of ADR
+// 0092's planning envelope for the whole verb (15-25 min, Measured versus
+// assumed) and 5x its measured make-test floor (11m57s) — long enough that
+// a second delegate still queues behind a real upgrade on a loaded box, short
+// enough that a squatter costs an hour and a refusal that names it rather
+// than a verb that never ends.
+const UpgradeLockWait = 60 * time.Minute
+
+// upgradeLockPoll is how often a contended lockUpgrade retries the
+// non-blocking flock. flock(2) has no "wait up to N" mode, so a bounded wait
+// is a poll (bdWriteLockPoll's header); an upgrade queue is minutes long, so
+// a second is fine-grained enough and costs nothing.
+const upgradeLockPoll = time.Second
+
 // lockUpgrade takes the box-wide upgrade lock, WAITING rather than refusing
 // when another upgrade holds it. An upgrade is minutes of `make test`, and a
 // second delegate who typed the verb wants it to happen once the first is
-// done — not to be told no and have to decide whether to retype it.
+// done — not to be told no and have to decide whether to retype it. The
+// wait is bounded by UpgradeLockWait, because the lock's directory is one
+// every seat can write (ranger-base-u66yb).
 func lockUpgrade(w io.Writer) (*upgradeLock, error) {
+	return lockUpgradeWithin(w, UpgradeLockWait, upgradeLockPoll)
+}
+
+// lockUpgradeWithin is lockUpgrade with its bound and poll as arguments, so
+// the pin can hold the lock in a child and watch the verb refuse in under a
+// second rather than an hour.
+func lockUpgradeWithin(w io.Writer, wait, poll time.Duration) (*upgradeLock, error) {
 	path := UpgradeLockPath()
 	if path == "" {
 		return nil, Die("posse upgrade: no HOME and no XDG_CACHE_HOME, so there is nowhere to put the upgrade lock — refusing rather than upgrading unserialized")
@@ -334,8 +362,21 @@ func lockUpgrade(w io.Writer) (*upgradeLock, error) {
 	// against nobody.
 	err = flock(f, syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {
-		fmt.Fprintf(w, "⏳ upgrade lock held by %s — waiting (ADR 0092 D3)\n", lockHolder(path))
-		err = flock(f, syscall.LOCK_EX)
+		fmt.Fprintf(w, "⏳ upgrade lock held by %s — waiting up to %s (ADR 0092 D3)\n", upgradeLockHolder(f, path), wait)
+		deadline := time.Now().Add(wait)
+		for errors.Is(err, syscall.EWOULDBLOCK) {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				// Named BEFORE the close: the kernel's answer is read off
+				// this fd's inode, and a closed fd has none.
+				holder := upgradeLockHolder(f, path)
+				f.Close()
+				return nil, Die("posse upgrade: upgrade lock %s still held by %s after %s — refusing rather than waiting forever (ranger-base-u66yb). Any seat can take that lock, so check the holder is an upgrade before retyping the verb",
+					AbbrevHome(path), holder, wait)
+			}
+			time.Sleep(min(poll, remaining))
+			err = flock(f, syscall.LOCK_EX|syscall.LOCK_NB)
+		}
 	}
 	if err != nil {
 		f.Close()
@@ -343,6 +384,69 @@ func lockUpgrade(w io.Writer) (*upgradeLock, error) {
 	}
 	stampLockHolder(f)
 	return &upgradeLock{f: f}, nil
+}
+
+// upgradeLockHolder names who holds the upgrade lock for the waiting line
+// and the refusal. The kernel's answer first: /proc/locks lists every flock
+// with the pid that took it and the file's inode, and a seat cannot write
+// that. The stamp in the lock file is the fallback, labelled as what it is —
+// bytes the holder wrote itself, which is any seat, so they can name anyone
+// (ranger-base-u66yb). No /proc/locks (darwin) or no unique match is the
+// fallback, never a guess.
+func upgradeLockHolder(f *os.File, path string) string {
+	if pid, ok := flockHolderPid(f, "/proc/locks"); ok {
+		return fmt.Sprintf("pid %d (per /proc/locks)", pid)
+	}
+	return lockHolder(path) + " (per the lock file's own stamp, which any seat can write)"
+}
+
+// flockHolderPid reads locksPath (/proc/locks' format) for the FLOCK held on
+// f's inode and returns the pid that took it. It matches on the inode alone:
+// /proc/locks reports the superblock's device, which on btrfs is not the
+// st_dev stat returns, so a device match would miss on exactly the
+// filesystem a box is likeliest to run. An inode that matches two different
+// pids (two filesystems, or a waiter line) is ambiguous, and ambiguous is
+// false. A pid of 0 or less is a holder outside this pid namespace — also
+// false.
+func flockHolderPid(f *os.File, locksPath string) (int, bool) {
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, false
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	ino := uint64(st.Ino)
+	b, err := os.ReadFile(locksPath)
+	if err != nil {
+		return 0, false
+	}
+	found := 0
+	for _, line := range strings.Split(string(b), "\n") {
+		// "1: FLOCK  ADVISORY  WRITE 4242 00:1f:123456 0 EOF"; a blocked
+		// waiter's line carries "->" after the ordinal and is not a holder.
+		fs := strings.Fields(line)
+		if len(fs) < 6 || fs[1] != "FLOCK" {
+			continue
+		}
+		parts := strings.Split(fs[5], ":")
+		if len(parts) != 3 {
+			continue
+		}
+		if n, err := strconv.ParseUint(parts[2], 10, 64); err != nil || n != ino {
+			continue
+		}
+		pid, err := strconv.Atoi(fs[4])
+		if err != nil || pid <= 0 {
+			return 0, false
+		}
+		if found != 0 && found != pid {
+			return 0, false
+		}
+		found = pid
+	}
+	return found, found != 0
 }
 
 // upgradePlan is what the verb resolved before it wrote anything. Every

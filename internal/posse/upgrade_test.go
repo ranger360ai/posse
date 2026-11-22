@@ -34,9 +34,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -1262,5 +1264,171 @@ func TestUpgradeTargetsTheRunningBinaryAndTheLagsCheckout(t *testing.T) {
 	head = strings.SplitN(out.String(), "\n", 2)[0]
 	if !strings.Contains(head, fmt.Sprintf("%s → %s (1 commit(s))", shortSha(f.a), shortSha(f.b))) {
 		t.Errorf("`posse upgrade <sha>` resolved something other than the sha it was given:\n  %q", head)
+	}
+}
+
+// ─── the bounded wait, ranger-base-u66yb ─────────────────────────────────────
+
+// Any seat can open ~/.cache/posse/upgrade.lock, flock it and stay alive. The
+// verb must then refuse within its bound rather than wait forever, and the
+// refusal must name the holder from the kernel's lock table — a pid the
+// holder could not have written — rather than from the stamp it wrote itself.
+// The holder is a CHILD process, the shape the finding describes: a different
+// process taking the lock, not another fd of this one.
+func TestUpgradeLockRefusesWithinItsBoundAndNamesTheKernelsHolder(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+	path := UpgradeLockPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The squatter's stamp names someone else entirely — what a seat that
+	// wanted to blame another could write.
+	if err := os.WriteFile(path, []byte("pid: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "RHQ_FAKE_HERDR=") {
+			env = append(env, kv)
+		}
+	}
+	child := exec.Command(os.Args[0], "-test.run=^TestUpgradeLockHolderChild$", "-test.v")
+	child.Env = append(env, "POSSE_UPGRADE_LOCK_HOLD="+path)
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = child.Process.Kill()
+		_, _ = child.Process.Wait()
+	}()
+	buf := make([]byte, 64)
+	got := ""
+	for deadline := time.Now().Add(30 * time.Second); !strings.Contains(got, "held") && time.Now().Before(deadline); {
+		n, err := stdout.Read(buf)
+		got += string(buf[:n])
+		if err != nil {
+			break
+		}
+	}
+	if !strings.Contains(got, "held") {
+		t.Fatalf("child never took the lock: %q", got)
+	}
+
+	var out bytes.Buffer
+	start := time.Now()
+	lock, err := lockUpgradeWithin(&out, 300*time.Millisecond, 20*time.Millisecond)
+	took := time.Since(start)
+	if err == nil {
+		lock.Release()
+		t.Fatal("lockUpgrade took a lock a live child holds")
+	}
+	if took > 10*time.Second {
+		t.Errorf("the refusal took %s against a 300ms bound", took)
+	}
+	if took < 300*time.Millisecond {
+		t.Errorf("the refusal came after %s, before its own 300ms bound — a wait that ends early lied about itself", took)
+	}
+	for _, s := range []string{err.Error(), out.String()} {
+		if !strings.Contains(s, "300ms") {
+			t.Errorf("must say the bound it waited: %q", s)
+		}
+	}
+	if !strings.Contains(err.Error(), "refusing rather than waiting forever") {
+		t.Errorf("the refusal must say what it is: %v", err)
+	}
+	if _, statErr := os.Stat("/proc/locks"); statErr == nil {
+		want := fmt.Sprintf("pid %d (per /proc/locks)", child.Process.Pid)
+		if !strings.Contains(err.Error(), want) || !strings.Contains(out.String(), want) {
+			t.Errorf("with /proc/locks readable the holder must be the kernel's, %q:\n  err: %v\n  out: %q", want, err, out.String())
+		}
+	} else if !strings.Contains(err.Error(), "own stamp") {
+		t.Errorf("without /proc/locks the stamp must be labelled as the holder's own word: %v", err)
+	}
+}
+
+// TestUpgradeLockHolderChild is the squatter: it flocks the path it is
+// handed, says so, and stays alive until it is killed.
+func TestUpgradeLockHolderChild(t *testing.T) {
+	path := os.Getenv("POSSE_UPGRADE_LOCK_HOLD")
+	if path == "" {
+		t.Skip("child of TestUpgradeLockRefusesWithinItsBoundAndNamesTheKernelsHolder")
+	}
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := flock(f, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("held")
+	time.Sleep(5 * time.Minute)
+}
+
+// The bound is a bound and not a refusal: a holder that lets go inside it is
+// queued behind, which is what lockUpgrade's header promises a second delegate.
+func TestUpgradeLockTakesTheLockWhenTheHolderLetsGoInsideTheBound(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	held, err := lockUpgradeWithin(io.Discard, time.Second, 10*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		held.Release()
+	}()
+	var out bytes.Buffer
+	lock, err := lockUpgradeWithin(&out, 30*time.Second, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("a lock released inside the bound must be taken: %v", err)
+	}
+	lock.Release()
+	if !strings.Contains(out.String(), "waiting up to 30s") {
+		t.Errorf("the waiting line must say its bound: %q", out.String())
+	}
+}
+
+// /proc/locks' format, read against fixtures: the holder's line wins, a
+// waiter's "->" line is not a holder, another inode is not this lock, and two
+// pids on one inode (two filesystems) is ambiguous and therefore no answer.
+func TestFlockHolderPidReadsTheKernelsTable(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	f, err := os.Create(filepath.Join(dir, "l"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	fi, _ := f.Stat()
+	ino := fi.Sys().(*syscall.Stat_t).Ino
+	for _, c := range []struct {
+		name  string
+		table string
+		pid   int
+		ok    bool
+	}{
+		{"holder", fmt.Sprintf("1: FLOCK  ADVISORY  WRITE 4242 00:1f:%d 0 EOF\n", ino), 4242, true},
+		{"waiter only", fmt.Sprintf("1: -> FLOCK  ADVISORY  WRITE 77 00:1f:%d 0 EOF\n", ino), 0, false},
+		{"holder and waiter", fmt.Sprintf("1: FLOCK  ADVISORY  WRITE 4242 00:1f:%d 0 EOF\n1: -> FLOCK  ADVISORY  WRITE 77 00:1f:%d 0 EOF\n", ino, ino), 4242, true},
+		{"other inode", fmt.Sprintf("1: FLOCK  ADVISORY  WRITE 4242 00:1f:%d 0 EOF\n", ino+1), 0, false},
+		{"posix lock", fmt.Sprintf("1: POSIX  ADVISORY  WRITE 4242 00:1f:%d 0 EOF\n", ino), 0, false},
+		{"ambiguous", fmt.Sprintf("1: FLOCK  ADVISORY  WRITE 4242 00:1f:%d 0 EOF\n2: FLOCK  ADVISORY  WRITE 99 00:2a:%d 0 EOF\n", ino, ino), 0, false},
+		{"outside the namespace", fmt.Sprintf("1: FLOCK  ADVISORY  WRITE 0 00:1f:%d 0 EOF\n", ino), 0, false},
+	} {
+		p := filepath.Join(dir, strings.ReplaceAll(c.name, " ", "-"))
+		if err := os.WriteFile(p, []byte(c.table), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pid, ok := flockHolderPid(f, p)
+		if pid != c.pid || ok != c.ok {
+			t.Errorf("%s: flockHolderPid = %d, %v; want %d, %v", c.name, pid, ok, c.pid, c.ok)
+		}
+	}
+	if _, ok := flockHolderPid(f, filepath.Join(dir, "absent")); ok {
+		t.Error("no table must be no answer")
 	}
 }
