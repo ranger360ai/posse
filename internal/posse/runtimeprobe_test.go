@@ -403,31 +403,90 @@ func TestProbePromptCarriesEveryShapeAndTheLookup(t *testing.T) {
 	}
 }
 
-func TestReadFromReturnsOnlyTheDelta(t *testing.T) {
+// The delta read, now guarded (ranger-base-jielm). The first three arms are
+// TestReadFromReturnsOnlyTheDelta's, unchanged in substance: what this reads
+// is what the trail GAINED, because refusals.log is kept across renders and
+// a stale line from an earlier probe would otherwise answer for this one.
+func TestRefusalDeltaAfterReturnsOnlyTheDelta(t *testing.T) {
 	t.Parallel()
-	p := filepath.Join(t.TempDir(), "refusals.log")
+	root := t.TempDir()
+	p := filepath.Join(root, "refusals.log")
 	if err := os.WriteFile(p, []byte("old line\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	at := fileSize(p)
+	at := refusalLeafSize(root, p)
+	if at == 0 {
+		t.Fatalf("the size of a regular trail read as 0, so every arm below starts from the wrong offset")
+	}
 	if err := os.WriteFile(p, []byte("old line\nnew line\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The delta is the whole point: refusals.log is kept across renders, so
-	// a stale line from an earlier probe would answer for this one.
-	if got := readFrom(p, at); got != "new line\n" {
-		t.Errorf("readFrom must return only what was appended: %q", got)
+	if got := refusalDeltaAfter(root, p, at); got != "new line\n" {
+		t.Errorf("the delta read must return only what was appended: %q", got)
 	}
 	// A log that SHRANK (rotated, or deleted and recreated) reads from the
 	// start rather than returning nothing.
 	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := readFrom(p, at); got != "x\n" {
+	if got := refusalDeltaAfter(root, p, at); got != "x\n" {
 		t.Errorf("a shrunken log reads whole: %q", got)
 	}
-	if got := readFrom(filepath.Join(t.TempDir(), "nope"), 0); got != "" {
+	if got := refusalDeltaAfter(root, filepath.Join(root, "nope"), 0); got != "" {
 		t.Errorf("a missing log is empty: %q", got)
+	}
+}
+
+// AND THE PLANT (ranger-base-jielm, found while fixing the `posse gates`
+// read of the same leaf). This pair is the whole evidence for the probe's
+// observable 2 — "the canary deny refused and landed in refusals.log
+// through all three shapes" — graded by strings.Contains over three FIXED
+// markers. So a planter outside every wall who links the leaf at a file
+// carrying those three strings does not merely leak that file: they report
+// a wall that refused nothing as a wall that held, on the command
+// INSTALL.md §7 sells as the thing you read before your first dispatch.
+//
+// Fail CLOSED is the only safe direction, and it is what is asserted: the
+// size reads 0, the delta reads "", and observable 2 then says "no refusal
+// reached refusals.log", which is true of a leaf the host would not read.
+func TestRefusalDeltaAfterCannotBeForgedByAPlantedLeaf(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	p := filepath.Join(root, "refusals.log")
+	forged := filepath.Join(t.TempDir(), "a-file-the-planter-wrote")
+	markers := []string{ProbeShapeDirect, ProbeShapeShellC, ProbeShapeScript}
+	if err := os.WriteFile(forged, []byte(strings.Join(markers, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The control: those three markers are what the grader looks for, so a
+	// REGULAR leaf with this body passes observable 2 — which is what makes
+	// the plant below worth anything.
+	if err := os.WriteFile(p, []byte(strings.Join(markers, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctl := refusalDeltaAfter(root, p, 0)
+	for _, m := range markers {
+		if !strings.Contains(ctl, m) {
+			t.Fatalf("a REGULAR leaf carrying %q does not read back, so the plant arm below measures nothing: %q", m, ctl)
+		}
+	}
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(forged, p); err != nil {
+		t.Fatal(err)
+	}
+	if n := refusalLeafSize(root, p); n != 0 {
+		t.Errorf("the size of a PLANTED leaf read as %d — the stat follows the link (ranger-base-jielm)", n)
+	}
+	got := refusalDeltaAfter(root, p, 0)
+	for _, m := range markers {
+		if strings.Contains(got, m) {
+			t.Errorf("a file a planter named at the refusals leaf answered the probe's %q marker — observable 2's verdict can be forged (ranger-base-jielm):\n%s", m, got)
+		}
+	}
+	if got != "" {
+		t.Errorf("a planted leaf must read empty and not %q", got)
 	}
 }
 

@@ -481,6 +481,29 @@ func TestQAProbeProfilesGrantInTheKernelsSpelling(t *testing.T) {
 	}
 	through := f // the same fixture, its store named the other way
 	through.store = link
+	// THE PREMISE, ASSERTED BEFORE ANYTHING IS MEASURED (ranger-base-jielm,
+	// from the ranger-base-q2peg verify). Everything this test says about
+	// spelling rests on the one assignment above: the set under test is
+	// built from `through.store`, so a `through.store` that is the
+	// fixture's own store leaves the row below green over the exact bug
+	// this pin was written for — MEASURED 2026-11-21 at d28d7c45, ok with
+	// `through.store = f.store` and the unresolved append put back, and ok
+	// with that one edit alone.
+	//
+	// The control this replaces was `filepath.Join(link, ".git") != want`,
+	// placed AFTER the measurement: it witnesses that the LINK EXISTS, and
+	// is true whatever `through.store` holds — which is why nothing stood
+	// over the assignment. Both arms below are written in terms of the
+	// field sbWritableFor was handed: the store it built from is a SECOND
+	// name for the fixture's store, and that name is not the one the kernel
+	// matches on. Fatal and not Errorf: a row that has stopped
+	// discriminating must not also report on what it no longer measures.
+	if through.store == f.store {
+		t.Fatalf("the set under test is built from the fixture's own store (%s) and not from the planted link, so this test measures nothing about spelling", through.store)
+	}
+	if raw := filepath.Join(through.store, ".git"); absResolve(raw) == raw {
+		t.Fatalf("the set under test is built from %s, which is already spelled the way the kernel matches, so this test measures nothing about spelling", raw)
+	}
 	// sbWritableFor fatals on an unresolved entry; this is the POSITIVE
 	// half, because a set that simply dropped the grant would satisfy that
 	// guard and leave the third profile proving nothing.
@@ -488,12 +511,6 @@ func TestQAProbeProfilesGrantInTheKernelsSpelling(t *testing.T) {
 	want := absResolve(filepath.Join(f.store, ".git"))
 	if !sbHas(w, want) {
 		t.Errorf("the %s set does not grant %s — ranger-base-kfrpv's grant has to be in it, spelled the way the kernel matches:\n  %s", name, want, strings.Join(w, "\n  "))
-	}
-	// And the control for the plant: the link really is a second spelling,
-	// so the row above discriminates. If the fixture ever stops putting the
-	// store where a link can reach it, this says so rather than passing.
-	if raw := filepath.Join(link, ".git"); raw == want {
-		t.Fatalf("the plant resolves to itself (%s), so this test measures nothing about spelling", raw)
 	}
 }
 

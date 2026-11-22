@@ -174,3 +174,70 @@ func readRefusalLeaf(root, path string) ([]byte, error) {
 	defer f.Close()
 	return io.ReadAll(f)
 }
+
+// ReadRefusalsLog is the canonical trail's bytes for a reader outside this
+// package: `posse gates <persona>` prints its last ten lines into the
+// operator's terminal (cmd/posse/main.go). That was the one uncaged ACCESS
+// of this leaf left on a plain os.ReadFile — the same leaf, the same
+// planter class and the same following open as the three WRITES above,
+// which is all legou's census claimed, since its subject was the writers
+// (ranger-base-jielm, from the ranger-base-q2peg verify). What a link
+// bought there is narrower than what it bought the fold — a chosen file's
+// last ten lines in the operator's own output, not seat-authored bytes
+// appended to a shell rc — but the open was identical, and the parents are
+// walked here for ranger-base-byqv0's reason too.
+//
+// An ABSENT trail answers an error os.IsNotExist recognises, which a
+// reporting caller may read as "empty"; a REFUSED one answers
+// errRefusalLeaf or errRefusalParent, which it must not.
+func (a *App) ReadRefusalsLog(persona string) ([]byte, error) {
+	return readRefusalLeaf(a.StateDir, a.RefusalsLogPath(persona))
+}
+
+// refusalLeafSize and refusalDeltaAfter are the DELTA read of the canonical
+// trail: `runtime probe` notes where the log stood, launches a real seat,
+// and grades observable 2 — "the canary deny refused and landed in
+// refusals.log through all three shapes" — by searching what the file
+// GAINED for three fixed markers (runtimeprobe.go).
+//
+// FOUND WHILE FIXING THE READ IN `posse gates` (ranger-base-jielm): that
+// pair was an os.Stat and an os.ReadFile, so it was the same following open
+// at a second host-side call site, and it buys a planter strictly more. The
+// `posse gates` read spends the link target's last ten lines on the
+// operator's terminal; this one spends the probe's VERDICT — a file linked
+// here that happens to carry the three markers reports a wall that refused
+// nothing as a wall that held, on the command INSTALL.md §7 sells as the
+// thing you read before your first dispatch.
+//
+// Both fail CLOSED on a refusal, which is the only direction that is safe
+// here: a size of 0 reads from the start, and a delta of "" leaves every
+// marker missing, so observable 2 reports "no refusal reached refusals.log"
+// — true of a leaf the host would not read, and the opposite of what the
+// unguarded pair could be made to say.
+func refusalLeafSize(root, path string) int64 {
+	f, err := openRefusalLeaf(root, path, os.O_RDONLY, false)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return 0
+	}
+	return st.Size()
+}
+
+// refusalDeltaAfter returns what the trail gained after offset. A leaf that
+// SHRANK (rotated, deleted and recreated) reads from the start rather than
+// returning nothing — readFrom's own reason, kept: the alternative is a
+// probe that silently measures an empty log.
+func refusalDeltaAfter(root, path string, offset int64) string {
+	b, err := readRefusalLeaf(root, path)
+	if err != nil {
+		return ""
+	}
+	if offset < 0 || offset > int64(len(b)) {
+		return string(b)
+	}
+	return string(b[offset:])
+}

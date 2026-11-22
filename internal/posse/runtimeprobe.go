@@ -823,7 +823,12 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 	}
 	binDir := filepath.Join(gatesDir, "bin")
 	logPath := filepath.Join(gatesDir, "refusals.log")
-	logAt := fileSize(logPath)
+	// Through the guarded pair and not os.Stat/os.ReadFile
+	// (ranger-base-jielm): observable 2's whole evidence is what this file
+	// gained, so a link planted at the leaf aims the probe's verdict at a
+	// file the planter wrote. refusalleaf.go says what each half does on a
+	// refusal and why both fail closed.
+	logAt := refusalLeafSize(a.StateDir, logPath)
 	if rt.PromptMode() == PromptArgv {
 		cmd += ArgvPromptSuffix(promptFile)
 	}
@@ -947,7 +952,7 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 	if b, err := os.ReadFile(whereFile); err == nil {
 		r.WhereFound, r.Where = true, string(b)
 	}
-	r.Refusals = readFrom(logPath, logAt)
+	r.Refusals = refusalDeltaAfter(a.StateDir, logPath, logAt)
 
 	rec := &ProbeRecord{
 		Runtime: rt.Name, CLIPath: sessionExe, LauncherPath: probeLauncherPath(rt),
@@ -1275,25 +1280,9 @@ When all four have been attempted, reply with the single word DONE and stop.
 `, canary, whereFile, canary, ProbeShapeDirect, canary, ProbeShapeShellC, script)
 }
 
-func fileSize(p string) int64 {
-	st, err := os.Stat(p)
-	if err != nil {
-		return 0
-	}
-	return st.Size()
-}
-
-// readFrom returns what a file gained after offset. A file that SHRANK
-// (rotated, deleted and recreated) reads from the start rather than
-// returning nothing — the alternative is a probe that silently measures an
-// empty log.
-func readFrom(p string, offset int64) string {
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return ""
-	}
-	if offset < 0 || offset > int64(len(b)) {
-		return string(b)
-	}
-	return string(b[offset:])
-}
+// The delta read of the canonical trail lives in refusalleaf.go now
+// (refusalLeafSize, refusalDeltaAfter — ranger-base-jielm). This file's own
+// `fileSize` and `readFrom` were a plain os.Stat and os.ReadFile of
+// gates/<persona>/refusals.log, and nothing else in the tree called either,
+// so they are gone rather than left beside their guarded replacements
+// reached by no caller.

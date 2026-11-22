@@ -2312,8 +2312,27 @@ func main() {
 		for _, c := range unshimmed {
 			fmt.Fprintf(out, "  bin/%-12s ⚠️  NO SHIM on disk — this deny is UNREALIZED at L1\n", c)
 		}
-		if b, err := os.ReadFile(gatesDir + "/refusals.log"); err == nil && len(b) > 0 {
-			lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+		// ranger-base-jielm: through the guarded read and not os.ReadFile.
+		// This is the host's own READ of the canonical refusals leaf,
+		// uncaged, over a file a planter outside every wall could have
+		// replaced with a link — the same leaf and the same planter class as
+		// ranger-base-legou's three writes, and guarded at every other
+		// access in the tree since. Here the link target's bytes land in the
+		// operator's terminal rather than in a shell rc file, so what a
+		// plant bought was much narrower; the open was the same one.
+		//
+		// A REFUSAL prints loud and does not print "empty". This command's
+		// output is read as a verdict (the unshimmed-gate arm above says
+		// why), and a tampered trail reported as a clean one is that same
+		// class of lie. It does not join the exit verdict below, which is
+		// deliberately the gap between the PID and the disk and nothing
+		// else: an absent-or-unreadable trail is neither, and a report that
+		// died here would say nothing about the wall it was asked to
+		// describe.
+		rlog, logErr := a.ReadRefusalsLog(ag.Name)
+		switch {
+		case logErr == nil && len(rlog) > 0:
+			lines := strings.Split(strings.TrimRight(string(rlog), "\n"), "\n")
 			if len(lines) > 10 {
 				lines = lines[len(lines)-10:]
 			}
@@ -2321,7 +2340,9 @@ func main() {
 			for _, ln := range lines {
 				fmt.Fprintf(out, "    %s\n", ln)
 			}
-		} else {
+		case logErr != nil && !os.IsNotExist(logErr):
+			fmt.Fprintf(out, "  refusals.log: ⚠️  NOT READ — %v\n", logErr)
+		default:
 			fmt.Fprintln(out, "  refusals.log: empty")
 		}
 		// ranger-base-pfcci: what this persona's wall-watch sidecars said
