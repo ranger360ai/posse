@@ -370,6 +370,165 @@ func TestQAWallCarvePinsAMasksLooseParentIsBoundInPlace(t *testing.T) {
 	}
 }
 
+// ─── The PREP half of the same ordering argument ────────────────────────────
+
+// Pin: THE PIN'S OWN `mkdir -p` RUNS BEFORE THE MASK POINT AND THE KEEP FILE
+// THE LAUNCHER CREATES INSIDE IT, which is the whole of step 2d's prep mark
+// and the one half of 2d's ordering argument that was asserted in prose and
+// in code and measured by nothing (ranger-base-dv1ln, escaped from
+// ranger-base-a59w7).
+//
+// THE ARGV HALF IS PINNED THREE WAYS OVER — the two render arms above assert
+// grant < pin < deny and pin < mask, pin < private, and both "append at the
+// end" and "splice at 5d's own position instead of 2d's mark" red one of
+// them. The PREP half had no witness at all: replacing step 5d's
+// `prep = slices.Insert(prep, carvePrepAt, pinPrep...)` with
+// `prep = append(prep, pinPrep...)` red nothing, MEASURED 2026-11-21 over
+// the six -run names ranger-base-dv1ln lists.
+//
+// WHAT IT COSTS WHEN IT IS WRONG, which is why this pin reads a prep LIST and
+// then RUNS it: PrepMaskPoint and PrepTouch open their name with
+// O_CREATE|O_EXCL and create no parents, unlike PrepSeed. A pin mkdir that
+// lands after them is a launcher that opens a file inside a directory nothing
+// has made — ENOENT, outside the namespace and before bwrap is exec'd — and
+// the seat does not launch. The mutant arm at the foot is that list, built by
+// hand out of the shipped render's own steps so that bwrap.go is untouched.
+//
+// INERT IN EVERY SHIPPED RENDER TODAY (TestQAWallCarvePinsCensusOverEveryRender
+// logs 0 pins over all five argvs this package renders), so the cost arrives
+// with the first render that grows a carve pin whose directory is ABSENT and
+// has a mask point or a keep file under it. Its direction is fail-closed, the
+// same direction as the refused render ranger-base-a59w7 fixed.
+//
+// BOTH KINDS IN ONE FIXTURE, because one splice position answers for both: the
+// mask point comes from step 5's masked-deny arm and the keep file from step
+// 2b, which is the one producer landing BETWEEN 2d's mark and step 5 — so a
+// reader who wonders whether the mark is early enough for it has the answer
+// here and not by reading two line numbers.
+func TestQAWallCarvePinsPrepMkdirsRunBeforeTheStepsTheyMakeRoomFor(t *testing.T) {
+	// No t.Parallel: this sets HOME, which the wall root is composed from.
+	root := wallUngrantedDir(t)
+	home := filepath.Join(root, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	if bwrapWallRoot() == "" {
+		t.Skip("NOTHING MEASURED: ADR 0100's rules stand down for a home under " + bwrapTmpMount + " (bwrapWallRoot)")
+	}
+
+	// ranger-base-dv1ln's REPRO, as a fixture that can be cut twice: a write
+	// grant with a masked deny two components inside it and a keep file one
+	// component inside it, and the first of those two components ABSENT.
+	// A pin over a directory that is already there emits no prep step at all,
+	// so the absence is the premise and not an accident of the fixture.
+	type fx struct {
+		prep                       []PrepStep
+		loose, looser, cache, keep string
+	}
+	cut := func(name string) fx {
+		t.Helper()
+		grant := filepath.Join(root, name)
+		f := fx{
+			loose:  filepath.Join(grant, "a"),
+			looser: filepath.Join(grant, "a", "b"),
+			cache:  filepath.Join(grant, "a", "b", "cache.json"),
+			keep:   filepath.Join(grant, "a", "keep"),
+		}
+		if err := os.MkdirAll(grant, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(f.loose); !os.IsNotExist(err) {
+			t.Fatalf("%s is already on the host (%v), so the pin emits no mkdir and this fixture measures nothing", f.loose, err)
+		}
+		_, prep, err := BwrapArgs(grant, []string{grant}, SeatbeltCarveOut{
+			Deny: []string{f.cache}, DenyFile: []string{f.cache}, Mask: []string{f.cache},
+		}, f.keep)
+		if err != nil {
+			t.Fatalf("a render masking %s inside the grant %s is refused (%v) — a seat that does not launch, and the remedy ADR 0100 prescribes for a loose component is an in-place bind of it (ranger-base-a59w7)", f.cache, grant, err)
+		}
+		f.prep = prep
+		return f
+	}
+
+	f := cut("grant")
+	list := strings.Join(bwPrep(f.prep), "\n  ")
+	mkLoose := wcpPrepAt(f.prep, PrepMkdirAll, f.loose)
+	mkLooser := wcpPrepAt(f.prep, PrepMkdirAll, f.looser)
+	mask := wcpPrepAt(f.prep, PrepMaskPoint, f.cache)
+	touch := wcpPrepAt(f.prep, PrepTouch, f.keep)
+	for _, c := range []struct {
+		kind PrepKind
+		path string
+		at   int
+	}{
+		{PrepMkdirAll, f.loose, mkLoose},
+		{PrepMkdirAll, f.looser, mkLooser},
+		{PrepMaskPoint, f.cache, mask},
+		{PrepTouch, f.keep, touch},
+	} {
+		if c.at < 0 {
+			t.Fatalf("the prep this render asked for has no %q step over %s, so the ordering rows below say nothing:\n  %s", c.kind, c.path, list)
+		}
+	}
+	for _, c := range []struct {
+		pin, path string
+		pinAt, at int
+	}{
+		{f.loose, f.cache, mkLoose, mask},
+		{f.looser, f.cache, mkLooser, mask},
+		{f.loose, f.keep, mkLoose, touch},
+	} {
+		if c.pinAt > c.at {
+			t.Errorf("the pin's mkdir of %s is step %d and the step over %s inside it is step %d — that step creates no parent, so the launcher's prep dies with ENOENT outside the namespace and the seat does not launch. Step 5d splices the pins at step 2d's prep mark (carvePrepAt) for exactly this\n  %s", c.pin, c.pinAt, c.path, c.at, list)
+		}
+	}
+
+	// AND IT RUNS, which is the claim's cost paid in full on the host this
+	// fixture is cut on rather than read off two indices.
+	if err := runBwrapPrep(f.prep); err != nil {
+		t.Fatalf("the prep this render asked for refused: %v — that is the launcher dying before it execs bwrap", err)
+	}
+	for _, c := range []struct {
+		path string
+		dir  bool
+	}{{f.loose, true}, {f.looser, true}, {f.cache, false}, {f.keep, false}} {
+		fi, serr := os.Lstat(c.path)
+		switch {
+		case serr != nil:
+			t.Errorf("the prep did not create %s: %v", c.path, serr)
+		case fi.IsDir() != c.dir:
+			t.Errorf("the prep made %s with IsDir()=%v, want %v", c.path, fi.IsDir(), c.dir)
+		}
+	}
+
+	// THE MUTANT, and the whole of what the splice position buys: the SAME
+	// render's steps with the pins' mkdirs appended at the END instead of
+	// spliced at 2d's mark — `prep = append(prep, pinPrep...)`, assembled out
+	// of the render's own list so that bwrap.go is untouched — refuses,
+	// because the parent is not there yet. Cut FRESH, since the run above
+	// made the directories on the first fixture.
+	m := cut("mutant")
+	var pins, rest []PrepStep
+	for _, s := range m.prep {
+		if s.Kind == PrepMkdirAll && (s.Path == m.loose || s.Path == m.looser) {
+			pins = append(pins, s)
+			continue
+		}
+		rest = append(rest, s)
+	}
+	if len(pins) != 2 || len(rest) == 0 {
+		t.Fatalf("CONTROL: the mutant is %d pin step(s) and %d other(s), so it is not the shipped list reordered:\n  %s", len(pins), len(rest), strings.Join(bwPrep(m.prep), "\n  "))
+	}
+	merr := runBwrapPrep(append(rest, pins...))
+	switch {
+	case merr == nil:
+		t.Errorf("the same steps with the pins' mkdirs at the END of the list ran clean, so nothing above is about their position — and then step 5d's splice at 2d's prep mark is held by no pin, which is the defect ranger-base-dv1ln was filed for")
+	case !strings.Contains(merr.Error(), "no such file or directory"):
+		t.Errorf("the mutant refused for a reason other than the missing parent, so this arm is not measuring the ordering: %v", merr)
+	}
+}
+
 // ─── The census ─────────────────────────────────────────────────────────────
 
 // CENSUS (the one ranger-base-a59w7 was told to run): how many carve-out
@@ -436,6 +595,19 @@ func wcpMountAt(argv []string, words ...string) int {
 			}
 		}
 		if hit {
+			return i
+		}
+	}
+	return -1
+}
+
+// wcpPrepAt is the INDEX of a prep step of that kind over that path, or -1.
+// The ordering arm needs positions and not membership: a step that is in the
+// list at all tells a reader nothing about whether it runs before the one it
+// makes room for.
+func wcpPrepAt(prep []PrepStep, kind PrepKind, path string) int {
+	for i, s := range prep {
+		if s.Kind == kind && s.Path == path {
 			return i
 		}
 	}
