@@ -492,6 +492,31 @@ func blockStillStands(t *SessionTree, head string, prior priorBlock) ([]string, 
 	if t.Base == "" {
 		return dirty, true
 	}
+	// A PARK HOLDS A COMMIT THIS LANDING WOULD PUT BACK (ranger-base-3s2ig).
+	// First, because MergeSessionWork asks it first — this function's whole
+	// contract is that the two cannot disagree about which obstacle comes
+	// first — and because the answer is a fact about the REPO's refs that
+	// neither the base moving nor the dirt can change. Without it the arms
+	// below reach mergesCleanly, which answers "worth asking git for real"
+	// over a carrier whose replay is clean (MEASURED: that merge-tree exits 0,
+	// which is the defect's own measurement), so every pass re-entered
+	// MergeSessionWork to be refused again by the guard there.
+	//
+	// It has the pass that can see it stop being true, which is what every
+	// reason here is held to: the park ref is lifted, or its commits reach the
+	// base, and `parkedInRange` answers empty on the very next pass.
+	//
+	// Nothing here writes the session tree — the reads are refs and rev-lists
+	// in the REPO — which is this function's other constraint (ADR 0058
+	// fact 4).
+	//
+	// A read that FAILS falls through rather than standing: the authority on an
+	// unaskable question is MergeSessionWork, which refuses on it in words, and
+	// a probe is how this function hands a question it cannot answer back to
+	// the thing that can.
+	if ref, _, err := parkedInRange(t.Repo, t.Base, t.Branch); err == nil && ref != "" {
+		return dirty, true
+	}
 	// The base moved back under the branch — the operator reset or reverted
 	// what conflicted — and the landing is now the fast-forward that touches
 	// no worktree at all.

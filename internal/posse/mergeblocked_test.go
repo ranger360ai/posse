@@ -1004,6 +1004,41 @@ func mergeBlockedCases() []mergeBlockedCase {
 				return why
 			},
 		},
+		// The park guard (ranger-base-3s2ig, worktree.go's parkedLanding): a
+		// landing never puts back a commit a park holds.
+		{
+			// The fixture is in parkland_test.go, where the rest of the class
+			// is pinned — the same arrangement as the generated-index and
+			// land-check rows above.
+			name: "a park holds a commit the landing would put back",
+			arm:  "is held by the park",
+			reason: func(t *testing.T) string {
+				a, _, tr, _, _ := parkedCarrierTree(t)
+				return mergeBlockedReason(t, a, tr)
+			},
+		},
+		{
+			// parkedLanding's error return. Called directly, for the "git
+			// could not read the diff" case's reason: every way to make that
+			// rev-list fail also fails the count above it, which returns an
+			// error and files no bead. The sentence is the same sentence.
+			//
+			// A park has to EXIST for the question to be asked at all — with
+			// no park ref the read is one `for-each-ref` that answers empty
+			// — so the fixture writes one and then breaks the base.
+			name: "the parks could not be read",
+			arm:  "the parks in",
+			reason: func(t *testing.T) string {
+				_, _, tr, _, _ := parkedCarrierTree(t)
+				broken := *tr
+				broken.Base = "no-such-base"
+				ref, sha, why := parkedLanding(&broken)
+				if why == "" {
+					t.Fatalf("fixture: the parks answered (%q %q), so this arm was not reached", ref, sha)
+				}
+				return why
+			},
+		},
 	}
 }
 

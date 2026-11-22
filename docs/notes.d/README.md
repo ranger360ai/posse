@@ -51,6 +51,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-6r6ox](ranger-base-6r6ox.md) — A kill that did not confirm no longer reports KILLED, and a fixture finally drives it (ranger-base-6r6ox) — 2026-11-22
 - [ranger-base-6felj](ranger-base-6felj.md) — A verdict file's reading is its LAST word on the kill (ranger-base-6felj) — 2026-11-22
 - [ranger-base-5k7vf](ranger-base-5k7vf.md) — A seat whose wall-watch AND bwrap are both gone has no lifetime bound, so the watch tick kills it (ranger-base-5k7vf) — 2026-11-22
+- [ranger-base-3s2ig](ranger-base-3s2ig.md) — ranger-base-3s2ig — the landing chain asks about parks now, and what reading one costs — 2026-11-22
 - [ranger-base-2unmh](ranger-base-2unmh.md) — Four closes verified, and four arms nothing witnessed (ranger-base-2unmh) — 2026-11-22
 - [ranger-base-2q0uy](ranger-base-2q0uy.md) — The host staging-root write is the stand-down shape's, not a fixture's, and no fixture root closes it (ranger-base-2q0uy) — 2026-11-22
 - [ranger-base-1aayx](ranger-base-1aayx.md) — The fourteen macos arm-1 reds were twelve landings and one fixture root (ranger-base-1aayx) — 2026-11-22

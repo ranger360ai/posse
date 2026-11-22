@@ -1829,6 +1829,39 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 		// ref would ever reach (ranger-base-dybv).
 		return landed(o, t), nil
 	}
+	// A LANDING NEVER PUTS BACK WHAT A PARK HOLDS (ranger-base-3s2ig, from
+	// the finding in ranger-base-zlvyk; park.go says what a park is and what
+	// reading one costs).
+	//
+	// Asked HERE: after the range is counted, because the range is the
+	// question, and before every arm that can move anything — both
+	// fast-forwards, the replay, and refreshGeneratedIndex's commit on the
+	// branch. The fast-forward is as much a carrier as the replay is: a seat
+	// whose branch was cut from the held tip and whose base has NOT moved
+	// since the park lands the held commits by sha, with no rebase involved.
+	//
+	// IT BLOCKS RATHER THAN WARNING, and that is the decision this bead was
+	// filed to make. A park is somebody's answer to a push hold; a landing
+	// that undoes it costs a second park, a second hold bead and a revert on
+	// the base, and the branch cannot be repaired from here because a carrier
+	// is checked out by a LIVE seat. So it joins every other verdict in this
+	// chain — reported, never repaired — and the sweep re-prints it until the
+	// park is lifted or the branch is rebased past it. One park can therefore
+	// print a standing block on every pass for hours, which is the cost, and
+	// it is paid where the alternative is main holding work a hold refused.
+	//
+	// It preempts the equivalence report below, which is a real cost and the
+	// right side of it: a carrier whose own work HAS reached the base under
+	// other shas is reported blocked rather than Merged, so its tree is not
+	// retired while a park stands over it — exactly the state ranger-base-zlvyk
+	// measured a re-landing out of.
+	if ref, sha, why := parkedLanding(t); why != "" {
+		o.Reason = why
+		return o, nil
+	} else if ref != "" {
+		o.Reason = parkLandRefusal(t, ref, sha)
+		return o, nil
+	}
 	// THE LANDING GATE (ranger-base-xcucy, design ranger-base-dvw0w D1/D5).
 	// After the import, every object the branch reaches beyond the base is
 	// in the shared store, or nothing lands: a fast-forward onto a commit
@@ -3401,6 +3434,38 @@ func gitPathsZ(repo string, args ...string) ([]string, error) {
 // constant existed, so every block already filed against an older posse is
 // still recognised by it.
 const dirtyBlockMark = "which git will not rebase over"
+
+// parkedLanding is the park guard as MergeSessionWork reads it
+// (ranger-base-3s2ig): the park and the commit, or the sentence to refuse
+// with when the question could not be asked at all. Here and not beside
+// parkedInRange (park.go) for landingGateReason's own reason — every merge
+// refusal is written in this file, where TestQAEveryMergeRefusalSentenceHasACase
+// can count it.
+//
+// Three results rather than a (hold, why) pair because the two halves of the
+// answer are read by two different sentences and neither is the other's
+// default: ("", "", "") is the ordinary landing.
+func parkedLanding(t *SessionTree) (string, string, string) {
+	ref, sha, err := parkedInRange(t.Repo, t.Base, t.Branch)
+	if err != nil {
+		return "", "", fmt.Sprintf("the parks in %s could not be read (%s) — a landing that cannot be asked about them is refused, and nothing was landed",
+			AbbrevHome(t.Repo), gitSaid(err))
+	}
+	return ref, sha, ""
+}
+
+// parkLandRefusal is the sentence a carrier branch's merge-back bead embeds.
+//
+// It names the park, the commit and the two ways out, because the reader is a
+// seat opening that bead some unbounded time later and the park is the one
+// operand it cannot discover from the branch: a held commit looks like any
+// other commit the base does not have. It says what this attempt DID — landed
+// nothing — and makes no claim about where the branch will be by then
+// (ranger-base-eq3ba's rule, blockedPromise in mergeblocked_test.go).
+func parkLandRefusal(t *SessionTree, ref, sha string) string {
+	return fmt.Sprintf("landing %s on %s would put %s back on it — that commit is held by the park %s, which is where a push hold put it when %s was reset out from under this branch — so nothing was landed; rebase %s onto %s, or park it too, and the next pass reads the branch again",
+		t.Branch, t.Base, abbrevSHA(sha), parkName(ref), t.Base, t.Branch, t.Base)
+}
 
 // landingGateReason is the gate as MergeSessionWork words it: "" lands
 // (ranger-base-xcucy; missingObjects, seatimport.go, is the reading). Here
