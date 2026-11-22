@@ -38,7 +38,7 @@ removed. No interpolated character is counted, so each figure is a FLOOR.
 
 The three are `bwrapseatstorelive_test.go` (18), `bwrapgitrefslive_test.go`
 (10) and `storerepogitwalllive_test.go` (4). `prefix + preamble` runs
-**52 to 233 characters, median 105**:
+**52 to 233 characters, median 104.5**:
 
 ```
 233 220 209 154 151 142 141 138 133 132 129 122 117 110 108 105
