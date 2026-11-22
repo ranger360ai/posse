@@ -19,6 +19,9 @@
 #   POSSE_SUITE_LOCK_DIR=...   where the slot files live
 #                              (default ${XDG_CACHE_HOME:-~/.cache}/posse)
 #   POSSE_SUITE_LOCK_POLL=5    seconds between attempts while queued
+#   POSSE_SUITE_LOCK_WAIT=3600 seconds a queued run waits before it runs
+#                              unserialized and names the holders
+#                              (_suite_lock_wait_bound says why)
 #   POSSE_SUITE_LOCK=0         run unserialized, and say so on one line
 #   POSSE_SUITE_LOCK_HELD      set by an acquire; a nested wrapper reads it
 #                              and does not take a second slot
@@ -168,6 +171,43 @@ _suite_lock_slots() {
 		_SUITE_LOCK_SLOTS_SAID=1
 		_suite_lock_say "POSSE_SUITE_SLOTS='$n' is not a positive integer — using $_SUITE_LOCK_SLOTS"
 	fi
+	return 0
+}
+
+# _suite_lock_wait_bound — how many seconds a queued acquire waits before it
+# runs unserialized instead (ranger-base-og2zi). Sets _SUITE_LOCK_WAIT, for
+# _suite_lock_slots' reason, and a bad value is said once and defaulted, for
+# the same one.
+#
+# WHY THERE IS A BOUND. The slot dir is ~/.cache/posse, which every wall and
+# every shim grants, so any seat can open both slot files, flock them and
+# stay alive — and before this every `make test` on the box queued behind it
+# forever. The upgrade lock had the same class and was bounded the same way
+# (ranger-base-u66yb, internal/posse/upgrade.go lockUpgradeWithin).
+#
+# WHY RUNNING, NOT REFUSING, at the end of it. The upgrade verb refuses; this
+# file may not (the header: IT NEVER MAKES THE SUITE UNRUNNABLE). An expired
+# wait is the POSSE_SUITE_LOCK=0 run, said out loud with the holders named.
+#
+# 3600 is ASSUMED, not measured: the upgrade lock's number, and the longest
+# single legitimate hold this tree issues — coldexec's arms carry
+# `-timeout 60m`. A squatter costs each queued arm at most that, and a
+# `make test` queues three arms in turn, so up to three hours against a squat
+# of both slots; a legitimate queue deeper than an hour degrades to the
+# opt-out run rather than waiting it out.
+_suite_lock_wait_bound() {
+	local n=${POSSE_SUITE_LOCK_WAIT:-3600}
+	case $n in
+	'' | *[!0-9]*) ;;
+	*)
+		if [ "$n" -ge 1 ]; then
+			_SUITE_LOCK_WAIT=$n
+			return 0
+		fi
+		;;
+	esac
+	_SUITE_LOCK_WAIT=3600
+	_suite_lock_say "POSSE_SUITE_LOCK_WAIT='$n' is not a positive integer — using $_SUITE_LOCK_WAIT"
 	return 0
 }
 
@@ -354,6 +394,76 @@ END { if (n > 8) { out = out ", and " (n - 8) " more" }
 	printf '%s' "$out"
 }
 
+# _suite_lock_kernel_holders <slotfile> — the processes whose open file
+# description HOLDS the flock on <slotfile>, as "pid comm" pairs, read from
+# /proc/<pid>/fdinfo (ranger-base-og2zi). This is the kernel's word, which a
+# seat cannot write; the stamp is the holder's own, which any seat can.
+#
+# NOT /proc/locks, which is what the upgrade lock reads (ranger-base-u66yb).
+# /proc/locks names the pid that TOOK the flock, and here that is always the
+# python3 (or flock(1)) child that exits the moment it has — the header's
+# "taken by a child, held by the shell". MEASURED 2026-11-22, linux 7.2,
+# tmpfs: a slot held by shell 3011565 read `FLOCK ADVISORY WRITE 3011566` in
+# /proc/locks, the dead child. fdinfo carries a `lock:` line on every fd that
+# shares the HOLDING description and on no other open of the same file
+# (measured the same day: a second `exec 8>>` of the slot in the holder
+# showed none), so it names the shell, its inheritors, and nobody queued.
+# The fd is matched by stat through /proc/<pid>/fd, dev and inode both, so a
+# same-numbered inode on another filesystem is not a match.
+#
+# EMPTY IS SILENCE, never "nobody", exactly as _suite_lock_who_holds: no
+# /proc (darwin), no python3, a holder in another pid namespace or under
+# another uid all answer nothing, and the caller falls back to the stamp,
+# labelled as what it is. Capped at 8 for the same reason.
+_suite_lock_kernel_holders() {
+	[ -d /proc/self/fdinfo ] || return 1
+	command -v python3 >/dev/null 2>&1 || return 1
+	local out
+	out=$(python3 -c 'import os, sys
+try:
+    st = os.stat(sys.argv[1])
+except OSError:
+    sys.exit(1)
+want = (st.st_dev, st.st_ino)
+seen = {}
+for pid in os.listdir("/proc"):
+    if not pid.isdigit():
+        continue
+    d = "/proc/" + pid + "/fdinfo"
+    try:
+        fds = os.listdir(d)
+    except OSError:
+        continue
+    for fd in fds:
+        try:
+            with open(d + "/" + fd) as fh:
+                txt = fh.read()
+        except OSError:
+            continue
+        if not any(l.startswith("lock:") and "FLOCK" in l and "->" not in l
+                   for l in txt.splitlines()):
+            continue
+        try:
+            fs = os.stat("/proc/" + pid + "/fd/" + fd)
+        except OSError:
+            continue
+        if (fs.st_dev, fs.st_ino) != want:
+            continue
+        try:
+            with open("/proc/" + pid + "/comm") as fh:
+                seen[int(pid)] = fh.read().strip()
+        except OSError:
+            seen[int(pid)] = "?"
+        break
+out = ["%d %s" % (p, seen[p]) for p in sorted(seen)]
+if len(out) > 8:
+    out = out[:8] + ["and %d more" % (len(out) - 8)]
+print(", ".join(out))
+' "$1" 2>/dev/null) || return 1
+	[ -n "$out" ] || return 1
+	printf '%s' "$out"
+}
+
 # _suite_lock_holders — one line per slot that somebody holds, worktree first.
 # A hint for the waiting line and for --status, never evidence: the kernel
 # holds the lock and these bytes are a courtesy, exactly as launchlock.go's
@@ -379,7 +489,7 @@ END { if (n > 8) { out = out ", and " (n - 8) " more" }
 # and the taker agree about what "can open" means — and in a subshell so the
 # caller's own fd 9, which may be a slot it HOLDS, is never touched.
 _suite_lock_holders() {
-	local dir i f who pid gone
+	local dir i f who pid gone stamp kern
 	dir=$(suite_lock_dir)
 	_suite_lock_slots
 	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
@@ -395,8 +505,16 @@ _suite_lock_holders() {
 		# the lock, has standing for that sentence.
 		gone=''
 		_suite_lock_gone "$pid" && gone=' gone'
-		printf '%s (pid %s%s, since %s)\n' "$who" "$pid" "$gone" \
-			"$(sed -n 's/^since: //p' "$f" 2>/dev/null | head -1)"
+		stamp=$(printf '%s (pid %s%s, since %s)' "$who" "$pid" "$gone" \
+			"$(sed -n 's/^since: //p' "$f" 2>/dev/null | head -1)")
+		# The kernel's word first when the box will give it, and the
+		# stamp always LABELLED: it is bytes the holder wrote itself, and
+		# the holder can be any seat (ranger-base-og2zi).
+		if kern=$(_suite_lock_kernel_holders "$f"); then
+			printf 'pid %s (per /proc fdinfo; the slot'"'"'s own stamp, which any seat can write, says %s)\n' "$kern" "$stamp"
+		else
+			printf '%s (per the slot'"'"'s own stamp, which any seat can write)\n' "$stamp"
+		fi
 	done
 }
 
@@ -563,6 +681,7 @@ suite_lock_acquire() {
 	# bad value earns is said here, and the flag it sets is inherited by
 	# every `$( )` below, so a queued run does not repeat it every poll.
 	_suite_lock_slots
+	_suite_lock_wait_bound
 	if ! mkdir -p "$dir" 2>/dev/null; then
 		_suite_lock_say "cannot create $dir — running unserialized"
 		return 0
@@ -584,6 +703,18 @@ suite_lock_acquire() {
 			# box this process cannot see (ranger-base-r3czg).
 			_suite_lock_say "cannot open any slot file in $dir (the line above is the kernel's) — running unserialized"
 			_suite_lock_say 'this seat is not queued against the other suites on this box; grant that directory to the session (posse names it in the launch line for a self-sandboxing runtime — `posse gates` prints the row) or set POSSE_SUITE_LOCK_DIR to one it can write'
+			return 0
+		fi
+		# The bound, asked right after a sweep that failed, so the last
+		# thing a run does before giving up on the queue is try it
+		# (ranger-base-og2zi; _suite_lock_wait_bound says why it runs
+		# rather than refusing). The holders are read before the say, in
+		# this order, so the line names who held the slot at the moment
+		# the queue was given up on.
+		if [ "$waited" -ge "$_SUITE_LOCK_WAIT" ]; then
+			held=$(_suite_lock_holders | paste -sd ';' -)
+			_suite_lock_say "no free suite slot after ${waited}s (POSSE_SUITE_LOCK_WAIT=$_SUITE_LOCK_WAIT) — running unserialized rather than queueing forever; held by: ${held:-nobody this seat can name}"
+			_suite_lock_say 'any seat can take a slot, so check the holder above is a suite (scripts/suite-lock.sh --status) before blaming the box'
 			return 0
 		fi
 		if [ "$announced" = 0 ]; then
@@ -623,7 +754,7 @@ suite_lock_acquire() {
 			unopen=''
 			[ "$n_unopen" = 0 ] ||
 				unopen=", $n_unopen this seat cannot open and does not judge (--status names them)"
-			_suite_lock_say "$n_held of $_SUITE_LOCK_SLOTS slots hold a full suite$unopen; this one is queued (POSSE_SUITE_SLOTS to change, POSSE_SUITE_LOCK=0 to opt out)"
+			_suite_lock_say "$n_held of $_SUITE_LOCK_SLOTS slots hold a full suite$unopen; this one is queued for up to ${_SUITE_LOCK_WAIT}s (POSSE_SUITE_SLOTS to change, POSSE_SUITE_LOCK_WAIT to bound, POSSE_SUITE_LOCK=0 to opt out)"
 		fi
 		sleep "${POSSE_SUITE_LOCK_POLL:-5}"
 		waited=$(( $(date +%s) - start ))
@@ -697,8 +828,13 @@ suite_lock_status() {
 		if ( exec 9>>"$f"; _suite_lock_flock ); then
 			printf '  slot %s: free\n' "$i"
 		else
-			printf '  slot %s: HELD by %s\n' "$i" \
+			printf '  slot %s: HELD by %s (per the slot'"'"'s own stamp, which any seat can write)\n' "$i" \
 				"$(sed -n 's/^worktree: //p;s/^pid: /pid /p' "$f" 2>/dev/null | paste -sd ' ' -)"
+			# HELD is the kernel's; so, where the box will say, is WHO
+			# (ranger-base-og2zi). A stamp is any seat's to write.
+			if who=$(_suite_lock_kernel_holders "$f"); then
+				printf '          held, per /proc fdinfo, by: %s\n' "$who"
+			fi
 			# Two answers, printed apart. HELD is the kernel's and is
 			# evidence; the pid is the stamp's and decays. When the
 			# stamp's pid is DEFINITELY gone, the lock is being held
@@ -759,10 +895,14 @@ _suite_lock_selftest() {
 	#                          `make test` before a package builds
 	#                          (ranger-base-ebrwn). Arm 9 sets it per-command,
 	#                          which is where opting out is the subject.
+	#   POSSE_SUITE_LOCK_WAIT  a small ambient value turns every queued arm
+	#                          into an unserialized run that never took a
+	#                          slot. Arm 18 sets it per-command, where the
+	#                          bound is the subject (ranger-base-og2zi).
 	export POSSE_SUITE_LOCK_DIR="$tmp/locks"
 	export POSSE_SUITE_LOCK_POLL=0.2
 	export POSSE_SUITE_SLOTS=2
-	unset POSSE_SUITE_LOCK_HELD POSSE_SUITE_LOCK
+	unset POSSE_SUITE_LOCK_HELD POSSE_SUITE_LOCK POSSE_SUITE_LOCK_WAIT
 
 	# A holder is a whole separate process, which is the only kind of
 	# witness an flock has. It acquires, records the slot it got, and then
@@ -1653,6 +1793,85 @@ STRICT
 		wait "$h23" 2>/dev/null
 	fi
 	chmod 644 "$xd/suite-slot.1.lock" 2>/dev/null
+
+	# ARM 18: a squatted slot (ranger-base-og2zi). ~/.cache/posse is granted
+	# to every seat, so any of them can flock the slots and stay alive, and
+	# before the bound every queued suite waited behind it forever — named by
+	# a stamp the squatter wrote itself.
+	#
+	# The squatter here is a real holder that then REWRITES its stamp to name
+	# pid 1 and a worktree that is not its own, which is the lie the bead is
+	# about. Four things at once:
+	#
+	#   the waiter QUEUED first (its queued line), so the give-up below is
+	#   the bound expiring and not a sweep that never saw the slot held;
+	#   it then ran unserialized, slot none, and said so;
+	#   the slot is STILL held by the squatter — the bound gives up the
+	#   queue, it does not take the slot; that is the control for a "fix"
+	#   that freed it;
+	#   and the holder is named by the KERNEL, as the squatter's real pid,
+	#   with the forged stamp printed only under its label. A box with no
+	#   /proc fdinfo cannot measure that half and says so; there the label
+	#   alone is required.
+	local sd=$tmp/squat-locks arm18='squat: a queue held past POSSE_SUITE_LOCK_WAIT runs unserialized, naming the holder by the kernel'
+	local h25 h26 squat_status kern_re
+	mkdir -p "$sd"
+	touch "$tmp/hold25" "$tmp/hold26"
+	POSSE_SUITE_LOCK_DIR="$sd" POSSE_SUITE_SLOTS=1 \
+		"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m25" "$tmp/hold25" go test -timeout 25m ./... &
+	h25=$!
+	if ! wait_file "$tmp/m25" "$fork_s" || [ "$(slot_of "$tmp/m25")" != 1 ]; then
+		bad "$arm18" "the squatter never took the only slot: $(tr '\n' '|' <"$tmp/m25.log" 2>/dev/null)"
+	else
+		# Through a second open, as _suite_lock_stamp does: the flock is
+		# on the squatter's description, not on these bytes.
+		printf 'pid: 1\nsince: 1970-01-01T00:00:00Z\nworktree: /forged/stamp\n' >"$sd/suite-slot.1.lock"
+		POSSE_SUITE_LOCK_DIR="$sd" POSSE_SUITE_SLOTS=1 POSSE_SUITE_LOCK_WAIT=1 \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m26" "$tmp/hold26" go test -timeout 25m ./... &
+		h26=$!
+		# Whole-pid: every entry of the kernel's list follows "pid " or
+		# ", " and is followed by " <comm>", so 5933 cannot match 59330.
+		kern_re="(pid |, )$h25 "
+		# The marker's ARRIVAL is the positive evidence here: a waiter
+		# that never writes one inside the backstop is a wait that is not
+		# bounded.
+		if ! wait_file "$tmp/m26" "$fork_s"; then
+			bad "$arm18" "the waiter never got through the acquire, so the wait is not bounded: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
+		elif ! squat_status=$( (export POSSE_SUITE_LOCK_DIR="$sd" POSSE_SUITE_SLOTS=1; suite_lock_status) ); then
+			bad "$arm18" "--status failed over the squatted dir: $squat_status"
+		elif [ "$(slot_of "$tmp/m26")" != none ]; then
+			bad "$arm18" "the waiter took slot $(slot_of "$tmp/m26") from a live squatter"
+		elif ! log_has "$tmp/m26.log" 'waiting for suite lock'; then
+			bad "$arm18" "the waiter never queued, so nothing here measured the bound: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
+		elif ! log_has "$tmp/m26.log" 'running unserialized rather than queueing forever'; then
+			bad "$arm18" "the waiter did not say it gave up the queue: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
+		elif [[ $squat_status != *'slot 1: HELD'* ]]; then
+			bad "$arm18" "the squatter no longer holds the slot, so the bound freed it: $(printf '%s' "$squat_status" | tr '\n' '|')"
+		elif ! log_has "$tmp/m26.log" "which any seat can write"; then
+			bad "$arm18" "the forged stamp was printed without its label: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
+		elif [ -d /proc/self/fdinfo ] && command -v python3 >/dev/null 2>&1; then
+			if [[ $(<"$tmp/m26.log") =~ $kern_re ]] &&
+				log_has "$tmp/m26.log" 'says /forged/stamp (pid 1' &&
+				[[ $squat_status =~ held,\ per\ /proc\ fdinfo,\ by:\ (.*,\ )?$h25\  ]]; then
+				ok "$arm18"
+			else
+				bad "$arm18" "the kernel did not name the squatter (pid $h25) over its forged stamp: log: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null); status: $(printf '%s' "$squat_status" | tr '\n' '|')"
+			fi
+		else
+			printf 'note  %s: no /proc fdinfo or python3 here, so the kernel half is NOT MEASURED\n' "$arm18"
+			if log_has "$tmp/m26.log" "/forged/stamp (pid 1, since 1970-01-01T00:00:00Z) (per the slot's own stamp, which any seat can write)"; then
+				ok "$arm18"
+			else
+				bad "$arm18" "the stamp-only fallback is not labelled: $(tr '\n' '|' <"$tmp/m26.log" 2>/dev/null)"
+			fi
+		fi
+		rm -f "$tmp/hold26"
+		kill "$h26" 2>/dev/null
+		wait "$h26" 2>/dev/null
+	fi
+	rm -f "$tmp/hold25"
+	kill "$h25" 2>/dev/null
+	wait "$h25" 2>/dev/null
 
 	# So the EXIT trap can remove them.
 	chmod 644 "$cd/suite-slot.1.lock" "$cd/suite-slot.2.lock" 2>/dev/null

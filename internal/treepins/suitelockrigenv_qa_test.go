@@ -69,6 +69,9 @@ var suiteLockHostileEnv = map[string]string{
 	// Longer than any arm's backstop, so a queued holder never gets a second
 	// attempt and "it waited" and "it never retried" become one reading.
 	"POSSE_SUITE_LOCK_POLL": "97",
+	// Shorter than any arm's queue, so every queued holder gives up the
+	// queue and runs unserialized on slot none (ranger-base-og2zi).
+	"POSSE_SUITE_LOCK_WAIT": "1",
 	// Not the scratch dir the rig makes, and not openable — the sandbox arm's
 	// own condition, applied to every arm at once.
 	"POSSE_SUITE_LOCK_DIR": "/nonexistent/posse-suite-lock-ranger-base-ebrwn",

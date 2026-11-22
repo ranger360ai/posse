@@ -130,6 +130,12 @@ var suiteLockArms = []string{
 	// 1459.6s against 424.1s unloaded. Arm 5 above is this arm's control: the
 	// rule must still let a named `./internal/posse` through.
 	"queue: the named package that costs a full suite takes a slot",
+	// ranger-base-og2zi: the slot dir is granted to every seat, so any seat
+	// can flock both slots and stay alive, and every queued suite then waited
+	// forever behind a holder named by a stamp it wrote itself. The arm forges
+	// that stamp and requires the bound to give up the QUEUE (not the slot)
+	// and the waiting line to name the squatter's real pid from /proc fdinfo.
+	"squat: a queue held past POSSE_SUITE_LOCK_WAIT runs unserialized, naming the holder by the kernel",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make
