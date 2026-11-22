@@ -269,6 +269,20 @@ func TestQAPrepTouchNeverCreatesThroughALink(t *testing.T) {
 // spelling, never a planted link's target, so the SBPL write literal never
 // names a path outside the gates dir — and the seatbelt render refuses the
 // plant outright rather than emitting a literal a seat could have staged.
+//
+// EVERY ARM OF keepLeafRefusal, EACH BY ITS OWN MESSAGE (ranger-base-ul49h).
+// It has two refusing arms and they OVERLAP: a symlink is not a regular
+// file, so either arm alone refuses the symlink this pin used to be the
+// whole of — and MEASURED 2026-11-21, linux, over the five xab99 pins, each
+// of three narrower mutants left all five green: dropping the symlink arm,
+// dropping the non-regular/hard-link arm, and dropping just the
+// `|| !storeSingleEntry(fi)` half of it. The combined mutant (skipping
+// keepLeafRefusal outright) was the only one that red, so the L2 side was
+// graded as one arm while the L1 side next door is graded per arm by
+// TestQAKeepLeafRefusesEveryNonPlainFileAtTheName. The hard link and the
+// FIFO below witness the non-regular arm's DECISION; asserting the symlink
+// refusal's own wording witnesses the symlink arm, whose only product is
+// that message, since nothing it refuses the other arm would pass.
 func TestQAKeepLeafSeatbeltNeverAllowsAPlantedTarget(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
 	f := wpsSeatTree(t)
@@ -304,5 +318,36 @@ func TestQAKeepLeafSeatbeltNeverAllowsAPlantedTarget(t *testing.T) {
 	}
 	if _, err := f.a.RenderSeatbelt(f.ag, f.dir); err == nil || !strings.Contains(err.Error(), "ranger-base-xab99") {
 		t.Errorf("a link at %s rendered a seatbelt profile (err %v)", keep, err)
+	} else if !strings.Contains(err.Error(), "it is a symlink") {
+		// The symlink arm's own wording: the non-regular arm below would
+		// refuse this same plant, so the message is the only thing that says
+		// which arm answered.
+		t.Errorf("the symlink at %s was refused by the wrong arm: %v", keep, err)
 	}
+
+	// The non-regular arm's DECISION, over the two shapes the arm above
+	// cannot reach: a hard link hands over another inode under the log's
+	// name exactly as a link's target was handed over, and a FIFO is nothing
+	// an audit log appends to.
+	for _, c := range []struct {
+		what string
+		mk   func() error
+	}{
+		{"a hard link to a file inside no grant", func() error { return os.Link(tgt, keep) }},
+		{"a FIFO", func() error { return syscall.Mkfifo(keep, 0o644) }},
+	} {
+		_ = os.Remove(keep)
+		if err := c.mk(); err != nil {
+			t.Fatalf("%s: plant: %v", c.what, err)
+		}
+		_, err := f.a.RenderSeatbelt(f.ag, f.dir)
+		switch {
+		case err == nil:
+			t.Errorf("%s at %s rendered a seatbelt profile", c.what, keep)
+		case !strings.Contains(err.Error(), "ranger-base-xab99"),
+			!strings.Contains(err.Error(), "not a regular file with one name"):
+			t.Errorf("%s at %s: want the Keep leaf's plain-file refusal, got %v", c.what, keep, err)
+		}
+	}
+	_ = os.Remove(keep)
 }
