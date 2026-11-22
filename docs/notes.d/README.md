@@ -20,6 +20,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-mlw6q](ranger-base-mlw6q.md) — ranger-base-mlw6q — the wallWitness home, and the two layers under it — 2026-11-22
 - [ranger-base-mhl7h](ranger-base-mhl7h.md) — ranger-base-mhl7h — a deadline branch that kills a nil Process reports nothing at all — 2026-11-22
 - [ranger-base-m33n5](ranger-base-m33n5.md) — ranger-base-m33n5 — the door for the bwrap fixture-home class is a RUN — 2026-11-22
+- [ranger-base-m0ajs](ranger-base-m0ajs.md) — ranger-base-m0ajs — a line that enumerates, and a census that claims a reach — 2026-11-22
 - [ranger-base-l9pk7](ranger-base-l9pk7.md) — A pin's stated reach is not its reach (ranger-base-l9pk7) — 2026-11-22
 - [ranger-base-kzk3u](ranger-base-kzk3u.md) — A kill the tick could not confirm keeps its seat's record, and is retried (ranger-base-kzk3u) — 2026-11-22
 - [ranger-base-k2quj](ranger-base-k2quj.md) — The wall abstention reaches all 55 members now (ranger-base-k2quj) — 2026-11-22

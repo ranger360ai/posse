@@ -1655,8 +1655,9 @@ func verifyAcceptanceLine(is BdIssue) string {
 // verifyNoCommitTrailLine is the section's line for a close that `git log
 // --grep <id>` answered about and named nothing. It reports the TRAIL'S
 // SILENCE and stops there, because that is the whole of what one exec
-// measured; the two readings it then lists are the verifier's to settle, and
-// the §4 pointer is reprinted as the one that applies to the second.
+// measured; the three readings it then lists are the verifier's to settle,
+// and the §4 pointer is reprinted as the one that applies to the two where
+// something was in fact built.
 //
 // This is the answer to the release triage's close reason, and the answer is
 // deliberately not the one the finding's cheapest option proposed.
@@ -1693,18 +1694,41 @@ func verifyAcceptanceLine(is BdIssue) string {
 // one thing: the shop's own promise that `git log --grep <id>` finds the
 // work is scoped (ADR 0022 — unconditional in a session worktree, in the
 // shared checkout only for a file with one in-flight writer), so a commit
-// that omitted the id renders identically here. Hence two readings and an
+// that omitted the id renders identically here. Hence readings and an
 // instruction to settle which, rather than a verdict either way.
+//
+// THREE readings, not two (ranger-base-m0ajs, from the verify of this
+// close): this instance runs more than one repo and a crew bead's work can
+// land in any of them, under a commit that DOES name the bead, in a
+// checkout this trail never reads. MEASURED 2026-11-22, same box and same
+// population eight hours on (the newest 150 ranger-base closes carrying a
+// code/devops label): 27 have no commit naming them in posse, and 3 of
+// those 27 — 11%, a ninth of the silent class — are named by a ranger-core
+// commit (ranger-base-jttvs/eda8427, -oqrat/29adec1, -2qlz2/3013107). The
+// two-reading line was rendered for all three.
+//
+// The settling sources are therefore ordered by what they can answer, and
+// not as a list of three equals. `bd comments <id>` is the only one that
+// reaches a commit in another repo, and it is how those three were
+// recovered. The branch records are a block gitBranchLandingFor renders
+// only for a branch cut in THIS repo for this bead, so for the whole of
+// that batch the old line pointed at a block that was not there — hence
+// "below WHEN", which is the pointer saying so.
 func verifyNoCommitTrailLine(is BdIssue) string {
 	id := verifyOneLine(is.ID)
 	return "- what this close shipped: NOTHING in this repo's git names " + id + " (`git log --grep " + id +
-		"` answered and matched no commit). The trail's silence, which is not a verdict and has two readings:" +
-		" nothing was built (a deferral, a condition that ended, a bead already satisfied), or something was" +
-		" built under a commit that omitted the id. Settle WHICH first — the branch records below, `bd comments " +
-		id + "`, the close_reason above — because the two want different verifications." +
+		"` answered and matched no commit). The trail's silence, which is not a verdict and has three readings:" +
+		" nothing was built (a deferral, a condition that ended, a bead already satisfied), something was" +
+		" built under a commit that omitted the id, or it was built in ANOTHER repo this crew works in under a" +
+		" commit that does name it — this trail reads one checkout, and a crew bead's work can land in any of" +
+		" them. Settle WHICH first — `bd comments " + id + "` is the only source that answers all three and is" +
+		" where a commit in another repo is recoverable; the branch records are below WHEN a branch was cut for" +
+		" this bead in this repo, and the close_reason is above — because the three want different verifications." +
 		" Nothing built: the close_reason is then the whole claim, so ask whether what it says holds and whether" +
 		" the class it states fits what the bead actually is, and record a stated reason that does not fit as a" +
-		" finding. Something built: the acceptance line above is the checklist as usual.\n"
+		" finding. Built either way — here under a commit that omitted the id, or in another repo: the" +
+		" acceptance line above is the checklist as usual, and for another repo the commit, the diff and the" +
+		" test run exist in a tree this section cannot read, so verify them there.\n"
 }
 
 // gitCommitsFor is the commit trail the ADR asks for, and the structured

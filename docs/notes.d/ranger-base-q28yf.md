@@ -72,11 +72,40 @@ thing: this shop's own `git log --grep <id>` promise is scoped (ADR 0022 —
 unconditional in a session worktree, in the shared checkout only for a file
 with one in-flight writer), so a commit that omitted the id renders here
 identically to a close that shipped nothing. The line therefore reports the
-trail's SILENCE, names both readings, tells the verifier to settle which
+trail's SILENCE, names the readings, tells the verifier to settle which
 first, and says what each one makes verifiable — the close_reason's own
-claim for the first, the §4 pointer as usual for the second. One git call,
-three answers, and `err != nil` stays a silence for `gitCommitsFor`'s own
-reason: "git said no" and "git could not say" cannot be read alike.
+claim where nothing was built, the §4 pointer as usual where something was.
+One git call, three answers, and `err != nil` stays a silence for
+`gitCommitsFor`'s own reason: "git said no" and "git could not say" cannot
+be read alike.
+
+### And it has to name THREE (ranger-base-m0ajs)
+
+This line shipped with two readings and the class has a third: the work
+landed in ANOTHER repo of this instance's crew, under a commit that DOES
+name the bead, in a checkout this trail never reads. Found by the verify of
+this close, which was itself a batch of four closes containing one
+(ranger-base-jttvs, commit eda8427 in ranger-core, PR 128).
+
+MEASURED 2026-11-22, this box, same population eight hours on (the newest
+150 `ranger-base-*` closes carrying a `code`/`devops` label): **27** have no
+commit naming them in posse — the window moved, the share did not — and **3
+of those 27 (11%)** are named by a ranger-core commit: ranger-base-jttvs
+(eda8427), -oqrat (29adec1), -2qlz2 (3013107). The two-reading line was
+rendered for all three.
+
+Why it was worth a line and not a RECORDED note: of the three settling
+sources the line named, only `bd comments <id>` answers here. The branch
+records are a block `gitBranchLandingFor` renders for a branch cut in THIS
+repo for this bead, and ~/src/posse held 11 `branch.<b>.posseBead` records
+naming none of that batch, so the pointer was printing for a block that was
+not there. And the half the line spent most words on — "Nothing built: the
+close_reason is then the whole claim" — sends the verifier to judge prose
+when there is a commit, a diff and a test run to read. So the fix is the
+third reading, the settling sources ordered by what they can answer, and
+the instruction to go verify in that tree; the pin grew four rows (the
+count, the third reading, the `bd comments` pointer and that instruction),
+each of them mutation-checked red.
 
 ## Pins
 

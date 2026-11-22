@@ -1752,17 +1752,32 @@ func TestVerifySectionReadsAnAnsweredEmptyCommitTrailAsALineNotASilence(t *testi
 			if !tc.wantLine {
 				return
 			}
-			// Both readings, and the instruction to settle which. A verdict
-			// is what this line is forbidden to reach: a commit that omitted
-			// the id renders here identically to a close that built nothing.
+			// All THREE readings, and the instruction to settle which. A
+			// verdict is what this line is forbidden to reach: a commit that
+			// omitted the id renders here identically to a close that built
+			// nothing — and so does work that landed in another repo of this
+			// crew under a commit that names the bead, which is 11% of the
+			// silent class and was the reading the line did not have
+			// (ranger-base-m0ajs; ranger-base-jttvs/eda8427 in ranger-core
+			// was rendered the two-reading line). `bd comments` is pinned
+			// with them because it is the only settling source that reaches
+			// that commit, and the line's own ordering now says so.
 			for _, want := range []string{
+				"has three readings",
 				"nothing was built",
 				"something was built under a commit that omitted the id",
+				"built in ANOTHER repo this crew works in",
 				"Settle WHICH first",
+				"`bd comments a-1`",
 				"the close_reason is then the whole claim",
+				// The instruction the third reading exists to give. Without
+				// it the line names the repo and still sends the verifier to
+				// judge the close_reason's prose, which is the misdirection
+				// the finding was about, so dropping this tail must red too.
+				"so verify them there",
 			} {
 				if !strings.Contains(got, want) {
-					t.Errorf("the line dropped %q, so it no longer hands the verifier both readings:\n%s", want, got)
+					t.Errorf("the line dropped %q, so it no longer hands the verifier all three readings:\n%s", want, got)
 				}
 			}
 			for _, no := range []string{"built nothing", "this close built"} {
