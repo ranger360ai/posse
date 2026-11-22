@@ -121,6 +121,47 @@ func wgKinds(set []string) []string {
 	return out
 }
 
+// wgStoreIs asserts that the store of record a launch in dir resolves to is
+// the one this fixture built, and returns the SPELLING beadsHome answers —
+// which is what every producer is handed at launch, and is not always the
+// resolved path.
+//
+// COMPARED RESOLVED ON BOTH SIDES, and that is the whole helper. beadsHome's
+// contract is bd's own spelling and not a resolved path (beadloss.go), so a
+// fixture root behind a symlink spells one directory two ways — which is
+// every darwin box, where `t.TempDir()` lands under `/var/folders/…` and
+// `/var` is a link to `/private/var`. MEASURED 2026-11-21 on ci run
+// 44974829306, job 137062263947 ("test (macos-latest, 1)"): NINE pins over
+// the store-repo git carve-out abstained with "measures nothing", and
+// reproduced here on linux by pointing TMPDIR at a symlink. The guards did
+// not just fail — they printed a got and a want that read IDENTICAL, because
+// the want was printed unresolved, so the one reader who went looking was
+// told the two paths were the same. Both sides resolved, and both PRINTED
+// resolved, so this line can tell a redirect that was not followed from one
+// spelled another way (ranger-base-1b8yv).
+func wgStoreIs(t *testing.T, what, dir, want string) string {
+	t.Helper()
+	home := beadsHome(dir)
+	if got, w := absResolve(home), absResolve(want); got != w {
+		t.Fatalf("%s, so this arm measures nothing: beadsHome(%s) = %s, want %s (both resolved — beadsHome answers a spelling, and these two differ wherever the root is behind a symlink)",
+			what, dir, got, w)
+	}
+	return home
+}
+
+// wgResolved is a set with every entry resolved: what a comparison against a
+// producer's own answer needs when the two sides may spell one directory
+// differently (ranger-base-1b8yv, as above). Paired with wgKinds, whose stat
+// reads the same through either spelling, so `wgKinds(wgResolved(set))` is a
+// list that compares like with like and prints what it compared.
+func wgResolved(set []string) []string {
+	out := make([]string, 0, len(set))
+	for _, p := range set {
+		out = append(out, absResolve(p))
+	}
+	return out
+}
+
 // wgUnder is the entries of a set that lie inside dir, resolved both sides.
 func wgUnder(set []string, dir string) []string {
 	var out []string
@@ -252,9 +293,7 @@ func TestQAWholeTreeDenyGetsNoGitGrantInALinkedWorktree(t *testing.T) {
 	inner := sbMkdir(t, filepath.Join(f.tree, "inner", beadsDirName))
 	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
 	sbWrite(t, filepath.Join(f.tree, beadsDirName, beadsRedirect), inner+"\n")
-	if got := beadsHome(f.tree); got != absResolve(inner) {
-		t.Fatalf("the redirect was not followed, so the half below is not about it: beadsHome = %s, want %s", got, inner)
-	}
+	wgStoreIs(t, "the redirect was not followed, so the half below is not about it", f.tree, inner)
 	control("with a redirect to <cwd>/inner/.beads")
 	noGitGrant("with a redirect to <cwd>/inner/.beads", filepath.Join(f.tree, beadsDirName), inner)
 }
@@ -396,9 +435,12 @@ func TestQAWholeTreeDenyRecordTargetsSkipOnlyItsOwnGitDir(t *testing.T) {
 
 	// A LOCAL store: the git dirs here are the session's own.
 	sbMkdir(t, filepath.Join(f.repo, beadsDirName))
-	local := beadsHome(f.repo)
-	want := []string{absResolve(local)}
-	if got := wgKinds(recordTargets(deny, f.repo, local)); strings.Join(got, "\n") != "d "+want[0] {
+	local := wgStoreIs(t, "the local store is not where this fixture put it", f.repo, filepath.Join(f.repo, beadsDirName))
+	// wgResolved on the targets, because the gate answers the SPELLING it
+	// was handed (recordTargets' first element is `home` itself) and the
+	// want here is resolved: one directory, two spellings, wherever the
+	// fixture root is behind a symlink (ranger-base-1b8yv).
+	if got := wgKinds(wgResolved(recordTargets(deny, f.repo, local))); strings.Join(got, "\n") != "d "+absResolve(local) {
 		t.Errorf("a whole-tree-deny PID is still asked to write a git dir of its own repo (ADR 0086 D3):\n  %s", strings.Join(got, "\n  "))
 	}
 	ctrl := recordTargets(open, f.repo, local)
@@ -416,10 +458,8 @@ func TestQAWholeTreeDenyRecordTargetsSkipOnlyItsOwnGitDir(t *testing.T) {
 	inner := sbMkdir(t, filepath.Join(f.tree, "inner", beadsDirName))
 	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
 	sbWrite(t, filepath.Join(f.tree, beadsDirName, beadsRedirect), inner+"\n")
-	if got := beadsHome(f.tree); got != absResolve(inner) {
-		t.Fatalf("the redirect does not resolve, so this half measures nothing: beadsHome = %s", got)
-	}
-	if got := wgKinds(recordTargets(deny, f.tree, beadsHome(f.tree))); strings.Join(got, "\n") != "d "+absResolve(inner) {
+	wgStoreIs(t, "the redirect does not reach <cwd>/inner/.beads", f.tree, inner)
+	if got := wgKinds(wgResolved(recordTargets(deny, f.tree, beadsHome(f.tree)))); strings.Join(got, "\n") != "d "+absResolve(inner) {
 		t.Errorf("a whole-tree-deny PID whose store is inside its own repo is still asked to write that repo's git dirs — the gate must ask for exactly what SeatbeltWritable grants:\n  %s",
 			strings.Join(got, "\n  "))
 	}
@@ -438,10 +478,7 @@ func TestQAWholeTreeDenyRecordTargetsSkipOnlyItsOwnGitDir(t *testing.T) {
 	sbMkdir(t, filepath.Join(store, beadsDirName))
 	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
 	sbWrite(t, filepath.Join(f.tree, beadsDirName, beadsRedirect), filepath.Join(store, beadsDirName)+"\n")
-	redirected := beadsHome(f.tree)
-	if redirected != absResolve(filepath.Join(store, beadsDirName)) {
-		t.Fatalf("the redirect does not resolve, so this half measures nothing: beadsHome = %s", redirected)
-	}
+	redirected := wgStoreIs(t, "the redirect does not reach the other repo's store", f.tree, filepath.Join(store, beadsDirName))
 	for _, ag := range []*AgentFile{deny, open} {
 		got := recordTargets(ag, f.tree, redirected)
 		if !bgHas(got, redirected) {

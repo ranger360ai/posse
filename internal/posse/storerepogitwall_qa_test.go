@@ -78,7 +78,8 @@ import (
 type srgFixture struct {
 	wgFixture
 	store string // the store repo's root
-	home  string // <store>/.beads, the store of record itself
+	home  string // <store>/.beads RESOLVED, the path a wall literal carries
+	spelt string // the same store as beadsHome SPELLS it — a producer's input
 	git   string // <store>/.git, which is both its git dir and its common dir
 }
 
@@ -90,15 +91,22 @@ func srgNew(t *testing.T) srgFixture {
 	home := sbMkdir(t, filepath.Join(store, beadsDirName))
 	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
 	sbWrite(t, filepath.Join(f.tree, beadsDirName, beadsRedirect), home+"\n")
-	if got := beadsHome(f.tree); got != absResolve(home) {
-		t.Fatalf("the redirect does not reach the store, so every arm here measures nothing: beadsHome = %q, want %q", got, home)
-	}
-	s := srgFixture{wgFixture: f, store: store, home: absResolve(home), git: absResolve(filepath.Join(store, ".git"))}
+	// TWO FIELDS FOR ONE DIRECTORY, deliberately (ranger-base-1b8yv).
+	// beadsHome answers bd's own spelling and not a resolved path
+	// (beadloss.go), so `spelt` is what the producers are HANDED at launch
+	// and `home` is what their answers must CARRY — the path the kernel
+	// matches. Where the fixture root is behind a symlink the two differ,
+	// which is every darwin box (`/var` → `/private/var`), and the arms
+	// below feed the one and assert the other.
+	s := srgFixture{wgFixture: f, store: store,
+		home:  absResolve(home),
+		spelt: wgStoreIs(t, "the redirect does not reach the store, so every arm here measures nothing", f.tree, home),
+		git:   absResolve(filepath.Join(store, ".git"))}
 	// A MAIN checkout, which is what the verified shape is and what `bd
 	// worktree create` always makes: git-dir and common dir are one path,
 	// so there is no per-worktree dir anywhere in the store repo to hide a
 	// grant in.
-	if gd := beadsGitDirs(s.home); len(gd) == 0 || !bgHas(gd, s.git) {
+	if gd := beadsGitDirs(s.spelt); len(gd) == 0 || !bgHas(gd, s.git) {
 		t.Fatalf("beadsGitDirs does not name %s for this store, so the negative arms below are not over the defect: %v", s.git, gd)
 	}
 	return s
@@ -138,7 +146,9 @@ func TestQANoProducerGrantsTheStoreRepoGitDirs(t *testing.T) {
 		sets := map[string][]string{
 			"SeatbeltWritable (L2, and L3 through BwrapWritable)": f.a.SeatbeltWritable(pid.ag, f.tree, f.gates),
 			"launchWritableRoots (the self-caging --add-dir set)": launchWritableRoots(f.tree),
-			"recordTargets (ADR 0013 §4's gate)":                  recordTargets(pid.ag, f.tree, f.home),
+			// f.spelt and not f.home: the gate is handed beadsHome's own
+			// answer at launch, so that is what it is handed here.
+			"recordTargets (ADR 0013 §4's gate)": recordTargets(pid.ag, f.tree, f.spelt),
 		}
 		for where, set := range sets {
 			inStore := wgRepoGrants(set, f.store, f.store)
@@ -189,8 +199,15 @@ func TestQABwrapRendersNoWriteBindInTheStoreRepoGitDir(t *testing.T) {
 		}
 	}
 
-	// The control: the exact pre-fix set.
-	pre := append(append([]string{}, set...), beadsGitDirs(f.home)...)
+	// The control: the exact pre-fix set — beadsGitDirs handed beadsHome's
+	// own spelling, as the producer handed it, and then RESOLVED on the way
+	// into the write set, as that producer's `add` resolved it (seatbelt.go,
+	// ranger-base-1b8yv). Resolved and not left as spelt, because the two
+	// differ wherever the fixture root sits behind a symlink and this render
+	// refuses an unresolved component outright (ADR 0100 D1,
+	// ranger-base-wsgus) — a control that died there would say nothing about
+	// the grant it exists to exhibit.
+	pre := append(append([]string{}, set...), wgResolved(beadsGitDirs(f.spelt))...)
 	pbset, pkeep := BwrapWritable(f.ag, pre, f.tree)
 	pargv, _, err := BwrapArgs(f.tree, pbset, carve, pkeep...)
 	if err != nil {

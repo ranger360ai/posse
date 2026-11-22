@@ -90,9 +90,7 @@ func rrgUngranted(t *testing.T, f wgFixture, ag *AgentFile, cwd string) []string
 func TestQARecordTargetsAskOnlyForGitDirsTheWallGrantsInALinkedWorktree(t *testing.T) {
 	f := wgDenyFixture(t)
 	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
-	if got := beadsHome(f.tree); got != absResolve(filepath.Join(f.tree, beadsDirName)) {
-		t.Fatalf("the local store does not resolve, so this arm measures nothing: beadsHome = %s", got)
-	}
+	wgStoreIs(t, "the local store is not where this fixture put it", f.tree, filepath.Join(f.tree, beadsDirName))
 
 	if bad := rrgUngranted(t, f, f.ag, f.tree); len(bad) != 0 {
 		t.Errorf("the record-reach gate probes %s, which no PID is granted in a linked worktree (ranger-base-m2wf) — the launch refuses for a write the wall deliberately withholds:\n  %s",
@@ -148,10 +146,7 @@ func TestQARecordTargetsRefuseTheStoreRepoGitDirsForBothPids(t *testing.T) {
 	sbMkdir(t, filepath.Join(store, beadsDirName))
 	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
 	sbWrite(t, filepath.Join(f.tree, beadsDirName, beadsRedirect), filepath.Join(store, beadsDirName)+"\n")
-	home := beadsHome(f.tree)
-	if home != absResolve(filepath.Join(store, beadsDirName)) {
-		t.Fatalf("the redirect does not resolve, so this arm measures nothing: beadsHome = %s", home)
-	}
+	home := wgStoreIs(t, "the redirect does not reach the other repo's store", f.tree, filepath.Join(store, beadsDirName))
 
 	// Non-vacuity first: the producer the grant used to come from still
 	// names this repo's git dirs, so an arm that finds no grant and no
@@ -287,10 +282,7 @@ func TestQARecordTargetsAgreeWithTheWallForEveryPidAndCheckoutShape(t *testing.T
 func TestQARecordTargetsAreAllDirectoriesTheProbeCanWriteIn(t *testing.T) {
 	f := wgDenyFixture(t)
 	sbMkdir(t, filepath.Join(f.tree, beadsDirName))
-	home := beadsHome(f.tree)
-	if home != absResolve(filepath.Join(f.tree, beadsDirName)) {
-		t.Fatalf("the local store does not resolve, so this arm measures nothing: beadsHome = %s", home)
-	}
+	home := wgStoreIs(t, "the local store is not where this fixture put it", f.tree, filepath.Join(f.tree, beadsDirName))
 
 	// Non-vacuity FIRST, because this arm's live answer is "every target is a
 	// directory" either way once the filter is there, and a filter nobody

@@ -395,6 +395,39 @@ func gitBead(home string, args ...string) ([]byte, error) {
 // another route; and where mid holds no database bd errors outright, so the
 // census of store was computed and then thrown away on the ListAll error.
 // One hop also means a redirect cycle cannot loop here at all.
+//
+// THE CONTRACT IS A SPELLING AND NOT A RESOLVED PATH, and it stays one
+// (ranger-base-1b8yv). What comes back is `<dir>/.beads` with dir exactly as
+// the caller spelled it — relative when the caller was relative, which
+// `beadsHome(".")` is — or the redirect's target as the operator WROTE it,
+// made absolute against the repo root only when it was relative. So where a
+// store sits behind a symlink, this answers one of the two spellings of that
+// directory and `absResolve` answers the other: `/var/folders/…` against
+// `/private/var/folders/…` on every darwin box, which is where that
+// difference is routine rather than exotic.
+//
+// NOT RESOLVED HERE, because this answer's first readers hand it to bd and
+// to git, which resolve it themselves and for which the spelling is the
+// operator's own: it is the `BEADS_DIR` every session carries (ADR 0055,
+// planLaunch's env), the `git -C` the census walks, and the path bd takes
+// its own location verdict on — 0.49.1 refused every `BEADS_DIR` under /tmp
+// BY NAME, and 0.50.3 was measured refusing none (bdStoreEnv's block,
+// beads.go), so what resolving here would do is hand the pinned bd a
+// different path than the operator configured, for a verdict that moves
+// with the version. No wall would gain by it, because every wall resolves
+// already, which is the next paragraph.
+//
+// SO EVERY CONSUMER WHOSE ANSWER IS A WALL LITERAL OR A CONTAINMENT
+// DECISION RESOLVES FIRST, and each one does today: SeatbeltWritable's `add`
+// (absResolve, seatbelt.go — so the L2 profile and the L3 bind carry the
+// path the kernel matches), cageOverlay's `src := absResolve(p)` (L4's mount
+// source) with cageCovering resolving every destination it compares,
+// containerReachRow's `absResolve(home)`, recordGitTargets' `underDir(dir,
+// home)` and the gate's `anyUnderDir`, and codexWritableRoot for the
+// `--add-dir` roots launchWritableRoots names — where an unresolved
+// component is not a weak wall but a session that runs no command at all
+// (ranger-base-k62e). beadshomespelling_qa_test.go is that paragraph as a
+// pin, over a store reached through a symlink on any host.
 func beadsHome(dir string) string {
 	home, target, _ := beadsRedirectHop(dir)
 	if target != "" {
