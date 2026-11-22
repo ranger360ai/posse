@@ -183,7 +183,9 @@ filed by a machine, and the seat that caused it was told which door to type.
   unchanged. An escape costs one macos-arm red on main and one ci-watch bead.
   The alternative was 527s on every `make test` (+54% on its ~970s across
   three arms). Box-wide that is paid through a two-slot queue, so every
-  waiting seat pays it again in queue time. D5.4 says when that trade flips.
+  waiting seat pays it again in queue time. In the same window, this bead's
+  own 70s arm runs waited 809s and 694s for a slot (MEASURED 2026-11-22).
+  D5.4 says when that trade flips.
 - **Exit hatch.** The table is the only state. Raising the 2.0s floor makes
   the door cheaper and the escape window wider, one row at a time. To revert,
   restore `tree-check`'s five prerequisites and `twdDoorHolders` from git.
@@ -228,7 +230,7 @@ filed by a machine, and the seat that caused it was told which door to type.
   steady rate of new tests. Kept as D5.4's fallback, arm 1 only.
 - **Swap the venue rather than add one: run `make test`'s arms with TMPDIR
   off `/tmp`.** This is the clever one, because it costs no second pass.
-  Rejected for three reasons. First, it moves the
+  Rejected for two reasons. First, it moves the
   blind spot rather than closing it. ranger-base-6ca29's invariant is that the
   verdict does not move with TMPDIR, and one venue cannot check an invariant
   over two. A refusal-expecting fixture on a bare temp home would then be
@@ -236,9 +238,11 @@ filed by a machine, and the seat that caused it was told which door to type.
   across 38 files already place refusal-side homes with `wallUngrantedDir`,
   so that side has real authoring traffic. Second, a caged seat cannot create
   a `/var/tmp` root at all (m33n5's measured refusal), so `make test` would
-  refuse or abstain on every caged seat. Third, `/tmp` here is tmpfs and
-  `/var/tmp` is btrfs, so the swap is not free either. See the A/B in the
-  bead comment.
+  refuse or abstain on every caged seat. Its price is not the reason.
+  `/tmp` here is tmpfs and `/var/tmp` is btrfs, but arm 2 read 67.6s and
+  71.5s on `/tmp` against 69.3s and 88.9s on `/var/tmp`, in that order, while
+  the load rose from 8 to 24 (MEASURED 2026-11-22, this box, warm cache, at
+  4e344271). That difference is within the box's noise.
 - **(c) A new ubuntu ci.yml leg.** The macos legs already run the venue, and
   ci-watch already files the red (D5.3). A ubuntu leg buys the same
   discovery on the host where the fix is written, for runner time the
