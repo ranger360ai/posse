@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -829,7 +830,42 @@ func TestQABoxCensusRendersOneBOUNDEDLineWhateverPeersDeclare(t *testing.T) {
 		if !strings.Contains(s, strconv.Itoa(peers)+" "+arm.clause) {
 			t.Errorf("%s: the line does not name all %d %s — truncating the rows must not truncate the count, which is the thing an operator acts on:\n%s", arm.name, peers, arm.clause, s)
 		}
-		t.Logf("%s: %d peers declaring %d bytes of home text render a %d-byte line", arm.name, peers, declared, len(s))
+		// ranger-base-wbwqm, from ranger-base-qnfan finding 2: THE NUMBER IN
+		// THE CLAUSE, and not only that a clause is there. boxJoinRows's own
+		// doc says the clause it appends "says HOW MANY it dropped", and the
+		// two assertions above read the clause's PRESENCE and the total ahead
+		// of the list — so `len(rows)-n` replaced by the literal `1` survived
+		// the whole box family and a reader was told one row was dropped
+		// where sixty-three were, with every pin green. MEASURED 2026-11-22
+		// through this very fixture: real code renders a 748-byte line whose
+		// clause reads "and 63 not shown", the mutant a 747-byte line reading
+		// "and 1 not shown", and `go test -run '^Test(QA)?(Live)?Box'
+		// ./internal/posse` is rc=0 under it. Not a tail case either — the
+		// real reading here shows ONE row of 64, so that count is what the
+		// clause says on every truncated reading.
+		//
+		// DERIVED FROM THE LINE and not from the function: count the rows
+		// that actually reached it — every row of either list names its pid —
+		// and the clause must account for the rest. An assertion that
+		// recomputed `len(rows)-n` would be the same arithmetic twice and
+		// would hold under a join that had lost the subtraction.
+		shown := 0
+		for _, p := range procs {
+			if strings.Contains(s, "pid "+strconv.Itoa(p.pid)) {
+				shown++
+			}
+		}
+		if shown == 0 || shown == peers {
+			t.Fatalf("%s: %d of %d rows reached the line — this assertion is about what a TRUNCATED line says, and a line that dropped nothing (or showed nothing) cannot say it:\n%s", arm.name, shown, peers, s)
+		}
+		dropped, okDropped := boxDroppedCount(s)
+		if !okDropped {
+			t.Fatalf("%s: there is no readable `and <n> not shown` clause to take a count out of:\n%s", arm.name, s)
+		}
+		if dropped != peers-shown {
+			t.Errorf("%s: the clause says %d rows were not shown, but %d of %d rows reached the line, so %d were dropped — that number is the whole of what a reader is given about the rows it cannot see:\n%s", arm.name, dropped, shown, peers, peers-shown, s)
+		}
+		t.Logf("%s: %d peers declaring %d bytes of home text render a %d-byte line, %d rows shown and %d declared not shown", arm.name, peers, declared, len(s), shown, dropped)
 	}
 	// BOTH LISTS AT ONCE, which is the shape a peer actually produces: the
 	// budget is per list, so the line a reader meets is bounded by the sum
@@ -870,6 +906,45 @@ func TestQABoxCensusRendersOneBOUNDEDLineWhateverPeersDeclare(t *testing.T) {
 		}
 	}
 	t.Logf("the measured box's own reading: %d bytes, nothing dropped", len(ordinary))
+
+	// AND THE BUDGET'S OWN BOUNDARY, which the sibling value cap has pinned
+	// (256 accepted / 257 refused) and this one did not: `>` → `>=` at
+	// boxJoinRows's break also survives the whole box family
+	// (ranger-base-qnfan finding 2's second survivor, named there so it would
+	// not be re-derived, and closed here). It is one row either way, and the
+	// row it costs is a row a reader is told about instead of shown.
+	//
+	// Driven at boxJoinRows directly, because the boundary is a byte sum the
+	// fixture seam above cannot land on: a row there is a quoted home plus a
+	// pid, so no number of peers sums to exactly the budget. 255 + len("; ")
+	// + 255 does, and the budget is what FITS — so the second row is the last
+	// one rendered and the join is exactly boxRowsMaxBytes with no clause.
+	fits := []string{strings.Repeat("a", 255), strings.Repeat("b", 255)}
+	if n := len(fits[0]) + len("; ") + len(fits[1]); n != boxRowsMaxBytes {
+		t.Fatalf("the boundary fixture sums to %d and the budget is %d — it is not on the boundary, so it reds nothing either way", n, boxRowsMaxBytes)
+	}
+	if j := boxJoinRows(fits); strings.Contains(j, "not shown") || len(j) != boxRowsMaxBytes {
+		t.Errorf("a list that is exactly the %d-byte budget dropped a row — the boundary row fits, and dropping it costs a reader a row to spare a byte nothing is spending; got %d bytes:\n%s", boxRowsMaxBytes, len(j), j)
+	}
+	// Its control, one byte past the budget, which must truncate — so the
+	// row above is rendered because it fits and not because nothing here is
+	// bounded at all.
+	if j := boxJoinRows([]string{strings.Repeat("a", 255), strings.Repeat("b", 256)}); !strings.Contains(j, "and 1 not shown") {
+		t.Errorf("a list one byte past the %d-byte budget rendered whole:\n%s", boxRowsMaxBytes, j)
+	}
+}
+
+// boxDroppedCount reads the integer out of boxJoinRows's truncation clause,
+// which is the one number a reader is given about rows the line does not
+// show. Read off the RENDERED line rather than returned beside it, because
+// what a pin has to hold is that the sentence an operator is pasted says it.
+func boxDroppedCount(s string) (int, bool) {
+	m := regexp.MustCompile(`and (\d+) not shown`).FindStringSubmatch(s)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(m[1])
+	return n, err == nil
 }
 
 // TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang. The directory this

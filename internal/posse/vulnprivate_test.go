@@ -1084,6 +1084,63 @@ func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
 		text: "+- ranger-base-l751c\n+\tthe heap overflow\n",
 		want: true,
 	}, {
+		// ranger-base-wbwqm, from ranger-base-qnfan finding 1: the OTHER TWO
+		// state-affecting clauses of that switch, which nobody had graded.
+		// The site is now closed rather than closed for one more round —
+		// `atFile = true` was mutation-killed before tcho6
+		// (ranger-base-yusee), the `+++ ` guard is the row above, and these
+		// two rows are the two `atFile = false` CLEARS. There is no fifth
+		// clause.
+		//
+		// BOTH FAIL OPEN, which is why they are pins and not a comment: a
+		// DESCRIBED open vuln-private id reads clean where real code reds, so
+		// what moves is the control that keeps an open residual's detail off
+		// this public tree. The reachability argument is tcho6's own and not
+		// a new one — RunGatesVulnPrivateScan judges arbitrary reader text —
+		// so neither row needs a stream git writes.
+		//
+		// THIS ROW is the clear in `default:`. A bare id, then a
+		// `+++ `-prefixed CONTENT line, then the description: real code is at
+		// atFile=false by the time it reaches that line, so the line is
+		// content (`++ …`), the unit holds and the id is described. Sticky
+		// atFile blanks it instead, the unit closes, the description detaches
+		// from the id and the hit is gone. MEASURED 2026-11-22 (linux
+		// 7.2.15-1-omarchy, go1.27.3, tree at 4e344271): real HIT, the clear
+		// removed CLEAN — and before this row that mutant survived
+		// internal/posse arms 1, 2 and 3 filtered on `VulnPrivate|Undiff` and
+		// internal/treepins' `CommitGate|BdWrite` pins, all six rc=0.
+		name: "the `default:` arm clears atFile, so a `+++ ` line after a content line is content",
+		text: vulnPrivateDiffHeader + "a/docs/x.md b/docs/x.md\n" +
+			"+- ranger-base-l751c\n" +
+			"+++ b/bin/bob-watch\n" +
+			"+\tthe heap overflow\n",
+		want: true,
+	}, {
+		// The clear in the `case atFile && HasPrefix(line, "+++ ")` arm
+		// itself, the fourth clause. Two consecutive `+++ ` lines, the second
+		// of them content carrying the id and its description: real code
+		// cleared atFile at the header, so the second line is judged as
+		// content and reds. Sticky there blanks that line too and the added
+		// text is gone altogether. MEASURED 2026-11-22, same box and tree:
+		// real HIT, the clear removed CLEAN, surviving the same six runs.
+		name: "the `+++ ` arm clears atFile, so a second consecutive `+++ ` line is content",
+		text: vulnPrivateDiffHeader + "a/docs/x.md b/docs/x.md\n" +
+			"+++ b/docs/x.md\n" +
+			"+++ - ranger-base-l751c is a heap overflow\n",
+		want: true,
+	}, {
+		// The control for BOTH rows above, paired as every other row here is:
+		// the same added lines with no header above them, so atFile is never
+		// set and the three readings cannot differ. HIT under real code and
+		// under either mutant, which is what makes those two rows
+		// attributable to the clears rather than to a judge that is broken
+		// outright.
+		name: "control: the same added lines with no header above them",
+		text: "+- ranger-base-l751c\n" +
+			"+++ b/bin/bob-watch\n" +
+			"+\tthe heap overflow\n",
+		want: true,
+	}, {
 		// The controls: a boundary must not blank the judge.
 		name: "a description in the SAME file still reds",
 		text: vpFile("docs/x.md", "- ranger-base-l751c", "  the heap overflow in the parser"),
