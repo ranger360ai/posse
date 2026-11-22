@@ -2265,7 +2265,7 @@ func wwHeadReads(f *ast.File) (byConst, byText map[string]map[string]bool) {
 	return byConst, byText
 }
 
-func TestWallWatchEveryKillHeadIsReadInItsTwoHomesAndNowhereElse(t *testing.T) {
+func TestQAEveryWallWatchKillHeadIsReadInItsTwoHomesAndNowhereElse(t *testing.T) {
 	t.Parallel()
 	paths, err := filepath.Glob("*.go")
 	if err != nil {
@@ -2332,7 +2332,7 @@ func TestWallWatchEveryKillHeadIsReadInItsTwoHomesAndNowhereElse(t *testing.T) {
 // key that quietly stopped meaning "reads this head" reds here with no tree to
 // read. Both arms: the pre-ranger-base-6r6ox spelling at a verdict line, and
 // the same line spelling the head's text instead of its name.
-func TestWallWatchTheKillHeadRuleSaysNo(t *testing.T) {
+func TestQATheWallWatchKillHeadRuleSaysNo(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		name, src     string

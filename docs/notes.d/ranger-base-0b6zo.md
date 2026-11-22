@@ -43,7 +43,7 @@ renders byte-identically whenever the kill confirms, so no live seat can tell
 them apart either — left the whole of arm 1 green, exit 0, 0 FAIL lines.
 
 So that arm is held by a rule over the source instead of a fixture.
-`TestWallWatchEveryKillHeadIsReadInItsTwoHomesAndNowhereElse` parses this
+`TestQAEveryWallWatchKillHeadIsReadInItsTwoHomesAndNowhereElse` parses this
 package's 220 non-test files and requires each head constant to be read in its
 one writer and its one reader and nowhere else, and its text to open no string
 literal of its own. Both mutants above red it by name.
@@ -53,7 +53,7 @@ carries the not-confirmed head's words mid-sentence
 ("security: wall-watch could NOT confirm the kill of seat %s"), which is a
 second spelling of the same claim but not of a HEAD — a head opens the line it
 reports, and no verdict file holds a title.
-`TestWallWatchTheKillHeadRuleSaysNo` drives both halves of the key over
+`TestQATheWallWatchKillHeadRuleSaysNo` drives both halves of the key over
 planted source with a control that must report nothing, and a renamed home
 reds the census's own vacuity arm rather than passing quietly.
 
