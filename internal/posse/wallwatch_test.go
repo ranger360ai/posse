@@ -911,6 +911,32 @@ func TestWallWatchBackstopActsOnADetachEvenWithTheWatcherAlive(t *testing.T) {
 	}
 }
 
+// wwBackstopBeadClass asserts the CLASS of a bead the backstop files for
+// itself: a P1 security bug. That triple is what
+// TestWallWatchFilesOneP1PerPathAndCommentsInsideTenMinutes has asserted of
+// fileWallWatchDetach's bead since ranger-base-0qpsw, and neither of the
+// backstop's OWN two filings — the dead-watcher bead and
+// ranger-base-5k7vf's kill — was held to it.
+//
+// IT IS NOT DECORATION, and `security` is the half that is load-bearing
+// twice: it is the lane the bead routes to, and it is also the label the
+// detach dedupe READS BACK — fileWallWatchDetach's OpenLabeledAny(dir,
+// "security") is how a later detach finds the bead an earlier one filed, so a
+// backstop bead filed without it is invisible to that read as well.
+//
+// MEASURED 2026-11-22 under ranger-base-evq89, the QA verify of
+// ranger-base-5k7vf: with the kill's `Labels: []string{"security"}` mutated
+// to nil, and again with its `Type: "bug"` mutated to "task", every test in
+// `-run 'TestWallWatchSeatOrphaned|TestWallWatchBackstop|TestWallWatchProcProbeLeaderParent|TestWallWatchLeaderLive'`
+// stayed green — 15 tests, ok 0.19s. Priority was the one third of the triple
+// a pin held (`Priority: "2"` red the kill arm).
+func wwBackstopBeadClass(t *testing.T, is BdIssue, what string) {
+	t.Helper()
+	if is.Priority != 1 || is.IssueType != "bug" || !reflect.DeepEqual(is.Labels, []string{"security"}) {
+		t.Errorf("%s is P%d %s %v, want a P1 security bug — and `security` is the label fileWallWatchDetach's own dedupe reads back, so a bead without it is unrouted AND undeduped", what, is.Priority, is.IssueType, is.Labels)
+	}
+}
+
 func TestWallWatchBackstopFilesADeadWatcherOnceAndKeepsDiffing(t *testing.T) {
 	t.Parallel()
 	state, path, r := wwBackstopRecord(t)
@@ -920,9 +946,10 @@ func TestWallWatchBackstopFilesADeadWatcherOnceAndKeepsDiffing(t *testing.T) {
 	if p.killed != 0 {
 		t.Errorf("a seat with every wall up was killed")
 	}
-	if len(st.issues) != 1 || !strings.Contains(st.issues[0].Description, wallWatchOrphanMarker(r)) || st.issues[0].Priority != 1 {
-		t.Fatalf("want one P1 naming the dead watcher, got %+v (lines %q)", st.issues, lines)
+	if len(st.issues) != 1 || !strings.Contains(st.issues[0].Description, wallWatchOrphanMarker(r)) {
+		t.Fatalf("want one bead naming the dead watcher, got %+v (lines %q)", st.issues, lines)
 	}
+	wwBackstopBeadClass(t, st.issues[0], "the dead watcher's bead")
 	got, err := readWallWatchRecord(path)
 	if err != nil || got.OrphanFiled != st.issues[0].ID {
 		t.Fatalf("the record does not carry the filed bead: %+v, %v", got, err)
@@ -980,9 +1007,10 @@ func TestWallWatchBackstopKillsASeatOrphanedUnderADeadWatcher(t *testing.T) {
 	if p.killed != 1 {
 		t.Fatalf("killed %d times, want 1 — a seat with no watcher, no bwrap and no pdeathsig was left running: %q", p.killed, lines)
 	}
-	if len(st.issues) != 1 || st.issues[0].Priority != 1 {
-		t.Fatalf("want one P1, got %+v (lines %q)", st.issues, lines)
+	if len(st.issues) != 1 {
+		t.Fatalf("want one bead, got %+v (lines %q)", st.issues, lines)
 	}
+	wwBackstopBeadClass(t, st.issues[0], "the kill's own bead")
 	if ti := st.issues[0].Title; !strings.Contains(ti, "outlived its wall-watch and its bwrap") {
 		t.Errorf("the title does not say what happened: %q", ti)
 	}
