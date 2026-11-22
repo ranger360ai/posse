@@ -214,10 +214,13 @@ func (a *App) PrepareGatesWrap(persona string, deny []string, noGateShell bool, 
 // store class and not just the no-db ones: without help, a caged persona's
 // create/comment/close from a session worktree appends to that worktree's
 // own issues.jsonl, `bd where` names the main store anyway, and no read
-// tells them apart. `BEADS_DIR` is what closes it — set to beadsHome(dir)
-// on every launch (planLaunch) and forwarded by name into the container
-// (CageEnvNames), pointing bd at the same directory CageMounts already
-// binds read-write for it.
+// tells them apart. `BEADS_DIR` is what closes it — set on every launch
+// (planLaunch) and forwarded by name into the container (CageEnvNames),
+// pointing bd at the same directory CageMounts already binds read-write for
+// it. AT THIS TIER THE VALUE IS THE MOUNT SET'S SPELLING of that directory
+// and not beadsHome's (CageBeadsDir, ranger-base-ayubz): the raw spelling of
+// a store reached through a host symlink is in no bind, so a no-db bd told
+// the store is there writes into the container and nothing else.
 var CageBdFlags = []string{"--no-db", "--no-daemon"}
 
 // renderCageBd puts that bd on the same PATH the inner gates own — the shim

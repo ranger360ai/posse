@@ -48,8 +48,14 @@ package posse
 // beadsHome's spelling (planLaunch, CageEnvNames), so a store behind a link
 // is named inside the cage at a path no mount holds — and
 // containerReachRow, which resolves, reads the row Enforced anyway.
-// ranger-base-ayubz carries it: the reading, why L2 and L3 are not affected,
-// and the pin that belongs beside this one.
+//
+// CLOSED by ranger-base-ayubz, and NOT by a fifth `absResolve`: at L4 the
+// filesystem is the rendered bind list, so where the thing behind the link is
+// the session DIR the store crosses at the raw spelling and resolving the
+// name would have broken the case that worked. The caged env asks the mount
+// set which path it gave the store (CageBeadsDir, cage.go), and
+// cagebeadsdir_qa_test.go is the pin that belongs beside this one — the
+// reading, both shapes, and why L2 and L3 are not affected.
 
 import (
 	"os"

@@ -130,7 +130,11 @@ package posse
 //     docs/notes.d/ranger-base-a5st4.md has the table.
 //     THE FIX IS THE LAUNCH ENV, not this file (ADR 0055 D1): every session
 //     posse launches carries `BEADS_DIR=beadsHome(dir)` (planLaunch,
-//     herdrback.go), forwarded into the container by name (CageEnvNames).
+//     herdrback.go), forwarded into the container by name (CageEnvNames) —
+//     and at the container tier valued at the MOUNT SET's spelling of that
+//     same directory rather than beadsHome's, because there the filesystem
+//     is the bind list and a store behind a host symlink has no other name
+//     inside (CageBeadsDir, ranger-base-ayubz).
 //     Measured on a SINGLE-PREFIX scratch store: with it set, the no-db
 //     create from the worktree lands in the MAIN store and the worktree's
 //     `bd list` reads it — on the `no-db: true` store and on the `--no-db`

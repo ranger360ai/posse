@@ -428,6 +428,17 @@ func gitBead(home string, args ...string) ([]byte, error) {
 // component is not a weak wall but a session that runs no command at all
 // (ranger-base-k62e). beadshomespelling_qa_test.go is that paragraph as a
 // pin, over a store reached through a symlink on any host.
+//
+// AND ONE CONSUMER THAT IS NEITHER — the L4 session env — RESOLVES NOTHING
+// AND TRANSLATES INSTEAD (CageBeadsDir, cage.go; ranger-base-ayubz). A caged
+// bd is handed this answer as its `BEADS_DIR`, and inside a container the
+// filesystem IS the rendered bind list: the raw spelling of a store behind a
+// host symlink is in no mount, and the RESOLVED spelling is in no mount
+// either where the thing behind the link is the session dir, because the
+// repo bind's destination is dir exactly as the launch spells it. So that
+// consumer asks the mount set which path it gave the store, which is
+// cageCovering and not a fifth spelling of this one.
+// cagebeadsdir_qa_test.go is that paragraph as a pin.
 func beadsHome(dir string) string {
 	home, target, _ := beadsRedirectHop(dir)
 	if target != "" {
