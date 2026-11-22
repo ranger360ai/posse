@@ -47,6 +47,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-evx07](ranger-base-evx07.md) — ranger-base-evx07 — a walled seat SIGKILLed from outside, and why the fix is not finding the sender — 2026-11-21
 - [ranger-base-dw2du](ranger-base-dw2du.md) — ranger-base-dw2du — D2 pins every bind, and D2(a) reads the wall root in both directions — 2026-11-21
 - [ranger-base-dot6w](ranger-base-dot6w.md) — ranger-base-dot6w — shape 1 pins the directories between nested write grants — 2026-11-21
+- [ranger-base-byqv0](ranger-base-byqv0.md) — The refusals trail's parent directories are walked through no link (ranger-base-byqv0) — 2026-11-21
 - [ranger-base-bx9wj](ranger-base-bx9wj.md) — ranger-base-bx9wj — the live pins' home was under TMPDIR, so ADR 0100's refusals measured only in the venue — 2026-11-21
 - [ranger-base-bncbk](ranger-base-bncbk.md) — Shape 5's directory masks cover the name before the credential exists (ranger-base-bncbk) — 2026-11-21
 - [ranger-base-blkse](ranger-base-blkse.md) — git will not pack a ref it cannot resolve, and a seat's commit is in the seat's store (ranger-base-blkse) — 2026-11-21
