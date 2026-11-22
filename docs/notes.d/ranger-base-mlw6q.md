@@ -1,128 +1,137 @@
-# ranger-base-mlw6q — the stand-down root is the wrong answer for a fixture that drives the PRODUCTION render
+# ranger-base-mlw6q — the wallWitness home, and the two layers under it
 
 Two `wallWitness` arms, plus a third arm's control, red from a `wtqaHome()`
-home on a linux seat whose `TMPDIR` points outside `/tmp`. Same class as
-ranger-base-jhmm7, ranger-base-shf97 and ranger-base-1aayx — a fixture home
-from a bare temp root, green here by an accident of where this box puts its
-temp files — and the first of the family whose answer is NOT
-`wallStandDownDir`.
+home on a linux seat whose `TMPDIR` points outside `/tmp`. ranger-base-jhmm7's
+class — a fixture home from a bare temp root, green on this box only because
+linux's `t.TempDir()` IS under `/tmp`, where the wall-root containment refusal
+stands down.
 
-The fix is in `internal/posse/wallwitness_qa_test.go`: `$HOME` and the App
-home both move out of the per-arm fixture root into one `wallUngrantedDir`
-root (`wwSeatRoot`), leaving each arm's root to be the TREE and nothing else.
+The fix is one line in `internal/posse/wallwitness_qa_test.go`: `wwTempRoot`
+takes its `$HOME` from `wallStandDownDir` instead of `wtqaHome`. That is the
+answer ranger-base-shf97, ranger-base-zbmxc and ranger-base-1aayx took, and
+this bead is the fourth in the class to take it.
 
-## Why the stand-down root does not work here
+What is worth recording is not the line. It is that **this fixture needed a
+second thing to be true, and at the commit this bead started from it was
+not** — so the obvious fix was red, and the reading that explains why is the
+deliverable.
 
-`wallStandDownDir` is the declared answer for a fixture home whose render must
-succeed: a root under `/tmp`, where the wall-root containment refusal stands
-down (`bwrapWallRoot`). Every fixture that has used it drives the PURE render
-— `BwrapArgs` or `bwrapArgsWatched` — which emits an argv and runs nothing.
+## Layer 1: the wall-root refusal
 
-This pair drives `App.RenderWall`, the production entry point, which runs
-`runBwrapPrep`: real writes on the HOST, in the seat's name, at paths the
-render chose. A test binary fences those (`prepHostFenceWhy`,
-ranger-base-bncbk) to the binary's temp home, `os.TempDir()`, `/var/tmp` and
-this seat's declared ungranted root. **`/tmp` is none of those unless the
-box's `TMPDIR` happens to be `/tmp`** — which is this box's and ci.yml's
-ubuntu legs' shape, and exactly why neither layer is visible here by default.
+`BwrapArgs` judges every write grant against the per-seat wall root composed
+from `$HOME` and refuses the render outright where one OVERLAPS it
+(`bwrapRefuseWallRootGrant`, ADR 0100 D1/D2(a)). The refusal stands down where
+the home is itself under `/tmp` (`bwrapWallRoot`).
 
-So the two refusals are a vice: a home under `TMPDIR` hits the wall-root
-refusal, a home under `/tmp` hits the prep fence, and only a root that is
-*both* outside every blanket grant *and* named by the fence satisfies both.
-`/var/tmp` is that root, and `wallUngrantedDir` is how this package cuts one.
+This fixture is the one shape that KEEPS the launcher's `TMPDIR` grant:
+`bwrapSeatTmp` answers `""` for a cwd under `/tmp` — which is the arm's whole
+premise, since that is what leaves the blanket `/tmp` grant covering the tree —
+so `bwrapDropTmpGrants` never takes `TMPDIR` back out. A `$HOME` cut from
+`TMPDIR` is therefore a wall root the render walks straight into.
 
-It needs no stand-down at all, which is what makes it an answer rather than a
-third guess: the wall-root refusal fires on an OVERLAP between a write grant
-and the wall root, and `/var/tmp` is the one directory on both hosts that no
-blanket temp grant covers. The wall root composed from this home is REAL and
-nothing is granted over it. `ungrantedGrantRefusal`, inside that helper,
-checks it rather than assuming it.
+## Layer 2: the prep host fence, and why `wallStandDownDir` alone was not enough
+
+These arms drive the full PRODUCTION render (`f.a.RenderWall`), not the pure
+`BwrapArgs`. The production render runs `runBwrapPrep`: real writes on the
+HOST, in the seat's name, at paths the render chose. A test binary fences
+those (`prepHostFenceWhy`, ranger-base-bncbk).
+
+At this bead's base (e17ea911) that fence named the binary's temp home,
+`os.TempDir()`, `/var/tmp` and this seat's declared ungranted root — and
+`/tmp` only by way of `os.TempDir()`, which covers it just while `TMPDIR` is
+unset or itself under `/tmp`. **That is the same host accident
+`wallStandDownDir` exists to escape.** So moving the home onto a stand-down
+root traded a wall-root refusal for a fence refusal, one layer down, and two
+of this fixture's steps are under `/tmp`: the seat's own `.cache`, and the App
+home's `runtimes` at `<fixture root>/home`.
+
+`ranger-base-shf97` landed `bwrapTmpMount` as a NAMED entry of that fence
+(`prepHostFenceRootList`), pinned by
+`TestQATheStandDownFixtureRootIsAPrepHostFenceRoot`, having hit the identical
+two layers in `wallSeedProjectConfig`'s arms. With that entry in, the
+one-line fix here is correct and sufficient.
 
 ## MEASURED
 
-2026-11-22, this box (linux 7.2.15, go1.27.3, 16 cores), at e17ea911, over
-`-run 'TestQAWallWitness|TestLiveWallWitness' ./internal/posse`, with the
-repro ranger-base-1aayx uses. Three seat placements against two `TMPDIR`
-shapes. The movers are
+2026-11-22, this box (linux 7.2.15, go1.27.3, 16 cores), over
+`-run 'TestQAWallWitness|TestLiveWallWitness' ./internal/posse` with the repro
+ranger-base-1aayx uses. The movers are
 `TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate` (both subtests)
 and `TestQAWallWitnessTakesTheRowAwayWhenTheWallCannotBeRenderedAtAll`'s
-control at the foot of the arm:
+control.
 
-| seat placement | `TMPDIR` unset | `TMPDIR=/var/tmp/posse-mlw6q-repro` |
+| home | fence | `TMPDIR=/var/tmp/posse-mlw6q-repro` |
 |---|---|---|
-| `wtqaHome()`, App home at `<root>/home` (as shipped) | ok | `bwrap cannot grant write on /var/tmp/posse-mlw6q-repro: it contains the per-seat wall root …/001/.cache/posse-wall … (ADR 0100 D1/D2(a))` |
-| `wallStandDownDir`, App home unchanged | ok | `cage seatbelt (bwrap) refuses to prepare /tmp/posse-standdown-N/.cache …: the bwrap prep host fence is up … is under none of <binary home> /var/tmp/posse-mlw6q-repro /var/tmp` |
-| `wallStandDownDir`, App home unchanged — one step on | ok | the same fence, next step: `refuses to prepare /tmp/posse-wwtmp-N/home/runtimes` |
-| `wwSeatRoot` (`/var/tmp`), App home with it | ok | **ok** |
+| `wtqaHome()` | either | `bwrap cannot grant write on /var/tmp/posse-mlw6q-repro: it contains the per-seat wall root …/001/.cache/posse-wall … (ADR 0100 D1/D2(a))` |
+| `wallStandDownDir` | at e17ea911, pre-shf97 | `cage seatbelt (bwrap) refuses to prepare /tmp/posse-standdown-N/.cache …: the bwrap prep host fence is up … under none of <binary home> /var/tmp/posse-mlw6q-repro /var/tmp` |
+| `wallStandDownDir`, `$HOME` only | at e17ea911, pre-shf97 | the same fence one step on: `refuses to prepare /tmp/posse-wwtmp-N/home/runtimes` |
+| `wallStandDownDir` | with the shf97 entry (main today) | **ok** |
 
-Rows 2 and 3 are the same placement: fixing the `$HOME` moved the refusal onto
-the App home, which also lived under the `/tmp` tree root. That is why the fix
-moves BOTH halves of the seat and not just `$HOME`.
+With `TMPDIR` unset every row above reads `ok`, which is the whole reason the
+class is invisible on this box and on ci.yml's ubuntu legs.
 
-Final state, both shapes, 11 tests, no skips and no `NOTHING MEASURED`:
-`ok 1.318s` with `TMPDIR` unset, `ok 2.224s` under the repro.
+Final state, 11 tests, no skips and no `NOTHING MEASURED` on either shape:
+`ok 0.915s` with `TMPDIR` unset, `ok 1.207s` under the repro.
 
-## The fence is not widened to `/tmp`, and that is measured too
+Rows 2 and 3 were taken at e17ea911, on the real pre-entry tree, and not from
+a mutant — so they are also the red-before for the coupling shf97's pin now
+holds: take `bwrapTmpMount` out of that fence and these arms red at the render
+again.
 
-The other candidate was one row in `prepHostFenceRootList` — add
-`bwrapTmpMount`, since the package deliberately cuts fixture homes under
-`/tmp` (`wallStandDownDir`, `bwsHome`) and the fence's own comment enumerates
-only "the two temp roots this package's fixtures are cut from".
+## The route not taken, and why it is recorded rather than argued
 
-It is refused by a reading already in the tree. The 13 macos arm-1 reds
-ranger-base-aurb8 diagnosed were this same fence refusing a
-`mkdir -p /private/tmp/posse-upgrade`, and that bead's verdict was *"the fence
-was right; the grant should not have been there"*
-(`bwrapDropTmpGrantsOver`'s comment, `wallseatcache.go`). A fence admitting
-all of `/tmp` would have passed those 13 silently. The fence stays as it is
-and the fixture moves.
+While this bead was in flight and before shf97 landed, the fix here was built
+the other way: move the whole SEAT — `$HOME` and the App home — out of the
+`/tmp` tree root into one `wallUngrantedDir` root, on the reasoning that
+`/var/tmp` is outside every blanket grant (so nothing can overlap the wall
+root) *and* is a root the fence already named, needing no fence change at all.
+That version was green on both shapes too (`ok 1.318s` / `ok 2.224s`,
+commit `6374b814`, superseded).
 
-## What the fix does not perturb, read rather than assumed
+It was abandoned on a comparison and not on a preference:
 
-- **The premise.** `bwrapSeatTmp` answers `""` — no private `/tmp`, blanket
-  `/tmp` grant intact, tree writable — when the home OR the cwd is under
-  `/tmp`, and the cwd is `wwTempRoot`'s root. The premise was over-determined
-  before, by both halves; it is carried by the cwd alone now, which is what
-  the helper's comment always said it rested on. An arm that stopped
-  measuring because `bwrapSeatTmp`'s cwd arm broke reds now instead of
-  passing on the home. `wwRequireTheWallAllowsTheCreate` reads the premise
-  through the real render before any row is judged, so a green arm is a
-  measured one.
-- **The live arm.** `TestLiveWallWitnessHoldsUnderTheRenderedWall` keeps its
-  tree under `wwRoot` and is green under the repro before and after. Its seat
-  was never what made its wall hold: its cwd under `/var/tmp` gets the seat a
-  private tmp, so `bwrapDropTmpGrants` takes out both grants that could have
-  overlapped a `TMPDIR` home. What it loses is that second, redundant reason.
-- **`wtqaHome`'s own count.** Its comment says "the two left are … sbRoot …
-  and one init test". Two `wallwitness` calls had been added since; removing
-  them makes that sentence true again.
+- It is a SECOND answer to a class that now has one. `bhsDeclaredRoots` reads
+  `wallStandDownDir` as "the render must succeed" and `wallUngrantedDir` as
+  "the refusal is the subject"; using the second for a render that must
+  succeed works, but reads as the opposite of what it is.
+- It costs coverage. `wallUngrantedDir` abstains where `/var/tmp` is
+  read-only — every seat inside its own bwrap wall — so the whole file would
+  have gone dark on such a seat instead of half of it, unless that seat
+  declares `POSSE_TEST_UNGRANTED_ROOT` (ranger-base-ydw7p).
+- It is a larger diff: a new helper plus a moved App home, against one
+  identifier.
 
-## The cost, stated
+The argument it rested on — that the fence should not name `/tmp`, because
+ranger-base-aurb8's 13 macos reds were this same fence catching a
+`mkdir -p /private/tmp/posse-upgrade` and its verdict was "the fence was
+right; the grant should not have been there" — is a **real cost of shf97's
+entry and is noted here as one**: that refusal would now be admitted
+silently. But it is a cost to a different invariant. The fence's subject is
+"do not write into somebody's live area", and `/private/tmp/posse-upgrade` is
+not one; catching a surviving grant was a side effect it was never designed
+for. shf97's own reasoning — the entry widens the fence no more than the
+`/var/tmp` entry already does, both are world-shared temp roots holding no
+live area of this box's operator or of rex, and the keep-out arm still decides
+a passwd home strictly inside either — holds on its own terms.
 
-The `/tmp` arms now carry `wallUngrantedDir`'s abstention through
-`wwSeatRoot`: a seat whose `/var/tmp` is read-only — every seat running inside
-its own bwrap wall — skips them unless it declares
-`POSSE_TEST_UNGRANTED_ROOT` (ranger-base-ydw7p). The abstention is COUNTED and
-fails the run undeclared (`wallUngrantedAbstain`), and the live arm of this
-same pair already took it, so what changes is that the whole file goes dark on
-such a seat instead of half of it — loudly, and with the same one variable to
-set. That variable is also the fence's third root, so a seat that sets it
-fixes both halves at once.
+## The guard
+
+`wwTempRoot` now checks its root against the ANSWER and not the spelling, which
+is `wspFixtureIn`'s guard (ranger-base-shf97) applied to this fixture's second
+host-prep step: the App home it carries is `<root>/home`, admitted by the fence
+only because the root is under `bwrapTmpMount`. A root that resolved elsewhere
+— darwin spells `/tmp` `/private/tmp` — would red at the fence with a sentence
+about somebody's live area, so the fixture says so itself instead.
+
+`wallStandDownDir` makes the same check over the home, so both halves of the
+seat are checked where they are chosen.
 
 ## Not visible to the tree-wide pin
 
 `internal/treepins/bwraphomestanddown_qa_test.go` reads a render a test writes
 as `BwrapArgs`/`bwrapArgsWatched` in its own identifier call graph; this one
-arrives through the METHOD `f.a.RenderWall`, and a method edge keyed by name
-alone is unsound in a package parsed per-arm from source. ranger-base-shf97
-measured every widening that would reach it. Nothing here widens that pin.
-
-The gap this bead *adds* to that pin's subject is worth naming: the three
-declared roots answer "does the render refuse itself", and they do not
-distinguish a fixture that drives the PURE render from one that drives the
-production entry point and so must also satisfy the prep host fence. For the
-pure-render fixtures the pin covers today, `wallStandDownDir` remains right.
-
-## Not closed here
-
-- ranger-base-shf97
+arrives through the METHOD `f.a.RenderWall`. ranger-base-shf97 measured eight
+widenings over the live corpus — none with zero false positives, the cheapest
+that sees a method-reached render costing 15 false reads — and
+ranger-base-m33n5 holds the venue door for that path. Nothing here widens that
+pin.

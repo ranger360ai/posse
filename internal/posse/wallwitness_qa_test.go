@@ -33,20 +33,6 @@ package posse
 // violated, over production code that was right. wwTempRoot's own comment
 // has that measurement.
 //
-// AND THE HOME IS PART OF THAT PLACEMENT, not part of the body
-// (ranger-base-mlw6q). The bwrap render judges every write grant against the
-// per-seat wall root composed from $HOME and refuses the render outright where
-// one OVERLAPS it (bwrapRefuseWallRootGrant, ADR 0100 D1/D2(a)), so a fixture
-// home inside a blanket temp grant asks the render to refuse itself — and both
-// halves of this pair need it to succeed, one to wall a tree and one to leave
-// it writable. So neither home is a `t.TempDir()`: wwRoot's is granted by
-// nothing once the render drops the temp grants its private `/tmp` replaces,
-// and wwTempRoot's is cut under `/var/tmp`, which no blanket grant reaches on
-// either host. Each helper's comment has the reading and the measurement, and
-// wwTempRoot's says why the obvious answer — a home under `/tmp`, where the
-// refusal stands down — is the wrong one for a fixture that drives the
-// PRODUCTION render.
-//
 // Same production code, same PID, opposite verdicts, and the difference is
 // the wall and not the test. That is what ADR 0086's own caveat about its
 // "move main" row asked for: a fixture under `/tmp` measures nothing about a
@@ -97,53 +83,12 @@ type wwFixture struct {
 	repo, tree string
 }
 
-// wwSeatRoot is the SEAT side of every fixture here — `$HOME` and the App
-// whose home renders the wall — and it is deliberately not inside either arm's
-// tree root (ranger-base-mlw6q). It answers the App home.
-//
-// ONE ROOT FOR BOTH ARMS, which is what makes the pair below honest: the file's
-// claim is "one fixture body under two roots, with nothing else varied", and
-// while the seat lived at `<tree root>/home` the two arms varied their seat
-// too. Now the TREE root is the only difference, and `wgFixtureAnyBox`
-// (seatbeltworktreegit_qa_test.go) is the shape — two siblings under one root,
-// so nothing an arm narrows to the repo can arrive from the home.
-//
-// UNDER wallUngrantedDir, FOR TWO REASONS THAT HAPPEN TO WANT THE SAME ROOT:
-//
-//  1. THE RENDER MUST NOT REFUSE ITSELF. BwrapArgs judges every write grant
-//     against the per-seat wall root composed from `$HOME` and refuses the
-//     render where one OVERLAPS it (bwrapRefuseWallRootGrant, ADR 0100
-//     D1/D2(a)). `/var/tmp` is the one directory on both hosts no blanket temp
-//     grant covers, so the wall root here is real and nothing is granted over
-//     it — no stand-down needed, and nothing for a box's TMPDIR to move.
-//     `ungrantedGrantRefusal` inside that helper checks it rather than
-//     assuming it.
-//  2. THE HOST PREP IS FENCED. These arms drive the full PRODUCTION render,
-//     which runs runBwrapPrep — real writes on the host, at paths the render
-//     chose — and a test binary refuses a step outside the binary's temp home,
-//     `os.TempDir()`, `/var/tmp` or this seat's declared ungranted root
-//     (prepHostFenceWhy, ranger-base-bncbk). The seat's `.cache` and the App
-//     home's `runtimes` are both such steps, so the seat has to sit in a root
-//     that fence names. `/var/tmp` is one; `/tmp` is not, unless the box's
-//     TMPDIR happens to be `/tmp`.
-//
-// wwTempRoot's comment has the measurement of both, and the reason the fence
-// is not widened to `/tmp` to suit this instead.
-func wwSeatRoot(t *testing.T) string {
-	t.Helper()
-	root := wallUngrantedDir(t)
-	// HOME elsewhere, and a SIBLING of the App home rather than its parent:
-	// the home cache grants and the per-seat wall dir name a fixture home,
-	// and wgFixtureAnyBox's reason for the split applies here too.
-	t.Setenv("HOME", sbMkdir(t, filepath.Join(root, "seat-home")))
-	return filepath.Join(root, "home")
-}
-
-// wwRoot is the TREE root for an arm whose wall must HOLD: a directory no
-// grant reaches (wallUngrantedDir, wall_helpers_test.go). The seat is
-// wwSeatRoot's, as the other half's is.
+// wwRoot is the fixture root for an arm whose wall must HOLD: a directory no
+// grant reaches (wallUngrantedDir, wall_helpers_test.go), under a HOME that
+// is a fixture so the home cache grants name one too.
 func wwRoot(t *testing.T) string {
 	t.Helper()
+	wtqaHome(t) // HOME elsewhere: the home cache grants name a fixture home
 	return wallUngrantedDir(t)
 }
 
@@ -184,90 +129,60 @@ func wwRoot(t *testing.T) string {
 // On darwin the `/tmp` grant is an SBPL allow with no substitution behind it,
 // so the name is right there too, by a shorter road.
 //
-// THIS ROOT IS THE TREE AND ONLY THE TREE, and until ranger-base-mlw6q it was
-// the seat as well — `wtqaHome`'s `t.TempDir()` for `$HOME`, and the App home
-// at `<this root>/home`. Both of those are now wwSeatRoot's, under `/var/tmp`,
-// and the reason is that nothing in the SEAT may be under `/tmp` while the
-// tree must be:
+// AND THE HOME IS NAMED HERE FOR THE SAME REASON THE ROOT IS, which is the
+// half ranger-base-6ca29 left on `wtqaHome` — `t.Setenv("HOME", t.TempDir())`
+// — and the half that then red (ranger-base-mlw6q). BwrapArgs judges every
+// write grant against the per-seat wall root composed from `$HOME` and refuses
+// the render outright where one OVERLAPS it (bwrapRefuseWallRootGrant, ADR
+// 0100 D1/D2(a)), and this fixture is the ONE shape that keeps the launcher's
+// TMPDIR grant: `bwrapSeatTmp` answers "" for a cwd under `/tmp`, so
+// `bwrapDropTmpGrants` never takes TMPDIR back out. A `$HOME` cut from TMPDIR
+// is therefore a wall root the render walks straight into — invisibly here,
+// where `t.TempDir()` IS under `/tmp` and the refusal stands down, and red on
+// any seat whose TMPDIR points elsewhere.
 //
-//  1. THE WALL-ROOT REFUSAL. BwrapArgs judges every write grant against the
-//     per-seat wall root composed from `$HOME` and refuses the render where one
-//     OVERLAPS it (bwrapRefuseWallRootGrant, ADR 0100 D1/D2(a)). This fixture
-//     is the one shape that KEEPS the launcher's TMPDIR grant — `bwrapSeatTmp`
-//     answers "" for a cwd under `/tmp`, so `bwrapDropTmpGrants` never takes it
-//     back out — so a `$HOME` cut from TMPDIR is a wall root the render walks
-//     straight into.
-//  2. THE HOST PREP FENCE. These arms drive the full PRODUCTION render, which
-//     runs runBwrapPrep: real writes on the host at paths the render chose, and
-//     a test binary refuses a step outside the binary's temp home,
-//     `os.TempDir()`, `/var/tmp` or this seat's declared ungranted root
-//     (prepHostFenceWhy, ranger-base-bncbk). `/tmp` is none of those unless the
-//     box's TMPDIR happens to be `/tmp`, and both the seat's `.cache` and the
-//     App home's `runtimes` are such steps.
+// `wallStandDownDir` is that answer, the same one ranger-base-shf97,
+// ranger-base-zbmxc and ranger-base-1aayx took: a home inside the one blanket
+// temp grant both hosts spell alike, where the refusal stands down
+// (bhsDeclaredRoots, internal/treepins/bwraphomestanddown_qa_test.go). It
+// perturbs nothing above: the cwd is under `/tmp` either way, so
+// `bwrapSeatTmp` answered "" before this home moved and answers "" after, and
+// the blanket `/tmp` grant still reaches the tree, which is the whole premise.
 //
-// SO `wallStandDownDir` IS THE WRONG ANSWER HERE, which is this bead's finding
-// and the one place it departs from the four fixes before it. That helper — a
-// root under `/tmp`, where the wall-root refusal stands down — is the declared
-// answer for a fixture home whose render must succeed (bhsDeclaredRoots,
-// internal/treepins/bwraphomestanddown_qa_test.go), and every fixture that has
-// used it drives the PURE render (BwrapArgs, bwrapArgsWatched), which runs no
-// prep. This pair is the first to drive the production entry point, so item 2
-// applies to it and to none of them: a stand-down home trades (1) for (2) and
-// the arm is red either way.
+// IT TAKES TWO LAYERS, and the second is the one worth knowing about here.
+// These arms drive the full PRODUCTION render (`f.a.RenderWall`), not the pure
+// one, so they also run `runBwrapPrep` — real writes on the HOST, at paths the
+// render chose — and a test binary fences those to the binary's temp home,
+// `os.TempDir()`, `/var/tmp`, `bwrapTmpMount` and this seat's declared
+// ungranted root (prepHostFenceRootList). Two of this fixture's steps are
+// under `/tmp`: the seat's own `.cache`, and the App home's `runtimes` at
+// `<this root>/home`. `bwrapTmpMount` became a NAMED entry of that fence in
+// ranger-base-shf97 — rather than one `os.TempDir()` covered only while TMPDIR
+// is unset, which is the same host accident the stand-down root exists to
+// escape — and that is what makes a `/tmp` fixture of this shape renderable at
+// all. Before it, both halves of this pair red at the fence instead:
 //
-// MEASURED 2026-11-22 on this box (linux 7.2.15, go1.27.3, at e17ea911), over
-// `-run 'TestQAWallWitness|TestLiveWallWitness'` with the repro
-// ranger-base-1aayx uses. Three seat placements, two TMPDIRs; the two
-// TakesTheRowAway arms and the second one's control are what move:
+// MEASURED 2026-11-22 on this box (linux 7.2.15, go1.27.3), over `-run
+// 'TestQAWallWitness|TestLiveWallWitness' ./internal/posse` with the repro
+// ranger-base-1aayx uses, `TMPDIR=/var/tmp/posse-mlw6q-repro`:
 //
-//	seat placement             TMPDIR unset  TMPDIR=/var/tmp/x
-//	wtqaHome + <root>/home     ok            `bwrap cannot grant write on
-//	                                         /var/tmp/x: it contains the
-//	                                         per-seat wall root …/.cache/
-//	                                         posse-wall` (ADR 0100 D1/D2(a))
-//	wallStandDownDir + same    ok            `refuses to prepare /tmp/posse-
-//	                                         standdown-N/.cache … the bwrap
-//	                                         prep host fence is up … under none
-//	                                         of <binary home> /var/tmp/x
-//	                                         /var/tmp`
-//	wallStandDownDir, App                    the same fence, one step on:
-//	home still <root>/home     ok            `refuses to prepare /tmp/posse-
-//	                                         wwtmp-N/home/runtimes`
-//	wwSeatRoot (/var/tmp)      ok            ok
+//	home             fence                     verdict
+//	wtqaHome         either                    `bwrap cannot grant write on
+//	                                           /var/tmp/…: it contains the
+//	                                           per-seat wall root …/.cache/
+//	                                           posse-wall` (ADR 0100 D1/D2(a))
+//	wallStandDownDir at e17ea911, before the   `refuses to prepare /tmp/posse-
+//	                 shf97 entry               standdown-N/.cache … the prep
+//	                                           host fence is up … under none of
+//	                                           <binary home> /var/tmp/… /var/tmp`
+//	                                           — and with only `$HOME` moved, the
+//	                                           same fence one step on, at
+//	                                           `/tmp/posse-wwtmp-N/home/runtimes`
+//	wallStandDownDir with it (main today)      ok
 //
-// AND THE FENCE IS NOT WIDENED TO `/tmp` TO SUIT THIS, which was the other
-// candidate and is refused by a measurement already in the tree: the 13 macos
-// arm-1 reds ranger-base-aurb8 diagnosed were this same fence refusing a
-// `mkdir -p /private/tmp/posse-upgrade`, and that bead's verdict was "the fence
-// was right; the grant should not have been there" (bwrapDropTmpGrantsOver's
-// comment, wallseatcache.go). A fence admitting all of `/tmp` would have passed
-// those 13 silently. The fence stays as it is, and the fixture moves.
-//
-// IT PERTURBS NOTHING ABOVE, which is the half that had to be read rather than
-// sed'd because the placement is this arm's whole subject. `bwrapSeatTmp`
-// answers "" — no private tmp, blanket `/tmp` grant intact, tree writable —
-// when the home OR the cwd is under `/tmp`, and the cwd is the root this helper
-// returns. So the premise was over-determined before, by both halves, and is
-// carried by the cwd alone now, which is what every paragraph above says it
-// rests on: an arm that stopped measuring because `bwrapSeatTmp`'s cwd arm
-// broke reds here instead of passing on the home.
-//
-// AND THE LIVE ARM IS UNMOVED, read rather than assumed: its tree stays under
-// `wwRoot`, its seat was never what made its wall hold, and it is green under
-// the repro before and after. What it loses is the second, redundant reason its
-// own render was never refused — its cwd under `/var/tmp` gets the seat a
-// private tmp, so `bwrapDropTmpGrants` took out both grants that could have
-// overlapped a TMPDIR home.
-//
-// THE COST, stated because it is a real one: the `/tmp` arms now carry
-// wallUngrantedDir's abstention through wwSeatRoot — a seat whose `/var/tmp` is
-// read-only, which is every seat running inside its own bwrap wall, skips them
-// unless it declares POSSE_TEST_UNGRANTED_ROOT (ranger-base-ydw7p). That
-// abstention is COUNTED and fails the run undeclared (wallUngrantedAbstain),
-// and the live arm of this very pair already took it, so what changes is that
-// the whole file goes dark on such a seat instead of half of it — loudly, and
-// with the same one variable to set. That variable is also the third root the
-// prep fence names, so a seat that sets it fixes both halves at once.
+// So the `$HOME` here is load-bearing on that fence entry, and the fence entry
+// is pinned where it lives (TestQATheStandDownFixtureRootIsAPrepHostFenceRoot).
+// If it is ever taken out, these arms say so at the render and not at a row.
 func wwTempRoot(t *testing.T) string {
 	t.Helper()
 	// `wwTmpRoot` and not bwrapTmpMount, which is the same literal one file
@@ -275,6 +190,9 @@ func wwTempRoot(t *testing.T) string {
 	// whole package (internal/treepins/temproot_qa_test.go), and a name bound
 	// twice is a name it will not resolve to either binding.
 	const wwTmpRoot = "/tmp"
+	// The home under the stand-down root, and not wtqaHome's `t.TempDir()`:
+	// the head comment above has the mechanism and the measurement.
+	t.Setenv("HOME", wallStandDownDir(t))
 	if st, err := os.Stat(wwTmpRoot); err != nil || !st.IsDir() {
 		t.Skip("NOTHING MEASURED: no " + wwTmpRoot + " on this host, so there is no fixture root the blanket temp grant reaches")
 	}
@@ -285,7 +203,18 @@ func wwTempRoot(t *testing.T) string {
 		t.Skip("NOTHING MEASURED: cannot make a fixture root under " + wwTmpRoot + ": " + err.Error())
 	}
 	t.Cleanup(func() { removeAllTolerant(t, d) })
-	return absResolve(d)
+	d = absResolve(d)
+	// AND THE ROOT IS CHECKED AGAINST THE ANSWER, wspFixtureIn's guard
+	// (wallseedprojectconfig_qa_test.go) for this fixture's second host-prep
+	// step: the App home this root carries is `<root>/home`, and the fence
+	// admits it because the root is under `bwrapTmpMount`. A root that
+	// resolved somewhere else — darwin spells `/tmp` `/private/tmp` — would
+	// red at the fence with a sentence about somebody's live area, so it says
+	// so here instead.
+	if !underDir(bwrapTmpMount, d) {
+		t.Fatalf("this fixture's root is %s, which resolves outside %s: the production render's host prep writes inside the App home under this root, and the prep host fence admits that step only under a root it names (prepHostFenceRootList, ranger-base-shf97/ranger-base-mlw6q). So every arm over this root would read a fence refusal instead of the wall it came to measure", d, bwrapTmpMount)
+	}
+	return d
 }
 
 // wwRequireTheWallAllowsTheCreate is wwTempRoot's premise as one reading, and
@@ -346,10 +275,7 @@ func wwFixtureIn(t *testing.T, root string) wwFixture {
 		t.Fatalf("no linked worktree was made, so half the arms measure the wrong shape: LinkedGitDirs(%s) = %v", tree, dirs)
 	}
 
-	// The seat is NOT under `root`: the render's host prep writes inside this
-	// App home, and under the `/tmp` half of the pair that is a path the prep
-	// host fence does not name (wwSeatRoot, ranger-base-mlw6q).
-	a := NewAppAt(wwSeatRoot(t))
+	a := NewAppAt(filepath.Join(root, "home"))
 	homeWithConstitution(t, a, "")
 	f := wwFixture{a: a, root: root, repo: repo, tree: tree,
 		// Not claude: ADR 0080 D19's config-dir demand is its own pin and not
@@ -439,7 +365,7 @@ func wwNoWitnessFileLeft(t *testing.T, root string) {
 // that is also what proves the target was really there: the whole file would
 // pass over a probe that always reported "refused" without it.
 func TestLiveWallWitnessHoldsUnderTheRenderedWall(t *testing.T) {
-	// No t.Parallel: wwFixtureIn sets HOME for this process (wwSeatRoot).
+	// No t.Parallel: wwRoot sets TMPDIR and HOME for this process.
 	wwSkipUnlessTheWallIsReal(t)
 	f := wwFixtureIn(t, wwRoot(t))
 
@@ -512,7 +438,7 @@ func TestLiveWallWitnessHoldsUnderTheRenderedWall(t *testing.T) {
 // is the one reading that tells the two apart, so it is taken by itself and
 // its failure says the premise is gone rather than that the design is broken.
 func TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate(t *testing.T) {
-	// No t.Parallel: wwFixtureIn sets HOME for this process (wwSeatRoot).
+	// No t.Parallel: wwTempRoot sets HOME for this process.
 	wwSkipUnlessTheWallIsReal(t)
 	f := wwFixtureIn(t, wwTempRoot(t))
 
@@ -567,7 +493,7 @@ func TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate(t *testing.T) {
 // (bwrapprepauthority_qa_test.go stubs /usr/bin/bwrap), and the second is
 // what every bwrap failure on an L4 host looks like.
 func TestQAWallWitnessAbstainsWhereNothingRanBehindThePrefix(t *testing.T) {
-	// No t.Parallel: wwFixtureIn sets HOME for this process (wwSeatRoot).
+	// No t.Parallel: wwTempRoot sets HOME for this process.
 	f := wwFixtureIn(t, wwTempRoot(t))
 	for _, tc := range []struct{ what, prefix string }{
 		{"a stub that swallows the command and exits 0", "/usr/bin/env true "},
@@ -672,7 +598,7 @@ func wwStubApplyRefusal(t *testing.T, why string) {
 // needs this host's wall to be real — the one precondition left is the tier,
 // because wallRendered is what puts a launch behind an L2 wall at all.
 func TestQAWallWitnessAbstentionNamesTheWallThisProcessCannotPutUp(t *testing.T) {
-	// No t.Parallel: wwFixtureIn (HOME) and wallMechanismForTest write process state.
+	// No t.Parallel: wwTempRoot and wallMechanismForTest write process state.
 	if !AvailableCages[CageSeatbelt] {
 		t.Skip("NOTHING MEASURED: this host does not provide the seatbelt tier, so no launch here is behind an L2 wall at all (wallRendered)")
 	}
@@ -756,7 +682,7 @@ func TestQAWallWitnessAbstainsWhereTheBaselineCreateCannotLand(t *testing.T) {
 // path that is a file) refuses the bwrap render and renders fine on darwin,
 // so it would have been a Linux-only pin for a row both mechanisms write.
 func TestQAWallWitnessTakesTheRowAwayWhenTheWallCannotBeRenderedAtAll(t *testing.T) {
-	// No t.Parallel: wwFixtureIn sets HOME for this process (wwSeatRoot).
+	// No t.Parallel: wwTempRoot sets HOME for this process.
 	wwSkipUnlessTheWallIsReal(t)
 	f := wwFixtureIn(t, wwTempRoot(t))
 	blocked := filepath.Join(f.root, "blocked")
@@ -794,7 +720,7 @@ func TestQAWallWitnessTakesTheRowAwayWhenTheWallCannotBeRenderedAtAll(t *testing
 // writable, a seat that cannot edit a file still mints a commit by plumbing
 // (W14/W15), and in a linked worktree that directory is not under cwd at all.
 func TestQAWallWitnessTargetsAreTheTreeAndItsObjectStore(t *testing.T) {
-	// No t.Parallel: wwFixtureIn sets HOME for this process (wwSeatRoot).
+	// No t.Parallel: wwTempRoot sets HOME for this process.
 	f := wwFixtureIn(t, wwTempRoot(t))
 	common := absResolve(LinkedGitDirs(f.tree)[1])
 
@@ -872,7 +798,7 @@ func TestQAWallWitnessJudgesTheRowParityActuallyWrites(t *testing.T) {
 // witness that spoke about any of them would be claiming a measurement it
 // did not take.
 func TestQAWallWitnessSaysNothingAboutARowItDidNotClaim(t *testing.T) {
-	// No t.Parallel: wwFixtureIn sets HOME for this process (wwSeatRoot).
+	// No t.Parallel: wwTempRoot sets HOME for this process.
 	f := wwFixtureIn(t, wwTempRoot(t))
 	// This fixture's wall ALLOWS the create (it is under /tmp), so if the
 	// witness runs at all in any arm below it will be loud about it — which
@@ -934,7 +860,7 @@ func TestQAWallWitnessSaysNothingAboutARowItDidNotClaim(t *testing.T) {
 // a LAUNCH witnesses; that a reader abstains rather than writing a caller's
 // HOME is readerprobeprep_qa_test.go's.
 func TestQAWallWitnessReachesTheLaunchThroughCheckParityIn(t *testing.T) {
-	// No t.Parallel: wwFixtureIn sets HOME for this process (wwSeatRoot).
+	// No t.Parallel: wwRoot sets TMPDIR and HOME for this process.
 	wwSkipUnlessTheWallIsReal(t)
 	f := wwFixtureIn(t, wwRoot(t))
 	p := f.a.checkParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.tree, nil, askedByLaunch)
