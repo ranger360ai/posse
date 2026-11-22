@@ -157,6 +157,25 @@ func FencePrepHost(root string) {
 // lies in, and the keep-out arm still decides a passwd home STRICTLY inside
 // either of them.
 //
+// THE STAGING-ROOT STEP OF THE STAND-DOWN SHAPE IS A STATED RESIDUAL, AND
+// THESE ROOTS ADMIT IT (ADR 0100 D5). A render whose home or cwd lies under
+// `/tmp` binds no private /tmp, keeps the blanket temp grants and renders the
+// denies under them — `upgradePrivateDenied`'s staging root among them — so
+// an uncaged test binary's prep creates `<temp root>/posse-upgrade` on the
+// host, admitted here through `os.TempDir()` and through `bwrapTmpMount`.
+// That is not a breach of this fence's purpose and NOT a reason to narrow it.
+// The fence exists to refuse a step at a path the render took from a host
+// input the fixture did not move (the passwd home, `XDG_STATE_HOME`); this
+// path comes from the fixture's own shape, lies in a world-shared temp root
+// this list admits by declaration, and is byte-for-byte the step a launch in
+// that shape makes. Both entries are load bearing for the fixtures above —
+// `t.TempDir()` under the first, `wallStandDownDir` under the last — so
+// narrowing either would refuse the renders those fixtures drive, which is
+// what D5's A9-A11 priced and rejected. The cost is one empty 0755 directory
+// per temp root, at the name `posse upgrade` creates for itself anyway:
+// docs/notes.d/ranger-base-2q0uy.md measured the class at 37 prep attempts
+// in 16 files, all naming that one path.
+//
 // ORDER IS COSMETIC AND THE DECISION DOES NOT READ IT: prepHostFenceWhy
 // unions the roots' coverage and unions the keep-out question over them, so
 // what the order decides is only how the refusal sentence reads.

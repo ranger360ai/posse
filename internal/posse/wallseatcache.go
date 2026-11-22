@@ -169,6 +169,18 @@ func bwrapSeatTmpRoot(tmp string) string {
 // already, so there is no seat on such a box for this mount to protect. No
 // production launch is that shape (homes and worktrees live under the home);
 // the fixtures of this package's own wall tests are.
+//
+// AND THE STAND-DOWN KEEPS THE BLANKET TEMP GRANTS (ADR 0100 D5). With
+// `carve.Tmp` empty, bwrapRender never calls bwrapDropTmpGrants, so `/tmp`
+// and the launcher's TMPDIR stay in the write set. That is the design and not
+// an omission: the seat's own tree is in the shared directory in this shape,
+// so the blanket grant is what lets it write that tree, and a render that
+// took the grant away would leave it a wall it cannot work behind — with
+// bwrapRefuseWallRootGrant standing down here too, nothing would say so. It
+// follows that every deny inside those grants IS rendered in this shape, and
+// prepped where it is absent: upgradePrivateDenied's staging root included,
+// which seatbelt.go's own block says is the wall doing its job for a launch
+// and a stated residual for an uncaged test binary.
 func bwrapSeatTmp(home, cwd string) string {
 	if home == "" || cwd == "" || underDir(bwrapTmpMount, home) || underDir(bwrapTmpMount, cwd) {
 		return ""

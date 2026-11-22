@@ -2118,8 +2118,25 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 	// takes is a seat choosing what the operator's box executes. The temp
 	// grants are blanket, so the deny is too: it is rendered whether or not
 	// an upgrade is running, because a seat's profile is fixed at its own
-	// launch and the verb starts later. bwrap renders nothing for it and
-	// needs to — the seat's /tmp is already a private bind (bwrap.go 1c).
+	// launch and the verb starts later.
+	//
+	// AT BWRAP IT IS RENDERED EXACTLY WHERE THE BLANKET GRANT SURVIVES
+	// (ADR 0100 D5). Where a private /tmp is bound, step 1c and
+	// bwrapDropTmpGrants take the grants this deny sits under out of the
+	// write set, so nothing is left to deny and the render emits nothing for
+	// it — and that is every production launch, which is the whole of what
+	// the sentence this replaces was saying unconditionally. Where
+	// bwrapSeatTmp STANDS DOWN (the home or the session dir is itself under
+	// /tmp, which is every wall fixture of this package) no private /tmp is
+	// bound, the blanket grants stay, and the deny IS rendered under them:
+	// absent and inside a write grant, it gets the prep every such deny gets
+	// (ADR 0080 D17/D18 shape 1) — `mkdir -p <grant>/posse-upgrade`, then
+	// the mount over it. For a LAUNCH in that shape that is this wall doing
+	// its job, since a seat that may write /tmp and holds no mount over
+	// /tmp/posse-upgrade is the ranger-base-ua625 hole, so the prep is not
+	// to be suppressed. For a test binary run UNCAGED the same step lands on
+	// the host temp root, which the prep host fence admits by declaration;
+	// D5 states that as a residual and prices it (prepHostFenceRootList).
 	//
 	// THE VERB STAGES UNDER ONE OF THESE AND NEVER UNDER os.TempDir()
 	// (ranger-base-18brx): a deny over the grant ROOTS is not a deny over
