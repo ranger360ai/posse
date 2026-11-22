@@ -232,6 +232,15 @@ stall that day, and every one of them a typing habit.
   (ranger-base-zipwe, -fdihp, -8h17w, -m0ajs). The publication gate caught
   every one, and each still cost a park, a hold bead and a rewrite. Some
   also cost a rebase that carried the text again.
+  **A park is a `refs/heads/parked/<name>` ref, and that spelling is an
+  enforcement input** (ranger-base-jv2q3): the carrier census
+  (`scripts/park-carriers.sh`) and the landing guard both read that one
+  prefix, so a park spelled otherwise is seen by neither and nothing reds.
+  The procedure is `docs/runbooks/push-hold-park.md`. What it asks of YOU is
+  only this: a park leaves every branch already cut from that tip pointing at
+  the held commits, so if the census names your branch a carrier, say so on
+  your bead and name the park — your landing is refused until the hold's owner
+  moves it, and that refusal is the gate working.
 - **Commit everything you want kept.** Only commits move: the launcher
   fast-forwards your branch onto `main` when the bead closes, and uncommitted
   files stay behind in a tree that is eventually retired.

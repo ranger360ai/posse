@@ -29,6 +29,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-kzk3u](ranger-base-kzk3u.md) — A kill the tick could not confirm keeps its seat's record, and is retried (ranger-base-kzk3u) — 2026-11-22
 - [ranger-base-k2quj](ranger-base-k2quj.md) — The wall abstention reaches all 55 members now (ranger-base-k2quj) — 2026-11-22
 - [ranger-base-k2olp](ranger-base-k2olp.md) — Two launches named, one openable (ranger-base-k2olp) — 2026-11-22
+- [ranger-base-jv2q3](ranger-base-jv2q3.md) — The park namespace is written where the park is typed (ranger-base-jv2q3) — 2026-11-22
 - [ranger-base-jqdm2](ranger-base-jqdm2.md) — The abstention reaches the members a census could not see (ranger-base-jqdm2) — 2026-11-22
 - [ranger-base-jielm](ranger-base-jielm.md) — Two verify findings: a pin whose premise nothing witnessed, and the last unguarded read of the refusals leaf (ranger-base-jielm) — 2026-11-22
 - [ranger-base-jhmm7](ranger-base-jhmm7.md) — ranger-base-jhmm7 — the door under the bwrap fixture HOME — 2026-11-22
