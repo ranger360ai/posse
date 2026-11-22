@@ -95,6 +95,34 @@ that count went to zero, the base did not move off them.
 $ scripts/park-carriers.sh
 ```
 
+**Bare, with no base override.** The base this census needs is the branch you
+reset in step 2, and the script's default is it (`main`).
+`PARK_CARRIERS_BASE` is there for a repository whose base branch is called
+something else, and for the self-test. It is not a knob to turn here, and
+`origin/main` in particular is the wrong answer — wrong in exactly the case
+this page is for, because a hold IS a refused push, so the base branch is
+ahead of `origin/main` whenever a landing has been made and not pushed, and
+step 2's reset point is ahead of it too.
+
+The base decides the held set — `<park> --not <base>` — so a base BEHIND the
+commit you reset to pulls commits that are legitimately on the base branch
+into the held set, and then every live ref that reaches any of them reads as a
+carrier. MEASURED 2026-11-22, git 2.56.0 (ranger-base-3bhxb), in a scratch
+repository built to the shape above, with `origin/main` two landings behind
+the base branch, one held commit, one real carrier branch cut after it and one
+sibling branch cut from the reset point:
+
+| base | held set | live carriers named |
+|---|---|---|
+| `main` — the default | 1: the held commit | 1: the real carrier |
+| `origin/main` | 3: the held commit and two landings | 3: the real carrier, the base branch itself, and the sibling |
+
+Both exit 1, and the inflated run reads exactly like the correct one — same
+shape, same annotations, more rows. The only thing that distinguishes them is
+the base, which the script prints on every line it writes. Read that line
+before you read the exit status: the answer to "which refs carry this hold" is
+only an answer relative to the base it was asked about.
+
 Exit 0 says no landable branch reaches a held commit. Exit 1 names every one
 that does, with the worktree holding it, and that is the list the hold is
 actually about. The reset removed ONE ref's claim on the held commits; every
@@ -135,7 +163,7 @@ does not unpublish anything; it only takes the guard's subject away.
 ## Verify the machinery, not just this park
 
 ```sh
-$ scripts/park-carriers.sh --self-test     # the census says YES with a carrier, NO without
+$ scripts/park-carriers.sh --self-test     # YES with a carrier, NO without, and the worktree named
 $ git for-each-ref refs/heads/parked       # every park, and the one place the spelling shows
 $ make treepins-check                      # includes the pin over this page and the namespace
 ```
@@ -143,6 +171,11 @@ $ make treepins-check                      # includes the pin over this page and
 The self-test builds the hold's exact shape in a scratch repo — a commit, a
 branch cut from that tip, the park, the reset — and proves the census can
 still say both things. It touches nothing on the box.
+
+Its third arm checks out the carrier branch in a second worktree and asserts
+the row names that directory, because `[checked out at <path>]` is the one
+field on a carrier row step 4 turns on and until ranger-base-3bhxb no arm ran
+its producer: deleting the annotation outright left the self-test green.
 
 ---
 

@@ -4,7 +4,8 @@
 #
 #   scripts/park-carriers.sh                 census every refs/heads/parked/*
 #   scripts/park-carriers.sh <park>...       census just these parks
-#   scripts/park-carriers.sh --self-test     prove the census can still say YES
+#   scripts/park-carriers.sh --self-test     prove the census can still say YES,
+#                                            name the carrier's worktree, and say NO
 #
 #   exit 0  no landable branch reaches any parked commit
 #   exit 1  at least one does — every carrier is named, with the worktree
@@ -68,6 +69,14 @@
 # (the same reason scripts/verify-pid-deny-set.sh carries its sets as strings).
 set -euo pipefail
 
+# THE BASE IS THE BRANCH THE PARK'S OWN RESET MOVED, and the default is it.
+# The override is for a repository whose base branch is named otherwise, and
+# for the self-test — not for naming a remote-tracking ref. A base BEHIND the
+# reset point pulls commits that are legitimately on the base branch into the
+# held set below, and every live ref that reaches one of them then reads as a
+# carrier: MEASURED 2026-11-22 (ranger-base-3bhxb), `origin/main` two landings
+# behind the base turned one held commit and one carrier into three and three.
+# Both runs exit 1 and look alike, which is why every line prints $base.
 base=${PARK_CARRIERS_BASE:-main}
 park_glob='refs/heads/parked/*'
 
@@ -170,7 +179,8 @@ census() {
 	return "$found"
 }
 
-# Prove the census can say YES and can say NO. Hermetic: a scratch repo under
+# Prove the census can say YES, can name the worktree holding the carrier, and
+# can say NO. Hermetic: a scratch repo under
 # a fresh temp root, nothing on this box read or touched. The root is spelled
 # `${TMPDIR:-/tmp}/posse-<what>.XXXXXX` and not `mktemp -t`, because
 # scripts/reap-test-tmp.sh's one shell class globs `posse-*` under /tmp and
@@ -179,7 +189,7 @@ census() {
 # this script). It is removed on the pass and on every fail path rather than
 # from an EXIT trap.
 self_test() {
-	local d repo me out rc
+	local d repo me out rc wt
 	me="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 	d=$(mktemp -d "${TMPDIR:-/tmp}/posse-park-carriers.XXXXXX")
 	repo=$d/repo
@@ -216,7 +226,43 @@ self_test() {
 		;;
 	esac
 
+	# Give that same carrier a worktree of its own: the row must now carry the
+	# `[checked out at <path>]` annotation, naming that directory.
+	#
+	# This is the one field on a carrier row a reader ACTS on — a ref a live
+	# seat holds cannot be moved at all (this script's header, and step 4 of
+	# docs/runbooks/push-hold-park.md) — and until ranger-base-3bhxb no arm
+	# ran its producer at all, because the fixture built `seat` in the scratch
+	# repo and never checked it out anywhere. MEASURED 2026-11-22 by
+	# ranger-base-j7ekm, two blindings with the other arms green through both:
+	# the `[checked out at ...]` echo deleted, and worktree_of matched against
+	# a branch name that cannot exist. Six other mutants of this script were
+	# killed by those arms, so this was the door's one hole.
+	wt=$d/park-seat-wt
+	git -C "$repo" worktree add -q "$wt" seat
+	rc=0
+	out=$(cd "$repo" && PARK_CARRIERS_BASE=main bash "$me") || rc=$?
+	echo "$out"
+	if [ "$rc" != 1 ]; then
+		echo "SELF-TEST FAIL: carried park with a worktree exited $rc, want 1" >&2
+		rm -rf -- "${d:?}"
+		return 1
+	fi
+	# Matched on the trailing path component rather than byte-equal to $wt:
+	# git records the worktree path as IT resolves it, which on a box whose
+	# temp root is a symlink (darwin's /tmp -> /private/tmp) is not the string
+	# mktemp printed. The basename is what a reader of the row would check.
+	case "$out" in
+	*"seat "*"[checked out at "*"/park-seat-wt]"*) ;;
+	*)
+		echo "SELF-TEST FAIL: carrier 'seat' is checked out at $wt and its row does not say so" >&2
+		rm -rf -- "${d:?}"
+		return 1
+		;;
+	esac
+
 	# Remove the only carrier: the same park must read clean and exit 0.
+	git -C "$repo" worktree remove --force "$wt"
 	git -C "$repo" branch -q -D seat
 	rc=0
 	out=$(cd "$repo" && PARK_CARRIERS_BASE=main bash "$me") || rc=$?
@@ -228,7 +274,7 @@ self_test() {
 	fi
 
 	rm -rf -- "${d:?}"
-	echo "SELF-TEST OK: the census says YES when a live ref carries a park, and NO when none does"
+	echo "SELF-TEST OK: the census says YES when a live ref carries a park, names the worktree holding that ref, and says NO when none does"
 }
 
 if [ "${1-}" = "--self-test" ]; then
