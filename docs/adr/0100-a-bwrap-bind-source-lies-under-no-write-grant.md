@@ -7,7 +7,8 @@ other lines stand · fix: ranger-base-5f5kb (D1's claude state and private
 D2(b), which amended D2(b)'s own last paragraph on a measurement),
 ranger-base-gn050 (D4, which amended D4(a) with its census and D4(b) with a
 stand-down), ranger-base-dw2du (D2(a)'s second direction, D2(b) over the
-in-place binds, and D4(b)/(c)'s wording, from the re-read of D2 and D4)*
+in-place binds, and D4(b)/(c)'s wording, from the re-read of D2 and D4) ·
+D5 ruled 2026-11-22 (ranger-base-xw7tc)*
 
 ## Context
 
@@ -407,6 +408,47 @@ kind.
 move_mount, and path mount(2) follows a final link. It is kept as the refusal
 a hand-made link gets. Nothing relies on it.
 
+**D5. THE STAND-DOWN SHAPE KEEPS THE BLANKET TEMP GRANTS, AND THE DENIES
+UNDER THEM ARE RENDERED THERE** (ranger-base-xw7tc, ruled 2026-11-22). Where
+`bwrapSeatTmp` stands down (the home or the session dir is under `/tmp`), no
+private /tmp is bound, so nothing replaces the blanket grants (`$TMPDIR`,
+`/tmp`) and `bwrapDropTmpGrants` is not called. That is the design and not
+an omission. The seat's own tree is in the shared directory in that shape, so
+the blanket grant is what lets it write its own tree. A render that took the
+grant away would leave the seat a wall it cannot work behind, and with
+`bwrapRefuseWallRootGrant` also standing down there, nothing would say so.
+
+It follows that every deny inside those grants IS rendered in this shape, and
+`upgradePrivateDenied`'s staging root is one. Absent, under a write grant, it
+gets D17's prep: `mkdir -p <grant>/posse-upgrade` on the host, then the
+mount over it. For a LAUNCH in this shape that is the wall doing its job. A
+seat that may write `/tmp` and holds no mount over `/tmp/posse-upgrade` is
+the ranger-base-ua625 hole, so the prep is not to be suppressed.
+
+For a TEST BINARY run uncaged, the same step makes `<temp root>/posse-upgrade`
+on the host. The prep host fence admits it, through `bwrapTmpMount` and
+`os.TempDir()`, and both stay fence roots because the stand-down fixtures
+(`wallStandDownDir`) and `t.TempDir()` live under them. This is a STATED
+RESIDUAL, not a breach of the fence's purpose. The fence exists to refuse a
+step at a path the render took from a host input the fixture did not move
+(the passwd home, XDG_STATE_HOME). This step's path comes from the fixture's
+own shape, it lies in a world-shared temp root the fence admits by
+declaration, and it is byte-for-byte the step a launch in that shape makes.
+Cost: one empty 0755 directory per temp root, at the name `posse upgrade`
+creates for itself anyway, and MkdirTemps inside. A test run INSIDE a walled
+seat writes the seat's private /tmp (D1), so the host write needs an uncaged
+run: an operator's `make test`, CI, or `posse upgrade`'s own suite, which
+runs inside the directory it just staged.
+
+The two controls stay as written, and their premise is now this decision
+and not a fixture accident. TestLiveBwrapWithoutSeatTmpReachesTheHostsTmp is
+the control for D1's private /tmp. TestQAWallWitnessTakesTheRowAwayWhereTheWallAllowsTheCreate
+needs a tree the wall leaves writable, and gets it here. ranger-base-2q0uy's
+"the fix is at the fixtures and not at the fence" is withdrawn: neither
+place has a fix that does not move a pinned property, so its done-when
+("no `posse-upgrade` left in a fresh temp root") cannot be met and is
+replaced by this statement.
+
 **SCOPE.** The guarantee is for WALLED seats (bwrap, L3/L4). A seat at `cage:
 shims`, and a seat degraded from seatbelt to shims on linux, is a same-uid
 crew process with no write wall. It reaches every wall dir, every
@@ -450,7 +492,10 @@ this record, and this record neither closes nor widens it.
   wall root to protect. No production launch is that shape — homes and
   worktrees live under the home — and every fixture of internal/posse is,
   which is why the pins for D2(a) place their home outside every blanket temp
-  grant and would otherwise measure the stand-down.
+  grant and would otherwise measure the stand-down. The same shape keeps the
+  blanket temp grants and renders the denies under them, D5, so an uncaged
+  test binary leaves `<temp root>/posse-upgrade` behind. D5 states that
+  residual and gives its price.
 - Every reader that composes the private paths recomposes from SeatWallDir:
   claudePrivateHistoryPath, claudePrivateSessionRowPath, the herdr backend's
   seat home, SeatTmpDir/bwrapSeatTmp, the seat store layout and the
@@ -511,6 +556,35 @@ not priced, because the measurement that would have called for it came back
 empty (D2(b)'s 2026-11-21 amendment: 150 in-place binds, none loose). It is
 where to go if a future PID's grants cannot be pinned without refusing a
 shape the shop needs.
+
+The next three were the candidates for D5's residual (ranger-base-xw7tc). The
+readings are gwart's, from ranger-base-2q0uy's run.
+
+**A9. Close it at the fixtures** (2q0uy's own prescription: move every
+wall fixture's HOME off `/tmp`). Rejected because it cannot close the
+residual. The stand-down fires on HOME *or* cwd, and three pins need their
+cwd under `/tmp` as their premise: the wallwitness arm, D4(b)'s stand-down control
+(TestQAWallPinnedDstPrivateSetGateStandsDownWithTheWall) and the D1
+private-/tmp control. Those three keep the grant whatever
+their HOME is. The other 15 files would each trade `t.Parallel` for a
+`t.Setenv` in a 264s arm, and buy nothing.
+
+**A10. Hoist `sbNoBlanketTempGrants` into TestMain** so that no render in
+the package carries a temp grant. MEASURED: 0 steps emitted, FAIL 46. The
+46 are the symptom. The real cost is that every wall pin in the package
+would then measure a write set no launch renders, because every real launch
+carries those grants. The stub stays confined to `sbRoot`, where it is
+parallel-safe.
+
+**A11. Drop the blanket grants in the stand-down shape too** (the clever
+one: one line in `bwrapRender`, and the fence question goes away). MEASURED:
+0 steps emitted, FAIL 2, and those 2 are the two controls D5 keeps. Their
+subject is the behaviour A11 removes. It also has a cost neither red names:
+a seat whose home is under the grant silently loses write on its own home.
+Narrowing it to "drop unless HOME or cwd lies under the grant" keeps that
+seat working, but every fixture's HOME lies under the grant, so the narrowed
+rule renders exactly the baseline and closes nothing. What is left is a
+production change for a shape that no production launch has.
 
 ## MEASURED vs ASSUMED
 
@@ -625,12 +699,22 @@ MEASURED (2026-11-15, this box, Linux 7.2.15, bubblewrap 0.13.1):
   makes parents, so a pin mkdir can be too late and cannot be too early.
   CENSUS unchanged at 0 over the five argvs, so the class stays inert until a
   shipped render grows such a nest, fail-closed when it does.
+- (2026-11-22, gwart for ranger-base-2q0uy, read by ranger-base-xw7tc for D5;
+  linux 7.2.15, go1.27.3, at 97979d7d) Full arm 1 with a fresh TMPDIR under
+  `/tmp`. Baseline: ok in 264.3s, and the temp root was left holding
+  `posse-upgrade/`. The class is 37 prep attempts across 16 files, all at one
+  path. A10: 0 steps, FAIL 46. A11: 0 steps, FAIL 2.
 
 ASSUMED:
 
 - the seat-store toggle win rate;
 - that losing private history/debug/tmp once is acceptable;
-- A6's premise about claude's top-level `<cfg>` writes.
+- A6's premise about claude's top-level `<cfg>` writes;
+- D5: that no production launch has its home or worktree under `/tmp`. This
+  is a reading of where `posse` puts homes and worktrees (both under the
+  home), not a census of live seats. D5 holds either way, because the
+  stand-down render is the correct wall for that shape, but the residual's
+  price assumes nobody runs a real fleet there.
 
 ## Not closed here
 
