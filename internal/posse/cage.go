@@ -1042,10 +1042,10 @@ var cageEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // resolves $BEADS_DIR else $cwd/.beads and reads no redirect at all — so
 // without this name crossing the boundary, a caged persona's claim, comment
 // and close land in the session worktree's own issues.jsonl and never reach
-// the store the mount was carved out for. The value is the same
-// beadsHome(dir) CageMounts already mounts read-write, which is what makes
-// the pair work: the mount makes the store writable, the name tells bd it
-// is the store.
+// the store the mount was carved out for. The VALUE is the one CageBeadsDir
+// answers, which is the mount set's own spelling of the store and not
+// beadsHome's — that is what makes the pair work: the mount makes the store
+// writable, the name tells bd it is the store, and both say one path.
 func CageEnvNames(vars []EnvVar) []string {
 	names := []string{
 		"RHQ_HOME", "POSSE_HOME", EnvLaunchHome, "BD_ACTOR", "BEADS_DIR", EnvPersona, "RHQ_PERSONA_DIR", "POSSE_PERSONA_DIR",
@@ -1071,6 +1071,83 @@ func CageEnvNames(vars []EnvVar) []string {
 		}
 	}
 	return dedupeStrings(names)
+}
+
+// CageBeadsDir is the value a CAGED launch gives BEADS_DIR, and it is the
+// MOUNT SET's spelling of the store of record rather than the host's
+// (ranger-base-ayubz).
+//
+// THE PAIR THAT DISAGREED. beadsHome answers bd's own spelling and not a
+// resolved path, deliberately (beadloss.go's contract, pinned by
+// TestQABeadsHomeAnswersBdsOwnSpellingAndNotAResolvedPath), and at this tier
+// two consumers read it: CageMounts, which resolves — cageOverlay's `src :=
+// absResolve(p)` — and the env, which until this function did not. So where
+// the store is reached through a symlink (a `.beads/redirect` naming a path
+// with a link component, or any tree under a linked prefix, which is every
+// darwin box under /var), the caged bd was handed a path the container does
+// not have: the link itself is outside every mount and is mounted nowhere.
+// The inner bd is always `--no-db --no-daemon` (CageBdFlags) and a no-db bd
+// resolves $BEADS_DIR else $cwd/.beads and reads no redirect at all (ADR
+// 0055 D1), so the caged claim/comment/close either failed outright or
+// landed in the session worktree's own issues.jsonl and died with the
+// container — the silent record loss ADR 0055 D1 exists to prevent, by the
+// one route that bead did not close.
+//
+// AND IT IS NOT ONE absResolve, which is what that bead's reading expected.
+// At L4 the filesystem IS the mount set, and `CageMount.Dst` is what the
+// container has: the repo bind is `{Src: dir, Dst: dir}` with dir exactly as
+// the launch spells it, so where DIR is the thing behind the link — a home
+// under darwin's `/home` -> `/System/Volumes/Data/home`, every `t.TempDir()`
+// under `/var` -> `/private/var` — the store crosses at the RAW spelling and
+// resolving the name would break the case that works today. cageCovering is
+// already the one resolver for this question (its own comment: an overlay
+// resolved for the host "would land at a path nothing mounts"), so this is
+// that answer and not a second rule: the deepest bind covering the store,
+// extended by the store's path relative to it, spelled the way that bind
+// spells it. Under a redirect out of the tree the covering bind is the
+// carve-out at `absResolve(home)` and the answer is resolved; under no
+// redirect it is the repo bind and the answer is `home` unchanged.
+//
+// "" FROM cageBeadsDirIn MEANS NO BIND COVERS THE STORE AT ALL, and the
+// fallback is beadsHome's answer — what shipped before this function. Not a
+// refusal here: that session cannot write the store at any spelling, and the
+// thing that says so is ADR 0013 §4's reachability row over this same mount
+// set (containerReachRow), which is waivable with --allow-degraded exactly
+// as every other gate is. Two refusals for one fact would make the gate the
+// liar instead.
+func (a *App) CageBeadsDir(ag *AgentFile, dir, session, home string) string {
+	// The engine loads by construction on the path this is called from —
+	// `caged` is `cage == CageContainer && a.ContainerAvailable()`, and that
+	// probe IS LoadEngine plus the binary — so the fallback here is for a
+	// reader, not for a launch.
+	e, err := a.LoadEngine(a.ResolveEngine())
+	if err != nil {
+		return home
+	}
+	if d := cageBeadsDirIn(a.CageMounts(ag, e, dir, session), home); d != "" {
+		return d
+	}
+	return home
+}
+
+// cageBeadsDirIn is that translation over a rendered mount set, split out
+// because the set is the whole input: a caller that already holds one — the
+// reachability row, a pin — asks this and renders nothing. "" when no bind
+// covers the store.
+//
+// The LAUNCH does render a second set, because the env is assembled before
+// the cage wrap that renders the first (planLaunch), and that is affordable
+// rather than ideal: CageMounts only spells paths and stats them, so a
+// second call is pure, and cageCovering takes the DEEPEST bind, so the one
+// mount the wrap adds afterwards (the dispatched prompt file, `:ro`) cannot
+// move the answer. What would make it wrong is a mount renderer with a side
+// effect; there is none, and a reader adding one should come back here.
+func cageBeadsDirIn(ms []CageMount, home string) string {
+	i, over := cageCovering(ms, absResolve(home))
+	if i < 0 {
+		return ""
+	}
+	return over.Dst
 }
 
 // ─── the credential (ADR 0002 §4 precondition, rangerhq-kiz) ─────────────────

@@ -613,6 +613,16 @@ func codexReachRow(cmd, dir string, targets []string) string {
 // anything CageMounts reads from disk — it only spells two paths from it
 // (the refusals spool, a socket mount), neither a fact this question
 // depends on.
+//
+// THE NAME THE SESSION USES COMES OFF THIS SAME LIST now
+// (ranger-base-ayubz): the row judges the MOUNT, and what tells a `--no-db`
+// bd where the store is is the forwarded BEADS_DIR, so while that value was
+// beadsHome's unresolved spelling this row read Enforced over a store the
+// caged bd could not open — a false pass of the ADR 0013 §4 row in the
+// ranger-base-0fb/k62e class. CageBeadsDir (cage.go) answers it from
+// cageCovering over the mount set this function renders, so the row's
+// verdict and the session's env cannot disagree about which path the store
+// is; cagebeadsdir_qa_test.go is that agreement as a pin.
 func (a *App) containerReachRow(ag *AgentFile, dir, home string) string {
 	e, err := a.LoadEngine(a.ResolveEngine())
 	if err != nil {

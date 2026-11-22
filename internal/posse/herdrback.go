@@ -3421,7 +3421,29 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// session refuse loudly by name ("BEADS_DIR points to unsafe
 	// location"); that refusal is preferred to a launch-time copy of bd's
 	// prefix list (ADR 0055 Consequences).
+	//
+	// AND AT THE CONTAINER TIER THE NAME IS SPELLED IN THE MOUNT SET'S
+	// NAMESPACE, not the host's (ranger-base-ayubz). There the filesystem IS
+	// the rendered bind list, so a store reached through a host symlink is
+	// named inside the cage at a path no mount holds — and the name is the
+	// only thing that tells a `--no-db` bd where the store is. CageBeadsDir
+	// asks that list (cageCovering, the same resolver CageMounts renders its
+	// overlays by), which is why this is a tier-keyed VALUE and not an
+	// absResolve here or in beadsHome: at L1 bd reads the operator's own
+	// spelling and takes its unsafe-prefix verdict on it, at L2 a seatbelt
+	// rule matches the vnode's real path whichever way the env spells it,
+	// and at L3 the link is still in the seat's namespace. L4 is the one
+	// venue where the spelling does not exist.
+	//
+	// Keyed on `caged` and not on `cage`, so a container tier this host
+	// cannot provide — which runs on the host, marked — keeps the host's
+	// answer. Same predicate the cage wrap below is keyed on: two spellings
+	// of "is this session really in the cage" is a seat named for a
+	// namespace it is not in.
 	if home := beadsHome(dir); isDirPath(home) {
+		if caged {
+			home = a.CageBeadsDir(ag, dir, o.Name, home)
+		}
 		vars = append(vars, EnvVar{"BEADS_DIR", home})
 	}
 
