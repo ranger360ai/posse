@@ -208,7 +208,8 @@ func TestQARefKeepLeafRefusesALinkAtTheKeepFile(t *testing.T) {
 
 // Pin: the executor. PrepTouch runs UNCAGED, so it must never create through
 // a link: a dangling link at the name fails the prep and its target stays
-// absent; an absent name is created; a regular file already there is left.
+// absent; a hard link at the name fails it too (ranger-base-jum4x); an absent
+// name is created; a regular file already there is left.
 func TestQAPrepTouchNeverCreatesThroughALink(t *testing.T) {
 	t.Parallel()
 	d := t.TempDir()
@@ -245,6 +246,24 @@ func TestQAPrepTouchNeverCreatesThroughALink(t *testing.T) {
 			r.Close()
 		}
 		t.Errorf("a PrepTouch over a FIFO blocked opening it: the launcher opens what is planted at the name")
+	}
+
+	// A HARD LINK is lstat-regular, so it reaches the EEXIST fallback's
+	// accept rather than its refusal; the fallback must ask the render's
+	// nlink question too, or a link to a host file planted after the render
+	// is bound read-write (ranger-base-jum4x). Neither arm above reaches it.
+	host := filepath.Join(d, "host-secret")
+	if err := os.WriteFile(host, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hard := filepath.Join(d, "hard")
+	if err := os.Link(host, hard); err != nil {
+		t.Fatal(err)
+	}
+	if err := runBwrapPrep([]PrepStep{{PrepTouch, hard, "pin"}}); err == nil {
+		t.Errorf("a PrepTouch over a hard link (nlink 2) succeeded: the launcher accepts a leaf the render refuses")
+	} else if !strings.Contains(err.Error(), "ranger-base-jum4x") {
+		t.Errorf("a PrepTouch over a hard link refused for the wrong reason: %v", err)
 	}
 
 	fresh := filepath.Join(d, "fresh")

@@ -3905,18 +3905,22 @@ func runBwrapPrep(prep []PrepStep) error {
 			// runs UNCAGED, and O_CREATE alone over a DANGLING link creates
 			// the link's TARGET and leaves the link a link — a file at a
 			// path of the planter's choosing, made by the launcher. O_EXCL
-			// refuses every name that is already there, a link of either
-			// kind included, and opens nothing that exists, so a FIFO
-			// planted at the name cannot hang the launch either (the reason
-			// worktree.go gives for not reaching for O_NOFOLLOW). A name
-			// that appeared since the render is accepted only as a regular
-			// file, read without following.
+			// fails on every name that is already there and opens nothing
+			// that exists, so a FIFO planted at the name cannot hang the
+			// launch either (the reason worktree.go gives for not reaching
+			// for O_NOFOLLOW). The EEXIST fallback below then judges what is
+			// there, read without following, by the SAME rule the render's
+			// step 4 and keepLeafRefusal apply to this leaf: a regular file
+			// with ONE link. A hard link is lstat-regular, so IsRegular alone
+			// accepted one planted in the render-to-prep window, and step 4
+			// binds the leaf read-write at its own spelling
+			// (ranger-base-jum4x).
 			f, err := os.OpenFile(s.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 			if os.IsExist(err) {
-				if fi, lerr := os.Lstat(s.Path); lerr == nil && fi.Mode().IsRegular() {
+				if fi, lerr := os.Lstat(s.Path); lerr == nil && fi.Mode().IsRegular() && storeSingleEntry(fi) {
 					continue
 				}
-				return Die("cage %s (%s) cannot prepare %s (%s): something that is not a regular file appeared at that name since the render, and the launcher creates through nothing it did not judge. Remove it and relaunch (ranger-base-xab99)",
+				return Die("cage %s (%s) cannot prepare %s (%s): something that is not a regular file of one link appeared at that name since the render, and the launcher creates through nothing it did not judge. Remove it and relaunch (ranger-base-xab99, ranger-base-jum4x)",
 					CageSeatbelt, WallBwrap, s.Path, s.Why)
 			}
 			if err != nil {
