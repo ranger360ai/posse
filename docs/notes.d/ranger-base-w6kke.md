@@ -80,6 +80,32 @@ because the wallunixlive three carry a multi-line seat SELF-REPORT and not a
 watcher's two lines: which row of a report to spend 300 characters on is a
 choice, and the choice is that bead's deliverable.
 
+## Why the landed census does not read any of this, and that is not a bug
+
+ranger-base-s9h52 landed the mechanical census of this class a day earlier —
+`internal/treepins/wallmemberaccount_qa_test.go`, green over this tree — and
+it narrows by SUBJECT rather than by prose shape: arm 2 reads a local bound to
+the LAST string result of a function that LAUNCHES a bwrap seat, which is
+three member files' runner helpers. So it reaches neither this member's `said`
+(wall-watch members launch through `runWallWatch`, production code that
+returns an int, with no `exec.Command("bwrap", …)` in the test and no account
+to bind) nor the four rows left in ranger-base-8ck6d, whose seat output is
+read inline in a test body. That is the decision s9h52 made with the numbers
+— the wide rule reads 204 of 785 calls, the sharpest prose rule 44 — and not
+an oversight: a reader finding this page before that one should not go looking
+for a census bug.
+
+What is worth carrying forward is the reason s9h52's own `Not closed here`
+gave for leaving this bead outside its key: a wall-watch member's seat is run
+through `runWallWatch`, "so there is no error to destroy and the status is
+already on their first line". The first half is exactly right and is why the
+census cannot see it. The second half holds for exit 1 and is what exit 2
+defeats, which is this bead: `runWallWatch` has several refusals and they all
+exit 2, so the status on the first line narrows the cause to a set and the
+words are what pick one out of it. a688i's own P1 was the same shape one
+number down — `(exit 1)` with four causes behind it. A status is an account
+only when it is injective.
+
 Nothing pins either converted call site. a688i's two fatals got
 `TestQAWallWatchLaunchFatalsCarryTheFoldedWordsAtTheCallSite` from
 ranger-base-nqw8v, a verify bead, and that pin reads `launchOn`'s wait loop by
