@@ -34,17 +34,25 @@ package posse
 //     first parameter and take the key second, read out of that file rather
 //     than listed — `YamlGet`, `YamlList`, `YamlMapPairs`,
 //     `YamlMapPairsRaw`, `yamlHasKey`, `YamlKeysWithPrefix`. Opening is
-//     transitive and seeded with `os.ReadFile`: `readLines` passes its
-//     parameter to that, the exported readers pass theirs to `readLines`,
-//     and `YamlMapPairs` passes its to `YamlMapPairsRaw`. The two `(lines
+//     transitive and seeded with the stdlib opens `os.ReadFile`, `os.Open`
+//     and `os.OpenFile`: `readLines` passes its parameter to the first of
+//     those, the exported readers pass theirs to `readLines`, and
+//     `YamlMapPairs` passes its to `YamlMapPairsRaw`. The two `(lines
 //     []string, key string)` helpers beside them never reach the file, and
 //     neither does `flatFieldRefusal(key, v string)` — which is the whole
 //     discriminator. A seventh added tomorrow is in the census the day it is
-//     written, whatever its parameters are called: the rule was keyed on the
-//     first parameter being NAMED `path` until ranger-base-3weac, a name no
-//     rule in this tree requires, and a reader spelled `(file, key string)`
-//     escaped it in silence (MEASURED 2026-11-21; the arm that pins it is in
-//     TestConfigKeyCensusCanStillSayNo).
+//     written, whatever its parameters are called and whichever of those
+//     three opens it, through a local alias of the parameter or not: the
+//     rule was keyed on the first parameter being NAMED `path` until
+//     ranger-base-3weac, a name no rule in this tree requires, and then on
+//     one stdlib call and a bare Ident until ranger-base-m4w7d — three
+//     shapes, each of which escaped in silence, because a reader part 1 does
+//     not derive has no call sites for part 2 to walk at all (MEASURED
+//     2026-11-21; the arms that pin them are in
+//     TestConfigKeyCensusCanStillSayNo). What is STILL outside is an open
+//     this seed does not name — a reader reaching the file through a helper
+//     in another file of the package, or through some fourth stdlib call —
+//     and skcIsFileOpener says so where the seed is spelled.
 //  2. A READ OF THE INSTANCE CONFIG is one of those calls whose PATH
 //     argument is a `.ConfigPath` selector. That is the whole scope rule, and
 //     it is load-bearing: these same six functions read runtime adapter
@@ -286,7 +294,7 @@ func skcConfigKeyCensus(t *testing.T, root string) skcCensus {
 	// `os.ReadFile`, the exported readers hand it to `readLines`, and
 	// `YamlMapPairs` hands it to `YamlMapPairsRaw` — so the set is the
 	// transitive closure of "hands its first parameter to something in this
-	// file that opens it", seeded with the stdlib call and naming no local
+	// file that opens it", seeded with three stdlib opens and naming no local
 	// identifier of its own. The `(lines []string, key string)` helpers
 	// beside them never touch the file, and neither does
 	// `flatFieldRefusal(key, v string)`, which is two strings — that is the
@@ -311,6 +319,21 @@ func skcConfigKeyCensus(t *testing.T, root string) skcCensus {
 	// non-reader in that file may not be so harmless. The body rule
 	// excludes it for the reason the head comment always gave — it does not
 	// read the file.
+	//
+	// AND THE FIRST BODY RULE TRADED THAT ESCAPE FOR TWO OTHERS, which is
+	// ranger-base-m4w7d (from ranger-base-a7y67's verify of that close). It
+	// seeded the fixpoint with `os.ReadFile` alone and required arg 0 to be
+	// the parameter's own Ident, so a reader whose opener was `os.Open` and
+	// a reader that assigned `p := file` first were each derived as NOTHING
+	// — and both of those shapes, spelled with `path`, were in the census
+	// under the name rule it replaced. MEASURED 2026-11-21, each shape
+	// planted in yamlflat.go with a non-test `.ConfigPath` caller reading an
+	// undocumented key: rc=0 with the key named nowhere at that HEAD, rc=2
+	// with the key named under the pre-fix name rule. The seed is three
+	// stdlib opens now and the argument is matched through local aliases and
+	// through wrapping (skcIsFileOpener, skcHandsToFileOpen), and the
+	// derived set over the real tree did not move: the same six readers and
+	// the same 112 sites over 79 keys.
 	//
 	// The key index is 1, which is a SHAPE and not a derivation: a
 	// `(path, section, key string)` reader would be censused at `section`.
@@ -652,22 +675,68 @@ func skcIsString(e ast.Expr) bool {
 }
 
 // skcHandsToFileOpen is part 1's rule for one yamlflat.go body: does it hand
-// the named parameter to something that OPENS it — `os.ReadFile` itself, or
-// another function in that file already derived as doing so — at that
-// callee's own first argument, which is where a path goes in every one of
-// them. It is what makes part 1 a derivation over behaviour rather than over
-// a parameter's spelling (ranger-base-3weac).
+// the named parameter to something that OPENS it — one of the stdlib opens
+// `skcIsFileOpener` names, or another function in that file already derived
+// as doing so — at that callee's own first argument, which is where a path
+// goes in every one of them. It is what makes part 1 a derivation over
+// behaviour rather than over a parameter's spelling (ranger-base-3weac).
+//
+// THE ARGUMENT IS MATCHED THROUGH LOCAL ALIASES AND THROUGH WRAPPING, which
+// is ranger-base-m4w7d (from ranger-base-a7y67's verify of ranger-base-3weac).
+// The first spelling required arg 0 to be the parameter's own `*ast.Ident`,
+// so one assignment hid a reader from the whole census: `p := file;
+// readLines(p)` was derived as nothing, its call sites were never walked, and
+// every key read through it was named NOWHERE with `make seed-check` green —
+// which is the escape ranger-base-3weac was filed on, reached through a
+// second door. MEASURED 2026-11-21: that shape rc=0 and the key named
+// nowhere, while the same reader spelled `readLines(file)` redded.
+//
+// So: an alias set, seeded with the parameter and closed over assignments
+// whose right-hand side MENTIONS a member (`p := file`, `p = filepath.Clean(p)`),
+// and arg 0 matches when it mentions any member of that set. Mentioning
+// rather than being, because a wrapped argument is the same reader —
+// `readLines(filepath.Clean(file))` opens its own first parameter — and a
+// rule that reads only a bare Ident is a rule the next line of ordinary Go
+// walks past. It costs the derivation nothing it was relying on: what part 1
+// must keep saying no to is a function that never hands its parameter to an
+// opener at all, and `flatFieldRefusal(key, v string)`, the two `(lines,
+// key)` helpers and the plant's aliasing non-reader are all still outside it
+// (TestConfigKeyCensusCanStillSayNo asserts the derived set EXACTLY).
 func skcHandsToFileOpen(body *ast.BlockStmt, param string, opensFile map[string]bool) bool {
+	alias := map[string]bool{param: true}
+	for {
+		added := false
+		ast.Inspect(body, func(n ast.Node) bool {
+			as, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range as.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || id.Name == "_" || alias[id.Name] || i >= len(as.Rhs) {
+					continue
+				}
+				if skcMentions(as.Rhs[i], alias) {
+					alias[id.Name] = true
+					added = true
+				}
+			}
+			return true
+		})
+		if !added {
+			break
+		}
+	}
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
 		}
-		if !skcIsOsReadFile(call.Fun) && !opensFile[skcCallee(call.Fun)] {
+		if !skcIsFileOpener(call.Fun) && !opensFile[skcCallee(call.Fun)] {
 			return true
 		}
-		if id, ok := call.Args[0].(*ast.Ident); ok && id.Name == param {
+		if skcMentions(call.Args[0], alias) {
 			found = true
 		}
 		return true
@@ -675,13 +744,64 @@ func skcHandsToFileOpen(body *ast.BlockStmt, param string, opensFile map[string]
 	return found
 }
 
-// skcIsOsReadFile is the one call part 1's fixpoint is seeded with, and it is
-// stdlib on purpose: a seed spelled as a local identifier would be the same
-// convention-by-name the body rule replaced. The package qualifier is
-// checked, so a `ReadFile` method on some other receiver is not it.
-func skcIsOsReadFile(e ast.Expr) bool {
+// skcMentions reports whether an expression names any of the identifiers in
+// set — the whole of what "hands its parameter to" means once an alias or a
+// `filepath.Clean` can stand between the two.
+//
+// It is syntax and knows nothing of SCOPES, so a nested binding that reuses
+// the parameter's name reads as the parameter. That error is in the wide
+// direction only: it can derive a reader that opens some other path, never
+// miss one that opens its own, and what holds it honest is the exact derived
+// set TestConfigKeyCensusCanStillSayNo asserts plus part 2's scope rule,
+// which answers about the ARGUMENT at each call site and not about this.
+func skcMentions(e ast.Expr, set map[string]bool) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && set[id.Name] {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// skcIsFileOpener is the set part 1's fixpoint is seeded with, and every
+// member is stdlib on purpose: a seed spelled as a local identifier would be
+// the same convention-by-name the body rule replaced. The package qualifier
+// is checked, so a `ReadFile` method on some other receiver is not it.
+//
+// THREE CALLS AND NOT ONE, which is ranger-base-m4w7d. The seed was
+// `os.ReadFile` alone, so a reader in that file that opened its own first
+// parameter any other way was derived as nothing at all — and a reader part 1
+// does not derive has no call sites for part 2 to walk, so every key read
+// through it is invisible to all three seed pins with `make seed-check` green
+// and silent. MEASURED 2026-11-21: `(file, key string)` reaching an opener
+// spelled `os.Open` scored rc=0 with its key named nowhere, and the same
+// shape spelled `os.ReadFile` redded.
+//
+// The three are the stdlib calls that turn a path at argument 0 into the
+// file's BYTES, and all three are how this tree opens files: MEASURED
+// 2026-11-21 over the tracked non-test Go, 109 `os.ReadFile` sites, 39
+// `os.OpenFile`, 30 `os.Open`. `os.Create` is deliberately NOT here — it
+// truncates, so a function reaching it is writing its first parameter, and a
+// key this harness WRITES is not a key this census is about.
+//
+// STILL OUTSIDE, so the next reader of that file is not told a seventh is
+// free: an open this set does not name. A reader that reached the file
+// through a helper in some OTHER file of the package, or through an opener
+// that is not one of these three, is derived as nothing — the fixpoint's
+// transitive half closes over yamlflat.go's own declarations and no further.
+// That is the residue of keying on behaviour at all: the seed has to be
+// spelled somewhere, and here it is spelled as three stdlib names rather
+// than as one.
+func skcIsFileOpener(e ast.Expr) bool {
 	sel, ok := e.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "ReadFile" {
+	if !ok {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "ReadFile", "Open", "OpenFile":
+	default:
 		return false
 	}
 	id, ok := sel.X.(*ast.Ident)
@@ -1011,14 +1131,20 @@ func TestConfigKeyCensusCanStillSayNo(t *testing.T) {
 	// further out through `YamlMapPairsRaw`, which is the member the
 	// transitive half of the rule exists for.
 	//
-	// Four non-readers beside them, one for each way part 1 must say no: the
+	// Non-readers beside them, one for each way part 1 must say no: the
 	// `(lines, key)` helpers every real reader delegates to, a one-argument
 	// function, a `(string, string)` function that never touches the file
 	// (`flatFieldRefusal`'s shape — this is what the deleted name test used
-	// to exclude, and what the body rule must exclude on its own), and
-	// `YamlGetAlt`, a reader whose first parameter is named anything but
-	// `path`, which the name-keyed rule derived as nothing at all
-	// (ranger-base-3weac).
+	// to exclude, and what the body rule must exclude on its own), and one
+	// that aliases its own first parameter before handing it to something
+	// that opens nothing, which is the alias rule's negative case.
+	//
+	// And three readers that are each a rule away from being derived as
+	// nothing: `YamlGetAlt`, whose first parameter is named anything but
+	// `path`, which the name-keyed rule could not see (ranger-base-3weac);
+	// `YamlGetOpened`, whose opener is `os.Open`; and `YamlGetAliased`,
+	// which reaches `readLines` through one assignment. The last two escaped
+	// the first body rule in silence and are ranger-base-m4w7d.
 	plant("yamlflat.go", `package p
 
 import "os"
@@ -1034,6 +1160,33 @@ func readLines(path string) []string {
 func YamlGet(path, key string) string    { return yamlGetLines(readLines(path), key) }
 func YamlGetAlt(file, key string) string { return yamlGetLines(readLines(file), key) }
 func YamlList(path, key string) []string { return yamlListLines(readLines(path), key) }
+
+// ranger-base-m4w7d's two shapes: an opener that is not os.ReadFile, and a
+// parameter that reaches the opener through a local alias. Both were derived
+// as NOTHING by the first body rule, and a reader part 1 does not derive has
+// no call sites for part 2 to walk at all.
+func openLines(file string) []string {
+	f, err := os.Open(file)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	return []string{file}
+}
+
+func YamlGetOpened(file, key string) string { return yamlGetLines(openLines(file), key) }
+
+func YamlGetAliased(file, key string) string {
+	p := file
+	return yamlGetLines(readLines(p), key)
+}
+
+// And the alias rule must still say no: this one aliases its first parameter
+// and hands the alias to something that opens nothing.
+func flatRefusalAliased(key, v string) string {
+	k := key
+	return yamlGetLines(nil, k) + v
+}
 
 func YamlMapPairsRaw(path, mapkey string) [][3]string {
 	for _, ln := range readLines(path) {
@@ -1097,6 +1250,12 @@ func (a *App) plantedAge(key string, def int) int {
 // an answer about.
 func (a *App) PlantedAlt() string { return YamlGetAlt(a.ConfigPath, "planted_alt_named") }
 
+// ranger-base-m4w7d: a read through a reader whose opener is os.Open, and one
+// through a reader that aliases its own first parameter. Each was a key named
+// NOWHERE, with the census green.
+func (a *App) PlantedOpened() string  { return YamlGetOpened(a.ConfigPath, "planted_opened") }
+func (a *App) PlantedAliased() string { return YamlGetAliased(a.ConfigPath, "planted_aliased") }
+
 func (a *App) PlantedLiteral() string  { return a.CfgGet("planted_literal", "") }
 func (a *App) PlantedHop() int         { return a.plantedAge("planted_hopped", 1) }
 func (a *App) PlantedConst() string    { return YamlGet(a.ConfigPath, PlantedConstKey) }
@@ -1147,16 +1306,20 @@ func (a *App) PlantedDynamic(n string) string { return a.CfgGet("planted_cap_"+n
 	// The exact set, and not a count: each name is a different way part 1
 	// can go wrong, and each absence from it is a different way it can go
 	// wide. `YamlMapPairs` is the transitive hop, `YamlGetAlt` is the
-	// parameter-name escape, and the four omitted are the four shapes that
-	// must stay out — `readLines` (one parameter, so no key slot),
-	// `flatFieldRefusal` (two strings, never opens the file), and the two
-	// `(lines, key)` helpers.
+	// parameter-name escape, `YamlGetOpened` is an opener that is not
+	// `os.ReadFile` and `YamlGetAliased` reaches its opener through a local
+	// assignment (both ranger-base-m4w7d) — and the six omitted are the six
+	// shapes that must stay out: `readLines` and `openLines` (one parameter,
+	// so no key slot), `flatFieldRefusal` and `flatRefusalAliased` (two
+	// strings, never opens the file, the second one aliasing its parameter
+	// first), and the two `(lines, key)` helpers.
 	wantFlat := []string{
-		"YamlGet", "YamlGetAlt", "YamlKeysWithPrefix", "YamlList",
-		"YamlMapPairs", "YamlMapPairsRaw", "yamlHasKey",
+		"YamlGet", "YamlGetAliased", "YamlGetAlt", "YamlGetOpened",
+		"YamlKeysWithPrefix", "YamlList", "YamlMapPairs", "YamlMapPairsRaw",
+		"yamlHasKey",
 	}
 	if got := seedSortedKeys(c.flat); !reflect.DeepEqual(got, wantFlat) {
-		t.Errorf("part 1 derived %v from the planted yamlflat.go, want exactly %v — the body rule either missed a reader (`YamlMapPairs` is only reachable through `YamlMapPairsRaw`; `YamlGetAlt` is only reachable if the rule is not keyed on the parameter being named `path`) or read a non-reader as one (`flatFieldRefusal` is two strings and opens nothing)", got, wantFlat)
+		t.Errorf("part 1 derived %v from the planted yamlflat.go, want exactly %v — the body rule either missed a reader (`YamlMapPairs` is only reachable through `YamlMapPairsRaw`; `YamlGetAlt` only if the rule is not keyed on the parameter being named `path`; `YamlGetOpened` only if the seed is not `os.ReadFile` alone; `YamlGetAliased` only if a local alias of the parameter counts) or read a non-reader as one (`flatFieldRefusal` and `flatRefusalAliased` are two strings and open nothing)", got, wantFlat)
 	}
 	for _, want := range []string{"CfgGet", "plantedAge"} {
 		if _, ok := c.readers[want]; !ok {
@@ -1174,6 +1337,8 @@ func (a *App) PlantedDynamic(n string) string { return a.CfgGet("planted_cap_"+n
 	for _, want := range []struct{ key, why string }{
 		{"planted_literal", "a literal handed to CfgGet"},
 		{"planted_alt_named", "a literal handed to a flat reader whose first parameter is named `file` — the escape ranger-base-3weac measured, which the parameter-name rule could not see at all"},
+		{"planted_opened", "a literal handed to a flat reader whose opener is `os.Open` and not `os.ReadFile` — the first body rule's seed was one call, so this reader was derived as nothing and its key was named nowhere (ranger-base-m4w7d)"},
+		{"planted_aliased", "a literal handed to a flat reader that reaches its opener through `p := file` — one assignment hid the whole reader from the census (ranger-base-m4w7d)"},
 		{"planted_hopped", "a literal handed to a derived reader one hop out"},
 		{"planted_const", "a package-level string constant"},
 		{"planted_prefix_", "a prefix read"},

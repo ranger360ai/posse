@@ -742,6 +742,136 @@ func TestQABoxCensusRendersNoTextFromAMalformedHome(t *testing.T) {
 	}
 }
 
+// TestQABoxCensusRendersOneBOUNDEDLineWhateverPeersDeclare is the other half
+// of the value cap, and the half its own justification claimed and did not
+// buy (ranger-base-m4w7d, from ranger-base-a7y67's verify of
+// ranger-base-fugew).
+//
+// `boxHomeMaxLen` is justified at boxloops.go:330 by a line a reader can
+// still read. It bounds one VALUE; the rendering joins one row per process
+// and nothing bounded the number of rows, so the four-thousand-byte line that
+// cap exists to refuse cost a peer sixteen forks instead of one long value —
+// every value well-formed, the cap in place. MEASURED 2026-11-21 through this
+// fixture seam before the bound: 1 peer 612 bytes, 2 peers 882, 16 peers
+// 4649, 64 peers 17561, and the scope clause and the counts are rendered
+// AFTER the list.
+//
+// Both lists are driven, because they are reachable by different costs: a
+// row in the loop list needs a record at the declared home naming the pid
+// back, and a row in the unattributed list needs nothing but a fork.
+//
+// WHAT THE ARMS ASSERT is the pair that makes the bound honest — the line is
+// bounded AND it still says how many rows there are, which is the only thing
+// an operator acts on. A truncation that lost the count would refuse the
+// injection by making the reading useless.
+func TestQABoxCensusRendersOneBOUNDEDLineWhateverPeersDeclare(t *testing.T) {
+	t.Parallel()
+	// A distinct home per peer, each exactly boxHomeMaxLen bytes and each
+	// one the fence ACCEPTS: the arm is about the shape that got through,
+	// not about a refusal.
+	home := func(i int) string {
+		suffix := "/" + strconv.Itoa(i)
+		h := "/x" + strings.Repeat("a", boxHomeMaxLen-2-len(suffix)) + suffix
+		if len(h) != boxHomeMaxLen || !boxHomeIsWellFormed(h) {
+			t.Fatalf("fixture home %d is %d bytes and well-formed=%v — the arm must drive values the fence admits, or it is testing the abstention path", i, len(h), boxHomeIsWellFormed(h))
+		}
+		return h
+	}
+	const peers = 64
+	for _, arm := range []struct {
+		name     string
+		recorded bool // a record at the home naming the pid back: a confirmed loop
+		clause   string
+	}{
+		{"loops", true, "dispatch loops"},
+		{"unattributed", false, "other processes"},
+	} {
+		procs := make([]boxFixtureProc, 0, peers)
+		records := map[string]int{}
+		for i := 0; i < peers; i++ {
+			pid := 5000 + i
+			procs = append(procs, boxFixtureProc{pid: pid, ino: "14541392", home: home(i)})
+			if arm.recorded {
+				records[home(i)] = pid
+			}
+		}
+		path, probe := boxFixture("14541392", procs, records, 9999)
+		r := readBoxLoops(path, probe)
+		if arm.recorded && len(r.Loops()) != peers {
+			t.Fatalf("%s: %d of %d peers were confirmed as loops — the arm needs them all in the list it is about", arm.name, len(r.Loops()), peers)
+		}
+		if !arm.recorded && len(r.Unattributed()) != peers {
+			t.Fatalf("%s: %d of %d peers are unattributed — the arm needs them all in the list it is about", arm.name, len(r.Unattributed()), peers)
+		}
+		// The positive witness that this fixture could blow the line: the
+		// declared text alone, rendered the one way it is ever rendered, is
+		// four thousand bytes before any of the sentence's own prose.
+		declared := 0
+		for _, p := range r.Procs {
+			declared += len(boxRenderHome(p.Home))
+		}
+		if arm.recorded && declared < 4000 {
+			t.Fatalf("%s: the peers' declared homes render in %d bytes, so this fixture never reached the shape the bound is for", arm.name, declared)
+		}
+		s := r.Sentence()
+		if strings.Count(s, "\n") != 0 {
+			t.Errorf("%s: the rendering is one line:\n%s", arm.name, s)
+		}
+		if len(s) > 2000 {
+			t.Errorf("%s: %d peers rendered a %d-byte line — the reader's own sentence (the scope clause, the counts) is rendered after the list, so a peer that forks has pushed it off the end of what anyone reads:\n%s", arm.name, peers, len(s), s)
+		}
+		if !strings.Contains(s, "not shown") {
+			t.Errorf("%s: the line dropped rows without saying it did — a reader cannot tell a truncated list from the whole box:\n%s", arm.name, s)
+		}
+		// And the count survives the truncation, which is what makes the
+		// bound a rendering choice rather than a loss of the reading: the
+		// total is rendered ahead of the list by boxCount.
+		if !strings.Contains(s, strconv.Itoa(peers)+" "+arm.clause) {
+			t.Errorf("%s: the line does not name all %d %s — truncating the rows must not truncate the count, which is the thing an operator acts on:\n%s", arm.name, peers, arm.clause, s)
+		}
+		t.Logf("%s: %d peers declaring %d bytes of home text render a %d-byte line", arm.name, peers, declared, len(s))
+	}
+	// BOTH LISTS AT ONCE, which is the shape a peer actually produces: the
+	// budget is per list, so the line a reader meets is bounded by the sum
+	// and not by either half. 64 peers whose record names them back and 64
+	// that nothing names, in one reading.
+	both := make([]boxFixtureProc, 0, 2*peers)
+	bothRecords := map[string]int{}
+	for i := 0; i < peers; i++ {
+		both = append(both, boxFixtureProc{pid: 5000 + i, ino: "14541392", home: home(i)})
+		bothRecords[home(i)] = 5000 + i
+		both = append(both, boxFixtureProc{pid: 7000 + i, ino: "14541392", home: home(1000 + i)})
+	}
+	path, probe := boxFixture("14541392", both, bothRecords, 9999)
+	r := readBoxLoops(path, probe)
+	if len(r.Loops()) != peers || len(r.Unattributed()) != peers {
+		t.Fatalf("the combined fixture holds %d loops and %d unattributed, want %d of each", len(r.Loops()), len(r.Unattributed()), peers)
+	}
+	s := r.Sentence()
+	if strings.Count(s, "\n") != 0 || len(s) > 2000 {
+		t.Errorf("%d loops and %d unattributed rendered a %d-byte line over %d lines — one bounded list per clause does not bound the line unless the budget is spent once per clause:\n%s", peers, peers, len(s), 1+strings.Count(s, "\n"), s)
+	}
+	if !strings.Contains(s, strconv.Itoa(peers)+" dispatch loops") || !strings.Contains(s, strconv.Itoa(peers)+" other processes") {
+		t.Errorf("the combined line does not name both counts:\n%s", s)
+	}
+	t.Logf("both clauses full: %d-byte line", len(s))
+
+	// The control: the measured box's own reading is far inside the budget,
+	// so no real reading is truncated and every declared home is rendered in
+	// full. A bound that hid the ordinary answer would be a worse injection
+	// than the one it refuses.
+	ordinary := readBoxLoops(theMeasuredBox(9999)).Sentence()
+	if strings.Contains(ordinary, "not shown") {
+		t.Errorf("the measured box's own three-process reading was truncated — boxRowsMaxBytes is below what this box renders:\n%s", ordinary)
+	}
+	for _, h := range []string{"/homes/weller", "/homes/ranger"} {
+		if !strings.Contains(ordinary, strconv.Quote(h)) {
+			t.Errorf("the ordinary reading no longer names %s:\n%s", h, ordinary)
+		}
+	}
+	t.Logf("the measured box's own reading: %d bytes, nothing dropped", len(ordinary))
+}
+
 // TestQABoxRecordReadRefusesANonRegularFileAndDoesNotHang. The directory this
 // reaches into is named by another process, so the file at the end of it is
 // not ours. ReadWatchPid stats and then reads, and an open(2) of a FIFO there

@@ -335,10 +335,22 @@ func boxHomeIsWellFormed(v string) bool {
 // distinct values, both 24 bytes — `/home/posse/homes/ranger` and
 // `/home/posse/homes/weller`. 256 is ten times the live spelling and still a
 // value a reader meets as a path rather than as a paragraph. An unbounded one
-// is not: the rendering is ONE line pasted on a bead, and a peer that can
-// make that line four thousand bytes long has pushed the reader's own
-// sentence — the scope clause, the bead id, the loop count — off the end of
-// what anyone reads.
+// is not: it would arrive as a paragraph inside the one line a reader reads.
+//
+// WHAT THIS CAP DOES NOT BUY, said here because its first spelling claimed it
+// (ranger-base-m4w7d, from ranger-base-a7y67's verify of ranger-base-fugew):
+// a bounded LINE. It bounds one VALUE, and the rendering joins one row per
+// process — so four thousand bytes cost a peer sixteen forks rather than one
+// long value, with this cap in place and every value it admits well-formed.
+// MEASURED 2026-11-21 through the package's own fixture seam, N peers each
+// declaring a distinct 256-byte home this fence accepts: 1 peer 612 bytes,
+// 2 peers 882, 16 peers 4649, 64 peers 17561 — and the scope clause and the
+// loop counts are rendered AFTER the list, so at sixteen they are past byte
+// 4600 of a line pasted whole onto an install bead. (The series is
+// ranger-base-a7y67's; the 64-peer reading was re-measured here against the
+// unbounded join, which is also the mutant the new pin is graded on.) What bounds the line is
+// boxRowsMaxBytes, which bounds the assembled LIST; the two answer different
+// halves and neither is enough alone.
 const boxHomeMaxLen = 256
 
 // boxHomePathByte is the byte set a declared home may be spelled in: ASCII
@@ -618,7 +630,56 @@ func boxProcList(ps []BoxProc, onDisk string, perProcState bool) string {
 		}
 		parts = append(parts, row)
 	}
-	return strings.Join(parts, "; ")
+	return boxJoinRows(parts)
+}
+
+// boxRowsMaxBytes bounds the ASSEMBLED list, which boxHomeMaxLen does not:
+// the value cap bounds one row and nothing bounded how many rows there are,
+// so the one shape that cap's own justification named — a four-thousand-byte
+// line — was reachable with the cap in place, for sixteen forks
+// (ranger-base-m4w7d, measured at boxHomeMaxLen above).
+//
+// 512 is three times the longest list this box renders: MEASURED 2026-11-21
+// by the live arm, two dispatch loops and two further candidates on the
+// installed image — the loop list 78 bytes over two rows, the unattributed
+// list 161 over two, and the whole sentence 754. So no reading this box
+// produces is truncated, and a peer that forks for length gets a bounded line
+// and a clause saying how many rows it did not print: MEASURED the same day
+// through the fixture seam, 64 peers each declaring a 256-byte home render
+// 748 bytes through the loop list and 1082 through the unattributed one,
+// against 17561 unbounded — and 1435 with both clauses full, which is the
+// line's worst case, because the budget is spent once per list.
+//
+// A ROW COUNT IS NOT WHAT IS BOUNDED, because it is not what a reader runs
+// out of: one row carries a value of up to boxHomeMaxLen, so eight rows is
+// 512 bytes or 2.6KB depending on what the peers declared. The budget is
+// bytes, and the rows are whole — a row cut in half would be a path a reader
+// could mistake for a shorter one.
+const boxRowsMaxBytes = 512
+
+// boxJoinRows is the one join both per-process lists use, and the clause it
+// appends when it drops rows says HOW MANY it dropped. Nothing about the
+// count is lost that way: every branch that renders a list prints the total
+// ahead of it (boxCount), so what truncation costs is which rows, never how
+// many — and the first row is always rendered, so a reading never reports a
+// list it shows nothing of.
+func boxJoinRows(rows []string) string {
+	n, total := 0, 0
+	for _, r := range rows {
+		if n > 0 && total+len("; ")+len(r) > boxRowsMaxBytes {
+			break
+		}
+		if n > 0 {
+			total += len("; ")
+		}
+		total += len(r)
+		n++
+	}
+	s := strings.Join(rows[:n], "; ")
+	if n < len(rows) {
+		s += fmt.Sprintf("; and %d not shown — this reading is ONE line pasted on a bead, so the list is bounded and the count ahead of it is the whole number", len(rows)-n)
+	}
+	return s
 }
 
 // boxRenderHome is the ONE place a value out of a peer's environment reaches
@@ -650,12 +711,18 @@ func boxRenderHome(home string) string {
 // pid. Keep it that way; a future branch that wants to say WHICH home sends
 // it through boxRenderHome, which is the one quoted route (ranger-base-fugew
 // F1 pins both halves).
+//
+// It is bounded by the same join as boxProcList, and for the cheaper reason:
+// an unattributed candidate needs no record naming it back, so a peer reaches
+// this list by forking alone (ranger-base-m4w7d). Bounding one list and not
+// the other would leave the same line reachable through the clause the reader
+// trusts most.
 func boxOtherList(ps []BoxProc) string {
 	parts := make([]string, 0, len(ps))
 	for _, p := range ps {
 		parts = append(parts, fmt.Sprintf("pid %d (%s)", p.Pid, p.Why))
 	}
-	return strings.Join(parts, "; ")
+	return boxJoinRows(parts)
 }
 
 // boxCount is "<n> <noun>", with BOTH spellings given rather than an "s"
