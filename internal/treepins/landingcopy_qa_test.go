@@ -333,6 +333,10 @@ var landingDropRegister = []landingDrop{
 		why:   "`make coldexec-check` is a target in this repo's Makefile and the cost it injects comes from a seam in this repo's own internal/posse test binary — a fresh work repo has neither, and the class the door decides is a property of THIS repo's test fixtures rather than of anyone's landing discipline (ADR 0085, ranger-base-pbo1q)",
 	},
 	{
+		match: "make tmpdir-check RUN=",
+		why:   "`make tmpdir-check` is a target in this repo's Makefile and the class it decides is a property of THIS repo's own test fixtures — a fixture home that drives internal/posse's bwrap render — so a fresh work repo has neither the door, the arms it names, nor anything for the moved temp root to discriminate (ranger-base-m33n5, from ranger-base-jhmm7)",
+	},
+	{
 		match: "A branch ready for the remote goes to",
 		why:   "it names THIS instance's push delegate, a persona a fresh work repo's crew need not have; who carries the operator's push for another instance is that instance's own staffing, and the shared claim (the operator pushes, every PID denies it) is already in §9's copy (ranger-base-qpcbo)",
 	},

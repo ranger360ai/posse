@@ -724,3 +724,34 @@ stall that day, and every one of them a typing habit.
   docs/notes.d/ranger-base-in8dr.md has those readings and the one coverage
   hole they turned up (an orphaned process's execs are un-adjudicated —
   ranger-base-orgvt).
+- **A test fixture whose `$HOME` comes from a temp root, under a render that
+  must succeed: `make tmpdir-check RUN=<your tests>`** (ranger-base-m33n5,
+  from ranger-base-jhmm7's class). `BwrapArgs` refuses a write grant that
+  contains the per-seat wall root composed from `$HOME` (ADR 0100 D1/D2(a)),
+  and that refusal stands down only where the home is under `/tmp` — which is
+  a property of the BOX and not of the test. On this box and on ci.yml's
+  ubuntu legs `t.TempDir()` IS under `/tmp` and the stand-down is free; on
+  darwin it is `/var/folders/…` and on any linux seat whose TMPDIR points
+  elsewhere it is not, so the fixture is green where it is written and red
+  where nobody is watching. **This class has had five fixes
+  (ranger-base-shf97's count) and every one of them was found by reading a
+  macos arm-1 log** — the sixth, ranger-base-mlw6q, was found by this door
+  instead, which is the argument for it. The door runs internal/posse's
+  three arms with TMPDIR at a fresh `/var/tmp` root, which IS the
+  discriminator — the class's whole content is that the verdict turns on where
+  the box puts its temp files, so a second run with the temp root moved
+  decides it, with no call graph and no guess. It beat every static variant
+  tried: 4 of arm 1's 4 live members, none false, against 2 of 4 at a cost of
+  15 false reads for the best scan (MEASURED 2026-11-22, ranger-base-shf97).
+  Filtered it is seconds and takes no suite slot — 9.8s over those four
+  members; unfiltered it is three arms, three slots and 527s, and arms 2 and 3
+  are green. It REFUSES (exit 2) rather than passing when its root resolves
+  inside a blanket temp grant or cannot be created at all, which a caged seat
+  cannot do: inside a seat's own bwrap wall `/var/tmp` is read-only, so such a
+  seat is not this venue and is told so. `TMPDIR_CHECK_ROOT` is the override.
+  It is nobody's prerequisite and not in CI, and where it ought to live is
+  ADR 0098's call, carried by ranger-base-o065a with the prices in hand.
+  The static half of the same class is
+  `internal/treepins/bwraphomestanddown_qa_test.go`, inside `make
+  treepins-check`; it reads the render a TEST writes and its head comment says
+  what it cannot see. docs/notes.d/ranger-base-m33n5.md has every reading.
