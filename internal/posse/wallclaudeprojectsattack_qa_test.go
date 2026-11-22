@@ -292,15 +292,45 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 		cmd.Env = append(os.Environ(), "HOME="+f.home, ClaudeConfigDirVar+"="+f.cfg,
 			"ANTHROPIC_BASE_URL=http://127.0.0.1:1", "ANTHROPIC_API_KEY=sk-dead-9xt70",
 			"DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "CLAUDE_CODE_MAX_RETRIES=0")
+		// STARTED ON THIS GOROUTINE AND WAITED ON THE OTHER, where it used
+		// to be one CombinedOutput inside the goroutine (ranger-base-eheo3).
+		// cmd.Process is written by Start, which CombinedOutput called in
+		// there, so the deadline branch below read it nil and
+		// os.(*Process).signal derefed it: a SIGSEGV that takes the whole
+		// test binary down, and a faulted binary prints no `file.go:NN:`
+		// line, so scripts/posse-wall-check gets no member line and the run
+		// reads as a tree that would not run rather than as this member's
+		// finding (ADR 0097 D3) — worse than the Fatalf the branch was about
+		// to print. Start here, Wait there, one builder bound to both
+		// streams: the shape every other live seat run in this package has
+		// (bgLive.packUnderALiveSeat in bwrapgitrefslive_test.go).
+		//
+		// The two near shapes were measured against and refused
+		// (ranger-base-mhl7h, which fixed this defect's first site in
+		// wallclaudeprojects_qa_test.go and filed this one). A
+		// `cmd.Process != nil` guard answers the panic and not the race, and
+		// the `<-done` under it then blocks on a seat the goroutine is about
+		// to Start — the hang the deadline exists to break, arriving as the
+		// 25m binary timeout. An exec.CommandContext whose cancel the
+		// deadline calls closes `done` as it kills, so both select cases are
+		// ready and Go picks one at random: half the time a deadline that
+		// really elapsed abstains NOTHING MEASURED over a finding, which the
+		// `case <-done` comment just below rules out in words.
+		outBuf := &strings.Builder{}
+		cmd.Stdout, cmd.Stderr = outBuf, outBuf
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("could not start the real claude under the wall for cwd %s: %v", cwd, err)
+		}
 		done := make(chan struct{})
-		var out []byte
 		// runErr and not `_` (ranger-base-s9h52): this goroutine used to
 		// blank the seat's error, so a claude that the wall refused outright
 		// and a claude that ran reported identically — and the tree-equality
-		// arm below passes either way. Both readers are after `<-done`, which
-		// the goroutine closes last, so neither races it.
+		// arm below passes either way. Every reader of runErr and of outBuf
+		// is after `<-done`, which the goroutine closes last, and Wait
+		// returns only once it has copied both streams to the end, so
+		// neither races it.
 		var runErr error
-		go func() { out, runErr = cmd.CombinedOutput(); close(done) }()
+		go func() { runErr = cmd.Wait(); close(done) }()
 		select {
 		case <-done:
 			// The abstention (ranger-base-k2quj), on THIS arm only: the
@@ -310,7 +340,7 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 			// rules out. A seat the box ended writes no transcript, and the
 			// tree reading below then reds as a narrowing failure this run
 			// never measured.
-			bgSeatAbstainIfOutside(t, "the real claude seat under the rendered wall for cwd "+cwd, runErr, string(out))
+			bgSeatAbstainIfOutside(t, "the real claude seat under the rendered wall for cwd "+cwd, runErr, outBuf.String())
 		case <-time.After(90 * time.Second):
 			_ = cmd.Process.Kill()
 			<-done
@@ -318,12 +348,12 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 			// above ended it and `exit status N` says it was already gone,
 			// and the wall check carries only this first line to the bead
 			// (ADR 0097 D3).
-			t.Fatalf("claude -p under the wall for cwd %s did not end in 90s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out; the seat answered %s", cwd, bgSeatAccount(runErr, string(out)))
+			t.Fatalf("claude -p under the wall for cwd %s did not end in 90s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out; the seat answered %s", cwd, bgSeatAccount(runErr, outBuf.String()))
 		}
 		if runErr != nil {
-			t.Logf("claude -p under the wall for cwd %s ended badly, which this pin does not assert on — it reads the projects/ tree, not the exit — but a reader of a red below needs it: %s", cwd, bgSeatAccount(runErr, string(out)))
+			t.Logf("claude -p under the wall for cwd %s ended badly, which this pin does not assert on — it reads the projects/ tree, not the exit — but a reader of a red below needs it: %s", cwd, bgSeatAccount(runErr, outBuf.String()))
 		}
-		return strings.TrimSpace(string(out))
+		return strings.TrimSpace(outBuf.String())
 	}
 
 	// THE NON-OWN CWD IS A PLAIN DIRECTORY AND NOT THE MAIN CHECKOUT, which
