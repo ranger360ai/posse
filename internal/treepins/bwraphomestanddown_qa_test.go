@@ -98,7 +98,12 @@ package treepins
 // through a method is not read here.
 //
 // THE RENDER THIS PIN READS IS BwrapArgs AND ITS WATCHED TWIN, AND NOT THE
-// PRODUCTION ENTRY POINTS ABOVE THEM (ranger-base-shf97 holds that half).
+// PRODUCTION ENTRY POINTS ABOVE THEM. ranger-base-shf97 held that half open,
+// measured every widening that could close it, and closed the bead on NO
+// RULE: not one variant sees the two arms it was filed over without dragging
+// in false reads, and the cheapest that sees them at all costs fifteen. The
+// table is six rows down this comment and
+// docs/notes.d/ranger-base-shf97.md has the instrument.
 // This was tried and measured, same box and commit, and the widening is not
 // the answer as it stands. Deriving the production functions that render
 // bwrap on EVERY host — a path to BwrapArgs along uniquely-named edges with
@@ -120,8 +125,41 @@ package treepins
 // granted by something else. It also still missed the two arms that ARE red
 // there (wallseedprojectconfig_qa_test.go, whose seed call is inside a
 // method). 13 false and 2 missed is not a door, so the door is stated over
-// the render a test writes, and the other path is a bead with its
-// measurements on it.
+// the render a test writes.
+//
+// EVERY OTHER WIDENING WAS THEN MEASURED TOO, and none of them is a door
+// either (ranger-base-shf97, 2026-11-22, same box, over the live corpus with
+// that file's pre-fix source overlaid so its two homes read bare again):
+//
+//	variant                                        reach  flagged  real  false
+//	this pin as it stands                            106        0     0      0
+//	+ a method edge where the name is UNIQUE         109        0     0      0
+//	+ a method edge keyed by NAME ALONE (unsound)    142        2     0      2
+//	the 10 production seeds, identifier edges        189       13     0     13
+//	the 10 + unique-name method edges                192       13     0     13
+//	the 10 + name-alone method edges (unsound)       230       17     2     15
+//	file-scoped, narrow seeds (no edges at all)        —    5 fls     0      8
+//	file-scoped, the 10 seeds                          —   16 fls     2     23
+//
+// UNIQUENESS WAS THE ONE SOUND NARROWING AND IT DOES NOT REACH, which is the
+// finding. The rule would have been temproot_qa_test.go's — admit a method
+// edge whose name has exactly one declaration in the tree and is bound
+// nowhere else — and the blocker is not the render but the HOP: `bwrapRender`
+// is unique, while `prep` is declared twice in internal/posse and bound as a
+// local besides, so `f.prep(t, f.home)` is inadmissible by exactly the rule
+// that makes `bwrapRender` admissible. The two the narrow seeds flag with
+// name-alone edges are canonicalwall_qa_test.go's — this comment's own
+// measured failure mode, at a different pair.
+//
+// AND THE DOOR FOR THAT PATH TURNED OUT NOT TO BE A SCAN. MEASURED the same
+// day: `TMPDIR=/var/tmp/… go test ./internal/posse` (arm 1, with those two
+// arms fixed) is 263.0s and reds TWO MORE live members of this class that no
+// variant above flags at all — wallwitness_qa_test.go's, whose home is
+// wtqaHome's and whose render is reached through `RenderWall`. Four members in
+// arm 1: the best static variant flags two and costs fifteen false reads, and
+// the run finds four and costs none. So this pin keeps the class it can state
+// soundly, the remaining members and the venue are beads, and
+// docs/notes.d/ranger-base-shf97.md has every reading.
 //
 // Reading the SOURCE rather than building it is also what covers all three
 // arms at once: parser.ParseFile applies no build constraints, so the

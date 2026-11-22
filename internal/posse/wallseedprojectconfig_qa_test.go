@@ -110,10 +110,49 @@ type wspFixture struct {
 	rts         map[string]*Runtime
 }
 
+// THE ROOT IS A STAND-DOWN ROOT AND NOT A `t.TempDir()`, because `prep`
+// below renders a wall whose SESSION DIR is this fixture's own home: the home
+// is a write grant of that render, and BwrapArgs refuses a grant that
+// contains the per-seat wall root composed from $HOME
+// (bwrapRefuseWallRootGrant, ADR 0100 D1/D2(a)). The refusal stands down only
+// where the home is itself inside the unconditional `/tmp` grant, which is a
+// property of the HOST and not of this test — so both arms were green on this
+// box for the accident that linux's `t.TempDir()` is under /tmp, and red the
+// moment TMPDIR is not. MEASURED 2026-11-22 (linux 7.2.15, go1.27.3, at
+// 648a32d6) with `TMPDIR=/var/tmp/… go test -run TestQAWallSeedProjectConfig
+// ./internal/posse`: both arms fail at the render, "bwrap cannot grant write
+// on <root>/home: it contains the per-seat wall root <root>/home/.cache/
+// posse-wall", and both are `ok` with the root taken from wallStandDownDir
+// (ranger-base-shf97, whose class is ranger-base-jhmm7's).
+//
+// WITH ONE MORE ENTRY IN THE FENCE, which is the layer this uncovered: on the
+// stand-down root the render succeeded and both arms went red one further in,
+// at the prep host fence, whose declared roots named `/tmp` only by way of
+// os.TempDir() — the same host accident. prepHostFenceRootList names
+// bwrapTmpMount now and TestQATheStandDownFixtureRootIsAPrepHostFenceRoot
+// holds it; the `ok` above is with both halves in.
+//
+// NOT wallUngrantedDir, which is the answer for a pin whose subject IS the
+// refusal: the grant refused here is the HOME ITSELF, so a real wall root
+// under it is refused whatever else moves.
+//
+// THE CHECK IS HERE AND NOT ONLY AT THE CALL SITES, because the tree-wide pin
+// cannot see this render: it reads a render a test writes as BwrapArgs or
+// bwrapArgsWatched in the test's own identifier call graph, and these arms
+// reach it through a METHOD (`f.a.bwrapRender`), which that pin deliberately
+// does not follow (internal/treepins/bwraphomestanddown_qa_test.go, "A METHOD
+// CALL IS NOT AN EDGE"). So a third arm added here would be invisible to the
+// door, and this is the one place in the source that can still say no. It says
+// it in the fixture's own words rather than the render's, which is the whole
+// complaint jhmm7 was filed over — a red on another host that names a refusal
+// instead of the fixture that caused it.
 func wspFixtureIn(t *testing.T, root string) wspFixture {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("the seed is the bwrap mechanism's; seatbelt creates nothing (SeatbeltCarveOut.Seeded)")
+	}
+	if !underDir(bwrapTmpMount, root) {
+		t.Fatalf("this fixture's root is %s, which is outside %s: `prep` renders a wall whose session dir is the home under this root, so the render refuses that grant for containing the per-seat wall root and every arm here measures a refusal instead of the seed (ADR 0100 D1/D2(a), ranger-base-shf97). Take the root from wallStandDownDir", root, bwrapTmpMount)
 	}
 	at := func(parts ...string) string { return filepath.Join(append([]string{root}, parts...)...) }
 	f := wspFixture{home: at("home"), rts: map[string]*Runtime{}}
@@ -162,7 +201,7 @@ func (f wspFixture) prep(t *testing.T, dir string) map[string][]PrepStep {
 // with the classifier's finding for the thing that was made.
 func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
-	f := wspFixtureIn(t, t.TempDir())
+	f := wspFixtureIn(t, wallStandDownDir(t))
 	steps := f.prep(t, f.home)
 
 	// Control: an empty home is a clean launch for every runtime, so
@@ -297,7 +336,7 @@ func TestQAWallSeedProjectConfigCensusOfWhatThePrepCreates(t *testing.T) {
 // The `-run 'WallSeedProjectConfig'` filter reaches it either way.
 func TestQAWallSeedProjectConfigLaunchInTheHomeItSeededIsClean(t *testing.T) {
 	// No t.Parallel: the fixture sets HOME and the CLI home variables.
-	f := wspFixtureIn(t, t.TempDir())
+	f := wspFixtureIn(t, wallStandDownDir(t))
 	steps := f.prep(t, f.home)
 	for _, name := range wspRuntimes {
 		if err := runBwrapPrep(steps[name]); err != nil {
