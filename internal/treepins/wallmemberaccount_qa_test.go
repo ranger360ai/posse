@@ -68,8 +68,24 @@ package treepins
 // one would have escaped by. Arm 3 carries the planted pair and its negative
 // cases (`bwraptest`, `bwrap-wrapper`, `bwrap.sh` and a skip message that
 // says the word are none of them launches); arm 1 carries a floor on the
-// wrapper route and a ceiling on it, because widening a key is how a census
-// starts grading functions that launch nothing.
+// wrapper route.
+//
+// THE OVER-READ DIRECTION IS ARM 3'S, AND ONLY ARM 3'S (ranger-base-8752f,
+// from ranger-base-udagn's verify of the widening). A ceiling on the wrapper
+// count — `len(wrapped) > 8` — used to sit beside that floor here, on the
+// reasoning that widening a key is how a census starts grading functions that
+// launch nothing. It could not perform the detection its own message claimed.
+// MEASURED 2026-11-22 at 330d6940, one mutant at a time: the whole ceiling
+// block deleted reds nothing, and `wmaSeatWord` rewritten as a
+// `strings.Contains` — the canonical over-read, and exactly the shape the
+// ceiling's message described — still reads 2 of 32 through the wrapper route,
+// the same count as the unmutated key. It cannot: the neighbour names that an
+// over-reading key would newly match (`bwraptest`, `bwrap-wrapper`,
+// `bwrap.sh`) live in arm 3's fixtures and in no member file, so no value of
+// that bound distinguishes the two keys over this tree. The SAME mutant reds
+// arm 3's neighbour row, and nowhere else — so the claim is held hermetically,
+// by the arm this comment already called "the precise half of this", and the
+// census logs its own counts instead of asserting a bound nothing witnesses.
 //
 // MEASURED 2026-11-21 (linux 7.2.15, go1.27.3, this tree): 24 member files,
 // 30 bwrap-launching functions in them, 2 of which rendered no error at all —
@@ -565,14 +581,12 @@ func TestQAEveryWallMemberSeatLaunchRendersItsChildsError(t *testing.T) {
 	if len(wrapped) == 0 {
 		t.Errorf("this census found %d launch(es) of a seat spelled some way other than a literal `bwrap` argv entry, want at least 1 (2 on 2026-11-22: grokleader_qa_test.go's pty arm, which joins the render's argv into a line for `script -qfec`, and wallunixlive_test.go's `sh -c 'bwrap \"$@\"; :'` arm). Those two are why the key is not the argv entry alone (ranger-base-hhps5); with neither in the tree, nothing but arm 3's planted pair holds the widening, and a later narrowing of wmaSeatLaunches would be green here. If the routes really have gone, say so and take this floor out — do not lower it.", len(wrapped))
 	}
-	// The other direction, because widening a key is how a census starts
-	// grading functions that launch nothing: the wrapper route is the
-	// EXCEPTION in this package (2 of 32), and a jump here is the one-hop
-	// name read matching a message or a neighbour's name rather than a
-	// launch. Arm 3's negative cases are the precise half of this.
-	if len(wrapped) > 8 {
-		t.Errorf("this census read %d of %d launch(es) through the wrapper route, want at most 8 (2 of 32 on 2026-11-22, with %d handing exec.Command a literal `bwrap` argv entry) — that is the shape of a key that has stopped meaning `this function starts a seat`, and every function it over-reads is one arm 1 then holds to a rule written for seats. The wrapper reads were: %v", len(wrapped), launchers, argvEntry, wrapped)
-	}
+	// The other direction — a key that has stopped meaning `this function
+	// starts a seat` — is arm 3's and not a bound here: see the head comment,
+	// which carries the measurement that no bound over this tree can read it.
+	// What this arm owes a reader is the census it actually took.
+	t.Logf("%d member file(s), %d launching function(s) (%d handing exec.Command a literal `bwrap` argv entry, %d through the wrapper route), %d child error(s) graded. The wrapper reads were: %v",
+		len(files), launchers, argvEntry, len(wrapped), graded, wrapped)
 }
 
 // ARM 2 — THE LINE. A message carrying a seat's account carries it where the

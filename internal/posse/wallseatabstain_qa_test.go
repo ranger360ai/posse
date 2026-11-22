@@ -37,6 +37,31 @@ package posse
 // helpers as callsite_qa_test.go (ranger-base-nqw8v) and
 // bwrapgitrefsaccount_qa_test.go (ranger-base-axt1f).
 //
+// WHAT A SEAT RUN IS SPELLED LIKE, which this pin got wrong once
+// (ranger-base-8752f, found by ranger-base-udagn's verify of
+// ranger-base-k2quj). Arm 1's key was `exec.Command` whose argv[0] is the
+// literal `"bwrap"`; arm 2's was the NEGATIVE of "names its program with a
+// literal at all". A program that IS a literal but is `sh`, `script`,
+// `setsid` or `env`, carrying `bwrap --…` in its argument, fell between them —
+// not arm 1's key, not a variable, so no row was demanded and NOTHING said so.
+// MEASURED 2026-11-22 at 175e7c3b by a planted member file and its control,
+// the same seat run twice and the only difference the spelling of the argv:
+// `exec.Command("bwrap", "--dev-bind", "/", "/", "/bin/true")` RED, named at
+// its line; `exec.Command("sh", "-c", "bwrap --dev-bind / / /bin/true")`
+// GREEN, and no register row asked for either. That control is what made the
+// green a reading.
+//
+// The route is not hypothetical: internal/treepins' wmaSeatLaunches closed the
+// same hole in the same member set eight hours earlier (ranger-base-hhps5) and
+// names two such launches in today's tree. So this pin reads the bwrap command
+// WORD now, wherever it reaches the call — the program position in arm 1
+// (`/usr/bin/bwrap` is the same direct run), and an argument, one hop included,
+// in arm 2's wsaWrappedSeatRun. It goes to the REGISTER and not to arm 1 for a
+// measured reason wsaWrappedSeatRun's own comment states: arm 1 owns routing at
+// the innermost running frame, and one of the two live wrapper arms must NOT
+// route. The planted pair above and its negatives are arm 2's rows in
+// TestQAWallMemberAbstentionRuleMatchesWhatItClaims.
+//
 // WHAT IT DOES NOT READ, said here so the next reader does not come back to
 // it. wallvenue_test.go runs a bwrap of its own (bwrapNestProbe) and is NOT a
 // member file, deliberately: that probe is the gate, its own comment says
@@ -57,6 +82,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -109,61 +135,217 @@ type wsaSite struct {
 	top   ast.Node
 }
 
-// wsaBwrapLiteral answers whether a call is `exec.Command("bwrap", …)` or
-// `exec.CommandContext(ctx, "bwrap", …)`. A LITERAL, deliberately: a site
-// whose argv[0] is a variable cannot be read this way and is carried by
-// wsaVariableCommandRegister below instead, which is the honest shape rather
-// than a rule that guesses.
-func wsaBwrapLiteral(c *ast.CallExpr) bool {
+// wsaSeatRe is the bwrap binary read as a command WORD, so that a path to it
+// counts and a neighbour whose name merely carries the letters does not:
+// `bwrap` and `/usr/bin/bwrap` match, `bwrap-wrapper`, `bwrap.sh` and
+// `wrcNeedBwrap` do not. It is internal/treepins' wmaSeatRe, character for
+// character and deliberately so: that census and this one make ONE claim
+// about ONE member set, and two spellings of "what a seat launch looks like"
+// would be two answers about it (ranger-base-8752f).
+var wsaSeatRe = regexp.MustCompile(`(?:^|[^\w.-])bwrap(?:$|[^\w.-])`)
+
+// wsaSeatWord reports whether s names the bwrap binary as a command word.
+func wsaSeatWord(s string) bool { return wsaSeatRe.MatchString(s) }
+
+// wsaProgramArg is the index of an exec.Command/CommandContext call's program
+// argument, and -1 when the call is neither.
+func wsaProgramArg(c *ast.CallExpr) int {
 	sel, ok := c.Fun.(*ast.SelectorExpr)
 	if !ok {
-		return false
+		return -1
 	}
 	pkg, ok := sel.X.(*ast.Ident)
 	if !ok || pkg.Name != "exec" {
-		return false
+		return -1
 	}
-	at := -1
 	switch sel.Sel.Name {
 	case "Command":
-		at = 0
+		return 0
 	case "CommandContext":
-		at = 1
-	default:
-		return false
+		return 1
 	}
-	if len(c.Args) <= at {
-		return false
-	}
-	lit, ok := c.Args[at].(*ast.BasicLit)
-	return ok && lit.Kind == token.STRING && (lit.Value == `"bwrap"` || lit.Value == "`bwrap`")
+	return -1
 }
 
-// wsaCommandArgIsLiteral answers whether an exec.Command/CommandContext call
-// names its program with a string literal at all. Arm 2 reads the negative.
-func wsaCommandArgIsLiteral(c *ast.CallExpr) (isExec, literal bool) {
-	sel, ok := c.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return false, false
+// wsaStringLit unquotes a string literal expression.
+func wsaStringLit(x ast.Node) (string, bool) {
+	lit, ok := x.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
 	}
-	pkg, ok := sel.X.(*ast.Ident)
-	if !ok || pkg.Name != "exec" {
-		return false, false
+	s, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return "", false
 	}
-	at := -1
-	switch sel.Sel.Name {
-	case "Command":
-		at = 0
-	case "CommandContext":
-		at = 1
-	default:
-		return false, false
+	return s, true
+}
+
+// wsaExprSeatWord reports whether any string literal anywhere under x names
+// bwrap as a command word — so a line spelled across a `+` is read too.
+func wsaExprSeatWord(x ast.Expr) bool {
+	found := false
+	ast.Inspect(x, func(n ast.Node) bool {
+		if s, ok := wsaStringLit(n); ok && wsaSeatWord(s) {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// wsaExprMentions reports whether x reads any of these names.
+func wsaExprMentions(x ast.Expr, names map[string]bool) bool {
+	found := false
+	ast.Inspect(x, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && names[id.Name] {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// wsaSeatWordNames are the names this body builds a bwrap command word INTO:
+// `line := "bwrap …"`, `q = append(q, "bwrap")`, `argv := []string{"bwrap", …}`.
+// ONE HOP, the same depth internal/treepins' wmaSeatWordNames reads, and it is
+// what lets a seat's line reach the call in a variable.
+func wsaSeatWordNames(n ast.Node) map[string]bool {
+	names := map[string]bool{}
+	record := func(lhs, rhs []ast.Expr) {
+		carries := false
+		for _, r := range rhs {
+			if wsaExprSeatWord(r) {
+				carries = true
+			}
+		}
+		if !carries {
+			return
+		}
+		for _, l := range lhs {
+			if id, ok := l.(*ast.Ident); ok && id.Name != "_" {
+				names[id.Name] = true
+			}
+		}
 	}
-	if len(c.Args) <= at {
-		return true, false
+	ast.Inspect(n, func(x ast.Node) bool {
+		switch s := x.(type) {
+		case *ast.AssignStmt:
+			record(s.Lhs, s.Rhs)
+		case *ast.ValueSpec:
+			var lhs []ast.Expr
+			for _, id := range s.Names {
+				lhs = append(lhs, id)
+			}
+			record(lhs, s.Values)
+		}
+		return true
+	})
+	return names
+}
+
+// wsaBwrapLiteral answers whether a call is `exec.Command("bwrap", …)` or
+// `exec.CommandContext(ctx, "bwrap", …)` — the program named by a string
+// literal that IS the bwrap binary, its absolute path included. A LITERAL,
+// deliberately: a site whose argv[0] is a variable cannot be read this way and
+// is carried by wsaVariableCommandRegister below instead, which is the honest
+// shape rather than a rule that guesses.
+//
+// The program is read as a command WORD rather than compared to `"bwrap"`
+// (ranger-base-8752f): `exec.Command("/usr/bin/bwrap", …)` is this same direct
+// seat run, and the equality this key used to make was invisible to it while
+// a literal program kept it out of the register too.
+func wsaBwrapLiteral(c *ast.CallExpr) bool {
+	at := wsaProgramArg(c)
+	if at < 0 || len(c.Args) <= at {
+		return false
 	}
-	lit, ok := c.Args[at].(*ast.BasicLit)
-	return true, ok && lit.Kind == token.STRING
+	prog, ok := wsaStringLit(c.Args[at])
+	return ok && wsaSeatWord(prog)
+}
+
+// wsaWrappedSeatRun answers whether a call starts a bwrap seat through a
+// WRAPPER: the program is a string literal that is NOT bwrap — `sh`, `script`,
+// `setsid`, `env` — and the bwrap command word reaches the call's remaining
+// arguments, in a literal of its own or one hop away in a name this body built
+// the line in.
+//
+// WHY IT IS A THIRD ANSWER AND NOT PART OF ARM 1 (ranger-base-8752f, found by
+// ranger-base-udagn extending arm 1's key with a planted pair). Such a run is
+// a seat by every reading the house has — internal/treepins' wmaSeatLaunches
+// counts the same shape — but arm 1 owns routing at the INNERMOST function
+// that runs something, and a wrapper arm's status is not always one anybody may
+// route: wallunixlive_test.go's second loop starts `sh -c 'bwrap "$@"; :'`,
+// SIGKILLs the sh ITSELF and discards its Wait error, which is the grokleader
+// family — route it and the criterion abstains on every run and holds the wall
+// check at exit 3 forever (ADR 0097 D3). MEASURED 2026-11-22 at 330d6940: with
+// this shape folded into arm 1's key instead, arm 1 reds on
+// wallunixlive_test.go:473 against a sibling t.Run closure that routes and an
+// arm that must not. So the route goes where the pin's other un-gradable
+// spelling goes — the register, which has the dispositions and the prose for
+// exactly this.
+func wsaWrappedSeatRun(c *ast.CallExpr, names map[string]bool) bool {
+	at := wsaProgramArg(c)
+	if at < 0 || len(c.Args) <= at {
+		return false
+	}
+	prog, ok := wsaStringLit(c.Args[at])
+	if !ok || wsaSeatWord(prog) {
+		// Not a literal at all is the variable half's; bwrap itself is arm 1's.
+		return false
+	}
+	for _, a := range c.Args[at+1:] {
+		if wsaExprSeatWord(a) || wsaExprMentions(a, names) {
+			return true
+		}
+	}
+	return false
+}
+
+// wsaUngradable is one seat run arm 2 carries: a run this pin cannot grade by
+// reading it, which therefore has to be named in the register.
+type wsaUngradable struct {
+	fn      *ast.FuncDecl // the top-level declaration it is in
+	line    int
+	wrapper bool // the wrapper route; else the program is not a literal at all
+}
+
+// wsaUngradableSeatRuns is arm 2's key over one parsed file, as a function so
+// the controls below can drive it over planted source — the same reason
+// wsaUnrouted is one.
+func wsaUngradableSeatRuns(f *ast.File, fset *token.FileSet) []wsaUngradable {
+	var out []wsaUngradable
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		names := wsaSeatWordNames(fn.Body)
+		ast.Inspect(fn.Body, func(x ast.Node) bool {
+			c, ok := x.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			at := wsaProgramArg(c)
+			if at < 0 {
+				return true
+			}
+			// "Names its program with a string literal at all": the first
+			// half reads the negative, which is the register's original
+			// spelling, and the second the literal that is not bwrap.
+			literal := false
+			if len(c.Args) > at {
+				_, literal = wsaStringLit(c.Args[at])
+			}
+			switch {
+			case !literal:
+				out = append(out, wsaUngradable{fn: fn, line: fset.Position(c.Pos()).Line})
+			case wsaWrappedSeatRun(c, names):
+				out = append(out, wsaUngradable{fn: fn, line: fset.Position(c.Pos()).Line, wrapper: true})
+			}
+			return true
+		})
+	}
+	return out
 }
 
 // wsaMembers returns the top-level test names in a parsed file that are
@@ -531,13 +713,15 @@ var wsaWatcherSiteRegister = []struct {
 	},
 }
 
-// wsaVariableCommandRegister is the priced table of seat runs this pin's
-// bwrap LITERAL cannot see: an `exec.Command` whose program is a variable.
-// Each row is file · the top-level test it is in · what was decided and why.
-// It exists so that the hole is named rather than silently covered, and so a
-// NEW invisible seat runner cannot arrive without a reader: arm 2 reds on a
-// variable-program site this table does not name, and on a row that names
-// nothing.
+// wsaVariableCommandRegister is the priced table of seat runs arm 1 cannot
+// grade by reading the program, and there are two such spellings: an
+// `exec.Command` whose program is a VARIABLE, and one whose program is a
+// literal other than bwrap with the seat's line in an argument — the WRAPPER
+// route (ranger-base-8752f). Each row is file · the top-level test it is in ·
+// what was decided and why. It exists so that the hole is named rather than
+// silently covered, and so a NEW invisible seat runner cannot arrive without a
+// reader: arm 2 reds on an un-gradable site this table does not name, and on a
+// row that names nothing.
 //
 // The disposition is not a flag this pin acts on — every ROUTED row below is
 // already routed in its file and arm 2 says so by reading the owning
@@ -572,6 +756,16 @@ var wsaVariableCommandRegister = []struct {
 		why:    "the same runner and the same fatal as the arm above, in the other D3 arm.",
 	},
 	{
+		file: "wallunixlive_test.go", test: "TestLiveWallUnixScopesSignalsToTheSeat",
+		routed: true,
+		why: "THE WRAPPER ROUTE: the second loop's arms start `sh -c 'bwrap \"$@\"; :'`, so the seat's " +
+			"line is an argument and the program is `sh`. Those arms have no status anybody may route — " +
+			"the sh's Start error is a start failure and never a signal, and THIS TEST SIGKILLs the sh " +
+			"after reading the seat's self-report and discards its Wait error, which is the grokleader " +
+			"row's reason one line down. The routing this row asserts is the first loop's, over the " +
+			"literal `exec.Command(\"bwrap\", argv...)` arm, where there is a status and arm 1 reads it.",
+	},
+	{
 		file: "grokleader_qa_test.go", test: "TestLiveWallGrokLeaderUseLeaderTUIStartsNoLeader",
 		routed: false,
 		why: "EXEMPT: the program is util-linux `script`, which holds the bwrap line under a pty, and " +
@@ -601,9 +795,14 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 
 	members, memberFiles, sites := 0, 0, 0
 	var unrouted []string
-	// Arm 2's two halves, collected over the same walk: the
-	// variable-program sites found, and the register rows they match.
+	// Arm 2's two halves, collected over the same walk: the un-gradable
+	// sites found, and the register rows they match. wrapperFound is the
+	// subset taking the wrapper route, counted on its own because an
+	// invisible spelling does not lower the count of the visible ones —
+	// internal/treepins' `wrapped` floor is the same reading for the same
+	// reason (ranger-base-8752f).
 	found := map[string]bool{}
+	wrapperFound := map[string]bool{}
 	matched := map[int]bool{}
 	// Arm 3 is the watcher-run half (ranger-base-jqdm2), collected the same
 	// way: its own unrouted sites, and its own register.
@@ -671,39 +870,39 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 			})
 		}
 
-		// The variable-program half, in the same member file.
-		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
+		// Arm 2's half, in the same member file: every seat run this pin
+		// cannot grade by reading it, each of which needs a register row.
+		for _, u := range wsaUngradableSeatRuns(f, fset) {
+			key := name + "\x00" + u.fn.Name.Name
+			found[key] = true
+			spelling := "whose program is a VARIABLE"
+			if u.wrapper {
+				wrapperFound[key] = true
+				spelling = "through a WRAPPER — the program is a literal that is not bwrap and the seat's line reaches the call in an argument"
+			}
+			row := -1
+			for i, r := range wsaVariableCommandRegister {
+				if r.file == name && r.test == u.fn.Name.Name {
+					row = i
+					break
+				}
+			}
+			if row >= 0 {
+				if matched[row] {
+					continue // one reading per row, however many sites it holds
+				}
+				matched[row] = true
+				r := wsaVariableCommandRegister[row]
+				if r.routed && !qcsHas(qcsCalls(u.fn.Body), wsaRouter) {
+					t.Errorf("%s: %s is registered as routing the abstention for a seat run this pin cannot grade by reading it, and it does not call %s. %s", name, u.fn.Name.Name, wsaRouter, r.why)
+				}
+				if !r.routed && qcsHas(qcsCalls(u.fn.Body), wsaRouter) {
+					t.Errorf("%s: %s is registered EXEMPT and now calls %s. Read the row before you keep it: %s", name, u.fn.Name.Name, wsaRouter, r.why)
+				}
 				continue
 			}
-			ast.Inspect(fn.Body, func(x ast.Node) bool {
-				c, ok := x.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				isExec, literal := wsaCommandArgIsLiteral(c)
-				if !isExec || literal {
-					return true
-				}
-				key := name + "\x00" + fn.Name.Name
-				found[key] = true
-				for i, row := range wsaVariableCommandRegister {
-					if row.file == name && row.test == fn.Name.Name {
-						matched[i] = true
-						if row.routed && !qcsHas(qcsCalls(fn.Body), wsaRouter) {
-							t.Errorf("%s: %s is registered as routing the abstention for a seat run whose program is a variable, and it does not call %s. %s", name, fn.Name.Name, wsaRouter, row.why)
-						}
-						if !row.routed && qcsHas(qcsCalls(fn.Body), wsaRouter) {
-							t.Errorf("%s: %s is registered EXEMPT and now calls %s. Read the row before you keep it: %s", name, fn.Name.Name, wsaRouter, row.why)
-						}
-						return true
-					}
-				}
-				t.Errorf("%s:%d: %s runs a command whose program is a VARIABLE, and no row of wsaVariableCommandRegister names it. This pin's rule reads the literal `exec.Command(\"bwrap\", …)`, so a seat run spelled this way is invisible to it — which is the hole the register exists to keep named. Add a row saying whether this site routes the abstention (ranger-base-k2quj's reason: a seat the box SIGKILLs is silent and exits 128+9, which a success arm reds and a refusal arm PASSES) or why routing it would be wrong.",
-					name, fset.Position(c.Pos()).Line, fn.Name.Name)
-				return true
-			})
+			t.Errorf("%s:%d: %s runs a seat %s, and no row of wsaVariableCommandRegister names it. Arm 1's rule reads the program — `exec.Command(\"bwrap\", …)` and its absolute path — so a seat run spelled this way it cannot grade, and the register is what keeps the hole named rather than silently covered. Add a row saying whether this site routes the abstention (ranger-base-k2quj's reason: a seat the box SIGKILLs is silent and exits 128+9, which a success arm reds and a refusal arm PASSES) or why routing it would be wrong.",
+				name, u.line, u.fn.Name.Name, spelling)
 		}
 	}
 
@@ -725,7 +924,7 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 
 	for i, row := range wsaVariableCommandRegister {
 		if !matched[i] {
-			t.Errorf("wsaVariableCommandRegister row %d names %s in %s, and this walk found no seat run with a variable program there. A stale row is a hole nobody is reading any more: delete it, or follow the site to its new home.", i, row.test, row.file)
+			t.Errorf("wsaVariableCommandRegister row %d names %s in %s, and this walk found no seat run there that arm 1 cannot grade — neither a variable program nor the wrapper route. A stale row is a hole nobody is reading any more: delete it, or follow the site to its new home.", i, row.test, row.file)
 		}
 	}
 
@@ -742,7 +941,15 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 		t.Errorf("this pin found %d bwrap seat runs in the member set (33 on 2026-11-22) — the literal reading has stopped matching, and an unrouted runner would now pass", sites)
 	}
 	if len(found) < 3 {
-		t.Errorf("this pin found %d member tests running a command with a variable program (4 rows on 2026-11-22) — arm 2's reading has stopped matching and the register is holding nothing", len(found))
+		t.Errorf("this pin found %d member tests running a seat it cannot grade by reading it (5 on 2026-11-22) — arm 2's reading has stopped matching and the register is holding nothing", len(found))
+	}
+	// And the wrapper route's own floor (ranger-base-8752f). The floor above
+	// cannot ask it: a spelling the key cannot see does not lower the count of
+	// the ones it can, which is how this route was invisible to both halves
+	// for as long as it was. MEASURED 2026-11-22 at 330d6940: one member test
+	// takes it — wallunixlive_test.go's `sh -c 'bwrap "$@"; :'` arm.
+	if len(wrapperFound) < 1 {
+		t.Errorf("this pin found %d member tests launching a seat through a wrapper (1 on 2026-11-22: wallunixlive_test.go's `sh -c 'bwrap \"$@\"; :'` arm) — with none in the tree, nothing but the planted rows in TestQAWallMemberAbstentionRuleMatchesWhatItClaims holds the widening, and a later narrowing of wsaWrappedSeatRun would be green here. If the route really has gone, say so and take this floor out — do not lower it.", len(wrapperFound))
 	}
 	// The watcher half's floors (ranger-base-jqdm2). MEASURED 2026-11-22: 8
 	// sites in the three member files that run a seat that way — 2 runs read
@@ -755,7 +962,7 @@ func TestQAEveryWallMemberSeatRunRoutesTheAbstention(t *testing.T) {
 	if len(wFound) < 1 {
 		t.Errorf("this pin found %d member tests running a watcher seat with a variable bwrap argv (1 row on 2026-11-22) — arm 3's register is holding nothing", len(wFound))
 	}
-	t.Logf("%d members in %d files, %d literal bwrap seat runs, %d variable-program member tests, %d watcher-run sites, %d variable-argv watcher tests", members, memberFiles, sites, len(found), wSites, len(wFound))
+	t.Logf("%d members in %d files, %d literal bwrap seat runs, %d un-gradable member tests (%d of them through a wrapper), %d watcher-run sites, %d variable-argv watcher tests", members, memberFiles, sites, len(found), len(wrapperFound), wSites, len(wFound))
 }
 
 // TestQAWallMemberAbstentionRuleMatchesWhatItClaims drives the rule above
@@ -839,10 +1046,115 @@ func TestLiveWallX(t *testing.T) {
 	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
 	if err != nil { t.Fatal(string(out)) }
 }`, 0},
+		// ranger-base-8752f: the program read as a command word rather than
+		// compared to `"bwrap"`, and the two neighbours that must stay out.
+		{"the seat named by its absolute path is the same direct run", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("/usr/bin/bwrap", "sh", "-c", "x").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 1},
+		{"a program whose NAME merely carries the letters is nobody's seat", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("bwrap-wrapper", "sh", "-c", "x").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 0},
+		{"the WRAPPER route is not arm 1's — the register carries it", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("sh", "-c", "bwrap --dev-bind / / /bin/true").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 0},
 	} {
 		got, _ := wsaUnrouted(t, "planted.go", c.src)
 		if len(got) != c.want {
 			t.Errorf("%s: the rule found %d unrouted site(s) %v, want %d", c.name, len(got), got, c.want)
+		}
+	}
+
+	// ARM 2'S KEY, over planted source: the seat runs this pin cannot grade
+	// by reading the program, and the neighbours that are no seat at all.
+	// ranger-base-udagn's planted pair is the first two rows — the same probe
+	// twice, the only difference being how the argv is spelled, which is what
+	// made the green a reading when arm 1 saw the first and nothing saw the
+	// second.
+	for _, c := range []struct {
+		name             string
+		src              string
+		want, wantWrappd int
+	}{
+		{"the literal bwrap argv entry is arm 1's and nobody's here", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("bwrap", "--dev-bind", "/", "/", "/bin/true").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 0, 0},
+		{"the same seat through a shell is the wrapper route", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("sh", "-c", "bwrap --dev-bind / / /bin/true").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 1, 1},
+		{"CommandContext takes the wrapper route too", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.CommandContext(ctx, "sh", "-c", "bwrap --dev-bind / / /bin/true").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 1, 1},
+		{"the seat's absolute path inside the command line", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("sh", "-c", "exec /usr/bin/bwrap --dev-bind / / /bin/true").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 1, 1},
+		{"the line built one hop away, wallunixlive's own shape", head + `
+func TestLiveWallX(t *testing.T) {
+	line := "bwrap \"$@\"; :"
+	out, err := exec.Command("sh", append([]string{"-c", line, "sh"}, args...)...).CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 1, 1},
+		{"the argv appended one hop away and joined into the line", head + `
+func TestLiveWallX(t *testing.T) {
+	var q []string
+	q = append(q, "bwrap")
+	out, err := exec.Command("script", "-qfec", strings.Join(q, " "), "/dev/null").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 1, 1},
+		{"a variable program is the OTHER half of the register", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 1, 0},
+		{"a shell line that is no seat", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("sh", "-c", "git status --porcelain").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 0, 0},
+		{"a shell line naming a neighbour of bwrap", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("sh", "-c", "bwraptest && bwrap-wrapper && echo bwrap.sh").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 0, 0},
+		{"a skip message that says the word reaches no call", head + `
+func TestLiveWallX(t *testing.T) {
+	why := "NOTHING MEASURED: no bwrap on this host"
+	out, err := exec.Command("git", "status").CombinedOutput()
+	if err != nil { t.Skipf("%s: %s", why, out) }
+}`, 0, 0},
+		{"a run of something that is not a seat at all", head + `
+func TestLiveWallX(t *testing.T) {
+	out, err := exec.Command("git", "status").CombinedOutput()
+	if err != nil { t.Fatal(string(out)) }
+}`, 0, 0},
+	} {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "planted.go", c.src, 0)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		got := wsaUngradableSeatRuns(f, fset)
+		wrapped := 0
+		for _, u := range got {
+			if u.wrapper {
+				wrapped++
+			}
+		}
+		if len(got) != c.want || wrapped != c.wantWrappd {
+			t.Errorf("%s: arm 2's key found %d un-gradable site(s), %d of them through a wrapper; want %d and %d", c.name, len(got), wrapped, c.want, c.wantWrappd)
 		}
 	}
 

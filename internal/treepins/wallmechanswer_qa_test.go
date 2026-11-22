@@ -72,6 +72,41 @@ package treepins
 // "answers one frame down" row holds that choice so it cannot drift into an
 // accident.
 //
+// THE BUILD SIDE DOES NOT CLOSE EITHER, and that one IS a false green —
+// priced, measured, and held by a row rather than left to be rediscovered
+// (ranger-base-8752f, from ranger-base-udagn's verify of this close).
+// `builds` is set by a `newLandedChecker` call in the body itself, so the
+// MIRROR of the refactor the ship fixpoint was built for walks through:
+// extracting the BUILDER — `func zzBuild(t, repo) *landedChecker { return
+// newLandedChecker(t, repo) }` — leaves the test `ships && !builds` and the
+// helper `builds && !ships`, and nobody is asked D2's second question.
+// MEASURED 2026-11-22 at 175e7c3b by planting that pair into internal/posse:
+// green, no member added, against the close's own shape (a) — the SHIP one
+// frame down — which reds and names the caller and its chain.
+//
+// CLOSING IT WAS TRIED AND PRICED, at 330d6940 the same day, and the arm
+// below is the reading that stopped it. The closure cannot be the ship side's:
+// `wckFixture` builds a checker for some thirty arms and the whole point of it
+// is that it answers for them (jyqk4's fix), so a closure that read every
+// caller of a builder as a builder reds all thirty. Narrowed to carry up only
+// from a builder that SETTLES NOTHING — answers nowhere, reaches no wall check
+// — it adds exactly one member to today's tree:
+// TestEveryVerdictLineNamesTheLauncherThatRanTheCheck
+// (internal/posse/landedlauncher_test.go:73), which ships through wckFixture
+// in three arms and inherits an unanswered checker through
+// landedCheckFixture in three others. That body is CORRECT on macos today —
+// its wall arms take wckFixture and get its `wallMechFn` — so the finding is
+// a false red, and the "cost of answering where it was not needed is one
+// line" this file prices elsewhere does not hold for it: that test is
+// `t.Parallel()` with parallel subtests, the package seam writes a
+// package-level var and is serial-only by its own comment
+// (TestATreeThatShipsNoWallCheckIsLeftAloneEntirely says so), and the host
+// seam is a skip that would cost the macos leg three landed verdict lines. So
+// answering it means three `c.wallMechFn` lines inside arms that never touch
+// the wall step. A false red at that price buys less than it costs, and the
+// build side stays one body at a time, named here and in the list below and
+// held by arm 3's "the BUILD one frame down" row.
+//
 // THE NAMING SIDE IS BROAD ON PURPOSE, and the tree's own third member is
 // why. TestATreeThatShipsNoWallCheckIsLeftAloneEntirely
 // (internal/posse/wallcheck_test.go) ships no wall check at all and names the
@@ -128,6 +163,13 @@ package treepins
 //   - A declaration with no initializer carries no facts, so a ship parked
 //     in a struct field, a map, a slice or a channel and named elsewhere is
 //     invisible.
+//   - The BUILD side is read one body at a time while the ship side closes,
+//     so a checker built one frame down — a builder extracted into a helper,
+//     the mirror of the refactor the ship fixpoint was written for — empties
+//     the class with this green. That is the one FALSE GREEN on this list
+//     rather than a safe over-approximation; "THE BUILD SIDE DOES NOT CLOSE
+//     EITHER" above has the measurement and what closing it costs, and arm
+//     3's "the BUILD one frame down" row is its teeth.
 //
 // GRADED AGAINST THE REAL TREE and not only against arm 3's fixtures
 // (MEASURED 2026-11-22, this box, go1.27.3). Each shape planted in
@@ -142,10 +184,14 @@ package treepins
 //	both of those, each answering in its own body    green
 //	a brand-new fourth member answering nothing      RED, names it
 //	the venue arm's own `c.wallMechFn =` blanked      RED, names it
+//	the BUILD one frame down (8752f's mirror of (a)) green, NO member
 //
 // The first cut of this pin was green over the first two of those, which is
-// ranger-base-72t07's finding; the last two are the close's own mutants,
-// re-measured here so the widening is not resting on them.
+// ranger-base-72t07's finding; the next two are the close's own mutants,
+// re-measured here so the widening is not resting on them. The LAST is the
+// one false green this census keeps: "THE BUILD SIDE DOES NOT CLOSE EITHER"
+// prices closing it and arm 3 holds the shape, so it cannot drift back into
+// being nobody's decision.
 //
 // Its subject is the tree, so it lives here and is doored by
 // `make treepins-check`, the package minus a priced table (ADR 0098 D1/D4) —
@@ -785,6 +831,31 @@ func TestAnswersOneFrameDown(t *testing.T) {
 }`,
 		members:  []string{"TestAnswersOneFrameDown"},
 		findings: []string{"TestAnswersOneFrameDown"},
+	}, {
+		// ranger-base-8752f: the MIRROR of shape (a) — the BUILDER extracted
+		// one frame down instead of the ship. The test is `ships && !builds`
+		// and the helper `builds && !ships`, so NEITHER is a member and
+		// nobody is asked D2's second question. This census reads that
+		// GREEN, which is a false green and the only one on the blindness
+		// list; the row is here so it is a decision somebody made and not an
+		// accident, and "THE BUILD SIDE DOES NOT CLOSE EITHER" in the head
+		// comment prices what closing it costs (one false red over a
+		// `t.Parallel()` member that cannot use the package seam).
+		//
+		// A row with no member and no finding is the strongest statement
+		// available here: the day the build side closes, this row reds and
+		// its replacement says so.
+		name: "the BUILD one frame down — the mirror refactor, read green and said so",
+		src: `func wckBuild(t *testing.T) *landedChecker {
+	return newLandedChecker(wtApp(t), &bytes.Buffer{})
+}
+
+func TestBuildsOneFrameDown(t *testing.T) {
+	repo := wtRepo(t)
+	shipWallCheck(t, repo, "#!/bin/sh\nexit 0\n", "ship it")
+	c := wckBuild(t)
+	c.once(repo, "main")
+}`,
 	}, {
 		// ranger-base-72t07's shape (b): the const reached through a
 		// package var, which is why var and const declarations are
