@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-u5ez8](ranger-base-u5ez8.md) — A tree-wide pin over the refusals trail, and the two rules that do not work (ranger-base-u5ez8) — 2026-11-22
 - [ranger-base-t0ha1](ranger-base-t0ha1.md) — Four closes verified, and the arm a census cannot see (ranger-base-t0ha1) — 2026-11-22
 - [ranger-base-njj5z](ranger-base-njj5z.md) — A read deadline is a poller fact, and a FIFO is not pollable on darwin (ranger-base-njj5z) — 2026-11-22
 - [ranger-base-jielm](ranger-base-jielm.md) — Two verify findings: a pin whose premise nothing witnessed, and the last unguarded read of the refusals leaf (ranger-base-jielm) — 2026-11-22

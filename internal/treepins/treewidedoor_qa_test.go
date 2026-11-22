@@ -1388,6 +1388,27 @@ package treepins
 // not. 0.37s for the census, which is the cost of parsing internal/posse's
 // 885 .go files, and 0.00s for the control (MEASURED 2026-11-14).
 //
+// and one more into corpus-check's door for that same reason — a census
+// over this repo's own non-test .go under cmd/ and internal/, file set
+// discovered by arParse (ranger-base-u5ez8). Its subject is the SET of the
+// host's accesses to the refusals trail, which until now was pinned one
+// call site at a time: fifteen plant tests over four files, not one of them
+// with the set as its subject, and the class escaped by that route three
+// times — legou's four opens, byqv0's parent directories, jielm's `posse
+// gates` read and the probe's own delta pair. A green says every call in
+// the tree that hands a trail path to something that opens it hands it to
+// openRefusalLeaf, readRefusalLeaf, refusalLeafSize or refusalDeltaAfter:
+//
+//	TestQAEveryHostSideRefusalTrailAccessGoesThroughTheGuard
+//	                                              make corpus-check
+//	                                              (ranger-base-u5ez8)
+//
+// Its control arm (TestQARefusalTrailCensusCatchesEachEscape) re-introduces
+// each of those escapes into a fixture under t.TempDir() and so is not in
+// this class, the same way the mktemp, trap-state, temp-root, upgrade-class
+// and launch-line controls above are not. 0.13s for the census over 230
+// files and 0.00s for the control (MEASURED 2026-11-22).
+//
 // and SIX more, which are the first members of this class admitted by a DOOR
 // alone — nothing derives them and nothing will under the present rule
 // (ranger-base-n7hsa). internal/treepins' half keys membership on an
@@ -1506,7 +1527,7 @@ package treepins
 // eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
-// and `make tree-check` is all of them — one hundred and sixty-two pins
+// and `make tree-check` is all of them — one hundred and sixty-three pins
 // and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
