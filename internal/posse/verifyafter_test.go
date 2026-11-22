@@ -1687,6 +1687,98 @@ func TestVerifyAfterFilesWhenGitCannotSayWhatACloseShipped(t *testing.T) {
 	}
 }
 
+// ranger-base-q28yf. The exemption above is narrow by its WORDS half, and a
+// deferral phrased outside rejectWords — the release triage's templated
+// close reason is the measured case — is therefore FILED. What it used to be
+// filed as is the defect: an acceptance pointer aimed at the closed bead's
+// description, with the commit block simply absent, so the one fact the
+// section had measured about such a close was rendered as a silence and the
+// verifier had to derive its own question from it.
+//
+// Three arms, which are the three answers one git call can give, and no two
+// of them are the same assertion:
+//
+//   - a commit NAMES the bead: the trail prints and the line must not, or
+//     every ordinary verify bead grows a paragraph telling its reader to
+//     settle a question git already settled.
+//   - git answers and names NOTHING: the line prints. Both readings are
+//     asserted present, because a line that said "built nothing" would be
+//     the bug — 23% of the newest 150 code/devops closes have no commit
+//     naming them (MEASURED 2026-11-22, live store), too many for that to
+//     be one thing when ADR 0022 scopes the `git log --grep` promise.
+//   - git CANNOT answer (not a repo): neither prints. Doubt makes no claim,
+//     which is gitCommitsFor's own rule and the reason it returns an error
+//     the exemption reads separately.
+//
+// Mutation-checked: fold the error arm into the empty arm and arm 3 reds;
+// drop either reading from the line and arm 2 reds naming it; emit the line
+// unconditionally and arm 1 reds.
+func TestVerifySectionReadsAnAnsweredEmptyCommitTrailAsALineNotASilence(t *testing.T) {
+	t.Parallel()
+	const triage = "Closed in the posse release triage (operator approval 2026-11-21): polish that does " +
+		"not change what posse does; not release scope. Stale comment or test pin."
+	closed := time.Date(2026, 11, 21, 9, 20, 6, 0, time.UTC)
+	is := BdIssue{ID: "a-1", Title: "gate shell", Assignee: "developer", Labels: []string{"code"},
+		IssueType: "bug", CloseReason: triage, Description: "what it does", ClosedAt: &closed}
+
+	for _, tc := range []struct {
+		name     string
+		repo     func(t *testing.T) string
+		wantLine bool
+		wantTrai bool
+	}{
+		{"a commit names it", func(t *testing.T) string {
+			d := t.TempDir()
+			vaGitRepo(t, d, "fix: the landed-check judge's bead output (a-1)")
+			return d
+		}, false, true},
+		{"git answers and names nothing", func(t *testing.T) string {
+			d := t.TempDir()
+			vaGitRepo(t, d, "chore: a commit that names no bead")
+			return d
+		}, true, false},
+		{"git cannot answer", func(t *testing.T) string { return t.TempDir() }, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			got := b.App.verifySection(tc.repo(t), is, verifyCloser(is))
+
+			if has := strings.Contains(got, "- what this close shipped:"); has != tc.wantLine {
+				t.Errorf("the trail's-silence line present = %v, want %v:\n%s", has, tc.wantLine, got)
+			}
+			if has := strings.Contains(got, "- commits naming a-1"); has != tc.wantTrai {
+				t.Errorf("the commit trail present = %v, want %v:\n%s", has, tc.wantTrai, got)
+			}
+			if !tc.wantLine {
+				return
+			}
+			// Both readings, and the instruction to settle which. A verdict
+			// is what this line is forbidden to reach: a commit that omitted
+			// the id renders here identically to a close that built nothing.
+			for _, want := range []string{
+				"nothing was built",
+				"something was built under a commit that omitted the id",
+				"Settle WHICH first",
+				"the close_reason is then the whole claim",
+			} {
+				if !strings.Contains(got, want) {
+					t.Errorf("the line dropped %q, so it no longer hands the verifier both readings:\n%s", want, got)
+				}
+			}
+			for _, no := range []string{"built nothing", "this close built"} {
+				if strings.Contains(got, no) {
+					t.Errorf("the line states %q as a verdict; the trail's silence cannot carry one:\n%s", no, got)
+				}
+			}
+			// The §4 pointer is still the section's checklist line: this one
+			// says which reading it applies to, it does not replace it.
+			if !strings.Contains(got, "- acceptance: ") {
+				t.Errorf("the line displaced ADR 0006 §4's acceptance pointer:\n%s", got)
+			}
+		})
+	}
+}
+
 // ─── the findings bundle and the class (ADR 0006 §1/§3, amended 2026-09-02) ──
 //
 // Two rulings, one bead this rule mints: its TRAILER says file one findings

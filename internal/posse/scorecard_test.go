@@ -586,6 +586,25 @@ func TestIsRejectedCloseMatchesWordsNotSubstrings(t *testing.T) {
 		// verdict alone, which is why verify-after reads the commit trail
 		// beside it rather than trusting this answer on its own.
 		{"Fixed: the retry no longer files a duplicate bead", true},
+		// A DEFERRAL, phrased entirely outside the vocabulary — the posse
+		// release triage's templated close reason, verbatim from the live
+		// store. It reads false, and ranger-base-q28yf makes that CHOSEN
+		// rather than unmeasured: this table used to table substring-vs-word
+		// only, so every false row described a FIX and nothing here said
+		// what the boundary does with a close that was neither fixed nor
+		// rejected. Widening to reach it was priced and refused — the words
+		// are one half of verify-after's exemption, so a match SUPPRESSES a
+		// QA session past a watermark that never comes back, and of the four
+		// triage closes ranger-base-3na17 verified, one had a wrong stated
+		// class that only the session caught. The trail's silence is read as
+		// a line instead (verifyafter.go's verifyNoCommitTrailLine).
+		{"Closed in the posse release triage (operator approval 2026-11-21): polish that does not change " +
+			"what posse does; not release scope. Stale comment or test pin.", false},
+		// The near miss, kept because it is what the refusal costs: the same
+		// deferral written by hand reads TRUE on "won't fix" alone. The
+		// vocabulary cannot tell a deferral from a rejection and is not being
+		// asked to — the commit trail is.
+		{"won't fix — not release scope", true},
 	} {
 		if got := isRejectedClose(tc.reason); got != tc.want {
 			t.Errorf("isRejectedClose(%q) = %v, want %v", tc.reason, got, tc.want)

@@ -25,6 +25,14 @@ package posse
 // — and neither is one that shipped commits whatever its reason says
 // (ranger-base-5fyg: "15 duplicates closed" is a fix, not a rejection).
 //
+// The exemption is narrow by its WORDS half and stays that way: a deferral
+// phrased outside rejectWords — the release triage's templated reason is the
+// measured case — is filed, not skipped, and its section carries the trail's
+// silence as a LINE that says what is left to verify (verifyNoCommitTrailLine,
+// which prices the widening that was not done). Filing a bead a reader can
+// aim is the cheap half; suppressing a session is the half that cannot be
+// undone.
+//
 // with the closer, the close reason, the commits `git log --grep <id>` finds,
 // and a pointer at the closed bead's OWN description as the checklist (ADR
 // 0006 §4, simplified 2026-09-05: acceptance is explicit, never inferred) —
@@ -1549,7 +1557,23 @@ func (a *App) verifySection(dir string, is BdIssue, closer string) string {
 		fmt.Fprintf(&b, "- labels: %s\n", verifyOneLine(strings.Join(is.Labels, ", ")))
 	}
 	b.WriteString(verifyAcceptanceLine(is))
-	if lines, _ := gitCommitsFor(dir, is.ID); len(lines) > 0 {
+	// One git call, three answers, and the EMPTY one is a line rather than a
+	// silence (ranger-base-q28yf). An absent commit block was the section's
+	// only word about a close that landed nothing, and absence is not a
+	// reading: the verifier met an acceptance pointer aimed at work that may
+	// never have been done and had to derive its own question. The verify of
+	// four release-triage closes did exactly that, out loud, in its close
+	// reason — "these are deferrals and the verifiable claim was the
+	// triage's" — and what it then caught was a triage close whose stated
+	// class was wrong. That is the question this line hands the next one.
+	//
+	// Error stays a silence, for gitCommitsFor's own reason: "git said no"
+	// and "git could not say" cannot be read alike, and doubt makes no claim.
+	switch lines, err := gitCommitsFor(dir, is.ID); {
+	case err != nil:
+	case len(lines) == 0:
+		b.WriteString(verifyNoCommitTrailLine(is))
+	default:
 		fmt.Fprintf(&b, "- commits naming %s (git log --grep; a commit may merely CITE the bead):\n", is.ID)
 		for _, l := range lines {
 			fmt.Fprintf(&b, "    %s\n", l)
@@ -1626,6 +1650,61 @@ func verifyAcceptanceLine(is BdIssue) string {
 	}
 	return "- acceptance: the closed bead's own description is this section's checklist — read it there (`bd show " + id + "`)." +
 		" If it states no completion criteria, say so as this verification's limit rather than inventing them.\n"
+}
+
+// verifyNoCommitTrailLine is the section's line for a close that `git log
+// --grep <id>` answered about and named nothing. It reports the TRAIL'S
+// SILENCE and stops there, because that is the whole of what one exec
+// measured; the two readings it then lists are the verifier's to settle, and
+// the §4 pointer is reprinted as the one that applies to the second.
+//
+// This is the answer to the release triage's close reason, and the answer is
+// deliberately not the one the finding's cheapest option proposed.
+// verify-after's exemption reads two halves — rejection WORDS plus no commit
+// — and the triage's templated reason carries none of scorecard.go's
+// rejectWords, so the exemption misses it and a verify bead is filed. Three
+// shapes were priced (docs/notes.d/ranger-base-q28yf.md):
+//
+//	(a) add the template's phrase to rejectWords. Rejected on evidence, not
+//	    on taste: of the four triage closes the verify of ranger-base-3na17
+//	    read, ONE had a wrong stated class (ranger-base-nq6bv, filed as
+//	    "Stale comment or test pin", in fact a behavioural gap in the
+//	    landed-check judge's bead output) and the only thing that caught it
+//	    was the session this would have suppressed. A widening here does not
+//	    miscount a scorecard cell, it SUPPRESSES A CONTROL and the watermark
+//	    then advances past it unrecoverably. It also puts a release-scope
+//	    deferral into the scorecard's `Rejected` column, which is the other
+//	    caller of the one vocabulary.
+//	(b) have the triage write a structured marker. Same suppression, made
+//	    durable rather than fragile — the objection to (a) is not that the
+//	    signal is prose.
+//	(c) leave it. Honest, and the floor this had to beat.
+//
+// It beats (c) by a line and no new signal. MEASURED 2026-11-22, this box,
+// live store (`bd list --all --status closed --limit 100000 --json`, 4,179
+// closed beads): 20 closes carry the triage template and 0 of 20 match
+// rejectRe, so (a)'s class is 20 — but over the newest 150 ranger-base
+// closes carrying a `code`/`devops` label, 34 (23%) have no commit naming
+// them and only 7 of those 34 are triage-templated. The class a word list
+// can reach is a fifth of the class the trail already reads, so the fact is
+// worth more here than the vocabulary, and it goes stale for nobody.
+//
+// What it must never say is "built nothing". 23% is too many for that to be
+// one thing: the shop's own promise that `git log --grep <id>` finds the
+// work is scoped (ADR 0022 — unconditional in a session worktree, in the
+// shared checkout only for a file with one in-flight writer), so a commit
+// that omitted the id renders identically here. Hence two readings and an
+// instruction to settle which, rather than a verdict either way.
+func verifyNoCommitTrailLine(is BdIssue) string {
+	id := verifyOneLine(is.ID)
+	return "- what this close shipped: NOTHING in this repo's git names " + id + " (`git log --grep " + id +
+		"` answered and matched no commit). The trail's silence, which is not a verdict and has two readings:" +
+		" nothing was built (a deferral, a condition that ended, a bead already satisfied), or something was" +
+		" built under a commit that omitted the id. Settle WHICH first — the branch records below, `bd comments " +
+		id + "`, the close_reason above — because the two want different verifications." +
+		" Nothing built: the close_reason is then the whole claim, so ask whether what it says holds and whether" +
+		" the class it states fits what the bead actually is, and record a stated reason that does not fit as a" +
+		" finding. Something built: the acceptance line above is the checklist as usual.\n"
 }
 
 // gitCommitsFor is the commit trail the ADR asks for, and the structured
