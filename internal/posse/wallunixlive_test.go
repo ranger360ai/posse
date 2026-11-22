@@ -169,8 +169,39 @@ func TestLiveWallUnixRefusesAHostSocketBoundAfterTheSeatLaunched(t *testing.T) {
 			// ADR 0097 D3's exit 3 instead.
 			bgSeatAbstainIfOutside(t, "the Landlock seat for "+c.name+" inside the rendered wall", werr, buf.String())
 			if werr != nil {
-				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s",
-					werr, buf.String(), strings.Join(argv, " "))
+				// ONE LINE FOR THE BEAD (ranger-base-8ck6d, the class
+				// docs/notes.d/ranger-base-a688i.md names, ADR 0097 D3), and
+				// the reason the other two seats in this file carry the same
+				// fold. scripts/posse-wall-check's evidence() reports a
+				// failed member by its first `file.go:NN:` line, truncated to
+				// 300 characters, and the launcher puts that one line on a
+				// P1 bead — so the seat's self-report, on line 2, reached
+				// that bead not at all.
+				//
+				// THE STATUS ON ITS OWN DOES NOT PICK THE CAUSE OUT, which is
+				// why this row is folded and not left alone. MEASURED
+				// 2026-11-22 (bwrap 0.13.1): a setup refusal (`bwrap: Can't
+				// find source path …`), an unknown option, and a child that
+				// exits 1 — which the seat does when its own test fails — ALL
+				// arrive here as `exit status 1`, and wuSeatEnv's fake-bd
+				// shape is a fourth. The words discriminate all four; the
+				// number narrows them to a set. A status is an account only
+				// when it is injective (docs/notes.d/ranger-base-w6kke.md).
+				//
+				// bgSeatAccount AND NOT A SECOND FOLD: it is this package's
+				// one spelling of a seat's one-line account — the status,
+				// then the seat's words through wwOneLine, with its own
+				// finding for a seat that said nothing. It is also what
+				// internal/treepins/wallmemberaccount_qa_test.go's arm 1
+				// reads, so the call stays HERE in the launching function
+				// rather than behind a file-local helper: that arm grades
+				// whether this function hands `werr` to something that shows
+				// it, and a helper of our own is not in its wmaSayers.
+				//
+				// argv keeps line 2. It is context a reader can re-derive,
+				// and at this length it would spend the whole budget.
+				t.Fatalf("the seat exited badly: %s\nargv: bwrap %s",
+					bgSeatAccount(werr, buf.String()), strings.Join(argv, " "))
 			}
 			got := buf.String()
 			if !strings.Contains(got, "SEAT-RESULT "+c.want) {
@@ -417,7 +448,11 @@ func TestLiveWallUnixScopesSignalsToTheSeat(t *testing.T) {
 			// D3's exit 1 for a run that read no wall. Exit 3 instead.
 			bgSeatAbstainIfOutside(t, "the signal-scope seat for "+c.name+" inside the rendered wall", err, string(out))
 			if err != nil {
-				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s", err, out, strings.Join(argv, " "))
+				// ONE LINE FOR THE BEAD (ranger-base-8ck6d), the same fold
+				// and the same reason the first of this file's three seats
+				// carries in full: `exit status 1` has four causes here and
+				// only the seat's own words pick one out.
+				t.Fatalf("the seat exited badly: %s\nargv: bwrap %s", bgSeatAccount(err, string(out)), strings.Join(argv, " "))
 			}
 			for _, want := range []string{
 				"SEAT-OUTSIDE " + c.outside,
@@ -1013,8 +1048,12 @@ func TestLiveWallUnixLeavesCrossDirectoryRename(t *testing.T) {
 			// D3's exit 1 for a run that read no wall. Exit 3 instead.
 			bgSeatAbstainIfOutside(t, "the REFER seat for "+c.name+" inside the rendered wall", rerr, buf.String())
 			if rerr != nil {
-				t.Fatalf("the seat exited badly (%v). Seat output:\n%s\nargv: bwrap %s",
-					rerr, buf.String(), strings.Join(argv, " "))
+				// ONE LINE FOR THE BEAD (ranger-base-8ck6d), the same fold
+				// and the same reason the first of this file's three seats
+				// carries in full: `exit status 1` has four causes here and
+				// only the seat's own words pick one out.
+				t.Fatalf("the seat exited badly: %s\nargv: bwrap %s",
+					bgSeatAccount(rerr, buf.String()), strings.Join(argv, " "))
 			}
 			got := buf.String()
 			if want := "SEAT-REFER " + wantRefer; !strings.Contains(got, want) {

@@ -34,6 +34,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-b8igm](ranger-base-b8igm.md) — Two arms nothing ran, and a census one frame short (ranger-base-b8igm) — 2026-11-22
 - [ranger-base-ayubz](ranger-base-ayubz.md) — The caged BEADS_DIR is a translation, not a resolve (ranger-base-ayubz) — 2026-11-22
 - [ranger-base-9uvsx](ranger-base-9uvsx.md) — One notification, one verdict (ranger-base-9uvsx) — 2026-11-22
+- [ranger-base-8ck6d](ranger-base-8ck6d.md) — ranger-base-8ck6d: the last four member lines that deferred their cause — 2026-11-22
 - [ranger-base-8752f](ranger-base-8752f.md) — Three arms of the wall-member censuses, each priced before it was widened (ranger-base-8752f) — 2026-11-22
 - [ranger-base-7mfnf](ranger-base-7mfnf.md) — The re-plant hazard cannot reach a `#!` script, so 361 call sites are not exposed (ranger-base-7mfnf) — 2026-11-22
 - [ranger-base-5k7vf](ranger-base-5k7vf.md) — A seat whose wall-watch AND bwrap are both gone has no lifetime bound, so the watch tick kills it (ranger-base-5k7vf) — 2026-11-22

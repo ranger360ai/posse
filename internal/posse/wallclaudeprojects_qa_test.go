@@ -359,7 +359,28 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 	case <-time.After(90 * time.Second):
 		_ = cmd.Process.Kill()
 		<-done
-		t.Fatalf("claude -p under the wall did not end in 90s:\n%s", out)
+		// ONE LINE FOR THE BEAD (ranger-base-8ck6d, the class
+		// docs/notes.d/ranger-base-a688i.md names, ADR 0097 D3): the pane was
+		// on line 2, which scripts/posse-wall-check's evidence() does not
+		// carry, and for a HANG the pane is the only account of how far the
+		// seat got — there is no exit status to read.
+		//
+		// THE STATUS IS DELIBERATELY NOT CARRIED, unlike the bgSeatAccount
+		// lines below: THIS process did the killing one line up, so `cerr`
+		// reads `signal: killed` whatever happened, which is this deadline
+		// naming itself and not the seat (the done branch's comment above is
+		// the same caution one arm over).
+		//
+		// AND THE SILENCE IS SAID HERE rather than borrowed from wwOneLine,
+		// whose NOTHING case answers a bwrap that ENDED without a word — the
+		// opposite of a seat still running at 90s. That is bgSeatAccount's own
+		// rule: each caller keeps its own account of silence and shares the
+		// fold.
+		said := wwOneLine(string(out))
+		if len(strings.Fields(string(out))) == 0 {
+			said = "NOTHING in 90s — so it hung before its first word, and the deadline is the whole finding"
+		}
+		t.Fatalf("claude -p under the wall did not end in 90s; it said %s", said)
 	}
 	// THE STATUS IS RENDERED, not only read (ranger-base-k2quj, the shape
 	// wallclaudeprojectsattack_qa_test.go already had): this pin does not
