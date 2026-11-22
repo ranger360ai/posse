@@ -1287,13 +1287,15 @@ func TestUpgradeLockRefusesWithinItsBoundAndNamesTheKernelsHolder(t *testing.T) 
 	if err := os.WriteFile(path, []byte("pid: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	child := exec.Command(os.Args[0], "-test.run=^TestUpgradeLockHolderChild$", "-test.v")
+	// The child must run as a test binary, not as the fake substrate TestMain
+	// turns it into whenever RHQ_FAKE_HERDR is set (pulsewait_test.go's site).
 	var env []string
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "RHQ_FAKE_HERDR=") {
 			env = append(env, kv)
 		}
 	}
-	child := exec.Command(os.Args[0], "-test.run=^TestUpgradeLockHolderChild$", "-test.v")
 	child.Env = append(env, "POSSE_UPGRADE_LOCK_HOLD="+path)
 	stdout, err := child.StdoutPipe()
 	if err != nil {
@@ -1354,6 +1356,7 @@ func TestUpgradeLockRefusesWithinItsBoundAndNamesTheKernelsHolder(t *testing.T) 
 // TestUpgradeLockHolderChild is the squatter: it flocks the path it is
 // handed, says so, and stays alive until it is killed.
 func TestUpgradeLockHolderChild(t *testing.T) {
+	t.Parallel()
 	path := os.Getenv("POSSE_UPGRADE_LOCK_HOLD")
 	if path == "" {
 		t.Skip("child of TestUpgradeLockRefusesWithinItsBoundAndNamesTheKernelsHolder")
