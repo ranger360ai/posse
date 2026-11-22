@@ -48,6 +48,17 @@ package's 220 non-test files and requires each head constant to be read in its
 one writer and its one reader and nowhere else, and its text to open no string
 literal of its own. Both mutants above red it by name.
 
+A PREFIX, AND IT IS ANCHORED ON WHAT THE DEFECT ACTUALLY SPELLED. The
+pre-ranger-base-6r6ox lines at both sites were
+`v.say("KILLED seat %s: the wall over %s came off…", d.Seat, …)` and
+`refuse("KILLED seat %s: its bwrap (pid %d) ended…", r.Opts.Seat, …)` — a
+literal with the head at its front — so the prefix arm reads the shape the
+regression took, at both of the sites that took it, and the constant arm reads
+the other route a new site has (naming the constant and skipping the helper).
+What it cannot see: a line that reports a kill in words of its own, carrying
+none of the three head phrases at all. Nothing can — the heads are the only
+thing a reader of a verdict file has to go on, which is why they are constants.
+
 A PREFIX and not a `Contains`, which the wide form taught: `wallWatchTitle`
 carries the not-confirmed head's words mid-sentence
 ("security: wall-watch could NOT confirm the kill of seat %s"), which is a
