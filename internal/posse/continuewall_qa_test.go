@@ -46,7 +46,16 @@ package posse
 // which is this wall's whole subject. So the option set is asked of git
 // too, and pin 2 below is the pin that was missing.
 //
-// Five pins, in the order a reader wants them:
+// AMENDED ranger-base-hkp3s: the refusal's SECOND LINE is part of the
+// wall. Three of the four Way strings told a refused seat to type
+// `git <verb> --abort`, which commits nothing — so it is past the wall by
+// class — and destroys the staged entry the wall had just protected
+// (MEASURED 2026-11-21, docs/notes.d/ranger-base-hkp3s.md). ADR 0001
+// decided L1 grows no second wall for destruction and that the house stops
+// prescribing it instead, so pin 6 derives the forbidden set from git in
+// that same window.
+//
+// Six pins, in the order a reader wants them:
 //
 //   - the verb table is the whole class git has (derived from git);
 //   - so is each verb's OPTION set: every option git treats as meaningful
@@ -54,8 +63,11 @@ package posse
 //   - each walled option's abbreviation minimum is git's own boundary;
 //   - the wall refuses in a SHARED checkout and the premise still holds
 //     (unguarded, each option really does sweep or destroy), while the
-//     stood-down options are not refused;
-//   - it stands down in a LINKED WORKTREE, where the index is the seat's.
+//     stood-down options are not refused and the option the Way PRESCRIBES
+//     runs in the window it is prescribed for;
+//   - it stands down in a LINKED WORKTREE, where the index is the seat's;
+//   - and no Way prescribes an option that destroys another persona's
+//     uncommitted work.
 
 import (
 	"os"
@@ -679,18 +691,123 @@ func TestQAContinueWallRefusesTheFourVerbsInASharedCheckout(t *testing.T) {
 				}
 			})
 
-			// The way through the refusal names is NOT refused, and for
-			// `--abort` that is asserted in the window it is prescribed
-			// for, mid-conflict, where it is also what the refusal's second
-			// line tells the reader to type.
-			t.Run("abort-mid-conflict", func(t *testing.T) {
+			// The way through the refusal names is NOT refused, asserted in
+			// the window it is prescribed for: mid-conflict, through the
+			// shim, for every option the Way actually tells the reader to
+			// type. It was `--abort` until 2026-11-21 and is `--quit` now
+			// (ranger-base-hkp3s), so the subtest reads the Way rather than
+			// a spelling and the next respelling moves it for free. That
+			// `--abort` still RUNS mid-conflict is unchanged and asserted by
+			// the stand-down half above, which runs every Stood option in
+			// the same window.
+			t.Run("way-mid-conflict", func(t *testing.T) {
 				t.Parallel()
-				fx := cwSetup(t)
-				cwConflict(t, fx, fx.repo, v.Verb, "side", false)
-				if out, err := fx.shim(fx.repo, v.Verb, "--abort"); err != nil || strings.Contains(out, "commitwall:sequencer-continue") {
-					t.Errorf("git %s --abort must still run mid-conflict: %v %s", v.Verb, err, out)
+				for _, s := range v.Stood {
+					if !cwWayPrescribes(v.Way, v.Verb, s.Long) {
+						continue
+					}
+					t.Run(s.Long, func(t *testing.T) {
+						t.Parallel()
+						fx := cwSetup(t)
+						cwConflict(t, fx, fx.repo, v.Verb, "side", false)
+						if out, err := fx.shim(fx.repo, v.Verb, s.Long); err != nil || strings.Contains(out, "commitwall:sequencer-continue") {
+							t.Errorf("git %s %s is what this verb's refusal tells a refused seat to type, and it must run mid-conflict: %v %s", v.Verb, s.Long, err, out)
+						}
+					})
+				}
+				// `revert`'s Way names no option of git's at all — it names
+				// the two-step path-limited commit, which finishes a
+				// conflicted revert outright — so "this verb prescribes no
+				// option" is a real state and not a broken matcher. What
+				// must never happen is a Way prescribing an option this
+				// wall REFUSES: the refusal would then name the command it
+				// had just refused.
+				for _, o := range v.Advance {
+					if cwWayPrescribes(v.Way, v.Verb, o.Long) {
+						t.Errorf("%s's Way prescribes `git %s %s`, which this wall refuses:\n  %s", v.Verb, v.Verb, o.Long, v.Way)
+					}
 				}
 			})
+		})
+	}
+}
+
+// ─── pin 6: the refusal prescribes no destruction (ranger-base-hkp3s) ────────
+
+// cwWayPrescribes answers whether a verb's Way TELLS a refused seat to type
+// `git <verb> <opt>`. It reads the typed command, not every mention of the
+// option: a Way may also warn a reader OFF an option by naming it bare
+// (`Not --abort: ...`), and a warning is the opposite of a prescription. So
+// a Way that spells the whole command for an option it is warning against
+// reds the pins below — which is the safe direction, since the fix is to
+// stop spelling it.
+func cwWayPrescribes(way, verb, opt string) bool {
+	return strings.Contains(way, "git "+verb+" "+opt)
+}
+
+// A refusal's second line is an INSTRUCTION, and until 2026-11-21 three of
+// the four told a seat to type `git <verb> --abort` in the shared checkout
+// — in exactly the window another persona's work is staged, which is the
+// only window this wall ever fires in. `--abort` makes no commit, so it is
+// past the wall by class (gates.go, residual 5), but it DESTROYS that
+// persona's staged entry and their edit on disk, and `rebase --abort` takes
+// their unstaged edits too (MEASURED 2026-11-21, 25 shapes,
+// docs/notes.d/ranger-base-hkp3s.md). ADR 0001 decided L1 grows no second
+// wall for destruction and that the house stops PRESCRIBING it instead, so
+// the prescription is the thing left to pin.
+//
+// THE PROCESS THIS PROTECTS (ADR 0006 §7) is the refusal text a refused
+// seat follows. Nothing else reads that text: a seat whose `--continue` was
+// refused has its command stopped and the second line is the whole of what
+// it is given to do next, so a destroying verb named there is the harm the
+// wall exists to prevent, one step later.
+//
+// The forbidden set is DERIVED rather than spelled: every stood-down option
+// is run mid-conflict, unguarded, with the other persona's file staged, and
+// an option that does not leave that file intact may not be prescribed. A
+// Way that reinstates `--abort` reds here on git's own measurement, and an
+// option whose destructiveness changes in git moves the pin with it.
+func TestQAContinueWallPrescribesNoOptionThatDestroysAnotherPersonasWork(t *testing.T) {
+	t.Parallel()
+	for _, v := range continueWallVerbs {
+		t.Run(v.Verb, func(t *testing.T) {
+			t.Parallel()
+			for _, s := range v.Stood {
+				t.Run(s.Long, func(t *testing.T) {
+					t.Parallel()
+					fx := cwSetup(t)
+					cwConflict(t, fx, fx.repo, v.Verb, "side", false)
+					// The premise: their work is really in the index and on
+					// disk before the option runs, or the reading after it
+					// measures nothing.
+					if staged, _ := fx.git("-C", fx.repo, "diff", "--cached", "--name-only", "HEAD"); !strings.Contains(staged, "other.txt") {
+						t.Fatalf("fixture: other.txt must be staged before git %s %s, got %q", v.Verb, s.Long, staged)
+					}
+					if out, err := fx.git("-C", fx.repo, v.Verb, s.Long); err != nil {
+						t.Fatalf("git %s %s must run mid-conflict: %v %s", v.Verb, s.Long, err, out)
+					}
+					staged, _ := fx.git("-C", fx.repo, "diff", "--cached", "--name-only", "HEAD")
+					disk, _ := os.ReadFile(filepath.Join(fx.repo, "other.txt"))
+					intact := strings.Contains(staged, "other.txt") && strings.Contains(string(disk), "theirs-edited")
+
+					// The control, taken from the same reading: `--abort` is
+					// the option this pin exists for, and it must still
+					// measure as destroying. A derivation that silently
+					// stopped finding anything would pardon a Way that
+					// reinstated it, and the Way strings are WRITTEN on this
+					// measurement.
+					if s.Long == "--abort" && intact {
+						t.Errorf("git %s --abort left another persona's staged work intact (index=%q disk=%q), and MEASURED 2026-11-21 it destroyed it (docs/notes.d/ranger-base-hkp3s.md).\n"+
+							"Either git changed or this reading is broken; re-read the measurement before trusting this pin, because the refusal texts rest on it.", v.Verb, staged, disk)
+					}
+					if intact || !cwWayPrescribes(v.Way, v.Verb, s.Long) {
+						return
+					}
+					t.Errorf("git %s %s DESTROYS another persona's staged work (index=%q disk=%q) and this verb's refusal prescribes it:\n  %s\n"+
+						"ADR 0001, decided 2026-11-21 (ranger-base-hkp3s): L1 grows no second wall for destruction, so the Way may not send a refused seat to a destroying verb. The measured exit is `git %s --quit`, then `git restore --source=HEAD --staged --worktree -- <the paths it touched>`.",
+						v.Verb, s.Long, staged, disk, v.Way, v.Verb)
+				})
+			}
 		})
 	}
 }

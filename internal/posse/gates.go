@@ -1724,13 +1724,28 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 // persona's uncommitted work is past this wall by class, because the rule
 // it realizes is about a commit. MEASURED 2026-11-21 in the same window:
 // `--abort` clears the other actor's staged entry and restores their file
-// on disk for all four verbs, and `--skip` does the same before its own
-// commit. `--abort` is also the way out AGENTS.md prescribes, so a wall
-// here would refuse the route the refusal itself names. Whether the shared
-// checkout gets a wall for destruction at all — `reset --hard`,
-// `checkout -f`, `restore`, `clean -fd` and this `--abort` are one class,
-// and none of them is walled today — is the architecture lane's
-// (ranger-base-hkp3s).
+// on disk for all four verbs (and `rebase --abort` takes their unstaged
+// edits too), and `--skip` does the same before its own commit. **This is
+// an ACCEPTED cost and not an open hole**, decided 2026-11-21 (ADR 0001,
+// Consequences, the seeded rule's bullet; ranger-base-hkp3s): L1 grows no
+// second wall for destruction. `reset --hard`, `checkout -f`,
+// `switch --discard-changes`, `restore` over `.`, `stash`, `clean -fd` and
+// this `--abort` are one class, and the four priced reasons are that the
+// class has no PID rule behind it (this arm renders only where a PID
+// carries the commit rule, and a typed deny on `--abort` could not stand
+// down in a linked worktree, where `--abort` is the right tool); that argv
+// cannot draw the line, because `restore -- <path>` is the house's own safe
+// form and destroys a victim inside `<path>` (ADR 0022's same-file case);
+// that nobody walks the route (MEASURED: over 743 transcripts and 84,375
+// Bash calls, no crew seat typed one of these verbs in a shared checkout);
+// and that the half a wall could reach is recoverable, `git add` having
+// already written the blob (`git fsck --lost-found`, until gc). What the
+// decision DID change is this arm: the Way strings no longer prescribe
+// `--abort`, so the wall no longer sends a refused seat to a destroying
+// verb in exactly the window another persona's work is staged
+// (TestQAContinueWallPrescribesNoOptionThatDestroysAnotherPersonasWork).
+// docs/notes.d/ranger-base-hkp3s.md has the 25-shape destruction table and
+// the respelling's readings.
 type continueWallVerb struct {
 	// Verb is the subcommand as git spells it.
 	Verb string
@@ -1741,6 +1756,17 @@ type continueWallVerb struct {
 	Stood []continueWallStood
 	// Way completes the refusal's second line: the route that is not
 	// refused, named out of AGENTS.md rather than invented here.
+	//
+	// It may not PRESCRIBE an option that destroys another persona's
+	// uncommitted work — which is what `git <verb> --abort` does here
+	// (residual 5 above; ADR 0001, decided 2026-11-21 under
+	// ranger-base-hkp3s). A refusal that names the destroying verb is a
+	// refusal that does the harm it was written to prevent, one step
+	// later. The exit it names instead is `--quit` plus a path-limited
+	// `git restore`, measured non-destructive for merge, cherry-pick and
+	// rebase; the pin derives the forbidden set from git in the conflict
+	// window rather than from this spelling
+	// (TestQAContinueWallPrescribesNoOptionThatDestroysAnotherPersonasWork).
 	Way string
 }
 
@@ -1781,38 +1807,40 @@ type continueWallStood struct {
 //
 // Every Why below is MEASURED 2026-11-21 (git 2.56.0, this box) in the
 // conflict window with another actor's unrelated file staged:
-// docs/notes.d/ranger-base-6zw05.md has the readings.
+// docs/notes.d/ranger-base-6zw05.md has the commit readings and
+// docs/notes.d/ranger-base-hkp3s.md the destruction ones, including the
+// `--quit`-plus-restore exit every Way below now names.
 var continueWallVerbs = []continueWallVerb{
 	{Verb: "merge",
 		Advance: []continueWallOpt{{"--continue", "--con"}},
 		Stood: []continueWallStood{
-			{"--abort", "resets to the pre-merge HEAD and makes no commit; it is the way out AGENTS.md prescribes, and the refusal above names it"},
-			{"--quit", "drops MERGE_HEAD and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
+			{"--abort", "resets to the pre-merge HEAD and makes no commit, which is the whole of its excuse: it DESTROYS the other actor's staged entry, so no Way prescribes it (residual 5)"},
+			{"--quit", "drops MERGE_HEAD and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it, which is why the Way names it"},
 		},
-		Way: "the launcher merges and the operator pushes (AGENTS.md, \"Landing the plane\"): do the merge in your own session worktree, where the index is yours and this wall stands down — or end it here with `git merge --abort`."},
+		Way: "the launcher merges and the operator pushes (AGENTS.md, \"Landing the plane\"): do the merge in your own session worktree, where the index is yours and this wall stands down — or end it here with `git merge --quit`, then `git restore --source=HEAD --staged --worktree -- <the paths the merge touched>`. Not `--abort`: it makes no commit either, but it destroys another persona's staged work (ranger-base-hkp3s)."},
 	{Verb: "cherry-pick",
 		Advance: []continueWallOpt{{"--continue", "--continue"}, {"--skip", "--skip"}},
 		Stood: []continueWallStood{
-			{"--abort", "cancels the sequence and makes no commit; the way out AGENTS.md prescribes"},
-			{"--quit", "ends the sequence and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
+			{"--abort", "cancels the sequence and makes no commit, which is the whole of its excuse: it DESTROYS the other actor's staged entry, so no Way prescribes it (residual 5)"},
+			{"--quit", "ends the sequence and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it, which is why the Way names it"},
 		},
-		Way: "do the cherry-pick in your own session worktree, where the index is yours and this wall stands down — or end it here with `git cherry-pick --abort`."},
+		Way: "do the cherry-pick in your own session worktree, where the index is yours and this wall stands down — or end it here with `git cherry-pick --quit`, then `git restore --source=HEAD --staged --worktree -- <the paths it touched>`. Not `--abort`: it makes no commit either, but it destroys another persona's staged work (ranger-base-hkp3s)."},
 	{Verb: "revert",
 		Advance: []continueWallOpt{{"--continue", "--continue"}, {"--skip", "--skip"}},
 		Stood: []continueWallStood{
-			{"--abort", "cancels the sequence and makes no commit; the way out AGENTS.md prescribes"},
+			{"--abort", "cancels the sequence and makes no commit, which is the whole of its excuse: it DESTROYS the other actor's staged entry, and this verb's Way never needed it (residual 5)"},
 			{"--quit", "ends the sequence and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
 		},
 		Way: "in the shared checkout a revert is two steps (AGENTS.md, \"Landing the plane\"): `git revert --no-commit <sha>`, then `git commit -F - -- <the paths it touched>`. A path-limited commit finishes a CONFLICTED revert outright, so `--abort` is not needed first."},
 	{Verb: "rebase",
 		Advance: []continueWallOpt{{"--continue", "--con"}, {"--skip", "--sk"}},
 		Stood: []continueWallStood{
-			{"--abort", "checks the original branch back out and makes no commit; the way out AGENTS.md prescribes"},
-			{"--quit", "drops the rebase state and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it"},
+			{"--abort", "checks the original branch back out and makes no commit, which is the whole of its excuse: it DESTROYS the other actor's staged entry AND their unstaged edits — the worst of the four — so no Way prescribes it (residual 5)"},
+			{"--quit", "drops the rebase state and makes no commit, leaving index and working tree alone — the other actor's staged entry survived it, which is why the Way names it"},
 			{"--edit-todo", "rewrites the todo list and exits; no commit, and the index is untouched"},
 			{"--show-current-patch", "prints the patch being applied; read-only"},
 		},
-		Way: "the shared checkout never rebases (AGENTS.md, \"Landing the plane\": never `--amend`, `rebase` or `reset` there): `git rebase --abort` here and do it in your own session worktree."},
+		Way: "the shared checkout never rebases (AGENTS.md, \"Landing the plane\": never `--amend`, `rebase` or `reset` there): do it in your own session worktree, where the index is yours and this wall stands down — or end it here with `git rebase --quit`, then `git restore --source=HEAD --staged --worktree -- <the paths it touched>`, then `git switch <branch>`, in that order and never with `-f` (before the restore, git refuses the switch over the conflicted path). Not `--abort`: it makes no commit either, but it destroys another persona's staged work and their unstaged edits (ranger-base-hkp3s)."},
 }
 
 // renderContinueWall writes the arm, or "" when it does not apply.

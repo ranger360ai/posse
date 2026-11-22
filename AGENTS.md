@@ -121,15 +121,25 @@ stall that day, and every one of them a typing habit.
   the bullet above prescribes, whose path-limited commit finishes a
   conflicted revert outright. The clean verbs are untouched: git already
   refuses to start a merge, cherry-pick or revert over a dirty index.
-  **Ending it here: `--abort` and `--quit` both run, and they are not the
-  same thing.** `--quit` drops the operation's state and leaves the index
-  and working tree alone (measured: another persona's staged entry survives
-  it). `--abort` makes no commit either, which is why this wall is past it,
-  but it destroys that entry and their on-disk edit exactly as `--skip`
-  does — and it is still the route this gate's own refusal names.
-  ranger-base-hkp3s has the decision about destruction, which is a class L1
-  does not wall anywhere (`reset --hard`, `checkout -f`, `restore`,
-  `clean -fd` are the rest of it).
+  **Ending it here is `--quit` and a path-limited restore, never `--abort`**
+  (ADR 0001, Consequences, decided 2026-11-21 under ranger-base-hkp3s):
+  `git <verb> --quit`, then `git restore --source=HEAD --staged --worktree
+  -- <the paths the operation touched>`, and after a rebase `git switch
+  <branch>` — in that order, and never with `-f`, because before the restore
+  git refuses the switch over the conflicted path. MEASURED 2026-11-21 for
+  merge, cherry-pick and rebase: the sequencer state cleared, HEAD and the
+  branch were restored, and another persona's staged, new and unstaged work
+  all survived. `--abort` makes no commit either, which is why the wall is
+  past it, but it destroys that persona's staged entry and their on-disk
+  edit exactly as `--skip` does, and `rebase --abort` takes their unstaged
+  edits too. That destruction is a class L1 does not wall anywhere
+  (`reset --hard`, `checkout -f`, `switch --discard-changes`, `restore` over
+  `.`, `stash`, `clean -fd` are the rest of it), at an accepted cost — the
+  decision instead stopped the house PRESCRIBING it, which is why this
+  gate's refusal now names `--quit`. The recovery, if someone types it
+  anyway: `git fsck --lost-found` returns the staged half, which `git add`
+  had already written as a blob, until gc prunes it; the unstaged half was
+  never an object and is gone.
 - **In a session worktree, a `cherry-pick`/`revert`/`rebase` that exits 0 has
   not necessarily ended** (ranger-base-71g2f). Ending one deletes a pseudo-ref
   (`CHERRY_PICK_HEAD`), and that delete needs the SHARED repo's

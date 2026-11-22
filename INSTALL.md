@@ -1682,9 +1682,16 @@ $ cat >> AGENTS.md <<'EOF'
   verbs now, in any prefix git resolves (`git merge --con` is `--continue`).
   **A linked worktree is NOT refused** — its index is yours alone — so the
   way through is almost always "do it in your own session worktree";
-  otherwise `--abort` here, and for a revert the two-step form the bullet
-  above prescribes, whose path-limited commit finishes a conflicted revert
-  outright. The clean verbs are untouched: git already refuses to start a
+  otherwise end it here with `git <verb> --quit`, then `git restore
+  --source=HEAD --staged --worktree -- <the paths the operation touched>`,
+  and after a rebase `git switch <branch>` — in that order, and never with
+  `-f`, because before the restore git refuses the switch over the
+  conflicted path. For a revert use the two-step form the bullet above
+  prescribes, whose path-limited commit finishes a conflicted revert
+  outright. **Not `--abort`**: it makes no commit either, which is why this
+  wall is past it, but it destroys another persona's staged entry and their
+  on-disk edit, and `rebase --abort` takes their unstaged edits too
+  (measured). The clean verbs are untouched: git already refuses to start a
   merge, cherry-pick or revert over a dirty index.
 - **In a session worktree, a `cherry-pick`/`revert`/`rebase` that exits 0 has
   not necessarily ended.** Ending one deletes a pseudo-ref
