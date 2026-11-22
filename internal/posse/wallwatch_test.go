@@ -1745,8 +1745,9 @@ func TestWallWatchVerdictsSayCountsAMixedSetApart(t *testing.T) {
 
 // The counting itself, over the readings a tick cannot write: a verdict that
 // is on disk and could not be read says nothing about a kill, and a file
-// that holds BOTH readings takes the louder one — a seat that may still be
-// running is what its reader has to act on.
+// that holds two detections of the same seat reads as the LAST of them —
+// here a detach whose kill did not confirm, which is the seat's current
+// state and the one its reader has to act on.
 func TestWallWatchVerdictsSayOverReadingsNoTickWrites(t *testing.T) {
 	t.Parallel()
 	if got := WallWatchVerdictsSay(nil); got != "" {
@@ -1759,6 +1760,114 @@ func TestWallWatchVerdictsSayOverReadingsNoTickWrites(t *testing.T) {
 	both := []WallWatchVerdict{{Text: "KILLED seat a: the wall over /x came off\ncould NOT confirm the kill of seat a — the wall over /y came off"}}
 	if got := WallWatchVerdictsSay(both); !strings.Contains(got, "may still be RUNNING") || strings.Contains(got, "KILLED") {
 		t.Errorf("the summary of a file holding both readings = %q, want the unconfirmed one", got)
+	}
+}
+
+// ── the retry's answer is in the same file as its alarm (ranger-base-6felj)
+//
+// Since ranger-base-kzk3u a kill that did not confirm keeps the seat's
+// record and every later tick retries it, and the tick that finds the seat
+// over appends its verdict to the file that already holds the "could NOT
+// confirm" head. The reader matched on the two heads with Contains over the
+// whole file, so it never saw the resolution: the one line `posse gates` and
+// `posse peek` put over the set went on saying "it may still be RUNNING, so
+// end it by hand" for the life of the file, sending an operator after a seat
+// the tick had ended — and the only way to find that out was to read the
+// whole body the head exists to summarize.
+//
+// The rows are the round trip both arms take, and the third is the CONTROL:
+// one tick, nothing retried, the summary DOES say it.
+
+func TestWallWatchVerdictsSaySeesTheRetryThatConfirmedTheSeatIsOver(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		// probe is the state at the first tick, which condemns the seat
+		// and cannot confirm the kill; over is what happens before the
+		// second tick, or nil for the control.
+		probe *fakeWallWatchProbe
+		over  func(*fakeWallWatchProbe)
+		want  []string
+		wantN []string
+	}{
+		// The detach arm: the retry's own kill confirms.
+		{"a retry that killed it",
+			&fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killErr: wwKzkKillErr},
+			func(p *fakeWallWatchProbe) { p.killErr = "" },
+			[]string{"a seat was KILLED for a wall that came off (ranger-base-0qpsw D2)"},
+			[]string{"NOT", "RUNNING", "by hand"}},
+		// The orphan arm: the seat ends on its own between ticks, so the
+		// retry kills nothing and reads the empty namespace instead.
+		{"a seat that ended between ticks",
+			&fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: 1, leaderRead: true, killErr: wwKzkKillErr},
+			func(p *fakeWallWatchProbe) { p.pids = nil },
+			[]string{"a seat was KILLED for a wall that came off (ranger-base-0qpsw D2)"},
+			[]string{"NOT", "RUNNING", "by hand"}},
+		// CONTROL, so the two above are not measuring a summary that never
+		// says it: one tick, the kill still unconfirmed, nothing retried.
+		{"a kill nothing has retried yet",
+			&fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killErr: wwKzkKillErr},
+			nil,
+			[]string{"could NOT be confirmed", "may still be RUNNING", "end it by hand"},
+			[]string{"KILLED"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			state, _, _ := wwBackstopRecord(t)
+			st := &fakeWallWatchStore{}
+			wallWatchBackstop(state, st, "", time.Now, c.probe)
+			if c.over != nil {
+				c.over(c.probe)
+				wallWatchBackstop(state, st, "", time.Now, c.probe)
+			}
+			vs := readWallWatchVerdicts(state, "developer")
+			if len(vs) != 1 {
+				t.Fatalf("%d verdicts, want 1: %+v", len(vs), vs)
+			}
+			got := WallWatchVerdictsSay(vs)
+			for _, w := range c.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("the summary of %s does not say %q:\n%s\nover the verdict:\n%s", c.name, w, got, vs[0].Text)
+				}
+			}
+			for _, w := range c.wantN {
+				if strings.Contains(got, w) {
+					t.Errorf("the summary of %s says %q:\n%s\nover the verdict:\n%s", c.name, w, got, vs[0].Text)
+				}
+			}
+		})
+	}
+}
+
+// Both blocks in BOTH orders, because Contains is what made order invisible:
+// the reading is the file's LAST word on the kill. A retry that resolves an
+// unconfirmed kill reads as killed; a FRESH unconfirmed kill after such a
+// resolution is a new alarm and reads as one. Composed from the writers' own
+// head constants, so a renamed head reds here too.
+func TestWallWatchVerdictSaysTakesTheLastWordOnTheKill(t *testing.T) {
+	t.Parallel()
+	nc := wallWatchNotConfirmedHead + "developer — the wall over /x came off (ranger-base-0qpsw D2)"
+	over := "⛨ wall-watch backstop: seat developer " + wallWatchOverHead + " (20 rounds of SIGKILL: [102]) was retried, and this one did: killed pids 102 (ranger-base-kzk3u)"
+	for _, c := range []struct {
+		name string
+		text string
+		want wallWatchReading
+	}{
+		{"the retry answers the alarm", nc + "\n" + over, wallWatchReadsKilled},
+		{"a fresh alarm after a resolution", over + "\n" + nc, wallWatchReadsNotConfirmed},
+		{"a resolution and nothing else", over, wallWatchReadsKilled},
+		{"neither head", "refusing to start the seat unwatched (ranger-base-0qpsw D1)", wallWatchReadsNoKill},
+	} {
+		if got := wallWatchVerdictSays(c.text); got != c.want {
+			t.Errorf("%s: the reading = %d, want %d:\n%s", c.name, got, c.want, c.text)
+		}
+	}
+	// And through the summary, which is what a human reads.
+	if got := WallWatchVerdictsSay([]WallWatchVerdict{{Text: nc + "\n" + over}}); strings.Contains(got, "RUNNING") {
+		t.Errorf("the summary sends a reader after a seat the retry confirmed was over: %q", got)
+	}
+	if got := WallWatchVerdictsSay([]WallWatchVerdict{{Text: over + "\n" + nc}}); !strings.Contains(got, "may still be RUNNING") {
+		t.Errorf("the summary of an alarm raised after a resolution = %q, want the alarm", got)
 	}
 }
 

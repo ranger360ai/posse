@@ -703,13 +703,24 @@ func wallWatchPidList(ps []int) string {
 // hand told them, at a glance, that it was already ended. A kill that found
 // nothing left is still a seat that is over, and reads as killed.
 //
-// The two heads are constants because a READER of a verdict file matches on
-// them (WallWatchVerdictsSay, ranger-base-oe884) — one spelling for the
+// The three heads are constants because a READER of a verdict file matches
+// on them (WallWatchVerdictsSay, ranger-base-oe884) — one spelling for the
 // writer and the reader, so a renamed head cannot leave the reader quietly
 // finding nothing.
+//
+// wallWatchOverHead is the third, and the only one that ANSWERS another: it
+// opens the retry's verdict (wallWatchRetryKill, ranger-base-kzk3u), which
+// lands in the same file as the "could NOT confirm" head it resolves. It is
+// a head for the same reason the other two are. Before it the retry's block
+// carried neither of them, so a file whose kill the tick had retried and
+// confirmed went on reading "it may still be RUNNING, so end it by hand" —
+// for the life of the file, sending the operator after a seat the tick had
+// ended several ticks earlier (ranger-base-6felj). A resolution has to be
+// as findable as the alarm it resolves.
 const (
 	wallWatchKilledHead       = "KILLED seat "
 	wallWatchNotConfirmedHead = "could NOT confirm the kill of seat "
+	wallWatchOverHead         = "is over — the kill an earlier tick could not confirm"
 )
 
 func wallWatchKillHead(d wallWatchDetach) string {
@@ -1001,7 +1012,7 @@ func wallWatchRetryKill(path string, r wallWatchRecord, alive bool, pids []int, 
 	var out []string
 	var what string
 	if len(pids) == 0 {
-		what = fmt.Sprintf("seat %s is over — the kill an earlier tick could not confirm (%s) is confirmed by its mount namespace being empty", r.Seat, r.KillPending)
+		what = fmt.Sprintf("seat %s %s (%s) is confirmed by its mount namespace being empty", r.Seat, wallWatchOverHead, r.KillPending)
 	} else {
 		d := wallWatchDetach{Seat: r.Seat, Dir: r.Dir, BwrapPid: r.BwrapPid, SeatPid: r.SeatPid, At: now()}
 		d.Killed, d.KillErr = p.Kill(r)
@@ -1016,7 +1027,7 @@ func wallWatchRetryKill(path string, r wallWatchRecord, alive bool, pids []int, 
 			}
 			return append(out, line)
 		}
-		what = fmt.Sprintf("seat %s is over — the tick retried a kill that had not confirmed (%s), and this one did: killed %s", r.Seat, r.KillPending, wallWatchKilled(d))
+		what = fmt.Sprintf("seat %s %s (%s) was retried, and this one did: killed %s", r.Seat, wallWatchOverHead, r.KillPending, wallWatchKilled(d))
 	}
 	v := &wallWatchSaid{Path: wallWatchVerdictPath(path), Pane: func(s string) { out = append(out, s) }}
 	v.say("⛨ wall-watch backstop: %s (ranger-base-kzk3u)", what)
@@ -1271,15 +1282,56 @@ func readWallWatchVerdicts(stateDir, seat string) []WallWatchVerdict {
 // kill too, as is one that is on disk and could not be read.
 //
 // So the summary counts what each text SAYS and asserts nothing else. The
-// key is the writer's own head string (wallWatchKillHead's two constants),
-// and the pin is a round trip through a tick that really detached rather
-// than a hand-written fixture: a head the reader no longer finds reds it.
+// key is the writer's own head strings (the three constants beside
+// wallWatchKillHead), and the pin is a round trip through a tick that
+// really detached rather than a hand-written fixture: a head the reader no
+// longer finds reds it.
+//
+// And the reading of a file is the LAST thing it says about the kill, not
+// the union of everything it says (ranger-base-6felj). appendWallWatchVerdict
+// appends, so a file holds every block its watcher wrote in the order they
+// happened, and one block can ANSWER an earlier one: since
+// ranger-base-kzk3u a tick retries a kill that did not confirm and writes
+// wallWatchOverHead when the seat is finally over. Under the Contains rule
+// this reader was written with, that resolution was invisible — a file that
+// held both heads took "the louder reading", which was right for the two
+// independent events it was written for (a refusal and then a detach,
+// neither of which answers the other) and wrong for the one it was not:
+// the alarm outlived its own answer for the life of the file.
 
-// wallWatchVerdictSays is what one verdict's text reports. Both can be true:
-// appendWallWatchVerdict appends, so one file holds every block its
-// watcher wrote — a refusal and then a detach, or two detections.
-func wallWatchVerdictSays(text string) (killed, notConfirmed bool) {
-	return strings.Contains(text, wallWatchKilledHead), strings.Contains(text, wallWatchNotConfirmedHead)
+// wallWatchReading is what one verdict file's text says became of its seat.
+type wallWatchReading int
+
+const (
+	// wallWatchReadsNoKill: no head at all — a refusal (ranger-base-r9slg),
+	// or a verdict that is on disk and could not be read.
+	wallWatchReadsNoKill wallWatchReading = iota
+	wallWatchReadsKilled
+	wallWatchReadsNotConfirmed
+)
+
+// wallWatchVerdictSays is what one verdict's text reports: the reading of
+// its LAST head, so a retry that confirmed the seat over reads as killed
+// and a fresh unconfirmed kill after one still reads as unconfirmed.
+func wallWatchVerdictSays(text string) wallWatchReading {
+	// A seat the tick found over after a kill it could not confirm is a
+	// seat that is over, and reads as killed — the same reading
+	// wallWatchKillHead gives a kill that found nothing left.
+	last := wallWatchReadsNoKill
+	at := -1
+	for _, c := range []struct {
+		head string
+		says wallWatchReading
+	}{
+		{wallWatchKilledHead, wallWatchReadsKilled},
+		{wallWatchNotConfirmedHead, wallWatchReadsNotConfirmed},
+		{wallWatchOverHead, wallWatchReadsKilled},
+	} {
+		if i := strings.LastIndex(text, c.head); i > at {
+			at, last = i, c.says
+		}
+	}
+	return last
 }
 
 // WallWatchVerdictsSay is the clause a reader may put over a set of
@@ -1289,13 +1341,10 @@ func wallWatchVerdictSays(text string) (killed, notConfirmed bool) {
 func WallWatchVerdictsSay(vs []WallWatchVerdict) string {
 	var killed, notConfirmed, noKill int
 	for _, v := range vs {
-		k, nc := wallWatchVerdictSays(v.Text)
-		switch {
-		case nc:
-			// The louder reading wins a file that holds both: a seat that
-			// may still be running is what the reader has to act on.
+		switch wallWatchVerdictSays(v.Text) {
+		case wallWatchReadsNotConfirmed:
 			notConfirmed++
-		case k:
+		case wallWatchReadsKilled:
 			killed++
 		default:
 			noKill++
