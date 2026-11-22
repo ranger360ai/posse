@@ -309,6 +309,10 @@ var landingDropRegister = []landingDrop{
 		why:   "the rule exists because THIS repo is public while the bead graph it is worked from is a private store — a fresh work repo has neither that split, nor a `vuln-private` label to key it on, nor any claim that its own tree is published at all (operator ruling 2026-11-11, ranger-base-lcuec)",
 	},
 	{
+		match: "A finding in ANOTHER repository is named",
+		why:   "the rule exists because THIS repo is public while the other repos its crew works in are private — a fresh work repo makes no claim that its own tree is published, so it has no public/private split between repos to guard (ranger-base-uymh6, ranger-base-9ubm5)",
+	},
+	{
 		match: "background process actually died",
 		why:   "ends in `go run ./cmd/checkorphans`, a command that lives only in this repo",
 	},
