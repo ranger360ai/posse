@@ -30,9 +30,15 @@
 #   * Exit 0 is green, any other exit is red, errors on stderr.
 #   * The LAST lines of combined output are the cause — the runner keeps the
 #     last few non-empty ones and flattens them into a bead somebody reads
-#     later. So this fails FAST and prints NOTHING after the failing tool:
-#     make's own `*** [Makefile:NNN: corpus-check] Error 1` is the tail, and it
-#     names the door, which is the whole of what the bead needs to say.
+#     later (`landCheckSaid`, internal/posse/landcheck.go). A SERIAL runner
+#     got that for free by failing fast and printing nothing after the dead
+#     tool: make's own `*** [Makefile:NNN: corpus-check] Error 1` was the
+#     tail, and it names the door, which is the whole of what the bead needs
+#     to say. Under `-j` it is not free — make announces the dead door and
+#     then waits for the jobs already running, so the last lines are a GREEN
+#     door's output — so since D6.7 the tail is MADE rather than inherited.
+#     See THE BODY RUNS FOUR DOORS AT A TIME below; this script's pin asserts
+#     both halves over planted Makefiles.
 #
 # WHAT IT MAY RUN, and this is where it differs from the land check. The land
 # check runs operator-side, uncaged, as the launcher, inside the fleet lock, so
@@ -81,22 +87,77 @@
 # sentence and the fix is to delete this guard in the same commit; a check that
 # could not say that is worth less than the noise.
 #
+# THE BODY RUNS FOUR DOORS AT A TIME (D6.7, from ranger-base-hzh0w). The
+# derived goals go to ONE `make -j4 --output-sync=target`, with no `-k`.
+#
+# WHY, and it is a growth law rather than a speed preference: a serial
+# runner's wall is the SUM of its doors, and D6 derives the body so that the
+# body grows with every door anyone adds. A fixed ceiling over that sum will
+# be crossed — not a risk, a consequence of the design — and D6.3 filed the
+# first crossing. Under `-j` the wall follows the LONGEST door plus
+# contention, so a new door adds wall only by becoming the longest, which is
+# something D6's own derivation can live with. Narrowing the body was refused
+# on the same grounds the derivation exists for (it gives up the derivation),
+# and raising the ceiling only moves the date.
+#
+# 4 IS A CONSTANT HERE, not a probe of the box: `-j4` is MEASURED as the
+# faster of the two readings taken, and ASSUMED to be the knee, because the
+# critical path is one door (`treepins-check`) and more jobs only add
+# contention to it. The readings are in ADR 0088's amendment "the body runs
+# four doors at a time" and not here, for the reason the cost paragraph at
+# the foot of this header gives.
+#
+# AND THEN THE TAIL IS MADE, IN A SECOND MAKE. The parallel run's combined
+# output is captured into a shell VARIABLE and printed — a variable and not a
+# file, because under D3 the landed tree and the build cache are the only
+# writable things in the cage, which is the same reason the probe above is a
+# pipe. On a nonzero exit the failed doors are read back out of make's own
+# `*** [Makefile:N: <door>] Error` lines, and the FIRST of them is re-run
+# ALONE, last: `make --no-print-directory <door>`. That run ends in the
+# door's own complaint and make's line naming it, which is the tail D1 asks
+# for and the same sentence a seat would read. Four properties of that, each
+# of which the pin holds:
+#
+#   * The second make is this script, this cwd and this scrubbed environment.
+#     It is not a second runner, and on a green run it never happens.
+#   * A door GREEN when re-run alone is still RED here, and the last line
+#     names it as such: a door not safe beside its siblings, or a flake, and
+#     either one is a finding. Reading it as green would hide the one new
+#     failure mode this shape creates.
+#   * A red `-j` run from which no door can be parsed at all is red too, and
+#     says so. Never green: a quiet green is the hole this file exists to
+#     close, and it may not come back through the parser.
+#   * `fmt-check` is no longer guaranteed to be the first door that can red.
+#     It still reds within seconds, because it starts in the first batch.
+#
+# `--output-sync` needs a writable TMPDIR, and the judge is given one inside
+# its own run dir (`landedRunEnv`, internal/posse/landedcheck.go). Where it is
+# NOT writable, make says `cannot open output-sync lock file, suppressing
+# output-sync` and carries on interleaved (MEASURED 2026-11-22, linux, GNU
+# Make 4.4.1): every door still runs, and the `*** [...] Error` lines the
+# re-run is chosen from are untouched, so that degradation costs legibility
+# and never the verdict.
+#
+# THE EXIT HATCH is two deletions — `-j4 --output-sync=target` and the
+# `serial_rerun` call — which restores the serial runner this replaced.
+#
+# WHAT IT COSTS, paid outside the lock and holding nothing: see
+# docs/notes.d/ranger-base-r3pqf.md, which is the ONE place this script's
+# readings are said, and ADR 0088's "the body runs four doors at a time" for
+# the per-door and `-j4`/`-j8` readings behind the shape above. This file
+# quoting them as well would be two places to keep in step by hand, which is
+# how the figure in the second one goes stale while both look authoritative
+# (AGENTS.md's own rule about the tree-check reading). D6's ceiling is a 240s
+# warm run, at which the price goes back to architecture (D6.2, amended by
+# ranger-base-7idk4 — it was 120s, which was also the kill, and one number
+# doing both jobs could only report a crossing as silence). Nothing kills on
+# 240s: the kill is `landedCheckLimit`, ten minutes, and it bounds a hang.
+#
 # WHAT RUNS THIS: internal/posse/landedcheckplan_qa_test.go, suite arm 2, over
 # a PLANTED Makefile and never over this tree. The subject is the derivation,
 # and a pin that read this repo's own `test:` line would assert a door list
 # every unrelated landing can move (the land check's pin says the same of its
 # arms, for the same reason).
-#
-# WHAT IT COSTS, paid outside the lock and holding nothing: see
-# docs/notes.d/ranger-base-r3pqf.md, which is the ONE place the readings are
-# said. This file quoting them as well would be two places to keep in step by
-# hand, which is how the figure in the second one goes stale while both look
-# authoritative (AGENTS.md's own rule about the tree-check reading). D6's
-# ceiling is a 240s warm run, at which the price goes back to architecture
-# (D6.2, amended by ranger-base-7idk4 — it was 120s, which was also the kill,
-# and one number doing both jobs could only report a crossing as silence).
-# Nothing kills on 240s: the kill is `landedCheckLimit`, ten minutes, and it
-# bounds a hang.
 set -euo pipefail
 
 plan_only=0
@@ -125,14 +186,18 @@ fi
 # options out of `MAKEFLAGS` and `GNUMAKEFLAGS` and extra makefiles out of
 # `MAKEFILES`, so an inherited `-n` would make every door print and run
 # nothing while this exits 0 — a green over an empty room, from a variable
-# nobody here typed — and an inherited `-k` would carry on past the first red,
-# which puts a GREEN door's output in the tail that D1 says is the cause.
-# `MAKELEVEL` is the same hazard one step quieter: set, it makes the child
-# announce `Entering directory` and, worse, `Leaving directory` LAST, so the
-# bead gets a path where the door's name belongs. MEASURED 2026-11-11: this
-# script's own pin red exactly that way when the suite ran it under
-# `make test-arm2`. They are scrubbed rather than overridden, so the run is the
-# same from a launcher, a seat's shell and a Makefile recipe.
+# nobody here typed. An inherited `-k` would carry on past the first red, and
+# an inherited `-j` would change how many doors run at once: under D6.7 the
+# job count and the tail are BOTH this script's to decide, and neither may be
+# decided by a variable the caller exported — `-k` would put a green door's
+# output after the re-run's complaint, and `-j<n>` would move the one number
+# that paragraph measures. `MAKELEVEL` is the same hazard one step quieter:
+# set, it makes the child announce `Entering directory` and, worse, `Leaving
+# directory` LAST, so the bead gets a path where the door's name belongs.
+# MEASURED 2026-11-11: this script's own pin red exactly that way when the
+# suite ran it under `make test-arm2`. They are scrubbed rather than
+# overridden, so the run is the same from a launcher, a seat's shell and a
+# Makefile recipe.
 unset MAKEFLAGS GNUMAKEFLAGS MAKELEVEL MAKEFILES MFLAGS
 
 say() { printf 'posse-landed-check: %s\n' "$*" >&2; }
@@ -141,15 +206,40 @@ die() {
   exit 1
 }
 
+# HOW MANY DOORS AT A TIME (D6.7). A constant, named once, so that the plan,
+# the run and every sentence this script prints about a red quote the same
+# number.
+jobs_at_a_time=4
+
 # One choke point for every child, so the plan and the run cannot disagree
 # about what this check is. The step line goes out BEFORE the child, so on a
 # red it is the line above the tool's complaint.
+#
+# It CAPTURES rather than execs through: D6.7's tail is built by reading the
+# parallel run's own output back, and a narrator that handed its argv to the
+# terminal could not be the thing that reads it. The transcript is reprinted
+# by the caller, on stderr like everything else here, so that one stream
+# carries the whole of what the runner's tail reader sees in the order it
+# happened — two streams into one pipe would let a block-buffered flush land
+# after a later line and scramble exactly the last three lines that reach the
+# bead.
 steps=0
+captured=
 step() {
   steps=$((steps + 1))
   say "step $steps: $*"
+  captured=
   if [ "$plan_only" = 1 ]; then return 0; fi
-  "$@"
+  local rc=0
+  captured=$("$@" 2>&1) || rc=$?
+  return "$rc"
+}
+
+# print_captured prints the last child's transcript, and nothing at all when
+# it said nothing — a blank line here is a line the runner's tail reader has
+# to step over.
+print_captured() {
+  if [ -n "$captured" ]; then printf '%s\n' "$captured" >&2; fi
 }
 
 # The goal is named in one place, because the probe makefile and the command
@@ -157,8 +247,10 @@ step() {
 probe_goal=__posse_landed_check_probe__
 
 # test_prerequisites prints the prerequisites of `test:`, one per line, in the
-# order the Makefile declares them — so the cheapest door (`fmt-check`, ~1.5s)
-# is the first thing that can red, as it is for a seat.
+# order the Makefile declares them. That order no longer decides which door
+# can red first — under `-j4` the first four start together (D6.7) — but it is
+# still the order a seat's `make test` would name them in, and a derivation
+# that reordered them would be a derivation nobody could check by eye.
 #
 # The data base's `# Files` section prints one `<target>: <prerequisites>`
 # header per target with every variable expanded. The scan is fenced to that
@@ -188,6 +280,47 @@ test_prerequisites() {
     '
 }
 
+# failed_doors reads the doors make said died, one per line, in the order make
+# said them, out of its own `*** [Makefile:N: <door>] Error <n>` lines
+# (MEASURED 2026-11-22, GNU Make 4.4.1, `-j4 --output-sync=target`, two doors
+# failing: one such line each, in completion order).
+#
+# The target is taken from after the LAST `: ` inside the brackets, because
+# that is where make puts the file and line it is reporting from; a bracket
+# with no `: ` at all is an older spelling (`*** [door-a] Error 1`) and the
+# whole of it is the target. Nothing is filtered against the derived goals on
+# purpose: the door that dies is usually a prerequisite of one of them and not
+# one of them — on this repo `treepins-check` hangs off `tree-check` — and
+# re-running the named door is both more precise and shorter than re-running
+# its parent. A name that is not a goal at all dies at make's own `No rule to
+# make target`, which is loud, and is this parser being wrong rather than a
+# landing being green.
+#
+# `(ignored)` is excluded BELT-AND-BRACES. A recipe line prefixed `-` whose
+# command fails is reported as `make: [Makefile:4: door] Error 1 (ignored)` —
+# MEASURED 2026-11-22, and note it carries NO `***`, so the `***` already in
+# the pattern is what excludes it today. Both clauses are kept because either
+# one alone is one edit from a wrong FINDING rather than a missed one: reading
+# an ignored error as the cause re-runs a door that passed, which then reports
+# as "red under -j4 and green alone" on a bead. The pin holds the pair.
+failed_doors() {
+  awk '
+    /\*\*\* \[.*\] Error/ && !/\(ignored\)/ {
+      line = $0
+      sub(/^[^[]*\[/, "", line)
+      sub(/\].*$/, "", line)
+      if (match(line, /: [^:]*$/)) line = substr(line, RSTART + 2)
+      if (line != "") print line
+    }
+  '
+}
+
+# serial_rerun is the second make, named in ONE place so that the plan's shape
+# and the red path's command cannot disagree about anything but the door.
+serial_rerun() {
+  step make --no-print-directory "$1"
+}
+
 say "judging $PWD"
 [ -f Makefile ] || die "no Makefile here — cwd must be the root of the tree to judge (ADR 0088 D1)"
 
@@ -196,15 +329,40 @@ prerequisites=$(test_prerequisites)
 goals=$(printf '%s' "$prerequisites" | tr '\n' ' ')
 say "make test's prerequisites here: $goals"
 
-# Unquoted on purpose: one make goal per word. They run in one invocation so
+# Unquoted on purpose: one make goal per word. They run in ONE invocation so
 # that make dedupes the doors they share (fmt-check is a prerequisite of
-# tree-check as well), and serially with no -k, so the first red is the tail.
-# `--no-print-directory` keeps that tail the door's own complaint even where
+# tree-check as well) and so that its own job server, and not a runner written
+# beside it, decides what runs next. No `-k`: the run stops at the first red,
+# and `--output-sync=target` keeps each door's output in one block instead of
+# interleaving the four.
+# `--no-print-directory` keeps the tail the door's own complaint even where
 # something put make into directory-announcing mode past the scrub above.
-step make --no-print-directory $goals
+rc=0
+step make --no-print-directory "-j$jobs_at_a_time" --output-sync=target $goals || rc=$?
+print_captured
 
 if [ "$plan_only" = 1 ]; then
-  say "plan only: $steps step, nothing run"
+  say "on a red, and only then: the first failed door, alone, last — so the tail is that door's own complaint and not a green sibling's output (ADR 0088 D6.7)"
+  serial_rerun '<the first failed door>'
+  say "plan only: $steps steps, nothing run"
   exit 0
 fi
-say "green in ${SECONDS}s: $(printf '%s\n' "$prerequisites" | wc -l | tr -d ' ') prerequisites of \`make test\` over $PWD"
+
+if [ "$rc" -ne 0 ]; then
+  # The parallel run's tail is a green door's output (D6.7), so the cause is
+  # re-read out of the transcript rather than taken from where it landed.
+  doors=$(printf '%s\n' "$captured" | failed_doors)
+  first_door=${doors%%$'\n'*}
+  [ -n "$first_door" ] || die "make exited $rc under -j$jobs_at_a_time and printed no \`*** [Makefile:N: <door>] Error\` line, so no door can be named or re-run — this is RED, and the cause is in the output above: make refusing a goal prints no such line (MEASURED: \`No rule to make target\`), and neither would a parser that has gone stale (ADR 0088 D6.7)"
+  n_doors=$(printf '%s\n' "$doors" | wc -l | tr -d ' ')
+  say "red under -j$jobs_at_a_time after ${SECONDS}s: $n_doors door(s) died ($(printf '%s' "$doors" | tr '\n' ' ')) — re-running the first alone, last, so the tail is its own complaint (ADR 0088 D6.7)"
+  rerun_rc=0
+  serial_rerun "$first_door" || rerun_rc=$?
+  print_captured
+  if [ "$rerun_rc" -ne 0 ]; then exit "$rerun_rc"; fi
+  # D6.7: green alone is NOT green. Either the door is unsafe beside its
+  # siblings or it is a flake, and both are findings somebody has to read.
+  die "$first_door red under -j$jobs_at_a_time and green alone — a door not safe beside its siblings, or a flake (ADR 0088 D6.7)"
+fi
+
+say "green in ${SECONDS}s: $(printf '%s\n' "$prerequisites" | wc -l | tr -d ' ') prerequisites of \`make test\` over $PWD, $jobs_at_a_time at a time"

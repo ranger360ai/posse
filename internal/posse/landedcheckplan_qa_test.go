@@ -30,6 +30,18 @@ package posse
 // is exactly the shape these runs have: an absolute path to this checkout's
 // script, `cmd.Dir` the fixture.
 //
+// AND SINCE D6.7, THE TAIL (ranger-base-hzh0w/25kki). The body runs under
+// `make -j4 --output-sync=target`, so D1's "the last lines of combined output
+// are the cause" is no longer something make gives for free: make announces
+// the dead door, then waits for the jobs already running, so the last lines
+// are a GREEN door's output. The script makes the tail instead — it reads the
+// failed doors out of make's own `*** [Makefile:N: <door>] Error` lines and
+// re-runs the first one ALONE, last. Three arms here are that shape and
+// nothing else: the tail is the dead door's and not a slow green sibling's,
+// a door green when re-run alone is still RED and says so by name, and the
+// doors behind the first batch never start (which is what "no -k" means once
+// the body is parallel).
+//
 // `--plan` FOR THE DERIVATION ARMS AND A REAL RUN FOR THE REST, which is what
 // keeps this in an arm rather than behind a door: plan mode runs no make goal
 // at all, and the fixtures whose doors DO run spell them `@:`. Nothing here
@@ -82,6 +94,36 @@ const ldcMakefile = "test: door-a door-b door-c\n" +
 	"door-b:\n\t@:\n" +
 	"door-c:\n\t@:\n"
 
+// ldcLateDoors are the doors BEHIND the first `-j4` batch in
+// ldcBatchMakefile: five of them, each leaving a witness, so that "the run
+// starts no door after the first red" is a fact about files on disk.
+var ldcLateDoors = []string{"door-e", "door-f", "door-g", "door-h", "door-i"}
+
+// ldcBatchMakefile is the fail-fast fixture in the shape D6.7 made relevant:
+// door-a dies at once; door-b, door-c and door-d are SLOW and chatty, so they
+// are still running when it dies and their output lands after make's error
+// line; and ldcLateDoors sit behind the first batch of four. Under `-j4` with
+// no `-k`, the first four start together and the five behind them never start
+// at all.
+func ldcBatchMakefile() string {
+	mk := "test: door-a door-b door-c door-d " + strings.Join(ldcLateDoors, " ") + "\n" +
+		"\t@touch " + ldcArmWitness + "\n" +
+		"door-a:\n\t@echo door-a is unhappy; exit 1\n" +
+		"door-b:\n\t@sleep 1; echo " + ldcChatter + "; echo more from door-b\n" +
+		"door-c:\n\t@sleep 1; echo door-c is fine\n" +
+		"door-d:\n\t@sleep 1; echo door-d is fine\n"
+	for _, d := range ldcLateDoors {
+		mk += d + ":\n\t@touch " + d + "-ran\n"
+	}
+	return mk
+}
+
+// ldcChatter is what the slow GREEN door prints. It is the text that must not
+// be in the tail: under `-j4 --output-sync=target` it is what make prints
+// last, MEASURED 2026-11-22 over a planted Makefile and recorded in ADR
+// 0088's "the body runs four doors at a time".
+const ldcChatter = "door-b is fine and chatty"
+
 // ldcTree plants a tree holding one Makefile and returns its root.
 func ldcTree(t *testing.T, makefile string) string {
 	t.Helper()
@@ -121,6 +163,37 @@ func ldcRunEnv(t *testing.T, tree string, extra []string, args ...string) (strin
 
 var ldcStepLine = regexp.MustCompile(`^posse-landed-check: step ([0-9]+): (.*)$`)
 
+// ldcParallelStep is step 1: the derived goals in ONE make, four doors at a
+// time, output-synced, with no `-k` (ADR 0088 D6.7). The job count is spelled
+// out here rather than read off the script, because a constant the pin takes
+// from its subject is a constant the pin cannot hold.
+func ldcParallelStep(goals ...string) string {
+	return "make --no-print-directory -j4 --output-sync=target " + strings.Join(goals, " ")
+}
+
+// ldcRerunStep is step 2: the serial re-run that MAKES the tail. `--plan`
+// prints it with the door as a placeholder, because which door it is depends
+// on which one dies.
+const ldcRerunStep = "make --no-print-directory <the first failed door>"
+
+// ldcTail is the last non-empty lines of combined output, in order — the
+// whole of what the runner flattens into a bead (landCheckSaid keeps three of
+// them, ADR 0088 D1/D5). Fatal on nothing at all: an arm reading the tail must
+// not read "it names the door" out of an empty run.
+func ldcTail(t *testing.T, out string) []string {
+	t.Helper()
+	var tail []string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) != "" {
+			tail = append(tail, line)
+		}
+	}
+	if len(tail) == 0 {
+		t.Fatalf("the run printed nothing at all")
+	}
+	return tail
+}
+
 // ldcPlan is the planned step list: the payload of each `step N:` line, with
 // the numbering checked. A plan that failed is a fatal here rather than an
 // empty list — an arm comparing step lists must not read "no steps" out of a
@@ -152,15 +225,16 @@ func ldcPlan(t *testing.T, tree string) []string {
 	return steps
 }
 
-// TestQALandedCheckPlansMakeOverTheDerivedPrerequisites is the baseline: one
-// step, `make` over the `test:` prerequisites in the order the Makefile
-// declares them, and the suite arms absent from it.
+// TestQALandedCheckPlansMakeOverTheDerivedPrerequisites is the baseline: TWO
+// steps since D6.7 — the derived `test:` prerequisites in the order the
+// Makefile declares them, four at a time in one make, and the serial re-run
+// that makes the tail on a red — and the suite arms absent from both.
 func TestQALandedCheckPlansMakeOverTheDerivedPrerequisites(t *testing.T) {
 	t.Parallel()
 	steps := ldcPlan(t, ldcTree(t, ldcMakefile))
-	want := "make --no-print-directory door-a door-b door-c"
-	if len(steps) != 1 || steps[0] != want {
-		t.Errorf("planned %q, want exactly [%q] — the derived prerequisites, in declared order, in one make", steps, want)
+	want := []string{ldcParallelStep("door-a", "door-b", "door-c"), ldcRerunStep}
+	if len(steps) != len(want) || steps[0] != want[0] || steps[1] != want[1] {
+		t.Errorf("planned %q, want exactly %q — the derived prerequisites four at a time, then the first failed door alone (ADR 0088 D6.7)", steps, want)
 	}
 	if strings.Contains(steps[0], "test") {
 		t.Errorf("the plan names the `test` goal itself (%q) — the suite arms are the recipe of that goal and cost three suite slots (ADR 0088 D6)", steps[0])
@@ -179,9 +253,9 @@ func TestQALandedCheckDerivationExpandsVariables(t *testing.T) {
 		"door-b:\n\t@:\n" +
 		"door-c:\n\t@:\n"
 	steps := ldcPlan(t, ldcTree(t, mk))
-	want := "make --no-print-directory door-a door-b door-c"
-	if len(steps) != 1 || steps[0] != want {
-		t.Errorf("planned %q over a Makefile naming two doors through $(DOORS), want [%q] — a derivation reading the line's TEXT would plan `$(DOORS)`, which is not a goal", steps, want)
+	want := ldcParallelStep("door-a", "door-b", "door-c")
+	if len(steps) != 2 || steps[0] != want {
+		t.Errorf("planned %q over a Makefile naming two doors through $(DOORS), want step 1 %q — a derivation reading the line's TEXT would plan `$(DOORS)`, which is not a goal", steps, want)
 	}
 }
 
@@ -197,8 +271,8 @@ func TestQALandedCheckDerivationUnionsASecondTestLine(t *testing.T) {
 		"door-a:\n\t@:\n" +
 		"door-b:\n\t@:\n"
 	steps := ldcPlan(t, ldcTree(t, mk))
-	if len(steps) != 1 {
-		t.Fatalf("planned %d steps, want 1: %q", len(steps), steps)
+	if len(steps) != 2 {
+		t.Fatalf("planned %d steps, want 2 (the parallel body, then the re-run): %q", len(steps), steps)
 	}
 	for _, door := range []string{"door-a", "door-b"} {
 		if !strings.Contains(steps[0], door) {
@@ -303,35 +377,161 @@ func TestQALandedCheckRunsThePrerequisitesAndNotTheSuiteArms(t *testing.T) {
 	}
 }
 
-// TestQALandedCheckStopsAtTheFirstRedAndTheTailNamesIt: the last lines of
-// combined output are the cause (D1), and a door after the failing one must
-// not run — the tail would then be a green door's output.
+// TestQALandedCheckStopsAtTheFirstRedAndTheTailNamesIt: no `-k`, so the run
+// stops at the first red — which under `-j4` means it STARTS no door it had
+// not already started, rather than "nothing runs after the failing one"
+// (D6.7). The five doors behind the first batch of four must leave no witness,
+// and the tail must still name the door that died.
 func TestQALandedCheckStopsAtTheFirstRedAndTheTailNamesIt(t *testing.T) {
 	t.Parallel()
-	mk := "test: door-a door-b\n" +
-		"\t@touch " + ldcArmWitness + "\n" +
-		"door-a:\n\t@echo door-a is unhappy; exit 1\n" +
-		"door-b:\n\t@touch door-b-ran\n"
-	tree := ldcTree(t, mk)
+	tree := ldcTree(t, ldcBatchMakefile())
 	out, code := ldcRun(t, tree)
 	if code == 0 {
 		t.Fatalf("a run over a fixture whose first door fails exited 0\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(tree, "door-b-ran")); err == nil {
-		t.Errorf("the run carried on past the failing door — door-b ran, so the tail is a GREEN door's output")
-	}
-	var tail []string
-	for _, line := range strings.Split(out, "\n") {
-		if strings.TrimSpace(line) != "" {
-			tail = append(tail, line)
+	for _, door := range ldcLateDoors {
+		if _, err := os.Stat(filepath.Join(tree, door+"-ran")); err == nil {
+			t.Errorf("%s ran — it is behind the first batch of four, so the run carried on past the red and this is `-k` by accident (ADR 0088 D6.7)\nfull output:\n%s", door, out)
 		}
 	}
-	if len(tail) == 0 {
-		t.Fatalf("a red printed nothing at all")
-	}
+	tail := ldcTail(t, out)
 	last := tail[len(tail)-1]
 	if !strings.Contains(last, "door-a") {
 		t.Errorf("the last non-empty line is %q — it does not name the door that died, and the last lines are the whole of what reaches the bead (ADR 0088 D1/D5)\nfull output:\n%s", last, out)
+	}
+}
+
+// TestQALandedCheckTailIsTheFailedDoorsAndNotASlowGreenSiblings is the arm
+// D6.7 exists for, and the one a serial runner could not have had. Under `-j4
+// --output-sync=target` make prints the dead door's error line, then `Waiting
+// for unfinished jobs....`, then the output of every green door that was
+// already running — so the last lines of a `-j` run are a GREEN door's
+// chatter, and the bead would quote that as the cause. The check answers by
+// re-running the first failed door ALONE, last.
+//
+// IT ASSERTS MAKE'S OWN COMPLAINT AND NOT MERELY THE DOOR'S NAME, which is
+// not pedantry: this script PRINTS a line naming the door before it re-runs
+// it, so a check for the name alone is satisfied by that line and the arm
+// survives the removal of the whole re-run (MEASURED 2026-11-22, mutation A
+// below, before this was tightened). What D6.7 promises is the door's own
+// complaint plus make's line naming it — the sentence a seat would read — so
+// that is what is pinned.
+//
+// MUTATIONS (MEASURED 2026-11-22, this file's arms, `-run LandedCheck`):
+//   - dropping the `serial_rerun` call from the script's red path reds this
+//     arm and `…ADoorGreenWhenReRunAloneIsStillRed`, and nothing else;
+//   - putting the body back to a serial `make` with the re-run kept reds this
+//     arm too, at its fixture guard: with no `-j` the slow green sibling never
+//     runs at all, so the shape this arm is about does not exist.
+//
+// `--output-sync=target` is NOT pinned by behaviour, and the comment says so
+// rather than implying it: removing it reds only the four plan arms, which
+// hold the flag as text. What it buys is each door's output in one block
+// instead of four interleaved, which is legibility rather than verdict.
+func TestQALandedCheckTailIsTheFailedDoorsAndNotASlowGreenSiblings(t *testing.T) {
+	t.Parallel()
+	out, code := ldcRun(t, ldcTree(t, ldcBatchMakefile()))
+	if code == 0 {
+		t.Fatalf("a run over a fixture whose first door fails exited 0\n%s", out)
+	}
+	if !strings.Contains(out, ldcChatter) {
+		t.Fatalf("the slow green door never printed %q — then this fixture does not have the shape the arm is about\n%s", ldcChatter, out)
+	}
+	tail := ldcTail(t, out)
+	if n := len(tail); n > landCheckTailLines {
+		tail = tail[n-landCheckTailLines:]
+	}
+	said := strings.Join(tail, "; ")
+	last := tail[len(tail)-1]
+	if !strings.Contains(last, "door-a") || !strings.Contains(last, "*** [") {
+		t.Errorf("the last non-empty line is %q — the tail the runner flattens into a bead is %q, and it must END on make's own complaint about the door that died (`*** [Makefile:N: door-a] Error`), not on this script's narration about it (ADR 0088 D1/D6.7)\nfull output:\n%s", last, said, out)
+	}
+	if !strings.Contains(said, "door-a is unhappy") {
+		t.Errorf("the tail the runner flattens into a bead is %q — it does not carry the dead door's OWN output, which is the cause somebody reads (ADR 0088 D1/D6.7)\nfull output:\n%s", said, out)
+	}
+	if strings.Contains(said, ldcChatter) {
+		t.Errorf("the tail the runner flattens into a bead is %q — it carries a GREEN door's output, which is what `-j` puts last and what the serial re-run exists to displace (ADR 0088 D6.7)\nfull output:\n%s", said, out)
+	}
+}
+
+// TestQALandedCheckADoorGreenWhenReRunAloneIsStillRed: the one new failure
+// mode the parallel body creates. A door that dies beside its siblings and
+// passes alone is either not safe beside them or a flake, and both are
+// findings — so the run is RED and its last line says which door (D6.7).
+// Reading that serial green as the verdict would hide it.
+//
+// The fixture is the FLAKE half, because it is the half that can be made
+// deterministic: door-a fails the first time it is ever run in a tree and
+// passes afterwards, so the `-j4` body reds and the re-run alone is green,
+// with no timing anywhere in it.
+//
+// MUTATION (MEASURED 2026-11-22): exiting with the re-run's own status — the
+// one-line change that reads serial green as green — reds this arm alone.
+// Dropping the re-run entirely reds it as well, and that is the right
+// coupling: with no second make there is no serial verdict to misread.
+func TestQALandedCheckADoorGreenWhenReRunAloneIsStillRed(t *testing.T) {
+	t.Parallel()
+	mk := "test: door-a door-b\n" +
+		"\t@touch " + ldcArmWitness + "\n" +
+		"door-a:\n\t@if [ -e door-a-ran-once ]; then echo door-a is fine now; else touch door-a-ran-once; echo door-a is unhappy; exit 1; fi\n" +
+		"door-b:\n\t@echo door-b is fine\n"
+	out, code := ldcRun(t, ldcTree(t, mk))
+	if code == 0 {
+		t.Fatalf("a door that died under -j4 and passed when re-run alone was read as GREEN — that is the one failure mode this shape creates, and it is a finding (ADR 0088 D6.7)\n%s", out)
+	}
+	last := ldcTail(t, out)
+	if l := last[len(last)-1]; !strings.Contains(l, "door-a") || !strings.Contains(l, "green alone") {
+		t.Errorf("the last non-empty line is %q — it must name the door and say it was red under -j4 and green alone, because that sentence is the whole of what reaches the bead (ADR 0088 D1/D6.7)\nfull output:\n%s", l, out)
+	}
+}
+
+// TestQALandedCheckDoesNotReadAnIgnoredErrorAsTheCause: a recipe line
+// prefixed `-` whose command fails is reported by make as `[Makefile:N: door]
+// Error 1 (ignored)` — no `***`, and the door did not fail. Picking that line
+// as the cause would re-run a door that PASSED, which then reports as "red
+// under -j4 and green alone": a wrong finding on a bead rather than a missed
+// one, which is why the script guards it twice (the `***` in the pattern and
+// an `(ignored)` exclusion) and why this arm pins the pair rather than either.
+//
+// MUTATION (MEASURED 2026-11-22): dropping EITHER guard alone survives this
+// arm, because the other still excludes the line; dropping both reds it, and
+// reds nothing else. That is the arm doing what its last sentence claims.
+func TestQALandedCheckDoesNotReadAnIgnoredErrorAsTheCause(t *testing.T) {
+	t.Parallel()
+	mk := "test: door-ignored door-real\n" +
+		"\t@touch " + ldcArmWitness + "\n" +
+		"door-ignored:\n\t-@echo door-ignored shrugs; exit 1\n" +
+		"door-real:\n\t@sleep 1; echo door-real is unhappy; exit 1\n"
+	out, code := ldcRun(t, ldcTree(t, mk))
+	if code == 0 {
+		t.Fatalf("a run whose second door really failed exited 0\n%s", out)
+	}
+	if !strings.Contains(out, "(ignored)") {
+		t.Fatalf("make printed no `(ignored)` line — then this fixture is not the shape the arm is about\n%s", out)
+	}
+	if strings.Contains(out, "green alone") {
+		t.Errorf("the check re-ran the IGNORED door, found it green, and reported a door red under -j4 and green alone — that is a wrong finding, not a missed one\n%s", out)
+	}
+	tail := ldcTail(t, out)
+	if l := tail[len(tail)-1]; !strings.Contains(l, "door-real") {
+		t.Errorf("the last non-empty line is %q — the cause is `door-real`, the only door that actually failed\nfull output:\n%s", l, out)
+	}
+}
+
+// TestQALandedCheckARedThatNamesNoDoorIsStillRed: the parser is now between
+// the body's red and the verdict, so it is a place a green could come back
+// from. A goal with no rule is the live shape of it — make refuses it and
+// prints no `*** [Makefile:N: <door>] Error` line at all — and the run must
+// still be red, and say that nothing could be named.
+func TestQALandedCheckARedThatNamesNoDoorIsStillRed(t *testing.T) {
+	t.Parallel()
+	mk := "test: door-missing\n\t@touch " + ldcArmWitness + "\n"
+	out, code := ldcRun(t, ldcTree(t, mk))
+	if code == 0 {
+		t.Fatalf("a red body from which no door could be parsed exited 0 — never green (ADR 0088 D6.7)\n%s", out)
+	}
+	if !strings.Contains(out, "no door can be named") {
+		t.Errorf("the red does not say that no door could be named, so the bead would carry make's refusal with no sentence about why nothing was re-run:\n%s", out)
 	}
 }
 
@@ -358,22 +558,27 @@ func TestQALandedCheckIgnoresAnInheritedMakeEnvironment(t *testing.T) {
 	}
 }
 
-// TestQALandedCheckIgnoresAnInheritedKeepGoing is the other half: `-k` carries
-// on past the first red, so the tail that reaches the bead would be a GREEN
-// door's output instead of the cause (ADR 0088 D1/D5).
+// TestQALandedCheckIgnoresAnInheritedKeepGoing is the other half: `-k` runs
+// every remaining door after the first red. The tail no longer turns on it —
+// since D6.7 the tail is made by the serial re-run — so what an inherited
+// `-k` costs is the body's own fail-fast: the doors behind the first batch
+// would all run, for no verdict, on a box the judge shares with the seats
+// this exists to protect. Scrubbed, they do not.
 func TestQALandedCheckIgnoresAnInheritedKeepGoing(t *testing.T) {
 	t.Parallel()
-	mk := "test: door-a door-b\n" +
-		"\t@touch " + ldcArmWitness + "\n" +
-		"door-a:\n\t@echo door-a is unhappy; exit 1\n" +
-		"door-b:\n\t@touch door-b-ran\n"
-	tree := ldcTree(t, mk)
+	tree := ldcTree(t, ldcBatchMakefile())
 	out, code := ldcRunEnv(t, tree, []string{"MAKEFLAGS=-k"})
 	if code == 0 {
 		t.Fatalf("a run under MAKEFLAGS=-k over a fixture whose first door fails exited 0\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(tree, "door-b-ran")); err == nil {
-		t.Errorf("MAKEFLAGS=-k carried the run past the failing door — the tail is then a green door's output")
+	for _, door := range ldcLateDoors {
+		if _, err := os.Stat(filepath.Join(tree, door+"-ran")); err == nil {
+			t.Errorf("MAKEFLAGS=-k carried the run past the failing door — %s ran, and it is behind the first batch of four (ADR 0088 D6.7)\nfull output:\n%s", door, out)
+		}
+	}
+	tail := ldcTail(t, out)
+	if l := tail[len(tail)-1]; !strings.Contains(l, "door-a") {
+		t.Errorf("the last non-empty line under MAKEFLAGS=-k is %q — the re-run's own tail must survive an inherited -k (ADR 0088 D1/D6.7)\nfull output:\n%s", l, out)
 	}
 }
 
@@ -392,12 +597,7 @@ func TestQALandedCheckTailNamesTheDoorUnderAParentMake(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("a run under MAKELEVEL=1 over a failing fixture exited 0\n%s", out)
 	}
-	var tail []string
-	for _, line := range strings.Split(out, "\n") {
-		if strings.TrimSpace(line) != "" {
-			tail = append(tail, line)
-		}
-	}
+	tail := ldcTail(t, out)
 	last := tail[len(tail)-1]
 	if strings.Contains(last, "irectory") || !strings.Contains(last, "door-a") {
 		t.Errorf("under MAKELEVEL=1 the last non-empty line is %q — it must name the door that died, not the directory make left\nfull output:\n%s", last, out)
@@ -415,9 +615,9 @@ func TestQALandedCheckReadsADoubleColonTestRule(t *testing.T) {
 		"door-a:\n\t@:\n" +
 		"door-b:\n\t@:\n"
 	steps := ldcPlan(t, ldcTree(t, mk))
-	want := "make --no-print-directory door-a door-b"
-	if len(steps) != 1 || steps[0] != want {
-		t.Errorf("planned %q over a `test::` rule, want [%q] — a derivation stripping one colon plans the goal `:`", steps, want)
+	want := ldcParallelStep("door-a", "door-b")
+	if len(steps) != 2 || steps[0] != want {
+		t.Errorf("planned %q over a `test::` rule, want step 1 %q — a derivation stripping one colon plans the goal `:`", steps, want)
 	}
 }
 
@@ -439,8 +639,8 @@ func TestQALandedCheckDropsTheOrderOnlySeparator(t *testing.T) {
 		"door-a:\n\t@:\n" +
 		"door-b:\n\t@:\n"
 	steps := ldcPlan(t, ldcTree(t, mk))
-	want := "make --no-print-directory door-a door-b"
-	if len(steps) != 1 || steps[0] != want {
-		t.Errorf("planned %q over a `test: door-a | door-b` rule, want [%q] — the order-only separator is not a goal and a derivation that plans it fails `make` outright", steps, want)
+	want := ldcParallelStep("door-a", "door-b")
+	if len(steps) != 2 || steps[0] != want {
+		t.Errorf("planned %q over a `test: door-a | door-b` rule, want step 1 %q — the order-only separator is not a goal and a derivation that plans it fails `make` outright", steps, want)
 	}
 }

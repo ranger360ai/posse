@@ -177,3 +177,16 @@ can move, and it would be a tree-wide pin inside a package nobody runs whole.
 Two of the thirteen are the witnesses that make the rest mean anything — one
 proves `--plan` ran no recipe (the same fixture without `--plan` is red), and
 one proves a real run leaves the `test:` recipe untouched.
+
+## Superseded in part, 2026-11-22: the body is parallel now
+
+Everything above is the SERIAL body, and it is kept as the reading it was.
+ADR 0088's amendment "the body runs four doors at a time" (D6.7,
+ranger-base-hzh0w) changed the shape: the derived goals go to one
+`make -j4 --output-sync=target`, and on a red the first failed door is re-run
+alone, last, because under `-j` the last lines of combined output are a GREEN
+door's. So the `step 1` line above is now two steps, `fmt-check` is no longer
+guaranteed to be the first door that can red (it starts in the first batch of
+four, and still reds within seconds), and the pin is eighteen arms rather
+than thirteen. The build, its walls through the script, and the mutation table
+are in docs/notes.d/ranger-base-25kki.md.
