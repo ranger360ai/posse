@@ -51,12 +51,15 @@ package posse
 // whole-tree-deny PID through this render at all.
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -264,6 +267,102 @@ func bgSeatAccount(err error, out string) string {
 	return status + ", and the seat said " + wwOneLine(out)
 }
 
+// bgSeatEndedFromOutside reads the ONE signature ranger-base-evx07 measured,
+// and it is the half of bgSeatAccount's sentence that had nowhere to go: that
+// account already NAMES "the shape of a seat ended from outside rather than
+// one the wall turned away", and then every caller turned it into a FAIL
+// anyway. A member FAIL is ADR 0097 D3's exit 1, which D5's ratchet files as
+// one P1 `-l code` attributed to the newest landing's persona — so a seat the
+// box killed arrives as a wall regression charged to whoever landed last.
+// This class has done that four times (ranger-base-a688i, -w6kke, -axt1f,
+// -s9h52) and none of those landings had anything to do with it.
+//
+// ADR 0097 ALREADY HAS THE RIGHT BUCKET and it is not red: a member that
+// abstains is exit 3, "no answer", which D5 routes to the WATCHDOG — filed on
+// the second consecutive one, `-l architecture`, attributed to nobody,
+// carrying the tails. D5's "an abstention is never a pass" is the rule in the
+// other direction; this is its converse, which nothing implemented: a death
+// that measured nothing was a red. `t.Skip` with a NOTHING MEASURED line is
+// the house idiom for it (wuOutsideAndAbsent does exactly this for a reaped
+// pid), scripts/posse-wall-check counts a member that printed D4's marker and
+// then went dark, and bgLiveSkip prints that marker before any body runs. So
+// this invents no mechanism and changes no ADR — it stops spending the wrong
+// one.
+//
+// IT ALSO DISCHARGES ADR 0086 D5's OBLIGATION, which ADR 0097's own
+// Consequences records as OPEN: "A pin whose own exec fails for some other
+// reason still reads as a refusal." f.walled's refusal arms (`if ok { fail }`)
+// read a silent outside kill as the wall refusing — a FALSE PASS — while its
+// two success arms (`if !ok { fail }`) read it as a red. One criterion in one
+// place answers both polarities, which is why this sits in walled and in
+// packUnderALiveSeat rather than in the five arms that call them.
+//
+// THE CRITERION IS DELIBERATELY NARROW — a conjunction, not "non-zero":
+//
+//   - the seat said NOTHING (strings.Fields, bgSeatAccount's own emptiness
+//     test, so "silent" means one thing at both ends of the fold), AND
+//   - it was ended by a SUPERVISOR's signal: bwrap propagated 128+9 or 128+15
+//     from inside the sandbox, or bwrap itself was signalled.
+//
+// Everything else still reds, and that is the point. `exit status 128` is git
+// at `cannot lock ref` — the wall's own answer, one below this range, and
+// never swallowed here. An in-sandbox fault that kills silently stays red
+// too: a seccomp SECCOMP_RET_KILL_PROCESS is SIGSYS (128+31) and would be the
+// wall's doing, so only the two signals a supervisor sends are read as
+// "outside". This render carries no --seccomp today; the criterion does not
+// depend on that staying true.
+//
+// MEASURED 2026-11-21 (linux 7.2.15, bubblewrap 0.13.1, go1.27.3, 16 cores),
+// which is what says 137 is this shape and not a wall answer. bwrap
+// propagates its SANDBOX CHILD's status and nothing deeper, so what the member
+// reads depends on what that child did with the death below it — and 137
+// arrives by two different routes that this criterion must both catch:
+//
+//	sh -c 'exec <self-killing script>'       -> rc 137   signalled child:
+//	                                                     bubblewrap's
+//	                                                     propagate_exit_status
+//	                                                     renders 128+WTERMSIG
+//	sh -c '<self-killing script>'            -> rc 137   the shell SURVIVED and
+//	                                                     reported 128+9 as its
+//	                                                     own ordinary exit
+//	sh -c '<same>; exit 7'                   -> rc 7     a shell that carries on
+//	                                                     MASKS the kill entirely
+//
+// Nothing printed on any of the three. The first two are why the test reads
+// ExitCode and not WaitStatus.Signaled alone: one is a signal death and the
+// other is a normal exit carrying the same number, and a member cannot tell
+// them apart nor needs to. The third is the one to keep in mind when reading a
+// green seat — it is also why packUnderALiveSeat's inner line execs, so that
+// the commit's own death is the sandbox child's death and cannot be masked.
+func bgSeatEndedFromOutside(err error, out string) bool {
+	if err == nil || len(strings.Fields(out)) != 0 {
+		return false
+	}
+	ee, ok := err.(*exec.ExitError)
+	if !ok {
+		return false
+	}
+	// bwrap itself signalled: ExitCode is -1 and err reads `signal: killed`.
+	if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return true
+	}
+	switch ee.ExitCode() {
+	case 128 + int(syscall.SIGKILL), 128 + int(syscall.SIGTERM):
+		return true
+	}
+	return false
+}
+
+// bgSeatAbstain is the one place that spends the abstention, so the line a
+// reader gets is the same whichever runner met it. It is `file.go:NN:`-shaped
+// through t.Skipf like every other member line, which is what posse-wall-check
+// reads as its evidence.
+func bgSeatAbstain(t *testing.T, what string, err error, out string) {
+	t.Helper()
+	t.Skipf("NOTHING MEASURED: %s — %s. Nothing in this run read the wall: the seat was ended by a signal from outside the sandbox before it could answer, so this is ADR 0097 D3's exit 3 and neither a wall red nor a pass (ranger-base-evx07)",
+		what, bgSeatAccount(err, out))
+}
+
 // walled runs one command inside the rendered wall and answers whether it was
 // allowed, with the seat's own one-line account for a failure message (see
 // bgSeatAccount: a member's budget is one line and `:\n%s` spends it on
@@ -273,6 +372,9 @@ func (f bgLive) walled(t *testing.T, arg ...string) (bool, string) {
 	t.Helper()
 	cmd := exec.Command("bwrap", append(append([]string{}, f.argv...), arg...)...)
 	out, err := cmd.CombinedOutput()
+	if bgSeatEndedFromOutside(err, string(out)) {
+		bgSeatAbstain(t, "a seat running "+wwOneLine(strings.Join(arg, " "))+" inside the rendered wall", err, string(out))
+	}
 	return err == nil, bgSeatAccount(err, string(out))
 }
 
@@ -608,5 +710,121 @@ func (f bgLive) packUnderALiveSeat(t *testing.T, msg string) (bool, string) {
 		t.Fatalf("could not release the seat: %v", err)
 	}
 	err := cmd.Wait()
+	// Before either arm reads this: an outside kill here is NOT the keep
+	// file's answer. T4e's `!ok` branch logs "MEASURED: the prune took the
+	// directory and the seat's commit failed", which is a reading of D20's
+	// reasoning — so a seat the box killed would be recorded as a kernel
+	// measurement this run never took. That is worse than the red T4 files.
+	if bgSeatEndedFromOutside(err, outBuf.String()) {
+		bgSeatAbstain(t, "the seat held at its ready file for an outside pack-refs --all --prune ("+msg+")", err, outBuf.String())
+	}
 	return err == nil, bgSeatAccount(err, outBuf.String())
+}
+
+// ─── the criterion's own pin (ranger-base-evx07) ─────────────────────────────
+
+// Why this is a pin and not a comment: bgSeatEndedFromOutside decides whether
+// a member REDS or ABSTAINS, so widening it by one line silently converts wall
+// regressions into "no answer" — the one direction ADR 0097 D5 will not catch,
+// because an abstention only reaches a reader on the SECOND consecutive one and
+// a widened criterion abstains forever without ever being consecutive-with-
+// itself in a way anyone reads as wrong. The negative rows carry this test.
+//
+// THE ERROR VALUES ARE REAL. Every row runs a command and hands this function
+// the *exec.ExitError the production path would hand it, rather than a
+// hand-built WaitStatus — the thing under test is how the function reads what
+// os/exec actually produces on this platform, and a faked struct cannot be
+// wrong about that.
+func TestBgSeatEndedFromOutsideReadsOnlyASupervisorSignalOverSilence(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("NOTHING MEASURED: this pin needs a POSIX shell to produce real exit statuses")
+	}
+	// exited is the error from `sh -c 'exit <code>'`: a NORMAL exit carrying
+	// that status, which is what bwrap's propagate_exit_status produces for a
+	// signalled sandbox child (128+WTERMSIG) and also what git produces at
+	// 128. The two are one byte apart and must not be read alike.
+	exited := func(code int) error {
+		err := exec.Command("sh", "-c", "exit "+strconv.Itoa(code)).Run()
+		if err == nil {
+			t.Fatalf("`sh -c 'exit %d'` exited 0, so this row varies nothing", code)
+		}
+		return err
+	}
+	// signalled is the other shape: bwrap ITSELF killed, so ExitCode is -1 and
+	// the error reads `signal: killed`.
+	signalled := func() error {
+		c := exec.Command("sleep", "60")
+		if err := c.Start(); err != nil {
+			t.Fatalf("cannot start the process to signal: %v", err)
+		}
+		if err := c.Process.Kill(); err != nil {
+			t.Fatalf("cannot signal it: %v", err)
+		}
+		err := c.Wait()
+		if err == nil {
+			t.Fatal("a SIGKILLed sleep waited clean, so this row varies nothing")
+		}
+		return err
+	}
+
+	for _, c := range []struct {
+		name string
+		err  error
+		out  string
+		want bool
+	}{
+		// The two rows this bead measured.
+		{"silent 137 — bwrap propagating SIGKILL from inside the sandbox", exited(128 + int(syscall.SIGKILL)), "", true},
+		{"silent 143 — the same for SIGTERM", exited(128 + int(syscall.SIGTERM)), "", true},
+		{"silent `signal: killed` — bwrap itself ended", signalled(), "", true},
+
+		// The rows that must keep REDDING. Each is a thing the wall, git or
+		// the sandbox said, and an abstention would bury it.
+		{"128 is git at `cannot lock ref` — the wall's own answer, one below the range", exited(128), "", false},
+		{"159 is SIGSYS: a seccomp kill is the wall's doing, not a supervisor's", exited(128 + 31), "", false},
+		{"a plain exit 1", exited(1), "", false},
+		{"137 with the seat SAYING something is not silent", exited(128 + int(syscall.SIGKILL)), "fatal: cannot lock ref", false},
+		{"a signalled seat that still printed is not silent", signalled(), "bwrap: execvp failed", false},
+		{"whitespace is silence, the same as bgSeatAccount reads it", exited(128 + int(syscall.SIGKILL)), " \n\t ", true},
+		{"exit 0 with no error", nil, "", false},
+		{"an error that is not an ExitError at all", errors.New("fork/exec bwrap: no such file or directory"), "", false},
+	} {
+		if got := bgSeatEndedFromOutside(c.err, c.out); got != c.want {
+			t.Errorf("%s: bgSeatEndedFromOutside(%v, %q) = %v, want %v", c.name, c.err, c.out, got, c.want)
+		}
+	}
+}
+
+// The live half of the pin above, and a MEMBER so it measures where ADR 0097
+// D1's venue measures: a seat SIGKILLed inside THIS render — the argv posse
+// really hands bwrap, not a bare --ro-bind — must read as ended-from-outside.
+// It passes rather than abstaining, deliberately: a member that always skipped
+// would hold the whole wall check at exit 3 forever (D3), so the abstention
+// itself is pinned by its criterion above and this arm pins the one thing a
+// unit test cannot — that bubblewrap under this render really does propagate
+// 128+9 and really does say nothing while doing it.
+//
+// `exec` makes the commit's death the SANDBOX CHILD's death, which is the only
+// one bwrap propagates — a shell that carries on past a killed child reports
+// its own status instead and masks the kill (MEASURED 2026-11-21: rc 7 for a
+// shell that exits 7 after its child was SIGKILLed, against rc 137 when the
+// killed process is the one bwrap waits on). That is why packUnderALiveSeat's
+// inner line execs too.
+func TestLiveBwrapGitRefsReadsAnOutsideKillAsNothingMeasured(t *testing.T) {
+	t.Parallel()
+	bgLiveSkip(t)
+	f := bgLiveFixture(t)
+	cmd := exec.Command("bwrap", append(append([]string{}, f.argv...), "sh", "-c", `exec sh -c "kill -9 $$"`)...)
+	out, err := cmd.CombinedOutput()
+	if !bgSeatEndedFromOutside(err, string(out)) {
+		t.Fatalf("a seat SIGKILLed inside the rendered wall read as: %s — so the ranger-base-evx07 abstention never fires and an outside kill still reaches a bead as a wall regression (ADR 0097 D5's ratchet) instead of as exit 3", bgSeatAccount(err, string(out)))
+	}
+	// And the control for the sentence above: the SAME render, the same
+	// silence, an ordinary non-zero exit — this must still red.
+	cmd = exec.Command("bwrap", append(append([]string{}, f.argv...), "sh", "-c", "exit 128")...)
+	out, err = cmd.CombinedOutput()
+	if bgSeatEndedFromOutside(err, string(out)) {
+		t.Fatalf("a seat that exited 128 silently — git's own answer at `cannot lock ref` — read as ended-from-outside: %s. That is the widening the criterion exists to refuse; a wall regression would now abstain instead of redding", bgSeatAccount(err, string(out)))
+	}
 }

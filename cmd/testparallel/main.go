@@ -615,7 +615,7 @@ func main() {
 		// measurement itself is an out-of-process `flock -n` on $HOME, which
 		// is read-only and answers the same for every reader.
 		"TestTheCreatorHoldsAFlockOnItsTempHome": "reads testHomeLock and testHomeOwned",
-		// bwrapNestOnce and bwrapNestWhy (25): ADR 0096 D3's gate, reached
+		// bwrapNestOnce and bwrapNestWhy (26): ADR 0096 D3's gate, reached
 		// through bgLiveSkip (bsLiveFixture too), bhLiveFixture, btLive and wwLiveFixture. Every
 		// one of these arms execs a real bwrap, so each asks the gate whether
 		// THIS process can nest one; the answer is memoized because the only
@@ -626,6 +626,7 @@ func main() {
 		"TestLiveBwrapGitRefsCommitsAfterAnOutsidePackRefs":                "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapGitRefsCommitsOnTheSessionBranch":                    "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapGitRefsRefusesTheSharedGitState":                     "reads bwrapNestOnce and bwrapNestWhy",
+		"TestLiveBwrapGitRefsReadsAnOutsideKillAsNothingMeasured":          "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapGitRefsWithoutTheKeepFileNeverCommitsIntoAPrunedDir": "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession":             "reads bwrapNestOnce and bwrapNestWhy",
 		"TestLiveBwrapWalledSeatCommitsDetachedAndCannotWriteARef":         "reads bwrapNestOnce and bwrapNestWhy",
