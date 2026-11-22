@@ -115,15 +115,28 @@ so a fixture that drifts off the boundary says so instead of passing.
 | `len(rows)-n` → `1` | `-run TestQABoxCensusRendersOneBOUNDEDLineWhateverPeersDeclare` | rc=1, both arms (`says 1 … 63 were dropped`) |
 | `>` → `>=` | the same | rc=1, the boundary row |
 
-## What the suite said, and the pre-existing red it was read around
+## What the suite said
 
-`make test` on this base dies at its 12th tree-check prerequisite on a red
-that is not this bead's and is already owned: `ranger-base-89fsg`, "main red
-at 8b6d0c2776d3", `TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles` —
-the head comment says 163 pins where the Makefile has 164. Measured here with
-this bead's two files restored to HEAD, so it is the base's and not the diff's.
-Per AGENTS.md ("A red `make test` on a fresh `main`") no second bead was
-filed.
+**The reading of record is a plain `make test`, exit 0, no skips of any kind**
+— MEASURED 2026-11-22 on this branch merged onto main at `d1c7f7f8`, zero
+FAIL lines, `cmd/posse` 121.5s, internal/posse's three arms 251.6s / 69.6s /
+154.2s, internal/treepins 149.6s. `go run ./cmd/checkorphans` clean.
+
+That reading was only available at the end. The rest of this section is how
+the same work was verified before it, and it is kept because the lesson in it
+outlives this bead.
+
+## The base red it had to be read around first
+
+For most of this bead's life `make test` died at its 12th `tree-check`
+prerequisite on a red that was not this bead's and was already owned:
+`ranger-base-89fsg`, "main red at 8b6d0c2776d3",
+`TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles` — the head comment said
+163 pins where the Makefile had 164. Measured here with this bead's two files
+restored to HEAD, so it was the base's and not the diff's. Per AGENTS.md
+("A red `make test` on a fresh `main`") no second bead was filed, and
+`8b83a18a` landed that one-word fix while this bead was in its last suite
+run.
 
 **And the obvious way around it does not work**, which is worth writing down
 because the next seat on this base will reach for it: `make test
@@ -138,8 +151,9 @@ hand-exempted, and a `make` variable is a hand exemption. MEASURED
 
 The route that does work is `ranger-base-mlw6q`'s: leave the Makefile alone —
 so the complement door compares two sets that agree and is green — and put
-the skip on the `go test` line instead. This bead's readings were taken that
-way, through `scripts/test-times.sh` so each run still takes a suite slot:
+the skip on the `go test` line instead. This bead's intermediate readings were
+taken that way, through `scripts/test-times.sh` so each run still takes a
+suite slot:
 
 - the other thirteen `tree-check` doors, each by name: all green
 - `scripts/test-times.sh go test ./internal/treepins -count=1 -skip
@@ -148,3 +162,7 @@ way, through `scripts/test-times.sh` so each run still takes a suite slot:
   `verify-*` targets)
 - `TestQAEverySuiteArmTypeChecks`, then arm 1 (`./...`), arm 2, arm 3, then
   `scripts/audit-silent-reverts.sh --quiet`
+
+Arm 1 is `./...`, so it reaches internal/treepins too and needs the same skip
+on its own line — the first pass around the red forgot that and arm 1 was the
+one red in an otherwise green set, which is how the omission announces itself.
