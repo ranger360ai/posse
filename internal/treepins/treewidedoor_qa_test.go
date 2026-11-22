@@ -1494,10 +1494,14 @@ package treepins
 // and one door that stands in front of no pin at all (ranger-base-ujyjd,
 // finding 4 of the ranger-base-hbjma verify):
 //
-//	(no pin)                                      make land-check    ~1.5s
+//	(no pin)                                      make land-check      ~2s
 //
 // It is `scripts/posse-land-check`, the gate ADR 0087 has judge a REPLAYED
-// landing, and its fifth step vets the NOT-native GOOS. Nothing else in this
+// landing, and its last three steps vet the NOT-native GOOS — the untagged
+// build, then each arm it derives, which is the cross product
+// ranger-base-fuwuv found empty (340 of internal/posse's 981 `.go` files are
+// under the two positive arm tags, and nothing compiled them for the other
+// platform). Nothing else in this
 // repository compiles the tree for the platform this box is not: GOOS
 // appeared nowhere in the Makefile, so a test file with no build constraint
 // reaching for a helper declared only under one GOOS is a tree whose
@@ -1623,7 +1627,10 @@ package treepins
 // The new door is `make land-check` and it is 1.5s of that warm — 8.2s with
 // the darwin build cache cold, and 0.3s for its cross-GOOS step alone — so
 // the 11s band is not its cost; it is the load, which is where this chain's
-// every reading puts it. An earlier set of three on the same work at one
+// every reading puts it. (That door reads 2.0-2.2s warm since
+// ranger-base-fuwuv gave its cross-GOOS half the arm tags, 0.65s of it the
+// three cross steps. The readings in this paragraph are the ones that were
+// taken, and they stand as taken.) An earlier set of three on the same work at one
 // hundred and forty-eight, before ranger-base-q749c's and
 // ranger-base-n7hsa's pins landed beside it, read 51s, 41s then 41s at a
 // load of 1.71 to 4.51 with no slot held by anyone: a quiet box and a

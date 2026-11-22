@@ -175,9 +175,11 @@ func lcpWantArms(t *testing.T, tree string, want ...string) []string {
 
 // 1. THE BASELINE, every step of it, and the contract's own shape around the
 // derivation: build, vet, one vet per declared arm in the package that
-// declares it, and ONE cross-GOOS vet — whichever of darwin and linux is not
-// this host's, which is why that step is read as a pattern rather than as a
-// literal (the GOARCH is the host's except where darwin has no port for it).
+// declares it, and ONE UNTAGGED cross-GOOS vet — whichever of darwin and
+// linux is not this host's, which is why that step is read as a pattern
+// rather than as a literal (the GOARCH is the host's except where darwin has
+// no port for it). The TAGGED cross vets beside it are arm 9's subject; this
+// arm counts the untagged one, which is why its regexp ends at `./...`.
 func TestQALandCheckPlansBuildVetEveryArmAndOneCrossGoosVet(t *testing.T) {
 	t.Parallel()
 	tree := lcpTree(t, nil)
@@ -335,6 +337,89 @@ func TestQALandCheckJudgesItsCwdAndNotItsOwnCheckout(t *testing.T) {
 		t.Errorf("the red does not say which tree it could not judge:\n%s", out)
 	}
 }
+
+// lcpCrossArm reads a planned TAGGED cross-GOOS vet: the `GOOS=… GOARCH=…`
+// words env takes as its own operands, then the same `go vet -tags` payload
+// the native half spells. Two groups, so an arm can compare the platform and
+// the arm list separately.
+var lcpCrossArm = regexp.MustCompile(`^GOOS=(darwin|linux) (GOARCH=[a-z0-9]+) (go vet -tags .*)$`)
+
+// 9. EVERY ARM UNDER THE NOT-NATIVE GOOS TOO, which is ranger-base-fuwuv: the
+// cross product of the arm tags and the platforms, which was empty. The arm
+// loop ran at the native GOOS and the cross-GOOS step carried no `-tags`, so
+// nothing in this tree ever type-checked `-tags posse_arm2` or
+// `-tags posse_arm3` for the platform the launcher is not — about two thirds
+// of internal/posse's test tree (ranger-base-qp1hm), which `go test ./...`
+// does not compile either. A file under either tag naming a linux-only symbol
+// was green through `make fmt-check`, `make tree-check`, `make test` and
+// `make test-arm2` here and failed to BUILD on ci.yml's macos leg: the exact
+// class of ADR 0087's residual 1 and of the untagged cross vet beside it, one
+// tag deeper. Found by hand on ranger-base-njj5z, whose fix added
+// `golang.org/x/sys/unix` to a `//go:build posse_arm2` file and whose seat
+// cross-vetted it because nothing asked.
+//
+// The assertion is that the cross arm list is the native arm list, VERBATIM
+// and in order, under one platform — not a count and not a literal, because
+// the point of the fix is that the two halves share one derivation. The
+// fixture declares a third arm in a SECOND package, so a cross half that
+// re-derived its own list (or kept a literal `./internal/posse`) differs here
+// rather than agreeing by coincidence over one package.
+func TestQALandCheckCrossVetsEveryDeclaredArmAndNotOnlyTheUntaggedBuild(t *testing.T) {
+	t.Parallel()
+	tree := lcpTree(t, map[string]string{
+		"internal/newthing/arm4_qa_test.go": "//go:build posse_arm4\n\npackage newthing\n",
+	})
+	steps := lcpPlan(t, tree)
+	native := strings.TrimSpace(lcpGoEnv(t, "GOOS"))
+	var crossArms, platforms []string
+	for _, s := range steps {
+		m := lcpCrossArm.FindStringSubmatch(s)
+		if m == nil {
+			continue
+		}
+		if m[1] == native {
+			t.Errorf("the plan cross-vets an arm under %s, this host's own GOOS — the native arm vets already covered it, so this step is paid for nothing: %s", m[1], s)
+		}
+		platforms = append(platforms, "GOOS="+m[1]+" "+m[2])
+		crossArms = append(crossArms, m[3])
+	}
+	want := lcpArms(steps)
+	if len(want) != 3 {
+		t.Fatalf("the fixture declares three arms and the plan holds %d native arm vets, so this arm is comparing against the wrong list:\n  %s",
+			len(want), strings.Join(steps, "\n  "))
+	}
+	if strings.Join(crossArms, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the plan cross-vets\n  %s\nand vets natively\n  %s\n— two thirds of a package's test tree compiles for one platform and nothing compiles it for the other (ranger-base-fuwuv); the whole plan was:\n  %s",
+			strings.Join(crossArms, "\n  "), strings.Join(want, "\n  "), strings.Join(steps, "\n  "))
+	}
+	// And every one of them names the platform the UNTAGGED cross vet
+	// named, which is the pair arm 1 holds to the non-native of darwin and
+	// linux. Without this, a plan whose tagged steps said arm64 while the
+	// untagged one said amd64 would satisfy arm 1 (one cross vet, not
+	// native) and the comparison above (one platform, consistently) while
+	// vetting the arms for an architecture nothing else in this tree, and
+	// no leg of ci.yml, judges.
+	//
+	// Bounded on purpose: a plan with NO tagged cross vets at all is the
+	// hole itself, already reported above, and indexing past it here would
+	// turn that report into a panic.
+	var untagged string
+	for _, s := range steps {
+		if m := lcpUntaggedCrossVet.FindStringSubmatch(s); m != nil {
+			untagged = m[1]
+		}
+	}
+	for _, p := range platforms {
+		if p != untagged {
+			t.Errorf("an arm is cross-vetted for %q where the untagged cross vet named %q — the tagged steps are that same pair or they are vetting a GOOS/GOARCH nothing else here, and no leg of ci.yml, judges:\n  %s",
+				p, untagged, strings.Join(steps, "\n  "))
+		}
+	}
+}
+
+// lcpUntaggedCrossVet is the plain cross-GOOS step, arm 1's subject, read
+// here for its platform words alone.
+var lcpUntaggedCrossVet = regexp.MustCompile(`^(GOOS=(?:darwin|linux) GOARCH=[a-z0-9]+) go vet \./\.\.\.$`)
 
 // lcpGoEnv is one `go env` value, for the cross-GOOS arm. It asks the
 // toolchain rather than reading runtime.GOOS: the script asks `go env`, and

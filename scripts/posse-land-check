@@ -79,39 +79,77 @@
 # host's arch is one darwin has no port for, which is not a pair go will accept
 # and would be a spurious red rather than a finding.
 #
+# AND EVERY ARM UNDER BOTH PLATFORMS, which until ranger-base-fuwuv was the
+# cross product nothing took: the arm loop ran at the native GOOS and the
+# cross-GOOS step carried no `-tags`, so nothing in this tree ever type-checked
+# `-tags posse_arm2` or `-tags posse_arm3` for the not-native platform. Arms 2
+# and 3 are about two thirds of internal/posse's test tree
+# (ranger-base-qp1hm) and `go test ./...` compiles neither, so a file under
+# either tag naming a linux-only symbol passed `make fmt-check`,
+# `make tree-check`, `make test` and `make test-arm2` here and failed to BUILD
+# on ci.yml's macos leg — the same class as the paragraph above, one tag
+# deeper. MEASURED on the bead that found it: ranger-base-njj5z's fix added
+# `golang.org/x/sys/unix` to a `//go:build posse_arm2` test file, and the
+# cross-GOOS vets of it were run BY HAND because nothing asked. So `arm_vets`
+# below is called once with no env words and once per cross-GOOS pair, which
+# is also why it is a function: two call sites deriving two arm lists is the
+# hole reopening quietly.
+#
 # STATED RESIDUAL: the `!darwin && !linux` files (backupvolume_other.go,
 # loadavg_other.go, procstart_other.go, …) compile under neither GOOS, here or
 # in ci.yml. Covering them means a third GOOS and a price nobody has measured.
+#
+# INHERITED RESIDUAL, not new to the cross product: the derivation names the
+# package that declares a tag, and `go vet -tags T ./pkg` over a package whose
+# files are all excluded under the GOOS being vetted exits 1 with `build
+# constraints exclude all Go files`. That is a spurious red at a gate where a
+# spurious red blocks a landing, and it is already reachable at the NATIVE arm
+# vets — an arm declared only in darwin-only files reds on a linux launcher
+# today. The cross product widens the surface and adds no class. MEASURED
+# 2026-11-22: no package in this tree declares an arm in a file constrained to
+# one GOOS, and both cross-GOOS arm vets are green. The day one appears, the
+# red names the package and the fix is to constrain the vet, not the file.
 #
 # WHAT RUNS THIS, which until ranger-base-n2yaw was nothing at all: `make
 # test` never invoked the script, `scripts/shell-syntax.sh` only parsed it,
 # and `make scripts-check`'s censuses read scripts/ as text — so the
 # derivation above, the one part of this file designed to outlive its author,
 # was witnessed only by four by-hand `--plan` readings on ranger-base-pn621's
-# close. internal/posse/landcheckplan_qa_test.go is eight arms over the
-# `--plan` output now (suite arm 2, 0.14s for all eight, no toolchain step
-# run), over a PLANTED module rather than this tree: the subject is the
+# close. internal/posse/landcheckplan_qa_test.go is nine arms over the
+# `--plan` output now (suite arm 2, 0.043-0.059s for all nine, no toolchain
+# step run), over a PLANTED module rather than this tree: the subject is the
 # derivation, and a pin that read this repo's own arms would assert a package
-# list every unrelated landing can move. One of those eight red when it was
-# written, which is the legacy spelling above.
+# list every unrelated landing can move. Two of those nine red when they were
+# written — the legacy spelling above, and the cross product below.
 #
 # WHAT IT COSTS, paid inside the fleet lock on the replay arm only: about
-# 7-9s warm and 30s cold, against ADR 0087's budget of ~6s warm and ~16s cold,
-# so warm holds and the ~30s WARM ceiling at which ranger-base-pn621 said to
-# hand the lock-time price back to architecture is not approached.
+# 13-16s warm and 24s cold, against ADR 0087's budget of ~6s warm and ~16s
+# cold, so the ~30s WARM ceiling at which ranger-base-pn621 said to hand the
+# lock-time price back to architecture is a little under twice this and is not
+# reached.
 #
-# It is 7s rather than 6s because the ADR timed its four steps one after
-# another over a cache that was warm for all of them, and a replay's tree has
-# files in it that nothing has compiled. The cold figure is the ADR's four
-# steps plus the darwin vet it measured separately (17.7s first-ever there,
-# 8.5s here), and a cold cache is the first replay after a toolchain change or
-# a cache prune rather than a per-landing price.
+# It is 13-16s rather than the ADR's 6s for three reasons worth separating,
+# because only one of them is a decision anybody made. The ADR timed its steps
+# one after another over a cache warm for all of them, and a replay's tree has
+# files in it that nothing has compiled. The two cross-GOOS arm vets are
+# +3.9-6.3s of it on such a tree (and +0.4-0.65s where nothing needs
+# recompiling at all). And the five steps that were here on 2026-11-11 read
+# 7.1-8.7s then and 9.5-11.5s on the same method eleven days later: the tree
+# grows under this check, which is what will eat the rest of the headroom.
+# A cold cache is the first replay after a toolchain change or a cache prune
+# rather than a per-landing price, and it is the one state the cross product
+# is nearly free in — an empty cache makes the untagged darwin vet build that
+# whole dependency tree anyway.
 #
 # EVERY READING, with its tree and its load average, is in
-# docs/notes.d/ranger-base-pn621.md, and that is the ONE place they are said:
-# this file quoting the table as well would be two places to keep in step by
-# hand, which is how the figure in the second one goes stale while both look
-# authoritative (AGENTS.md's own rule about the tree-check reading).
+# docs/notes.d/ranger-base-fuwuv.md for the seven steps and in
+# docs/notes.d/ranger-base-pn621.md for the five, and those are the ONE place
+# each is said: this file quoting either table as well would be two places to
+# keep in step by hand, which is how the figure in the second one goes stale
+# while both look authoritative (AGENTS.md's own rule about the tree-check
+# reading). The two are not one table re-measured — pn621's rows are the
+# five-step script and stay true of it — so the current price is fuwuv's and
+# pn621's is what it is being compared against.
 set -euo pipefail
 
 plan_only=0
@@ -204,11 +242,24 @@ declarations=$(arm_declarations)
 tags=$(printf '%s\n' "$declarations" | awk -F'\t' 'NF == 2 { print $1 }' | sort -u)
 [ -n "$tags" ] || die "no posse_arm* build tags found in this tree — this repo has three test arms (ranger-base-qp1hm), so this is the derivation broken and not a tree without arms; see this script's header"
 say "arms declared here: $(printf '%s' "$tags" | tr '\n' ' ')"
-for tag in $tags; do
-  dirs=$(printf '%s\n' "$declarations" | awk -F'\t' -v t="$tag" '$1 == t { print $2 }' | sort -u)
-  # Unquoted on purpose: one package pattern per word.
-  step go vet -tags "$tag" $dirs
-done
+
+# Every declared arm, in the package that declares it, under ONE platform: the
+# native one when called with no arguments, and a cross one when called with
+# `GOOS=… GOARCH=…` — env's own leading operands, the same words the plain
+# cross-GOOS vet below passes, so a tagged cross step reads in the log exactly
+# like the untagged one above it. One function and not two loops: the native
+# and cross call sites cover the same derived arm list or the hole
+# ranger-base-fuwuv closed is back without anyone editing the derivation.
+arm_vets() {
+  local tag dirs
+  for tag in $tags; do
+    dirs=$(printf '%s\n' "$declarations" | awk -F'\t' -v t="$tag" '$1 == t { print $2 }' | sort -u)
+    # Unquoted on purpose: one package pattern per word.
+    step "$@" go vet -tags "$tag" $dirs
+  done
+}
+
+arm_vets
 
 native_os=$(go env GOOS)
 native_arch=$(go env GOARCH)
@@ -220,6 +271,7 @@ for goos in darwin linux; do
       *) goarch=arm64 ;;
     esac
     step "GOOS=$goos" "GOARCH=$goarch" go vet ./...
+    arm_vets "GOOS=$goos" "GOARCH=$goarch"
   fi
 done
 

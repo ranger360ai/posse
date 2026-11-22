@@ -524,7 +524,7 @@ stall that day, and every one of them a typing habit.
   make pkgcensus-arm3-check    the same, for what only -tags posse_arm3 builds
   make treepins-check   ~70s   every tree-wide pin in internal/treepins, minus a priced table
   make pid-check        ~10s   the shipped PIDs under examples/agents/
-  make land-check      ~1.5s   the launcher's own land gate, cross-GOOS vet and all
+  make land-check        ~2s   the launcher's own land gate, cross-GOOS vets and all
   ```
 
   **The treepins door is named by what it does NOT run** (ADR 0098,
@@ -547,8 +547,13 @@ stall that day, and every one of them a typing habit.
 
   The last of those is the odd one out and the one worth knowing about: it is
   not a tree-wide pin, it is `scripts/posse-land-check`, the gate that judges
-  a REPLAYED landing — and its fifth step vets the NOT-native GOOS, which is
-  the only thing on this box that does. GOOS appeared nowhere in the Makefile
+  a REPLAYED landing — and its last three steps vet the NOT-native GOOS, the
+  untagged build and then each declared arm, which is the only thing on this
+  box that does. (Each arm under both platforms only since
+  ranger-base-fuwuv: the arm vets ran native and the cross vet ran untagged,
+  so 340 of internal/posse's 981 `.go` files — the two positive arm tags —
+  were compiled for one platform and by nothing for the other.) GOOS appeared
+  nowhere in the Makefile
   until this door, so a file that compiles here and not on darwin sat behind a
   green `make test`, a green `make tree-check` and a green `go vet ./...`, and
   the first thing to say so was the coordinator's pre-push gate: that is how
@@ -556,8 +561,11 @@ stall that day, and every one of them a typing habit.
   residual 1 — "the unreplayed arm can still land a tip the seat never built;
   that is seat discipline" — says why the door has to exist: an UNREPLAYED
   fast-forward runs that gate nowhere, so nobody read its verdict until that
-  pre-push gate did. 1.5s warm, 8.2s with the darwin build cache cold, is what
-  that discipline costs now it is typed for you.
+  pre-push gate did. 2.0-2.2s warm is what that discipline costs now it is
+  typed for you — 1.5s of that is the five steps it had before the cross
+  product and 0.65s is the three cross-GOOS steps, and
+  docs/notes.d/ranger-base-fuwuv.md prices it on a tree nothing has compiled,
+  which is the shape a replay actually pays.
 
   **`make tree-check` is all of them, 83-92s warm over three runs with the
   complement door on the line** (MEASURED 2026-11-14, ranger-base-3cpcg:
