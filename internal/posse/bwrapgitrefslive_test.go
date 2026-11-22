@@ -221,14 +221,59 @@ func bgLiveSessionGrants(t *testing.T, repo, tree string, ag *AgentFile) []strin
 	return out
 }
 
+// bgSeatAccount is what a seat run in this file reports about itself, on ONE
+// line, and it is ranger-base-axt1f (ADR 0097 D3, the class
+// docs/notes.d/ranger-base-a688i.md names).
+//
+// WHAT THE WALL CHECK CAN READ. scripts/posse-wall-check reports a failed
+// member by its first `file.go:NN:` line and nothing after it — its
+// evidence(), 300 characters — and the launcher puts that one line on the
+// bead. Every seat runner here used to hand its caller the raw combined
+// output, which every fatal then interpolated after a `\n`, so a red reached
+// the bead as a symptom with a colon and no cause: ranger-base-axt1f's whole
+// text was `the seat's commit failed after an outside pack-refs --all
+// --prune:`, one line, and nothing in it said whether git had refused the
+// write or something had killed the seat.
+//
+// THE EXIT STATUS IS THE ROW THAT WAS BEING THROWN AWAY, and it is the one
+// that discriminates. Both runners reduced `err` to `err == nil` before the
+// message was ever formatted, so a git that exited 128 at `cannot lock ref`
+// and a seat killed from outside produced byte-identical reports. `exit
+// status 128` is the wall or git; `signal: killed` is neither, and sends the
+// next reader to the box instead of to this render.
+//
+// THE FOLD IS wwOneLine's AND NOT A SECOND SPELLING OF IT
+// (wallwatchlive_test.go, ranger-base-a688i): two foldings of "put this on
+// one line" are two answers waiting to disagree about what a member's line
+// may contain. What is NOT borrowed is its silence case, deliberately —
+// wwOneLine answers a wordless bwrap in wall-watch's own terms, and here a
+// seat that said nothing means something else, so each caller keeps its own
+// account of silence and shares the fold.
+func bgSeatAccount(err error, out string) string {
+	status := "exit 0"
+	if err != nil {
+		// Folded too, so the contract holds whatever an exec error says: the
+		// return value of this function is one line, always.
+		status = strings.Join(strings.Fields(err.Error()), " ")
+	}
+	// strings.Fields, which is wwOneLine's own emptiness test, so "said
+	// nothing" means the same thing at both ends of the fold.
+	if len(strings.Fields(out)) == 0 {
+		return status + ", and the seat said NOTHING — so that status is the whole account: no git error and no bwrap refusal, which is the shape of a seat ended from outside rather than one the wall turned away"
+	}
+	return status + ", and the seat said " + wwOneLine(out)
+}
+
 // walled runs one command inside the rendered wall and answers whether it was
-// allowed, with the output for a failure message. --chdir is already in the
-// argv, so the command runs in the session's tree the way a pane does.
+// allowed, with the seat's own one-line account for a failure message (see
+// bgSeatAccount: a member's budget is one line and `:\n%s` spends it on
+// nothing). --chdir is already in the argv, so the command runs in the
+// session's tree the way a pane does.
 func (f bgLive) walled(t *testing.T, arg ...string) (bool, string) {
 	t.Helper()
 	cmd := exec.Command("bwrap", append(append([]string{}, f.argv...), arg...)...)
 	out, err := cmd.CombinedOutput()
-	return err == nil, strings.TrimSpace(string(out))
+	return err == nil, bgSeatAccount(err, string(out))
 }
 
 // gitIn is a git invocation with an identity on the command line: $HOME is
@@ -264,7 +309,7 @@ func TestLiveBwrapGitRefsCommitsOnTheSessionBranch(t *testing.T) {
 
 	ok, out := f.walled(t, f.gitIn("commit", "-q", "--allow-empty", "-m", "t2")...)
 	if !ok {
-		t.Fatalf("the session cannot commit on its own branch under the rendered wall:\n%s", out)
+		t.Fatalf("the session cannot commit on its own branch under the rendered wall: %s", out)
 	}
 	after := f.branchSha(t, "posse/s1")
 	if after == "" || after == before {
@@ -291,7 +336,7 @@ func TestLiveBwrapGitRefsRefusesTheSharedGitState(t *testing.T) {
 		{"write packed-refs", []string{"sh", "-c", "echo x >> " + filepath.Join(f.common, "packed-refs")}},
 	} {
 		if ok, out := f.walled(t, c.arg...); ok {
-			t.Errorf("%s was ALLOWED under the rendered wall:\n%s", c.name, out)
+			t.Errorf("%s was ALLOWED under the rendered wall: %s", c.name, out)
 		}
 	}
 	if got := f.branchSha(t, "main"); got != mainBefore {
@@ -311,7 +356,7 @@ func TestLiveBwrapGitRefsCanMoveAPeerSessionsRef(t *testing.T) {
 
 	ok, out := f.walled(t, f.gitIn("update-ref", "refs/heads/posse/s2", "HEAD")...)
 	if !ok {
-		t.Fatalf("a peer session's ref in the granted directory was refused — the widening parity declares is not real, and ADR 0080 D20's Consequences entry needs revisiting instead of this test:\n%s", out)
+		t.Fatalf("a peer session's ref in the granted directory was refused — the widening parity declares is not real, and ADR 0080 D20's Consequences entry needs revisiting instead of this test: %s", out)
 	}
 }
 
@@ -354,7 +399,7 @@ func TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession(t *testing.T) {
 		{"move the session's own ref by hand", []string{"sh", "-c", "echo " + before + " > " + filepath.Join(f.common, "refs", "heads", "posse", "s1")}},
 	} {
 		if ok, out := f.walled(t, c.arg...); ok {
-			t.Errorf("%s was ALLOWED under the rendered wall for a PID that denies Edit and Write:\n%s", c.name, out)
+			t.Errorf("%s was ALLOWED under the rendered wall for a PID that denies Edit and Write: %s", c.name, out)
 		}
 	}
 	if got := f.branchSha(t, "posse/s1"); got != before {
@@ -375,7 +420,7 @@ func TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession(t *testing.T) {
 		{"read a tracked file", []string{"sh", "-c", "cat " + filepath.Join(f.tree, ".git")}},
 	} {
 		if ok, out := f.walled(t, c.arg...); !ok {
-			t.Errorf("%s was REFUSED under the rendered wall, and ADR 0086 G1-G3 measured it allowed:\n%s", c.name, out)
+			t.Errorf("%s was REFUSED under the rendered wall, and ADR 0086 G1-G3 measured it allowed: %s", c.name, out)
 		}
 	}
 
@@ -384,7 +429,7 @@ func TestLiveBwrapWholeTreeDenyGetsNoGitWriteInItsSession(t *testing.T) {
 	// which the prep made, so this is the arm that says the seat can still
 	// claim, comment and close.
 	if ok, out := f.walled(t, "sh", "-c", ": > "+filepath.Join(f.tree, ".beads", "witness")); !ok {
-		t.Errorf("the bead store is not writable, so a findings-only seat cannot claim or close its own bead:\n%s", out)
+		t.Errorf("the bead store is not writable, so a findings-only seat cannot claim or close its own bead: %s", out)
 	}
 }
 
@@ -411,7 +456,7 @@ func TestLiveBwrapWalledSeatCommitsDetachedAndCannotWriteARef(t *testing.T) {
 
 	ok, out := f.walled(t, f.gitIn("commit", "-q", "--allow-empty", "-m", "pe5g5")...)
 	if !ok {
-		t.Fatalf("a walled seat cannot commit on its detached HEAD under the rendered wall:\n%s", out)
+		t.Fatalf("a walled seat cannot commit on its detached HEAD under the rendered wall: %s", out)
 	}
 	head := mustGit(t, f.tree, "rev-parse", "HEAD")
 	if head == refs["posse/s1"] {
@@ -430,7 +475,7 @@ func TestLiveBwrapWalledSeatCommitsDetachedAndCannotWriteARef(t *testing.T) {
 		{"write its own ref file by hand", []string{"sh", "-c", "echo " + head + " > " + filepath.Join(f.common, "refs", "heads", "posse", "s1")}},
 	} {
 		if ok, out := f.walled(t, c.arg...); ok {
-			t.Errorf("a walled seat could %s:\n%s", c.name, out)
+			t.Errorf("a walled seat could %s: %s", c.name, out)
 		}
 	}
 	for b, was := range refs {
@@ -474,7 +519,7 @@ func TestLiveBwrapGitRefsCommitsAfterAnOutsidePackRefs(t *testing.T) {
 
 	ok, out := f.packUnderALiveSeat(t, "t4")
 	if !ok {
-		t.Fatalf("the seat's commit failed after an outside pack-refs --all --prune:\n%s", out)
+		t.Fatalf("the seat's commit failed after an outside pack-refs --all --prune: %s", out)
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("the keep file did not keep %s: %v", dir, err)
@@ -518,7 +563,7 @@ func TestLiveBwrapGitRefsWithoutTheKeepFileNeverCommitsIntoAPrunedDir(t *testing
 	_, statErr := os.Stat(dir)
 	switch {
 	case !ok:
-		t.Logf("MEASURED: no keep file — the prune took %s (present=%v) and the seat's commit failed, which is D20's reasoning:\n%s",
+		t.Logf("MEASURED: no keep file — the prune took %s (present=%v) and the seat's commit failed, which is D20's reasoning: %s",
 			dir, statErr == nil, out)
 	case f.branchSha(t, "posse/s1") == before:
 		t.Fatalf("the seat's commit exited 0 and the operator's checkout still reads posse/s1 at %s: the ref write landed in a directory nothing reads (%s present=%v). A seat cannot be allowed to commit into a pruned ref directory — ADR 0080 D20's keep file is the remedy and this says it did not work",
@@ -553,8 +598,8 @@ func (f bgLive) packUnderALiveSeat(t *testing.T, msg string) (bool, string) {
 		}
 		if time.Now().After(deadline) {
 			cmd.Process.Kill()
-			cmd.Wait()
-			t.Fatalf("the walled seat never came up (no %s):\n%s", ready, outBuf.String())
+			werr := cmd.Wait()
+			t.Fatalf("the walled seat never came up (no %s after 30s): %s", ready, bgSeatAccount(werr, outBuf.String()))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -563,5 +608,5 @@ func (f bgLive) packUnderALiveSeat(t *testing.T, msg string) (bool, string) {
 		t.Fatalf("could not release the seat: %v", err)
 	}
 	err := cmd.Wait()
-	return err == nil, strings.TrimSpace(outBuf.String())
+	return err == nil, bgSeatAccount(err, outBuf.String())
 }
