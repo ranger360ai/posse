@@ -841,10 +841,14 @@ type fakeWallWatchProbe struct {
 	// leader with the watcher and only its backgrounded child survives.
 	leaderPpid int
 	leaderRead bool
-	// killErr is a kill that did not confirm: the census still names the
-	// seat's processes, so they are left in pids (ranger-base-kzk3u; the
-	// same shape as ranger-base-6r6ox's field of the same name).
-	killErr string
+	// killErr and killNothing are the two kill outcomes no arm could reach
+	// while Kill returned every pid and an empty error unconditionally
+	// (ranger-base-6r6ox): a kill that did not confirm — the census still
+	// names processes, so they are left in pids, which is also what
+	// ranger-base-kzk3u's arms turn on — and a kill that found the seat
+	// already over.
+	killErr     string
+	killNothing bool
 }
 
 func (p *fakeWallWatchProbe) WatcherAlive(wallWatchRecord) bool { return p.alive }
@@ -855,6 +859,10 @@ func (p *fakeWallWatchProbe) LeaderParent(wallWatchRecord) (int, bool) {
 }
 func (p *fakeWallWatchProbe) Kill(wallWatchRecord) ([]int, string) {
 	p.killed++
+	if p.killNothing {
+		p.pids = nil
+		return nil, ""
+	}
 	k := p.pids
 	if p.killErr != "" {
 		return k, p.killErr
@@ -1247,6 +1255,167 @@ func TestWallWatchBackstopClearsTheRetryMarkUnderALiveWatcher(t *testing.T) {
 	}
 	if p.killed != 2 || len(st.issues) != 1 {
 		t.Errorf("killed=%d beads=%d, want 2 and 1", p.killed, len(st.issues))
+	}
+}
+
+// ── a kill that did not confirm, and one that found nothing (ranger-base-6r6ox)
+//
+// Until these rows, fakeWallWatchProbe.Kill returned every pid and an empty
+// error, so no arm could reach wallWatchKilled's "NOT CONFIRMED" or its
+// "nothing was left to kill", and `grep -rn 'NOT CONFIRMED'` over the tree
+// found only the string's own definition. Each row drives one render site
+// through the backstop or the filing, and holds the TITLE and the verdict
+// line's head to the body: a seat the kill could not confirm ended must not
+// be reported KILLED in the part a reader sees first.
+
+const wwKillErr = "processes in the seat's mount namespace were still alive after 20 rounds of SIGKILL: [102 103]"
+
+// wwSaysNotConfirmed asserts what every reading of an unconfirmed kill must
+// carry, and what it must not.
+func wwSaysNotConfirmed(t *testing.T, what, text string) {
+	t.Helper()
+	if !strings.Contains(text, "NOT CONFIRMED — "+wwKillErr) {
+		t.Errorf("%s does not carry the kill's failure:\n%s", what, text)
+	}
+	if strings.Contains(text, "KILLED seat") || strings.Contains(text, "KILLED this seat") || strings.Contains(text, "killed the seat.") {
+		t.Errorf("%s reports as KILLED a seat whose kill did not confirm:\n%s", what, text)
+	}
+}
+
+func TestWallWatchBackstopDetachWhoseKillDidNotConfirmSaysSoInTitleAndVerdict(t *testing.T) {
+	t.Parallel()
+	state, _, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killErr: wwKillErr}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 || len(st.issues) != 1 {
+		t.Fatalf("killed=%d beads=%+v (lines %q)", p.killed, st.issues, lines)
+	}
+	is := st.issues[0]
+	wwBackstopBeadClass(t, is, "the unconfirmed kill's bead")
+	if want := "security: wall-watch could NOT confirm the kill of seat developer — the mount over /h/.claude/settings.json came off"; is.Title != want {
+		t.Errorf("title = %q, want %q", is.Title, want)
+	}
+	wwSaysNotConfirmed(t, "the bead", is.Description)
+	if !strings.Contains(is.Description, "end it by hand") {
+		t.Errorf("the bead does not tell its reader the seat may still be running:\n%s", is.Description)
+	}
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 1 {
+		t.Fatalf("%d verdicts, want 1 (tick said %q)", len(vs), lines)
+	}
+	if !strings.Contains(vs[0].Text, "could NOT confirm the kill of seat developer — the wall over /h/.claude/settings.json came off") {
+		t.Errorf("the verdict's head does not say the kill is unconfirmed:\n%s", vs[0].Text)
+	}
+	wwSaysNotConfirmed(t, "the verdict", vs[0].Text)
+}
+
+// The comment arm of the same filing: a second detection of the same path
+// inside ten minutes is a comment, rendered by wallWatchComment.
+func TestWallWatchDetachCommentOfAnUnconfirmedKillSaysNotConfirmed(t *testing.T) {
+	t.Parallel()
+	st := &fakeWallWatchStore{}
+	m := []WallWatchMount{{WallWatchDeny, "/x"}}
+	now := time.Now()
+	if _, _, err := fileWallWatchDetach(st, wallWatchDetach{Seat: "a", Missing: m, Killed: []int{7}}, now, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, commented, err := fileWallWatchDetach(st, wallWatchDetach{Seat: "b", Missing: m, Killed: []int{8}, KillErr: wwKillErr}, now, "")
+	if err != nil || len(commented) != 1 {
+		t.Fatalf("commented=%v err=%v, want one comment", commented, err)
+	}
+	cs := st.comments[commented[0]]
+	if len(cs) != 1 {
+		t.Fatalf("%d comments, want 1: %v", len(cs), cs)
+	}
+	wwSaysNotConfirmed(t, "the comment", cs[0])
+}
+
+func TestWallWatchBackstopOrphanKillThatDidNotConfirmSaysSoInTitleAndVerdict(t *testing.T) {
+	t.Parallel()
+	state, _, r := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: 1, leaderRead: true, killErr: wwKillErr}
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if p.killed != 1 || len(st.issues) != 1 {
+		t.Fatalf("killed=%d beads=%+v (lines %q)", p.killed, st.issues, lines)
+	}
+	is := st.issues[0]
+	wwBackstopBeadClass(t, is, "the unconfirmed orphan kill's bead")
+	if want := "security: seat developer outlived its wall-watch and its bwrap, and the watch tick could NOT confirm killing it"; is.Title != want {
+		t.Errorf("title = %q, want %q", is.Title, want)
+	}
+	wwSaysNotConfirmed(t, "the bead", is.Description)
+	// The marker is the class's search key and stays one spelling, so an
+	// unconfirmed kill is found by the same search as a confirmed one.
+	if !strings.Contains(is.Description, wallWatchOrphanKillMarker(r)) {
+		t.Errorf("the bead lost its marker:\n%s", is.Description)
+	}
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 1 {
+		t.Fatalf("%d verdicts, want 1 (tick said %q)", len(vs), lines)
+	}
+	if !strings.Contains(vs[0].Text, "⛨ wall-watch backstop: could NOT confirm the kill of seat developer — its watcher") {
+		t.Errorf("the verdict's head does not say the kill is unconfirmed:\n%s", vs[0].Text)
+	}
+	wwSaysNotConfirmed(t, "the verdict", vs[0].Text)
+}
+
+func TestWallWatchBackstopOrphanKillCommentThatDidNotConfirmSaysSo(t *testing.T) {
+	t.Parallel()
+	state, _, r := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: r.BwrapPid, leaderRead: true, killErr: wwKillErr}
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if len(st.issues) != 1 || p.killed != 0 {
+		t.Fatalf("the first tick: beads=%+v killed=%d", st.issues, p.killed)
+	}
+	id := st.issues[0].ID
+	p.leaderPpid = 1
+	wallWatchBackstop(state, st, "", time.Now, p)
+	cs := st.comments[id]
+	// TWO comments, since ranger-base-kzk3u: the kill comment this bead is
+	// about, and the notice that the record is kept and the kill retried.
+	// The first is the one a reader meets as the kill's own account.
+	if p.killed != 1 || len(cs) != 2 {
+		t.Fatalf("killed=%d comments=%v", p.killed, cs)
+	}
+	wwSaysNotConfirmed(t, "the comment", cs[0])
+	if !strings.Contains(cs[0], "may still be running") {
+		t.Errorf("the comment does not say the seat may still be running:\n%s", cs[0])
+	}
+	if !strings.Contains(cs[1], "retries the kill every tick") {
+		t.Errorf("the bead is not told the kill is being retried (ranger-base-kzk3u):\n%s", cs[1])
+	}
+}
+
+// The other undriven arm: the kill found the seat already over. That seat
+// is ended, so its title still says killed, and its body says why there are
+// no pids — not an empty list.
+func TestWallWatchBackstopKillThatFoundNothingSaysNothingWasLeft(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name  string
+		probe *fakeWallWatchProbe
+		title string
+	}{
+		{"detach", &fakeWallWatchProbe{pids: []int{102}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killNothing: true},
+			"security: wall-watch killed seat developer — the mount over /h/.claude/settings.json came off"},
+		{"orphan", &fakeWallWatchProbe{pids: []int{102}, table: wwIntact(), leaderPpid: 1, leaderRead: true, killNothing: true},
+			"security: seat developer outlived its wall-watch and its bwrap, and the watch tick killed it"},
+	} {
+		state, _, _ := wwBackstopRecord(t)
+		st := &fakeWallWatchStore{}
+		lines := wallWatchBackstop(state, st, "", time.Now, c.probe)
+		if c.probe.killed != 1 || len(st.issues) != 1 {
+			t.Fatalf("%s: killed=%d beads=%+v (lines %q)", c.name, c.probe.killed, st.issues, lines)
+		}
+		if st.issues[0].Title != c.title {
+			t.Errorf("%s: title = %q, want %q", c.name, st.issues[0].Title, c.title)
+		}
+		if d := st.issues[0].Description; !strings.Contains(d, "killed: nothing was left to kill") || strings.Contains(d, "NOT CONFIRMED") {
+			t.Errorf("%s: the bead does not say nothing was left to kill:\n%s", c.name, d)
+		}
 	}
 }
 

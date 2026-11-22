@@ -454,12 +454,15 @@ func wallWatchPaths(ms []WallWatchMount) string {
 }
 
 func wallWatchTitle(d wallWatchDetach, ms []WallWatchMount) string {
+	if d.KillErr != "" {
+		return fmt.Sprintf("security: wall-watch could NOT confirm the kill of seat %s — the mount over %s came off", d.Seat, wallWatchPaths(ms))
+	}
 	return fmt.Sprintf("security: wall-watch killed seat %s — the mount over %s came off", d.Seat, wallWatchPaths(ms))
 }
 
 func wallWatchDescription(d wallWatchDetach, ms []WallWatchMount) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Filed by posse wall-watch (ranger-base-0qpsw D2). A wall this seat's render put over a name left the seat's mount table, so the seat could reach the HOST object at that name from then on. The watcher killed the seat.\n\n")
+	fmt.Fprintf(&b, "Filed by posse wall-watch (ranger-base-0qpsw D2). A wall this seat's render put over a name left the seat's mount table, so the seat could reach the HOST object at that name from then on. %s\n\n", wallWatchKillSentence(d, "The watcher"))
 	fmt.Fprintf(&b, "seat: %s\nsession dir: %s\nbwrap pid: %d · seat pid: %d\ndetached at: %s\n", d.Seat, d.Dir, d.BwrapPid, d.SeatPid, d.At.UTC().Format(time.RFC3339Nano))
 	if d.AtLaunch {
 		fmt.Fprintf(&b, "when: at launch, before the seat's command ran (it never ran)\n")
@@ -641,7 +644,10 @@ func wallWatchOrphanKillMarker(r wallWatchRecord) string {
 	return fmt.Sprintf("wall-watch gone and seat KILLED: watcher %d of seat %s (ranger-base-5k7vf)", r.WatcherPid, r.Seat)
 }
 
-func wallWatchOrphanKillTitle(r wallWatchRecord) string {
+func wallWatchOrphanKillTitle(r wallWatchRecord, d wallWatchDetach) string {
+	if d.KillErr != "" {
+		return fmt.Sprintf("security: seat %s outlived its wall-watch and its bwrap, and the watch tick could NOT confirm killing it", r.Seat)
+	}
 	return fmt.Sprintf("security: seat %s outlived its wall-watch and its bwrap, and the watch tick killed it", r.Seat)
 }
 
@@ -661,7 +667,7 @@ func wallWatchOrphanKillLines(r wallWatchRecord, d wallWatchDetach, ppid int) st
 }
 
 func wallWatchOrphanKillDescription(r wallWatchRecord, d wallWatchDetach, ppid int) string {
-	return "Filed by the dispatch watch tick (ranger-base-5k7vf, over ranger-base-0qpsw D3). This bwrap seat's `posse wall-watch` sidecar is gone, its bwrap is gone, and its leader was still running — so nothing was left to end it and the tick KILLED it.\n\n" +
+	return "Filed by the dispatch watch tick (ranger-base-5k7vf, over ranger-base-0qpsw D3). This bwrap seat's `posse wall-watch` sidecar is gone, its bwrap is gone, and its leader was still running — so nothing was left to end it. " + wallWatchKillSentence(d, "The tick") + "\n\n" +
 		wallWatchOrphanKillLines(r, d, ppid)
 }
 
@@ -669,6 +675,10 @@ func wallWatchOrphanKillDescription(r wallWatchRecord, d wallWatchDetach, ppid i
 // tick already filed for this seat's dead watcher — the one that says
 // nothing has been killed, which is no longer true.
 func wallWatchOrphanKillComment(r wallWatchRecord, d wallWatchDetach, ppid int) string {
+	if d.KillErr != "" {
+		return "The watch tick TRIED to kill this seat and could NOT confirm it ended (ranger-base-5k7vf): its leader outlived its bwrap as well, so nothing was left to end it. It may still be running — end it by hand; `killed:` below says what the kill left.\n\n" +
+			wallWatchOrphanKillLines(r, d, ppid)
+	}
 	return "The watch tick has now KILLED this seat (ranger-base-5k7vf): its leader outlived its bwrap as well, so nothing was left to end it. The bead above says nothing had been killed, which was true when it was filed.\n\n" +
 		wallWatchOrphanKillLines(r, d, ppid)
 }
@@ -682,6 +692,28 @@ func wallWatchPidList(ps []int) string {
 		return "none"
 	}
 	return "pids " + strings.Join(s, " ")
+}
+
+// wallWatchKillHead opens every verdict line that reports a kill, and
+// wallWatchKillSentence is the description's sentence about it. Both turn on
+// KillErr for one reason (ranger-base-6r6ox): the `killed:` field has always
+// said "NOT CONFIRMED" for a kill that did not confirm, but the title and the
+// head of the line — what a reader sees in `bd list` and in the pane — said
+// KILLED regardless, so the one P1 that most needs a human to end a seat by
+// hand told them, at a glance, that it was already ended. A kill that found
+// nothing left is still a seat that is over, and reads as killed.
+func wallWatchKillHead(d wallWatchDetach) string {
+	if d.KillErr != "" {
+		return "could NOT confirm the kill of seat " + d.Seat
+	}
+	return "KILLED seat " + d.Seat
+}
+
+func wallWatchKillSentence(d wallWatchDetach, who string) string {
+	if d.KillErr != "" {
+		return who + " TRIED to kill the seat and could NOT confirm it ended — it may still be running, so end it by hand; `killed:` below says what the kill left."
+	}
+	return who + " killed the seat."
 }
 
 func wallWatchKilled(d wallWatchDetach) string {
@@ -797,7 +829,10 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 			// part of: a reader who comes to the seat finds it here.
 			v := &wallWatchSaid{Path: wallWatchVerdictPath(path), Pane: func(s string) { out = append(out, s) }}
 			v.note(wallWatchVerdictHeader(d))
-			v.say("⛨ wall-watch backstop: KILLED seat %s — the wall over %s came off; %s (ranger-base-0qpsw D3)", r.Seat, wallWatchPaths(gone), d.Backstop)
+			v.say("⛨ wall-watch backstop: %s — the wall over %s came off; %s (ranger-base-0qpsw D3)", wallWatchKillHead(d), wallWatchPaths(gone), d.Backstop)
+			if d.KillErr != "" {
+				v.say("  killed: %s", wallWatchKilled(d))
+			}
 			filed, commented, ferr := fileWallWatchDetach(st, d, now(), lock)
 			if filed != "" {
 				v.say("  filed %s", filed)
@@ -845,8 +880,8 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 			// seat has no part of.
 			v := &wallWatchSaid{Path: wallWatchVerdictPath(path), Pane: func(s string) { out = append(out, s) }}
 			v.note(wallWatchOrphanVerdictHeader(r, d.At))
-			v.say("⛨ wall-watch backstop: KILLED seat %s — its watcher (pid %d) is gone and its leader (pid %d) outlived its bwrap (pid %d; its parent is now pid %d), so nothing bounded it (ranger-base-5k7vf); killed %s",
-				r.Seat, r.WatcherPid, r.SeatPid, r.BwrapPid, ppid, wallWatchKilled(d))
+			v.say("⛨ wall-watch backstop: %s — its watcher (pid %d) is gone and its leader (pid %d) outlived its bwrap (pid %d; its parent is now pid %d), so nothing bounded it (ranger-base-5k7vf); killed %s",
+				wallWatchKillHead(d), r.WatcherPid, r.SeatPid, r.BwrapPid, ppid, wallWatchKilled(d))
 			var beads []string
 			if r.OrphanFiled != "" {
 				if cerr := st.Comment(r.Dir, r.OrphanFiled, wallWatchOrphanKillComment(r, d, ppid), VerifyActor); cerr != nil {
@@ -858,7 +893,7 @@ func wallWatchBackstop(stateDir string, st wallWatchStore, lock string, now func
 				// tick's word on the kill belongs there.
 				beads = []string{r.OrphanFiled}
 			} else if id, cerr := st.Create(r.Dir, BdNew{
-				Title:       wallWatchOrphanKillTitle(r),
+				Title:       wallWatchOrphanKillTitle(r, d),
 				Description: wallWatchOrphanKillDescription(r, d, ppid),
 				Labels:      []string{"security"},
 				Priority:    "1",

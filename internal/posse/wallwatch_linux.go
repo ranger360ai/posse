@@ -195,7 +195,10 @@ func runWallWatch(r wallWatchRun) int {
 		// could not be written, and the pane was the only other copy.
 		v := &wallWatchSaid{Path: verdict, Pane: func(s string) { say("%s", s) }}
 		v.note(wallWatchVerdictHeader(d))
-		v.say("KILLED seat %s: the wall over %s came off at %s (ranger-base-0qpsw D2)", d.Seat, wallWatchPaths(missing), d.At.Format(time.RFC3339Nano))
+		v.say("%s: the wall over %s came off at %s (ranger-base-0qpsw D2)", wallWatchKillHead(d), wallWatchPaths(missing), d.At.Format(time.RFC3339Nano))
+		if d.KillErr != "" {
+			v.say("killed: %s", wallWatchKilled(d))
+		}
 		if r.OnDetach != nil {
 			r.OnDetach(d)
 		}
@@ -291,8 +294,9 @@ func runWallWatch(r wallWatchRun) int {
 			// that stays what it was.
 			if wallWatchLeaderLive(info.ChildPid, info.MntNamespace) {
 				killed, kerr := wallWatchKillWith(0, func() []int { return wallWatchSeatPids(0, info.MntNamespace) })
-				refuse("KILLED seat %s: its bwrap (pid %d) ended with the seat's leader (pid %d) still running, so the seat's die-with-parent never fired and nothing else supervised it (ranger-base-6ec6n); killed %s",
-					r.Opts.Seat, bwrapPid, seatPid, wallWatchKilled(wallWatchDetach{Killed: killed, KillErr: kerr}))
+				kd := wallWatchDetach{Seat: r.Opts.Seat, Killed: killed, KillErr: kerr}
+				refuse("%s: its bwrap (pid %d) ended with the seat's leader (pid %d) still running, so the seat's die-with-parent never fired and nothing else supervised it (ranger-base-6ec6n); killed %s",
+					wallWatchKillHead(kd), bwrapPid, seatPid, wallWatchKilled(kd))
 			}
 			return code
 		default:

@@ -40,6 +40,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-8ck6d](ranger-base-8ck6d.md) — ranger-base-8ck6d: the last four member lines that deferred their cause — 2026-11-22
 - [ranger-base-8752f](ranger-base-8752f.md) — Three arms of the wall-member censuses, each priced before it was widened (ranger-base-8752f) — 2026-11-22
 - [ranger-base-7mfnf](ranger-base-7mfnf.md) — The re-plant hazard cannot reach a `#!` script, so 361 call sites are not exposed (ranger-base-7mfnf) — 2026-11-22
+- [ranger-base-6r6ox](ranger-base-6r6ox.md) — A kill that did not confirm no longer reports KILLED, and a fixture finally drives it (ranger-base-6r6ox) — 2026-11-22
 - [ranger-base-5k7vf](ranger-base-5k7vf.md) — A seat whose wall-watch AND bwrap are both gone has no lifetime bound, so the watch tick kills it (ranger-base-5k7vf) — 2026-11-22
 - [ranger-base-2unmh](ranger-base-2unmh.md) — Four closes verified, and four arms nothing witnessed (ranger-base-2unmh) — 2026-11-22
 - [ranger-base-2q0uy](ranger-base-2q0uy.md) — The host staging-root write is the stand-down shape's, not a fixture's, and no fixture root closes it (ranger-base-2q0uy) — 2026-11-22
