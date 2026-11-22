@@ -11,6 +11,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-t0ha1](ranger-base-t0ha1.md) — Four closes verified, and the arm a census cannot see (ranger-base-t0ha1) — 2026-11-22
 - [ranger-base-jielm](ranger-base-jielm.md) — Two verify findings: a pin whose premise nothing witnessed, and the last unguarded read of the refusals leaf (ranger-base-jielm) — 2026-11-22
 - [ranger-base-ayubz](ranger-base-ayubz.md) — The caged BEADS_DIR is a translation, not a resolve (ranger-base-ayubz) — 2026-11-22
+- [ranger-base-1aayx](ranger-base-1aayx.md) — The fourteen macos arm-1 reds were twelve landings and one fixture root (ranger-base-1aayx) — 2026-11-22
 - [ranger-base-zm03j](ranger-base-zm03j.md) — Verifying four closes, and the platform half nothing read (ranger-base-zm03j) — 2026-11-21
 - [ranger-base-zcj0z](ranger-base-zcj0z.md) — Arm 1 ran no Go test on either platform for nine days, and both reasons were loud (ranger-base-zcj0z) — 2026-11-21
 - [ranger-base-zbmxc](ranger-base-zbmxc.md) — Five macos arm-1 reds, and the three darwin path shapes a linux box can plant (ranger-base-zbmxc) — 2026-11-21

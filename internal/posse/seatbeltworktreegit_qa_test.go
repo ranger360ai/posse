@@ -114,10 +114,27 @@ func wgFixtureIn(t *testing.T, root string) wgFixture {
 // profile: wgDenyFixture (the ADR 0086 parity arms, which narrow the set by
 // spelling instead) and wgPack's own pin (ranger-base-blkse, whose subject is
 // the seat's object store and not the sandbox).
+//
+// UNDER /tmp AND NOT t.TempDir(), HOME INCLUDED (ranger-base-1aayx).
+// "every box" is the claim this helper's name makes, and `t.TempDir()` is a
+// different directory on each of the two: under `/tmp` on linux, under
+// `$TMPDIR` in `/var/folders/…` on darwin. Both are blanket temp grants, but
+// only `/tmp` is where the bwrap render's stand-downs are, so an arm here
+// that RENDERS — the two of them, ranger-base-1b8yv's L3 arm and
+// ranger-base-kfrpv's — had BwrapArgs refuse the fixture's own home on macos
+// arm 1 and read that refusal instead of the wall it came to measure.
+// wallStandDownDir carries the mechanism, the measurement and the two fixes
+// not taken; one root for the home and the tree keeps them on one box as
+// well as on one host.
 func wgFixtureAnyBox(t *testing.T) wgFixture {
 	t.Helper()
-	wtqaHome(t) // the home caches, and the seat's wall dir, name a fixture home
-	return wgFixtureIn(t, gitTempDir(t))
+	root := wallStandDownDir(t)
+	// The home caches, and the seat's wall dir, name a fixture home — a
+	// SIBLING of the fixture root and not a path inside it, which is the
+	// relationship wtqaHome's own t.TempDir() had to gitTempDir's: nothing
+	// the arms below narrow to this repo may come from the home.
+	t.Setenv("HOME", sbMkdir(t, filepath.Join(root, "seat-home")))
+	return wgFixtureIn(t, sbMkdir(t, filepath.Join(root, "work")))
 }
 
 func (f wgFixture) writable(t *testing.T) []string {

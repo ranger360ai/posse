@@ -294,6 +294,64 @@ func wallUngrantedDir(t *testing.T) string {
 	return d
 }
 
+// wallStandDownDir is wallUngrantedDir's OPPOSITE, and it is the fixture root
+// for a pin whose subject is a bwrap render that must SUCCEED: a directory
+// inside the one blanket temp grant both hosts spell the same way, `/tmp`
+// (bwrapTmpMount), which is where the render's own stand-downs are.
+//
+// WHY A FIXTURE NEEDS ONE. BwrapArgs judges every write grant against the
+// per-seat wall root composed from $HOME (bwrapRefuseWallRootGrant) and
+// REFUSES a grant that contains it — and a blanket temp grant contains any
+// fixture home cut under that temp root, so a pin whose home is a plain
+// `t.TempDir()` is asking the render to refuse itself. The refusal stands
+// down where the home is under `/tmp`, for the reason its own comment gives:
+// `/tmp` is granted unconditionally, a home inside it is in the shared
+// directory already, so there is no seat there for a wall root to protect.
+// bwrapSeatTmp's private-/tmp mount stands down over the same question.
+//
+// SO THE HOST IS THE WHOLE OF IT, and that is why this helper exists rather
+// than a sentence at each call site. On linux `t.TempDir()` IS under /tmp and
+// both stand-downs were free; on darwin it is $TMPDIR under `/var/folders/…`,
+// granted just as unconditionally but not `/tmp`, so the containment refusal
+// spoke and the arm read it instead of the thing it came to measure. MEASURED
+// on macos arm 1 at 2a50bcb5 (run 44990274146, job 137109586827) and
+// reproduced here with `TMPDIR=/var/tmp/…`, same lines and same messages
+// (ranger-base-1aayx). ranger-base-zbmxc took this same answer one file over
+// for the same reason — bwrapstatedirs_qa_test.go's bwsHome — and ruled out
+// both alternatives there: widening the stand-down weakens a live refusal on
+// linux, and skipping the render off linux retires the pin on the only host
+// that runs it.
+//
+// RESOLVED, because the raw/resolved split is the class this is in: on darwin
+// `/tmp` is itself a link to `/private/tmp`, so a fixture handed the raw
+// spelling would plant every path in the pin at one spelling and have every
+// producer answer at the other.
+//
+// os.MkdirTemp with a tolerant removal and not t.TempDir(), for
+// wallUngrantedDir's reason: callers `git init` in here
+// (TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot is the pin). The
+// `posse-` prefix is the temp-root census's
+// (internal/treepins/temproot_qa_test.go): this root outlives no SIGKILL and
+// no -timeout panic, and `posse-*` is the only class scripts/reap-test-tmp.sh
+// reaches under /tmp.
+func wallStandDownDir(t *testing.T) string {
+	t.Helper()
+	d, err := os.MkdirTemp(bwrapTmpMount, "posse-standdown-")
+	if err != nil {
+		t.Fatalf("cannot make a fixture root under %s: %v", bwrapTmpMount, err)
+	}
+	t.Cleanup(func() { removeAllTolerant(t, d) })
+	d = absResolve(d)
+	// The ANSWER and not the spelling, exactly as wallUngrantedDir checks its
+	// own: a box whose `/tmp` led somewhere outside the grant would hand every
+	// caller a root the stand-downs do not cover, and every arm below would be
+	// reading a refusal instead of a render.
+	if !underDir(bwrapTmpMount, d) {
+		t.Fatalf("%s is not inside %s, so the render's stand-downs do not cover this fixture and every arm over it measures a refusal", d, bwrapTmpMount)
+	}
+	return d
+}
+
 // ─── an abstention here is counted, and an undeclared one is not a pass ─────
 //
 // ADR 0097 D5's rule — "an abstention is never a pass" — one layer in from

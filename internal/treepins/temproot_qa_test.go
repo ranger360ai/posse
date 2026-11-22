@@ -220,8 +220,18 @@ const trRequired = "posse-"
 // nobody's in this bead, the floor is one-directional so it reds nothing, and
 // moving a number this bead did not measure the before-reading of would be
 // the drift this file is about in the other direction.
+//
+// MEASURED 2026-11-22 (linux, this box, ranger-base-1aayx): 21 Go roots over
+// 1172 .go files, and 20 at the commit before that bead — so one of the two
+// the Go line moves by is ranger-base-1aayx's own (`wallStandDownDir`, the
+// root wgFixtureAnyBox cuts its fixture tree and its HOME under) and one was
+// ranger-base-zbmxc's `posse-bwsd-`, already live and above a trGoRoots of
+// 19. That is the one-directional silence twice over, and it is why this
+// line is set from the LOGGED count and not from the diff. The Python line
+// does not move: this bead added no Python root and still has no
+// before-reading of the live 8.
 const (
-	trGoRoots  = 19
+	trGoRoots  = 21
 	trPyRootsN = 7
 )
 
