@@ -56,11 +56,13 @@ import (
 //	                         patch FILE with only pre-applypatch run — no
 //	                         prior unscanned object needed, and posse's own
 //	                         L3 prepare-commit-msg skipped too. Every am but
-//	                         the four that end or read one: --abort, --quit,
-//	                         --skip, --show-current-patch, which AGENTS.md
-//	                         and gates.go's sequencer arm both tell seats to
-//	                         type. `git apply` then `git commit` is the
-//	                         respelling, and it meets both hooks.
+//	                         the three that end or read one: --abort, --quit,
+//	                         --show-current-patch, which AGENTS.md and
+//	                         gates.go's sequencer arm both tell seats to
+//	                         type. NOT --skip (ranger-base-t4qez), which
+//	                         commits the rest of the mbox. `git apply` then
+//	                         `git commit` is the respelling, and it meets
+//	                         both hooks.
 //	hookskip:alias           (ranger-base-z8kym) a verb that is not a git
 //	                         builtin is looked up as an alias, under the
 //	                         call's own global options and env, after the
@@ -386,7 +388,7 @@ var hookSkipNoVerifyVerbs = []string{"commit", "am", "merge", "pull", "rebase", 
 // renderHookSkipArm. A standalone `am)` arm after the loop would be dead
 // code: sh takes the first matching arm (ranger-base-o6ip1).
 var hookSkipVerbExtra = map[string]string{
-	"am": "posse_hs_am \"$@\" || posse_hs_refuse hookskip:plumbing-commit 'git am commits a patch FILE with only pre-applypatch run — never pre-commit or commit-msg, and not the L3 prepare-commit-msg posse renders; git apply then git commit is the respelling, and am --abort/--quit/--skip/--show-current-patch still run'",
+	"am": "posse_hs_am \"$@\" || posse_hs_refuse hookskip:plumbing-commit 'git am commits a patch FILE with only pre-applypatch run — never pre-commit or commit-msg, and not the L3 prepare-commit-msg posse renders; git apply then git commit is the respelling, and am --abort/--quit/--show-current-patch still run (NOT --skip: it commits the rest of the mbox)'",
 }
 
 // hookSkipAmAllowed are the only `git am` forms a seat may still type: each
@@ -395,14 +397,44 @@ var hookSkipVerbExtra = map[string]string{
 // to type `git am --abort`/`--quit` to clear a stalled tree, so refusing
 // those would refuse the house's own advice.
 //
+// `--skip` WAS ON THIS LIST AND IS NOT (ranger-base-t4qez, from
+// ranger-base-6zw05). It does not end an am: it is a `reset --hard` of the
+// patch it stopped on followed by the REST OF THE MBOX, exactly as
+// `cherry-pick --skip` is, so it COMMITS whenever a patch is left — which
+// made the "commits nothing" clause above false for one of four entries and
+// let an am land a commit with only pre-applypatch run, past the one arm
+// that exists to stop that. MEASURED 2026-11-21, git 2.56.0, Linux, a
+// non-linked checkout, with an am stopped on a conflicting first patch and a
+// clean second still in the mbox: `git am --skip` exited 0 unrefused and
+// moved HEAD onto that second patch, with the managed pre-commit unrun —
+// through this box's INSTALLED shim (ranger-base-6zw05's reading, which also
+// saw it reset another actor's staged file out of the index and off the disk
+// on the way, a destruction that is ranger-base-hkp3s's class and not this
+// arm's) and again through the shim this tree RENDERS, where the pin below
+// keeps it measured.
+// The respelling is `git am --abort`, then `git apply` plus a path-limited
+// `git commit` — which is what this arm already says for `am` itself — or
+// the same am in a session worktree. Nothing in AGENTS.md, INSTALL.md or the
+// ADR 0052 lineage ever told a seat to type `am --skip`: every hit is
+// `--abort`/`--quit` prose, so no prose needed respelling, and the removal
+// needed no prefix work either because this list is exact spellings.
+//
 // EXACT spellings, not prefixes, and that is the safe direction: this arm
 // refuses am by DEFAULT, so an unlisted abbreviation (`--abor`, which git
 // itself accepts) is an over-refusal one respelling away — the accepted cost
 // in every arm here. A prefix GLOB would do the opposite and admit the wrong
 // option outright: `--s*` reaches --signoff and --scissors, both of which
-// commit. `--continue`/`--resolved` are deliberately absent for the same
-// reason — continuing an am is what finally writes its commit.
-var hookSkipAmAllowed = []string{"--abort", "--quit", "--skip", "--show-current-patch"}
+// commit. `--continue`/`--resolved` are absent for the same reason `--skip`
+// now is — continuing an am is what finally writes its commit, and skipping
+// a patch continues the am too.
+//
+// THE PIN THIS LIST OWES ITS NAME TO is
+// TestQAHookSkipAmAllowedFormsCommitNothing: for every form the list calls
+// safe, with a tail LEFT in the mbox, the commit count does not move. The
+// legs in hsAllowed could not have caught `--skip`, because with nothing in
+// progress git itself exits 128 on all of these and no form has anything to
+// commit; a window with a tail is the only one where the claim has content.
+var hookSkipAmAllowed = []string{"--abort", "--quit", "--show-current-patch"}
 
 // ciGlob spells s as a case-insensitive sh glob: `core` → `[Cc][Oo][Rr][Ee]`.
 // git compares section and variable names case-insensitively, so a literal
@@ -739,11 +771,13 @@ func renderHookSkipClone() string {
 // with a managed pre-commit in global scope: `git am <patch>` landed the
 // commit at rc 0 with pre-commit unrun, and did so with the working tree
 // DIRTY as well, when the patch touched a file the tree had not. Only
-// pre-applypatch ran. `am --abort/--quit/--skip/--show-current-patch` with
+// pre-applypatch ran. `am --abort/--quit/--show-current-patch` with
 // nothing in progress each exit 128 on git's own `fatal: Resolve operation
 // not in progress` — refused by git, not by this arm, which is why the
 // --abort control is pinned against a REAL stalled am
-// (TestQAHookSkipAmAbortStillEndsAStalledAm).
+// (TestQAHookSkipAmAbortStillEndsAStalledAm) and why every form on the
+// allowed list is pinned against one too
+// (TestQAHookSkipAmAllowedFormsCommitNothing, ranger-base-t4qez).
 //
 // The scan STOPS at `--`: every word after it is a mailbox path, and a file
 // literally named `--abort` must not buy a pass. Stopping there refuses,

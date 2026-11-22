@@ -276,17 +276,20 @@ func cwHeadFiles(t *testing.T, fx *cwFixture, dir string) string {
 // hookSkipVerbExtra). A git that grows a fifth one reds here on the day it
 // lands rather than the day somebody's work is swept by it.
 //
-// `am`'s EXCUSE IS THINNER THAN THIS CLAUSE READS, and it is now measured:
-// that arm refuses the verb by DEFAULT and passes four forms through
-// (hookSkipAmAllowed), one of which is `--skip` — which applies and COMMITS
-// whatever is left in the mbox, exactly as `cherry-pick --skip` does.
-// MEASURED 2026-11-21 through this box's installed shim. So the assertion
-// below is true (the entry exists) while the sentence above it is not quite,
-// and this test is deliberately left as it was: the fix belongs to that
-// arm's own table, under ranger-base-t4qez, and either answer there — drop
-// `--skip` from the allowed list, or give `am` a row in continueWallVerbs —
-// makes this clause honest again. ranger-base-6zw05 filed it rather than
-// widening into another arm's table.
+// `am`'s EXCUSE WAS ONCE THINNER THAN THIS CLAUSE READ, so the assertion
+// below checks it rather than taking it (ranger-base-t4qez, from
+// ranger-base-6zw05). That arm refuses `am` by DEFAULT and passes a short
+// list of forms through (hookSkipAmAllowed), and `--skip` was on it —
+// which applies and COMMITS whatever is left in the mbox, exactly as
+// `cherry-pick --skip` does (MEASURED 2026-11-21 through this box's
+// installed shim). While it was, the entry existed and the excuse did not
+// hold: the verb whose whole subject here is an option that ADVANCES an
+// operation was excused by an arm that let the advancing option by. So the
+// excuse is two facts now — the entry exists, AND nothing on that arm's
+// allowed list advances an am — and a form added back there reds this pin
+// instead of quietly reopening the hole. The am-side half of the same fix
+// is TestQAHookSkipAmAllowedFormsCommitNothing, which measures that every
+// allowed form commits nothing with a tail left to apply.
 //
 // `<verb> -h` and not `<verb> --continue`: the usage line is read-only and
 // exits before the verb does anything, so the census cannot change a repo
@@ -328,6 +331,16 @@ func TestQAContinueWallNamesEveryGitVerbThatCanContinue(t *testing.T) {
 	}
 	if _, ok := hookSkipVerbExtra["am"]; !ok {
 		t.Error(`am is excused from continueWallVerbs because hookSkipVerbExtra["am"] refuses it; that entry is gone`)
+	}
+	// The other half of that excuse: an arm that refuses the verb but passes
+	// an ADVANCING option through excuses nothing this wall cares about.
+	// `--resolved` is git's own synonym for `--continue` on am.
+	for _, form := range hookSkipAmAllowed {
+		switch form {
+		case "--continue", "--resolved", "--skip":
+			t.Errorf("hookSkipAmAllowed passes %s through, and that option ADVANCES an am: it commits whatever is left in the mbox, which is exactly what this wall refuses for the other four verbs.\n"+
+				"am is excused from continueWallVerbs only while that arm refuses every advancing form. Drop it there, or give am a row here with its measured Min.", form)
+		}
 	}
 }
 

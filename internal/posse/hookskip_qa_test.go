@@ -240,10 +240,17 @@ func hsRefused(fx *hsFixture) []hsLeg {
 		// that commits when it has its input, and the arm must not admit
 		// either on the strength of carrying no mailbox argument. Bare `am`
 		// reads a mailbox from stdin; --continue is what finally writes a
-		// stalled am's commit, which is why it is not one of the four
+		// stalled am's commit, which is why it is not one of the three
 		// allowed forms beside --abort.
 		{"", "am", "hookskip:plumbing-commit"},
 		{"", "am --continue", "hookskip:plumbing-commit"},
+		// ranger-base-t4qez: `am --skip` was the fourth allowed form until
+		// it was measured. It is a third spelling pin for the same reason
+		// the two above are — with no am in progress git exits 128 on it, so
+		// this leg witnesses no landing — and it is the form that DOES land
+		// one when an am is stopped with a patch left in the mbox, which
+		// TestQAHookSkipAmAllowedFormsCommitNothing measures.
+		{"", "am --skip", "hookskip:plumbing-commit"},
 	}
 }
 
@@ -319,18 +326,21 @@ func hsAllowed(fx *hsFixture) []hsLeg {
 		// The D2 redirect posse renders passes, and the managed hook still
 		// runs through its dispatcher (hsPlantRedirects plants it).
 		{hsKey0("core.hooksPath", filepath.Join(fx.hooksRoot, "hs-session")), "commit -q -m r -- f", ""},
-		// ranger-base-o6ip1: the four `am` forms that END or READ an am in
+		// ranger-base-o6ip1: the `am` forms that END or READ an am in
 		// progress commit nothing, and AGENTS.md's sequencer paragraph plus
 		// gates.go's sequencerVerbs comment both tell seats to type --abort
 		// and --quit to clear a stalled tree. With no am in progress git
 		// itself exits 128 on each (`fatal: Resolve operation not in
 		// progress`, MEASURED 2026-11-11, git 2.56.0), so what these legs
-		// pin is that the refusal is GIT's and not this arm's. The --abort
-		// control against a real stalled am, which must exit 0, is
-		// TestQAHookSkipAmAbortStillEndsAStalledAm.
+		// pin is that the refusal is GIT's and not this arm's — and why
+		// they could never have caught `--skip`, which was on the allowed
+		// list until ranger-base-t4qez and commits whenever the mbox has a
+		// tail. The controls against a REAL stalled am are
+		// TestQAHookSkipAmAbortStillEndsAStalledAm (--abort must work) and
+		// TestQAHookSkipAmAllowedFormsCommitNothing (none of these may
+		// commit, with a tail left to apply).
 		{"", "am --abort", ""},
 		{"", "am --quit", ""},
-		{"", "am --skip", ""},
 		{"", "am --show-current-patch", ""},
 		{"", "am --show-current-patch=diff", ""},
 		{"", "-C . am --abort", ""},
@@ -742,6 +752,118 @@ func TestQAHookSkipAmAbortStillEndsAStalledAm(t *testing.T) {
 	}
 	if _, err := os.Stat(applyDir); !os.IsNotExist(err) {
 		t.Errorf(".git/rebase-apply survived `git am --abort` through the shim: %v", err)
+	}
+}
+
+// hsAmStallWithTail opens the window every claim about hookSkipAmAllowed is
+// made in: an am stopped on a patch it cannot apply, with ANOTHER patch
+// still queued behind it (ranger-base-t4qez). The tail is the whole point —
+// with nothing left to apply, every form on that list trivially commits
+// nothing and a form that commits looks exactly like one that cannot.
+//
+// The am that opens the window is run past the shim on purpose: what is
+// under test is what a seat types INTO the window, not the am that makes it.
+// Each call resets the repo to baseline first, so legs do not inherit each
+// other's HEAD.
+func hsAmStallWithTail(t *testing.T, fx *hsFixture, baseline string) {
+	t.Helper()
+	applyDir := filepath.Join(fx.repo, ".git", "rebase-apply")
+	if err := os.RemoveAll(applyDir); err != nil {
+		t.Fatal(err)
+	}
+	hsRealGit(t, fx, "-C", fx.repo, "reset", "-q", "--hard", baseline)
+	cmd := exec.Command(fx.realGit, "-C", fx.repo, "am", fx.amPatches[0], fx.amPatches[1])
+	cmd.Env = hsEnv(fx)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("the two-mailbox am applied cleanly — this fixture needs its FIRST mailbox to conflict:\n%s", out)
+	}
+	if _, err := os.Stat(applyDir); err != nil {
+		t.Fatalf("a stalled am left no .git/rebase-apply, so there is no window to measure in: %v", err)
+	}
+	if got := hsRepoOut(t, fx, "rev-parse", "HEAD"); got != baseline {
+		t.Fatalf("the stalled am moved HEAD to %s; the window must open with HEAD still at %s", got, baseline)
+	}
+}
+
+// The pin hookSkipAmAllowed owes its name to (ranger-base-t4qez, from
+// ranger-base-6zw05). That list is documented as "the only `git am` forms a
+// seat may still type: each ENDS or READS an am already in progress and
+// commits nothing", and until this test nothing asked the second half of
+// that sentence. `--skip` was on it and is a `reset --hard` plus the REST OF
+// THE MBOX, so it commits whenever a patch is left — an am landing a commit
+// with only pre-applypatch run, which is the one thing this arm exists to
+// refuse (ADR 0052).
+//
+// The hsAllowed legs could not have caught it and no widening of them could:
+// with no am in progress git itself exits 128 on every one of these forms,
+// so what those legs pin is whose refusal it is. The window with a TAIL is
+// the only one where "commits nothing" has content, and it is measured both
+// ways here — through the shim, where `--skip` must now be refused, and past
+// it, where the real git commits the queued patch with the managed
+// pre-commit unrun. That second half is the premise of the removal, stated
+// as a measurement rather than as a claim, so a seat that puts `--skip` back
+// reds on the fixture's own witness and not on prose.
+//
+// MEASURED 2026-11-21, git 2.56.0, Linux: `am --abort`, `am --quit` and
+// `am --show-current-patch` each exit 0 in this window and leave HEAD where
+// it was; `git am --skip` exits 0 and moves HEAD onto the queued patch.
+func TestQAHookSkipAmAllowedFormsCommitNothing(t *testing.T) {
+	t.Parallel()
+	fx := hsSetup(t)
+	wrapped, _ := hsWrap(t, fx, "claude", "hs-am-tail")
+
+	// A commit the FIRST mailbox cannot apply over, so an am of two stalls
+	// on patch 1 with patch 2 — a file this repo does not have — still
+	// queued behind it.
+	write(t, filepath.Join(fx.repo, "amfile-a"), "someone else\n")
+	hsRealGit(t, fx, "-C", fx.repo, "add", "--", "amfile-a")
+	hsRealGit(t, fx, "-C", fx.repo, "commit", "-q", "-m", "conflicting amfile-a", "--", "amfile-a")
+	baseline := hsRepoOut(t, fx, "rev-parse", "HEAD")
+
+	for _, form := range hookSkipAmAllowed {
+		hsAmStallWithTail(t, fx, baseline)
+		before := hsFired(fx)
+		errs, code := hsRun(t, fx, wrapped, hsLeg{args: "am " + form})
+		line := "git am " + form
+		if strings.Contains(errs, "hookskip:") {
+			t.Errorf("%s: refused by the hook-skip arm, and hookSkipAmAllowed says a seat may type it: %q", line, errs)
+			continue
+		}
+		if code != 0 {
+			t.Errorf("%s: code=%d, want 0 — a form on the allowed list has to work in the window it is named for (%s)", line, code, errs)
+		}
+		if got := hsRepoOut(t, fx, "rev-parse", "HEAD"); got != baseline {
+			t.Errorf("%s: HEAD moved from %s to %s, so this form COMMITS when the mbox has a tail. hookSkipAmAllowed says every form on it commits nothing: either that claim or that entry is wrong, and the entry is what ranger-base-t4qez fixed one option over", line, baseline, got)
+		}
+		if hsFired(fx) != before {
+			t.Errorf("%s: the managed pre-commit fired, so this form reached a commit", line)
+		}
+	}
+
+	// Through the shim: refused, before git, naming its rule.
+	hsAmStallWithTail(t, fx, baseline)
+	errs, code := hsRun(t, fx, wrapped, hsLeg{args: "am --skip"})
+	if code == 0 || !strings.Contains(errs, "rule: hookskip:plumbing-commit,") {
+		t.Errorf("git am --skip with a tail left in the mbox: code=%d, want refused naming hookskip:plumbing-commit (%s)", code, errs)
+	}
+	if got := hsRepoOut(t, fx, "rev-parse", "HEAD"); got != baseline {
+		t.Errorf("git am --skip moved HEAD from %s to %s through the shim: the refusal has to come before git, not after", baseline, got)
+	}
+
+	// Past the shim: the premise. If this ever stops committing, the fixture
+	// has lost its tail and the legs above are witnessing nothing.
+	hsAmStallWithTail(t, fx, baseline)
+	before := hsFired(fx)
+	past := exec.Command(fx.realGit, "-C", fx.repo, "am", "--skip")
+	past.Env = hsEnv(fx)
+	if out, err := past.CombinedOutput(); err != nil {
+		t.Fatalf("past the shim, `git am --skip` failed, and the refusal's whole premise is that it SUCCEEDS here: %v\n%s", err, out)
+	}
+	if got := hsRepoOut(t, fx, "rev-parse", "HEAD"); got == baseline {
+		t.Errorf("past the shim, `git am --skip` left HEAD at %s: this fixture's window has no tail, so neither this leg nor the ones above witness anything", baseline)
+	}
+	if hsFired(fx) != before {
+		t.Errorf("the managed pre-commit fired on `git am --skip`, and the reason this arm refuses am at all is that it does not")
 	}
 }
 

@@ -22,6 +22,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-vi3vn](ranger-base-vi3vn.md) — Four closes verified, and a wall probe's execution count is two pins over (ranger-base-vi3vn) — 2026-11-21
 - [ranger-base-vbp5a](ranger-base-vbp5a.md) — ranger-base-vbp5a — two socket-wall live pins spent sun_path on their own test names — 2026-11-21
 - [ranger-base-tcho6](ranger-base-tcho6.md) — Check 4's positional guard is pinned against the reader, not against git (ranger-base-tcho6) — 2026-11-21
+- [ranger-base-t4qez](ranger-base-t4qez.md) — ranger-base-t4qez — `git am --skip` was on a list named "commits nothing", and it commits — 2026-11-21
 - [ranger-base-rh8y0](ranger-base-rh8y0.md) — ranger-base-rh8y0 — the landed loop's pending re-read, and four findings that are not this repo's — 2026-11-21
 - [ranger-base-r1zdr](ranger-base-r1zdr.md) — The upgrade report's two loop lines, held by a report pin (ranger-base-r1zdr) — 2026-11-21
 - [ranger-base-otoi4](ranger-base-otoi4.md) — ranger-base-otoi4 — ARM 21's guard asserted something about the box — 2026-11-21
